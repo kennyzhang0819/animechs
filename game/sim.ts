@@ -9,15 +9,12 @@ import {
   type LevelSpec,
   type UnitKind,
 } from "./levels";
-import { generateTerrain, WALL_PINE, type Terrain } from "./terrain";
+import { OFFICIAL_MAPS, terrainFromMap } from "./maps";
+import { WALL_PINE, type Terrain } from "./terrain";
 import { FxKind, type Effect, type Projectile, type Tower, type TowerKind } from "./types";
 
 const FX_CAP = 400;
 
-// THE map: one hand-picked generator seed — the game always plays this world
-// (chosen by scoring seeds 1-30 on path length, serpentine spread, and open
-// buildable ground: a hairpin first bend, a 156-tile lane, 62% open)
-const MAP_SEED = 24;
 
 // separation personal space (px): units steer apart inside this radius, and
 // hard-resolve interpenetration below the pressure floor (see HARD). Bigger
@@ -101,7 +98,7 @@ export class Sim {
     this.reset();
   }
 
-  reset(seed = MAP_SEED): void {
+  reset(): void {
     this.n = 0;
     this.kills = 0;
     this.leaked = 0;
@@ -109,15 +106,19 @@ export class Sim {
     this.projs.length = 0;
     this.effects.length = 0;
     this.towers.length = 0;
-    // deterministic: the same seed rebuilds exactly the same world every
-    // session and every reset (the fallback increments only if a seed ever
-    // fails to connect spawn to core — MAP_SEED is verified not to)
-    for (let attempt = 0; attempt < 12; attempt++) {
-      this.terrain = generateTerrain(seed + attempt);
-      this.field.rebuildWalk(this.towers, this.terrain.blocked, this.terrain.spawn);
-      this.field.compute();
-      if (this.field.spawnPts.length >= 6) break;
-    }
+    // the official map document IS the world: map-editor saves land in its
+    // JSON, and the next reset (or hot reload) plays them
+    this.terrain = terrainFromMap(OFFICIAL_MAPS[0]);
+    this.field.rebuildWalk(this.towers, this.terrain.blocked, this.terrain.spawn);
+    this.field.compute();
+    // fail LOUDLY on a broken map: with zero pads nothing ever spawns and a
+    // wave script stalls forever, which reads as a scheduler bug otherwise
+    if (this.field.spawnAir.length === 0)
+      throw new Error(`map "${OFFICIAL_MAPS[0].id}" has no spawn pads — paint some in the editor`);
+    if (this.field.spawnPts.length === 0)
+      console.warn(
+        `map "${OFFICIAL_MAPS[0].id}": no spawn pad connects to the core — ground waves will stall`,
+      );
     this.totalEnemies = 0;
     for (const step of this.level.script)
       if ("wave" in step)

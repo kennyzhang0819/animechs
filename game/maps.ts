@@ -1,9 +1,12 @@
 import { BASE, COLS, NCELLS, ROWS } from "./constants";
-import { generateTerrain, WALL_PINE, type Prop, type Terrain } from "./terrain";
+import { WALL_PINE, type Prop, type Terrain } from "./terrain";
+import generated24 from "./maps/generated-24.json";
 
 /**
- * Serializable map snapshot — the editor's document format. Stored in
- * localStorage; convertible to/from the game's Terrain.
+ * Serializable map document — the game's OFFICIAL maps, one JSON file per
+ * map under game/maps/. The map editor saves straight back into those
+ * files (through the dev-only /api/maps route), so an edit IS the map:
+ * the sim loads the same document.
  */
 export interface MapData {
   id: string;
@@ -16,13 +19,13 @@ export interface MapData {
   spawn?: number[];
   pines: Prop[];
   decor: Prop[];
+  // carved-valley centerline per column — generator metadata the sim's
+  // seed-tower search reads; older documents fall back to a flat line
+  valleyY?: number[];
 }
 
-/** the generated map's pinned seed — mirrors MAP_SEED in sim.ts */
-export const GENERATED_SEED = 24;
-export const GENERATED_ID = "generated-24";
-
-const LS_KEY = "swarmfield.maps.v1";
+/** every playable map — add a JSON under game/maps/ and list it here */
+export const OFFICIAL_MAPS: readonly MapData[] = [generated24 as MapData];
 
 // ---------- palette ----------
 
@@ -79,6 +82,7 @@ export function mapFromTerrain(t: Terrain, id: string, name: string): MapData {
     spawn: Array.from(t.spawn),
     pines: t.pines.map((p) => ({ ...p })),
     decor: t.decor.map((p) => ({ ...p })),
+    valleyY: Array.from(t.valleyY).map((v) => Math.round(v * 100) / 100),
   };
 }
 
@@ -102,87 +106,35 @@ export function terrainFromMap(m: MapData): Terrain {
     spawn: m.spawn ? Uint8Array.from(m.spawn) : legacySpawn(blocked),
     pines: m.pines.map((p) => ({ ...p })),
     decor: m.decor.map((p) => ({ ...p })),
-    // editor maps carry no carved-valley metadata; a flat centerline keeps
-    // Terrain consumers (seedTower's search) sane if one ever loads this
-    valleyY: new Float32Array(COLS).fill(BASE.y + BASE.size / 2),
+    valleyY: m.valleyY
+      ? Float32Array.from(m.valleyY)
+      : new Float32Array(COLS).fill(BASE.y + BASE.size / 2),
   };
-}
-
-/** the game's pinned generated world, as an editable document */
-export function generatedMap(): MapData {
-  return mapFromTerrain(
-    generateTerrain(GENERATED_SEED),
-    GENERATED_ID,
-    `Seed ${GENERATED_SEED} — generated`,
-  );
-}
-
-/** empty grass field ringed by stone wall, spawn pads along the west side */
-export function blankMap(name: string): MapData {
-  const floor = new Array<number>(NCELLS);
-  const wall = new Array<number>(NCELLS).fill(0);
-  const blocked = new Array<number>(NCELLS).fill(0);
-  const spawn = new Array<number>(NCELLS).fill(0);
-  for (let y = 0; y < ROWS; y++)
-    for (let x = 0; x < COLS; x++) {
-      const i = y * COLS + x;
-      floor[i] = (Math.random() * 3) | 0;
-      if (x < 2 || y < 2 || x >= COLS - 2 || y >= ROWS - 2) {
-        blocked[i] = 1;
-        wall[i] = (Math.random() * 2) | 0;
-      } else if (x < 5) {
-        spawn[i] = 1;
-      }
-    }
-  return { id: `map-${Date.now().toString(36)}`, name, floor, wall, blocked, spawn, pines: [], decor: [] };
 }
 
 // ---------- storage ----------
 
-function readStore(): MapData[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(LS_KEY);
-    const parsed: unknown = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? (parsed as MapData[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeStore(maps: MapData[]): void {
-  window.localStorage.setItem(LS_KEY, JSON.stringify(maps));
-}
-
-/** custom maps only — the generated map is prepended by the admin page */
-export function listCustomMaps(): MapData[] {
-  return readStore();
-}
-
 export function loadMap(id: string): MapData | null {
-  if (id === GENERATED_ID) return generatedMap();
-  return readStore().find((m) => m.id === id) ?? null;
+  return OFFICIAL_MAPS.find((m) => m.id === id) ?? null;
 }
 
 /**
- * Persist a map. Saving the generated map forks it into a custom copy
- * (the generated one always rebuilds from its seed) — returns the stored id.
+ * Persist an official map: the dev server writes the JSON document back to
+ * game/maps/<id>.json, and hot reload hands the new world to everyone
+ * importing it — the admin list, and the game itself on its next reset.
+ * Resolves false when saving failed (production build, bad response).
  */
-export function saveMap(map: MapData): string {
-  const maps = readStore();
-  let stored = map;
-  if (map.id === GENERATED_ID) {
-    stored = { ...map, id: `map-${Date.now().toString(36)}`, name: `Seed ${GENERATED_SEED} — edited` };
+export async function saveMap(map: MapData): Promise<boolean> {
+  try {
+    const res = await fetch("/api/maps", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(map),
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
-  const at = maps.findIndex((m) => m.id === stored.id);
-  if (at >= 0) maps[at] = stored;
-  else maps.push(stored);
-  writeStore(maps);
-  return stored.id;
-}
-
-export function deleteMap(id: string): void {
-  writeStore(readStore().filter((m) => m.id !== id));
 }
 
 // ---------- thumbnails ----------

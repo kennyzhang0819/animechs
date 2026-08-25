@@ -11,11 +11,9 @@ import { PALETTE, saveMap, type MapData, type PaletteSet } from "@/game/maps";
 export default function MapEditorView({
   map,
   onClose,
-  onSaved,
 }: {
   map: MapData;
   onClose: () => void;
-  onSaved: (storedId: string) => void;
 }) {
   const glRef = useRef<HTMLCanvasElement>(null);
   const uiRef = useRef<HTMLCanvasElement>(null);
@@ -25,6 +23,8 @@ export default function MapEditorView({
   const [randomize, setRandomize] = useState(true);
   const [brush, setBrush] = useState(1);
   const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -77,13 +77,20 @@ export default function MapEditorView({
     return () => window.removeEventListener("keydown", onKey);
   }, [close]);
 
-  const save = (): void => {
+  // writes straight back into this official map's JSON via /api/maps
+  const save = async (): Promise<void> => {
     const ed = editorRef.current;
-    if (!ed) return;
-    const storedId = saveMap(ed.data());
-    ed.dirty = false;
-    setDirty(false);
-    onSaved(storedId);
+    if (!ed || saving) return;
+    setSaving(true);
+    setSaveError(false);
+    const ok = await saveMap(ed.data());
+    setSaving(false);
+    if (ok) {
+      ed.dirty = false;
+      setDirty(false);
+    } else {
+      setSaveError(true);
+    }
   };
 
   const pick = (set: PaletteSet, v: number): void => {
@@ -123,9 +130,10 @@ export default function MapEditorView({
           </div>
           <button
             onClick={save}
-            className="rounded border border-[#2E6E4E] bg-[#12281E]/80 px-3 py-1 text-[#7BE0A8] hover:border-[#3E9E6E]"
+            disabled={saving}
+            className="rounded border border-[#2E6E4E] bg-[#12281E]/80 px-3 py-1 text-[#7BE0A8] hover:border-[#3E9E6E] disabled:opacity-50"
           >
-            Save
+            {saving ? "Saving…" : saveError ? "Save failed — retry" : "Save"}
           </button>
           <button
             onClick={close}
