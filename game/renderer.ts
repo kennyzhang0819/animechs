@@ -15,6 +15,7 @@ import {
   CELL,
   COLS,
   H,
+  HP0,
   HP_TINT,
   MAX_UNITS,
   NCELLS,
@@ -260,8 +261,9 @@ export class Renderer {
     }
     const { upx, upy, uvx, uvy, uhp, n } = sim;
     const usz = UNIT_SPRITE;
+    const hpLow = HP0 / 3, hpMid = (2 * HP0) / 3;
     for (let i = 0; i < n; i++) {
-      const h = uhp[i] <= 1 ? 0 : uhp[i] <= 2 ? 1 : 2;
+      const h = uhp[i] <= hpLow ? 0 : uhp[i] <= hpMid ? 1 : 2;
       const tint = HP_TINT[h];
       this.push(
         dyn,

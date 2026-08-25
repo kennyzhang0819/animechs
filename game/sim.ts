@@ -8,6 +8,7 @@ import {
   MAX_UNITS,
   ROWS,
   TOWER,
+  UNIT_SPEED,
   UR,
   W,
 } from "./constants";
@@ -16,9 +17,17 @@ import { FxKind, type Effect, type Projectile, type Tower } from "./types";
 
 const FX_CAP = 400;
 
+// separation personal space (px): units steer apart inside this radius, and
+// hard-resolve interpenetration below the pressure floor (see HARD). Bigger
+// SEP = airier crowds but lower lane throughput, which caps how many units
+// the field can hold at once (throughput ~ speed * strip / SEP^2)
+const SEP = 26;
+// pressure floor (px): crowds may compress to this spacing but never below.
+// It sets crowd density — and with it how many units fit on the field
+const HARD = 20;
 // spatial hash cell size (px); rebuilt every frame with a counting sort.
-// must be >= 2*UR so a 3x3 bucket scan covers the separation radius
-const HC = 20;
+// must be >= SEP so a 3x3 bucket scan covers the separation radius
+const HC = 26;
 const HCOLS = (W / HC) | 0;
 const HROWS = (H / HC) | 0;
 const HN = HCOLS * HROWS;
@@ -231,7 +240,7 @@ export class Sim {
    * slingshots units forward.
    */
   private spawnSpotFree(x: number, y: number): boolean {
-    const r2 = UR * 2 * (UR * 2);
+    const r2 = HARD * HARD;
     const hx = clamp((x / HC) | 0, 0, HCOLS - 1);
     const hy = clamp((y / HC) | 0, 0, HROWS - 1);
     for (let gy = Math.max(0, hy - 1); gy <= Math.min(HROWS - 1, hy + 1); gy++) {
@@ -251,9 +260,9 @@ export class Sim {
   private spawnUnit(): void {
     const { spawnRows } = this.field;
     if (this.n >= MAX_UNITS || this.n >= this.target || spawnRows.length === 0) return;
-    for (let a = 0; a < 3; a++) {
+    for (let a = 0; a < 8; a++) {
       const row = spawnRows[(Math.random() * spawnRows.length) | 0];
-      const x = UR + 1 + Math.random() * (CELL * 4 - UR - 2);
+      const x = UR + 1 + Math.random() * (CELL * 6 - UR - 2);
       const y = (row + 0.15 + Math.random() * 0.7) * CELL;
       if (!this.spawnSpotFree(x, y)) continue;
       const i = this.n++;
@@ -262,7 +271,7 @@ export class Sim {
       this.uvx[i] = 0;
       this.uvy[i] = 0;
       this.uhp[i] = HP0;
-      this.uspd[i] = 62 + Math.random() * 30;
+      this.uspd[i] = UNIT_SPEED;
       return;
     }
   }
@@ -308,7 +317,7 @@ export class Sim {
   private updateUnits(dt: number): void {
     const { upx, upy, uvx, uvy, uspd, field, flowTmp, bStart, bUnits } = this;
     const steer = Math.min(1, dt * 8);
-    const R2 = UR * 2 * (UR * 2);
+    const SEP2 = SEP * SEP;
     const PR = UR + 4, REP = 55, SMAX = 70;
     const { isGoal } = field;
 
@@ -326,8 +335,9 @@ export class Sim {
       uvx[i] += (flowTmp.x * uspd[i] - uvx[i]) * steer;
       uvy[i] += (flowTmp.y * uspd[i] - uvy[i]) * steer;
 
-      // separation from neighbours via the hash
-      let sx = 0, sy = 0;
+      // separation from neighbours via the hash: soft steering inside the
+      // personal-space radius, plus accumulated hard overlap below the floor
+      let sx = 0, sy = 0, px = 0, py = 0;
       const hx = clamp((upx[i] / HC) | 0, 0, HCOLS - 1);
       const hy = clamp((upy[i] / HC) | 0, 0, HROWS - 1);
       for (let gy = Math.max(0, hy - 1); gy <= Math.min(HROWS - 1, hy + 1); gy++) {
@@ -338,11 +348,16 @@ export class Sim {
             if (j === i || j >= this.n) continue;
             const dx = upx[i] - upx[j], dy = upy[i] - upy[j];
             const d2 = dx * dx + dy * dy;
-            if (d2 > R2 || d2 < 1e-6) continue;
+            if (d2 > SEP2 || d2 < 1e-6) continue;
             const d = Math.sqrt(d2);
-            const push = (UR * 2 - d) / d;
+            const push = (SEP - d) / d;
             sx += dx * push;
             sy += dy * push;
+            if (d < HARD) {
+              const ov = (HARD - d) / d;
+              px += dx * ov;
+              py += dy * ov;
+            }
           }
         }
       }
@@ -359,14 +374,41 @@ export class Sim {
       if (field.blockedPx(upx[i], upy[i] + PR)) fy -= REP;
       if (field.blockedPx(upx[i], upy[i] - PR)) fy += REP;
 
+      // separation/repulsion steer but never exceed the unit's stat speed
+      let mvx = uvx[i] + fx, mvy = uvy[i] + fy;
+      const ml = Math.hypot(mvx, mvy);
+      if (ml > uspd[i]) {
+        mvx = (mvx / ml) * uspd[i];
+        mvy = (mvy / ml) * uspd[i];
+      }
+
+      // hard de-overlap: resolve up to half the interpenetration per frame
+      let ox = 0, oy = 0;
+      const pl = Math.hypot(px, py);
+      if (pl > 1e-6) {
+        const amt = Math.min(pl * 0.5, 10);
+        ox = (px / pl) * amt;
+        oy = (py / pl) * amt;
+      }
+
+      // total displacement never exceeds the unit's stat speed: crowd
+      // pressure may redirect a unit but can never squeeze it forward
+      // faster than it could walk
+      let dxT = mvx * dt + ox, dyT = mvy * dt + oy;
+      const dl = Math.hypot(dxT, dyT), dmax = uspd[i] * dt;
+      if (dl > dmax) {
+        dxT = (dxT / dl) * dmax;
+        dyT = (dyT / dl) * dmax;
+      }
+
       // axis-separated move; a blocked axis redirects its speed into the free one
-      let nx = upx[i] + (uvx[i] + fx) * dt;
+      let nx = upx[i] + dxT;
       if (field.hitsWall(nx, upy[i], UR)) {
         nx = upx[i];
         uvy[i] += Math.sign(uvy[i] || flowTmp.y || 1) * Math.abs(uvx[i]) * 0.6;
         uvx[i] = 0;
       }
-      let ny = upy[i] + (uvy[i] + fy) * dt;
+      let ny = upy[i] + dyT;
       if (field.hitsWall(nx, ny, UR)) {
         ny = upy[i];
         uvx[i] += Math.sign(uvx[i] || flowTmp.x || 1) * Math.abs(uvy[i]) * 0.6;
