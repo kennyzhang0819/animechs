@@ -36,6 +36,8 @@ export const UV_WALLS: readonly UVRect[] = [
 export const UV_UNIT = uv(320, 0, 64, 64);
 export const UV_MACE = uv(416, 288, 96, 96);
 export const UV_FLARE = uv(384, 0, 64, 64);
+// mechanical spawn-pad tile — drawn only by the map editor's terrain pass
+export const UV_SPAWN = uv(0, 192, 64, 64, 2);
 export const UV_PROJ = uv(352, 288, 64, 64);
 export const UV_RING = uv(448, 0, 64, 64);
 export const UV_FLASH = uv(0, 64, 64, 64);
@@ -93,6 +95,7 @@ const SPRITES = {
   mace: "/mindustry/sprites/units/mace.png",
   maceLeg: "/mindustry/sprites/units/mace-leg.png",
   flare: "/mindustry/sprites/units/flare.png",
+  spawnPad: `${ENV}/dark-panel-2.png`,
   towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
   towerBase3: "/mindustry/sprites/blocks/turrets/bases/block-3.png",
   salvoPreview: "/mindustry/sprites/blocks/turrets/salvo/salvo-preview.png",
@@ -175,6 +178,7 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(img.dirt2, 384, 64, 64, 64);
   c.drawImage(img.dirtWall0, 448, 64, 64, 64);
   c.drawImage(img.dirtWall1, 0, 128, 64, 64);
+  c.drawImage(img.spawnPad, 0, 192, 64, 64);
   // props: 48px overhanging sources at 2x into 96px cells
   c.drawImage(img.pine, 0, 288, 96, 96);
   c.drawImage(img.boulder0, 96, 288, 96, 96);

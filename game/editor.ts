@@ -22,6 +22,7 @@ interface Snapshot {
   floor: Uint8Array;
   wall: Uint8Array;
   blocked: Uint8Array;
+  spawn: Uint8Array;
   pines: Prop[];
   decor: Prop[];
 }
@@ -85,7 +86,7 @@ export class MapEditor {
     this.uictx = ctx;
 
     this.resize();
-    this.renderer.rebuildTerrain(this);
+    this.renderer.rebuildTerrain(this, true);
 
     window.addEventListener("resize", this.onResize);
     window.addEventListener("keydown", this.onKeyDown);
@@ -141,10 +142,11 @@ export class MapEditor {
     this.terrain.floor.set(s.floor);
     this.terrain.wall.set(s.wall);
     this.terrain.blocked.set(s.blocked);
+    this.terrain.spawn.set(s.spawn);
     this.terrain.pines = s.pines;
     this.terrain.decor = s.decor;
     this.dirty = true;
-    this.renderer.rebuildTerrain(this);
+    this.renderer.rebuildTerrain(this, true);
   }
 
   canUndo(): boolean {
@@ -158,6 +160,7 @@ export class MapEditor {
       floor: this.terrain.floor.slice(),
       wall: this.terrain.wall.slice(),
       blocked: this.terrain.blocked.slice(),
+      spawn: this.terrain.spawn.slice(),
       pines: this.terrain.pines.map((p) => ({ ...p })),
       decor: this.terrain.decor.map((p) => ({ ...p })),
     });
@@ -186,16 +189,26 @@ export class MapEditor {
       T.floor[i] = pick;
       T.blocked[i] = 0;
       T.wall[i] = 0;
+      T.spawn[i] = 0;
       this.removePropsAt(gx, gy);
     } else if (set.kind === "wall") {
       T.blocked[i] = 1;
       T.wall[i] = pick;
+      T.spawn[i] = 0;
       this.removePropsAt(gx, gy);
     } else if (set.kind === "pine") {
       T.blocked[i] = 1;
       T.wall[i] = WALL_PINE;
+      T.spawn[i] = 0;
       this.removePropsAt(gx, gy);
       T.pines.push({ x: cx, y: cy, size: CELL * 1.5, rot, kind: 0 });
+    } else if (set.kind === "spawn") {
+      // spawn pad: clears any wall under it — pads live on open ground.
+      // The floor beneath stays; the game draws only that floor
+      T.blocked[i] = 0;
+      T.wall[i] = 0;
+      T.spawn[i] = 1;
+      this.removePropsAt(gx, gy);
     } else if (set.kind === "decor") {
       if (T.blocked[i]) return; // props live on open ground, like the generator's
       this.removePropsAt(gx, gy);
@@ -207,9 +220,10 @@ export class MapEditor {
         kind: pick,
       });
     } else {
-      // erase: strip walls and props, keep the floor
+      // erase: strip walls, pads, and props, keep the floor
       T.blocked[i] = 0;
       T.wall[i] = 0;
+      T.spawn[i] = 0;
       this.removePropsAt(gx, gy);
     }
     this.dirty = true;
@@ -235,7 +249,7 @@ export class MapEditor {
         );
     }
     this.lastCell = { x: gx, y: gy };
-    this.renderer.rebuildTerrain(this);
+    this.renderer.rebuildTerrain(this, true);
   }
 
   // ---------- input ----------

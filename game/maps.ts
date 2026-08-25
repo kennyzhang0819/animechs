@@ -11,6 +11,9 @@ export interface MapData {
   floor: number[]; // NCELLS, UV_FLOORS index
   wall: number[]; // NCELLS, UV_WALLS index or WALL_PINE where blocked
   blocked: number[]; // NCELLS, 0/1
+  // NCELLS, 0/1 — enemy spawn pads. Absent in maps saved before the layer
+  // existed; terrainFromMap synthesizes the legacy western strip then
+  spawn?: number[];
   pines: Prop[];
   decor: Prop[];
 }
@@ -23,7 +26,7 @@ const LS_KEY = "swarmfield.maps.v1";
 
 // ---------- palette ----------
 
-export type PaintKind = "floor" | "wall" | "pine" | "decor" | "erase";
+export type PaintKind = "floor" | "wall" | "pine" | "decor" | "spawn" | "erase";
 
 /**
  * One paintable entry: a set of interchangeable variants. With randomize ON
@@ -58,6 +61,9 @@ export const PALETTE: readonly PaletteSet[] = [
   { id: "boulder", label: "Boulder", kind: "decor", variants: [0, 1],
     icons: [1, 2].map((n) => `${PROPS}/boulder${n}.png`) },
   { id: "shrub", label: "Shrub", kind: "decor", variants: [2], icons: [`${ENV}/shrubs1.png`] },
+  // enemy spawn pad: a data layer — the pad tile shows in the editor only,
+  // the game renders the floor beneath it
+  { id: "spawn", label: "Spawn pad", kind: "spawn", variants: [0], icons: [`${ENV}/dark-panel-2.png`] },
   { id: "erase", label: "Erase", kind: "erase", variants: [0], icons: [`${ENV}/clear-editor.png`] },
 ];
 
@@ -70,16 +76,30 @@ export function mapFromTerrain(t: Terrain, id: string, name: string): MapData {
     floor: Array.from(t.floor),
     wall: Array.from(t.wall),
     blocked: Array.from(t.blocked),
+    spawn: Array.from(t.spawn),
     pines: t.pines.map((p) => ({ ...p })),
     decor: t.decor.map((p) => ({ ...p })),
   };
 }
 
+/** pre-spawn-layer maps spawned on the open cells of the western strip */
+function legacySpawn(blocked: Uint8Array): Uint8Array {
+  const spawn = new Uint8Array(NCELLS);
+  for (let y = 1; y < ROWS - 1; y++)
+    for (let x = 0; x < 6; x++) {
+      const i = y * COLS + x;
+      if (!blocked[i]) spawn[i] = 1;
+    }
+  return spawn;
+}
+
 export function terrainFromMap(m: MapData): Terrain {
+  const blocked = Uint8Array.from(m.blocked);
   return {
     floor: Uint8Array.from(m.floor),
     wall: Uint8Array.from(m.wall),
-    blocked: Uint8Array.from(m.blocked),
+    blocked,
+    spawn: m.spawn ? Uint8Array.from(m.spawn) : legacySpawn(blocked),
     pines: m.pines.map((p) => ({ ...p })),
     decor: m.decor.map((p) => ({ ...p })),
     // editor maps carry no carved-valley metadata; a flat centerline keeps
@@ -97,11 +117,12 @@ export function generatedMap(): MapData {
   );
 }
 
-/** empty grass field ringed by stone wall */
+/** empty grass field ringed by stone wall, spawn pads along the west side */
 export function blankMap(name: string): MapData {
   const floor = new Array<number>(NCELLS);
   const wall = new Array<number>(NCELLS).fill(0);
   const blocked = new Array<number>(NCELLS).fill(0);
+  const spawn = new Array<number>(NCELLS).fill(0);
   for (let y = 0; y < ROWS; y++)
     for (let x = 0; x < COLS; x++) {
       const i = y * COLS + x;
@@ -109,9 +130,11 @@ export function blankMap(name: string): MapData {
       if (x < 2 || y < 2 || x >= COLS - 2 || y >= ROWS - 2) {
         blocked[i] = 1;
         wall[i] = (Math.random() * 2) | 0;
+      } else if (x < 5) {
+        spawn[i] = 1;
       }
     }
-  return { id: `map-${Date.now().toString(36)}`, name, floor, wall, blocked, pines: [], decor: [] };
+  return { id: `map-${Date.now().toString(36)}`, name, floor, wall, blocked, spawn, pines: [], decor: [] };
 }
 
 // ---------- storage ----------
@@ -168,6 +191,7 @@ export function deleteMap(id: string): void {
 const FLOOR_TONES = ["#7ab648", "#74ae45", "#6ea843", "#8a8a93", "#84848d", "#7e7e87", "#a5764f", "#9e7049", "#976a44"];
 const WALL_TONES = ["#5c5c66", "#565660", "#6e4f35", "#674a32"];
 const PINE_TONE = "#2e6e35";
+const SPAWN_TONE = "#8a3a44"; // the pad's dark red-panel look
 
 /** paint a MapData into a canvas at 1px per cell (scale it up with CSS) */
 export function drawThumb(map: MapData, canvas: HTMLCanvasElement): void {
@@ -182,7 +206,9 @@ export function drawThumb(map: MapData, canvas: HTMLCanvasElement): void {
         ? map.wall[i] === WALL_PINE
           ? PINE_TONE
           : WALL_TONES[map.wall[i]] ?? WALL_TONES[0]
-        : FLOOR_TONES[map.floor[i]] ?? FLOOR_TONES[0];
+        : map.spawn?.[i]
+          ? SPAWN_TONE
+          : FLOOR_TONES[map.floor[i]] ?? FLOOR_TONES[0];
       c.fillRect(x, y, 1, 1);
     }
   // core marker

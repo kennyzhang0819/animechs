@@ -9,6 +9,7 @@ import {
   UV_RING,
   UV_FUSE,
   UV_SCATTER,
+  UV_SPAWN,
   UV_SHELL,
   UV_TOWER_BASE,
   UV_TOWER_BASE3,
@@ -151,7 +152,8 @@ export class Renderer {
       gl.STATIC_DRAW,
     );
 
-    this.terrain = this.makeBatch(NCELLS + 512); // tiles + decor/pine props
+    // tiles + decor/pine props + (editor) a spawn overlay per cell at worst
+    this.terrain = this.makeBatch(NCELLS * 2 + 512);
     this.dyn = this.makeBatch(MAX_UNITS + 2048);
 
     const tex = gl.createTexture();
@@ -252,8 +254,12 @@ export class Renderer {
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, b.n);
   }
 
-  /** rebuild the static tile batch — call on init and whenever the map changes */
-  rebuildTerrain(src: { terrain: Terrain }): void {
+  /**
+   * rebuild the static tile batch — call on init and whenever the map
+   * changes. showSpawn paints the spawn-pad layer over its floor cells —
+   * an editor-only debug view; the game never passes it
+   */
+  rebuildTerrain(src: { terrain: Terrain }, showSpawn = false): void {
     const gl = this.gl;
     const t = this.terrain;
     const T = src.terrain;
@@ -269,6 +275,8 @@ export class Renderer {
             ? UV_WALLS[T.wall[i]]
             : UV_FLOORS[T.floor[i]];
         this.push(t, cx, cy, CELL, CELL, 0, uvr, 1, 1, 1, 1);
+        if (showSpawn && T.spawn[i] && !T.blocked[i])
+          this.push(t, cx, cy, CELL, CELL, 0, UV_SPAWN, 1, 1, 1, 1);
       }
     }
     for (const d of T.decor)

@@ -74,8 +74,12 @@ export class Sim {
   leaked = 0;
   // live per-kind census, updated the moment a unit spawns or is removed
   readonly aliveByKind = new Int32Array(UNIT_KINDS.length);
-  // per-entry countdown of the level's enemies still waiting to spawn
-  private spawnQueue: { kind: UnitKind; left: number }[] = [];
+  // the level script's cursor, plus the live state of the step it points at:
+  // a wave counts down per kind, a wait counts down in seconds
+  private stepIdx = 0;
+  private readonly waveLeft = new Int32Array(UNIT_KINDS.length);
+  private readonly waveTotal = new Int32Array(UNIT_KINDS.length);
+  private waitLeft = 0;
   private spawnAcc = 0;
 
   towers: Tower[] = [];
@@ -110,13 +114,18 @@ export class Sim {
     // fails to connect spawn to core — MAP_SEED is verified not to)
     for (let attempt = 0; attempt < 12; attempt++) {
       this.terrain = generateTerrain(seed + attempt);
-      this.field.rebuildWalk(this.towers, this.terrain.blocked);
+      this.field.rebuildWalk(this.towers, this.terrain.blocked, this.terrain.spawn);
       this.field.compute();
-      if (this.field.spawnRows.length >= 6) break;
+      if (this.field.spawnPts.length >= 6) break;
     }
-    this.totalEnemies = this.level.enemies.reduce((s, e) => s + e.count, 0);
-    this.spawnQueue = this.level.enemies.map((e) => ({ kind: e.kind, left: e.count }));
+    this.totalEnemies = 0;
+    for (const step of this.level.script)
+      if ("wave" in step)
+        for (const k of UNIT_KINDS) this.totalEnemies += step.wave[k] ?? 0;
+    this.stepIdx = 0;
+    this.waitLeft = 0;
     this.spawnAcc = 0;
+    this.loadStep();
     this.aliveByKind.fill(0);
     this.seedTower();
   }
@@ -131,11 +140,9 @@ export class Sim {
     return this.totalEnemies - this.kills - this.leaked;
   }
 
-  /** per-kind remaining (unspawned + alive), indexed like UNIT_KINDS */
-  remainingByKind(): number[] {
-    const out = Array.from(this.aliveByKind);
-    for (const e of this.spawnQueue) out[UNIT_ID[e.kind]] += e.left;
-    return out;
+  /** per-kind head count currently on the field, indexed like UNIT_KINDS */
+  aliveByKindList(): number[] {
+    return Array.from(this.aliveByKind);
   }
 
   /** starter tower on the first highground overlooking the early lane */
@@ -164,15 +171,7 @@ export class Sim {
   }
 
   update(dt: number): void {
-    // stream the level's enemies in at its spawn rate; a failed spawn (strip
-    // too crowded) keeps the enemy queued and retries on later frames
-    const entry = this.spawnQueue.find((e) => e.left > 0);
-    if (entry) {
-      this.spawnAcc = Math.min(this.spawnAcc + this.level.spawnRate * dt, this.level.spawnRate);
-      let want = Math.min(entry.left, this.spawnAcc | 0);
-      this.spawnAcc -= want;
-      while (want-- > 0 && this.spawnUnit(entry.kind)) entry.left--;
-    }
+    this.runScript(dt);
 
     this.buildHash();
     this.updateUnits(dt);
@@ -187,6 +186,96 @@ export class Sim {
         fx.pop();
       }
     }
+  }
+
+  // ---------- level script ----------
+
+  /**
+   * Point the live state at script[stepIdx], skipping steps with nothing in
+   * them (an empty wave, a zero wait). Leaves everything zeroed once the
+   * script runs out, which is what ends the level.
+   */
+  private loadStep(): void {
+    this.waveLeft.fill(0);
+    this.waveTotal.fill(0);
+    this.waitLeft = 0;
+    const script = this.level.script;
+    for (; this.stepIdx < script.length; this.stepIdx++) {
+      const step = script[this.stepIdx];
+      if ("wait" in step) {
+        if (step.wait > 0) {
+          this.waitLeft = step.wait;
+          return;
+        }
+        continue;
+      }
+      let any = false;
+      for (const k of UNIT_KINDS) {
+        const c = step.wave[k] ?? 0;
+        if (c <= 0) continue;
+        this.waveLeft[UNIT_ID[k]] = c;
+        this.waveTotal[UNIT_ID[k]] = c;
+        any = true;
+      }
+      if (any) return;
+    }
+  }
+
+  /** move to the next step, resetting the drain credit so waves start clean */
+  private nextStep(): void {
+    this.stepIdx++;
+    this.spawnAcc = 0;
+    this.loadStep();
+  }
+
+  /**
+   * Which kind to send next out of the current wave: whichever is furthest
+   * from finishing, by fraction of its own total. That intermingles a mixed
+   * wave from its first unit and lands every kind's last unit together,
+   * instead of emptying one pile before starting the next.
+   */
+  private nextWaveKind(): number {
+    let best = -1;
+    let bestFrac = 0;
+    for (let i = 0; i < this.waveLeft.length; i++) {
+      if (this.waveLeft[i] <= 0) continue;
+      const frac = this.waveLeft[i] / this.waveTotal[i];
+      if (frac > bestFrac) {
+        bestFrac = frac;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Run the level script: hold through a wait, otherwise drain the current
+   * wave at the level's spawn rate. A failed spawn (the strip is too crowded)
+   * leaves the unit in the wave and keeps its drain credit for a later frame,
+   * so a packed field delays a wave rather than swallowing it.
+   */
+  private runScript(dt: number): void {
+    if (this.waitLeft > 0) {
+      this.waitLeft -= dt;
+      if (this.waitLeft > 0) return;
+      this.nextStep();
+      // if that step is another wait, hold again from the next frame
+      if (this.waitLeft > 0) return;
+    }
+
+    let left = 0;
+    for (let i = 0; i < this.waveLeft.length; i++) left += this.waveLeft[i];
+    if (left === 0) return; // script finished
+
+    this.spawnAcc = Math.min(this.spawnAcc + this.level.spawnRate * dt, this.level.spawnRate);
+    while (left > 0 && this.spawnAcc >= 1) {
+      const id = this.nextWaveKind();
+      if (id < 0 || !this.spawnUnit(UNIT_KINDS[id])) break;
+      this.waveLeft[id]--;
+      this.spawnAcc--;
+      left--;
+    }
+    if (left === 0) this.nextStep();
   }
 
   // ---------- placement ----------
@@ -352,21 +441,21 @@ export class Sim {
   }
 
   private spawnUnit(kind: UnitKind): boolean {
-    const { spawnRows } = this.field;
     const stats = UNIT_STATS[kind];
     const fly = !!stats.flying;
-    if (this.n >= MAX_UNITS || (!fly && spawnRows.length === 0)) return false;
+    // every enemy enters on a spawn pad from the terrain's spawn layer;
+    // walkers need a pad connected to the core, flyers take any open pad
+    const pads = fly ? this.field.spawnAir : this.field.spawnPts;
+    if (this.n >= MAX_UNITS || pads.length === 0) return false;
     const r = stats.radius;
     for (let a = 0; a < 8; a++) {
-      // flyers launch from anywhere along the western edge — the terrain
-      // below them is scenery; walkers need an open, connected spawn row
-      const row = fly
-        ? 1 + Math.random() * (ROWS - 3)
-        : spawnRows[(Math.random() * spawnRows.length) | 0] + 0.15 + Math.random() * 0.7;
-      const x = r + 1 + Math.random() * (CELL * 6 - r - 2);
-      const y = row * CELL;
-      // the mountain edge is ragged now — a spawn row open at column 1 can
-      // still have rock jutting into the columns beside it
+      const ci = pads[(Math.random() * pads.length) | 0];
+      // jitter within the pad, but keep the hitbox inside the cell when it
+      // fits (a mace is wider than a tile — it spawns pad-centered)
+      const j = Math.max(0, CELL / 2 - r - 1);
+      const x = ((ci % COLS) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
+      const y = (((ci / COLS) | 0) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
+      // a big hitbox can overhang the pad into ragged rock beside it
       if ((!fly && this.field.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly)) continue;
       const i = this.n++;
       this.upx[i] = x;

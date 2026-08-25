@@ -38,7 +38,12 @@ export class FlowField {
   readonly dist = new Float32Array(NCELLS);
   readonly dirX = new Float32Array(NCELLS);
   readonly dirY = new Float32Array(NCELLS);
-  spawnRows: number[] = [];
+  // spawn-pad cells (indices), from the terrain's spawn layer:
+  // spawnPts = open AND connected to the core (where walkers may enter);
+  // spawnAir = every open pad (flyers ignore ground connectivity)
+  spawnPts: number[] = [];
+  spawnAir: number[] = [];
+  private spawnMask: Uint8Array | null = null;
 
   // binary min-heap with lazy deletion (sized for ~8 relaxations per cell)
   private readonly hKey = new Float64Array(1 << 17);
@@ -59,7 +64,8 @@ export class FlowField {
   // extra Dijkstra cost per narrow cell entered (in cell units)
   private static readonly NARROW_COST = 4;
 
-  rebuildWalk(towers: readonly Tower[], blockedBase: Uint8Array): void {
+  rebuildWalk(towers: readonly Tower[], blockedBase: Uint8Array, spawnMask: Uint8Array): void {
+    this.spawnMask = spawnMask;
     this.walk.set(blockedBase);
     this.isGoal.fill(0);
     for (const t of towers)
@@ -171,10 +177,15 @@ export class FlowField {
       }
     }
 
-    this.spawnRows = [];
-    for (let y = 1; y < ROWS - 1; y++) {
-      const i = y * COLS + 1;
-      if (!walk[i] && this.dist[i] < INF) this.spawnRows.push(y);
+    this.spawnPts = [];
+    this.spawnAir = [];
+    const mask = this.spawnMask;
+    if (mask) {
+      for (let i = 0; i < NCELLS; i++) {
+        if (!mask[i] || walk[i]) continue;
+        this.spawnAir.push(i);
+        if (this.dist[i] < INF) this.spawnPts.push(i);
+      }
     }
   }
 
@@ -197,7 +208,7 @@ export class FlowField {
     for (let h = 0; h < n; h++) {
       const i = q[h];
       const x = i % COLS, y = (i / COLS) | 0;
-      if (x === 1) return false; // a spawn-column cell is still reachable
+      if (this.spawnMask?.[i]) return false; // a spawn pad is still reachable
       for (const [dx, dy] of D4) {
         const nx = x + dx, ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
