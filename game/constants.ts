@@ -7,10 +7,10 @@ export const NCELLS = COLS * ROWS;
 export const INF = 1e9;
 
 export const MAX_UNITS = 22000;
-// Dagger: art overhangs the hitbox in Mindustry (48px art on a 32px tile), so
-// physics is ~0.7 tile and the sprite draws larger for the same look.
-export const UR = 7;
-export const UNIT_SPRITE = 21; // Mindustry's art-to-hitbox ratio (48px art on a 32px tile)
+// Dagger at true Mindustry scale: 1-tile hitbox, art overhanging 1.5x
+// (48px art on a 32px tile)
+export const UR = 10;
+export const UNIT_SPRITE = 30;
 export const HP0 = 3;
 
 export const TOWER = {

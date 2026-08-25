@@ -18,7 +18,7 @@ const FX_CAP = 400;
 
 // spatial hash cell size (px); rebuilt every frame with a counting sort.
 // must be >= 2*UR so a 3x3 bucket scan covers the separation radius
-const HC = 16;
+const HC = 20;
 const HCOLS = (W / HC) | 0;
 const HROWS = (H / HC) | 0;
 const HN = HCOLS * HROWS;

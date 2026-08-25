@@ -11,7 +11,14 @@ export default function Swarmfield() {
   const uiRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef<Game | null>(null);
   const [target, setTarget] = useState<number>(DEFAULT_TARGET);
-  const [stats, setStats] = useState<Stats>({ units: 0, kills: 0, leaked: 0, simMs: 0, fps: 0 });
+  const [stats, setStats] = useState<Stats>({
+    units: 0,
+    kills: 0,
+    leaked: 0,
+    simMs: 0,
+    fps: 0,
+    zoom: 1,
+  });
   const [webglError, setWebglError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -109,9 +116,9 @@ export default function Swarmfield() {
 
       <p className="mx-auto w-full max-w-[1320px] px-5 pt-2.5 pb-5 text-[#5B6885]">
         <em className="not-italic text-[#9AA7C7]">Click the field to build a 2&times;2 tower.</em>{" "}
-        Towers block movement and the swarm re-routes around them in real time. Placements that
-        would seal off the core are rejected. All sprites come from one texture atlas &mdash; swap
-        in custom art without touching the pipeline.
+        Scroll to zoom, drag with right/middle mouse or WASD to pan. Towers block movement and the
+        swarm re-routes around them in real time; placements that would seal off the core are
+        rejected. Sprites courtesy of Mindustry (GPL-3.0).
       </p>
     </div>
   );

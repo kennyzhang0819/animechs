@@ -33,12 +33,15 @@ layout(location=3) in float aRot;
 layout(location=4) in vec4 aUV;
 layout(location=5) in vec4 aTint;
 uniform vec2 uRes;
+uniform float uZoom;
+uniform vec2 uOff;
 out vec2 vUV;
 out vec4 vTint;
 void main() {
   float s = sin(aRot), c = cos(aRot);
   vec2 p = vec2(aCorner.x * c - aCorner.y * s, aCorner.x * s + aCorner.y * c) * aSize + aPos;
-  vec2 clip = p / uRes * 2.0 - 1.0;
+  vec2 view = p * uZoom + uOff;
+  vec2 clip = view / uRes * 2.0 - 1.0;
   gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
   vUV = mix(aUV.xy, aUV.zw, aCorner + 0.5);
   vTint = aTint;
@@ -73,6 +76,8 @@ export class Renderer {
   private readonly gl: WebGL2RenderingContext;
   private readonly prog: WebGLProgram;
   private readonly uRes: WebGLUniformLocation;
+  private readonly uZoom: WebGLUniformLocation;
+  private readonly uOff: WebGLUniformLocation;
   private readonly quadVBO: WebGLBuffer;
   private readonly tex: WebGLTexture;
   private readonly terrain: Batch;
@@ -87,9 +92,14 @@ export class Renderer {
     this.gl = gl;
 
     this.prog = this.link();
-    const loc = gl.getUniformLocation(this.prog, "uRes");
-    if (!loc) throw new Error("uRes uniform missing");
-    this.uRes = loc;
+    const need = (name: string): WebGLUniformLocation => {
+      const loc = gl.getUniformLocation(this.prog, name);
+      if (!loc) throw new Error(`${name} uniform missing`);
+      return loc;
+    };
+    this.uRes = need("uRes");
+    this.uZoom = need("uZoom");
+    this.uOff = need("uOff");
 
     const quad = gl.createBuffer();
     if (!quad) throw new Error("buffer alloc failed");
@@ -112,7 +122,7 @@ export class Renderer {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas);
     gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST); // crisp pixel art when zoomed in
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 3); // deeper mips bleed across atlas cells
 
     gl.enable(gl.BLEND);
@@ -211,11 +221,10 @@ export class Renderer {
       for (let x = 0; x < COLS; x++) {
         const cx = (x + 0.5) * CELL, cy = (y + 0.5) * CELL;
         const blockedByObstacle = sim.field.walk[y * COLS + x] === 1 && !this.towerAt(sim, x, y);
-        // deterministic per-cell variant pick, weighted toward the plain tiles
-        const h = (x * 31 + y * 17 + ((x * y) | 0)) % 16;
-        const uvr = blockedByObstacle
-          ? UV_WALLS[h < 14 ? 0 : 1]
-          : UV_FLOORS[h < 13 ? 0 : h < 15 ? 1 : 2];
+        // deterministic per-cell variant pick — grass/stone variants are
+        // equal-weight randoms, like Mindustry's own floor variants
+        const h = (x * 31 + y * 17 + ((x * y) | 0)) % 6;
+        const uvr = blockedByObstacle ? UV_WALLS[h & 1] : UV_FLOORS[h % 3];
         this.push(t, cx, cy, CELL, CELL, 0, uvr, 1, 1, 1, 1);
       }
     }
@@ -241,12 +250,15 @@ export class Renderer {
     return false;
   }
 
-  render(sim: Sim): void {
+  /** zoom is world→viewport scale; (offX, offY) = -cameraTopLeft * zoom */
+  render(sim: Sim, zoom = 1, offX = 0, offY = 0): void {
     const gl = this.gl;
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(this.prog);
     gl.uniform2f(this.uRes, W, H);
+    gl.uniform1f(this.uZoom, zoom);
+    gl.uniform2f(this.uOff, offX, offY);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
 
     this.draw(this.terrain, false);

@@ -27,11 +27,11 @@ export const UV_TURRET = uv(192, 128, 128, 128);
 export const UV_CORE = uv(320, 128, 96, 96);
 
 const SPRITES = {
-  floor0: "/mindustry/env/metal-floor-2.png",
-  floor1: "/mindustry/env/dark-panel-4.png",
-  floor2: "/mindustry/env/dark-panel-2.png",
-  wall0: "/mindustry/env/dark-metal1.png",
-  wall1: "/mindustry/env/dark-metal2.png",
+  floor0: "/mindustry/env/grass1.png",
+  floor1: "/mindustry/env/grass2.png",
+  floor2: "/mindustry/env/grass3.png",
+  wall0: "/mindustry/env/stone-wall1.png",
+  wall1: "/mindustry/env/stone-wall2.png",
   daggerBase: "/mindustry/units/dagger-base.png",
   dagger: "/mindustry/units/dagger.png",
   daggerLeg: "/mindustry/units/dagger-leg.png",
