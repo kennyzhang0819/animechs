@@ -516,7 +516,7 @@ export class Sim {
   }
 
   private updateProjectiles(dt: number): void {
-    const { upx, upy, uhp, field, projs, bStart, bUnits } = this;
+    const { upx, upy, uhp, projs, bStart, bUnits } = this;
     const HIT2 = (UR + 2.5) * (UR + 2.5);
     for (let p = projs.length - 1; p >= 0; p--) {
       const pr = projs[p];
@@ -524,8 +524,9 @@ export class Sim {
       pr.y += pr.vy * dt;
       pr.life -= dt;
       pr.age += dt;
-      // grace period so shots clear the tower's own blocked footprint
-      let dead = pr.life <= 0 || (pr.age > 0.07 && field.blockedPx(pr.x, pr.y));
+      // shots come from elevated towers and arc over terrain — they never
+      // collide with rock, only with units or their range-capped life
+      let dead = pr.life <= 0;
       if (!dead) {
         const hx = clamp((pr.x / HC) | 0, 0, HCOLS - 1);
         const hy = clamp((pr.y / HC) | 0, 0, HROWS - 1);
