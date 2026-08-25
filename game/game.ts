@@ -8,7 +8,10 @@ import type { Tower } from "./types";
 export interface UiState {
   levelId: number;
   remaining: number;
+  /** remaining per unit kind, indexed like UNIT_KINDS */
+  byKind: number[];
   buildKind: TowerKind | null;
+  paused: boolean;
 }
 
 export interface Stats {
@@ -131,9 +134,10 @@ export class Game {
         // the ghost already shows red where placement fails
         this.building = true;
         this.buildFrom = p;
+        const sz = TOWERS[this.buildKind].size;
         this.sim.placeTower(
-          clamp(Math.round(p.x / CELL) - 1, 0, COLS - 2),
-          clamp(Math.round(p.y / CELL) - 1, 0, ROWS - 2),
+          clamp(Math.round(p.x / CELL - sz / 2), 0, COLS - sz),
+          clamp(Math.round(p.y / CELL - sz / 2), 0, ROWS - sz),
           this.buildKind,
         );
       } else {
@@ -175,8 +179,9 @@ export class Game {
       this.sim.placeLine(this.buildFrom.x, this.buildFrom.y, p.x, p.y, this.buildKind);
       this.buildFrom = p;
     }
-    this.hoverGx = clamp(Math.round(p.x / CELL) - 1, 0, COLS - 2);
-    this.hoverGy = clamp(Math.round(p.y / CELL) - 1, 0, ROWS - 2);
+    const hsz = this.buildKind ? TOWERS[this.buildKind].size : 2;
+    this.hoverGx = clamp(Math.round(p.x / CELL - hsz / 2), 0, COLS - hsz);
+    this.hoverGy = clamp(Math.round(p.y / CELL - hsz / 2), 0, ROWS - hsz);
   };
   private readonly onLeave = (): void => {
     this.hoverGx = -1;
@@ -245,7 +250,9 @@ export class Game {
     return {
       levelId: this.sim.level.id,
       remaining: this.sim.remaining(),
+      byKind: this.sim.remainingByKind(),
       buildKind: this.buildKind,
+      paused: this.paused,
     };
   }
 
@@ -351,27 +358,32 @@ export class Game {
       c.strokeStyle = "rgba(91,217,232,0.7)";
       c.lineWidth = 1.5;
       c.stroke();
-      c.strokeRect(t.gx * CELL + 1, t.gy * CELL + 1, CELL * 2 - 2, CELL * 2 - 2);
+      const selPx = TOWERS[t.kind].size * CELL;
+      c.strokeRect(t.gx * CELL + 1, t.gy * CELL + 1, selPx - 2, selPx - 2);
     }
 
     if (this.buildKind && this.hoverGx >= 0 && !this.panning) {
       // red marks anything that blocks the spot: walls, the core, units
       // underneath, or a placement that would seal the swarm's last route
-      const ok = this.sim.canPlace(this.hoverGx, this.hoverGy);
+      const sz = TOWERS[this.buildKind].size;
+      const px = sz * CELL;
+      const ok = this.sim.canPlace(this.hoverGx, this.hoverGy, this.buildKind);
       const x = this.hoverGx * CELL, y = this.hoverGy * CELL;
       c.fillStyle = ok ? "rgba(91,217,232,0.14)" : "rgba(255,90,90,0.3)";
-      c.fillRect(x, y, CELL * 2, CELL * 2);
+      c.fillRect(x, y, px, px);
       c.strokeStyle = ok ? "rgba(91,217,232,0.85)" : "rgba(255,90,90,0.9)";
       c.lineWidth = 1.5;
-      c.strokeRect(x + 1, y + 1, CELL * 2 - 2, CELL * 2 - 2);
-      // interior lines so the ghost reads as the 2x2 cells it occupies
+      c.strokeRect(x + 1, y + 1, px - 2, px - 2);
+      // interior lines so the ghost reads as the cells it occupies
       c.lineWidth = 1;
       c.globalAlpha = 0.45;
       c.beginPath();
-      c.moveTo(x + CELL, y + 1);
-      c.lineTo(x + CELL, y + CELL * 2 - 1);
-      c.moveTo(x + 1, y + CELL);
-      c.lineTo(x + CELL * 2 - 1, y + CELL);
+      for (let i = 1; i < sz; i++) {
+        c.moveTo(x + CELL * i, y + 1);
+        c.lineTo(x + CELL * i, y + px - 1);
+        c.moveTo(x + 1, y + CELL * i);
+        c.lineTo(x + px - 1, y + CELL * i);
+      }
       c.stroke();
       c.globalAlpha = 1;
     }

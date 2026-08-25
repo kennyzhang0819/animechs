@@ -15,6 +15,9 @@ export interface UnitStats {
   armor: number;
   /** collision radius in world px — half the square hitbox edge */
   radius: number;
+  /** flying units ignore terrain and head straight for the core; only
+   * towers with targetAir (and bullets with collidesAir) touch them */
+  flying?: boolean;
 }
 
 /** per-kind combat stats (official Mindustry numbers) */

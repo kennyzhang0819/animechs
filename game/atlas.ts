@@ -45,6 +45,11 @@ export const UV_CORE = uv(320, 128, 160, 160);
 // row 4 (y=384): scatter turret top, flak shell
 export const UV_SCATTER = uv(0, 384, 128, 128);
 export const UV_SHELL = uv(128, 384, 64, 64);
+export const UV_FUSE = uv(192, 384, 128, 128);
+export const UV_TOWER_BASE3 = uv(384, 384, 96, 96); // block-3 at native 96px
+// white isosceles triangle, base at -x edge, apex at +x — tinted at draw
+// time for shrapnel rays (Drawf.tri)
+export const UV_TRI = uv(320, 384, 64, 64, 2);
 // row 3: 96px prop cells — overhanging 48px sources at 2x
 export const UV_PINE = uv(0, 288, 96, 96);
 export const UV_DECOR: readonly UVRect[] = [
@@ -86,8 +91,10 @@ const SPRITES = {
   mace: "/mindustry/sprites/units/mace.png",
   maceLeg: "/mindustry/sprites/units/mace-leg.png",
   towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
+  towerBase3: "/mindustry/sprites/blocks/turrets/bases/block-3.png",
   salvoPreview: "/mindustry/sprites/blocks/turrets/salvo/salvo-preview.png",
   scatterPreview: "/mindustry/sprites/blocks/turrets/scatter/scatter-preview.png",
+  fuse: "/mindustry/sprites/blocks/turrets/fuse.png",
   shell: "/mindustry/sprites/effects/shell.png",
   shellBack: "/mindustry/sprites/effects/shell-back.png",
   core: "/mindustry/sprites/blocks/storage/core-nucleus.png",
@@ -262,6 +269,21 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   shc.drawImage(tinted(img.shellBack, "#f9c27a"), 0, 0);
   shc.drawImage(tinted(img.shell, "#fff8e8"), 0, 0);
   drawFacingRight(c, shell, 160, 416, 64);
+
+  // fuse top: size-3 turret art, facing +x like the others
+  drawFacingRight(c, img.fuse, 256, 448, 128);
+  // 3x3 turret base at native 96px
+  c.drawImage(img.towerBase3, 384, 384, 96, 96);
+
+  // shrapnel triangle (320,384): white, base on the left edge, apex right;
+  // the renderer stretches and tints it into Drawf.tri shapes
+  c.fillStyle = "#ffffff";
+  c.beginPath();
+  c.moveTo(322, 387);
+  c.lineTo(322, 445);
+  c.lineTo(381, 416);
+  c.closePath();
+  c.fill();
 
   // core-nucleus at native 160px: base block, then the team overlay tinted
   // sharded-yellow the way Mindustry composites team regions

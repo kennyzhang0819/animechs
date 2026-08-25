@@ -1,4 +1,4 @@
-export type TowerKind = "salvo" | "scatter";
+export type TowerKind = "salvo" | "scatter" | "fuse";
 
 export interface Tower {
   kind: TowerKind;
@@ -31,6 +31,7 @@ export const enum FxKind {
   Death = 1,
   Breach = 2,
   Flak = 3,
+  Shrapnel = 4,
 }
 
 export interface Effect {
@@ -39,4 +40,6 @@ export interface Effect {
   age: number;
   ttl: number;
   kind: FxKind;
+  rot?: number; // Shrapnel: ray direction (rad)
+  len?: number; // Shrapnel: ray length (px)
 }

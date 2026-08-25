@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Game, type UiState } from "@/game/game";
-import type { TowerKind } from "@/game/levels";
+import { UNIT_KINDS, type TowerKind, type UnitKind } from "@/game/levels";
+
+// HUD labels and icons per unit kind ("mace" is its own plural)
+const UNIT_LABEL: Record<UnitKind, readonly [string, string]> = {
+  dagger: ["dagger", "daggers"],
+  mace: ["mace", "mace"],
+};
+const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
 
 const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }> = [
   {
@@ -14,6 +21,11 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
     kind: "scatter",
     name: "Scatter",
     icon: "/mindustry/sprites/blocks/turrets/scatter/scatter-preview.png",
+  },
+  {
+    kind: "fuse",
+    name: "Fuse",
+    icon: "/mindustry/sprites/blocks/turrets/fuse.png",
   },
 ];
 
@@ -84,14 +96,43 @@ export default function Swarmfield() {
             hud?.buildKind ? "cursor-crosshair" : "cursor-default"
           }`}
         />
+        {hud?.paused && (
+          <div className="absolute left-4 top-[4.75rem] flex items-center gap-2 rounded border border-[#E8B45B] bg-[#0D1424]/70 px-3 py-1.5 backdrop-blur">
+            <span className="text-sm font-semibold uppercase tracking-widest text-[#E8B45B]">
+              Paused
+            </span>
+            <span className="text-[11px] text-[#9AA7C7]">space to resume</span>
+          </div>
+        )}
         {hud && (
           <div className="absolute left-4 top-4 rounded border border-[#223050] bg-[#0D1424]/70 px-3 py-1.5 backdrop-blur">
             <div className="text-[11px] uppercase tracking-widest text-[#5B6885]">
               Level {hud.levelId}
             </div>
-            <div className="text-sm font-semibold text-[#E8EDF7]">
-              {hud.remaining > 0 ? `Kill ${hud.remaining} enemies` : "Level cleared!"}
-            </div>
+            {hud.remaining > 0 ? (
+              <div className="flex items-center gap-3 text-sm font-semibold text-[#E8EDF7]">
+                <span className="font-normal text-[#9AA7C7]">Remaining:</span>
+                {UNIT_KINDS.map(
+                  (k, i) =>
+                    hud.byKind[i] > 0 && (
+                      <span key={k} className="flex items-center gap-1.5">
+                        {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
+                        <img
+                          src={unitIcon(k)}
+                          alt={k}
+                          className="h-5 w-5 [image-rendering:pixelated]"
+                        />
+                        {hud.byKind[i]}{" "}
+                        <span className="font-normal text-[#9AA7C7]">
+                          {UNIT_LABEL[k][hud.byKind[i] === 1 ? 0 : 1]}
+                        </span>
+                      </span>
+                    ),
+                )}
+              </div>
+            ) : (
+              <div className="text-sm font-semibold text-[#E8EDF7]">Level cleared!</div>
+            )}
           </div>
         )}
         <div
