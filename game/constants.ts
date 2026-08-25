@@ -30,65 +30,89 @@ export interface BulletStats {
   lifetime: number; // s (Mindustry limitRange: how far a shot can fly)
   splash: number; // splash damage at the blast center (0 = none)
   splashRadius: number; // px
-  hitsWalls: boolean; // false = flies over terrain (collidesGround = false)
+  collidesAir: boolean; // can this bullet hit flying units?
+  collidesGround: boolean; // ...and ground units?
   flak?: {
     explodeRange: number; // px — proximity fuse trigger radius
     explodeDelay: number; // s between priming and the blast
     interval: number; // s between proximity checks
   };
+  // hitscan (Mindustry ShrapnelBulletType): no projectile — the shot is an
+  // instant piercing ray damaging everything along it; lifetime is only the
+  // draw animation
+  ray?: {
+    length: number; // px
+  };
 }
 
 export interface TowerStats {
   name: string;
+  size: number; // footprint in tiles (size x size)
   range: number; // px
   reload: number; // s per volley
   shots: number; // bullets per volley
   shotDelay: number; // s between a volley's bullets
+  spread: number; // rad between a volley's bullets (ShootSpread fan)
   inaccuracy: number; // rad, each shot offset uniformly within ±this
   shootCone: number; // rad — fire only when aimed this close to the target
   rotateSpeed: number; // rad/s
+  targetAir: boolean; // will the turret acquire flying units?
+  targetGround: boolean; // ...and ground units?
   bullet: BulletStats;
 }
 
 export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
+  // Salvo, 1:1 from mindustry/content/Blocks.java with thorium ammo
+  // (BasicBulletType(4, 28)): 4-shot bursts 3 ticks apart, every 29 ticks
   salvo: {
     name: "Salvo",
-    range: 190,
-    reload: 0.11,
-    shots: 1,
-    shotDelay: 0,
+    size: 2,
+    range: 190 * MU,
+    reload: 29 / TICK,
+    shots: 4,
+    shotDelay: 3 / TICK,
+    spread: 0,
     inaccuracy: 0,
-    shootCone: Math.PI * 2,
-    rotateSpeed: Infinity,
+    // turret defaults: 8-degree shoot cone, 5 deg/tick turn rate
+    shootCone: (8 * Math.PI) / 180,
+    rotateSpeed: ((5 * Math.PI) / 180) * TICK,
+    targetAir: true,
+    targetGround: true,
     bullet: {
-      speed: 520,
-      damage: 50, // 3 shots kill a dagger
-      lifetime: (190 + 50) / 520,
+      speed: 4 * TICK * MU,
+      damage: 28,
+      lifetime: (190 + 9 + 10) / 4 / TICK, // limitRange() default margin 9
       splash: 0,
       splashRadius: 0,
-      hitsWalls: true,
+      collidesAir: true,
+      collidesGround: true,
     },
   },
   // Scatter, 1:1 from mindustry/content/Blocks.java with lead ammo
-  // (FlakBulletType(4.2, 3), splash 27*1.5 in a 15-unit radius). One
-  // deviation: targetGround is false upstream (pure anti-air) — here it
-  // targets the ground swarm, since that's all there is to shoot.
+  // (FlakBulletType(4.2, 3), splash 27*1.5 in a 15-unit radius).
+  // Anti-air only, exactly like upstream: it ignores the ground swarm and
+  // waits for flyers.
   scatter: {
     name: "Scatter",
+    size: 2,
     range: 220 * MU,
     reload: 18 / TICK,
     shots: 2,
     shotDelay: 5 / TICK,
+    spread: 0,
     inaccuracy: (17 * Math.PI) / 180,
     shootCone: (35 * Math.PI) / 180,
     rotateSpeed: ((15 * Math.PI) / 180) * TICK,
+    targetAir: true,
+    targetGround: false,
     bullet: {
       speed: 4.2 * TICK * MU,
       damage: 3,
       lifetime: (220 + 2 + 10) / 4.2 / TICK, // limitRange(2) + base 10-unit margin
       splash: 27 * 1.5,
       splashRadius: 15 * MU,
-      hitsWalls: false, // flak shells arc over terrain
+      collidesAir: true,
+      collidesGround: false,
       flak: {
         explodeRange: 30 * MU,
         explodeDelay: 5 / TICK,
@@ -96,7 +120,52 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       },
     },
   },
+  // Fuse, 1:1 from mindustry/content/Blocks.java with thorium ammo
+  // (ShrapnelBulletType, damage 105): three instant piercing rays fired as
+  // a ShootSpread(3, 20deg) fan, 3 shots / 0.583s = the official 5.14/sec.
+  fuse: {
+    name: "Fuse",
+    size: 3,
+    range: 90 * MU,
+    reload: 35 / TICK,
+    shots: 3,
+    shotDelay: 0,
+    spread: (20 * Math.PI) / 180,
+    inaccuracy: 0,
+    shootCone: (30 * Math.PI) / 180,
+    rotateSpeed: ((5 * Math.PI) / 180) * TICK, // BaseTurret default
+    targetAir: true,
+    targetGround: true,
+    bullet: {
+      speed: 0,
+      damage: 105,
+      lifetime: 10 / TICK, // animation only — damage is instant
+      splash: 0,
+      splashRadius: 0,
+      collidesAir: true,
+      collidesGround: true,
+      ray: {
+        length: (90 + 10) * MU, // brange = range + 10
+      },
+    },
+  },
 };
+
+// ShrapnelBulletType draw geometry (world units -> px), shared by the
+// renderer so the animation matches the original exactly
+export const SHRAPNEL = {
+  width: 20 * MU, // thorium keeps the default width
+  backLen: 10 * MU,
+  tipPad: 4 * MU,
+  serrations: 7,
+  serrationSpacing: 8 * MU,
+  serrationLenScl: 10 * MU,
+  serrationWidth: 4 * MU,
+  serrationSpaceOffset: 80 * MU,
+  serrationFadeOffset: 0.5,
+  fromColor: [1, 1, 1] as const, // white
+  toColor: [0xf9 / 255, 0xa3 / 255, 0xc7 / 255] as const, // Pal.thoriumPink
+} as const;
 
 export const BASE = { x: 120, y: 33, size: 5 }; // 5x5 core-nucleus, walkable goal cells
 

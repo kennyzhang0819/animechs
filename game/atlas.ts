@@ -35,6 +35,7 @@ export const UV_WALLS: readonly UVRect[] = [
 ];
 export const UV_UNIT = uv(320, 0, 64, 64);
 export const UV_MACE = uv(416, 288, 96, 96);
+export const UV_FLARE = uv(384, 0, 64, 64);
 export const UV_PROJ = uv(352, 288, 64, 64);
 export const UV_RING = uv(448, 0, 64, 64);
 export const UV_FLASH = uv(0, 64, 64, 64);
@@ -45,6 +46,11 @@ export const UV_CORE = uv(320, 128, 160, 160);
 // row 4 (y=384): scatter turret top, flak shell
 export const UV_SCATTER = uv(0, 384, 128, 128);
 export const UV_SHELL = uv(128, 384, 64, 64);
+export const UV_FUSE = uv(192, 384, 128, 128);
+export const UV_TOWER_BASE3 = uv(384, 384, 96, 96); // block-3 at native 96px
+// white isosceles triangle, base at -x edge, apex at +x — tinted at draw
+// time for shrapnel rays (Drawf.tri)
+export const UV_TRI = uv(320, 384, 64, 64, 2);
 // row 3: 96px prop cells — overhanging 48px sources at 2x
 export const UV_PINE = uv(0, 288, 96, 96);
 export const UV_DECOR: readonly UVRect[] = [
@@ -58,6 +64,7 @@ export const UV_DECOR: readonly UVRect[] = [
 export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   dagger: { uv: UV_UNIT, sprite: UNIT_SPRITE }, // 48px art in a 64 cell on a 40px quad
   mace: { uv: UV_MACE, sprite: 60 }, // 64px art in a 96 cell on a 60px quad
+  flare: { uv: UV_FLARE, sprite: UNIT_SPRITE }, // 48px art in a 64 cell, dagger scale
 };
 
 const ENV = "/mindustry/sprites/blocks/environment";
@@ -85,9 +92,12 @@ const SPRITES = {
   maceBase: "/mindustry/sprites/units/mace-base.png",
   mace: "/mindustry/sprites/units/mace.png",
   maceLeg: "/mindustry/sprites/units/mace-leg.png",
+  flare: "/mindustry/sprites/units/flare.png",
   towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
+  towerBase3: "/mindustry/sprites/blocks/turrets/bases/block-3.png",
   salvoPreview: "/mindustry/sprites/blocks/turrets/salvo/salvo-preview.png",
   scatterPreview: "/mindustry/sprites/blocks/turrets/scatter/scatter-preview.png",
+  fuse: "/mindustry/sprites/blocks/turrets/fuse.png",
   shell: "/mindustry/sprites/effects/shell.png",
   shellBack: "/mindustry/sprites/effects/shell-back.png",
   core: "/mindustry/sprites/blocks/storage/core-nucleus.png",
@@ -205,6 +215,15 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   mc.drawImage(img.mace, 16, 16, 64, 64);
   drawFacingRight(c, mace, 464, 336, 96);
 
+  // flare: a flying unit is one sprite — no legs, no chassis
+  const flare = document.createElement("canvas");
+  flare.width = flare.height = 64;
+  const fc = flare.getContext("2d");
+  if (!fc) throw new Error("2d context unavailable");
+  fc.imageSmoothingEnabled = false;
+  fc.drawImage(img.flare, 8, 8, 48, 48);
+  drawFacingRight(c, flare, 416, 32, 64);
+
   // official basic bullet at (352,288): back layer in Mindustry's bullet
   // orange under a pale-yellow core, pre-rotated to face +x like the unit
   const tinted = (src: HTMLImageElement, color: string): HTMLCanvasElement => {
@@ -262,6 +281,21 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   shc.drawImage(tinted(img.shellBack, "#f9c27a"), 0, 0);
   shc.drawImage(tinted(img.shell, "#fff8e8"), 0, 0);
   drawFacingRight(c, shell, 160, 416, 64);
+
+  // fuse top: size-3 turret art, facing +x like the others
+  drawFacingRight(c, img.fuse, 256, 448, 128);
+  // 3x3 turret base at native 96px
+  c.drawImage(img.towerBase3, 384, 384, 96, 96);
+
+  // shrapnel triangle (320,384): white, base on the left edge, apex right;
+  // the renderer stretches and tints it into Drawf.tri shapes
+  c.fillStyle = "#ffffff";
+  c.beginPath();
+  c.moveTo(322, 387);
+  c.lineTo(322, 445);
+  c.lineTo(381, 416);
+  c.closePath();
+  c.fill();
 
   // core-nucleus at native 160px: base block, then the team overlay tinted
   // sharded-yellow the way Mindustry composites team regions

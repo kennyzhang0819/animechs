@@ -7,31 +7,60 @@ import {
   UV_PINE,
   UV_PROJ,
   UV_RING,
+  UV_FUSE,
   UV_SCATTER,
   UV_SHELL,
   UV_TOWER_BASE,
+  UV_TOWER_BASE3,
+  UV_TRI,
   UV_TURRET,
   UV_WALLS,
   type UVRect,
 } from "./atlas";
-import { BASE, CELL, COLS, H, HP_TINT, MAX_UNITS, NCELLS, ROWS, W } from "./constants";
-import { UNIT_KINDS } from "./levels";
+import {
+  BASE,
+  CELL,
+  COLS,
+  H,
+  HP_TINT,
+  MAX_UNITS,
+  NCELLS,
+  ROWS,
+  SHRAPNEL,
+  TOWERS,
+  W,
+} from "./constants";
+import { UNIT_KINDS, UNIT_STATS } from "./levels";
 import type { Sim } from "./sim";
 import type { Terrain } from "./terrain";
 import { FxKind, type TowerKind } from "./types";
 
 // per-kind turret tops and bullet sprites
-const UV_TURRETS: Record<TowerKind, UVRect> = { salvo: UV_TURRET, scatter: UV_SCATTER };
-const UV_BULLETS: Record<TowerKind, UVRect> = { salvo: UV_PROJ, scatter: UV_SHELL };
+const UV_TURRETS: Record<TowerKind, UVRect> = {
+  salvo: UV_TURRET,
+  scatter: UV_SCATTER,
+  fuse: UV_FUSE,
+};
 // draw size [along-travel, across] px; scatter's flak shell is Mindustry's
-// 6x8-unit shell (15x20 px), longer than it is wide
+// 6x8-unit shell (15x20 px), longer than it is wide. Fuse never spawns a
+// projectile (hitscan) — its entries are unused placeholders.
+const UV_BULLETS: Record<TowerKind, UVRect> = {
+  salvo: UV_PROJ,
+  scatter: UV_SHELL,
+  fuse: UV_PROJ,
+};
 const BULLET_SIZE: Record<TowerKind, readonly [number, number]> = {
   salvo: [18, 18],
   scatter: [20, 15],
+  fuse: [18, 18],
 };
 // unit art indexed by the sim's numeric kind id (UNIT_ID order)
 const KIND_UV = UNIT_KINDS.map((k) => UNIT_ART[k].uv);
 const KIND_SPRITE = UNIT_KINDS.map((k) => UNIT_ART[k].sprite);
+const KIND_FLYING = UNIT_KINDS.map((k) => !!UNIT_STATS[k].flying);
+// flyer drop shadow: painter's offset + premultiplied black tint
+const SHADOW_OFF = 6;
+const SHADOW_ALPHA = 0.22;
 
 const VS = `#version 300 es
 layout(location=0) in vec2 aCorner;
@@ -47,7 +76,10 @@ out vec2 vUV;
 out vec4 vTint;
 void main() {
   float s = sin(aRot), c = cos(aRot);
-  vec2 p = vec2(aCorner.x * c - aCorner.y * s, aCorner.x * s + aCorner.y * c) * aSize + aPos;
+  // scale to sprite size FIRST, then rotate — the reverse order stretches
+  // any non-square quad along the world axes instead of its own axis
+  vec2 sc = aCorner * aSize;
+  vec2 p = vec2(sc.x * c - sc.y * s, sc.x * s + sc.y * c) + aPos;
   vec2 view = p * uZoom + uOff;
   vec2 clip = view / uRes * 2.0 - 1.0;
   gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
@@ -292,26 +324,39 @@ export class Renderer {
     const dyn = this.dyn;
     dyn.n = 0;
     for (const t of sim.towers) {
-      this.push(dyn, t.x, t.y, CELL * 2, CELL * 2, 0, UV_TOWER_BASE, 1, 1, 1, 1);
-      this.push(dyn, t.x, t.y, CELL * 2, CELL * 2, t.angle, UV_TURRETS[t.kind], 1, 1, 1, 1);
+      const px = TOWERS[t.kind].size * CELL;
+      const base = TOWERS[t.kind].size >= 3 ? UV_TOWER_BASE3 : UV_TOWER_BASE;
+      this.push(dyn, t.x, t.y, px, px, 0, base, 1, 1, 1, 1);
+      this.push(dyn, t.x, t.y, px, px, t.angle, UV_TURRETS[t.kind], 1, 1, 1, 1);
     }
     const { upx, upy, uvx, uvy, uhp, uhpmax, ukind, n } = sim;
-    for (let i = 0; i < n; i++) {
-      // hp thirds of the unit's own max, so every kind tints alike
-      const t3 = (uhp[i] * 3) / uhpmax[i];
-      const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
-      const k = ukind[i];
-      const usz = KIND_SPRITE[k];
-      this.push(
-        dyn,
-        upx[i],
-        upy[i],
-        usz,
-        usz,
-        Math.atan2(uvy[i], uvx[i]),
-        KIND_UV[k],
-        tint[0], tint[1], tint[2], 1,
-      );
+    // painter's order in three passes: ground units, then flyer shadows on
+    // top of the crowd, then the flyers themselves above everything
+    for (let pass = 0; pass < 3; pass++) {
+      const wantFly = pass > 0;
+      for (let i = 0; i < n; i++) {
+        const k = ukind[i];
+        if (KIND_FLYING[k] !== wantFly) continue;
+        const usz = KIND_SPRITE[k];
+        const rot = Math.atan2(uvy[i], uvx[i]);
+        if (pass === 1) {
+          this.push(dyn, upx[i] + SHADOW_OFF, upy[i] + SHADOW_OFF, usz, usz, rot, KIND_UV[k], 0, 0, 0, SHADOW_ALPHA);
+          continue;
+        }
+        // hp thirds of the unit's own max, so every kind tints alike
+        const t3 = (uhp[i] * 3) / uhpmax[i];
+        const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
+        this.push(
+          dyn,
+          upx[i],
+          upy[i],
+          usz,
+          usz,
+          rot,
+          KIND_UV[k],
+          tint[0], tint[1], tint[2], 1,
+        );
+      }
     }
     for (const p of sim.projs) {
       // colors are baked into the atlas composite
@@ -330,6 +375,8 @@ export class Renderer {
         const s = 12 + t * 46;
         this.push(dyn, e.x, e.y, 16 * (1 - t), 16 * (1 - t), 0, UV_FLASH, 1, 0.7, 0.3, 1 - t);
         this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 1, 0.5, 0.13, (1 - t) * 0.85);
+      } else if (e.kind === FxKind.Shrapnel) {
+        this.drawShrapnel(dyn, e.x, e.y, e.rot ?? 0, e.len ?? 0, t);
       } else {
         const s = 9 + t * 30;
         this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 0.34, 0.89, 0.54, (1 - t) * 0.9);
@@ -348,5 +395,43 @@ export class Renderer {
       1, 1, 1, 1,
     );
     this.draw(dyn, true);
+  }
+
+  /**
+   * ShrapnelBulletType.draw, 1:1: a long triangle bolt with a short back
+   * spike and perpendicular serrations, tinted white fading to thoriumPink
+   * over its 10-tick life, all widths shrinking with fout.
+   */
+  private drawShrapnel(
+    dyn: Batch,
+    x: number,
+    y: number,
+    rot: number,
+    len: number,
+    t: number,
+  ): void {
+    const S = SHRAPNEL;
+    const fout = 1 - t;
+    const r = S.fromColor[0] + (S.toColor[0] - S.fromColor[0]) * t;
+    const g = S.fromColor[1] + (S.toColor[1] - S.fromColor[1]) * t;
+    const b = S.fromColor[2] + (S.toColor[2] - S.fromColor[2]) * t;
+    // Drawf.tri: isosceles triangle, base centered at (tx, ty), apex l away
+    // along angle a — the atlas triangle points +x with its base at -x
+    const tri = (tx: number, ty: number, w: number, l: number, a: number): void => {
+      if (l <= 0.01 || w <= 0.01) return;
+      const cx = tx + (Math.cos(a) * l) / 2;
+      const cy = ty + (Math.sin(a) * l) / 2;
+      this.push(dyn, cx, cy, l, w, a, UV_TRI, r, g, b, 1);
+    };
+    for (let i = 0; i < S.serrations; i++) {
+      const px = x + Math.cos(rot) * i * S.serrationSpacing;
+      const py = y + Math.sin(rot) * i * S.serrationSpacing;
+      const fade = Math.min(Math.max(fout - S.serrationFadeOffset, 0), 1);
+      const sl = fade * (S.serrationSpaceOffset - i * S.serrationLenScl);
+      tri(px, py, S.serrationWidth, sl, rot + Math.PI / 2);
+      tri(px, py, S.serrationWidth, sl, rot - Math.PI / 2);
+    }
+    tri(x, y, S.width * fout, len + S.tipPad, rot);
+    tri(x, y, S.width * fout, S.backLen, rot + Math.PI);
   }
 }
