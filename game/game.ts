@@ -43,8 +43,12 @@ export class Game {
   private tlx = 0;
   private tly = 0;
   private panning = false;
+  private panMoved = 0;
   private building = false;
   private buildFrom = { x: 0, y: 0 };
+  // world point of a right-button press; a release that never really moved
+  // is a click, and clicks on a tower sell it (dragging pans instead)
+  private sellPress: { x: number; y: number } | null = null;
   private lastMouse = { x: 0, y: 0 };
   private readonly keysDown = new Set<string>();
 
@@ -90,10 +94,16 @@ export class Game {
       e.preventDefault();
       this.building = false;
       this.panning = true;
+      this.panMoved = 0;
+      this.sellPress = e.button === 2 ? this.mouseWorld(e) : null;
       this.lastMouse = { x: e.clientX, y: e.clientY };
     }
   };
-  private readonly onMouseUp = (): void => {
+  private readonly onMouseUp = (e: MouseEvent): void => {
+    if (e.button === 2 && this.sellPress && this.panMoved < 6) {
+      this.sim.sellTowerAt(this.sellPress.x, this.sellPress.y);
+    }
+    this.sellPress = null;
     this.panning = false;
     this.building = false;
   };
@@ -102,6 +112,7 @@ export class Game {
       const r = this.uiCanvas.getBoundingClientRect();
       const dx = e.clientX - this.lastMouse.x;
       const dy = e.clientY - this.lastMouse.y;
+      this.panMoved += Math.abs(dx) + Math.abs(dy);
       this.tlx -= (dx / r.width) * (W / this.zoom);
       this.tly -= (dy / r.height) * (H / this.zoom);
       this.lastMouse = { x: e.clientX, y: e.clientY };
@@ -120,6 +131,7 @@ export class Game {
     this.hoverGy = -1;
     this.panning = false;
     this.building = false;
+    this.sellPress = null;
   };
   private readonly onContext = (e: Event): void => e.preventDefault();
 

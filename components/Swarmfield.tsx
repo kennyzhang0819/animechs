@@ -116,7 +116,8 @@ export default function Swarmfield() {
 
       <p className="mx-auto w-full max-w-[1320px] px-5 pt-2.5 pb-5 text-[#5B6885]">
         <em className="not-italic text-[#9AA7C7]">
-          Click to build a 2&times;2 tower — hold and drag to chain a line of them.
+          Click to build a 2&times;2 tower — hold and drag to chain a line of them; right-click a
+          tower to demolish it.
         </em>{" "}
         Scroll to zoom, drag with right/middle mouse or WASD to pan. Towers block movement and the
         swarm re-routes around them in real time; the ghost turns red where you can&apos;t build —

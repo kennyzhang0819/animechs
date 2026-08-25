@@ -192,6 +192,24 @@ export class Sim {
     return placed;
   }
 
+  /** remove the tower whose footprint covers the world point, if any */
+  sellTowerAt(px: number, py: number): boolean {
+    const gx = (px / CELL) | 0, gy = (py / CELL) | 0;
+    for (let k = 0; k < this.towers.length; k++) {
+      const t = this.towers[k];
+      if (gx < t.gx || gx >= t.gx + 2 || gy < t.gy || gy >= t.gy + 2) continue;
+      this.towers.splice(k, 1);
+      const { walk } = this.field;
+      for (let y = t.gy; y < t.gy + 2; y++)
+        for (let x = t.gx; x < t.gx + 2; x++) walk[y * COLS + x] = 0;
+      this.field.compute();
+      this.sealGx = -1; // freed cells can flip nearby seal verdicts
+      this.pushFx(t.x, t.y, 0.35, FxKind.Death); // demolish puff
+      return true;
+    }
+    return false;
+  }
+
   /** placement minus the flow recompute — placeLine batches that */
   private tryPlace(gx: number, gy: number): PlaceResult {
     if (!this.cellsFree(gx, gy) || !this.areaClearOfUnits(gx, gy)) return "invalid";
