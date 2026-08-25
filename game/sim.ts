@@ -53,6 +53,12 @@ export class Sim {
   private readonly bUnits = new Int32Array(MAX_UNITS);
   private readonly flowTmp: Vec2 = { x: 0, y: 0 };
 
+  // seal-test cache: hover asks canPlace every frame, and the test costs two
+  // flow-field recomputes — remember the verdict for the last cell asked
+  private sealGx = -1;
+  private sealGy = -1;
+  private sealResult = false;
+
   constructor() {
     this.reset();
   }
@@ -61,6 +67,7 @@ export class Sim {
     this.n = 0;
     this.kills = 0;
     this.leaked = 0;
+    this.sealGx = -1;
     this.projs.length = 0;
     this.effects.length = 0;
     this.towers.length = 0;
@@ -104,7 +111,8 @@ export class Sim {
 
   // ---------- placement ----------
 
-  canPlace(gx: number, gy: number): boolean {
+  /** the 2x2 footprint is on the map, off the core, and free of walls */
+  private cellsFree(gx: number, gy: number): boolean {
     if (gx < 0 || gy < 0 || gx > COLS - 2 || gy > ROWS - 2) return false;
     const { walk, isGoal } = this.field;
     for (let y = gy; y < gy + 2; y++)
@@ -115,20 +123,56 @@ export class Sim {
     return true;
   }
 
+  /** no unit may be standing on (or overhanging into) the footprint */
+  private areaClearOfUnits(gx: number, gy: number): boolean {
+    const x0 = gx * CELL, y0 = gy * CELL;
+    const x1 = x0 + CELL * 2, y1 = y0 + CELL * 2;
+    const hx0 = clamp(((x0 - UR) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((y0 - UR) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((x1 + UR) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((y1 + UR) / HC) | 0, 0, HROWS - 1);
+    for (let hy = hy0; hy <= hy1; hy++) {
+      for (let hx = hx0; hx <= hx1; hx++) {
+        const c = hy * HCOLS + hx, e = this.bStart[c + 1];
+        for (let k = this.bStart[c]; k < e; k++) {
+          const i = this.bUnits[k];
+          if (i >= this.n) continue;
+          const dx = this.upx[i] - clamp(this.upx[i], x0, x1);
+          const dy = this.upy[i] - clamp(this.upy[i], y0, y1);
+          if (dx * dx + dy * dy < UR * UR) return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  /** would this footprint cut the swarm's last route to the core? */
+  private wouldSeal(gx: number, gy: number): boolean {
+    if (gx === this.sealGx && gy === this.sealGy) return this.sealResult;
+    const sealed = this.field.sealsSpawns(gx, gy);
+    this.sealGx = gx;
+    this.sealGy = gy;
+    this.sealResult = sealed;
+    return sealed;
+  }
+
+  canPlace(gx: number, gy: number): boolean {
+    return (
+      this.cellsFree(gx, gy) &&
+      this.areaClearOfUnits(gx, gy) &&
+      !this.wouldSeal(gx, gy)
+    );
+  }
+
   placeTower(gx: number, gy: number): PlaceResult {
-    if (!this.canPlace(gx, gy)) return "invalid";
-    // tentatively block, and reject if the swarm could no longer reach the core
+    if (!this.cellsFree(gx, gy) || !this.areaClearOfUnits(gx, gy)) return "invalid";
+    if (this.wouldSeal(gx, gy)) return "would-seal";
     const { walk } = this.field;
     for (let y = gy; y < gy + 2; y++)
       for (let x = gx; x < gx + 2; x++) walk[y * COLS + x] = 1;
     this.field.compute();
-    if (this.field.spawnRows.length === 0) {
-      for (let y = gy; y < gy + 2; y++)
-        for (let x = gx; x < gx + 2; x++) walk[y * COLS + x] = 0;
-      this.field.compute();
-      return "would-seal";
-    }
     this.addTower(gx, gy);
+    this.sealGx = -1; // the wall layout changed; cached verdicts are stale
     this.unstickUnits();
     return "ok";
   }

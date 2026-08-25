@@ -117,8 +117,9 @@ export default function Swarmfield() {
       <p className="mx-auto w-full max-w-[1320px] px-5 pt-2.5 pb-5 text-[#5B6885]">
         <em className="not-italic text-[#9AA7C7]">Click the field to build a 2&times;2 tower.</em>{" "}
         Scroll to zoom, drag with right/middle mouse or WASD to pan. Towers block movement and the
-        swarm re-routes around them in real time; placements that would seal off the core are
-        rejected. Sprites courtesy of Mindustry (GPL-3.0).
+        swarm re-routes around them in real time; the ghost turns red where you can&apos;t build —
+        walls, the core, units underfoot, or a spot that would seal the swarm&apos;s last route.
+        Sprites courtesy of Mindustry (GPL-3.0).
       </p>
     </div>
   );

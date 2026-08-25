@@ -14,6 +14,13 @@ const D8: ReadonlyArray<readonly [number, number, number]> = [
   [-1, -1, SQRT2],
 ];
 
+const D4: ReadonlyArray<readonly [number, number]> = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+];
+
 export interface Vec2 {
   x: number;
   y: number;
@@ -38,6 +45,10 @@ export class FlowField {
   private readonly hVal = new Int32Array(1 << 17);
   private hN = 0;
   private popKey = 0;
+
+  // scratch for sealsSpawns
+  private readonly bfsSeen = new Uint8Array(NCELLS);
+  private readonly bfsQ = new Int32Array(NCELLS);
 
   rebuildWalk(towers: readonly Tower[]): void {
     this.walk.fill(0);
@@ -149,6 +160,39 @@ export class FlowField {
       const i = y * COLS + 1;
       if (!walk[i] && this.dist[i] < INF) this.spawnRows.push(y);
     }
+  }
+
+  /**
+   * Would blocking this 2x2 footprint cut every spawn cell off from the core?
+   * A BFS reachability probe — nothing is mutated and no field is recomputed.
+   * 4-connectivity matches the movement rules: the no-corner-cutting check in
+   * compute() only permits a diagonal when both orthogonal cells are open, so
+   * a diagonal never connects anything a 4-connected path doesn't.
+   */
+  sealsSpawns(bgx: number, bgy: number): boolean {
+    const { walk, isGoal, bfsSeen: seen, bfsQ: q } = this;
+    seen.fill(0);
+    let n = 0;
+    for (let i = 0; i < NCELLS; i++)
+      if (isGoal[i] && !walk[i]) {
+        seen[i] = 1;
+        q[n++] = i;
+      }
+    for (let h = 0; h < n; h++) {
+      const i = q[h];
+      const x = i % COLS, y = (i / COLS) | 0;
+      if (x === 1) return false; // a spawn-column cell is still reachable
+      for (const [dx, dy] of D4) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+        if (nx >= bgx && nx < bgx + 2 && ny >= bgy && ny < bgy + 2) continue;
+        const ni = ny * COLS + nx;
+        if (seen[ni] || walk[ni]) continue;
+        seen[ni] = 1;
+        q[n++] = ni;
+      }
+    }
+    return true;
   }
 
   /** bilinear sample of the direction field at a world position */

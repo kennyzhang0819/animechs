@@ -37,7 +37,6 @@ export class Game {
   private scale = 1;
   private hoverGx = -1;
   private hoverGy = -1;
-  private invalidFlash = 0;
 
   // camera: zoom 1 fits the whole map; (tlx, tly) is the visible top-left in world px
   private zoom = 1;
@@ -110,7 +109,7 @@ export class Game {
     const p = this.mouseWorld(e);
     const gx = clamp(Math.round(p.x / CELL) - 1, 0, COLS - 2);
     const gy = clamp(Math.round(p.y / CELL) - 1, 0, ROWS - 2);
-    if (this.sim.placeTower(gx, gy) !== "ok") this.invalidFlash = 0.35;
+    this.sim.placeTower(gx, gy); // the ghost already shows red where this fails
   };
   private readonly onContext = (e: Event): void => e.preventDefault();
 
@@ -225,7 +224,6 @@ export class Game {
 
     const t0 = performance.now();
     this.sim.update(dt);
-    if (this.invalidFlash > 0) this.invalidFlash -= dt;
     const simMs = performance.now() - t0;
 
     this.renderer.render(this.sim, this.zoom, -this.tlx * this.zoom, -this.tly * this.zoom);
@@ -244,18 +242,25 @@ export class Game {
     const s = this.scale * this.zoom;
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
     if (this.hoverGx >= 0 && !this.panning) {
+      // red marks anything that blocks the spot: walls, the core, units
+      // underneath, or a placement that would seal the swarm's last route
       const ok = this.sim.canPlace(this.hoverGx, this.hoverGy);
       const x = this.hoverGx * CELL, y = this.hoverGy * CELL;
-      c.strokeStyle = ok ? "rgba(91,217,232,0.8)" : "rgba(255,90,90,0.8)";
-      c.setLineDash([4, 3]);
+      c.fillStyle = ok ? "rgba(91,217,232,0.14)" : "rgba(255,90,90,0.3)";
+      c.fillRect(x, y, CELL * 2, CELL * 2);
+      c.strokeStyle = ok ? "rgba(91,217,232,0.85)" : "rgba(255,90,90,0.9)";
       c.lineWidth = 1.5;
       c.strokeRect(x + 1, y + 1, CELL * 2 - 2, CELL * 2 - 2);
-      c.setLineDash([]);
-    }
-    if (this.invalidFlash > 0) {
-      c.setTransform(this.scale, 0, 0, this.scale, 0, 0);
-      c.fillStyle = `rgba(255,90,90,${this.invalidFlash * 0.25})`;
-      c.fillRect(0, 0, W, H);
+      // interior lines so the ghost reads as the 2x2 cells it occupies
+      c.lineWidth = 1;
+      c.globalAlpha = 0.45;
+      c.beginPath();
+      c.moveTo(x + CELL, y + 1);
+      c.lineTo(x + CELL, y + CELL * 2 - 1);
+      c.moveTo(x + 1, y + CELL);
+      c.lineTo(x + CELL * 2 - 1, y + CELL);
+      c.stroke();
+      c.globalAlpha = 1;
     }
   }
 }
