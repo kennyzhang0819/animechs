@@ -20,6 +20,7 @@ export interface Stats {
   zoom: number;
 }
 
+const ZOOM_MIN = 1;
 const ZOOM_MAX = 6;
 const PAN_KEYS: Record<string, readonly [number, number]> = {
   KeyW: [0, -1],
@@ -112,7 +113,7 @@ export class Game {
       (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 40);
     if (pinch || notchy) {
       const before = this.mouseWorld(e);
-      this.zoom = clamp(this.zoom * Math.exp(-dy * (pinch ? 0.012 : 0.0015)), this.minZoom(), ZOOM_MAX);
+      this.zoom = clamp(this.zoom * Math.exp(-dy * (pinch ? 0.012 : 0.0015)), ZOOM_MIN, ZOOM_MAX);
       // keep the world point under the cursor fixed
       this.tlx = before.x - ((e.clientX - r.left) / r.width) * this.visW();
       this.tly = before.y - ((e.clientY - r.top) / r.height) * this.visH();
@@ -209,10 +210,6 @@ export class Game {
     this.uictx = ctx;
 
     this.resize();
-    // open on the whole battlefield: zoom 1 is "cover" (fills the window,
-    // crops the world on any non-16:9 aspect), so start at fit instead
-    this.zoom = this.minZoom();
-    this.clampCamera();
     this.renderer.rebuildTerrain(this.sim);
 
     window.addEventListener("resize", this.onResize);
@@ -286,30 +283,28 @@ export class Game {
     return this.uiCanvas.height / (this.scale * this.zoom);
   }
 
-  /** zoom that fits the whole world in view — letterboxed on the spare axis */
-  private minZoom(): number {
-    return Math.min(this.uiCanvas.width / W, this.uiCanvas.height / H) / this.scale;
-  }
-
   private clampCamera(): void {
-    const vw = this.visW(), vh = this.visH();
-    // a view larger than the world centers it instead of clamping (the
-    // clamp range inverts); the letterbox shows the clear color
-    this.tlx = vw >= W ? (W - vw) / 2 : clamp(this.tlx, 0, W - vw);
-    this.tly = vh >= H ? (H - vh) / 2 : clamp(this.tly, 0, H - vh);
+    this.tlx = clamp(this.tlx, 0, W - this.visW());
+    this.tly = clamp(this.tly, 0, H - this.visH());
   }
 
   private resize(): void {
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
     const bw = Math.round((this.glCanvas.clientWidth || W) * dpr);
     const bh = Math.round((this.glCanvas.clientHeight || H) * dpr);
-    if (bw === this.glCanvas.width && bh === this.glCanvas.height) return;
-    this.glCanvas.width = bw;
-    this.glCanvas.height = bh;
-    this.uiCanvas.width = bw;
-    this.uiCanvas.height = bh;
+    // only skip the canvas attribute writes (they clear the canvas) — the
+    // scale must ALWAYS be recomputed: a hot-reload recreates Game on the
+    // same canvas element with matching backing size, and an early return
+    // here left this.scale at its placeholder 1, rendering the world at
+    // raw device pixels (cropped right, dead band below) until a full
+    // page reload. That was the "zoom is fundamentally broken" bug.
+    if (bw !== this.glCanvas.width || bh !== this.glCanvas.height) {
+      this.glCanvas.width = bw;
+      this.glCanvas.height = bh;
+      this.uiCanvas.width = bw;
+      this.uiCanvas.height = bh;
+    }
     this.scale = Math.max(bw / W, bh / H);
-    this.zoom = clamp(this.zoom, this.minZoom(), ZOOM_MAX);
     this.clampCamera();
   }
 

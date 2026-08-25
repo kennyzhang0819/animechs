@@ -4,6 +4,7 @@ import { PALETTE, terrainFromMap, mapFromTerrain, type MapData, type PaletteSet 
 import { Renderer } from "./renderer";
 import { WALL_PINE, type Prop, type Terrain } from "./terrain";
 
+const ZOOM_MIN = 1;
 const ZOOM_MAX = 6;
 const UNDO_CAP = 40;
 const PAN_KEYS: Record<string, readonly [number, number]> = {
@@ -84,9 +85,6 @@ export class MapEditor {
     this.uictx = ctx;
 
     this.resize();
-    // open on the whole map — fit view, like the game
-    this.zoom = this.minZoom();
-    this.clampCamera();
     this.renderer.rebuildTerrain(this);
 
     window.addEventListener("resize", this.onResize);
@@ -272,7 +270,7 @@ export class MapEditor {
       (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 40);
     if (pinch || notchy) {
       const before = this.mouseWorld(e);
-      this.zoom = clamp(this.zoom * Math.exp(-dy * (pinch ? 0.012 : 0.0015)), this.minZoom(), ZOOM_MAX);
+      this.zoom = clamp(this.zoom * Math.exp(-dy * (pinch ? 0.012 : 0.0015)), ZOOM_MIN, ZOOM_MAX);
       this.tlx = before.x - ((e.clientX - r.left) / r.width) * this.visW();
       this.tly = before.y - ((e.clientY - r.top) / r.height) * this.visH();
     } else {
@@ -342,28 +340,24 @@ export class MapEditor {
     return this.uiCanvas.height / (this.scale * this.zoom);
   }
 
-  /** zoom that fits the whole world in view — letterboxed on the spare axis */
-  private minZoom(): number {
-    return Math.min(this.uiCanvas.width / W, this.uiCanvas.height / H) / this.scale;
-  }
-
   private clampCamera(): void {
-    const vw = this.visW(), vh = this.visH();
-    this.tlx = vw >= W ? (W - vw) / 2 : clamp(this.tlx, 0, W - vw);
-    this.tly = vh >= H ? (H - vh) / 2 : clamp(this.tly, 0, H - vh);
+    this.tlx = clamp(this.tlx, 0, W - this.visW());
+    this.tly = clamp(this.tly, 0, H - this.visH());
   }
 
   private resize(): void {
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
     const bw = Math.round((this.glCanvas.clientWidth || W) * dpr);
     const bh = Math.round((this.glCanvas.clientHeight || H) * dpr);
-    if (bw === this.glCanvas.width && bh === this.glCanvas.height) return;
-    this.glCanvas.width = bw;
-    this.glCanvas.height = bh;
-    this.uiCanvas.width = bw;
-    this.uiCanvas.height = bh;
+    // always recompute scale — matching backing sizes must not skip it
+    // (hot-reload recreates the editor on an already-sized canvas)
+    if (bw !== this.glCanvas.width || bh !== this.glCanvas.height) {
+      this.glCanvas.width = bw;
+      this.glCanvas.height = bh;
+      this.uiCanvas.width = bw;
+      this.uiCanvas.height = bh;
+    }
     this.scale = Math.max(bw / W, bh / H);
-    this.zoom = clamp(this.zoom, this.minZoom(), ZOOM_MAX);
     this.clampCamera();
   }
 
