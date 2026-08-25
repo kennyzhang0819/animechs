@@ -1,7 +1,9 @@
 import {
   UV_CORE,
+  UV_DECOR,
   UV_FLASH,
   UV_FLOORS,
+  UV_PINE,
   UV_PROJ,
   UV_RING,
   UV_TOWER_BASE,
@@ -112,7 +114,7 @@ export class Renderer {
       gl.STATIC_DRAW,
     );
 
-    this.terrain = this.makeBatch(NCELLS + 1);
+    this.terrain = this.makeBatch(NCELLS + 512); // tiles + decor/pine props
     this.dyn = this.makeBatch(MAX_UNITS + 2048);
 
     const tex = gl.createTexture();
@@ -217,27 +219,27 @@ export class Renderer {
   rebuildTerrain(sim: Sim): void {
     const gl = this.gl;
     const t = this.terrain;
+    const T = sim.terrain;
     t.n = 0;
     for (let y = 0; y < ROWS; y++) {
       for (let x = 0; x < COLS; x++) {
+        const i = y * COLS + x;
         const cx = (x + 0.5) * CELL, cy = (y + 0.5) * CELL;
-        const blockedByObstacle = sim.field.walk[y * COLS + x] === 1 && !this.towerAt(sim, x, y);
-        // deterministic per-cell variant pick — grass/stone variants are
-        // equal-weight randoms, like Mindustry's own floor variants
-        const h = (x * 31 + y * 17 + ((x * y) | 0)) % 6;
-        const uvr = blockedByObstacle ? UV_WALLS[h & 1] : UV_FLOORS[h % 3];
+        // pine cells (and tower cells, which aren't in terrain.blocked at
+        // all) get their floor painted; props draw over it below
+        const uvr =
+          T.blocked[i] && T.wall[i] < UV_WALLS.length
+            ? UV_WALLS[T.wall[i]]
+            : UV_FLOORS[T.floor[i]];
         this.push(t, cx, cy, CELL, CELL, 0, uvr, 1, 1, 1, 1);
       }
     }
+    for (const d of T.decor)
+      this.push(t, d.x, d.y, d.size, d.size, 0, UV_DECOR[d.kind], 1, 1, 1, 1);
+    for (const p of T.pines) this.push(t, p.x, p.y, p.size, p.size, 0, UV_PINE, 1, 1, 1, 1);
     gl.bindVertexArray(t.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, t.vbo);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, t.data, 0, t.n * FLOATS);
-  }
-
-  private towerAt(sim: Sim, x: number, y: number): boolean {
-    for (const t of sim.towers)
-      if (x >= t.gx && x < t.gx + 2 && y >= t.gy && y < t.gy + 2) return true;
-    return false;
   }
 
   /**

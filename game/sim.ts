@@ -13,6 +13,7 @@ import {
   W,
 } from "./constants";
 import { FlowField, type Vec2 } from "./flowfield";
+import { generateTerrain, type Terrain } from "./terrain";
 import { FxKind, type Effect, type Projectile, type Tower } from "./types";
 
 const FX_CAP = 400;
@@ -40,6 +41,7 @@ export type PlaceResult = "ok" | "invalid" | "would-seal";
  */
 export class Sim {
   readonly field = new FlowField();
+  terrain!: Terrain; // assigned by reset() in the constructor
 
   readonly upx = new Float32Array(MAX_UNITS);
   readonly upy = new Float32Array(MAX_UNITS);
@@ -80,9 +82,25 @@ export class Sim {
     this.projs.length = 0;
     this.effects.length = 0;
     this.towers.length = 0;
-    this.addTower(36, 34); // just past the first wall gap — every lane funnels through here
-    this.field.rebuildWalk(this.towers);
-    this.field.compute();
+    // roll fresh valleys until one connects spawn to core (carving all but
+    // guarantees it — the retry covers a forest or outcrop landing badly)
+    for (let attempt = 0; attempt < 12; attempt++) {
+      this.terrain = generateTerrain((Math.random() * 0x7fffffff) | 0);
+      this.field.rebuildWalk(this.towers, this.terrain.blocked);
+      this.field.compute();
+      if (this.field.spawnRows.length >= 6) break;
+    }
+    this.seedTower();
+  }
+
+  /** starter tower on the first valley stretch, wherever it fits */
+  private seedTower(): void {
+    for (let gx = 32; gx <= 52; gx += 2) {
+      const cy = Math.round(this.terrain.valleyY[gx]) - 1;
+      for (let d = 0; d <= 8; d++)
+        for (const s of d === 0 ? [0] : [-d, d])
+          if (this.placeTower(gx, cy + s) === "ok") return;
+    }
   }
 
   private addTower(gx: number, gy: number): void {
@@ -264,7 +282,9 @@ export class Sim {
       const row = spawnRows[(Math.random() * spawnRows.length) | 0];
       const x = UR + 1 + Math.random() * (CELL * 6 - UR - 2);
       const y = (row + 0.15 + Math.random() * 0.7) * CELL;
-      if (!this.spawnSpotFree(x, y)) continue;
+      // the mountain edge is ragged now — a spawn row open at column 1 can
+      // still have rock jutting into the columns beside it
+      if (this.field.hitsWall(x, y, UR) || !this.spawnSpotFree(x, y)) continue;
       const i = this.n++;
       this.upx[i] = x;
       this.upy[i] = y;

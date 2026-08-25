@@ -1,4 +1,4 @@
-import { BASE, CELL, clamp, COLS, INF, NCELLS, OBSTACLES, ROWS, W, H } from "./constants";
+import { BASE, CELL, clamp, COLS, INF, NCELLS, ROWS, W, H } from "./constants";
 import type { Tower } from "./types";
 
 const SQRT2 = Math.SQRT2;
@@ -50,12 +50,9 @@ export class FlowField {
   private readonly bfsSeen = new Uint8Array(NCELLS);
   private readonly bfsQ = new Int32Array(NCELLS);
 
-  rebuildWalk(towers: readonly Tower[]): void {
-    this.walk.fill(0);
+  rebuildWalk(towers: readonly Tower[], blockedBase: Uint8Array): void {
+    this.walk.set(blockedBase);
     this.isGoal.fill(0);
-    for (const o of OBSTACLES)
-      for (let y = o.y; y < o.y + o.h; y++)
-        for (let x = o.x; x < o.x + o.w; x++) this.walk[y * COLS + x] = 1;
     for (const t of towers)
       for (let y = t.gy; y < t.gy + 2; y++)
         for (let x = t.gx; x < t.gx + 2; x++) this.walk[y * COLS + x] = 1;

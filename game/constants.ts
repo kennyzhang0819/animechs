@@ -22,28 +22,6 @@ export const TOWER = {
   projSpd: 520,
 } as const;
 
-export interface Rect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-// the old 64x36 layout scaled 2x onto the tile grid
-export const OBSTACLES: Rect[] = [
-  { x: 28, y: 0, w: 4, h: 26 },
-  { x: 28, y: 46, w: 4, h: 26 },
-  { x: 60, y: 18, w: 4, h: 36 },
-  { x: 92, y: 0, w: 4, h: 24 },
-  { x: 92, y: 50, w: 4, h: 22 },
-  { x: 44, y: 32, w: 8, h: 8 },
-  { x: 76, y: 8, w: 8, h: 6 },
-  { x: 76, y: 58, w: 8, h: 6 },
-  { x: 12, y: 16, w: 6, h: 4 },
-  { x: 12, y: 52, w: 6, h: 4 },
-  { x: 108, y: 28, w: 4, h: 16 },
-];
-
 export const BASE = { x: 120, y: 33, size: 5 }; // 5x5 core-nucleus, walkable goal cells
 
 // damage tint per hp third — full hp renders the sprite as-is

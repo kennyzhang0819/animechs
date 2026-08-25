@@ -10,35 +10,68 @@ const uv = (x: number, y: number, w: number, h: number, inset = 0): UVRect => [
   (y + h - inset) / ATLAS,
 ];
 
-// row 0: 64px cells — ground tiles, wall tiles, unit, fx
+// row 0: 64px cells — grass floors, stone walls, unit, fx
+// indices into UV_FLOORS: 0-2 grass, 3-5 stone, 6-8 dirt
 export const UV_FLOORS: readonly UVRect[] = [
   uv(0, 0, 64, 64, 2),
   uv(64, 0, 64, 64, 2),
   uv(128, 0, 64, 64, 2),
+  uv(64, 64, 64, 64, 2),
+  uv(128, 64, 64, 64, 2),
+  uv(192, 64, 64, 64, 2),
+  uv(256, 64, 64, 64, 2),
+  uv(320, 64, 64, 64, 2),
+  uv(384, 64, 64, 64, 2),
 ];
-export const UV_WALLS: readonly UVRect[] = [uv(192, 0, 64, 64, 2), uv(256, 0, 64, 64, 2)];
+// 0-1 stone-wall, 2-3 dirt-wall (terrain wall index 4 means "pine prop")
+export const UV_WALLS: readonly UVRect[] = [
+  uv(192, 0, 64, 64, 2),
+  uv(256, 0, 64, 64, 2),
+  uv(448, 64, 64, 64, 2),
+  uv(0, 128, 64, 64, 2),
+];
 export const UV_UNIT = uv(320, 0, 64, 64);
 export const UV_PROJ = uv(384, 0, 64, 64);
 export const UV_RING = uv(448, 0, 64, 64);
-// row 1: 128px cells — turret base, turret top, core; plus the hit flash
 export const UV_FLASH = uv(0, 64, 64, 64);
+// row 2: 128px cells — turret base, turret top, core
 export const UV_TOWER_BASE = uv(64, 128, 128, 128);
 export const UV_TURRET = uv(192, 128, 128, 128);
 export const UV_CORE = uv(320, 128, 160, 160);
+// row 3: 96px prop cells — overhanging 48px sources at 2x
+export const UV_PINE = uv(0, 288, 96, 96);
+export const UV_DECOR: readonly UVRect[] = [
+  uv(96, 288, 96, 96), // boulder1
+  uv(192, 288, 96, 96), // boulder2
+  uv(288, 288, 64, 64), // shrubs
+];
 
+const ENV = "/mindustry/sprites/blocks/environment";
 const SPRITES = {
-  floor0: "/mindustry/env/grass1.png",
-  floor1: "/mindustry/env/grass2.png",
-  floor2: "/mindustry/env/grass3.png",
-  wall0: "/mindustry/env/stone-wall1.png",
-  wall1: "/mindustry/env/stone-wall2.png",
-  daggerBase: "/mindustry/units/dagger-base.png",
-  dagger: "/mindustry/units/dagger.png",
-  daggerLeg: "/mindustry/units/dagger-leg.png",
-  towerBase: "/mindustry/turrets/block-2.png",
-  salvoPreview: "/mindustry/turrets/salvo-preview.png",
-  core: "/mindustry/storage/core-nucleus.png",
-  coreTeam: "/mindustry/storage/core-nucleus-team.png",
+  grass0: `${ENV}/grass1.png`,
+  grass1: `${ENV}/grass2.png`,
+  grass2: `${ENV}/grass3.png`,
+  stone0: `${ENV}/stone1.png`,
+  stone1: `${ENV}/stone2.png`,
+  stone2: `${ENV}/stone3.png`,
+  dirt0: `${ENV}/dirt1.png`,
+  dirt1: `${ENV}/dirt2.png`,
+  dirt2: `${ENV}/dirt3.png`,
+  stoneWall0: `${ENV}/stone-wall1.png`,
+  stoneWall1: `${ENV}/stone-wall2.png`,
+  dirtWall0: `${ENV}/dirt-wall1.png`,
+  dirtWall1: `${ENV}/dirt-wall2.png`,
+  pine: `${ENV}/pine.png`,
+  shrubs: `${ENV}/shrubs1.png`,
+  boulder0: "/mindustry/sprites/blocks/props/boulder1.png",
+  boulder1: "/mindustry/sprites/blocks/props/boulder2.png",
+  daggerBase: "/mindustry/sprites/units/dagger-base.png",
+  dagger: "/mindustry/sprites/units/dagger.png",
+  daggerLeg: "/mindustry/sprites/units/dagger-leg.png",
+  towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
+  salvoPreview: "/mindustry/sprites/blocks/turrets/salvo/salvo-preview.png",
+  core: "/mindustry/sprites/blocks/storage/core-nucleus.png",
+  coreTeam: "/mindustry/sprites/blocks/storage/core-nucleus-team.png",
 } as const;
 
 // Mindustry's sharded (player) team color — the team overlay multiplies by it
@@ -97,11 +130,24 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   c.imageSmoothingEnabled = false; // integer upscales keep the pixel art crisp
 
   // ground + wall tiles: 32px sources upscaled 2x into 64px cells
-  c.drawImage(img.floor0, 0, 0, 64, 64);
-  c.drawImage(img.floor1, 64, 0, 64, 64);
-  c.drawImage(img.floor2, 128, 0, 64, 64);
-  c.drawImage(img.wall0, 192, 0, 64, 64);
-  c.drawImage(img.wall1, 256, 0, 64, 64);
+  c.drawImage(img.grass0, 0, 0, 64, 64);
+  c.drawImage(img.grass1, 64, 0, 64, 64);
+  c.drawImage(img.grass2, 128, 0, 64, 64);
+  c.drawImage(img.stoneWall0, 192, 0, 64, 64);
+  c.drawImage(img.stoneWall1, 256, 0, 64, 64);
+  c.drawImage(img.stone0, 64, 64, 64, 64);
+  c.drawImage(img.stone1, 128, 64, 64, 64);
+  c.drawImage(img.stone2, 192, 64, 64, 64);
+  c.drawImage(img.dirt0, 256, 64, 64, 64);
+  c.drawImage(img.dirt1, 320, 64, 64, 64);
+  c.drawImage(img.dirt2, 384, 64, 64, 64);
+  c.drawImage(img.dirtWall0, 448, 64, 64, 64);
+  c.drawImage(img.dirtWall1, 0, 128, 64, 64);
+  // props: 48px overhanging sources at 2x into 96px cells
+  c.drawImage(img.pine, 0, 288, 96, 96);
+  c.drawImage(img.boulder0, 96, 288, 96, 96);
+  c.drawImage(img.boulder1, 192, 288, 96, 96);
+  c.drawImage(img.shrubs, 288, 288, 64, 64);
 
   // dagger: the leg sprite is pre-offset for one side; mirror it for the
   // other, then chassis and body on top — all sharing one 48px origin
