@@ -13,7 +13,9 @@ export default function AdminShortcut() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (!e.ctrlKey || !e.shiftKey || e.code !== "KeyM") return;
+      // ctrl OR cmd — though Chrome on Mac reserves Cmd+Shift+M for profile
+      // switching, so Ctrl+Shift+M is the combination that always arrives
+      if ((!e.ctrlKey && !e.metaKey) || !e.shiftKey || e.code !== "KeyM") return;
       e.preventDefault();
       router.push(pathname.startsWith("/admin") ? "/" : "/admin");
     };
