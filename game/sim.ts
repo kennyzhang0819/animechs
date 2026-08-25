@@ -18,6 +18,11 @@ import { FxKind, type Effect, type Projectile, type Tower } from "./types";
 
 const FX_CAP = 400;
 
+// THE map: one hand-picked generator seed — the game always plays this world
+// (chosen by scoring seeds 1-30 on path length, serpentine spread, and open
+// buildable ground: a hairpin first bend, a 156-tile lane, 62% open)
+const MAP_SEED = 24;
+
 // separation personal space (px): units steer apart inside this radius, and
 // hard-resolve interpenetration below the pressure floor (see HARD). Bigger
 // SEP = airier crowds but lower lane throughput, which caps how many units
@@ -74,7 +79,7 @@ export class Sim {
     this.reset();
   }
 
-  reset(): void {
+  reset(seed = MAP_SEED): void {
     this.n = 0;
     this.kills = 0;
     this.leaked = 0;
@@ -82,10 +87,11 @@ export class Sim {
     this.projs.length = 0;
     this.effects.length = 0;
     this.towers.length = 0;
-    // roll fresh valleys until one connects spawn to core (carving all but
-    // guarantees it — the retry covers a forest or outcrop landing badly)
+    // deterministic: the same seed rebuilds exactly the same world every
+    // session and every reset (the fallback increments only if a seed ever
+    // fails to connect spawn to core — MAP_SEED is verified not to)
     for (let attempt = 0; attempt < 12; attempt++) {
-      this.terrain = generateTerrain((Math.random() * 0x7fffffff) | 0);
+      this.terrain = generateTerrain(seed + attempt);
       this.field.rebuildWalk(this.towers, this.terrain.blocked);
       this.field.compute();
       if (this.field.spawnRows.length >= 6) break;
