@@ -221,31 +221,6 @@ export function generateTerrain(seed: number): Terrain {
   for (let y = Math.max(0, BASE.y - 4); y < Math.min(ROWS, BASE.y + BASE.size + 4); y++)
     for (let x = BASE.x - 6; x < COLS; x++) blocked[y * COLS + x] = 0;
 
-  // impassable slivers: a unit's collision box is exactly one tile wide
-  // (UR*2 === CELL), so a 1-cell passage can never actually be walked — the
-  // corner probes always graze the neighbouring cells — yet the cell-based
-  // flow field would route the swarm straight into the crack and pile it up
-  // there. Fill such cells solid, iterating since a fill can narrow a
-  // neighbouring passage
-  const solidAt = (x: number, y: number): number =>
-    x < 0 || y < 0 || x >= COLS || y >= ROWS ? 1 : blocked[y * COLS + x];
-  for (let changed = true; changed; ) {
-    changed = false;
-    for (let y = 0; y < ROWS; y++)
-      for (let x = 0; x < COLS; x++) {
-        const i = y * COLS + x;
-        if (blocked[i]) continue;
-        if (
-          (solidAt(x, y - 1) && solidAt(x, y + 1)) ||
-          (solidAt(x - 1, y) && solidAt(x + 1, y))
-        ) {
-          blocked[i] = 1;
-          mountain[i] = 2; // crevice fill reads as outcrop: no slope fringe
-          changed = true;
-        }
-      }
-  }
-
   for (let i = 0; i < NCELLS; i++)
     if (blocked[i] && wall[i] !== WALL_PINE && !mountain[i]) mountain[i] = 1;
   // a cleared cell may keep a stale pine entry — drop props whose cell opened
