@@ -119,10 +119,10 @@ export default function Swarmfield() {
           Click to build a 2&times;2 tower — hold and drag to chain a line of them; right-click a
           tower to demolish it.
         </em>{" "}
-        Scroll to zoom, drag with right/middle mouse or WASD to pan. Towers block movement and the
-        swarm re-routes around them in real time; the ghost turns red where you can&apos;t build —
-        walls, the core, units underfoot, or a spot that would seal the swarm&apos;s last route.
-        Sprites courtesy of Mindustry (GPL-3.0).
+        Scroll to zoom, drag with right/middle mouse or WASD to pan, space to pause. Towers block
+        movement and the swarm re-routes around them in real time; the ghost turns red where you
+        can&apos;t build — walls, the core, units underfoot, or a spot that would seal the
+        swarm&apos;s last route. Sprites courtesy of Mindustry (GPL-3.0).
       </p>
     </div>
   );

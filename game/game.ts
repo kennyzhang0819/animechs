@@ -51,6 +51,7 @@ export class Game {
   private sellPress: { x: number; y: number } | null = null;
   private lastMouse = { x: 0, y: 0 };
   private readonly keysDown = new Set<string>();
+  private paused = false;
 
   private raf = 0;
   private last = 0;
@@ -60,7 +61,15 @@ export class Game {
 
   private readonly onResize = (): void => this.resize();
   private readonly onKeyDown = (e: KeyboardEvent): void => {
-    if (!PAN_KEYS[e.code] || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.code === "Space" && !e.repeat) {
+      // let a focused button keep its native space activation
+      if (e.target instanceof HTMLElement && e.target.closest("button, input, select, textarea")) return;
+      e.preventDefault();
+      this.paused = !this.paused;
+      return;
+    }
+    if (!PAN_KEYS[e.code]) return;
     e.preventDefault(); // arrows would scroll the page
     this.keysDown.add(e.code);
   };
@@ -243,7 +252,7 @@ export class Game {
     if (this.keysDown.size > 0) this.clampCamera();
 
     const t0 = performance.now();
-    this.sim.update(dt);
+    if (!this.paused) this.sim.update(dt);
     const simMs = performance.now() - t0;
 
     this.renderer.render(this.sim, this.zoom, -this.tlx * this.zoom, -this.tly * this.zoom);
