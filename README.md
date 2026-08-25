@@ -29,8 +29,6 @@ npm run dev   # Next.js + Turbopack
 - `game/game.ts` — rAF loop, input, 2d overlay (placement ghost), stats
 - `components/Swarmfield.tsx` — React shell: HUD, unit-count switcher, canvases
 
-`prototype/index.html` is the original single-file version this was ported from.
-
 In dev builds the running `Game` instance is exposed as `window.__swarmfield`
 for console poking.
 
