@@ -10,6 +10,10 @@ export const MAX_UNITS = 22000;
 // Dagger at true Mindustry scale: 1-tile hitbox, art overhanging 1.5x
 // (48px art on a 32px tile)
 export const UR = 10;
+// wall-clearance radius (px): strictly under CELL/2, so a 1-tile corridor
+// leaves a (CELL - 2*WALL_R)px window a unit can actually thread. UR stays
+// the unit-vs-unit and projectile-hit radius
+export const WALL_R = 7;
 export const UNIT_SPRITE = 40;
 // official dagger stats: 150 hp, speed 0.5 px/tick = 3.75 tiles/s
 export const HP0 = 150;

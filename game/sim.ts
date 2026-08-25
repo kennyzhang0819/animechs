@@ -1,4 +1,4 @@
-import { CELL, clamp, COLS, H, MAX_UNITS, ROWS, TOWER, UR, W } from "./constants";
+import { CELL, clamp, COLS, H, MAX_UNITS, ROWS, TOWER, UR, W, WALL_R } from "./constants";
 import { FlowField, type Vec2 } from "./flowfield";
 import { LEVELS, UNIT_STATS, type LevelSpec, type UnitKind } from "./levels";
 import { generateTerrain, WALL_PINE, type Terrain } from "./terrain";
@@ -22,6 +22,10 @@ const HARD = 20;
 // spatial hash cell size (px); rebuilt every frame with a counting sort.
 // must be >= SEP so a 3x3 bucket scan covers the separation radius
 const HC = 26;
+// narrow-passage centering gain (1/s): in 1-wide corridors and L-bend
+// corners, steer toward the cell centerline so units line up with the
+// slim (CELL - 2*WALL_R)px window instead of scraping the jambs
+const CENTER_K = 25;
 const HCOLS = (W / HC) | 0;
 const HROWS = (H / HC) | 0;
 const HN = HCOLS * HROWS;
@@ -312,7 +316,7 @@ export class Sim {
       const y = (row + 0.15 + Math.random() * 0.7) * CELL;
       // the mountain edge is ragged now — a spawn row open at column 1 can
       // still have rock jutting into the columns beside it
-      if (this.field.hitsWall(x, y, UR) || !this.spawnSpotFree(x, y)) continue;
+      if (this.field.hitsWall(x, y, WALL_R) || !this.spawnSpotFree(x, y)) continue;
       const i = this.n++;
       this.upx[i] = x;
       this.upy[i] = y;
@@ -367,8 +371,11 @@ export class Sim {
     const { upx, upy, uvx, uvy, uspd, field, flowTmp, bStart, bUnits } = this;
     const steer = Math.min(1, dt * 8);
     const SEP2 = SEP * SEP;
-    const PR = UR + 4, REP = 55, SMAX = 70;
-    const { isGoal } = field;
+    // repulsion probes reach 4px past the wall-clearance radius: any longer
+    // and the push-off fires while a unit hugs a wall to enter a staggered
+    // narrow passage, shoving it back out of the entry window forever
+    const PR = WALL_R + 4, REP = 55, SMAX = 70;
+    const { isGoal, walk } = field;
 
     for (let i = this.n - 1; i >= 0; i--) {
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
@@ -417,11 +424,33 @@ export class Sim {
         fy = (fy / fl) * SMAX;
       }
 
-      // wall repulsion probes: push off nearby walls so corners can't wedge units
+      // wall repulsion probes: push off nearby walls so corners can't wedge
+      // units (in a 1-wide corridor both sides fire and cancel — harmless)
       if (field.blockedPx(upx[i] + PR, upy[i])) fx -= REP;
       if (field.blockedPx(upx[i] - PR, upy[i])) fx += REP;
       if (field.blockedPx(upx[i], upy[i] + PR)) fy -= REP;
       if (field.blockedPx(upx[i], upy[i] - PR)) fy += REP;
+
+      // symmetry-breaking jitter: units contesting a doorway can settle into
+      // a perfectly balanced standoff (flow vs separation, a fraction of a
+      // pixel outside the opening, forever) — a small random push dissolves
+      // such equilibria and disappears under the flow force in open field
+      fx += (Math.random() - 0.5) * 14;
+      fy += (Math.random() - 0.5) * 14;
+
+      // narrow-passage centering: 1-wide corridors leave only a slim window
+      // (unit clearance is WALL_R < CELL/2) — steer onto the cell centerline
+      // there. Strictly both-sides-blocked cells only: anything looser (e.g.
+      // an L-corner heuristic) also matches convex corners in open ground
+      // and would drag passing units into the corner. Corners of narrow
+      // bends need no help — the axis-separated slide stops a unit just
+      // inside the turn's window and redirects its speed into the turn
+      const bL = cx <= 0 || walk[cy * COLS + cx - 1] === 1;
+      const bR = cx >= COLS - 1 || walk[cy * COLS + cx + 1] === 1;
+      const bU = cy <= 0 || walk[(cy - 1) * COLS + cx] === 1;
+      const bD = cy >= ROWS - 1 || walk[(cy + 1) * COLS + cx] === 1;
+      if (bL && bR) fx += ((cx + 0.5) * CELL - upx[i]) * CENTER_K;
+      if (bU && bD) fy += ((cy + 0.5) * CELL - upy[i]) * CENTER_K;
 
       // separation/repulsion steer but never exceed the unit's stat speed
       let mvx = uvx[i] + fx, mvy = uvy[i] + fy;
@@ -450,21 +479,46 @@ export class Sim {
         dyT = (dyT / dl) * dmax;
       }
 
-      // axis-separated move; a blocked axis redirects its speed into the free one
+      // axis-separated move with slide-to-contact: a blocked axis advances
+      // flush against the wall face rather than rejecting the whole step —
+      // all-or-nothing rejection zeroes the axis velocity each frame, and a
+      // unit that must shed a corner overlap in sub-pixel steps deadlocks.
+      // Contact placement also lands units exactly on a narrow passage's
+      // window edge, so 1-wide corridors and their L-bends stay threadable.
+      // Only a zero-progress axis redirects its speed into the free one, and
+      // a unit already overlapping a wall (crowd shoves) skips the veto
+      // entirely so it can always walk back out
+      const wedged = field.hitsWall(upx[i], upy[i], WALL_R);
       let nx = upx[i] + dxT;
-      if (field.hitsWall(nx, upy[i], UR)) {
-        nx = upx[i];
-        uvy[i] += Math.sign(uvy[i] || flowTmp.y || 1) * Math.abs(uvx[i]) * 0.6;
-        uvx[i] = 0;
+      if (!wedged && field.hitsWall(nx, upy[i], WALL_R)) {
+        const cX =
+          dxT > 0
+            ? Math.floor((nx + WALL_R) / CELL) * CELL - WALL_R
+            : Math.ceil((nx - WALL_R) / CELL) * CELL + WALL_R;
+        const fwd = dxT > 0 ? cX > upx[i] : cX < upx[i];
+        if (fwd && !field.hitsWall(cX, upy[i], WALL_R)) nx = cX;
+        else {
+          nx = upx[i];
+          uvy[i] += Math.sign(uvy[i] || flowTmp.y || 1) * Math.abs(uvx[i]) * 0.6;
+          uvx[i] = 0;
+        }
       }
       let ny = upy[i] + dyT;
-      if (field.hitsWall(nx, ny, UR)) {
-        ny = upy[i];
-        uvx[i] += Math.sign(uvx[i] || flowTmp.x || 1) * Math.abs(uvy[i]) * 0.6;
-        uvy[i] = 0;
+      if (!wedged && field.hitsWall(nx, ny, WALL_R)) {
+        const cY =
+          dyT > 0
+            ? Math.floor((ny + WALL_R) / CELL) * CELL - WALL_R
+            : Math.ceil((ny - WALL_R) / CELL) * CELL + WALL_R;
+        const fwd = dyT > 0 ? cY > upy[i] : cY < upy[i];
+        if (fwd && !field.hitsWall(nx, cY, WALL_R)) ny = cY;
+        else {
+          ny = upy[i];
+          uvx[i] += Math.sign(uvx[i] || flowTmp.x || 1) * Math.abs(uvy[i]) * 0.6;
+          uvy[i] = 0;
+        }
       }
-      upx[i] = clamp(nx, UR, W - UR);
-      upy[i] = clamp(ny, UR, H - UR);
+      upx[i] = clamp(nx, WALL_R, W - WALL_R);
+      upy[i] = clamp(ny, WALL_R, H - WALL_R);
     }
   }
 
@@ -472,7 +526,7 @@ export class Sim {
   private unstickUnits(): void {
     const { upx, upy, field } = this;
     for (let i = 0; i < this.n; i++) {
-      if (!field.hitsWall(upx[i], upy[i], UR)) continue;
+      if (!field.hitsWall(upx[i], upy[i], WALL_R)) continue;
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
       const cy = clamp((upy[i] / CELL) | 0, 0, ROWS - 1);
       let done = false;

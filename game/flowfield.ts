@@ -50,6 +50,15 @@ export class FlowField {
   private readonly bfsSeen = new Uint8Array(NCELLS);
   private readonly bfsQ = new Int32Array(NCELLS);
 
+  // per-cell entry-cost flag: 1-wide slots, bends, and diagonal pinches.
+  // Such cells are physically passable (units thread them one at a time)
+  // but have single-file throughput — costing them extra keeps the main
+  // stream on real lanes, so dense crowds never crush into a crack. A
+  // crack that is the ONLY route still gets used: the penalty is finite
+  private readonly narrow = new Uint8Array(NCELLS);
+  // extra Dijkstra cost per narrow cell entered (in cell units)
+  private static readonly NARROW_COST = 4;
+
   rebuildWalk(towers: readonly Tower[], blockedBase: Uint8Array): void {
     this.walk.set(blockedBase);
     this.isGoal.fill(0);
@@ -99,7 +108,17 @@ export class FlowField {
   }
 
   compute(): void {
-    const { walk, isGoal, dist, dirX, dirY } = this;
+    const { walk, isGoal, dist, dirX, dirY, narrow } = this;
+    for (let i = 0; i < NCELLS; i++) {
+      narrow[i] = 0;
+      if (walk[i]) continue;
+      const x = i % COLS, y = (i / COLS) | 0;
+      const bL = x <= 0 || walk[i - 1] === 1;
+      const bR = x >= COLS - 1 || walk[i + 1] === 1;
+      const bU = y <= 0 || walk[i - COLS] === 1;
+      const bD = y >= ROWS - 1 || walk[i + COLS] === 1;
+      if ((bL && bR) || (bU && bD) || ((bL || bR) && (bU || bD))) narrow[i] = 1;
+    }
     dist.fill(INF);
     this.hN = 0;
     for (let i = 0; i < NCELLS; i++)
@@ -119,7 +138,7 @@ export class FlowField {
         if (walk[ni]) continue;
         // no cutting corners diagonally through a blocked cell
         if (dx !== 0 && dy !== 0 && (walk[y * COLS + nx] || walk[ny * COLS + x])) continue;
-        const nd = dist[i] + c;
+        const nd = dist[i] + c + (narrow[ni] ? FlowField.NARROW_COST : 0);
         if (nd < dist[ni] - 1e-6) {
           dist[ni] = nd;
           this.hPush(nd, ni);
@@ -227,11 +246,15 @@ export class FlowField {
   }
 
   hitsWall(x: number, y: number, r: number): boolean {
+    // the box is half-open like the grid cells it tests: a right/bottom
+    // edge at exactly a cell boundary touches the next cell, not overlaps
+    // it — else a unit flush against a wall reads as colliding and wedges
+    const r2 = r - 1e-3;
     return (
       this.blockedPx(x - r, y - r) ||
-      this.blockedPx(x + r, y - r) ||
-      this.blockedPx(x - r, y + r) ||
-      this.blockedPx(x + r, y + r)
+      this.blockedPx(x + r2, y - r) ||
+      this.blockedPx(x - r, y + r2) ||
+      this.blockedPx(x + r2, y + r2)
     );
   }
 }
