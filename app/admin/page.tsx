@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import MapEditorView from "@/components/MapEditorView";
-import { drawThumb, loadMap, OFFICIAL_MAPS, type MapData } from "@/game/maps";
+import { drawThumb, loadOfficialMaps, type MapData } from "@/game/maps";
 
 function Thumb({ map }: { map: MapData }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -23,12 +23,24 @@ function AdminInner() {
   const router = useRouter();
   const params = useSearchParams();
   const openId = params.get("map");
+  const [maps, setMaps] = useState<MapData[]>([]);
   const [open, setOpen] = useState<MapData | null>(null);
+
+  // the documents live in public/maps/ and are fetched, not imported
+  useEffect(() => {
+    let alive = true;
+    loadOfficialMaps().then((loaded) => {
+      if (alive) setMaps([...loaded]);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // deep link: /admin?map=<id> opens straight into the editor
   useEffect(() => {
-    setOpen(openId ? loadMap(openId) : null);
-  }, [openId]);
+    setOpen(maps.find((m) => m.id === openId) ?? null);
+  }, [openId, maps]);
 
   if (open) {
     return (
@@ -59,7 +71,7 @@ function AdminInner() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {OFFICIAL_MAPS.map((m) => (
+          {maps.map((m) => (
             <button
               key={m.id}
               onClick={() => router.push(`/admin?map=${encodeURIComponent(m.id)}`)}

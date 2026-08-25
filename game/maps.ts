@@ -1,12 +1,16 @@
 import { BASE, COLS, NCELLS, ROWS } from "./constants";
 import { WALL_PINE, type Prop, type Terrain } from "./terrain";
-import generated24 from "./maps/generated-24.json";
 
 /**
  * Serializable map document — the game's OFFICIAL maps, one JSON file per
- * map under game/maps/. The map editor saves straight back into those
+ * map under public/maps/. The map editor saves straight back into those
  * files (through the dev-only /api/maps route), so an edit IS the map:
  * the sim loads the same document.
+ *
+ * The documents deliberately live OUTSIDE the bundler's module graph and
+ * are fetched at startup (loadOfficialMaps), never imported: an imported
+ * JSON made every editor save a Turbopack HMR update, which its runtime
+ * cannot hot-apply ("Expected module to match pattern" errors).
  */
 export interface MapData {
   id: string;
@@ -24,8 +28,29 @@ export interface MapData {
   valleyY?: number[];
 }
 
-/** every playable map — add a JSON under game/maps/ and list it here */
-export const OFFICIAL_MAPS: readonly MapData[] = [generated24 as MapData];
+/** every playable map — add a JSON under public/maps/ and list its id here */
+export const OFFICIAL_MAP_IDS: readonly string[] = ["generated-24"];
+
+/**
+ * The loaded official map documents, in OFFICIAL_MAP_IDS order. Empty until
+ * loadOfficialMaps() resolves — Game.create and the admin page both await
+ * it before anything reads a map.
+ */
+export const OFFICIAL_MAPS: MapData[] = [];
+
+/** fetch (or re-fetch) every official map document into OFFICIAL_MAPS */
+export async function loadOfficialMaps(): Promise<MapData[]> {
+  const maps = await Promise.all(
+    OFFICIAL_MAP_IDS.map(async (id) => {
+      const res = await fetch(`/maps/${id}.json`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`failed to load official map "${id}" (${res.status})`);
+      return (await res.json()) as MapData;
+    }),
+  );
+  OFFICIAL_MAPS.length = 0;
+  OFFICIAL_MAPS.push(...maps);
+  return OFFICIAL_MAPS;
+}
 
 // ---------- palette ----------
 
@@ -120,9 +145,9 @@ export function loadMap(id: string): MapData | null {
 
 /**
  * Persist an official map: the dev server writes the JSON document back to
- * game/maps/<id>.json, and hot reload hands the new world to everyone
- * importing it — the admin list, and the game itself on its next reset.
- * Resolves false when saving failed (production build, bad response).
+ * public/maps/<id>.json. The game plays the new world on its next page
+ * load (Game.create re-fetches the documents). Resolves false when saving
+ * failed (production build, bad response).
  */
 export async function saveMap(map: MapData): Promise<boolean> {
   try {
@@ -131,7 +156,11 @@ export async function saveMap(map: MapData): Promise<boolean> {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(map),
     });
-    return res.ok;
+    if (!res.ok) return false;
+    // keep the in-memory documents current so admin thumbnails match
+    const at = OFFICIAL_MAPS.findIndex((m) => m.id === map.id);
+    if (at >= 0) OFFICIAL_MAPS[at] = map;
+    return true;
   } catch {
     return false;
   }

@@ -1,4 +1,5 @@
 import { buildAtlas } from "./atlas";
+import { loadOfficialMaps } from "./maps";
 import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
 import type { TowerKind } from "./levels";
 import { Renderer } from "./renderer";
@@ -201,7 +202,11 @@ export class Game {
 
   /** loads the sprite atlas, then wires everything up */
   static async create(glCanvas: HTMLCanvasElement, uiCanvas: HTMLCanvasElement): Promise<Game> {
-    return new Game(glCanvas, uiCanvas, await buildAtlas());
+    // the sim reads the official map documents, which live outside the
+    // module graph and are fetched, never imported (imported JSON turned
+    // every editor save into a Turbopack HMR update it cannot apply)
+    const [atlas] = await Promise.all([buildAtlas(), loadOfficialMaps()]);
+    return new Game(glCanvas, uiCanvas, atlas);
   }
 
   private constructor(

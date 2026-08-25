@@ -6,7 +6,7 @@ import type { MapData } from "@/game/maps";
 
 /**
  * Dev-only map persistence: the editor POSTs an official map document and
- * this writes it back to game/maps/<id>.json — the repo file IS the map.
+ * this writes it back to public/maps/<id>.json — the repo file IS the map.
  * Only ids whose file already exists can be written (no path games, no
  * new maps from the browser), and production builds refuse entirely.
  */
@@ -23,7 +23,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!Array.isArray(map.pines) || !Array.isArray(map.decor))
     return NextResponse.json({ error: "bad props" }, { status: 400 });
 
-  const file = path.join(process.cwd(), "game", "maps", `${map.id}.json`);
+  const file = path.join(process.cwd(), "public", "maps", `${map.id}.json`);
   try {
     await access(file); // official maps only — the file must already exist
   } catch {

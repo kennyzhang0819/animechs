@@ -20,6 +20,12 @@
       "port": 3103
     },
     {
+      "name": "main-3001",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "/Users/kennyzhang/Desktop/swarmfield", "run", "dev", "--", "-p", "3001"],
+      "port": 3001
+    },
+    {
       "name": "m4-current",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "/Users/kennyzhang/Desktop/swarmfield", "run", "dev", "--", "-p", "3104"],

@@ -107,18 +107,19 @@ export class Sim {
     this.effects.length = 0;
     this.towers.length = 0;
     // the official map document IS the world: map-editor saves land in its
-    // JSON, and the next reset (or hot reload) plays them
-    this.terrain = terrainFromMap(OFFICIAL_MAPS[0]);
+    // JSON, and the next full page load plays them. The documents are
+    // fetched before the sim is built (see Game.create), never imported
+    const doc = OFFICIAL_MAPS[0];
+    if (!doc) throw new Error("official maps not loaded — await loadOfficialMaps() first");
+    this.terrain = terrainFromMap(doc);
     this.field.rebuildWalk(this.towers, this.terrain.blocked, this.terrain.spawn);
     this.field.compute();
     // fail LOUDLY on a broken map: with zero pads nothing ever spawns and a
     // wave script stalls forever, which reads as a scheduler bug otherwise
     if (this.field.spawnAir.length === 0)
-      throw new Error(`map "${OFFICIAL_MAPS[0].id}" has no spawn pads — paint some in the editor`);
+      throw new Error(`map "${doc.id}" has no spawn pads — paint some in the editor`);
     if (this.field.spawnPts.length === 0)
-      console.warn(
-        `map "${OFFICIAL_MAPS[0].id}": no spawn pad connects to the core — ground waves will stall`,
-      );
+      console.warn(`map "${doc.id}": no spawn pad connects to the core — ground waves will stall`);
     this.totalEnemies = 0;
     for (const step of this.level.script)
       if ("wave" in step)
