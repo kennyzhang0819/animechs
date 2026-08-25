@@ -64,26 +64,52 @@ export function generateTerrain(seed: number): Terrain {
   const pines: Prop[] = [];
   const decor: Prop[] = [];
 
-  // mountains: noise elevation plus a hard bias toward the top/bottom rims,
-  // so the open land reads as a valley between two ranges
+  // mountains: noise elevation plus a hard bias toward the top/bottom rims.
+  // the threshold is low enough that the interior is properly mountainous —
+  // the carved lane below is the way through, not a shortcut across a plain
   for (let y = 0; y < ROWS; y++) {
     for (let x = 0; x < COLS; x++) {
-      const rim = Math.max(0, (11 - Math.min(y, ROWS - 1 - y)) / 11);
+      const rim = Math.max(0, (12 - Math.min(y, ROWS - 1 - y)) / 12);
       const e = elev(x * 0.055, y * 0.055) + rim * rim * 0.55;
-      if (e > 0.67) blocked[y * COLS + x] = 1;
+      if (e > 0.62) blocked[y * COLS + x] = 1;
     }
   }
 
-  // main valley: a meandering centerline carved open, pulled toward the core
-  // on the right so the lane always arrives
-  const valleyY = new Float32Array(COLS);
+  // baffle spurs: noisy full-height ranges across the middle of the map.
+  // only the lane carves below punch through them, so the shortest path is
+  // forced to actually ride the valley's curves instead of beelining
   const coreCy = BASE.y + BASE.size / 2;
-  let cy = 18 + rng() * (ROWS - 36);
+  const spurXs: number[] = [];
+  const spurs = 2 + (rng() < 0.6 ? 1 : 0);
+  for (let s = 0; s < spurs; s++)
+    spurXs.push(Math.round(COLS * (0.22 + ((s + 0.2 + rng() * 0.6) * 0.58) / spurs)));
+  for (const sx of spurXs) {
+    const w = 4 + rng() * 3;
+    for (let y = 0; y < ROWS; y++)
+      for (let x = Math.max(0, Math.floor(sx - w - 2)); x <= Math.min(COLS - 1, sx + w + 2); x++)
+        if (Math.abs(x - sx) < w + (elev(x * 0.21, y * 0.21) - 0.5) * 4)
+          blocked[y * COLS + x] = 1;
+  }
+
+  // main valley centerline: waypoints at each spur with ALTERNATING offsets
+  // from the midline, cosine-interpolated — consecutive spur holes are
+  // guaranteed on opposite sides, so the lane serpentines by construction
+  const valleyY = new Float32Array(COLS);
+  const pts: Array<[number, number]> = [[0, clamp(coreCy + rng() * 30 - 15, 10, ROWS - 11)]];
+  let side = rng() < 0.5 ? -1 : 1;
+  for (const sx of spurXs) {
+    pts.push([sx, clamp(coreCy + side * (12 + rng() * 9), 9, ROWS - 10)]);
+    side = -side;
+  }
+  pts.push([COLS - 1, coreCy]);
+  let seg = 0;
   for (let x = 0; x < COLS; x++) {
-    valleyY[x] = cy;
-    const drift = (meander(x * 0.045, 3.7) - 0.5) * 3.4;
-    const pull = (coreCy - cy) * (x > COLS * 0.7 ? 0.09 : 0.012);
-    cy = clamp(cy + drift + pull, 9, ROWS - 10);
+    while (seg < pts.length - 2 && x > pts[seg + 1][0]) seg++;
+    const [x0, y0] = pts[seg], [x1, y1] = pts[seg + 1];
+    const t = clamp((x - x0) / (x1 - x0), 0, 1);
+    const ease = 0.5 - 0.5 * Math.cos(t * Math.PI);
+    const drift = (meander(x * 0.03, 3.7) - 0.5) * 6;
+    valleyY[x] = clamp(y0 + (y1 - y0) * ease + drift, 9, ROWS - 10);
   }
   const carve = (px: number, py: number, r: number): void => {
     const x0 = Math.max(0, Math.ceil(px - r)), x1 = Math.min(COLS - 1, Math.floor(px + r));
@@ -94,16 +120,28 @@ export function generateTerrain(seed: number): Terrain {
         if (dx * dx + dy * dy <= r * r) blocked[yy * COLS + xx] = 0;
       }
   };
-  for (let x = 0; x < COLS; x++) carve(x, valleyY[x], 5 + meander(x * 0.09, 9.1) * 4.5);
+  for (let x = 0; x < COLS; x++) carve(x, valleyY[x], 4.5 + meander(x * 0.09, 9.1) * 4);
 
-  // branch lane: leaves the valley, arcs away, rejoins downstream
-  const bx0 = 18 + ((rng() * 14) | 0), bx1 = 84 + ((rng() * 22) | 0);
-  const side = rng() < 0.5 ? -1 : 1;
-  const amp = 12 + rng() * 9;
-  for (let x = bx0; x <= bx1; x++) {
-    const t = (x - bx0) / (bx1 - bx0);
-    const by = clamp(valleyY[x] + side * Math.sin(t * Math.PI) * amp, 4, ROWS - 5);
-    carve(x, by, 3.5 + meander(x * 0.11, 21.3) * 2.5);
+  // branch lane: a loop that leaves the valley and rejoins WITHIN one
+  // segment between spurs — never through one, so it can't open a shortcut
+  // hole that lets the path skip a serpentine bend
+  const bounds: Array<[number, number]> = [];
+  let prevEdge = 6;
+  for (const sx of spurXs) {
+    bounds.push([prevEdge, sx - 5]);
+    prevEdge = sx + 5;
+  }
+  bounds.push([prevEdge, COLS - 16]);
+  const wide = bounds.filter(([a, b]) => b - a >= 20);
+  if (wide.length > 0) {
+    const [bx0, bx1] = wide[(rng() * wide.length) | 0];
+    const bSide = rng() < 0.5 ? -1 : 1;
+    const bAmp = 9 + rng() * 8;
+    for (let x = bx0; x <= bx1; x++) {
+      const t = (x - bx0) / (bx1 - bx0);
+      const by = clamp(valleyY[x] + bSide * Math.sin(t * Math.PI) * bAmp, 4, ROWS - 5);
+      carve(x, by, 3.5 + meander(x * 0.11, 21.3) * 2.5);
+    }
   }
 
   // forests: pine clumps scattered in the open land
@@ -146,7 +184,7 @@ export function generateTerrain(seed: number): Terrain {
   }
 
   // guaranteed clearings: the spawn mouth on the left, the core on the right
-  for (let x = 0; x < 5; x++)
+  for (let x = 0; x < 7; x++) // the spawn strip reaches column 5 — keep it all open
     for (let y = Math.max(1, valleyY[0] - 9); y <= Math.min(ROWS - 2, valleyY[0] + 9); y++)
       blocked[Math.round(y) * COLS + x] = 0;
   for (let y = Math.max(0, BASE.y - 4); y < Math.min(ROWS, BASE.y + BASE.size + 4); y++)

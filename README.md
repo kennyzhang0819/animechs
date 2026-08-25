@@ -13,7 +13,9 @@ npm run dev   # Next.js + Turbopack
 
 ## Architecture
 
-- `game/constants.ts` — grid, map layout, tower/unit tuning
+- `game/constants.ts` — grid, core placement, tower/unit tuning
+- `game/terrain.ts` — seeded value-noise worldgen: mountain ranges, a carved
+  meandering valley with a branch lane, forests, outcrops, floor fringes, decor
 - `game/flowfield.ts` — grid occupancy + one Dijkstra pass from the core into a
   per-cell direction field; units sample it bilinearly (pathfinding is O(map),
   not O(units))
