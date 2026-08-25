@@ -83,8 +83,10 @@ export class Game {
       return;
     }
     if (e.code === "Space" && !e.repeat) {
-      // let a focused button keep its native space activation
-      if (e.target instanceof HTMLElement && e.target.closest("button, input, select, textarea")) return;
+      // space ALWAYS pauses — even with a UI button focused after a click,
+      // where the browser would otherwise re-activate the button. Only real
+      // text entry keeps its space (none exists in the UI today)
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea, [contenteditable]")) return;
       e.preventDefault();
       this.paused = !this.paused;
       return;
