@@ -1,0 +1,274 @@
+import {
+  buildAtlas,
+  UV_BARREL,
+  UV_BLOCK,
+  UV_CORE,
+  UV_FLOOR,
+  UV_PROJ,
+  UV_RING,
+  UV_TOWER,
+  UV_UNIT,
+  UV_FLASH,
+  type UVRect,
+} from "./atlas";
+import { BASE, CELL, COLS, H, HP_TINT, MAX_UNITS, NCELLS, ROWS, UR, W } from "./constants";
+import type { Sim } from "./sim";
+import { FxKind } from "./types";
+
+const VS = `#version 300 es
+layout(location=0) in vec2 aCorner;
+layout(location=1) in vec2 aPos;
+layout(location=2) in vec2 aSize;
+layout(location=3) in float aRot;
+layout(location=4) in vec4 aUV;
+layout(location=5) in vec4 aTint;
+uniform vec2 uRes;
+out vec2 vUV;
+out vec4 vTint;
+void main() {
+  float s = sin(aRot), c = cos(aRot);
+  vec2 p = vec2(aCorner.x * c - aCorner.y * s, aCorner.x * s + aCorner.y * c) * aSize + aPos;
+  vec2 clip = p / uRes * 2.0 - 1.0;
+  gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+  vUV = mix(aUV.xy, aUV.zw, aCorner + 0.5);
+  vTint = aTint;
+}`;
+
+const FS = `#version 300 es
+precision mediump float;
+uniform sampler2D uTex;
+in vec2 vUV;
+in vec4 vTint;
+out vec4 o;
+void main() {
+  o = texture(uTex, vUV) * vec4(vTint.rgb * vTint.a, vTint.a);
+}`;
+
+const FLOATS = 13; // pos2 size2 rot1 uv4 tint4
+
+interface Batch {
+  vao: WebGLVertexArrayObject;
+  vbo: WebGLBuffer;
+  data: Float32Array;
+  n: number;
+  cap: number;
+}
+
+/**
+ * WebGL2 instanced sprite renderer. Two draw calls per frame: a static
+ * terrain batch and one dynamic batch (towers, units, projectiles, effects)
+ * in painter's order.
+ */
+export class Renderer {
+  private readonly gl: WebGL2RenderingContext;
+  private readonly prog: WebGLProgram;
+  private readonly uRes: WebGLUniformLocation;
+  private readonly quadVBO: WebGLBuffer;
+  private readonly tex: WebGLTexture;
+  private readonly terrain: Batch;
+  private readonly dyn: Batch;
+
+  constructor(private readonly canvas: HTMLCanvasElement) {
+    const gl = canvas.getContext("webgl2", { alpha: false, antialias: false });
+    if (!gl) throw new Error("WebGL2 is required");
+    this.gl = gl;
+
+    this.prog = this.link();
+    const loc = gl.getUniformLocation(this.prog, "uRes");
+    if (!loc) throw new Error("uRes uniform missing");
+    this.uRes = loc;
+
+    const quad = gl.createBuffer();
+    if (!quad) throw new Error("buffer alloc failed");
+    this.quadVBO = quad;
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5]),
+      gl.STATIC_DRAW,
+    );
+
+    this.terrain = this.makeBatch(NCELLS + 1);
+    this.dyn = this.makeBatch(MAX_UNITS + 2048);
+
+    const tex = gl.createTexture();
+    if (!tex) throw new Error("texture alloc failed");
+    this.tex = tex;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, buildAtlas());
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 3); // deeper mips bleed across atlas cells
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.clearColor(0.039, 0.063, 0.122, 1); // #0A101F
+  }
+
+  private link(): WebGLProgram {
+    const gl = this.gl;
+    const sh = (type: number, src: string): WebGLShader => {
+      const s = gl.createShader(type);
+      if (!s) throw new Error("shader alloc failed");
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+        throw new Error(gl.getShaderInfoLog(s) ?? "shader compile failed");
+      return s;
+    };
+    const p = gl.createProgram();
+    if (!p) throw new Error("program alloc failed");
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, VS));
+    gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FS));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+      throw new Error(gl.getProgramInfoLog(p) ?? "program link failed");
+    return p;
+  }
+
+  private makeBatch(cap: number): Batch {
+    const gl = this.gl;
+    const vao = gl.createVertexArray();
+    const vbo = gl.createBuffer();
+    if (!vao || !vbo) throw new Error("batch alloc failed");
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadVBO);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, cap * FLOATS * 4, gl.DYNAMIC_DRAW);
+    const stride = FLOATS * 4;
+    const attrs: ReadonlyArray<readonly [number, number, number]> = [
+      [1, 2, 0],
+      [2, 2, 8],
+      [3, 1, 16],
+      [4, 4, 20],
+      [5, 4, 36],
+    ];
+    for (const [loc, size, off] of attrs) {
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride, off);
+      gl.vertexAttribDivisor(loc, 1);
+    }
+    gl.bindVertexArray(null);
+    return { vao, vbo, data: new Float32Array(cap * FLOATS), n: 0, cap };
+  }
+
+  private push(
+    b: Batch,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    rot: number,
+    uvr: UVRect,
+    r: number,
+    g: number,
+    bl: number,
+    a: number,
+  ): void {
+    if (b.n >= b.cap) return;
+    let o = b.n * FLOATS;
+    const d = b.data;
+    d[o++] = x; d[o++] = y; d[o++] = w; d[o++] = h; d[o++] = rot;
+    d[o++] = uvr[0]; d[o++] = uvr[1]; d[o++] = uvr[2]; d[o++] = uvr[3];
+    d[o++] = r; d[o++] = g; d[o++] = bl; d[o++] = a;
+    b.n++;
+  }
+
+  private draw(b: Batch, upload: boolean): void {
+    if (b.n === 0) return;
+    const gl = this.gl;
+    gl.bindVertexArray(b.vao);
+    if (upload) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, b.vbo);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, b.data, 0, b.n * FLOATS);
+    }
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, b.n);
+  }
+
+  /** rebuild the static tile batch — call on init and whenever the map changes */
+  rebuildTerrain(sim: Sim): void {
+    const gl = this.gl;
+    const t = this.terrain;
+    t.n = 0;
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        const cx = (x + 0.5) * CELL, cy = (y + 0.5) * CELL;
+        const blockedByObstacle = sim.field.walk[y * COLS + x] === 1 && !this.towerAt(sim, x, y);
+        this.push(t, cx, cy, CELL, CELL, 0, blockedByObstacle ? UV_BLOCK : UV_FLOOR, 1, 1, 1, 1);
+      }
+    }
+    this.push(
+      t,
+      (BASE.x + 1) * CELL,
+      (BASE.y + 1) * CELL,
+      CELL * 2,
+      CELL * 2,
+      0,
+      UV_CORE,
+      1, 1, 1, 1,
+    );
+    gl.bindVertexArray(t.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, t.vbo);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, t.data, 0, t.n * FLOATS);
+  }
+
+  private towerAt(sim: Sim, x: number, y: number): boolean {
+    for (const t of sim.towers)
+      if (x >= t.gx && x < t.gx + 2 && y >= t.gy && y < t.gy + 2) return true;
+    return false;
+  }
+
+  render(sim: Sim): void {
+    const gl = this.gl;
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(this.prog);
+    gl.uniform2f(this.uRes, W, H);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+
+    this.draw(this.terrain, false);
+
+    const dyn = this.dyn;
+    dyn.n = 0;
+    for (const t of sim.towers) {
+      this.push(dyn, t.x, t.y, CELL * 2, CELL * 2, 0, UV_TOWER, 1, 1, 1, 1);
+      this.push(dyn, t.x, t.y, CELL * 2, CELL * 2, t.angle, UV_BARREL, 0.357, 0.851, 0.91, 1);
+    }
+    const { upx, upy, uvx, uvy, uhp, n } = sim;
+    const usz = UR * 2.4;
+    for (let i = 0; i < n; i++) {
+      const h = uhp[i] <= 1 ? 0 : uhp[i] <= 2 ? 1 : 2;
+      const tint = HP_TINT[h];
+      this.push(
+        dyn,
+        upx[i],
+        upy[i],
+        usz,
+        usz,
+        Math.atan2(uvy[i], uvx[i]),
+        UV_UNIT,
+        tint[0], tint[1], tint[2], 1,
+      );
+    }
+    for (const p of sim.projs) {
+      this.push(dyn, p.x, p.y, 14, 6, Math.atan2(p.vy, p.vx), UV_PROJ, 1, 0.82, 0.3, 0.95);
+    }
+    for (const e of sim.effects) {
+      const t = e.age / e.ttl;
+      if (e.kind === FxKind.Hit) {
+        this.push(dyn, e.x, e.y, 9, 9, 0, UV_FLASH, 1, 0.82, 0.3, 1 - t);
+      } else if (e.kind === FxKind.Death) {
+        const s = 7 + t * 22;
+        this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 1, 0.54, 0.24, (1 - t) * 0.9);
+      } else {
+        const s = 9 + t * 30;
+        this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 0.34, 0.89, 0.54, (1 - t) * 0.9);
+      }
+    }
+    this.draw(dyn, true);
+  }
+}
