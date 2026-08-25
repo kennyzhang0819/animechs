@@ -31,7 +31,7 @@ export const UV_WALLS: readonly UVRect[] = [
   uv(0, 128, 64, 64, 2),
 ];
 export const UV_UNIT = uv(320, 0, 64, 64);
-export const UV_PROJ = uv(384, 0, 64, 64);
+export const UV_PROJ = uv(352, 288, 64, 64);
 export const UV_RING = uv(448, 0, 64, 64);
 export const UV_FLASH = uv(0, 64, 64, 64);
 // row 2: 128px cells — turret base, turret top, core
@@ -72,6 +72,8 @@ const SPRITES = {
   salvoPreview: "/mindustry/sprites/blocks/turrets/salvo/salvo-preview.png",
   core: "/mindustry/sprites/blocks/storage/core-nucleus.png",
   coreTeam: "/mindustry/sprites/blocks/storage/core-nucleus-team.png",
+  bullet: "/mindustry/sprites/effects/bullet.png",
+  bulletBack: "/mindustry/sprites/effects/bullet-back.png",
 } as const;
 
 // Mindustry's sharded (player) team color — the team overlay multiplies by it
@@ -166,13 +168,29 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   uc.drawImage(img.dagger, 8, 8, 48, 48);
   drawFacingRight(c, unit, 352, 32, 64);
 
-  // projectile glow (384,0) — procedural
-  let g = c.createRadialGradient(416, 32, 0, 416, 32, 28);
-  g.addColorStop(0, "#ffffff");
-  g.addColorStop(0.3, "rgba(255,255,255,0.85)");
-  g.addColorStop(1, "rgba(255,255,255,0)");
-  c.fillStyle = g;
-  c.fillRect(384, 0, 64, 64);
+  // official basic bullet at (352,288): back layer in Mindustry's bullet
+  // orange under a pale-yellow core, pre-rotated to face +x like the unit
+  const tinted = (src: HTMLImageElement, color: string): HTMLCanvasElement => {
+    const t = document.createElement("canvas");
+    t.width = t.height = 64;
+    const tc = t.getContext("2d");
+    if (!tc) throw new Error("2d context unavailable");
+    tc.imageSmoothingEnabled = false;
+    tc.drawImage(src, 6, 6, 52, 52);
+    tc.globalCompositeOperation = "multiply";
+    tc.fillStyle = color;
+    tc.fillRect(0, 0, 64, 64);
+    tc.globalCompositeOperation = "destination-in";
+    tc.drawImage(src, 6, 6, 52, 52);
+    return t;
+  };
+  const bul = document.createElement("canvas");
+  bul.width = bul.height = 64;
+  const bc = bul.getContext("2d");
+  if (!bc) throw new Error("2d context unavailable");
+  bc.drawImage(tinted(img.bulletBack, "#f68021"), 0, 0);
+  bc.drawImage(tinted(img.bullet, "#fff5cc"), 0, 0);
+  drawFacingRight(c, bul, 384, 320, 64);
 
   // ring (448,0) — procedural
   c.strokeStyle = "#ffffff";
@@ -182,7 +200,7 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   c.stroke();
 
   // flash (0,64) — procedural
-  g = c.createRadialGradient(32, 96, 0, 32, 96, 18);
+  const g = c.createRadialGradient(32, 96, 0, 32, 96, 18);
   g.addColorStop(0, "#ffffff");
   g.addColorStop(1, "rgba(255,255,255,0)");
   c.fillStyle = g;

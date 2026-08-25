@@ -284,7 +284,8 @@ export class Renderer {
       );
     }
     for (const p of sim.projs) {
-      this.push(dyn, p.x, p.y, 14, 6, Math.atan2(p.vy, p.vx), UV_PROJ, 1, 0.82, 0.3, 0.95);
+      // colors are baked into the atlas composite; uniform scale, no squish
+      this.push(dyn, p.x, p.y, 18, 18, Math.atan2(p.vy, p.vx), UV_PROJ, 1, 1, 1, 1);
     }
     for (const e of sim.effects) {
       const t = e.age / e.ttl;
