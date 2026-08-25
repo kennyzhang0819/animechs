@@ -15,7 +15,6 @@ import { FxKind, type Effect, type Projectile, type Tower, type TowerKind } from
 
 const FX_CAP = 400;
 
-
 // separation personal space (px): units steer apart inside this radius, and
 // hard-resolve interpenetration below the pressure floor (see HARD). Bigger
 // SEP = airier crowds but lower lane throughput, which caps how many units
@@ -74,6 +73,10 @@ export class Sim {
   // the level script's cursor, plus the live state of the step it points at:
   // a wave counts down per kind, a wait counts down in seconds
   private stepIdx = 0;
+  // how many waves the script holds, and how many have begun entering — the
+  // HUD's "Wave 2 / 5". A wave stays current through the wait that follows it
+  totalWaves = 0;
+  private wavesStarted = 0;
   private readonly waveLeft = new Int32Array(UNIT_KINDS.length);
   private readonly waveTotal = new Int32Array(UNIT_KINDS.length);
   private waitLeft = 0;
@@ -121,12 +124,21 @@ export class Sim {
     if (this.field.spawnPts.length === 0)
       console.warn(`map "${doc.id}": no spawn pad connects to the core — ground waves will stall`);
     this.totalEnemies = 0;
-    for (const step of this.level.script)
-      if ("wave" in step)
-        for (const k of UNIT_KINDS) this.totalEnemies += step.wave[k] ?? 0;
+    this.totalWaves = 0;
+    // an empty wave is not a wave — loadStep skips it, so it must not count
+    // here either, or the HUD would promise a wave that never arrives
+    for (const step of this.level.script) {
+      if (!("wave" in step)) continue;
+      let n = 0;
+      for (const k of UNIT_KINDS) n += step.wave[k] ?? 0;
+      if (n === 0) continue;
+      this.totalWaves++;
+      this.totalEnemies += n;
+    }
     this.stepIdx = 0;
     this.waitLeft = 0;
     this.spawnAcc = 0;
+    this.wavesStarted = 0;
     this.loadStep();
     this.aliveByKind.fill(0);
     this.seedTower();
@@ -145,6 +157,18 @@ export class Sim {
   /** per-kind head count currently on the field, indexed like UNIT_KINDS */
   aliveByKindList(): number[] {
     return Array.from(this.aliveByKind);
+  }
+
+  /** 1-based number of the wave on the field; a level that opens with a wait
+   * still reads "Wave 1" while it counts down to that first wave */
+  currentWave(): number {
+    return Math.max(1, this.wavesStarted);
+  }
+
+  /** seconds until the next wave starts entering, or 0 when one is already
+   * draining (or the script has run out) */
+  nextWaveIn(): number {
+    return this.waitLeft > 0 ? this.waitLeft : 0;
   }
 
   /** starter tower on the first highground overlooking the early lane */
@@ -219,7 +243,10 @@ export class Sim {
         this.waveTotal[UNIT_ID[k]] = c;
         any = true;
       }
-      if (any) return;
+      if (any) {
+        this.wavesStarted++;
+        return;
+      }
     }
   }
 
@@ -261,7 +288,8 @@ export class Sim {
       this.waitLeft -= dt;
       if (this.waitLeft > 0) return;
       this.nextStep();
-      // if that step is another wait, hold again from the next frame
+      // a wait that ends this frame hands its leftover time to nothing else;
+      // the wave it unblocks starts draining on the next frame
       if (this.waitLeft > 0) return;
     }
 

@@ -9,8 +9,13 @@ import type { Tower } from "./types";
 export interface UiState {
   levelId: number;
   remaining: number;
-  /** remaining per unit kind, indexed like UNIT_KINDS */
+  /** how many of each kind are on the field right now, like UNIT_KINDS */
   byKind: number[];
+  /** seconds until the next wave, or 0 while one is already coming in */
+  nextWaveIn: number;
+  /** 1-based wave now on the field, out of how many the level holds */
+  currentWave: number;
+  totalWaves: number;
   buildKind: TowerKind | null;
   paused: boolean;
 }
@@ -25,7 +30,7 @@ export interface Stats {
 }
 
 const ZOOM_MIN = 1;
-const ZOOM_MAX = 6;
+const ZOOM_MAX = 3;
 const PAN_KEYS: Record<string, readonly [number, number]> = {
   KeyW: [0, -1],
   KeyS: [0, 1],
@@ -264,7 +269,10 @@ export class Game {
     return {
       levelId: this.sim.level.id,
       remaining: this.sim.remaining(),
-      byKind: this.sim.remainingByKind(),
+      byKind: this.sim.aliveByKindList(),
+      nextWaveIn: this.sim.nextWaveIn(),
+      currentWave: this.sim.currentWave(),
+      totalWaves: this.sim.totalWaves,
       buildKind: this.buildKind,
       paused: this.paused,
     };

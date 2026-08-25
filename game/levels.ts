@@ -33,13 +33,25 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
 /** largest unit radius — pads broad-phase bounds that must cover any unit */
 export const UNIT_RMAX = Math.max(...UNIT_KINDS.map((k) => UNIT_STATS[k].radius));
 
+/**
+ * One step of a level's script. A wave says how many of each kind to send;
+ * its kinds drain together and intermingled, all running out at the same
+ * moment, so `{ dagger: 10, mace: 20 }` arrives as one mixed push rather
+ * than ten daggers followed by twenty maces. A wait holds for that many
+ * seconds once the previous wave has finished entering the field — the
+ * clock starts when the last unit spawns, not when it dies.
+ */
+export type LevelStep =
+  | { wave: Partial<Record<UnitKind, number>> }
+  | { wait: number };
+
 export interface LevelSpec {
   id: number;
   name: string;
-  /** enemies entering the field per second */
+  /** enemies entering the field per second — every wave drains at this rate */
   spawnRate: number;
-  /** what the level throws at you, spawned in order */
-  enemies: ReadonlyArray<{ kind: UnitKind; count: number }>;
+  /** what the level throws at you, run start to finish in order */
+  script: readonly LevelStep[];
 }
 
 // add a level by appending a spec here — the map itself is shared for now
@@ -48,10 +60,17 @@ export const LEVELS: readonly LevelSpec[] = [
     id: 1,
     name: "Level 1",
     spawnRate: 60,
-    enemies: [
-      { kind: "dagger", count: 500 },
-      { kind: "mace", count: 100 },
-      { kind: "flare", count: 200 },
+    script: [
+      { wait: 10 },
+      { wave: { dagger: 50 } },
+      { wait: 10 },
+      { wave: { dagger: 50 } },
+      { wait: 10 },
+      { wave: { mace: 20 } },
+      { wait: 10 },
+      { wave: { dagger: 100, mace: 20 } },
+      { wait: 10 },
+      { wave: { dagger: 200, mace: 50 } },
     ],
   },
 ];
