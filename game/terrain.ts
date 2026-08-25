@@ -124,7 +124,16 @@ export function generateTerrain(seed: number): Terrain {
         if (dx * dx + dy * dy <= r * r) blocked[yy * COLS + xx] = 0;
       }
   };
-  for (let x = 0; x < COLS; x++) carve(x, valleyY[x], 4.5 + meander(x * 0.09, 9.1) * 4);
+  // the lane pinches into a proper choke where it crosses each spur, and
+  // breathes back open between them
+  for (let x = 0; x < COLS; x++) {
+    let w = 4.5 + meander(x * 0.09, 9.1) * 4;
+    for (const sx of spurXs) {
+      const d = Math.abs(x - sx);
+      if (d < 10) w = Math.min(w, 3.1 + d * 0.4);
+    }
+    carve(x, valleyY[x], w);
+  }
 
   // branch lane: a loop that leaves the valley and rejoins WITHIN one
   // segment between spurs — never through one, so it can't open a shortcut
@@ -171,11 +180,9 @@ export function generateTerrain(seed: number): Terrain {
       }
   }
 
-  // rock outcrops: small blobs of bare stone wall inside the valley
-  const rocks = 6 + ((rng() * 5) | 0);
-  for (let n = 0; n < rocks; n++) {
-    const rx = 12 + rng() * (COLS - 30), ry = 4 + rng() * (ROWS - 8);
-    const r = 0.8 + rng() * 1.6;
+  // rock blobs: bare stone that doubles as TOWER PLATFORMS — towers build
+  // only on highground, so rocks near the lane are the player's real estate
+  const rock = (rx: number, ry: number, r: number): void => {
     for (let yy = Math.max(1, Math.ceil(ry - r)); yy <= Math.min(ROWS - 2, ry + r); yy++)
       for (let xx = Math.max(8, Math.ceil(rx - r)); xx <= Math.min(COLS - 10, rx + r); xx++) {
         const dx = xx - rx, dy = yy - ry;
@@ -186,7 +193,21 @@ export function generateTerrain(seed: number): Terrain {
           mountain[i] = 2; // outcrop: skip the dirt-slope fringe treatment
         }
       }
+  };
+  // a pair of platforms flanking every spur choke — the best spots overlook
+  // the tightest part of the lane
+  for (const sx of spurXs)
+    for (const s of [-1, 1])
+      rock(sx + rng() * 4 - 2, valleyY[sx] + s * (5 + rng() * 2), 1.7 + rng());
+  // platforms strung along the rest of the lane, alternating sides
+  for (let x = 13; x < COLS - 18; x += 6 + ((rng() * 5) | 0)) {
+    const s = rng() < 0.5 ? -1 : 1;
+    rock(x, valleyY[x] + s * (5.5 + rng() * 2.5), 1.2 + rng() * 1.2);
   }
+  // and loose scatter rocks in the open basins
+  const rocks = 10 + ((rng() * 5) | 0);
+  for (let n = 0; n < rocks; n++)
+    rock(12 + rng() * (COLS - 30), 4 + rng() * (ROWS - 8), 0.9 + rng() * 1.6);
 
   // guaranteed clearings: the spawn mouth on the left, the core on the right
   for (let x = 0; x < 7; x++) // the spawn strip reaches column 5 — keep it all open

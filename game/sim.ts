@@ -13,7 +13,7 @@ import {
   W,
 } from "./constants";
 import { FlowField, type Vec2 } from "./flowfield";
-import { generateTerrain, type Terrain } from "./terrain";
+import { generateTerrain, WALL_PINE, type Terrain } from "./terrain";
 import { FxKind, type Effect, type Projectile, type Tower } from "./types";
 
 const FX_CAP = 400;
@@ -99,12 +99,12 @@ export class Sim {
     this.seedTower();
   }
 
-  /** starter tower on the first valley stretch, wherever it fits */
+  /** starter tower on the first highground overlooking the early lane */
   private seedTower(): void {
-    for (let gx = 32; gx <= 52; gx += 2) {
+    for (let gx = 26; gx <= 64; gx++) {
       const cy = Math.round(this.terrain.valleyY[gx]) - 1;
-      for (let d = 0; d <= 8; d++)
-        for (const s of d === 0 ? [0] : [-d, d])
+      for (let d = 2; d <= 12; d++)
+        for (const s of [-d, d])
           if (this.placeTower(gx, cy + s) === "ok") return;
     }
   }
@@ -189,25 +189,34 @@ export class Sim {
     return sealed;
   }
 
+  /**
+   * Towers build on HIGHGROUND only: mountain/rock wall cells (not forest,
+   * not floor), free of other towers. They overlook the lanes and never
+   * touch the flow field — the rock was already unwalkable.
+   */
   canPlace(gx: number, gy: number): boolean {
-    return (
-      this.cellsFree(gx, gy) &&
-      this.areaClearOfUnits(gx, gy) &&
-      !this.wouldSeal(gx, gy)
-    );
+    if (gx < 0 || gy < 0 || gx > COLS - 2 || gy > ROWS - 2) return false;
+    const { blocked, wall } = this.terrain;
+    for (let y = gy; y < gy + 2; y++)
+      for (let x = gx; x < gx + 2; x++) {
+        const i = y * COLS + x;
+        if (!blocked[i] || wall[i] >= WALL_PINE) return false;
+      }
+    for (const t of this.towers)
+      if (Math.abs(gx - t.gx) < 2 && Math.abs(gy - t.gy) < 2) return false;
+    return true;
   }
 
   placeTower(gx: number, gy: number): PlaceResult {
-    const r = this.tryPlace(gx, gy);
-    if (r === "ok") this.field.compute();
-    return r;
+    if (!this.canPlace(gx, gy)) return "invalid";
+    this.addTower(gx, gy);
+    return "ok";
   }
 
   /**
    * Chain building: walk the drag segment a cell at a time, dropping a tower
-   * wherever one fits (overlap with the one just placed simply fails
-   * cellsFree, which is what spaces the chain). Flow recomputes once at the
-   * end, not per tower. Returns how many towers landed.
+   * wherever one fits (overlap with the one just placed fails canPlace,
+   * which is what spaces the chain). Returns how many towers landed.
    */
   placeLine(x0: number, y0: number, x1: number, y1: number): number {
     const dx = x1 - x0, dy = y1 - y0;
@@ -219,9 +228,8 @@ export class Sim {
       if (gx === pgx && gy === pgy) continue;
       pgx = gx;
       pgy = gy;
-      if (this.tryPlace(gx, gy) === "ok") placed++;
+      if (this.placeTower(gx, gy) === "ok") placed++;
     }
-    if (placed > 0) this.field.compute();
     return placed;
   }
 
@@ -232,25 +240,26 @@ export class Sim {
       const t = this.towers[k];
       if (gx < t.gx || gx >= t.gx + 2 || gy < t.gy || gy >= t.gy + 2) continue;
       this.towers.splice(k, 1);
-      const { walk } = this.field;
-      for (let y = t.gy; y < t.gy + 2; y++)
-        for (let x = t.gx; x < t.gx + 2; x++) walk[y * COLS + x] = 0;
-      this.field.compute();
-      this.sealGx = -1; // freed cells can flip nearby seal verdicts
+      // the rock under it belongs to the mountain — nothing to unblock
       this.pushFx(t.x, t.y, 0.35, FxKind.Death); // demolish puff
       return true;
     }
     return false;
   }
 
-  /** placement minus the flow recompute — placeLine batches that */
-  private tryPlace(gx: number, gy: number): PlaceResult {
+  /**
+   * Future ground-placed structures build on the floor with the full rule
+   * set towers used to have: free walkable cells, no units underfoot, and
+   * no sealing of the swarm's last route. Blocks the cells and recomputes
+   * the flow. Unused today — kept wired for when such structures exist.
+   */
+  placeGroundStructure(gx: number, gy: number): PlaceResult {
     if (!this.cellsFree(gx, gy) || !this.areaClearOfUnits(gx, gy)) return "invalid";
     if (this.wouldSeal(gx, gy)) return "would-seal";
     const { walk } = this.field;
     for (let y = gy; y < gy + 2; y++)
       for (let x = gx; x < gx + 2; x++) walk[y * COLS + x] = 1;
-    this.addTower(gx, gy);
+    this.field.compute();
     this.sealGx = -1; // the wall layout changed; cached verdicts are stale
     this.unstickUnits();
     return "ok";
