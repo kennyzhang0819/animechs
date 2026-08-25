@@ -1,7 +1,15 @@
 import { buildAtlas } from "./atlas";
-import { CELL, clamp, COLS, H, ROWS, W } from "./constants";
+import { CELL, clamp, COLS, H, ROWS, TOWER, W } from "./constants";
+import type { TowerKind } from "./levels";
 import { Renderer } from "./renderer";
 import { Sim } from "./sim";
+import type { Tower } from "./types";
+
+export interface UiState {
+  levelId: number;
+  remaining: number;
+  buildKind: TowerKind | null;
+}
 
 export interface Stats {
   units: number;
@@ -46,6 +54,10 @@ export class Game {
   private tly = 0;
   private panning = false;
   private panMoved = 0;
+  // cursor mode: null is the normal cursor (click a tower to inspect its
+  // range); a kind from the tower menu turns on the ghost + paint placement
+  private buildKind: TowerKind | null = null;
+  private selected: Tower | null = null;
   private building = false;
   private buildFrom = { x: 0, y: 0 };
   // world point of a right-button press; a release that never really moved
@@ -64,6 +76,12 @@ export class Game {
   private readonly onResize = (): void => this.resize();
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.code === "Escape") {
+      this.buildKind = null;
+      this.selected = null;
+      this.building = false;
+      return;
+    }
     if (e.code === "Space" && !e.repeat) {
       // let a focused button keep its native space activation
       if (e.target instanceof HTMLElement && e.target.closest("button, input, select, textarea")) return;
@@ -105,15 +123,20 @@ export class Game {
   };
   private readonly onMouseDown = (e: MouseEvent): void => {
     if (e.button === 0 && !this.panning) {
-      // left press places right away, and dragging chains from here;
-      // the ghost already shows red where placement fails
       const p = this.mouseWorld(e);
-      this.building = true;
-      this.buildFrom = p;
-      this.sim.placeTower(
-        clamp(Math.round(p.x / CELL) - 1, 0, COLS - 2),
-        clamp(Math.round(p.y / CELL) - 1, 0, ROWS - 2),
-      );
+      if (this.buildKind) {
+        // left press places right away, and dragging chains from here;
+        // the ghost already shows red where placement fails
+        this.building = true;
+        this.buildFrom = p;
+        this.sim.placeTower(
+          clamp(Math.round(p.x / CELL) - 1, 0, COLS - 2),
+          clamp(Math.round(p.y / CELL) - 1, 0, ROWS - 2),
+        );
+      } else {
+        // normal cursor: clicking a tower shows its range, empty ground clears
+        this.selected = this.sim.towerAt(p.x, p.y);
+      }
     } else if (e.button === 1 || e.button === 2) {
       e.preventDefault();
       this.building = false;
@@ -125,7 +148,9 @@ export class Game {
   };
   private readonly onMouseUp = (e: MouseEvent): void => {
     if (e.button === 2 && this.sellPress && this.panMoved < 6) {
-      this.sim.sellTowerAt(this.sellPress.x, this.sellPress.y);
+      // right-click cancels build mode; with the normal cursor it demolishes
+      if (this.buildKind) this.buildKind = null;
+      else this.sim.sellTowerAt(this.sellPress.x, this.sellPress.y);
     }
     this.sellPress = null;
     this.panning = false;
@@ -207,8 +232,18 @@ export class Game {
     this.uiCanvas.removeEventListener("contextmenu", this.onContext);
   }
 
-  setTarget(n: number): void {
-    this.sim.target = n;
+  setBuildKind(kind: TowerKind | null): void {
+    this.buildKind = kind;
+    if (kind) this.selected = null;
+  }
+
+  /** everything the React overlay renders, polled a few times a second */
+  ui(): UiState {
+    return {
+      levelId: this.sim.level.id,
+      remaining: this.sim.remaining(),
+      buildKind: this.buildKind,
+    };
   }
 
   reset(): void {
@@ -301,7 +336,22 @@ export class Game {
     // world-space transform through the camera
     const s = this.scale * this.zoom;
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
-    if (this.hoverGx >= 0 && !this.panning) {
+
+    // selection: range ring + footprint outline (drops when the tower is sold)
+    if (this.selected && !this.sim.towers.includes(this.selected)) this.selected = null;
+    if (this.selected) {
+      const t = this.selected;
+      c.beginPath();
+      c.arc(t.x, t.y, TOWER.range, 0, Math.PI * 2);
+      c.fillStyle = "rgba(91,217,232,0.06)";
+      c.fill();
+      c.strokeStyle = "rgba(91,217,232,0.7)";
+      c.lineWidth = 1.5;
+      c.stroke();
+      c.strokeRect(t.gx * CELL + 1, t.gy * CELL + 1, CELL * 2 - 2, CELL * 2 - 2);
+    }
+
+    if (this.buildKind && this.hoverGx >= 0 && !this.panning) {
       // red marks anything that blocks the spot: walls, the core, units
       // underneath, or a placement that would seal the swarm's last route
       const ok = this.sim.canPlace(this.hoverGx, this.hoverGy);

@@ -32,8 +32,5 @@ export const HP_TINT: ReadonlyArray<readonly [number, number, number]> = [
   [1.0, 1.0, 1.0],
 ];
 
-export const UNIT_COUNTS = [1000, 5000, 10000, 20000] as const;
-export const DEFAULT_TARGET = 5000;
-
 export const clamp = (v: number, a: number, b: number): number =>
   v < a ? a : v > b ? b : v;

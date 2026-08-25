@@ -1,18 +1,6 @@
-import {
-  CELL,
-  clamp,
-  COLS,
-  DEFAULT_TARGET,
-  H,
-  HP0,
-  MAX_UNITS,
-  ROWS,
-  TOWER,
-  UNIT_SPEED,
-  UR,
-  W,
-} from "./constants";
+import { CELL, clamp, COLS, H, MAX_UNITS, ROWS, TOWER, UR, W } from "./constants";
 import { FlowField, type Vec2 } from "./flowfield";
+import { LEVELS, UNIT_STATS, type LevelSpec, type UnitKind } from "./levels";
 import { generateTerrain, WALL_PINE, type Terrain } from "./terrain";
 import { FxKind, type Effect, type Projectile, type Tower } from "./types";
 
@@ -56,9 +44,13 @@ export class Sim {
   readonly uspd = new Float32Array(MAX_UNITS);
   n = 0;
 
-  target = DEFAULT_TARGET;
+  level: LevelSpec = LEVELS[0];
+  totalEnemies = 0;
   kills = 0;
   leaked = 0;
+  // per-entry countdown of the level's enemies still waiting to spawn
+  private spawnQueue: { kind: UnitKind; left: number }[] = [];
+  private spawnAcc = 0;
 
   towers: Tower[] = [];
   projs: Projectile[] = [];
@@ -96,7 +88,20 @@ export class Sim {
       this.field.compute();
       if (this.field.spawnRows.length >= 6) break;
     }
+    this.totalEnemies = this.level.enemies.reduce((s, e) => s + e.count, 0);
+    this.spawnQueue = this.level.enemies.map((e) => ({ kind: e.kind, left: e.count }));
+    this.spawnAcc = 0;
     this.seedTower();
+  }
+
+  loadLevel(spec: LevelSpec): void {
+    this.level = spec;
+    this.reset();
+  }
+
+  /** enemies left to kill: still unspawned + still walking the field */
+  remaining(): number {
+    return this.totalEnemies - this.kills - this.leaked;
   }
 
   /** starter tower on the first highground overlooking the early lane */
@@ -121,11 +126,15 @@ export class Sim {
   }
 
   update(dt: number): void {
-    const want = Math.min(
-      this.target - this.n,
-      Math.ceil(Math.max(400, this.target / 5) * dt),
-    );
-    for (let s = 0; s < want; s++) this.spawnUnit();
+    // stream the level's enemies in at its spawn rate; a failed spawn (strip
+    // too crowded) keeps the enemy queued and retries on later frames
+    const entry = this.spawnQueue.find((e) => e.left > 0);
+    if (entry) {
+      this.spawnAcc = Math.min(this.spawnAcc + this.level.spawnRate * dt, this.level.spawnRate);
+      let want = Math.min(entry.left, this.spawnAcc | 0);
+      this.spawnAcc -= want;
+      while (want-- > 0 && this.spawnUnit(entry.kind)) entry.left--;
+    }
 
     this.buildHash();
     this.updateUnits(dt);
@@ -233,18 +242,22 @@ export class Sim {
     return placed;
   }
 
+  /** the tower whose 2x2 footprint covers the world point, if any */
+  towerAt(px: number, py: number): Tower | null {
+    const gx = (px / CELL) | 0, gy = (py / CELL) | 0;
+    for (const t of this.towers)
+      if (gx >= t.gx && gx < t.gx + 2 && gy >= t.gy && gy < t.gy + 2) return t;
+    return null;
+  }
+
   /** remove the tower whose footprint covers the world point, if any */
   sellTowerAt(px: number, py: number): boolean {
-    const gx = (px / CELL) | 0, gy = (py / CELL) | 0;
-    for (let k = 0; k < this.towers.length; k++) {
-      const t = this.towers[k];
-      if (gx < t.gx || gx >= t.gx + 2 || gy < t.gy || gy >= t.gy + 2) continue;
-      this.towers.splice(k, 1);
-      // the rock under it belongs to the mountain — nothing to unblock
-      this.pushFx(t.x, t.y, 0.35, FxKind.Death); // demolish puff
-      return true;
-    }
-    return false;
+    const t = this.towerAt(px, py);
+    if (!t) return false;
+    this.towers.splice(this.towers.indexOf(t), 1);
+    // the rock under it belongs to the mountain — nothing to unblock
+    this.pushFx(t.x, t.y, 0.35, FxKind.Death); // demolish puff
+    return true;
   }
 
   /**
@@ -290,9 +303,9 @@ export class Sim {
     return true;
   }
 
-  private spawnUnit(): void {
+  private spawnUnit(kind: UnitKind): boolean {
     const { spawnRows } = this.field;
-    if (this.n >= MAX_UNITS || this.n >= this.target || spawnRows.length === 0) return;
+    if (this.n >= MAX_UNITS || spawnRows.length === 0) return false;
     for (let a = 0; a < 8; a++) {
       const row = spawnRows[(Math.random() * spawnRows.length) | 0];
       const x = UR + 1 + Math.random() * (CELL * 6 - UR - 2);
@@ -305,10 +318,11 @@ export class Sim {
       this.upy[i] = y;
       this.uvx[i] = 0;
       this.uvy[i] = 0;
-      this.uhp[i] = HP0;
-      this.uspd[i] = UNIT_SPEED;
-      return;
+      this.uhp[i] = UNIT_STATS[kind].hp;
+      this.uspd[i] = UNIT_STATS[kind].speed;
+      return true;
     }
+    return false;
   }
 
   private removeUnit(i: number): void {
