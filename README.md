@@ -1,4 +1,4 @@
-# Swarmfield
+# Swarmdustry
 
 Tower-defense swarm prototype: flow-field pathfinding for up to 20,000 units,
 WebGL2 instanced rendering, and 2x2 towers that block movement and reroute the
