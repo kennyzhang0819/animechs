@@ -81,7 +81,10 @@ export function generateTerrain(seed: number): Terrain {
 
   // baffle spurs: noisy full-height ranges across the middle of the map.
   // only the lane carves below punch through them, so the shortest path is
-  // forced to actually ride the valley's curves instead of beelining
+  // forced to actually ride the valley's curves instead of beelining.
+  // The crest line wanders, the width breathes along the ridge, and it
+  // swells into broad roots where the spur meets the top/bottom ranges —
+  // so the ridges read as mountains instead of uniform bars
   const coreCy = BASE.y + BASE.size / 2;
   const spurXs: number[] = [];
   const spurs = 2 + (rng() < 0.6 ? 1 : 0);
@@ -89,10 +92,18 @@ export function generateTerrain(seed: number): Terrain {
     spurXs.push(Math.round(COLS * (0.22 + ((s + 0.2 + rng() * 0.6) * 0.58) / spurs)));
   for (const sx of spurXs) {
     const w = 4 + rng() * 3;
-    for (let y = 0; y < ROWS; y++)
-      for (let x = Math.max(0, Math.floor(sx - w - 2)); x <= Math.min(COLS - 1, sx + w + 2); x++)
-        if (Math.abs(x - sx) < w + (elev(x * 0.21, y * 0.21) - 0.5) * 4)
+    for (let y = 0; y < ROWS; y++) {
+      const rim = Math.abs(y / (ROWS - 1) - 0.5) * 2; // 0 mid-map, 1 at the rims
+      const drift = (meander(sx * 0.7, y * 0.045) - 0.5) * 8;
+      // never thinner than 3.5: the per-cell edge noise below reaches -2,
+      // and a spine thinner than that can open a hole clean through the
+      // spur — a lane bypass, not a mountain
+      const wy = Math.max(3.5, w * (0.55 + rim * rim * 1.6) + (elev(sx * 0.13, y * 0.11) - 0.5) * 5);
+      const cx = sx + drift;
+      for (let x = Math.max(0, Math.floor(cx - wy - 2)); x <= Math.min(COLS - 1, Math.ceil(cx + wy + 2)); x++)
+        if (Math.abs(x - cx) < wy + (elev(x * 0.21, y * 0.21) - 0.5) * 4)
           blocked[y * COLS + x] = 1;
+    }
   }
 
   // main valley centerline: waypoints at each spur with ALTERNATING offsets
@@ -218,6 +229,14 @@ export function generateTerrain(seed: number): Terrain {
     for (let y = Math.max(1, Math.ceil(cy - r)); y <= Math.min(ROWS - 2, Math.floor(cy + r)); y++)
       blocked[y * COLS + x] = 0;
   }
+  // the southwest bay: a rock peninsula used to wall off the spawn strip's
+  // lower half, squeezing those units through a 4-cell corridor along the
+  // map edge. Carve an organic chain of clearings over it so the lower
+  // spawn pocket opens straight into the first basin
+  for (const [bx, by, br] of [
+    [6, 45, 5], [7, 50, 6], [9, 55, 6], [12, 59, 5.5], [15, 61, 4.5],
+  ] as const)
+    carve(bx, by, br);
   for (let y = Math.max(0, BASE.y - 4); y < Math.min(ROWS, BASE.y + BASE.size + 4); y++)
     for (let x = BASE.x - 6; x < COLS; x++) blocked[y * COLS + x] = 0;
 
