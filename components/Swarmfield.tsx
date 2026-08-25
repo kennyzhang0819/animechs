@@ -10,6 +10,11 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
     name: "Salvo",
     icon: "/mindustry/sprites/blocks/turrets/salvo/salvo-preview.png",
   },
+  {
+    kind: "scatter",
+    name: "Scatter",
+    icon: "/mindustry/sprites/blocks/turrets/scatter/scatter-preview.png",
+  },
 ];
 
 export default function Swarmfield() {

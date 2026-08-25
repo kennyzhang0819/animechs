@@ -1,8 +1,8 @@
-import { CELL, clamp, COLS, H, MAX_UNITS, ROWS, TOWER, UR, W } from "./constants";
+import { CELL, clamp, COLS, H, MAX_UNITS, ROWS, TOWERS, W, type TowerStats } from "./constants";
 import { FlowField, type Vec2 } from "./flowfield";
-import { LEVELS, UNIT_STATS, type LevelSpec, type UnitKind } from "./levels";
+import { LEVELS, UNIT_ID, UNIT_RMAX, UNIT_STATS, type LevelSpec, type UnitKind } from "./levels";
 import { generateTerrain, WALL_PINE, type Terrain } from "./terrain";
-import { FxKind, type Effect, type Projectile, type Tower } from "./types";
+import { FxKind, type Effect, type Projectile, type Tower, type TowerKind } from "./types";
 
 const FX_CAP = 400;
 
@@ -41,7 +41,11 @@ export class Sim {
   readonly uvx = new Float32Array(MAX_UNITS);
   readonly uvy = new Float32Array(MAX_UNITS);
   readonly uhp = new Float32Array(MAX_UNITS);
+  readonly uhpmax = new Float32Array(MAX_UNITS);
   readonly uspd = new Float32Array(MAX_UNITS);
+  readonly urad = new Float32Array(MAX_UNITS);
+  readonly uarmor = new Float32Array(MAX_UNITS);
+  readonly ukind = new Uint8Array(MAX_UNITS); // UNIT_ID of the kind
   n = 0;
 
   level: LevelSpec = LEVELS[0];
@@ -110,18 +114,21 @@ export class Sim {
       const cy = Math.round(this.terrain.valleyY[gx]) - 1;
       for (let d = 2; d <= 12; d++)
         for (const s of [-d, d])
-          if (this.placeTower(gx, cy + s) === "ok") return;
+          if (this.placeTower(gx, cy + s, "salvo") === "ok") return;
     }
   }
 
-  private addTower(gx: number, gy: number): void {
+  private addTower(gx: number, gy: number, kind: TowerKind): void {
     this.towers.push({
+      kind,
       gx,
       gy,
       x: (gx + 1) * CELL,
       y: (gy + 1) * CELL,
       cd: Math.random() * 0.1,
       angle: 0,
+      burstLeft: 0,
+      burstT: 0,
     });
   }
 
@@ -169,10 +176,10 @@ export class Sim {
   private areaClearOfUnits(gx: number, gy: number): boolean {
     const x0 = gx * CELL, y0 = gy * CELL;
     const x1 = x0 + CELL * 2, y1 = y0 + CELL * 2;
-    const hx0 = clamp(((x0 - UR) / HC) | 0, 0, HCOLS - 1);
-    const hy0 = clamp(((y0 - UR) / HC) | 0, 0, HROWS - 1);
-    const hx1 = clamp(((x1 + UR) / HC) | 0, 0, HCOLS - 1);
-    const hy1 = clamp(((y1 + UR) / HC) | 0, 0, HROWS - 1);
+    const hx0 = clamp(((x0 - UNIT_RMAX) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((y0 - UNIT_RMAX) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((x1 + UNIT_RMAX) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((y1 + UNIT_RMAX) / HC) | 0, 0, HROWS - 1);
     for (let hy = hy0; hy <= hy1; hy++) {
       for (let hx = hx0; hx <= hx1; hx++) {
         const c = hy * HCOLS + hx, e = this.bStart[c + 1];
@@ -181,7 +188,7 @@ export class Sim {
           if (i >= this.n) continue;
           const dx = this.upx[i] - clamp(this.upx[i], x0, x1);
           const dy = this.upy[i] - clamp(this.upy[i], y0, y1);
-          if (dx * dx + dy * dy < UR * UR) return false;
+          if (dx * dx + dy * dy < this.urad[i] * this.urad[i]) return false;
         }
       }
     }
@@ -216,9 +223,9 @@ export class Sim {
     return true;
   }
 
-  placeTower(gx: number, gy: number): PlaceResult {
+  placeTower(gx: number, gy: number, kind: TowerKind): PlaceResult {
     if (!this.canPlace(gx, gy)) return "invalid";
-    this.addTower(gx, gy);
+    this.addTower(gx, gy, kind);
     return "ok";
   }
 
@@ -227,7 +234,7 @@ export class Sim {
    * wherever one fits (overlap with the one just placed fails canPlace,
    * which is what spaces the chain). Returns how many towers landed.
    */
-  placeLine(x0: number, y0: number, x1: number, y1: number): number {
+  placeLine(x0: number, y0: number, x1: number, y1: number, kind: TowerKind): number {
     const dx = x1 - x0, dy = y1 - y0;
     const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / CELL));
     let placed = 0, pgx = -1, pgy = -1;
@@ -237,7 +244,7 @@ export class Sim {
       if (gx === pgx && gy === pgy) continue;
       pgx = gx;
       pgy = gy;
-      if (this.placeTower(gx, gy) === "ok") placed++;
+      if (this.placeTower(gx, gy, kind) === "ok") placed++;
     }
     return placed;
   }
@@ -285,8 +292,10 @@ export class Sim {
    * keeps the spawn strip from overcrowding, so separation never
    * slingshots units forward.
    */
-  private spawnSpotFree(x: number, y: number): boolean {
-    const r2 = HARD * HARD;
+  private spawnSpotFree(x: number, y: number, r: number): boolean {
+    // the spawner's own radius plus the crowd pressure floor's half-spacing
+    const need = r + HARD / 2;
+    const r2 = need * need;
     const hx = clamp((x / HC) | 0, 0, HCOLS - 1);
     const hy = clamp((y / HC) | 0, 0, HROWS - 1);
     for (let gy = Math.max(0, hy - 1); gy <= Math.min(HROWS - 1, hy + 1); gy++) {
@@ -306,20 +315,26 @@ export class Sim {
   private spawnUnit(kind: UnitKind): boolean {
     const { spawnRows } = this.field;
     if (this.n >= MAX_UNITS || spawnRows.length === 0) return false;
+    const stats = UNIT_STATS[kind];
+    const r = stats.radius;
     for (let a = 0; a < 8; a++) {
       const row = spawnRows[(Math.random() * spawnRows.length) | 0];
-      const x = UR + 1 + Math.random() * (CELL * 6 - UR - 2);
+      const x = r + 1 + Math.random() * (CELL * 6 - r - 2);
       const y = (row + 0.15 + Math.random() * 0.7) * CELL;
       // the mountain edge is ragged now — a spawn row open at column 1 can
       // still have rock jutting into the columns beside it
-      if (this.field.hitsWall(x, y, UR) || !this.spawnSpotFree(x, y)) continue;
+      if (this.field.hitsWall(x, y, r) || !this.spawnSpotFree(x, y, r)) continue;
       const i = this.n++;
       this.upx[i] = x;
       this.upy[i] = y;
       this.uvx[i] = 0;
       this.uvy[i] = 0;
-      this.uhp[i] = UNIT_STATS[kind].hp;
-      this.uspd[i] = UNIT_STATS[kind].speed;
+      this.uhp[i] = stats.hp;
+      this.uhpmax[i] = stats.hp;
+      this.uspd[i] = stats.speed;
+      this.urad[i] = r;
+      this.uarmor[i] = stats.armor;
+      this.ukind[i] = UNIT_ID[kind];
       return true;
     }
     return false;
@@ -332,7 +347,11 @@ export class Sim {
     this.uvx[i] = this.uvx[n];
     this.uvy[i] = this.uvy[n];
     this.uhp[i] = this.uhp[n];
+    this.uhpmax[i] = this.uhpmax[n];
     this.uspd[i] = this.uspd[n];
+    this.urad[i] = this.urad[n];
+    this.uarmor[i] = this.uarmor[n];
+    this.ukind[i] = this.ukind[n];
   }
 
   // ---------- spatial hash ----------
@@ -364,10 +383,10 @@ export class Sim {
   // ---------- units ----------
 
   private updateUnits(dt: number): void {
-    const { upx, upy, uvx, uvy, uspd, field, flowTmp, bStart, bUnits } = this;
+    const { upx, upy, uvx, uvy, uspd, urad, field, flowTmp, bStart, bUnits } = this;
     const steer = Math.min(1, dt * 8);
     const SEP2 = SEP * SEP;
-    const PR = UR + 4, REP = 55, SMAX = 70;
+    const REP = 55, SMAX = 70;
     const { isGoal } = field;
 
     for (let i = this.n - 1; i >= 0; i--) {
@@ -418,10 +437,11 @@ export class Sim {
       }
 
       // wall repulsion probes: push off nearby walls so corners can't wedge units
-      if (field.blockedPx(upx[i] + PR, upy[i])) fx -= REP;
-      if (field.blockedPx(upx[i] - PR, upy[i])) fx += REP;
-      if (field.blockedPx(upx[i], upy[i] + PR)) fy -= REP;
-      if (field.blockedPx(upx[i], upy[i] - PR)) fy += REP;
+      const pr = urad[i] + 4;
+      if (field.blockedPx(upx[i] + pr, upy[i])) fx -= REP;
+      if (field.blockedPx(upx[i] - pr, upy[i])) fx += REP;
+      if (field.blockedPx(upx[i], upy[i] + pr)) fy -= REP;
+      if (field.blockedPx(upx[i], upy[i] - pr)) fy += REP;
 
       // separation/repulsion steer but never exceed the unit's stat speed
       let mvx = uvx[i] + fx, mvy = uvy[i] + fy;
@@ -452,27 +472,27 @@ export class Sim {
 
       // axis-separated move; a blocked axis redirects its speed into the free one
       let nx = upx[i] + dxT;
-      if (field.hitsWall(nx, upy[i], UR)) {
+      if (field.hitsWall(nx, upy[i], urad[i])) {
         nx = upx[i];
         uvy[i] += Math.sign(uvy[i] || flowTmp.y || 1) * Math.abs(uvx[i]) * 0.6;
         uvx[i] = 0;
       }
       let ny = upy[i] + dyT;
-      if (field.hitsWall(nx, ny, UR)) {
+      if (field.hitsWall(nx, ny, urad[i])) {
         ny = upy[i];
         uvx[i] += Math.sign(uvx[i] || flowTmp.x || 1) * Math.abs(uvy[i]) * 0.6;
         uvy[i] = 0;
       }
-      upx[i] = clamp(nx, UR, W - UR);
-      upy[i] = clamp(ny, UR, H - UR);
+      upx[i] = clamp(nx, urad[i], W - urad[i]);
+      upy[i] = clamp(ny, urad[i], H - urad[i]);
     }
   }
 
   /** push units out of freshly blocked cells (after tower placement) */
   private unstickUnits(): void {
-    const { upx, upy, field } = this;
+    const { upx, upy, urad, field } = this;
     for (let i = 0; i < this.n; i++) {
-      if (!field.hitsWall(upx[i], upy[i], UR)) continue;
+      if (!field.hitsWall(upx[i], upy[i], urad[i])) continue;
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
       const cy = clamp((upy[i] / CELL) | 0, 0, ROWS - 1);
       let done = false;
@@ -493,12 +513,37 @@ export class Sim {
 
   // ---------- towers & projectiles ----------
 
+  /** smallest signed difference a -> b in radians */
+  private static angleDiff(a: number, b: number): number {
+    let d = (b - a) % (Math.PI * 2);
+    if (d > Math.PI) d -= Math.PI * 2;
+    if (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  }
+
+  /**
+   * The Turret.java loop: reload runs regardless of targeting, queued volley
+   * shots fire on their shotDelay timers at the turret's current rotation,
+   * the barrel turns toward the intercept point at rotateSpeed, and a new
+   * volley starts only when aimed within shootCone of the target.
+   */
   private fireTowers(dt: number): void {
     const { upx, upy, uvx, uvy } = this;
     for (const t of this.towers) {
-      t.cd -= dt;
-      if (t.cd > 0) continue;
-      let best = -1, bd = TOWER.range * TOWER.range;
+      const st = TOWERS[t.kind];
+      if (t.cd > 0) t.cd -= dt;
+
+      // shots already queued by a volley fire even if the target moved/died
+      if (t.burstLeft > 0) {
+        t.burstT -= dt;
+        while (t.burstLeft > 0 && t.burstT <= 0) {
+          this.fireShot(t, st);
+          t.burstLeft--;
+          t.burstT += st.shotDelay;
+        }
+      }
+
+      let best = -1, bd = st.range * st.range;
       for (let i = 0; i < this.n; i++) {
         const dx = upx[i] - t.x, dy = upy[i] - t.y;
         const d2 = dx * dx + dy * dy;
@@ -507,37 +552,90 @@ export class Sim {
           best = i;
         }
       }
-      if (best < 0) {
-        t.cd = 0.03;
-        continue;
+      if (best < 0) continue;
+
+      // Predict.intercept: aim where target and bullet paths cross
+      const dx = upx[best] - t.x, dy = upy[best] - t.y;
+      const tvx = uvx[best], tvy = uvy[best];
+      const s2 = st.bullet.speed * st.bullet.speed;
+      const qa = tvx * tvx + tvy * tvy - s2;
+      const qb = 2 * (dx * tvx + dy * tvy);
+      const qc = dx * dx + dy * dy;
+      let lead = Math.sqrt(qc) / st.bullet.speed; // fallback: current distance
+      if (Math.abs(qa) > 1e-4) {
+        const disc = qb * qb - 4 * qa * qc;
+        if (disc >= 0) {
+          const root = (-qb - Math.sqrt(disc)) / (2 * qa);
+          if (root > 0) lead = root;
+        }
+      } else if (Math.abs(qb) > 1e-4) {
+        const root = -qc / qb;
+        if (root > 0) lead = root;
       }
-      const d = Math.sqrt(bd) || 1;
-      const lead = d / TOWER.projSpd;
-      const ax = upx[best] + uvx[best] * lead - t.x;
-      const ay = upy[best] + uvy[best] * lead - t.y;
-      const al = Math.hypot(ax, ay) || 1;
-      t.angle = Math.atan2(ay, ax);
-      this.projs.push({
-        x: t.x + (ax / al) * 10,
-        y: t.y + (ay / al) * 10,
-        vx: (ax / al) * TOWER.projSpd,
-        vy: (ay / al) * TOWER.projSpd,
-        life: (d + 50) / TOWER.projSpd,
-        age: 0,
-      });
-      t.cd = TOWER.cooldown;
+      const targetRot = Math.atan2(dy + tvy * lead, dx + tvx * lead);
+
+      const diff = Sim.angleDiff(t.angle, targetRot);
+      const turn = st.rotateSpeed * dt;
+      t.angle = Math.abs(diff) <= turn ? targetRot : t.angle + Math.sign(diff) * turn;
+
+      if (t.cd <= 0 && Math.abs(Sim.angleDiff(t.angle, targetRot)) < st.shootCone) {
+        t.cd += st.reload; // reloadCounter %= reload
+        this.fireShot(t, st);
+        t.burstLeft = st.shots - 1;
+        t.burstT = st.shotDelay;
+      }
     }
   }
 
+  /** one bullet at the turret's rotation, offset by its per-shot inaccuracy */
+  private fireShot(t: Tower, st: TowerStats): void {
+    const a = t.angle + (Math.random() * 2 - 1) * st.inaccuracy;
+    const cos = Math.cos(a), sin = Math.sin(a);
+    this.projs.push({
+      kind: t.kind,
+      x: t.x + cos * 10,
+      y: t.y + sin * 10,
+      vx: cos * st.bullet.speed,
+      vy: sin * st.bullet.speed,
+      life: st.bullet.lifetime,
+      age: 0,
+      primeT: -1,
+      flakT: st.bullet.flak ? st.bullet.flak.interval : 0,
+    });
+  }
+
+  /** Mindustry Damage.applyArmor: flat reduction, floored at 10% of the raw hit */
+  private static applyArmor(dmg: number, armor: number): number {
+    return Math.max(dmg - armor, 0.1 * dmg);
+  }
+
   private updateProjectiles(dt: number): void {
-    const { upx, upy, uhp, projs, bStart, bUnits } = this;
-    const HIT2 = (UR + 2.5) * (UR + 2.5);
+    const { upx, upy, uhp, uarmor, urad, projs, bStart, bUnits } = this;
     for (let p = projs.length - 1; p >= 0; p--) {
       const pr = projs[p];
+      const b = TOWERS[pr.kind].bullet;
       pr.x += pr.vx * dt;
       pr.y += pr.vy * dt;
       pr.life -= dt;
       pr.age += dt;
+
+      // flak proximity fuse: check every interval; an enemy inside
+      // explodeRange (+ its hitbox) primes the shell, which detonates
+      // explodeDelay later while continuing to fly
+      if (b.flak && pr.primeT < 0) {
+        pr.flakT -= dt;
+        if (pr.flakT <= 0) {
+          pr.flakT += b.flak.interval;
+          if (this.anyUnitWithin(pr.x, pr.y, b.flak.explodeRange)) {
+            pr.primeT = b.flak.explodeDelay;
+          }
+        }
+      }
+      if (pr.primeT >= 0) {
+        pr.primeT -= dt;
+        if (pr.primeT <= 0) pr.life = 0;
+      }
+
       // shots come from elevated towers and arc over terrain — they never
       // collide with rock, only with units or their range-capped life
       let dead = pr.life <= 0;
@@ -551,13 +649,14 @@ export class Sim {
               const i = bUnits[k];
               if (i >= this.n || uhp[i] <= 0) continue;
               const dx = upx[i] - pr.x, dy = upy[i] - pr.y;
-              if (dx * dx + dy * dy < HIT2) {
-                uhp[i] -= TOWER.dmg;
+              const hr = urad[i] + 2.5;
+              if (dx * dx + dy * dy < hr * hr) {
+                uhp[i] -= Sim.applyArmor(b.damage, uarmor[i]);
                 if (uhp[i] <= 0) {
                   this.pushFx(upx[i], upy[i], 0.35, FxKind.Death);
                   this.removeUnit(i);
                   this.kills++;
-                } else {
+                } else if (b.splash <= 0) {
                   this.pushFx(pr.x, pr.y, 0.12, FxKind.Hit);
                 }
                 dead = true;
@@ -568,10 +667,80 @@ export class Sim {
         }
       }
       if (dead) {
+        // splash bullets blast wherever they die: direct hit, proximity
+        // fuse, or end of lifetime (Mindustry's despawnHit)
+        if (b.splash > 0) this.splash(pr.x, pr.y, b.splashRadius, b.splash);
         projs[p] = projs[projs.length - 1];
         projs.pop();
       }
     }
+  }
+
+  /** is any live unit's hitbox within r of (x, y)? */
+  private anyUnitWithin(x: number, y: number, r: number): boolean {
+    const { upx, upy, uhp, urad, bStart, bUnits } = this;
+    const pad = r + UNIT_RMAX;
+    const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((x + pad) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((y + pad) / HC) | 0, 0, HROWS - 1);
+    for (let hy = hy0; hy <= hy1; hy++) {
+      for (let hx = hx0; hx <= hx1; hx++) {
+        const c = hy * HCOLS + hx, e = bStart[c + 1];
+        for (let k = bStart[c]; k < e; k++) {
+          const i = bUnits[k];
+          if (i >= this.n || uhp[i] <= 0) continue;
+          const dx = upx[i] - x, dy = upy[i] - y;
+          const rr = r + urad[i];
+          if (dx * dx + dy * dy < rr * rr) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private readonly splashHits: number[] = [];
+
+  /**
+   * Area damage with Mindustry's falloff (Damage.calculateDamage): full at
+   * the blast center easing to 40% at the radius edge; anything whose
+   * hitbox overlaps the radius is affected, armor applying per victim.
+   */
+  private splash(x: number, y: number, radius: number, dmg: number): void {
+    const { upx, upy, uhp, uarmor, urad, bStart, bUnits, splashHits } = this;
+    splashHits.length = 0;
+    const reach = radius + UNIT_RMAX;
+    const hx0 = clamp(((x - reach) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((y - reach) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((x + reach) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((y + reach) / HC) | 0, 0, HROWS - 1);
+    for (let hy = hy0; hy <= hy1; hy++) {
+      for (let hx = hx0; hx <= hx1; hx++) {
+        const c = hy * HCOLS + hx, e = bStart[c + 1];
+        for (let k = bStart[c]; k < e; k++) {
+          const i = bUnits[k];
+          if (i >= this.n || uhp[i] <= 0) continue;
+          const dx = upx[i] - x, dy = upy[i] - y;
+          const rr = radius + urad[i];
+          if (dx * dx + dy * dy < rr * rr) splashHits.push(i);
+        }
+      }
+    }
+    // damage first (indices stay stable), then remove the dead from the
+    // highest index down so swap-remove can't disturb pending removals
+    for (const i of splashHits) {
+      const d = Math.hypot(upx[i] - x, upy[i] - y);
+      const raw = dmg * Math.max(0, 0.4 + 0.6 * (1 - d / radius));
+      uhp[i] -= Sim.applyArmor(raw, uarmor[i]);
+    }
+    splashHits.sort((a, b) => b - a);
+    for (const i of splashHits) {
+      if (uhp[i] > 0) continue;
+      this.pushFx(upx[i], upy[i], 0.35, FxKind.Death);
+      this.removeUnit(i);
+      this.kills++;
+    }
+    this.pushFx(x, y, 0.3, FxKind.Flak);
   }
 
   private pushFx(x: number, y: number, ttl: number, kind: FxKind): void {

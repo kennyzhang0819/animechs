@@ -1,3 +1,6 @@
+import { UNIT_SPRITE } from "./constants";
+import type { UnitKind } from "./levels";
+
 const ATLAS = 512;
 const TAU = Math.PI * 2;
 
@@ -31,6 +34,7 @@ export const UV_WALLS: readonly UVRect[] = [
   uv(0, 128, 64, 64, 2),
 ];
 export const UV_UNIT = uv(320, 0, 64, 64);
+export const UV_MACE = uv(416, 288, 96, 96);
 export const UV_PROJ = uv(352, 288, 64, 64);
 export const UV_RING = uv(448, 0, 64, 64);
 export const UV_FLASH = uv(0, 64, 64, 64);
@@ -38,6 +42,9 @@ export const UV_FLASH = uv(0, 64, 64, 64);
 export const UV_TOWER_BASE = uv(64, 128, 128, 128);
 export const UV_TURRET = uv(192, 128, 128, 128);
 export const UV_CORE = uv(320, 128, 160, 160);
+// row 4 (y=384): scatter turret top, flak shell
+export const UV_SCATTER = uv(0, 384, 128, 128);
+export const UV_SHELL = uv(128, 384, 64, 64);
 // row 3: 96px prop cells — overhanging 48px sources at 2x
 export const UV_PINE = uv(0, 288, 96, 96);
 export const UV_DECOR: readonly UVRect[] = [
@@ -45,6 +52,13 @@ export const UV_DECOR: readonly UVRect[] = [
   uv(192, 288, 96, 96), // boulder2
   uv(288, 288, 64, 64), // shrubs
 ];
+
+// per-kind unit art: atlas cell + world quad size. Both ride at true
+// Mindustry scale — dagger 48px art = 1.5 tiles, mace 64px art = 2 tiles
+export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
+  dagger: { uv: UV_UNIT, sprite: UNIT_SPRITE }, // 48px art in a 64 cell on a 40px quad
+  mace: { uv: UV_MACE, sprite: 60 }, // 64px art in a 96 cell on a 60px quad
+};
 
 const ENV = "/mindustry/sprites/blocks/environment";
 const SPRITES = {
@@ -68,8 +82,14 @@ const SPRITES = {
   daggerBase: "/mindustry/sprites/units/dagger-base.png",
   dagger: "/mindustry/sprites/units/dagger.png",
   daggerLeg: "/mindustry/sprites/units/dagger-leg.png",
+  maceBase: "/mindustry/sprites/units/mace-base.png",
+  mace: "/mindustry/sprites/units/mace.png",
+  maceLeg: "/mindustry/sprites/units/mace-leg.png",
   towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
   salvoPreview: "/mindustry/sprites/blocks/turrets/salvo/salvo-preview.png",
+  scatterPreview: "/mindustry/sprites/blocks/turrets/scatter/scatter-preview.png",
+  shell: "/mindustry/sprites/effects/shell.png",
+  shellBack: "/mindustry/sprites/effects/shell-back.png",
   core: "/mindustry/sprites/blocks/storage/core-nucleus.png",
   coreTeam: "/mindustry/sprites/blocks/storage/core-nucleus-team.png",
   bullet: "/mindustry/sprites/effects/bullet.png",
@@ -168,6 +188,23 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   uc.drawImage(img.dagger, 8, 8, 48, 48);
   drawFacingRight(c, unit, 352, 32, 64);
 
+  // mace: same layering from 64px sources, centered in a 96px cell so the
+  // art overhangs its quad in the same proportion as the dagger's
+  const mace = document.createElement("canvas");
+  mace.width = mace.height = 96;
+  const mc = mace.getContext("2d");
+  if (!mc) throw new Error("2d context unavailable");
+  mc.imageSmoothingEnabled = false;
+  mc.drawImage(img.maceLeg, 16, 16, 64, 64);
+  mc.save();
+  mc.translate(48, 0);
+  mc.scale(-1, 1);
+  mc.drawImage(img.maceLeg, -32, 16, 64, 64);
+  mc.restore();
+  mc.drawImage(img.maceBase, 16, 16, 64, 64);
+  mc.drawImage(img.mace, 16, 16, 64, 64);
+  drawFacingRight(c, mace, 464, 336, 96);
+
   // official basic bullet at (352,288): back layer in Mindustry's bullet
   // orange under a pale-yellow core, pre-rotated to face +x like the unit
   const tinted = (src: HTMLImageElement, color: string): HTMLCanvasElement => {
@@ -212,6 +249,19 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   // salvo top: the preview sprite is the fully assembled turret — face right
   c.imageSmoothingEnabled = false;
   drawFacingRight(c, img.salvoPreview, 256, 192, 128);
+
+  // scatter top, same treatment
+  drawFacingRight(c, img.scatterPreview, 64, 448, 128);
+
+  // flak shell: Mindustry's "shell" region in the default lead-ammo colors
+  // (Pal.bulletYellowBack under Pal.bulletYellow), facing +x
+  const shell = document.createElement("canvas");
+  shell.width = shell.height = 64;
+  const shc = shell.getContext("2d");
+  if (!shc) throw new Error("2d context unavailable");
+  shc.drawImage(tinted(img.shellBack, "#f9c27a"), 0, 0);
+  shc.drawImage(tinted(img.shell, "#fff8e8"), 0, 0);
+  drawFacingRight(c, shell, 160, 416, 64);
 
   // core-nucleus at native 160px: base block, then the team overlay tinted
   // sharded-yellow the way Mindustry composites team regions

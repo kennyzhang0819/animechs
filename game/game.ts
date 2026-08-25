@@ -1,5 +1,5 @@
 import { buildAtlas } from "./atlas";
-import { CELL, clamp, COLS, H, ROWS, TOWER, W } from "./constants";
+import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
 import type { TowerKind } from "./levels";
 import { Renderer } from "./renderer";
 import { Sim } from "./sim";
@@ -132,6 +132,7 @@ export class Game {
         this.sim.placeTower(
           clamp(Math.round(p.x / CELL) - 1, 0, COLS - 2),
           clamp(Math.round(p.y / CELL) - 1, 0, ROWS - 2),
+          this.buildKind,
         );
       } else {
         // normal cursor: clicking a tower shows its range, empty ground clears
@@ -168,8 +169,8 @@ export class Game {
       this.clampCamera();
     }
     const p = this.mouseWorld(e);
-    if (this.building && !this.panning) {
-      this.sim.placeLine(this.buildFrom.x, this.buildFrom.y, p.x, p.y);
+    if (this.building && this.buildKind && !this.panning) {
+      this.sim.placeLine(this.buildFrom.x, this.buildFrom.y, p.x, p.y, this.buildKind);
       this.buildFrom = p;
     }
     this.hoverGx = clamp(Math.round(p.x / CELL) - 1, 0, COLS - 2);
@@ -342,7 +343,7 @@ export class Game {
     if (this.selected) {
       const t = this.selected;
       c.beginPath();
-      c.arc(t.x, t.y, TOWER.range, 0, Math.PI * 2);
+      c.arc(t.x, t.y, TOWERS[t.kind].range, 0, Math.PI * 2);
       c.fillStyle = "rgba(91,217,232,0.06)";
       c.fill();
       c.strokeStyle = "rgba(91,217,232,0.7)";

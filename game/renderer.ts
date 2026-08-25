@@ -1,4 +1,5 @@
 import {
+  UNIT_ART,
   UV_CORE,
   UV_DECOR,
   UV_FLASH,
@@ -6,27 +7,30 @@ import {
   UV_PINE,
   UV_PROJ,
   UV_RING,
+  UV_SCATTER,
+  UV_SHELL,
   UV_TOWER_BASE,
   UV_TURRET,
-  UV_UNIT,
   UV_WALLS,
   type UVRect,
 } from "./atlas";
-import {
-  BASE,
-  CELL,
-  COLS,
-  H,
-  HP0,
-  HP_TINT,
-  MAX_UNITS,
-  NCELLS,
-  ROWS,
-  UNIT_SPRITE,
-  W,
-} from "./constants";
+import { BASE, CELL, COLS, H, HP_TINT, MAX_UNITS, NCELLS, ROWS, W } from "./constants";
+import { UNIT_KINDS } from "./levels";
 import type { Sim } from "./sim";
-import { FxKind } from "./types";
+import { FxKind, type TowerKind } from "./types";
+
+// per-kind turret tops and bullet sprites
+const UV_TURRETS: Record<TowerKind, UVRect> = { salvo: UV_TURRET, scatter: UV_SCATTER };
+const UV_BULLETS: Record<TowerKind, UVRect> = { salvo: UV_PROJ, scatter: UV_SHELL };
+// draw size [along-travel, across] px; scatter's flak shell is Mindustry's
+// 6x8-unit shell (15x20 px), longer than it is wide
+const BULLET_SIZE: Record<TowerKind, readonly [number, number]> = {
+  salvo: [18, 18],
+  scatter: [20, 15],
+};
+// unit art indexed by the sim's numeric kind id (UNIT_ID order)
+const KIND_UV = UNIT_KINDS.map((k) => UNIT_ART[k].uv);
+const KIND_SPRITE = UNIT_KINDS.map((k) => UNIT_ART[k].sprite);
 
 const VS = `#version 300 es
 layout(location=0) in vec2 aCorner;
@@ -264,14 +268,15 @@ export class Renderer {
     dyn.n = 0;
     for (const t of sim.towers) {
       this.push(dyn, t.x, t.y, CELL * 2, CELL * 2, 0, UV_TOWER_BASE, 1, 1, 1, 1);
-      this.push(dyn, t.x, t.y, CELL * 2, CELL * 2, t.angle, UV_TURRET, 1, 1, 1, 1);
+      this.push(dyn, t.x, t.y, CELL * 2, CELL * 2, t.angle, UV_TURRETS[t.kind], 1, 1, 1, 1);
     }
-    const { upx, upy, uvx, uvy, uhp, n } = sim;
-    const usz = UNIT_SPRITE;
-    const hpLow = HP0 / 3, hpMid = (2 * HP0) / 3;
+    const { upx, upy, uvx, uvy, uhp, uhpmax, ukind, n } = sim;
     for (let i = 0; i < n; i++) {
-      const h = uhp[i] <= hpLow ? 0 : uhp[i] <= hpMid ? 1 : 2;
-      const tint = HP_TINT[h];
+      // hp thirds of the unit's own max, so every kind tints alike
+      const t3 = (uhp[i] * 3) / uhpmax[i];
+      const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
+      const k = ukind[i];
+      const usz = KIND_SPRITE[k];
       this.push(
         dyn,
         upx[i],
@@ -279,13 +284,14 @@ export class Renderer {
         usz,
         usz,
         Math.atan2(uvy[i], uvx[i]),
-        UV_UNIT,
+        KIND_UV[k],
         tint[0], tint[1], tint[2], 1,
       );
     }
     for (const p of sim.projs) {
-      // colors are baked into the atlas composite; uniform scale, no squish
-      this.push(dyn, p.x, p.y, 18, 18, Math.atan2(p.vy, p.vx), UV_PROJ, 1, 1, 1, 1);
+      // colors are baked into the atlas composite
+      const [bw, bh] = BULLET_SIZE[p.kind];
+      this.push(dyn, p.x, p.y, bw, bh, Math.atan2(p.vy, p.vx), UV_BULLETS[p.kind], 1, 1, 1, 1);
     }
     for (const e of sim.effects) {
       const t = e.age / e.ttl;
@@ -294,6 +300,11 @@ export class Renderer {
       } else if (e.kind === FxKind.Death) {
         const s = 7 + t * 22;
         this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 1, 0.54, 0.24, (1 - t) * 0.9);
+      } else if (e.kind === FxKind.Flak) {
+        // flakExplosion: bright flash inside an expanding orange ring
+        const s = 12 + t * 46;
+        this.push(dyn, e.x, e.y, 16 * (1 - t), 16 * (1 - t), 0, UV_FLASH, 1, 0.7, 0.3, 1 - t);
+        this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 1, 0.5, 0.13, (1 - t) * 0.85);
       } else {
         const s = 9 + t * 30;
         this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 0.34, 0.89, 0.54, (1 - t) * 0.9);
