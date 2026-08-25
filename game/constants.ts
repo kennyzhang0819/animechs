@@ -42,7 +42,7 @@ export const OBSTACLES: Rect[] = [
   { x: 108, y: 28, w: 4, h: 16 },
 ];
 
-export const BASE = { x: 121, y: 34, size: 3 }; // 3x3 core-shard, walkable goal cells
+export const BASE = { x: 120, y: 33, size: 5 }; // 5x5 core-nucleus, walkable goal cells
 
 // damage tint per hp bucket (1, 2, 3 hp) — full hp renders the sprite as-is
 // (gray armor, orange cell, like Mindustry); hits darken and redden it

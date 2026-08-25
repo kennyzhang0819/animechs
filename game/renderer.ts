@@ -228,17 +228,6 @@ export class Renderer {
         this.push(t, cx, cy, CELL, CELL, 0, uvr, 1, 1, 1, 1);
       }
     }
-    const coreSz = BASE.size * CELL;
-    this.push(
-      t,
-      (BASE.x + BASE.size / 2) * CELL,
-      (BASE.y + BASE.size / 2) * CELL,
-      coreSz,
-      coreSz,
-      0,
-      UV_CORE,
-      1, 1, 1, 1,
-    );
     gl.bindVertexArray(t.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, t.vbo);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, t.data, 0, t.n * FLOATS);
@@ -300,6 +289,18 @@ export class Renderer {
         this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 0.34, 0.89, 0.54, (1 - t) * 0.9);
       }
     }
+    // core last, above units and breach fx — arrivals disappear beneath it
+    const coreSz = BASE.size * CELL;
+    this.push(
+      dyn,
+      (BASE.x + BASE.size / 2) * CELL,
+      (BASE.y + BASE.size / 2) * CELL,
+      coreSz,
+      coreSz,
+      0,
+      UV_CORE,
+      1, 1, 1, 1,
+    );
     this.draw(dyn, true);
   }
 }

@@ -56,11 +56,15 @@ export class Game {
 
   private readonly onResize = (): void => this.resize();
   private readonly onKeyDown = (e: KeyboardEvent): void => {
-    if (PAN_KEYS[e.code]) this.keysDown.add(e.code);
+    if (!PAN_KEYS[e.code] || e.metaKey || e.ctrlKey || e.altKey) return;
+    e.preventDefault(); // arrows would scroll the page
+    this.keysDown.add(e.code);
   };
   private readonly onKeyUp = (e: KeyboardEvent): void => {
     this.keysDown.delete(e.code);
   };
+  // missed keyups (cmd+tab away mid-pan) would leave the camera drifting
+  private readonly onBlur = (): void => this.keysDown.clear();
   private readonly onWheel = (e: WheelEvent): void => {
     e.preventDefault();
     const before = this.mouseWorld(e);
@@ -131,6 +135,7 @@ export class Game {
     window.addEventListener("resize", this.onResize);
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
+    window.addEventListener("blur", this.onBlur);
     window.addEventListener("mouseup", this.onMouseUp);
     uiCanvas.addEventListener("wheel", this.onWheel, { passive: false });
     uiCanvas.addEventListener("mousedown", this.onMouseDown);
@@ -149,6 +154,7 @@ export class Game {
     window.removeEventListener("resize", this.onResize);
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
+    window.removeEventListener("blur", this.onBlur);
     window.removeEventListener("mouseup", this.onMouseUp);
     this.uiCanvas.removeEventListener("wheel", this.onWheel);
     this.uiCanvas.removeEventListener("mousedown", this.onMouseDown);
@@ -206,7 +212,7 @@ export class Game {
 
   private readonly frame = (now: number): void => {
     if (this.destroyed) return;
-    const dt = Math.min(0.05, (now - this.last) / 1000) || 0.016;
+    const dt = clamp((now - this.last) / 1000, 0, 0.05) || 0.016;
     this.last = now;
 
     // keyboard pan: half a viewport per second

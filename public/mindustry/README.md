@@ -11,7 +11,7 @@ Source paths (repo `core/assets-raw/sprites/`):
   salvo/salvo-barrel, salvo/salvo-preview, duo/duo
 - `blocks/environment/` — metal-floor, metal-floor-2, metal-floor-5,
   dark-metal1, dark-metal2
-- `blocks/storage/` — core-shard, core-shard-team
+- `blocks/storage/` — core-nucleus, core-nucleus-team
 
 If this project is ever distributed, GPL-3.0 terms apply to these assets;
 replace them with original art for a commercial release.

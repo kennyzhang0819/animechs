@@ -24,7 +24,7 @@ export const UV_RING = uv(448, 0, 64, 64);
 export const UV_FLASH = uv(0, 64, 64, 64);
 export const UV_TOWER_BASE = uv(64, 128, 128, 128);
 export const UV_TURRET = uv(192, 128, 128, 128);
-export const UV_CORE = uv(320, 128, 96, 96);
+export const UV_CORE = uv(320, 128, 160, 160);
 
 const SPRITES = {
   floor0: "/mindustry/env/grass1.png",
@@ -37,8 +37,12 @@ const SPRITES = {
   daggerLeg: "/mindustry/units/dagger-leg.png",
   towerBase: "/mindustry/turrets/block-2.png",
   salvoPreview: "/mindustry/turrets/salvo-preview.png",
-  core: "/mindustry/storage/core-shard.png",
+  core: "/mindustry/storage/core-nucleus.png",
+  coreTeam: "/mindustry/storage/core-nucleus-team.png",
 } as const;
+
+// Mindustry's sharded (player) team color — the team overlay multiplies by it
+const TEAM_COLOR = "#ffd37f";
 
 type SpriteKey = keyof typeof SPRITES;
 
@@ -145,8 +149,20 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   c.imageSmoothingEnabled = false;
   drawFacingRight(c, img.salvoPreview, 256, 192, 128);
 
-  // core-shard at native 96px
-  c.drawImage(img.core, 320, 128, 96, 96);
+  // core-nucleus at native 160px: base block, then the team overlay tinted
+  // sharded-yellow the way Mindustry composites team regions
+  c.drawImage(img.core, 320, 128, 160, 160);
+  const team = document.createElement("canvas");
+  team.width = team.height = 160;
+  const tc = team.getContext("2d");
+  if (!tc) throw new Error("2d context unavailable");
+  tc.drawImage(img.coreTeam, 0, 0, 160, 160);
+  tc.globalCompositeOperation = "multiply";
+  tc.fillStyle = TEAM_COLOR;
+  tc.fillRect(0, 0, 160, 160);
+  tc.globalCompositeOperation = "destination-in";
+  tc.drawImage(img.coreTeam, 0, 0, 160, 160);
+  c.drawImage(team, 320, 128);
 
   return a;
 }
