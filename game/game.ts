@@ -186,6 +186,13 @@ export class Game {
     this.sellPress = null;
   };
   private readonly onContext = (e: Event): void => e.preventDefault();
+  // trackpad pinch = ctrl+wheel: the canvas handler already consumes it, but
+  // a pinch that starts over a UI overlay (HUD, tower menu) would reach the
+  // browser and zoom the PAGE — which sticks per-site and shoves the UI
+  // off-screen. Swallow it window-wide while the game screen is up
+  private readonly onWinWheel = (e: WheelEvent): void => {
+    if (e.ctrlKey) e.preventDefault();
+  };
 
   /** loads the sprite atlas, then wires everything up */
   static async create(glCanvas: HTMLCanvasElement, uiCanvas: HTMLCanvasElement): Promise<Game> {
@@ -210,6 +217,7 @@ export class Game {
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("blur", this.onBlur);
     window.addEventListener("mouseup", this.onMouseUp);
+    window.addEventListener("wheel", this.onWinWheel, { passive: false });
     uiCanvas.addEventListener("wheel", this.onWheel, { passive: false });
     uiCanvas.addEventListener("mousedown", this.onMouseDown);
     uiCanvas.addEventListener("mousemove", this.onMove);
@@ -228,6 +236,7 @@ export class Game {
     window.removeEventListener("keyup", this.onKeyUp);
     window.removeEventListener("blur", this.onBlur);
     window.removeEventListener("mouseup", this.onMouseUp);
+    window.removeEventListener("wheel", this.onWinWheel);
     this.uiCanvas.removeEventListener("wheel", this.onWheel);
     this.uiCanvas.removeEventListener("mousedown", this.onMouseDown);
     this.uiCanvas.removeEventListener("mousemove", this.onMove);

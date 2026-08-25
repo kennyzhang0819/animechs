@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Chakra_Petch, IBM_Plex_Mono } from "next/font/google";
+import AdminShortcut from "@/components/AdminShortcut";
 import "./globals.css";
 
 const display = Chakra_Petch({
@@ -24,6 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className={`${display.variable} ${mono.variable} font-mono bg-[#070B14] text-[13px] text-[#9AA7C7] antialiased`}>
+        <AdminShortcut />
         {children}
       </body>
     </html>
