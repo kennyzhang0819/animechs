@@ -209,12 +209,42 @@ export function generateTerrain(seed: number): Terrain {
   for (let n = 0; n < rocks; n++)
     rock(12 + rng() * (COLS - 30), 4 + rng() * (ROWS - 8), 0.9 + rng() * 1.6);
 
-  // guaranteed clearings: the spawn mouth on the left, the core on the right
-  for (let x = 0; x < 7; x++) // the spawn strip reaches column 5 — keep it all open
-    for (let y = Math.max(1, valleyY[0] - 9); y <= Math.min(ROWS - 2, valleyY[0] + 9); y++)
-      blocked[Math.round(y) * COLS + x] = 0;
+  // guaranteed clearings: the spawn mouth on the left, the core on the right.
+  // the mouth continues as a funnel that tapers into the carved lane, so
+  // late-placed rocks can never pinch the swarm's way out of the strip
+  for (let x = 0; x < 16; x++) {
+    const cy = x < 7 ? valleyY[0] : valleyY[x]; // rectangular strip, then follow the lane
+    const r = x < 7 ? 9 : Math.max(5, 9 - (x - 6) * 0.7);
+    for (let y = Math.max(1, Math.ceil(cy - r)); y <= Math.min(ROWS - 2, Math.floor(cy + r)); y++)
+      blocked[y * COLS + x] = 0;
+  }
   for (let y = Math.max(0, BASE.y - 4); y < Math.min(ROWS, BASE.y + BASE.size + 4); y++)
     for (let x = BASE.x - 6; x < COLS; x++) blocked[y * COLS + x] = 0;
+
+  // impassable slivers: a unit's collision box is exactly one tile wide
+  // (UR*2 === CELL), so a 1-cell passage can never actually be walked — the
+  // corner probes always graze the neighbouring cells — yet the cell-based
+  // flow field would route the swarm straight into the crack and pile it up
+  // there. Fill such cells solid, iterating since a fill can narrow a
+  // neighbouring passage
+  const solidAt = (x: number, y: number): number =>
+    x < 0 || y < 0 || x >= COLS || y >= ROWS ? 1 : blocked[y * COLS + x];
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (let y = 0; y < ROWS; y++)
+      for (let x = 0; x < COLS; x++) {
+        const i = y * COLS + x;
+        if (blocked[i]) continue;
+        if (
+          (solidAt(x, y - 1) && solidAt(x, y + 1)) ||
+          (solidAt(x - 1, y) && solidAt(x + 1, y))
+        ) {
+          blocked[i] = 1;
+          mountain[i] = 2; // crevice fill reads as outcrop: no slope fringe
+          changed = true;
+        }
+      }
+  }
 
   for (let i = 0; i < NCELLS; i++)
     if (blocked[i] && wall[i] !== WALL_PINE && !mountain[i]) mountain[i] = 1;
