@@ -165,12 +165,40 @@ export class Sim {
   }
 
   placeTower(gx: number, gy: number): PlaceResult {
+    const r = this.tryPlace(gx, gy);
+    if (r === "ok") this.field.compute();
+    return r;
+  }
+
+  /**
+   * Chain building: walk the drag segment a cell at a time, dropping a tower
+   * wherever one fits (overlap with the one just placed simply fails
+   * cellsFree, which is what spaces the chain). Flow recomputes once at the
+   * end, not per tower. Returns how many towers landed.
+   */
+  placeLine(x0: number, y0: number, x1: number, y1: number): number {
+    const dx = x1 - x0, dy = y1 - y0;
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / CELL));
+    let placed = 0, pgx = -1, pgy = -1;
+    for (let s = 0; s <= steps; s++) {
+      const gx = clamp(Math.round((x0 + (dx * s) / steps) / CELL) - 1, 0, COLS - 2);
+      const gy = clamp(Math.round((y0 + (dy * s) / steps) / CELL) - 1, 0, ROWS - 2);
+      if (gx === pgx && gy === pgy) continue;
+      pgx = gx;
+      pgy = gy;
+      if (this.tryPlace(gx, gy) === "ok") placed++;
+    }
+    if (placed > 0) this.field.compute();
+    return placed;
+  }
+
+  /** placement minus the flow recompute — placeLine batches that */
+  private tryPlace(gx: number, gy: number): PlaceResult {
     if (!this.cellsFree(gx, gy) || !this.areaClearOfUnits(gx, gy)) return "invalid";
     if (this.wouldSeal(gx, gy)) return "would-seal";
     const { walk } = this.field;
     for (let y = gy; y < gy + 2; y++)
       for (let x = gx; x < gx + 2; x++) walk[y * COLS + x] = 1;
-    this.field.compute();
     this.addTower(gx, gy);
     this.sealGx = -1; // the wall layout changed; cached verdicts are stale
     this.unstickUnits();

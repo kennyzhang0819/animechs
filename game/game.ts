@@ -43,7 +43,8 @@ export class Game {
   private tlx = 0;
   private tly = 0;
   private panning = false;
-  private panMoved = 0;
+  private building = false;
+  private buildFrom = { x: 0, y: 0 };
   private lastMouse = { x: 0, y: 0 };
   private readonly keysDown = new Set<string>();
 
@@ -75,28 +76,42 @@ export class Game {
     this.clampCamera();
   };
   private readonly onMouseDown = (e: MouseEvent): void => {
-    if (e.button === 1 || e.button === 2) {
+    if (e.button === 0 && !this.panning) {
+      // left press places right away, and dragging chains from here;
+      // the ghost already shows red where placement fails
+      const p = this.mouseWorld(e);
+      this.building = true;
+      this.buildFrom = p;
+      this.sim.placeTower(
+        clamp(Math.round(p.x / CELL) - 1, 0, COLS - 2),
+        clamp(Math.round(p.y / CELL) - 1, 0, ROWS - 2),
+      );
+    } else if (e.button === 1 || e.button === 2) {
       e.preventDefault();
+      this.building = false;
       this.panning = true;
-      this.panMoved = 0;
       this.lastMouse = { x: e.clientX, y: e.clientY };
     }
   };
   private readonly onMouseUp = (): void => {
     this.panning = false;
+    this.building = false;
   };
   private readonly onMove = (e: MouseEvent): void => {
     if (this.panning) {
       const r = this.uiCanvas.getBoundingClientRect();
       const dx = e.clientX - this.lastMouse.x;
       const dy = e.clientY - this.lastMouse.y;
-      this.panMoved += Math.abs(dx) + Math.abs(dy);
       this.tlx -= (dx / r.width) * (W / this.zoom);
       this.tly -= (dy / r.height) * (H / this.zoom);
       this.lastMouse = { x: e.clientX, y: e.clientY };
       this.clampCamera();
     }
     const p = this.mouseWorld(e);
+    if (this.building && !this.panning) {
+      this.sim.placeLine(this.buildFrom.x, this.buildFrom.y, p.x, p.y);
+      this.buildFrom = p;
+    }
     this.hoverGx = clamp(Math.round(p.x / CELL) - 1, 0, COLS - 2);
     this.hoverGy = clamp(Math.round(p.y / CELL) - 1, 0, ROWS - 2);
   };
@@ -104,12 +119,7 @@ export class Game {
     this.hoverGx = -1;
     this.hoverGy = -1;
     this.panning = false;
-  };
-  private readonly onClick = (e: MouseEvent): void => {
-    const p = this.mouseWorld(e);
-    const gx = clamp(Math.round(p.x / CELL) - 1, 0, COLS - 2);
-    const gy = clamp(Math.round(p.y / CELL) - 1, 0, ROWS - 2);
-    this.sim.placeTower(gx, gy); // the ghost already shows red where this fails
+    this.building = false;
   };
   private readonly onContext = (e: Event): void => e.preventDefault();
 
@@ -140,7 +150,6 @@ export class Game {
     uiCanvas.addEventListener("mousedown", this.onMouseDown);
     uiCanvas.addEventListener("mousemove", this.onMove);
     uiCanvas.addEventListener("mouseleave", this.onLeave);
-    uiCanvas.addEventListener("click", this.onClick);
     uiCanvas.addEventListener("contextmenu", this.onContext);
 
     this.last = performance.now();
@@ -159,7 +168,6 @@ export class Game {
     this.uiCanvas.removeEventListener("mousedown", this.onMouseDown);
     this.uiCanvas.removeEventListener("mousemove", this.onMove);
     this.uiCanvas.removeEventListener("mouseleave", this.onLeave);
-    this.uiCanvas.removeEventListener("click", this.onClick);
     this.uiCanvas.removeEventListener("contextmenu", this.onContext);
   }
 
