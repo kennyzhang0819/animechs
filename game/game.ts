@@ -34,11 +34,13 @@ export class Game {
   private readonly renderer: Renderer;
   private readonly uictx: CanvasRenderingContext2D;
 
+  // device px per world px at zoom 1 — the "cover" scale, so the canvas is
+  // always filled and the world is cropped on the axis that overflows
   private scale = 1;
   private hoverGx = -1;
   private hoverGy = -1;
 
-  // camera: zoom 1 fits the whole map; (tlx, tly) is the visible top-left in world px
+  // camera: zoom 1 fills the viewport; (tlx, tly) is the visible top-left in world px
   private zoom = 1;
   private tlx = 0;
   private tly = 0;
@@ -84,8 +86,8 @@ export class Game {
     const r = this.uiCanvas.getBoundingClientRect();
     this.zoom = clamp(this.zoom * Math.exp(-e.deltaY * 0.0015), ZOOM_MIN, ZOOM_MAX);
     // keep the world point under the cursor fixed
-    this.tlx = before.x - ((e.clientX - r.left) / r.width) * (W / this.zoom);
-    this.tly = before.y - ((e.clientY - r.top) / r.height) * (H / this.zoom);
+    this.tlx = before.x - ((e.clientX - r.left) / r.width) * this.visW();
+    this.tly = before.y - ((e.clientY - r.top) / r.height) * this.visH();
     this.clampCamera();
   };
   private readonly onMouseDown = (e: MouseEvent): void => {
@@ -122,8 +124,8 @@ export class Game {
       const dx = e.clientX - this.lastMouse.x;
       const dy = e.clientY - this.lastMouse.y;
       this.panMoved += Math.abs(dx) + Math.abs(dy);
-      this.tlx -= (dx / r.width) * (W / this.zoom);
-      this.tly -= (dy / r.height) * (H / this.zoom);
+      this.tlx -= (dx / r.width) * this.visW();
+      this.tly -= (dy / r.height) * this.visH();
       this.lastMouse = { x: e.clientX, y: e.clientY };
       this.clampCamera();
     }
@@ -212,29 +214,39 @@ export class Game {
     };
   }
 
+  /** visible world width/height in world px, given the cover scale and zoom */
+  private visW(): number {
+    return this.uiCanvas.width / (this.scale * this.zoom);
+  }
+
+  private visH(): number {
+    return this.uiCanvas.height / (this.scale * this.zoom);
+  }
+
   private clampCamera(): void {
-    this.tlx = clamp(this.tlx, 0, W - W / this.zoom);
-    this.tly = clamp(this.tly, 0, H - H / this.zoom);
+    this.tlx = clamp(this.tlx, 0, W - this.visW());
+    this.tly = clamp(this.tly, 0, H - this.visH());
   }
 
   private resize(): void {
-    const cssW = this.glCanvas.clientWidth || W;
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const bw = Math.round(cssW * dpr);
-    if (bw === this.glCanvas.width) return;
+    const bw = Math.round((this.glCanvas.clientWidth || W) * dpr);
+    const bh = Math.round((this.glCanvas.clientHeight || H) * dpr);
+    if (bw === this.glCanvas.width && bh === this.glCanvas.height) return;
     this.glCanvas.width = bw;
-    this.glCanvas.height = Math.round((bw * H) / W);
+    this.glCanvas.height = bh;
     this.uiCanvas.width = bw;
-    this.uiCanvas.height = this.glCanvas.height;
-    this.scale = bw / W;
+    this.uiCanvas.height = bh;
+    this.scale = Math.max(bw / W, bh / H);
+    this.clampCamera();
   }
 
   /** mouse event -> world coordinates through the camera */
   private mouseWorld(e: { clientX: number; clientY: number }): { x: number; y: number } {
     const r = this.uiCanvas.getBoundingClientRect();
     return {
-      x: this.tlx + ((e.clientX - r.left) / r.width) * (W / this.zoom),
-      y: this.tly + ((e.clientY - r.top) / r.height) * (H / this.zoom),
+      x: this.tlx + ((e.clientX - r.left) / r.width) * this.visW(),
+      y: this.tly + ((e.clientY - r.top) / r.height) * this.visH(),
     };
   }
 
@@ -246,8 +258,8 @@ export class Game {
     // keyboard pan: half a viewport per second
     for (const code of this.keysDown) {
       const dir = PAN_KEYS[code];
-      this.tlx += dir[0] * (W / this.zoom) * 0.5 * dt;
-      this.tly += dir[1] * (H / this.zoom) * 0.5 * dt;
+      this.tlx += dir[0] * this.visW() * 0.5 * dt;
+      this.tly += dir[1] * this.visH() * 0.5 * dt;
     }
     if (this.keysDown.size > 0) this.clampCamera();
 
@@ -255,7 +267,13 @@ export class Game {
     if (!this.paused) this.sim.update(dt);
     const simMs = performance.now() - t0;
 
-    this.renderer.render(this.sim, this.zoom, -this.tlx * this.zoom, -this.tly * this.zoom);
+    this.renderer.render(
+      this.sim,
+      this.zoom,
+      -this.tlx * this.zoom,
+      -this.tly * this.zoom,
+      this.scale,
+    );
     this.drawOverlay();
 
     this.fpsEma += (1 / Math.max(dt, 1e-4) - this.fpsEma) * 0.05;

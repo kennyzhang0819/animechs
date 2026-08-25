@@ -53,11 +53,8 @@ export default function Swarmfield() {
   }
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black">
-      <div
-        className="relative max-h-full w-full"
-        style={{ aspectRatio: "16 / 9", maxWidth: "calc(100vh * 16 / 9)" }}
-      >
+    <div className="fixed inset-0 overflow-hidden bg-black">
+      <div className="relative h-full w-full">
         <canvas ref={glRef} width={2560} height={1440} className="block h-full w-full" />
         <canvas
           ref={uiRef}

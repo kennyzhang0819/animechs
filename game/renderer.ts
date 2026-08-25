@@ -240,13 +240,17 @@ export class Renderer {
     return false;
   }
 
-  /** zoom is world→viewport scale; (offX, offY) = -cameraTopLeft * zoom */
-  render(sim: Sim, zoom = 1, offX = 0, offY = 0): void {
+  /**
+   * zoom is world→view scale; (offX, offY) = -cameraTopLeft * zoom; kPx is
+   * device px per world px at zoom 1, so the view spans canvas/kPx world px
+   * and the canvas is always filled whatever its aspect
+   */
+  render(sim: Sim, zoom = 1, offX = 0, offY = 0, kPx = this.canvas.width / W): void {
     const gl = this.gl;
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(this.prog);
-    gl.uniform2f(this.uRes, W, H);
+    gl.uniform2f(this.uRes, this.canvas.width / kPx, this.canvas.height / kPx);
     gl.uniform1f(this.uZoom, zoom);
     gl.uniform2f(this.uOff, offX, offY);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
