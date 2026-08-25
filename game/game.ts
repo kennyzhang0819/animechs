@@ -82,12 +82,25 @@ export class Game {
   private readonly onBlur = (): void => this.keysDown.clear();
   private readonly onWheel = (e: WheelEvent): void => {
     e.preventDefault();
-    const before = this.mouseWorld(e);
     const r = this.uiCanvas.getBoundingClientRect();
-    this.zoom = clamp(this.zoom * Math.exp(-e.deltaY * 0.0015), ZOOM_MIN, ZOOM_MAX);
-    // keep the world point under the cursor fixed
-    this.tlx = before.x - ((e.clientX - r.left) / r.width) * this.visW();
-    this.tly = before.y - ((e.clientY - r.top) / r.height) * this.visH();
+    // mac trackpad pinches arrive as ctrl+wheel; real mouse wheels tick in
+    // coarse integer notches (or line-mode deltas). Everything else is
+    // two-finger trackpad scroll, which pans the camera instead of zooming.
+    const pinch = e.ctrlKey;
+    const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY; // lines -> px
+    const notchy =
+      e.deltaMode !== 0 ||
+      (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 40);
+    if (pinch || notchy) {
+      const before = this.mouseWorld(e);
+      this.zoom = clamp(this.zoom * Math.exp(-dy * (pinch ? 0.012 : 0.0015)), ZOOM_MIN, ZOOM_MAX);
+      // keep the world point under the cursor fixed
+      this.tlx = before.x - ((e.clientX - r.left) / r.width) * this.visW();
+      this.tly = before.y - ((e.clientY - r.top) / r.height) * this.visH();
+    } else {
+      this.tlx += (e.deltaX / r.width) * this.visW();
+      this.tly += (e.deltaY / r.height) * this.visH();
+    }
     this.clampCamera();
   };
   private readonly onMouseDown = (e: MouseEvent): void => {
