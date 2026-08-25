@@ -8,6 +8,7 @@ import { UNIT_KINDS, type TowerKind, type UnitKind } from "@/game/levels";
 const UNIT_LABEL: Record<UnitKind, readonly [string, string]> = {
   dagger: ["dagger", "daggers"],
   mace: ["mace", "mace"],
+  flare: ["flare", "flares"],
 };
 const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
 

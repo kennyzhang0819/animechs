@@ -35,6 +35,7 @@ export const UV_WALLS: readonly UVRect[] = [
 ];
 export const UV_UNIT = uv(320, 0, 64, 64);
 export const UV_MACE = uv(416, 288, 96, 96);
+export const UV_FLARE = uv(384, 0, 64, 64);
 export const UV_PROJ = uv(352, 288, 64, 64);
 export const UV_RING = uv(448, 0, 64, 64);
 export const UV_FLASH = uv(0, 64, 64, 64);
@@ -63,6 +64,7 @@ export const UV_DECOR: readonly UVRect[] = [
 export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   dagger: { uv: UV_UNIT, sprite: UNIT_SPRITE }, // 48px art in a 64 cell on a 40px quad
   mace: { uv: UV_MACE, sprite: 60 }, // 64px art in a 96 cell on a 60px quad
+  flare: { uv: UV_FLARE, sprite: UNIT_SPRITE }, // 48px art in a 64 cell, dagger scale
 };
 
 const ENV = "/mindustry/sprites/blocks/environment";
@@ -90,6 +92,7 @@ const SPRITES = {
   maceBase: "/mindustry/sprites/units/mace-base.png",
   mace: "/mindustry/sprites/units/mace.png",
   maceLeg: "/mindustry/sprites/units/mace-leg.png",
+  flare: "/mindustry/sprites/units/flare.png",
   towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
   towerBase3: "/mindustry/sprites/blocks/turrets/bases/block-3.png",
   salvoPreview: "/mindustry/sprites/blocks/turrets/salvo/salvo-preview.png",
@@ -211,6 +214,15 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   mc.drawImage(img.maceBase, 16, 16, 64, 64);
   mc.drawImage(img.mace, 16, 16, 64, 64);
   drawFacingRight(c, mace, 464, 336, 96);
+
+  // flare: a flying unit is one sprite — no legs, no chassis
+  const flare = document.createElement("canvas");
+  flare.width = flare.height = 64;
+  const fc = flare.getContext("2d");
+  if (!fc) throw new Error("2d context unavailable");
+  fc.imageSmoothingEnabled = false;
+  fc.drawImage(img.flare, 8, 8, 48, 48);
+  drawFacingRight(c, flare, 416, 32, 64);
 
   // official basic bullet at (352,288): back layer in Mindustry's bullet
   // orange under a pale-yellow core, pre-rotated to face +x like the unit

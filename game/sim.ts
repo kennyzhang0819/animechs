@@ -1,4 +1,4 @@
-import { CELL, clamp, COLS, H, MAX_UNITS, ROWS, TOWERS, W, WALL_R, type TowerStats } from "./constants";
+import { BASE, CELL, clamp, COLS, H, MAX_UNITS, ROWS, TOWERS, W, WALL_R, type TowerStats } from "./constants";
 import { FlowField, type Vec2 } from "./flowfield";
 import {
   LEVELS,
@@ -43,6 +43,10 @@ export type PlaceResult = "ok" | "invalid" | "would-seal";
 // is a unit kind (by numeric id) airborne? towers and bullets check this
 // against their targetAir/targetGround and collidesAir/collidesGround flags
 const KIND_FLYING: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].flying);
+
+// where flyers aim: the core's center in world px — they need no flow field
+const GOAL_X = (BASE.x + BASE.size / 2) * CELL;
+const GOAL_Y = (BASE.y + BASE.size / 2) * CELL;
 
 /**
  * The whole simulation: units in struct-of-arrays, a spatial hash for
@@ -326,8 +330,9 @@ export class Sim {
    * keeps the spawn strip from overcrowding, so separation never
    * slingshots units forward.
    */
-  private spawnSpotFree(x: number, y: number, r: number): boolean {
-    // the spawner's own radius plus the crowd pressure floor's half-spacing
+  private spawnSpotFree(x: number, y: number, r: number, fly: boolean): boolean {
+    // the spawner's own radius plus the crowd pressure floor's half-spacing;
+    // only units in the same layer count — air and ground never collide
     const need = r + HARD / 2;
     const r2 = need * need;
     const hx = clamp((x / HC) | 0, 0, HCOLS - 1);
@@ -337,7 +342,7 @@ export class Sim {
         const c = gy * HCOLS + gx, e = this.bStart[c + 1];
         for (let k = this.bStart[c]; k < e; k++) {
           const i = this.bUnits[k];
-          if (i >= this.n) continue;
+          if (i >= this.n || KIND_FLYING[this.ukind[i]] !== fly) continue;
           const dx = this.upx[i] - x, dy = this.upy[i] - y;
           if (dx * dx + dy * dy < r2) return false;
         }
@@ -349,15 +354,20 @@ export class Sim {
   private spawnUnit(kind: UnitKind): boolean {
     const { spawnRows } = this.field;
     const stats = UNIT_STATS[kind];
-    if (this.n >= MAX_UNITS || spawnRows.length === 0) return false;
+    const fly = !!stats.flying;
+    if (this.n >= MAX_UNITS || (!fly && spawnRows.length === 0)) return false;
     const r = stats.radius;
     for (let a = 0; a < 8; a++) {
-      const row = spawnRows[(Math.random() * spawnRows.length) | 0] + 0.15 + Math.random() * 0.7;
+      // flyers launch from anywhere along the western edge — the terrain
+      // below them is scenery; walkers need an open, connected spawn row
+      const row = fly
+        ? 1 + Math.random() * (ROWS - 3)
+        : spawnRows[(Math.random() * spawnRows.length) | 0] + 0.15 + Math.random() * 0.7;
       const x = r + 1 + Math.random() * (CELL * 6 - r - 2);
       const y = row * CELL;
       // the mountain edge is ragged now — a spawn row open at column 1 can
       // still have rock jutting into the columns beside it
-      if (this.field.hitsWall(x, y, WALL_R) || !this.spawnSpotFree(x, y, r)) continue;
+      if ((!fly && this.field.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly)) continue;
       const i = this.n++;
       this.upx[i] = x;
       this.upy[i] = y;
@@ -438,12 +448,23 @@ export class Sim {
         continue;
       }
 
-      field.sample(upx[i], upy[i], flowTmp);
-      uvx[i] += (flowTmp.x * uspd[i] - uvx[i]) * steer;
-      uvy[i] += (flowTmp.y * uspd[i] - uvy[i]) * steer;
+      const fly = KIND_FLYING[ukind[i]];
+      if (fly) {
+        // flyers ignore the maze: aim straight at the core's center
+        const gdx = GOAL_X - upx[i], gdy = GOAL_Y - upy[i];
+        const gl = Math.hypot(gdx, gdy) || 1;
+        uvx[i] += ((gdx / gl) * uspd[i] - uvx[i]) * steer;
+        uvy[i] += ((gdy / gl) * uspd[i] - uvy[i]) * steer;
+      } else {
+        field.sample(upx[i], upy[i], flowTmp);
+        uvx[i] += (flowTmp.x * uspd[i] - uvx[i]) * steer;
+        uvy[i] += (flowTmp.y * uspd[i] - uvy[i]) * steer;
+      }
 
       // separation from neighbours via the hash: soft steering inside the
-      // personal-space radius, plus accumulated hard overlap below the floor
+      // personal-space radius, plus accumulated hard overlap below the floor.
+      // Same forces for both layers, but strictly within a layer — air and
+      // ground pass through each other freely
       let sx = 0, sy = 0, px = 0, py = 0;
       const hx = clamp((upx[i] / HC) | 0, 0, HCOLS - 1);
       const hy = clamp((upy[i] / HC) | 0, 0, HROWS - 1);
@@ -452,7 +473,7 @@ export class Sim {
           const c = gy * HCOLS + gx, e = bStart[c + 1];
           for (let k = bStart[c]; k < e; k++) {
             const j = bUnits[k];
-            if (j === i || j >= this.n) continue;
+            if (j === i || j >= this.n || KIND_FLYING[ukind[j]] !== fly) continue;
             const dx = upx[i] - upx[j], dy = upy[i] - upy[j];
             const d2 = dx * dx + dy * dy;
             if (d2 > SEP2 || d2 < 1e-6) continue;
@@ -475,33 +496,37 @@ export class Sim {
         fy = (fy / fl) * SMAX;
       }
 
-      // wall repulsion probes: push off nearby walls so corners can't wedge
-      // units (in a 1-wide corridor both sides fire and cancel — harmless)
-      if (field.blockedPx(upx[i] + PR, upy[i])) fx -= REP;
-      if (field.blockedPx(upx[i] - PR, upy[i])) fx += REP;
-      if (field.blockedPx(upx[i], upy[i] + PR)) fy -= REP;
-      if (field.blockedPx(upx[i], upy[i] - PR)) fy += REP;
+      // everything terrain-flavoured is ground-only: flyers never probe,
+      // jitter, or center — walls are scenery beneath them
+      if (!fly) {
+        // wall repulsion probes: push off nearby walls so corners can't wedge
+        // units (in a 1-wide corridor both sides fire and cancel — harmless)
+        if (field.blockedPx(upx[i] + PR, upy[i])) fx -= REP;
+        if (field.blockedPx(upx[i] - PR, upy[i])) fx += REP;
+        if (field.blockedPx(upx[i], upy[i] + PR)) fy -= REP;
+        if (field.blockedPx(upx[i], upy[i] - PR)) fy += REP;
 
-      // symmetry-breaking jitter: units contesting a doorway can settle into
-      // a perfectly balanced standoff (flow vs separation, a fraction of a
-      // pixel outside the opening, forever) — a small random push dissolves
-      // such equilibria and disappears under the flow force in open field
-      fx += (Math.random() - 0.5) * 14;
-      fy += (Math.random() - 0.5) * 14;
+        // symmetry-breaking jitter: units contesting a doorway can settle into
+        // a perfectly balanced standoff (flow vs separation, a fraction of a
+        // pixel outside the opening, forever) — a small random push dissolves
+        // such equilibria and disappears under the flow force in open field
+        fx += (Math.random() - 0.5) * 14;
+        fy += (Math.random() - 0.5) * 14;
 
-      // narrow-passage centering: 1-wide corridors leave only a slim window
-      // (unit clearance is WALL_R < CELL/2) — steer onto the cell centerline
-      // there. Strictly both-sides-blocked cells only: anything looser (e.g.
-      // an L-corner heuristic) also matches convex corners in open ground
-      // and would drag passing units into the corner. Corners of narrow
-      // bends need no help — the axis-separated slide stops a unit just
-      // inside the turn's window and redirects its speed into the turn
-      const bL = cx <= 0 || walk[cy * COLS + cx - 1] === 1;
-      const bR = cx >= COLS - 1 || walk[cy * COLS + cx + 1] === 1;
-      const bU = cy <= 0 || walk[(cy - 1) * COLS + cx] === 1;
-      const bD = cy >= ROWS - 1 || walk[(cy + 1) * COLS + cx] === 1;
-      if (bL && bR) fx += ((cx + 0.5) * CELL - upx[i]) * CENTER_K;
-      if (bU && bD) fy += ((cy + 0.5) * CELL - upy[i]) * CENTER_K;
+        // narrow-passage centering: 1-wide corridors leave only a slim window
+        // (unit clearance is WALL_R < CELL/2) — steer onto the cell centerline
+        // there. Strictly both-sides-blocked cells only: anything looser (e.g.
+        // an L-corner heuristic) also matches convex corners in open ground
+        // and would drag passing units into the corner. Corners of narrow
+        // bends need no help — the axis-separated slide stops a unit just
+        // inside the turn's window and redirects its speed into the turn
+        const bL = cx <= 0 || walk[cy * COLS + cx - 1] === 1;
+        const bR = cx >= COLS - 1 || walk[cy * COLS + cx + 1] === 1;
+        const bU = cy <= 0 || walk[(cy - 1) * COLS + cx] === 1;
+        const bD = cy >= ROWS - 1 || walk[(cy + 1) * COLS + cx] === 1;
+        if (bL && bR) fx += ((cx + 0.5) * CELL - upx[i]) * CENTER_K;
+        if (bU && bD) fy += ((cy + 0.5) * CELL - upy[i]) * CENTER_K;
+      }
 
       // separation/repulsion steer but never exceed the unit's stat speed
       let mvx = uvx[i] + fx, mvy = uvy[i] + fy;
@@ -538,8 +563,8 @@ export class Sim {
       // window edge, so 1-wide corridors and their L-bends stay threadable.
       // Only a zero-progress axis redirects its speed into the free one, and
       // a unit already overlapping a wall (crowd shoves) skips the veto
-      // entirely so it can always walk back out
-      const wedged = field.hitsWall(upx[i], upy[i], WALL_R);
+      // entirely so it can always walk back out. Flyers skip walls wholesale
+      const wedged = fly || field.hitsWall(upx[i], upy[i], WALL_R);
       let nx = upx[i] + dxT;
       if (!wedged && field.hitsWall(nx, upy[i], WALL_R)) {
         const cX =
@@ -575,9 +600,10 @@ export class Sim {
 
   /** push units out of freshly blocked cells (after tower placement) */
   private unstickUnits(): void {
-    const { upx, upy, field } = this;
+    const { upx, upy, ukind, field } = this;
     for (let i = 0; i < this.n; i++) {
-      if (!field.hitsWall(upx[i], upy[i], WALL_R)) continue;
+      // flyers are allowed over walls — never teleport them off a mountain
+      if (KIND_FLYING[ukind[i]] || !field.hitsWall(upx[i], upy[i], WALL_R)) continue;
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
       const cy = clamp((upy[i] / CELL) | 0, 0, ROWS - 1);
       let done = false;

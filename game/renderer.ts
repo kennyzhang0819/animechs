@@ -30,7 +30,7 @@ import {
   TOWERS,
   W,
 } from "./constants";
-import { UNIT_KINDS } from "./levels";
+import { UNIT_KINDS, UNIT_STATS } from "./levels";
 import type { Sim } from "./sim";
 import { FxKind, type TowerKind } from "./types";
 
@@ -56,6 +56,10 @@ const BULLET_SIZE: Record<TowerKind, readonly [number, number]> = {
 // unit art indexed by the sim's numeric kind id (UNIT_ID order)
 const KIND_UV = UNIT_KINDS.map((k) => UNIT_ART[k].uv);
 const KIND_SPRITE = UNIT_KINDS.map((k) => UNIT_ART[k].sprite);
+const KIND_FLYING = UNIT_KINDS.map((k) => !!UNIT_STATS[k].flying);
+// flyer drop shadow: painter's offset + premultiplied black tint
+const SHADOW_OFF = 6;
+const SHADOW_ALPHA = 0.22;
 
 const VS = `#version 300 es
 layout(location=0) in vec2 aCorner;
@@ -301,23 +305,33 @@ export class Renderer {
       this.push(dyn, t.x, t.y, px, px, t.angle, UV_TURRETS[t.kind], 1, 1, 1, 1);
     }
     const { upx, upy, uvx, uvy, uhp, uhpmax, ukind, n } = sim;
-    for (let i = 0; i < n; i++) {
-      const k = ukind[i];
-      const usz = KIND_SPRITE[k];
-      const rot = Math.atan2(uvy[i], uvx[i]);
-      // hp thirds of the unit's own max, so every kind tints alike
-      const t3 = (uhp[i] * 3) / uhpmax[i];
-      const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
-      this.push(
-        dyn,
-        upx[i],
-        upy[i],
-        usz,
-        usz,
-        rot,
-        KIND_UV[k],
-        tint[0], tint[1], tint[2], 1,
-      );
+    // painter's order in three passes: ground units, then flyer shadows on
+    // top of the crowd, then the flyers themselves above everything
+    for (let pass = 0; pass < 3; pass++) {
+      const wantFly = pass > 0;
+      for (let i = 0; i < n; i++) {
+        const k = ukind[i];
+        if (KIND_FLYING[k] !== wantFly) continue;
+        const usz = KIND_SPRITE[k];
+        const rot = Math.atan2(uvy[i], uvx[i]);
+        if (pass === 1) {
+          this.push(dyn, upx[i] + SHADOW_OFF, upy[i] + SHADOW_OFF, usz, usz, rot, KIND_UV[k], 0, 0, 0, SHADOW_ALPHA);
+          continue;
+        }
+        // hp thirds of the unit's own max, so every kind tints alike
+        const t3 = (uhp[i] * 3) / uhpmax[i];
+        const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
+        this.push(
+          dyn,
+          upx[i],
+          upy[i],
+          usz,
+          usz,
+          rot,
+          KIND_UV[k],
+          tint[0], tint[1], tint[2], 1,
+        );
+      }
     }
     for (const p of sim.projs) {
       // colors are baked into the atlas composite
