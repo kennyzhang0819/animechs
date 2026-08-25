@@ -32,6 +32,7 @@ import {
 } from "./constants";
 import { UNIT_KINDS, UNIT_STATS } from "./levels";
 import type { Sim } from "./sim";
+import type { Terrain } from "./terrain";
 import { FxKind, type TowerKind } from "./types";
 
 // per-kind turret tops and bullet sprites
@@ -252,10 +253,10 @@ export class Renderer {
   }
 
   /** rebuild the static tile batch — call on init and whenever the map changes */
-  rebuildTerrain(sim: Sim): void {
+  rebuildTerrain(src: { terrain: Terrain }): void {
     const gl = this.gl;
     const t = this.terrain;
-    const T = sim.terrain;
+    const T = src.terrain;
     t.n = 0;
     for (let y = 0; y < ROWS; y++) {
       for (let x = 0; x < COLS; x++) {
@@ -279,12 +280,8 @@ export class Renderer {
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, t.data, 0, t.n * FLOATS);
   }
 
-  /**
-   * zoom is world→view scale; (offX, offY) = -cameraTopLeft * zoom; kPx is
-   * device px per world px at zoom 1, so the view spans canvas/kPx world px
-   * and the canvas is always filled whatever its aspect
-   */
-  render(sim: Sim, zoom = 1, offX = 0, offY = 0, kPx = this.canvas.width / W): void {
+  /** per-frame GL setup shared by the game and terrain-only render paths */
+  private begin(zoom: number, offX: number, offY: number, kPx: number): void {
     const gl = this.gl;
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -293,7 +290,35 @@ export class Renderer {
     gl.uniform1f(this.uZoom, zoom);
     gl.uniform2f(this.uOff, offX, offY);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
+  }
 
+  /** terrain + core only — the map editor's frame, no sim required */
+  renderTerrain(zoom = 1, offX = 0, offY = 0, kPx = this.canvas.width / W): void {
+    this.begin(zoom, offX, offY, kPx);
+    this.draw(this.terrain, false);
+    const dyn = this.dyn;
+    dyn.n = 0;
+    const coreSz = BASE.size * CELL;
+    this.push(
+      dyn,
+      (BASE.x + BASE.size / 2) * CELL,
+      (BASE.y + BASE.size / 2) * CELL,
+      coreSz,
+      coreSz,
+      0,
+      UV_CORE,
+      1, 1, 1, 1,
+    );
+    this.draw(dyn, true);
+  }
+
+  /**
+   * zoom is world→view scale; (offX, offY) = -cameraTopLeft * zoom; kPx is
+   * device px per world px at zoom 1, so the view spans canvas/kPx world px
+   * and the canvas is always filled whatever its aspect
+   */
+  render(sim: Sim, zoom = 1, offX = 0, offY = 0, kPx = this.canvas.width / W): void {
+    this.begin(zoom, offX, offY, kPx);
     this.draw(this.terrain, false);
 
     const dyn = this.dyn;
