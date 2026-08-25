@@ -16,21 +16,29 @@ export default function Swarmfield() {
 
   useEffect(() => {
     if (!glRef.current || !uiRef.current) return;
-    let game: Game;
-    try {
-      game = new Game(glRef.current, uiRef.current);
-    } catch (err) {
-      setWebglError(err instanceof Error ? err.message : String(err));
-      return;
-    }
-    gameRef.current = game;
-    if (process.env.NODE_ENV !== "production") {
-      (window as unknown as Record<string, unknown>).__swarmfield = game;
-    }
-    const hud = setInterval(() => setStats(game.stats()), 200);
+    let alive = true;
+    let game: Game | null = null;
+    let hud: ReturnType<typeof setInterval> | undefined;
+    Game.create(glRef.current, uiRef.current)
+      .then((g) => {
+        if (!alive) {
+          g.destroy();
+          return;
+        }
+        game = g;
+        gameRef.current = g;
+        if (process.env.NODE_ENV !== "production") {
+          (window as unknown as Record<string, unknown>).__swarmfield = g;
+        }
+        hud = setInterval(() => setStats(g.stats()), 200);
+      })
+      .catch((err: unknown) => {
+        if (alive) setWebglError(err instanceof Error ? err.message : String(err));
+      });
     return () => {
-      clearInterval(hud);
-      game.destroy();
+      alive = false;
+      if (hud) clearInterval(hud);
+      game?.destroy();
       gameRef.current = null;
     };
   }, []);
@@ -87,11 +95,11 @@ export default function Swarmfield() {
             <p className="p-8 text-center text-[#9AA7C7]">{webglError}</p>
           ) : (
             <>
-              <canvas ref={glRef} width={1280} height={720} className="block h-auto w-full" />
+              <canvas ref={glRef} width={2560} height={1440} className="block h-auto w-full" />
               <canvas
                 ref={uiRef}
-                width={1280}
-                height={720}
+                width={2560}
+                height={1440}
                 className="absolute inset-0 h-full w-full cursor-crosshair"
               />
             </>

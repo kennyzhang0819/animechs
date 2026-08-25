@@ -10,105 +10,143 @@ const uv = (x: number, y: number, w: number, h: number, inset = 0): UVRect => [
   (y + h - inset) / ATLAS,
 ];
 
-export const UV_FLOOR = uv(0, 0, 64, 64, 2);
-export const UV_BLOCK = uv(64, 0, 64, 64, 2);
-export const UV_UNIT = uv(128, 0, 64, 64);
-export const UV_PROJ = uv(192, 0, 64, 64);
-export const UV_RING = uv(256, 0, 64, 64);
-export const UV_FLASH = uv(320, 0, 64, 64);
-export const UV_TOWER = uv(0, 64, 128, 128);
-export const UV_BARREL = uv(128, 64, 64, 64);
-export const UV_CORE = uv(256, 64, 128, 128);
+// row 0: 64px cells — ground tiles, wall tiles, unit, fx
+export const UV_FLOORS: readonly UVRect[] = [
+  uv(0, 0, 64, 64, 2),
+  uv(64, 0, 64, 64, 2),
+  uv(128, 0, 64, 64, 2),
+];
+export const UV_WALLS: readonly UVRect[] = [uv(192, 0, 64, 64, 2), uv(256, 0, 64, 64, 2)];
+export const UV_UNIT = uv(320, 0, 64, 64);
+export const UV_PROJ = uv(384, 0, 64, 64);
+export const UV_RING = uv(448, 0, 64, 64);
+// row 1: 128px cells — turret base, turret top, core; plus the hit flash
+export const UV_FLASH = uv(0, 64, 64, 64);
+export const UV_TOWER_BASE = uv(64, 128, 128, 128);
+export const UV_TURRET = uv(192, 128, 128, 128);
+export const UV_CORE = uv(320, 128, 96, 96);
+
+const SPRITES = {
+  floor0: "/mindustry/env/metal-floor-2.png",
+  floor1: "/mindustry/env/dark-panel-4.png",
+  floor2: "/mindustry/env/dark-panel-2.png",
+  wall0: "/mindustry/env/dark-metal1.png",
+  wall1: "/mindustry/env/dark-metal2.png",
+  daggerBase: "/mindustry/units/dagger-base.png",
+  dagger: "/mindustry/units/dagger.png",
+  daggerLeg: "/mindustry/units/dagger-leg.png",
+  towerBase: "/mindustry/turrets/block-2.png",
+  salvoPreview: "/mindustry/turrets/salvo-preview.png",
+  core: "/mindustry/storage/core-shard.png",
+} as const;
+
+type SpriteKey = keyof typeof SPRITES;
+
+async function loadImages(): Promise<Record<SpriteKey, HTMLImageElement>> {
+  const entries = await Promise.all(
+    (Object.keys(SPRITES) as SpriteKey[]).map(async (key) => {
+      const img = new Image();
+      // load event, not img.decode(): decode() is deferred indefinitely in
+      // hidden tabs; drawImage decodes synchronously when we composite anyway
+      const loaded = new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error(`failed to load sprite: ${SPRITES[key]}`));
+      });
+      img.src = SPRITES[key];
+      await loaded;
+      return [key, img] as const;
+    }),
+  );
+  return Object.fromEntries(entries) as Record<SpriteKey, HTMLImageElement>;
+}
 
 /**
- * Procedural placeholder art. Every sprite the game draws is a region of this
- * one texture — to ship custom graphics, draw (or blit an image) into the same
- * regions and nothing else changes.
+ * Mindustry sprites face up; our shader treats rotation 0 as facing +x.
+ * Pre-rotate 90° clockwise at composite time so runtime rotation stays a
+ * single angle.
  */
-export function buildAtlas(): HTMLCanvasElement {
+function drawFacingRight(
+  c: CanvasRenderingContext2D,
+  src: CanvasImageSource,
+  cx: number,
+  cy: number,
+  size: number,
+): void {
+  c.save();
+  c.translate(cx, cy);
+  c.rotate(Math.PI / 2);
+  c.drawImage(src, -size / 2, -size / 2, size, size);
+  c.restore();
+}
+
+/**
+ * Composites the Mindustry sprites (GPL-3.0, github.com/Anuken/Mindustry)
+ * into the game's single texture atlas. Swap any region — or the whole
+ * source set — for custom art without touching the render pipeline.
+ */
+export async function buildAtlas(): Promise<HTMLCanvasElement> {
+  const img = await loadImages();
   const a = document.createElement("canvas");
   a.width = a.height = ATLAS;
   const c = a.getContext("2d");
   if (!c) throw new Error("2d context unavailable for atlas build");
+  c.imageSmoothingEnabled = false; // integer upscales keep the pixel art crisp
 
-  // floor tile (0,0,64,64)
-  c.fillStyle = "#0A101F";
-  c.fillRect(0, 0, 64, 64);
-  c.fillStyle = "#111A2E";
-  c.fillRect(2, 2, 60, 2);
-  c.fillRect(2, 2, 2, 60);
+  // ground + wall tiles: 32px sources upscaled 2x into 64px cells
+  c.drawImage(img.floor0, 0, 0, 64, 64);
+  c.drawImage(img.floor1, 64, 0, 64, 64);
+  c.drawImage(img.floor2, 128, 0, 64, 64);
+  c.drawImage(img.wall0, 192, 0, 64, 64);
+  c.drawImage(img.wall1, 256, 0, 64, 64);
 
-  // obstacle tile (64,0,64,64)
-  c.fillStyle = "#232E4A";
-  c.fillRect(64, 0, 64, 64);
-  c.fillStyle = "#2E3B5E";
-  c.fillRect(64, 0, 64, 9);
-  c.fillStyle = "#1B2438";
-  c.fillRect(64, 57, 64, 7);
+  // dagger: the leg sprite is pre-offset for one side; mirror it for the
+  // other, then chassis and body on top — all sharing one 48px origin
+  const unit = document.createElement("canvas");
+  unit.width = unit.height = 64;
+  const uc = unit.getContext("2d");
+  if (!uc) throw new Error("2d context unavailable");
+  uc.imageSmoothingEnabled = false;
+  uc.drawImage(img.daggerLeg, 8, 8, 48, 48);
+  uc.save();
+  uc.translate(32, 0);
+  uc.scale(-1, 1);
+  uc.drawImage(img.daggerLeg, -24, 8, 48, 48);
+  uc.restore();
+  uc.drawImage(img.daggerBase, 8, 8, 48, 48);
+  uc.drawImage(img.dagger, 8, 8, 48, 48);
+  drawFacingRight(c, unit, 352, 32, 64);
 
-  // unit (128,0,64,64) — white, tinted per instance
-  let g = c.createRadialGradient(160, 32, 0, 160, 32, 26);
-  g.addColorStop(0, "#ffffff");
-  g.addColorStop(0.72, "#ffffff");
-  g.addColorStop(1, "rgba(255,255,255,0)");
-  c.fillStyle = g;
-  c.fillRect(128, 0, 64, 64);
-
-  // projectile glow (192,0,64,64)
-  g = c.createRadialGradient(224, 32, 0, 224, 32, 28);
+  // projectile glow (384,0) — procedural
+  let g = c.createRadialGradient(416, 32, 0, 416, 32, 28);
   g.addColorStop(0, "#ffffff");
   g.addColorStop(0.3, "rgba(255,255,255,0.85)");
   g.addColorStop(1, "rgba(255,255,255,0)");
   c.fillStyle = g;
-  c.fillRect(192, 0, 64, 64);
+  c.fillRect(384, 0, 64, 64);
 
-  // ring (256,0,64,64)
+  // ring (448,0) — procedural
   c.strokeStyle = "#ffffff";
   c.lineWidth = 5;
   c.beginPath();
-  c.arc(288, 32, 22, 0, TAU);
+  c.arc(480, 32, 22, 0, TAU);
   c.stroke();
 
-  // flash (320,0,64,64)
-  g = c.createRadialGradient(352, 32, 0, 352, 32, 18);
+  // flash (0,64) — procedural
+  g = c.createRadialGradient(32, 96, 0, 32, 96, 18);
   g.addColorStop(0, "#ffffff");
   g.addColorStop(1, "rgba(255,255,255,0)");
   c.fillStyle = g;
-  c.fillRect(320, 0, 64, 64);
+  c.fillRect(0, 64, 64, 64);
 
-  // tower body (0,64,128,128)
-  c.fillStyle = "#16303B";
-  c.beginPath();
-  c.roundRect(8, 72, 112, 112, 14);
-  c.fill();
-  c.strokeStyle = "#5BD9E8";
-  c.lineWidth = 6;
-  c.stroke();
-  c.fillStyle = "#0A101F";
-  c.beginPath();
-  c.arc(64, 128, 16, 0, TAU);
-  c.fill();
+  // turret base: 64px block-2 upscaled 2x into a 128px cell
+  c.drawImage(img.towerBase, 64, 128, 128, 128);
 
-  // tower barrel (128,64,64,64) — white, extends from cell center to the right, tinted cyan
-  c.fillStyle = "#ffffff";
-  c.beginPath();
-  c.roundRect(158, 90, 30, 12, 5);
-  c.fill();
+  // salvo top: the preview sprite is the fully assembled turret — face right
+  c.imageSmoothingEnabled = false;
+  drawFacingRight(c, img.salvoPreview, 256, 192, 128);
 
-  // core (256,64,128,128)
-  c.fillStyle = "#0F2B1C";
-  c.fillRect(264, 72, 112, 112);
-  c.strokeStyle = "#57E389";
-  c.lineWidth = 6;
-  c.strokeRect(268, 76, 104, 104);
-  c.fillStyle = "#57E389";
-  c.beginPath();
-  c.moveTo(320, 96);
-  c.lineTo(352, 128);
-  c.lineTo(320, 160);
-  c.lineTo(288, 128);
-  c.closePath();
-  c.fill();
+  // core-shard at native 96px
+  c.drawImage(img.core, 320, 128, 96, 96);
 
   return a;
 }

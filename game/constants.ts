@@ -1,20 +1,23 @@
-export const COLS = 64;
-export const ROWS = 36;
-export const CELL = 20;
+export const COLS = 128;
+export const ROWS = 72;
+export const CELL = 20; // one Mindustry ground tile
 export const W = COLS * CELL;
 export const H = ROWS * CELL;
 export const NCELLS = COLS * ROWS;
 export const INF = 1e9;
 
 export const MAX_UNITS = 22000;
-export const UR = 2.4; // unit physics radius — constant at every count tier
+// Dagger: art overhangs the hitbox in Mindustry (48px art on a 32px tile), so
+// physics is ~0.7 tile and the sprite draws larger for the same look.
+export const UR = 7;
+export const UNIT_SPRITE = 21; // Mindustry's art-to-hitbox ratio (48px art on a 32px tile)
 export const HP0 = 3;
 
 export const TOWER = {
-  range: 150,
+  range: 190,
   cooldown: 0.11,
   dmg: 1,
-  projSpd: 430,
+  projSpd: 520,
 } as const;
 
 export interface Rect {
@@ -24,27 +27,29 @@ export interface Rect {
   h: number;
 }
 
+// the old 64x36 layout scaled 2x onto the tile grid
 export const OBSTACLES: Rect[] = [
-  { x: 14, y: 0, w: 2, h: 13 },
-  { x: 14, y: 23, w: 2, h: 13 },
-  { x: 30, y: 9, w: 2, h: 18 },
-  { x: 46, y: 0, w: 2, h: 12 },
-  { x: 46, y: 25, w: 2, h: 11 },
-  { x: 22, y: 16, w: 4, h: 4 },
-  { x: 38, y: 4, w: 4, h: 3 },
-  { x: 38, y: 29, w: 4, h: 3 },
-  { x: 6, y: 8, w: 3, h: 2 },
-  { x: 6, y: 26, w: 3, h: 2 },
-  { x: 54, y: 14, w: 2, h: 8 },
+  { x: 28, y: 0, w: 4, h: 26 },
+  { x: 28, y: 46, w: 4, h: 26 },
+  { x: 60, y: 18, w: 4, h: 36 },
+  { x: 92, y: 0, w: 4, h: 24 },
+  { x: 92, y: 50, w: 4, h: 22 },
+  { x: 44, y: 32, w: 8, h: 8 },
+  { x: 76, y: 8, w: 8, h: 6 },
+  { x: 76, y: 58, w: 8, h: 6 },
+  { x: 12, y: 16, w: 6, h: 4 },
+  { x: 12, y: 52, w: 6, h: 4 },
+  { x: 108, y: 28, w: 4, h: 16 },
 ];
 
-export const BASE = { x: 59, y: 17 }; // 2x2 walkable goal cells
+export const BASE = { x: 121, y: 34, size: 3 }; // 3x3 core-shard, walkable goal cells
 
-// tint per hp bucket (1, 2, 3 hp), applied to the white unit sprite
+// damage tint per hp bucket (1, 2, 3 hp) — full hp renders the sprite as-is
+// (gray armor, orange cell, like Mindustry); hits darken and redden it
 export const HP_TINT: ReadonlyArray<readonly [number, number, number]> = [
-  [0.76, 0.18, 0.24],
-  [0.96, 0.34, 0.23],
-  [1.0, 0.54, 0.24],
+  [0.65, 0.4, 0.38],
+  [1.0, 0.72, 0.65],
+  [1.0, 1.0, 1.0],
 ];
 
 export const UNIT_COUNTS = [1000, 5000, 10000, 20000] as const;

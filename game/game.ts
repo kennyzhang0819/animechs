@@ -1,3 +1,4 @@
+import { buildAtlas } from "./atlas";
 import { CELL, clamp, COLS, H, ROWS, W } from "./constants";
 import { Renderer } from "./renderer";
 import { Sim } from "./sim";
@@ -47,11 +48,17 @@ export class Game {
     if (this.sim.placeTower(gx, gy) !== "ok") this.invalidFlash = 0.35;
   };
 
-  constructor(
+  /** loads the sprite atlas, then wires everything up */
+  static async create(glCanvas: HTMLCanvasElement, uiCanvas: HTMLCanvasElement): Promise<Game> {
+    return new Game(glCanvas, uiCanvas, await buildAtlas());
+  }
+
+  private constructor(
     private readonly glCanvas: HTMLCanvasElement,
     private readonly uiCanvas: HTMLCanvasElement,
+    atlas: HTMLCanvasElement,
   ) {
-    this.renderer = new Renderer(glCanvas);
+    this.renderer = new Renderer(glCanvas, atlas);
     const ctx = uiCanvas.getContext("2d");
     if (!ctx) throw new Error("2d context unavailable");
     this.uictx = ctx;

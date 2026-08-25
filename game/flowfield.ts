@@ -33,9 +33,9 @@ export class FlowField {
   readonly dirY = new Float32Array(NCELLS);
   spawnRows: number[] = [];
 
-  // binary min-heap with lazy deletion
-  private readonly hKey = new Float64Array(1 << 16);
-  private readonly hVal = new Int32Array(1 << 16);
+  // binary min-heap with lazy deletion (sized for ~8 relaxations per cell)
+  private readonly hKey = new Float64Array(1 << 17);
+  private readonly hVal = new Int32Array(1 << 17);
   private hN = 0;
   private popKey = 0;
 
@@ -48,8 +48,8 @@ export class FlowField {
     for (const t of towers)
       for (let y = t.gy; y < t.gy + 2; y++)
         for (let x = t.gx; x < t.gx + 2; x++) this.walk[y * COLS + x] = 1;
-    for (let y = BASE.y; y < BASE.y + 2; y++)
-      for (let x = BASE.x; x < BASE.x + 2; x++) this.isGoal[y * COLS + x] = 1;
+    for (let y = BASE.y; y < BASE.y + BASE.size; y++)
+      for (let x = BASE.x; x < BASE.x + BASE.size; x++) this.isGoal[y * COLS + x] = 1;
   }
 
   private hPush(k: number, v: number): void {

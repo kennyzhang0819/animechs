@@ -1,17 +1,27 @@
 import {
-  buildAtlas,
-  UV_BARREL,
-  UV_BLOCK,
   UV_CORE,
-  UV_FLOOR,
+  UV_FLASH,
+  UV_FLOORS,
   UV_PROJ,
   UV_RING,
-  UV_TOWER,
+  UV_TOWER_BASE,
+  UV_TURRET,
   UV_UNIT,
-  UV_FLASH,
+  UV_WALLS,
   type UVRect,
 } from "./atlas";
-import { BASE, CELL, COLS, H, HP_TINT, MAX_UNITS, NCELLS, ROWS, UR, W } from "./constants";
+import {
+  BASE,
+  CELL,
+  COLS,
+  H,
+  HP_TINT,
+  MAX_UNITS,
+  NCELLS,
+  ROWS,
+  UNIT_SPRITE,
+  W,
+} from "./constants";
 import type { Sim } from "./sim";
 import { FxKind } from "./types";
 
@@ -68,7 +78,10 @@ export class Renderer {
   private readonly terrain: Batch;
   private readonly dyn: Batch;
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
+  constructor(
+    private readonly canvas: HTMLCanvasElement,
+    atlas: HTMLCanvasElement,
+  ) {
     const gl = canvas.getContext("webgl2", { alpha: false, antialias: false });
     if (!gl) throw new Error("WebGL2 is required");
     this.gl = gl;
@@ -96,7 +109,7 @@ export class Renderer {
     this.tex = tex;
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, buildAtlas());
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas);
     gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -198,15 +211,21 @@ export class Renderer {
       for (let x = 0; x < COLS; x++) {
         const cx = (x + 0.5) * CELL, cy = (y + 0.5) * CELL;
         const blockedByObstacle = sim.field.walk[y * COLS + x] === 1 && !this.towerAt(sim, x, y);
-        this.push(t, cx, cy, CELL, CELL, 0, blockedByObstacle ? UV_BLOCK : UV_FLOOR, 1, 1, 1, 1);
+        // deterministic per-cell variant pick, weighted toward the plain tiles
+        const h = (x * 31 + y * 17 + ((x * y) | 0)) % 16;
+        const uvr = blockedByObstacle
+          ? UV_WALLS[h < 14 ? 0 : 1]
+          : UV_FLOORS[h < 13 ? 0 : h < 15 ? 1 : 2];
+        this.push(t, cx, cy, CELL, CELL, 0, uvr, 1, 1, 1, 1);
       }
     }
+    const coreSz = BASE.size * CELL;
     this.push(
       t,
-      (BASE.x + 1) * CELL,
-      (BASE.y + 1) * CELL,
-      CELL * 2,
-      CELL * 2,
+      (BASE.x + BASE.size / 2) * CELL,
+      (BASE.y + BASE.size / 2) * CELL,
+      coreSz,
+      coreSz,
       0,
       UV_CORE,
       1, 1, 1, 1,
@@ -235,11 +254,11 @@ export class Renderer {
     const dyn = this.dyn;
     dyn.n = 0;
     for (const t of sim.towers) {
-      this.push(dyn, t.x, t.y, CELL * 2, CELL * 2, 0, UV_TOWER, 1, 1, 1, 1);
-      this.push(dyn, t.x, t.y, CELL * 2, CELL * 2, t.angle, UV_BARREL, 0.357, 0.851, 0.91, 1);
+      this.push(dyn, t.x, t.y, CELL * 2, CELL * 2, 0, UV_TOWER_BASE, 1, 1, 1, 1);
+      this.push(dyn, t.x, t.y, CELL * 2, CELL * 2, t.angle, UV_TURRET, 1, 1, 1, 1);
     }
     const { upx, upy, uvx, uvy, uhp, n } = sim;
-    const usz = UR * 2.4;
+    const usz = UNIT_SPRITE;
     for (let i = 0; i < n; i++) {
       const h = uhp[i] <= 1 ? 0 : uhp[i] <= 2 ? 1 : 2;
       const tint = HP_TINT[h];

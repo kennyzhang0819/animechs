@@ -16,8 +16,9 @@ import { FxKind, type Effect, type Projectile, type Tower } from "./types";
 
 const FX_CAP = 400;
 
-// spatial hash cell size (px); rebuilt every frame with a counting sort
-const HC = 8;
+// spatial hash cell size (px); rebuilt every frame with a counting sort.
+// must be >= 2*UR so a 3x3 bucket scan covers the separation radius
+const HC = 16;
 const HCOLS = (W / HC) | 0;
 const HROWS = (H / HC) | 0;
 const HN = HCOLS * HROWS;
@@ -63,7 +64,7 @@ export class Sim {
     this.projs.length = 0;
     this.effects.length = 0;
     this.towers.length = 0;
-    this.addTower(18, 16); // just past the first wall gap — every lane funnels through here
+    this.addTower(36, 34); // just past the first wall gap — every lane funnels through here
     this.field.rebuildWalk(this.towers);
     this.field.compute();
   }
@@ -162,7 +163,7 @@ export class Sim {
     if (this.n >= MAX_UNITS || this.n >= this.target || spawnRows.length === 0) return;
     for (let a = 0; a < 3; a++) {
       const row = spawnRows[(Math.random() * spawnRows.length) | 0];
-      const x = 5 + Math.random() * 38;
+      const x = UR + 1 + Math.random() * (CELL * 4 - UR - 2);
       const y = (row + 0.15 + Math.random() * 0.7) * CELL;
       if (!this.spawnSpotFree(x, y)) continue;
       const i = this.n++;
@@ -171,7 +172,7 @@ export class Sim {
       this.uvx[i] = 0;
       this.uvy[i] = 0;
       this.uhp[i] = HP0;
-      this.uspd[i] = 52 + Math.random() * 26;
+      this.uspd[i] = 62 + Math.random() * 30;
       return;
     }
   }
