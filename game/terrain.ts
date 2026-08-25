@@ -3,9 +3,13 @@ import { BASE, CELL, clamp, COLS, NCELLS, ROWS } from "./constants";
 export interface Prop {
   x: number; // world px, sprite center
   y: number;
-  size: number;
+  size: number; // fixed per sprite type — native tile scale, never randomized
+  rot: number; // radians, quarter-turn steps so the pixel art stays crisp
   kind: number; // index into UV_DECOR (unused for pines)
 }
+
+/** random quarter-turn — props vary by rotation, never by size */
+const quarterTurn = (rng: () => number): number => ((rng() * 4) | 0) * (Math.PI / 2);
 
 /** wall[] value meaning "grass floor with a pine tree prop on top" */
 export const WALL_PINE = 4;
@@ -158,9 +162,10 @@ export function generateTerrain(seed: number): Terrain {
         blocked[i] = 1;
         wall[i] = WALL_PINE;
         pines.push({
-          x: (xx + 0.5) * CELL + (rng() - 0.5) * 5,
-          y: (yy + 0.5) * CELL + (rng() - 0.5) * 5,
-          size: CELL * (1.35 + rng() * 0.35),
+          x: (xx + 0.5) * CELL,
+          y: (yy + 0.5) * CELL,
+          size: CELL * 1.5, // 48px art on a 32px tile, like Mindustry
+          rot: quarterTurn(rng),
           kind: 0,
         });
       }
@@ -239,9 +244,10 @@ export function generateTerrain(seed: number): Terrain {
     if (x >= BASE.x - 6 && y >= BASE.y - 4 && y < BASE.y + BASE.size + 4) continue;
     const shrub = floor[i] < 3 && rng() < 0.45; // shrubs only look right on grass
     decor.push({
-      x: (x + 0.5) * CELL + (rng() - 0.5) * 8,
-      y: (y + 0.5) * CELL + (rng() - 0.5) * 8,
-      size: shrub ? CELL * (0.95 + rng() * 0.3) : CELL * (1.15 + rng() * 0.5),
+      x: (x + 0.5) * CELL,
+      y: (y + 0.5) * CELL,
+      size: shrub ? CELL : CELL * 1.5, // native scale: 32px shrub, 48px boulder
+      rot: quarterTurn(rng),
       kind: shrub ? 2 : (rng() * 2) | 0,
     });
   }

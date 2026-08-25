@@ -235,8 +235,9 @@ export class Renderer {
       }
     }
     for (const d of T.decor)
-      this.push(t, d.x, d.y, d.size, d.size, 0, UV_DECOR[d.kind], 1, 1, 1, 1);
-    for (const p of T.pines) this.push(t, p.x, p.y, p.size, p.size, 0, UV_PINE, 1, 1, 1, 1);
+      this.push(t, d.x, d.y, d.size, d.size, d.rot, UV_DECOR[d.kind], 1, 1, 1, 1);
+    for (const p of T.pines)
+      this.push(t, p.x, p.y, p.size, p.size, p.rot, UV_PINE, 1, 1, 1, 1);
     gl.bindVertexArray(t.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, t.vbo);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, t.data, 0, t.n * FLOATS);
