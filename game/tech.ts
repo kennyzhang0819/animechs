@@ -4,7 +4,8 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * The tech tree: one square node per turret, laid out as a small graph.
  * A node's point count IS the turret's placement capacity — the first
  * point unlocks the turret (capacity 1) and every further point on the
- * same node is +1 capacity. Every point costs the same flat price.
+ * same node is +1 capacity. Each node prices its own points, flat: a duo
+ * slot is chaff money, a fuse slot is a real investment.
  *
  * Nodes gate two ways: the parent node must hold at least one point (the
  * graph edge — a node stays hidden until its parent is bought), and some
@@ -12,26 +13,42 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * duo and hail; clearing world 1 opens salvo and scatter; fuse waits for
  * world 2.
  */
-export const TECH_PRICE = 100;
-
 export interface TechNodeDef {
   tower: TowerKind;
+  /**
+   * scrap per point on this node, priced off what the turret does for you:
+   * duo is the cheap line filler, salvo and fuse are the heavy hitters, and
+   * scatter costs a little more than hail for being the only air answer.
+   * Kills are the only income now, so these sit low enough that a single
+   * cleared level buys a few slots rather than a fraction of one.
+   */
+  price: number;
   /** parent node: needs >= 1 point before this node appears in the tree */
   requires?: TowerKind;
   /** world that must be fully cleared before points can go in */
   world?: number;
-  /** grid position in the tree view, in cell units */
+  /**
+   * grid position in the tree view, in cell units. The tree grows DOWNWARD:
+   * y is the depth (a child always sits on the row below its parent) and x
+   * spreads siblings sideways, so duo's trunk runs straight down the middle
+   * with scatter branching off it.
+   */
   x: number;
   y: number;
 }
 
 export const TECH_TREE: readonly TechNodeDef[] = [
-  { tower: "duo", x: 0, y: 1 },
-  { tower: "hail", requires: "duo", x: 1, y: 0 },
-  { tower: "scatter", requires: "duo", world: 1, x: 1, y: 2 },
-  { tower: "salvo", requires: "hail", world: 1, x: 2, y: 0 },
-  { tower: "fuse", requires: "salvo", world: 2, x: 3, y: 0 },
+  { tower: "duo", price: 20, x: 1, y: 0 },
+  { tower: "hail", price: 45, requires: "duo", x: 1, y: 1 },
+  { tower: "scatter", price: 60, requires: "duo", world: 1, x: 0, y: 1 },
+  { tower: "salvo", price: 90, requires: "hail", world: 1, x: 1, y: 2 },
+  { tower: "fuse", price: 140, requires: "salvo", world: 2, x: 1, y: 3 },
 ];
+
+/** scrap for one more point (one more placement) of this turret */
+export function techPrice(tower: TowerKind): number {
+  return techNode(tower).price;
+}
 
 export function techNode(tower: TowerKind): TechNodeDef {
   const def = TECH_TREE.find((n) => n.tower === tower);

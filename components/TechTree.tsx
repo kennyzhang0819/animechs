@@ -2,7 +2,7 @@
 
 import { TOWERS } from "@/game/constants";
 import { buyTech, nodeStatus, type NodeStatus, type Progress } from "@/game/progress";
-import { TECH_PRICE, TECH_TREE, techNode } from "@/game/tech";
+import { TECH_TREE, techNode, techPrice } from "@/game/tech";
 import { SCRAP_ICON, TOWER_ICONS } from "./towerIcons";
 
 // board geometry: nodes are squares centered in grid cells; the SVG edge
@@ -50,8 +50,8 @@ export default function TechTree({
           </span>
         </header>
         <p className="mt-2 text-center text-[11px] uppercase tracking-widest text-[#71717C]">
-          Every point costs {TECH_PRICE} — the first unlocks the turret, each one after is +1
-          placement
+          Each point is priced per turret — the first unlocks it with 1 placement, each one after
+          is +1 placement
         </p>
 
         <div className="mt-10 flex justify-center overflow-x-auto">
@@ -175,7 +175,7 @@ export default function TechTree({
                           alt="scrap"
                           className="h-4 w-4 [image-rendering:pixelated]"
                         />
-                        {TECH_PRICE}
+                        {techPrice(n.tower)}
                         {status === "poor" && <span className="font-normal">— not enough scrap</span>}
                       </div>
                     )}

@@ -330,7 +330,6 @@ export default function Swarmfield() {
                             <span>
                               {waves} waves · {enemies} enemies
                             </span>
-                            <Scrap value={lv.clearBonus} dim />
                           </div>
                         </button>
                       );
@@ -538,16 +537,8 @@ export default function Swarmfield() {
                 </div>
                 {result && (
                   <>
-                    <div className="flex items-center justify-between">
-                      <span>Kill salvage</span>
-                      <Scrap value={result.killScrap} dim />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Clear bonus</span>
-                      <Scrap value={result.clearBonus} dim />
-                    </div>
                     <div className="flex items-center justify-between border-t border-[#2E2E36] pt-1.5">
-                      <span className="font-semibold text-[#EDEDEF]">Scrap banked</span>
+                      <span className="font-semibold text-[#EDEDEF]">Scrap salvaged</span>
                       <Scrap value={result.total} />
                     </div>
                     {result.firstClear && (
@@ -593,6 +584,9 @@ export default function Swarmfield() {
                 >
                   Abandon level
                 </button>
+                <p className="text-[10px] uppercase tracking-widest text-[#71717C]">
+                  Abandoning banks no scrap — only a finished run pays
+                </p>
               </div>
             </div>
           </div>

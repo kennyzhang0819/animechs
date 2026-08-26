@@ -94,8 +94,6 @@ export interface LevelSpec {
   spawnRate: number;
   /** what the level throws at you, run start to finish in order */
   script: readonly LevelStep[];
-  /** scrap on top of kill payouts for holding the core to the end */
-  clearBonus: number;
 }
 
 export interface WorldSpec {
@@ -107,8 +105,9 @@ export interface WorldSpec {
 /**
  * The campaign: worlds play strictly in order, and so do the levels inside
  * each one — a level is playable once the one before it (across the whole
- * flattened list) has been cleared. Every run banks scrap per kill whether
- * it ends in victory or defeat; see progress.ts for the ledger.
+ * flattened list) has been cleared. Kills are the only income: a finished
+ * run banks scrap per kill whether it ended in victory or defeat, and
+ * winning pays in the next level rather than a bonus. See progress.ts.
  */
 export const WORLDS: readonly WorldSpec[] = [
   {
@@ -119,9 +118,8 @@ export const WORLDS: readonly WorldSpec[] = [
         id: "1-1",
         name: "First Contact",
         spawnRate: 30,
-        clearBonus: 60,
         script: [
-          { wait: 8 },
+          { wait: 10 },
           { wave: { dagger: 20 } },
           { wait: 10 },
           { wave: { dagger: 30 } },
@@ -133,7 +131,6 @@ export const WORLDS: readonly WorldSpec[] = [
         id: "1-2",
         name: "Thin Red Line",
         spawnRate: 40,
-        clearBonus: 90,
         script: [
           { wait: 8 },
           { wave: { dagger: 40 } },
@@ -149,7 +146,6 @@ export const WORLDS: readonly WorldSpec[] = [
         id: "1-3",
         name: "The Dagger Problem",
         spawnRate: 60,
-        clearBonus: 160,
         script: [
           { wait: 10 },
           { wave: { dagger: 50 } },
@@ -173,7 +169,6 @@ export const WORLDS: readonly WorldSpec[] = [
         id: "2-1",
         name: "Air Raid",
         spawnRate: 60,
-        clearBonus: 220,
         script: [
           { wait: 8 },
           { wave: { dagger: 60, crawler: 20 } },
@@ -189,7 +184,6 @@ export const WORLDS: readonly WorldSpec[] = [
         id: "2-2",
         name: "Pincer",
         spawnRate: 80,
-        clearBonus: 300,
         script: [
           { wait: 8 },
           { wave: { dagger: 120, mace: 20 } },
@@ -206,7 +200,6 @@ export const WORLDS: readonly WorldSpec[] = [
         name: "The Horde",
         map: "desert-3way",
         spawnRate: 60,
-        clearBonus: 500,
         script: [
           { wait: 10 },
           { wave: { dagger: 300, mace: 50 } },

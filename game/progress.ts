@@ -1,5 +1,5 @@
 import { LEVELS, UNIT_KINDS, UNIT_STATS, WORLDS, levelById } from "./levels";
-import { TECH_PRICE, techNode, techState, type TechLevels, type TechState } from "./tech";
+import { techNode, techPrice, techState, type TechLevels, type TechState } from "./tech";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
 /**
@@ -96,14 +96,14 @@ export function nodeStatus(p: Progress, tower: TowerKind): NodeStatus {
   const def = techNode(tower);
   if (def.requires && (p.tech[def.requires] ?? 0) < 1) return "hidden";
   if (def.world && !isWorldBeaten(p, def.world)) return "locked-world";
-  return p.scrap >= TECH_PRICE ? "buyable" : "poor";
+  return p.scrap >= techPrice(tower) ? "buyable" : "poor";
 }
 
 /** put one point in a turret's node (unlock, or +1 capacity); null = refused */
 export function buyTech(tower: TowerKind): Progress | null {
   const p = loadProgress();
   if (nodeStatus(p, tower) !== "buyable") return null;
-  p.scrap -= TECH_PRICE;
+  p.scrap -= techPrice(tower);
   p.tech[tower] = (p.tech[tower] ?? 0) + 1;
   saveProgress(p);
   return p;
@@ -118,30 +118,29 @@ export function scrapForKills(killsByKind: ArrayLike<number>): number {
 }
 
 export interface RunReward {
-  killScrap: number;
-  clearBonus: number;
   total: number;
   firstClear: boolean;
 }
 
 /**
- * Settle a finished run into the save: kills always pay (defeat included)
- * and a win adds the level's clear bonus. Marks the level cleared on a win.
- * Returns the breakdown for the results screen.
+ * Settle a FINISHED run into the save. Kills are the only income — no clear
+ * bonus — so a defeat still banks everything the towers killed on the way
+ * down, and the reward for winning is the next level, not a payout.
+ *
+ * Only call this on a run that reached its own end (won or lost): abandoning
+ * mid-level is worth nothing, which is why the UI settles from the win/loss
+ * state and never on the way out to the menu.
  */
 export function grantRunReward(
   levelId: string,
   killsByKind: ArrayLike<number>,
   won: boolean,
 ): RunReward {
-  const level = levelById(levelId);
   const p = loadProgress();
-  const killScrap = scrapForKills(killsByKind);
-  const clearBonus = won && level ? level.clearBonus : 0;
-  const total = killScrap + clearBonus;
+  const total = scrapForKills(killsByKind);
   const firstClear = won && !p.completed.includes(levelId);
   p.scrap += total;
   if (firstClear) p.completed.push(levelId);
   saveProgress(p);
-  return { killScrap, clearBonus, total, firstClear };
+  return { total, firstClear };
 }
