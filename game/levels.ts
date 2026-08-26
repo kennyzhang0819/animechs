@@ -1,11 +1,11 @@
 import { CELL, HP0, UNIT_SPEED, UR } from "./constants";
 
-export const UNIT_KINDS = ["dagger", "mace", "flare"] as const;
+export const UNIT_KINDS = ["dagger", "mace", "fortress", "crawler", "flare"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
 /** numeric unit id — index into UNIT_KINDS, stored in the sim's ukind array */
-export const UNIT_ID: Record<UnitKind, number> = { dagger: 0, mace: 1, flare: 2 };
+export const UNIT_ID: Record<UnitKind, number> = { dagger: 0, mace: 1, fortress: 2, crawler: 3, flare: 4 };
 
 export interface UnitStats {
   hp: number;
@@ -26,6 +26,12 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   dagger: { hp: HP0, speed: UNIT_SPEED, armor: 0, radius: UR },
   // mace: 550 hp, armor 4, 1.25x1.25-block hitbox, 3.75 tiles/s
   mace: { hp: 550, speed: UNIT_SPEED, armor: 4, radius: UR * 1.25 },
+  // fortress: 900 hp, armor 9, 1.625x1.625-block hitbox, 3.225 tiles/s
+  // (0.43 px/tick) — the T3 heavy walks noticeably slower than the line
+  fortress: { hp: 900, speed: 3.225 * CELL, armor: 9, radius: UR * 1.625 },
+  // crawler: 150 hp, no armor, 1x1-block hitbox, 1 px/tick = 7.5 tiles/s —
+  // twice the line's pace; the swarm closes distance before towers thin it
+  crawler: { hp: 150, speed: 7.5 * CELL, armor: 0, radius: UR },
   // flare: 70 hp, no armor, 1.125-block hitbox, 2.7 px/tick = 20.25 tiles/s
   flare: { hp: 70, speed: 20.25 * CELL, armor: 0, radius: UR * 1.125, flying: true },
 };
@@ -48,6 +54,8 @@ export type LevelStep =
 export interface LevelSpec {
   id: number;
   name: string;
+  /** official map id this level plays on; the first official map when unset */
+  map?: string;
   /** enemies entering the field per second — every wave drains at this rate */
   spawnRate: number;
   /** what the level throws at you, run start to finish in order */
@@ -63,14 +71,35 @@ export const LEVELS: readonly LevelSpec[] = [
     script: [
       { wait: 10 },
       { wave: { dagger: 50 } },
+      { wait: 20 },
+      { wave: { dagger: 100, mace: 10 } },
+      { wait: 20 },
+      { wave: { mace: 35 } },
+      { wait: 20 },
+      { wave: { dagger: 150, mace: 50 } },
+      { wait: 20 },
+      { wave: { dagger: 100, mace: 100 } },
+    ],
+  },
+
+  {
+    id: 2,
+    name: "Level 2",
+    map: "desert-3way",
+    spawnRate: 60,
+    script: [
       { wait: 10 },
-      { wave: { dagger: 50 } },
-      { wait: 10 },
-      { wave: { mace: 20 } },
-      { wait: 10 },
-      { wave: { dagger: 100, mace: 20 } },
-      { wait: 10 },
-      { wave: { dagger: 200, mace: 50 } },
+      { wave: { dagger: 300, mace: 50 } },
+      { wait: 20 },
+      { wave: { mace: 30, flare: 20 } },
+      { wait: 20 },
+      { wave: { mace: 300 } },
+      { wait: 20 },
+      { wave: { fortress: 50 } },
+      { wait: 20 },
+      { wave: { flare: 200, mace: 200 } },
+      { wait: 20 },
+      { wave: { flare: 50, dagger: 300, mace: 300, fortress: 300 } },
     ],
   },
 ];

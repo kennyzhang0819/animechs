@@ -16,7 +16,7 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Swarmfield",
+  title: "Swarmdustry",
   description:
     "Flow-field pathfinding demo: thousands of swarm units, WebGL instanced rendering, and towers that reroute the horde in real time.",
 };
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${display.variable} ${mono.variable} font-mono bg-[#070B14] text-[13px] text-[#9AA7C7] antialiased`}>
+      <body className={`${display.variable} ${mono.variable} font-mono bg-[#0B0B0D] text-[13px] text-[#A6A6AF] antialiased`}>
         <AdminShortcut />
         {children}
       </body>

@@ -14,7 +14,7 @@ function Thumb({ map }: { map: MapData }) {
   return (
     <canvas
       ref={ref}
-      className="w-full rounded border border-[#223050] [image-rendering:pixelated]"
+      className="w-full rounded border border-[#2E2E36] [image-rendering:pixelated]"
     />
   );
 }
@@ -52,19 +52,19 @@ function AdminInner() {
   }
 
   return (
-    <div className="min-h-screen bg-[#070B14] p-8">
+    <div className="min-h-screen bg-[#0B0B0D] p-8">
       <div className="mx-auto max-w-5xl">
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-semibold text-[#E8EDF7]">Maps — admin</h1>
-            <p className="text-[#5B6885]">
+            <h1 className="text-lg font-semibold text-[#EDEDEF]">Maps — admin</h1>
+            <p className="text-[#71717C]">
               Debug tool. Ctrl+Shift+M toggles this page; saving writes the map&apos;s JSON in
               game/maps/ — edits ARE the official map.
             </p>
           </div>
           <button
             onClick={() => router.push("/")}
-            className="rounded border border-[#223050] px-3 py-1.5 text-[#9AA7C7] hover:border-[#35486E]"
+            className="rounded border border-[#2E2E36] px-3 py-1.5 text-[#A6A6AF] hover:border-[#4A4A55]"
           >
             Back to game
           </button>
@@ -75,12 +75,12 @@ function AdminInner() {
             <button
               key={m.id}
               onClick={() => router.push(`/admin?map=${encodeURIComponent(m.id)}`)}
-              className="rounded-lg border border-[#223050] bg-[#0D1424]/70 p-3 text-left transition-colors hover:border-[#35486E]"
+              className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3 text-left transition-colors hover:border-[#4A4A55]"
             >
               <Thumb map={m} />
               <div className="mt-2 flex items-baseline justify-between">
-                <span className="font-semibold text-[#E8EDF7]">{m.name}</span>
-                <span className="text-[10px] uppercase tracking-widest text-[#5B6885]">
+                <span className="font-semibold text-[#EDEDEF]">{m.name}</span>
+                <span className="text-[10px] uppercase tracking-widest text-[#71717C]">
                   official
                 </span>
               </div>

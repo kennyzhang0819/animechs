@@ -14,7 +14,9 @@ const uv = (x: number, y: number, w: number, h: number, inset = 0): UVRect => [
 ];
 
 // row 0: 64px cells — grass floors, stone walls, unit, fx
-// indices into UV_FLOORS: 0-2 grass, 3-5 stone, 6-8 dirt
+// indices into UV_FLOORS: 0-2 grass, 3-5 stone, 6-8 dirt, 9-11 sand,
+// 12-14 darksand (the desert pair rides row 0's free tail; x512 stays
+// empty to keep clear space beside the ring cell at 448)
 export const UV_FLOORS: readonly UVRect[] = [
   uv(0, 0, 64, 64, 2),
   uv(64, 0, 64, 64, 2),
@@ -25,21 +27,57 @@ export const UV_FLOORS: readonly UVRect[] = [
   uv(256, 64, 64, 64, 2),
   uv(320, 64, 64, 64, 2),
   uv(384, 64, 64, 64, 2),
+  uv(576, 0, 64, 64, 2),
+  uv(640, 0, 64, 64, 2),
+  uv(704, 0, 64, 64, 2),
+  uv(768, 0, 64, 64, 2),
+  uv(832, 0, 64, 64, 2),
+  uv(896, 0, 64, 64, 2),
 ];
 // per-group floor edge fades (Mindustry's generated <floor>-edge sprites):
 // three 192px blocks at y=768 for grass/stone/dirt, each a 3x3 of 64px
 // sub-cells in image space. A tile bordered by a higher-priority floor gets
 // that floor's sub-cell (col 1-dx, row 1-dy) overlaid, so the neighbor's
 // texture fades across the tile seam exactly like Floor.drawEdges
-export const UV_FLOOR_EDGES: ReadonlyArray<ReadonlyArray<readonly UVRect[]>> = [16, 272, 528].map(
-  (bx) => [0, 1, 2].map((ry) => [0, 1, 2].map((rx) => uv(bx + rx * 64, 768 + ry * 64, 64, 64))),
-);
-// 0-1 stone-wall, 2-3 dirt-wall (terrain wall index 4 means "pine prop")
+const edgeBlock = (bx: number, by: number): ReadonlyArray<readonly UVRect[]> =>
+  [0, 1, 2].map((ry) => [0, 1, 2].map((rx) => uv(bx + rx * 64, by + ry * 64, 64, 64)));
+export const UV_FLOOR_EDGES: ReadonlyArray<ReadonlyArray<readonly UVRect[]>> = [
+  edgeBlock(16, 768), // grass
+  edgeBlock(272, 768), // stone (baked but never overlays — lowest priority)
+  edgeBlock(528, 768), // dirt
+  // sand: no edge art baked — its only inferior floor (stone) shares no
+  // map with it yet, so the renderer never overlays it; stone's block
+  // stands in to keep the group indices aligned
+  edgeBlock(272, 768),
+  // darksand: no contiguous 192px block is left in the atlas, so its nine
+  // sub-cells ride the y=704 gutter row, row-major from x=416
+  [0, 1, 2].map((ry) => [0, 1, 2].map((rx) => uv(416 + (ry * 3 + rx) * 64, 704, 64, 64))),
+];
+// 0-1 stone-wall, 2-3 dirt-wall, 5-6 carbon-wall (the darker rock).
+// Index 4 is the WALL_PINE sentinel — its slot here is a never-drawn
+// placeholder, since everything tests wall[i] === WALL_PINE explicitly
 export const UV_WALLS: readonly UVRect[] = [
   uv(192, 0, 64, 64, 2),
   uv(256, 0, 64, 64, 2),
   uv(448, 64, 64, 64, 2),
   uv(0, 128, 64, 64, 2),
+  uv(192, 0, 64, 64, 2), // WALL_PINE placeholder
+  uv(320, 0, 64, 64, 2),
+  uv(384, 0, 64, 64, 2),
+];
+// which wall family each UV_WALLS index belongs to (0 stone, 1 dirt,
+// 2 dark rock; -1 the pine sentinel) — StaticWall's large-draw rule works
+// per block type, so 2x2 detection must ignore the variant within a family
+export const WALL_GROUP: readonly number[] = [0, 0, 1, 1, -1, 2, 2];
+// Mindustry's <wall>-large art: one 2x2-tile sprite per family, split into
+// per-tile quadrant UVs [row][col] in screen space (y down). Families
+// without baked large art (dirt) draw per-tile variants everywhere
+const largeQuads = (x: number, y: number): ReadonlyArray<readonly UVRect[]> =>
+  [0, 1].map((row) => [0, 1].map((col) => uv(x + col * 64, y + row * 64, 64, 64, 2)));
+export const UV_WALL_LARGE: ReadonlyArray<ReadonlyArray<readonly UVRect[]> | null> = [
+  largeQuads(736, 768), // stone-wall-large
+  null, // dirt: fringe slopes, aligned 2x2 blocks are rare — not baked
+  largeQuads(864, 768), // carbon-wall-large
 ];
 // flare lives on a gutter row (see the mech-part note below) — its old cell
 // at (384,0) had dirt within a mip-3 texel below and the ring to its right
@@ -56,7 +94,9 @@ export const UV_CORE = uv(320, 128, 160, 160);
 // row 4 (y=384): scatter turret top, flak shell
 export const UV_SCATTER = uv(0, 384, 128, 128);
 export const UV_SHELL = uv(128, 384, 64, 64);
-export const UV_FUSE = uv(192, 384, 128, 128);
+// fuse rides at native 96px (like block-3): stretching the 96px source to
+// a 128 cell was a 1.33x non-integer upscale that shredded its antialiasing
+export const UV_FUSE = uv(208, 400, 96, 96);
 export const UV_TOWER_BASE3 = uv(384, 384, 96, 96); // block-3 at native 96px
 // duo turret top and its 1x1 base, tucked under the shell and tri cells
 export const UV_DUO = uv(128, 448, 64, 64);
@@ -92,6 +132,30 @@ export const UV_MACE_LEG_SIL = uv(544, 960, 64, 64);
 export const UV_MACE_BASE_SIL = uv(672, 960, 64, 64);
 export const UV_MACE_BODY_SIL = uv(800, 960, 64, 64);
 export const UV_FLAMETHROWER_SIL = uv(928, 960, 64, 64);
+// fortress parts ride 128px cells — the T3 art outgrows the 64px cells
+// above (body 100x80, leg 80x60 at native scale). The art row fills the
+// free strip right of block-3 at y=384; the silhouette row sits in the
+// free space right of the core at y=128. Cells are 128px wide so even the
+// 3px-dilated silhouettes keep >=4px of transparent margin (see the
+// mip-bleed note on the mech row)
+export const UV_FORTRESS_LEG = uv(512, 384, 128, 128);
+export const UV_FORTRESS_BASE = uv(640, 384, 128, 128);
+export const UV_FORTRESS_BODY = uv(768, 384, 128, 128);
+export const UV_ARTILLERY = uv(896, 384, 128, 128);
+export const UV_FORTRESS_LEG_SIL = uv(512, 128, 128, 128);
+export const UV_FORTRESS_BASE_SIL = uv(640, 128, 128, 128);
+export const UV_FORTRESS_BODY_SIL = uv(768, 128, 128, 128);
+export const UV_ARTILLERY_SIL = uv(896, 128, 128, 128);
+// crawler parts: 64px cells flush-packed at y=288, right of the bullet
+// cell and a 32px gutter above the fortress art strip. The 48px sources
+// keep >=5px transparent margins even silhouette-dilated, so unlike the
+// full-bleed mace cells these don't need the 128px pitch
+export const UV_CRAWLER_LEG = uv(448, 288, 64, 64);
+export const UV_CRAWLER_BASE = uv(512, 288, 64, 64);
+export const UV_CRAWLER_BODY = uv(576, 288, 64, 64);
+export const UV_CRAWLER_LEG_SIL = uv(640, 288, 64, 64);
+export const UV_CRAWLER_BASE_SIL = uv(704, 288, 64, 64);
+export const UV_CRAWLER_BODY_SIL = uv(768, 288, 64, 64);
 // white isosceles triangle, base at -x edge, apex at +x — tinted at draw
 // time for shrapnel rays (Drawf.tri)
 export const UV_TRI = uv(320, 384, 64, 64, 2);
@@ -108,6 +172,8 @@ export const UV_DECOR: readonly UVRect[] = [
 export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   dagger: { uv: UV_DAGGER_BODY, sprite: UNIT_SPRITE },
   mace: { uv: UV_MACE_BODY, sprite: UNIT_SPRITE },
+  fortress: { uv: UV_FORTRESS_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
+  crawler: { uv: UV_CRAWLER_BODY, sprite: UNIT_SPRITE },
   flare: { uv: UV_FLARE, sprite: UNIT_SPRITE }, // 48px art in a 64 cell, dagger scale
 };
 
@@ -119,13 +185,19 @@ export interface MechArt {
   leg: UVRect;
   base: UVRect;
   body: UVRect;
-  gun: UVRect;
+  /** absent when the type's weapon has no sprite (crawler: the explosion
+   * IS the weapon) — pushMech then draws no gun quads */
+  gun?: UVRect;
   gunX: number; // sideways gun mount offset px, mirrored to both sides
   gunY: number; // forward gun mount offset px
   stride: number; // leg swing amplitude px — the walk cycle is 4 strides
+  /** forward body/gun bob px — Mindustry mechFrontSway (default 0.1) x 2.5 */
+  frontSway?: number;
+  /** sideways body/gun bob px — Mindustry mechSideSway (default 0.54) x 2.5 */
+  sideSway?: number;
   sprite: number; // world px of every part quad (same 64px cell scale)
   /** solid-color silhouette cells, drawn under all parts as the outer rim */
-  sil: { leg: UVRect; base: UVRect; body: UVRect; gun: UVRect };
+  sil: { leg: UVRect; base: UVRect; body: UVRect; gun?: UVRect };
 }
 
 // stride is Mindustry's default 4 + (hitSize - 8) / 2.1 world units; gun
@@ -164,6 +236,42 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
       gun: UV_FLAMETHROWER_SIL,
     },
   },
+  // artillery weapon x=9 y=1, mirrored; mechFrontSway 0.55 is 5.5x the
+  // default — the heavy visibly lumbers nose-first with every stride
+  fortress: {
+    leg: UV_FORTRESS_LEG,
+    base: UV_FORTRESS_BASE,
+    body: UV_FORTRESS_BODY,
+    gun: UV_ARTILLERY,
+    gunX: 9 * MU,
+    gunY: 1 * MU,
+    stride: (4 + (13 - 8) / 2.1) * MU,
+    frontSway: 0.55 * MU,
+    sprite: UNIT_SPRITE * 2,
+    sil: {
+      leg: UV_FORTRESS_LEG_SIL,
+      base: UV_FORTRESS_BASE_SIL,
+      body: UV_FORTRESS_BODY_SIL,
+      gun: UV_ARTILLERY_SIL,
+    },
+  },
+  // no gun sprite — its Weapon fires only via shootOnDeath. mechSideSway
+  // 0.25 is under half the default: it scuttles rather than swaggers
+  crawler: {
+    leg: UV_CRAWLER_LEG,
+    base: UV_CRAWLER_BASE,
+    body: UV_CRAWLER_BODY,
+    gunX: 0,
+    gunY: 0,
+    stride: 4 * MU,
+    sideSway: 0.25 * MU,
+    sprite: UNIT_SPRITE,
+    sil: {
+      leg: UV_CRAWLER_LEG_SIL,
+      base: UV_CRAWLER_BASE_SIL,
+      body: UV_CRAWLER_BODY_SIL,
+    },
+  },
 };
 
 const ENV = "/mindustry/sprites/blocks/environment";
@@ -177,10 +285,20 @@ const SPRITES = {
   dirt0: `${ENV}/dirt1.png`,
   dirt1: `${ENV}/dirt2.png`,
   dirt2: `${ENV}/dirt3.png`,
+  sand0: `${ENV}/sand-floor1.png`,
+  sand1: `${ENV}/sand-floor2.png`,
+  sand2: `${ENV}/sand-floor3.png`,
+  darksand0: `${ENV}/darksand1.png`,
+  darksand1: `${ENV}/darksand2.png`,
+  darksand2: `${ENV}/darksand3.png`,
   stoneWall0: `${ENV}/stone-wall1.png`,
   stoneWall1: `${ENV}/stone-wall2.png`,
   dirtWall0: `${ENV}/dirt-wall1.png`,
   dirtWall1: `${ENV}/dirt-wall2.png`,
+  carbonWall0: `${ENV}/carbon-wall1.png`,
+  carbonWall1: `${ENV}/carbon-wall2.png`,
+  stoneWallLarge: `${ENV}/stone-wall-large.png`,
+  carbonWallLarge: `${ENV}/carbon-wall-large.png`,
   edgeStencil: `${ENV}/edge-stencil.png`,
   pine: `${ENV}/pine.png`,
   shrubs: `${ENV}/shrubs1.png`,
@@ -192,9 +310,16 @@ const SPRITES = {
   maceBase: "/mindustry/sprites/units/mace-base.png",
   mace: "/mindustry/sprites/units/mace.png",
   maceLeg: "/mindustry/sprites/units/mace-leg.png",
+  crawlerBase: "/mindustry/sprites/units/crawler-base.png",
+  crawler: "/mindustry/sprites/units/crawler.png",
+  crawlerLeg: "/mindustry/sprites/units/crawler-leg.png",
+  fortressBase: "/mindustry/sprites/units/fortress-base.png",
+  fortress: "/mindustry/sprites/units/fortress.png",
+  fortressLeg: "/mindustry/sprites/units/fortress-leg.png",
   flare: "/mindustry/sprites/units/flare.png",
   largeWeapon: "/mindustry/sprites/units/weapons/large-weapon.png",
   flamethrower: "/mindustry/sprites/units/weapons/flamethrower.png",
+  artillery: "/mindustry/sprites/units/weapons/artillery.png",
   spawnPad: `${ENV}/dark-panel-2.png`,
   towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
   towerBase1: "/mindustry/sprites/blocks/turrets/bases/block-1.png",
@@ -431,12 +556,13 @@ function drawFacingRight(
   src: CanvasImageSource,
   cx: number,
   cy: number,
-  size: number,
+  w: number,
+  h = w,
 ): void {
   c.save();
   c.translate(cx, cy);
   c.rotate(Math.PI / 2);
-  c.drawImage(src, -size / 2, -size / 2, size, size);
+  c.drawImage(src, -w / 2, -h / 2, w, h);
   c.restore();
 }
 
@@ -454,21 +580,34 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   c.imageSmoothingEnabled = false; // integer upscales keep the pixel art crisp
 
   // ground + wall tiles: 32px sources upscaled 2x into 64px cells
-  c.drawImage(img.grass0, 0, 0, 64, 64);
-  c.drawImage(img.grass1, 64, 0, 64, 64);
-  c.drawImage(img.grass2, 128, 0, 64, 64);
+  c.drawImage(antialiased(img.grass0), 0, 0, 64, 64);
+  c.drawImage(antialiased(img.grass1), 64, 0, 64, 64);
+  c.drawImage(antialiased(img.grass2), 128, 0, 64, 64);
   // walls ride the same antialias pass the game's packer runs over them
   c.drawImage(antialiased(img.stoneWall0), 192, 0, 64, 64);
   c.drawImage(antialiased(img.stoneWall1), 256, 0, 64, 64);
-  c.drawImage(img.stone0, 64, 64, 64, 64);
-  c.drawImage(img.stone1, 128, 64, 64, 64);
-  c.drawImage(img.stone2, 192, 64, 64, 64);
-  c.drawImage(img.dirt0, 256, 64, 64, 64);
-  c.drawImage(img.dirt1, 320, 64, 64, 64);
-  c.drawImage(img.dirt2, 384, 64, 64, 64);
+  c.drawImage(antialiased(img.stone0), 64, 64, 64, 64);
+  c.drawImage(antialiased(img.stone1), 128, 64, 64, 64);
+  c.drawImage(antialiased(img.stone2), 192, 64, 64, 64);
+  c.drawImage(antialiased(img.dirt0), 256, 64, 64, 64);
+  c.drawImage(antialiased(img.dirt1), 320, 64, 64, 64);
+  c.drawImage(antialiased(img.dirt2), 384, 64, 64, 64);
   c.drawImage(antialiased(img.dirtWall0), 448, 64, 64, 64);
   c.drawImage(antialiased(img.dirtWall1), 0, 128, 64, 64);
-  c.drawImage(img.spawnPad, 0, 192, 64, 64);
+  c.drawImage(antialiased(img.carbonWall0), 320, 0, 64, 64);
+  c.drawImage(antialiased(img.carbonWall1), 384, 0, 64, 64);
+  // desert floors on row 0's free tail (see the UV_FLOORS note)
+  c.drawImage(antialiased(img.sand0), 576, 0, 64, 64);
+  c.drawImage(antialiased(img.sand1), 640, 0, 64, 64);
+  c.drawImage(antialiased(img.sand2), 704, 0, 64, 64);
+  c.drawImage(antialiased(img.darksand0), 768, 0, 64, 64);
+  c.drawImage(antialiased(img.darksand1), 832, 0, 64, 64);
+  c.drawImage(antialiased(img.darksand2), 896, 0, 64, 64);
+  // 2x2-tile "-large" wall art: 64px sources at the same 2x tile scale,
+  // in the free block right of the dirt edge fades
+  c.drawImage(antialiased(img.stoneWallLarge), 736, 768, 128, 128);
+  c.drawImage(antialiased(img.carbonWallLarge), 864, 768, 128, 128);
+  c.drawImage(antialiased(img.spawnPad), 0, 192, 64, 64);
 
   // floor edge fades, generated exactly like the game's sprite packer
   // (tools Generators.java "edge stencils"): the floor texture tiled 3x3 at
@@ -492,12 +631,18 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(makeEdge(img.grass0)), 16, 768, 192, 192);
   c.drawImage(antialiased(makeEdge(img.stone0)), 272, 768, 192, 192);
   c.drawImage(antialiased(makeEdge(img.dirt0)), 528, 768, 192, 192);
+  // darksand's edge fade, sliced into its nine scattered cells (see the
+  // UV_FLOOR_EDGES note) — AA'd whole first, exactly once, like the blocks
+  const dsEdge = antialiased(makeEdge(img.darksand0));
+  for (let ry = 0; ry < 3; ry++)
+    for (let rx = 0; rx < 3; rx++)
+      c.drawImage(dsEdge, rx * 32, ry * 32, 32, 32, 416 + (ry * 3 + rx) * 64, 704, 64, 64);
 
   // props: 48px overhanging sources at 2x into 96px cells
-  c.drawImage(img.pine, 0, 288, 96, 96);
-  c.drawImage(img.boulder0, 96, 288, 96, 96);
-  c.drawImage(img.boulder1, 192, 288, 96, 96);
-  c.drawImage(img.shrubs, 288, 288, 64, 64);
+  c.drawImage(antialiased(img.pine), 0, 288, 96, 96);
+  c.drawImage(antialiased(img.boulder0), 96, 288, 96, 96);
+  c.drawImage(antialiased(img.boulder1), 192, 288, 96, 96);
+  c.drawImage(antialiased(img.shrubs), 288, 288, 64, 64);
 
   // mech parts (row y=576, 128px pitch — see the UV block note): each
   // source centered at native size in its own 64px cell so the renderer can
@@ -517,6 +662,20 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(img.flamethrower), -24, -28, 48, 56);
   c.restore();
 
+  // fortress parts at native size in their 128px cells (see the UV note)
+  drawFacingRight(c, antialiased(img.fortressLeg), 576, 448, 80, 60);
+  drawFacingRight(c, antialiased(img.fortressBase), 704, 448, 64);
+  drawFacingRight(c, antialiased(img.fortress), 832, 448, 100, 80);
+  drawFacingRight(c, antialiased(img.artillery), 960, 448, 48, 56);
+
+  // crawler parts: art then silhouettes, one flush 64px run (see UV note)
+  drawFacingRight(c, antialiased(img.crawlerLeg), 480, 320, 48);
+  drawFacingRight(c, antialiased(img.crawlerBase), 544, 320, 48);
+  drawFacingRight(c, antialiased(img.crawler), 608, 320, 48);
+  drawFacingRight(c, silhouetted(img.crawlerLeg), 672, 320, 48);
+  drawFacingRight(c, silhouetted(img.crawlerBase), 736, 320, 48);
+  drawFacingRight(c, silhouetted(img.crawler), 800, 320, 48);
+
   // silhouette row (y=960): each part again as a solid dilated shape — the
   // under-layer pushMech uses for the unit's single outer rim
   drawFacingRight(c, silhouetted(img.daggerLeg), 64, 992, 48);
@@ -531,6 +690,10 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   c.rotate(Math.PI / 2);
   c.drawImage(silhouetted(img.flamethrower), -24, -28, 48, 56);
   c.restore();
+  drawFacingRight(c, silhouetted(img.fortressLeg), 576, 192, 80, 60);
+  drawFacingRight(c, silhouetted(img.fortressBase), 704, 192, 64);
+  drawFacingRight(c, silhouetted(img.fortress), 832, 192, 100, 80);
+  drawFacingRight(c, silhouetted(img.artillery), 960, 192, 48, 56);
 
   // flare: a flying unit is one sprite — no legs, no chassis
   const flare = document.createElement("canvas");
@@ -543,7 +706,7 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
 
   // official basic bullet at (352,288): back layer in Mindustry's bullet
   // orange under a pale-yellow core, pre-rotated to face +x like the unit
-  const tinted = (src: HTMLImageElement, color: string): HTMLCanvasElement => {
+  const tinted = (src: HTMLImageElement | HTMLCanvasElement, color: string): HTMLCanvasElement => {
     const t = document.createElement("canvas");
     t.width = t.height = 64;
     const tc = t.getContext("2d");
@@ -561,8 +724,8 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   bul.width = bul.height = 64;
   const bc = bul.getContext("2d");
   if (!bc) throw new Error("2d context unavailable");
-  bc.drawImage(tinted(img.bulletBack, "#f68021"), 0, 0);
-  bc.drawImage(tinted(img.bullet, "#fff5cc"), 0, 0);
+  bc.drawImage(tinted(antialiased(img.bulletBack), "#f68021"), 0, 0);
+  bc.drawImage(tinted(antialiased(img.bullet), "#fff5cc"), 0, 0);
   drawFacingRight(c, bul, 384, 320, 64);
 
   // ring (448,0) — procedural
@@ -580,7 +743,7 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   c.fillRect(0, 64, 64, 64);
 
   // turret base: 64px block-2 upscaled 2x into a 128px cell
-  c.drawImage(img.towerBase, 64, 128, 128, 128);
+  c.drawImage(antialiased(img.towerBase), 64, 128, 128, 128);
 
   // salvo top: the preview sprite is the fully assembled turret — face right
   c.imageSmoothingEnabled = false;
@@ -595,8 +758,9 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   shell.width = shell.height = 64;
   const shc = shell.getContext("2d");
   if (!shc) throw new Error("2d context unavailable");
-  shc.drawImage(tinted(img.shellBack, "#f9c27a"), 0, 0);
-  shc.drawImage(tinted(img.shell, "#fff8e8"), 0, 0);
+  const shellBackAA = antialiased(img.shellBack), shellAA = antialiased(img.shell);
+  shc.drawImage(tinted(shellBackAA, "#f9c27a"), 0, 0);
+  shc.drawImage(tinted(shellAA, "#fff8e8"), 0, 0);
   drawFacingRight(c, shell, 160, 416, 64);
 
   // hail's artillery shell, same region in graphite ammo colors
@@ -605,8 +769,8 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   gshell.width = gshell.height = 64;
   const gsc = gshell.getContext("2d");
   if (!gsc) throw new Error("2d context unavailable");
-  gsc.drawImage(tinted(img.shellBack, "#7d89d8"), 0, 0);
-  gsc.drawImage(tinted(img.shell, "#dae1ee"), 0, 0);
+  gsc.drawImage(tinted(shellBackAA, "#7d89d8"), 0, 0);
+  gsc.drawImage(tinted(shellAA, "#dae1ee"), 0, 0);
   drawFacingRight(c, gshell, 320, 736, 64);
 
   // hail top: the bare turret head (no preview exists — the renderer draws
@@ -614,13 +778,13 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   drawFacingRight(c, antialiased(outlined(img.hail, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 192, 736, 64);
 
   // fuse top: size-3 turret art, facing +x like the others
-  drawFacingRight(c, antialiased(outlined(img.fuse, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 256, 448, 128);
+  drawFacingRight(c, antialiased(outlined(img.fuse, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 256, 448, 96);
   // 3x3 turret base at native 96px
-  c.drawImage(img.towerBase3, 384, 384, 96, 96);
+  c.drawImage(antialiased(img.towerBase3), 384, 384, 96, 96);
 
   // duo top and 1x1 base: 32px sources upscaled 2x into 64px cells
   drawFacingRight(c, antialiased(outlined(img.duoPreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 160, 480, 64);
-  c.drawImage(img.towerBase1, 320, 448, 64, 64);
+  c.drawImage(antialiased(img.towerBase1), 320, 448, 64, 64);
 
   // shrapnel triangle (320,384): white, base on the left edge, apex right;
   // the renderer stretches and tints it into Drawf.tri shapes
@@ -634,17 +798,18 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
 
   // core-nucleus at native 160px: base block, then the team overlay tinted
   // sharded-yellow the way Mindustry composites team regions
-  c.drawImage(img.core, 320, 128, 160, 160);
+  c.drawImage(antialiased(img.core), 320, 128, 160, 160);
+  const coreTeam = antialiased(img.coreTeam);
   const team = document.createElement("canvas");
   team.width = team.height = 160;
   const tc = team.getContext("2d");
   if (!tc) throw new Error("2d context unavailable");
-  tc.drawImage(img.coreTeam, 0, 0, 160, 160);
+  tc.drawImage(coreTeam, 0, 0, 160, 160);
   tc.globalCompositeOperation = "multiply";
   tc.fillStyle = TEAM_COLOR;
   tc.fillRect(0, 0, 160, 160);
   tc.globalCompositeOperation = "destination-in";
-  tc.drawImage(img.coreTeam, 0, 0, 160, 160);
+  tc.drawImage(coreTeam, 0, 0, 160, 160);
   c.drawImage(team, 320, 128);
 
   return a;

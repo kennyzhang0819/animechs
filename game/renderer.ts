@@ -23,6 +23,8 @@ import {
   UV_TRI,
   UV_TURRET,
   UV_WALLS,
+  UV_WALL_LARGE,
+  WALL_GROUP,
   type UVRect,
 } from "./atlas";
 import {
@@ -40,7 +42,7 @@ import {
 } from "./constants";
 import { UNIT_KINDS, UNIT_STATS } from "./levels";
 import type { Sim } from "./sim";
-import type { Terrain } from "./terrain";
+import { WALL_PINE, type Terrain } from "./terrain";
 import { FxKind, type TowerKind } from "./types";
 
 // per-kind turret tops and bullet sprites
@@ -80,11 +82,14 @@ const KIND_MECH = UNIT_KINDS.map((k) => MECH_ART[k] ?? null);
 const SIDE_SWAY = 0.54 * 2.5;
 const FRONT_SWAY = 0.1 * 2.5;
 const LEG_SHADE = 0.14;
-// floor blend priority by group id (grass, stone, dirt): Blocks.java
-// definition order — stone < dirt < grass, higher fades over lower
-const GROUP_PRI = [2, 0, 1] as const;
-// overlaying groups in ascending priority (stone never overlays)
-const EDGE_ORDER = [2, 0] as const;
+// floor blend priority by group id (grass, stone, dirt, sand, darksand):
+// Blocks.java definition order — stone < sand < darksand < dirt < grass,
+// higher fades over lower
+const GROUP_PRI = [4, 0, 3, 1, 2] as const;
+// overlaying groups in ascending priority. Stone never overlays (lowest),
+// and sand's only inferior — stone floor — shares no map with it yet, so
+// its edge art isn't baked either
+const EDGE_ORDER = [4, 2, 0] as const;
 // wall shadow strength: BlockRenderer.shadowColor is black at 0.71 — the
 // premultiplied blend of a black quad at this alpha equals its multiply
 const WALL_SHADOW_A = 0.71;
@@ -301,8 +306,8 @@ export class Renderer {
     const lift = Math.sin(((raw / m.stride) * Math.PI) / 2);
     const cb = Math.cos(brot), sb = Math.sin(brot);
     // stride sway shifts everything above the chassis (guns + body only)
-    const sway = lift * SIDE_SWAY;
-    const fsway = Math.sin((raw / m.stride) * Math.PI) * FRONT_SWAY;
+    const sway = lift * (m.sideSway ?? SIDE_SWAY);
+    const fsway = Math.sin((raw / m.stride) * Math.PI) * (m.frontSway ?? FRONT_SWAY);
     const ox = -sb * sway + cb * fsway;
     const oy = cb * sway + sb * fsway;
     const cr = Math.cos(rot), sr = Math.sin(rot);
@@ -324,26 +329,30 @@ export class Renderer {
       ]);
     }
     parts.push(["base", x, y, s, s, brot, 1]);
-    for (let side = -1; side <= 1; side += 2) {
-      parts.push([
-        "gun",
-        x + ox + cr * m.gunY - sr * m.gunX * side,
-        y + oy + sr * m.gunY + cr * m.gunX * side,
-        s,
-        s * side, // mirrored mount, like Weapon.flipSprite
-        rot,
-        1,
-      ]);
+    if (m.gun) {
+      for (let side = -1; side <= 1; side += 2) {
+        parts.push([
+          "gun",
+          x + ox + cr * m.gunY - sr * m.gunX * side,
+          y + oy + sr * m.gunY + cr * m.gunX * side,
+          s,
+          s * side, // mirrored mount, like Weapon.flipSprite
+          rot,
+          1,
+        ]);
+      }
     }
     parts.push(["body", x + ox, y + oy, s, s, rot, 1]);
     // silhouette pass: every part as a solid dilated shape, drawn first so
     // the art covers all of it but a single rim around the assembly — the
     // outer border without a line at every seam of the walking mech
     for (const [k, px, py, w, h, r] of parts) {
-      this.push(b, px, py, w, h, r, m.sil[k], tint[0], tint[1], tint[2], 1);
+      const uvr = m.sil[k]; // gun entries exist only when the art does
+      if (uvr) this.push(b, px, py, w, h, r, uvr, tint[0], tint[1], tint[2], 1);
     }
     for (const [k, px, py, w, h, r, dk] of parts) {
-      this.push(b, px, py, w, h, r, m[k], tint[0] * dk, tint[1] * dk, tint[2] * dk, 1);
+      const uvr = m[k];
+      if (uvr) this.push(b, px, py, w, h, r, uvr, tint[0] * dk, tint[1] * dk, tint[2] * dk, 1);
     }
   }
 
@@ -393,8 +402,7 @@ export class Renderer {
     // does this cell show its floor (rather than a wall sprite)? pine cells
     // (and tower cells, which aren't in terrain.blocked at all) get their
     // floor painted; props draw over it below
-    const showsFloor = (j: number): boolean =>
-      !(T.blocked[j] && T.wall[j] < UV_WALLS.length);
+    const showsFloor = (j: number): boolean => !T.blocked[j] || T.wall[j] === WALL_PINE;
     // pass 1: floors, with Floor.drawEdges fades — a neighboring floor of
     // higher blend priority overlays its edge sub-cell for that direction.
     // Lower-priority groups overlay first, like the blenders id sort
@@ -450,11 +458,41 @@ export class Renderer {
     // editor's spawn overlay and the props
     const w = this.walls;
     w.n = 0;
+    // StaticWall.drawBase's large rule: a wall cell's 2x2-ALIGNED block
+    // (rx = x & ~1) that is entirely one wall family has a seeded 50%
+    // chance to render as the four quadrants of that family's -large art;
+    // otherwise every cell keeps its own baked variant. Seeded per block,
+    // so the choice is stable across rebuilds
+    const groupAt = (xx: number, yy: number): number => {
+      if (xx >= COLS || yy >= ROWS) return -1;
+      const j = yy * COLS + xx;
+      return T.blocked[j] ? (WALL_GROUP[T.wall[j]] ?? -1) : -1;
+    };
+    const largeBlock = (rx: number, ry: number): boolean => {
+      let h = (Math.imul(rx, 374761393) + Math.imul(ry, 668265263)) | 0;
+      h = Math.imul(h ^ (h >>> 13), 1274126177);
+      h ^= h >>> 16;
+      return (h >>> 0) / 4294967296 < 0.5;
+    };
     for (let y = 0; y < ROWS; y++) {
       for (let x = 0; x < COLS; x++) {
         const i = y * COLS + x;
         if (showsFloor(i)) continue;
-        this.push(w, (x + 0.5) * CELL, (y + 0.5) * CELL, CELL, CELL, 0, UV_WALLS[T.wall[i]], 1, 1, 1, 1);
+        let uvr = UV_WALLS[T.wall[i]];
+        const g = WALL_GROUP[T.wall[i]] ?? -1;
+        const quads = g >= 0 ? UV_WALL_LARGE[g] : null;
+        if (quads) {
+          const rx = x & ~1, ry = y & ~1;
+          if (
+            groupAt(rx, ry) === g &&
+            groupAt(rx + 1, ry) === g &&
+            groupAt(rx, ry + 1) === g &&
+            groupAt(rx + 1, ry + 1) === g &&
+            largeBlock(rx, ry)
+          )
+            uvr = quads[y & 1][x & 1];
+        }
+        this.push(w, (x + 0.5) * CELL, (y + 0.5) * CELL, CELL, CELL, 0, uvr, 1, 1, 1, 1);
       }
     }
     if (showSpawn) {

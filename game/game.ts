@@ -1,7 +1,7 @@
 import { buildAtlas } from "./atlas";
 import { loadOfficialMaps } from "./maps";
 import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
-import type { TowerKind } from "./levels";
+import type { LevelSpec, TowerKind } from "./levels";
 import { Renderer } from "./renderer";
 import { Sim } from "./sim";
 import type { Tower } from "./types";
@@ -18,6 +18,13 @@ export interface UiState {
   totalWaves: number;
   buildKind: TowerKind | null;
   paused: boolean;
+  /** the core is destroyed — the field is frozen behind the score screen */
+  lost: boolean;
+  /** every enemy in the script is down — the success screen takes over */
+  won: boolean;
+  kills: number;
+  /** the esc game menu is up: sim held, resume or abandon from the overlay */
+  menuOpen: boolean;
 }
 
 export interface Stats {
@@ -75,6 +82,7 @@ export class Game {
   private lastMouse = { x: 0, y: 0 };
   private readonly keysDown = new Set<string>();
   private paused = false;
+  private menuOpen = false;
 
   private raf = 0;
   private last = 0;
@@ -86,12 +94,24 @@ export class Game {
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.code === "Escape") {
-      this.buildKind = null;
-      this.selected = null;
-      this.building = false;
+      // esc backs out one layer at a time: an open menu closes, an active
+      // build/selection cancels, and only a bare esc brings up the game
+      // menu. The end screens own the UI — no menu underneath them
+      if (this.menuOpen) {
+        this.menuOpen = false;
+        return;
+      }
+      if (this.buildKind || this.selected || this.building) {
+        this.buildKind = null;
+        this.selected = null;
+        this.building = false;
+        return;
+      }
+      if (!this.sim.lost() && !this.won()) this.menuOpen = true;
       return;
     }
     if (e.code === "Space" && !e.repeat) {
+      if (this.menuOpen) return; // the menu already holds the sim
       // space ALWAYS pauses — even with a UI button focused after a click,
       // where the browser would otherwise re-activate the button. Only real
       // text entry keeps its space (none exists in the UI today)
@@ -269,6 +289,16 @@ export class Game {
     this.sim.skipWave();
   }
 
+  /** the whole script is dealt with and the core stands */
+  private won(): boolean {
+    return !this.sim.lost() && this.sim.remaining() <= 0;
+  }
+
+  /** the esc menu's Resume button */
+  closeMenu(): void {
+    this.menuOpen = false;
+  }
+
   /** everything the React overlay renders, polled a few times a second */
   ui(): UiState {
     return {
@@ -280,11 +310,22 @@ export class Game {
       totalWaves: this.sim.totalWaves,
       buildKind: this.buildKind,
       paused: this.paused,
+      lost: this.sim.lost(),
+      won: this.won(),
+      kills: this.sim.kills,
+      menuOpen: this.menuOpen,
     };
   }
 
   reset(): void {
     this.sim.reset();
+    this.menuOpen = false;
+    this.renderer.rebuildTerrain(this.sim);
+  }
+
+  /** switch to (or restart) a level: fresh sim state, terrain rebuilt */
+  loadLevel(spec: LevelSpec): void {
+    this.sim.loadLevel(spec);
     this.renderer.rebuildTerrain(this.sim);
   }
 
@@ -356,7 +397,11 @@ export class Game {
     if (this.keysDown.size > 0) this.clampCamera();
 
     const t0 = performance.now();
-    if (!this.paused) this.sim.update(dt);
+    // a lost game freezes mid-carnage: the score screen sits over the
+    // exact frame the core fell on, until retry resets the sim. The esc
+    // menu holds the sim the same way. A won game keeps running — the
+    // field is empty and the last death effects get to play out
+    if (!this.paused && !this.menuOpen && !this.sim.lost()) this.sim.update(dt);
     const simMs = performance.now() - t0;
 
     this.renderer.render(
@@ -387,9 +432,9 @@ export class Game {
       const t = this.selected;
       c.beginPath();
       c.arc(t.x, t.y, TOWERS[t.kind].range, 0, Math.PI * 2);
-      c.fillStyle = "rgba(91,217,232,0.06)";
+      c.fillStyle = "rgba(255,211,127,0.06)";
       c.fill();
-      c.strokeStyle = "rgba(91,217,232,0.7)";
+      c.strokeStyle = "rgba(255,211,127,0.7)";
       c.lineWidth = 1.5;
       c.stroke();
       const selPx = TOWERS[t.kind].size * CELL;
@@ -403,9 +448,9 @@ export class Game {
       const px = sz * CELL;
       const ok = this.sim.canPlace(this.hoverGx, this.hoverGy, this.buildKind);
       const x = this.hoverGx * CELL, y = this.hoverGy * CELL;
-      c.fillStyle = ok ? "rgba(91,217,232,0.14)" : "rgba(255,90,90,0.3)";
+      c.fillStyle = ok ? "rgba(255,211,127,0.14)" : "rgba(255,90,90,0.3)";
       c.fillRect(x, y, px, px);
-      c.strokeStyle = ok ? "rgba(91,217,232,0.85)" : "rgba(255,90,90,0.9)";
+      c.strokeStyle = ok ? "rgba(255,211,127,0.85)" : "rgba(255,90,90,0.9)";
       c.lineWidth = 1.5;
       c.strokeRect(x + 1, y + 1, px - 2, px - 2);
       // interior lines so the ghost reads as the cells it occupies

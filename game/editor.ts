@@ -412,9 +412,9 @@ export class MapEditor {
     const r = this.brush - 1;
     const x = (this.hoverGx - r) * CELL, y = (this.hoverGy - r) * CELL;
     const side = (2 * r + 1) * CELL;
-    c.fillStyle = this.set.kind === "erase" ? "rgba(255,90,90,0.18)" : "rgba(91,217,232,0.14)";
+    c.fillStyle = this.set.kind === "erase" ? "rgba(255,90,90,0.18)" : "rgba(255,211,127,0.14)";
     c.fillRect(x, y, side, side);
-    c.strokeStyle = this.set.kind === "erase" ? "rgba(255,90,90,0.9)" : "rgba(91,217,232,0.85)";
+    c.strokeStyle = this.set.kind === "erase" ? "rgba(255,90,90,0.9)" : "rgba(255,211,127,0.85)";
     c.lineWidth = 1.5 / s;
     c.strokeRect(x, y, side, side);
   }

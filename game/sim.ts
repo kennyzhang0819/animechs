@@ -9,25 +9,26 @@ import {
   type LevelSpec,
   type UnitKind,
 } from "./levels";
-import { OFFICIAL_MAPS, terrainFromMap } from "./maps";
+import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
 import { WALL_PINE, type Terrain } from "./terrain";
 import { FxKind, type Effect, type Projectile, type Tower, type TowerKind } from "./types";
 
 const FX_CAP = 400;
 
-// separation personal space (px): units steer apart inside this radius, and
-// hard-resolve interpenetration below the pressure floor (see HARD). Bigger
-// SEP = airier crowds but lower lane throughput, which caps how many units
-// the field can hold at once (throughput ~ speed * strip / SEP^2)
-const SEP = 26;
-// pressure floor (px): crowds may compress to this spacing but never below.
-// It sets crowd density — and with it how many units fit on the field.
-// Two daggers (UR 10) touch at 20, so a floor a notch above that keeps
-// pressed crowds from shoving units visibly into each other; must stay < SEP
-const HARD = 26;
+// --- Mindustry unit physics (async/PhysicsProcess.java) ---
+// every unit is a circle of radius hitSize * unitCollisionRadiusScale
+// (0.6); our urad stores hitSize/2 in px, so the factor doubles to 1.2.
+// Note the physics circle is BIGGER than the hitbox — crowds keep a
+// sliver of daylight between sprites, exactly like the original
+const PHYS_R = 1.2;
+// PhysicsWorld.scl, "how much to soften movement by": each overlapping
+// pair moves only 1/1.25 of the way apart per tick, split by mass
+const PHYS_SCL = 1.25;
 // spatial hash cell size (px); rebuilt every frame with a counting sort.
-// must be >= SEP so a 3x3 bucket scan covers the separation radius
-const HC = 26;
+// Derived, not hardcoded: it must cover the widest pair contact distance
+// (two of the biggest kind) or the 3x3 bucket scan silently misses
+// overlapping pairs the moment someone adds a larger unit
+const HC = Math.ceil(2 * PHYS_R * UNIT_RMAX);
 // narrow-passage centering gain (1/s): in 1-wide corridors and L-bend
 // corners, steer toward the cell centerline so units line up with the
 // slim (CELL - 2*WALL_R)px window instead of scraping the jambs
@@ -79,6 +80,10 @@ export class Sim {
   totalEnemies = 0;
   kills = 0;
   leaked = 0;
+  // the core's health: every unit that reaches it takes one point. At 1
+  // max, the first leak is the loss — raise this when cores get tougher
+  readonly coreHpMax = 1;
+  coreHp = this.coreHpMax;
   // live per-kind census, updated the moment a unit spawns or is removed
   readonly aliveByKind = new Int32Array(UNIT_KINDS.length);
   // the level script's cursor, plus the live state of the step it points at:
@@ -100,6 +105,11 @@ export class Sim {
   private readonly bStart = new Int32Array(HN + 1);
   private readonly bCount = new Int32Array(HN);
   private readonly bUnits = new Int32Array(MAX_UNITS);
+  // physics scratch positions: start each tick at upx/upy, get mutated by
+  // the pairwise resolution, and the difference is that tick's crowd shove.
+  // Never swapped in removeUnit — fully rebuilt every tick before use
+  private readonly phx = new Float32Array(MAX_UNITS);
+  private readonly phy = new Float32Array(MAX_UNITS);
   private readonly flowTmp: Vec2 = { x: 0, y: 0 };
 
   // seal-test cache: hover asks canPlace every frame, and the test costs two
@@ -116,14 +126,16 @@ export class Sim {
     this.n = 0;
     this.kills = 0;
     this.leaked = 0;
+    this.coreHp = this.coreHpMax;
     this.sealGx = -1;
     this.projs.length = 0;
     this.effects.length = 0;
     this.towers.length = 0;
     // the official map document IS the world: map-editor saves land in its
     // JSON, and the next full page load plays them. The documents are
-    // fetched before the sim is built (see Game.create), never imported
-    const doc = OFFICIAL_MAPS[0];
+    // fetched before the sim is built (see Game.create), never imported.
+    // A level may name its map; the first official map is the default
+    const doc = (this.level.map ? loadMap(this.level.map) : null) ?? OFFICIAL_MAPS[0];
     if (!doc) throw new Error("official maps not loaded — await loadOfficialMaps() first");
     this.terrain = terrainFromMap(doc);
     this.field.rebuildWalk(this.towers, this.terrain.blocked, this.terrain.spawn);
@@ -157,6 +169,11 @@ export class Sim {
   loadLevel(spec: LevelSpec): void {
     this.level = spec;
     this.reset();
+  }
+
+  /** the core is down — the game freezes and the score screen takes over */
+  lost(): boolean {
+    return this.coreHp <= 0;
   }
 
   /** enemies left to kill: still unspawned + still walking the field */
@@ -212,6 +229,7 @@ export class Sim {
     this.runScript(dt);
 
     this.buildHash();
+    this.updatePhysics();
     this.updateUnits(dt);
     this.fireTowers(dt);
     this.updateProjectiles(dt);
@@ -379,7 +397,10 @@ export class Sim {
     for (let y = gy; y < gy + sz; y++)
       for (let x = gx; x < gx + sz; x++) {
         const i = y * COLS + x;
-        if (!blocked[i] || wall[i] >= WALL_PINE) return false;
+        // pine forests are the one un-buildable kind of blocked cell; every
+        // rock family (stone, dirt, dark carbon: indices above the sentinel
+        // too) is tower real estate
+        if (!blocked[i] || wall[i] === WALL_PINE) return false;
       }
     for (const t of this.towers) {
       const tsz = TOWERS[t.kind].size;
@@ -462,10 +483,6 @@ export class Sim {
    * slingshots units forward.
    */
   private spawnSpotFree(x: number, y: number, r: number, fly: boolean): boolean {
-    // the spawner's own radius plus the crowd pressure floor's half-spacing;
-    // only units in the same layer count — air and ground never collide
-    const need = r + HARD / 2;
-    const r2 = need * need;
     const hx = clamp((x / HC) | 0, 0, HCOLS - 1);
     const hy = clamp((y / HC) | 0, 0, HROWS - 1);
     for (let gy = Math.max(0, hy - 1); gy <= Math.min(HROWS - 1, hy + 1); gy++) {
@@ -474,8 +491,12 @@ export class Sim {
         for (let k = this.bStart[c]; k < e; k++) {
           const i = this.bUnits[k];
           if (i >= this.n || KIND_FLYING[this.ukind[i]] !== fly) continue;
+          // free means the physics circles wouldn't touch, so a fresh
+          // spawn never starts mid-shove; only the same layer counts —
+          // air and ground never collide
           const dx = this.upx[i] - x, dy = this.upy[i] - y;
-          if (dx * dx + dy * dy < r2) return false;
+          const rs = (r + this.urad[i]) * PHYS_R;
+          if (dx * dx + dy * dy < rs * rs) return false;
         }
       }
     }
@@ -568,14 +589,70 @@ export class Sim {
 
   // ---------- units ----------
 
+  /**
+   * Mindustry's PhysicsProcess.PhysicsWorld.update(), ported 1:1: every
+   * unit is a circle (radius PHYS_R * urad) with mass = area; overlapping
+   * same-layer pairs are pushed apart along their center line by the full
+   * overlap softened by PHYS_SCL, split inversely by mass — a mace plows
+   * through daggers, daggers barely rock the mace. Each unordered pair
+   * resolves exactly once per tick, at its first member's turn (the
+   * original's `collided` flag == our ascending-index guard), and later
+   * pairs see the already-pushed scratch positions, so a pile relaxes a
+   * little more per tick than independent pushes would. Exactly stacked
+   * units part in a random direction. Ground and air are separate layers
+   * that pass through each other freely.
+   */
+  private updatePhysics(): void {
+    const { upx, upy, urad, ukind, phx, phy, bStart, bUnits } = this;
+    const n = this.n;
+    for (let i = 0; i < n; i++) {
+      phx[i] = upx[i];
+      phy[i] = upy[i];
+    }
+    for (let i = 0; i < n; i++) {
+      const fly = KIND_FLYING[ukind[i]];
+      const ri = urad[i] * PHYS_R;
+      const mi = urad[i] * urad[i]; // hitSize^2 * pi — the pi cancels in the ratio
+      const hx = clamp((phx[i] / HC) | 0, 0, HCOLS - 1);
+      const hy = clamp((phy[i] / HC) | 0, 0, HROWS - 1);
+      for (let gy = Math.max(0, hy - 1); gy <= Math.min(HROWS - 1, hy + 1); gy++) {
+        for (let gx = Math.max(0, hx - 1); gx <= Math.min(HCOLS - 1, hx + 1); gx++) {
+          const c = gy * HCOLS + gx, e = bStart[c + 1];
+          for (let k = bStart[c]; k < e; k++) {
+            const j = bUnits[k];
+            if (j <= i || j >= n || KIND_FLYING[ukind[j]] !== fly) continue;
+            const rs = ri + urad[j] * PHYS_R;
+            let dx = phx[i] - phx[j], dy = phy[i] - phy[j];
+            const d2 = dx * dx + dy * dy;
+            if (d2 >= rs * rs) continue;
+            const dst = Math.sqrt(d2);
+            if (dst < 1e-4) {
+              const a = Math.random() * Math.PI * 2;
+              dx = Math.cos(a);
+              dy = Math.sin(a);
+            } else {
+              dx /= dst;
+              dy /= dst;
+            }
+            const mj = urad[j] * urad[j];
+            const push = (rs - dst) / PHYS_SCL / (mi + mj);
+            phx[i] += dx * push * mj;
+            phy[i] += dy * push * mj;
+            phx[j] -= dx * push * mi;
+            phy[j] -= dy * push * mi;
+          }
+        }
+      }
+    }
+  }
+
   private updateUnits(dt: number): void {
-    const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, field, flowTmp, bStart, bUnits } = this;
+    const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, phx, phy, field, flowTmp } = this;
     const steer = Math.min(1, dt * 8);
-    const SEP2 = SEP * SEP;
     // repulsion probes reach 4px past the wall-clearance radius: any longer
     // and the push-off fires while a unit hugs a wall to enter a staggered
     // narrow passage, shoving it back out of the entry window forever
-    const PR = WALL_R + 4, REP = 55, SMAX = 70;
+    const PR = WALL_R + 4, REP = 55;
     const { isGoal, walk } = field;
 
     for (let i = this.n - 1; i >= 0; i--) {
@@ -585,6 +662,7 @@ export class Sim {
         this.pushFx(upx[i], upy[i], 0.4, FxKind.Breach);
         this.removeUnit(i);
         this.leaked++;
+        if (this.coreHp > 0) this.coreHp--;
         continue;
       }
 
@@ -601,40 +679,14 @@ export class Sim {
         uvy[i] += (flowTmp.y * uspd[i] - uvy[i]) * steer;
       }
 
-      // separation from neighbours via the hash: soft steering inside the
-      // personal-space radius, plus accumulated hard overlap below the floor.
-      // Same forces for both layers, but strictly within a layer — air and
-      // ground pass through each other freely
-      let sx = 0, sy = 0, px = 0, py = 0;
-      const hx = clamp((upx[i] / HC) | 0, 0, HCOLS - 1);
-      const hy = clamp((upy[i] / HC) | 0, 0, HROWS - 1);
-      for (let gy = Math.max(0, hy - 1); gy <= Math.min(HROWS - 1, hy + 1); gy++) {
-        for (let gx = Math.max(0, hx - 1); gx <= Math.min(HCOLS - 1, hx + 1); gx++) {
-          const c = gy * HCOLS + gx, e = bStart[c + 1];
-          for (let k = bStart[c]; k < e; k++) {
-            const j = bUnits[k];
-            if (j === i || j >= this.n || KIND_FLYING[ukind[j]] !== fly) continue;
-            const dx = upx[i] - upx[j], dy = upy[i] - upy[j];
-            const d2 = dx * dx + dy * dy;
-            if (d2 > SEP2 || d2 < 1e-6) continue;
-            const d = Math.sqrt(d2);
-            const push = (SEP - d) / d;
-            sx += dx * push;
-            sy += dy * push;
-            if (d < HARD) {
-              const ov = (HARD - d) / d;
-              px += dx * ov;
-              py += dy * ov;
-            }
-          }
-        }
-      }
-      let fx = sx * 14, fy = sy * 14;
-      const fl = Math.hypot(fx, fy);
-      if (fl > SMAX) {
-        fx = (fx / fl) * SMAX;
-        fy = (fy / fl) * SMAX;
-      }
+      // this tick's crowd shove, precomputed by updatePhysics: whatever the
+      // pairwise resolution moved this unit's scratch position. Applied on
+      // top of the unit's own capped drive — a crowd can shove a unit
+      // faster than it walks, exactly as in Mindustry — but it rides
+      // through the same wall slide below, so pressure never pins anyone
+      // into rock
+      const shx = phx[i] - upx[i], shy = phy[i] - upy[i];
+      let fx = 0, fy = 0;
 
       // everything terrain-flavoured is ground-only: flyers never probe,
       // jitter, or center — walls are scenery beneath them
@@ -668,32 +720,15 @@ export class Sim {
         if (bU && bD) fy += ((cy + 0.5) * CELL - upy[i]) * CENTER_K;
       }
 
-      // separation/repulsion steer but never exceed the unit's stat speed
+      // the unit's own drive (flow + terrain steering) never exceeds its
+      // stat speed; the physics shove then rides on top uncapped
       let mvx = uvx[i] + fx, mvy = uvy[i] + fy;
       const ml = Math.hypot(mvx, mvy);
       if (ml > uspd[i]) {
         mvx = (mvx / ml) * uspd[i];
         mvy = (mvy / ml) * uspd[i];
       }
-
-      // hard de-overlap: resolve up to half the interpenetration per frame
-      let ox = 0, oy = 0;
-      const pl = Math.hypot(px, py);
-      if (pl > 1e-6) {
-        const amt = Math.min(pl * 0.5, 10);
-        ox = (px / pl) * amt;
-        oy = (py / pl) * amt;
-      }
-
-      // total displacement never exceeds the unit's stat speed: crowd
-      // pressure may redirect a unit but can never squeeze it forward
-      // faster than it could walk
-      let dxT = mvx * dt + ox, dyT = mvy * dt + oy;
-      const dl = Math.hypot(dxT, dyT), dmax = uspd[i] * dt;
-      if (dl > dmax) {
-        dxT = (dxT / dl) * dmax;
-        dyT = (dyT / dl) * dmax;
-      }
+      const dxT = mvx * dt + shx, dyT = mvy * dt + shy;
 
       // axis-separated move with slide-to-contact: a blocked axis advances
       // flush against the wall face rather than rejecting the whole step —
