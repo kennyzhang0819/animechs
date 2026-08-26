@@ -546,12 +546,6 @@ export default function Swarmfield() {
                       <span>Clear bonus</span>
                       <Scrap value={result.clearBonus} dim />
                     </div>
-                    {result.incomeBonus > 0 && (
-                      <div className="flex items-center justify-between">
-                        <span>Salvage teams</span>
-                        <Scrap value={result.incomeBonus} dim />
-                      </div>
-                    )}
                     <div className="flex items-center justify-between border-t border-[#2E2E36] pt-1.5">
                       <span className="font-semibold text-[#EDEDEF]">Scrap banked</span>
                       <Scrap value={result.total} />
