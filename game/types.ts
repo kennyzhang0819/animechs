@@ -1,4 +1,5 @@
-export type TowerKind = "duo" | "hail" | "salvo" | "scatter" | "fuse";
+export const TOWER_KINDS = ["duo", "hail", "salvo", "scatter", "fuse"] as const;
+export type TowerKind = (typeof TOWER_KINDS)[number];
 
 export interface Tower {
   kind: TowerKind;

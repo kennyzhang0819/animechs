@@ -16,9 +16,9 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Swarmfield",
+  title: "Sir, We Have a Dagger Problem",
   description:
-    "Flow-field pathfinding demo: thousands of swarm units, WebGL instanced rendering, and towers that reroute the horde in real time.",
+    "Incremental swarm defense: every run banks scrap toward a tech tree of towers and placements, across a campaign of worlds — thousands of units on a WebGL flow field.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

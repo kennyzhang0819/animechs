@@ -1,13 +1,15 @@
 import { buildAtlas } from "./atlas";
 import { loadOfficialMaps } from "./maps";
 import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
-import type { TowerKind } from "./levels";
+import type { LevelSpec, TowerKind } from "./levels";
+import { scrapForKills } from "./progress";
 import { Renderer } from "./renderer";
 import { Sim } from "./sim";
+import type { TechState } from "./tech";
 import type { Tower } from "./types";
 
 export interface UiState {
-  levelId: number;
+  levelId: string;
   remaining: number;
   /** how many of each kind are on the field right now, like UNIT_KINDS */
   byKind: number[];
@@ -18,6 +20,20 @@ export interface UiState {
   totalWaves: number;
   buildKind: TowerKind | null;
   paused: boolean;
+  /** leaks chip the core; the run is lost at zero */
+  coreHp: number;
+  coreHpMax: number;
+  /** the sim freezes on the first non-"playing" outcome (see frame) */
+  outcome: "playing" | "won" | "lost";
+  kills: number;
+  leaked: number;
+  /** scrap this run's kills are worth so far, before bonuses/economy */
+  scrapEarned: number;
+  /** live towers per kind, for the menu's "2/6" cap badges */
+  counts: Record<TowerKind, number>;
+  /** campaign restrictions from the tech tree; null = unrestricted (editor) */
+  caps: Record<TowerKind, number> | null;
+  unlocked: readonly TowerKind[] | null;
 }
 
 export interface Stats {
@@ -47,8 +63,12 @@ const PAN_KEYS: Record<string, readonly [number, number]> = {
  * a pair of stacked canvases. Owns the requestAnimationFrame loop.
  */
 export class Game {
-  readonly sim = new Sim();
+  readonly sim: Sim;
   private readonly renderer: Renderer;
+  // set on the first won/lost outcome: the sim freezes there so the results
+  // read what actually happened, and reset()/restart clears it
+  private ended = false;
+  private readonly tech: TechState | null;
   private readonly uictx: CanvasRenderingContext2D;
 
   // device px per world px at zoom 1 — the "cover" scale, so the canvas is
@@ -205,20 +225,34 @@ export class Game {
     if (e.ctrlKey) e.preventDefault();
   };
 
-  /** loads the sprite atlas, then wires everything up */
-  static async create(glCanvas: HTMLCanvasElement, uiCanvas: HTMLCanvasElement): Promise<Game> {
+  /**
+   * Loads the sprite atlas, then wires everything up. `level` picks what the
+   * run plays (default: the campaign's first); `tech` applies the save's
+   * tower unlocks and caps — omit it for unrestricted building (editor, dev).
+   */
+  static async create(
+    glCanvas: HTMLCanvasElement,
+    uiCanvas: HTMLCanvasElement,
+    level?: LevelSpec,
+    tech?: TechState,
+  ): Promise<Game> {
     // the sim reads the official map documents, which live outside the
     // module graph and are fetched, never imported (imported JSON turned
     // every editor save into a Turbopack HMR update it cannot apply)
     const [atlas] = await Promise.all([buildAtlas(), loadOfficialMaps()]);
-    return new Game(glCanvas, uiCanvas, atlas);
+    return new Game(glCanvas, uiCanvas, atlas, level, tech);
   }
 
   private constructor(
     private readonly glCanvas: HTMLCanvasElement,
     private readonly uiCanvas: HTMLCanvasElement,
     atlas: HTMLCanvasElement,
+    level?: LevelSpec,
+    tech?: TechState,
   ) {
+    this.sim = new Sim(level);
+    this.tech = tech ?? null;
+    this.sim.setTech(this.tech);
     this.renderer = new Renderer(glCanvas, atlas);
     const ctx = uiCanvas.getContext("2d");
     if (!ctx) throw new Error("2d context unavailable");
@@ -260,6 +294,7 @@ export class Game {
   }
 
   setBuildKind(kind: TowerKind | null): void {
+    if (kind && this.tech && !this.tech.unlocked.has(kind)) return;
     this.buildKind = kind;
     if (kind) this.selected = null;
   }
@@ -280,10 +315,22 @@ export class Game {
       totalWaves: this.sim.totalWaves,
       buildKind: this.buildKind,
       paused: this.paused,
+      coreHp: this.sim.coreHp,
+      coreHpMax: this.sim.coreHpMax,
+      outcome: this.sim.outcome(),
+      kills: this.sim.kills,
+      leaked: this.sim.leaked,
+      scrapEarned: scrapForKills(this.sim.killsByKind),
+      counts: this.sim.towerCounts(),
+      caps: this.tech ? this.tech.caps : null,
+      unlocked: this.tech ? Array.from(this.tech.unlocked) : null,
     };
   }
 
   reset(): void {
+    this.ended = false;
+    this.buildKind = null;
+    this.selected = null;
     this.sim.reset();
     this.renderer.rebuildTerrain(this.sim);
   }
@@ -356,7 +403,12 @@ export class Game {
     if (this.keysDown.size > 0) this.clampCamera();
 
     const t0 = performance.now();
-    if (!this.paused) this.sim.update(dt);
+    // the sim freezes on the run's first won/lost frame — the field stays up
+    // as the results screen's backdrop, and reset() rearms it
+    if (!this.paused && !this.ended) {
+      this.sim.update(dt);
+      if (this.sim.outcome() !== "playing") this.ended = true;
+    }
     const simMs = performance.now() - t0;
 
     this.renderer.render(

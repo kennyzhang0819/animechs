@@ -9,9 +9,10 @@ import {
   type LevelSpec,
   type UnitKind,
 } from "./levels";
-import { OFFICIAL_MAPS, terrainFromMap } from "./maps";
+import { loadMap, terrainFromMap } from "./maps";
+import type { TechState } from "./tech";
 import { WALL_PINE, type Terrain } from "./terrain";
-import { FxKind, type Effect, type Projectile, type Tower, type TowerKind } from "./types";
+import { FxKind, TOWER_KINDS, type Effect, type Projectile, type Tower, type TowerKind } from "./types";
 
 const FX_CAP = 400;
 
@@ -79,6 +80,15 @@ export class Sim {
   totalEnemies = 0;
   kills = 0;
   leaked = 0;
+  /** kills per unit kind this run, indexed like UNIT_KINDS — the scrap payout */
+  readonly killsByKind = new Int32Array(UNIT_KINDS.length);
+  /** every leak chips the core; at zero the run is lost */
+  readonly coreHpMax = 10;
+  coreHp = this.coreHpMax;
+  // which towers may be built and how many of each — null (the default, and
+  // the map editor's mode) places no restrictions; the campaign sets it from
+  // the save's tech tree before play (see Game.create)
+  private tech: TechState | null = null;
   // live per-kind census, updated the moment a unit spawns or is removed
   readonly aliveByKind = new Int32Array(UNIT_KINDS.length);
   // the level script's cursor, plus the live state of the step it points at:
@@ -108,7 +118,8 @@ export class Sim {
   private sealGy = -1;
   private sealResult = false;
 
-  constructor() {
+  constructor(level?: LevelSpec) {
+    if (level) this.level = level;
     this.reset();
   }
 
@@ -116,6 +127,8 @@ export class Sim {
     this.n = 0;
     this.kills = 0;
     this.leaked = 0;
+    this.killsByKind.fill(0);
+    this.coreHp = this.coreHpMax;
     this.sealGx = -1;
     this.projs.length = 0;
     this.effects.length = 0;
@@ -123,8 +136,11 @@ export class Sim {
     // the official map document IS the world: map-editor saves land in its
     // JSON, and the next full page load plays them. The documents are
     // fetched before the sim is built (see Game.create), never imported
-    const doc = OFFICIAL_MAPS[0];
-    if (!doc) throw new Error("official maps not loaded — await loadOfficialMaps() first");
+    const doc = loadMap(this.level.mapId);
+    if (!doc)
+      throw new Error(
+        `map "${this.level.mapId}" not loaded — await loadOfficialMaps() first (and list it in OFFICIAL_MAP_IDS)`,
+      );
     this.terrain = terrainFromMap(doc);
     this.field.rebuildWalk(this.towers, this.terrain.blocked, this.terrain.spawn);
     this.field.compute();
@@ -159,9 +175,31 @@ export class Sim {
     this.reset();
   }
 
+  /** campaign restrictions on building; null lifts them (editor, dev) */
+  setTech(tech: TechState | null): void {
+    this.tech = tech;
+  }
+
   /** enemies left to kill: still unspawned + still walking the field */
   remaining(): number {
     return this.totalEnemies - this.kills - this.leaked;
+  }
+
+  /**
+   * Where the run stands: lost the moment the core's HP is gone, won once
+   * every scripted enemy is dead or leaked with HP to spare.
+   */
+  outcome(): "playing" | "won" | "lost" {
+    if (this.coreHp <= 0) return "lost";
+    if (this.totalEnemies > 0 && this.remaining() === 0) return "won";
+    return "playing";
+  }
+
+  /** live towers per kind — the HUD's "2/6" badges, and the cap check */
+  towerCounts(): Record<TowerKind, number> {
+    const counts = Object.fromEntries(TOWER_KINDS.map((k) => [k, 0])) as Record<TowerKind, number>;
+    for (const t of this.towers) counts[t.kind]++;
+    return counts;
   }
 
   /** per-kind head count currently on the field, indexed like UNIT_KINDS */
@@ -373,6 +411,14 @@ export class Sim {
    * touch the flow field — the rock was already unwalkable.
    */
   canPlace(gx: number, gy: number, kind: TowerKind): boolean {
+    // tech gate first: a locked tower or an exhausted cap refuses everywhere,
+    // so the drag-chain and keyboard paths can't sidestep the menu
+    if (this.tech) {
+      if (!this.tech.unlocked.has(kind)) return false;
+      let count = 0;
+      for (const t of this.towers) if (t.kind === kind) count++;
+      if (count >= this.tech.caps[kind]) return false;
+    }
     const sz = TOWERS[kind].size;
     if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
     const { blocked, wall } = this.terrain;
@@ -522,6 +568,14 @@ export class Sim {
     return false;
   }
 
+  /** a tower kill: death puff, removal, and the per-kind scrap ledger */
+  private killUnit(i: number): void {
+    this.killsByKind[this.ukind[i]]++;
+    this.pushFx(this.upx[i], this.upy[i], 0.35, FxKind.Death);
+    this.removeUnit(i);
+    this.kills++;
+  }
+
   private removeUnit(i: number): void {
     this.aliveByKind[this.ukind[i]]--;
     const n = --this.n;
@@ -585,6 +639,7 @@ export class Sim {
         this.pushFx(upx[i], upy[i], 0.4, FxKind.Breach);
         this.removeUnit(i);
         this.leaked++;
+        if (this.coreHp > 0) this.coreHp--;
         continue;
       }
 
@@ -967,9 +1022,7 @@ export class Sim {
     splashHits.sort((a2, b2) => b2 - a2);
     for (const i of splashHits) {
       if (uhp[i] > 0) continue;
-      this.pushFx(upx[i], upy[i], 0.35, FxKind.Death);
-      this.removeUnit(i);
-      this.kills++;
+      this.killUnit(i);
     }
   }
 
@@ -1025,9 +1078,7 @@ export class Sim {
               if (dx * dx + dy * dy < hr * hr) {
                 uhp[i] -= Sim.applyArmor(b.damage, uarmor[i]);
                 if (uhp[i] <= 0) {
-                  this.pushFx(upx[i], upy[i], 0.35, FxKind.Death);
-                  this.removeUnit(i);
-                  this.kills++;
+                  this.killUnit(i);
                 } else if (b.splash <= 0) {
                   this.pushFx(pr.x, pr.y, 0.12, FxKind.Hit);
                 }
@@ -1118,9 +1169,7 @@ export class Sim {
     splashHits.sort((a, b) => b - a);
     for (const i of splashHits) {
       if (uhp[i] > 0) continue;
-      this.pushFx(upx[i], upy[i], 0.35, FxKind.Death);
-      this.removeUnit(i);
-      this.kills++;
+      this.killUnit(i);
     }
     this.pushFx(x, y, 0.3, FxKind.Flak);
   }
