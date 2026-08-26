@@ -16,15 +16,15 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sir, We Have a Dagger Problem",
+  title: "Swarmdustry",
   description:
-    "Incremental swarm defense: every run banks scrap toward a tech tree of towers and placements, across a campaign of worlds — thousands of units on a WebGL flow field.",
+    "Flow-field pathfinding demo: thousands of swarm units, WebGL instanced rendering, and towers that reroute the horde in real time.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${display.variable} ${mono.variable} font-mono bg-[#070B14] text-[13px] text-[#9AA7C7] antialiased`}>
+      <body className={`${display.variable} ${mono.variable} font-mono bg-[#0B0B0D] text-[13px] text-[#A6A6AF] antialiased`}>
         <AdminShortcut />
         {children}
       </body>

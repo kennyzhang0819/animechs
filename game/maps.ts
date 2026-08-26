@@ -29,7 +29,7 @@ export interface MapData {
 }
 
 /** every playable map — add a JSON under public/maps/ and list its id here */
-export const OFFICIAL_MAP_IDS: readonly string[] = ["generated-24"];
+export const OFFICIAL_MAP_IDS: readonly string[] = ["generated-24", "desert-3way"];
 
 /**
  * The loaded official map documents, in OFFICIAL_MAP_IDS order. Empty until
@@ -81,10 +81,18 @@ export const PALETTE: readonly PaletteSet[] = [
     icons: [1, 2, 3].map((n) => `${ENV}/stone${n}.png`) },
   { id: "dirt", label: "Dirt", kind: "floor", variants: [6, 7, 8],
     icons: [1, 2, 3].map((n) => `${ENV}/dirt${n}.png`) },
+  { id: "sand", label: "Sand", kind: "floor", variants: [9, 10, 11],
+    icons: [1, 2, 3].map((n) => `${ENV}/sand-floor${n}.png`) },
+  { id: "darksand", label: "Darksand", kind: "floor", variants: [12, 13, 14],
+    icons: [1, 2, 3].map((n) => `${ENV}/darksand${n}.png`) },
   { id: "stone-wall", label: "Stone wall", kind: "wall", variants: [0, 1],
     icons: [1, 2].map((n) => `${ENV}/stone-wall${n}.png`) },
   { id: "dirt-wall", label: "Dirt wall", kind: "wall", variants: [2, 3],
     icons: [1, 2].map((n) => `${ENV}/dirt-wall${n}.png`) },
+  // the darker rock (carbon wall); variant 4 is the pine sentinel, so the
+  // wall indices jump straight to 5-6
+  { id: "dark-wall", label: "Dark rock", kind: "wall", variants: [5, 6],
+    icons: [1, 2].map((n) => `${ENV}/carbon-wall${n}.png`) },
   { id: "pine", label: "Pine", kind: "pine", variants: [0], icons: [`${ENV}/pine.png`] },
   { id: "boulder", label: "Boulder", kind: "decor", variants: [0, 1],
     icons: [1, 2].map((n) => `${PROPS}/boulder${n}.png`) },
@@ -169,8 +177,16 @@ export async function saveMap(map: MapData): Promise<boolean> {
 // ---------- thumbnails ----------
 
 /** per-cell preview colors, mirroring the atlas art's average tones */
-const FLOOR_TONES = ["#7ab648", "#74ae45", "#6ea843", "#8a8a93", "#84848d", "#7e7e87", "#a5764f", "#9e7049", "#976a44"];
-const WALL_TONES = ["#5c5c66", "#565660", "#6e4f35", "#674a32"];
+const FLOOR_TONES = [
+  "#7ab648", "#74ae45", "#6ea843", // grass
+  "#8a8a93", "#84848d", "#7e7e87", // stone
+  "#a5764f", "#9e7049", "#976a44", // dirt
+  "#d8b290", "#dbb492", "#d9b391", // sand
+  "#3f3c3c", "#413e3e", "#3f3c3c", // darksand
+];
+// index 4 (the pine sentinel) never reaches this table — drawThumb tests
+// WALL_PINE first — but the slot keeps 5-6 (dark carbon rock) aligned
+const WALL_TONES = ["#5c5c66", "#565660", "#6e4f35", "#674a32", "#000000", "#3e454a", "#3a4046"];
 const PINE_TONE = "#2e6e35";
 const SPAWN_TONE = "#8a3a44"; // the pad's dark red-panel look
 

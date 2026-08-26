@@ -100,13 +100,13 @@ export default function MapEditorView({
 
   if (error) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-[#0A101F]">
-        <p className="p-8 text-center text-[#9AA7C7]">{error}</p>
+      <div className="fixed inset-0 flex items-center justify-center bg-[#101013]">
+        <p className="p-8 text-center text-[#A6A6AF]">{error}</p>
       </div>
     );
   }
 
-  const panel = "rounded border border-[#223050] bg-[#0D1424]/80 backdrop-blur";
+  const panel = "rounded border border-[#2E2E36] bg-[#151518]/80 backdrop-blur";
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-black">
@@ -122,8 +122,8 @@ export default function MapEditorView({
         {/* header: name, save, back */}
         <div className={`absolute left-4 top-4 flex items-center gap-3 px-3 py-2 ${panel}`}>
           <div>
-            <div className="text-[11px] uppercase tracking-widest text-[#5B6885]">Map editor</div>
-            <div className="text-sm font-semibold text-[#E8EDF7]">
+            <div className="text-[11px] uppercase tracking-widest text-[#71717C]">Map editor</div>
+            <div className="text-sm font-semibold text-[#EDEDEF]">
               {map.name}
               {dirty && <span className="ml-1 text-[#F0B457]">●</span>}
             </div>
@@ -137,7 +137,7 @@ export default function MapEditorView({
           </button>
           <button
             onClick={close}
-            className="rounded border border-[#223050] px-3 py-1 text-[#9AA7C7] hover:border-[#35486E]"
+            className="rounded border border-[#2E2E36] px-3 py-1 text-[#A6A6AF] hover:border-[#4A4A55]"
           >
             Back (Esc)
           </button>
@@ -146,24 +146,24 @@ export default function MapEditorView({
         {/* right controls: randomize + brush */}
         <div className={`absolute right-4 top-4 flex flex-col gap-2 px-3 py-2 ${panel}`}>
           <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[11px] uppercase tracking-widest text-[#5B6885]">Randomize</span>
+            <span className="text-[11px] uppercase tracking-widest text-[#71717C]">Randomize</span>
             <button
               role="switch"
               aria-checked={randomize}
               onClick={() => setRandomize(!randomize)}
               className={`relative h-5 w-9 rounded-full transition-colors ${
-                randomize ? "bg-[#2E6E4E]" : "bg-[#223050]"
+                randomize ? "bg-[#2E6E4E]" : "bg-[#2E2E36]"
               }`}
             >
               <span
-                className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-[#E8EDF7] transition-transform ${
+                className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-[#EDEDEF] transition-transform ${
                   randomize ? "translate-x-4" : ""
                 }`}
               />
             </button>
           </label>
           <label className="flex items-center justify-between gap-3">
-            <span className="text-[11px] uppercase tracking-widest text-[#5B6885]">Brush</span>
+            <span className="text-[11px] uppercase tracking-widest text-[#71717C]">Brush</span>
             <span className="flex gap-1">
               {[1, 2, 3].map((b) => (
                 <button
@@ -172,8 +172,8 @@ export default function MapEditorView({
                   onClick={() => setBrush(b)}
                   className={`h-6 w-6 rounded border text-xs ${
                     brush === b
-                      ? "border-[#5BD9E8] bg-[#16233E] text-[#E8EDF7]"
-                      : "border-[#223050] text-[#5B6885] hover:border-[#35486E]"
+                      ? "border-[#FFD37F] bg-[#222227] text-[#EDEDEF]"
+                      : "border-[#2E2E36] text-[#71717C] hover:border-[#4A4A55]"
                   }`}
                 >
                   {2 * b - 1}
@@ -181,7 +181,7 @@ export default function MapEditorView({
               ))}
             </span>
           </label>
-          <div className="text-[10px] text-[#5B6885]">
+          <div className="text-[10px] text-[#71717C]">
             LMB paint · RMB pan · wheel zoom · ⌘Z undo
           </div>
         </div>
@@ -193,7 +193,7 @@ export default function MapEditorView({
           <div className="flex flex-col gap-1.5">
             {PALETTE.map((set) => (
               <div key={set.id}>
-                <div className="mb-0.5 text-[10px] uppercase tracking-widest text-[#5B6885]">
+                <div className="mb-0.5 text-[10px] uppercase tracking-widest text-[#71717C]">
                   {set.label}
                 </div>
                 <div className="flex gap-1">
@@ -211,14 +211,14 @@ export default function MapEditorView({
                         onClick={() => pick(set, v)}
                         className={`relative flex h-10 w-10 items-center justify-center rounded border ${
                           active
-                            ? "border-[#5BD9E8] bg-[#16233E]"
-                            : "border-[#223050] bg-[#0A101F] hover:border-[#35486E]"
+                            ? "border-[#FFD37F] bg-[#222227]"
+                            : "border-[#2E2E36] bg-[#101013] hover:border-[#4A4A55]"
                         }`}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
                         <img src={icon} alt={set.label} className="h-8 w-8 [image-rendering:pixelated]" />
                         {randomize && set.icons.length > 1 && (
-                          <span className="absolute -right-1 -top-1 rounded bg-[#16233E] px-1 text-[9px] text-[#5BD9E8]">
+                          <span className="absolute -right-1 -top-1 rounded bg-[#222227] px-1 text-[9px] text-[#FFD37F]">
                             ×{set.icons.length}
                           </span>
                         )}
