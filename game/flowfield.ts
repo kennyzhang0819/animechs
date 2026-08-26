@@ -38,11 +38,16 @@ export class FlowField {
   readonly dist = new Float32Array(NCELLS);
   readonly dirX = new Float32Array(NCELLS);
   readonly dirY = new Float32Array(NCELLS);
-  // spawn-pad cells (indices), from the terrain's spawn layer:
+  // spawn-pad cells (indices), from the terrain's spawn layer (whose values
+  // are region ids — 0 none, N >= 1 a pad in region N):
   // spawnPts = open AND connected to the core (where walkers may enter);
-  // spawnAir = every open pad (flyers ignore ground connectivity)
+  // spawnAir = every open pad (flyers ignore ground connectivity).
+  // The ByRegion maps split the same lists per region id, for wave groups
+  // that pin their units to one region
   spawnPts: number[] = [];
   spawnAir: number[] = [];
+  readonly spawnPtsByRegion = new Map<number, number[]>();
+  readonly spawnAirByRegion = new Map<number, number[]>();
   private spawnMask: Uint8Array | null = null;
 
   // binary min-heap with lazy deletion (sized for ~8 relaxations per cell)
@@ -179,12 +184,23 @@ export class FlowField {
 
     this.spawnPts = [];
     this.spawnAir = [];
+    this.spawnPtsByRegion.clear();
+    this.spawnAirByRegion.clear();
     const mask = this.spawnMask;
     if (mask) {
+      const into = (map: Map<number, number[]>, region: number, i: number): void => {
+        const pads = map.get(region);
+        if (pads) pads.push(i);
+        else map.set(region, [i]);
+      };
       for (let i = 0; i < NCELLS; i++) {
         if (!mask[i] || walk[i]) continue;
         this.spawnAir.push(i);
-        if (this.dist[i] < INF) this.spawnPts.push(i);
+        into(this.spawnAirByRegion, mask[i], i);
+        if (this.dist[i] < INF) {
+          this.spawnPts.push(i);
+          into(this.spawnPtsByRegion, mask[i], i);
+        }
       }
     }
   }

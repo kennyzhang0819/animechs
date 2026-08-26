@@ -33,17 +33,48 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
 /** largest unit radius — pads broad-phase bounds that must cover any unit */
 export const UNIT_RMAX = Math.max(...UNIT_KINDS.map((k) => UNIT_STATS[k].radius));
 
+/** how many of each kind a wave (or one region's share of it) sends */
+export type WaveUnits = Partial<Record<UnitKind, number>>;
+
+/**
+ * One region's contingent of a wave. Its units enter ONLY on the spawn pads
+ * carrying this region id in the map document's spawn layer — pad choice
+ * and order are random within the region, never across regions.
+ */
+export type RegionWave = WaveUnits & { region: number };
+
 /**
  * One step of a level's script. A wave says how many of each kind to send;
  * its kinds drain together and intermingled, all running out at the same
  * moment, so `{ dagger: 10, mace: 20 }` arrives as one mixed push rather
- * than ten daggers followed by twenty maces. A wait holds for that many
- * seconds once the previous wave has finished entering the field — the
- * clock starts when the last unit spawns, not when it dies.
+ * than ten daggers followed by twenty maces. The plain form spawns from any
+ * pad; the region-group form pins each group to one spawn region:
+ * `{ wave: [{ region: 1, flare: 50 }, { region: 2, mace: 50 }] }` sends the
+ * flares from region 1's pads and the maces from region 2's, both groups
+ * draining at once. A wait holds for that many seconds once the previous
+ * wave has finished entering the field — the clock starts when the last
+ * unit spawns, not when it dies.
  */
 export type LevelStep =
-  | { wave: Partial<Record<UnitKind, number>> }
+  | { wave: WaveUnits | readonly RegionWave[] }
   | { wait: number };
+
+/**
+ * Normalize a wave into region groups with counts indexed like UNIT_KINDS.
+ * The plain kind-count form becomes one region-0 group (region 0 = any
+ * pad); groups with nothing in them are dropped.
+ */
+export function waveGroups(
+  wave: WaveUnits | readonly RegionWave[],
+): { region: number; counts: number[] }[] {
+  const specs: readonly RegionWave[] = Array.isArray(wave) ? wave : [{ region: 0, ...wave }];
+  const groups: { region: number; counts: number[] }[] = [];
+  for (const spec of specs) {
+    const counts = UNIT_KINDS.map((k) => Math.max(0, spec[k] ?? 0));
+    if (counts.some((c) => c > 0)) groups.push({ region: spec.region, counts });
+  }
+  return groups;
+}
 
 export interface LevelSpec {
   id: number;

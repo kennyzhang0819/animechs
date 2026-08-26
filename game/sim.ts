@@ -6,6 +6,7 @@ import {
   UNIT_KINDS,
   UNIT_RMAX,
   UNIT_STATS,
+  waveGroups,
   type LevelSpec,
   type UnitKind,
 } from "./levels";
@@ -88,8 +89,10 @@ export class Sim {
   // HUD's "Wave 2 / 5". A wave stays current through the wait that follows it
   totalWaves = 0;
   private wavesStarted = 0;
-  private readonly waveLeft = new Int32Array(UNIT_KINDS.length);
-  private readonly waveTotal = new Int32Array(UNIT_KINDS.length);
+  // the wave being drained, flattened to (region, kind) entries — every
+  // entry runs out at the same moment (see nextWaveEntry), each spawning
+  // only on its own region's pads (region 0 = any pad)
+  private waveEntries: { region: number; kind: number; left: number; total: number }[] = [];
   private waitLeft = 0;
   private spawnAcc = 0;
 
@@ -138,13 +141,25 @@ export class Sim {
     this.totalWaves = 0;
     // an empty wave is not a wave — loadStep skips it, so it must not count
     // here either, or the HUD would promise a wave that never arrives
+    const regions = new Set<number>();
     for (const step of this.level.script) {
       if (!("wave" in step)) continue;
       let n = 0;
-      for (const k of UNIT_KINDS) n += step.wave[k] ?? 0;
+      for (const g of waveGroups(step.wave)) {
+        for (const c of g.counts) n += c;
+        if (g.region > 0) regions.add(g.region);
+      }
       if (n === 0) continue;
       this.totalWaves++;
       this.totalEnemies += n;
+    }
+    // a script naming a region the map doesn't carry falls back to any pad
+    // (see spawnPads) — a map/script mismatch, so say so up front
+    for (const r of regions) {
+      if (!this.field.spawnAirByRegion.get(r)?.length)
+        console.warn(`map "${doc.id}" has no region-${r} spawn pads — that wave group will use any pad`);
+      else if (!this.field.spawnPtsByRegion.get(r)?.length)
+        console.warn(`map "${doc.id}": no region-${r} pad connects to the core — its ground units will use any pad`);
     }
     this.stepIdx = 0;
     this.waitLeft = 0;
@@ -234,8 +249,7 @@ export class Sim {
    * script runs out, which is what ends the level.
    */
   private loadStep(): void {
-    this.waveLeft.fill(0);
-    this.waveTotal.fill(0);
+    this.waveEntries.length = 0;
     this.waitLeft = 0;
     const script = this.level.script;
     for (; this.stepIdx < script.length; this.stepIdx++) {
@@ -247,15 +261,11 @@ export class Sim {
         }
         continue;
       }
-      let any = false;
-      for (const k of UNIT_KINDS) {
-        const c = step.wave[k] ?? 0;
-        if (c <= 0) continue;
-        this.waveLeft[UNIT_ID[k]] = c;
-        this.waveTotal[UNIT_ID[k]] = c;
-        any = true;
-      }
-      if (any) {
+      for (const g of waveGroups(step.wave))
+        for (let kind = 0; kind < g.counts.length; kind++)
+          if (g.counts[kind] > 0)
+            this.waveEntries.push({ region: g.region, kind, left: g.counts[kind], total: g.counts[kind] });
+      if (this.waveEntries.length > 0) {
         this.wavesStarted++;
         return;
       }
@@ -270,20 +280,23 @@ export class Sim {
   }
 
   /**
-   * Which kind to send next out of the current wave: whichever is furthest
+   * Which entry to send next out of the current wave: whichever is furthest
    * from finishing, by fraction of its own total. That intermingles a mixed
-   * wave from its first unit and lands every kind's last unit together,
-   * instead of emptying one pile before starting the next.
+   * wave from its first unit and lands every entry's last unit together,
+   * instead of emptying one pile before starting the next. Entries in
+   * `skip` (their region's pads were too crowded this frame) don't compete.
    */
-  private nextWaveKind(): number {
-    let best = -1;
+  private nextWaveEntry(
+    skip: ReadonlySet<unknown>,
+  ): { region: number; kind: number; left: number; total: number } | null {
+    let best = null;
     let bestFrac = 0;
-    for (let i = 0; i < this.waveLeft.length; i++) {
-      if (this.waveLeft[i] <= 0) continue;
-      const frac = this.waveLeft[i] / this.waveTotal[i];
+    for (const e of this.waveEntries) {
+      if (e.left <= 0 || skip.has(e)) continue;
+      const frac = e.left / e.total;
       if (frac > bestFrac) {
         bestFrac = frac;
-        best = i;
+        best = e;
       }
     }
     return best;
@@ -306,14 +319,22 @@ export class Sim {
     }
 
     let left = 0;
-    for (let i = 0; i < this.waveLeft.length; i++) left += this.waveLeft[i];
+    for (const e of this.waveEntries) left += e.left;
     if (left === 0) return; // script finished
 
     this.spawnAcc = Math.min(this.spawnAcc + this.level.spawnRate * dt, this.level.spawnRate);
+    // one region's crowded pads must not stall the other regions' share of
+    // the wave — a failed entry sits out the rest of this frame while the
+    // remaining entries keep draining
+    const blocked = new Set<unknown>();
     while (left > 0 && this.spawnAcc >= 1) {
-      const id = this.nextWaveKind();
-      if (id < 0 || !this.spawnUnit(UNIT_KINDS[id])) break;
-      this.waveLeft[id]--;
+      const e = this.nextWaveEntry(blocked);
+      if (!e) break;
+      if (!this.spawnUnit(UNIT_KINDS[e.kind], e.region)) {
+        blocked.add(e);
+        continue;
+      }
+      e.left--;
       this.spawnAcc--;
       left--;
     }
@@ -482,12 +503,24 @@ export class Sim {
     return true;
   }
 
-  private spawnUnit(kind: UnitKind): boolean {
+  /** the pad cells a unit may enter on: its wave group's region, or every
+   * pad for a region-less group (region 0). A region the map doesn't carry
+   * — or whose pads are all cut off — falls back to every pad, so a
+   * mismatched script keeps playing instead of stalling (warned at reset) */
+  private spawnPads(fly: boolean, region: number): number[] {
+    const all = fly ? this.field.spawnAir : this.field.spawnPts;
+    if (region <= 0) return all;
+    const byRegion = fly ? this.field.spawnAirByRegion : this.field.spawnPtsByRegion;
+    const pads = byRegion.get(region);
+    return pads && pads.length > 0 ? pads : all;
+  }
+
+  private spawnUnit(kind: UnitKind, region: number): boolean {
     const stats = UNIT_STATS[kind];
     const fly = !!stats.flying;
     // every enemy enters on a spawn pad from the terrain's spawn layer;
     // walkers need a pad connected to the core, flyers take any open pad
-    const pads = fly ? this.field.spawnAir : this.field.spawnPts;
+    const pads = this.spawnPads(fly, region);
     if (this.n >= MAX_UNITS || pads.length === 0) return false;
     const r = stats.radius;
     for (let a = 0; a < 8; a++) {

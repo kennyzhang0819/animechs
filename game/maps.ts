@@ -18,8 +18,12 @@ export interface MapData {
   floor: number[]; // NCELLS, UV_FLOORS index
   wall: number[]; // NCELLS, UV_WALLS index or WALL_PINE where blocked
   blocked: number[]; // NCELLS, 0/1
-  // NCELLS, 0/1 — enemy spawn pads. Absent in maps saved before the layer
-  // existed; terrainFromMap synthesizes the legacy western strip then
+  // NCELLS — enemy spawn pads by region: 0 = no pad, N >= 1 = a pad in
+  // spawn region N. Level scripts pin wave groups to a region
+  // ({ region: 2, mace: 50 } spawns only on region-2 pads), so legacy 0/1
+  // documents read unchanged as one region-1 area. Absent in maps saved
+  // before the layer existed; terrainFromMap synthesizes the legacy
+  // western strip then
   spawn?: number[];
   pines: Prop[];
   decor: Prop[];
@@ -69,7 +73,28 @@ export interface PaletteSet {
   kind: PaintKind;
   variants: number[];
   icons: string[]; // sprite url per variant, for the picker UI
+  // variants that mean different things (spawn regions) rather than
+  // interchangeable art: the picker always shows them all and randomize
+  // never applies
+  noRandom?: boolean;
 }
+
+/**
+ * Editor display colors per spawn region (index = region id - 1, cycling
+ * past the end): `tint` multiplies the pad sprite in the editor's terrain
+ * pass, `css` colors the picker's region badge, `tone` paints thumbnails.
+ * Region 1 keeps the pad art's native look, so old maps draw unchanged.
+ */
+export const SPAWN_REGIONS: readonly {
+  tint: readonly [number, number, number];
+  css: string;
+  tone: string;
+}[] = [
+  { tint: [1, 1, 1], css: "#E0757F", tone: "#8a3a44" },
+  { tint: [0.5, 1.6, 1.9], css: "#5BD9E8", tone: "#2f6d78" },
+  { tint: [0.55, 1.7, 0.7], css: "#7BE0A8", tone: "#2f7846" },
+  { tint: [1.5, 0.75, 1.9], css: "#C77BFF", tone: "#6d3a8a" },
+];
 
 const ENV = "/mindustry/sprites/blocks/environment";
 const PROPS = "/mindustry/sprites/blocks/props";
@@ -89,9 +114,11 @@ export const PALETTE: readonly PaletteSet[] = [
   { id: "boulder", label: "Boulder", kind: "decor", variants: [0, 1],
     icons: [1, 2].map((n) => `${PROPS}/boulder${n}.png`) },
   { id: "shrub", label: "Shrub", kind: "decor", variants: [2], icons: [`${ENV}/shrubs1.png`] },
-  // enemy spawn pad: a data layer — the pad tile shows in the editor only,
-  // the game renders the floor beneath it
-  { id: "spawn", label: "Spawn pad", kind: "spawn", variants: [0], icons: [`${ENV}/dark-panel-2.png`] },
+  // enemy spawn pads: a data layer — the pad tile shows in the editor only,
+  // the game renders the floor beneath it. One variant per spawn region;
+  // the variant value IS the region id written into the spawn layer
+  { id: "spawn", label: "Spawn region", kind: "spawn", variants: [1, 2, 3, 4], noRandom: true,
+    icons: SPAWN_REGIONS.map(() => `${ENV}/dark-panel-2.png`) },
   { id: "erase", label: "Erase", kind: "erase", variants: [0], icons: [`${ENV}/clear-editor.png`] },
 ];
 
@@ -172,7 +199,6 @@ export async function saveMap(map: MapData): Promise<boolean> {
 const FLOOR_TONES = ["#7ab648", "#74ae45", "#6ea843", "#8a8a93", "#84848d", "#7e7e87", "#a5764f", "#9e7049", "#976a44"];
 const WALL_TONES = ["#5c5c66", "#565660", "#6e4f35", "#674a32"];
 const PINE_TONE = "#2e6e35";
-const SPAWN_TONE = "#8a3a44"; // the pad's dark red-panel look
 
 /** paint a MapData into a canvas at 1px per cell (scale it up with CSS) */
 export function drawThumb(map: MapData, canvas: HTMLCanvasElement): void {
@@ -188,7 +214,7 @@ export function drawThumb(map: MapData, canvas: HTMLCanvasElement): void {
           ? PINE_TONE
           : WALL_TONES[map.wall[i]] ?? WALL_TONES[0]
         : map.spawn?.[i]
-          ? SPAWN_TONE
+          ? SPAWN_REGIONS[(map.spawn[i] - 1) % SPAWN_REGIONS.length].tone
           : FLOOR_TONES[map.floor[i]] ?? FLOOR_TONES[0];
       c.fillRect(x, y, 1, 1);
     }
