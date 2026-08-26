@@ -21,8 +21,10 @@ const FX_CAP = 400;
 // the field can hold at once (throughput ~ speed * strip / SEP^2)
 const SEP = 26;
 // pressure floor (px): crowds may compress to this spacing but never below.
-// It sets crowd density — and with it how many units fit on the field
-const HARD = 20;
+// It sets crowd density — and with it how many units fit on the field.
+// Two daggers (UR 10) touch at 20, so a floor a notch above that keeps
+// pressed crowds from shoving units visibly into each other; must stay < SEP
+const HARD = 26;
 // spatial hash cell size (px); rebuilt every frame with a counting sort.
 // must be >= SEP so a 3x3 bucket scan covers the separation radius
 const HC = 26;
@@ -44,6 +46,10 @@ const KIND_FLYING: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].fl
 const GOAL_X = (BASE.x + BASE.size / 2) * CELL;
 const GOAL_Y = (BASE.y + BASE.size / 2) * CELL;
 
+// how fast body and chassis swivel: Mindustry's default rotateSpeed /
+// baseRotateSpeed, 5 degrees per tick
+const ROT_SPD = ((5 * Math.PI) / 180) * 60;
+
 /**
  * The whole simulation: units in struct-of-arrays, a spatial hash for
  * separation and projectile hits, towers, and the flow field they block.
@@ -62,6 +68,11 @@ export class Sim {
   readonly urad = new Float32Array(MAX_UNITS);
   readonly uarmor = new Float32Array(MAX_UNITS);
   readonly ukind = new Uint8Array(MAX_UNITS); // UNIT_ID of the kind
+  // animation state, sim-owned so it survives swap-remove: distance walked
+  // (drives the mech leg cycle), chassis angle, body angle
+  readonly uwalk = new Float32Array(MAX_UNITS);
+  readonly ubrot = new Float32Array(MAX_UNITS);
+  readonly urot = new Float32Array(MAX_UNITS);
   n = 0;
 
   level: LevelSpec = LEVELS[0];
@@ -141,7 +152,6 @@ export class Sim {
     this.wavesStarted = 0;
     this.loadStep();
     this.aliveByKind.fill(0);
-    this.seedTower();
   }
 
   loadLevel(spec: LevelSpec): void {
@@ -171,14 +181,14 @@ export class Sim {
     return this.waitLeft > 0 ? this.waitLeft : 0;
   }
 
-  /** starter tower on the first highground overlooking the early lane */
-  private seedTower(): void {
-    for (let gx = 26; gx <= 64; gx++) {
-      const cy = Math.round(this.terrain.valleyY[gx]) - 1;
-      for (let d = 2; d <= 12; d++)
-        for (const s of [-d, d])
-          if (this.placeTower(gx, cy + s, "salvo") === "ok") return;
-    }
+  /** cut the between-waves wait short: the next wave starts entering now.
+   * A no-op while a wave is still draining (there is nothing to skip).
+   * Must advance the script — during a wait the wave counters are already
+   * zero, and runScript reads "no wait + empty wave" as script-finished */
+  skipWave(): void {
+    if (this.waitLeft <= 0) return;
+    this.waitLeft = 0;
+    this.nextStep();
   }
 
   private addTower(gx: number, gy: number, kind: TowerKind): void {
@@ -193,6 +203,8 @@ export class Sim {
       angle: 0,
       burstLeft: 0,
       burstT: 0,
+      shotCount: 0,
+      aimDist: 0,
     });
   }
 
@@ -498,6 +510,12 @@ export class Sim {
       this.urad[i] = r;
       this.uarmor[i] = stats.armor;
       this.ukind[i] = UNIT_ID[kind];
+      // face the way it will walk, with legs mid-cycle at a random phase so
+      // a wave doesn't march in lockstep
+      const a0 = fly ? Math.atan2(GOAL_Y - y, GOAL_X - x) : 0;
+      this.uwalk[i] = Math.random() * 100;
+      this.ubrot[i] = a0;
+      this.urot[i] = a0;
       this.aliveByKind[UNIT_ID[kind]]++;
       return true;
     }
@@ -517,6 +535,9 @@ export class Sim {
     this.urad[i] = this.urad[n];
     this.uarmor[i] = this.uarmor[n];
     this.ukind[i] = this.ukind[n];
+    this.uwalk[i] = this.uwalk[n];
+    this.ubrot[i] = this.ubrot[n];
+    this.urot[i] = this.urot[n];
   }
 
   // ---------- spatial hash ----------
@@ -548,7 +569,7 @@ export class Sim {
   // ---------- units ----------
 
   private updateUnits(dt: number): void {
-    const { upx, upy, uvx, uvy, uspd, ukind, field, flowTmp, bStart, bUnits } = this;
+    const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, field, flowTmp, bStart, bUnits } = this;
     const steer = Math.min(1, dt * 8);
     const SEP2 = SEP * SEP;
     // repulsion probes reach 4px past the wall-clearance radius: any longer
@@ -683,6 +704,7 @@ export class Sim {
       // Only a zero-progress axis redirects its speed into the free one, and
       // a unit already overlapping a wall (crowd shoves) skips the veto
       // entirely so it can always walk back out. Flyers skip walls wholesale
+      const x0 = upx[i], y0 = upy[i];
       const wedged = fly || field.hitsWall(upx[i], upy[i], WALL_R);
       let nx = upx[i] + dxT;
       if (!wedged && field.hitsWall(nx, upy[i], WALL_R)) {
@@ -714,6 +736,22 @@ export class Sim {
       }
       upx[i] = clamp(nx, WALL_R, W - WALL_R);
       upy[i] = clamp(ny, WALL_R, H - WALL_R);
+
+      // animation state from what actually happened this frame: legs cycle
+      // with distance covered; the body turns toward travel at its steady
+      // rate while the chassis (Mindustry baseRotation) only turns as fast
+      // as the unit is really moving — shoved units swivel feet-last
+      const mdx = upx[i] - x0, mdy = upy[i] - y0;
+      const len = Math.hypot(mdx, mdy);
+      if (len > 1e-4) {
+        const ang = Math.atan2(mdy, mdx);
+        urot[i] += clamp(Sim.angleDiff(urot[i], ang), -ROT_SPD * dt, ROT_SPD * dt);
+        if (!fly) {
+          uwalk[i] += len;
+          const cap = ROT_SPD * Math.min(1, len / (uspd[i] * dt)) * dt;
+          ubrot[i] += clamp(Sim.angleDiff(ubrot[i], ang), -cap, cap);
+        }
+      }
     }
   }
 
@@ -821,6 +859,7 @@ export class Sim {
         t.cd += st.reload; // reloadCounter %= reload
         t.burstLeft = st.shots;
         t.burstT = 0;
+        t.aimDist = Math.hypot(aimX, aimY); // artillery lands its shells here
         // shots with no shotDelay (a ShootSpread fan) all leave this frame
         while (t.burstLeft > 0 && t.burstT <= 0) {
           this.fireShot(t, st, st.shots - t.burstLeft);
@@ -841,7 +880,16 @@ export class Sim {
     const a = t.angle + fan + (Math.random() * 2 - 1) * st.inaccuracy;
     const cos = Math.cos(a), sin = Math.sin(a);
     const muzzle = st.size * 5; // scales the old 10px offset with the block
-    const x = t.x + cos * muzzle, y = t.y + sin * muzzle;
+    let x = t.x + cos * muzzle, y = t.y + sin * muzzle;
+    if (st.barrels) {
+      // ShootAlternate: the mount point steps sideways barrel to barrel,
+      // perpendicular to the turret's facing (not the inaccuracy-jittered a)
+      const bi = (t.shotCount % st.barrels.count) - (st.barrels.count - 1) / 2;
+      const off = bi * st.barrels.spread;
+      x += -Math.sin(t.angle) * off;
+      y += Math.cos(t.angle) * off;
+    }
+    t.shotCount++;
     if (st.bullet.ray) {
       this.hitscanRay(
         x,
@@ -855,13 +903,18 @@ export class Sim {
       this.pushFx(x, y, st.bullet.lifetime, FxKind.Shrapnel, a, st.bullet.ray.length);
       return;
     }
+    // Mindustry scaleLife: an artillery shell's lifetime shrinks to the
+    // predicted impact distance, so it despawns — and blasts — on target
+    const life = st.bullet.artillery
+      ? st.bullet.lifetime * clamp(t.aimDist / st.range, 0.1, 1)
+      : st.bullet.lifetime;
     this.projs.push({
       kind: t.kind,
       x,
       y,
       vx: cos * st.bullet.speed,
       vy: sin * st.bullet.speed,
-      life: st.bullet.lifetime,
+      life,
       age: 0,
       primeT: -1,
       flakT: st.bullet.flak ? st.bullet.flak.interval : 0,
@@ -953,9 +1006,11 @@ export class Sim {
       }
 
       // shots come from elevated towers and arc over terrain — they never
-      // collide with rock, only with units or their range-capped life
+      // collide with rock, only with units or their range-capped life.
+      // Artillery shells overfly units too: they only die on target, where
+      // the splash below is their whole damage
       let dead = pr.life <= 0;
-      if (!dead) {
+      if (!dead && !b.artillery) {
         const hx = clamp((pr.x / HC) | 0, 0, HCOLS - 1);
         const hy = clamp((pr.y / HC) | 0, 0, HROWS - 1);
         outer: for (let cy = Math.max(0, hy - 1); cy <= Math.min(HROWS - 1, hy + 1); cy++) {

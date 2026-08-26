@@ -30,7 +30,7 @@ export interface Stats {
 }
 
 const ZOOM_MIN = 1;
-const ZOOM_MAX = 3;
+const ZOOM_MAX = 2;
 const PAN_KEYS: Record<string, readonly [number, number]> = {
   KeyW: [0, -1],
   KeyS: [0, 1],
@@ -262,6 +262,11 @@ export class Game {
   setBuildKind(kind: TowerKind | null): void {
     this.buildKind = kind;
     if (kind) this.selected = null;
+  }
+
+  /** HUD skip button: start the next wave without waiting out the timer */
+  skipWave(): void {
+    this.sim.skipWave();
   }
 
   /** everything the React overlay renders, polled a few times a second */

@@ -43,6 +43,10 @@ export interface BulletStats {
   ray?: {
     length: number; // px
   };
+  // Mindustry ArtilleryBulletType: the shell arcs over everything (no
+  // mid-flight collision) and its lifetime is scaled at fire time so it
+  // dies — and splashes — exactly at the predicted impact point
+  artillery?: boolean;
 }
 
 export interface TowerStats {
@@ -58,10 +62,68 @@ export interface TowerStats {
   rotateSpeed: number; // rad/s
   targetAir: boolean; // will the turret acquire flying units?
   targetGround: boolean; // ...and ground units?
+  // ShootAlternate: successive shots leave side-by-side barrels, `spread`
+  // px apart perpendicular to the facing
+  barrels?: { count: number; spread: number };
   bullet: BulletStats;
 }
 
 export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
+  // Duo, 1:1 from mindustry/content/Blocks.java with copper ammo
+  // (BasicBulletType(2.5, 9)): one shot every 20 ticks, alternating between
+  // twin barrels 3.5 units apart (ShootAlternate)
+  duo: {
+    name: "Duo",
+    size: 1,
+    range: 160 * MU,
+    reload: 20 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: (2 * Math.PI) / 180,
+    shootCone: (15 * Math.PI) / 180,
+    rotateSpeed: ((10 * Math.PI) / 180) * TICK,
+    targetAir: true,
+    targetGround: true,
+    barrels: { count: 2, spread: 3.5 * MU },
+    bullet: {
+      speed: 2.5 * TICK * MU,
+      damage: 9,
+      lifetime: (160 + 5 + 10) / 2.5 / TICK, // limitRange(5) + base 10-unit margin
+      splash: 0,
+      splashRadius: 0,
+      collidesAir: true,
+      collidesGround: true,
+    },
+  },
+  // Hail, 1:1 from mindustry/content/Blocks.java with graphite ammo
+  // (ArtilleryBulletType(3, 20)): a slow arcing shell every 60 ticks that
+  // ignores everything in flight and blasts 33 splash where it lands.
+  // Artillery can't touch the air — ground targets only
+  hail: {
+    name: "Hail",
+    size: 1,
+    range: 235 * MU,
+    reload: 60 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: (1 * Math.PI) / 180,
+    shootCone: (10 * Math.PI) / 180,
+    rotateSpeed: ((5 * Math.PI) / 180) * TICK, // BaseTurret default
+    targetAir: false,
+    targetGround: true,
+    bullet: {
+      speed: 3 * TICK * MU,
+      damage: 20, // never lands directly — kept 1:1 with the source
+      lifetime: (235 + 0 + 10) / 3 / TICK, // limitRange(0) + base 10-unit margin
+      splash: 33,
+      splashRadius: 25 * 0.75 * MU,
+      collidesAir: false,
+      collidesGround: true,
+      artillery: true,
+    },
+  },
   // Salvo, 1:1 from mindustry/content/Blocks.java with thorium ammo
   // (BasicBulletType(4, 28)): 4-shot bursts 3 ticks apart, every 29 ticks
   salvo: {

@@ -1,4 +1,4 @@
-export type TowerKind = "salvo" | "scatter" | "fuse";
+export type TowerKind = "duo" | "hail" | "salvo" | "scatter" | "fuse";
 
 export interface Tower {
   kind: TowerKind;
@@ -10,6 +10,9 @@ export interface Tower {
   angle: number;
   burstLeft: number; // shots still queued in the current volley
   burstT: number; // seconds until the next queued shot fires
+  shotCount: number; // lifetime shots fired — picks the next barrel (ShootAlternate)
+  aimDist: number; // px to the predicted impact at volley start — artillery
+  // shells scale their lifetime by it so they blast at the aim point
 }
 
 export interface Projectile {

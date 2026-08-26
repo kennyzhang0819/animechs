@@ -3,10 +3,21 @@
 import { useEffect, useRef, useState } from "react";
 import { Game, type UiState } from "@/game/game";
 import { UNIT_KINDS, type TowerKind, type UnitKind } from "@/game/levels";
+import { turretIcon } from "@/game/atlas";
 
 const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
 
 const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }> = [
+  {
+    kind: "duo",
+    name: "Duo",
+    icon: "/mindustry/sprites/blocks/turrets/duo/duo-preview.png",
+  },
+  {
+    kind: "hail",
+    name: "Hail",
+    icon: "/mindustry/sprites/blocks/turrets/hail.png",
+  },
   {
     kind: "salvo",
     name: "Salvo",
@@ -29,6 +40,9 @@ export default function Swarmfield() {
   const uiRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef<Game | null>(null);
   const [hud, setHud] = useState<UiState | null>(null);
+  // menu icons with the block outline baked in, keyed by kind; the raw
+  // sprite shows until its processed version resolves
+  const [icons, setIcons] = useState<Partial<Record<TowerKind, string>>>({});
   const [webglError, setWebglError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,6 +74,18 @@ export default function Swarmfield() {
       clearInterval(poll);
       game?.destroy();
       gameRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all(
+      TOWER_MENU.map(async (t) => [t.kind, await turretIcon(t.icon)] as const),
+    ).then((entries) => {
+      if (alive) setIcons(Object.fromEntries(entries));
+    });
+    return () => {
+      alive = false;
     };
   }, []);
 
@@ -124,11 +150,23 @@ export default function Swarmfield() {
               <div className="text-sm font-semibold text-[#E8EDF7]">Level cleared!</div>
             )}
             {hud.nextWaveIn > 0 && (
-              <div className="text-[11px] uppercase tracking-widest text-[#5B6885]">
-                Next wave{" "}
-                <span className="font-semibold text-[#E8EDF7]">
-                  {Math.ceil(hud.nextWaveIn)}
+              <div className="flex items-center gap-2 text-[11px] uppercase tracking-widest text-[#5B6885]">
+                <span>
+                  Next wave{" "}
+                  <span className="font-semibold text-[#E8EDF7]">
+                    {Math.ceil(hud.nextWaveIn)}
+                  </span>
                 </span>
+                <button
+                  title="Start next wave now"
+                  aria-label="Start next wave now"
+                  onClick={() => gameRef.current?.skipWave()}
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-[#223050] text-[#5BD9E8] hover:border-[#5BD9E8] hover:bg-[#16233E]/90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#5BD9E8]"
+                >
+                  <svg viewBox="0 0 12 12" className="h-3 w-3 fill-current" aria-hidden="true">
+                    <path d="M2.5 1.5v9l8-4.5z" />
+                  </svg>
+                </button>
               </div>
             )}
           </div>
@@ -152,7 +190,7 @@ export default function Swarmfield() {
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
               <img
-                src={t.icon}
+                src={icons[t.kind] ?? t.icon}
                 alt={t.name}
                 className="h-10 w-10 [image-rendering:pixelated]"
               />
