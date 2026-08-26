@@ -18,9 +18,10 @@ export interface Terrain {
   blocked: Uint8Array; // mountains, forests, rocks — everything units can't cross
   floor: Uint8Array; // UV_FLOORS index per cell (pine cells: the grass underneath)
   wall: Uint8Array; // per blocked cell: UV_WALLS index, or WALL_PINE
-  // enemy spawn pads: every enemy enters the field on one of these cells.
-  // A data layer — the game renders plain floor here; only the map editor
-  // draws the pad tile
+  // enemy spawn pads by region: 0 = none, N >= 1 = a pad in spawn region N.
+  // Every enemy enters the field on one of these cells; wave groups that
+  // name a region use only that region's pads. A data layer — the game
+  // renders plain floor here; only the map editor draws the pad tile
   spawn: Uint8Array;
   pines: Prop[]; // blocking tree cells, drawn as overhanging props
   decor: Prop[]; // non-blocking props: boulders, shrubs
@@ -302,7 +303,8 @@ export function generateTerrain(seed: number): Terrain {
   }
 
   // spawn pads: the open cells of the western strip — the same ground the
-  // spawner has always used, now an explicit, editable layer
+  // spawner has always used, now an explicit, editable layer (all region 1;
+  // paint further regions in the editor)
   const spawn = new Uint8Array(NCELLS);
   for (let y = 1; y < ROWS - 1; y++)
     for (let x = 0; x < 6; x++) {

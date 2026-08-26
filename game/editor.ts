@@ -179,7 +179,7 @@ export class MapEditor {
     const T = this.terrain;
     const i = gy * COLS + gx;
     const set = this.set;
-    const pick = this.randomize
+    const pick = this.randomize && !set.noRandom
       ? set.variants[(Math.random() * set.variants.length) | 0]
       : set.variants[this.variant];
     const rot = this.randomize ? quarterTurn() : 0;
@@ -204,10 +204,11 @@ export class MapEditor {
       T.pines.push({ x: cx, y: cy, size: CELL * 1.5, rot, kind: 0 });
     } else if (set.kind === "spawn") {
       // spawn pad: clears any wall under it — pads live on open ground.
-      // The floor beneath stays; the game draws only that floor
+      // The floor beneath stays; the game draws only that floor. The
+      // variant is the region id the pad belongs to
       T.blocked[i] = 0;
       T.wall[i] = 0;
-      T.spawn[i] = 1;
+      T.spawn[i] = pick;
       this.removePropsAt(gx, gy);
     } else if (set.kind === "decor") {
       if (T.blocked[i]) return; // props live on open ground, like the generator's

@@ -76,8 +76,7 @@ export function scrapForKills(killsByKind: ArrayLike<number>): number {
 export interface RunReward {
   killScrap: number;
   clearBonus: number;
-  perfectBonus: number;
-  /** what the economy nodes added on top of the three above */
+  /** what the economy nodes added on top of kills + clear bonus */
   incomeBonus: number;
   total: number;
   firstClear: boolean;
@@ -85,28 +84,26 @@ export interface RunReward {
 
 /**
  * Settle a finished run into the save: kills always pay (defeat included),
- * a win adds the level's clear bonus, a win with nothing leaked adds half
- * of it again, and economy nodes multiply the lot. Marks the level cleared
- * on a win. Returns the breakdown for the results screen.
+ * a win adds the level's clear bonus, and economy nodes multiply the lot.
+ * Marks the level cleared on a win. Returns the breakdown for the results
+ * screen.
  */
 export function grantRunReward(
   levelId: string,
   killsByKind: ArrayLike<number>,
   won: boolean,
-  perfect: boolean,
 ): RunReward {
   const level = levelById(levelId);
   const p = loadProgress();
   const killScrap = scrapForKills(killsByKind);
   const clearBonus = won && level ? level.clearBonus : 0;
-  const perfectBonus = won && perfect && level ? Math.floor(level.clearBonus / 2) : 0;
-  const base = killScrap + clearBonus + perfectBonus;
+  const base = killScrap + clearBonus;
   const total = Math.floor(base * techOf(p).incomeMult);
   const firstClear = won && !p.completed.includes(levelId);
   p.scrap += total;
   if (firstClear) p.completed.push(levelId);
   saveProgress(p);
-  return { killScrap, clearBonus, perfectBonus, incomeBonus: total - base, total, firstClear };
+  return { killScrap, clearBonus, incomeBonus: total - base, total, firstClear };
 }
 
 /** buy a tech node if affordable and its parent is owned; null = refused */

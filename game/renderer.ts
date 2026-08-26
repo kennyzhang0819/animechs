@@ -41,6 +41,7 @@ import {
   W,
 } from "./constants";
 import { UNIT_KINDS, UNIT_STATS } from "./levels";
+import { SPAWN_REGIONS } from "./maps";
 import type { Sim } from "./sim";
 import { WALL_PINE, type Terrain } from "./terrain";
 import { FxKind, type TowerKind } from "./types";
@@ -499,7 +500,9 @@ export class Renderer {
       for (let i = 0; i < COLS * ROWS; i++) {
         if (!T.spawn[i] || T.blocked[i]) continue;
         const cx = ((i % COLS) + 0.5) * CELL, cy = (((i / COLS) | 0) + 0.5) * CELL;
-        this.push(w, cx, cy, CELL, CELL, 0, UV_SPAWN, 1, 1, 1, 1);
+        // tint the pad toward its region's color, so regions read at a glance
+        const [tr, tg, tb] = SPAWN_REGIONS[(T.spawn[i] - 1) % SPAWN_REGIONS.length].tint;
+        this.push(w, cx, cy, CELL, CELL, 0, UV_SPAWN, tr, tg, tb, 1);
       }
     }
     for (const d of T.decor)

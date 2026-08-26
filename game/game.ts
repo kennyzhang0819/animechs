@@ -2,12 +2,14 @@ import { buildAtlas } from "./atlas";
 import { loadOfficialMaps } from "./maps";
 import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
 import type { LevelSpec, TowerKind } from "./levels";
+import { scrapForKills } from "./progress";
 import { Renderer } from "./renderer";
 import { Sim } from "./sim";
+import type { TechState } from "./tech";
 import type { Tower } from "./types";
 
 export interface UiState {
-  levelId: number;
+  levelId: string;
   remaining: number;
   /** how many of each kind are on the field right now, like UNIT_KINDS */
   byKind: number[];
@@ -25,6 +27,13 @@ export interface UiState {
   kills: number;
   /** the esc game menu is up: sim held, resume or abandon from the overlay */
   menuOpen: boolean;
+  /** scrap this run's kills are worth so far, before bonuses/economy */
+  scrapEarned: number;
+  /** live towers per kind, for the menu's "2/6" cap badges */
+  counts: Record<TowerKind, number>;
+  /** campaign restrictions from the tech tree; null = unrestricted (editor) */
+  caps: Record<TowerKind, number> | null;
+  unlocked: readonly TowerKind[] | null;
 }
 
 export interface Stats {
@@ -83,6 +92,8 @@ export class Game {
   private readonly keysDown = new Set<string>();
   private paused = false;
   private menuOpen = false;
+  // the campaign's tower unlocks and caps (see setTech); null in the editor
+  private tech: TechState | null = null;
 
   private raf = 0;
   private last = 0;
@@ -280,8 +291,15 @@ export class Game {
   }
 
   setBuildKind(kind: TowerKind | null): void {
+    if (kind && this.tech && !this.tech.unlocked.has(kind)) return;
     this.buildKind = kind;
     if (kind) this.selected = null;
+  }
+
+  /** apply the save's tower unlocks and caps; null lifts them (editor, dev) */
+  setTech(tech: TechState | null): void {
+    this.tech = tech;
+    this.sim.setTech(tech);
   }
 
   /** HUD skip button: start the next wave without waiting out the timer */
@@ -314,6 +332,10 @@ export class Game {
       won: this.won(),
       kills: this.sim.kills,
       menuOpen: this.menuOpen,
+      scrapEarned: scrapForKills(this.sim.killsByKind),
+      counts: this.sim.towerCounts(),
+      caps: this.tech ? this.tech.caps : null,
+      unlocked: this.tech ? Array.from(this.tech.unlocked) : null,
     };
   }
 

@@ -6,12 +6,14 @@ import {
   UNIT_KINDS,
   UNIT_RMAX,
   UNIT_STATS,
+  waveGroups,
   type LevelSpec,
   type UnitKind,
 } from "./levels";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
+import type { TechState } from "./tech";
 import { WALL_PINE, type Terrain } from "./terrain";
-import { FxKind, type Effect, type Projectile, type Tower, type TowerKind } from "./types";
+import { FxKind, TOWER_KINDS, type Effect, type Projectile, type Tower, type TowerKind } from "./types";
 
 const FX_CAP = 400;
 
@@ -80,10 +82,16 @@ export class Sim {
   totalEnemies = 0;
   kills = 0;
   leaked = 0;
+  /** kills per unit kind this run, indexed like UNIT_KINDS — the scrap payout */
+  readonly killsByKind = new Int32Array(UNIT_KINDS.length);
   // the core's health: every unit that reaches it takes one point. At 1
   // max, the first leak is the loss — raise this when cores get tougher
   readonly coreHpMax = 1;
   coreHp = this.coreHpMax;
+  // which towers may be built and how many of each — null (the default, and
+  // the map editor's mode) places no restrictions; the campaign sets it from
+  // the save's tech tree before play (see Game.setTech)
+  private tech: TechState | null = null;
   // live per-kind census, updated the moment a unit spawns or is removed
   readonly aliveByKind = new Int32Array(UNIT_KINDS.length);
   // the level script's cursor, plus the live state of the step it points at:
@@ -93,8 +101,10 @@ export class Sim {
   // HUD's "Wave 2 / 5". A wave stays current through the wait that follows it
   totalWaves = 0;
   private wavesStarted = 0;
-  private readonly waveLeft = new Int32Array(UNIT_KINDS.length);
-  private readonly waveTotal = new Int32Array(UNIT_KINDS.length);
+  // the wave being drained, flattened to (region, kind) entries — every
+  // entry runs out at the same moment (see nextWaveEntry), each spawning
+  // only on its own region's pads (region 0 = any pad)
+  private waveEntries: { region: number; kind: number; left: number; total: number }[] = [];
   private waitLeft = 0;
   private spawnAcc = 0;
 
@@ -126,6 +136,7 @@ export class Sim {
     this.n = 0;
     this.kills = 0;
     this.leaked = 0;
+    this.killsByKind.fill(0);
     this.coreHp = this.coreHpMax;
     this.sealGx = -1;
     this.projs.length = 0;
@@ -150,13 +161,25 @@ export class Sim {
     this.totalWaves = 0;
     // an empty wave is not a wave — loadStep skips it, so it must not count
     // here either, or the HUD would promise a wave that never arrives
+    const regions = new Set<number>();
     for (const step of this.level.script) {
       if (!("wave" in step)) continue;
       let n = 0;
-      for (const k of UNIT_KINDS) n += step.wave[k] ?? 0;
+      for (const g of waveGroups(step.wave)) {
+        for (const c of g.counts) n += c;
+        if (g.region > 0) regions.add(g.region);
+      }
       if (n === 0) continue;
       this.totalWaves++;
       this.totalEnemies += n;
+    }
+    // a script naming a region the map doesn't carry falls back to any pad
+    // (see spawnPads) — a map/script mismatch, so say so up front
+    for (const r of regions) {
+      if (!this.field.spawnAirByRegion.get(r)?.length)
+        console.warn(`map "${doc.id}" has no region-${r} spawn pads — that wave group will use any pad`);
+      else if (!this.field.spawnPtsByRegion.get(r)?.length)
+        console.warn(`map "${doc.id}": no region-${r} pad connects to the core — its ground units will use any pad`);
     }
     this.stepIdx = 0;
     this.waitLeft = 0;
@@ -174,6 +197,18 @@ export class Sim {
   /** the core is down — the game freezes and the score screen takes over */
   lost(): boolean {
     return this.coreHp <= 0;
+  }
+
+  /** campaign restrictions on building; null lifts them (editor, dev) */
+  setTech(tech: TechState | null): void {
+    this.tech = tech;
+  }
+
+  /** live towers per kind — the HUD's "2/6" badges, and the cap check */
+  towerCounts(): Record<TowerKind, number> {
+    const counts = Object.fromEntries(TOWER_KINDS.map((k) => [k, 0])) as Record<TowerKind, number>;
+    for (const t of this.towers) counts[t.kind]++;
+    return counts;
   }
 
   /** enemies left to kill: still unspawned + still walking the field */
@@ -252,8 +287,7 @@ export class Sim {
    * script runs out, which is what ends the level.
    */
   private loadStep(): void {
-    this.waveLeft.fill(0);
-    this.waveTotal.fill(0);
+    this.waveEntries.length = 0;
     this.waitLeft = 0;
     const script = this.level.script;
     for (; this.stepIdx < script.length; this.stepIdx++) {
@@ -265,15 +299,11 @@ export class Sim {
         }
         continue;
       }
-      let any = false;
-      for (const k of UNIT_KINDS) {
-        const c = step.wave[k] ?? 0;
-        if (c <= 0) continue;
-        this.waveLeft[UNIT_ID[k]] = c;
-        this.waveTotal[UNIT_ID[k]] = c;
-        any = true;
-      }
-      if (any) {
+      for (const g of waveGroups(step.wave))
+        for (let kind = 0; kind < g.counts.length; kind++)
+          if (g.counts[kind] > 0)
+            this.waveEntries.push({ region: g.region, kind, left: g.counts[kind], total: g.counts[kind] });
+      if (this.waveEntries.length > 0) {
         this.wavesStarted++;
         return;
       }
@@ -288,20 +318,23 @@ export class Sim {
   }
 
   /**
-   * Which kind to send next out of the current wave: whichever is furthest
+   * Which entry to send next out of the current wave: whichever is furthest
    * from finishing, by fraction of its own total. That intermingles a mixed
-   * wave from its first unit and lands every kind's last unit together,
-   * instead of emptying one pile before starting the next.
+   * wave from its first unit and lands every entry's last unit together,
+   * instead of emptying one pile before starting the next. Entries in
+   * `skip` (their region's pads were too crowded this frame) don't compete.
    */
-  private nextWaveKind(): number {
-    let best = -1;
+  private nextWaveEntry(
+    skip: ReadonlySet<unknown>,
+  ): { region: number; kind: number; left: number; total: number } | null {
+    let best = null;
     let bestFrac = 0;
-    for (let i = 0; i < this.waveLeft.length; i++) {
-      if (this.waveLeft[i] <= 0) continue;
-      const frac = this.waveLeft[i] / this.waveTotal[i];
+    for (const e of this.waveEntries) {
+      if (e.left <= 0 || skip.has(e)) continue;
+      const frac = e.left / e.total;
       if (frac > bestFrac) {
         bestFrac = frac;
-        best = i;
+        best = e;
       }
     }
     return best;
@@ -324,14 +357,22 @@ export class Sim {
     }
 
     let left = 0;
-    for (let i = 0; i < this.waveLeft.length; i++) left += this.waveLeft[i];
+    for (const e of this.waveEntries) left += e.left;
     if (left === 0) return; // script finished
 
     this.spawnAcc = Math.min(this.spawnAcc + this.level.spawnRate * dt, this.level.spawnRate);
+    // one region's crowded pads must not stall the other regions' share of
+    // the wave — a failed entry sits out the rest of this frame while the
+    // remaining entries keep draining
+    const blocked = new Set<unknown>();
     while (left > 0 && this.spawnAcc >= 1) {
-      const id = this.nextWaveKind();
-      if (id < 0 || !this.spawnUnit(UNIT_KINDS[id])) break;
-      this.waveLeft[id]--;
+      const e = this.nextWaveEntry(blocked);
+      if (!e) break;
+      if (!this.spawnUnit(UNIT_KINDS[e.kind], e.region)) {
+        blocked.add(e);
+        continue;
+      }
+      e.left--;
       this.spawnAcc--;
       left--;
     }
@@ -391,6 +432,14 @@ export class Sim {
    * touch the flow field — the rock was already unwalkable.
    */
   canPlace(gx: number, gy: number, kind: TowerKind): boolean {
+    // tech gate first: a locked tower or an exhausted cap refuses everywhere,
+    // so the drag-chain and keyboard paths can't sidestep the menu
+    if (this.tech) {
+      if (!this.tech.unlocked.has(kind)) return false;
+      let count = 0;
+      for (const t of this.towers) if (t.kind === kind) count++;
+      if (count >= this.tech.caps[kind]) return false;
+    }
     const sz = TOWERS[kind].size;
     if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
     const { blocked, wall } = this.terrain;
@@ -503,12 +552,24 @@ export class Sim {
     return true;
   }
 
-  private spawnUnit(kind: UnitKind): boolean {
+  /** the pad cells a unit may enter on: its wave group's region, or every
+   * pad for a region-less group (region 0). A region the map doesn't carry
+   * — or whose pads are all cut off — falls back to every pad, so a
+   * mismatched script keeps playing instead of stalling (warned at reset) */
+  private spawnPads(fly: boolean, region: number): number[] {
+    const all = fly ? this.field.spawnAir : this.field.spawnPts;
+    if (region <= 0) return all;
+    const byRegion = fly ? this.field.spawnAirByRegion : this.field.spawnPtsByRegion;
+    const pads = byRegion.get(region);
+    return pads && pads.length > 0 ? pads : all;
+  }
+
+  private spawnUnit(kind: UnitKind, region: number): boolean {
     const stats = UNIT_STATS[kind];
     const fly = !!stats.flying;
     // every enemy enters on a spawn pad from the terrain's spawn layer;
     // walkers need a pad connected to the core, flyers take any open pad
-    const pads = fly ? this.field.spawnAir : this.field.spawnPts;
+    const pads = this.spawnPads(fly, region);
     if (this.n >= MAX_UNITS || pads.length === 0) return false;
     const r = stats.radius;
     for (let a = 0; a < 8; a++) {
@@ -541,6 +602,14 @@ export class Sim {
       return true;
     }
     return false;
+  }
+
+  /** a tower kill: death puff, removal, and the per-kind scrap ledger */
+  private killUnit(i: number): void {
+    this.killsByKind[this.ukind[i]]++;
+    this.pushFx(this.upx[i], this.upy[i], 0.35, FxKind.Death);
+    this.removeUnit(i);
+    this.kills++;
   }
 
   private removeUnit(i: number): void {
@@ -1002,9 +1071,7 @@ export class Sim {
     splashHits.sort((a2, b2) => b2 - a2);
     for (const i of splashHits) {
       if (uhp[i] > 0) continue;
-      this.pushFx(upx[i], upy[i], 0.35, FxKind.Death);
-      this.removeUnit(i);
-      this.kills++;
+      this.killUnit(i);
     }
   }
 
@@ -1060,9 +1127,7 @@ export class Sim {
               if (dx * dx + dy * dy < hr * hr) {
                 uhp[i] -= Sim.applyArmor(b.damage, uarmor[i]);
                 if (uhp[i] <= 0) {
-                  this.pushFx(upx[i], upy[i], 0.35, FxKind.Death);
-                  this.removeUnit(i);
-                  this.kills++;
+                  this.killUnit(i);
                 } else if (b.splash <= 0) {
                   this.pushFx(pr.x, pr.y, 0.12, FxKind.Hit);
                 }
@@ -1153,9 +1218,7 @@ export class Sim {
     splashHits.sort((a, b) => b - a);
     for (const i of splashHits) {
       if (uhp[i] > 0) continue;
-      this.pushFx(upx[i], upy[i], 0.35, FxKind.Death);
-      this.removeUnit(i);
-      this.kills++;
+      this.killUnit(i);
     }
     this.pushFx(x, y, 0.3, FxKind.Flak);
   }

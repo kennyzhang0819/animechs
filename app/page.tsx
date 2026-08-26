@@ -1,5 +1,5 @@
-import GameShell from "@/components/GameShell";
+import Swarmfield from "@/components/Swarmfield";
 
 export default function Home() {
-  return <GameShell />;
+  return <Swarmfield />;
 }

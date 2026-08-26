@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MapEditor } from "@/game/editor";
-import { PALETTE, saveMap, type MapData, type PaletteSet } from "@/game/maps";
+import { PALETTE, SPAWN_REGIONS, saveMap, type MapData, type PaletteSet } from "@/game/maps";
 
 /**
  * Full-screen map editor: the WebGL canvas pair underneath (same layout as
@@ -197,15 +197,21 @@ export default function MapEditorView({
                   {set.label}
                 </div>
                 <div className="flex gap-1">
-                  {(randomize ? set.icons.slice(0, 1) : set.icons).map((icon, v) => {
-                    const active = setId === set.id && (randomize || variant === v);
+                  {/* noRandom variants mean different things (spawn regions),
+                      so they all stay pickable even with randomize on */}
+                  {(randomize && !set.noRandom ? set.icons.slice(0, 1) : set.icons).map((icon, v) => {
+                    const active =
+                      setId === set.id && ((randomize && !set.noRandom) || variant === v);
+                    const region = set.kind === "spawn" ? set.variants[v] : 0;
                     return (
                       <button
-                        key={icon}
+                        key={`${set.id}:${v}`}
                         title={
-                          randomize && set.icons.length > 1
-                            ? `${set.label} (random of ${set.icons.length})`
-                            : `${set.label} ${set.icons.length > 1 ? v + 1 : ""}`
+                          region > 0
+                            ? `${set.label} ${region}`
+                            : randomize && set.icons.length > 1
+                              ? `${set.label} (random of ${set.icons.length})`
+                              : `${set.label} ${set.icons.length > 1 ? v + 1 : ""}`
                         }
                         aria-pressed={active}
                         onClick={() => pick(set, v)}
@@ -217,7 +223,15 @@ export default function MapEditorView({
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
                         <img src={icon} alt={set.label} className="h-8 w-8 [image-rendering:pixelated]" />
-                        {randomize && set.icons.length > 1 && (
+                        {region > 0 && (
+                          <span
+                            className="absolute -right-1 -top-1 rounded bg-[#222227] px-1 text-[9px] font-semibold"
+                            style={{ color: SPAWN_REGIONS[(region - 1) % SPAWN_REGIONS.length].css }}
+                          >
+                            {region}
+                          </span>
+                        )}
+                        {randomize && !set.noRandom && set.icons.length > 1 && (
                           <span className="absolute -right-1 -top-1 rounded bg-[#222227] px-1 text-[9px] text-[#FFD37F]">
                             ×{set.icons.length}
                           </span>
