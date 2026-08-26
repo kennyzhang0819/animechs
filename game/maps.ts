@@ -30,10 +30,20 @@ export interface MapData {
   // carved-valley centerline per column — generator metadata the sim's
   // seed-tower search reads; older documents fall back to a flat line
   valleyY?: number[];
+  /** where this map's core sits (top-left cell). Absent = the default BASE
+   * position, which is what every pre-per-core document means */
+  core?: { x: number; y: number };
 }
 
 /** every playable map — add a JSON under public/maps/ and list its id here */
-export const OFFICIAL_MAP_IDS: readonly string[] = ["generated-24", "desert-3way"];
+export const OFFICIAL_MAP_IDS: readonly string[] = [
+  "grass-s",
+  "dunes-long",
+  "stone-canyon",
+  // archived: superseded by grass-s and dunes-long, kept for reference
+  "generated-24",
+  "desert-3way",
+];
 
 /**
  * The loaded official map documents, in OFFICIAL_MAP_IDS order. Empty until
@@ -58,7 +68,7 @@ export async function loadOfficialMaps(): Promise<MapData[]> {
 
 // ---------- palette ----------
 
-export type PaintKind = "floor" | "wall" | "pine" | "decor" | "spawn" | "erase";
+export type PaintKind = "floor" | "wall" | "pine" | "decor" | "spawn" | "erase" | "path" | "core";
 
 /**
  * One paintable entry: a set of interchangeable variants. With randomize ON
@@ -118,6 +128,13 @@ export const PALETTE: readonly PaletteSet[] = [
   // wall indices jump straight to 5-6
   { id: "dark-wall", label: "Dark rock", kind: "wall", variants: [5, 6],
     icons: [1, 2].map((n) => `${ENV}/carbon-wall${n}.png`) },
+  // the path tool: drags carve an enemy road through rock at roughly the
+  // width the generated maps use, with a little wobble on the edges, and
+  // lay this floor down its middle. Variants are the road surface
+  { id: "path-dirt", label: "Dirt path", kind: "path", variants: [6, 7, 8],
+    icons: [1, 2, 3].map((n) => `${ENV}/dirt${n}.png`) },
+  { id: "path-darksand", label: "Sand path", kind: "path", variants: [12, 13, 14],
+    icons: [1, 2, 3].map((n) => `${ENV}/darksand${n}.png`) },
   { id: "pine", label: "Pine", kind: "pine", variants: [0], icons: [`${ENV}/pine.png`] },
   { id: "boulder", label: "Boulder", kind: "decor", variants: [0, 1],
     icons: [1, 2].map((n) => `${PROPS}/boulder${n}.png`) },
@@ -127,6 +144,10 @@ export const PALETTE: readonly PaletteSet[] = [
   // the variant value IS the region id written into the spawn layer
   { id: "spawn", label: "Spawn region", kind: "spawn", variants: [1, 2, 3, 4], noRandom: true,
     icons: SPAWN_REGIONS.map(() => `${ENV}/dark-panel-2.png`) },
+  // the core: a map has exactly one, so placing it MOVES it. The click
+  // clears the ground it lands on, since a walled core is unreachable
+  { id: "core", label: "Core", kind: "core", variants: [0], noRandom: true,
+    icons: ["/mindustry/sprites/blocks/storage/core-nucleus.png"] },
   { id: "erase", label: "Erase", kind: "erase", variants: [0], icons: [`${ENV}/clear-editor.png`] },
 ];
 
@@ -136,6 +157,7 @@ export function mapFromTerrain(t: Terrain, id: string, name: string): MapData {
   return {
     id,
     name,
+    core: { x: t.core.x, y: t.core.y },
     floor: Array.from(t.floor),
     wall: Array.from(t.wall),
     blocked: Array.from(t.blocked),
@@ -157,18 +179,40 @@ function legacySpawn(blocked: Uint8Array): Uint8Array {
   return spawn;
 }
 
+/**
+ * Lift one layer of a document onto the CURRENT grid. Documents are stored
+ * at whatever ROWS was when they were saved, so a shorter one (the grid has
+ * only ever grown) keeps its rows anchored at the top and the new ground
+ * below it is filled with `pad` — rock for the blocked layer, so old maps
+ * gain a rim of mountain rather than a walkable void. Same-height documents
+ * pass straight through.
+ */
+function lift(src: readonly number[], pad: number): Uint8Array {
+  const out = new Uint8Array(NCELLS);
+  const rows = Math.min(ROWS, Math.floor(src.length / COLS));
+  for (let y = 0; y < rows; y++)
+    for (let x = 0; x < COLS; x++) out[y * COLS + x] = src[y * COLS + x];
+  for (let i = rows * COLS; i < NCELLS; i++) out[i] = pad;
+  return out;
+}
+
 export function terrainFromMap(m: MapData): Terrain {
-  const blocked = Uint8Array.from(m.blocked);
+  // pad short documents with rock (blocked 1) wearing the dark carbon wall
+  // sprite, over stone floor that never shows
+  const blocked = lift(m.blocked, 1);
+  const core = { x: m.core?.x ?? BASE.x, y: m.core?.y ?? BASE.y, size: BASE.size };
   return {
-    floor: Uint8Array.from(m.floor),
-    wall: Uint8Array.from(m.wall),
+    floor: lift(m.floor, 3),
+    wall: lift(m.wall, 5),
     blocked,
-    spawn: m.spawn ? Uint8Array.from(m.spawn) : legacySpawn(blocked),
+    spawn: m.spawn ? lift(m.spawn, 0) : legacySpawn(blocked),
     pines: m.pines.map((p) => ({ ...p })),
     decor: m.decor.map((p) => ({ ...p })),
     valleyY: m.valleyY
       ? Float32Array.from(m.valleyY)
-      : new Float32Array(COLS).fill(BASE.y + BASE.size / 2),
+      : new Float32Array(COLS).fill(core.y + core.size / 2),
+    core,
+    rows: Math.max(1, Math.min(ROWS, Math.floor(m.floor.length / COLS))),
   };
 }
 
@@ -218,11 +262,14 @@ const PINE_TONE = "#2e6e35";
 
 /** paint a MapData into a canvas at 1px per cell (scale it up with CSS) */
 export function drawThumb(map: MapData, canvas: HTMLCanvasElement): void {
+  // a document saved on a shorter grid draws at ITS height, so the card
+  // preview keeps the map's real proportions instead of a padded band
+  const rows = Math.max(1, Math.min(ROWS, Math.floor(map.floor.length / COLS)));
   canvas.width = COLS;
-  canvas.height = ROWS;
+  canvas.height = rows;
   const c = canvas.getContext("2d");
   if (!c) return;
-  for (let y = 0; y < ROWS; y++)
+  for (let y = 0; y < rows; y++)
     for (let x = 0; x < COLS; x++) {
       const i = y * COLS + x;
       c.fillStyle = map.blocked[i]
@@ -236,5 +283,5 @@ export function drawThumb(map: MapData, canvas: HTMLCanvasElement): void {
     }
   // core marker
   c.fillStyle = "#ffd37f";
-  c.fillRect(BASE.x, BASE.y, BASE.size, BASE.size);
+  c.fillRect(map.core?.x ?? BASE.x, map.core?.y ?? BASE.y, BASE.size, BASE.size);
 }

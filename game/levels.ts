@@ -1,11 +1,21 @@
 import { CELL, HP0, UNIT_SPEED, UR } from "./constants";
 
-export const UNIT_KINDS = ["dagger", "mace", "fortress", "crawler", "flare"] as const;
+export const UNIT_KINDS = ["dagger", "mace", "fortress", "crawler", "flare", "nova", "pulsar", "horizon", "zenith"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
 /** numeric unit id — index into UNIT_KINDS, stored in the sim's ukind array */
-export const UNIT_ID: Record<UnitKind, number> = { dagger: 0, mace: 1, fortress: 2, crawler: 3, flare: 4 };
+export const UNIT_ID: Record<UnitKind, number> = {
+  dagger: 0,
+  mace: 1,
+  fortress: 2,
+  crawler: 3,
+  flare: 4,
+  nova: 5,
+  pulsar: 6,
+  horizon: 7,
+  zenith: 8,
+};
 
 export interface UnitStats {
   hp: number;
@@ -20,6 +30,18 @@ export interface UnitStats {
   /** flying units ignore terrain and head straight for the core; only
    * towers with targetAir (and bullets with collidesAir) touch them */
   flying?: boolean;
+  /**
+   * Mindustry RepairFieldAbility: every `reload` seconds, heal every unit
+   * whose hitbox falls inside `range` by `amount`, capped at its max hp.
+   * The healer is inside its own field, so it mends itself too.
+   */
+  repairField?: { amount: number; reload: number; range: number };
+  /**
+   * Mindustry ShieldRegenFieldAbility: every `reload` seconds, top every
+   * unit in `range` up by `amount` of absorbing shield, never past `max`.
+   * Shields soak damage before health does (see Sim.damageUnit).
+   */
+  shieldField?: { amount: number; max: number; reload: number; range: number };
 }
 
 /** per-kind combat stats (official Mindustry numbers) */
@@ -36,6 +58,52 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   crawler: { hp: 150, speed: 7.5 * CELL, armor: 0, radius: UR, scrap: 1 },
   // flare: 70 hp, no armor, 1.125-block hitbox, 2.7 px/tick = 20.25 tiles/s
   flare: { hp: 70, speed: 20.25 * CELL, armor: 0, radius: UR * 1.125, scrap: 2, flying: true },
+  // nova: the T1 of the support line — 120 hp, armor 1, 1x1-block hitbox,
+  // 0.55 px/tick = 4.125 tiles/s. Frailer than a dagger but a step quicker
+  // RepairFieldAbility(10, 60*4, 60): 10 hp to everything within 7.5 tiles,
+  // every 4 s — a nova escort keeps a dagger line topped up between volleys
+  nova: {
+    hp: 120,
+    speed: 4.125 * CELL,
+    armor: 1,
+    radius: UR,
+    scrap: 1,
+    repairField: { amount: 10, reload: 4, range: 7.5 * CELL },
+  },
+  // pulsar: support T2 — 320 hp, armor 4 (a mace's plating on half its hp),
+  // 1.375x1.375-block hitbox, 0.7 px/tick = 5.25 tiles/s: the line's fastest
+  // walker, so it arrives ahead of the daggers it escorts
+  // ShieldRegenFieldAbility(20, 40, 60*5, 60): +20 shield every 5 s up to a
+  // 40-point cap, over the same 7.5-tile field
+  pulsar: {
+    hp: 320,
+    speed: 5.25 * CELL,
+    armor: 4,
+    radius: UR * 1.375,
+    scrap: 3,
+    shieldField: { amount: 20, max: 40, reload: 5, range: 7.5 * CELL },
+  },
+  // horizon: the T2 bomber — 340 hp, armor 3, 1.375x1.375-block hitbox,
+  // 1.65 px/tick = 12.375 tiles/s. Slower than a flare but four times the
+  // health, and armour 3 blunts the scatter flak that shreds the T1
+  horizon: {
+    hp: 340,
+    speed: 12.375 * CELL,
+    armor: 3,
+    radius: UR * 1.375,
+    scrap: 4,
+    flying: true,
+  },
+  // zenith: the T3 gunship — 700 hp, armor 5, a 2.5x2.5-block hitbox that
+  // makes it the widest thing in the sky, at 1.7 px/tick = 12.75 tiles/s
+  zenith: {
+    hp: 700,
+    speed: 12.75 * CELL,
+    armor: 5,
+    radius: UR * 2.5,
+    scrap: 7,
+    flying: true,
+  },
 };
 
 /** largest unit radius — pads broad-phase bounds that must cover any unit */
@@ -85,9 +153,11 @@ export function waveGroups(
 }
 
 export interface LevelSpec {
-  /** save key and display number, "world-index" (e.g. "2-1") */
+  /** save key and display number — the world number, e.g. "2" */
   id: string;
   name: string;
+  /** flavour name shown under the world number on its card */
+  subtitle?: string;
   /** official map id this level plays on; the first official map when unset */
   map?: string;
   /** enemies entering the field per second — every wave drains at this rate */
@@ -96,132 +166,140 @@ export interface LevelSpec {
   script: readonly LevelStep[];
 }
 
-export interface WorldSpec {
-  id: number;
-  name: string;
-  levels: readonly LevelSpec[];
-}
-
 /**
- * The campaign: worlds play strictly in order, and so do the levels inside
- * each one — a level is playable once the one before it (across the whole
- * flattened list) has been cleared. Kills are the only income: a finished
- * run banks scrap per kill whether it ended in victory or defeat, and
- * winning pays in the next level rather than a bonus. See progress.ts.
+ * The campaign: a WORLD is one playable level on its own map, and they play
+ * strictly in order — world N opens when world N-1 is cleared. Kills are the
+ * only income: a finished run banks scrap per kill whether it ended in
+ * victory or defeat, and winning pays in the next world rather than a bonus.
+ * See progress.ts.
  */
-export const WORLDS: readonly WorldSpec[] = [
+export const WORLDS: readonly LevelSpec[] = [
   {
-    id: 1,
-    name: "The Foothills",
-    levels: [
-      {
-        id: "1-1",
-        name: "First Contact",
-        spawnRate: 30,
-        script: [
-          { wait: 10 },
-          { wave: { dagger: 20 } },
-          { wait: 10 },
-          { wave: { dagger: 30 } },
-          { wait: 10 },
-          { wave: { dagger: 50 } },
-        ],
-      },
-      {
-        id: "1-2",
-        name: "Thin Red Line",
-        spawnRate: 40,
-        script: [
-          { wait: 8 },
-          { wave: { dagger: 40 } },
-          { wait: 10 },
-          { wave: { dagger: 60, crawler: 10 } },
-          { wait: 10 },
-          { wave: { dagger: 60, mace: 5 } },
-          { wait: 10 },
-          { wave: { dagger: 80, mace: 10, crawler: 20 } },
-        ],
-      },
-      {
-        id: "1-3",
-        name: "The Dagger Problem",
-        spawnRate: 60,
-        script: [
-          { wait: 10 },
-          { wave: { dagger: 50 } },
-          { wait: 20 },
-          { wave: { dagger: 100, mace: 10 } },
-          { wait: 20 },
-          { wave: { mace: 35 } },
-          { wait: 20 },
-          { wave: { dagger: 150, mace: 50 } },
-          { wait: 20 },
-          { wave: { dagger: 100, mace: 100 } },
-        ],
-      },
+    id: "1",
+    name: "World 1",
+    subtitle: "The Foothills",
+    map: "grass-s",
+    spawnRate: 40,
+    script: [
+      { wait: 10 },
+      { wave: { dagger: 10 } },
+      { wait: 10 },
+      { wave: { dagger: 20 } },
+      { wait: 10 },
+      { wave: { crawler: 10 } },
+      { wait: 10 },
+      { wave: { dagger: 20, crawler: 10 } },
+      { wait: 10 },
+      { wave: { dagger: 15, nova: 15 } },
+      { wait: 10 },
+      { wave: { dagger: 40, mace: 5 } },
+      { wait: 10 },
+      { wave: { dagger: 50, crawler: 20 } },
+      { wait: 10 },
+      { wave: { dagger: 60, mace: 8 } },
+      { wait: 10 },
+      { wave: { dagger: 40, crawler: 40 } },
+      { wait: 10 },
+      { wave: { dagger: 60, mace: 20 } },
+      { wait: 10 },
+      { wave: { dagger: 60, crawler: 100 } },
+      { wait: 10 },
+      { wave: { dagger: 100, mace: 30 } },
+      { wait: 10 },
+      { wave: { dagger: 100, crawler: 40, mace: 15 } },
+      { wait: 10 },
+      { wave: { dagger: 100, mace: 30 } },
+      { wait: 10 },
+      { wave: { dagger: 150, crawler: 50, mace: 50 } },
     ],
   },
   {
-    id: 2,
-    name: "The Dunes",
-    levels: [
-      {
-        id: "2-1",
-        name: "Air Raid",
-        spawnRate: 60,
-        script: [
-          { wait: 8 },
-          { wave: { dagger: 60, crawler: 20 } },
-          { wait: 10 },
-          { wave: { flare: 15 } },
-          { wait: 10 },
-          { wave: { dagger: 100, flare: 20 } },
-          { wait: 10 },
-          { wave: { dagger: 150, mace: 20, flare: 30 } },
-        ],
-      },
-      {
-        id: "2-2",
-        name: "Pincer",
-        spawnRate: 80,
-        script: [
-          { wait: 8 },
-          { wave: { dagger: 120, mace: 20 } },
-          { wait: 10 },
-          { wave: { flare: 40, crawler: 40 } },
-          { wait: 10 },
-          { wave: { dagger: 200, mace: 40, fortress: 5 } },
-          { wait: 12 },
-          { wave: { dagger: 250, mace: 60, flare: 40 } },
-        ],
-      },
-      {
-        id: "2-3",
-        name: "The Horde",
-        map: "desert-3way",
-        spawnRate: 60,
-        script: [
-          { wait: 10 },
-          { wave: { dagger: 300, mace: 50 } },
-          { wait: 20 },
-          { wave: { mace: 30, flare: 20 } },
-          { wait: 20 },
-          { wave: { mace: 300 } },
-          { wait: 20 },
-          { wave: { fortress: 50 } },
-          { wait: 20 },
-          { wave: { flare: 200, mace: 200 } },
-          { wait: 20 },
-          { wave: { flare: 50, dagger: 300, mace: 300, fortress: 300 } },
-        ],
-      },
+    id: "2",
+    name: "World 2",
+    subtitle: "The Dunes",
+    map: "dunes-long",
+    spawnRate: 60,
+    script: [
+      { wait: 10 },
+      { wave: { dagger: 50 } },
+      { wait: 10 },
+      { wave: { crawler: 100 } },
+      { wait: 10 },
+      { wave: { flare: 15 } },
+      { wait: 10 },
+      { wave: { dagger: 50, mace: 50 } },
+      { wait: 10 },
+      { wave: [{ region: 1, flare: 25 }, { region: 2, dagger: 80 }] },
+      { wait: 10 },
+      { wave: [{ region: 1, mace: 50 }, { region: 3, fortress: 10 }] },
+      { wait: 10 },
+      { wave: [{ region: 1, flare: 20 }, { region: 2, dagger: 80 }, { region: 3, fortress: 20 }] },
+      { wait: 10 },
+      { wave: [{ region: 1, mace: 50 }, { region: 2, mace: 40 }, { region: 3, crawler: 200 }] },
+      { wait: 10 },
+      { wave: { flare: 150 } },
+      { wait: 10 },
+      { wave: { fortress: 50, crawler: 300 } },
+      { wait: 10 },
+      { wave: [{ region: 2, mace: 30 }, { region: 3, fortress: 30 }] },
+      { wait: 12 },
+      { wave: { dagger: 200, mace: 50, fortress: 30, crawler: 100, flare: 50 } },
+      { wait: 12 },
+      { wave: [{ region: 1, flare: 60 }, { region: 2, dagger: 200 }, { region: 3, mace: 60 }] },
+      { wait: 12 },
+      { wave: { flare: 250 } },
+      { wait: 10 },
+      { wave: [{ region: 1, flare: 80 }, { region: 2, dagger: 300 }, { region: 3, mace: 120 }] },
+    ],
+  },
+  {
+    id: "3",
+    name: "World 3",
+    subtitle: "Canyon Run",
+    map: "stone-canyon",
+    spawnRate: 60,
+    script: [
+      { wait: 10 },
+      { wave: { dagger: 100 } },
+      { wait: 10 },
+      { wave: { dagger: 120, crawler: 40 } },
+      { wait: 10 },
+      // north canyon and south canyon each carry their own contingent
+      { wave: [{ region: 1, dagger: 100 }, { region: 2, mace: 30 }] },
+      { wait: 10 },
+      { wave: { mace: 60, flare: 20 } },
+      { wait: 10 },
+      { wave: { dagger: 120, fortress: 5 } },
+      { wait: 10 },
+      { wave: [{ region: 1, flare: 40 }, { region: 2, dagger: 150 }] },
+      { wait: 10 },
+      { wave: { mace: 100, crawler: 60 } },
+      { wait: 10 },
+      { wave: { mace: 60, fortress: 10 } },
+      { wait: 10 },
+      { wave: [{ region: 1, dagger: 200 }, { region: 2, fortress: 10 }] },
+      { wait: 10 },
+      { wave: { flare: 60, mace: 80 } },
+      { wait: 10 },
+      { wave: { dagger: 250, crawler: 100 } },
+      { wait: 10 },
+      { wave: [{ region: 1, fortress: 15 }, { region: 2, mace: 120 }] },
+      { wait: 12 },
+      { wave: { dagger: 200, flare: 80 } },
+      { wait: 12 },
+      { wave: { mace: 100, fortress: 25 } },
+      { wait: 12 },
+      { wave: [{ region: 1, dagger: 300 }, { region: 2, flare: 80 }] },
+      { wait: 12 },
+      { wave: { mace: 200, fortress: 30 } },
+      { wait: 12 },
+      { wave: [{ region: 1, fortress: 40 }, { region: 2, dagger: 350 }] },
+      { wait: 15 },
+      { wave: { dagger: 400, mace: 200, fortress: 50, flare: 100 } },
     ],
   },
 ];
 
-/** the campaign flattened in play order — index i unlocks when i-1 is cleared */
-export const LEVELS: readonly LevelSpec[] = WORLDS.flatMap((w) => w.levels);
-
-export function levelById(id: string): LevelSpec | null {
-  return LEVELS.find((l) => l.id === id) ?? null;
+export function worldById(id: string): LevelSpec | null {
+  return WORLDS.find((w) => w.id === id) ?? null;
 }

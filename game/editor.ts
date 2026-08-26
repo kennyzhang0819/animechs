@@ -1,7 +1,7 @@
 import { buildAtlas } from "./atlas";
-import { CELL, clamp, COLS, H, ROWS, W } from "./constants";
+import { CELL, clamp, COLS, CORE_SIZE, H, ROWS, W } from "./constants";
 import { PALETTE, terrainFromMap, mapFromTerrain, type MapData, type PaletteSet } from "./maps";
-import { Renderer } from "./renderer";
+import { ALL_LAYERS, Renderer, type TerrainLayers } from "./renderer";
 import { WALL_PINE, type Prop, type Terrain } from "./terrain";
 
 const ZOOM_MIN = 1;
@@ -25,9 +25,38 @@ interface Snapshot {
   spawn: Uint8Array;
   pines: Prop[];
   decor: Prop[];
+  core: { x: number; y: number; size: number };
 }
 
 const quarterTurn = (): number => ((Math.random() * 4) | 0) * (Math.PI / 2);
+
+/** how wide the path tool carves, in tiles across (see PATH_WOBBLE) */
+export const PATH_WIDTHS: readonly number[] = [9, 12, 15];
+/** +/- tiles the carved half-width breathes along the road */
+const PATH_WOBBLE = 0.9;
+/** the road surface reaches this fraction of the carved half-width, so a
+ * shoulder of the surrounding floor always shows between road and rock */
+const PATH_SURFACE = 0.62;
+
+/**
+ * Smooth 2d value noise in [0,1] — the same lattice-and-smoothstep the map
+ * generators use, so a hand-drawn road's edges wander like a generated
+ * one's instead of jittering per cell. Position-seeded, so redrawing over
+ * the same ground reproduces the same edge.
+ */
+function pathNoise(x: number, y: number): number {
+  const lat = (ix: number, iy: number): number => {
+    let h = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + 0x51ed) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  };
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const a = lat(ix, iy), b = lat(ix + 1, iy), c = lat(ix, iy + 1), d = lat(ix + 1, iy + 1);
+  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+}
 
 /**
  * The map editor: same full-screen canvas pair and camera as the game, but
@@ -44,6 +73,15 @@ export class MapEditor {
   private variant = 0; // index into set.variants, used when randomize is off
   randomize = true;
   brush = 1; // painted square is (2*brush - 1) cells wide
+  /** index into PATH_WIDTHS — how wide the path tool carves */
+  pathWidth = 1;
+  /**
+   * Layer visibility, and with it what edits may touch: a HIDDEN layer is
+   * left alone by every tool. That is what lets you hide the spawn pads and
+   * repaint the ground under them without wiping the pads, or hide the
+   * hills and work on the floor a hill is standing on.
+   */
+  layers: TerrainLayers = { ...ALL_LAYERS };
   dirty = false;
 
   private readonly undoStack: Snapshot[] = [];
@@ -86,7 +124,7 @@ export class MapEditor {
     this.uictx = ctx;
 
     this.resize();
-    this.renderer.rebuildTerrain(this, true);
+    this.renderer.rebuildTerrain(this, true, this.layers);
 
     window.addEventListener("resize", this.onResize);
     window.addEventListener("keydown", this.onKeyDown);
@@ -145,8 +183,14 @@ export class MapEditor {
     this.terrain.spawn.set(s.spawn);
     this.terrain.pines = s.pines;
     this.terrain.decor = s.decor;
+    this.terrain.core = s.core;
     this.dirty = true;
-    this.renderer.rebuildTerrain(this, true);
+    this.renderer.rebuildTerrain(this, true, this.layers);
+  }
+
+  /** rebuild the static batches — after a layer visibility change */
+  redraw(): void {
+    this.renderer.rebuildTerrain(this, true, this.layers);
   }
 
   canUndo(): boolean {
@@ -163,6 +207,7 @@ export class MapEditor {
       spawn: this.terrain.spawn.slice(),
       pines: this.terrain.pines.map((p) => ({ ...p })),
       decor: this.terrain.decor.map((p) => ({ ...p })),
+      core: { ...this.terrain.core },
     });
     if (this.undoStack.length > UNDO_CAP) this.undoStack.shift();
   }
@@ -185,31 +230,38 @@ export class MapEditor {
     const rot = this.randomize ? quarterTurn() : 0;
     const cx = (gx + 0.5) * CELL, cy = (gy + 0.5) * CELL;
 
+    // a hidden layer is not just invisible, it is out of reach: these
+    // guards are what make "hide it and edit underneath" work
+    const L = this.layers;
     if (set.kind === "floor") {
       T.floor[i] = pick;
-      T.blocked[i] = 0;
-      T.wall[i] = 0;
-      T.spawn[i] = 0;
-      this.removePropsAt(gx, gy);
+      if (L.wall) {
+        T.blocked[i] = 0;
+        T.wall[i] = 0;
+      }
+      if (L.spawn) T.spawn[i] = 0;
+      if (L.props) this.removePropsAt(gx, gy);
     } else if (set.kind === "wall") {
       T.blocked[i] = 1;
       T.wall[i] = pick;
-      T.spawn[i] = 0;
-      this.removePropsAt(gx, gy);
+      if (L.spawn) T.spawn[i] = 0;
+      if (L.props) this.removePropsAt(gx, gy);
     } else if (set.kind === "pine") {
       T.blocked[i] = 1;
       T.wall[i] = WALL_PINE;
-      T.spawn[i] = 0;
+      if (L.spawn) T.spawn[i] = 0;
       this.removePropsAt(gx, gy);
       T.pines.push({ x: cx, y: cy, size: CELL * 1.5, rot, kind: 0 });
     } else if (set.kind === "spawn") {
       // spawn pad: clears any wall under it — pads live on open ground.
       // The floor beneath stays; the game draws only that floor. The
       // variant is the region id the pad belongs to
-      T.blocked[i] = 0;
-      T.wall[i] = 0;
+      if (L.wall) {
+        T.blocked[i] = 0;
+        T.wall[i] = 0;
+      }
       T.spawn[i] = pick;
-      this.removePropsAt(gx, gy);
+      if (L.props) this.removePropsAt(gx, gy);
     } else if (set.kind === "decor") {
       if (T.blocked[i]) return; // props live on open ground, like the generator's
       this.removePropsAt(gx, gy);
@@ -221,16 +273,94 @@ export class MapEditor {
         kind: pick,
       });
     } else {
-      // erase: strip walls, pads, and props, keep the floor
-      T.blocked[i] = 0;
-      T.wall[i] = 0;
-      T.spawn[i] = 0;
-      this.removePropsAt(gx, gy);
+      // erase: strip the VISIBLE layers, keep the floor. Hiding a layer
+      // therefore also shields it from the eraser
+      if (L.wall) {
+        T.blocked[i] = 0;
+        T.wall[i] = 0;
+      }
+      if (L.spawn) T.spawn[i] = 0;
+      if (L.props) this.removePropsAt(gx, gy);
     }
     this.dirty = true;
   }
 
+  /**
+   * One step of a path stroke: carve open ground around (gx, gy) at the
+   * tool's width, wobbling the edge with position noise so the road reads
+   * as carved rather than stamped, and lay the road surface down its
+   * middle. Anything the carve reaches stops being wall — pads and props
+   * included — which is what makes it a road and not a floor brush.
+   */
+  private pathAt(gx: number, gy: number): void {
+    const T = this.terrain;
+    const set = this.set;
+    const half = PATH_WIDTHS[clamp(this.pathWidth, 0, PATH_WIDTHS.length - 1)] / 2;
+    const reach = Math.ceil(half + PATH_WOBBLE) + 1;
+    for (let y = gy - reach; y <= gy + reach; y++) {
+      if (y < 0 || y >= ROWS) continue;
+      for (let x = gx - reach; x <= gx + reach; x++) {
+        if (x < 0 || x >= COLS) continue;
+        const dx = x - gx, dy = y - gy;
+        const d = Math.hypot(dx, dy);
+        // the edge breathes with noise sampled where the cell IS, so
+        // neighbouring stroke steps agree about the same piece of rim
+        const edge = half + (pathNoise(x * 0.18, y * 0.18) - 0.5) * 2 * PATH_WOBBLE;
+        if (d > edge) continue;
+        const i = y * COLS + x;
+        if (this.layers.wall) {
+          T.blocked[i] = 0;
+          T.wall[i] = 0;
+        }
+        if (this.layers.props) this.removePropsAt(x, y);
+        // the surface covers the middle; the rim keeps whatever floor the
+        // map already had, which is what leaves a shoulder either side
+        if (d <= edge * PATH_SURFACE) {
+          T.floor[i] = this.randomize
+            ? set.variants[(Math.random() * set.variants.length) | 0]
+            : set.variants[clamp(this.variant, 0, set.variants.length - 1)];
+        }
+      }
+    }
+    this.dirty = true;
+  }
+
+  /**
+   * Move the core so its footprint is centred on the cursor. A map has one
+   * core, so this is a move rather than an add: the old position simply
+   * stops being the core. The ground it lands on is cleared — the footprint
+   * itself plus a one-cell apron — because a core sitting in rock is one
+   * the swarm can never reach.
+   */
+  private placeCore(gx: number, gy: number): void {
+    const T = this.terrain;
+    const half = (CORE_SIZE / 2) | 0;
+    const x0 = clamp(gx - half, 0, COLS - CORE_SIZE);
+    const y0 = clamp(gy - half, 0, ROWS - CORE_SIZE);
+    for (let y = y0 - 1; y < y0 + CORE_SIZE + 1; y++)
+      for (let x = x0 - 1; x < x0 + CORE_SIZE + 1; x++) {
+        if (x < 0 || y < 0 || x >= COLS || y >= ROWS) continue;
+        const i = y * COLS + x;
+        T.blocked[i] = 0;
+        T.wall[i] = 0;
+        T.spawn[i] = 0; // a spawn pad under the core would spawn on the goal
+        this.removePropsAt(x, y);
+        // the core always clears its own ground: a core you cannot reach is
+        // a broken map, so this one ignores layer visibility
+      }
+    T.core = { x: x0, y: y0, size: CORE_SIZE };
+    this.dirty = true;
+  }
+
   private paintAt(gx: number, gy: number): void {
+    if (this.set.kind === "core") {
+      this.placeCore(gx, gy);
+      return;
+    }
+    if (this.set.kind === "path") {
+      this.pathAt(gx, gy);
+      return;
+    }
     const r = this.brush - 1;
     for (let y = gy - r; y <= gy + r; y++)
       for (let x = gx - r; x <= gx + r; x++) this.paintCell(x, y);
@@ -250,7 +380,7 @@ export class MapEditor {
         );
     }
     this.lastCell = { x: gx, y: gy };
-    this.renderer.rebuildTerrain(this, true);
+    this.renderer.rebuildTerrain(this, true, this.layers);
   }
 
   // ---------- input ----------
@@ -356,6 +486,10 @@ export class MapEditor {
   }
 
   private clampCamera(): void {
+    // a zero-sized canvas divides by zero in any pointer-driven pan, and a
+    // NaN camera renders the map nowhere (see Game.clampCamera)
+    if (!Number.isFinite(this.tlx)) this.tlx = 0;
+    if (!Number.isFinite(this.tly)) this.tly = 0;
     this.tlx = clamp(this.tlx, 0, W - this.visW());
     this.tly = clamp(this.tly, 0, H - this.visH());
   }
@@ -410,6 +544,31 @@ export class MapEditor {
     if (this.hoverGx < 0) return;
     const s = this.scale * this.zoom;
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
+    // the path tool is round and much wider than a brush — preview it as
+    // the circle it actually carves
+    if (this.set.kind === "core") {
+      const half = (CORE_SIZE / 2) | 0;
+      const x0 = clamp(this.hoverGx - half, 0, COLS - CORE_SIZE) * CELL;
+      const y0 = clamp(this.hoverGy - half, 0, ROWS - CORE_SIZE) * CELL;
+      const side = CORE_SIZE * CELL;
+      c.fillStyle = "rgba(255,211,127,0.18)";
+      c.fillRect(x0, y0, side, side);
+      c.strokeStyle = "rgba(255,211,127,0.9)";
+      c.lineWidth = 2 / s;
+      c.strokeRect(x0, y0, side, side);
+      return;
+    }
+    if (this.set.kind === "path") {
+      const rad = (PATH_WIDTHS[clamp(this.pathWidth, 0, PATH_WIDTHS.length - 1)] / 2) * CELL;
+      c.beginPath();
+      c.arc((this.hoverGx + 0.5) * CELL, (this.hoverGy + 0.5) * CELL, rad, 0, Math.PI * 2);
+      c.fillStyle = "rgba(255,211,127,0.12)";
+      c.fill();
+      c.strokeStyle = "rgba(255,211,127,0.85)";
+      c.lineWidth = 1.5 / s;
+      c.stroke();
+      return;
+    }
     const r = this.brush - 1;
     const x = (this.hoverGx - r) * CELL, y = (this.hoverGy - r) * CELL;
     const side = (2 * r + 1) * CELL;

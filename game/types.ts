@@ -12,8 +12,11 @@ export interface Tower {
   burstLeft: number; // shots still queued in the current volley
   burstT: number; // seconds until the next queued shot fires
   shotCount: number; // lifetime shots fired — picks the next barrel (ShootAlternate)
-  aimDist: number; // px to the predicted impact at volley start — artillery
-  // shells scale their lifetime by it so they blast at the aim point
+  // the predicted impact point in world px, fixed when the volley starts.
+  // Artillery shells scale their lifetime by the muzzle's distance to it,
+  // so they expire — and blast — on target instead of overflying it
+  aimX: number;
+  aimY: number;
 }
 
 export interface Projectile {
@@ -36,6 +39,9 @@ export const enum FxKind {
   Breach = 2,
   Flak = 3,
   Shrapnel = 4,
+  Heal = 5,
+  HealWave = 6,
+  ShieldWave = 7,
 }
 
 export interface Effect {

@@ -26,6 +26,13 @@ export interface Terrain {
   pines: Prop[]; // blocking tree cells, drawn as overhanging props
   decor: Prop[]; // non-blocking props: boulders, shrubs
   valleyY: Float32Array; // carved main-valley centerline per column
+  /** this map's core: top-left cell + edge length, in cells */
+  core: { x: number; y: number; size: number };
+  /** how many rows of the grid this map actually uses. Documents saved on a
+   * shorter grid are padded with rock to fill the arrays (see
+   * terrainFromMap), but the CAMERA stops at this height, so an older map
+   * plays exactly as it did instead of panning into a dead rock apron */
+  rows: number;
 }
 
 const mulberry32 = (seed: number) => (): number => {
@@ -312,5 +319,5 @@ export function generateTerrain(seed: number): Terrain {
       if (!blocked[i]) spawn[i] = 1;
     }
 
-  return { blocked, floor, wall, spawn, pines, decor, valleyY };
+  return { blocked, floor, wall, spawn, pines, decor, valleyY, core: { ...BASE }, rows: ROWS };
 }

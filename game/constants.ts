@@ -1,5 +1,5 @@
 export const COLS = 128;
-export const ROWS = 72;
+export const ROWS = 96;
 export const CELL = 20; // one Mindustry ground tile
 export const W = COLS * CELL;
 export const H = ROWS * CELL;
@@ -229,7 +229,12 @@ export const SHRAPNEL = {
   toColor: [0xf9 / 255, 0xa3 / 255, 0xc7 / 255] as const, // Pal.thoriumPink
 } as const;
 
-export const BASE = { x: 120, y: 33, size: 5 }; // 5x5 core-nucleus, walkable goal cells
+// the DEFAULT core: 5x5 core-nucleus of walkable goal cells. A map document
+// may place its own core anywhere (MapData.core), so nothing but the
+// fallback should read BASE directly — the live position is terrain.core
+export const BASE = { x: 120, y: 33, size: 5 };
+/** every core is this many cells square */
+export const CORE_SIZE = BASE.size;
 
 // damage tint per hp third — full hp renders the sprite as-is
 // (gray armor, orange cell, like Mindustry); hits darken and redden it

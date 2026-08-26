@@ -1,8 +1,144 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MapEditor } from "@/game/editor";
+import { MapEditor, PATH_WIDTHS } from "@/game/editor";
+import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
 import { PALETTE, SPAWN_REGIONS, saveMap, type MapData, type PaletteSet } from "@/game/maps";
+
+const LAYER_ROWS: ReadonlyArray<[keyof TerrainLayers, string]> = [
+  ["wall", "Hills"],
+  ["props", "Props"],
+  ["spawn", "Spawn pads"],
+  ["core", "Core"],
+];
+
+const POS_KEY = "swarmdustry.editor.panels.v1";
+
+/** remember one panel's position and minimised state */
+function persist(id: string, state: { x: number; y: number; open: boolean }): void {
+  try {
+    const all = JSON.parse(localStorage.getItem(POS_KEY) ?? "{}");
+    localStorage.setItem(POS_KEY, JSON.stringify({ ...all, [id]: state }));
+  } catch {
+    // storage blocked: the panel still moved for this session
+  }
+}
+
+/**
+ * An overlay panel the user can drag out of the way by its grip. The
+ * position is an OFFSET from wherever the panel is anchored by CSS, so
+ * right- and centre-anchored panels keep their anchoring, and it persists
+ * per panel id — the layout someone arranges for a map survives reloads.
+ */
+function Panel({
+  id,
+  title,
+  className,
+  bodyClassName = "",
+  base = "",
+  children,
+}: {
+  id: string;
+  /** shown in the grip bar, and the only thing left when minimised */
+  title: string;
+  className: string;
+  /** the scrolling part: the grip stays outside it, so a long list can be
+   * scrolled without losing the handle that moves the panel */
+  bodyClassName?: string;
+  /** transform the panel's own anchoring needs (e.g. vertical centring),
+   * composed BEFORE the drag offset so the two don't overwrite each other */
+  base?: string;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [off, setOff] = useState({ x: 0, y: 0 });
+  const [open, setOpen] = useState(true);
+
+  useEffect(() => {
+    try {
+      const all = JSON.parse(localStorage.getItem(POS_KEY) ?? "{}") as Record<
+        string,
+        { x: number; y: number; open?: boolean }
+      >;
+      if (all[id]) {
+        setOff({ x: all[id].x, y: all[id].y });
+        if (all[id].open === false) setOpen(false);
+      }
+    } catch {
+      // a mangled layout just means default positions
+    }
+  }, [id]);
+
+  const onGrab = (e: React.PointerEvent): void => {
+    e.preventDefault();
+    const grip = e.currentTarget;
+    grip.setPointerCapture(e.pointerId);
+    const from = { x: e.clientX, y: e.clientY };
+    const base = off;
+    const move = (ev: PointerEvent): void => {
+      const next = { x: base.x + ev.clientX - from.x, y: base.y + ev.clientY - from.y };
+      // never let a panel be dragged fully off-screen: its own box has to
+      // keep a grip's worth of itself inside the viewport
+      const r = ref.current?.getBoundingClientRect();
+      if (r) {
+        const minX = next.x - r.left - r.width + 40, maxX = next.x + (window.innerWidth - r.left - 40);
+        const minY = next.y - r.top + 8, maxY = next.y + (window.innerHeight - r.top - 40);
+        next.x = Math.min(Math.max(next.x, minX), maxX);
+        next.y = Math.min(Math.max(next.y, minY), maxY);
+      }
+      setOff(next);
+    };
+    const up = (): void => {
+      window.removeEventListener("pointermove", move);
+      setOff((cur) => {
+        persist(id, { ...cur, open });
+        return cur;
+      });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up, { once: true });
+  };
+
+  const toggle = (): void => {
+    setOpen((v) => {
+      persist(id, { ...off, open: !v });
+      return !v;
+    });
+  };
+
+  return (
+    <div ref={ref} className={className} style={{ transform: `translate(${off.x}px, ${off.y}px) ${base}`.trim() }}>
+      {/* the grip is sticky, so scrolling a long palette never scrolls the
+          handle (or the minimise button) out of reach */}
+      <div
+        onPointerDown={onGrab}
+        onDoubleClick={() => {
+          setOff({ x: 0, y: 0 });
+          persist(id, { x: 0, y: 0, open });
+        }}
+        title="Drag to move · double-click to reset position"
+        className="sticky top-0 z-10 -mx-1 mb-1 flex cursor-grab select-none items-center gap-2 rounded-sm bg-[#151518] px-1 py-0.5 text-[#4A4A55] hover:text-[#A6A6AF] active:cursor-grabbing"
+      >
+        <svg viewBox="0 0 16 4" className="h-1.5 w-4 shrink-0 fill-current" aria-hidden="true">
+          <circle cx="2" cy="2" r="1" />
+          <circle cx="8" cy="2" r="1" />
+          <circle cx="14" cy="2" r="1" />
+        </svg>
+        <span className="flex-1 truncate text-[10px] uppercase tracking-widest">{title}</span>
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={toggle}
+          title={open ? "Minimise" : "Expand"}
+          aria-expanded={open}
+          className="shrink-0 rounded px-1 text-[11px] leading-none text-[#71717C] hover:bg-[#222227] hover:text-[#EDEDEF]"
+        >
+          {open ? "–" : "+"}
+        </button>
+      </div>
+      {open && <div className={bodyClassName}>{children}</div>}
+    </div>
+  );
+}
 
 /**
  * Full-screen map editor: the WebGL canvas pair underneath (same layout as
@@ -22,6 +158,8 @@ export default function MapEditorView({
   const [variant, setVariant] = useState(0);
   const [randomize, setRandomize] = useState(true);
   const [brush, setBrush] = useState(1);
+  const [pathWidth, setPathWidth] = useState(1);
+  const [layers, setLayers] = useState<TerrainLayers>({ ...ALL_LAYERS });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
@@ -39,6 +177,9 @@ export default function MapEditorView({
         }
         editor = ed;
         editorRef.current = ed;
+        if (process.env.NODE_ENV !== "production") {
+          (window as unknown as Record<string, unknown>).__swarmeditor = ed;
+        }
       })
       .catch((err: unknown) => {
         if (alive) setError(err instanceof Error ? err.message : String(err));
@@ -51,6 +192,8 @@ export default function MapEditorView({
       clearInterval(poll);
       editor?.destroy();
       editorRef.current = null;
+      const w = window as unknown as Record<string, unknown>;
+      if (w.__swarmeditor === editor) delete w.__swarmeditor;
     };
   }, [map]);
 
@@ -62,6 +205,16 @@ export default function MapEditorView({
     ed.setTool(set, variant);
     ed.randomize = randomize;
     ed.brush = brush;
+    ed.pathWidth = pathWidth;
+    if (
+      ed.layers.wall !== layers.wall ||
+      ed.layers.props !== layers.props ||
+      ed.layers.spawn !== layers.spawn ||
+      ed.layers.core !== layers.core
+    ) {
+      ed.layers = { ...layers };
+      ed.redraw(); // visibility changed: the static batches must be rebuilt
+    }
   });
 
   const close = useCallback(() => {
@@ -107,6 +260,7 @@ export default function MapEditorView({
   }
 
   const panel = "rounded border border-[#2E2E36] bg-[#151518]/80 backdrop-blur";
+  const isPath = (PALETTE.find((p) => p.id === setId) ?? PALETTE[0]).kind === "path";
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-black">
@@ -120,7 +274,8 @@ export default function MapEditorView({
         />
 
         {/* header: name, save, back */}
-        <div className={`absolute left-4 top-4 flex items-center gap-3 px-3 py-2 ${panel}`}>
+        <Panel id="header" title="Map" className={`absolute left-4 top-4 px-3 pb-2 pt-1 ${panel}`}>
+          <div className="flex items-center gap-3">
           <div>
             <div className="text-[11px] uppercase tracking-widest text-[#71717C]">Map editor</div>
             <div className="text-sm font-semibold text-[#EDEDEF]">
@@ -141,10 +296,12 @@ export default function MapEditorView({
           >
             Back (Esc)
           </button>
-        </div>
+          </div>
+        </Panel>
 
         {/* right controls: randomize + brush */}
-        <div className={`absolute right-4 top-4 flex flex-col gap-2 px-3 py-2 ${panel}`}>
+        <Panel id="controls" title="Tools" className={`absolute right-4 top-4 px-3 pb-2 pt-1 ${panel}`}>
+          <div className="flex flex-col gap-2">
           <label className="flex cursor-pointer items-center justify-between gap-3">
             <span className="text-[11px] uppercase tracking-widest text-[#71717C]">Randomize</span>
             <button
@@ -181,14 +338,69 @@ export default function MapEditorView({
               ))}
             </span>
           </label>
-          <div className="text-[10px] text-[#71717C]">
-            LMB paint · RMB pan · wheel zoom · ⌘Z undo
+          <div className="flex flex-col gap-1 border-t border-[#2E2E36] pt-2">
+            <span className="text-[11px] uppercase tracking-widest text-[#71717C]">Layers</span>
+            {LAYER_ROWS.map(([key, label]) => (
+              <label key={key} className="flex cursor-pointer items-center justify-between gap-3">
+                <span className={`text-[11px] ${layers[key] ? "text-[#A6A6AF]" : "text-[#4A4A55] line-through"}`}>
+                  {label}
+                </span>
+                <button
+                  role="switch"
+                  aria-checked={layers[key]}
+                  aria-label={`${label} layer`}
+                  onClick={() => setLayers({ ...layers, [key]: !layers[key] })}
+                  className={`relative h-4 w-8 shrink-0 rounded-full transition-colors ${
+                    layers[key] ? "bg-[#2E6E4E]" : "bg-[#2E2E36]"
+                  }`}
+                >
+                  <span
+                    className={`absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-[#EDEDEF] transition-transform ${
+                      layers[key] ? "translate-x-4" : ""
+                    }`}
+                  />
+                </button>
+              </label>
+            ))}
+            <div className="text-[10px] leading-tight text-[#71717C]">
+              A hidden layer is locked: paint straight over the ground beneath it
+            </div>
           </div>
-        </div>
+          {isPath && (
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-[11px] uppercase tracking-widest text-[#71717C]">Path</span>
+              <span className="flex gap-1">
+                {PATH_WIDTHS.map((w, i) => (
+                  <button
+                    key={w}
+                    aria-pressed={pathWidth === i}
+                    onClick={() => setPathWidth(i)}
+                    className={`h-6 w-7 rounded border text-xs ${
+                      pathWidth === i
+                        ? "border-[#FFD37F] bg-[#222227] text-[#EDEDEF]"
+                        : "border-[#2E2E36] text-[#71717C] hover:border-[#4A4A55]"
+                    }`}
+                  >
+                    {w}
+                  </button>
+                ))}
+              </span>
+            </label>
+          )}
+          <div className="text-[10px] text-[#71717C]">
+            {isPath
+              ? "Drag to carve an enemy road · edges wobble on their own"
+              : "LMB paint · RMB pan · wheel zoom · ⌘Z undo"}
+          </div>
+          </div>
+        </Panel>
 
         {/* palette */}
-        <div
-          className={`absolute left-4 top-1/2 max-h-[80vh] -translate-y-1/2 overflow-y-auto p-2 ${panel}`}
+        <Panel
+          id="palette"
+          title="Palette"
+          base="translateY(-50%)"
+          className={`absolute left-4 top-1/2 max-h-[80vh] overflow-y-auto p-2 ${panel}`}
         >
           <div className="flex flex-col gap-1.5">
             {PALETTE.map((set) => (
@@ -243,7 +455,7 @@ export default function MapEditorView({
               </div>
             ))}
           </div>
-        </div>
+        </Panel>
       </div>
     </div>
   );

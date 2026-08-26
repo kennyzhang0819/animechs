@@ -1,16 +1,21 @@
 import { UNIT_SPRITE } from "./constants";
 import type { UnitKind } from "./levels";
 
-const ATLAS = 1024;
+// The sheet is 1024 wide and 2048 tall. It began as a 1024 square and grew
+// downward when the roster outgrew it: every cell below keeps its original
+// pixel coordinates, so only the v axis rescaled, and the fresh 1024x1024
+// band at y=1024 is where new oversized art goes.
+const ATLAS_W = 1024;
+const ATLAS_H = 2048;
 const TAU = Math.PI * 2;
 
 export type UVRect = readonly [number, number, number, number];
 
 const uv = (x: number, y: number, w: number, h: number, inset = 0): UVRect => [
-  (x + inset) / ATLAS,
-  (y + inset) / ATLAS,
-  (x + w - inset) / ATLAS,
-  (y + h - inset) / ATLAS,
+  (x + inset) / ATLAS_W,
+  (y + inset) / ATLAS_H,
+  (x + w - inset) / ATLAS_W,
+  (y + h - inset) / ATLAS_H,
 ];
 
 // row 0: 64px cells — grass floors, stone walls, unit, fx
@@ -82,10 +87,24 @@ export const UV_WALL_LARGE: ReadonlyArray<ReadonlyArray<readonly UVRect[]> | nul
 // flare lives on a gutter row (see the mech-part note below) — its old cell
 // at (384,0) had dirt within a mip-3 texel below and the ring to its right
 export const UV_FLARE = uv(32, 704, 64, 64);
+// horizon (72px) and zenith (112px) outgrow the 64px flyer cell, so they take
+// 128px cells at the head of the new y=1024 band. Both keep well past the 4px
+// mip-3 margin even after the 3px outline dilation (zenith, the tighter of
+// the two, still clears 5px)
+export const UV_HORIZON = uv(0, 1024, 128, 128);
+export const UV_ZENITH = uv(128, 1024, 128, 128);
 // mechanical spawn-pad tile — drawn only by the map editor's terrain pass
 export const UV_SPAWN = uv(0, 192, 64, 64, 2);
 export const UV_PROJ = uv(352, 288, 64, 64);
 export const UV_RING = uv(448, 0, 64, 64);
+// a plain opaque texel, for geometry the renderer strokes itself: Lines.circle
+// draws a constant-width ring, which a scaled ring SPRITE cannot do (its band
+// fattens with the radius). It sits in the 64px gutter BETWEEN the grass and
+// stone floor-edge blocks — those blocks run x=16..208 and x=272..464 down
+// the whole y=768..960 band, and most of their art is transparent, so an
+// empty-looking hole in there is still spoken for. Inset well past the mip-3
+// footprint so every sampled level stays pure white
+export const UV_SOLID = uv(224, 928, 32, 32, 8);
 export const UV_FLASH = uv(0, 64, 64, 64);
 // row 2: 128px cells — turret base, turret top, core
 export const UV_TOWER_BASE = uv(64, 128, 128, 128);
@@ -150,6 +169,28 @@ export const UV_ARTILLERY_SIL = uv(896, 128, 128, 128);
 // cell and a 32px gutter above the fortress art strip. The 48px sources
 // keep >=5px transparent margins even silhouette-dilated, so unlike the
 // full-bleed mace cells these don't need the 128px pitch
+// the support line (nova T1, pulsar T2) rides the two free full-width rows
+// at y=512 and y=640, same 128px pitch as the mech strip above: art in the
+// left four cells, silhouettes in the right four. Every part clears the 4px
+// mip-3 margin even after the silhouette's 3px dilation — pulsar's 68x58
+// body and 64px leg overhang their cells only with transparent padding
+export const UV_NOVA_LEG = uv(32, 512, 64, 64);
+export const UV_NOVA_BASE = uv(160, 512, 64, 64);
+export const UV_NOVA_BODY = uv(288, 512, 64, 64);
+export const UV_HEAL_WEAPON = uv(416, 512, 64, 64);
+export const UV_NOVA_LEG_SIL = uv(544, 512, 64, 64);
+export const UV_NOVA_BASE_SIL = uv(672, 512, 64, 64);
+export const UV_NOVA_BODY_SIL = uv(800, 512, 64, 64);
+export const UV_HEAL_WEAPON_SIL = uv(928, 512, 64, 64);
+export const UV_PULSAR_LEG = uv(32, 640, 64, 64);
+export const UV_PULSAR_BASE = uv(160, 640, 64, 64);
+export const UV_PULSAR_BODY = uv(288, 640, 64, 64);
+export const UV_HEAL_SHOTGUN = uv(416, 640, 64, 64);
+export const UV_PULSAR_LEG_SIL = uv(544, 640, 64, 64);
+export const UV_PULSAR_BASE_SIL = uv(672, 640, 64, 64);
+export const UV_PULSAR_BODY_SIL = uv(800, 640, 64, 64);
+export const UV_HEAL_SHOTGUN_SIL = uv(928, 640, 64, 64);
+
 export const UV_CRAWLER_LEG = uv(448, 288, 64, 64);
 export const UV_CRAWLER_BASE = uv(512, 288, 64, 64);
 export const UV_CRAWLER_BODY = uv(576, 288, 64, 64);
@@ -174,7 +215,13 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   mace: { uv: UV_MACE_BODY, sprite: UNIT_SPRITE },
   fortress: { uv: UV_FORTRESS_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
   crawler: { uv: UV_CRAWLER_BODY, sprite: UNIT_SPRITE },
+  nova: { uv: UV_NOVA_BODY, sprite: UNIT_SPRITE },
+  pulsar: { uv: UV_PULSAR_BODY, sprite: UNIT_SPRITE },
   flare: { uv: UV_FLARE, sprite: UNIT_SPRITE }, // 48px art in a 64 cell, dagger scale
+  // 128px cells: double the cell means double the sprite box, which keeps
+  // world px per native px identical to every other unit
+  horizon: { uv: UV_HORIZON, sprite: UNIT_SPRITE * 2 },
+  zenith: { uv: UV_ZENITH, sprite: UNIT_SPRITE * 2 },
 };
 
 // Mindustry world units → px (CELL / 8, see constants.ts)
@@ -255,6 +302,41 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
       gun: UV_ARTILLERY_SIL,
     },
   },
+  // support T1: heal-weapon x=4.5 mirrored, top=false so it rides under the
+  // body like the dagger's. hitSize 8 gives it the dagger's 4-unit stride
+  nova: {
+    leg: UV_NOVA_LEG,
+    base: UV_NOVA_BASE,
+    body: UV_NOVA_BODY,
+    gun: UV_HEAL_WEAPON,
+    gunX: 4.5 * MU,
+    gunY: 0,
+    stride: 4 * MU,
+    sprite: UNIT_SPRITE,
+    sil: {
+      leg: UV_NOVA_LEG_SIL,
+      base: UV_NOVA_BASE_SIL,
+      body: UV_NOVA_BODY_SIL,
+      gun: UV_HEAL_WEAPON_SIL,
+    },
+  },
+  // support T2: heal-shotgun-weapon x=5 y=0.5, mirrored and under the body
+  pulsar: {
+    leg: UV_PULSAR_LEG,
+    base: UV_PULSAR_BASE,
+    body: UV_PULSAR_BODY,
+    gun: UV_HEAL_SHOTGUN,
+    gunX: 5 * MU,
+    gunY: 0.5 * MU,
+    stride: (4 + (11 - 8) / 2.1) * MU,
+    sprite: UNIT_SPRITE,
+    sil: {
+      leg: UV_PULSAR_LEG_SIL,
+      base: UV_PULSAR_BASE_SIL,
+      body: UV_PULSAR_BODY_SIL,
+      gun: UV_HEAL_SHOTGUN_SIL,
+    },
+  },
   // no gun sprite — its Weapon fires only via shootOnDeath. mechSideSway
   // 0.25 is under half the default: it scuttles rather than swaggers
   crawler: {
@@ -317,9 +399,19 @@ const SPRITES = {
   fortress: "/mindustry/sprites/units/fortress.png",
   fortressLeg: "/mindustry/sprites/units/fortress-leg.png",
   flare: "/mindustry/sprites/units/flare.png",
+  horizon: "/mindustry/sprites/units/horizon.png",
+  zenith: "/mindustry/sprites/units/zenith.png",
   largeWeapon: "/mindustry/sprites/units/weapons/large-weapon.png",
   flamethrower: "/mindustry/sprites/units/weapons/flamethrower.png",
   artillery: "/mindustry/sprites/units/weapons/artillery.png",
+  nova: "/mindustry/sprites/units/nova.png",
+  novaBase: "/mindustry/sprites/units/nova-base.png",
+  novaLeg: "/mindustry/sprites/units/nova-leg.png",
+  healWeapon: "/mindustry/sprites/units/weapons/heal-weapon.png",
+  pulsar: "/mindustry/sprites/units/pulsar.png",
+  pulsarBase: "/mindustry/sprites/units/pulsar-base.png",
+  pulsarLeg: "/mindustry/sprites/units/pulsar-leg.png",
+  healShotgun: "/mindustry/sprites/units/weapons/heal-shotgun-weapon.png",
   spawnPad: `${ENV}/dark-panel-2.png`,
   towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
   towerBase1: "/mindustry/sprites/blocks/turrets/bases/block-1.png",
@@ -574,7 +666,8 @@ function drawFacingRight(
 export async function buildAtlas(): Promise<HTMLCanvasElement> {
   const img = await loadImages();
   const a = document.createElement("canvas");
-  a.width = a.height = ATLAS;
+  a.width = ATLAS_W;
+  a.height = ATLAS_H;
   const c = a.getContext("2d");
   if (!c) throw new Error("2d context unavailable for atlas build");
   c.imageSmoothingEnabled = false; // integer upscales keep the pixel art crisp
@@ -668,6 +761,25 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   drawFacingRight(c, antialiased(img.fortress), 832, 448, 100, 80);
   drawFacingRight(c, antialiased(img.artillery), 960, 448, 48, 56);
 
+  // support line: each part at native size in its own cell, art left of the
+  // silhouettes on the same row (see the UV note)
+  drawFacingRight(c, antialiased(img.novaLeg), 64, 544, 48);
+  drawFacingRight(c, antialiased(img.novaBase), 192, 544, 48);
+  drawFacingRight(c, antialiased(img.nova), 320, 544, 56);
+  drawFacingRight(c, antialiased(img.healWeapon), 448, 544, 48);
+  drawFacingRight(c, silhouetted(img.novaLeg), 576, 544, 48);
+  drawFacingRight(c, silhouetted(img.novaBase), 704, 544, 48);
+  drawFacingRight(c, silhouetted(img.nova), 832, 544, 56);
+  drawFacingRight(c, silhouetted(img.healWeapon), 960, 544, 48);
+  drawFacingRight(c, antialiased(img.pulsarLeg), 64, 672, 64);
+  drawFacingRight(c, antialiased(img.pulsarBase), 192, 672, 48);
+  drawFacingRight(c, antialiased(img.pulsar), 320, 672, 68, 58);
+  drawFacingRight(c, antialiased(img.healShotgun), 448, 672, 50);
+  drawFacingRight(c, silhouetted(img.pulsarLeg), 576, 672, 64);
+  drawFacingRight(c, silhouetted(img.pulsarBase), 704, 672, 48);
+  drawFacingRight(c, silhouetted(img.pulsar), 832, 672, 68, 58);
+  drawFacingRight(c, silhouetted(img.healShotgun), 960, 672, 50);
+
   // crawler parts: art then silhouettes, one flush 64px run (see UV note)
   drawFacingRight(c, antialiased(img.crawlerLeg), 480, 320, 48);
   drawFacingRight(c, antialiased(img.crawlerBase), 544, 320, 48);
@@ -704,6 +816,11 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   fc.drawImage(antialiased(outlined(img.flare, UNIT_OUTLINE, UNIT_OUTLINE_R)), 8, 8, 48, 48);
   drawFacingRight(c, flare, 64, 736, 64);
 
+  // horizon and zenith: same single-sprite treatment as flare, at native
+  // size in their own 128px cells
+  drawFacingRight(c, antialiased(outlined(img.horizon, UNIT_OUTLINE, UNIT_OUTLINE_R)), 64, 1088, 72);
+  drawFacingRight(c, antialiased(outlined(img.zenith, UNIT_OUTLINE, UNIT_OUTLINE_R)), 192, 1088, 112);
+
   // official basic bullet at (352,288): back layer in Mindustry's bullet
   // orange under a pale-yellow core, pre-rotated to face +x like the unit
   const tinted = (src: HTMLImageElement | HTMLCanvasElement, color: string): HTMLCanvasElement => {
@@ -734,6 +851,10 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   c.beginPath();
   c.arc(480, 32, 22, 0, TAU);
   c.stroke();
+
+  // solid texel (224,928) — the stroke source for procedural lines
+  c.fillStyle = "#ffffff";
+  c.fillRect(224, 928, 32, 32);
 
   // flash (0,64) — procedural
   const g = c.createRadialGradient(32, 96, 0, 32, 96, 18);

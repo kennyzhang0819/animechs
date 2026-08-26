@@ -1,4 +1,4 @@
-import { BASE, CELL, clamp, COLS, INF, NCELLS, ROWS, W, H } from "./constants";
+import { CELL, clamp, COLS, INF, NCELLS, ROWS, W, H } from "./constants";
 import type { Tower } from "./types";
 
 const SQRT2 = Math.SQRT2;
@@ -69,15 +69,20 @@ export class FlowField {
   // extra Dijkstra cost per narrow cell entered (in cell units)
   private static readonly NARROW_COST = 4;
 
-  rebuildWalk(towers: readonly Tower[], blockedBase: Uint8Array, spawnMask: Uint8Array): void {
+  rebuildWalk(
+    towers: readonly Tower[],
+    blockedBase: Uint8Array,
+    spawnMask: Uint8Array,
+    core: { x: number; y: number; size: number },
+  ): void {
     this.spawnMask = spawnMask;
     this.walk.set(blockedBase);
     this.isGoal.fill(0);
     for (const t of towers)
       for (let y = t.gy; y < t.gy + 2; y++)
         for (let x = t.gx; x < t.gx + 2; x++) this.walk[y * COLS + x] = 1;
-    for (let y = BASE.y; y < BASE.y + BASE.size; y++)
-      for (let x = BASE.x; x < BASE.x + BASE.size; x++) this.isGoal[y * COLS + x] = 1;
+    for (let y = core.y; y < core.y + core.size; y++)
+      for (let x = core.x; x < core.x + core.size; x++) this.isGoal[y * COLS + x] = 1;
   }
 
   private hPush(k: number, v: number): void {

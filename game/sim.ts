@@ -1,7 +1,7 @@
 import { BASE, CELL, clamp, COLS, H, MAX_UNITS, ROWS, TOWERS, W, WALL_R, type TowerStats } from "./constants";
 import { FlowField, type Vec2 } from "./flowfield";
 import {
-  LEVELS,
+  WORLDS,
   UNIT_ID,
   UNIT_KINDS,
   UNIT_RMAX,
@@ -44,10 +44,14 @@ export type PlaceResult = "ok" | "invalid" | "would-seal";
 // is a unit kind (by numeric id) airborne? towers and bullets check this
 // against their targetAir/targetGround and collidesAir/collidesGround flags
 const KIND_FLYING: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].flying);
+// support fields, indexed like UNIT_KINDS — null for kinds with no ability
+const KIND_REPAIR = UNIT_KINDS.map((k) => UNIT_STATS[k].repairField ?? null);
+const KIND_SHIELD = UNIT_KINDS.map((k) => UNIT_STATS[k].shieldField ?? null);
+/** any support unit on the roster at all? skips the pass entirely when not */
+const HAS_ABILITIES = KIND_REPAIR.some(Boolean) || KIND_SHIELD.some(Boolean);
 
-// where flyers aim: the core's center in world px — they need no flow field
-const GOAL_X = (BASE.x + BASE.size / 2) * CELL;
-const GOAL_Y = (BASE.y + BASE.size / 2) * CELL;
+// where flyers aim: the core's center in world px — they need no flow
+// field. Per map, so a core placed low or high pulls them the right way
 
 // how fast body and chassis swivel: Mindustry's default rotateSpeed /
 // baseRotateSpeed, 5 degrees per tick
@@ -60,6 +64,9 @@ const ROT_SPD = ((5 * Math.PI) / 180) * 60;
 export class Sim {
   readonly field = new FlowField();
   terrain!: Terrain; // assigned by reset() in the constructor
+  // the live core's center in world px (terrain.core), what flyers home on
+  private goalX = 0;
+  private goalY = 0;
 
   readonly upx = new Float32Array(MAX_UNITS);
   readonly upy = new Float32Array(MAX_UNITS);
@@ -70,6 +77,12 @@ export class Sim {
   readonly uspd = new Float32Array(MAX_UNITS);
   readonly urad = new Float32Array(MAX_UNITS);
   readonly uarmor = new Float32Array(MAX_UNITS);
+  /** absorbing shield (Mindustry ShieldComp.shield): eaten before health */
+  readonly ushield = new Float32Array(MAX_UNITS);
+  /** shield draw opacity — 1 on apply or hit, fading over 15 ticks */
+  readonly ushieldAlpha = new Float32Array(MAX_UNITS);
+  /** seconds since this unit's support ability last pulsed */
+  readonly uability = new Float32Array(MAX_UNITS);
   readonly ukind = new Uint8Array(MAX_UNITS); // UNIT_ID of the kind
   // animation state, sim-owned so it survives swap-remove: distance walked
   // (drives the mech leg cycle), chassis angle, body angle
@@ -78,7 +91,7 @@ export class Sim {
   readonly urot = new Float32Array(MAX_UNITS);
   n = 0;
 
-  level: LevelSpec = LEVELS[0];
+  level: LevelSpec = WORLDS[0];
   totalEnemies = 0;
   kills = 0;
   leaked = 0;
@@ -149,12 +162,25 @@ export class Sim {
     const doc = (this.level.map ? loadMap(this.level.map) : null) ?? OFFICIAL_MAPS[0];
     if (!doc) throw new Error("official maps not loaded — await loadOfficialMaps() first");
     this.terrain = terrainFromMap(doc);
-    this.field.rebuildWalk(this.towers, this.terrain.blocked, this.terrain.spawn);
+    this.goalX = (this.terrain.core.x + this.terrain.core.size / 2) * CELL;
+    this.goalY = (this.terrain.core.y + this.terrain.core.size / 2) * CELL;
+    this.field.rebuildWalk(this.towers, this.terrain.blocked, this.terrain.spawn, this.terrain.core);
     this.field.compute();
     // fail LOUDLY on a broken map: with zero pads nothing ever spawns and a
     // wave script stalls forever, which reads as a scheduler bug otherwise
     if (this.field.spawnAir.length === 0)
       throw new Error(`map "${doc.id}" has no spawn pads — paint some in the editor`);
+    // a core sitting on rock is always an authoring slip (a map that moved
+    // its core without carving the basin, say) and it reads as "the waves
+    // never finish" rather than as a broken map — so say it out loud
+    let walledCore = 0;
+    for (let y = this.terrain.core.y; y < this.terrain.core.y + this.terrain.core.size; y++)
+      for (let x = this.terrain.core.x; x < this.terrain.core.x + this.terrain.core.size; x++)
+        if (this.terrain.blocked[y * COLS + x]) walledCore++;
+    if (walledCore > 0)
+      console.warn(
+        `map "${doc.id}": ${walledCore} of the core's cells are walled — carve its basin open at ${this.terrain.core.x},${this.terrain.core.y}`,
+      );
     if (this.field.spawnPts.length === 0)
       console.warn(`map "${doc.id}": no spawn pad connects to the core — ground waves will stall`);
     this.totalEnemies = 0;
@@ -256,7 +282,8 @@ export class Sim {
       burstLeft: 0,
       burstT: 0,
       shotCount: 0,
-      aimDist: 0,
+      aimX: 0,
+      aimY: 0,
     });
   }
 
@@ -266,6 +293,10 @@ export class Sim {
     this.buildHash();
     this.updatePhysics();
     this.updateUnits(dt);
+    this.updateAbilities(dt);
+    // ShieldComp: shieldAlpha fades out over 15 ticks once nothing refreshes it
+    for (let i = 0; i < this.n; i++)
+      if (this.ushieldAlpha[i] > 0) this.ushieldAlpha[i] = Math.max(0, this.ushieldAlpha[i] - dt * (60 / 15));
     this.fireTowers(dt);
     this.updateProjectiles(dt);
 
@@ -591,10 +622,15 @@ export class Sim {
       this.uspd[i] = stats.speed;
       this.urad[i] = r;
       this.uarmor[i] = stats.armor;
+      this.ushield[i] = 0;
+      this.ushieldAlpha[i] = 0;
+      // a fresh support unit waits a full cycle before its first pulse,
+      // exactly like a newly constructed Ability's zeroed timer
+      this.uability[i] = 0;
       this.ukind[i] = UNIT_ID[kind];
       // face the way it will walk, with legs mid-cycle at a random phase so
       // a wave doesn't march in lockstep
-      const a0 = fly ? Math.atan2(GOAL_Y - y, GOAL_X - x) : 0;
+      const a0 = fly ? Math.atan2(this.goalY - y, this.goalX - x) : 0;
       this.uwalk[i] = Math.random() * 100;
       this.ubrot[i] = a0;
       this.urot[i] = a0;
@@ -602,6 +638,68 @@ export class Sim {
       return true;
     }
     return false;
+  }
+
+  /**
+   * The support line's Ability.update, 1:1 with RepairFieldAbility and
+   * ShieldRegenFieldAbility: each carrier runs its own timer, and on the
+   * tick it reaches `reload` it pulses once over everything in range and
+   * zeroes the timer (no carry-over, matching `timer = 0f`).
+   *
+   * Units.nearby's circle test counts the OTHER unit's hitbox — a unit
+   * whose edge reaches the field is inside it — so the radius compared
+   * against is `range + urad[j]`. A carrier sits inside its own field and
+   * mends or shields itself along with everyone else.
+   */
+  private updateAbilities(dt: number): void {
+    if (!HAS_ABILITIES) return;
+    const { upx, upy, uhp, uhpmax, urad, ushield, ushieldAlpha, uability, ukind } = this;
+    for (let i = 0; i < this.n; i++) {
+      const k = ukind[i];
+      const repair = KIND_REPAIR[k];
+      const shield = KIND_SHIELD[k];
+      if (!repair && !shield) continue;
+      const reload = (repair ?? shield)!.reload;
+      uability[i] += dt;
+      if (uability[i] < reload) continue;
+      uability[i] = 0;
+
+      const range = (repair ?? shield)!.range;
+      // RepairFieldAbility.wasHealed / ShieldRegenFieldAbility.applied: the
+      // carrier's wave only plays when the pulse actually did something
+      let did = false;
+      const pad = range + UNIT_RMAX;
+      const hx0 = clamp(((upx[i] - pad) / HC) | 0, 0, HCOLS - 1);
+      const hy0 = clamp(((upy[i] - pad) / HC) | 0, 0, HROWS - 1);
+      const hx1 = clamp(((upx[i] + pad) / HC) | 0, 0, HCOLS - 1);
+      const hy1 = clamp(((upy[i] + pad) / HC) | 0, 0, HROWS - 1);
+      for (let hy = hy0; hy <= hy1; hy++) {
+        for (let hx = hx0; hx <= hx1; hx++) {
+          const c = hy * HCOLS + hx, e = this.bStart[c + 1];
+          for (let b = this.bStart[c]; b < e; b++) {
+            const j = this.bUnits[b];
+            if (j >= this.n || uhp[j] <= 0) continue;
+            const dx = upx[j] - upx[i], dy = upy[j] - upy[i];
+            const rr = range + urad[j];
+            if (dx * dx + dy * dy > rr * rr) continue;
+            if (repair && uhp[j] < uhpmax[j]) {
+              // Unit.heal clamps at max health
+              uhp[j] = Math.min(uhp[j] + repair.amount, uhpmax[j]);
+              this.pushFx(upx[j], upy[j], 0.18, FxKind.Heal);
+              did = true;
+            }
+            if (shield && ushield[j] < shield.max) {
+              ushield[j] = Math.min(ushield[j] + shield.amount, shield.max);
+              ushieldAlpha[j] = 1;
+              did = true;
+            }
+          }
+        }
+      }
+      // healWaveDynamic / shieldWave: a 22-tick ring out to the field edge
+      if (did)
+        this.pushFx(upx[i], upy[i], 22 / 60, repair ? FxKind.HealWave : FxKind.ShieldWave, 0, range);
+    }
   }
 
   /** a tower kill: death puff, removal, and the per-kind scrap ledger */
@@ -624,6 +722,9 @@ export class Sim {
     this.uspd[i] = this.uspd[n];
     this.urad[i] = this.urad[n];
     this.uarmor[i] = this.uarmor[n];
+    this.ushield[i] = this.ushield[n];
+    this.ushieldAlpha[i] = this.ushieldAlpha[n];
+    this.uability[i] = this.uability[n];
     this.ukind[i] = this.ukind[n];
     this.uwalk[i] = this.uwalk[n];
     this.ubrot[i] = this.ubrot[n];
@@ -738,7 +839,7 @@ export class Sim {
       const fly = KIND_FLYING[ukind[i]];
       if (fly) {
         // flyers ignore the maze: aim straight at the core's center
-        const gdx = GOAL_X - upx[i], gdy = GOAL_Y - upy[i];
+        const gdx = this.goalX - upx[i], gdy = this.goalY - upy[i];
         const gl = Math.hypot(gdx, gdy) || 1;
         uvx[i] += ((gdx / gl) * uspd[i] - uvx[i]) * steer;
         uvy[i] += ((gdy / gl) * uspd[i] - uvy[i]) * steer;
@@ -963,7 +1064,9 @@ export class Sim {
         t.cd += st.reload; // reloadCounter %= reload
         t.burstLeft = st.shots;
         t.burstT = 0;
-        t.aimDist = Math.hypot(aimX, aimY); // artillery lands its shells here
+        // artillery lands its shells here: the intercept point in world px
+        t.aimX = t.x + aimX;
+        t.aimY = t.y + aimY;
         // shots with no shotDelay (a ShootSpread fan) all leave this frame
         while (t.burstLeft > 0 && t.burstT <= 0) {
           this.fireShot(t, st, st.shots - t.burstLeft);
@@ -1007,11 +1110,16 @@ export class Sim {
       this.pushFx(x, y, st.bullet.lifetime, FxKind.Shrapnel, a, st.bullet.ray.length);
       return;
     }
-    // Mindustry scaleLife: an artillery shell's lifetime shrinks to the
-    // predicted impact distance, so it despawns — and blasts — on target
-    const life = st.bullet.artillery
-      ? st.bullet.lifetime * clamp(t.aimDist / st.range, 0.1, 1)
-      : st.bullet.lifetime;
+    // Mindustry scaleLife (Turret.java): an artillery shell's lifetime
+    // shrinks to the MUZZLE's distance from the predicted impact, scaled
+    // against the BULLET's own reach (speed x lifetime) rather than the
+    // turret's range — the two differ, and dividing by the shorter turret
+    // range stretched every shell past its aim point
+    let life = st.bullet.lifetime;
+    if (st.bullet.artillery) {
+      const reach = st.bullet.speed * st.bullet.lifetime;
+      life *= clamp(Math.hypot(t.aimX - x, t.aimY - y) / reach, 0, st.range / reach);
+    }
     this.projs.push({
       kind: t.kind,
       x,
@@ -1065,7 +1173,7 @@ export class Sim {
       }
     }
     for (const i of splashHits) {
-      uhp[i] -= Sim.applyArmor(dmg, uarmor[i]);
+      this.damageUnit(i, dmg);
       if (uhp[i] > 0) this.pushFx(upx[i], upy[i], 0.12, FxKind.Hit);
     }
     splashHits.sort((a2, b2) => b2 - a2);
@@ -1078,6 +1186,22 @@ export class Sim {
   /** Mindustry Damage.applyArmor: flat reduction, floored at 10% of the raw hit */
   private static applyArmor(dmg: number, armor: number): number {
     return Math.max(dmg - armor, 0.1 * dmg);
+  }
+
+  /**
+   * Mindustry ShieldComp.rawDamage: armor comes off the raw hit, then the
+   * shield soaks everything it can and only the remainder reaches health.
+   * Every damage source goes through here so shields can never be skipped.
+   */
+  private damageUnit(i: number, raw: number): void {
+    let amount = Sim.applyArmor(raw, this.uarmor[i]);
+    if (this.ushield[i] > 0.0001) {
+      this.ushieldAlpha[i] = 1;
+      const soaked = Math.min(this.ushield[i], amount);
+      this.ushield[i] -= soaked;
+      amount -= soaked;
+    }
+    if (amount > 0) this.uhp[i] -= amount;
   }
 
   private updateProjectiles(dt: number): void {
@@ -1125,7 +1249,7 @@ export class Sim {
               const dx = upx[i] - pr.x, dy = upy[i] - pr.y;
               const hr = urad[i] + 2.5;
               if (dx * dx + dy * dy < hr * hr) {
-                uhp[i] -= Sim.applyArmor(b.damage, uarmor[i]);
+                this.damageUnit(i, b.damage);
                 if (uhp[i] <= 0) {
                   this.killUnit(i);
                 } else if (b.splash <= 0) {
@@ -1213,7 +1337,7 @@ export class Sim {
     for (const i of splashHits) {
       const d = Math.hypot(upx[i] - x, upy[i] - y);
       const raw = dmg * Math.max(0, 0.4 + 0.6 * (1 - d / radius));
-      uhp[i] -= Sim.applyArmor(raw, uarmor[i]);
+      this.damageUnit(i, raw);
     }
     splashHits.sort((a, b) => b - a);
     for (const i of splashHits) {

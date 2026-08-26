@@ -27,6 +27,8 @@ export interface UiState {
   kills: number;
   /** the esc game menu is up: sim held, resume or abandon from the overlay */
   menuOpen: boolean;
+  /** simulation speed multiplier: 1, 2 or 4 */
+  speed: number;
   /** scrap this run's kills are worth so far, before bonuses/economy */
   scrapEarned: number;
   /** live towers per kind, for the menu's "2/6" cap badges */
@@ -45,6 +47,14 @@ export interface Stats {
   zoom: number;
 }
 
+/** the speeds the HUD toggle offers */
+export const SPEEDS: readonly number[] = [1, 2, 4];
+
+// zoom 1 is "cover": the world fills the viewport completely, cropped on
+// whichever axis overflows. It is also the FLOOR — zooming out past cover
+// would letterbox the world against empty space, and the screen must never
+// show anything but map. A map taller than the viewport is panned, not
+// shrunk to fit
 const ZOOM_MIN = 1;
 const ZOOM_MAX = 2;
 const PAN_KEYS: Record<string, readonly [number, number]> = {
@@ -70,6 +80,9 @@ export class Game {
   // device px per world px at zoom 1 — the "cover" scale, so the canvas is
   // always filled and the world is cropped on the axis that overflows
   private scale = 1;
+  // the playable height in world px: the loaded map's own rows, so a map
+  // stored on a shorter grid neither letterboxes nor pans into its padding
+  private worldH = H;
   private hoverGx = -1;
   private hoverGy = -1;
 
@@ -92,6 +105,10 @@ export class Game {
   private readonly keysDown = new Set<string>();
   private paused = false;
   private menuOpen = false;
+  // fast-forward: the sim runs this many fixed steps per rendered frame, so
+  // a sped-up run steps exactly like a real-time one (stretching dt instead
+  // would let units tunnel through walls and each other)
+  private speed = 1;
   // the campaign's tower unlocks and caps (see setTech); null in the editor
   private tech: TechState | null = null;
 
@@ -143,6 +160,7 @@ export class Game {
   private readonly onWheel = (e: WheelEvent): void => {
     e.preventDefault();
     const r = this.uiCanvas.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return; // zero-sized: nothing to aim at
     // mac trackpad pinches arrive as ctrl+wheel; real mouse wheels tick in
     // coarse integer notches (or line-mode deltas). Everything else is
     // two-finger trackpad scroll, which pans the camera instead of zooming.
@@ -255,7 +273,7 @@ export class Game {
     if (!ctx) throw new Error("2d context unavailable");
     this.uictx = ctx;
 
-    this.resize();
+    this.fitToMap();
     this.renderer.rebuildTerrain(this.sim);
 
     window.addEventListener("resize", this.onResize);
@@ -317,6 +335,11 @@ export class Game {
     this.menuOpen = false;
   }
 
+  /** fast-forward toggle: 1x, 2x or 4x */
+  setSpeed(mult: number): void {
+    this.speed = SPEEDS.includes(mult) ? mult : 1;
+  }
+
   /** everything the React overlay renders, polled a few times a second */
   ui(): UiState {
     return {
@@ -328,6 +351,7 @@ export class Game {
       totalWaves: this.sim.totalWaves,
       buildKind: this.buildKind,
       paused: this.paused,
+      speed: this.speed,
       lost: this.sim.lost(),
       won: this.won(),
       kills: this.sim.kills,
@@ -342,12 +366,14 @@ export class Game {
   reset(): void {
     this.sim.reset();
     this.menuOpen = false;
+    this.fitToMap();
     this.renderer.rebuildTerrain(this.sim);
   }
 
   /** switch to (or restart) a level: fresh sim state, terrain rebuilt */
   loadLevel(spec: LevelSpec): void {
     this.sim.loadLevel(spec);
+    this.fitToMap();
     this.renderer.rebuildTerrain(this.sim);
   }
 
@@ -371,9 +397,22 @@ export class Game {
     return this.uiCanvas.height / (this.scale * this.zoom);
   }
 
+  /** re-read the loaded map's height and refit the camera to it */
+  private fitToMap(): void {
+    this.worldH = this.sim.terrain.rows * CELL;
+    this.resize();
+  }
+
   private clampCamera(): void {
+    // a zero-sized canvas (hidden tab, collapsed layout) divides by zero in
+    // any pointer-driven pan, and a NaN camera renders the world nowhere —
+    // a blank screen. Snap back to the origin rather than showing void
+    if (!Number.isFinite(this.tlx)) this.tlx = 0;
+    if (!Number.isFinite(this.tly)) this.tly = 0;
+    // cover guarantees the window fits inside the world, so these ranges are
+    // never negative and no edge of the screen can fall off the map
     this.tlx = clamp(this.tlx, 0, W - this.visW());
-    this.tly = clamp(this.tly, 0, H - this.visH());
+    this.tly = clamp(this.tly, 0, this.worldH - this.visH());
   }
 
   private resize(): void {
@@ -392,13 +431,17 @@ export class Game {
       this.uiCanvas.width = bw;
       this.uiCanvas.height = bh;
     }
-    this.scale = Math.max(bw / W, bh / H);
+    this.scale = Math.max(bw / W, bh / this.worldH);
+    this.zoom = clamp(this.zoom, ZOOM_MIN, ZOOM_MAX);
     this.clampCamera();
   }
 
   /** mouse event -> world coordinates through the camera */
   private mouseWorld(e: { clientX: number; clientY: number }): { x: number; y: number } {
     const r = this.uiCanvas.getBoundingClientRect();
+    // laid out at zero size: there is no meaningful world point, and
+    // dividing by the rect would poison the camera with NaN
+    if (r.width <= 0 || r.height <= 0) return { x: this.tlx, y: this.tly };
     return {
       x: this.tlx + ((e.clientX - r.left) / r.width) * this.visW(),
       y: this.tly + ((e.clientY - r.top) / r.height) * this.visH(),
@@ -423,7 +466,8 @@ export class Game {
     // exact frame the core fell on, until retry resets the sim. The esc
     // menu holds the sim the same way. A won game keeps running — the
     // field is empty and the last death effects get to play out
-    if (!this.paused && !this.menuOpen && !this.sim.lost()) this.sim.update(dt);
+    if (!this.paused && !this.menuOpen && !this.sim.lost())
+      for (let i = 0; i < this.speed; i++) this.sim.update(dt);
     const simMs = performance.now() - t0;
 
     this.renderer.render(

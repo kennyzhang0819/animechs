@@ -1,4 +1,4 @@
-import { LEVELS, UNIT_KINDS, UNIT_STATS, WORLDS, levelById } from "./levels";
+import { UNIT_KINDS, UNIT_STATS, WORLDS, worldById } from "./levels";
 import { techNode, techPrice, techState, type TechLevels, type TechState } from "./tech";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
@@ -10,7 +10,7 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  */
 export interface Progress {
   scrap: number;
-  /** cleared level ids ("1-1", ...) — clearing level i unlocks level i+1 */
+  /** cleared world ids ("1", ...) — clearing world N unlocks world N+1 */
   completed: string[];
   /** tech points per turret — a node's points are its placement capacity */
   tech: TechLevels;
@@ -18,10 +18,14 @@ export interface Progress {
 
 const KEY = "dagger-problem.progress.v1";
 
-/** duo is the free starter kit — a fresh save can already place a line */
-const DUO_START = 6;
+/** the duo comes free and pre-unlocked: a fresh save can place exactly
+ * one, and the tech tree sells the rest (its first ten are 1 scrap each) */
+const DUO_START = 1;
 
-const fresh = (): Progress => ({ scrap: 0, completed: [], tech: { duo: DUO_START } });
+/** seed scrap: enough to buy out the 1-scrap duo rung before the first wave */
+const SCRAP_START = 10;
+
+const fresh = (): Progress => ({ scrap: SCRAP_START, completed: [], tech: { duo: DUO_START } });
 
 export function loadProgress(): Progress {
   try {
@@ -40,7 +44,7 @@ export function loadProgress(): Progress {
     tech.duo = Math.max(tech.duo ?? 0, DUO_START);
     return {
       scrap: typeof p.scrap === "number" && p.scrap >= 0 ? Math.floor(p.scrap) : 0,
-      completed: Array.isArray(p.completed) ? p.completed.filter((id) => levelById(String(id))) : [],
+      completed: Array.isArray(p.completed) ? p.completed.filter((id) => worldById(String(id))) : [],
       tech,
     };
   } catch {
@@ -69,20 +73,18 @@ export function techOf(p: Progress): TechState {
 }
 
 /**
- * Strict campaign order: the first level is always open, every other level
- * opens when the one before it in LEVELS is cleared — which also makes each
- * world wait for the previous world's last level.
+ * Strict campaign order: world 1 is always open, and every later world opens
+ * when the one before it is cleared.
  */
-export function isLevelUnlocked(p: Progress, levelId: string): boolean {
-  const i = LEVELS.findIndex((l) => l.id === levelId);
+export function isWorldUnlocked(p: Progress, worldId: string): boolean {
+  const i = WORLDS.findIndex((w) => w.id === worldId);
   if (i < 0) return false;
-  return i === 0 || p.completed.includes(LEVELS[i - 1].id);
+  return i === 0 || p.completed.includes(WORLDS[i - 1].id);
 }
 
-/** a world is beaten once every one of its levels is cleared */
+/** a world is beaten once its run has been won (tech.ts gates off this) */
 export function isWorldBeaten(p: Progress, worldId: number): boolean {
-  const w = WORLDS.find((w) => w.id === worldId);
-  return !!w && w.levels.every((l) => p.completed.includes(l.id));
+  return p.completed.includes(String(worldId));
 }
 
 /**
@@ -96,14 +98,14 @@ export function nodeStatus(p: Progress, tower: TowerKind): NodeStatus {
   const def = techNode(tower);
   if (def.requires && (p.tech[def.requires] ?? 0) < 1) return "hidden";
   if (def.world && !isWorldBeaten(p, def.world)) return "locked-world";
-  return p.scrap >= techPrice(tower) ? "buyable" : "poor";
+  return p.scrap >= techPrice(tower, p.tech[tower] ?? 0) ? "buyable" : "poor";
 }
 
 /** put one point in a turret's node (unlock, or +1 capacity); null = refused */
 export function buyTech(tower: TowerKind): Progress | null {
   const p = loadProgress();
   if (nodeStatus(p, tower) !== "buyable") return null;
-  p.scrap -= techPrice(tower);
+  p.scrap -= techPrice(tower, p.tech[tower] ?? 0);
   p.tech[tower] = (p.tech[tower] ?? 0) + 1;
   saveProgress(p);
   return p;
@@ -132,15 +134,15 @@ export interface RunReward {
  * state and never on the way out to the menu.
  */
 export function grantRunReward(
-  levelId: string,
+  worldId: string,
   killsByKind: ArrayLike<number>,
   won: boolean,
 ): RunReward {
   const p = loadProgress();
   const total = scrapForKills(killsByKind);
-  const firstClear = won && !p.completed.includes(levelId);
+  const firstClear = won && !p.completed.includes(worldId);
   p.scrap += total;
-  if (firstClear) p.completed.push(levelId);
+  if (firstClear) p.completed.push(worldId);
   saveProgress(p);
   return { total, firstClear };
 }

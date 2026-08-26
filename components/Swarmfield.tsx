@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Game, type UiState } from "@/game/game";
+import { Game, SPEEDS, type UiState } from "@/game/game";
 import {
   UNIT_KINDS,
   WORLDS,
@@ -13,7 +13,7 @@ import {
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import {
   grantRunReward,
-  isLevelUnlocked,
+  isWorldUnlocked,
   loadProgress,
   resetProgress,
   techOf,
@@ -33,11 +33,13 @@ function LevelThumb({ mapId }: { mapId: string }) {
     const m = loadMap(mapId);
     if (m && ref.current) drawThumb(m, ref.current);
   }, [mapId]);
+  // fixed-aspect frame: maps differ in proportion (a taller world 2 next to
+  // a wide world 1), and letting each canvas set its own height left the
+  // cards ragged. The preview sits centred inside a constant box instead
   return (
-    <canvas
-      ref={ref}
-      className="w-full rounded border border-[#2E2E36] [image-rendering:pixelated]"
-    />
+    <div className="flex aspect-[16/9] items-center justify-center overflow-hidden rounded border border-[#2E2E36] bg-[#101013]">
+      <canvas ref={ref} className="h-full w-full object-contain [image-rendering:pixelated]" />
+    </div>
   );
 }
 
@@ -114,6 +116,13 @@ export default function Swarmfield() {
   // the selector draws map previews, so the documents load with the menu —
   // Game.create re-fetches later, keeping in-game state just as fresh
   const [mapsReady, setMapsReady] = useState(false);
+  // sandbox mode, hidden until Ctrl+Shift+S like the admin page's
+  // Ctrl+Shift+M: reveals the fast-forward strip AND lifts the tech tree's
+  // turret locks and placement caps (Game.setTech(null)), so a run can be
+  // staged for filming. Leaving it drops back to whatever the save allows —
+  // but the current speed keeps running, so the control can be hidden
+  // mid-run without snapping the game back to 1x
+  const [admin, setAdmin] = useState(false);
   // the campaign save (scrap, cleared levels, tech nodes) — localStorage,
   // so it loads in an effect; null only for the first client frame
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -125,6 +134,26 @@ export default function Swarmfield() {
   useEffect(() => {
     setProgress(loadProgress());
   }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      // ctrl OR cmd, same as AdminShortcut — Ctrl+Shift+S is the pair that
+      // arrives on every platform (Cmd+Shift+S is the browser's save dialog)
+      if ((!e.ctrlKey && !e.metaKey) || !e.shiftKey || e.code !== "KeyS") return;
+      e.preventDefault();
+      setAdmin((v) => !v);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // a run already in progress picks the mode up immediately
+  useEffect(() => {
+    const g = gameRef.current;
+    if (!g) return;
+    g.setTech(admin ? null : techOf(loadProgress()));
+    setHud(g.ui());
+  }, [admin]);
 
   useEffect(() => {
     let alive = true;
@@ -148,7 +177,7 @@ export default function Swarmfield() {
           g.destroy();
           return;
         }
-        g.setTech(techOf(loadProgress()));
+        g.setTech(admin ? null : techOf(loadProgress()));
         g.loadLevel(level);
         game = g;
         gameRef.current = g;
@@ -220,7 +249,7 @@ export default function Swarmfield() {
     setResult(null);
     // the run just banked scrap — a node bought mid-overlay would not apply
     // without this re-read (tech is per-run anyway, but keep it honest)
-    g.setTech(techOf(loadProgress()));
+    g.setTech(admin ? null : techOf(loadProgress()));
     g.reset();
     setHud(g.ui());
   };
@@ -246,15 +275,12 @@ export default function Swarmfield() {
   if (screen !== "game" || !level) {
     return (
       <div className="fixed inset-0 overflow-y-auto bg-[#101013]">
-        <div className="mx-auto flex min-h-full max-w-4xl flex-col items-center justify-center gap-8 px-6 py-16">
+        <div className="mx-auto flex min-h-full max-w-5xl flex-col items-center justify-center gap-8 px-6 py-16">
           <div className="text-center">
             <h1 className="text-4xl font-bold uppercase tracking-[0.35em] text-[#EDEDEF]">
               Sir, We Have a<br />
               <span className="text-[#FFD37F]">Dagger Problem</span>
             </h1>
-            <p className="mt-3 text-[11px] uppercase tracking-widest text-[#71717C]">
-              Every run banks scrap, win or lose — spend it in the tech tree
-            </p>
           </div>
           {progress && (
             <div className="flex items-center gap-3">
@@ -265,79 +291,64 @@ export default function Swarmfield() {
                 onClick={() => setScreen("tech")}
                 className="rounded border border-[#FFD37F] bg-[#222227]/90 px-4 py-2 text-[11px] font-semibold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
               >
-                Tech tree
+                Turrets
               </button>
             </div>
           )}
-          {progress &&
-            WORLDS.map((world) => {
-              const worldLocked = !isLevelUnlocked(progress, world.levels[0].id);
-              return (
-                <section key={world.id} className="w-full">
-                  <div className="flex items-baseline gap-3">
-                    <h2 className="text-sm font-bold uppercase tracking-[0.25em] text-[#EDEDEF]">
-                      World {world.id} — {world.name}
-                    </h2>
-                    {worldLocked && (
-                      <span className="text-[11px] uppercase tracking-widest text-[#71717C]">
-                        Clear world {world.id - 1} to enter
-                      </span>
-                    )}
-                  </div>
-                  <div
-                    role="group"
-                    aria-label={`world ${world.id} levels`}
-                    className="mt-3 flex flex-wrap gap-4"
+          {progress && (
+            <div
+              role="group"
+              aria-label="world select"
+              className="flex flex-wrap justify-center gap-4"
+            >
+              {WORLDS.map((world, i) => {
+                const { waves, enemies } = levelSummary(world);
+                const unlocked = isWorldUnlocked(progress, world.id);
+                const cleared = progress.completed.includes(world.id);
+                return (
+                  <button
+                    key={world.id}
+                    disabled={!unlocked}
+                    onClick={() => {
+                      setLevel(world);
+                      setScreen("game");
+                    }}
+                    className={`w-72 rounded-lg border p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+                      unlocked
+                        ? "border-[#2E2E36] bg-[#151518]/70 hover:border-[#FFD37F] hover:bg-[#222227]/90"
+                        : "cursor-not-allowed border-[#222227] bg-[#121215]/60 opacity-50"
+                    }`}
                   >
-                    {world.levels.map((lv) => {
-                      const { waves, enemies } = levelSummary(lv);
-                      const unlocked = isLevelUnlocked(progress, lv.id);
-                      const cleared = progress.completed.includes(lv.id);
-                      return (
-                        <button
-                          key={lv.id}
-                          disabled={!unlocked}
-                          onClick={() => {
-                            setLevel(lv);
-                            setScreen("game");
-                          }}
-                          className={`w-72 rounded-lg border p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-                            unlocked
-                              ? "border-[#2E2E36] bg-[#151518]/70 hover:border-[#FFD37F] hover:bg-[#222227]/90"
-                              : "cursor-not-allowed border-[#222227] bg-[#121215]/60 opacity-50"
-                          }`}
+                    {mapsReady && <LevelThumb mapId={world.map ?? OFFICIAL_MAP_IDS[0]} />}
+                    <div className="mt-2 flex items-baseline justify-between">
+                      <span className="text-base font-semibold text-[#EDEDEF]">{world.name}</span>
+                      {cleared ? (
+                        <span className="text-[10px] font-semibold uppercase tracking-widest text-[#7BE58A]">
+                          Cleared
+                        </span>
+                      ) : !unlocked ? (
+                        <svg
+                          viewBox="0 0 12 12"
+                          className="h-4 w-4 fill-[#71717C]"
+                          aria-hidden="true"
                         >
-                          {mapsReady && <LevelThumb mapId={lv.map ?? OFFICIAL_MAP_IDS[0]} />}
-                          <div className="mt-2 flex items-baseline justify-between">
-                            <span className="text-base font-semibold text-[#EDEDEF]">
-                              {lv.id} · {lv.name}
-                            </span>
-                            {cleared ? (
-                              <span className="text-[10px] font-semibold uppercase tracking-widest text-[#7BE58A]">
-                                Cleared
-                              </span>
-                            ) : !unlocked ? (
-                              <svg
-                                viewBox="0 0 12 12"
-                                className="h-4 w-4 fill-[#71717C]"
-                                aria-hidden="true"
-                              >
-                                <path d="M3.5 5V3.8a2.5 2.5 0 0 1 5 0V5H9a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h.5zm1.2 0h2.6V3.8a1.3 1.3 0 0 0-2.6 0V5z" />
-                              </svg>
-                            ) : null}
-                          </div>
-                          <div className="mt-1 flex items-baseline justify-between text-[11px] uppercase tracking-widest text-[#71717C]">
-                            <span>
-                              {waves} waves · {enemies} enemies
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-              );
-            })}
+                          <path d="M3.5 5V3.8a2.5 2.5 0 0 1 5 0V5H9a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h.5zm1.2 0h2.6V3.8a1.3 1.3 0 0 0-2.6 0V5z" />
+                        </svg>
+                      ) : null}
+                    </div>
+                    <div className="mt-1 space-y-0.5 text-[11px] uppercase tracking-widest text-[#71717C]">
+                      <div className="truncate">
+                        {unlocked ? world.subtitle : `Clear ${WORLDS[i - 1]?.name ?? ""} first`}
+                      </div>
+                      <div>
+                        {waves} waves · {enemies} enemies
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <div className="flex flex-col items-center gap-6">
             <button
               onClick={() => {
@@ -387,7 +398,7 @@ export default function Swarmfield() {
         {hud && (
           <div className="absolute left-4 top-4 max-w-[calc(100vw-2rem)] rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
             <div className="text-[11px] uppercase tracking-widest text-[#71717C]">
-              {level.id} · {level.name} — Wave {hud.currentWave} / {hud.totalWaves}
+              {level.name} — Wave {hud.currentWave} / {hud.totalWaves}
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
               <Scrap value={hud.scrapEarned} />
@@ -434,53 +445,75 @@ export default function Swarmfield() {
             )}
           </div>
         )}
+        {hud && admin && (
+          <div
+            role="group"
+            aria-label="sandbox controls"
+            className="absolute bottom-4 left-4 flex overflow-hidden rounded border border-[#2E2E36] bg-[#151518]/70 backdrop-blur"
+          >
+            <span className="border-r border-[#2E2E36] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-[#FFD37F]">
+              Sandbox
+            </span>
+            {SPEEDS.map((mult) => (
+              <button
+                key={mult}
+                title={`${mult}x speed`}
+                aria-pressed={hud.speed === mult}
+                onClick={() => {
+                  const g = gameRef.current;
+                  if (!g) return;
+                  g.setSpeed(mult);
+                  setHud(g.ui());
+                }}
+                className={`px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+                  hud.speed === mult
+                    ? "bg-[#222227] text-[#FFD37F]"
+                    : "text-[#71717C] hover:bg-[#222227]/60 hover:text-[#A6A6AF]"
+                }`}
+              >
+                {mult}x
+              </button>
+            ))}
+          </div>
+        )}
         <div
           role="group"
           aria-label="tower menu"
           className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-2"
         >
-          {TOWER_MENU.map((t) => {
-            const locked = hud?.unlocked ? !hud.unlocked.includes(t.kind) : false;
+          {/* a turret the tech tree has not unlocked yet is not shown at
+              all — the bar holds exactly what this run can build. A null
+              unlocked list is sandbox mode: everything, uncapped */}
+          {TOWER_MENU.filter((t) => (hud ? !hud.unlocked || hud.unlocked.includes(t.kind) : false)).map((t) => {
             const cap = hud?.caps ? hud.caps[t.kind] : null;
             const count = hud?.counts ? hud.counts[t.kind] : 0;
             const full = cap !== null && count >= cap;
             return (
               <button
                 key={t.kind}
-                title={locked ? `${t.name} — locked (buy it in the tech tree)` : t.name}
-                disabled={locked}
+                title={t.name}
                 aria-pressed={hud?.buildKind === t.kind}
                 onClick={() => pickTower(t.kind)}
                 className={`relative flex h-14 w-14 items-center justify-center rounded border backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
                   hud?.buildKind === t.kind
                     ? "border-[#FFD37F] bg-[#222227]/90"
                     : "border-[#2E2E36] bg-[#151518]/70 hover:border-[#4A4A55]"
-                } ${locked ? "cursor-not-allowed opacity-40 hover:border-[#2E2E36]" : ""}`}
+                }`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
                 <img
                   src={icons[t.kind] ?? t.icon}
                   alt={t.name}
-                  className={`h-10 w-10 [image-rendering:pixelated] ${locked ? "grayscale" : ""}`}
+                  className="h-10 w-10 [image-rendering:pixelated]"
                 />
-                {locked ? (
-                  <svg
-                    viewBox="0 0 12 12"
-                    className="absolute bottom-1 right-1 h-3.5 w-3.5 fill-[#A6A6AF]"
-                    aria-hidden="true"
+                {cap !== null && (
+                  <span
+                    className={`absolute bottom-0.5 right-1 text-[10px] font-semibold ${
+                      full ? "text-[#FFD37F]" : "text-[#71717C]"
+                    }`}
                   >
-                    <path d="M3.5 5V3.8a2.5 2.5 0 0 1 5 0V5H9a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h.5zm1.2 0h2.6V3.8a1.3 1.3 0 0 0-2.6 0V5z" />
-                  </svg>
-                ) : (
-                  cap !== null && (
-                    <span
-                      className={`absolute bottom-0.5 right-1 text-[10px] font-semibold ${
-                        full ? "text-[#FFD37F]" : "text-[#71717C]"
-                      }`}
-                    >
-                      {count}/{cap}
-                    </span>
-                  )
+                    {count}/{cap}
+                  </span>
                 )}
               </button>
             );
@@ -584,9 +617,6 @@ export default function Swarmfield() {
                 >
                   Abandon level
                 </button>
-                <p className="text-[10px] uppercase tracking-widest text-[#71717C]">
-                  Abandoning banks no scrap — only a finished run pays
-                </p>
               </div>
             </div>
           </div>

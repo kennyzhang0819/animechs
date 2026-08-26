@@ -2,6 +2,7 @@ import {
   MECH_ART,
   type MechArt,
   UNIT_ART,
+  UV_SOLID,
   UV_CORE,
   UV_DECOR,
   UV_FLASH,
@@ -71,6 +72,28 @@ const BULLET_SIZE: Record<TowerKind, readonly [number, number]> = {
   scatter: [20, 15],
   fuse: [18, 18],
 };
+/** px per Mindustry world unit — effect geometry is written in those units */
+const MU = CELL / 8;
+/** Pal.heal #98ffa9 */
+const PAL_HEAL = [0x98 / 255, 0xff / 255, 0xa9 / 255] as const;
+/**
+ * Pal.shield #ffd37f — the warm amber Mindustry uses for friendly shields
+ * (force projectors and the like). UnitType.shieldColor defaults to the
+ * OWNING team's colour, which for the crux enemy is a red that this game's
+ * low-hp unit tint already owns; the amber keeps "shielded" and "nearly
+ * dead" telling apart at a glance.
+ */
+const SHIELD_COL = [0xff / 255, 0xd3 / 255, 0x7f / 255] as const;
+/** Arc Interp.pow3Out, the curve behind EffectContainer.finpow() */
+const FIN_POW = (f: number): number => 1 - Math.pow(1 - f, 3);
+/**
+ * Opacity applied to every stroked effect ring. Mindustry draws these at
+ * full alpha and lets the thinning stroke do the fading; a lighter ring
+ * reads better over this game's busier ground, so the whole family is
+ * scaled by one knob rather than per-effect.
+ */
+const RING_ALPHA = 0.4;
+
 // unit art indexed by the sim's numeric kind id (UNIT_ID order)
 const KIND_UV = UNIT_KINDS.map((k) => UNIT_ART[k].uv);
 const KIND_SPRITE = UNIT_KINDS.map((k) => UNIT_ART[k].sprite);
@@ -94,6 +117,16 @@ const EDGE_ORDER = [4, 2, 0] as const;
 // wall shadow strength: BlockRenderer.shadowColor is black at 0.71 — the
 // premultiplied blend of a black quad at this alpha equals its multiply
 const WALL_SHADOW_A = 0.71;
+/** which terrain layers the static batches draw; the editor hides one to
+ * work on what sits underneath it */
+export interface TerrainLayers {
+  wall: boolean;
+  props: boolean;
+  spawn: boolean;
+  core: boolean;
+}
+export const ALL_LAYERS: TerrainLayers = { wall: true, props: true, spawn: true, core: true };
+
 // flyer drop shadow: painter's offset + premultiplied black tint
 const SHADOW_OFF = 6;
 const SHADOW_ALPHA = 0.22;
@@ -166,6 +199,12 @@ export class Renderer {
   // cannot live in the NEAREST-filtered sprite atlas
   private readonly shadowTex: WebGLTexture;
   private readonly dyn: Batch;
+  // the core of the terrain currently in the static batches; renderTerrain
+  // (the editor) has no sim to ask, so rebuildTerrain leaves it here
+  private core = { ...BASE };
+  // layer visibility of whatever is currently in the static batches, so the
+  // editor's core sprite (drawn per frame) matches the terrain it sits on
+  private layers: TerrainLayers = ALL_LAYERS;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -395,15 +434,24 @@ export class Renderer {
    * changes. showSpawn paints the spawn-pad layer over its floor cells —
    * an editor-only debug view; the game never passes it
    */
-  rebuildTerrain(src: { terrain: Terrain }, showSpawn = false): void {
+  rebuildTerrain(
+    src: { terrain: Terrain },
+    showSpawn = false,
+    layers: TerrainLayers = ALL_LAYERS,
+  ): void {
     const gl = this.gl;
     const t = this.terrain;
     const T = src.terrain;
+    this.core = T.core;
+    this.layers = layers;
     t.n = 0;
     // does this cell show its floor (rather than a wall sprite)? pine cells
     // (and tower cells, which aren't in terrain.blocked at all) get their
-    // floor painted; props draw over it below
-    const showsFloor = (j: number): boolean => !T.blocked[j] || T.wall[j] === WALL_PINE;
+    // floor painted; props draw over it below. With the wall layer hidden
+    // EVERY cell shows its floor — that is what lets the editor paint the
+    // ground a hill is standing on
+    const showsFloor = (j: number): boolean =>
+      !layers.wall || !T.blocked[j] || T.wall[j] === WALL_PINE;
     // pass 1: floors, with Floor.drawEdges fades — a neighboring floor of
     // higher blend priority overlays its edge sub-cell for that direction.
     // Lower-priority groups overlay first, like the blenders id sort
@@ -441,13 +489,14 @@ export class Renderer {
     const stamp = (i: number): void => {
       mask[i * 4] = mask[i * 4 + 1] = mask[i * 4 + 2] = mask[i * 4 + 3] = 255;
     };
-    for (let i = 0; i < COLS * ROWS; i++) if (T.blocked[i]) stamp(i);
+    if (layers.wall) for (let i = 0; i < COLS * ROWS; i++) if (T.blocked[i]) stamp(i);
     // buildings on the ground stamp their footprint too, like Mindustry's
     // displayShadow blocks — the core sprite covers the middle, so what
     // shows is the rim hugging its sides. Towers sit on hills (already
     // fully stamped as blocked cells), so they need nothing extra
-    for (let y = BASE.y; y < BASE.y + BASE.size; y++)
-      for (let x = BASE.x; x < BASE.x + BASE.size; x++) stamp(y * COLS + x);
+    if (layers.core)
+      for (let y = T.core.y; y < T.core.y + T.core.size; y++)
+        for (let x = T.core.x; x < T.core.x + T.core.size; x++) stamp(y * COLS + x);
     gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, mask);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
@@ -475,7 +524,7 @@ export class Renderer {
       h ^= h >>> 16;
       return (h >>> 0) / 4294967296 < 0.5;
     };
-    for (let y = 0; y < ROWS; y++) {
+    if (layers.wall) for (let y = 0; y < ROWS; y++) {
       for (let x = 0; x < COLS; x++) {
         const i = y * COLS + x;
         if (showsFloor(i)) continue;
@@ -496,7 +545,7 @@ export class Renderer {
         this.push(w, (x + 0.5) * CELL, (y + 0.5) * CELL, CELL, CELL, 0, uvr, 1, 1, 1, 1);
       }
     }
-    if (showSpawn) {
+    if (showSpawn && layers.spawn) {
       for (let i = 0; i < COLS * ROWS; i++) {
         if (!T.spawn[i] || T.blocked[i]) continue;
         const cx = ((i % COLS) + 0.5) * CELL, cy = (((i / COLS) | 0) + 0.5) * CELL;
@@ -505,10 +554,12 @@ export class Renderer {
         this.push(w, cx, cy, CELL, CELL, 0, UV_SPAWN, tr, tg, tb, 1);
       }
     }
-    for (const d of T.decor)
-      this.push(w, d.x, d.y, d.size, d.size, d.rot, UV_DECOR[d.kind], 1, 1, 1, 1);
-    for (const p of T.pines)
-      this.push(w, p.x, p.y, p.size, p.size, p.rot, UV_PINE, 1, 1, 1, 1);
+    if (layers.props) {
+      for (const d of T.decor)
+        this.push(w, d.x, d.y, d.size, d.size, d.rot, UV_DECOR[d.kind], 1, 1, 1, 1);
+      for (const p of T.pines)
+        this.push(w, p.x, p.y, p.size, p.size, p.rot, UV_PINE, 1, 1, 1, 1);
+    }
     for (const b of [t, sh, w]) {
       gl.bindVertexArray(b.vao);
       gl.bindBuffer(gl.ARRAY_BUFFER, b.vbo);
@@ -544,11 +595,18 @@ export class Renderer {
     this.drawWorld();
     const dyn = this.dyn;
     dyn.n = 0;
-    const coreSz = BASE.size * CELL;
+    // the core of the map last built into the terrain batch (see
+    // rebuildTerrain) — a map may put it anywhere, not just at BASE
+    const core = this.core;
+    if (!this.layers.core) {
+      this.draw(dyn, true);
+      return;
+    }
+    const coreSz = core.size * CELL;
     this.push(
       dyn,
-      (BASE.x + BASE.size / 2) * CELL,
-      (BASE.y + BASE.size / 2) * CELL,
+      (core.x + core.size / 2) * CELL,
+      (core.y + core.size / 2) * CELL,
       coreSz,
       coreSz,
       0,
@@ -577,6 +635,7 @@ export class Renderer {
       this.push(dyn, t.x, t.y, px, px, t.angle, UV_TURRETS[t.kind], 1, 1, 1, 1);
     }
     const { upx, upy, uvx, uvy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
+    const { ushield, ushieldAlpha, urad } = sim;
     // painter's order in three passes: ground units, then flyer shadows on
     // top of the crowd, then the flyers themselves above everything
     for (let pass = 0; pass < 3; pass++) {
@@ -589,6 +648,16 @@ export class Renderer {
           const rot = Math.atan2(uvy[i], uvx[i]);
           this.push(dyn, upx[i] + SHADOW_OFF, upy[i] + SHADOW_OFF, usz, usz, rot, KIND_UV[k], 0, 0, 0, SHADOW_ALPHA);
           continue;
+        }
+        // UnitType.drawShield: a crux-red halo at hitSize * 1.3, its opacity
+        // spiking to full on a hit or a fresh pulse and fading out after
+        if (ushield[i] > 0.0001) {
+          // UnitType.drawShield: Fill.light at hitSize * 1.3 — a disc that is
+          // clear at the centre and carries the colour at its rim
+          const sr = urad[i] * 2 * 1.3 * 2;
+          this.push(dyn, upx[i], upy[i], sr, sr, 0, UV_RING,
+            SHIELD_COL[0], SHIELD_COL[1], SHIELD_COL[2],
+            0.7 * (0.3 + 0.7 * ushieldAlpha[i]));
         }
         // hp thirds of the unit's own max, so every kind tints alike
         const t3 = (uhp[i] * 3) / uhpmax[i];
@@ -620,6 +689,20 @@ export class Renderer {
         const s = 12 + t * 46;
         this.push(dyn, e.x, e.y, 16 * (1 - t), 16 * (1 - t), 0, UV_FLASH, 1, 0.7, 0.3, 1 - t);
         this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 1, 0.5, 0.13, (1 - t) * 0.85);
+      } else if (e.kind === FxKind.Heal) {
+        // Fx.heal: stroke(fout*2), circle(2 + finpow*7)
+        this.strokeCircle(dyn, e.x, e.y, (2 + FIN_POW(t) * 7) * MU, (1 - t) * 2 * MU,
+          PAL_HEAL[0], PAL_HEAL[1], PAL_HEAL[2], RING_ALPHA);
+      } else if (e.kind === FxKind.HealWave || e.kind === FxKind.ShieldWave) {
+        // healWaveDynamic: circle(4 + finpow*range) in Pal.heal
+        // shieldWave:      circle(4 + finpow*60) in the shield colour at a=0.7
+        const heal = e.kind === FxKind.HealWave;
+        const grow = heal ? (e.len ?? 0) : 60 * MU;
+        this.strokeCircle(dyn, e.x, e.y, 4 * MU + FIN_POW(t) * grow, (1 - t) * 2 * MU,
+          heal ? PAL_HEAL[0] : SHIELD_COL[0],
+          heal ? PAL_HEAL[1] : SHIELD_COL[1],
+          heal ? PAL_HEAL[2] : SHIELD_COL[2],
+          (heal ? 1 : 0.7) * RING_ALPHA);
       } else if (e.kind === FxKind.Shrapnel) {
         this.drawShrapnel(dyn, e.x, e.y, e.rot ?? 0, e.len ?? 0, t);
       } else {
@@ -628,11 +711,12 @@ export class Renderer {
       }
     }
     // core last, above units and breach fx — arrivals disappear beneath it
-    const coreSz = BASE.size * CELL;
+    const core = sim.terrain.core;
+    const coreSz = core.size * CELL;
     this.push(
       dyn,
-      (BASE.x + BASE.size / 2) * CELL,
-      (BASE.y + BASE.size / 2) * CELL,
+      (core.x + core.size / 2) * CELL,
+      (core.y + core.size / 2) * CELL,
       coreSz,
       coreSz,
       0,
@@ -647,6 +731,44 @@ export class Renderer {
    * spike and perpendicular serrations, tinted white fading to thoriumPink
    * over its 10-tick life, all widths shrinking with fout.
    */
+  /**
+   * Arc's Lines.circle: a ring stroked at a CONSTANT width, built from
+   * Lines.circleVertices(rad) tangent segments. A scaled ring sprite can't
+   * stand in for this — its band thickens with the radius, so a big wave
+   * reads as a filled blob instead of a hairline.
+   */
+  private strokeCircle(
+    dyn: Batch,
+    cx: number,
+    cy: number,
+    radius: number,
+    stroke: number,
+    r: number,
+    g: number,
+    b: number,
+    a: number,
+  ): void {
+    if (radius <= 0.01 || stroke <= 0.01 || a <= 0.004) return;
+    // Lines.circleVertices: 11 + rad*0.6, with rad in Mindustry units
+    const sides = 11 + Math.floor((radius / MU) * 0.6);
+    const step = (Math.PI * 2) / sides;
+    // segment chord, overlapped slightly so the joints leave no gaps
+    const chord = 2 * radius * Math.sin(step / 2) + stroke * 0.5;
+    for (let i = 0; i < sides; i++) {
+      const ang = (i + 0.5) * step;
+      this.push(
+        dyn,
+        cx + Math.cos(ang) * radius,
+        cy + Math.sin(ang) * radius,
+        chord,
+        stroke,
+        ang + Math.PI / 2,
+        UV_SOLID,
+        r, g, b, a,
+      );
+    }
+  }
+
   private drawShrapnel(
     dyn: Batch,
     x: number,
