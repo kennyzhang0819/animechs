@@ -28,9 +28,9 @@ export interface Vec2 {
 
 /**
  * Grid occupancy plus a flow field: one Dijkstra pass from the core produces a
- * distance field, then every walkable cell gets a unit direction toward its
- * cheapest neighbour. Units just sample the field — pathfinding is O(map),
- * not O(units).
+ * distance field, a fast-sweeping pass refines it into a proper eikonal one,
+ * then every walkable cell gets a unit direction from that field's upwind
+ * gradient. Units just sample the field — pathfinding is O(map), not O(units).
  */
 export class FlowField {
   readonly walk = new Uint8Array(NCELLS); // 1 = blocked
@@ -68,6 +68,19 @@ export class FlowField {
   private readonly narrow = new Uint8Array(NCELLS);
   // extra Dijkstra cost per narrow cell entered (in cell units)
   private static readonly NARROW_COST = 4;
+  /**
+   * per-cell travel cost, i.e. 1 plus whatever `narrow` adds. Dijkstra pays
+   * it on entry; the eikonal sweep reads the same number as the slowness
+   * |grad dist| has to match, so both passes agree on what a cell is worth
+   */
+  private readonly cost = new Float32Array(NCELLS);
+  /**
+   * how far each open cell sits from the nearest rock, in cells: 1 for a
+   * cell touching a wall, growing toward the middle of a corridor. The sim
+   * reads it to decide how much room a crowd has to fan out into — no room
+   * means a 1-wide slot, where spreading is not on offer
+   */
+  readonly clear = new Float32Array(NCELLS);
 
   rebuildWalk(
     towers: readonly Tower[],
@@ -123,17 +136,109 @@ export class FlowField {
     return v;
   }
 
+  /**
+   * Chamfer distance transform for `clear`: two raster passes over a 3x3
+   * neighbourhood with 1 / sqrt(2) weights. Rock reads 0, and everything
+   * off the edge of the map counts as rock so a border cell never looks
+   * like open field.
+   */
+  private computeClearance(): void {
+    const { walk, clear } = this;
+    for (let i = 0; i < NCELLS; i++) clear[i] = walk[i] ? 0 : INF;
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        const i = y * COLS + x;
+        if (clear[i] === 0) continue;
+        let v = x === 0 || y === 0 || x === COLS - 1 || y === ROWS - 1 ? 1 : clear[i];
+        if (x > 0) v = Math.min(v, clear[i - 1] + 1);
+        if (y > 0) v = Math.min(v, clear[i - COLS] + 1);
+        if (x > 0 && y > 0) v = Math.min(v, clear[i - COLS - 1] + SQRT2);
+        if (x < COLS - 1 && y > 0) v = Math.min(v, clear[i - COLS + 1] + SQRT2);
+        clear[i] = v;
+      }
+    }
+    for (let y = ROWS - 1; y >= 0; y--) {
+      for (let x = COLS - 1; x >= 0; x--) {
+        const i = y * COLS + x;
+        if (clear[i] === 0) continue;
+        let v = clear[i];
+        if (x < COLS - 1) v = Math.min(v, clear[i + 1] + 1);
+        if (y < ROWS - 1) v = Math.min(v, clear[i + COLS] + 1);
+        if (x < COLS - 1 && y < ROWS - 1) v = Math.min(v, clear[i + COLS + 1] + SQRT2);
+        if (x > 0 && y < ROWS - 1) v = Math.min(v, clear[i + COLS - 1] + SQRT2);
+        clear[i] = v;
+      }
+    }
+  }
+
+  /**
+   * Fast-sweeping refinement of the Dijkstra field into an eikonal one:
+   * solve |grad dist| = cost with the standard Godunov upwind update, run in
+   * four alternating raster orders. Every update takes a min, so seeding the
+   * sweep with Dijkstra — whose 8-way distance is an upper bound on the true
+   * geodesic — only ever lowers a cell, and lands within a rounding error of
+   * the fixed point in two rounds.
+   *
+   * This is the pass that stops crowds funnelling. An 8-way field offers a
+   * cell exactly eight headings, and under octile costs a straight step and a
+   * diagonal step buy the same progress, so descent directions collapse onto
+   * a few 45-degree seams and every unit in an open field walks the same ray,
+   * single file. An eikonal field's gradient is isotropic: two units a tile
+   * apart get two slightly different headings, both aimed straight at the
+   * core, so a wide crowd stays wide.
+   */
+  private sweepEikonal(): void {
+    const { walk, isGoal, dist, cost } = this;
+    for (let round = 0; round < 2; round++) {
+      for (let s = 0; s < 4; s++) {
+        const rx = (s & 1) !== 0, ry = (s & 2) !== 0;
+        for (let yy = 0; yy < ROWS; yy++) {
+          const y = ry ? ROWS - 1 - yy : yy;
+          const row = y * COLS;
+          for (let xx = 0; xx < COLS; xx++) {
+            const x = rx ? COLS - 1 - xx : xx;
+            const i = row + x;
+            if (walk[i] || isGoal[i]) continue;
+            const a = Math.min(
+              x > 0 && !walk[i - 1] ? dist[i - 1] : INF,
+              x < COLS - 1 && !walk[i + 1] ? dist[i + 1] : INF,
+            );
+            const b = Math.min(
+              y > 0 && !walk[i - COLS] ? dist[i - COLS] : INF,
+              y < ROWS - 1 && !walk[i + COLS] ? dist[i + COLS] : INF,
+            );
+            if (a >= INF && b >= INF) continue;
+            const f = cost[i];
+            const d = a - b;
+            // one axis carries the whole front when the two disagree by more
+            // than a cell of cost; otherwise both do, via the two-axis root
+            const t =
+              Math.abs(d) >= f
+                ? Math.min(a, b) + f
+                : (a + b + Math.sqrt(2 * f * f - d * d)) * 0.5;
+            if (t < dist[i]) dist[i] = t;
+          }
+        }
+      }
+    }
+  }
+
   compute(): void {
-    const { walk, isGoal, dist, dirX, dirY, narrow } = this;
+    const { walk, isGoal, dist, dirX, dirY, narrow, cost } = this;
+    this.computeClearance();
     for (let i = 0; i < NCELLS; i++) {
       narrow[i] = 0;
+      cost[i] = 1;
       if (walk[i]) continue;
       const x = i % COLS, y = (i / COLS) | 0;
       const bL = x <= 0 || walk[i - 1] === 1;
       const bR = x >= COLS - 1 || walk[i + 1] === 1;
       const bU = y <= 0 || walk[i - COLS] === 1;
       const bD = y >= ROWS - 1 || walk[i + COLS] === 1;
-      if ((bL && bR) || (bU && bD) || ((bL || bR) && (bU || bD))) narrow[i] = 1;
+      if ((bL && bR) || (bU && bD) || ((bL || bR) && (bU || bD))) {
+        narrow[i] = 1;
+        cost[i] = 1 + FlowField.NARROW_COST;
+      }
     }
     dist.fill(INF);
     this.hN = 0;
@@ -154,7 +259,7 @@ export class FlowField {
         if (walk[ni]) continue;
         // no cutting corners diagonally through a blocked cell
         if (dx !== 0 && dy !== 0 && (walk[y * COLS + nx] || walk[ny * COLS + x])) continue;
-        const nd = dist[i] + c + (narrow[ni] ? FlowField.NARROW_COST : 0);
+        const nd = dist[i] + c + cost[ni] - 1;
         if (nd < dist[ni] - 1e-6) {
           dist[ni] = nd;
           // push the value AS STORED, not nd. dist is a Float32Array while
@@ -169,25 +274,47 @@ export class FlowField {
       }
     }
 
+    // Dijkstra settled reachability and an upper bound; the sweep turns that
+    // bound into a smooth field whose gradient is a usable heading
+    this.sweepEikonal();
+
     for (let i = 0; i < NCELLS; i++) {
       dirX[i] = 0;
       dirY[i] = 0;
       if (walk[i] || isGoal[i] || dist[i] >= INF) continue;
       const x = i % COLS, y = (i / COLS) | 0;
-      let best = dist[i], bx = 0, by = 0;
-      for (const [dx, dy] of D8) {
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
-        const ni = ny * COLS + nx;
-        if (walk[ni]) continue;
-        if (dx !== 0 && dy !== 0 && (walk[y * COLS + nx] || walk[ny * COLS + x])) continue;
-        if (dist[ni] < best) {
-          best = dist[ni];
-          bx = dx;
-          by = dy;
+      const d = dist[i];
+      // upwind gradient: on each axis, lean toward the cheaper side by
+      // exactly how much cheaper it is. Both magnitudes vary continuously
+      // with the field, so the heading turns smoothly across open ground
+      // rather than snapping between eight compass points
+      const xm = x > 0 && !walk[i - 1] ? dist[i - 1] : INF;
+      const xp = x < COLS - 1 && !walk[i + 1] ? dist[i + 1] : INF;
+      const ym = y > 0 && !walk[i - COLS] ? dist[i - COLS] : INF;
+      const yp = y < ROWS - 1 && !walk[i + COLS] ? dist[i + COLS] : INF;
+      let bx = 0, by = 0;
+      if (xm < xp) { if (xm < d) bx = xm - d; } else if (xp < d) bx = d - xp;
+      if (ym < yp) { if (ym < d) by = ym - d; } else if (yp < d) by = d - yp;
+      let len = Math.hypot(bx, by);
+      if (len < 1e-6) {
+        // a cell the sweep never tightened whose orthogonal neighbours all
+        // cost at least as much — its descent is diagonal. Fall back to the
+        // 8-way steepest step, which Dijkstra guarantees exists
+        let best = d;
+        for (const [dx, dy] of D8) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+          const ni = ny * COLS + nx;
+          if (walk[ni]) continue;
+          if (dx !== 0 && dy !== 0 && (walk[y * COLS + nx] || walk[ny * COLS + x])) continue;
+          if (dist[ni] < best) {
+            best = dist[ni];
+            bx = dx;
+            by = dy;
+          }
         }
+        len = Math.hypot(bx, by);
       }
-      const len = Math.hypot(bx, by);
       if (len > 0) {
         dirX[i] = bx / len;
         dirY[i] = by / len;
@@ -277,6 +404,14 @@ export class FlowField {
       out.x = sx / len;
       out.y = sy / len;
     }
+  }
+
+  /** how far the open ground under this world position reaches from rock, in
+   * cells — the sim's budget for letting a crowd spread sideways */
+  clearanceAt(x: number, y: number): number {
+    return this.clear[
+      clamp((y / CELL) | 0, 0, ROWS - 1) * COLS + clamp((x / CELL) | 0, 0, COLS - 1)
+    ];
   }
 
   blockedPx(x: number, y: number): boolean {

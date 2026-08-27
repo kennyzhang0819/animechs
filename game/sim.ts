@@ -50,6 +50,43 @@ const HC = Math.ceil(2 * PHYS_R * UNIT_RMAX);
 // corners, steer toward the cell centerline so units line up with the
 // slim (CELL - 2*WALL_R)px window instead of scraping the jambs
 const CENTER_K = 25;
+
+// --- crowd spreading ---
+// A flow field hands every unit in a place the same heading, so a crowd
+// left to itself collapses into one thread: whoever is behind shoves the
+// one in front further along the very line it already walks. The eikonal
+// field (see FlowField.sweepEikonal) removes the funnelling the 8-way grid
+// used to add; these three forces do the rest, turning a column into a
+// front that AoE has to work through instead of a queue it enfilades.
+//
+// 1. Overlaps resolve sideways first. PUSH_LONG is the fraction of a
+//    front-to-back shove that stays front-to-back; PUSH_SIDE is how hard
+//    the remainder is re-aimed across the direction of travel. The shove's
+//    magnitude never changes — only the axis it is spent on
+const PUSH_LONG = 0.45;
+const PUSH_SIDE = 1.1;
+// ...but only where a unit has somewhere to step aside: this much
+// clearance (FlowField.clear, in cells) or the shove stays as Mindustry
+// wrote it, so a 1-wide slot still resolves a rear-ender by backing off
+const SPREAD_CLEAR = 1.7;
+// 2. Lateral drift: every unit carries a bias in [-1, 1] and walks that
+//    fraction of its speed across the flow. LAT_RELAX sets how fast the
+//    bias decorrelates (1/s — its reciprocal is the correlation time, and
+//    it must be seconds, not frames, or the walk averages out to nothing);
+//    LAT_SIGMA is the stationary spread the re-roll is normalised to hold
+const LAT_FRAC = 0.5;
+const LAT_RELAX = 0.6;
+const LAT_SIGMA = 0.62;
+// no drift where there is no room for it, ramping in over a cell of
+// clearance above SPREAD_CLEAR
+const LAT_ROOM_K = 1 / 1.1;
+// 3. Lane centering: ride the clearance gradient back toward the middle of
+//    the corridor, so the band the first two forces spread stays centred on
+//    the route rather than smearing along the rock. Only the component
+//    across the flow is used — this never brakes or hurries the advance —
+//    and it fades out past CENTER_CLEAR cells from the nearest wall
+const CENTER_CLEAR = 3.2;
+const CENTER_GAIN = 18;
 const HCOLS = (W / HC) | 0;
 const HROWS = (H / HC) | 0;
 const HN = HCOLS * HROWS;
@@ -157,6 +194,20 @@ export class Sim {
    */
   readonly uid = new Int32Array(MAX_UNITS);
   readonly ukind = new Uint8Array(MAX_UNITS); // UNIT_ID of the kind
+  /**
+   * this unit's sideways bias in [-1, 1]: how far off the flow line it
+   * prefers to walk. Wanders on a multi-second clock, so two units that
+   * left the same pad a moment apart are soon aiming at different lanes and
+   * the stream between them widens into a band
+   */
+  readonly ulat = new Float32Array(MAX_UNITS);
+  /**
+   * scratch, rebuilt every frame: unit-length travel direction, zeroed for
+   * anyone standing still or boxed in too tight to step aside. Only the
+   * physics pass reads it, to decide which way an overlap should resolve
+   */
+  private readonly uhx = new Float32Array(MAX_UNITS);
+  private readonly uhy = new Float32Array(MAX_UNITS);
   // animation state, sim-owned so it survives swap-remove: distance walked
   // (drives the mech leg cycle), chassis angle, body angle
   readonly uwalk = new Float32Array(MAX_UNITS);
@@ -743,6 +794,9 @@ export class Sim {
       this.uburn[i] = 0;
       this.uid[i] = this.nextId++;
       this.ukind[i] = UNIT_ID[kind];
+      // start already off-line, drawn from the bias's own resting spread —
+      // a wave that all began dead centre would need seconds to fan out
+      this.ulat[i] = clamp((Math.random() * 2 - 1) * LAT_SIGMA * 1.7, -1, 1);
       // face the way it will walk, with legs mid-cycle at a random phase so
       // a wave doesn't march in lockstep
       const a0 = fly ? Math.atan2(this.goalY - y, this.goalX - x) : 0;
@@ -871,6 +925,7 @@ export class Sim {
     this.uburn[i] = this.uburn[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
+    this.ulat[i] = this.ulat[n];
     this.uwalk[i] = this.uwalk[n];
     this.ubrot[i] = this.ubrot[n];
     this.urot[i] = this.urot[n];
@@ -1053,13 +1108,33 @@ export class Sim {
    * little more per tick than independent pushes would. Exactly stacked
    * units part in a random direction. Ground and air are separate layers
    * that pass through each other freely.
+   *
+   * One deliberate departure from the original: where a unit has room to
+   * step aside, the shove is re-aimed across its direction of travel (see
+   * PUSH_LONG / PUSH_SIDE). Mindustry resolves along the centre line, which
+   * for a crowd all walking one heading means every overlap lengthens the
+   * column — the classic conga line. Same magnitude, different axis.
    */
   private updatePhysics(): void {
-    const { upx, upy, urad, ukind, phx, phy, bStart, bUnits } = this;
+    const { upx, upy, urad, ukind, uvx, uvy, uhx, uhy, uid, phx, phy, bStart, bUnits } = this;
+    const { clear } = this.field;
     const n = this.n;
     for (let i = 0; i < n; i++) {
       phx[i] = upx[i];
       phy[i] = upy[i];
+      const vx = uvx[i], vy = uvy[i];
+      const vl = Math.sqrt(vx * vx + vy * vy);
+      // a flyer always has room; a walker needs open ground beside it, or
+      // the sideways re-aim would only grind it into rock
+      const room =
+        vl > 1e-3 &&
+        (KIND_FLYING[ukind[i]] ||
+          clear[
+            clamp((upy[i] / CELL) | 0, 0, ROWS - 1) * COLS +
+              clamp((upx[i] / CELL) | 0, 0, COLS - 1)
+          ] >= SPREAD_CLEAR);
+      uhx[i] = room ? vx / vl : 0;
+      uhy[i] = room ? vy / vl : 0;
     }
     for (let i = 0; i < n; i++) {
       const fly = KIND_FLYING[ukind[i]];
@@ -1086,6 +1161,33 @@ export class Sim {
               dx /= dst;
               dy /= dst;
             }
+            // re-aim the (unit-length) push across the direction of travel:
+            // split it into along- and across-heading parts, keep a fraction
+            // of the along part, and spend what is left widening the rank.
+            // Renormalised, so the pair still separates by exactly the
+            // overlap and the relaxation cannot overshoot into jitter
+            const hx = uhx[i], hy = uhy[i];
+            if (hx !== 0 || hy !== 0) {
+              const al = dx * hx + dy * hy;
+              const ll = Math.sqrt(Math.max(0, 1 - al * al));
+              let lx: number, ly: number;
+              if (ll < 1e-3) {
+                // dead in line astern — no across-component to grow, so take
+                // a side from the pair's ids: stable frame to frame, which
+                // matters because a side that flipped would just shudder
+                const s = (uid[i] ^ uid[j]) & 1 ? 1 : -1;
+                lx = -hy * s;
+                ly = hx * s;
+              } else {
+                lx = (dx - al * hx) / ll;
+                ly = (dy - al * hy) / ll;
+              }
+              const pa = al * PUSH_LONG;
+              const pl = ll + Math.abs(al) * PUSH_SIDE;
+              const pn = Math.sqrt(pa * pa + pl * pl) || 1;
+              dx = (pa * hx + pl * lx) / pn;
+              dy = (pa * hy + pl * ly) / pn;
+            }
             const mj = urad[j] * urad[j];
             const push = (rs - dst) / PHYS_SCL / (mi + mj);
             phx[i] += dx * push * mj;
@@ -1099,8 +1201,14 @@ export class Sim {
   }
 
   private updateUnits(dt: number): void {
-    const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, phx, phy, field, flowTmp } = this;
+    const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, ulat, phx, phy, field, flowTmp } =
+      this;
     const steer = Math.min(1, dt * 8);
+    // one step of the lateral bias's mean-reverting walk, precomputed: pull
+    // LAT_A of the way back to straight-ahead, then add noise scaled so the
+    // stationary spread lands on LAT_SIGMA whatever the tick rate
+    const LAT_A = Math.min(1, LAT_RELAX * dt);
+    const LAT_N = LAT_SIGMA * Math.sqrt(6 * LAT_A);
     // repulsion probes reach 4px past the wall-clearance radius: any longer
     // and the push-off fires while a unit hugs a wall to enter a staggered
     // narrow passage, shoving it back out of the entry window forever
@@ -1110,7 +1218,8 @@ export class Sim {
     for (let i = this.n - 1; i >= 0; i--) {
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
       const cy = clamp((upy[i] / CELL) | 0, 0, ROWS - 1);
-      if (isGoal[cy * COLS + cx]) {
+      const ci = cy * COLS + cx;
+      if (isGoal[ci]) {
         this.pushFx(upx[i], upy[i], 0.4, FxKind.Breach);
         this.removeUnit(i);
         this.leaked++;
@@ -1123,13 +1232,13 @@ export class Sim {
         // flyers ignore the maze: aim straight at the core's center
         const gdx = this.goalX - upx[i], gdy = this.goalY - upy[i];
         const gl = Math.hypot(gdx, gdy) || 1;
-        uvx[i] += ((gdx / gl) * uspd[i] - uvx[i]) * steer;
-        uvy[i] += ((gdy / gl) * uspd[i] - uvy[i]) * steer;
+        flowTmp.x = gdx / gl;
+        flowTmp.y = gdy / gl;
       } else {
         field.sample(upx[i], upy[i], flowTmp);
-        uvx[i] += (flowTmp.x * uspd[i] - uvx[i]) * steer;
-        uvy[i] += (flowTmp.y * uspd[i] - uvy[i]) * steer;
       }
+      uvx[i] += (flowTmp.x * uspd[i] - uvx[i]) * steer;
+      uvy[i] += (flowTmp.y * uspd[i] - uvy[i]) * steer;
 
       // this tick's crowd shove, precomputed by updatePhysics: whatever the
       // pairwise resolution moved this unit's scratch position. Applied on
@@ -1139,6 +1248,23 @@ export class Sim {
       // into rock
       const shx = phx[i] - upx[i], shy = phy[i] - upy[i];
       let fx = 0, fy = 0;
+
+      // lateral drift, both layers. The physics re-aim above only spreads
+      // units already touching; once a stream is strung out single file
+      // nothing is left to widen it, and a flyer swarm homing on one point
+      // has nothing to widen it in the first place. So each unit wanders a
+      // little across its own heading, on a multi-second clock so the walk
+      // actually accumulates instead of averaging away frame to frame. The
+      // bias reverts to zero, so a unit drifts off the line and back rather
+      // than committing to a wall
+      ulat[i] = clamp(ulat[i] + (Math.random() * 2 - 1) * LAT_N - ulat[i] * LAT_A, -1, 1);
+      const cl = fly ? CENTER_CLEAR : field.clear[ci];
+      const room = clamp((cl - SPREAD_CLEAR) * LAT_ROOM_K, 0, 1);
+      if (room > 0) {
+        const drift = ulat[i] * LAT_FRAC * uspd[i] * room;
+        fx -= flowTmp.y * drift;
+        fy += flowTmp.x * drift;
+      }
 
       // everything terrain-flavoured is ground-only: flyers never probe,
       // jitter, or center — walls are scenery beneath them
@@ -1156,6 +1282,22 @@ export class Sim {
         // such equilibria and disappears under the flow force in open field
         fx += (Math.random() - 0.5) * 14;
         fy += (Math.random() - 0.5) * 14;
+
+        // lane centering: lean up the clearance gradient so the band the
+        // drift and the re-aim spread stays centred on the route instead of
+        // grinding along both walls. Only the component across the flow is
+        // taken, so this never brakes or hurries the advance; it is zero in
+        // a 1-wide slot (both sides read the same clearance) and fades out
+        // once there is a comfortable margin of rock on either hand
+        if (cl < CENTER_CLEAR) {
+          const cw = field.clear;
+          const gx = cw[cx < COLS - 1 ? ci + 1 : ci] - cw[cx > 0 ? ci - 1 : ci];
+          const gy = cw[cy < ROWS - 1 ? ci + COLS : ci] - cw[cy > 0 ? ci - COLS : ci];
+          const lean =
+            (gy * flowTmp.x - gx * flowTmp.y) * CENTER_GAIN * (1 - cl / CENTER_CLEAR);
+          fx -= flowTmp.y * lean;
+          fy += flowTmp.x * lean;
+        }
 
         // narrow-passage centering: 1-wide corridors leave only a slim window
         // (unit clearance is WALL_R < CELL/2) — steer onto the cell centerline
