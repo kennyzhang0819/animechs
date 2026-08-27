@@ -2,7 +2,7 @@ import { CELL, HP0, UNIT_SPEED, UR } from "./constants";
 import { itemForTier, type Cost } from "./items";
 import { explain, type SaveResult } from "./types";
 
-export const UNIT_KINDS = ["dagger", "mace", "fortress", "crawler", "atrax", "spiroct", "flare", "nova", "pulsar", "horizon", "zenith"] as const;
+export const UNIT_KINDS = ["dagger", "mace", "fortress", "crawler", "atrax", "spiroct", "flare", "nova", "pulsar", "quasar", "horizon", "zenith"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -17,8 +17,9 @@ export const UNIT_ID: Record<UnitKind, number> = {
   flare: 6,
   nova: 7,
   pulsar: 8,
-  horizon: 9,
-  zenith: 10,
+  quasar: 9,
+  horizon: 10,
+  zenith: 11,
 };
 
 /** px per Mindustry world unit — leg geometry is written in those units */
@@ -84,6 +85,31 @@ const legs = (o: Partial<LegSpec> & Pick<LegSpec, "count" | "length">): LegSpec 
   ...o,
 });
 
+/**
+ * Mindustry ForceFieldAbility's four numbers plus its polygon. Held on the
+ * carrier's own shield pool (UnitStats has no separate store — Mindustry
+ * spends `unit.shield` here exactly as ShieldRegenFieldAbility does), so a
+ * hit that reaches the carrier through the field eats the field too.
+ */
+export interface ForceFieldSpec {
+  /** the bubble's circumradius in world px */
+  radius: number;
+  /** shield points restored per second (Mindustry's per-tick regen x 60) */
+  regen: number;
+  /** the pool's cap, and what a fresh carrier spawns holding */
+  max: number;
+  /**
+   * seconds of downtime after a break. Mindustry buys this by driving the
+   * pool to `-cooldown * regen` rather than by running a timer, so the very
+   * same regen that refills the field is what times its outage
+   */
+  cooldown: number;
+  /** sides of the shield polygon — 6, a hexagon, for every stock unit */
+  sides: number;
+  /** the polygon's roll, rad: fixed to the WORLD, never to the carrier */
+  rotation: number;
+}
+
 export interface UnitStats {
   hp: number;
   /** world px/s */
@@ -113,6 +139,14 @@ export interface UnitStats {
    * Shields soak damage before health does (see Sim.damageUnit).
    */
   shieldField?: { amount: number; max: number; reload: number; range: number };
+  /**
+   * Mindustry ForceFieldAbility: a standing polygonal bubble that EATS
+   * bullets outright — anything absorbable crossing the outline is deleted
+   * and its damage billed to the carrier's shield pool instead. Nothing
+   * about it is periodic: it regenerates every tick, and once the pool hits
+   * zero the field drops for `cooldown` seconds (see Sim.updateAbilities).
+   */
+  forceField?: ForceFieldSpec;
   /**
    * A walking unit with real legs rather than a mech's sliding pair. Its
    * presence is what puts a kind on the legged draw path — see LEG_ART in
@@ -191,6 +225,29 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 2,
     shieldField: { amount: 20, max: 40, reload: 5, range: 7.5 * CELL },
   },
+  // quasar: support T3 — 640 hp, armor 9 (a fortress's plating), a
+  // 1.625x1.625-block hitbox, 0.5 px/tick = 3.75 tiles/s: after the
+  // pulsar's sprint the line drops back to the dagger's marching pace
+  // ForceFieldAbility(60, 0.4, 500, 60*6): a 7.5-tile hexagon holding 500
+  // points, refilling at 24/s and dark for 6 s once it breaks. Where nova
+  // and pulsar hand out health and shields unit by unit, this one covers
+  // GROUND — every absorbable shot crossing the outline dies there, so a
+  // quasar walking point turns the crowd behind it into a blind spot
+  quasar: {
+    hp: 640,
+    speed: UNIT_SPEED,
+    armor: 9,
+    radius: UR * 1.625,
+    tier: 3,
+    forceField: {
+      radius: 7.5 * CELL,
+      regen: 0.4 * 60,
+      max: 500,
+      cooldown: 6,
+      sides: 6,
+      rotation: 0,
+    },
+  },
   // horizon: the T2 bomber — 340 hp, armor 3, 1.375x1.375-block hitbox,
   // 1.65 px/tick = 12.375 tiles/s. Slower than a flare but four times the
   // health, and armour 3 blunts the scatter flak that shreds the T1
@@ -222,7 +279,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
  */
 export const UNIT_TREES = [
   { name: "Ground", kinds: ["dagger", "mace", "fortress"] },
-  { name: "Support", kinds: ["nova", "pulsar"] },
+  { name: "Support", kinds: ["nova", "pulsar", "quasar"] },
   { name: "Crawler", kinds: ["crawler", "atrax", "spiroct"] },
   { name: "Air", kinds: ["flare", "horizon", "zenith"] },
 ] as const satisfies readonly { name: string; kinds: readonly UnitKind[] }[];

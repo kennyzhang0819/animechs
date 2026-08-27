@@ -14,6 +14,7 @@ import {
   UV_PROJ,
   UV_RING,
   UV_FUSE,
+  UV_HEX,
   UV_SCATTER,
   UV_FLOOR_EDGES,
   UV_SHELL,
@@ -45,7 +46,7 @@ import {
   TOWERS,
   W,
 } from "./constants";
-import { UNIT_KINDS, UNIT_STATS, type LegSpec } from "./levels";
+import { UNIT_KINDS, UNIT_STATS, type ForceFieldSpec, type LegSpec } from "./levels";
 import { MAX_LEGS, type Sim } from "./sim";
 import { WALL_PINE, type Terrain } from "./terrain";
 import { FxKind, type Effect, type TowerKind } from "./types";
@@ -129,6 +130,43 @@ const rng = (): number => {
  * dead" telling apart at a glance.
  */
 const SHIELD_COL = [0xff / 255, 0xd3 / 255, 0x7f / 255] as const;
+/**
+ * Mindustry's shield look is a post-process, not geometry: everything on
+ * Layer.shields is filled solid into a buffer and then run through
+ * shaders/shield.frag, which throws away the fill and keeps three things —
+ * a saturated rim two world units OUTSIDE the outline (its edge detect
+ * fires on transparent pixels whose neighbour is opaque), an interior
+ * knocked down to a flat ALPHA, and a diagonal hatch, two units of every
+ * ten along x + y, brightening what it crosses by 1.65.
+ *
+ * This renderer has one program and one batch, so the same three parts are
+ * drawn as geometry instead — filled polygon, mitred outline ring, and
+ * hatch bands clipped to the polygon. The numbers below are the shader's
+ * own, in world px: it works in Mindustry world units (its `coords` are
+ * camera-space world coordinates), which is also why the hatch is anchored
+ * to the WORLD and slides across a moving carrier rather than riding along.
+ */
+const SHIELD_ALPHA = 0.18;
+/** shield.frag's `step`: how far outside the outline the rim reaches */
+const SHIELD_RIM = 2 * MU;
+/**
+ * hatch period and band width along the band's own normal. The shader
+ * tests `mod(x + y + ..., 10) < 2`, and x + y measures 1/sqrt(2) of the
+ * distance travelled across a 45-degree band, so both shrink by that
+ */
+const HATCH_PERIOD = (10 * MU) / Math.SQRT2;
+const HATCH_WIDTH = (2 * MU) / Math.SQRT2;
+/** the bands run along -45 degrees; `+ u_time / 4` slides them up their
+ * normal at a quarter world unit per tick */
+const HATCH_DIR = -Math.PI / 4;
+const HATCH_SPEED = (60 / 4) * MU / Math.SQRT2;
+/**
+ * The band is drawn at the SAME colour as the fill it lies on, and the two
+ * translucent layers compose to the shader's 1.65x brightening: over a
+ * SHIELD_ALPHA base, a coat of alpha a leaves 0.18 + 0.82a of the colour,
+ * and 1.65 * 0.18 lands at a = 0.143.
+ */
+const HATCH_ALPHA = (SHIELD_ALPHA * 1.65 - SHIELD_ALPHA) / (1 - SHIELD_ALPHA);
 /** Arc Interp.pow3Out, the curve behind EffectContainer.finpow() */
 const FIN_POW = (f: number): number => 1 - Math.pow(1 - f, 3);
 /**
@@ -147,6 +185,8 @@ const KIND_MECH = UNIT_KINDS.map((k) => MECH_ART[k] ?? null);
 // the legged pair (atrax, spiroct): part art and the gait that moves it
 const KIND_LEG = UNIT_KINDS.map((k) => LEG_ART[k] ?? null);
 const KIND_GAIT = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
+/** the force field each kind stands inside, null for everything else */
+const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
 const TAU = Math.PI * 2;
 // Mindustry throws every shadow along (shadowTX, shadowTY) = (-12, -13)
 // world units times the caster's elevation. This game's shadows fall the
@@ -803,8 +843,11 @@ export class Renderer {
           continue;
         }
         // UnitType.drawShield: a crux-red halo at hitSize * 1.3, its opacity
-        // spiking to full on a hit or a fresh pulse and fading out after
-        if (ushield[i] > 0.0001) {
+        // spiking to full on a hit or a fresh pulse and fading out after.
+        // A force field carrier sets drawShields = false — its pool is
+        // already on screen as the bubble, and a halo under it would read
+        // as a second, smaller shield
+        if (ushield[i] > 0.0001 && !KIND_FORCE[k]) {
           // UnitType.drawShield: Fill.light at hitSize * 1.3 — a disc that is
           // clear at the centre and carries the colour at its rim
           const sr = urad[i] * 2 * 1.3 * 2;
@@ -870,11 +913,24 @@ export class Renderer {
         this.drawHitFlame(dyn, e, t);
       } else if (e.kind === FxKind.Burning) {
         this.drawBurning(dyn, e, t);
+      } else if (e.kind === FxKind.Absorb) {
+        // Fx.absorb: stroke(fout*2), circle(5*fout) in Pal.accent — the
+        // little pop where a shot died on the outline
+        this.strokeCircle(dyn, e.x, e.y, 5 * MU * (1 - t), (1 - t) * 2 * MU,
+          SHIELD_COL[0], SHIELD_COL[1], SHIELD_COL[2], RING_ALPHA);
+      } else if (e.kind === FxKind.ShieldBreak) {
+        // Fx.shieldBreak: stroke(fout*3), poly(sides, radius + fin) — the
+        // outline snapping outward as the bubble pops
+        this.strokePoly(dyn, e.x, e.y, e.sides ?? 6, (e.len ?? 0) + FIN_POW(t) * MU,
+          e.rot ?? 0, (1 - t) * 3 * MU, SHIELD_COL, RING_ALPHA);
       } else {
         const s = 9 + t * 30;
         this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 0.34, 0.89, 0.54, (1 - t) * 0.9);
       }
     }
+    // Layer.shields sits above bullets and effects alike, so the bubbles go
+    // over everything the field has drawn so far
+    this.drawForceFields(dyn, sim);
     // core last, above units and breach fx — arrivals disappear beneath it
     const core = sim.terrain.core;
     const coreSz = core.size * CELL;
@@ -889,6 +945,198 @@ export class Renderer {
       1, 1, 1, 1,
     );
     this.draw(dyn, true);
+  }
+
+  /**
+   * ForceFieldAbility.draw for every carrier standing a bubble this frame.
+   * Mindustry fills the polygon and lets shield.frag make it look like a
+   * shield; this walks the same three parts the shader leaves behind (see
+   * the SHIELD_ALPHA block).
+   */
+  private drawForceFields(dyn: Batch, sim: Sim): void {
+    const { upx, upy, ushield, ushieldAlpha, uforceScale, ukind, n } = sim;
+    for (let i = 0; i < n; i++) {
+      const spec = KIND_FORCE[ukind[i]];
+      // ForceFieldAbility.draw draws nothing at all while the pool is empty
+      if (!spec || ushield[i] <= 0) continue;
+      const rad = spec.radius * uforceScale[i];
+      if (rad < 1) continue;
+      // Draw.color(shieldColor, Color.white, clamp(alpha)): a shot landing
+      // on the field whitens the whole bubble for a few ticks
+      const w = Math.min(1, ushieldAlpha[i]);
+      const col: RGB = [
+        SHIELD_COL[0] + (1 - SHIELD_COL[0]) * w,
+        SHIELD_COL[1] + (1 - SHIELD_COL[1]) * w,
+        SHIELD_COL[2] + (1 - SHIELD_COL[2]) * w,
+      ];
+      this.pushShield(dyn, upx[i], upy[i], spec, rad, col, sim.time);
+    }
+  }
+
+  /** one bubble: interior, hatch, then the rim over both */
+  private pushShield(
+    dyn: Batch,
+    cx: number,
+    cy: number,
+    spec: ForceFieldSpec,
+    rad: number,
+    col: RGB,
+    time: number,
+  ): void {
+    const { sides, rotation } = spec;
+    const step = (Math.PI * 2) / sides;
+    const half = step / 2;
+    this.fillPoly(dyn, cx, cy, sides, rad, rotation, col, SHIELD_ALPHA);
+    this.hatchPoly(dyn, cx, cy, sides, rad, rotation, col, time);
+    // the shader's rim lands OUTSIDE the fill, in the band its edge detect
+    // reaches into: a SHIELD_RIM-wide stroke centred half that far out
+    this.strokePoly(
+      dyn, cx, cy, sides,
+      rad + SHIELD_RIM / 2 / Math.cos(half),
+      rotation, SHIELD_RIM, col, 1,
+    );
+  }
+
+  /**
+   * Arc Fill.poly: a solid regular polygon.
+   *
+   * A hexagon — every force field on the roster — is one quad off the
+   * UV_HEX cell, which is the whole point of that cell: a fan of separate
+   * triangles shows a faint line down each radial join at close zoom (see
+   * the UV_HEX note). Anything else falls back to the fan, each side one
+   * Drawf.tri with its base on the edge and its apex at the middle, since
+   * that is the only decomposition this batch can draw — every quad it
+   * takes is a rotated rectangle.
+   */
+  private fillPoly(
+    dyn: Batch,
+    cx: number,
+    cy: number,
+    sides: number,
+    radius: number,
+    rotation: number,
+    col: RGB,
+    a: number,
+  ): void {
+    if (radius <= 0.01 || a <= 0.004) return;
+    if (sides === 6) {
+      this.push(dyn, cx, cy, radius * 2, radius * 2, rotation, UV_HEX,
+        col[0], col[1], col[2], a);
+      return;
+    }
+    const step = (Math.PI * 2) / sides;
+    const apothem = radius * Math.cos(step / 2);
+    const chord = 2 * radius * Math.sin(step / 2);
+    for (let k = 0; k < sides; k++) {
+      // the bearing of this edge's midpoint — the tri points back down it
+      const ang = rotation + (k + 0.5) * step;
+      this.push(
+        dyn,
+        cx + Math.cos(ang) * (apothem / 2),
+        cy + Math.sin(ang) * (apothem / 2),
+        apothem, chord, ang + Math.PI, UV_TRI,
+        col[0], col[1], col[2], a,
+      );
+    }
+  }
+
+  /**
+   * Arc Lines.poly: the outline of a regular polygon, mitred at the
+   * corners. Each edge is one rectangle run long by half a stroke's worth
+   * of tangent so neighbours meet cleanly instead of leaving notches.
+   */
+  private strokePoly(
+    dyn: Batch,
+    cx: number,
+    cy: number,
+    sides: number,
+    radius: number,
+    rotation: number,
+    stroke: number,
+    col: RGB,
+    a: number,
+  ): void {
+    if (radius <= 0.01 || stroke <= 0.01 || a <= 0.004) return;
+    const step = (Math.PI * 2) / sides;
+    const half = step / 2;
+    const apothem = radius * Math.cos(half);
+    const len = 2 * radius * Math.sin(half) + stroke * Math.tan(half);
+    for (let k = 0; k < sides; k++) {
+      const ang = rotation + (k + 0.5) * step;
+      this.push(
+        dyn,
+        cx + Math.cos(ang) * apothem,
+        cy + Math.sin(ang) * apothem,
+        len, stroke, ang + Math.PI / 2, UV_SOLID,
+        col[0], col[1], col[2], a,
+      );
+    }
+  }
+
+  /**
+   * shield.frag's moving hatch: bands running at -45 degrees, two world
+   * units of every ten, brightening the fill they cross. They are pinned to
+   * WORLD coordinates — the shader reads camera-space world coords, so the
+   * pattern stands still and the bubble slides through it.
+   *
+   * Each band is one rectangle clipped to the polygon. Clipping is done
+   * against the polygon SHRUNK by the band's half width, so the rectangle's
+   * corners can never poke out past the outline; the band falls at most a
+   * half width short of the edge instead, which the rim covers anyway.
+   */
+  private hatchPoly(
+    dyn: Batch,
+    cx: number,
+    cy: number,
+    sides: number,
+    radius: number,
+    rotation: number,
+    col: RGB,
+    time: number,
+  ): void {
+    const step = (Math.PI * 2) / sides;
+    const hw = HATCH_WIDTH / 2;
+    // shrink by the half width measured on the apothem, which is what the
+    // circumradius has to give up to keep every edge that far in
+    const inner = radius - hw / Math.cos(step / 2);
+    if (inner <= hw) return;
+    // the band normal and the direction they run along
+    const nx = Math.cos(HATCH_DIR + Math.PI / 2), ny = Math.sin(HATCH_DIR + Math.PI / 2);
+    const dx = Math.cos(HATCH_DIR), dy = Math.sin(HATCH_DIR);
+    // where the centre sits along the normal, so the phase stays world-fixed
+    const base = cx * nx + cy * ny + time * HATCH_SPEED;
+    const first = Math.ceil((base - inner) / HATCH_PERIOD);
+    const last = Math.floor((base + inner) / HATCH_PERIOD);
+    for (let k = first; k <= last; k++) {
+      // this band's offset from the centre, along the normal
+      const off = k * HATCH_PERIOD - base;
+      // clip the band's centre line to the shrunk polygon: p(t) = off*n + t*d
+      let t0 = -inner, t1 = inner;
+      for (let e = 0; e < sides && t0 < t1; e++) {
+        const ang = rotation + (e + 0.5) * step;
+        // outward normal of edge e, and how far out its face stands
+        const mx = Math.cos(ang), my = Math.sin(ang);
+        const face = inner * Math.cos(step / 2);
+        const along = mx * dx + my * dy;
+        const at = face - off * (mx * nx + my * ny);
+        if (Math.abs(along) < 1e-6) {
+          if (at < 0) { t0 = t1; break; } // the whole line is outside
+        } else if (along > 0) {
+          t1 = Math.min(t1, at / along);
+        } else {
+          t0 = Math.max(t0, at / along);
+        }
+      }
+      if (t1 - t0 <= 0.5) continue;
+      const mid = (t0 + t1) / 2;
+      this.push(
+        dyn,
+        cx + off * nx + mid * dx,
+        cy + off * ny + mid * dy,
+        t1 - t0, HATCH_WIDTH, HATCH_DIR, UV_SOLID,
+        col[0], col[1], col[2], HATCH_ALPHA,
+      );
+    }
   }
 
   /**

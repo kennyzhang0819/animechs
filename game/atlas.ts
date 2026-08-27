@@ -200,6 +200,34 @@ export const UV_PULSAR_LEG_SIL = uv(544, 640, 64, 64);
 export const UV_PULSAR_BASE_SIL = uv(672, 640, 64, 64);
 export const UV_PULSAR_BODY_SIL = uv(800, 640, 64, 64);
 export const UV_HEAL_SHOTGUN_SIL = uv(928, 640, 64, 64);
+/**
+ * The support line's T3 outgrows those 64px cells: every quasar part ships
+ * on an 80x80 source (its leg alone reaches 35px off centre, past the 32px
+ * a 64 cell can hold), so the line's last row takes the fortress treatment
+ * — 128px cells on the free full-width band at y=1664, art in the left four
+ * and silhouettes in the right four. Double the cell with double the sprite
+ * box keeps world px per native px identical to the rest of the roster.
+ */
+export const UV_QUASAR_LEG = uv(0, 1664, 128, 128);
+export const UV_QUASAR_BASE = uv(128, 1664, 128, 128);
+export const UV_QUASAR_BODY = uv(256, 1664, 128, 128);
+export const UV_BEAM_WEAPON = uv(384, 1664, 128, 128);
+export const UV_QUASAR_LEG_SIL = uv(512, 1664, 128, 128);
+export const UV_QUASAR_BASE_SIL = uv(640, 1664, 128, 128);
+export const UV_QUASAR_BODY_SIL = uv(768, 1664, 128, 128);
+export const UV_BEAM_WEAPON_SIL = uv(896, 1664, 128, 128);
+/**
+ * A solid white hexagon filling its cell's width, for the one shape a
+ * force field is ever drawn as. Fanning a polygon out of UV_TRI works, but
+ * the atlas magnifies NEAREST, so at close zoom the mirrored staircases of
+ * two neighbouring triangles do not interlock and every radial join shows
+ * as a faint line across the fill. One quad has no joins to show.
+ *
+ * The hexagon is inscribed in the cell across the flats of its vertex
+ * pair, so a quad of 2 x radius on BOTH axes draws it at exactly `radius`
+ * — its shorter axis is the sprite's own transparent margin.
+ */
+export const UV_HEX = uv(0, 1792, 128, 128, 2);
 
 export const UV_CRAWLER_LEG = uv(448, 288, 64, 64);
 export const UV_CRAWLER_BASE = uv(512, 288, 64, 64);
@@ -268,6 +296,7 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   spiroct: { uv: UV_SPIROCT_BODY, sprite: UNIT_SPRITE * 2 },
   nova: { uv: UV_NOVA_BODY, sprite: UNIT_SPRITE },
   pulsar: { uv: UV_PULSAR_BODY, sprite: UNIT_SPRITE },
+  quasar: { uv: UV_QUASAR_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
   flare: { uv: UV_FLARE, sprite: UNIT_SPRITE }, // 48px art in a 64 cell, dagger scale
   // 128px cells: double the cell means double the sprite box, which keeps
   // world px per native px identical to every other unit
@@ -386,6 +415,26 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
       base: UV_PULSAR_BASE_SIL,
       body: UV_PULSAR_BODY_SIL,
       gun: UV_HEAL_SHOTGUN_SIL,
+    },
+  },
+  // support T3: beam-weapon x=6.5, top=false, and mechFrontSway 0.55 — the
+  // same nose-first lumber the fortress walks with. hitSize 13 gives it the
+  // heavy's stride, which reads right under a bubble this wide
+  quasar: {
+    leg: UV_QUASAR_LEG,
+    base: UV_QUASAR_BASE,
+    body: UV_QUASAR_BODY,
+    gun: UV_BEAM_WEAPON,
+    gunX: 6.5 * MU,
+    gunY: 0,
+    stride: (4 + (13 - 8) / 2.1) * MU,
+    frontSway: 0.55 * MU,
+    sprite: UNIT_SPRITE * 2,
+    sil: {
+      leg: UV_QUASAR_LEG_SIL,
+      base: UV_QUASAR_BASE_SIL,
+      body: UV_QUASAR_BODY_SIL,
+      gun: UV_BEAM_WEAPON_SIL,
     },
   },
   // no gun sprite — its Weapon fires only via shootOnDeath. mechSideSway
@@ -556,6 +605,10 @@ const SPRITES = {
   pulsarBase: "/mindustry/sprites/units/pulsar-base.png",
   pulsarLeg: "/mindustry/sprites/units/pulsar-leg.png",
   healShotgun: "/mindustry/sprites/units/weapons/heal-shotgun-weapon.png",
+  quasar: "/mindustry/sprites/units/quasar.png",
+  quasarBase: "/mindustry/sprites/units/quasar-base.png",
+  quasarLeg: "/mindustry/sprites/units/quasar-leg.png",
+  beamWeapon: "/mindustry/sprites/units/weapons/beam-weapon.png",
   spawnPad: `${ENV}/dark-panel-2.png`,
   towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
   towerBase1: "/mindustry/sprites/blocks/turrets/bases/block-1.png",
@@ -927,6 +980,17 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   drawFacingRight(c, silhouetted(img.pulsarBase), 704, 672, 48);
   drawFacingRight(c, silhouetted(img.pulsar), 832, 672, 68, 58);
   drawFacingRight(c, silhouetted(img.healShotgun), 960, 672, 50);
+  // quasar's four parts on the 128px row (see the UV note): each 80x80
+  // source at native size, so it keeps the 0.625 world-px-per-native-px
+  // every other unit draws at
+  drawFacingRight(c, antialiased(img.quasarLeg), 64, 1728, 80);
+  drawFacingRight(c, antialiased(img.quasarBase), 192, 1728, 80);
+  drawFacingRight(c, antialiased(img.quasar), 320, 1728, 80);
+  drawFacingRight(c, antialiased(img.beamWeapon), 448, 1728, 80);
+  drawFacingRight(c, silhouetted(img.quasarLeg), 576, 1728, 80);
+  drawFacingRight(c, silhouetted(img.quasarBase), 704, 1728, 80);
+  drawFacingRight(c, silhouetted(img.quasar), 832, 1728, 80);
+  drawFacingRight(c, silhouetted(img.beamWeapon), 960, 1728, 80);
 
   // crawler parts: art then silhouettes, one flush 64px run (see UV note)
   drawFacingRight(c, antialiased(img.crawlerLeg), 480, 320, 48);
@@ -1097,12 +1161,33 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(img.towerBase1), 320, 448, 64, 64);
 
   // shrapnel triangle (320,384): white, base on the left edge, apex right;
-  // the renderer stretches and tints it into Drawf.tri shapes
+  // the renderer stretches and tints it into Drawf.tri shapes.
+  //
+  // Drawn to the cell's 2px UV inset EXACTLY, corner to corner, rather than
+  // sitting a pixel inside it. Fanning a filled polygon out of these
+  // (Renderer.fillPoly) lays neighbouring triangles slope against slope,
+  // and a slope even a texel short leaves a radial seam down every one of
+  // those joins; a texel proud leaves a doubled-alpha one instead.
   c.fillStyle = "#ffffff";
   c.beginPath();
-  c.moveTo(322, 387);
-  c.lineTo(322, 445);
-  c.lineTo(381, 416);
+  c.moveTo(322, 386);
+  c.lineTo(322, 446);
+  c.lineTo(382, 416);
+  c.closePath();
+  c.fill();
+
+  // force field hexagon (0,1792): white, vertices on the cell's 2px inset
+  // left and right edges, the flats clearing top and bottom (see the UV
+  // note). Drawn as a path like the shrapnel triangle — it is geometry,
+  // not art, so it takes neither the outline nor the antialias pass
+  c.fillStyle = "#ffffff";
+  c.beginPath();
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * TAU;
+    const hx = 64 + Math.cos(a) * 62, hy = 1792 + 64 + Math.sin(a) * 62;
+    if (k === 0) c.moveTo(hx, hy);
+    else c.lineTo(hx, hy);
+  }
   c.closePath();
   c.fill();
 
