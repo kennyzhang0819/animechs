@@ -1259,6 +1259,14 @@ export class Sim {
     this.uhpmax[i] = this.uhpmax[n];
     this.uspd[i] = this.uspd[n];
     this.urad[i] = this.urad[n];
+    // a flyer's exit is picked ONCE, at spawn, so it has to travel with the
+    // unit like its feet do. Left behind, the flyer swapped down into a
+    // dead unit's slot silently inherits that unit's destination — on a
+    // multi-exit map it turns for the wrong one mid-flight, and a slot last
+    // held by a walker (which never writes these at all) points it at
+    // whatever stale value was sitting there
+    this.ugx[i] = this.ugx[n];
+    this.ugy[i] = this.ugy[n];
     this.uarmor[i] = this.uarmor[n];
     this.ushield[i] = this.ushield[n];
     this.ushieldAlpha[i] = this.ushieldAlpha[n];

@@ -60,13 +60,29 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * because pricing is relative; a wrong number moves every node together and
  * cancels out. Change it here and re-solve rather than arguing per turret.
  *
- *   turret   size  DPS    ceiling   lifetime DPS   growth
- *   duo      1x1     27     500          13,500    1.0098
- *   hail     1x1    165     500          82,500    1.0103
- *   scorch   1x1    850     500         425,000    1.0133
- *   scatter  2x2  1,450     200         290,000    1.0327
- *   salvo    2x2    217     200          43,355    1.0156
- *   fuse     3x3  4,109     100         410,870    1.0594
+ *   turret     size  DPS    ceiling   lifetime DPS   growth
+ *   duo        1x1     27     500          13,500    1.0098
+ *   hail       1x1    165     500          82,500    1.0103
+ *   scorch     1x1    850     500         425,000    1.0133
+ *   scatter    2x2  1,450     200         290,000    1.0327
+ *   salvo      2x2    217     200          43,355    1.0156
+ *   fuse       3x3  4,109     100         410,870    1.0594
+ *   arc        1x1    411     500         205,714    1.0120
+ *   lancer     2x2    420     200          84,000    1.0216
+ *   ripple     3x3    700     100          70,000    1.0453
+ *   parallax   2x2     30     200           6,000    1.0007
+ *
+ * The lower four were solved when they stopped being stubs. Their DPS is
+ * `shots x per-shot x 60 / reload ticks`, which is what the top four rows
+ * reproduce exactly; salvo's 217 and fuse's 4,109 do not fall out of it
+ * (they imply reloads of 31 and 23 against the 29 and 35 the turrets
+ * actually carry), so those two rows are taken as given rather than
+ * recomputed. Every growth above, theirs included, IS consistent with the
+ * DPS beside it under the 7.85 rule.
+ *
+ * PARALLAX IS WHERE THE RULE RUNS OUT. It is priced on 30 damage a second
+ * because that is all the rule can see, and its actual job is dragging air
+ * out of formation — see the node.
  *
  * DUO COMES OUT VERY CHEAP and that is the rule working, not a bug: at 27
  * DPS it is the weakest thing in the game, so equal cost-per-DPS prices it
@@ -241,6 +257,65 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     x: 2,
     y: 5,
   },
+  {
+    // MEDIUM. Chain lightning down a file of ground units, and the root of
+    // the short-range branch — scorch and lancer both hang off it.
+    // 411 DPS is TWELVE node bullets a bolt rather than one shot catching
+    // five: arc's shot walks, and every node it lands on is a separate
+    // plain bullet taking one body. Measured on a file of ten daggers, one
+    // bolt lands 217 of its theoretical 240
+    tower: "arc",
+    price: { base: { copper: 50, titanium: 8 }, growth: 1.012 },
+    requires: "duo",
+    x: 3,
+    y: 1,
+  },
+  {
+    // HIGH. A piercing laser; the ground answer that is not artillery.
+    // FOUR bodies, not the usual five — pierceCap 4 is a hard stop written
+    // into the bullet, and the beam visibly ends at the fourth thing it
+    // hits, so counting five would be pricing a shot it cannot fire
+    tower: "lancer",
+    price: { base: { copper: 200, titanium: 50, thorium: 15 }, growth: 1.0216 },
+    requires: "scorch",
+    requiresTier: 0,
+    x: 4,
+    y: 3,
+  },
+  {
+    // HIGH. 290 range — the longest reach in the game, and the wave-clear
+    // that answers the crawler floods. Four shells a volley at 70 splash,
+    // and like every artillery piece only the splash counts: the shell
+    // arcs over its target rather than hitting it
+    tower: "ripple",
+    price: { base: { copper: 300, titanium: 80, thorium: 20 }, growth: 1.0453 },
+    requires: "salvo",
+    requiresTier: 0,
+    x: 2,
+    y: 4,
+  },
+  {
+    // HIGH. Not a damage turret at all: it drags air units out of formation.
+    // In Mindustry it hangs off wave, which we do not have, so it takes its
+    // grandparent scorch instead.
+    //
+    // THE ONE NODE THE DPS RULE CANNOT SEE, and the growth says so: 30
+    // armour-piercing damage a second on ONE target is the least in the
+    // game, so equal cost-per-DPS prices two hundred of them at 47k copper
+    // — under half what five hundred duos cost — and a High-cleared bank
+    // covers that several times over. What the rule is not counting is the
+    // pull, which is the whole turret: it drags a flare at 85% of its own
+    // top speed and a horizon at 123%, i.e. backwards. Priced on damage a
+    // parallax wall is nearly free and answers air outright. Left literal
+    // rather than fudged, because the rule is the rule and a second one
+    // invented here would not be
+    tower: "parallax",
+    price: { base: { copper: 220, titanium: 55, thorium: 15 }, growth: 1.0007 },
+    requires: "scorch",
+    requiresTier: 0,
+    x: 3,
+    y: 3,
+  },
   // ---------- STUBS: tree shape only, no turret behind them yet --------
   //
   // THEIR PRICES ARE NOT SOLVED. Every bundle below predates the DPS rule
@@ -256,45 +331,6 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   // hidden ERADICATION difficulty that does not exist yet. Every edge below
   // runs to an equal-or-later difficulty, so no child can ever open before
   // its parent.
-  {
-    // MEDIUM. Chain lightning down a file of ground units, and the root of
-    // the short-range branch — scorch and lancer both hang off it
-    tower: "arc",
-    price: { base: { copper: 50, titanium: 8 }, growth: 1.0277 },
-    requires: "duo",
-    x: 3,
-    y: 1,
-  },
-  {
-    // HIGH. A piercing laser; the ground answer that is not artillery
-    tower: "lancer",
-    price: { base: { copper: 200, titanium: 50, thorium: 15 }, growth: 1.0394 },
-    requires: "scorch",
-    requiresTier: 0,
-    x: 4,
-    y: 3,
-  },
-  {
-    // HIGH. 290 range — the longest reach in the game, and the wave-clear
-    // that answers the crawler floods
-    tower: "ripple",
-    price: { base: { copper: 300, titanium: 80, thorium: 20 }, growth: 1.0595 },
-    requires: "salvo",
-    requiresTier: 0,
-    x: 2,
-    y: 4,
-  },
-  {
-    // HIGH. Not a damage turret at all: it drags air units out of formation.
-    // In Mindustry it hangs off wave, which we do not have, so it takes its
-    // grandparent scorch instead
-    tower: "parallax",
-    price: { base: { copper: 220, titanium: 55, thorium: 15 }, growth: 1.027 },
-    requires: "scorch",
-    requiresTier: 0,
-    x: 3,
-    y: 3,
-  },
   {
     // EXTREME. Homing missiles — they chase what they lock, so overkill
     // costs less than it does on a straight-firing line
