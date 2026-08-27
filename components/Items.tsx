@@ -1,6 +1,6 @@
 "use client";
 
-import { costEntries, ITEM_INFO, ITEM_KINDS, type Bank, type Cost, type ItemKind } from "@/game/items";
+import { BASE_ITEM, costEntries, ITEM_INFO, ITEM_KINDS, type Bank, type Cost, type ItemKind } from "@/game/items";
 
 /* eslint-disable @next/next/no-img-element -- raw pixel sprites, no optimization wanted */
 
@@ -39,7 +39,7 @@ export function ItemAmount({
 /**
  * A price or a payout, one stack per currency it mentions. Pass `bank` and
  * every stack the wallet can't cover turns red on its own, so a cost that
- * fails on titanium alone says exactly that instead of just "too expensive".
+ * fails on thorium alone says exactly that instead of just "too expensive".
  */
 export function CostRow({
   cost,
@@ -71,11 +71,11 @@ export function CostRow({
 
 /**
  * The wallet strip. Currencies the player has never earned stay hidden —
- * scrap is always shown so a fresh save isn't a blank box, and copper,
- * titanium and everything past them appear the first time a kill drops one.
+ * the base item is always shown so a fresh save isn't a blank box, and
+ * everything past it appears the first time a kill drops one.
  */
 export function Wallet({ bank, size = "md" }: { bank: Bank; size?: keyof typeof SIZES }) {
-  const held = ITEM_KINDS.filter((k) => k === "scrap" || bank[k] > 0);
+  const held = ITEM_KINDS.filter((k) => k === BASE_ITEM || bank[k] > 0);
   return (
     <span className="inline-flex flex-wrap items-center gap-x-4 gap-y-1">
       {held.map((k) => (

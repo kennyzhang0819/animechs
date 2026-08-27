@@ -1,5 +1,5 @@
 import { UNIT_KINDS, unitDrop } from "./levels";
-import { OPENING_DUOS, tierDropBonus } from "./ladder";
+import { OPENING_DUOS, tierDropBonus, TOP_TIER } from "./ladder";
 import {
   addScaled,
   canAfford,
@@ -9,6 +9,7 @@ import {
   pay,
   type Bank,
   type Cost,
+  type ItemKind,
 } from "./items";
 import {
   affordablePoints as affordableTechPoints,
@@ -33,8 +34,9 @@ export interface Progress {
   /**
    * How many tiers of the ladder have been cleared: tiers 0 .. cleared-1
    * are beaten, and tier `cleared` is the frontier — the highest tier that
-   * can be attempted, and the only one that still pays its first-clear
-   * bonus. There is no top: clearing the frontier just moves it up one.
+   * can be attempted. The ladder is four difficulties long, so `cleared`
+   * reaching TOP_TIER + 1 means the campaign is finished and there is
+   * nothing above it (isCampaignComplete).
    */
   cleared: number;
   /** tech points per turret — a node's points are its placement capacity */
@@ -44,15 +46,13 @@ export interface Progress {
 const KEY = "dagger-problem.progress.v1";
 
 /**
- * The free opening loadout — a fixed constant, not a number derived from
- * the opening waves (see OPENING_DUOS in ladder.ts for why the dependency
- * runs that way).
+ * The free opening loadout — a hand-tuned constant (see OPENING_DUOS in
+ * ladder.ts).
  *
  * The core has one hit point, so a run demands a 100% kill rate. A fresh
- * save that cannot clear the first tier is not a challenge, it is a
- * die-and-grind loop with no way out, because kills are the only income and
- * a wipe on wave 1 banks almost nothing. The level editor's `Check ladder`
- * reports when the authored opening has outgrown this fleet.
+ * save that cannot hold wave 1 is not a challenge, it is a die-and-grind
+ * loop with no way out, because kills are the only income and a wipe on
+ * wave 1 banks almost nothing. Past wave 1 the run pays for its own fleet.
  */
 const DUO_START = OPENING_DUOS;
 
@@ -63,21 +63,44 @@ const freshBank = (): Bank => emptyBank();
 const fresh = (): Progress => ({ bank: freshBank(), cleared: 0, tech: { duo: DUO_START } });
 
 /**
- * Pull the wallet out of a raw save. Pre-currency saves stored a single
- * `scrap` number and no bank at all, so those migrate into the scrap
- * balance with every other currency starting at zero; anything missing or
- * malformed reads as empty rather than NaN.
+ * The currency scale before scrap was dropped off the bottom of it, in the
+ * old cheapest-first order. A balance saved under one of these names is
+ * worth the same number of the item that took its place — the shift moved
+ * every drop AND every price by one step together, so a shifted wallet buys
+ * exactly what it used to.
+ */
+const LEGACY_ITEM_SHIFT: Record<string, ItemKind> = {
+  scrap: "copper",
+  copper: "titanium",
+  titanium: "thorium",
+  thorium: "plastanium",
+};
+
+/**
+ * Pull the wallet out of a raw save.
+ *
+ * Two migrations run here. Pre-currency saves stored a single `scrap` number
+ * and no bank at all. Saves from before the currency shift hold balances
+ * under the old names, which are moved up a step rather than dropped —
+ * silently zeroing a returning player's bank is worse than any inaccuracy in
+ * the conversion. Anything missing or malformed reads as empty, not NaN.
  */
 function readBank(p: { bank?: unknown; scrap?: unknown }): Bank {
   const bank = emptyBank();
   const raw = p.bank && typeof p.bank === "object" ? (p.bank as Record<string, unknown>) : null;
   if (raw) {
-    for (const k of ITEM_KINDS) {
-      const v = raw[k];
-      if (typeof v === "number" && v > 0) bank[k] = Math.floor(v);
+    // A PRE-SHIFT SAVE IS IDENTIFIED BY ITS SCRAP KEY, and the whole wallet
+    // has to move together. Deciding per name instead would leave a pre-shift
+    // save's copper sitting in copper — where it now means a currency one
+    // step cheaper than the one it was earned as.
+    const preShift = "scrap" in raw;
+    for (const [k, v] of Object.entries(raw)) {
+      if (typeof v !== "number" || v <= 0) continue;
+      const item = preShift ? LEGACY_ITEM_SHIFT[k] : (k as ItemKind);
+      if (item && item in bank) bank[item] += Math.floor(v);
     }
   } else if (typeof p.scrap === "number" && p.scrap > 0) {
-    bank.scrap = Math.floor(p.scrap); // legacy single-currency save
+    bank[LEGACY_ITEM_SHIFT.scrap] = Math.floor(p.scrap); // legacy single-currency save
   }
   return bank;
 }
@@ -140,11 +163,19 @@ export function techOf(p: Progress): TechState {
 
 /**
  * The highest tier that can be attempted: every cleared one, plus the
- * frontier. A player may replay any tier below it to farm — a cleared tier
- * pays exactly what it always did — but only the frontier moves the
- * campaign forward.
+ * frontier — capped at TOP_TIER, because the ladder is four difficulties
+ * long and ends there. A player may replay any tier below it to farm — a
+ * cleared tier pays exactly what it always did — but only the frontier
+ * moves the campaign forward.
  */
-export const topTier = (p: Progress): number => p.cleared;
+export const topTier = (p: Progress): number => Math.min(TOP_TIER, p.cleared);
+
+/**
+ * Has the whole campaign been beaten? `cleared` runs one past the top tier
+ * on the final win, which is the only state that means "there is nothing
+ * above this".
+ */
+export const isCampaignComplete = (p: Progress): boolean => p.cleared > TOP_TIER;
 
 /** has this tier been beaten? (the frontier itself has not) */
 export const isTierCleared = (p: Progress, tier: number): boolean => tier < p.cleared;
@@ -172,7 +203,7 @@ export function nodeStatus(p: Progress, tower: TowerKind): NodeStatus {
  * price walk in tech.ts, plus the gates. `limit` caps it: the buy controls
  * ask for a specific step, and only "Max" wants the true ceiling.
  *
- * This exists because the volume turret is FLAT (tech.ts): at 8 scrap a
+ * This exists because the volume turret is FLAT (tech.ts): at 8 copper a
  * point a mid-campaign bank buys duos by the thousand, and a tree that could
  * only be clicked one point at a time would make the game's central action
  * its most tedious one.
@@ -204,8 +235,8 @@ export function buyTech(tower: TowerKind, count = 1): Progress | null {
 /**
  * The bundle a run's kills are worth before the ladder's multipliers. Each
  * kind pays its own tier's item, so the shape of this bundle is the shape of
- * the wave that died: a pure dagger push is scrap only, a spiroct column is
- * titanium only.
+ * the wave that died: a pure dagger push is copper only, a spiroct column is
+ * thorium only.
  */
 export function dropsForKills(killsByKind: ArrayLike<number>): Cost {
   const total: Cost = {};
@@ -253,7 +284,7 @@ export function grantRunReward(
   won: boolean,
 ): RunReward {
   const p = loadProgress();
-  const n = Math.max(0, Math.floor(tier));
+  const n = Math.min(TOP_TIER, Math.max(0, Math.floor(tier)));
   const firstClear = won && n >= p.cleared;
   // a tier pays the same whether or not it is new: what clearing the
   // frontier buys is the NEXT tier — more waves, more enemies, more kinds of

@@ -10,9 +10,9 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * Nodes gate two ways: the parent node must hold at least one point (the
  * graph edge — a node stays hidden until its parent is bought), and some
  * nodes wait on a TIER of the ladder being cleared. A fresh save sees duo,
- * hail and scorch; clearing tier 1 opens scatter, tier 3 salvo, tier 6
- * fuse — each of them a tier or more before the enemy it answers first
- * walks onto the field.
+ * hail and scorch; clearing difficulty 1 opens scatter, difficulty 2
+ * salvo, difficulty 3 fuse — each of them on sale before the enemy it
+ * answers is the one that matters.
  */
 
 /**
@@ -24,7 +24,7 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * 1.15 a copy) and they are wrong for the turret a stalled player leans on.
  * The count you can afford grows with the LOGARITHM of income, so it caps
  * near 60-90 forever whatever you earn: at growth 1.08 the 150th duo costs
- * 515k scrap on its own and 6.4M cumulative, against a campaign that pays
+ * 515k copper on its own and 6.4M cumulative, against a campaign that pays
  * about 14k a run. A screen full of turrets stops being expensive and
  * becomes arithmetically impossible.
  *
@@ -42,9 +42,9 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  *   growth 1.06  a stack in the low hundreds
  *   growth 1.09  steep — a battery of a few dozen, meant to stay rare
  *
- * `from` delays an ITEM rather than the node: `from: { copper: 30 }` means
- * the first 30 points cost no copper at all. The exponent is NOT restarted
- * at that point — copper joins at `base * growth^30`, its honest share of
+ * `from` delays an ITEM rather than the node: `from: { titanium: 30 }` means
+ * the first 30 points cost no titanium at all. The exponent is NOT restarted
+ * at that point — titanium joins at `base * growth^30`, its honest share of
  * the tier. Restarting it would pin that currency at a fraction of its
  * share forever and quietly make one currency the only real constraint.
  */
@@ -114,7 +114,7 @@ export interface TechNodeDef {
  * ONE: the volume turret is flat and everything else grows. See PriceCurve.
  *
  * TWO: A COST BUNDLE MUST CARRY THE DROP RATIO OF THE TIER THAT UNLOCKS IT.
- * The baseline supplies scrap : copper : titanium at roughly 100 : 15 : 2.2
+ * The baseline supplies copper : titanium : thorium at roughly 100 : 21 : 4.6
  * and the ratio only widens as the ladder fields more heavies, so every
  * bundle below is written at about that shape. Get it wrong — demand
  * 100 : 10 : 0.4 against a supply of 100 : 15 : 2.2 — and the mismatched
@@ -127,13 +127,13 @@ export interface TechNodeDef {
 export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // THE VOLUME TURRET, and the only lever a stalled player has — so it is
-    // FLAT, forever, and scrap-only. A run that dies before the baseline's
-    // first mace wave banks no copper at all, and duo capacity has to stay
-    // buyable out of that run or the save is stuck. 8 scrap is a shade under
+    // FLAT, forever, and copper-only. A run that dies before the baseline's
+    // first mace wave banks no titanium at all, and duo capacity has to stay
+    // buyable out of that run or the save is stuck. 8 copper is a shade under
     // ten dagger kills; the fleet grows with the bank, in a straight line,
     // for as long as there is rock to stand on
     tower: "duo",
-    price: { base: { scrap: 8 }, growth: 1 },
+    price: { base: { copper: 8 }, growth: 1 },
     x: 1,
     y: 0,
   },
@@ -142,7 +142,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // splash scales with bodies per blast and collapses with health per
     // body, so one hail shell kills five daggers and chips a spiroct
     tower: "hail",
-    price: { base: { scrap: 40, copper: 6 }, growth: 1.03 },
+    price: { base: { copper: 40, titanium: 6 }, growth: 1.03 },
     requires: "duo",
     x: 1,
     y: 1,
@@ -152,40 +152,43 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // piercing flame rakes a whole file of units and sets each alight, and
     // burning ignores armour outright. 60 units of range is the whole cost
     tower: "scorch",
-    price: { base: { scrap: 60, copper: 9 }, growth: 1.05 },
+    price: { base: { copper: 60, titanium: 9 }, growth: 1.05 },
     requires: "duo",
     x: 2,
     y: 1,
   },
   {
-    // anti-air only. Gated on tier 1 so it is on sale a full tier before
-    // flares first appear at tier 2
+    // anti-air only, and the reward for clearing difficulty 1. Flares debut
+    // at wave 8, inside difficulty 1 — the duo targets air, so the opening
+    // is playable without this, but it is what makes the air waves cheap
     tower: "scatter",
-    price: { base: { scrap: 120, copper: 20, titanium: 3 }, growth: 1.04 },
+    price: { base: { copper: 120, titanium: 20, thorium: 3 }, growth: 1.04 },
     requires: "duo",
-    requiresTier: 1,
+    requiresTier: 0,
     x: 0,
     y: 1,
   },
   {
     // 28 damage a shell — the first turret that puts a fortress (armour 9)
-    // back at its printed health instead of ten times it. Gated on tier 3,
-    // five tiers before the fortress debuts
+    // back at its printed health instead of ten times it. The reward for
+    // clearing difficulty 2
     tower: "salvo",
-    price: { base: { scrap: 250, copper: 36, titanium: 6 }, growth: 1.06 },
+    price: { base: { copper: 250, titanium: 36, thorium: 6 }, growth: 1.06 },
     requires: "hail",
-    requiresTier: 3,
+    requiresTier: 1,
     x: 1,
     y: 2,
   },
   {
     // the steepest curve in the tree: a fuse battery is meant to be a
     // handful. Three instant piercing rays at 105 damage each, at nine
-    // tiles of range — priced so it can never become the whole answer
+    // tiles of range — priced so it can never become the whole answer.
+    // The reward for clearing difficulty 3, so it is on sale for exactly
+    // one difficulty: the last one
     tower: "fuse",
-    price: { base: { scrap: 600, copper: 105, titanium: 34 }, growth: 1.09 },
+    price: { base: { copper: 600, titanium: 105, thorium: 34 }, growth: 1.09 },
     requires: "salvo",
-    requiresTier: 6,
+    requiresTier: 2,
     x: 1,
     y: 3,
   },
@@ -220,7 +223,7 @@ export function canAffordTech(bank: Bank, tower: TowerKind, owned = 0): boolean 
  *
  * A geometric node is walked a tier at a time, which is cheap because the
  * count it can reach is logarithmic in the bank — a few dozen iterations at
- * any bank size. A FLAT node is not: at 8 scrap a point a late bank buys
+ * any bank size. A FLAT node is not: at 8 copper a point a late bank buys
  * tens of thousands, and walking that on every render made the tech screen
  * take over a second to repaint. Its price never changes, so the answer is
  * a division instead.

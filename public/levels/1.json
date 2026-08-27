@@ -24,8 +24,7 @@
   {
    "wave": {
     "crawler": 60,
-    "atrax": 24,
-    "spiroct": 3,
+    "atrax": 16,
     "nova": 10
    }
   },
@@ -381,23 +380,6 @@
     "fortress": 30,
     "atrax": 96,
     "spiroct": 42
-   }
-  },
-  {
-   "wave": {
-    "dagger": 370,
-    "mace": 132,
-    "crawler": 420,
-    "pulsar": 64
-   }
-  },
-  {
-   "wave": {
-    "fortress": 22,
-    "spiroct": 36,
-    "flare": 210,
-    "horizon": 108,
-    "zenith": 40
    }
   }
  ]

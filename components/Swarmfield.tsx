@@ -26,9 +26,11 @@ import {
   difficultyOf,
   specForTier,
   waveCost,
+  waveGuide,
   tierDropBonus,
   tierLevel,
   HP_PER_LEVEL,
+  TOP_TIER,
 } from "@/game/ladder";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import {
@@ -280,6 +282,100 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
   },
 ];
 
+/** the two wave buttons in the HUD, sized to be hit without aiming */
+const WAVE_BTN =
+  "flex h-8 w-8 shrink-0 items-center justify-center rounded border border-[#2E2E36] text-[#FFD37F] hover:border-[#FFD37F] hover:bg-[#222227]/90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
+
+/**
+ * The "skip to wave" box, opened by the double-play button in the HUD and
+ * folded away by default — it is a tool for reaching a late wave, not part
+ * of playing the level.
+ *
+ * Nothing is actually skipped: the sim spawns every wave up to the target
+ * back to back with no gap (see Sim.skipToWave), so what lands on the field
+ * is all of them at once. The box says so, because "skip" reads like the
+ * waves in between never arrive.
+ */
+function SkipToWave({
+  onClose,
+  hud,
+  onSkip,
+}: {
+  onClose: () => void;
+  hud: UiState;
+  onSkip: (n: number) => void;
+}) {
+  const [text, setText] = useState("");
+  const target = Math.floor(Number(text));
+  // only forward: the script has no reverse, and the wave already on the
+  // field is already here. There is no upper bound — past the last wave just
+  // empties the script onto the field
+  const valid = text.trim() !== "" && Number.isFinite(target) && target > hud.currentWave;
+  const send = (): void => {
+    if (!valid) return;
+    onSkip(target);
+    setText("");
+  };
+
+  return (
+    <div className="rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
+      <div className="flex items-center gap-2">
+        <label
+          htmlFor="skip-to-wave"
+          className="text-[13px] font-bold uppercase tracking-widest text-[#71717C]"
+        >
+          Skip to wave
+        </label>
+        <input
+          id="skip-to-wave"
+          type="number"
+          min={hud.currentWave + 1}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") send();
+            // the canvas listens on window for hotkeys — a wave number is
+            // not a build shortcut
+            e.stopPropagation();
+          }}
+          placeholder={`${hud.currentWave + 1}`}
+          className="w-16 rounded border border-[#2E2E36] bg-[#0E0E11] px-1.5 py-0.5 text-base font-bold text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+        />
+        <button
+          onClick={send}
+          disabled={!valid}
+          className="rounded border border-[#2E2E36] px-2 py-0.5 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F] hover:border-[#FFD37F] hover:bg-[#222227]/90 disabled:cursor-not-allowed disabled:border-[#2E2E36] disabled:text-[#4A4A55] disabled:hover:bg-transparent focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+        >
+          Go
+        </button>
+        <button
+          onClick={onClose}
+          title="Hide"
+          aria-label="Hide skip to wave"
+          className="text-[13px] font-bold uppercase tracking-widest text-[#71717C] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+        >
+          x
+        </button>
+      </div>
+      <p className="mt-0.5 text-[13px] uppercase tracking-widest text-[#71717C]">
+        {hud.rushTo > 0 ? (
+          <>
+            <span className="font-bold text-[#FFD37F]">Spawning to wave {hud.rushTo}</span>{" "}
+            <button
+              onClick={() => onSkip(0)}
+              className="uppercase tracking-widest text-[#71717C] underline underline-offset-2 hover:text-[#FF5A5A] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+            >
+              Stop
+            </button>
+          </>
+        ) : (
+          `Spawns every wave up to it — none are skipped`
+        )}
+      </p>
+    </div>
+  );
+}
+
 export default function Swarmfield() {
   const glRef = useRef<HTMLCanvasElement>(null);
   const uiRef = useRef<HTMLCanvasElement>(null);
@@ -310,7 +406,7 @@ export default function Swarmfield() {
   // but the current speed keeps running, so the control can be hidden
   // mid-run without snapping the game back to 1x
   const [admin, setAdmin] = useState(false);
-  // the campaign save (scrap, cleared levels, tech nodes) — localStorage,
+  // the campaign save (bank, cleared levels, tech nodes) — localStorage,
   // so it loads in an effect; null only for the first client frame
   const [progress, setProgress] = useState<Progress | null>(null);
   // a finished run's settled payout: non-null exactly while the results
@@ -318,6 +414,9 @@ export default function Swarmfield() {
   const [result, setResult] = useState<RunReward | null>(null);
   // non-null exactly while the loading screen is up, including its fade
   const [loadUi, setLoadUi] = useState<LoadUi | null>(null);
+  // the "skip to wave" box under the HUD starts folded away: it is a tool
+  // for testing a late wave, not part of playing the level
+  const [skipOpen, setSkipOpen] = useState(false);
   const granted = useRef(false);
 
   useEffect(() => {
@@ -386,17 +485,18 @@ export default function Swarmfield() {
         if (process.env.NODE_ENV !== "production") {
           const w = window as unknown as Record<string, unknown>;
           w.__swarmfield = g;
-          // the ladder's tuning surface, next to the running game: COVERAGE
-          // is the one constant in ladder.ts that has to be MEASURED rather
-          // than reasoned out, and re-measuring it means loading a tier into
-          // the live sim and stepping it. `__ladder.budget(n)` is what the
-          // arithmetic predicts; `__ladder.spec(n)` is what to hand
-          // `sim.loadLevel` to find out what actually happens
+          // the ladder's number guide, next to the running game.
+          // `__ladder.audit()` is one row a difficulty, `.waves()` one row a
+          // wave, and `.spec(n)` is what to hand `sim.loadLevel` to watch a
+          // difficulty actually play out
           w.__ladder = {
             spec: (n: number) => specForTier(WORLD, n),
             budget: (n: number) => budget(WORLD, n),
-            audit: (through?: number) => audit(WORLD, through),
-            check: (through?: number) => check(WORLD, through),
+            // the number guide: audit() is one row a difficulty, waves() is
+            // one row a wave with its share of the difficulty it belongs to
+            audit: () => audit(WORLD),
+            waves: () => waveGuide(WORLD),
+            check: () => check(WORLD),
             wave: (i: number, tier = 0) => waveCost(WORLD.script[i], tierLevel(tier)),
           };
         }
@@ -483,7 +583,7 @@ export default function Swarmfield() {
     if (!g) return;
     granted.current = false;
     setResult(null);
-    // the run just banked scrap — a node bought mid-overlay would not apply
+    // the run just banked its drops — a node bought mid-overlay would not apply
     // without this re-read (tech is per-run anyway, but keep it honest)
     g.setTech(admin ? null : techOf(loadProgress()));
     g.reset();
@@ -599,10 +699,14 @@ export default function Swarmfield() {
           </div>
         )}
         {hud && (
-          <div className="absolute left-4 top-4 max-w-[calc(100vw-2rem)] rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
+          <div className="absolute left-4 top-4 flex max-w-[calc(100vw-2rem)] flex-col items-start gap-2">
+          <div className="w-full rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
+            {/* the wave counter is what a run is read off, so the line
+                carries that and the difficulty and nothing else — the level
+                name is on the card that launched it */}
             <div className="text-[13px] uppercase tracking-widest text-[#71717C]">
-              {level.name} — Difficulty {difficultyOf(hud.tier)} — Wave {hud.currentWave} /{" "}
-              {hud.totalWaves}
+              D{difficultyOf(hud.tier)} — Wave{" "}
+              <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span> / {hud.totalWaves}
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
               {/* what the run has banked so far, one stack per currency —
@@ -629,26 +733,58 @@ export default function Swarmfield() {
                 </span>
               )}
             </div>
-            {hud.nextWaveIn > 0 && (
-              <div className="flex items-center gap-2 text-[13px] uppercase tracking-widest text-[#71717C]">
-                <span>
-                  Next wave{" "}
-                  <span className="font-bold text-[#EDEDEF]">
-                    {Math.ceil(hud.nextWaveIn)}
+            {/* the two wave controls sit together: single play releases the
+                next wave, double play opens the box that runs to a wave
+                further out. Only the countdown is conditional — a rush has
+                no timer to wait for, so its button is always here */}
+            <div className="flex items-center gap-2 text-[13px] uppercase tracking-widest text-[#71717C]">
+              {hud.nextWaveIn > 0 && (
+                <>
+                  <span>
+                    Next wave{" "}
+                    <span className="font-bold text-[#EDEDEF]">
+                      {Math.ceil(hud.nextWaveIn)}
+                    </span>
                   </span>
-                </span>
-                <button
-                  title="Start next wave now"
-                  aria-label="Start next wave now"
-                  onClick={() => gameRef.current?.skipWave()}
-                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-[#2E2E36] text-[#FFD37F] hover:border-[#FFD37F] hover:bg-[#222227]/90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
-                >
-                  <svg viewBox="0 0 12 12" className="h-3 w-3 fill-current" aria-hidden="true">
-                    <path d="M2.5 1.5v9l8-4.5z" />
-                  </svg>
-                </button>
-              </div>
-            )}
+                  <button
+                    title="Start next wave now"
+                    aria-label="Start next wave now"
+                    onClick={() => gameRef.current?.skipWave()}
+                    className={WAVE_BTN}
+                  >
+                    <svg viewBox="0 0 12 12" className="h-4 w-4 fill-current" aria-hidden="true">
+                      <path d="M2.5 1.5v9l8-4.5z" />
+                    </svg>
+                  </button>
+                </>
+              )}
+              <button
+                title="Skip to wave"
+                aria-label="Skip to wave"
+                aria-expanded={skipOpen}
+                onClick={() => setSkipOpen(!skipOpen)}
+                className={`${WAVE_BTN} ${
+                  skipOpen || hud.rushTo > 0 ? "border-[#FFD37F] bg-[#222227]/90" : ""
+                }`}
+              >
+                <svg viewBox="0 0 12 12" className="h-4 w-4 fill-current" aria-hidden="true">
+                  <path d="M1 1.5v9l5-4.5zM6 1.5v9l5-4.5z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          {skipOpen && (
+          <SkipToWave
+            onClose={() => setSkipOpen(false)}
+            hud={hud}
+            onSkip={(n) => {
+              const g = gameRef.current;
+              if (!g) return;
+              g.skipToWave(n);
+              setHud(g.ui());
+            }}
+          />
+          )}
           </div>
         )}
         {hud && admin && (
@@ -693,14 +829,19 @@ export default function Swarmfield() {
           {TOWER_MENU.filter((t) => (hud ? !hud.unlocked || hud.unlocked.includes(t.kind) : false)).map((t) => {
             const cap = hud?.caps ? hud.caps[t.kind] : null;
             const count = hud?.counts ? hud.counts[t.kind] : 0;
-            const full = cap !== null && count >= cap;
+            // what the badge says is how many are LEFT to place, not how
+            // many are standing — that is the number a build decision needs,
+            // and "0" reads faster than working out 6/6
+            const left = cap === null ? null : Math.max(0, cap - count);
+            const full = left === 0;
             return (
               <button
                 key={t.kind}
                 title={t.name}
+                aria-label={left === null ? t.name : `${t.name}, ${left} left`}
                 aria-pressed={hud?.buildKind === t.kind}
                 onClick={() => pickTower(t.kind)}
-                className={`relative flex h-14 w-14 items-center justify-center rounded border backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+                className={`flex h-[4.5rem] w-14 flex-col items-center justify-center gap-0.5 rounded border backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
                   hud?.buildKind === t.kind
                     ? "border-[#FFD37F] bg-[#222227]/90"
                     : "border-[#2E2E36] bg-[#151518]/70 hover:border-[#4A4A55]"
@@ -709,16 +850,16 @@ export default function Swarmfield() {
                 {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
                 <img
                   src={icons[t.kind] ?? t.icon}
-                  alt={t.name}
+                  alt=""
                   className="h-10 w-10 [image-rendering:pixelated]"
                 />
-                {cap !== null && (
+                {left !== null && (
                   <span
-                    className={`absolute bottom-0.5 right-1 text-[12px] font-bold ${
-                      full ? "text-[#FFD37F]" : "text-[#71717C]"
+                    className={`text-base font-bold leading-none ${
+                      full ? "text-[#FFD37F]" : "text-white"
                     }`}
                   >
-                    {count}/{cap}
+                    {left}
                   </span>
                 )}
               </button>
@@ -792,9 +933,14 @@ export default function Swarmfield() {
                         <CostRow cost={result.earned} />
                       )}
                     </div>
+                    {/* the ladder is four difficulties long and ends there,
+                        so the last first-clear has nothing to unlock — it
+                        finishes the campaign instead */}
                     {result.firstClear && (
                       <div className="pt-1 text-[12px] uppercase tracking-widest text-[#FFD37F]">
-                        Difficulty {difficultyOf(result.tier + 1)} unlocked
+                        {result.tier >= TOP_TIER
+                          ? "Campaign complete — every wave cleared"
+                          : `Difficulty ${difficultyOf(result.tier + 1)} unlocked`}
                       </div>
                     )}
                   </>

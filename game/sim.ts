@@ -33,6 +33,18 @@ import { FxKind, TOWER_KINDS, type Effect, type Projectile, type Tower, type Tow
 
 const FX_CAP = 400;
 
+// units per second a "skip to wave N" rush spawns at, in place of the
+// level's own spawnRate (20/s). High enough that a dozen waves land in a
+// second or two, low enough that the pads aren't asked for more room than
+// they have every frame — a rush that outruns its pads just stalls on
+// crowding until the units ahead walk clear
+const RUSH_SPAWN_RATE = 400;
+
+// refused spawns a rush shrugs off per frame before it starts writing wave
+// entries off as blocked (see runScript) — a pad is picked at random, so a
+// packed but not full field turns plenty of refusals into hits on a retry
+const RUSH_RETRIES = 64;
+
 // --- Mindustry unit physics (async/PhysicsProcess.java) ---
 // every unit is a circle of radius hitSize * unitCollisionRadiusScale
 // (0.6); our urad stores hitSize/2 in px, so the factor doubles to 1.2.
@@ -249,7 +261,7 @@ export class Sim {
   totalEnemies = 0;
   kills = 0;
   leaked = 0;
-  /** kills per unit kind this run, indexed like UNIT_KINDS — the scrap payout */
+  /** kills per unit kind this run, indexed like UNIT_KINDS — the drop payout */
   readonly killsByKind = new Int32Array(UNIT_KINDS.length);
   // the core's health: every unit that reaches it takes one point. At 1
   // max, the first leak is the loss — raise this when cores get tougher
@@ -276,6 +288,10 @@ export class Sim {
   private waveEntries: { region: number; kind: number; left: number; total: number }[] = [];
   private waitLeft = 0;
   private spawnAcc = 0;
+  // "skip to wave N": while this is set, the script runs with no gaps and a
+  // rushed spawn rate until wave N is the one on the field. Nothing is
+  // skipped — every wave on the way still enters, they just pile up. 0 = off
+  private rushTarget = 0;
 
   towers: Tower[] = [];
   projs: Projectile[] = [];
@@ -370,6 +386,7 @@ export class Sim {
     this.waitLeft = 0;
     this.spawnAcc = 0;
     this.wavesStarted = 0;
+    this.rushTarget = 0;
     this.loadStep();
     this.aliveByKind.fill(0);
   }
@@ -435,6 +452,30 @@ export class Sim {
   skipWave(): void {
     if (this.waitLeft <= 0) return;
     this.waitLeft = 0;
+  }
+
+  /**
+   * Run the script forward until wave `n` is the wave on the field. This
+   * skips nothing: every wave before `n` still spawns in full, back to back
+   * with no gap between them, so the field ends up holding all of them at
+   * once. Below the current wave it is a no-op, and 0 cancels a rush already
+   * under way. Past the last wave is allowed: it empties the script onto the
+   * field and the rush ends there.
+   */
+  skipToWave(n: number): void {
+    const target = Math.floor(n);
+    // the wave ON THE FIELD is the yardstick, not `wavesStarted`: asking for
+    // the wave already staged inside its gap means "start it now", and the
+    // rush releases that gap on its first frame.
+    // A target past the end of the script is not clamped — it just means
+    // "empty the script onto the field", and runScript drops the rush when
+    // the last wave is out
+    this.rushTarget = target > this.currentWave() ? target : 0;
+  }
+
+  /** the wave a rush is heading for, or 0 when none is running */
+  rushingTo(): number {
+    return this.rushTarget;
   }
 
   private addTower(gx: number, gy: number, kind: TowerKind): void {
@@ -546,6 +587,13 @@ export class Sim {
    * later frame, so a packed field delays a wave rather than swallowing it.
    */
   private runScript(dt: number): void {
+    // a rush eats the gaps outright, the arrival frame included — landing on
+    // the target wave releases it immediately rather than parking the player
+    // in front of one more countdown
+    if (this.rushTarget > 0) {
+      this.waitLeft = 0;
+      if (this.wavesStarted >= this.rushTarget) this.rushTarget = 0;
+    }
     if (this.waitLeft > 0) {
       this.waitLeft -= dt;
       // the gap belongs to the wave already loaded, so running it out just
@@ -556,18 +604,31 @@ export class Sim {
 
     let left = 0;
     for (const e of this.waveEntries) left += e.left;
-    if (left === 0) return; // script finished
+    if (left === 0) {
+      this.rushTarget = 0; // script finished — nothing left to rush toward
+      return;
+    }
 
-    this.spawnAcc = Math.min(this.spawnAcc + this.level.spawnRate * dt, this.level.spawnRate);
+    // a rush drains at RUSH_SPAWN_RATE, and one wave per frame at most: the
+    // wave that empties here only advances the script at the bottom of this
+    // call, so the next one starts on the next frame. That keeps the rush
+    // bounded no matter how far ahead the target is
+    const rate = this.rushTarget > 0 ? RUSH_SPAWN_RATE : this.level.spawnRate;
+    this.spawnAcc = Math.min(this.spawnAcc + rate * dt, rate);
     // one region's crowded pads must not stall the other regions' share of
     // the wave — a failed entry sits out the rest of this frame while the
     // remaining entries keep draining
     const blocked = new Set<unknown>();
+    // a rush spawns into a field that is already packed, so the first
+    // refusal is normal rather than a sign the pads are full — it retries
+    // (the pad picked is random) before writing the entry off for the frame
+    let retries = this.rushTarget > 0 ? RUSH_RETRIES : 0;
     while (left > 0 && this.spawnAcc >= 1) {
       const e = this.nextWaveEntry(blocked);
       if (!e) break;
       if (!this.spawnUnit(UNIT_KINDS[e.kind], e.region)) {
-        blocked.add(e);
+        if (retries > 0) retries--;
+        else blocked.add(e);
         continue;
       }
       e.left--;
@@ -925,7 +986,7 @@ export class Sim {
     }
   }
 
-  /** a tower kill: death puff, removal, and the per-kind scrap ledger */
+  /** a tower kill: death puff, removal, and the per-kind drop ledger */
   private killUnit(i: number): void {
     this.killsByKind[this.ukind[i]]++;
     this.pushFx(this.upx[i], this.upy[i], 0.35, FxKind.Death);

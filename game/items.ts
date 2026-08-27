@@ -1,26 +1,51 @@
 /**
  * The campaign currencies. Every enemy drops exactly ONE item — the one its
  * tier maps to below — so the resource a run banks is decided entirely by
- * what it was asked to kill. Daggers pay scrap, maces pay copper,
- * fortresses pay titanium, and the ladder keeps going for tiers the
- * campaign has not fielded yet.
+ * what it was asked to kill. Daggers pay copper, maces pay titanium,
+ * fortresses pay thorium, and the ladder keeps going for tiers the campaign
+ * has not fielded yet.
  *
  * The point of the split: tech nodes cost SEVERAL items at once (see
  * tech.ts), so a deep upgrade can't be bought by farming the easiest wave
- * forever — the higher tiers want copper and titanium, and the only place
- * those come from is heavier enemies in later worlds.
+ * forever — the higher tiers want titanium and thorium, and the only place
+ * those come from is heavier enemies.
+ *
+ * SCRAP IS DELIBERATELY NOT HERE. Mindustry's own progression runs copper →
+ * titanium → thorium → plastanium → phase fabric, and scrap sits off to the
+ * side of it as salvage rather than as a rung. Starting the campaign on
+ * copper means the cheapest currency a player ever holds is the one
+ * Mindustry also starts you on.
  */
 
 /** every currency the game knows, cheapest tier first */
-export const ITEM_KINDS = ["scrap", "copper", "titanium", "thorium"] as const;
+export const ITEM_KINDS = [
+  "copper",
+  "titanium",
+  "thorium",
+  "plastanium",
+  "phase-fabric",
+] as const;
 export type ItemKind = (typeof ITEM_KINDS)[number];
 
 /**
- * Unit tier → the item that tier drops. T1 pays scrap and nothing else, T2
- * pays copper, T3 titanium, T4 thorium. Add a tier-5 unit and this table
- * (plus ITEM_KINDS) is the only place that needs a new row.
+ * Unit tier → the item that tier drops. T1 pays copper and nothing else, T2
+ * titanium, T3 thorium, T4 plastanium, T5 phase fabric. Add a tier-6 unit
+ * and this table (plus ITEM_KINDS) is the only place that needs a new row.
+ *
+ * T4 and T5 have no units yet — the campaign fields tiers 1-3. The rows are
+ * here so that adding one is a stats edit rather than an economy edit.
  */
-export const TIER_ITEM: readonly ItemKind[] = ["scrap", "copper", "titanium", "thorium"];
+export const TIER_ITEM: readonly ItemKind[] = [
+  "copper",
+  "titanium",
+  "thorium",
+  "plastanium",
+  "phase-fabric",
+];
+
+/** the cheapest currency — what a fresh save earns first, and what the
+ * volume turret is priced in. Every "normalised to X = 100" ratio uses it */
+export const BASE_ITEM: ItemKind = ITEM_KINDS[0];
 
 /** the item a tier-N unit drops; tiers past the table fall back to the top */
 export function itemForTier(tier: number): ItemKind {
@@ -39,11 +64,21 @@ export const emptyBank = (): Bank =>
 
 /** display metadata: the item sprite and the accent colour it draws in */
 export const ITEM_INFO: Record<ItemKind, { name: string; icon: string; color: string }> = {
-  // official Mindustry item colours, so a stack reads the same as in-game
-  scrap: { name: "Scrap", icon: "/mindustry/sprites/items/item-scrap.png", color: "#E8AE9C" },
+  // official Mindustry item colours (content/Items.java), so a stack reads
+  // the same as in-game
   copper: { name: "Copper", icon: "/mindustry/sprites/items/item-copper.png", color: "#D99D73" },
   titanium: { name: "Titanium", icon: "/mindustry/sprites/items/item-titanium.png", color: "#8DA1E3" },
   thorium: { name: "Thorium", icon: "/mindustry/sprites/items/item-thorium.png", color: "#F9A3C7" },
+  plastanium: {
+    name: "Plastanium",
+    icon: "/mindustry/sprites/items/item-plastanium.png",
+    color: "#CBD97F",
+  },
+  "phase-fabric": {
+    name: "Phase Fabric",
+    icon: "/mindustry/sprites/items/item-phase-fabric.png",
+    color: "#F4BA6E",
+  },
 };
 
 /** the items a bundle actually mentions, in ITEM_KINDS order */

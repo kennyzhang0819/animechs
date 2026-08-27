@@ -9,26 +9,36 @@ import {
 } from "./levels";
 import { TOWERS } from "./constants";
 import { TECH_TREE } from "./tech";
+import {
+  BASE_ITEM,
+  costEntries,
+  ITEM_INFO,
+  ITEM_KINDS,
+  itemForTier,
+  type Cost,
+} from "./items";
 
 /**
- * THE LADDER — the campaign's only difficulty axis.
+ * THE LADDER — four difficulties, and then the campaign is over.
  *
- * A world ships ONE authored baseline script (the tier-0 run). Every tier
- * above it is that same script re-scaled by three dials and nothing else:
+ * A world ships ONE authored script. A difficulty is a CUT of that script
+ * plus an enemy level, and nothing else:
  *
- *   +LEVELS_PER_TIER enemy levels   difficulty  (health only)
- *   +WAVES_PER_TIER  waves          duration and income
- *   x(1 + DROP_BONUS_PER_TIER * n)  drops       income
+ *   difficulty 1   waves 1-20   enemy level  0
+ *   difficulty 2   waves 1-30   enemy level 10
+ *   difficulty 3   waves 1-40   enemy level 20
+ *   difficulty 4   waves 1-50   enemy level 30
  *
- * The tiers never run out, so there is always a next number to go up, and
- * a player who stalls farms the highest tier they can clear until the bank
- * covers the next one. That is the whole idle loop.
+ * Nothing is generated. Wave 1 of difficulty 4 is wave 1 of the same
+ * authored list difficulty 1 plays, with 30 levels on it — which is what
+ * lets the level editor be the whole authoring surface.
  *
- * The three dials are deliberately SEPARATE. Units are income; health is
- * difficulty. A level is pure cost — it doubles what the fleet must chew
- * through every 12 levels and pays nothing back — while a wave is pure
- * income at constant difficulty per body. Moving one never silently moves
- * the other.
+ * THE LADDER IS FINITE AND THAT IS THE POINT. There is no fifth difficulty
+ * and no endless level counter above the fourth: clearing difficulty 4
+ * finishes the campaign. A player who stalls farms a lower difficulty until
+ * the bank covers the next one, and there are only ever three of those
+ * gaps to cross, so each one has to be worth crossing — see the step
+ * numbers in audit().
  */
 
 /**
@@ -36,122 +46,114 @@ import { TECH_TREE } from "./tech";
  * is exactly double health, and NOTHING else scales: armour, speed, hitbox
  * and drop all stay at their base values forever.
  *
- * Flat armour against level-scaled health is what keeps the whole tier
- * ladder relevant. A tier is just a level offset on this same curve —
- * T2 is +22 levels, T3 is +32, T4 would be +72 — so a level-32 dagger has
- * a fortress's health with a dagger's armour, and a level-32 fortress is
- * still the thing your duos cannot scratch. Tiers stay distinct by their
- * armour long after their health has been overtaken.
+ * Flat armour against level-scaled health is what keeps the four
+ * difficulties distinct rather than merely long. A difficulty is a level
+ * offset on this same curve, so a level-30 dagger has more health than a
+ * fortress and still a dagger's armour, while the level-30 fortress is
+ * still the thing chip damage cannot scratch.
  */
 export const HP_PER_LEVEL = 1.06;
 
-/** enemy levels added per tier — 5 levels is x1.338 health */
-export const LEVELS_PER_TIER = 5;
+/**
+ * Enemy levels added per difficulty — 10 levels is x1.79 health per body.
+ *
+ * This is the half of a difficulty that makes the SAME waves harder. The
+ * other half is the wave cut below, which makes the run longer. Both move
+ * together on purpose: without the levels, difficulty 4 would be a longer
+ * difficulty 1 against identical enemies, because the authored script has
+ * already fielded every unit kind by wave 20.
+ */
+export const LEVELS_PER_TIER = 10;
 
 /**
- * How many waves a tier-0 run sends — the first four of the authored script.
- * Small on purpose: the wave count is one of the two things a tier visibly
- * BUYS, and starting at four is what makes going to seven feel like
- * something rather than a rounding error.
+ * THE FOUR DIFFICULTIES, and the only place their shape is written down.
+ *
+ * `waves` is how much of the authored script the difficulty plays; `level`
+ * is the enemy level it plays it at. Everything else on this page is
+ * arithmetic over this table.
+ *
+ * The wave counts are 20/30/40/50 rather than something evener because
+ * difficulty 1 has to be a whole arc on its own — a fresh save's entire
+ * experience of the game until it clears — while 2 through 4 are each one
+ * more block of ten on top of a run the player already knows.
  */
-export const BASE_WAVES = 4;
+export const DIFFICULTIES: readonly { waves: number; level: number }[] = [
+  { waves: 20, level: 0 },
+  { waves: 30, level: 10 },
+  { waves: 40, level: 20 },
+  { waves: 50, level: 30 },
+];
+
+/** the last difficulty there is — clearing it finishes the campaign */
+export const TOP_TIER = DIFFICULTIES.length - 1;
+
+/** every tier index is clamped into the table; there is nothing above it */
+const clampTier = (tier: number): number =>
+  Math.min(TOP_TIER, Math.max(0, Math.floor(tier)));
 
 /**
- * How many further waves each tier unlocks off the authored script.
+ * Drop bonus per difficulty, applied LINEARLY: difficulty n pays x(1 + 0.3n).
  *
- * This is the ladder's second reward and it is not a side effect. A tier
- * pays more because it sends more, but it is also simply MORE GAME — three
- * waves nobody has seen, hand-written in levels.ts, with kinds the tiers
- * below never fielded — and that is a reason to push that a bigger number
- * on the same four waves could never be.
+ * Steeper than it was under the old endless ladder, because there are only
+ * three steps left to sell. Turret prices are flat (see tech.ts), so the
+ * units you kill already pay for the damage needed to kill them and the
+ * ladder walks with no bonus at all; the bonus exists only so a HIGHER
+ * difficulty is the better farm. Without it every difficulty pays the same
+ * per minute and the correct play is to grind difficulty 1 forever.
  */
-export const WAVES_PER_TIER = 3;
-
-/**
- * Drop bonus per tier, applied LINEARLY: tier n pays x(1 + 0.15n).
- *
- * Linear on purpose. The bonus is not what pays for the treadmill —
- * turret prices are flat (see tech.ts), so the units you kill already pay
- * for the damage needed to kill them, and the ladder walks with no bonus
- * at all. The bonus exists only so a HIGHER tier is the better farm;
- * without it every tier pays the same per minute and there is no reason to
- * climb. Compound it (x1.2 a tier, say) and income outruns health, so no
- * tier is ever harder than the last and the ladder stops being a ladder.
- *
- * It is deliberately NOT the main reason to push. A tier above pays a
- * little better per body and a lot better per run, but what it really sells
- * is more waves, more enemies and kinds of enemy the tier below never
- * fielded. Climbing buys content; the bonus only stops farming from being
- * the arithmetically correct answer.
- */
-export const DROP_BONUS_PER_TIER = 0.15;
-
-
-/**
- * Coverage: the fraction of its theoretical DPS a placed fleet actually
- * lands, once turrets with nothing in range, travel time and overkill are
- * paid for. It is the single number standing between the arithmetic below
- * and the field, and the one number here that cannot be reasoned out — it
- * has to be MEASURED, against a placement a real player would make.
- *
- * 0.48 is that measurement, back-solved from a human clear of tier 0 with
- * 84 duos: 65,220 effective health / (84 x 27 DPS x 60.1 s).
- *
- * Two things it is NOT. It is not the textbook 0.6, which predicts 67 and
- * hands out a fleet that clears the opening run without asking anything of
- * the player. And it is not the 0.41 a scripted harness reports when it
- * strides duos evenly along the route by flow-field distance: that number
- * is real but it measures the HARNESS, which wastes turrets on stretches a
- * player would leave bare and misses the pinch points a player aims for.
- *
- * Re-measure from a real clear whenever the baseline, the map, or duo's
- * stats change.
- */
-export const COVERAGE = 0.48;
+export const DROP_BONUS_PER_TIER = 0.3;
 
 /**
  * The tier as the PLAYER sees it: "Difficulty 1" is tier 0.
  *
  * `tier` is 0-based everywhere in the code and in window.__ladder, because
- * tier 0 is the authored baseline every other tier is expanded from and an
- * offset there would put a +1 in the middle of the arithmetic. But
- * "Difficulty 0" reads as NO difficulty, so the screen is 1-based. Every
- * player-facing tier number goes through here, so the two numbering schemes
- * meet in exactly one place instead of a `+ 1` per label.
+ * tier 0 indexes DIFFICULTIES and an offset there would put a +1 in the
+ * middle of the arithmetic. But "Difficulty 0" reads as NO difficulty, so
+ * the screen is 1-based. Every player-facing tier number goes through here,
+ * so the two numbering schemes meet in exactly one place instead of a
+ * `+ 1` per label.
  */
-export const difficultyOf = (tier: number): number =>
-  Math.max(0, Math.floor(tier)) + 1;
+export const difficultyOf = (tier: number): number => clampTier(tier) + 1;
 
-/** enemy level of a tier-n run */
-export const tierLevel = (tier: number): number => Math.max(0, Math.floor(tier)) * LEVELS_PER_TIER;
+/** enemy level of a difficulty */
+export const tierLevel = (tier: number): number => DIFFICULTIES[clampTier(tier)].level;
 
-/** health multiplier of a tier-n run */
+/** health multiplier of a difficulty */
 export const tierHpScale = (tier: number): number => HP_PER_LEVEL ** tierLevel(tier);
 
-/** drop multiplier of a tier-n run */
+/** drop multiplier of a difficulty */
 export const tierDropBonus = (tier: number): number =>
-  1 + DROP_BONUS_PER_TIER * Math.max(0, Math.floor(tier));
+  1 + DROP_BONUS_PER_TIER * clampTier(tier);
 
 /**
- * How many of the authored waves a tier-n run sends, clamped to what has
- * actually been written. Once a tier runs past the end of the script the
- * wave count stops growing and the ladder continues on enemy level alone —
- * so the campaign never hard-stops, it just stops adding new content.
+ * How many of the authored waves a difficulty sends, clamped to what has
+ * actually been written. A script shorter than 50 waves simply ends early
+ * at the top difficulties; a script LONGER than 50 has waves nothing ever
+ * plays, which check() reports.
  */
 export const tierWaveCount = (spec: LevelSpec, tier: number): number =>
-  Math.min(spec.script.length, BASE_WAVES + WAVES_PER_TIER * Math.max(0, Math.floor(tier)));
+  Math.min(spec.script.length, DIFFICULTIES[clampTier(tier)].waves);
 
 /**
- * The tier at which a wave first appears — the inverse of tierWaveCount, and
- * the number an author needs when deciding where in the script to put a new
- * enemy kind.
+ * The difficulty a wave first appears at — the inverse of tierWaveCount,
+ * and the number an author needs when deciding where in the script to put
+ * a new wave.
+ *
+ * Returns -1 for a wave past the top difficulty's cut: it is written but
+ * unreachable, which is a bug in the script rather than a difficulty.
  */
-export const tierOfWave = (index: number): number =>
-  Math.max(0, Math.ceil((index + 1 - BASE_WAVES) / WAVES_PER_TIER));
+export const tierOfWave = (index: number): number => {
+  const n = Math.max(0, Math.floor(index)) + 1;
+  for (let d = 0; d < DIFFICULTIES.length; d++) if (DIFFICULTIES[d].waves >= n) return d;
+  return -1;
+};
 
-/** the last tier that still unlocks a wave; past it only health rises */
-export const topContentTier = (spec: LevelSpec): number =>
-  tierOfWave(spec.script.length - 1);
+/** the last difficulty that still unlocks a wave — always the top one */
+export const topContentTier = (spec: LevelSpec): number => {
+  for (let d = TOP_TIER; d > 0; d--)
+    if (tierWaveCount(spec, d) > tierWaveCount(spec, d - 1)) return d;
+  return 0;
+};
 
 /** one unit's health at an enemy level (armour, speed and drop never move) */
 export const unitHpAtLevel = (kind: UnitKind, level: number): number =>
@@ -159,16 +161,10 @@ export const unitHpAtLevel = (kind: UnitKind, level: number): number =>
 
 // ---------- expansion ----------
 
-/**
- * The playable spec for one tier: the authored script cut to this tier's
- * wave count, carrying the enemy level the sim scales health by.
- *
- * Nothing is generated. Wave 1 of tier 40 is wave 1 of the same authored
- * list tier 0 plays, just with 200 levels on it — which is what lets the
- * level editor be the whole authoring surface.
- */
+/** the playable spec for one difficulty: the script cut to its wave count,
+ * carrying the enemy level the sim scales health by */
 export function specForTier(spec: LevelSpec, tier: number): LevelSpec {
-  const n = Math.max(0, Math.floor(tier));
+  const n = clampTier(tier);
   return {
     ...spec,
     script: spec.script.slice(0, tierWaveCount(spec, n)),
@@ -177,108 +173,126 @@ export function specForTier(spec: LevelSpec, tier: number): LevelSpec {
   };
 }
 
-// ---------- the difficulty budget ----------
+// ---------- strength ----------
 
 /**
- * Duo DPS against bare flesh: damage 9 every 20 ticks is 27/s. The whole
- * budget is denominated in duos because the duo is the fleet's unit of
- * account — flat-priced, one tile, and the only turret a stalled player can
- * always buy more of.
+ * STRENGTH IS PRINTED HEALTH. That is the whole measure, and it is
+ * weapon-agnostic on purpose.
+ *
+ * The tempting alternative is to price a unit against one turret — armour
+ * is flat, so a fortress (armour 9) soaks 9 / max(9 - 9, 0.9) = ten times
+ * its printed health from a duo line. But the player never fields one
+ * turret. Splash, pierce and burning all route around armour, a duo line
+ * with enough waves of runway stalls anything, and the mix changes at every
+ * difficulty — so any single-turret denominator says more about the
+ * denominator than about the wave.
+ *
+ * Mindustry settles this the same way. `RtsAI` sums raw `unit.health` to
+ * weigh a squad, `WaveGraph` plots counts/totals/health, and `Waves.generate`
+ * controls heavy units by COUNT (`unitAmount = 6 / tier`, `max = 13`) rather
+ * than by pricing their armour. Armour never enters a strength number
+ * anywhere in that codebase; it lives only in the damage path.
+ *
+ * So armour rides along here as COMPOSITION — a share, reported next to the
+ * health, never multiplied into it. An armour-heavy wave is a different
+ * fight at the same strength, and that is a thing an author wants to see
+ * rather than have folded into one number.
  */
-export const DUO_DPS = (TOWERS.duo.bullet.damage * 60) / (TOWERS.duo.reload * 60);
-
-/**
- * A unit's health as the duo fleet experiences it. Armour is subtracted
- * per shot with a 10% floor, so a unit with armour a soaks 9 / max(9 - a,
- * 0.9) times its printed health from a duo line. Budgeting on printed
- * health instead is how a wave of maces quietly costs double what it looks
- * like, and a wave of fortresses ten times.
- */
-export function duoEffectiveHp(kind: UnitKind, level = 0): number {
-  const dmg = TOWERS.duo.bullet.damage;
-  const { armor } = UNIT_STATS[kind];
-  return (unitHpAtLevel(kind, level) * dmg) / Math.max(dmg - armor, 0.1 * dmg);
-}
+export const waveHp = (step: LevelStep, level = 0): number => {
+  let hp = 0;
+  for (const g of waveGroups(step.wave))
+    g.counts.forEach((count, i) => {
+      if (count > 0) hp += unitHpAtLevel(UNIT_KINDS[i], level) * count;
+    });
+  return hp;
+};
 
 export interface Budget {
   waves: number;
   units: number;
-  /** printed health of everything the run sends */
+  /** printed health of everything the run sends — the strength measure */
   hp: number;
-  /** ...and what it costs a duo line, after armour */
-  effectiveHp: number;
-  /** share of printed health carried by tier 3 and up — the real difficulty */
+  /** share of health carried by units with armour 3 or more */
+  armourShare: number;
+  /** share of health that flies — hail and scorch cannot touch it at all */
+  airShare: number;
+  /** share of health carried by unit tier 3 and up */
   t3Share: number;
   /** seconds the run lasts if it is killed as fast as it arrives */
   duration: number;
-  /** duos needed to clear it at COVERAGE */
-  duos: number;
+  /** health per second the fleet has to keep up with */
+  hpPerSecond: number;
 }
 
-/**
- * Weigh a tier. duration = waves * gap + units / spawnRate is the whole run
- * front to back, and total effective health <= fleet DPS * COVERAGE *
- * duration is the clear condition, so the duo count that satisfies it with
- * equality is exactly what the tier asks for.
- *
- * One optimism to know about: this counts a level's WAVE GAP as productive
- * time, when part of it is an empty field. That is folded into COVERAGE
- * rather than modelled, which is fine while the gap is what it was measured
- * at and wrong as soon as it moves — raising waveGap lengthens `duration`
- * and so LOWERS the fleet this predicts, exactly backwards from the truth.
- * Change waveGap or spawnRate and COVERAGE has to be measured again.
- */
+/** weigh one difficulty */
 export function budget(spec: LevelSpec, tier = 0): Budget {
   const run = specForTier(spec, tier);
   const level = run.enemyLevel ?? 0;
   let units = 0;
   let hp = 0;
-  let effectiveHp = 0;
-  let t3hp = 0;
+  let armour = 0;
+  let air = 0;
+  let t3 = 0;
   for (const step of run.script) {
     for (const g of waveGroups(step.wave)) {
       g.counts.forEach((count, i) => {
         if (count <= 0) return;
         const kind = UNIT_KINDS[i];
+        const stats = UNIT_STATS[kind];
         const h = unitHpAtLevel(kind, level) * count;
         units += count;
         hp += h;
-        effectiveHp += duoEffectiveHp(kind, level) * count;
-        if (UNIT_STATS[kind].tier >= 3) t3hp += h;
+        if (stats.armor >= 3) armour += h;
+        if (stats.flying) air += h;
+        if (stats.tier >= 3) t3 += h;
       });
     }
   }
   const duration = run.script.length * run.waveGap + units / run.spawnRate;
+  const share = (x: number): number => (hp > 0 ? x / hp : 0);
   return {
     waves: run.script.length,
     units,
     hp,
-    effectiveHp,
-    t3Share: hp > 0 ? t3hp / hp : 0,
+    armourShare: share(armour),
+    airShare: share(air),
+    t3Share: share(t3),
     duration,
-    duos: effectiveHp / Math.max(1e-6, duration * COVERAGE * DUO_DPS),
+    hpPerSecond: hp / Math.max(1e-6, duration),
   };
 }
 
-export const OPENING_DUOS = 70;
+/**
+ * THE FREE OPENING LOADOUT — a hand-tuned constant, and deliberately not a
+ * number derived from the opening waves.
+ *
+ * It exists to solve a bootstrap, not to clear a run. Kills are the only
+ * income and zero turrets kill nothing, so a fresh save needs enough to
+ * hold WAVE ONE; from there difficulty 1 pays for itself several times over
+ * while it is still being played. Duo is flat at 8 copper forever, so the
+ * fleet grows with the bank in a straight line — difficulty 1's own kills
+ * bank roughly 2,100 copper, some 260 more duos, and cross the granted fleet
+ * about a third of the way in.
+ *
+ * That is why there is no arithmetic here and no check on this number. A
+ * static-fleet model would be measuring a fleet that stops existing thirty
+ * seconds into the run. Tune it by feel: too low and wave 1 wipes a fresh
+ * save with no way to earn out, too high and the opening asks nothing.
+ */
+export const OPENING_DUOS = 50;
 
-// ---------- the debut rule, enforced ----------
+// ---------- the debut rule ----------
 
 /**
- * The best per-shot damage the player can own by the time a tier starts:
- * the strongest bullet among every turret whose gate has opened.
- *
- * Splash and pierce are ignored on purpose. What the debut rule cares about
- * is the SINGLE-SHOT number armour is subtracted from, because that is what
- * decides whether a unit reads at its printed health or at ten times it.
+ * The best per-shot damage the player can own by the time a difficulty
+ * starts: the strongest bullet among every turret whose gate has opened.
  */
 function bestShotByTier(tier: number): number {
-  // TIER 0 IS A SPECIAL CASE AND IT IS THE ONE THAT MATTERS. A fresh save
-  // has banked nothing — kills are the only income — so it owns the free
-  // duos and literally nothing else, however many turrets are technically
-  // ungated. Counting hail's 20 damage here because hail has no tier gate
-  // is what let three fortresses into wave 4 without a word of complaint.
-  if (Math.floor(tier) <= 0) return TOWERS.duo.bullet.damage;
+  // DIFFICULTY 1 IS A SPECIAL CASE AND IT IS THE ONE THAT MATTERS. A fresh
+  // save has banked nothing — kills are the only income — so it owns the
+  // free duos and literally nothing else, however many turrets are
+  // technically ungated.
+  if (clampTier(tier) <= 0) return TOWERS.duo.bullet.damage;
   let best = 0;
   for (const node of TECH_TREE) {
     if (node.requiresTier != null && node.requiresTier >= tier) continue;
@@ -287,19 +301,20 @@ function bestShotByTier(tier: number): number {
   return best;
 }
 
-
 /**
- * Every unit debuts against a turret that can actually hurt it — the one
- * authoring rule the extension pool has to keep. A violation is silent in
- * play: the wave simply cannot be killed, the core takes its one hit, and
- * the tier reads as "too hard" rather than as "mispriced armour".
+ * Units whose armour meets nothing that can efficiently hurt it at the
+ * difficulty they debut on.
  *
- * Returns the offending debuts, empty when the script is sound.
+ * This is a NOTE, not a gate. Nothing is ever unkillable — the 10% floor
+ * means a duo always lands 0.9 — so a heavily armoured debut costs more
+ * farming, which is a legitimate thing for a script to ask for. What it
+ * reports is the size of that ask, so an author choosing it is choosing it.
  */
 export function debutViolations(spec: LevelSpec = WORLD): LadderIssue[] {
   const debut = new Map<UnitKind, number>();
   spec.script.forEach((step, i) => {
     const at = tierOfWave(i);
+    if (at < 0) return; // unreachable wave; check() reports it separately
     for (const g of waveGroups(step.wave))
       g.counts.forEach((count, k) => {
         if (count <= 0) return;
@@ -310,102 +325,175 @@ export function debutViolations(spec: LevelSpec = WORLD): LadderIssue[] {
 
   const bad: LadderIssue[] = [];
   for (const [kind, tier] of debut) {
-    const { armor, hp } = UNIT_STATS[kind];
+    const { armor } = UNIT_STATS[kind];
     const shot = bestShotByTier(tier);
-    if (armor >= shot)
+    const tax = shot / Math.max(shot - armor, 0.1 * shot);
+    if (tax >= 2)
       bad.push({
         tier,
         kind: "debut",
-        message: `${kind} (armour ${armor}) debuts here, but the best shot on sale is ${shot} — it lands the 10% floor and plays as ${Math.round(hp / 0.1).toLocaleString()} health instead of ${hp.toLocaleString()}`,
+        message: `${kind} (armour ${armor}) debuts here against a best shot of ${shot} — it costs a fleet ${tax.toFixed(1)}x its printed health, so budget the farming for it`,
       });
   }
   return bad;
 }
 
 /**
- * One complaint about a script. `tier` is the tier it belongs to, so the
- * level editor can label the wave rows that tier owns; null means the
- * finding is about the script as a whole.
+ * One complaint about a script. `tier` is the difficulty it belongs to, so
+ * the level editor can label the wave rows that difficulty owns; null means
+ * the finding is about the script as a whole.
  */
 export interface LadderIssue {
   tier: number | null;
-  kind: "debut" | "opening" | "wall" | "filler" | "economy";
+  kind: "debut" | "wall" | "filler" | "economy" | "unreachable";
   message: string;
 }
 
 // ---------- authoring aid ----------
 
-/** what one authored wave costs and pays, at a given enemy level */
+/** what one authored wave weighs and pays, at a given enemy level */
 export interface WaveCost {
   units: number;
-  /** printed health */
+  /** printed health — the strength measure */
   hp: number;
-  /** ...and what it costs a duo line once flat armour is paid */
-  effectiveHp: number;
-  /** share of effective health carried by tier 3 and up */
+  /** share of that health carried by unit tier 3 and up */
   t3Share: number;
+  /** share carried by units with armour 3 or more */
+  armourShare: number;
   /** how much of it flies — hail and scorch cannot touch these at all */
   airShare: number;
-  /** one item per kill, by tier: what the wave pays */
-  drops: { scrap: number; copper: number; titanium: number };
+  /** one item per kill, by unit tier: what the wave pays */
+  drops: Cost;
 }
 
 export function waveCost(step: LevelStep, level = 0): WaveCost {
   const out: WaveCost = {
     units: 0,
     hp: 0,
-    effectiveHp: 0,
     t3Share: 0,
+    armourShare: 0,
     airShare: 0,
-    drops: { scrap: 0, copper: 0, titanium: 0 },
+    drops: {},
   };
-  const item = ["scrap", "copper", "titanium"] as const;
   let t3 = 0;
+  let armour = 0;
   let air = 0;
   for (const g of waveGroups(step.wave)) {
     g.counts.forEach((count, i) => {
       if (count <= 0) return;
       const kind = UNIT_KINDS[i];
       const stats = UNIT_STATS[kind];
-      const eff = duoEffectiveHp(kind, level) * count;
+      const h = unitHpAtLevel(kind, level) * count;
       out.units += count;
-      out.hp += unitHpAtLevel(kind, level) * count;
-      out.effectiveHp += eff;
-      if (stats.tier >= 3) t3 += eff;
-      if (stats.flying) air += eff;
-      out.drops[item[Math.min(stats.tier, 3) - 1]] += count;
+      out.hp += h;
+      if (stats.tier >= 3) t3 += h;
+      if (stats.armor >= 3) armour += h;
+      if (stats.flying) air += h;
+      // the drop table lives in items.ts and covers every tier there is —
+      // reading it rather than a local triple is what lets a tier-4 unit be
+      // a stats edit instead of an economy edit
+      const drop = itemForTier(stats.tier);
+      out.drops[drop] = (out.drops[drop] ?? 0) + count;
     });
   }
-  out.t3Share = out.effectiveHp > 0 ? t3 / out.effectiveHp : 0;
-  out.airShare = out.effectiveHp > 0 ? air / out.effectiveHp : 0;
+  const share = (x: number): number => (out.hp > 0 ? x / out.hp : 0);
+  out.t3Share = share(t3);
+  out.armourShare = share(armour);
+  out.airShare = share(air);
   return out;
 }
 
-/** one tier, weighed — the row the editor's ladder check renders */
+/**
+ * ONE WAVE, WEIGHED — the per-wave half of the number guide.
+ *
+ * `share` is the wave's slice of the difficulty it belongs to, which is the
+ * number to author against: a wave carrying 5% of its difficulty is filler,
+ * one carrying 25% is a spike, and a difficulty's LAST wave should be its
+ * heaviest or the run tails off into its finale.
+ */
+export interface WaveRow {
+  /** 1-based wave number, as the editor shows it */
+  wave: number;
+  /** the difficulty it first appears at; -1 if past the top cut */
+  tier: number;
+  units: number;
+  /** printed health at enemy level 0 — the authored weight */
+  hp: number;
+  /** this wave's share of its own difficulty's total health */
+  share: number;
+  /** health relative to the wave before it */
+  step: number;
+  armourShare: number;
+  airShare: number;
+  t3Share: number;
+}
+
+/** the per-wave guide, at the authored baseline level */
+export function waveGuide(spec: LevelSpec = WORLD): WaveRow[] {
+  const totals = DIFFICULTIES.map(
+    (_, d) => budget(spec, d).hp / Math.max(1e-6, tierHpScale(d)),
+  );
+  let prev = 0;
+  return spec.script.map((step, i) => {
+    const c = waveCost(step, 0);
+    const tier = tierOfWave(i);
+    const row: WaveRow = {
+      wave: i + 1,
+      tier,
+      units: c.units,
+      hp: c.hp,
+      share: tier < 0 ? 0 : c.hp / Math.max(1, totals[tier]),
+      step: prev ? c.hp / prev : 1,
+      armourShare: c.armourShare,
+      airShare: c.airShare,
+      t3Share: c.t3Share,
+    };
+    prev = c.hp;
+    return row;
+  });
+}
+
+/** one difficulty, weighed — the row the editor's ladder check renders */
 export interface AuditRow {
   tier: number;
+  /** the 1-based number the player sees */
+  difficulty: number;
   waves: number;
   units: number;
-  /** duos the tier asks for, at COVERAGE */
-  duos: number;
-  /** how much harder than the tier below — the number to keep even */
+  /** enemy level the difficulty plays at */
+  level: number;
+  /** printed health of the whole run — THE strength number */
+  hp: number;
+  /** how much harder than the difficulty below */
   step: number;
+  /** health per second the fleet has to keep up with */
+  hpPerSecond: number;
+  /** seconds the run lasts */
+  duration: number;
   t3Share: number;
-  /** scrap : copper : titanium the tier pays, normalised to scrap = 100 */
-  dropRatio: [number, number, number];
+  armourShare: number;
+  /**
+   * What the difficulty pays, per currency, normalised to the base item
+   * (copper) = 100. Indexed like ITEM_KINDS, so [100, titanium, thorium, ...]
+   * — the shape the tech tree's cost bundles have to match.
+   */
+  dropRatio: number[];
 }
 
 /**
- * Walk the ladder and report what each tier actually asks for.
+ * WALK THE LADDER AND REPORT WHAT EACH DIFFICULTY ASKS FOR.
  *
- * Hand-written waves are free to be whatever they want, but three things do
- * NOT come out in the wash, because the tier scales HEALTH and nothing else.
+ * `step` is the number to author against. It has two sources multiplied
+ * together:
  *
- * ARMOUR is the big one. It is flat and never scales, so it is a permanent
- * multiplier on a wave's cost at every tier forever: max(dmg - armor,
- * 0.1 * dmg) means a fortress costs a duo line ten times its printed health
- * at tier 0 and still ten times at tier 40. `duos` counts that, `units`
- * does not.
+ *   step = 1.79 (the +10 enemy levels) x (health of the new waves ratio)
+ *
+ * so 1.79x is the FLOOR — what a difficulty costs if it adds no waves at
+ * all — and everything above it is bought by the ten waves it unlocks. To
+ * hit a target step M, the new block of ten must weigh (M / 1.79 - 1) times
+ * everything below it.
+ *
+ * Two things that do NOT come out in the wash:
  *
  * HEALTH PER BODY is difficulty that pays nothing back. A kill drops one
  * item whatever it killed, so 100 spirocts cost fifteen times what 100
@@ -415,36 +503,35 @@ export interface AuditRow {
  * THE CURRENCY MIX has to stay near what the tree charges, or one currency
  * becomes the only real constraint while the others pile up unspent.
  */
-export function audit(spec: LevelSpec = WORLD, through = 20): AuditRow[] {
+export function audit(spec: LevelSpec = WORLD): AuditRow[] {
   const rows: AuditRow[] = [];
   let prev = 0;
-  for (let tier = 0; tier <= through; tier++) {
+  for (let tier = 0; tier <= TOP_TIER; tier++) {
     const run = specForTier(spec, tier);
     const level = run.enemyLevel ?? 0;
-    let units = 0, eff = 0, t3 = 0;
-    const drops = { scrap: 0, copper: 0, titanium: 0 };
-    for (const step of run.script) {
-      const c = waveCost(step, level);
-      units += c.units;
-      eff += c.effectiveHp;
-      t3 += c.effectiveHp * c.t3Share;
-      drops.scrap += c.drops.scrap;
-      drops.copper += c.drops.copper;
-      drops.titanium += c.drops.titanium;
-    }
-    const duration = run.script.length * run.waveGap + units / run.spawnRate;
-    const duos = eff / Math.max(1e-6, duration * COVERAGE * DUO_DPS);
-    const s = Math.max(1, drops.scrap);
+    const b = budget(spec, tier);
+    const drops: Cost = {};
+    for (const step of run.script)
+      for (const { item, amount } of costEntries(waveCost(step, level).drops))
+        drops[item] = (drops[item] ?? 0) + amount;
+    const s = Math.max(1, drops[BASE_ITEM] ?? 0);
     rows.push({
       tier,
-      waves: run.script.length,
-      units,
-      duos: Math.round(duos),
-      step: prev ? +(duos / prev).toFixed(2) : 1,
-      t3Share: +(t3 / Math.max(1, eff)).toFixed(2),
-      dropRatio: [100, Math.round((100 * drops.copper) / s), Math.round((1000 * drops.titanium) / s) / 10],
+      difficulty: difficultyOf(tier),
+      waves: b.waves,
+      units: b.units,
+      level,
+      hp: Math.round(b.hp),
+      step: prev ? +(b.hp / prev).toFixed(2) : 1,
+      hpPerSecond: Math.round(b.hpPerSecond),
+      duration: Math.round(b.duration),
+      t3Share: +b.t3Share.toFixed(2),
+      armourShare: +b.armourShare.toFixed(2),
+      dropRatio: ITEM_KINDS.map((k) =>
+        k === BASE_ITEM ? 100 : Math.round((1000 * (drops[k] ?? 0)) / s) / 10,
+      ),
     });
-    prev = duos;
+    prev = b.hp;
   }
   return rows;
 }
@@ -453,63 +540,73 @@ export function audit(spec: LevelSpec = WORLD, through = 20): AuditRow[] {
  * The authoring smell test, as a list of complaints. Empty means the script
  * is in line. Run it after editing waves — `window.__ladder.check()`.
  */
-export function check(spec: LevelSpec = WORLD, through = 20): LadderIssue[] {
+export function check(spec: LevelSpec = WORLD): LadderIssue[] {
   const out = debutViolations(spec);
-  const rows = audit(spec, through);
+  const rows = audit(spec);
 
-  // The free opening loadout is solved off the SHIPPED baseline in code,
-  // because a save is read the moment the page opens and level documents
-  // arrive later (see levels.ts). So an edit that makes tier 0 heavier does
-  // NOT move the fleet handed out to answer it, and a fresh save walks into
-  // a run it cannot clear with no way to earn its way out — kills are the
-  // only income and a wipe on wave 1 banks almost nothing.
-  const granted = OPENING_DUOS;
-  if (rows[0] && rows[0].duos > granted)
+  // a script longer than the top difficulty's cut has waves nothing ever
+  // plays — silent content loss, and the easiest edit in the world to make
+  // by accident
+  const cut = DIFFICULTIES[TOP_TIER].waves;
+  if (spec.script.length > cut)
     out.push({
-      tier: 0,
-      kind: "opening",
-      message: `needs ${rows[0].duos} duos but a fresh save is handed ${granted} — either lighten the opening waves or update the shipped baseline in levels.ts`,
+      tier: null,
+      kind: "unreachable",
+      message: `the script has ${spec.script.length} waves but difficulty ${difficultyOf(TOP_TIER)} only plays ${cut} — waves ${cut + 1}-${spec.script.length} are never sent`,
     });
+
+  // NOTE: there is deliberately no check on the opening loadout. See
+  // OPENING_DUOS — difficulty 1 pays for hundreds of duos while it is still
+  // being played, so any static-fleet prediction measures a fleet that never
+  // exists. That number is tuned by feel, not by arithmetic.
 
   rows.forEach((r, i) => {
     const prev = rows[i - 1];
     // NOTE: none of these are feasibility tests. Turret prices are flat and
-    // every run banks something, so a player can always farm the tier below
-    // until they can afford the next one — nothing here is unwinnable. What
-    // these measure is GRIND, which is the failure mode an idle game
-    // actually has: a tier costing twice what the last one did is not
-    // impossible, it is twice the farming, and three of those stacked is a
-    // chore rather than a climb
+    // every run banks something, so a player can always farm the difficulty
+    // below until they can afford the next one — nothing here is unwinnable.
+    // What these measure is GRIND, which is the failure mode an idle game
+    // actually has.
     if (prev && r.step > WALL_STEP)
       out.push({
         tier: r.tier,
         kind: "wall",
-        message: `asks ${r.step}x the fleet of tier ${prev.tier} — roughly ${r.step}x the farming before it opens`,
+        message: `asks ${r.step}x the health of difficulty ${prev.difficulty} — roughly ${r.step}x the farming before it opens`,
       });
     if (prev && r.step < FILLER_STEP && r.waves > prev.waves)
       out.push({
         tier: r.tier,
         kind: "filler",
-        message: `adds ${r.waves - prev.waves} waves but only ${r.step}x the difficulty — reads as padding`,
+        message: `adds ${r.waves - prev.waves} waves but only ${r.step}x the health — the ten new waves are barely paying for themselves`,
       });
-    const [, cu, ti] = r.dropRatio;
-    if (cu < 7 || cu > 45)
+    // The currency mix, against what the tree charges. Named off ITEM_KINDS
+    // rather than written out, so shifting the whole scale one item up (as
+    // the campaign did when scrap dropped off the bottom) moves these with
+    // it instead of leaving them describing a currency nothing pays.
+    const name = (i: number): string => ITEM_INFO[ITEM_KINDS[i]].name.toLowerCase();
+    const [, second, third] = r.dropRatio;
+    if (second < 7 || second > 45)
       out.push({
         tier: r.tier,
         kind: "economy",
-        message: `pays copper at 100:${cu}; the tree charges near 100:15, so one currency ends up the only real constraint`,
+        message: `pays ${name(1)} at 100:${second}; the tree charges near 100:15, so one currency ends up the only real constraint`,
       });
-    if (r.tier >= 3 && (ti < 0.8 || ti > 30))
+    if (r.tier >= 1 && (third < 0.8 || third > 30))
       out.push({
         tier: r.tier,
         kind: "economy",
-        message: `pays titanium at 100:${ti}; the tree charges near 100:2.5`,
+        message: `pays ${name(2)} at 100:${third}; the tree charges near 100:2.5`,
       });
   });
   return out;
 }
 
-/** a tier costing more than this much more than the last reads as a wall */
-export const WALL_STEP = 1.85;
-/** ...and less than this, with new waves, reads as padding */
-export const FILLER_STEP = 1.1;
+/**
+ * A difficulty costing more than this much more than the last reads as a
+ * wall. Generous, because with only three gaps in the whole campaign each
+ * one is MEANT to be a real step — the +10 enemy levels alone are 1.79x
+ * before a single new wave is counted.
+ */
+export const WALL_STEP = 4.5;
+/** ...and less than this, with ten new waves, reads as padding */
+export const FILLER_STEP = 2;

@@ -18,11 +18,13 @@ import { dropsForKills } from "@/game/progress";
 import {
   audit,
   check,
+  difficultyOf,
   tierOfWave,
-  topContentTier,
+  waveGuide,
   WALL_STEP,
   type AuditRow,
   type LadderIssue,
+  type WaveRow,
 } from "@/game/ladder";
 import {
   drawThumb,
@@ -36,6 +38,17 @@ import { CostRow } from "./Items";
 /* eslint-disable @next/next/no-img-element -- raw pixel sprites, no optimization wanted */
 
 const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
+
+/** health runs to nine figures at the top difficulty; a table cell wants
+ * three characters and a suffix, not 20,276,477 */
+const compactHp = (hp: number): string =>
+  hp >= 1e9
+    ? `${(hp / 1e9).toFixed(1)}B`
+    : hp >= 1e6
+      ? `${(hp / 1e6).toFixed(1)}M`
+      : hp >= 1e3
+        ? `${(hp / 1e3).toFixed(0)}k`
+        : `${Math.round(hp)}`;
 
 /** region 0 is "any pad"; 1+ are the map's painted spawn regions */
 const regionCss = (region: number): string =>
@@ -139,12 +152,13 @@ function LadderReport({
     byTier.set(i.tier, list);
   }
   const KIND_CSS: Record<LadderIssue["kind"], string> = {
-    debut: "border-[#5B2E2E] bg-[#2A1616] text-[#FF8A8A]",
-    opening: "border-[#5B2E2E] bg-[#2A1616] text-[#FF8A8A]",
+    debut: "border-[#3A3A46] bg-[#1C1C22] text-[#A6A6AF]",
+    unreachable: "border-[#5B2E2E] bg-[#2A1616] text-[#FF8A8A]",
     wall: "border-[#5B4A2E] bg-[#2A2116] text-[#F0B457]",
     filler: "border-[#2E4A5B] bg-[#16222A] text-[#8DA1E3]",
     economy: "border-[#3A3A46] bg-[#1C1C22] text-[#A6A6AF]",
   };
+  const loose = issues.filter((i) => i.tier == null);
 
   return (
     <section className="mb-3 rounded-lg border border-[#2E2E36] bg-[#151518] p-3">
@@ -159,21 +173,38 @@ function LadderReport({
         >
           {issues.length
             ? `${issues.length} finding${issues.length > 1 ? "s" : ""}`
-            : `Clean through tier ${rows.length - 1}`}
+            : "Clean"}
         </span>
       </div>
 
-      {/* one row a tier. `step` is the number to keep even — the climb should
-          cost about half again what the tier below did, all the way up */}
+      {/* findings about the script as a whole, with no difficulty to sit on */}
+      {loose.length > 0 && (
+        <div className="mb-2 space-y-1">
+          {loose.map((f, n) => (
+            <div
+              key={n}
+              className={`rounded border px-1.5 py-0.5 text-[12px] leading-snug ${KIND_CSS[f.kind]}`}
+            >
+              <span className="font-bold uppercase tracking-widest">{f.kind}</span> {f.message}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* one row a difficulty — there are exactly four. `step` is the number
+          to author against: 1.79x is the floor the +10 enemy levels give for
+          free, and everything above it was bought by the ten new waves */}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-[13px]">
           <thead className="text-[12px] uppercase tracking-widest text-[#71717C]">
             <tr>
-              <th className="py-1 pr-3 font-normal">Tier</th>
+              <th className="py-1 pr-3 font-normal">Diff</th>
               <th className="py-1 pr-3 font-normal">Waves</th>
+              <th className="py-1 pr-3 text-right font-normal">Lv</th>
               <th className="py-1 pr-3 text-right font-normal">Enemies</th>
-              <th className="py-1 pr-3 text-right font-normal">Fleet</th>
+              <th className="py-1 pr-3 text-right font-normal">Health</th>
               <th className="py-1 pr-3 text-right font-normal">Step</th>
+              <th className="py-1 pr-3 text-right font-normal">Armour</th>
               <th className="py-1 pr-3 text-right font-normal">T3</th>
               <th className="py-1 font-normal">Findings</th>
             </tr>
@@ -189,13 +220,14 @@ function LadderReport({
                     found.length ? "bg-[#1A1A1F]" : ""
                   }`}
                 >
-                  <td className="py-1 pr-3 font-bold text-[#EDEDEF]">{r.tier}</td>
+                  <td className="py-1 pr-3 font-bold text-[#EDEDEF]">{r.difficulty}</td>
                   <td className="py-1 pr-3 text-[#A6A6AF]">{r.waves}</td>
+                  <td className="py-1 pr-3 text-right text-[#71717C]">{r.level}</td>
                   <td className="py-1 pr-3 text-right text-[#A6A6AF]">
                     {r.units.toLocaleString()}
                   </td>
                   <td className="py-1 pr-3 text-right text-[#A6A6AF]">
-                    {r.duos.toLocaleString()}
+                    {compactHp(r.hp)}
                   </td>
                   <td
                     className={`py-1 pr-3 text-right font-bold ${
@@ -207,6 +239,9 @@ function LadderReport({
                     }`}
                   >
                     {r.tier === 0 ? "—" : `${r.step.toFixed(2)}x`}
+                  </td>
+                  <td className="py-1 pr-3 text-right text-[#71717C]">
+                    {Math.round(r.armourShare * 100)}%
                   </td>
                   <td className="py-1 pr-3 text-right text-[#71717C]">
                     {Math.round(r.t3Share * 100)}%
@@ -238,9 +273,12 @@ function LadderReport({
       </div>
 
       <p className="mt-2 border-t border-[#2E2E36] pt-2 text-[12px] leading-snug text-[#71717C]">
-        Fleet is duos needed at the measured coverage — it counts armour, so it
-        moves far more than the enemy count does. Nothing here is unwinnable:
-        prices are flat, so a steep tier means more farming, not a dead end.
+        Health is printed health — the strength measure, weapon-agnostic.
+        Armour is shown beside it as composition, never folded into it: an
+        armour-heavy difficulty is a different fight at the same strength.
+        Step floors at 1.79x (the +10 enemy levels alone); anything above that
+        was bought by the ten new waves. Nothing here is unwinnable — prices
+        are flat, so a steep step means more farming, not a dead end.
       </p>
     </section>
   );
@@ -383,28 +421,30 @@ export default function LevelEditorView({
   };
 
   /**
-   * The ladder report, or null while it is closed. Computed on demand from
-   * the LIVE buffer rather than the saved document — the whole point is to
-   * weigh an edit before committing it, so a report of the file on disk
-   * would answer the wrong question.
+   * The summary table folds away; the per-wave numbers never do.
    */
-  const [report, setReport] = useState<{ rows: AuditRow[]; issues: LadderIssue[] } | null>(null);
+  const [showReport, setShowReport] = useState(true);
 
-  const runCheck = (): void => {
-    if (report) return setReport(null); // the button toggles
+  /**
+   * THE NUMBER GUIDE, RECOMPUTED ON EVERY EDIT.
+   *
+   * Computed from the LIVE buffer rather than the saved document — the whole
+   * point is to weigh an edit before committing it, so a report of the file
+   * on disk would answer the wrong question.
+   *
+   * The whole walk — four difficulties, every wave, and the findings —
+   * measures ~1.3 ms on a 50-wave script, so there is nothing to debounce and
+   * no reason to make the author ask for it. Typing a count re-costs the wave
+   * under the cursor and re-steps the difficulty it belongs to, live.
+   *
+   * This replaced a button that computed on demand and blanked itself on
+   * every edit, which meant the numbers were only ever visible next to waves
+   * that had not been touched since.
+   */
+  const report = useMemo(() => {
     const spec = { ...level, spawnRate, waveGap, script: toScript(steps) };
-    // one tier past the last one that unlocks a wave: beyond that the script
-    // stops changing and every further tier is the same shape with more
-    // health, so there is nothing left for the check to say
-    const through = topContentTier(spec) + 1;
-    setReport({ rows: audit(spec, through), issues: check(spec, through) });
-  };
-
-  // any edit invalidates a report — a stale verdict next to changed waves is
-  // worse than no verdict
-  useEffect(() => {
-    setReport(null);
-  }, [steps, spawnRate, waveGap]);
+    return { rows: audit(spec), issues: check(spec), waves: waveGuide(spec) };
+  }, [level, spawnRate, waveGap, steps]);
 
   const back = (): void => {
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
@@ -453,15 +493,17 @@ export default function LevelEditorView({
               </p>
             )}
             <button
-              onClick={runCheck}
-              aria-pressed={report !== null}
+              onClick={() => setShowReport((v) => !v)}
+              aria-pressed={showReport}
               className={`rounded border px-4 py-1.5 text-[14px] uppercase tracking-widest ${
-                report
+                showReport
                   ? "border-[#7BE58A] bg-[#14271C] text-[#7BE58A]"
-                  : "border-[#2E2E36] text-[#A6A6AF] hover:border-[#4A4A55]"
+                  : report.issues.length
+                    ? "border-[#5B4A2E] text-[#F0B457] hover:border-[#7A6440]"
+                    : "border-[#2E2E36] text-[#A6A6AF] hover:border-[#4A4A55]"
               }`}
             >
-              Check ladder
+              Ladder{report.issues.length ? ` · ${report.issues.length}` : ""}
             </button>
             <button
               onClick={back}
@@ -535,7 +577,7 @@ export default function LevelEditorView({
 
           {/* ---- the script ---- */}
           <main className="min-h-0 overflow-y-auto pr-1">
-            {report && <LadderReport rows={report.rows} issues={report.issues} />}
+            {showReport && <LadderReport rows={report.rows} issues={report.issues} />}
             <InsertBar onInsert={() => edit((s) => [makeStep(), ...s])} />
             {steps.map((step, i) => {
               return (
@@ -543,6 +585,7 @@ export default function LevelEditorView({
                   <StepCard
                     step={step}
                     waveNo={i + 1}
+                    guide={report.waves[i]}
                     index={i}
                     last={i === steps.length - 1}
                     mapRegions={mapRegions}
@@ -647,6 +690,7 @@ function InsertBar({ onInsert }: { onInsert: () => void }) {
 function StepCard({
   step,
   waveNo,
+  guide,
   index,
   last,
   mapRegions,
@@ -656,6 +700,8 @@ function StepCard({
 }: {
   step: EditStep;
   waveNo: number;
+  /** this wave's row of the number guide; absent until Check ladder is run */
+  guide?: WaveRow;
   index: number;
   last: boolean;
   mapRegions: readonly number[];
@@ -688,17 +734,53 @@ function StepCard({
         <span className="text-[14px] font-bold uppercase tracking-widest text-[#EDEDEF]">
           Wave {waveNo}
         </span>
-        {/* a wave's POSITION is its difficulty gate: the ladder sends the
-            first BASE_WAVES + 3n of them at tier n, so this badge is the
-            tier a wave first appears at. Moving a row up moves the fight it
-            holds down the ladder, against a smaller fleet */}
-        <span
-          title={`First played at tier ${tierOfWave(index)}`}
-          className="rounded border border-[#3A3320] bg-[#1C1810] px-1.5 text-[12px] font-bold uppercase tracking-widest text-[#FFD37F]"
-        >
-          T{tierOfWave(index)}
-        </span>
+        {/* a wave's POSITION is its difficulty gate: difficulty n plays the
+            first 20/30/40/50 waves, so this badge is the difficulty a wave
+            first appears at. Moving a row up moves the fight it holds down
+            the ladder, against a smaller fleet. A wave past the 50th is
+            written but never sent — that badge is a warning, not a gate */}
+        {tierOfWave(index) < 0 ? (
+          <span
+            title="Past difficulty 4's 50-wave cut — this wave is never sent"
+            className="rounded border border-[#5B2E2E] bg-[#2A1616] px-1.5 text-[12px] font-bold uppercase tracking-widest text-[#FF8A8A]"
+          >
+            unplayed
+          </span>
+        ) : (
+          <span
+            title={`First played at difficulty ${difficultyOf(tierOfWave(index))}`}
+            className="rounded border border-[#3A3320] bg-[#1C1810] px-1.5 text-[12px] font-bold uppercase tracking-widest text-[#FFD37F]"
+          >
+            D{difficultyOf(tierOfWave(index))}
+          </span>
+        )}
         <span className="text-[13px] text-[#71717C]">{total} enemies</span>
+        {/* the number guide, per wave: what this wave weighs, what slice of
+            its difficulty that is, and how it compares with the wave before.
+            `share` is the one to author against — 5% is filler, 25% is a
+            spike, and a difficulty's last wave should be its heaviest */}
+        {guide && (
+          <span className="flex items-center gap-2 text-[13px] text-[#71717C]">
+            <span className="font-bold text-[#A6A6AF]">{compactHp(guide.hp)} hp</span>
+            <span
+              title="share of this wave's own difficulty"
+              className={guide.share >= 0.2 ? "font-bold text-[#F0B457]" : ""}
+            >
+              {(guide.share * 100).toFixed(1)}%
+            </span>
+            {index > 0 && <span>{guide.step.toFixed(2)}x prev</span>}
+            {guide.armourShare > 0 && (
+              <span title="share of health behind armour 3+">
+                {Math.round(guide.armourShare * 100)}% arm
+              </span>
+            )}
+            {guide.airShare > 0 && (
+              <span title="share of health that flies">
+                {Math.round(guide.airShare * 100)}% air
+              </span>
+            )}
+          </span>
+        )}
         <CostRow cost={payout} />
         <div className="ml-auto">{controls}</div>
       </div>

@@ -94,7 +94,7 @@ export interface UnitStats {
   radius: number;
   /**
    * Unit tier, 1-3 today. The tier alone decides WHICH currency a kill pays
-   * out — T1 drops scrap, T2 copper, T3 titanium (see items.ts) — so a
+   * out — T1 drops copper, T2 titanium, T3 thorium (see items.ts) — so a
    * level's enemy mix is what determines the resources a run banks.
    */
   tier: number;
@@ -238,7 +238,7 @@ void _everyKindHasATree;
 
 /**
  * What one kill of this kind pays out: exactly ONE of its tier's item. The
- * tier is the whole drop table — a T2 kill is one copper whether it was a
+ * tier is the whole drop table — a T2 kill is one titanium whether it was a
  * mace or a pulsar — so a level's difficulty mix is the only thing that
  * decides what a run banks, and no unit is quietly worth more than its tier.
  */
@@ -351,41 +351,44 @@ export function levelDoc(spec: LevelSpec): LevelDoc {
 }
 
 /**
- * The campaign: ONE world, played over and over at an ever-higher TIER.
+ * The campaign: ONE world, played at FOUR difficulties, and then it is over.
  *
- * EVERY WAVE THE GAME WILL EVER SEND IS WRITTEN OUT BELOW, in order. The
- * tier does not generate waves — it decides HOW MANY OF THESE a run plays.
- * Tier 0 sends the first four, and every tier adds three more (see
- * WAVES_PER_TIER in ladder.ts), so:
+ * EVERY WAVE THE GAME WILL EVER SEND IS WRITTEN OUT BELOW, in order. A
+ * difficulty does not generate waves — it decides HOW MANY OF THESE a run
+ * plays, and at what enemy level (see DIFFICULTIES in ladder.ts):
  *
- *   tier  0   waves 1-4      tier  4   waves 1-16
- *   tier  1   waves 1-7      tier  8   waves 1-28
- *   tier  2   waves 1-10     tier 16   waves 1-52  (all of them)
+ *   difficulty 1   waves 1-20   enemy level  0
+ *   difficulty 2   waves 1-30   enemy level 10
+ *   difficulty 3   waves 1-40   enemy level 20
+ *   difficulty 4   waves 1-50   enemy level 30
  *
- * That is what makes climbing worth doing. A tier is not the same fight
- * with a bigger number on it — it is three waves of hand-authored fight
- * nobody has seen yet, on top of everything below. The enemy LEVEL rises
- * alongside (health only, x1.06 a level), and past the end of this list the
- * level keeps rising on its own, so the ladder never hard-stops; it just
- * stops adding new content until more waves are written here.
+ * So a difficulty buys two things at once: ten waves of hand-authored fight
+ * nobody has seen yet, and x1.79 health on every wave below them. Neither
+ * alone would carry it — by wave 20 the script has already fielded every
+ * unit kind there is, so without the levels difficulty 4 would just be a
+ * longer difficulty 1 against identical enemies.
+ *
+ * ANYTHING PAST WAVE 50 IS NEVER SENT. The list is currently longer than
+ * that; check() reports the orphans, and they are content waiting for a
+ * home rather than content in the game.
  *
  * Kills are the only income: a finished run banks each dead unit's tier
- * item whether it ended in victory or defeat, times the tier's drop bonus.
+ * item whether it ended in victory or defeat, times the difficulty's drop
+ * bonus.
  *
- * TWO RULES WHEN EDITING THIS LIST.
+ * TWO THINGS TO KNOW WHEN EDITING THIS LIST.
  *
  * ONE — a wave's position IS its difficulty gate. Wave i first appears at
- * tier ceil((i - 4) / 3), so moving a wave earlier makes it arrive against
- * a smaller fleet. The comments below mark where each tier begins.
+ * the first difficulty whose cut reaches it, so moving a wave earlier makes
+ * it arrive against a smaller fleet. The comments below mark the cuts.
  *
- * TWO — a unit may not debut before the player can own a turret whose
- * per-shot damage exceeds its armour. Armour is flat, max(dmg - armor,
- * 0.1 * dmg), so a fortress (armour 9) against a duo (damage 9) hits the
- * 10% floor and reads as a 9,000-health unit rather than a 900-health one.
- * That is why the sky opens with flares, tier 3 opens with spiroct
- * (armour 5, still 4 damage a duo shot), and the fortress waits until
- * wave 26 — tier 8, five tiers after salvo's 28-damage shells go on sale.
- * debutViolations() in ladder.ts warns in dev if an edit breaks this.
+ * TWO — armour is flat, max(dmg - armor, 0.1 * dmg), so a fortress
+ * (armour 9) against a duo (damage 9) hits the 10% floor and costs a duo
+ * line ten times its printed health. That is NOT a reason it cannot debut
+ * early: the floor is a floor, so nothing is ever unkillable, and a heavy
+ * debut is simply a wave that asks for more farming. It is a reason to
+ * know what you are asking for — debutViolations() in ladder.ts prints the
+ * multiplier so the choice is deliberate.
  */
 export const WORLDS: LevelSpec[] = [
   {
@@ -397,75 +400,62 @@ export const WORLDS: LevelSpec[] = [
     spawnRate: 20,
     waveGap: 15,
     script: [
-      // ---------- tier 0: waves 1-4 -----------------------------------
+      // ---------- difficulty 1: waves 1-20, enemy level 0 -------------
       { wave: { dagger: 24 } },
       { wave: { dagger: 40, crawler: 25 } },
       { wave: { dagger: 50, mace: 6, nova: 12 } },
       { wave: { dagger: 60, mace: 24, fortress: 3, nova: 10 } },
-      // ---------- tier 1: waves 5-7 -----------------------------------
       { wave: { dagger: 48, crawler: 44, nova: 10 } },
       { wave: { dagger: 44, mace: 25, pulsar: 8 } },
       { wave: { dagger: 52, fortress: 6, crawler: 50 } },
-      // ---------- tier 2: waves 8-10 ----------------------------------
       { wave: { dagger: 45, flare: 34 } },
       { wave: { dagger: 70, mace: 22, atrax: 12, spiroct: 7 } },
       { wave: { crawler: 100, flare: 30, nova: 18 } },
-      // ---------- tier 3: waves 11-13 ---------------------------------
       { wave: { dagger: 85, mace: 26, spiroct: 8, pulsar: 14 } },
       { wave: { dagger: 60, crawler: 80, flare: 50 } },
       { wave: { dagger: 85, atrax: 24, spiroct: 10, nova: 22 } },
-      // ---------- tier 4: waves 14-16 ---------------------------------
       { wave: { dagger: 90, flare: 45, horizon: 20 } },
       { wave: { dagger: 100, mace: 40, atrax: 24, spiroct: 18 } },
       { wave: { crawler: 150, spiroct: 10, pulsar: 24 } },
-      // ---------- tier 5: waves 17-19 ---------------------------------
       { wave: { mace: 30, spiroct: 8, flare: 70, horizon: 28 } },
       { wave: { dagger: 120, mace: 46, atrax: 30, pulsar: 20 } },
       { wave: { dagger: 110, crawler: 190, spiroct: 14 } },
-      // ---------- tier 6: waves 20-22 ---------------------------------
       { wave: { flare: 80, horizon: 24, zenith: 10 } },
+      // ---------- difficulty 2: waves 21-30, enemy level 10 -----------
       { wave: { dagger: 170, mace: 50, atrax: 34, spiroct: 15 } },
       { wave: { crawler: 220, spiroct: 11, nova: 45, pulsar: 26 } },
-      // ---------- tier 7: waves 23-25 ---------------------------------
       { wave: { dagger: 140, atrax: 24, horizon: 30, zenith: 14 } },
       { wave: { dagger: 190, mace: 62, spiroct: 18 } },
       { wave: { crawler: 250, spiroct: 15, flare: 80 } },
-      // ---------- tier 8: waves 26-28 ---------------------------------
       { wave: { dagger: 90, mace: 48, fortress: 7, atrax: 30 } },
       { wave: { dagger: 210, crawler: 200, spiroct: 18, zenith: 10 } },
       { wave: { flare: 130, pulsar: 32, horizon: 42, zenith: 14 } },
-      // ---------- tier 9: waves 29-31 ---------------------------------
       { wave: { dagger: 190, mace: 60, fortress: 9, spiroct: 15 } },
       { wave: { crawler: 280, atrax: 46, nova: 60 } },
+      // ---------- difficulty 3: waves 31-40, enemy level 20 -----------
       { wave: { flare: 150, horizon: 46, zenith: 17 } },
-      // ---------- tier 10: waves 32-34 --------------------------------
       { wave: { dagger: 110, fortress: 11, atrax: 52, spiroct: 20, pulsar: 36 } },
       { wave: { dagger: 240, mace: 70, crawler: 240 } },
       { wave: { dagger: 170, flare: 120, horizon: 52, zenith: 19 } },
-      // ---------- tier 11: waves 35-37 --------------------------------
       { wave: { dagger: 130, mace: 76, fortress: 13, spiroct: 22 } },
       { wave: { dagger: 230, crawler: 330, nova: 70, pulsar: 40 } },
       { wave: { atrax: 54, flare: 120, horizon: 58, zenith: 21 } },
-      // ---------- tier 12: waves 38-40 --------------------------------
       { wave: { dagger: 150, fortress: 15, atrax: 62, spiroct: 26 } },
       { wave: { dagger: 280, mace: 88, crawler: 280, pulsar: 44 } },
       { wave: { fortress: 11, flare: 190, horizon: 66, zenith: 24 } },
-      // ---------- tier 13: waves 41-43 --------------------------------
+      // ---------- difficulty 4: waves 41-50, enemy level 30 -----------
       { wave: { dagger: 170, mace: 100, fortress: 18, spiroct: 30 } },
       { wave: { dagger: 270, crawler: 380, atrax: 68, nova: 80 } },
       { wave: { spiroct: 24, flare: 150, horizon: 74, zenith: 27 } },
-      // ---------- tier 14: waves 44-46 --------------------------------
       { wave: { dagger: 190, fortress: 21, atrax: 78, spiroct: 34, pulsar: 52 } },
       { wave: { dagger: 330, mace: 110, crawler: 330 } },
       { wave: { fortress: 15, flare: 220, horizon: 84, zenith: 31 } },
-      // ---------- tier 15: waves 47-49 --------------------------------
       { wave: { dagger: 200, mace: 122, fortress: 25, atrax: 84, spiroct: 38 } },
       { wave: { dagger: 320, crawler: 440, nova: 92, pulsar: 58 } },
       { wave: { spiroct: 30, flare: 190, horizon: 96, zenith: 35 } },
-      // ---------- tier 16: waves 50-52 — the top of the authored ladder ---
-      // Past here a tier adds only enemy level, never a new wave. Write more
       // waves below to extend the content ladder; nothing else needs editing
       { wave: { dagger: 230, fortress: 30, atrax: 96, spiroct: 42 } },
+      // ---------- past the 50-wave cut: NEVER SENT --------------------
       { wave: { dagger: 370, mace: 132, crawler: 420, pulsar: 64 } },
       { wave: { fortress: 22, spiroct: 36, flare: 210, horizon: 108, zenith: 40 } },
     ],

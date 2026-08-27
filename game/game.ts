@@ -23,6 +23,8 @@ export interface UiState {
   /** 1-based wave now on the field, out of how many the level holds */
   currentWave: number;
   totalWaves: number;
+  /** the wave a "skip to wave" rush is spawning toward, or 0 when idle */
+  rushTo: number;
   buildKind: TowerKind | null;
   paused: boolean;
   /** the core is destroyed — the field is frozen behind the score screen */
@@ -487,6 +489,12 @@ export class Game {
     this.sim.skipWave();
   }
 
+  /** HUD "skip to wave" box: run the script forward to wave `n`, spawning
+   * every wave on the way instead of skipping past them. 0 cancels */
+  skipToWave(n: number): void {
+    this.sim.skipToWave(n);
+  }
+
   /** the whole script is dealt with and the core stands */
   private won(): boolean {
     return !this.sim.lost() && this.sim.remaining() <= 0;
@@ -513,6 +521,7 @@ export class Game {
       nextWaveIn: this.sim.nextWaveIn(),
       currentWave: this.sim.currentWave(),
       totalWaves: this.sim.totalWaves,
+      rushTo: this.sim.rushingTo(),
       buildKind: this.buildKind,
       paused: this.paused,
       speed: this.speed,
