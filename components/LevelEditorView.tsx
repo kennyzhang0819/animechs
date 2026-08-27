@@ -514,7 +514,7 @@ function StepCard({
         </span>
         {/* a wave's POSITION is its difficulty gate: the ladder sends the
             first BASE_WAVES + 3n of them at tier n, so this badge is the
-            rung a wave first appears at. Moving a row up moves the fight it
+            tier a wave first appears at. Moving a row up moves the fight it
             holds down the ladder, against a smaller fleet */}
         <span
           title={`First played at tier ${tierOfWave(index)}`}

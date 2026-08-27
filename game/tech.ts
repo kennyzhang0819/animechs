@@ -9,9 +9,9 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  *
  * Nodes gate two ways: the parent node must hold at least one point (the
  * graph edge — a node stays hidden until its parent is bought), and some
- * nodes wait on a RUNG of the ladder being cleared. A fresh save sees duo,
+ * nodes wait on a TIER of the ladder being cleared. A fresh save sees duo,
  * hail and scorch; clearing tier 1 opens scatter, tier 3 salvo, tier 6
- * fuse — each of them a rung or more before the enemy it answers first
+ * fuse — each of them a tier or more before the enemy it answers first
  * walks onto the field.
  */
 
@@ -45,7 +45,7 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * `from` delays an ITEM rather than the node: `from: { copper: 30 }` means
  * the first 30 points cost no copper at all. The exponent is NOT restarted
  * at that point — copper joins at `base * growth^30`, its honest share of
- * the rung. Restarting it would pin that currency at a fraction of its
+ * the tier. Restarting it would pin that currency at a fraction of its
  * share forever and quietly make one currency the only real constraint.
  */
 export interface PriceCurve {
@@ -89,8 +89,8 @@ export interface TechNodeDef {
   /** parent node: needs >= 1 point before this node appears in the tree */
   requires?: TowerKind;
   /**
-   * Ladder gate: this rung of the campaign must have been CLEARED before
-   * points can go in. Gates sit one or more rungs BEFORE the enemy they
+   * Ladder gate: this tier of the campaign must have been CLEARED before
+   * points can go in. Gates sit one or more tiers BEFORE the enemy they
    * answer debuts (see EXTENSION in ladder.ts), so the turret is on sale by
    * the time it is needed rather than the run it is needed.
    */
@@ -113,7 +113,7 @@ export interface TechNodeDef {
  *
  * ONE: the volume turret is flat and everything else grows. See PriceCurve.
  *
- * TWO: A COST BUNDLE MUST CARRY THE DROP RATIO OF THE RUNG THAT UNLOCKS IT.
+ * TWO: A COST BUNDLE MUST CARRY THE DROP RATIO OF THE TIER THAT UNLOCKS IT.
  * The baseline supplies scrap : copper : titanium at roughly 100 : 15 : 2.2
  * and the ratio only widens as the ladder fields more heavies, so every
  * bundle below is written at about that shape. Get it wrong — demand
@@ -121,7 +121,7 @@ export interface TechNodeDef {
  * currency is the ONLY real constraint while the others pile up unspent,
  * which reads to a player as a broken economy rather than a tuned one.
  *
- * Keep the FIRST point of any newly-gated node payable out of the rungs
+ * Keep the FIRST point of any newly-gated node payable out of the tiers
  * already cleared when its gate opens, or the node unlocks into a wall.
  */
 export const TECH_TREE: readonly TechNodeDef[] = [
@@ -158,7 +158,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     y: 1,
   },
   {
-    // anti-air only. Gated on tier 1 so it is on sale a full rung before
+    // anti-air only. Gated on tier 1 so it is on sale a full tier before
     // flares first appear at tier 2
     tower: "scatter",
     price: { base: { scrap: 120, copper: 20, titanium: 3 }, growth: 1.04 },
@@ -170,7 +170,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // 28 damage a shell — the first turret that puts a fortress (armour 9)
     // back at its printed health instead of ten times it. Gated on tier 3,
-    // five rungs before the fortress debuts
+    // five tiers before the fortress debuts
     tower: "salvo",
     price: { base: { scrap: 250, copper: 36, titanium: 6 }, growth: 1.06 },
     requires: "hail",
@@ -218,7 +218,7 @@ export function canAffordTech(bank: Bank, tower: TowerKind, owned = 0): boolean 
 /**
  * How many more points this wallet buys on one node, spending nothing else.
  *
- * A geometric node is walked a rung at a time, which is cheap because the
+ * A geometric node is walked a tier at a time, which is cheap because the
  * count it can reach is logarithmic in the bank — a few dozen iterations at
  * any bank size. A FLAT node is not: at 8 scrap a point a late bank buys
  * tens of thousands, and walking that on every render made the tech screen

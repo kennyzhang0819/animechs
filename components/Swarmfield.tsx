@@ -23,6 +23,7 @@ import {
   audit,
   budget,
   check,
+  difficultyOf,
   specForTier,
   waveCost,
   tierDropBonus,
@@ -112,7 +113,7 @@ function LoadingScreen({
             {level.name}
           </h2>
           <p className="text-[13px] uppercase tracking-widest text-[#71717C]">
-            Tier {level.tier ?? 0} — {waves} waves — {enemies} enemies
+            Difficulty {difficultyOf(level.tier ?? 0)} — {waves} waves — {enemies} enemies
           </p>
         </div>
         <div className="flex w-full flex-col gap-2">
@@ -146,11 +147,11 @@ const levelSummary = (lv: LevelSpec): { waves: number; enemies: number } => {
 };
 
 /**
- * The campaign menu: one world, and the RUNG of the ladder to play it at.
+ * The campaign menu: one world, and the TIER of the ladder to play it at.
  *
- * The frontier — the highest rung not yet cleared — is the default and the
+ * The frontier — the highest tier not yet cleared — is the default and the
  * headline, because it is both the hardest run available and the best-paying
- * one (a first clear pays double). Stepping down is farming: every rung
+ * one (a first clear pays double). Stepping down is farming: every tier
  * below the frontier still pays its drop bonus, which is what a player does
  * while they close the gap to the next one.
  */
@@ -172,7 +173,7 @@ function TierPicker({
   const { waves, enemies } = levelSummary(spec);
   const level = tierLevel(tier);
   // the enemy level in the one unit that means anything to a player: how
-  // many times over a body has to be shot compared with the opening rung
+  // many times over a body has to be shot compared with the opening tier
   const health = HP_PER_LEVEL ** level;
   const step = (d: number): void => onTier(Math.min(top, Math.max(0, tier + d)));
 
@@ -187,18 +188,18 @@ function TierPicker({
           </span>
         ) : (
           <span className="text-[12px] font-bold uppercase tracking-widest text-[#FFD37F]">
-            New tier
+            New
           </span>
         )}
       </div>
 
       <div
         role="group"
-        aria-label="tier select"
+        aria-label="difficulty select"
         className="mt-3 flex items-center justify-between gap-2"
       >
         <button
-          aria-label="lower tier"
+          aria-label="lower difficulty"
           disabled={tier <= 0}
           onClick={() => step(-1)}
           className="h-9 w-9 rounded border border-[#2E2E36] text-lg font-bold text-[#A6A6AF] enabled:hover:border-[#FFD37F] enabled:hover:text-[#EDEDEF] disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
@@ -206,11 +207,11 @@ function TierPicker({
           −
         </button>
         <div className="text-center">
-          <div className="text-[11px] uppercase tracking-[0.3em] text-[#71717C]">Tier</div>
-          <div className="text-3xl font-bold leading-none text-[#FFD37F]">{tier}</div>
+          <div className="text-[11px] uppercase tracking-[0.3em] text-[#71717C]">Difficulty</div>
+          <div className="text-3xl font-bold leading-none text-[#FFD37F]">{difficultyOf(tier)}</div>
         </div>
         <button
-          aria-label="higher tier"
+          aria-label="higher difficulty"
           disabled={tier >= top}
           onClick={() => step(1)}
           className="h-9 w-9 rounded border border-[#2E2E36] text-lg font-bold text-[#A6A6AF] enabled:hover:border-[#FFD37F] enabled:hover:text-[#EDEDEF] disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
@@ -219,7 +220,7 @@ function TierPicker({
         </button>
       </div>
 
-      {/* what this rung actually costs and pays, in the four numbers that
+      {/* what this tier actually costs and pays, in the four numbers that
           decide whether to push or farm */}
       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 border-t border-[#2E2E36] pt-3 text-[13px]">
         <dt className="text-[#71717C]">Waves</dt>
@@ -293,10 +294,10 @@ export default function Swarmfield() {
   const [screen, setScreen] = useState<"menu" | "tech" | "game">("menu");
   const [level, setLevel] = useState<LevelSpec | null>(null);
   /**
-   * The rung the menu is pointed at. It follows the frontier whenever the
+   * The tier the menu is pointed at. It follows the frontier whenever the
    * save advances — pushing is the default action and the frontier is the
-   * only rung that still pays its first-clear bonus — but the player can
-   * step it back down to farm a rung they already own.
+   * only tier that still pays its first-clear bonus — but the player can
+   * step it back down to farm a tier they already own.
    */
   const [tier, setTier] = useState(0);
   // the selector draws map previews, so the documents load with the menu —
@@ -387,7 +388,7 @@ export default function Swarmfield() {
           w.__swarmfield = g;
           // the ladder's tuning surface, next to the running game: COVERAGE
           // is the one constant in ladder.ts that has to be MEASURED rather
-          // than reasoned out, and re-measuring it means loading a rung into
+          // than reasoned out, and re-measuring it means loading a tier into
           // the live sim and stepping it. `__ladder.budget(n)` is what the
           // arithmetic predicts; `__ladder.spec(n)` is what to hand
           // `sim.loadLevel` to find out what actually happens
@@ -430,7 +431,7 @@ export default function Swarmfield() {
         setResult(reward);
         setProgress(after);
         // the picker follows the frontier ONLY when the frontier moved. A
-        // player farming tier 2 with a frontier of 7 has chosen that rung
+        // player farming tier 2 with a frontier of 7 has chosen that tier
         // and must not be yanked back up to 7 for clearing it again
         if (reward.firstClear) setTier(topTier(after));
       }
@@ -600,7 +601,8 @@ export default function Swarmfield() {
         {hud && (
           <div className="absolute left-4 top-4 max-w-[calc(100vw-2rem)] rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
             <div className="text-[13px] uppercase tracking-widest text-[#71717C]">
-              {level.name} — Tier {hud.tier} — Wave {hud.currentWave} / {hud.totalWaves}
+              {level.name} — Difficulty {difficultyOf(hud.tier)} — Wave {hud.currentWave} /{" "}
+              {hud.totalWaves}
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
               {/* what the run has banked so far, one stack per currency —
@@ -769,7 +771,7 @@ export default function Swarmfield() {
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="w-80 rounded border border-[#1F3A2E] bg-[#151518]/95 p-6 text-center">
               <div className="text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
-                Tier {hud.tier} cleared
+                Difficulty {difficultyOf(hud.tier)} cleared
               </div>
               <div className="mt-4 space-y-1.5 text-base text-[#A6A6AF]">
                 <div>
@@ -792,7 +794,7 @@ export default function Swarmfield() {
                     </div>
                     {result.firstClear && (
                       <div className="pt-1 text-[12px] uppercase tracking-widest text-[#FFD37F]">
-                        Tier {result.tier + 1} unlocked
+                        Difficulty {difficultyOf(result.tier + 1)} unlocked
                       </div>
                     )}
                   </>

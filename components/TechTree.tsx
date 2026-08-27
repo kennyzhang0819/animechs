@@ -213,7 +213,7 @@ export default function TechTree({
                       </div>
                     ) : (
                       <div className="mt-2 border-t border-[#2E2E36] pt-2 text-[14px]">
-                        {/* the full bundle: every currency this rung wants.
+                        {/* the full bundle: every currency this tier wants.
                             Passing the bank reddens exactly the stacks it
                             can't cover, which is the whole "why can't I buy
                             this" explanation — no prose needed. Only the NEXT

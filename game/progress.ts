@@ -31,8 +31,8 @@ export interface Progress {
   /** one balance per currency; see items.ts for what drops which */
   bank: Bank;
   /**
-   * How many rungs of the ladder have been cleared: tiers 0 .. cleared-1
-   * are beaten, and tier `cleared` is the frontier — the highest rung that
+   * How many tiers of the ladder have been cleared: tiers 0 .. cleared-1
+   * are beaten, and tier `cleared` is the frontier — the highest tier that
    * can be attempted, and the only one that still pays its first-clear
    * bonus. There is no top: clearing the frontier just moves it up one.
    */
@@ -47,7 +47,7 @@ const KEY = "dagger-problem.progress.v1";
  * The free opening loadout, SOLVED from the baseline rather than picked:
  * enough duos to clear tier 0 outright with nothing bought (see
  * startingDuos). The core has one hit point, so a run demands a 100% kill
- * rate — a fresh save that cannot clear the first rung is not a challenge,
+ * rate — a fresh save that cannot clear the first tier is not a challenge,
  * it is a die-and-grind loop with no way out, because kills are the only
  * income and a wipe on wave 1 banks almost nothing.
  *
@@ -85,9 +85,9 @@ function readBank(p: { bank?: unknown; scrap?: unknown }): Bank {
 /**
  * How far up the ladder a raw save has climbed. Saves written before the
  * ladder existed carry `completed: string[]` — a list of cleared WORLD ids
- * — and there is no honest conversion from "beat world 2" to a rung, so
+ * — and there is no honest conversion from "beat world 2" to a tier, so
  * every one of them lands on the frontier its world count suggests: one
- * rung per world cleared. That keeps a returning player's tech gates open
+ * tier per world cleared. That keeps a returning player's tech gates open
  * without inventing progress they never made.
  */
 function readCleared(p: { cleared?: unknown; completed?: unknown }): number {
@@ -139,23 +139,23 @@ export function techOf(p: Progress): TechState {
 }
 
 /**
- * The highest rung that can be attempted: every cleared one, plus the
- * frontier. A player may replay any rung below it to farm — a cleared rung
+ * The highest tier that can be attempted: every cleared one, plus the
+ * frontier. A player may replay any tier below it to farm — a cleared tier
  * pays exactly what it always did — but only the frontier moves the
  * campaign forward.
  */
 export const topTier = (p: Progress): number => p.cleared;
 
-/** has this rung been beaten? (the frontier itself has not) */
+/** has this tier been beaten? (the frontier itself has not) */
 export const isTierCleared = (p: Progress, tier: number): boolean => tier < p.cleared;
 
-/** may this rung be played at all? */
+/** may this tier be played at all? */
 export const isTierUnlocked = (p: Progress, tier: number): boolean =>
   tier >= 0 && tier <= topTier(p);
 
 /**
  * What a tree node can do right now. "hidden" nodes (parent unbought) are
- * not drawn at all; "locked-tier" nodes are drawn dimmed with the rung they
+ * not drawn at all; "locked-tier" nodes are drawn dimmed with the tier they
  * wait for; the rest differ only by affordability.
  */
 export type NodeStatus = "buyable" | "poor" | "locked-tier" | "hidden";
@@ -227,11 +227,11 @@ function scaleCost(cost: Cost, mul: number): Cost {
 export interface RunReward {
   /** everything the run banked, by currency, after every multiplier */
   earned: Cost;
-  /** the rung that was played */
+  /** the tier that was played */
   tier: number;
-  /** drop multiplier the rung itself carries */
+  /** drop multiplier the tier itself carries */
   dropBonus: number;
-  /** did this clear push the frontier up a rung? */
+  /** did this clear push the frontier up a tier? */
   firstClear: boolean;
 }
 
@@ -240,7 +240,7 @@ export interface RunReward {
  *
  * Kills are the only income, so a defeat still banks everything the towers
  * killed on the way down — in whatever currencies those kills happened to
- * drop — multiplied by the rung's own drop bonus. Clearing a rung for the
+ * drop — multiplied by the tier's own drop bonus. Clearing a tier for the
  * first time doubles that, and moves the frontier up one.
  *
  * Only call this on a run that reached its own end (won or lost):
@@ -255,8 +255,8 @@ export function grantRunReward(
   const p = loadProgress();
   const n = Math.max(0, Math.floor(tier));
   const firstClear = won && n >= p.cleared;
-  // a rung pays the same whether or not it is new: what clearing the
-  // frontier buys is the NEXT rung — more waves, more enemies, more kinds of
+  // a tier pays the same whether or not it is new: what clearing the
+  // frontier buys is the NEXT tier — more waves, more enemies, more kinds of
   // them — and that is the whole reason to push rather than farm
   const dropBonus = tierDropBonus(n);
   const earned = scaleCost(dropsForKills(killsByKind), dropBonus);
