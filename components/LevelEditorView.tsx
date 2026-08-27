@@ -15,6 +15,7 @@ import {
   type WaveUnits,
 } from "@/game/levels";
 import { dropsForKills } from "@/game/progress";
+import { tierOfWave } from "@/game/ladder";
 import {
   drawThumb,
   loadMap,
@@ -511,6 +512,16 @@ function StepCard({
         <span className="text-[14px] font-bold uppercase tracking-widest text-[#EDEDEF]">
           Wave {waveNo}
         </span>
+        {/* a wave's POSITION is its difficulty gate: the ladder sends the
+            first BASE_WAVES + 3n of them at tier n, so this badge is the
+            rung a wave first appears at. Moving a row up moves the fight it
+            holds down the ladder, against a smaller fleet */}
+        <span
+          title={`First played at tier ${tierOfWave(index)}`}
+          className="rounded border border-[#3A3320] bg-[#1C1810] px-1.5 text-[12px] font-bold uppercase tracking-widest text-[#FFD37F]"
+        >
+          T{tierOfWave(index)}
+        </span>
         <span className="text-[13px] text-[#71717C]">{total} enemies</span>
         <CostRow cost={payout} />
         <div className="ml-auto">{controls}</div>
@@ -673,7 +684,7 @@ function UnitSlot({
         <img
           src={unitIcon(kind)}
           alt={kind}
-          className={`h-5 w-5 [image-rendering:pixelated] ${on ? "" : "opacity-25"}`}
+          className={`h-5 w-5 object-contain [image-rendering:pixelated] ${on ? "" : "opacity-25"}`}
         />
       </button>
       <NumberInput

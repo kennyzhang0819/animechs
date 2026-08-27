@@ -11,6 +11,10 @@ import type { Tower } from "./types";
 
 export interface UiState {
   levelId: string;
+  /** which rung of the ladder is being played (see ladder.ts) */
+  tier: number;
+  /** enemy level this rung carries — every unit's health x 1.06^level */
+  enemyLevel: number;
   remaining: number;
   /** how many of each kind are on the field right now, like UNIT_KINDS */
   byKind: number[];
@@ -502,6 +506,8 @@ export class Game {
   ui(): UiState {
     return {
       levelId: this.sim.level.id,
+      tier: this.sim.level.tier ?? 0,
+      enemyLevel: this.sim.level.enemyLevel ?? 0,
       remaining: this.sim.remaining(),
       byKind: this.sim.aliveByKindList(),
       nextWaveIn: this.sim.nextWaveIn(),

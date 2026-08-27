@@ -1,40 +1,52 @@
-import { addScaled, canAfford, costEntries, type Bank, type Cost, type ItemKind } from "./items";
+import { addScaled, canAfford, costEntries, pay, type Bank, type Cost, type ItemKind } from "./items";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
 /**
  * The tech tree: one square node per turret, laid out as a small graph.
  * A node's point count IS the turret's placement capacity — the first
  * point unlocks the turret (capacity 1) and every further point on the
- * same node is +1 capacity. Points get more expensive the more of them you
- * own: every node carries a PRICE LADDER of tiers (see TECH_TREE below),
- * so the first few slots are cheap and a deep stack costs real money.
+ * same node is +1 capacity.
  *
  * Nodes gate two ways: the parent node must hold at least one point (the
  * graph edge — a node stays hidden until its parent is bought), and some
- * nodes wait for a world to be fully cleared. World-1 players see only
- * duo and hail; clearing world 1 opens salvo and scatter; fuse waits for
- * world 2.
+ * nodes wait on a RUNG of the ladder being cleared. A fresh save sees duo,
+ * hail and scorch; clearing tier 1 opens scatter, tier 3 salvo, tier 6
+ * fuse — each of them a rung or more before the enemy it answers first
+ * walks onto the field.
  */
 
 /**
- * A node's PRICE CURVE. Prices are computed, not tabulated: the nth point on
- * a node costs `base * growth^n` of each item it wants, rounded to a tidy
- * number. Geometric growth is what idle and tower games almost always use
- * (Cookie Clicker's buildings are 1.15 per copy) and it is the whole answer
- * to "one clear buys a dozen turrets": the cost of N points grows like
- * growth^N, so the count a player can afford grows only with the LOGARITHM
- * of their income. Doubling income adds a fixed handful of turrets rather
- * than doubling the fleet.
+ * A node's PRICE CURVE: the nth point costs `base * growth^n` of each item
+ * it wants, tidied to a readable number.
  *
- *   growth 1.10  gentle — a stack of 30 is realistic
- *   growth 1.15  the genre default; every 5 points is roughly +2x
- *   growth 1.25  steep — a deep stack is a real sacrifice
- *   growth 1.40  near-vertical; use for a turret meant to stay rare
+ * GROWTH 1 — A FLAT PRICE — IS THE DEFAULT HERE, NOT AN ESCAPE HATCH.
+ * Geometric prices are the genre reflex (Cookie Clicker's buildings are
+ * 1.15 a copy) and they are wrong for the turret a stalled player leans on.
+ * The count you can afford grows with the LOGARITHM of income, so it caps
+ * near 60-90 forever whatever you earn: at growth 1.08 the 150th duo costs
+ * 515k scrap on its own and 6.4M cumulative, against a campaign that pays
+ * about 14k a run. A screen full of turrets stops being expensive and
+ * becomes arithmetically impossible.
+ *
+ * Flat is safe here because the treadmill lives somewhere else entirely -
+ * on enemy LEVEL (ladder.ts), which raises what a kill costs without ever
+ * raising what a turret costs. The units you kill pay for the damage needed
+ * to kill them, and the ladder walks on its own.
+ *
+ * So: the spam turret is flat, and growth stays on the SPECIALISTS, where
+ * a hard cap is the point — it is what stops "buy more fuse" from being the
+ * answer to everything and keeps composition a real decision.
+ *
+ *   growth 1.00  flat — the volume turret; thousands are reachable
+ *   growth 1.03  gentle — a few hundred
+ *   growth 1.06  a stack in the low hundreds
+ *   growth 1.09  steep — a battery of a few dozen, meant to stay rare
  *
  * `from` delays an ITEM rather than the node: `from: { copper: 30 }` means
- * the first 30 points cost no copper at all, and copper starts at its base
- * price on point 30. That is how a node stays payable out of the worlds
- * already open while still wanting the deeper currencies later.
+ * the first 30 points cost no copper at all. The exponent is NOT restarted
+ * at that point — copper joins at `base * growth^30`, its honest share of
+ * the rung. Restarting it would pin that currency at a fraction of its
+ * share forever and quietly make one currency the only real constraint.
  */
 export interface PriceCurve {
   /** what the FIRST point costs, per item */
@@ -76,8 +88,13 @@ export interface TechNodeDef {
   price: PriceCurve;
   /** parent node: needs >= 1 point before this node appears in the tree */
   requires?: TowerKind;
-  /** world that must be fully cleared before points can go in */
-  world?: number;
+  /**
+   * Ladder gate: this rung of the campaign must have been CLEARED before
+   * points can go in. Gates sit one or more rungs BEFORE the enemy they
+   * answer debuts (see EXTENSION in ladder.ts), so the turret is on sale by
+   * the time it is needed rather than the run it is needed.
+   */
+  requiresTier?: number;
   /**
    * grid position in the tree view, in cell units. The tree grows DOWNWARD:
    * y is the depth (a child always sits on the row below its parent) and x
@@ -89,82 +106,86 @@ export interface TechNodeDef {
 }
 
 /**
- * The tree. To retune the economy, edit the `tiers` ladders below — nothing
- * else reads prices. Each turret's ladder roughly doubles per rung, so
- * stacking one turret deep costs more than spreading across the tree; the
- * a node's `growth` says how fast that turret's own price climbs, so a
- * turret meant to be spammed (duo) climbs slowly and one meant to stay rare
- * (fuse) climbs hard. PRICE_GROWTH_SCALE moves them all at once.
+ * The tree. Nothing else reads prices, so this is where the economy is
+ * tuned; PRICE_GROWTH_SCALE moves every specialist at once.
  *
- * Curves also get WIDER in currency as they climb: the cheap end is scrap
- * the opening waves already pay for, the middle wants copper that only T2
- * kills drop, and the deep end needs titanium off T3s — that is what `from`
- * is for. A node therefore can't be climbed by farming one easy wave; the
- * mix of enemies a player is willing to fight limits how far up they get.
- * Keep the FIRST point of any newly-unlockable node payable from the worlds
- * already open at that point, or the node unlocks into a wall.
+ * Two rules hold the whole thing up.
+ *
+ * ONE: the volume turret is flat and everything else grows. See PriceCurve.
+ *
+ * TWO: A COST BUNDLE MUST CARRY THE DROP RATIO OF THE RUNG THAT UNLOCKS IT.
+ * The baseline supplies scrap : copper : titanium at roughly 100 : 15 : 2.2
+ * and the ratio only widens as the ladder fields more heavies, so every
+ * bundle below is written at about that shape. Get it wrong — demand
+ * 100 : 10 : 0.4 against a supply of 100 : 15 : 2.2 — and the mismatched
+ * currency is the ONLY real constraint while the others pile up unspent,
+ * which reads to a player as a broken economy rather than a tuned one.
+ *
+ * Keep the FIRST point of any newly-gated node payable out of the rungs
+ * already cleared when its gate opens, or the node unlocks into a wall.
  */
 export const TECH_TREE: readonly TechNodeDef[] = [
   {
-    // The spam turret, and the only lever a stalled player has — so it
-    // climbs slowest, and stays SCRAP-ONLY until 30. A run that dies before
-    // world 1's first mace wave banks no copper at all, and duo capacity has
-    // to remain buyable out of that run or the save is stuck.
+    // THE VOLUME TURRET, and the only lever a stalled player has — so it is
+    // FLAT, forever, and scrap-only. A run that dies before the baseline's
+    // first mace wave banks no copper at all, and duo capacity has to stay
+    // buyable out of that run or the save is stuck. 8 scrap is a shade under
+    // ten dagger kills; the fleet grows with the bank, in a straight line,
+    // for as long as there is rock to stand on
     tower: "duo",
-    price: { base: { scrap: 5, copper: 1 }, growth: 1.08, from: { copper: 30 } },
+    price: { base: { scrap: 8 }, growth: 1 },
     x: 1,
     y: 0,
   },
   {
+    // the first AoE, and the moment tier 1 and tier 2 stop being difficulty:
+    // splash scales with bodies per blast and collapses with health per
+    // body, so one hail shell kills five daggers and chips a spiroct
     tower: "hail",
-    price: { base: { scrap: 30, copper: 2 }, growth: 1.14, from: { copper: 3, titanium: 15 } },
+    price: { base: { scrap: 40, copper: 6 }, growth: 1.03 },
     requires: "duo",
     x: 1,
     y: 1,
   },
   {
-    tower: "scatter",
-    price: {
-      base: { scrap: 120, copper: 8, titanium: 2 },
-      growth: 1.14,
-      from: { titanium: 12 },
-    },
-    requires: "duo",
-    world: 1,
-    x: 0,
-    y: 1,
-  },
-  {
-    // no world gate: scorch is open from the start like hail, and undercuts
-    // it — it is Mindustry's second-cheapest turret. however, its currently very strong in 
-    // this game because of aoe against early game swarms and enemies cant fight back
+    // ungated like hail and strong out of proportion to its price: a
+    // piercing flame rakes a whole file of units and sets each alight, and
+    // burning ignores armour outright. 60 units of range is the whole cost
     tower: "scorch",
-    price: { base: { scrap: 100, copper: 20 }, growth: 1.2, from: { titanium: 3 } },
+    price: { base: { scrap: 60, copper: 9 }, growth: 1.05 },
     requires: "duo",
     x: 2,
     y: 1,
   },
   {
-    // opens on clearing world 1, which fields no fortresses — so titanium
-    // waits until point 5, by which time world 2 is supplying it
+    // anti-air only. Gated on tier 1 so it is on sale a full rung before
+    // flares first appear at tier 2
+    tower: "scatter",
+    price: { base: { scrap: 120, copper: 20, titanium: 3 }, growth: 1.04 },
+    requires: "duo",
+    requiresTier: 1,
+    x: 0,
+    y: 1,
+  },
+  {
+    // 28 damage a shell — the first turret that puts a fortress (armour 9)
+    // back at its printed health instead of ten times it. Gated on tier 3,
+    // five rungs before the fortress debuts
     tower: "salvo",
-    price: {
-      base: { scrap: 250, copper: 25, titanium: 4 },
-      growth: 1.25,
-      from: { titanium: 5 },
-    },
+    price: { base: { scrap: 250, copper: 36, titanium: 6 }, growth: 1.06 },
     requires: "hail",
-    world: 1,
+    requiresTier: 3,
     x: 1,
     y: 2,
   },
   {
-    // world-2 gated, so titanium is already flowing when it opens. The
-    // steepest curve in the tree: a fuse battery is meant to be a handful
+    // the steepest curve in the tree: a fuse battery is meant to be a
+    // handful. Three instant piercing rays at 105 damage each, at nine
+    // tiles of range — priced so it can never become the whole answer
     tower: "fuse",
-    price: { base: { scrap: 500, copper: 60, titanium: 12 }, growth: 1.35 },
+    price: { base: { scrap: 600, copper: 105, titanium: 34 }, growth: 1.09 },
     requires: "salvo",
-    world: 2,
+    requiresTier: 6,
     x: 1,
     y: 3,
   },
@@ -181,9 +202,10 @@ export function techPrice(tower: TowerKind, owned = 0): Cost {
   const g = effectiveGrowth(growth);
   const out: Cost = {};
   for (const { item, amount } of costEntries(base)) {
-    const starts = from?.[item] ?? 0;
-    if (n < starts) continue; // this item isn't charged for yet
-    out[item] = tidy(amount * g ** (n - starts));
+    if (n < (from?.[item] ?? 0)) continue; // this item isn't charged for yet
+    // NOT `g ** (n - starts)`: a delayed currency joins the ladder where it
+    // actually stands, not at the bottom of a second one
+    out[item] = tidy(amount * g ** n);
   }
   return out;
 }
@@ -191,6 +213,44 @@ export function techPrice(tower: TowerKind, owned = 0): Cost {
 /** can this wallet pay for the next point on the node? */
 export function canAffordTech(bank: Bank, tower: TowerKind, owned = 0): boolean {
   return canAfford(bank, techPrice(tower, owned));
+}
+
+/**
+ * How many more points this wallet buys on one node, spending nothing else.
+ *
+ * A geometric node is walked a rung at a time, which is cheap because the
+ * count it can reach is logarithmic in the bank — a few dozen iterations at
+ * any bank size. A FLAT node is not: at 8 scrap a point a late bank buys
+ * tens of thousands, and walking that on every render made the tech screen
+ * take over a second to repaint. Its price never changes, so the answer is
+ * a division instead.
+ */
+export function affordablePoints(
+  bank: Bank,
+  tower: TowerKind,
+  owned = 0,
+  limit = Infinity,
+): number {
+  const n = Math.max(0, Math.floor(owned));
+  const price = techPrice(tower, n);
+  const entries = costEntries(price);
+  if (entries.length === 0) return 0;
+
+  if (effectiveGrowth(techNode(tower).price.growth) === 1) {
+    let most = Infinity;
+    for (const { item, amount } of entries) most = Math.min(most, Math.floor(bank[item] / amount));
+    return Math.max(0, Math.min(most, limit));
+  }
+
+  const left = { ...bank };
+  let bought = 0;
+  while (bought < limit) {
+    const next = techPrice(tower, n + bought);
+    if (!canAfford(left, next)) break;
+    pay(left, next);
+    bought++;
+  }
+  return bought;
 }
 
 /**

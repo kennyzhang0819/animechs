@@ -25,6 +25,7 @@ import {
   type LevelSpec,
   type UnitKind,
 } from "./levels";
+import { unitHpAtLevel } from "./ladder";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
 import type { TechState } from "./tech";
 import { WALL_PINE, type Terrain } from "./terrain";
@@ -777,12 +778,18 @@ export class Sim {
       // a big hitbox can overhang the pad into ragged rock beside it
       if ((!fly && this.field.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly)) continue;
       const i = this.n++;
+      // LEVEL SCALING, and the only stat the ladder touches: health alone
+      // moves with the enemy level, so armour, speed, hitbox and drop stay
+      // exactly where UNIT_STATS put them however high the rung climbs.
+      // That is what keeps a tier-1 dagger a dagger — a fat one, but still
+      // something a duo shot lands its full 9 damage on
+      const hp = unitHpAtLevel(kind, this.level.enemyLevel ?? 0);
       this.upx[i] = x;
       this.upy[i] = y;
       this.uvx[i] = 0;
       this.uvy[i] = 0;
-      this.uhp[i] = stats.hp;
-      this.uhpmax[i] = stats.hp;
+      this.uhp[i] = hp;
+      this.uhpmax[i] = hp;
       this.uspd[i] = stats.speed;
       this.urad[i] = r;
       this.uarmor[i] = stats.armor;

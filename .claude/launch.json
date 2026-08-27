@@ -96,6 +96,18 @@
         "3110"
       ],
       "port": 3110
+    },
+    {
+      "name": "swarmdustry-3000",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3000"
+      ],
+      "port": 3000
     }
   ]
 }

@@ -13,19 +13,30 @@ import {
 import {
   loadLevelDocs,
   UNIT_KINDS,
-  WORLDS,
+  WORLD,
   waveGroups,
   type LevelSpec,
   type TowerKind,
   type UnitKind,
 } from "@/game/levels";
+import {
+  audit,
+  budget,
+  check,
+  specForTier,
+  waveCost,
+  tierDropBonus,
+  tierLevel,
+  HP_PER_LEVEL,
+} from "@/game/ladder";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import {
   grantRunReward,
-  isWorldUnlocked,
+  isTierCleared,
   loadProgress,
   resetProgress,
   techOf,
+  topTier,
   type Progress,
   type RunReward,
 } from "@/game/progress";
@@ -101,7 +112,7 @@ function LoadingScreen({
             {level.name}
           </h2>
           <p className="text-[13px] uppercase tracking-widest text-[#71717C]">
-            {waves} waves — {enemies} enemies
+            Tier {level.tier ?? 0} — {waves} waves — {enemies} enemies
           </p>
         </div>
         <div className="flex w-full flex-col gap-2">
@@ -133,6 +144,107 @@ const levelSummary = (lv: LevelSpec): { waves: number; enemies: number } => {
   }
   return { waves, enemies };
 };
+
+/**
+ * The campaign menu: one world, and the RUNG of the ladder to play it at.
+ *
+ * The frontier — the highest rung not yet cleared — is the default and the
+ * headline, because it is both the hardest run available and the best-paying
+ * one (a first clear pays double). Stepping down is farming: every rung
+ * below the frontier still pays its drop bonus, which is what a player does
+ * while they close the gap to the next one.
+ */
+function TierPicker({
+  progress,
+  tier,
+  onTier,
+  mapsReady,
+  onStart,
+}: {
+  progress: Progress;
+  tier: number;
+  onTier: (t: number) => void;
+  mapsReady: boolean;
+  onStart: () => void;
+}) {
+  const top = topTier(progress);
+  const spec = specForTier(WORLD, tier);
+  const { waves, enemies } = levelSummary(spec);
+  const level = tierLevel(tier);
+  // the enemy level in the one unit that means anything to a player: how
+  // many times over a body has to be shot compared with the opening rung
+  const health = HP_PER_LEVEL ** level;
+  const step = (d: number): void => onTier(Math.min(top, Math.max(0, tier + d)));
+
+  return (
+    <div className="w-[22rem] rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-4">
+      {mapsReady && <LevelThumb mapId={spec.map ?? OFFICIAL_MAP_IDS[0]} />}
+      <div className="mt-3 flex items-baseline justify-between">
+        <span className="text-lg font-bold text-[#EDEDEF]">{spec.name}</span>
+        {isTierCleared(progress, tier) ? (
+          <span className="text-[12px] font-bold uppercase tracking-widest text-[#7BE58A]">
+            Cleared
+          </span>
+        ) : (
+          <span className="text-[12px] font-bold uppercase tracking-widest text-[#FFD37F]">
+            New tier
+          </span>
+        )}
+      </div>
+
+      <div
+        role="group"
+        aria-label="tier select"
+        className="mt-3 flex items-center justify-between gap-2"
+      >
+        <button
+          aria-label="lower tier"
+          disabled={tier <= 0}
+          onClick={() => step(-1)}
+          className="h-9 w-9 rounded border border-[#2E2E36] text-lg font-bold text-[#A6A6AF] enabled:hover:border-[#FFD37F] enabled:hover:text-[#EDEDEF] disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+        >
+          −
+        </button>
+        <div className="text-center">
+          <div className="text-[11px] uppercase tracking-[0.3em] text-[#71717C]">Tier</div>
+          <div className="text-3xl font-bold leading-none text-[#FFD37F]">{tier}</div>
+        </div>
+        <button
+          aria-label="higher tier"
+          disabled={tier >= top}
+          onClick={() => step(1)}
+          className="h-9 w-9 rounded border border-[#2E2E36] text-lg font-bold text-[#A6A6AF] enabled:hover:border-[#FFD37F] enabled:hover:text-[#EDEDEF] disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+        >
+          +
+        </button>
+      </div>
+
+      {/* what this rung actually costs and pays, in the four numbers that
+          decide whether to push or farm */}
+      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 border-t border-[#2E2E36] pt-3 text-[13px]">
+        <dt className="text-[#71717C]">Waves</dt>
+        <dd className="text-right font-bold text-[#EDEDEF]">{waves}</dd>
+        <dt className="text-[#71717C]">Enemies</dt>
+        <dd className="text-right font-bold text-[#EDEDEF]">{enemies.toLocaleString()}</dd>
+        <dt className="text-[#71717C]">Enemy level</dt>
+        <dd className="text-right font-bold text-[#EDEDEF]">
+          {level} <span className="text-[#71717C]">(×{health.toFixed(1)} hp)</span>
+        </dd>
+        <dt className="text-[#71717C]">Salvage</dt>
+        <dd className="text-right font-bold text-[#7BE58A]">
+          ×{tierDropBonus(tier).toFixed(2)}
+        </dd>
+      </dl>
+
+      <button
+        onClick={onStart}
+        className="mt-3 w-full rounded border border-[#FFD37F] bg-[#222227]/90 py-2 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+      >
+        Deploy
+      </button>
+    </div>
+  );
+}
 
 const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }> = [
   {
@@ -180,6 +292,13 @@ export default function Swarmfield() {
   // picked, and going back to the menu tears the whole game down
   const [screen, setScreen] = useState<"menu" | "tech" | "game">("menu");
   const [level, setLevel] = useState<LevelSpec | null>(null);
+  /**
+   * The rung the menu is pointed at. It follows the frontier whenever the
+   * save advances — pushing is the default action and the frontier is the
+   * only rung that still pays its first-clear bonus — but the player can
+   * step it back down to farm a rung they already own.
+   */
+  const [tier, setTier] = useState(0);
   // the selector draws map previews, so the documents load with the menu —
   // Game.create re-fetches later, keeping in-game state just as fresh
   const [mapsReady, setMapsReady] = useState(false);
@@ -201,7 +320,9 @@ export default function Swarmfield() {
   const granted = useRef(false);
 
   useEffect(() => {
-    setProgress(loadProgress());
+    const p = loadProgress();
+    setProgress(p);
+    setTier(topTier(p));
   }, []);
 
   useEffect(() => {
@@ -262,7 +383,21 @@ export default function Swarmfield() {
         gameRef.current = g;
         setHud(g.ui());
         if (process.env.NODE_ENV !== "production") {
-          (window as unknown as Record<string, unknown>).__swarmfield = g;
+          const w = window as unknown as Record<string, unknown>;
+          w.__swarmfield = g;
+          // the ladder's tuning surface, next to the running game: COVERAGE
+          // is the one constant in ladder.ts that has to be MEASURED rather
+          // than reasoned out, and re-measuring it means loading a rung into
+          // the live sim and stepping it. `__ladder.budget(n)` is what the
+          // arithmetic predicts; `__ladder.spec(n)` is what to hand
+          // `sim.loadLevel` to find out what actually happens
+          w.__ladder = {
+            spec: (n: number) => specForTier(WORLD, n),
+            budget: (n: number) => budget(WORLD, n),
+            audit: (through?: number) => audit(WORLD, through),
+            check: (through?: number) => check(WORLD, through),
+            wave: (i: number, tier = 0) => waveCost(WORLD.script[i], tierLevel(tier)),
+          };
         }
         // hold the screen out to its minimum, then dissolve it. The game is
         // already running underneath — the sim ticks through the fade, so
@@ -290,8 +425,14 @@ export default function Swarmfield() {
       setHud(ui);
       if ((ui.lost || ui.won) && !granted.current) {
         granted.current = true;
-        setResult(grantRunReward(level.id, Array.from(g.sim.killsByKind), ui.won));
-        setProgress(loadProgress());
+        const reward = grantRunReward(level.tier ?? 0, Array.from(g.sim.killsByKind), ui.won);
+        const after = loadProgress();
+        setResult(reward);
+        setProgress(after);
+        // the picker follows the frontier ONLY when the frontier moved. A
+        // player farming tier 2 with a frontier of 7 has chosen that rung
+        // and must not be yanked back up to 7 for clearing it again
+        if (reward.firstClear) setTier(topTier(after));
       }
     }, 100);
     return () => {
@@ -390,75 +531,29 @@ export default function Swarmfield() {
             </div>
           )}
           {progress && (
-            <div
-              role="group"
-              aria-label="world select"
-              className="flex flex-wrap justify-center gap-4"
-            >
-              {WORLDS.map((world, i) => {
-                const { waves, enemies } = levelSummary(world);
-                const unlocked = isWorldUnlocked(progress, world.id);
-                const cleared = progress.completed.includes(world.id);
-                return (
-                  <button
-                    key={world.id}
-                    disabled={!unlocked}
-                    onClick={() => {
-                      setLevel(world);
-                      setScreen("game");
-                      // raised in the same batch as the screen switch, so
-                      // the game screen's FIRST paint is already covered —
-                      // an effect would run after that paint and let a
-                      // frame of black canvas through
-                      setLoadUi({ step: firstLoadStep(), out: false });
-                    }}
-                    className={`w-72 rounded-lg border p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-                      unlocked
-                        ? "border-[#2E2E36] bg-[#151518]/70 hover:border-[#FFD37F] hover:bg-[#222227]/90"
-                        : "cursor-not-allowed border-[#222227] bg-[#121215]/60 opacity-50"
-                    }`}
-                  >
-                    {mapsReady && <LevelThumb mapId={world.map ?? OFFICIAL_MAP_IDS[0]} />}
-                    <div className="mt-2 flex items-baseline justify-between">
-                      <span className="text-lg font-bold text-[#EDEDEF]">{world.name}</span>
-                      {cleared ? (
-                        <span className="text-[12px] font-bold uppercase tracking-widest text-[#7BE58A]">
-                          Cleared
-                        </span>
-                      ) : !unlocked ? (
-                        <svg
-                          viewBox="0 0 12 12"
-                          className="h-4 w-4 fill-[#71717C]"
-                          aria-hidden="true"
-                        >
-                          <path d="M3.5 5V3.8a2.5 2.5 0 0 1 5 0V5H9a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h.5zm1.2 0h2.6V3.8a1.3 1.3 0 0 0-2.6 0V5z" />
-                        </svg>
-                      ) : null}
-                    </div>
-                    <div className="mt-1 space-y-0.5 text-[13px] uppercase tracking-widest text-[#71717C]">
-                      {/* a world's name is now its only label, so the flavour
-                          line it used to carry is gone — the gate notice is
-                          all that still belongs here, and only while locked */}
-                      {!unlocked && (
-                        <div className="truncate">
-                          Clear {WORLDS[i - 1]?.name ?? "the previous world"} first
-                        </div>
-                      )}
-                      <div>
-                        {waves} waves · {enemies} enemies
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+            <TierPicker
+              progress={progress}
+              tier={tier}
+              onTier={setTier}
+              mapsReady={mapsReady}
+              onStart={() => {
+                setLevel(specForTier(WORLD, tier));
+                setScreen("game");
+                // raised in the same batch as the screen switch, so the game
+                // screen's FIRST paint is already covered — an effect would
+                // run after that paint and let a frame of black canvas through
+                setLoadUi({ step: firstLoadStep(), out: false });
+              }}
+            />
           )}
           <div className="flex flex-col items-center gap-6">
             <button
               onClick={() => {
-                if (window.confirm("Wipe all progress — resources, tech, and cleared levels?")) {
+                if (window.confirm("Wipe all progress — resources, tech, and cleared tiers?")) {
                   resetProgress();
-                  setProgress(loadProgress());
+                  const p = loadProgress();
+                  setProgress(p);
+                  setTier(topTier(p));
                 }
               }}
               className="text-[13px] uppercase tracking-widest text-[#71717C] underline-offset-2 hover:text-[#FF5A5A] hover:underline"
@@ -505,7 +600,7 @@ export default function Swarmfield() {
         {hud && (
           <div className="absolute left-4 top-4 max-w-[calc(100vw-2rem)] rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
             <div className="text-[13px] uppercase tracking-widest text-[#71717C]">
-              {level.name} — Wave {hud.currentWave} / {hud.totalWaves}
+              {level.name} — Tier {hud.tier} — Wave {hud.currentWave} / {hud.totalWaves}
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
               {/* what the run has banked so far, one stack per currency —
@@ -523,7 +618,7 @@ export default function Swarmfield() {
                           <img
                             src={unitIcon(k)}
                             alt={k}
-                            className="h-5 w-5 shrink-0 [image-rendering:pixelated]"
+                            className="h-5 w-5 shrink-0 object-contain [image-rendering:pixelated]"
                           />
                           {hud.byKind[i]}
                         </span>
@@ -645,7 +740,10 @@ export default function Swarmfield() {
                 </div>
                 {result && !isEmpty(result.earned) && (
                   <div className="space-y-1 pt-1">
-                    <div>Salvaged</div>
+                    {/* kills are the only income, so a loss still pays for
+                        everything the towers killed on the way down —
+                        which is what makes a failed push into progress */}
+                    <div>Salvaged (×{result.dropBonus.toFixed(2)})</div>
                     <CostRow cost={result.earned} className="justify-center" />
                   </div>
                 )}
@@ -671,7 +769,7 @@ export default function Swarmfield() {
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="w-80 rounded border border-[#1F3A2E] bg-[#151518]/95 p-6 text-center">
               <div className="text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
-                Level cleared
+                Tier {hud.tier} cleared
               </div>
               <div className="mt-4 space-y-1.5 text-base text-[#A6A6AF]">
                 <div>
@@ -680,7 +778,12 @@ export default function Swarmfield() {
                 {result && (
                   <>
                     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[#2E2E36] pt-1.5">
-                      <span className="font-bold text-[#EDEDEF]">Salvaged</span>
+                      <span className="font-bold text-[#EDEDEF]">
+                        Salvaged
+                        <span className="ml-1 font-normal text-[#71717C]">
+                          ×{result.dropBonus.toFixed(2)}
+                        </span>
+                      </span>
                       {isEmpty(result.earned) ? (
                         <span className="text-[#71717C]">nothing</span>
                       ) : (
@@ -689,7 +792,7 @@ export default function Swarmfield() {
                     </div>
                     {result.firstClear && (
                       <div className="pt-1 text-[12px] uppercase tracking-widest text-[#FFD37F]">
-                        Next level unlocked
+                        Tier {result.tier + 1} unlocked
                       </div>
                     )}
                   </>
@@ -728,7 +831,7 @@ export default function Swarmfield() {
                   onClick={backToMenu}
                   className="rounded border border-[#3A2430] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#FF8A8A] hover:border-[#FF5A5A] hover:bg-[#2A1620]/80 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF5A5A]"
                 >
-                  Abandon level
+                  Abandon run
                 </button>
               </div>
             </div>

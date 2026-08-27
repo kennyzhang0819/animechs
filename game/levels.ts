@@ -317,6 +317,14 @@ export interface LevelSpec {
   waveGap: number;
   /** what the level throws at you, run start to finish in order */
   script: LevelStep[];
+  /**
+   * Enemy level: every unit's health is multiplied by HP_PER_LEVEL^level
+   * and nothing else moves — armour, speed, hitbox and drop stay at base.
+   * Unset (the authored baseline) means level 0. Set by specForTier().
+   */
+  enemyLevel?: number;
+  /** which rung of the ladder this spec was expanded for; unset = baseline */
+  tier?: number;
 }
 
 /**
@@ -343,93 +351,131 @@ export function levelDoc(spec: LevelSpec): LevelDoc {
 }
 
 /**
- * The campaign: a WORLD is one playable level on its own map, and they play
- * strictly in order — world N opens when world N-1 is cleared. Kills are the
- * only income: a finished run banks each dead unit's tier item whether it
- * ended in victory or defeat, and winning pays in the next world rather than
- * a bonus. That makes a world's enemy mix its economy — world 1 is daggers
- * and crawlers, so it is a scrap mine with a copper trickle from its maces,
- * while titanium only starts flowing once world 2 fields fortresses.
- * See progress.ts.
+ * The campaign: ONE world, played over and over at an ever-higher TIER.
+ *
+ * EVERY WAVE THE GAME WILL EVER SEND IS WRITTEN OUT BELOW, in order. The
+ * tier does not generate waves — it decides HOW MANY OF THESE a run plays.
+ * Tier 0 sends the first four, and every rung adds three more (see
+ * WAVES_PER_TIER in ladder.ts), so:
+ *
+ *   tier  0   waves 1-4      tier  4   waves 1-16
+ *   tier  1   waves 1-7      tier  8   waves 1-28
+ *   tier  2   waves 1-10     tier 16   waves 1-52  (all of them)
+ *
+ * That is what makes climbing worth doing. A rung is not the same fight
+ * with a bigger number on it — it is three waves of hand-authored fight
+ * nobody has seen yet, on top of everything below. The enemy LEVEL rises
+ * alongside (health only, x1.06 a level), and past the end of this list the
+ * level keeps rising on its own, so the ladder never hard-stops; it just
+ * stops adding new content until more waves are written here.
+ *
+ * Kills are the only income: a finished run banks each dead unit's tier
+ * item whether it ended in victory or defeat, times the rung's drop bonus.
+ *
+ * TWO RULES WHEN EDITING THIS LIST.
+ *
+ * ONE — a wave's position IS its difficulty gate. Wave i first appears at
+ * tier ceil((i - 4) / 3), so moving a wave earlier makes it arrive against
+ * a smaller fleet. The comments below mark where each rung begins.
+ *
+ * TWO — a unit may not debut before the player can own a turret whose
+ * per-shot damage exceeds its armour. Armour is flat, max(dmg - armor,
+ * 0.1 * dmg), so a fortress (armour 9) against a duo (damage 9) hits the
+ * 10% floor and reads as a 9,000-health unit rather than a 900-health one.
+ * That is why the sky opens with flares, tier 3 opens with spiroct
+ * (armour 5, still 4 damage a duo shot), and the fortress waits until
+ * wave 26 — tier 8, five rungs after salvo's 28-damage shells go on sale.
+ * debutViolations() in ladder.ts warns in dev if an edit breaks this.
  */
 export const WORLDS: LevelSpec[] = [
   {
     id: "1",
     name: "The Foothills",
     map: "grass-s",
-    spawnRate: 40,
-    waveGap: 10,
+    // slow enough that a wave is still walking in when the next gap starts,
+    // so the field reads as one continuous swarm rather than a set of pushes
+    spawnRate: 20,
+    waveGap: 15,
     script: [
-      { wave: { dagger: 10 } },
-      { wave: { dagger: 20, nova: 3 } },
-      { wave: { crawler: 10 } },
-      { wave: { dagger: 15, crawler: 10, nova: 5 } },
-      { wave: { dagger: 20, nova: 10 } },
-      { wave: { dagger: 40, mace: 5, nova: 10 } },
-      { wave: { dagger: 50, crawler: 20 } },
-      { wave: { dagger: 60, mace: 8 } },
-      { wave: { dagger: 40, crawler: 40 } },
-      { wave: { dagger: 60, mace: 20 } },
-      { wave: { dagger: 60, crawler: 100 } },
-      { wave: { dagger: 100, mace: 30 } },
-      { wave: { dagger: 100, crawler: 40, mace: 15 } },
-      { wave: { dagger: 100, mace: 30 } },
-      { wave: { dagger: 150, crawler: 50, mace: 50 } },
-    ],
-  },
-  {
-    id: "2",
-    name: "The Dunes",
-    map: "dunes-long",
-    spawnRate: 60,
-    waveGap: 10,
-    script: [
-      { wave: { dagger: 50 } },
-      { wave: { crawler: 100 } },
-      { wave: { flare: 15 } },
-      { wave: { dagger: 50, mace: 50 } },
-      { wave: [{ region: 1, flare: 25 }, { region: 2, dagger: 80 }] },
-      { wave: [{ region: 1, mace: 50 }, { region: 3, fortress: 10 }] },
-      { wave: [{ region: 1, flare: 20 }, { region: 2, dagger: 80 }, { region: 3, fortress: 20 }] },
-      { wave: [{ region: 1, mace: 50 }, { region: 2, mace: 40 }, { region: 3, crawler: 200 }] },
-      { wave: { flare: 150 } },
-      { wave: { fortress: 50, crawler: 300 } },
-      { wave: [{ region: 2, mace: 30 }, { region: 3, fortress: 30 }] },
-      { wave: { dagger: 200, mace: 50, fortress: 30, crawler: 100, flare: 50 } },
-      { wave: [{ region: 1, flare: 60 }, { region: 2, dagger: 200 }, { region: 3, mace: 60 }] },
-      { wave: { flare: 250 } },
-      { wave: [{ region: 1, flare: 80 }, { region: 2, dagger: 300 }, { region: 3, mace: 120 }] },
-    ],
-  },
-  {
-    id: "3",
-    name: "Canyon Run",
-    map: "stone-canyon",
-    spawnRate: 60,
-    waveGap: 10,
-    script: [
-      { wave: { dagger: 100 } },
-      { wave: { dagger: 120, crawler: 40 } },
-      // north canyon and south canyon each carry their own contingent
-      { wave: [{ region: 1, dagger: 100 }, { region: 2, mace: 30 }] },
-      { wave: { mace: 60, flare: 20 } },
-      { wave: { dagger: 120, fortress: 5 } },
-      { wave: [{ region: 1, flare: 40 }, { region: 2, dagger: 150 }] },
-      { wave: { mace: 100, crawler: 60 } },
-      { wave: { mace: 60, fortress: 10 } },
-      { wave: [{ region: 1, dagger: 200 }, { region: 2, fortress: 10 }] },
-      { wave: { flare: 60, mace: 80 } },
-      { wave: { dagger: 250, crawler: 100 } },
-      { wave: [{ region: 1, fortress: 15 }, { region: 2, mace: 120 }] },
-      { wave: { dagger: 200, flare: 80 } },
-      { wave: { mace: 100, fortress: 25 } },
-      { wave: [{ region: 1, dagger: 300 }, { region: 2, flare: 80 }] },
-      { wave: { mace: 200, fortress: 30 } },
-      { wave: [{ region: 1, fortress: 40 }, { region: 2, dagger: 350 }] },
-      { wave: { dagger: 400, mace: 200, fortress: 50, flare: 100 } },
+      // ---------- tier 0: waves 1-4, a 60-second opening skirmish ----------
+      { wave: { dagger: 24 } },
+      { wave: { dagger: 40, crawler: 25 } },
+      // first armour: a mace's 4 costs a duo shot nearly half its damage
+      { wave: { dagger: 50, nova: 12, mace: 6 } },
+      // first tier 3 — spiroct, armour 5, so a duo still lands 4 a shot
+      { wave: { dagger: 60, mace: 14, atrax: 8, spiroct: 3 } },
+      // ---------- tier 1: waves 5-7 ----------
+      { wave: { dagger: 48, crawler: 44, nova: 10 } },
+      { wave: { dagger: 44, mace: 15, atrax: 8, pulsar: 8 } },
+      { wave: { dagger: 52, crawler: 50, spiroct: 5 } },
+      // ---------- tier 2: waves 8-10 — THE SKY OPENS (scatter gated on 1) --
+      { wave: { flare: 34, dagger: 45 } },
+      { wave: { dagger: 70, mace: 22, atrax: 12, spiroct: 7 } },
+      { wave: { crawler: 100, flare: 30, nova: 18 } },
+      // ---------- tier 3: waves 11-13 (salvo goes on sale) ----------
+      { wave: { dagger: 85, mace: 26, pulsar: 14, spiroct: 8 } },
+      { wave: { flare: 50, crawler: 80, dagger: 60 } },
+      { wave: { dagger: 85, atrax: 24, spiroct: 10, nova: 22 } },
+      // ---------- tier 4: waves 14-16 — horizon, the armoured bomber ------
+      { wave: { horizon: 20, flare: 45, dagger: 90 } },
+      { wave: { dagger: 100, mace: 40, atrax: 24, spiroct: 18 } },
+      { wave: { crawler: 150, pulsar: 24, spiroct: 10 } },
+      // ---------- tier 5: waves 17-19 ----------
+      { wave: { horizon: 28, flare: 70, mace: 30, spiroct: 8 } },
+      { wave: { dagger: 120, mace: 46, atrax: 30, pulsar: 20 } },
+      { wave: { crawler: 190, dagger: 110, spiroct: 14 } },
+      // ---------- tier 6: waves 20-22 — zenith (fuse goes on sale) --------
+      { wave: { zenith: 10, horizon: 24, flare: 80 } },
+      { wave: { dagger: 170, mace: 50, atrax: 34, spiroct: 15 } },
+      { wave: { crawler: 220, nova: 45, pulsar: 26, spiroct: 11 } },
+      // ---------- tier 7: waves 23-25 ----------
+      { wave: { zenith: 14, horizon: 30, dagger: 140, atrax: 24 } },
+      { wave: { dagger: 190, mace: 62, spiroct: 18 } },
+      { wave: { crawler: 250, flare: 80, spiroct: 15 } },
+      // ---------- tier 8: waves 26-28 — THE FORTRESS, armour 9 ------------
+      { wave: { fortress: 7, mace: 48, atrax: 30, dagger: 90 } },
+      { wave: { dagger: 210, crawler: 200, spiroct: 18, zenith: 10 } },
+      { wave: { horizon: 42, zenith: 14, flare: 130, pulsar: 32 } },
+      // ---------- tier 9: waves 29-31 ----------
+      { wave: { fortress: 9, dagger: 190, mace: 60, spiroct: 15 } },
+      { wave: { crawler: 280, atrax: 46, nova: 60 } },
+      { wave: { zenith: 17, horizon: 46, flare: 150 } },
+      // ---------- tier 10: waves 32-34 ----------
+      { wave: { fortress: 11, spiroct: 20, atrax: 52, pulsar: 36, dagger: 110 } },
+      { wave: { dagger: 240, crawler: 240, mace: 70 } },
+      { wave: { zenith: 19, horizon: 52, dagger: 170, flare: 120 } },
+      // ---------- tier 11: waves 35-37 ----------
+      { wave: { fortress: 13, mace: 76, spiroct: 22, dagger: 130 } },
+      { wave: { crawler: 330, dagger: 230, nova: 70, pulsar: 40 } },
+      { wave: { zenith: 21, horizon: 58, atrax: 54, flare: 120 } },
+      // ---------- tier 12: waves 38-40 ----------
+      { wave: { fortress: 15, spiroct: 26, atrax: 62, dagger: 150 } },
+      { wave: { dagger: 280, crawler: 280, mace: 88, pulsar: 44 } },
+      { wave: { zenith: 24, horizon: 66, flare: 190, fortress: 11 } },
+      // ---------- tier 13: waves 41-43 ----------
+      { wave: { fortress: 18, spiroct: 30, mace: 100, dagger: 170 } },
+      { wave: { crawler: 380, dagger: 270, atrax: 68, nova: 80 } },
+      { wave: { zenith: 27, horizon: 74, spiroct: 24, flare: 150 } },
+      // ---------- tier 14: waves 44-46 ----------
+      { wave: { fortress: 21, spiroct: 34, atrax: 78, pulsar: 52, dagger: 190 } },
+      { wave: { dagger: 330, crawler: 330, mace: 110 } },
+      { wave: { zenith: 31, horizon: 84, fortress: 15, flare: 220 } },
+      // ---------- tier 15: waves 47-49 ----------
+      { wave: { fortress: 25, spiroct: 38, mace: 122, atrax: 84, dagger: 200 } },
+      { wave: { crawler: 440, dagger: 320, nova: 92, pulsar: 58 } },
+      { wave: { zenith: 35, horizon: 96, spiroct: 30, flare: 190 } },
+      // ---------- tier 16: waves 50-52 — the top of the authored ladder ---
+      // Past here a rung adds only enemy level, never a new wave. Write more
+      // waves below to extend the content ladder; nothing else needs editing
+      { wave: { fortress: 30, spiroct: 42, atrax: 96, dagger: 230 } },
+      { wave: { dagger: 370, crawler: 420, mace: 132, pulsar: 64 } },
+      { wave: { zenith: 40, horizon: 108, fortress: 22, spiroct: 36, flare: 210 } },
     ],
   },
 ];
+
+/** the campaign's only world — everything above tier 0 is ladder.ts */
+export const WORLD = WORLDS[0];
 
 export function worldById(id: string): LevelSpec | null {
   return WORLDS.find((w) => w.id === id) ?? null;
@@ -452,8 +498,15 @@ export function worldById(id: string): LevelSpec | null {
  * The overlay is applied IN PLACE, which is the whole reason this is safe to
  * call late: WORLDS is never empty, never re-ordered, and never a different
  * array object. Everything that reads it synchronously at module load —
- * Sim's `WORLDS[0]` default, progress.ts filtering saved clears by world id —
+ * Sim's `WORLDS[0]` default, WORLD, progress.ts sizing the opening loadout —
  * keeps working whether or not documents have loaded yet.
+ *
+ * One consequence worth knowing: the opening duo count is solved off the
+ * SHIPPED baseline, not off a document, because a save is read the moment
+ * the page opens and documents arrive later. Retune the baseline in an
+ * editor and the ladder plays the edit, but the free loadout still answers
+ * to the code — so a document that makes tier 0 much heavier wants the
+ * array above updated to match.
  */
 async function fetchLevelDoc(id: string): Promise<LevelDoc | null> {
   try {
