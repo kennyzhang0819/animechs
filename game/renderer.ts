@@ -36,6 +36,7 @@ import {
 import {
   BASE,
   CELL,
+  clamp,
   COLS,
   H,
   HP_TINT,
@@ -84,6 +85,20 @@ const BULLET_SIZE: Record<TowerKind, readonly [number, number]> = {
 const MU = CELL / 8;
 /** Pal.heal #98ffa9 */
 const PAL_HEAL = [0x98 / 255, 0xff / 255, 0xa9 / 255] as const;
+/**
+ * Mindustry's Floor.mapColor — what the sprite packer sets to the average
+ * colour of a floor's own texture, and the tint every walk and landing
+ * effect is fired in. These are those averages, measured off the very PNGs
+ * the atlas is packed from, one per floor GROUP (UV_FLOORS carries three
+ * variants of each, and they average alike).
+ */
+const FLOOR_DUST: readonly RGB[] = [
+  [0x6e / 255, 0xab / 255, 0x5e / 255], // grass
+  [0x56 / 255, 0x56 / 255, 0x5c / 255], // stone
+  [0x67 / 255, 0x40 / 255, 0x36 / 255], // dirt
+  [0xd8 / 255, 0xb2 / 255, 0x90 / 255], // sand
+  [0x3f / 255, 0x3c / 255, 0x3c / 255], // darksand
+];
 /** Pal.lightFlame #ffdd55, Pal.darkFlame #db401c, and Arc's Color.gray */
 const LIGHT_FLAME = [0xff / 255, 0xdd / 255, 0x55 / 255] as const;
 const DARK_FLAME = [0xdb / 255, 0x40 / 255, 0x1c / 255] as const;
@@ -654,15 +669,35 @@ export class Renderer {
           // bends the way its art was drawn
           const flip = k >= n / 2 ? 1 : -1;
           this.pushSeg(b, mx, my, jx, jy, art.leg, art.legStroke * flip, tint);
-          // the lower segment is pulled back along itself by legExtension
-          // so its end covers the knee (jointless legs need it; these do not)
+          // the lower segment starts legExtension PAST the knee, so the
+          // sprite covers the joint instead of butting up against it.
+          // Its MAGNITUDE is all that counts: Mindustry writes the offset
+          // as `.inv().setLength(legExtension)`, and Arc's setLength goes
+          // through setLength2(len * len) — a negative length comes back
+          // out positive. arkyid's -15 is a +15 offset in the real game
           const dx = jx - fx, dy = jy - fy;
           const d = Math.hypot(dx, dy) || 1;
-          const ex = (dx / d) * L.extension, ey = (dy / d) * L.extension;
+          const ext = Math.abs(L.extension);
+          const ex = (dx / d) * ext, ey = (dy / d) * ext;
           this.pushSeg(b, jx + ex, jy + ey, fx, fy, art.legBase, art.legBaseStroke * flip, tint);
         }
-        // the knee cap is never rotated — Mindustry draws it upright
-        this.push(b, jx, jy, sm, sm, 0, painted ? art.joint : art.sil.joint, tr, tg, tb, 1);
+        // the knee cap is never rotated — Mindustry draws it upright. Not
+        // every legged unit has one: arkyid leaves its elbow as the bare
+        // overlap of the two segments and caps the shoulder instead
+        const joint = painted ? art.joint : art.sil.joint;
+        if (joint) this.push(b, jx, jy, sm, sm, 0, joint, tr, tg, tb, 1);
+      }
+      // the shoulder plates go on after EVERY leg (UnitType.drawLegs draws
+      // base joints in their own pass) — one drawn leg by leg would be
+      // buried by the next leg round the ring. They ride the CHASSIS
+      // angle, like the mount ring they cap and unlike the body over them
+      const baseJoint = painted ? art.baseJoint : art.sil.baseJoint;
+      if (baseJoint) {
+        for (let k = 0; k < n; k++) {
+          const ang = brot + (TAU / n) * k + Math.PI / n;
+          this.push(b, x + Math.cos(ang) * L.baseOffset, y + Math.sin(ang) * L.baseOffset,
+            sm, sm, brot, baseJoint, tr, tg, tb, 1);
+        }
       }
       // the plate the legs hang off turns with the chassis, the body and its
       // guns with the unit's own facing. A gun mount is mirrored to both
@@ -937,7 +972,7 @@ export class Renderer {
       this.push(dyn, t.x, t.y, px, px, 0, base, 1, 1, 1, 1);
       this.push(dyn, t.x, t.y, px, px, t.angle, UV_TURRETS[t.kind], 1, 1, 1, 1);
     }
-    const { upx, upy, uvx, uvy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
+    const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
     const { ushield, ushieldAlpha, urad } = sim;
     // painter's order in three passes: ground units, then flyer shadows on
     // top of the crowd, then the flyers themselves above everything
@@ -948,8 +983,7 @@ export class Renderer {
         if (KIND_FLYING[k] !== wantFly) continue;
         const usz = KIND_SPRITE[k];
         if (pass === 1) {
-          const rot = Math.atan2(uvy[i], uvx[i]);
-          this.push(dyn, upx[i] + SHADOW_OFF, upy[i] + SHADOW_OFF, usz, usz, rot, KIND_UV[k], 0, 0, 0, SHADOW_ALPHA);
+          this.push(dyn, upx[i] + SHADOW_OFF, upy[i] + SHADOW_OFF, usz, usz, urot[i], KIND_UV[k], 0, 0, 0, SHADOW_ALPHA);
           continue;
         }
         // UnitType.drawShield: a crux-red halo at hitSize * 1.3, its opacity
@@ -975,9 +1009,12 @@ export class Renderer {
         } else if (mech) {
           this.pushMech(dyn, mech, upx[i], upy[i], urot[i], ubrot[i], uwalk[i], tint);
         } else {
-          // flyers bank instantly along their velocity, one flat quad
-          const rot = Math.atan2(uvy[i], uvx[i]);
-          this.push(dyn, upx[i], upy[i], usz, usz, rot, KIND_UV[k], tint[0], tint[1], tint[2], 1);
+          // a flyer is one flat quad on the heading the sim turned it to.
+          // That is its own UnitType.rotateSpeed, not its velocity: the
+          // stock 5 deg/tick is close enough to instant that the light
+          // flyers read as banking with their drift, while antumbra's 1.9
+          // visibly swings the hull round after the course change
+          this.push(dyn, upx[i], upy[i], usz, usz, urot[i], KIND_UV[k], tint[0], tint[1], tint[2], 1);
         }
       }
     }
@@ -1023,6 +1060,8 @@ export class Renderer {
         this.drawHitFlame(dyn, e, t);
       } else if (e.kind === FxKind.Burning) {
         this.drawBurning(dyn, e, t);
+      } else if (e.kind === FxKind.Footfall) {
+        this.drawFootfall(dyn, sim, e, t);
       } else if (e.kind === FxKind.Absorb) {
         // Fx.absorb: stroke(fout*2), circle(5*fout) in Pal.accent — the
         // little pop where a shot died on the outline
@@ -1396,6 +1435,36 @@ export class Renderer {
         col,
         1,
       );
+    }
+  }
+
+  /**
+   * Fx.unitLandSmall, the puff a planted foot throws up: 6 motes per unit
+   * of rippleScale, flung up to 12 world units out (times that same scale)
+   * over 30 ticks, each shrinking from 3 units to nothing.
+   *
+   * Mindustry fires it in the FLOOR's own colour brightened a tenth, which
+   * is what makes a stone canyon read as grit and a meadow as clippings —
+   * so the tile under the foot is looked up per puff, not per unit.
+   */
+  private drawFootfall(dyn: Batch, sim: Sim, e: Effect, t: number): void {
+    const ripple = e.rot ?? 1;
+    const cx = clamp((e.x / CELL) | 0, 0, COLS - 1);
+    const cy = clamp((e.y / CELL) | 0, 0, ROWS - 1);
+    const base = FLOOR_DUST[((sim.terrain.floor[cy * COLS + cx] / 3) | 0) % FLOOR_DUST.length];
+    const col: RGB = [
+      Math.min(1, base[0] * 1.1),
+      Math.min(1, base[1] * 1.1),
+      Math.min(1, base[2] * 1.1),
+    ];
+    const n = (6 * ripple) | 0;
+    const len = 12 * MU * FIN_POW(t) * ripple;
+    const rad = ((1 - t) * 3 + 0.1) * MU;
+    rngSeed(e.seed ?? 1);
+    for (let i = 0; i < n; i++) {
+      const l = rng() * len;
+      const a = rng() * TAU;
+      this.fillCircle(dyn, e.x + Math.cos(a) * l, e.y + Math.sin(a) * l, rad, col, 1);
     }
   }
 

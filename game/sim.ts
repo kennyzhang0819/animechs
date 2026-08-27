@@ -20,7 +20,10 @@ import {
   UNIT_ID,
   UNIT_KINDS,
   UNIT_RMAX,
+  UNIT_RMAX_AIR,
+  UNIT_RMAX_GROUND,
   UNIT_STATS,
+  rmaxFor,
   waveGroups,
   type LegSpec,
   type LevelSpec,
@@ -33,6 +36,13 @@ import { WALL_PINE, type Terrain } from "./terrain";
 import { FxKind, TOWER_KINDS, type Effect, type Projectile, type Tower, type TowerKind } from "./types";
 
 const FX_CAP = 400;
+/**
+ * Footfall dust gets a third of that and no more. It is ambience, and it
+ * is PERIODIC: every legged unit on the field throws a puff per planted
+ * foot, several times a second each, so left on the shared budget a wave
+ * of walkers would push every hit, death and blast out of the buffer.
+ */
+const FX_DUST_CAP = 140;
 
 // units per second a "skip to wave N" rush spawns at, in place of the
 // level's own spawnRate (20/s). High enough that a dozen waves land in a
@@ -56,32 +66,55 @@ const PHYS_R = 1.2;
 // pair moves only 1/1.25 of the way apart per tick, split by mass
 const PHYS_SCL = 1.25;
 /**
+ * How far a unit of each kind has to look to find something it might be
+ * touching: its own physics radius plus the widest ON ITS OWN LAYER, since
+ * ground and air pass straight through one another. That layer split is
+ * what keeps the antumbra's 5.75-block hitbox — more than twice anything
+ * that walks — off the ground swarm's bill entirely.
+ */
+const KIND_REACH = UNIT_KINDS.map(
+  (k) =>
+    (UNIT_STATS[k].radius + (UNIT_STATS[k].flying ? UNIT_RMAX_AIR : UNIT_RMAX_GROUND)) * PHYS_R,
+);
+/**
  * Spatial hash cell size (px); rebuilt every frame with a counting sort.
  *
- * Sized to the SMALLEST unit's worst-case reach — how far a T1 hitbox has
- * to look to find the biggest thing on the roster — because that is what
- * twenty thousand of them scanning is made of. Each query then spans as
- * many cells as its own reach needs (KIND_SPAN), so correctness does not
- * ride on this number at all.
+ * Sized to the SMALLEST reach on the roster, because that is what twenty
+ * thousand daggers scanning is made of. Each query then spans as many
+ * cells as its own reach needs (KIND_SPAN), so correctness does not ride
+ * on this number at all — only cost does.
  *
  * Sizing it to the widest unit instead, which is the obvious thing to do,
  * makes every dagger in the swarm walk a cell scaled to a unit it will
- * probably never meet: adding the T4 that way widened the cell by half and
- * cost a fifth of the whole physics pass, in waves with no T4 in them.
+ * probably never meet: adding the first T4 that way widened the cell by
+ * half and cost a fifth of the whole physics pass, in waves with no T4 in
+ * them.
  */
-const HC = Math.ceil((UR + UNIT_RMAX) * PHYS_R);
+const HC = Math.ceil(Math.min(...KIND_REACH));
 /**
- * How many cells out each kind has to scan: its own reach against the
- * widest partner it could have, in cells. A pair further apart than
- * `span * HC` in either axis is more than `span` buckets away, so this is
- * exactly the ring that can hold anything it might be touching.
+ * The same reach in cells: a pair further apart than `span * HC` in either
+ * axis is more than `span` buckets away, so this is exactly the ring that
+ * can hold anything a unit of this kind might be touching.
  *
- * The swarm kinds come out at 1 — the plain 3x3 — by construction, since
- * HC is the smallest unit's reach. Only the heavies widen their own scan.
+ * Whichever kind sets HC comes out at 1 — the plain 3x3 — by construction,
+ * and on this roster that is the whole ground swarm. Only the heavies
+ * widen their own scan.
  */
-const KIND_SPAN = UNIT_KINDS.map((k) =>
-  Math.ceil(((UNIT_STATS[k].radius + UNIT_RMAX) * PHYS_R) / HC),
-);
+const KIND_SPAN = KIND_REACH.map((r) => Math.ceil(r / HC));
+/**
+ * How many buckets a bullet has to look through to find what it flew into:
+ * the widest unit it can hit plus its own contact radius, in cells. Fixed
+ * per tower kind, since bullet stats are constants — and no longer the
+ * flat 1 it used to be, because the antumbra's hitbox is wider than a hash
+ * cell and a shot could otherwise pass clean through one whose centre sat
+ * two buckets away.
+ */
+const HIT_SPAN = Object.fromEntries(
+  TOWER_KINDS.map((k) => {
+    const b = TOWERS[k].bullet;
+    return [k, Math.ceil((rmaxFor(b.collidesAir, b.collidesGround) + (b.hitRadius ?? 2.5)) / HC)];
+  }),
+) as Record<TowerKind, number>;
 // narrow-passage centering gain (1/s): in 1-wide corridors and L-bend
 // corners, steer toward the cell centerline so units line up with the
 // slim (CELL - 2*WALL_R)px window instead of scraping the jambs
@@ -149,6 +182,15 @@ const FORCE_KINDS = KIND_FORCE.map((f, i) => (f ? i : -1)).filter((i) => i >= 0)
  * the field, and one typed-array read per unit is a great deal cheaper
  * there than reaching into KIND_FORCE for an object it will discard */
 const KIND_IS_FORCE = Uint8Array.from(KIND_FORCE, (f) => (f ? 1 : 0));
+/**
+ * UnitType.immunities as one flag per kind. StatusEffects.burning is the
+ * only status this game applies, so the whole immunity table collapses to
+ * a bit — and Mindustry checks it in StatusComp.apply, BEFORE the effect
+ * is added, so an immune unit never burns and never flickers either
+ */
+const KIND_BURN_IMMUNE = Uint8Array.from(UNIT_KINDS, (k) =>
+  UNIT_STATS[k].immunities?.includes("burning") ? 1 : 0,
+);
 /** the gait of every legged kind, indexed like UNIT_KINDS — null for the
  * mechs and flyers, whose animation is one sliding pair of leg sprites */
 const KIND_LEGS = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
@@ -879,11 +921,11 @@ export class Sim {
    * keeps the spawn strip from overcrowding, so separation never
    * slingshots units forward.
    */
-  private spawnSpotFree(x: number, y: number, r: number, fly: boolean): boolean {
+  private spawnSpotFree(x: number, y: number, r: number, fly: boolean, span: number): boolean {
     const hx = clamp((x / HC) | 0, 0, HCOLS - 1);
     const hy = clamp((y / HC) | 0, 0, HROWS - 1);
-    for (let gy = Math.max(0, hy - 1); gy <= Math.min(HROWS - 1, hy + 1); gy++) {
-      for (let gx = Math.max(0, hx - 1); gx <= Math.min(HCOLS - 1, hx + 1); gx++) {
+    for (let gy = Math.max(0, hy - span); gy <= Math.min(HROWS - 1, hy + span); gy++) {
+      for (let gx = Math.max(0, hx - span); gx <= Math.min(HCOLS - 1, hx + span); gx++) {
         const c = gy * HCOLS + gx, e = this.bStart[c + 1];
         for (let k = this.bStart[c]; k < e; k++) {
           const i = this.bUnits[k];
@@ -920,6 +962,10 @@ export class Sim {
     const pads = this.spawnPads(fly, region);
     if (this.n >= MAX_UNITS || pads.length === 0) return false;
     const r = stats.radius;
+    // the drop-zone test is the same broad-phase query the physics pass
+    // runs, so it needs the same reach: a ring of 1 would let two antumbras
+    // land inside one another and start the wave already shoving
+    const span = KIND_SPAN[UNIT_ID[kind]];
     for (let a = 0; a < 8; a++) {
       const ci = pads[(Math.random() * pads.length) | 0];
       // jitter within the pad, but keep the hitbox inside the cell when it
@@ -928,7 +974,8 @@ export class Sim {
       const x = ((ci % COLS) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
       const y = (((ci / COLS) | 0) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
       // a big hitbox can overhang the pad into ragged rock beside it
-      if ((!fly && this.field.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly)) continue;
+      if ((!fly && this.field.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly, span))
+        continue;
       const i = this.n++;
       // LEVEL SCALING, and the only stat the ladder touches: health alone
       // moves with the enemy level, so armour, speed, hitbox and drop stay
@@ -1273,6 +1320,22 @@ export class Sim {
       clampLen(ulegFX[p] - bx, ulegFY[p] - by, minF, maxF, legTmp);
       ulegFX[p] = bx + legTmp.x;
       ulegFY[p] = by + legTmp.y;
+    }
+    // a leg is DOWN the moment its group's turn passes on, and that
+    // transition is where Mindustry hangs everything a footstep does:
+    // Fx.unitLandSmall at the foot, the step shake, and — on the units
+    // that carry it — legSplashDamage. Arkyid is the only kind on this
+    // roster with that last one, and it has nothing to land on: its 32
+    // damage over 30 units hits enemy units and buildings, and the player
+    // here fields no units and builds towers that cannot be damaged. So
+    // what a footfall leaves behind is the dust, scaled by rippleScale
+    const landed = this.ulegMove[i] & ~bits;
+    if (landed !== 0 && this.effects.length < FX_DUST_CAP) {
+      for (let k = 0; k < n; k++) {
+        if ((landed & (1 << k)) === 0) continue;
+        this.pushFx(ulegFX[off + k], ulegFY[off + k], 30 / 60, FxKind.Footfall,
+          L.ripple, 0, (Math.random() * 0x7fffffff) | 0);
+      }
     }
     this.ulegMove[i] = bits;
   }
@@ -1801,7 +1864,7 @@ export class Sim {
     const EXPAND = 7.5; // collideLine's expand = 3 world units
     const dirx = Math.cos(angle), diry = Math.sin(angle);
     const x2 = x + dirx * length, y2 = y + diry * length;
-    const pad = UNIT_RMAX + EXPAND;
+    const pad = rmaxFor(air, ground) + EXPAND;
     const hx0 = clamp(((Math.min(x, x2) - pad) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((Math.min(y, y2) - pad) / HC) | 0, 0, HROWS - 1);
     const hx1 = clamp(((Math.max(x, x2) + pad) / HC) | 0, 0, HCOLS - 1);
@@ -1981,6 +2044,7 @@ export class Sim {
       let dead = pr.life <= 0;
       if (!dead && !b.artillery) {
         const brad = b.hitRadius ?? 2.5;
+        const sp = HIT_SPAN[pr.kind];
         const hx = clamp((pr.x / HC) | 0, 0, HCOLS - 1);
         const hy = clamp((pr.y / HC) | 0, 0, HROWS - 1);
         // a piercing shot may hit several units this tick and outlive them
@@ -1989,8 +2053,8 @@ export class Sim {
         // an unvisited unit into a bucket we have already walked past
         const hits = this.splashHits;
         hits.length = 0;
-        outer: for (let cy = Math.max(0, hy - 1); cy <= Math.min(HROWS - 1, hy + 1); cy++) {
-          for (let cx = Math.max(0, hx - 1); cx <= Math.min(HCOLS - 1, hx + 1); cx++) {
+        outer: for (let cy = Math.max(0, hy - sp); cy <= Math.min(HROWS - 1, hy + sp); cy++) {
+          for (let cx = Math.max(0, hx - sp); cx <= Math.min(HCOLS - 1, hx + sp); cx++) {
             const c = cy * HCOLS + cx, e = bStart[c + 1];
             for (let k = bStart[c]; k < e; k++) {
               const i = bUnits[k];
@@ -2015,7 +2079,7 @@ export class Sim {
         }
         for (const i of hits) {
           this.damageUnit(i, b.damage);
-          if (uhp[i] > 0 && b.burn) this.uburn[i] = b.burn;
+          if (uhp[i] > 0 && b.burn && !KIND_BURN_IMMUNE[this.ukind[i]]) this.uburn[i] = b.burn;
           // BulletType.hitEffect, at the bullet rather than the victim
           if (uhp[i] > 0 && b.splash <= 0)
             this.pushFx(
@@ -2042,7 +2106,7 @@ export class Sim {
   /** is any live targetable unit's hitbox within r of (x, y)? */
   private anyUnitWithin(x: number, y: number, r: number, air: boolean, ground: boolean): boolean {
     const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
-    const pad = r + UNIT_RMAX;
+    const pad = r + rmaxFor(air, ground);
     const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
     const hx1 = clamp(((x + pad) / HC) | 0, 0, HCOLS - 1);
@@ -2080,7 +2144,7 @@ export class Sim {
   ): void {
     const { upx, upy, uhp, uarmor, urad, ukind, bStart, bUnits, splashHits } = this;
     splashHits.length = 0;
-    const reach = radius + UNIT_RMAX;
+    const reach = radius + rmaxFor(air, ground);
     const hx0 = clamp(((x - reach) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((y - reach) / HC) | 0, 0, HROWS - 1);
     const hx1 = clamp(((x + reach) / HC) | 0, 0, HCOLS - 1);

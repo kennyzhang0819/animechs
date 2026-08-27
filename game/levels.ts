@@ -2,7 +2,7 @@ import { CELL, HP0, UNIT_SPEED, UR } from "./constants";
 import { itemForTier, type Cost } from "./items";
 import { explain, type SaveResult } from "./types";
 
-export const UNIT_KINDS = ["dagger", "mace", "fortress", "scepter", "crawler", "atrax", "spiroct", "flare", "nova", "pulsar", "quasar", "horizon", "zenith"] as const;
+export const UNIT_KINDS = ["dagger", "mace", "fortress", "scepter", "crawler", "atrax", "spiroct", "arkyid", "flare", "nova", "pulsar", "quasar", "vela", "horizon", "zenith", "antumbra"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -15,12 +15,15 @@ export const UNIT_ID: Record<UnitKind, number> = {
   crawler: 4,
   atrax: 5,
   spiroct: 6,
-  flare: 7,
-  nova: 8,
-  pulsar: 9,
-  quasar: 10,
-  horizon: 11,
-  zenith: 12,
+  arkyid: 7,
+  flare: 8,
+  nova: 9,
+  pulsar: 10,
+  quasar: 11,
+  vela: 12,
+  horizon: 13,
+  zenith: 14,
+  antumbra: 15,
 };
 
 /** px per Mindustry world unit — leg geometry is written in those units */
@@ -54,8 +57,13 @@ export interface LegSpec {
   moveSpace: number;
   /** the leg mount's own radius from the body center, px */
   baseOffset: number;
-  /** for jointless legs: how far the lower segment is pulled back along
-   * itself so it covers the joint, px */
+  /**
+   * How far past the knee the LOWER segment starts, so its sprite covers
+   * the joint rather than butting up against it, px. Mindustry states this
+   * signed (arkyid's is -15) but only its magnitude ever reaches the
+   * screen — see the note in Renderer.pushLegs — so the source's sign is
+   * kept here for fidelity and dropped at draw time.
+   */
   extension: number;
   /** desynchronizes the gait — leg i's stage is offset by i * this, px */
   pairOffset: number;
@@ -68,6 +76,13 @@ export interface LegSpec {
   /** UnitType.shadowElevation: how high a swinging foot rides above the
    * ground at the top of its step — the renderer offsets its shadow by it */
   elevation: number;
+  /**
+   * UnitType.rippleScale: how big the dust a foot throws up when it lands.
+   * Mindustry fires Fx.unitLandSmall at every foot the moment its group's
+   * turn in the gait passes on, scaled by this — so it is one puff per
+   * planted foot, not a puff per unit.
+   */
+  ripple: number;
 }
 
 /** a LegSpec with Mindustry's UnitType defaults filled in */
@@ -83,6 +98,7 @@ const legs = (o: Partial<LegSpec> & Pick<LegSpec, "count" | "length">): LegSpec 
   minLength: 0,
   maxLength: 1.75,
   elevation: 0,
+  ripple: 1,
   ...o,
 });
 
@@ -110,6 +126,13 @@ export interface ForceFieldSpec {
   /** the polygon's roll, rad: fixed to the WORLD, never to the carrier */
   rotation: number;
 }
+
+/**
+ * The status effects a unit can carry. Mindustry has dozens; this game
+ * fields exactly one — StatusEffects.burning, lit by the scorch turret —
+ * so a unit's `immunities` list is only ever about that.
+ */
+export type StatusKind = "burning";
 
 export interface UnitStats {
   hp: number;
@@ -157,6 +180,13 @@ export interface UnitStats {
    * zero the field drops for `cooldown` seconds (see Sim.updateAbilities).
    */
   forceField?: ForceFieldSpec;
+  /**
+   * Mindustry UnitType.immunities: status effects that simply never take.
+   * The check is at application time (StatusComp.apply returns early), not
+   * a resistance — an immune unit is never lit at all, so it also never
+   * shows the burning flicker.
+   */
+  immunities?: readonly StatusKind[];
   /**
    * A walking unit with real legs rather than a mech's sliding pair. Its
    * presence is what puts a kind on the legged draw path — see LEG_ART in
@@ -225,6 +255,43 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
       elevation: 0.3,
     }),
   },
+  // arkyid: the crawler line's T4 — 8000 hp, armor 6, a 2.875x2.875-block
+  // hitbox, 0.62 px/tick = 4.65 tiles/s. Eight times the spiroct's health
+  // on something that walks faster than it, which makes it the only T4 on
+  // the roster that is quicker than the T3 it replaces
+  //
+  // Its legs are the difference: 30 world units against the spiroct's 13,
+  // on mounts 10 units out, so it straddles ground the spiroct walks over.
+  // legPairOffset 3 staggers the gait leg by leg (the spiroct's 0 swings
+  // each three-leg group as one piece), and legExtension 15 runs each
+  // lower segment a whole segment back past its own knee, so the limb
+  // sprite covers the joint — which is why arkyid needs no knee cap where
+  // every other legged unit has one
+  //
+  // rippleScale 2 doubles the dust a planted foot throws. Mindustry also
+  // gives it legSplashDamage 32 over legSplashRange 30, a stamp that hurts
+  // whatever the foot lands on: it has no target here, since this game's
+  // towers cannot be damaged and the player fields no units of its own, so
+  // what survives of the footfall is the dust and the reach
+  arkyid: {
+    hp: 8000,
+    speed: 4.65 * CELL,
+    armor: 6,
+    radius: UR * 2.875,
+    tier: 4,
+    rotateSpeed: 2.7,
+    legs: legs({
+      count: 6,
+      length: 30 * MU,
+      pairOffset: 3 * MU,
+      baseOffset: 10 * MU,
+      extension: -15 * MU,
+      lengthScl: 0.96,
+      speed: 0.2,
+      elevation: 0.65,
+      ripple: 2,
+    }),
+  },
   // flare: 70 hp, no armor, 1.125-block hitbox, 2.7 px/tick = 20.25 tiles/s
   flare: { hp: 70, speed: 20.25 * CELL, armor: 0, radius: UR * 1.125, tier: 1, flying: true },
   // nova: the T1 of the support line — 120 hp, armor 1, 1x1-block hitbox,
@@ -275,6 +342,31 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
       rotation: 0,
     },
   },
+  // vela: the support line's T4 — 8200 hp, armor 9, a 3x3-block hitbox,
+  // 0.44 px/tick = 3.3 tiles/s, and rotateSpeed 1.8, the slowest turn on
+  // the roster. Thirteen quasars' health with none of the quasar's reach:
+  // where its predecessor covers the ground around it, this one is simply
+  // very hard to remove
+  //
+  // immunities = burning: scorch's flame lights every other ground unit on
+  // the field and slides straight off this one. A flame wall that melts a
+  // dagger column is the wrong answer to a vela — its 9 armour already
+  // takes 17-damage flame hits down to 8, and the 0.167/tick burn that
+  // normally finishes the job never starts
+  //
+  // Mindustry also gives it canBoost/boostMultiplier 2.4 — a hop over
+  // terrain at more than double pace. That is a player's button: the wave
+  // AI (GroundAI) only ever LOWERS a boosting unit back down, and never
+  // calls updateBoosting to raise one, so a vela arriving in a wave walks
+  vela: {
+    hp: 8200,
+    speed: 3.3 * CELL,
+    armor: 9,
+    radius: UR * 3,
+    tier: 4,
+    rotateSpeed: 1.8,
+    immunities: ["burning"],
+  },
   // horizon: the T2 bomber — 340 hp, armor 3, 1.375x1.375-block hitbox,
   // 1.65 px/tick = 12.375 tiles/s. Slower than a flare but four times the
   // health, and armour 3 blunts the scatter flak that shreds the T1
@@ -296,6 +388,27 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 3,
     flying: true,
   },
+  // antumbra: the air line's T4 — 7200 hp, armor 9, and a 5.75x5.75-block
+  // hitbox, more than twice the zenith across and the widest thing on the
+  // roster by some margin. At 0.8 px/tick = 6 tiles/s it also gives up
+  // more speed than any other upgrade takes: the zenith flies at 12.75, so
+  // where the rest of the air line's appeal is arriving before the guns
+  // can answer, this one crosses at half that pace and spends twice as
+  // long inside their range
+  //
+  // rotateSpeed 1.9 against the stock 5 is what sells the weight: a flyer
+  // holds its heading through its own drift, and this one visibly swings
+  // round rather than snapping. It carries no ability — the air line has
+  // none at any tier
+  antumbra: {
+    hp: 7200,
+    speed: 6 * CELL,
+    armor: 9,
+    radius: UR * 5.75,
+    tier: 4,
+    rotateSpeed: 1.9,
+    flying: true,
+  },
 };
 
 /**
@@ -306,9 +419,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
  */
 export const UNIT_TREES = [
   { name: "Ground", kinds: ["dagger", "mace", "fortress", "scepter"] },
-  { name: "Support", kinds: ["nova", "pulsar", "quasar"] },
-  { name: "Crawler", kinds: ["crawler", "atrax", "spiroct"] },
-  { name: "Air", kinds: ["flare", "horizon", "zenith"] },
+  { name: "Support", kinds: ["nova", "pulsar", "quasar", "vela"] },
+  { name: "Crawler", kinds: ["crawler", "atrax", "spiroct", "arkyid"] },
+  { name: "Air", kinds: ["flare", "horizon", "zenith", "antumbra"] },
 ] as const satisfies readonly { name: string; kinds: readonly UnitKind[] }[];
 
 /**
@@ -330,8 +443,25 @@ export function unitDrop(kind: UnitKind): Cost {
   return { [itemForTier(UNIT_STATS[kind].tier)]: 1 };
 }
 
-/** largest unit radius — pads broad-phase bounds that must cover any unit */
-export const UNIT_RMAX = Math.max(...UNIT_KINDS.map((k) => UNIT_STATS[k].radius));
+/**
+ * Largest unit radius PER LAYER, and over both. Broad-phase bounds have to
+ * cover the widest thing a query could actually find, and ground and air
+ * never touch each other: a ground-only splash that padded itself by the
+ * antumbra's 5.75-block hitbox would sweep more than twice the buckets it
+ * can ever hit. So a query that knows its layer uses that layer's number,
+ * and only the layer-agnostic ones (a footprint that must be clear of
+ * everything) take the overall maximum.
+ */
+const rmaxOf = (fly: boolean): number =>
+  Math.max(
+    ...UNIT_KINDS.filter((k) => !!UNIT_STATS[k].flying === fly).map((k) => UNIT_STATS[k].radius),
+  );
+export const UNIT_RMAX_GROUND = rmaxOf(false);
+export const UNIT_RMAX_AIR = rmaxOf(true);
+export const UNIT_RMAX = Math.max(UNIT_RMAX_GROUND, UNIT_RMAX_AIR);
+/** the widest unit a query touching these layers could turn up */
+export const rmaxFor = (air: boolean, ground: boolean): number =>
+  Math.max(air ? UNIT_RMAX_AIR : 0, ground ? UNIT_RMAX_GROUND : 0);
 
 /** how many of each kind a wave (or one region's share of it) sends */
 export type WaveUnits = Partial<Record<UnitKind, number>>;
