@@ -247,29 +247,7 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
   };
 }
 
-/**
- * The opening loadout, SOLVED rather than guessed: the duo count that
- * clears the baseline exactly. A fresh save must beat tier 0 outright with
- * nothing bought — the core has one hit point, so a 100% kill rate is
- * mandatory and every unit authored is DPS the player must actually have.
- * Undersize this and the game opens as a die-and-grind loop.
- *
- * A 10% margin covers the fact that the budget assumes a perfectly spread
- * fleet and a first-time player's is not.
- */
-export function startingDuos(spec: LevelSpec): number {
-  return Math.ceil(budget(spec, 0).duos * OPENING_MARGIN);
-}
-
-/**
- * How much more than the tier-0 budget the opening loadout carries: nothing.
- * The opening run is meant to be a fight — placement is the only skill the
- * game asks for and the first rung is where it is taught, so the fleet is
- * sized to exactly what the budget says clears it and no more. A player who
- * spreads it well has a little room; one who bunches it on the wrong ridge
- * leaks, and the answer is to move the duos, not to buy more.
- */
-const OPENING_MARGIN = 1;
+export const OPENING_DUOS = 70;
 
 // ---------- the debut rule, enforced ----------
 
@@ -282,6 +260,12 @@ const OPENING_MARGIN = 1;
  * decides whether a unit reads at its printed health or at ten times it.
  */
 function bestShotByTier(tier: number): number {
+  // TIER 0 IS A SPECIAL CASE AND IT IS THE ONE THAT MATTERS. A fresh save
+  // has banked nothing — kills are the only income — so it owns the free
+  // duos and literally nothing else, however many turrets are technically
+  // ungated. Counting hail's 20 damage here because hail has no tier gate
+  // is what let three fortresses into wave 4 without a word of complaint.
+  if (Math.floor(tier) <= 0) return TOWERS.duo.bullet.damage;
   let best = 0;
   for (const node of TECH_TREE) {
     if (node.requiresTier != null && node.requiresTier >= tier) continue;
@@ -290,17 +274,18 @@ function bestShotByTier(tier: number): number {
   return best;
 }
 
+
 /**
  * Every unit debuts against a turret that can actually hurt it — the one
  * authoring rule the extension pool has to keep. A violation is silent in
  * play: the wave simply cannot be killed, the core takes its one hit, and
  * the rung reads as "too hard" rather than as "mispriced armour".
  *
- * Returns the offending debuts, empty when the pool is sound.
+ * Returns the offending debuts, empty when the script is sound.
  */
-export function debutViolations(): string[] {
+export function debutViolations(spec: LevelSpec = WORLD): LadderIssue[] {
   const debut = new Map<UnitKind, number>();
-  WORLD.script.forEach((step, i) => {
+  spec.script.forEach((step, i) => {
     const at = tierOfWave(i);
     for (const g of waveGroups(step.wave))
       g.counts.forEach((count, k) => {
@@ -310,19 +295,30 @@ export function debutViolations(): string[] {
       });
   });
 
-  const bad: string[] = [];
+  const bad: LadderIssue[] = [];
   for (const [kind, tier] of debut) {
     const { armor, hp } = UNIT_STATS[kind];
     const shot = bestShotByTier(tier);
     if (armor >= shot)
-      bad.push(
-        `${kind} (armour ${armor}) debuts at tier ${tier}, where the best shot available is ${shot} — it would land the 10% floor and read as ${Math.round(hp / 0.1)} health rather than ${hp}`,
-      );
+      bad.push({
+        tier,
+        kind: "debut",
+        message: `${kind} (armour ${armor}) debuts here, but the best shot on sale is ${shot} — it lands the 10% floor and plays as ${Math.round(hp / 0.1).toLocaleString()} health instead of ${hp.toLocaleString()}`,
+      });
   }
   return bad;
 }
 
-
+/**
+ * One complaint about a script. `tier` is the rung it belongs to, so the
+ * level editor can label the wave rows that rung owns; null means the
+ * finding is about the script as a whole.
+ */
+export interface LadderIssue {
+  tier: number | null;
+  kind: "debut" | "opening" | "wall" | "filler" | "economy";
+  message: string;
+}
 
 // ---------- authoring aid ----------
 
@@ -343,7 +339,11 @@ export interface WaveCost {
 
 export function waveCost(step: LevelStep, level = 0): WaveCost {
   const out: WaveCost = {
-    units: 0, hp: 0, effectiveHp: 0, t3Share: 0, airShare: 0,
+    units: 0,
+    hp: 0,
+    effectiveHp: 0,
+    t3Share: 0,
+    airShare: 0,
     drops: { scrap: 0, copper: 0, titanium: 0 },
   };
   const item = ["scrap", "copper", "titanium"] as const;
@@ -368,6 +368,7 @@ export function waveCost(step: LevelStep, level = 0): WaveCost {
   return out;
 }
 
+/** one rung, weighed — the row the editor's ladder check renders */
 export interface AuditRow {
   tier: number;
   waves: number;
@@ -382,35 +383,24 @@ export interface AuditRow {
 }
 
 /**
- * Walk the ladder and report what each rung actually asks for. This is the
- * authoring aid: hand-written waves are free to be whatever they want, but
- * three things do NOT come out in the wash, because the tier scales HEALTH
- * and nothing else.
+ * Walk the ladder and report what each rung actually asks for.
+ *
+ * Hand-written waves are free to be whatever they want, but three things do
+ * NOT come out in the wash, because the tier scales HEALTH and nothing else.
  *
  * ARMOUR is the big one. It is flat and never scales, so it is a permanent
  * multiplier on a wave's cost at every rung forever: max(dmg - armor,
  * 0.1 * dmg) means a fortress costs a duo line ten times its printed health
- * at tier 0 and still ten times at tier 40. Swapping daggers for maces in a
- * wave roughly doubles it; swapping them for fortresses multiplies it
- * sixtyfold. `duos` below counts that, `units` does not.
+ * at tier 0 and still ten times at tier 40. `duos` counts that, `units`
+ * does not.
  *
  * HEALTH PER BODY is difficulty that pays nothing back. A kill drops one
  * item whatever it killed, so 100 spirocts cost fifteen times what 100
- * daggers cost and pay the same hundred items (in a different currency).
- * Padding a wave with T1 bodies is close to free — it adds cost and income
- * at about the same rate — which is why the swarm waves can be as big as
- * they look good at.
+ * daggers cost and pay the same hundred items in a different currency.
+ * Padding a wave with tier-1 bodies is close to free.
  *
- * THE CURRENCY MIX has to stay near what the tree charges. Prices are
- * written at roughly scrap : copper : titanium = 100 : 15 : 2.5 (tech.ts),
- * and if the script drifts far from that, one currency becomes the only
- * real constraint while the others pile up unspent.
- *
- * Two more that this cannot measure but that matter at the table: AIR
- * (hail and scorch cannot shoot up at all, so an all-air wave switches off
- * half a fleet — waveCost reports airShare) and CRAWLER SPEED (twice the
- * line's pace, so they reach the core before the kill zone has finished
- * with them, whatever their health says).
+ * THE CURRENCY MIX has to stay near what the tree charges, or one currency
+ * becomes the only real constraint while the others pile up unspent.
  */
 export function audit(spec: LevelSpec = WORLD, through = 20): AuditRow[] {
   const rows: AuditRow[] = [];
@@ -450,27 +440,63 @@ export function audit(spec: LevelSpec = WORLD, through = 20): AuditRow[] {
  * The authoring smell test, as a list of complaints. Empty means the script
  * is in line. Run it after editing waves — `window.__ladder.check()`.
  */
-export function check(spec: LevelSpec = WORLD, through = 20): string[] {
-  const out = debutViolations();
-  for (const r of audit(spec, through)) {
-    // a rung should cost about half again what the one below it did. Much
-    // more and it reads as a wall; much less and it reads as filler
-    if (r.tier > 0 && r.step > 1.85)
-      out.push(`tier ${r.tier} asks ${r.step}x the fleet of tier ${r.tier - 1} — a wall, not a rung`);
-    if (r.tier > 0 && r.step < 1.1 && r.waves > (audit(spec, r.tier - 1).at(-1)?.waves ?? 0))
-      out.push(`tier ${r.tier} adds waves but barely any difficulty (${r.step}x) — filler`);
-    // the tree charges roughly 100 : 15 : 2.5; drifting far from what the
-    // script pays makes one currency the only real constraint
+export function check(spec: LevelSpec = WORLD, through = 20): LadderIssue[] {
+  const out = debutViolations(spec);
+  const rows = audit(spec, through);
+
+  // The free opening loadout is solved off the SHIPPED baseline in code,
+  // because a save is read the moment the page opens and level documents
+  // arrive later (see levels.ts). So an edit that makes tier 0 heavier does
+  // NOT move the fleet handed out to answer it, and a fresh save walks into
+  // a run it cannot clear with no way to earn its way out — kills are the
+  // only income and a wipe on wave 1 banks almost nothing.
+  const granted = OPENING_DUOS;
+  if (rows[0] && rows[0].duos > granted)
+    out.push({
+      tier: 0,
+      kind: "opening",
+      message: `needs ${rows[0].duos} duos but a fresh save is handed ${granted} — either lighten the opening waves or update the shipped baseline in levels.ts`,
+    });
+
+  rows.forEach((r, i) => {
+    const prev = rows[i - 1];
+    // NOTE: none of these are feasibility tests. Turret prices are flat and
+    // every run banks something, so a player can always farm the rung below
+    // until they can afford the next one — nothing here is unwinnable. What
+    // these measure is GRIND, which is the failure mode an idle game
+    // actually has: a rung costing twice what the last one did is not
+    // impossible, it is twice the farming, and three of those stacked is a
+    // chore rather than a climb
+    if (prev && r.step > WALL_STEP)
+      out.push({
+        tier: r.tier,
+        kind: "wall",
+        message: `asks ${r.step}x the fleet of tier ${prev.tier} — roughly ${r.step}x the farming before it opens`,
+      });
+    if (prev && r.step < FILLER_STEP && r.waves > prev.waves)
+      out.push({
+        tier: r.tier,
+        kind: "filler",
+        message: `adds ${r.waves - prev.waves} waves but only ${r.step}x the difficulty — reads as padding`,
+      });
     const [, cu, ti] = r.dropRatio;
     if (cu < 7 || cu > 45)
-      out.push(`tier ${r.tier} pays copper at 100:${cu} — the tree charges near 100:15`);
+      out.push({
+        tier: r.tier,
+        kind: "economy",
+        message: `pays copper at 100:${cu}; the tree charges near 100:15, so one currency ends up the only real constraint`,
+      });
     if (r.tier >= 3 && (ti < 0.8 || ti > 30))
-      out.push(`tier ${r.tier} pays titanium at 100:${ti} — the tree charges near 100:2.5`);
-  }
+      out.push({
+        tier: r.tier,
+        kind: "economy",
+        message: `pays titanium at 100:${ti}; the tree charges near 100:2.5`,
+      });
+  });
   return out;
 }
 
-// dev builds shout about an out-of-line script the moment it loads, so an
-// edit that breaks the ladder is caught at the console rather than at tier 9
-if (process.env.NODE_ENV !== "production")
-  for (const why of check()) console.warn(`ladder: ${why}`);
+/** a rung costing more than this much more than the last reads as a wall */
+export const WALL_STEP = 1.85;
+/** ...and less than this, with new waves, reads as padding */
+export const FILLER_STEP = 1.1;

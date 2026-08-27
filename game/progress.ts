@@ -1,5 +1,5 @@
-import { UNIT_KINDS, unitDrop, WORLD } from "./levels";
-import { startingDuos, tierDropBonus } from "./ladder";
+import { UNIT_KINDS, unitDrop } from "./levels";
+import { OPENING_DUOS, tierDropBonus } from "./ladder";
 import {
   addScaled,
   canAfford,
@@ -44,17 +44,17 @@ export interface Progress {
 const KEY = "dagger-problem.progress.v1";
 
 /**
- * The free opening loadout, SOLVED from the baseline rather than picked:
- * enough duos to clear tier 0 outright with nothing bought (see
- * startingDuos). The core has one hit point, so a run demands a 100% kill
- * rate — a fresh save that cannot clear the first rung is not a challenge,
- * it is a die-and-grind loop with no way out, because kills are the only
- * income and a wipe on wave 1 banks almost nothing.
+ * The free opening loadout — a fixed constant, not a number derived from
+ * the opening waves (see OPENING_DUOS in ladder.ts for why the dependency
+ * runs that way).
  *
- * Read off the SHIPPED baseline in code, never a level document: documents
- * load asynchronously and this is read the moment a save is opened.
+ * The core has one hit point, so a run demands a 100% kill rate. A fresh
+ * save that cannot clear the first rung is not a challenge, it is a
+ * die-and-grind loop with no way out, because kills are the only income and
+ * a wipe on wave 1 banks almost nothing. The level editor's `Check ladder`
+ * reports when the authored opening has outgrown this fleet.
  */
-const DUO_START = startingDuos(WORLD);
+const DUO_START = OPENING_DUOS;
 
 /** every currency starts empty — kills are the only income, so the first
  * purchase of the campaign is paid for by the first waves the duos kill */

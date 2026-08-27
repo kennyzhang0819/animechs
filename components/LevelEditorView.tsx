@@ -15,7 +15,15 @@ import {
   type WaveUnits,
 } from "@/game/levels";
 import { dropsForKills } from "@/game/progress";
-import { tierOfWave } from "@/game/ladder";
+import {
+  audit,
+  check,
+  tierOfWave,
+  topContentTier,
+  WALL_STEP,
+  type AuditRow,
+  type LadderIssue,
+} from "@/game/ladder";
 import {
   drawThumb,
   loadMap,
@@ -104,6 +112,138 @@ function trimCounts(counts: Partial<Record<UnitKind, number>>): Partial<Record<U
     if (typeof n === "number" && n > 0) out[k] = Math.floor(n);
   }
   return out;
+}
+
+/**
+ * The ladder report: one row per rung, flagged where the climb is uneven.
+ *
+ * What it is NOT is a feasibility test. Turret prices are flat and every run
+ * banks something, so a player can always farm the rung below until they can
+ * afford the next — no rung here is unwinnable. `step` measures GRIND: a
+ * rung costing twice what the last one did is twice the farming before it
+ * opens, and a few of those stacked turn a climb into a chore. That is the
+ * failure mode an idle game actually has.
+ */
+function LadderReport({
+  rows,
+  issues,
+}: {
+  rows: readonly AuditRow[];
+  issues: readonly LadderIssue[];
+}) {
+  const byTier = new Map<number, LadderIssue[]>();
+  for (const i of issues) {
+    if (i.tier == null) continue;
+    const list = byTier.get(i.tier) ?? [];
+    list.push(i);
+    byTier.set(i.tier, list);
+  }
+  const KIND_CSS: Record<LadderIssue["kind"], string> = {
+    debut: "border-[#5B2E2E] bg-[#2A1616] text-[#FF8A8A]",
+    opening: "border-[#5B2E2E] bg-[#2A1616] text-[#FF8A8A]",
+    wall: "border-[#5B4A2E] bg-[#2A2116] text-[#F0B457]",
+    filler: "border-[#2E4A5B] bg-[#16222A] text-[#8DA1E3]",
+    economy: "border-[#3A3A46] bg-[#1C1C22] text-[#A6A6AF]",
+  };
+
+  return (
+    <section className="mb-3 rounded-lg border border-[#2E2E36] bg-[#151518] p-3">
+      <div className="mb-2 flex items-baseline justify-between">
+        <h2 className="text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
+          Ladder check
+        </h2>
+        <span
+          className={`text-[12px] font-bold uppercase tracking-widest ${
+            issues.length ? "text-[#F0B457]" : "text-[#7BE58A]"
+          }`}
+        >
+          {issues.length
+            ? `${issues.length} finding${issues.length > 1 ? "s" : ""}`
+            : `Clean through tier ${rows.length - 1}`}
+        </span>
+      </div>
+
+      {/* one row a rung. `step` is the number to keep even — the climb should
+          cost about half again what the rung below did, all the way up */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-[13px]">
+          <thead className="text-[12px] uppercase tracking-widest text-[#71717C]">
+            <tr>
+              <th className="py-1 pr-3 font-normal">Tier</th>
+              <th className="py-1 pr-3 font-normal">Waves</th>
+              <th className="py-1 pr-3 text-right font-normal">Enemies</th>
+              <th className="py-1 pr-3 text-right font-normal">Fleet</th>
+              <th className="py-1 pr-3 text-right font-normal">Step</th>
+              <th className="py-1 pr-3 text-right font-normal">T3</th>
+              <th className="py-1 font-normal">Findings</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const found = byTier.get(r.tier) ?? [];
+              const steep = r.tier > 0 && r.step > WALL_STEP;
+              return (
+                <tr
+                  key={r.tier}
+                  className={`border-t border-[#222227] ${
+                    found.length ? "bg-[#1A1A1F]" : ""
+                  }`}
+                >
+                  <td className="py-1 pr-3 font-bold text-[#EDEDEF]">{r.tier}</td>
+                  <td className="py-1 pr-3 text-[#A6A6AF]">{r.waves}</td>
+                  <td className="py-1 pr-3 text-right text-[#A6A6AF]">
+                    {r.units.toLocaleString()}
+                  </td>
+                  <td className="py-1 pr-3 text-right text-[#A6A6AF]">
+                    {r.duos.toLocaleString()}
+                  </td>
+                  <td
+                    className={`py-1 pr-3 text-right font-bold ${
+                      r.tier === 0
+                        ? "text-[#4A4A55]"
+                        : steep
+                          ? "text-[#F0B457]"
+                          : "text-[#7BE58A]"
+                    }`}
+                  >
+                    {r.tier === 0 ? "—" : `${r.step.toFixed(2)}x`}
+                  </td>
+                  <td className="py-1 pr-3 text-right text-[#71717C]">
+                    {Math.round(r.t3Share * 100)}%
+                  </td>
+                  <td className="py-1">
+                    {found.length === 0 ? (
+                      <span className="text-[#4A4A55]">—</span>
+                    ) : (
+                      <div className="space-y-1">
+                        {found.map((f, n) => (
+                          <div
+                            key={n}
+                            className={`rounded border px-1.5 py-0.5 text-[12px] leading-snug ${KIND_CSS[f.kind]}`}
+                          >
+                            <span className="font-bold uppercase tracking-widest">
+                              {f.kind}
+                            </span>{" "}
+                            {f.message}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="mt-2 border-t border-[#2E2E36] pt-2 text-[12px] leading-snug text-[#71717C]">
+        Fleet is duos needed at the measured coverage — it counts armour, so it
+        moves far more than the enemy count does. Nothing here is unwinnable:
+        prices are flat, so a steep rung means more farming, not a dead end.
+      </p>
+    </section>
+  );
 }
 
 const stepTotal = (step: EditStep): number =>
@@ -242,6 +382,30 @@ export default function LevelEditorView({
     else setSaveError(res.error);
   };
 
+  /**
+   * The ladder report, or null while it is closed. Computed on demand from
+   * the LIVE buffer rather than the saved document — the whole point is to
+   * weigh an edit before committing it, so a report of the file on disk
+   * would answer the wrong question.
+   */
+  const [report, setReport] = useState<{ rows: AuditRow[]; issues: LadderIssue[] } | null>(null);
+
+  const runCheck = (): void => {
+    if (report) return setReport(null); // the button toggles
+    const spec = { ...level, spawnRate, waveGap, script: toScript(steps) };
+    // one rung past the last one that unlocks a wave: beyond that the script
+    // stops changing and every further rung is the same shape with more
+    // health, so there is nothing left for the check to say
+    const through = topContentTier(spec) + 1;
+    setReport({ rows: audit(spec, through), issues: check(spec, through) });
+  };
+
+  // any edit invalidates a report — a stale verdict next to changed waves is
+  // worse than no verdict
+  useEffect(() => {
+    setReport(null);
+  }, [steps, spawnRate, waveGap]);
+
   const back = (): void => {
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
     onClose();
@@ -288,6 +452,17 @@ export default function LevelEditorView({
                 {saveError}
               </p>
             )}
+            <button
+              onClick={runCheck}
+              aria-pressed={report !== null}
+              className={`rounded border px-4 py-1.5 text-[14px] uppercase tracking-widest ${
+                report
+                  ? "border-[#7BE58A] bg-[#14271C] text-[#7BE58A]"
+                  : "border-[#2E2E36] text-[#A6A6AF] hover:border-[#4A4A55]"
+              }`}
+            >
+              Check ladder
+            </button>
             <button
               onClick={back}
               className="rounded border border-[#2E2E36] px-4 py-1.5 text-[14px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55]"
@@ -360,6 +535,7 @@ export default function LevelEditorView({
 
           {/* ---- the script ---- */}
           <main className="min-h-0 overflow-y-auto pr-1">
+            {report && <LadderReport rows={report.rows} issues={report.issues} />}
             <InsertBar onInsert={() => edit((s) => [makeStep(), ...s])} />
             {steps.map((step, i) => {
               return (

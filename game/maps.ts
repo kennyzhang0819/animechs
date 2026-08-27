@@ -454,23 +454,11 @@ export function drawThumb(map: MapData, canvas: HTMLCanvasElement): void {
         : FLOOR_TONES[map.floor[i]] ?? FLOOR_TONES[0];
       c.fillRect(x, y, 1, 1);
     }
-  // core marker
+  // core marker. Spawn zones are deliberately NOT drawn: a thumbnail is a
+  // picture of the place, and at 1px per cell a zone ring is a coloured arc
+  // clipped by the map edge that reads as an artefact rather than as
+  // information. The map editor's own canvas still paints them, which is
+  // where they are actually being authored
   c.fillStyle = "#ffd37f";
   c.fillRect(map.core?.x ?? BASE.x, map.core?.y ?? BASE.y, BASE.size, BASE.size);
-  // Drop zones as RINGS over untouched ground, the same way the map editor
-  // draws them — the floor inside a zone is ordinary floor and shouldn't be
-  // recoloured. Region N keeps its palette colour whatever shape the
-  // document was saved in, which is what ties a level editor's "Region 2"
-  // to a place on the map.
-  // The bright `css` colour at 2px, not the muted floor `tone`: a zone sits
-  // at the map edge, so most of its ring falls outside the canvas and only a
-  // short arc survives — a dark hairline would read as nothing at 1px/cell.
-  const circles = spawnCirclesOf(map, lift(map.blocked, 1));
-  c.lineWidth = 2;
-  for (const z of circles) {
-    c.strokeStyle = SPAWN_REGIONS[(z.region - 1) % SPAWN_REGIONS.length].css;
-    c.beginPath();
-    c.arc(z.x + 0.5, z.y + 0.5, z.r, 0, Math.PI * 2);
-    c.stroke();
-  }
 }

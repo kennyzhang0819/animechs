@@ -397,79 +397,75 @@ export const WORLDS: LevelSpec[] = [
     spawnRate: 20,
     waveGap: 15,
     script: [
-      // ---------- tier 0: waves 1-4, a 60-second opening skirmish ----------
+      // ---------- tier 0: waves 1-4 -----------------------------------
       { wave: { dagger: 24 } },
       { wave: { dagger: 40, crawler: 25 } },
-      // first armour: a mace's 4 costs a duo shot nearly half its damage
-      { wave: { dagger: 50, nova: 12, mace: 6 } },
-      // first tier 3 — spiroct, armour 5, so a duo still lands 4 a shot
-      { wave: { dagger: 60, mace: 14, atrax: 8, spiroct: 3 } },
-      // ---------- tier 1: waves 5-7 ----------
+      { wave: { dagger: 50, mace: 6, nova: 12 } },
+      { wave: { dagger: 60, mace: 24, fortress: 3, nova: 10 } },
+      // ---------- tier 1: waves 5-7 -----------------------------------
       { wave: { dagger: 48, crawler: 44, nova: 10 } },
-      { wave: { dagger: 44, mace: 15, atrax: 8, pulsar: 8 } },
-      { wave: { dagger: 52, crawler: 50, spiroct: 5 } },
-      // ---------- tier 2: waves 8-10 — THE SKY OPENS (scatter gated on 1) --
-      { wave: { flare: 34, dagger: 45 } },
+      { wave: { dagger: 44, mace: 25, pulsar: 8 } },
+      { wave: { dagger: 52, fortress: 6, crawler: 50 } },
+      // ---------- tier 2: waves 8-10 ----------------------------------
+      { wave: { dagger: 45, flare: 34 } },
       { wave: { dagger: 70, mace: 22, atrax: 12, spiroct: 7 } },
       { wave: { crawler: 100, flare: 30, nova: 18 } },
-      // ---------- tier 3: waves 11-13 (salvo goes on sale) ----------
-      { wave: { dagger: 85, mace: 26, pulsar: 14, spiroct: 8 } },
-      { wave: { flare: 50, crawler: 80, dagger: 60 } },
+      // ---------- tier 3: waves 11-13 ---------------------------------
+      { wave: { dagger: 85, mace: 26, spiroct: 8, pulsar: 14 } },
+      { wave: { dagger: 60, crawler: 80, flare: 50 } },
       { wave: { dagger: 85, atrax: 24, spiroct: 10, nova: 22 } },
-      // ---------- tier 4: waves 14-16 — horizon, the armoured bomber ------
-      { wave: { horizon: 20, flare: 45, dagger: 90 } },
+      // ---------- tier 4: waves 14-16 ---------------------------------
+      { wave: { dagger: 90, flare: 45, horizon: 20 } },
       { wave: { dagger: 100, mace: 40, atrax: 24, spiroct: 18 } },
-      { wave: { crawler: 150, pulsar: 24, spiroct: 10 } },
-      // ---------- tier 5: waves 17-19 ----------
-      { wave: { horizon: 28, flare: 70, mace: 30, spiroct: 8 } },
+      { wave: { crawler: 150, spiroct: 10, pulsar: 24 } },
+      // ---------- tier 5: waves 17-19 ---------------------------------
+      { wave: { mace: 30, spiroct: 8, flare: 70, horizon: 28 } },
       { wave: { dagger: 120, mace: 46, atrax: 30, pulsar: 20 } },
-      { wave: { crawler: 190, dagger: 110, spiroct: 14 } },
-      // ---------- tier 6: waves 20-22 — zenith (fuse goes on sale) --------
-      { wave: { zenith: 10, horizon: 24, flare: 80 } },
+      { wave: { dagger: 110, crawler: 190, spiroct: 14 } },
+      // ---------- tier 6: waves 20-22 ---------------------------------
+      { wave: { flare: 80, horizon: 24, zenith: 10 } },
       { wave: { dagger: 170, mace: 50, atrax: 34, spiroct: 15 } },
-      { wave: { crawler: 220, nova: 45, pulsar: 26, spiroct: 11 } },
-      // ---------- tier 7: waves 23-25 ----------
-      { wave: { zenith: 14, horizon: 30, dagger: 140, atrax: 24 } },
+      { wave: { crawler: 220, spiroct: 11, nova: 45, pulsar: 26 } },
+      // ---------- tier 7: waves 23-25 ---------------------------------
+      { wave: { dagger: 140, atrax: 24, horizon: 30, zenith: 14 } },
       { wave: { dagger: 190, mace: 62, spiroct: 18 } },
-      { wave: { crawler: 250, flare: 80, spiroct: 15 } },
-      // ---------- tier 8: waves 26-28 — THE FORTRESS, armour 9 ------------
-      { wave: { fortress: 7, mace: 48, atrax: 30, dagger: 90 } },
+      { wave: { crawler: 250, spiroct: 15, flare: 80 } },
+      // ---------- tier 8: waves 26-28 ---------------------------------
+      { wave: { dagger: 90, mace: 48, fortress: 7, atrax: 30 } },
       { wave: { dagger: 210, crawler: 200, spiroct: 18, zenith: 10 } },
-      { wave: { horizon: 42, zenith: 14, flare: 130, pulsar: 32 } },
-      // ---------- tier 9: waves 29-31 ----------
-      { wave: { fortress: 9, dagger: 190, mace: 60, spiroct: 15 } },
+      { wave: { flare: 130, pulsar: 32, horizon: 42, zenith: 14 } },
+      // ---------- tier 9: waves 29-31 ---------------------------------
+      { wave: { dagger: 190, mace: 60, fortress: 9, spiroct: 15 } },
       { wave: { crawler: 280, atrax: 46, nova: 60 } },
-      { wave: { zenith: 17, horizon: 46, flare: 150 } },
-      // ---------- tier 10: waves 32-34 ----------
-      { wave: { fortress: 11, spiroct: 20, atrax: 52, pulsar: 36, dagger: 110 } },
-      { wave: { dagger: 240, crawler: 240, mace: 70 } },
-      { wave: { zenith: 19, horizon: 52, dagger: 170, flare: 120 } },
-      // ---------- tier 11: waves 35-37 ----------
-      { wave: { fortress: 13, mace: 76, spiroct: 22, dagger: 130 } },
-      { wave: { crawler: 330, dagger: 230, nova: 70, pulsar: 40 } },
-      { wave: { zenith: 21, horizon: 58, atrax: 54, flare: 120 } },
-      // ---------- tier 12: waves 38-40 ----------
-      { wave: { fortress: 15, spiroct: 26, atrax: 62, dagger: 150 } },
-      { wave: { dagger: 280, crawler: 280, mace: 88, pulsar: 44 } },
-      { wave: { zenith: 24, horizon: 66, flare: 190, fortress: 11 } },
-      // ---------- tier 13: waves 41-43 ----------
-      { wave: { fortress: 18, spiroct: 30, mace: 100, dagger: 170 } },
-      { wave: { crawler: 380, dagger: 270, atrax: 68, nova: 80 } },
-      { wave: { zenith: 27, horizon: 74, spiroct: 24, flare: 150 } },
-      // ---------- tier 14: waves 44-46 ----------
-      { wave: { fortress: 21, spiroct: 34, atrax: 78, pulsar: 52, dagger: 190 } },
-      { wave: { dagger: 330, crawler: 330, mace: 110 } },
-      { wave: { zenith: 31, horizon: 84, fortress: 15, flare: 220 } },
-      // ---------- tier 15: waves 47-49 ----------
-      { wave: { fortress: 25, spiroct: 38, mace: 122, atrax: 84, dagger: 200 } },
-      { wave: { crawler: 440, dagger: 320, nova: 92, pulsar: 58 } },
-      { wave: { zenith: 35, horizon: 96, spiroct: 30, flare: 190 } },
-      // ---------- tier 16: waves 50-52 — the top of the authored ladder ---
-      // Past here a rung adds only enemy level, never a new wave. Write more
-      // waves below to extend the content ladder; nothing else needs editing
-      { wave: { fortress: 30, spiroct: 42, atrax: 96, dagger: 230 } },
-      { wave: { dagger: 370, crawler: 420, mace: 132, pulsar: 64 } },
-      { wave: { zenith: 40, horizon: 108, fortress: 22, spiroct: 36, flare: 210 } },
+      { wave: { flare: 150, horizon: 46, zenith: 17 } },
+      // ---------- tier 10: waves 32-34 --------------------------------
+      { wave: { dagger: 110, fortress: 11, atrax: 52, spiroct: 20, pulsar: 36 } },
+      { wave: { dagger: 240, mace: 70, crawler: 240 } },
+      { wave: { dagger: 170, flare: 120, horizon: 52, zenith: 19 } },
+      // ---------- tier 11: waves 35-37 --------------------------------
+      { wave: { dagger: 130, mace: 76, fortress: 13, spiroct: 22 } },
+      { wave: { dagger: 230, crawler: 330, nova: 70, pulsar: 40 } },
+      { wave: { atrax: 54, flare: 120, horizon: 58, zenith: 21 } },
+      // ---------- tier 12: waves 38-40 --------------------------------
+      { wave: { dagger: 150, fortress: 15, atrax: 62, spiroct: 26 } },
+      { wave: { dagger: 280, mace: 88, crawler: 280, pulsar: 44 } },
+      { wave: { fortress: 11, flare: 190, horizon: 66, zenith: 24 } },
+      // ---------- tier 13: waves 41-43 --------------------------------
+      { wave: { dagger: 170, mace: 100, fortress: 18, spiroct: 30 } },
+      { wave: { dagger: 270, crawler: 380, atrax: 68, nova: 80 } },
+      { wave: { spiroct: 24, flare: 150, horizon: 74, zenith: 27 } },
+      // ---------- tier 14: waves 44-46 --------------------------------
+      { wave: { dagger: 190, fortress: 21, atrax: 78, spiroct: 34, pulsar: 52 } },
+      { wave: { dagger: 330, mace: 110, crawler: 330 } },
+      { wave: { fortress: 15, flare: 220, horizon: 84, zenith: 31 } },
+      // ---------- tier 15: waves 47-49 --------------------------------
+      { wave: { dagger: 200, mace: 122, fortress: 25, atrax: 84, spiroct: 38 } },
+      { wave: { dagger: 320, crawler: 440, nova: 92, pulsar: 58 } },
+      { wave: { spiroct: 30, flare: 190, horizon: 96, zenith: 35 } },
+      // ---------- tier 16: waves 50-52 --------------------------------
+      { wave: { dagger: 230, fortress: 30, atrax: 96, spiroct: 42 } },
+      { wave: { dagger: 370, mace: 132, crawler: 420, pulsar: 64 } },
+      { wave: { fortress: 22, spiroct: 36, flare: 210, horizon: 108, zenith: 40 } },
     ],
   },
 ];
@@ -501,12 +497,12 @@ export function worldById(id: string): LevelSpec | null {
  * Sim's `WORLDS[0]` default, WORLD, progress.ts sizing the opening loadout —
  * keeps working whether or not documents have loaded yet.
  *
- * One consequence worth knowing: the opening duo count is solved off the
- * SHIPPED baseline, not off a document, because a save is read the moment
- * the page opens and documents arrive later. Retune the baseline in an
- * editor and the ladder plays the edit, but the free loadout still answers
- * to the code — so a document that makes tier 0 much heavier wants the
- * array above updated to match.
+ * The free opening loadout does NOT follow this script. It is a fixed
+ * design constant (OPENING_DUOS in ladder.ts) because it is the difficulty
+ * anchor: the author decides how hard the first run should be and writes
+ * the opening waves to fit that fleet, rather than the fleet silently
+ * growing to absorb whatever the waves became. `Check ladder` in the level
+ * editor reports the gap.
  */
 async function fetchLevelDoc(id: string): Promise<LevelDoc | null> {
   try {

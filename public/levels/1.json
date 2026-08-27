@@ -1,0 +1,404 @@
+{
+ "id": "1",
+ "spawnRate": 20,
+ "waveGap": 15,
+ "script": [
+  {
+   "wave": {
+    "dagger": 24
+   }
+  },
+  {
+   "wave": {
+    "dagger": 40,
+    "crawler": 25
+   }
+  },
+  {
+   "wave": {
+    "dagger": 50,
+    "mace": 6,
+    "nova": 12
+   }
+  },
+  {
+   "wave": {
+    "crawler": 60,
+    "atrax": 24,
+    "spiroct": 3,
+    "nova": 10
+   }
+  },
+  {
+   "wave": {
+    "dagger": 48,
+    "crawler": 44,
+    "nova": 10
+   }
+  },
+  {
+   "wave": {
+    "dagger": 50,
+    "mace": 25,
+    "pulsar": 8
+   }
+  },
+  {
+   "wave": {
+    "dagger": 52,
+    "crawler": 50,
+    "spiroct": 10
+   }
+  },
+  {
+   "wave": {
+    "dagger": 45,
+    "flare": 34
+   }
+  },
+  {
+   "wave": {
+    "dagger": 70,
+    "mace": 22,
+    "atrax": 12,
+    "spiroct": 7
+   }
+  },
+  {
+   "wave": {
+    "crawler": 100,
+    "flare": 30,
+    "nova": 18
+   }
+  },
+  {
+   "wave": {
+    "dagger": 85,
+    "mace": 26,
+    "spiroct": 8,
+    "pulsar": 14
+   }
+  },
+  {
+   "wave": {
+    "dagger": 60,
+    "crawler": 80,
+    "flare": 50
+   }
+  },
+  {
+   "wave": {
+    "dagger": 85,
+    "atrax": 24,
+    "spiroct": 10,
+    "nova": 22
+   }
+  },
+  {
+   "wave": {
+    "dagger": 90,
+    "flare": 45,
+    "horizon": 20
+   }
+  },
+  {
+   "wave": {
+    "dagger": 100,
+    "mace": 40,
+    "atrax": 24,
+    "spiroct": 18
+   }
+  },
+  {
+   "wave": {
+    "crawler": 150,
+    "spiroct": 10,
+    "pulsar": 24
+   }
+  },
+  {
+   "wave": {
+    "mace": 30,
+    "spiroct": 8,
+    "flare": 70,
+    "horizon": 28
+   }
+  },
+  {
+   "wave": {
+    "dagger": 120,
+    "mace": 46,
+    "atrax": 30,
+    "pulsar": 20
+   }
+  },
+  {
+   "wave": {
+    "dagger": 110,
+    "crawler": 190,
+    "spiroct": 14
+   }
+  },
+  {
+   "wave": {
+    "flare": 80,
+    "horizon": 24,
+    "zenith": 10
+   }
+  },
+  {
+   "wave": {
+    "dagger": 170,
+    "mace": 50,
+    "atrax": 34,
+    "spiroct": 15
+   }
+  },
+  {
+   "wave": {
+    "crawler": 220,
+    "spiroct": 11,
+    "nova": 45,
+    "pulsar": 26
+   }
+  },
+  {
+   "wave": {
+    "dagger": 140,
+    "atrax": 24,
+    "horizon": 30,
+    "zenith": 14
+   }
+  },
+  {
+   "wave": {
+    "dagger": 190,
+    "mace": 62,
+    "spiroct": 18
+   }
+  },
+  {
+   "wave": {
+    "crawler": 250,
+    "spiroct": 15,
+    "flare": 80
+   }
+  },
+  {
+   "wave": {
+    "dagger": 90,
+    "mace": 48,
+    "fortress": 7,
+    "atrax": 30
+   }
+  },
+  {
+   "wave": {
+    "dagger": 210,
+    "crawler": 200,
+    "spiroct": 18,
+    "zenith": 10
+   }
+  },
+  {
+   "wave": {
+    "flare": 130,
+    "pulsar": 32,
+    "horizon": 42,
+    "zenith": 14
+   }
+  },
+  {
+   "wave": {
+    "dagger": 190,
+    "mace": 60,
+    "fortress": 9,
+    "spiroct": 15
+   }
+  },
+  {
+   "wave": {
+    "crawler": 280,
+    "atrax": 46,
+    "nova": 60
+   }
+  },
+  {
+   "wave": {
+    "flare": 150,
+    "horizon": 46,
+    "zenith": 17
+   }
+  },
+  {
+   "wave": {
+    "dagger": 110,
+    "fortress": 11,
+    "atrax": 52,
+    "spiroct": 20,
+    "pulsar": 36
+   }
+  },
+  {
+   "wave": {
+    "dagger": 240,
+    "mace": 70,
+    "crawler": 240
+   }
+  },
+  {
+   "wave": {
+    "dagger": 170,
+    "flare": 120,
+    "horizon": 52,
+    "zenith": 19
+   }
+  },
+  {
+   "wave": {
+    "dagger": 130,
+    "mace": 76,
+    "fortress": 13,
+    "spiroct": 22
+   }
+  },
+  {
+   "wave": {
+    "dagger": 230,
+    "crawler": 330,
+    "nova": 70,
+    "pulsar": 40
+   }
+  },
+  {
+   "wave": {
+    "atrax": 54,
+    "flare": 120,
+    "horizon": 58,
+    "zenith": 21
+   }
+  },
+  {
+   "wave": {
+    "dagger": 150,
+    "fortress": 15,
+    "atrax": 62,
+    "spiroct": 26
+   }
+  },
+  {
+   "wave": {
+    "dagger": 280,
+    "mace": 88,
+    "crawler": 280,
+    "pulsar": 44
+   }
+  },
+  {
+   "wave": {
+    "fortress": 11,
+    "flare": 190,
+    "horizon": 66,
+    "zenith": 24
+   }
+  },
+  {
+   "wave": {
+    "dagger": 170,
+    "mace": 100,
+    "fortress": 18,
+    "spiroct": 30
+   }
+  },
+  {
+   "wave": {
+    "dagger": 270,
+    "crawler": 380,
+    "atrax": 68,
+    "nova": 80
+   }
+  },
+  {
+   "wave": {
+    "spiroct": 24,
+    "flare": 150,
+    "horizon": 74,
+    "zenith": 27
+   }
+  },
+  {
+   "wave": {
+    "dagger": 190,
+    "fortress": 21,
+    "atrax": 78,
+    "spiroct": 34,
+    "pulsar": 52
+   }
+  },
+  {
+   "wave": {
+    "dagger": 330,
+    "mace": 110,
+    "crawler": 330
+   }
+  },
+  {
+   "wave": {
+    "fortress": 15,
+    "flare": 220,
+    "horizon": 84,
+    "zenith": 31
+   }
+  },
+  {
+   "wave": {
+    "dagger": 200,
+    "mace": 122,
+    "fortress": 25,
+    "atrax": 84,
+    "spiroct": 38
+   }
+  },
+  {
+   "wave": {
+    "dagger": 320,
+    "crawler": 440,
+    "nova": 92,
+    "pulsar": 58
+   }
+  },
+  {
+   "wave": {
+    "spiroct": 30,
+    "flare": 190,
+    "horizon": 96,
+    "zenith": 35
+   }
+  },
+  {
+   "wave": {
+    "dagger": 230,
+    "fortress": 30,
+    "atrax": 96,
+    "spiroct": 42
+   }
+  },
+  {
+   "wave": {
+    "dagger": 370,
+    "mace": 132,
+    "crawler": 420,
+    "pulsar": 64
+   }
+  },
+  {
+   "wave": {
+    "fortress": 22,
+    "spiroct": 36,
+    "flare": 210,
+    "horizon": 108,
+    "zenith": 40
+   }
+  }
+ ]
+}

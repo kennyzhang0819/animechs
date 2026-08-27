@@ -105,7 +105,12 @@ __ladder.wave(7, 3)   // what one authored wave costs at a given tier
   on the specialists, where a hard cap is the point.
 - **Cost bundles carry the drop ratio of the rung that unlocks them.**
 
+Nothing about pricing, turret caps, or the free loadout is derived from the
+wave script. `OPENING_DUOS` (the free fleet) is a fixed constant and the
+campaign's difficulty anchor — the opening waves are authored to fit it, not
+the other way round, so an edit that makes tier 0 heavier does not quietly
+hand out more duos to absorb it. `Check ladder` reports the gap.
+
 `COVERAGE` in `ladder.ts` is the one constant that must be **measured**
 rather than reasoned out (0.48, from a human clear of tier 0 with 84 duos).
-Re-derive it whenever the baseline, the map, `waveGap`, `spawnRate`, or
-duo's stats change.
+Re-derive it whenever the map, `waveGap`, `spawnRate`, or duo's stats change.

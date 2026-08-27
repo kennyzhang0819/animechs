@@ -60,6 +60,11 @@ const CENTER_K = 25;
 // used to add; these three forces do the rest, turning a column into a
 // front that AoE has to work through instead of a queue it enfilades.
 //
+// All three are GROUND-only. Flyers ignore terrain and fly straight at the
+// core, so they never funnel on a corridor wall in the first place; leaving
+// them on the untouched Mindustry physics keeps a swarm reading as a swarm
+// rather than a wobbling cloud.
+//
 // 1. Overlaps resolve sideways first. PUSH_LONG is the fraction of a
 //    front-to-back shove that stays front-to-back; PUSH_SIDE is how hard
 //    the remainder is re-aimed across the direction of travel. The shove's
@@ -70,7 +75,7 @@ const PUSH_SIDE = 1.1;
 // clearance (FlowField.clear, in cells) or the shove stays as Mindustry
 // wrote it, so a 1-wide slot still resolves a rear-ender by backing off
 const SPREAD_CLEAR = 1.7;
-// 2. Lateral drift: every unit carries a bias in [-1, 1] and walks that
+// 2. Lateral drift: every WALKER carries a bias in [-1, 1] and walks that
 //    fraction of its speed across the flow. LAT_RELAX sets how fast the
 //    bias decorrelates (1/s — its reciprocal is the correlation time, and
 //    it must be seconds, not frames, or the walk averages out to nothing);
@@ -196,16 +201,18 @@ export class Sim {
   readonly uid = new Int32Array(MAX_UNITS);
   readonly ukind = new Uint8Array(MAX_UNITS); // UNIT_ID of the kind
   /**
-   * this unit's sideways bias in [-1, 1]: how far off the flow line it
+   * this walker's sideways bias in [-1, 1]: how far off the flow line it
    * prefers to walk. Wanders on a multi-second clock, so two units that
    * left the same pad a moment apart are soon aiming at different lanes and
-   * the stream between them widens into a band
+   * the stream between them widens into a band. Unused by flyers, which
+   * steer straight at the core and are never nudged off it
    */
   readonly ulat = new Float32Array(MAX_UNITS);
   /**
    * scratch, rebuilt every frame: unit-length travel direction, zeroed for
-   * anyone standing still or boxed in too tight to step aside. Only the
-   * physics pass reads it, to decide which way an overlap should resolve
+   * anyone standing still, boxed in too tight to step aside, or airborne.
+   * Only the physics pass reads it, to decide which way an overlap should
+   * resolve — a zero here means resolve it the way Mindustry always did
    */
   private readonly uhx = new Float32Array(MAX_UNITS);
   private readonly uhy = new Float32Array(MAX_UNITS);
@@ -1131,15 +1138,17 @@ export class Sim {
       phy[i] = upy[i];
       const vx = uvx[i], vy = uvy[i];
       const vl = Math.sqrt(vx * vx + vy * vy);
-      // a flyer always has room; a walker needs open ground beside it, or
-      // the sideways re-aim would only grind it into rock
+      // walkers only, and only where there is open ground beside them: the
+      // sideways re-aim would otherwise grind a unit into rock. Flyers are
+      // left on Mindustry's own centre-line resolution — the conga line is
+      // a corridor problem, and they are not in a corridor
       const room =
         vl > 1e-3 &&
-        (KIND_FLYING[ukind[i]] ||
-          clear[
-            clamp((upy[i] / CELL) | 0, 0, ROWS - 1) * COLS +
-              clamp((upx[i] / CELL) | 0, 0, COLS - 1)
-          ] >= SPREAD_CLEAR);
+        !KIND_FLYING[ukind[i]] &&
+        clear[
+          clamp((upy[i] / CELL) | 0, 0, ROWS - 1) * COLS +
+            clamp((upx[i] / CELL) | 0, 0, COLS - 1)
+        ] >= SPREAD_CLEAR;
       uhx[i] = room ? vx / vl : 0;
       uhy[i] = room ? vy / vl : 0;
     }
@@ -1256,26 +1265,28 @@ export class Sim {
       const shx = phx[i] - upx[i], shy = phy[i] - upy[i];
       let fx = 0, fy = 0;
 
-      // lateral drift, both layers. The physics re-aim above only spreads
-      // units already touching; once a stream is strung out single file
-      // nothing is left to widen it, and a flyer swarm homing on one point
-      // has nothing to widen it in the first place. So each unit wanders a
-      // little across its own heading, on a multi-second clock so the walk
-      // actually accumulates instead of averaging away frame to frame. The
-      // bias reverts to zero, so a unit drifts off the line and back rather
-      // than committing to a wall
-      ulat[i] = clamp(ulat[i] + (Math.random() * 2 - 1) * LAT_N - ulat[i] * LAT_A, -1, 1);
-      const cl = fly ? CENTER_CLEAR : field.clear[ci];
-      const room = clamp((cl - SPREAD_CLEAR) * LAT_ROOM_K, 0, 1);
-      if (room > 0) {
-        const drift = ulat[i] * LAT_FRAC * uspd[i] * room;
-        fx -= flowTmp.y * drift;
-        fy += flowTmp.x * drift;
-      }
-
-      // everything terrain-flavoured is ground-only: flyers never probe,
-      // jitter, or center — walls are scenery beneath them
+      // every steering force below is ground-only: flyers never probe,
+      // jitter, center, or drift. They ignore the maze entirely and hold the
+      // straight line to the core they have always flown — open sky has no
+      // corridor to spread across and no walls to crowd against, so the
+      // crowd fixes a corridor needs would only add wobble up there
       if (!fly) {
+        const cl = field.clear[ci];
+
+        // lateral drift. The physics re-aim above only spreads units already
+        // touching; once a stream is strung out single file nothing is left
+        // to widen it. So each walker wanders a little across the flow, on a
+        // multi-second clock so the walk actually accumulates instead of
+        // averaging away frame to frame. The bias reverts to zero, so a unit
+        // drifts off the line and back rather than committing to a wall
+        ulat[i] = clamp(ulat[i] + (Math.random() * 2 - 1) * LAT_N - ulat[i] * LAT_A, -1, 1);
+        const room = clamp((cl - SPREAD_CLEAR) * LAT_ROOM_K, 0, 1);
+        if (room > 0) {
+          const drift = ulat[i] * LAT_FRAC * uspd[i] * room;
+          fx -= flowTmp.y * drift;
+          fy += flowTmp.x * drift;
+        }
+
         // wall repulsion probes: push off nearby walls so corners can't wedge
         // units (in a 1-wide corridor both sides fire and cancel — harmless)
         if (field.blockedPx(upx[i] + PR, upy[i])) fx -= REP;
