@@ -265,7 +265,91 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       invisible: true,
     },
   },
+
+  // ---------- STUBS ----------------------------------------------------
+  //
+  // The rest of the Serpulo turret line, present so the tech tree can show
+  // the whole shape of the game. SIZE, RANGE and RELOAD are the real
+  // Mindustry numbers (content/Blocks.java) because those are what the
+  // ceiling rule in tech.ts is solved from and they must not be guesses.
+  // EVERYTHING ELSE IS A PLACEHOLDER — the bullets below are a duo's, not
+  // each turret's own, and the aiming fields are defaults.
+  //
+  // None of these is in the build menu, so none can be placed. Implementing
+  // one means replacing its bullet block with the real ammo and adding it
+  // to TOWER_MENU; nothing else here has to change.
+  ...stubTurrets({
+    // MEDIUM — chains lightning down a file of ground units
+    arc: { name: "Arc", size: 1, range: 90, reload: 35, air: false },
+    // HIGH — a piercing laser that rakes everything in a line
+    lancer: { name: "Lancer", size: 2, range: 165, reload: 80, air: false },
+    // HIGH — the longest artillery reach in the game
+    ripple: { name: "Ripple", size: 3, range: 290, reload: 120, air: false, shots: 4 },
+    // HIGH — tractor beam: drags and slows air units instead of killing them
+    parallax: { name: "Parallax", size: 2, range: 300, reload: 60, ground: false },
+    // EXTREME — homing missiles that chase what they lock
+    swarmer: { name: "Swarmer", size: 2, range: 240, reload: 60 * 4 / 7, shots: 4 },
+    // EXTREME — a flak wall; the reason to own it is volume of splash
+    cyclone: { name: "Cyclone", size: 3, range: 200, reload: 10 },
+    // ERADICATION — twin heavy cannon, the highest sustained damage there is
+    spectre: { name: "Spectre", size: 4, range: 260, reload: 7, barrels: 2 },
+    // ERADICATION — a continuous beam that melts whatever it rests on
+    meltdown: { name: "Meltdown", size: 4, range: 195, reload: 90 },
+    // ERADICATION — 500 range, one enormous shot; a sniper, not a defence
+    foreshadow: { name: "Foreshadow", size: 4, range: 500, reload: 200 },
+  }),
 };
+
+/** shape of one stub before it is filled out into a whole TowerStats */
+interface StubSpec {
+  name: string;
+  size: number;
+  /** Mindustry world units, as printed in Blocks.java */
+  range: number;
+  /** Mindustry ticks between volleys */
+  reload: number;
+  shots?: number;
+  air?: boolean;
+  ground?: boolean;
+  barrels?: number;
+}
+
+/**
+ * Fill a stub out into a valid TowerStats so the record typechecks and a
+ * stray placement cannot crash the sim. The bullet is a duo's, deliberately
+ * — a stub that fired something plausible would be harder to notice than
+ * one that fires a copper pellet.
+ */
+function stubTurrets<K extends string>(specs: Record<K, StubSpec>): Record<K, TowerStats> {
+  const out = {} as Record<K, TowerStats>;
+  for (const [kind, s] of Object.entries(specs) as [K, StubSpec][]) {
+    out[kind] = {
+      name: s.name,
+      size: s.size,
+      range: s.range * MU,
+      reload: s.reload / TICK,
+      shots: s.shots ?? 1,
+      shotDelay: 0,
+      spread: 0,
+      inaccuracy: (5 * Math.PI) / 180,
+      shootCone: (15 * Math.PI) / 180,
+      rotateSpeed: ((10 * Math.PI) / 180) * TICK,
+      targetAir: s.air ?? true,
+      targetGround: s.ground ?? true,
+      ...(s.barrels ? { barrels: { count: s.barrels, spread: 4 * MU } } : {}),
+      bullet: {
+        speed: 2.5 * TICK * MU,
+        damage: 9, // PLACEHOLDER
+        lifetime: (s.range + 15) / 2.5 / TICK,
+        splash: 0,
+        splashRadius: 0,
+        collidesAir: s.air ?? true,
+        collidesGround: s.ground ?? true,
+      },
+    };
+  }
+  return out;
+}
 
 // StatusEffects.burning, 1:1: 0.167 damage per tick, and it pierces armor
 // (StatusEffect.update calls damageContinuousPierce) — but a shield still

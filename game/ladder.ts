@@ -444,20 +444,38 @@ export interface WaveRow {
   units: number;
   /** printed health at enemy level 0 — the authored weight */
   hp: number;
-  /** this wave's share of its own difficulty's total health */
+  /**
+   * This wave's share of the health of the difficulty being LOOKED AT — not
+   * of the one the wave debuts on. The same wave is a different fraction of
+   * a 20-wave run and a 50-wave one, and which of those matters depends on
+   * the run you are authoring for, so the caller picks.
+   *
+   * 0 for a wave the chosen difficulty never sends.
+   */
   share: number;
-  /** health relative to the wave before it */
+  /**
+   * Health relative to the wave before it. Not rendered — consecutive waves
+   * alternate archetype, so this swings from 0.35x to 4x on a script that is
+   * pacing itself perfectly well, and it read as noise next to `share`.
+   * Kept for `window.__ladder.waves()`.
+   */
   step: number;
   armourShare: number;
   airShare: number;
   t3Share: number;
 }
 
-/** the per-wave guide, at the authored baseline level */
-export function waveGuide(spec: LevelSpec = WORLD): WaveRow[] {
-  const totals = DIFFICULTIES.map(
-    (_, d) => budget(spec, d).hp / Math.max(1e-6, tierHpScale(d)),
-  );
+/**
+ * The per-wave guide, at the authored baseline level.
+ *
+ * `against` is the difficulty every share is measured in. Health is compared
+ * at level 0 throughout — the enemy level is a uniform multiplier, so it
+ * cancels out of a share and only the wave CUT actually moves the number.
+ */
+export function waveGuide(spec: LevelSpec = WORLD, against: number = TOP_TIER): WaveRow[] {
+  const d = clampTier(against);
+  const cut = tierWaveCount(spec, d);
+  const total = budget(spec, d).hp / Math.max(1e-6, tierHpScale(d));
   let prev = 0;
   return spec.script.map((step, i) => {
     const c = waveCost(step, 0);
@@ -467,7 +485,8 @@ export function waveGuide(spec: LevelSpec = WORLD): WaveRow[] {
       tier,
       units: c.units,
       hp: c.hp,
-      share: tier < 0 ? 0 : c.hp / Math.max(1, totals[tier]),
+      // a wave past this difficulty's cut is not part of its run at all
+      share: i >= cut ? 0 : c.hp / Math.max(1, total),
       step: prev ? c.hp / prev : 1,
       armourShare: c.armourShare,
       airShare: c.airShare,
@@ -500,9 +519,21 @@ export interface AuditRow {
   t3Share: number;
   armourShare: number;
   /**
-   * What the difficulty pays, per currency, normalised to the base item
-   * (copper) = 100. Indexed like ITEM_KINDS, so [100, titanium, thorium, ...]
-   * — the shape the tech tree's cost bundles have to match.
+   * What a full clear actually banks, per currency, INCLUDING this
+   * difficulty's drop bonus. One item per kill, so this is just the enemy
+   * mix priced out — which is why the wave script is the only thing that
+   * sets the economy.
+   */
+  drops: Cost;
+  /**
+   * The same thing as a shape: normalised to the base item (copper) = 100,
+   * indexed like ITEM_KINDS. The drop BONUS cannot move this — it scales
+   * every currency together — so the ratio is decided purely by how many
+   * T1/T2/T3 bodies the waves send.
+   *
+   * WHAT TO AIM AT: the tree charges about 100 : 15 : 2.6 across all
+   * fifteen nodes at their ceilings. Pay much above that and titanium and
+   * thorium pile up unspent while copper stays the only real constraint.
    */
   dropRatio: number[];
 }
@@ -541,6 +572,12 @@ export function audit(spec: LevelSpec = WORLD): AuditRow[] {
     for (const step of run.script)
       for (const { item, amount } of costEntries(waveCost(step, level).drops))
         drops[item] = (drops[item] ?? 0) + amount;
+    // the bonus is what the player actually receives, so the payout column
+    // shows it; the ratio below is computed before it, though both give the
+    // same answer — a uniform multiplier cannot change a ratio
+    const bonus = tierDropBonus(tier);
+    const paid: Cost = {};
+    for (const { item, amount } of costEntries(drops)) paid[item] = Math.round(amount * bonus);
     const s = Math.max(1, drops[BASE_ITEM] ?? 0);
     rows.push({
       tier,
@@ -555,6 +592,7 @@ export function audit(spec: LevelSpec = WORLD): AuditRow[] {
       duration: Math.round(b.duration),
       t3Share: +b.t3Share.toFixed(2),
       armourShare: +b.armourShare.toFixed(2),
+      drops: paid,
       dropRatio: ITEM_KINDS.map((k) =>
         k === BASE_ITEM ? 100 : Math.round((1000 * (drops[k] ?? 0)) / s) / 10,
       ),

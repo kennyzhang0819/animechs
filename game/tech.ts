@@ -159,8 +159,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // the question stops being "can I afford one more" and becomes "is one
     // more duo worth a salvo"
     tower: "duo",
-    price: { base: { copper: 8 }, growth: 1.0217 },
-    x: 1,
+    price: { base: { copper: 8 }, growth: 1.0212 },
+    x: 2,
     y: 0,
   },
   {
@@ -168,20 +168,20 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // splash scales with bodies per blast and collapses with health per
     // body, so one hail shell kills five daggers and chips a spiroct
     tower: "hail",
-    price: { base: { copper: 40, titanium: 6 }, growth: 1.0131 },
-    requires: "duo",
+    price: { base: { copper: 40, titanium: 6 }, growth: 1.0127 },
+    requires: "scatter",
     x: 1,
-    y: 1,
+    y: 2,
   },
   {
     // ungated like hail and strong out of proportion to its price: a
     // piercing flame rakes a whole file of units and sets each alight, and
     // burning ignores armour outright. 60 units of range is the whole cost
     tower: "scorch",
-    price: { base: { copper: 60, titanium: 9 }, growth: 1.036 },
-    requires: "duo",
-    x: 2,
-    y: 1,
+    price: { base: { copper: 60, titanium: 9 }, growth: 1.035 },
+    requires: "arc",
+    x: 3,
+    y: 2,
   },
   {
     // anti-air only, and UNGATED for the same reason hail and scorch are:
@@ -190,9 +190,9 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // The price gates it on its own — 120 copper / 20 titanium / 3 thorium
     // is first affordable after wave 7, one wave before the flares
     tower: "scatter",
-    price: { base: { copper: 120, titanium: 20, thorium: 3 }, growth: 1.0318 },
+    price: { base: { copper: 120, titanium: 20, thorium: 3 }, growth: 1.0308 },
     requires: "duo",
-    x: 0,
+    x: 1,
     y: 1,
   },
   {
@@ -200,11 +200,11 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // back at its printed health instead of ten times it. The reward for
     // clearing Medium
     tower: "salvo",
-    price: { base: { copper: 250, titanium: 36, thorium: 6 }, growth: 1.0273 },
+    price: { base: { copper: 250, titanium: 36, thorium: 6 }, growth: 1.0262 },
     requires: "hail",
     requiresTier: 0,
     x: 1,
-    y: 2,
+    y: 3,
   },
   {
     // the steepest curve in the tree: a fuse battery is meant to be a
@@ -214,11 +214,110 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // difficulty: Extreme. A gate on the LAST difficulty would mean the
     // turret only ever unlocks after the campaign is already finished
     tower: "fuse",
-    price: { base: { copper: 600, titanium: 105, thorium: 34 }, growth: 1.1264 },
+    price: { base: { copper: 600, titanium: 105, thorium: 34 }, growth: 1.1216 },
     requires: "salvo",
     requiresTier: 1,
-    x: 1,
+    x: 2,
+    y: 5,
+  },
+  // ---------- STUBS: tree shape only, no turret behind them yet --------
+  //
+  // Lineage is Mindustry's own (content/SerpuloTechTree.java) and the
+  // difficulty gates fall out of BUILD MATERIAL: a turret whose Mindustry
+  // cost tops out at copper/lead/graphite is Medium, at titanium is High,
+  // at thorium or plastanium is Extreme, and at surge alloy belongs to the
+  // hidden ERADICATION difficulty that does not exist yet. Every edge below
+  // runs to an equal-or-later difficulty, so no child can ever open before
+  // its parent.
+  {
+    // MEDIUM. Chain lightning down a file of ground units, and the root of
+    // the short-range branch — scorch and lancer both hang off it
+    tower: "arc",
+    price: { base: { copper: 50, titanium: 8 }, growth: 1.0277 },
+    requires: "duo",
+    x: 3,
+    y: 1,
+  },
+  {
+    // HIGH. A piercing laser; the ground answer that is not artillery
+    tower: "lancer",
+    price: { base: { copper: 200, titanium: 30, thorium: 4 }, growth: 1.0394 },
+    requires: "scorch",
+    requiresTier: 0,
+    x: 4,
     y: 3,
+  },
+  {
+    // HIGH. 290 range — the longest reach in the game, and the wave-clear
+    // that answers the crawler floods
+    tower: "ripple",
+    price: { base: { copper: 300, titanium: 45, thorium: 8 }, growth: 1.0595 },
+    requires: "salvo",
+    requiresTier: 0,
+    x: 2,
+    y: 4,
+  },
+  {
+    // HIGH. Not a damage turret at all: it drags air units out of formation.
+    // In Mindustry it hangs off wave, which we do not have, so it takes its
+    // grandparent scorch instead
+    tower: "parallax",
+    price: { base: { copper: 220, titanium: 34, thorium: 6 }, growth: 1.027 },
+    requires: "scorch",
+    requiresTier: 0,
+    x: 3,
+    y: 3,
+  },
+  {
+    // EXTREME. Homing missiles — they chase what they lock, so overkill
+    // costs less than it does on a straight-firing line
+    tower: "swarmer",
+    price: { base: { copper: 350, titanium: 55, thorium: 12 }, growth: 1.0241 },
+    requires: "salvo",
+    requiresTier: 1,
+    x: 0,
+    y: 4,
+  },
+  {
+    // EXTREME. A flak wall. The reason to own it is volume of splash, which
+    // is why its ceiling is the full 3x3 band
+    tower: "cyclone",
+    price: { base: { copper: 450, titanium: 75, thorium: 18 }, growth: 1.0543 },
+    requires: "swarmer",
+    requiresTier: 1,
+    x: 0,
+    y: 5,
+  },
+  {
+    // ERADICATION. Twin heavy cannon — the highest sustained damage in the
+    // game. Gated on clearing Extreme, which today means "after the
+    // campaign", and that is deliberate: these three ARE the hidden
+    // difficulty's reward, and they light up the moment it ships
+    tower: "spectre",
+    price: { base: { copper: 900, titanium: 160, thorium: 45 }, growth: 1.1109 },
+    requires: "cyclone",
+    requiresTier: 2,
+    x: 0,
+    y: 6,
+  },
+  {
+    // ERADICATION. A continuous beam that melts whatever it rests on
+    tower: "meltdown",
+    price: { base: { copper: 1000, titanium: 175, thorium: 50 }, growth: 1.1081 },
+    requires: "lancer",
+    requiresTier: 2,
+    x: 4,
+    y: 4,
+  },
+  {
+    // ERADICATION. 500 range and one enormous shot — a sniper rather than a
+    // defence, and the only turret that can hit a spawn pad from the core
+    tower: "foreshadow",
+    price: { base: { copper: 1100, titanium: 190, thorium: 55 }, growth: 1.1054 },
+    requires: "meltdown",
+    requiresTier: 2,
+    x: 4,
+    y: 5,
   },
 ];
 

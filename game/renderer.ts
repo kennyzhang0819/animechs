@@ -60,6 +60,18 @@ const UV_TURRETS: Record<TowerKind, UVRect> = {
   scatter: UV_SCATTER,
   fuse: UV_FUSE,
   scorch: UV_SCORCH,
+  // STUBS: not in the build menu, so never drawn. They point at duo's
+  // region only so the record stays exhaustive — packing their real
+  // sprites is part of implementing each turret, not of listing it
+  arc: UV_DUO,
+  lancer: UV_DUO,
+  ripple: UV_DUO,
+  parallax: UV_DUO,
+  swarmer: UV_DUO,
+  cyclone: UV_DUO,
+  spectre: UV_DUO,
+  meltdown: UV_DUO,
+  foreshadow: UV_DUO,
 };
 // draw size [along-travel, across] px; scatter's flak shell is Mindustry's
 // 6x8-unit shell (15x20 px), longer than it is wide. Fuse never spawns a
@@ -72,6 +84,15 @@ const UV_BULLETS: Record<TowerKind, UVRect> = {
   scatter: UV_SHELL,
   fuse: UV_PROJ,
   scorch: UV_PROJ,
+  arc: UV_PROJ,
+  lancer: UV_PROJ,
+  ripple: UV_PROJ,
+  parallax: UV_PROJ,
+  swarmer: UV_PROJ,
+  cyclone: UV_PROJ,
+  spectre: UV_PROJ,
+  meltdown: UV_PROJ,
+  foreshadow: UV_PROJ,
 };
 const BULLET_SIZE: Record<TowerKind, readonly [number, number]> = {
   duo: [14, 12], // copper pellet: visibly lighter than salvo's thorium round
@@ -80,6 +101,15 @@ const BULLET_SIZE: Record<TowerKind, readonly [number, number]> = {
   scatter: [20, 15],
   fuse: [18, 18],
   scorch: [18, 18],
+  arc: [18, 18],
+  lancer: [18, 18],
+  ripple: [18, 18],
+  parallax: [18, 18],
+  swarmer: [18, 18],
+  cyclone: [18, 18],
+  spectre: [18, 18],
+  meltdown: [18, 18],
+  foreshadow: [18, 18],
 };
 /** px per Mindustry world unit — effect geometry is written in those units */
 const MU = CELL / 8;

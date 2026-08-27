@@ -20,7 +20,10 @@ import {
   check,
   difficultyName,
   difficultyOf,
+  DIFFICULTIES,
+  tierDropBonus,
   tierOfWave,
+  TOP_TIER,
   waveGuide,
   WALL_STEP,
   type AuditRow,
@@ -442,10 +445,18 @@ export default function LevelEditorView({
    * every edit, which meant the numbers were only ever visible next to waves
    * that had not been touched since.
    */
+  /**
+   * The difficulty every per-wave SHARE is measured against. The same wave
+   * is a different slice of a 20-wave run and a 50-wave one, and the run you
+   * are authoring for is the one whose numbers you want — so it is a choice,
+   * not the wave's own debut difficulty.
+   */
+  const [against, setAgainst] = useState(TOP_TIER);
+
   const report = useMemo(() => {
     const spec = { ...level, spawnRate, waveGap, script: toScript(steps) };
-    return { rows: audit(spec), issues: check(spec), waves: waveGuide(spec) };
-  }, [level, spawnRate, waveGap, steps]);
+    return { rows: audit(spec), issues: check(spec), waves: waveGuide(spec, against) };
+  }, [level, spawnRate, waveGap, steps, against]);
 
   const back = (): void => {
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
@@ -554,6 +565,67 @@ export default function LevelEditorView({
               </p>
             </section>
 
+            {/* ECONOMY. One row a difficulty: what a full clear banks (drop
+                bonus included) and the shape of it, normalised to copper =
+                100. The ratio is the number to author against — the tech tree
+                charges about 100 : 15 : 3 : 9 : 3 across every node at its
+                ceiling, and paying far above that on any currency leaves it
+                piling up unspent. The BONUS cannot move the ratio; only the
+                mix of unit tiers the waves send can. */}
+            <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
+              <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
+                Payout per difficulty
+              </h2>
+              <div className="space-y-2">
+                {report.rows.map((r) => (
+                  <div key={r.tier}>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-[13px] font-bold text-[#EDEDEF]">{r.name}</span>
+                      <span className="text-[12px] text-[#71717C]">
+                        x{tierDropBonus(r.tier).toFixed(1)}
+                      </span>
+                    </div>
+                    <CostRow cost={r.drops} />
+                    <div className="text-[12px] text-[#71717C]">
+                      {r.dropRatio
+                        .map((v, i) => (i === 0 ? "100" : v.toFixed(v < 10 ? 1 : 0)))
+                        .join(" : ")}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 border-t border-[#2E2E36] pt-2 text-[12px] leading-snug text-[#71717C]">
+                Copper : titanium : thorium : plastanium : phase. The tree wants
+                about 100 : 15 : 3 : 9 : 3.
+              </p>
+            </section>
+
+            {/* which run the per-wave SHARE percentages are measured in */}
+            <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
+              <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
+                Share shown for
+              </h2>
+              <div className="flex gap-1">
+                {DIFFICULTIES.map((d, i) => (
+                  <button
+                    key={d.name}
+                    onClick={() => setAgainst(i)}
+                    className={`flex-1 rounded border px-2 py-1 text-[13px] font-bold uppercase tracking-widest ${
+                      against === i
+                        ? "border-[#FFD37F] bg-[#1C1810] text-[#FFD37F]"
+                        : "border-[#2E2E36] text-[#71717C] hover:border-[#4A4A55]"
+                    }`}
+                  >
+                    {d.name}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-[12px] leading-snug text-[#71717C]">
+                Each wave's % is its share of this run's total health. A wave
+                this difficulty never sends shows no share at all.
+              </p>
+            </section>
+
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
               <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
                 Totals
@@ -587,6 +659,7 @@ export default function LevelEditorView({
                     step={step}
                     waveNo={i + 1}
                     guide={report.waves[i]}
+                    against={against}
                     index={i}
                     last={i === steps.length - 1}
                     mapRegions={mapRegions}
@@ -692,6 +765,7 @@ function StepCard({
   step,
   waveNo,
   guide,
+  against,
   index,
   last,
   mapRegions,
@@ -701,8 +775,10 @@ function StepCard({
 }: {
   step: EditStep;
   waveNo: number;
-  /** this wave's row of the number guide; absent until Check ladder is run */
+  /** this wave's row of the number guide */
   guide?: WaveRow;
+  /** the difficulty its share is measured in, for the tooltips */
+  against: number;
   index: number;
   last: boolean;
   mapRegions: readonly number[];
@@ -756,29 +832,22 @@ function StepCard({
           </span>
         )}
         <span className="text-[13px] text-[#71717C]">{total} enemies</span>
-        {/* the number guide, per wave: what this wave weighs, what slice of
-            its difficulty that is, and how it compares with the wave before.
-            `share` is the one to author against — 5% is filler, 25% is a
-            spike, and a difficulty's last wave should be its heaviest */}
+        {/* the number guide, per wave: what this wave weighs and what slice
+            of the selected run that is. `share` is the one to author against
+            — 5% is filler, 25% is a spike, and a difficulty's last wave
+            should be its heaviest */}
         {guide && (
           <span className="flex items-center gap-2 text-[13px] text-[#71717C]">
             <span className="font-bold text-[#A6A6AF]">{compactHp(guide.hp)} hp</span>
-            <span
-              title="share of this wave's own difficulty"
-              className={guide.share >= 0.2 ? "font-bold text-[#F0B457]" : ""}
-            >
-              {(guide.share * 100).toFixed(1)}%
-            </span>
-            {index > 0 && <span>{guide.step.toFixed(2)}x prev</span>}
-            {guide.armourShare > 0 && (
-              <span title="share of health behind armour 3+">
-                {Math.round(guide.armourShare * 100)}% arm
+            {guide.share > 0 ? (
+              <span
+                title={`share of a ${difficultyName(against)} run's total health`}
+                className={guide.share >= 0.2 ? "font-bold text-[#F0B457]" : ""}
+              >
+                {(guide.share * 100).toFixed(1)}%
               </span>
-            )}
-            {guide.airShare > 0 && (
-              <span title="share of health that flies">
-                {Math.round(guide.airShare * 100)}% air
-              </span>
+            ) : (
+              <span title={`${difficultyName(against)} never sends this wave`}>—</span>
             )}
           </span>
         )}

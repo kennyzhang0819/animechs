@@ -1,4 +1,37 @@
-export const TOWER_KINDS = ["duo", "hail", "salvo", "scatter", "fuse", "scorch"] as const;
+/**
+ * Every Serpulo turret the campaign will ever field, in tech-tree order.
+ *
+ * The first six are IMPLEMENTED — real stats, real bullets, drawn on the
+ * field. The rest are STUBS: they exist so the tech tree can show the whole
+ * shape of the game, and their stats in constants.ts carry the true
+ * Mindustry size/range/reload with placeholder bullets. None of them is in
+ * the build menu yet, so nothing can place one.
+ *
+ * Three Serpulo turrets are deliberately absent. Wave and tsunami are
+ * liquid turrets whose job is extinguishing fire, wetting units and healing
+ * blocks — none of which exists here. Segment shoots down enemy bullets,
+ * and our units never fire at buildings, so it would have nothing to
+ * intercept. They come back if those systems ever do.
+ */
+export const TOWER_KINDS = [
+  // implemented
+  "duo",
+  "hail",
+  "salvo",
+  "scatter",
+  "fuse",
+  "scorch",
+  // stubs — tree shape only
+  "arc",
+  "lancer",
+  "ripple",
+  "parallax",
+  "swarmer",
+  "cyclone",
+  "spectre",
+  "meltdown",
+  "foreshadow",
+] as const;
 export type TowerKind = (typeof TOWER_KINDS)[number];
 
 export interface Tower {
