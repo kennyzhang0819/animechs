@@ -578,9 +578,15 @@ export function levelDoc(spec: LevelSpec): LevelDoc {
  *
  * So a difficulty buys two things at once: ten waves of hand-authored fight
  * nobody has seen yet, and x1.79 health on every wave below them. Neither
- * alone would carry it — by wave 20 the script has already fielded every
- * unit kind there is, so without the levels difficulty 4 would just be a
- * longer difficulty 1 against identical enemies.
+ * alone would carry it — the script has fielded every kind it uses by wave
+ * 20, so without the levels difficulty 4 would just be a longer difficulty
+ * 1 against identical enemies.
+ *
+ * The roster is now ahead of the script: quasar and the whole T4 line
+ * (scepter, arkyid, vela, antumbra) are implemented and never sent. They
+ * are the obvious material for the upper difficulties, but putting one in
+ * is a balance decision and belongs in this list rather than in a stat
+ * file — the editor's `Check ladder` prices the wave before you commit.
  *
  * ANYTHING PAST WAVE 50 IS NEVER SENT. The list is currently longer than
  * that; check() reports the orphans, and they are content waiting for a

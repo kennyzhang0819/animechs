@@ -61,7 +61,8 @@ export const HP_PER_LEVEL = 1.06;
  * other half is the wave cut below, which makes the run longer. Both move
  * together on purpose: without the levels, difficulty 4 would be a longer
  * difficulty 1 against identical enemies, because the authored script has
- * already fielded every unit kind by wave 20.
+ * already fielded every kind it uses by wave 20. (It does not use every
+ * kind that EXISTS — see the note over WORLDS in levels.ts.)
  */
 export const LEVELS_PER_TIER = 10;
 

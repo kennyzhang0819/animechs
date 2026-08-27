@@ -81,7 +81,7 @@ and nothing else:
   free — cost and income rise together — which is why swarm waves can be as
   big as they look good.
 - **The currency mix must track the tree.** Prices are written at roughly
-  scrap : copper : titanium = 100 : 15 : 2.5; drift far from that and one
+  copper : titanium : thorium = 100 : 15 : 2.5; drift far from that and one
   currency becomes the only real constraint.
 
 Two more the arithmetic can't see: **air** (hail and scorch cannot shoot up
@@ -98,7 +98,7 @@ __ladder.wave(7, 3)   // what one authored wave costs at a given tier
 
 ### Economy
 
-- **The volume turret is flat-priced** (duo, 8 scrap, forever). Geometric
+- **The volume turret is flat-priced** (duo, 8 copper, forever). Geometric
   prices cap the count you can afford at the logarithm of your income —
   60–90 turrets whatever you earn — so the treadmill lives on enemy level
   instead, where it costs the player without pricing them out. Growth stays

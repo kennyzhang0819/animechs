@@ -32,8 +32,10 @@ export type ItemKind = (typeof ITEM_KINDS)[number];
  * titanium, T3 thorium, T4 plastanium, T5 phase fabric. Add a tier-6 unit
  * and this table (plus ITEM_KINDS) is the only place that needs a new row.
  *
- * T4 and T5 have no units yet — the campaign fields tiers 1-3. The rows are
- * here so that adding one is a stats edit rather than an economy edit.
+ * T5 has no units yet. That row is here so adding one is a stats edit
+ * rather than an economy edit — which is what the T4 line turned out to
+ * be: scepter, arkyid, vela and antumbra dropped in paying plastanium
+ * without this file changing at all.
  */
 export const TIER_ITEM: readonly ItemKind[] = [
   "copper",
