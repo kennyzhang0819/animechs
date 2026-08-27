@@ -357,16 +357,15 @@ export function levelDoc(spec: LevelSpec): LevelDoc {
  * difficulty does not generate waves — it decides HOW MANY OF THESE a run
  * plays, and at what enemy level (see DIFFICULTIES in ladder.ts):
  *
- *   difficulty 1   waves 1-20   enemy level  0
- *   difficulty 2   waves 1-30   enemy level 10
- *   difficulty 3   waves 1-40   enemy level 20
- *   difficulty 4   waves 1-50   enemy level 30
+ *   Medium    waves 1-20   enemy level  0
+ *   High      waves 1-35   enemy level 10
+ *   Extreme   waves 1-50   enemy level 20
  *
  * So a difficulty buys two things at once: ten waves of hand-authored fight
  * nobody has seen yet, and x1.79 health on every wave below them. Neither
  * alone would carry it — by wave 20 the script has already fielded every
- * unit kind there is, so without the levels difficulty 4 would just be a
- * longer difficulty 1 against identical enemies.
+ * unit kind there is, so without the levels Extreme would just be a longer
+ * Medium against identical enemies.
  *
  * ANYTHING PAST WAVE 50 IS NEVER SENT. The list is currently longer than
  * that; check() reports the orphans, and they are content waiting for a
@@ -400,7 +399,7 @@ export const WORLDS: LevelSpec[] = [
     spawnRate: 20,
     waveGap: 15,
     script: [
-      // ---------- difficulty 1: waves 1-20, enemy level 0 -------------
+      // ---------- MEDIUM: waves 1-20, enemy level 0 ------------------
       { wave: { dagger: 24 } },
       { wave: { dagger: 40, crawler: 25 } },
       { wave: { dagger: 50, mace: 6, nova: 12 } },
@@ -421,7 +420,7 @@ export const WORLDS: LevelSpec[] = [
       { wave: { dagger: 120, mace: 46, atrax: 30, pulsar: 20 } },
       { wave: { dagger: 110, crawler: 190, spiroct: 14 } },
       { wave: { flare: 80, horizon: 24, zenith: 10 } },
-      // ---------- difficulty 2: waves 21-30, enemy level 10 -----------
+      // ---------- HIGH: waves 21-35, enemy level 10 ------------------
       { wave: { dagger: 170, mace: 50, atrax: 34, spiroct: 15 } },
       { wave: { crawler: 220, spiroct: 11, nova: 45, pulsar: 26 } },
       { wave: { dagger: 140, atrax: 24, horizon: 30, zenith: 14 } },
@@ -432,18 +431,17 @@ export const WORLDS: LevelSpec[] = [
       { wave: { flare: 130, pulsar: 32, horizon: 42, zenith: 14 } },
       { wave: { dagger: 190, mace: 60, fortress: 9, spiroct: 15 } },
       { wave: { crawler: 280, atrax: 46, nova: 60 } },
-      // ---------- difficulty 3: waves 31-40, enemy level 20 -----------
       { wave: { flare: 150, horizon: 46, zenith: 17 } },
       { wave: { dagger: 110, fortress: 11, atrax: 52, spiroct: 20, pulsar: 36 } },
       { wave: { dagger: 240, mace: 70, crawler: 240 } },
       { wave: { dagger: 170, flare: 120, horizon: 52, zenith: 19 } },
       { wave: { dagger: 130, mace: 76, fortress: 13, spiroct: 22 } },
+      // ---------- EXTREME: waves 36-50, enemy level 20 ---------------
       { wave: { dagger: 230, crawler: 330, nova: 70, pulsar: 40 } },
       { wave: { atrax: 54, flare: 120, horizon: 58, zenith: 21 } },
       { wave: { dagger: 150, fortress: 15, atrax: 62, spiroct: 26 } },
       { wave: { dagger: 280, mace: 88, crawler: 280, pulsar: 44 } },
       { wave: { fortress: 11, flare: 190, horizon: 66, zenith: 24 } },
-      // ---------- difficulty 4: waves 41-50, enemy level 30 -----------
       { wave: { dagger: 170, mace: 100, fortress: 18, spiroct: 30 } },
       { wave: { dagger: 270, crawler: 380, atrax: 68, nova: 80 } },
       { wave: { spiroct: 24, flare: 150, horizon: 74, zenith: 27 } },
@@ -455,7 +453,7 @@ export const WORLDS: LevelSpec[] = [
       { wave: { spiroct: 30, flare: 190, horizon: 96, zenith: 35 } },
       // waves below to extend the content ladder; nothing else needs editing
       { wave: { dagger: 230, fortress: 30, atrax: 96, spiroct: 42 } },
-      // ---------- past the 50-wave cut: NEVER SENT --------------------
+      // ---------- past the 50-wave cut: NEVER SENT -------------------
       { wave: { dagger: 370, mace: 132, crawler: 420, pulsar: 64 } },
       { wave: { fortress: 22, spiroct: 36, flare: 210, horizon: 108, zenith: 40 } },
     ],

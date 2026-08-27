@@ -34,7 +34,7 @@ export interface Progress {
   /**
    * How many tiers of the ladder have been cleared: tiers 0 .. cleared-1
    * are beaten, and tier `cleared` is the frontier — the highest tier that
-   * can be attempted. The ladder is four difficulties long, so `cleared`
+   * can be attempted. The ladder is DIFFICULTIES long, so `cleared`
    * reaching TOP_TIER + 1 means the campaign is finished and there is
    * nothing above it (isCampaignComplete).
    */
@@ -163,8 +163,8 @@ export function techOf(p: Progress): TechState {
 
 /**
  * The highest tier that can be attempted: every cleared one, plus the
- * frontier — capped at TOP_TIER, because the ladder is four difficulties
- * long and ends there. A player may replay any tier below it to farm — a
+ * frontier — capped at TOP_TIER, because the ladder is finite and ends at
+ * Extreme. A player may replay any tier below it to farm — a
  * cleared tier pays exactly what it always did — but only the frontier
  * moves the campaign forward.
  */
@@ -203,10 +203,10 @@ export function nodeStatus(p: Progress, tower: TowerKind): NodeStatus {
  * price walk in tech.ts, plus the gates. `limit` caps it: the buy controls
  * ask for a specific step, and only "Max" wants the true ceiling.
  *
- * This exists because the volume turret is FLAT (tech.ts): at 8 copper a
- * point a mid-campaign bank buys duos by the thousand, and a tree that could
- * only be clicked one point at a time would make the game's central action
- * its most tedious one.
+ * This exists because a mid-campaign bank buys turrets by the hundred — duo
+ * starts at 8 copper and its curve is gentle for a long way (tech.ts) — and a
+ * tree that could only be clicked one point at a time would make the game's
+ * central action its most tedious one.
  */
 export function affordablePoints(p: Progress, tower: TowerKind, limit = Infinity): number {
   if (nodeStatus(p, tower) !== "buyable") return 0;

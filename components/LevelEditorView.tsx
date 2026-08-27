@@ -18,6 +18,7 @@ import { dropsForKills } from "@/game/progress";
 import {
   audit,
   check,
+  difficultyName,
   difficultyOf,
   tierOfWave,
   waveGuide,
@@ -191,14 +192,14 @@ function LadderReport({
         </div>
       )}
 
-      {/* one row a difficulty — there are exactly four. `step` is the number
-          to author against: 1.79x is the floor the +10 enemy levels give for
-          free, and everything above it was bought by the ten new waves */}
+      {/* one row a difficulty. `step` is the number to author against:
+          1.79x is the floor the +10 enemy levels give for free, and
+          everything above it was bought by the fifteen new waves */}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-[13px]">
           <thead className="text-[12px] uppercase tracking-widest text-[#71717C]">
             <tr>
-              <th className="py-1 pr-3 font-normal">Diff</th>
+              <th className="py-1 pr-3 font-normal">Difficulty</th>
               <th className="py-1 pr-3 font-normal">Waves</th>
               <th className="py-1 pr-3 text-right font-normal">Lv</th>
               <th className="py-1 pr-3 text-right font-normal">Enemies</th>
@@ -220,7 +221,7 @@ function LadderReport({
                     found.length ? "bg-[#1A1A1F]" : ""
                   }`}
                 >
-                  <td className="py-1 pr-3 font-bold text-[#EDEDEF]">{r.difficulty}</td>
+                  <td className="py-1 pr-3 font-bold text-[#EDEDEF]">{r.name}</td>
                   <td className="py-1 pr-3 text-[#A6A6AF]">{r.waves}</td>
                   <td className="py-1 pr-3 text-right text-[#71717C]">{r.level}</td>
                   <td className="py-1 pr-3 text-right text-[#A6A6AF]">
@@ -432,7 +433,7 @@ export default function LevelEditorView({
    * point is to weigh an edit before committing it, so a report of the file
    * on disk would answer the wrong question.
    *
-   * The whole walk — four difficulties, every wave, and the findings —
+   * The whole walk — every difficulty, every wave, and the findings —
    * measures ~1.3 ms on a 50-wave script, so there is nothing to debounce and
    * no reason to make the author ask for it. Typing a count re-costs the wave
    * under the cursor and re-steps the difficulty it belongs to, live.
@@ -735,20 +736,20 @@ function StepCard({
           Wave {waveNo}
         </span>
         {/* a wave's POSITION is its difficulty gate: difficulty n plays the
-            first 20/30/40/50 waves, so this badge is the difficulty a wave
+            first 20/35/50 waves, so this badge is the difficulty a wave
             first appears at. Moving a row up moves the fight it holds down
             the ladder, against a smaller fleet. A wave past the 50th is
             written but never sent — that badge is a warning, not a gate */}
         {tierOfWave(index) < 0 ? (
           <span
-            title="Past difficulty 4's 50-wave cut — this wave is never sent"
+            title="Past Extreme's 50-wave cut — this wave is never sent"
             className="rounded border border-[#5B2E2E] bg-[#2A1616] px-1.5 text-[12px] font-bold uppercase tracking-widest text-[#FF8A8A]"
           >
             unplayed
           </span>
         ) : (
           <span
-            title={`First played at difficulty ${difficultyOf(tierOfWave(index))}`}
+            title={`First played on ${difficultyName(tierOfWave(index))}`}
             className="rounded border border-[#3A3320] bg-[#1C1810] px-1.5 text-[12px] font-bold uppercase tracking-widest text-[#FFD37F]"
           >
             D{difficultyOf(tierOfWave(index))}

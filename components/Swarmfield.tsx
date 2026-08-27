@@ -23,7 +23,7 @@ import {
   audit,
   budget,
   check,
-  difficultyOf,
+  difficultyName,
   specForTier,
   waveCost,
   waveGuide,
@@ -115,7 +115,7 @@ function LoadingScreen({
             {level.name}
           </h2>
           <p className="text-[13px] uppercase tracking-widest text-[#71717C]">
-            Difficulty {difficultyOf(level.tier ?? 0)} — {waves} waves — {enemies} enemies
+            {difficultyName(level.tier ?? 0)} — {waves} waves — {enemies} enemies
           </p>
         </div>
         <div className="flex w-full flex-col gap-2">
@@ -210,7 +210,9 @@ function TierPicker({
         </button>
         <div className="text-center">
           <div className="text-[11px] uppercase tracking-[0.3em] text-[#71717C]">Difficulty</div>
-          <div className="text-3xl font-bold leading-none text-[#FFD37F]">{difficultyOf(tier)}</div>
+          <div className="text-2xl font-bold uppercase leading-none tracking-[0.15em] text-[#FFD37F]">
+            {difficultyName(tier)}
+          </div>
         </div>
         <button
           aria-label="higher difficulty"
@@ -318,8 +320,8 @@ function SkipToWave({
   };
 
   return (
-    <div className="rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
-      <div className="flex items-center gap-2">
+    <div className="w-full rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
+      <div className="flex flex-wrap items-center gap-2">
         <label
           htmlFor="skip-to-wave"
           className="text-[13px] font-bold uppercase tracking-widest text-[#71717C]"
@@ -339,7 +341,7 @@ function SkipToWave({
             e.stopPropagation();
           }}
           placeholder={`${hud.currentWave + 1}`}
-          className="w-16 rounded border border-[#2E2E36] bg-[#0E0E11] px-1.5 py-0.5 text-base font-bold text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+          className="w-16 shrink-0 rounded border border-[#2E2E36] bg-[#0E0E11] px-1.5 py-0.5 text-base font-bold text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
         />
         <button
           onClick={send}
@@ -357,7 +359,7 @@ function SkipToWave({
           x
         </button>
       </div>
-      <p className="mt-0.5 text-[13px] uppercase tracking-widest text-[#71717C]">
+      <p className="mt-0.5 text-[13px] uppercase tracking-widest text-[#71717C] break-words">
         {hud.rushTo > 0 ? (
           <>
             <span className="font-bold text-[#FFD37F]">Spawning to wave {hud.rushTo}</span>{" "}
@@ -698,93 +700,96 @@ export default function Swarmfield() {
             Paused
           </div>
         )}
+        {/* one fixed width for the whole top-left stack, so the panel does
+            not breathe in and out as counters change and the skip box lines
+            up under it. Everything inside wraps rather than widening it */}
         {hud && (
-          <div className="absolute left-4 top-4 flex max-w-[calc(100vw-2rem)] flex-col items-start gap-2">
-          <div className="w-full rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
-            {/* the wave counter is what a run is read off, so the line
-                carries that and the difficulty and nothing else — the level
-                name is on the card that launched it */}
-            <div className="text-[13px] uppercase tracking-widest text-[#71717C]">
-              D{difficultyOf(hud.tier)} — Wave{" "}
-              <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span> / {hud.totalWaves}
-            </div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
-              {/* what the run has banked so far, one stack per currency —
-                  empty until the first kill, so it doesn't sit at "0" */}
-              <CostRow cost={hud.earned} />
-              {hud.remaining > 0 && (
-                // icon + count only; wraps rather than running off the
-                // viewport once a level fields more kinds than fit on a line
-                <span className="flex flex-wrap items-center gap-x-3 gap-y-1 font-bold text-[#EDEDEF]">
-                  {UNIT_KINDS.map(
-                    (k, i) =>
-                      hud.byKind[i] > 0 && (
-                        <span key={k} className="flex items-center gap-1.5">
-                          {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
-                          <img
-                            src={unitIcon(k)}
-                            alt={k}
-                            className="h-5 w-5 shrink-0 object-contain [image-rendering:pixelated]"
-                          />
-                          {hud.byKind[i]}
-                        </span>
-                      ),
-                  )}
-                </span>
-              )}
-            </div>
-            {/* the two wave controls sit together: single play releases the
-                next wave, double play opens the box that runs to a wave
-                further out. Only the countdown is conditional — a rush has
-                no timer to wait for, so its button is always here */}
-            <div className="flex items-center gap-2 text-[13px] uppercase tracking-widest text-[#71717C]">
-              {hud.nextWaveIn > 0 && (
-                <>
-                  <span>
-                    Next wave{" "}
-                    <span className="font-bold text-[#EDEDEF]">
-                      {Math.ceil(hud.nextWaveIn)}
-                    </span>
+          <div className="absolute left-4 top-4 flex w-80 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-2">
+            <div className="w-full rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
+              {/* the wave counter is what a run is read off, so the line
+                  carries that and the difficulty and nothing else — the level
+                  name is on the card that launched it */}
+              <div className="text-[13px] uppercase tracking-widest text-[#71717C] break-words">
+                {difficultyName(hud.tier)} — Wave{" "}
+                <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span> / {hud.totalWaves}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
+                {/* what the run has banked so far, one stack per currency —
+                    empty until the first kill, so it doesn't sit at "0" */}
+                <CostRow cost={hud.earned} />
+                {hud.remaining > 0 && (
+                  // icon + count only; wraps rather than running off the
+                  // viewport once a level fields more kinds than fit on a line
+                  <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 font-bold text-[#EDEDEF]">
+                    {UNIT_KINDS.map(
+                      (k, i) =>
+                        hud.byKind[i] > 0 && (
+                          <span key={k} className="flex items-center gap-1.5">
+                            {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
+                            <img
+                              src={unitIcon(k)}
+                              alt={k}
+                              className="h-5 w-5 shrink-0 object-contain [image-rendering:pixelated]"
+                            />
+                            {hud.byKind[i]}
+                          </span>
+                        ),
+                    )}
                   </span>
-                  <button
-                    title="Start next wave now"
-                    aria-label="Start next wave now"
-                    onClick={() => gameRef.current?.skipWave()}
-                    className={WAVE_BTN}
-                  >
-                    <svg viewBox="0 0 12 12" className="h-4 w-4 fill-current" aria-hidden="true">
-                      <path d="M2.5 1.5v9l8-4.5z" />
-                    </svg>
-                  </button>
-                </>
-              )}
-              <button
-                title="Skip to wave"
-                aria-label="Skip to wave"
-                aria-expanded={skipOpen}
-                onClick={() => setSkipOpen(!skipOpen)}
-                className={`${WAVE_BTN} ${
-                  skipOpen || hud.rushTo > 0 ? "border-[#FFD37F] bg-[#222227]/90" : ""
-                }`}
-              >
-                <svg viewBox="0 0 12 12" className="h-4 w-4 fill-current" aria-hidden="true">
-                  <path d="M1 1.5v9l5-4.5zM6 1.5v9l5-4.5z" />
-                </svg>
-              </button>
+                )}
+              </div>
+              {/* the two wave controls sit together: single play releases the
+                  next wave, double play opens the box that runs to a wave
+                  further out. Only the countdown is conditional — a rush has
+                  no timer to wait for, so its button is always here */}
+              <div className="flex flex-wrap items-center gap-2 text-[13px] uppercase tracking-widest text-[#71717C]">
+                {hud.nextWaveIn > 0 && (
+                  <>
+                    <span>
+                      Next wave{" "}
+                      <span className="font-bold text-[#EDEDEF]">
+                        {Math.ceil(hud.nextWaveIn)}
+                      </span>
+                    </span>
+                    <button
+                      title="Start next wave now"
+                      aria-label="Start next wave now"
+                      onClick={() => gameRef.current?.skipWave()}
+                      className={WAVE_BTN}
+                    >
+                      <svg viewBox="0 0 12 12" className="h-4 w-4 fill-current" aria-hidden="true">
+                        <path d="M2.5 1.5v9l8-4.5z" />
+                      </svg>
+                    </button>
+                  </>
+                )}
+                <button
+                  title="Skip to wave"
+                  aria-label="Skip to wave"
+                  aria-expanded={skipOpen}
+                  onClick={() => setSkipOpen(!skipOpen)}
+                  className={`${WAVE_BTN} ${
+                    skipOpen || hud.rushTo > 0 ? "border-[#FFD37F] bg-[#222227]/90" : ""
+                  }`}
+                >
+                  <svg viewBox="0 0 12 12" className="h-4 w-4 fill-current" aria-hidden="true">
+                    <path d="M1 1.5v9l5-4.5zM6 1.5v9l5-4.5z" />
+                  </svg>
+                </button>
+              </div>
             </div>
-          </div>
-          {skipOpen && (
-          <SkipToWave
-            onClose={() => setSkipOpen(false)}
-            hud={hud}
-            onSkip={(n) => {
-              const g = gameRef.current;
-              if (!g) return;
-              g.skipToWave(n);
-              setHud(g.ui());
-            }}
-          />
-          )}
+            {skipOpen && (
+            <SkipToWave
+              onClose={() => setSkipOpen(false)}
+              hud={hud}
+              onSkip={(n) => {
+                const g = gameRef.current;
+                if (!g) return;
+                g.skipToWave(n);
+                setHud(g.ui());
+              }}
+            />
+            )}
           </div>
         )}
         {hud && admin && (
@@ -912,7 +917,7 @@ export default function Swarmfield() {
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="w-80 rounded border border-[#1F3A2E] bg-[#151518]/95 p-6 text-center">
               <div className="text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
-                Difficulty {difficultyOf(hud.tier)} cleared
+                {difficultyName(hud.tier)} cleared
               </div>
               <div className="mt-4 space-y-1.5 text-base text-[#A6A6AF]">
                 <div>
@@ -933,14 +938,14 @@ export default function Swarmfield() {
                         <CostRow cost={result.earned} />
                       )}
                     </div>
-                    {/* the ladder is four difficulties long and ends there,
+                    {/* the ladder is finite and ends at Extreme,
                         so the last first-clear has nothing to unlock — it
                         finishes the campaign instead */}
                     {result.firstClear && (
                       <div className="pt-1 text-[12px] uppercase tracking-widest text-[#FFD37F]">
                         {result.tier >= TOP_TIER
                           ? "Campaign complete — every wave cleared"
-                          : `Difficulty ${difficultyOf(result.tier + 1)} unlocked`}
+                          : `${difficultyName(result.tier + 1)} unlocked`}
                       </div>
                     )}
                   </>

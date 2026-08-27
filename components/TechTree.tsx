@@ -10,6 +10,7 @@ import {
   type Progress,
 } from "@/game/progress";
 import { TECH_TREE, techNode, techPrice } from "@/game/tech";
+import { difficultyName } from "@/game/ladder";
 import { CostRow, Wallet } from "./Items";
 import { TOWER_ICONS } from "./towerIcons";
 
@@ -209,7 +210,7 @@ export default function TechTree({
                     </div>
                     {status === "locked-tier" ? (
                       <div className="mt-2 text-[13px] font-bold uppercase tracking-widest text-[#FF8A8A]">
-                        Clear tier {techNode(n.tower).requiresTier} first
+                        Clear {difficultyName(techNode(n.tower).requiresTier ?? 0)} first
                       </div>
                     ) : (
                       <div className="mt-2 border-t border-[#2E2E36] pt-2 text-[14px]">

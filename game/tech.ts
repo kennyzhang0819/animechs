@@ -10,37 +10,60 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * Nodes gate two ways: the parent node must hold at least one point (the
  * graph edge — a node stays hidden until its parent is bought), and some
  * nodes wait on a TIER of the ladder being cleared. A fresh save sees duo,
- * hail and scorch; clearing difficulty 1 opens scatter, difficulty 2
- * salvo, difficulty 3 fuse — each of them on sale before the enemy it
- * answers is the one that matters.
+ * hail, scorch and scatter; clearing Medium opens salvo and clearing High
+ * opens fuse — each on sale before the enemy it answers is the
+ * one that matters.
+ *
+ * The four ungated nodes are ungated on purpose: every enemy difficulty 1
+ * fields, air included, has to have an answer buyable DURING Medium,
+ * because a fresh save has no lower difficulty to farm.
  */
 
 /**
  * A node's PRICE CURVE: the nth point costs `base * growth^n` of each item
  * it wants, tidied to a readable number.
  *
- * GROWTH 1 — A FLAT PRICE — IS THE DEFAULT HERE, NOT AN ESCAPE HATCH.
- * Geometric prices are the genre reflex (Cookie Clicker's buildings are
- * 1.15 a copy) and they are wrong for the turret a stalled player leans on.
- * The count you can afford grows with the LOGARITHM of income, so it caps
- * near 60-90 forever whatever you earn: at growth 1.08 the 150th duo costs
- * 515k copper on its own and 6.4M cumulative, against a campaign that pays
- * about 14k a run. A screen full of turrets stops being expensive and
- * becomes arithmetically impossible.
+ * GROWTH IS NOT A PRICE, IT IS A CEILING. Because the curve is geometric,
+ * the count a bank can reach is LOGARITHMIC in that bank: at growth 1.05,
+ * going from a million copper to a billion buys 142 more turrets. So the
+ * exponent does not really decide what a turret costs — it decides how many
+ * of it a player ends up with, forever, however long they play. Every value
+ * below was chosen by picking that number first and solving backwards.
  *
- * Flat is safe here because the treadmill lives somewhere else entirely -
- * on enemy LEVEL (ladder.ts), which raises what a kill costs without ever
- * raising what a turret costs. The units you kill pay for the damage needed
- * to kill them, and the ladder walks on its own.
+ * THE CEILING IS SET BY BOARD SPACE, IN TWO STEPS.
  *
- * So: the spam turret is flat, and growth stays on the SPECIALISTS, where
- * a hard cap is the point — it is what stops "buy more fuse" from being the
- * answer to everything and keeps composition a real decision.
+ * FIRST BY FOOTPRINT, because that is what actually competes for tiles:
  *
- *   growth 1.00  flat — the volume turret; thousands are reachable
- *   growth 1.03  gentle — a few hundred
- *   growth 1.06  a stack in the low hundreds
- *   growth 1.09  steep — a battery of a few dozen, meant to stay rare
+ *   1x1  ->  500      2x2  ->  200      3x3  ->  100
+ *
+ * THEN BY RANGE, as `clamp(range / 200, 0.4, 1)`. A short-ranged turret has
+ * to sit on the front line and there are only so many front-line tiles, so
+ * it cannot usefully occupy the board the way a long-ranged one can — 200
+ * units earns the full band, and range can never cut it below 40%. Scorch
+ * is the case that forces this: it is 1x1 and would take the top band on
+ * footprint alone, but at 60 units it is the shortest-ranged turret in the
+ * game and very strong, so it lands at 200 rather than 500.
+ *
+ *   turret   size  range   band  xrange   ceiling   growth
+ *   duo      1x1     160    500    0.80       400   1.0217
+ *   hail     1x1     235    500    1.00       500   1.0131
+ *   scorch   1x1      60    500    0.40       200   1.0360
+ *   scatter  2x2     220    200    1.00       200   1.0318
+ *   salvo    2x2     190    200    0.95       200   1.0273
+ *   fuse     3x3      90    100    0.45        50   1.1264
+ *
+ * Ceilings are quoted at a hundred Extreme runs, which is the bank the
+ * curves were solved against. They total 3,150 of grass-s's 4,015 buildable
+ * tiles, so a player cannot max everything and composition stays a real
+ * choice — which is the entire job of this file.
+ *
+ * DUO IS NOT EXEMPT, though it used to be. A flat price was defensible while
+ * the ladder was endless, because enemy LEVEL rose forever and no fixed
+ * turret price could outrun it. Four difficulties ended that: level stops at
+ * 30, and flat at 8 copper put every tile on the map within fifteen
+ * Medium runs. At 400 duos x 27 DPS the fleet still falls short of
+ * Extreme's 7,728 health a second, so the specialists are mandatory
+ * rather than optional.
  *
  * `from` delays an ITEM rather than the node: `from: { titanium: 30 }` means
  * the first 30 points cost no titanium at all. The exponent is NOT restarted
@@ -111,13 +134,14 @@ export interface TechNodeDef {
  *
  * Two rules hold the whole thing up.
  *
- * ONE: the volume turret is flat and everything else grows. See PriceCurve.
+ * ONE: a node's growth is solved from the CEILING its footprint and range
+ * earn it, not chosen by feel. See PriceCurve.
  *
  * TWO: A COST BUNDLE MUST CARRY THE DROP RATIO OF THE TIER THAT UNLOCKS IT.
  * The baseline supplies copper : titanium : thorium at roughly 100 : 21 : 4.6
  * and the ratio only widens as the ladder fields more heavies, so every
  * bundle below is written at about that shape. Get it wrong — demand
- * 100 : 10 : 0.4 against a supply of 100 : 15 : 2.2 — and the mismatched
+ * 100 : 10 : 0.4 against a supply of 100 : 21 : 4.6 — and the mismatched
  * currency is the ONLY real constraint while the others pile up unspent,
  * which reads to a player as a broken economy rather than a tuned one.
  *
@@ -127,13 +151,15 @@ export interface TechNodeDef {
 export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // THE VOLUME TURRET, and the only lever a stalled player has — so it is
-    // FLAT, forever, and copper-only. A run that dies before the baseline's
-    // first mace wave banks no titanium at all, and duo capacity has to stay
-    // buyable out of that run or the save is stuck. 8 copper is a shade under
-    // ten dagger kills; the fleet grows with the bank, in a straight line,
-    // for as long as there is rock to stand on
+    // copper-only and the second-gentlest curve in the tree. A run that dies
+    // before the baseline's first mace wave banks no titanium at all, and duo
+    // capacity has to stay buyable out of that run or the save is stuck.
+    // 8 copper is a shade under ten dagger kills and the first fifty points
+    // barely move off it; the curve only bites near its 400 ceiling, where
+    // the question stops being "can I afford one more" and becomes "is one
+    // more duo worth a salvo"
     tower: "duo",
-    price: { base: { copper: 8 }, growth: 1 },
+    price: { base: { copper: 8 }, growth: 1.0217 },
     x: 1,
     y: 0,
   },
@@ -142,7 +168,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // splash scales with bodies per blast and collapses with health per
     // body, so one hail shell kills five daggers and chips a spiroct
     tower: "hail",
-    price: { base: { copper: 40, titanium: 6 }, growth: 1.03 },
+    price: { base: { copper: 40, titanium: 6 }, growth: 1.0131 },
     requires: "duo",
     x: 1,
     y: 1,
@@ -152,30 +178,31 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // piercing flame rakes a whole file of units and sets each alight, and
     // burning ignores armour outright. 60 units of range is the whole cost
     tower: "scorch",
-    price: { base: { copper: 60, titanium: 9 }, growth: 1.05 },
+    price: { base: { copper: 60, titanium: 9 }, growth: 1.036 },
     requires: "duo",
     x: 2,
     y: 1,
   },
   {
-    // anti-air only, and the reward for clearing difficulty 1. Flares debut
-    // at wave 8, inside difficulty 1 — the duo targets air, so the opening
-    // is playable without this, but it is what makes the air waves cheap
+    // anti-air only, and UNGATED for the same reason hail and scorch are:
+    // flares debut at wave 8, inside difficulty 1, so a gate of any kind
+    // would lock the answer to air behind the run that first asks for it.
+    // The price gates it on its own — 120 copper / 20 titanium / 3 thorium
+    // is first affordable after wave 7, one wave before the flares
     tower: "scatter",
-    price: { base: { copper: 120, titanium: 20, thorium: 3 }, growth: 1.04 },
+    price: { base: { copper: 120, titanium: 20, thorium: 3 }, growth: 1.0318 },
     requires: "duo",
-    requiresTier: 0,
     x: 0,
     y: 1,
   },
   {
     // 28 damage a shell — the first turret that puts a fortress (armour 9)
     // back at its printed health instead of ten times it. The reward for
-    // clearing difficulty 2
+    // clearing Medium
     tower: "salvo",
-    price: { base: { copper: 250, titanium: 36, thorium: 6 }, growth: 1.06 },
+    price: { base: { copper: 250, titanium: 36, thorium: 6 }, growth: 1.0273 },
     requires: "hail",
-    requiresTier: 1,
+    requiresTier: 0,
     x: 1,
     y: 2,
   },
@@ -183,12 +210,13 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // the steepest curve in the tree: a fuse battery is meant to be a
     // handful. Three instant piercing rays at 105 damage each, at nine
     // tiles of range — priced so it can never become the whole answer.
-    // The reward for clearing difficulty 3, so it is on sale for exactly
-    // one difficulty: the last one
+    // The reward for clearing High, so it is on sale for exactly one
+    // difficulty: Extreme. A gate on the LAST difficulty would mean the
+    // turret only ever unlocks after the campaign is already finished
     tower: "fuse",
-    price: { base: { copper: 600, titanium: 105, thorium: 34 }, growth: 1.09 },
+    price: { base: { copper: 600, titanium: 105, thorium: 34 }, growth: 1.1264 },
     requires: "salvo",
-    requiresTier: 2,
+    requiresTier: 1,
     x: 1,
     y: 3,
   },
@@ -221,12 +249,15 @@ export function canAffordTech(bank: Bank, tower: TowerKind, owned = 0): boolean 
 /**
  * How many more points this wallet buys on one node, spending nothing else.
  *
- * A geometric node is walked a tier at a time, which is cheap because the
- * count it can reach is logarithmic in the bank — a few dozen iterations at
- * any bank size. A FLAT node is not: at 8 copper a point a late bank buys
- * tens of thousands, and walking that on every render made the tech screen
- * take over a second to repaint. Its price never changes, so the answer is
- * a division instead.
+ * Every node is walked a point at a time, which is cheap because a
+ * geometric count is logarithmic in the bank — a few hundred iterations at
+ * any bank size, sub-millisecond.
+ *
+ * The flat branch below is now only reachable through PRICE_GROWTH_SCALE = 0,
+ * since no node ships with growth 1. It has to stay: a flat price walked
+ * point by point is LINEAR in the bank, and back when duo was flat at 8
+ * copper a late save made that loop run into the tens of thousands and took
+ * the tech screen over a second to repaint. A division answers it instead.
  */
 export function affordablePoints(
   bank: Bank,

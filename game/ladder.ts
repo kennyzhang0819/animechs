@@ -19,26 +19,28 @@ import {
 } from "./items";
 
 /**
- * THE LADDER — four difficulties, and then the campaign is over.
+ * THE LADDER — three difficulties, and then the campaign is over.
  *
  * A world ships ONE authored script. A difficulty is a CUT of that script
  * plus an enemy level, and nothing else:
  *
- *   difficulty 1   waves 1-20   enemy level  0
- *   difficulty 2   waves 1-30   enemy level 10
- *   difficulty 3   waves 1-40   enemy level 20
- *   difficulty 4   waves 1-50   enemy level 30
+ *   Medium    waves 1-20   enemy level  0
+ *   High      waves 1-35   enemy level 10
+ *   Extreme   waves 1-50   enemy level 20
  *
- * Nothing is generated. Wave 1 of difficulty 4 is wave 1 of the same
- * authored list difficulty 1 plays, with 30 levels on it — which is what
- * lets the level editor be the whole authoring surface.
+ * Extreme plays the whole authored script, so the ladder ends where the
+ * writing does. A hidden ERADICATION difficulty above it is planned and is
+ * NOT modelled here — nothing below should assume it exists.
  *
- * THE LADDER IS FINITE AND THAT IS THE POINT. There is no fifth difficulty
- * and no endless level counter above the fourth: clearing difficulty 4
- * finishes the campaign. A player who stalls farms a lower difficulty until
- * the bank covers the next one, and there are only ever three of those
- * gaps to cross, so each one has to be worth crossing — see the step
- * numbers in audit().
+ * Nothing is generated. Wave 1 of Extreme is wave 1 of the same authored
+ * list Medium plays, with 20 levels on it — which is what lets the level
+ * editor be the whole authoring surface.
+ *
+ * THE LADDER IS FINITE AND THAT IS THE POINT. There is no endless level
+ * counter above the top: clearing Extreme finishes the campaign. A player
+ * who stalls farms a lower difficulty until the bank covers the next one,
+ * and there are only ever TWO of those gaps to cross, so each one has to be
+ * worth crossing — see the step numbers in audit().
  */
 
 /**
@@ -46,11 +48,11 @@ import {
  * is exactly double health, and NOTHING else scales: armour, speed, hitbox
  * and drop all stay at their base values forever.
  *
- * Flat armour against level-scaled health is what keeps the four
- * difficulties distinct rather than merely long. A difficulty is a level
- * offset on this same curve, so a level-30 dagger has more health than a
- * fortress and still a dagger's armour, while the level-30 fortress is
- * still the thing chip damage cannot scratch.
+ * Flat armour against level-scaled health is what keeps the difficulties
+ * distinct rather than merely long. A difficulty is a level offset on this
+ * same curve, so a level-20 dagger outlives a level-0 mace and still has a
+ * dagger's armour, while the level-20 fortress is still the thing chip
+ * damage cannot scratch.
  */
 export const HP_PER_LEVEL = 1.06;
 
@@ -59,29 +61,45 @@ export const HP_PER_LEVEL = 1.06;
  *
  * This is the half of a difficulty that makes the SAME waves harder. The
  * other half is the wave cut below, which makes the run longer. Both move
- * together on purpose: without the levels, difficulty 4 would be a longer
- * difficulty 1 against identical enemies, because the authored script has
+ * together on purpose: without the levels, the top difficulty would be a
+ * longer opening against identical enemies, because the authored script has
  * already fielded every unit kind by wave 20.
  */
 export const LEVELS_PER_TIER = 10;
 
 /**
- * THE FOUR DIFFICULTIES, and the only place their shape is written down.
+ * THE DIFFICULTIES, and the only place their shape is written down.
  *
- * `waves` is how much of the authored script the difficulty plays; `level`
- * is the enemy level it plays it at. Everything else on this page is
- * arithmetic over this table.
+ * `waves` is how much of the authored script it plays, `level` the enemy
+ * level it plays at, and `name` the only thing the player is ever shown —
+ * everything else on this page is arithmetic over this table.
  *
- * The wave counts are 20/30/40/50 rather than something evener because
- * difficulty 1 has to be a whole arc on its own — a fresh save's entire
- * experience of the game until it clears — while 2 through 4 are each one
- * more block of ten on top of a run the player already knows.
+ * THEY ARE NAMED, NOT NUMBERED, and the names are Mindustry's own.
+ * `SectorDifficulty` in the source runs
+ *
+ *   low  <  medium  <  high  <  EXTREME  <  eradication  <  unreasonable
+ *
+ * and the campaign takes the three rungs ending at Extreme. That is a
+ * deliberate placement rather than a full span: the scale is left with room
+ * BELOW (Low, if a gentler opening is ever wanted) and, more to the point,
+ * two rungs still free above. ERADICATION is reserved for the hidden
+ * ultimate difficulty, and Mindustry keeps UNREASONABLE for exactly one
+ * sector in the whole game — so there is a name in hand for whatever sits
+ * past even that.
+ *
+ * Starting at Medium rather than Low is the point of the arrangement: the
+ * game never calls its own opening easy, and a player who clears Extreme
+ * can still see there is something above it.
+ *
+ * The wave counts are 20/35/50 rather than something evener because Medium
+ * has to be a whole arc on its own — a fresh save's entire experience of
+ * the game until it clears it.
  */
-export const DIFFICULTIES: readonly { waves: number; level: number }[] = [
-  { waves: 20, level: 0 },
-  { waves: 30, level: 10 },
-  { waves: 40, level: 20 },
-  { waves: 50, level: 30 },
+export const DIFFICULTIES: readonly { name: string; waves: number; level: number }[] = [
+  { name: "Medium", waves: 20, level: 0 },
+  { name: "High", waves: 35, level: 10 },
+  { name: "Extreme", waves: 50, level: 20 },
+  // ERADICATION and UNREASONABLE are deliberately not here yet
 ];
 
 /** the last difficulty there is — clearing it finishes the campaign */
@@ -95,7 +113,7 @@ const clampTier = (tier: number): number =>
  * Drop bonus per difficulty, applied LINEARLY: difficulty n pays x(1 + 0.3n).
  *
  * Steeper than it was under the old endless ladder, because there are only
- * three steps left to sell. Turret prices are flat (see tech.ts), so the
+ * two steps left to sell. Turret prices are flat (see tech.ts), so the
  * units you kill already pay for the damage needed to kill them and the
  * ladder walks with no bonus at all; the bonus exists only so a HIGHER
  * difficulty is the better farm. Without it every difficulty pays the same
@@ -104,14 +122,20 @@ const clampTier = (tier: number): number =>
 export const DROP_BONUS_PER_TIER = 0.3;
 
 /**
- * The tier as the PLAYER sees it: "Difficulty 1" is tier 0.
+ * WHAT THE PLAYER IS SHOWN. Tier 0 is Medium.
  *
  * `tier` is 0-based everywhere in the code and in window.__ladder, because
  * tier 0 indexes DIFFICULTIES and an offset there would put a +1 in the
- * middle of the arithmetic. But "Difficulty 0" reads as NO difficulty, so
- * the screen is 1-based. Every player-facing tier number goes through here,
- * so the two numbering schemes meet in exactly one place instead of a
- * `+ 1` per label.
+ * middle of the arithmetic. Nothing player-facing should ever print that
+ * index — use the name. Every label goes through here, so the internal
+ * index and the shown word meet in exactly one place.
+ */
+export const difficultyName = (tier: number): string => DIFFICULTIES[clampTier(tier)].name;
+
+/**
+ * The 1-based ordinal, for the places a NUMBER is genuinely wanted — the
+ * editor's per-wave badge, an axis label, a sort key. Prefer the name
+ * anywhere a player reads prose.
  */
 export const difficultyOf = (tier: number): number => clampTier(tier) + 1;
 
@@ -456,7 +480,9 @@ export function waveGuide(spec: LevelSpec = WORLD): WaveRow[] {
 /** one difficulty, weighed — the row the editor's ladder check renders */
 export interface AuditRow {
   tier: number;
-  /** the 1-based number the player sees */
+  /** the name the player sees — Medium, High, Extreme */
+  name: string;
+  /** the 1-based ordinal, for compact labels */
   difficulty: number;
   waves: number;
   units: number;
@@ -517,6 +543,7 @@ export function audit(spec: LevelSpec = WORLD): AuditRow[] {
     const s = Math.max(1, drops[BASE_ITEM] ?? 0);
     rows.push({
       tier,
+      name: difficultyName(tier),
       difficulty: difficultyOf(tier),
       waves: b.waves,
       units: b.units,
@@ -571,7 +598,7 @@ export function check(spec: LevelSpec = WORLD): LadderIssue[] {
       out.push({
         tier: r.tier,
         kind: "wall",
-        message: `asks ${r.step}x the health of difficulty ${prev.difficulty} — roughly ${r.step}x the farming before it opens`,
+        message: `asks ${r.step}x the health of ${prev.name} — roughly ${r.step}x the farming before it opens`,
       });
     if (prev && r.step < FILLER_STEP && r.waves > prev.waves)
       out.push({
