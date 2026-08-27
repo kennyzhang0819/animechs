@@ -3,10 +3,11 @@ import type { UnitKind } from "./levels";
 
 // The sheet is 1024 wide and 2048 tall. It began as a 1024 square and grew
 // downward when the roster outgrew it: every cell below keeps its original
-// pixel coordinates, so only the v axis rescaled, and the fresh 1024x1024
-// band at y=1024 is where new oversized art goes.
+// pixel coordinates, so only the v axis rescaled, and each fresh 1024-tall
+// band is where the next batch of oversized art goes — y=1024 took the
+// legged crawlers and the flyers, y=2048 takes the T4 line.
 const ATLAS_W = 1024;
-const ATLAS_H = 2048;
+const ATLAS_H = 3072;
 const TAU = Math.PI * 2;
 
 export type UVRect = readonly [number, number, number, number];
@@ -233,6 +234,25 @@ export const UV_BEAM_WEAPON_SIL = uv(896, 1664, 128, 128);
  * — its shorter axis is the sprite's own transparent margin.
  */
 export const UV_HEX = uv(0, 1792, 256, 256, 2);
+/**
+ * The T4 line rides the fresh 1024-tall band at y=2048, on 256px cells:
+ * scepter's hull alone is a 170x140 source, half again as wide as the
+ * 128px cells the T3s sit in. Every part shares the one cell size because
+ * a mech draws all of its quads at MechArt.sprite, and 256px at the
+ * roster's usual 0.625 world px per native px is UNIT_SPRITE * 4.
+ *
+ * Art and silhouette sit side by side, two cells to a part.
+ */
+export const UV_SCEPTER_BODY = uv(0, 2048, 256, 256);
+export const UV_SCEPTER_BODY_SIL = uv(256, 2048, 256, 256);
+export const UV_SCEPTER_LEG = uv(512, 2048, 256, 256);
+export const UV_SCEPTER_LEG_SIL = uv(768, 2048, 256, 256);
+export const UV_SCEPTER_BASE = uv(0, 2304, 256, 256);
+export const UV_SCEPTER_BASE_SIL = uv(256, 2304, 256, 256);
+export const UV_SCEPTER_WEAPON = uv(512, 2304, 256, 256);
+export const UV_SCEPTER_WEAPON_SIL = uv(768, 2304, 256, 256);
+export const UV_SCEPTER_MOUNT = uv(0, 2560, 256, 256);
+export const UV_SCEPTER_MOUNT_SIL = uv(256, 2560, 256, 256);
 
 export const UV_CRAWLER_LEG = uv(448, 288, 64, 64);
 export const UV_CRAWLER_BASE = uv(512, 288, 64, 64);
@@ -295,6 +315,7 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   dagger: { uv: UV_DAGGER_BODY, sprite: UNIT_SPRITE },
   mace: { uv: UV_MACE_BODY, sprite: UNIT_SPRITE },
   fortress: { uv: UV_FORTRESS_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
+  scepter: { uv: UV_SCEPTER_BODY, sprite: UNIT_SPRITE * 4 }, // 256px cell, same px scale
   crawler: { uv: UV_CRAWLER_BODY, sprite: UNIT_SPRITE },
   // 128px cells, like the fortress: the legged pair's bodies outgrow 64
   atrax: { uv: UV_ATRAX_BODY, sprite: UNIT_SPRITE * 2 },
@@ -317,11 +338,13 @@ export interface MechArt {
   leg: UVRect;
   base: UVRect;
   body: UVRect;
-  /** absent when the type's weapon has no sprite (crawler: the explosion
-   * IS the weapon) — pushMech then draws no gun quads */
-  gun?: UVRect;
-  gunX: number; // sideways gun mount offset px, mirrored to both sides
-  gunY: number; // forward gun mount offset px
+  /**
+   * every Weapon bolted to the chassis, each mirrored to both sides
+   * (Weapon.mirror, true on all of them). Empty when the type's weapons
+   * have no sprite at all — crawler's explosion IS its weapon — and more
+   * than one once a hull carries mounts as well as a main gun.
+   */
+  guns: readonly LegGun[];
   stride: number; // leg swing amplitude px — the walk cycle is 4 strides
   /** forward body/gun bob px — Mindustry mechFrontSway (default 0.1) x 2.5 */
   frontSway?: number;
@@ -329,7 +352,7 @@ export interface MechArt {
   sideSway?: number;
   sprite: number; // world px of every part quad (same 64px cell scale)
   /** solid-color silhouette cells, drawn under all parts as the outer rim */
-  sil: { leg: UVRect; base: UVRect; body: UVRect; gun?: UVRect };
+  sil: { leg: UVRect; base: UVRect; body: UVRect };
 }
 
 // stride is Mindustry's default 4 + (hitSize - 8) / 2.1 world units; gun
@@ -340,33 +363,19 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     leg: UV_DAGGER_LEG,
     base: UV_DAGGER_BASE,
     body: UV_DAGGER_BODY,
-    gun: UV_LARGE_WEAPON,
-    gunX: 4 * MU,
-    gunY: 2 * MU,
+    guns: [{ uv: UV_LARGE_WEAPON, sil: UV_LARGE_WEAPON_SIL, x: 4 * MU, y: 2 * MU, top: false }],
     stride: 4 * MU,
     sprite: UNIT_SPRITE,
-    sil: {
-      leg: UV_DAGGER_LEG_SIL,
-      base: UV_DAGGER_BASE_SIL,
-      body: UV_DAGGER_BODY_SIL,
-      gun: UV_LARGE_WEAPON_SIL,
-    },
+    sil: { leg: UV_DAGGER_LEG_SIL, base: UV_DAGGER_BASE_SIL, body: UV_DAGGER_BODY_SIL },
   },
   mace: {
     leg: UV_MACE_LEG,
     base: UV_MACE_BASE,
     body: UV_MACE_BODY,
-    gun: UV_FLAMETHROWER,
-    gunX: 5 * MU,
-    gunY: 0,
+    guns: [{ uv: UV_FLAMETHROWER, sil: UV_FLAMETHROWER_SIL, x: 5 * MU, y: 0, top: false }],
     stride: (4 + (10 - 8) / 2.1) * MU,
     sprite: UNIT_SPRITE,
-    sil: {
-      leg: UV_MACE_LEG_SIL,
-      base: UV_MACE_BASE_SIL,
-      body: UV_MACE_BODY_SIL,
-      gun: UV_FLAMETHROWER_SIL,
-    },
+    sil: { leg: UV_MACE_LEG_SIL, base: UV_MACE_BASE_SIL, body: UV_MACE_BODY_SIL },
   },
   // artillery weapon x=9 y=1, mirrored; mechFrontSway 0.55 is 5.5x the
   // default — the heavy visibly lumbers nose-first with every stride
@@ -374,18 +383,35 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     leg: UV_FORTRESS_LEG,
     base: UV_FORTRESS_BASE,
     body: UV_FORTRESS_BODY,
-    gun: UV_ARTILLERY,
-    gunX: 9 * MU,
-    gunY: 1 * MU,
+    guns: [{ uv: UV_ARTILLERY, sil: UV_ARTILLERY_SIL, x: 9 * MU, y: 1 * MU, top: false }],
     stride: (4 + (13 - 8) / 2.1) * MU,
     frontSway: 0.55 * MU,
     sprite: UNIT_SPRITE * 2,
-    sil: {
-      leg: UV_FORTRESS_LEG_SIL,
-      base: UV_FORTRESS_BASE_SIL,
-      body: UV_FORTRESS_BODY_SIL,
-      gun: UV_ARTILLERY_SIL,
-    },
+    sil: { leg: UV_FORTRESS_LEG_SIL, base: UV_FORTRESS_BASE_SIL, body: UV_FORTRESS_BODY_SIL },
+  },
+  /**
+   * The T4: the first hull on the roster carrying more than one kind of
+   * gun. scepter-weapon x=16 y=1 rides UNDER the body like every mech gun
+   * before it; the two scepter-mount turrets (x=8.5, y=6 and y=-7) leave
+   * `top` at its default and sit ON it — which is the whole reason
+   * MechArt.guns is a list and pushMech sorts by that flag.
+   *
+   * mechFrontSway 1 is ten times the stock lean: at 0.36 px/tick it plants
+   * one foot at a time and the hull pitches forward onto each of them.
+   */
+  scepter: {
+    leg: UV_SCEPTER_LEG,
+    base: UV_SCEPTER_BASE,
+    body: UV_SCEPTER_BODY,
+    guns: [
+      { uv: UV_SCEPTER_WEAPON, sil: UV_SCEPTER_WEAPON_SIL, x: 16 * MU, y: 1 * MU, top: false },
+      { uv: UV_SCEPTER_MOUNT, sil: UV_SCEPTER_MOUNT_SIL, x: 8.5 * MU, y: 6 * MU, top: true },
+      { uv: UV_SCEPTER_MOUNT, sil: UV_SCEPTER_MOUNT_SIL, x: 8.5 * MU, y: -7 * MU, top: true },
+    ],
+    stride: (4 + (22 - 8) / 2.1) * MU,
+    frontSway: 1 * MU,
+    sprite: UNIT_SPRITE * 4,
+    sil: { leg: UV_SCEPTER_LEG_SIL, base: UV_SCEPTER_BASE_SIL, body: UV_SCEPTER_BODY_SIL },
   },
   // support T1: heal-weapon x=4.5 mirrored, top=false so it rides under the
   // body like the dagger's. hitSize 8 gives it the dagger's 4-unit stride
@@ -393,34 +419,20 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     leg: UV_NOVA_LEG,
     base: UV_NOVA_BASE,
     body: UV_NOVA_BODY,
-    gun: UV_HEAL_WEAPON,
-    gunX: 4.5 * MU,
-    gunY: 0,
+    guns: [{ uv: UV_HEAL_WEAPON, sil: UV_HEAL_WEAPON_SIL, x: 4.5 * MU, y: 0, top: false }],
     stride: 4 * MU,
     sprite: UNIT_SPRITE,
-    sil: {
-      leg: UV_NOVA_LEG_SIL,
-      base: UV_NOVA_BASE_SIL,
-      body: UV_NOVA_BODY_SIL,
-      gun: UV_HEAL_WEAPON_SIL,
-    },
+    sil: { leg: UV_NOVA_LEG_SIL, base: UV_NOVA_BASE_SIL, body: UV_NOVA_BODY_SIL },
   },
   // support T2: heal-shotgun-weapon x=5 y=0.5, mirrored and under the body
   pulsar: {
     leg: UV_PULSAR_LEG,
     base: UV_PULSAR_BASE,
     body: UV_PULSAR_BODY,
-    gun: UV_HEAL_SHOTGUN,
-    gunX: 5 * MU,
-    gunY: 0.5 * MU,
+    guns: [{ uv: UV_HEAL_SHOTGUN, sil: UV_HEAL_SHOTGUN_SIL, x: 5 * MU, y: 0.5 * MU, top: false }],
     stride: (4 + (11 - 8) / 2.1) * MU,
     sprite: UNIT_SPRITE,
-    sil: {
-      leg: UV_PULSAR_LEG_SIL,
-      base: UV_PULSAR_BASE_SIL,
-      body: UV_PULSAR_BODY_SIL,
-      gun: UV_HEAL_SHOTGUN_SIL,
-    },
+    sil: { leg: UV_PULSAR_LEG_SIL, base: UV_PULSAR_BASE_SIL, body: UV_PULSAR_BODY_SIL },
   },
   // support T3: beam-weapon x=6.5, top=false, and mechFrontSway 0.55 — the
   // same nose-first lumber the fortress walks with. hitSize 13 gives it the
@@ -429,18 +441,11 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     leg: UV_QUASAR_LEG,
     base: UV_QUASAR_BASE,
     body: UV_QUASAR_BODY,
-    gun: UV_BEAM_WEAPON,
-    gunX: 6.5 * MU,
-    gunY: 0,
+    guns: [{ uv: UV_BEAM_WEAPON, sil: UV_BEAM_WEAPON_SIL, x: 6.5 * MU, y: 0, top: false }],
     stride: (4 + (13 - 8) / 2.1) * MU,
     frontSway: 0.55 * MU,
     sprite: UNIT_SPRITE * 2,
-    sil: {
-      leg: UV_QUASAR_LEG_SIL,
-      base: UV_QUASAR_BASE_SIL,
-      body: UV_QUASAR_BODY_SIL,
-      gun: UV_BEAM_WEAPON_SIL,
-    },
+    sil: { leg: UV_QUASAR_LEG_SIL, base: UV_QUASAR_BASE_SIL, body: UV_QUASAR_BODY_SIL },
   },
   // no gun sprite — its Weapon fires only via shootOnDeath. mechSideSway
   // 0.25 is under half the default: it scuttles rather than swaggers
@@ -448,16 +453,11 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     leg: UV_CRAWLER_LEG,
     base: UV_CRAWLER_BASE,
     body: UV_CRAWLER_BODY,
-    gunX: 0,
-    gunY: 0,
+    guns: [],
     stride: 4 * MU,
     sideSway: 0.25 * MU,
     sprite: UNIT_SPRITE,
-    sil: {
-      leg: UV_CRAWLER_LEG_SIL,
-      base: UV_CRAWLER_BASE_SIL,
-      body: UV_CRAWLER_BODY_SIL,
-    },
+    sil: { leg: UV_CRAWLER_LEG_SIL, base: UV_CRAWLER_BASE_SIL, body: UV_CRAWLER_BODY_SIL },
   },
 };
 
@@ -614,6 +614,11 @@ const SPRITES = {
   quasarBase: "/mindustry/sprites/units/quasar-base.png",
   quasarLeg: "/mindustry/sprites/units/quasar-leg.png",
   beamWeapon: "/mindustry/sprites/units/weapons/beam-weapon.png",
+  scepter: "/mindustry/sprites/units/scepter.png",
+  scepterBase: "/mindustry/sprites/units/scepter-base.png",
+  scepterLeg: "/mindustry/sprites/units/scepter-leg.png",
+  scepterWeapon: "/mindustry/sprites/units/weapons/scepter-weapon.png",
+  scepterMount: "/mindustry/sprites/units/weapons/scepter-mount.png",
   spawnPad: `${ENV}/dark-panel-2.png`,
   towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
   towerBase1: "/mindustry/sprites/blocks/turrets/bases/block-1.png",
@@ -996,6 +1001,20 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   drawFacingRight(c, silhouetted(img.quasarBase), 704, 1728, 80);
   drawFacingRight(c, silhouetted(img.quasar), 832, 1728, 80);
   drawFacingRight(c, silhouetted(img.beamWeapon), 960, 1728, 80);
+
+  // scepter parts on the T4 band's 256px cells (see the UV note): each
+  // source at native size, so it keeps the 0.625 world px per native px
+  // every other unit draws at
+  drawFacingRight(c, antialiased(img.scepter), 128, 2176, 170, 140);
+  drawFacingRight(c, silhouetted(img.scepter), 384, 2176, 170, 140);
+  drawFacingRight(c, antialiased(img.scepterLeg), 640, 2176, 128);
+  drawFacingRight(c, silhouetted(img.scepterLeg), 896, 2176, 128);
+  drawFacingRight(c, antialiased(img.scepterBase), 128, 2432, 128);
+  drawFacingRight(c, silhouetted(img.scepterBase), 384, 2432, 128);
+  drawFacingRight(c, antialiased(img.scepterWeapon), 640, 2432, 56, 102);
+  drawFacingRight(c, silhouetted(img.scepterWeapon), 896, 2432, 56, 102);
+  drawFacingRight(c, antialiased(img.scepterMount), 128, 2688, 48);
+  drawFacingRight(c, silhouetted(img.scepterMount), 384, 2688, 48);
 
   // crawler parts: art then silhouettes, one flush 64px run (see UV note)
   drawFacingRight(c, antialiased(img.crawlerLeg), 480, 320, 48);

@@ -9,6 +9,7 @@ import {
   MAX_UNITS,
   ROWS,
   TOWERS,
+  UR,
   W,
   WALL_R,
   type TowerStats,
@@ -54,11 +55,33 @@ const PHYS_R = 1.2;
 // PhysicsWorld.scl, "how much to soften movement by": each overlapping
 // pair moves only 1/1.25 of the way apart per tick, split by mass
 const PHYS_SCL = 1.25;
-// spatial hash cell size (px); rebuilt every frame with a counting sort.
-// Derived, not hardcoded: it must cover the widest pair contact distance
-// (two of the biggest kind) or the 3x3 bucket scan silently misses
-// overlapping pairs the moment someone adds a larger unit
-const HC = Math.ceil(2 * PHYS_R * UNIT_RMAX);
+/**
+ * Spatial hash cell size (px); rebuilt every frame with a counting sort.
+ *
+ * Sized to the SMALLEST unit's worst-case reach — how far a T1 hitbox has
+ * to look to find the biggest thing on the roster — because that is what
+ * twenty thousand of them scanning is made of. Each query then spans as
+ * many cells as its own reach needs (KIND_SPAN), so correctness does not
+ * ride on this number at all.
+ *
+ * Sizing it to the widest unit instead, which is the obvious thing to do,
+ * makes every dagger in the swarm walk a cell scaled to a unit it will
+ * probably never meet: adding the T4 that way widened the cell by half and
+ * cost a fifth of the whole physics pass, in waves with no T4 in them.
+ */
+const HC = Math.ceil((UR + UNIT_RMAX) * PHYS_R);
+/**
+ * How many cells out each kind has to scan: its own reach against the
+ * widest partner it could have, in cells. A pair further apart than
+ * `span * HC` in either axis is more than `span` buckets away, so this is
+ * exactly the ring that can hold anything it might be touching.
+ *
+ * The swarm kinds come out at 1 — the plain 3x3 — by construction, since
+ * HC is the smallest unit's reach. Only the heavies widen their own scan.
+ */
+const KIND_SPAN = UNIT_KINDS.map((k) =>
+  Math.ceil(((UNIT_STATS[k].radius + UNIT_RMAX) * PHYS_R) / HC),
+);
 // narrow-passage centering gain (1/s): in 1-wide corridors and L-bend
 // corners, steer toward the cell centerline so units line up with the
 // slim (CELL - 2*WALL_R)px window instead of scraping the jambs
@@ -180,6 +203,15 @@ const HAS_ABILITIES = KIND_REPAIR.some(Boolean) || KIND_SHIELD.some(Boolean) || 
 // how fast body and chassis swivel: Mindustry's default rotateSpeed /
 // baseRotateSpeed, 5 degrees per tick
 const ROT_SPD = ((5 * Math.PI) / 180) * 60;
+/**
+ * UnitType.rotateSpeed per kind, rad/s — how fast the TORSO comes round.
+ * Only the heavies override it; everything else takes the default, and the
+ * chassis under all of them keeps baseRotateSpeed either way
+ */
+const KIND_ROT = Float32Array.from(UNIT_KINDS, (k) => {
+  const deg = UNIT_STATS[k].rotateSpeed;
+  return deg === undefined ? ROT_SPD : ((deg * Math.PI) / 180) * 60;
+});
 
 /**
  * The whole simulation: units in struct-of-arrays, a spatial hash for
@@ -1321,8 +1353,9 @@ export class Sim {
       const mi = urad[i] * urad[i]; // hitSize^2 * pi — the pi cancels in the ratio
       const hx = clamp((phx[i] / HC) | 0, 0, HCOLS - 1);
       const hy = clamp((phy[i] / HC) | 0, 0, HROWS - 1);
-      for (let gy = Math.max(0, hy - 1); gy <= Math.min(HROWS - 1, hy + 1); gy++) {
-        for (let gx = Math.max(0, hx - 1); gx <= Math.min(HCOLS - 1, hx + 1); gx++) {
+      const sp = KIND_SPAN[ukind[i]];
+      for (let gy = Math.max(0, hy - sp); gy <= Math.min(HROWS - 1, hy + sp); gy++) {
+        for (let gx = Math.max(0, hx - sp); gx <= Math.min(HCOLS - 1, hx + sp); gx++) {
           const c = gy * HCOLS + gx, e = bStart[c + 1];
           for (let k = bStart[c]; k < e; k++) {
             const j = bUnits[k];
@@ -1555,7 +1588,8 @@ export class Sim {
       const len = Math.hypot(mdx, mdy);
       if (len > 1e-4) {
         const ang = Math.atan2(mdy, mdx);
-        urot[i] += clamp(Sim.angleDiff(urot[i], ang), -ROT_SPD * dt, ROT_SPD * dt);
+        const trot = KIND_ROT[ukind[i]] * dt;
+        urot[i] += clamp(Sim.angleDiff(urot[i], ang), -trot, trot);
         if (!fly) {
           uwalk[i] += len;
           const cap = ROT_SPD * Math.min(1, len / (uspd[i] * dt)) * dt;

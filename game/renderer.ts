@@ -402,8 +402,12 @@ export class Renderer {
     // wall tiles + (editor) spawn overlays + decor/pine props
     this.walls = this.makeBatch(NCELLS * 2 + 2048);
     this.shadow = this.makeBatch(4);
-    // a walking mech is 6 quads (2 legs, chassis, 2 guns, body)
-    // mechs draw twice (silhouette rim under, art over) — up to 12 quads each
+    // a swarm budget, not a worst case: 12 quads is a walking mech with one
+    // mirrored gun drawn twice (silhouette rim under, art over), which is
+    // what MAX_UNITS of anything is ever actually made of. The heavies cost
+    // more — a scepter's three mounts make 20, a six-legged spiroct closer
+    // to 50 — and a field that was somehow ALL heavies would run this dry;
+    // they arrive in tens, among thousands of the cheap kinds that do not
     this.dyn = this.makeBatch(MAX_UNITS * 12 + 2048);
     // one quad per hexagonal bubble; a polygon of any other side count
     // takes one per side, so this holds a wave's worth either way
@@ -538,15 +542,18 @@ export class Renderer {
     const ox = -sb * sway + cb * fsway;
     const oy = cb * sway + sb * fsway;
     const cr = Math.cos(rot), sr = Math.sin(rot);
-    // the six quads' shared geometry, legs → base → guns → body; shade is
-    // the planted-leg darkening, applied on the art pass only
+    // the assembly in draw order: legs → base → under-slung guns → body →
+    // guns that ride ON the body (Weapon.top). Each entry carries its own
+    // art and silhouette cells, which is what lets a hull mix gun sprites.
+    // `dk` is the planted-leg darkening, applied on the art pass only
     const parts: Array<
-      readonly [keyof MechArt["sil"], number, number, number, number, number, number]
+      readonly [UVRect, UVRect, number, number, number, number, number, number]
     > = [];
     for (let side = -1; side <= 1; side += 2) {
       const dk = 1 - Math.max(0, (side * ext) / m.stride) * LEG_SHADE;
       parts.push([
-        "leg",
+        m.leg,
+        m.sil.leg,
         x + cb * ext * side,
         y + sb * ext * side,
         s * (1 - Math.max(-lift * side, 0) * 0.5),
@@ -555,31 +562,35 @@ export class Renderer {
         dk,
       ]);
     }
-    parts.push(["base", x, y, s, s, brot, 1]);
-    if (m.gun) {
-      for (let side = -1; side <= 1; side += 2) {
-        parts.push([
-          "gun",
-          x + ox + cr * m.gunY - sr * m.gunX * side,
-          y + oy + sr * m.gunY + cr * m.gunX * side,
-          s,
-          s * side, // mirrored mount, like Weapon.flipSprite
-          rot,
-          1,
-        ]);
+    parts.push([m.base, m.sil.base, x, y, s, s, brot, 1]);
+    const gunParts = (top: boolean): void => {
+      for (const g of m.guns) {
+        if (g.top !== top) continue;
+        for (let side = -1; side <= 1; side += 2) {
+          parts.push([
+            g.uv,
+            g.sil,
+            x + ox + cr * g.y - sr * g.x * side,
+            y + oy + sr * g.y + cr * g.x * side,
+            s,
+            s * side, // mirrored mount, like Weapon.flipSprite
+            rot,
+            1,
+          ]);
+        }
       }
-    }
-    parts.push(["body", x + ox, y + oy, s, s, rot, 1]);
+    };
+    gunParts(false);
+    parts.push([m.body, m.sil.body, x + ox, y + oy, s, s, rot, 1]);
+    gunParts(true);
     // silhouette pass: every part as a solid dilated shape, drawn first so
     // the art covers all of it but a single rim around the assembly — the
     // outer border without a line at every seam of the walking mech
-    for (const [k, px, py, w, h, r] of parts) {
-      const uvr = m.sil[k]; // gun entries exist only when the art does
-      if (uvr) this.push(b, px, py, w, h, r, uvr, tint[0], tint[1], tint[2], 1);
+    for (const [, sil, px, py, w, h, r] of parts) {
+      this.push(b, px, py, w, h, r, sil, tint[0], tint[1], tint[2], 1);
     }
-    for (const [k, px, py, w, h, r, dk] of parts) {
-      const uvr = m[k];
-      if (uvr) this.push(b, px, py, w, h, r, uvr, tint[0] * dk, tint[1] * dk, tint[2] * dk, 1);
+    for (const [uvr, , px, py, w, h, r, dk] of parts) {
+      this.push(b, px, py, w, h, r, uvr, tint[0] * dk, tint[1] * dk, tint[2] * dk, 1);
     }
   }
 

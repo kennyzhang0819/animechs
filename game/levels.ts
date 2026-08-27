@@ -2,7 +2,7 @@ import { CELL, HP0, UNIT_SPEED, UR } from "./constants";
 import { itemForTier, type Cost } from "./items";
 import { explain, type SaveResult } from "./types";
 
-export const UNIT_KINDS = ["dagger", "mace", "fortress", "crawler", "atrax", "spiroct", "flare", "nova", "pulsar", "quasar", "horizon", "zenith"] as const;
+export const UNIT_KINDS = ["dagger", "mace", "fortress", "scepter", "crawler", "atrax", "spiroct", "flare", "nova", "pulsar", "quasar", "horizon", "zenith"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -11,15 +11,16 @@ export const UNIT_ID: Record<UnitKind, number> = {
   dagger: 0,
   mace: 1,
   fortress: 2,
-  crawler: 3,
-  atrax: 4,
-  spiroct: 5,
-  flare: 6,
-  nova: 7,
-  pulsar: 8,
-  quasar: 9,
-  horizon: 10,
-  zenith: 11,
+  scepter: 3,
+  crawler: 4,
+  atrax: 5,
+  spiroct: 6,
+  flare: 7,
+  nova: 8,
+  pulsar: 9,
+  quasar: 10,
+  horizon: 11,
+  zenith: 12,
 };
 
 /** px per Mindustry world unit — leg geometry is written in those units */
@@ -119,11 +120,20 @@ export interface UnitStats {
   /** collision radius in world px — half the square hitbox edge */
   radius: number;
   /**
-   * Unit tier, 1-3 today. The tier alone decides WHICH currency a kill pays
-   * out — T1 drops copper, T2 titanium, T3 thorium (see items.ts) — so a
-   * level's enemy mix is what determines the resources a run banks.
+   * Unit tier, 1-4 today. The tier alone decides WHICH currency a kill pays
+   * out — T1 drops copper, T2 titanium, T3 thorium, T4 plastanium (see
+   * items.ts) — so a level's enemy mix is what determines the resources a
+   * run banks.
    */
   tier: number;
+  /**
+   * Mindustry UnitType.rotateSpeed in DEGREES PER TICK: how fast the torso
+   * swivels onto a new heading. Unset takes the 5 every stock unit has;
+   * the heavies that override it downward visibly lag their own turn.
+   * Only the torso — the chassis under it keeps the default, which is
+   * what makes a heavy look like it is dragging its guns round.
+   */
+  rotateSpeed?: number;
   /** flying units ignore terrain and head straight for the core; only
    * towers with targetAir (and bullets with collidesAir) touch them */
   flying?: boolean;
@@ -164,6 +174,23 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // fortress: 900 hp, armor 9, 1.625x1.625-block hitbox, 3.225 tiles/s
   // (0.43 px/tick) — the T3 heavy walks noticeably slower than the line
   fortress: { hp: 900, speed: 3.225 * CELL, armor: 9, radius: UR * 1.625, tier: 3 },
+  // scepter: the ground line's T4 — 9000 hp, armor 10, a 2.75x2.75-block
+  // hitbox, 0.36 px/tick = 2.7 tiles/s. Ten fortresses' health on something
+  // that walks slower than anything else on the roster, and rotateSpeed 2.1
+  // (under half the stock 5) means it cannot even turn quickly
+  // ShieldRegenFieldAbility(25, 250, 60, 60): +25 shield EVERY SECOND up to
+  // 250, over the usual 7.5-tile field. The pulsar's version tops its
+  // escort up between volleys; this one out-heals sustained fire, and it
+  // shields itself first of all
+  scepter: {
+    hp: 9000,
+    speed: 2.7 * CELL,
+    armor: 10,
+    radius: UR * 2.75,
+    tier: 4,
+    rotateSpeed: 2.1,
+    shieldField: { amount: 25, max: 250, reload: 1, range: 7.5 * CELL },
+  },
   // crawler: 150 hp, no armor, 1x1-block hitbox, 1 px/tick = 7.5 tiles/s —
   // twice the line's pace; the swarm closes distance before towers thin it
   crawler: { hp: 150, speed: 7.5 * CELL, armor: 0, radius: UR, tier: 1 },
@@ -278,7 +305,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
  * a unit's position in a row is its tier.
  */
 export const UNIT_TREES = [
-  { name: "Ground", kinds: ["dagger", "mace", "fortress"] },
+  { name: "Ground", kinds: ["dagger", "mace", "fortress", "scepter"] },
   { name: "Support", kinds: ["nova", "pulsar", "quasar"] },
   { name: "Crawler", kinds: ["crawler", "atrax", "spiroct"] },
   { name: "Air", kinds: ["flare", "horizon", "zenith"] },
