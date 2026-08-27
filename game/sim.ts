@@ -9,6 +9,7 @@ import {
   MAX_UNITS,
   ROWS,
   TOWERS,
+  UR,
   W,
   WALL_R,
   type TowerStats,
@@ -19,7 +20,10 @@ import {
   UNIT_ID,
   UNIT_KINDS,
   UNIT_RMAX,
+  UNIT_RMAX_AIR,
+  UNIT_RMAX_GROUND,
   UNIT_STATS,
+  rmaxFor,
   waveGroups,
   type LegSpec,
   type LevelSpec,
@@ -32,6 +36,13 @@ import { WALL_PINE, type Terrain } from "./terrain";
 import { FxKind, TOWER_KINDS, type Effect, type Projectile, type Tower, type TowerKind } from "./types";
 
 const FX_CAP = 400;
+/**
+ * Footfall dust gets a third of that and no more. It is ambience, and it
+ * is PERIODIC: every legged unit on the field throws a puff per planted
+ * foot, several times a second each, so left on the shared budget a wave
+ * of walkers would push every hit, death and blast out of the buffer.
+ */
+const FX_DUST_CAP = 140;
 
 // units per second a "skip to wave N" rush spawns at, in place of the
 // level's own spawnRate (20/s). High enough that a dozen waves land in a
@@ -54,11 +65,56 @@ const PHYS_R = 1.2;
 // PhysicsWorld.scl, "how much to soften movement by": each overlapping
 // pair moves only 1/1.25 of the way apart per tick, split by mass
 const PHYS_SCL = 1.25;
-// spatial hash cell size (px); rebuilt every frame with a counting sort.
-// Derived, not hardcoded: it must cover the widest pair contact distance
-// (two of the biggest kind) or the 3x3 bucket scan silently misses
-// overlapping pairs the moment someone adds a larger unit
-const HC = Math.ceil(2 * PHYS_R * UNIT_RMAX);
+/**
+ * How far a unit of each kind has to look to find something it might be
+ * touching: its own physics radius plus the widest ON ITS OWN LAYER, since
+ * ground and air pass straight through one another. That layer split is
+ * what keeps the antumbra's 5.75-block hitbox — more than twice anything
+ * that walks — off the ground swarm's bill entirely.
+ */
+const KIND_REACH = UNIT_KINDS.map(
+  (k) =>
+    (UNIT_STATS[k].radius + (UNIT_STATS[k].flying ? UNIT_RMAX_AIR : UNIT_RMAX_GROUND)) * PHYS_R,
+);
+/**
+ * Spatial hash cell size (px); rebuilt every frame with a counting sort.
+ *
+ * Sized to the SMALLEST reach on the roster, because that is what twenty
+ * thousand daggers scanning is made of. Each query then spans as many
+ * cells as its own reach needs (KIND_SPAN), so correctness does not ride
+ * on this number at all — only cost does.
+ *
+ * Sizing it to the widest unit instead, which is the obvious thing to do,
+ * makes every dagger in the swarm walk a cell scaled to a unit it will
+ * probably never meet: adding the first T4 that way widened the cell by
+ * half and cost a fifth of the whole physics pass, in waves with no T4 in
+ * them.
+ */
+const HC = Math.ceil(Math.min(...KIND_REACH));
+/**
+ * The same reach in cells: a pair further apart than `span * HC` in either
+ * axis is more than `span` buckets away, so this is exactly the ring that
+ * can hold anything a unit of this kind might be touching.
+ *
+ * Whichever kind sets HC comes out at 1 — the plain 3x3 — by construction,
+ * and on this roster that is the whole ground swarm. Only the heavies
+ * widen their own scan.
+ */
+const KIND_SPAN = KIND_REACH.map((r) => Math.ceil(r / HC));
+/**
+ * How many buckets a bullet has to look through to find what it flew into:
+ * the widest unit it can hit plus its own contact radius, in cells. Fixed
+ * per tower kind, since bullet stats are constants — and no longer the
+ * flat 1 it used to be, because the antumbra's hitbox is wider than a hash
+ * cell and a shot could otherwise pass clean through one whose centre sat
+ * two buckets away.
+ */
+const HIT_SPAN = Object.fromEntries(
+  TOWER_KINDS.map((k) => {
+    const b = TOWERS[k].bullet;
+    return [k, Math.ceil((rmaxFor(b.collidesAir, b.collidesGround) + (b.hitRadius ?? 2.5)) / HC)];
+  }),
+) as Record<TowerKind, number>;
 // narrow-passage centering gain (1/s): in 1-wide corridors and L-bend
 // corners, steer toward the cell centerline so units line up with the
 // slim (CELL - 2*WALL_R)px window instead of scraping the jambs
@@ -117,6 +173,24 @@ const KIND_FLYING: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].fl
 // support fields, indexed like UNIT_KINDS — null for kinds with no ability
 const KIND_REPAIR = UNIT_KINDS.map((k) => UNIT_STATS[k].repairField ?? null);
 const KIND_SHIELD = UNIT_KINDS.map((k) => UNIT_STATS[k].shieldField ?? null);
+const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
+/** kind ids that carry a force field — the absorb pass is skipped outright
+ * when none of them is on the field, so the scan costs nothing in a wave
+ * without one */
+const FORCE_KINDS = KIND_FORCE.map((f, i) => (f ? i : -1)).filter((i) => i >= 0);
+/** the same thing as a flag array: the carrier scan runs over every unit on
+ * the field, and one typed-array read per unit is a great deal cheaper
+ * there than reaching into KIND_FORCE for an object it will discard */
+const KIND_IS_FORCE = Uint8Array.from(KIND_FORCE, (f) => (f ? 1 : 0));
+/**
+ * UnitType.immunities as one flag per kind. StatusEffects.burning is the
+ * only status this game applies, so the whole immunity table collapses to
+ * a bit — and Mindustry checks it in StatusComp.apply, BEFORE the effect
+ * is added, so an immune unit never burns and never flickers either
+ */
+const KIND_BURN_IMMUNE = Uint8Array.from(UNIT_KINDS, (k) =>
+  UNIT_STATS[k].immunities?.includes("burning") ? 1 : 0,
+);
 /** the gait of every legged kind, indexed like UNIT_KINDS — null for the
  * mechs and flyers, whose animation is one sliding pair of leg sprites */
 const KIND_LEGS = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
@@ -163,7 +237,7 @@ const legTmp: Vec2 = { x: 0, y: 0 };
 const legTmp2: Vec2 = { x: 0, y: 0 };
 
 /** any support unit on the roster at all? skips the pass entirely when not */
-const HAS_ABILITIES = KIND_REPAIR.some(Boolean) || KIND_SHIELD.some(Boolean);
+const HAS_ABILITIES = KIND_REPAIR.some(Boolean) || KIND_SHIELD.some(Boolean) || FORCE_KINDS.length > 0;
 
 // where flyers aim: the core's center in world px — they need no flow
 // field. Per map, so a core placed low or high pulls them the right way
@@ -171,6 +245,15 @@ const HAS_ABILITIES = KIND_REPAIR.some(Boolean) || KIND_SHIELD.some(Boolean);
 // how fast body and chassis swivel: Mindustry's default rotateSpeed /
 // baseRotateSpeed, 5 degrees per tick
 const ROT_SPD = ((5 * Math.PI) / 180) * 60;
+/**
+ * UnitType.rotateSpeed per kind, rad/s — how fast the TORSO comes round.
+ * Only the heavies override it; everything else takes the default, and the
+ * chassis under all of them keeps baseRotateSpeed either way
+ */
+const KIND_ROT = Float32Array.from(UNIT_KINDS, (k) => {
+  const deg = UNIT_STATS[k].rotateSpeed;
+  return deg === undefined ? ROT_SPD : ((deg * Math.PI) / 180) * 60;
+});
 
 /**
  * The whole simulation: units in struct-of-arrays, a spatial hash for
@@ -198,6 +281,20 @@ export class Sim {
   readonly ushieldAlpha = new Float32Array(MAX_UNITS);
   /** seconds since this unit's support ability last pulsed */
   readonly uability = new Float32Array(MAX_UNITS);
+  /**
+   * ForceFieldAbility.radiusScale: the bubble does not snap to full size,
+   * it inflates toward 1 while it holds charge and collapses to 0 the
+   * instant it breaks. It scales the radius everywhere — the absorb test
+   * reads the same number the renderer draws, so a half-grown field really
+   * does only cover half its reach
+   */
+  readonly uforceScale = new Float32Array(MAX_UNITS);
+  /**
+   * ForceFieldAbility.wasBroken: 1 once the pool has been seen empty. It is
+   * what makes a break fire exactly once — the pool sits negative for the
+   * whole outage, and without this every tick of it would re-break
+   */
+  readonly uforceDown = new Uint8Array(MAX_UNITS);
   /**
    * StatusEffects.burning: seconds of fire left. Reapplying resets it to
    * the full statusDuration rather than stacking, exactly like Mindustry's
@@ -293,6 +390,9 @@ export class Sim {
   // skipped — every wave on the way still enters, they just pile up. 0 = off
   private rushTarget = 0;
 
+  /** seconds of simulated time since the level was reset (Time.time) */
+  time = 0;
+
   towers: Tower[] = [];
   projs: Projectile[] = [];
   effects: Effect[] = [];
@@ -305,6 +405,15 @@ export class Sim {
   // Never swapped in removeUnit — fully rebuilt every tick before use
   private readonly phx = new Float32Array(MAX_UNITS);
   private readonly phy = new Float32Array(MAX_UNITS);
+  /**
+   * the carriers standing a force field this projectile pass, by unit
+   * index. Gathered at the top of the pass — after every earlier step that
+   * can swap-remove a unit — and kept straight through the pass itself by
+   * removeUnit, which is free to reshuffle indices out from under it as
+   * shots kill what they hit
+   */
+  private readonly fldI: number[] = [];
+  private fldN = 0;
   private readonly flowTmp: Vec2 = { x: 0, y: 0 };
 
   // seal-test cache: hover asks canPlace every frame, and the test costs two
@@ -322,6 +431,7 @@ export class Sim {
 
   reset(): void {
     this.n = 0;
+    this.time = 0;
     this.kills = 0;
     this.leaked = 0;
     this.killsByKind.fill(0);
@@ -497,6 +607,10 @@ export class Sim {
   }
 
   update(dt: number): void {
+    // Mindustry Time.time: seconds of SIMULATED time, so animations driven
+    // by it (the shield hatch) speed up with the game speed and hold still
+    // while the sim is paused
+    this.time += dt;
     this.runScript(dt);
 
     this.buildHash();
@@ -807,11 +921,11 @@ export class Sim {
    * keeps the spawn strip from overcrowding, so separation never
    * slingshots units forward.
    */
-  private spawnSpotFree(x: number, y: number, r: number, fly: boolean): boolean {
+  private spawnSpotFree(x: number, y: number, r: number, fly: boolean, span: number): boolean {
     const hx = clamp((x / HC) | 0, 0, HCOLS - 1);
     const hy = clamp((y / HC) | 0, 0, HROWS - 1);
-    for (let gy = Math.max(0, hy - 1); gy <= Math.min(HROWS - 1, hy + 1); gy++) {
-      for (let gx = Math.max(0, hx - 1); gx <= Math.min(HCOLS - 1, hx + 1); gx++) {
+    for (let gy = Math.max(0, hy - span); gy <= Math.min(HROWS - 1, hy + span); gy++) {
+      for (let gx = Math.max(0, hx - span); gx <= Math.min(HCOLS - 1, hx + span); gx++) {
         const c = gy * HCOLS + gx, e = this.bStart[c + 1];
         for (let k = this.bStart[c]; k < e; k++) {
           const i = this.bUnits[k];
@@ -848,6 +962,10 @@ export class Sim {
     const pads = this.spawnPads(fly, region);
     if (this.n >= MAX_UNITS || pads.length === 0) return false;
     const r = stats.radius;
+    // the drop-zone test is the same broad-phase query the physics pass
+    // runs, so it needs the same reach: a ring of 1 would let two antumbras
+    // land inside one another and start the wave already shoving
+    const span = KIND_SPAN[UNIT_ID[kind]];
     for (let a = 0; a < 8; a++) {
       const ci = pads[(Math.random() * pads.length) | 0];
       // jitter within the pad, but keep the hitbox inside the cell when it
@@ -856,7 +974,8 @@ export class Sim {
       const x = ((ci % COLS) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
       const y = (((ci / COLS) | 0) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
       // a big hitbox can overhang the pad into ragged rock beside it
-      if ((!fly && this.field.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly)) continue;
+      if ((!fly && this.field.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly, span))
+        continue;
       const i = this.n++;
       // LEVEL SCALING, and the only stat the ladder touches: health alone
       // moves with the enemy level, so armour, speed, hitbox and drop stay
@@ -873,8 +992,13 @@ export class Sim {
       this.uspd[i] = stats.speed;
       this.urad[i] = r;
       this.uarmor[i] = stats.armor;
-      this.ushield[i] = 0;
+      // ForceFieldAbility.created: a carrier walks in with the bubble
+      // already full, so the first tower to see one meets 500 points of
+      // shield rather than a field still charging up
+      this.ushield[i] = stats.forceField ? stats.forceField.max : 0;
       this.ushieldAlpha[i] = 0;
+      this.uforceScale[i] = 0;
+      this.uforceDown[i] = 0;
       // a fresh support unit waits a full cycle before its first pulse,
       // exactly like a newly constructed Ability's zeroed timer
       this.uability[i] = 0;
@@ -898,21 +1022,54 @@ export class Sim {
   }
 
   /**
-   * The support line's Ability.update, 1:1 with RepairFieldAbility and
-   * ShieldRegenFieldAbility: each carrier runs its own timer, and on the
-   * tick it reaches `reload` it pulses once over everything in range and
+   * The support line's Ability.update, 1:1 with RepairFieldAbility,
+   * ShieldRegenFieldAbility and ForceFieldAbility.
+   *
+   * The first two are pulses: each carrier runs its own timer, and on the
+   * tick it reaches `reload` it fires once over everything in range and
    * zeroes the timer (no carry-over, matching `timer = 0f`).
    *
    * Units.nearby's circle test counts the OTHER unit's hitbox — a unit
    * whose edge reaches the field is inside it — so the radius compared
    * against is `range + urad[j]`. A carrier sits inside its own field and
    * mends or shields itself along with everyone else.
+   *
+   * A force field is not a pulse at all and takes the branch below: it
+   * regenerates continuously and its work happens in the projectile pass,
+   * where the shots it eats are.
    */
   private updateAbilities(dt: number): void {
     if (!HAS_ABILITIES) return;
     const { upx, upy, uhp, uhpmax, urad, ushield, ushieldAlpha, uability, ukind } = this;
+    const { uforceScale, uforceDown } = this;
     for (let i = 0; i < this.n; i++) {
       const k = ukind[i];
+      const force = KIND_FORCE[k];
+      if (force) {
+        // ForceFieldAbility.update. The break is billed to the pool itself:
+        // draining it by one cooldown's worth of regen means the same
+        // steady +regen that refills the field is also what times its
+        // outage, and the field is dark for exactly `cooldown` seconds
+        if (ushield[i] <= 0 && !uforceDown[i]) {
+          ushield[i] -= force.cooldown * force.regen;
+          // Fx.shieldBreak: the outline snapping outward as it pops
+          this.pushFx(
+            upx[i], upy[i], 40 / 60, FxKind.ShieldBreak,
+            force.rotation, force.radius * uforceScale[i], 0, force.sides,
+          );
+        }
+        uforceDown[i] = ushield[i] <= 0 ? 1 : 0;
+        // regen is unconditional, so a pool sitting at -144 climbs back
+        // through zero on its own and the field comes up again
+        if (ushield[i] < force.max) ushield[i] = Math.min(ushield[i] + force.regen * dt, force.max);
+        // Mathf.lerpDelta(radiusScale, 1, 0.06) per tick, compounded over
+        // the frame; a broken field has no radius at all
+        uforceScale[i] =
+          ushield[i] > 0
+            ? uforceScale[i] + (1 - uforceScale[i]) * (1 - Math.pow(1 - 0.06, dt * 60))
+            : 0;
+        continue;
+      }
       const repair = KIND_REPAIR[k];
       const shield = KIND_SHIELD[k];
       if (!repair && !shield) continue;
@@ -997,6 +1154,16 @@ export class Sim {
   private removeUnit(i: number): void {
     this.aliveByKind[this.ukind[i]]--;
     const n = --this.n;
+    // the projectile pass holds its force-field carriers by index, and a
+    // shot that kills what it hits reshuffles them mid-pass: the dead
+    // carrier leaves the list, and the unit swapped down into its slot
+    // follows its row. Without this a stale index points at a row that has
+    // moved on — the bubble deflects from where its carrier used to be,
+    // and once something else lands there it is not a carrier at all
+    for (let f = this.fldN - 1; f >= 0; f--) {
+      if (this.fldI[f] === i) this.fldI[f] = this.fldI[--this.fldN];
+      else if (this.fldI[f] === n) this.fldI[f] = i;
+    }
     this.upx[i] = this.upx[n];
     this.upy[i] = this.upy[n];
     this.uvx[i] = this.uvx[n];
@@ -1009,6 +1176,8 @@ export class Sim {
     this.ushield[i] = this.ushield[n];
     this.ushieldAlpha[i] = this.ushieldAlpha[n];
     this.uability[i] = this.uability[n];
+    this.uforceScale[i] = this.uforceScale[n];
+    this.uforceDown[i] = this.uforceDown[n];
     this.uburn[i] = this.uburn[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
@@ -1152,6 +1321,22 @@ export class Sim {
       ulegFX[p] = bx + legTmp.x;
       ulegFY[p] = by + legTmp.y;
     }
+    // a leg is DOWN the moment its group's turn passes on, and that
+    // transition is where Mindustry hangs everything a footstep does:
+    // Fx.unitLandSmall at the foot, the step shake, and — on the units
+    // that carry it — legSplashDamage. Arkyid is the only kind on this
+    // roster with that last one, and it has nothing to land on: its 32
+    // damage over 30 units hits enemy units and buildings, and the player
+    // here fields no units and builds towers that cannot be damaged. So
+    // what a footfall leaves behind is the dust, scaled by rippleScale
+    const landed = this.ulegMove[i] & ~bits;
+    if (landed !== 0 && this.effects.length < FX_DUST_CAP) {
+      for (let k = 0; k < n; k++) {
+        if ((landed & (1 << k)) === 0) continue;
+        this.pushFx(ulegFX[off + k], ulegFY[off + k], 30 / 60, FxKind.Footfall,
+          L.ripple, 0, (Math.random() * 0x7fffffff) | 0);
+      }
+    }
     this.ulegMove[i] = bits;
   }
 
@@ -1231,8 +1416,9 @@ export class Sim {
       const mi = urad[i] * urad[i]; // hitSize^2 * pi — the pi cancels in the ratio
       const hx = clamp((phx[i] / HC) | 0, 0, HCOLS - 1);
       const hy = clamp((phy[i] / HC) | 0, 0, HROWS - 1);
-      for (let gy = Math.max(0, hy - 1); gy <= Math.min(HROWS - 1, hy + 1); gy++) {
-        for (let gx = Math.max(0, hx - 1); gx <= Math.min(HCOLS - 1, hx + 1); gx++) {
+      const sp = KIND_SPAN[ukind[i]];
+      for (let gy = Math.max(0, hy - sp); gy <= Math.min(HROWS - 1, hy + sp); gy++) {
+        for (let gx = Math.max(0, hx - sp); gx <= Math.min(HCOLS - 1, hx + sp); gx++) {
           const c = gy * HCOLS + gx, e = bStart[c + 1];
           for (let k = bStart[c]; k < e; k++) {
             const j = bUnits[k];
@@ -1465,7 +1651,8 @@ export class Sim {
       const len = Math.hypot(mdx, mdy);
       if (len > 1e-4) {
         const ang = Math.atan2(mdy, mdx);
-        urot[i] += clamp(Sim.angleDiff(urot[i], ang), -ROT_SPD * dt, ROT_SPD * dt);
+        const trot = KIND_ROT[ukind[i]] * dt;
+        urot[i] += clamp(Sim.angleDiff(urot[i], ang), -trot, trot);
         if (!fly) {
           uwalk[i] += len;
           const cap = ROT_SPD * Math.min(1, len / (uspd[i] * dt)) * dt;
@@ -1677,7 +1864,7 @@ export class Sim {
     const EXPAND = 7.5; // collideLine's expand = 3 world units
     const dirx = Math.cos(angle), diry = Math.sin(angle);
     const x2 = x + dirx * length, y2 = y + diry * length;
-    const pad = UNIT_RMAX + EXPAND;
+    const pad = rmaxFor(air, ground) + EXPAND;
     const hx0 = clamp(((Math.min(x, x2) - pad) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((Math.min(y, y2) - pad) / HC) | 0, 0, HROWS - 1);
     const hx1 = clamp(((Math.max(x, x2) + pad) / HC) | 0, 0, HCOLS - 1);
@@ -1733,8 +1920,91 @@ export class Sim {
     if (amount > 0) this.uhp[i] -= amount;
   }
 
+  /**
+   * Arc Intersector.isInRegularPolygon, in closed form: fold the bearing
+   * into one sector and compare the point's reach along that edge's normal
+   * against the apothem. Arc walks the vertex ring instead, but a regular
+   * polygon needs no ring — every edge is the same edge, rotated.
+   */
+  private static inRegularPolygon(
+    sides: number,
+    cx: number,
+    cy: number,
+    radius: number,
+    rotation: number,
+    x: number,
+    y: number,
+  ): boolean {
+    const dx = x - cx, dy = y - cy;
+    const dst = Math.hypot(dx, dy);
+    if (dst > radius) return false;
+    const step = TAU / sides;
+    // vertices sit at multiples of `step` from `rotation`, so the edge
+    // facing a point is the one whose normal is half a step further round
+    let a = (Math.atan2(dy, dx) - rotation) % step;
+    if (a < 0) a += step;
+    return dst * Math.cos(a - step / 2) <= radius * Math.cos(step / 2);
+  }
+
+  /**
+   * Gather the force fields standing this tick. Skipped outright unless a
+   * carrier kind is actually alive, so the scan only costs anything in the
+   * waves that field one.
+   */
+  private collectForceFields(): void {
+    this.fldN = 0;
+    if (this.projs.length === 0) return;
+    // the census already knows how many carriers are out there: none means
+    // no scan at all, and the count doubles as the scan's early exit once
+    // it has seen the last one
+    let left = 0;
+    for (const k of FORCE_KINDS) left += this.aliveByKind[k];
+    if (left === 0) return;
+    const { ukind, ushield, uforceScale } = this;
+    for (let i = 0; i < this.n && left > 0; i++) {
+      if (!KIND_IS_FORCE[ukind[i]]) continue;
+      left--;
+      // ForceFieldAbility.update guards its bullet sweep on shield > 0, so
+      // a pool still climbing back through zero deflects nothing
+      if (ushield[i] <= 0 || uforceScale[i] <= 0.01) continue;
+      this.fldI[this.fldN++] = i;
+    }
+  }
+
+  /**
+   * ForceFieldAbility's shieldConsumer: a shot whose position falls inside
+   * a standing bubble is deleted outright and its damage billed to the
+   * carrier's pool. Absorption happens the moment the shot is inside the
+   * outline, before it can reach anything sheltering there, and an absorbed
+   * bullet never splashes (BulletType.despawned skips the blast on
+   * `b.absorbed`) — the blast dies with the shell.
+   *
+   * Only `absorbable` bullets are eaten. Fuse is the exception on this
+   * roster and needs no flag: its ShrapnelBulletType sets absorbable=false
+   * AND deals its damage as an instant ray at the muzzle, so it never
+   * becomes a projectile here at all and rakes straight through a field.
+   */
+  private absorb(px: number, py: number, damage: number): boolean {
+    const { upx, upy, ushield, ushieldAlpha, ukind, fldI } = this;
+    for (let f = 0; f < this.fldN; f++) {
+      const i = fldI[f];
+      const spec = KIND_FORCE[ukind[i]]!;
+      const rad = spec.radius * this.uforceScale[i];
+      const dx = px - upx[i], dy = py - upy[i];
+      if (dx * dx + dy * dy > rad * rad) continue; // cheap circumcircle reject
+      if (!Sim.inRegularPolygon(spec.sides, upx[i], upy[i], rad, spec.rotation, px, py)) continue;
+      // Bullet.type.shieldDamage: the shot's damage, shieldDamageMultiplier 1
+      ushield[i] -= damage;
+      ushieldAlpha[i] = 1;
+      this.pushFx(px, py, 12 / 60, FxKind.Absorb);
+      return true;
+    }
+    return false;
+  }
+
   private updateProjectiles(dt: number): void {
     const { upx, upy, uhp, uarmor, urad, projs, bStart, bUnits } = this;
+    this.collectForceFields();
     for (let p = projs.length - 1; p >= 0; p--) {
       const pr = projs[p];
       const b = TOWERS[pr.kind].bullet;
@@ -1742,6 +2012,13 @@ export class Sim {
       pr.y += pr.vy * dt;
       pr.life -= dt;
       pr.age += dt;
+
+      // a force field eats the shot where it stands: no hit, no splash
+      if (this.fldN > 0 && this.absorb(pr.x, pr.y, b.damage)) {
+        projs[p] = projs[projs.length - 1];
+        projs.pop();
+        continue;
+      }
 
       // flak proximity fuse: check every interval; an enemy inside
       // explodeRange (+ its hitbox) primes the shell, which detonates
@@ -1767,6 +2044,7 @@ export class Sim {
       let dead = pr.life <= 0;
       if (!dead && !b.artillery) {
         const brad = b.hitRadius ?? 2.5;
+        const sp = HIT_SPAN[pr.kind];
         const hx = clamp((pr.x / HC) | 0, 0, HCOLS - 1);
         const hy = clamp((pr.y / HC) | 0, 0, HROWS - 1);
         // a piercing shot may hit several units this tick and outlive them
@@ -1775,8 +2053,8 @@ export class Sim {
         // an unvisited unit into a bucket we have already walked past
         const hits = this.splashHits;
         hits.length = 0;
-        outer: for (let cy = Math.max(0, hy - 1); cy <= Math.min(HROWS - 1, hy + 1); cy++) {
-          for (let cx = Math.max(0, hx - 1); cx <= Math.min(HCOLS - 1, hx + 1); cx++) {
+        outer: for (let cy = Math.max(0, hy - sp); cy <= Math.min(HROWS - 1, hy + sp); cy++) {
+          for (let cx = Math.max(0, hx - sp); cx <= Math.min(HCOLS - 1, hx + sp); cx++) {
             const c = cy * HCOLS + cx, e = bStart[c + 1];
             for (let k = bStart[c]; k < e; k++) {
               const i = bUnits[k];
@@ -1801,7 +2079,7 @@ export class Sim {
         }
         for (const i of hits) {
           this.damageUnit(i, b.damage);
-          if (uhp[i] > 0 && b.burn) this.uburn[i] = b.burn;
+          if (uhp[i] > 0 && b.burn && !KIND_BURN_IMMUNE[this.ukind[i]]) this.uburn[i] = b.burn;
           // BulletType.hitEffect, at the bullet rather than the victim
           if (uhp[i] > 0 && b.splash <= 0)
             this.pushFx(
@@ -1828,7 +2106,7 @@ export class Sim {
   /** is any live targetable unit's hitbox within r of (x, y)? */
   private anyUnitWithin(x: number, y: number, r: number, air: boolean, ground: boolean): boolean {
     const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
-    const pad = r + UNIT_RMAX;
+    const pad = r + rmaxFor(air, ground);
     const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
     const hx1 = clamp(((x + pad) / HC) | 0, 0, HCOLS - 1);
@@ -1866,7 +2144,7 @@ export class Sim {
   ): void {
     const { upx, upy, uhp, uarmor, urad, ukind, bStart, bUnits, splashHits } = this;
     splashHits.length = 0;
-    const reach = radius + UNIT_RMAX;
+    const reach = radius + rmaxFor(air, ground);
     const hx0 = clamp(((x - reach) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((y - reach) / HC) | 0, 0, HROWS - 1);
     const hx1 = clamp(((x + reach) / HC) | 0, 0, HCOLS - 1);
@@ -1907,7 +2185,9 @@ export class Sim {
     rot = 0,
     len = 0,
     seed = 0,
+    sides = 0,
   ): void {
-    if (this.effects.length < FX_CAP) this.effects.push({ x, y, age: 0, ttl, kind, rot, len, seed });
+    if (this.effects.length < FX_CAP)
+      this.effects.push({ x, y, age: 0, ttl, kind, rot, len, seed, sides });
   }
 }

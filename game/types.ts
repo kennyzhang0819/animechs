@@ -50,6 +50,9 @@ export const enum FxKind {
   Flame = 8,
   FlameHit = 9,
   Burning = 10,
+  Absorb = 11,
+  ShieldBreak = 12,
+  Footfall = 13,
 }
 
 export interface Effect {
@@ -58,8 +61,11 @@ export interface Effect {
   age: number;
   ttl: number;
   kind: FxKind;
-  rot?: number; // Shrapnel: ray direction (rad)
-  len?: number; // Shrapnel: ray length (px)
+  rot?: number; // Shrapnel: ray direction (rad); ShieldBreak: polygon roll;
+  // Footfall: the unit's rippleScale, which is the slot Mindustry itself
+  // passes it in (Fx.unitLandSmall reads e.rotation as its size)
+  len?: number; // Shrapnel: ray length (px); ShieldBreak: polygon radius
+  sides?: number; // ShieldBreak: sides of the force field that just popped
   // Mindustry seeds Mathf.rand with the effect's entity id and replays the
   // same sequence every frame, so a particle keeps its own direction while
   // its distance grows. Effects with scattered particles carry that seed

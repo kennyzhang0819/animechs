@@ -1,12 +1,14 @@
 import { UNIT_SPRITE } from "./constants";
 import type { UnitKind } from "./levels";
 
-// The sheet is 1024 wide and 2048 tall. It began as a 1024 square and grew
-// downward when the roster outgrew it: every cell below keeps its original
-// pixel coordinates, so only the v axis rescaled, and the fresh 1024x1024
-// band at y=1024 is where new oversized art goes.
+// The sheet is 1024 wide. It began as a 1024 square and grew downward when
+// the roster outgrew it: every cell below keeps its original pixel
+// coordinates, so only the v axis rescaled, and each fresh 1024-tall band
+// is where the next batch of oversized art goes — y=1024 took the legged
+// crawlers and the flyers, y=2048 and y=3072 take the T4 line, which needs
+// two bands because every one of its parts rides a 256px cell.
 const ATLAS_W = 1024;
-const ATLAS_H = 2048;
+const ATLAS_H = 4096;
 const TAU = Math.PI * 2;
 
 export type UVRect = readonly [number, number, number, number];
@@ -200,6 +202,95 @@ export const UV_PULSAR_LEG_SIL = uv(544, 640, 64, 64);
 export const UV_PULSAR_BASE_SIL = uv(672, 640, 64, 64);
 export const UV_PULSAR_BODY_SIL = uv(800, 640, 64, 64);
 export const UV_HEAL_SHOTGUN_SIL = uv(928, 640, 64, 64);
+/**
+ * The support line's T3 outgrows those 64px cells: every quasar part ships
+ * on an 80x80 source (its leg alone reaches 35px off centre, past the 32px
+ * a 64 cell can hold), so the line's last row takes the fortress treatment
+ * — 128px cells on the free full-width band at y=1664, art in the left four
+ * and silhouettes in the right four. Double the cell with double the sprite
+ * box keeps world px per native px identical to the rest of the roster.
+ */
+export const UV_QUASAR_LEG = uv(0, 1664, 128, 128);
+export const UV_QUASAR_BASE = uv(128, 1664, 128, 128);
+export const UV_QUASAR_BODY = uv(256, 1664, 128, 128);
+export const UV_BEAM_WEAPON = uv(384, 1664, 128, 128);
+export const UV_QUASAR_LEG_SIL = uv(512, 1664, 128, 128);
+export const UV_QUASAR_BASE_SIL = uv(640, 1664, 128, 128);
+export const UV_QUASAR_BODY_SIL = uv(768, 1664, 128, 128);
+export const UV_BEAM_WEAPON_SIL = uv(896, 1664, 128, 128);
+/**
+ * A solid white hexagon filling its cell's width, for the one shape a
+ * force field is ever drawn as. It is filled into the shield buffer
+ * OPAQUE and the shader reads that buffer's alpha to find the outline, so
+ * this has to be one unbroken quad: fanning it out of UV_TRI leaves
+ * hairline joins where neighbouring triangles meet, and the edge detect
+ * would faithfully draw a rim down every one of them.
+ *
+ * The cell is 256px for the edge's sake, not the shape's — the atlas
+ * magnifies NEAREST, and a coarser cell stairsteps the diagonals the
+ * shader then outlines.
+ *
+ * The hexagon is inscribed in the cell across the flats of its vertex
+ * pair, so a quad of 2 x radius on BOTH axes draws it at exactly `radius`
+ * — its shorter axis is the sprite's own transparent margin.
+ */
+export const UV_HEX = uv(0, 1792, 256, 256, 2);
+/**
+ * The T4 line rides the fresh 1024-tall band at y=2048, on 256px cells:
+ * scepter's hull alone is a 170x140 source, half again as wide as the
+ * 128px cells the T3s sit in. Every part shares the one cell size because
+ * a mech draws all of its quads at MechArt.sprite, and 256px at the
+ * roster's usual 0.625 world px per native px is UNIT_SPRITE * 4.
+ *
+ * Art and silhouette sit side by side, two cells to a part.
+ */
+export const UV_SCEPTER_BODY = uv(0, 2048, 256, 256);
+export const UV_SCEPTER_BODY_SIL = uv(256, 2048, 256, 256);
+export const UV_SCEPTER_LEG = uv(512, 2048, 256, 256);
+export const UV_SCEPTER_LEG_SIL = uv(768, 2048, 256, 256);
+export const UV_SCEPTER_BASE = uv(0, 2304, 256, 256);
+export const UV_SCEPTER_BASE_SIL = uv(256, 2304, 256, 256);
+export const UV_SCEPTER_WEAPON = uv(512, 2304, 256, 256);
+export const UV_SCEPTER_WEAPON_SIL = uv(768, 2304, 256, 256);
+export const UV_SCEPTER_MOUNT = uv(0, 2560, 256, 256);
+export const UV_SCEPTER_MOUNT_SIL = uv(256, 2560, 256, 256);
+/**
+ * arkyid's small parts share the free right half of the scepter mount's
+ * row: foot and base-joint on 128px cells (their 70px sources keep a wide
+ * margin there), and the two leg SEGMENTS below them on the exact rects
+ * their art occupies — a stretched segment samples its cell corner to
+ * corner, so its UV has to be the art and nothing else.
+ */
+export const UV_ARKYID_FOOT = uv(512, 2560, 128, 128);
+export const UV_ARKYID_FOOT_SIL = uv(640, 2560, 128, 128);
+export const UV_ARKYID_JOINT_BASE = uv(768, 2560, 128, 128);
+export const UV_ARKYID_JOINT_BASE_SIL = uv(896, 2560, 128, 128);
+export const UV_ARKYID_LEG = uv(528, 2704, 56, 56);
+export const UV_ARKYID_LEG_BASE = uv(640, 2700, 104, 64);
+/**
+ * The second T4 band, y=3072: vela and arkyid's big parts, plus antumbra.
+ * Same 256px cells and same art-then-silhouette pairing as the scepter's
+ * band above it — see that note for why the T4s need cells this size.
+ *
+ * antumbra takes a whole cell to itself: a flyer is one sprite with no
+ * silhouette under-layer (see UNIT_ART), but at 216x240 native it is the
+ * largest single piece of art on the sheet.
+ */
+export const UV_VELA_BODY = uv(0, 3072, 256, 256);
+export const UV_VELA_BODY_SIL = uv(256, 3072, 256, 256);
+export const UV_VELA_LEG = uv(512, 3072, 256, 256);
+export const UV_VELA_LEG_SIL = uv(768, 3072, 256, 256);
+export const UV_VELA_BASE = uv(0, 3328, 256, 256);
+export const UV_VELA_BASE_SIL = uv(256, 3328, 256, 256);
+export const UV_REPAIR_BEAM = uv(512, 3328, 256, 256);
+export const UV_REPAIR_BEAM_SIL = uv(768, 3328, 256, 256);
+export const UV_ARKYID_BODY = uv(0, 3584, 256, 256);
+export const UV_ARKYID_BODY_SIL = uv(256, 3584, 256, 256);
+export const UV_ARKYID_WEAPON = uv(512, 3584, 256, 256);
+export const UV_ARKYID_WEAPON_SIL = uv(768, 3584, 256, 256);
+export const UV_ARKYID_MOUNT = uv(0, 3840, 256, 256);
+export const UV_ARKYID_MOUNT_SIL = uv(256, 3840, 256, 256);
+export const UV_ANTUMBRA = uv(512, 3840, 256, 256);
 
 export const UV_CRAWLER_LEG = uv(448, 288, 64, 64);
 export const UV_CRAWLER_BASE = uv(512, 288, 64, 64);
@@ -262,17 +353,23 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   dagger: { uv: UV_DAGGER_BODY, sprite: UNIT_SPRITE },
   mace: { uv: UV_MACE_BODY, sprite: UNIT_SPRITE },
   fortress: { uv: UV_FORTRESS_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
+  scepter: { uv: UV_SCEPTER_BODY, sprite: UNIT_SPRITE * 4 }, // 256px cell, same px scale
   crawler: { uv: UV_CRAWLER_BODY, sprite: UNIT_SPRITE },
   // 128px cells, like the fortress: the legged pair's bodies outgrow 64
   atrax: { uv: UV_ATRAX_BODY, sprite: UNIT_SPRITE * 2 },
   spiroct: { uv: UV_SPIROCT_BODY, sprite: UNIT_SPRITE * 2 },
+  arkyid: { uv: UV_ARKYID_BODY, sprite: UNIT_SPRITE * 4 }, // 256px cell, same px scale
   nova: { uv: UV_NOVA_BODY, sprite: UNIT_SPRITE },
   pulsar: { uv: UV_PULSAR_BODY, sprite: UNIT_SPRITE },
+  quasar: { uv: UV_QUASAR_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
+  vela: { uv: UV_VELA_BODY, sprite: UNIT_SPRITE * 4 }, // 256px cell, same px scale
   flare: { uv: UV_FLARE, sprite: UNIT_SPRITE }, // 48px art in a 64 cell, dagger scale
   // 128px cells: double the cell means double the sprite box, which keeps
   // world px per native px identical to every other unit
   horizon: { uv: UV_HORIZON, sprite: UNIT_SPRITE * 2 },
   zenith: { uv: UV_ZENITH, sprite: UNIT_SPRITE * 2 },
+  // 216x240 of art on a 5.75-block hitbox: the sheet's biggest single piece
+  antumbra: { uv: UV_ANTUMBRA, sprite: UNIT_SPRITE * 4 },
 };
 
 // Mindustry world units → px (CELL / 8, see constants.ts)
@@ -283,11 +380,13 @@ export interface MechArt {
   leg: UVRect;
   base: UVRect;
   body: UVRect;
-  /** absent when the type's weapon has no sprite (crawler: the explosion
-   * IS the weapon) — pushMech then draws no gun quads */
-  gun?: UVRect;
-  gunX: number; // sideways gun mount offset px, mirrored to both sides
-  gunY: number; // forward gun mount offset px
+  /**
+   * every Weapon bolted to the chassis, each mirrored to both sides
+   * (Weapon.mirror, true on all of them). Empty when the type's weapons
+   * have no sprite at all — crawler's explosion IS its weapon — and more
+   * than one once a hull carries mounts as well as a main gun.
+   */
+  guns: readonly LegGun[];
   stride: number; // leg swing amplitude px — the walk cycle is 4 strides
   /** forward body/gun bob px — Mindustry mechFrontSway (default 0.1) x 2.5 */
   frontSway?: number;
@@ -295,7 +394,7 @@ export interface MechArt {
   sideSway?: number;
   sprite: number; // world px of every part quad (same 64px cell scale)
   /** solid-color silhouette cells, drawn under all parts as the outer rim */
-  sil: { leg: UVRect; base: UVRect; body: UVRect; gun?: UVRect };
+  sil: { leg: UVRect; base: UVRect; body: UVRect };
 }
 
 // stride is Mindustry's default 4 + (hitSize - 8) / 2.1 world units; gun
@@ -306,33 +405,19 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     leg: UV_DAGGER_LEG,
     base: UV_DAGGER_BASE,
     body: UV_DAGGER_BODY,
-    gun: UV_LARGE_WEAPON,
-    gunX: 4 * MU,
-    gunY: 2 * MU,
+    guns: [{ uv: UV_LARGE_WEAPON, sil: UV_LARGE_WEAPON_SIL, x: 4 * MU, y: 2 * MU, top: false }],
     stride: 4 * MU,
     sprite: UNIT_SPRITE,
-    sil: {
-      leg: UV_DAGGER_LEG_SIL,
-      base: UV_DAGGER_BASE_SIL,
-      body: UV_DAGGER_BODY_SIL,
-      gun: UV_LARGE_WEAPON_SIL,
-    },
+    sil: { leg: UV_DAGGER_LEG_SIL, base: UV_DAGGER_BASE_SIL, body: UV_DAGGER_BODY_SIL },
   },
   mace: {
     leg: UV_MACE_LEG,
     base: UV_MACE_BASE,
     body: UV_MACE_BODY,
-    gun: UV_FLAMETHROWER,
-    gunX: 5 * MU,
-    gunY: 0,
+    guns: [{ uv: UV_FLAMETHROWER, sil: UV_FLAMETHROWER_SIL, x: 5 * MU, y: 0, top: false }],
     stride: (4 + (10 - 8) / 2.1) * MU,
     sprite: UNIT_SPRITE,
-    sil: {
-      leg: UV_MACE_LEG_SIL,
-      base: UV_MACE_BASE_SIL,
-      body: UV_MACE_BODY_SIL,
-      gun: UV_FLAMETHROWER_SIL,
-    },
+    sil: { leg: UV_MACE_LEG_SIL, base: UV_MACE_BASE_SIL, body: UV_MACE_BODY_SIL },
   },
   // artillery weapon x=9 y=1, mirrored; mechFrontSway 0.55 is 5.5x the
   // default — the heavy visibly lumbers nose-first with every stride
@@ -340,18 +425,35 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     leg: UV_FORTRESS_LEG,
     base: UV_FORTRESS_BASE,
     body: UV_FORTRESS_BODY,
-    gun: UV_ARTILLERY,
-    gunX: 9 * MU,
-    gunY: 1 * MU,
+    guns: [{ uv: UV_ARTILLERY, sil: UV_ARTILLERY_SIL, x: 9 * MU, y: 1 * MU, top: false }],
     stride: (4 + (13 - 8) / 2.1) * MU,
     frontSway: 0.55 * MU,
     sprite: UNIT_SPRITE * 2,
-    sil: {
-      leg: UV_FORTRESS_LEG_SIL,
-      base: UV_FORTRESS_BASE_SIL,
-      body: UV_FORTRESS_BODY_SIL,
-      gun: UV_ARTILLERY_SIL,
-    },
+    sil: { leg: UV_FORTRESS_LEG_SIL, base: UV_FORTRESS_BASE_SIL, body: UV_FORTRESS_BODY_SIL },
+  },
+  /**
+   * The T4: the first hull on the roster carrying more than one kind of
+   * gun. scepter-weapon x=16 y=1 rides UNDER the body like every mech gun
+   * before it; the two scepter-mount turrets (x=8.5, y=6 and y=-7) leave
+   * `top` at its default and sit ON it — which is the whole reason
+   * MechArt.guns is a list and pushMech sorts by that flag.
+   *
+   * mechFrontSway 1 is ten times the stock lean: at 0.36 px/tick it plants
+   * one foot at a time and the hull pitches forward onto each of them.
+   */
+  scepter: {
+    leg: UV_SCEPTER_LEG,
+    base: UV_SCEPTER_BASE,
+    body: UV_SCEPTER_BODY,
+    guns: [
+      { uv: UV_SCEPTER_WEAPON, sil: UV_SCEPTER_WEAPON_SIL, x: 16 * MU, y: 1 * MU, top: false },
+      { uv: UV_SCEPTER_MOUNT, sil: UV_SCEPTER_MOUNT_SIL, x: 8.5 * MU, y: 6 * MU, top: true },
+      { uv: UV_SCEPTER_MOUNT, sil: UV_SCEPTER_MOUNT_SIL, x: 8.5 * MU, y: -7 * MU, top: true },
+    ],
+    stride: (4 + (22 - 8) / 2.1) * MU,
+    frontSway: 1 * MU,
+    sprite: UNIT_SPRITE * 4,
+    sil: { leg: UV_SCEPTER_LEG_SIL, base: UV_SCEPTER_BASE_SIL, body: UV_SCEPTER_BODY_SIL },
   },
   // support T1: heal-weapon x=4.5 mirrored, top=false so it rides under the
   // body like the dagger's. hitSize 8 gives it the dagger's 4-unit stride
@@ -359,34 +461,54 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     leg: UV_NOVA_LEG,
     base: UV_NOVA_BASE,
     body: UV_NOVA_BODY,
-    gun: UV_HEAL_WEAPON,
-    gunX: 4.5 * MU,
-    gunY: 0,
+    guns: [{ uv: UV_HEAL_WEAPON, sil: UV_HEAL_WEAPON_SIL, x: 4.5 * MU, y: 0, top: false }],
     stride: 4 * MU,
     sprite: UNIT_SPRITE,
-    sil: {
-      leg: UV_NOVA_LEG_SIL,
-      base: UV_NOVA_BASE_SIL,
-      body: UV_NOVA_BODY_SIL,
-      gun: UV_HEAL_WEAPON_SIL,
-    },
+    sil: { leg: UV_NOVA_LEG_SIL, base: UV_NOVA_BASE_SIL, body: UV_NOVA_BODY_SIL },
   },
   // support T2: heal-shotgun-weapon x=5 y=0.5, mirrored and under the body
   pulsar: {
     leg: UV_PULSAR_LEG,
     base: UV_PULSAR_BASE,
     body: UV_PULSAR_BODY,
-    gun: UV_HEAL_SHOTGUN,
-    gunX: 5 * MU,
-    gunY: 0.5 * MU,
+    guns: [{ uv: UV_HEAL_SHOTGUN, sil: UV_HEAL_SHOTGUN_SIL, x: 5 * MU, y: 0.5 * MU, top: false }],
     stride: (4 + (11 - 8) / 2.1) * MU,
     sprite: UNIT_SPRITE,
-    sil: {
-      leg: UV_PULSAR_LEG_SIL,
-      base: UV_PULSAR_BASE_SIL,
-      body: UV_PULSAR_BODY_SIL,
-      gun: UV_HEAL_SHOTGUN_SIL,
-    },
+    sil: { leg: UV_PULSAR_LEG_SIL, base: UV_PULSAR_BASE_SIL, body: UV_PULSAR_BODY_SIL },
+  },
+  // support T3: beam-weapon x=6.5, top=false, and mechFrontSway 0.55 — the
+  // same nose-first lumber the fortress walks with. hitSize 13 gives it the
+  // heavy's stride, which reads right under a bubble this wide
+  quasar: {
+    leg: UV_QUASAR_LEG,
+    base: UV_QUASAR_BASE,
+    body: UV_QUASAR_BODY,
+    guns: [{ uv: UV_BEAM_WEAPON, sil: UV_BEAM_WEAPON_SIL, x: 6.5 * MU, y: 0, top: false }],
+    stride: (4 + (13 - 8) / 2.1) * MU,
+    frontSway: 0.55 * MU,
+    sprite: UNIT_SPRITE * 2,
+    sil: { leg: UV_QUASAR_LEG_SIL, base: UV_QUASAR_BASE_SIL, body: UV_QUASAR_BODY_SIL },
+  },
+  /**
+   * The support T4. Its main gun has NO sprite at all: Mindustry's
+   * Weapon("vela-weapon") finds no such region and Weapon.draw skips a
+   * region it cannot find, so the plasma cannon you see is painted into
+   * the hull itself. What is left to bolt on is the pair of repair-beam
+   * pods (x=11, y=-7.5), and those ride ON the body like the scepter's
+   * mounts rather than under it.
+   *
+   * mechFrontSway 1 matches the scepter's ten-times-stock lean, on a hull
+   * that walks even slower — it plants each foot and rocks over it.
+   */
+  vela: {
+    leg: UV_VELA_LEG,
+    base: UV_VELA_BASE,
+    body: UV_VELA_BODY,
+    guns: [{ uv: UV_REPAIR_BEAM, sil: UV_REPAIR_BEAM_SIL, x: 11 * MU, y: -7.5 * MU, top: true }],
+    stride: (4 + (24 - 8) / 2.1) * MU,
+    frontSway: 1 * MU,
+    sprite: UNIT_SPRITE * 4,
+    sil: { leg: UV_VELA_LEG_SIL, base: UV_VELA_BASE_SIL, body: UV_VELA_BODY_SIL },
   },
   // no gun sprite — its Weapon fires only via shootOnDeath. mechSideSway
   // 0.25 is under half the default: it scuttles rather than swaggers
@@ -394,16 +516,11 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     leg: UV_CRAWLER_LEG,
     base: UV_CRAWLER_BASE,
     body: UV_CRAWLER_BODY,
-    gunX: 0,
-    gunY: 0,
+    guns: [],
     stride: 4 * MU,
     sideSway: 0.25 * MU,
     sprite: UNIT_SPRITE,
-    sil: {
-      leg: UV_CRAWLER_LEG_SIL,
-      base: UV_CRAWLER_BASE_SIL,
-      body: UV_CRAWLER_BODY_SIL,
-    },
+    sil: { leg: UV_CRAWLER_LEG_SIL, base: UV_CRAWLER_BASE_SIL, body: UV_CRAWLER_BODY_SIL },
   },
 };
 
@@ -426,7 +543,15 @@ export interface LegArt {
   body: UVRect;
   /** Mindustry baseRegion, the plate the legs mount to; spiroct has none */
   base?: UVRect;
-  joint: UVRect;
+  /** Mindustry jointRegion, the cap over the KNEE — arkyid has none, and
+   * its elbow is left as the bare overlap of the two segments */
+  joint?: UVRect;
+  /**
+   * Mindustry baseJointRegion, a cap over the leg's MOUNT rather than its
+   * knee. It is drawn after every leg, so it covers all six shoulders at
+   * once instead of being buried under the next leg round the ring.
+   */
+  baseJoint?: UVRect;
   foot: UVRect;
   /** the two segments, mount -> joint -> foot, each stretched between its
    * endpoints; the cell is the art's exact rect (see the UV note) */
@@ -437,11 +562,12 @@ export interface LegArt {
   legStroke: number;
   legBaseStroke: number;
   guns: readonly LegGun[];
-  /** world px of the body/base/gun quads (128px cells) */
+  /** world px of the body/base/gun quads — the cell size those parts are
+   * packed at, times the sheet's 0.625 world px per native px */
   sprite: number;
-  /** world px of the joint and foot quads (64px cells) */
+  /** the same for the joint and foot quads, which ride a smaller cell */
   small: number;
-  sil: { body: UVRect; base?: UVRect; joint: UVRect; foot: UVRect };
+  sil: { body: UVRect; base?: UVRect; joint?: UVRect; baseJoint?: UVRect; foot: UVRect };
 }
 
 export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
@@ -483,6 +609,38 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
     sprite: UNIT_SPRITE * 2,
     small: UNIT_SPRITE,
     sil: { body: UV_SPIROCT_BODY_SIL, joint: UV_SPIROCT_JOINT_SIL, foot: UV_SPIROCT_FOOT_SIL },
+  },
+  /**
+   * The crawler line's T4 — the same six-leg frame as the spiroct at more
+   * than twice the reach, and the first unit on the roster whose knee has
+   * no cap: arkyid ships an arkyid-joint-base instead, a shoulder plate
+   * drawn over all six MOUNTS once every leg is down.
+   *
+   * Its guns are the spiroct's sap weapon three times over (x=4/9/14 down
+   * the flank, each mirrored) topped by one large purple artillery mount
+   * at x=9, y=-7 — eight gun quads, where the spiroct carries four.
+   */
+  arkyid: {
+    body: UV_ARKYID_BODY,
+    baseJoint: UV_ARKYID_JOINT_BASE,
+    foot: UV_ARKYID_FOOT,
+    leg: UV_ARKYID_LEG,
+    legBase: UV_ARKYID_LEG_BASE,
+    legStroke: 56 * PX,
+    legBaseStroke: 64 * PX,
+    guns: [
+      { uv: UV_ARKYID_WEAPON, sil: UV_ARKYID_WEAPON_SIL, x: 4 * MU, y: 8 * MU, top: true },
+      { uv: UV_ARKYID_WEAPON, sil: UV_ARKYID_WEAPON_SIL, x: 9 * MU, y: 6 * MU, top: true },
+      { uv: UV_ARKYID_WEAPON, sil: UV_ARKYID_WEAPON_SIL, x: 14 * MU, y: 0, top: true },
+      { uv: UV_ARKYID_MOUNT, sil: UV_ARKYID_MOUNT_SIL, x: 9 * MU, y: -7 * MU, top: true },
+    ],
+    sprite: UNIT_SPRITE * 4,
+    small: UNIT_SPRITE * 2,
+    sil: {
+      body: UV_ARKYID_BODY_SIL,
+      baseJoint: UV_ARKYID_JOINT_BASE_SIL,
+      foot: UV_ARKYID_FOOT_SIL,
+    },
   },
 };
 
@@ -556,6 +714,26 @@ const SPRITES = {
   pulsarBase: "/mindustry/sprites/units/pulsar-base.png",
   pulsarLeg: "/mindustry/sprites/units/pulsar-leg.png",
   healShotgun: "/mindustry/sprites/units/weapons/heal-shotgun-weapon.png",
+  quasar: "/mindustry/sprites/units/quasar.png",
+  quasarBase: "/mindustry/sprites/units/quasar-base.png",
+  quasarLeg: "/mindustry/sprites/units/quasar-leg.png",
+  beamWeapon: "/mindustry/sprites/units/weapons/beam-weapon.png",
+  scepter: "/mindustry/sprites/units/scepter.png",
+  scepterBase: "/mindustry/sprites/units/scepter-base.png",
+  scepterLeg: "/mindustry/sprites/units/scepter-leg.png",
+  scepterWeapon: "/mindustry/sprites/units/weapons/scepter-weapon.png",
+  scepterMount: "/mindustry/sprites/units/weapons/scepter-mount.png",
+  vela: "/mindustry/sprites/units/vela.png",
+  velaBase: "/mindustry/sprites/units/vela-base.png",
+  velaLeg: "/mindustry/sprites/units/vela-leg.png",
+  repairBeam: "/mindustry/sprites/units/weapons/repair-beam-weapon-center-large.png",
+  arkyid: "/mindustry/sprites/units/arkyid.png",
+  arkyidFoot: "/mindustry/sprites/units/arkyid-foot.png",
+  arkyidJointBase: "/mindustry/sprites/units/arkyid-joint-base.png",
+  arkyidLeg: "/mindustry/sprites/units/arkyid-leg.png",
+  arkyidLegBase: "/mindustry/sprites/units/arkyid-leg-base.png",
+  purpleMount: "/mindustry/sprites/units/weapons/large-purple-mount.png",
+  antumbra: "/mindustry/sprites/units/antumbra.png",
   spawnPad: `${ENV}/dark-panel-2.png`,
   towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
   towerBase1: "/mindustry/sprites/blocks/turrets/bases/block-1.png",
@@ -927,6 +1105,70 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   drawFacingRight(c, silhouetted(img.pulsarBase), 704, 672, 48);
   drawFacingRight(c, silhouetted(img.pulsar), 832, 672, 68, 58);
   drawFacingRight(c, silhouetted(img.healShotgun), 960, 672, 50);
+  // quasar's four parts on the 128px row (see the UV note): each 80x80
+  // source at native size, so it keeps the 0.625 world-px-per-native-px
+  // every other unit draws at
+  drawFacingRight(c, antialiased(img.quasarLeg), 64, 1728, 80);
+  drawFacingRight(c, antialiased(img.quasarBase), 192, 1728, 80);
+  drawFacingRight(c, antialiased(img.quasar), 320, 1728, 80);
+  drawFacingRight(c, antialiased(img.beamWeapon), 448, 1728, 80);
+  drawFacingRight(c, silhouetted(img.quasarLeg), 576, 1728, 80);
+  drawFacingRight(c, silhouetted(img.quasarBase), 704, 1728, 80);
+  drawFacingRight(c, silhouetted(img.quasar), 832, 1728, 80);
+  drawFacingRight(c, silhouetted(img.beamWeapon), 960, 1728, 80);
+
+  // scepter parts on the T4 band's 256px cells (see the UV note): each
+  // source at native size, so it keeps the 0.625 world px per native px
+  // every other unit draws at
+  drawFacingRight(c, antialiased(img.scepter), 128, 2176, 170, 140);
+  drawFacingRight(c, silhouetted(img.scepter), 384, 2176, 170, 140);
+  drawFacingRight(c, antialiased(img.scepterLeg), 640, 2176, 128);
+  drawFacingRight(c, silhouetted(img.scepterLeg), 896, 2176, 128);
+  drawFacingRight(c, antialiased(img.scepterBase), 128, 2432, 128);
+  drawFacingRight(c, silhouetted(img.scepterBase), 384, 2432, 128);
+  drawFacingRight(c, antialiased(img.scepterWeapon), 640, 2432, 56, 102);
+  drawFacingRight(c, silhouetted(img.scepterWeapon), 896, 2432, 56, 102);
+  drawFacingRight(c, antialiased(img.scepterMount), 128, 2688, 48);
+  drawFacingRight(c, silhouetted(img.scepterMount), 384, 2688, 48);
+
+  // vela's parts on the second T4 band, same 256px cells and same native
+  // scale. Its main gun has no sprite (see the MECH_ART note) — the pair
+  // of repair-beam pods is all there is to bolt on
+  drawFacingRight(c, antialiased(img.vela), 128, 3200, 170, 140);
+  drawFacingRight(c, silhouetted(img.vela), 384, 3200, 170, 140);
+  drawFacingRight(c, antialiased(img.velaLeg), 640, 3200, 128);
+  drawFacingRight(c, silhouetted(img.velaLeg), 896, 3200, 128);
+  drawFacingRight(c, antialiased(img.velaBase), 128, 3456, 128);
+  drawFacingRight(c, silhouetted(img.velaBase), 384, 3456, 128);
+  drawFacingRight(c, antialiased(img.repairBeam), 640, 3456, 48);
+  drawFacingRight(c, silhouetted(img.repairBeam), 896, 3456, 48);
+
+  // arkyid: hull and guns on 256px cells, the sap gun being the spiroct's
+  // own weapon sprite again — packed a second time here because a legged
+  // unit draws every gun at its own LegArt.sprite, and arkyid's is 256
+  drawFacingRight(c, antialiased(img.arkyid), 128, 3712, 128);
+  drawFacingRight(c, silhouetted(img.arkyid), 384, 3712, 128);
+  drawFacingRight(c, antialiased(img.spiroctWeapon), 640, 3712, 48, 56);
+  drawFacingRight(c, silhouetted(img.spiroctWeapon), 896, 3712, 48, 56);
+  drawFacingRight(c, antialiased(img.purpleMount), 128, 3968, 70, 97);
+  drawFacingRight(c, silhouetted(img.purpleMount), 384, 3968, 70, 97);
+  // arkyid's feet and shoulder plates on 128px cells, and the two leg
+  // SEGMENTS on the exact rects their UVs name — a stretched segment
+  // samples its cell corner to corner (see the UV note). The base joint
+  // turns with the unit, unlike a knee cap, so it is packed facing +x
+  drawFacingRight(c, antialiased(img.arkyidFoot), 576, 2624, 70);
+  drawFacingRight(c, silhouetted(img.arkyidFoot), 704, 2624, 70);
+  drawFacingRight(c, antialiased(img.arkyidJointBase), 832, 2624, 70);
+  drawFacingRight(c, silhouetted(img.arkyidJointBase), 960, 2624, 70);
+  c.drawImage(antialiased(img.arkyidLeg), 528, 2704, 56, 56);
+  c.drawImage(antialiased(img.arkyidLegBase), 640, 2700, 104, 64);
+
+  // antumbra: the same single-sprite treatment as every other flyer, at
+  // native size in a 256px cell — 216x240 is the biggest piece of art on
+  // the sheet, and it leaves only an 8px margin across its own cell
+  drawFacingRight(
+    c, antialiased(outlined(img.antumbra, UNIT_OUTLINE, UNIT_OUTLINE_R)), 640, 3968, 216, 240,
+  );
 
   // crawler parts: art then silhouettes, one flush 64px run (see UV note)
   drawFacingRight(c, antialiased(img.crawlerLeg), 480, 320, 48);
@@ -1097,12 +1339,33 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(img.towerBase1), 320, 448, 64, 64);
 
   // shrapnel triangle (320,384): white, base on the left edge, apex right;
-  // the renderer stretches and tints it into Drawf.tri shapes
+  // the renderer stretches and tints it into Drawf.tri shapes.
+  //
+  // Drawn to the cell's 2px UV inset EXACTLY, corner to corner, rather than
+  // sitting a pixel inside it. Fanning a filled polygon out of these
+  // (Renderer.fillPoly) lays neighbouring triangles slope against slope,
+  // and a slope even a texel short leaves a radial seam down every one of
+  // those joins; a texel proud leaves a doubled-alpha one instead.
   c.fillStyle = "#ffffff";
   c.beginPath();
-  c.moveTo(322, 387);
-  c.lineTo(322, 445);
-  c.lineTo(381, 416);
+  c.moveTo(322, 386);
+  c.lineTo(322, 446);
+  c.lineTo(382, 416);
+  c.closePath();
+  c.fill();
+
+  // force field hexagon (0,1792): white, vertices on the cell's 2px inset
+  // left and right edges, the flats clearing top and bottom (see the UV
+  // note). Drawn as a path like the shrapnel triangle — it is geometry,
+  // not art, so it takes neither the outline nor the antialias pass
+  c.fillStyle = "#ffffff";
+  c.beginPath();
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * TAU;
+    const hx = 128 + Math.cos(a) * 126, hy = 1792 + 128 + Math.sin(a) * 126;
+    if (k === 0) c.moveTo(hx, hy);
+    else c.lineTo(hx, hy);
+  }
   c.closePath();
   c.fill();
 
@@ -1130,7 +1393,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
  *
  * Packing is not cheap — it decodes every sprite, runs the EPX antialias
  * pass over each in JavaScript, outlines the units, and composites the lot
- * into a 1024x2048 canvas — and it depends on nothing but the sprite files,
+ * into a 1024x4096 canvas — and it depends on nothing but the sprite files,
  * so a second call can only produce a byte-identical sheet. It used to run
  * on every Game.create, which meant paying the whole cost again on every
  * level start. Now the first caller pays and everyone after shares.

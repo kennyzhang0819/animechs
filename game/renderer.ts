@@ -14,6 +14,7 @@ import {
   UV_PROJ,
   UV_RING,
   UV_FUSE,
+  UV_HEX,
   UV_SCATTER,
   UV_FLOOR_EDGES,
   UV_SHELL,
@@ -35,6 +36,7 @@ import {
 import {
   BASE,
   CELL,
+  clamp,
   COLS,
   H,
   HP_TINT,
@@ -45,7 +47,7 @@ import {
   TOWERS,
   W,
 } from "./constants";
-import { UNIT_KINDS, UNIT_STATS, type LegSpec } from "./levels";
+import { UNIT_KINDS, UNIT_STATS, type ForceFieldSpec, type LegSpec } from "./levels";
 import { MAX_LEGS, type Sim } from "./sim";
 import { WALL_PINE, type Terrain } from "./terrain";
 import { FxKind, type Effect, type TowerKind } from "./types";
@@ -83,6 +85,20 @@ const BULLET_SIZE: Record<TowerKind, readonly [number, number]> = {
 const MU = CELL / 8;
 /** Pal.heal #98ffa9 */
 const PAL_HEAL = [0x98 / 255, 0xff / 255, 0xa9 / 255] as const;
+/**
+ * Mindustry's Floor.mapColor — what the sprite packer sets to the average
+ * colour of a floor's own texture, and the tint every walk and landing
+ * effect is fired in. These are those averages, measured off the very PNGs
+ * the atlas is packed from, one per floor GROUP (UV_FLOORS carries three
+ * variants of each, and they average alike).
+ */
+const FLOOR_DUST: readonly RGB[] = [
+  [0x6e / 255, 0xab / 255, 0x5e / 255], // grass
+  [0x56 / 255, 0x56 / 255, 0x5c / 255], // stone
+  [0x67 / 255, 0x40 / 255, 0x36 / 255], // dirt
+  [0xd8 / 255, 0xb2 / 255, 0x90 / 255], // sand
+  [0x3f / 255, 0x3c / 255, 0x3c / 255], // darksand
+];
 /** Pal.lightFlame #ffdd55, Pal.darkFlame #db401c, and Arc's Color.gray */
 const LIGHT_FLAME = [0xff / 255, 0xdd / 255, 0x55 / 255] as const;
 const DARK_FLAME = [0xdb / 255, 0x40 / 255, 0x1c / 255] as const;
@@ -129,6 +145,88 @@ const rng = (): number => {
  * dead" telling apart at a glance.
  */
 const SHIELD_COL = [0xff / 255, 0xd3 / 255, 0x7f / 255] as const;
+/**
+ * Mindustry's shield look is a post-process, not geometry. Everything on
+ * Layer.shields is filled SOLID into an offscreen buffer cleared to
+ * transparent, and the buffer is then blitted through shaders/shield.frag,
+ * which throws the fill away and keeps three things: a saturated rim two
+ * world units outside the outline (its edge detect fires on transparent
+ * pixels whose neighbour is opaque), an interior knocked down to a flat
+ * 0.18 alpha, and a wavy diagonal hatch brightening what it crosses by
+ * 1.65 — the whole thing sampled through a travelling sine wobble, which
+ * is what makes the outline ripple.
+ *
+ * Doing it any other way costs the two behaviours that make it read as a
+ * FIELD rather than a decal. The wobble is a distortion of the sampling,
+ * so it moves the rim and the hatch together instead of each separately.
+ * And because every carrier fills the same buffer, the edge detect runs on
+ * the UNION: two overlapping bubbles lose the wall between them and come
+ * out as one shape under one rim, exactly as in the original.
+ *
+ * So this does what Mindustry does — see Renderer.blitShields.
+ */
+const SHIELD_VS = `#version 300 es
+layout(location=0) in vec2 aCorner;
+out vec2 vUV;
+void main() {
+  vUV = aCorner + 0.5;
+  gl_Position = vec4(aCorner * 2.0, 0.0, 1.0);
+}`;
+
+/**
+ * shaders/shield.frag, ported. The original works in Mindustry world units
+ * (its `coords` are camera-space world coordinates), so the buffer's rect
+ * is handed over in those units and every constant below is the original's
+ * — the 3.0 and 20.0 of the wobble, the 2-unit edge reach, the 10-and-2
+ * hatch period, 1.65, 0.18.
+ *
+ * Two deliberate differences. Mindustry's y runs up and this game's runs
+ * down, so the row is flipped back when reading world coordinates out of
+ * the texture coordinate; the sine patterns are symmetric, so this only
+ * decides which way the hatch leans. And the output is premultiplied,
+ * matching this renderer's blend func rather than Arc's.
+ */
+const SHIELD_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uTex;
+uniform vec4 uCam;    // camera x, y, w, h in Mindustry world units
+uniform vec2 uInv;    // 1 / (w, h): a UV step of one world unit
+uniform float uTime;  // Mindustry ticks
+uniform float uDp;
+in vec2 vUV;
+out vec4 o;
+const float ALPHA = 0.18;
+const float EDGE = 2.0;
+void main() {
+  vec2 T = vUV;
+  vec2 coords = vec2(T.x * uCam.z + uCam.x, (1.0 - T.y) * uCam.w + uCam.y);
+  T += vec2(sin(coords.y / 3.0 + uTime / 20.0), sin(coords.x / 3.0 + uTime / 20.0)) * uInv;
+  vec4 color = texture(uTex, T);
+  vec4 maxed = max(max(max(
+    texture(uTex, T + vec2(0.0, EDGE) * uInv),
+    texture(uTex, T + vec2(0.0, -EDGE) * uInv)),
+    texture(uTex, T + vec2(EDGE, 0.0) * uInv)),
+    texture(uTex, T + vec2(-EDGE, 0.0) * uInv));
+  if (color.a < 0.9 && maxed.a > 0.9) {
+    // maxed.a * 100 saturates: the rim is drawn at full opacity
+    o = vec4(maxed.rgb, 1.0);
+  } else if (color.a > 0.0) {
+    vec3 rgb = color.rgb;
+    if (mod(coords.x / uDp + coords.y / uDp
+          + sin(coords.x / uDp / 5.0) * 3.0
+          + sin(coords.y / uDp / 5.0) * 3.0
+          + uTime / 4.0, 10.0) < 2.0) rgb *= 1.65;
+    o = vec4(rgb * ALPHA, ALPHA);
+  } else {
+    o = vec4(0.0);
+  }
+}`;
+
+/** Shaders.ShieldShader's u_dp, Scl.scl(1) — the UI scale, 1 at 1x */
+const SHIELD_DP = 1;
+/** the scene's clear colour, #0A101F — the shield pass borrows the clear
+ * for its own buffer and has to hand this back */
+const CLEAR = [0.039, 0.063, 0.122] as const;
 /** Arc Interp.pow3Out, the curve behind EffectContainer.finpow() */
 const FIN_POW = (f: number): number => 1 - Math.pow(1 - f, 3);
 /**
@@ -147,6 +245,8 @@ const KIND_MECH = UNIT_KINDS.map((k) => MECH_ART[k] ?? null);
 // the legged pair (atrax, spiroct): part art and the gait that moves it
 const KIND_LEG = UNIT_KINDS.map((k) => LEG_ART[k] ?? null);
 const KIND_GAIT = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
+/** the force field each kind stands inside, null for everything else */
+const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
 const TAU = Math.PI * 2;
 // Mindustry throws every shadow along (shadowTX, shadowTY) = (-12, -13)
 // world units times the caster's elevation. This game's shadows fall the
@@ -253,6 +353,30 @@ export class Renderer {
   // cannot live in the NEAREST-filtered sprite atlas
   private readonly shadowTex: WebGLTexture;
   private readonly dyn: Batch;
+  /**
+   * the force-field fills for this frame. They never reach the screen
+   * directly — they are drawn into the shield buffer and blitted through
+   * SHIELD_FS, which is what merges overlapping bubbles into one shape
+   */
+  private readonly shields: Batch;
+  private readonly shieldProg: WebGLProgram;
+  private readonly uShieldCam: WebGLUniformLocation;
+  private readonly uShieldInv: WebGLUniformLocation;
+  private readonly uShieldTime: WebGLUniformLocation;
+  private readonly uShieldDp: WebGLUniformLocation;
+  /** the fullscreen quad the blit runs over, on the shared corner VBO */
+  private readonly blitVao: WebGLVertexArrayObject;
+  private shieldFbo: WebGLFramebuffer | null = null;
+  private shieldTex: WebGLTexture | null = null;
+  private shieldW = 0;
+  private shieldH = 0;
+  /**
+   * did the buffer come up? A driver that will not give us a complete
+   * framebuffer gets Mindustry's own no-shader path instead (see
+   * ForceProjector.drawShield with animateShields off): a stroked outline
+   * over a faint fill, no wobble and no merging, but a visible field
+   */
+  private shieldReady = true;
   // the core of the terrain currently in the static batches; renderTerrain
   // (the editor) has no sim to ask, so rebuildTerrain leaves it here
   private core = { ...BASE };
@@ -268,7 +392,7 @@ export class Renderer {
     if (!gl) throw new Error("WebGL2 is required");
     this.gl = gl;
 
-    this.prog = this.link();
+    this.prog = this.link(VS, FS);
     const need = (name: string): WebGLUniformLocation => {
       const loc = gl.getUniformLocation(this.prog, name);
       if (!loc) throw new Error(`${name} uniform missing`);
@@ -293,9 +417,37 @@ export class Renderer {
     // wall tiles + (editor) spawn overlays + decor/pine props
     this.walls = this.makeBatch(NCELLS * 2 + 2048);
     this.shadow = this.makeBatch(4);
-    // a walking mech is 6 quads (2 legs, chassis, 2 guns, body)
-    // mechs draw twice (silhouette rim under, art over) — up to 12 quads each
+    // a swarm budget, not a worst case: 12 quads is a walking mech with one
+    // mirrored gun drawn twice (silhouette rim under, art over), which is
+    // what MAX_UNITS of anything is ever actually made of. The heavies cost
+    // more — a scepter's three mounts make 20, a six-legged spiroct closer
+    // to 50 — and a field that was somehow ALL heavies would run this dry;
+    // they arrive in tens, among thousands of the cheap kinds that do not
     this.dyn = this.makeBatch(MAX_UNITS * 12 + 2048);
+    // one quad per hexagonal bubble; a polygon of any other side count
+    // takes one per side, so this holds a wave's worth either way
+    this.shields = this.makeBatch(2048);
+
+    this.shieldProg = this.link(SHIELD_VS, SHIELD_FS);
+    const needIn = (name: string): WebGLUniformLocation => {
+      const loc = gl.getUniformLocation(this.shieldProg, name);
+      if (!loc) throw new Error(`${name} uniform missing`);
+      return loc;
+    };
+    this.uShieldCam = needIn("uCam");
+    this.uShieldInv = needIn("uInv");
+    this.uShieldTime = needIn("uTime");
+    this.uShieldDp = needIn("uDp");
+    // the blit is one quad off the shared corner VBO — no instance data,
+    // so it takes attribute 0 alone
+    const bvao = gl.createVertexArray();
+    if (!bvao) throw new Error("blit vao alloc failed");
+    this.blitVao = bvao;
+    gl.bindVertexArray(bvao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadVBO);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
 
     const stex = gl.createTexture();
     if (!stex) throw new Error("shadow texture alloc failed");
@@ -323,10 +475,10 @@ export class Renderer {
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.clearColor(0.039, 0.063, 0.122, 1); // #0A101F
+    gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1); // #0A101F
   }
 
-  private link(): WebGLProgram {
+  private link(vs: string, fs: string): WebGLProgram {
     const gl = this.gl;
     const sh = (type: number, src: string): WebGLShader => {
       const s = gl.createShader(type);
@@ -339,8 +491,8 @@ export class Renderer {
     };
     const p = gl.createProgram();
     if (!p) throw new Error("program alloc failed");
-    gl.attachShader(p, sh(gl.VERTEX_SHADER, VS));
-    gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FS));
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, vs));
+    gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
     gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS))
       throw new Error(gl.getProgramInfoLog(p) ?? "program link failed");
@@ -405,15 +557,18 @@ export class Renderer {
     const ox = -sb * sway + cb * fsway;
     const oy = cb * sway + sb * fsway;
     const cr = Math.cos(rot), sr = Math.sin(rot);
-    // the six quads' shared geometry, legs → base → guns → body; shade is
-    // the planted-leg darkening, applied on the art pass only
+    // the assembly in draw order: legs → base → under-slung guns → body →
+    // guns that ride ON the body (Weapon.top). Each entry carries its own
+    // art and silhouette cells, which is what lets a hull mix gun sprites.
+    // `dk` is the planted-leg darkening, applied on the art pass only
     const parts: Array<
-      readonly [keyof MechArt["sil"], number, number, number, number, number, number]
+      readonly [UVRect, UVRect, number, number, number, number, number, number]
     > = [];
     for (let side = -1; side <= 1; side += 2) {
       const dk = 1 - Math.max(0, (side * ext) / m.stride) * LEG_SHADE;
       parts.push([
-        "leg",
+        m.leg,
+        m.sil.leg,
         x + cb * ext * side,
         y + sb * ext * side,
         s * (1 - Math.max(-lift * side, 0) * 0.5),
@@ -422,31 +577,35 @@ export class Renderer {
         dk,
       ]);
     }
-    parts.push(["base", x, y, s, s, brot, 1]);
-    if (m.gun) {
-      for (let side = -1; side <= 1; side += 2) {
-        parts.push([
-          "gun",
-          x + ox + cr * m.gunY - sr * m.gunX * side,
-          y + oy + sr * m.gunY + cr * m.gunX * side,
-          s,
-          s * side, // mirrored mount, like Weapon.flipSprite
-          rot,
-          1,
-        ]);
+    parts.push([m.base, m.sil.base, x, y, s, s, brot, 1]);
+    const gunParts = (top: boolean): void => {
+      for (const g of m.guns) {
+        if (g.top !== top) continue;
+        for (let side = -1; side <= 1; side += 2) {
+          parts.push([
+            g.uv,
+            g.sil,
+            x + ox + cr * g.y - sr * g.x * side,
+            y + oy + sr * g.y + cr * g.x * side,
+            s,
+            s * side, // mirrored mount, like Weapon.flipSprite
+            rot,
+            1,
+          ]);
+        }
       }
-    }
-    parts.push(["body", x + ox, y + oy, s, s, rot, 1]);
+    };
+    gunParts(false);
+    parts.push([m.body, m.sil.body, x + ox, y + oy, s, s, rot, 1]);
+    gunParts(true);
     // silhouette pass: every part as a solid dilated shape, drawn first so
     // the art covers all of it but a single rim around the assembly — the
     // outer border without a line at every seam of the walking mech
-    for (const [k, px, py, w, h, r] of parts) {
-      const uvr = m.sil[k]; // gun entries exist only when the art does
-      if (uvr) this.push(b, px, py, w, h, r, uvr, tint[0], tint[1], tint[2], 1);
+    for (const [, sil, px, py, w, h, r] of parts) {
+      this.push(b, px, py, w, h, r, sil, tint[0], tint[1], tint[2], 1);
     }
-    for (const [k, px, py, w, h, r, dk] of parts) {
-      const uvr = m[k];
-      if (uvr) this.push(b, px, py, w, h, r, uvr, tint[0] * dk, tint[1] * dk, tint[2] * dk, 1);
+    for (const [uvr, , px, py, w, h, r, dk] of parts) {
+      this.push(b, px, py, w, h, r, uvr, tint[0] * dk, tint[1] * dk, tint[2] * dk, 1);
     }
   }
 
@@ -510,15 +669,35 @@ export class Renderer {
           // bends the way its art was drawn
           const flip = k >= n / 2 ? 1 : -1;
           this.pushSeg(b, mx, my, jx, jy, art.leg, art.legStroke * flip, tint);
-          // the lower segment is pulled back along itself by legExtension
-          // so its end covers the knee (jointless legs need it; these do not)
+          // the lower segment starts legExtension PAST the knee, so the
+          // sprite covers the joint instead of butting up against it.
+          // Its MAGNITUDE is all that counts: Mindustry writes the offset
+          // as `.inv().setLength(legExtension)`, and Arc's setLength goes
+          // through setLength2(len * len) — a negative length comes back
+          // out positive. arkyid's -15 is a +15 offset in the real game
           const dx = jx - fx, dy = jy - fy;
           const d = Math.hypot(dx, dy) || 1;
-          const ex = (dx / d) * L.extension, ey = (dy / d) * L.extension;
+          const ext = Math.abs(L.extension);
+          const ex = (dx / d) * ext, ey = (dy / d) * ext;
           this.pushSeg(b, jx + ex, jy + ey, fx, fy, art.legBase, art.legBaseStroke * flip, tint);
         }
-        // the knee cap is never rotated — Mindustry draws it upright
-        this.push(b, jx, jy, sm, sm, 0, painted ? art.joint : art.sil.joint, tr, tg, tb, 1);
+        // the knee cap is never rotated — Mindustry draws it upright. Not
+        // every legged unit has one: arkyid leaves its elbow as the bare
+        // overlap of the two segments and caps the shoulder instead
+        const joint = painted ? art.joint : art.sil.joint;
+        if (joint) this.push(b, jx, jy, sm, sm, 0, joint, tr, tg, tb, 1);
+      }
+      // the shoulder plates go on after EVERY leg (UnitType.drawLegs draws
+      // base joints in their own pass) — one drawn leg by leg would be
+      // buried by the next leg round the ring. They ride the CHASSIS
+      // angle, like the mount ring they cap and unlike the body over them
+      const baseJoint = painted ? art.baseJoint : art.sil.baseJoint;
+      if (baseJoint) {
+        for (let k = 0; k < n; k++) {
+          const ang = brot + (TAU / n) * k + Math.PI / n;
+          this.push(b, x + Math.cos(ang) * L.baseOffset, y + Math.sin(ang) * L.baseOffset,
+            sm, sm, brot, baseJoint, tr, tg, tb, 1);
+        }
       }
       // the plate the legs hang off turns with the chassis, the body and its
       // guns with the unit's own facing. A gun mount is mirrored to both
@@ -780,6 +959,12 @@ export class Renderer {
 
     const dyn = this.dyn;
     dyn.n = 0;
+    this.shields.n = 0;
+    // settled before the fills are gathered, because it decides what they
+    // ARE: solid shapes for the shader to work on, or the finished
+    // no-shader drawing
+    const buffered = this.ensureShieldTarget(this.canvas.width, this.canvas.height);
+    this.drawForceFields(sim, buffered);
     for (const t of sim.towers) {
       const sz = TOWERS[t.kind].size;
       const px = sz * CELL;
@@ -787,7 +972,7 @@ export class Renderer {
       this.push(dyn, t.x, t.y, px, px, 0, base, 1, 1, 1, 1);
       this.push(dyn, t.x, t.y, px, px, t.angle, UV_TURRETS[t.kind], 1, 1, 1, 1);
     }
-    const { upx, upy, uvx, uvy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
+    const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
     const { ushield, ushieldAlpha, urad } = sim;
     // painter's order in three passes: ground units, then flyer shadows on
     // top of the crowd, then the flyers themselves above everything
@@ -798,13 +983,15 @@ export class Renderer {
         if (KIND_FLYING[k] !== wantFly) continue;
         const usz = KIND_SPRITE[k];
         if (pass === 1) {
-          const rot = Math.atan2(uvy[i], uvx[i]);
-          this.push(dyn, upx[i] + SHADOW_OFF, upy[i] + SHADOW_OFF, usz, usz, rot, KIND_UV[k], 0, 0, 0, SHADOW_ALPHA);
+          this.push(dyn, upx[i] + SHADOW_OFF, upy[i] + SHADOW_OFF, usz, usz, urot[i], KIND_UV[k], 0, 0, 0, SHADOW_ALPHA);
           continue;
         }
         // UnitType.drawShield: a crux-red halo at hitSize * 1.3, its opacity
-        // spiking to full on a hit or a fresh pulse and fading out after
-        if (ushield[i] > 0.0001) {
+        // spiking to full on a hit or a fresh pulse and fading out after.
+        // A force field carrier sets drawShields = false — its pool is
+        // already on screen as the bubble, and a halo under it would read
+        // as a second, smaller shield
+        if (ushield[i] > 0.0001 && !KIND_FORCE[k]) {
           // UnitType.drawShield: Fill.light at hitSize * 1.3 — a disc that is
           // clear at the centre and carries the colour at its rim
           const sr = urad[i] * 2 * 1.3 * 2;
@@ -822,9 +1009,12 @@ export class Renderer {
         } else if (mech) {
           this.pushMech(dyn, mech, upx[i], upy[i], urot[i], ubrot[i], uwalk[i], tint);
         } else {
-          // flyers bank instantly along their velocity, one flat quad
-          const rot = Math.atan2(uvy[i], uvx[i]);
-          this.push(dyn, upx[i], upy[i], usz, usz, rot, KIND_UV[k], tint[0], tint[1], tint[2], 1);
+          // a flyer is one flat quad on the heading the sim turned it to.
+          // That is its own UnitType.rotateSpeed, not its velocity: the
+          // stock 5 deg/tick is close enough to instant that the light
+          // flyers read as banking with their drift, while antumbra's 1.9
+          // visibly swings the hull round after the course change
+          this.push(dyn, upx[i], upy[i], usz, usz, urot[i], KIND_UV[k], tint[0], tint[1], tint[2], 1);
         }
       }
     }
@@ -870,6 +1060,18 @@ export class Renderer {
         this.drawHitFlame(dyn, e, t);
       } else if (e.kind === FxKind.Burning) {
         this.drawBurning(dyn, e, t);
+      } else if (e.kind === FxKind.Footfall) {
+        this.drawFootfall(dyn, sim, e, t);
+      } else if (e.kind === FxKind.Absorb) {
+        // Fx.absorb: stroke(fout*2), circle(5*fout) in Pal.accent — the
+        // little pop where a shot died on the outline
+        this.strokeCircle(dyn, e.x, e.y, 5 * MU * (1 - t), (1 - t) * 2 * MU,
+          SHIELD_COL[0], SHIELD_COL[1], SHIELD_COL[2], RING_ALPHA);
+      } else if (e.kind === FxKind.ShieldBreak) {
+        // Fx.shieldBreak: stroke(fout*3), poly(sides, radius + fin) — the
+        // outline snapping outward as the bubble pops
+        this.strokePoly(dyn, e.x, e.y, e.sides ?? 6, (e.len ?? 0) + FIN_POW(t) * MU,
+          e.rot ?? 0, (1 - t) * 3 * MU, SHIELD_COL, RING_ALPHA);
       } else {
         const s = 9 + t * 30;
         this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 0.34, 0.89, 0.54, (1 - t) * 0.9);
@@ -889,6 +1091,221 @@ export class Renderer {
       1, 1, 1, 1,
     );
     this.draw(dyn, true);
+    // Layer.shields is above every one of those, the core included, and it
+    // is its own pass: gather the fills, then blit the buffer over the
+    // finished frame
+    this.blitShields(zoom, offX, offY, kPx, sim.time, buffered);
+  }
+
+  /**
+   * ForceFieldAbility.draw for every carrier standing a bubble this frame.
+   * Mindustry fills the polygon SOLID at Layer.shields and lets the shield
+   * shader make it look like a shield; this gathers the same fills, and
+   * blitShields runs them through the same shader.
+   *
+   * The fill has to be opaque: the shader finds the outline by testing the
+   * buffer's alpha against 0.9, so a translucent one has no edge to find
+   * and the bubble comes out as a flat wash with no rim at all.
+   *
+   * Without a buffer to fill, `buffered` false, this draws Mindustry's own
+   * fallback instead (ForceProjector.drawShield with animateShields off):
+   * a 1.5-unit stroked outline over a 0.09 fill, which is a plain shape on
+   * screen — no wobble, and two overlapping fields keep both their
+   * outlines rather than merging.
+   */
+  private drawForceFields(sim: Sim, buffered: boolean): void {
+    const { upx, upy, ushield, ushieldAlpha, uforceScale, ukind, n } = sim;
+    const b = this.shields;
+    for (let i = 0; i < n; i++) {
+      const spec = KIND_FORCE[ukind[i]];
+      // ForceFieldAbility.draw draws nothing at all while the pool is empty
+      if (!spec || ushield[i] <= 0) continue;
+      const rad = spec.radius * uforceScale[i];
+      if (rad < 1) continue;
+      // Draw.color(shieldColor, Color.white, clamp(alpha)): a shot landing
+      // on the field whitens the whole bubble for a few ticks. The colour
+      // rides into the buffer with the fill, so the shader's rim and hatch
+      // pick it up without knowing anything about the carrier
+      const w = Math.min(1, ushieldAlpha[i]);
+      const col: RGB = [
+        SHIELD_COL[0] + (1 - SHIELD_COL[0]) * w,
+        SHIELD_COL[1] + (1 - SHIELD_COL[1]) * w,
+        SHIELD_COL[2] + (1 - SHIELD_COL[2]) * w,
+      ];
+      if (buffered) {
+        this.fillPoly(b, upx[i], upy[i], spec.sides, rad, spec.rotation, col, 1);
+      } else {
+        this.fillPoly(b, upx[i], upy[i], spec.sides, rad, spec.rotation, col, 0.09 + 0.08 * w);
+        this.strokePoly(b, upx[i], upy[i], spec.sides, rad, spec.rotation, 1.5 * MU, col, 1);
+      }
+    }
+  }
+
+  /**
+   * Size the shield buffer to the drawing buffer, rebuilding it whenever
+   * the canvas changes. Returns false if the driver will not give us a
+   * complete framebuffer, which puts the fields on the no-shader path.
+   */
+  private ensureShieldTarget(w: number, h: number): boolean {
+    if (!this.shieldReady) return false;
+    if (this.shieldFbo && this.shieldW === w && this.shieldH === h) return true;
+    const gl = this.gl;
+    if (!this.shieldTex) this.shieldTex = gl.createTexture();
+    if (!this.shieldFbo) this.shieldFbo = gl.createFramebuffer();
+    if (!this.shieldTex || !this.shieldFbo) return (this.shieldReady = false);
+    gl.bindTexture(gl.TEXTURE_2D, this.shieldTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    // NEAREST, like Arc's FrameBuffer: the shader thresholds this texture's
+    // alpha at 0.9 to find the outline, and a filtered edge would smear
+    // that threshold into a band instead of a line
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.shieldFbo);
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.shieldTex, 0,
+    );
+    const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    if (!ok) return (this.shieldReady = false);
+    this.shieldW = w;
+    this.shieldH = h;
+    return true;
+  }
+
+  /**
+   * Mindustry's Layer.shields pass, 1:1 in shape: fill the buffer from
+   * transparent, then blit the whole thing through the shield shader
+   * (Renderer.effectBuffer.begin(Color.clear) ... blit(Shaders.shield)).
+   *
+   * Doing it in one pass over one buffer is what makes overlapping fields
+   * merge — the shader's edge detect never sees the wall between two
+   * bubbles, only the outline of everything the buffer holds.
+   *
+   * The shader reasons in Mindustry world units, so the camera rect goes
+   * over in those: the visible world is uRes/zoom px across, starting at
+   * -off/zoom, and MU px make one unit.
+   */
+  private blitShields(
+    zoom: number,
+    offX: number,
+    offY: number,
+    kPx: number,
+    time: number,
+    buffered: boolean,
+  ): void {
+    if (this.shields.n === 0) return;
+    const gl = this.gl;
+    const w = this.canvas.width, h = this.canvas.height;
+    // no buffer: the batch already holds the finished no-shader drawing,
+    // so it goes straight over the frame like any other geometry
+    if (!buffered) {
+      this.draw(this.shields, true);
+      return;
+    }
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.shieldFbo);
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1); // begin() clears with this
+    // the fills ride the sprite program under the same camera
+    gl.useProgram(this.prog);
+    gl.uniform2f(this.uRes, w / kPx, h / kPx);
+    gl.uniform1f(this.uZoom, zoom);
+    gl.uniform2f(this.uOff, offX, offY);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    this.draw(this.shields, true);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.useProgram(this.shieldProg);
+    const camW = w / kPx / zoom / MU, camH = h / kPx / zoom / MU;
+    gl.uniform4f(this.uShieldCam, -offX / zoom / MU, -offY / zoom / MU, camW, camH);
+    gl.uniform2f(this.uShieldInv, 1 / camW, 1 / camH);
+    // Shaders.ShieldShader: u_time is Time.time / dp, in ticks
+    gl.uniform1f(this.uShieldTime, (time * 60) / SHIELD_DP);
+    gl.uniform1f(this.uShieldDp, SHIELD_DP);
+    gl.bindTexture(gl.TEXTURE_2D, this.shieldTex);
+    gl.bindVertexArray(this.blitVao);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+  }
+
+  /**
+   * Arc Fill.poly: a solid regular polygon.
+   *
+   * A hexagon — every force field on the roster — is one quad off the
+   * UV_HEX cell, which is the whole point of that cell (see the UV_HEX
+   * note: joins in the fill become joins in the outline). Anything else
+   * falls back to a fan, each side one Drawf.tri with its base on the edge
+   * and its apex at the middle, since that is the only decomposition this
+   * batch can draw — every quad it takes is a rotated rectangle.
+   */
+  private fillPoly(
+    dyn: Batch,
+    cx: number,
+    cy: number,
+    sides: number,
+    radius: number,
+    rotation: number,
+    col: RGB,
+    a: number,
+  ): void {
+    if (radius <= 0.01 || a <= 0.004) return;
+    if (sides === 6) {
+      this.push(dyn, cx, cy, radius * 2, radius * 2, rotation, UV_HEX,
+        col[0], col[1], col[2], a);
+      return;
+    }
+    const step = (Math.PI * 2) / sides;
+    const apothem = radius * Math.cos(step / 2);
+    const chord = 2 * radius * Math.sin(step / 2);
+    for (let k = 0; k < sides; k++) {
+      // the bearing of this edge's midpoint — the tri points back down it
+      const ang = rotation + (k + 0.5) * step;
+      this.push(
+        dyn,
+        cx + Math.cos(ang) * (apothem / 2),
+        cy + Math.sin(ang) * (apothem / 2),
+        apothem, chord, ang + Math.PI, UV_TRI,
+        col[0], col[1], col[2], a,
+      );
+    }
+  }
+
+  /**
+   * Arc Lines.poly: the outline of a regular polygon, mitred at the
+   * corners. Each edge is one rectangle run long by half a stroke's worth
+   * of tangent so neighbours meet cleanly instead of leaving notches.
+   */
+  private strokePoly(
+    dyn: Batch,
+    cx: number,
+    cy: number,
+    sides: number,
+    radius: number,
+    rotation: number,
+    stroke: number,
+    col: RGB,
+    a: number,
+  ): void {
+    if (radius <= 0.01 || stroke <= 0.01 || a <= 0.004) return;
+    const step = (Math.PI * 2) / sides;
+    const half = step / 2;
+    const apothem = radius * Math.cos(half);
+    const len = 2 * radius * Math.sin(half) + stroke * Math.tan(half);
+    for (let k = 0; k < sides; k++) {
+      const ang = rotation + (k + 0.5) * step;
+      this.push(
+        dyn,
+        cx + Math.cos(ang) * apothem,
+        cy + Math.sin(ang) * apothem,
+        len, stroke, ang + Math.PI / 2, UV_SOLID,
+        col[0], col[1], col[2], a,
+      );
+    }
   }
 
   /**
@@ -1018,6 +1435,36 @@ export class Renderer {
         col,
         1,
       );
+    }
+  }
+
+  /**
+   * Fx.unitLandSmall, the puff a planted foot throws up: 6 motes per unit
+   * of rippleScale, flung up to 12 world units out (times that same scale)
+   * over 30 ticks, each shrinking from 3 units to nothing.
+   *
+   * Mindustry fires it in the FLOOR's own colour brightened a tenth, which
+   * is what makes a stone canyon read as grit and a meadow as clippings —
+   * so the tile under the foot is looked up per puff, not per unit.
+   */
+  private drawFootfall(dyn: Batch, sim: Sim, e: Effect, t: number): void {
+    const ripple = e.rot ?? 1;
+    const cx = clamp((e.x / CELL) | 0, 0, COLS - 1);
+    const cy = clamp((e.y / CELL) | 0, 0, ROWS - 1);
+    const base = FLOOR_DUST[((sim.terrain.floor[cy * COLS + cx] / 3) | 0) % FLOOR_DUST.length];
+    const col: RGB = [
+      Math.min(1, base[0] * 1.1),
+      Math.min(1, base[1] * 1.1),
+      Math.min(1, base[2] * 1.1),
+    ];
+    const n = (6 * ripple) | 0;
+    const len = 12 * MU * FIN_POW(t) * ripple;
+    const rad = ((1 - t) * 3 + 0.1) * MU;
+    rngSeed(e.seed ?? 1);
+    for (let i = 0; i < n; i++) {
+      const l = rng() * len;
+      const a = rng() * TAU;
+      this.fillCircle(dyn, e.x + Math.cos(a) * l, e.y + Math.sin(a) * l, rad, col, 1);
     }
   }
 
