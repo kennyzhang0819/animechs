@@ -26,6 +26,12 @@ import {
   UV_TOWER_BASE1,
   UV_TOWER_BASE3,
   UV_SCORCH,
+  UV_ARC,
+  UV_LANCER,
+  UV_RIPPLE,
+  UV_PARALLAX,
+  UV_PARALLAX_LASER,
+  UV_PARALLAX_LASER_END,
   UV_TRI,
   UV_TURRET,
   UV_WALLS,
@@ -50,7 +56,7 @@ import {
 import { UNIT_KINDS, UNIT_STATS, type ForceFieldSpec, type LegSpec } from "./levels";
 import { MAX_LEGS, type Sim } from "./sim";
 import { WALL_PINE, type Terrain } from "./terrain";
-import { FxKind, type Effect, type TowerKind } from "./types";
+import { FxKind, type Effect, type Tower, type TowerKind } from "./types";
 
 // per-kind turret tops and bullet sprites
 const UV_TURRETS: Record<TowerKind, UVRect> = {
@@ -60,13 +66,13 @@ const UV_TURRETS: Record<TowerKind, UVRect> = {
   scatter: UV_SCATTER,
   fuse: UV_FUSE,
   scorch: UV_SCORCH,
+  arc: UV_ARC,
+  lancer: UV_LANCER,
+  ripple: UV_RIPPLE,
+  parallax: UV_PARALLAX,
   // STUBS: not in the build menu, so never drawn. They point at duo's
   // region only so the record stays exhaustive — packing their real
   // sprites is part of implementing each turret, not of listing it
-  arc: UV_DUO,
-  lancer: UV_DUO,
-  ripple: UV_DUO,
-  parallax: UV_DUO,
   swarmer: UV_DUO,
   cyclone: UV_DUO,
   spectre: UV_DUO,
@@ -86,7 +92,8 @@ const UV_BULLETS: Record<TowerKind, UVRect> = {
   scorch: UV_PROJ,
   arc: UV_PROJ,
   lancer: UV_PROJ,
-  ripple: UV_PROJ,
+  // ripple's graphite ammo is the same shell hail fires, in the same colours
+  ripple: UV_SHELL_GRAPHITE,
   parallax: UV_PROJ,
   swarmer: UV_PROJ,
   cyclone: UV_PROJ,
@@ -103,7 +110,7 @@ const BULLET_SIZE: Record<TowerKind, readonly [number, number]> = {
   scorch: [18, 18],
   arc: [18, 18],
   lancer: [18, 18],
-  ripple: [18, 18],
+  ripple: [35, 30], // 12x14-unit artillery shell, longer than hail's
   parallax: [18, 18],
   swarmer: [18, 18],
   cyclone: [18, 18],
@@ -129,6 +136,9 @@ const FLOOR_DUST: readonly RGB[] = [
   [0xd8 / 255, 0xb2 / 255, 0x90 / 255], // sand
   [0x3f / 255, 0x3c / 255, 0x3c / 255], // darksand
 ];
+/** Pal.lancerLaser #a9d8ff — arc's bolt and lancer's beam are both drawn
+ * in it, and both wash out to white as they fade */
+const PAL_LANCER = [0xa9 / 255, 0xd8 / 255, 0xff / 255] as const;
 /** Pal.lightFlame #ffdd55, Pal.darkFlame #db401c, and Arc's Color.gray */
 const LIGHT_FLAME = [0xff / 255, 0xdd / 255, 0x55 / 255] as const;
 const DARK_FLAME = [0xdb / 255, 0x40 / 255, 0x1c / 255] as const;
@@ -772,10 +782,11 @@ export class Renderer {
     uvr: UVRect,
     stroke: number,
     tint: readonly [number, number, number],
+    alpha = 1,
   ): void {
     const dx = x2 - x1, dy = y2 - y1;
     this.push(b, x1 + dx / 2, y1 + dy / 2, Math.hypot(dx, dy), stroke, Math.atan2(dy, dx),
-      uvr, tint[0], tint[1], tint[2], 1);
+      uvr, tint[0], tint[1], tint[2], alpha);
   }
 
   private push(
@@ -1014,6 +1025,11 @@ export class Renderer {
       this.push(dyn, t.x, t.y, px, px, 0, base, 1, 1, 1, 1);
       this.push(dyn, t.x, t.y, px, px, t.angle, UV_TURRETS[t.kind], 1, 1, 1, 1);
     }
+    // a tractor turret's beam sits over the turrets and under the units it
+    // is dragging — it has no bullet, so this is its only visual
+    for (const t of sim.towers) {
+      if (t.beamStr > 0.01) this.drawTractorBeam(dyn, t);
+    }
     const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
     const { ushield, ushieldAlpha, urad } = sim;
     // painter's order in three passes: ground units, then flyer shadows on
@@ -1102,6 +1118,10 @@ export class Renderer {
         this.drawHitFlame(dyn, e, t);
       } else if (e.kind === FxKind.Burning) {
         this.drawBurning(dyn, e, t);
+      } else if (e.kind === FxKind.Lightning) {
+        this.drawBolt(dyn, e, t);
+      } else if (e.kind === FxKind.Laser) {
+        this.drawLaser(dyn, e, t);
       } else if (e.kind === FxKind.Footfall) {
         this.drawFootfall(dyn, sim, e, t);
       } else if (e.kind === FxKind.Absorb) {
@@ -1482,6 +1502,106 @@ export class Renderer {
         1,
       );
     }
+  }
+
+  /**
+   * Fx.lightning, 1:1: arc's bolt is drawn from the very point list the
+   * walk built (Sim.lightningBolt), stroked 3 units wide and fading, with a
+   * dot at every node so the corners read as joints rather than kinks. The
+   * colour washes from Pal.lancerLaser to white as it goes out.
+   */
+  private drawBolt(dyn: Batch, e: Effect, t: number): void {
+    const pts = e.pts;
+    if (!pts || pts.length < 4) return;
+    const stroke = 3 * MU * (1 - t);
+    if (stroke <= 0.01) return;
+    const col: RGB = [
+      PAL_LANCER[0] + (1 - PAL_LANCER[0]) * t,
+      PAL_LANCER[1] + (1 - PAL_LANCER[1]) * t,
+      PAL_LANCER[2] + (1 - PAL_LANCER[2]) * t,
+    ];
+    for (let i = 0; i + 3 < pts.length; i += 2)
+      this.pushSeg(dyn, pts[i], pts[i + 1], pts[i + 2], pts[i + 3], UV_SOLID, stroke, col);
+    for (let i = 0; i < pts.length; i += 2)
+      this.fillCircle(dyn, pts[i], pts[i + 1], stroke / 2, col, 1);
+  }
+
+  /**
+   * LaserBulletType.draw, 1:1: three passes of the same beam, each half the
+   * width of the last, so the bright core sits inside a wide translucent
+   * sheath. Each pass adds a tip triangle and a pair of flares out the
+   * sides of the muzzle, and the whole thing grows to length over the first
+   * fifth of its life and thins out over the rest.
+   *
+   * `len` is what the beam ACTUALLY reached — Sim.laserBeam shortens it to
+   * the fourth unit it hit — so a lancer firing into a crowd draws short.
+   */
+  private drawLaser(dyn: Batch, e: Effect, t: number): void {
+    const rot = e.rot ?? 0;
+    const fout = 1 - t;
+    const baseLen = (e.len ?? 0) * Math.min(1, t / 0.2); // Mathf.curve(fin, 0, 0.2)
+    if (baseLen <= 0.01) return;
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    const width = 15 * MU; // LaserBulletType.width
+    const SIDE_LEN = 29 * MU, SIDE_WIDTH = 0.7, FALLOFF = 0.5;
+    // colors[0] is the same blue at 0.4 alpha, colors[1] solid, colors[2] white
+    const passes: ReadonlyArray<readonly [RGB, number]> = [
+      [PAL_LANCER, 0.4],
+      [PAL_LANCER, 1],
+      [[1, 1, 1], 1],
+    ];
+    const tri = (
+      tx: number, ty: number, w: number, l: number, a: number, col: RGB, alpha: number,
+    ): void => {
+      if (l <= 0.01 || w <= 0.01) return;
+      this.push(dyn, tx + (Math.cos(a) * l) / 2, ty + (Math.sin(a) * l) / 2, l, w, a,
+        UV_TRI, col[0], col[1], col[2], alpha);
+    };
+    let cwidth = width;
+    let compound = 1;
+    for (const [col, alpha] of passes) {
+      cwidth *= FALLOFF;
+      const stroke = cwidth * fout;
+      if (stroke > 0.01) {
+        this.pushSeg(dyn, e.x, e.y, e.x + cos * baseLen, e.y + sin * baseLen,
+          UV_SOLID, stroke, col, alpha);
+        // the point on the end, and the muzzle bloom
+        tri(e.x + cos * baseLen, e.y + sin * baseLen, stroke, cwidth * 2 + width / 2, rot,
+          col, alpha);
+        this.fillCircle(dyn, e.x, e.y, cwidth * fout, col, alpha);
+        for (const sgn of [1, -1])
+          tri(e.x, e.y, SIDE_WIDTH * fout * cwidth, SIDE_LEN * compound,
+            rot + (sgn * Math.PI) / 2, col, alpha);
+      }
+      compound *= FALLOFF;
+    }
+  }
+
+  /**
+   * Drawf.laser for a TractorBeamTurret's held beam: a 12-unit-wide line
+   * scaled by the turret's `strength` and laserWidth, inset at both ends by
+   * the caps that close it off. Parallax fires no bullet, so this is the
+   * only thing on screen that says it is working.
+   */
+  private drawTractorBeam(dyn: Batch, t: Tower): void {
+    const st = TOWERS[t.kind];
+    const scale = t.beamStr * 0.6; // TractorBeamTurret.laserWidth
+    const x1 = t.x + Math.cos(t.angle) * 5 * MU; // shootLength
+    const y1 = t.y + Math.sin(t.angle) * 5 * MU;
+    const dx = t.beamX - x1, dy = t.beamY - y1;
+    const d = Math.hypot(dx, dy);
+    if (d < 1) return;
+    const inset = 8 * scale * 0.25 * MU; // Drawf.laser's own end inset
+    // the glow at region.height * scale * Draw.scl — on the TRIMMED 32px
+    // region Mindustry actually packs, not the 72px source (see the UV note)
+    const cap = 32 * scale * 0.25 * MU;
+    const ux = dx / d, uy = dy / d;
+    const white: RGB = [1, 1, 1]; // TractorBeamTurret.laserColor
+    this.pushSeg(dyn, x1 + ux * inset, y1 + uy * inset, t.beamX - ux * inset,
+      t.beamY - uy * inset, UV_PARALLAX_LASER, 12 * scale * MU, white);
+    const a = Math.atan2(dy, dx);
+    this.push(dyn, x1, y1, cap, cap, a + Math.PI, UV_PARALLAX_LASER_END, 1, 1, 1, 1);
+    this.push(dyn, t.beamX, t.beamY, cap, cap, a, UV_PARALLAX_LASER_END, 1, 1, 1, 1);
   }
 
   /**

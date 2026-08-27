@@ -35,6 +35,9 @@ import type { TechState } from "./tech";
 import { WALL_PINE, type Terrain } from "./terrain";
 import { FxKind, TOWER_KINDS, type Effect, type Projectile, type Tower, type TowerKind } from "./types";
 
+/** px per Mindustry world unit — the ported turret geometry is in those */
+const MU = CELL / 8;
+
 const FX_CAP = 400;
 /**
  * Footfall dust gets a third of that and no more. It is ambience, and it
@@ -191,6 +194,13 @@ const KIND_IS_FORCE = Uint8Array.from(KIND_FORCE, (f) => (f ? 1 : 0));
 const KIND_BURN_IMMUNE = Uint8Array.from(UNIT_KINDS, (k) =>
   UNIT_STATS[k].immunities?.includes("burning") ? 1 : 0,
 );
+/**
+ * UnitType.drag per kind — the fraction of an external shove a unit sheds
+ * per tick, and the only thing that reads it is a parallax beam's pull.
+ * Mindustry's own default is 0.3, which is what every kind that does not
+ * state one carries.
+ */
+const KIND_DRAG = Float32Array.from(UNIT_KINDS, (k) => UNIT_STATS[k].drag ?? 0.3);
 /** the gait of every legged kind, indexed like UNIT_KINDS — null for the
  * mechs and flyers, whose animation is one sliding pair of leg sprites */
 const KIND_LEGS = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
@@ -301,6 +311,15 @@ export class Sim {
    * whole outage, and without this every tick of it would re-break
    */
   readonly uforceDown = new Uint8Array(MAX_UNITS);
+  /**
+   * Mindustry's impulse velocity, px/s: an outside shove that is NOT the
+   * unit's own drive. A parallax beam adds to it, the kind's drag bleeds
+   * it away, and it rides on top of the capped drive exactly like the
+   * crowd shove does — a unit can be dragged faster than it can walk, and
+   * has to walk back out of it
+   */
+  readonly upullx = new Float32Array(MAX_UNITS);
+  readonly upully = new Float32Array(MAX_UNITS);
   /**
    * StatusEffects.burning: seconds of fire left. Reapplying resets it to
    * the full statusDuration rather than stacking, exactly like Mindustry's
@@ -658,6 +677,10 @@ export class Sim {
       shotCount: 0,
       aimX: 0,
       aimY: 0,
+      chargeT: -1,
+      beamX: 0,
+      beamY: 0,
+      beamStr: 0,
     });
   }
 
@@ -1064,6 +1087,8 @@ export class Sim {
       // a fresh support unit waits a full cycle before its first pulse,
       // exactly like a newly constructed Ability's zeroed timer
       this.uability[i] = 0;
+      this.upullx[i] = 0;
+      this.upully[i] = 0;
       this.uburn[i] = 0;
       this.uid[i] = this.nextId++;
       this.ukind[i] = UNIT_ID[kind];
@@ -1238,6 +1263,8 @@ export class Sim {
     this.ushield[i] = this.ushield[n];
     this.ushieldAlpha[i] = this.ushieldAlpha[n];
     this.uability[i] = this.uability[n];
+    this.upullx[i] = this.upullx[n];
+    this.upully[i] = this.upully[n];
     this.uforceScale[i] = this.uforceScale[n];
     this.uforceDown[i] = this.uforceDown[n];
     this.uburn[i] = this.uburn[n];
@@ -1540,6 +1567,7 @@ export class Sim {
   private updateUnits(dt: number): void {
     const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, ulat, phx, phy, field, flowTmp } =
       this;
+    const { upullx, upully } = this;
     const steer = Math.min(1, dt * 8);
     // one step of the lateral bias's mean-reverting walk, precomputed: pull
     // LAT_A of the way back to straight-ahead, then add noise scaled so the
@@ -1662,7 +1690,18 @@ export class Sim {
         mvx = (mvx / ml) * uspd[i];
         mvy = (mvy / ml) * uspd[i];
       }
-      const dxT = mvx * dt + shx, dyT = mvy * dt + shy;
+      // an outside shove (a parallax beam) rides on top of the capped drive
+      // like the crowd shove does, and bleeds off at the kind's own drag —
+      // Mindustry keeps the impulse in `vel` and scales the whole thing by
+      // (1 - drag) every tick, so the pull outlives the beam by a moment
+      const pull = upullx[i] !== 0 || upully[i] !== 0;
+      const dxT = mvx * dt + shx + (pull ? upullx[i] * dt : 0);
+      const dyT = mvy * dt + shy + (pull ? upully[i] * dt : 0);
+      if (pull) {
+        const keep = Math.pow(1 - KIND_DRAG[ukind[i]], dt * 60);
+        upullx[i] *= keep;
+        upully[i] *= keep;
+      }
 
       // axis-separated move with slide-to-contact: a blocked axis advances
       // flush against the wall face rather than rejecting the whole step —
@@ -1773,7 +1812,23 @@ export class Sim {
     const { upx, upy, uvx, uvy } = this;
     for (const t of this.towers) {
       const st = TOWERS[t.kind];
+      // a tractor turret has no reload and no volley — it holds a beam
+      if (st.bullet.tractor) {
+        this.updateTractor(t, st, dt);
+        continue;
+      }
       if (t.cd > 0) t.cd -= dt;
+
+      // a queued volley that is still charging: the shots are already spent
+      // from the reload's point of view, they just have not left yet
+      if (t.chargeT >= 0) {
+        t.chargeT -= dt;
+        if (t.chargeT <= 0) {
+          t.chargeT = -1;
+          t.burstLeft = st.shots;
+          t.burstT = 0;
+        }
+      }
 
       // shots already queued by a volley fire even if the target moved/died
       if (t.burstLeft > 0) {
@@ -1825,17 +1880,28 @@ export class Sim {
       }
       const targetRot = Math.atan2(aimY, aimX);
 
-      const diff = Sim.angleDiff(t.angle, targetRot);
-      const turn = st.rotateSpeed * dt;
-      t.angle = Math.abs(diff) <= turn ? targetRot : t.angle + Math.sign(diff) * turn;
+      // Turret.shouldTurn: moveWhileCharging false LOCKS the barrel for the
+      // whole charge, so a lancer commits to where it was aiming rather
+      // than tracking through the two thirds of a second it takes to fire
+      if (t.chargeT < 0) {
+        const diff = Sim.angleDiff(t.angle, targetRot);
+        const turn = st.rotateSpeed * dt;
+        t.angle = Math.abs(diff) <= turn ? targetRot : t.angle + Math.sign(diff) * turn;
+      }
 
-      if (t.cd <= 0 && Math.abs(Sim.angleDiff(t.angle, targetRot)) < st.shootCone) {
+      // updateShooting: a charging turret starts no new volley, though its
+      // reload keeps running underneath (reloadWhileCharging, the default)
+      if (t.cd <= 0 && t.chargeT < 0 && Math.abs(Sim.angleDiff(t.angle, targetRot)) < st.shootCone) {
         t.cd += st.reload; // reloadCounter %= reload
-        t.burstLeft = st.shots;
-        t.burstT = 0;
         // artillery lands its shells here: the intercept point in world px
         t.aimX = t.x + aimX;
         t.aimY = t.y + aimY;
+        if (st.chargeTime) {
+          t.chargeT = st.chargeTime; // fires when it runs out, above
+          continue;
+        }
+        t.burstLeft = st.shots;
+        t.burstT = 0;
         // shots with no shotDelay (a ShootSpread fan) all leave this frame
         while (t.burstLeft > 0 && t.burstT <= 0) {
           this.fireShot(t, st, st.shots - t.burstLeft);
@@ -1872,6 +1938,31 @@ export class Sim {
     // For scorch this IS the weapon: the bullet draws nothing at all
     if (st.bullet.invisible)
       this.pushFx(x, y, 32 / 60, FxKind.Flame, a, 0, (Math.random() * 0x7fffffff) | 0);
+    if (st.bullet.lightning) {
+      const pts = this.lightningBolt(
+        x, y, a,
+        st.bullet.damage,
+        st.bullet.lightning.length,
+        st.bullet.hitRadius ?? 2.5,
+        st.bullet.collidesAir,
+        st.bullet.collidesGround,
+      );
+      this.pushBolt(x, y, st.bullet.lifetime, pts);
+      return;
+    }
+    if (st.bullet.laser) {
+      const reached = this.laserBeam(
+        x, y, a,
+        st.bullet.laser.length,
+        st.bullet.damage,
+        st.bullet.laser.pierceCap,
+        st.bullet.armorMultiplier ?? 1,
+        st.bullet.collidesAir,
+        st.bullet.collidesGround,
+      );
+      this.pushFx(x, y, st.bullet.lifetime, FxKind.Laser, a, reached);
+      return;
+    }
     if (st.bullet.ray) {
       this.hitscanRay(
         x,
@@ -1893,14 +1984,26 @@ export class Sim {
     let life = st.bullet.lifetime;
     if (st.bullet.artillery) {
       const reach = st.bullet.speed * st.bullet.lifetime;
-      life *= clamp(Math.hypot(t.aimX - x, t.aimY - y) / reach, 0, st.range / reach);
+      // scaleLifetimeOffset overshoots the aim point by a fraction, and
+      // minRange is the FLOOR on the scale — a shell aimed inside it
+      // overflies rather than landing short
+      const off = st.lifeScaleOffset ?? 0;
+      const lo = (st.minRange ?? 0) / reach;
+      life *=
+        clamp(((1 + off) * Math.hypot(t.aimX - x, t.aimY - y)) / reach, lo, st.range / reach);
     }
+    // lifeScaleRandMin/Max and velocityRnd: the two rolls that turn a
+    // ripple's four shells from one hole into a pattern down the lane
+    const lr = st.bullet.lifeScaleRand;
+    if (lr) life *= lr[0] + Math.random() * (lr[1] - lr[0]);
+    const vr = st.velocityRnd ?? 0;
+    const speed = st.bullet.speed * (vr > 0 ? 1 - vr + Math.random() * vr : 1);
     this.projs.push({
       kind: t.kind,
       x,
       y,
-      vx: cos * st.bullet.speed,
-      vy: sin * st.bullet.speed,
+      vx: cos * speed,
+      vy: sin * speed,
       life,
       age: 0,
       primeT: -1,
@@ -1959,6 +2062,275 @@ export class Sim {
     }
   }
 
+  /**
+   * The single unit a point-blank bullet would land on: the nearest whose
+   * hitbox contains the point. One victim, like any non-piercing shot.
+   */
+  private nearestUnit(
+    x: number,
+    y: number,
+    brad: number,
+    air: boolean,
+    ground: boolean,
+  ): number {
+    const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
+    const pad = brad + rmaxFor(air, ground);
+    const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((x + pad) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((y + pad) / HC) | 0, 0, HROWS - 1);
+    let best = -1, bd = Infinity;
+    for (let hy = hy0; hy <= hy1; hy++) {
+      for (let hx = hx0; hx <= hx1; hx++) {
+        const c = hy * HCOLS + hx, e = bStart[c + 1];
+        for (let k = bStart[c]; k < e; k++) {
+          const i = bUnits[k];
+          if (i >= this.n || uhp[i] <= 0) continue;
+          if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
+          const dx = upx[i] - x, dy = upy[i] - y;
+          const d2 = dx * dx + dy * dy;
+          const rr = urad[i] + brad;
+          if (d2 < rr * rr && d2 < bd) {
+            bd = d2;
+            best = i;
+          }
+        }
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Mindustry Lightning.createLightningInternal, ported whole: arc's shot
+   * is not a projectile but a bolt that WALKS.
+   *
+   * It takes `length / 2` steps. At each one it drops a node bullet where
+   * it stands — that is where the damage happens, one victim per node —
+   * then looks for enemies whose hitbox falls inside a 30-unit SQUARE
+   * around it and jumps to the FURTHEST of them, which is what makes the
+   * bolt reach across a crowd rather than nuzzle the nearest body. With
+   * nobody in reach it turns up to 20 degrees and wanders half a square on.
+   *
+   * A unit is only chained ONCE, and only the first `maxChain` of them:
+   * past eight victims the bolt stops looking and just walks out. The
+   * jittered node positions are handed back as the drawn path.
+   *
+   * ONE DIVERGENCE. In Mindustry each node is a real bullet, and a real
+   * bullet is absorbable — a quasar's force field standing over a node
+   * would eat it. Here the node damages directly and no field sees it, so
+   * a bolt walks through a bubble it should have died in. Arc is a
+   * 90-unit ground turret and the bubble is 7.5 tiles, so the two rarely
+   * meet; wiring it up properly means the absorb pass running before the
+   * turrets rather than after them, which is a change to the tick order.
+   */
+  private lightningBolt(
+    x: number,
+    y: number,
+    angle: number,
+    damage: number,
+    length: number,
+    brad: number,
+    air: boolean,
+    ground: boolean,
+  ): number[] {
+    const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
+    const HIT_RANGE = 30 * MU; // Lightning.hitRange
+    const MAX_CHAIN = 8; // Lightning.maxChain
+    const half = HIT_RANGE / 2;
+    const pts: number[] = [];
+    const chained = new Set<number>(); // unit IDS — indices move under us
+    const hits = this.boltHits;
+    hits.length = 0;
+    let rot = angle;
+    const nodes = (length / 2) | 0;
+    for (let step = 0; step < nodes; step++) {
+      // the node's own bullet, which is where every point of arc's damage
+      // is actually dealt
+      const victim = this.nearestUnit(x, y, brad, air, ground);
+      if (victim >= 0) {
+        this.damageUnit(victim, damage);
+        if (uhp[victim] > 0) this.pushFx(x, y, 0.12, FxKind.Hit);
+        else if (!hits.includes(victim)) hits.push(victim);
+      }
+      pts.push(x + (Math.random() * 2 - 1) * 3 * MU, y + (Math.random() * 2 - 1) * 3 * MU);
+
+      // the chain: the furthest un-hit enemy whose hitbox touches the square
+      let far = -1, fd = -1;
+      if (chained.size < MAX_CHAIN) {
+        const pad = half + rmaxFor(air, ground);
+        const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
+        const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
+        const hx1 = clamp(((x + pad) / HC) | 0, 0, HCOLS - 1);
+        const hy1 = clamp(((y + pad) / HC) | 0, 0, HROWS - 1);
+        for (let hy = hy0; hy <= hy1; hy++) {
+          for (let hx = hx0; hx <= hx1; hx++) {
+            const c = hy * HCOLS + hx, e = bStart[c + 1];
+            for (let k = bStart[c]; k < e; k++) {
+              const j = bUnits[k];
+              if (j >= this.n || uhp[j] <= 0 || chained.has(this.uid[j])) continue;
+              if (KIND_FLYING[ukind[j]] ? !air : !ground) continue;
+              const dx = upx[j] - x, dy = upy[j] - y;
+              const reach = half + urad[j]; // Rect vs hitbox, not a circle
+              if (Math.abs(dx) > reach || Math.abs(dy) > reach) continue;
+              const d2 = dx * dx + dy * dy;
+              if (d2 > fd) {
+                fd = d2;
+                far = j;
+              }
+            }
+          }
+        }
+      }
+      if (far >= 0) {
+        chained.add(this.uid[far]);
+        x = upx[far];
+        y = upy[far];
+      } else {
+        rot += (Math.random() * 2 - 1) * ((20 * Math.PI) / 180);
+        x += Math.cos(rot) * half;
+        y += Math.sin(rot) * half;
+      }
+    }
+    // the walk read live positions, so nothing may be removed until it ends
+    hits.sort((a, b) => b - a);
+    for (const i of hits) if (uhp[i] <= 0) this.killUnit(i);
+    return pts;
+  }
+
+  /**
+   * Mindustry Damage.collideLaser, the lancer's whole shot: an instant beam
+   * that pierces a FIXED NUMBER of units and stops.
+   *
+   * Two passes, exactly as the original: findPierceLength collects every
+   * eligible unit the segment crosses and, if there are more of them than
+   * the cap, shortens the beam to the cap'th nearest; collideLine then
+   * damages that many, nearest first. Returns the length the beam reached,
+   * which is what gets drawn — a lancer firing into a crowd is visibly
+   * shorter than one firing down an empty lane.
+   */
+  private laserBeam(
+    x: number,
+    y: number,
+    angle: number,
+    length: number,
+    damage: number,
+    pierceCap: number,
+    armorMult: number,
+    air: boolean,
+    ground: boolean,
+  ): number {
+    const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
+    const EXPAND = 7.5; // collideLine's expand = 3 world units
+    const dirx = Math.cos(angle), diry = Math.sin(angle);
+    const hits = this.boltHits;
+    hits.length = 0;
+    const dists = this.boltDists;
+    dists.length = 0;
+    const x2 = x + dirx * length, y2 = y + diry * length;
+    const pad = rmaxFor(air, ground) + EXPAND;
+    const hx0 = clamp(((Math.min(x, x2) - pad) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((Math.min(y, y2) - pad) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((Math.max(x, x2) + pad) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((Math.max(y, y2) + pad) / HC) | 0, 0, HROWS - 1);
+    for (let hy = hy0; hy <= hy1; hy++) {
+      for (let hx = hx0; hx <= hx1; hx++) {
+        const c = hy * HCOLS + hx, e = bStart[c + 1];
+        for (let k = bStart[c]; k < e; k++) {
+          const i = bUnits[k];
+          if (i >= this.n || uhp[i] <= 0) continue;
+          if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
+          const tt = clamp((upx[i] - x) * dirx + (upy[i] - y) * diry, 0, length);
+          const dx = upx[i] - (x + dirx * tt), dy = upy[i] - (y + diry * tt);
+          const rr = urad[i] + EXPAND;
+          if (dx * dx + dy * dy < rr * rr) {
+            hits.push(i);
+            dists.push(Math.hypot(upx[i] - x, upy[i] - y));
+          }
+        }
+      }
+    }
+    // nearest first, so the cap keeps the units the beam reaches first
+    const order = hits.map((_, k) => k).sort((a, b) => dists[a] - dists[b]);
+    // findPierceLength: under the cap the beam runs its full length; at or
+    // over it, it stops dead at the cap'th victim (never inside 6 units)
+    const reached =
+      pierceCap <= 0 || order.length < pierceCap
+        ? length
+        : Math.max(6 * MU, dists[order[pierceCap - 1]]);
+    const dead: number[] = [];
+    for (let k = 0; k < order.length && (pierceCap <= 0 || k < pierceCap); k++) {
+      const i = hits[order[k]];
+      this.damageUnit(i, damage, false, armorMult);
+      if (uhp[i] > 0) this.pushFx(upx[i], upy[i], 0.12, FxKind.Hit);
+      else dead.push(i);
+    }
+    dead.sort((a, b) => b - a);
+    for (const i of dead) if (uhp[i] <= 0) this.killUnit(i);
+    return reached;
+  }
+
+  /** scratch for the two instant weapons; never nested, never persisted */
+  private readonly boltHits: number[] = [];
+  private readonly boltDists: number[] = [];
+
+  /**
+   * Mindustry TractorBeamTurret.updateTile: parallax has no reload, no
+   * volley and no bullet. It locks the CLOSEST flyer in range, swings onto
+   * it, and for as long as it is aimed within its cone it deals continuous
+   * armour-piercing damage and pulls the target toward itself.
+   *
+   * The pull is an impulse divided by the target's mass — hitSize squared
+   * times pi (PhysicsComp.mass) — so it is the same force on everything and
+   * a completely different effect: it nearly stops a flare, leans hard on a
+   * zenith, and barely troubles an antumbra.
+   */
+  private updateTractor(t: Tower, st: TowerStats, dt: number): void {
+    const spec = st.bullet.tractor!;
+    const { upx, upy, uhp, urad, ukind, upullx, upully } = this;
+    // Units.closestEnemy, over the turret's own layer filter
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < this.n; i++) {
+      if (KIND_FLYING[ukind[i]] ? !st.targetAir : !st.targetGround) continue;
+      const dx = upx[i] - t.x, dy = upy[i] - t.y;
+      const d = Math.hypot(dx, dy);
+      // within(range + hitSize/2): a wide target counts from its edge
+      if (d < bd && d <= st.range + urad[i]) {
+        bd = d;
+        best = i;
+      }
+    }
+    // `strength` lerps in as the beam catches and out as it lets go
+    const ease = 1 - Math.pow(1 - 0.1, dt * 60);
+    if (best < 0) {
+      t.beamStr += (0 - t.beamStr) * ease;
+      return;
+    }
+    const targetRot = Math.atan2(upy[best] - t.y, upx[best] - t.x);
+    const diff = Sim.angleDiff(t.angle, targetRot);
+    const turn = st.rotateSpeed * dt;
+    t.angle = Math.abs(diff) <= turn ? targetRot : t.angle + Math.sign(diff) * turn;
+    t.beamX = upx[best];
+    t.beamY = upy[best];
+    t.beamStr += (1 - t.beamStr) * ease;
+    if (Math.abs(Sim.angleDiff(t.angle, targetRot)) >= st.shootCone) return;
+
+    // damageContinuousPierce: armour never applies, but a shield still eats it
+    this.damageUnit(best, st.bullet.damage * dt, true);
+    if (uhp[best] <= 0) {
+      this.killUnit(best);
+      return;
+    }
+    // impulse(v) is vel += v / mass, and mass is the hitbox's own area
+    const hitSize = (urad[best] * 2) / MU;
+    const mass = hitSize * hitSize * Math.PI;
+    const mag = spec.force + (1 - bd / st.range) * spec.scaledForce;
+    // world units per tick, over this frame's ticks, into px per second
+    const dv = ((mag * dt * 60) / mass) * MU * 60;
+    const inv = bd > 1e-4 ? 1 / bd : 0;
+    upullx[best] += (t.x - upx[best]) * inv * dv;
+    upully[best] += (t.y - upy[best]) * inv * dv;
+  }
+
   /** Mindustry Damage.applyArmor: flat reduction, floored at 10% of the raw hit */
   private static applyArmor(dmg: number, armor: number): number {
     return Math.max(dmg - armor, 0.1 * dmg);
@@ -1971,9 +2343,14 @@ export class Sim {
    *
    * pierceArmor is ShieldComp.damagePierce — it skips applyArmor but still
    * runs the shield, which is how burning damage behaves in the original.
+   *
+   * armorMult is BulletType.armorMultiplier, applied the way
+   * ShieldComp.damageArmorMult does: it scales the TARGET'S ARMOUR, not the
+   * damage, so a lancer's 4 means armour counts quadruple against it and
+   * the same beam is worth far less to a fortress than to a dagger.
    */
-  private damageUnit(i: number, raw: number, pierceArmor = false): void {
-    let amount = pierceArmor ? raw : Sim.applyArmor(raw, this.uarmor[i]);
+  private damageUnit(i: number, raw: number, pierceArmor = false, armorMult = 1): void {
+    let amount = pierceArmor ? raw : Sim.applyArmor(raw, this.uarmor[i] * armorMult);
     if (this.ushield[i] > 0.0001) {
       this.ushieldAlpha[i] = 1;
       const soaked = Math.min(this.ushield[i], amount);
@@ -2238,6 +2615,13 @@ export class Sim {
       this.killUnit(i);
     }
     this.pushFx(x, y, 0.3, FxKind.Flak);
+  }
+
+  /** Fx.lightning: the only effect whose shape is data rather than a seed —
+   * Mindustry hands it the very point list the walk built */
+  private pushBolt(x: number, y: number, ttl: number, pts: readonly number[]): void {
+    if (this.effects.length < FX_CAP)
+      this.effects.push({ x, y, age: 0, ttl, kind: FxKind.Lightning, pts });
   }
 
   private pushFx(

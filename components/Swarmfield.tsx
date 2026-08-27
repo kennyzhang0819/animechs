@@ -278,6 +278,26 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
     icon: "/mindustry/sprites/blocks/turrets/scatter/scatter-preview.png",
   },
   {
+    kind: "arc",
+    name: "Arc",
+    icon: "/mindustry/sprites/blocks/turrets/arc.png",
+  },
+  {
+    kind: "lancer",
+    name: "Lancer",
+    icon: "/mindustry/sprites/blocks/turrets/lancer.png",
+  },
+  {
+    kind: "ripple",
+    name: "Ripple",
+    icon: "/mindustry/sprites/blocks/turrets/ripple.png",
+  },
+  {
+    kind: "parallax",
+    name: "Parallax",
+    icon: "/mindustry/sprites/blocks/defense/parallax.png",
+  },
+  {
     kind: "fuse",
     name: "Fuse",
     icon: "/mindustry/sprites/blocks/turrets/fuse.png",

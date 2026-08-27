@@ -292,6 +292,37 @@ export const UV_ARKYID_MOUNT = uv(0, 3840, 256, 256);
 export const UV_ARKYID_MOUNT_SIL = uv(256, 3840, 256, 256);
 export const UV_ANTUMBRA = uv(512, 3840, 256, 256);
 
+/**
+ * The Medium and High turret tops, on the free band at y=2816. Each cell
+ * hugs its art exactly, like every other turret top: the renderer maps the
+ * whole cell onto a size*CELL quad, so a sprite parked inside a larger cell
+ * would draw small. Mindustry block art is 32px a tile, so arc (size 1) is
+ * a 32px source at 2x, lancer and parallax (size 2) are 64px at 2x, and
+ * ripple takes the fuse treatment — 96px at NATIVE, because 96 into a 128
+ * cell is the 1.33x upscale that shredded fuse's antialiasing.
+ */
+export const UV_ARC = uv(0, 2816, 64, 64);
+export const UV_LANCER = uv(128, 2816, 128, 128);
+export const UV_PARALLAX = uv(320, 2816, 128, 128);
+export const UV_RIPPLE = uv(512, 2816, 96, 96);
+/**
+ * Parallax's beam, the two regions Drawf.laser stretches between the
+ * turret and its target. The line is packed ROTATED — its 4x48 source runs
+ * along the beam, and pushSeg maps a region's WIDTH along the line it is
+ * stretched down.
+ *
+ * Both cells hug the OPAQUE art, not the source rect, and that is not
+ * tidiness: Arc's packer trims a sprite's transparent border and Mindustry
+ * then draws the trimmed region, so `parallax-laser` is really 4x24 and
+ * `parallax-laser-end` really 32x32. Taking the source rects instead put a
+ * quarter of transparent film on each end of a STRETCHED beam — the line
+ * drew at half length, floating between the turret and its target — and
+ * made the end glow, whose size Drawf.laser reads off the region itself,
+ * less than half of what it should be.
+ */
+export const UV_PARALLAX_LASER = uv(772, 2860, 24, 4);
+export const UV_PARALLAX_LASER_END = uv(668, 2844, 32, 32);
+
 export const UV_CRAWLER_LEG = uv(448, 288, 64, 64);
 export const UV_CRAWLER_BASE = uv(512, 288, 64, 64);
 export const UV_CRAWLER_BODY = uv(576, 288, 64, 64);
@@ -744,6 +775,14 @@ const SPRITES = {
   scatterPreview: "/mindustry/sprites/blocks/turrets/scatter/scatter-preview.png",
   fuse: "/mindustry/sprites/blocks/turrets/fuse.png",
   scorch: "/mindustry/sprites/blocks/turrets/scorch.png",
+  arc: "/mindustry/sprites/blocks/turrets/arc.png",
+  lancer: "/mindustry/sprites/blocks/turrets/lancer.png",
+  ripple: "/mindustry/sprites/blocks/turrets/ripple.png",
+  // parallax is filed under defense, not turrets — it damages almost
+  // nothing and Mindustry classes it with the support blocks
+  parallax: "/mindustry/sprites/blocks/defense/parallax.png",
+  parallaxLaser: "/mindustry/sprites/effects/parallax-laser.png",
+  parallaxLaserEnd: "/mindustry/sprites/effects/parallax-laser-end.png",
   shell: "/mindustry/sprites/effects/shell.png",
   shellBack: "/mindustry/sprites/effects/shell-back.png",
   core: "/mindustry/sprites/blocks/storage/core-nucleus.png",
@@ -1333,6 +1372,17 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
 
   // scorch top: 32px source upscaled 2x, filling its 64px cell like duo's
   drawFacingRight(c, antialiased(outlined(img.scorch, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 320, 1088, 64);
+
+  // the Medium and High turret tops (see the UV note): arc, lancer and
+  // parallax upscale 2x like duo's, ripple stays native like fuse's
+  drawFacingRight(c, antialiased(outlined(img.arc, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 32, 2848, 64);
+  drawFacingRight(c, antialiased(outlined(img.lancer, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 192, 2880, 128);
+  drawFacingRight(c, antialiased(outlined(img.parallax, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 384, 2880, 128);
+  drawFacingRight(c, antialiased(outlined(img.ripple, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 560, 2864, 96);
+  // parallax's beam: the end glow at native size, and the line rotated so
+  // its length runs along the +x axis pushSeg stretches
+  drawFacingRight(c, antialiased(img.parallaxLaserEnd), 684, 2860, 72);
+  drawFacingRight(c, antialiased(img.parallaxLaser), 784, 2862, 4, 48);
 
   // duo top and 1x1 base: 32px sources upscaled 2x into 64px cells
   drawFacingRight(c, antialiased(outlined(img.duoPreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 160, 480, 64);

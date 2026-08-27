@@ -150,6 +150,15 @@ export interface UnitStats {
    */
   tier: number;
   /**
+   * Mindustry UnitType.drag, "movement drag as fraction": how much of an
+   * external shove a unit sheds per tick. Nothing this game does steers by
+   * it — our units chase a flow field rather than accelerating — but a
+   * parallax beam's pull is a Mindustry impulse, and this is what decides
+   * how long that pull keeps acting after it stops. Unset takes UnitType's
+   * own 0.3, which is what every kind below that omits it has.
+   */
+  drag?: number;
+  /**
    * Mindustry UnitType.rotateSpeed in DEGREES PER TICK: how fast the torso
    * swivels onto a new heading. Unset takes the 5 every stock unit has;
    * the heavies that override it downward visibly lag their own turn.
@@ -235,6 +244,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     armor: 3,
     radius: UR * 1.625,
     tier: 2,
+    drag: 0.4,
     legs: legs({ count: 4, length: 9 * MU, forwardScl: 0.6, moveSpace: 1.4, elevation: 0.2 }),
   },
   // spiroct: the line's T3 — 1000 hp, armor 5, a 1.875x1.875-block hitbox,
@@ -246,6 +256,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     armor: 5,
     radius: UR * 1.875,
     tier: 3,
+    drag: 0.4,
     legs: legs({
       count: 6,
       length: 13 * MU,
@@ -279,6 +290,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     armor: 6,
     radius: UR * 2.875,
     tier: 4,
+    drag: 0.1,
     rotateSpeed: 2.7,
     legs: legs({
       count: 6,
@@ -293,7 +305,15 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     }),
   },
   // flare: 70 hp, no armor, 1.125-block hitbox, 2.7 px/tick = 20.25 tiles/s
-  flare: { hp: 70, speed: 20.25 * CELL, armor: 0, radius: UR * 1.125, tier: 1, flying: true },
+  flare: {
+    hp: 70,
+    speed: 20.25 * CELL,
+    armor: 0,
+    radius: UR * 1.125,
+    tier: 1,
+    drag: 0.04,
+    flying: true,
+  },
   // nova: the T1 of the support line — 120 hp, armor 1, 1x1-block hitbox,
   // 0.55 px/tick = 4.125 tiles/s. Frailer than a dagger but a step quicker
   // RepairFieldAbility(10, 60*4, 60): 10 hp to everything within 7.5 tiles,
@@ -376,6 +396,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     armor: 3,
     radius: UR * 1.375,
     tier: 2,
+    drag: 0.03,
     flying: true,
   },
   // zenith: the T3 gunship — 700 hp, armor 5, a 2.5x2.5-block hitbox that
@@ -386,6 +407,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     armor: 5,
     radius: UR * 2.5,
     tier: 3,
+    drag: 0.016,
     flying: true,
   },
   // antumbra: the air line's T4 — 7200 hp, armor 9, and a 5.75x5.75-block
@@ -406,6 +428,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     armor: 9,
     radius: UR * 5.75,
     tier: 4,
+    drag: 0.04,
     rotateSpeed: 1.9,
     flying: true,
   },

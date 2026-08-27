@@ -60,6 +60,40 @@ export interface BulletStats {
   // only draws a trail and parts): the shot is invisible and its shoot and
   // hit effects ARE the visual. This is how scorch's flame works
   invisible?: boolean;
+  // Mindustry LaserBulletType: an instant beam, not a projectile. Unlike a
+  // `ray` it is capped — Damage.collideLaser stops at the pierceCap'th
+  // victim and the DRAWN beam stops there too, so a laser that runs into a
+  // crowd is visibly shorter than one fired down an empty lane
+  laser?: {
+    length: number; // px
+    pierceCap: number; // how many units one beam may hit
+    width: number; // px — the drawn beam's core width
+  };
+  // Mindustry LightningBulletType: no projectile either. The shot spawns a
+  // bolt that WALKS — `length / 2` nodes, each damaging what it lands on
+  // and then jumping to the furthest enemy in reach, or wandering on when
+  // there is none. See Sim.lightningBolt
+  lightning?: {
+    length: number; // Lightning.create's `length`; the bolt walks half of it
+  };
+  // Mindustry TractorBeamTurret: not a bullet at all. The turret holds a
+  // beam on one target, damaging it continuously and PULLING it toward
+  // itself with a force divided by the target's mass
+  tractor?: {
+    force: number; // Mindustry world units of impulse per tick
+    scaledForce: number; // ...plus this much again, at point-blank
+  };
+  // Mindustry BulletType.armorMultiplier: the TARGET's armour is scaled by
+  // this before the flat subtraction, so a 4 here quadruples what armour
+  // takes off the hit. Unset is 1 — armour as printed
+  armorMultiplier?: number;
+  // Mindustry damagePierce / damageContinuousPierce: skip armour entirely.
+  // A shield still soaks it (see Sim.damageUnit)
+  pierceArmor?: boolean;
+  // Mindustry lifeScaleRandMin/Max: the shell's lifetime is multiplied by a
+  // roll in this range at spawn, which is what scatters a volley of
+  // artillery along its firing line instead of stacking it on one point
+  lifeScaleRand?: readonly [number, number];
 }
 
 export interface TowerStats {
@@ -78,6 +112,21 @@ export interface TowerStats {
   // Mindustry shootY: how far up the barrel a shot leaves, in px. Unset
   // falls back to the shared size-scaled muzzle
   shootY?: number;
+  // Mindustry Turret.minRange, artillery only: NOT a refusal to fire at
+  // something close, but the floor on how short a shell's flight may be
+  // scaled. A ripple aimed inside 50 units still shoots — the shell just
+  // overflies the target rather than landing shorter than this
+  minRange?: number;
+  // Mindustry shoot.firstShotDelay, in seconds: the volley is queued, then
+  // held this long before the shot leaves. Lancer also sets
+  // moveWhileCharging false, so the barrel LOCKS for the whole charge
+  chargeTime?: number;
+  // Mindustry Turret.velocityRnd: each shot leaves at a random fraction of
+  // full speed, drawn from [1 - velocityRnd, 1]
+  velocityRnd?: number;
+  // Mindustry Turret.scaleLifetimeOffset: added to an artillery shell's
+  // lifetime scale, so the shell overflies its aim point by this fraction
+  lifeScaleOffset?: number;
   // ShootAlternate: successive shots leave side-by-side barrels, `spread`
   // px apart perpendicular to the facing
   barrels?: { count: number; spread: number };
@@ -268,7 +317,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
 
   // ---------- STUBS ----------------------------------------------------
   //
-  // The rest of the Serpulo turret line, present so the tech tree can show
+  // The Extreme and Eradication turrets, present so the tech tree can show
   // the whole shape of the game. SIZE, RANGE and RELOAD are the real
   // Mindustry numbers (content/Blocks.java) because those are what the
   // ceiling rule in tech.ts is solved from and they must not be guesses.
@@ -278,15 +327,146 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // None of these is in the build menu, so none can be placed. Implementing
   // one means replacing its bullet block with the real ammo and adding it
   // to TOWER_MENU; nothing else here has to change.
+  // Arc, 1:1 from mindustry/content/Blocks.java (a PowerTurret, so its one
+  // shootType is the whole armament): a LightningBulletType at 20 damage
+  // and lightningLength 25. The bolt is not a shot — it walks twelve nodes
+  // out from the muzzle, damaging what each lands on and chaining to the
+  // furthest enemy within reach of it, which is why arc's reach in a crowd
+  // is far longer than the 90 units it targets from. Ground only.
+  arc: {
+    name: "Arc",
+    size: 1,
+    range: 90 * MU,
+    reload: 35 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: 0, // Turret default — arc never overrides it
+    shootCone: (40 * Math.PI) / 180,
+    rotateSpeed: ((8 * Math.PI) / 180) * TICK,
+    targetAir: false,
+    targetGround: true,
+    bullet: {
+      speed: 0,
+      damage: 20,
+      // Fx.lightning's own 10 ticks: the bolt is instant, and this is only
+      // how long the drawn arc lingers
+      lifetime: 10 / TICK,
+      splash: 0,
+      splashRadius: 0,
+      collidesAir: false,
+      collidesGround: true,
+      // the node bullet is a plain BulletType, hitSize 4
+      hitRadius: (4 / 2) * MU,
+      lightning: { length: 25 },
+    },
+  },
+  // Lancer, 1:1 from mindustry/content/Blocks.java: a LaserBulletType(140)
+  // 173 units long that pierces FOUR units and stops. shoot.firstShotDelay
+  // 40 makes it charge for two thirds of a second before it fires, and
+  // moveWhileCharging false locks the barrel for that whole charge — a
+  // lancer commits to where it was aiming, not where the target went.
+  //
+  // armorMultiplier 4 is the catch: armour counts quadruple against it, so
+  // the 140 that guts a dagger is 104 against a fortress. Ground only.
+  lancer: {
+    name: "Lancer",
+    size: 2,
+    range: 165 * MU,
+    reload: 80 / TICK,
+    chargeTime: 40 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: 0,
+    // turret defaults: 8-degree shoot cone, 5 deg/tick turn rate
+    shootCone: (8 * Math.PI) / 180,
+    rotateSpeed: ((5 * Math.PI) / 180) * TICK,
+    targetAir: false,
+    targetGround: true,
+    bullet: {
+      speed: 0,
+      damage: 140,
+      lifetime: 16 / TICK, // the beam's fade — the damage is instant
+      splash: 0,
+      splashRadius: 0,
+      collidesAir: false,
+      collidesGround: true,
+      armorMultiplier: 4,
+      laser: { length: 173 * MU, pierceCap: 4, width: 15 * MU },
+    },
+  },
+  // Ripple, 1:1 from mindustry/content/Blocks.java with graphite ammo
+  // (ArtilleryBulletType(3, 40), 70 splash in a 22.5-unit radius): four
+  // shells every two seconds over 290 units, the longest reach in the game.
+  // The volley scatters on purpose — 11 degrees of inaccuracy, a velocity
+  // roll in [0.8, 1] and a lifetime roll in [0.95, 1.08] — so it lands as a
+  // pattern across the lane rather than four shells in one hole.
+  ripple: {
+    name: "Ripple",
+    size: 3,
+    range: 290 * MU,
+    minRange: 50 * MU,
+    reload: 120 / TICK,
+    shots: 4,
+    shotDelay: 0, // ShootPattern.shots with no delay — the volley leaves together
+    spread: 0,
+    inaccuracy: (11 * Math.PI) / 180,
+    shootCone: (8 * Math.PI) / 180,
+    rotateSpeed: ((5 * Math.PI) / 180) * TICK,
+    targetAir: false,
+    targetGround: true,
+    velocityRnd: 0.2,
+    lifeScaleOffset: 1 / 9,
+    bullet: {
+      speed: 3 * TICK * MU,
+      damage: 40, // never lands directly — an artillery shell arcs over
+      lifetime: 80 / TICK,
+      splash: 70,
+      splashRadius: 30 * 0.75 * MU,
+      collidesAir: false,
+      collidesGround: true,
+      artillery: true,
+      lifeScaleRand: [0.95, 1.08],
+    },
+  },
+  // Parallax, 1:1 from mindustry/content/Blocks.java. A TractorBeamTurret
+  // has no reload and fires no bullet at all: it holds a beam on ONE flyer
+  // and, every tick it is aimed within 6 degrees, deals 0.5 armour-piercing
+  // damage and pulls the target toward itself.
+  //
+  // The pull is an impulse divided by the target's MASS (hitSize squared,
+  // times pi), which is the whole character of the turret: the same 16-25
+  // units of force that nearly stops a flare barely leans on an antumbra.
+  // Thirty damage a second will not kill anything on its own — parallax
+  // takes air units out of formation and hands them to something else.
+  parallax: {
+    name: "Parallax",
+    size: 2,
+    range: 300 * MU,
+    reload: 0, // continuous: no volley clock at all
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: 0,
+    shootCone: (6 * Math.PI) / 180, // TractorBeamTurret's own default
+    rotateSpeed: ((12 * Math.PI) / 180) * TICK,
+    targetAir: true,
+    targetGround: false,
+    bullet: {
+      // damageContinuousPierce is per TICK; this table is per second
+      speed: 0,
+      damage: 0.5 * TICK,
+      lifetime: 0,
+      splash: 0,
+      splashRadius: 0,
+      collidesAir: true,
+      collidesGround: false,
+      pierceArmor: true,
+      tractor: { force: 16, scaledForce: 9 },
+    },
+  },
   ...stubTurrets({
-    // MEDIUM — chains lightning down a file of ground units
-    arc: { name: "Arc", size: 1, range: 90, reload: 35, air: false },
-    // HIGH — a piercing laser that rakes everything in a line
-    lancer: { name: "Lancer", size: 2, range: 165, reload: 80, air: false },
-    // HIGH — the longest artillery reach in the game
-    ripple: { name: "Ripple", size: 3, range: 290, reload: 120, air: false, shots: 4 },
-    // HIGH — tractor beam: drags and slows air units instead of killing them
-    parallax: { name: "Parallax", size: 2, range: 300, reload: 60, ground: false },
     // EXTREME — homing missiles that chase what they lock
     swarmer: { name: "Swarmer", size: 2, range: 240, reload: 60 * 4 / 7, shots: 4 },
     // EXTREME — a flak wall; the reason to own it is volume of splash

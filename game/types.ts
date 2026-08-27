@@ -50,6 +50,16 @@ export interface Tower {
   // so they expire — and blast — on target instead of overflying it
   aimX: number;
   aimY: number;
+  // Mindustry shoot.firstShotDelay: seconds left of a queued volley's
+  // charge, or -1 when nothing is charging. Lancer sets moveWhileCharging
+  // false, so a charging turret also stops turning
+  chargeT: number;
+  // TractorBeamTurret's live beam: where it ends, and Mindustry's
+  // `strength`, which lerps in as the beam catches and out as it lets go.
+  // A tractor turret has no bullets, so this IS its whole visual state
+  beamX: number;
+  beamY: number;
+  beamStr: number;
 }
 
 export interface Projectile {
@@ -86,6 +96,8 @@ export const enum FxKind {
   Absorb = 11,
   ShieldBreak = 12,
   Footfall = 13,
+  Lightning = 14,
+  Laser = 15,
 }
 
 export interface Effect {
@@ -97,7 +109,11 @@ export interface Effect {
   rot?: number; // Shrapnel: ray direction (rad); ShieldBreak: polygon roll;
   // Footfall: the unit's rippleScale, which is the slot Mindustry itself
   // passes it in (Fx.unitLandSmall reads e.rotation as its size)
-  len?: number; // Shrapnel: ray length (px); ShieldBreak: polygon radius
+  len?: number; // Shrapnel: ray length (px); ShieldBreak: polygon radius;
+  // Laser: how far the beam actually reached before its pierce cap stopped it
+  /** Lightning: the bolt's path, x,y pairs — Mindustry hands Fx.lightning
+   * the very Seq<Vec2> the walk built, and the effect just strokes it */
+  pts?: readonly number[];
   sides?: number; // ShieldBreak: sides of the force field that just popped
   // Mindustry seeds Mathf.rand with the effect's entity id and replays the
   // same sequence every frame, so a particle keeps its own direction while
