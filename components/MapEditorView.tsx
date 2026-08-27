@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MapEditor, PATH_WIDTHS } from "@/game/editor";
+import { SPAWN_RADII, SPAWN_RADIUS_DEFAULT } from "@/game/maps";
 import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
 import { PALETTE, SPAWN_REGIONS, saveMap, type MapData, type PaletteSet } from "@/game/maps";
 
@@ -124,13 +125,13 @@ function Panel({
           <circle cx="8" cy="2" r="1" />
           <circle cx="14" cy="2" r="1" />
         </svg>
-        <span className="flex-1 truncate text-[10px] uppercase tracking-widest">{title}</span>
+        <span className="flex-1 truncate text-[12px] uppercase tracking-widest">{title}</span>
         <button
           onPointerDown={(e) => e.stopPropagation()}
           onClick={toggle}
           title={open ? "Minimise" : "Expand"}
           aria-expanded={open}
-          className="shrink-0 rounded px-1 text-[11px] leading-none text-[#71717C] hover:bg-[#222227] hover:text-[#EDEDEF]"
+          className="shrink-0 rounded px-1 text-[13px] leading-none text-[#71717C] hover:bg-[#222227] hover:text-[#EDEDEF]"
         >
           {open ? "–" : "+"}
         </button>
@@ -159,6 +160,7 @@ export default function MapEditorView({
   const [randomize, setRandomize] = useState(true);
   const [brush, setBrush] = useState(1);
   const [pathWidth, setPathWidth] = useState(1);
+  const [spawnRadius, setSpawnRadius] = useState(SPAWN_RADIUS_DEFAULT);
   const [layers, setLayers] = useState<TerrainLayers>({ ...ALL_LAYERS });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -206,6 +208,7 @@ export default function MapEditorView({
     ed.randomize = randomize;
     ed.brush = brush;
     ed.pathWidth = pathWidth;
+    ed.spawnRadius = spawnRadius;
     if (
       ed.layers.wall !== layers.wall ||
       ed.layers.props !== layers.props ||
@@ -260,7 +263,9 @@ export default function MapEditorView({
   }
 
   const panel = "rounded border border-[#2E2E36] bg-[#151518]/80 backdrop-blur";
-  const isPath = (PALETTE.find((p) => p.id === setId) ?? PALETTE[0]).kind === "path";
+  const activeKind = (PALETTE.find((p) => p.id === setId) ?? PALETTE[0]).kind;
+  const isPath = activeKind === "path";
+  const isSpawn = activeKind === "spawn";
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-black">
@@ -277,8 +282,8 @@ export default function MapEditorView({
         <Panel id="header" title="Map" className={`absolute left-4 top-4 px-3 pb-2 pt-1 ${panel}`}>
           <div className="flex items-center gap-3">
           <div>
-            <div className="text-[11px] uppercase tracking-widest text-[#71717C]">Map editor</div>
-            <div className="text-sm font-semibold text-[#EDEDEF]">
+            <div className="text-[13px] uppercase tracking-widest text-[#71717C]">Map editor</div>
+            <div className="text-base font-bold text-[#EDEDEF]">
               {map.name}
               {dirty && <span className="ml-1 text-[#F0B457]">●</span>}
             </div>
@@ -303,7 +308,7 @@ export default function MapEditorView({
         <Panel id="controls" title="Tools" className={`absolute right-4 top-4 px-3 pb-2 pt-1 ${panel}`}>
           <div className="flex flex-col gap-2">
           <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[11px] uppercase tracking-widest text-[#71717C]">Randomize</span>
+            <span className="text-[13px] uppercase tracking-widest text-[#71717C]">Randomize</span>
             <button
               role="switch"
               aria-checked={randomize}
@@ -320,14 +325,14 @@ export default function MapEditorView({
             </button>
           </label>
           <label className="flex items-center justify-between gap-3">
-            <span className="text-[11px] uppercase tracking-widest text-[#71717C]">Brush</span>
+            <span className="text-[13px] uppercase tracking-widest text-[#71717C]">Brush</span>
             <span className="flex gap-1">
               {[1, 2, 3].map((b) => (
                 <button
                   key={b}
                   aria-pressed={brush === b}
                   onClick={() => setBrush(b)}
-                  className={`h-6 w-6 rounded border text-xs ${
+                  className={`h-6 w-6 rounded border text-sm ${
                     brush === b
                       ? "border-[#FFD37F] bg-[#222227] text-[#EDEDEF]"
                       : "border-[#2E2E36] text-[#71717C] hover:border-[#4A4A55]"
@@ -339,10 +344,10 @@ export default function MapEditorView({
             </span>
           </label>
           <div className="flex flex-col gap-1 border-t border-[#2E2E36] pt-2">
-            <span className="text-[11px] uppercase tracking-widest text-[#71717C]">Layers</span>
+            <span className="text-[13px] uppercase tracking-widest text-[#71717C]">Layers</span>
             {LAYER_ROWS.map(([key, label]) => (
               <label key={key} className="flex cursor-pointer items-center justify-between gap-3">
-                <span className={`text-[11px] ${layers[key] ? "text-[#A6A6AF]" : "text-[#4A4A55] line-through"}`}>
+                <span className={`text-[13px] ${layers[key] ? "text-[#A6A6AF]" : "text-[#4A4A55] line-through"}`}>
                   {label}
                 </span>
                 <button
@@ -362,20 +367,41 @@ export default function MapEditorView({
                 </button>
               </label>
             ))}
-            <div className="text-[10px] leading-tight text-[#71717C]">
+            <div className="text-[12px] leading-tight text-[#71717C]">
               A hidden layer is locked: paint straight over the ground beneath it
             </div>
           </div>
+          {isSpawn && (
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-[13px] uppercase tracking-widest text-[#71717C]">Radius</span>
+              <span className="flex gap-1">
+                {SPAWN_RADII.map((r) => (
+                  <button
+                    key={r}
+                    aria-pressed={spawnRadius === r}
+                    onClick={() => setSpawnRadius(r)}
+                    className={`h-6 w-7 rounded border text-sm ${
+                      spawnRadius === r
+                        ? "border-[#FFD37F] bg-[#222227] text-[#EDEDEF]"
+                        : "border-[#2E2E36] text-[#71717C] hover:border-[#4A4A55]"
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </span>
+            </label>
+          )}
           {isPath && (
             <label className="flex items-center justify-between gap-3">
-              <span className="text-[11px] uppercase tracking-widest text-[#71717C]">Path</span>
+              <span className="text-[13px] uppercase tracking-widest text-[#71717C]">Path</span>
               <span className="flex gap-1">
                 {PATH_WIDTHS.map((w, i) => (
                   <button
                     key={w}
                     aria-pressed={pathWidth === i}
                     onClick={() => setPathWidth(i)}
-                    className={`h-6 w-7 rounded border text-xs ${
+                    className={`h-6 w-7 rounded border text-sm ${
                       pathWidth === i
                         ? "border-[#FFD37F] bg-[#222227] text-[#EDEDEF]"
                         : "border-[#2E2E36] text-[#71717C] hover:border-[#4A4A55]"
@@ -387,10 +413,12 @@ export default function MapEditorView({
               </span>
             </label>
           )}
-          <div className="text-[10px] text-[#71717C]">
+          <div className="text-[12px] text-[#71717C]">
             {isPath
               ? "Drag to carve an enemy road · edges wobble on their own"
-              : "LMB paint · RMB pan · wheel zoom · ⌘Z undo"}
+              : isSpawn
+                ? "Click to drop a zone · click inside one to move it · erase removes it"
+                : "LMB paint · RMB pan · wheel zoom · ⌘Z undo"}
           </div>
           </div>
         </Panel>
@@ -405,7 +433,7 @@ export default function MapEditorView({
           <div className="flex flex-col gap-1.5">
             {PALETTE.map((set) => (
               <div key={set.id}>
-                <div className="mb-0.5 text-[10px] uppercase tracking-widest text-[#71717C]">
+                <div className="mb-0.5 text-[12px] uppercase tracking-widest text-[#71717C]">
                   {set.label}
                 </div>
                 <div className="flex gap-1">
@@ -437,14 +465,14 @@ export default function MapEditorView({
                         <img src={icon} alt={set.label} className="h-8 w-8 [image-rendering:pixelated]" />
                         {region > 0 && (
                           <span
-                            className="absolute -right-1 -top-1 rounded bg-[#222227] px-1 text-[9px] font-semibold"
+                            className="absolute -right-1 -top-1 rounded bg-[#222227] px-1 text-[11px] font-bold"
                             style={{ color: SPAWN_REGIONS[(region - 1) % SPAWN_REGIONS.length].css }}
                           >
                             {region}
                           </span>
                         )}
                         {randomize && !set.noRandom && set.icons.length > 1 && (
-                          <span className="absolute -right-1 -top-1 rounded bg-[#222227] px-1 text-[9px] text-[#FFD37F]">
+                          <span className="absolute -right-1 -top-1 rounded bg-[#222227] px-1 text-[11px] text-[#FFD37F]">
                             ×{set.icons.length}
                           </span>
                         )}

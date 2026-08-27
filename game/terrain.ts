@@ -1,4 +1,5 @@
 import { BASE, CELL, clamp, COLS, NCELLS, ROWS } from "./constants";
+import { fitSpawnCircles, rasterizeSpawns, type SpawnCircle } from "./maps";
 
 export interface Prop {
   x: number; // world px, sprite center
@@ -18,6 +19,12 @@ export interface Terrain {
   blocked: Uint8Array; // mountains, forests, rocks — everything units can't cross
   floor: Uint8Array; // UV_FLOORS index per cell (pine cells: the grass underneath)
   wall: Uint8Array; // per blocked cell: UV_WALLS index, or WALL_PINE
+  /**
+   * the authored drop zones. This is the SOURCE: `spawn` below is burned
+   * from it (and from `blocked`) by rasterizeSpawns, so anything that moves
+   * a circle or paints over one must re-derive the layer, never patch it
+   */
+  spawns: SpawnCircle[];
   // enemy spawn pads by region: 0 = none, N >= 1 = a pad in spawn region N.
   // Every enemy enters the field on one of these cells; wave groups that
   // name a region use only that region's pads. A data layer — the game
@@ -309,15 +316,20 @@ export function generateTerrain(seed: number): Terrain {
     });
   }
 
-  // spawn pads: the open cells of the western strip — the same ground the
-  // spawner has always used, now an explicit, editable layer (all region 1;
-  // paint further regions in the editor)
-  const spawn = new Uint8Array(NCELLS);
+  // the drop zone: the open ground of the western strip, the same mouth the
+  // spawner has always used, expressed as a circle covering it (region 1 —
+  // place further zones in the editor)
+  const strip = new Uint8Array(NCELLS);
   for (let y = 1; y < ROWS - 1; y++)
     for (let x = 0; x < 6; x++) {
       const i = y * COLS + x;
-      if (!blocked[i]) spawn[i] = 1;
+      if (!blocked[i]) strip[i] = 1;
     }
+  const spawns = fitSpawnCircles(strip);
+  const spawn = rasterizeSpawns(spawns, blocked);
 
-  return { blocked, floor, wall, spawn, pines, decor, valleyY, core: { ...BASE }, rows: ROWS };
+  return {
+    blocked, floor, wall, spawns, spawn, pines, decor, valleyY,
+    core: { ...BASE }, rows: ROWS,
+  };
 }

@@ -4,13 +4,13 @@ import AdminShortcut from "@/components/AdminShortcut";
 import "./globals.css";
 
 const display = Chakra_Petch({
-  weight: "600",
+  weight: ["600", "700"],
   subsets: ["latin"],
   variable: "--font-display",
 });
 
 const mono = IBM_Plex_Mono({
-  weight: ["400", "500"],
+  weight: ["400", "500", "600", "700"],
   subsets: ["latin"],
   variable: "--font-mono",
 });
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${display.variable} ${mono.variable} font-mono bg-[#0B0B0D] text-[13px] text-[#A6A6AF] antialiased`}>
+      <body className={`${display.variable} ${mono.variable} font-mono font-medium bg-[#0B0B0D] text-[15px] leading-snug text-[#C9C9D4] antialiased`}>
         <AdminShortcut />
         {children}
       </body>

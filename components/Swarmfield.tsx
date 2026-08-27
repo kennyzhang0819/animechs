@@ -1,8 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Game, SPEEDS, type UiState } from "@/game/game";
 import {
+  firstLoadStep,
+  Game,
+  LOAD_STEP_LABEL,
+  LOAD_STEPS,
+  SPEEDS,
+  type LoadStep,
+  type UiState,
+} from "@/game/game";
+import {
+  loadLevelDocs,
   UNIT_KINDS,
   WORLDS,
   waveGroups,
@@ -21,8 +30,9 @@ import {
   type RunReward,
 } from "@/game/progress";
 import { turretIcon } from "@/game/atlas";
+import { isEmpty } from "@/game/items";
+import { CostRow, Wallet } from "./Items";
 import TechTree from "./TechTree";
-import { SCRAP_ICON } from "./towerIcons";
 
 const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
 
@@ -39,6 +49,73 @@ function LevelThumb({ mapId }: { mapId: string }) {
   return (
     <div className="flex aspect-[16/9] items-center justify-center overflow-hidden rounded border border-[#2E2E36] bg-[#101013]">
       <canvas ref={ref} className="h-full w-full object-contain [image-rendering:pixelated]" />
+    </div>
+  );
+}
+
+/**
+ * How long the loading screen stays up at minimum, and how long it takes to
+ * fade. A warm start finishes in a few milliseconds, and an overlay that
+ * appears and vanishes inside one frame reads as a glitch rather than as a
+ * transition — so the screen is held briefly and dissolved, which costs a
+ * third of a second and buys a level start that looks deliberate.
+ */
+const MIN_LOAD_MS = 420;
+const FADE_MS = 260;
+
+/** the loading screen's own state: which step, and whether it is dissolving */
+interface LoadUi {
+  step: LoadStep;
+  out: boolean;
+}
+
+/** the screen shown while a level is being prepared */
+function LoadingScreen({
+  level,
+  step,
+  out,
+}: {
+  level: LevelSpec;
+  step: LoadStep;
+  out: boolean;
+}) {
+  const { waves, enemies } = levelSummary(level);
+  // steps, not bytes: nothing here streams, so the bar fills a stage at a
+  // time rather than pretending to a percentage it cannot know
+  const done = LOAD_STEPS.indexOf(step) + 1;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label={`Loading ${level.name}`}
+      className={`absolute inset-0 z-20 flex items-center justify-center bg-[#101013] transition-opacity duration-[260ms] ${
+        out ? "pointer-events-none opacity-0" : "opacity-100"
+      }`}
+    >
+      <div className="flex w-full max-w-md flex-col items-center gap-6 px-8">
+        <div className="w-full">
+          <LevelThumb mapId={level.map ?? OFFICIAL_MAP_IDS[0]} />
+        </div>
+        <div className="flex flex-col items-center gap-1.5 text-center">
+          <h2 className="text-3xl font-bold uppercase tracking-[0.25em] text-[#EDEDEF]">
+            {level.name}
+          </h2>
+          <p className="text-[13px] uppercase tracking-widest text-[#71717C]">
+            {waves} waves — {enemies} enemies
+          </p>
+        </div>
+        <div className="flex w-full flex-col gap-2">
+          <div className="h-1 w-full overflow-hidden rounded-full bg-[#2E2E36]">
+            <div
+              className="h-full rounded-full bg-[#FFD37F] transition-[width] duration-200 ease-out"
+              style={{ width: `${(done / LOAD_STEPS.length) * 100}%` }}
+            />
+          </div>
+          <p className="text-center text-[13px] uppercase tracking-widest text-[#71717C]">
+            {LOAD_STEP_LABEL[step]}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -69,6 +146,11 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
     icon: "/mindustry/sprites/blocks/turrets/hail.png",
   },
   {
+    kind: "scorch",
+    name: "Scorch",
+    icon: "/mindustry/sprites/blocks/turrets/scorch.png",
+  },
+  {
     kind: "salvo",
     name: "Salvo",
     icon: "/mindustry/sprites/blocks/turrets/salvo/salvo-preview.png",
@@ -84,21 +166,6 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
     icon: "/mindustry/sprites/blocks/turrets/fuse.png",
   },
 ];
-
-/** a scrap amount with the item sprite, for reward rows and headers */
-function Scrap({ value, dim }: { value: number; dim?: boolean }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1 font-semibold ${
-        dim ? "text-[#A6A6AF]" : "text-[#FFD37F]"
-      }`}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
-      <img src={SCRAP_ICON} alt="scrap" className="h-4 w-4 [image-rendering:pixelated]" />
-      {value}
-    </span>
-  );
-}
 
 export default function Swarmfield() {
   const glRef = useRef<HTMLCanvasElement>(null);
@@ -129,6 +196,8 @@ export default function Swarmfield() {
   // a finished run's settled payout: non-null exactly while the results
   // overlay shows the breakdown, and the guard against granting twice
   const [result, setResult] = useState<RunReward | null>(null);
+  // non-null exactly while the loading screen is up, including its fade
+  const [loadUi, setLoadUi] = useState<LoadUi | null>(null);
   const granted = useRef(false);
 
   useEffect(() => {
@@ -157,7 +226,10 @@ export default function Swarmfield() {
 
   useEffect(() => {
     let alive = true;
-    loadOfficialMaps()
+    // level documents overlay WORLDS in place (see levels.ts), so a script
+    // edited in the admin level editor is what the menu counts and the run
+    // plays. A level with no document keeps the campaign as shipped
+    Promise.all([loadOfficialMaps(), loadLevelDocs()])
       .then(() => {
         if (alive) setMapsReady(true);
       })
@@ -171,23 +243,43 @@ export default function Swarmfield() {
     if (screen !== "game" || !level || !glRef.current || !uiRef.current) return;
     let alive = true;
     let game: Game | null = null;
-    Game.create(glRef.current, uiRef.current)
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    // the overlay covers the canvases from the first render of the game
+    // screen, so the black canvas is never seen at all
+    const startedAt = performance.now();
+    setLoadUi({ step: firstLoadStep(), out: false });
+    Game.create(glRef.current, uiRef.current, level, (step) => {
+      // a step arriving after teardown must not resurrect the overlay
+      if (alive) setLoadUi((ui) => (ui ? { ...ui, step } : ui));
+    })
       .then((g) => {
         if (!alive) {
           g.destroy();
           return;
         }
         g.setTech(admin ? null : techOf(loadProgress()));
-        g.loadLevel(level);
         game = g;
         gameRef.current = g;
         setHud(g.ui());
         if (process.env.NODE_ENV !== "production") {
           (window as unknown as Record<string, unknown>).__swarmfield = g;
         }
+        // hold the screen out to its minimum, then dissolve it. The game is
+        // already running underneath — the sim ticks through the fade, so
+        // the first wave's timer starts when the player can see the field
+        timers.push(
+          setTimeout(() => {
+            setLoadUi((ui) => (ui ? { ...ui, out: true } : ui));
+            timers.push(setTimeout(() => setLoadUi(null), FADE_MS));
+          }, Math.max(0, MIN_LOAD_MS - (performance.now() - startedAt))),
+        );
       })
       .catch((err: unknown) => {
-        if (alive) setWebglError(err instanceof Error ? err.message : String(err));
+        if (!alive) return;
+        // the error screen replaces everything, so the overlay must go or it
+        // would sit on top of the message
+        setLoadUi(null);
+        setWebglError(err instanceof Error ? err.message : String(err));
       });
     // mode changes can also happen in-game (escape, right-click cancel);
     // the poll also catches the run ending, which settles the payout ONCE
@@ -205,9 +297,11 @@ export default function Swarmfield() {
     return () => {
       alive = false;
       clearInterval(poll);
+      for (const t of timers) clearTimeout(t);
       game?.destroy();
       gameRef.current = null;
       setHud(null);
+      setLoadUi(null);
       // drop the debug global too — a stale pointer to a destroyed Game
       // makes console probing silently act on the wrong instance
       const w = window as unknown as Record<string, unknown>;
@@ -284,14 +378,14 @@ export default function Swarmfield() {
           </div>
           {progress && (
             <div className="flex items-center gap-3">
-              <span className="flex items-center gap-2 rounded border border-[#2E2E36] bg-[#151518] px-4 py-2">
-                <Scrap value={progress.scrap} />
+              <span className="flex items-center rounded border border-[#2E2E36] bg-[#151518] px-4 py-2">
+                <Wallet bank={progress.bank} />
               </span>
               <button
                 onClick={() => setScreen("tech")}
-                className="rounded border border-[#FFD37F] bg-[#222227]/90 px-4 py-2 text-[11px] font-semibold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                className="rounded border border-[#FFD37F] bg-[#222227]/90 px-4 py-2 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
               >
-                Turrets
+                Upgrades
               </button>
             </div>
           )}
@@ -312,6 +406,11 @@ export default function Swarmfield() {
                     onClick={() => {
                       setLevel(world);
                       setScreen("game");
+                      // raised in the same batch as the screen switch, so
+                      // the game screen's FIRST paint is already covered —
+                      // an effect would run after that paint and let a
+                      // frame of black canvas through
+                      setLoadUi({ step: firstLoadStep(), out: false });
                     }}
                     className={`w-72 rounded-lg border p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
                       unlocked
@@ -321,9 +420,9 @@ export default function Swarmfield() {
                   >
                     {mapsReady && <LevelThumb mapId={world.map ?? OFFICIAL_MAP_IDS[0]} />}
                     <div className="mt-2 flex items-baseline justify-between">
-                      <span className="text-base font-semibold text-[#EDEDEF]">{world.name}</span>
+                      <span className="text-lg font-bold text-[#EDEDEF]">{world.name}</span>
                       {cleared ? (
-                        <span className="text-[10px] font-semibold uppercase tracking-widest text-[#7BE58A]">
+                        <span className="text-[12px] font-bold uppercase tracking-widest text-[#7BE58A]">
                           Cleared
                         </span>
                       ) : !unlocked ? (
@@ -336,10 +435,15 @@ export default function Swarmfield() {
                         </svg>
                       ) : null}
                     </div>
-                    <div className="mt-1 space-y-0.5 text-[11px] uppercase tracking-widest text-[#71717C]">
-                      <div className="truncate">
-                        {unlocked ? world.subtitle : `Clear ${WORLDS[i - 1]?.name ?? ""} first`}
-                      </div>
+                    <div className="mt-1 space-y-0.5 text-[13px] uppercase tracking-widest text-[#71717C]">
+                      {/* a world's name is now its only label, so the flavour
+                          line it used to carry is gone — the gate notice is
+                          all that still belongs here, and only while locked */}
+                      {!unlocked && (
+                        <div className="truncate">
+                          Clear {WORLDS[i - 1]?.name ?? "the previous world"} first
+                        </div>
+                      )}
                       <div>
                         {waves} waves · {enemies} enemies
                       </div>
@@ -352,16 +456,16 @@ export default function Swarmfield() {
           <div className="flex flex-col items-center gap-6">
             <button
               onClick={() => {
-                if (window.confirm("Wipe all progress — scrap, tech, and cleared levels?")) {
+                if (window.confirm("Wipe all progress — resources, tech, and cleared levels?")) {
                   resetProgress();
                   setProgress(loadProgress());
                 }
               }}
-              className="text-[11px] uppercase tracking-widest text-[#71717C] underline-offset-2 hover:text-[#FF5A5A] hover:underline"
+              className="text-[13px] uppercase tracking-widest text-[#71717C] underline-offset-2 hover:text-[#FF5A5A] hover:underline"
             >
               Reset save
             </button>
-            <p className="text-center text-[11px] uppercase tracking-widest text-[#71717C]">
+            <p className="text-center text-[13px] uppercase tracking-widest text-[#71717C]">
               A personal project by Zerkka — all units, art, and inspiration come from{" "}
               <a
                 href="https://mindustrygame.github.io/"
@@ -390,22 +494,27 @@ export default function Swarmfield() {
             hud?.buildKind ? "cursor-crosshair" : "cursor-default"
           }`}
         />
+        {loadUi && (
+          <LoadingScreen level={level} step={loadUi.step} out={loadUi.out} />
+        )}
         {hud?.paused && (
-          <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded border border-[#E8B45B] bg-[#151518]/70 px-3 py-1.5 text-sm font-semibold uppercase tracking-widest text-[#E8B45B] backdrop-blur">
+          <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded border border-[#E8B45B] bg-[#151518]/70 px-3 py-1.5 text-base font-bold uppercase tracking-widest text-[#E8B45B] backdrop-blur">
             Paused
           </div>
         )}
         {hud && (
           <div className="absolute left-4 top-4 max-w-[calc(100vw-2rem)] rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
-            <div className="text-[11px] uppercase tracking-widest text-[#71717C]">
+            <div className="text-[13px] uppercase tracking-widest text-[#71717C]">
               {level.name} — Wave {hud.currentWave} / {hud.totalWaves}
             </div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-              <Scrap value={hud.scrapEarned} />
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
+              {/* what the run has banked so far, one stack per currency —
+                  empty until the first kill, so it doesn't sit at "0" */}
+              <CostRow cost={hud.earned} />
               {hud.remaining > 0 && (
                 // icon + count only; wraps rather than running off the
                 // viewport once a level fields more kinds than fit on a line
-                <span className="flex flex-wrap items-center gap-x-3 gap-y-1 font-semibold text-[#EDEDEF]">
+                <span className="flex flex-wrap items-center gap-x-3 gap-y-1 font-bold text-[#EDEDEF]">
                   {UNIT_KINDS.map(
                     (k, i) =>
                       hud.byKind[i] > 0 && (
@@ -424,10 +533,10 @@ export default function Swarmfield() {
               )}
             </div>
             {hud.nextWaveIn > 0 && (
-              <div className="flex items-center gap-2 text-[11px] uppercase tracking-widest text-[#71717C]">
+              <div className="flex items-center gap-2 text-[13px] uppercase tracking-widest text-[#71717C]">
                 <span>
                   Next wave{" "}
-                  <span className="font-semibold text-[#EDEDEF]">
+                  <span className="font-bold text-[#EDEDEF]">
                     {Math.ceil(hud.nextWaveIn)}
                   </span>
                 </span>
@@ -451,7 +560,7 @@ export default function Swarmfield() {
             aria-label="sandbox controls"
             className="absolute bottom-4 left-4 flex overflow-hidden rounded border border-[#2E2E36] bg-[#151518]/70 backdrop-blur"
           >
-            <span className="border-r border-[#2E2E36] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-[#FFD37F]">
+            <span className="border-r border-[#2E2E36] px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F]">
               Sandbox
             </span>
             {SPEEDS.map((mult) => (
@@ -465,7 +574,7 @@ export default function Swarmfield() {
                   g.setSpeed(mult);
                   setHud(g.ui());
                 }}
-                className={`px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+                className={`px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
                   hud.speed === mult
                     ? "bg-[#222227] text-[#FFD37F]"
                     : "text-[#71717C] hover:bg-[#222227]/60 hover:text-[#A6A6AF]"
@@ -508,7 +617,7 @@ export default function Swarmfield() {
                 />
                 {cap !== null && (
                   <span
-                    className={`absolute bottom-0.5 right-1 text-[10px] font-semibold ${
+                    className={`absolute bottom-0.5 right-1 text-[12px] font-bold ${
                       full ? "text-[#FFD37F]" : "text-[#71717C]"
                     }`}
                   >
@@ -522,35 +631,35 @@ export default function Swarmfield() {
         {hud?.lost && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="w-80 rounded border border-[#3A2430] bg-[#151518]/95 p-6 text-center">
-              <div className="text-lg font-bold uppercase tracking-widest text-[#FF5A5A]">
+              <div className="text-xl font-bold uppercase tracking-widest text-[#FF5A5A]">
                 Core destroyed
               </div>
-              <div className="mt-4 space-y-1 text-sm text-[#A6A6AF]">
+              <div className="mt-4 space-y-1 text-base text-[#A6A6AF]">
                 <div>
                   Reached wave{" "}
-                  <span className="font-semibold text-[#EDEDEF]">{hud.currentWave}</span> of{" "}
+                  <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span> of{" "}
                   {hud.totalWaves}
                 </div>
                 <div>
-                  Kills <span className="font-semibold text-[#EDEDEF]">{hud.kills}</span>
+                  Kills <span className="font-bold text-[#EDEDEF]">{hud.kills}</span>
                 </div>
-                {result && (
-                  <div className="flex items-center justify-center gap-1.5 pt-1">
-                    <span>Scrap salvaged</span>
-                    <Scrap value={result.total} />
+                {result && !isEmpty(result.earned) && (
+                  <div className="space-y-1 pt-1">
+                    <div>Salvaged</div>
+                    <CostRow cost={result.earned} className="justify-center" />
                   </div>
                 )}
               </div>
               <div className="mt-6 flex justify-center gap-3">
                 <button
                   onClick={retry}
-                  className="rounded border border-[#FFD37F] bg-[#222227]/90 px-5 py-2 text-sm font-semibold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                  className="rounded border border-[#FFD37F] bg-[#222227]/90 px-5 py-2 text-base font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
                 >
                   Retry
                 </button>
                 <button
                   onClick={backToMenu}
-                  className="rounded border border-[#2E2E36] px-5 py-2 text-sm font-semibold uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:bg-[#222227]/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                  className="rounded border border-[#2E2E36] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:bg-[#222227]/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
                 >
                   Levels
                 </button>
@@ -561,21 +670,25 @@ export default function Swarmfield() {
         {hud?.won && !hud.lost && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="w-80 rounded border border-[#1F3A2E] bg-[#151518]/95 p-6 text-center">
-              <div className="text-lg font-bold uppercase tracking-widest text-[#7BE58A]">
+              <div className="text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
                 Level cleared
               </div>
-              <div className="mt-4 space-y-1.5 text-sm text-[#A6A6AF]">
+              <div className="mt-4 space-y-1.5 text-base text-[#A6A6AF]">
                 <div>
-                  Kills <span className="font-semibold text-[#EDEDEF]">{hud.kills}</span>
+                  Kills <span className="font-bold text-[#EDEDEF]">{hud.kills}</span>
                 </div>
                 {result && (
                   <>
-                    <div className="flex items-center justify-between border-t border-[#2E2E36] pt-1.5">
-                      <span className="font-semibold text-[#EDEDEF]">Scrap salvaged</span>
-                      <Scrap value={result.total} />
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[#2E2E36] pt-1.5">
+                      <span className="font-bold text-[#EDEDEF]">Salvaged</span>
+                      {isEmpty(result.earned) ? (
+                        <span className="text-[#71717C]">nothing</span>
+                      ) : (
+                        <CostRow cost={result.earned} />
+                      )}
                     </div>
                     {result.firstClear && (
-                      <div className="pt-1 text-[10px] uppercase tracking-widest text-[#FFD37F]">
+                      <div className="pt-1 text-[12px] uppercase tracking-widest text-[#FFD37F]">
                         Next level unlocked
                       </div>
                     )}
@@ -585,7 +698,7 @@ export default function Swarmfield() {
               <div className="mt-6 flex justify-center">
                 <button
                   onClick={backToMenu}
-                  className="rounded border border-[#7BE58A] bg-[#14271C]/90 px-6 py-2 text-sm font-semibold uppercase tracking-widest text-[#7BE58A] hover:bg-[#1A3324] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#7BE58A]"
+                  className="rounded border border-[#7BE58A] bg-[#14271C]/90 px-6 py-2 text-base font-bold uppercase tracking-widest text-[#7BE58A] hover:bg-[#1A3324] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#7BE58A]"
                 >
                   Continue
                 </button>
@@ -596,7 +709,7 @@ export default function Swarmfield() {
         {hud?.menuOpen && !hud.lost && !hud.won && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
             <div className="w-72 rounded border border-[#2E2E36] bg-[#151518]/95 p-6 text-center">
-              <div className="text-lg font-bold uppercase tracking-widest text-[#EDEDEF]">
+              <div className="text-xl font-bold uppercase tracking-widest text-[#EDEDEF]">
                 Game menu
               </div>
               <div className="mt-6 flex flex-col gap-3">
@@ -607,13 +720,13 @@ export default function Swarmfield() {
                     g.closeMenu();
                     setHud(g.ui());
                   }}
-                  className="rounded border border-[#FFD37F] bg-[#222227]/90 px-5 py-2 text-sm font-semibold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                  className="rounded border border-[#FFD37F] bg-[#222227]/90 px-5 py-2 text-base font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
                 >
                   Resume
                 </button>
                 <button
                   onClick={backToMenu}
-                  className="rounded border border-[#3A2430] px-5 py-2 text-sm font-semibold uppercase tracking-widest text-[#FF8A8A] hover:border-[#FF5A5A] hover:bg-[#2A1620]/80 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF5A5A]"
+                  className="rounded border border-[#3A2430] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#FF8A8A] hover:border-[#FF5A5A] hover:bg-[#2A1620]/80 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF5A5A]"
                 >
                   Abandon level
                 </button>

@@ -1,9 +1,11 @@
 "use client";
 
 import { TOWERS } from "@/game/constants";
+import { worldById } from "@/game/levels";
 import { buyTech, nodeStatus, type NodeStatus, type Progress } from "@/game/progress";
-import { TECH_TREE, techNode, techPrice, techTierLeft } from "@/game/tech";
-import { SCRAP_ICON, TOWER_ICONS } from "./towerIcons";
+import { TECH_TREE, techNode, techPrice } from "@/game/tech";
+import { CostRow, Wallet } from "./Items";
+import { TOWER_ICONS } from "./towerIcons";
 
 // board geometry: nodes are squares centered in grid cells; the SVG edge
 // layer underneath connects cell centers
@@ -36,17 +38,15 @@ export default function TechTree({
         <header className="flex flex-wrap items-center justify-between gap-3">
           <button
             onClick={onBack}
-            className="rounded border border-[#2E2E36] px-3 py-1.5 text-[11px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+            className="rounded border border-[#2E2E36] px-3 py-1.5 text-[13px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
           >
             ◂ Levels
           </button>
-          <h1 className="text-xl font-bold uppercase tracking-[0.25em] text-[#EDEDEF]">
-            Turrets
+          <h1 className="text-2xl font-bold uppercase tracking-[0.25em] text-[#EDEDEF]">
+            Upgrades
           </h1>
-          <span className="flex items-center gap-2 rounded border border-[#2E2E36] bg-[#151518] px-4 py-1.5 font-semibold text-[#FFD37F]">
-            {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
-            <img src={SCRAP_ICON} alt="scrap" className="h-5 w-5 [image-rendering:pixelated]" />
-            {progress.scrap}
+          <span className="flex items-center rounded border border-[#2E2E36] bg-[#151518] px-4 py-1.5">
+            <Wallet bank={progress.bank} />
           </span>
         </header>
 
@@ -117,7 +117,7 @@ export default function TechTree({
                       }`}
                     />
                     {points > 0 && (
-                      <span className="absolute -bottom-2 -right-2 rounded border border-[#FFD37F] bg-[#101013] px-1.5 text-[11px] font-bold text-[#FFD37F]">
+                      <span className="absolute -bottom-2 -right-2 rounded border border-[#FFD37F] bg-[#101013] px-1.5 text-[13px] font-bold text-[#FFD37F]">
                         ×{points}
                       </span>
                     )}
@@ -132,7 +132,7 @@ export default function TechTree({
                     )}
                   </button>
                   <div
-                    className={`text-center text-[10px] font-semibold uppercase tracking-widest ${
+                    className={`text-center text-[12px] font-bold uppercase tracking-widest ${
                       points > 0 ? "text-[#EDEDEF]" : "text-[#71717C]"
                     }`}
                   >
@@ -146,33 +146,26 @@ export default function TechTree({
                   >
                     <div className="flex items-baseline justify-between">
                       <span className="font-bold text-[#EDEDEF]">{name}</span>
-                      <span className="text-[11px] text-[#A6A6AF]">
+                      <span className="text-[13px] text-[#A6A6AF]">
                         Capacity {points}
                       </span>
                     </div>
-                    <div className="mt-1 text-[12px] text-[#A6A6AF]">
+                    <div className="mt-1 text-[14px] text-[#A6A6AF]">
                       {points > 0
                         ? `+1 ${name} placement (${points} → ${points + 1})`
                         : `Unlocks the ${name} turret with 1 placement`}
                     </div>
                     {status === "locked-world" ? (
-                      <div className="mt-2 text-[11px] font-semibold uppercase tracking-widest text-[#FF8A8A]">
-                        Clear world {techNode(n.tower).world} first
+                      <div className="mt-2 text-[13px] font-bold uppercase tracking-widest text-[#FF8A8A]">
+                        Clear {worldById(String(techNode(n.tower).world))?.name ?? "the gating world"} first
                       </div>
                     ) : (
-                      <div
-                        className={`mt-2 flex items-center gap-1.5 text-[12px] font-semibold ${
-                          status === "buyable" ? "text-[#FFD37F]" : "text-[#FF8A8A]"
-                        }`}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
-                        <img
-                          src={SCRAP_ICON}
-                          alt="scrap"
-                          className="h-4 w-4 [image-rendering:pixelated]"
-                        />
-                        {techPrice(n.tower, points)}
-                        {status === "poor" && <span className="font-normal">— not enough scrap</span>}
+                      <div className="mt-2 border-t border-[#2E2E36] pt-2 text-[14px]">
+                        {/* the full bundle: every currency this rung wants.
+                            Passing the bank reddens exactly the stacks it
+                            can't cover, which is the whole "why can't I buy
+                            this" explanation — no prose needed */}
+                        <CostRow cost={techPrice(n.tower, points)} bank={progress.bank} />
                       </div>
                     )}
                   </div>

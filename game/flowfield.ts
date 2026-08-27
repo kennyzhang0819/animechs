@@ -157,7 +157,14 @@ export class FlowField {
         const nd = dist[i] + c + (narrow[ni] ? FlowField.NARROW_COST : 0);
         if (nd < dist[ni] - 1e-6) {
           dist[ni] = nd;
-          this.hPush(nd, ni);
+          // push the value AS STORED, not nd. dist is a Float32Array while
+          // the heap key is a float64, so pushing nd leaves the key holding
+          // more precision than the array kept — and once distances grow
+          // past ~130 that rounding gap outruns the 1e-6 slack in the
+          // stale-pop guard below, which then throws away LIVE frontier
+          // entries. The heap empties early and the walk stops dead at a
+          // flat distance contour, stranding every spawn pad beyond it
+          this.hPush(dist[ni], ni);
         }
       }
     }

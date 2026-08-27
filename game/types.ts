@@ -1,4 +1,4 @@
-export const TOWER_KINDS = ["duo", "hail", "salvo", "scatter", "fuse"] as const;
+export const TOWER_KINDS = ["duo", "hail", "salvo", "scatter", "fuse", "scorch"] as const;
 export type TowerKind = (typeof TOWER_KINDS)[number];
 
 export interface Tower {
@@ -31,6 +31,11 @@ export interface Projectile {
   // primed; once an enemy strays inside explodeRange it counts down to boom
   primeT: number;
   flakT: number; // seconds until the next proximity check
+  // Mindustry Bullet.collided: a piercing shot keeps flying and remembers
+  // whom it already hit, so one flame tongue costs each unit exactly one
+  // hit however many ticks it spends inside the hitbox. Unit IDS, not
+  // indices — swap-remove reshuffles indices under us. null = no pierce
+  pierced: number[] | null;
 }
 
 export const enum FxKind {
@@ -42,6 +47,9 @@ export const enum FxKind {
   Heal = 5,
   HealWave = 6,
   ShieldWave = 7,
+  Flame = 8,
+  FlameHit = 9,
+  Burning = 10,
 }
 
 export interface Effect {
@@ -52,4 +60,8 @@ export interface Effect {
   kind: FxKind;
   rot?: number; // Shrapnel: ray direction (rad)
   len?: number; // Shrapnel: ray length (px)
+  // Mindustry seeds Mathf.rand with the effect's entity id and replays the
+  // same sequence every frame, so a particle keeps its own direction while
+  // its distance grows. Effects with scattered particles carry that seed
+  seed?: number;
 }

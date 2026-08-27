@@ -9,6 +9,5 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   salvo: `${T}/salvo/salvo-preview.png`,
   scatter: `${T}/scatter/scatter-preview.png`,
   fuse: `${T}/fuse.png`,
+  scorch: `${T}/scorch.png`,
 };
-
-export const SCRAP_ICON = "/mindustry/sprites/items/item-scrap.png";

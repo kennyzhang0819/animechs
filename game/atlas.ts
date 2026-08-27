@@ -93,6 +93,16 @@ export const UV_FLARE = uv(32, 704, 64, 64);
 // the two, still clears 5px)
 export const UV_HORIZON = uv(0, 1024, 128, 128);
 export const UV_ZENITH = uv(128, 1024, 128, 128);
+// scorch's turret top rides the same fresh band. The cell must hug the art
+// EXACTLY like duo's and hail's do (64px art, 64px cell): the renderer maps
+// the whole cell onto a size*CELL quad, so a 64px sprite parked inside a
+// 128px cell would draw at half scale beside its size-1 neighbours. The
+// mip-3 margin comes from the empty band around it, not from cell padding
+export const UV_SCORCH = uv(288, 1056, 64, 64);
+// a plain filled white circle: the particle Mindustry's Fill.circle draws
+// by the dozen in every flame effect. UV_SOLID cannot stand in for it — a
+// square particle reads as a pixel cloud, not a tongue of fire
+export const UV_DISC = uv(384, 1024, 64, 64);
 // mechanical spawn-pad tile — drawn only by the map editor's terrain pass
 export const UV_SPAWN = uv(0, 192, 64, 64, 2);
 export const UV_PROJ = uv(352, 288, 64, 64);
@@ -208,6 +218,44 @@ export const UV_DECOR: readonly UVRect[] = [
   uv(288, 288, 64, 64), // shrubs
 ];
 
+/**
+ * The crawler line's T2 and T3 are LEG units, not mechs: their parts ride
+ * the empty 1024-wide band below y=1152 (the flyer band's tail), art and
+ * silhouettes side by side on 128px cells like every other unit strip.
+ *
+ * Two cells break the 128px-cell rule on purpose. A leg SEGMENT is drawn
+ * as a stretched quad between two moving points (Mindustry Lines.line), so
+ * the atlas cell has to be the art's exact rect — any padding would be
+ * stretched along with it. Both segment sprites fill their source rect
+ * edge to edge, so they also get no silhouette: the dilation an outline
+ * pass would add is clipped away at the rect, exactly as in Mindustry's
+ * own packer, and the leg art carries its dark edging hand-drawn anyway.
+ */
+export const UV_ATRAX_BODY = uv(0, 1152, 128, 128);
+export const UV_ATRAX_BASE = uv(128, 1152, 128, 128);
+export const UV_ATRAX_WEAPON = uv(256, 1152, 128, 128);
+export const UV_ATRAX_BODY_SIL = uv(384, 1152, 128, 128);
+export const UV_ATRAX_BASE_SIL = uv(512, 1152, 128, 128);
+export const UV_ATRAX_WEAPON_SIL = uv(640, 1152, 128, 128);
+export const UV_ATRAX_JOINT = uv(768, 1152, 64, 64);
+export const UV_ATRAX_FOOT = uv(896, 1152, 64, 64);
+export const UV_ATRAX_JOINT_SIL = uv(0, 1280, 64, 64);
+export const UV_ATRAX_FOOT_SIL = uv(128, 1280, 64, 64);
+export const UV_ATRAX_LEG = uv(272, 1296, 36, 26);
+export const UV_ATRAX_LEG_BASE = uv(336, 1296, 36, 26);
+export const UV_SPIROCT_BODY = uv(0, 1408, 128, 128);
+export const UV_SPIROCT_WEAPON = uv(128, 1408, 128, 128);
+export const UV_SPIROCT_MOUNT = uv(256, 1408, 128, 128);
+export const UV_SPIROCT_BODY_SIL = uv(384, 1408, 128, 128);
+export const UV_SPIROCT_WEAPON_SIL = uv(512, 1408, 128, 128);
+export const UV_SPIROCT_MOUNT_SIL = uv(640, 1408, 128, 128);
+export const UV_SPIROCT_JOINT = uv(768, 1408, 64, 64);
+export const UV_SPIROCT_FOOT = uv(896, 1408, 64, 64);
+export const UV_SPIROCT_JOINT_SIL = uv(0, 1536, 64, 64);
+export const UV_SPIROCT_FOOT_SIL = uv(128, 1536, 64, 64);
+export const UV_SPIROCT_LEG = uv(272, 1552, 48, 34);
+export const UV_SPIROCT_LEG_BASE = uv(352, 1552, 48, 34);
+
 // per-kind unit art: atlas cell + world quad size. Both ride at true
 // Mindustry scale — dagger 48px art = 1.5 tiles, mace 64px art = 2 tiles
 export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
@@ -215,6 +263,9 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   mace: { uv: UV_MACE_BODY, sprite: UNIT_SPRITE },
   fortress: { uv: UV_FORTRESS_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
   crawler: { uv: UV_CRAWLER_BODY, sprite: UNIT_SPRITE },
+  // 128px cells, like the fortress: the legged pair's bodies outgrow 64
+  atrax: { uv: UV_ATRAX_BODY, sprite: UNIT_SPRITE * 2 },
+  spiroct: { uv: UV_SPIROCT_BODY, sprite: UNIT_SPRITE * 2 },
   nova: { uv: UV_NOVA_BODY, sprite: UNIT_SPRITE },
   pulsar: { uv: UV_PULSAR_BODY, sprite: UNIT_SPRITE },
   flare: { uv: UV_FLARE, sprite: UNIT_SPRITE }, // 48px art in a 64 cell, dagger scale
@@ -356,6 +407,85 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
   },
 };
 
+/** px of world per native sprite px — a 64px cell draws at UNIT_SPRITE */
+const PX = UNIT_SPRITE / 64;
+
+/** one gun mount: Mindustry's Weapon, mirrored to both sides of the body */
+export interface LegGun {
+  uv: UVRect;
+  sil: UVRect;
+  /** sideways mount offset px, mirrored; forward offset px */
+  x: number;
+  y: number;
+  /** Weapon.top: false tucks the gun UNDER the body, like a mech's */
+  top: boolean;
+}
+
+/** part art for a legged (LegsUnit) ground unit — see LegSpec for its gait */
+export interface LegArt {
+  body: UVRect;
+  /** Mindustry baseRegion, the plate the legs mount to; spiroct has none */
+  base?: UVRect;
+  joint: UVRect;
+  foot: UVRect;
+  /** the two segments, mount -> joint -> foot, each stretched between its
+   * endpoints; the cell is the art's exact rect (see the UV note) */
+  leg: UVRect;
+  legBase: UVRect;
+  /** each segment's across-the-line width in world px — Mindustry's
+   * Lines.stroke(region.height * scl) */
+  legStroke: number;
+  legBaseStroke: number;
+  guns: readonly LegGun[];
+  /** world px of the body/base/gun quads (128px cells) */
+  sprite: number;
+  /** world px of the joint and foot quads (64px cells) */
+  small: number;
+  sil: { body: UVRect; base?: UVRect; joint: UVRect; foot: UVRect };
+}
+
+export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
+  // atrax-weapon x=7, top=false: a pair of slag guns slung under the shell
+  atrax: {
+    body: UV_ATRAX_BODY,
+    base: UV_ATRAX_BASE,
+    joint: UV_ATRAX_JOINT,
+    foot: UV_ATRAX_FOOT,
+    leg: UV_ATRAX_LEG,
+    legBase: UV_ATRAX_LEG_BASE,
+    legStroke: 26 * PX,
+    legBaseStroke: 26 * PX,
+    guns: [{ uv: UV_ATRAX_WEAPON, sil: UV_ATRAX_WEAPON_SIL, x: 7 * MU, y: 0, top: false }],
+    sprite: UNIT_SPRITE * 2,
+    small: UNIT_SPRITE,
+    sil: {
+      body: UV_ATRAX_BODY_SIL,
+      base: UV_ATRAX_BASE_SIL,
+      joint: UV_ATRAX_JOINT_SIL,
+      foot: UV_ATRAX_FOOT_SIL,
+    },
+  },
+  // two weapon pairs over the body: the long sap gun (x=8.5, y=-1.5) and
+  // the small purple mount (x=4, y=3). Both rotate to track a target in
+  // Mindustry; these enemies never shoot, so they ride the body's facing
+  spiroct: {
+    body: UV_SPIROCT_BODY,
+    joint: UV_SPIROCT_JOINT,
+    foot: UV_SPIROCT_FOOT,
+    leg: UV_SPIROCT_LEG,
+    legBase: UV_SPIROCT_LEG_BASE,
+    legStroke: 34 * PX,
+    legBaseStroke: 34 * PX,
+    guns: [
+      { uv: UV_SPIROCT_WEAPON, sil: UV_SPIROCT_WEAPON_SIL, x: 8.5 * MU, y: -1.5 * MU, top: true },
+      { uv: UV_SPIROCT_MOUNT, sil: UV_SPIROCT_MOUNT_SIL, x: 4 * MU, y: 3 * MU, top: true },
+    ],
+    sprite: UNIT_SPRITE * 2,
+    small: UNIT_SPRITE,
+    sil: { body: UV_SPIROCT_BODY_SIL, joint: UV_SPIROCT_JOINT_SIL, foot: UV_SPIROCT_FOOT_SIL },
+  },
+};
+
 const ENV = "/mindustry/sprites/blocks/environment";
 const SPRITES = {
   grass0: `${ENV}/grass1.png`,
@@ -392,6 +522,20 @@ const SPRITES = {
   maceBase: "/mindustry/sprites/units/mace-base.png",
   mace: "/mindustry/sprites/units/mace.png",
   maceLeg: "/mindustry/sprites/units/mace-leg.png",
+  atrax: "/mindustry/sprites/units/atrax.png",
+  atraxBase: "/mindustry/sprites/units/atrax-base.png",
+  atraxLeg: "/mindustry/sprites/units/atrax-leg.png",
+  atraxLegBase: "/mindustry/sprites/units/atrax-leg-base.png",
+  atraxJoint: "/mindustry/sprites/units/atrax-joint.png",
+  atraxFoot: "/mindustry/sprites/units/atrax-foot.png",
+  atraxWeapon: "/mindustry/sprites/units/weapons/atrax-weapon.png",
+  spiroct: "/mindustry/sprites/units/spiroct.png",
+  spiroctLeg: "/mindustry/sprites/units/spiroct-leg.png",
+  spiroctLegBase: "/mindustry/sprites/units/spiroct-leg-base.png",
+  spiroctJoint: "/mindustry/sprites/units/spiroct-joint.png",
+  spiroctFoot: "/mindustry/sprites/units/spiroct-foot.png",
+  spiroctWeapon: "/mindustry/sprites/units/weapons/spiroct-weapon.png",
+  spiroctMount: "/mindustry/sprites/units/weapons/mount-purple-weapon.png",
   crawlerBase: "/mindustry/sprites/units/crawler-base.png",
   crawler: "/mindustry/sprites/units/crawler.png",
   crawlerLeg: "/mindustry/sprites/units/crawler-leg.png",
@@ -421,6 +565,7 @@ const SPRITES = {
   salvoPreview: "/mindustry/sprites/blocks/turrets/salvo/salvo-preview.png",
   scatterPreview: "/mindustry/sprites/blocks/turrets/scatter/scatter-preview.png",
   fuse: "/mindustry/sprites/blocks/turrets/fuse.png",
+  scorch: "/mindustry/sprites/blocks/turrets/scorch.png",
   shell: "/mindustry/sprites/effects/shell.png",
   shellBack: "/mindustry/sprites/effects/shell-back.png",
   core: "/mindustry/sprites/blocks/storage/core-nucleus.png",
@@ -475,7 +620,10 @@ function outlined(src: HTMLImageElement, color: string, radius: number): HTMLCan
   const cv = document.createElement("canvas");
   cv.width = w;
   cv.height = h;
-  const cc = cv.getContext("2d");
+  // read-back canvas: both this pass and silhouetted() pull the pixels out
+  // with getImageData, and a GPU-backed canvas has to stall and copy back
+  // every time. Say so up front and the browser keeps it in system memory
+  const cc = cv.getContext("2d", { willReadFrequently: true });
   if (!cc) throw new Error("2d context unavailable for outline");
   cc.imageSmoothingEnabled = false;
   cc.drawImage(src, 0, 0);
@@ -554,7 +702,7 @@ function antialiased(src: HTMLImageElement | HTMLCanvasElement): HTMLCanvasEleme
   const cv = document.createElement("canvas");
   cv.width = w;
   cv.height = h;
-  const cc = cv.getContext("2d");
+  const cc = cv.getContext("2d", { willReadFrequently: true });
   if (!cc) throw new Error("2d context unavailable for antialias");
   cc.imageSmoothingEnabled = false;
   cc.drawImage(src, 0, 0);
@@ -663,7 +811,7 @@ function drawFacingRight(
  * into the game's single texture atlas. Swap any region — or the whole
  * source set — for custom art without touching the render pipeline.
  */
-export async function buildAtlas(): Promise<HTMLCanvasElement> {
+async function packAtlas(): Promise<HTMLCanvasElement> {
   const img = await loadImages();
   const a = document.createElement("canvas");
   a.width = ATLAS_W;
@@ -788,6 +936,37 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   drawFacingRight(c, silhouetted(img.crawlerBase), 736, 320, 48);
   drawFacingRight(c, silhouetted(img.crawler), 800, 320, 48);
 
+  // the legged crawler line (see the UV note): body, mount plate and guns
+  // face +x on 128px cells, feet the same on 64px ones. A JOINT is drawn
+  // with no rotation at all in Mindustry, so its cell is packed upright.
+  drawFacingRight(c, antialiased(img.atrax), 64, 1216, 88, 64);
+  drawFacingRight(c, antialiased(img.atraxBase), 192, 1216, 64);
+  drawFacingRight(c, antialiased(img.atraxWeapon), 320, 1216, 48, 56);
+  drawFacingRight(c, silhouetted(img.atrax), 448, 1216, 88, 64);
+  drawFacingRight(c, silhouetted(img.atraxBase), 576, 1216, 64);
+  drawFacingRight(c, silhouetted(img.atraxWeapon), 704, 1216, 48, 56);
+  c.drawImage(antialiased(img.atraxJoint), 787, 1171, 26, 26);
+  drawFacingRight(c, antialiased(img.atraxFoot), 928, 1184, 40);
+  c.drawImage(silhouetted(img.atraxJoint), 19, 1299, 26, 26);
+  drawFacingRight(c, silhouetted(img.atraxFoot), 160, 1312, 40);
+  // segments: the cell IS the art, so these are drawn unrotated, at native
+  // size, exactly on the rect their UVs name
+  c.drawImage(antialiased(img.atraxLeg), 272, 1296, 36, 26);
+  c.drawImage(antialiased(img.atraxLegBase), 336, 1296, 36, 26);
+
+  drawFacingRight(c, antialiased(img.spiroct), 64, 1472, 94, 75);
+  drawFacingRight(c, antialiased(img.spiroctWeapon), 192, 1472, 48, 56);
+  drawFacingRight(c, antialiased(img.spiroctMount), 320, 1472, 48);
+  drawFacingRight(c, silhouetted(img.spiroct), 448, 1472, 94, 75);
+  drawFacingRight(c, silhouetted(img.spiroctWeapon), 576, 1472, 48, 56);
+  drawFacingRight(c, silhouetted(img.spiroctMount), 704, 1472, 48);
+  c.drawImage(antialiased(img.spiroctJoint), 784, 1424, 32, 32);
+  drawFacingRight(c, antialiased(img.spiroctFoot), 928, 1440, 46);
+  c.drawImage(silhouetted(img.spiroctJoint), 16, 1552, 32, 32);
+  drawFacingRight(c, silhouetted(img.spiroctFoot), 160, 1568, 46);
+  c.drawImage(antialiased(img.spiroctLeg), 272, 1552, 48, 34);
+  c.drawImage(antialiased(img.spiroctLegBase), 352, 1552, 48, 34);
+
   // silhouette row (y=960): each part again as a solid dilated shape — the
   // under-layer pushMech uses for the unit's single outer rim
   drawFacingRight(c, silhouetted(img.daggerLeg), 64, 992, 48);
@@ -856,6 +1035,13 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   c.fillStyle = "#ffffff";
   c.fillRect(224, 928, 32, 32);
 
+  // flame particle disc (384,1024) — procedural, inset well past the 4px
+  // mip-3 footprint so the cell's rim never bleeds into its neighbours
+  c.fillStyle = "#ffffff";
+  c.beginPath();
+  c.arc(416, 1056, 27, 0, TAU);
+  c.fill();
+
   // flash (0,64) — procedural
   const g = c.createRadialGradient(32, 96, 0, 32, 96, 18);
   g.addColorStop(0, "#ffffff");
@@ -903,6 +1089,9 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   // 3x3 turret base at native 96px
   c.drawImage(antialiased(img.towerBase3), 384, 384, 96, 96);
 
+  // scorch top: 32px source upscaled 2x, filling its 64px cell like duo's
+  drawFacingRight(c, antialiased(outlined(img.scorch, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 320, 1088, 64);
+
   // duo top and 1x1 base: 32px sources upscaled 2x into 64px cells
   drawFacingRight(c, antialiased(outlined(img.duoPreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 160, 480, 64);
   c.drawImage(antialiased(img.towerBase1), 320, 448, 64, 64);
@@ -934,4 +1123,45 @@ export async function buildAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(team, 320, 128);
 
   return a;
+}
+
+/**
+ * The packed sheet, built at most once per page.
+ *
+ * Packing is not cheap — it decodes every sprite, runs the EPX antialias
+ * pass over each in JavaScript, outlines the units, and composites the lot
+ * into a 1024x2048 canvas — and it depends on nothing but the sprite files,
+ * so a second call can only produce a byte-identical sheet. It used to run
+ * on every Game.create, which meant paying the whole cost again on every
+ * level start. Now the first caller pays and everyone after shares.
+ *
+ * The promise is memoised, not the canvas, so overlapping callers await the
+ * same build instead of racing two of them. A failure is not cached: the
+ * memo is dropped so a retry can actually retry.
+ */
+let atlasBuild: Promise<HTMLCanvasElement> | null = null;
+let atlasPacked = false;
+
+export function buildAtlas(): Promise<HTMLCanvasElement> {
+  atlasBuild ??= packAtlas().then(
+    (sheet) => {
+      atlasPacked = true;
+      return sheet;
+    },
+    (err: unknown) => {
+      atlasBuild = null;
+      throw err;
+    },
+  );
+  return atlasBuild;
+}
+
+/**
+ * True once the sheet is FINISHED — deliberately not "once a build has
+ * started". A level opened while an earlier build is still in flight still
+ * has to wait for it, so it must still say "Packing sprites"; keying this
+ * off the promise merely existing would label that wait as something else.
+ */
+export function atlasReady(): boolean {
+  return atlasPacked;
 }

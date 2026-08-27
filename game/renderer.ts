@@ -1,5 +1,8 @@
 import {
+  LEG_ART,
   MECH_ART,
+  type LegArt,
+  type LegGun,
   type MechArt,
   UNIT_ART,
   UV_SOLID,
@@ -12,15 +15,16 @@ import {
   UV_RING,
   UV_FUSE,
   UV_SCATTER,
-  UV_SPAWN,
   UV_FLOOR_EDGES,
   UV_SHELL,
   UV_SHELL_GRAPHITE,
   UV_HAIL,
+  UV_DISC,
   UV_DUO,
   UV_TOWER_BASE,
   UV_TOWER_BASE1,
   UV_TOWER_BASE3,
+  UV_SCORCH,
   UV_TRI,
   UV_TURRET,
   UV_WALLS,
@@ -41,11 +45,10 @@ import {
   TOWERS,
   W,
 } from "./constants";
-import { UNIT_KINDS, UNIT_STATS } from "./levels";
-import { SPAWN_REGIONS } from "./maps";
-import type { Sim } from "./sim";
+import { UNIT_KINDS, UNIT_STATS, type LegSpec } from "./levels";
+import { MAX_LEGS, type Sim } from "./sim";
 import { WALL_PINE, type Terrain } from "./terrain";
-import { FxKind, type TowerKind } from "./types";
+import { FxKind, type Effect, type TowerKind } from "./types";
 
 // per-kind turret tops and bullet sprites
 const UV_TURRETS: Record<TowerKind, UVRect> = {
@@ -54,16 +57,19 @@ const UV_TURRETS: Record<TowerKind, UVRect> = {
   salvo: UV_TURRET,
   scatter: UV_SCATTER,
   fuse: UV_FUSE,
+  scorch: UV_SCORCH,
 };
 // draw size [along-travel, across] px; scatter's flak shell is Mindustry's
 // 6x8-unit shell (15x20 px), longer than it is wide. Fuse never spawns a
-// projectile (hitscan) — its entries are unused placeholders.
+// projectile (hitscan) and scorch's is invisible (a bare BulletType draws
+// nothing) — their entries here are unused placeholders.
 const UV_BULLETS: Record<TowerKind, UVRect> = {
   duo: UV_PROJ,
   hail: UV_SHELL_GRAPHITE,
   salvo: UV_PROJ,
   scatter: UV_SHELL,
   fuse: UV_PROJ,
+  scorch: UV_PROJ,
 };
 const BULLET_SIZE: Record<TowerKind, readonly [number, number]> = {
   duo: [14, 12], // copper pellet: visibly lighter than salvo's thorium round
@@ -71,11 +77,50 @@ const BULLET_SIZE: Record<TowerKind, readonly [number, number]> = {
   salvo: [18, 18],
   scatter: [20, 15],
   fuse: [18, 18],
+  scorch: [18, 18],
 };
 /** px per Mindustry world unit — effect geometry is written in those units */
 const MU = CELL / 8;
 /** Pal.heal #98ffa9 */
 const PAL_HEAL = [0x98 / 255, 0xff / 255, 0xa9 / 255] as const;
+/** Pal.lightFlame #ffdd55, Pal.darkFlame #db401c, and Arc's Color.gray */
+const LIGHT_FLAME = [0xff / 255, 0xdd / 255, 0x55 / 255] as const;
+const DARK_FLAME = [0xdb / 255, 0x40 / 255, 0x1c / 255] as const;
+const FLAME_GRAY = [0.5, 0.5, 0.5] as const;
+type RGB = readonly [number, number, number];
+
+/**
+ * Draw.color(a, b, t) and Draw.color(a, b, c, t): a two- or three-stop ramp
+ * across the whole 0..1 progress, the middle colour landing at t = 0.5
+ */
+const ramp = (a: RGB, b: RGB, c: RGB | null, t: number): RGB => {
+  const [p, q, u] = c === null ? [a, b, t] : t < 0.5 ? [a, b, t * 2] : [b, c, t * 2 - 1];
+  return [p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u, p[2] + (q[2] - p[2]) * u];
+};
+
+/**
+ * Mindustry re-seeds Mathf.rand with the effect's entity id at the top of
+ * every draw, so a particle's direction and its fraction of the (growing)
+ * length are fixed for the effect's whole life while nothing has to be
+ * stored per particle. A plain xorshift32 stands in for Arc's Rand — the
+ * numbers differ, the distribution and the redraw stability do not.
+ */
+const SPREAD_10 = (10 * Math.PI) / 180;
+const SPREAD_50 = (50 * Math.PI) / 180;
+let rngState = 1;
+const rngSeed = (seed: number): void => {
+  rngState = seed | 0 || 1;
+};
+const rng = (): number => {
+  let x = rngState;
+  x ^= x << 13;
+  x |= 0;
+  x ^= x >>> 17;
+  x ^= x << 5;
+  x |= 0;
+  rngState = x;
+  return (x >>> 0) / 4294967296;
+};
 /**
  * Pal.shield #ffd37f — the warm amber Mindustry uses for friendly shields
  * (force projectors and the like). UnitType.shieldColor defaults to the
@@ -99,6 +144,15 @@ const KIND_UV = UNIT_KINDS.map((k) => UNIT_ART[k].uv);
 const KIND_SPRITE = UNIT_KINDS.map((k) => UNIT_ART[k].sprite);
 const KIND_FLYING = UNIT_KINDS.map((k) => !!UNIT_STATS[k].flying);
 const KIND_MECH = UNIT_KINDS.map((k) => MECH_ART[k] ?? null);
+// the legged pair (atrax, spiroct): part art and the gait that moves it
+const KIND_LEG = UNIT_KINDS.map((k) => LEG_ART[k] ?? null);
+const KIND_GAIT = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
+const TAU = Math.PI * 2;
+// Mindustry throws every shadow along (shadowTX, shadowTY) = (-12, -13)
+// world units times the caster's elevation. This game's shadows fall the
+// other way (see SHADOW_OFF), so the same vector is used mirrored
+const SHADOW_TX = 12 * MU;
+const SHADOW_TY = 13 * MU;
 // mech walk dressing (Mindustry defaults, world units × 2.5 px):
 // body/gun sway per stride, and a gentle shade on the planted leg — the
 // original lerps the sprite toward Pal.darkMetal, which the leg art
@@ -396,6 +450,114 @@ export class Renderer {
     }
   }
 
+  /**
+   * A walking LEG unit, layered like Mindustry's drawLegs: feet planted in
+   * the world, two segments stroked between mount, knee and foot, then the
+   * mount plate, the guns and the body over them.
+   *
+   * Nothing here is animated — the sim owns every joint and foot position
+   * (Sim.updateLegs), so this only decides what covers what. Legs run
+   * outside-in so a near leg never draws under a far one, and everything
+   * but the stretched segments gets the silhouette under-layer pushMech
+   * uses, which leaves one rim around the whole assembly instead of a line
+   * at every seam.
+   */
+  private pushLegs(
+    b: Batch,
+    art: LegArt,
+    L: LegSpec,
+    sim: Sim,
+    i: number,
+    tint: readonly [number, number, number],
+  ): void {
+    const { ulegFX, ulegFY, ulegJX, ulegJY, ulegStage, ulegMove } = sim;
+    const x = sim.upx[i], y = sim.upy[i];
+    const brot = sim.ubrot[i], rot = sim.urot[i];
+    const n = L.count, off = i * MAX_LEGS;
+    const sz = art.sprite, sm = art.small;
+    const [tr, tg, tb] = tint;
+    const cr = Math.cos(rot), sr = Math.sin(rot);
+    const swinging = ulegMove[i];
+
+    // a foot at the top of its swing throws its shadow clear of itself —
+    // the only cue that a leg is off the ground rather than sliding along it
+    for (let k = 0; k < n; k++) {
+      if (!(swinging & (1 << k)) || L.elevation <= 0) continue;
+      const p = off + k;
+      // Mathf.slope: a triangle peaking mid-swing, so the foot rises and lands
+      const elev = (1 - Math.abs(1 - ulegStage[p] - 0.5) * 2) * L.elevation;
+      const ang = brot + (TAU / n) * k + Math.PI / n;
+      const mx = x + Math.cos(ang) * L.baseOffset, my = y + Math.sin(ang) * L.baseOffset;
+      const fa = Math.atan2(ulegFY[p] - my, ulegFX[p] - mx);
+      this.push(b, ulegFX[p] + SHADOW_TX * elev, ulegFY[p] + SHADOW_TY * elev,
+        sm, sm, fa, art.foot, 0, 0, 0, SHADOW_ALPHA);
+    }
+
+    for (let pass = 0; pass < 2; pass++) {
+      const painted = pass === 1; // 0 = silhouette under-layer, 1 = the art
+      for (let j = n - 1; j >= 0; j--) {
+        // Mindustry's draw order: 0, n-1, 1, n-2, … — outermost pair last
+        const k = j % 2 === 0 ? j / 2 : n - 1 - ((j / 2) | 0);
+        const p = off + k;
+        const ang = brot + (TAU / n) * k + Math.PI / n;
+        const mx = x + Math.cos(ang) * L.baseOffset, my = y + Math.sin(ang) * L.baseOffset;
+        const fx = ulegFX[p], fy = ulegFY[p], jx = ulegJX[p], jy = ulegJY[p];
+        this.push(b, fx, fy, sm, sm, Math.atan2(fy - my, fx - mx),
+          painted ? art.foot : art.sil.foot, tr, tg, tb, 1);
+        if (painted) {
+          // the segment sprites are asymmetric: one half of the ring draws
+          // them mirrored (Mindustry's negative Lines.stroke) so every knee
+          // bends the way its art was drawn
+          const flip = k >= n / 2 ? 1 : -1;
+          this.pushSeg(b, mx, my, jx, jy, art.leg, art.legStroke * flip, tint);
+          // the lower segment is pulled back along itself by legExtension
+          // so its end covers the knee (jointless legs need it; these do not)
+          const dx = jx - fx, dy = jy - fy;
+          const d = Math.hypot(dx, dy) || 1;
+          const ex = (dx / d) * L.extension, ey = (dy / d) * L.extension;
+          this.pushSeg(b, jx + ex, jy + ey, fx, fy, art.legBase, art.legBaseStroke * flip, tint);
+        }
+        // the knee cap is never rotated — Mindustry draws it upright
+        this.push(b, jx, jy, sm, sm, 0, painted ? art.joint : art.sil.joint, tr, tg, tb, 1);
+      }
+      // the plate the legs hang off turns with the chassis, the body and its
+      // guns with the unit's own facing. A gun mount is mirrored to both
+      // sides (Weapon.mirror), the far one drawn from the same sprite
+      // flipped, and Weapon.top decides which side of the body it lands on
+      const gun = (g: LegGun): void => {
+        for (let side = -1; side <= 1; side += 2) {
+          this.push(b, x + cr * g.y - sr * g.x * side, y + sr * g.y + cr * g.x * side,
+            sz, sz * side, rot, painted ? g.uv : g.sil, tr, tg, tb, 1);
+        }
+      };
+      const base = painted ? art.base : art.sil.base;
+      if (base) this.push(b, x, y, sz, sz, brot, base, tr, tg, tb, 1);
+      for (const g of art.guns) if (!g.top) gun(g);
+      this.push(b, x, y, sz, sz, rot, painted ? art.body : art.sil.body, tr, tg, tb, 1);
+      for (const g of art.guns) if (g.top) gun(g);
+    }
+  }
+
+  /**
+   * One leg segment: the region stretched between two points, as wide as
+   * `stroke` across (Mindustry Lines.line). A negative stroke mirrors the
+   * art, which is how the two sides of the body share one sprite.
+   */
+  private pushSeg(
+    b: Batch,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    uvr: UVRect,
+    stroke: number,
+    tint: readonly [number, number, number],
+  ): void {
+    const dx = x2 - x1, dy = y2 - y1;
+    this.push(b, x1 + dx / 2, y1 + dy / 2, Math.hypot(dx, dy), stroke, Math.atan2(dy, dx),
+      uvr, tint[0], tint[1], tint[2], 1);
+  }
+
   private push(
     b: Batch,
     x: number,
@@ -431,14 +593,14 @@ export class Renderer {
 
   /**
    * rebuild the static tile batch — call on init and whenever the map
-   * changes. showSpawn paints the spawn-pad layer over its floor cells —
-   * an editor-only debug view; the game never passes it
+   * changes.
+   *
+   * Drop zones are NOT painted here, in the editor or in the game: a tinted
+   * pad hides the floor an author is trying to see, and the zone's real
+   * shape is already drawn as its circle in the editor overlay. `layers`
+   * still gates the zones' reachability there — see MapEditor.drawOverlay.
    */
-  rebuildTerrain(
-    src: { terrain: Terrain },
-    showSpawn = false,
-    layers: TerrainLayers = ALL_LAYERS,
-  ): void {
+  rebuildTerrain(src: { terrain: Terrain }, layers: TerrainLayers = ALL_LAYERS): void {
     const gl = this.gl;
     const t = this.terrain;
     const T = src.terrain;
@@ -543,15 +705,6 @@ export class Renderer {
             uvr = quads[y & 1][x & 1];
         }
         this.push(w, (x + 0.5) * CELL, (y + 0.5) * CELL, CELL, CELL, 0, uvr, 1, 1, 1, 1);
-      }
-    }
-    if (showSpawn && layers.spawn) {
-      for (let i = 0; i < COLS * ROWS; i++) {
-        if (!T.spawn[i] || T.blocked[i]) continue;
-        const cx = ((i % COLS) + 0.5) * CELL, cy = (((i / COLS) | 0) + 0.5) * CELL;
-        // tint the pad toward its region's color, so regions read at a glance
-        const [tr, tg, tb] = SPAWN_REGIONS[(T.spawn[i] - 1) % SPAWN_REGIONS.length].tint;
-        this.push(w, cx, cy, CELL, CELL, 0, UV_SPAWN, tr, tg, tb, 1);
       }
     }
     if (layers.props) {
@@ -662,8 +815,11 @@ export class Renderer {
         // hp thirds of the unit's own max, so every kind tints alike
         const t3 = (uhp[i] * 3) / uhpmax[i];
         const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
+        const legArt = KIND_LEG[k], gait = KIND_GAIT[k];
         const mech = KIND_MECH[k];
-        if (mech) {
+        if (legArt && gait) {
+          this.pushLegs(dyn, legArt, gait, sim, i, tint);
+        } else if (mech) {
           this.pushMech(dyn, mech, upx[i], upy[i], urot[i], ubrot[i], uwalk[i], tint);
         } else {
           // flyers bank instantly along their velocity, one flat quad
@@ -673,6 +829,9 @@ export class Renderer {
       }
     }
     for (const p of sim.projs) {
+      // a bare BulletType has no sprite at all — scorch's flame lives
+      // entirely in its shoot and hit effects
+      if (TOWERS[p.kind].bullet.invisible) continue;
       // colors are baked into the atlas composite
       const [bw, bh] = BULLET_SIZE[p.kind];
       this.push(dyn, p.x, p.y, bw, bh, Math.atan2(p.vy, p.vx), UV_BULLETS[p.kind], 1, 1, 1, 1);
@@ -705,6 +864,12 @@ export class Renderer {
           (heal ? 1 : 0.7) * RING_ALPHA);
       } else if (e.kind === FxKind.Shrapnel) {
         this.drawShrapnel(dyn, e.x, e.y, e.rot ?? 0, e.len ?? 0, t);
+      } else if (e.kind === FxKind.Flame) {
+        this.drawShootFlame(dyn, e, t);
+      } else if (e.kind === FxKind.FlameHit) {
+        this.drawHitFlame(dyn, e, t);
+      } else if (e.kind === FxKind.Burning) {
+        this.drawBurning(dyn, e, t);
       } else {
         const s = 9 + t * 30;
         this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 0.34, 0.89, 0.54, (1 - t) * 0.9);
@@ -766,6 +931,110 @@ export class Renderer {
         UV_SOLID,
         r, g, b, a,
       );
+    }
+  }
+
+  /** Fill.circle: a flat disc of the current colour */
+  private fillCircle(
+    dyn: Batch,
+    cx: number,
+    cy: number,
+    radius: number,
+    col: RGB,
+    a: number,
+  ): void {
+    if (radius <= 0.01 || a <= 0.004) return;
+    this.push(dyn, cx, cy, radius * 2, radius * 2, 0, UV_DISC, col[0], col[1], col[2], a);
+  }
+
+  /** Lines.lineAngle: a stroke-wide bar running `len` from (x, y) at `ang` */
+  private strokeLine(
+    dyn: Batch,
+    x: number,
+    y: number,
+    ang: number,
+    len: number,
+    stroke: number,
+    col: RGB,
+    a: number,
+  ): void {
+    if (len <= 0.01 || stroke <= 0.01 || a <= 0.004) return;
+    this.push(
+      dyn,
+      x + (Math.cos(ang) * len) / 2,
+      y + (Math.sin(ang) * len) / 2,
+      len, stroke, ang, UV_SOLID,
+      col[0], col[1], col[2], a,
+    );
+  }
+
+  /**
+   * Fx.shootSmallFlame, 1:1 — scorch's entire visible weapon. Twelve
+   * particles stream out of the muzzle inside a 10-degree cone, each one
+   * parked at its own fixed fraction of a length that eases out to 60
+   * units, so the tongue lengthens fast and then hangs. They fatten as they
+   * fade and run yellow to red to smoke-grey across the 32-tick life.
+   *
+   * The effect does NOT follow the turret (.followParent(false)): it is
+   * planted at the muzzle when the shot leaves, and the next shot is
+   * 6 ticks behind it, so five or six overlap into one continuous jet.
+   */
+  private drawShootFlame(dyn: Batch, e: Effect, t: number): void {
+    const fout = 1 - t;
+    const col = ramp(LIGHT_FLAME, DARK_FLAME, FLAME_GRAY, t);
+    const len = FIN_POW(t) * 60 * MU;
+    const rad = (0.65 + fout * 1.5) * MU;
+    const rot = e.rot ?? 0;
+    rngSeed(e.seed ?? 1);
+    for (let i = 0; i < 12; i++) {
+      const a = rot + (rng() * 2 - 1) * SPREAD_10;
+      const l = rng() * len;
+      this.fillCircle(dyn, e.x + Math.cos(a) * l, e.y + Math.sin(a) * l, rad, col, 1);
+    }
+  }
+
+  /**
+   * Fx.hitFlameSmall, 1:1: two short bars flicking outward from the point
+   * of contact over 14 ticks, within 50 degrees of the shot's heading
+   */
+  private drawHitFlame(dyn: Batch, e: Effect, t: number): void {
+    const fout = 1 - t;
+    const col = ramp(LIGHT_FLAME, DARK_FLAME, null, t);
+    const len = (1 + t * 15) * MU;
+    const stroke = (0.5 + fout) * MU;
+    const rot = e.rot ?? 0;
+    rngSeed(e.seed ?? 1);
+    for (let i = 0; i < 2; i++) {
+      const a = rot + (rng() * 2 - 1) * SPREAD_50;
+      const l = rng() * len;
+      // Mathf.angle(x, y): each bar points the way its own offset went
+      this.strokeLine(
+        dyn,
+        e.x + Math.cos(a) * l,
+        e.y + Math.sin(a) * l,
+        a,
+        (fout * 3 + 1) * MU,
+        stroke,
+        col,
+        1,
+      );
+    }
+  }
+
+  /**
+   * Fx.burning, 1:1: three embers guttering off a unit that scorch has set
+   * alight, drifting out in any direction over 35 ticks
+   */
+  private drawBurning(dyn: Batch, e: Effect, t: number): void {
+    const fout = 1 - t;
+    const col = ramp(LIGHT_FLAME, DARK_FLAME, null, t);
+    const len = (2 + t * 7) * MU;
+    const rad = (0.1 + fout * 1.4) * MU;
+    rngSeed(e.seed ?? 1);
+    for (let i = 0; i < 3; i++) {
+      const l = rng() * len;
+      const a = rng() * Math.PI * 2;
+      this.fillCircle(dyn, e.x + Math.cos(a) * l, e.y + Math.sin(a) * l, rad, col, 1);
     }
   }
 

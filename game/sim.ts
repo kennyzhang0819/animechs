@@ -1,4 +1,18 @@
-import { BASE, CELL, clamp, COLS, H, MAX_UNITS, ROWS, TOWERS, W, WALL_R, type TowerStats } from "./constants";
+import {
+  BASE,
+  BURN_DPS,
+  BURN_FX_CHANCE,
+  CELL,
+  clamp,
+  COLS,
+  H,
+  MAX_UNITS,
+  ROWS,
+  TOWERS,
+  W,
+  WALL_R,
+  type TowerStats,
+} from "./constants";
 import { FlowField, type Vec2 } from "./flowfield";
 import {
   WORLDS,
@@ -7,6 +21,7 @@ import {
   UNIT_RMAX,
   UNIT_STATS,
   waveGroups,
+  type LegSpec,
   type LevelSpec,
   type UnitKind,
 } from "./levels";
@@ -47,6 +62,51 @@ const KIND_FLYING: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].fl
 // support fields, indexed like UNIT_KINDS — null for kinds with no ability
 const KIND_REPAIR = UNIT_KINDS.map((k) => UNIT_STATS[k].repairField ?? null);
 const KIND_SHIELD = UNIT_KINDS.map((k) => UNIT_STATS[k].shieldField ?? null);
+/** the gait of every legged kind, indexed like UNIT_KINDS — null for the
+ * mechs and flyers, whose animation is one sliding pair of leg sprites */
+const KIND_LEGS = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
+/** widest leg count on the roster: the stride of the per-leg arrays */
+export const MAX_LEGS = Math.max(1, ...KIND_LEGS.map((l) => l?.count ?? 0));
+const TAU = Math.PI * 2;
+
+/**
+ * Arc InverseKinematics.solve, the knee placement for a two-segment leg:
+ * given the foot at (ex, ey) relative to the mount, put the joint where
+ * both segments keep their length. `side` chooses between the two mirror
+ * solutions — the original passes an attractor built by rotating the foot
+ * vector one degree, which after normalizing is exactly the perpendicular
+ * on that side, so the perpendicular is what this uses.
+ *
+ * An unreachable foot (further than a + b) is not an error: the reach
+ * clamp pulls it back next frame, and meanwhile the knee locks straight.
+ */
+function solveIK(a: number, b: number, ex: number, ey: number, side: boolean, out: Vec2): void {
+  const len = Math.hypot(ex, ey);
+  if (len < 1e-4) {
+    out.x = 0;
+    out.y = a;
+    return;
+  }
+  const ax = ex / len, ay = ey / len;
+  const px = side ? -ay : ay, py = side ? ax : -ax;
+  const along = clamp((len + (a * a - b * b) / len) / 2, 0, a);
+  const out2 = Math.sqrt(Math.max(0, a * a - along * along));
+  out.x = ax * along + px * out2;
+  out.y = ay * along + py * out2;
+}
+
+/** clamp a vector's length into [min, max], writing it back to `out` */
+function clampLen(dx: number, dy: number, min: number, max: number, out: Vec2): void {
+  const len = Math.hypot(dx, dy);
+  const k = len < 1e-6 ? 1 : len < min ? min / len : len > max ? max / len : 1;
+  out.x = dx * k;
+  out.y = dy * k;
+}
+
+/** scratch vectors for the leg pass — one per call site, never nested */
+const legTmp: Vec2 = { x: 0, y: 0 };
+const legTmp2: Vec2 = { x: 0, y: 0 };
+
 /** any support unit on the roster at all? skips the pass entirely when not */
 const HAS_ABILITIES = KIND_REPAIR.some(Boolean) || KIND_SHIELD.some(Boolean);
 
@@ -83,13 +143,48 @@ export class Sim {
   readonly ushieldAlpha = new Float32Array(MAX_UNITS);
   /** seconds since this unit's support ability last pulsed */
   readonly uability = new Float32Array(MAX_UNITS);
+  /**
+   * StatusEffects.burning: seconds of fire left. Reapplying resets it to
+   * the full statusDuration rather than stacking, exactly like Mindustry's
+   * status map, which keeps one entry per effect
+   */
+  readonly uburn = new Float32Array(MAX_UNITS);
+  /**
+   * a never-reused identity, Mindustry's entity id. Indices are recycled by
+   * swap-remove the instant anything dies, so anything that must remember a
+   * particular unit across ticks — a piercing bullet's hit list — has to
+   * hold this instead
+   */
+  readonly uid = new Int32Array(MAX_UNITS);
   readonly ukind = new Uint8Array(MAX_UNITS); // UNIT_ID of the kind
   // animation state, sim-owned so it survives swap-remove: distance walked
   // (drives the mech leg cycle), chassis angle, body angle
   readonly uwalk = new Float32Array(MAX_UNITS);
   readonly ubrot = new Float32Array(MAX_UNITS);
   readonly urot = new Float32Array(MAX_UNITS);
+  // --- legged units (UnitStats.legs) ---
+  // A leg is two segments between three points: the mount (derived from the
+  // body every frame), the knee JOINT, and the FOOT, which is planted in
+  // the world and only moves when the gait lifts it. Both live here, MAX_LEGS
+  // slots per unit, so a leg keeps its footing across frames — and across
+  // the swap-remove that recycles a dead unit's index
+  readonly ulegFX = new Float32Array(MAX_UNITS * MAX_LEGS);
+  readonly ulegFY = new Float32Array(MAX_UNITS * MAX_LEGS);
+  readonly ulegJX = new Float32Array(MAX_UNITS * MAX_LEGS);
+  readonly ulegJY = new Float32Array(MAX_UNITS * MAX_LEGS);
+  /** how far through its swing each leg is, 0..1 — the renderer lifts a
+   * stepping foot by it, and it eases back to 0 when the unit stands still */
+  readonly ulegStage = new Float32Array(MAX_UNITS * MAX_LEGS);
+  /** one bit per leg: is it mid-swing this frame? */
+  readonly ulegMove = new Uint8Array(MAX_UNITS);
+  /** Mindustry LegsComp.totalLength: px walked, the gait's clock */
+  readonly ulegT = new Float32Array(MAX_UNITS);
+  /** LegsComp.curMoveOffset: the smoothed lean the whole gait takes into
+   * the direction of travel, so feet land ahead of a walking body */
+  readonly ulegOX = new Float32Array(MAX_UNITS);
+  readonly ulegOY = new Float32Array(MAX_UNITS);
   n = 0;
+  private nextId = 1;
 
   level: LevelSpec = WORLDS[0];
   totalEnemies = 0;
@@ -141,7 +236,10 @@ export class Sim {
   private sealGy = -1;
   private sealResult = false;
 
-  constructor() {
+  /** a Sim is always born on a level — building a default world and then
+   * calling loadLevel solved the flow field twice and threw the first away */
+  constructor(level: LevelSpec = WORLDS[0]) {
+    this.level = level;
     this.reset();
   }
 
@@ -261,12 +359,11 @@ export class Sim {
 
   /** cut the between-waves wait short: the next wave starts entering now.
    * A no-op while a wave is still draining (there is nothing to skip).
-   * Must advance the script — during a wait the wave counters are already
-   * zero, and runScript reads "no wait + empty wave" as script-finished */
+   * The gap belongs to the wave loadStep already staged, so zeroing it
+   * releases THAT wave — advancing the script here would skip it outright */
   skipWave(): void {
     if (this.waitLeft <= 0) return;
     this.waitLeft = 0;
-    this.nextStep();
   }
 
   private addTower(gx: number, gy: number, kind: TowerKind): void {
@@ -294,6 +391,7 @@ export class Sim {
     this.updatePhysics();
     this.updateUnits(dt);
     this.updateAbilities(dt);
+    this.updateStatus(dt);
     // ShieldComp: shieldAlpha fades out over 15 ticks once nothing refreshes it
     for (let i = 0; i < this.n; i++)
       if (this.ushieldAlpha[i] > 0) this.ushieldAlpha[i] = Math.max(0, this.ushieldAlpha[i] - dt * (60 / 15));
@@ -313,9 +411,13 @@ export class Sim {
   // ---------- level script ----------
 
   /**
-   * Point the live state at script[stepIdx], skipping steps with nothing in
-   * them (an empty wave, a zero wait). Leaves everything zeroed once the
-   * script runs out, which is what ends the level.
+   * Point the live state at script[stepIdx], skipping empty waves. Leaves
+   * everything zeroed once the script runs out, which is what ends the level.
+   *
+   * Pacing is no longer written into the script: the level carries one
+   * `waveGap` and the sim puts it BEFORE every wave, the opening one
+   * included, which is the breather the old leading `{ wait: 10 }` gave.
+   * A step therefore always describes enemies and never time.
    */
   private loadStep(): void {
     this.waveEntries.length = 0;
@@ -323,19 +425,14 @@ export class Sim {
     const script = this.level.script;
     for (; this.stepIdx < script.length; this.stepIdx++) {
       const step = script[this.stepIdx];
-      if ("wait" in step) {
-        if (step.wait > 0) {
-          this.waitLeft = step.wait;
-          return;
-        }
-        continue;
-      }
       for (const g of waveGroups(step.wave))
         for (let kind = 0; kind < g.counts.length; kind++)
           if (g.counts[kind] > 0)
             this.waveEntries.push({ region: g.region, kind, left: g.counts[kind], total: g.counts[kind] });
       if (this.waveEntries.length > 0) {
         this.wavesStarted++;
+        // hold the gap, then let this wave drain — waitLeft gates runScript
+        this.waitLeft = Math.max(0, this.level.waveGap);
         return;
       }
     }
@@ -372,19 +469,18 @@ export class Sim {
   }
 
   /**
-   * Run the level script: hold through a wait, otherwise drain the current
-   * wave at the level's spawn rate. A failed spawn (the strip is too crowded)
-   * leaves the unit in the wave and keeps its drain credit for a later frame,
-   * so a packed field delays a wave rather than swallowing it.
+   * Run the level script: hold through the level's wave gap, otherwise drain
+   * the current wave at its spawn rate. A failed spawn (the drop zone is too
+   * crowded) leaves the unit in the wave and keeps its drain credit for a
+   * later frame, so a packed field delays a wave rather than swallowing it.
    */
   private runScript(dt: number): void {
     if (this.waitLeft > 0) {
       this.waitLeft -= dt;
+      // the gap belongs to the wave already loaded, so running it out just
+      // releases that wave — there is no next step to advance to
       if (this.waitLeft > 0) return;
-      this.nextStep();
-      // a wait that ends this frame hands its leftover time to nothing else;
-      // the wave it unblocks starts draining on the next frame
-      if (this.waitLeft > 0) return;
+      this.waitLeft = 0;
     }
 
     let left = 0;
@@ -527,6 +623,23 @@ export class Sim {
     return null;
   }
 
+  /**
+   * Chain demolition, the mirror of placeLine: walk the drag segment a cell
+   * at a time and pull down every tower it crosses. Sampling at most one
+   * cell apart means a fast drag cannot skip over a footprint, and
+   * sellTowerAt is a no-op on bare rock, so overlapping samples are free.
+   * Returns how many towers came down.
+   */
+  sellLine(x0: number, y0: number, x1: number, y1: number): number {
+    const dx = x1 - x0, dy = y1 - y0;
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / CELL));
+    let sold = 0;
+    for (let s = 0; s <= steps; s++) {
+      if (this.sellTowerAt(x0 + (dx * s) / steps, y0 + (dy * s) / steps)) sold++;
+    }
+    return sold;
+  }
+
   /** remove the tower whose footprint covers the world point, if any */
   sellTowerAt(px: number, py: number): boolean {
     const t = this.towerAt(px, py);
@@ -627,6 +740,8 @@ export class Sim {
       // a fresh support unit waits a full cycle before its first pulse,
       // exactly like a newly constructed Ability's zeroed timer
       this.uability[i] = 0;
+      this.uburn[i] = 0;
+      this.uid[i] = this.nextId++;
       this.ukind[i] = UNIT_ID[kind];
       // face the way it will walk, with legs mid-cycle at a random phase so
       // a wave doesn't march in lockstep
@@ -634,6 +749,7 @@ export class Sim {
       this.uwalk[i] = Math.random() * 100;
       this.ubrot[i] = a0;
       this.urot[i] = a0;
+      if (stats.legs) this.resetLegs(i, stats.legs);
       this.aliveByKind[UNIT_ID[kind]]++;
       return true;
     }
@@ -702,6 +818,33 @@ export class Sim {
     }
   }
 
+  /**
+   * StatusEffect.update for the one status we carry, burning: it ticks
+   * damageContinuousPierce every frame — armour-piercing, though a shield
+   * still eats it — and flickers Fx.burning at effectChance per tick from a
+   * random point inside the unit's hitbox. Walking backwards so a unit that
+   * burns to death can be swap-removed without skipping its neighbour.
+   */
+  private updateStatus(dt: number): void {
+    const { uburn, uhp, upx, upy, urad } = this;
+    for (let i = this.n - 1; i >= 0; i--) {
+      if (uburn[i] <= 0) continue;
+      uburn[i] -= dt;
+      this.damageUnit(i, BURN_DPS * dt, true);
+      if (uhp[i] <= 0) {
+        this.killUnit(i);
+        continue;
+      }
+      // Mathf.chanceDelta: the per-tick chance scaled by the frame's ticks
+      if (Math.random() < BURN_FX_CHANCE * dt) {
+        // Tmp.v1.rnd(Mathf.range(hitSize / 2)): a random point in the disc
+        const a = Math.random() * Math.PI * 2;
+        const r = (Math.random() * 2 - 1) * (urad[i] / 2);
+        this.pushFx(upx[i] + Math.cos(a) * r, upy[i] + Math.sin(a) * r, 35 / 60, FxKind.Burning);
+      }
+    }
+  }
+
   /** a tower kill: death puff, removal, and the per-kind scrap ledger */
   private killUnit(i: number): void {
     this.killsByKind[this.ukind[i]]++;
@@ -725,10 +868,149 @@ export class Sim {
     this.ushield[i] = this.ushield[n];
     this.ushieldAlpha[i] = this.ushieldAlpha[n];
     this.uability[i] = this.uability[n];
+    this.uburn[i] = this.uburn[n];
+    this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
     this.uwalk[i] = this.uwalk[n];
     this.ubrot[i] = this.ubrot[n];
     this.urot[i] = this.urot[n];
+    // the moved unit's feet are world positions, not offsets — they have to
+    // travel with it to its new index or its legs snap back to the origin
+    if (KIND_LEGS[this.ukind[i]]) {
+      const a = i * MAX_LEGS, b = n * MAX_LEGS;
+      for (let k = 0; k < MAX_LEGS; k++) {
+        this.ulegFX[a + k] = this.ulegFX[b + k];
+        this.ulegFY[a + k] = this.ulegFY[b + k];
+        this.ulegJX[a + k] = this.ulegJX[b + k];
+        this.ulegJY[a + k] = this.ulegJY[b + k];
+        this.ulegStage[a + k] = this.ulegStage[b + k];
+      }
+      this.ulegMove[i] = this.ulegMove[n];
+      this.ulegT[i] = this.ulegT[n];
+      this.ulegOX[i] = this.ulegOX[n];
+      this.ulegOY[i] = this.ulegOY[n];
+    }
+  }
+
+  /**
+   * Mindustry LegsComp.resetLegs: stand every leg straight out along its
+   * own mount angle, knee halfway. A fresh unit has never walked, so its
+   * gait clock starts at a random point — a wave of them steps out of
+   * phase instead of marching like a chorus line.
+   */
+  private resetLegs(i: number, L: LegSpec): void {
+    const off = i * MAX_LEGS;
+    const x = this.upx[i], y = this.upy[i], rot = this.ubrot[i];
+    for (let k = 0; k < L.count; k++) {
+      const ang = rot + (TAU / L.count) * k + Math.PI / L.count;
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      const bx = x + ca * L.baseOffset, by = y + sa * L.baseOffset;
+      this.ulegJX[off + k] = bx + ca * (L.length / 2);
+      this.ulegJY[off + k] = by + sa * (L.length / 2);
+      this.ulegFX[off + k] = bx + ca * L.length;
+      this.ulegFY[off + k] = by + sa * L.length;
+      this.ulegStage[off + k] = 0;
+    }
+    this.ulegMove[i] = 0;
+    this.ulegT[i] = Math.random() * 100;
+    this.ulegOX[i] = 0;
+    this.ulegOY[i] = 0;
+  }
+
+  /**
+   * One legged unit's gait, ported from Mindustry LegsComp.update.
+   *
+   * The legs are divided into `div` groups that take turns: the gait clock
+   * is the distance the body has walked, and every `moveSpace` px of it the
+   * turn passes to the next group. A leg whose turn it is swings toward the
+   * spot it wants to stand on (straight out along its mount angle, plus the
+   * body's lean into its travel); every other leg keeps its foot planted
+   * exactly where it is while the body walks out from over it. The knee is
+   * whatever IK says it must be for the segment lengths to hold, so all the
+   * bending falls out of the two endpoints rather than being animated.
+   */
+  private updateLegs(i: number, L: LegSpec, mdx: number, mdy: number, moved: number, dt: number): void {
+    const { ulegFX, ulegFY, ulegJX, ulegJY, ulegStage } = this;
+    const off = i * MAX_LEGS;
+    const x = this.upx[i], y = this.upy[i], rot = this.ubrot[i];
+    const n = L.count;
+    const div = Math.max((n / L.groupSize) | 0, 2);
+    const space = (L.length / 1.6 / (div / 2)) * L.moveSpace;
+    // Mathf.lerpDelta's alpha is per 1/60 s tick; compound it over the frame
+    const ticks = dt * 60;
+    const ease = 1 - Math.pow(0.9, ticks);
+    const knee = 1 - Math.pow(1 - L.speed / 4, ticks);
+    const moving = moved > 1e-3;
+    this.ulegT[i] += moved;
+
+    // the gait leans most of one stride into the direction of travel, eased
+    // so a turning unit's feet swing round rather than jumping
+    const trns = space * 0.85 * L.forwardScl;
+    const tx = moving ? (mdx / moved) * trns : 0;
+    const ty = moving ? (mdy / moved) * trns : 0;
+    this.ulegOX[i] += (tx - this.ulegOX[i]) * ease;
+    this.ulegOY[i] += (ty - this.ulegOY[i]) * ease;
+    const ox = this.ulegOX[i], oy = this.ulegOY[i];
+
+    const minJ = (L.minLength * L.length) / 2, maxJ = (L.maxLength * L.length) / 2;
+    const minF = L.minLength * L.length, maxF = L.maxLength * L.length;
+    let bits = 0;
+    for (let k = 0; k < n; k++) {
+      const p = off + k;
+      // the mount this leg hangs from: its own slice of the ring around the
+      // body, turning with the chassis
+      const ang = rot + (TAU / n) * k + Math.PI / n;
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      const bx = x + ca * L.baseOffset, by = y + sa * L.baseOffset;
+
+      // no leg may be stretched or folded past its reach — enforced before
+      // the step and again after it, exactly like the original
+      clampLen(ulegJX[p] - bx, ulegJY[p] - by, minJ, maxJ, legTmp);
+      ulegJX[p] = bx + legTmp.x;
+      ulegJY[p] = by + legTmp.y;
+      clampLen(ulegFX[p] - bx, ulegFY[p] - by, minF, maxF, legTmp);
+      ulegFX[p] = bx + legTmp.x;
+      ulegFY[p] = by + legTmp.y;
+
+      // whose turn it is: the clock's whole part picks the group, its
+      // fraction is how far through the swing this leg has come
+      const stageF = (this.ulegT[i] + k * L.pairOffset) / space;
+      const frac = stageF - Math.floor(stageF);
+      const step = k % div === Math.floor(stageF) % div;
+      if (step) bits |= 1 << k;
+      ulegStage[p] = moving ? frac : ulegStage[p] * (1 - ease);
+
+      // knees splay outward: the front and back halves take opposite IK
+      // solutions, and the pair straddling the middle flips again
+      // (Mindustry flipBackLegs) so the hindmost legs bend like the front
+      const back = Math.abs(k + 0.5 - n / 2) <= 0.501;
+      const side = k < n / 2 !== back;
+      solveIK(L.length / 2, L.length / 2, ulegFX[p] - bx, ulegFY[p] - by, side, legTmp2);
+      const jdx = bx + legTmp2.x, jdy = by + legTmp2.y;
+
+      if (step) {
+        // the spot this leg is swinging to, and a knee chasing it twice as slowly
+        const dx = bx + ca * L.length * L.lengthScl + ox;
+        const dy = by + sa * L.length * L.lengthScl + oy;
+        const a = 1 - Math.pow(1 - frac, ticks);
+        ulegFX[p] += (dx - ulegFX[p]) * a;
+        ulegFY[p] += (dy - ulegFY[p]) * a;
+        const a2 = 1 - Math.pow(1 - frac / 2, ticks);
+        ulegJX[p] += (jdx - ulegJX[p]) * a2;
+        ulegJY[p] += (jdy - ulegJY[p]) * a2;
+      }
+      // planted or not, the knee keeps easing toward its IK solution
+      ulegJX[p] += (jdx - ulegJX[p]) * knee;
+      ulegJY[p] += (jdy - ulegJY[p]) * knee;
+
+      clampLen(ulegJX[p] - bx, ulegJY[p] - by, minJ, maxJ, legTmp);
+      ulegJX[p] = bx + legTmp.x;
+      ulegJY[p] = by + legTmp.y;
+      clampLen(ulegFX[p] - bx, ulegFY[p] - by, minF, maxF, legTmp);
+      ulegFX[p] = bx + legTmp.x;
+      ulegFY[p] = by + legTmp.y;
+    }
+    this.ulegMove[i] = bits;
   }
 
   // ---------- spatial hash ----------
@@ -957,6 +1239,10 @@ export class Sim {
           ubrot[i] += clamp(Sim.angleDiff(ubrot[i], ang), -cap, cap);
         }
       }
+      // legs walk on the chassis angle this frame settled on. A standing
+      // unit still runs the pass — its feet ease back under it
+      const gait = KIND_LEGS[ukind[i]];
+      if (gait) this.updateLegs(i, gait, mdx, mdy, len, dt);
     }
   }
 
@@ -1086,7 +1372,9 @@ export class Sim {
     const fan = (idx - (st.shots - 1) / 2) * st.spread;
     const a = t.angle + fan + (Math.random() * 2 - 1) * st.inaccuracy;
     const cos = Math.cos(a), sin = Math.sin(a);
-    const muzzle = st.size * 5; // scales the old 10px offset with the block
+    // Mindustry shootY where the turret states one, else the shared
+    // size-scaled muzzle
+    const muzzle = st.shootY ?? st.size * 5;
     let x = t.x + cos * muzzle, y = t.y + sin * muzzle;
     if (st.barrels) {
       // ShootAlternate: the mount point steps sideways barrel to barrel,
@@ -1097,6 +1385,10 @@ export class Sim {
       y += Math.cos(t.angle) * off;
     }
     t.shotCount++;
+    // BulletType.shootEffect, fired at the muzzle along the shot's angle.
+    // For scorch this IS the weapon: the bullet draws nothing at all
+    if (st.bullet.invisible)
+      this.pushFx(x, y, 32 / 60, FxKind.Flame, a, 0, (Math.random() * 0x7fffffff) | 0);
     if (st.bullet.ray) {
       this.hitscanRay(
         x,
@@ -1130,6 +1422,7 @@ export class Sim {
       age: 0,
       primeT: -1,
       flakT: st.bullet.flak ? st.bullet.flak.interval : 0,
+      pierced: st.bullet.pierce ? [] : null,
     });
   }
 
@@ -1192,9 +1485,12 @@ export class Sim {
    * Mindustry ShieldComp.rawDamage: armor comes off the raw hit, then the
    * shield soaks everything it can and only the remainder reaches health.
    * Every damage source goes through here so shields can never be skipped.
+   *
+   * pierceArmor is ShieldComp.damagePierce — it skips applyArmor but still
+   * runs the shield, which is how burning damage behaves in the original.
    */
-  private damageUnit(i: number, raw: number): void {
-    let amount = Sim.applyArmor(raw, this.uarmor[i]);
+  private damageUnit(i: number, raw: number, pierceArmor = false): void {
+    let amount = pierceArmor ? raw : Sim.applyArmor(raw, this.uarmor[i]);
     if (this.ushield[i] > 0.0001) {
       this.ushieldAlpha[i] = 1;
       const soaked = Math.min(this.ushield[i], amount);
@@ -1237,8 +1533,15 @@ export class Sim {
       // the splash below is their whole damage
       let dead = pr.life <= 0;
       if (!dead && !b.artillery) {
+        const brad = b.hitRadius ?? 2.5;
         const hx = clamp((pr.x / HC) | 0, 0, HCOLS - 1);
         const hy = clamp((pr.y / HC) | 0, 0, HROWS - 1);
+        // a piercing shot may hit several units this tick and outlive them
+        // all, so its victims are gathered first and removed afterwards
+        // from the highest index down — a swap-remove mid-scan would drag
+        // an unvisited unit into a bucket we have already walked past
+        const hits = this.splashHits;
+        hits.length = 0;
         outer: for (let cy = Math.max(0, hy - 1); cy <= Math.min(HROWS - 1, hy + 1); cy++) {
           for (let cx = Math.max(0, hx - 1); cx <= Math.min(HCOLS - 1, hx + 1); cx++) {
             const c = cy * HCOLS + cx, e = bStart[c + 1];
@@ -1246,21 +1549,37 @@ export class Sim {
               const i = bUnits[k];
               if (i >= this.n || uhp[i] <= 0) continue;
               if (KIND_FLYING[this.ukind[i]] ? !b.collidesAir : !b.collidesGround) continue;
+              // Bullet.collides: a pierce shot skips whoever it already hit
+              if (pr.pierced && pr.pierced.includes(this.uid[i])) continue;
               const dx = upx[i] - pr.x, dy = upy[i] - pr.y;
-              const hr = urad[i] + 2.5;
+              const hr = urad[i] + brad;
               if (dx * dx + dy * dy < hr * hr) {
-                this.damageUnit(i, b.damage);
-                if (uhp[i] <= 0) {
-                  this.killUnit(i);
-                } else if (b.splash <= 0) {
-                  this.pushFx(pr.x, pr.y, 0.12, FxKind.Hit);
+                hits.push(i);
+                // Bullet.collision: a plain shot is spent on the first hit,
+                // a piercing one is only added to `collided` and flies on
+                if (!pr.pierced) {
+                  dead = true;
+                  break outer;
                 }
-                dead = true;
-                break outer;
+                pr.pierced.push(this.uid[i]);
               }
             }
           }
         }
+        for (const i of hits) {
+          this.damageUnit(i, b.damage);
+          if (uhp[i] > 0 && b.burn) this.uburn[i] = b.burn;
+          // BulletType.hitEffect, at the bullet rather than the victim
+          if (uhp[i] > 0 && b.splash <= 0)
+            this.pushFx(
+              pr.x, pr.y, b.invisible ? 14 / 60 : 0.12,
+              b.invisible ? FxKind.FlameHit : FxKind.Hit,
+              Math.atan2(pr.vy, pr.vx), 0,
+              (Math.random() * 0x7fffffff) | 0,
+            );
+        }
+        hits.sort((a2, b2) => b2 - a2);
+        for (const i of hits) if (uhp[i] <= 0) this.killUnit(i);
       }
       if (dead) {
         // splash bullets blast wherever they die: direct hit, proximity
@@ -1347,7 +1666,15 @@ export class Sim {
     this.pushFx(x, y, 0.3, FxKind.Flak);
   }
 
-  private pushFx(x: number, y: number, ttl: number, kind: FxKind, rot = 0, len = 0): void {
-    if (this.effects.length < FX_CAP) this.effects.push({ x, y, age: 0, ttl, kind, rot, len });
+  private pushFx(
+    x: number,
+    y: number,
+    ttl: number,
+    kind: FxKind,
+    rot = 0,
+    len = 0,
+    seed = 0,
+  ): void {
+    if (this.effects.length < FX_CAP) this.effects.push({ x, y, age: 0, ttl, kind, rot, len, seed });
   }
 }

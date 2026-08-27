@@ -18,12 +18,17 @@ export interface MapData {
   floor: number[]; // NCELLS, UV_FLOORS index
   wall: number[]; // NCELLS, UV_WALLS index or WALL_PINE where blocked
   blocked: number[]; // NCELLS, 0/1
-  // NCELLS — enemy spawn pads by region: 0 = no pad, N >= 1 = a pad in
-  // spawn region N. Level scripts pin wave groups to a region
-  // ({ region: 2, mace: 50 } spawns only on region-2 pads), so legacy 0/1
-  // documents read unchanged as one region-1 area. Absent in maps saved
-  // before the layer existed; terrainFromMap synthesizes the legacy
-  // western strip then
+  // enemy drop zones, Mindustry-style: a spawn area is a CIRCLE, and every
+  // floor tile inside it is somewhere the swarm can enter. Level scripts
+  // pin wave groups to a region ({ region: 2, mace: 50 } enters only from
+  // region-2 circles), and several circles may share a region id
+  spawns?: SpawnCircle[];
+  /**
+   * LEGACY, read but never written: spawn pads painted cell by cell, NCELLS
+   * of region ids. Documents saved before drop zones existed carry this,
+   * and the loader fits circles over it (see fitSpawnCircles) so there is
+   * exactly one spawn representation at runtime
+   */
   spawn?: number[];
   pines: Prop[];
   decor: Prop[];
@@ -52,23 +57,72 @@ export const OFFICIAL_MAP_IDS: readonly string[] = [
  */
 export const OFFICIAL_MAPS: MapData[] = [];
 
+/** fetch one official map document, bypassing the HTTP cache */
+async function fetchMap(id: string): Promise<MapData> {
+  const res = await fetch(`/maps/${id}.json`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`failed to load official map "${id}" (${res.status})`);
+  return (await res.json()) as MapData;
+}
+
 /** fetch (or re-fetch) every official map document into OFFICIAL_MAPS */
 export async function loadOfficialMaps(): Promise<MapData[]> {
-  const maps = await Promise.all(
-    OFFICIAL_MAP_IDS.map(async (id) => {
-      const res = await fetch(`/maps/${id}.json`, { cache: "no-store" });
-      if (!res.ok) throw new Error(`failed to load official map "${id}" (${res.status})`);
-      return (await res.json()) as MapData;
-    }),
-  );
+  const maps = await Promise.all(OFFICIAL_MAP_IDS.map(fetchMap));
   OFFICIAL_MAPS.length = 0;
   OFFICIAL_MAPS.push(...maps);
   return OFFICIAL_MAPS;
 }
 
+/**
+ * Re-fetch a SINGLE document into OFFICIAL_MAPS, replacing the copy already
+ * there. This is what starting a level needs: the editor is a client-side
+ * route (router.push("/"), so module state survives the trip back), which
+ * means a map edited and saved would otherwise be played from the stale
+ * copy in memory. Only the map about to be played can have gone stale in a
+ * way that matters, so re-reading all five — well over 400 KB, on every
+ * level start — bought nothing the one document does not.
+ *
+ * A failed re-fetch is not fatal: an offline or 404 refresh keeps whatever
+ * copy is already loaded and lets the level start on it, because a slightly
+ * stale map beats no map at all.
+ */
+export async function refreshMap(id: string): Promise<MapData | null> {
+  try {
+    const doc = await fetchMap(id);
+    const at = OFFICIAL_MAPS.findIndex((m) => m.id === id);
+    if (at >= 0) OFFICIAL_MAPS[at] = doc;
+    else OFFICIAL_MAPS.push(doc);
+    return doc;
+  } catch (err) {
+    const have = loadMap(id);
+    if (!have) throw err;
+    console.warn(`could not refresh map "${id}", playing the copy already loaded`, err);
+    return have;
+  }
+}
+
 // ---------- palette ----------
 
 export type PaintKind = "floor" | "wall" | "pine" | "decor" | "spawn" | "erase" | "path" | "core";
+
+/**
+ * One enemy drop zone: Mindustry marks a spawn with a tile and draws
+ * state.rules.dropZoneRadius around it, and the swarm arrives inside that
+ * ring. Ours is the same idea with the radius authored per circle, so a
+ * mouth can be widened without repainting anything.
+ */
+export interface SpawnCircle {
+  /** centre in cells — cell centres land on the .5, like the editor cursor */
+  x: number;
+  y: number;
+  /** radius in cells */
+  r: number;
+  /** which spawn region this circle feeds, >= 1 */
+  region: number;
+}
+
+/** the radius a freshly placed drop zone gets, and the range the editor offers */
+export const SPAWN_RADII: readonly number[] = [4, 6, 8, 10, 14, 18];
+export const SPAWN_RADIUS_DEFAULT = 8;
 
 /**
  * One paintable entry: a set of interchangeable variants. With randomize ON
@@ -153,15 +207,129 @@ export const PALETTE: readonly PaletteSet[] = [
 
 // ---------- terrain <-> map ----------
 
+/**
+ * Burn the drop zones into the per-cell region layer everything downstream
+ * reads: the flow field's entry points, the sim's pad picker, the editor's
+ * tint. A cell belongs to a circle when its CENTRE falls inside, and only
+ * when it is open ground — a drop zone laid over rock simply has fewer
+ * tiles in it, which is what lets a circle overhang a corridor wall without
+ * spawning anything inside the mountain. Later circles win where they
+ * overlap, so the last one placed is the one you see.
+ */
+export function rasterizeSpawns(
+  circles: readonly SpawnCircle[],
+  blocked: Uint8Array,
+): Uint8Array {
+  const spawn = new Uint8Array(NCELLS);
+  for (const c of circles) {
+    const r2 = c.r * c.r;
+    const x0 = Math.max(0, Math.floor(c.x - c.r)), x1 = Math.min(COLS - 1, Math.ceil(c.x + c.r));
+    const y0 = Math.max(0, Math.floor(c.y - c.r)), y1 = Math.min(ROWS - 1, Math.ceil(c.y + c.r));
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++) {
+        const i = y * COLS + x;
+        if (blocked[i]) continue;
+        const dx = x + 0.5 - c.x, dy = y + 0.5 - c.y;
+        if (dx * dx + dy * dy <= r2) spawn[i] = c.region;
+      }
+  }
+  return spawn;
+}
+
+/**
+ * Fit drop zones over a legacy painted spawn layer, one circle per region:
+ * centred on the region's cells and grown until it covers every last one,
+ * so nothing that used to be a spawn stops being one. The circle picks up
+ * some neighbouring floor the brush never painted — that is the point of
+ * the shape, and the radius is editable afterwards.
+ */
+export function fitSpawnCircles(spawn: Uint8Array): SpawnCircle[] {
+  const byRegion = new Map<number, number[]>();
+  for (let i = 0; i < spawn.length; i++) {
+    const r = spawn[i];
+    if (!r) continue;
+    const cells = byRegion.get(r);
+    if (cells) cells.push(i);
+    else byRegion.set(r, [i]);
+  }
+  const out: SpawnCircle[] = [];
+  for (const [region, cells] of [...byRegion].sort((a, b) => a[0] - b[0])) {
+    let sx = 0, sy = 0;
+    for (const i of cells) {
+      sx += (i % COLS) + 0.5;
+      sy += ((i / COLS) | 0) + 0.5;
+    }
+    const cx = Math.round(sx / cells.length - 0.5) + 0.5;
+    const cy = Math.round(sy / cells.length - 0.5) + 0.5;
+    let r = 0;
+    for (const i of cells)
+      r = Math.max(r, Math.hypot((i % COLS) + 0.5 - cx, ((i / COLS) | 0) + 0.5 - cy));
+    out.push({ x: cx, y: cy, r: Math.max(1, Math.ceil(r)), region });
+  }
+  return out;
+}
+
+/** a document's drop zones, whatever shape it was saved in */
+export function spawnCirclesOf(m: MapData, blocked: Uint8Array): SpawnCircle[] {
+  if (m.spawns) return m.spawns.map((c) => ({ ...c }));
+  return fitSpawnCircles(m.spawn ? lift(m.spawn, 0) : legacySpawn(blocked));
+}
+
+/**
+ * The distinct spawn regions a map feeds, ascending — what a level editor's
+ * "which region does this wave enter from" picker offers. Read this rather
+ * than the document's fields: it is the only thing that stays correct
+ * across the painted-pads and drop-zone shapes.
+ */
+export function spawnRegionIds(m: MapData): number[] {
+  const ids = new Set<number>();
+  if (m.spawns) for (const c of m.spawns) ids.add(c.region);
+  else if (m.spawn) for (const r of m.spawn) if (r > 0) ids.add(r);
+  else ids.add(1); // no layer at all: the synthesized western strip
+  return [...ids].sort((a, b) => a - b);
+}
+
+/**
+ * Is this row nothing but the rock terrainFromMap pads a short document
+ * with? Exactly the fill values lift() uses, plus no prop standing in it —
+ * so dropping such a row is reversible: the next load puts it straight back.
+ */
+function isPadRow(t: Terrain, y: number): boolean {
+  for (let x = 0; x < COLS; x++) {
+    const i = y * COLS + x;
+    if (t.blocked[i] !== 1 || t.floor[i] !== 3 || t.wall[i] !== 5 || t.spawn[i] !== 0) return false;
+  }
+  return !t.pines.some((p) => p.y === y) && !t.decor.some((p) => p.y === y);
+}
+
+/**
+ * A map document is written at the map's OWN height, not the full grid.
+ *
+ * The editor always works on a full ROWS-high terrain, because a short
+ * document is padded with rock on load. Writing that padding back out would
+ * make it real: the document grows to the full grid, `rows` reads the padded
+ * height, and the camera then has to fit two dozen rows of dead rock the
+ * player can never reach. That is how world 1 silently became a third
+ * taller than it was authored. Trailing padding is dropped instead, so a
+ * save round-trips a map's height instead of ratcheting it upwards.
+ *
+ * Only padding is trimmed — the first row holding anything a person painted
+ * stops it, so extending a map downwards in the editor still saves.
+ */
 export function mapFromTerrain(t: Terrain, id: string, name: string): MapData {
+  let rows = ROWS;
+  while (rows > 1 && isPadRow(t, rows - 1)) rows--;
+  const n = rows * COLS;
   return {
     id,
     name,
     core: { x: t.core.x, y: t.core.y },
-    floor: Array.from(t.floor),
-    wall: Array.from(t.wall),
-    blocked: Array.from(t.blocked),
-    spawn: Array.from(t.spawn),
+    floor: Array.from(t.floor.subarray(0, n)),
+    wall: Array.from(t.wall.subarray(0, n)),
+    blocked: Array.from(t.blocked.subarray(0, n)),
+    // drop zones are authored, not painted: the per-cell layer is derived
+    // from them on load, so writing it back out would be writing a cache
+    spawns: t.spawns.map((c) => ({ ...c })),
     pines: t.pines.map((p) => ({ ...p })),
     decor: t.decor.map((p) => ({ ...p })),
     valleyY: Array.from(t.valleyY).map((v) => Math.round(v * 100) / 100),
@@ -201,11 +369,13 @@ export function terrainFromMap(m: MapData): Terrain {
   // sprite, over stone floor that never shows
   const blocked = lift(m.blocked, 1);
   const core = { x: m.core?.x ?? BASE.x, y: m.core?.y ?? BASE.y, size: BASE.size };
+  const spawns = spawnCirclesOf(m, blocked);
   return {
     floor: lift(m.floor, 3),
     wall: lift(m.wall, 5),
     blocked,
-    spawn: m.spawn ? lift(m.spawn, 0) : legacySpawn(blocked),
+    spawns,
+    spawn: rasterizeSpawns(spawns, blocked),
     pines: m.pines.map((p) => ({ ...p })),
     decor: m.decor.map((p) => ({ ...p })),
     valleyY: m.valleyY
@@ -276,12 +446,26 @@ export function drawThumb(map: MapData, canvas: HTMLCanvasElement): void {
         ? map.wall[i] === WALL_PINE
           ? PINE_TONE
           : WALL_TONES[map.wall[i]] ?? WALL_TONES[0]
-        : map.spawn?.[i]
-          ? SPAWN_REGIONS[(map.spawn[i] - 1) % SPAWN_REGIONS.length].tone
-          : FLOOR_TONES[map.floor[i]] ?? FLOOR_TONES[0];
+        : FLOOR_TONES[map.floor[i]] ?? FLOOR_TONES[0];
       c.fillRect(x, y, 1, 1);
     }
   // core marker
   c.fillStyle = "#ffd37f";
   c.fillRect(map.core?.x ?? BASE.x, map.core?.y ?? BASE.y, BASE.size, BASE.size);
+  // Drop zones as RINGS over untouched ground, the same way the map editor
+  // draws them — the floor inside a zone is ordinary floor and shouldn't be
+  // recoloured. Region N keeps its palette colour whatever shape the
+  // document was saved in, which is what ties a level editor's "Region 2"
+  // to a place on the map.
+  // The bright `css` colour at 2px, not the muted floor `tone`: a zone sits
+  // at the map edge, so most of its ring falls outside the canvas and only a
+  // short arc survives — a dark hairline would read as nothing at 1px/cell.
+  const circles = spawnCirclesOf(map, lift(map.blocked, 1));
+  c.lineWidth = 2;
+  for (const z of circles) {
+    c.strokeStyle = SPAWN_REGIONS[(z.region - 1) % SPAWN_REGIONS.length].css;
+    c.beginPath();
+    c.arc(z.x + 0.5, z.y + 0.5, z.r, 0, Math.PI * 2);
+    c.stroke();
+  }
 }

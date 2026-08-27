@@ -47,6 +47,19 @@ export interface BulletStats {
   // mid-flight collision) and its lifetime is scaled at fire time so it
   // dies — and splashes — exactly at the predicted impact point
   artillery?: boolean;
+  // Mindustry pierce: the shot is not consumed by a hit — it flies its full
+  // lifetime and damages every unit it passes through, each exactly once
+  pierce?: boolean;
+  // the bullet's own contact radius in px (Mindustry hitSize / 2). Left
+  // unset it keeps the 2.5px the original four turrets have always used
+  hitRadius?: number;
+  // StatusEffects.burning, applied for this many seconds on every hit
+  // (Mindustry statusDuration). Refreshing an already-burning unit resets it
+  burn?: number;
+  // a bare BulletType with no sprite of its own (Mindustry's BulletType.draw
+  // only draws a trail and parts): the shot is invisible and its shoot and
+  // hit effects ARE the visual. This is how scorch's flame works
+  invisible?: boolean;
 }
 
 export interface TowerStats {
@@ -62,6 +75,9 @@ export interface TowerStats {
   rotateSpeed: number; // rad/s
   targetAir: boolean; // will the turret acquire flying units?
   targetGround: boolean; // ...and ground units?
+  // Mindustry shootY: how far up the barrel a shot leaves, in px. Unset
+  // falls back to the shared size-scaled muzzle
+  shootY?: number;
   // ShootAlternate: successive shots leave side-by-side barrels, `spread`
   // px apart perpendicular to the facing
   barrels?: { count: number; spread: number };
@@ -211,7 +227,51 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       },
     },
   },
+  // Scorch, 1:1 from mindustry/content/Blocks.java with coal ammo
+  // (BulletType(3.35, 17)): a flamethrower. It fires every 6 ticks — ten
+  // times a second — and the "bullet" is a plain BulletType, which in the
+  // original draws NOTHING. The flame you see is the shoot effect
+  // (Fx.shootSmallFlame) painted at the muzzle; the shot itself is an
+  // invisible piercing dart that rakes the whole file of units in front of
+  // it and sets each alight. 60 units of range makes it the shortest-
+  // ranged turret in the game, and it cannot touch the air at all
+  scorch: {
+    name: "Scorch",
+    size: 1,
+    range: 60 * MU,
+    reload: 6 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: 0, // Turret default — scorch never overrides it
+    shootCone: (50 * Math.PI) / 180,
+    rotateSpeed: ((5 * Math.PI) / 180) * TICK, // BaseTurret default
+    targetAir: false,
+    targetGround: true,
+    shootY: 3 * MU,
+    bullet: {
+      speed: 3.35 * TICK * MU,
+      damage: 17,
+      // no limitRange call: 3.35 units/tick for 18 ticks is 60.3 units,
+      // which is exactly the turret's range
+      lifetime: 18 / TICK,
+      splash: 0,
+      splashRadius: 0,
+      collidesAir: false,
+      collidesGround: true,
+      pierce: true,
+      hitRadius: (7 / 2) * MU, // hitSize 7
+      burn: 4, // statusDuration 60 * 4
+      invisible: true,
+    },
+  },
 };
+
+// StatusEffects.burning, 1:1: 0.167 damage per tick, and it pierces armor
+// (StatusEffect.update calls damageContinuousPierce) — but a shield still
+// soaks it. Fx.burning flickers off a burning unit at effectChance per tick
+export const BURN_DPS = 0.167 * TICK;
+export const BURN_FX_CHANCE = 0.15 * TICK; // Mathf.chanceDelta(0.15)
 
 // ShrapnelBulletType draw geometry (world units -> px), shared by the
 // renderer so the animation matches the original exactly

@@ -1,6 +1,16 @@
 import { buildAtlas } from "./atlas";
 import { CELL, clamp, COLS, CORE_SIZE, H, ROWS, W } from "./constants";
-import { PALETTE, terrainFromMap, mapFromTerrain, type MapData, type PaletteSet } from "./maps";
+import {
+  PALETTE,
+  rasterizeSpawns,
+  SPAWN_REGIONS,
+  SPAWN_RADIUS_DEFAULT,
+  terrainFromMap,
+  mapFromTerrain,
+  type MapData,
+  type PaletteSet,
+  type SpawnCircle,
+} from "./maps";
 import { ALL_LAYERS, Renderer, type TerrainLayers } from "./renderer";
 import { WALL_PINE, type Prop, type Terrain } from "./terrain";
 
@@ -22,7 +32,7 @@ interface Snapshot {
   floor: Uint8Array;
   wall: Uint8Array;
   blocked: Uint8Array;
-  spawn: Uint8Array;
+  spawns: SpawnCircle[];
   pines: Prop[];
   decor: Prop[];
   core: { x: number; y: number; size: number };
@@ -75,6 +85,8 @@ export class MapEditor {
   brush = 1; // painted square is (2*brush - 1) cells wide
   /** index into PATH_WIDTHS — how wide the path tool carves */
   pathWidth = 1;
+  /** radius in cells of the next drop zone placed, editable in the panel */
+  spawnRadius = SPAWN_RADIUS_DEFAULT;
   /**
    * Layer visibility, and with it what edits may touch: a HIDDEN layer is
    * left alone by every tool. That is what lets you hide the spawn pads and
@@ -124,7 +136,7 @@ export class MapEditor {
     this.uictx = ctx;
 
     this.resize();
-    this.renderer.rebuildTerrain(this, true, this.layers);
+    this.renderer.rebuildTerrain(this, this.layers);
 
     window.addEventListener("resize", this.onResize);
     window.addEventListener("keydown", this.onKeyDown);
@@ -180,17 +192,18 @@ export class MapEditor {
     this.terrain.floor.set(s.floor);
     this.terrain.wall.set(s.wall);
     this.terrain.blocked.set(s.blocked);
-    this.terrain.spawn.set(s.spawn);
+    this.terrain.spawns = s.spawns;
     this.terrain.pines = s.pines;
     this.terrain.decor = s.decor;
     this.terrain.core = s.core;
+    this.resyncSpawn();
     this.dirty = true;
-    this.renderer.rebuildTerrain(this, true, this.layers);
+    this.renderer.rebuildTerrain(this, this.layers);
   }
 
   /** rebuild the static batches — after a layer visibility change */
   redraw(): void {
-    this.renderer.rebuildTerrain(this, true, this.layers);
+    this.renderer.rebuildTerrain(this, this.layers);
   }
 
   canUndo(): boolean {
@@ -204,7 +217,7 @@ export class MapEditor {
       floor: this.terrain.floor.slice(),
       wall: this.terrain.wall.slice(),
       blocked: this.terrain.blocked.slice(),
-      spawn: this.terrain.spawn.slice(),
+      spawns: this.terrain.spawns.map((c) => ({ ...c })),
       pines: this.terrain.pines.map((p) => ({ ...p })),
       decor: this.terrain.decor.map((p) => ({ ...p })),
       core: { ...this.terrain.core },
@@ -239,29 +252,16 @@ export class MapEditor {
         T.blocked[i] = 0;
         T.wall[i] = 0;
       }
-      if (L.spawn) T.spawn[i] = 0;
       if (L.props) this.removePropsAt(gx, gy);
     } else if (set.kind === "wall") {
       T.blocked[i] = 1;
       T.wall[i] = pick;
-      if (L.spawn) T.spawn[i] = 0;
       if (L.props) this.removePropsAt(gx, gy);
     } else if (set.kind === "pine") {
       T.blocked[i] = 1;
       T.wall[i] = WALL_PINE;
-      if (L.spawn) T.spawn[i] = 0;
       this.removePropsAt(gx, gy);
       T.pines.push({ x: cx, y: cy, size: CELL * 1.5, rot, kind: 0 });
-    } else if (set.kind === "spawn") {
-      // spawn pad: clears any wall under it — pads live on open ground.
-      // The floor beneath stays; the game draws only that floor. The
-      // variant is the region id the pad belongs to
-      if (L.wall) {
-        T.blocked[i] = 0;
-        T.wall[i] = 0;
-      }
-      T.spawn[i] = pick;
-      if (L.props) this.removePropsAt(gx, gy);
     } else if (set.kind === "decor") {
       if (T.blocked[i]) return; // props live on open ground, like the generator's
       this.removePropsAt(gx, gy);
@@ -279,10 +279,54 @@ export class MapEditor {
         T.blocked[i] = 0;
         T.wall[i] = 0;
       }
-      if (L.spawn) T.spawn[i] = 0;
       if (L.props) this.removePropsAt(gx, gy);
     }
     this.dirty = true;
+  }
+
+  /**
+   * Re-burn the per-cell spawn layer from the circles. Every edit that moves
+   * a circle OR changes what is open ground has to run this — a drop zone
+   * covers the FLOOR inside it, so walling part of one off takes those cells
+   * out of the swarm's entry set and carving new floor inside one adds them.
+   */
+  private resyncSpawn(): void {
+    // written INTO the existing array, not swapped for a new one: the flow
+    // field keeps the spawn mask by reference
+    this.terrain.spawn.set(rasterizeSpawns(this.terrain.spawns, this.terrain.blocked));
+  }
+
+  /**
+   * Drop-zone tool. A click places a circle of the current radius in the
+   * current region; clicking inside an existing circle of that region MOVES
+   * it rather than stacking a second one on top, which is what makes the
+   * tool feel like dragging a zone around. The eraser removes whole circles.
+   */
+  private spawnAt(gx: number, gy: number): void {
+    if (!this.layers.spawn) return; // hidden means out of reach, like every layer
+    const T = this.terrain;
+    const region = this.set.variants[this.variant] ?? 1;
+    const x = gx + 0.5, y = gy + 0.5;
+    const hit = T.spawns.findIndex(
+      (c) => c.region === region && Math.hypot(c.x - x, c.y - y) <= c.r,
+    );
+    if (hit >= 0) T.spawns[hit] = { ...T.spawns[hit], x, y, r: this.spawnRadius };
+    else T.spawns.push({ x, y, r: this.spawnRadius, region });
+    this.resyncSpawn();
+    this.dirty = true;
+  }
+
+  /** eraser over a drop zone: drop every circle covering this cell */
+  private eraseSpawnAt(gx: number, gy: number): boolean {
+    if (!this.layers.spawn) return false;
+    const T = this.terrain;
+    const x = gx + 0.5, y = gy + 0.5;
+    const keep = T.spawns.filter((c) => Math.hypot(c.x - x, c.y - y) > c.r);
+    if (keep.length === T.spawns.length) return false;
+    T.spawns = keep;
+    this.resyncSpawn();
+    this.dirty = true;
+    return true;
   }
 
   /**
@@ -343,12 +387,14 @@ export class MapEditor {
         const i = y * COLS + x;
         T.blocked[i] = 0;
         T.wall[i] = 0;
-        T.spawn[i] = 0; // a spawn pad under the core would spawn on the goal
         this.removePropsAt(x, y);
         // the core always clears its own ground: a core you cannot reach is
         // a broken map, so this one ignores layer visibility
       }
     T.core = { x: x0, y: y0, size: CORE_SIZE };
+    // clearing the core's ground opens cells that a drop zone overhanging it
+    // would now cover, so the entry set has to be re-derived
+    this.resyncSpawn();
     this.dirty = true;
   }
 
@@ -361,9 +407,17 @@ export class MapEditor {
       this.pathAt(gx, gy);
       return;
     }
+    if (this.set.kind === "spawn") {
+      this.spawnAt(gx, gy);
+      return;
+    }
+    // the eraser takes a whole drop zone when it starts on one, rather than
+    // nibbling terrain out from under it
+    if (this.set.kind === "erase" && this.eraseSpawnAt(gx, gy)) return;
     const r = this.brush - 1;
     for (let y = gy - r; y <= gy + r; y++)
       for (let x = gx - r; x <= gx + r; x++) this.paintCell(x, y);
+    this.resyncSpawn();
   }
 
   /** paint every cell on the segment between two cells — no gaps on fast drags */
@@ -380,7 +434,7 @@ export class MapEditor {
         );
     }
     this.lastCell = { x: gx, y: gy };
-    this.renderer.rebuildTerrain(this, true, this.layers);
+    this.renderer.rebuildTerrain(this, this.layers);
   }
 
   // ---------- input ----------
@@ -541,9 +595,26 @@ export class MapEditor {
     const c = this.uictx;
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.clearRect(0, 0, this.uiCanvas.width, this.uiCanvas.height);
-    if (this.hoverGx < 0) return;
     const s = this.scale * this.zoom;
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
+
+    // Every placed drop zone. This ring is the ONLY thing marking a zone —
+    // the floor inside it is drawn as plain ground — so it is drawn before
+    // the hover bail-out below: a zone must not disappear the moment the
+    // pointer leaves the canvas.
+    if (this.layers.spawn) {
+      c.lineWidth = 2 / s;
+      for (const z of this.terrain.spawns) {
+        c.strokeStyle = SPAWN_REGIONS[(z.region - 1) % SPAWN_REGIONS.length].css;
+        c.beginPath();
+        c.arc(z.x * CELL, z.y * CELL, z.r * CELL, 0, Math.PI * 2);
+        c.stroke();
+      }
+    }
+
+    // everything below previews the tool under the cursor, so it needs one
+    if (this.hoverGx < 0) return;
+
     // the path tool is round and much wider than a brush — preview it as
     // the circle it actually carves
     if (this.set.kind === "core") {
@@ -556,6 +627,18 @@ export class MapEditor {
       c.strokeStyle = "rgba(255,211,127,0.9)";
       c.lineWidth = 2 / s;
       c.strokeRect(x0, y0, side, side);
+      return;
+    }
+    if (this.set.kind === "spawn") {
+      const region = this.set.variants[this.variant] ?? 1;
+      const col = SPAWN_REGIONS[(region - 1) % SPAWN_REGIONS.length].css;
+      c.beginPath();
+      c.arc((this.hoverGx + 0.5) * CELL, (this.hoverGy + 0.5) * CELL, this.spawnRadius * CELL, 0, Math.PI * 2);
+      c.fillStyle = col + "22";
+      c.fill();
+      c.strokeStyle = col;
+      c.lineWidth = 2 / s;
+      c.stroke();
       return;
     }
     if (this.set.kind === "path") {

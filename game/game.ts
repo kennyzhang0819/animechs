@@ -1,8 +1,9 @@
-import { buildAtlas } from "./atlas";
-import { loadOfficialMaps } from "./maps";
+import { atlasReady, buildAtlas } from "./atlas";
+import { loadOfficialMaps, OFFICIAL_MAP_IDS, OFFICIAL_MAPS, refreshMap } from "./maps";
 import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
-import type { LevelSpec, TowerKind } from "./levels";
-import { scrapForKills } from "./progress";
+import { loadLevelDocs, type LevelSpec, type TowerKind } from "./levels";
+import type { Cost } from "./items";
+import { dropsForKills } from "./progress";
 import { Renderer } from "./renderer";
 import { Sim } from "./sim";
 import type { TechState } from "./tech";
@@ -29,8 +30,8 @@ export interface UiState {
   menuOpen: boolean;
   /** simulation speed multiplier: 1, 2 or 4 */
   speed: number;
-  /** scrap this run's kills are worth so far, before bonuses/economy */
-  scrapEarned: number;
+  /** what this run's kills have banked so far, by currency (see items.ts) */
+  earned: Cost;
   /** live towers per kind, for the menu's "2/6" cap badges */
   counts: Record<TowerKind, number>;
   /** campaign restrictions from the tech tree; null = unrestricted (editor) */
@@ -49,6 +50,63 @@ export interface Stats {
 
 /** the speeds the HUD toggle offers */
 export const SPEEDS: readonly number[] = [1, 2, 4];
+
+/**
+ * The stages of starting a level, in order, as the loading screen reports
+ * them. They are stages rather than a byte count on purpose: none of this
+ * work streams, so a percentage would be invented. The bar advances a step
+ * at a time and each step is honest about what is happening.
+ */
+export const LOAD_STEPS = ["sprites", "map", "world", "warmup"] as const;
+export type LoadStep = (typeof LOAD_STEPS)[number];
+
+export const LOAD_STEP_LABEL: Record<LoadStep, string> = {
+  sprites: "Packing sprites",
+  map: "Reading the map",
+  world: "Carving terrain",
+  warmup: "Warming up",
+};
+
+/**
+ * Which step a cold start really begins at. Packing the sheet is the only
+ * genuinely slow stage, and it happens once per page — so after the first
+ * level the bar would sit at "Packing sprites" for a millisecond and then
+ * leap, which reads as a stutter. Starting the bar past the finished work
+ * instead makes a warm start look like what it is: nearly instant.
+ */
+export function firstLoadStep(): LoadStep {
+  return atlasReady() ? "map" : "sprites";
+}
+
+/**
+ * Give the browser a chance to actually paint before the next stage starts.
+ *
+ * Announcing a step is not the same as showing it: packing the sheet is one
+ * unbroken ~200ms task, so without a yield here the loading screen would be
+ * told about a step and then have the main thread taken away before it could
+ * draw it — the label the player reads would always be one behind the work.
+ * Two frames, because the first only lets React commit and the second is
+ * where the commit reaches the screen.
+ *
+ * The escapes matter. requestAnimationFrame never fires in a hidden tab, so
+ * a level started in a background tab would wait forever on a paint that
+ * cannot happen — hence the up-front hidden check and the timeout behind it
+ * for a tab that goes hidden mid-wait.
+ */
+function paint(): Promise<void> {
+  if (document.hidden) return Promise.resolve();
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(bail);
+      resolve();
+    };
+    const bail = setTimeout(done, 250);
+    requestAnimationFrame(() => requestAnimationFrame(done));
+  });
+}
 
 // zoom 1 is "cover": the world fills the viewport completely, cropped on
 // whichever axis overflows. It is also the FLOOR — zooming out past cover
@@ -73,7 +131,7 @@ const PAN_KEYS: Record<string, readonly [number, number]> = {
  * a pair of stacked canvases. Owns the requestAnimationFrame loop.
  */
 export class Game {
-  readonly sim = new Sim();
+  readonly sim: Sim;
   private readonly renderer: Renderer;
   private readonly uictx: CanvasRenderingContext2D;
 
@@ -98,9 +156,12 @@ export class Game {
   private selected: Tower | null = null;
   private building = false;
   private buildFrom = { x: 0, y: 0 };
-  // world point of a right-button press; a release that never really moved
-  // is a click, and clicks on a tower sell it (dragging pans instead)
-  private sellPress: { x: number; y: number } | null = null;
+  // right button = demolish, the exact mirror of the left button's build
+  // chain: the press pulls down whatever is under it and the drag keeps
+  // pulling down everything it crosses. Panning therefore lives on the
+  // MIDDLE drag and on WASD/arrows (see PAN_KEYS), not here
+  private selling = false;
+  private sellFrom = { x: 0, y: 0 };
   private lastMouse = { x: 0, y: 0 };
   private readonly keysDown = new Set<string>();
   private paused = false;
@@ -199,22 +260,32 @@ export class Game {
         // normal cursor: clicking a tower shows its range, empty ground clears
         this.selected = this.sim.towerAt(p.x, p.y);
       }
-    } else if (e.button === 1 || e.button === 2) {
+    } else if (e.button === 2) {
+      e.preventDefault();
+      this.building = false;
+      // right-click still escapes build mode first — you reach for it to put
+      // the ghost away, and that press must never also demolish something
+      if (this.buildKind) {
+        this.buildKind = null;
+        return;
+      }
+      // otherwise it demolishes on press and chains from here, exactly like
+      // the left button builds on press and chains from there
+      const p = this.mouseWorld(e);
+      this.selling = true;
+      this.sellFrom = p;
+      this.sim.sellTowerAt(p.x, p.y);
+      this.dropSelectionIfGone();
+    } else if (e.button === 1) {
       e.preventDefault();
       this.building = false;
       this.panning = true;
       this.panMoved = 0;
-      this.sellPress = e.button === 2 ? this.mouseWorld(e) : null;
       this.lastMouse = { x: e.clientX, y: e.clientY };
     }
   };
-  private readonly onMouseUp = (e: MouseEvent): void => {
-    if (e.button === 2 && this.sellPress && this.panMoved < 6) {
-      // right-click cancels build mode; with the normal cursor it demolishes
-      if (this.buildKind) this.buildKind = null;
-      else this.sim.sellTowerAt(this.sellPress.x, this.sellPress.y);
-    }
-    this.sellPress = null;
+  private readonly onMouseUp = (): void => {
+    this.selling = false;
     this.panning = false;
     this.building = false;
   };
@@ -234,6 +305,11 @@ export class Game {
       this.sim.placeLine(this.buildFrom.x, this.buildFrom.y, p.x, p.y, this.buildKind);
       this.buildFrom = p;
     }
+    if (this.selling && !this.panning) {
+      this.sim.sellLine(this.sellFrom.x, this.sellFrom.y, p.x, p.y);
+      this.sellFrom = p;
+      this.dropSelectionIfGone();
+    }
     const hsz = this.buildKind ? TOWERS[this.buildKind].size : 2;
     this.hoverGx = clamp(Math.round(p.x / CELL - hsz / 2), 0, COLS - hsz);
     this.hoverGy = clamp(Math.round(p.y / CELL - hsz / 2), 0, ROWS - hsz);
@@ -243,8 +319,16 @@ export class Game {
     this.hoverGy = -1;
     this.panning = false;
     this.building = false;
-    this.sellPress = null;
+    this.selling = false;
   };
+  /**
+   * The range ring reads `selected`, which holds a Tower by reference — a
+   * demolished tower would keep drawing its ring over bare rock. Drop the
+   * selection the moment it leaves the sim.
+   */
+  private dropSelectionIfGone(): void {
+    if (this.selected && !this.sim.towers.includes(this.selected)) this.selected = null;
+  }
   private readonly onContext = (e: Event): void => e.preventDefault();
   // trackpad pinch = ctrl+wheel: the canvas handler already consumes it, but
   // a pinch that starts over a UI overlay (HUD, tower menu) would reach the
@@ -254,20 +338,70 @@ export class Game {
     if (e.ctrlKey) e.preventDefault();
   };
 
-  /** loads the sprite atlas, then wires everything up */
-  static async create(glCanvas: HTMLCanvasElement, uiCanvas: HTMLCanvasElement): Promise<Game> {
+  /**
+   * Everything a level needs before its first frame, in the order it
+   * happens. The loading screen names these; see LOAD_STEP_LABEL.
+   */
+  static async create(
+    glCanvas: HTMLCanvasElement,
+    uiCanvas: HTMLCanvasElement,
+    spec: LevelSpec,
+    onStep: (step: LoadStep) => void = () => {},
+  ): Promise<Game> {
+    // announce, then let the screen draw it, THEN do the work
+    const begin = async (step: LoadStep): Promise<void> => {
+      onStep(step);
+      await paint();
+    };
+
+    // packed once per page and shared from then on: the long step on a cold
+    // start, free on every level after. A warm start does not announce it at
+    // all, matching firstLoadStep — otherwise the bar would step BACKWARDS
+    // from where the screen came up
+    if (!atlasReady()) await begin("sprites");
+    const atlas = await buildAtlas();
+
     // the sim reads the official map documents, which live outside the
     // module graph and are fetched, never imported (imported JSON turned
-    // every editor save into a Turbopack HMR update it cannot apply)
-    const [atlas] = await Promise.all([buildAtlas(), loadOfficialMaps()]);
-    return new Game(glCanvas, uiCanvas, atlas);
+    // every editor save into a Turbopack HMR update it cannot apply).
+    // Only the document about to be played is re-read: the editor returns
+    // through a client-side route, so a saved map must not be played from
+    // the stale copy in memory — but that is true of ONE map, not five
+    // The level SCRIPT is re-read here too, for the same reason. Both
+    // editors return through a client-side route, so an edited wave script
+    // is as capable of being stale as an edited map — and applyLevelDoc
+    // overlays onto the WORLDS entry in place, which is the object this
+    // spec already points at, so the sim built below picks it up
+    await begin("map");
+    const mapId = spec.map ?? OFFICIAL_MAP_IDS[0];
+    await Promise.all([
+      OFFICIAL_MAPS.length === 0 ? loadOfficialMaps() : refreshMap(mapId),
+      loadLevelDocs(),
+    ]);
+
+    // terrain, flow field and the static geometry batches
+    await begin("world");
+    const game = new Game(glCanvas, uiCanvas, atlas, spec);
+
+    // one full frame on the GPU before anything uncovers the canvas, so
+    // the reveal shows the map rather than a black flash that resolves a
+    // frame later
+    await begin("warmup");
+    game.warmup();
+    return game;
   }
 
   private constructor(
     private readonly glCanvas: HTMLCanvasElement,
     private readonly uiCanvas: HTMLCanvasElement,
     atlas: HTMLCanvasElement,
+    level: LevelSpec,
   ) {
+    // the level is built ONCE, here. Constructing a default sim and then
+    // calling loadLevel meant carving terrain and solving the flow field
+    // twice on every single level start, the second solve throwing the
+    // first away
+    this.sim = new Sim(level);
     this.renderer = new Renderer(glCanvas, atlas);
     const ctx = uiCanvas.getContext("2d");
     if (!ctx) throw new Error("2d context unavailable");
@@ -290,6 +424,30 @@ export class Game {
 
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.frame);
+  }
+
+  /**
+   * Draw one complete frame and block until the driver has actually done
+   * it. The raf loop is already running by now, but "a frame was queued"
+   * is not "a frame is on screen": the first draw also uploads the atlas
+   * and the terrain batches, and uncovering the canvas before that lands
+   * shows black for a beat. gl.finish() is exactly the wrong call inside a
+   * render loop and exactly the right one here, where the whole point is
+   * to wait.
+   */
+  private warmup(): void {
+    this.renderer.render(
+      this.sim,
+      this.zoom,
+      -this.tlx * this.zoom,
+      -this.tly * this.zoom,
+      this.scale,
+    );
+    this.drawOverlay();
+    // getContext with the same type returns the context the Renderer
+    // already created — it does NOT make a second one — which is how a
+    // sync point is reached without widening the Renderer's surface
+    this.glCanvas.getContext("webgl2")?.finish();
   }
 
   destroy(): void {
@@ -356,7 +514,7 @@ export class Game {
       won: this.won(),
       kills: this.sim.kills,
       menuOpen: this.menuOpen,
-      scrapEarned: scrapForKills(this.sim.killsByKind),
+      earned: dropsForKills(this.sim.killsByKind),
       counts: this.sim.towerCounts(),
       caps: this.tech ? this.tech.caps : null,
       unlocked: this.tech ? Array.from(this.tech.unlocked) : null,
@@ -366,13 +524,6 @@ export class Game {
   reset(): void {
     this.sim.reset();
     this.menuOpen = false;
-    this.fitToMap();
-    this.renderer.rebuildTerrain(this.sim);
-  }
-
-  /** switch to (or restart) a level: fresh sim state, terrain rebuilt */
-  loadLevel(spec: LevelSpec): void {
-    this.sim.loadLevel(spec);
     this.fitToMap();
     this.renderer.rebuildTerrain(this.sim);
   }
