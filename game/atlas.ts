@@ -218,16 +218,21 @@ export const UV_QUASAR_BODY_SIL = uv(768, 1664, 128, 128);
 export const UV_BEAM_WEAPON_SIL = uv(896, 1664, 128, 128);
 /**
  * A solid white hexagon filling its cell's width, for the one shape a
- * force field is ever drawn as. Fanning a polygon out of UV_TRI works, but
- * the atlas magnifies NEAREST, so at close zoom the mirrored staircases of
- * two neighbouring triangles do not interlock and every radial join shows
- * as a faint line across the fill. One quad has no joins to show.
+ * force field is ever drawn as. It is filled into the shield buffer
+ * OPAQUE and the shader reads that buffer's alpha to find the outline, so
+ * this has to be one unbroken quad: fanning it out of UV_TRI leaves
+ * hairline joins where neighbouring triangles meet, and the edge detect
+ * would faithfully draw a rim down every one of them.
+ *
+ * The cell is 256px for the edge's sake, not the shape's — the atlas
+ * magnifies NEAREST, and a coarser cell stairsteps the diagonals the
+ * shader then outlines.
  *
  * The hexagon is inscribed in the cell across the flats of its vertex
  * pair, so a quad of 2 x radius on BOTH axes draws it at exactly `radius`
  * — its shorter axis is the sprite's own transparent margin.
  */
-export const UV_HEX = uv(0, 1792, 128, 128, 2);
+export const UV_HEX = uv(0, 1792, 256, 256, 2);
 
 export const UV_CRAWLER_LEG = uv(448, 288, 64, 64);
 export const UV_CRAWLER_BASE = uv(512, 288, 64, 64);
@@ -1184,7 +1189,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.beginPath();
   for (let k = 0; k < 6; k++) {
     const a = (k / 6) * TAU;
-    const hx = 64 + Math.cos(a) * 62, hy = 1792 + 64 + Math.sin(a) * 62;
+    const hx = 128 + Math.cos(a) * 126, hy = 1792 + 128 + Math.sin(a) * 126;
     if (k === 0) c.moveTo(hx, hy);
     else c.lineTo(hx, hy);
   }

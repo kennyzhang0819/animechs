@@ -131,42 +131,87 @@ const rng = (): number => {
  */
 const SHIELD_COL = [0xff / 255, 0xd3 / 255, 0x7f / 255] as const;
 /**
- * Mindustry's shield look is a post-process, not geometry: everything on
- * Layer.shields is filled solid into a buffer and then run through
- * shaders/shield.frag, which throws away the fill and keeps three things —
- * a saturated rim two world units OUTSIDE the outline (its edge detect
- * fires on transparent pixels whose neighbour is opaque), an interior
- * knocked down to a flat ALPHA, and a diagonal hatch, two units of every
- * ten along x + y, brightening what it crosses by 1.65.
+ * Mindustry's shield look is a post-process, not geometry. Everything on
+ * Layer.shields is filled SOLID into an offscreen buffer cleared to
+ * transparent, and the buffer is then blitted through shaders/shield.frag,
+ * which throws the fill away and keeps three things: a saturated rim two
+ * world units outside the outline (its edge detect fires on transparent
+ * pixels whose neighbour is opaque), an interior knocked down to a flat
+ * 0.18 alpha, and a wavy diagonal hatch brightening what it crosses by
+ * 1.65 — the whole thing sampled through a travelling sine wobble, which
+ * is what makes the outline ripple.
  *
- * This renderer has one program and one batch, so the same three parts are
- * drawn as geometry instead — filled polygon, mitred outline ring, and
- * hatch bands clipped to the polygon. The numbers below are the shader's
- * own, in world px: it works in Mindustry world units (its `coords` are
- * camera-space world coordinates), which is also why the hatch is anchored
- * to the WORLD and slides across a moving carrier rather than riding along.
+ * Doing it any other way costs the two behaviours that make it read as a
+ * FIELD rather than a decal. The wobble is a distortion of the sampling,
+ * so it moves the rim and the hatch together instead of each separately.
+ * And because every carrier fills the same buffer, the edge detect runs on
+ * the UNION: two overlapping bubbles lose the wall between them and come
+ * out as one shape under one rim, exactly as in the original.
+ *
+ * So this does what Mindustry does — see Renderer.blitShields.
  */
-const SHIELD_ALPHA = 0.18;
-/** shield.frag's `step`: how far outside the outline the rim reaches */
-const SHIELD_RIM = 2 * MU;
+const SHIELD_VS = `#version 300 es
+layout(location=0) in vec2 aCorner;
+out vec2 vUV;
+void main() {
+  vUV = aCorner + 0.5;
+  gl_Position = vec4(aCorner * 2.0, 0.0, 1.0);
+}`;
+
 /**
- * hatch period and band width along the band's own normal. The shader
- * tests `mod(x + y + ..., 10) < 2`, and x + y measures 1/sqrt(2) of the
- * distance travelled across a 45-degree band, so both shrink by that
+ * shaders/shield.frag, ported. The original works in Mindustry world units
+ * (its `coords` are camera-space world coordinates), so the buffer's rect
+ * is handed over in those units and every constant below is the original's
+ * — the 3.0 and 20.0 of the wobble, the 2-unit edge reach, the 10-and-2
+ * hatch period, 1.65, 0.18.
+ *
+ * Two deliberate differences. Mindustry's y runs up and this game's runs
+ * down, so the row is flipped back when reading world coordinates out of
+ * the texture coordinate; the sine patterns are symmetric, so this only
+ * decides which way the hatch leans. And the output is premultiplied,
+ * matching this renderer's blend func rather than Arc's.
  */
-const HATCH_PERIOD = (10 * MU) / Math.SQRT2;
-const HATCH_WIDTH = (2 * MU) / Math.SQRT2;
-/** the bands run along -45 degrees; `+ u_time / 4` slides them up their
- * normal at a quarter world unit per tick */
-const HATCH_DIR = -Math.PI / 4;
-const HATCH_SPEED = (60 / 4) * MU / Math.SQRT2;
-/**
- * The band is drawn at the SAME colour as the fill it lies on, and the two
- * translucent layers compose to the shader's 1.65x brightening: over a
- * SHIELD_ALPHA base, a coat of alpha a leaves 0.18 + 0.82a of the colour,
- * and 1.65 * 0.18 lands at a = 0.143.
- */
-const HATCH_ALPHA = (SHIELD_ALPHA * 1.65 - SHIELD_ALPHA) / (1 - SHIELD_ALPHA);
+const SHIELD_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uTex;
+uniform vec4 uCam;    // camera x, y, w, h in Mindustry world units
+uniform vec2 uInv;    // 1 / (w, h): a UV step of one world unit
+uniform float uTime;  // Mindustry ticks
+uniform float uDp;
+in vec2 vUV;
+out vec4 o;
+const float ALPHA = 0.18;
+const float EDGE = 2.0;
+void main() {
+  vec2 T = vUV;
+  vec2 coords = vec2(T.x * uCam.z + uCam.x, (1.0 - T.y) * uCam.w + uCam.y);
+  T += vec2(sin(coords.y / 3.0 + uTime / 20.0), sin(coords.x / 3.0 + uTime / 20.0)) * uInv;
+  vec4 color = texture(uTex, T);
+  vec4 maxed = max(max(max(
+    texture(uTex, T + vec2(0.0, EDGE) * uInv),
+    texture(uTex, T + vec2(0.0, -EDGE) * uInv)),
+    texture(uTex, T + vec2(EDGE, 0.0) * uInv)),
+    texture(uTex, T + vec2(-EDGE, 0.0) * uInv));
+  if (color.a < 0.9 && maxed.a > 0.9) {
+    // maxed.a * 100 saturates: the rim is drawn at full opacity
+    o = vec4(maxed.rgb, 1.0);
+  } else if (color.a > 0.0) {
+    vec3 rgb = color.rgb;
+    if (mod(coords.x / uDp + coords.y / uDp
+          + sin(coords.x / uDp / 5.0) * 3.0
+          + sin(coords.y / uDp / 5.0) * 3.0
+          + uTime / 4.0, 10.0) < 2.0) rgb *= 1.65;
+    o = vec4(rgb * ALPHA, ALPHA);
+  } else {
+    o = vec4(0.0);
+  }
+}`;
+
+/** Shaders.ShieldShader's u_dp, Scl.scl(1) — the UI scale, 1 at 1x */
+const SHIELD_DP = 1;
+/** the scene's clear colour, #0A101F — the shield pass borrows the clear
+ * for its own buffer and has to hand this back */
+const CLEAR = [0.039, 0.063, 0.122] as const;
 /** Arc Interp.pow3Out, the curve behind EffectContainer.finpow() */
 const FIN_POW = (f: number): number => 1 - Math.pow(1 - f, 3);
 /**
@@ -293,6 +338,30 @@ export class Renderer {
   // cannot live in the NEAREST-filtered sprite atlas
   private readonly shadowTex: WebGLTexture;
   private readonly dyn: Batch;
+  /**
+   * the force-field fills for this frame. They never reach the screen
+   * directly — they are drawn into the shield buffer and blitted through
+   * SHIELD_FS, which is what merges overlapping bubbles into one shape
+   */
+  private readonly shields: Batch;
+  private readonly shieldProg: WebGLProgram;
+  private readonly uShieldCam: WebGLUniformLocation;
+  private readonly uShieldInv: WebGLUniformLocation;
+  private readonly uShieldTime: WebGLUniformLocation;
+  private readonly uShieldDp: WebGLUniformLocation;
+  /** the fullscreen quad the blit runs over, on the shared corner VBO */
+  private readonly blitVao: WebGLVertexArrayObject;
+  private shieldFbo: WebGLFramebuffer | null = null;
+  private shieldTex: WebGLTexture | null = null;
+  private shieldW = 0;
+  private shieldH = 0;
+  /**
+   * did the buffer come up? A driver that will not give us a complete
+   * framebuffer gets Mindustry's own no-shader path instead (see
+   * ForceProjector.drawShield with animateShields off): a stroked outline
+   * over a faint fill, no wobble and no merging, but a visible field
+   */
+  private shieldReady = true;
   // the core of the terrain currently in the static batches; renderTerrain
   // (the editor) has no sim to ask, so rebuildTerrain leaves it here
   private core = { ...BASE };
@@ -308,7 +377,7 @@ export class Renderer {
     if (!gl) throw new Error("WebGL2 is required");
     this.gl = gl;
 
-    this.prog = this.link();
+    this.prog = this.link(VS, FS);
     const need = (name: string): WebGLUniformLocation => {
       const loc = gl.getUniformLocation(this.prog, name);
       if (!loc) throw new Error(`${name} uniform missing`);
@@ -336,6 +405,30 @@ export class Renderer {
     // a walking mech is 6 quads (2 legs, chassis, 2 guns, body)
     // mechs draw twice (silhouette rim under, art over) — up to 12 quads each
     this.dyn = this.makeBatch(MAX_UNITS * 12 + 2048);
+    // one quad per hexagonal bubble; a polygon of any other side count
+    // takes one per side, so this holds a wave's worth either way
+    this.shields = this.makeBatch(2048);
+
+    this.shieldProg = this.link(SHIELD_VS, SHIELD_FS);
+    const needIn = (name: string): WebGLUniformLocation => {
+      const loc = gl.getUniformLocation(this.shieldProg, name);
+      if (!loc) throw new Error(`${name} uniform missing`);
+      return loc;
+    };
+    this.uShieldCam = needIn("uCam");
+    this.uShieldInv = needIn("uInv");
+    this.uShieldTime = needIn("uTime");
+    this.uShieldDp = needIn("uDp");
+    // the blit is one quad off the shared corner VBO — no instance data,
+    // so it takes attribute 0 alone
+    const bvao = gl.createVertexArray();
+    if (!bvao) throw new Error("blit vao alloc failed");
+    this.blitVao = bvao;
+    gl.bindVertexArray(bvao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadVBO);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
 
     const stex = gl.createTexture();
     if (!stex) throw new Error("shadow texture alloc failed");
@@ -363,10 +456,10 @@ export class Renderer {
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.clearColor(0.039, 0.063, 0.122, 1); // #0A101F
+    gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1); // #0A101F
   }
 
-  private link(): WebGLProgram {
+  private link(vs: string, fs: string): WebGLProgram {
     const gl = this.gl;
     const sh = (type: number, src: string): WebGLShader => {
       const s = gl.createShader(type);
@@ -379,8 +472,8 @@ export class Renderer {
     };
     const p = gl.createProgram();
     if (!p) throw new Error("program alloc failed");
-    gl.attachShader(p, sh(gl.VERTEX_SHADER, VS));
-    gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FS));
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, vs));
+    gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
     gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS))
       throw new Error(gl.getProgramInfoLog(p) ?? "program link failed");
@@ -820,6 +913,12 @@ export class Renderer {
 
     const dyn = this.dyn;
     dyn.n = 0;
+    this.shields.n = 0;
+    // settled before the fills are gathered, because it decides what they
+    // ARE: solid shapes for the shader to work on, or the finished
+    // no-shader drawing
+    const buffered = this.ensureShieldTarget(this.canvas.width, this.canvas.height);
+    this.drawForceFields(sim, buffered);
     for (const t of sim.towers) {
       const sz = TOWERS[t.kind].size;
       const px = sz * CELL;
@@ -928,9 +1027,6 @@ export class Renderer {
         this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 0.34, 0.89, 0.54, (1 - t) * 0.9);
       }
     }
-    // Layer.shields sits above bullets and effects alike, so the bubbles go
-    // over everything the field has drawn so far
-    this.drawForceFields(dyn, sim);
     // core last, above units and breach fx — arrivals disappear beneath it
     const core = sim.terrain.core;
     const coreSz = core.size * CELL;
@@ -945,16 +1041,31 @@ export class Renderer {
       1, 1, 1, 1,
     );
     this.draw(dyn, true);
+    // Layer.shields is above every one of those, the core included, and it
+    // is its own pass: gather the fills, then blit the buffer over the
+    // finished frame
+    this.blitShields(zoom, offX, offY, kPx, sim.time, buffered);
   }
 
   /**
    * ForceFieldAbility.draw for every carrier standing a bubble this frame.
-   * Mindustry fills the polygon and lets shield.frag make it look like a
-   * shield; this walks the same three parts the shader leaves behind (see
-   * the SHIELD_ALPHA block).
+   * Mindustry fills the polygon SOLID at Layer.shields and lets the shield
+   * shader make it look like a shield; this gathers the same fills, and
+   * blitShields runs them through the same shader.
+   *
+   * The fill has to be opaque: the shader finds the outline by testing the
+   * buffer's alpha against 0.9, so a translucent one has no edge to find
+   * and the bubble comes out as a flat wash with no rim at all.
+   *
+   * Without a buffer to fill, `buffered` false, this draws Mindustry's own
+   * fallback instead (ForceProjector.drawShield with animateShields off):
+   * a 1.5-unit stroked outline over a 0.09 fill, which is a plain shape on
+   * screen — no wobble, and two overlapping fields keep both their
+   * outlines rather than merging.
    */
-  private drawForceFields(dyn: Batch, sim: Sim): void {
+  private drawForceFields(sim: Sim, buffered: boolean): void {
     const { upx, upy, ushield, ushieldAlpha, uforceScale, ukind, n } = sim;
+    const b = this.shields;
     for (let i = 0; i < n; i++) {
       const spec = KIND_FORCE[ukind[i]];
       // ForceFieldAbility.draw draws nothing at all while the pool is empty
@@ -962,51 +1073,125 @@ export class Renderer {
       const rad = spec.radius * uforceScale[i];
       if (rad < 1) continue;
       // Draw.color(shieldColor, Color.white, clamp(alpha)): a shot landing
-      // on the field whitens the whole bubble for a few ticks
+      // on the field whitens the whole bubble for a few ticks. The colour
+      // rides into the buffer with the fill, so the shader's rim and hatch
+      // pick it up without knowing anything about the carrier
       const w = Math.min(1, ushieldAlpha[i]);
       const col: RGB = [
         SHIELD_COL[0] + (1 - SHIELD_COL[0]) * w,
         SHIELD_COL[1] + (1 - SHIELD_COL[1]) * w,
         SHIELD_COL[2] + (1 - SHIELD_COL[2]) * w,
       ];
-      this.pushShield(dyn, upx[i], upy[i], spec, rad, col, sim.time);
+      if (buffered) {
+        this.fillPoly(b, upx[i], upy[i], spec.sides, rad, spec.rotation, col, 1);
+      } else {
+        this.fillPoly(b, upx[i], upy[i], spec.sides, rad, spec.rotation, col, 0.09 + 0.08 * w);
+        this.strokePoly(b, upx[i], upy[i], spec.sides, rad, spec.rotation, 1.5 * MU, col, 1);
+      }
     }
   }
 
-  /** one bubble: interior, hatch, then the rim over both */
-  private pushShield(
-    dyn: Batch,
-    cx: number,
-    cy: number,
-    spec: ForceFieldSpec,
-    rad: number,
-    col: RGB,
-    time: number,
-  ): void {
-    const { sides, rotation } = spec;
-    const step = (Math.PI * 2) / sides;
-    const half = step / 2;
-    this.fillPoly(dyn, cx, cy, sides, rad, rotation, col, SHIELD_ALPHA);
-    this.hatchPoly(dyn, cx, cy, sides, rad, rotation, col, time);
-    // the shader's rim lands OUTSIDE the fill, in the band its edge detect
-    // reaches into: a SHIELD_RIM-wide stroke centred half that far out
-    this.strokePoly(
-      dyn, cx, cy, sides,
-      rad + SHIELD_RIM / 2 / Math.cos(half),
-      rotation, SHIELD_RIM, col, 1,
+  /**
+   * Size the shield buffer to the drawing buffer, rebuilding it whenever
+   * the canvas changes. Returns false if the driver will not give us a
+   * complete framebuffer, which puts the fields on the no-shader path.
+   */
+  private ensureShieldTarget(w: number, h: number): boolean {
+    if (!this.shieldReady) return false;
+    if (this.shieldFbo && this.shieldW === w && this.shieldH === h) return true;
+    const gl = this.gl;
+    if (!this.shieldTex) this.shieldTex = gl.createTexture();
+    if (!this.shieldFbo) this.shieldFbo = gl.createFramebuffer();
+    if (!this.shieldTex || !this.shieldFbo) return (this.shieldReady = false);
+    gl.bindTexture(gl.TEXTURE_2D, this.shieldTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    // NEAREST, like Arc's FrameBuffer: the shader thresholds this texture's
+    // alpha at 0.9 to find the outline, and a filtered edge would smear
+    // that threshold into a band instead of a line
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.shieldFbo);
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.shieldTex, 0,
     );
+    const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    if (!ok) return (this.shieldReady = false);
+    this.shieldW = w;
+    this.shieldH = h;
+    return true;
+  }
+
+  /**
+   * Mindustry's Layer.shields pass, 1:1 in shape: fill the buffer from
+   * transparent, then blit the whole thing through the shield shader
+   * (Renderer.effectBuffer.begin(Color.clear) ... blit(Shaders.shield)).
+   *
+   * Doing it in one pass over one buffer is what makes overlapping fields
+   * merge — the shader's edge detect never sees the wall between two
+   * bubbles, only the outline of everything the buffer holds.
+   *
+   * The shader reasons in Mindustry world units, so the camera rect goes
+   * over in those: the visible world is uRes/zoom px across, starting at
+   * -off/zoom, and MU px make one unit.
+   */
+  private blitShields(
+    zoom: number,
+    offX: number,
+    offY: number,
+    kPx: number,
+    time: number,
+    buffered: boolean,
+  ): void {
+    if (this.shields.n === 0) return;
+    const gl = this.gl;
+    const w = this.canvas.width, h = this.canvas.height;
+    // no buffer: the batch already holds the finished no-shader drawing,
+    // so it goes straight over the frame like any other geometry
+    if (!buffered) {
+      this.draw(this.shields, true);
+      return;
+    }
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.shieldFbo);
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1); // begin() clears with this
+    // the fills ride the sprite program under the same camera
+    gl.useProgram(this.prog);
+    gl.uniform2f(this.uRes, w / kPx, h / kPx);
+    gl.uniform1f(this.uZoom, zoom);
+    gl.uniform2f(this.uOff, offX, offY);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    this.draw(this.shields, true);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.useProgram(this.shieldProg);
+    const camW = w / kPx / zoom / MU, camH = h / kPx / zoom / MU;
+    gl.uniform4f(this.uShieldCam, -offX / zoom / MU, -offY / zoom / MU, camW, camH);
+    gl.uniform2f(this.uShieldInv, 1 / camW, 1 / camH);
+    // Shaders.ShieldShader: u_time is Time.time / dp, in ticks
+    gl.uniform1f(this.uShieldTime, (time * 60) / SHIELD_DP);
+    gl.uniform1f(this.uShieldDp, SHIELD_DP);
+    gl.bindTexture(gl.TEXTURE_2D, this.shieldTex);
+    gl.bindVertexArray(this.blitVao);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
   }
 
   /**
    * Arc Fill.poly: a solid regular polygon.
    *
    * A hexagon — every force field on the roster — is one quad off the
-   * UV_HEX cell, which is the whole point of that cell: a fan of separate
-   * triangles shows a faint line down each radial join at close zoom (see
-   * the UV_HEX note). Anything else falls back to the fan, each side one
-   * Drawf.tri with its base on the edge and its apex at the middle, since
-   * that is the only decomposition this batch can draw — every quad it
-   * takes is a rotated rectangle.
+   * UV_HEX cell, which is the whole point of that cell (see the UV_HEX
+   * note: joins in the fill become joins in the outline). Anything else
+   * falls back to a fan, each side one Drawf.tri with its base on the edge
+   * and its apex at the middle, since that is the only decomposition this
+   * batch can draw — every quad it takes is a rotated rectangle.
    */
   private fillPoly(
     dyn: Batch,
@@ -1069,72 +1254,6 @@ export class Renderer {
         cy + Math.sin(ang) * apothem,
         len, stroke, ang + Math.PI / 2, UV_SOLID,
         col[0], col[1], col[2], a,
-      );
-    }
-  }
-
-  /**
-   * shield.frag's moving hatch: bands running at -45 degrees, two world
-   * units of every ten, brightening the fill they cross. They are pinned to
-   * WORLD coordinates — the shader reads camera-space world coords, so the
-   * pattern stands still and the bubble slides through it.
-   *
-   * Each band is one rectangle clipped to the polygon. Clipping is done
-   * against the polygon SHRUNK by the band's half width, so the rectangle's
-   * corners can never poke out past the outline; the band falls at most a
-   * half width short of the edge instead, which the rim covers anyway.
-   */
-  private hatchPoly(
-    dyn: Batch,
-    cx: number,
-    cy: number,
-    sides: number,
-    radius: number,
-    rotation: number,
-    col: RGB,
-    time: number,
-  ): void {
-    const step = (Math.PI * 2) / sides;
-    const hw = HATCH_WIDTH / 2;
-    // shrink by the half width measured on the apothem, which is what the
-    // circumradius has to give up to keep every edge that far in
-    const inner = radius - hw / Math.cos(step / 2);
-    if (inner <= hw) return;
-    // the band normal and the direction they run along
-    const nx = Math.cos(HATCH_DIR + Math.PI / 2), ny = Math.sin(HATCH_DIR + Math.PI / 2);
-    const dx = Math.cos(HATCH_DIR), dy = Math.sin(HATCH_DIR);
-    // where the centre sits along the normal, so the phase stays world-fixed
-    const base = cx * nx + cy * ny + time * HATCH_SPEED;
-    const first = Math.ceil((base - inner) / HATCH_PERIOD);
-    const last = Math.floor((base + inner) / HATCH_PERIOD);
-    for (let k = first; k <= last; k++) {
-      // this band's offset from the centre, along the normal
-      const off = k * HATCH_PERIOD - base;
-      // clip the band's centre line to the shrunk polygon: p(t) = off*n + t*d
-      let t0 = -inner, t1 = inner;
-      for (let e = 0; e < sides && t0 < t1; e++) {
-        const ang = rotation + (e + 0.5) * step;
-        // outward normal of edge e, and how far out its face stands
-        const mx = Math.cos(ang), my = Math.sin(ang);
-        const face = inner * Math.cos(step / 2);
-        const along = mx * dx + my * dy;
-        const at = face - off * (mx * nx + my * ny);
-        if (Math.abs(along) < 1e-6) {
-          if (at < 0) { t0 = t1; break; } // the whole line is outside
-        } else if (along > 0) {
-          t1 = Math.min(t1, at / along);
-        } else {
-          t0 = Math.max(t0, at / along);
-        }
-      }
-      if (t1 - t0 <= 0.5) continue;
-      const mid = (t0 + t1) / 2;
-      this.push(
-        dyn,
-        cx + off * nx + mid * dx,
-        cy + off * ny + mid * dy,
-        t1 - t0, HATCH_WIDTH, HATCH_DIR, UV_SOLID,
-        col[0], col[1], col[2], HATCH_ALPHA,
       );
     }
   }
