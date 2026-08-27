@@ -115,12 +115,12 @@ function trimCounts(counts: Partial<Record<UnitKind, number>>): Partial<Record<U
 }
 
 /**
- * The ladder report: one row per rung, flagged where the climb is uneven.
+ * The ladder report: one row per tier, flagged where the climb is uneven.
  *
  * What it is NOT is a feasibility test. Turret prices are flat and every run
- * banks something, so a player can always farm the rung below until they can
- * afford the next — no rung here is unwinnable. `step` measures GRIND: a
- * rung costing twice what the last one did is twice the farming before it
+ * banks something, so a player can always farm the tier below until they can
+ * afford the next — no tier here is unwinnable. `step` measures GRIND: a
+ * tier costing twice what the last one did is twice the farming before it
  * opens, and a few of those stacked turn a climb into a chore. That is the
  * failure mode an idle game actually has.
  */
@@ -163,8 +163,8 @@ function LadderReport({
         </span>
       </div>
 
-      {/* one row a rung. `step` is the number to keep even — the climb should
-          cost about half again what the rung below did, all the way up */}
+      {/* one row a tier. `step` is the number to keep even — the climb should
+          cost about half again what the tier below did, all the way up */}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-[13px]">
           <thead className="text-[12px] uppercase tracking-widest text-[#71717C]">
@@ -240,7 +240,7 @@ function LadderReport({
       <p className="mt-2 border-t border-[#2E2E36] pt-2 text-[12px] leading-snug text-[#71717C]">
         Fleet is duos needed at the measured coverage — it counts armour, so it
         moves far more than the enemy count does. Nothing here is unwinnable:
-        prices are flat, so a steep rung means more farming, not a dead end.
+        prices are flat, so a steep tier means more farming, not a dead end.
       </p>
     </section>
   );
@@ -393,8 +393,8 @@ export default function LevelEditorView({
   const runCheck = (): void => {
     if (report) return setReport(null); // the button toggles
     const spec = { ...level, spawnRate, waveGap, script: toScript(steps) };
-    // one rung past the last one that unlocks a wave: beyond that the script
-    // stops changing and every further rung is the same shape with more
+    // one tier past the last one that unlocks a wave: beyond that the script
+    // stops changing and every further tier is the same shape with more
     // health, so there is nothing left for the check to say
     const through = topContentTier(spec) + 1;
     setReport({ rows: audit(spec, through), issues: check(spec, through) });
@@ -690,7 +690,7 @@ function StepCard({
         </span>
         {/* a wave's POSITION is its difficulty gate: the ladder sends the
             first BASE_WAVES + 3n of them at tier n, so this badge is the
-            rung a wave first appears at. Moving a row up moves the fight it
+            tier a wave first appears at. Moving a row up moves the fight it
             holds down the ladder, against a smaller fleet */}
         <span
           title={`First played at tier ${tierOfWave(index)}`}

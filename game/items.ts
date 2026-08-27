@@ -7,7 +7,7 @@
  *
  * The point of the split: tech nodes cost SEVERAL items at once (see
  * tech.ts), so a deep upgrade can't be bought by farming the easiest wave
- * forever — the higher rungs want copper and titanium, and the only place
+ * forever — the higher tiers want copper and titanium, and the only place
  * those come from is heavier enemies in later worlds.
  */
 

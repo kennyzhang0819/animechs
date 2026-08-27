@@ -323,7 +323,7 @@ export interface LevelSpec {
    * Unset (the authored baseline) means level 0. Set by specForTier().
    */
   enemyLevel?: number;
-  /** which rung of the ladder this spec was expanded for; unset = baseline */
+  /** which tier of the ladder this spec was expanded for; unset = baseline */
   tier?: number;
 }
 
@@ -355,14 +355,14 @@ export function levelDoc(spec: LevelSpec): LevelDoc {
  *
  * EVERY WAVE THE GAME WILL EVER SEND IS WRITTEN OUT BELOW, in order. The
  * tier does not generate waves — it decides HOW MANY OF THESE a run plays.
- * Tier 0 sends the first four, and every rung adds three more (see
+ * Tier 0 sends the first four, and every tier adds three more (see
  * WAVES_PER_TIER in ladder.ts), so:
  *
  *   tier  0   waves 1-4      tier  4   waves 1-16
  *   tier  1   waves 1-7      tier  8   waves 1-28
  *   tier  2   waves 1-10     tier 16   waves 1-52  (all of them)
  *
- * That is what makes climbing worth doing. A rung is not the same fight
+ * That is what makes climbing worth doing. A tier is not the same fight
  * with a bigger number on it — it is three waves of hand-authored fight
  * nobody has seen yet, on top of everything below. The enemy LEVEL rises
  * alongside (health only, x1.06 a level), and past the end of this list the
@@ -370,13 +370,13 @@ export function levelDoc(spec: LevelSpec): LevelDoc {
  * stops adding new content until more waves are written here.
  *
  * Kills are the only income: a finished run banks each dead unit's tier
- * item whether it ended in victory or defeat, times the rung's drop bonus.
+ * item whether it ended in victory or defeat, times the tier's drop bonus.
  *
  * TWO RULES WHEN EDITING THIS LIST.
  *
  * ONE — a wave's position IS its difficulty gate. Wave i first appears at
  * tier ceil((i - 4) / 3), so moving a wave earlier makes it arrive against
- * a smaller fleet. The comments below mark where each rung begins.
+ * a smaller fleet. The comments below mark where each tier begins.
  *
  * TWO — a unit may not debut before the player can own a turret whose
  * per-shot damage exceeds its armour. Armour is flat, max(dmg - armor,
@@ -384,7 +384,7 @@ export function levelDoc(spec: LevelSpec): LevelDoc {
  * 10% floor and reads as a 9,000-health unit rather than a 900-health one.
  * That is why the sky opens with flares, tier 3 opens with spiroct
  * (armour 5, still 4 damage a duo shot), and the fortress waits until
- * wave 26 — tier 8, five rungs after salvo's 28-damage shells go on sale.
+ * wave 26 — tier 8, five tiers after salvo's 28-damage shells go on sale.
  * debutViolations() in ladder.ts warns in dev if an edit breaks this.
  */
 export const WORLDS: LevelSpec[] = [
@@ -462,7 +462,9 @@ export const WORLDS: LevelSpec[] = [
       { wave: { dagger: 200, mace: 122, fortress: 25, atrax: 84, spiroct: 38 } },
       { wave: { dagger: 320, crawler: 440, nova: 92, pulsar: 58 } },
       { wave: { spiroct: 30, flare: 190, horizon: 96, zenith: 35 } },
-      // ---------- tier 16: waves 50-52 --------------------------------
+      // ---------- tier 16: waves 50-52 — the top of the authored ladder ---
+      // Past here a tier adds only enemy level, never a new wave. Write more
+      // waves below to extend the content ladder; nothing else needs editing
       { wave: { dagger: 230, fortress: 30, atrax: 96, spiroct: 42 } },
       { wave: { dagger: 370, mace: 132, crawler: 420, pulsar: 64 } },
       { wave: { fortress: 22, spiroct: 36, flare: 210, horizon: 108, zenith: 40 } },

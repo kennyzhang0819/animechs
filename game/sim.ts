@@ -264,8 +264,10 @@ export class Sim {
   // the level script's cursor, plus the live state of the step it points at:
   // a wave counts down per kind, a wait counts down in seconds
   private stepIdx = 0;
-  // how many waves the script holds, and how many have begun entering — the
-  // HUD's "Wave 2 / 5". A wave stays current through the wait that follows it
+  // how many waves the script holds, and how many have been STAGED by
+  // loadStep — the HUD's "Wave 2 / 5". Staging runs one waveGap ahead of the
+  // wave entering, so currentWave() backs this off by one while that gap is
+  // still running: a wave stays current through the wait that follows it
   totalWaves = 0;
   private wavesStarted = 0;
   // the wave being drained, flattened to (region, kind) entries — every
@@ -404,10 +406,20 @@ export class Sim {
     return Array.from(this.aliveByKind);
   }
 
-  /** 1-based number of the wave on the field; a level that opens with a wait
-   * still reads "Wave 1" while it counts down to that first wave */
+  /**
+   * 1-based number of the wave ON THE FIELD — the one the player is fighting.
+   *
+   * `wavesStarted` counts a wave from the moment loadStep STAGES it, which is
+   * one waveGap before its first unit enters, so reporting it raw credits the
+   * next wave the instant the current one finishes spawning and leaves the HUD
+   * naming a wave that has not arrived. A staged wave still inside its gap
+   * therefore does not count yet.
+   *
+   * The floor keeps a level that opens with a wait reading "Wave 1" while it
+   * counts down to that first wave.
+   */
   currentWave(): number {
-    return Math.max(1, this.wavesStarted);
+    return Math.max(1, this.wavesStarted - (this.waitLeft > 0 ? 1 : 0));
   }
 
   /** seconds until the next wave starts entering, or 0 when one is already
@@ -787,7 +799,7 @@ export class Sim {
       const i = this.n++;
       // LEVEL SCALING, and the only stat the ladder touches: health alone
       // moves with the enemy level, so armour, speed, hitbox and drop stay
-      // exactly where UNIT_STATS put them however high the rung climbs.
+      // exactly where UNIT_STATS put them however high the tier climbs.
       // That is what keeps a tier-1 dagger a dagger — a fat one, but still
       // something a duo shot lands its full 9 damage on
       const hp = unitHpAtLevel(kind, this.level.enemyLevel ?? 0);

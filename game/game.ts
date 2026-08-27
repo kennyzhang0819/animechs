@@ -11,9 +11,9 @@ import type { Tower } from "./types";
 
 export interface UiState {
   levelId: string;
-  /** which rung of the ladder is being played (see ladder.ts) */
+  /** which tier of the ladder is being played (see ladder.ts) */
   tier: number;
-  /** enemy level this rung carries — every unit's health x 1.06^level */
+  /** enemy level this tier carries — every unit's health x 1.06^level */
   enemyLevel: number;
   remaining: number;
   /** how many of each kind are on the field right now, like UNIT_KINDS */

@@ -20,7 +20,7 @@ npm run dev   # Next.js + Turbopack
   opening fleet
 - `game/tech.ts` — turret price curves (the volume turret is flat) and the
   tier gates
-- `game/progress.ts` — the save: bank, rungs cleared, tech points
+- `game/progress.ts` — the save: bank, tiers cleared, tech points
 - `game/terrain.ts` — seeded value-noise worldgen: mountain ranges, a carved
   meandering valley with a branch lane, forests, outcrops, floor fringes, decor
 - `game/flowfield.ts` — grid occupancy + one Dijkstra pass from the core into a
@@ -38,7 +38,7 @@ npm run dev   # Next.js + Turbopack
 
 In dev builds the running `Game` instance is exposed as `window.__swarmfield`
 for console poking, and the ladder's tuning surface as `window.__ladder`
-(`.spec(n)` for a rung's playable spec, `.budget(n)` for what the arithmetic
+(`.spec(n)` for a tier's playable spec, `.budget(n)` for what the arithmetic
 says it costs).
 
 ## Progression
@@ -46,7 +46,7 @@ says it costs).
 There is one world, played over and over at an ever-higher **tier**. Every
 wave the game will ever send is written out in `WORLDS[0].script` — the tier
 does not generate waves, it decides **how many of them a run plays**: four at
-tier 0, and three more per rung.
+tier 0, and three more per tier.
 
 | | tier 0 | tier 4 | tier 8 | tier 16 |
 |---|---|---|---|---|
@@ -61,8 +61,8 @@ until more waves are authored.
 
 Only **health** scales with level (×1.06 a level; +12 levels is exactly
 double). Armour, speed, hitbox and drop stay at base forever, which is what
-keeps a tier-1 dagger worth shooting at rung 20 and a fortress unkillable by
-duos at rung 0.
+keeps a tier-1 dagger worth shooting at tier 20 and a fortress unkillable by
+duos at tier 0.
 
 ### Authoring waves
 
@@ -73,7 +73,7 @@ and nothing else:
 
 - **Armour is a permanent multiplier.** `max(dmg - armor, 0.1 * dmg)` never
   scales, so a fortress costs a duo line ten times its printed health at
-  every rung forever. A unit must not debut before the player can own a
+  every tier forever. A unit must not debut before the player can own a
   turret out-damaging its armour.
 - **Health per body is difficulty that pays nothing back.** A kill drops one
   item whatever it killed, so 100 spirocts cost ~15× what 100 daggers cost
@@ -92,7 +92,7 @@ Check any edit from the console — dev builds also warn on load:
 
 ```js
 __ladder.check()      // complaints; empty means the script is in line
-__ladder.audit()      // per-rung waves, units, fleet needed, step, drop ratio
+__ladder.audit()      // per-tier waves, units, fleet needed, step, drop ratio
 __ladder.wave(7, 3)   // what one authored wave costs at a given tier
 ```
 
@@ -103,7 +103,7 @@ __ladder.wave(7, 3)   // what one authored wave costs at a given tier
   60–90 turrets whatever you earn — so the treadmill lives on enemy level
   instead, where it costs the player without pricing them out. Growth stays
   on the specialists, where a hard cap is the point.
-- **Cost bundles carry the drop ratio of the rung that unlocks them.**
+- **Cost bundles carry the drop ratio of the tier that unlocks them.**
 
 Nothing about pricing, turret caps, or the free loadout is derived from the
 wave script. `OPENING_DUOS` (the free fleet) is a fixed constant and the

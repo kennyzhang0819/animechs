@@ -13,15 +13,15 @@ import { TECH_TREE } from "./tech";
 /**
  * THE LADDER — the campaign's only difficulty axis.
  *
- * A world ships ONE authored baseline script (the tier-0 run). Every rung
+ * A world ships ONE authored baseline script (the tier-0 run). Every tier
  * above it is that same script re-scaled by three dials and nothing else:
  *
  *   +LEVELS_PER_TIER enemy levels   difficulty  (health only)
  *   +WAVES_PER_TIER  waves          duration and income
  *   x(1 + DROP_BONUS_PER_TIER * n)  drops       income
  *
- * The rungs never run out, so there is always a next number to go up, and
- * a player who stalls farms the highest rung they can clear until the bank
+ * The tiers never run out, so there is always a next number to go up, and
+ * a player who stalls farms the highest tier they can clear until the bank
  * covers the next one. That is the whole idle loop.
  *
  * The three dials are deliberately SEPARATE. Units are income; health is
@@ -45,42 +45,42 @@ import { TECH_TREE } from "./tech";
  */
 export const HP_PER_LEVEL = 1.06;
 
-/** enemy levels added per rung — 5 levels is x1.338 health per tier */
+/** enemy levels added per tier — 5 levels is x1.338 health */
 export const LEVELS_PER_TIER = 5;
 
 /**
  * How many waves a tier-0 run sends — the first four of the authored script.
- * Small on purpose: the wave count is one of the two things a rung visibly
+ * Small on purpose: the wave count is one of the two things a tier visibly
  * BUYS, and starting at four is what makes going to seven feel like
  * something rather than a rounding error.
  */
 export const BASE_WAVES = 4;
 
 /**
- * How many further waves each rung unlocks off the authored script.
+ * How many further waves each tier unlocks off the authored script.
  *
- * This is the ladder's second reward and it is not a side effect. A rung
+ * This is the ladder's second reward and it is not a side effect. A tier
  * pays more because it sends more, but it is also simply MORE GAME — three
- * waves nobody has seen, hand-written in levels.ts, with kinds the rungs
+ * waves nobody has seen, hand-written in levels.ts, with kinds the tiers
  * below never fielded — and that is a reason to push that a bigger number
  * on the same four waves could never be.
  */
 export const WAVES_PER_TIER = 3;
 
 /**
- * Drop bonus per rung, applied LINEARLY: tier n pays x(1 + 0.15n).
+ * Drop bonus per tier, applied LINEARLY: tier n pays x(1 + 0.15n).
  *
  * Linear on purpose. The bonus is not what pays for the treadmill —
  * turret prices are flat (see tech.ts), so the units you kill already pay
  * for the damage needed to kill them, and the ladder walks with no bonus
- * at all. The bonus exists only so a HIGHER rung is the better farm;
- * without it every rung pays the same per minute and there is no reason to
- * climb. Compound it (x1.2 a rung, say) and income outruns health, so no
- * rung is ever harder than the last and the ladder stops being a ladder.
+ * at all. The bonus exists only so a HIGHER tier is the better farm;
+ * without it every tier pays the same per minute and there is no reason to
+ * climb. Compound it (x1.2 a tier, say) and income outruns health, so no
+ * tier is ever harder than the last and the ladder stops being a ladder.
  *
- * It is deliberately NOT the main reason to push. A rung above pays a
+ * It is deliberately NOT the main reason to push. A tier above pays a
  * little better per body and a lot better per run, but what it really sells
- * is more waves, more enemies and kinds of enemy the rung below never
+ * is more waves, more enemies and kinds of enemy the tier below never
  * fielded. Climbing buys content; the bonus only stops farming from being
  * the arithmetically correct answer.
  */
@@ -109,6 +109,19 @@ export const DROP_BONUS_PER_TIER = 0.15;
  */
 export const COVERAGE = 0.48;
 
+/**
+ * The tier as the PLAYER sees it: "Difficulty 1" is tier 0.
+ *
+ * `tier` is 0-based everywhere in the code and in window.__ladder, because
+ * tier 0 is the authored baseline every other tier is expanded from and an
+ * offset there would put a +1 in the middle of the arithmetic. But
+ * "Difficulty 0" reads as NO difficulty, so the screen is 1-based. Every
+ * player-facing tier number goes through here, so the two numbering schemes
+ * meet in exactly one place instead of a `+ 1` per label.
+ */
+export const difficultyOf = (tier: number): number =>
+  Math.max(0, Math.floor(tier)) + 1;
+
 /** enemy level of a tier-n run */
 export const tierLevel = (tier: number): number => Math.max(0, Math.floor(tier)) * LEVELS_PER_TIER;
 
@@ -121,7 +134,7 @@ export const tierDropBonus = (tier: number): number =>
 
 /**
  * How many of the authored waves a tier-n run sends, clamped to what has
- * actually been written. Once a rung runs past the end of the script the
+ * actually been written. Once a tier runs past the end of the script the
  * wave count stops growing and the ladder continues on enemy level alone —
  * so the campaign never hard-stops, it just stops adding new content.
  */
@@ -129,14 +142,14 @@ export const tierWaveCount = (spec: LevelSpec, tier: number): number =>
   Math.min(spec.script.length, BASE_WAVES + WAVES_PER_TIER * Math.max(0, Math.floor(tier)));
 
 /**
- * The rung at which a wave first appears — the inverse of tierWaveCount, and
+ * The tier at which a wave first appears — the inverse of tierWaveCount, and
  * the number an author needs when deciding where in the script to put a new
  * enemy kind.
  */
 export const tierOfWave = (index: number): number =>
   Math.max(0, Math.ceil((index + 1 - BASE_WAVES) / WAVES_PER_TIER));
 
-/** the last rung that still unlocks a wave; past it only health rises */
+/** the last tier that still unlocks a wave; past it only health rises */
 export const topContentTier = (spec: LevelSpec): number =>
   tierOfWave(spec.script.length - 1);
 
@@ -147,7 +160,7 @@ export const unitHpAtLevel = (kind: UnitKind, level: number): number =>
 // ---------- expansion ----------
 
 /**
- * The playable spec for one rung: the authored script cut to this tier's
+ * The playable spec for one tier: the authored script cut to this tier's
  * wave count, carrying the enemy level the sim scales health by.
  *
  * Nothing is generated. Wave 1 of tier 40 is wave 1 of the same authored
@@ -203,10 +216,10 @@ export interface Budget {
 }
 
 /**
- * Weigh a rung. duration = waves * gap + units / spawnRate is the whole run
+ * Weigh a tier. duration = waves * gap + units / spawnRate is the whole run
  * front to back, and total effective health <= fleet DPS * COVERAGE *
  * duration is the clear condition, so the duo count that satisfies it with
- * equality is exactly what the rung asks for.
+ * equality is exactly what the tier asks for.
  *
  * One optimism to know about: this counts a level's WAVE GAP as productive
  * time, when part of it is an empty field. That is folded into COVERAGE
@@ -252,7 +265,7 @@ export const OPENING_DUOS = 70;
 // ---------- the debut rule, enforced ----------
 
 /**
- * The best per-shot damage the player can own by the time a rung starts:
+ * The best per-shot damage the player can own by the time a tier starts:
  * the strongest bullet among every turret whose gate has opened.
  *
  * Splash and pierce are ignored on purpose. What the debut rule cares about
@@ -279,7 +292,7 @@ function bestShotByTier(tier: number): number {
  * Every unit debuts against a turret that can actually hurt it — the one
  * authoring rule the extension pool has to keep. A violation is silent in
  * play: the wave simply cannot be killed, the core takes its one hit, and
- * the rung reads as "too hard" rather than as "mispriced armour".
+ * the tier reads as "too hard" rather than as "mispriced armour".
  *
  * Returns the offending debuts, empty when the script is sound.
  */
@@ -310,8 +323,8 @@ export function debutViolations(spec: LevelSpec = WORLD): LadderIssue[] {
 }
 
 /**
- * One complaint about a script. `tier` is the rung it belongs to, so the
- * level editor can label the wave rows that rung owns; null means the
+ * One complaint about a script. `tier` is the tier it belongs to, so the
+ * level editor can label the wave rows that tier owns; null means the
  * finding is about the script as a whole.
  */
 export interface LadderIssue {
@@ -368,28 +381,28 @@ export function waveCost(step: LevelStep, level = 0): WaveCost {
   return out;
 }
 
-/** one rung, weighed — the row the editor's ladder check renders */
+/** one tier, weighed — the row the editor's ladder check renders */
 export interface AuditRow {
   tier: number;
   waves: number;
   units: number;
-  /** duos the rung asks for, at COVERAGE */
+  /** duos the tier asks for, at COVERAGE */
   duos: number;
-  /** how much harder than the rung below — the number to keep even */
+  /** how much harder than the tier below — the number to keep even */
   step: number;
   t3Share: number;
-  /** scrap : copper : titanium the rung pays, normalised to scrap = 100 */
+  /** scrap : copper : titanium the tier pays, normalised to scrap = 100 */
   dropRatio: [number, number, number];
 }
 
 /**
- * Walk the ladder and report what each rung actually asks for.
+ * Walk the ladder and report what each tier actually asks for.
  *
  * Hand-written waves are free to be whatever they want, but three things do
  * NOT come out in the wash, because the tier scales HEALTH and nothing else.
  *
  * ARMOUR is the big one. It is flat and never scales, so it is a permanent
- * multiplier on a wave's cost at every rung forever: max(dmg - armor,
+ * multiplier on a wave's cost at every tier forever: max(dmg - armor,
  * 0.1 * dmg) means a fortress costs a duo line ten times its printed health
  * at tier 0 and still ten times at tier 40. `duos` counts that, `units`
  * does not.
@@ -461,10 +474,10 @@ export function check(spec: LevelSpec = WORLD, through = 20): LadderIssue[] {
   rows.forEach((r, i) => {
     const prev = rows[i - 1];
     // NOTE: none of these are feasibility tests. Turret prices are flat and
-    // every run banks something, so a player can always farm the rung below
+    // every run banks something, so a player can always farm the tier below
     // until they can afford the next one — nothing here is unwinnable. What
     // these measure is GRIND, which is the failure mode an idle game
-    // actually has: a rung costing twice what the last one did is not
+    // actually has: a tier costing twice what the last one did is not
     // impossible, it is twice the farming, and three of those stacked is a
     // chore rather than a climb
     if (prev && r.step > WALL_STEP)
@@ -496,7 +509,7 @@ export function check(spec: LevelSpec = WORLD, through = 20): LadderIssue[] {
   return out;
 }
 
-/** a rung costing more than this much more than the last reads as a wall */
+/** a tier costing more than this much more than the last reads as a wall */
 export const WALL_STEP = 1.85;
 /** ...and less than this, with new waves, reads as padding */
 export const FILLER_STEP = 1.1;
