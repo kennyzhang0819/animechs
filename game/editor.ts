@@ -73,6 +73,9 @@ function pathNoise(x: number, y: number): number {
  * the left button paints terrain instead of building towers. Debug tool —
  * it never runs a Sim; it renders the terrain batch and edits it in place.
  */
+/** how a brush covers its area: the full box, or a disc inside it */
+export type BrushShape = "square" | "round";
+
 export class MapEditor {
   terrain: Terrain;
   private readonly renderer: Renderer;
@@ -82,7 +85,17 @@ export class MapEditor {
   private set: PaletteSet = PALETTE[0];
   private variant = 0; // index into set.variants, used when randomize is off
   randomize = true;
-  brush = 1; // painted square is (2*brush - 1) cells wide
+  brush = 1; // painted area is (2*brush - 1) cells across
+  /**
+   * Square covers the whole (2r+1) box; round keeps the cells inside a disc
+   * of radius r + 0.5, so the edge lands halfway through the rim cells and
+   * the shape reads as a circle rather than a staircase.
+   *
+   * Below about five cells across the two are the same stamp — there is no
+   * room for a corner to be missing — so the choice only starts to show on
+   * the wide brushes it was added for.
+   */
+  brushShape: BrushShape = "square";
   /** index into PATH_WIDTHS — how wide the path tool carves */
   pathWidth = 1;
   /** radius in cells of the next drop zone placed, editable in the panel */
@@ -105,6 +118,16 @@ export class MapEditor {
   private tly = 0;
   private panning = false;
   private painting = false;
+  /**
+   * The drop zone this stroke is dragging, or -1. A stroke grabs ONE circle
+   * when it starts and holds it until the button comes up.
+   *
+   * Re-running the proximity test on every cell of the stroke is what broke:
+   * the moment the cursor outran the circle it had just moved, the test
+   * missed and the tool dropped a FRESH zone on the ground — so one drag
+   * left a trail of them instead of moving the one you grabbed.
+   */
+  private grabbedSpawn = -1;
   private lastCell = { x: -1, y: -1 };
   private hoverGx = -1;
   private hoverGy = -1;
@@ -272,6 +295,12 @@ export class MapEditor {
         rot,
         kind: pick,
       });
+    } else if (set.kind === "goal") {
+      // A GOAL ON ROCK IS INERT, NOT AN ERROR. rebuildWalk seeds only the
+      // goal cells that are walkable, so marking a hillside costs nothing
+      // and carving it open later turns those cells live — same rule the
+      // drop zones follow
+      T.goal[i] = 1;
     } else {
       // erase: strip the VISIBLE layers, keep the floor. Hiding a layer
       // therefore also shields it from the eraser
@@ -279,6 +308,7 @@ export class MapEditor {
         T.blocked[i] = 0;
         T.wall[i] = 0;
       }
+      if (L.goal) T.goal[i] = 0;
       if (L.props) this.removePropsAt(gx, gy);
     }
     this.dirty = true;
@@ -307,11 +337,30 @@ export class MapEditor {
     const T = this.terrain;
     const region = this.set.variants[this.variant] ?? 1;
     const x = gx + 0.5, y = gy + 0.5;
+
+    // already dragging one: it follows the cursor and nothing else happens
+    if (this.grabbedSpawn >= 0 && this.grabbedSpawn < T.spawns.length) {
+      T.spawns[this.grabbedSpawn] = { ...T.spawns[this.grabbedSpawn], x, y };
+      this.resyncSpawn();
+      this.dirty = true;
+      return;
+    }
+
     const hit = T.spawns.findIndex(
       (c) => c.region === region && Math.hypot(c.x - x, c.y - y) <= c.r,
     );
-    if (hit >= 0) T.spawns[hit] = { ...T.spawns[hit], x, y, r: this.spawnRadius };
-    else T.spawns.push({ x, y, r: this.spawnRadius, region });
+    if (hit >= 0) {
+      // A MOVE KEEPS THE ZONE'S OWN RADIUS. Rewriting it to the current brush
+      // used to shrink the circle out from under the drag that was moving it.
+      // Resize with the radius control, not by picking a zone up
+      this.grabbedSpawn = hit;
+      T.spawns[hit] = { ...T.spawns[hit], x, y };
+    } else {
+      // fresh ground: place one at the current radius and grab it, so the
+      // same press-and-drag puts it exactly where it is wanted
+      this.grabbedSpawn = T.spawns.length;
+      T.spawns.push({ x, y, r: this.spawnRadius, region });
+    }
     this.resyncSpawn();
     this.dirty = true;
   }
@@ -415,8 +464,16 @@ export class MapEditor {
     // nibbling terrain out from under it
     if (this.set.kind === "erase" && this.eraseSpawnAt(gx, gy)) return;
     const r = this.brush - 1;
+    const round = this.brushShape === "round";
+    const rr = (r + 0.5) * (r + 0.5);
     for (let y = gy - r; y <= gy + r; y++)
-      for (let x = gx - r; x <= gx + r; x++) this.paintCell(x, y);
+      for (let x = gx - r; x <= gx + r; x++) {
+        if (round) {
+          const dx = x - gx, dy = y - gy;
+          if (dx * dx + dy * dy > rr) continue;
+        }
+        this.paintCell(x, y);
+      }
     this.resyncSpawn();
   }
 
@@ -484,6 +541,7 @@ export class MapEditor {
       const p = this.mouseWorld(e);
       this.snapshot();
       this.painting = true;
+      this.grabbedSpawn = -1; // this stroke grabs its own zone, if any
       this.lastCell = { x: -1, y: -1 };
       this.paintStroke(clamp((p.x / CELL) | 0, 0, COLS - 1), clamp((p.y / CELL) | 0, 0, ROWS - 1));
     } else if (e.button === 1 || e.button === 2) {
@@ -497,6 +555,7 @@ export class MapEditor {
   private readonly onMouseUp = (): void => {
     this.panning = false;
     this.painting = false;
+    this.grabbedSpawn = -1;
   };
 
   private readonly onMove = (e: MouseEvent): void => {
@@ -520,6 +579,7 @@ export class MapEditor {
     this.hoverGy = -1;
     this.panning = false;
     this.painting = false;
+    this.grabbedSpawn = -1;
   };
 
   private readonly onContext = (e: Event): void => e.preventDefault();
@@ -598,6 +658,39 @@ export class MapEditor {
     const s = this.scale * this.zoom;
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
 
+    // The exit cells, drawn as one filled region rather than cell by cell:
+    // a goal band is hundreds of cells and stroking each would bury the
+    // terrain under a grid. Only the OUTER edges get a line, by drawing a
+    // border on each side that has no goal beside it.
+    if (this.layers.goal) {
+      const G = this.terrain.goal;
+      c.fillStyle = "rgba(120,225,160,0.22)";
+      c.strokeStyle = "rgba(120,225,160,0.95)";
+      c.lineWidth = 2 / s;
+      c.beginPath();
+      for (let y = 0; y < ROWS; y++)
+        for (let x = 0; x < COLS; x++) {
+          if (!G[y * COLS + x]) continue;
+          const px = x * CELL, py = y * CELL;
+          c.rect(px, py, CELL, CELL);
+        }
+      c.fill();
+      // the rim: a cell edge is an outline only where the neighbour is not
+      // also a goal, so the band reads as one shape with a clean border
+      c.beginPath();
+      for (let y = 0; y < ROWS; y++)
+        for (let x = 0; x < COLS; x++) {
+          const i = y * COLS + x;
+          if (!G[i]) continue;
+          const px = x * CELL, py = y * CELL;
+          if (y === 0 || !G[i - COLS]) { c.moveTo(px, py); c.lineTo(px + CELL, py); }
+          if (y === ROWS - 1 || !G[i + COLS]) { c.moveTo(px, py + CELL); c.lineTo(px + CELL, py + CELL); }
+          if (x === 0 || !G[i - 1]) { c.moveTo(px, py); c.lineTo(px, py + CELL); }
+          if (x === COLS - 1 || !G[i + 1]) { c.moveTo(px + CELL, py); c.lineTo(px + CELL, py + CELL); }
+        }
+      c.stroke();
+    }
+
     // Every placed drop zone. This ring is the ONLY thing marking a zone —
     // the floor inside it is drawn as plain ground — so it is drawn before
     // the hover bail-out below: a zone must not disappear the moment the
@@ -656,9 +749,24 @@ export class MapEditor {
     const x = (this.hoverGx - r) * CELL, y = (this.hoverGy - r) * CELL;
     const side = (2 * r + 1) * CELL;
     c.fillStyle = this.set.kind === "erase" ? "rgba(255,90,90,0.18)" : "rgba(255,211,127,0.14)";
-    c.fillRect(x, y, side, side);
     c.strokeStyle = this.set.kind === "erase" ? "rgba(255,90,90,0.9)" : "rgba(255,211,127,0.85)";
     c.lineWidth = 1.5 / s;
+    if (this.brushShape === "round") {
+      // the same disc the paint loop walks, drawn from the cursor cell's
+      // centre — so what is outlined is exactly what a click would change
+      c.beginPath();
+      c.arc(
+        (this.hoverGx + 0.5) * CELL,
+        (this.hoverGy + 0.5) * CELL,
+        (r + 0.5) * CELL,
+        0,
+        Math.PI * 2,
+      );
+      c.fill();
+      c.stroke();
+      return;
+    }
+    c.fillRect(x, y, side, side);
     c.strokeRect(x, y, side, side);
   }
 }

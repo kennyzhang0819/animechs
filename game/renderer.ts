@@ -307,9 +307,16 @@ export interface TerrainLayers {
   wall: boolean;
   props: boolean;
   spawn: boolean;
+  goal: boolean;
   core: boolean;
 }
-export const ALL_LAYERS: TerrainLayers = { wall: true, props: true, spawn: true, core: true };
+export const ALL_LAYERS: TerrainLayers = {
+  wall: true,
+  props: true,
+  spawn: true,
+  goal: true,
+  core: true,
+};
 
 // flyer drop shadow: painter's offset + premultiplied black tint
 const SHADOW_OFF = 6;
@@ -410,6 +417,10 @@ export class Renderer {
   // the core of the terrain currently in the static batches; renderTerrain
   // (the editor) has no sim to ask, so rebuildTerrain leaves it here
   private core = { ...BASE };
+  // a goal-layer map routes the swarm to painted exit cells and has no core
+  // to defend, so it draws none — the sprite would otherwise sit in the
+  // middle of the exit band promising something the map does not have
+  private hasGoals = false;
   // layer visibility of whatever is currently in the static batches, so the
   // editor's core sprite (drawn per frame) matches the terrain it sits on
   private layers: TerrainLayers = ALL_LAYERS;
@@ -814,6 +825,7 @@ export class Renderer {
     const t = this.terrain;
     const T = src.terrain;
     this.core = T.core;
+    this.hasGoals = T.goal.some((g) => g !== 0);
     this.layers = layers;
     t.n = 0;
     // does this cell show its floor (rather than a wall sprite)? pine cells
@@ -865,7 +877,7 @@ export class Renderer {
     // displayShadow blocks — the core sprite covers the middle, so what
     // shows is the rim hugging its sides. Towers sit on hills (already
     // fully stamped as blocked cells), so they need nothing extra
-    if (layers.core)
+    if (layers.core && !this.hasGoals)
       for (let y = T.core.y; y < T.core.y + T.core.size; y++)
         for (let x = T.core.x; x < T.core.x + T.core.size; x++) stamp(y * COLS + x);
     gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
@@ -960,7 +972,7 @@ export class Renderer {
     // the core of the map last built into the terrain batch (see
     // rebuildTerrain) — a map may put it anywhere, not just at BASE
     const core = this.core;
-    if (!this.layers.core) {
+    if (!this.layers.core || this.hasGoals) {
       this.draw(dyn, true);
       return;
     }
@@ -1107,19 +1119,23 @@ export class Renderer {
         this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 0.34, 0.89, 0.54, (1 - t) * 0.9);
       }
     }
-    // core last, above units and breach fx — arrivals disappear beneath it
-    const core = sim.terrain.core;
-    const coreSz = core.size * CELL;
-    this.push(
-      dyn,
-      (core.x + core.size / 2) * CELL,
-      (core.y + core.size / 2) * CELL,
-      coreSz,
-      coreSz,
-      0,
-      UV_CORE,
-      1, 1, 1, 1,
-    );
+    // core last, above units and breach fx — arrivals disappear beneath it.
+    // A goal-layer map draws none: its exits are the map edge, and there is
+    // no building there to swallow anything
+    if (!this.hasGoals) {
+      const core = sim.terrain.core;
+      const coreSz = core.size * CELL;
+      this.push(
+        dyn,
+        (core.x + core.size / 2) * CELL,
+        (core.y + core.size / 2) * CELL,
+        coreSz,
+        coreSz,
+        0,
+        UV_CORE,
+        1, 1, 1, 1,
+      );
+    }
     this.draw(dyn, true);
     // Layer.shields is above every one of those, the core included, and it
     // is its own pass: gather the fills, then blit the buffer over the

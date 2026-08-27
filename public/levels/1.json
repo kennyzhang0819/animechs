@@ -1,6 +1,6 @@
 {
  "id": "1",
- "spawnRate": 20,
+ "spawnRate": 40,
  "waveGap": 15,
  "script": [
   {
@@ -17,21 +17,21 @@
   {
    "wave": {
     "dagger": 50,
-    "mace": 6,
-    "nova": 12
+    "mace": 5,
+    "nova": 10
    }
   },
   {
    "wave": {
     "crawler": 80,
-    "atrax": 16,
-    "nova": 15
+    "atrax": 15,
+    "nova": 10
    }
   },
   {
    "wave": {
-    "dagger": 48,
-    "crawler": 44,
+    "dagger": 50,
+    "crawler": 40,
     "nova": 10
    }
   },
@@ -39,12 +39,12 @@
    "wave": {
     "dagger": 50,
     "mace": 25,
-    "pulsar": 8
+    "pulsar": 10
    }
   },
   {
    "wave": {
-    "dagger": 52,
+    "dagger": 50,
     "crawler": 50,
     "spiroct": 10
    }
@@ -59,8 +59,8 @@
   {
    "wave": {
     "crawler": 180,
-    "atrax": 12,
-    "spiroct": 7,
+    "atrax": 10,
+    "spiroct": 10,
     "nova": 30,
     "pulsar": 10
    }
@@ -102,7 +102,8 @@
     "mace": 50,
     "fortress": 10,
     "nova": 20,
-    "pulsar": 5
+    "pulsar": 5,
+    "quasar": 1
    }
   },
   {
@@ -115,12 +116,12 @@
    "wave": {
     "nova": 220,
     "pulsar": 60,
-    "quasar": 20
+    "quasar": 5
    }
   },
   {
    "wave": {
-    "flare": 70,
+    "flare": 100,
     "horizon": 30,
     "zenith": 10
    }
@@ -128,23 +129,25 @@
   {
    "wave": {
     "dagger": 120,
-    "mace": 46,
-    "atrax": 30,
+    "mace": 50,
+    "nova": 50,
     "pulsar": 20
    }
   },
   {
    "wave": {
-    "dagger": 110,
-    "crawler": 190,
-    "spiroct": 14
+    "crawler": 300,
+    "atrax": 50,
+    "spiroct": 20
    }
   },
   {
    "wave": {
-    "flare": 80,
-    "horizon": 24,
-    "zenith": 10
+    "dagger": 400,
+    "fortress": 30,
+    "quasar": 10,
+    "horizon": 50,
+    "zenith": 20
    }
   },
   {

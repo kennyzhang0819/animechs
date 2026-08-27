@@ -275,6 +275,12 @@ export class Sim {
   readonly uspd = new Float32Array(MAX_UNITS);
   readonly urad = new Float32Array(MAX_UNITS);
   readonly uarmor = new Float32Array(MAX_UNITS);
+  // a flyer's own destination in world px, fixed when it spawns: the goal
+  // cell nearest where it entered. Walkers read the flow field instead, and
+  // the field already routes them to their nearest goal for free — this is
+  // only here because flyers never touch it
+  readonly ugx = new Float32Array(MAX_UNITS);
+  readonly ugy = new Float32Array(MAX_UNITS);
   /** absorbing shield (Mindustry ShieldComp.shield): eaten before health */
   readonly ushield = new Float32Array(MAX_UNITS);
   /** shield draw opacity — 1 on apply or hit, fading over 15 ticks */
@@ -415,6 +421,11 @@ export class Sim {
   private readonly fldI: number[] = [];
   private fldN = 0;
   private readonly flowTmp: Vec2 = { x: 0, y: 0 };
+  // every goal cell's centre in world px, as flat x,y pairs — what a
+  // spawning flyer scans to pick its destination. One entry (the core's
+  // centre) on a map with no goal layer, so the old behaviour is the
+  // one-goal case of the new one rather than a separate path
+  private goalPts = new Float32Array(2);
 
   // seal-test cache: hover asks canPlace every frame, and the test costs two
   // flow-field recomputes — remember the verdict for the last cell asked
@@ -449,7 +460,14 @@ export class Sim {
     this.terrain = terrainFromMap(doc);
     this.goalX = (this.terrain.core.x + this.terrain.core.size / 2) * CELL;
     this.goalY = (this.terrain.core.y + this.terrain.core.size / 2) * CELL;
-    this.field.rebuildWalk(this.towers, this.terrain.blocked, this.terrain.spawn, this.terrain.core);
+    this.field.rebuildWalk(
+      this.towers,
+      this.terrain.blocked,
+      this.terrain.spawn,
+      this.terrain.core,
+      this.terrain.goal,
+    );
+    this.buildGoalPts();
     this.field.compute();
     // fail LOUDLY on a broken map: with zero pads nothing ever spawns and a
     // wave script stalls forever, which reads as a scheduler bug otherwise
@@ -458,10 +476,13 @@ export class Sim {
     // a core sitting on rock is always an authoring slip (a map that moved
     // its core without carving the basin, say) and it reads as "the waves
     // never finish" rather than as a broken map — so say it out loud
+    // ...on a map that still HAS one. A goal-layer map never seeds from the
+    // core, so its core cells are decoration and may sit under rock
     let walledCore = 0;
-    for (let y = this.terrain.core.y; y < this.terrain.core.y + this.terrain.core.size; y++)
-      for (let x = this.terrain.core.x; x < this.terrain.core.x + this.terrain.core.size; x++)
-        if (this.terrain.blocked[y * COLS + x]) walledCore++;
+    if (!this.usesGoalLayer())
+      for (let y = this.terrain.core.y; y < this.terrain.core.y + this.terrain.core.size; y++)
+        for (let x = this.terrain.core.x; x < this.terrain.core.x + this.terrain.core.size; x++)
+          if (this.terrain.blocked[y * COLS + x]) walledCore++;
     if (walledCore > 0)
       console.warn(
         `map "${doc.id}": ${walledCore} of the core's cells are walled — carve its basin open at ${this.terrain.core.x},${this.terrain.core.y}`,
@@ -504,6 +525,40 @@ export class Sim {
   loadLevel(spec: LevelSpec): void {
     this.level = spec;
     this.reset();
+  }
+
+  /** does this map route the swarm to painted goal cells rather than a core? */
+  usesGoalLayer(): boolean {
+    const g = this.terrain.goal;
+    for (let i = 0; i < g.length; i++) if (g[i]) return true;
+    return false;
+  }
+
+  /**
+   * Collect every goal cell's centre, for flyers to choose from. Falls back
+   * to the core's centre so a pre-goal map is simply the one-goal case —
+   * there is no second code path for it anywhere.
+   */
+  private buildGoalPts(): void {
+    const { goal, core } = this.terrain;
+    const pts: number[] = [];
+    for (let i = 0; i < goal.length; i++)
+      if (goal[i]) pts.push((i % COLS) * CELL + CELL / 2, (((i / COLS) | 0) + 0.5) * CELL);
+    this.goalPts = Float32Array.from(
+      pts.length > 0 ? pts : [this.goalX, this.goalY],
+    );
+  }
+
+  /** the goal cell nearest a point, in world px — a flyer's destination */
+  private nearestGoal(x: number, y: number): { x: number; y: number } {
+    const p = this.goalPts;
+    let bx = p[0], by = p[1], best = Infinity;
+    for (let k = 0; k < p.length; k += 2) {
+      const dx = p[k] - x, dy = p[k + 1] - y;
+      const d = dx * dx + dy * dy;
+      if (d < best) { best = d; bx = p[k]; by = p[k + 1]; }
+    }
+    return { x: bx, y: by };
   }
 
   /** the core is down — the game freezes and the score screen takes over */
@@ -991,6 +1046,13 @@ export class Sim {
       this.uhpmax[i] = hp;
       this.uspd[i] = stats.speed;
       this.urad[i] = r;
+      // flyers never read the flow field, so the routing the field does for
+      // free has to be done by hand for them — once, here, not per tick
+      if (fly) {
+        const g = this.nearestGoal(x, y);
+        this.ugx[i] = g.x;
+        this.ugy[i] = g.y;
+      }
       this.uarmor[i] = stats.armor;
       // ForceFieldAbility.created: a carrier walks in with the bubble
       // already full, so the first tower to see one meets 500 points of
@@ -1504,8 +1566,9 @@ export class Sim {
 
       const fly = KIND_FLYING[ukind[i]];
       if (fly) {
-        // flyers ignore the maze: aim straight at the core's center
-        const gdx = this.goalX - upx[i], gdy = this.goalY - upy[i];
+        // flyers ignore the maze: aim straight at the exit they picked when
+        // they spawned (the core's centre on a map with no goal layer)
+        const gdx = this.ugx[i] - upx[i], gdy = this.ugy[i] - upy[i];
         const gl = Math.hypot(gdx, gdy) || 1;
         flowTmp.x = gdx / gl;
         flowTmp.y = gdy / gl;

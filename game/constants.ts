@@ -1,5 +1,5 @@
-export const COLS = 128;
-export const ROWS = 96;
+export const COLS = 256;
+export const ROWS = 192;
 export const CELL = 20; // one Mindustry ground tile
 export const W = COLS * CELL;
 export const H = ROWS * CELL;

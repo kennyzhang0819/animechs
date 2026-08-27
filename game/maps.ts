@@ -1,4 +1,11 @@
 import { BASE, COLS, NCELLS, ROWS } from "./constants";
+
+/**
+ * The grid width every map was authored at before the board grew. Documents
+ * saved since carry their own `w`; these do not, and this is what they mean.
+ * Never change it — it is a fact about files already on disk.
+ */
+export const LEGACY_COLS = 128;
 import { WALL_PINE, type Prop, type Terrain } from "./terrain";
 import { explain, type SaveResult } from "./types";
 
@@ -16,6 +23,16 @@ import { explain, type SaveResult } from "./types";
 export interface MapData {
   id: string;
   name: string;
+  /**
+   * The grid WIDTH this document's layers were saved at. The board has grown
+   * since the first maps were drawn, and every layer below is a flat array
+   * indexed `y * w + x` — so without this, widening COLS would reinterpret
+   * every old document's rows at the wrong stride and shred it. Absent means
+   * LEGACY_COLS, which is what every pre-widening document was saved at.
+   *
+   * Height needs no such field: it falls out of `floor.length / w`.
+   */
+  w?: number;
   floor: number[]; // NCELLS, UV_FLOORS index
   wall: number[]; // NCELLS, UV_WALLS index or WALL_PINE where blocked
   blocked: number[]; // NCELLS, 0/1
@@ -31,6 +48,13 @@ export interface MapData {
    * exactly one spawn representation at runtime
    */
   spawn?: number[];
+  /**
+   * Exit cells, NCELLS of 0/1 — the swarm's destination, and the reason a
+   * map needs no core. Units path to the nearest set cell, so a band down
+   * one edge makes the whole map drain that way instead of funnelling.
+   * Absent on every pre-goal document, which keeps playing off its core.
+   */
+  goal?: number[];
   pines: Prop[];
   decor: Prop[];
   // carved-valley centerline per column — generator metadata the sim's
@@ -44,6 +68,7 @@ export interface MapData {
 /** every playable map — add a JSON under public/maps/ and list its id here */
 export const OFFICIAL_MAP_IDS: readonly string[] = [
   "grass-s",
+  "grass-open",
   "dunes-long",
   "stone-canyon",
   // archived: superseded by grass-s and dunes-long, kept for reference
@@ -103,7 +128,16 @@ export async function refreshMap(id: string): Promise<MapData | null> {
 
 // ---------- palette ----------
 
-export type PaintKind = "floor" | "wall" | "pine" | "decor" | "spawn" | "erase" | "path" | "core";
+export type PaintKind =
+  | "floor"
+  | "wall"
+  | "pine"
+  | "decor"
+  | "spawn"
+  | "goal"
+  | "erase"
+  | "path"
+  | "core";
 
 /**
  * One enemy drop zone: Mindustry marks a spawn with a tile and draws
@@ -203,6 +237,12 @@ export const PALETTE: readonly PaletteSet[] = [
   // clears the ground it lands on, since a walled core is unreachable
   { id: "core", label: "Core", kind: "core", variants: [0], noRandom: true,
     icons: ["/mindustry/sprites/blocks/storage/core-nucleus.png"] },
+  // the exit cells: where the swarm is trying to GET TO. Like spawn pads
+  // this is a data layer the game never draws — the floor underneath shows
+  // through, and the editor marks it in the overlay. A map with any goal
+  // cell routes to them instead of to its core (see Terrain.goal)
+  { id: "goal", label: "Exit", kind: "goal", variants: [0], noRandom: true,
+    icons: [`${ENV}/dark-panel-3.png`] },
   { id: "erase", label: "Erase", kind: "erase", variants: [0], icons: [`${ENV}/clear-editor.png`] },
 ];
 
@@ -273,7 +313,7 @@ export function fitSpawnCircles(spawn: Uint8Array): SpawnCircle[] {
 /** a document's drop zones, whatever shape it was saved in */
 export function spawnCirclesOf(m: MapData, blocked: Uint8Array): SpawnCircle[] {
   if (m.spawns) return m.spawns.map((c) => ({ ...c }));
-  return fitSpawnCircles(m.spawn ? lift(m.spawn, 0) : legacySpawn(blocked));
+  return fitSpawnCircles(m.spawn ? lift(m.spawn, 0, m.w ?? LEGACY_COLS) : legacySpawn(blocked));
 }
 
 /**
@@ -298,6 +338,9 @@ export function spawnRegionIds(m: MapData): number[] {
 function isPadRow(t: Terrain, y: number): boolean {
   for (let x = 0; x < COLS; x++) {
     const i = y * COLS + x;
+    // a goal cell makes a row real however untouched it otherwise looks —
+    // trimming one away would silently delete the swarm's destination
+    if (t.goal[i] !== 0) return false;
     if (t.blocked[i] !== 1 || t.floor[i] !== 3 || t.wall[i] !== 5 || t.spawn[i] !== 0) return false;
   }
   return !t.pines.some((p) => p.y === y) && !t.decor.some((p) => p.y === y);
@@ -321,13 +364,20 @@ export function mapFromTerrain(t: Terrain, id: string, name: string): MapData {
   let rows = ROWS;
   while (rows > 1 && isPadRow(t, rows - 1)) rows--;
   const n = rows * COLS;
+  const goal = Array.from(t.goal.subarray(0, n));
   return {
     id,
     name,
+    // ALWAYS write the stride these arrays were flattened at. A document
+    // without it is read as LEGACY_COLS, so omitting it here would corrupt
+    // every map the editor touches the next time the board grows
+    w: COLS,
     core: { x: t.core.x, y: t.core.y },
     floor: Array.from(t.floor.subarray(0, n)),
     wall: Array.from(t.wall.subarray(0, n)),
     blocked: Array.from(t.blocked.subarray(0, n)),
+    // omitted entirely on a core map, so its document stays as it was
+    ...(goal.some((g) => g !== 0) ? { goal } : {}),
     // drop zones are authored, not painted: the per-cell layer is derived
     // from them on load, so writing it back out would be writing a cache
     spawns: t.spawns.map((c) => ({ ...c })),
@@ -356,34 +406,39 @@ function legacySpawn(blocked: Uint8Array): Uint8Array {
  * gain a rim of mountain rather than a walkable void. Same-height documents
  * pass straight through.
  */
-function lift(src: readonly number[], pad: number): Uint8Array {
-  const out = new Uint8Array(NCELLS);
-  const rows = Math.min(ROWS, Math.floor(src.length / COLS));
+function lift(src: readonly number[], pad: number, srcW: number): Uint8Array {
+  const out = new Uint8Array(NCELLS).fill(pad);
+  const rows = Math.min(ROWS, Math.floor(src.length / srcW));
+  const cols = Math.min(COLS, srcW);
+  // row by row at the SOURCE stride, into the current one — a narrower
+  // document lands in the top-left and the rest of the board stays `pad`
   for (let y = 0; y < rows; y++)
-    for (let x = 0; x < COLS; x++) out[y * COLS + x] = src[y * COLS + x];
-  for (let i = rows * COLS; i < NCELLS; i++) out[i] = pad;
+    for (let x = 0; x < cols; x++) out[y * COLS + x] = src[y * srcW + x];
   return out;
 }
 
 export function terrainFromMap(m: MapData): Terrain {
   // pad short documents with rock (blocked 1) wearing the dark carbon wall
   // sprite, over stone floor that never shows
-  const blocked = lift(m.blocked, 1);
+  const sw = m.w ?? LEGACY_COLS;
+  const blocked = lift(m.blocked, 1, sw);
   const core = { x: m.core?.x ?? BASE.x, y: m.core?.y ?? BASE.y, size: BASE.size };
   const spawns = spawnCirclesOf(m, blocked);
   return {
-    floor: lift(m.floor, 3),
-    wall: lift(m.wall, 5),
+    floor: lift(m.floor, 3, sw),
+    wall: lift(m.wall, 5, sw),
     blocked,
     spawns,
     spawn: rasterizeSpawns(spawns, blocked),
+    goal: m.goal ? lift(m.goal, 0, sw) : new Uint8Array(NCELLS),
     pines: m.pines.map((p) => ({ ...p })),
     decor: m.decor.map((p) => ({ ...p })),
     valleyY: m.valleyY
       ? Float32Array.from(m.valleyY)
       : new Float32Array(COLS).fill(core.y + core.size / 2),
     core,
-    rows: Math.max(1, Math.min(ROWS, Math.floor(m.floor.length / COLS))),
+    rows: Math.max(1, Math.min(ROWS, Math.floor(m.floor.length / sw))),
+    cols: Math.max(1, Math.min(COLS, sw)),
   };
 }
 

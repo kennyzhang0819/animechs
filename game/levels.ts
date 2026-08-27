@@ -613,7 +613,7 @@ export const WORLDS: LevelSpec[] = [
   {
     id: "1",
     name: "The Foothills",
-    map: "grass-s",
+    map: "grass-open",
     // slow enough that a wave is still walking in when the next gap starts,
     // so the field reads as one continuous swarm rather than a set of pushes
     spawnRate: 20,

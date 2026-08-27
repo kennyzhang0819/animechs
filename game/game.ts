@@ -147,6 +147,7 @@ export class Game {
   // the playable height in world px: the loaded map's own rows, so a map
   // stored on a shorter grid neither letterboxes nor pans into its padding
   private worldH = H;
+  private worldW = W;
   private hoverGx = -1;
   private hoverGy = -1;
 
@@ -566,6 +567,7 @@ export class Game {
   /** re-read the loaded map's height and refit the camera to it */
   private fitToMap(): void {
     this.worldH = this.sim.terrain.rows * CELL;
+    this.worldW = this.sim.terrain.cols * CELL;
     this.resize();
   }
 
@@ -577,13 +579,13 @@ export class Game {
     if (!Number.isFinite(this.tly)) this.tly = 0;
     // cover guarantees the window fits inside the world, so these ranges are
     // never negative and no edge of the screen can fall off the map
-    this.tlx = clamp(this.tlx, 0, W - this.visW());
+    this.tlx = clamp(this.tlx, 0, this.worldW - this.visW());
     this.tly = clamp(this.tly, 0, this.worldH - this.visH());
   }
 
   private resize(): void {
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const bw = Math.round((this.glCanvas.clientWidth || W) * dpr);
+    const bw = Math.round((this.glCanvas.clientWidth || this.worldW) * dpr);
     const bh = Math.round((this.glCanvas.clientHeight || H) * dpr);
     // only skip the canvas attribute writes (they clear the canvas) — the
     // scale must ALWAYS be recomputed: a hot-reload recreates Game on the
@@ -597,7 +599,7 @@ export class Game {
       this.uiCanvas.width = bw;
       this.uiCanvas.height = bh;
     }
-    this.scale = Math.max(bw / W, bh / this.worldH);
+    this.scale = Math.max(bw / this.worldW, bh / this.worldH);
     this.zoom = clamp(this.zoom, ZOOM_MIN, ZOOM_MAX);
     this.clampCamera();
   }

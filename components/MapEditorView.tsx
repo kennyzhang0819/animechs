@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { MapEditor, PATH_WIDTHS } from "@/game/editor";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { MapEditor, PATH_WIDTHS, type BrushShape } from "@/game/editor";
 import { SPAWN_RADII, SPAWN_RADIUS_DEFAULT } from "@/game/maps";
 import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
 import { PALETTE, SPAWN_REGIONS, saveMap, type MapData, type PaletteSet } from "@/game/maps";
@@ -10,6 +10,7 @@ const LAYER_ROWS: ReadonlyArray<[keyof TerrainLayers, string]> = [
   ["wall", "Hills"],
   ["props", "Props"],
   ["spawn", "Spawn pads"],
+  ["goal", "Exits"],
   ["core", "Core"],
 ];
 
@@ -54,6 +55,50 @@ function Panel({
   const ref = useRef<HTMLDivElement>(null);
   const [off, setOff] = useState({ x: 0, y: 0 });
   const [open, setOpen] = useState(true);
+  // the panel's CSS-anchored position, i.e. where it sits with a ZERO offset.
+  // Measured rects already include whatever offset is applied, so every clamp
+  // below subtracts the applied offset to get back to this fixed origin —
+  // clamping against the live rect instead lets the bounds drift with the
+  // panel and the box escapes the viewport anyway
+  const anchor = useRef<{ x: number; y: number } | null>(null);
+
+  /**
+   * Keep a usable piece of the panel on screen. GRIP is what has to stay
+   * reachable: lose that and the panel can never be dragged back, which is
+   * exactly what a saved off-screen position used to do — permanently, since
+   * the restore below applied it without any clamp at all.
+   */
+  const clampOff = useCallback((next: { x: number; y: number }) => {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r || !anchor.current) return next;
+    const { x: ax, y: ay } = anchor.current;
+    const GRIP = 56;
+    return {
+      x: Math.min(Math.max(next.x, GRIP - ax - r.width), window.innerWidth - GRIP - ax),
+      y: Math.min(Math.max(next.y, -ay), window.innerHeight - GRIP - ay),
+    };
+  }, []);
+
+  // measure the anchor once mounted, then rescue anything already off-screen
+  useLayoutEffect(() => {
+    const r = ref.current?.getBoundingClientRect();
+    if (r) anchor.current = { x: r.left - off.x, y: r.top - off.y };
+    setOff((cur) => {
+      const fixed = clampOff(cur);
+      return fixed.x === cur.x && fixed.y === cur.y ? cur : fixed;
+    });
+  }, [off.x, off.y, clampOff]);
+
+  // a window that shrinks must not strand a panel outside it either
+  useEffect(() => {
+    const onResize = (): void =>
+      setOff((cur) => {
+        const fixed = clampOff(cur);
+        return fixed.x === cur.x && fixed.y === cur.y ? cur : fixed;
+      });
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [clampOff]);
 
   useEffect(() => {
     try {
@@ -77,17 +122,7 @@ function Panel({
     const from = { x: e.clientX, y: e.clientY };
     const base = off;
     const move = (ev: PointerEvent): void => {
-      const next = { x: base.x + ev.clientX - from.x, y: base.y + ev.clientY - from.y };
-      // never let a panel be dragged fully off-screen: its own box has to
-      // keep a grip's worth of itself inside the viewport
-      const r = ref.current?.getBoundingClientRect();
-      if (r) {
-        const minX = next.x - r.left - r.width + 40, maxX = next.x + (window.innerWidth - r.left - 40);
-        const minY = next.y - r.top + 8, maxY = next.y + (window.innerHeight - r.top - 40);
-        next.x = Math.min(Math.max(next.x, minX), maxX);
-        next.y = Math.min(Math.max(next.y, minY), maxY);
-      }
-      setOff(next);
+      setOff(clampOff({ x: base.x + ev.clientX - from.x, y: base.y + ev.clientY - from.y }));
     };
     const up = (): void => {
       window.removeEventListener("pointermove", move);
@@ -159,6 +194,7 @@ export default function MapEditorView({
   const [variant, setVariant] = useState(0);
   const [randomize, setRandomize] = useState(true);
   const [brush, setBrush] = useState(1);
+  const [brushShape, setBrushShape] = useState<BrushShape>("square");
   const [pathWidth, setPathWidth] = useState(1);
   const [spawnRadius, setSpawnRadius] = useState(SPAWN_RADIUS_DEFAULT);
   const [layers, setLayers] = useState<TerrainLayers>({ ...ALL_LAYERS });
@@ -208,16 +244,21 @@ export default function MapEditorView({
     ed.setTool(set, variant);
     ed.randomize = randomize;
     ed.brush = brush;
+    ed.brushShape = brushShape;
     ed.pathWidth = pathWidth;
     ed.spawnRadius = spawnRadius;
     if (
       ed.layers.wall !== layers.wall ||
       ed.layers.props !== layers.props ||
       ed.layers.spawn !== layers.spawn ||
+      ed.layers.goal !== layers.goal ||
       ed.layers.core !== layers.core
     ) {
       ed.layers = { ...layers };
-      ed.redraw(); // visibility changed: the static batches must be rebuilt
+      // exits live in the per-frame overlay rather than the static batches,
+      // so hiding them alone needs no rebuild — but the assignment above
+      // does have to happen, and redraw() is cheap enough not to special-case
+      ed.redraw();
     }
   });
 
@@ -350,6 +391,53 @@ export default function MapEditorView({
                   {2 * b - 1}
                 </button>
               ))}
+              {/* the presets are the everyday sizes; this takes any other.
+                  A square brush is always an ODD number of cells across —
+                  it is centred on the cursor's cell — so an even entry is
+                  rounded up rather than quietly ignored */}
+              <input
+                type="number"
+                min={1}
+                max={99}
+                step={2}
+                value={2 * brush - 1}
+                onChange={(e) => {
+                  const w = Number(e.target.value);
+                  if (!Number.isFinite(w)) return;
+                  const odd = Math.max(1, Math.min(99, Math.round(w) | 1));
+                  setBrush((odd + 1) / 2);
+                }}
+                title="Brush width in cells — odd numbers only, centred on the cursor"
+                className="h-6 w-14 rounded border border-[#2E2E36] bg-[#101013] px-1.5 text-right text-sm text-[#EDEDEF] focus:border-[#FFD37F] focus:outline-none"
+              />
+            </span>
+          </label>
+          <label className="flex items-center justify-between gap-3">
+            <span className="text-[13px] uppercase tracking-widest text-[#71717C]">Shape</span>
+            <span className="flex gap-1">
+              {(["square", "round"] as const).map((sh) => (
+                <button
+                  key={sh}
+                  aria-pressed={brushShape === sh}
+                  onClick={() => setBrushShape(sh)}
+                  title={
+                    sh === "square"
+                      ? "Square brush — covers the whole box"
+                      : "Round brush — covers a disc inside it"
+                  }
+                  className={`flex h-6 w-7 items-center justify-center rounded border ${
+                    brushShape === sh
+                      ? "border-[#FFD37F] bg-[#222227]"
+                      : "border-[#2E2E36] hover:border-[#4A4A55]"
+                  }`}
+                >
+                  <span
+                    className={`block h-3 w-3 border ${sh === "round" ? "rounded-full" : ""} ${
+                      brushShape === sh ? "border-[#EDEDEF] bg-[#EDEDEF]" : "border-[#71717C]"
+                    }`}
+                  />
+                </button>
+              ))}
             </span>
           </label>
           <div className="flex flex-col gap-1 border-t border-[#2E2E36] pt-2">
@@ -398,6 +486,22 @@ export default function MapEditorView({
                     {r}
                   </button>
                 ))}
+                {/* the presets are the common sizes; this is for any other.
+                    Clamped to something that can actually hold a drop zone —
+                    a radius of 0 would be a zone nothing ever spawns in */}
+                <input
+                  type="number"
+                  min={1}
+                  max={64}
+                  step={1}
+                  value={spawnRadius}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (Number.isFinite(v)) setSpawnRadius(Math.max(1, Math.min(64, Math.round(v))));
+                  }}
+                  title="Radius in cells — applies to the next zone you place"
+                  className="h-6 w-14 rounded border border-[#2E2E36] bg-[#101013] px-1.5 text-right text-sm text-[#EDEDEF] focus:border-[#FFD37F] focus:outline-none"
+                />
               </span>
             </label>
           )}

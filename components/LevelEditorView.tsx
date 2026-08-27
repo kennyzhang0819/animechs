@@ -568,10 +568,10 @@ export default function LevelEditorView({
             {/* ECONOMY. One row a difficulty: what a full clear banks (drop
                 bonus included) and the shape of it, normalised to copper =
                 100. The ratio is the number to author against — the tech tree
-                charges about 100 : 15 : 3 : 9 : 3 across every node at its
-                ceiling, and paying far above that on any currency leaves it
-                piling up unspent. The BONUS cannot move the ratio; only the
-                mix of unit tiers the waves send can. */}
+                is authored to — see TARGET_DROP_RATIO in ladder.ts, which
+                the check below measures every currency against. The BONUS
+                cannot move the ratio; only the mix of unit tiers the waves
+                send can. */}
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
               <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
                 Payout per difficulty
@@ -595,8 +595,8 @@ export default function LevelEditorView({
                 ))}
               </div>
               <p className="mt-2 border-t border-[#2E2E36] pt-2 text-[12px] leading-snug text-[#71717C]">
-                Copper : titanium : thorium : plastanium : phase. The tree wants
-                about 100 : 15 : 3 : 9 : 3.
+                Copper : titanium : thorium : plastanium : phase — targets are
+                TARGET_DROP_RATIO in ladder.ts, one row a difficulty.
               </p>
             </section>
 

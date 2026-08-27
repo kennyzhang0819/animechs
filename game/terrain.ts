@@ -30,11 +30,26 @@ export interface Terrain {
   // name a region use only that region's pads. A data layer — the game
   // renders plain floor here; only the map editor draws the pad tile
   spawn: Uint8Array;
+  /**
+   * WHERE THE SWARM IS TRYING TO GET TO: 1 on every cell that counts as an
+   * exit. The flow field seeds its Dijkstra from all of them at once, so a
+   * unit heads for the NEAREST goal and the map partitions itself into
+   * watersheds — which is what lets a crowd spread like water instead of
+   * funnelling onto one point.
+   *
+   * Empty on a map authored before goals existed; the field then falls back
+   * to the core block, which is exactly what such a map means.
+   */
+  goal: Uint8Array;
   pines: Prop[]; // blocking tree cells, drawn as overhanging props
   decor: Prop[]; // non-blocking props: boulders, shrubs
   valleyY: Float32Array; // carved main-valley centerline per column
   /** this map's core: top-left cell + edge length, in cells */
   core: { x: number; y: number; size: number };
+  /** how many columns of the grid this map actually uses — the horizontal
+   * twin of `rows`. A document drawn on the old narrower board lands in the
+   * left of the grid and the camera stops at its edge */
+  cols: number;
   /** how many rows of the grid this map actually uses. Documents saved on a
    * shorter grid are padded with rock to fill the arrays (see
    * terrainFromMap), but the CAMERA stops at this height, so an older map
@@ -330,6 +345,9 @@ export function generateTerrain(seed: number): Terrain {
 
   return {
     blocked, floor, wall, spawns, spawn, pines, decor, valleyY,
-    core: { ...BASE }, rows: ROWS,
+    // the procedural terrain has no authored exits, so it plays off its
+    // core exactly as it always has (see Terrain.goal)
+    goal: new Uint8Array(NCELLS),
+    core: { ...BASE }, rows: ROWS, cols: COLS,
   };
 }

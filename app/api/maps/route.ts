@@ -1,7 +1,6 @@
 import { access, writeFile } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
-import { COLS, NCELLS } from "@/game/constants";
 import type { MapData } from "@/game/maps";
 
 /**
@@ -18,38 +17,49 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (typeof map.id !== "string" || !/^[a-z0-9-]+$/.test(map.id))
     return NextResponse.json({ error: "bad map id" }, { status: 400 });
 
-  // A document is as tall as it needs to be: mapFromTerrain trims unused pad
-  // rows, so a layer is COLS * rows long for some rows <= ROWS rather than a
-  // fixed NCELLS. All three painted layers must agree on that height, since
-  // the loader indexes them together.
+  // THE SERVER DOES NOT POLICE MAP DIMENSIONS. A document carries the grid
+  // width it was flattened at (`w`), so any size is a legal map and the
+  // loader re-strides it on the way in — an editor should not be told its
+  // map is the wrong shape. The only rule left is the one that would
+  // actually corrupt a file: the three painted layers are indexed together
+  // on load, so they have to be the same length as each other.
   const heights = new Set<number>();
   for (const [name, layer] of [
     ["floor", map.floor],
     ["wall", map.wall],
     ["blocked", map.blocked],
   ] as const) {
-    if (!Array.isArray(layer))
+    if (!Array.isArray(layer) || layer.length === 0)
       return NextResponse.json({ error: `${name} layer is missing` }, { status: 400 });
-    if (layer.length === 0 || layer.length % COLS !== 0 || layer.length > NCELLS)
-      return NextResponse.json(
-        {
-          error: `${name} layer is ${layer.length} cells — expected a multiple of ${COLS} up to ${NCELLS}`,
-        },
-        { status: 400 },
-      );
     heights.add(layer.length);
   }
   if (heights.size !== 1)
     return NextResponse.json(
-      { error: `floor, wall and blocked layers disagree on height (${[...heights].join(", ")})` },
+      { error: `floor, wall and blocked layers disagree on length (${[...heights].join(", ")})` },
       { status: 400 },
     );
 
-  // `spawn` is the legacy per-cell drop-zone layer: read from old documents,
-  // never written by the editor (it emits `spawns` circles instead). Accept
-  // its absence, and only check the shape when a document still carries it.
-  if (map.spawn !== undefined && (!Array.isArray(map.spawn) || map.spawn.length % COLS !== 0))
-    return NextResponse.json({ error: "bad legacy spawn layer" }, { status: 400 });
+  // ...and `w` has to divide them, or every row after the first lands at the
+  // wrong offset. A document without one is read at LEGACY_COLS
+  const len = [...heights][0];
+  if (map.w !== undefined) {
+    if (!Number.isInteger(map.w) || map.w <= 0 || len % map.w !== 0)
+      return NextResponse.json(
+        { error: `grid width ${map.w} does not divide ${len} cells` },
+        { status: 400 },
+      );
+  }
+
+  // `goal` and the legacy per-cell `spawn` layer are optional; when present
+  // they are indexed the same way, so they get the same length rule
+  for (const [name, layer] of [["spawn", map.spawn], ["goal", map.goal]] as const) {
+    if (layer === undefined) continue;
+    if (!Array.isArray(layer) || layer.length !== len)
+      return NextResponse.json(
+        { error: `${name} layer must be ${len} cells to match the painted layers` },
+        { status: 400 },
+      );
+  }
   if (map.spawns !== undefined && !Array.isArray(map.spawns))
     return NextResponse.json({ error: "bad spawn regions" }, { status: 400 });
   if (!Array.isArray(map.pines) || !Array.isArray(map.decor))

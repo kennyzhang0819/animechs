@@ -103,6 +103,54 @@ export const DIFFICULTIES: readonly { name: string; waves: number; level: number
   // ERADICATION and UNREASONABLE are deliberately not here yet
 ];
 
+/**
+ * THE ENEMY MIX EACH DIFFICULTY SHOULD SEND, as the payout it produces:
+ * one item per kill, so a wave script's unit tiers ARE the economy. Indexed
+ * like DIFFICULTIES then like ITEM_KINDS, normalised to copper = 100.
+ *
+ *   difficulty   copper  titanium  thorium  plastanium  phase
+ *   Medium         100      15       3.6        0         0
+ *   High           100      22       6.5       0.23       0
+ *   Extreme        100      27       9         0.7       0.13
+ *
+ * THIS IS THE DESIGN INPUT, NOT A CONSEQUENCE. The wave script is authored
+ * to this and the tech tree's prices are balanced to whatever it pays —
+ * never the other way round. An earlier version of this table was derived
+ * backwards from Mindustry's turret BUILD COSTS, which was wrong twice
+ * over: plastanium and phase are specialty materials there rather than
+ * rungs of a tier ladder, and their quantities carry no information about
+ * how many tier-4 enemies a wave should hold.
+ *
+ * A BODY RATIO BADLY UNDERSTATES A HEAVY, so read it alongside the health
+ * these mixes actually put on the field:
+ *
+ *   difficulty     T1    T2    T3    T4    T5
+ *   Medium         58%   30%   12%    -     -
+ *   High           43%   34%   17%    6%    -
+ *   Extreme        32%   30%   17%   14%    7%
+ *
+ * At Extreme that is ninety-five tier-4 and tier-5 bodies out of sixteen
+ * thousand carrying a fifth of the run. Ten T5 in wave 50 alone are 6% of
+ * the whole difficulty.
+ *
+ * Three rules hold the shape up. T1 keeps dominating COUNT while its share
+ * of WEIGHT falls (58% -> 32%), which is what makes the top difficulty a
+ * different fight rather than a longer one. Every currency debuts one
+ * difficulty before anything charges for it — the fifteen T4 at High are
+ * only twenty plastanium a run, far too few to spend, but the currency is
+ * visibly accumulating before Extreme's plastanium-priced turrets open.
+ * And T5 exists only at Extreme and only at the very end, so it reads as
+ * the campaign arriving rather than as something to farm.
+ */
+export const TARGET_DROP_RATIO: readonly (readonly number[])[] = [
+  [100, 15, 3.6, 0, 0],
+  [100, 22, 6.5, 0.23, 0],
+  [100, 27, 9, 0.7, 0.13],
+];
+
+/** how far off target a currency may drift before check() says so */
+export const RATIO_TOLERANCE = 0.4;
+
 /** the last difficulty there is — clearing it finishes the campaign */
 export const TOP_TIER = DIFFICULTIES.length - 1;
 
@@ -531,9 +579,9 @@ export interface AuditRow {
    * every currency together — so the ratio is decided purely by how many
    * T1/T2/T3 bodies the waves send.
    *
-   * WHAT TO AIM AT: the tree charges about 100 : 15 : 2.6 across all
-   * fifteen nodes at their ceilings. Pay much above that and titanium and
-   * thorium pile up unspent while copper stays the only real constraint.
+   * WHAT TO AIM AT: TARGET_DROP_RATIO, above — the authored enemy mix this
+   * difficulty is supposed to send. check() reports any currency that has
+   * drifted more than RATIO_TOLERANCE off it.
    */
   dropRatio: number[];
 }
@@ -645,24 +693,33 @@ export function check(spec: LevelSpec = WORLD): LadderIssue[] {
         kind: "filler",
         message: `adds ${r.waves - prev.waves} waves but only ${r.step}x the health — the ten new waves are barely paying for themselves`,
       });
-    // The currency mix, against what the tree charges. Named off ITEM_KINDS
-    // rather than written out, so shifting the whole scale one item up (as
-    // the campaign did when scrap dropped off the bottom) moves these with
-    // it instead of leaving them describing a currency nothing pays.
+    // The currency mix against TARGET_DROP_RATIO, every currency, named off
+    // ITEM_KINDS rather than written out — so adding a tier-6 unit extends
+    // this check for free instead of leaving a currency unwatched.
     const name = (i: number): string => ITEM_INFO[ITEM_KINDS[i]].name.toLowerCase();
-    const [, second, third] = r.dropRatio;
-    if (second < 7 || second > 45)
-      out.push({
-        tier: r.tier,
-        kind: "economy",
-        message: `pays ${name(1)} at 100:${second}; the tree charges near 100:15, so one currency ends up the only real constraint`,
-      });
-    if (r.tier >= 1 && (third < 0.8 || third > 30))
-      out.push({
-        tier: r.tier,
-        kind: "economy",
-        message: `pays ${name(2)} at 100:${third}; the tree charges near 100:2.5`,
-      });
+    const want = TARGET_DROP_RATIO[r.tier] ?? [];
+    want.forEach((target, i) => {
+      // copper is the denominator, and a currency this difficulty is not
+      // meant to pay yet is not a finding — only paying one EARLY is
+      if (i === 0) return;
+      const got = r.dropRatio[i] ?? 0;
+      if (target === 0) {
+        if (got > 0)
+          out.push({
+            tier: r.tier,
+            kind: "economy",
+            message: `pays ${name(i)} at 100:${got}, but nothing charges for it this early — it will sit unspent until the difficulty that does`,
+          });
+        return;
+      }
+      const drift = got / target;
+      if (drift < 1 - RATIO_TOLERANCE || drift > 1 + RATIO_TOLERANCE)
+        out.push({
+          tier: r.tier,
+          kind: "economy",
+          message: `pays ${name(i)} at 100:${got}, ${drift < 1 ? "under" : "over"} the 100:${target} this difficulty is authored to — ${drift.toFixed(2)}x target`,
+        });
+    });
   });
   return out;
 }

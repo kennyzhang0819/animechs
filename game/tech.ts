@@ -27,43 +27,52 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * the count a bank can reach is LOGARITHMIC in that bank: at growth 1.05,
  * going from a million copper to a billion buys 142 more turrets. So the
  * exponent does not really decide what a turret costs — it decides how many
- * of it a player ends up with, forever, however long they play. Every value
- * below was chosen by picking that number first and solving backwards.
+ * of it a player ends up with, forever, however long they play.
  *
- * THE CEILING IS SET BY BOARD SPACE, IN TWO STEPS.
- *
- * FIRST BY FOOTPRINT, because that is what actually competes for tiles:
+ * THE CEILING IS FOOTPRINT, AND ONLY FOOTPRINT:
  *
  *   1x1  ->  500      2x2  ->  200      3x3  ->  100
  *
- * THEN BY RANGE, as `clamp(range / 200, 0.4, 1)`. A short-ranged turret has
- * to sit on the front line and there are only so many front-line tiles, so
- * it cannot usefully occupy the board the way a long-ranged one can — 200
- * units earns the full band, and range can never cut it below 40%. Scorch
- * is the case that forces this: it is 1x1 and would take the top band on
- * footprint alone, but at 60 units it is the shortest-ranged turret in the
- * game and very strong, so it lands at 200 rather than 500.
+ * THE RANGE MULTIPLIER IS GONE, and it is worth saying why it ever existed.
+ * On the old 128x96 board these ceilings committed 76% of the 4,015
+ * buildable tiles, so a short-ranged turret genuinely could not occupy the
+ * board the way a long-ranged one could, and its ceiling was cut to say so.
+ * The board is now 256x192 with 29,109 buildable cells: the same ceilings
+ * commit 11% of it. TILE SCARCITY STOPPED BINDING, so the rule it justified
+ * went with it.
  *
- *   turret   size  range   band  xrange   ceiling   growth
- *   duo      1x1     160    500    0.80       400   1.0217
- *   hail     1x1     235    500    1.00       500   1.0131
- *   scorch   1x1      60    500    0.40       200   1.0360
- *   scatter  2x2     220    200    1.00       200   1.0318
- *   salvo    2x2     190    200    0.95       200   1.0273
- *   fuse     3x3      90    100    0.45        50   1.1264
+ * The map charges for short range on its own now, in units rather than in
+ * price — a 60-unit scorch covers 7.5 tiles of a 35-tile gate, so holding
+ * one gate takes about five of them abreast. Charging again in the ceiling
+ * was double-counting, and it is why scorch and fuse read as overtuned on
+ * the cramped map and balanced on this one.
  *
- * Ceilings are quoted at a hundred Extreme runs, which is the bank the
- * curves were solved against. They total 3,150 of grass-s's 4,015 buildable
- * tiles, so a player cannot max everything and composition stays a real
- * choice — which is the entire job of this file.
+ * GROWTH IS SOLVED SO EVERY NODE COSTS THE SAME PER POINT OF DPS —
+ * 7.85 copper for each point of damage-per-second its full ceiling fields.
+ * The tree's whole lifetime bill is unchanged, so the campaign is the same
+ * length; only the DISTRIBUTION moved. A strong turret is now expensive
+ * because it is strong, and a weak one cheap because it is weak, which is
+ * the entire rule and the only one to hold in your head.
  *
- * DUO IS NOT EXEMPT, though it used to be. A flat price was defensible while
- * the ladder was endless, because enemy LEVEL rose forever and no fixed
- * turret price could outrun it. Four difficulties ended that: level stops at
- * 30, and flat at 8 copper put every tile on the map within fifteen
- * Medium runs. At 400 duos x 27 DPS the fleet still falls short of
- * Extreme's 7,728 health a second, so the specialists are mandatory
- * rather than optional.
+ * THE ONE ASSUMPTION, written down once: a splashing or piercing shot is
+ * counted as catching FIVE bodies — the crowd case those turrets exist for.
+ * It does not have to be true. It has to be the SAME for every turret,
+ * because pricing is relative; a wrong number moves every node together and
+ * cancels out. Change it here and re-solve rather than arguing per turret.
+ *
+ *   turret   size  DPS    ceiling   lifetime DPS   growth
+ *   duo      1x1     27     500          13,500    1.0098
+ *   hail     1x1    165     500          82,500    1.0103
+ *   scorch   1x1    850     500         425,000    1.0133
+ *   scatter  2x2  1,450     200         290,000    1.0327
+ *   salvo    2x2    217     200          43,355    1.0156
+ *   fuse     3x3  4,109     100         410,870    1.0594
+ *
+ * DUO COMES OUT VERY CHEAP and that is the rule working, not a bug: at 27
+ * DPS it is the weakest thing in the game, so equal cost-per-DPS prices it
+ * near nothing and a single top-difficulty run roughly maxes it. Five
+ * hundred duos are still only 13,500 DPS, which is a rounding error against
+ * what the top difficulty sends — it stays the bootstrap, never the answer.
  *
  * `from` delays an ITEM rather than the node: `from: { titanium: 30 }` means
  * the first 30 points cost no titanium at all. The exponent is NOT restarted
@@ -137,13 +146,23 @@ export interface TechNodeDef {
  * ONE: a node's growth is solved from the CEILING its footprint and range
  * earn it, not chosen by feel. See PriceCurve.
  *
- * TWO: A COST BUNDLE MUST CARRY THE DROP RATIO OF THE TIER THAT UNLOCKS IT.
- * The baseline supplies copper : titanium : thorium at roughly 100 : 21 : 4.6
- * and the ratio only widens as the ladder fields more heavies, so every
- * bundle below is written at about that shape. Get it wrong — demand
- * 100 : 10 : 0.4 against a supply of 100 : 21 : 4.6 — and the mismatched
- * currency is the ONLY real constraint while the others pile up unspent,
- * which reads to a player as a broken economy rather than a tuned one.
+ * TWO: A COST BUNDLE MUST CARRY THE DROP RATIO OF THE DIFFICULTY THAT
+ * UNLOCKS IT. Supply is TARGET_DROP_RATIO in ladder.ts — the enemy mix the
+ * waves are authored to send — and the bundles below are shaped to match it
+ * in aggregate: about 100 : 27 : 10 : 0.7 : 0.13. Get it wrong and the
+ * mismatched currency becomes the ONLY real constraint while the others pile
+ * up unspent, which reads to a player as a broken economy rather than a
+ * tuned one.
+ *
+ * A bundle also may not charge for a currency its own difficulty does not
+ * yet pay. Plastanium appears first on the Extreme-gated nodes and phase
+ * fabric only on the Eradication ones, because that is where tier-4 and
+ * tier-5 enemies are — charging fuse for plastanium at High would unlock it
+ * into a wall.
+ *
+ * DUO IS THE ONE EXEMPTION: copper-only, forever. A run that dies before the
+ * first mace banks no titanium at all, and duo capacity has to stay buyable
+ * out of that run or a bad save has no way back.
  *
  * Keep the FIRST point of any newly-gated node payable out of the tiers
  * already cleared when its gate opens, or the node unlocks into a wall.
@@ -151,15 +170,15 @@ export interface TechNodeDef {
 export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // THE VOLUME TURRET, and the only lever a stalled player has — so it is
-    // copper-only and the second-gentlest curve in the tree. A run that dies
-    // before the baseline's first mace wave banks no titanium at all, and duo
-    // capacity has to stay buyable out of that run or the save is stuck.
-    // 8 copper is a shade under ten dagger kills and the first fifty points
-    // barely move off it; the curve only bites near its 400 ceiling, where
-    // the question stops being "can I afford one more" and becomes "is one
-    // more duo worth a salvo"
+    // copper-only. A run that dies before the baseline's first mace wave
+    // banks no titanium at all, and duo capacity has to stay buyable out of
+    // that run or the save is stuck.
+    // Also the cheapest node in the tree, because 27 DPS is the least any
+    // turret does and the price rule pays exactly that much attention to it.
+    // A top-difficulty run roughly maxes it; five hundred duos are still
+    // only 13,500 DPS, so it stays the thing you open with, never the answer
     tower: "duo",
-    price: { base: { copper: 8 }, growth: 1.0212 },
+    price: { base: { copper: 8 }, growth: 1.0098 },
     x: 2,
     y: 0,
   },
@@ -168,7 +187,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // splash scales with bodies per blast and collapses with health per
     // body, so one hail shell kills five daggers and chips a spiroct
     tower: "hail",
-    price: { base: { copper: 40, titanium: 6 }, growth: 1.0127 },
+    price: { base: { copper: 40, titanium: 8 }, growth: 1.0103 },
     requires: "scatter",
     x: 1,
     y: 2,
@@ -178,7 +197,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // piercing flame rakes a whole file of units and sets each alight, and
     // burning ignores armour outright. 60 units of range is the whole cost
     tower: "scorch",
-    price: { base: { copper: 60, titanium: 9 }, growth: 1.035 },
+    price: { base: { copper: 60, titanium: 10 }, growth: 1.0133 },
     requires: "arc",
     x: 3,
     y: 2,
@@ -190,7 +209,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // The price gates it on its own — 120 copper / 20 titanium / 3 thorium
     // is first affordable after wave 7, one wave before the flares
     tower: "scatter",
-    price: { base: { copper: 120, titanium: 20, thorium: 3 }, growth: 1.0308 },
+    price: { base: { copper: 120, titanium: 25, thorium: 5 }, growth: 1.0327 },
     requires: "duo",
     x: 1,
     y: 1,
@@ -200,27 +219,35 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // back at its printed health instead of ten times it. The reward for
     // clearing Medium
     tower: "salvo",
-    price: { base: { copper: 250, titanium: 36, thorium: 6 }, growth: 1.0262 },
+    price: { base: { copper: 250, titanium: 80, thorium: 25 }, growth: 1.0156 },
     requires: "hail",
     requiresTier: 0,
     x: 1,
     y: 3,
   },
   {
-    // the steepest curve in the tree: a fuse battery is meant to be a
-    // handful. Three instant piercing rays at 105 damage each, at nine
-    // tiles of range — priced so it can never become the whole answer.
+    // the steepest curve among the built turrets, and the most expensive
+    // node in the tree — three instant piercing rays at 105 damage each is
+    // the highest DPS on the roster, so equal cost-per-DPS charges for it.
+    // Nine tiles of range is no longer a discount: the map already decides
+    // how much of a gate one can hold (see PriceCurve).
     // The reward for clearing High, so it is on sale for exactly one
     // difficulty: Extreme. A gate on the LAST difficulty would mean the
     // turret only ever unlocks after the campaign is already finished
     tower: "fuse",
-    price: { base: { copper: 600, titanium: 105, thorium: 34 }, growth: 1.1216 },
+    price: { base: { copper: 600, titanium: 250, thorium: 150, plastanium: 15 }, growth: 1.0594 },
     requires: "salvo",
     requiresTier: 1,
     x: 2,
     y: 5,
   },
   // ---------- STUBS: tree shape only, no turret behind them yet --------
+  //
+  // THEIR PRICES ARE NOT SOLVED. Every bundle below predates the DPS rule
+  // and is a placeholder, because these nodes carry a placeholder BULLET —
+  // duo's — so any DPS computed for them today would price the stand-in
+  // rather than the turret. Give one its real ammo and re-solve it by the
+  // rule in PriceCurve; until then treat these numbers as scaffolding.
   //
   // Lineage is Mindustry's own (content/SerpuloTechTree.java) and the
   // difficulty gates fall out of BUILD MATERIAL: a turret whose Mindustry
@@ -241,7 +268,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // HIGH. A piercing laser; the ground answer that is not artillery
     tower: "lancer",
-    price: { base: { copper: 200, titanium: 30, thorium: 4 }, growth: 1.0394 },
+    price: { base: { copper: 200, titanium: 50, thorium: 15 }, growth: 1.0394 },
     requires: "scorch",
     requiresTier: 0,
     x: 4,
@@ -251,7 +278,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // HIGH. 290 range — the longest reach in the game, and the wave-clear
     // that answers the crawler floods
     tower: "ripple",
-    price: { base: { copper: 300, titanium: 45, thorium: 8 }, growth: 1.0595 },
+    price: { base: { copper: 300, titanium: 80, thorium: 20 }, growth: 1.0595 },
     requires: "salvo",
     requiresTier: 0,
     x: 2,
@@ -262,7 +289,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // In Mindustry it hangs off wave, which we do not have, so it takes its
     // grandparent scorch instead
     tower: "parallax",
-    price: { base: { copper: 220, titanium: 34, thorium: 6 }, growth: 1.027 },
+    price: { base: { copper: 220, titanium: 55, thorium: 15 }, growth: 1.027 },
     requires: "scorch",
     requiresTier: 0,
     x: 3,
@@ -272,7 +299,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // EXTREME. Homing missiles — they chase what they lock, so overkill
     // costs less than it does on a straight-firing line
     tower: "swarmer",
-    price: { base: { copper: 350, titanium: 55, thorium: 12 }, growth: 1.0241 },
+    price: { base: { copper: 350, titanium: 125, thorium: 55, plastanium: 3 }, growth: 1.0241 },
     requires: "salvo",
     requiresTier: 1,
     x: 0,
@@ -282,7 +309,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // EXTREME. A flak wall. The reason to own it is volume of splash, which
     // is why its ceiling is the full 3x3 band
     tower: "cyclone",
-    price: { base: { copper: 450, titanium: 75, thorium: 18 }, growth: 1.0543 },
+    price: { base: { copper: 450, titanium: 150, thorium: 70, plastanium: 4 }, growth: 1.0543 },
     requires: "swarmer",
     requiresTier: 1,
     x: 0,
@@ -294,7 +321,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // campaign", and that is deliberate: these three ARE the hidden
     // difficulty's reward, and they light up the moment it ships
     tower: "spectre",
-    price: { base: { copper: 900, titanium: 160, thorium: 45 }, growth: 1.1109 },
+    price: { base: { copper: 900, titanium: 375, thorium: 225, plastanium: 23, "phase-fabric": 6 }, growth: 1.1109 },
     requires: "cyclone",
     requiresTier: 2,
     x: 0,
@@ -303,7 +330,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // ERADICATION. A continuous beam that melts whatever it rests on
     tower: "meltdown",
-    price: { base: { copper: 1000, titanium: 175, thorium: 50 }, growth: 1.1081 },
+    price: { base: { copper: 1000, titanium: 425, thorium: 250, plastanium: 26, "phase-fabric": 7 }, growth: 1.1081 },
     requires: "lancer",
     requiresTier: 2,
     x: 4,
@@ -313,7 +340,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // ERADICATION. 500 range and one enormous shot — a sniper rather than a
     // defence, and the only turret that can hit a spawn pad from the core
     tower: "foreshadow",
-    price: { base: { copper: 1100, titanium: 190, thorium: 55 }, growth: 1.1054 },
+    price: { base: { copper: 1100, titanium: 450, thorium: 275, plastanium: 29, "phase-fabric": 8 }, growth: 1.1054 },
     requires: "meltdown",
     requiresTier: 2,
     x: 4,

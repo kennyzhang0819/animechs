@@ -87,6 +87,7 @@ export class FlowField {
     blockedBase: Uint8Array,
     spawnMask: Uint8Array,
     core: { x: number; y: number; size: number },
+    goalMask?: Uint8Array,
   ): void {
     this.spawnMask = spawnMask;
     this.walk.set(blockedBase);
@@ -94,8 +95,23 @@ export class FlowField {
     for (const t of towers)
       for (let y = t.gy; y < t.gy + 2; y++)
         for (let x = t.gx; x < t.gx + 2; x++) this.walk[y * COLS + x] = 1;
-    for (let y = core.y; y < core.y + core.size; y++)
-      for (let x = core.x; x < core.x + core.size; x++) this.isGoal[y * COLS + x] = 1;
+    // GOAL CELLS WIN WHERE A MAP HAS THEM, and nothing below this line
+    // changes: compute() already seeds its Dijkstra from EVERY isGoal cell
+    // at distance 0, which is a multi-source shortest path — so painting a
+    // band instead of a block costs nothing and hands every cell the
+    // heading to its nearest exit. A goal cell under a tower is not a goal.
+    let goals = 0;
+    if (goalMask)
+      for (let i = 0; i < NCELLS; i++)
+        if (goalMask[i] && !this.walk[i]) {
+          this.isGoal[i] = 1;
+          goals++;
+        }
+    // no goal layer (or a map that walled every goal off) falls back to the
+    // core, so every document written before goals existed plays unchanged
+    if (goals === 0)
+      for (let y = core.y; y < core.y + core.size; y++)
+        for (let x = core.x; x < core.x + core.size; x++) this.isGoal[y * COLS + x] = 1;
   }
 
   private hPush(k: number, v: number): void {
