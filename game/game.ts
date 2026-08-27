@@ -28,7 +28,7 @@ export interface UiState {
   kills: number;
   /** the esc game menu is up: sim held, resume or abandon from the overlay */
   menuOpen: boolean;
-  /** simulation speed multiplier: 1, 2 or 4 */
+  /** simulation speed multiplier: one of SPEEDS */
   speed: number;
   /** what this run's kills have banked so far, by currency (see items.ts) */
   earned: Cost;
@@ -49,7 +49,7 @@ export interface Stats {
 }
 
 /** the speeds the HUD toggle offers */
-export const SPEEDS: readonly number[] = [1, 2, 4];
+export const SPEEDS: readonly number[] = [1, 2, 4, 8, 16];
 
 /**
  * The stages of starting a level, in order, as the loading screen reports
@@ -493,7 +493,7 @@ export class Game {
     this.menuOpen = false;
   }
 
-  /** fast-forward toggle: 1x, 2x or 4x */
+  /** fast-forward toggle: any multiplier in SPEEDS; anything else is 1x */
   setSpeed(mult: number): void {
     this.speed = SPEEDS.includes(mult) ? mult : 1;
   }

@@ -199,7 +199,8 @@ export default function LevelEditorView({
   const [waveGap, setWaveGap] = useState(level.waveGap);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState(false);
+  // why the last save was refused — null when the last attempt succeeded
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // reloading a different level through the same mounted component has to
   // reset the buffer, or the new level opens showing the old one's script
@@ -228,16 +229,16 @@ export default function LevelEditorView({
 
   const save = async (): Promise<void> => {
     setSaving(true);
-    setSaveError(false);
-    const ok = await saveLevel({
+    setSaveError(null);
+    const res = await saveLevel({
       ...levelDoc(level),
       spawnRate,
       waveGap,
       script: toScript(steps),
     });
     setSaving(false);
-    if (ok) setDirty(false);
-    else setSaveError(true);
+    if (res.ok) setDirty(false);
+    else setSaveError(res.error);
   };
 
   const back = (): void => {
@@ -279,6 +280,13 @@ export default function LevelEditorView({
             >
               {saving ? "Saving…" : saveError ? "Save failed — retry" : "Save"}
             </button>
+            {/* the route explains every refusal; show it rather than
+                leaving the author guessing at a rejected script */}
+            {saveError && (
+              <p role="alert" className="max-w-xs text-[13px] leading-snug text-[#F08A8A]">
+                {saveError}
+              </p>
+            )}
             <button
               onClick={back}
               className="rounded border border-[#2E2E36] px-4 py-1.5 text-[14px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55]"

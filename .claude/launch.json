@@ -4,38 +4,98 @@
     {
       "name": "m1-engine",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "/Users/kennyzhang/Desktop/swarmfield-footage/m1-engine", "run", "dev", "--", "-p", "3101"],
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/kennyzhang/Desktop/swarmfield-footage/m1-engine",
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3101"
+      ],
       "port": 3101
     },
     {
       "name": "m2-artpass",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "/Users/kennyzhang/Desktop/swarmfield-footage/m2-artpass", "run", "dev", "--", "-p", "3102"],
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/kennyzhang/Desktop/swarmfield-footage/m2-artpass",
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3102"
+      ],
       "port": 3102
     },
     {
       "name": "m3-feel",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "/Users/kennyzhang/Desktop/swarmfield-footage/m3-feel", "run", "dev", "--", "-p", "3103"],
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/kennyzhang/Desktop/swarmfield-footage/m3-feel",
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3103"
+      ],
       "port": 3103
     },
     {
       "name": "main-3001",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "/Users/kennyzhang/Desktop/swarmfield", "run", "dev", "--", "-p", "3001"],
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/kennyzhang/Desktop/swarmfield",
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3001"
+      ],
       "port": 3001
     },
     {
       "name": "m4-current",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "/Users/kennyzhang/Desktop/swarmfield", "run", "dev", "--", "-p", "3104"],
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/kennyzhang/Desktop/swarmfield",
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3104"
+      ],
       "port": 3104
     },
     {
       "name": "worktree",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "/Users/kennyzhang/Desktop/swarmfield/.claude/worktrees/youtube-game-series-plan-6b9254", "run", "dev", "--", "-p", "3105"],
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/kennyzhang/Desktop/swarmfield/.claude/worktrees/youtube-game-series-plan-6b9254",
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3105"
+      ],
       "port": 3105
+    },
+    {
+      "name": "swarmdustry",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3110"
+      ],
+      "port": 3110
     }
   ]
 }

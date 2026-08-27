@@ -164,7 +164,8 @@ export default function MapEditorView({
   const [layers, setLayers] = useState<TerrainLayers>({ ...ALL_LAYERS });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState(false);
+  // why the last save was refused — null when the last attempt succeeded
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -238,14 +239,14 @@ export default function MapEditorView({
     const ed = editorRef.current;
     if (!ed || saving) return;
     setSaving(true);
-    setSaveError(false);
-    const ok = await saveMap(ed.data());
+    setSaveError(null);
+    const res = await saveMap(ed.data());
     setSaving(false);
-    if (ok) {
+    if (res.ok) {
       ed.dirty = false;
       setDirty(false);
     } else {
-      setSaveError(true);
+      setSaveError(res.error);
     }
   };
 
@@ -295,6 +296,14 @@ export default function MapEditorView({
           >
             {saving ? "Saving…" : saveError ? "Save failed — retry" : "Save"}
           </button>
+          {/* the refusal itself, not just that there was one: these are
+              author errors (a layer the route won't take, a map id with no
+              file) that are unfixable while they stay invisible */}
+          {saveError && (
+            <p role="alert" className="max-w-md text-[13px] leading-snug text-[#F08A8A]">
+              {saveError}
+            </p>
+          )}
           <button
             onClick={close}
             className="rounded border border-[#2E2E36] px-3 py-1 text-[#A6A6AF] hover:border-[#4A4A55]"

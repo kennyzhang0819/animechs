@@ -1,5 +1,6 @@
 import { BASE, COLS, NCELLS, ROWS } from "./constants";
 import { WALL_PINE, type Prop, type Terrain } from "./terrain";
+import { explain, type SaveResult } from "./types";
 
 /**
  * Serializable map document — the game's OFFICIAL maps, one JSON file per
@@ -395,24 +396,28 @@ export function loadMap(id: string): MapData | null {
 /**
  * Persist an official map: the dev server writes the JSON document back to
  * public/maps/<id>.json. The game plays the new world on its next page
- * load (Game.create re-fetches the documents). Resolves false when saving
- * failed (production build, bad response).
+ * load (Game.create re-fetches the documents). A refusal carries the
+ * route's explanation back to the editor so it can be shown, not just
+ * counted as failure.
  */
-export async function saveMap(map: MapData): Promise<boolean> {
+export async function saveMap(map: MapData): Promise<SaveResult> {
+  let res: Response;
   try {
-    const res = await fetch("/api/maps", {
+    res = await fetch("/api/maps", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(map),
     });
-    if (!res.ok) return false;
-    // keep the in-memory documents current so admin thumbnails match
-    const at = OFFICIAL_MAPS.findIndex((m) => m.id === map.id);
-    if (at >= 0) OFFICIAL_MAPS[at] = map;
-    return true;
-  } catch {
-    return false;
+  } catch (err) {
+    // the dev server went away mid-edit — the one failure with no response
+    const why = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `could not reach the dev server (${why})` };
   }
+  if (!res.ok) return { ok: false, error: await explain(res) };
+  // keep the in-memory documents current so admin thumbnails match
+  const at = OFFICIAL_MAPS.findIndex((m) => m.id === map.id);
+  if (at >= 0) OFFICIAL_MAPS[at] = map;
+  return { ok: true };
 }
 
 // ---------- thumbnails ----------

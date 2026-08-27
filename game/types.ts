@@ -65,3 +65,26 @@ export interface Effect {
   // its distance grows. Effects with scattered particles carry that seed
   seed?: number;
 }
+
+/**
+ * The outcome of a dev-tool save (maps, levels). The API routes explain
+ * every refusal in their JSON body, so the client carries that text back to
+ * the editor rather than collapsing it to a bare boolean — a save that
+ * cannot succeed must at least say why.
+ */
+export type SaveResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * The message behind a failed save response. Both dev routes answer with
+ * `{ error }`, but a crashed route or a proxy can answer with anything, so
+ * fall back to the status rather than showing "undefined" to the author.
+ */
+export async function explain(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: unknown };
+    if (typeof body.error === "string" && body.error) return body.error;
+  } catch {
+    // not JSON — an HTML error page or an empty body
+  }
+  return `server said ${res.status} ${res.statusText}`.trim();
+}

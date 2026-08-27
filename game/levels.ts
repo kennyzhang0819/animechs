@@ -1,5 +1,6 @@
 import { CELL, HP0, UNIT_SPEED, UR } from "./constants";
 import { itemForTier, type Cost } from "./items";
+import { explain, type SaveResult } from "./types";
 
 export const UNIT_KINDS = ["dagger", "mace", "fortress", "crawler", "atrax", "spiroct", "flare", "nova", "pulsar", "horizon", "zenith"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
@@ -565,17 +566,19 @@ export async function loadLevelDocs(): Promise<void> {
  * save without a reload. false means the write failed and nothing changed
  * on disk — the editor keeps its dirty flag.
  */
-export async function saveLevel(doc: LevelDoc): Promise<boolean> {
+export async function saveLevel(doc: LevelDoc): Promise<SaveResult> {
+  let res: Response;
   try {
-    const res = await fetch("/api/levels", {
+    res = await fetch("/api/levels", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(doc),
     });
-    if (!res.ok) return false;
-    applyLevelDoc(doc);
-    return true;
-  } catch {
-    return false;
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `could not reach the dev server (${why})` };
   }
+  if (!res.ok) return { ok: false, error: await explain(res) };
+  applyLevelDoc(doc);
+  return { ok: true };
 }
