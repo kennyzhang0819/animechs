@@ -223,6 +223,17 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // flares debut inside difficulty 1, so a gate of any kind would lock the
     // answer to air behind the run that first asks for it.
     //
+    // THE ONE NODE PRICED BELOW DPS PARITY, at 0.4x what the rule asks.
+    // Flak DPS is the highest on the cheap half of the tree, but it only ever
+    // fires at AIR — and air is 12% of the health a run sends. Charging the
+    // full rate bills a turret that idles through seven eighths of the game.
+    //
+    // Not discounted to that 12% either: air is a CHECK, and nothing else
+    // cheap answers it (hail and scorch cannot see it at all, salvo and fuse
+    // are gated), so a player without scatter does not lose 12% of a run,
+    // they lose the run. 0.4 sits just above the geometric mean of the two
+    // readings — priced for a turret that is mandatory AND mostly idle.
+    //
     // COPPER AND TITANIUM ONLY, and that is the whole point. It used to want
     // thorium, which comes from tier-3 kills and so does not flow until well
     // into a Medium run — and since hail hangs off this node (Mindustry's own
@@ -230,7 +241,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // ground AoE behind the T3 waves too. Upstream builds scatter from copper
     // and lead, a tier-1 cost; this is that, in our currencies
     tower: "scatter",
-    price: { base: { copper: 120, titanium: 25 }, growth: 1.0327 },
+    price: { base: { copper: 50, titanium: 10 }, growth: 1.0327 },
     requires: "duo",
     x: 1,
     y: 1,
