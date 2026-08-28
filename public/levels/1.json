@@ -182,10 +182,15 @@
   {
    "wave": {
     "dagger": 600,
-    "mace": 62,
+    "mace": 180,
     "crawler": 1000,
+    "atrax": 180,
     "spiroct": 18,
-    "nova": 300
+    "flare": 200,
+    "nova": 300,
+    "pulsar": 180,
+    "quasar": 50,
+    "horizon": 180
    }
   },
   {
