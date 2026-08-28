@@ -1938,6 +1938,10 @@ export class Sim {
         if (cont) {
           if (t.beamT > cont.fade) continue; // still holding one
           t.beamT = cont.duration + cont.fade;
+          // Bullet.timer(1, damageInterval): Interval.get fires only once
+          // the clock EXCEEDS the interval, so a fresh beam's first pass
+          // lands one interval in, not on the frame it is lit
+          t.beamDmgT = cont.damageInterval;
           t.cd = st.reload;
           const mz = st.shootY ?? st.size * 5;
           this.bulletFx(
@@ -2168,6 +2172,10 @@ export class Sim {
       for (let d = 0; d <= reached; d += spec.pointSpacing)
         this.bulletFx(b.pointFx, x + dirx * d, y + diry * d, angle, b.fxColor);
     }
+    // BulletType.despawned: a rail bullet has speed 0 and a lifetime of one
+    // tick, so it dies where it was fired and its despawn effect is, in
+    // practice, the turret's own detonation
+    this.bulletFx(b.despawnFx, x, y, angle, b.fxColor);
   }
 
   /**

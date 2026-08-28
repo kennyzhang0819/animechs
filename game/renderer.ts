@@ -49,6 +49,7 @@ import {
 } from "./atlas";
 import {
   BASE,
+  bulletOf,
   CELL,
   clamp,
   COLS,
@@ -1097,8 +1098,9 @@ export class Renderer {
     }
     for (const p of sim.projs) {
       // a bare BulletType has no sprite at all — scorch's flame lives
-      // entirely in its shoot and hit effects
-      const sp = TOWERS[p.kind].bullet.sprite;
+      // entirely in its shoot and hit effects. A shot thrown by a frag
+      // burst carries the CHILD ammo's sprite, not the shell's
+      const sp = bulletOf(p.kind, p.frag).sprite;
       if (!sp) continue;
       // BasicBulletType.draw: shrinkInterp(fout) drives both axes, so a
       // pellet tapers as it flies and a shell — on Mathf.slope — opens out
