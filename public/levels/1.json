@@ -175,15 +175,13 @@
   {
    "wave": {
     "flare": 200,
-    "pulsar": 120,
-    "quasar": 40,
-    "horizon": 200,
-    "zenith": 90
+    "horizon": 250,
+    "zenith": 120
    }
   },
   {
    "wave": {
-    "dagger": 1000,
+    "dagger": 600,
     "mace": 62,
     "crawler": 1000,
     "spiroct": 18,
