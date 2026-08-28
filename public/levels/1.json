@@ -1,6 +1,6 @@
 {
  "id": "1",
- "spawnRate": 40,
+ "spawnRate": 160,
  "waveGap": 15,
  "script": [
   {
@@ -10,144 +10,144 @@
   },
   {
    "wave": {
-    "dagger": 40,
-    "crawler": 30
+    "dagger": 49,
+    "crawler": 37
    }
   },
   {
    "wave": {
-    "dagger": 50,
-    "mace": 5,
-    "nova": 10
+    "dagger": 72,
+    "mace": 7,
+    "nova": 14
    }
   },
   {
    "wave": {
-    "crawler": 80,
-    "atrax": 15,
-    "nova": 10
+    "crawler": 132,
+    "atrax": 24,
+    "nova": 17
    }
   },
   {
    "wave": {
-    "dagger": 50,
-    "crawler": 40,
-    "nova": 10
+    "dagger": 93,
+    "crawler": 75,
+    "nova": 19
    }
   },
   {
    "wave": {
-    "dagger": 50,
-    "mace": 25,
-    "pulsar": 10
-   }
-  },
-  {
-   "wave": {
-    "dagger": 50,
-    "crawler": 50,
-    "spiroct": 10
-   }
-  },
-  {
-   "wave": {
-    "dagger": 40,
-    "mace": 20,
-    "flare": 20
-   }
-  },
-  {
-   "wave": {
-    "crawler": 180,
-    "atrax": 10,
-    "spiroct": 10,
-    "nova": 30,
-    "pulsar": 10
-   }
-  },
-  {
-   "wave": {
-    "dagger": 200,
-    "mace": 26,
-    "fortress": 10,
-    "nova": 30,
-    "pulsar": 14
-   }
-  },
-  {
-   "wave": {
-    "crawler": 200,
-    "flare": 50,
-    "nova": 20
-   }
-  },
-  {
-   "wave": {
-    "flare": 50,
-    "horizon": 20
-   }
-  },
-  {
-   "wave": {
-    "crawler": 150,
-    "atrax": 30,
-    "spiroct": 15,
-    "nova": 20,
-    "pulsar": 5
-   }
-  },
-  {
-   "wave": {
-    "dagger": 200,
-    "mace": 50,
-    "fortress": 10,
-    "nova": 20,
-    "pulsar": 5,
-    "quasar": 1
-   }
-  },
-  {
-   "wave": {
-    "dagger": 200,
-    "crawler": 300
-   }
-  },
-  {
-   "wave": {
-    "nova": 220,
-    "pulsar": 60,
-    "quasar": 5
-   }
-  },
-  {
-   "wave": {
-    "flare": 100,
-    "horizon": 30,
-    "zenith": 10
-   }
-  },
-  {
-   "wave": {
-    "dagger": 120,
-    "mace": 50,
-    "nova": 50,
+    "dagger": 104,
+    "mace": 51,
     "pulsar": 20
    }
   },
   {
    "wave": {
-    "crawler": 300,
-    "atrax": 50,
-    "spiroct": 20
+    "dagger": 115,
+    "crawler": 115,
+    "spiroct": 18
    }
   },
   {
    "wave": {
-    "dagger": 400,
-    "fortress": 30,
-    "quasar": 10,
-    "horizon": 50,
-    "zenith": 20
+    "dagger": 101,
+    "mace": 49,
+    "flare": 50
+   }
+  },
+  {
+   "wave": {
+    "crawler": 493,
+    "atrax": 27,
+    "spiroct": 20,
+    "nova": 82,
+    "pulsar": 26
+   }
+  },
+  {
+   "wave": {
+    "dagger": 591,
+    "mace": 74,
+    "fortress": 22,
+    "nova": 89,
+    "pulsar": 40
+   }
+  },
+  {
+   "wave": {
+    "crawler": 635,
+    "flare": 159,
+    "nova": 63
+   }
+  },
+  {
+   "wave": {
+    "flare": 170,
+    "horizon": 65
+   }
+  },
+  {
+   "wave": {
+    "crawler": 541,
+    "atrax": 104,
+    "spiroct": 38,
+    "nova": 72,
+    "pulsar": 17
+   }
+  },
+  {
+   "wave": {
+    "dagger": 765,
+    "mace": 184,
+    "fortress": 27,
+    "nova": 76,
+    "pulsar": 18,
+    "quasar": 3
+   }
+  },
+  {
+   "wave": {
+    "dagger": 809,
+    "crawler": 1213
+   }
+  },
+  {
+   "wave": {
+    "nova": 937,
+    "pulsar": 245,
+    "quasar": 15
+   }
+  },
+  {
+   "wave": {
+    "flare": 448,
+    "horizon": 129,
+    "zenith": 31
+   }
+  },
+  {
+   "wave": {
+    "dagger": 563,
+    "mace": 225,
+    "nova": 235,
+    "pulsar": 90
+   }
+  },
+  {
+   "wave": {
+    "crawler": 1474,
+    "atrax": 235,
+    "spiroct": 67
+   }
+  },
+  {
+   "wave": {
+    "dagger": 2052,
+    "fortress": 104,
+    "quasar": 35,
+    "horizon": 245,
+    "zenith": 70
    }
   },
   {
