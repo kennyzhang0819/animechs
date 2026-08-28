@@ -19,17 +19,25 @@ import {
   UV_BULLET_BACK,
   UV_SHELL,
   UV_SHELL_BACK,
+  UV_MISSILE,
+  UV_MISSILE_BACK,
   UV_HAIL,
   UV_DISC,
   UV_DUO,
   UV_TOWER_BASE,
   UV_TOWER_BASE1,
   UV_TOWER_BASE3,
+  UV_TOWER_BASE4,
   UV_SCORCH,
   UV_ARC,
   UV_LANCER,
   UV_RIPPLE,
   UV_PARALLAX,
+  UV_SWARMER,
+  UV_CYCLONE,
+  UV_SPECTRE,
+  UV_MELTDOWN,
+  UV_FORESHADOW,
   UV_PARALLAX_LASER,
   UV_PARALLAX_LASER_END,
   UV_TRI,
@@ -73,14 +81,11 @@ const UV_TURRETS: Record<TowerKind, UVRect> = {
   lancer: UV_LANCER,
   ripple: UV_RIPPLE,
   parallax: UV_PARALLAX,
-  // STUBS: not in the build menu, so never drawn. They point at duo's
-  // region only so the record stays exhaustive — packing their real
-  // sprites is part of implementing each turret, not of listing it
-  swarmer: UV_DUO,
-  cyclone: UV_DUO,
-  spectre: UV_DUO,
-  meltdown: UV_DUO,
-  foreshadow: UV_DUO,
+  swarmer: UV_SWARMER,
+  cyclone: UV_CYCLONE,
+  spectre: UV_SPECTRE,
+  meltdown: UV_MELTDOWN,
+  foreshadow: UV_FORESHADOW,
 };
 /**
  * The two regions BasicBulletType.draw lays on one rect: the longer `-back`
@@ -88,9 +93,10 @@ const UV_TURRETS: Record<TowerKind, UVRect> = {
  * (BulletSprite.region) — the colours are too, so one pair covers every
  * ammo type in the game.
  */
-const BULLET_REGIONS: Record<"bullet" | "shell", readonly [UVRect, UVRect]> = {
+const BULLET_REGIONS: Record<"bullet" | "shell" | "missile", readonly [UVRect, UVRect]> = {
   bullet: [UV_BULLET_BACK, UV_BULLET],
   shell: [UV_SHELL_BACK, UV_SHELL],
+  missile: [UV_MISSILE_BACK, UV_MISSILE],
 };
 /** px per Mindustry world unit — effect geometry is written in those units */
 const MU = CELL / 8;
@@ -137,6 +143,29 @@ const ramp = (a: RGB, b: RGB, c: RGB | null, t: number): RGB => {
 const SPREAD_10 = (10 * Math.PI) / 180;
 const SPREAD_20 = (20 * Math.PI) / 180;
 const SPREAD_50 = (50 * Math.PI) / 180;
+const SPREAD_60 = (60 * Math.PI) / 180;
+/**
+ * Mathf.absin(in, scl, mag): a 0..mag ripple with a period of 4*pi*scl
+ * ticks. Meltdown is the only thing that uses it, twice — once on the
+ * colour and once on the width, at slightly different rates so the beam
+ * never settles into one look.
+ */
+const ABSIN = (x: number, scl: number, mag: number): number =>
+  (Math.sin(x / (scl * 2)) * mag + mag) / 2;
+/**
+ * ContinuousLaserBulletType.colors, r/g/b/a. The two washes carry their
+ * alpha in the hex (0x55 and 0xaa) — they are meant to be seen THROUGH,
+ * which is what layers the beam rather than stacking four bars.
+ */
+const CL_COLORS: ReadonlyArray<readonly [number, number, number, number]> = [
+  [0xec / 255, 0x74 / 255, 0x58 / 255, 0x55 / 255],
+  [0xec / 255, 0x74 / 255, 0x58 / 255, 0xaa / 255],
+  [0xff / 255, 0x9c / 255, 0x5a / 255, 1],
+  [1, 1, 1, 1],
+];
+/** its backLength and frontLength, the two flame fronts' reach */
+const CL_BACK = 7 * (CELL / 8);
+const CL_FRONT = 35 * (CELL / 8);
 const SPREAD_120 = (120 * Math.PI) / 180;
 let rngState = 1;
 const rngSeed = (seed: number): void => {
@@ -997,7 +1026,11 @@ export class Renderer {
     for (const t of sim.towers) {
       const sz = TOWERS[t.kind].size;
       const px = sz * CELL;
-      const base = sz >= 3 ? UV_TOWER_BASE3 : sz === 2 ? UV_TOWER_BASE : UV_TOWER_BASE1;
+      const base =
+        sz >= 4 ? UV_TOWER_BASE4
+        : sz === 3 ? UV_TOWER_BASE3
+        : sz === 2 ? UV_TOWER_BASE
+        : UV_TOWER_BASE1;
       this.push(dyn, t.x, t.y, px, px, 0, base, 1, 1, 1, 1);
       this.push(dyn, t.x, t.y, px, px, t.angle, UV_TURRETS[t.kind], 1, 1, 1, 1);
     }
@@ -1005,6 +1038,7 @@ export class Renderer {
     // is dragging — it has no bullet, so this is its only visual
     for (const t of sim.towers) {
       if (t.beamStr > 0.01) this.drawTractorBeam(dyn, t);
+      if (t.beamT >= 0) this.drawContinuousBeam(dyn, t);
     }
     const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
     const { ushield, ushieldAlpha, urad } = sim;
@@ -1140,6 +1174,42 @@ export class Renderer {
         this.drawBolt(dyn, e, t);
       } else if (e.kind === FxKind.Laser) {
         this.drawLaser(dyn, e, t);
+      } else if (e.kind === FxKind.BlastExplosion) {
+        this.drawBlastExplosion(dyn, e, t);
+      } else if (e.kind === FxKind.PlasticExplosion) {
+        this.drawPlasticExplosion(dyn, e, t);
+      } else if (e.kind === FxKind.InstShoot) {
+        this.drawInstShoot(dyn, e, t);
+      } else if (e.kind === FxKind.InstHit) {
+        this.drawInstHit(dyn, e, t);
+      } else if (e.kind === FxKind.InstTrail) {
+        this.drawInstTrail(dyn, e, t);
+      } else if (e.kind === FxKind.InstBomb) {
+        this.drawInstBomb(dyn, e, t);
+      } else if (e.kind === FxKind.RailHit) {
+        // Fx.railHit: two coppery spikes thrown back off a body the rail
+        // punched through, 140 degrees off the line it is still travelling
+        for (const side of [-1, 1])
+          this.tri(dyn, e.x, e.y, 10 * (1 - t) * MU, 60 * MU,
+            (e.rot ?? 0) + (side * 140 * Math.PI) / 180, PAL.orangeSpark, 1);
+      } else if (e.kind === FxKind.SmokeCloud) {
+        this.drawSmokeCloud(dyn, e, t);
+      } else if (e.kind === FxKind.HitMeltdown) {
+        // Fx.hitMeltdown: six bars flicking off whatever the beam is
+        // resting on, in the beam's own hot orange
+        const bar = ((1 - t) * 4 + 1) * MU;
+        this.scatter(e.seed ?? 1, 6, FIN_POW(t) * 18 * MU, 0, Math.PI, (x, y, bearing) => {
+          this.strokeLine(dyn, e.x + x, e.y + y, bearing, bar, (1 - t) * 2 * MU,
+            PAL.meltdownHit, 1);
+        });
+      } else if (e.kind === FxKind.SmokeBig2) {
+        // Fx.shootBigSmoke2: shootBigSmoke's cloud, but nine motes over
+        // 23 units instead of eight over 19 — meltdown lights up wide
+        const col = ramp(PAL.lightOrange, PAL.lightGray, PAL.gray, t);
+        const rad = ((1 - t) * 2.4 + 0.2) * MU;
+        this.scatter(e.seed ?? 1, 9, FIN_POW(t) * 23 * MU, e.rot ?? 0, SPREAD_20, (x, y) => {
+          this.fillCircle(dyn, e.x + x, e.y + y, rad, col, 1);
+        });
       } else if (e.kind === FxKind.Footfall) {
         this.drawFootfall(dyn, sim, e, t);
       } else if (e.kind === FxKind.Absorb) {
@@ -1516,6 +1586,204 @@ export class Renderer {
   }
 
   /**
+   * Angles.randLenVectors' ParticleConsumer overload — the one whose
+   * particles each carry their OWN progress. Every mote draws a fraction
+   * `l` of the way out, and is handed `fin * l` and `(1 - fin) * l`: so a
+   * cloud does not move as one body, it boils, with the near motes still
+   * young while the far ones are already going out.
+   */
+  private cloud(
+    seed: number,
+    n: number,
+    len: number,
+    fin: number,
+    body: (x: number, y: number, pfin: number, pfout: number) => void,
+  ): void {
+    rngSeed(seed);
+    for (let i = 0; i < n; i++) {
+      const l = rng();
+      const a = rng() * Math.PI * 2;
+      const d = len * l * fin;
+      body(Math.cos(a) * d, Math.sin(a) * d, fin * l, (1 - fin) * l);
+    }
+  }
+
+  /**
+   * Mathf.randomSeedRange: a value in +/-range off a seed of its own, so
+   * one particle keeps the same offset every frame while the shape it
+   * belongs to grows. Mindustry seeds it per PARTICLE (id + j), which is
+   * why the rays of an instHit fan out at fixed, unequal angles.
+   */
+  private static seedRange(seed: number, range: number): number {
+    rngSeed(seed);
+    return (rng() - 0.5) * 2 * range;
+  }
+
+  /**
+   * Fx.blastExplosion, 1:1: swarmer's warhead. A pale ring snaps out over
+   * the first six ticks, five grey cinders tumble after it and four
+   * missile-orange sparks chase those — flakExplosion's shape in the
+   * missile palette, thrown a third again as wide.
+   */
+  private drawBlastExplosion(dyn: Batch, e: Effect, t: number): void {
+    const fout = 1 - t;
+    // e.scaled(6) of the effect's 22 ticks
+    const RING = 6 / 22;
+    if (t < RING) {
+      const s = t / RING;
+      this.strokeCircle(dyn, e.x, e.y, (3 + s * 15) * MU, 3 * (1 - s) * MU,
+        PAL.missileYellow[0], PAL.missileYellow[1], PAL.missileYellow[2], RING_ALPHA);
+    }
+    const grit = (fout * 4 + 0.5) * MU;
+    this.scatter(e.seed ?? 1, 5, (2 + 23 * FIN_POW(t)) * MU, 0, Math.PI, (x, y) => {
+      this.fillCircle(dyn, e.x + x, e.y + y, grit, PAL.gray, 1);
+    });
+    const spark = (1 + fout * 3) * MU;
+    this.scatter((e.seed ?? 1) + 1, 4, (1 + 23 * FIN_POW(t)) * MU, 0, Math.PI, (x, y, bearing) => {
+      this.strokeLine(dyn, e.x + x, e.y + y, bearing, spark, fout * MU, PAL.missileYellowBack, 1);
+    });
+  }
+
+  /**
+   * Fx.plasticExplosion, 1:1: cyclone's. The same three passes again, in
+   * plastanium yellow-green and wider still — a 24-unit ring over seven
+   * ticks and seven cinders rather than five. The six fragments thrown by
+   * the same blast are real bullets, not part of this.
+   */
+  private drawPlasticExplosion(dyn: Batch, e: Effect, t: number): void {
+    const fout = 1 - t;
+    // e.scaled(7) of the effect's 24 ticks
+    const RING = 7 / 24;
+    if (t < RING) {
+      const s = t / RING;
+      this.strokeCircle(dyn, e.x, e.y, (3 + s * 24) * MU, 3 * (1 - s) * MU,
+        PAL.plastaniumFront[0], PAL.plastaniumFront[1], PAL.plastaniumFront[2], RING_ALPHA);
+    }
+    const grit = (fout * 4 + 0.5) * MU;
+    this.scatter(e.seed ?? 1, 7, (2 + 28 * FIN_POW(t)) * MU, 0, Math.PI, (x, y) => {
+      this.fillCircle(dyn, e.x + x, e.y + y, grit, PAL.gray, 1);
+    });
+    const spark = (1 + fout * 3) * MU;
+    this.scatter((e.seed ?? 1) + 1, 4, (1 + 25 * FIN_POW(t)) * MU, 0, Math.PI, (x, y, bearing) => {
+      this.strokeLine(dyn, e.x + x, e.y + y, bearing, spark, fout * MU, PAL.plastaniumBack, 1);
+    });
+  }
+
+  /**
+   * Fx.instShoot, 1:1: foreshadow's muzzle. A 50-unit ring blows off the
+   * barrel over the first ten ticks while four long blades stand out of
+   * it — one pair square to the shot and one pair almost along it. It is
+   * the biggest muzzle flash in the game, and deliberately so: the shot
+   * itself is instant and this is all there is to see of it.
+   */
+  private drawInstShoot(dyn: Batch, e: Effect, t: number): void {
+    const fout = 1 - t;
+    const rot = e.rot ?? 0;
+    const RING = 10 / 24; // e.scaled(10) of the effect's 24 ticks
+    if (t < RING) {
+      const s = t / RING;
+      const col = ramp(PAL.white, PAL.bulletYellowBack, null, s);
+      this.strokeCircle(dyn, e.x, e.y, s * 50 * MU, ((1 - s) * 3 + 0.2) * MU,
+        col[0], col[1], col[2], RING_ALPHA);
+    }
+    const w = 13 * fout * MU;
+    for (const side of [-1, 1]) {
+      this.tri(dyn, e.x, e.y, w, 85 * MU, rot + (side * Math.PI) / 2, PAL.bulletYellowBack, 1);
+      this.tri(dyn, e.x, e.y, w, 50 * MU, rot + (side * 20 * Math.PI) / 180, PAL.bulletYellowBack, 1);
+    }
+  }
+
+  /**
+   * Fx.instHit, 1:1: where a rail shot lands. Two passes of five ragged
+   * blades each — the back pair full length and the front pair half, so
+   * the burst reads as layered — over a ring and a spray of tumbling
+   * diamonds. Each blade's angle and length come off its own seed, which
+   * is what keeps the star lopsided instead of a clean asterisk.
+   */
+  private drawInstHit(dyn: Batch, e: Effect, t: number): void {
+    const fout = 1 - t;
+    const rot = e.rot ?? 0;
+    const seed = e.seed ?? 1;
+    for (let i = 0; i < 2; i++) {
+      const col = i === 0 ? PAL.bulletYellowBack : PAL.bulletYellow;
+      const m = i === 0 ? 1 : 0.5;
+      for (let j = 0; j < 5; j++) {
+        const a = rot + (Renderer.seedRange(seed + j, 50) * Math.PI) / 180;
+        const w = 23 * fout * m * MU;
+        this.tri(dyn, e.x, e.y, w, (80 + Renderer.seedRange(seed + j, 40)) * m * MU, a, col, 1);
+        this.tri(dyn, e.x, e.y, w, 20 * m * MU, a + Math.PI, col, 1);
+      }
+    }
+    const RING = 10 / 20; // e.scaled(10) of 20 ticks
+    if (t < RING) {
+      const s = t / RING;
+      this.strokeCircle(dyn, e.x, e.y, s * 30 * MU, ((1 - s) * 2 + 0.2) * MU,
+        PAL.bulletYellow[0], PAL.bulletYellow[1], PAL.bulletYellow[2], RING_ALPHA);
+    }
+    const SPRAY = 12 / 20; // e.scaled(12), but the SPREAD rides the outer fin
+    if (t < SPRAY) {
+      const s = 1 - t / SPRAY;
+      const side = s * 3 * MU;
+      this.scatter(seed, 25, (5 + t * 80) * MU, rot, SPREAD_60, (x, y) => {
+        // Fill.square(..., 45): a diamond, not a dot
+        this.push(dyn, e.x + x, e.y + y, side * 2, side * 2, Math.PI / 4, UV_SOLID,
+          PAL.bulletYellowBack[0], PAL.bulletYellowBack[1], PAL.bulletYellowBack[2], 1);
+      });
+    }
+  }
+
+  /**
+   * Fx.instTrail, 1:1: laid every 20 units down the line a rail shot
+   * actually reached, so a shot stopped early leaves a visibly shorter
+   * track. Each mark is a blade pointing BACK along the line and a stub
+   * pointing forward — the wake, not the shot.
+   */
+  private drawInstTrail(dyn: Batch, e: Effect, t: number): void {
+    const fout = 1 - t;
+    const back = (e.rot ?? 0) + Math.PI;
+    const seed = e.seed ?? 1;
+    for (let i = 0; i < 2; i++) {
+      const col = i === 0 ? PAL.bulletYellowBack : PAL.bulletYellow;
+      const m = i === 0 ? 1 : 0.5;
+      const w = 15 * fout * m * MU;
+      this.tri(dyn, e.x, e.y, w, (30 + Renderer.seedRange(seed, 15)) * m * MU, back, col, 1);
+      this.tri(dyn, e.x, e.y, w, 10 * m * MU, back + Math.PI, col, 1);
+    }
+  }
+
+  /**
+   * Fx.instBomb, 1:1: the ring and eight-pointed star a rail shot leaves
+   * at the muzzle it never left — a rail bullet has speed 0 and a life of
+   * one tick, so its despawn effect plays exactly where it was fired.
+   */
+  private drawInstBomb(dyn: Batch, e: Effect, t: number): void {
+    const fout = 1 - t;
+    this.strokeCircle(dyn, e.x, e.y, (4 + FIN_POW(t) * 20) * MU, fout * 4 * MU,
+      PAL.bulletYellowBack[0], PAL.bulletYellowBack[1], PAL.bulletYellowBack[2], RING_ALPHA);
+    for (let i = 0; i < 4; i++) {
+      const a = ((i * 90 + 45) * Math.PI) / 180;
+      this.tri(dyn, e.x, e.y, 6 * MU, 80 * fout * MU, a, PAL.bulletYellowBack, 1);
+    }
+    for (let i = 0; i < 4; i++) {
+      const a = ((i * 90 + 45) * Math.PI) / 180;
+      this.tri(dyn, e.x, e.y, 3 * MU, 30 * fout * MU, a, PAL.white, 1);
+    }
+  }
+
+  /**
+   * Fx.smokeCloud, 1:1: the powder foreshadow leaves hanging for a second
+   * and a bit. Thirty motes on the boiling-cloud variant of
+   * randLenVectors, each fading in and out on its OWN clock — an alpha
+   * that peaks when that mote is halfway through its life.
+   */
+  private drawSmokeCloud(dyn: Batch, e: Effect, t: number): void {
+    this.cloud(e.seed ?? 1, 30, 30 * MU, t, (x, y, pfin, pfout) => {
+      this.fillCircle(dyn, e.x + x, e.y + y, (0.5 + pfout * 4) * MU, PAL.gray,
+        (0.5 - Math.abs(pfin - 0.5)) * 2);
+    });
+  }
+
+  /**
    * Fx.hitBulletColor, 1:1 — and Fx.hitBulletSmall, which is the same
    * effect with its ramp fixed to Pal.lightOrange, so the ammo's own
    * colour arriving in e.col covers both. A ring snaps out over the first
@@ -1791,6 +2059,92 @@ export class Renderer {
     const a = Math.atan2(dy, dx);
     this.push(dyn, x1, y1, cap, cap, a + Math.PI, UV_PARALLAX_LASER_END, 1, 1, 1, 1);
     this.push(dyn, t.beamX, t.beamY, cap, cap, a, UV_PARALLAX_LASER_END, 1, 1, 1, 1);
+  }
+
+  /**
+   * Drawf.flameFront: the rounded cap on either end of a continuous laser.
+   * A half-ellipse — `length` along the beam, `width` across — filled as a
+   * fan of wedges out of its own centre. The wedges are drawn with the
+   * shrapnel triangle, base on the arc and apex at the centre, which is
+   * exact for a circle and off by a hair for an ellipse; at fifteen
+   * divisions that hair is well under a pixel.
+   */
+  private flameFront(
+    dyn: Batch,
+    x: number,
+    y: number,
+    rot: number,
+    length: number,
+    width: number,
+    col: RGB,
+    a: number,
+  ): void {
+    if (length <= 0.01 || width <= 0.01 || a <= 0.004) return;
+    const DIV = 15; // Mathf.round(divisions=13, 2) + 1
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    // local (u, v): u along the beam, v across it. The arc runs from -90
+    // through the nose at 0 to +90, so the polygon closes on its own base
+    let pu = 0, pv = -width;
+    for (let i = 1; i <= DIV; i++) {
+      const th = ((-90 + (180 * i) / DIV) * Math.PI) / 180;
+      const u = Math.cos(th) * length, v = Math.sin(th) * width;
+      const mu = (pu + u) / 2, mv = (pv + v) / 2;
+      const chord = Math.hypot(u - pu, v - pv);
+      const h = Math.hypot(mu, mv);
+      if (h > 0.001 && chord > 0.001) {
+        const wx = x + cos * mu - sin * mv, wy = y + sin * mu + cos * mv;
+        // the apex sits at the fan's centre, so the tri points back down
+        // the bearing from the chord's midpoint to it
+        this.tri(dyn, wx, wy, chord, h, Math.atan2(-(sin * mu + cos * mv), -(cos * mu - sin * mv)),
+          col, a);
+      }
+      pu = u;
+      pv = v;
+    }
+  }
+
+  /**
+   * ContinuousLaserBulletType.draw, 1:1: meltdown's beam. FOUR passes of
+   * the same line, each narrower and whiter than the last — a broad
+   * translucent wash, two hotter cores inside it and a white filament down
+   * the middle — with a flame front capping both ends of every pass. The
+   * layering is the entire look: no single pass is the beam.
+   *
+   * The beam shortens as it goes out (fout drives both stroke and length),
+   * and Mathf.absin gives the whole thing a slow shimmer that keeps it
+   * from reading as a static bar.
+   */
+  private drawContinuousBeam(dyn: Batch, t: Tower): void {
+    const cont = TOWERS[t.kind].bullet.continuous;
+    if (!cont) return;
+    // held at full, then linearly out over fadeTime
+    const fout = t.beamT > cont.fade ? 1 : t.beamT / cont.fade;
+    const len = cont.length * fout;
+    if (len <= 0.01) return;
+    const rot = t.beamRot;
+    // Time.time, in ticks — the beam's own elapsed life does for a clock
+    const time = (cont.duration + cont.fade - t.beamT) * 60;
+    const shimmer = 1 + ABSIN(time, 1, 0.1);
+    const width = 9 + ABSIN(time, 0.8, 1.5); // width + absin(oscScl, oscMag)
+    const body = Math.max(0, len - CL_FRONT);
+    const bx = t.beamOX + Math.cos(rot) * body, by = t.beamOY + Math.sin(rot) * body;
+    for (let i = 0; i < CL_COLORS.length; i++) {
+      const [cr, cg, cb, ca] = CL_COLORS[i];
+      const col: RGB = [
+        Math.min(1, cr * shimmer),
+        Math.min(1, cg * shimmer),
+        Math.min(1, cb * shimmer),
+      ];
+      const colorFin = i / (CL_COLORS.length - 1);
+      // strokeFrom 2 -> strokeTo 0.5: every pass inside the one before it
+      const stroke = width * fout * (2 + (0.5 - 2) * colorFin) * MU;
+      // pointyScaling: the innermost passes keep a full-length nose while
+      // the outer wash is stubbier, which is what sharpens the tip
+      const lenScl = 1 - i / CL_COLORS.length + (i / CL_COLORS.length) * 0.75;
+      this.strokeLine(dyn, t.beamOX, t.beamOY, rot, body, stroke, col, ca);
+      this.flameFront(dyn, t.beamOX, t.beamOY, rot + Math.PI, CL_BACK, stroke / 2, col, ca);
+      this.flameFront(dyn, bx, by, rot, CL_FRONT * lenScl, stroke / 2, col, ca);
+    }
   }
 
   /**

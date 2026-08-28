@@ -48,6 +48,14 @@ export const PAL = {
   thoriumAmmoBack: pal(0xf595be),
   thoriumPink: pal(0xf9a3c7),
   lancerLaser: pal(0xa9d8ff),
+  missileYellow: pal(0xffd2ae),
+  missileYellowBack: pal(0xe58956),
+  blastAmmoFront: pal(0xeeab89),
+  blastAmmoBack: pal(0xe9665b),
+  plastaniumFront: pal(0xfffac6),
+  plastaniumBack: pal(0xd8d97f),
+  orangeSpark: pal(0xd2b29c),
+  meltdownHit: pal(0xffb98b),
   lightOrange: pal(0xf68021),
   lighterOrange: pal(0xf6e096),
   white: pal(0xffffff),
@@ -64,8 +72,9 @@ export const PAL = {
  * the whole region, transparent border and all, exactly as Draw.rect does.
  */
 export interface BulletSprite {
-  /** which pair of atlas regions: Mindustry's "bullet" or its "shell" */
-  region: "bullet" | "shell";
+  /** which pair of atlas regions: Mindustry's "bullet", "shell" or
+   *  "missile" — the sprite name a BasicBulletType is constructed with */
+  region: "bullet" | "shell" | "missile";
   across: number; // BasicBulletType.width, px across the line of travel
   along: number; // BasicBulletType.height, px along it
   /** shrinkX/shrinkY: the fraction of each axis the shot gives up in flight */
@@ -147,6 +156,55 @@ export interface BulletStats {
   // roll in this range at spawn, which is what scatters a volley of
   // artillery along its firing line instead of stacking it on one point
   lifeScaleRand?: readonly [number, number];
+  // Mindustry homingPower/homingRange (BulletType.updateHoming): every
+  // tick the shot picks the nearest target within `range` of itself and
+  // swings `power` degrees toward it. It re-picks each tick, so a missile
+  // that loses its mark simply latches onto the next thing it passes
+  homing?: {
+    power: number; // rad/s the shot may turn (Mindustry power * 50 deg/tick)
+    range: number; // px it will look for something to chase
+  };
+  // Mindustry pierceCap: a piercing shot is SPENT after this many bodies
+  // rather than running its whole lifetime. Meaningless without `pierce`
+  pierceCap?: number;
+  // Mindustry knockback: on every direct hit the victim takes an impulse
+  // of knockback * 80 world units, straight out along the shot's line
+  knockback?: number;
+  // Mindustry fragBullet/fragBullets (BulletType.createFrags): where this
+  // shot dies it throws `count` children, each on a random bearing within
+  // half of `spread` of the parent's heading and at a random fraction of
+  // the child's own full speed. Cyclone's plastanium flak is the one that
+  // uses it: the burst is what makes a flak wall out of a single turret
+  frag?: {
+    count: number;
+    spread: number; // rad — fragRandomSpread, the FULL cone
+    velMin: number; // fragVelocityMin/Max, as fractions of the child's speed
+    velMax: number;
+    offsetMin: number; // fragOffsetMin/Max: px out from the blast it starts
+    offsetMax: number;
+    bullet: BulletStats;
+  };
+  // Mindustry RailBulletType: an instant piercing line, but one with a
+  // BUDGET — each body it punches through subtracts its own FULL health
+  // from the shot's remaining damage (pierceDamageFactor 1), and the shot
+  // stops where that budget runs out. Every victim along the way takes
+  // whatever damage is still left, so the line kills a health POOL rather
+  // than a body count. `pointSpacing` is pointEffectSpace, how often the
+  // trail effect is laid down the line it actually reached
+  rail?: {
+    length: number; // px
+    pointSpacing: number; // px between trail effects
+  };
+  // Mindustry ContinuousLaserBulletType, fired by a LaserTurret: not a shot
+  // but a BEAM the turret holds on target, re-damaging everything under it
+  // every damageInterval. `damage` is the per-interval hit, not a rate
+  continuous?: {
+    length: number; // px the beam reaches at full strength
+    damageInterval: number; // s between damage passes
+    duration: number; // LaserTurret.shootDuration: s the turret holds it
+    fade: number; // ContinuousLaserBulletType.fadeTime: s of tail after
+    moveFract: number; // LaserTurret.firingMoveFract: turn rate while firing
+  };
   // BasicBulletType.draw: the shot itself. A bullet with no sprite draws
   // nothing at all — a laser, a bolt, a hitscan ray and scorch's flame
   // each live entirely in their effects
@@ -155,6 +213,12 @@ export interface BulletStats {
   // ticks at a radius of fslope * size, in the shell's own backColor. It is
   // what makes a shell read as arcing rather than sliding along the ground
   trail?: { size: number; mult: number };
+  // BulletType.trailChance/trailParam (updateTrailEffects): a CHANCE per
+  // tick of dropping a puff of constant radius. Fx.missileTrail and
+  // Fx.artilleryTrail are the same fading disc, so this shares the trail
+  // above's draw — what differs is the cadence, and it is the difference
+  // between a motor that burns steadily and a shell that is lobbed
+  puff?: { chance: number; size: number };
   // BulletType.shootEffect and smokeEffect, both fired where the shot
   // leaves the barrel, along the angle it leaves on
   shootFx?: BulletFx;
@@ -166,6 +230,11 @@ export interface BulletStats {
   hitFx2?: BulletFx;
   // BulletType.despawnEffect, only where the shot runs out of lifetime
   despawnFx?: BulletFx;
+  // RailBulletType.pierceEffect, at every body the line punches through,
+  // and pointEffect, laid every `rail.pointSpacing` down the length the
+  // line actually reached before its damage budget ran out
+  pierceFx?: BulletFx;
+  pointFx?: BulletFx;
   // BulletType.chargeEffect, fired at the muzzle the moment a volley with a
   // firstShotDelay is queued — so it plays THROUGH the charge, not after it
   chargeFx?: BulletFx;
@@ -192,7 +261,17 @@ export type BulletFx =
   | FxKind.SparkShoot
   | FxKind.LancerShoot
   | FxKind.LancerCharge
-  | FxKind.HitLancer;
+  | FxKind.HitLancer
+  | FxKind.BlastExplosion
+  | FxKind.PlasticExplosion
+  | FxKind.InstShoot
+  | FxKind.InstHit
+  | FxKind.InstTrail
+  | FxKind.InstBomb
+  | FxKind.RailHit
+  | FxKind.SmokeCloud
+  | FxKind.HitMeltdown
+  | FxKind.SmokeBig2;
 
 /**
  * The Mindustry lifetime, in seconds, of each of those. An Effect carries
@@ -217,6 +296,16 @@ export const FX_LIFE: Record<BulletFx, number> = {
   [FxKind.Flak]: 20 / TICK,
   [FxKind.Flame]: 32 / TICK,
   [FxKind.FlameHit]: 14 / TICK,
+  [FxKind.BlastExplosion]: 22 / TICK,
+  [FxKind.PlasticExplosion]: 24 / TICK,
+  [FxKind.InstShoot]: 24 / TICK,
+  [FxKind.InstHit]: 20 / TICK,
+  [FxKind.InstTrail]: 30 / TICK,
+  [FxKind.InstBomb]: 15 / TICK,
+  [FxKind.RailHit]: 18 / TICK,
+  [FxKind.SmokeCloud]: 70 / TICK,
+  [FxKind.HitMeltdown]: 12 / TICK,
+  [FxKind.SmokeBig2]: 18 / TICK,
 };
 /** Fx.lancerLaserCharge's own 38 ticks, inside LancerCharge's 60 */
 export const LANCER_CHARGE_SPARK = 38 / 60;
@@ -252,9 +341,14 @@ export interface TowerStats {
   // Mindustry Turret.scaleLifetimeOffset: added to an artillery shell's
   // lifetime scale, so the shell overflies its aim point by this fraction
   lifeScaleOffset?: number;
-  // ShootAlternate: successive shots leave side-by-side barrels, `spread`
-  // px apart perpendicular to the facing
+  // ShootAlternate and ShootBarrel: successive shots leave side-by-side
+  // barrels, `spread` px apart perpendicular to the facing
   barrels?: { count: number; spread: number };
+  // Mindustry Turret.unitSort. Unset is UnitSorts.closest, which is what
+  // every turret in the game uses bar one: foreshadow takes `strongest`,
+  // because a 1350-damage shot spent on whichever dagger wandered nearest
+  // is three and a third seconds of reload thrown away
+  sort?: "strongest";
   bullet: BulletStats;
 }
 
@@ -690,95 +784,313 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       tractor: { force: 16, scaledForce: 9 },
     },
   },
-  // ---------- STUBS ----------------------------------------------------
+  // Swarmer, 1:1 from mindustry/content/Blocks.java with blast-compound
+  // ammo (MissileBulletType(3.7, 10)): four missiles a volley, five ticks
+  // apart, out of three barrels 4 units abreast (ShootBarrel).
   //
-  // The Extreme and Eradication turrets, present so the tech tree can show
-  // the whole shape of the game. SIZE, RANGE and RELOAD are the real
-  // Mindustry numbers (content/Blocks.java) because those are what the
-  // ceiling rule in tech.ts is solved from and they must not be guesses.
-  // EVERYTHING ELSE IS A PLACEHOLDER — the bullets below are a duo's, not
-  // each turret's own, and the aiming fields are defaults.
+  // THE MISSILE IS THE POINT. homingPower 0.08 turns it four degrees a
+  // tick toward the nearest thing within 50 units of ITSELF — re-picked
+  // every tick, so a missile whose mark dies simply latches onto the next
+  // body it passes. Ten damage on contact is nothing; the 45 splash it
+  // lands is the weapon, and the homing is what stops a volley of it
+  // being wasted on a target that has already fallen over.
+  swarmer: {
+    name: "Swarmer",
+    size: 2,
+    range: 240 * MU,
+    reload: (60 * 4) / 7 / TICK,
+    shots: 4,
+    shotDelay: 5 / TICK,
+    spread: 0,
+    inaccuracy: (10 * Math.PI) / 180,
+    // turret defaults: 8-degree shoot cone, 5 deg/tick turn rate
+    shootCone: (8 * Math.PI) / 180,
+    rotateSpeed: ((5 * Math.PI) / 180) * TICK,
+    targetAir: true,
+    targetGround: true,
+    shootY: 4.5 * MU,
+    barrels: { count: 3, spread: 4 * MU },
+    bullet: {
+      speed: 3.7 * TICK * MU,
+      damage: 10,
+      lifetime: (240 + 5 + 10) / 3.7 / TICK, // limitRange(5) + base 10-unit margin
+      splash: 30 * 1.5,
+      splashRadius: 30 * 0.75 * MU,
+      collidesAir: true,
+      collidesGround: true,
+      // homingPower * 50 degrees a tick, and homingRange is BulletType's
+      // own 50 — measured from the MISSILE, not from the turret
+      homing: { power: ((0.08 * 50 * Math.PI) / 180) * TICK, range: 50 * MU },
+      sprite: {
+        region: "missile",
+        across: 8 * MU,
+        along: 8 * MU,
+        shrinkX: 0,
+        shrinkY: 0, // MissileBulletType zeroes it: a missile does not taper
+        back: PAL.blastAmmoBack,
+        front: PAL.blastAmmoFront,
+      },
+      // MissileBulletType.trailChance 0.2 over BulletType's 2-unit puff:
+      // one in five ticks, which reads as a motor rather than an arc
+      puff: { chance: 0.2 * TICK, size: 2 * MU },
+      // blast compound overrides neither, so the missile leaves on
+      // BulletType's stock pair
+      shootFx: FxKind.ShootSmall,
+      smokeFx: FxKind.SmokeSmall,
+      hitFx: FxKind.BlastExplosion,
+      despawnFx: FxKind.BlastExplosion,
+      fxColor: PAL.blastAmmoBack,
+    },
+  },
+  // Cyclone, 1:1 from mindustry/content/Blocks.java with plastanium ammo
+  // (FlakBulletType(4, 8)): a shell every ten ticks out of three barrels,
+  // proximity-fused at 20 units, 37.5 splash across forty.
   //
-  // None of these is in the build menu, so none can be placed. Implementing
-  // one means replacing its bullet block with the real ammo and adding it
-  // to TOWER_MENU; nothing else here has to change.
-  ...stubTurrets({
-    // EXTREME — homing missiles that chase what they lock
-    swarmer: { name: "Swarmer", size: 2, range: 240, reload: 60 * 4 / 7, shots: 4 },
-    // EXTREME — a flak wall; the reason to own it is volume of splash
-    cyclone: { name: "Cyclone", size: 3, range: 200, reload: 10 },
-    // ERADICATION — twin heavy cannon, the highest sustained damage there is
-    spectre: { name: "Spectre", size: 4, range: 260, reload: 7, barrels: 2 },
-    // ERADICATION — a continuous beam that melts whatever it rests on
-    meltdown: { name: "Meltdown", size: 4, range: 195, reload: 90 },
-    // ERADICATION — 500 range, one enormous shot; a sniper, not a defence
-    foreshadow: { name: "Foreshadow", size: 4, range: 500, reload: 200 },
-  }),
+  // AND THEN IT FRAGMENTS. Every blast throws six more bullets on random
+  // bearings, each 12 damage — so one cyclone shell is a burst, not a
+  // point, and a turret firing six a second lays a wall of them. That is
+  // the whole reason to own it, and the reason its ammo is plastanium
+  // rather than the surge that hits harder in a straight line.
+  //
+  // Unlike scatter, plastanium sets collidesGround: cyclone answers both
+  // layers.
+  cyclone: {
+    name: "Cyclone",
+    size: 3,
+    range: 200 * MU,
+    reload: 10 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: (10 * Math.PI) / 180,
+    shootCone: (30 * Math.PI) / 180,
+    rotateSpeed: ((10 * Math.PI) / 180) * TICK,
+    targetAir: true,
+    targetGround: true,
+    shootY: 10 * MU,
+    barrels: { count: 3, spread: 3 * MU },
+    bullet: {
+      speed: 4 * TICK * MU,
+      damage: 8,
+      lifetime: (200 + 9 + 10) / 4 / TICK, // limitRange() default margin 9
+      splash: 37.5,
+      splashRadius: 40 * 0.75 * MU,
+      collidesAir: true,
+      collidesGround: true,
+      flak: {
+        explodeRange: 20 * MU,
+        explodeDelay: 5 / TICK,
+        interval: 6 / TICK,
+      },
+      sprite: {
+        region: "shell",
+        across: 8 * MU, // FlakBulletType's own 8x10; plastanium keeps it
+        along: 10 * MU,
+        shrinkX: 0,
+        shrinkY: 0.5,
+        back: PAL.plastaniumBack,
+        front: PAL.plastaniumFront,
+      },
+      frag: {
+        count: 6,
+        spread: 2 * Math.PI, // fragRandomSpread 360: the burst is a circle
+        velMin: 0.2,
+        velMax: 1,
+        offsetMin: 1 * MU,
+        offsetMax: 7 * MU,
+        bullet: {
+          speed: 2.5 * TICK * MU,
+          damage: 12,
+          lifetime: 15 / TICK,
+          splash: 0,
+          splashRadius: 0,
+          collidesAir: true,
+          collidesGround: true,
+          sprite: {
+            region: "bullet",
+            across: 10 * MU,
+            along: 12 * MU,
+            shrinkX: 0,
+            shrinkY: 1, // the whole length: a fragment burns out to nothing
+            back: PAL.plastaniumBack,
+            front: PAL.plastaniumFront,
+          },
+          hitFx: FxKind.BulletHit,
+          // despawnEffect = Fx.none: a fragment that hits nothing just ends
+          fxColor: PAL.plastaniumBack,
+        },
+      },
+      shootFx: FxKind.ShootBig,
+      smokeFx: FxKind.SmokeSmall,
+      hitFx: FxKind.PlasticExplosion,
+      despawnFx: FxKind.BulletHit,
+      // plastanium sets frontColor and backColor but NOT hitColor, so the
+      // hit ramp keeps BulletType's own white
+      fxColor: PAL.white,
+    },
+  },
+  // Spectre, 1:1 from mindustry/content/Blocks.java with thorium ammo
+  // (BasicBulletType(8, 80)): a shell every seven ticks, alternating twin
+  // barrels 8 units apart (ShootAlternate) — 686 damage a second, the
+  // highest sustained figure in the game and the whole reason it exists.
+  //
+  // pierceCap 2 makes every shell worth two bodies rather than one, and
+  // knockback 0.7 shoves what survives back down the lane. Nothing about
+  // it is clever: it is a wall of heavy shells.
+  spectre: {
+    name: "Spectre",
+    size: 4,
+    range: 260 * MU,
+    reload: 7 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: (3 * Math.PI) / 180,
+    shootCone: (24 * Math.PI) / 180,
+    rotateSpeed: ((5 * Math.PI) / 180) * TICK, // BaseTurret default
+    targetAir: true,
+    targetGround: true,
+    // Turret's own shootY default, size * tilesize / 2 in world units. The
+    // shared `size * 5` fallback is half of that, which parks a size-4
+    // muzzle inside the hull
+    shootY: 4 * 4 * MU,
+    barrels: { count: 2, spread: 8 * MU },
+    bullet: {
+      speed: 8 * TICK * MU,
+      damage: 80,
+      lifetime: (260 + 9 + 10) / 8 / TICK, // limitRange() default margin 9
+      splash: 0,
+      splashRadius: 0,
+      collidesAir: true,
+      collidesGround: true,
+      hitRadius: (5 / 2) * MU, // hitSize 5
+      // BulletType.init: pierceCap >= 1 turns pierce on by itself
+      pierce: true,
+      pierceCap: 2,
+      knockback: 0.7,
+      sprite: {
+        region: "bullet",
+        across: 16 * MU,
+        along: 23 * MU, // the biggest round on the field by half again
+        shrinkX: 0,
+        shrinkY: 0.5,
+        back: PAL.thoriumAmmoBack,
+        front: PAL.thoriumAmmoFront,
+      },
+      shootFx: FxKind.ShootBig,
+      smokeFx: FxKind.SmokeSmall,
+      hitFx: FxKind.BulletHit,
+      despawnFx: FxKind.BulletHit,
+      fxColor: PAL.thoriumAmmoBack,
+    },
+  },
+  // Meltdown, 1:1 from mindustry/content/Blocks.java: a LaserTurret, which
+  // is a turret that does not fire shots at all. It lights a
+  // ContinuousLaserBulletType and HOLDS it — 78 damage to everything under
+  // the beam every five ticks, for 230 ticks, and only then does the
+  // 90-tick reload start running. 936 damage a second while it burns,
+  // against nothing at all while it cools: a 72% duty cycle.
+  //
+  // firingMoveFract halves the turret's turn rate for as long as the beam
+  // is lit, so meltdown tracks a crossing target badly and a queue walking
+  // into it perfectly. The beam pierces without limit, which is what makes
+  // that queue the case it is built for.
+  meltdown: {
+    name: "Meltdown",
+    size: 4,
+    range: 195 * MU,
+    reload: 90 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: 0,
+    shootCone: (40 * Math.PI) / 180,
+    rotateSpeed: ((5 * Math.PI) / 180) * TICK, // BaseTurret default
+    targetAir: true,
+    targetGround: true,
+    shootY: 4 * 4 * MU, // Turret's own default, as spectre's
+    bullet: {
+      speed: 0,
+      damage: 78, // per damageInterval, NOT per second
+      lifetime: 0, // the beam is turret state, not a projectile
+      splash: 0,
+      splashRadius: 0,
+      collidesAir: true,
+      collidesGround: true,
+      hitRadius: (4 / 2) * MU, // hitSize 4
+      continuous: {
+        length: 200 * MU,
+        damageInterval: 5 / TICK,
+        duration: 230 / TICK, // LaserTurret.shootDuration
+        fade: 16 / TICK, // ContinuousLaserBulletType.fadeTime
+        moveFract: 0.5, // LaserTurret.firingMoveFract
+      },
+      // the TURRET names Fx.shootBigSmoke2 and the bullet none, so the
+      // block's effect is the one that plays
+      shootFx: FxKind.SmokeBig2,
+      hitFx: FxKind.HitMeltdown,
+      fxColor: PAL.meltdownHit,
+    },
+  },
+  // Foreshadow, 1:1 from mindustry/content/Blocks.java with surge ammo (a
+  // RailBulletType): 500 units of range — the only turret that outreaches
+  // the map's own lanes — and one 1350-damage shot every 200 ticks.
+  //
+  // THE DAMAGE IS A BUDGET, NOT A NUMBER. The rail is an instant line, and
+  // every body it punches through takes whatever is LEFT of the 1350 and
+  // then subtracts its own full health from it (pierceDamageFactor 1). So
+  // one shot deletes a queue until 1350 health has gone by and stops dead
+  // there — nine daggers, or one fortress and change. It kills a health
+  // POOL, which is why it targets the STRONGEST thing in range rather than
+  // the nearest: spending the reload on a stray crawler is the one way to
+  // waste it.
+  foreshadow: {
+    name: "Foreshadow",
+    size: 4,
+    range: 500 * MU,
+    reload: 200 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: 0,
+    shootCone: (2 * Math.PI) / 180, // it commits: two degrees, and 2 deg/tick
+    rotateSpeed: ((2 * Math.PI) / 180) * TICK,
+    targetAir: true,
+    targetGround: true,
+    shootY: 4 * 4 * MU, // Turret's own default, as spectre's
+    sort: "strongest",
+    bullet: {
+      speed: 0,
+      damage: 1350,
+      lifetime: 1 / TICK, // RailBulletType's own: the damage is instant
+      splash: 0,
+      splashRadius: 0,
+      collidesAir: true,
+      collidesGround: true,
+      rail: { length: 500 * MU, pointSpacing: 20 * MU },
+      pierceFx: FxKind.RailHit,
+      pointFx: FxKind.InstTrail,
+      shootFx: FxKind.InstShoot,
+      smokeFx: FxKind.SmokeCloud,
+      hitFx: FxKind.InstHit,
+      // despawnEffect fires where the shot DIES, and a rail bullet dies at
+      // the muzzle it never left — so instBomb is the turret's own flash
+      despawnFx: FxKind.InstBomb,
+      fxColor: PAL.bulletYellowBack,
+    },
+  },
 };
 
-/** shape of one stub before it is filled out into a whole TowerStats */
-interface StubSpec {
-  name: string;
-  size: number;
-  /** Mindustry world units, as printed in Blocks.java */
-  range: number;
-  /** Mindustry ticks between volleys */
-  reload: number;
-  shots?: number;
-  air?: boolean;
-  ground?: boolean;
-  barrels?: number;
-}
-
 /**
- * Fill a stub out into a valid TowerStats so the record typechecks and a
- * stray placement cannot crash the sim. The bullet is a duo's, deliberately
- * — a stub that fired something plausible would be harder to notice than
- * one that fires a copper pellet.
+ * The stats driving one live projectile. Almost always the firing turret's
+ * own ammo — the exception is a shot thrown by BulletType.createFrags,
+ * which is the PARENT ammo's child and has its own speed, damage, life and
+ * sprite. One boolean rather than a stats pointer on every projectile
+ * keeps Projectile a flat record, which is what the sim's hot loop wants.
  */
-function stubTurrets<K extends string>(specs: Record<K, StubSpec>): Record<K, TowerStats> {
-  const out = {} as Record<K, TowerStats>;
-  for (const [kind, s] of Object.entries(specs) as [K, StubSpec][]) {
-    out[kind] = {
-      name: s.name,
-      size: s.size,
-      range: s.range * MU,
-      reload: s.reload / TICK,
-      shots: s.shots ?? 1,
-      shotDelay: 0,
-      spread: 0,
-      inaccuracy: (5 * Math.PI) / 180,
-      shootCone: (15 * Math.PI) / 180,
-      rotateSpeed: ((10 * Math.PI) / 180) * TICK,
-      targetAir: s.air ?? true,
-      targetGround: s.ground ?? true,
-      ...(s.barrels ? { barrels: { count: s.barrels, spread: 4 * MU } } : {}),
-      bullet: {
-        speed: 2.5 * TICK * MU,
-        damage: 9, // PLACEHOLDER
-        lifetime: (s.range + 15) / 2.5 / TICK,
-        splash: 0,
-        splashRadius: 0,
-        collidesAir: s.air ?? true,
-        collidesGround: s.ground ?? true,
-        sprite: {
-          region: "bullet",
-          across: 7 * MU,
-          along: 9 * MU,
-          shrinkX: 0,
-          shrinkY: 0.5,
-          back: PAL.copperAmmoBack,
-          front: PAL.copperAmmoFront,
-        },
-        shootFx: FxKind.ShootSmall,
-        smokeFx: FxKind.SmokeSmall,
-        hitFx: FxKind.BulletHit,
-        despawnFx: FxKind.BulletHit,
-        fxColor: PAL.copperAmmoBack,
-      },
-    };
-  }
-  return out;
+export function bulletOf(kind: import("./types").TowerKind, frag: boolean): BulletStats {
+  const b = TOWERS[kind].bullet;
+  return frag && b.frag ? b.frag.bullet : b;
 }
 
 // StatusEffects.burning, 1:1: 0.167 damage per tick, and it pierces armor

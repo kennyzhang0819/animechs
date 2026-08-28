@@ -10,9 +10,8 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   scatter: `${T}/scatter/scatter-preview.png`,
   fuse: `${T}/fuse.png`,
   scorch: `${T}/scorch.png`,
-  // stubs — real Mindustry sprites so the tech tree reads correctly even
-  // though none of these can be placed yet. Parallax ships under blocks/
-  // defense rather than blocks/turrets in the source atlas
+  // Parallax ships under blocks/defense rather than blocks/turrets in the
+  // source atlas — Mindustry classes it with the support blocks
   arc: `${T}/arc.png`,
   lancer: `${T}/lancer.png`,
   ripple: `${T}/ripple.png`,

@@ -2,6 +2,7 @@ import {
   BASE,
   BURN_DPS,
   BURN_FX_CHANCE,
+  bulletOf,
   CELL,
   clamp,
   COLS,
@@ -14,6 +15,7 @@ import {
   W,
   WALL_R,
   type BulletFx,
+  type BulletStats,
   type TowerStats,
 } from "./constants";
 import { FlowField, type Vec2 } from "./flowfield";
@@ -126,10 +128,17 @@ const KIND_SPAN = KIND_REACH.map((r) => Math.ceil(r / HC));
  * cell and a shot could otherwise pass clean through one whose centre sat
  * two buckets away.
  */
+const spanOf = (b: BulletStats): number =>
+  Math.ceil((rmaxFor(b.collidesAir, b.collidesGround) + (b.hitRadius ?? 2.5)) / HC);
 const HIT_SPAN = Object.fromEntries(
+  TOWER_KINDS.map((k) => [k, spanOf(TOWERS[k].bullet)]),
+) as Record<TowerKind, number>;
+/** the same, for a frag child — its hitbox and layers are its own, not the
+ *  shell's, so a cyclone fragment scans the buckets a fragment needs */
+const FRAG_SPAN = Object.fromEntries(
   TOWER_KINDS.map((k) => {
-    const b = TOWERS[k].bullet;
-    return [k, Math.ceil((rmaxFor(b.collidesAir, b.collidesGround) + (b.hitRadius ?? 2.5)) / HC)];
+    const f = TOWERS[k].bullet.frag;
+    return [k, f ? spanOf(f.bullet) : 0];
   }),
 ) as Record<TowerKind, number>;
 // narrow-passage centering gain (1/s): in 1-wide corridors and L-bend
@@ -694,6 +703,11 @@ export class Sim {
       beamX: 0,
       beamY: 0,
       beamStr: 0,
+      beamT: -1,
+      beamOX: 0,
+      beamOY: 0,
+      beamRot: 0,
+      beamDmgT: 0,
     });
   }
 
@@ -1819,7 +1833,15 @@ export class Sim {
         this.updateTractor(t, st, dt);
         continue;
       }
-      if (t.cd > 0) t.cd -= dt;
+      // LaserTurret: while the beam is lit the reload does NOT run, so a
+      // meltdown's cycle is 230 ticks of burning and only then 90 of
+      // cooling. The beam is also what damages, every damageInterval
+      const cont = st.bullet.continuous;
+      if (cont && t.beamT >= 0) this.updateBeam(t, st, cont, dt);
+      // LaserTurret.updateTile runs the reload only while `bullets` is
+      // EMPTY, and the turret lets go of its beam at the end of
+      // shootDuration — so the fade tail cools alongside the turret
+      if (t.cd > 0 && !(cont && t.beamT > cont.fade)) t.cd -= dt;
 
       // a queued volley that is still charging: the shots are already spent
       // from the reload's point of view, they just have not left yet
@@ -1842,18 +1864,30 @@ export class Sim {
         }
       }
 
-      let best = -1, bd = st.range * st.range;
+      // Units.bestTarget over Turret.unitSort. The default sort is
+      // UnitSorts.closest — plain squared distance — and foreshadow's is
+      // `strongest`, -maxHealth with distance as a tiebreak worth one
+      // point per 80 world units squared (dst2 / 6400, in px / 200)
+      const strongest = st.sort === "strongest";
+      const r2 = st.range * st.range;
+      let best = -1, bs = Infinity;
       for (let i = 0; i < this.n; i++) {
         // air-only turrets ignore the ground swarm and vice versa
         if (KIND_FLYING[this.ukind[i]] ? !st.targetAir : !st.targetGround) continue;
         const dx = upx[i] - t.x, dy = upy[i] - t.y;
         const d2 = dx * dx + dy * dy;
-        if (d2 < bd) {
-          bd = d2;
+        if (d2 >= r2) continue;
+        const score = strongest ? d2 / 40000 - this.uhpmax[i] : d2;
+        if (score < bs) {
+          bs = score;
           best = i;
         }
       }
-      if (best < 0) continue;
+      if (best < 0) {
+        // nothing in range: a beam already lit keeps burning down its
+        // duration where it is, exactly as Mindustry's held bullet does
+        continue;
+      }
 
       // Predict.intercept: aim where target and bullet paths cross. Hitscan
       // bullets (speed ~0) aim straight at the target, like Mindustry's
@@ -1887,13 +1921,34 @@ export class Sim {
       // than tracking through the two thirds of a second it takes to fire
       if (t.chargeT < 0) {
         const diff = Sim.angleDiff(t.angle, targetRot);
-        const turn = st.rotateSpeed * dt;
+        // LaserTurret.turnToTarget: firingMoveFract while the beam is
+        // HELD (not while it fades), so meltdown tracks a crossing target
+        // at half speed and a queue walking into it at full
+        const held = cont !== undefined && t.beamT > cont.fade;
+        const turn = st.rotateSpeed * (held ? cont!.moveFract : 1) * dt;
         t.angle = Math.abs(diff) <= turn ? targetRot : t.angle + Math.sign(diff) * turn;
       }
 
       // updateShooting: a charging turret starts no new volley, though its
       // reload keeps running underneath (reloadWhileCharging, the default)
       if (t.cd <= 0 && t.chargeT < 0 && Math.abs(Sim.angleDiff(t.angle, targetRot)) < st.shootCone) {
+        // LaserTurret.updateShooting: lighting the beam IS the shot. It
+        // burns for shootDuration and then fades, and only once it is out
+        // does the reload above start counting again
+        if (cont) {
+          if (t.beamT > cont.fade) continue; // still holding one
+          t.beamT = cont.duration + cont.fade;
+          t.cd = st.reload;
+          const mz = st.shootY ?? st.size * 5;
+          this.bulletFx(
+            st.bullet.shootFx,
+            t.x + Math.cos(t.angle) * mz,
+            t.y + Math.sin(t.angle) * mz,
+            t.angle,
+            st.bullet.fxColor,
+          );
+          continue;
+        }
         t.cd += st.reload; // reloadCounter %= reload
         // artillery lands its shells here: the intercept point in world px
         t.aimX = t.x + aimX;
@@ -1981,6 +2036,10 @@ export class Sim {
       this.pushFx(x, y, st.bullet.lifetime, FxKind.Laser, a, reached);
       return;
     }
+    if (st.bullet.rail) {
+      this.railShot(x, y, a, st.bullet);
+      return;
+    }
     if (st.bullet.ray) {
       this.hitscanRay(
         x,
@@ -2030,7 +2089,85 @@ export class Sim {
       flakT: st.bullet.flak ? st.bullet.flak.interval : 0,
       pierced: st.bullet.pierce ? [] : null,
       trailT: 0,
+      frag: false,
     });
+  }
+
+  /**
+   * Mindustry BulletType.createFrags: where a fragmenting shot dies it
+   * throws `count` children, each on a bearing drawn uniformly from the
+   * full `spread` cone around the parent's heading, at a random fraction
+   * of the CHILD's own speed and starting a random offset out from the
+   * blast. Cyclone's six plastanium fragments are the only user, and they
+   * are what turns one shell into a wall.
+   */
+  private createFrags(pr: Projectile, spec: NonNullable<BulletStats["frag"]>): void {
+    const rot = Math.atan2(pr.vy, pr.vx);
+    const child = spec.bullet;
+    for (let i = 0; i < spec.count; i++) {
+      const off = spec.offsetMin + Math.random() * (spec.offsetMax - spec.offsetMin);
+      const a = rot + (Math.random() - 0.5) * spec.spread;
+      const v = child.speed * (spec.velMin + Math.random() * (spec.velMax - spec.velMin));
+      const cos = Math.cos(a), sin = Math.sin(a);
+      this.projs.push({
+        kind: pr.kind,
+        x: pr.x + cos * off,
+        y: pr.y + sin * off,
+        vx: cos * v,
+        vy: sin * v,
+        life: child.lifetime,
+        age: 0,
+        primeT: -1,
+        flakT: 0,
+        pierced: child.pierce ? [] : null,
+        trailT: 0,
+        frag: true,
+      });
+    }
+  }
+
+  /**
+   * Mindustry RailBulletType.init, 1:1. There is no projectile at all: the
+   * line is walked the moment the shot leaves, nearest body first, and
+   * each one takes whatever damage is LEFT and then subtracts its own full
+   * health from the budget (pierceDamageFactor 1). The shot stops where
+   * the budget runs out, and that is also where the drawn line stops —
+   * `pointEffect` is laid down the length it actually reached, not the
+   * 500 units it was allowed.
+   */
+  private railShot(x: number, y: number, angle: number, b: BulletStats): void {
+    const spec = b.rail!;
+    const { upx, upy, uhp } = this;
+    const dirx = Math.cos(angle), diry = Math.sin(angle);
+    const hits = this.boltHits, dists = this.boltDists;
+    this.collideLine(x, y, dirx, diry, spec.length, b.collidesAir, b.collidesGround, hits, dists);
+    const order = hits.map((_, k) => k).sort((p, q) => dists[p] - dists[q]);
+    let left = b.damage;
+    let reached = spec.length;
+    const dead: number[] = [];
+    for (const k of order) {
+      if (left <= 0) {
+        reached = Math.min(reached, dists[k]);
+        break;
+      }
+      const i = hits[k];
+      const health = uhp[i];
+      this.damageUnit(i, left);
+      // hit(), then handlePierce: the burst lands on the body, and the
+      // body's own health comes off the budget that made it
+      this.bulletFx(b.hitFx, upx[i], upy[i], angle, b.fxColor);
+      this.bulletFx(b.pierceFx, upx[i], upy[i], angle, b.fxColor);
+      if (uhp[i] <= 0) dead.push(i);
+      left -= Math.min(left, health);
+      if (left <= 0) reached = Math.min(reached, dists[k]);
+    }
+    dead.sort((p, q) => q - p);
+    for (const i of dead) if (uhp[i] <= 0) this.killUnit(i);
+    // pointEffect every pointEffectSpace down what the line reached
+    if (b.pointFx !== undefined) {
+      for (let d = 0; d <= reached; d += spec.pointSpacing)
+        this.bulletFx(b.pointFx, x + dirx * d, y + diry * d, angle, b.fxColor);
+    }
   }
 
   /**
@@ -2121,6 +2258,63 @@ export class Sim {
       }
     }
     return best;
+  }
+
+  /**
+   * Mindustry Units.closestTarget: the nearest live targetable unit whose
+   * CENTRE is within `range`. That is the difference from nearestUnit
+   * above, which tests a bullet against a hitbox and so counts a wide
+   * unit from its edge; a homing missile's search is centre to centre.
+   */
+  private nearestInRange(
+    x: number,
+    y: number,
+    range: number,
+    air: boolean,
+    ground: boolean,
+  ): number {
+    const { upx, upy, uhp, ukind, bStart, bUnits } = this;
+    const hx0 = clamp(((x - range) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((y - range) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((x + range) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((y + range) / HC) | 0, 0, HROWS - 1);
+    let best = -1, bd = range * range;
+    for (let hy = hy0; hy <= hy1; hy++) {
+      for (let hx = hx0; hx <= hx1; hx++) {
+        const c = hy * HCOLS + hx, e = bStart[c + 1];
+        for (let k = bStart[c]; k < e; k++) {
+          const i = bUnits[k];
+          if (i >= this.n || uhp[i] <= 0) continue;
+          if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
+          const dx = upx[i] - x, dy = upy[i] - y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < bd) {
+            bd = d2;
+            best = i;
+          }
+        }
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Mindustry Unit.impulse(v): `vel += v / mass`, and PhysicsComp.mass is
+   * the hitbox's own area — hitSize squared, times pi. The vector is in
+   * world units of velocity per TICK, as every Mindustry impulse is; it
+   * lands in the pull channel, which the movement step reads and then
+   * bleeds away, so the shove outlives the frame that dealt it.
+   *
+   * That mass divisor is the whole character of both weapons that use it:
+   * the same push all but stops a dagger and barely leans on a fortress.
+   */
+  private impulse(i: number, wx: number, wy: number): void {
+    const hitSize = (this.urad[i] * 2) / MU;
+    const mass = hitSize * hitSize * Math.PI;
+    // world units per tick -> px per second
+    const k = (MU * 60) / mass;
+    this.upullx[i] += wx * k;
+    this.upully[i] += wy * k;
   }
 
   /**
@@ -2246,12 +2440,51 @@ export class Sim {
     hitFx: BulletFx | undefined,
     fxColor: RGB | undefined,
   ): number {
+    const { upx, upy, uhp } = this;
+    const dirx = Math.cos(angle), diry = Math.sin(angle);
+    const hits = this.boltHits, dists = this.boltDists;
+    this.collideLine(x, y, dirx, diry, length, air, ground, hits, dists);
+    // nearest first, so the cap keeps the units the beam reaches first
+    const order = hits.map((_, k) => k).sort((a, b) => dists[a] - dists[b]);
+    // findPierceLength: under the cap the beam runs its full length; at or
+    // over it, it stops dead at the cap'th victim (never inside 6 units)
+    const reached =
+      pierceCap <= 0 || order.length < pierceCap
+        ? length
+        : Math.max(6 * MU, dists[order[pierceCap - 1]]);
+    const dead: number[] = [];
+    for (let k = 0; k < order.length && (pierceCap <= 0 || k < pierceCap); k++) {
+      const i = hits[order[k]];
+      this.damageUnit(i, damage, false, armorMult);
+      if (uhp[i] > 0) this.bulletFx(hitFx, upx[i], upy[i], angle, fxColor);
+      else dead.push(i);
+    }
+    dead.sort((a, b) => b - a);
+    for (const i of dead) if (uhp[i] <= 0) this.killUnit(i);
+    return reached;
+  }
+
+  /**
+   * Mindustry Damage.collideLine's scan: every live targetable unit whose
+   * hitbox — grown by collideLine's 3-unit `expand` — touches the segment
+   * from (x, y) out `length` along (dirx, diry), together with how far
+   * down the line each one sits. Terrain never blocks it; the callers
+   * decide what the hits mean. Both arrays are cleared first.
+   */
+  private collideLine(
+    x: number,
+    y: number,
+    dirx: number,
+    diry: number,
+    length: number,
+    air: boolean,
+    ground: boolean,
+    hits: number[],
+    dists: number[],
+  ): void {
     const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
     const EXPAND = 7.5; // collideLine's expand = 3 world units
-    const dirx = Math.cos(angle), diry = Math.sin(angle);
-    const hits = this.boltHits;
     hits.length = 0;
-    const dists = this.boltDists;
     dists.length = 0;
     const x2 = x + dirx * length, y2 = y + diry * length;
     const pad = rmaxFor(air, ground) + EXPAND;
@@ -2276,27 +2509,65 @@ export class Sim {
         }
       }
     }
-    // nearest first, so the cap keeps the units the beam reaches first
-    const order = hits.map((_, k) => k).sort((a, b) => dists[a] - dists[b]);
-    // findPierceLength: under the cap the beam runs its full length; at or
-    // over it, it stops dead at the cap'th victim (never inside 6 units)
-    const reached =
-      pierceCap <= 0 || order.length < pierceCap
-        ? length
-        : Math.max(6 * MU, dists[order[pierceCap - 1]]);
-    const dead: number[] = [];
-    for (let k = 0; k < order.length && (pierceCap <= 0 || k < pierceCap); k++) {
-      const i = hits[order[k]];
-      this.damageUnit(i, damage, false, armorMult);
-      if (uhp[i] > 0) this.bulletFx(hitFx, upx[i], upy[i], angle, fxColor);
-      else dead.push(i);
-    }
-    dead.sort((a, b) => b - a);
-    for (const i of dead) if (uhp[i] <= 0) this.killUnit(i);
-    return reached;
   }
 
-  /** scratch for the two instant weapons; never nested, never persisted */
+  /**
+   * LaserTurret's held beam (Mindustry ContinuousBulletType.update). For
+   * shootDuration the beam is PINNED to the muzzle and rakes everything
+   * under it every damageInterval; then the turret lets go and the last
+   * fadeTime of it stays where it was, shortening as it goes out, still
+   * damaging on the same clock. Nothing about it is a projectile — the
+   * beam's whole state is on the turret, and this is where it burns down.
+   */
+  private updateBeam(
+    t: Tower,
+    st: TowerStats,
+    cont: NonNullable<BulletStats["continuous"]>,
+    dt: number,
+  ): void {
+    const b = st.bullet;
+    const held = t.beamT > cont.fade;
+    if (held) {
+      // pinned: the beam leaves the muzzle on the turret's current facing
+      const mz = st.shootY ?? st.size * 5;
+      t.beamOX = t.x + Math.cos(t.angle) * mz;
+      t.beamOY = t.y + Math.sin(t.angle) * mz;
+      t.beamRot = t.angle;
+    }
+    // ContinuousLaserBulletType.draw/currentLength: full while held, then
+    // linearly out over fadeTime — and the beam SHORTENS as it fades
+    const fout = held ? 1 : t.beamT / cont.fade;
+    const reach = cont.length * fout;
+    // Bullet.timer(1, damageInterval): the damage clock runs through the
+    // fade too, over the shorter line
+    t.beamDmgT -= dt;
+    if (t.beamDmgT <= 0) {
+      t.beamDmgT += cont.damageInterval;
+      const { upx, upy, uhp } = this;
+      const hits = this.boltHits, dists = this.boltDists;
+      this.collideLine(
+        t.beamOX, t.beamOY, Math.cos(t.beamRot), Math.sin(t.beamRot),
+        reach, b.collidesAir, b.collidesGround, hits, dists,
+      );
+      const dead: number[] = [];
+      // pierceCap -1: the beam stops for nothing
+      for (const i of hits) {
+        this.damageUnit(i, b.damage, b.pierceArmor ?? false, b.armorMultiplier ?? 1);
+        if (uhp[i] > 0) this.bulletFx(b.hitFx, upx[i], upy[i], t.beamRot, b.fxColor);
+        else dead.push(i);
+      }
+      dead.sort((p, q) => q - p);
+      for (const i of dead) if (uhp[i] <= 0) this.killUnit(i);
+    }
+    t.beamT -= dt;
+    if (t.beamT <= 0) {
+      t.beamT = -1;
+      t.beamDmgT = 0;
+    }
+  }
+
+  /** scratch for the instant weapons and the held beam; never nested,
+   *  never persisted */
   private readonly boltHits: number[] = [];
   private readonly boltDists: number[] = [];
 
@@ -2313,7 +2584,7 @@ export class Sim {
    */
   private updateTractor(t: Tower, st: TowerStats, dt: number): void {
     const spec = st.bullet.tractor!;
-    const { upx, upy, uhp, urad, ukind, upullx, upully } = this;
+    const { upx, upy, uhp, urad, ukind } = this;
     // Units.closestEnemy, over the turret's own layer filter
     let best = -1, bd = Infinity;
     for (let i = 0; i < this.n; i++) {
@@ -2347,15 +2618,11 @@ export class Sim {
       this.killUnit(best);
       return;
     }
-    // impulse(v) is vel += v / mass, and mass is the hitbox's own area
-    const hitSize = (urad[best] * 2) / MU;
-    const mass = hitSize * hitSize * Math.PI;
-    const mag = spec.force + (1 - bd / st.range) * spec.scaledForce;
-    // world units per tick, over this frame's ticks, into px per second
-    const dv = ((mag * dt * 60) / mass) * MU * 60;
+    // the pull is applied every TICK, so this frame is worth dt * 60 of
+    // them; impulse() does the mass division and the unit conversion
+    const mag = (spec.force + (1 - bd / st.range) * spec.scaledForce) * dt * 60;
     const inv = bd > 1e-4 ? 1 / bd : 0;
-    upullx[best] += (t.x - upx[best]) * inv * dv;
-    upully[best] += (t.y - upy[best]) * inv * dv;
+    this.impulse(best, (t.x - upx[best]) * inv * mag, (t.y - upy[best]) * inv * mag);
   }
 
   /** Mindustry Damage.applyArmor: flat reduction, floored at 10% of the raw hit */
@@ -2474,11 +2741,35 @@ export class Sim {
     this.collectForceFields();
     for (let p = projs.length - 1; p >= 0; p--) {
       const pr = projs[p];
-      const b = TOWERS[pr.kind].bullet;
+      const b = bulletOf(pr.kind, pr.frag);
+      // BulletType.updateHoming, BEFORE the step: the shot picks the
+      // nearest target within homingRange OF ITSELF and swings toward it,
+      // re-picking every tick — so a missile whose mark dies latches onto
+      // whatever it passes next instead of flying on into the ground
+      if (b.homing) {
+        const tgt = this.nearestInRange(pr.x, pr.y, b.homing.range, b.collidesAir, b.collidesGround);
+        if (tgt >= 0) {
+          const want = Math.atan2(upy[tgt] - pr.y, upx[tgt] - pr.x);
+          const cur = Math.atan2(pr.vy, pr.vx);
+          const diff = Sim.angleDiff(cur, want);
+          const turn = b.homing.power * dt;
+          const a = Math.abs(diff) <= turn ? want : cur + Math.sign(diff) * turn;
+          // Vec2.setAngle keeps the speed and turns the heading
+          const sp = Math.hypot(pr.vx, pr.vy);
+          pr.vx = Math.cos(a) * sp;
+          pr.vy = Math.sin(a) * sp;
+        }
+      }
       pr.x += pr.vx * dt;
       pr.y += pr.vy * dt;
       pr.life -= dt;
       pr.age += dt;
+
+      // BulletType.updateTrailEffects: a puff on a per-tick CHANCE, at a
+      // constant radius — Fx.missileTrail, which is Fx.artilleryTrail's
+      // fading disc under another name, so it rides the same pass
+      if (b.puff && Math.random() < b.puff.chance * dt)
+        this.pushTrail(pr.x, pr.y, b.puff.size, b.sprite?.back);
 
       // ArtilleryBulletType.update: a puff every (3 + fslope*2) * mult
       // ticks, at a radius of fslope * size. fslope peaks at half life, so
@@ -2526,7 +2817,7 @@ export class Sim {
       let dead = pr.life <= 0;
       if (!dead && !b.artillery) {
         const brad = b.hitRadius ?? 2.5;
-        const sp = HIT_SPAN[pr.kind];
+        const sp = pr.frag ? FRAG_SPAN[pr.kind] : HIT_SPAN[pr.kind];
         const hx = clamp((pr.x / HC) | 0, 0, HCOLS - 1);
         const hy = clamp((pr.y / HC) | 0, 0, HROWS - 1);
         // a piercing shot may hit several units this tick and outlive them
@@ -2555,12 +2846,28 @@ export class Sim {
                   break outer;
                 }
                 pr.pierced.push(this.uid[i]);
+                // Mindustry pierceCap: a capped pierce is SPENT once it
+                // has been through that many bodies, rather than running
+                // its whole lifetime
+                if (b.pierceCap !== undefined && pr.pierced.length >= b.pierceCap) {
+                  dead = true;
+                  break outer;
+                }
               }
             }
           }
         }
         for (const i of hits) {
           this.damageUnit(i, b.damage);
+          // BulletType.hitEntity: an impulse of knockback * 80 world units
+          // straight out from the shot. Unit.impulse divides by mass, so
+          // the same shove all but stops a dagger and leans on a fortress
+          if (b.knockback) {
+            const dx = upx[i] - pr.x, dy = upy[i] - pr.y;
+            const d = Math.hypot(dx, dy) || 1;
+            const mag = b.knockback * 80;
+            this.impulse(i, (dx / d) * mag, (dy / d) * mag);
+          }
           if (uhp[i] > 0 && b.burn && !KIND_BURN_IMMUNE[this.ukind[i]]) this.uburn[i] = b.burn;
           // BulletType.hitEffect, at the bullet rather than the victim.
           // A splash shot skips it — the blast in the `dead` branch below
@@ -2586,6 +2893,10 @@ export class Sim {
         // BulletType.despawned, and only that: a shot spent on a direct
         // hit was removed, not despawned, and leaves nothing behind
         if (pr.life <= 0) this.bulletFx(b.despawnFx, pr.x, pr.y, rot, b.fxColor);
+        // BulletType.hit -> createFrags: the burst that makes a cyclone
+        // shell a wall rather than a point. Fired here, at the end, so a
+        // fragment is never walked by the loop it was born in
+        if (b.frag) this.createFrags(pr, b.frag);
         projs[p] = projs[projs.length - 1];
         projs.pop();
       }
