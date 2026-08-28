@@ -136,9 +136,19 @@ function paint(): Promise<void> {
 // show anything but map. A map taller than the viewport is panned, not
 // shrunk to fit
 const ZOOM_MIN = 1;
-// a fingertip covers far more map than a cursor does, so the ceiling has to
-// leave enough room to aim at a single cell on a phone-sized viewport
-const ZOOM_MAX = 4;
+// A FINGERTIP COVERS FAR MORE MAP THAN A CURSOR DOES, so the ceiling has to
+// leave enough room to aim at a single cell on a phone-sized viewport.
+//
+// The board is 256x192 cells, so "cover" on a 1280px-wide viewport puts one
+// cell at 5 CSS px — a 1x1 duo was 20px across even at the old ceiling of 4,
+// which is a thing you place blind rather than aim. At 12 a cell is 60px and
+// the visible field is 21 cells wide on a desktop and about 7 on a phone:
+// close enough to pick one turret out of a packed line, and still showing
+// enough ground to see what is walking into it.
+//
+// The floor is what needs guarding, not the ceiling — zooming IN only ever
+// crops, while zooming out past cover would letterbox the world.
+const ZOOM_MAX = 12;
 
 // a touch that never travels this far in CSS px is a tap — it selects the
 // tower under it — and anything further is a drag that carried the camera.
