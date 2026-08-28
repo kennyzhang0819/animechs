@@ -850,20 +850,29 @@ export const WORLDS: LevelSpec[] = [
     // Every TWO cycles, insert one wave of PURE SUPPORT. So the repeating
     // unit is nine waves: D C A M  D C A M  S.
     //
-    // THE FINALE OF EACH DIFFICULTY IS NOT AUTHORED HERE. Waves 35 and 50
-    // are deliberately left as a placeholder (ten daggers) for the author to
-    // write by hand — a difficulty should END on something chosen, not on
-    // whatever the pattern happened to produce. LEAVE THEM ALONE unless you
-    // are the one designing that finale.
+    // THE LAST TWO WAVES OF EACH DIFFICULTY ARE HAND-WRITTEN, and they are a
+    // PAIR rather than two waves that happen to be adjacent. Waves 34 and 49
+    // are LULLS and waves 35 and 50 are FINALES, and the lull exists to make
+    // the finale land:
     //
-    // Waves 34 and 49, the two PENULTIMATE waves, are authored and are not
-    // pattern waves either. They are the run-up: every line at once, weighted
-    // to the heaviest thing their difficulty has taught, and about 2x the
-    // wave before them. Wave 34 fields scepters and arkyids but no tier 5;
-    // wave 49 is the only place reign, toxopid, corvus and eclipse all appear
-    // together. Their bodies are TAKEN OUT of the generated segment rather
-    // than added on top, so the cumulative ratios stay exactly on target —
-    // if you resize one, move the difference back into waves 21-33 or 36-48.
+    //   34    674 bodies  0.23M health      35   3,505 bodies  2.17M health
+    //   49    710 bodies  0.74M health      50   3,670 bodies  6.93M health
+    //
+    // That is a 9.7x and 9.4x swing in one wave gap. A difficulty that simply
+    // ramped to its biggest wave would arrive at the same number having
+    // spent it; dropping the floor out first is what makes the last wave
+    // read as an event. The lull is quieter than the AIR wave before it,
+    // which is the quietest thing the pattern otherwise produces.
+    //
+    // The finales are every line at full strength and about a third of their
+    // segment's entire health — 3.9x and 2.0x the biggest wave the generated
+    // pattern produces. Wave 50 is the only wave in the game where reign,
+    // toxopid, corvus and eclipse all appear at once. Wave 35 fields scepters
+    // and arkyids but NO tier 5, because High must not (see above).
+    //
+    // ALL FOUR TAKE THEIR BODIES OUT OF THE GENERATED SEGMENT rather than
+    // adding on top, so the cumulative ratios stay exactly on target. Resize
+    // any of them and the difference moves back into waves 21-33 or 36-48.
     //
     // WITHIN a segment, ramp two things at once: total bodies, and the tier
     // mix. Early waves lean T2; late waves lean T4 and T5. Wave 21's dagger
