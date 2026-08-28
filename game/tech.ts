@@ -52,7 +52,14 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  *
  * THE CEILING IS FOOTPRINT, AND ONLY FOOTPRINT:
  *
- *   1x1  ->  500      2x2  ->  200      3x3  ->  100
+ *   1x1  ->  500   2x2  ->  200   3x3  ->  100   4x4  ->  60
+ *
+ * The 4x4 row was added with spectre, meltdown and foreshadow, the first
+ * size-4 blocks in the game. It is an extension of the series rather than
+ * a formula: the tiles a full ceiling commits run 500, 800, 900, 960, a
+ * curve that flattens as footprints grow because the ceiling is about how
+ * much of the BOARD one turret type may own, and 960 of 29,109 buildable
+ * cells is 3.3% — the same order as the three rows above it.
  *
  * THE RANGE MULTIPLIER IS GONE, and it is worth saying why it ever existed.
  * On the old 128x96 board these ceilings committed 76% of the 4,015
@@ -92,8 +99,30 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  *   lancer     2x2    420     200          84,000    1.0216
  *   ripple     3x3    700     100          70,000    1.0453
  *   parallax   2x2     30     200           6,000    1.0007
+ *   swarmer    2x2  1,925     200         385,000    1.0278
+ *   cyclone    3x3  1,797     100         179,700    1.0524
+ *   spectre    4x4  1,371      60          82,286    1.0671
+ *   meltdown   4x4  3,364      60         201,825    1.0854
+ *   foreshadow 4x4    405      60          24,300    1.0317
  *
- * The lower four were solved when they stopped being stubs. Their DPS is
+ * THE LAST FIVE WERE SOLVED WHEN THEY STOPPED BEING STUBS, and each one
+ * needed the DPS convention read rather than applied blind:
+ *
+ *   swarmer      4 missiles x (10 direct + 45 splash) at 60/34.3 volleys
+ *   cyclone      the shell's 45.5 splashes, so x5; its SIX fragments do
+ *                not splash, so their 72 is counted once
+ *   spectre      pierceCap 2, so x2 — lancer's rule, not the flat x5
+ *   meltdown     936 while the beam is lit, over a 230/320 duty cycle
+ *   foreshadow   405, and NO crowd multiplier at all: 1350 is a BUDGET
+ *                spent across everything the rail passes through, so the
+ *                five bodies are already inside the number
+ *
+ * Only the growths moved. Every base bundle is the one the stubs shipped
+ * with, because the base is settled by rule TWO (the drop ratio) and the
+ * stubs already carried the right currencies — it was only the DPS the
+ * placeholder bullet made unknowable.
+ *
+ * Arc, lancer, ripple and parallax were solved the same way. Their DPS is
  * `shots x per-shot x 60 / reload ticks`, which is what the top four rows
  * reproduce exactly; salvo's 217 and fuse's 4,109 do not fall out of it
  * (they imply reloads of 31 and 23 against the 29 and 35 the turrets
@@ -378,13 +407,12 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     x: 3,
     y: 3,
   },
-  // ---------- STUBS: tree shape only, no turret behind them yet --------
+  // ---------- EXTREME AND ERADICATION ----------------------------------
   //
-  // THEIR PRICES ARE NOT SOLVED. Every bundle below predates the DPS rule
-  // and is a placeholder, because these nodes carry a placeholder BULLET —
-  // duo's — so any DPS computed for them today would price the stand-in
-  // rather than the turret. Give one its real ammo and re-solve it by the
-  // rule in PriceCurve; until then treat these numbers as scaffolding.
+  // These five were stubs — a tech-tree shape with duo's bullet behind it —
+  // and their growths were scaffolding, because a placeholder bullet makes
+  // a node's DPS unknowable. They now carry their own ammo and their own
+  // solved curves; see the table in PriceCurve for what each one reads.
   //
   // Lineage is Mindustry's own (content/SerpuloTechTree.java) and the
   // difficulty each one lands at falls out of BUILD MATERIAL, which is now
@@ -399,7 +427,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PLASTANIUM. Homing missiles — they chase what they lock, so overkill
     // costs less than it does on a straight-firing line
     tower: "swarmer",
-    price: { base: { copper: 350, titanium: 125, thorium: 55, plastanium: 3 }, growth: 1.0241 },
+    price: { base: { copper: 350, titanium: 125, thorium: 55, plastanium: 3 }, growth: 1.0278 },
     requires: "salvo",
     x: 0,
     y: 4,
@@ -408,7 +436,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PLASTANIUM. A flak wall. The reason to own it is volume of splash, which
     // is why its ceiling is the full 3x3 band
     tower: "cyclone",
-    price: { base: { copper: 450, titanium: 150, thorium: 70, plastanium: 4 }, growth: 1.0543 },
+    price: { base: { copper: 450, titanium: 150, thorium: 70, plastanium: 4 }, growth: 1.0524 },
     requires: "swarmer",
     x: 0,
     y: 5,
@@ -420,7 +448,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // and they light up the moment it ships — priced there rather than told
     // to wait there
     tower: "spectre",
-    price: { base: { copper: 900, titanium: 375, thorium: 225, plastanium: 23, "phase-fabric": 6 }, growth: 1.1109 },
+    price: { base: { copper: 900, titanium: 375, thorium: 225, plastanium: 23, "phase-fabric": 6 }, growth: 1.0671 },
     requires: "cyclone",
     x: 0,
     y: 6,
@@ -428,7 +456,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // PHASE FABRIC. A continuous beam that melts whatever it rests on
     tower: "meltdown",
-    price: { base: { copper: 1000, titanium: 425, thorium: 250, plastanium: 26, "phase-fabric": 7 }, growth: 1.1081 },
+    price: { base: { copper: 1000, titanium: 425, thorium: 250, plastanium: 26, "phase-fabric": 7 }, growth: 1.0854 },
     requires: "lancer",
     x: 4,
     y: 4,
@@ -437,7 +465,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PHASE FABRIC. 500 range and one enormous shot — a sniper rather than a
     // defence, and the only turret that can hit a spawn pad from the core
     tower: "foreshadow",
-    price: { base: { copper: 1100, titanium: 450, thorium: 275, plastanium: 29, "phase-fabric": 8 }, growth: 1.1054 },
+    price: { base: { copper: 1100, titanium: 450, thorium: 275, plastanium: 29, "phase-fabric": 8 }, growth: 1.0317 },
     requires: "meltdown",
     x: 4,
     y: 5,

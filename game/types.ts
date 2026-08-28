@@ -1,12 +1,11 @@
 /**
  * Every Serpulo turret the campaign will ever field, in tech-tree order.
  *
- * The first ten are IMPLEMENTED — real stats, real ammo, drawn on the
- * field, and every one of them in the build menu. The last five are STUBS:
- * they exist so the tech tree can show the whole shape of the game, and
- * their stats in constants.ts carry the true Mindustry size/range/reload
- * with a duo's bullet standing in. None of those is in the build menu, so
- * nothing can place one.
+ * ALL FIFTEEN ARE IMPLEMENTED — real stats, real ammo, drawn on the field,
+ * and every one of them in the build menu. The last five were stubs
+ * carrying a duo's bullet until they were given their own: swarmer's
+ * homing missiles, cyclone's fragmenting flak, spectre's piercing twin
+ * cannon, meltdown's held beam and foreshadow's rail shot.
  *
  * Three Serpulo turrets are deliberately absent. Wave and tsunami are
  * liquid turrets whose job is extinguishing fire, wetting units and healing
@@ -26,7 +25,7 @@ export const TOWER_KINDS = [
   "lancer",
   "ripple",
   "parallax",
-  // stubs — tree shape only
+  // extreme and eradication
   "swarmer",
   "cyclone",
   "spectre",
@@ -61,6 +60,17 @@ export interface Tower {
   beamX: number;
   beamY: number;
   beamStr: number;
+  // LaserTurret's held beam (meltdown). Mindustry pins the beam bullet to
+  // the muzzle for shootDuration and then simply LETS GO of it: the last
+  // fadeTime of beam stays where it was released while the turret is
+  // already slewing off and reloading. So the beam carries its own origin
+  // and heading rather than reading the turret's, which no longer match.
+  // beamT < 0 is a turret that is not firing at all
+  beamT: number; // seconds left of the burst: shootDuration, then fadeTime
+  beamOX: number; // where the beam leaves — frozen the moment it is let go
+  beamOY: number;
+  beamRot: number;
+  beamDmgT: number; // Bullet.timer(1, damageInterval): the beam's own clock
 }
 
 export interface Projectile {
@@ -83,6 +93,11 @@ export interface Projectile {
   // Bullet.timer(0, ...), the rolling clock ArtilleryBulletType.update
   // drops its trail puffs on. Left at 0 by everything else
   trailT: number;
+  // a shot thrown by BulletType.createFrags rather than by a barrel: its
+  // stats are the parent ammo's `frag.bullet`, not the turret's own. One
+  // flag rather than a stats pointer keeps a projectile a flat record —
+  // see bulletOf() in constants.ts
+  frag: boolean;
 }
 
 export const enum FxKind {
@@ -116,6 +131,16 @@ export const enum FxKind {
   LancerShoot = 23, // Fx.lancerLaserShoot
   LancerCharge = 24, // Fx.lancerLaserCharge over Fx.lancerLaserChargeBegin
   HitLancer = 25, // Fx.hitLancer
+  BlastExplosion = 26, // Fx.blastExplosion — swarmer's warhead
+  PlasticExplosion = 27, // Fx.plasticExplosion — cyclone's
+  InstShoot = 28, // Fx.instShoot — foreshadow's muzzle
+  InstHit = 29, // Fx.instHit
+  InstTrail = 30, // Fx.instTrail, laid every 20 units down the rail line
+  InstBomb = 31, // Fx.instBomb, where a rail shot runs out unspent
+  RailHit = 32, // Fx.railHit, at each body the rail punches through
+  SmokeCloud = 33, // Fx.smokeCloud
+  HitMeltdown = 34, // Fx.hitMeltdown
+  SmokeBig2 = 35, // Fx.shootBigSmoke2 — meltdown's, wider than shootBigSmoke
 }
 
 /** an r,g,b triple in 0..1, the form every draw call wants */

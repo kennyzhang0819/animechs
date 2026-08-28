@@ -304,6 +304,31 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
     name: "Fuse",
     icon: "/mindustry/sprites/blocks/turrets/fuse.png",
   },
+  {
+    kind: "swarmer",
+    name: "Swarmer",
+    icon: "/mindustry/sprites/blocks/turrets/swarmer.png",
+  },
+  {
+    kind: "cyclone",
+    name: "Cyclone",
+    icon: "/mindustry/sprites/blocks/turrets/cyclone/cyclone-preview.png",
+  },
+  {
+    kind: "spectre",
+    name: "Spectre",
+    icon: "/mindustry/sprites/blocks/turrets/spectre.png",
+  },
+  {
+    kind: "meltdown",
+    name: "Meltdown",
+    icon: "/mindustry/sprites/blocks/turrets/meltdown.png",
+  },
+  {
+    kind: "foreshadow",
+    name: "Foreshadow",
+    icon: "/mindustry/sprites/blocks/turrets/foreshadow.png",
+  },
 ];
 
 /** the two wave buttons in the HUD, sized to be hit without aiming */

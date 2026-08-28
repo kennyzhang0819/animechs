@@ -382,6 +382,10 @@ export const UV_BULLET = uv(T5, 1792, 52, 52);
 export const UV_BULLET_BACK = uv(T5 + 64, 1792, 52, 52);
 export const UV_SHELL = uv(T5 + 128, 1792, 36, 36);
 export const UV_SHELL_BACK = uv(T5 + 176, 1792, 36, 36);
+// the third pair: swarmer's warhead. 36x36 like the shell, and the same
+// rule — white, source size, facing +x
+export const UV_MISSILE = uv(T5 + 224, 1792, 36, 36);
+export const UV_MISSILE_BACK = uv(T5 + 272, 1792, 36, 36);
 
 /**
  * The Medium and High turret tops, on the free band at y=2816. Each cell
@@ -413,6 +417,26 @@ export const UV_RIPPLE = uv(512, 2816, 96, 96);
  */
 export const UV_PARALLAX_LASER = uv(772, 2860, 24, 4);
 export const UV_PARALLAX_LASER_END = uv(668, 2844, 32, 32);
+
+/**
+ * The Extreme and Eradication turret tops, on the free right half of the
+ * atlas. Same rule as every other top — the cell hugs the art exactly,
+ * because the renderer maps the whole cell onto a size*CELL quad.
+ *
+ * Mindustry block art is 32px a tile, so swarmer (size 2) is a 64px source
+ * upscaled 2x, and cyclone (3) and the three size-4 tops are already 96 and
+ * 128 and stay NATIVE — the same reasoning that keeps fuse and ripple
+ * native, since anything but an integer upscale shreds their antialiasing.
+ *
+ * The 4x4 turret base rides with them: spectre, meltdown and foreshadow are
+ * the first size-4 blocks in the game, so block-4 had never been packed.
+ */
+export const UV_SWARMER = uv(1152, 2816, 128, 128);
+export const UV_CYCLONE = uv(1312, 2816, 96, 96);
+export const UV_SPECTRE = uv(1440, 2816, 128, 128);
+export const UV_MELTDOWN = uv(1600, 2816, 128, 128);
+export const UV_FORESHADOW = uv(1760, 2816, 128, 128);
+export const UV_TOWER_BASE4 = uv(1152, 2976, 128, 128);
 
 export const UV_CRAWLER_LEG = uv(448, 288, 64, 64);
 export const UV_CRAWLER_BASE = uv(512, 288, 64, 64);
@@ -1001,6 +1025,16 @@ const SPRITES = {
   // parallax is filed under defense, not turrets — it damages almost
   // nothing and Mindustry classes it with the support blocks
   parallax: "/mindustry/sprites/blocks/defense/parallax.png",
+  towerBase4: "/mindustry/sprites/blocks/turrets/bases/block-4.png",
+  swarmer: "/mindustry/sprites/blocks/turrets/swarmer.png",
+  // cyclone's own art is the bare head; its three barrels are separate
+  // sprites the preview already has assembled underneath
+  cyclonePreview: "/mindustry/sprites/blocks/turrets/cyclone/cyclone-preview.png",
+  spectre: "/mindustry/sprites/blocks/turrets/spectre.png",
+  meltdown: "/mindustry/sprites/blocks/turrets/meltdown.png",
+  foreshadow: "/mindustry/sprites/blocks/turrets/foreshadow.png",
+  missile: "/mindustry/sprites/effects/missile.png",
+  missileBack: "/mindustry/sprites/effects/missile-back.png",
   parallaxLaser: "/mindustry/sprites/effects/parallax-laser.png",
   parallaxLaserEnd: "/mindustry/sprites/effects/parallax-laser-end.png",
   shell: "/mindustry/sprites/effects/shell.png",
@@ -1571,6 +1605,8 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   drawFacingRight(c, antialiased(img.bulletBack), T5 + 90, 1818, 52);
   drawFacingRight(c, antialiased(img.shell), T5 + 146, 1810, 36);
   drawFacingRight(c, antialiased(img.shellBack), T5 + 194, 1810, 36);
+  drawFacingRight(c, antialiased(img.missile), T5 + 242, 1810, 36);
+  drawFacingRight(c, antialiased(img.missileBack), T5 + 290, 1810, 36);
 
   // ring (448,0) — procedural
   c.strokeStyle = "#ffffff";
@@ -1622,6 +1658,16 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // its length runs along the +x axis pushSeg stretches
   drawFacingRight(c, antialiased(img.parallaxLaserEnd), 684, 2860, 72);
   drawFacingRight(c, antialiased(img.parallaxLaser), 784, 2862, 4, 48);
+
+  // the Extreme and Eradication tops (see the UV note): swarmer upscales
+  // 2x like lancer's, and cyclone and the three size-4 heads stay native
+  drawFacingRight(c, antialiased(outlined(img.swarmer, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1216, 2880, 128);
+  drawFacingRight(c, antialiased(outlined(img.cyclonePreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1360, 2864, 96);
+  drawFacingRight(c, antialiased(outlined(img.spectre, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1504, 2880, 128);
+  drawFacingRight(c, antialiased(outlined(img.meltdown, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1664, 2880, 128);
+  drawFacingRight(c, antialiased(outlined(img.foreshadow, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1824, 2880, 128);
+  // ...and the 4x4 base under the last three, at native 128px like block-3
+  c.drawImage(antialiased(img.towerBase4), 1152, 2976, 128, 128);
 
   // duo top and 1x1 base: 32px sources upscaled 2x into 64px cells
   drawFacingRight(c, antialiased(outlined(img.duoPreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 160, 480, 64);
