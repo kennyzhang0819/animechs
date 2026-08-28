@@ -344,7 +344,7 @@ function SkipToWave({
       <div className="flex flex-wrap items-center gap-2">
         <label
           htmlFor="skip-to-wave"
-          className="text-[13px] font-bold uppercase tracking-widest text-[#71717C]"
+          className="text-[13px] font-bold uppercase tracking-widest text-[#EDEDEF]"
         >
           Skip to wave
         </label>
@@ -374,18 +374,18 @@ function SkipToWave({
           onClick={onClose}
           title="Hide"
           aria-label="Hide skip to wave"
-          className="text-[13px] font-bold uppercase tracking-widest text-[#71717C] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+          className="text-[13px] font-bold uppercase tracking-widest text-[#EDEDEF] hover:text-[#FFD37F] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
         >
           x
         </button>
       </div>
-      <p className="mt-0.5 text-[13px] uppercase tracking-widest text-[#71717C] break-words">
+      <p className="mt-0.5 text-[13px] uppercase tracking-widest text-[#EDEDEF] break-words">
         {hud.rushTo > 0 ? (
           <>
             <span className="font-bold text-[#FFD37F]">Spawning to wave {hud.rushTo}</span>{" "}
             <button
               onClick={() => onSkip(0)}
-              className="uppercase tracking-widest text-[#71717C] underline underline-offset-2 hover:text-[#FF5A5A] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+              className="uppercase tracking-widest text-[#EDEDEF] underline underline-offset-2 hover:text-[#FF5A5A] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
             >
               Stop
             </button>
@@ -758,7 +758,7 @@ export default function Swarmfield() {
               {/* the wave counter is what a run is read off, so the line
                   carries that and the difficulty and nothing else — the level
                   name is on the card that launched it */}
-              <div className="text-[13px] uppercase tracking-widest text-[#71717C] break-words">
+              <div className="text-[13px] uppercase tracking-widest text-[#EDEDEF] break-words">
                 {difficultyName(hud.tier)} — Wave{" "}
                 <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span> / {hud.totalWaves}
               </div>
@@ -791,7 +791,7 @@ export default function Swarmfield() {
                   next wave, double play opens the box that runs to a wave
                   further out. Only the countdown is conditional — a rush has
                   no timer to wait for, so its button is always here */}
-              <div className="flex flex-wrap items-center gap-2 text-[13px] uppercase tracking-widest text-[#71717C]">
+              <div className="flex flex-wrap items-center gap-2 text-[13px] uppercase tracking-widest text-[#EDEDEF]">
                 {hud.nextWaveIn > 0 && (
                   <>
                     <span>
@@ -864,7 +864,7 @@ export default function Swarmfield() {
                 className={`px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
                   hud.speed === mult
                     ? "bg-[#222227] text-[#FFD37F]"
-                    : "text-[#71717C] hover:bg-[#222227]/60 hover:text-[#A6A6AF]"
+                    : "text-[#EDEDEF] hover:bg-[#222227]/60"
                 }`}
               >
                 {mult}x
@@ -894,7 +894,7 @@ export default function Swarmfield() {
               className={`rounded border px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
                 hud.showRoutes
                   ? "border-[#FFD37F] bg-[#222227]/90 text-[#FFD37F]"
-                  : "border-[#2E2E36] bg-[#151518]/70 text-[#71717C] hover:border-[#4A4A55] hover:text-[#A6A6AF]"
+                  : "border-[#2E2E36] bg-[#151518]/70 text-[#EDEDEF] hover:border-[#4A4A55]"
               }`}
             >
               Spawns &amp; routes
@@ -909,7 +909,7 @@ export default function Swarmfield() {
                 g.openMenu();
                 setHud(g.ui());
               }}
-              className="rounded border border-[#2E2E36] bg-[#151518]/70 p-[6px] text-[#71717C] backdrop-blur hover:border-[#4A4A55] hover:text-[#A6A6AF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+              className="rounded border border-[#2E2E36] bg-[#151518]/70 p-[6px] text-[#EDEDEF] backdrop-blur hover:border-[#4A4A55] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
             >
               <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" aria-hidden="true">
                 <path
@@ -974,7 +974,7 @@ export default function Swarmfield() {
               <div className="text-xl font-bold uppercase tracking-widest text-[#FF5A5A]">
                 Core destroyed
               </div>
-              <div className="mt-4 space-y-1 text-base text-[#A6A6AF]">
+              <div className="mt-4 space-y-1 text-base text-[#EDEDEF]">
                 <div>
                   Reached wave{" "}
                   <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span> of{" "}
@@ -1009,13 +1009,13 @@ export default function Swarmfield() {
                 <div className="flex justify-center gap-3">
                 <button
                   onClick={retry}
-                  className="rounded border border-[#2E2E36] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:bg-[#222227]/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                  className="rounded border border-[#2E2E36] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#EDEDEF] hover:border-[#4A4A55] hover:bg-[#222227]/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
                 >
                   Retry
                 </button>
                 <button
                   onClick={backToMenu}
-                  className="rounded border border-[#2E2E36] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:bg-[#222227]/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                  className="rounded border border-[#2E2E36] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#EDEDEF] hover:border-[#4A4A55] hover:bg-[#222227]/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
                 >
                   Levels
                 </button>
@@ -1030,7 +1030,7 @@ export default function Swarmfield() {
               <div className="text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
                 {difficultyName(hud.tier)} cleared
               </div>
-              <div className="mt-4 space-y-1.5 text-base text-[#A6A6AF]">
+              <div className="mt-4 space-y-1.5 text-base text-[#EDEDEF]">
                 <div>
                   Kills <span className="font-bold text-[#EDEDEF]">{hud.kills}</span>
                 </div>
@@ -1039,12 +1039,12 @@ export default function Swarmfield() {
                     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[#2E2E36] pt-1.5">
                       <span className="font-bold text-[#EDEDEF]">
                         Salvaged
-                        <span className="ml-1 font-normal text-[#71717C]">
+                        <span className="ml-1 font-normal text-[#EDEDEF]">
                           ×{result.dropBonus.toFixed(2)}
                         </span>
                       </span>
                       {isEmpty(result.earned) ? (
-                        <span className="text-[#71717C]">nothing</span>
+                        <span className="text-[#EDEDEF]">nothing</span>
                       ) : (
                         <CostRow cost={result.earned} />
                       )}
