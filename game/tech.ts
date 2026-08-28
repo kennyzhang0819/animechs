@@ -367,7 +367,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // any at all. A Medium save can see this node and can never pay for it,
     // which is the same lock the old tier gate spelled out by hand
     tower: "fuse",
-    price: { base: { titanium: 600, thorium: 490, plastanium: 170 }, growth: 1.0594 },
+    price: { base: { titanium: 280, thorium: 340, plastanium: 65 }, growth: 1.0594 },
     requires: "salvo",
     x: 2,
     y: 5,
@@ -448,7 +448,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PLASTANIUM. Homing missiles — they chase what they lock, so overkill
     // costs less than it does on a straight-firing line
     tower: "swarmer",
-    price: { base: { titanium: 270, thorium: 150, plastanium: 35 }, growth: 1.0278 },
+    price: { base: { titanium: 130, thorium: 110, plastanium: 15 }, growth: 1.0278 },
     requires: "salvo",
     x: 0,
     y: 4,
@@ -457,7 +457,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PLASTANIUM. A flak wall. The reason to own it is volume of splash, which
     // is why its ceiling is the full 3x3 band
     tower: "cyclone",
-    price: { base: { titanium: 330, thorium: 200, plastanium: 45 }, growth: 1.0524 },
+    price: { base: { titanium: 150, thorium: 130, plastanium: 15 }, growth: 1.0524 },
     requires: "swarmer",
     x: 0,
     y: 5,
@@ -469,7 +469,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // and they light up the moment it ships — priced there rather than told
     // to wait there
     tower: "spectre",
-    price: { base: { titanium: 810, thorium: 630, plastanium: 270, "phase-fabric": 160 }, growth: 1.0671 },
+    price: { base: { titanium: 380, thorium: 430, plastanium: 100, "phase-fabric": 55 }, growth: 1.0671 },
     requires: "cyclone",
     x: 0,
     y: 6,
@@ -477,7 +477,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // PHASE FABRIC. A continuous beam that melts whatever it rests on
     tower: "meltdown",
-    price: { base: { titanium: 920, thorium: 700, plastanium: 300, "phase-fabric": 180 }, growth: 1.0854 },
+    price: { base: { titanium: 430, thorium: 480, plastanium: 110, "phase-fabric": 65 }, growth: 1.0854 },
     requires: "lancer",
     x: 4,
     y: 4,
@@ -486,7 +486,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PHASE FABRIC. 500 range and one enormous shot — a sniper rather than a
     // defence, and the only turret that can hit a spawn pad from the core
     tower: "foreshadow",
-    price: { base: { titanium: 980, thorium: 770, plastanium: 330, "phase-fabric": 210 }, growth: 1.0317 },
+    price: { base: { titanium: 450, thorium: 530, plastanium: 120, "phase-fabric": 75 }, growth: 1.0317 },
     requires: "meltdown",
     x: 4,
     y: 5,

@@ -812,17 +812,31 @@ export const WORLDS: LevelSpec[] = [
     // treat this as the shape rather than the content.
     //
     // MEDIUM (waves 1-20) IS PLAYTESTED AND FIXED. Do not restructure it.
-    // It is also why the tiers above it look the way they do: it sends
-    // 12,500 tier-1 bodies, a cut of a script cannot un-send them, so 12,500
-    // is the tier-1 floor for every difficulty and the rows in
-    // TARGET_DROP_RATIO can only be reached by sending NO TIER-1 UNITS AT
-    // ALL after wave 20. Each line continues at its higher tiers instead.
+    //
+    // A DIFFICULTY IS A PREFIX, NOT A SCRIPT OF ITS OWN. High plays waves
+    // 1-35 and Extreme 1-50, so both REPLAY every Medium wave, and the rows
+    // in TARGET_DROP_RATIO describe the cumulative total of a whole run.
+    // Authoring can only ever ADD to a tier, never subtract, so Medium's
+    // 12,500 tier-1 bodies are the floor for every difficulty above it.
     //
     //   line       T1        T2       T3         T4         T5
     //   dagger     dagger    mace     fortress   scepter    reign
     //   crawler    crawler   atrax    spiroct    arkyid     toxopid
     //   support    nova      pulsar   quasar     vela       corvus
     //   air        flare     horizon  zenith     antumbra   eclipse
+    //
+    // KEEP SENDING TIER-1 UNITS. They are the swarm and the game is named
+    // after them. They are also nearly free in the health budget — 118 hp
+    // against a scepter's 8,100, so one T4 weighs as much as sixty-nine
+    // daggers, and the twelve thousand extra daggers High adds cost less
+    // than its two hundred scepters. Spend the budget on T3/T4/T5 counts;
+    // that is the only thing that really moves a difficulty's weight.
+    //
+    // NO TIER-5 BEFORE EXTREME. Waves 21-35 must field none at all: phase
+    // fabric is what spectre, meltdown and foreshadow are priced in, and
+    // those three are meant to be unbuyable until Extreme has actually been
+    // played. Adding one reign to a High wave quietly unlocks the top of
+    // the tech tree a difficulty early.
     //
     // THE PATTERN, past Medium. One cycle is four waves:
     //
@@ -853,9 +867,12 @@ export const WORLDS: LevelSpec[] = [
     // the only real constraint while the rest pile up unspent.
     // `window.__ladder.check()` reports the drift.
     //
-    // MIND THE FLOOR. A tier-5 hitbox is 4.3x a dagger's radius, so one T5
-    // stands on as much ground as 18.8 daggers. Adding heavies without
-    // taking bodies away makes the map MORE crowded, not less.
+    // DO NOT SIZE A DIFFICULTY AGAINST THE MAP'S AREA. A run's total bodies
+    // are not its bodies on the field: units stream in over
+    // WAVE_RELEASE_SECONDS and die continuously, so a difficulty that sends
+    // 52,000 of them never holds a fraction of that at once. If a wave
+    // outruns the drop zones they simply queue (Sim.runScript). Size against
+    // TARGET_DROP_RATIO and the health step, which are the limits that bind.
     // ==============================================================
     script: [
       // ---------- MEDIUM: waves 1-20, enemy level 0 ------------------

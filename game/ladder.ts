@@ -111,8 +111,8 @@ export const DIFFICULTIES: readonly { name: string; waves: number; level: number
  *
  *   difficulty   copper  titanium  thorium  plastanium  phase
  *   Medium         100      15       3.6        0         0
- *   High           100      86      31          5.0       0.45
- *   Extreme        100     133      83         27         5.6
+ *   High           100      24.5    12.2        0.8       0
+ *   Extreme        100      30      24          4.2       0.85
  *
  * THIS IS THE DESIGN INPUT, NOT A CONSEQUENCE. The wave script is authored
  * to this and the tech tree's prices are balanced to whatever it pays —
@@ -122,47 +122,48 @@ export const DIFFICULTIES: readonly { name: string; waves: number; level: number
  * rungs of a tier ladder, and their quantities carry no information about
  * how many tier-4 enemies a wave should hold.
  *
- * THE HIGH AND EXTREME ROWS ARE ABOUT FLOOR SPACE, and that is worth saying
- * because the numbers look like a difficulty knob and are not. The map has
- * a finite walkable area — 7.3M px^2 on The Three Gates — and the old rows
- * asked for twenty-five thousand tier-1 bodies at Extreme, which only fits
- * because they stream in and die. Past some point the drop zones simply
- * cannot pass enough units, so the way to keep raising the pressure is to
- * send FEWER, HEAVIER bodies rather than more small ones.
- *
- * MIND THE TRAP THAT SETS: a heavy is not free floor. A tier-5 hitbox is
- * 4.3x a dagger's radius, so ONE T5 stands on as much ground as 18.8
- * daggers. Trading tier-1 for tier-5 at constant BODY COUNT makes crowding
- * worse, not better. These rows only relieve the map because the body count
- * falls with them; if a future row raises both, it buys nothing.
- *
- * T1 IS PINNED, NOT CHOSEN. Medium is playtested and fixed at 12,500 tier-1
- * bodies, and a cut of a script cannot un-send them — so 12,500 is the floor
- * for every difficulty above it, and the honest way to hit these rows is to
- * send NO tier-1 units at all after wave 20. Each line simply continues at
- * its higher tiers: the dagger line goes on as mace, fortress, scepter and
- * reign. That is why T1 stops growing while everything else does.
- *
- * A BODY RATIO BADLY UNDERSTATES A HEAVY, so read it alongside the health
- * these mixes actually put on the field:
+ * READ THESE ROWS AS WEIGHT, NOT COUNT. Every difficulty above Medium still
+ * sends tier-1 bodies by the tens of thousands — T1 stays the most numerous
+ * thing on the field, and the swarm is meant to look like a swarm. What
+ * moves is what the swarm is CARRYING:
  *
  *   difficulty     T1    T2    T3    T4    T5
- *   Medium         44%   39%   18%    -     -
- *   High           17%   35%   27%   19%    2%
- *   Extreme         5%   25%   28%   34%    8%
+ *   Medium         55%   32%   14%    -     -
+ *   High           30%   28%   25%   17%    -
+ *   Extreme        12%   14%   20%   35%   19%
  *
- * Two rules hold the shape up. T1's share of WEIGHT collapses as the ladder
- * climbs, which is what makes the top difficulty a different fight rather
- * than a longer one — at Extreme the tier-1 half of the field is texture
- * and the tier-4 bodies are the threat. And every currency debuts one
- * difficulty before anything charges for it: High's fifty-odd T5 are far
- * too few to spend, but phase is visibly accumulating before Extreme's
- * phase-priced turrets open.
+ * A TIER-1 BODY IS NEARLY FREE IN THIS BUDGET and that is the key to reading
+ * the table: 118 health against a tier-4's 8,100, so ONE T4 weighs as much
+ * as sixty-nine daggers. Twelve thousand extra daggers at High cost less
+ * health than two hundred scepters. So "send more T1" and "shift the weight
+ * upward" are not in tension at all — the thing that actually sets the size
+ * of the step between difficulties is the T3, T4 and T5 counts, and nothing
+ * else is close.
+ *
+ * A run's TOTAL bodies are not its bodies on the field. Units stream in over
+ * WAVE_RELEASE_SECONDS and die continuously, so a difficulty that sends
+ * 52,000 of them never holds anything like that at once. Do not size a
+ * difficulty against the map's area; size it against these rows and let the
+ * drop zones throttle what they cannot pass.
+ *
+ * TIER 5 DOES NOT EXIST BEFORE EXTREME, deliberately, and it breaks the old
+ * rule that every currency debuts one difficulty before anything charges for
+ * it. Phase fabric now debuts and is spent at the same difficulty. That is
+ * the point: spectre, meltdown and foreshadow are priced in phase, so a
+ * player cannot own the last three turrets until they have actually played
+ * Extreme. Nothing walls them in — difficulties unlock by clearing the one
+ * below, never by tech — so Extreme opens on schedule and those three are
+ * the reward for engaging with it rather than a prerequisite.
+ *
+ * The steps these rows produce are 6.4x Medium -> High and 6.0x High ->
+ * Extreme, against a WALL_STEP guideline of 4.5. That is a deliberate, known
+ * overshoot: holding 4.5 forces High back onto almost exactly Medium's own
+ * ratio, and the campaign stops going anywhere. See audit().
  */
 export const TARGET_DROP_RATIO: readonly (readonly number[])[] = [
   [100, 15, 3.6, 0, 0],
-  [100, 86, 31, 5.0, 0.45],
-  [100, 133, 83, 27, 5.6],
+  [100, 24.5, 12.2, 0.8, 0],
+  [100, 30, 24, 4.2, 0.85],
 ];
 
 /** how far off target a currency may drift before check() says so */
