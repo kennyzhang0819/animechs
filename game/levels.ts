@@ -850,11 +850,20 @@ export const WORLDS: LevelSpec[] = [
     // Every TWO cycles, insert one wave of PURE SUPPORT. So the repeating
     // unit is nine waves: D C A M  D C A M  S.
     //
-    // THE LAST WAVES OF EACH DIFFICULTY ARE NOT AUTHORED HERE. Waves 34-35
-    // and 49-50 are deliberately left as a placeholder (ten daggers) for the
-    // author to write by hand — a difficulty should END on something chosen,
-    // not on whatever the pattern happened to produce. Leave them alone
-    // unless you are the one designing that finale.
+    // THE FINALE OF EACH DIFFICULTY IS NOT AUTHORED HERE. Waves 35 and 50
+    // are deliberately left as a placeholder (ten daggers) for the author to
+    // write by hand — a difficulty should END on something chosen, not on
+    // whatever the pattern happened to produce. LEAVE THEM ALONE unless you
+    // are the one designing that finale.
+    //
+    // Waves 34 and 49, the two PENULTIMATE waves, are authored and are not
+    // pattern waves either. They are the run-up: every line at once, weighted
+    // to the heaviest thing their difficulty has taught, and about 2x the
+    // wave before them. Wave 34 fields scepters and arkyids but no tier 5;
+    // wave 49 is the only place reign, toxopid, corvus and eclipse all appear
+    // together. Their bodies are TAKEN OUT of the generated segment rather
+    // than added on top, so the cumulative ratios stay exactly on target —
+    // if you resize one, move the difference back into waves 21-33 or 36-48.
     //
     // WITHIN a segment, ramp two things at once: total bodies, and the tier
     // mix. Early waves lean T2; late waves lean T4 and T5. Wave 21's dagger
