@@ -111,8 +111,8 @@ export const DIFFICULTIES: readonly { name: string; waves: number; level: number
  *
  *   difficulty   copper  titanium  thorium  plastanium  phase
  *   Medium         100      15       3.6        0         0
- *   High           100      22       6.5       0.23       0
- *   Extreme        100      27       9         0.7       0.13
+ *   High           100      86      31          5.0       0.45
+ *   Extreme        100     133      83         27         5.6
  *
  * THIS IS THE DESIGN INPUT, NOT A CONSEQUENCE. The wave script is authored
  * to this and the tech tree's prices are balanced to whatever it pays —
@@ -122,31 +122,47 @@ export const DIFFICULTIES: readonly { name: string; waves: number; level: number
  * rungs of a tier ladder, and their quantities carry no information about
  * how many tier-4 enemies a wave should hold.
  *
+ * THE HIGH AND EXTREME ROWS ARE ABOUT FLOOR SPACE, and that is worth saying
+ * because the numbers look like a difficulty knob and are not. The map has
+ * a finite walkable area — 7.3M px^2 on The Three Gates — and the old rows
+ * asked for twenty-five thousand tier-1 bodies at Extreme, which only fits
+ * because they stream in and die. Past some point the drop zones simply
+ * cannot pass enough units, so the way to keep raising the pressure is to
+ * send FEWER, HEAVIER bodies rather than more small ones.
+ *
+ * MIND THE TRAP THAT SETS: a heavy is not free floor. A tier-5 hitbox is
+ * 4.3x a dagger's radius, so ONE T5 stands on as much ground as 18.8
+ * daggers. Trading tier-1 for tier-5 at constant BODY COUNT makes crowding
+ * worse, not better. These rows only relieve the map because the body count
+ * falls with them; if a future row raises both, it buys nothing.
+ *
+ * T1 IS PINNED, NOT CHOSEN. Medium is playtested and fixed at 12,500 tier-1
+ * bodies, and a cut of a script cannot un-send them — so 12,500 is the floor
+ * for every difficulty above it, and the honest way to hit these rows is to
+ * send NO tier-1 units at all after wave 20. Each line simply continues at
+ * its higher tiers: the dagger line goes on as mace, fortress, scepter and
+ * reign. That is why T1 stops growing while everything else does.
+ *
  * A BODY RATIO BADLY UNDERSTATES A HEAVY, so read it alongside the health
  * these mixes actually put on the field:
  *
  *   difficulty     T1    T2    T3    T4    T5
- *   Medium         58%   30%   12%    -     -
- *   High           43%   34%   17%    6%    -
- *   Extreme        32%   30%   17%   14%    7%
+ *   Medium         44%   39%   18%    -     -
+ *   High           17%   35%   27%   19%    2%
+ *   Extreme         5%   25%   28%   34%    8%
  *
- * At Extreme that is ninety-five tier-4 and tier-5 bodies out of sixteen
- * thousand carrying a fifth of the run. Ten T5 in wave 50 alone are 6% of
- * the whole difficulty.
- *
- * Three rules hold the shape up. T1 keeps dominating COUNT while its share
- * of WEIGHT falls (58% -> 32%), which is what makes the top difficulty a
- * different fight rather than a longer one. Every currency debuts one
- * difficulty before anything charges for it — the fifteen T4 at High are
- * only twenty plastanium a run, far too few to spend, but the currency is
- * visibly accumulating before Extreme's plastanium-priced turrets open.
- * And T5 exists only at Extreme and only at the very end, so it reads as
- * the campaign arriving rather than as something to farm.
+ * Two rules hold the shape up. T1's share of WEIGHT collapses as the ladder
+ * climbs, which is what makes the top difficulty a different fight rather
+ * than a longer one — at Extreme the tier-1 half of the field is texture
+ * and the tier-4 bodies are the threat. And every currency debuts one
+ * difficulty before anything charges for it: High's fifty-odd T5 are far
+ * too few to spend, but phase is visibly accumulating before Extreme's
+ * phase-priced turrets open.
  */
 export const TARGET_DROP_RATIO: readonly (readonly number[])[] = [
   [100, 15, 3.6, 0, 0],
-  [100, 22, 6.5, 0.23, 0],
-  [100, 27, 9, 0.7, 0.13],
+  [100, 86, 31, 5.0, 0.45],
+  [100, 133, 83, 27, 5.6],
 ];
 
 /** how far off target a currency may drift before check() says so */

@@ -804,6 +804,59 @@ export const WORLDS: LevelSpec[] = [
     name: "The Three Gates",
     map: "grass-open",
     waveGap: 15,
+    // ================= HOW TO AUTHOR A WAVE ========================
+    //
+    // THE SHIPPED SCRIPT IS OVERRIDDEN BY public/levels/1.json. The array
+    // below is the fallback the game ships with; applyLevelDoc() replaces it
+    // wholesale at load, so edit the JSON (or the admin level editor) and
+    // treat this as the shape rather than the content.
+    //
+    // MEDIUM (waves 1-20) IS PLAYTESTED AND FIXED. Do not restructure it.
+    // It is also why the tiers above it look the way they do: it sends
+    // 12,500 tier-1 bodies, a cut of a script cannot un-send them, so 12,500
+    // is the tier-1 floor for every difficulty and the rows in
+    // TARGET_DROP_RATIO can only be reached by sending NO TIER-1 UNITS AT
+    // ALL after wave 20. Each line continues at its higher tiers instead.
+    //
+    //   line       T1        T2       T3         T4         T5
+    //   dagger     dagger    mace     fortress   scepter    reign
+    //   crawler    crawler   atrax    spiroct    arkyid     toxopid
+    //   support    nova      pulsar   quasar     vela       corvus
+    //   air        flare     horizon  zenith     antumbra   eclipse
+    //
+    // THE PATTERN, past Medium. One cycle is four waves:
+    //
+    //   1  DAGGER CLASS  + partial support, and optionally a SMALL amount
+    //                      of air — small is the point, not a hedge
+    //   2  CRAWLER CLASS + partial support, same optional small air
+    //   3  AIR ONLY      — air is strong right now, so this wave is allowed
+    //                      to be a DIP in the ramp chart. It should be.
+    //   4  MIXED         — a bit of everything
+    //
+    // Every TWO cycles, insert one wave of PURE SUPPORT. So the repeating
+    // unit is nine waves: D C A M  D C A M  S.
+    //
+    // THE LAST WAVES OF EACH DIFFICULTY ARE NOT AUTHORED HERE. Waves 34-35
+    // and 49-50 are deliberately left as a placeholder (ten daggers) for the
+    // author to write by hand — a difficulty should END on something chosen,
+    // not on whatever the pattern happened to produce. Leave them alone
+    // unless you are the one designing that finale.
+    //
+    // WITHIN a segment, ramp two things at once: total bodies, and the tier
+    // mix. Early waves lean T2; late waves lean T4 and T5. Wave 21's dagger
+    // wave is mace 692 / fortress 145 / scepter 7; wave 45's is mace 262 /
+    // fortress 411 / scepter 223 / reign 52. Same wave type, different game.
+    //
+    // CHECK THE TOTALS, NOT THE FEEL. A difficulty's cumulative tier counts
+    // have to land on TARGET_DROP_RATIO (ladder.ts), because one kill is one
+    // item and that ratio IS the economy — miss it and some currency becomes
+    // the only real constraint while the rest pile up unspent.
+    // `window.__ladder.check()` reports the drift.
+    //
+    // MIND THE FLOOR. A tier-5 hitbox is 4.3x a dagger's radius, so one T5
+    // stands on as much ground as 18.8 daggers. Adding heavies without
+    // taking bodies away makes the map MORE crowded, not less.
+    // ==============================================================
     script: [
       // ---------- MEDIUM: waves 1-20, enemy level 0 ------------------
       { wave: { dagger: 24 } },

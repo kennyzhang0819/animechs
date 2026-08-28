@@ -240,9 +240,30 @@ export interface TechNodeDef {
  * currency EARLIER than intended unlocks a node into a wall, and charging it
  * LATER than intended opens content a difficulty early.
  *
- * DUO IS THE ONE EXEMPTION: copper-only, forever. A run that dies before the
- * first mace banks no titanium at all, and duo capacity has to stay buyable
- * out of that run or a bad save has no way back.
+ * DUO IS THE ONE EXEMPTION AT THE BOTTOM: copper-only, forever. A run that
+ * dies before the first mace banks no titanium at all, and duo capacity has
+ * to stay buyable out of that run or a bad save has no way back.
+ *
+ * THREE: THE SIX LATE NODES PAY NO COPPER AT ALL — fuse, swarmer, cyclone,
+ * spectre, meltdown and foreshadow. It is duo's rule read from the other
+ * end: copper is the bootstrap currency, and the endgame is where you have
+ * outgrown it.
+ *
+ * This is a SUBSTITUTION, NOT A DISCOUNT, and not a price rise either. Those
+ * six held 56% of the tree's entire copper bill — 10.1M of 17.9M — and the
+ * value came back as titanium, thorium, plastanium and phase on the same six
+ * nodes. What it buys is that the supply the waves pay and the demand the
+ * tree charges finally have the same SHAPE: every currency now maxes the
+ * whole tree in 385-391 Extreme runs, where before plastanium needed 8,736
+ * and phase could not be spent at all.
+ *
+ * It also had to happen for the ratio to move. The waves cut low-tier bodies
+ * for room on the map (TARGET_DROP_RATIO in ladder.ts), which cuts copper
+ * income hardest; leaving the copper bill where it was would have made
+ * copper the one gate on a tree whose top half no enemy pays for.
+ *
+ * The NINE early and mid nodes are untouched — copper and all. Everything a
+ * Medium run can reach is priced exactly as it was playtested.
  *
  * Keep the FIRST point of every node payable out of the difficulty whose
  * currency it debuts on, or that node is decoration.
@@ -346,7 +367,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // any at all. A Medium save can see this node and can never pay for it,
     // which is the same lock the old tier gate spelled out by hand
     tower: "fuse",
-    price: { base: { copper: 600, titanium: 275, thorium: 175, plastanium: 15 }, growth: 1.0594 },
+    price: { base: { titanium: 600, thorium: 490, plastanium: 170 }, growth: 1.0594 },
     requires: "salvo",
     x: 2,
     y: 5,
@@ -427,7 +448,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PLASTANIUM. Homing missiles — they chase what they lock, so overkill
     // costs less than it does on a straight-firing line
     tower: "swarmer",
-    price: { base: { copper: 350, titanium: 125, thorium: 55, plastanium: 3 }, growth: 1.0278 },
+    price: { base: { titanium: 270, thorium: 150, plastanium: 35 }, growth: 1.0278 },
     requires: "salvo",
     x: 0,
     y: 4,
@@ -436,7 +457,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PLASTANIUM. A flak wall. The reason to own it is volume of splash, which
     // is why its ceiling is the full 3x3 band
     tower: "cyclone",
-    price: { base: { copper: 450, titanium: 150, thorium: 70, plastanium: 4 }, growth: 1.0524 },
+    price: { base: { titanium: 330, thorium: 200, plastanium: 45 }, growth: 1.0524 },
     requires: "swarmer",
     x: 0,
     y: 5,
@@ -448,7 +469,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // and they light up the moment it ships — priced there rather than told
     // to wait there
     tower: "spectre",
-    price: { base: { copper: 900, titanium: 375, thorium: 225, plastanium: 23, "phase-fabric": 6 }, growth: 1.0671 },
+    price: { base: { titanium: 810, thorium: 630, plastanium: 270, "phase-fabric": 160 }, growth: 1.0671 },
     requires: "cyclone",
     x: 0,
     y: 6,
@@ -456,7 +477,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // PHASE FABRIC. A continuous beam that melts whatever it rests on
     tower: "meltdown",
-    price: { base: { copper: 1000, titanium: 425, thorium: 250, plastanium: 26, "phase-fabric": 7 }, growth: 1.0854 },
+    price: { base: { titanium: 920, thorium: 700, plastanium: 300, "phase-fabric": 180 }, growth: 1.0854 },
     requires: "lancer",
     x: 4,
     y: 4,
@@ -465,7 +486,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PHASE FABRIC. 500 range and one enormous shot — a sniper rather than a
     // defence, and the only turret that can hit a spawn pad from the core
     tower: "foreshadow",
-    price: { base: { copper: 1100, titanium: 450, thorium: 275, plastanium: 29, "phase-fabric": 8 }, growth: 1.0317 },
+    price: { base: { titanium: 980, thorium: 770, plastanium: 330, "phase-fabric": 210 }, growth: 1.0317 },
     requires: "meltdown",
     x: 4,
     y: 5,
