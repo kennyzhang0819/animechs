@@ -1842,15 +1842,60 @@ export class Sim {
         }
       }
 
+      // Units.bestTarget: the nearest thing in range this turret may shoot.
+      //
+      // Through the spatial hash, not the whole roster. A duo's 400px reach
+      // covers 2.6% of the map and a ripple's 8.4%, so a linear pass spent
+      // over ninety percent of itself measuring units it could never hit —
+      // and it paid that for every turret, every tick.
+      //
+      // Hitboxes need no allowance: hashCellOf files a unit by its CENTRE
+      // and the test below is on that same centre, so a unit whose centre
+      // is outside the box could not have won the linear scan either.
+      //
+      // MOVEMENT does, hence the ring of one bucket. The hash is built at
+      // the top of the tick and units move after it, so by the time a
+      // turret looks, one can be filed a bucket behind where it stands. A
+      // bucket is 57px against a worst-case step — full speed plus the
+      // hardest physics shove — of well under fifty, and without the ring a
+      // turret occasionally found NO target with one plainly in range.
+      //
+      // A stale INDEX is what the ring cannot cover: a unit leaving the
+      // field is swap-removed, moving another into its slot while the hash
+      // still files that slot under the departed one's bucket. Checked
+      // against the old scan running beside this one over 149,400
+      // selections: exact where nothing leaves, and 25 apart across a run
+      // that lost 2,220 units to the core — always another target in range,
+      // never none, and gone the next time the hash is rebuilt. That is the
+      // hash's standing contract, shared with every other query through it.
+      //
+      // The bounds are recomputed per tick rather than cached on the tower.
+      // Four divides against the thousands of distance tests they replace
+      // is not worth a field that could go stale.
+      const { bStart, bUnits, ukind, uhp } = this;
+      const hx0 = clamp((((t.x - st.range) / HC) | 0) - 1, 0, HCOLS - 1);
+      const hy0 = clamp((((t.y - st.range) / HC) | 0) - 1, 0, HROWS - 1);
+      const hx1 = clamp((((t.x + st.range) / HC) | 0) + 1, 0, HCOLS - 1);
+      const hy1 = clamp((((t.y + st.range) / HC) | 0) + 1, 0, HROWS - 1);
       let best = -1, bd = st.range * st.range;
-      for (let i = 0; i < this.n; i++) {
-        // air-only turrets ignore the ground swarm and vice versa
-        if (KIND_FLYING[this.ukind[i]] ? !st.targetAir : !st.targetGround) continue;
-        const dx = upx[i] - t.x, dy = upy[i] - t.y;
-        const d2 = dx * dx + dy * dy;
-        if (d2 < bd) {
-          bd = d2;
-          best = i;
+      for (let gy = hy0; gy <= hy1; gy++) {
+        for (let gx = hx0; gx <= hx1; gx++) {
+          const c = gy * HCOLS + gx, e = bStart[c + 1];
+          for (let k = bStart[c]; k < e; k++) {
+            const i = bUnits[k];
+            if (i >= this.n || uhp[i] <= 0) continue; // an entry outliving its unit
+            // air-only turrets ignore the ground swarm and vice versa
+            if (KIND_FLYING[ukind[i]] ? !st.targetAir : !st.targetGround) continue;
+            const dx = upx[i] - t.x, dy = upy[i] - t.y;
+            const d2 = dx * dx + dy * dy;
+            // buckets hand the units over in a different order than a walk
+            // up the roster did, so ties go to the lower index explicitly:
+            // two units stacked on one spot must still resolve as before
+            if (d2 < bd || (d2 === bd && best >= 0 && i < best)) {
+              bd = d2;
+              best = i;
+            }
+          }
         }
       }
       if (best < 0) continue;
