@@ -48,6 +48,7 @@ export const PAL = {
   thoriumAmmoBack: pal(0xf595be),
   thoriumPink: pal(0xf9a3c7),
   lancerLaser: pal(0xa9d8ff),
+  accent: pal(0xffd37f),
   missileYellow: pal(0xffd2ae),
   missileYellowBack: pal(0xe58956),
   blastAmmoFront: pal(0xeeab89),
@@ -1092,6 +1093,27 @@ export function bulletOf(kind: import("./types").TowerKind, frag: boolean): Bull
   const b = TOWERS[kind].bullet;
   return frag && b.frag ? b.frag.bullet : b;
 }
+
+/**
+ * Mindustry WaveSpawner.spawnEffect, 1:1: what a wave does to every unit it
+ * puts on the map, beyond placing it.
+ *
+ * StatusEffects.unmoving (speedMultiplier 0) for half a second and
+ * StatusEffects.invincible (healthMultiplier infinity) for a whole one. A
+ * unit therefore MATERIALISES where it lands rather than sliding out of the
+ * pad already walking — which is the entrance, and the reason Fx.unitSpawn
+ * has something to play over.
+ *
+ * `unmoving` is a speed multiplier and not a freeze: the crowd can still
+ * shove an arriving unit, it just cannot walk itself.
+ */
+export const SPAWN_INVINCIBLE = 60 / TICK;
+export const SPAWN_UNMOVING = 30 / TICK;
+/** Fx.unitSpawn's own 30 ticks, and Fx.spawn's — the second is run 30
+ *  ticks BEHIND the first (Time.run), so it lands exactly as the unit
+ *  stops being unmoving and takes its first step */
+export const FX_UNIT_SPAWN = 30 / TICK;
+export const FX_SPAWN = 30 / TICK;
 
 // StatusEffects.burning, 1:1: 0.167 damage per tick, and it pierces armor
 // (StatusEffect.update calls damageContinuousPierce) — but a shield still

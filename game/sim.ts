@@ -3,6 +3,10 @@ import {
   BURN_DPS,
   BURN_FX_CHANCE,
   bulletOf,
+  FX_SPAWN,
+  FX_UNIT_SPAWN,
+  SPAWN_INVINCIBLE,
+  SPAWN_UNMOVING,
   CELL,
   clamp,
   COLS,
@@ -350,6 +354,14 @@ export class Sim {
    */
   readonly upullx = new Float32Array(MAX_UNITS);
   readonly upully = new Float32Array(MAX_UNITS);
+  /**
+   * WaveSpawner.spawnEffect's two statuses, as one clock: seconds left of
+   * the arrival. It counts down from SPAWN_INVINCIBLE, and the unit is
+   * INVINCIBLE for all of it and UNMOVING for the first SPAWN_UNMOVING —
+   * so the boundary between the two is also the frame Fx.spawn fires on.
+   * Zero is a unit that has finished arriving, which is nearly all of them
+   */
+  readonly uspawn = new Float32Array(MAX_UNITS);
   /**
    * StatusEffects.burning: seconds of fire left. Reapplying resets it to
    * the full statusDuration rather than stacking, exactly like Mindustry's
@@ -1114,6 +1126,7 @@ export class Sim {
       this.uability[i] = 0;
       this.upullx[i] = 0;
       this.upully[i] = 0;
+      this.uspawn[i] = SPAWN_INVINCIBLE;
       this.uburn[i] = 0;
       this.uid[i] = this.nextId++;
       this.ukind[i] = UNIT_ID[kind];
@@ -1127,6 +1140,11 @@ export class Sim {
       this.ubrot[i] = a0;
       this.urot[i] = a0;
       if (stats.legs) this.resetLegs(i, stats.legs);
+      // Call.spawnEffect: the entrance, drawn in the arriving unit's own
+      // sprite and on the heading it will be drawn at. Fx.spawn is NOT
+      // fired here — Mindustry runs it 30 ticks behind, which updateStatus
+      // does when the unmoving half of the clock runs out
+      this.pushSpawnFx(x, y, a0, UNIT_ID[kind]);
       this.aliveByKind[UNIT_ID[kind]]++;
       return true;
     }
@@ -1236,8 +1254,19 @@ export class Sim {
    * burns to death can be swap-removed without skipping its neighbour.
    */
   private updateStatus(dt: number): void {
-    const { uburn, uhp, upx, upy, urad } = this;
+    const { uburn, uhp, upx, upy, urad, uspawn } = this;
     for (let i = this.n - 1; i >= 0; i--) {
+      // the arrival clock. Mindustry schedules Fx.spawn with Time.run(30),
+      // which lands on the frame `unmoving` expires — so the ring going up
+      // and the unit taking its first step are the same moment, and one
+      // threshold crossing does for both
+      if (uspawn[i] > 0) {
+        const was = uspawn[i];
+        uspawn[i] = Math.max(0, was - dt);
+        const walks = SPAWN_INVINCIBLE - SPAWN_UNMOVING;
+        if (was > walks && uspawn[i] <= walks)
+          this.pushFx(upx[i], upy[i], FX_SPAWN, FxKind.Spawn);
+      }
       if (uburn[i] <= 0) continue;
       uburn[i] -= dt;
       this.damageUnit(i, BURN_DPS * dt, true);
@@ -1298,6 +1327,7 @@ export class Sim {
     this.uability[i] = this.uability[n];
     this.upullx[i] = this.upullx[n];
     this.upully[i] = this.upully[n];
+    this.uspawn[i] = this.uspawn[n];
     this.uforceScale[i] = this.uforceScale[n];
     this.uforceDown[i] = this.uforceDown[n];
     this.uburn[i] = this.uburn[n];
@@ -1600,7 +1630,7 @@ export class Sim {
   private updateUnits(dt: number): void {
     const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, ulat, phx, phy, field, flowTmp } =
       this;
-    const { upullx, upully } = this;
+    const { upullx, upully, uspawn } = this;
     const steer = Math.min(1, dt * 8);
     // one step of the lateral bias's mean-reverting walk, precomputed: pull
     // LAT_A of the way back to straight-ahead, then add noise scaled so the
@@ -1636,8 +1666,14 @@ export class Sim {
       } else {
         field.sample(upx[i], upy[i], flowTmp);
       }
-      uvx[i] += (flowTmp.x * uspd[i] - uvx[i]) * steer;
-      uvy[i] += (flowTmp.y * uspd[i] - uvy[i]) * steer;
+      // StatusEffects.unmoving is a speedMultiplier of 0, not a freeze: a
+      // unit still materialising cannot drive itself anywhere, but the
+      // crowd shove below still lands on it. `spd` is that multiplier
+      // applied — the STAT speed stays in uspd, which the chassis turn rate
+      // further down reads as the pace to measure travel against
+      const spd = uspawn[i] > SPAWN_INVINCIBLE - SPAWN_UNMOVING ? 0 : uspd[i];
+      uvx[i] += (flowTmp.x * spd - uvx[i]) * steer;
+      uvy[i] += (flowTmp.y * spd - uvy[i]) * steer;
 
       // this tick's crowd shove, precomputed by updatePhysics: whatever the
       // pairwise resolution moved this unit's scratch position. Applied on
@@ -1665,7 +1701,7 @@ export class Sim {
         ulat[i] = clamp(ulat[i] + (Math.random() * 2 - 1) * LAT_N - ulat[i] * LAT_A, -1, 1);
         const room = clamp((cl - SPREAD_CLEAR) * LAT_ROOM_K, 0, 1);
         if (room > 0) {
-          const drift = ulat[i] * LAT_FRAC * uspd[i] * room;
+          const drift = ulat[i] * LAT_FRAC * spd * room;
           fx -= flowTmp.y * drift;
           fy += flowTmp.x * drift;
         }
@@ -1719,9 +1755,9 @@ export class Sim {
       // stat speed; the physics shove then rides on top uncapped
       let mvx = uvx[i] + fx, mvy = uvy[i] + fy;
       const ml = Math.hypot(mvx, mvy);
-      if (ml > uspd[i]) {
-        mvx = (mvx / ml) * uspd[i];
-        mvy = (mvy / ml) * uspd[i];
+      if (ml > spd) {
+        mvx = (mvx / ml) * spd;
+        mvy = (mvy / ml) * spd;
       }
       // an outside shove (a parallax beam) rides on top of the capped drive
       // like the crowd shove does, and bleeds off at the kind's own drag —
@@ -2669,6 +2705,10 @@ export class Sim {
    * the same beam is worth far less to a fortress than to a dagger.
    */
   private damageUnit(i: number, raw: number, pierceArmor = false, armorMult = 1): void {
+    // StatusEffects.invincible, healthMultiplier infinity: every hit lands
+    // on a unit still arriving for exactly nothing. It runs a full second,
+    // half of it after the unit has started walking
+    if (this.uspawn[i] > 0) return;
     let amount = pierceArmor ? raw : Sim.applyArmor(raw, this.uarmor[i] * armorMult);
     if (this.ushield[i] > 0.0001) {
       this.ushieldAlpha[i] = 1;
@@ -3035,6 +3075,20 @@ export class Sim {
     this.effects.push({
       x, y, age: 0, ttl: FX_LIFE[kind], kind, rot, len: 0,
       seed: (Math.random() * 0x7fffffff) | 0, sides: 0, col,
+    });
+  }
+
+  /**
+   * Fx.unitSpawn, via Call.spawnEffect. It takes its own push because it is
+   * the one effect that carries a UNIT (Mindustry's e.data): the entrance
+   * is drawn in the arriving unit's own sprite, so the renderer has to be
+   * told which one landed.
+   */
+  private pushSpawnFx(x: number, y: number, rot: number, unit: number): void {
+    if (this.effects.length >= FX_CAP) return;
+    this.effects.push({
+      x, y, age: 0, ttl: FX_UNIT_SPAWN, kind: FxKind.UnitSpawn,
+      rot, len: 0, seed: 0, sides: 0, unit,
     });
   }
 
