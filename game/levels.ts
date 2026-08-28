@@ -672,7 +672,7 @@ export interface LevelSpec {
    * must stay stable even when a world is renamed, or saves break
    */
   id: string;
-  /** the world's only display name, e.g. "The Foothills" */
+  /** the world's only display name, e.g. "The Three Gates" */
   name: string;
   /** official map id this level plays on; the first official map when unset */
   map?: string;
@@ -768,7 +768,7 @@ export function levelDoc(spec: LevelSpec): LevelDoc {
 export const WORLDS: LevelSpec[] = [
   {
     id: "1",
-    name: "The Foothills",
+    name: "The Three Gates",
     map: "grass-open",
     // slow enough that a wave is still walking in when the next gap starts,
     // so the field reads as one continuous swarm rather than a set of pushes

@@ -203,7 +203,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // splash scales with bodies per blast and collapses with health per
     // body, so one hail shell kills five daggers and chips a spiroct
     tower: "hail",
-    price: { base: { copper: 40, titanium: 8 }, growth: 1.0103 },
+    price: { base: { copper: 40, titanium: 9 }, growth: 1.0103 },
     requires: "scatter",
     x: 1,
     y: 2,
@@ -220,12 +220,17 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   },
   {
     // anti-air only, and UNGATED for the same reason hail and scorch are:
-    // flares debut at wave 8, inside difficulty 1, so a gate of any kind
-    // would lock the answer to air behind the run that first asks for it.
-    // The price gates it on its own — 120 copper / 20 titanium / 3 thorium
-    // is first affordable after wave 7, one wave before the flares
+    // flares debut inside difficulty 1, so a gate of any kind would lock the
+    // answer to air behind the run that first asks for it.
+    //
+    // COPPER AND TITANIUM ONLY, and that is the whole point. It used to want
+    // thorium, which comes from tier-3 kills and so does not flow until well
+    // into a Medium run — and since hail hangs off this node (Mindustry's own
+    // lineage: duo -> scatter -> hail), a thorium price here locked the cheap
+    // ground AoE behind the T3 waves too. Upstream builds scatter from copper
+    // and lead, a tier-1 cost; this is that, in our currencies
     tower: "scatter",
-    price: { base: { copper: 120, titanium: 25, thorium: 5 }, growth: 1.0327 },
+    price: { base: { copper: 120, titanium: 25 }, growth: 1.0327 },
     requires: "duo",
     x: 1,
     y: 1,
@@ -235,7 +240,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // back at its printed health instead of ten times it. The reward for
     // clearing Medium
     tower: "salvo",
-    price: { base: { copper: 250, titanium: 80, thorium: 25 }, growth: 1.0156 },
+    price: { base: { copper: 250, titanium: 85, thorium: 30 }, growth: 1.0156 },
     requires: "hail",
     requiresTier: 0,
     x: 1,
@@ -251,7 +256,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // difficulty: Extreme. A gate on the LAST difficulty would mean the
     // turret only ever unlocks after the campaign is already finished
     tower: "fuse",
-    price: { base: { copper: 600, titanium: 250, thorium: 150, plastanium: 15 }, growth: 1.0594 },
+    price: { base: { copper: 600, titanium: 275, thorium: 175, plastanium: 15 }, growth: 1.0594 },
     requires: "salvo",
     requiresTier: 1,
     x: 2,
@@ -265,7 +270,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // plain bullet taking one body. Measured on a file of ten daggers, one
     // bolt lands 217 of its theoretical 240
     tower: "arc",
-    price: { base: { copper: 50, titanium: 8 }, growth: 1.012 },
+    price: { base: { copper: 50, titanium: 9 }, growth: 1.012 },
     requires: "duo",
     x: 3,
     y: 1,
@@ -276,7 +281,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // into the bullet, and the beam visibly ends at the fourth thing it
     // hits, so counting five would be pricing a shot it cannot fire
     tower: "lancer",
-    price: { base: { copper: 200, titanium: 50, thorium: 15 }, growth: 1.0216 },
+    price: { base: { copper: 200, titanium: 55, thorium: 20 }, growth: 1.0216 },
     requires: "scorch",
     requiresTier: 0,
     x: 4,
@@ -288,7 +293,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // and like every artillery piece only the splash counts: the shell
     // arcs over its target rather than hitting it
     tower: "ripple",
-    price: { base: { copper: 300, titanium: 80, thorium: 20 }, growth: 1.0453 },
+    price: { base: { copper: 300, titanium: 85, thorium: 25 }, growth: 1.0453 },
     requires: "salvo",
     requiresTier: 0,
     x: 2,
@@ -310,7 +315,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // rather than fudged, because the rule is the rule and a second one
     // invented here would not be
     tower: "parallax",
-    price: { base: { copper: 220, titanium: 55, thorium: 15 }, growth: 1.0007 },
+    price: { base: { copper: 220, titanium: 60, thorium: 20 }, growth: 1.0007 },
     requires: "scorch",
     requiresTier: 0,
     x: 3,
