@@ -1,14 +1,23 @@
 import { UNIT_SPRITE } from "./constants";
 import type { UnitKind } from "./levels";
 
-// The sheet is 1024 wide. It began as a 1024 square and grew downward when
-// the roster outgrew it: every cell below keeps its original pixel
-// coordinates, so only the v axis rescaled, and each fresh 1024-tall band
-// is where the next batch of oversized art goes — y=1024 took the legged
-// crawlers and the flyers, y=2048 and y=3072 take the T4 line, which needs
-// two bands because every one of its parts rides a 256px cell.
-const ATLAS_W = 1024;
+// The sheet began as a 1024 square and grew as the roster outgrew it. Every
+// cell keeps its original PIXEL coordinates and every UV is derived from
+// them by uv() below, so a growth step only rescales an axis — no existing
+// cell moves. It grew downward first, one 1024-tall band at a time: y=1024
+// took the legged crawlers and the flyers, y=2048 and y=3072 the T4 line,
+// which needs two bands because every one of its parts rides a 256px cell.
+//
+// The T5 line grew it SIDEWAYS instead. Another downward band would have
+// made 6144 the sheet's longest side, and a WebGL2 context only has to
+// guarantee MAX_TEXTURE_SIZE 2048 — every device that runs the game today
+// already clears 4096, so widening keeps the longest side exactly where it
+// has been while opening a fresh 1024x4096 column at x=1024 for reign,
+// corvus, toxopid and eclipse.
+const ATLAS_W = 2048;
 const ATLAS_H = 4096;
+/** left edge of the T5 column — every cell below x=1024 predates it */
+const T5 = 1024;
 const TAU = Math.PI * 2;
 
 export type UVRect = readonly [number, number, number, number];
@@ -293,6 +302,65 @@ export const UV_ARKYID_MOUNT_SIL = uv(256, 3840, 256, 256);
 export const UV_ANTUMBRA = uv(512, 3840, 256, 256);
 
 /**
+ * THE T5 COLUMN (x=1024..2048). Four units, laid out top down: reign's
+ * mech parts on two 256px rows, then corvus's and toxopid's hulls, then
+ * one 128px row of the small legged parts they share the shape of, the
+ * bare leg-segment rects, and eclipse alone in a 384px cell.
+ *
+ * Cell sizes follow the same rule as every band before it — the cell is
+ * what sets the world scale, so a 256px cell draws at UNIT_SPRITE * 4 and
+ * keeps the sheet's constant 0.625 world px per native px. Nothing here is
+ * scaled to fit; the art sits at native size inside a cell chosen to clear
+ * the 4px mip-3 margin even after a silhouette's 3px dilation.
+ */
+export const UV_REIGN_BODY = uv(T5, 0, 256, 256);
+export const UV_REIGN_BODY_SIL = uv(T5 + 256, 0, 256, 256);
+export const UV_REIGN_BASE = uv(T5 + 512, 0, 256, 256);
+export const UV_REIGN_BASE_SIL = uv(T5 + 768, 0, 256, 256);
+export const UV_REIGN_LEG = uv(T5, 256, 256, 256);
+export const UV_REIGN_LEG_SIL = uv(T5 + 256, 256, 256, 256);
+export const UV_REIGN_WEAPON = uv(T5 + 512, 256, 256, 256);
+export const UV_REIGN_WEAPON_SIL = uv(T5 + 768, 256, 256, 256);
+
+export const UV_CORVUS_BODY = uv(T5, 512, 256, 256);
+export const UV_CORVUS_BODY_SIL = uv(T5 + 256, 512, 256, 256);
+export const UV_CORVUS_BASE = uv(T5 + 512, 512, 256, 256);
+export const UV_CORVUS_BASE_SIL = uv(T5 + 768, 512, 256, 256);
+
+export const UV_TOXOPID_BODY = uv(T5, 768, 256, 256);
+export const UV_TOXOPID_BODY_SIL = uv(T5 + 256, 768, 256, 256);
+export const UV_TOXOPID_CANNON = uv(T5 + 512, 768, 256, 256);
+export const UV_TOXOPID_CANNON_SIL = uv(T5 + 768, 768, 256, 256);
+
+// the small legged parts on one shared 128px row: corvus brings a knee cap
+// (jointRegion) as well as a shoulder plate, toxopid — like the arkyid —
+// brings only the plate and leaves its elbow as the bare segment overlap
+export const UV_CORVUS_JOINT = uv(T5, 1024, 128, 128);
+export const UV_CORVUS_JOINT_SIL = uv(T5 + 128, 1024, 128, 128);
+export const UV_CORVUS_JOINT_BASE = uv(T5 + 256, 1024, 128, 128);
+export const UV_CORVUS_JOINT_BASE_SIL = uv(T5 + 384, 1024, 128, 128);
+export const UV_CORVUS_FOOT = uv(T5 + 512, 1024, 128, 128);
+export const UV_CORVUS_FOOT_SIL = uv(T5 + 640, 1024, 128, 128);
+export const UV_TOXOPID_JOINT_BASE = uv(T5 + 768, 1024, 128, 128);
+export const UV_TOXOPID_JOINT_BASE_SIL = uv(T5 + 896, 1024, 128, 128);
+export const UV_TOXOPID_FOOT = uv(T5, 1152, 128, 128);
+export const UV_TOXOPID_FOOT_SIL = uv(T5 + 128, 1152, 128, 128);
+
+// leg SEGMENTS: the cell is the art's exact rect, because a segment is
+// stretched corner to corner between its endpoints rather than drawn into
+// a quad (see pushSeg). Their strokes are the rect's height — Mindustry's
+// Lines.stroke(legRegion.height) — so the cell may not carry any padding
+export const UV_CORVUS_LEG = uv(T5, 1312, 30, 68);
+export const UV_CORVUS_LEG_BASE = uv(T5 + 96, 1312, 30, 64);
+export const UV_TOXOPID_LEG = uv(T5 + 192, 1312, 150, 72);
+export const UV_TOXOPID_LEG_BASE = uv(T5 + 416, 1312, 270, 64);
+
+// eclipse: 320x321 of art, the largest single piece on the sheet, in the
+// only 384px cell there is. A 256 cell would have had to scale it down and
+// broken the constant native-px-to-world-px the whole atlas rests on
+export const UV_ECLIPSE = uv(T5, 1408, 384, 384);
+
+/**
  * The Medium and High turret tops, on the free band at y=2816. Each cell
  * hugs its art exactly, like every other turret top: the renderer maps the
  * whole cell onto a size*CELL quad, so a sprite parked inside a larger cell
@@ -385,22 +453,28 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   mace: { uv: UV_MACE_BODY, sprite: UNIT_SPRITE },
   fortress: { uv: UV_FORTRESS_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
   scepter: { uv: UV_SCEPTER_BODY, sprite: UNIT_SPRITE * 4 }, // 256px cell, same px scale
+  reign: { uv: UV_REIGN_BODY, sprite: UNIT_SPRITE * 4 },
   crawler: { uv: UV_CRAWLER_BODY, sprite: UNIT_SPRITE },
   // 128px cells, like the fortress: the legged pair's bodies outgrow 64
   atrax: { uv: UV_ATRAX_BODY, sprite: UNIT_SPRITE * 2 },
   spiroct: { uv: UV_SPIROCT_BODY, sprite: UNIT_SPRITE * 2 },
   arkyid: { uv: UV_ARKYID_BODY, sprite: UNIT_SPRITE * 4 }, // 256px cell, same px scale
+  toxopid: { uv: UV_TOXOPID_BODY, sprite: UNIT_SPRITE * 4 },
   nova: { uv: UV_NOVA_BODY, sprite: UNIT_SPRITE },
   pulsar: { uv: UV_PULSAR_BODY, sprite: UNIT_SPRITE },
   quasar: { uv: UV_QUASAR_BODY, sprite: UNIT_SPRITE * 2 }, // 128px cell, same px scale
   vela: { uv: UV_VELA_BODY, sprite: UNIT_SPRITE * 4 }, // 256px cell, same px scale
+  corvus: { uv: UV_CORVUS_BODY, sprite: UNIT_SPRITE * 4 },
   flare: { uv: UV_FLARE, sprite: UNIT_SPRITE }, // 48px art in a 64 cell, dagger scale
   // 128px cells: double the cell means double the sprite box, which keeps
   // world px per native px identical to every other unit
   horizon: { uv: UV_HORIZON, sprite: UNIT_SPRITE * 2 },
   zenith: { uv: UV_ZENITH, sprite: UNIT_SPRITE * 2 },
-  // 216x240 of art on a 5.75-block hitbox: the sheet's biggest single piece
   antumbra: { uv: UV_ANTUMBRA, sprite: UNIT_SPRITE * 4 },
+  // 320x321 on a 7.25-block hitbox: the sheet's biggest single piece, and
+  // the only 384px cell on it — hence the odd multiplier, which is just
+  // 384/64 like every other one here
+  eclipse: { uv: UV_ECLIPSE, sprite: UNIT_SPRITE * 6 },
 };
 
 // Mindustry world units → px (CELL / 8, see constants.ts)
@@ -541,6 +615,28 @@ export const MECH_ART: Partial<Record<UnitKind, MechArt>> = {
     sprite: UNIT_SPRITE * 4,
     sil: { leg: UV_VELA_LEG_SIL, base: UV_VELA_BASE_SIL, body: UV_VELA_BODY_SIL },
   },
+  /**
+   * The ground line's T5 — the same four-part mech as the scepter, one
+   * tier heavier. Weapon("reign-weapon") is top=false at x=21.5, y=1: the
+   * widest mount on the roster, slung under a chassis 30 world units
+   * across, so the pair sits almost clear of the hull's own outline.
+   *
+   * mechFrontSway 1.9 is nineteen times stock and the largest on any unit
+   * (the scepter's 1 was the previous high); mechSideSway 0.6 is barely
+   * over the 0.54 default. So it pitches nose-down hard over each step
+   * without rolling — a heavy lurch rather than the dagger's swagger.
+   */
+  reign: {
+    leg: UV_REIGN_LEG,
+    base: UV_REIGN_BASE,
+    body: UV_REIGN_BODY,
+    guns: [{ uv: UV_REIGN_WEAPON, sil: UV_REIGN_WEAPON_SIL, x: 21.5 * MU, y: 1 * MU, top: false }],
+    stride: (4 + (30 - 8) / 2.1) * MU,
+    frontSway: 1.9 * MU,
+    sideSway: 0.6 * MU,
+    sprite: UNIT_SPRITE * 4,
+    sil: { leg: UV_REIGN_LEG_SIL, base: UV_REIGN_BASE_SIL, body: UV_REIGN_BODY_SIL },
+  },
   // no gun sprite — its Weapon fires only via shootOnDeath. mechSideSway
   // 0.25 is under half the default: it scuttles rather than swaggers
   crawler: {
@@ -567,6 +663,14 @@ export interface LegGun {
   y: number;
   /** Weapon.top: false tucks the gun UNDER the body, like a mech's */
   top: boolean;
+  /**
+   * Weapon.mirror, true on nearly every stock weapon: the mount is drawn
+   * on BOTH sides of the hull, the far one from the same sprite flipped.
+   * false draws it once, and is what a single centered gun wants —
+   * toxopid's cannon sits at x=0, so mirroring it would stack two quads in
+   * the same place and double-composite the sprite's feathered rim.
+   */
+  mirror?: boolean;
 }
 
 /** part art for a legged (LegsUnit) ground unit — see LegSpec for its gait */
@@ -673,6 +777,81 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
       foot: UV_ARKYID_FOOT_SIL,
     },
   },
+  /**
+   * The crawler line's T5 — the arkyid's frame with two more legs and two
+   * and a half times the reach, and the only unit that carries BOTH gun
+   * kinds at once: the arkyid's large purple mount, mirrored to x=11,
+   * y=-5, and one toxopid-cannon dead on the centreline at y=-14. That
+   * cannon is Weapon.mirror=false, the roster's only unmirrored gun with a
+   * sprite, so it draws once rather than twice over itself.
+   *
+   * The mount cell is the arkyid's own UV_ARKYID_MOUNT: same sprite, same
+   * 256px cell, same world scale, so there is nothing to gain by packing a
+   * second copy. Like the arkyid it has no knee cap, only a shoulder plate.
+   */
+  toxopid: {
+    body: UV_TOXOPID_BODY,
+    baseJoint: UV_TOXOPID_JOINT_BASE,
+    foot: UV_TOXOPID_FOOT,
+    leg: UV_TOXOPID_LEG,
+    legBase: UV_TOXOPID_LEG_BASE,
+    legStroke: 72 * PX,
+    legBaseStroke: 64 * PX,
+    guns: [
+      { uv: UV_ARKYID_MOUNT, sil: UV_ARKYID_MOUNT_SIL, x: 11 * MU, y: -5 * MU, top: true },
+      {
+        uv: UV_TOXOPID_CANNON,
+        sil: UV_TOXOPID_CANNON_SIL,
+        x: 0,
+        y: -14 * MU,
+        top: true,
+        mirror: false,
+      },
+    ],
+    sprite: UNIT_SPRITE * 4,
+    small: UNIT_SPRITE * 2,
+    sil: {
+      body: UV_TOXOPID_BODY_SIL,
+      baseJoint: UV_TOXOPID_JOINT_BASE_SIL,
+      foot: UV_TOXOPID_FOOT_SIL,
+    },
+  },
+  /**
+   * The support line's T5, and the only legged unit on the roster wearing
+   * the full set of leg parts: a mount plate (baseRegion) like the atrax,
+   * a knee cap (jointRegion) like the atrax and spiroct, AND a shoulder
+   * plate (baseJointRegion) like the arkyid and toxopid.
+   *
+   * It carries no gun at all. Mindustry's Weapon("corvus-weapon") names a
+   * region the sprite set does not contain — only a -heat overlay exists —
+   * and Weapon.draw skips a region it cannot find, so the charged laser is
+   * painted into the hull, exactly as the vela's plasma cannon is.
+   *
+   * Four legs of 14 world units on mounts 11 out: almost the whole span is
+   * the mount offset, so the segments are stubby and very broad — a 68px
+   * stroke against a 30px segment, the widest leg-to-length ratio here.
+   */
+  corvus: {
+    body: UV_CORVUS_BODY,
+    base: UV_CORVUS_BASE,
+    joint: UV_CORVUS_JOINT,
+    baseJoint: UV_CORVUS_JOINT_BASE,
+    foot: UV_CORVUS_FOOT,
+    leg: UV_CORVUS_LEG,
+    legBase: UV_CORVUS_LEG_BASE,
+    legStroke: 68 * PX,
+    legBaseStroke: 64 * PX,
+    guns: [],
+    sprite: UNIT_SPRITE * 4,
+    small: UNIT_SPRITE * 2,
+    sil: {
+      body: UV_CORVUS_BODY_SIL,
+      base: UV_CORVUS_BASE_SIL,
+      joint: UV_CORVUS_JOINT_SIL,
+      baseJoint: UV_CORVUS_JOINT_BASE_SIL,
+      foot: UV_CORVUS_FOOT_SIL,
+    },
+  },
 };
 
 const ENV = "/mindustry/sprites/blocks/environment";
@@ -765,6 +944,24 @@ const SPRITES = {
   arkyidLegBase: "/mindustry/sprites/units/arkyid-leg-base.png",
   purpleMount: "/mindustry/sprites/units/weapons/large-purple-mount.png",
   antumbra: "/mindustry/sprites/units/antumbra.png",
+  reign: "/mindustry/sprites/units/reign.png",
+  reignBase: "/mindustry/sprites/units/reign-base.png",
+  reignLeg: "/mindustry/sprites/units/reign-leg.png",
+  reignWeapon: "/mindustry/sprites/units/weapons/reign-weapon.png",
+  corvus: "/mindustry/sprites/units/corvus.png",
+  corvusBase: "/mindustry/sprites/units/corvus-base.png",
+  corvusLeg: "/mindustry/sprites/units/corvus-leg.png",
+  corvusLegBase: "/mindustry/sprites/units/corvus-leg-base.png",
+  corvusJoint: "/mindustry/sprites/units/corvus-joint.png",
+  corvusJointBase: "/mindustry/sprites/units/corvus-joint-base.png",
+  corvusFoot: "/mindustry/sprites/units/corvus-foot.png",
+  toxopid: "/mindustry/sprites/units/toxopid.png",
+  toxopidLeg: "/mindustry/sprites/units/toxopid-leg.png",
+  toxopidLegBase: "/mindustry/sprites/units/toxopid-leg-base.png",
+  toxopidJointBase: "/mindustry/sprites/units/toxopid-joint-base.png",
+  toxopidFoot: "/mindustry/sprites/units/toxopid-foot.png",
+  toxopidCannon: "/mindustry/sprites/units/weapons/toxopid-cannon.png",
+  eclipse: "/mindustry/sprites/units/eclipse.png",
   spawnPad: `${ENV}/dark-panel-2.png`,
   towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
   towerBase1: "/mindustry/sprites/blocks/turrets/bases/block-1.png",
@@ -1207,6 +1404,68 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // the sheet, and it leaves only an 8px margin across its own cell
   drawFacingRight(
     c, antialiased(outlined(img.antumbra, UNIT_OUTLINE, UNIT_OUTLINE_R)), 640, 3968, 216, 240,
+  );
+
+  // ---- the T5 column (x=1024) ----
+  // reign: a mech like the scepter, so the same four parts on 256px cells.
+  // reign-weapon is Weapon(x=21.5, y=1, top=false) — a gun slung under
+  // each side of a chassis wide enough to carry it
+  drawFacingRight(c, antialiased(img.reign), T5 + 128, 128, 214, 140);
+  drawFacingRight(c, silhouetted(img.reign), T5 + 384, 128, 214, 140);
+  drawFacingRight(c, antialiased(img.reignBase), T5 + 640, 128, 152, 124);
+  drawFacingRight(c, silhouetted(img.reignBase), T5 + 896, 128, 152, 124);
+  drawFacingRight(c, antialiased(img.reignLeg), T5 + 128, 384, 152, 124);
+  drawFacingRight(c, silhouetted(img.reignLeg), T5 + 384, 384, 152, 124);
+  drawFacingRight(c, antialiased(img.reignWeapon), T5 + 640, 384, 83, 138);
+  drawFacingRight(c, silhouetted(img.reignWeapon), T5 + 896, 384, 83, 138);
+
+  // corvus: hull and the plate its four legs mount to. It has NO gun cell
+  // — Mindustry's Weapon("corvus-weapon") names a region that does not
+  // exist in the sprite set (only a -heat overlay does), and Weapon.draw
+  // skips a region it cannot find, so the charged laser you see in game is
+  // painted into the hull itself. Same as the vela one tier below it
+  drawFacingRight(c, antialiased(img.corvus), T5 + 128, 640, 214, 140);
+  drawFacingRight(c, silhouetted(img.corvus), T5 + 384, 640, 214, 140);
+  drawFacingRight(c, antialiased(img.corvusBase), T5 + 640, 640, 152, 124);
+  drawFacingRight(c, silhouetted(img.corvusBase), T5 + 896, 640, 152, 124);
+
+  // toxopid: hull and the one centered cannon (mirror=false, x=0, y=-14).
+  // Its other weapon is the large purple mount the arkyid already carries,
+  // packed once at UV_ARKYID_MOUNT and shared — both units draw their guns
+  // at the same 256px cell scale, so the cell is reusable as it stands
+  drawFacingRight(c, antialiased(img.toxopid), T5 + 128, 896, 160, 190);
+  drawFacingRight(c, silhouetted(img.toxopid), T5 + 384, 896, 160, 190);
+  drawFacingRight(c, antialiased(img.toxopidCannon), T5 + 640, 896, 206, 220);
+  drawFacingRight(c, silhouetted(img.toxopidCannon), T5 + 896, 896, 206, 220);
+
+  // the small legged parts. A JOINT is drawn with no rotation at all in
+  // Mindustry, so its cell is packed upright; a base joint turns with the
+  // unit and a foot turns with its leg, so both are packed facing +x
+  c.drawImage(antialiased(img.corvusJoint), T5 + 58, 1058, 60, 60);
+  c.drawImage(silhouetted(img.corvusJoint), T5 + 186, 1058, 60, 60);
+  drawFacingRight(c, antialiased(img.corvusJointBase), T5 + 320, 1088, 70);
+  drawFacingRight(c, silhouetted(img.corvusJointBase), T5 + 448, 1088, 70);
+  drawFacingRight(c, antialiased(img.corvusFoot), T5 + 576, 1088, 90);
+  drawFacingRight(c, silhouetted(img.corvusFoot), T5 + 704, 1088, 90);
+  drawFacingRight(c, antialiased(img.toxopidJointBase), T5 + 832, 1088, 70);
+  drawFacingRight(c, silhouetted(img.toxopidJointBase), T5 + 960, 1088, 70);
+  drawFacingRight(c, antialiased(img.toxopidFoot), T5 + 64, 1216, 90);
+  drawFacingRight(c, silhouetted(img.toxopidFoot), T5 + 192, 1216, 90);
+
+  // the four leg segments on the exact rects their UVs name. toxopid's
+  // lower segment is 270px of art for a 150px upper one: legExtension 20
+  // runs it back over its own knee, and the length it covers is the
+  // segment plus that overhang
+  c.drawImage(antialiased(img.corvusLeg), T5, 1312, 30, 68);
+  c.drawImage(antialiased(img.corvusLegBase), T5 + 96, 1312, 30, 64);
+  c.drawImage(antialiased(img.toxopidLeg), T5 + 192, 1312, 150, 72);
+  c.drawImage(antialiased(img.toxopidLegBase), T5 + 416, 1312, 270, 64);
+
+  // eclipse: one outlined quad like every flyer, at native size in the
+  // sheet's only 384px cell
+  drawFacingRight(
+    c, antialiased(outlined(img.eclipse, UNIT_OUTLINE, UNIT_OUTLINE_R)),
+    T5 + 192, 1600, 320, 321,
   );
 
   // crawler parts: art then silhouettes, one flush 64px run (see UV note)

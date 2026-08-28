@@ -206,6 +206,12 @@ const KIND_DRAG = Float32Array.from(UNIT_KINDS, (k) => UNIT_STATS[k].drag ?? 0.3
 const KIND_LEGS = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
 /** widest leg count on the roster: the stride of the per-leg arrays */
 export const MAX_LEGS = Math.max(1, ...KIND_LEGS.map((l) => l?.count ?? 0));
+// ulegMove packs one swing bit per leg into a Uint8Array, so eight legs is
+// the roster's ceiling — and the toxopid sits exactly on it. A ninth would
+// not fail anywhere: the bit would truncate silently, that leg would never
+// register a landing, and it would simply stop throwing dust. Widen
+// ulegMove to a Uint16Array if a unit ever needs more.
+if (MAX_LEGS > 8) throw new Error(`MAX_LEGS ${MAX_LEGS} > 8: widen Sim.ulegMove past Uint8Array`);
 const TAU = Math.PI * 2;
 
 /**
@@ -368,7 +374,8 @@ export class Sim {
   /** how far through its swing each leg is, 0..1 — the renderer lifts a
    * stepping foot by it, and it eases back to 0 when the unit stands still */
   readonly ulegStage = new Float32Array(MAX_UNITS * MAX_LEGS);
-  /** one bit per leg: is it mid-swing this frame? */
+  /** one bit per leg: is it mid-swing this frame? Eight bits is the whole
+   * budget — see the MAX_LEGS guard above */
   readonly ulegMove = new Uint8Array(MAX_UNITS);
   /** Mindustry LegsComp.totalLength: px walked, the gait's clock */
   readonly ulegT = new Float32Array(MAX_UNITS);

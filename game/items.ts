@@ -32,10 +32,10 @@ export type ItemKind = (typeof ITEM_KINDS)[number];
  * titanium, T3 thorium, T4 plastanium, T5 phase fabric. Add a tier-6 unit
  * and this table (plus ITEM_KINDS) is the only place that needs a new row.
  *
- * T5 has no units yet. That row is here so adding one is a stats edit
- * rather than an economy edit — which is what the T4 line turned out to
- * be: scepter, arkyid, vela and antumbra dropped in paying plastanium
- * without this file changing at all.
+ * Every row now has units behind it. Both of the last two lines landed as
+ * pure stats edits with this file untouched — scepter, arkyid, vela and
+ * antumbra started paying plastanium, then reign, toxopid, corvus and
+ * eclipse started paying phase fabric — which is what the split is for.
  */
 export const TIER_ITEM: readonly ItemKind[] = [
   "copper",

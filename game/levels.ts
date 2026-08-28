@@ -2,7 +2,7 @@ import { CELL, HP0, UNIT_SPEED, UR } from "./constants";
 import { itemForTier, type Cost } from "./items";
 import { explain, type SaveResult } from "./types";
 
-export const UNIT_KINDS = ["dagger", "mace", "fortress", "scepter", "crawler", "atrax", "spiroct", "arkyid", "flare", "nova", "pulsar", "quasar", "vela", "horizon", "zenith", "antumbra"] as const;
+export const UNIT_KINDS = ["dagger", "mace", "fortress", "scepter", "reign", "crawler", "atrax", "spiroct", "arkyid", "toxopid", "flare", "nova", "pulsar", "quasar", "vela", "corvus", "horizon", "zenith", "antumbra", "eclipse"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -12,18 +12,22 @@ export const UNIT_ID: Record<UnitKind, number> = {
   mace: 1,
   fortress: 2,
   scepter: 3,
-  crawler: 4,
-  atrax: 5,
-  spiroct: 6,
-  arkyid: 7,
-  flare: 8,
-  nova: 9,
-  pulsar: 10,
-  quasar: 11,
-  vela: 12,
-  horizon: 13,
-  zenith: 14,
-  antumbra: 15,
+  reign: 4,
+  crawler: 5,
+  atrax: 6,
+  spiroct: 7,
+  arkyid: 8,
+  toxopid: 9,
+  flare: 10,
+  nova: 11,
+  pulsar: 12,
+  quasar: 13,
+  vela: 14,
+  corvus: 15,
+  horizon: 16,
+  zenith: 17,
+  antumbra: 18,
+  eclipse: 19,
 };
 
 /** px per Mindustry world unit — leg geometry is written in those units */
@@ -143,10 +147,10 @@ export interface UnitStats {
   /** collision radius in world px — half the square hitbox edge */
   radius: number;
   /**
-   * Unit tier, 1-4 today. The tier alone decides WHICH currency a kill pays
-   * out — T1 drops copper, T2 titanium, T3 thorium, T4 plastanium (see
-   * items.ts) — so a level's enemy mix is what determines the resources a
-   * run banks.
+   * Unit tier, 1-5. The tier alone decides WHICH currency a kill pays out —
+   * T1 drops copper, T2 titanium, T3 thorium, T4 plastanium, T5 phase
+   * fabric (see items.ts) — so a level's enemy mix is what determines the
+   * resources a run banks.
    */
   tier: number;
   /**
@@ -211,8 +215,16 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // mace: 550 hp, armor 4, 1.25x1.25-block hitbox, 3.75 tiles/s
   mace: { hp: 550, speed: UNIT_SPEED, armor: 4, radius: UR * 1.25, tier: 2 },
   // fortress: 900 hp, armor 9, 1.625x1.625-block hitbox, 3.225 tiles/s
-  // (0.43 px/tick) — the T3 heavy walks noticeably slower than the line
-  fortress: { hp: 900, speed: 3.225 * CELL, armor: 9, radius: UR * 1.625, tier: 3 },
+  // (0.43 px/tick) — the T3 heavy walks noticeably slower than the line,
+  // and rotateSpeed 3 against the stock 5 makes it turn slower too
+  fortress: {
+    hp: 900,
+    speed: 3.225 * CELL,
+    armor: 9,
+    radius: UR * 1.625,
+    tier: 3,
+    rotateSpeed: 3,
+  },
   // scepter: the ground line's T4 — 9000 hp, armor 10, a 2.75x2.75-block
   // hitbox, 0.36 px/tick = 2.7 tiles/s. Ten fortresses' health on something
   // that walks slower than anything else on the roster, and rotateSpeed 2.1
@@ -230,6 +242,25 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 2.1,
     shieldField: { amount: 25, max: 250, reload: 1, range: 7.5 * CELL },
   },
+  // reign: the ground line's T5 and the heaviest thing in the game —
+  // 24000 hp, a 3.75x3.75-block hitbox, 0.4 px/tick = 3 tiles/s. Note it
+  // walks FASTER than the scepter it replaces (2.7), the second time the
+  // roster hands a tier an upgrade that is not also a slowdown
+  //
+  // armor 18 is the number that matters. Armour is a flat shave floored at
+  // a tenth of the raw shot (see Sim.applyArmor), so anything firing under
+  // 20 a hit is reduced to paying the floor: a duo's 9-damage bolt lands 0.9
+  // instead of 9, and a full duo wall does a tenth of its paper DPS. The
+  // counter is calibre, not volume — one lancer hit clears the shave twice
+  // over. No ability: at this weight it does not need one
+  reign: {
+    hp: 24000,
+    speed: 3 * CELL,
+    armor: 18,
+    radius: UR * 3.75,
+    tier: 5,
+    rotateSpeed: 1.65,
+  },
   // crawler: 150 hp, no armor, 1x1-block hitbox, 1 px/tick = 7.5 tiles/s —
   // twice the line's pace; the swarm closes distance before towers thin it
   crawler: { hp: 150, speed: 7.5 * CELL, armor: 0, radius: UR, tier: 1 },
@@ -238,6 +269,10 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // swarm, its successor plods: four legs carrying four times the health
   // legCount 4 / legLength 9 / legForwardScl 0.6 / legMoveSpace 1.4 — a
   // short reach and a wide gait, so it visibly hauls itself along
+  //
+  // immunities burning (and melting, which this game does not field): the
+  // slag-throwing unit does not burn. Scorch is the counter to the crawler
+  // swarm and slides straight off the thing the swarm upgrades INTO
   atrax: {
     hp: 600,
     speed: 4.5 * CELL,
@@ -245,6 +280,8 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     radius: UR * 1.625,
     tier: 2,
     drag: 0.4,
+    rotateSpeed: 3,
+    immunities: ["burning"],
     legs: legs({ count: 4, length: 9 * MU, forwardScl: 0.6, moveSpace: 1.4, elevation: 0.2 }),
   },
   // spiroct: the line's T3 — 1000 hp, armor 5, a 1.875x1.875-block hitbox,
@@ -257,6 +294,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     radius: UR * 1.875,
     tier: 3,
     drag: 0.4,
+    rotateSpeed: 3,
     legs: legs({
       count: 6,
       length: 13 * MU,
@@ -302,6 +340,45 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
       speed: 0.2,
       elevation: 0.65,
       ripple: 2,
+    }),
+  },
+  // toxopid: the crawler line's T5 — 22000 hp, armor 13, a 3.25x3.25-block
+  // hitbox, and 0.5 px/tick = 3.75 tiles/s, which is exactly the dagger's
+  // marching pace: the largest spider on the field keeps up with the line
+  // it walks in front of
+  //
+  // Its legs are the whole silhouette. Eight of them at 75 world units —
+  // two and a half times the arkyid's 30, the longest reach on the roster
+  // — on mounts only 8 units out, so the body sits low inside a span it
+  // straddles rather than stands on. legLengthScl 0.93 folds them a little
+  // further in than arkyid's 0.96, and shadowElevation 0.95 lifts a
+  // swinging foot almost a full body-height off the ground: the gait is
+  // visibly high-stepping where the arkyid's is a scuttle
+  //
+  // Like the arkyid it has no knee cap and takes a shoulder plate instead
+  // (legExtension 20 runs each lower segment back over its own joint), and
+  // like the arkyid its legSplashDamage 80 / legSplashRange 60 has nothing
+  // to hit here — towers cannot be damaged and the player fields no units
+  // — so what lands is rippleScale 3, half again the arkyid's dust
+  toxopid: {
+    hp: 22000,
+    speed: UNIT_SPEED,
+    armor: 13,
+    radius: UR * 3.25,
+    tier: 5,
+    drag: 0.1,
+    rotateSpeed: 1.9,
+    legs: legs({
+      count: 8,
+      length: 75 * MU,
+      moveSpace: 0.8,
+      pairOffset: 3 * MU,
+      extension: -20 * MU,
+      baseOffset: 8 * MU,
+      lengthScl: 0.93,
+      speed: 0.19,
+      elevation: 0.95,
+      ripple: 3,
     }),
   },
   // flare: 70 hp, no armor, 1.125-block hitbox, 2.7 px/tick = 20.25 tiles/s
@@ -368,11 +445,11 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // where its predecessor covers the ground around it, this one is simply
   // very hard to remove
   //
-  // immunities = burning: scorch's flame lights every other ground unit on
-  // the field and slides straight off this one. A flame wall that melts a
-  // dagger column is the wrong answer to a vela — its 9 armour already
-  // takes 17-damage flame hits down to 8, and the 0.167/tick burn that
-  // normally finishes the job never starts
+  // immunities = burning: scorch's flame slides off this one exactly as it
+  // does off the atrax, the roster's only other fireproof unit. A flame
+  // wall that melts a dagger column is the wrong answer here — 9 armour
+  // already takes 17-damage flame hits down to 8, and the 0.167/tick burn
+  // that normally finishes the job never starts
   //
   // Mindustry also gives it canBoost/boostMultiplier 2.4 — a hop over
   // terrain at more than double pace. That is a player's button: the wave
@@ -387,6 +464,38 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 1.8,
     immunities: ["burning"],
   },
+  // corvus: the support line's T5 — 18000 hp, armor 9, a 3.625x3.625-block
+  // hitbox, and 0.3 px/tick = 2.25 tiles/s, the slowest thing in the game.
+  // rotateSpeed 1.5 is likewise the slowest turn on the roster, under a
+  // third of stock: it arrives late and cannot answer a flank
+  //
+  // It is also the lightest of the four T5s, and the support line's tier
+  // where support stops. Mindustry's corvus heals through its WEAPON — a
+  // 560-damage charged laser with healPercent 25 and collidesTeam — not
+  // through an ability, and enemies in this game never shoot, so nothing
+  // of it survives the port. nova, pulsar and quasar all carry real
+  // abilities; their T4 and T5 carry none, which makes the top of the
+  // support line a pair of very large bodies and nothing more
+  //
+  // Four legs, not the six or eight the crawler line runs on, at 14 world
+  // units on mounts 11 out: nearly all of the leg is the mount offset, so
+  // it stands on stubby posts planted wide of a body that overhangs them
+  corvus: {
+    hp: 18000,
+    speed: 2.25 * CELL,
+    armor: 9,
+    radius: UR * 3.625,
+    tier: 5,
+    rotateSpeed: 1.5,
+    legs: legs({
+      count: 4,
+      length: 14 * MU,
+      forwardScl: 0.58,
+      moveSpace: 1.5,
+      baseOffset: 11 * MU,
+      elevation: 0.2,
+    }),
+  },
   // horizon: the T2 bomber — 340 hp, armor 3, 1.375x1.375-block hitbox,
   // 1.65 px/tick = 12.375 tiles/s. Slower than a flare but four times the
   // health, and armour 3 blunts the scatter flak that shreds the T1
@@ -397,6 +506,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     radius: UR * 1.375,
     tier: 2,
     drag: 0.03,
+    rotateSpeed: 4.5,
     flying: true,
   },
   // zenith: the T3 gunship — 700 hp, armor 5, a 2.5x2.5-block hitbox that
@@ -432,6 +542,29 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 1.9,
     flying: true,
   },
+  // eclipse: the air line's T5 — 22000 hp, armor 13, and a 7.25x7.25-block
+  // hitbox. That is the widest thing in the game by a clear margin (the
+  // antumbra, itself twice a zenith, is 5.75), and it is what the unit is
+  // for: nothing on the roster is harder to miss, and nothing soaks a
+  // splash pattern like a body that fills it
+  //
+  // The air line's whole premise is arriving before the guns can answer,
+  // and this is where that premise is abandoned. 0.54 px/tick = 4.05
+  // tiles/s is a fifth of the flare's 20.25 and two thirds of the
+  // antumbra's 6 — slower than most of the GROUND roster, so it crosses a
+  // field of scatter at walking pace. rotateSpeed 1 is the slowest turn of
+  // anything that moves here. Like every unit in its line it has no
+  // ability; unlike them it cannot outrun the mistake
+  eclipse: {
+    hp: 22000,
+    speed: 4.05 * CELL,
+    armor: 13,
+    radius: UR * 7.25,
+    tier: 5,
+    drag: 0.04,
+    rotateSpeed: 1,
+    flying: true,
+  },
 };
 
 /**
@@ -441,10 +574,10 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
  * a unit's position in a row is its tier.
  */
 export const UNIT_TREES = [
-  { name: "Ground", kinds: ["dagger", "mace", "fortress", "scepter"] },
-  { name: "Support", kinds: ["nova", "pulsar", "quasar", "vela"] },
-  { name: "Crawler", kinds: ["crawler", "atrax", "spiroct", "arkyid"] },
-  { name: "Air", kinds: ["flare", "horizon", "zenith", "antumbra"] },
+  { name: "Ground", kinds: ["dagger", "mace", "fortress", "scepter", "reign"] },
+  { name: "Support", kinds: ["nova", "pulsar", "quasar", "vela", "corvus"] },
+  { name: "Crawler", kinds: ["crawler", "atrax", "spiroct", "arkyid", "toxopid"] },
+  { name: "Air", kinds: ["flare", "horizon", "zenith", "antumbra", "eclipse"] },
 ] as const satisfies readonly { name: string; kinds: readonly UnitKind[] }[];
 
 /**

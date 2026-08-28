@@ -632,7 +632,8 @@ export class Renderer {
     const gunParts = (top: boolean): void => {
       for (const g of m.guns) {
         if (g.top !== top) continue;
-        for (let side = -1; side <= 1; side += 2) {
+        // an unmirrored mount is drawn once, on the +x side (see LegGun)
+        for (let side = g.mirror === false ? 1 : -1; side <= 1; side += 2) {
           parts.push([
             g.uv,
             g.sil,
@@ -755,7 +756,7 @@ export class Renderer {
       // sides (Weapon.mirror), the far one drawn from the same sprite
       // flipped, and Weapon.top decides which side of the body it lands on
       const gun = (g: LegGun): void => {
-        for (let side = -1; side <= 1; side += 2) {
+        for (let side = g.mirror === false ? 1 : -1; side <= 1; side += 2) {
           this.push(b, x + cr * g.y - sr * g.x * side, y + sr * g.y + cr * g.x * side,
             sz, sz * side, rot, painted ? g.uv : g.sil, tr, tg, tb, 1);
         }
