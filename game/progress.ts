@@ -1,5 +1,5 @@
 import { UNIT_KINDS, unitDrop } from "./levels";
-import { OPENING_DUOS, tierDropBonus, TOP_TIER } from "./ladder";
+import { OPENING_ARCS, OPENING_DUOS, tierDropBonus, TOP_TIER } from "./ladder";
 import {
   addScaled,
   canAfford,
@@ -55,12 +55,19 @@ const KEY = "dagger-problem.progress.v1";
  * wave 1 banks almost nothing. Past wave 1 the run pays for its own fleet.
  */
 const DUO_START = OPENING_DUOS;
+const ARC_START = OPENING_ARCS;
 
 /** every currency starts empty — kills are the only income, so the first
  * purchase of the campaign is paid for by the first waves the duos kill */
 const freshBank = (): Bank => emptyBank();
 
-const fresh = (): Progress => ({ bank: freshBank(), cleared: 0, tech: { duo: DUO_START } });
+const fresh = (): Progress => ({
+  bank: freshBank(),
+  cleared: 0,
+  // arc's tech node hangs off duo, and duo starts with points, so granting
+  // arc here does not leave an orphan the tree would refuse to draw
+  tech: { duo: DUO_START, arc: ARC_START },
+});
 
 /**
  * The currency scale before scrap was dropped off the bottom of it, in the
@@ -131,10 +138,13 @@ export function loadProgress(): Progress {
         if (typeof v === "number" && v > 0) tech[k] = Math.floor(v);
       }
     }
-    // duo can never legitimately sit below its free starting capacity —
+    // neither grant can legitimately sit below its free starting capacity —
     // this also migrates saves from before the per-turret point model, and
-    // any save written while the baseline was tuned to a smaller loadout
+    // any save written while the baseline was tuned to a smaller loadout.
+    // Points only ever go up (there is no selling a node), so a floor can
+    // never take anything from a player who has bought past it
     tech.duo = Math.max(tech.duo ?? 0, DUO_START);
+    tech.arc = Math.max(tech.arc ?? 0, ARC_START);
     return { bank: readBank(p), cleared: readCleared(p), tech };
   } catch {
     return fresh();

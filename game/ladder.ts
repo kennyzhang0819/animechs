@@ -354,6 +354,23 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
  */
 export const OPENING_DUOS = 50;
 
+/**
+ * ...and five arcs beside them, for a different reason than the duos.
+ *
+ * The duos exist so wave 1 is survivable. These exist so the first hour is
+ * not spent re-earning a lesson the player has already had: a duo line kills
+ * a crowd one body at a time, so the opening waves are a flat grind whose
+ * only lever is buying more duos. Arc chains its bolt through a file of
+ * ground units, so five of them are enough to feel the difference between
+ * single-target and area fire — which is the thing the tech tree is FOR, and
+ * it should be legible before a player has paid for it.
+ *
+ * FIVE, not fifty. It is a taste, not a fleet: air is untouched (arc is
+ * ground-only), and five bolts do not hold a wave on their own. It buys back
+ * a round or two of duo farming and no more.
+ */
+export const OPENING_ARCS = 5;
+
 // ---------- the debut rule ----------
 
 /**
