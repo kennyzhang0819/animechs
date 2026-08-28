@@ -6,6 +6,7 @@ import {
   type LevelSpec,
   type LevelStep,
   type UnitKind,
+  WAVE_RELEASE_SECONDS,
 } from "./levels";
 import { TOWERS } from "./constants";
 import { TECH_TREE, type TechNodeDef } from "./tech";
@@ -321,7 +322,9 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
       });
     }
   }
-  const duration = run.script.length * run.waveGap + units / run.spawnRate;
+  // every wave costs its gap plus the same fixed release window, so the
+  // run's length is its WAVE COUNT and no longer its unit count
+  const duration = run.script.length * (run.waveGap + WAVE_RELEASE_SECONDS);
   const share = (x: number): number => (hp > 0 ? x / hp : 0);
   return {
     waves: run.script.length,

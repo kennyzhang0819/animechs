@@ -19,8 +19,6 @@ export async function POST(req: Request): Promise<NextResponse> {
   const doc = (await req.json()) as Partial<LevelDoc>;
   if (typeof doc.id !== "string" || !WORLDS.some((w) => w.id === doc.id))
     return NextResponse.json({ error: "unknown level id" }, { status: 400 });
-  if (typeof doc.spawnRate !== "number" || !(doc.spawnRate > 0) || doc.spawnRate > 10000)
-    return NextResponse.json({ error: "bad spawn rate" }, { status: 400 });
   if (typeof doc.waveGap !== "number" || !(doc.waveGap >= 0) || doc.waveGap > 3600)
     return NextResponse.json({ error: "bad wave gap" }, { status: 400 });
   if (!Array.isArray(doc.script) || !doc.script.every(isStep))
@@ -31,7 +29,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   await writeFile(
     path.join(dir, `${doc.id}.json`),
     JSON.stringify(
-      { id: doc.id, spawnRate: doc.spawnRate, waveGap: doc.waveGap, script: doc.script },
+      { id: doc.id, waveGap: doc.waveGap, script: doc.script },
       null,
       1,
     ),

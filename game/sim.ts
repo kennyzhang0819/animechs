@@ -30,6 +30,7 @@ import {
   type LegSpec,
   type LevelSpec,
   type UnitKind,
+  waveSpawnRate,
 } from "./levels";
 import { unitHpAtLevel } from "./ladder";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
@@ -429,6 +430,13 @@ export class Sim {
   // entry runs out at the same moment (see nextWaveEntry), each spawning
   // only on its own region's pads (region 0 = any pad)
   private waveEntries: { region: number; kind: number; left: number; total: number }[] = [];
+  /**
+   * Enemies per second for the wave currently loaded — its OWN size over
+   * WAVE_RELEASE_SECONDS, cached at load. Cached rather than recomputed from
+   * `left` because a rate derived from what REMAINS would decay as the wave
+   * drains, stretching its tail out for as long again.
+   */
+  private waveRate = 0;
   private waitLeft = 0;
   private spawnAcc = 0;
   // "skip to wave N": while this is set, the script runs with no gaps and a
@@ -738,6 +746,7 @@ export class Sim {
    */
   private loadStep(): void {
     this.waveEntries.length = 0;
+    this.waveRate = 0;
     this.waitLeft = 0;
     const script = this.level.script;
     for (; this.stepIdx < script.length; this.stepIdx++) {
@@ -747,6 +756,9 @@ export class Sim {
           if (g.counts[kind] > 0)
             this.waveEntries.push({ region: g.region, kind, left: g.counts[kind], total: g.counts[kind] });
       if (this.waveEntries.length > 0) {
+        let total = 0;
+        for (const e of this.waveEntries) total += e.total;
+        this.waveRate = waveSpawnRate(total);
         this.wavesStarted++;
         // hold the gap, then let this wave drain — waitLeft gates runScript
         this.waitLeft = Math.max(0, this.level.waveGap);
@@ -787,9 +799,14 @@ export class Sim {
 
   /**
    * Run the level script: hold through the level's wave gap, otherwise drain
-   * the current wave at its spawn rate. A failed spawn (the drop zone is too
-   * crowded) leaves the unit in the wave and keeps its drain credit for a
-   * later frame, so a packed field delays a wave rather than swallowing it.
+   * the current wave at ITS OWN rate — the wave's size over the fixed
+   * WAVE_RELEASE_SECONDS, so every wave takes the same time to walk on.
+   *
+   * A failed spawn (the drop zone is too crowded) leaves the unit in the wave
+   * and keeps its drain credit for a later frame, so a packed field delays a
+   * wave rather than swallowing it. That is what makes the rate safe to scale
+   * with size: a wave big enough to outrun the pads simply queues behind
+   * them, and the field fills as fast as there is room for it.
    */
   private runScript(dt: number): void {
     if (this.waitLeft > 0) {
@@ -804,7 +821,7 @@ export class Sim {
     for (const e of this.waveEntries) left += e.left;
     if (left === 0) return;
 
-    const rate = this.level.spawnRate;
+    const rate = this.waveRate;
     this.spawnAcc = Math.min(this.spawnAcc + rate * dt, rate);
     // one region's crowded pads must not stall the other regions' share of
     // the wave — a failed entry sits out the rest of this frame while the

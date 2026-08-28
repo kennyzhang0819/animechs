@@ -676,8 +676,6 @@ export interface LevelSpec {
   name: string;
   /** official map id this level plays on; the first official map when unset */
   map?: string;
-  /** enemies entering the field per second — every wave drains at this rate */
-  spawnRate: number;
   /**
    * seconds held between waves, and before the first one. The clock starts
    * when the previous wave has finished ENTERING the field — the last unit
@@ -698,6 +696,43 @@ export interface LevelSpec {
 }
 
 /**
+ * HOW LONG A WAVE TAKES TO WALK ONTO THE FIELD, in seconds — the same for
+ * every wave, whatever its size.
+ *
+ * RELEASE PACE IS NOT A TUNABLE ANY MORE. It used to be `spawnRate`, a flat
+ * enemies-per-second on each level, and a flat rate makes a wave's release
+ * time proportional to its SIZE: the shipped script ran from 0.3s (wave 1's
+ * forty daggers, which arrived as a single dump) to 15.7s (wave 20's 2,506,
+ * which trickled). Two waves authored to feel different sizes instead felt
+ * like different GAMES, and the only way to fix one end was to break the
+ * other. The rate is now `count / WAVE_RELEASE_SECONDS`, so a wave's size
+ * decides how HARD it arrives and never how long it takes to show up.
+ *
+ * 3.5 SECONDS IS NOT A TASTE, IT IS THE OLD TOTAL. The shipped script holds
+ * 28,006 enemies across 50 waves, which at the authored 160/s took 175s of
+ * release; 50 waves x 3.5s is the same 175s. The campaign is exactly as long
+ * as it was and only the DISTRIBUTION moved — small waves stop dumping
+ * instantly, big ones stop dragging.
+ *
+ * FOR A BIG WAVE THIS NUMBER IS AN ASPIRATION, and that is by design. A
+ * failed spawn keeps its credit and goes as soon as a footprint frees up
+ * (see Sim.runScript), so congestion DELAYS a wave and never swallows one.
+ * The constant sets the pace where the map can keep up and gets out of the
+ * way where it cannot.
+ *
+ * Measured on The Three Gates, which has five drop zones: every wave up to
+ * about 230/s comes out in the full 3.5s, and wave 20 asks 716/s, gets 253/s
+ * and takes 9.9s to release all 2,506 — still quicker than the 15.7s the old
+ * flat 160/s gave it. So the ceiling a map imposes is a REAL limit worth
+ * knowing, and raising it is a matter of drop zones, not of this number.
+ */
+export const WAVE_RELEASE_SECONDS = 3.5;
+
+/** enemies per second for a wave of `count` — the whole pacing rule */
+export const waveSpawnRate = (count: number): number =>
+  Math.max(1, count) / WAVE_RELEASE_SECONDS;
+
+/**
  * The editable half of a level: everything the admin level editor writes.
  * Identity and presentation (name, map) stay in code — an editor that could
  * rename a world or move it to another map would be editing the campaign's
@@ -705,7 +740,6 @@ export interface LevelSpec {
  */
 export interface LevelDoc {
   id: string;
-  spawnRate: number;
   waveGap: number;
   script: LevelStep[];
 }
@@ -714,7 +748,6 @@ export interface LevelDoc {
 export function levelDoc(spec: LevelSpec): LevelDoc {
   return {
     id: spec.id,
-    spawnRate: spec.spawnRate,
     waveGap: spec.waveGap,
     script: spec.script,
   };
@@ -770,9 +803,6 @@ export const WORLDS: LevelSpec[] = [
     id: "1",
     name: "The Three Gates",
     map: "grass-open",
-    // slow enough that a wave is still walking in when the next gap starts,
-    // so the field reads as one continuous swarm rather than a set of pushes
-    spawnRate: 20,
     waveGap: 15,
     script: [
       // ---------- MEDIUM: waves 1-20, enemy level 0 ------------------
@@ -853,7 +883,7 @@ export function worldById(id: string): LevelSpec | null {
  *
  * Unlike maps, though, a level always exists in code first. WORLDS above is
  * the shipped campaign; a document, when one has been saved, REPLACES that
- * world's spawnRate and script wholesale. So the source of truth for an
+ * world's waveGap and script wholesale. So the source of truth for an
  * edited level is its JSON, and for an untouched one it is the array above —
  * never a merge of the two.
  *
@@ -921,8 +951,9 @@ async function fetchLevelIndex(): Promise<string[]> {
  */
 function readLevelDoc(id: string, raw: unknown): LevelDoc | null {
   if (!raw || typeof raw !== "object") return null;
+  // `spawnRate` is read off older documents and DISCARDED, not rejected —
+  // release pacing is no longer a per-level number (see WAVE_RELEASE_SECONDS)
   const d = raw as Partial<LevelDoc> & { script?: unknown };
-  if (typeof d.spawnRate !== "number" || !(d.spawnRate > 0)) return null;
   if (!Array.isArray(d.script)) return null;
 
   const waits: number[] = [];
@@ -943,7 +974,7 @@ function readLevelDoc(id: string, raw: unknown): LevelDoc | null {
 
   const waveGap =
     typeof d.waveGap === "number" && d.waveGap >= 0 ? d.waveGap : commonest(waits);
-  return { id, spawnRate: d.spawnRate, waveGap, script };
+  return { id, waveGap, script };
 }
 
 /** the most frequent value, ties going to the smaller; 10s if there are none */
@@ -958,7 +989,6 @@ function commonest(values: readonly number[]): number {
 export function applyLevelDoc(doc: LevelDoc): void {
   const world = WORLDS.find((w) => w.id === doc.id);
   if (!world) return;
-  world.spawnRate = doc.spawnRate;
   world.waveGap = doc.waveGap;
   world.script = doc.script;
 }
