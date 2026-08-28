@@ -1,11 +1,12 @@
 /**
  * Every Serpulo turret the campaign will ever field, in tech-tree order.
  *
- * The first six are IMPLEMENTED — real stats, real bullets, drawn on the
- * field. The rest are STUBS: they exist so the tech tree can show the whole
- * shape of the game, and their stats in constants.ts carry the true
- * Mindustry size/range/reload with placeholder bullets. None of them is in
- * the build menu yet, so nothing can place one.
+ * The first ten are IMPLEMENTED — real stats, real ammo, drawn on the
+ * field, and every one of them in the build menu. The last five are STUBS:
+ * they exist so the tech tree can show the whole shape of the game, and
+ * their stats in constants.ts carry the true Mindustry size/range/reload
+ * with a duo's bullet standing in. None of those is in the build menu, so
+ * nothing can place one.
  *
  * Three Serpulo turrets are deliberately absent. Wave and tsunami are
  * liquid turrets whose job is extinguishing fire, wetting units and healing
@@ -21,11 +22,11 @@ export const TOWER_KINDS = [
   "scatter",
   "fuse",
   "scorch",
-  // stubs — tree shape only
   "arc",
   "lancer",
   "ripple",
   "parallax",
+  // stubs — tree shape only
   "swarmer",
   "cyclone",
   "spectre",
@@ -79,26 +80,46 @@ export interface Projectile {
   // hit however many ticks it spends inside the hitbox. Unit IDS, not
   // indices — swap-remove reshuffles indices under us. null = no pierce
   pierced: number[] | null;
+  // Bullet.timer(0, ...), the rolling clock ArtilleryBulletType.update
+  // drops its trail puffs on. Left at 0 by everything else
+  trailT: number;
 }
 
 export const enum FxKind {
-  Hit = 0,
-  Death = 1,
-  Breach = 2,
-  Flak = 3,
-  Shrapnel = 4,
-  Heal = 5,
-  HealWave = 6,
-  ShieldWave = 7,
-  Flame = 8,
-  FlameHit = 9,
-  Burning = 10,
-  Absorb = 11,
-  ShieldBreak = 12,
-  Footfall = 13,
-  Lightning = 14,
-  Laser = 15,
+  Death = 0,
+  Breach = 1,
+  Shrapnel = 2,
+  Heal = 3,
+  HealWave = 4,
+  ShieldWave = 5,
+  Absorb = 6,
+  ShieldBreak = 7,
+  Footfall = 8,
+  Burning = 9,
+  Lightning = 10,
+  Laser = 11,
+  // ---- what a bullet fires, one member per Mindustry Fx entry ---------
+  Flame = 12, // Fx.shootSmallFlame
+  FlameHit = 13, // Fx.hitFlameSmall
+  Flak = 14, // Fx.flakExplosion
+  /** Fx.hitBulletColor — and Fx.hitBulletSmall, which is the same effect
+   *  with its ramp fixed to Pal.lightOrange, so one member covers both */
+  BulletHit = 15,
+  ShootSmall = 16, // Fx.shootSmall
+  ShootBig = 17, // Fx.shootBig
+  SmokeSmall = 18, // Fx.shootSmallSmoke
+  SmokeBig = 19, // Fx.shootBigSmoke
+  ArtilleryTrail = 20, // Fx.artilleryTrail
+  Shockwave = 21, // Fx.shockwaveSmaller
+  /** Fx.thoriumShoot and Fx.lightningShoot — again one shape, two colours */
+  SparkShoot = 22,
+  LancerShoot = 23, // Fx.lancerLaserShoot
+  LancerCharge = 24, // Fx.lancerLaserCharge over Fx.lancerLaserChargeBegin
+  HitLancer = 25, // Fx.hitLancer
 }
+
+/** an r,g,b triple in 0..1, the form every draw call wants */
+export type RGB = readonly [number, number, number];
 
 export interface Effect {
   x: number;
@@ -106,6 +127,13 @@ export interface Effect {
   age: number;
   ttl: number;
   kind: FxKind;
+  /**
+   * Effect.at(x, y, rotation, color)'s last argument. Mindustry hands a
+   * colour to any effect whose look is the AMMO's rather than its own —
+   * hitBulletColor ramps to it, artilleryTrail is drawn in it — and the
+   * effects that carry their own palette simply ignore it
+   */
+  col?: RGB;
   rot?: number; // Shrapnel: ray direction (rad); ShieldBreak: polygon roll;
   // Footfall: the unit's rippleScale, which is the slot Mindustry itself
   // passes it in (Fx.unitLandSmall reads e.rotation as its size)

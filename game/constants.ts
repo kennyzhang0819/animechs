@@ -1,3 +1,5 @@
+import { FxKind, type RGB } from "./types";
+
 export const COLS = 256;
 export const ROWS = 192;
 export const CELL = 20; // one Mindustry ground tile
@@ -23,6 +25,61 @@ export const UNIT_SPEED = 3.75 * CELL;
 // Stats copied from the official repo convert through these.
 const MU = CELL / 8; // px per Mindustry world unit
 const TICK = 60; // ticks per second
+
+const pal = (hex: number): RGB => [
+  ((hex >> 16) & 255) / 255,
+  ((hex >> 8) & 255) / 255,
+  (hex & 255) / 255,
+];
+/**
+ * mindustry/graphics/Pal.java, plus the two Arc greys its effects ramp
+ * through. An ammo type tints its shot AND every effect around that shot
+ * in a pair of these, so they belong with the stats rather than as
+ * literals scattered over the draw sites.
+ */
+export const PAL = {
+  bulletYellow: pal(0xfff8e8),
+  bulletYellowBack: pal(0xf9c27a),
+  copperAmmoFront: pal(0xeac1a8),
+  copperAmmoBack: pal(0xd39169),
+  graphiteAmmoFront: pal(0xdae1ee),
+  graphiteAmmoBack: pal(0x7d89d8),
+  thoriumAmmoFront: pal(0xffffff),
+  thoriumAmmoBack: pal(0xf595be),
+  thoriumPink: pal(0xf9a3c7),
+  lancerLaser: pal(0xa9d8ff),
+  lightOrange: pal(0xf68021),
+  lighterOrange: pal(0xf6e096),
+  white: pal(0xffffff),
+  lightGray: pal(0xbfbfbf), // Arc Color.lightGray
+  gray: pal(0x7f7f7f), // Arc Color.gray
+} as const;
+
+/**
+ * BasicBulletType.draw, 1:1. Mindustry lays a `-back` region and a shorter
+ * core region on the SAME rect, each tinted with its own ammo colour, so
+ * the longer back shows as a rim off the core's nose and tail. Both are
+ * packed uncropped — pack.json's ignoredWhitespaceStrings keeps everything
+ * under `effects/` at its full source rect — so `across` and `along` size
+ * the whole region, transparent border and all, exactly as Draw.rect does.
+ */
+export interface BulletSprite {
+  /** which pair of atlas regions: Mindustry's "bullet" or its "shell" */
+  region: "bullet" | "shell";
+  across: number; // BasicBulletType.width, px across the line of travel
+  along: number; // BasicBulletType.height, px along it
+  /** shrinkX/shrinkY: the fraction of each axis the shot gives up in flight */
+  shrinkX: number;
+  shrinkY: number;
+  /**
+   * shrinkInterp. Unset is Interp.linear — the shot tapers steadily as it
+   * goes. Artillery uses Mathf.slope, which peaks at half life, so a shell
+   * swells out of the barrel and draws back in again as it falls
+   */
+  slopeShrink?: boolean;
+  back: RGB; // BasicBulletType.backColor
+  front: RGB; // BasicBulletType.frontColor
+}
 
 export interface BulletStats {
   speed: number; // px/s
@@ -56,10 +113,6 @@ export interface BulletStats {
   // StatusEffects.burning, applied for this many seconds on every hit
   // (Mindustry statusDuration). Refreshing an already-burning unit resets it
   burn?: number;
-  // a bare BulletType with no sprite of its own (Mindustry's BulletType.draw
-  // only draws a trail and parts): the shot is invisible and its shoot and
-  // hit effects ARE the visual. This is how scorch's flame works
-  invisible?: boolean;
   // Mindustry LaserBulletType: an instant beam, not a projectile. Unlike a
   // `ray` it is capped — Damage.collideLaser stops at the pierceCap'th
   // victim and the DRAWN beam stops there too, so a laser that runs into a
@@ -94,7 +147,79 @@ export interface BulletStats {
   // roll in this range at spawn, which is what scatters a volley of
   // artillery along its firing line instead of stacking it on one point
   lifeScaleRand?: readonly [number, number];
+  // BasicBulletType.draw: the shot itself. A bullet with no sprite draws
+  // nothing at all — a laser, a bolt, a hitscan ray and scorch's flame
+  // each live entirely in their effects
+  sprite?: BulletSprite;
+  // ArtilleryBulletType.update: a puff dropped every (3 + fslope*2) * mult
+  // ticks at a radius of fslope * size, in the shell's own backColor. It is
+  // what makes a shell read as arcing rather than sliding along the ground
+  trail?: { size: number; mult: number };
+  // BulletType.shootEffect and smokeEffect, both fired where the shot
+  // leaves the barrel, along the angle it leaves on
+  shootFx?: BulletFx;
+  smokeFx?: BulletFx;
+  // BulletType.hitEffect, at the point of contact — and again where the
+  // shot dies, since BulletType.init gives every splash bullet despawnHit.
+  // hitFx2 is Mindustry's MultiEffect: ripple lays a shockwave over its blast
+  hitFx?: BulletFx;
+  hitFx2?: BulletFx;
+  // BulletType.despawnEffect, only where the shot runs out of lifetime
+  despawnFx?: BulletFx;
+  // BulletType.chargeEffect, fired at the muzzle the moment a volley with a
+  // firstShotDelay is queued — so it plays THROUGH the charge, not after it
+  chargeFx?: BulletFx;
+  // BulletType.hitColor, handed to every one of those. Unset is Color.white
+  fxColor?: RGB;
 }
+
+/**
+ * The effects a bullet can fire. Naming them as a union is what makes
+ * FX_LIFE below total: a kind cannot be put in a BulletStats field without
+ * a lifetime, and a lifetime cannot be forgotten when a kind is added.
+ */
+export type BulletFx =
+  | FxKind.Flame
+  | FxKind.FlameHit
+  | FxKind.Flak
+  | FxKind.BulletHit
+  | FxKind.ShootSmall
+  | FxKind.ShootBig
+  | FxKind.SmokeSmall
+  | FxKind.SmokeBig
+  | FxKind.ArtilleryTrail
+  | FxKind.Shockwave
+  | FxKind.SparkShoot
+  | FxKind.LancerShoot
+  | FxKind.LancerCharge
+  | FxKind.HitLancer;
+
+/**
+ * The Mindustry lifetime, in seconds, of each of those. An Effect carries
+ * its own duration in the original — the call site only says where and
+ * which — so it is looked up here rather than passed in.
+ */
+export const FX_LIFE: Record<BulletFx, number> = {
+  [FxKind.BulletHit]: 14 / TICK,
+  [FxKind.ShootSmall]: 8 / TICK,
+  [FxKind.ShootBig]: 9 / TICK,
+  [FxKind.SmokeSmall]: 20 / TICK,
+  [FxKind.SmokeBig]: 17 / TICK,
+  [FxKind.ArtilleryTrail]: 50 / TICK,
+  [FxKind.Shockwave]: 9 / TICK,
+  [FxKind.SparkShoot]: 12 / TICK,
+  [FxKind.LancerShoot]: 21 / TICK,
+  // MultiEffect(lancerLaserCharge 38, lancerLaserChargeBegin 60): the pair
+  // always fires together, so one entity draws both and the shorter of the
+  // two simply stops early. The longer lifetime is the entity's
+  [FxKind.LancerCharge]: 60 / TICK,
+  [FxKind.HitLancer]: 12 / TICK,
+  [FxKind.Flak]: 20 / TICK,
+  [FxKind.Flame]: 32 / TICK,
+  [FxKind.FlameHit]: 14 / TICK,
+};
+/** Fx.lancerLaserCharge's own 38 ticks, inside LancerCharge's 60 */
+export const LANCER_CHARGE_SPARK = 38 / 60;
 
 export interface TowerStats {
   name: string;
@@ -159,6 +284,20 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       splashRadius: 0,
       collidesAir: true,
       collidesGround: true,
+      sprite: {
+        region: "bullet",
+        across: 7 * MU,
+        along: 9 * MU,
+        shrinkX: 0,
+        shrinkY: 0.5, // BasicBulletType's default: half its length by the end
+        back: PAL.copperAmmoBack,
+        front: PAL.copperAmmoFront,
+      },
+      shootFx: FxKind.ShootSmall,
+      smokeFx: FxKind.SmokeSmall,
+      hitFx: FxKind.BulletHit,
+      despawnFx: FxKind.BulletHit,
+      fxColor: PAL.copperAmmoBack,
     },
   },
   // Hail, 1:1 from mindustry/content/Blocks.java with graphite ammo
@@ -187,6 +326,27 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       collidesAir: false,
       collidesGround: true,
       artillery: true,
+      sprite: {
+        region: "shell",
+        across: 11 * MU,
+        along: 11 * MU,
+        // ArtilleryBulletType's own defaults, and the reason a shell reads
+        // as leaving the ground: Mathf.slope peaks at half life, so it
+        // opens out of the barrel at half size and closes again on impact
+        shrinkX: 0.15,
+        shrinkY: 0.5,
+        slopeShrink: true,
+        back: PAL.graphiteAmmoBack,
+        front: PAL.graphiteAmmoFront,
+      },
+      trail: { size: 4 * MU, mult: 1 },
+      shootFx: FxKind.ShootBig,
+      smokeFx: FxKind.SmokeSmall,
+      // collides is false, so a shell only ever dies of old age — and
+      // despawnHit then fires BOTH of these on the same spot
+      hitFx: FxKind.Flak,
+      despawnFx: FxKind.BulletHit,
+      fxColor: PAL.graphiteAmmoBack,
     },
   },
   // Salvo, 1:1 from mindustry/content/Blocks.java with thorium ammo
@@ -213,6 +373,20 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       splashRadius: 0,
       collidesAir: true,
       collidesGround: true,
+      sprite: {
+        region: "bullet",
+        across: 8 * MU,
+        along: 13 * MU, // half again as long as duo's copper pellet
+        shrinkX: 0,
+        shrinkY: 0.5,
+        back: PAL.thoriumAmmoBack,
+        front: PAL.thoriumAmmoFront,
+      },
+      shootFx: FxKind.ShootBig,
+      smokeFx: FxKind.SmokeBig,
+      hitFx: FxKind.BulletHit,
+      despawnFx: FxKind.BulletHit,
+      fxColor: PAL.thoriumAmmoBack,
     },
   },
   // Scatter, 1:1 from mindustry/content/Blocks.java with lead ammo
@@ -245,6 +419,23 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
         explodeDelay: 5 / TICK,
         interval: 6 / TICK,
       },
+      sprite: {
+        region: "shell",
+        across: 6 * MU,
+        along: 8 * MU,
+        shrinkX: 0,
+        shrinkY: 0.5,
+        // lead ammo overrides no colour, so the shell keeps the stock pair
+        back: PAL.bulletYellowBack,
+        front: PAL.bulletYellow,
+      },
+      shootFx: FxKind.ShootSmall,
+      smokeFx: FxKind.SmokeSmall,
+      hitFx: FxKind.Flak,
+      // lead sets no despawnEffect either, so it keeps Fx.hitBulletSmall —
+      // which is hitBulletColor with its ramp fixed to Pal.lightOrange
+      despawnFx: FxKind.BulletHit,
+      fxColor: PAL.lightOrange,
     },
   },
   // Fuse, 1:1 from mindustry/content/Blocks.java with thorium ammo
@@ -274,6 +465,12 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       ray: {
         length: (90 + 10) * MU, // brange = range + 10
       },
+      // thorium ammo sets shootEffect = smokeEffect = Fx.thoriumShoot, so
+      // the muzzle throws the same spray of pink sparks twice over
+      shootFx: FxKind.SparkShoot,
+      smokeFx: FxKind.SparkShoot,
+      hitFx: FxKind.HitLancer, // ShrapnelBulletType's own
+      fxColor: PAL.thoriumPink,
     },
   },
   // Scorch, 1:1 from mindustry/content/Blocks.java with coal ammo
@@ -311,22 +508,17 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       pierce: true,
       hitRadius: (7 / 2) * MU, // hitSize 7
       burn: 4, // statusDuration 60 * 4
-      invisible: true,
+      // no `sprite`: a bare BulletType draws nothing but its trail and its
+      // parts, and coal ammo has neither. Fx.shootSmallFlame IS the weapon
+      shootFx: FxKind.Flame,
+      // coal overrides no smokeEffect, so the flame carries BulletType's
+      // stock puff along with it
+      smokeFx: FxKind.SmokeSmall,
+      hitFx: FxKind.FlameHit,
+      // despawnEffect = Fx.none: a flame tongue simply runs out
     },
   },
 
-  // ---------- STUBS ----------------------------------------------------
-  //
-  // The Extreme and Eradication turrets, present so the tech tree can show
-  // the whole shape of the game. SIZE, RANGE and RELOAD are the real
-  // Mindustry numbers (content/Blocks.java) because those are what the
-  // ceiling rule in tech.ts is solved from and they must not be guesses.
-  // EVERYTHING ELSE IS A PLACEHOLDER — the bullets below are a duo's, not
-  // each turret's own, and the aiming fields are defaults.
-  //
-  // None of these is in the build menu, so none can be placed. Implementing
-  // one means replacing its bullet block with the real ammo and adding it
-  // to TOWER_MENU; nothing else here has to change.
   // Arc, 1:1 from mindustry/content/Blocks.java (a PowerTurret, so its one
   // shootType is the whole armament): a LightningBulletType at 20 damage
   // and lightningLength 25. The bolt is not a shot — it walks twelve nodes
@@ -359,6 +551,12 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       // the node bullet is a plain BulletType, hitSize 4
       hitRadius: (4 / 2) * MU,
       lightning: { length: 25 },
+      // the turret names Fx.lightningShoot but leaves smokeEffect alone,
+      // so BulletType's stock puff comes along with the sparks
+      shootFx: FxKind.SparkShoot,
+      smokeFx: FxKind.SmokeSmall,
+      hitFx: FxKind.HitLancer, // every node's own bullet lands one
+      fxColor: PAL.lancerLaser,
     },
   },
   // Lancer, 1:1 from mindustry/content/Blocks.java: a LaserBulletType(140)
@@ -394,6 +592,12 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       collidesGround: true,
       armorMultiplier: 4,
       laser: { length: 173 * MU, pierceCap: 4, width: 15 * MU },
+      // the turret names Fx.lancerLaserShoot and sets smokeEffect to none:
+      // a lancer fires clean, with two blue wings and no powder at all
+      shootFx: FxKind.LancerShoot,
+      chargeFx: FxKind.LancerCharge,
+      hitFx: FxKind.HitLancer,
+      fxColor: PAL.lancerLaser,
     },
   },
   // Ripple, 1:1 from mindustry/content/Blocks.java with graphite ammo
@@ -428,6 +632,26 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       collidesGround: true,
       artillery: true,
       lifeScaleRand: [0.95, 1.08],
+      sprite: {
+        region: "shell",
+        across: 12 * MU,
+        along: 14 * MU, // longer than hail's, and not round
+        shrinkX: 0.15,
+        shrinkY: 0.5,
+        slopeShrink: true,
+        back: PAL.graphiteAmmoBack,
+        front: PAL.graphiteAmmoFront,
+      },
+      trail: { size: 4 * MU, mult: 1 },
+      shootFx: FxKind.ShootBig,
+      smokeFx: FxKind.SmokeSmall,
+      // MultiEffect(Fx.flakExplosion, Fx.shockwaveSmaller): the blast, and
+      // a white ring running out of it — what tells a ripple's landing
+      // apart from a hail's
+      hitFx: FxKind.Flak,
+      hitFx2: FxKind.Shockwave,
+      despawnFx: FxKind.BulletHit,
+      fxColor: PAL.graphiteAmmoBack,
     },
   },
   // Parallax, 1:1 from mindustry/content/Blocks.java. A TractorBeamTurret
@@ -466,6 +690,18 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       tractor: { force: 16, scaledForce: 9 },
     },
   },
+  // ---------- STUBS ----------------------------------------------------
+  //
+  // The Extreme and Eradication turrets, present so the tech tree can show
+  // the whole shape of the game. SIZE, RANGE and RELOAD are the real
+  // Mindustry numbers (content/Blocks.java) because those are what the
+  // ceiling rule in tech.ts is solved from and they must not be guesses.
+  // EVERYTHING ELSE IS A PLACEHOLDER — the bullets below are a duo's, not
+  // each turret's own, and the aiming fields are defaults.
+  //
+  // None of these is in the build menu, so none can be placed. Implementing
+  // one means replacing its bullet block with the real ammo and adding it
+  // to TOWER_MENU; nothing else here has to change.
   ...stubTurrets({
     // EXTREME — homing missiles that chase what they lock
     swarmer: { name: "Swarmer", size: 2, range: 240, reload: 60 * 4 / 7, shots: 4 },
@@ -525,6 +761,20 @@ function stubTurrets<K extends string>(specs: Record<K, StubSpec>): Record<K, To
         splashRadius: 0,
         collidesAir: s.air ?? true,
         collidesGround: s.ground ?? true,
+        sprite: {
+          region: "bullet",
+          across: 7 * MU,
+          along: 9 * MU,
+          shrinkX: 0,
+          shrinkY: 0.5,
+          back: PAL.copperAmmoBack,
+          front: PAL.copperAmmoFront,
+        },
+        shootFx: FxKind.ShootSmall,
+        smokeFx: FxKind.SmokeSmall,
+        hitFx: FxKind.BulletHit,
+        despawnFx: FxKind.BulletHit,
+        fxColor: PAL.copperAmmoBack,
       },
     };
   }
@@ -549,8 +799,8 @@ export const SHRAPNEL = {
   serrationWidth: 4 * MU,
   serrationSpaceOffset: 80 * MU,
   serrationFadeOffset: 0.5,
-  fromColor: [1, 1, 1] as const, // white
-  toColor: [0xf9 / 255, 0xa3 / 255, 0xc7 / 255] as const, // Pal.thoriumPink
+  fromColor: PAL.white,
+  toColor: PAL.thoriumPink,
 } as const;
 
 // the DEFAULT core: 5x5 core-nucleus of walkable goal cells. A map document

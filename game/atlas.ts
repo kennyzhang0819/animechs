@@ -13,7 +13,7 @@ import type { UnitKind } from "./levels";
 // guarantee MAX_TEXTURE_SIZE 2048 — every device that runs the game today
 // already clears 4096, so widening keeps the longest side exactly where it
 // has been while opening a fresh 1024x4096 column at x=1024 for reign,
-// corvus, toxopid and eclipse.
+// corvus, toxopid and eclipse — and, under them, the bullet regions.
 const ATLAS_W = 2048;
 const ATLAS_H = 4096;
 /** left edge of the T5 column — every cell below x=1024 predates it */
@@ -116,7 +116,6 @@ export const UV_SCORCH = uv(288, 1056, 64, 64);
 export const UV_DISC = uv(384, 1024, 64, 64);
 // mechanical spawn-pad tile — drawn only by the map editor's terrain pass
 export const UV_SPAWN = uv(0, 192, 64, 64, 2);
-export const UV_PROJ = uv(352, 288, 64, 64);
 export const UV_RING = uv(448, 0, 64, 64);
 // a plain opaque texel, for geometry the renderer strokes itself: Lines.circle
 // draws a constant-width ring, which a scaled ring SPRITE cannot do (its band
@@ -126,25 +125,22 @@ export const UV_RING = uv(448, 0, 64, 64);
 // empty-looking hole in there is still spoken for. Inset well past the mip-3
 // footprint so every sampled level stays pure white
 export const UV_SOLID = uv(224, 928, 32, 32, 8);
-export const UV_FLASH = uv(0, 64, 64, 64);
 // row 2: 128px cells — turret base, turret top, core
 export const UV_TOWER_BASE = uv(64, 128, 128, 128);
 export const UV_TURRET = uv(192, 128, 128, 128);
 export const UV_CORE = uv(320, 128, 160, 160);
-// row 4 (y=384): scatter turret top, flak shell
+// row 4 (y=384): scatter turret top
 export const UV_SCATTER = uv(0, 384, 128, 128);
-export const UV_SHELL = uv(128, 384, 64, 64);
 // fuse rides at native 96px (like block-3): stretching the 96px source to
 // a 128 cell was a 1.33x non-integer upscale that shredded its antialiasing
 export const UV_FUSE = uv(208, 400, 96, 96);
 export const UV_TOWER_BASE3 = uv(384, 384, 96, 96); // block-3 at native 96px
-// duo turret top and its 1x1 base, tucked under the shell and tri cells
+// duo turret top and its 1x1 base, tucked under the tri cell
 export const UV_DUO = uv(128, 448, 64, 64);
 export const UV_TOWER_BASE1 = uv(320, 448, 64, 64);
-// hail turret top and its graphite artillery shell, riding the gutter row
-// beside the flare (128px pitch, see the mech-part note)
+// hail turret top, riding the gutter row beside the flare (128px pitch,
+// see the mech-part note)
 export const UV_HAIL = uv(160, 704, 64, 64);
-export const UV_SHELL_GRAPHITE = uv(288, 704, 64, 64);
 // row at y=576: mech part cells — leg, chassis, body, gun per ground
 // kind, each source centered at native size in a 64px cell, facing +x.
 // Unit cells ride a 128px pitch so everything within a mip-3 texel (4px,
@@ -186,10 +182,10 @@ export const UV_FORTRESS_LEG_SIL = uv(512, 128, 128, 128);
 export const UV_FORTRESS_BASE_SIL = uv(640, 128, 128, 128);
 export const UV_FORTRESS_BODY_SIL = uv(768, 128, 128, 128);
 export const UV_ARTILLERY_SIL = uv(896, 128, 128, 128);
-// crawler parts: 64px cells flush-packed at y=288, right of the bullet
-// cell and a 32px gutter above the fortress art strip. The 48px sources
-// keep >=5px transparent margins even silhouette-dilated, so unlike the
-// full-bleed mace cells these don't need the 128px pitch
+// crawler parts: 64px cells flush-packed at y=288, a 32px gutter above the
+// fortress art strip. The 48px sources keep >=5px transparent margins even
+// silhouette-dilated, so unlike the full-bleed mace cells these don't need
+// the 128px pitch
 // the support line (nova T1, pulsar T2) rides the two free full-width rows
 // at y=512 and y=640, same 128px pitch as the mech strip above: art in the
 // left four cells, silhouettes in the right four. Every part clears the 4px
@@ -359,6 +355,33 @@ export const UV_TOXOPID_LEG_BASE = uv(T5 + 416, 1312, 270, 64);
 // only 384px cell there is. A 256 cell would have had to scale it down and
 // broken the constant native-px-to-world-px the whole atlas rests on
 export const UV_ECLIPSE = uv(T5, 1408, 384, 384);
+
+/**
+ * The two bullet regions, and the two shell regions, on the free band under
+ * eclipse. Every one is packed WHITE and at its exact source size, which is
+ * the only way BasicBulletType.draw comes out right.
+ *
+ * White, because an ammo type is a pair of colours over one pair of shapes:
+ * duo's copper pellet, salvo's thorium round and scatter's flak shell are
+ * the same two sprites tinted differently. Baking a colour in would need a
+ * cell per ammo and would still lose the two separate Draw.color passes.
+ *
+ * Exact size, because Draw.rect maps the WHOLE region onto the shot's
+ * width x height box, and pack.json exempts everything under `effects/`
+ * from whitespace stripping (ignoredWhitespaceStrings) — so the region
+ * Mindustry scales is the full 52x52 or 36x36 source, transparent border
+ * and all. A cell any larger than the source would draw the art small by
+ * exactly that ratio.
+ *
+ * The `-back` sprite is the longer of each pair: 40px of art in bullet's
+ * 52 against the core's 28, and 32 of shell's 36 against 20. Drawn into the
+ * same box it therefore sticks out fore and aft, which is the rim you see
+ * on every Mindustry shot. Both face +x, like all the other rotated art.
+ */
+export const UV_BULLET = uv(T5, 1792, 52, 52);
+export const UV_BULLET_BACK = uv(T5 + 64, 1792, 52, 52);
+export const UV_SHELL = uv(T5 + 128, 1792, 36, 36);
+export const UV_SHELL_BACK = uv(T5 + 176, 1792, 36, 36);
 
 /**
  * The Medium and High turret tops, on the free band at y=2816. Each cell
@@ -1540,29 +1563,14 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   drawFacingRight(c, antialiased(outlined(img.horizon, UNIT_OUTLINE, UNIT_OUTLINE_R)), 64, 1088, 72);
   drawFacingRight(c, antialiased(outlined(img.zenith, UNIT_OUTLINE, UNIT_OUTLINE_R)), 192, 1088, 112);
 
-  // official basic bullet at (352,288): back layer in Mindustry's bullet
-  // orange under a pale-yellow core, pre-rotated to face +x like the unit
-  const tinted = (src: HTMLImageElement | HTMLCanvasElement, color: string): HTMLCanvasElement => {
-    const t = document.createElement("canvas");
-    t.width = t.height = 64;
-    const tc = t.getContext("2d");
-    if (!tc) throw new Error("2d context unavailable");
-    tc.imageSmoothingEnabled = false;
-    tc.drawImage(src, 6, 6, 52, 52);
-    tc.globalCompositeOperation = "multiply";
-    tc.fillStyle = color;
-    tc.fillRect(0, 0, 64, 64);
-    tc.globalCompositeOperation = "destination-in";
-    tc.drawImage(src, 6, 6, 52, 52);
-    return t;
-  };
-  const bul = document.createElement("canvas");
-  bul.width = bul.height = 64;
-  const bc = bul.getContext("2d");
-  if (!bc) throw new Error("2d context unavailable");
-  bc.drawImage(tinted(antialiased(img.bulletBack), "#f68021"), 0, 0);
-  bc.drawImage(tinted(antialiased(img.bullet), "#fff5cc"), 0, 0);
-  drawFacingRight(c, bul, 384, 320, 64);
+  // the four bullet regions, white and at source size, facing +x. See the
+  // UV_BULLET note: the renderer lays the -back region under the core on
+  // one rect and tints each with the firing ammo's own colour, exactly as
+  // BasicBulletType.draw does
+  drawFacingRight(c, antialiased(img.bullet), T5 + 26, 1818, 52);
+  drawFacingRight(c, antialiased(img.bulletBack), T5 + 90, 1818, 52);
+  drawFacingRight(c, antialiased(img.shell), T5 + 146, 1810, 36);
+  drawFacingRight(c, antialiased(img.shellBack), T5 + 194, 1810, 36);
 
   // ring (448,0) — procedural
   c.strokeStyle = "#ffffff";
@@ -1582,13 +1590,6 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.arc(416, 1056, 27, 0, TAU);
   c.fill();
 
-  // flash (0,64) — procedural
-  const g = c.createRadialGradient(32, 96, 0, 32, 96, 18);
-  g.addColorStop(0, "#ffffff");
-  g.addColorStop(1, "rgba(255,255,255,0)");
-  c.fillStyle = g;
-  c.fillRect(0, 64, 64, 64);
-
   // turret base: 64px block-2 upscaled 2x into a 128px cell
   c.drawImage(antialiased(img.towerBase), 64, 128, 128, 128);
 
@@ -1598,27 +1599,6 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
 
   // scatter top, same treatment
   drawFacingRight(c, antialiased(outlined(img.scatterPreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 64, 448, 128);
-
-  // flak shell: Mindustry's "shell" region in the default lead-ammo colors
-  // (Pal.bulletYellowBack under Pal.bulletYellow), facing +x
-  const shell = document.createElement("canvas");
-  shell.width = shell.height = 64;
-  const shc = shell.getContext("2d");
-  if (!shc) throw new Error("2d context unavailable");
-  const shellBackAA = antialiased(img.shellBack), shellAA = antialiased(img.shell);
-  shc.drawImage(tinted(shellBackAA, "#f9c27a"), 0, 0);
-  shc.drawImage(tinted(shellAA, "#fff8e8"), 0, 0);
-  drawFacingRight(c, shell, 160, 416, 64);
-
-  // hail's artillery shell, same region in graphite ammo colors
-  // (Pal.graphiteAmmoBack under Pal.graphiteAmmoFront)
-  const gshell = document.createElement("canvas");
-  gshell.width = gshell.height = 64;
-  const gsc = gshell.getContext("2d");
-  if (!gsc) throw new Error("2d context unavailable");
-  gsc.drawImage(tinted(shellBackAA, "#7d89d8"), 0, 0);
-  gsc.drawImage(tinted(shellAA, "#dae1ee"), 0, 0);
-  drawFacingRight(c, gshell, 320, 736, 64);
 
   // hail top: the bare turret head (no preview exists — the renderer draws
   // the block-1 base underneath anyway), 32px source upscaled 2x
