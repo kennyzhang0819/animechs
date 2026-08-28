@@ -44,11 +44,16 @@ export default function TechTree({
   progress,
   onChanged,
   onBack,
+  backLabel = "◂ Levels",
 }: {
   progress: Progress;
   /** a point was bought — the caller re-reads the save */
   onChanged: () => void;
   onBack: () => void;
+  /** where leaving goes, in words. The tree is reachable from the menu AND
+   * from a lost run, and those are different exits — one returns to the
+   * level list, the other starts the run again with what was just bought */
+  backLabel?: string;
 }) {
   const [step, setStep] = useState<BuyStep>(1);
 
@@ -64,7 +69,7 @@ export default function TechTree({
             onClick={onBack}
             className="rounded border border-[#2E2E36] px-3 py-1.5 text-[13px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
           >
-            ◂ Levels
+            {backLabel}
           </button>
           <h1 className="text-2xl font-bold uppercase tracking-[0.25em] text-[#EDEDEF]">
             Upgrades

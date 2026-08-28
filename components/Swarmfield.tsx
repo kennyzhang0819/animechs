@@ -440,6 +440,13 @@ export default function Swarmfield() {
   // for testing a late wave, not part of playing the level
   const [skipOpen, setSkipOpen] = useState(false);
   const granted = useRef(false);
+  /**
+   * Where the tech tree was opened FROM. A loss is the moment the tree is
+   * most worth reading — the run just banked everything its towers killed on
+   * the way down — so the defeat panel offers it, and leaving from there has
+   * to come back to the run rather than dump the player on the level list.
+   */
+  const [techFrom, setTechFrom] = useState<"menu" | "game">("menu");
 
   useEffect(() => {
     const p = loadProgress();
@@ -600,6 +607,24 @@ export default function Swarmfield() {
     setScreen("menu");
   };
 
+  /**
+   * Leave the tech tree. From the menu that is just the level list; from a
+   * lost run it restarts the run — the screen switch tears the Game down and
+   * rebuilds it, and Game.create reads the save, so whatever was just bought
+   * is already fielded. The grant latch has to be cleared or the new run
+   * would end without paying out.
+   */
+  const leaveTech = (): void => {
+    if (techFrom !== "game") {
+      setScreen("menu");
+      return;
+    }
+    granted.current = false;
+    setResult(null);
+    setProgress(loadProgress());
+    setScreen("game");
+  };
+
   const retry = (): void => {
     const g = gameRef.current;
     if (!g) return;
@@ -625,7 +650,8 @@ export default function Swarmfield() {
       <TechTree
         progress={progress}
         onChanged={() => setProgress(loadProgress())}
-        onBack={() => setScreen("menu")}
+        onBack={leaveTech}
+        backLabel={techFrom === "game" ? "◂ Restart run" : undefined}
       />
     );
   }
@@ -646,7 +672,10 @@ export default function Swarmfield() {
                 <Wallet bank={progress.bank} />
               </span>
               <button
-                onClick={() => setScreen("tech")}
+                onClick={() => {
+                  setTechFrom("menu");
+                  setScreen("tech");
+                }}
                 className="rounded border border-[#FFD37F] bg-[#222227]/90 px-4 py-2 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
               >
                 Upgrades
@@ -916,10 +945,23 @@ export default function Swarmfield() {
                   </div>
                 )}
               </div>
-              <div className="mt-6 flex justify-center gap-3">
+              <div className="mt-6 space-y-3">
+                {/* the salvage above is spendable RIGHT NOW, and spending it
+                    is the only thing that changes the next attempt — so the
+                    tree leads, and a plain retry sits under it */}
+                <button
+                  onClick={() => {
+                    setTechFrom("game");
+                    setScreen("tech");
+                  }}
+                  className="w-full rounded border border-[#FFD37F] bg-[#222227]/90 px-5 py-2 text-base font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                >
+                  Upgrades
+                </button>
+                <div className="flex justify-center gap-3">
                 <button
                   onClick={retry}
-                  className="rounded border border-[#FFD37F] bg-[#222227]/90 px-5 py-2 text-base font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                  className="rounded border border-[#2E2E36] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:bg-[#222227]/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
                 >
                   Retry
                 </button>
@@ -929,6 +971,7 @@ export default function Swarmfield() {
                 >
                   Levels
                 </button>
+                </div>
               </div>
             </div>
           </div>
