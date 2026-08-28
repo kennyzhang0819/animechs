@@ -1204,6 +1204,13 @@ export class Renderer {
           this.strokeLine(dyn, e.x + x, e.y + y, bearing, bar, (1 - t) * 2 * MU,
             PAL.meltdownHit, 1);
         });
+      } else if (e.kind === FxKind.UnitSpawn) {
+        this.drawUnitSpawn(dyn, e, t);
+      } else if (e.kind === FxKind.Spawn) {
+        // Fx.spawn: an accent square snapping out where a unit finished
+        // arriving — vertices on the axes, like Arc's Lines.poly at zero
+        this.strokePoly(dyn, e.x, e.y, 4, (5 + t * 12) * MU, 0,
+          2 * (1 - t) * MU, PAL.accent, RING_ALPHA);
       } else if (e.kind === FxKind.SmokeBig2) {
         // Fx.shootBigSmoke2: shootBigSmoke's cloud, but nine motes over
         // 23 units instead of eight over 19 — meltdown lights up wide
@@ -2147,6 +2154,37 @@ export class Renderer {
       this.flameFront(dyn, t.beamOX, t.beamOY, rot + Math.PI, CL_BACK, stroke / 2, col, ca);
       this.flameFront(dyn, bx, by, rot, CL_FRONT * lenScl, stroke / 2, col, ca);
     }
+  }
+
+  /**
+   * Fx.unitSpawn, 1:1 in shape: a unit's entrance, drawn in the unit's OWN
+   * sprite. Two copies of it on the same spot —
+   *
+   *   - one at normal size and a fixed half turn from the atlas facing,
+   *     fading OUT: the husk the unit arrives out of;
+   *   - one starting at THREE times size and shrinking onto the unit's
+   *     real footprint, fading IN, on the heading it will be drawn at.
+   *
+   * ONE THING IS NOT REPRODUCED, and it is the mixcol: Mindustry lerps the
+   * fading copy toward white as it goes, and this pipeline's tint is a
+   * MULTIPLY (`texture * tint` in the fragment shader), which can darken a
+   * sprite but can never brighten one toward white. Every other effect on
+   * the sheet is geometry drawn on a white texel, where a tint IS the
+   * colour; this is the only one that tints real art, and it is the only
+   * place the difference shows.
+   */
+  private drawUnitSpawn(dyn: Batch, e: Effect, t: number): void {
+    const k = e.unit ?? 0;
+    const uv = KIND_UV[k];
+    if (!uv) return;
+    const size = KIND_SPRITE[k];
+    const fout = 1 - t;
+    // the husk: normal size, a fixed half turn (Mindustry's literal 180 in
+    // its own draw space), fading out
+    this.push(dyn, e.x, e.y, size, size, Math.PI, uv, 1, 1, 1, fout);
+    // and the unit itself, closing from 3x onto its own size
+    const s = size * (1 + fout * 2);
+    this.push(dyn, e.x, e.y, s, s, e.rot ?? 0, uv, 1, 1, 1, t);
   }
 
   /**

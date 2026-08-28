@@ -141,6 +141,15 @@ export const enum FxKind {
   SmokeCloud = 33, // Fx.smokeCloud
   HitMeltdown = 34, // Fx.hitMeltdown
   SmokeBig2 = 35, // Fx.shootBigSmoke2 — meltdown's, wider than shootBigSmoke
+  /** Fx.unitSpawn: the entrance. Two copies of the arriving unit's OWN
+   *  sprite — one shrinking onto it out of nothing, one counter-rotated
+   *  underneath fading away. WaveSpawner.spawnEffect fires it on every
+   *  unit a wave puts on the map */
+  UnitSpawn = 36,
+  /** Fx.spawn: the accent square that snaps out where a unit finished
+   *  arriving. Mindustry runs it 30 ticks BEHIND unitSpawn, which is
+   *  exactly when the unit stops being unmoving and walks */
+  Spawn = 37,
 }
 
 /** an r,g,b triple in 0..1, the form every draw call wants */
@@ -168,6 +177,9 @@ export interface Effect {
    * the very Seq<Vec2> the walk built, and the effect just strokes it */
   pts?: readonly number[];
   sides?: number; // ShieldBreak: sides of the force field that just popped
+  /** Effect.data. Only unitSpawn carries one: the UnitKind id whose sprite
+   *  the effect draws, since the entrance IS the unit's own art */
+  unit?: number;
   // Mindustry seeds Mathf.rand with the effect's entity id and replays the
   // same sequence every frame, so a particle keeps its own direction while
   // its distance grows. Effects with scattered particles carry that seed
