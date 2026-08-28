@@ -182,7 +182,7 @@ function TierPicker({
   const step = (d: number): void => onTier(Math.min(top, Math.max(0, tier + d)));
 
   return (
-    <div className="w-[22rem] rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-4">
+    <div className="w-full max-w-[22rem] rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-4">
       {mapsReady && <LevelThumb mapId={spec.map ?? OFFICIAL_MAP_IDS[0]} />}
       <div className="mt-3 flex items-baseline justify-between">
         <span className="text-lg font-bold text-[#EDEDEF]">{spec.name}</span>
@@ -308,7 +308,19 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
 
 /** the two wave buttons in the HUD, sized to be hit without aiming */
 const WAVE_BTN =
-  "flex h-8 w-8 shrink-0 items-center justify-center rounded border border-[#2E2E36] text-[#FFD37F] hover:border-[#FFD37F] hover:bg-[#222227]/90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
+  "flex h-9 w-9 shrink-0 items-center justify-center rounded border border-[#2E2E36] text-[#FFD37F] hover:border-[#FFD37F] hover:bg-[#222227]/90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
+
+/**
+ * Pause and the game menu, as buttons. Both already have a key — space and
+ * esc — and a touchscreen has neither, so the same two live in the corner of
+ * the field at a size a thumb can hit (44px is the platform minimum).
+ */
+const ICON_BTN =
+  "flex h-11 w-11 items-center justify-center rounded border bg-[#151518]/70 backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
+
+/** every button in the bottom bar: the turrets and the demolish tool */
+const TOOL_BTN =
+  "flex h-[4.5rem] w-14 shrink-0 flex-col items-center justify-center gap-0.5 rounded border backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
 
 
 export default function Swarmfield() {
@@ -523,6 +535,32 @@ export default function Swarmfield() {
     setHud(g.ui());
   };
 
+  /**
+   * The demolish tool. On a mouse it doubles the right button; on a
+   * touchscreen it is the only way to sell at all, so it is a mode picked
+   * from the bar rather than a modifier held down.
+   */
+  const toggleSell = (): void => {
+    const g = gameRef.current;
+    if (!g) return;
+    g.setSellMode(!hud?.sellMode);
+    setHud(g.ui());
+  };
+
+  const togglePause = (): void => {
+    const g = gameRef.current;
+    if (!g) return;
+    g.togglePause();
+    setHud(g.ui());
+  };
+
+  const openMenu = (): void => {
+    const g = gameRef.current;
+    if (!g) return;
+    g.openMenu();
+    setHud(g.ui());
+  };
+
   const backToMenu = (): void => {
     granted.current = false;
     setResult(null);
@@ -587,9 +625,9 @@ export default function Swarmfield() {
   if (screen !== "game" || !level) {
     return (
       <div className="fixed inset-0 overflow-y-auto bg-[#101013]">
-        <div className="mx-auto flex min-h-full max-w-5xl flex-col items-center justify-center gap-8 px-6 py-16">
+        <div className="mx-auto flex min-h-full max-w-5xl flex-col items-center justify-center gap-8 py-12 pl-[max(1.5rem,var(--safe-l))] pr-[max(1.5rem,var(--safe-r))] sm:py-16">
           <div className="text-center">
-            <h1 className="text-4xl font-bold uppercase tracking-[0.35em] text-[#EDEDEF]">
+            <h1 className="text-3xl font-bold uppercase tracking-[0.2em] text-[#EDEDEF] sm:text-4xl sm:tracking-[0.35em]">
               Sir, We Have a<br />
               <span className="text-[#FFD37F]">Dagger Problem</span>
             </h1>
@@ -658,22 +696,33 @@ export default function Swarmfield() {
   }
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-black">
+    // touch-none hands every gesture over the field to Game: without it the
+    // browser claims the drag for a scroll and the pinch for a page zoom, and
+    // the map underneath never moves. select-none and the callout keep a
+    // press-and-drag from turning into a text selection or an iOS share sheet
+    <div className="fixed inset-0 overflow-hidden bg-black select-none [-webkit-touch-callout:none]">
       <div className="relative h-full w-full">
-        <canvas ref={glRef} width={2560} height={1440} className="block h-full w-full" />
+        <canvas
+          ref={glRef}
+          width={2560}
+          height={1440}
+          className="block h-full w-full touch-none"
+        />
         <canvas
           ref={uiRef}
           width={2560}
           height={1440}
-          className={`absolute inset-0 h-full w-full ${
-            hud?.buildKind ? "cursor-crosshair" : "cursor-default"
+          className={`absolute inset-0 h-full w-full touch-none ${
+            hud?.buildKind || hud?.sellMode ? "cursor-crosshair" : "cursor-default"
           }`}
         />
         {loadUi && (
           <LoadingScreen level={level} step={loadUi.step} out={loadUi.out} />
         )}
         {hud?.paused && (
-          <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded border border-[#E8B45B] bg-[#151518]/70 px-3 py-1.5 text-base font-bold uppercase tracking-widest text-[#E8B45B] backdrop-blur">
+          // on a phone the wave panel already fills the top of the screen, so
+          // the badge drops onto the map rather than landing on top of it
+          <div className="absolute left-1/2 top-[30%] -translate-x-1/2 rounded border border-[#E8B45B] bg-[#151518]/70 px-3 py-1.5 text-base font-bold uppercase tracking-widest text-[#E8B45B] backdrop-blur sm:top-[calc(1rem+var(--safe-t))]">
             Paused
           </div>
         )}
@@ -681,7 +730,7 @@ export default function Swarmfield() {
             not breathe in and out as counters change and the skip box lines
             up under it. Everything inside wraps rather than widening it */}
         {hud && (
-          <div className="absolute left-4 top-4 flex w-80 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-2">
+          <div className="absolute left-[calc(1rem+var(--safe-l))] top-[calc(1rem+var(--safe-t))] flex w-80 max-w-[calc(100vw-8rem-var(--safe-l)-var(--safe-r))] flex-col items-stretch gap-2">
             <div className="w-full rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
               {/* the wave counter is what a run is read off, so the line
                   carries that and the difficulty and nothing else — the level
@@ -743,15 +792,18 @@ export default function Swarmfield() {
             </div>
           </div>
         )}
-        {hud && !hud.lost && !hud.won && (
+        {hud && !hud.lost && !hud.won && !hud.menuOpen && (
           /* pace controls, for everyone: an idle game where the only way to
              sit out a wave gap is to watch it is a game that wastes the
              player's time. Pause leads, since it is the one that stops the
-             clock; the multipliers run out from it */
+             clock; the multipliers run out from it.
+             Pause and the game menu are also the two controls a touchscreen
+             has no key for, so having them on screen is what makes space and
+             esc optional rather than required */
           <div
             role="group"
             aria-label="speed controls"
-            className="absolute bottom-4 left-4 flex overflow-hidden rounded border border-[#2E2E36] bg-[#151518]/70 backdrop-blur"
+            className="absolute bottom-[calc(1rem+var(--safe-b))] left-[calc(1rem+var(--safe-l))] flex overflow-hidden rounded border border-[#2E2E36] bg-[#151518]/70 backdrop-blur"
           >
             <button
               title={hud.paused ? "Resume (space)" : "Pause (space)"}
@@ -799,11 +851,11 @@ export default function Swarmfield() {
             ))}
           </div>
         )}
-        {hud && !hud.lost && !hud.won && (
+        {hud && !hud.lost && !hud.won && !hud.menuOpen && (
           <div
             role="group"
             aria-label="view and menu"
-            className="absolute right-4 top-4 flex items-start gap-2"
+            className="absolute right-[calc(1rem+var(--safe-r))] top-[calc(1rem+var(--safe-t))] flex items-start gap-2"
           >
             {/* the swarm's entry points, and the lines flyers fly out of
                 them. Walkers read off the terrain — flyers ignore it, so
@@ -847,57 +899,86 @@ export default function Swarmfield() {
             </button>
           </div>
         )}
-        <div
-          role="group"
-          aria-label="tower menu"
-          className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-2"
-        >
-          {/* a turret the tech tree has not unlocked yet is not shown at
-              all — the bar holds exactly what this run can build. A null
-              unlocked list is sandbox mode: everything, uncapped */}
-          {TOWER_MENU.filter((t) => (hud ? !hud.unlocked || hud.unlocked.includes(t.kind) : false)).map((t) => {
-            const cap = hud?.caps ? hud.caps[t.kind] : null;
-            const count = hud?.counts ? hud.counts[t.kind] : 0;
-            // what the badge says is how many are LEFT to place, not how
-            // many are standing — that is the number a build decision needs,
-            // and "0" reads faster than working out 6/6
-            const left = cap === null ? null : Math.max(0, cap - count);
-            const full = left === 0;
-            return (
+        {/* The bar scrolls sideways instead of wrapping: ten turrets do not
+            fit across a phone, and a second row would eat the field. The
+            scroller itself is click-through so the map keeps the space to
+            either side of the buttons. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-[calc(1rem+var(--safe-b))] overflow-x-auto pb-1 pl-[calc(1rem+var(--safe-l))] pr-[calc(1rem+var(--safe-r))]">
+          <div
+            role="group"
+            aria-label="tower menu"
+            className="pointer-events-auto mx-auto flex w-max gap-2"
+          >
+            {/* a turret the tech tree has not unlocked yet is not shown at
+                all — the bar holds exactly what this run can build. A null
+                unlocked list is sandbox mode: everything, uncapped */}
+            {TOWER_MENU.filter((t) => (hud ? !hud.unlocked || hud.unlocked.includes(t.kind) : false)).map((t) => {
+              const cap = hud?.caps ? hud.caps[t.kind] : null;
+              const count = hud?.counts ? hud.counts[t.kind] : 0;
+              // what the badge says is how many are LEFT to place, not how
+              // many are standing — that is the number a build decision needs,
+              // and "0" reads faster than working out 6/6
+              const left = cap === null ? null : Math.max(0, cap - count);
+              const full = left === 0;
+              return (
+                <button
+                  key={t.kind}
+                  title={t.name}
+                  aria-label={left === null ? t.name : `${t.name}, ${left} left`}
+                  aria-pressed={hud?.buildKind === t.kind}
+                  onClick={() => pickTower(t.kind)}
+                  className={`${TOOL_BTN} ${
+                    hud?.buildKind === t.kind
+                      ? "border-[#FFD37F] bg-[#222227]/90"
+                      : "border-[#2E2E36] bg-[#151518]/70 hover:border-[#4A4A55]"
+                  }`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
+                  <img
+                    src={icons[t.kind] ?? t.icon}
+                    alt=""
+                    className="h-10 w-10 [image-rendering:pixelated]"
+                  />
+                  {left !== null && (
+                    <span
+                      className={`text-base font-bold leading-none ${
+                        full ? "text-[#FFD37F]" : "text-white"
+                      }`}
+                    >
+                      {left}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            {/* demolish rides in the bar with the turrets because on a
+                touchscreen it is a tool like they are — there is no right
+                button to hold instead */}
+            {hud && (
               <button
-                key={t.kind}
-                title={t.name}
-                aria-label={left === null ? t.name : `${t.name}, ${left} left`}
-                aria-pressed={hud?.buildKind === t.kind}
-                onClick={() => pickTower(t.kind)}
-                className={`flex h-[4.5rem] w-14 flex-col items-center justify-center gap-0.5 rounded border backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-                  hud?.buildKind === t.kind
-                    ? "border-[#FFD37F] bg-[#222227]/90"
-                    : "border-[#2E2E36] bg-[#151518]/70 hover:border-[#4A4A55]"
+                title="Demolish (or right-click)"
+                aria-label="Demolish"
+                aria-pressed={hud.sellMode}
+                onClick={toggleSell}
+                className={`${TOOL_BTN} ${
+                  hud.sellMode
+                    ? "border-[#FF5A5A] bg-[#2A1620]/90 text-[#FF5A5A]"
+                    : "border-[#2E2E36] bg-[#151518]/70 text-[#A6A6AF] hover:border-[#4A4A55]"
                 }`}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
-                <img
-                  src={icons[t.kind] ?? t.icon}
-                  alt=""
-                  className="h-10 w-10 [image-rendering:pixelated]"
-                />
-                {left !== null && (
-                  <span
-                    className={`text-base font-bold leading-none ${
-                      full ? "text-[#FFD37F]" : "text-white"
-                    }`}
-                  >
-                    {left}
-                  </span>
-                )}
+                <svg viewBox="0 0 12 12" className="h-8 w-8 fill-current" aria-hidden="true">
+                  <path d="M4.6 1.1h2.8l.6 1h2v1.2H2V2.1h2zM2.9 4.6h6.2l-.5 6.3H3.4z" />
+                </svg>
+                <span className="text-[11px] font-bold uppercase leading-none tracking-widest">
+                  Sell
+                </span>
               </button>
-            );
-          })}
+            )}
+          </div>
         </div>
         {hud?.lost && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="w-80 rounded border border-[#3A2430] bg-[#151518]/95 p-6 text-center">
+            <div className="w-80 max-w-[calc(100vw-2rem)] rounded border border-[#3A2430] bg-[#151518]/95 p-6 text-center">
               <div className="text-xl font-bold uppercase tracking-widest text-[#FF5A5A]">
                 Core destroyed
               </div>
@@ -953,7 +1034,7 @@ export default function Swarmfield() {
         )}
         {hud?.won && !hud.lost && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="w-80 rounded border border-[#1F3A2E] bg-[#151518]/95 p-6 text-center">
+            <div className="w-80 max-w-[calc(100vw-2rem)] rounded border border-[#1F3A2E] bg-[#151518]/95 p-6 text-center">
               <div className="text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
                 {difficultyName(hud.tier)} cleared
               </div>
@@ -1002,7 +1083,7 @@ export default function Swarmfield() {
         )}
         {hud?.menuOpen && !hud.lost && !hud.won && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="w-72 rounded border border-[#2E2E36] bg-[#151518]/95 p-6 text-center">
+            <div className="w-72 max-w-[calc(100vw-2rem)] rounded border border-[#2E2E36] bg-[#151518]/95 p-6 text-center">
               <div className="text-xl font-bold uppercase tracking-widest text-[#EDEDEF]">
                 Game menu
               </div>

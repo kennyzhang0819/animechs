@@ -41,6 +41,25 @@ for console poking, and the ladder's tuning surface as `window.__ladder`
 (`.spec(n)` for a tier's playable spec, `.budget(n)` for what the arithmetic
 says it costs).
 
+## Controls
+
+One set of pointer listeners covers mouse, pen and touch (`game/game.ts`).
+
+| | mouse | touch |
+|---|---|---|
+| build | left press, drag to chain | press, drag to chain |
+| demolish | right press, drag to chain | the **Sell** tool in the bar, then drag |
+| inspect a turret's range | left click, with no tool picked | tap, with no tool picked |
+| pan | middle drag, WASD/arrows, two-finger scroll | one-finger drag, or two |
+| zoom | wheel, trackpad pinch | pinch |
+| pause / menu | space / esc | the two buttons in the top-right corner |
+
+The field claims every gesture over it — `touch-action: none` on the canvas,
+`user-scalable=no` in the viewport meta, and Safari's `gesture*` events
+swallowed — so a pinch zooms the **map** and never the page. Zoom 1 is
+"cover" (the world fills the viewport) and is also the floor; the ceiling is
+3, which is what makes a single cell aimable with a fingertip.
+
 ## Progression
 
 There is one world, played over and over at an ever-higher **tier**. Every

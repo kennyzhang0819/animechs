@@ -63,7 +63,7 @@ export default function TechTree({
 
   return (
     <div className="fixed inset-0 overflow-y-auto bg-[#101013]">
-      <div className="mx-auto max-w-4xl px-6 py-10">
+      <div className="mx-auto max-w-4xl pt-10 pb-[max(2.5rem,var(--safe-b))] pl-[max(1.5rem,var(--safe-l))] pr-[max(1.5rem,var(--safe-r))]">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <button
             onClick={onBack}
@@ -103,8 +103,8 @@ export default function TechTree({
           ))}
         </div>
 
-        <div className="mt-8 flex justify-center overflow-x-auto">
-          <div className="relative shrink-0" style={{ width: BOARD_W, height: BOARD_H }}>
+        <div className="mt-8 overflow-x-auto">
+          <div className="relative mx-auto" style={{ width: BOARD_W, height: BOARD_H }}>
             <svg
               className="absolute inset-0"
               width={BOARD_W}
@@ -154,8 +154,14 @@ export default function TechTree({
                         ? `${name}: +${Math.max(1, willBuy)} placement capacity`
                         : `Unlock ${name}`
                     }
-                    disabled={!clickable}
+                    // aria-disabled rather than disabled: a node priced out
+                    // of reach still has to be able to say so, and a disabled
+                    // button takes no focus — which on a touchscreen, where
+                    // there is no hover either, left its price card with no
+                    // way at all to be opened
+                    aria-disabled={!clickable}
                     onClick={() => {
+                      if (!clickable) return;
                       if (buyTech(n.tower, Math.max(1, willBuy))) onChanged();
                     }}
                     className={`relative flex h-full w-full items-center justify-center rounded-lg border-2 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
@@ -198,7 +204,9 @@ export default function TechTree({
                   </div>
                   {/* hover card: what this node does right now */}
                   <div
-                    className={`pointer-events-none absolute left-1/2 z-10 hidden w-56 -translate-x-1/2 rounded border border-[#4A4A55] bg-[#151518] p-3 text-left shadow-lg group-hover:block ${
+                    // focus-within is the touch spelling of hover: a tap
+                    // focuses the node and the card opens with it
+                    className={`pointer-events-none absolute left-1/2 z-10 hidden w-56 -translate-x-1/2 rounded border border-[#4A4A55] bg-[#151518] p-3 text-left shadow-lg group-hover:block group-focus-within:block ${
                       n.y === 0 ? "top-full mt-5" : "bottom-full mb-3"
                     }`}
                   >

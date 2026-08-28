@@ -5,9 +5,29 @@
   --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* The device's own reserved edges — the notch, the rounded corners, the home
+   indicator — as plain numbers the HUD can add to its own margins. The page
+   is laid out under all of them (viewport-fit=cover in app/layout.tsx) so the
+   map runs edge to edge; only the controls step back out of the way. */
+:root {
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+}
+
 /* ---- dark scrollbars ---- */
 html {
   color-scheme: dark;
+  /* rotating a phone must not re-flow the HUD at a bigger font size */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* No pull-to-refresh and no rubber-banding: a drag on the map is the camera,
+   and a drag that overscrolls the document behind it would reload the run. */
+html,
+body {
+  overscroll-behavior: none;
 }
 
 * {
