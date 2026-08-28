@@ -8,7 +8,7 @@ import {
   type UnitKind,
 } from "./levels";
 import { TOWERS } from "./constants";
-import { TECH_TREE } from "./tech";
+import { TECH_TREE, type TechNodeDef } from "./tech";
 import {
   BASE_ITEM,
   costEntries,
@@ -374,8 +374,27 @@ export const OPENING_ARCS = 5;
 // ---------- the debut rule ----------
 
 /**
+ * Is every currency in this node's price actually dropped at this
+ * difficulty? That is the whole unlock rule now — the tech tree carries no
+ * ladder gates, so a node is reachable exactly when the waves pay for it
+ * (see the note at the top of tech.ts).
+ */
+function payableAtTier(node: TechNodeDef, tier: number): boolean {
+  const ratio = TARGET_DROP_RATIO[clampTier(tier)];
+  return costEntries(node.price.base).every(
+    ({ item }) => (ratio[ITEM_KINDS.indexOf(item)] ?? 0) > 0,
+  );
+}
+
+/**
  * The best per-shot damage the player can own by the time a difficulty
- * starts: the strongest bullet among every turret whose gate has opened.
+ * starts: the strongest bullet among every turret this difficulty's drops
+ * can actually pay for.
+ *
+ * This used to read `requiresTier`, back when a node could be told to wait
+ * for a difficulty. Nothing is told to wait any more, so asking the price
+ * is not a substitute for the old test — it IS the old test, written where
+ * the truth lives.
  */
 function bestShotByTier(tier: number): number {
   // DIFFICULTY 1 IS A SPECIAL CASE AND IT IS THE ONE THAT MATTERS. A fresh
@@ -385,7 +404,7 @@ function bestShotByTier(tier: number): number {
   if (clampTier(tier) <= 0) return TOWERS.duo.bullet.damage;
   let best = 0;
   for (const node of TECH_TREE) {
-    if (node.requiresTier != null && node.requiresTier >= tier) continue;
+    if (!payableAtTier(node, tier)) continue;
     best = Math.max(best, TOWERS[node.tower].bullet.damage);
   }
   return best;

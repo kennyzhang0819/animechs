@@ -7,16 +7,37 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * point unlocks the turret (capacity 1) and every further point on the
  * same node is +1 capacity.
  *
- * Nodes gate two ways: the parent node must hold at least one point (the
- * graph edge — a node stays hidden until its parent is bought), and some
- * nodes wait on a TIER of the ladder being cleared. A fresh save sees duo,
- * hail, scorch and scatter; clearing Medium opens salvo and clearing High
- * opens fuse — each on sale before the enemy it answers is the
- * one that matters.
+ * A node gates ONE way: the parent must hold at least one point, so a node
+ * stays hidden until its parent is bought. That edge is the tree's shape and
+ * costs a single cheap point to satisfy. There is no second gate.
  *
- * The four ungated nodes are ungated on purpose: every enemy difficulty 1
- * fields, air included, has to have an answer buyable DURING Medium,
- * because a fresh save has no lower difficulty to farm.
+ * THE LADDER GATES ARE GONE, AND THE CURRENCY IS THE GATE INSTEAD. Every
+ * node used to be able to demand a DIFFICULTY be cleared before it would
+ * take points; salvo waited on Medium, fuse on High, and the specialists on
+ * whichever tier came before the enemy they answered. That was a second gate
+ * doing a job the first one already did, because A BUNDLE CANNOT BE PAID IN
+ * A CURRENCY ITS DIFFICULTY DOES NOT DROP. Medium pays copper, titanium and
+ * thorium and no plastanium at all (TARGET_DROP_RATIO in ladder.ts), so
+ * fuse's fifteen plastanium locks it out of a fresh save on its own, exactly
+ * and automatically, with no gate written anywhere.
+ *
+ * Where the two gates disagreed, the tier gate was WRONG. Thorium starts
+ * dropping in Medium at wave 7 and a full Medium run banks 450 of it — but
+ * every node that charged thorium waited on Medium being CLEARED, so a save
+ * that had not yet cleared it accumulated a currency with nowhere to spend
+ * it. A player who dies at wave 17 is exactly the player who needs the next
+ * turret, and the gate was denying it to them for the crime of not already
+ * being past it.
+ *
+ * SO EVERY NODE IS OPEN AND THE BANK DECIDES. The four this actually frees
+ * during Medium are salvo, lancer, ripple and parallax — the thorium sinks.
+ * Everything above them still costs plastanium or phase fabric, which Medium
+ * and High do not pay, so they stay shut without being told to.
+ *
+ * `requiresTier` is kept on the interface and honoured by progress.ts, and
+ * nothing uses it. It is the hook for content whose gate genuinely is NOT a
+ * currency — the planned Eradication difficulty ships no new item, so a node
+ * meant for it would have nothing else to wait on.
  */
 
 /**
@@ -138,9 +159,13 @@ export interface TechNodeDef {
   requires?: TowerKind;
   /**
    * Ladder gate: this tier of the campaign must have been CLEARED before
-   * points can go in. Gates sit one or more tiers BEFORE the enemy they
-   * answer debuts (see EXTENSION in ladder.ts), so the turret is on sale by
-   * the time it is needed rather than the run it is needed.
+   * points can go in.
+   *
+   * NOTHING SETS THIS, deliberately — see the note at the top of the file.
+   * A turret that costs a currency only a later difficulty drops is already
+   * gated by its price, and saying it twice locked thorium nodes away from
+   * the Medium run that was banking the thorium. Reach for this only when a
+   * node's gate is genuinely not a currency.
    */
   requiresTier?: number;
   /**
@@ -163,25 +188,35 @@ export interface TechNodeDef {
  * earn it, not chosen by feel. See PriceCurve.
  *
  * TWO: A COST BUNDLE MUST CARRY THE DROP RATIO OF THE DIFFICULTY THAT
- * UNLOCKS IT. Supply is TARGET_DROP_RATIO in ladder.ts — the enemy mix the
- * waves are authored to send — and the bundles below are shaped to match it
- * in aggregate: about 100 : 27 : 10 : 0.7 : 0.13. Get it wrong and the
+ * UNLOCKS IT — and since the tier gates are gone, THE BUNDLE IS THE GATE, so
+ * this rule now decides not just what a node costs but when it exists.
+ * Supply is TARGET_DROP_RATIO in ladder.ts — the enemy mix the waves are
+ * authored to send — and the bundles below are shaped to match it in
+ * aggregate: about 100 : 27 : 10 : 0.7 : 0.13. Get it wrong and the
  * mismatched currency becomes the ONLY real constraint while the others pile
  * up unspent, which reads to a player as a broken economy rather than a
  * tuned one.
  *
- * A bundle also may not charge for a currency its own difficulty does not
- * yet pay. Plastanium appears first on the Extreme-gated nodes and phase
- * fabric only on the Eradication ones, because that is where tier-4 and
- * tier-5 enemies are — charging fuse for plastanium at High would unlock it
- * into a wall.
+ * SCATTER IS WHERE THAT WENT WRONG ONCE, and it is the worked example to
+ * read before touching a bundle. It asked 50 copper : 10 titanium, a 5:1
+ * ratio against a Medium that pays 6.67:1, so titanium ran dry first and put
+ * a hard cap on how many a player could own however much copper they had.
+ * The turret felt overpriced; the PRICE was fine and the SHAPE was wrong.
+ *
+ * The currency also picks the difficulty. Plastanium appears first on the
+ * nodes meant for Extreme and phase fabric only on the ones meant for
+ * Eradication, because that is where tier-4 and tier-5 enemies are — and a
+ * currency nothing drops yet is an absolute lock, which is exactly why no
+ * node needs a tier gate on top of it. The converse is the trap: charging a
+ * currency EARLIER than intended unlocks a node into a wall, and charging it
+ * LATER than intended opens content a difficulty early.
  *
  * DUO IS THE ONE EXEMPTION: copper-only, forever. A run that dies before the
  * first mace banks no titanium at all, and duo capacity has to stay buyable
  * out of that run or a bad save has no way back.
  *
- * Keep the FIRST point of any newly-gated node payable out of the tiers
- * already cleared when its gate opens, or the node unlocks into a wall.
+ * Keep the FIRST point of every node payable out of the difficulty whose
+ * currency it debuts on, or that node is decoration.
  */
 export const TECH_TREE: readonly TechNodeDef[] = [
   {
@@ -223,37 +258,52 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // flares debut inside difficulty 1, so a gate of any kind would lock the
     // answer to air behind the run that first asks for it.
     //
-    // THE ONE NODE PRICED BELOW DPS PARITY, at 0.4x what the rule asks.
+    // THE ONE NODE PRICED BELOW DPS PARITY, at 0.2x what the rule asks.
     // Flak DPS is the highest on the cheap half of the tree, but it only ever
     // fires at AIR — and air is 12% of the health a run sends. Charging the
     // full rate bills a turret that idles through seven eighths of the game.
     //
-    // Not discounted to that 12% either: air is a CHECK, and nothing else
-    // cheap answers it (hail and scorch cannot see it at all, salvo and fuse
-    // are gated), so a player without scatter does not lose 12% of a run,
-    // they lose the run. 0.4 sits just above the geometric mean of the two
-    // readings — priced for a turret that is mandatory AND mostly idle.
+    // It was 0.4x, sat just above the geometric mean of that 12% and the 100%
+    // that says air is a CHECK you either answer or lose the run to. THE
+    // SECOND HALF OF THAT ARGUMENT NO LONGER HOLDS: salvo and parallax both
+    // shoot air and both are now buyable during Medium (see the top of the
+    // file), so scatter is the CHEAP answer to air rather than the only one,
+    // and the multiplier falls back toward the 12% reading it started from.
     //
-    // COPPER AND TITANIUM ONLY, and that is the whole point. It used to want
-    // thorium, which comes from tier-3 kills and so does not flow until well
-    // into a Medium run — and since hail hangs off this node (Mindustry's own
-    // lineage: duo -> scatter -> hail), a thorium price here locked the cheap
-    // ground AoE behind the T3 waves too. Upstream builds scatter from copper
-    // and lead, a tier-1 cost; this is that, in our currencies
+    // THE CUT IS ALL IN THE BASE, NOT THE GROWTH, and that is the point.
+    // Growth only decides what the two-hundredth scatter costs; a player who
+    // is losing wave 12 to a flare cloud is buying their fifteenth. Halving
+    // 50 to 25 halves the price of every point including the ones that
+    // decide that fight, and lands the lifetime bill at 0.209x parity on its
+    // own — growth is left exactly where the ceiling put it.
+    //
+    // TITANIUM DROPS 10 -> 4, further than copper does, because the old
+    // bundle had the ratio wrong: 50:10 is 5:1 against a Medium that pays
+    // 6.67:1, so titanium ran out first and CAPPED the count no matter how
+    // much copper was banked. 25:4 is 6.25:1 and tracks the drop.
+    //
+    // COPPER AND TITANIUM ONLY. It used to want thorium, which comes from
+    // tier-3 kills and so does not flow until well into a Medium run — and
+    // since hail hangs off this node (Mindustry's own lineage: duo ->
+    // scatter -> hail), a thorium price here locked the cheap ground AoE
+    // behind the T3 waves too. Upstream builds scatter from copper and lead,
+    // a tier-1 cost; this is that, in our currencies
     tower: "scatter",
-    price: { base: { copper: 50, titanium: 10 }, growth: 1.0327 },
+    price: { base: { copper: 25, titanium: 4 }, growth: 1.0327 },
     requires: "duo",
     x: 1,
     y: 1,
   },
   {
     // 28 damage a shell — the first turret that puts a fortress (armour 9)
-    // back at its printed health instead of ten times it. The reward for
-    // clearing Medium
+    // back at its printed health instead of ten times it. THE FIRST THORIUM
+    // NODE, and so the first thing a Medium run's thorium is for: it opens
+    // around wave 7, when the T3 kills that pay for it start arriving. It
+    // also shoots AIR, which makes it the second answer to the flare waves
+    // and half the reason scatter no longer has to be priced as the only one
     tower: "salvo",
     price: { base: { copper: 250, titanium: 85, thorium: 30 }, growth: 1.0156 },
     requires: "hail",
-    requiresTier: 0,
     x: 1,
     y: 3,
   },
@@ -263,18 +313,17 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // the highest DPS on the roster, so equal cost-per-DPS charges for it.
     // Nine tiles of range is no longer a discount: the map already decides
     // how much of a gate one can hold (see PriceCurve).
-    // The reward for clearing High, so it is on sale for exactly one
-    // difficulty: Extreme. A gate on the LAST difficulty would mean the
-    // turret only ever unlocks after the campaign is already finished
+    // PLASTANIUM IS THE GATE: fifteen of it, and only High and Extreme drop
+    // any at all. A Medium save can see this node and can never pay for it,
+    // which is the same lock the old tier gate spelled out by hand
     tower: "fuse",
     price: { base: { copper: 600, titanium: 275, thorium: 175, plastanium: 15 }, growth: 1.0594 },
     requires: "salvo",
-    requiresTier: 1,
     x: 2,
     y: 5,
   },
   {
-    // MEDIUM. Chain lightning down a file of ground units, and the root of
+    // Chain lightning down a file of ground units, and the root of
     // the short-range branch — scorch and lancer both hang off it.
     // 411 DPS is TWELVE node bullets a bolt rather than one shot catching
     // five: arc's shot walks, and every node it lands on is a separate
@@ -287,31 +336,29 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     y: 1,
   },
   {
-    // HIGH. A piercing laser; the ground answer that is not artillery.
+    // A piercing laser; the ground answer that is not artillery.
     // FOUR bodies, not the usual five — pierceCap 4 is a hard stop written
     // into the bullet, and the beam visibly ends at the fourth thing it
     // hits, so counting five would be pricing a shot it cannot fire
     tower: "lancer",
     price: { base: { copper: 200, titanium: 55, thorium: 20 }, growth: 1.0216 },
     requires: "scorch",
-    requiresTier: 0,
     x: 4,
     y: 3,
   },
   {
-    // HIGH. 290 range — the longest reach in the game, and the wave-clear
+    // 290 range — the longest reach in the game, and the wave-clear
     // that answers the crawler floods. Four shells a volley at 70 splash,
     // and like every artillery piece only the splash counts: the shell
     // arcs over its target rather than hitting it
     tower: "ripple",
     price: { base: { copper: 300, titanium: 85, thorium: 25 }, growth: 1.0453 },
     requires: "salvo",
-    requiresTier: 0,
     x: 2,
     y: 4,
   },
   {
-    // HIGH. Not a damage turret at all: it drags air units out of formation.
+    // Not a damage turret at all: it drags air units out of formation.
     // In Mindustry it hangs off wave, which we do not have, so it takes its
     // grandparent scorch instead.
     //
@@ -328,7 +375,6 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     tower: "parallax",
     price: { base: { copper: 220, titanium: 60, thorium: 20 }, growth: 1.0007 },
     requires: "scorch",
-    requiresTier: 0,
     x: 3,
     y: 3,
   },
@@ -341,60 +387,58 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   // rule in PriceCurve; until then treat these numbers as scaffolding.
   //
   // Lineage is Mindustry's own (content/SerpuloTechTree.java) and the
-  // difficulty gates fall out of BUILD MATERIAL: a turret whose Mindustry
-  // cost tops out at copper/lead/graphite is Medium, at titanium is High,
-  // at thorium or plastanium is Extreme, and at surge alloy belongs to the
-  // hidden ERADICATION difficulty that does not exist yet. Every edge below
-  // runs to an equal-or-later difficulty, so no child can ever open before
-  // its parent.
+  // difficulty each one lands at falls out of BUILD MATERIAL, which is now
+  // the ONLY thing holding them shut: a turret whose Mindustry cost tops out
+  // at thorium or plastanium prices out to Extreme, and one that wants surge
+  // alloy belongs to the hidden ERADICATION difficulty that does not exist
+  // yet — so it is priced in phase fabric, which nothing below Extreme
+  // drops. Each bundle below charges a currency its own difficulty is the
+  // first to pay, and a child always costs at least what its parent does, so
+  // no child can open before its parent even with every gate gone.
   {
-    // EXTREME. Homing missiles — they chase what they lock, so overkill
+    // PLASTANIUM. Homing missiles — they chase what they lock, so overkill
     // costs less than it does on a straight-firing line
     tower: "swarmer",
     price: { base: { copper: 350, titanium: 125, thorium: 55, plastanium: 3 }, growth: 1.0241 },
     requires: "salvo",
-    requiresTier: 1,
     x: 0,
     y: 4,
   },
   {
-    // EXTREME. A flak wall. The reason to own it is volume of splash, which
+    // PLASTANIUM. A flak wall. The reason to own it is volume of splash, which
     // is why its ceiling is the full 3x3 band
     tower: "cyclone",
     price: { base: { copper: 450, titanium: 150, thorium: 70, plastanium: 4 }, growth: 1.0543 },
     requires: "swarmer",
-    requiresTier: 1,
     x: 0,
     y: 5,
   },
   {
-    // ERADICATION. Twin heavy cannon — the highest sustained damage in the
-    // game. Gated on clearing Extreme, which today means "after the
-    // campaign", and that is deliberate: these three ARE the hidden
-    // difficulty's reward, and they light up the moment it ships
+    // PHASE FABRIC. Twin heavy cannon — the highest sustained damage in the
+    // game. Phase drops only at Extreme and only from the T5 that arrives at
+    // the very end of it, so these three ARE the hidden difficulty's reward
+    // and they light up the moment it ships — priced there rather than told
+    // to wait there
     tower: "spectre",
     price: { base: { copper: 900, titanium: 375, thorium: 225, plastanium: 23, "phase-fabric": 6 }, growth: 1.1109 },
     requires: "cyclone",
-    requiresTier: 2,
     x: 0,
     y: 6,
   },
   {
-    // ERADICATION. A continuous beam that melts whatever it rests on
+    // PHASE FABRIC. A continuous beam that melts whatever it rests on
     tower: "meltdown",
     price: { base: { copper: 1000, titanium: 425, thorium: 250, plastanium: 26, "phase-fabric": 7 }, growth: 1.1081 },
     requires: "lancer",
-    requiresTier: 2,
     x: 4,
     y: 4,
   },
   {
-    // ERADICATION. 500 range and one enormous shot — a sniper rather than a
+    // PHASE FABRIC. 500 range and one enormous shot — a sniper rather than a
     // defence, and the only turret that can hit a spawn pad from the core
     tower: "foreshadow",
     price: { base: { copper: 1100, titanium: 450, thorium: 275, plastanium: 29, "phase-fabric": 8 }, growth: 1.1054 },
     requires: "meltdown",
-    requiresTier: 2,
     x: 4,
     y: 5,
   },
