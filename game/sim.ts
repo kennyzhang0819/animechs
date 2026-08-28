@@ -5,6 +5,7 @@ import {
   CELL,
   clamp,
   COLS,
+  FX_LIFE,
   H,
   MAX_UNITS,
   ROWS,
@@ -12,6 +13,7 @@ import {
   UR,
   W,
   WALL_R,
+  type BulletFx,
   type TowerStats,
 } from "./constants";
 import { FlowField, type Vec2 } from "./flowfield";
@@ -33,17 +35,41 @@ import { unitHpAtLevel } from "./ladder";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
 import type { TechState } from "./tech";
 import { WALL_PINE, type Terrain } from "./terrain";
-import { FxKind, TOWER_KINDS, type Effect, type Projectile, type Tower, type TowerKind } from "./types";
+import {
+  FxKind,
+  TOWER_KINDS,
+  type Effect,
+  type Projectile,
+  type RGB,
+  type Tower,
+  type TowerKind,
+} from "./types";
 
 /** px per Mindustry world unit — the ported turret geometry is in those */
 const MU = CELL / 8;
 
-const FX_CAP = 400;
 /**
- * Footfall dust gets a third of that and no more. It is ambience, and it
- * is PERIODIC: every legged unit on the field throws a puff per planted
- * foot, several times a second each, so left on the shared budget a wave
- * of walkers would push every hit, death and blast out of the buffer.
+ * How many effects may be alive at once, shared by everything that throws
+ * one. A push past it is DROPPED — and it is the newest that go, so a board
+ * over budget loses the flash of the shot being fired while stale puffs
+ * linger.
+ *
+ * Measured, uncapped, on a 160-turret map with 3,200 units walking into it:
+ * demand runs at ~730 and spikes to ~1,800 for the instant the crowd
+ * arrives. 1,400 is a shade under twice the sustained figure, so it clears
+ * every steady-state peak and clips only that one arrival spike — the one
+ * moment the screen is too full to tell. It has to be this much higher than
+ * the 400 it was: the muzzle flash, powder and hit spark every turret now
+ * throws on every shot roughly doubled the standing demand.
+ */
+const FX_CAP = 1400;
+/**
+ * Footfall dust gets 140 of those and no more — a fixed slice, not a share,
+ * so raising the budget above buys room for shots rather than for grit. It
+ * is ambience, and it is PERIODIC: every legged unit on the field throws a
+ * puff per planted foot, several times a second each, so left on the shared
+ * budget a wave of walkers would push every hit, death and blast out of the
+ * buffer.
  */
 const FX_DUST_CAP = 140;
 
@@ -1874,6 +1900,17 @@ export class Sim {
         t.aimY = t.y + aimY;
         if (st.chargeTime) {
           t.chargeT = st.chargeTime; // fires when it runs out, above
+          // BulletType.chargeEffect: fired the moment the volley is
+          // QUEUED, so it plays through the charge rather than after it,
+          // and off the barrel's own facing (no per-shot inaccuracy yet)
+          const mz = st.shootY ?? st.size * 5;
+          this.bulletFx(
+            st.bullet.chargeFx,
+            t.x + Math.cos(t.angle) * mz,
+            t.y + Math.sin(t.angle) * mz,
+            t.angle,
+            st.bullet.fxColor,
+          );
           continue;
         }
         t.burstLeft = st.shots;
@@ -1910,10 +1947,11 @@ export class Sim {
       y += Math.cos(t.angle) * off;
     }
     t.shotCount++;
-    // BulletType.shootEffect, fired at the muzzle along the shot's angle.
-    // For scorch this IS the weapon: the bullet draws nothing at all
-    if (st.bullet.invisible)
-      this.pushFx(x, y, 32 / 60, FxKind.Flame, a, 0, (Math.random() * 0x7fffffff) | 0);
+    // BulletType.shootEffect and smokeEffect, both fired at the muzzle
+    // along the shot's angle. For scorch the pair IS the weapon: the
+    // bullet itself draws nothing at all
+    this.bulletFx(st.bullet.shootFx, x, y, a, st.bullet.fxColor);
+    this.bulletFx(st.bullet.smokeFx, x, y, a, st.bullet.fxColor);
     if (st.bullet.lightning) {
       const pts = this.lightningBolt(
         x, y, a,
@@ -1922,6 +1960,8 @@ export class Sim {
         st.bullet.hitRadius ?? 2.5,
         st.bullet.collidesAir,
         st.bullet.collidesGround,
+        st.bullet.hitFx,
+        st.bullet.fxColor,
       );
       this.pushBolt(x, y, st.bullet.lifetime, pts);
       return;
@@ -1935,6 +1975,8 @@ export class Sim {
         st.bullet.armorMultiplier ?? 1,
         st.bullet.collidesAir,
         st.bullet.collidesGround,
+        st.bullet.hitFx,
+        st.bullet.fxColor,
       );
       this.pushFx(x, y, st.bullet.lifetime, FxKind.Laser, a, reached);
       return;
@@ -1948,6 +1990,8 @@ export class Sim {
         st.bullet.damage,
         st.bullet.collidesAir,
         st.bullet.collidesGround,
+        st.bullet.hitFx,
+        st.bullet.fxColor,
       );
       this.pushFx(x, y, st.bullet.lifetime, FxKind.Shrapnel, a, st.bullet.ray.length);
       return;
@@ -1985,6 +2029,7 @@ export class Sim {
       primeT: -1,
       flakT: st.bullet.flak ? st.bullet.flak.interval : 0,
       pierced: st.bullet.pierce ? [] : null,
+      trailT: 0,
     });
   }
 
@@ -2001,6 +2046,8 @@ export class Sim {
     dmg: number,
     air: boolean,
     ground: boolean,
+    hitFx: BulletFx | undefined,
+    fxColor: RGB | undefined,
   ): void {
     const { upx, upy, uhp, uarmor, urad, ukind, bStart, bUnits, splashHits } = this;
     const EXPAND = 7.5; // collideLine's expand = 3 world units
@@ -2029,7 +2076,7 @@ export class Sim {
     }
     for (const i of splashHits) {
       this.damageUnit(i, dmg);
-      if (uhp[i] > 0) this.pushFx(upx[i], upy[i], 0.12, FxKind.Hit);
+      if (uhp[i] > 0) this.bulletFx(hitFx, upx[i], upy[i], angle, fxColor);
     }
     splashHits.sort((a2, b2) => b2 - a2);
     for (const i of splashHits) {
@@ -2108,6 +2155,8 @@ export class Sim {
     brad: number,
     air: boolean,
     ground: boolean,
+    hitFx: BulletFx | undefined,
+    fxColor: RGB | undefined,
   ): number[] {
     const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
     const HIT_RANGE = 30 * MU; // Lightning.hitRange
@@ -2125,7 +2174,7 @@ export class Sim {
       const victim = this.nearestUnit(x, y, brad, air, ground);
       if (victim >= 0) {
         this.damageUnit(victim, damage);
-        if (uhp[victim] > 0) this.pushFx(x, y, 0.12, FxKind.Hit);
+        if (uhp[victim] > 0) this.bulletFx(hitFx, x, y, rot, fxColor);
         else if (!hits.includes(victim)) hits.push(victim);
       }
       pts.push(x + (Math.random() * 2 - 1) * 3 * MU, y + (Math.random() * 2 - 1) * 3 * MU);
@@ -2194,6 +2243,8 @@ export class Sim {
     armorMult: number,
     air: boolean,
     ground: boolean,
+    hitFx: BulletFx | undefined,
+    fxColor: RGB | undefined,
   ): number {
     const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
     const EXPAND = 7.5; // collideLine's expand = 3 world units
@@ -2237,7 +2288,7 @@ export class Sim {
     for (let k = 0; k < order.length && (pierceCap <= 0 || k < pierceCap); k++) {
       const i = hits[order[k]];
       this.damageUnit(i, damage, false, armorMult);
-      if (uhp[i] > 0) this.pushFx(upx[i], upy[i], 0.12, FxKind.Hit);
+      if (uhp[i] > 0) this.bulletFx(hitFx, upx[i], upy[i], angle, fxColor);
       else dead.push(i);
     }
     dead.sort((a, b) => b - a);
@@ -2429,6 +2480,21 @@ export class Sim {
       pr.life -= dt;
       pr.age += dt;
 
+      // ArtilleryBulletType.update: a puff every (3 + fslope*2) * mult
+      // ticks, at a radius of fslope * size. fslope peaks at half life, so
+      // the trail is both fastest and fattest at the top of the arc and
+      // thins away at both ends — which is the whole illusion of height
+      if (b.trail) {
+        const fin = pr.age / (pr.age + pr.life);
+        const slope = 1 - Math.abs(fin - 0.5) * 2;
+        pr.trailT += dt;
+        const every = ((3 + slope * 2) * b.trail.mult) / 60;
+        if (pr.trailT >= every) {
+          pr.trailT = 0;
+          this.pushTrail(pr.x, pr.y, slope * b.trail.size, b.sprite?.back);
+        }
+      }
+
       // a force field eats the shot where it stands: no hit, no splash
       if (this.fldN > 0 && this.absorb(pr.x, pr.y, b.damage)) {
         projs[p] = projs[projs.length - 1];
@@ -2496,23 +2562,30 @@ export class Sim {
         for (const i of hits) {
           this.damageUnit(i, b.damage);
           if (uhp[i] > 0 && b.burn && !KIND_BURN_IMMUNE[this.ukind[i]]) this.uburn[i] = b.burn;
-          // BulletType.hitEffect, at the bullet rather than the victim
+          // BulletType.hitEffect, at the bullet rather than the victim.
+          // A splash shot skips it — the blast in the `dead` branch below
+          // is its hit effect — and so does a killing blow, whose death
+          // puff would only be buried under it
           if (uhp[i] > 0 && b.splash <= 0)
-            this.pushFx(
-              pr.x, pr.y, b.invisible ? 14 / 60 : 0.12,
-              b.invisible ? FxKind.FlameHit : FxKind.Hit,
-              Math.atan2(pr.vy, pr.vx), 0,
-              (Math.random() * 0x7fffffff) | 0,
-            );
+            this.bulletFx(b.hitFx, pr.x, pr.y, Math.atan2(pr.vy, pr.vx), b.fxColor);
         }
         hits.sort((a2, b2) => b2 - a2);
         for (const i of hits) if (uhp[i] <= 0) this.killUnit(i);
       }
       if (dead) {
-        // splash bullets blast wherever they die: direct hit, proximity
-        // fuse, or end of lifetime (Mindustry's despawnHit)
-        if (b.splash > 0)
+        const rot = Math.atan2(pr.vy, pr.vx);
+        // BulletType.hit: the blast, and the hit effect a splash bullet
+        // saves for it rather than firing per victim above. Mindustry gives
+        // every splash bullet despawnHit, so a shell that simply runs out
+        // of lifetime blasts exactly as one that ran into something
+        if (b.splash > 0) {
+          this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor);
+          this.bulletFx(b.hitFx2, pr.x, pr.y, rot, b.fxColor);
           this.splash(pr.x, pr.y, b.splashRadius, b.splash, b.collidesAir, b.collidesGround);
+        }
+        // BulletType.despawned, and only that: a shot spent on a direct
+        // hit was removed, not despawned, and leaves nothing behind
+        if (pr.life <= 0) this.bulletFx(b.despawnFx, pr.x, pr.y, rot, b.fxColor);
         projs[p] = projs[projs.length - 1];
         projs.pop();
       }
@@ -2549,6 +2622,8 @@ export class Sim {
    * Area damage with Mindustry's falloff (Damage.calculateDamage): full at
    * the blast center easing to 40% at the radius edge; anything whose
    * hitbox overlaps the radius is affected, armor applying per victim.
+   * Damage only — the blast the player SEES is the bullet's own hitEffect,
+   * fired beside this by whatever set the shot off.
    */
   private splash(
     x: number,
@@ -2590,7 +2665,6 @@ export class Sim {
       if (uhp[i] > 0) continue;
       this.killUnit(i);
     }
-    this.pushFx(x, y, 0.3, FxKind.Flak);
   }
 
   /** Fx.lightning: the only effect whose shape is data rather than a seed —
@@ -2612,5 +2686,32 @@ export class Sim {
   ): void {
     if (this.effects.length < FX_CAP)
       this.effects.push({ x, y, age: 0, ttl, kind, rot, len, seed, sides });
+  }
+
+  /**
+   * Effect.at(x, y, rotation, color) for one of a bullet's own effects.
+   * The kind carries its Mindustry lifetime (FX_LIFE) and every one of
+   * them scatters particles, so both are filled in here rather than at the
+   * dozen call sites. An unset kind is Fx.none and draws nothing.
+   */
+  private bulletFx(kind: BulletFx | undefined, x: number, y: number, rot: number, col?: RGB): void {
+    if (kind === undefined || this.effects.length >= FX_CAP) return;
+    this.effects.push({
+      x, y, age: 0, ttl: FX_LIFE[kind], kind, rot, len: 0,
+      seed: (Math.random() * 0x7fffffff) | 0, sides: 0, col,
+    });
+  }
+
+  /**
+   * Fx.artilleryTrail: a disc that fades where it was dropped. It takes
+   * its own push because its radius rides the `len` slot and it is drawn
+   * a layer under the shells rather than with the rest of the effects.
+   */
+  private pushTrail(x: number, y: number, radius: number, col?: RGB): void {
+    if (this.effects.length >= FX_CAP) return;
+    this.effects.push({
+      x, y, age: 0, ttl: FX_LIFE[FxKind.ArtilleryTrail], kind: FxKind.ArtilleryTrail,
+      rot: 0, len: radius, seed: 0, sides: 0, col,
+    });
   }
 }
