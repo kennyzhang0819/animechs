@@ -873,26 +873,52 @@ export default function Swarmfield() {
           </div>
         )}
         {hud && !hud.lost && !hud.won && (
-          /* the swarm's entry points, and the lines flyers fly out of them.
-             Walkers read off the terrain — flyers ignore it, so where they
-             come from and where they cross is the question this answers */
-          <button
-            aria-pressed={hud.showRoutes}
-            title="Show enemy drop zones and the routes flyers take"
-            onClick={() => {
-              const g = gameRef.current;
-              if (!g) return;
-              g.toggleRoutes();
-              setHud(g.ui());
-            }}
-            className={`absolute right-4 top-16 rounded border px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-              hud.showRoutes
-                ? "border-[#FFD37F] bg-[#222227]/90 text-[#FFD37F]"
-                : "border-[#2E2E36] bg-[#151518]/70 text-[#71717C] hover:border-[#4A4A55] hover:text-[#A6A6AF]"
-            }`}
+          <div
+            role="group"
+            aria-label="view and menu"
+            className="absolute right-4 top-4 flex items-start gap-2"
           >
-            Spawns &amp; routes
-          </button>
+            {/* the swarm's entry points, and the lines flyers fly out of
+                them. Walkers read off the terrain — flyers ignore it, so
+                where they come from and what they cross is the question
+                this answers */}
+            <button
+              aria-pressed={hud.showRoutes}
+              title="Show enemy drop zones and the routes flyers take"
+              onClick={() => {
+                const g = gameRef.current;
+                if (!g) return;
+                g.toggleRoutes();
+                setHud(g.ui());
+              }}
+              className={`rounded border px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+                hud.showRoutes
+                  ? "border-[#FFD37F] bg-[#222227]/90 text-[#FFD37F]"
+                  : "border-[#2E2E36] bg-[#151518]/70 text-[#71717C] hover:border-[#4A4A55] hover:text-[#A6A6AF]"
+              }`}
+            >
+              Spawns &amp; routes
+            </button>
+            {/* the same menu esc raises — a pointer needs a way in too */}
+            <button
+              aria-label="Game menu"
+              title="Game menu (Esc)"
+              onClick={() => {
+                const g = gameRef.current;
+                if (!g) return;
+                g.openMenu();
+                setHud(g.ui());
+              }}
+              className="rounded border border-[#2E2E36] bg-[#151518]/70 p-[6px] text-[#71717C] backdrop-blur hover:border-[#4A4A55] hover:text-[#A6A6AF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+            >
+              <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M19.14 12.94a7.5 7.5 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.3 7.3 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.56-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.65 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.5 7.5 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.5.38 1.04.7 1.63.94l.36 2.54c.04.24.25.42.5.42h3.84c.25 0 .46-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.63-.94l2.39.96c.21.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"
+                />
+              </svg>
+            </button>
+          </div>
         )}
         <div
           role="group"

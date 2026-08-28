@@ -520,6 +520,15 @@ export class Game {
     this.menuOpen = false;
   }
 
+  /**
+   * The gear button, and the same guard esc uses: the end screens own the UI
+   * outright, so there is no pause menu to raise underneath one.
+   */
+  openMenu(): void {
+    if (this.sim.lost() || this.won()) return;
+    this.menuOpen = true;
+  }
+
   /** fast-forward toggle: any multiplier in SPEEDS; anything else is 1x */
   setSpeed(mult: number): void {
     this.speed = SPEEDS.includes(mult) ? mult : 1;
