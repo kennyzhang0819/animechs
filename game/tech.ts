@@ -2,6 +2,56 @@ import { addScaled, canAfford, costEntries, pay, type Bank, type Cost, type Item
 import { TOWER_KINDS, type TowerKind } from "./types";
 
 /**
+ * The nodes that are not turrets.
+ *
+ * `home` is the trunk everything hangs off — it is bought for nothing and
+ * granted to every save, because a root that could be missed would leave
+ * the whole tree hidden behind it. It exists to give the tree TWO paths out
+ * of one place: turrets down the middle, and the utilities off to the side.
+ *
+ * The four speed nodes are the utilities path, and they are a different
+ * KIND of purchase from a turret. A turret node's points are capacity, so
+ * it takes points forever; a utility is a SWITCH, so it takes exactly one
+ * (see `cap`) and then reads as owned.
+ */
+export const UTILITY_KINDS = ["home", "speed-2", "speed-4", "speed-8", "speed-16"] as const;
+export type UtilityKind = (typeof UTILITY_KINDS)[number];
+
+/** anything the tree can hold points in */
+export type TechKind = TowerKind | UtilityKind;
+
+export const TECH_KINDS: readonly TechKind[] = [...TOWER_KINDS, ...UTILITY_KINDS];
+
+const UTILITY_SET: ReadonlySet<string> = new Set<string>(UTILITY_KINDS);
+
+/** is this node a turret? — the guard every turret-only reader needs */
+export const isTowerNode = (id: TechKind): id is TowerKind => !UTILITY_SET.has(id);
+
+/**
+ * The fast-forward multiplier each utility node hands over. 1x is not in
+ * here: it is the pace the game runs at with nothing bought, so it is never
+ * something to own.
+ */
+export const NODE_SPEED: Readonly<Partial<Record<UtilityKind, number>>> = {
+  "speed-2": 2,
+  "speed-4": 4,
+  "speed-8": 8,
+  "speed-16": 16,
+};
+
+/** what each utility node is called, and what owning it does */
+export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: string }>> = {
+  home: {
+    name: "Home",
+    blurb: "The root of the tree. Turrets run down the middle, utilities off to the side.",
+  },
+  "speed-2": { name: "2x Speed", blurb: "Run the whole simulation at double pace." },
+  "speed-4": { name: "4x Speed", blurb: "Quadruple pace — a wave gap stops being a wait." },
+  "speed-8": { name: "8x Speed", blurb: "Eight times pace, for a board that is already holding." },
+  "speed-16": { name: "16x Speed", blurb: "Sixteen times pace. A finished run, fast-forwarded." },
+};
+
+/**
  * The tech tree: one square node per turret, laid out as a small graph.
  * A node's point count IS the turret's placement capacity — the first
  * point unlocks the turret (capacity 1) and every further point on the
@@ -181,11 +231,21 @@ function tidy(x: number): number {
 }
 
 export interface TechNodeDef {
-  tower: TowerKind;
+  /** which node this is — a turret, or one of the utilities (UTILITY_KINDS) */
+  id: TechKind;
   /** what this node's points cost — two numbers, not a table */
   price: PriceCurve;
   /** parent node: needs >= 1 point before this node appears in the tree */
-  requires?: TowerKind;
+  requires?: TechKind;
+  /**
+   * Hard ceiling on points, if the node has one.
+   *
+   * TURRETS DO NOT: a turret's points ARE its placement capacity, so there
+   * is always one more to buy and the price curve is the only ceiling.
+   * A utility is a switch rather than a stack — 2x speed is on or it is
+   * not — so those stop at one and go quiet.
+   */
+  cap?: number;
   /**
    * Ladder gate: this tier of the campaign must have been CLEARED before
    * points can go in.
@@ -201,7 +261,9 @@ export interface TechNodeDef {
    * grid position in the tree view, in cell units. The tree grows DOWNWARD:
    * y is the depth (a child always sits on the row below its parent) and x
    * spreads siblings sideways, so duo's trunk runs straight down the middle
-   * with scatter branching off it.
+   * with scatter branching off it. Home sits above the trunk at the top,
+   * and the utilities run down their own column on the right — the same
+   * root, a visibly separate path.
    */
   x: number;
   y: number;
@@ -270,6 +332,21 @@ export interface TechNodeDef {
  */
 export const TECH_TREE: readonly TechNodeDef[] = [
   {
+    // THE ROOT, AND THE ONLY FREE NODE. It costs nothing, every save is
+    // granted it (progress.ts), and its cap of one means it never asks for
+    // a second point — it is a junction, not a purchase.
+    //
+    // It exists because the tree now forks at the top. Duo and the fourteen
+    // turrets below it are one path; the utilities are the other, and they
+    // buy PACE rather than firepower. Hanging both off a single visible
+    // root is what makes that a fork rather than two unrelated trees.
+    id: "home",
+    price: { base: {}, growth: 1 },
+    cap: 1,
+    x: 2,
+    y: 0,
+  },
+  {
     // THE VOLUME TURRET, and the only lever a stalled player has — so it is
     // copper-only. A run that dies before the baseline's first mace wave
     // banks no titanium at all, and duo capacity has to stay buyable out of
@@ -278,30 +355,31 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // turret does and the price rule pays exactly that much attention to it.
     // A top-difficulty run roughly maxes it; five hundred duos are still
     // only 13,500 DPS, so it stays the thing you open with, never the answer
-    tower: "duo",
+    id: "duo",
     price: { base: { copper: 8 }, growth: 1.0098 },
+    requires: "home",
     x: 2,
-    y: 0,
+    y: 1,
   },
   {
     // the first AoE, and the moment tier 1 and tier 2 stop being difficulty:
     // splash scales with bodies per blast and collapses with health per
     // body, so one hail shell kills five daggers and chips a spiroct
-    tower: "hail",
+    id: "hail",
     price: { base: { copper: 40, titanium: 9 }, growth: 1.0103 },
     requires: "scatter",
     x: 1,
-    y: 2,
+    y: 3,
   },
   {
     // ungated like hail and strong out of proportion to its price: a
     // piercing flame rakes a whole file of units and sets each alight, and
     // burning ignores armour outright. 60 units of range is the whole cost
-    tower: "scorch",
+    id: "scorch",
     price: { base: { copper: 60, titanium: 10 }, growth: 1.0133 },
     requires: "arc",
     x: 3,
-    y: 2,
+    y: 3,
   },
   {
     // anti-air only, and UNGATED for the same reason hail and scorch are:
@@ -338,11 +416,11 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // scatter -> hail), a thorium price here locked the cheap ground AoE
     // behind the T3 waves too. Upstream builds scatter from copper and lead,
     // a tier-1 cost; this is that, in our currencies
-    tower: "scatter",
+    id: "scatter",
     price: { base: { copper: 25, titanium: 4 }, growth: 1.0327 },
     requires: "duo",
     x: 1,
-    y: 1,
+    y: 2,
   },
   {
     // 28 damage a shell — the first turret that puts a fortress (armour 9)
@@ -351,11 +429,11 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // around wave 7, when the T3 kills that pay for it start arriving. It
     // also shoots AIR, which makes it the second answer to the flare waves
     // and half the reason scatter no longer has to be priced as the only one
-    tower: "salvo",
+    id: "salvo",
     price: { base: { copper: 250, titanium: 85, thorium: 30 }, growth: 1.0156 },
     requires: "hail",
     x: 1,
-    y: 3,
+    y: 4,
   },
   {
     // the steepest curve among the built turrets, and the most expensive
@@ -366,11 +444,11 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PLASTANIUM IS THE GATE: fifteen of it, and only High and Extreme drop
     // any at all. A Medium save can see this node and can never pay for it,
     // which is the same lock the old tier gate spelled out by hand
-    tower: "fuse",
+    id: "fuse",
     price: { base: { titanium: 280, thorium: 340, plastanium: 65 }, growth: 1.0594 },
     requires: "salvo",
     x: 2,
-    y: 5,
+    y: 6,
   },
   {
     // Chain lightning down a file of ground units, and the root of
@@ -379,33 +457,33 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // five: arc's shot walks, and every node it lands on is a separate
     // plain bullet taking one body. Measured on a file of ten daggers, one
     // bolt lands 217 of its theoretical 240
-    tower: "arc",
+    id: "arc",
     price: { base: { copper: 50, titanium: 9 }, growth: 1.012 },
     requires: "duo",
     x: 3,
-    y: 1,
+    y: 2,
   },
   {
     // A piercing laser; the ground answer that is not artillery.
     // FOUR bodies, not the usual five — pierceCap 4 is a hard stop written
     // into the bullet, and the beam visibly ends at the fourth thing it
     // hits, so counting five would be pricing a shot it cannot fire
-    tower: "lancer",
+    id: "lancer",
     price: { base: { copper: 200, titanium: 55, thorium: 20 }, growth: 1.0216 },
     requires: "scorch",
     x: 4,
-    y: 3,
+    y: 4,
   },
   {
     // 290 range — the longest reach in the game, and the wave-clear
     // that answers the crawler floods. Four shells a volley at 70 splash,
     // and like every artillery piece only the splash counts: the shell
     // arcs over its target rather than hitting it
-    tower: "ripple",
+    id: "ripple",
     price: { base: { copper: 300, titanium: 85, thorium: 25 }, growth: 1.0453 },
     requires: "salvo",
     x: 2,
-    y: 4,
+    y: 5,
   },
   {
     // Not a damage turret at all: it drags air units out of formation.
@@ -422,11 +500,11 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // parallax wall is nearly free and answers air outright. Left literal
     // rather than fudged, because the rule is the rule and a second one
     // invented here would not be
-    tower: "parallax",
+    id: "parallax",
     price: { base: { copper: 220, titanium: 60, thorium: 20 }, growth: 1.0007 },
     requires: "scorch",
     x: 3,
-    y: 3,
+    y: 4,
   },
   // ---------- EXTREME AND ERADICATION ----------------------------------
   //
@@ -447,20 +525,20 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // PLASTANIUM. Homing missiles — they chase what they lock, so overkill
     // costs less than it does on a straight-firing line
-    tower: "swarmer",
+    id: "swarmer",
     price: { base: { titanium: 130, thorium: 110, plastanium: 15 }, growth: 1.0278 },
     requires: "salvo",
     x: 0,
-    y: 4,
+    y: 5,
   },
   {
     // PLASTANIUM. A flak wall. The reason to own it is volume of splash, which
     // is why its ceiling is the full 3x3 band
-    tower: "cyclone",
+    id: "cyclone",
     price: { base: { titanium: 150, thorium: 130, plastanium: 15 }, growth: 1.0524 },
     requires: "swarmer",
     x: 0,
-    y: 5,
+    y: 6,
   },
   {
     // PHASE FABRIC. Twin heavy cannon — the highest sustained damage in the
@@ -468,28 +546,84 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // the very end of it, so these three ARE the hidden difficulty's reward
     // and they light up the moment it ships — priced there rather than told
     // to wait there
-    tower: "spectre",
+    id: "spectre",
     price: { base: { titanium: 380, thorium: 430, plastanium: 100, "phase-fabric": 55 }, growth: 1.0671 },
     requires: "cyclone",
     x: 0,
-    y: 6,
+    y: 7,
   },
   {
     // PHASE FABRIC. A continuous beam that melts whatever it rests on
-    tower: "meltdown",
+    id: "meltdown",
     price: { base: { titanium: 430, thorium: 480, plastanium: 110, "phase-fabric": 65 }, growth: 1.0854 },
     requires: "lancer",
     x: 4,
-    y: 4,
+    y: 5,
   },
   {
     // PHASE FABRIC. 500 range and one enormous shot — a sniper rather than a
     // defence, and the only turret that can hit a spawn pad from the core
-    tower: "foreshadow",
+    id: "foreshadow",
     price: { base: { titanium: 450, thorium: 530, plastanium: 120, "phase-fabric": 75 }, growth: 1.0317 },
     requires: "meltdown",
     x: 4,
-    y: 5,
+    y: 6,
+  },
+  // ---------- THE UTILITIES PATH ---------------------------------------
+  //
+  // Four one-point switches off home, in their own column: 2x, 4x, 8x and
+  // 16x simulation pace. They used to be a constant — 2x and 4x free to
+  // everyone, 8x and 16x a sandbox tool nobody could reach (the old PLAYER_SPEEDS
+  // in game.ts). They are now the second thing a save can spend on.
+  //
+  // THEY ARE PRICED AS CONVENIENCE, NOT AS POWER, and that is deliberate:
+  // pace changes nothing about whether a board holds. It only decides how
+  // long the player sits watching one that already does. Charging turret
+  // money for it would be charging for the game's own dead time. The whole
+  // path costs less than a single mid-tree turret point.
+  //
+  // WHAT PACES THEM IS THE CURRENCY, NOT THE NUMBER. Each node asks for one
+  // item and a different one, so the path unfolds at exactly the rate the
+  // campaign hands out new currencies — copper from the first wave, titanium
+  // from the first mace, thorium once the T3s arrive mid-Medium, plastanium
+  // only from High. That is the same rule the turrets run on (see TWO at the
+  // top of the file): the bundle is the gate, and nothing here needs a tier
+  // written on it. 16x lands on High because High is where a run is long
+  // enough to want it.
+  //
+  // A CHAIN, NOT A FAN. Each one requires the one below it, so the column
+  // reads in order and a player cannot own 16x without having wanted 8x.
+  {
+    id: "speed-2",
+    price: { base: { copper: 30 }, growth: 1 },
+    requires: "home",
+    cap: 1,
+    x: 5,
+    y: 1,
+  },
+  {
+    id: "speed-4",
+    price: { base: { titanium: 25 }, growth: 1 },
+    requires: "speed-2",
+    cap: 1,
+    x: 5,
+    y: 2,
+  },
+  {
+    id: "speed-8",
+    price: { base: { thorium: 20 }, growth: 1 },
+    requires: "speed-4",
+    cap: 1,
+    x: 5,
+    y: 3,
+  },
+  {
+    id: "speed-16",
+    price: { base: { plastanium: 15 }, growth: 1 },
+    requires: "speed-8",
+    cap: 1,
+    x: 5,
+    y: 4,
   },
 ];
 
@@ -498,8 +632,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
  * `base * growth^owned` per item, skipping items the curve hasn't started
  * charging yet, then tidied to a readable number.
  */
-export function techPrice(tower: TowerKind, owned = 0): Cost {
-  const { base, growth, from } = techNode(tower).price;
+export function techPrice(node: TechKind, owned = 0): Cost {
+  const { base, growth, from } = techNode(node).price;
   const n = Math.max(0, Math.floor(owned));
   const g = effectiveGrowth(growth);
   const out: Cost = {};
@@ -513,9 +647,15 @@ export function techPrice(tower: TowerKind, owned = 0): Cost {
 }
 
 /** can this wallet pay for the next point on the node? */
-export function canAffordTech(bank: Bank, tower: TowerKind, owned = 0): boolean {
-  return canAfford(bank, techPrice(tower, owned));
+export function canAffordTech(bank: Bank, node: TechKind, owned = 0): boolean {
+  return canAfford(bank, techPrice(node, owned));
 }
+
+/** the most points this node will ever hold — Infinity for every turret */
+export const techCap = (node: TechKind): number => techNode(node).cap ?? Infinity;
+
+/** has this node taken every point it is ever going to? */
+export const isMaxed = (node: TechKind, owned = 0): boolean => owned >= techCap(node);
 
 /**
  * How many more points this wallet buys on one node, spending nothing else.
@@ -524,33 +664,35 @@ export function canAffordTech(bank: Bank, tower: TowerKind, owned = 0): boolean 
  * geometric count is logarithmic in the bank — a few hundred iterations at
  * any bank size, sub-millisecond.
  *
- * The flat branch below is now only reachable through PRICE_GROWTH_SCALE = 0,
- * since no node ships with growth 1. It has to stay: a flat price walked
- * point by point is LINEAR in the bank, and back when duo was flat at 8
- * copper a late save made that loop run into the tens of thousands and took
- * the tech screen over a second to repaint. A division answers it instead.
+ * The flat branch below was once only reachable through
+ * PRICE_GROWTH_SCALE = 0. THE UTILITY NODES SHIP FLAT — a switch has one
+ * price and no curve — so it is live again, and it is also why the cap is
+ * applied first: a flat price divided into a fat bank answers "four hundred
+ * of them", and 2x speed is a thing you own once.
  */
 export function affordablePoints(
   bank: Bank,
-  tower: TowerKind,
+  node: TechKind,
   owned = 0,
   limit = Infinity,
 ): number {
   const n = Math.max(0, Math.floor(owned));
-  const price = techPrice(tower, n);
+  const room = Math.min(limit, techCap(node) - n);
+  if (room < 1) return 0;
+  const price = techPrice(node, n);
   const entries = costEntries(price);
   if (entries.length === 0) return 0;
 
-  if (effectiveGrowth(techNode(tower).price.growth) === 1) {
+  if (effectiveGrowth(techNode(node).price.growth) === 1) {
     let most = Infinity;
     for (const { item, amount } of entries) most = Math.min(most, Math.floor(bank[item] / amount));
-    return Math.max(0, Math.min(most, limit));
+    return Math.max(0, Math.min(most, room));
   }
 
   const left = { ...bank };
   let bought = 0;
-  while (bought < limit) {
-    const next = techPrice(tower, n + bought);
+  while (bought < room) {
+    const next = techPrice(node, n + bought);
     if (!canAfford(left, next)) break;
     pay(left, next);
     bought++;
@@ -563,26 +705,35 @@ export function affordablePoints(
  * price up to it. Curve tuning is really about this number, not about any
  * single price, so it lives here rather than in a scratch script.
  */
-export function techSpend(tower: TowerKind, points: number): Cost {
+export function techSpend(node: TechKind, points: number): Cost {
   const total: Cost = {};
   for (let i = 0; i < Math.max(0, Math.floor(points)); i++)
-    addScaled(total, techPrice(tower, i), 1);
+    addScaled(total, techPrice(node, i), 1);
   return total;
 }
 
-export function techNode(tower: TowerKind): TechNodeDef {
-  const def = TECH_TREE.find((n) => n.tower === tower);
-  if (!def) throw new Error(`tower "${tower}" is not in TECH_TREE`);
+export function techNode(id: TechKind): TechNodeDef {
+  const def = TECH_TREE.find((n) => n.id === id);
+  if (!def) throw new Error(`"${id}" is not in TECH_TREE`);
   return def;
 }
 
-/** points per turret node — the save's tech field; points == capacity */
-export type TechLevels = Partial<Record<TowerKind, number>>;
+/**
+ * Points per node — the save's tech field. On a turret the points ARE the
+ * placement capacity; on a utility there is only ever one, and it means the
+ * switch is on.
+ */
+export type TechLevels = Partial<Record<TechKind, number>>;
 
 /** everything the sim and UI need to know, derived from the point spread */
 export interface TechState {
   unlocked: ReadonlySet<TowerKind>;
   caps: Record<TowerKind, number>;
+  /**
+   * The fast-forward multipliers this save may use, ascending. 1x is always
+   * in it and is never bought — it is the pace the game runs at.
+   */
+  speeds: readonly number[];
 }
 
 export function techState(levels: TechLevels): TechState {
@@ -590,5 +741,11 @@ export function techState(levels: TechLevels): TechState {
     TOWER_KINDS.map((k) => [k, Math.max(0, Math.floor(levels[k] ?? 0))]),
   ) as Record<TowerKind, number>;
   const unlocked = new Set<TowerKind>(TOWER_KINDS.filter((k) => caps[k] > 0));
-  return { unlocked, caps };
+  const speeds = [
+    1,
+    ...UTILITY_KINDS.filter((k) => (levels[k] ?? 0) > 0)
+      .map((k) => NODE_SPEED[k])
+      .filter((m): m is number => m != null),
+  ].sort((a, b) => a - b);
+  return { unlocked, caps, speeds };
 }

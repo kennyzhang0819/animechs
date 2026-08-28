@@ -9,7 +9,7 @@ import {
   WAVE_RELEASE_SECONDS,
 } from "./levels";
 import { TOWERS } from "./constants";
-import { TECH_TREE, type TechNodeDef } from "./tech";
+import { isTowerNode, TECH_TREE, type TechNodeDef } from "./tech";
 import {
   BASE_ITEM,
   costEntries,
@@ -424,8 +424,10 @@ function bestShotByTier(tier: number): number {
   if (clampTier(tier) <= 0) return TOWERS.duo.bullet.damage;
   let best = 0;
   for (const node of TECH_TREE) {
+    // the utilities path buys pace, not damage — it has no bullet to read
+    if (!isTowerNode(node.id)) continue;
     if (!payableAtTier(node, tier)) continue;
-    best = Math.max(best, TOWERS[node.tower].bullet.damage);
+    best = Math.max(best, TOWERS[node.id].bullet.damage);
   }
   return best;
 }

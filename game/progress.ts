@@ -13,9 +13,12 @@ import {
 } from "./items";
 import {
   affordablePoints as affordableTechPoints,
+  isMaxed,
+  TECH_KINDS,
   techNode,
   techPrice,
   techState,
+  type TechKind,
   type TechLevels,
   type TechState,
 } from "./tech";
@@ -39,7 +42,11 @@ export interface Progress {
    * nothing above it (isCampaignComplete).
    */
   cleared: number;
-  /** tech points per turret — a node's points are its placement capacity */
+  /**
+   * Tech points per node. On a turret the points are its placement
+   * capacity; on a utility (home, the speed unlocks) there is only one and
+   * it means the switch is on.
+   */
   tech: TechLevels;
   /**
    * The last layout built on each map, by map id — so a lost run does not
@@ -84,9 +91,11 @@ const freshBank = (): Bank => emptyBank();
 const fresh = (): Progress => ({
   bank: freshBank(),
   cleared: 0,
-  // arc's tech node hangs off duo, and duo starts with points, so granting
-  // arc here does not leave an orphan the tree would refuse to draw
-  tech: { duo: DUO_START, arc: ARC_START },
+  // home is free and granted outright — it is the root the whole tree hangs
+  // off, and a save without it would draw nothing at all. Arc's node hangs
+  // off duo and duo's off home, so granting all three leaves no orphan the
+  // tree would refuse to draw
+  tech: { home: 1, duo: DUO_START, arc: ARC_START },
 });
 
 /**
@@ -146,6 +155,12 @@ function readCleared(p: { cleared?: unknown; completed?: unknown }): number {
   return 0;
 }
 
+/**
+ * A node's ceiling, as the save loader needs it: a hand-edited or
+ * stale save must not be able to claim four points of "2x speed".
+ */
+const techCapOf = (k: TechKind): number => techNode(k).cap ?? Infinity;
+
 export function loadProgress(): Progress {
   try {
     const raw = localStorage.getItem(KEY);
@@ -153,16 +168,18 @@ export function loadProgress(): Progress {
     const p = JSON.parse(raw) as Partial<Progress> & { tech?: unknown; scrap?: unknown };
     const tech: TechLevels = {};
     if (p.tech && typeof p.tech === "object") {
-      for (const k of TOWER_KINDS) {
+      for (const k of TECH_KINDS) {
         const v = (p.tech as Record<string, unknown>)[k];
-        if (typeof v === "number" && v > 0) tech[k] = Math.floor(v);
+        if (typeof v === "number" && v > 0) tech[k] = Math.min(Math.floor(v), techCapOf(k));
       }
     }
-    // neither grant can legitimately sit below its free starting capacity —
-    // this also migrates saves from before the per-turret point model, and
-    // any save written while the baseline was tuned to a smaller loadout.
-    // Points only ever go up (there is no selling a node), so a floor can
-    // never take anything from a player who has bought past it
+    // none of the three grants can legitimately sit below its free starting
+    // value — this also migrates saves from before the per-turret point
+    // model, from before home existed at all, and any save written while the
+    // baseline was tuned to a smaller loadout. Points only ever go up (there
+    // is no selling a node), so a floor can never take anything from a
+    // player who has bought past it
+    tech.home = 1;
     tech.duo = Math.max(tech.duo ?? 0, DUO_START);
     tech.arc = Math.max(tech.arc ?? 0, ARC_START);
     return { bank: readBank(p), cleared: readCleared(p), tech, layouts: readLayouts(p) };
@@ -255,13 +272,19 @@ export const isTierUnlocked = (p: Progress, tier: number): boolean =>
  * not drawn at all; "locked-tier" nodes are drawn dimmed with the tier they
  * wait for; the rest differ only by affordability.
  */
-export type NodeStatus = "buyable" | "poor" | "locked-tier" | "hidden";
+export type NodeStatus = "buyable" | "poor" | "locked-tier" | "maxed" | "hidden";
 
-export function nodeStatus(p: Progress, tower: TowerKind): NodeStatus {
-  const def = techNode(tower);
+export function nodeStatus(p: Progress, node: TechKind): NodeStatus {
+  const def = techNode(node);
+  const owned = p.tech[node] ?? 0;
   if (def.requires && (p.tech[def.requires] ?? 0) < 1) return "hidden";
+  // "maxed" is a UTILITY state and only a utility one: a turret node's
+  // points are capacity, so there is always one more to buy. A switch that
+  // is already on has nothing left to sell, and saying so is friendlier
+  // than leaving a lit node that refuses every click
+  if (isMaxed(node, owned)) return "maxed";
   if (def.requiresTier != null && !isTierCleared(p, def.requiresTier)) return "locked-tier";
-  return canAfford(p.bank, techPrice(tower, p.tech[tower] ?? 0)) ? "buyable" : "poor";
+  return canAfford(p.bank, techPrice(node, owned)) ? "buyable" : "poor";
 }
 
 /**
@@ -274,25 +297,25 @@ export function nodeStatus(p: Progress, tower: TowerKind): NodeStatus {
  * tree that could only be clicked one point at a time would make the game's
  * central action its most tedious one.
  */
-export function affordablePoints(p: Progress, tower: TowerKind, limit = Infinity): number {
-  if (nodeStatus(p, tower) !== "buyable") return 0;
-  return affordableTechPoints(p.bank, tower, p.tech[tower] ?? 0, limit);
+export function affordablePoints(p: Progress, node: TechKind, limit = Infinity): number {
+  if (nodeStatus(p, node) !== "buyable") return 0;
+  return affordableTechPoints(p.bank, node, p.tech[node] ?? 0, limit);
 }
 
 /**
- * Put points into a turret's node — unlock, or +N capacity. Buys as many as
+ * Put points into a node — unlock, or +N capacity. Buys as many as
  * asked for OR as many as the wallet covers, whichever is fewer, and
  * returns null only when it could not buy a single one, so a "×100" that
  * can afford 37 lands 37 rather than refusing.
  */
-export function buyTech(tower: TowerKind, count = 1): Progress | null {
+export function buyTech(node: TechKind, count = 1): Progress | null {
   const p = loadProgress();
-  const n = Math.min(Math.max(1, Math.floor(count)), affordablePoints(p, tower, count));
+  const n = Math.min(Math.max(1, Math.floor(count)), affordablePoints(p, node, count));
   if (n < 1) return null;
   for (let i = 0; i < n; i++) {
-    const owned = p.tech[tower] ?? 0;
-    pay(p.bank, techPrice(tower, owned));
-    p.tech[tower] = owned + 1;
+    const owned = p.tech[node] ?? 0;
+    pay(p.bank, techPrice(node, owned));
+    p.tech[node] = owned + 1;
   }
   saveProgress(p);
   return p;

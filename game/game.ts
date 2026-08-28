@@ -67,11 +67,16 @@ export interface Stats {
 export const SPEEDS: readonly number[] = [1, 2, 4, 8, 16];
 
 /**
- * The multipliers a player gets. The rest of SPEEDS stay a sandbox tool:
- * 8x and 16x exist to reach a late wave for testing, and at that pace a
- * run is not being played so much as fast-forwarded past.
+ * The multipliers a save has BEFORE it buys any — just the pace the game
+ * runs at.
+ *
+ * This used to be [1, 2, 4], with 8x and 16x held back as a sandbox tool.
+ * All four are now the utilities path in the tech tree (tech.ts), bought
+ * one cheap currency at a time, so what a player gets is read off their
+ * save (TechState.speeds) rather than written here. Sandbox still shows
+ * every SPEEDS entry, because sandbox ignores the tree entirely.
  */
-export const PLAYER_SPEEDS: readonly number[] = [1, 2, 4];
+export const BASE_SPEEDS: readonly number[] = [1];
 
 /**
  * The stages of starting a level, in order, as the loading screen reports
