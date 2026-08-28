@@ -529,6 +529,7 @@ export default function LevelEditorView({
         <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-[260px_1fr]">
           {/* ---- left rail: level settings, map regions, rollup ---- */}
           <aside className="space-y-4 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <RampChart waves={report.waves} />
             <RegionKey mapId={mapId} regions={mapRegions} />
 
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
@@ -718,6 +719,102 @@ function Row({ label, value }: { label: string; value: string }) {
 
 /** the map's spawn pads, coloured exactly as the map editor paints them, so
  * "region 2" in a wave group is visibly the same place on the map */
+
+/**
+ * THE RAMP — the live shape of the run, one point per authored wave.
+ *
+ * The number that matters here is not any wave's size but whether the curve
+ * keeps CLIMBING ACROSS THE CUTS. One script feeds every difficulty, so a
+ * ramp solved for the first cut alone spikes at it and collapses into the
+ * waves after — which is invisible in a list of counts and obvious in a
+ * line. The vertical rules are those cuts.
+ *
+ * Deliberately short. It is pinned above a rail that scrolls, so every pixel
+ * it takes is a pixel of settings pushed off the screen.
+ */
+function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement | null {
+  const [metric, setMetric] = useState<"units" | "hp">("units");
+  const n = waves.length;
+  if (n < 2) return null;
+
+  const v = waves.map((w) => (metric === "units" ? w.units : w.hp));
+  const max = Math.max(1, ...v);
+  // a 240x64 box stretched to the rail's width: preserveAspectRatio="none"
+  // would smear the stroke with it, so the stroke opts out of the scaling
+  const X = (i: number): number => (i / (n - 1)) * 240;
+  const Y = (k: number): number => 62 - (k / max) * 58;
+  const pts = v.map((k, i) => `${X(i).toFixed(1)},${Y(k).toFixed(1)}`);
+  const line = `M${pts.join("L")}`;
+  const area = `M${X(0).toFixed(1)},64L${pts.join("L")}L${X(n - 1).toFixed(1)},64Z`;
+  // a cut is drawn only where the script actually reaches it
+  const cuts = DIFFICULTIES.slice(0, -1)
+    .map((d) => d.waves)
+    .filter((w) => w < n);
+  const fmt = (k: number): string =>
+    k >= 1000 ? `${(k / 1000).toFixed(k >= 10000 ? 0 : 1)}k` : `${Math.round(k)}`;
+
+  return (
+    <div className="sticky top-0 z-10 rounded-lg border border-[#2E2E36] bg-[#151518] p-2.5">
+      <div className="mb-1.5 flex items-baseline justify-between gap-2">
+        <h2 className="text-[12px] font-bold uppercase tracking-widest text-[#71717C]">Ramp</h2>
+        <span className="flex gap-1">
+          {(["units", "hp"] as const).map((m) => (
+            <button
+              key={m}
+              aria-pressed={metric === m}
+              onClick={() => setMetric(m)}
+              className={`rounded px-1.5 text-[11px] uppercase tracking-wider ${
+                metric === m ? "text-[#FFD37F]" : "text-[#4A4A55] hover:text-[#71717C]"
+              }`}
+            >
+              {m === "units" ? "units" : "health"}
+            </button>
+          ))}
+        </span>
+      </div>
+      <svg viewBox="0 0 240 64" preserveAspectRatio="none" className="block h-[62px] w-full">
+        <path d={area} fill="#FFD37F" fillOpacity={0.1} />
+        {cuts.map((w) => (
+          <line
+            key={w}
+            x1={X(w - 1)}
+            x2={X(w - 1)}
+            y1={0}
+            y2={64}
+            stroke="#4A4A55"
+            strokeWidth={1}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+        <path
+          d={line}
+          fill="none"
+          stroke="#FFD37F"
+          strokeWidth={1.5}
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+        {/* one hit target per wave, so hovering the line names the wave it is */}
+        {v.map((k, i) => (
+          <rect key={i} x={X(i) - 120 / n} y={0} width={240 / n} height={64} fill="transparent">
+            <title>{`Wave ${i + 1} — ${metric === "units" ? `${k.toLocaleString()} enemies` : `${Math.round(k).toLocaleString()} hp`}`}</title>
+          </rect>
+        ))}
+      </svg>
+      <div className="mt-1 flex justify-between text-[11px] text-[#4A4A55]">
+        <span>wave 1</span>
+        {cuts.map((w) => (
+          <span key={w} className="text-[#71717C]">
+            {difficultyName(tierOfWave(w - 1))} ends
+          </span>
+        ))}
+        <span>peak {fmt(max)}</span>
+      </div>
+    </div>
+  );
+}
+
+
 function RegionKey({ mapId, regions }: { mapId: string; regions: readonly number[] }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
