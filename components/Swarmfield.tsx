@@ -38,6 +38,7 @@ import {
   isTierCleared,
   loadProgress,
   resetProgress,
+  saveLayout,
   techOf,
   topTier,
   type Progress,
@@ -508,6 +509,11 @@ export default function Swarmfield() {
           return;
         }
         g.setTech(admin ? null : techOf(loadProgress()));
+        // stand last run's emplacements back up before the first wave. Tech
+        // is applied first because placeTower checks capacity, so restoring
+        // ahead of it would silently drop everything past the default caps
+        const saved = loadProgress().layouts?.[g.mapId()];
+        if (saved && saved.length > 0) g.applyLayout(saved);
         game = g;
         gameRef.current = g;
         setHud(g.ui());
@@ -555,6 +561,10 @@ export default function Swarmfield() {
       setHud(ui);
       if ((ui.lost || ui.won) && !granted.current) {
         granted.current = true;
+        // the layout is saved on the RUN ENDING rather than on every
+        // placement: mid-run it is still changing, and a run abandoned from
+        // the pause menu should leave the last finished layout alone
+        saveLayout(g.mapId(), g.layout());
         const reward = grantRunReward(level.tier ?? 0, Array.from(g.sim.killsByKind), ui.won);
         const after = loadProgress();
         setResult(reward);
@@ -634,6 +644,11 @@ export default function Swarmfield() {
     // without this re-read (tech is per-run anyway, but keep it honest)
     g.setTech(admin ? null : techOf(loadProgress()));
     g.reset();
+    // reset() clears the field, so the layout has to be stood back up here
+    // too — Retry rebuilds the sim in place and never goes through the
+    // create effect that restores it on a fresh mount
+    const saved = loadProgress().layouts?.[g.mapId()];
+    if (saved && saved.length > 0) g.applyLayout(saved);
     setHud(g.ui());
   };
 

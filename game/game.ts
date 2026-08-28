@@ -9,7 +9,7 @@ import {
 import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
 import { loadLevelDocs, type LevelSpec, type TowerKind } from "./levels";
 import type { Cost } from "./items";
-import { dropsForKills } from "./progress";
+import { dropsForKills, type TowerPlacement } from "./progress";
 import { Renderer } from "./renderer";
 import { Sim } from "./sim";
 import type { TechState } from "./tech";
@@ -559,6 +559,31 @@ export class Game {
       caps: this.tech ? this.tech.caps : null,
       unlocked: this.tech ? Array.from(this.tech.unlocked) : null,
     };
+  }
+
+  /** which map this run is played on — what a saved layout is keyed by */
+  mapId(): string {
+    return this.sim.level.map ?? OFFICIAL_MAP_IDS[0];
+  }
+
+  /** what is standing right now, in save shape */
+  layout(): TowerPlacement[] {
+    return this.sim.towers.map((t) => ({ kind: t.kind, gx: t.gx, gy: t.gy }));
+  }
+
+  /**
+   * Rebuild a saved layout, and return how much of it stood back up.
+   *
+   * Every placement goes through placeTower, so the map and the tech tree
+   * both get a veto: a cell that stopped being rock since the layout was
+   * saved, or a turret whose capacity has since been spent elsewhere in the
+   * same list, simply drops out. A map edited under a save therefore loses
+   * the towers that no longer fit rather than restoring them into walls.
+   */
+  applyLayout(towers: readonly TowerPlacement[]): number {
+    let placed = 0;
+    for (const t of towers) if (this.sim.placeTower(t.gx, t.gy, t.kind) === "ok") placed++;
+    return placed;
   }
 
   /** show or hide the drop zones and the air routes out of them */

@@ -41,6 +41,26 @@ export interface Progress {
   cleared: number;
   /** tech points per turret — a node's points are its placement capacity */
   tech: TechLevels;
+  /**
+   * The last layout built on each map, by map id — so a lost run does not
+   * cost the player the twenty minutes of placing they already did.
+   *
+   * Safe to keep because PLACING IS FREE: a tower costs nothing but a point
+   * of its node's capacity (see Sim.canPlace), and towers build on rock, so
+   * a restored layout cannot seal a route or hand back value that was spent.
+   * It is convenience, not progress.
+   *
+   * Keyed by MAP rather than by level: the layout is a fact about terrain,
+   * and two levels on one map want the same emplacements.
+   */
+  layouts?: Record<string, TowerPlacement[]>;
+}
+
+/** one emplacement, as the save keeps it: what, and which cell */
+export interface TowerPlacement {
+  kind: TowerKind;
+  gx: number;
+  gy: number;
 }
 
 const KEY = "dagger-problem.progress.v1";
@@ -145,10 +165,46 @@ export function loadProgress(): Progress {
     // never take anything from a player who has bought past it
     tech.duo = Math.max(tech.duo ?? 0, DUO_START);
     tech.arc = Math.max(tech.arc ?? 0, ARC_START);
-    return { bank: readBank(p), cleared: readCleared(p), tech };
+    return { bank: readBank(p), cleared: readCleared(p), tech, layouts: readLayouts(p) };
   } catch {
     return fresh();
   }
+}
+
+/**
+ * Layouts out of a raw save. Every field is re-validated rather than trusted:
+ * these are cell coordinates that will be replayed into placeTower, and a
+ * stale or hand-edited save must degrade to "no layout" rather than throw.
+ * Placement itself re-checks the terrain, so a cell that stopped being rock
+ * simply loses its tower.
+ */
+function readLayouts(p: { layouts?: unknown }): Record<string, TowerPlacement[]> {
+  const out: Record<string, TowerPlacement[]> = {};
+  if (!p.layouts || typeof p.layouts !== "object") return out;
+  const kinds = new Set<string>(TOWER_KINDS);
+  for (const [mapId, raw] of Object.entries(p.layouts as Record<string, unknown>)) {
+    if (!Array.isArray(raw)) continue;
+    const list: TowerPlacement[] = [];
+    for (const t of raw) {
+      if (!t || typeof t !== "object") continue;
+      const { kind, gx, gy } = t as Record<string, unknown>;
+      if (typeof kind !== "string" || !kinds.has(kind)) continue;
+      if (typeof gx !== "number" || typeof gy !== "number") continue;
+      if (!Number.isInteger(gx) || !Number.isInteger(gy) || gx < 0 || gy < 0) continue;
+      list.push({ kind: kind as TowerKind, gx, gy });
+    }
+    if (list.length > 0) out[mapId] = list;
+  }
+  return out;
+}
+
+/** remember what was standing on a map when the run ended */
+export function saveLayout(mapId: string, towers: readonly TowerPlacement[]): void {
+  const p = loadProgress();
+  const layouts = { ...(p.layouts ?? {}) };
+  if (towers.length > 0) layouts[mapId] = towers.map((t) => ({ ...t }));
+  else delete layouts[mapId];
+  saveProgress({ ...p, layouts });
 }
 
 export function saveProgress(p: Progress): void {
