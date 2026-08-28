@@ -4,7 +4,16 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { MapEditor, PATH_WIDTHS, type BrushShape } from "@/game/editor";
 import { SPAWN_RADII, SPAWN_RADIUS_DEFAULT } from "@/game/maps";
 import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
-import { PALETTE, SPAWN_REGIONS, saveMap, type MapData, type PaletteSet } from "@/game/maps";
+import {
+  MAX_SPAWN_REGIONS,
+  PALETTE,
+  saveMap,
+  spawnRegionIds,
+  spawnRegionStyle,
+  SPAWN_REGIONS,
+  type MapData,
+  type PaletteSet,
+} from "@/game/maps";
 
 const LAYER_ROWS: ReadonlyArray<[keyof TerrainLayers, string]> = [
   ["wall", "Hills"],
@@ -197,6 +206,27 @@ export default function MapEditorView({
   const [brushShape, setBrushShape] = useState<BrushShape>("square");
   const [pathWidth, setPathWidth] = useState(1);
   const [spawnRadius, setSpawnRadius] = useState(SPAWN_RADIUS_DEFAULT);
+  /**
+   * How many spawn-region swatches the palette offers. NOT a limit on the
+   * map — "+" adds another, forever — just how many are on show, so the
+   * picker does not start with a wall of regions nobody is using.
+   *
+   * It opens at four (the hand-picked colours in maps.ts) or at whatever the
+   * map already paints, whichever is more: loading a map that uses region 7
+   * has to be able to select region 7, or its own zones become unreachable.
+   */
+  const [regionSlots, setRegionSlots] = useState(() =>
+    Math.max(SPAWN_REGIONS.length, ...spawnRegionIds(map)),
+  );
+  /**
+   * The live slot count, mirrored out of React state because "+" both grows
+   * the row AND selects what it grew. Two setState calls in one handler read
+   * the same batched `regionSlots`, so a double-click used to add one region
+   * instead of two — the second click computed its "next" from the value the
+   * first had not committed yet. The ref is written synchronously, so each
+   * click sees the one before it.
+   */
+  const slotsRef = useRef(regionSlots);
   const [layers, setLayers] = useState<TerrainLayers>({ ...ALL_LAYERS });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -549,13 +579,21 @@ export default function MapEditorView({
                 <div className="mb-0.5 text-[12px] uppercase tracking-widest text-[#71717C]">
                   {set.label}
                 </div>
-                <div className="flex gap-1">
+                <div className={`flex flex-wrap gap-1 ${set.kind === "spawn" ? "max-w-[172px]" : ""}`}>
                   {/* noRandom variants mean different things (spawn regions),
-                      so they all stay pickable even with randomize on */}
-                  {(randomize && !set.noRandom ? set.icons.slice(0, 1) : set.icons).map((icon, v) => {
+                      so they all stay pickable even with randomize on.
+                      The spawn row is as long as the player has asked for
+                      rather than as long as `icons` — every pad draws with
+                      the same sprite, and the badge is what tells them apart */}
+                  {(set.kind === "spawn"
+                    ? Array.from({ length: regionSlots }, () => set.icons[0])
+                    : randomize && !set.noRandom
+                      ? set.icons.slice(0, 1)
+                      : set.icons
+                  ).map((icon, v) => {
                     const active =
                       setId === set.id && ((randomize && !set.noRandom) || variant === v);
-                    const region = set.kind === "spawn" ? set.variants[v] : 0;
+                    const region = set.kind === "spawn" ? v + 1 : 0;
                     return (
                       <button
                         key={`${set.id}:${v}`}
@@ -579,7 +617,7 @@ export default function MapEditorView({
                         {region > 0 && (
                           <span
                             className="absolute -right-1 -top-1 rounded bg-[#222227] px-1 text-[11px] font-bold"
-                            style={{ color: SPAWN_REGIONS[(region - 1) % SPAWN_REGIONS.length].css }}
+                            style={{ color: spawnRegionStyle(region).css }}
                           >
                             {region}
                           </span>
@@ -592,6 +630,23 @@ export default function MapEditorView({
                       </button>
                     );
                   })}
+                  {/* one more region, and then one more after that. The cap
+                      is the Uint8 cell the id is stored in, not this */}
+                  {set.kind === "spawn" && (
+                    <button
+                      title={`Add spawn region ${regionSlots + 1}`}
+                      onClick={() => {
+                        const added = Math.min(slotsRef.current + 1, MAX_SPAWN_REGIONS);
+                        slotsRef.current = added;
+                        setRegionSlots(added);
+                        pick(set, added - 1); // select the region just added
+                      }}
+                      disabled={regionSlots >= MAX_SPAWN_REGIONS}
+                      className="flex h-10 w-10 items-center justify-center rounded border border-dashed border-[#4A4A55] bg-[#101013] text-[18px] leading-none text-[#A6A6AF] hover:border-[#FFD37F] hover:text-[#FFD37F] disabled:opacity-30 disabled:hover:border-[#4A4A55] disabled:hover:text-[#A6A6AF]"
+                    >
+                      +
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

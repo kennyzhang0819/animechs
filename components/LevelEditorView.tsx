@@ -35,7 +35,7 @@ import {
   loadMap,
   OFFICIAL_MAP_IDS,
   spawnRegionIds,
-  SPAWN_REGIONS,
+  spawnRegionStyle,
 } from "@/game/maps";
 import { CostRow } from "./Items";
 
@@ -56,7 +56,7 @@ const compactHp = (hp: number): string =>
 
 /** region 0 is "any pad"; 1+ are the map's painted spawn regions */
 const regionCss = (region: number): string =>
-  region <= 0 ? "#A6A6AF" : SPAWN_REGIONS[(region - 1) % SPAWN_REGIONS.length].css;
+  region <= 0 ? "#A6A6AF" : spawnRegionStyle(region).css;
 
 const regionLabel = (region: number): string => (region <= 0 ? "Any pad" : `Region ${region}`);
 

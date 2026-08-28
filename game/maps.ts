@@ -178,22 +178,89 @@ export interface PaletteSet {
   noRandom?: boolean;
 }
 
+export interface SpawnRegionStyle {
+  /** multiplies the pad sprite in the editor's terrain pass */
+  tint: readonly [number, number, number];
+  /** the picker's region badge and every zone outline */
+  css: string;
+  /** the darker fill thumbnails paint with */
+  tone: string;
+}
+
 /**
- * Editor display colors per spawn region (index = region id - 1, cycling
- * past the end): `tint` multiplies the pad sprite in the editor's terrain
- * pass, `css` colors the picker's region badge, `tone` paints thumbnails.
+ * THE HAND-PICKED SPAWN COLOURS — region 1 through 4, and no ceiling.
+ *
+ * A MAP MAY HAVE AS MANY REGIONS AS IT LIKES. These four are the ones worth
+ * choosing by eye, because four is what almost every map uses; past them
+ * spawnRegionStyle() generates a colour rather than running out, and the
+ * region id is stored in a Uint8 cell so the real limit is 255.
+ *
  * Region 1 keeps the pad art's native look, so old maps draw unchanged.
  */
-export const SPAWN_REGIONS: readonly {
-  tint: readonly [number, number, number];
-  css: string;
-  tone: string;
-}[] = [
+export const SPAWN_REGIONS: readonly SpawnRegionStyle[] = [
   { tint: [1, 1, 1], css: "#E0757F", tone: "#8a3a44" },
   { tint: [0.5, 1.6, 1.9], css: "#5BD9E8", tone: "#2f6d78" },
   { tint: [0.55, 1.7, 0.7], css: "#7BE0A8", tone: "#2f7846" },
   { tint: [1.5, 0.75, 1.9], css: "#C77BFF", tone: "#6d3a8a" },
 ];
+
+/**
+ * THE ONLY REAL CEILING ON SPAWN REGIONS. A cell's region id lives in
+ * Terrain.spawn, a Uint8Array, so 255 is where the storage runs out — 0 is
+ * reserved for "no pad here". Nothing else in the editor, the level editor
+ * or the save format counts regions, so this is the number to raise if that
+ * ever needs to change, and it would mean widening that layer.
+ */
+export const MAX_SPAWN_REGIONS = 255;
+
+/**
+ * The pad sprite's own colour — SPAWN_REGIONS[0].css, which is why region 1
+ * tints by [1,1,1]. Every other tint is `wanted / this`, which is where the
+ * curated numbers above came from and how generated ones are derived.
+ */
+const PAD_RGB = [0.878, 0.459, 0.498] as const;
+
+/** how much darker a thumbnail tone runs than the css colour it comes from */
+const TONE = 0.52;
+
+/**
+ * Spread generated hues by the golden angle so CONSECUTIVE regions never
+ * look alike — the case that actually matters, since a map's regions are
+ * numbered in the order they were painted. The sequence does eventually
+ * wander back near a hue it already used (region 10 lands close to region
+ * 1's pink), which is unavoidable once a map wants ten of them and is why
+ * the first four are chosen by hand instead.
+ */
+const GOLDEN_ANGLE = 137.508;
+
+/** hsl -> 0..1 rgb, saturation and lightness fixed to the curated look */
+function spawnHue(hue: number): [number, number, number] {
+  const f = (n: number): number => {
+    const k = (n + hue / 30) % 12;
+    return 0.67 - 0.68 * Math.min(0.67, 1 - 0.67) * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+  };
+  return [f(0), f(8), f(4)];
+}
+
+const hex2 = (v: number): string =>
+  Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, "0");
+
+/**
+ * The display style of ANY region id, curated or not. Read this rather than
+ * indexing SPAWN_REGIONS: the array is four long and a map is not limited to
+ * four, so indexing it directly either overflows or wraps two regions onto
+ * one colour.
+ */
+export function spawnRegionStyle(region: number): SpawnRegionStyle {
+  const n = Math.max(1, Math.floor(region));
+  if (n <= SPAWN_REGIONS.length) return SPAWN_REGIONS[n - 1];
+  const rgb = spawnHue((30 + (n - SPAWN_REGIONS.length - 1) * GOLDEN_ANGLE) % 360);
+  return {
+    tint: [rgb[0] / PAD_RGB[0], rgb[1] / PAD_RGB[1], rgb[2] / PAD_RGB[2]],
+    css: `#${rgb.map(hex2).join("")}`,
+    tone: `#${rgb.map((v) => hex2(v * TONE)).join("")}`,
+  };
+}
 
 const ENV = "/mindustry/sprites/blocks/environment";
 const PROPS = "/mindustry/sprites/blocks/props";
@@ -229,8 +296,12 @@ export const PALETTE: readonly PaletteSet[] = [
     icons: [1, 2].map((n) => `${PROPS}/boulder${n}.png`) },
   { id: "shrub", label: "Shrub", kind: "decor", variants: [2], icons: [`${ENV}/shrubs1.png`] },
   // enemy spawn pads: a data layer — the pad tile shows in the editor only,
-  // the game renders the floor beneath it. One variant per spawn region;
-  // the variant value IS the region id written into the spawn layer
+  // the game renders the floor beneath it.
+  //
+  // THE REGION ID IS `variant + 1`, NOT `variants[variant]`, and this is the
+  // one set where that matters: the picker grows a swatch at a time, so the
+  // variant index runs past whatever this array happens to hold. The four
+  // below are the STARTING swatch count, not a limit — see spawnRegionStyle
   { id: "spawn", label: "Spawn region", kind: "spawn", variants: [1, 2, 3, 4], noRandom: true,
     icons: SPAWN_REGIONS.map(() => `${ENV}/dark-panel-2.png`) },
   // the core: a map has exactly one, so placing it MOVES it. The click

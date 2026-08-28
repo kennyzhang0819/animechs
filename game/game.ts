@@ -4,7 +4,7 @@ import {
   OFFICIAL_MAP_IDS,
   OFFICIAL_MAPS,
   refreshMap,
-  SPAWN_REGIONS,
+  spawnRegionStyle,
 } from "./maps";
 import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
 import { loadLevelDocs, type LevelSpec, type TowerKind } from "./levels";
@@ -1003,7 +1003,7 @@ export class Game {
     // ordinary floor a player may want to look at and build near
     if (this.showRoutes) {
       for (const r of this.sim.airRoutes()) {
-        const col = SPAWN_REGIONS[(r.region - 1) % SPAWN_REGIONS.length].css;
+        const col = spawnRegionStyle(r.region).css;
         c.strokeStyle = col;
         c.globalAlpha = 0.5;
         c.lineWidth = 2;
@@ -1026,7 +1026,7 @@ export class Game {
         c.fill();
       }
       for (const z of this.sim.terrain.spawns) {
-        c.strokeStyle = SPAWN_REGIONS[(z.region - 1) % SPAWN_REGIONS.length].css;
+        c.strokeStyle = spawnRegionStyle(z.region).css;
         c.globalAlpha = 0.9;
         c.lineWidth = 2;
         c.beginPath();

@@ -3,7 +3,7 @@ import { CELL, clamp, COLS, CORE_SIZE, H, ROWS, W } from "./constants";
 import {
   PALETTE,
   rasterizeSpawns,
-  SPAWN_REGIONS,
+  spawnRegionStyle,
   SPAWN_RADIUS_DEFAULT,
   terrainFromMap,
   mapFromTerrain,
@@ -327,15 +327,32 @@ export class MapEditor {
   }
 
   /**
-   * Drop-zone tool. A click places a circle of the current radius in the
-   * current region; clicking inside an existing circle of that region MOVES
-   * it rather than stacking a second one on top, which is what makes the
-   * tool feel like dragging a zone around. The eraser removes whole circles.
+   * Drop-zone tool.
+   *
+   * A REGION IS ONE ZONE. If the selected region is already on the map,
+   * clicking ANYWHERE moves it there — it is never stacked, never doubled.
+   * The region number is an identity, not a paint colour, and every map
+   * shipped is authored that way: one circle each.
+   *
+   * This used to require clicking INSIDE the existing circle to move it, and
+   * a click on clear ground pushed a second circle carrying the same region
+   * id. Nothing downstream distinguished those two circles — rasterizeSpawns
+   * unions them and the level editor lists the region once — so the only
+   * thing the duplicate did was make the zone impossible to move by clicking
+   * where you wanted it.
+   *
+   * The radius follows the gesture. PICKING A ZONE UP (pressing inside it)
+   * keeps its own radius, because a drag that resized what it was dragging
+   * was the bug that made zones shrink out from under the cursor. SENDING IT
+   * SOMEWHERE (pressing on clear ground) adopts the current radius, which is
+   * also the only way to resize a zone without erasing it first.
+   *
+   * The eraser removes whole circles.
    */
   private spawnAt(gx: number, gy: number): void {
     if (!this.layers.spawn) return; // hidden means out of reach, like every layer
     const T = this.terrain;
-    const region = this.set.variants[this.variant] ?? 1;
+    const region = this.spawnRegion();
     const x = gx + 0.5, y = gy + 0.5;
 
     // already dragging one: it follows the cursor and nothing else happens
@@ -346,15 +363,14 @@ export class MapEditor {
       return;
     }
 
-    const hit = T.spawns.findIndex(
-      (c) => c.region === region && Math.hypot(c.x - x, c.y - y) <= c.r,
-    );
+    // the region itself, wherever it currently sits — not "a circle under
+    // the cursor", which is what made a second one appear
+    const hit = T.spawns.findIndex((c) => c.region === region);
     if (hit >= 0) {
-      // A MOVE KEEPS THE ZONE'S OWN RADIUS. Rewriting it to the current brush
-      // used to shrink the circle out from under the drag that was moving it.
-      // Resize with the radius control, not by picking a zone up
+      const zone = T.spawns[hit];
+      const pickedUp = Math.hypot(zone.x - x, zone.y - y) <= zone.r;
       this.grabbedSpawn = hit;
-      T.spawns[hit] = { ...T.spawns[hit], x, y };
+      T.spawns[hit] = { ...zone, x, y, r: pickedUp ? zone.r : this.spawnRadius };
     } else {
       // fresh ground: place one at the current radius and grab it, so the
       // same press-and-drag puts it exactly where it is wanted
@@ -363,6 +379,19 @@ export class MapEditor {
     }
     this.resyncSpawn();
     this.dirty = true;
+  }
+
+  /**
+   * The region the drop-zone tool is currently painting: the picker's slot
+   * index plus one, NOT `set.variants[variant]`.
+   *
+   * The palette entry lists four variants because four swatches is where the
+   * picker starts, and the picker grows one at a time with no ceiling — so
+   * the index routinely runs past the end of that array. Indexing it would
+   * have every region past the fourth quietly land back on region 1.
+   */
+  private spawnRegion(): number {
+    return this.variant + 1;
   }
 
   /** eraser over a drop zone: drop every circle covering this cell */
@@ -698,7 +727,7 @@ export class MapEditor {
     if (this.layers.spawn) {
       c.lineWidth = 2 / s;
       for (const z of this.terrain.spawns) {
-        c.strokeStyle = SPAWN_REGIONS[(z.region - 1) % SPAWN_REGIONS.length].css;
+        c.strokeStyle = spawnRegionStyle(z.region).css;
         c.beginPath();
         c.arc(z.x * CELL, z.y * CELL, z.r * CELL, 0, Math.PI * 2);
         c.stroke();
@@ -723,8 +752,8 @@ export class MapEditor {
       return;
     }
     if (this.set.kind === "spawn") {
-      const region = this.set.variants[this.variant] ?? 1;
-      const col = SPAWN_REGIONS[(region - 1) % SPAWN_REGIONS.length].css;
+      const region = this.spawnRegion();
+      const col = spawnRegionStyle(region).css;
       c.beginPath();
       c.arc((this.hoverGx + 0.5) * CELL, (this.hoverGy + 0.5) * CELL, this.spawnRadius * CELL, 0, Math.PI * 2);
       c.fillStyle = col + "22";
