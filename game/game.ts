@@ -1,5 +1,11 @@
 import { atlasReady, buildAtlas } from "./atlas";
-import { loadOfficialMaps, OFFICIAL_MAP_IDS, OFFICIAL_MAPS, refreshMap } from "./maps";
+import {
+  loadOfficialMaps,
+  OFFICIAL_MAP_IDS,
+  OFFICIAL_MAPS,
+  refreshMap,
+  SPAWN_REGIONS,
+} from "./maps";
 import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
 import { loadLevelDocs, type LevelSpec, type TowerKind } from "./levels";
 import type { Cost } from "./items";
@@ -36,6 +42,8 @@ export interface UiState {
   menuOpen: boolean;
   /** simulation speed multiplier: one of SPEEDS */
   speed: number;
+  /** is the drop-zone and air-route overlay on? */
+  showRoutes: boolean;
   /** what this run's kills have banked so far, by currency (see items.ts) */
   earned: Cost;
   /** live towers per kind, for the menu's "2/6" cap badges */
@@ -172,6 +180,12 @@ export class Game {
   private lastMouse = { x: 0, y: 0 };
   private readonly keysDown = new Set<string>();
   private paused = false;
+  /**
+   * The route overlay: drop zones, and the lines flyers fly out of them.
+   * OFF by default — it is an answer to "where is that coming from", not
+   * something to leave on top of the field all game.
+   */
+  private showRoutes = false;
   private menuOpen = false;
   // fast-forward: the sim runs this many fixed steps per rendered frame, so
   // a sped-up run steps exactly like a real-time one (stretching dt instead
@@ -526,6 +540,7 @@ export class Game {
       buildKind: this.buildKind,
       paused: this.paused,
       speed: this.speed,
+      showRoutes: this.showRoutes,
       lost: this.sim.lost(),
       won: this.won(),
       kills: this.sim.kills,
@@ -535,6 +550,11 @@ export class Game {
       caps: this.tech ? this.tech.caps : null,
       unlocked: this.tech ? Array.from(this.tech.unlocked) : null,
     };
+  }
+
+  /** show or hide the drop zones and the air routes out of them */
+  toggleRoutes(): void {
+    this.showRoutes = !this.showRoutes;
   }
 
   reset(): void {
@@ -659,6 +679,44 @@ export class Game {
     // world-space transform through the camera
     const s = this.scale * this.zoom;
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
+
+    // ROUTES, under everything else so a selection ring still reads on top.
+    // Drop zones are rings rather than discs: the ground inside one is
+    // ordinary floor a player may want to look at and build near
+    if (this.showRoutes) {
+      for (const r of this.sim.airRoutes()) {
+        const col = SPAWN_REGIONS[(r.region - 1) % SPAWN_REGIONS.length].css;
+        c.strokeStyle = col;
+        c.globalAlpha = 0.5;
+        c.lineWidth = 2;
+        c.setLineDash([10, 8]);
+        c.beginPath();
+        c.moveTo(r.x1, r.y1);
+        c.lineTo(r.x2, r.y2);
+        c.stroke();
+        c.setLineDash([]);
+        // the arrowhead settles which end is the destination
+        const a = Math.atan2(r.y2 - r.y1, r.x2 - r.x1);
+        const hx = r.x2 - Math.cos(a) * 14, hy = r.y2 - Math.sin(a) * 14;
+        c.globalAlpha = 0.85;
+        c.beginPath();
+        c.moveTo(r.x2, r.y2);
+        c.lineTo(hx - Math.sin(a) * 7, hy + Math.cos(a) * 7);
+        c.lineTo(hx + Math.sin(a) * 7, hy - Math.cos(a) * 7);
+        c.closePath();
+        c.fillStyle = col;
+        c.fill();
+      }
+      for (const z of this.sim.terrain.spawns) {
+        c.strokeStyle = SPAWN_REGIONS[(z.region - 1) % SPAWN_REGIONS.length].css;
+        c.globalAlpha = 0.9;
+        c.lineWidth = 2;
+        c.beginPath();
+        c.arc(z.x * CELL, z.y * CELL, z.r * CELL, 0, Math.PI * 2);
+        c.stroke();
+      }
+      c.globalAlpha = 1;
+    }
 
     // selection: range ring + footprint outline (drops when the tower is sold)
     if (this.selected && !this.sim.towers.includes(this.selected)) this.selected = null;

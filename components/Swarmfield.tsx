@@ -872,6 +872,28 @@ export default function Swarmfield() {
             ))}
           </div>
         )}
+        {hud && !hud.lost && !hud.won && (
+          /* the swarm's entry points, and the lines flyers fly out of them.
+             Walkers read off the terrain — flyers ignore it, so where they
+             come from and where they cross is the question this answers */
+          <button
+            aria-pressed={hud.showRoutes}
+            title="Show enemy drop zones and the routes flyers take"
+            onClick={() => {
+              const g = gameRef.current;
+              if (!g) return;
+              g.toggleRoutes();
+              setHud(g.ui());
+            }}
+            className={`absolute right-4 top-16 rounded border px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+              hud.showRoutes
+                ? "border-[#FFD37F] bg-[#222227]/90 text-[#FFD37F]"
+                : "border-[#2E2E36] bg-[#151518]/70 text-[#71717C] hover:border-[#4A4A55] hover:text-[#A6A6AF]"
+            }`}
+          >
+            Spawns &amp; routes
+          </button>
+        )}
         <div
           role="group"
           aria-label="tower menu"

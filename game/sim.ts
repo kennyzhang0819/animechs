@@ -575,6 +575,24 @@ export class Sim {
     );
   }
 
+  /**
+   * THE LINES FLYERS ACTUALLY FLY, one per drop zone — what the route
+   * overlay draws. Walkers follow the flow field, which the terrain already
+   * shows; flyers ignore it completely and cut whatever straight line their
+   * spawn happens to pick, which is invisible until they are on top of you.
+   *
+   * Drawn from each zone's centre. A flyer entering at the rim picks its own
+   * nearest goal and may head somewhere else, so this is the middle of a
+   * fan rather than a single guaranteed track.
+   */
+  airRoutes(): { x1: number; y1: number; x2: number; y2: number; region: number }[] {
+    return this.terrain.spawns.map((z) => {
+      const x = z.x * CELL, y = z.y * CELL;
+      const g = this.nearestGoal(x, y);
+      return { x1: x, y1: y, x2: g.x, y2: g.y, region: z.region };
+    });
+  }
+
   /** the goal cell nearest a point, in world px — a flyer's destination */
   private nearestGoal(x: number, y: number): { x: number; y: number } {
     const p = this.goalPts;
