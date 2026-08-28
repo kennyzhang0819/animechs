@@ -11,6 +11,7 @@ import {
   type LoadStep,
   type UiState,
 } from "@/game/game";
+import { loadBalanceDoc } from "@/game/balance";
 import {
   loadLevelDocs,
   UNIT_KINDS,
@@ -430,7 +431,7 @@ export default function Swarmfield() {
     // level documents overlay WORLDS in place (see levels.ts), so a script
     // edited in the admin level editor is what the menu counts and the run
     // plays. A level with no document keeps the campaign as shipped
-    Promise.all([loadOfficialMaps(), loadLevelDocs()])
+    Promise.all([loadOfficialMaps(), loadLevelDocs(), loadBalanceDoc()])
       .then(() => {
         if (alive) setMapsReady(true);
       })

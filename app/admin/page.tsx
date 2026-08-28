@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import BalanceView from "@/components/BalanceView";
+import { loadBalanceDoc } from "@/game/balance";
 import LevelEditorView from "@/components/LevelEditorView";
 import MapEditorView from "@/components/MapEditorView";
 import { loadLevelDocs, WORLDS, waveGroups, type LevelSpec } from "@/game/levels";
@@ -75,12 +77,18 @@ function AdminInner() {
   const params = useSearchParams();
   const openId = params.get("map");
   const openLevel = params.get("level");
+  // the tab lives in the URL like the editors do, so a reload lands back
+  // where you were mid-tune
+  const tab = params.get("tab") === "balance" ? "balance" : "content";
   const [maps, setMaps] = useState<MapData[]>([]);
   const [open, setOpen] = useState<MapData | null>(null);
   // level documents overlay WORLDS in place, so this is a "have they landed
   // yet" flag rather than a piece of state — the editor must not open on the
   // shipped script and then save that over someone's earlier edits
   const [levelsReady, setLevelsReady] = useState(false);
+  // and the same for the balance document: the tab must not open on the
+  // authored coefficients and then save those over what is on disk
+  const [balanceReady, setBalanceReady] = useState(false);
 
   // the documents live in public/maps/ and public/levels/ and are fetched,
   // not imported
@@ -91,6 +99,9 @@ function AdminInner() {
     });
     loadLevelDocs().then(() => {
       if (alive) setLevelsReady(true);
+    });
+    loadBalanceDoc().then(() => {
+      if (alive) setBalanceReady(true);
     });
     return () => {
       alive = false;
@@ -128,7 +139,8 @@ function AdminInner() {
             <p className="text-[#71717C]">
               Debug tool. Ctrl+Shift+M toggles this page. Map edits write public/maps/&lt;id&gt;.json
               and ARE the official map; level edits write public/levels/&lt;id&gt;.json and override
-              the shipped script.
+              the shipped script; balance edits write public/balance.json and override the
+              authored tuning coefficients.
             </p>
           </div>
           <button
@@ -139,6 +151,34 @@ function AdminInner() {
           </button>
         </div>
 
+        <div className="mb-6 flex gap-1 border-b border-[#2E2E36]">
+          {([
+            ["content", "Levels & maps"],
+            ["balance", "Balance"],
+          ] as const).map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => router.push(id === "content" ? "/admin" : `/admin?tab=${id}`)}
+              className={`-mb-px border-b-2 px-4 py-2 text-[13px] font-bold transition-colors ${
+                tab === id
+                  ? "border-[#EDEDEF] text-[#EDEDEF]"
+                  : "border-transparent text-[#71717C] hover:text-[#A6A6AF]"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "balance" &&
+          (balanceReady ? (
+            <BalanceView />
+          ) : (
+            <p className="text-[#71717C]">Reading public/balance.json…</p>
+          ))}
+
+        {tab === "content" && (
+          <>
         <h2 className="mb-3 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
           Levels — wave composition
         </h2>
@@ -173,6 +213,8 @@ function AdminInner() {
             </button>
           ))}
         </div>
+          </>
+        )}
       </div>
     </div>
   );

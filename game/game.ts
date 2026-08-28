@@ -7,6 +7,7 @@ import {
   spawnRegionStyle,
 } from "./maps";
 import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
+import { loadBalanceDoc } from "./balance";
 import { loadLevelDocs, type LevelSpec, type TowerKind } from "./levels";
 import type { Cost } from "./items";
 import { dropsForKills, type TowerPlacement } from "./progress";
@@ -657,6 +658,9 @@ export class Game {
     await Promise.all([
       OFFICIAL_MAPS.length === 0 ? loadOfficialMaps() : refreshMap(mapId),
       loadLevelDocs(),
+      // tech prices are read the moment the tech screen opens, so the
+      // coefficients have to land before the game does
+      loadBalanceDoc(),
     ]);
 
     // terrain, flow field and the static geometry batches

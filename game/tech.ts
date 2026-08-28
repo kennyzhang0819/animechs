@@ -1,4 +1,5 @@
 import { addScaled, canAfford, costEntries, pay, type Bank, type Cost, type ItemKind } from "./items";
+import { TOWERS } from "./constants";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
 /**
@@ -50,16 +51,25 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * exponent does not really decide what a turret costs — it decides how many
  * of it a player ends up with, forever, however long they play.
  *
- * THE CEILING IS FOOTPRINT, AND ONLY FOOTPRINT:
+ * THE SPAN IS FOOTPRINT, AND ONLY FOOTPRINT:
  *
  *   1x1  ->  500   2x2  ->  200   3x3  ->  100   4x4  ->  60
  *
+ * THIS IS THE SPAN, NOT THE CAP, and the two were one number until they
+ * were not. The span is the count the ladder is SOLVED against; the cap is
+ * CAP_TILES / footprint area, ten thousand tiles per turret type. Keeping
+ * them separate is what lets the cap move: solve growth against the cap and
+ * raising it also raises the budget, which cheapens every rung — a cap at
+ * half the board measured as a 1.7-3.4x power buff at 2% of a node bill.
+ * Against a fixed span, the cap costs nothing and only stops being in the
+ * way. See PRICE_SPAN and CAP_TILES.
+ *
  * The 4x4 row was added with spectre, meltdown and foreshadow, the first
  * size-4 blocks in the game. It is an extension of the series rather than
- * a formula: the tiles a full ceiling commits run 500, 800, 900, 960, a
- * curve that flattens as footprints grow because the ceiling is about how
- * much of the BOARD one turret type may own, and 960 of 29,109 buildable
- * cells is 3.3% — the same order as the three rows above it.
+ * a formula: the tiles a full span commits run 500, 800, 900, 960, a
+ * curve that flattens as footprints grow because the span is about how
+ * much of the BOARD one turret type is priced to own, and 960 of 29,109
+ * buildable cells is 3.3% — the same order as the three rows above it.
  *
  * THE RANGE MULTIPLIER IS GONE, and it is worth saying why it ever existed.
  * On the old 128x96 board these ceilings committed 76% of the 4,015
@@ -88,7 +98,15 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * because pricing is relative; a wrong number moves every node together and
  * cancels out. Change it here and re-solve rather than arguing per turret.
  *
- *   turret     size  DPS    ceiling   lifetime DPS   growth
+ * THE GROWTHS BELOW ARE DERIVED, NOT AUTHORED — solveGrowth reproduces
+ * every one of them from the base bundle, the DPS and the span, and the
+ * table is kept only so the shape of the tree can be read at a glance.
+ * Salvo is the single rounding casualty: its raw solve lands on 1.015650,
+ * exactly on the four-place boundary, so it now rounds to 1.0157 where the
+ * hand-written value rounded to 1.0156. That is parity being restored
+ * rather than lost — the old number sat a whisker under the rule.
+ *
+ *   turret     size  DPS      span    lifetime DPS   growth
  *   duo        1x1     27     500          13,500    1.0098
  *   hail       1x1    165     500          82,500    1.0103
  *   scorch     1x1    850     500         425,000    1.0133
@@ -149,10 +167,132 @@ import { TOWER_KINDS, type TowerKind } from "./types";
 export interface PriceCurve {
   /** what the FIRST point costs, per item */
   base: Cost;
-  /** per-point multiplier, applied to every item in the bundle */
-  growth: number;
   /** point index at which an item starts being charged at all (default 0) */
   from?: Partial<Record<ItemKind, number>>;
+}
+
+/**
+ * COPPER PER POINT OF LIFETIME DPS — the one shared constant, and the whole
+ * pricing rule. A node ladder is solved so that buying PRICE_SPAN of it costs
+ * this much for every point of damage-per-second those turrets field.
+ *
+ * It is a normaliser rather than a first principle: 7.85 is the tree total
+ * bill divided by its total lifetime DPS, picked so that moving to a solved
+ * curve changed the DISTRIBUTION of cost without changing the campaign
+ * length. Any other value scales the whole tree together.
+ */
+export const PRICE_PER_DPS = 7.85;
+
+/**
+ * THE COUNT THE LADDER IS SOLVED AGAINST, by footprint — and NOT the cap.
+ *
+ * These two used to be one number, and that coupling was the bug. Solving
+ * growth against the cap means raising the cap also raises the budget, which
+ * cheapens every rung and hands the player more DPS at every bank: measured,
+ * a cap raised to half the board was a 1.7-3.4x power buff at just 2% of a
+ * node bill. So the ladder is authored against a fixed span, and the cap is
+ * then free to move without touching a single price.
+ *
+ * The span is the old ceiling table, kept so the shipped curves reproduce.
+ */
+const PRICE_SPAN: Readonly<Record<number, number>> = { 1: 500, 2: 200, 3: 100, 4: 60 };
+
+/**
+ * How many tiles one turret type may cover once it is maxed. The cap is this
+ * divided by the footprint area, so a full stack of any node covers the same
+ * 10,000 cells — 34% of the 29,109 buildable ones — and the late game has
+ * room to answer a wave with a single turret type if it wants to.
+ *
+ * A CAP IS ONLY A CAP. Nothing about pricing reads it.
+ */
+export const CAP_TILES = 10000;
+
+/** the most points this node will ever take */
+export function techCeiling(tower: TowerKind): number {
+  const size = TOWERS[tower].size;
+  return Math.floor(CAP_TILES / (size * size));
+}
+
+/** growths are authored to four places; solved ones are held to the same */
+const round4 = (x: number): number => Math.round(x * 1e4) / 1e4;
+
+/**
+ * Solve the per-point multiplier from the rule above: find g where the sum
+ * of base times g to the n, over the span, equals the target spend.
+ * Bisection, because that sum has no closed form in g and this runs fifteen
+ * times at module load.
+ */
+function solveGrowth(base: number, n: number, target: number): number {
+  if (base <= 0 || n <= 0 || target <= 0) return 1;
+  const sum = (g: number): number => (g === 1 ? base * n : (base * (g ** n - 1)) / (g - 1));
+  let lo = 1 + 1e-10;
+  let hi = 3;
+  for (let i = 0; i < 200; i++) {
+    const mid = (lo + hi) / 2;
+    if (sum(mid) < target) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/**
+ * THE TUNING COEFFICIENT, per node — the one balance dial.
+ *
+ * It scales the solved growth distance above 1, exactly as
+ * PRICE_GROWTH_SCALE does globally: below 1 smoothens the ladder so capacity
+ * accumulates faster, above 1 steepens it so the node walls out sooner. It
+ * moves the EXPONENT, so the effect compounds over hundreds of purchases —
+ * at a quarter-bill bank, tune 0.5 to 3 swings duo between 582 and 158,
+ * where shifting the whole curve instead moved it by a tenth of that.
+ *
+ * The admin dashboard writes overrides here, and one set there wins over the
+ * authored value until it is cleared.
+ */
+const tuneOverrides = new Map<TowerKind, number>();
+const growthCache = new Map<TowerKind, number>();
+
+/** the coefficient in force for this node, override first */
+export function tuneOf(tower: TowerKind): number {
+  return tuneOverrides.get(tower) ?? techNode(tower).tune ?? 1;
+}
+
+/** every node coefficient, for the dashboard and for saving */
+export function allTunes(): Record<TowerKind, number> {
+  return Object.fromEntries(TOWER_KINDS.map((k) => [k, tuneOf(k)])) as Record<TowerKind, number>;
+}
+
+/** bend one node; undefined restores the authored value */
+export function setTune(tower: TowerKind, value: number | undefined): void {
+  if (value === undefined || !Number.isFinite(value)) tuneOverrides.delete(tower);
+  else tuneOverrides.set(tower, Math.max(0, value));
+  growthCache.delete(tower);
+}
+
+/** replace every override at once — what a saved balance document applies */
+export function applyTunes(doc: Partial<Record<TowerKind, number>>): void {
+  tuneOverrides.clear();
+  growthCache.clear();
+  for (const k of TOWER_KINDS) {
+    const v = doc[k];
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) tuneOverrides.set(k, v);
+  }
+}
+
+/**
+ * The per-point multiplier this node actually charges: solved from its base,
+ * its damage and its span, then bent by the coefficient. Memoised, because
+ * affordablePoints walks a node one point at a time.
+ */
+export function growthOf(tower: TowerKind): number {
+  const hit = growthCache.get(tower);
+  if (hit !== undefined) return hit;
+  const node = techNode(tower);
+  const span = PRICE_SPAN[TOWERS[tower].size] ?? 100;
+  const copper = node.price.base.copper ?? 0;
+  const raw = solveGrowth(copper, span, PRICE_PER_DPS * node.dps * span);
+  const g = round4(1 + (raw - 1) * tuneOf(tower));
+  growthCache.set(tower, g);
+  return g;
 }
 
 /**
@@ -182,8 +322,24 @@ function tidy(x: number): number {
 
 export interface TechNodeDef {
   tower: TowerKind;
-  /** what this node's points cost — two numbers, not a table */
+  /** what this node's points cost — the base bundle, and nothing else */
   price: PriceCurve;
+  /**
+   * The turret damage per second at its full ceiling, measured when the
+   * turret was built. THIS DRIVES THE PRICE and nothing else reads it — the
+   * sim computes real damage from the bullet, never from here.
+   *
+   * A splashing or piercing shot counts as catching FIVE bodies. That does
+   * not have to be true; it has to be the SAME for every turret, because
+   * pricing is relative and a wrong number moves every node together.
+   */
+  dps: number;
+  /**
+   * The balance dial — 1 is "priced by the rule", below 1 smoothens the
+   * ladder and above 1 steepens it. Only a node deliberately bent away from
+   * parity writes this.
+   */
+  tune?: number;
   /** parent node: needs >= 1 point before this node appears in the tree */
   requires?: TowerKind;
   /**
@@ -213,8 +369,9 @@ export interface TechNodeDef {
  *
  * Two rules hold the whole thing up.
  *
- * ONE: a node's growth is solved from the CEILING its footprint and range
- * earn it, not chosen by feel. See PriceCurve.
+ * ONE: a node growth is solved from its DPS against the SPAN its footprint
+ * earns it, not chosen by feel, and one coefficient per node bends the
+ * result where balance asks for it. See PriceCurve and TechNodeDef.tune.
  *
  * TWO: A COST BUNDLE MUST CARRY THE DROP RATIO OF THE DIFFICULTY THAT
  * UNLOCKS IT — and since the tier gates are gone, THE BUNDLE IS THE GATE, so
@@ -258,7 +415,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // A top-difficulty run roughly maxes it; five hundred duos are still
     // only 13,500 DPS, so it stays the thing you open with, never the answer
     tower: "duo",
-    price: { base: { copper: 8 }, growth: 1.0098 },
+    price: { base: { copper: 8 } },
+    dps: 27,
     x: 2,
     y: 0,
   },
@@ -267,7 +425,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // splash scales with bodies per blast and collapses with health per
     // body, so one hail shell kills five daggers and chips a spiroct
     tower: "hail",
-    price: { base: { copper: 40, titanium: 9 }, growth: 1.0103 },
+    price: { base: { copper: 40, titanium: 9 } },
+    dps: 165,
     requires: "scatter",
     x: 1,
     y: 2,
@@ -277,7 +436,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // piercing flame rakes a whole file of units and sets each alight, and
     // burning ignores armour outright. 60 units of range is the whole cost
     tower: "scorch",
-    price: { base: { copper: 60, titanium: 10 }, growth: 1.0133 },
+    price: { base: { copper: 60, titanium: 10 } },
+    dps: 850,
     requires: "arc",
     x: 3,
     y: 2,
@@ -299,6 +459,12 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // file), so scatter is the CHEAP answer to air rather than the only one,
     // and the multiplier falls back toward the 12% reading it started from.
     //
+    // Its coefficient is 0.7763 for exactly this reason: the growth was
+    // solved when the base was 50, and halving the base to 25 without
+    // re-solving left the node priced at 0.209x parity. That used to be an
+    // untouched number nobody could see; it is now the tune field, and
+    // moving it back to 1 is what re-prices scatter at parity.
+    //
     // THE CUT IS ALL IN THE BASE, NOT THE GROWTH, and that is the point.
     // Growth only decides what the two-hundredth scatter costs; a player who
     // is losing wave 12 to a flare cloud is buying their fifteenth. Halving
@@ -318,7 +484,9 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // behind the T3 waves too. Upstream builds scatter from copper and lead,
     // a tier-1 cost; this is that, in our currencies
     tower: "scatter",
-    price: { base: { copper: 25, titanium: 4 }, growth: 1.0327 },
+    price: { base: { copper: 25, titanium: 4 } },
+    dps: 1450,
+    tune: 0.7763,
     requires: "duo",
     x: 1,
     y: 1,
@@ -331,7 +499,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // also shoots AIR, which makes it the second answer to the flare waves
     // and half the reason scatter no longer has to be priced as the only one
     tower: "salvo",
-    price: { base: { copper: 250, titanium: 85, thorium: 30 }, growth: 1.0156 },
+    price: { base: { copper: 250, titanium: 85, thorium: 30 } },
+    dps: 217,
     requires: "hail",
     x: 1,
     y: 3,
@@ -346,7 +515,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // any at all. A Medium save can see this node and can never pay for it,
     // which is the same lock the old tier gate spelled out by hand
     tower: "fuse",
-    price: { base: { copper: 600, titanium: 275, thorium: 175, plastanium: 15 }, growth: 1.0594 },
+    price: { base: { copper: 600, titanium: 275, thorium: 175, plastanium: 15 } },
+    dps: 4109,
     requires: "salvo",
     x: 2,
     y: 5,
@@ -359,7 +529,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // plain bullet taking one body. Measured on a file of ten daggers, one
     // bolt lands 217 of its theoretical 240
     tower: "arc",
-    price: { base: { copper: 50, titanium: 9 }, growth: 1.012 },
+    price: { base: { copper: 50, titanium: 9 } },
+    dps: 411,
     requires: "duo",
     x: 3,
     y: 1,
@@ -370,7 +541,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // into the bullet, and the beam visibly ends at the fourth thing it
     // hits, so counting five would be pricing a shot it cannot fire
     tower: "lancer",
-    price: { base: { copper: 200, titanium: 55, thorium: 20 }, growth: 1.0216 },
+    price: { base: { copper: 200, titanium: 55, thorium: 20 } },
+    dps: 420,
     requires: "scorch",
     x: 4,
     y: 3,
@@ -381,7 +553,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // and like every artillery piece only the splash counts: the shell
     // arcs over its target rather than hitting it
     tower: "ripple",
-    price: { base: { copper: 300, titanium: 85, thorium: 25 }, growth: 1.0453 },
+    price: { base: { copper: 300, titanium: 85, thorium: 25 } },
+    dps: 700,
     requires: "salvo",
     x: 2,
     y: 4,
@@ -402,7 +575,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // rather than fudged, because the rule is the rule and a second one
     // invented here would not be
     tower: "parallax",
-    price: { base: { copper: 220, titanium: 60, thorium: 20 }, growth: 1.0007 },
+    price: { base: { copper: 220, titanium: 60, thorium: 20 } },
+    dps: 30,
     requires: "scorch",
     x: 3,
     y: 3,
@@ -427,7 +601,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PLASTANIUM. Homing missiles — they chase what they lock, so overkill
     // costs less than it does on a straight-firing line
     tower: "swarmer",
-    price: { base: { copper: 350, titanium: 125, thorium: 55, plastanium: 3 }, growth: 1.0278 },
+    price: { base: { copper: 350, titanium: 125, thorium: 55, plastanium: 3 } },
+    dps: 1925,
     requires: "salvo",
     x: 0,
     y: 4,
@@ -436,7 +611,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PLASTANIUM. A flak wall. The reason to own it is volume of splash, which
     // is why its ceiling is the full 3x3 band
     tower: "cyclone",
-    price: { base: { copper: 450, titanium: 150, thorium: 70, plastanium: 4 }, growth: 1.0524 },
+    price: { base: { copper: 450, titanium: 150, thorium: 70, plastanium: 4 } },
+    dps: 1797,
     requires: "swarmer",
     x: 0,
     y: 5,
@@ -448,7 +624,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // and they light up the moment it ships — priced there rather than told
     // to wait there
     tower: "spectre",
-    price: { base: { copper: 900, titanium: 375, thorium: 225, plastanium: 23, "phase-fabric": 6 }, growth: 1.0671 },
+    price: { base: { copper: 900, titanium: 375, thorium: 225, plastanium: 23, "phase-fabric": 6 } },
+    dps: 1371,
     requires: "cyclone",
     x: 0,
     y: 6,
@@ -456,7 +633,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // PHASE FABRIC. A continuous beam that melts whatever it rests on
     tower: "meltdown",
-    price: { base: { copper: 1000, titanium: 425, thorium: 250, plastanium: 26, "phase-fabric": 7 }, growth: 1.0854 },
+    price: { base: { copper: 1000, titanium: 425, thorium: 250, plastanium: 26, "phase-fabric": 7 } },
+    dps: 3364,
     requires: "lancer",
     x: 4,
     y: 4,
@@ -465,7 +643,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PHASE FABRIC. 500 range and one enormous shot — a sniper rather than a
     // defence, and the only turret that can hit a spawn pad from the core
     tower: "foreshadow",
-    price: { base: { copper: 1100, titanium: 450, thorium: 275, plastanium: 29, "phase-fabric": 8 }, growth: 1.0317 },
+    price: { base: { copper: 1100, titanium: 450, thorium: 275, plastanium: 29, "phase-fabric": 8 } },
+    dps: 405,
     requires: "meltdown",
     x: 4,
     y: 5,
@@ -478,9 +657,9 @@ export const TECH_TREE: readonly TechNodeDef[] = [
  * charging yet, then tidied to a readable number.
  */
 export function techPrice(tower: TowerKind, owned = 0): Cost {
-  const { base, growth, from } = techNode(tower).price;
+  const { base, from } = techNode(tower).price;
   const n = Math.max(0, Math.floor(owned));
-  const g = effectiveGrowth(growth);
+  const g = effectiveGrowth(growthOf(tower));
   const out: Cost = {};
   for (const { item, amount } of costEntries(base)) {
     if (n < (from?.[item] ?? 0)) continue; // this item isn't charged for yet
@@ -516,19 +695,24 @@ export function affordablePoints(
   limit = Infinity,
 ): number {
   const n = Math.max(0, Math.floor(owned));
+  // THE CAP BITES HERE AND NOWHERE ELSE. Every purchase path runs through
+  // this function, so clamping the room left is the whole enforcement.
+  const room = Math.max(0, techCeiling(tower) - n);
+  const ceiling = Math.min(limit, room);
+  if (ceiling < 1) return 0;
   const price = techPrice(tower, n);
   const entries = costEntries(price);
   if (entries.length === 0) return 0;
 
-  if (effectiveGrowth(techNode(tower).price.growth) === 1) {
+  if (effectiveGrowth(growthOf(tower)) === 1) {
     let most = Infinity;
     for (const { item, amount } of entries) most = Math.min(most, Math.floor(bank[item] / amount));
-    return Math.max(0, Math.min(most, limit));
+    return Math.max(0, Math.min(most, ceiling));
   }
 
   const left = { ...bank };
   let bought = 0;
-  while (bought < limit) {
+  while (bought < ceiling) {
     const next = techPrice(tower, n + bought);
     if (!canAfford(left, next)) break;
     pay(left, next);
