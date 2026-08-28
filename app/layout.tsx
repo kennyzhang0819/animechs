@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Chakra_Petch, IBM_Plex_Mono } from "next/font/google";
 import AdminShortcut from "@/components/AdminShortcut";
 import "./globals.css";
@@ -19,6 +19,25 @@ export const metadata: Metadata = {
   title: "Sir, We Have a Dagger Problem",
   description:
     "Incremental swarm defense: every run banks resources toward a tech tree of towers and placements, across a campaign of worlds — thousands of units on a WebGL flow field.",
+};
+
+/**
+ * The game owns every gesture on the page. Without this, a pinch on a phone
+ * zooms the DOCUMENT — the HUD balloons off the screen and the map underneath
+ * never moves — and a double tap does the same in one gesture. The canvas
+ * reads pinches itself and drives the camera with them (see game/game.ts);
+ * Safari ignores user-scalable, so Game also swallows its gesture events.
+ *
+ * viewport-fit=cover lets the map run under the notch and the home
+ * indicator. The HUD stays clear of both through --safe-* in globals.css.
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#0B0B0D",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
