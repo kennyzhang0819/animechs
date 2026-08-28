@@ -120,7 +120,7 @@ function paint(): Promise<void> {
 // show anything but map. A map taller than the viewport is panned, not
 // shrunk to fit
 const ZOOM_MIN = 1;
-const ZOOM_MAX = 2;
+const ZOOM_MAX = 4;
 const PAN_KEYS: Record<string, readonly [number, number]> = {
   KeyW: [0, -1],
   KeyS: [0, 1],

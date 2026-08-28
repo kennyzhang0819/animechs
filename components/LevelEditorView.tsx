@@ -734,6 +734,7 @@ function Row({ label, value }: { label: string; value: string }) {
  */
 function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement | null {
   const [metric, setMetric] = useState<"units" | "hp">("units");
+  const [at, setAt] = useState<number | null>(null);
   const n = waves.length;
   if (n < 2) return null;
 
@@ -746,12 +747,21 @@ function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement
   const pts = v.map((k, i) => `${X(i).toFixed(1)},${Y(k).toFixed(1)}`);
   const line = `M${pts.join("L")}`;
   const area = `M${X(0).toFixed(1)},64L${pts.join("L")}L${X(n - 1).toFixed(1)},64Z`;
-  // a cut is drawn only where the script actually reaches it
   const cuts = DIFFICULTIES.slice(0, -1)
     .map((d) => d.waves)
     .filter((w) => w < n);
   const fmt = (k: number): string =>
     k >= 1000 ? `${(k / 1000).toFixed(k >= 10000 ? 0 : 1)}k` : `${Math.round(k)}`;
+
+  // the pointer names the wave under it. Rounding rather than flooring means
+  // the nearest POINT wins, so a spike is picked by aiming at the spike
+  // rather than at the column of pixels starting under it
+  const track = (e: React.MouseEvent<SVGSVGElement>): void => {
+    const r = e.currentTarget.getBoundingClientRect();
+    if (r.width <= 0) return;
+    const i = Math.round(((e.clientX - r.left) / r.width) * (n - 1));
+    setAt(Math.min(n - 1, Math.max(0, i)));
+  };
 
   return (
     <div className="sticky top-0 z-10 rounded-lg border border-[#2E2E36] bg-[#151518] p-2.5">
@@ -772,43 +782,81 @@ function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement
           ))}
         </span>
       </div>
-      <svg viewBox="0 0 240 64" preserveAspectRatio="none" className="block h-[62px] w-full">
-        <path d={area} fill="#FFD37F" fillOpacity={0.1} />
-        {cuts.map((w) => (
-          <line
-            key={w}
-            x1={X(w - 1)}
-            x2={X(w - 1)}
-            y1={0}
-            y2={64}
-            stroke="#4A4A55"
-            strokeWidth={1}
+      <div className="relative">
+        <svg
+          viewBox="0 0 240 64"
+          preserveAspectRatio="none"
+          className="block h-[62px] w-full"
+          onMouseMove={track}
+          onMouseLeave={() => setAt(null)}
+        >
+          <path d={area} fill="#FFD37F" fillOpacity={0.1} />
+          {cuts.map((w) => (
+            <line
+              key={w}
+              x1={X(w - 1)}
+              x2={X(w - 1)}
+              y1={0}
+              y2={64}
+              stroke="#4A4A55"
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+          <path
+            d={line}
+            fill="none"
+            stroke="#FFD37F"
+            strokeWidth={1.5}
+            strokeLinejoin="round"
             vectorEffect="non-scaling-stroke"
           />
-        ))}
-        <path
-          d={line}
-          fill="none"
-          stroke="#FFD37F"
-          strokeWidth={1.5}
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
-        {/* one hit target per wave, so hovering the line names the wave it is */}
-        {v.map((k, i) => (
-          <rect key={i} x={X(i) - 120 / n} y={0} width={240 / n} height={64} fill="transparent">
-            <title>{`Wave ${i + 1} — ${metric === "units" ? `${k.toLocaleString()} enemies` : `${Math.round(k).toLocaleString()} hp`}`}</title>
-          </rect>
-        ))}
-      </svg>
-      <div className="mt-1 flex justify-between text-[11px] text-[#4A4A55]">
-        <span>wave 1</span>
-        {cuts.map((w) => (
-          <span key={w} className="text-[#71717C]">
-            {difficultyName(tierOfWave(w - 1))} ends
-          </span>
-        ))}
-        <span>peak {fmt(max)}</span>
+          {at !== null && (
+            <line
+              x1={X(at)}
+              x2={X(at)}
+              y1={0}
+              y2={64}
+              stroke="#EDEDEF"
+              strokeWidth={1}
+              strokeOpacity={0.5}
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+        </svg>
+        {/* the marker dot is HTML, not SVG: the box is stretched to the rail's
+            width, and a circle inside it would come out an ellipse */}
+        {at !== null && (
+          <span
+            className="pointer-events-none absolute -ml-[3px] -mt-[3px] block h-1.5 w-1.5 rounded-full bg-[#EDEDEF]"
+            style={{ left: `${(at / (n - 1)) * 100}%`, top: `${(Y(v[at]) / 64) * 100}%` }}
+          />
+        )}
+      </div>
+      <div className="mt-1 flex justify-between gap-2 text-[11px]">
+        {at === null ? (
+          <>
+            <span className="text-[#4A4A55]">wave 1</span>
+            {cuts.map((w) => (
+              <span key={w} className="text-[#71717C]">
+                {difficultyName(tierOfWave(w - 1))} ends
+              </span>
+            ))}
+            <span className="text-[#4A4A55]">peak {fmt(max)}</span>
+          </>
+        ) : (
+          <>
+            <span className="text-[#EDEDEF]">Wave {at + 1}</span>
+            <span className="text-[#71717C]">
+              {tierOfWave(at) >= 0 ? difficultyName(tierOfWave(at)) : "unreachable"}
+            </span>
+            <span className="text-[#FFD37F]">
+              {metric === "units"
+                ? `${v[at].toLocaleString()} enemies`
+                : `${Math.round(v[at]).toLocaleString()} hp`}
+            </span>
+          </>
+        )}
       </div>
     </div>
   );
