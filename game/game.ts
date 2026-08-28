@@ -65,6 +65,13 @@ export interface Stats {
 export const SPEEDS: readonly number[] = [1, 2, 4, 8, 16];
 
 /**
+ * The multipliers a player gets. The rest of SPEEDS stay a sandbox tool:
+ * 8x and 16x exist to reach a late wave for testing, and at that pace a
+ * run is not being played so much as fast-forwarded past.
+ */
+export const PLAYER_SPEEDS: readonly number[] = [1, 2, 4];
+
+/**
  * The stages of starting a level, in order, as the loading screen reports
  * them. They are stages rather than a byte count on purpose: none of this
  * work streams, so a percentage would be invented. The bar advances a step
@@ -520,6 +527,16 @@ export class Game {
   openMenu(): void {
     if (this.sim.lost() || this.won()) return;
     this.menuOpen = true;
+  }
+
+  /**
+   * The HUD's play/pause, and the same guard space applies: an open menu
+   * already holds the sim, so pausing under it would leave the player
+   * resuming into a still-frozen field.
+   */
+  togglePause(): void {
+    if (this.menuOpen) return;
+    this.paused = !this.paused;
   }
 
   /** fast-forward toggle: any multiplier in SPEEDS; anything else is 1x */

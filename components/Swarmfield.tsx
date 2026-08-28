@@ -6,6 +6,7 @@ import {
   Game,
   LOAD_STEP_LABEL,
   LOAD_STEPS,
+  PLAYER_SPEEDS,
   SPEEDS,
   type LoadStep,
   type UiState,
@@ -380,6 +381,10 @@ export default function Swarmfield() {
     const g = gameRef.current;
     if (!g) return;
     g.setTech(admin ? null : techOf(loadProgress()));
+    // dropping out of sandbox drops a sandbox-only pace with it, or the run
+    // keeps running at a speed whose button is no longer on screen
+    if (!admin && !PLAYER_SPEEDS.includes(g.ui().speed))
+      g.setSpeed(PLAYER_SPEEDS[PLAYER_SPEEDS.length - 1]);
     setHud(g.ui());
   }, [admin]);
 
@@ -738,16 +743,41 @@ export default function Swarmfield() {
             </div>
           </div>
         )}
-        {hud && admin && (
+        {hud && !hud.lost && !hud.won && (
+          /* pace controls, for everyone: an idle game where the only way to
+             sit out a wave gap is to watch it is a game that wastes the
+             player's time. Pause leads, since it is the one that stops the
+             clock; the multipliers run out from it */
           <div
             role="group"
-            aria-label="sandbox controls"
+            aria-label="speed controls"
             className="absolute bottom-4 left-4 flex overflow-hidden rounded border border-[#2E2E36] bg-[#151518]/70 backdrop-blur"
           >
-            <span className="border-r border-[#2E2E36] px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F]">
-              Sandbox
-            </span>
-            {SPEEDS.map((mult) => (
+            <button
+              title={hud.paused ? "Resume (space)" : "Pause (space)"}
+              aria-label={hud.paused ? "Resume" : "Pause"}
+              aria-pressed={hud.paused}
+              onClick={() => {
+                const g = gameRef.current;
+                if (!g) return;
+                g.togglePause();
+                setHud(g.ui());
+              }}
+              className={`border-r border-[#2E2E36] px-3 py-1.5 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+                hud.paused
+                  ? "bg-[#222227] text-[#E8B45B]"
+                  : "text-[#EDEDEF] hover:bg-[#222227]/60"
+              }`}
+            >
+              <svg viewBox="0 0 12 12" className="h-4 w-4 fill-current" aria-hidden="true">
+                {hud.paused ? (
+                  <path d="M2.5 1.5v9l8-4.5z" />
+                ) : (
+                  <path d="M2 1.5h3v9H2zM7 1.5h3v9H7z" />
+                )}
+              </svg>
+            </button>
+            {(admin ? SPEEDS : PLAYER_SPEEDS).map((mult) => (
               <button
                 key={mult}
                 title={`${mult}x speed`}
