@@ -309,95 +309,6 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
 const WAVE_BTN =
   "flex h-8 w-8 shrink-0 items-center justify-center rounded border border-[#2E2E36] text-[#FFD37F] hover:border-[#FFD37F] hover:bg-[#222227]/90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
 
-/**
- * The "skip to wave" box, opened by the double-play button in the HUD and
- * folded away by default — it is a tool for reaching a late wave, not part
- * of playing the level.
- *
- * Nothing is actually skipped: the sim spawns every wave up to the target
- * back to back with no gap (see Sim.skipToWave), so what lands on the field
- * is all of them at once. The box says so, because "skip" reads like the
- * waves in between never arrive.
- */
-function SkipToWave({
-  onClose,
-  hud,
-  onSkip,
-}: {
-  onClose: () => void;
-  hud: UiState;
-  onSkip: (n: number) => void;
-}) {
-  const [text, setText] = useState("");
-  const target = Math.floor(Number(text));
-  // only forward: the script has no reverse, and the wave already on the
-  // field is already here. There is no upper bound — past the last wave just
-  // empties the script onto the field
-  const valid = text.trim() !== "" && Number.isFinite(target) && target > hud.currentWave;
-  const send = (): void => {
-    if (!valid) return;
-    onSkip(target);
-    setText("");
-  };
-
-  return (
-    <div className="w-full rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
-      <div className="flex flex-wrap items-center gap-2">
-        <label
-          htmlFor="skip-to-wave"
-          className="text-[13px] font-bold uppercase tracking-widest text-[#EDEDEF]"
-        >
-          Skip to wave
-        </label>
-        <input
-          id="skip-to-wave"
-          type="number"
-          min={hud.currentWave + 1}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") send();
-            // the canvas listens on window for hotkeys — a wave number is
-            // not a build shortcut
-            e.stopPropagation();
-          }}
-          placeholder={`${hud.currentWave + 1}`}
-          className="w-16 shrink-0 rounded border border-[#2E2E36] bg-[#0E0E11] px-1.5 py-0.5 text-base font-bold text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
-        />
-        <button
-          onClick={send}
-          disabled={!valid}
-          className="rounded border border-[#2E2E36] px-2 py-0.5 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F] hover:border-[#FFD37F] hover:bg-[#222227]/90 disabled:cursor-not-allowed disabled:border-[#2E2E36] disabled:text-[#4A4A55] disabled:hover:bg-transparent focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
-        >
-          Go
-        </button>
-        <button
-          onClick={onClose}
-          title="Hide"
-          aria-label="Hide skip to wave"
-          className="text-[13px] font-bold uppercase tracking-widest text-[#EDEDEF] hover:text-[#FFD37F] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
-        >
-          x
-        </button>
-      </div>
-      <p className="mt-0.5 text-[13px] uppercase tracking-widest text-[#EDEDEF] break-words">
-        {hud.rushTo > 0 ? (
-          <>
-            <span className="font-bold text-[#FFD37F]">Spawning to wave {hud.rushTo}</span>{" "}
-            <button
-              onClick={() => onSkip(0)}
-              className="uppercase tracking-widest text-[#EDEDEF] underline underline-offset-2 hover:text-[#FF5A5A] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
-            >
-              Stop
-            </button>
-          </>
-        ) : (
-          `Spawns every wave up to it — none are skipped`
-        )}
-      </p>
-    </div>
-  );
-}
 
 export default function Swarmfield() {
   const glRef = useRef<HTMLCanvasElement>(null);
@@ -437,9 +348,6 @@ export default function Swarmfield() {
   const [result, setResult] = useState<RunReward | null>(null);
   // non-null exactly while the loading screen is up, including its fade
   const [loadUi, setLoadUi] = useState<LoadUi | null>(null);
-  // the "skip to wave" box under the HUD starts folded away: it is a tool
-  // for testing a late wave, not part of playing the level
-  const [skipOpen, setSkipOpen] = useState(false);
   const granted = useRef(false);
   /**
    * Where the tech tree was opened FROM. A loss is the moment the tree is
@@ -802,10 +710,9 @@ export default function Swarmfield() {
                   </span>
                 )}
               </div>
-              {/* the two wave controls sit together: single play releases the
-                  next wave, double play opens the box that runs to a wave
-                  further out. Only the countdown is conditional — a rush has
-                  no timer to wait for, so its button is always here */}
+              {/* the countdown and the button that cuts it short. Both are
+                  conditional on there being a wave still pending — with the
+                  script drained there is nothing left to release */}
               <div className="flex flex-wrap items-center gap-2 text-[13px] uppercase tracking-widest text-[#EDEDEF]">
                 {hud.nextWaveIn > 0 && (
                   <>
@@ -827,33 +734,8 @@ export default function Swarmfield() {
                     </button>
                   </>
                 )}
-                <button
-                  title="Skip to wave"
-                  aria-label="Skip to wave"
-                  aria-expanded={skipOpen}
-                  onClick={() => setSkipOpen(!skipOpen)}
-                  className={`${WAVE_BTN} ${
-                    skipOpen || hud.rushTo > 0 ? "border-[#FFD37F] bg-[#222227]/90" : ""
-                  }`}
-                >
-                  <svg viewBox="0 0 12 12" className="h-4 w-4 fill-current" aria-hidden="true">
-                    <path d="M1 1.5v9l5-4.5zM6 1.5v9l5-4.5z" />
-                  </svg>
-                </button>
               </div>
             </div>
-            {skipOpen && (
-            <SkipToWave
-              onClose={() => setSkipOpen(false)}
-              hud={hud}
-              onSkip={(n) => {
-                const g = gameRef.current;
-                if (!g) return;
-                g.skipToWave(n);
-                setHud(g.ui());
-              }}
-            />
-            )}
           </div>
         )}
         {hud && admin && (
