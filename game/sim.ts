@@ -83,7 +83,10 @@ const MU = CELL / 8;
  * How many effects may be alive at once, shared by everything that throws
  * one. A push past it is DROPPED — and it is the newest that go, so a board
  * over budget loses the flash of the shot being fired while stale puffs
- * linger.
+ * linger. The one exception: effects that ARE a weapon — a hitscan shot's
+ * only visible artifact — push past the cap (see pushFx's `force`), so a
+ * saturated screen can no longer make a firing fuse look like a stalled
+ * one.
  *
  * Measured, uncapped, on a 160-turret map with 3,200 units walking into it:
  * demand runs at ~730 and spikes to ~1,800 for the instant the crowd
@@ -2275,12 +2278,15 @@ export class Sim {
           // QUEUED, so it plays through the charge rather than after it,
           // and off the barrel's own facing (no per-shot inaccuracy yet)
           const mz = st.shootY ?? st.size * 5;
+          // forced: the glow is the only sign a charging turret is doing
+          // anything at all — dropped, a winding-up lancer reads as stalled
           this.bulletFx(
             st.bullet.chargeFx,
             t.x + Math.cos(t.angle) * mz,
             t.y + Math.sin(t.angle) * mz,
             t.angle,
             st.bullet.fxColor,
+            true,
           );
           continue;
         }
@@ -2461,7 +2467,7 @@ export class Sim {
         st.bullet.hitFx,
         st.bullet.fxColor,
       );
-      this.pushBolt(x, y, st.bullet.lifetime, pts);
+      this.pushBolt(x, y, st.bullet.lifetime, pts, true); // the bolt IS arc's shot
       return;
     }
     if (st.bullet.laser) {
@@ -2476,7 +2482,8 @@ export class Sim {
         st.bullet.hitFx,
         st.bullet.fxColor,
       );
-      this.pushFx(x, y, st.bullet.lifetime, FxKind.Laser, a, reached);
+      // forced: the beam is lancer's entire visible shot (damage is instant)
+      this.pushFx(x, y, st.bullet.lifetime, FxKind.Laser, a, reached, 0, 0, true);
       return;
     }
     if (st.bullet.rail) {
@@ -2495,7 +2502,8 @@ export class Sim {
         st.bullet.hitFx,
         st.bullet.fxColor,
       );
-      this.pushFx(x, y, st.bullet.lifetime, FxKind.Shrapnel, a, st.bullet.ray.length);
+      // forced: the ray is fuse's entire visible shot (damage is instant)
+      this.pushFx(x, y, st.bullet.lifetime, FxKind.Shrapnel, a, st.bullet.ray.length, 0, 0, true);
       return;
     }
     // Mindustry scaleLife (Turret.java): an artillery shell's lifetime
@@ -2608,13 +2616,14 @@ export class Sim {
     for (const i of dead) if (uhp[i] <= 0) this.killUnit(i);
     // pointEffect every pointEffectSpace down what the line reached
     if (b.pointFx !== undefined) {
+      // forced: the trail line is the rail's entire visible shot
       for (let d = 0; d <= reached; d += spec.pointSpacing)
-        this.bulletFx(b.pointFx, x + dirx * d, y + diry * d, angle, b.fxColor);
+        this.bulletFx(b.pointFx, x + dirx * d, y + diry * d, angle, b.fxColor, true);
     }
     // BulletType.despawned: a rail bullet has speed 0 and a lifetime of one
     // tick, so it dies where it was fired and its despawn effect is, in
-    // practice, the turret's own detonation
-    this.bulletFx(b.despawnFx, x, y, angle, b.fxColor);
+    // practice, the turret's own detonation — forced with the trail
+    this.bulletFx(b.despawnFx, x, y, angle, b.fxColor, true);
   }
 
   /**
@@ -3450,11 +3459,21 @@ export class Sim {
 
   /** Fx.lightning: the only effect whose shape is data rather than a seed —
    * Mindustry hands it the very point list the walk built */
-  private pushBolt(x: number, y: number, ttl: number, pts: readonly number[]): void {
-    if (this.effects.length < FX_CAP)
+  private pushBolt(x: number, y: number, ttl: number, pts: readonly number[], force = false): void {
+    if (force || this.effects.length < FX_CAP)
       this.effects.push({ x, y, age: 0, ttl, kind: FxKind.Lightning, pts });
   }
 
+  /**
+   * `force` marks an effect that IS a weapon rather than dressing on one —
+   * fuse's shrapnel ray, lancer's beam and charge glow, arc's bolt, the
+   * rail's trail — and pushes it past FX_CAP. Those weapons deal instant
+   * invisible damage, so with their one visible artifact dropped a firing
+   * turret and a stalled one look identical, and a swarm big enough to
+   * saturate the budget is exactly when that report comes in. Bounded by
+   * turret count x fire rate — tens of overshoot, not the crowd's
+   * thousands — so the cap still holds for everything ambient.
+   */
   private pushFx(
     x: number,
     y: number,
@@ -3464,8 +3483,9 @@ export class Sim {
     len = 0,
     seed = 0,
     sides = 0,
+    force = false,
   ): void {
-    if (this.effects.length < FX_CAP)
+    if (force || this.effects.length < FX_CAP)
       this.effects.push({ x, y, age: 0, ttl, kind, rot, len, seed, sides });
   }
 
@@ -3474,9 +3494,17 @@ export class Sim {
    * The kind carries its Mindustry lifetime (FX_LIFE) and every one of
    * them scatters particles, so both are filled in here rather than at the
    * dozen call sites. An unset kind is Fx.none and draws nothing.
+   * `force` as on pushFx: weapon-defining artifacts skip the cap.
    */
-  private bulletFx(kind: BulletFx | undefined, x: number, y: number, rot: number, col?: RGB): void {
-    if (kind === undefined || this.effects.length >= FX_CAP) return;
+  private bulletFx(
+    kind: BulletFx | undefined,
+    x: number,
+    y: number,
+    rot: number,
+    col?: RGB,
+    force = false,
+  ): void {
+    if (kind === undefined || (!force && this.effects.length >= FX_CAP)) return;
     this.effects.push({
       x, y, age: 0, ttl: FX_LIFE[kind], kind, rot, len: 0,
       seed: (Math.random() * 0x7fffffff) | 0, sides: 0, col,

@@ -11,6 +11,14 @@ npm install
 npm run dev   # Next.js + Turbopack
 ```
 
+### Build number
+
+`game/version.ts` holds `BUILD`, shown small and grey at the bottom-right
+of every screen. **Increment it by one in every commit that changes what
+the game does** — sim, targeting, balance, rendering, UI. A playtest
+report only means something against the number that was on screen: a
+stale tab or a cached bundle looks exactly like a fix not working.
+
 ## Architecture
 
 - `game/constants.ts` — grid, core placement, tower/unit tuning
