@@ -242,20 +242,20 @@ export default function TechTree({
     applyCam();
 
     // native and non-passive: React's wheel listener cannot preventDefault,
-    // and without it ctrl+wheel (which is also what a trackpad pinch
-    // arrives as) zooms the PAGE instead of the board
+    // and without it a ctrl+wheel (which is also what a trackpad pinch
+    // arrives as) zooms the PAGE instead of the board.
+    //
+    // THE WHEEL ZOOMS, exactly like the field one keystroke away — about
+    // the cursor, so what you point at stays put. A pinch's ctrl-tagged
+    // events carry tiny deltas, so it takes the game's own stronger
+    // factor; deltaMode 1 is a line-scrolling mouse (Firefox), whose
+    // deltas are in lines rather than px
     const onWheel = (e: WheelEvent): void => {
       e.preventDefault();
       const r = view.getBoundingClientRect();
-      if (e.ctrlKey || e.metaKey) {
-        zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.01));
-      } else {
-        // plain scroll MOVES the map, both axes — the tree is not a page
-        const c = cam.current;
-        c.x += e.deltaX / c.z;
-        c.y += e.deltaY / c.z;
-        applyCam();
-      }
+      const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+      const k = e.ctrlKey || e.metaKey ? 0.01 : 0.0015;
+      zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-dy * k));
     };
     view.addEventListener("wheel", onWheel, { passive: false });
 
@@ -388,9 +388,14 @@ export default function TechTree({
         }
       }}
     >
+      {/* NO will-change here, deliberately: promoting the layer makes the
+          browser rasterize it once and stretch that texture as you zoom,
+          which is exactly "why is the text blurry". Un-promoted, every
+          transform change re-rasterizes at the live scale, and a board
+          this small re-rasters well inside a frame */}
       <div
         ref={boardRef}
-        className="absolute left-0 top-0 will-change-transform"
+        className="absolute left-0 top-0"
         style={{
           width: BOARD_W,
           height: BOARD_H,
@@ -641,7 +646,7 @@ export default function TechTree({
           </button>
         </div>
         <div className="absolute bottom-[max(1rem,var(--safe-b))] left-[max(1rem,var(--safe-l))] text-[11px] uppercase tracking-widest text-[#4A4A55]">
-          drag · scroll · wasd to pan &nbsp;—&nbsp; ctrl+scroll to zoom
+          drag · wasd to pan &nbsp;—&nbsp; scroll to zoom
         </div>
       </div>
     </div>
