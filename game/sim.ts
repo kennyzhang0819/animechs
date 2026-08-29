@@ -1113,10 +1113,11 @@ export class Sim {
         this.ugx[i] = g.x;
         this.ugy[i] = g.y;
       }
-      // ...plus the difficulty's flat armour bonus (DIFFICULTIES.armorBonus),
-      // the one exception to "health alone moves": baked into uarmor here so
-      // every armour read downstream — the lancer's x4 included — sees it
-      this.uarmor[i] = stats.armor + armorBonusAtLevel(this.level.enemyLevel ?? 0);
+      // ...plus the difficulty's flat armour bonus for the unit's side
+      // (DIFFICULTIES.groundArmorBonus / airArmorBonus): baked into uarmor
+      // here so every armour read downstream — the lancer's x4 included —
+      // sees it
+      this.uarmor[i] = stats.armor + armorBonusAtLevel(this.level.enemyLevel ?? 0, fly);
       // ForceFieldAbility.created: a carrier walks in with the bubble
       // already full, so the first tower to see one meets a whole pool of
       // shield rather than a field still charging up. The pool is scaled by
