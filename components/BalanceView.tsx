@@ -5,6 +5,14 @@ import { saveBalanceDoc, type BalanceDoc } from "@/game/balance";
 import { TOWERS } from "@/game/constants";
 import { costEntries, ITEM_INFO, type ItemKind } from "@/game/items";
 import {
+  allDifficultyOverrides,
+  authoredDifficultyKnobs,
+  DIFFICULTIES,
+  difficultyKnobsOf,
+  setDifficultyKnob,
+  type DifficultyKnobs,
+} from "@/game/ladder";
+import {
   allOverrides,
   authoredKnobs,
   globalGrowth,
@@ -153,8 +161,20 @@ export default function BalanceView() {
     bump((n) => n + 1);
   }, [sel]);
 
+  const setDifficulty = useCallback(
+    (tier: number, knob: keyof DifficultyKnobs, v: number | undefined) => {
+      setDifficultyKnob(tier, knob, v);
+      setStatus(null);
+      bump((n) => n + 1);
+    },
+    [],
+  );
+
   const save = useCallback(async () => {
-    setStatus((await saveBalanceDoc(allOverrides() as BalanceDoc)) ? "Saved" : "Save failed");
+    const doc: BalanceDoc = { ...allOverrides() };
+    const diffs = allDifficultyOverrides();
+    if (Object.keys(diffs).length > 0) doc.difficulties = diffs;
+    setStatus((await saveBalanceDoc(doc)) ? "Saved" : "Save failed");
   }, []);
 
   // the curve, plus the running total, sampled across the window on screen
@@ -218,6 +238,71 @@ export default function BalanceView() {
           >
             Save
           </button>
+        </div>
+      </div>
+
+      {/* enemy-side dials, saved into the same document under `difficulties` */}
+      <div className="mb-4 rounded-lg border border-[#2E2E36] p-4">
+        <div className="mb-1 text-[15px] font-bold text-[#EDEDEF]">Difficulty scaling</div>
+        <p className="mb-3 max-w-3xl text-[12.5px] leading-relaxed text-[#71717C]">
+          Enemy-side dials, applied at spawn. <span className="text-[#A6A6AF]">Shield ×</span>{" "}
+          multiplies every shield ability&apos;s pool, cap and regen (quasar bubbles, pulsar and
+          scepter fields). <span className="text-[#A6A6AF]">Armour +</span> is added flat to every
+          body on that side; the shave is floored at 10% of the hit, so small-calibre turrets feel
+          it hardest, the lancer counts armour ×4, and burning ignores it entirely. Scatter fires
+          3-damage pellets — move air armour in ones.
+        </p>
+        <div className="grid gap-4 md:grid-cols-3">
+          {DIFFICULTIES.map((d, tier) => {
+            const dk = difficultyKnobsOf(tier);
+            const da = authoredDifficultyKnobs(tier);
+            return (
+              <div key={d.name} className="rounded border border-[#2E2E36] px-3 py-1">
+                <div className="flex items-baseline justify-between pt-2">
+                  <span className="text-[14px] font-bold text-[#EDEDEF]">{d.name}</span>
+                  <span className={`text-[11px] text-[#71717C] ${NUM}`}>
+                    enemy level {d.level}
+                  </span>
+                </div>
+                <Knob
+                  label="Shield ×"
+                  hint="multiplier on every shield pool, cap and regen"
+                  value={dk.shieldScale}
+                  min={0}
+                  max={50}
+                  step={0.5}
+                  decimals={1}
+                  bent={dk.shieldScale !== da.shieldScale}
+                  onChange={(v) => setDifficulty(tier, "shieldScale", Math.max(0, v))}
+                  onReset={() => setDifficulty(tier, "shieldScale", undefined)}
+                />
+                <Knob
+                  label="Ground armour +"
+                  hint="flat armour on every walker"
+                  value={dk.groundArmorBonus}
+                  min={0}
+                  max={20}
+                  step={1}
+                  decimals={0}
+                  bent={dk.groundArmorBonus !== da.groundArmorBonus}
+                  onChange={(v) => setDifficulty(tier, "groundArmorBonus", Math.max(0, v))}
+                  onReset={() => setDifficulty(tier, "groundArmorBonus", undefined)}
+                />
+                <Knob
+                  label="Air armour +"
+                  hint="flat armour on every flyer — scatter pays for every point"
+                  value={dk.airArmorBonus}
+                  min={0}
+                  max={20}
+                  step={1}
+                  decimals={0}
+                  bent={dk.airArmorBonus !== da.airArmorBonus}
+                  onChange={(v) => setDifficulty(tier, "airArmorBonus", Math.max(0, v))}
+                  onReset={() => setDifficulty(tier, "airArmorBonus", undefined)}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
 

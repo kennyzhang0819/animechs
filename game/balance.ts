@@ -1,7 +1,11 @@
+import { applyDifficultyOverrides, type DifficultyKnobs } from "./ladder";
 import { applyOverrides } from "./tech";
 
 /**
- * The balance document: one tuning coefficient per turret, and nothing else.
+ * The balance document: one tuning coefficient per turret, plus the
+ * per-difficulty dials (shield scale, ground/air armour bonus) under the
+ * reserved `difficulties` key — no turret is named that, so the flat shape
+ * survives.
  *
  * It exists so the dial can be turned WITHOUT a rebuild. The admin dashboard
  * writes it, the game reads it at startup, and a node missing from it simply
@@ -10,10 +14,17 @@ import { applyOverrides } from "./tech";
  * how that afternoon becomes a week.
  *
  * The document is an OVERRIDE LAYER, never the source of truth. Once a
- * coefficient is settled it belongs in the node in tech.ts, where it is read
- * alongside the reasoning for it; this file is the scratch pad in between.
+ * coefficient is settled it belongs in the node in tech.ts — or the
+ * difficulty's row in ladder.ts — where it is read alongside the reasoning
+ * for it; this file is the scratch pad in between.
  */
-export type BalanceDoc = Record<string, Partial<import("./tech").Knobs>>;
+export interface BalanceDoc {
+  [node: string]:
+    | Partial<import("./tech").Knobs>
+    | Record<string, Partial<DifficultyKnobs>>
+    | undefined;
+  difficulties?: Record<string, Partial<DifficultyKnobs>>;
+}
 
 /** where the document lives, served straight out of public/ */
 const DOC_URL = "/balance.json";
@@ -33,7 +44,11 @@ export async function loadBalanceDoc(): Promise<void> {
     if (!res.ok) return;
     const parsed = (await res.json()) as unknown;
     if (!parsed || typeof parsed !== "object") return;
-    applyOverrides(parsed as BalanceDoc);
+    const { difficulties, ...towers } = parsed as BalanceDoc;
+    applyOverrides(towers as Record<string, Partial<import("./tech").Knobs>>);
+    applyDifficultyOverrides(
+      difficulties && typeof difficulties === "object" ? difficulties : {},
+    );
   } catch {
     // offline, or a half-written file mid-save: the authored numbers stand
   }

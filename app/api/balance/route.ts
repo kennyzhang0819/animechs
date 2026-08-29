@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
+import { DIFFICULTIES } from "@/game/ladder";
 import { TECH_KINDS } from "@/game/tech";
 
 /** the two knobs, and the sane range each one may be saved in */
@@ -11,6 +12,18 @@ const LIMITS = {
   // price the second turret past any bank the game can hold
   growth: 4,
 } as const;
+
+/** the per-difficulty dials under the reserved `difficulties` key */
+const DIFFICULTY_LIMITS = {
+  // a multiplier on shield pools; three digits already means an unbreakable
+  // bubble, so anything past this is a typo
+  shieldScale: 1000,
+  // flat armour on every body — the armour scale itself tops out at 18
+  groundArmorBonus: 100,
+  airArmorBonus: 100,
+} as const;
+
+const DIFFICULTY_NAMES = DIFFICULTIES.map((d) => d.name);
 
 /**
  * Dev-only balance persistence: the admin dashboard POSTs the knobs it has
@@ -32,8 +45,31 @@ export async function POST(req: Request): Promise<NextResponse> {
   // Only known nodes, only the three knobs, only finite numbers in range. The
   // bounds matter: growth is an exponent, so a fat-fingered 40 would price the
   // second turret past any bank the game can hold.
-  const doc: Record<string, Record<string, number>> = {};
+  const doc: Record<string, Record<string, number> | Record<string, Record<string, number>>> = {};
   for (const [id, raw] of Object.entries(body as Record<string, unknown>)) {
+    // the reserved section: dials per difficulty NAME, not per tech node
+    if (id === "difficulties") {
+      if (!raw || typeof raw !== "object")
+        return NextResponse.json({ error: "bad difficulties section" }, { status: 400 });
+      const section: Record<string, Record<string, number>> = {};
+      for (const [name, dials] of Object.entries(raw as Record<string, unknown>)) {
+        if (!DIFFICULTY_NAMES.includes(name))
+          return NextResponse.json({ error: `unknown difficulty ${name}` }, { status: 400 });
+        if (!dials || typeof dials !== "object")
+          return NextResponse.json({ error: `bad dials for ${name}` }, { status: 400 });
+        const out: Record<string, number> = {};
+        for (const [knob, limit] of Object.entries(DIFFICULTY_LIMITS)) {
+          const v = (dials as Record<string, unknown>)[knob];
+          if (v === undefined) continue;
+          if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > limit)
+            return NextResponse.json({ error: `bad ${knob} for ${name}` }, { status: 400 });
+          out[knob] = v;
+        }
+        if (Object.keys(out).length > 0) section[name] = out;
+      }
+      if (Object.keys(section).length > 0) doc.difficulties = section;
+      continue;
+    }
     if (!(TECH_KINDS as readonly string[]).includes(id))
       return NextResponse.json({ error: `unknown node ${id}` }, { status: 400 });
     if (!raw || typeof raw !== "object")
