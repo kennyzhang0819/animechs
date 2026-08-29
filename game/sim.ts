@@ -72,7 +72,6 @@ import { WALL_PINE, type Terrain } from "./terrain";
 import {
   FxKind,
   TOWER_KINDS,
-  type Effect,
   type Projectile,
   type RGB,
   type Tower,
@@ -109,6 +108,14 @@ const FX_CAP = 1400;
  * buffer.
  */
 const FX_DUST_CAP = 140;
+/**
+ * The pool's HARD size — what the struct-of-arrays effect storage below is
+ * allocated at, and the one ceiling even a `force` push cannot pass. It is
+ * deliberately far above FX_CAP: forced pushes are bounded by turret count
+ * times fire rate (tens over the cap, not thousands), so in any reachable
+ * game state this never clips — it exists so the arrays have a size.
+ */
+const FX_MAX = 8192;
 
 // --- Mindustry unit physics (async/PhysicsProcess.java) ---
 // every unit is a circle of radius hitSize * unitCollisionRadiusScale
@@ -553,7 +560,39 @@ export class Sim {
 
   towers: Tower[] = [];
   projs: Projectile[] = [];
-  effects: Effect[] = [];
+
+  // --- effects, in struct-of-arrays like the units ---
+  // These used to be an array of small objects, allocated on every push —
+  // and a fuse-heavy board at 8x speed pushes thousands a second, which is
+  // steady GC pressure timed exactly to the busiest frames. The pool is
+  // flat typed arrays with a live count and swap-remove, so a push is a
+  // handful of stores and an expiry allocates nothing. The renderer reads
+  // these directly (see its effects passes); everything an old Effect
+  // object carried has a lane here, with fxHasCol standing in for the
+  // optional colour and fxPts — the one field that is genuinely a list,
+  // arc's bolt path — kept as a parallel ref array that swap-removes in
+  // step and only ever holds an array while a bolt is alive.
+  fxN = 0;
+  readonly fxX = new Float32Array(FX_MAX);
+  readonly fxY = new Float32Array(FX_MAX);
+  readonly fxAge = new Float32Array(FX_MAX);
+  readonly fxTtl = new Float32Array(FX_MAX);
+  readonly fxKind = new Uint8Array(FX_MAX);
+  readonly fxRot = new Float32Array(FX_MAX);
+  readonly fxLen = new Float32Array(FX_MAX);
+  readonly fxSeed = new Int32Array(FX_MAX);
+  readonly fxSides = new Uint8Array(FX_MAX);
+  /** UnitSpawn's kind id — meaningless (0) for every other kind */
+  readonly fxUnit = new Uint8Array(FX_MAX);
+  /** Effect.at's optional colour: the rgb lanes are only meaningful where
+   * fxHasCol is set — a reused slot's stale colour must never leak */
+  readonly fxHasCol = new Uint8Array(FX_MAX);
+  readonly fxColR = new Float32Array(FX_MAX);
+  readonly fxColG = new Float32Array(FX_MAX);
+  readonly fxColB = new Float32Array(FX_MAX);
+  readonly fxPts: (readonly number[] | null)[] = new Array<readonly number[] | null>(
+    FX_MAX,
+  ).fill(null);
 
   private readonly bStart = new Int32Array(HN + 1);
   private readonly bCount = new Int32Array(HN);
@@ -623,7 +662,10 @@ export class Sim {
     this.coreHp = this.coreHpMax;
     this.sealGx = -1;
     this.projs.length = 0;
-    this.effects.length = 0;
+    // drop the fx pool: the count is the pool, but the bolt-path refs must
+    // actually go or the last run's arrays sit unreachable-but-held
+    this.fxPts.fill(null, 0, this.fxN);
+    this.fxN = 0;
     this.towers.length = 0;
     // the official map document IS the world: map-editor saves land in its
     // JSON, and the next full page load plays them. The documents are
@@ -888,13 +930,10 @@ export class Sim {
     this.fireTowers(dt);
     this.updateProjectiles(dt);
 
-    const fx = this.effects;
-    for (let e = fx.length - 1; e >= 0; e--) {
-      fx[e].age += dt;
-      if (fx[e].age >= fx[e].ttl) {
-        fx[e] = fx[fx.length - 1];
-        fx.pop();
-      }
+    const { fxAge, fxTtl } = this;
+    for (let e = this.fxN - 1; e >= 0; e--) {
+      fxAge[e] += dt;
+      if (fxAge[e] >= fxTtl[e]) this.removeFx(e);
     }
   }
 
@@ -1672,7 +1711,7 @@ export class Sim {
     // here fields no units and builds towers that cannot be damaged. So
     // what a footfall leaves behind is the dust, scaled by rippleScale
     const landed = this.ulegMove[i] & ~bits;
-    if (landed !== 0 && this.effects.length < FX_DUST_CAP) {
+    if (landed !== 0 && this.fxN < FX_DUST_CAP) {
       for (let k = 0; k < n; k++) {
         if ((landed & (1 << k)) === 0) continue;
         this.pushFx(ulegFX[off + k], ulegFY[off + k], 30 / 60, FxKind.Footfall,
@@ -3473,11 +3512,68 @@ export class Sim {
     }
   }
 
+  /**
+   * Claim and fill one slot of the effect pool, every lane written — a
+   * slot is REUSED after swap-remove, so a field left unset here would be
+   * whatever the previous tenant put there. The specialised pushers below
+   * overwrite the lanes they own after this returns. -1 = pool refused
+   * (over FX_CAP without `force`, or the hard FX_MAX either way).
+   */
+  private pushSlot(
+    x: number,
+    y: number,
+    ttl: number,
+    kind: FxKind,
+    rot: number,
+    len: number,
+    seed: number,
+    sides: number,
+    force: boolean,
+  ): number {
+    const i = this.fxN;
+    if (i >= (force ? FX_MAX : FX_CAP)) return -1;
+    this.fxN = i + 1;
+    this.fxX[i] = x;
+    this.fxY[i] = y;
+    this.fxAge[i] = 0;
+    this.fxTtl[i] = ttl;
+    this.fxKind[i] = kind;
+    this.fxRot[i] = rot;
+    this.fxLen[i] = len;
+    this.fxSeed[i] = seed;
+    this.fxSides[i] = sides;
+    this.fxUnit[i] = 0;
+    this.fxHasCol[i] = 0;
+    this.fxPts[i] = null;
+    return i;
+  }
+
+  /** swap-remove one effect, keeping the bolt-path refs in step */
+  private removeFx(i: number): void {
+    const n = --this.fxN;
+    this.fxX[i] = this.fxX[n];
+    this.fxY[i] = this.fxY[n];
+    this.fxAge[i] = this.fxAge[n];
+    this.fxTtl[i] = this.fxTtl[n];
+    this.fxKind[i] = this.fxKind[n];
+    this.fxRot[i] = this.fxRot[n];
+    this.fxLen[i] = this.fxLen[n];
+    this.fxSeed[i] = this.fxSeed[n];
+    this.fxSides[i] = this.fxSides[n];
+    this.fxUnit[i] = this.fxUnit[n];
+    this.fxHasCol[i] = this.fxHasCol[n];
+    this.fxColR[i] = this.fxColR[n];
+    this.fxColG[i] = this.fxColG[n];
+    this.fxColB[i] = this.fxColB[n];
+    this.fxPts[i] = this.fxPts[n];
+    this.fxPts[n] = null; // the vacated slot must not pin a bolt path
+  }
+
   /** Fx.lightning: the only effect whose shape is data rather than a seed —
    * Mindustry hands it the very point list the walk built */
   private pushBolt(x: number, y: number, ttl: number, pts: readonly number[], force = false): void {
-    if (force || this.effects.length < FX_CAP)
-      this.effects.push({ x, y, age: 0, ttl, kind: FxKind.Lightning, pts });
+    const i = this.pushSlot(x, y, ttl, FxKind.Lightning, 0, 0, 0, 0, force);
+    if (i >= 0) this.fxPts[i] = pts;
   }
 
   /**
@@ -3501,8 +3597,7 @@ export class Sim {
     sides = 0,
     force = false,
   ): void {
-    if (force || this.effects.length < FX_CAP)
-      this.effects.push({ x, y, age: 0, ttl, kind, rot, len, seed, sides });
+    this.pushSlot(x, y, ttl, kind, rot, len, seed, sides, force);
   }
 
   /**
@@ -3520,11 +3615,18 @@ export class Sim {
     col?: RGB,
     force = false,
   ): void {
-    if (kind === undefined || (!force && this.effects.length >= FX_CAP)) return;
-    this.effects.push({
-      x, y, age: 0, ttl: FX_LIFE[kind], kind, rot, len: 0,
-      seed: (Math.random() * 0x7fffffff) | 0, sides: 0, col,
-    });
+    // refuse before rolling the seed, so a capped board leaves the random
+    // stream exactly where the old object push left it
+    if (kind === undefined || this.fxN >= (force ? FX_MAX : FX_CAP)) return;
+    const i = this.pushSlot(
+      x, y, FX_LIFE[kind], kind, rot, 0, (Math.random() * 0x7fffffff) | 0, 0, force,
+    );
+    if (i >= 0 && col) {
+      this.fxHasCol[i] = 1;
+      this.fxColR[i] = col[0];
+      this.fxColG[i] = col[1];
+      this.fxColB[i] = col[2];
+    }
   }
 
   /**
@@ -3534,11 +3636,8 @@ export class Sim {
    * told which one landed.
    */
   private pushSpawnFx(x: number, y: number, rot: number, unit: number): void {
-    if (this.effects.length >= FX_CAP) return;
-    this.effects.push({
-      x, y, age: 0, ttl: FX_UNIT_SPAWN, kind: FxKind.UnitSpawn,
-      rot, len: 0, seed: 0, sides: 0, unit,
-    });
+    const i = this.pushSlot(x, y, FX_UNIT_SPAWN, FxKind.UnitSpawn, rot, 0, 0, 0, false);
+    if (i >= 0) this.fxUnit[i] = unit;
   }
 
   /**
@@ -3547,10 +3646,14 @@ export class Sim {
    * a layer under the shells rather than with the rest of the effects.
    */
   private pushTrail(x: number, y: number, radius: number, col?: RGB): void {
-    if (this.effects.length >= FX_CAP) return;
-    this.effects.push({
-      x, y, age: 0, ttl: FX_LIFE[FxKind.ArtilleryTrail], kind: FxKind.ArtilleryTrail,
-      rot: 0, len: radius, seed: 0, sides: 0, col,
-    });
+    const i = this.pushSlot(
+      x, y, FX_LIFE[FxKind.ArtilleryTrail], FxKind.ArtilleryTrail, 0, radius, 0, 0, false,
+    );
+    if (i >= 0 && col) {
+      this.fxHasCol[i] = 1;
+      this.fxColR[i] = col[0];
+      this.fxColG[i] = col[1];
+      this.fxColB[i] = col[2];
+    }
   }
 }

@@ -179,6 +179,14 @@ export const enum FxKind {
 /** an r,g,b triple in 0..1, the form every draw call wants */
 export type RGB = readonly [number, number, number];
 
+/**
+ * The shape of one effect AS THE DRAW HELPERS READ IT. The sim no longer
+ * stores effects as objects of this shape — they live in flat typed
+ * arrays on Sim (fxX/fxY/fxAge/..., see the pool there), because a
+ * fuse-heavy board pushes thousands a second and an object per push was
+ * steady GC pressure. The renderer refills one reused view of this shape
+ * per effect per frame, so every field's meaning below is unchanged.
+ */
 export interface Effect {
   x: number;
   y: number;
