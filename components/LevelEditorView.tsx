@@ -19,6 +19,7 @@ import { dropsForKills } from "@/game/progress";
 import {
   audit,
   check,
+  difficultyColor,
   difficultyName,
   difficultyOf,
   DIFFICULTIES,
@@ -602,9 +603,10 @@ export default function LevelEditorView({
                     onClick={() => setAgainst(i)}
                     className={`flex-1 rounded border px-2 py-1 text-[13px] font-bold uppercase tracking-widest ${
                       against === i
-                        ? "border-[#FFD37F] bg-[#1C1810] text-[#FFD37F]"
+                        ? "bg-[#151518]"
                         : "border-[#2E2E36] text-[#71717C] hover:border-[#4A4A55]"
                     }`}
+                    style={against === i ? { color: d.color, borderColor: `${d.color}88` } : undefined}
                   >
                     {d.name}
                   </button>
@@ -827,7 +829,7 @@ function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement
           <>
             <span className="text-[#4A4A55]">wave 1</span>
             {cuts.map((w) => (
-              <span key={w} className="text-[#71717C]">
+              <span key={w} style={{ color: difficultyColor(tierOfWave(w - 1)) }}>
                 {difficultyName(tierOfWave(w - 1))} ends
               </span>
             ))}
@@ -836,9 +838,13 @@ function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement
         ) : (
           <>
             <span className="text-[#EDEDEF]">Wave {at + 1}</span>
-            <span className="text-[#71717C]">
-              {tierOfWave(at) >= 0 ? difficultyName(tierOfWave(at)) : "unreachable"}
-            </span>
+            {tierOfWave(at) >= 0 ? (
+              <span style={{ color: difficultyColor(tierOfWave(at)) }}>
+                {difficultyName(tierOfWave(at))}
+              </span>
+            ) : (
+              <span className="text-[#71717C]">unreachable</span>
+            )}
             <span className="text-[#FFD37F]">
               {metric === "units"
                 ? `${v[at].toLocaleString()} enemies`
@@ -952,7 +958,7 @@ function StepCard({
             written but never sent — that badge is a warning, not a gate */}
         {tierOfWave(index) < 0 ? (
           <span
-            title="Past Extreme's 50-wave cut — this wave is never sent"
+            title="Past Nemesis's 50-wave cut — this wave is never sent"
             className="rounded border border-[#5B2E2E] bg-[#2A1616] px-1.5 text-[12px] font-bold uppercase tracking-widest text-[#FF8A8A]"
           >
             unplayed
@@ -960,7 +966,11 @@ function StepCard({
         ) : (
           <span
             title={`First played on ${difficultyName(tierOfWave(index))}`}
-            className="rounded border border-[#3A3320] bg-[#1C1810] px-1.5 text-[12px] font-bold uppercase tracking-widest text-[#FFD37F]"
+            className="rounded border bg-[#151518] px-1.5 text-[12px] font-bold uppercase tracking-widest"
+            style={{
+              color: difficultyColor(tierOfWave(index)),
+              borderColor: `${difficultyColor(tierOfWave(index))}55`,
+            }}
           >
             D{difficultyOf(tierOfWave(index))}
           </span>

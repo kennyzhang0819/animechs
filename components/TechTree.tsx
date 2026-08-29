@@ -17,7 +17,7 @@ import {
   UTILITY_INFO,
   type TechKind,
 } from "@/game/tech";
-import { difficultyName } from "@/game/ladder";
+import { difficultyColor, difficultyName } from "@/game/ladder";
 import { CostRow, Wallet } from "./Items";
 import { TOWER_ICONS } from "./towerIcons";
 
@@ -334,7 +334,11 @@ export default function TechTree({
                     </div>
                     {status === "locked-tier" ? (
                       <div className="mt-2 text-[13px] font-bold uppercase tracking-widest text-[#FF8A8A]">
-                        Clear {difficultyName(techNode(n.id).requiresTier ?? 0)} first
+                        Clear{" "}
+                        <span style={{ color: difficultyColor(techNode(n.id).requiresTier ?? 0) }}>
+                          {difficultyName(techNode(n.id).requiresTier ?? 0)}
+                        </span>{" "}
+                        first
                       </div>
                     ) : status === "maxed" ? null : (
                       <div className="mt-2 border-t border-[#2E2E36] pt-2 text-[14px]">

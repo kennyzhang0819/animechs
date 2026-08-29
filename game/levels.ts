@@ -794,14 +794,14 @@ export function levelDoc(spec: LevelSpec): LevelDoc {
  * difficulty does not generate waves — it decides HOW MANY OF THESE a run
  * plays, and at what enemy level (see DIFFICULTIES in ladder.ts):
  *
- *   Medium    waves 1-20   enemy level  0
- *   High      waves 1-35   enemy level 10
- *   Extreme   waves 1-50   enemy level 20
+ *   Incursion   waves 1-20   enemy level  0
+ *   Onslaught   waves 1-35   enemy level 10
+ *   Nemesis     waves 1-50   enemy level 20
  *
  * So a difficulty buys two things at once: ten waves of hand-authored fight
  * nobody has seen yet, and x1.79 health on every wave below them. Neither
  * alone would carry it — the script has fielded every kind it uses by wave
- * 20, so without the levels Extreme would just be a longer Medium against
+ * 20, so without the levels Nemesis would just be a longer Incursion against
  * identical enemies.
  *
  * The roster is now ahead of the script: quasar and the whole T4 line
@@ -845,12 +845,12 @@ export const WORLDS: LevelSpec[] = [
     // this block. Everything below documents HOW to author a wave; WHAT the
     // waves are lives in the document, and the admin level editor writes it.
     //
-    // MEDIUM (waves 1-20) IS PLAYTESTED AND FIXED. Do not restructure it.
+    // INCURSION (waves 1-20) IS PLAYTESTED AND FIXED. Do not restructure it.
     //
-    // A DIFFICULTY IS A PREFIX, NOT A SCRIPT OF ITS OWN. High plays waves
-    // 1-35 and Extreme 1-50, so both REPLAY every Medium wave, and the rows
+    // A DIFFICULTY IS A PREFIX, NOT A SCRIPT OF ITS OWN. Onslaught plays waves
+    // 1-35 and Nemesis 1-50, so both REPLAY every Incursion wave, and the rows
     // in TARGET_DROP_RATIO describe the cumulative total of a whole run.
-    // Authoring can only ever ADD to a tier, never subtract, so Medium's
+    // Authoring can only ever ADD to a tier, never subtract, so Incursion's
     // 12,500 tier-1 bodies are the floor for every difficulty above it.
     //
     //   line       T1        T2       T3         T4         T5
@@ -862,17 +862,17 @@ export const WORLDS: LevelSpec[] = [
     // KEEP SENDING TIER-1 UNITS. They are the swarm and the game is named
     // after them. They are also nearly free in the health budget — 118 hp
     // against a scepter's 8,100, so one T4 weighs as much as sixty-nine
-    // daggers, and the twelve thousand extra daggers High adds cost less
+    // daggers, and the twelve thousand extra daggers Onslaught adds cost less
     // than its two hundred scepters. Spend the budget on T3/T4/T5 counts;
     // that is the only thing that really moves a difficulty's weight.
     //
-    // NO TIER-5 BEFORE EXTREME. Waves 21-35 must field none at all: phase
+    // NO TIER-5 BEFORE NEMESIS. Waves 21-35 must field none at all: phase
     // fabric is what spectre, meltdown and foreshadow are priced in, and
-    // those three are meant to be unbuyable until Extreme has actually been
-    // played. Adding one reign to a High wave quietly unlocks the top of
+    // those three are meant to be unbuyable until Nemesis has actually been
+    // played. Adding one reign to a Onslaught wave quietly unlocks the top of
     // the tech tree a difficulty early.
     //
-    // THE PATTERN, past Medium. One cycle is four waves:
+    // THE PATTERN, past Incursion. One cycle is four waves:
     //
     //   1  DAGGER CLASS  + partial support, and optionally a SMALL amount
     //                      of air — small is the point, not a hedge
@@ -884,25 +884,24 @@ export const WORLDS: LevelSpec[] = [
     // Every TWO cycles, insert one wave of PURE SUPPORT. So the repeating
     // unit is nine waves: D C A M  D C A M  S.
     //
-    // THE LAST TWO WAVES OF EACH DIFFICULTY ARE HAND-WRITTEN, and they are a
-    // PAIR rather than two waves that happen to be adjacent. Waves 34 and 49
-    // are LULLS and waves 35 and 50 are FINALES, and the lull exists to make
-    // the finale land:
+    // THE LAST TWO WAVES OF EACH DIFFICULTY ARE HAND-WRITTEN. On Onslaught they
+    // are a lull-then-finale PAIR — wave 34 (674 bodies, 0.23M health) drops
+    // the floor out so wave 35 (3,505 bodies, 2.17M health) lands as a 9.7x
+    // event in one wave gap. A difficulty that simply ramped to its biggest
+    // wave would arrive at the same number having spent it. The lull is
+    // quieter than the AIR wave before it, which is the quietest thing the
+    // pattern otherwise produces.
     //
-    //   34    674 bodies  0.23M health      35   3,505 bodies  2.17M health
-    //   49    710 bodies  0.74M health      50   3,670 bodies  6.93M health
+    // NEMESIS'S LAST TWO ARE A DOUBLE FINALE INSTEAD: waves 49 and 50 split
+    // what used to be one 6.93M finale into two peers (49: 2,420 bodies,
+    // 3.99M health; 50: 1,960 bodies, 3.69M health), with 50's fleet the
+    // slightly lighter of the two on purpose — the headroom is the disrupt
+    // boss's budget, and the boss rides wave 50 on top of it. Both waves
+    // field every line at full strength; they are the only two waves in
+    // the game where reign, toxopid, corvus and eclipse all appear at once.
     //
-    // That is a 9.7x and 9.4x swing in one wave gap. A difficulty that simply
-    // ramped to its biggest wave would arrive at the same number having
-    // spent it; dropping the floor out first is what makes the last wave
-    // read as an event. The lull is quieter than the AIR wave before it,
-    // which is the quietest thing the pattern otherwise produces.
-    //
-    // The finales are every line at full strength and about a third of their
-    // segment's entire health — 3.9x and 2.0x the biggest wave the generated
-    // pattern produces. Wave 50 is the only wave in the game where reign,
-    // toxopid, corvus and eclipse all appear at once. Wave 35 fields scepters
-    // and arkyids but NO tier 5, because High must not (see above).
+    // Wave 35 fields scepters and arkyids but NO tier 5, because Onslaught must
+    // not (see above).
     //
     // ALL FOUR TAKE THEIR BODIES OUT OF THE GENERATED SEGMENT rather than
     // adding on top, so the cumulative ratios stay exactly on target. Resize

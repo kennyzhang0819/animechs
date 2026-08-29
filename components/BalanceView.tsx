@@ -259,7 +259,9 @@ export default function BalanceView() {
             return (
               <div key={d.name} className="rounded border border-[#2E2E36] px-3 py-1">
                 <div className="flex items-baseline justify-between pt-2">
-                  <span className="text-[14px] font-bold text-[#EDEDEF]">{d.name}</span>
+                  <span className="text-[14px] font-bold" style={{ color: d.color }}>
+                    {d.name}
+                  </span>
                   <span className={`text-[11px] text-[#71717C] ${NUM}`}>
                     enemy level {d.level}
                   </span>

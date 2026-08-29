@@ -64,26 +64,26 @@ export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: s
  *
  * THE LADDER GATES ARE GONE, AND THE CURRENCY IS THE GATE INSTEAD. Every
  * node used to be able to demand a DIFFICULTY be cleared before it would
- * take points; salvo waited on Medium, fuse on High, and the specialists on
+ * take points; salvo waited on Incursion, fuse on Onslaught, and the specialists on
  * whichever tier came before the enemy they answered. That was a second gate
  * doing a job the first one already did, because A BUNDLE CANNOT BE PAID IN
- * A CURRENCY ITS DIFFICULTY DOES NOT DROP. Medium pays copper, titanium and
+ * A CURRENCY ITS DIFFICULTY DOES NOT DROP. Incursion pays copper, titanium and
  * thorium and no plastanium at all (TARGET_DROP_RATIO in ladder.ts), so
  * fuse's fifteen plastanium locks it out of a fresh save on its own, exactly
  * and automatically, with no gate written anywhere.
  *
  * Where the two gates disagreed, the tier gate was WRONG. Thorium starts
- * dropping in Medium at wave 7 and a full Medium run banks 450 of it — but
- * every node that charged thorium waited on Medium being CLEARED, so a save
+ * dropping in Incursion at wave 7 and a full Incursion run banks 450 of it — but
+ * every node that charged thorium waited on Incursion being CLEARED, so a save
  * that had not yet cleared it accumulated a currency with nowhere to spend
  * it. A player who dies at wave 17 is exactly the player who needs the next
  * turret, and the gate was denying it to them for the crime of not already
  * being past it.
  *
  * SO EVERY NODE IS OPEN AND THE BANK DECIDES. The four this actually frees
- * during Medium are salvo, lancer, ripple and parallax — the thorium sinks.
- * Everything above them still costs plastanium or phase fabric, which Medium
- * and High do not pay, so they stay shut without being told to.
+ * during Incursion are salvo, lancer, ripple and parallax — the thorium sinks.
+ * Everything above them still costs plastanium or phase fabric, which Incursion
+ * and Onslaught do not pay, so they stay shut without being told to.
  *
  * `requiresTier` is kept on the interface and honoured by progress.ts, and
  * nothing uses it. It is the hook for content whose gate genuinely is NOT a
@@ -451,7 +451,7 @@ export interface TechNodeDef {
    * NOTHING SETS THIS, deliberately — see the note at the top of the file.
    * A turret that costs a currency only a later difficulty drops is already
    * gated by its price, and saying it twice locked thorium nodes away from
-   * the Medium run that was banking the thorium. Reach for this only when a
+   * the Incursion run that was banking the thorium. Reach for this only when a
    * node's gate is genuinely not a currency.
    */
   requiresTier?: number;
@@ -489,12 +489,12 @@ export interface TechNodeDef {
  *
  * SCATTER IS WHERE THAT WENT WRONG ONCE, and it is the worked example to
  * read before touching a bundle. It asked 50 copper : 10 titanium, a 5:1
- * ratio against a Medium that pays 6.67:1, so titanium ran dry first and put
+ * ratio against a Incursion that pays 6.67:1, so titanium ran dry first and put
  * a hard cap on how many a player could own however much copper they had.
  * The turret felt overpriced; the PRICE was fine and the SHAPE was wrong.
  *
  * The currency also picks the difficulty. Plastanium appears first on the
- * nodes meant for Extreme and phase fabric only on the ones meant for
+ * nodes meant for Nemesis and phase fabric only on the ones meant for
  * Eradication, because that is where tier-4 and tier-5 enemies are — and a
  * currency nothing drops yet is an absolute lock, which is exactly why no
  * node needs a tier gate on top of it. The converse is the trap: charging a
@@ -515,7 +515,7 @@ export interface TechNodeDef {
  * value came back as titanium, thorium, plastanium and phase on the same six
  * nodes. What it buys is that the supply the waves pay and the demand the
  * tree charges finally have the same SHAPE: every currency now maxes the
- * whole tree in 385-391 Extreme runs, where before plastanium needed 8,736
+ * whole tree in 385-391 Nemesis runs, where before plastanium needed 8,736
  * and phase could not be spent at all.
  *
  * It also had to happen for the ratio to move. The waves cut low-tier bodies
@@ -524,7 +524,7 @@ export interface TechNodeDef {
  * copper the one gate on a tree whose top half no enemy pays for.
  *
  * The NINE early and mid nodes are untouched — copper and all. Everything a
- * Medium run can reach is priced exactly as it was playtested.
+ * Incursion run can reach is priced exactly as it was playtested.
  *
  * Keep the FIRST point of every node payable out of the difficulty whose
  * currency it debuts on, or that node is decoration.
@@ -699,7 +699,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // It was 0.4x, sat just above the geometric mean of that 12% and the 100%
     // that says air is a CHECK you either answer or lose the run to. THE
     // SECOND HALF OF THAT ARGUMENT NO LONGER HOLDS: salvo and parallax both
-    // shoot air and both are now buyable during Medium (see the top of the
+    // shoot air and both are now buyable during Incursion (see the top of the
     // file), so scatter is the CHEAP answer to air rather than the only one,
     // and the multiplier falls back toward the 12% reading it started from.
     //
@@ -723,12 +723,12 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // own — growth is left exactly where the ceiling put it.
     //
     // TITANIUM DROPS 10 -> 4, further than copper does, because the old
-    // bundle had the ratio wrong: 50:10 is 5:1 against a Medium that pays
+    // bundle had the ratio wrong: 50:10 is 5:1 against a Incursion that pays
     // 6.67:1, so titanium ran out first and CAPPED the count no matter how
     // much copper was banked. 25:4 is 6.25:1 and tracks the drop.
     //
     // COPPER AND TITANIUM ONLY. It used to want thorium, which comes from
-    // tier-3 kills and so does not flow until well into a Medium run — and
+    // tier-3 kills and so does not flow until well into a Incursion run — and
     // since hail hangs off this node (Mindustry's own lineage: duo ->
     // scatter -> hail), a thorium price here locked the cheap ground AoE
     // behind the T3 waves too. Upstream builds scatter from copper and lead,
@@ -743,7 +743,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // 28 damage a shell — the first turret that puts a fortress (armour 9)
     // back at its printed health instead of ten times it. THE FIRST THORIUM
-    // NODE, and so the first thing a Medium run's thorium is for: it opens
+    // NODE, and so the first thing a Incursion run's thorium is for: it opens
     // around wave 7, when the T3 kills that pay for it start arriving. It
     // also shoots AIR, which makes it the second answer to the flare waves
     // and half the reason scatter no longer has to be priced as the only one
@@ -760,8 +760,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // the highest DPS on the roster, so equal cost-per-DPS charges for it.
     // Nine tiles of range is no longer a discount: the map already decides
     // how much of a gate one can hold (see PriceCurve).
-    // PLASTANIUM IS THE GATE: fifteen of it, and only High and Extreme drop
-    // any at all. A Medium save can see this node and can never pay for it,
+    // PLASTANIUM IS THE GATE: fifteen of it, and only Onslaught and Nemesis drop
+    // any at all. A Incursion save can see this node and can never pay for it,
     // which is the same lock the old tier gate spelled out by hand
     id: "fuse",
     price: { base: { titanium: 65, thorium: 80, plastanium: 15 }, growth: 1.01 },
@@ -816,7 +816,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // THE ONE NODE THE DPS RULE CANNOT SEE, and the growth says so: 30
     // armour-piercing damage a second on ONE target is the least in the
     // game, so equal cost-per-DPS prices two hundred of them at 47k copper
-    // — under half what five hundred duos cost — and a High-cleared bank
+    // — under half what five hundred duos cost — and a Onslaught-cleared bank
     // covers that several times over. What the rule is not counting is the
     // pull, which is the whole turret: it drags a flare at 85% of its own
     // top speed and a horizon at 123%, i.e. backwards. Priced on damage a
@@ -830,7 +830,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     x: 3,
     y: 4,
   },
-  // ---------- EXTREME AND ERADICATION ----------------------------------
+  // ---------- NEMESIS AND ERADICATION ----------------------------------
   //
   // These five were stubs — a tech-tree shape with duo's bullet behind it —
   // and their growths were scaffolding, because a placeholder bullet makes
@@ -840,9 +840,9 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   // Lineage is Mindustry's own (content/SerpuloTechTree.java) and the
   // difficulty each one lands at falls out of BUILD MATERIAL, which is now
   // the ONLY thing holding them shut: a turret whose Mindustry cost tops out
-  // at thorium or plastanium prices out to Extreme, and one that wants surge
+  // at thorium or plastanium prices out to Nemesis, and one that wants surge
   // alloy belongs to the hidden ERADICATION difficulty that does not exist
-  // yet — so it is priced in phase fabric, which nothing below Extreme
+  // yet — so it is priced in phase fabric, which nothing below Nemesis
   // drops. Each bundle below charges a currency its own difficulty is the
   // first to pay, and a child always costs at least what its parent does, so
   // no child can open before its parent even with every gate gone.
@@ -868,7 +868,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   },
   {
     // PHASE FABRIC. Twin heavy cannon — the highest sustained damage in the
-    // game. Phase drops only at Extreme and only from the T5 that arrives at
+    // game. Phase drops only at Nemesis and only from the T5 that arrives at
     // the very end of it, so these three ARE the hidden difficulty's reward
     // and they light up the moment it ships — priced there rather than told
     // to wait there
@@ -914,7 +914,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   // WHAT PACES THEM IS THE CURRENCY, NOT THE NUMBER. Each node asks for one
   // item and a different one, so the path unfolds at exactly the rate the
   // campaign hands out new currencies — titanium from the first mace, thorium
-  // once the T3s arrive mid-Medium, plastanium from High, phase fabric only
+  // once the T3s arrive mid-Incursion, plastanium from Onslaught, phase fabric only
   // off the T5s. That is the same rule the turrets run on (see TWO at the top
   // of the file): the bundle is the gate, and nothing here needs a tier
   // written on it.

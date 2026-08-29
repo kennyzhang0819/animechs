@@ -15,6 +15,7 @@ import { loadBalanceDoc } from "@/game/balance";
 import {
   loadLevelDocs,
   UNIT_KINDS,
+  UNIT_STATS,
   WORLD,
   waveGroups,
   type LevelSpec,
@@ -25,13 +26,13 @@ import {
   audit,
   budget,
   check,
+  difficultyColor,
   difficultyName,
   specForTier,
   waveCost,
   waveGuide,
   tierDropBonus,
   tierLevel,
-  HP_PER_LEVEL,
   TOP_TIER,
 } from "@/game/ladder";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
@@ -49,7 +50,7 @@ import {
   type RunReward,
 } from "@/game/progress";
 import { turretIcon } from "@/game/atlas";
-import { isEmpty } from "@/game/items";
+import { isEmpty, ITEM_INFO, itemForTier } from "@/game/items";
 import { CostRow, Wallet } from "./Items";
 import TechTree from "./TechTree";
 
@@ -120,7 +121,10 @@ function LoadingScreen({
             {level.name}
           </h2>
           <p className="text-[13px] uppercase tracking-widest text-[#71717C]">
-            {difficultyName(level.tier ?? 0)} — {waves} waves — {enemies} enemies
+            <span className="font-bold" style={{ color: difficultyColor(level.tier ?? 0) }}>
+              {difficultyName(level.tier ?? 0)}
+            </span>{" "}
+            — {waves} waves — {enemies} enemies
           </p>
         </div>
         <div className="flex w-full flex-col gap-2">
@@ -177,12 +181,22 @@ function TierPicker({
 }) {
   const top = topTier(progress);
   const spec = specForTier(WORLD, tier);
-  const { waves, enemies } = levelSummary(spec);
-  const level = tierLevel(tier);
-  // the enemy level in the one unit that means anything to a player: how
-  // many times over a body has to be shot compared with the opening tier
-  const health = HP_PER_LEVEL ** level;
+  const { waves } = levelSummary(spec);
   const step = (d: number): void => onTier(Math.min(top, Math.max(0, tier + d)));
+  // the salvage multiplier as the one number in the blurb — "30% more loot"
+  const lootPct = Math.round((tierDropBonus(tier) - 1) * 100);
+  // what a difficulty NEWLY drops: its top tier's currency. Tier 0's spread
+  // (copper through thorium) is the baseline, so it gets prose instead
+  const newDrop = ITEM_INFO[itemForTier(tier + 3)].name.toLowerCase();
+  // whether this difficulty's cut of the script fields a boss kind — read
+  // from the waves themselves, so the warning follows the boss if it moves
+  const hasBoss = spec.script.some(
+    (s) =>
+      "wave" in s &&
+      waveGroups(s.wave).some((g) =>
+        g.counts.some((c, i) => c > 0 && UNIT_STATS[UNIT_KINDS[i]].boss),
+      ),
+  );
 
   return (
     <div className="w-full max-w-[22rem] rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-4">
@@ -215,7 +229,10 @@ function TierPicker({
         </button>
         <div className="text-center">
           <div className="text-[11px] uppercase tracking-[0.3em] text-[#71717C]">Difficulty</div>
-          <div className="text-2xl font-bold uppercase leading-none tracking-[0.15em] text-[#FFD37F]">
+          <div
+            className="text-2xl font-bold uppercase leading-none tracking-[0.15em]"
+            style={{ color: difficultyColor(tier) }}
+          >
             {difficultyName(tier)}
           </div>
         </div>
@@ -229,22 +246,29 @@ function TierPicker({
         </button>
       </div>
 
-      {/* what this tier actually costs and pays, in the four numbers that
-          decide whether to push or farm */}
-      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 border-t border-[#2E2E36] pt-3 text-[13px]">
-        <dt className="text-[#71717C]">Waves</dt>
-        <dd className="text-right font-bold text-[#EDEDEF]">{waves}</dd>
-        <dt className="text-[#71717C]">Enemies</dt>
-        <dd className="text-right font-bold text-[#EDEDEF]">{enemies.toLocaleString()}</dd>
-        <dt className="text-[#71717C]">Enemy level</dt>
-        <dd className="text-right font-bold text-[#EDEDEF]">
-          {level} <span className="text-[#71717C]">(×{health.toFixed(1)} hp)</span>
-        </dd>
-        <dt className="text-[#71717C]">Salvage</dt>
-        <dd className="text-right font-bold text-[#7BE58A]">
-          ×{tierDropBonus(tier).toFixed(2)}
-        </dd>
-      </dl>
+      {/* the wave count and one sentence of what the tier means — the full
+          numbers (enemy level, hp multiple, exact salvage) live in the run
+          itself and the editor, not on the menu */}
+      <div className="mt-3 border-t border-[#2E2E36] pt-3 text-[13px] leading-snug">
+        <span className="font-bold text-[#EDEDEF]">{waves} waves.</span>{" "}
+        <span className="text-[#A6A6AF]">
+          {tier === 0 ? (
+            <>The swarm at base strength — every kill drops resources for the tech tree.</>
+          ) : (
+            <>
+              Enemies have more health and shields, but drop {newDrop} and{" "}
+              <span className="font-bold text-[#7BE58A]">{lootPct}% more loot</span>.
+              {hasBoss && (
+                <>
+                  {" "}
+                  <span className="font-bold text-[#FF8A8A]">A powerful enemy</span> will
+                  spawn.
+                </>
+              )}
+            </>
+          )}
+        </span>
+      </div>
 
       <button
         onClick={onStart}
@@ -792,7 +816,10 @@ export default function Swarmfield() {
                   carries that and the difficulty and nothing else — the level
                   name is on the card that launched it */}
               <div className="text-[13px] uppercase tracking-widest text-[#EDEDEF] break-words">
-                {difficultyName(hud.tier)} — Wave{" "}
+                <span className="font-bold" style={{ color: difficultyColor(hud.tier) }}>
+                  {difficultyName(hud.tier)}
+                </span>{" "}
+                — Wave{" "}
                 <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span> / {hud.totalWaves}
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
@@ -1095,7 +1122,10 @@ export default function Swarmfield() {
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="w-80 max-w-[calc(100vw-2rem)] rounded border border-[#1F3A2E] bg-[#151518]/95 p-6 text-center">
               <div className="text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
-                {difficultyName(hud.tier)} cleared
+                <span style={{ color: difficultyColor(hud.tier) }}>
+                  {difficultyName(hud.tier)}
+                </span>{" "}
+                cleared
               </div>
               <div className="mt-4 space-y-1.5 text-base text-[#EDEDEF]">
                 <div>
@@ -1116,14 +1146,21 @@ export default function Swarmfield() {
                         <CostRow cost={result.earned} />
                       )}
                     </div>
-                    {/* the ladder is finite and ends at Extreme,
+                    {/* the ladder is finite and ends at Nemesis,
                         so the last first-clear has nothing to unlock — it
                         finishes the campaign instead */}
                     {result.firstClear && (
                       <div className="pt-1 text-[12px] uppercase tracking-widest text-[#FFD37F]">
-                        {result.tier >= TOP_TIER
-                          ? "Campaign complete — every wave cleared"
-                          : `${difficultyName(result.tier + 1)} unlocked`}
+                        {result.tier >= TOP_TIER ? (
+                          "Campaign complete — every wave cleared"
+                        ) : (
+                          <>
+                            <span style={{ color: difficultyColor(result.tier + 1) }}>
+                              {difficultyName(result.tier + 1)}
+                            </span>{" "}
+                            unlocked
+                          </>
+                        )}
                       </div>
                     )}
                   </>
