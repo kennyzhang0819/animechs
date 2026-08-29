@@ -96,11 +96,45 @@ export const LEVELS_PER_TIER = 10;
  * The wave counts are 20/35/50 rather than something evener because Medium
  * has to be a whole arc on its own — a fresh save's entire experience of
  * the game until it clears it.
+ *
+ * `shieldScale` multiplies every shield ability's pool, cap and regen (see
+ * Sim.updateAbilities), and it is a hand-tuned constant per difficulty
+ * rather than a curve, because shields answer a different question than
+ * health. A body's health is priced against the enemy budget, so it rides
+ * the level curve; a shield is measured in SECONDS OF ABSORBED TOWER FIRE,
+ * so it has to track the player's firepower — and that moves by the ~6x
+ * difficulty steps documented over TARGET_DROP_RATIO, not by x1.79. Left
+ * flat, a quasar's 500-point bubble that buys real cover at Medium pops to
+ * incidental fire at High. Only the enemy's own shields scale; nothing on
+ * the player's side reads this.
+ *
+ * `groundArmorBonus` / `airArmorBonus` are added FLAT to every walker's /
+ * flyer's armour at spawn (Sim reads them once, into uarmor). Armour is a
+ * flat shave floored at a tenth of the raw hit (Sim.applyArmor), so these
+ * knobs are regressive by calibre on purpose: +3 barely dents a salvo's 28
+ * or a lancer's 140, but takes a third off a duo's 9 — they make the swarm
+ * outlast CHIP without inflating it against the big guns. The two sides
+ * are split because their counters live on different scales: the ground
+ * roster is answered by real calibre, while the anti-air line is built on
+ * small pellets — a scatter shot is 3 damage, so even +1 of air armour
+ * halves the game's first AA and +3 floors it outright. Raise the air knob
+ * in ones, not threes. Two more cautions, both sides: the lancer counts
+ * armour QUADRUPLE (armorMultiplier 4), so every +1 is -4 to the turret
+ * that is supposed to answer T3/T4; and burning pierces armour entirely,
+ * so it buys nothing against scorch's afterburn. checkDebuts prices the
+ * bonus into its debut-tax lint.
  */
-export const DIFFICULTIES: readonly { name: string; waves: number; level: number }[] = [
-  { name: "Medium", waves: 20, level: 0 },
-  { name: "High", waves: 35, level: 10 },
-  { name: "Extreme", waves: 50, level: 20 },
+export const DIFFICULTIES: readonly {
+  name: string;
+  waves: number;
+  level: number;
+  shieldScale: number;
+  groundArmorBonus: number;
+  airArmorBonus: number;
+}[] = [
+  { name: "Medium", waves: 20, level: 0, shieldScale: 1, groundArmorBonus: 0, airArmorBonus: 0 },
+  { name: "High", waves: 35, level: 10, shieldScale: 5, groundArmorBonus: 0, airArmorBonus: 0 },
+  { name: "Extreme", waves: 50, level: 20, shieldScale: 20, groundArmorBonus: 0, airArmorBonus: 0 },
   // ERADICATION and UNREASONABLE are deliberately not here yet
 ];
 
@@ -212,6 +246,38 @@ export const tierLevel = (tier: number): number => DIFFICULTIES[clampTier(tier)]
 /** health multiplier of a difficulty */
 export const tierHpScale = (tier: number): number => HP_PER_LEVEL ** tierLevel(tier);
 
+/** shield multiplier of a difficulty */
+export const tierShieldScale = (tier: number): number =>
+  DIFFICULTIES[clampTier(tier)].shieldScale;
+
+/**
+ * Shield multiplier at an enemy level: the scale of the highest difficulty
+ * whose level the given one has reached. Piecewise-constant on purpose —
+ * the campaign only ever plays levels 0, 10 and 20 (tierLevel), so a curve
+ * through the levels in between would be tuning nothing.
+ */
+export const shieldScaleAtLevel = (level: number): number => {
+  let s = 1;
+  for (const d of DIFFICULTIES) if (level >= d.level) s = d.shieldScale;
+  return s;
+};
+
+/** flat armour added to every unit at a difficulty; air and ground carry
+ *  separate knobs because their counters shoot different calibres */
+export const tierArmorBonus = (tier: number, flying: boolean): number => {
+  const d = DIFFICULTIES[clampTier(tier)];
+  return flying ? d.airArmorBonus : d.groundArmorBonus;
+};
+
+/** flat armour bonus at an enemy level — piecewise like shieldScaleAtLevel,
+ *  and for the same reason: only levels 0, 10 and 20 are ever played */
+export const armorBonusAtLevel = (level: number, flying: boolean): number => {
+  let a = 0;
+  for (const d of DIFFICULTIES)
+    if (level >= d.level) a = flying ? d.airArmorBonus : d.groundArmorBonus;
+  return a;
+};
+
 /** drop multiplier of a difficulty */
 export const tierDropBonus = (tier: number): number =>
   1 + DROP_BONUS_PER_TIER * clampTier(tier);
@@ -305,6 +371,9 @@ export interface Budget {
   hp: number;
   /** share of health carried by units with armour 3 or more */
   armourShare: number;
+  /** share of health carried by units with a shield ability — ehp the hp
+   *  column cannot see, and it grows by tierShieldScale on top */
+  shieldShare: number;
   /** share of health that flies — hail and scorch cannot touch it at all */
   airShare: number;
   /** share of health carried by unit tier 3 and up */
@@ -322,6 +391,7 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
   let units = 0;
   let hp = 0;
   let armour = 0;
+  let shielded = 0;
   let air = 0;
   let t3 = 0;
   for (const step of run.script) {
@@ -334,6 +404,7 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
         units += count;
         hp += h;
         if (stats.armor >= 3) armour += h;
+        if (stats.forceField || stats.shieldField) shielded += h;
         if (stats.flying) air += h;
         if (stats.tier >= 3) t3 += h;
       });
@@ -348,6 +419,7 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
     units,
     hp,
     armourShare: share(armour),
+    shieldShare: share(shielded),
     airShare: share(air),
     t3Share: share(t3),
     duration,
@@ -456,14 +528,17 @@ export function debutViolations(spec: LevelSpec = WORLD): LadderIssue[] {
 
   const bad: LadderIssue[] = [];
   for (const [kind, tier] of debut) {
-    const { armor } = UNIT_STATS[kind];
+    // the armour a tower actually meets: printed plus the difficulty's
+    // flat bonus for the unit's side, which is what Sim spawns with
+    const armor =
+      UNIT_STATS[kind].armor + tierArmorBonus(tier, UNIT_STATS[kind].flying ?? false);
     const shot = bestShotByTier(tier);
     const tax = shot / Math.max(shot - armor, 0.1 * shot);
     if (tax >= 2)
       bad.push({
         tier,
         kind: "debut",
-        message: `${kind} (armour ${armor}) debuts here against a best shot of ${shot} — it costs a fleet ${tax.toFixed(1)}x its printed health, so budget the farming for it`,
+        message: `${kind} (armour ${armor} with the difficulty's bonus) debuts here against a best shot of ${shot} — it costs a fleet ${tax.toFixed(1)}x its printed health, so budget the farming for it`,
       });
   }
   return bad;
@@ -624,6 +699,9 @@ export interface AuditRow {
   duration: number;
   t3Share: number;
   armourShare: number;
+  /** share of health carried by shield-ability units, whose pools are also
+   *  multiplied by this difficulty's shieldScale */
+  shieldShare: number;
   /**
    * What a full clear actually banks, per currency, INCLUDING this
    * difficulty's drop bonus. One item per kill, so this is just the enemy
@@ -698,6 +776,7 @@ export function audit(spec: LevelSpec = WORLD): AuditRow[] {
       duration: Math.round(b.duration),
       t3Share: +b.t3Share.toFixed(2),
       armourShare: +b.armourShare.toFixed(2),
+      shieldShare: +b.shieldShare.toFixed(2),
       drops: paid,
       dropRatio: ITEM_KINDS.map((k) =>
         k === BASE_ITEM ? 100 : Math.round((1000 * (drops[k] ?? 0)) / s) / 10,
