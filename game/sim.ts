@@ -2148,9 +2148,8 @@ export class Sim {
       // spatial hash's buckets under the range circle rather than every
       // unit on the field; a turret whose whole target layer is empty
       // skips even that. The default sort is UnitSorts.closest — plain
-      // squared distance — and foreshadow's is `strongest`, -maxHealth
-      // with distance as a tiebreak worth one point per 80 world units
-      // squared (dst2 / 6400, in px / 200)
+      // squared distance; foreshadow's `strongest` and the piercers'
+      // `barrel` are documented on bestTarget and TowerStats.sort
       const r2t = st.range * st.range;
       let best = -1;
       if (
@@ -2168,7 +2167,7 @@ export class Sim {
           (st.targetAir && this.nAliveAir > 0) ||
           (st.targetGround && this.nAliveGround > 0);
         best = hasTargets
-          ? this.bestTarget(t.x, t.y, st.range, st.targetAir, st.targetGround, st.sort === "strongest")
+          ? this.bestTarget(t.x, t.y, st.range, st.targetAir, st.targetGround, st.sort, t.angle)
           : -1;
         t.targetT = TARGET_INTERVAL;
         t.target = best >= 0 ? this.uid[best] : -1;
@@ -2299,11 +2298,19 @@ export class Sim {
 
   /**
    * Units.bestTarget: the best-scoring live targetable unit whose CENTRE
-   * is within `range`. Exactly the pick the old O(units) scan made — the
-   * same score, with ties broken by the lowest index, so neither bucket
-   * order nor the linear fallback can ever choose differently — but read
+   * is within `range`, with ties broken by the lowest index so neither
+   * bucket order nor the linear fallback can ever choose differently. Read
    * off the spatial hash, so a turret pays for the units under its range
    * circle rather than for the whole field.
+   *
+   * Three sorts (see TowerStats.sort). The default is closest — plain
+   * squared distance. `strongest` is the HIGHEST CURRENT HEALTH, distance
+   * strictly the tiebreak (the d2 term is scaled far below any health
+   * difference): foreshadow finishes nothing another turret has all but
+   * killed. `barrel` is the target nearest the turret's CURRENT facing,
+   * distance again the strict tiebreak: the sweep-not-chase pick for the
+   * instant piercers, whose stall was a closest-pick dying mid-swing and
+   * the next closest waiting on the opposite side.
    *
    * The hash is a tick old by the time towers fire (units have stepped
    * once since buildHash), so the bucket sweep is padded by a few px; the
@@ -2315,11 +2322,18 @@ export class Sim {
     range: number,
     air: boolean,
     ground: boolean,
-    strongest: boolean,
+    sort: "strongest" | "barrel" | undefined,
+    angle: number,
   ): number {
-    const { upx, upy, uhpmax, ufly } = this;
+    const { upx, upy, uhp, ufly } = this;
     const n = this.n;
     const r2 = range * range;
+    const score = (i: number, dx: number, dy: number, d2: number): number =>
+      sort === "strongest"
+        ? -uhp[i] + d2 * 1e-9
+        : sort === "barrel"
+          ? Math.abs(Sim.angleDiff(angle, Math.atan2(dy, dx))) + d2 * 1e-9
+          : d2;
     let best = -1, bs = Infinity;
     // a short field is cheaper to walk directly than through the buckets
     if (n <= 128) {
@@ -2328,9 +2342,9 @@ export class Sim {
         const dx = upx[i] - x, dy = upy[i] - y;
         const d2 = dx * dx + dy * dy;
         if (d2 >= r2) continue;
-        const score = strongest ? d2 / 40000 - uhpmax[i] : d2;
-        if (score < bs || (score === bs && i < best)) {
-          bs = score;
+        const s = score(i, dx, dy, d2);
+        if (s < bs || (s === bs && i < best)) {
+          bs = s;
           best = i;
         }
       }
@@ -2352,9 +2366,9 @@ export class Sim {
         const dx = upx[i] - x, dy = upy[i] - y;
         const d2 = dx * dx + dy * dy;
         if (d2 >= r2) continue;
-        const score = strongest ? d2 / 40000 - uhpmax[i] : d2;
-        if (score < bs || (score === bs && i < best)) {
-          bs = score;
+        const s = score(i, dx, dy, d2);
+        if (s < bs || (s === bs && i < best)) {
+          bs = s;
           best = i;
         }
       }

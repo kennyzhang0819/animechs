@@ -345,11 +345,24 @@ export interface TowerStats {
   // ShootAlternate and ShootBarrel: successive shots leave side-by-side
   // barrels, `spread` px apart perpendicular to the facing
   barrels?: { count: number; spread: number };
-  // Mindustry Turret.unitSort. Unset is UnitSorts.closest, which is what
-  // every turret in the game uses bar one: foreshadow takes `strongest`,
-  // because a 1350-damage shot spent on whichever dagger wandered nearest
-  // is three and a third seconds of reload thrown away
-  sort?: "strongest";
+  // Mindustry Turret.unitSort, with one home-grown member. Unset is
+  // UnitSorts.closest — most turrets. `strongest` is foreshadow's: the
+  // HIGHEST CURRENT HEALTH in range, ties broken by distance, because a
+  // 1350-damage shot spent on whichever dagger wandered nearest is three
+  // and a third seconds of reload thrown away. (Mindustry sorts on
+  // maxHealth with a blended distance term; current health strict is a
+  // deliberate deviation — it walks off a target other turrets have
+  // nearly finished instead of overkilling it.)
+  //
+  // `barrel` is NOT Mindustry's and exists for the instant barrel-aimed
+  // piercers (fuse, lancer): the target nearest the barrel's CURRENT
+  // facing, ties broken by distance. Chasing the closest body point-blank
+  // loses the race — the pick dies to splash mid-swing, the next closest
+  // is on the other side, and the whole reload is spent slewing over
+  // empty ground. Sweeping to the nearest thing in ANGLE always
+  // terminates: there is one small turn between a loaded turret and a
+  // shot, whatever dies along the way
+  sort?: "strongest" | "barrel";
   bullet: BulletStats;
 }
 
@@ -549,6 +562,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     rotateSpeed: ((5 * Math.PI) / 180) * TICK, // BaseTurret default
     targetAir: true,
     targetGround: true,
+    sort: "barrel", // a shotgun sweeps to the nearest angle, not the nearest body
     bullet: {
       speed: 0,
       damage: 105,
@@ -677,6 +691,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     rotateSpeed: ((5 * Math.PI) / 180) * TICK,
     targetAir: false,
     targetGround: true,
+    sort: "barrel", // the 8-degree cone gates the charge; sweep, don't chase
     bullet: {
       speed: 0,
       damage: 140,
