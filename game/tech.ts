@@ -923,8 +923,16 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // the very end of it, so these three ARE the hidden difficulty's reward
     // and they light up the moment it ships — priced there rather than told
     // to wait there
+    //
+    // THE PHASE SHARE ON THESE THREE IS DELIBERATELY BELOW THE DROP RATIO
+    // (halved from the rule-TWO split, 30/40/75 -> 15/20/38). The split
+    // prices a phase drop off its count in the waves, but a T5 kill costs
+    // far more tower-fire than its printed health says — armour 13-18
+    // floors most calibres and the escorts shield them — so per EFFORT a
+    // phase is worth well over the 1.7 plastanium the old bundles implied.
+    // Playtested at Nemesis; do not "fix" these back to the ratio.
     id: "spectre",
-    price: { base: { titanium: 200, thorium: 225, plastanium: 55, "phase-fabric": 30 }, growth: 1.01 },
+    price: { base: { titanium: 200, thorium: 225, plastanium: 55, "phase-fabric": 15 }, growth: 1.01 },
     dps: 1371,
     requires: "cyclone",
     x: 0,
@@ -933,7 +941,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // PHASE FABRIC. A continuous beam that melts whatever it rests on
     id: "meltdown",
-    price: { base: { titanium: 275, thorium: 300, plastanium: 65, "phase-fabric": 40 }, growth: 1.01 },
+    price: { base: { titanium: 275, thorium: 300, plastanium: 65, "phase-fabric": 20 }, growth: 1.01 },
     dps: 3364,
     requires: "lancer",
     x: 4,
@@ -943,7 +951,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PHASE FABRIC. 500 range and one enormous shot — a sniper rather than a
     // defence, and the only turret that can hit a spawn pad from the core
     id: "foreshadow",
-    price: { base: { titanium: 450, thorium: 525, plastanium: 125, "phase-fabric": 75 }, growth: 1.01 },
+    price: { base: { titanium: 450, thorium: 525, plastanium: 125, "phase-fabric": 38 }, growth: 1.01 },
     dps: 405,
     requires: "meltdown",
     x: 4,
@@ -1004,7 +1012,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   },
   {
     id: "speed-16",
-    price: { base: { "phase-fabric": 10 }, growth: 1 },
+    price: { base: { "phase-fabric": 5 }, growth: 1 },
     requires: "speed-8",
     cap: 1,
     x: 5,
