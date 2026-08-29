@@ -913,18 +913,23 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   //
   // WHAT PACES THEM IS THE CURRENCY, NOT THE NUMBER. Each node asks for one
   // item and a different one, so the path unfolds at exactly the rate the
-  // campaign hands out new currencies — copper from the first wave, titanium
-  // from the first mace, thorium once the T3s arrive mid-Medium, plastanium
-  // only from High. That is the same rule the turrets run on (see TWO at the
-  // top of the file): the bundle is the gate, and nothing here needs a tier
-  // written on it. 16x lands on High because High is where a run is long
-  // enough to want it.
+  // campaign hands out new currencies — titanium from the first mace, thorium
+  // once the T3s arrive mid-Medium, plastanium from High, phase fabric only
+  // off the T5s. That is the same rule the turrets run on (see TWO at the top
+  // of the file): the bundle is the gate, and nothing here needs a tier
+  // written on it.
+  //
+  // THE WHOLE PATH SITS ONE CURRENCY ABOVE WHERE IT STARTED. Copper used to
+  // buy 2x, which meant the first wave of a fresh save already handed over
+  // fast-forward — pace arrived before there was anything worth skipping.
+  // Every node moved up a tier, so thorium now tops out at 4x and the last
+  // two multipliers are late-campaign goods.
   //
   // A CHAIN, NOT A FAN. Each one requires the one below it, so the column
   // reads in order and a player cannot own 16x without having wanted 8x.
   {
     id: "speed-2",
-    price: { base: { copper: 30 }, growth: 1 },
+    price: { base: { titanium: 25 }, growth: 1 },
     requires: "home",
     cap: 1,
     x: 5,
@@ -932,7 +937,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   },
   {
     id: "speed-4",
-    price: { base: { titanium: 25 }, growth: 1 },
+    price: { base: { thorium: 20 }, growth: 1 },
     requires: "speed-2",
     cap: 1,
     x: 5,
@@ -940,7 +945,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   },
   {
     id: "speed-8",
-    price: { base: { thorium: 20 }, growth: 1 },
+    price: { base: { plastanium: 15 }, growth: 1 },
     requires: "speed-4",
     cap: 1,
     x: 5,
@@ -948,7 +953,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   },
   {
     id: "speed-16",
-    price: { base: { plastanium: 15 }, growth: 1 },
+    price: { base: { "phase-fabric": 10 }, growth: 1 },
     requires: "speed-8",
     cap: 1,
     x: 5,

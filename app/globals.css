@@ -30,6 +30,34 @@ body {
   overscroll-behavior: none;
 }
 
+/* A held finger is never a text gesture here. Every screen in the game is
+   made of things you press — nodes, level cards, HUD buttons — and iOS
+   answers a long press on any of them with the selection magnifier and the
+   copy/paste callout, which reads as the UI glitching rather than as an
+   offer. The canvas already opted out of both (Swarmfield); this is the same
+   rule for the menus and the tech tree, which are their own screens and were
+   never covered by it.
+
+   Scoped to coarse pointers so a mouse can still select and copy — the
+   admin and editor screens are read as much as they are clicked. Inputs opt
+   back in regardless: user-select inherits, and a field you cannot put a
+   caret in is not a field. */
+@media (pointer: coarse) {
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  input,
+  textarea,
+  select,
+  [contenteditable] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: #3A3A44 transparent;

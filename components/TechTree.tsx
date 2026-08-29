@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TOWERS } from "@/game/constants";
 import {
   affordablePoints,
@@ -86,6 +86,32 @@ const stepLabel = (s: BuyStep): string => (s === "max" ? "Max" : `×${s}`);
 const stepCount = (p: Progress, node: TechKind, step: BuyStep): number =>
   affordablePoints(p, node, step === "max" ? Infinity : step);
 
+/**
+ * Does this device answer a resting pointer with hover?
+ *
+ * A mouse reads a node before spending on it for free — you rest on it, the
+ * price card opens, you decide. A finger has no resting state: the only way
+ * it can ask "what is this and what does it cost" is to press the thing, and
+ * on a tree where pressing SPENDS, that question costs money to ask.
+ *
+ * So on a touchscreen the first tap on a node is the hover — it opens the
+ * card and buys nothing — and every tap after it on that same node buys, so
+ * a player who wants ten points still just taps ten more times. Desktop is
+ * untouched: hover already separates reading from buying there, and making a
+ * mouse click twice would be a tax paid for a problem it does not have.
+ */
+function useTouchOnly(): boolean {
+  const [touch, setTouch] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(hover: none)");
+    const read = (): void => setTouch(mq.matches);
+    read();
+    mq.addEventListener("change", read);
+    return () => mq.removeEventListener("change", read);
+  }, []);
+  return touch;
+}
+
 export default function TechTree({
   progress,
   onChanged,
@@ -102,6 +128,11 @@ export default function TechTree({
   backLabel?: string;
 }) {
   const [step, setStep] = useState<BuyStep>(1);
+  const touch = useTouchOnly();
+  // the one node a finger has already asked about, and so the one node a tap
+  // is allowed to spend on. Tapping a different node moves the question there
+  // rather than buying it
+  const [armed, setArmed] = useState<TechKind | null>(null);
 
   // a node is drawn only once its parent holds a point; edges follow the
   // same rule, so buying a node is what reveals the links out of it
@@ -190,6 +221,12 @@ export default function TechTree({
               // the step is a ceiling, not a promise: a "×100" the wallet
               // only half covers lands what it covers rather than refusing
               const willBuy = clickable ? stepCount(progress, n.id, step) : 0;
+              // a mouse is always primed — its hover already did the asking
+              const primed = !touch || armed === n.id;
+              // on touch the card follows `armed`, not the pointer: iOS does
+              // not reliably focus a <button> it was tapped on, so hanging the
+              // card off focus-within alone would leave taps opening nothing
+              const showCard = touch && armed === n.id;
               return (
                 <div
                   key={n.id}
@@ -203,13 +240,15 @@ export default function TechTree({
                 >
                   <button
                     aria-label={
-                      utility
-                        ? owned
-                          ? `${name}: owned`
-                          : `Unlock ${name}`
-                        : owned
-                          ? `${name}: +${Math.max(1, willBuy)} placement capacity`
-                          : `Unlock ${name}`
+                      clickable && !primed
+                        ? `${name}: show price, tap again to buy`
+                        : utility
+                          ? owned
+                            ? `${name}: owned`
+                            : `Unlock ${name}`
+                          : owned
+                            ? `${name}: +${Math.max(1, willBuy)} placement capacity`
+                            : `Unlock ${name}`
                     }
                     // aria-disabled rather than disabled: a node priced out
                     // of reach still has to be able to say so, and a disabled
@@ -218,6 +257,12 @@ export default function TechTree({
                     // way at all to be opened
                     aria-disabled={!clickable}
                     onClick={() => {
+                      // an unbuyable node still opens its card on touch —
+                      // "why not" is the question it most needs to answer
+                      if (touch && armed !== n.id) {
+                        setArmed(n.id);
+                        return;
+                      }
                       if (!clickable) return;
                       if (buyTech(n.id, Math.max(1, willBuy))) onChanged();
                     }}
@@ -264,13 +309,13 @@ export default function TechTree({
                   >
                     {name}
                   </div>
-                  {/* hover card: what this node does right now */}
+                  {/* hover card: what this node does right now — opened by
+                      resting on the node with a mouse, and by the first tap
+                      with a finger */}
                   <div
-                    // focus-within is the touch spelling of hover: a tap
-                    // focuses the node and the card opens with it
-                    className={`pointer-events-none absolute left-1/2 z-10 hidden w-56 -translate-x-1/2 rounded border border-[#4A4A55] bg-[#151518] p-3 text-left shadow-lg group-hover:block group-focus-within:block ${
-                      n.y === 0 ? "top-full mt-5" : "bottom-full mb-3"
-                    }`}
+                    className={`pointer-events-none absolute left-1/2 z-10 w-56 -translate-x-1/2 rounded border border-[#4A4A55] bg-[#151518] p-3 text-left shadow-lg ${
+                      showCard ? "block" : "hidden group-hover:block group-focus-within:block"
+                    } ${n.y === 0 ? "top-full mt-5" : "bottom-full mb-3"}`}
                   >
                     <div className="flex items-baseline justify-between">
                       <span className="font-bold text-[#EDEDEF]">{name}</span>
@@ -300,6 +345,13 @@ export default function TechTree({
                             point's price is shown even on a ×100 click: it is
                             the number that decides whether the click lands */}
                         <CostRow cost={techPrice(n.id, points)} bank={progress.bank} />
+                      </div>
+                    )}
+                    {/* the card is only open on touch because a tap opened
+                        it, and on touch a tap is what spends — so say so */}
+                    {showCard && clickable && (
+                      <div className="mt-2 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F]">
+                        Tap again to buy
                       </div>
                     )}
                   </div>
