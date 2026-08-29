@@ -1,12 +1,19 @@
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
-import { TOWER_KINDS } from "@/game/types";
+import { TECH_KINDS } from "@/game/tech";
+
+/** the three knobs, and the sane range each one may be saved in */
+const LIMITS = {
+  baseScale: 1000,
+  multiplier: 1000,
+  growth: 4,
+} as const;
 
 /**
- * Dev-only balance persistence: the admin dashboard POSTs one tuning
- * coefficient per turret and this writes public/balance.json, which the game
- * reads over the authored values at startup (see game/balance.ts).
+ * Dev-only balance persistence: the admin dashboard POSTs the knobs it has
+ * bent and this writes public/balance.json, which the game reads over the
+ * authored values at startup (see game/balance.ts).
  *
  * Production refuses outright, exactly like /api/levels and /api/maps — a
  * shipped build must price turrets from the tree it was compiled with, not
@@ -18,18 +25,26 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const body = (await req.json()) as unknown;
   if (!body || typeof body !== "object")
-    return NextResponse.json({ error: "expected an object of coefficients" }, { status: 400 });
+    return NextResponse.json({ error: "expected an object of knobs per node" }, { status: 400 });
 
-  // Only known towers, only finite non-negative numbers, and a sane upper
-  // bound: the coefficient multiplies an exponent, so a fat-fingered 1e9
-  // would price the second turret past any bank the game can hold.
-  const doc: Record<string, number> = {};
-  for (const k of TOWER_KINDS) {
-    const v = (body as Record<string, unknown>)[k];
-    if (v === undefined) continue;
-    if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 100)
-      return NextResponse.json({ error: `bad coefficient for ${k}` }, { status: 400 });
-    doc[k] = v;
+  // Only known nodes, only the three knobs, only finite numbers in range. The
+  // bounds matter: growth is an exponent, so a fat-fingered 40 would price the
+  // second turret past any bank the game can hold.
+  const doc: Record<string, Record<string, number>> = {};
+  for (const [id, raw] of Object.entries(body as Record<string, unknown>)) {
+    if (!(TECH_KINDS as readonly string[]).includes(id))
+      return NextResponse.json({ error: `unknown node ${id}` }, { status: 400 });
+    if (!raw || typeof raw !== "object")
+      return NextResponse.json({ error: `bad knobs for ${id}` }, { status: 400 });
+    const out: Record<string, number> = {};
+    for (const [knob, limit] of Object.entries(LIMITS)) {
+      const v = (raw as Record<string, unknown>)[knob];
+      if (v === undefined) continue;
+      if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > limit)
+        return NextResponse.json({ error: `bad ${knob} for ${id}` }, { status: 400 });
+      out[knob] = v;
+    }
+    if (Object.keys(out).length > 0) doc[id] = out;
   }
 
   const dir = path.join(process.cwd(), "public");

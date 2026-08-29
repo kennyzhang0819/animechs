@@ -1,5 +1,4 @@
-import { applyTunes } from "./tech";
-import { TOWER_KINDS, type TowerKind } from "./types";
+import { applyOverrides } from "./tech";
 
 /**
  * The balance document: one tuning coefficient per turret, and nothing else.
@@ -14,7 +13,7 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * coefficient is settled it belongs in the node in tech.ts, where it is read
  * alongside the reasoning for it; this file is the scratch pad in between.
  */
-export type BalanceDoc = Partial<Record<TowerKind, number>>;
+export type BalanceDoc = Record<string, Partial<import("./tech").Knobs>>;
 
 /** where the document lives, served straight out of public/ */
 const DOC_URL = "/balance.json";
@@ -34,12 +33,7 @@ export async function loadBalanceDoc(): Promise<void> {
     if (!res.ok) return;
     const parsed = (await res.json()) as unknown;
     if (!parsed || typeof parsed !== "object") return;
-    const doc: BalanceDoc = {};
-    for (const k of TOWER_KINDS) {
-      const v = (parsed as Record<string, unknown>)[k];
-      if (typeof v === "number" && Number.isFinite(v) && v >= 0) doc[k] = v;
-    }
-    applyTunes(doc);
+    applyOverrides(parsed as BalanceDoc);
   } catch {
     // offline, or a half-written file mid-save: the authored numbers stand
   }

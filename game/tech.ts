@@ -229,47 +229,6 @@ export interface PriceCurve {
 }
 
 /**
- * COPPER PER POINT OF LIFETIME DPS — the one shared constant, and the whole
- * pricing rule. A node ladder is solved so that buying PRICE_SPAN of it costs
- * this much for every point of damage-per-second those turrets field.
- *
- * It is a normaliser rather than a first principle: 7.85 is the tree total
- * bill divided by its total lifetime DPS, picked so that moving to a solved
- * curve changed the DISTRIBUTION of cost without changing the campaign
- * length. Any other value scales the whole tree together.
- *
- * IT IS DENOMINATED IN COPPER, AND SIX NODES NO LONGER CARRY ANY. The wave
- * and economy pass reshaped fuse, swarmer, cyclone, spectre, meltdown and
- * foreshadow onto tier-appropriate currencies with no copper at all, so
- * there is nothing for the solve to price against and those six keep an
- * authored growth. They are not an oversight, they are a disagreement:
- * their bundles are now shaped by CURRENCY TIER where this rule shapes by
- * DAMAGE, and the two do not currently agree.
- *
- * Valuing a bundle in copper-equivalent through TARGET_DROP_RATIO would let
- * the rule reach them, and it was measured: it prices foreshadow at 82,391
- * against the 50,463 its 405 DPS earns, so no growth at or above 1 fits its
- * span. Foreshadow is priced like a meltdown while dealing an eighth of the
- * damage. That is worth settling in the bundles rather than papering over
- * with a coefficient, which is why the six wait rather than being forced.
- */
-export const PRICE_PER_DPS = 7.85;
-
-/**
- * THE COUNT THE LADDER IS SOLVED AGAINST, by footprint — and NOT the cap.
- *
- * These two used to be one number, and that coupling was the bug. Solving
- * growth against the cap means raising the cap also raises the budget, which
- * cheapens every rung and hands the player more DPS at every bank: measured,
- * a cap raised to half the board was a 1.7-3.4x power buff at just 2% of a
- * node bill. So the ladder is authored against a fixed span, and the cap is
- * then free to move without touching a single price.
- *
- * The span is the old ceiling table, kept so the shipped curves reproduce.
- */
-const PRICE_SPAN: Readonly<Record<number, number>> = { 1: 500, 2: 200, 3: 100, 4: 60 };
-
-/**
  * How many tiles one turret type may cover once it is maxed. The cap is this
  * divided by the footprint area, so a full stack of any node covers the same
  * 10,000 cells — 34% of the 29,109 buildable ones — and the late game has
@@ -296,100 +255,99 @@ export const techCap = (node: TechKind): number =>
 const round4 = (x: number): number => Math.round(x * 1e4) / 1e4;
 
 /**
- * Solve the per-point multiplier from the rule above: find g where the sum
- * of base times g to the n, over the span, equals the target spend.
- * Bisection, because that sum has no closed form in g and this runs fifteen
- * times at module load.
+ * THE THREE KNOBS, and the whole pricing model.
+ *
+ *   price(n, item) = base[item] x baseScale x multiplier x growth^n
+ *
+ * base        the bundle, authored. Its SHAPE is the drop-ratio rule and its
+ *             size is what a first purchase costs.
+ * multiplier  a flat scalar on the whole node, so one number moves a turret
+ *             without re-editing five currency amounts.
+ * growth      the per-point climb — the shape of the ladder.
+ *
+ * NOTHING IS SOLVED ANY MORE. A bisection used to derive growth from a damage
+ * figure against a fixed lifetime budget, and that budget is exactly what made
+ * it impossible to tune by hand: with the total pinned, every growth you tried
+ * moved the base underneath you. These three are independent, so one knob does
+ * one thing and a play-tested number stays where you put it.
+ *
+ * DPS still earns its keep as the STARTING GUESS — see recommendedBase — but
+ * no price depends on it at runtime, so a new bullet type cannot silently
+ * re-price the tree.
  */
-function solveGrowth(base: number, n: number, target: number): number {
-  if (base <= 0 || n <= 0 || target <= 0) return 1;
-  const sum = (g: number): number => (g === 1 ? base * n : (base * (g ** n - 1)) / (g - 1));
-  let lo = 1 + 1e-10;
-  let hi = 3;
-  for (let i = 0; i < 200; i++) {
-    const mid = (lo + hi) / 2;
-    if (sum(mid) < target) lo = mid;
-    else hi = mid;
-  }
-  return (lo + hi) / 2;
+export interface Knobs {
+  /** scale on the authored bundle; 1 leaves the shipped base alone */
+  baseScale: number;
+  /** flat scalar on every item at every point */
+  multiplier: number;
+  /** per-point climb */
+  growth: number;
 }
+
+const overrides = new Map<TechKind, Partial<Knobs>>();
 
 /**
- * THE TUNING COEFFICIENT, per node — the one balance dial.
- *
- * It scales the solved growth distance above 1, exactly as
- * PRICE_GROWTH_SCALE does globally: below 1 smoothens the ladder so capacity
- * accumulates faster, above 1 steepens it so the node walls out sooner. It
- * moves the EXPONENT, so the effect compounds over hundreds of purchases —
- * at a quarter-bill bank, tune 0.5 to 3 swings duo between 582 and 158,
- * where shifting the whole curve instead moved it by a tenth of that.
- *
- * The admin dashboard writes overrides here, and one set there wins over the
- * authored value until it is cleared.
+ * Copper per point of damage for a FIRST purchase — a rule of thumb for
+ * seeding a node, not a rule the prices obey. It is the median of the ratios
+ * the tree already carried, which is why duo lands back on its own 8.
  */
-const tuneOverrides = new Map<TechKind, number>();
-const growthCache = new Map<TechKind, number>();
+export const BASE_PER_DPS = 0.3;
 
-/** the coefficient in force for this node, override first */
-export function tuneOf(id: TechKind): number {
-  return tuneOverrides.get(id) ?? techNode(id).tune ?? 1;
+/** what the rule of thumb would charge to start, from damage alone */
+export function recommendedBase(id: TechKind): number | null {
+  const dps = techNode(id).dps;
+  return dps === undefined ? null : tidy(BASE_PER_DPS * dps);
 }
 
-/** every node coefficient, for the dashboard and for saving */
-export function allTunes(): Record<TechKind, number> {
-  return Object.fromEntries(TECH_KINDS.map((k) => [k, tuneOf(k)])) as Record<TechKind, number>;
+/** every knob in force for this node — the authored value unless overridden */
+export function knobsOf(id: TechKind): Knobs {
+  const node = techNode(id);
+  const o = overrides.get(id) ?? {};
+  return {
+    baseScale: o.baseScale ?? 1,
+    multiplier: o.multiplier ?? node.multiplier ?? 1,
+    growth: o.growth ?? node.price.growth ?? 1,
+  };
 }
 
-/** bend one node; undefined restores the authored value */
-export function setTune(id: TechKind, value: number | undefined): void {
-  if (value === undefined || !Number.isFinite(value)) tuneOverrides.delete(id);
-  else tuneOverrides.set(id, Math.max(0, value));
-  growthCache.delete(id);
+/** the knobs as authored — where a Reset returns to */
+export function authoredKnobs(id: TechKind): Knobs {
+  const node = techNode(id);
+  return { baseScale: 1, multiplier: node.multiplier ?? 1, growth: node.price.growth ?? 1 };
+}
+
+/** point one knob somewhere else; undefined restores the authored value */
+export function setKnob(id: TechKind, knob: keyof Knobs, value: number | undefined): void {
+  const o: Partial<Knobs> = { ...(overrides.get(id) ?? {}) };
+  if (value === undefined || !Number.isFinite(value) || value < 0) delete o[knob];
+  else o[knob] = value;
+  if (Object.keys(o).length === 0) overrides.delete(id);
+  else overrides.set(id, o);
+}
+
+/** only what has actually been bent, for the balance document */
+export function allOverrides(): Record<string, Partial<Knobs>> {
+  return Object.fromEntries([...overrides].map(([k, v]) => [k, { ...v }]));
 }
 
 /** replace every override at once — what a saved balance document applies */
-export function applyTunes(doc: Partial<Record<TechKind, number>>): void {
-  tuneOverrides.clear();
-  growthCache.clear();
+export function applyOverrides(doc: Record<string, Partial<Knobs>>): void {
+  overrides.clear();
   for (const k of TECH_KINDS) {
     const v = doc[k];
-    if (typeof v === "number" && Number.isFinite(v) && v >= 0) tuneOverrides.set(k, v);
+    if (!v || typeof v !== "object") continue;
+    const clean: Partial<Knobs> = {};
+    for (const key of ["baseScale", "multiplier", "growth"] as const) {
+      const n = v[key];
+      if (typeof n === "number" && Number.isFinite(n) && n >= 0) clean[key] = n;
+    }
+    if (Object.keys(clean).length > 0) overrides.set(k, clean);
   }
 }
 
-/**
- * The per-point multiplier this node actually charges: solved from its base,
- * its damage and its span, then bent by the coefficient. Memoised, because
- * affordablePoints walks a node one point at a time.
- */
-/**
- * Is this node priced by the rule, or by hand? The two conditions the solve
- * needs are a damage figure and copper to denominate it in, so this is the
- * single place that answers it — growthOf branches on it, and the dashboard
- * labels rows with it.
- */
-export function isDerived(id: TechKind): boolean {
-  const node = techNode(id);
-  return node.dps !== undefined && (node.price.base.copper ?? 0) > 0 && isTowerNode(id);
-}
-
+/** the per-point climb this node charges */
 export function growthOf(id: TechKind): number {
-  const hit = growthCache.get(id);
-  if (hit !== undefined) return hit;
-  const node = techNode(id);
-  const copper = node.price.base.copper ?? 0;
-  // derive where the rule can see the node; fall back to the authored curve
-  // for a utility (no damage) or a bundle with no copper to price against
-  const raw = isDerived(id)
-    ? solveGrowth(
-        copper,
-        PRICE_SPAN[TOWERS[id as TowerKind].size] ?? 100,
-        PRICE_PER_DPS * (node.dps ?? 0) * (PRICE_SPAN[TOWERS[id as TowerKind].size] ?? 100),
-      )
-    : (node.price.growth ?? 1);
-  const g = round4(1 + (raw - 1) * tuneOf(id));
-  growthCache.set(id, g);
-  return g;
+  return round4(knobsOf(id).growth);
 }
 
 /**
@@ -437,11 +395,11 @@ export interface TechNodeDef {
    */
   dps?: number;
   /**
-   * The balance dial — 1 is "priced by the rule", below 1 smoothens the
-   * ladder and above 1 steepens it. Only a node deliberately bent away from
-   * parity writes this.
+   * A flat scalar on every item at every point — the cheap way to move one
+   * turret without re-editing its whole bundle. 0.5 is "half price, all the
+   * way up". Default 1.
    */
-  tune?: number;
+  multiplier?: number;
   /** parent node: needs >= 1 point before this node appears in the tree */
   requires?: TechKind;
   /**
@@ -564,7 +522,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // A top-difficulty run roughly maxes it; five hundred duos are still
     // only 13,500 DPS, so it stays the thing you open with, never the answer
     id: "duo",
-    price: { base: { copper: 8 } },
+    price: { base: { copper: 8 }, growth: 1.0098 },
     dps: 27,
     requires: "home",
     x: 2,
@@ -575,7 +533,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // splash scales with bodies per blast and collapses with health per
     // body, so one hail shell kills five daggers and chips a spiroct
     id: "hail",
-    price: { base: { copper: 40, titanium: 9 } },
+    price: { base: { copper: 40, titanium: 9 }, growth: 1.0103 },
     dps: 165,
     requires: "scatter",
     x: 1,
@@ -586,7 +544,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // piercing flame rakes a whole file of units and sets each alight, and
     // burning ignores armour outright. 60 units of range is the whole cost
     id: "scorch",
-    price: { base: { copper: 60, titanium: 10 } },
+    price: { base: { copper: 60, titanium: 10 }, growth: 1.0133 },
     dps: 850,
     requires: "arc",
     x: 3,
@@ -640,9 +598,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // behind the T3 waves too. Upstream builds scatter from copper and lead,
     // a tier-1 cost; this is that, in our currencies
     id: "scatter",
-    price: { base: { copper: 25, titanium: 4 } },
+    price: { base: { copper: 25, titanium: 4 }, growth: 1.0211 },
     dps: 1450,
-    tune: 0.5,
     requires: "duo",
     x: 1,
     y: 2,
@@ -655,9 +612,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // also shoots AIR, which makes it the second answer to the flare waves
     // and half the reason scatter no longer has to be priced as the only one
     id: "salvo",
-    price: { base: { copper: 250, titanium: 85, thorium: 30 } },
+    price: { base: { copper: 250, titanium: 85, thorium: 30 }, growth: 1.0125 },
     dps: 217,
-    tune: 0.8,
     requires: "hail",
     x: 1,
     y: 4,
@@ -686,7 +642,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // plain bullet taking one body. Measured on a file of ten daggers, one
     // bolt lands 217 of its theoretical 240
     id: "arc",
-    price: { base: { copper: 50, titanium: 9 } },
+    price: { base: { copper: 50, titanium: 9 }, growth: 1.012 },
     dps: 411,
     requires: "duo",
     x: 3,
@@ -698,7 +654,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // into the bullet, and the beam visibly ends at the fourth thing it
     // hits, so counting five would be pricing a shot it cannot fire
     id: "lancer",
-    price: { base: { copper: 200, titanium: 55, thorium: 20 } },
+    price: { base: { copper: 200, titanium: 55, thorium: 20 }, growth: 1.0216 },
     dps: 420,
     requires: "scorch",
     x: 4,
@@ -710,7 +666,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // and like every artillery piece only the splash counts: the shell
     // arcs over its target rather than hitting it
     id: "ripple",
-    price: { base: { copper: 300, titanium: 85, thorium: 25 } },
+    price: { base: { copper: 300, titanium: 85, thorium: 25 }, growth: 1.0453 },
     dps: 700,
     requires: "salvo",
     x: 2,
@@ -732,7 +688,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // rather than fudged, because the rule is the rule and a second one
     // invented here would not be
     id: "parallax",
-    price: { base: { copper: 220, titanium: 60, thorium: 20 } },
+    price: { base: { copper: 220, titanium: 60, thorium: 20 }, growth: 1.0007 },
     dps: 30,
     requires: "scorch",
     x: 3,
@@ -872,13 +828,15 @@ export const TECH_TREE: readonly TechNodeDef[] = [
 export function techPrice(node: TechKind, owned = 0): Cost {
   const { base, from } = techNode(node).price;
   const n = Math.max(0, Math.floor(owned));
+  const k = knobsOf(node);
+  const scale = k.baseScale * k.multiplier;
   const g = effectiveGrowth(growthOf(node));
   const out: Cost = {};
   for (const { item, amount } of costEntries(base)) {
     if (n < (from?.[item] ?? 0)) continue; // this item isn't charged for yet
     // NOT `g ** (n - starts)`: a delayed currency joins the ladder where it
     // actually stands, not at the bottom of a second one
-    out[item] = tidy(amount * g ** n);
+    out[item] = tidy(amount * scale * g ** n);
   }
   return out;
 }
