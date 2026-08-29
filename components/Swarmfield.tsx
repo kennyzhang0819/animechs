@@ -41,6 +41,7 @@ import {
   isTierCleared,
   loadProgress,
   resetProgress,
+  saveHudMinimized,
   saveLayout,
   saveSpeed,
   startingSpeed,
@@ -421,11 +422,15 @@ export default function Swarmfield() {
    * to come back to the run rather than dump the player on the level list.
    */
   const [techFrom, setTechFrom] = useState<"menu" | "game">("menu");
+  /** the top-left panel collapsed to its wave line — a saved preference
+   * (Progress.hudMinimized), initialized on mount with the rest of the save */
+  const [hudMin, setHudMin] = useState(false);
 
   useEffect(() => {
     const p = loadProgress();
     setProgress(p);
     setTier(topTier(p));
+    setHudMin(p.hudMinimized ?? false);
   }, []);
 
   useEffect(() => {
@@ -814,127 +819,152 @@ export default function Swarmfield() {
             <div className="w-full rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
               {/* the wave counter is what a run is read off, so the line
                   carries that and the difficulty and nothing else — the level
-                  name is on the card that launched it */}
-              <div className="text-[13px] uppercase tracking-widest text-[#EDEDEF] break-words">
-                <span className="font-bold" style={{ color: difficultyColor(hud.tier) }}>
-                  {difficultyName(hud.tier)}
-                </span>{" "}
-                — Wave{" "}
-                <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span> / {hud.totalWaves}
+                  name is on the card that launched it. Minimized, this line
+                  IS the panel: not even the next-wave countdown survives */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="text-[13px] uppercase tracking-widest text-[#EDEDEF] break-words">
+                  <span className="font-bold" style={{ color: difficultyColor(hud.tier) }}>
+                    {difficultyName(hud.tier)}
+                  </span>{" "}
+                  — Wave{" "}
+                  <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span> / {hud.totalWaves}
+                </div>
+                <button
+                  title={hudMin ? "Show run details" : "Hide run details"}
+                  aria-label={hudMin ? "Show run details" : "Hide run details"}
+                  aria-expanded={!hudMin}
+                  onClick={() => {
+                    const next = !hudMin;
+                    setHudMin(next);
+                    saveHudMinimized(next); // a preference, kept across runs
+                  }}
+                  className="shrink-0 rounded px-1 text-[13px] leading-5 text-[#71717C] hover:bg-[#222227]/60 hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                >
+                  <svg viewBox="0 0 12 12" className="h-3.5 w-3.5 fill-current" aria-hidden="true">
+                    {hudMin ? <path d="M6 3l4.5 5h-9z" /> : <path d="M6 9L1.5 4h9z" />}
+                  </svg>
+                </button>
               </div>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
-                {/* what the run has banked so far, one stack per currency —
-                    empty until the first kill, so it doesn't sit at "0" */}
-                <CostRow cost={hud.earned} />
-                {hud.remaining > 0 && (
-                  // icon + count only; wraps rather than running off the
-                  // viewport once a level fields more kinds than fit on a line
-                  <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 font-bold text-[#EDEDEF]">
-                    {UNIT_KINDS.map(
-                      (k, i) =>
-                        hud.byKind[i] > 0 && (
-                          <span key={k} className="flex items-center gap-1.5">
-                            {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
-                            <img
-                              src={unitIcon(k)}
-                              alt={k}
-                              className="h-5 w-5 shrink-0 object-contain [image-rendering:pixelated]"
-                            />
-                            {hud.byKind[i]}
-                          </span>
-                        ),
-                    )}
-                  </span>
-                )}
-              </div>
-              {/* the countdown and the button that cuts it short. Both are
-                  conditional on there being a wave still pending — with the
-                  script drained there is nothing left to release */}
-              <div className="flex flex-wrap items-center gap-2 text-[13px] uppercase tracking-widest text-[#EDEDEF]">
-                {hud.nextWaveIn > 0 && (
-                  <>
-                    <span>
-                      Next wave{" "}
-                      <span className="font-bold text-[#EDEDEF]">
-                        {Math.ceil(hud.nextWaveIn)}
+              {!hudMin && (
+                <>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
+                    {/* what the run has banked so far, one stack per currency —
+                        empty until the first kill, so it doesn't sit at "0" */}
+                    <CostRow cost={hud.earned} />
+                    {hud.remaining > 0 && (
+                      // icon + count only; wraps rather than running off the
+                      // viewport once a level fields more kinds than fit on a line
+                      <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 font-bold text-[#EDEDEF]">
+                        {UNIT_KINDS.map(
+                          (k, i) =>
+                            hud.byKind[i] > 0 && (
+                              <span key={k} className="flex items-center gap-1.5">
+                                {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
+                                <img
+                                  src={unitIcon(k)}
+                                  alt={k}
+                                  className="h-5 w-5 shrink-0 object-contain [image-rendering:pixelated]"
+                                />
+                                {hud.byKind[i]}
+                              </span>
+                            ),
+                        )}
                       </span>
-                    </span>
-                    <button
-                      title="Start next wave now"
-                      aria-label="Start next wave now"
-                      onClick={() => gameRef.current?.skipWave()}
-                      className={WAVE_BTN}
-                    >
-                      <svg viewBox="0 0 12 12" className="h-4 w-4 fill-current" aria-hidden="true">
-                        <path d="M2.5 1.5v9l8-4.5z" />
-                      </svg>
-                    </button>
-                  </>
-                )}
-              </div>
+                    )}
+                  </div>
+                  {/* the countdown and the button that cuts it short. Both are
+                      conditional on there being a wave still pending — with the
+                      script drained there is nothing left to release */}
+                  <div className="flex flex-wrap items-center gap-2 text-[13px] uppercase tracking-widest text-[#EDEDEF]">
+                    {hud.nextWaveIn > 0 && (
+                      <>
+                        <span>
+                          Next wave{" "}
+                          <span className="font-bold text-[#EDEDEF]">
+                            {Math.ceil(hud.nextWaveIn)}
+                          </span>
+                        </span>
+                        <button
+                          title="Start next wave now"
+                          aria-label="Start next wave now"
+                          onClick={() => gameRef.current?.skipWave()}
+                          className={WAVE_BTN}
+                        >
+                          <svg viewBox="0 0 12 12" className="h-4 w-4 fill-current" aria-hidden="true">
+                            <path d="M2.5 1.5v9l8-4.5z" />
+                          </svg>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
-          </div>
-        )}
-        {hud && !hud.lost && !hud.won && !hud.menuOpen && (
-          /* pace controls, for everyone: an idle game where the only way to
-             sit out a wave gap is to watch it is a game that wastes the
-             player's time. Pause leads, since it is the one that stops the
-             clock; the multipliers run out from it.
-             Pause and the game menu are also the two controls a touchscreen
-             has no key for, so having them on screen is what makes space and
-             esc optional rather than required */
-          <div
-            role="group"
-            aria-label="speed controls"
-            className="absolute bottom-[calc(1rem+var(--safe-b))] left-[calc(1rem+var(--safe-l))] flex overflow-hidden rounded border border-[#2E2E36] bg-[#151518]/70 backdrop-blur"
-          >
-            <button
-              title={hud.paused ? "Resume (space)" : "Pause (space)"}
-              aria-label={hud.paused ? "Resume" : "Pause"}
-              aria-pressed={hud.paused}
-              onClick={() => {
-                const g = gameRef.current;
-                if (!g) return;
-                g.togglePause();
-                setHud(g.ui());
-              }}
-              className={`border-r border-[#2E2E36] px-3 py-1.5 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-                hud.paused
-                  ? "bg-[#222227] text-[#E8B45B]"
-                  : "text-[#EDEDEF] hover:bg-[#222227]/60"
-              }`}
-            >
-              <svg viewBox="0 0 12 12" className="h-4 w-4 fill-current" aria-hidden="true">
-                {hud.paused ? (
-                  <path d="M2.5 1.5v9l8-4.5z" />
-                ) : (
-                  <path d="M2 1.5h3v9H2zM7 1.5h3v9H7z" />
-                )}
-              </svg>
-            </button>
-            {/* what a save may run at is bought on the utilities path
-                (tech.ts); sandbox ignores the tree and offers all of them */}
-            {(admin ? SPEEDS : progress ? techOf(progress).speeds : BASE_SPEEDS).map((mult) => (
-              <button
-                key={mult}
-                title={`${mult}x speed`}
-                aria-pressed={hud.speed === mult}
-                onClick={() => {
-                  const g = gameRef.current;
-                  if (!g) return;
-                  g.setSpeed(mult);
-                  saveSpeed(mult);
-                  setHud(g.ui());
-                }}
-                className={`px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-                  hud.speed === mult
-                    ? "bg-[#222227] text-[#FFD37F]"
-                    : "text-[#EDEDEF] hover:bg-[#222227]/60"
-                }`}
+            {!hud.lost && !hud.won && !hud.menuOpen && (
+              /* pace controls, for everyone: an idle game where the only way
+                 to sit out a wave gap is to watch it is a game that wastes
+                 the player's time. Pause leads, since it is the one that
+                 stops the clock; the multipliers run out from it. They live
+                 directly under the wave panel so the whole run reads off one
+                 corner — and self-start keeps the strip its own width
+                 rather than the stack's.
+                 Pause and the game menu are also the two controls a
+                 touchscreen has no key for, so having them on screen is what
+                 makes space and esc optional rather than required */
+              <div
+                role="group"
+                aria-label="speed controls"
+                className="flex self-start overflow-hidden rounded border border-[#2E2E36] bg-[#151518]/70 backdrop-blur"
               >
-                {mult}x
-              </button>
-            ))}
+                <button
+                  title={hud.paused ? "Resume (space)" : "Pause (space)"}
+                  aria-label={hud.paused ? "Resume" : "Pause"}
+                  aria-pressed={hud.paused}
+                  onClick={() => {
+                    const g = gameRef.current;
+                    if (!g) return;
+                    g.togglePause();
+                    setHud(g.ui());
+                  }}
+                  className={`border-r border-[#2E2E36] px-3 py-1.5 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+                    hud.paused
+                      ? "bg-[#222227] text-[#E8B45B]"
+                      : "text-[#EDEDEF] hover:bg-[#222227]/60"
+                  }`}
+                >
+                  <svg viewBox="0 0 12 12" className="h-4 w-4 fill-current" aria-hidden="true">
+                    {hud.paused ? (
+                      <path d="M2.5 1.5v9l8-4.5z" />
+                    ) : (
+                      <path d="M2 1.5h3v9H2zM7 1.5h3v9H7z" />
+                    )}
+                  </svg>
+                </button>
+                {/* what a save may run at is bought on the utilities path
+                    (tech.ts); sandbox ignores the tree and offers all of them */}
+                {(admin ? SPEEDS : progress ? techOf(progress).speeds : BASE_SPEEDS).map((mult) => (
+                  <button
+                    key={mult}
+                    title={`${mult}x speed`}
+                    aria-pressed={hud.speed === mult}
+                    onClick={() => {
+                      const g = gameRef.current;
+                      if (!g) return;
+                      g.setSpeed(mult);
+                      saveSpeed(mult);
+                      setHud(g.ui());
+                    }}
+                    className={`px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+                      hud.speed === mult
+                        ? "bg-[#222227] text-[#FFD37F]"
+                        : "text-[#EDEDEF] hover:bg-[#222227]/60"
+                    }`}
+                  >
+                    {mult}x
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {hud && !hud.lost && !hud.won && !hud.menuOpen && (

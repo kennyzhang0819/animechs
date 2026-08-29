@@ -75,6 +75,13 @@ export interface Progress {
    * the tech tree: see startingSpeed, which reads this through it.
    */
   speed?: number;
+  /**
+   * The HUD's top-left panel collapsed to its one-line wave counter. A
+   * preference about screen space, kept across runs for the same reason
+   * `speed` is: a player who tucked the panel away wants it tucked away
+   * after a loss, after a win, and after closing the tab.
+   */
+  hudMinimized?: boolean;
 }
 
 /** one emplacement, as the save keeps it: what, and which cell */
@@ -218,6 +225,7 @@ export function loadProgress(): Progress {
       tech,
       layouts: readLayouts(p),
       speed: readSpeed(p),
+      hudMinimized: p.hudMinimized === true,
     };
   } catch {
     return fresh();
@@ -265,6 +273,13 @@ export function saveSpeed(mult: number): void {
   const p = loadProgress();
   if (p.speed === mult) return;
   saveProgress({ ...p, speed: mult });
+}
+
+/** persist the HUD panel's collapsed state — see Progress.hudMinimized */
+export function saveHudMinimized(min: boolean): void {
+  const p = loadProgress();
+  if ((p.hudMinimized ?? false) === min) return;
+  saveProgress({ ...p, hudMinimized: min });
 }
 
 /**
