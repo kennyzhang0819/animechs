@@ -306,7 +306,7 @@ export function techOf(p: Progress): TechState {
 /**
  * The highest tier that can be attempted: every cleared one, plus the
  * frontier — capped at TOP_TIER, because the ladder is finite and ends at
- * Extreme. A player may replay any tier below it to farm — a
+ * Nemesis. A player may replay any tier below it to farm — a
  * cleared tier pays exactly what it always did — but only the frontier
  * moves the campaign forward.
  */

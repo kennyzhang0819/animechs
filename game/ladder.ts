@@ -25,20 +25,20 @@ import {
  * A world ships ONE authored script. A difficulty is a CUT of that script
  * plus an enemy level, and nothing else:
  *
- *   Medium    waves 1-20   enemy level  0
- *   High      waves 1-35   enemy level 10
- *   Extreme   waves 1-50   enemy level 20
+ *   Incursion   waves 1-20   enemy level  0
+ *   Onslaught   waves 1-35   enemy level 10
+ *   Nemesis     waves 1-50   enemy level 20
  *
- * Extreme plays the whole authored script, so the ladder ends where the
+ * Nemesis plays the whole authored script, so the ladder ends where the
  * writing does. A hidden ERADICATION difficulty above it is planned and is
  * NOT modelled here — nothing below should assume it exists.
  *
- * Nothing is generated. Wave 1 of Extreme is wave 1 of the same authored
- * list Medium plays, with 20 levels on it — which is what lets the level
+ * Nothing is generated. Wave 1 of Nemesis is wave 1 of the same authored
+ * list Incursion plays, with 20 levels on it — which is what lets the level
  * editor be the whole authoring surface.
  *
  * THE LADDER IS FINITE AND THAT IS THE POINT. There is no endless level
- * counter above the top: clearing Extreme finishes the campaign. A player
+ * counter above the top: clearing Nemesis finishes the campaign. A player
  * who stalls farms a lower difficulty until the bank covers the next one,
  * and there are only ever TWO of those gaps to cross, so each one has to be
  * worth crossing — see the step numbers in audit().
@@ -73,29 +73,32 @@ export const LEVELS_PER_TIER = 10;
  * THE DIFFICULTIES, and the only place their shape is written down.
  *
  * `waves` is how much of the authored script it plays, `level` the enemy
- * level it plays at, and `name` the only thing the player is ever shown —
- * everything else on this page is arithmetic over this table.
+ * level it plays at, and `name` and `color` the only things the player is
+ * ever shown — everything else on this page is arithmetic over this table.
  *
- * THEY ARE NAMED, NOT NUMBERED, and the names are Mindustry's own.
- * `SectorDifficulty` in the source runs
+ * THEY ARE NAMED, NOT NUMBERED, and the names are this game's own:
  *
- *   low  <  medium  <  high  <  EXTREME  <  eradication  <  unreasonable
+ *   Incursion  <  Onslaught  <  NEMESIS  <  eradication
  *
- * and the campaign takes the three rungs ending at Extreme. That is a
- * deliberate placement rather than a full span: the scale is left with room
- * BELOW (Low, if a gentler opening is ever wanted) and, more to the point,
- * two rungs still free above. ERADICATION is reserved for the hidden
- * ultimate difficulty, and Mindustry keeps UNREASONABLE for exactly one
- * sector in the whole game — so there is a name in hand for whatever sits
- * past even that.
+ * The campaign runs the three tiers ending at Nemesis. ERADICATION is
+ * reserved for the hidden ultimate difficulty and is deliberately not in
+ * the table yet — a name in hand for what sits past the visible top.
  *
- * Starting at Medium rather than Low is the point of the arrangement: the
- * game never calls its own opening easy, and a player who clears Extreme
- * can still see there is something above it.
+ * The names escalate from a probe to a personified doom on purpose: the
+ * bottom tier never calls itself easy (it is an attack, just a small one),
+ * and the visible top is a noun — a thing that comes for you — rather than
+ * an adjective on a dial. A player who clears Nemesis can still see there
+ * is something above it.
  *
- * The wave counts are 20/35/50 rather than something evener because Medium
- * has to be a whole arc on its own — a fresh save's entire experience of
- * the game until it clears it.
+ * `color` is the difficulty's identity everywhere one is shown: Incursion
+ * green, Onslaught yellow, Nemesis red — and Eradication, when it lands,
+ * dark purple (#A05AE5). The values are the UI palette's existing green /
+ * gold / red so difficulty labels read as siblings of Cleared badges and
+ * damage numbers rather than a scheme of their own.
+ *
+ * The wave counts are 20/35/50 rather than something evener because
+ * Incursion has to be a whole arc on its own — a fresh save's entire
+ * experience of the game until it clears it.
  *
  * `shieldScale` multiplies every shield ability's pool, cap and regen (see
  * Sim.updateAbilities), and it is a hand-tuned constant per difficulty
@@ -104,8 +107,8 @@ export const LEVELS_PER_TIER = 10;
  * the level curve; a shield is measured in SECONDS OF ABSORBED TOWER FIRE,
  * so it has to track the player's firepower — and that moves by the ~6x
  * difficulty steps documented over TARGET_DROP_RATIO, not by x1.79. Left
- * flat, a quasar's 500-point bubble that buys real cover at Medium pops to
- * incidental fire at High. Only the enemy's own shields scale; nothing on
+ * flat, a quasar's 500-point bubble that buys real cover at Incursion pops to
+ * incidental fire at Onslaught. Only the enemy's own shields scale; nothing on
  * the player's side reads this.
  *
  * `groundArmorBonus` / `airArmorBonus` are added FLAT to every walker's /
@@ -126,16 +129,21 @@ export const LEVELS_PER_TIER = 10;
  */
 export const DIFFICULTIES: readonly {
   name: string;
+  color: string;
   waves: number;
   level: number;
   shieldScale: number;
   groundArmorBonus: number;
   airArmorBonus: number;
 }[] = [
-  { name: "Medium", waves: 20, level: 0, shieldScale: 1, groundArmorBonus: 0, airArmorBonus: 0 },
-  { name: "High", waves: 35, level: 10, shieldScale: 5, groundArmorBonus: 0, airArmorBonus: 0 },
-  { name: "Extreme", waves: 50, level: 20, shieldScale: 20, groundArmorBonus: 0, airArmorBonus: 0 },
-  // ERADICATION and UNREASONABLE are deliberately not here yet
+  // prettier-ignore
+  { name: "Incursion", color: "#7BE58A", waves: 20, level: 0, shieldScale: 1, groundArmorBonus: 0, airArmorBonus: 0 },
+  // prettier-ignore
+  { name: "Onslaught", color: "#FFD37F", waves: 35, level: 10, shieldScale: 5, groundArmorBonus: 0, airArmorBonus: 0 },
+  // prettier-ignore
+  { name: "Nemesis", color: "#FF5A5A", waves: 50, level: 20, shieldScale: 20, groundArmorBonus: 0, airArmorBonus: 0 },
+  // ERADICATION (dark purple, #A05AE5) is deliberately not here yet — the
+  // hidden ultimate difficulty, named and colored before it exists
 ];
 
 /**
@@ -144,9 +152,9 @@ export const DIFFICULTIES: readonly {
  * like DIFFICULTIES then like ITEM_KINDS, normalised to copper = 100.
  *
  *   difficulty   copper  titanium  thorium  plastanium  phase
- *   Medium         100      15       3.6        0         0
- *   High           100      24.5    12.2        0.8       0
- *   Extreme        100      30      24          4.2       0.85
+ *   Incursion      100      15       3.6        0         0
+ *   Onslaught      100      24.5    12.2        0.8       0
+ *   Nemesis        100      30      24          4.2       0.85
  *
  * THIS IS THE DESIGN INPUT, NOT A CONSEQUENCE. The wave script is authored
  * to this and the tech tree's prices are balanced to whatever it pays —
@@ -156,19 +164,19 @@ export const DIFFICULTIES: readonly {
  * rungs of a tier ladder, and their quantities carry no information about
  * how many tier-4 enemies a wave should hold.
  *
- * READ THESE ROWS AS WEIGHT, NOT COUNT. Every difficulty above Medium still
+ * READ THESE ROWS AS WEIGHT, NOT COUNT. Every difficulty above Incursion still
  * sends tier-1 bodies by the tens of thousands — T1 stays the most numerous
  * thing on the field, and the swarm is meant to look like a swarm. What
  * moves is what the swarm is CARRYING:
  *
  *   difficulty     T1    T2    T3    T4    T5
- *   Medium         55%   32%   14%    -     -
- *   High           30%   28%   25%   17%    -
- *   Extreme        12%   14%   20%   35%   19%
+ *   Incursion      55%   32%   14%    -     -
+ *   Onslaught      30%   28%   25%   17%    -
+ *   Nemesis        12%   14%   20%   35%   19%
  *
  * A TIER-1 BODY IS NEARLY FREE IN THIS BUDGET and that is the key to reading
  * the table: 118 health against a tier-4's 8,100, so ONE T4 weighs as much
- * as sixty-nine daggers. Twelve thousand extra daggers at High cost less
+ * as sixty-nine daggers. Twelve thousand extra daggers at Onslaught cost less
  * health than two hundred scepters. So "send more T1" and "shift the weight
  * upward" are not in tension at all — the thing that actually sets the size
  * of the step between difficulties is the T3, T4 and T5 counts, and nothing
@@ -180,18 +188,18 @@ export const DIFFICULTIES: readonly {
  * difficulty against the map's area; size it against these rows and let the
  * drop zones throttle what they cannot pass.
  *
- * TIER 5 DOES NOT EXIST BEFORE EXTREME, deliberately, and it breaks the old
+ * TIER 5 DOES NOT EXIST BEFORE NEMESIS, deliberately, and it breaks the old
  * rule that every currency debuts one difficulty before anything charges for
  * it. Phase fabric now debuts and is spent at the same difficulty. That is
  * the point: spectre, meltdown and foreshadow are priced in phase, so a
  * player cannot own the last three turrets until they have actually played
- * Extreme. Nothing walls them in — difficulties unlock by clearing the one
- * below, never by tech — so Extreme opens on schedule and those three are
+ * Nemesis. Nothing walls them in — difficulties unlock by clearing the one
+ * below, never by tech — so Nemesis opens on schedule and those three are
  * the reward for engaging with it rather than a prerequisite.
  *
- * The steps these rows produce are 6.4x Medium -> High and 6.0x High ->
- * Extreme, against a WALL_STEP guideline of 4.5. That is a deliberate, known
- * overshoot: holding 4.5 forces High back onto almost exactly Medium's own
+ * The steps these rows produce are 6.4x Incursion -> Onslaught and 6.0x Onslaught ->
+ * Nemesis, against a WALL_STEP guideline of 4.5. That is a deliberate, known
+ * overshoot: holding 4.5 forces Onslaught back onto almost exactly Incursion's own
  * ratio, and the campaign stops going anywhere. See audit().
  */
 export const TARGET_DROP_RATIO: readonly (readonly number[])[] = [
@@ -223,7 +231,7 @@ const clampTier = (tier: number): number =>
 export const DROP_BONUS_PER_TIER = 0.3;
 
 /**
- * WHAT THE PLAYER IS SHOWN. Tier 0 is Medium.
+ * WHAT THE PLAYER IS SHOWN. Tier 0 is Incursion.
  *
  * `tier` is 0-based everywhere in the code and in window.__ladder, because
  * tier 0 indexes DIFFICULTIES and an offset there would put a +1 in the
@@ -232,6 +240,13 @@ export const DROP_BONUS_PER_TIER = 0.3;
  * index and the shown word meet in exactly one place.
  */
 export const difficultyName = (tier: number): string => DIFFICULTIES[clampTier(tier)].name;
+
+/**
+ * The difficulty's color, wherever its name is shown — green, yellow, red
+ * up the ladder (see the note over DIFFICULTIES). Same clamping as the
+ * name, so a name and its color can never disagree.
+ */
+export const difficultyColor = (tier: number): string => DIFFICULTIES[clampTier(tier)].color;
 
 /**
  * The 1-based ordinal, for the places a NUMBER is genuinely wanted — the
@@ -761,7 +776,7 @@ export function waveGuide(spec: LevelSpec = WORLD, against: number = TOP_TIER): 
 /** one difficulty, weighed — the row the editor's ladder check renders */
 export interface AuditRow {
   tier: number;
-  /** the name the player sees — Medium, High, Extreme */
+  /** the name the player sees — Incursion, Onslaught, Nemesis */
   name: string;
   /** the 1-based ordinal, for compact labels */
   difficulty: number;

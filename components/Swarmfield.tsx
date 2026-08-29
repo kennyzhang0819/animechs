@@ -25,6 +25,7 @@ import {
   audit,
   budget,
   check,
+  difficultyColor,
   difficultyName,
   specForTier,
   waveCost,
@@ -120,7 +121,10 @@ function LoadingScreen({
             {level.name}
           </h2>
           <p className="text-[13px] uppercase tracking-widest text-[#71717C]">
-            {difficultyName(level.tier ?? 0)} — {waves} waves — {enemies} enemies
+            <span className="font-bold" style={{ color: difficultyColor(level.tier ?? 0) }}>
+              {difficultyName(level.tier ?? 0)}
+            </span>{" "}
+            — {waves} waves — {enemies} enemies
           </p>
         </div>
         <div className="flex w-full flex-col gap-2">
@@ -215,7 +219,10 @@ function TierPicker({
         </button>
         <div className="text-center">
           <div className="text-[11px] uppercase tracking-[0.3em] text-[#71717C]">Difficulty</div>
-          <div className="text-2xl font-bold uppercase leading-none tracking-[0.15em] text-[#FFD37F]">
+          <div
+            className="text-2xl font-bold uppercase leading-none tracking-[0.15em]"
+            style={{ color: difficultyColor(tier) }}
+          >
             {difficultyName(tier)}
           </div>
         </div>
@@ -792,7 +799,10 @@ export default function Swarmfield() {
                   carries that and the difficulty and nothing else — the level
                   name is on the card that launched it */}
               <div className="text-[13px] uppercase tracking-widest text-[#EDEDEF] break-words">
-                {difficultyName(hud.tier)} — Wave{" "}
+                <span className="font-bold" style={{ color: difficultyColor(hud.tier) }}>
+                  {difficultyName(hud.tier)}
+                </span>{" "}
+                — Wave{" "}
                 <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span> / {hud.totalWaves}
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
@@ -1095,7 +1105,10 @@ export default function Swarmfield() {
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="w-80 max-w-[calc(100vw-2rem)] rounded border border-[#1F3A2E] bg-[#151518]/95 p-6 text-center">
               <div className="text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
-                {difficultyName(hud.tier)} cleared
+                <span style={{ color: difficultyColor(hud.tier) }}>
+                  {difficultyName(hud.tier)}
+                </span>{" "}
+                cleared
               </div>
               <div className="mt-4 space-y-1.5 text-base text-[#EDEDEF]">
                 <div>
@@ -1116,14 +1129,21 @@ export default function Swarmfield() {
                         <CostRow cost={result.earned} />
                       )}
                     </div>
-                    {/* the ladder is finite and ends at Extreme,
+                    {/* the ladder is finite and ends at Nemesis,
                         so the last first-clear has nothing to unlock — it
                         finishes the campaign instead */}
                     {result.firstClear && (
                       <div className="pt-1 text-[12px] uppercase tracking-widest text-[#FFD37F]">
-                        {result.tier >= TOP_TIER
-                          ? "Campaign complete — every wave cleared"
-                          : `${difficultyName(result.tier + 1)} unlocked`}
+                        {result.tier >= TOP_TIER ? (
+                          "Campaign complete — every wave cleared"
+                        ) : (
+                          <>
+                            <span style={{ color: difficultyColor(result.tier + 1) }}>
+                              {difficultyName(result.tier + 1)}
+                            </span>{" "}
+                            unlocked
+                          </>
+                        )}
                       </div>
                     )}
                   </>
