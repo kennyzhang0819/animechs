@@ -15,6 +15,7 @@ import { loadBalanceDoc } from "@/game/balance";
 import {
   loadLevelDocs,
   UNIT_KINDS,
+  UNIT_STATS,
   WORLD,
   waveGroups,
   type LevelSpec,
@@ -187,6 +188,15 @@ function TierPicker({
   // what a difficulty NEWLY drops: its top tier's currency. Tier 0's spread
   // (copper through thorium) is the baseline, so it gets prose instead
   const newDrop = ITEM_INFO[itemForTier(tier + 3)].name.toLowerCase();
+  // whether this difficulty's cut of the script fields a boss kind — read
+  // from the waves themselves, so the warning follows the boss if it moves
+  const hasBoss = spec.script.some(
+    (s) =>
+      "wave" in s &&
+      waveGroups(s.wave).some((g) =>
+        g.counts.some((c, i) => c > 0 && UNIT_STATS[UNIT_KINDS[i]].boss),
+      ),
+  );
 
   return (
     <div className="w-full max-w-[22rem] rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-4">
@@ -248,6 +258,13 @@ function TierPicker({
             <>
               Enemies have more health and shields, but drop {newDrop} and{" "}
               <span className="font-bold text-[#7BE58A]">{lootPct}% more loot</span>.
+              {hasBoss && (
+                <>
+                  {" "}
+                  <span className="font-bold text-[#FF8A8A]">A powerful enemy</span> will
+                  spawn.
+                </>
+              )}
             </>
           )}
         </span>
