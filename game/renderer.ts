@@ -269,9 +269,25 @@ void main() {
 
 /** Shaders.ShieldShader's u_dp, Scl.scl(1) — the UI scale, 1 at 1x */
 const SHIELD_DP = 1;
-/** the scene's clear colour, #0A101F — the shield pass borrows the clear
- * for its own buffer and has to hand this back */
-const CLEAR = [0.039, 0.063, 0.122] as const;
+/**
+ * The scene's clear colour, #0B0B0B — the void the map sits in, and what
+ * the shield pass has to hand back after borrowing the clear for its own
+ * buffer.
+ *
+ * Neutral on purpose. This used to be a navy #0A101F, which read as sky
+ * behind the map rather than as nothing: the moment the camera could pull
+ * back past the edges (see Game.minZoom) the map looked like it was
+ * floating on water. Grey-black is the absence of a colour, which is what
+ * is meant to be out there.
+ */
+const CLEAR = [0.043, 0.043, 0.043] as const;
+/**
+ * The same colour as CSS `r,g,b` components. begin() clears the whole
+ * canvas to it, so everything outside the map's rectangle already IS this
+ * colour — which is what lets the edge haze (Game.drawHaze) land on the
+ * void seamlessly instead of ending on a visible seam.
+ */
+export const VOID_RGB = CLEAR.map((v) => Math.round(v * 255)).join(",");
 /** Arc Interp.pow3Out, the curve behind EffectContainer.finpow() */
 const FIN_POW = (f: number): number => 1 - Math.pow(1 - f, 3);
 /**
@@ -531,7 +547,7 @@ export class Renderer {
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1); // #0A101F
+    gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1); // #0B0B0B
   }
 
   private link(vs: string, fs: string): WebGLProgram {

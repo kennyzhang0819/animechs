@@ -41,6 +41,8 @@ import {
   loadProgress,
   resetProgress,
   saveLayout,
+  saveSpeed,
+  startingSpeed,
   techOf,
   topTier,
   type Progress,
@@ -422,10 +424,11 @@ export default function Swarmfield() {
     g.setTech(admin ? null : tech);
     // dropping out of sandbox drops a sandbox-only pace with it, or the run
     // keeps running at a speed whose button is no longer on screen. What the
-    // save allows is now the utilities path rather than a constant, so it
-    // falls back to the fastest pace this save actually owns
+    // save allows is the utilities path rather than a constant, so it falls
+    // back the same way a fresh run starts: the remembered pace, stepped
+    // down to the fastest one this save actually owns
     if (!admin && !tech.speeds.includes(g.ui().speed))
-      g.setSpeed(tech.speeds[tech.speeds.length - 1]);
+      g.setSpeed(startingSpeed(loadProgress(), tech.speeds));
     setHud(g.ui());
   }, [admin]);
 
@@ -462,11 +465,15 @@ export default function Swarmfield() {
           g.destroy();
           return;
         }
-        g.setTech(admin ? null : techOf(loadProgress()));
+        const save = loadProgress();
+        g.setTech(admin ? null : techOf(save));
+        // the pace carries across runs and across sessions — a player who
+        // plays at 4x wants 4x again after a loss, not 1x and a click
+        g.setSpeed(startingSpeed(save, admin ? SPEEDS : techOf(save).speeds));
         // stand last run's emplacements back up before the first wave. Tech
         // is applied first because placeTower checks capacity, so restoring
         // ahead of it would silently drop everything past the default caps
-        const saved = loadProgress().layouts?.[g.mapId()];
+        const saved = save.layouts?.[g.mapId()];
         if (saved && saved.length > 0) g.applyLayout(saved);
         game = g;
         gameRef.current = g;
@@ -869,6 +876,7 @@ export default function Swarmfield() {
                   const g = gameRef.current;
                   if (!g) return;
                   g.setSpeed(mult);
+                  saveSpeed(mult);
                   setHud(g.ui());
                 }}
                 className={`px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${

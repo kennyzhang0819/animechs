@@ -14,6 +14,7 @@ import {
 import {
   affordablePoints as affordableTechPoints,
   isMaxed,
+  NODE_SPEED,
   TECH_KINDS,
   techNode,
   techPrice,
@@ -61,6 +62,19 @@ export interface Progress {
    * and two levels on one map want the same emplacements.
    */
   layouts?: Record<string, TowerPlacement[]>;
+  /**
+   * The fast-forward multiplier the player last picked, kept so a run does
+   * not start at 1x every single time.
+   *
+   * A pace is a preference about how the player wants to spend their
+   * minutes, not a fact about the run — someone who plays at 4x wants 4x
+   * again after a loss, after a win, and after closing the tab. Absent on a
+   * save that has never touched the control, which means 1x.
+   *
+   * What the save is ALLOWED to run at is a separate question, answered by
+   * the tech tree: see startingSpeed, which reads this through it.
+   */
+  speed?: number;
 }
 
 /** one emplacement, as the save keeps it: what, and which cell */
@@ -156,6 +170,22 @@ function readCleared(p: { cleared?: unknown; completed?: unknown }): number {
 }
 
 /**
+ * Every multiplier the game has, whether or not a given save owns it: 1x
+ * plus one per utility node. The tree is the authority on which of these a
+ * save may USE — this is only what counts as a real number to remember.
+ */
+const ALL_SPEEDS: readonly number[] = [1, ...Object.values(NODE_SPEED)];
+
+/**
+ * The remembered pace out of a raw save. Anything that is not a multiplier
+ * this game offers — a hand-edited save, or one written when the strip had
+ * a pace it no longer has — reads as "never chosen", which is 1x.
+ */
+function readSpeed(p: { speed?: unknown }): number | undefined {
+  return typeof p.speed === "number" && ALL_SPEEDS.includes(p.speed) ? p.speed : undefined;
+}
+
+/**
  * A node's ceiling, as the save loader needs it: a hand-edited or
  * stale save must not be able to claim four points of "2x speed".
  */
@@ -182,7 +212,13 @@ export function loadProgress(): Progress {
     tech.home = 1;
     tech.duo = Math.max(tech.duo ?? 0, DUO_START);
     tech.arc = Math.max(tech.arc ?? 0, ARC_START);
-    return { bank: readBank(p), cleared: readCleared(p), tech, layouts: readLayouts(p) };
+    return {
+      bank: readBank(p),
+      cleared: readCleared(p),
+      tech,
+      layouts: readLayouts(p),
+      speed: readSpeed(p),
+    };
   } catch {
     return fresh();
   }
@@ -222,6 +258,29 @@ export function saveLayout(mapId: string, towers: readonly TowerPlacement[]): vo
   if (towers.length > 0) layouts[mapId] = towers.map((t) => ({ ...t }));
   else delete layouts[mapId];
   saveProgress({ ...p, layouts });
+}
+
+/** remember the pace just picked, for the next run and the next session */
+export function saveSpeed(mult: number): void {
+  const p = loadProgress();
+  if (p.speed === mult) return;
+  saveProgress({ ...p, speed: mult });
+}
+
+/**
+ * The pace a run should start at: what the player last picked, as far as
+ * `allowed` will carry it.
+ *
+ * Stepping DOWN to the nearest allowed multiplier rather than falling to 1x
+ * is what makes a sandbox session harmless — a 16x picked with the tree
+ * switched off comes back as the fastest pace the save actually owns, which
+ * is what that player was reaching for.
+ */
+export function startingSpeed(p: Progress, allowed: readonly number[]): number {
+  const want = p.speed ?? 1;
+  let best = allowed[0] ?? 1;
+  for (const m of allowed) if (m <= want && m > best) best = m;
+  return best;
 }
 
 export function saveProgress(p: Progress): void {
