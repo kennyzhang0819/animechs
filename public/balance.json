@@ -4,7 +4,8 @@
    "shieldScale": 5
   },
   "Nemesis": {
-   "shieldScale": 10
+   "level": 16,
+   "shieldScale": 5
   }
  }
 }

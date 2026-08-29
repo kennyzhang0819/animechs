@@ -11,6 +11,7 @@ import {
   difficultyKnobsOf,
   setDifficultyKnob,
   type DifficultyKnobs,
+  HP_PER_LEVEL,
 } from "@/game/ladder";
 import {
   allOverrides,
@@ -263,9 +264,21 @@ export default function BalanceView() {
                     {d.name}
                   </span>
                   <span className={`text-[11px] text-[#71717C] ${NUM}`}>
-                    enemy level {d.level}
+                    ×{(HP_PER_LEVEL ** dk.level).toFixed(2)} hp
                   </span>
                 </div>
+                <Knob
+                  label="Enemy level"
+                  hint="every unit's hp is ×1.06 per level; armour, speed and drops never move"
+                  value={dk.level}
+                  min={0}
+                  max={40}
+                  step={1}
+                  decimals={0}
+                  bent={dk.level !== da.level}
+                  onChange={(v) => setDifficulty(tier, "level", Math.max(0, v))}
+                  onReset={() => setDifficulty(tier, "level", undefined)}
+                />
                 <Knob
                   label="Shield ×"
                   hint="multiplier on every shield pool, cap and regen"
