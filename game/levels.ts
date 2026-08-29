@@ -806,10 +806,10 @@ export const WORLDS: LevelSpec[] = [
     waveGap: 15,
     // ================= HOW TO AUTHOR A WAVE ========================
     //
-    // THE SHIPPED SCRIPT IS OVERRIDDEN BY public/levels/1.json. The array
-    // below is the fallback the game ships with; applyLevelDoc() replaces it
-    // wholesale at load, so edit the JSON (or the admin level editor) and
-    // treat this as the shape rather than the content.
+    // THE SCRIPT IS public/levels/1.json. There is no copy in this file to
+    // keep in step with it — see the note above `script` at the bottom of
+    // this block. Everything below documents HOW to author a wave; WHAT the
+    // waves are lives in the document, and the admin level editor writes it.
     //
     // MEDIUM (waves 1-20) IS PLAYTESTED AND FIXED. Do not restructure it.
     //
@@ -892,69 +892,27 @@ export const WORLDS: LevelSpec[] = [
     // outruns the drop zones they simply queue (Sim.runScript). Size against
     // TARGET_DROP_RATIO and the health step, which are the limits that bind.
     // ==============================================================
-    script: [
-      // ---------- MEDIUM: waves 1-20, enemy level 0 ------------------
-      { wave: { dagger: 24 } },
-      { wave: { dagger: 40, crawler: 25 } },
-      { wave: { dagger: 50, mace: 6, nova: 12 } },
-      { wave: { dagger: 60, mace: 24, fortress: 3, nova: 10 } },
-      { wave: { dagger: 48, crawler: 44, nova: 10 } },
-      { wave: { dagger: 44, mace: 25, pulsar: 8 } },
-      { wave: { dagger: 52, fortress: 6, crawler: 50 } },
-      { wave: { dagger: 45, flare: 34 } },
-      { wave: { dagger: 70, mace: 22, atrax: 12, spiroct: 7 } },
-      { wave: { crawler: 100, flare: 30, nova: 18 } },
-      { wave: { dagger: 85, mace: 26, spiroct: 8, pulsar: 14 } },
-      { wave: { dagger: 60, crawler: 80, flare: 50 } },
-      { wave: { dagger: 85, atrax: 24, spiroct: 10, nova: 22 } },
-      { wave: { dagger: 90, flare: 45, horizon: 20 } },
-      { wave: { dagger: 100, mace: 40, atrax: 24, spiroct: 18 } },
-      { wave: { crawler: 150, spiroct: 10, pulsar: 24 } },
-      { wave: { mace: 30, spiroct: 8, flare: 70, horizon: 28 } },
-      { wave: { dagger: 120, mace: 46, atrax: 30, pulsar: 20 } },
-      { wave: { dagger: 110, crawler: 190, spiroct: 14 } },
-      { wave: { flare: 80, horizon: 24, zenith: 10 } },
-      // ---------- HIGH: waves 21-35, enemy level 10 ------------------
-      { wave: { dagger: 170, mace: 50, atrax: 34, spiroct: 15 } },
-      { wave: { crawler: 220, spiroct: 11, nova: 45, pulsar: 26 } },
-      { wave: { dagger: 140, atrax: 24, horizon: 30, zenith: 14 } },
-      { wave: { dagger: 190, mace: 62, spiroct: 18 } },
-      { wave: { crawler: 250, spiroct: 15, flare: 80 } },
-      { wave: { dagger: 90, mace: 48, fortress: 7, atrax: 30 } },
-      { wave: { dagger: 210, crawler: 200, spiroct: 18, zenith: 10 } },
-      { wave: { flare: 130, pulsar: 32, horizon: 42, zenith: 14 } },
-      { wave: { dagger: 190, mace: 60, fortress: 9, spiroct: 15 } },
-      { wave: { crawler: 280, atrax: 46, nova: 60 } },
-      { wave: { flare: 150, horizon: 46, zenith: 17 } },
-      { wave: { dagger: 110, fortress: 11, atrax: 52, spiroct: 20, pulsar: 36 } },
-      { wave: { dagger: 240, mace: 70, crawler: 240 } },
-      { wave: { dagger: 170, flare: 120, horizon: 52, zenith: 19 } },
-      { wave: { dagger: 130, mace: 76, fortress: 13, spiroct: 22 } },
-      // ---------- EXTREME: waves 36-50, enemy level 20 ---------------
-      { wave: { dagger: 230, crawler: 330, nova: 70, pulsar: 40 } },
-      { wave: { atrax: 54, flare: 120, horizon: 58, zenith: 21 } },
-      { wave: { dagger: 150, fortress: 15, atrax: 62, spiroct: 26 } },
-      { wave: { dagger: 280, mace: 88, crawler: 280, pulsar: 44 } },
-      { wave: { fortress: 11, flare: 190, horizon: 66, zenith: 24 } },
-      { wave: { dagger: 170, mace: 100, fortress: 18, spiroct: 30 } },
-      { wave: { dagger: 270, crawler: 380, atrax: 68, nova: 80 } },
-      { wave: { spiroct: 24, flare: 150, horizon: 74, zenith: 27 } },
-      { wave: { dagger: 190, fortress: 21, atrax: 78, spiroct: 34, pulsar: 52 } },
-      { wave: { dagger: 330, mace: 110, crawler: 330 } },
-      { wave: { fortress: 15, flare: 220, horizon: 84, zenith: 31 } },
-      { wave: { dagger: 200, mace: 122, fortress: 25, atrax: 84, spiroct: 38 } },
-      { wave: { dagger: 320, crawler: 440, nova: 92, pulsar: 58 } },
-      { wave: { spiroct: 30, flare: 190, horizon: 96, zenith: 35 } },
-      // waves below to extend the content ladder; nothing else needs editing
-      { wave: { dagger: 230, fortress: 30, atrax: 96, spiroct: 42 } },
-      // ---------- past the 50-wave cut: NEVER SENT -------------------
-      { wave: { dagger: 370, mace: 132, crawler: 420, pulsar: 64 } },
-      { wave: { fortress: 22, spiroct: 36, flare: 210, horizon: 108, zenith: 40 } },
-    ],
+    // THE SCRIPT LIVES IN public/levels/1.json AND NOWHERE ELSE. It is
+    // deliberately empty here: a second copy in code is a second campaign,
+    // and the two had already diverged across all 52 waves (the code copy
+    // ran about half the bodies) before this was emptied. Whatever fails to
+    // load is visible as a level with no waves, which is the point — a
+    // silent fall back to a different, staler campaign is the bug this
+    // removes. loadLevelDocs() warns on the console when a world has no
+    // document. Edit the waves in the admin level editor, or the JSON.
+    script: [],
   },
 ];
 
-/** the campaign's only world — everything above tier 0 is ladder.ts */
+/**
+ * The campaign's only world — everything above tier 0 is ladder.ts.
+ *
+ * Its `script` is EMPTY until loadLevelDocs() has run. Nothing reads the
+ * script at module load (the sim takes WORLDS[0] as a default parameter,
+ * evaluated per construction), and all three entry points — Game.create,
+ * Swarmfield and the admin page — await loadLevelDocs() before a run or an
+ * audit can start, so by the time anything asks, the document is on.
+ */
 export const WORLD = WORLDS[0];
 
 export function worldById(id: string): LevelSpec | null {
@@ -1091,6 +1049,16 @@ export async function loadLevelDocs(): Promise<void> {
   const edited = ids.filter((id) => WORLDS.some((w) => w.id === id));
   const docs = await Promise.all(edited.map(fetchLevelDoc));
   for (const doc of docs) if (doc) applyLevelDoc(doc);
+  // A world whose document did not arrive has no waves at all, because the
+  // script lives only in the document now. That is a loud failure by design
+  // — the alternative was a stale second script in code, silently playing a
+  // different campaign — but it still deserves a line in the console rather
+  // than leaving someone to wonder why nothing spawns.
+  for (const w of WORLDS)
+    if (w.script.length === 0)
+      console.error(
+        `level "${w.id}" has no waves: public/levels/${w.id}.json failed to load or is missing from public/levels/index.json`,
+      );
 }
 
 /**

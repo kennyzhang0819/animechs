@@ -257,13 +257,19 @@ const round4 = (x: number): number => Math.round(x * 1e4) / 1e4;
 /**
  * THE THREE KNOBS, and the whole pricing model.
  *
- *   price(n, item) = base[item] x baseScale x multiplier x growth^n
+ *   price(n, item) = base[item] x (base / authoredBase) x growth^n
  *
- * base        the bundle, authored. Its SHAPE is the drop-ratio rule and its
- *             size is what a first purchase costs.
- * multiplier  a flat scalar on the whole node, so one number moves a turret
- *             without re-editing five currency amounts.
- * growth      the per-point climb — the shape of the ladder.
+ * base    what the first purchase costs, in the currency the bundle leads
+ *         with. Editing it rescales the whole bundle, so the SHAPE stays the
+ *         drop-ratio rule and only the size moves.
+ * growth  the per-point climb — the shape of the ladder.
+ *
+ * TWO KNOBS, NOT THREE. There was a multiplier as well, and it was the same
+ * arithmetic as the base: both scaled every item at every point, so base 150
+ * with multiplier 1 was byte-identical to base 75 with multiplier 2. Two ways
+ * to write one intent, and no way to read back which you meant. The base is
+ * the one that survives because it is a number in a currency rather than a
+ * bare ratio, so what is stored says what it costs.
  *
  * NOTHING IS SOLVED ANY MORE. A bisection used to derive growth from a damage
  * figure against a fixed lifetime budget, and that budget is exactly what made
@@ -276,12 +282,23 @@ const round4 = (x: number): number => Math.round(x * 1e4) / 1e4;
  * re-price the tree.
  */
 export interface Knobs {
-  /** scale on the authored bundle; 1 leaves the shipped base alone */
-  baseScale: number;
-  /** flat scalar on every item at every point */
-  multiplier: number;
+  /** what the first purchase costs, in the bundle's lead currency */
+  base: number;
   /** per-point climb */
   growth: number;
+}
+
+/**
+ * The lead currency of a node's bundle, and what it costs as authored.
+ *
+ * A bundle needs a single handle for a knob to move, and the lead item is it:
+ * costEntries walks ITEM_KINDS in order, so a node that charges copper leads
+ * with copper and one that does not leads with its cheapest tier. Rescaling
+ * from that number moves every other currency in step, which is what keeps
+ * the drop-ratio shape intact while the size changes.
+ */
+export function authoredBase(id: TechKind): number {
+  return costEntries(techNode(id).price.base)[0]?.amount ?? 0;
 }
 
 const overrides = new Map<TechKind, Partial<Knobs>>();
@@ -304,8 +321,7 @@ export function knobsOf(id: TechKind): Knobs {
   const node = techNode(id);
   const o = overrides.get(id) ?? {};
   return {
-    baseScale: o.baseScale ?? 1,
-    multiplier: o.multiplier ?? node.multiplier ?? 1,
+    base: o.base ?? authoredBase(id),
     growth: o.growth ?? node.price.growth ?? 1,
   };
 }
@@ -313,7 +329,7 @@ export function knobsOf(id: TechKind): Knobs {
 /** the knobs as authored — where a Reset returns to */
 export function authoredKnobs(id: TechKind): Knobs {
   const node = techNode(id);
-  return { baseScale: 1, multiplier: node.multiplier ?? 1, growth: node.price.growth ?? 1 };
+  return { base: authoredBase(id), growth: node.price.growth ?? 1 };
 }
 
 /** point one knob somewhere else; undefined restores the authored value */
@@ -359,7 +375,7 @@ export function applyOverrides(doc: Record<string, Partial<Knobs>>): void {
     const v = doc[k];
     if (!v || typeof v !== "object") continue;
     const clean: Partial<Knobs> = {};
-    for (const key of ["baseScale", "multiplier", "growth"] as const) {
+    for (const key of ["base", "growth"] as const) {
       const n = v[key];
       if (typeof n === "number" && Number.isFinite(n) && n >= 0) clean[key] = n;
     }
@@ -416,12 +432,7 @@ export interface TechNodeDef {
    * write an authored growth instead.
    */
   dps?: number;
-  /**
-   * A flat scalar on every item at every point — the cheap way to move one
-   * turret without re-editing its whole bundle. 0.5 is "half price, all the
-   * way up". Default 1.
-   */
-  multiplier?: number;
+
   /** parent node: needs >= 1 point before this node appears in the tree */
   requires?: TechKind;
   /**
@@ -954,7 +965,10 @@ export function techPrice(node: TechKind, owned = 0): Cost {
   const { base, from } = techNode(node).price;
   const n = Math.max(0, Math.floor(owned));
   const k = knobsOf(node);
-  const scale = k.baseScale * k.multiplier;
+  // the knob is an absolute price in the lead currency; the rest of the
+  // bundle follows it so the drop-ratio shape survives the edit
+  const authored = authoredBase(node);
+  const scale = authored > 0 ? k.base / authored : 1;
   const g = effectiveGrowth(growthOf(node));
   const out: Cost = {};
   for (const { item, amount } of costEntries(base)) {
