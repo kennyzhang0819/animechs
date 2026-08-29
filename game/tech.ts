@@ -541,6 +541,26 @@ export interface TechNodeDef {
  * lands this close to a neighbour, expect to hand-pick the bundle rather
  * than trust the split.
  *
+ * GROWTH IS ONE CONSTANT FOR EVERY TURRET, AND THAT IS DELIBERATE. It used
+ * to vary from 1.0007 to 1.0854, but those were not decisions — they were
+ * whatever the old solver produced from a damage figure before it was
+ * deleted, and left alone they scrambled the very ordering these bundles
+ * import. At a late bank they had parallax as the most-owned turret in the
+ * game, ahead of duo, purely because its 1.0007 was nearly flat; ripple,
+ * which costs less than parallax, came out at a tenth of it.
+ *
+ * With one growth for everyone the count follows the BASE, and the base
+ * follows Mindustry, so what a player ends up owning agrees with the order
+ * above instead of fighting it. At 1.01 that runs from about 855 duos down
+ * to 39 foreshadows at a late-campaign bank.
+ *
+ * Balance lives in the turret's own stats now, not in its price curve, so
+ * growth has no per-turret work left to do. THE FIELD STAYS PER NODE
+ * REGARDLESS: count depends on base only logarithmically, so a 10,000x
+ * spread in price compresses to about 14x in count, and growth is the only
+ * tool that can make one turret genuinely rare. Constant is the baseline,
+ * not a rule — break it for a node that earns it.
+ *
  * TO PRICE A NEW TURRET: find its requirements in Blocks.java, sum amount x
  * Item.cost, put that through the formula, and split the result across the
  * currencies its tier charges using TARGET_DROP_RATIO — the bundle SHAPE is
@@ -581,7 +601,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // A top-difficulty run roughly maxes it; five hundred duos are still
     // only 13,500 DPS, so it stays the thing you open with, never the answer
     id: "duo",
-    price: { base: { copper: 8 }, growth: 1.0098 },
+    price: { base: { copper: 8 }, growth: 1.01 },
     dps: 27,
     requires: "home",
     x: 2,
@@ -592,7 +612,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // splash scales with bodies per blast and collapses with health per
     // body, so one hail shell kills five daggers and chips a spiroct
     id: "hail",
-    price: { base: { copper: 20, titanium: 4 }, growth: 1.0103 },
+    price: { base: { copper: 20, titanium: 4 }, growth: 1.01 },
     dps: 165,
     requires: "scatter",
     x: 1,
@@ -603,7 +623,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // piercing flame rakes a whole file of units and sets each alight, and
     // burning ignores armour outright. 60 units of range is the whole cost
     id: "scorch",
-    price: { base: { copper: 20, titanium: 3 }, growth: 1.0133 },
+    price: { base: { copper: 20, titanium: 3 }, growth: 1.01 },
     dps: 850,
     requires: "arc",
     x: 3,
@@ -657,7 +677,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // behind the T3 waves too. Upstream builds scatter from copper and lead,
     // a tier-1 cost; this is that, in our currencies
     id: "scatter",
-    price: { base: { copper: 75, titanium: 10 }, growth: 1.0211 },
+    price: { base: { copper: 75, titanium: 10 }, growth: 1.01 },
     dps: 1450,
     requires: "duo",
     x: 1,
@@ -671,7 +691,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // also shoots AIR, which makes it the second answer to the flare waves
     // and half the reason scatter no longer has to be priced as the only one
     id: "salvo",
-    price: { base: { copper: 175, titanium: 60, thorium: 20 }, growth: 1.0125 },
+    price: { base: { copper: 175, titanium: 60, thorium: 20 }, growth: 1.01 },
     dps: 217,
     requires: "hail",
     x: 1,
@@ -687,7 +707,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // any at all. A Medium save can see this node and can never pay for it,
     // which is the same lock the old tier gate spelled out by hand
     id: "fuse",
-    price: { base: { titanium: 65, thorium: 80, plastanium: 15 }, growth: 1.0594 },
+    price: { base: { titanium: 65, thorium: 80, plastanium: 15 }, growth: 1.01 },
     dps: 4109,
     requires: "salvo",
     x: 2,
@@ -701,7 +721,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // plain bullet taking one body. Measured on a file of ten daggers, one
     // bolt lands 217 of its theoretical 240
     id: "arc",
-    price: { base: { copper: 50, titanium: 9 }, growth: 1.012 },
+    price: { base: { copper: 50, titanium: 9 }, growth: 1.01 },
     dps: 411,
     requires: "duo",
     x: 3,
@@ -713,7 +733,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // into the bullet, and the beam visibly ends at the fourth thing it
     // hits, so counting five would be pricing a shot it cannot fire
     id: "lancer",
-    price: { base: { copper: 150, titanium: 40, thorium: 15 }, growth: 1.0216 },
+    price: { base: { copper: 150, titanium: 40, thorium: 15 }, growth: 1.01 },
     dps: 420,
     requires: "scorch",
     x: 4,
@@ -725,7 +745,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // and like every artillery piece only the splash counts: the shell
     // arcs over its target rather than hitting it
     id: "ripple",
-    price: { base: { copper: 450, titanium: 125, thorium: 35 }, growth: 1.0453 },
+    price: { base: { copper: 450, titanium: 125, thorium: 35 }, growth: 1.01 },
     dps: 700,
     requires: "salvo",
     x: 2,
@@ -747,7 +767,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // rather than fudged, because the rule is the rule and a second one
     // invented here would not be
     id: "parallax",
-    price: { base: { copper: 500, titanium: 125, thorium: 45 }, growth: 1.0007 },
+    price: { base: { copper: 500, titanium: 125, thorium: 45 }, growth: 1.01 },
     dps: 30,
     requires: "scorch",
     x: 3,
@@ -773,7 +793,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PLASTANIUM. Homing missiles — they chase what they lock, so overkill
     // costs less than it does on a straight-firing line
     id: "swarmer",
-    price: { base: { titanium: 20, thorium: 20, plastanium: 1 }, growth: 1.0278 },
+    price: { base: { titanium: 20, thorium: 20, plastanium: 1 }, growth: 1.01 },
     dps: 1925,
     requires: "salvo",
     x: 0,
@@ -783,7 +803,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PLASTANIUM. A flak wall. The reason to own it is volume of splash, which
     // is why its ceiling is the full 3x3 band
     id: "cyclone",
-    price: { base: { titanium: 70, thorium: 60, plastanium: 7 }, growth: 1.0524 },
+    price: { base: { titanium: 70, thorium: 60, plastanium: 7 }, growth: 1.01 },
     dps: 1797,
     requires: "swarmer",
     x: 0,
@@ -796,7 +816,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // and they light up the moment it ships — priced there rather than told
     // to wait there
     id: "spectre",
-    price: { base: { titanium: 200, thorium: 225, plastanium: 55, "phase-fabric": 30 }, growth: 1.0671 },
+    price: { base: { titanium: 200, thorium: 225, plastanium: 55, "phase-fabric": 30 }, growth: 1.01 },
     dps: 1371,
     requires: "cyclone",
     x: 0,
@@ -805,7 +825,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // PHASE FABRIC. A continuous beam that melts whatever it rests on
     id: "meltdown",
-    price: { base: { titanium: 275, thorium: 300, plastanium: 65, "phase-fabric": 40 }, growth: 1.0854 },
+    price: { base: { titanium: 275, thorium: 300, plastanium: 65, "phase-fabric": 40 }, growth: 1.01 },
     dps: 3364,
     requires: "lancer",
     x: 4,
@@ -815,7 +835,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PHASE FABRIC. 500 range and one enormous shot — a sniper rather than a
     // defence, and the only turret that can hit a spawn pad from the core
     id: "foreshadow",
-    price: { base: { titanium: 450, thorium: 525, plastanium: 125, "phase-fabric": 75 }, growth: 1.0317 },
+    price: { base: { titanium: 450, thorium: 525, plastanium: 125, "phase-fabric": 75 }, growth: 1.01 },
     dps: 405,
     requires: "meltdown",
     x: 4,
