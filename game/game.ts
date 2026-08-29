@@ -8,7 +8,7 @@ import {
 } from "./maps";
 import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
 import { loadBalanceDoc } from "./balance";
-import { loadLevelDocs, type LevelSpec, type TowerKind } from "./levels";
+import { loadLevelDocs, UNIT_KINDS, type LevelSpec, type TowerKind, type UnitKind } from "./levels";
 import type { Cost } from "./items";
 import { dropsForKills, type TowerPlacement } from "./progress";
 import { Renderer, VOID_RGB } from "./renderer";
@@ -25,6 +25,8 @@ export interface UiState {
   remaining: number;
   /** how many of each kind are on the field right now, like UNIT_KINDS */
   byKind: number[];
+  /** every boss on the field, one thin HUD bar each, keyed by spawn id */
+  bosses: { id: number; kind: UnitKind; hp: number; max: number }[];
   /** seconds until the next wave, or 0 while one is already coming in */
   nextWaveIn: number;
   /** 1-based wave now on the field, out of how many the level holds */
@@ -914,6 +916,7 @@ export class Game {
       enemyLevel: this.sim.level.enemyLevel ?? 0,
       remaining: this.sim.remaining(),
       byKind: this.sim.aliveByKindList(),
+      bosses: this.sim.bossBars().map((b) => ({ ...b, kind: UNIT_KINDS[b.kind] })),
       nextWaveIn: this.sim.nextWaveIn(),
       currentWave: this.sim.currentWave(),
       totalWaves: this.sim.totalWaves,

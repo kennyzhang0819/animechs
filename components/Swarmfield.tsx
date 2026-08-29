@@ -762,6 +762,26 @@ export default function Swarmfield() {
             Paused
           </div>
         )}
+        {/* one thin bar per boss on the field, stacked top-centre and keyed
+            by spawn id so a bar never trades places with its neighbour.
+            pointer-events-none: it is a readout, never a control */}
+        {hud && hud.bosses.length > 0 && (
+          <div className="pointer-events-none absolute left-1/2 top-[calc(0.75rem+var(--safe-t))] z-10 flex w-[min(40vw,22rem)] -translate-x-1/2 flex-col gap-1.5">
+            {hud.bosses.map((b) => (
+              <div key={b.id}>
+                <div className="mb-0.5 text-center text-[10px] font-bold uppercase tracking-widest text-[#F25555] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
+                  {b.kind}
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full border border-[#2E2E36] bg-[#151518]/80">
+                  <div
+                    className="h-full rounded-full bg-[#F25555] transition-[width] duration-150 ease-linear"
+                    style={{ width: `${Math.max(0, Math.min(100, (100 * b.hp) / b.max))}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {/* one fixed width for the whole top-left stack, so the panel does
             not breathe in and out as counters change and the skip box lines
             up under it. Everything inside wraps rather than widening it */}

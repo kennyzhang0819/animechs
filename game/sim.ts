@@ -240,6 +240,8 @@ const KIND_HEAVY = Uint8Array.from(UNIT_KINDS, (k) => (UNIT_STATS[k].radius > HE
 const KIND_REPAIR = UNIT_KINDS.map((k) => UNIT_STATS[k].repairField ?? null);
 const KIND_SHIELD = UNIT_KINDS.map((k) => UNIT_STATS[k].shieldField ?? null);
 const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
+const KIND_BOSS: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].boss);
+const BOSS_KINDS = KIND_BOSS.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
 /** kind ids that carry a force field — the absorb pass is skipped outright
  * when none of them is on the field, so the scan costs nothing in a wave
  * without one */
@@ -755,6 +757,32 @@ export class Sim {
   /** per-kind head count currently on the field, indexed like UNIT_KINDS */
   aliveByKindList(): number[] {
     return Array.from(this.aliveByKind);
+  }
+
+  /**
+   * Every boss on the field, one row per unit, for the HUD's bar stack.
+   * The census early-exits the scan the way collectForceFields does, so a
+   * bossless wave pays nothing. Rows are keyed and ordered by spawn id —
+   * unit indices reshuffle under swap-remove, and a bar that traded places
+   * with its neighbour whenever something died would read as a glitch.
+   */
+  bossBars(): { id: number; kind: number; hp: number; max: number }[] {
+    let left = 0;
+    for (const k of BOSS_KINDS) left += this.aliveByKind[k];
+    if (left === 0) return [];
+    const out: { id: number; kind: number; hp: number; max: number }[] = [];
+    for (let i = 0; i < this.n && out.length < left; i++) {
+      const k = this.ukind[i];
+      if (!KIND_BOSS[k]) continue;
+      out.push({
+        id: this.uid[i],
+        kind: k,
+        hp: Math.max(0, this.uhp[i]),
+        max: this.uhpmax[i],
+      });
+    }
+    out.sort((a, b) => a.id - b.id);
+    return out;
   }
 
   /**
