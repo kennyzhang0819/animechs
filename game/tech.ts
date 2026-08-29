@@ -15,7 +15,7 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * it takes points forever; a utility is a SWITCH, so it takes exactly one
  * (see `cap`) and then reads as owned.
  */
-export const UTILITY_KINDS = ["home", "speed-2", "speed-4", "speed-8", "speed-16"] as const;
+export const UTILITY_KINDS = ["home", "speed-2", "speed-4", "speed-8", "time-warp"] as const;
 export type UtilityKind = (typeof UTILITY_KINDS)[number];
 
 /** anything the tree can hold points in */
@@ -37,8 +37,14 @@ export const NODE_SPEED: Readonly<Partial<Record<UtilityKind, number>>> = {
   "speed-2": 2,
   "speed-4": 4,
   "speed-8": 8,
-  "speed-16": 16,
 };
+
+/**
+ * The wave a save with TIME WARP opens every run on. The waves before it
+ * never enter and never pay — the node buys back the opening minutes of a
+ * run whose outcome they no longer decide, at the price of their drops.
+ */
+export const WARP_START_WAVE = 10;
 
 /** what each utility node is called, and what owning it does */
 export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: string }>> = {
@@ -49,7 +55,10 @@ export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: s
   "speed-2": { name: "2x Speed", blurb: "Run the whole simulation at double pace." },
   "speed-4": { name: "4x Speed", blurb: "Quadruple pace — a wave gap stops being a wait." },
   "speed-8": { name: "8x Speed", blurb: "Eight times pace, for a board that is already holding." },
-  "speed-16": { name: "16x Speed", blurb: "Sixteen times pace. A finished run, fast-forwarded." },
+  "time-warp": {
+    name: "Time Warp",
+    blurb: `Every run opens on wave ${WARP_START_WAVE}. The waves before it never arrive — and never drop.`,
+  },
 };
 
 /**
@@ -816,7 +825,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     price: { base: { copper: 450, titanium: 125, thorium: 35 }, growth: 1.01 },
     dps: 700,
     requires: "salvo",
-    x: 2,
+    x: 1,
     y: 5,
   },
   {
@@ -878,7 +887,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     price: { base: { titanium: 360, thorium: 310, plastanium: 36 }, growth: 1.01 },
     dps: 8,
     requires: "wave",
-    x: 1,
+    x: 2,
     y: 5,
   },
   // ---------- NEMESIS AND ERADICATION ----------------------------------
@@ -959,10 +968,12 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   },
   // ---------- THE UTILITIES PATH ---------------------------------------
   //
-  // Four one-point switches off home, in their own column: 2x, 4x, 8x and
-  // 16x simulation pace. They used to be a constant — 2x and 4x free to
-  // everyone, 8x and 16x a sandbox tool nobody could reach (the old PLAYER_SPEEDS
-  // in game.ts). They are now the second thing a save can spend on.
+  // Four one-point switches off home, in their own column: 2x, 4x and 8x
+  // simulation pace, then time warp. The pace switches used to be a constant
+  // — 2x and 4x free to everyone, 8x a sandbox tool nobody could reach (the
+  // old PLAYER_SPEEDS in game.ts). They are now the second thing a save can
+  // spend on. 16x is gone from the tree entirely: sandbox still offers it
+  // (SPEEDS in game.ts), but nothing sells it.
   //
   // THEY ARE PRICED AS CONVENIENCE, NOT AS POWER, and that is deliberate:
   // pace changes nothing about whether a board holds. It only decides how
@@ -985,7 +996,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   // two multipliers are late-campaign goods.
   //
   // A CHAIN, NOT A FAN. Each one requires the one below it, so the column
-  // reads in order and a player cannot own 16x without having wanted 8x.
+  // reads in order and a player cannot own time warp without having wanted 8x.
   {
     id: "speed-2",
     price: { base: { titanium: 25 }, growth: 1 },
@@ -1011,8 +1022,17 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     y: 3,
   },
   {
-    id: "speed-16",
-    price: { base: { "phase-fabric": 5 }, growth: 1 },
+    // TIME WARP, where 16x pace used to sit. Sixteen times is not a pace a
+    // player watches, it is a way of not watching — and the thing actually
+    // worth skipping is the opening, not the frame rate. So the top of the
+    // column stopped selling speed and started selling the wave number.
+    //
+    // Priced in phase fabric like the node it replaced, and dearer, because
+    // this one does change a run: the first nine waves stop paying. It costs
+    // more than the three pace switches together and is still under a single
+    // mid-tree turret point — a convenience, bought once, late.
+    id: "time-warp",
+    price: { base: { "phase-fabric": 20 }, growth: 1 },
     requires: "speed-8",
     cap: 1,
     x: 5,
@@ -1132,6 +1152,12 @@ export interface TechState {
    * in it and is never bought — it is the pace the game runs at.
    */
   speeds: readonly number[];
+  /**
+   * The wave every run opens on: 1 normally, WARP_START_WAVE once time warp
+   * is owned. The sim walks its script cursor past everything before it —
+   * those waves never spawn, so they never pay either.
+   */
+  startWave: number;
 }
 
 export function techState(levels: TechLevels): TechState {
@@ -1145,5 +1171,6 @@ export function techState(levels: TechLevels): TechState {
       .map((k) => NODE_SPEED[k])
       .filter((m): m is number => m != null),
   ].sort((a, b) => a - b);
-  return { unlocked, caps, speeds };
+  const startWave = (levels["time-warp"] ?? 0) > 0 ? WARP_START_WAVE : 1;
+  return { unlocked, caps, speeds, startWave };
 }
