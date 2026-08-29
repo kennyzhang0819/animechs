@@ -574,17 +574,20 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     flying: true,
   },
   // disrupt: THE FINAL BOSS — Erekir's tier-5 missile bomber, the one kind
-  // on the roster from the other planet. Stats 1:1 from
-  // mindustry/content/UnitTypes.java (speed 1 unit/tick = 7.5 tiles/s,
-  // crawler pace on a 5.75-block hull; armor 9; rotateSpeed 2; drag 0.07)
-  // with ONE deliberate exception: health is Mindustry's 12000 x4, because
-  // it arrives as a boss rather than by the squadron. Its suppression
-  // field and missile racks stay behind on Erekir — enemies here do not
-  // shoot — so what crosses the map is the hull, the pace, and 48000
-  // health the fleet has to answer before it reaches the core.
+  // on the roster from the other planet. Stats from
+  // mindustry/content/UnitTypes.java (armor 9; hitSize 46; rotateSpeed 2;
+  // drag 0.07) with TWO deliberate exceptions. Health is Mindustry's
+  // 12000 x4, because it arrives as a boss rather than by the squadron.
+  // And speed drops from the official 1 unit/tick (7.5 tiles/s, crawler
+  // pace — it would outrun its own escort and reach the AA line alone) to
+  // 2.25 tiles/s, under even the reign's crawl: a boss is a deadline the
+  // player watches coming, not a sprinter. Its suppression field and
+  // missile racks stay behind on Erekir — enemies here do not shoot — so
+  // what crosses the map is the hull, the looming pace, and 48000 health
+  // the fleet has to answer before it reaches the core.
   disrupt: {
     hp: 12000 * 4,
-    speed: 7.5 * CELL,
+    speed: 2.25 * CELL,
     armor: 9,
     radius: UR * 5.75,
     tier: 5,
