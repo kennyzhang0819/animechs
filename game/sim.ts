@@ -2162,8 +2162,8 @@ export class Sim {
       // spatial hash's buckets under the range circle rather than every
       // unit on the field; a turret whose whole target layer is empty
       // skips even that. The default sort is UnitSorts.closest — plain
-      // squared distance; foreshadow's `strongest` and the piercers'
-      // `barrel` are documented on bestTarget and TowerStats.sort
+      // squared distance; foreshadow's `strongest` is documented on
+      // bestTarget and TowerStats.sort
       const r2t = st.range * st.range;
       let best = -1;
       if (
@@ -2181,7 +2181,7 @@ export class Sim {
           (st.targetAir && this.nAliveAir > 0) ||
           (st.targetGround && this.nAliveGround > 0);
         best = hasTargets
-          ? this.bestTarget(t.x, t.y, st.range, st.targetAir, st.targetGround, st.sort, t.angle)
+          ? this.bestTarget(t.x, t.y, st.range, st.targetAir, st.targetGround, st.sort === "strongest")
           : -1;
         t.targetT = TARGET_INTERVAL;
         t.target = best >= 0 ? this.uid[best] : -1;
@@ -2235,29 +2235,7 @@ export class Sim {
 
       // updateShooting: a charging turret starts no new volley, though its
       // reload keeps running underneath (reloadWhileCharging, the default)
-      // DELIBERATE DEVIATION from Turret.java for instant barrel-aimed
-      // piercers — fuse's shrapnel fan and lancer's laser: a point-blank
-      // crowd outruns the barrel (a crawler one tile out sweeps ~430deg/s
-      // past a 300deg/s turret) and the closest-target re-pick flips sides
-      // every TARGET_INTERVAL, so the cone check against the CHOSEN target
-      // can fail for seconds while bodies stream across the muzzle — worst
-      // for lancer, whose 8deg cone gates even the START of its charge.
-      // Both weapons fire down the barrel and pierce whatever is there
-      // (fireShot never reads the target), so when the chase is lost, the
-      // volley — or the charge — begins anyway the moment ANY valid target
-      // stands in the cone; a lancer already commits to its facing for the
-      // whole charge, so a blind charge is the same commitment. Projectile
-      // turrets keep the strict check (their shots are aimed at the pick's
-      // intercept), and so does foreshadow's rail: it picks the STRONGEST
-      // unit, and firing blind would spend its shot on a stray crawler.
-      const ready = t.cd <= 0 && t.chargeT < 0;
-      const aligned = Math.abs(Sim.angleDiff(t.angle, targetRot)) < st.shootCone;
-      if (
-        ready &&
-        (aligned ||
-          ((st.bullet.ray !== undefined || st.bullet.laser !== undefined) &&
-            this.anyTargetInCone(t.x, t.y, st.range, st.targetAir, st.targetGround, t.angle, st.shootCone)))
-      ) {
+      if (t.cd <= 0 && t.chargeT < 0 && Math.abs(Sim.angleDiff(t.angle, targetRot)) < st.shootCone) {
         // LaserTurret.updateShooting: lighting the beam IS the shot. It
         // burns for shootDuration and then fades, and only once it is out
         // does the reload above start counting again
@@ -2320,14 +2298,11 @@ export class Sim {
    * off the spatial hash, so a turret pays for the units under its range
    * circle rather than for the whole field.
    *
-   * Three sorts (see TowerStats.sort). The default is closest — plain
+   * Two sorts (see TowerStats.sort). The default is closest — plain
    * squared distance. `strongest` is the HIGHEST CURRENT HEALTH, distance
    * strictly the tiebreak (the d2 term is scaled far below any health
    * difference): foreshadow finishes nothing another turret has all but
-   * killed. `barrel` is the target nearest the turret's CURRENT facing,
-   * distance again the strict tiebreak: the sweep-not-chase pick for the
-   * instant piercers, whose stall was a closest-pick dying mid-swing and
-   * the next closest waiting on the opposite side.
+   * killed.
    *
    * The hash is a tick old by the time towers fire (units have stepped
    * once since buildHash), so the bucket sweep is padded by a few px; the
@@ -2339,18 +2314,13 @@ export class Sim {
     range: number,
     air: boolean,
     ground: boolean,
-    sort: "strongest" | "barrel" | undefined,
-    angle: number,
+    strongest: boolean,
   ): number {
     const { upx, upy, uhp, ufly } = this;
     const n = this.n;
     const r2 = range * range;
-    const score = (i: number, dx: number, dy: number, d2: number): number =>
-      sort === "strongest"
-        ? -uhp[i] + d2 * 1e-9
-        : sort === "barrel"
-          ? Math.abs(Sim.angleDiff(angle, Math.atan2(dy, dx))) + d2 * 1e-9
-          : d2;
+    const score = (i: number, d2: number): number =>
+      strongest ? -uhp[i] + d2 * 1e-9 : d2;
     let best = -1, bs = Infinity;
     // a short field is cheaper to walk directly than through the buckets
     if (n <= 128) {
@@ -2359,7 +2329,7 @@ export class Sim {
         const dx = upx[i] - x, dy = upy[i] - y;
         const d2 = dx * dx + dy * dy;
         if (d2 >= r2) continue;
-        const s = score(i, dx, dy, d2);
+        const s = score(i, d2);
         if (s < bs || (s === bs && i < best)) {
           bs = s;
           best = i;
@@ -2383,7 +2353,7 @@ export class Sim {
         const dx = upx[i] - x, dy = upy[i] - y;
         const d2 = dx * dx + dy * dy;
         if (d2 >= r2) continue;
-        const s = score(i, dx, dy, d2);
+        const s = score(i, d2);
         if (s < bs || (s === bs && i < best)) {
           bs = s;
           best = i;
@@ -2391,53 +2361,6 @@ export class Sim {
       }
     }
     return best;
-  }
-
-  /**
-   * Is any live targetable unit inside `range` AND within `cone` of the
-   * bearing `angle`? The blind-fire test for instant barrel-aimed piercers
-   * (fuse's ray fan, lancer's laser — see fireTowers) — it only runs when
-   * such a turret is loaded but has lost the chase, so the scan is
-   * throttled by the reload it releases.
-   */
-  private anyTargetInCone(
-    x: number,
-    y: number,
-    range: number,
-    air: boolean,
-    ground: boolean,
-    angle: number,
-    cone: number,
-  ): boolean {
-    const { upx, upy, ufly } = this;
-    const n = this.n;
-    const r2 = range * range;
-    const hit = (i: number): boolean => {
-      if (ufly[i] !== 0 ? !air : !ground) return false;
-      const dx = upx[i] - x, dy = upy[i] - y;
-      if (dx * dx + dy * dy >= r2) return false;
-      return Math.abs(Sim.angleDiff(angle, Math.atan2(dy, dx))) < cone;
-    };
-    // same walk as bestTarget: the short field directly, else the hash
-    if (n <= 128) {
-      for (let i = 0; i < n; i++) if (hit(i)) return true;
-      return false;
-    }
-    const { bStart, bUnits } = this;
-    const pad = range + 8;
-    const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
-    const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
-    const hx1 = clamp(((x + pad) / HC) | 0, 0, HCOLS - 1);
-    const hy1 = clamp(((y + pad) / HC) | 0, 0, HROWS - 1);
-    for (let hy = hy0; hy <= hy1; hy++) {
-      const row = hy * HCOLS;
-      const e = bStart[row + hx1 + 1];
-      for (let k = bStart[row + hx0]; k < e; k++) {
-        const i = bUnits[k];
-        if (i < n && hit(i)) return true;
-      }
-    }
-    return false;
   }
 
   /**
