@@ -19,7 +19,6 @@ import {
   globalGrowth,
   knobsOf,
   MINDUSTRY_VALUE,
-  recommendedBase,
   setGlobalGrowth,
   setKnob,
   SHARED_GROWTH,
@@ -214,7 +213,6 @@ export default function BalanceView() {
   const pathOf = (pts: { n: number; p: number }[]) =>
     pts.map((c, i) => (i ? "L" : "M") + X(c.n).toFixed(1) + " " + Y(c.p).toFixed(1)).join("");
   const yTicks = [0, top / 2, top];
-  const rec = recommendedBase(sel);
   const firstBundle = costEntries(bundleAt(sel, 1));
   // growth is global now, so a turret is bent only by its own base
   const bentAny = k.base !== authored.base;
@@ -368,10 +366,7 @@ export default function BalanceView() {
             <div>
               <Knob
                 label="Base"
-                hint={
-                  `${ITEM_INFO[lead].name} for the first one; the rest of the bundle follows` +
-                  (rec !== null ? ` · ${rec.toLocaleString()} is what its damage suggests` : "")
-                }
+                hint={`${ITEM_INFO[lead].name} for the first one; the rest of the bundle follows`}
                 value={k.base}
                 min={1}
                 max={Math.max(50, Math.round(authored.base * 4))}
