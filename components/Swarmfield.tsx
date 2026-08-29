@@ -32,7 +32,6 @@ import {
   waveGuide,
   tierDropBonus,
   tierLevel,
-  HP_PER_LEVEL,
   TOP_TIER,
 } from "@/game/ladder";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
@@ -50,7 +49,7 @@ import {
   type RunReward,
 } from "@/game/progress";
 import { turretIcon } from "@/game/atlas";
-import { isEmpty } from "@/game/items";
+import { isEmpty, ITEM_INFO, itemForTier } from "@/game/items";
 import { CostRow, Wallet } from "./Items";
 import TechTree from "./TechTree";
 
@@ -181,12 +180,13 @@ function TierPicker({
 }) {
   const top = topTier(progress);
   const spec = specForTier(WORLD, tier);
-  const { waves, enemies } = levelSummary(spec);
-  const level = tierLevel(tier);
-  // the enemy level in the one unit that means anything to a player: how
-  // many times over a body has to be shot compared with the opening tier
-  const health = HP_PER_LEVEL ** level;
+  const { waves } = levelSummary(spec);
   const step = (d: number): void => onTier(Math.min(top, Math.max(0, tier + d)));
+  // the salvage multiplier as the one number in the blurb — "30% more loot"
+  const lootPct = Math.round((tierDropBonus(tier) - 1) * 100);
+  // what a difficulty NEWLY drops: its top tier's currency. Tier 0's spread
+  // (copper through thorium) is the baseline, so it gets prose instead
+  const newDrop = ITEM_INFO[itemForTier(tier + 3)].name.toLowerCase();
 
   return (
     <div className="w-full max-w-[22rem] rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-4">
@@ -236,22 +236,22 @@ function TierPicker({
         </button>
       </div>
 
-      {/* what this tier actually costs and pays, in the four numbers that
-          decide whether to push or farm */}
-      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 border-t border-[#2E2E36] pt-3 text-[13px]">
-        <dt className="text-[#71717C]">Waves</dt>
-        <dd className="text-right font-bold text-[#EDEDEF]">{waves}</dd>
-        <dt className="text-[#71717C]">Enemies</dt>
-        <dd className="text-right font-bold text-[#EDEDEF]">{enemies.toLocaleString()}</dd>
-        <dt className="text-[#71717C]">Enemy level</dt>
-        <dd className="text-right font-bold text-[#EDEDEF]">
-          {level} <span className="text-[#71717C]">(×{health.toFixed(1)} hp)</span>
-        </dd>
-        <dt className="text-[#71717C]">Salvage</dt>
-        <dd className="text-right font-bold text-[#7BE58A]">
-          ×{tierDropBonus(tier).toFixed(2)}
-        </dd>
-      </dl>
+      {/* the wave count and one sentence of what the tier means — the full
+          numbers (enemy level, hp multiple, exact salvage) live in the run
+          itself and the editor, not on the menu */}
+      <div className="mt-3 border-t border-[#2E2E36] pt-3 text-[13px] leading-snug">
+        <span className="font-bold text-[#EDEDEF]">{waves} waves.</span>{" "}
+        <span className="text-[#A6A6AF]">
+          {tier === 0 ? (
+            <>The swarm at base strength — every kill drops resources for the tech tree.</>
+          ) : (
+            <>
+              Enemies have more health and shields, but drop {newDrop} and{" "}
+              <span className="font-bold text-[#7BE58A]">{lootPct}% more loot</span>.
+            </>
+          )}
+        </span>
+      </div>
 
       <button
         onClick={onStart}
