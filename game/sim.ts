@@ -1,5 +1,6 @@
 import {
   BASE,
+  BOSS_SPAWN_REGION,
   BURN_DPS as BURN_DPS_IMPORT,
   BURN_FX_CHANCE as BURN_FX_CHANCE_IMPORT,
   bulletOf as bulletOf_IMPORT,
@@ -1195,6 +1196,16 @@ export class Sim {
   private spawnUnit(kind: UnitKind, region: number): boolean {
     const stats = UNIT_STATS[kind];
     const fly = !!stats.flying;
+    // A BOSS IGNORES ITS WAVE GROUP'S REGION: when the map paints a boss
+    // zone, every boss-flagged kind enters from it — that is the zone's
+    // whole meaning. The check is against the ByRegion map directly, not
+    // spawnPads, because spawnPads falls back to every pad for an unknown
+    // region and a map WITHOUT a boss zone should leave the group's own
+    // region in force rather than falling back to "anywhere"
+    if (stats.boss) {
+      const byRegion = fly ? this.field.spawnAirByRegion : this.field.spawnPtsByRegion;
+      if (byRegion.get(BOSS_SPAWN_REGION)?.length) region = BOSS_SPAWN_REGION;
+    }
     // every enemy enters on a spawn pad from the terrain's spawn layer;
     // walkers need a pad connected to the core, flyers take any open pad
     const pads = this.spawnPads(fly, region);

@@ -1,4 +1,4 @@
-import { BASE, COLS, NCELLS, ROWS } from "./constants";
+import { BASE, BOSS_SPAWN_REGION, COLS, NCELLS, ROWS } from "./constants";
 
 /**
  * The grid width every map was authored at before the board grew. Documents
@@ -206,12 +206,15 @@ export const SPAWN_REGIONS: readonly SpawnRegionStyle[] = [
 
 /**
  * THE ONLY REAL CEILING ON SPAWN REGIONS. A cell's region id lives in
- * Terrain.spawn, a Uint8Array, so 255 is where the storage runs out — 0 is
- * reserved for "no pad here". Nothing else in the editor, the level editor
- * or the save format counts regions, so this is the number to raise if that
- * ever needs to change, and it would mean widening that layer.
+ * Terrain.spawn, a Uint8Array — 0 is reserved for "no pad here" and 255 for
+ * the boss zone (BOSS_SPAWN_REGION in constants.ts, re-exported here), so
+ * 254 is where wave regions run out. Nothing else in the editor, the level
+ * editor or the save format counts regions, so this is the number to raise
+ * if that ever needs to change, and it would mean widening that layer.
  */
-export const MAX_SPAWN_REGIONS = 255;
+export const MAX_SPAWN_REGIONS = 254;
+
+export { BOSS_SPAWN_REGION };
 
 /**
  * The pad sprite's own colour — SPAWN_REGIONS[0].css, which is why region 1
@@ -246,6 +249,18 @@ const hex2 = (v: number): string =>
   Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, "0");
 
 /**
+ * The boss zone's look: Eradication's dark purple, nothing like the wave
+ * palette on purpose — a zone that answers to no wave group should not
+ * read as the next number in the region sequence. spawnRegionStyle routes
+ * BOSS_SPAWN_REGION here instead of the golden-angle generator.
+ */
+const BOSS_REGION_STYLE: SpawnRegionStyle = {
+  tint: [0.627 / PAD_RGB[0], 0.353 / PAD_RGB[1], 0.898 / PAD_RGB[2]],
+  css: "#A05AE5",
+  tone: "#532F77",
+};
+
+/**
  * The display style of ANY region id, curated or not. Read this rather than
  * indexing SPAWN_REGIONS: the array is four long and a map is not limited to
  * four, so indexing it directly either overflows or wraps two regions onto
@@ -253,6 +268,7 @@ const hex2 = (v: number): string =>
  */
 export function spawnRegionStyle(region: number): SpawnRegionStyle {
   const n = Math.max(1, Math.floor(region));
+  if (n === BOSS_SPAWN_REGION) return BOSS_REGION_STYLE;
   if (n <= SPAWN_REGIONS.length) return SPAWN_REGIONS[n - 1];
   const rgb = spawnHue((30 + (n - SPAWN_REGIONS.length - 1) * GOLDEN_ANGLE) % 360);
   return {
@@ -392,12 +408,17 @@ export function spawnCirclesOf(m: MapData, blocked: Uint8Array): SpawnCircle[] {
  * "which region does this wave enter from" picker offers. Read this rather
  * than the document's fields: it is the only thing that stays correct
  * across the painted-pads and drop-zone shapes.
+ *
+ * The boss zone is NOT one of them: wave groups cannot target it — bosses
+ * are routed there by the sim on their own — so it stays out of every
+ * region picker this feeds.
  */
 export function spawnRegionIds(m: MapData): number[] {
   const ids = new Set<number>();
   if (m.spawns) for (const c of m.spawns) ids.add(c.region);
   else if (m.spawn) for (const r of m.spawn) if (r > 0) ids.add(r);
   else ids.add(1); // no layer at all: the synthesized western strip
+  ids.delete(BOSS_SPAWN_REGION);
   return [...ids].sort((a, b) => a - b);
 }
 

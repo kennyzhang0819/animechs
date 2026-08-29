@@ -1,4 +1,5 @@
 import {
+  BOSS_SPAWN_REGION,
   CELL as CELL_IMPORT,
   clamp as clamp_IMPORT,
   COLS as COLS_IMPORT,
@@ -370,10 +371,14 @@ export class FlowField {
       };
       for (let i = 0; i < NCELLS; i++) {
         if (!mask[i] || walk[i]) continue;
-        this.spawnAir.push(i);
+        // the boss zone is boss-only: its pads live in the ByRegion maps
+        // and stay out of the any-pad lists, so a region-0 wave group can
+        // never dump the ordinary swarm through the boss's door
+        const bossOnly = mask[i] === BOSS_SPAWN_REGION;
+        if (!bossOnly) this.spawnAir.push(i);
         into(this.spawnAirByRegion, mask[i], i);
         if (this.dist[i] < INF) {
-          this.spawnPts.push(i);
+          if (!bossOnly) this.spawnPts.push(i);
           into(this.spawnPtsByRegion, mask[i], i);
         }
       }

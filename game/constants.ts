@@ -1124,6 +1124,22 @@ export function bulletOf(kind: import("./types").TowerKind, frag: boolean): Bull
  */
 export const SPAWN_INVINCIBLE = 60 / TICK;
 export const SPAWN_UNMOVING = 30 / TICK;
+
+/**
+ * THE BOSS SPAWN ZONE'S REGION ID — the top of the Uint8 range the spawn
+ * layer stores region ids in, reserved so it can never collide with a
+ * painted wave region (the editor caps those at MAX_SPAWN_REGIONS, one
+ * below). A map paints at most one zone with this id, and every unit whose
+ * kind carries the `boss` flag enters from it regardless of what region its
+ * wave group named; a map without one lets bosses use their group's pads
+ * like anything else. Its pads are kept OUT of the generic any-pad lists
+ * (see Flowfield.compute), so the ordinary swarm never pours out of the
+ * boss's door.
+ *
+ * It lives here rather than maps.ts because the flowfield needs it and
+ * imports nothing above constants; maps.ts re-exports it for the editors.
+ */
+export const BOSS_SPAWN_REGION = 255;
 /** Fx.unitSpawn's own 30 ticks, and Fx.spawn's — the second is run 30
  *  ticks BEHIND the first (Time.run), so it lands exactly as the unit
  *  stops being unmoving and takes its first step */

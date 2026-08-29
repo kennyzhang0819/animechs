@@ -5,6 +5,7 @@ import { MapEditor, PATH_WIDTHS, type BrushShape } from "@/game/editor";
 import { SPAWN_RADII, SPAWN_RADIUS_DEFAULT } from "@/game/maps";
 import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
 import {
+  BOSS_SPAWN_REGION,
   MAX_SPAWN_REGIONS,
   PALETTE,
   saveMap,
@@ -645,6 +646,35 @@ export default function MapEditorView({
                       className="flex h-10 w-10 items-center justify-center rounded border border-dashed border-[#4A4A55] bg-[#101013] text-[18px] leading-none text-[#A6A6AF] hover:border-[#FFD37F] hover:text-[#FFD37F] disabled:opacity-30 disabled:hover:border-[#4A4A55] disabled:hover:text-[#A6A6AF]"
                     >
                       +
+                    </button>
+                  )}
+                  {/* the boss zone: one reserved region past the counter,
+                      picked here rather than by adding 250 slots. Wave
+                      groups can't name it — every boss-flagged kind enters
+                      from it when the map paints one */}
+                  {set.kind === "spawn" && (
+                    <button
+                      title="Boss zone — every boss spawns from it"
+                      aria-pressed={setId === set.id && variant === BOSS_SPAWN_REGION - 1}
+                      onClick={() => pick(set, BOSS_SPAWN_REGION - 1)}
+                      className={`relative flex h-10 w-10 items-center justify-center rounded border ${
+                        setId === set.id && variant === BOSS_SPAWN_REGION - 1
+                          ? "border-[#FFD37F] bg-[#222227]"
+                          : "border-[#2E2E36] bg-[#101013] hover:border-[#4A4A55]"
+                      }`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
+                      <img
+                        src={set.icons[0]}
+                        alt="Boss zone"
+                        className="h-8 w-8 [image-rendering:pixelated]"
+                      />
+                      <span
+                        className="absolute -right-1 -top-1 rounded bg-[#222227] px-1 text-[11px] font-bold"
+                        style={{ color: spawnRegionStyle(BOSS_SPAWN_REGION).css }}
+                      >
+                        B
+                      </span>
                     </button>
                   )}
                 </div>
