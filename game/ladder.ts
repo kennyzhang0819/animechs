@@ -133,8 +133,8 @@ export const DIFFICULTIES: readonly {
   airArmorBonus: number;
 }[] = [
   { name: "Medium", waves: 20, level: 0, shieldScale: 1, groundArmorBonus: 0, airArmorBonus: 0 },
-  { name: "High", waves: 35, level: 10, shieldScale: 5, groundArmorBonus: 3, airArmorBonus: 0 },
-  { name: "Extreme", waves: 50, level: 20, shieldScale: 20, groundArmorBonus: 6, airArmorBonus: 0 },
+  { name: "High", waves: 35, level: 10, shieldScale: 5, groundArmorBonus: 0, airArmorBonus: 0 },
+  { name: "Extreme", waves: 50, level: 20, shieldScale: 20, groundArmorBonus: 0, airArmorBonus: 0 },
   // ERADICATION and UNREASONABLE are deliberately not here yet
 ];
 
