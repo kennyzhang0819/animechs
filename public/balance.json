@@ -1,10 +1,10 @@
 {
  "difficulties": {
   "Onslaught": {
-   "shieldScale": 7.5
+   "shieldScale": 5
   },
   "Nemesis": {
-   "shieldScale": 15
+   "shieldScale": 10
   }
  }
 }
