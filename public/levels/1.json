@@ -626,7 +626,8 @@
     "reign": 40,
     "toxopid": 40,
     "corvus": 20,
-    "eclipse": 20
+    "eclipse": 20,
+    "disrupt": 1
    }
   }
  ]

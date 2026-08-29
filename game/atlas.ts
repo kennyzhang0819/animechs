@@ -296,6 +296,9 @@ export const UV_ARKYID_WEAPON_SIL = uv(768, 3584, 256, 256);
 export const UV_ARKYID_MOUNT = uv(0, 3840, 256, 256);
 export const UV_ARKYID_MOUNT_SIL = uv(256, 3840, 256, 256);
 export const UV_ANTUMBRA = uv(512, 3840, 256, 256);
+// disrupt: the boss flyer, 243x243 of Erekir art in the last free 256px
+// cell of the pre-T5 sheet, beside antumbra on the bottom band
+export const UV_DISRUPT = uv(768, 3840, 256, 256);
 
 /**
  * THE T5 COLUMN (x=1024..2048). Four units, laid out top down: reign's
@@ -518,6 +521,7 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   horizon: { uv: UV_HORIZON, sprite: UNIT_SPRITE * 2 },
   zenith: { uv: UV_ZENITH, sprite: UNIT_SPRITE * 2 },
   antumbra: { uv: UV_ANTUMBRA, sprite: UNIT_SPRITE * 4 },
+  disrupt: { uv: UV_DISRUPT, sprite: UNIT_SPRITE * 4 },
   // 320x321 on a 7.25-block hitbox: the sheet's biggest single piece, and
   // the only 384px cell on it — hence the odd multiplier, which is just
   // 384/64 like every other one here
@@ -991,6 +995,7 @@ const SPRITES = {
   arkyidLegBase: "/mindustry/sprites/units/arkyid-leg-base.png",
   purpleMount: "/mindustry/sprites/units/weapons/large-purple-mount.png",
   antumbra: "/mindustry/sprites/units/antumbra.png",
+  disrupt: "/mindustry/sprites/units/disrupt.png",
   reign: "/mindustry/sprites/units/reign.png",
   reignBase: "/mindustry/sprites/units/reign-base.png",
   reignLeg: "/mindustry/sprites/units/reign-leg.png",
@@ -1461,6 +1466,12 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // the sheet, and it leaves only an 8px margin across its own cell
   drawFacingRight(
     c, antialiased(outlined(img.antumbra, UNIT_OUTLINE, UNIT_OUTLINE_R)), 640, 3968, 216, 240,
+  );
+
+  // disrupt: the boss, same single-quad flyer treatment as antumbra, at
+  // native 243x243 in the cell beside it
+  drawFacingRight(
+    c, antialiased(outlined(img.disrupt, UNIT_OUTLINE, UNIT_OUTLINE_R)), 896, 3968, 243, 243,
   );
 
   // ---- the T5 column (x=1024) ----

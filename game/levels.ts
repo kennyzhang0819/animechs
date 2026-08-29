@@ -2,7 +2,7 @@ import { CELL, HP0, UNIT_SPEED, UR } from "./constants";
 import { itemForTier, type Cost } from "./items";
 import { explain, type SaveResult } from "./types";
 
-export const UNIT_KINDS = ["dagger", "mace", "fortress", "scepter", "reign", "crawler", "atrax", "spiroct", "arkyid", "toxopid", "flare", "nova", "pulsar", "quasar", "vela", "corvus", "horizon", "zenith", "antumbra", "eclipse"] as const;
+export const UNIT_KINDS = ["dagger", "mace", "fortress", "scepter", "reign", "crawler", "atrax", "spiroct", "arkyid", "toxopid", "flare", "nova", "pulsar", "quasar", "vela", "corvus", "horizon", "zenith", "antumbra", "eclipse", "disrupt"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -28,6 +28,7 @@ export const UNIT_ID: Record<UnitKind, number> = {
   zenith: 17,
   antumbra: 18,
   eclipse: 19,
+  disrupt: 20,
 };
 
 /** px per Mindustry world unit — leg geometry is written in those units */
@@ -173,6 +174,13 @@ export interface UnitStats {
   /** flying units ignore terrain and head straight for the core; only
    * towers with targetAir (and bullets with collidesAir) touch them */
   flying?: boolean;
+  /**
+   * Mindustry's boss (guardian) tag, made a property of the KIND rather
+   * than of one spawn: this game fields its bosses as dedicated kinds, so
+   * the flag lives here. For now it only marks the unit for presentation —
+   * nothing in the sim reads it.
+   */
+  boss?: boolean;
   /**
    * Mindustry RepairFieldAbility: every `reload` seconds, heal every unit
    * whose hitbox falls inside `range` by `amount`, capped at its max hp.
@@ -565,6 +573,26 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 1,
     flying: true,
   },
+  // disrupt: THE FINAL BOSS — Erekir's tier-5 missile bomber, the one kind
+  // on the roster from the other planet. Stats 1:1 from
+  // mindustry/content/UnitTypes.java (speed 1 unit/tick = 7.5 tiles/s,
+  // crawler pace on a 5.75-block hull; armor 9; rotateSpeed 2; drag 0.07)
+  // with ONE deliberate exception: health is Mindustry's 12000 x4, because
+  // it arrives as a boss rather than by the squadron. Its suppression
+  // field and missile racks stay behind on Erekir — enemies here do not
+  // shoot — so what crosses the map is the hull, the pace, and 48000
+  // health the fleet has to answer before it reaches the core.
+  disrupt: {
+    hp: 12000 * 4,
+    speed: 7.5 * CELL,
+    armor: 9,
+    radius: UR * 5.75,
+    tier: 5,
+    drag: 0.07,
+    rotateSpeed: 2,
+    flying: true,
+    boss: true,
+  },
 };
 
 /**
@@ -578,6 +606,9 @@ export const UNIT_TREES = [
   { name: "Support", kinds: ["nova", "pulsar", "quasar", "vela", "corvus"] },
   { name: "Crawler", kinds: ["crawler", "atrax", "spiroct", "arkyid", "toxopid"] },
   { name: "Air", kinds: ["flare", "horizon", "zenith", "antumbra", "eclipse"] },
+  // not an upgrade path: the boss row holds the kinds that arrive as an
+  // event rather than a stream, so its slots do not read as tiers
+  { name: "Boss", kinds: ["disrupt"] },
 ] as const satisfies readonly { name: string; kinds: readonly UnitKind[] }[];
 
 /**
