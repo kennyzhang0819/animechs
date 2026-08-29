@@ -11,7 +11,7 @@ import { loadBalanceDoc } from "./balance";
 import { loadLevelDocs, type LevelSpec, type TowerKind } from "./levels";
 import type { Cost } from "./items";
 import { dropsForKills, type TowerPlacement } from "./progress";
-import { Renderer } from "./renderer";
+import { Renderer, VOID_RGB } from "./renderer";
 import { Sim } from "./sim";
 import type { TechState } from "./tech";
 import type { Tower } from "./types";
@@ -137,11 +137,59 @@ function paint(): Promise<void> {
 }
 
 // zoom 1 is "cover": the world fills the viewport completely, cropped on
-// whichever axis overflows. It is also the FLOOR — zooming out past cover
-// would letterbox the world against empty space, and the screen must never
-// show anything but map. A map taller than the viewport is panned, not
-// shrunk to fit
-const ZOOM_MIN = 1;
+// whichever axis overflows. It is where a run starts, but it is no longer
+// the FLOOR — the camera keeps pulling back until the whole map is on
+// screen with a margin of void around it. "How does my line look against
+// the whole map" is a question a player asks constantly, and panning
+// around at cover is a poor way to answer it.
+//
+// What made cover the floor was that anything past it shows empty space.
+// Mindustry answers that with borderDarkness (World.getDarkness): the
+// outermost tiles ramp to black, so the world ends in a soft edge and the
+// void beyond it reads as deliberate rather than as a missing chunk of
+// map. drawHaze is that, and it is what pays for this floor.
+//
+// The floor as a fraction of the FIT zoom — the zoom at which the map's
+// long axis exactly spans the viewport. At 0.88 the map fills 88% of the
+// tight axis and the rest is margin: enough to read the map as a shape
+// with edges, not so much that it swims in black.
+const ZOOM_FIT_PAD = 0.88;
+// How deep the haze lies over the map's rim, in CELLS — Mindustry's
+// borderDarkness blends over 2 tiles, and this is the same idea with room
+// for a softer falloff.
+//
+// Cells, and only cells. A depth that also had a floor in screen terms
+// looked better at the zoom floor and was wrong the moment anyone touched
+// the wheel: a band whose world extent depends on the zoom SLIDES across
+// the terrain as you zoom, and the eye reads that as the map's edge moving.
+// Anchored to the world it is simply part of the map, and the price — a
+// tighter fade when the whole map is on screen — is the honest one.
+// Eight cells is deeper than it sounds: the curve below spends most of its
+// density in the first third, so what actually READS as dark is two or
+// three cells — Mindustry's two tiles — and the rest is a tail thin enough
+// to have no visible end.
+const HAZE_CELLS = 8;
+/**
+ * The haze's density from its outer face inward, as gradient stops.
+ *
+ * Solid where it meets the void — that stop is what makes the map's edge
+ * stop existing — then a curve that gives up most of its weight early and
+ * trails the rest out over a long tail. The tail is the whole trick: it is
+ * what stops there being a depth where the haze visibly ENDS. A ramp that
+ * runs out of density anywhere the eye can find draws a line there, which
+ * is exactly the border a fade is meant to be hiding.
+ */
+const HAZE_STOPS: readonly (readonly [number, number])[] = [
+  [0, 1],
+  [0.08, 0.84],
+  [0.18, 0.63],
+  [0.3, 0.45],
+  [0.45, 0.29],
+  [0.6, 0.17],
+  [0.75, 0.08],
+  [0.88, 0.025],
+  [1, 0],
+];
 // A FINGERTIP COVERS FAR MORE MAP THAN A CURSOR DOES, so the ceiling has to
 // leave enough room to aim at a single cell on a phone-sized viewport.
 //
@@ -152,8 +200,9 @@ const ZOOM_MIN = 1;
 // close enough to pick one turret out of a packed line, and still showing
 // enough ground to see what is walking into it.
 //
-// The floor is what needs guarding, not the ceiling — zooming IN only ever
-// crops, while zooming out past cover would letterbox the world.
+// Only the ceiling is a constant: zooming IN only ever crops, so it cares
+// about nothing but the fingertip. The floor depends on the map and the
+// viewport together, so it is computed from both (see minZoom).
 const ZOOM_MAX = 12;
 
 // a touch that never travels this far in CSS px is a tap — it selects the
@@ -315,7 +364,11 @@ export class Game {
       (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 40);
     if (pinch || notchy) {
       const before = this.mouseWorld(e);
-      this.zoom = clamp(this.zoom * Math.exp(-dy * (pinch ? 0.012 : 0.0015)), ZOOM_MIN, ZOOM_MAX);
+      this.zoom = clamp(
+        this.zoom * Math.exp(-dy * (pinch ? 0.012 : 0.0015)),
+        this.minZoom(),
+        ZOOM_MAX,
+      );
       // keep the world point under the cursor fixed
       this.tlx = before.x - ((e.clientX - r.left) / r.width) * this.visW();
       this.tly = before.y - ((e.clientY - r.top) / r.height) * this.visH();
@@ -333,12 +386,7 @@ export class Game {
         // the ghost already shows red where placement fails
         this.building = true;
         this.buildFrom = p;
-        const sz = TOWERS[this.buildKind].size;
-        this.sim.placeTower(
-          clamp(Math.round(p.x / CELL - sz / 2), 0, COLS - sz),
-          clamp(Math.round(p.y / CELL - sz / 2), 0, ROWS - sz),
-          this.buildKind,
-        );
+        this.buildTo(p, false);
       } else if (this.sellMode) {
         // demolish mode puts the right button's whole chain on the left one:
         // pull down what is under the press, keep pulling on the drag
@@ -392,10 +440,7 @@ export class Game {
       this.clampCamera();
     }
     const p = this.mouseWorld(e);
-    if (this.building && this.buildKind && !this.panning) {
-      this.sim.placeLine(this.buildFrom.x, this.buildFrom.y, p.x, p.y, this.buildKind);
-      this.buildFrom = p;
-    }
+    if (this.building && !this.panning) this.buildTo(p, true);
     if (this.selling && !this.panning) {
       this.sim.sellLine(this.sellFrom.x, this.sellFrom.y, p.x, p.y);
       this.sellFrom = p;
@@ -489,12 +534,7 @@ export class Game {
       // exactly the left button's chain: place under the press, then paint
       this.building = true;
       this.buildFrom = p;
-      const sz = TOWERS[this.buildKind].size;
-      this.sim.placeTower(
-        clamp(Math.round(p.x / CELL - sz / 2), 0, COLS - sz),
-        clamp(Math.round(p.y / CELL - sz / 2), 0, ROWS - sz),
-        this.buildKind,
-      );
+      this.buildTo(p, false);
       this.setHover(p);
     } else if (this.sellMode) {
       this.selling = true;
@@ -533,10 +573,7 @@ export class Game {
       return;
     }
     const p = this.mouseWorld(e);
-    if (this.building && this.buildKind) {
-      this.sim.placeLine(this.buildFrom.x, this.buildFrom.y, p.x, p.y, this.buildKind);
-      this.buildFrom = p;
-    }
+    if (this.building) this.buildTo(p, true);
     if (this.selling) {
       this.sim.sellLine(this.sellFrom.x, this.sellFrom.y, p.x, p.y);
       this.sellFrom = p;
@@ -559,7 +596,7 @@ export class Game {
     const dist = this.touchSpread();
     const before = this.mouseWorld({ clientX: this.lastMouse.x, clientY: this.lastMouse.y });
     if (this.pinchDist > 0 && dist > 0)
-      this.zoom = clamp(this.zoom * (dist / this.pinchDist), ZOOM_MIN, ZOOM_MAX);
+      this.zoom = clamp(this.zoom * (dist / this.pinchDist), this.minZoom(), ZOOM_MAX);
     this.pinchDist = dist;
     this.lastMouse = mid;
     this.tlx = before.x - ((mid.x - r.left) / r.width) * this.visW();
@@ -611,8 +648,45 @@ export class Game {
     }
   }
 
+  /** is this world point on the map at all, or out in the void past it? */
+  private inWorld(p: { x: number; y: number }): boolean {
+    return p.x >= 0 && p.y >= 0 && p.x < this.worldW && p.y < this.worldH;
+  }
+
+  /**
+   * The build chain, shared by press and drag on both mouse and touch:
+   * paint from wherever the chain last was to here (`chain`), or drop a
+   * single tower under the point that starts it.
+   *
+   * The void guard is why this is one function. Every world→cell conversion
+   * CLAMPS to the board, so a point past the map edge folds onto the rim
+   * and drops a tower there — harmless while the camera could not leave the
+   * map, and a way to build by clicking on nothing now that it can.
+   */
+  private buildTo(p: { x: number; y: number }, chain: boolean): void {
+    const kind = this.buildKind;
+    if (!kind || !this.inWorld(p)) return;
+    // a chain whose last point was out in the void has no line to draw —
+    // it restarts here, so a drag that leaves the map and comes back does
+    // not paint a stripe across everything it skipped
+    if (chain && this.inWorld(this.buildFrom)) {
+      this.sim.placeLine(this.buildFrom.x, this.buildFrom.y, p.x, p.y, kind);
+    } else {
+      const sz = TOWERS[kind].size;
+      this.sim.placeTower(
+        clamp(Math.round(p.x / CELL - sz / 2), 0, COLS - sz),
+        clamp(Math.round(p.y / CELL - sz / 2), 0, ROWS - sz),
+        kind,
+      );
+    }
+    this.buildFrom = p;
+  }
+
   /** remember the pointer in world px, and as the cell a tool would act on */
   private setHover(p: { x: number; y: number }): void {
+    // out past the edge there is no cell to aim at, and clamping would put
+    // the ghost on the rim while the cursor sits in the void
+    if (!this.inWorld(p)) return this.clearHover();
     this.hoverX = p.x;
     this.hoverY = p.y;
     const hsz = this.buildKind ? TOWERS[this.buildKind].size : 2;
@@ -916,6 +990,22 @@ export class Game {
     return this.uiCanvas.height / (this.scale * this.zoom);
   }
 
+  /**
+   * The zoom floor: fit the whole map on screen, then keep going by
+   * ZOOM_FIT_PAD so it sits in the void rather than against the frame.
+   *
+   * this.scale is the COVER scale (the axis that overflows), so dividing
+   * the FIT scale by it gives fit in zoom units — at most 1, and exactly 1
+   * only when the map and the viewport share an aspect ratio. A zero-sized
+   * canvas has no meaningful fit, so it falls back to cover and lets
+   * resize() sort it out once there is a layout.
+   */
+  private minZoom(): number {
+    const w = this.uiCanvas.width, h = this.uiCanvas.height;
+    if (w <= 0 || h <= 0 || this.scale <= 0) return 1;
+    return Math.min(w / this.worldW, h / this.worldH) / this.scale * ZOOM_FIT_PAD;
+  }
+
   /** re-read the loaded map's height and refit the camera to it */
   private fitToMap(): void {
     this.worldH = this.sim.terrain.rows * CELL;
@@ -929,10 +1019,23 @@ export class Game {
     // a blank screen. Snap back to the origin rather than showing void
     if (!Number.isFinite(this.tlx)) this.tlx = 0;
     if (!Number.isFinite(this.tly)) this.tly = 0;
-    // cover guarantees the window fits inside the world, so these ranges are
-    // never negative and no edge of the screen can fall off the map
-    this.tlx = clamp(this.tlx, 0, this.worldW - this.visW());
-    this.tly = clamp(this.tly, 0, this.worldH - this.visH());
+    // THE CENTRE OF THE SCREEN STAYS OVER THE MAP. That is the whole rule,
+    // and it is the only one: pan, drag and WASD all run out into the void
+    // exactly as if the map were a small island in a much bigger field,
+    // rather than stopping dead at the edge of the terrain.
+    //
+    // It replaces a pair of clamps that pinned the camera inside the map,
+    // which at any zoom past fit had no range left to give and had to
+    // centre the map instead — the camera going rigid the moment the whole
+    // map was on screen. Reading the constraint off the screen's centre
+    // instead of its corners is what makes one line cover every zoom: the
+    // range is always exactly the map, so it is never empty and never
+    // backwards, and the furthest you can push an edge is to the middle of
+    // the screen — far enough to look at a corner in isolation, never far
+    // enough to lose the map off the side.
+    const halfW = this.visW() / 2, halfH = this.visH() / 2;
+    this.tlx = clamp(this.tlx, -halfW, this.worldW - halfW);
+    this.tly = clamp(this.tly, -halfH, this.worldH - halfH);
   }
 
   private resize(): void {
@@ -952,7 +1055,7 @@ export class Game {
       this.uiCanvas.height = bh;
     }
     this.scale = Math.max(bw / this.worldW, bh / this.worldH);
-    this.zoom = clamp(this.zoom, ZOOM_MIN, ZOOM_MAX);
+    this.zoom = clamp(this.zoom, this.minZoom(), ZOOM_MAX);
     this.clampCamera();
   }
 
@@ -1009,6 +1112,48 @@ export class Game {
     this.raf = requestAnimationFrame(this.frame);
   };
 
+  /**
+   * The map's rim, hazed into the void it sits in.
+   *
+   * Mindustry's borderDarkness (World.getDarkness): the outermost tiles
+   * ramp to black so the world ends in a soft edge instead of a cut. Same
+   * idea, four gradients instead of per-tile darkness — this board has no
+   * darkness channel, and a straight edge each way is all there is to hide.
+   *
+   * It is the CLEAR colour rather than black because that is what is
+   * actually out there: the GL pass clears the whole canvas to it before
+   * any terrain lands, so the first stop of each gradient is the exact
+   * colour of the pixel beyond it and the map's edge stops existing.
+   * Corners take haze from two bands, which is right — it pools where they
+   * meet, and alpha compositing gets there smoothly on its own.
+   *
+   * This replaced a lumpier version that baked billows into a strip and
+   * stretched it along each edge. Irregularity that is BUILT is
+   * irregularity you can find: every lump had a radius, and where the brush
+   * ran past the inner face of the band it was cut off square, which put a
+   * visible straight border in the one place the whole effect exists to
+   * remove. A plain gradient with a long enough tail has no such place.
+   */
+  private drawHaze(c: CanvasRenderingContext2D): void {
+    const d = HAZE_CELLS * CELL;
+    const w = this.worldW, h = this.worldH;
+    // x0,y0 is ON the edge, where the haze is solid; x1,y1 is where it has
+    // given up the last of its density over the terrain
+    const band = (x0: number, y0: number, x1: number, y1: number): CanvasGradient => {
+      const grad = c.createLinearGradient(x0, y0, x1, y1);
+      for (const [t, a] of HAZE_STOPS) grad.addColorStop(t, `rgba(${VOID_RGB},${a})`);
+      return grad;
+    };
+    c.fillStyle = band(0, 0, d, 0);
+    c.fillRect(0, 0, d, h);
+    c.fillStyle = band(w, 0, w - d, 0);
+    c.fillRect(w - d, 0, d, h);
+    c.fillStyle = band(0, 0, 0, d);
+    c.fillRect(0, 0, w, d);
+    c.fillStyle = band(0, h, 0, h - d);
+    c.fillRect(0, h - d, w, d);
+  }
+
   private drawOverlay(): void {
     const c = this.uictx;
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -1016,6 +1161,10 @@ export class Game {
     // world-space transform through the camera
     const s = this.scale * this.zoom;
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
+    // first, so everything below stays crisp on top of it: a range ring or
+    // a build ghost at the map's rim has to stay readable even where the
+    // ground under it is fading out
+    this.drawHaze(c);
 
     // ROUTES, under everything else so a selection ring still reads on top.
     // Drop zones are rings rather than discs: the ground inside one is

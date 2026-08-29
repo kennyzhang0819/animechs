@@ -7,9 +7,13 @@ import { costEntries, ITEM_INFO, type ItemKind } from "@/game/items";
 import {
   allOverrides,
   authoredKnobs,
+  globalGrowth,
   knobsOf,
+  MINDUSTRY_VALUE,
   recommendedBase,
+  setGlobalGrowth,
   setKnob,
+  SHARED_GROWTH,
   techCap,
   techNode,
   techPrice,
@@ -19,6 +23,11 @@ import { TOWER_KINDS, type TowerKind } from "@/game/types";
 
 const NUM = "font-mono tabular-nums";
 const SERIES = "#3987e5";
+
+/** the list reads cheapest-first the way Mindustry itself prices these turrets */
+const BY_MINDUSTRY_VALUE = [...TOWER_KINDS].sort(
+  (a, b) => MINDUSTRY_VALUE[a] - MINDUSTRY_VALUE[b],
+);
 
 /** the item a bundle leads with — what the graph and the knob are denominated in */
 function leadItem(tower: TowerKind): ItemKind {
@@ -132,6 +141,12 @@ export default function BalanceView() {
   const lead = leadItem(sel);
   const shown = Math.min(cap, Math.max(10, span));
 
+  const setGrowth = useCallback((v: number | undefined) => {
+    setGlobalGrowth(v);
+    setStatus(null);
+    bump((n) => n + 1);
+  }, []);
+
   const set = useCallback((knob: keyof Knobs, v: number | undefined) => {
     setKnob(sel, knob, v);
     setStatus(null);
@@ -180,17 +195,20 @@ export default function BalanceView() {
   const yTicks = [0, top / 2, top];
   const rec = recommendedBase(sel);
   const firstBundle = costEntries(bundleAt(sel, 1));
-  const bentAny = k.base !== authored.base || k.growth !== authored.growth;
+  // growth is global now, so a turret is bent only by its own base
+  const bentAny = k.base !== authored.base;
 
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
         <p className="max-w-3xl text-[13px] leading-relaxed text-[#71717C]">
-          Two knobs: <span className="text-[#A6A6AF]">base</span> is what the first purchase costs,
-          and <span className="text-[#A6A6AF]">growth</span> is how steeply it climbs. Editing base
-          rescales the whole bundle, so its drop-ratio shape survives and only the size moves. Base
-          order comes from Mindustry&apos;s build costs — moving one past its neighbours gives that
-          up. Caps come from footprint and nothing here changes them.
+          One knob per turret: <span className="text-[#A6A6AF]">base</span>, what its first
+          purchase costs. Editing it rescales the whole bundle, so the drop-ratio shape survives
+          and only the size moves; the order of those bases comes from Mindustry&apos;s build
+          costs, so moving one past its neighbours gives that up.{" "}
+          <span className="text-[#A6A6AF]">Growth</span> is one number for the whole tree — every
+          turret climbs at the same rate, so that knob bends all fifteen ladders together. Caps
+          come from footprint and nothing here changes them.
         </p>
         <div className="flex shrink-0 items-center gap-2">
           {status && <span className="text-[13px] text-[#71717C]">{status}</span>}
@@ -206,10 +224,10 @@ export default function BalanceView() {
       <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
         {/* turret picker */}
         <div className="max-h-[560px] overflow-y-auto rounded-lg border border-[#2E2E36]">
-          {TOWER_KINDS.map((t) => {
+          {BY_MINDUSTRY_VALUE.map((t) => {
             const kk = knobsOf(t);
             const a = authoredKnobs(t);
-            const dirty = kk.base !== a.base || kk.growth !== a.growth;
+            const dirty = kk.base !== a.base;
             return (
               <button
                 key={t}
@@ -222,8 +240,8 @@ export default function BalanceView() {
                   {TOWERS[t].name}
                   {dirty && <span className="ml-1 text-[#3987e5]">•</span>}
                 </span>
-                <span className={`text-[11px] text-[#71717C] ${NUM}`}>
-                  {TOWERS[t].size}×{TOWERS[t].size} · {kk.growth.toFixed(4)}
+                <span className={`shrink-0 text-[11px] text-[#71717C] ${NUM}`}>
+                  {TOWERS[t].size}×{TOWERS[t].size} · cap {techCap(t).toLocaleString()}
                 </span>
               </button>
             );
@@ -265,16 +283,16 @@ export default function BalanceView() {
               />
 
               <Knob
-                label="Growth"
-                hint="cost multiplier per purchase — small numbers compound hard"
-                value={k.growth}
+                label="Growth (every turret)"
+                hint="cost multiplier per purchase, shared by the whole tree — small numbers compound hard"
+                value={globalGrowth()}
                 min={1}
                 max={1.2}
                 step={0.0001}
                 decimals={4}
-                bent={k.growth !== authored.growth}
-                onChange={(v) => set("growth", v)}
-                onReset={() => set("growth", undefined)}
+                bent={globalGrowth() !== SHARED_GROWTH}
+                onChange={(v) => setGrowth(v)}
+                onReset={() => setGrowth(undefined)}
               />
               <div className="border-t border-[#2E2E36] pt-3">
                 <div className="flex items-baseline justify-between">
@@ -297,7 +315,7 @@ export default function BalanceView() {
               {bentAny && (
                 <button
                   onClick={() => {
-                    (["base", "growth"] as const).forEach((x) => set(x, undefined));
+                    set("base", undefined);
                   }}
                   className="mt-3 w-full rounded border border-[#2E2E36] px-2 py-1.5 text-[12px] text-[#A6A6AF] hover:border-[#4A4A55]"
                 >

@@ -341,6 +341,28 @@ export function setKnob(id: TechKind, knob: keyof Knobs, value: number | undefin
   else overrides.set(id, o);
 }
 
+/**
+ * ONE CLIMB FOR THE WHOLE TREE. Every turret is authored at the same growth,
+ * because the per-node numbers were never independently playtested — they
+ * were solved against a lifetime budget that no longer exists, and fifteen
+ * separate steepnesses only ever read as noise on top of the bases, which
+ * are the deliberate part. So growth stops being a per-turret decision: the
+ * balance page tunes ONE number and every ladder bends with it.
+ *
+ * Utilities are untouched at growth 1 — a one-point switch has no ladder.
+ */
+export const SHARED_GROWTH = 1.01;
+
+/** the climb every turret is on — they move together, so any one of them answers */
+export function globalGrowth(): number {
+  return knobsOf("duo").growth;
+}
+
+/** bend every turret's ladder at once; undefined restores SHARED_GROWTH */
+export function setGlobalGrowth(value: number | undefined): void {
+  for (const t of TOWER_KINDS) setKnob(t, "growth", value);
+}
+
 /** only what has actually been bent, for the balance document */
 export function allOverrides(): Record<string, Partial<Knobs>> {
   return Object.fromEntries([...overrides].map(([k, v]) => [k, { ...v }]));
@@ -586,6 +608,30 @@ export interface TechNodeDef {
  * expensive turret of all twenty-eight. In both the price is the second
  * opinion and the DPS is the number to re-derive.
  */
+/**
+ * Sum of amount x Item.cost for each turret's Mindustry build cost, from the
+ * ranking in the comment above. Nothing in pricing reads it — the bundles
+ * already encode it — but the balance view sorts by it so the tree reads in
+ * the order upstream priced it rather than in implementation order.
+ */
+export const MINDUSTRY_VALUE: Record<TowerKind, number> = {
+  duo: 17.5,
+  scorch: 34.5,
+  hail: 37,
+  arc: 60,
+  scatter: 74,
+  swarmer: 152.5,
+  lancer: 157,
+  salvo: 180,
+  ripple: 270,
+  parallax: 288,
+  cyclone: 329,
+  fuse: 447.5,
+  spectre: 1552.5,
+  meltdown: 1795,
+  foreshadow: 2500,
+};
+
 export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // THE ROOT, AND THE ONLY FREE NODE. It costs nothing, every save is
