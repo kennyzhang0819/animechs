@@ -2194,22 +2194,27 @@ export class Sim {
 
       // updateShooting: a charging turret starts no new volley, though its
       // reload keeps running underneath (reloadWhileCharging, the default)
-      // DELIBERATE DEVIATION from Turret.java for hitscan ray fans (fuse):
-      // a point-blank crowd outruns the barrel — a crawler one tile out
-      // sweeps ~430deg/s past fuse's 300 — and the closest-target re-pick
-      // flips sides every TARGET_INTERVAL, so the cone check against the
-      // CHOSEN target can fail for seconds while bodies stream across the
-      // muzzle. A shrapnel volley fires down the barrel and pierces
-      // whatever is there (fireShot never reads the target), so when the
-      // chase is lost, the volley leaves anyway the moment ANY valid
-      // target stands in the cone. Projectile turrets keep the strict
-      // check — their shots are aimed at the pick, not the barrel.
+      // DELIBERATE DEVIATION from Turret.java for instant barrel-aimed
+      // piercers — fuse's shrapnel fan and lancer's laser: a point-blank
+      // crowd outruns the barrel (a crawler one tile out sweeps ~430deg/s
+      // past a 300deg/s turret) and the closest-target re-pick flips sides
+      // every TARGET_INTERVAL, so the cone check against the CHOSEN target
+      // can fail for seconds while bodies stream across the muzzle — worst
+      // for lancer, whose 8deg cone gates even the START of its charge.
+      // Both weapons fire down the barrel and pierce whatever is there
+      // (fireShot never reads the target), so when the chase is lost, the
+      // volley — or the charge — begins anyway the moment ANY valid target
+      // stands in the cone; a lancer already commits to its facing for the
+      // whole charge, so a blind charge is the same commitment. Projectile
+      // turrets keep the strict check (their shots are aimed at the pick's
+      // intercept), and so does foreshadow's rail: it picks the STRONGEST
+      // unit, and firing blind would spend its shot on a stray crawler.
       const ready = t.cd <= 0 && t.chargeT < 0;
       const aligned = Math.abs(Sim.angleDiff(t.angle, targetRot)) < st.shootCone;
       if (
         ready &&
         (aligned ||
-          (st.bullet.ray !== undefined &&
+          ((st.bullet.ray !== undefined || st.bullet.laser !== undefined) &&
             this.anyTargetInCone(t.x, t.y, st.range, st.targetAir, st.targetGround, t.angle, st.shootCone)))
       ) {
         // LaserTurret.updateShooting: lighting the beam IS the shot. It
@@ -2331,9 +2336,10 @@ export class Sim {
 
   /**
    * Is any live targetable unit inside `range` AND within `cone` of the
-   * bearing `angle`? The blind-fire test for hitscan ray fans (see
-   * fireTowers) — it only runs when such a turret is loaded but has lost
-   * the chase, so the scan is throttled by the reload it releases.
+   * bearing `angle`? The blind-fire test for instant barrel-aimed piercers
+   * (fuse's ray fan, lancer's laser — see fireTowers) — it only runs when
+   * such a turret is loaded but has lost the chase, so the scan is
+   * throttled by the reload it releases.
    */
   private anyTargetInCone(
     x: number,
