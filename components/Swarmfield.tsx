@@ -323,9 +323,19 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
     icon: "/mindustry/sprites/blocks/turrets/ripple.png",
   },
   {
+    kind: "wave",
+    name: "Wave",
+    icon: "/mindustry/sprites/blocks/turrets/wave.png",
+  },
+  {
     kind: "parallax",
     name: "Parallax",
     icon: "/mindustry/sprites/blocks/defense/parallax.png",
+  },
+  {
+    kind: "tsunami",
+    name: "Tsunami",
+    icon: "/mindustry/sprites/blocks/turrets/tsunami.png",
   },
   {
     kind: "fuse",

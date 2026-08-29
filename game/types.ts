@@ -1,17 +1,24 @@
 /**
  * Every Serpulo turret the campaign will ever field, in tech-tree order.
  *
- * ALL FIFTEEN ARE IMPLEMENTED — real stats, real ammo, drawn on the field,
- * and every one of them in the build menu. The last five were stubs
+ * ALL SEVENTEEN ARE IMPLEMENTED — real stats, real ammo, drawn on the
+ * field, and every one of them in the build menu. The late five were stubs
  * carrying a duo's bullet until they were given their own: swarmer's
  * homing missiles, cyclone's fragmenting flak, spectre's piercing twin
  * cannon, meltdown's held beam and foreshadow's rail shot.
  *
- * Three Serpulo turrets are deliberately absent. Wave and tsunami are
- * liquid turrets whose job is extinguishing fire, wetting units and healing
- * blocks — none of which exists here. Segment shoots down enemy bullets,
- * and our units never fire at buildings, so it would have nothing to
- * intercept. They come back if those systems ever do.
+ * Wave and tsunami are the liquid turrets, and they are the roster's one
+ * DELIBERATE DEVIATION rather than a 1:1 port. Upstream their water shoves
+ * units back (knockback) and wets them for a 0.94x speed multiplier — a
+ * nudge, because their real jobs there are extinguishing fire and healing
+ * blocks, neither of which exists here. Here the wet status IS the weapon:
+ * no push, and the slow is deep (see BulletStats.wet). Their trivial
+ * contact damage is kept — the number on the tin is honest about what they
+ * are for.
+ *
+ * One Serpulo turret stays deliberately absent. Segment shoots down enemy
+ * bullets, and our units never fire at buildings, so it would have nothing
+ * to intercept. It comes back if that system ever does.
  */
 export const TOWER_KINDS = [
   // implemented
@@ -24,7 +31,9 @@ export const TOWER_KINDS = [
   "arc",
   "lancer",
   "ripple",
+  "wave",
   "parallax",
+  "tsunami",
   // extreme and eradication
   "swarmer",
   "cyclone",
@@ -159,6 +168,12 @@ export const enum FxKind {
    *  arriving. Mindustry runs it 30 ticks BEHIND unitSpawn, which is
    *  exactly when the unit stops being unmoving and walks */
   Spawn = 37,
+  /** Fx.wet — StatusEffects.wet's flicker, burning's blue counterpart:
+   *  a water-coloured droplet fading off a soaked unit at effectChance
+   *  per tick */
+  Wet = 38,
+  ShootLiquid = 39, // Fx.shootLiquid — the spray a liquid turret's muzzle throws
+  HitLiquid = 40, // Fx.hitLiquid — droplets scattering where an orb lands
 }
 
 /** an r,g,b triple in 0..1, the form every draw call wants */

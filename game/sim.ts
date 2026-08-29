@@ -12,6 +12,7 @@ import {
   clamp as clamp_IMPORT,
   COLS as COLS_IMPORT,
   FX_LIFE as FX_LIFE_IMPORT,
+  WET_FX_CHANCE as WET_FX_CHANCE_IMPORT,
   H as H_IMPORT,
   MAX_UNITS,
   ROWS as ROWS_IMPORT,
@@ -33,6 +34,7 @@ import {
 // constants, so nothing is lost.
 const BURN_DPS = BURN_DPS_IMPORT;
 const BURN_FX_CHANCE = BURN_FX_CHANCE_IMPORT;
+const WET_FX_CHANCE = WET_FX_CHANCE_IMPORT;
 const bulletOf = bulletOf_IMPORT;
 const SPAWN_INVINCIBLE = SPAWN_INVINCIBLE_IMPORT;
 const SPAWN_UNMOVING = SPAWN_UNMOVING_IMPORT;
@@ -255,13 +257,17 @@ const FORCE_KINDS = KIND_FORCE.map((f, i) => (f ? i : -1)).filter((i) => i >= 0)
  * there than reaching into KIND_FORCE for an object it will discard */
 const KIND_IS_FORCE = Uint8Array.from(KIND_FORCE, (f) => (f ? 1 : 0));
 /**
- * UnitType.immunities as one flag per kind. StatusEffects.burning is the
- * only status this game applies, so the whole immunity table collapses to
- * a bit — and Mindustry checks it in StatusComp.apply, BEFORE the effect
- * is added, so an immune unit never burns and never flickers either
+ * UnitType.immunities as one flag per kind and per status — burning and
+ * wet are the two this game applies. Mindustry checks it in
+ * StatusComp.apply, BEFORE the effect is added, so an immune unit is never
+ * lit (or soaked) and never flickers either. No stock kind is wet-immune;
+ * the flag exists so declaring one in UNIT_STATS is all it would take.
  */
 const KIND_BURN_IMMUNE = Uint8Array.from(UNIT_KINDS, (k) =>
   UNIT_STATS[k].immunities?.includes("burning") ? 1 : 0,
+);
+const KIND_WET_IMMUNE = Uint8Array.from(UNIT_KINDS, (k) =>
+  UNIT_STATS[k].immunities?.includes("wet") ? 1 : 0,
 );
 /**
  * UnitType.drag per kind — the fraction of an external shove a unit sheds
@@ -427,6 +433,16 @@ export class Sim {
    * status map, which keeps one entry per effect
    */
   readonly uburn = new Float32Array(MAX_UNITS);
+  /**
+   * StatusEffects.wet: seconds of soaking left, and the drive-speed
+   * multiplier in force while it lasts. One entry like the status map's —
+   * reapplying re-times rather than stacks, and the strongest slow wins
+   * (see applyWet). `uwetSlow` is only meaningful while uwet > 0; expiry
+   * and spawn both park it back at 1 so a recycled slot can never leak a
+   * stale slow. The renderer reads uwet to tint soaked units blue
+   */
+  readonly uwet = new Float32Array(MAX_UNITS);
+  readonly uwetSlow = new Float32Array(MAX_UNITS);
   /**
    * a never-reused identity, Mindustry's entity id. Indices are recycled by
    * swap-remove the instant anything dies, so anything that must remember a
@@ -1272,6 +1288,8 @@ export class Sim {
       this.upully[i] = 0;
       this.uspawn[i] = SPAWN_INVINCIBLE;
       this.uburn[i] = 0;
+      this.uwet[i] = 0;
+      this.uwetSlow[i] = 1;
       this.uid[i] = this.nextId++;
       this.ukind[i] = UNIT_ID[kind];
       this.ufly[i] = fly ? 1 : 0;
@@ -1398,14 +1416,16 @@ export class Sim {
   }
 
   /**
-   * StatusEffect.update for the one status we carry, burning: it ticks
+   * StatusEffect.update for the two statuses we carry. Burning ticks
    * damageContinuousPierce every frame — armour-piercing, though a shield
    * still eats it — and flickers Fx.burning at effectChance per tick from a
-   * random point inside the unit's hitbox. Walking backwards so a unit that
-   * burns to death can be swap-removed without skipping its neighbour.
+   * random point inside the unit's hitbox. Wet only runs its clock down
+   * (the slow itself is read by updateUnits) and flickers Fx.wet the same
+   * way. Walking backwards so a unit that burns to death can be
+   * swap-removed without skipping its neighbour.
    */
   private updateStatus(dt: number): void {
-    const { uburn, uhp, upx, upy, urad, uspawn } = this;
+    const { uburn, uwet, uhp, upx, upy, urad, uspawn } = this;
     for (let i = this.n - 1; i >= 0; i--) {
       // the arrival clock. Mindustry schedules Fx.spawn with Time.run(30),
       // which lands on the frame `unmoving` expires — so the ring going up
@@ -1417,6 +1437,18 @@ export class Sim {
         const walks = SPAWN_INVINCIBLE - SPAWN_UNMOVING;
         if (was > walks && uspawn[i] <= walks)
           this.pushFx(upx[i], upy[i], FX_SPAWN, FxKind.Spawn);
+      }
+      if (uwet[i] > 0) {
+        uwet[i] -= dt;
+        if (uwet[i] <= 0) {
+          uwet[i] = 0;
+          this.uwetSlow[i] = 1; // dry — never let a slow outlive its status
+        } else if (Math.random() < WET_FX_CHANCE * dt) {
+          // the same random-point-in-the-disc draw burning's flicker uses
+          const a = Math.random() * Math.PI * 2;
+          const r = (Math.random() * 2 - 1) * (urad[i] / 2);
+          this.pushFx(upx[i] + Math.cos(a) * r, upy[i] + Math.sin(a) * r, 80 / 60, FxKind.Wet);
+        }
       }
       if (uburn[i] <= 0) continue;
       uburn[i] -= dt;
@@ -1482,6 +1514,8 @@ export class Sim {
     this.uforceScale[i] = this.uforceScale[n];
     this.uforceDown[i] = this.uforceDown[n];
     this.uburn[i] = this.uburn[n];
+    this.uwet[i] = this.uwet[n];
+    this.uwetSlow[i] = this.uwetSlow[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
     this.ufly[i] = this.ufly[n];
@@ -1855,7 +1889,7 @@ export class Sim {
   private updateUnits(dt: number): void {
     const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, ulat, phx, phy, field, flowTmp } =
       this;
-    const { upullx, upully, uspawn } = this;
+    const { upullx, upully, uspawn, uwet, uwetSlow } = this;
     const steer = Math.min(1, dt * 8);
     // one step of the lateral bias's mean-reverting walk, precomputed: pull
     // LAT_A of the way back to straight-ahead, then add noise scaled so the
@@ -1893,10 +1927,18 @@ export class Sim {
       }
       // StatusEffects.unmoving is a speedMultiplier of 0, not a freeze: a
       // unit still materialising cannot drive itself anywhere, but the
-      // crowd shove below still lands on it. `spd` is that multiplier
-      // applied — the STAT speed stays in uspd, which the chassis turn rate
+      // crowd shove below still lands on it. Wet is the other multiplier
+      // (StatusEffects.wet, and the liquid turrets' whole weapon): it
+      // scales the DRIVE only, so a soaked unit can still be crowd-shoved
+      // or beam-dragged at full force. `spd` is those multipliers applied
+      // — the STAT speed stays in uspd, which the chassis turn rate
       // further down reads as the pace to measure travel against
-      const spd = uspawn[i] > SPAWN_INVINCIBLE - SPAWN_UNMOVING ? 0 : uspd[i];
+      const spd =
+        uspawn[i] > SPAWN_INVINCIBLE - SPAWN_UNMOVING
+          ? 0
+          : uwet[i] > 0
+            ? uspd[i] * uwetSlow[i]
+            : uspd[i];
       uvx[i] += (flowTmp.x * spd - uvx[i]) * steer;
       uvy[i] += (flowTmp.y * spd - uvy[i]) * steer;
 
@@ -3029,6 +3071,45 @@ export class Sim {
     this.impulse(best, (t.x - upx[best]) * inv * mag, (t.y - upy[best]) * inv * mag);
   }
 
+  /**
+   * StatusComp.apply for the one OPPOSITE PAIR this game fields.
+   * StatusEffects declares burning.opposite(wet), and Mindustry's
+   * handleOpposite resolves a status landing on its opposite by SPENDING
+   * the application draining the opposite's clock — `result.time -=
+   * time * 0.5` — and only when that empties it does the incoming status
+   * take hold, at its own full duration. So water quenches a burning unit
+   * before it can soak it, fire dries a soaked unit before it can light
+   * it, and scorch and the liquid turrets covering one lane fight each
+   * other for the status slot exactly as they do upstream.
+   */
+  private applyBurn(i: number, duration: number): void {
+    if (this.uwet[i] > 0) {
+      this.uwet[i] -= duration * 0.5;
+      if (this.uwet[i] > 0) return; // still soaked: the flame was spent drying it
+      this.uwet[i] = 0;
+      this.uwetSlow[i] = 1;
+    }
+    this.uburn[i] = duration;
+  }
+
+  /**
+   * The wet half of the pair, plus the one rule opposite() cannot supply:
+   * WHICH water wins. Mindustry keeps one status entry and re-times it;
+   * our wet carries a per-ammo slow, so the strongest slow in force holds
+   * the entry — a tsunami soaking cannot be watered down by a wave
+   * droplet, while an equal or deeper soak re-times freely.
+   */
+  private applyWet(i: number, spec: { duration: number; slow: number }): void {
+    if (this.uburn[i] > 0) {
+      this.uburn[i] -= spec.duration * 0.5;
+      if (this.uburn[i] > 0) return; // still alight: the water was spent quenching
+      this.uburn[i] = 0;
+    }
+    if (this.uwet[i] > 0 && spec.slow > this.uwetSlow[i]) return;
+    this.uwet[i] = spec.duration;
+    this.uwetSlow[i] = spec.slow;
+  }
+
   /** Mindustry Damage.applyArmor: flat reduction, floored at 10% of the raw hit */
   private static applyArmor(dmg: number, armor: number): number {
     return Math.max(dmg - armor, 0.1 * dmg);
@@ -3282,7 +3363,8 @@ export class Sim {
             const mag = b.knockback * 80;
             this.impulse(i, (dx / d) * mag, (dy / d) * mag);
           }
-          if (uhp[i] > 0 && b.burn && !KIND_BURN_IMMUNE[this.ukind[i]]) this.uburn[i] = b.burn;
+          if (uhp[i] > 0 && b.burn && !KIND_BURN_IMMUNE[this.ukind[i]]) this.applyBurn(i, b.burn);
+          if (uhp[i] > 0 && b.wet && !KIND_WET_IMMUNE[this.ukind[i]]) this.applyWet(i, b.wet);
           // BulletType.hitEffect, at the bullet rather than the victim.
           // A splash shot skips it — the blast in the `dead` branch below
           // is its hit effect — and so does a killing blow, whose death

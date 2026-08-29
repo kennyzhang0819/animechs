@@ -505,10 +505,12 @@ export interface TechNodeDef {
  * dies before the first mace banks no titanium at all, and duo capacity has
  * to stay buyable out of that run or a bad save has no way back.
  *
- * THREE: THE SIX LATE NODES PAY NO COPPER AT ALL — fuse, swarmer, cyclone,
- * spectre, meltdown and foreshadow. It is duo's rule read from the other
- * end: copper is the bootstrap currency, and the endgame is where you have
- * outgrown it.
+ * THREE: THE LATE NODES PAY NO COPPER AT ALL — fuse, tsunami, swarmer,
+ * cyclone, spectre, meltdown and foreshadow. It is duo's rule read from
+ * the other end: copper is the bootstrap currency, and the endgame is
+ * where you have outgrown it. (Tsunami arrived after the substitution
+ * below and was simply born copper-free; the accounting that follows is
+ * about the original six.)
  *
  * This is a SUBSTITUTION, NOT A DISCOUNT, and not a price rise either. Those
  * six held 56% of the tree's entire copper bill — 10.1M of 17.9M — and the
@@ -523,8 +525,9 @@ export interface TechNodeDef {
  * income hardest; leaving the copper bill where it was would have made
  * copper the one gate on a tree whose top half no enemy pays for.
  *
- * The NINE early and mid nodes are untouched — copper and all. Everything a
- * Incursion run can reach is priced exactly as it was playtested.
+ * The early and mid nodes are untouched — copper and all. Everything a
+ * Incursion run can reach is priced exactly as it was playtested, and wave
+ * joined that half of the tree on the same copper-and-titanium shape.
  *
  * Keep the FIRST point of every node payable out of the difficulty whose
  * currency it debuts on, or that node is decoration.
@@ -547,11 +550,12 @@ export interface TechNodeDef {
  *                one using ours.
  *
  * A turret's Mindustry value is the sum of amount x item cost. Ranked, the
- * fifteen we ship run:
+ * seventeen we ship run:
  *
- *   duo 17.5 · scorch 34.5 · hail 37 · arc 60 · scatter 74 · swarmer 152.5
- *   lancer 157 · salvo 180 · ripple 270 · parallax 288 · cyclone 329
- *   fuse 447.5 · spectre 1552.5 · meltdown 1795 · foreshadow 2500
+ *   duo 17.5 · scorch 34.5 · hail 37 · arc 60 · scatter 74 · wave 132.5
+ *   swarmer 152.5 · lancer 157 · salvo 180 · ripple 270 · parallax 288
+ *   cyclone 329 · fuse 447.5 · tsunami 790 · spectre 1552.5 · meltdown 1795
+ *   foreshadow 2500
  *
  * ONLY THE ORDER IS BORROWED, NOT THE SPREAD. Their costs span 143x and ours
  * span 10,299x, because our drop ratio makes phase fabric worth 769 copper
@@ -620,6 +624,12 @@ export const MINDUSTRY_VALUE: Record<TowerKind, number> = {
   hail: 37,
   arc: 60,
   scatter: 74,
+  // wave: metaglass 45x1.5 + lead 75x0.7 + copper 25x0.5 — and tsunami:
+  // metaglass 100x1.5 + lead 400x0.7 + titanium 250 + thorium 100x1.1.
+  // The liquid turrets went through the same power law as everyone else
+  // when they shipped; see their nodes for how a support turret's price
+  // survives a 4-DPS bullet
+  wave: 132.5,
   swarmer: 152.5,
   lancer: 157,
   salvo: 180,
@@ -627,6 +637,7 @@ export const MINDUSTRY_VALUE: Record<TowerKind, number> = {
   parallax: 288,
   cyclone: 329,
   fuse: 447.5,
+  tsunami: 790,
   spectre: 1552.5,
   meltdown: 1795,
   foreshadow: 2500,
@@ -809,9 +820,30 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     y: 5,
   },
   {
+    // THE FIRST LIQUID TURRET, and the second node after parallax whose
+    // price the DPS rule cannot see: 4 damage a second is the least any
+    // shooting turret does, and it is beside the point. Wave's water SLOWS
+    // — everything it hoses drives at 65% speed (see BulletStats.wet), so
+    // it multiplies every other turret covering the same lane instead of
+    // killing anything itself. Which is exactly why it cannot be nearly
+    // free: a force multiplier priced on its own damage would be the best
+    // purchase in the game. So it takes parallax's road — the Mindustry
+    // build-cost power law (see the ranking above), which lands it between
+    // scatter and lancer at ~350 copper-equivalent, and the bundle carries
+    // Incursion's copper:titanium drop ratio so neither currency gates
+    // alone. Upstream it builds from metaglass and lead, a tier-1/2 cost:
+    // buyable mid-Incursion, like the difficulty that first wants it
+    id: "wave",
+    price: { base: { copper: 225, titanium: 35 }, growth: 1.01 },
+    dps: 4,
+    requires: "scorch",
+    x: 2,
+    y: 4,
+  },
+  {
     // Not a damage turret at all: it drags air units out of formation.
-    // In Mindustry it hangs off wave, which we do not have, so it takes its
-    // grandparent scorch instead.
+    // It hangs off wave, exactly where Mindustry's tech tree puts it —
+    // it used to borrow its grandparent scorch while wave did not exist.
     //
     // THE ONE NODE THE DPS RULE CANNOT SEE, and the growth says so: 30
     // armour-piercing damage a second on ONE target is the least in the
@@ -826,9 +858,28 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     id: "parallax",
     price: { base: { copper: 500, titanium: 125, thorium: 45 }, growth: 1.01 },
     dps: 30,
-    requires: "scorch",
+    requires: "wave",
     x: 3,
-    y: 4,
+    y: 5,
+  },
+  {
+    // Wave's heavy sibling, on wave's own lineage (Mindustry hangs both
+    // tsunami and parallax off wave) and priced by wave's own argument,
+    // scaled up: 8 DPS on paper, but everything crossing its 190-unit
+    // umbrella drives at 45% speed for four seconds — better than doubling
+    // what every turret around it gets done. The power law puts its 790
+    // Mindustry value at ~9.6k copper-equivalent, three fuses, and the
+    // bundle is cyclone's Nemesis shape scaled: no copper (rule THREE),
+    // and PLASTANIUM IS THE GATE. Upstream its build cost tops out at
+    // thorium, but a 9.6k support piece opening mid-Incursion would trivialise
+    // the difficulty that banks it — the price says Onslaught at the earliest,
+    // so the bundle does too
+    id: "tsunami",
+    price: { base: { titanium: 360, thorium: 310, plastanium: 36 }, growth: 1.01 },
+    dps: 8,
+    requires: "wave",
+    x: 1,
+    y: 5,
   },
   // ---------- NEMESIS AND ERADICATION ----------------------------------
   //

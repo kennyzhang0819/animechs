@@ -58,6 +58,10 @@ export const PAL = {
   orangeSpark: pal(0xd2b29c),
   meltdownHit: pal(0xffb98b),
   lightOrange: pal(0xf68021),
+  /** Liquids.water.color — not a Pal entry upstream, but it plays the same
+   *  role here an ammo colour pair does: the liquid turrets' orb, their
+   *  muzzle spray, their splash and the wet flicker are all drawn in it */
+  water: pal(0x596ab8),
   lighterOrange: pal(0xf6e096),
   white: pal(0xffffff),
   lightGray: pal(0xbfbfbf), // Arc Color.lightGray
@@ -171,6 +175,21 @@ export interface BulletStats {
   // Mindustry knockback: on every direct hit the victim takes an impulse
   // of knockback * 80 world units, straight out along the shot's line
   knockback?: number;
+  // StatusEffects.wet, and THE ROSTER'S ONE DELIBERATE DEVIATION. Upstream
+  // a water shot knocks its victim back and wets it for a 0.94x speed
+  // multiplier — a garnish on a turret whose real jobs (extinguishing
+  // fires, cooling reactors) do not exist here. Here the wet status IS the
+  // liquid turrets' weapon: no knockback at all, and the slow is deep.
+  // `slow` is the drive-speed multiplier while wet; `duration` is
+  // Mindustry's statusDuration in seconds, and reapplying resets the clock
+  // rather than stacking — one status entry per unit, strongest slow in
+  // force (see Sim.applyWet). Wet and burning are opposites(): each lands
+  // on the other as a quench/dry rather than taking hold
+  wet?: { duration: number; slow: number };
+  // LiquidBulletType.orbSize: the shot is not an atlas sprite but a filled
+  // disc of the liquid's own colour at this radius in px —
+  // Fill.circle(b.x, b.y, orbSize), drawn in fxColor
+  orb?: number;
   // Mindustry fragBullet/fragBullets (BulletType.createFrags): where this
   // shot dies it throws `count` children, each on a random bearing within
   // half of `spread` of the parent's heading and at a random fraction of
@@ -272,7 +291,9 @@ export type BulletFx =
   | FxKind.RailHit
   | FxKind.SmokeCloud
   | FxKind.HitMeltdown
-  | FxKind.SmokeBig2;
+  | FxKind.SmokeBig2
+  | FxKind.ShootLiquid
+  | FxKind.HitLiquid;
 
 /**
  * The Mindustry lifetime, in seconds, of each of those. An Effect carries
@@ -307,6 +328,8 @@ export const FX_LIFE: Record<BulletFx, number> = {
   [FxKind.SmokeCloud]: 70 / TICK,
   [FxKind.HitMeltdown]: 12 / TICK,
   [FxKind.SmokeBig2]: 18 / TICK,
+  [FxKind.ShootLiquid]: 15 / TICK,
+  [FxKind.HitLiquid]: 16 / TICK,
 };
 /** Fx.lancerLaserCharge's own 38 ticks, inside LancerCharge's 60 */
 export const LANCER_CHARGE_SPARK = 38 / 60;
@@ -753,6 +776,56 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.graphiteAmmoBack,
     },
   },
+  // Wave, from mindustry/content/Blocks.java with water ammo — 1:1 on
+  // every number EXCEPT the water's effect, which is this game's one
+  // deliberate deviation (see BulletStats.wet): upstream's knockback 0.7
+  // is gone, and the wet status slows instead of garnishing.
+  //
+  // The geometry is the original's: a size-2 turret hosing twenty orbs a
+  // second (reload 3 ticks) over 110 units, at a 50-degree cone and 5
+  // degrees of scatter so the stream sprays rather than draws a line.
+  // LiquidBulletType(water): speed 3.5, lifetime 34 ticks, statusDuration
+  // 60*2 — and 0.2 damage where upstream carries 0, because a turret
+  // whose printed DPS is 4 is honest about being a support piece while
+  // still able to finish what the water wore down. Wet units drive at 65%
+  // speed for 2 s, refreshed on every hit, so anything under the hose is
+  // pinned at 65% and stays slowed for two seconds after walking out.
+  wave: {
+    name: "Wave",
+    size: 2,
+    range: 110 * MU,
+    reload: 3 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: (5 * Math.PI) / 180,
+    shootCone: (50 * Math.PI) / 180,
+    rotateSpeed: ((5 * Math.PI) / 180) * TICK, // BaseTurret default
+    targetAir: true,
+    targetGround: true,
+    bullet: {
+      speed: 3.5 * TICK * MU,
+      damage: 0.2,
+      // no limitRange call upstream: 3.5 units/tick for 34 ticks is 119
+      // units against a 110 range — the drag we don't model ate the rest
+      lifetime: 34 / TICK,
+      splash: 0,
+      splashRadius: 0,
+      collidesAir: true,
+      collidesGround: true,
+      hitRadius: (4 / 2) * MU, // BulletType's default hitSize 4
+      wet: { duration: 2, slow: 0.65 },
+      orb: 3 * MU, // LiquidBulletType's default orbSize
+      // LiquidTurret zeroes the block's own effects; the bullet's
+      // shootEffect is Fx.shootLiquid and its hit is Fx.hitLiquid — and
+      // despawned() fires the hit effect too, so an orb that outruns its
+      // lifetime still lands as a splash
+      shootFx: FxKind.ShootLiquid,
+      hitFx: FxKind.HitLiquid,
+      despawnFx: FxKind.HitLiquid,
+      fxColor: PAL.water,
+    },
+  },
   // Parallax, 1:1 from mindustry/content/Blocks.java. A TractorBeamTurret
   // has no reload and fires no bullet at all: it holds a beam on ONE flyer
   // and, every tick it is aimed within 6 degrees, deals 0.5 armour-piercing
@@ -787,6 +860,51 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       collidesGround: false,
       pierceArmor: true,
       tractor: { force: 16, scaledForce: 9 },
+    },
+  },
+  // Tsunami, from mindustry/content/Blocks.java with water ammo — wave's
+  // rule: 1:1 on every number except the water's effect (BulletStats.wet).
+  // Upstream's knockback 1.7 — two and a half waves' worth of shove — is
+  // traded for the deeper slow, which is the entire reason to pay a
+  // size-3, Nemesis-priced bill for a 8-DPS turret.
+  //
+  // Twin barrels 4 units apart firing together (ShootAlternate, shots 2)
+  // every 3 ticks: forty orbs a second, so it soaks a COLUMN rather than
+  // picking at a file. The heavy shot flies faster and further (speed 4,
+  // lifetime 49 ticks over 190 range), soaks for twice wave's duration
+  // (statusDuration 60*4), and its 0.2 contact damage is upstream's own.
+  // Wet units drive at 45% speed for 4 s — anything crossing its 190-unit
+  // umbrella spends better than twice as long under every other turret.
+  tsunami: {
+    name: "Tsunami",
+    size: 3,
+    range: 190 * MU,
+    reload: 3 / TICK,
+    shots: 2,
+    shotDelay: 0, // both barrels throw on the same tick
+    spread: 0,
+    inaccuracy: (3 * Math.PI) / 180,
+    shootCone: (45 * Math.PI) / 180,
+    rotateSpeed: ((5 * Math.PI) / 180) * TICK, // BaseTurret default
+    targetAir: true,
+    targetGround: true,
+    velocityRnd: 0.1,
+    barrels: { count: 2, spread: 4 * MU },
+    bullet: {
+      speed: 4 * TICK * MU,
+      damage: 0.2,
+      lifetime: 49 / TICK, // 196 units of flight over a 190 range
+      splash: 0,
+      splashRadius: 0,
+      collidesAir: true,
+      collidesGround: true,
+      hitRadius: (4 / 2) * MU, // BulletType's default hitSize 4
+      wet: { duration: 4, slow: 0.45 },
+      orb: 4 * MU, // the heavy shot's own orbSize
+      shootFx: FxKind.ShootLiquid,
+      hitFx: FxKind.HitLiquid,
+      despawnFx: FxKind.HitLiquid,
+      fxColor: PAL.water,
     },
   },
   // Swarmer, 1:1 from mindustry/content/Blocks.java with blast-compound
@@ -1140,6 +1258,11 @@ export const FX_SPAWN = 30 / TICK;
 // soaks it. Fx.burning flickers off a burning unit at effectChance per tick
 export const BURN_DPS = 0.167 * TICK;
 export const BURN_FX_CHANCE = 0.15 * TICK; // Mathf.chanceDelta(0.15)
+// StatusEffects.wet's flicker: Fx.wet at effectChance 0.09 per tick, from
+// a random point inside the hitbox exactly like burning's. The status's
+// TEETH — the slow — are per-bullet (BulletStats.wet), not here: wave and
+// tsunami soak to different depths, so the strength travels with the ammo
+export const WET_FX_CHANCE = 0.09 * TICK;
 
 // ShrapnelBulletType draw geometry (world units -> px), shared by the
 // renderer so the animation matches the original exactly

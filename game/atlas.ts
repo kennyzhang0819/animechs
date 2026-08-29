@@ -420,6 +420,16 @@ export const UV_RIPPLE = uv(512, 2816, 96, 96);
  */
 export const UV_PARALLAX_LASER = uv(772, 2860, 24, 4);
 export const UV_PARALLAX_LASER_END = uv(668, 2844, 32, 32);
+/**
+ * The liquid turrets, on the free stretch of the same band between the
+ * parallax beam cells and swarmer. Each is COMPOSITED AT PACK TIME — the
+ * outlined turret, its `-liquid` window tinted water and drawn full (these
+ * turrets consume nothing here), and the white `-top` gleam over it — so
+ * the renderer draws one quad like any other top. Wave's 64px source
+ * upscales 2x like lancer's; tsunami's 96 stays native like cyclone's.
+ */
+export const UV_WAVE = uv(832, 2816, 128, 128);
+export const UV_TSUNAMI = uv(992, 2816, 96, 96);
 
 /**
  * The Nemesis and Eradication turret tops, on the free right half of the
@@ -1027,6 +1037,15 @@ const SPRITES = {
   arc: "/mindustry/sprites/blocks/turrets/arc.png",
   lancer: "/mindustry/sprites/blocks/turrets/lancer.png",
   ripple: "/mindustry/sprites/blocks/turrets/ripple.png",
+  // the liquid turrets ship in three layers apiece: the turret art, the
+  // liquid window (a white mask, tinted at pack time), and the specular
+  // gleam drawn untinted over the water — see liquidTurret()
+  wave: "/mindustry/sprites/blocks/turrets/wave.png",
+  waveLiquid: "/mindustry/sprites/blocks/turrets/wave-liquid.png",
+  waveTop: "/mindustry/sprites/blocks/turrets/wave-top.png",
+  tsunami: "/mindustry/sprites/blocks/turrets/tsunami.png",
+  tsunamiLiquid: "/mindustry/sprites/blocks/turrets/tsunami-liquid.png",
+  tsunamiTop: "/mindustry/sprites/blocks/turrets/tsunami-top.png",
   // parallax is filed under defense, not turrets — it damages almost
   // nothing and Mindustry classes it with the support blocks
   parallax: "/mindustry/sprites/blocks/defense/parallax.png",
@@ -1161,6 +1180,45 @@ function silhouetted(src: HTMLImageElement): HTMLCanvasElement {
   }
   cc.putImageData(id, 0, 0);
   return antialiased(cv);
+}
+
+/** Liquids.water.color — the tint baked into the liquid turrets' windows */
+const WATER_COLOR = "#596ab8";
+
+/**
+ * A LiquidTurret's draw stack (Mindustry DrawTurret), baked flat at pack
+ * time: the outlined turret art, the `-liquid` window — a white mask,
+ * tinted the liquid's colour with the multiply + destination-in recipe the
+ * core's team overlay uses — and the untinted `-top` specular gleam over
+ * the water. The window is drawn FULL: upstream its alpha is the turret's
+ * ammo fraction, and these turrets consume nothing here, so a live liquid
+ * layer would only ever be this constant.
+ */
+function liquidTurret(
+  base: HTMLImageElement,
+  liquid: HTMLImageElement,
+  top: HTMLImageElement,
+): HTMLCanvasElement {
+  const cv = outlined(base, BLOCK_OUTLINE, BLOCK_OUTLINE_R);
+  const cc = cv.getContext("2d");
+  if (!cc) throw new Error("2d context unavailable for liquid turret");
+  const w = cv.width, h = cv.height;
+  const win = document.createElement("canvas");
+  win.width = w;
+  win.height = h;
+  const wc = win.getContext("2d");
+  if (!wc) throw new Error("2d context unavailable for liquid window");
+  wc.imageSmoothingEnabled = false;
+  wc.drawImage(liquid, 0, 0, w, h);
+  wc.globalCompositeOperation = "multiply";
+  wc.fillStyle = WATER_COLOR;
+  wc.fillRect(0, 0, w, h);
+  wc.globalCompositeOperation = "destination-in";
+  wc.drawImage(liquid, 0, 0, w, h);
+  cc.imageSmoothingEnabled = false;
+  cc.drawImage(win, 0, 0);
+  cc.drawImage(top, 0, 0, w, h);
+  return cv;
 }
 
 /**
@@ -1669,6 +1727,11 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // its length runs along the +x axis pushSeg stretches
   drawFacingRight(c, antialiased(img.parallaxLaserEnd), 684, 2860, 72);
   drawFacingRight(c, antialiased(img.parallaxLaser), 784, 2862, 4, 48);
+  // the liquid turrets, composited flat (see liquidTurret and the UV note):
+  // wave's 64px source at 2x like lancer's, tsunami's 96 native like
+  // cyclone's
+  drawFacingRight(c, antialiased(liquidTurret(img.wave, img.waveLiquid, img.waveTop)), 896, 2880, 128);
+  drawFacingRight(c, antialiased(liquidTurret(img.tsunami, img.tsunamiLiquid, img.tsunamiTop)), 1040, 2864, 96);
 
   // the Nemesis and Eradication tops (see the UV note): swarmer upscales
   // 2x like lancer's, and cyclone and the three size-4 heads stay native
