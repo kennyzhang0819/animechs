@@ -49,22 +49,37 @@ import {
 } from "./atlas";
 import {
   BASE,
-  bulletOf,
-  CELL,
-  clamp,
-  COLS,
+  bulletOf as bulletOf_IMPORT,
+  CELL as CELL_IMPORT,
+  clamp as clamp_IMPORT,
+  COLS as COLS_IMPORT,
   FX_LIFE,
-  H,
-  HP_TINT,
+  H as H_IMPORT,
+  HP_TINT as HP_TINT_IMPORT,
   LANCER_CHARGE_SPARK,
   MAX_UNITS,
   NCELLS,
-  PAL,
-  ROWS,
+  PAL as PAL_IMPORT,
+  ROWS as ROWS_IMPORT,
   SHRAPNEL,
-  TOWERS,
-  W,
+  TOWERS as TOWERS_IMPORT,
+  W as W_IMPORT,
 } from "./constants";
+
+// Module-local bindings for what the per-frame batch build reads per unit,
+// projectile and effect: an imported binding is a getter call under
+// CommonJS interop (dev server), and this file reads these thousands of
+// times a frame. A module-local const is a plain read.
+const bulletOf = bulletOf_IMPORT;
+const CELL = CELL_IMPORT;
+const clamp = clamp_IMPORT;
+const COLS = COLS_IMPORT;
+const H = H_IMPORT;
+const HP_TINT = HP_TINT_IMPORT;
+const PAL = PAL_IMPORT;
+const ROWS = ROWS_IMPORT;
+const TOWERS = TOWERS_IMPORT;
+const W = W_IMPORT;
 import { UNIT_KINDS, UNIT_STATS, type ForceFieldSpec, type LegSpec } from "./levels";
 import { MAX_LEGS, type Sim } from "./sim";
 import { WALL_PINE, type Terrain } from "./terrain";
@@ -306,6 +321,19 @@ const KIND_MECH = UNIT_KINDS.map((k) => MECH_ART[k] ?? null);
 // the legged pair (atrax, spiroct): part art and the gait that moves it
 const KIND_LEG = UNIT_KINDS.map((k) => LEG_ART[k] ?? null);
 const KIND_GAIT = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
+/** each leg's fixed slice of the mount ring as a unit vector — the frame's
+ * chassis angle is composed on top (angle addition), sparing two trig
+ * calls per leg per pass in pushLegs */
+const KIND_GAIT_TRIG = KIND_GAIT.map((L) => {
+  if (!L) return null;
+  const arr = new Float64Array(L.count * 2);
+  for (let k = 0; k < L.count; k++) {
+    const c = ((Math.PI * 2) / L.count) * k + Math.PI / L.count;
+    arr[k * 2] = Math.cos(c);
+    arr[k * 2 + 1] = Math.sin(c);
+  }
+  return arr;
+});
 /** the force field each kind stands inside, null for everything else */
 const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
 const TAU = Math.PI * 2;
@@ -352,6 +380,44 @@ export const ALL_LAYERS: TerrainLayers = {
 // flyer drop shadow: painter's offset + premultiplied black tint
 const SHADOW_OFF = 6;
 const SHADOW_ALPHA = 0.22;
+
+/**
+ * How far past a unit's centre anything drawn FOR it can reach, per kind:
+ * the sprite itself plus whatever sticks out furthest — planted feet on
+ * the legged kinds (mount ring + a fully stretched leg), the drop shadow,
+ * or the shield halo at hitSize * 1.3. A unit whose centre sits this far
+ * outside the viewport cannot put a pixel in it, which is what lets the
+ * batch builder skip it entirely (the whole map is still simulated — only
+ * the sprite assembly work is saved).
+ */
+const KIND_CULL = UNIT_KINDS.map((k, i) => {
+  const legs = UNIT_STATS[k].legs;
+  const legReach = legs ? legs.baseOffset + legs.length * legs.maxLength + 24 : 0;
+  const halo = UNIT_STATS[k].radius * 2.6 + 8;
+  return Math.max(KIND_SPRITE[i], legReach, halo) + SHADOW_OFF + 8;
+});
+
+/**
+ * The same idea for effects: a conservative reach per kind, in px past the
+ * effect's anchor. Wide enough for the widest thing each kind ever draws
+ * (instHit's spray runs to ~(5 + 80) * 2.5 px). Line-shaped effects whose
+ * reach is data rather than a constant (Laser, Shrapnel, Lightning) are
+ * handled at the cull site — their length rides e.len / e.pts.
+ */
+const FX_CULL_PAD = 240;
+
+/** pushMech's reusable part records — see the note at its call site */
+interface MechPart {
+  uv: UVRect;
+  sil: UVRect;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  r: number;
+  dk: number;
+}
+const MECH_PARTS: MechPart[] = [];
 
 const VS = `#version 300 es
 layout(location=0) in vec2 aCorner;
@@ -445,6 +511,11 @@ export class Renderer {
    * over a faint fill, no wobble and no merging, but a visible field
    */
   private shieldReady = true;
+  // the visible world rect this frame (set by render), for culling
+  private vx0 = 0;
+  private vy0 = 0;
+  private vx1 = W;
+  private vy1 = H;
   // the core of the terrain currently in the static batches; renderTerrain
   // (the editor) has no sim to ask, so rebuildTerrain leaves it here
   private core = { ...BASE };
@@ -632,13 +703,22 @@ export class Renderer {
     // the assembly in draw order: legs → base → under-slung guns → body →
     // guns that ride ON the body (Weapon.top). Each entry carries its own
     // art and silhouette cells, which is what lets a hull mix gun sprites.
-    // `dk` is the planted-leg darkening, applied on the art pass only
-    const parts: Array<
-      readonly [UVRect, UVRect, number, number, number, number, number, number]
-    > = [];
+    // `dk` is the planted-leg darkening, applied on the art pass only.
+    // The records live in a module-scratch pool reused call to call — a
+    // fresh array of tuples here was tens of thousands of allocations a
+    // frame with a swarm on screen, which is GC-hitch territory
+    let np = 0;
+    const part = (
+      uv: UVRect, sil: UVRect, px: number, py: number,
+      w: number, h: number, r: number, dk: number,
+    ): void => {
+      const p = MECH_PARTS[np] ?? (MECH_PARTS[np] = { uv, sil, x: 0, y: 0, w: 0, h: 0, r: 0, dk: 1 });
+      p.uv = uv; p.sil = sil; p.x = px; p.y = py; p.w = w; p.h = h; p.r = r; p.dk = dk;
+      np++;
+    };
     for (let side = -1; side <= 1; side += 2) {
       const dk = 1 - Math.max(0, (side * ext) / m.stride) * LEG_SHADE;
-      parts.push([
+      part(
         m.leg,
         m.sil.leg,
         x + cb * ext * side,
@@ -647,15 +727,15 @@ export class Renderer {
         s * side, // negative height mirrors the off-side leg
         brot,
         dk,
-      ]);
+      );
     }
-    parts.push([m.base, m.sil.base, x, y, s, s, brot, 1]);
+    part(m.base, m.sil.base, x, y, s, s, brot, 1);
     const gunParts = (top: boolean): void => {
       for (const g of m.guns) {
         if (g.top !== top) continue;
         // an unmirrored mount is drawn once, on the +x side (see LegGun)
         for (let side = g.mirror === false ? 1 : -1; side <= 1; side += 2) {
-          parts.push([
+          part(
             g.uv,
             g.sil,
             x + ox + cr * g.y - sr * g.x * side,
@@ -664,21 +744,23 @@ export class Renderer {
             s * side, // mirrored mount, like Weapon.flipSprite
             rot,
             1,
-          ]);
+          );
         }
       }
     };
     gunParts(false);
-    parts.push([m.body, m.sil.body, x + ox, y + oy, s, s, rot, 1]);
+    part(m.body, m.sil.body, x + ox, y + oy, s, s, rot, 1);
     gunParts(true);
     // silhouette pass: every part as a solid dilated shape, drawn first so
     // the art covers all of it but a single rim around the assembly — the
     // outer border without a line at every seam of the walking mech
-    for (const [, sil, px, py, w, h, r] of parts) {
-      this.push(b, px, py, w, h, r, sil, tint[0], tint[1], tint[2], 1);
+    for (let k = 0; k < np; k++) {
+      const p = MECH_PARTS[k];
+      this.push(b, p.x, p.y, p.w, p.h, p.r, p.sil, tint[0], tint[1], tint[2], 1);
     }
-    for (const [uvr, , px, py, w, h, r, dk] of parts) {
-      this.push(b, px, py, w, h, r, uvr, tint[0] * dk, tint[1] * dk, tint[2] * dk, 1);
+    for (let k = 0; k < np; k++) {
+      const p = MECH_PARTS[k];
+      this.push(b, p.x, p.y, p.w, p.h, p.r, p.uv, tint[0] * p.dk, tint[1] * p.dk, tint[2] * p.dk, 1);
     }
   }
 
@@ -709,6 +791,9 @@ export class Renderer {
     const sz = art.sprite, sm = art.small;
     const [tr, tg, tb] = tint;
     const cr = Math.cos(rot), sr = Math.sin(rot);
+    // mount angles are brot + a fixed slice each — composed off one cos/sin
+    const trig = KIND_GAIT_TRIG[sim.ukind[i]]!;
+    const cb = Math.cos(brot), sb = Math.sin(brot);
     const swinging = ulegMove[i];
 
     // a foot at the top of its swing throws its shadow clear of itself —
@@ -718,8 +803,9 @@ export class Renderer {
       const p = off + k;
       // Mathf.slope: a triangle peaking mid-swing, so the foot rises and lands
       const elev = (1 - Math.abs(1 - ulegStage[p] - 0.5) * 2) * L.elevation;
-      const ang = brot + (TAU / n) * k + Math.PI / n;
-      const mx = x + Math.cos(ang) * L.baseOffset, my = y + Math.sin(ang) * L.baseOffset;
+      const ca = cb * trig[k * 2] - sb * trig[k * 2 + 1];
+      const sa = sb * trig[k * 2] + cb * trig[k * 2 + 1];
+      const mx = x + ca * L.baseOffset, my = y + sa * L.baseOffset;
       const fa = Math.atan2(ulegFY[p] - my, ulegFX[p] - mx);
       this.push(b, ulegFX[p] + SHADOW_TX * elev, ulegFY[p] + SHADOW_TY * elev,
         sm, sm, fa, art.foot, 0, 0, 0, SHADOW_ALPHA);
@@ -731,8 +817,9 @@ export class Renderer {
         // Mindustry's draw order: 0, n-1, 1, n-2, … — outermost pair last
         const k = j % 2 === 0 ? j / 2 : n - 1 - ((j / 2) | 0);
         const p = off + k;
-        const ang = brot + (TAU / n) * k + Math.PI / n;
-        const mx = x + Math.cos(ang) * L.baseOffset, my = y + Math.sin(ang) * L.baseOffset;
+        const ca = cb * trig[k * 2] - sb * trig[k * 2 + 1];
+        const sa = sb * trig[k * 2] + cb * trig[k * 2 + 1];
+        const mx = x + ca * L.baseOffset, my = y + sa * L.baseOffset;
         const fx = ulegFX[p], fy = ulegFY[p], jx = ulegJX[p], jy = ulegJY[p];
         this.push(b, fx, fy, sm, sm, Math.atan2(fy - my, fx - mx),
           painted ? art.foot : art.sil.foot, tr, tg, tb, 1);
@@ -767,8 +854,9 @@ export class Renderer {
       const baseJoint = painted ? art.baseJoint : art.sil.baseJoint;
       if (baseJoint) {
         for (let k = 0; k < n; k++) {
-          const ang = brot + (TAU / n) * k + Math.PI / n;
-          this.push(b, x + Math.cos(ang) * L.baseOffset, y + Math.sin(ang) * L.baseOffset,
+          const ca = cb * trig[k * 2] - sb * trig[k * 2 + 1];
+          const sa = sb * trig[k * 2] + cb * trig[k * 2 + 1];
+          this.push(b, x + ca * L.baseOffset, y + sa * L.baseOffset,
             sm, sm, brot, baseJoint, tr, tg, tb, 1);
         }
       }
@@ -1032,6 +1120,20 @@ export class Renderer {
     this.begin(zoom, offX, offY, kPx);
     this.drawWorld();
 
+    // the visible world rect, for culling: world x lands on screen where
+    // 0 <= x * zoom + offX <= canvas/kPx (see the vertex shader), so the
+    // view runs from -off/zoom for canvas/(kPx*zoom) world px. Everything
+    // pushed into the dynamic batch is centred on a point, so a centre
+    // further outside than the thing's own reach cannot touch a pixel —
+    // the sim still runs the whole map, only the sprite assembly is saved
+    const vx0 = -offX / zoom, vy0 = -offY / zoom;
+    const vx1 = vx0 + this.canvas.width / kPx / zoom;
+    const vy1 = vy0 + this.canvas.height / kPx / zoom;
+    this.vx0 = vx0;
+    this.vy0 = vy0;
+    this.vx1 = vx1;
+    this.vy1 = vy1;
+
     const dyn = this.dyn;
     dyn.n = 0;
     this.shields.n = 0;
@@ -1043,6 +1145,7 @@ export class Renderer {
     for (const t of sim.towers) {
       const sz = TOWERS[t.kind].size;
       const px = sz * CELL;
+      if (t.x < vx0 - px || t.x > vx1 + px || t.y < vy0 - px || t.y > vy1 + px) continue;
       const base =
         sz >= 4 ? UV_TOWER_BASE4
         : sz === 3 ? UV_TOWER_BASE3
@@ -1066,6 +1169,9 @@ export class Renderer {
       for (let i = 0; i < n; i++) {
         const k = ukind[i];
         if (KIND_FLYING[k] !== wantFly) continue;
+        const cm = KIND_CULL[k];
+        if (upx[i] < vx0 - cm || upx[i] > vx1 + cm || upy[i] < vy0 - cm || upy[i] > vy1 + cm)
+          continue;
         const usz = KIND_SPRITE[k];
         if (pass === 1) {
           this.push(dyn, upx[i] + SHADOW_OFF, upy[i] + SHADOW_OFF, usz, usz, urot[i], KIND_UV[k], 0, 0, 0, SHADOW_ALPHA);
@@ -1108,11 +1214,14 @@ export class Renderer {
     // them. It is the only effect below that line, which is why it takes a
     // pass of its own rather than a place in the loop after this one
     for (const e of sim.effects) {
-      if (e.kind === FxKind.ArtilleryTrail)
-        this.fillCircle(dyn, e.x, e.y, (e.len ?? 0) * (1 - e.age / e.ttl),
-          e.col ?? PAL.white, 1);
+      if (e.kind !== FxKind.ArtilleryTrail) continue;
+      const tm = (e.len ?? 0) + 8;
+      if (e.x < vx0 - tm || e.x > vx1 + tm || e.y < vy0 - tm || e.y > vy1 + tm) continue;
+      this.fillCircle(dyn, e.x, e.y, (e.len ?? 0) * (1 - e.age / e.ttl),
+        e.col ?? PAL.white, 1);
     }
     for (const p of sim.projs) {
+      if (p.x < vx0 - 48 || p.x > vx1 + 48 || p.y < vy0 - 48 || p.y > vy1 + 48) continue;
       // a bare BulletType has no sprite at all — scorch's flame lives
       // entirely in its shoot and hit effects. A shot thrown by a frag
       // burst carries the CHILD ammo's sprite, not the shell's
@@ -1134,6 +1243,33 @@ export class Renderer {
       this.push(dyn, p.x, p.y, along, across, rot, front, sp.front[0], sp.front[1], sp.front[2], 1);
     }
     for (const e of sim.effects) {
+      // cull: an anchor further out than the effect's reach draws nothing.
+      // The line-shaped kinds carry their reach as data — a beam's length
+      // in e.len, a bolt's whole path in e.pts — so they widen their own
+      // margin; everything else fits comfortably inside the flat pad
+      if (e.kind === FxKind.Lightning) {
+        const pts = e.pts;
+        if (pts && pts.length >= 2) {
+          // 120px pad: a bolt's longest segment (a chain jump across the
+          // 30-unit square) is ~110px, so a segment that crosses the view
+          // always has an endpoint inside the padded rect
+          let inView = false;
+          for (let q = 0; q < pts.length && !inView; q += 2)
+            inView =
+              pts[q] >= vx0 - 120 && pts[q] <= vx1 + 120 &&
+              pts[q + 1] >= vy0 - 120 && pts[q + 1] <= vy1 + 120;
+          if (!inView) continue;
+        }
+      } else {
+        let em = FX_CULL_PAD;
+        if (
+          e.kind === FxKind.Laser || e.kind === FxKind.Shrapnel ||
+          e.kind === FxKind.HealWave || e.kind === FxKind.ShieldBreak
+        )
+          em += e.len ?? 0;
+        else if (e.kind === FxKind.UnitSpawn) em += KIND_SPRITE[e.unit ?? 0] * 2;
+        if (e.x < vx0 - em || e.x > vx1 + em || e.y < vy0 - em || e.y > vy1 + em) continue;
+      }
       const t = e.age / e.ttl;
       if (e.kind === FxKind.Death) {
         const s = 7 + t * 22;
@@ -1294,6 +1430,13 @@ export class Renderer {
    */
   private drawForceFields(sim: Sim, buffered: boolean): void {
     const { upx, upy, ushield, ushieldAlpha, uforceScale, ukind, n } = sim;
+    // the census answers "is any carrier even alive" without touching the
+    // units — a wave with no quasar in it skips the whole scan
+    let carriers = 0;
+    for (let k = 0; k < KIND_FORCE.length; k++)
+      if (KIND_FORCE[k]) carriers += sim.aliveByKind[k];
+    if (carriers === 0) return;
+    const { vx0, vy0, vx1, vy1 } = this;
     const b = this.shields;
     for (let i = 0; i < n; i++) {
       const spec = KIND_FORCE[ukind[i]];
@@ -1301,6 +1444,12 @@ export class Renderer {
       if (!spec || ushield[i] <= 0) continue;
       const rad = spec.radius * uforceScale[i];
       if (rad < 1) continue;
+      // a bubble entirely outside the view puts no pixel in it — the
+      // shader's rim reaches 2 world units past the outline, well inside
+      // this margin
+      const bm = rad + 16;
+      if (upx[i] < vx0 - bm || upx[i] > vx1 + bm || upy[i] < vy0 - bm || upy[i] > vy1 + bm)
+        continue;
       // Draw.color(shieldColor, Color.white, clamp(alpha)): a shot landing
       // on the field whitens the whole bubble for a few ticks. The colour
       // rides into the buffer with the fill, so the shader's rim and hatch

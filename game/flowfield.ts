@@ -1,5 +1,25 @@
-import { CELL, clamp, COLS, INF, NCELLS, ROWS, W, H } from "./constants";
+import {
+  CELL as CELL_IMPORT,
+  clamp as clamp_IMPORT,
+  COLS as COLS_IMPORT,
+  INF,
+  NCELLS,
+  ROWS as ROWS_IMPORT,
+  W as W_IMPORT,
+  H as H_IMPORT,
+} from "./constants";
 import type { Tower } from "./types";
+
+// Module-local bindings for the constants blockedPx/hitsWall/sample read:
+// an imported binding is a getter call under CommonJS interop (dev server,
+// node tools), and these functions run ~10 times per unit per tick. A
+// module-local const is a plain read.
+const CELL = CELL_IMPORT;
+const clamp = clamp_IMPORT;
+const COLS = COLS_IMPORT;
+const ROWS = ROWS_IMPORT;
+const W = W_IMPORT;
+const H = H_IMPORT;
 
 const SQRT2 = Math.SQRT2;
 
@@ -410,7 +430,7 @@ export class FlowField {
         sy += dirY[ci] * w;
       }
     }
-    const len = Math.hypot(sx, sy);
+    const len = Math.sqrt(sx * sx + sy * sy);
     if (len < 0.05) {
       const ci =
         clamp((py / CELL) | 0, 0, ROWS - 1) * COLS + clamp((px / CELL) | 0, 0, COLS - 1);
@@ -438,13 +458,15 @@ export class FlowField {
   hitsWall(x: number, y: number, r: number): boolean {
     // the box is half-open like the grid cells it tests: a right/bottom
     // edge at exactly a cell boundary touches the next cell, not overlaps
-    // it — else a unit flush against a wall reads as colliding and wedges
+    // it — else a unit flush against a wall reads as colliding and wedges.
+    // One bounds check and four direct reads — this runs several times per
+    // unit per tick, so it does not go through blockedPx corner by corner
     const r2 = r - 1e-3;
-    return (
-      this.blockedPx(x - r, y - r) ||
-      this.blockedPx(x + r2, y - r) ||
-      this.blockedPx(x - r, y + r2) ||
-      this.blockedPx(x + r2, y + r2)
-    );
+    const x0 = x - r, y0 = y - r, x1 = x + r2, y1 = y + r2;
+    if (x0 < 0 || y0 < 0 || x1 >= W || y1 >= H) return true;
+    const gx0 = (x0 / CELL) | 0, gx1 = (x1 / CELL) | 0;
+    const r0 = ((y0 / CELL) | 0) * COLS, r1 = ((y1 / CELL) | 0) * COLS;
+    const w = this.walk;
+    return w[r0 + gx0] === 1 || w[r0 + gx1] === 1 || w[r1 + gx0] === 1 || w[r1 + gx1] === 1;
   }
 }

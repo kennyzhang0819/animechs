@@ -42,6 +42,15 @@ export interface Tower {
   y: number;
   cd: number; // reload: seconds until the next volley is ready
   angle: number;
+  // Turret.target under BaseTurret.targetInterval: the unit this turret is
+  // tracking, held between the periodic re-picks rather than re-chosen
+  // every tick. `target` is the unit's never-reused id (indices reshuffle
+  // under swap-remove); `targetIdx` is only the last known index, a hint
+  // revalidated against uid before use. -1 = nothing held. `targetT` is
+  // seconds until the next scheduled re-pick
+  target: number;
+  targetIdx: number;
+  targetT: number;
   burstLeft: number; // shots still queued in the current volley
   burstT: number; // seconds until the next queued shot fires
   shotCount: number; // lifetime shots fired — picks the next barrel (ShootAlternate)
