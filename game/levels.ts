@@ -894,11 +894,11 @@ export const WORLDS: LevelSpec[] = [
     //
     // NEMESIS'S LAST TWO ARE A DOUBLE FINALE INSTEAD: waves 49 and 50 split
     // what used to be one 6.93M finale into two peers (49: 2,420 bodies,
-    // 3.99M health; 50: 1,960 bodies, 3.69M health), with 50 the slightly
-    // lighter of the two on purpose — it is where the final boss goes, and
-    // the headroom is the boss's budget. Both waves field every line at
-    // full strength; they are the only two waves in the game where reign,
-    // toxopid, corvus and eclipse all appear at once.
+    // 3.99M health; 50: 1,960 bodies, 3.69M health), with 50's fleet the
+    // slightly lighter of the two on purpose — the headroom is the disrupt
+    // boss's budget, and the boss rides wave 50 on top of it. Both waves
+    // field every line at full strength; they are the only two waves in
+    // the game where reign, toxopid, corvus and eclipse all appear at once.
     //
     // Wave 35 fields scepters and arkyids but NO tier 5, because Onslaught must
     // not (see above).
