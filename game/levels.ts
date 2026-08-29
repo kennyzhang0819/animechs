@@ -134,10 +134,13 @@ export interface ForceFieldSpec {
 
 /**
  * The status effects a unit can carry. Mindustry has dozens; this game
- * fields exactly one — StatusEffects.burning, lit by the scorch turret —
- * so a unit's `immunities` list is only ever about that.
+ * fields exactly two — StatusEffects.burning, lit by the scorch turret,
+ * and StatusEffects.wet, soaked in by the liquid turrets (wave, tsunami).
+ * No kind on the roster is wet-immune (upstream reserves that for naval
+ * units, which Serpulo's attack waves never field), but the immunity check
+ * is generic, so declaring one here is all it would take.
  */
-export type StatusKind = "burning";
+export type StatusKind = "burning" | "wet";
 
 export interface UnitStats {
   hp: number;

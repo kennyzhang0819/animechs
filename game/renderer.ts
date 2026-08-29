@@ -32,7 +32,9 @@ import {
   UV_ARC,
   UV_LANCER,
   UV_RIPPLE,
+  UV_WAVE,
   UV_PARALLAX,
+  UV_TSUNAMI,
   UV_SWARMER,
   UV_CYCLONE,
   UV_SPECTRE,
@@ -96,7 +98,9 @@ const UV_TURRETS: Record<TowerKind, UVRect> = {
   arc: UV_ARC,
   lancer: UV_LANCER,
   ripple: UV_RIPPLE,
+  wave: UV_WAVE,
   parallax: UV_PARALLAX,
+  tsunami: UV_TSUNAMI,
   swarmer: UV_SWARMER,
   cyclone: UV_CYCLONE,
   spectre: UV_SPECTRE,
@@ -139,6 +143,16 @@ const PAL_LANCER = PAL.lancerLaser;
 const LIGHT_FLAME = [0xff / 255, 0xdd / 255, 0x55 / 255] as const;
 const DARK_FLAME = [0xdb / 255, 0x40 / 255, 0x1c / 255] as const;
 const FLAME_GRAY = [0.5, 0.5, 0.5] as const;
+/**
+ * HP_TINT with water's hue multiplied in — what a WET unit is drawn in.
+ * A deviation standing in for Mindustry's status-icon overlay, which this
+ * HUD does not have: the slow is the liquid turrets' whole weapon, so the
+ * player has to be able to see who is soaked without hovering anything.
+ * One row per hp third, so damage darkens a soaked unit the same way.
+ */
+const WET_TINT: ReadonlyArray<RGB> = HP_TINT.map(
+  (t): RGB => [t[0] * 0.62, t[1] * 0.75, t[2]],
+);
 
 /**
  * Draw.color(a, b, t) and Draw.color(a, b, c, t): a two- or three-stop ramp
@@ -157,6 +171,7 @@ const ramp = (a: RGB, b: RGB, c: RGB | null, t: number): RGB => {
  * numbers differ, the distribution and the redraw stability do not.
  */
 const SPREAD_10 = (10 * Math.PI) / 180;
+const SPREAD_11 = (11 * Math.PI) / 180;
 const SPREAD_20 = (20 * Math.PI) / 180;
 const SPREAD_50 = (50 * Math.PI) / 180;
 const SPREAD_60 = (60 * Math.PI) / 180;
@@ -1161,7 +1176,7 @@ export class Renderer {
       if (t.beamT >= 0) this.drawContinuousBeam(dyn, t);
     }
     const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
-    const { ushield, ushieldAlpha, urad } = sim;
+    const { ushield, ushieldAlpha, urad, uwet } = sim;
     // painter's order in three passes: ground units, then flyer shadows on
     // top of the crowd, then the flyers themselves above everything
     for (let pass = 0; pass < 3; pass++) {
@@ -1190,9 +1205,10 @@ export class Renderer {
             SHIELD_COL[0], SHIELD_COL[1], SHIELD_COL[2],
             0.7 * (0.3 + 0.7 * ushieldAlpha[i]));
         }
-        // hp thirds of the unit's own max, so every kind tints alike
+        // hp thirds of the unit's own max, so every kind tints alike —
+        // read off the water-multiplied rows while the unit is wet
         const t3 = (uhp[i] * 3) / uhpmax[i];
-        const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
+        const tint = (uwet[i] > 0 ? WET_TINT : HP_TINT)[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
         const legArt = KIND_LEG[k], gait = KIND_GAIT[k];
         const mech = KIND_MECH[k];
         if (legArt && gait) {
@@ -1222,10 +1238,19 @@ export class Renderer {
     }
     for (const p of sim.projs) {
       if (p.x < vx0 - 48 || p.x > vx1 + 48 || p.y < vy0 - 48 || p.y > vy1 + 48) continue;
+      const b = bulletOf(p.kind, p.frag);
+      // LiquidBulletType.draw: a water orb is not a sprite pair but a
+      // filled disc of the liquid's own colour — Fill.circle(x, y,
+      // orbSize). (The fout()/100 lerp toward white is a 1% shade and is
+      // dropped.)
+      if (b.orb) {
+        this.fillCircle(dyn, p.x, p.y, b.orb, b.fxColor ?? PAL.white, 1);
+        continue;
+      }
       // a bare BulletType has no sprite at all — scorch's flame lives
       // entirely in its shoot and hit effects. A shot thrown by a frag
       // burst carries the CHILD ammo's sprite, not the shell's
-      const sp = bulletOf(p.kind, p.frag).sprite;
+      const sp = b.sprite;
       if (!sp) continue;
       // BasicBulletType.draw: shrinkInterp(fout) drives both axes, so a
       // pellet tapers as it flies and a shell — on Mathf.slope — opens out
@@ -1324,6 +1349,25 @@ export class Renderer {
         this.drawHitFlame(dyn, e, t);
       } else if (e.kind === FxKind.Burning) {
         this.drawBurning(dyn, e, t);
+      } else if (e.kind === FxKind.Wet) {
+        // Fx.wet: one water-coloured droplet fading in over its first half
+        // (alpha clamp(fin*2)) while it shrinks away (radius fout)
+        this.fillCircle(dyn, e.x, e.y, (1 - t) * MU, PAL.water, Math.min(1, t * 2));
+      } else if (e.kind === FxKind.ShootLiquid) {
+        // Fx.shootLiquid: two droplets thrown 15 units up the shot line
+        // inside an 11-degree cone, each shrinking as the spray dies
+        const rad = (0.5 + (1 - t) * 2.5) * MU;
+        this.scatter(e.seed ?? 1, 2, FIN_POW(t) * 15 * MU, e.rot ?? 0, SPREAD_11, (x, y) => {
+          this.fillCircle(dyn, e.x + x, e.y + y, rad, e.col ?? PAL.water, 1);
+        });
+      } else if (e.kind === FxKind.HitLiquid) {
+        // Fx.hitLiquid: five droplets scattering off the landing inside a
+        // 60-degree cone — the length runs on fin, not finpow, so the
+        // splash leaves at full speed instead of easing out
+        const rad = (1 - t) * 2 * MU;
+        this.scatter(e.seed ?? 1, 5, (1 + t * 15) * MU, e.rot ?? 0, SPREAD_60, (x, y) => {
+          this.fillCircle(dyn, e.x + x, e.y + y, rad, e.col ?? PAL.water, 1);
+        });
       } else if (e.kind === FxKind.Lightning) {
         this.drawBolt(dyn, e, t);
       } else if (e.kind === FxKind.Laser) {

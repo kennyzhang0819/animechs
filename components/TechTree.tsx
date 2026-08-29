@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { TOWERS } from "@/game/constants";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { clamp, TOWERS } from "@/game/constants";
 import {
   affordablePoints,
   buyTech,
@@ -66,6 +66,42 @@ const BOARD_H = (Math.max(...TECH_TREE.map((n) => n.y)) + 1) * CELL_H;
 
 const centerX = (x: number): number => (x + 0.5) * CELL_W;
 const centerY = (y: number): number => (y + 0.5) * CELL_H;
+
+/**
+ * THE TREE IS A MAP, NOT A PAGE. It used to be a vertically scrolling
+ * document, which stopped working the moment the board outgrew one screen
+ * in BOTH axes — a page can only scroll one way, and the game one keystroke
+ * away already taught everyone its camera. So the board is a fixed viewport
+ * over a transformed layer, driven exactly like the field: WASD and arrows
+ * pan, the wheel pans (a trackpad's two-finger scroll moves the map, both
+ * axes), ctrl+wheel — which is what a pinch reaches the browser as — and
+ * the floating buttons zoom, and any drag on open ground or a node drags
+ * the board. The chrome floats over it.
+ *
+ * The camera lives in a REF and is applied to the layer imperatively:
+ * panning at 60fps must not re-render the tree, and a re-render from
+ * buying a point re-applies the same transform from the ref, so the two
+ * paths can never disagree.
+ */
+const ZOOM_MIN = 0.35;
+const ZOOM_MAX = 2.5;
+/** screen px of board that can never be panned off screen */
+const EDGE_KEEP = 140;
+/** pan speed while a key is held, in SCREEN px/s — zoom-independent */
+const PAN_SPEED = 900;
+/** finger travel (screen px) past which a gesture is a drag, not a tap */
+const DRAG_PX = 8;
+
+const PAN_KEYS: Readonly<Record<string, readonly [number, number]>> = {
+  w: [0, -1],
+  a: [-1, 0],
+  s: [0, 1],
+  d: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowLeft: [-1, 0],
+  ArrowDown: [0, 1],
+  ArrowRight: [1, 0],
+};
 
 /**
  * How many points one click buys. The volume turret is flat-priced, so a
@@ -134,63 +170,242 @@ export default function TechTree({
   // rather than buying it
   const [armed, setArmed] = useState<TechKind | null>(null);
 
+  // ---- the camera (see the note above PAN_KEYS) -------------------------
+  const viewRef = useRef<HTMLDivElement>(null);
+  const boardRef = useRef<HTMLDivElement>(null);
+  // (x, y) is the visible top-left in board px, z the scale
+  const cam = useRef({ x: 0, y: 0, z: 1 });
+  const camPlaced = useRef(false);
+  // live pointers, for drag-pan and pinch; screen px travelled this gesture,
+  // which is what tells a tap (buy) from a drag (pan) on the same node
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const dragPx = useRef(0);
+  const keysDown = useRef(new Set<string>());
+
+  const camCss = (): string => {
+    const c = cam.current;
+    return `translate(${-c.x * c.z}px, ${-c.y * c.z}px) scale(${c.z})`;
+  };
+
+  /** clamp so EDGE_KEEP screen px of board always stay on screen, then
+   *  write the transform straight onto the layer — no re-render to pan */
+  const applyCam = useCallback((): void => {
+    const view = viewRef.current, board = boardRef.current;
+    if (!view || !board) return;
+    const c = cam.current;
+    c.x = clamp(c.x, -(view.clientWidth - EDGE_KEEP) / c.z, BOARD_W - EDGE_KEEP / c.z);
+    c.y = clamp(c.y, -(view.clientHeight - EDGE_KEEP) / c.z, BOARD_H - EDGE_KEEP / c.z);
+    board.style.transform = camCss();
+  }, []);
+
+  /** zoom about a screen point, so what is under the cursor stays put */
+  const zoomAt = useCallback(
+    (sx: number, sy: number, factor: number): void => {
+      const c = cam.current;
+      const z2 = clamp(c.z * factor, ZOOM_MIN, ZOOM_MAX);
+      c.x += sx / c.z - sx / z2;
+      c.y += sy / c.z - sy / z2;
+      c.z = z2;
+      applyCam();
+    },
+    [applyCam],
+  );
+
+  /** the floating +/- buttons and the +/- keys zoom about the middle */
+  const zoomCenter = useCallback(
+    (factor: number): void => {
+      const view = viewRef.current;
+      if (!view) return;
+      zoomAt(view.clientWidth / 2, view.clientHeight / 2, factor);
+    },
+    [zoomAt],
+  );
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    // first mount: fit the whole board on screen, centered, and never again
+    // — a re-render from buying a point must not yank the camera home
+    if (!camPlaced.current) {
+      camPlaced.current = true;
+      const z = clamp(
+        Math.min(view.clientWidth / (BOARD_W + 120), view.clientHeight / (BOARD_H + 200)),
+        ZOOM_MIN,
+        1.15,
+      );
+      cam.current = {
+        x: (BOARD_W - view.clientWidth / z) / 2,
+        y: (BOARD_H - view.clientHeight / z) / 2,
+        z,
+      };
+    }
+    applyCam();
+
+    // native and non-passive: React's wheel listener cannot preventDefault,
+    // and without it ctrl+wheel (which is also what a trackpad pinch
+    // arrives as) zooms the PAGE instead of the board
+    const onWheel = (e: WheelEvent): void => {
+      e.preventDefault();
+      const r = view.getBoundingClientRect();
+      if (e.ctrlKey || e.metaKey) {
+        zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.01));
+      } else {
+        // plain scroll MOVES the map, both axes — the tree is not a page
+        const c = cam.current;
+        c.x += e.deltaX / c.z;
+        c.y += e.deltaY / c.z;
+        applyCam();
+      }
+    };
+    view.addEventListener("wheel", onWheel, { passive: false });
+
+    const keyOf = (e: KeyboardEvent): string =>
+      e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return; // browser shortcuts stay theirs
+      const k = keyOf(e);
+      if (PAN_KEYS[k]) {
+        keysDown.current.add(k);
+        e.preventDefault(); // arrows would otherwise walk the focus/page
+      } else if (k === "+" || k === "=") zoomCenter(1.25);
+      else if (k === "-" || k === "_") zoomCenter(0.8);
+    };
+    const onKeyUp = (e: KeyboardEvent): void => {
+      keysDown.current.delete(keyOf(e));
+    };
+    // missed keyups (cmd+tab away mid-pan) must not leave the camera drifting
+    const onBlur = (): void => keysDown.current.clear();
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+
+    // held-key panning runs on its own rAF clock so the speed is per
+    // second, not per keydown repeat
+    let raf = 0;
+    let last = performance.now();
+    const frame = (now: number): void => {
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      let dx = 0, dy = 0;
+      for (const k of keysDown.current) {
+        const v = PAN_KEYS[k];
+        if (v) {
+          dx += v[0];
+          dy += v[1];
+        }
+      }
+      if (dx !== 0 || dy !== 0) {
+        const c = cam.current;
+        c.x += (dx * PAN_SPEED * dt) / c.z;
+        c.y += (dy * PAN_SPEED * dt) / c.z;
+        applyCam();
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+
+    // drags are tracked on the window so one that leaves the viewport (or a
+    // node button) keeps panning until the button comes up
+    const onMove = (e: PointerEvent): void => {
+      const pts = pointers.current;
+      const prev = pts.get(e.pointerId);
+      if (!prev) return;
+      if (pts.size >= 2) {
+        // pinch: zoom by the distance ratio about the midpoint, and pan by
+        // the midpoint's own travel — one gesture does both, like the field
+        const other = [...pts.entries()].find(([id]) => id !== e.pointerId)?.[1];
+        if (other) {
+          const r = view.getBoundingClientRect();
+          const d0 = Math.hypot(prev.x - other.x, prev.y - other.y);
+          const d1 = Math.hypot(e.clientX - other.x, e.clientY - other.y);
+          const mx = (e.clientX + other.x) / 2 - r.left;
+          const my = (e.clientY + other.y) / 2 - r.top;
+          if (d0 > 1) zoomAt(mx, my, d1 / d0);
+          const c = cam.current;
+          c.x -= (e.clientX - prev.x) / 2 / c.z;
+          c.y -= (e.clientY - prev.y) / 2 / c.z;
+          applyCam();
+        }
+        dragPx.current = 1000; // a pinch is never a tap
+      } else {
+        const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
+        dragPx.current += Math.abs(dx) + Math.abs(dy);
+        if (dragPx.current > DRAG_PX) {
+          const c = cam.current;
+          c.x -= dx / c.z;
+          c.y -= dy / c.z;
+          applyCam();
+        }
+      }
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    };
+    const onUp = (e: PointerEvent): void => {
+      pointers.current.delete(e.pointerId);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    const onResize = (): void => applyCam();
+    window.addEventListener("resize", onResize);
+    return () => {
+      view.removeEventListener("wheel", onWheel);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("resize", onResize);
+      cancelAnimationFrame(raf);
+    };
+  }, [applyCam, zoomAt, zoomCenter]);
+
   // a node is drawn only once its parent holds a point; edges follow the
   // same rule, so buying a node is what reveals the links out of it
   const visible = TECH_TREE.filter((n) => nodeStatus(progress, n.id) !== "hidden");
 
+  const chromeBtn =
+    "pointer-events-auto rounded border border-[#2E2E36] bg-[#151518]/90 backdrop-blur px-3 py-1.5 text-[13px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
+
   return (
-    <div className="fixed inset-0 overflow-y-auto bg-[#101013]">
-      {/* wide enough for the whole board: the utilities column pushed the
-          tree to six cells, and a container that cropped it would hide the
-          new path behind a horizontal scroll nobody would think to try */}
-      <div className="mx-auto max-w-6xl pt-10 pb-[max(2.5rem,var(--safe-b))] pl-[max(1.5rem,var(--safe-l))] pr-[max(1.5rem,var(--safe-r))]">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <button
-            onClick={onBack}
-            className="rounded border border-[#2E2E36] px-3 py-1.5 text-[13px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
-          >
-            {backLabel}
-          </button>
-          <h1 className="text-2xl font-bold uppercase tracking-[0.25em] text-[#EDEDEF]">
-            Upgrades
-          </h1>
-          <span className="flex items-center rounded border border-[#2E2E36] bg-[#151518] px-4 py-1.5">
-            <Wallet bank={progress.bank} />
-          </span>
-        </header>
-
-        <div
-          role="group"
-          aria-label="points per click"
-          className="mt-6 flex items-center justify-center gap-2"
+    <div
+      ref={viewRef}
+      className="fixed inset-0 touch-none select-none overflow-hidden bg-[#101013]"
+      onPointerDown={(e) => {
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+        // a fresh gesture starts its tap-vs-drag budget over — BEFORE the
+        // chrome check, or a click after a drag would still read as one
+        if (pointers.current.size === 0) dragPx.current = 0;
+        // the floating chrome is UI, not map: its buttons never drag the board
+        if ((e.target as Element).closest("[data-ui]")) return;
+        pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }}
+      onClickCapture={(e) => {
+        // a drag that happened to start on a node must not spend on it
+        if (dragPx.current > DRAG_PX) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }}
+    >
+      <div
+        ref={boardRef}
+        className="absolute left-0 top-0 will-change-transform"
+        style={{
+          width: BOARD_W,
+          height: BOARD_H,
+          transformOrigin: "0 0",
+          // re-renders (buying a point) re-apply the ref's own transform,
+          // so React and the imperative pan can never disagree
+          transform: camCss(),
+        }}
+      >
+        <svg
+          className="absolute inset-0"
+          width={BOARD_W}
+          height={BOARD_H}
+          aria-hidden="true"
         >
-          <span className="mr-1 text-[12px] uppercase tracking-widest text-[#71717C]">
-            Buy
-          </span>
-          {BUY_STEPS.map((s) => (
-            <button
-              key={String(s)}
-              aria-pressed={step === s}
-              onClick={() => setStep(s)}
-              className={`rounded border px-3 py-1 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-                step === s
-                  ? "border-[#FFD37F] bg-[#222227] text-[#FFD37F]"
-                  : "border-[#2E2E36] bg-[#151518] text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF]"
-              }`}
-            >
-              {stepLabel(s)}
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-8 overflow-x-auto">
-          <div className="relative mx-auto" style={{ width: BOARD_W, height: BOARD_H }}>
-            <svg
-              className="absolute inset-0"
-              width={BOARD_W}
-              height={BOARD_H}
-              aria-hidden="true"
-            >
               {visible.map((n) => {
                 if (!n.requires) return null;
                 const parent = techNode(n.requires);
@@ -362,7 +577,71 @@ export default function TechTree({
                 </div>
               );
             })}
-          </div>
+      </div>
+
+      {/* floating chrome: the board pans underneath it. The wrapper eats no
+          pointer events; each control opts back in and carries data-ui so a
+          drag starting on it never grabs the board */}
+      <div className="pointer-events-none absolute inset-0">
+        <div
+          className="absolute top-[max(1rem,var(--safe-t))] left-[max(1rem,var(--safe-l))]"
+          data-ui
+        >
+          <button onClick={onBack} className={chromeBtn}>
+            {backLabel}
+          </button>
+        </div>
+        <div
+          role="group"
+          aria-label="points per click"
+          className="pointer-events-auto absolute top-[max(1rem,var(--safe-t))] left-1/2 flex -translate-x-1/2 items-center gap-2 rounded border border-[#2E2E36] bg-[#151518]/90 px-3 py-1.5 backdrop-blur"
+          data-ui
+        >
+          <span className="text-[12px] uppercase tracking-widest text-[#71717C]">
+            Buy
+          </span>
+          {BUY_STEPS.map((s) => (
+            <button
+              key={String(s)}
+              aria-pressed={step === s}
+              onClick={() => setStep(s)}
+              className={`rounded border px-3 py-1 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+                step === s
+                  ? "border-[#FFD37F] bg-[#222227] text-[#FFD37F]"
+                  : "border-[#2E2E36] bg-[#151518] text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF]"
+              }`}
+            >
+              {stepLabel(s)}
+            </button>
+          ))}
+        </div>
+        <span
+          className="pointer-events-auto absolute top-[max(1rem,var(--safe-t))] right-[max(1rem,var(--safe-r))] flex items-center rounded border border-[#2E2E36] bg-[#151518]/90 px-4 py-1.5 backdrop-blur"
+          data-ui
+        >
+          <Wallet bank={progress.bank} />
+        </span>
+        <div
+          className="absolute bottom-[max(1rem,var(--safe-b))] right-[max(1rem,var(--safe-r))] flex flex-col gap-2"
+          data-ui
+        >
+          <button
+            aria-label="zoom in"
+            onClick={() => zoomCenter(1.25)}
+            className={`${chromeBtn} flex h-10 w-10 items-center justify-center p-0 text-[17px] font-bold`}
+          >
+            +
+          </button>
+          <button
+            aria-label="zoom out"
+            onClick={() => zoomCenter(0.8)}
+            className={`${chromeBtn} flex h-10 w-10 items-center justify-center p-0 text-[17px] font-bold`}
+          >
+            −
+          </button>
+        </div>
+        <div className="absolute bottom-[max(1rem,var(--safe-b))] left-[max(1rem,var(--safe-l))] text-[11px] uppercase tracking-widest text-[#4A4A55]">
+          drag · scroll · wasd to pan &nbsp;—&nbsp; ctrl+scroll to zoom
         </div>
       </div>
     </div>

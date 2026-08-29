@@ -15,6 +15,10 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   arc: `${T}/arc.png`,
   lancer: `${T}/lancer.png`,
   ripple: `${T}/ripple.png`,
+  // the liquid turrets' bare art — the menu shows the dry turret, the
+  // atlas bakes the water into the placed one
+  wave: `${T}/wave.png`,
+  tsunami: `${T}/tsunami.png`,
   parallax: `/mindustry/sprites/blocks/defense/parallax.png`,
   swarmer: `${T}/swarmer.png`,
   cyclone: `${T}/cyclone/cyclone-preview.png`,
