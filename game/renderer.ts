@@ -421,6 +421,30 @@ const KIND_CULL = UNIT_KINDS.map((k, i) => {
  */
 const FX_CULL_PAD = 240;
 
+/**
+ * A reused view of one slot of the sim's struct-of-arrays effect pool.
+ * The effect draw helpers below all read the classic Effect shape; the
+ * main effects pass refills this ONE object per effect per frame instead
+ * of the sim ever allocating per push. `col` points at FX_VIEW_COL when
+ * the slot carries a colour and is unset otherwise, so the helpers'
+ * `e.col ?? fallback` reads keep working unchanged.
+ */
+const FX_VIEW: {
+  x: number;
+  y: number;
+  age: number;
+  ttl: number;
+  kind: FxKind;
+  col?: RGB;
+  rot: number;
+  len: number;
+  pts?: readonly number[];
+  sides: number;
+  unit: number;
+  seed: number;
+} = { x: 0, y: 0, age: 0, ttl: 1, kind: FxKind.Death, rot: 0, len: 0, sides: 0, unit: 0, seed: 0 };
+const FX_VIEW_COL: [number, number, number] = [0, 0, 0];
+
 /** pushMech's reusable part records — see the note at its call site */
 interface MechPart {
   uv: UVRect;
@@ -1229,12 +1253,24 @@ export class Renderer {
     // shells, so a volley's puffs never sit on top of the shot that made
     // them. It is the only effect below that line, which is why it takes a
     // pass of its own rather than a place in the loop after this one
-    for (const e of sim.effects) {
-      if (e.kind !== FxKind.ArtilleryTrail) continue;
-      const tm = (e.len ?? 0) + 8;
-      if (e.x < vx0 - tm || e.x > vx1 + tm || e.y < vy0 - tm || e.y > vy1 + tm) continue;
-      this.fillCircle(dyn, e.x, e.y, (e.len ?? 0) * (1 - e.age / e.ttl),
-        e.col ?? PAL.white, 1);
+    const {
+      fxN, fxX, fxY, fxAge, fxTtl, fxKind, fxRot, fxLen, fxSeed, fxSides,
+      fxUnit, fxHasCol, fxColR, fxColG, fxColB, fxPts,
+    } = sim;
+    for (let f = 0; f < fxN; f++) {
+      if (fxKind[f] !== FxKind.ArtilleryTrail) continue;
+      const len = fxLen[f];
+      const ex = fxX[f], ey = fxY[f];
+      const tm = len + 8;
+      if (ex < vx0 - tm || ex > vx1 + tm || ey < vy0 - tm || ey > vy1 + tm) continue;
+      let col: RGB = PAL.white;
+      if (fxHasCol[f]) {
+        FX_VIEW_COL[0] = fxColR[f];
+        FX_VIEW_COL[1] = fxColG[f];
+        FX_VIEW_COL[2] = fxColB[f];
+        col = FX_VIEW_COL;
+      }
+      this.fillCircle(dyn, ex, ey, len * (1 - fxAge[f] / fxTtl[f]), col, 1);
     }
     for (const p of sim.projs) {
       if (p.x < vx0 - 48 || p.x > vx1 + 48 || p.y < vy0 - 48 || p.y > vy1 + 48) continue;
@@ -1267,13 +1303,15 @@ export class Renderer {
       this.push(dyn, p.x, p.y, along, across, rot, back, sp.back[0], sp.back[1], sp.back[2], 1);
       this.push(dyn, p.x, p.y, along, across, rot, front, sp.front[0], sp.front[1], sp.front[2], 1);
     }
-    for (const e of sim.effects) {
+    for (let f = 0; f < fxN; f++) {
+      const kind = fxKind[f] as FxKind;
+      const ex = fxX[f], ey = fxY[f];
       // cull: an anchor further out than the effect's reach draws nothing.
       // The line-shaped kinds carry their reach as data — a beam's length
-      // in e.len, a bolt's whole path in e.pts — so they widen their own
-      // margin; everything else fits comfortably inside the flat pad
-      if (e.kind === FxKind.Lightning) {
-        const pts = e.pts;
+      // in its len lane, a bolt's whole path in fxPts — so they widen
+      // their own margin; everything else fits inside the flat pad
+      if (kind === FxKind.Lightning) {
+        const pts = fxPts[f];
         if (pts && pts.length >= 2) {
           // 120px pad: a bolt's longest segment (a chain jump across the
           // 30-unit square) is ~110px, so a segment that crosses the view
@@ -1288,12 +1326,34 @@ export class Renderer {
       } else {
         let em = FX_CULL_PAD;
         if (
-          e.kind === FxKind.Laser || e.kind === FxKind.Shrapnel ||
-          e.kind === FxKind.HealWave || e.kind === FxKind.ShieldBreak
+          kind === FxKind.Laser || kind === FxKind.Shrapnel ||
+          kind === FxKind.HealWave || kind === FxKind.ShieldBreak
         )
-          em += e.len ?? 0;
-        else if (e.kind === FxKind.UnitSpawn) em += KIND_SPRITE[e.unit ?? 0] * 2;
-        if (e.x < vx0 - em || e.x > vx1 + em || e.y < vy0 - em || e.y > vy1 + em) continue;
+          em += fxLen[f];
+        else if (kind === FxKind.UnitSpawn) em += KIND_SPRITE[fxUnit[f]] * 2;
+        if (ex < vx0 - em || ex > vx1 + em || ey < vy0 - em || ey > vy1 + em) continue;
+      }
+      // survived the cull: refill the one shared view and hand the draw
+      // helpers the Effect shape they have always read
+      const e = FX_VIEW;
+      e.x = ex;
+      e.y = ey;
+      e.age = fxAge[f];
+      e.ttl = fxTtl[f];
+      e.kind = kind;
+      e.rot = fxRot[f];
+      e.len = fxLen[f];
+      e.seed = fxSeed[f];
+      e.sides = fxSides[f];
+      e.unit = fxUnit[f];
+      e.pts = fxPts[f] ?? undefined;
+      if (fxHasCol[f]) {
+        FX_VIEW_COL[0] = fxColR[f];
+        FX_VIEW_COL[1] = fxColG[f];
+        FX_VIEW_COL[2] = fxColB[f];
+        e.col = FX_VIEW_COL;
+      } else {
+        e.col = undefined;
       }
       const t = e.age / e.ttl;
       if (e.kind === FxKind.Death) {
