@@ -1,43 +1,67 @@
 import {
   BASE,
-  BURN_DPS,
-  BURN_FX_CHANCE,
-  bulletOf,
+  BURN_DPS as BURN_DPS_IMPORT,
+  BURN_FX_CHANCE as BURN_FX_CHANCE_IMPORT,
+  bulletOf as bulletOf_IMPORT,
   FX_SPAWN,
   FX_UNIT_SPAWN,
-  SPAWN_INVINCIBLE,
-  SPAWN_UNMOVING,
-  CELL,
-  clamp,
-  COLS,
-  FX_LIFE,
-  H,
+  SPAWN_INVINCIBLE as SPAWN_INVINCIBLE_IMPORT,
+  SPAWN_UNMOVING as SPAWN_UNMOVING_IMPORT,
+  CELL as CELL_IMPORT,
+  clamp as clamp_IMPORT,
+  COLS as COLS_IMPORT,
+  FX_LIFE as FX_LIFE_IMPORT,
+  H as H_IMPORT,
   MAX_UNITS,
-  ROWS,
-  TOWERS,
+  ROWS as ROWS_IMPORT,
+  TOWERS as TOWERS_IMPORT,
   UR,
-  W,
-  WALL_R,
+  W as W_IMPORT,
+  WALL_R as WALL_R_IMPORT,
   type BulletFx,
   type BulletStats,
   type TowerStats,
 } from "./constants";
+
+// Module-local bindings for everything the per-unit and per-bullet loops
+// read. An imported binding compiles to a GETTER call on the module record
+// under CommonJS interop (the dev server, node-side tools) to keep the
+// binding live — and the loops below read these tens of thousands of times
+// a tick, which made the getters one of the largest line items in a CPU
+// profile. A module-local const is a plain read everywhere. The values are
+// constants, so nothing is lost.
+const BURN_DPS = BURN_DPS_IMPORT;
+const BURN_FX_CHANCE = BURN_FX_CHANCE_IMPORT;
+const bulletOf = bulletOf_IMPORT;
+const SPAWN_INVINCIBLE = SPAWN_INVINCIBLE_IMPORT;
+const SPAWN_UNMOVING = SPAWN_UNMOVING_IMPORT;
+const CELL = CELL_IMPORT;
+const clamp = clamp_IMPORT;
+const COLS = COLS_IMPORT;
+const FX_LIFE = FX_LIFE_IMPORT;
+const H = H_IMPORT;
+const ROWS = ROWS_IMPORT;
+const TOWERS = TOWERS_IMPORT;
+const W = W_IMPORT;
+const WALL_R = WALL_R_IMPORT;
 import { FlowField, type Vec2 } from "./flowfield";
 import {
   WORLDS,
   UNIT_ID,
-  UNIT_KINDS,
+  UNIT_KINDS as UNIT_KINDS_IMPORT,
   UNIT_RMAX,
   UNIT_RMAX_AIR,
   UNIT_RMAX_GROUND,
   UNIT_STATS,
-  rmaxFor,
   waveGroups,
   type LegSpec,
   type LevelSpec,
   type UnitKind,
   waveSpawnRate,
 } from "./levels";
+
+/** module-local for the same getter reason as the constants block above */
+const UNIT_KINDS = UNIT_KINDS_IMPORT;
 import { unitHpAtLevel } from "./ladder";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
 import type { TechState } from "./tech";
@@ -103,49 +127,47 @@ const KIND_REACH = UNIT_KINDS.map(
 /**
  * Spatial hash cell size (px); rebuilt every frame with a counting sort.
  *
- * Sized to the SMALLEST reach on the roster, because that is what twenty
- * thousand daggers scanning is made of. Each query then spans as many
- * cells as its own reach needs (KIND_SPAN), so correctness does not ride
- * on this number at all — only cost does.
+ * Every query spans as many cells as its own reach needs (KIND_SPAN and
+ * the dynamic spans in updateAliveBounds), so correctness does not ride
+ * on this number at all — only cost does, and it pulls two ways. A big
+ * cell makes broad queries (a turret's range circle) touch few buckets
+ * but stuffs each one with far-away units; a small cell trims the
+ * candidate set toward what is actually in reach but walks more buckets.
  *
- * Sizing it to the widest unit instead, which is the obvious thing to do,
- * makes every dagger in the swarm walk a cell scaled to a unit it will
- * probably never meet: adding the first T4 that way widened the cell by
- * half and cost a fifth of the whole physics pass, in waves with no T4 in
- * them.
+ * This used to be the smallest KIND_REACH (~83px), which is still sized
+ * by the widest unit on the ROSTER's layer: a dagger checking neighbours
+ * within ~30px swept a 250px window for them, and in a thousand-dagger
+ * crowd the physics pass was mostly distance tests that could never hit.
+ * 32px (1.6 cells) puts the common span at 96px instead; the rare wide
+ * units simply take a larger span, which is what the span machinery is
+ * for. Must divide W and H evenly (5120 and 3840 both are 32 * k).
  */
-const HC = Math.ceil(Math.min(...KIND_REACH));
+const HC = 32;
 /**
  * The same reach in cells: a pair further apart than `span * HC` in either
  * axis is more than `span` buckets away, so this is exactly the ring that
  * can hold anything a unit of this kind might be touching.
  *
- * Whichever kind sets HC comes out at 1 — the plain 3x3 — by construction,
- * and on this roster that is the whole ground swarm. Only the heavies
- * widen their own scan.
+ * This ROSTER-sized bound now serves only the spawn-spot test, which runs
+ * a handful of times a tick; the physics pass takes the tighter per-tick
+ * spans updateAliveBounds derives from what is actually on the field.
  */
 const KIND_SPAN = KIND_REACH.map((r) => Math.ceil(r / HC));
+// NOTE: a bullet's broad-phase span (how many buckets it looks through for
+// what it flew into) used to be fixed per tower kind off the roster's
+// widest hitbox. It is now derived per tick from the widest hitbox ALIVE
+// on the bullet's layers — see updateAliveBounds and updateProjectiles.
 /**
- * How many buckets a bullet has to look through to find what it flew into:
- * the widest unit it can hit plus its own contact radius, in cells. Fixed
- * per tower kind, since bullet stats are constants — and no longer the
- * flat 1 it used to be, because the antumbra's hitbox is wider than a hash
- * cell and a shot could otherwise pass clean through one whose centre sat
- * two buckets away.
+ * Mindustry BaseTurret.targetInterval, 20 ticks: how long a turret keeps
+ * the target it picked before looking for a better one. Stock Mindustry
+ * re-picks ONLY on this clock — a turret whose victim died coasts out the
+ * rest of the interval doing nothing. Here a target that stops being valid
+ * (died, left range) re-picks immediately instead, so the port's kill
+ * throughput against a swarm stays what it was when it re-picked every
+ * tick; the interval only governs how long a still-valid target is kept.
  */
-const spanOf = (b: BulletStats): number =>
-  Math.ceil((rmaxFor(b.collidesAir, b.collidesGround) + (b.hitRadius ?? 2.5)) / HC);
-const HIT_SPAN = Object.fromEntries(
-  TOWER_KINDS.map((k) => [k, spanOf(TOWERS[k].bullet)]),
-) as Record<TowerKind, number>;
-/** the same, for a frag child — its hitbox and layers are its own, not the
- *  shell's, so a cyclone fragment scans the buckets a fragment needs */
-const FRAG_SPAN = Object.fromEntries(
-  TOWER_KINDS.map((k) => {
-    const f = TOWERS[k].bullet.frag;
-    return [k, f ? spanOf(f.bullet) : 0];
-  }),
-) as Record<TowerKind, number>;
+const TARGET_INTERVAL = 20 / 60;
+
 // narrow-passage centering gain (1/s): in 1-wide corridors and L-bend
 // corners, steer toward the cell centerline so units line up with the
 // slim (CELL - 2*WALL_R)px window instead of scraping the jambs
@@ -201,6 +223,19 @@ export type PlaceResult = "ok" | "invalid" | "would-seal";
 // is a unit kind (by numeric id) airborne? towers and bullets check this
 // against their targetAir/targetGround and collidesAir/collidesGround flags
 const KIND_FLYING: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].flying);
+/** every kind's collision radius, for the live per-layer bounds below */
+const KIND_RADIUS = Float32Array.from(UNIT_KINDS, (k) => UNIT_STATS[k].radius);
+/**
+ * The physics size split: the roster's radii cluster into a numerous small
+ * class (10..18.75px — daggers to spirocts, the actual swarm) and a sparse
+ * heavy class (25px up — the T4/T5 hulls, fielded in tens among thousands).
+ * Cut between the clusters. A HEAVY unit owns every pair it is part of in
+ * the physics pass, so the swarm's scan window is sized by the widest
+ * SMALL unit alive rather than by the reign three lanes over; the handful
+ * of heavies scan the wide window themselves.
+ */
+const HEAVY_R = 20;
+const KIND_HEAVY = Uint8Array.from(UNIT_KINDS, (k) => (UNIT_STATS[k].radius > HEAVY_R ? 1 : 0));
 // support fields, indexed like UNIT_KINDS — null for kinds with no ability
 const KIND_REPAIR = UNIT_KINDS.map((k) => UNIT_STATS[k].repairField ?? null);
 const KIND_SHIELD = UNIT_KINDS.map((k) => UNIT_STATS[k].shieldField ?? null);
@@ -243,6 +278,24 @@ if (MAX_LEGS > 8) throw new Error(`MAX_LEGS ${MAX_LEGS} > 8: widen Sim.ulegMove 
 const TAU = Math.PI * 2;
 
 /**
+ * Per-kind leg-mount unit vectors: cos/sin of each leg's fixed slice of
+ * the ring ((TAU / count) * k + PI / count). The per-frame mount angle is
+ * the chassis rotation composed on top by the angle-addition identity,
+ * which costs four multiplies per leg instead of two trig calls — and the
+ * gait pass runs per leg per unit per tick.
+ */
+const KIND_LEG_TRIG = KIND_LEGS.map((L) => {
+  if (!L) return null;
+  const arr = new Float64Array(L.count * 2);
+  for (let k = 0; k < L.count; k++) {
+    const c = (TAU / L.count) * k + Math.PI / L.count;
+    arr[k * 2] = Math.cos(c);
+    arr[k * 2 + 1] = Math.sin(c);
+  }
+  return arr;
+});
+
+/**
  * Arc InverseKinematics.solve, the knee placement for a two-segment leg:
  * given the foot at (ex, ey) relative to the mount, put the joint where
  * both segments keep their length. `side` chooses between the two mirror
@@ -254,7 +307,7 @@ const TAU = Math.PI * 2;
  * clamp pulls it back next frame, and meanwhile the knee locks straight.
  */
 function solveIK(a: number, b: number, ex: number, ey: number, side: boolean, out: Vec2): void {
-  const len = Math.hypot(ex, ey);
+  const len = Math.sqrt(ex * ex + ey * ey);
   if (len < 1e-4) {
     out.x = 0;
     out.y = a;
@@ -270,7 +323,7 @@ function solveIK(a: number, b: number, ex: number, ey: number, side: boolean, ou
 
 /** clamp a vector's length into [min, max], writing it back to `out` */
 function clampLen(dx: number, dy: number, min: number, max: number, out: Vec2): void {
-  const len = Math.hypot(dx, dy);
+  const len = Math.sqrt(dx * dx + dy * dy);
   const k = len < 1e-6 ? 1 : len < min ? min / len : len > max ? max / len : 1;
   out.x = dx * k;
   out.y = dy * k;
@@ -377,6 +430,15 @@ export class Sim {
   readonly uid = new Int32Array(MAX_UNITS);
   readonly ukind = new Uint8Array(MAX_UNITS); // UNIT_ID of the kind
   /**
+   * KIND_FLYING[ukind[i]], denormalised to one read: the broad-phase loops
+   * test every candidate's layer, and chasing kind -> flag through two
+   * arrays is measurably slower than reading one
+   */
+  readonly ufly = new Uint8Array(MAX_UNITS);
+  /** KIND_HEAVY[ukind[i]], same reasoning — the physics split reads it per
+   * candidate */
+  readonly uheavy = new Uint8Array(MAX_UNITS);
+  /**
    * this walker's sideways bias in [-1, 1]: how far off the flow line it
    * prefers to walk. Wanders on a multi-second clock, so two units that
    * left the same pad a moment apart are soon aiming at different lanes and
@@ -474,6 +536,28 @@ export class Sim {
   private readonly bStart = new Int32Array(HN + 1);
   private readonly bCount = new Int32Array(HN);
   private readonly bUnits = new Int32Array(MAX_UNITS);
+  /**
+   * The largest radius STANDING on each layer this tick, and the per-kind
+   * physics spans derived from it (see updateAliveBounds). The static
+   * KIND_SPAN / HIT_SPAN bounds are sized to the biggest unit on the whole
+   * roster, so every dagger's broad phase paid scan area for a toxopid
+   * that is almost never on the field; these shrink each bound to what is
+   * actually alive, which changes no query's RESULT — only its cost.
+   */
+  private rmaxAliveGround = 0;
+  private rmaxAliveAir = 0;
+  /** physics span per kind against ANY live partner on its layer — what a
+   * heavy scans, since a heavy owns every pair it is in */
+  private readonly kindSpanDyn = new Int32Array(UNIT_KINDS.length);
+  /** physics span per kind against SMALL live partners only — what the
+   * swarm scans, its heavy pairs being the heavies' job (see HEAVY_R) */
+  private readonly kindSpanSDyn = new Int32Array(UNIT_KINDS.length);
+  /** live head counts per layer — they let a turret whose target layer is
+   * empty skip its scan outright. Snapshots from the top of the tick, so
+   * mid-tick deaths only ever leave them high (a scan that finds nothing),
+   * never low (a scan wrongly skipped) */
+  private nAliveAir = 0;
+  private nAliveGround = 0;
   // physics scratch positions: start each tick at upx/upy, get mutated by
   // the pairwise resolution, and the difference is that tick's crowd shove.
   // Never swapped in removeUnit — fully rebuilt every tick before use
@@ -714,6 +798,12 @@ export class Sim {
       y: (gy + sz / 2) * CELL,
       cd: Math.random() * 0.1,
       angle: 0,
+      target: -1,
+      targetIdx: -1,
+      // start the re-pick clock at a random phase so a wall of turrets
+      // spreads its scans across the interval instead of all paying on
+      // the same tick
+      targetT: Math.random() * TARGET_INTERVAL,
       burstLeft: 0,
       burstT: 0,
       shotCount: 0,
@@ -738,6 +828,7 @@ export class Sim {
     this.time += dt;
     this.runScript(dt);
 
+    this.updateAliveBounds();
     this.buildHash();
     this.updatePhysics();
     this.updateUnits(dt);
@@ -1037,21 +1128,22 @@ export class Sim {
    * slingshots units forward.
    */
   private spawnSpotFree(x: number, y: number, r: number, fly: boolean, span: number): boolean {
+    const f = fly ? 1 : 0;
     const hx = clamp((x / HC) | 0, 0, HCOLS - 1);
     const hy = clamp((y / HC) | 0, 0, HROWS - 1);
+    const gx0 = Math.max(0, hx - span), gx1 = Math.min(HCOLS - 1, hx + span);
     for (let gy = Math.max(0, hy - span); gy <= Math.min(HROWS - 1, hy + span); gy++) {
-      for (let gx = Math.max(0, hx - span); gx <= Math.min(HCOLS - 1, hx + span); gx++) {
-        const c = gy * HCOLS + gx, e = this.bStart[c + 1];
-        for (let k = this.bStart[c]; k < e; k++) {
-          const i = this.bUnits[k];
-          if (i >= this.n || KIND_FLYING[this.ukind[i]] !== fly) continue;
-          // free means the physics circles wouldn't touch, so a fresh
-          // spawn never starts mid-shove; only the same layer counts —
-          // air and ground never collide
-          const dx = this.upx[i] - x, dy = this.upy[i] - y;
-          const rs = (r + this.urad[i]) * PHYS_R;
-          if (dx * dx + dy * dy < rs * rs) return false;
-        }
+      const row = gy * HCOLS;
+      const e = this.bStart[row + gx1 + 1];
+      for (let k = this.bStart[row + gx0]; k < e; k++) {
+        const i = this.bUnits[k];
+        if (i >= this.n || this.ufly[i] !== f) continue;
+        // free means the physics circles wouldn't touch, so a fresh
+        // spawn never starts mid-shove; only the same layer counts —
+        // air and ground never collide
+        const dx = this.upx[i] - x, dy = this.upy[i] - y;
+        const rs = (r + this.urad[i]) * PHYS_R;
+        if (dx * dx + dy * dy < rs * rs) return false;
       }
     }
     return true;
@@ -1130,6 +1222,8 @@ export class Sim {
       this.uburn[i] = 0;
       this.uid[i] = this.nextId++;
       this.ukind[i] = UNIT_ID[kind];
+      this.ufly[i] = fly ? 1 : 0;
+      this.uheavy[i] = KIND_HEAVY[UNIT_ID[kind]];
       // start already off-line, drawn from the bias's own resting spread —
       // a wave that all began dead centre would need seconds to fan out
       this.ulat[i] = clamp((Math.random() * 2 - 1) * LAT_SIGMA * 1.7, -1, 1);
@@ -1212,31 +1306,30 @@ export class Sim {
       // RepairFieldAbility.wasHealed / ShieldRegenFieldAbility.applied: the
       // carrier's wave only plays when the pulse actually did something
       let did = false;
-      const pad = range + UNIT_RMAX;
+      const pad = range + Math.max(this.rmaxAliveGround, this.rmaxAliveAir);
       const hx0 = clamp(((upx[i] - pad) / HC) | 0, 0, HCOLS - 1);
       const hy0 = clamp(((upy[i] - pad) / HC) | 0, 0, HROWS - 1);
       const hx1 = clamp(((upx[i] + pad) / HC) | 0, 0, HCOLS - 1);
       const hy1 = clamp(((upy[i] + pad) / HC) | 0, 0, HROWS - 1);
       for (let hy = hy0; hy <= hy1; hy++) {
-        for (let hx = hx0; hx <= hx1; hx++) {
-          const c = hy * HCOLS + hx, e = this.bStart[c + 1];
-          for (let b = this.bStart[c]; b < e; b++) {
-            const j = this.bUnits[b];
-            if (j >= this.n || uhp[j] <= 0) continue;
-            const dx = upx[j] - upx[i], dy = upy[j] - upy[i];
-            const rr = range + urad[j];
-            if (dx * dx + dy * dy > rr * rr) continue;
-            if (repair && uhp[j] < uhpmax[j]) {
-              // Unit.heal clamps at max health
-              uhp[j] = Math.min(uhp[j] + repair.amount, uhpmax[j]);
-              this.pushFx(upx[j], upy[j], 0.18, FxKind.Heal);
-              did = true;
-            }
-            if (shield && ushield[j] < shield.max) {
-              ushield[j] = Math.min(ushield[j] + shield.amount, shield.max);
-              ushieldAlpha[j] = 1;
-              did = true;
-            }
+        const row = hy * HCOLS;
+        const e = this.bStart[row + hx1 + 1];
+        for (let b = this.bStart[row + hx0]; b < e; b++) {
+          const j = this.bUnits[b];
+          if (j >= this.n || uhp[j] <= 0) continue;
+          const dx = upx[j] - upx[i], dy = upy[j] - upy[i];
+          const rr = range + urad[j];
+          if (dx * dx + dy * dy > rr * rr) continue;
+          if (repair && uhp[j] < uhpmax[j]) {
+            // Unit.heal clamps at max health
+            uhp[j] = Math.min(uhp[j] + repair.amount, uhpmax[j]);
+            this.pushFx(upx[j], upy[j], 0.18, FxKind.Heal);
+            did = true;
+          }
+          if (shield && ushield[j] < shield.max) {
+            ushield[j] = Math.min(ushield[j] + shield.amount, shield.max);
+            ushieldAlpha[j] = 1;
+            did = true;
           }
         }
       }
@@ -1333,6 +1426,8 @@ export class Sim {
     this.uburn[i] = this.uburn[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
+    this.ufly[i] = this.ufly[n];
+    this.uheavy[i] = this.uheavy[n];
     this.ulat[i] = this.ulat[n];
     this.uwalk[i] = this.uwalk[n];
     this.ubrot[i] = this.ubrot[n];
@@ -1397,6 +1492,9 @@ export class Sim {
     const off = i * MAX_LEGS;
     const x = this.upx[i], y = this.upy[i], rot = this.ubrot[i];
     const n = L.count;
+    // each mount angle is rot + a fixed slice — compose off one cos/sin
+    const trig = KIND_LEG_TRIG[this.ukind[i]]!;
+    const cr = Math.cos(rot), sr = Math.sin(rot);
     const div = Math.max((n / L.groupSize) | 0, 2);
     const space = (L.length / 1.6 / (div / 2)) * L.moveSpace;
     // Mathf.lerpDelta's alpha is per 1/60 s tick; compound it over the frame
@@ -1422,8 +1520,8 @@ export class Sim {
       const p = off + k;
       // the mount this leg hangs from: its own slice of the ring around the
       // body, turning with the chassis
-      const ang = rot + (TAU / n) * k + Math.PI / n;
-      const ca = Math.cos(ang), sa = Math.sin(ang);
+      const ck = trig[k * 2], sk = trig[k * 2 + 1];
+      const ca = cr * ck - sr * sk, sa = sr * ck + cr * sk;
       const bx = x + ca * L.baseOffset, by = y + sa * L.baseOffset;
 
       // no leg may be stretched or folded past its reach — enforced before
@@ -1494,6 +1592,52 @@ export class Sim {
 
   // ---------- spatial hash ----------
 
+  /**
+   * Refresh the live per-layer bounds off the census: the widest radius
+   * standing on each layer, the per-kind physics spans it implies, and the
+   * airborne head count. Runs after the script's spawns and before the
+   * hash, so everything on the field this tick is counted; units that die
+   * MID-tick only ever leave the bounds conservative (too wide), never
+   * wrong. Cost is one pass over the kind table, not the units.
+   */
+  private updateAliveBounds(): void {
+    let g = 0, a = 0, na = 0, ng = 0;
+    // widest SMALL unit per layer, for the swarm's own physics span
+    let gs = 0, as = 0;
+    for (let k = 0; k < UNIT_KINDS.length; k++) {
+      const alive = this.aliveByKind[k];
+      if (alive <= 0) continue;
+      const r = KIND_RADIUS[k];
+      if (KIND_FLYING[k]) {
+        na += alive;
+        if (r > a) a = r;
+        if (!KIND_HEAVY[k] && r > as) as = r;
+      } else {
+        ng += alive;
+        if (r > g) g = r;
+        if (!KIND_HEAVY[k] && r > gs) gs = r;
+      }
+    }
+    this.rmaxAliveGround = g;
+    this.rmaxAliveAir = a;
+    this.nAliveAir = na;
+    this.nAliveGround = ng;
+    // the same reach KIND_SPAN held, with the live rmax in place of the
+    // roster's: a pair further apart than span * HC cannot be touching
+    for (let k = 0; k < UNIT_KINDS.length; k++) {
+      const rk = KIND_RADIUS[k];
+      const fly = KIND_FLYING[k];
+      this.kindSpanDyn[k] = Math.max(1, Math.ceil(((rk + (fly ? a : g)) * PHYS_R) / HC));
+      this.kindSpanSDyn[k] = Math.max(1, Math.ceil(((rk + (fly ? as : gs)) * PHYS_R) / HC));
+    }
+  }
+
+  /** the widest live radius a bullet with these layer flags can meet — the
+   * live-roster stand-in for rmaxFor() in every broad-phase pad */
+  private rmaxAliveFor(air: boolean, ground: boolean): number {
+    return Math.max(air ? this.rmaxAliveAir : 0, ground ? this.rmaxAliveGround : 0);
+  }
+
   private hashCellOf(i: number): number {
     return (
       clamp((this.upy[i] / HC) | 0, 0, HROWS - 1) * HCOLS +
@@ -1540,7 +1684,7 @@ export class Sim {
    * column — the classic conga line. Same magnitude, different axis.
    */
   private updatePhysics(): void {
-    const { upx, upy, urad, ukind, uvx, uvy, uhx, uhy, uid, phx, phy, bStart, bUnits } = this;
+    const { upx, upy, urad, ufly, uvx, uvy, uhx, uhy, uid, phx, phy, bStart, bUnits } = this;
     const { clear } = this.field;
     const n = this.n;
     for (let i = 0; i < n; i++) {
@@ -1554,7 +1698,7 @@ export class Sim {
       // a corridor problem, and they are not in a corridor
       const room =
         vl > 1e-3 &&
-        !KIND_FLYING[ukind[i]] &&
+        ufly[i] === 0 &&
         clear[
           clamp((upy[i] / CELL) | 0, 0, ROWS - 1) * COLS +
             clamp((upx[i] / CELL) | 0, 0, COLS - 1)
@@ -1562,68 +1706,91 @@ export class Sim {
       uhx[i] = room ? vx / vl : 0;
       uhy[i] = room ? vy / vl : 0;
     }
+    const { ukind, kindSpanDyn, kindSpanSDyn, uheavy } = this;
     for (let i = 0; i < n; i++) {
-      const fly = KIND_FLYING[ukind[i]];
+      const fly = ufly[i];
+      // the size split (see HEAVY_R): a heavy owns EVERY pair it is part
+      // of and scans the wide window for them; a small unit scans only the
+      // small-partner window and skips heavy candidates outright. Each
+      // unordered pair still resolves exactly once, and the small window
+      // is what keeps a dagger swarm's broad phase priced for daggers
+      // while a reign stands on the same field
+      const iHeavy = uheavy[i];
       const ri = urad[i] * PHYS_R;
       const mi = urad[i] * urad[i]; // hitSize^2 * pi — the pi cancels in the ratio
-      const hx = clamp((phx[i] / HC) | 0, 0, HCOLS - 1);
-      const hy = clamp((phy[i] / HC) | 0, 0, HROWS - 1);
-      const sp = KIND_SPAN[ukind[i]];
-      for (let gy = Math.max(0, hy - sp); gy <= Math.min(HROWS - 1, hy + sp); gy++) {
-        for (let gx = Math.max(0, hx - sp); gx <= Math.min(HCOLS - 1, hx + sp); gx++) {
-          const c = gy * HCOLS + gx, e = bStart[c + 1];
-          for (let k = bStart[c]; k < e; k++) {
-            const j = bUnits[k];
-            if (j <= i || j >= n || KIND_FLYING[ukind[j]] !== fly) continue;
-            const rs = ri + urad[j] * PHYS_R;
-            let dx = phx[i] - phx[j], dy = phy[i] - phy[j];
-            const d2 = dx * dx + dy * dy;
-            if (d2 >= rs * rs) continue;
-            const dst = Math.sqrt(d2);
-            if (dst < 1e-4) {
-              const a = Math.random() * Math.PI * 2;
-              dx = Math.cos(a);
-              dy = Math.sin(a);
-            } else {
-              dx /= dst;
-              dy /= dst;
-            }
-            // re-aim the (unit-length) push across the direction of travel:
-            // split it into along- and across-heading parts, keep a fraction
-            // of the along part, and spend what is left widening the rank.
-            // Renormalised, so the pair still separates by exactly the
-            // overlap and the relaxation cannot overshoot into jitter
-            const hx = uhx[i], hy = uhy[i];
-            if (hx !== 0 || hy !== 0) {
-              const al = dx * hx + dy * hy;
-              const ll = Math.sqrt(Math.max(0, 1 - al * al));
-              let lx: number, ly: number;
-              if (ll < 1e-3) {
-                // dead in line astern — no across-component to grow, so take
-                // a side from the pair's ids: stable frame to frame, which
-                // matters because a side that flipped would just shudder
-                const s = (uid[i] ^ uid[j]) & 1 ? 1 : -1;
-                lx = -hy * s;
-                ly = hx * s;
-              } else {
-                lx = (dx - al * hx) / ll;
-                ly = (dy - al * hy) / ll;
-              }
-              const pa = al * PUSH_LONG;
-              const pl = ll + Math.abs(al) * PUSH_SIDE;
-              const pn = Math.sqrt(pa * pa + pl * pl) || 1;
-              dx = (pa * hx + pl * lx) / pn;
-              dy = (pa * hy + pl * ly) / pn;
-            }
-            const mj = urad[j] * urad[j];
-            const push = (rs - dst) / PHYS_SCL / (mi + mj);
-            phx[i] += dx * push * mj;
-            phy[i] += dy * push * mj;
-            phx[j] -= dx * push * mi;
-            phy[j] -= dy * push * mi;
+      // the unit's own scratch position rides in locals through the scan —
+      // candidates read it every test, and it only moves when a pair
+      // actually resolves — and lands back in the array afterwards
+      let pxi = phx[i], pyi = phy[i];
+      const hix = clamp((pxi / HC) | 0, 0, HCOLS - 1);
+      const hiy = clamp((pyi / HC) | 0, 0, HROWS - 1);
+      const sp = iHeavy ? kindSpanDyn[ukind[i]] : kindSpanSDyn[ukind[i]];
+      // the counting sort lays a row's buckets out contiguously in bUnits,
+      // so each row of the window is ONE range — no per-bucket setup
+      const gx0 = Math.max(0, hix - sp), gx1 = Math.min(HCOLS - 1, hix + sp);
+      for (let gy = Math.max(0, hiy - sp); gy <= Math.min(HROWS - 1, hiy + sp); gy++) {
+        const row = gy * HCOLS;
+        const e = bStart[row + gx1 + 1];
+        for (let k = bStart[row + gx0]; k < e; k++) {
+          const j = bUnits[k];
+          if (j >= n || ufly[j] !== fly) continue;
+          if (iHeavy) {
+            // a heavy meets everyone; only the heavy-heavy pair needs the
+            // once-per-pair guard (its small pairs are exclusively its own)
+            if (j === i || (uheavy[j] !== 0 && j <= i)) continue;
+          } else {
+            if (j <= i || uheavy[j] !== 0) continue;
           }
+          const rs = ri + urad[j] * PHYS_R;
+          let dx = pxi - phx[j], dy = pyi - phy[j];
+          const d2 = dx * dx + dy * dy;
+          if (d2 >= rs * rs) continue;
+          const dst = Math.sqrt(d2);
+          if (dst < 1e-4) {
+            const a = Math.random() * Math.PI * 2;
+            dx = Math.cos(a);
+            dy = Math.sin(a);
+          } else {
+            dx /= dst;
+            dy /= dst;
+          }
+          // re-aim the (unit-length) push across the direction of travel:
+          // split it into along- and across-heading parts, keep a fraction
+          // of the along part, and spend what is left widening the rank.
+          // Renormalised, so the pair still separates by exactly the
+          // overlap and the relaxation cannot overshoot into jitter
+          const hx = uhx[i], hy = uhy[i];
+          if (hx !== 0 || hy !== 0) {
+            const al = dx * hx + dy * hy;
+            const ll = Math.sqrt(Math.max(0, 1 - al * al));
+            let lx: number, ly: number;
+            if (ll < 1e-3) {
+              // dead in line astern — no across-component to grow, so take
+              // a side from the pair's ids: stable frame to frame, which
+              // matters because a side that flipped would just shudder
+              const s = (uid[i] ^ uid[j]) & 1 ? 1 : -1;
+              lx = -hy * s;
+              ly = hx * s;
+            } else {
+              lx = (dx - al * hx) / ll;
+              ly = (dy - al * hy) / ll;
+            }
+            const pa = al * PUSH_LONG;
+            const pl = ll + Math.abs(al) * PUSH_SIDE;
+            const pn = Math.sqrt(pa * pa + pl * pl) || 1;
+            dx = (pa * hx + pl * lx) / pn;
+            dy = (pa * hy + pl * ly) / pn;
+          }
+          const mj = urad[j] * urad[j];
+          const push = (rs - dst) / PHYS_SCL / (mi + mj);
+          pxi += dx * push * mj;
+          pyi += dy * push * mj;
+          phx[j] -= dx * push * mi;
+          phy[j] -= dy * push * mi;
         }
       }
+      phx[i] = pxi;
+      phy[i] = pyi;
     }
   }
 
@@ -1655,12 +1822,12 @@ export class Sim {
         continue;
       }
 
-      const fly = KIND_FLYING[ukind[i]];
+      const fly = this.ufly[i] !== 0;
       if (fly) {
         // flyers ignore the maze: aim straight at the exit they picked when
         // they spawned (the core's centre on a map with no goal layer)
         const gdx = this.ugx[i] - upx[i], gdy = this.ugy[i] - upy[i];
-        const gl = Math.hypot(gdx, gdy) || 1;
+        const gl = Math.sqrt(gdx * gdx + gdy * gdy) || 1;
         flowTmp.x = gdx / gl;
         flowTmp.y = gdy / gl;
       } else {
@@ -1707,11 +1874,18 @@ export class Sim {
         }
 
         // wall repulsion probes: push off nearby walls so corners can't wedge
-        // units (in a 1-wide corridor both sides fire and cancel — harmless)
-        if (field.blockedPx(upx[i] + PR, upy[i])) fx -= REP;
-        if (field.blockedPx(upx[i] - PR, upy[i])) fx += REP;
-        if (field.blockedPx(upx[i], upy[i] + PR)) fy -= REP;
-        if (field.blockedPx(upx[i], upy[i] - PR)) fy += REP;
+        // units (in a 1-wide corridor both sides fire and cancel — harmless).
+        // The probes reach PR = 11px — inside the orthogonally adjacent cell
+        // — so they can only ever land on rock when this cell's clearance is
+        // exactly 1 (an orthogonal rock neighbour, or the map border, which
+        // the clearance transform also scores 1). Anywhere clearer, all four
+        // would come back false, so they are not asked
+        if (cl < 1.2) {
+          if (field.blockedPx(upx[i] + PR, upy[i])) fx -= REP;
+          if (field.blockedPx(upx[i] - PR, upy[i])) fx += REP;
+          if (field.blockedPx(upx[i], upy[i] + PR)) fy -= REP;
+          if (field.blockedPx(upx[i], upy[i] - PR)) fy += REP;
+        }
 
         // symmetry-breaking jitter: units contesting a doorway can settle into
         // a perfectly balanced standoff (flow vs separation, a fraction of a
@@ -1742,19 +1916,24 @@ export class Sim {
         // an L-corner heuristic) also matches convex corners in open ground
         // and would drag passing units into the corner. Corners of narrow
         // bends need no help — the axis-separated slide stops a unit just
-        // inside the turn's window and redirects its speed into the turn
-        const bL = cx <= 0 || walk[cy * COLS + cx - 1] === 1;
-        const bR = cx >= COLS - 1 || walk[cy * COLS + cx + 1] === 1;
-        const bU = cy <= 0 || walk[(cy - 1) * COLS + cx] === 1;
-        const bD = cy >= ROWS - 1 || walk[(cy + 1) * COLS + cx] === 1;
-        if (bL && bR) fx += ((cx + 0.5) * CELL - upx[i]) * CENTER_K;
-        if (bU && bD) fy += ((cy + 0.5) * CELL - upy[i]) * CENTER_K;
+        // inside the turn's window and redirects its speed into the turn.
+        // Gated like the probes above: an orthogonal rock neighbour (or the
+        // border) means clearance exactly 1, so anywhere clearer every one
+        // of these tests would be false
+        if (cl < 1.2) {
+          const bL = cx <= 0 || walk[cy * COLS + cx - 1] === 1;
+          const bR = cx >= COLS - 1 || walk[cy * COLS + cx + 1] === 1;
+          const bU = cy <= 0 || walk[(cy - 1) * COLS + cx] === 1;
+          const bD = cy >= ROWS - 1 || walk[(cy + 1) * COLS + cx] === 1;
+          if (bL && bR) fx += ((cx + 0.5) * CELL - upx[i]) * CENTER_K;
+          if (bU && bD) fy += ((cy + 0.5) * CELL - upy[i]) * CENTER_K;
+        }
       }
 
       // the unit's own drive (flow + terrain steering) never exceeds its
       // stat speed; the physics shove then rides on top uncapped
       let mvx = uvx[i] + fx, mvy = uvy[i] + fy;
-      const ml = Math.hypot(mvx, mvy);
+      const ml = Math.sqrt(mvx * mvx + mvy * mvy);
       if (ml > spd) {
         mvx = (mvx / ml) * spd;
         mvy = (mvy / ml) * spd;
@@ -1819,7 +1998,7 @@ export class Sim {
       // rate while the chassis (Mindustry baseRotation) only turns as fast
       // as the unit is really moving — shoved units swivel feet-last
       const mdx = upx[i] - x0, mdy = upy[i] - y0;
-      const len = Math.hypot(mdx, mdy);
+      const len = Math.sqrt(mdx * mdx + mdy * mdy);
       if (len > 1e-4) {
         const ang = Math.atan2(mdy, mdx);
         const trot = KIND_ROT[ukind[i]] * dt;
@@ -1917,25 +2096,40 @@ export class Sim {
         }
       }
 
-      // Units.bestTarget over Turret.unitSort. The default sort is
-      // UnitSorts.closest — plain squared distance — and foreshadow's is
-      // `strongest`, -maxHealth with distance as a tiebreak worth one
-      // point per 80 world units squared (dst2 / 6400, in px / 200)
-      const strongest = st.sort === "strongest";
-      const r2 = st.range * st.range;
-      let best = -1, bs = Infinity;
-      for (let i = 0; i < this.n; i++) {
-        // air-only turrets ignore the ground swarm and vice versa
-        if (KIND_FLYING[this.ukind[i]] ? !st.targetAir : !st.targetGround) continue;
-        const dx = upx[i] - t.x, dy = upy[i] - t.y;
-        const d2 = dx * dx + dy * dy;
-        if (d2 >= r2) continue;
-        const score = strongest ? d2 / 40000 - this.uhpmax[i] : d2;
-        if (score < bs) {
-          bs = score;
-          best = i;
-        }
+      // Units.bestTarget over Turret.unitSort, on BaseTurret's target
+      // clock (TARGET_INTERVAL). The held target is used for as long as it
+      // stays valid — alive (its uid still sits where the index hint says)
+      // and its centre still within range — and the actual scan runs only
+      // when the interval expires or the hold breaks. The scan walks the
+      // spatial hash's buckets under the range circle rather than every
+      // unit on the field; a turret whose whole target layer is empty
+      // skips even that. The default sort is UnitSorts.closest — plain
+      // squared distance — and foreshadow's is `strongest`, -maxHealth
+      // with distance as a tiebreak worth one point per 80 world units
+      // squared (dst2 / 6400, in px / 200)
+      const r2t = st.range * st.range;
+      let best = -1;
+      if (
+        t.target >= 0 &&
+        t.targetIdx >= 0 &&
+        t.targetIdx < this.n &&
+        this.uid[t.targetIdx] === t.target
+      ) {
+        const dx = upx[t.targetIdx] - t.x, dy = upy[t.targetIdx] - t.y;
+        if (dx * dx + dy * dy < r2t) best = t.targetIdx;
       }
+      t.targetT -= dt;
+      if (best < 0 || t.targetT <= 0) {
+        const hasTargets =
+          (st.targetAir && this.nAliveAir > 0) ||
+          (st.targetGround && this.nAliveGround > 0);
+        best = hasTargets
+          ? this.bestTarget(t.x, t.y, st.range, st.targetAir, st.targetGround, st.sort === "strongest")
+          : -1;
+        t.targetT = TARGET_INTERVAL;
+        t.target = best >= 0 ? this.uid[best] : -1;
+      }
+      t.targetIdx = best;
       if (best < 0) {
         // nothing in range: a beam already lit keeps burning down its
         // duration where it is, exactly as Mindustry's held bullet does
@@ -2035,6 +2229,71 @@ export class Sim {
         }
       }
     }
+  }
+
+  /**
+   * Units.bestTarget: the best-scoring live targetable unit whose CENTRE
+   * is within `range`. Exactly the pick the old O(units) scan made — the
+   * same score, with ties broken by the lowest index, so neither bucket
+   * order nor the linear fallback can ever choose differently — but read
+   * off the spatial hash, so a turret pays for the units under its range
+   * circle rather than for the whole field.
+   *
+   * The hash is a tick old by the time towers fire (units have stepped
+   * once since buildHash), so the bucket sweep is padded by a few px; the
+   * distance test itself always reads live positions.
+   */
+  private bestTarget(
+    x: number,
+    y: number,
+    range: number,
+    air: boolean,
+    ground: boolean,
+    strongest: boolean,
+  ): number {
+    const { upx, upy, uhpmax, ufly } = this;
+    const n = this.n;
+    const r2 = range * range;
+    let best = -1, bs = Infinity;
+    // a short field is cheaper to walk directly than through the buckets
+    if (n <= 128) {
+      for (let i = 0; i < n; i++) {
+        if (ufly[i] !== 0 ? !air : !ground) continue;
+        const dx = upx[i] - x, dy = upy[i] - y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= r2) continue;
+        const score = strongest ? d2 / 40000 - uhpmax[i] : d2;
+        if (score < bs || (score === bs && i < best)) {
+          bs = score;
+          best = i;
+        }
+      }
+      return best;
+    }
+    const { bStart, bUnits } = this;
+    const pad = range + 8;
+    const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((x + pad) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((y + pad) / HC) | 0, 0, HROWS - 1);
+    for (let hy = hy0; hy <= hy1; hy++) {
+      const row = hy * HCOLS;
+      const e = bStart[row + hx1 + 1];
+      for (let k = bStart[row + hx0]; k < e; k++) {
+        const i = bUnits[k];
+        if (i >= n) continue;
+        if (ufly[i] !== 0 ? !air : !ground) continue;
+        const dx = upx[i] - x, dy = upy[i] - y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= r2) continue;
+        const score = strongest ? d2 / 40000 - uhpmax[i] : d2;
+        if (score < bs || (score === bs && i < best)) {
+          bs = score;
+          best = i;
+        }
+      }
+    }
+    return best;
   }
 
   /**
@@ -2251,25 +2510,24 @@ export class Sim {
     const EXPAND = 7.5; // collideLine's expand = 3 world units
     const dirx = Math.cos(angle), diry = Math.sin(angle);
     const x2 = x + dirx * length, y2 = y + diry * length;
-    const pad = rmaxFor(air, ground) + EXPAND;
+    const pad = this.rmaxAliveFor(air, ground) + EXPAND;
     const hx0 = clamp(((Math.min(x, x2) - pad) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((Math.min(y, y2) - pad) / HC) | 0, 0, HROWS - 1);
     const hx1 = clamp(((Math.max(x, x2) + pad) / HC) | 0, 0, HCOLS - 1);
     const hy1 = clamp(((Math.max(y, y2) + pad) / HC) | 0, 0, HROWS - 1);
     splashHits.length = 0;
     for (let hy = hy0; hy <= hy1; hy++) {
-      for (let hx = hx0; hx <= hx1; hx++) {
-        const c = hy * HCOLS + hx, e = bStart[c + 1];
-        for (let k = bStart[c]; k < e; k++) {
-          const i = bUnits[k];
-          if (i >= this.n || uhp[i] <= 0) continue;
-          if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
-          // distance from the unit to the ray segment
-          const tt = clamp((upx[i] - x) * dirx + (upy[i] - y) * diry, 0, length);
-          const dx = upx[i] - (x + dirx * tt), dy = upy[i] - (y + diry * tt);
-          const rr = urad[i] + EXPAND;
-          if (dx * dx + dy * dy < rr * rr) splashHits.push(i);
-        }
+      const row = hy * HCOLS;
+      const e = bStart[row + hx1 + 1];
+      for (let k = bStart[row + hx0]; k < e; k++) {
+        const i = bUnits[k];
+        if (i >= this.n || uhp[i] <= 0) continue;
+        if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
+        // distance from the unit to the ray segment
+        const tt = clamp((upx[i] - x) * dirx + (upy[i] - y) * diry, 0, length);
+        const dx = upx[i] - (x + dirx * tt), dy = upy[i] - (y + diry * tt);
+        const rr = urad[i] + EXPAND;
+        if (dx * dx + dy * dy < rr * rr) splashHits.push(i);
       }
     }
     for (const i of splashHits) {
@@ -2295,26 +2553,25 @@ export class Sim {
     ground: boolean,
   ): number {
     const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
-    const pad = brad + rmaxFor(air, ground);
+    const pad = brad + this.rmaxAliveFor(air, ground);
     const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
     const hx1 = clamp(((x + pad) / HC) | 0, 0, HCOLS - 1);
     const hy1 = clamp(((y + pad) / HC) | 0, 0, HROWS - 1);
     let best = -1, bd = Infinity;
     for (let hy = hy0; hy <= hy1; hy++) {
-      for (let hx = hx0; hx <= hx1; hx++) {
-        const c = hy * HCOLS + hx, e = bStart[c + 1];
-        for (let k = bStart[c]; k < e; k++) {
-          const i = bUnits[k];
-          if (i >= this.n || uhp[i] <= 0) continue;
-          if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
-          const dx = upx[i] - x, dy = upy[i] - y;
-          const d2 = dx * dx + dy * dy;
-          const rr = urad[i] + brad;
-          if (d2 < rr * rr && d2 < bd) {
-            bd = d2;
-            best = i;
-          }
+      const row = hy * HCOLS;
+      const e = bStart[row + hx1 + 1];
+      for (let k = bStart[row + hx0]; k < e; k++) {
+        const i = bUnits[k];
+        if (i >= this.n || uhp[i] <= 0) continue;
+        if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
+        const dx = upx[i] - x, dy = upy[i] - y;
+        const d2 = dx * dx + dy * dy;
+        const rr = urad[i] + brad;
+        if (d2 < rr * rr && d2 < bd) {
+          bd = d2;
+          best = i;
         }
       }
     }
@@ -2341,18 +2598,17 @@ export class Sim {
     const hy1 = clamp(((y + range) / HC) | 0, 0, HROWS - 1);
     let best = -1, bd = range * range;
     for (let hy = hy0; hy <= hy1; hy++) {
-      for (let hx = hx0; hx <= hx1; hx++) {
-        const c = hy * HCOLS + hx, e = bStart[c + 1];
-        for (let k = bStart[c]; k < e; k++) {
-          const i = bUnits[k];
-          if (i >= this.n || uhp[i] <= 0) continue;
-          if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
-          const dx = upx[i] - x, dy = upy[i] - y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < bd) {
-            bd = d2;
-            best = i;
-          }
+      const row = hy * HCOLS;
+      const e = bStart[row + hx1 + 1];
+      for (let k = bStart[row + hx0]; k < e; k++) {
+        const i = bUnits[k];
+        if (i >= this.n || uhp[i] <= 0) continue;
+        if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
+        const dx = upx[i] - x, dy = upy[i] - y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < bd) {
+          bd = d2;
+          best = i;
         }
       }
     }
@@ -2437,26 +2693,25 @@ export class Sim {
       // the chain: the furthest un-hit enemy whose hitbox touches the square
       let far = -1, fd = -1;
       if (chained.size < MAX_CHAIN) {
-        const pad = half + rmaxFor(air, ground);
+        const pad = half + this.rmaxAliveFor(air, ground);
         const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
         const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
         const hx1 = clamp(((x + pad) / HC) | 0, 0, HCOLS - 1);
         const hy1 = clamp(((y + pad) / HC) | 0, 0, HROWS - 1);
         for (let hy = hy0; hy <= hy1; hy++) {
-          for (let hx = hx0; hx <= hx1; hx++) {
-            const c = hy * HCOLS + hx, e = bStart[c + 1];
-            for (let k = bStart[c]; k < e; k++) {
-              const j = bUnits[k];
-              if (j >= this.n || uhp[j] <= 0 || chained.has(this.uid[j])) continue;
-              if (KIND_FLYING[ukind[j]] ? !air : !ground) continue;
-              const dx = upx[j] - x, dy = upy[j] - y;
-              const reach = half + urad[j]; // Rect vs hitbox, not a circle
-              if (Math.abs(dx) > reach || Math.abs(dy) > reach) continue;
-              const d2 = dx * dx + dy * dy;
-              if (d2 > fd) {
-                fd = d2;
-                far = j;
-              }
+          const row = hy * HCOLS;
+          const e = bStart[row + hx1 + 1];
+          for (let k = bStart[row + hx0]; k < e; k++) {
+            const j = bUnits[k];
+            if (j >= this.n || uhp[j] <= 0 || chained.has(this.uid[j])) continue;
+            if (KIND_FLYING[ukind[j]] ? !air : !ground) continue;
+            const dx = upx[j] - x, dy = upy[j] - y;
+            const reach = half + urad[j]; // Rect vs hitbox, not a circle
+            if (Math.abs(dx) > reach || Math.abs(dy) > reach) continue;
+            const d2 = dx * dx + dy * dy;
+            if (d2 > fd) {
+              fd = d2;
+              far = j;
             }
           }
         }
@@ -2548,25 +2803,25 @@ export class Sim {
     hits.length = 0;
     dists.length = 0;
     const x2 = x + dirx * length, y2 = y + diry * length;
-    const pad = rmaxFor(air, ground) + EXPAND;
+    const pad = this.rmaxAliveFor(air, ground) + EXPAND;
     const hx0 = clamp(((Math.min(x, x2) - pad) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((Math.min(y, y2) - pad) / HC) | 0, 0, HROWS - 1);
     const hx1 = clamp(((Math.max(x, x2) + pad) / HC) | 0, 0, HCOLS - 1);
     const hy1 = clamp(((Math.max(y, y2) + pad) / HC) | 0, 0, HROWS - 1);
     for (let hy = hy0; hy <= hy1; hy++) {
-      for (let hx = hx0; hx <= hx1; hx++) {
-        const c = hy * HCOLS + hx, e = bStart[c + 1];
-        for (let k = bStart[c]; k < e; k++) {
-          const i = bUnits[k];
-          if (i >= this.n || uhp[i] <= 0) continue;
-          if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
-          const tt = clamp((upx[i] - x) * dirx + (upy[i] - y) * diry, 0, length);
-          const dx = upx[i] - (x + dirx * tt), dy = upy[i] - (y + diry * tt);
-          const rr = urad[i] + EXPAND;
-          if (dx * dx + dy * dy < rr * rr) {
-            hits.push(i);
-            dists.push(Math.hypot(upx[i] - x, upy[i] - y));
-          }
+      const row = hy * HCOLS;
+      const e = bStart[row + hx1 + 1];
+      for (let k = bStart[row + hx0]; k < e; k++) {
+        const i = bUnits[k];
+        if (i >= this.n || uhp[i] <= 0) continue;
+        if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
+        const tt = clamp((upx[i] - x) * dirx + (upy[i] - y) * diry, 0, length);
+        const dx = upx[i] - (x + dirx * tt), dy = upy[i] - (y + diry * tt);
+        const rr = urad[i] + EXPAND;
+        if (dx * dx + dy * dy < rr * rr) {
+          hits.push(i);
+          const hx2 = upx[i] - x, hy2 = upy[i] - y;
+          dists.push(Math.sqrt(hx2 * hx2 + hy2 * hy2));
         }
       }
     }
@@ -2645,17 +2900,35 @@ export class Sim {
    */
   private updateTractor(t: Tower, st: TowerStats, dt: number): void {
     const spec = st.bullet.tractor!;
-    const { upx, upy, uhp, urad, ukind } = this;
-    // Units.closestEnemy, over the turret's own layer filter
+    const { upx, upy, uhp, urad, ufly, bStart, bUnits } = this;
+    // Units.closestEnemy, over the turret's own layer filter — same pick
+    // the O(units) scan made (nearest eligible, ties to the lowest index),
+    // read off the hash's buckets under the reach circle instead. A turret
+    // whose whole target layer is empty pays for none of it
     let best = -1, bd = Infinity;
-    for (let i = 0; i < this.n; i++) {
-      if (KIND_FLYING[ukind[i]] ? !st.targetAir : !st.targetGround) continue;
-      const dx = upx[i] - t.x, dy = upy[i] - t.y;
-      const d = Math.hypot(dx, dy);
-      // within(range + hitSize/2): a wide target counts from its edge
-      if (d < bd && d <= st.range + urad[i]) {
-        bd = d;
-        best = i;
+    if (!(st.targetAir && this.nAliveAir > 0) && !(st.targetGround && this.nAliveGround > 0)) {
+      t.beamStr += (0 - t.beamStr) * (1 - Math.pow(1 - 0.1, dt * 60));
+      return;
+    }
+    const pad = st.range + this.rmaxAliveFor(st.targetAir, st.targetGround) + 8;
+    const hx0 = clamp(((t.x - pad) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((t.y - pad) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((t.x + pad) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((t.y + pad) / HC) | 0, 0, HROWS - 1);
+    for (let hy = hy0; hy <= hy1; hy++) {
+      const row = hy * HCOLS;
+      const e = bStart[row + hx1 + 1];
+      for (let k = bStart[row + hx0]; k < e; k++) {
+        const i = bUnits[k];
+        if (i >= this.n) continue;
+        if (ufly[i] !== 0 ? !st.targetAir : !st.targetGround) continue;
+        const dx = upx[i] - t.x, dy = upy[i] - t.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        // within(range + hitSize/2): a wide target counts from its edge
+        if (d <= st.range + urad[i] && (d < bd || (d === bd && i < best))) {
+          bd = d;
+          best = i;
+        }
       }
     }
     // `strength` lerps in as the beam catches and out as it lets go
@@ -2735,7 +3008,7 @@ export class Sim {
     y: number,
   ): boolean {
     const dx = x - cx, dy = y - cy;
-    const dst = Math.hypot(dx, dy);
+    const dst = Math.sqrt(dx * dx + dy * dy);
     if (dst > radius) return false;
     const step = TAU / sides;
     // vertices sit at multiples of `step` from `rotation`, so the edge
@@ -2820,7 +3093,7 @@ export class Sim {
           const turn = b.homing.power * dt;
           const a = Math.abs(diff) <= turn ? want : cur + Math.sign(diff) * turn;
           // Vec2.setAngle keeps the speed and turns the heading
-          const sp = Math.hypot(pr.vx, pr.vy);
+          const sp = Math.sqrt(pr.vx * pr.vx + pr.vy * pr.vy);
           pr.vx = Math.cos(a) * sp;
           pr.vy = Math.sin(a) * sp;
         }
@@ -2882,7 +3155,13 @@ export class Sim {
       let dead = pr.life <= 0;
       if (!dead && !b.artillery) {
         const brad = b.hitRadius ?? 2.5;
-        const sp = pr.frag ? FRAG_SPAN[pr.kind] : HIT_SPAN[pr.kind];
+        // the static HIT_SPAN/FRAG_SPAN bound, shrunk to the LIVE largest
+        // hitbox on the layers this bullet can touch — same hits, fewer
+        // buckets walked in the waves that field no heavy
+        const sp = Math.max(
+          1,
+          Math.ceil((this.rmaxAliveFor(b.collidesAir, b.collidesGround) + brad) / HC),
+        );
         const hx = clamp((pr.x / HC) | 0, 0, HCOLS - 1);
         const hy = clamp((pr.y / HC) | 0, 0, HROWS - 1);
         // a piercing shot may hit several units this tick and outlive them
@@ -2891,33 +3170,33 @@ export class Sim {
         // an unvisited unit into a bucket we have already walked past
         const hits = this.splashHits;
         hits.length = 0;
+        const cx0 = Math.max(0, hx - sp), cx1 = Math.min(HCOLS - 1, hx + sp);
         outer: for (let cy = Math.max(0, hy - sp); cy <= Math.min(HROWS - 1, hy + sp); cy++) {
-          for (let cx = Math.max(0, hx - sp); cx <= Math.min(HCOLS - 1, hx + sp); cx++) {
-            const c = cy * HCOLS + cx, e = bStart[c + 1];
-            for (let k = bStart[c]; k < e; k++) {
-              const i = bUnits[k];
-              if (i >= this.n || uhp[i] <= 0) continue;
-              if (KIND_FLYING[this.ukind[i]] ? !b.collidesAir : !b.collidesGround) continue;
-              // Bullet.collides: a pierce shot skips whoever it already hit
-              if (pr.pierced && pr.pierced.includes(this.uid[i])) continue;
-              const dx = upx[i] - pr.x, dy = upy[i] - pr.y;
-              const hr = urad[i] + brad;
-              if (dx * dx + dy * dy < hr * hr) {
-                hits.push(i);
-                // Bullet.collision: a plain shot is spent on the first hit,
-                // a piercing one is only added to `collided` and flies on
-                if (!pr.pierced) {
-                  dead = true;
-                  break outer;
-                }
-                pr.pierced.push(this.uid[i]);
-                // Mindustry pierceCap: a capped pierce is SPENT once it
-                // has been through that many bodies, rather than running
-                // its whole lifetime
-                if (b.pierceCap !== undefined && pr.pierced.length >= b.pierceCap) {
-                  dead = true;
-                  break outer;
-                }
+          const row = cy * HCOLS;
+          const e = bStart[row + cx1 + 1];
+          for (let k = bStart[row + cx0]; k < e; k++) {
+            const i = bUnits[k];
+            if (i >= this.n || uhp[i] <= 0) continue;
+            if (this.ufly[i] !== 0 ? !b.collidesAir : !b.collidesGround) continue;
+            // Bullet.collides: a pierce shot skips whoever it already hit
+            if (pr.pierced && pr.pierced.includes(this.uid[i])) continue;
+            const dx = upx[i] - pr.x, dy = upy[i] - pr.y;
+            const hr = urad[i] + brad;
+            if (dx * dx + dy * dy < hr * hr) {
+              hits.push(i);
+              // Bullet.collision: a plain shot is spent on the first hit,
+              // a piercing one is only added to `collided` and flies on
+              if (!pr.pierced) {
+                dead = true;
+                break outer;
+              }
+              pr.pierced.push(this.uid[i]);
+              // Mindustry pierceCap: a capped pierce is SPENT once it
+              // has been through that many bodies, rather than running
+              // its whole lifetime
+              if (b.pierceCap !== undefined && pr.pierced.length >= b.pierceCap) {
+                dead = true;
+                break outer;
               }
             }
           }
@@ -2929,7 +3208,7 @@ export class Sim {
           // the same shove all but stops a dagger and leans on a fortress
           if (b.knockback) {
             const dx = upx[i] - pr.x, dy = upy[i] - pr.y;
-            const d = Math.hypot(dx, dy) || 1;
+            const d = Math.sqrt(dx * dx + dy * dy) || 1;
             const mag = b.knockback * 80;
             this.impulse(i, (dx / d) * mag, (dy / d) * mag);
           }
@@ -2971,22 +3250,21 @@ export class Sim {
   /** is any live targetable unit's hitbox within r of (x, y)? */
   private anyUnitWithin(x: number, y: number, r: number, air: boolean, ground: boolean): boolean {
     const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
-    const pad = r + rmaxFor(air, ground);
+    const pad = r + this.rmaxAliveFor(air, ground);
     const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
     const hx1 = clamp(((x + pad) / HC) | 0, 0, HCOLS - 1);
     const hy1 = clamp(((y + pad) / HC) | 0, 0, HROWS - 1);
     for (let hy = hy0; hy <= hy1; hy++) {
-      for (let hx = hx0; hx <= hx1; hx++) {
-        const c = hy * HCOLS + hx, e = bStart[c + 1];
-        for (let k = bStart[c]; k < e; k++) {
-          const i = bUnits[k];
-          if (i >= this.n || uhp[i] <= 0) continue;
-          if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
-          const dx = upx[i] - x, dy = upy[i] - y;
-          const rr = r + urad[i];
-          if (dx * dx + dy * dy < rr * rr) return true;
-        }
+      const row = hy * HCOLS;
+      const e = bStart[row + hx1 + 1];
+      for (let k = bStart[row + hx0]; k < e; k++) {
+        const i = bUnits[k];
+        if (i >= this.n || uhp[i] <= 0) continue;
+        if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
+        const dx = upx[i] - x, dy = upy[i] - y;
+        const rr = r + urad[i];
+        if (dx * dx + dy * dy < rr * rr) return true;
       }
     }
     return false;
@@ -3011,28 +3289,28 @@ export class Sim {
   ): void {
     const { upx, upy, uhp, uarmor, urad, ukind, bStart, bUnits, splashHits } = this;
     splashHits.length = 0;
-    const reach = radius + rmaxFor(air, ground);
+    const reach = radius + this.rmaxAliveFor(air, ground);
     const hx0 = clamp(((x - reach) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((y - reach) / HC) | 0, 0, HROWS - 1);
     const hx1 = clamp(((x + reach) / HC) | 0, 0, HCOLS - 1);
     const hy1 = clamp(((y + reach) / HC) | 0, 0, HROWS - 1);
     for (let hy = hy0; hy <= hy1; hy++) {
-      for (let hx = hx0; hx <= hx1; hx++) {
-        const c = hy * HCOLS + hx, e = bStart[c + 1];
-        for (let k = bStart[c]; k < e; k++) {
-          const i = bUnits[k];
-          if (i >= this.n || uhp[i] <= 0) continue;
-          if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
-          const dx = upx[i] - x, dy = upy[i] - y;
-          const rr = radius + urad[i];
-          if (dx * dx + dy * dy < rr * rr) splashHits.push(i);
-        }
+      const row = hy * HCOLS;
+      const e = bStart[row + hx1 + 1];
+      for (let k = bStart[row + hx0]; k < e; k++) {
+        const i = bUnits[k];
+        if (i >= this.n || uhp[i] <= 0) continue;
+        if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
+        const dx = upx[i] - x, dy = upy[i] - y;
+        const rr = radius + urad[i];
+        if (dx * dx + dy * dy < rr * rr) splashHits.push(i);
       }
     }
     // damage first (indices stay stable), then remove the dead from the
     // highest index down so swap-remove can't disturb pending removals
     for (const i of splashHits) {
-      const d = Math.hypot(upx[i] - x, upy[i] - y);
+      const ddx = upx[i] - x, ddy = upy[i] - y;
+      const d = Math.sqrt(ddx * ddx + ddy * ddy);
       const raw = dmg * Math.max(0, 0.4 + 0.6 * (1 - d / radius));
       this.damageUnit(i, raw);
     }
