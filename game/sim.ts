@@ -38,7 +38,7 @@ import {
   type UnitKind,
   waveSpawnRate,
 } from "./levels";
-import { shieldScaleAtLevel, unitHpAtLevel } from "./ladder";
+import { armorBonusAtLevel, shieldScaleAtLevel, unitHpAtLevel } from "./ladder";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
 import type { TechState } from "./tech";
 import { WALL_PINE, type Terrain } from "./terrain";
@@ -1092,11 +1092,11 @@ export class Sim {
       if ((!fly && this.field.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly, span))
         continue;
       const i = this.n++;
-      // LEVEL SCALING, and the only stat the ladder touches: health alone
-      // moves with the enemy level, so armour, speed, hitbox and drop stay
-      // exactly where UNIT_STATS put them however high the tier climbs.
-      // That is what keeps a tier-1 dagger a dagger — a fat one, but still
-      // something a duo shot lands its full 9 damage on
+      // LEVEL SCALING: health rides the level curve, and the difficulty
+      // adds a flat armour bonus and a shield multiplier below (both from
+      // DIFFICULTIES, both piecewise per difficulty rather than per level).
+      // Speed, hitbox and drop stay exactly where UNIT_STATS put them
+      // however high the tier climbs
       const hp = unitHpAtLevel(kind, this.level.enemyLevel ?? 0);
       this.upx[i] = x;
       this.upy[i] = y;
@@ -1113,7 +1113,10 @@ export class Sim {
         this.ugx[i] = g.x;
         this.ugy[i] = g.y;
       }
-      this.uarmor[i] = stats.armor;
+      // ...plus the difficulty's flat armour bonus (DIFFICULTIES.armorBonus),
+      // the one exception to "health alone moves": baked into uarmor here so
+      // every armour read downstream — the lancer's x4 included — sees it
+      this.uarmor[i] = stats.armor + armorBonusAtLevel(this.level.enemyLevel ?? 0);
       // ForceFieldAbility.created: a carrier walks in with the bubble
       // already full, so the first tower to see one meets a whole pool of
       // shield rather than a field still charging up. The pool is scaled by

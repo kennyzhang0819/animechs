@@ -107,16 +107,28 @@ export const LEVELS_PER_TIER = 10;
  * flat, a quasar's 500-point bubble that buys real cover at Medium pops to
  * incidental fire at High. Only the enemy's own shields scale; nothing on
  * the player's side reads this.
+ *
+ * `armorBonus` is added FLAT to every unit's armour at spawn (Sim reads it
+ * once, into uarmor). Armour is a flat shave floored at a tenth of the raw
+ * hit (Sim.applyArmor), so this knob is regressive by calibre on purpose:
+ * +3 barely dents a salvo's 28 or a lancer's 140, but takes a third off a
+ * duo's 9 and pushes a scatter's 3 to the floor — it makes the swarm
+ * outlast CHIP without inflating it against the big guns. Two cautions
+ * when raising it: the lancer counts armour QUADRUPLE (armorMultiplier 4),
+ * so every +1 here is -4 to the turret that is supposed to answer T3/T4;
+ * and burning pierces armour entirely, so it buys nothing against scorch's
+ * afterburn. checkDebuts prices the bonus into its debut-tax lint.
  */
 export const DIFFICULTIES: readonly {
   name: string;
   waves: number;
   level: number;
   shieldScale: number;
+  armorBonus: number;
 }[] = [
-  { name: "Medium", waves: 20, level: 0, shieldScale: 1 },
-  { name: "High", waves: 35, level: 10, shieldScale: 5 },
-  { name: "Extreme", waves: 50, level: 20, shieldScale: 20 },
+  { name: "Medium", waves: 20, level: 0, shieldScale: 1, armorBonus: 0 },
+  { name: "High", waves: 35, level: 10, shieldScale: 5, armorBonus: 3 },
+  { name: "Extreme", waves: 50, level: 20, shieldScale: 20, armorBonus: 6 },
   // ERADICATION and UNREASONABLE are deliberately not here yet
 ];
 
@@ -242,6 +254,18 @@ export const shieldScaleAtLevel = (level: number): number => {
   let s = 1;
   for (const d of DIFFICULTIES) if (level >= d.level) s = d.shieldScale;
   return s;
+};
+
+/** flat armour added to every unit at a difficulty */
+export const tierArmorBonus = (tier: number): number =>
+  DIFFICULTIES[clampTier(tier)].armorBonus;
+
+/** flat armour bonus at an enemy level — piecewise like shieldScaleAtLevel,
+ *  and for the same reason: only levels 0, 10 and 20 are ever played */
+export const armorBonusAtLevel = (level: number): number => {
+  let a = 0;
+  for (const d of DIFFICULTIES) if (level >= d.level) a = d.armorBonus;
+  return a;
 };
 
 /** drop multiplier of a difficulty */
@@ -494,14 +518,16 @@ export function debutViolations(spec: LevelSpec = WORLD): LadderIssue[] {
 
   const bad: LadderIssue[] = [];
   for (const [kind, tier] of debut) {
-    const { armor } = UNIT_STATS[kind];
+    // the armour a tower actually meets: printed plus the difficulty's
+    // flat bonus, which is what Sim spawns with
+    const armor = UNIT_STATS[kind].armor + tierArmorBonus(tier);
     const shot = bestShotByTier(tier);
     const tax = shot / Math.max(shot - armor, 0.1 * shot);
     if (tax >= 2)
       bad.push({
         tier,
         kind: "debut",
-        message: `${kind} (armour ${armor}) debuts here against a best shot of ${shot} — it costs a fleet ${tax.toFixed(1)}x its printed health, so budget the farming for it`,
+        message: `${kind} (armour ${armor} with the difficulty's bonus) debuts here against a best shot of ${shot} — it costs a fleet ${tax.toFixed(1)}x its printed health, so budget the farming for it`,
       });
   }
   return bad;
