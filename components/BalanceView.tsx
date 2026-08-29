@@ -3,12 +3,14 @@
 import { useCallback, useState } from "react";
 import { saveBalanceDoc, type BalanceDoc } from "@/game/balance";
 import { TOWERS } from "@/game/constants";
+import { costEntries } from "@/game/items";
 import {
   CAP_TILES,
   PRICE_PER_DPS,
   growthOf,
+  isDerived,
   setTune,
-  techCeiling,
+  techCap,
   techNode,
   techPrice,
   tuneOf,
@@ -18,11 +20,27 @@ import { TOWER_KINDS, type TowerKind } from "@/game/types";
 /** what tech.ts would charge with no override — the value a Reset returns to */
 const authored = (t: TowerKind): number => techNode(t).tune ?? 1;
 
-/** copper for the nth point, or a dash once the node has run out of ceiling */
-function copperAt(tower: TowerKind, n: number): string {
-  if (n > techCeiling(tower)) return "—";
-  const c = techPrice(tower, n - 1).copper ?? 0;
-  return Math.round(c).toLocaleString();
+/** two letters is enough to tell the columns apart without widening them */
+const TAG: Record<string, string> = {
+  copper: "",
+  titanium: "Ti",
+  thorium: "Th",
+  plastanium: "Pl",
+  "phase-fabric": "Ph",
+};
+
+/**
+ * The nth point, in whichever currency the bundle leads with.
+ *
+ * NOT copper: six bundles carry none at all since the economy pass, and
+ * reading .copper off those printed a very convincing zero.
+ */
+function priceAt(tower: TowerKind, n: number): string {
+  if (n > techCap(tower)) return "—";
+  const lead = costEntries(techPrice(tower, n - 1))[0];
+  if (!lead) return "—";
+  const tag = TAG[lead.item] ?? "";
+  return Math.round(lead.amount).toLocaleString() + (tag ? " " + tag : "");
 }
 
 const NUM = "font-mono tabular-nums";
@@ -119,8 +137,18 @@ export default function BalanceView() {
                       {TOWERS[k].size}×{TOWERS[k].size}
                     </span>
                   </td>
-                  <td className={`p-3 text-right text-[#A6A6AF] ${NUM}`}>
-                    {node.dps.toLocaleString()}
+                  <td
+                    className={`p-3 text-right ${NUM} ${
+                      isDerived(k) ? "text-[#A6A6AF]" : "text-[#71717C]"
+                    }`}
+                  >
+                    {isDerived(k) ? (
+                      (node.dps ?? 0).toLocaleString()
+                    ) : (
+                      <span title="This bundle carries no copper for the rule to price against, so its growth is hand-written. The coefficient still bends it exactly the same way.">
+                        authored
+                      </span>
+                    )}
                   </td>
                   <td className="p-3">
                     <div className="flex items-center gap-2">
@@ -159,11 +187,11 @@ export default function BalanceView() {
                   <td className={`p-3 text-right ${NUM} ${bent ? "text-[#EDEDEF]" : "text-[#71717C]"}`}>
                     {growthOf(k).toFixed(4)}
                   </td>
-                  <td className={`p-3 text-right text-[#A6A6AF] ${NUM}`}>{copperAt(k, 1)}</td>
-                  <td className={`p-3 text-right text-[#A6A6AF] ${NUM}`}>{copperAt(k, 10)}</td>
-                  <td className={`p-3 text-right text-[#A6A6AF] ${NUM}`}>{copperAt(k, 100)}</td>
+                  <td className={`p-3 text-right text-[#A6A6AF] ${NUM}`}>{priceAt(k, 1)}</td>
+                  <td className={`p-3 text-right text-[#A6A6AF] ${NUM}`}>{priceAt(k, 10)}</td>
+                  <td className={`p-3 text-right text-[#A6A6AF] ${NUM}`}>{priceAt(k, 100)}</td>
                   <td className={`p-3 text-right text-[#71717C] ${NUM}`}>
-                    {techCeiling(k).toLocaleString()}
+                    {techCap(k).toLocaleString()}
                   </td>
                 </tr>
               );
@@ -172,9 +200,11 @@ export default function BalanceView() {
         </table>
       </div>
       <p className="mt-3 text-[12px] text-[#71717C]">
-        Prices are copper only — the other currencies ride the same curve at the ratio each base
-        bundle sets. Saving writes only the rows you have bent; the rest keep reading tech.ts. Once
-        a number is settled, move it into the node so the reasoning lives next to it.
+        Each price is the currency its bundle leads with — the rest ride the same curve at the
+        ratio the bundle sets. A row reading <span className="text-[#A6A6AF]">authored</span> has no
+        copper for the rule to price against, so its growth is hand-written; the coefficient bends
+        it exactly the same way. Saving writes only the rows you have bent; the rest keep reading
+        tech.ts. Once a number is settled, move it into the node so the reasoning lives next to it.
       </p>
     </div>
   );

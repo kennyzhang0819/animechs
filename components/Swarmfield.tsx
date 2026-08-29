@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  BASE_SPEEDS,
   firstLoadStep,
   Game,
   LOAD_STEP_LABEL,
   LOAD_STEPS,
-  PLAYER_SPEEDS,
   SPEEDS,
   type LoadStep,
   type UiState,
@@ -418,11 +418,14 @@ export default function Swarmfield() {
   useEffect(() => {
     const g = gameRef.current;
     if (!g) return;
-    g.setTech(admin ? null : techOf(loadProgress()));
+    const tech = techOf(loadProgress());
+    g.setTech(admin ? null : tech);
     // dropping out of sandbox drops a sandbox-only pace with it, or the run
-    // keeps running at a speed whose button is no longer on screen
-    if (!admin && !PLAYER_SPEEDS.includes(g.ui().speed))
-      g.setSpeed(PLAYER_SPEEDS[PLAYER_SPEEDS.length - 1]);
+    // keeps running at a speed whose button is no longer on screen. What the
+    // save allows is now the utilities path rather than a constant, so it
+    // falls back to the fastest pace this save actually owns
+    if (!admin && !tech.speeds.includes(g.ui().speed))
+      g.setSpeed(tech.speeds[tech.speeds.length - 1]);
     setHud(g.ui());
   }, [admin]);
 
@@ -855,7 +858,9 @@ export default function Swarmfield() {
                 )}
               </svg>
             </button>
-            {(admin ? SPEEDS : PLAYER_SPEEDS).map((mult) => (
+            {/* what a save may run at is bought on the utilities path
+                (tech.ts); sandbox ignores the tree and offers all of them */}
+            {(admin ? SPEEDS : progress ? techOf(progress).speeds : BASE_SPEEDS).map((mult) => (
               <button
                 key={mult}
                 title={`${mult}x speed`}

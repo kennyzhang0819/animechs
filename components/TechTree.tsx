@@ -9,10 +9,52 @@ import {
   type NodeStatus,
   type Progress,
 } from "@/game/progress";
-import { TECH_TREE, techNode, techPrice } from "@/game/tech";
+import {
+  isTowerNode,
+  TECH_TREE,
+  techNode,
+  techPrice,
+  UTILITY_INFO,
+  type TechKind,
+} from "@/game/tech";
 import { difficultyName } from "@/game/ladder";
 import { CostRow, Wallet } from "./Items";
 import { TOWER_ICONS } from "./towerIcons";
+
+/** what a node is called — turret stats for the fifteen, UTILITY_INFO for the rest */
+const nodeName = (id: TechKind): string =>
+  isTowerNode(id) ? TOWERS[id].name : UTILITY_INFO[id].name;
+
+/**
+ * The node's face.
+ *
+ * Turrets and home have sprites. The speed nodes do not — there is no block
+ * in Mindustry that means "run the clock faster" — so they get the one glyph
+ * every player already reads as fast-forward, and the name underneath says
+ * which multiplier it is.
+ */
+function NodeIcon({ id, lit }: { id: TechKind; lit: boolean }) {
+  if (isTowerNode(id) || id === "home")
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite
+      <img
+        src={id === "home" ? HOME_ICON : TOWER_ICONS[id]}
+        alt=""
+        className={`h-14 w-14 [image-rendering:pixelated] ${lit ? "" : "grayscale"}`}
+      />
+    );
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={`h-10 w-10 ${lit ? "fill-[#FFD37F]" : "fill-[#71717C]"}`}
+      aria-hidden="true"
+    >
+      <path d="M2 4v16l10-8zM12 4v16l10-8z" />
+    </svg>
+  );
+}
+
+const HOME_ICON = "/mindustry/sprites/blocks/storage/core-shard.png";
 
 // board geometry: nodes are squares centered in grid cells; the SVG edge
 // layer underneath connects cell centers
@@ -36,9 +78,13 @@ type BuyStep = (typeof BUY_STEPS)[number];
 
 const stepLabel = (s: BuyStep): string => (s === "max" ? "Max" : `×${s}`);
 
-/** how many points this step would actually land right now */
-const stepCount = (p: Progress, tower: string, step: BuyStep): number =>
-  affordablePoints(p, tower as never, step === "max" ? Infinity : step);
+/**
+ * How many points this step would actually land right now. The utilities
+ * cap at one point (tech.ts), so the step is a ceiling they simply never
+ * reach — no special case is needed here.
+ */
+const stepCount = (p: Progress, node: TechKind, step: BuyStep): number =>
+  affordablePoints(p, node, step === "max" ? Infinity : step);
 
 export default function TechTree({
   progress,
@@ -59,11 +105,14 @@ export default function TechTree({
 
   // a node is drawn only once its parent holds a point; edges follow the
   // same rule, so buying a node is what reveals the links out of it
-  const visible = TECH_TREE.filter((n) => nodeStatus(progress, n.tower) !== "hidden");
+  const visible = TECH_TREE.filter((n) => nodeStatus(progress, n.id) !== "hidden");
 
   return (
     <div className="fixed inset-0 overflow-y-auto bg-[#101013]">
-      <div className="mx-auto max-w-4xl pt-10 pb-[max(2.5rem,var(--safe-b))] pl-[max(1.5rem,var(--safe-l))] pr-[max(1.5rem,var(--safe-r))]">
+      {/* wide enough for the whole board: the utilities column pushed the
+          tree to six cells, and a container that cropped it would hide the
+          new path behind a horizontal scroll nobody would think to try */}
+      <div className="mx-auto max-w-6xl pt-10 pb-[max(2.5rem,var(--safe-b))] pl-[max(1.5rem,var(--safe-l))] pr-[max(1.5rem,var(--safe-r))]">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <button
             onClick={onBack}
@@ -114,10 +163,10 @@ export default function TechTree({
               {visible.map((n) => {
                 if (!n.requires) return null;
                 const parent = techNode(n.requires);
-                const bought = (progress.tech[n.tower] ?? 0) > 0;
+                const bought = (progress.tech[n.id] ?? 0) > 0;
                 return (
                   <line
-                    key={`${n.requires}-${n.tower}`}
+                    key={`${n.requires}-${n.id}`}
                     x1={centerX(parent.x)}
                     y1={centerY(parent.y)}
                     x2={centerX(n.x)}
@@ -130,16 +179,20 @@ export default function TechTree({
               })}
             </svg>
             {visible.map((n) => {
-              const status: NodeStatus = nodeStatus(progress, n.tower);
-              const points = progress.tech[n.tower] ?? 0;
-              const name = TOWERS[n.tower].name;
+              const status: NodeStatus = nodeStatus(progress, n.id);
+              const points = progress.tech[n.id] ?? 0;
+              const name = nodeName(n.id);
+              // a turret stacks capacity forever; a utility is a switch, and
+              // once it is on the node has nothing left to sell
+              const utility = !isTowerNode(n.id);
+              const owned = points > 0;
               const clickable = status === "buyable";
               // the step is a ceiling, not a promise: a "×100" the wallet
               // only half covers lands what it covers rather than refusing
-              const willBuy = clickable ? stepCount(progress, n.tower, step) : 0;
+              const willBuy = clickable ? stepCount(progress, n.id, step) : 0;
               return (
                 <div
-                  key={n.tower}
+                  key={n.id}
                   className="group absolute"
                   style={{
                     left: centerX(n.x) - NODE / 2,
@@ -150,9 +203,13 @@ export default function TechTree({
                 >
                   <button
                     aria-label={
-                      points > 0
-                        ? `${name}: +${Math.max(1, willBuy)} placement capacity`
-                        : `Unlock ${name}`
+                      utility
+                        ? owned
+                          ? `${name}: owned`
+                          : `Unlock ${name}`
+                        : owned
+                          ? `${name}: +${Math.max(1, willBuy)} placement capacity`
+                          : `Unlock ${name}`
                     }
                     // aria-disabled rather than disabled: a node priced out
                     // of reach still has to be able to say so, and a disabled
@@ -162,29 +219,34 @@ export default function TechTree({
                     aria-disabled={!clickable}
                     onClick={() => {
                       if (!clickable) return;
-                      if (buyTech(n.tower, Math.max(1, willBuy))) onChanged();
+                      if (buyTech(n.id, Math.max(1, willBuy))) onChanged();
                     }}
                     className={`relative flex h-full w-full items-center justify-center rounded-lg border-2 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-                      points > 0
+                      owned
                         ? "border-[#FFD37F] bg-[#222227]"
                         : status === "locked-tier"
                           ? "border-[#2E2E36] bg-[#151518] opacity-40"
                           : "border-[#4A4A55] bg-[#151518] hover:border-[#FFD37F]"
                     } ${clickable ? "cursor-pointer" : "cursor-not-allowed"}`}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
-                    <img
-                      src={TOWER_ICONS[n.tower]}
-                      alt=""
-                      className={`h-14 w-14 [image-rendering:pixelated] ${
-                        points > 0 ? "" : "grayscale"
-                      }`}
-                    />
-                    {points > 0 && (
-                      <span className="absolute -bottom-2 -right-2 rounded border border-[#FFD37F] bg-[#101013] px-1.5 text-[13px] font-bold text-[#FFD37F]">
-                        ×{points}
-                      </span>
-                    )}
+                    <NodeIcon id={n.id} lit={owned} />
+                    {/* the corner badge carries the one number that changes:
+                        a turret's capacity. A utility has no number — it is
+                        on or it is not — so it gets a tick instead */}
+                    {owned &&
+                      (utility ? (
+                        <svg
+                          viewBox="0 0 12 12"
+                          className="absolute -bottom-2 -right-2 h-5 w-5 rounded border border-[#FFD37F] bg-[#101013] fill-[#FFD37F] p-0.5"
+                          aria-hidden="true"
+                        >
+                          <path d="M10 2.8 4.6 9.4 2 6.6l1-1 1.6 1.7L9 2z" />
+                        </svg>
+                      ) : (
+                        <span className="absolute -bottom-2 -right-2 rounded border border-[#FFD37F] bg-[#101013] px-1.5 text-[13px] font-bold text-[#FFD37F]">
+                          ×{points}
+                        </span>
+                      ))}
                     {status === "locked-tier" && (
                       <svg
                         viewBox="0 0 12 12"
@@ -197,7 +259,7 @@ export default function TechTree({
                   </button>
                   <div
                     className={`text-center text-[12px] font-bold uppercase tracking-widest ${
-                      points > 0 ? "text-[#EDEDEF]" : "text-[#71717C]"
+                      owned ? "text-[#EDEDEF]" : "text-[#71717C]"
                     }`}
                   >
                     {name}
@@ -212,20 +274,24 @@ export default function TechTree({
                   >
                     <div className="flex items-baseline justify-between">
                       <span className="font-bold text-[#EDEDEF]">{name}</span>
-                      <span className="text-[13px] text-[#A6A6AF]">Capacity {points}</span>
+                      <span className="text-[13px] text-[#A6A6AF]">
+                        {utility ? (owned ? "Owned" : "Locked") : `Capacity ${points}`}
+                      </span>
                     </div>
                     <div className="mt-1 text-[14px] text-[#A6A6AF]">
-                      {points > 0
-                        ? `+${Math.max(1, willBuy)} ${name} placements (${points} → ${
-                            points + Math.max(1, willBuy)
-                          })`
-                        : `Unlocks the ${name} turret with 1 placement`}
+                      {utility
+                        ? UTILITY_INFO[n.id as keyof typeof UTILITY_INFO].blurb
+                        : owned
+                          ? `+${Math.max(1, willBuy)} ${name} placements (${points} → ${
+                              points + Math.max(1, willBuy)
+                            })`
+                          : `Unlocks the ${name} turret with 1 placement`}
                     </div>
                     {status === "locked-tier" ? (
                       <div className="mt-2 text-[13px] font-bold uppercase tracking-widest text-[#FF8A8A]">
-                        Clear {difficultyName(techNode(n.tower).requiresTier ?? 0)} first
+                        Clear {difficultyName(techNode(n.id).requiresTier ?? 0)} first
                       </div>
-                    ) : (
+                    ) : status === "maxed" ? null : (
                       <div className="mt-2 border-t border-[#2E2E36] pt-2 text-[14px]">
                         {/* the full bundle: every currency this tier wants.
                             Passing the bank reddens exactly the stacks it
@@ -233,7 +299,7 @@ export default function TechTree({
                             this" explanation — no prose needed. Only the NEXT
                             point's price is shown even on a ×100 click: it is
                             the number that decides whether the click lands */}
-                        <CostRow cost={techPrice(n.tower, points)} bank={progress.bank} />
+                        <CostRow cost={techPrice(n.id, points)} bank={progress.bank} />
                       </div>
                     )}
                   </div>

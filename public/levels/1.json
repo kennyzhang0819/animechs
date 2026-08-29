@@ -1,6 +1,5 @@
 {
  "id": "1",
- "spawnRate": 160,
  "waveGap": 15,
  "script": [
   {
@@ -152,239 +151,482 @@
   },
   {
    "wave": {
-    "dagger": 170,
-    "mace": 50,
-    "atrax": 34,
-    "spiroct": 15
+    "dagger": 983,
+    "nova": 303,
+    "flare": 227,
+    "mace": 177,
+    "pulsar": 55,
+    "horizon": 41,
+    "fortress": 46,
+    "quasar": 14,
+    "zenith": 11,
+    "scepter": 1
    }
   },
   {
    "wave": {
-    "crawler": 220,
-    "spiroct": 11,
-    "nova": 45,
-    "pulsar": 26
-   }
-  },
-  {
-   "wave": {
-    "dagger": 140,
-    "atrax": 24,
-    "horizon": 30,
-    "zenith": 14
-   }
-  },
-  {
-   "wave": {
-    "dagger": 190,
-    "mace": 62,
-    "spiroct": 18
-   }
-  },
-  {
-   "wave": {
-    "crawler": 250,
-    "spiroct": 15,
-    "flare": 80
-   }
-  },
-  {
-   "wave": {
-    "dagger": 90,
-    "mace": 48,
-    "fortress": 7,
-    "atrax": 30
-   }
-  },
-  {
-   "wave": {
-    "dagger": 210,
-    "crawler": 200,
-    "spiroct": 18,
-    "zenith": 10
-   }
-  },
-  {
-   "wave": {
-    "flare": 130,
-    "pulsar": 32,
+    "crawler": 898,
+    "nova": 276,
+    "flare": 207,
+    "atrax": 180,
+    "pulsar": 55,
     "horizon": 42,
-    "zenith": 14
+    "spiroct": 53,
+    "quasar": 16,
+    "zenith": 12,
+    "arkyid": 1,
+    "vela": 1
    }
   },
   {
    "wave": {
-    "dagger": 190,
-    "mace": 60,
-    "fortress": 9,
-    "spiroct": 15
+    "flare": 687,
+    "horizon": 154,
+    "zenith": 50,
+    "antumbra": 1
    }
   },
   {
    "wave": {
-    "crawler": 280,
-    "atrax": 46,
-    "nova": 60
-   }
-  },
-  {
-   "wave": {
-    "flare": 150,
-    "horizon": 46,
-    "zenith": 17
-   }
-  },
-  {
-   "wave": {
-    "dagger": 110,
-    "fortress": 11,
-    "atrax": 52,
-    "spiroct": 20,
-    "pulsar": 36
-   }
-  },
-  {
-   "wave": {
-    "dagger": 240,
-    "mace": 70,
-    "crawler": 240
-   }
-  },
-  {
-   "wave": {
-    "dagger": 170,
-    "flare": 120,
-    "horizon": 52,
-    "zenith": 19
-   }
-  },
-  {
-   "wave": {
-    "dagger": 130,
-    "mace": 76,
-    "fortress": 13,
-    "spiroct": 22
-   }
-  },
-  {
-   "wave": {
-    "dagger": 230,
-    "crawler": 330,
-    "nova": 70,
-    "pulsar": 40
-   }
-  },
-  {
-   "wave": {
-    "atrax": 54,
-    "flare": 120,
+    "dagger": 354,
+    "crawler": 354,
+    "nova": 236,
+    "flare": 236,
+    "mace": 88,
+    "atrax": 88,
+    "pulsar": 59,
     "horizon": 58,
-    "zenith": 21
+    "fortress": 33,
+    "spiroct": 32,
+    "quasar": 22,
+    "zenith": 22,
+    "scepter": 1,
+    "arkyid": 1,
+    "vela": 1
+   }
+  },
+  {
+   "wave": {
+    "dagger": 653,
+    "nova": 201,
+    "flare": 150,
+    "mace": 181,
+    "pulsar": 55,
+    "horizon": 42,
+    "fortress": 76,
+    "quasar": 23,
+    "zenith": 17,
+    "scepter": 2,
+    "vela": 1
+   }
+  },
+  {
+   "wave": {
+    "crawler": 580,
+    "nova": 178,
+    "flare": 134,
+    "atrax": 179,
+    "pulsar": 55,
+    "horizon": 41,
+    "spiroct": 84,
+    "quasar": 26,
+    "zenith": 19,
+    "arkyid": 3,
+    "vela": 1
+   }
+  },
+  {
+   "wave": {
+    "flare": 434,
+    "horizon": 149,
+    "zenith": 79,
+    "antumbra": 3
+   }
+  },
+  {
+   "wave": {
+    "dagger": 220,
+    "crawler": 219,
+    "nova": 146,
+    "flare": 146,
+    "mace": 83,
+    "atrax": 83,
+    "pulsar": 56,
+    "horizon": 56,
+    "fortress": 50,
+    "spiroct": 50,
+    "quasar": 34,
+    "zenith": 33,
+    "scepter": 2,
+    "arkyid": 2,
+    "vela": 2,
+    "antumbra": 1
+   }
+  },
+  {
+   "wave": {
+    "nova": 428,
+    "pulsar": 181,
+    "quasar": 123,
+    "vela": 6
+   }
+  },
+  {
+   "wave": {
+    "dagger": 349,
+    "nova": 107,
+    "flare": 80,
+    "mace": 164,
+    "pulsar": 51,
+    "horizon": 38,
+    "fortress": 125,
+    "quasar": 38,
+    "zenith": 29,
+    "scepter": 7,
+    "vela": 2,
+    "antumbra": 2
+   }
+  },
+  {
+   "wave": {
+    "crawler": 304,
+    "nova": 94,
+    "flare": 70,
+    "atrax": 159,
+    "pulsar": 49,
+    "horizon": 37,
+    "spiroct": 137,
+    "quasar": 42,
+    "zenith": 32,
+    "arkyid": 9,
+    "vela": 3,
+    "antumbra": 2
+   }
+  },
+  {
+   "wave": {
+    "flare": 224,
+    "horizon": 131,
+    "zenith": 127,
+    "antumbra": 10
+   }
+  },
+  {
+   "wave": {
+    "dagger": 112,
+    "crawler": 112,
+    "nova": 74,
+    "flare": 74,
+    "mace": 73,
+    "atrax": 72,
+    "pulsar": 48,
+    "horizon": 48,
+    "fortress": 79,
+    "spiroct": 79,
+    "quasar": 53,
+    "zenith": 53,
+    "scepter": 7,
+    "arkyid": 7,
+    "vela": 4,
+    "antumbra": 4
    }
   },
   {
    "wave": {
     "dagger": 150,
-    "fortress": 15,
-    "atrax": 62,
-    "spiroct": 26
-   }
-  },
-  {
-   "wave": {
-    "dagger": 280,
-    "mace": 88,
-    "crawler": 280,
-    "pulsar": 44
-   }
-  },
-  {
-   "wave": {
-    "fortress": 11,
-    "flare": 190,
-    "horizon": 66,
-    "zenith": 24
-   }
-  },
-  {
-   "wave": {
-    "dagger": 170,
-    "mace": 100,
-    "fortress": 18,
-    "spiroct": 30
-   }
-  },
-  {
-   "wave": {
-    "dagger": 270,
-    "crawler": 380,
-    "atrax": 68,
-    "nova": 80
-   }
-  },
-  {
-   "wave": {
-    "spiroct": 24,
-    "flare": 150,
-    "horizon": 74,
-    "zenith": 27
-   }
-  },
-  {
-   "wave": {
-    "dagger": 190,
-    "fortress": 21,
-    "atrax": 78,
-    "spiroct": 34,
-    "pulsar": 52
-   }
-  },
-  {
-   "wave": {
-    "dagger": 330,
-    "mace": 110,
-    "crawler": 330
-   }
-  },
-  {
-   "wave": {
-    "fortress": 15,
-    "flare": 220,
-    "horizon": 84,
-    "zenith": 31
-   }
-  },
-  {
-   "wave": {
-    "dagger": 200,
-    "mace": 122,
+    "crawler": 150,
+    "nova": 75,
+    "flare": 75,
+    "mace": 50,
+    "atrax": 50,
+    "pulsar": 25,
+    "horizon": 25,
     "fortress": 25,
-    "atrax": 84,
-    "spiroct": 38
+    "spiroct": 25,
+    "quasar": 10,
+    "zenith": 10,
+    "scepter": 2,
+    "arkyid": 2
    }
   },
   {
    "wave": {
-    "dagger": 320,
-    "crawler": 440,
-    "nova": 92,
-    "pulsar": 58
+    "dagger": 550,
+    "crawler": 550,
+    "nova": 300,
+    "flare": 300,
+    "mace": 300,
+    "atrax": 300,
+    "pulsar": 175,
+    "horizon": 175,
+    "fortress": 240,
+    "spiroct": 240,
+    "quasar": 135,
+    "zenith": 135,
+    "scepter": 35,
+    "arkyid": 35,
+    "vela": 18,
+    "antumbra": 17
    }
   },
   {
    "wave": {
-    "spiroct": 30,
-    "flare": 190,
-    "horizon": 96,
-    "zenith": 35
+    "dagger": 674,
+    "nova": 207,
+    "flare": 156,
+    "mace": 173,
+    "pulsar": 53,
+    "horizon": 40,
+    "fortress": 102,
+    "quasar": 31,
+    "zenith": 23,
+    "scepter": 7,
+    "vela": 2,
+    "antumbra": 2,
+    "reign": 1
    }
   },
   {
    "wave": {
-    "dagger": 230,
-    "fortress": 30,
-    "atrax": 96,
-    "spiroct": 42
+    "crawler": 615,
+    "nova": 189,
+    "flare": 142,
+    "atrax": 176,
+    "pulsar": 54,
+    "horizon": 40,
+    "spiroct": 116,
+    "quasar": 35,
+    "zenith": 27,
+    "arkyid": 9,
+    "vela": 3,
+    "antumbra": 2,
+    "toxopid": 1
+   }
+  },
+  {
+   "wave": {
+    "flare": 471,
+    "horizon": 149,
+    "zenith": 111,
+    "antumbra": 10,
+    "eclipse": 1
+   }
+  },
+  {
+   "wave": {
+    "dagger": 242,
+    "crawler": 242,
+    "nova": 162,
+    "flare": 162,
+    "mace": 86,
+    "atrax": 85,
+    "pulsar": 57,
+    "horizon": 57,
+    "fortress": 72,
+    "spiroct": 71,
+    "quasar": 48,
+    "zenith": 48,
+    "scepter": 8,
+    "arkyid": 7,
+    "vela": 5,
+    "antumbra": 5,
+    "reign": 1,
+    "toxopid": 1,
+    "corvus": 1
+   }
+  },
+  {
+   "wave": {
+    "dagger": 447,
+    "nova": 138,
+    "flare": 103,
+    "mace": 176,
+    "pulsar": 54,
+    "horizon": 40,
+    "fortress": 166,
+    "quasar": 51,
+    "zenith": 38,
+    "scepter": 20,
+    "vela": 6,
+    "antumbra": 4,
+    "reign": 3,
+    "corvus": 1
+   }
+  },
+  {
+   "wave": {
+    "crawler": 397,
+    "nova": 122,
+    "flare": 92,
+    "atrax": 174,
+    "pulsar": 53,
+    "horizon": 40,
+    "spiroct": 185,
+    "quasar": 57,
+    "zenith": 43,
+    "arkyid": 25,
+    "vela": 8,
+    "antumbra": 6,
+    "toxopid": 3,
+    "corvus": 1,
+    "eclipse": 1
+   }
+  },
+  {
+   "wave": {
+    "flare": 298,
+    "horizon": 145,
+    "zenith": 174,
+    "antumbra": 27,
+    "eclipse": 4
+   }
+  },
+  {
+   "wave": {
+    "dagger": 151,
+    "crawler": 150,
+    "nova": 100,
+    "flare": 100,
+    "mace": 82,
+    "atrax": 81,
+    "pulsar": 54,
+    "horizon": 54,
+    "fortress": 110,
+    "spiroct": 110,
+    "quasar": 74,
+    "zenith": 73,
+    "scepter": 20,
+    "arkyid": 19,
+    "vela": 13,
+    "antumbra": 13,
+    "reign": 4,
+    "toxopid": 3,
+    "corvus": 2,
+    "eclipse": 2
+   }
+  },
+  {
+   "wave": {
+    "nova": 293,
+    "pulsar": 177,
+    "quasar": 270,
+    "vela": 55,
+    "corvus": 10
+   }
+  },
+  {
+   "wave": {
+    "dagger": 239,
+    "nova": 73,
+    "flare": 55,
+    "mace": 160,
+    "pulsar": 49,
+    "horizon": 37,
+    "fortress": 275,
+    "quasar": 85,
+    "zenith": 63,
+    "scepter": 64,
+    "vela": 19,
+    "antumbra": 15,
+    "reign": 13,
+    "corvus": 4,
+    "eclipse": 3
+   }
+  },
+  {
+   "wave": {
+    "crawler": 209,
+    "nova": 64,
+    "flare": 48,
+    "atrax": 155,
+    "pulsar": 48,
+    "horizon": 36,
+    "spiroct": 302,
+    "quasar": 93,
+    "zenith": 69,
+    "arkyid": 79,
+    "vela": 25,
+    "antumbra": 18,
+    "toxopid": 18,
+    "corvus": 5,
+    "eclipse": 4
+   }
+  },
+  {
+   "wave": {
+    "flare": 154,
+    "horizon": 127,
+    "zenith": 279,
+    "antumbra": 84,
+    "eclipse": 21
+   }
+  },
+  {
+   "wave": {
+    "dagger": 77,
+    "crawler": 76,
+    "nova": 51,
+    "flare": 51,
+    "mace": 71,
+    "atrax": 70,
+    "pulsar": 47,
+    "horizon": 47,
+    "fortress": 174,
+    "spiroct": 174,
+    "quasar": 116,
+    "zenith": 116,
+    "scepter": 60,
+    "arkyid": 60,
+    "vela": 40,
+    "antumbra": 40,
+    "reign": 16,
+    "toxopid": 16,
+    "corvus": 11,
+    "eclipse": 10
+   }
+  },
+  {
+   "wave": {
+    "dagger": 120,
+    "crawler": 120,
+    "nova": 55,
+    "flare": 55,
+    "mace": 50,
+    "atrax": 50,
+    "pulsar": 25,
+    "horizon": 25,
+    "fortress": 50,
+    "spiroct": 50,
+    "quasar": 25,
+    "zenith": 25,
+    "scepter": 20,
+    "arkyid": 20,
+    "vela": 10,
+    "antumbra": 10
+   }
+  },
+  {
+   "wave": {
+    "dagger": 450,
+    "crawler": 450,
+    "nova": 250,
+    "flare": 250,
+    "mace": 250,
+    "atrax": 250,
+    "pulsar": 150,
+    "horizon": 150,
+    "fortress": 320,
+    "spiroct": 320,
+    "quasar": 180,
+    "zenith": 180,
+    "scepter": 115,
+    "arkyid": 115,
+    "vela": 60,
+    "antumbra": 60,
+    "reign": 40,
+    "toxopid": 40,
+    "corvus": 20,
+    "eclipse": 20
    }
   }
  ]

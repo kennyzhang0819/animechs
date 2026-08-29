@@ -8,6 +8,7 @@ import {
   levelDoc,
   saveLevel,
   waveGroups,
+  WAVE_RELEASE_SECONDS,
   type LevelSpec,
   type LevelStep,
   type RegionWave,
@@ -378,7 +379,6 @@ export default function LevelEditorView({
   onClose: () => void;
 }) {
   const [steps, setSteps] = useState<EditStep[]>(() => toEditSteps(level.script));
-  const [spawnRate, setSpawnRate] = useState(level.spawnRate);
   const [waveGap, setWaveGap] = useState(level.waveGap);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -389,7 +389,6 @@ export default function LevelEditorView({
   // reset the buffer, or the new level opens showing the old one's script
   useEffect(() => {
     setSteps(toEditSteps(level.script));
-    setSpawnRate(level.spawnRate);
     setWaveGap(level.waveGap);
     setDirty(false);
   }, [level]);
@@ -415,7 +414,6 @@ export default function LevelEditorView({
     setSaveError(null);
     const res = await saveLevel({
       ...levelDoc(level),
-      spawnRate,
       waveGap,
       script: toScript(steps),
     });
@@ -454,9 +452,9 @@ export default function LevelEditorView({
   const [against, setAgainst] = useState(TOP_TIER);
 
   const report = useMemo(() => {
-    const spec = { ...level, spawnRate, waveGap, script: toScript(steps) };
+    const spec = { ...level, waveGap, script: toScript(steps) };
     return { rows: audit(spec), issues: check(spec), waves: waveGuide(spec, against) };
-  }, [level, spawnRate, waveGap, steps, against]);
+  }, [level, waveGap, steps, against]);
 
   const back = (): void => {
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
@@ -536,19 +534,10 @@ export default function LevelEditorView({
               <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
                 Level
               </h2>
-              <label className="flex items-center justify-between gap-2 text-[14px] text-[#A6A6AF]">
-                Spawn rate
-                <NumberInput
-                  value={spawnRate}
-                  min={1}
-                  onChange={(n) => {
-                    setSpawnRate(n);
-                    setDirty(true);
-                  }}
-                />
-              </label>
-              <p className="mt-1 mb-3 text-[13px] leading-snug text-[#71717C]">
-                Enemies entering per second. Every wave drains at this rate.
+              <p className="mb-3 text-[13px] leading-snug text-[#71717C]">
+                Every wave walks on over {WAVE_RELEASE_SECONDS}s whatever its
+                size, so a bigger wave arrives harder rather than later. Waves
+                the drop zones cannot pass that fast simply queue.
               </p>
               <label className="flex items-center justify-between gap-2 text-[14px] text-[#A6A6AF]">
                 Time between waves
@@ -636,8 +625,8 @@ export default function LevelEditorView({
                 <Row label="Enemies" value={String(summary.enemies)} />
                 <Row label="Gap time" value={`${summary.waves * waveGap}s`} />
                 <Row
-                  label="Drain time"
-                  value={`${Math.ceil(summary.enemies / Math.max(1, spawnRate))}s`}
+                  label="Release time"
+                  value={`${Math.ceil(summary.waves * WAVE_RELEASE_SECONDS)}s`}
                 />
               </dl>
               <div className="mt-2 border-t border-[#2E2E36] pt-2">

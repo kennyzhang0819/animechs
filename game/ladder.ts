@@ -6,9 +6,10 @@ import {
   type LevelSpec,
   type LevelStep,
   type UnitKind,
+  WAVE_RELEASE_SECONDS,
 } from "./levels";
 import { TOWERS } from "./constants";
-import { TECH_TREE, type TechNodeDef } from "./tech";
+import { isTowerNode, TECH_TREE, type TechNodeDef } from "./tech";
 import {
   BASE_ITEM,
   costEntries,
@@ -110,8 +111,8 @@ export const DIFFICULTIES: readonly { name: string; waves: number; level: number
  *
  *   difficulty   copper  titanium  thorium  plastanium  phase
  *   Medium         100      15       3.6        0         0
- *   High           100      22       6.5       0.23       0
- *   Extreme        100      27       9         0.7       0.13
+ *   High           100      24.5    12.2        0.8       0
+ *   Extreme        100      30      24          4.2       0.85
  *
  * THIS IS THE DESIGN INPUT, NOT A CONSEQUENCE. The wave script is authored
  * to this and the tech tree's prices are balanced to whatever it pays —
@@ -121,31 +122,48 @@ export const DIFFICULTIES: readonly { name: string; waves: number; level: number
  * rungs of a tier ladder, and their quantities carry no information about
  * how many tier-4 enemies a wave should hold.
  *
- * A BODY RATIO BADLY UNDERSTATES A HEAVY, so read it alongside the health
- * these mixes actually put on the field:
+ * READ THESE ROWS AS WEIGHT, NOT COUNT. Every difficulty above Medium still
+ * sends tier-1 bodies by the tens of thousands — T1 stays the most numerous
+ * thing on the field, and the swarm is meant to look like a swarm. What
+ * moves is what the swarm is CARRYING:
  *
  *   difficulty     T1    T2    T3    T4    T5
- *   Medium         58%   30%   12%    -     -
- *   High           43%   34%   17%    6%    -
- *   Extreme        32%   30%   17%   14%    7%
+ *   Medium         55%   32%   14%    -     -
+ *   High           30%   28%   25%   17%    -
+ *   Extreme        12%   14%   20%   35%   19%
  *
- * At Extreme that is ninety-five tier-4 and tier-5 bodies out of sixteen
- * thousand carrying a fifth of the run. Ten T5 in wave 50 alone are 6% of
- * the whole difficulty.
+ * A TIER-1 BODY IS NEARLY FREE IN THIS BUDGET and that is the key to reading
+ * the table: 118 health against a tier-4's 8,100, so ONE T4 weighs as much
+ * as sixty-nine daggers. Twelve thousand extra daggers at High cost less
+ * health than two hundred scepters. So "send more T1" and "shift the weight
+ * upward" are not in tension at all — the thing that actually sets the size
+ * of the step between difficulties is the T3, T4 and T5 counts, and nothing
+ * else is close.
  *
- * Three rules hold the shape up. T1 keeps dominating COUNT while its share
- * of WEIGHT falls (58% -> 32%), which is what makes the top difficulty a
- * different fight rather than a longer one. Every currency debuts one
- * difficulty before anything charges for it — the fifteen T4 at High are
- * only twenty plastanium a run, far too few to spend, but the currency is
- * visibly accumulating before Extreme's plastanium-priced turrets open.
- * And T5 exists only at Extreme and only at the very end, so it reads as
- * the campaign arriving rather than as something to farm.
+ * A run's TOTAL bodies are not its bodies on the field. Units stream in over
+ * WAVE_RELEASE_SECONDS and die continuously, so a difficulty that sends
+ * 52,000 of them never holds anything like that at once. Do not size a
+ * difficulty against the map's area; size it against these rows and let the
+ * drop zones throttle what they cannot pass.
+ *
+ * TIER 5 DOES NOT EXIST BEFORE EXTREME, deliberately, and it breaks the old
+ * rule that every currency debuts one difficulty before anything charges for
+ * it. Phase fabric now debuts and is spent at the same difficulty. That is
+ * the point: spectre, meltdown and foreshadow are priced in phase, so a
+ * player cannot own the last three turrets until they have actually played
+ * Extreme. Nothing walls them in — difficulties unlock by clearing the one
+ * below, never by tech — so Extreme opens on schedule and those three are
+ * the reward for engaging with it rather than a prerequisite.
+ *
+ * The steps these rows produce are 6.4x Medium -> High and 6.0x High ->
+ * Extreme, against a WALL_STEP guideline of 4.5. That is a deliberate, known
+ * overshoot: holding 4.5 forces High back onto almost exactly Medium's own
+ * ratio, and the campaign stops going anywhere. See audit().
  */
 export const TARGET_DROP_RATIO: readonly (readonly number[])[] = [
   [100, 15, 3.6, 0, 0],
-  [100, 22, 6.5, 0.23, 0],
-  [100, 27, 9, 0.7, 0.13],
+  [100, 24.5, 12.2, 0.8, 0],
+  [100, 30, 24, 4.2, 0.85],
 ];
 
 /** how far off target a currency may drift before check() says so */
@@ -321,7 +339,9 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
       });
     }
   }
-  const duration = run.script.length * run.waveGap + units / run.spawnRate;
+  // every wave costs its gap plus the same fixed release window, so the
+  // run's length is its WAVE COUNT and no longer its unit count
+  const duration = run.script.length * (run.waveGap + WAVE_RELEASE_SECONDS);
   const share = (x: number): number => (hp > 0 ? x / hp : 0);
   return {
     waves: run.script.length,
@@ -404,8 +424,10 @@ function bestShotByTier(tier: number): number {
   if (clampTier(tier) <= 0) return TOWERS.duo.bullet.damage;
   let best = 0;
   for (const node of TECH_TREE) {
+    // the utilities path buys pace, not damage — it has no bullet to read
+    if (!isTowerNode(node.id)) continue;
     if (!payableAtTier(node, tier)) continue;
-    best = Math.max(best, TOWERS[node.tower].bullet.damage);
+    best = Math.max(best, TOWERS[node.id].bullet.damage);
   }
   return best;
 }

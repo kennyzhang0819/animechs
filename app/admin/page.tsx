@@ -61,7 +61,7 @@ function LevelCard({
         </span>
       </div>
       <div className="mt-1 text-[13px] uppercase tracking-widest text-[#71717C]">
-        {waves} waves · {enemies} enemies · {level.spawnRate}/s · {level.waveGap}s gap
+        {waves} waves · {enemies} enemies · {level.waveGap}s gap
       </div>
       <div className="mt-1 text-[13px] text-[#71717C]">
         {regions.size > 0

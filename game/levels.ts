@@ -676,8 +676,6 @@ export interface LevelSpec {
   name: string;
   /** official map id this level plays on; the first official map when unset */
   map?: string;
-  /** enemies entering the field per second — every wave drains at this rate */
-  spawnRate: number;
   /**
    * seconds held between waves, and before the first one. The clock starts
    * when the previous wave has finished ENTERING the field — the last unit
@@ -698,6 +696,43 @@ export interface LevelSpec {
 }
 
 /**
+ * HOW LONG A WAVE TAKES TO WALK ONTO THE FIELD, in seconds — the same for
+ * every wave, whatever its size.
+ *
+ * RELEASE PACE IS NOT A TUNABLE ANY MORE. It used to be `spawnRate`, a flat
+ * enemies-per-second on each level, and a flat rate makes a wave's release
+ * time proportional to its SIZE: the shipped script ran from 0.3s (wave 1's
+ * forty daggers, which arrived as a single dump) to 15.7s (wave 20's 2,506,
+ * which trickled). Two waves authored to feel different sizes instead felt
+ * like different GAMES, and the only way to fix one end was to break the
+ * other. The rate is now `count / WAVE_RELEASE_SECONDS`, so a wave's size
+ * decides how HARD it arrives and never how long it takes to show up.
+ *
+ * 3.5 SECONDS IS NOT A TASTE, IT IS THE OLD TOTAL. The shipped script holds
+ * 28,006 enemies across 50 waves, which at the authored 160/s took 175s of
+ * release; 50 waves x 3.5s is the same 175s. The campaign is exactly as long
+ * as it was and only the DISTRIBUTION moved — small waves stop dumping
+ * instantly, big ones stop dragging.
+ *
+ * FOR A BIG WAVE THIS NUMBER IS AN ASPIRATION, and that is by design. A
+ * failed spawn keeps its credit and goes as soon as a footprint frees up
+ * (see Sim.runScript), so congestion DELAYS a wave and never swallows one.
+ * The constant sets the pace where the map can keep up and gets out of the
+ * way where it cannot.
+ *
+ * Measured on The Three Gates, which has five drop zones: every wave up to
+ * about 230/s comes out in the full 3.5s, and wave 20 asks 716/s, gets 253/s
+ * and takes 9.9s to release all 2,506 — still quicker than the 15.7s the old
+ * flat 160/s gave it. So the ceiling a map imposes is a REAL limit worth
+ * knowing, and raising it is a matter of drop zones, not of this number.
+ */
+export const WAVE_RELEASE_SECONDS = 3.5;
+
+/** enemies per second for a wave of `count` — the whole pacing rule */
+export const waveSpawnRate = (count: number): number =>
+  Math.max(1, count) / WAVE_RELEASE_SECONDS;
+
+/**
  * The editable half of a level: everything the admin level editor writes.
  * Identity and presentation (name, map) stay in code — an editor that could
  * rename a world or move it to another map would be editing the campaign's
@@ -705,7 +740,6 @@ export interface LevelSpec {
  */
 export interface LevelDoc {
   id: string;
-  spawnRate: number;
   waveGap: number;
   script: LevelStep[];
 }
@@ -714,7 +748,6 @@ export interface LevelDoc {
 export function levelDoc(spec: LevelSpec): LevelDoc {
   return {
     id: spec.id,
-    spawnRate: spec.spawnRate,
     waveGap: spec.waveGap,
     script: spec.script,
   };
@@ -770,10 +803,95 @@ export const WORLDS: LevelSpec[] = [
     id: "1",
     name: "The Three Gates",
     map: "grass-open",
-    // slow enough that a wave is still walking in when the next gap starts,
-    // so the field reads as one continuous swarm rather than a set of pushes
-    spawnRate: 20,
     waveGap: 15,
+    // ================= HOW TO AUTHOR A WAVE ========================
+    //
+    // THE SHIPPED SCRIPT IS OVERRIDDEN BY public/levels/1.json. The array
+    // below is the fallback the game ships with; applyLevelDoc() replaces it
+    // wholesale at load, so edit the JSON (or the admin level editor) and
+    // treat this as the shape rather than the content.
+    //
+    // MEDIUM (waves 1-20) IS PLAYTESTED AND FIXED. Do not restructure it.
+    //
+    // A DIFFICULTY IS A PREFIX, NOT A SCRIPT OF ITS OWN. High plays waves
+    // 1-35 and Extreme 1-50, so both REPLAY every Medium wave, and the rows
+    // in TARGET_DROP_RATIO describe the cumulative total of a whole run.
+    // Authoring can only ever ADD to a tier, never subtract, so Medium's
+    // 12,500 tier-1 bodies are the floor for every difficulty above it.
+    //
+    //   line       T1        T2       T3         T4         T5
+    //   dagger     dagger    mace     fortress   scepter    reign
+    //   crawler    crawler   atrax    spiroct    arkyid     toxopid
+    //   support    nova      pulsar   quasar     vela       corvus
+    //   air        flare     horizon  zenith     antumbra   eclipse
+    //
+    // KEEP SENDING TIER-1 UNITS. They are the swarm and the game is named
+    // after them. They are also nearly free in the health budget — 118 hp
+    // against a scepter's 8,100, so one T4 weighs as much as sixty-nine
+    // daggers, and the twelve thousand extra daggers High adds cost less
+    // than its two hundred scepters. Spend the budget on T3/T4/T5 counts;
+    // that is the only thing that really moves a difficulty's weight.
+    //
+    // NO TIER-5 BEFORE EXTREME. Waves 21-35 must field none at all: phase
+    // fabric is what spectre, meltdown and foreshadow are priced in, and
+    // those three are meant to be unbuyable until Extreme has actually been
+    // played. Adding one reign to a High wave quietly unlocks the top of
+    // the tech tree a difficulty early.
+    //
+    // THE PATTERN, past Medium. One cycle is four waves:
+    //
+    //   1  DAGGER CLASS  + partial support, and optionally a SMALL amount
+    //                      of air — small is the point, not a hedge
+    //   2  CRAWLER CLASS + partial support, same optional small air
+    //   3  AIR ONLY      — air is strong right now, so this wave is allowed
+    //                      to be a DIP in the ramp chart. It should be.
+    //   4  MIXED         — a bit of everything
+    //
+    // Every TWO cycles, insert one wave of PURE SUPPORT. So the repeating
+    // unit is nine waves: D C A M  D C A M  S.
+    //
+    // THE LAST TWO WAVES OF EACH DIFFICULTY ARE HAND-WRITTEN, and they are a
+    // PAIR rather than two waves that happen to be adjacent. Waves 34 and 49
+    // are LULLS and waves 35 and 50 are FINALES, and the lull exists to make
+    // the finale land:
+    //
+    //   34    674 bodies  0.23M health      35   3,505 bodies  2.17M health
+    //   49    710 bodies  0.74M health      50   3,670 bodies  6.93M health
+    //
+    // That is a 9.7x and 9.4x swing in one wave gap. A difficulty that simply
+    // ramped to its biggest wave would arrive at the same number having
+    // spent it; dropping the floor out first is what makes the last wave
+    // read as an event. The lull is quieter than the AIR wave before it,
+    // which is the quietest thing the pattern otherwise produces.
+    //
+    // The finales are every line at full strength and about a third of their
+    // segment's entire health — 3.9x and 2.0x the biggest wave the generated
+    // pattern produces. Wave 50 is the only wave in the game where reign,
+    // toxopid, corvus and eclipse all appear at once. Wave 35 fields scepters
+    // and arkyids but NO tier 5, because High must not (see above).
+    //
+    // ALL FOUR TAKE THEIR BODIES OUT OF THE GENERATED SEGMENT rather than
+    // adding on top, so the cumulative ratios stay exactly on target. Resize
+    // any of them and the difference moves back into waves 21-33 or 36-48.
+    //
+    // WITHIN a segment, ramp two things at once: total bodies, and the tier
+    // mix. Early waves lean T2; late waves lean T4 and T5. Wave 21's dagger
+    // wave is mace 692 / fortress 145 / scepter 7; wave 45's is mace 262 /
+    // fortress 411 / scepter 223 / reign 52. Same wave type, different game.
+    //
+    // CHECK THE TOTALS, NOT THE FEEL. A difficulty's cumulative tier counts
+    // have to land on TARGET_DROP_RATIO (ladder.ts), because one kill is one
+    // item and that ratio IS the economy — miss it and some currency becomes
+    // the only real constraint while the rest pile up unspent.
+    // `window.__ladder.check()` reports the drift.
+    //
+    // DO NOT SIZE A DIFFICULTY AGAINST THE MAP'S AREA. A run's total bodies
+    // are not its bodies on the field: units stream in over
+    // WAVE_RELEASE_SECONDS and die continuously, so a difficulty that sends
+    // 52,000 of them never holds a fraction of that at once. If a wave
+    // outruns the drop zones they simply queue (Sim.runScript). Size against
+    // TARGET_DROP_RATIO and the health step, which are the limits that bind.
+    // ==============================================================
     script: [
       // ---------- MEDIUM: waves 1-20, enemy level 0 ------------------
       { wave: { dagger: 24 } },
@@ -853,7 +971,7 @@ export function worldById(id: string): LevelSpec | null {
  *
  * Unlike maps, though, a level always exists in code first. WORLDS above is
  * the shipped campaign; a document, when one has been saved, REPLACES that
- * world's spawnRate and script wholesale. So the source of truth for an
+ * world's waveGap and script wholesale. So the source of truth for an
  * edited level is its JSON, and for an untouched one it is the array above —
  * never a merge of the two.
  *
@@ -921,8 +1039,9 @@ async function fetchLevelIndex(): Promise<string[]> {
  */
 function readLevelDoc(id: string, raw: unknown): LevelDoc | null {
   if (!raw || typeof raw !== "object") return null;
+  // `spawnRate` is read off older documents and DISCARDED, not rejected —
+  // release pacing is no longer a per-level number (see WAVE_RELEASE_SECONDS)
   const d = raw as Partial<LevelDoc> & { script?: unknown };
-  if (typeof d.spawnRate !== "number" || !(d.spawnRate > 0)) return null;
   if (!Array.isArray(d.script)) return null;
 
   const waits: number[] = [];
@@ -943,7 +1062,7 @@ function readLevelDoc(id: string, raw: unknown): LevelDoc | null {
 
   const waveGap =
     typeof d.waveGap === "number" && d.waveGap >= 0 ? d.waveGap : commonest(waits);
-  return { id, spawnRate: d.spawnRate, waveGap, script };
+  return { id, waveGap, script };
 }
 
 /** the most frequent value, ties going to the smaller; 10s if there are none */
@@ -958,7 +1077,6 @@ function commonest(values: readonly number[]): number {
 export function applyLevelDoc(doc: LevelDoc): void {
   const world = WORLDS.find((w) => w.id === doc.id);
   if (!world) return;
-  world.spawnRate = doc.spawnRate;
   world.waveGap = doc.waveGap;
   world.script = doc.script;
 }
