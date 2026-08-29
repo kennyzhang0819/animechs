@@ -156,7 +156,7 @@ export default function BalanceView() {
     }));
     // knobs live in module state, so the bump counter is the real dependency
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sel, shown, k.baseScale, k.multiplier, k.growth]);
+  }, [sel, shown, k.base, k.growth]);
 
   const spendTo = useCallback(
     (n: number): Partial<Record<ItemKind, number>> => {
@@ -167,7 +167,7 @@ export default function BalanceView() {
       return total;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sel, k.baseScale, k.multiplier, k.growth],
+    [sel, k.base, k.growth],
   );
 
   const W = 720, H = 300, PL = 62, PR = 16, PT = 14, PB = 30;
@@ -180,19 +180,17 @@ export default function BalanceView() {
   const yTicks = [0, top / 2, top];
   const rec = recommendedBase(sel);
   const firstBundle = costEntries(bundleAt(sel, 1));
-  const bentAny = k.baseScale !== 1 || k.multiplier !== authored.multiplier || k.growth !== authored.growth;
+  const bentAny = k.base !== authored.base || k.growth !== authored.growth;
 
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
         <p className="max-w-3xl text-[13px] leading-relaxed text-[#71717C]">
-          Three independent knobs:{" "}
-          <span className="text-[#A6A6AF]">base</span> is what the first purchase costs,{" "}
-          <span className="text-[#A6A6AF]">multiplier</span> scales the whole node at once, and{" "}
-          <span className="text-[#A6A6AF]">growth</span> is how steeply it climbs. Base and
-          multiplier compose — both scale every price, so use base to set the start and multiplier
-          to move a turret without touching its bundle. Caps come from footprint and nothing here
-          changes them.
+          Two knobs: <span className="text-[#A6A6AF]">base</span> is what the first purchase costs,
+          and <span className="text-[#A6A6AF]">growth</span> is how steeply it climbs. Editing base
+          rescales the whole bundle, so its drop-ratio shape survives and only the size moves. Base
+          order comes from Mindustry&apos;s build costs — moving one past its neighbours gives that
+          up. Caps come from footprint and nothing here changes them.
         </p>
         <div className="flex shrink-0 items-center gap-2">
           {status && <span className="text-[13px] text-[#71717C]">{status}</span>}
@@ -211,7 +209,7 @@ export default function BalanceView() {
           {TOWER_KINDS.map((t) => {
             const kk = knobsOf(t);
             const a = authoredKnobs(t);
-            const dirty = kk.baseScale !== 1 || kk.multiplier !== a.multiplier || kk.growth !== a.growth;
+            const dirty = kk.base !== a.base || kk.growth !== a.growth;
             return (
               <button
                 key={t}
@@ -253,33 +251,19 @@ export default function BalanceView() {
               <Knob
                 label="Base"
                 hint={
-                  `scales the whole bundle; the field is ${ITEM_INFO[lead].name}` +
+                  `${ITEM_INFO[lead].name} for the first one; the rest of the bundle follows` +
                   (rec !== null ? ` · ${rec.toLocaleString()} is what its damage suggests` : "")
                 }
-                value={priceAt(sel, 1, lead)}
+                value={k.base}
                 min={1}
-                max={Math.max(50, Math.round((techNode(sel).price.base[lead] ?? 1) * 4))}
+                max={Math.max(50, Math.round(authored.base * 4))}
                 step={1}
                 decimals={0}
-                bent={k.baseScale !== 1}
-                onChange={(v) => {
-                  const authoredLead = techNode(sel).price.base[lead] ?? 1;
-                  set("baseScale", Math.max(0.001, v / (authoredLead * k.multiplier)));
-                }}
-                onReset={() => set("baseScale", undefined)}
+                bent={k.base !== authored.base}
+                onChange={(v) => set("base", Math.max(0.01, v))}
+                onReset={() => set("base", undefined)}
               />
-              <Knob
-                label="Multiplier"
-                hint="scales every price on this node at once"
-                value={k.multiplier}
-                min={0.05}
-                max={4}
-                step={0.01}
-                decimals={2}
-                bent={k.multiplier !== authored.multiplier}
-                onChange={(v) => set("multiplier", v)}
-                onReset={() => set("multiplier", undefined)}
-              />
+
               <Knob
                 label="Growth"
                 hint="cost multiplier per purchase — small numbers compound hard"
@@ -313,7 +297,7 @@ export default function BalanceView() {
               {bentAny && (
                 <button
                   onClick={() => {
-                    (["baseScale", "multiplier", "growth"] as const).forEach((x) => set(x, undefined));
+                    (["base", "growth"] as const).forEach((x) => set(x, undefined));
                   }}
                   className="mt-3 w-full rounded border border-[#2E2E36] px-2 py-1.5 text-[12px] text-[#A6A6AF] hover:border-[#4A4A55]"
                 >

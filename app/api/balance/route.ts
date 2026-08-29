@@ -3,10 +3,12 @@ import path from "path";
 import { NextResponse } from "next/server";
 import { TECH_KINDS } from "@/game/tech";
 
-/** the three knobs, and the sane range each one may be saved in */
+/** the two knobs, and the sane range each one may be saved in */
 const LIMITS = {
-  baseScale: 1000,
-  multiplier: 1000,
+  // an absolute first purchase, in whichever currency the bundle leads with
+  base: 1_000_000,
+  // an exponent, so the ceiling is low on purpose: a fat-fingered 40 would
+  // price the second turret past any bank the game can hold
   growth: 4,
 } as const;
 
