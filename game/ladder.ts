@@ -96,11 +96,27 @@ export const LEVELS_PER_TIER = 10;
  * The wave counts are 20/35/50 rather than something evener because Medium
  * has to be a whole arc on its own — a fresh save's entire experience of
  * the game until it clears it.
+ *
+ * `shieldScale` multiplies every shield ability's pool, cap and regen (see
+ * Sim.updateAbilities), and it is a hand-tuned constant per difficulty
+ * rather than a curve, because shields answer a different question than
+ * health. A body's health is priced against the enemy budget, so it rides
+ * the level curve; a shield is measured in SECONDS OF ABSORBED TOWER FIRE,
+ * so it has to track the player's firepower — and that moves by the ~6x
+ * difficulty steps documented over TARGET_DROP_RATIO, not by x1.79. Left
+ * flat, a quasar's 500-point bubble that buys real cover at Medium pops to
+ * incidental fire at High. Only the enemy's own shields scale; nothing on
+ * the player's side reads this.
  */
-export const DIFFICULTIES: readonly { name: string; waves: number; level: number }[] = [
-  { name: "Medium", waves: 20, level: 0 },
-  { name: "High", waves: 35, level: 10 },
-  { name: "Extreme", waves: 50, level: 20 },
+export const DIFFICULTIES: readonly {
+  name: string;
+  waves: number;
+  level: number;
+  shieldScale: number;
+}[] = [
+  { name: "Medium", waves: 20, level: 0, shieldScale: 1 },
+  { name: "High", waves: 35, level: 10, shieldScale: 5 },
+  { name: "Extreme", waves: 50, level: 20, shieldScale: 20 },
   // ERADICATION and UNREASONABLE are deliberately not here yet
 ];
 
@@ -212,6 +228,22 @@ export const tierLevel = (tier: number): number => DIFFICULTIES[clampTier(tier)]
 /** health multiplier of a difficulty */
 export const tierHpScale = (tier: number): number => HP_PER_LEVEL ** tierLevel(tier);
 
+/** shield multiplier of a difficulty */
+export const tierShieldScale = (tier: number): number =>
+  DIFFICULTIES[clampTier(tier)].shieldScale;
+
+/**
+ * Shield multiplier at an enemy level: the scale of the highest difficulty
+ * whose level the given one has reached. Piecewise-constant on purpose —
+ * the campaign only ever plays levels 0, 10 and 20 (tierLevel), so a curve
+ * through the levels in between would be tuning nothing.
+ */
+export const shieldScaleAtLevel = (level: number): number => {
+  let s = 1;
+  for (const d of DIFFICULTIES) if (level >= d.level) s = d.shieldScale;
+  return s;
+};
+
 /** drop multiplier of a difficulty */
 export const tierDropBonus = (tier: number): number =>
   1 + DROP_BONUS_PER_TIER * clampTier(tier);
@@ -305,6 +337,9 @@ export interface Budget {
   hp: number;
   /** share of health carried by units with armour 3 or more */
   armourShare: number;
+  /** share of health carried by units with a shield ability — ehp the hp
+   *  column cannot see, and it grows by tierShieldScale on top */
+  shieldShare: number;
   /** share of health that flies — hail and scorch cannot touch it at all */
   airShare: number;
   /** share of health carried by unit tier 3 and up */
@@ -322,6 +357,7 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
   let units = 0;
   let hp = 0;
   let armour = 0;
+  let shielded = 0;
   let air = 0;
   let t3 = 0;
   for (const step of run.script) {
@@ -334,6 +370,7 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
         units += count;
         hp += h;
         if (stats.armor >= 3) armour += h;
+        if (stats.forceField || stats.shieldField) shielded += h;
         if (stats.flying) air += h;
         if (stats.tier >= 3) t3 += h;
       });
@@ -348,6 +385,7 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
     units,
     hp,
     armourShare: share(armour),
+    shieldShare: share(shielded),
     airShare: share(air),
     t3Share: share(t3),
     duration,
@@ -624,6 +662,9 @@ export interface AuditRow {
   duration: number;
   t3Share: number;
   armourShare: number;
+  /** share of health carried by shield-ability units, whose pools are also
+   *  multiplied by this difficulty's shieldScale */
+  shieldShare: number;
   /**
    * What a full clear actually banks, per currency, INCLUDING this
    * difficulty's drop bonus. One item per kill, so this is just the enemy
@@ -698,6 +739,7 @@ export function audit(spec: LevelSpec = WORLD): AuditRow[] {
       duration: Math.round(b.duration),
       t3Share: +b.t3Share.toFixed(2),
       armourShare: +b.armourShare.toFixed(2),
+      shieldShare: +b.shieldShare.toFixed(2),
       drops: paid,
       dropRatio: ITEM_KINDS.map((k) =>
         k === BASE_ITEM ? 100 : Math.round((1000 * (drops[k] ?? 0)) / s) / 10,

@@ -38,7 +38,7 @@ import {
   type UnitKind,
   waveSpawnRate,
 } from "./levels";
-import { unitHpAtLevel } from "./ladder";
+import { shieldScaleAtLevel, unitHpAtLevel } from "./ladder";
 import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
 import type { TechState } from "./tech";
 import { WALL_PINE, type Terrain } from "./terrain";
@@ -1115,9 +1115,15 @@ export class Sim {
       }
       this.uarmor[i] = stats.armor;
       // ForceFieldAbility.created: a carrier walks in with the bubble
-      // already full, so the first tower to see one meets 500 points of
-      // shield rather than a field still charging up
-      this.ushield[i] = stats.forceField ? stats.forceField.max : 0;
+      // already full, so the first tower to see one meets a whole pool of
+      // shield rather than a field still charging up. The pool is scaled by
+      // the difficulty's shieldScale — shields track the player's firepower,
+      // not the hp curve (see DIFFICULTIES) — and every other read of a
+      // shield spec's max/amount/regen (updateAbilities) carries the same
+      // factor, or the spawn bonus could never refill
+      this.ushield[i] = stats.forceField
+        ? stats.forceField.max * shieldScaleAtLevel(this.level.enemyLevel ?? 0)
+        : 0;
       this.ushieldAlpha[i] = 0;
       this.uforceScale[i] = 0;
       this.uforceDown[i] = 0;
@@ -1172,6 +1178,11 @@ export class Sim {
     if (!HAS_ABILITIES) return;
     const { upx, upy, uhp, uhpmax, urad, ushield, ushieldAlpha, uability, ukind } = this;
     const { uforceScale, uforceDown } = this;
+    // the difficulty's shield multiplier (see DIFFICULTIES.shieldScale):
+    // pool, cap and regen all carry it, so a scaled field breaks later,
+    // refills proportionally faster, and is still dark for exactly
+    // `cooldown` seconds when it pops
+    const ss = shieldScaleAtLevel(this.level.enemyLevel ?? 0);
     for (let i = 0; i < this.n; i++) {
       const k = ukind[i];
       const force = KIND_FORCE[k];
@@ -1181,7 +1192,7 @@ export class Sim {
         // steady +regen that refills the field is also what times its
         // outage, and the field is dark for exactly `cooldown` seconds
         if (ushield[i] <= 0 && !uforceDown[i]) {
-          ushield[i] -= force.cooldown * force.regen;
+          ushield[i] -= force.cooldown * force.regen * ss;
           // Fx.shieldBreak: the outline snapping outward as it pops
           this.pushFx(
             upx[i], upy[i], 40 / 60, FxKind.ShieldBreak,
@@ -1189,9 +1200,10 @@ export class Sim {
           );
         }
         uforceDown[i] = ushield[i] <= 0 ? 1 : 0;
-        // regen is unconditional, so a pool sitting at -144 climbs back
-        // through zero on its own and the field comes up again
-        if (ushield[i] < force.max) ushield[i] = Math.min(ushield[i] + force.regen * dt, force.max);
+        // regen is unconditional, so a pool sitting below zero climbs back
+        // through it on its own and the field comes up again
+        const fmax = force.max * ss;
+        if (ushield[i] < fmax) ushield[i] = Math.min(ushield[i] + force.regen * ss * dt, fmax);
         // Mathf.lerpDelta(radiusScale, 1, 0.06) per tick, compounded over
         // the frame; a broken field has no radius at all
         uforceScale[i] =
@@ -1232,8 +1244,8 @@ export class Sim {
               this.pushFx(upx[j], upy[j], 0.18, FxKind.Heal);
               did = true;
             }
-            if (shield && ushield[j] < shield.max) {
-              ushield[j] = Math.min(ushield[j] + shield.amount, shield.max);
+            if (shield && ushield[j] < shield.max * ss) {
+              ushield[j] = Math.min(ushield[j] + shield.amount * ss, shield.max * ss);
               ushieldAlpha[j] = 1;
               did = true;
             }
