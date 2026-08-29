@@ -459,11 +459,17 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // file), so scatter is the CHEAP answer to air rather than the only one,
     // and the multiplier falls back toward the 12% reading it started from.
     //
-    // Its coefficient is 0.7763 for exactly this reason: the growth was
-    // solved when the base was 50, and halving the base to 25 without
-    // re-solving left the node priced at 0.209x parity. That used to be an
-    // untouched number nobody could see; it is now the tune field, and
-    // moving it back to 1 is what re-prices scatter at parity.
+    // ITS COEFFICIENT IS 0.5, AND IT IS THE FIRST ONE CHOSEN RATHER THAN
+    // INHERITED. The node arrived here at 0.7763, which was not a decision at
+    // all: the growth had been solved when the base was 50, and halving the
+    // base to 25 without re-solving left it at 0.209x parity. That accident
+    // was invisible until the coefficient gave it a name.
+    //
+    // 0.5 is deliberate on top of it. Flak wants to be the answer a player
+    // reaches for against a flare cloud, and reaching for it means owning
+    // enough to cover more than one lane: at a mid-campaign bank this is
+    // about 295 scatters where parity affords 205, and it cuts the
+    // hundredth from 600 copper to 200.
     //
     // THE CUT IS ALL IN THE BASE, NOT THE GROWTH, and that is the point.
     // Growth only decides what the two-hundredth scatter costs; a player who
@@ -486,7 +492,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     tower: "scatter",
     price: { base: { copper: 25, titanium: 4 } },
     dps: 1450,
-    tune: 0.7763,
+    tune: 0.5,
     requires: "duo",
     x: 1,
     y: 1,
@@ -501,6 +507,17 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     tower: "salvo",
     price: { base: { copper: 250, titanium: 85, thorium: 30 } },
     dps: 217,
+    // A DELIBERATE SHADE UNDER PARITY. Salvo is the sustained-fire answer
+    // on a tier where scatter is the burst one, and at 217 DPS the rule
+    // prices it honestly but joylessly — the fiftieth costs 525 copper and
+    // the hundredth 1,200, which is a lot of banking for a turret whose
+    // job is to be ordinary and everywhere. 0.8 takes those to 450 and
+    // 850, about 13% more of them at a mid-campaign bank.
+    //
+    // Deliberately small: this is the node whose stated DPS the shots and
+    // reload do not reproduce (see the header), so it is the one to bend
+    // gently until that discrepancy is understood rather than papered over.
+    tune: 0.8,
     requires: "hail",
     x: 1,
     y: 3,
