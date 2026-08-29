@@ -26,9 +26,19 @@ function leadItem(tower: TowerKind): ItemKind {
   return (first?.item ?? "copper") as ItemKind;
 }
 
-/** price of the nth purchase (1-indexed) in the bundle's lead currency */
-function priceAt(tower: TowerKind, n: number): number {
-  return techPrice(tower, n - 1)[leadItem(tower)] ?? 0;
+/** every currency in this node's bundle, in ITEM_KINDS order */
+function itemsOf(tower: TowerKind): ItemKind[] {
+  return costEntries(techNode(tower).price.base).map((e) => e.item as ItemKind);
+}
+
+/** the whole nth purchase (1-indexed), not just its lead currency */
+function bundleAt(tower: TowerKind, n: number): Partial<Record<ItemKind, number>> {
+  return techPrice(tower, n - 1);
+}
+
+/** one currency of the nth purchase */
+function priceAt(tower: TowerKind, n: number, item: ItemKind): number {
+  return techPrice(tower, n - 1)[item] ?? 0;
 }
 
 const fmt = (x: number): string =>
@@ -135,19 +145,26 @@ export default function BalanceView() {
   // the curve, plus the running total, sampled across the window on screen
   const curve = useMemo(() => {
     const step = Math.max(1, Math.round(shown / 240));
-    const pts: { n: number; p: number }[] = [];
-    for (let n = 1; n <= shown; n += step) pts.push({ n, p: priceAt(sel, n) });
-    if (pts[pts.length - 1]?.n !== shown) pts.push({ n: shown, p: priceAt(sel, shown) });
-    return pts;
+    const ns: number[] = [];
+    for (let n = 1; n <= shown; n += step) ns.push(n);
+    if (ns[ns.length - 1] !== shown) ns.push(shown);
+    // every currency rides the same growth, so these come out parallel — which
+    // is the point: the graph should show that the whole bundle moves together
+    return itemsOf(sel).map((item) => ({
+      item,
+      pts: ns.map((n) => ({ n, p: priceAt(sel, n, item) })),
+    }));
     // knobs live in module state, so the bump counter is the real dependency
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel, shown, k.baseScale, k.multiplier, k.growth]);
 
   const spendTo = useCallback(
-    (n: number) => {
-      let t = 0;
-      for (let i = 1; i <= n; i++) t += priceAt(sel, i);
-      return t;
+    (n: number): Partial<Record<ItemKind, number>> => {
+      const total: Partial<Record<ItemKind, number>> = {};
+      for (let i = 1; i <= n; i++)
+        for (const e of costEntries(bundleAt(sel, i)))
+          total[e.item as ItemKind] = (total[e.item as ItemKind] ?? 0) + e.amount;
+      return total;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [sel, k.baseScale, k.multiplier, k.growth],
@@ -155,13 +172,14 @@ export default function BalanceView() {
 
   const W = 720, H = 300, PL = 62, PR = 16, PT = 14, PB = 30;
   const IW = W - PL - PR, IH = H - PT - PB;
-  const top = Math.max(1, ...curve.map((c) => c.p)) * 1.05;
+  const top = Math.max(1, ...curve.flatMap((c) => c.pts.map((q) => q.p))) * 1.05;
   const X = (n: number) => PL + ((n - 1) / Math.max(1, shown - 1)) * IW;
   const Y = (p: number) => PT + IH - (p / top) * IH;
-  const path = curve.map((c, i) => (i ? "L" : "M") + X(c.n).toFixed(1) + " " + Y(c.p).toFixed(1)).join("");
-  const area = path + "L" + X(shown).toFixed(1) + " " + (PT + IH) + "L" + PL + " " + (PT + IH) + "Z";
+  const pathOf = (pts: { n: number; p: number }[]) =>
+    pts.map((c, i) => (i ? "L" : "M") + X(c.n).toFixed(1) + " " + Y(c.p).toFixed(1)).join("");
   const yTicks = [0, top / 2, top];
   const rec = recommendedBase(sel);
+  const firstBundle = costEntries(bundleAt(sel, 1));
   const bentAny = k.baseScale !== 1 || k.multiplier !== authored.multiplier || k.growth !== authored.growth;
 
   return (
@@ -225,10 +243,8 @@ export default function BalanceView() {
               </span>
             </div>
             <div className={`text-[12px] text-[#71717C] ${NUM}`}>
-              first purchase:{" "}
-              {costEntries(techPrice(sel, 0))
-                .map((e) => `${Math.round(e.amount).toLocaleString()} ${ITEM_INFO[e.item].name}`)
-                .join(" · ")}
+              {firstBundle.length} {firstBundle.length === 1 ? "currency" : "currencies"}, all
+              riding the same growth
             </div>
           </div>
 
@@ -237,10 +253,10 @@ export default function BalanceView() {
               <Knob
                 label="Base"
                 hint={
-                  `${ITEM_INFO[lead].name} for the first one` +
+                  `scales the whole bundle; the field is ${ITEM_INFO[lead].name}` +
                   (rec !== null ? ` · ${rec.toLocaleString()} is what its damage suggests` : "")
                 }
-                value={priceAt(sel, 1)}
+                value={priceAt(sel, 1, lead)}
                 min={1}
                 max={Math.max(50, Math.round((techNode(sel).price.base[lead] ?? 1) * 4))}
                 step={1}
@@ -344,15 +360,17 @@ export default function BalanceView() {
                     </text>
                   </g>
                 ))}
-                <path d={area} fill={SERIES} fillOpacity={0.12} />
-                <path
-                  d={path}
-                  fill="none"
-                  stroke={SERIES}
-                  strokeWidth={2}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
+                {curve.map((c) => (
+                  <path
+                    key={c.item}
+                    d={pathOf(c.pts)}
+                    fill="none"
+                    stroke={ITEM_INFO[c.item].color}
+                    strokeWidth={2}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                ))}
                 {hover !== null && (
                   <>
                     <line
@@ -363,14 +381,17 @@ export default function BalanceView() {
                       stroke="#898781"
                       strokeWidth={1}
                     />
-                    <circle
-                      cx={X(hover)}
-                      cy={Y(priceAt(sel, hover))}
-                      r={4}
-                      fill={SERIES}
-                      stroke="#191b1c"
-                      strokeWidth={2}
-                    />
+                    {curve.map((c) => (
+                      <circle
+                        key={c.item}
+                        cx={X(hover)}
+                        cy={Y(priceAt(sel, hover, c.item))}
+                        r={4}
+                        fill={ITEM_INFO[c.item].color}
+                        stroke="#0B0B0D"
+                        strokeWidth={2}
+                      />
+                    ))}
                   </>
                 )}
                 <line x1={PL} y1={PT + IH} x2={W - PR} y2={PT + IH} stroke="#383835" strokeWidth={1} />
@@ -390,27 +411,37 @@ export default function BalanceView() {
               </svg>
 
               <div className="mt-1 rounded border border-[#2E2E36] bg-[#0B0B0D] p-3">
-                {hover === null ? (
-                  <p className="text-[12px] text-[#71717C]">
-                    Hover the curve to read any purchase — price, and everything spent to reach it.
-                  </p>
-                ) : (
-                  <div className={`flex flex-wrap gap-x-6 gap-y-1 text-[12.5px] ${NUM}`}>
-                    <span className="text-[#71717C]">
-                      purchase <span className="text-[#EDEDEF]">{hover.toLocaleString()}</span>
-                    </span>
-                    <span className="text-[#71717C]">
-                      costs{" "}
-                      <span className="text-[#EDEDEF]">
-                        {Math.round(priceAt(sel, hover)).toLocaleString()} {ITEM_INFO[lead].name}
-                      </span>
-                    </span>
-                    <span className="text-[#71717C]">
-                      spent by then{" "}
-                      <span className="text-[#EDEDEF]">{fmt(spendTo(hover))}</span>
-                    </span>
+                <div className={`text-[12.5px] ${NUM}`}>
+                  <div className="mb-1 text-[#71717C]">
+                    {hover === null ? (
+                      "first purchase — hover the graph to read any other"
+                    ) : (
+                      <>
+                        purchase{" "}
+                        <span className="text-[#EDEDEF]">{hover.toLocaleString()}</span>
+                      </>
+                    )}
                   </div>
-                )}
+                  <div className="flex flex-wrap gap-x-5 gap-y-1">
+                    {itemsOf(sel).map((it) => (
+                      <span key={it} className="inline-flex items-center gap-1.5">
+                        <span
+                          className="inline-block h-2.5 w-2.5 rounded-sm"
+                          style={{ background: ITEM_INFO[it].color }}
+                        />
+                        <span className="text-[#EDEDEF]">
+                          {Math.round(priceAt(sel, hover ?? 1, it)).toLocaleString()}
+                        </span>
+                        <span className="text-[#71717C]">{ITEM_INFO[it].name}</span>
+                        {hover !== null && (
+                          <span className="text-[#5A5A63]">
+                            ({fmt(spendTo(hover)[it] ?? 0)} spent)
+                          </span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
