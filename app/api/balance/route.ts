@@ -15,6 +15,9 @@ const LIMITS = {
 
 /** the per-difficulty dials under the reserved `difficulties` key */
 const DIFFICULTY_LIMITS = {
+  // enemy level: hp is x1.06^level, so 100 is already x339 health and
+  // anything past it is a typo
+  level: 100,
   // a multiplier on shield pools; three digits already means an unbreakable
   // bubble, so anything past this is a typo
   shieldScale: 1000,

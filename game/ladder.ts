@@ -255,8 +255,8 @@ export const difficultyColor = (tier: number): string => DIFFICULTIES[clampTier(
  */
 export const difficultyOf = (tier: number): number => clampTier(tier) + 1;
 
-/** enemy level of a difficulty */
-export const tierLevel = (tier: number): number => DIFFICULTIES[clampTier(tier)].level;
+/** enemy level of a difficulty — through the dials, so an override applies */
+export const tierLevel = (tier: number): number => difficultyKnobsOf(tier).level;
 
 /** health multiplier of a difficulty */
 export const tierHpScale = (tier: number): number => HP_PER_LEVEL ** tierLevel(tier);
@@ -270,12 +270,14 @@ export const tierHpScale = (tier: number): number => HP_PER_LEVEL ** tierLevel(t
  * source of truth; once a number is settled it belongs there.
  */
 export interface DifficultyKnobs {
+  /** enemy level — every unit's hp is x HP_PER_LEVEL^level, nothing else moves */
+  level: number;
   shieldScale: number;
   groundArmorBonus: number;
   airArmorBonus: number;
 }
 
-const DIFFICULTY_KNOB_KEYS = ["shieldScale", "groundArmorBonus", "airArmorBonus"] as const;
+const DIFFICULTY_KNOB_KEYS = ["level", "shieldScale", "groundArmorBonus", "airArmorBonus"] as const;
 
 /** keyed by difficulty NAME — the stable identity a saved document uses */
 const difficultyOverrides = new Map<string, Partial<DifficultyKnobs>>();
@@ -285,6 +287,7 @@ export function difficultyKnobsOf(tier: number): DifficultyKnobs {
   const d = DIFFICULTIES[clampTier(tier)];
   const o = difficultyOverrides.get(d.name) ?? {};
   return {
+    level: o.level ?? d.level,
     shieldScale: o.shieldScale ?? d.shieldScale,
     groundArmorBonus: o.groundArmorBonus ?? d.groundArmorBonus,
     airArmorBonus: o.airArmorBonus ?? d.airArmorBonus,
@@ -295,6 +298,7 @@ export function difficultyKnobsOf(tier: number): DifficultyKnobs {
 export function authoredDifficultyKnobs(tier: number): DifficultyKnobs {
   const d = DIFFICULTIES[clampTier(tier)];
   return {
+    level: d.level,
     shieldScale: d.shieldScale,
     groundArmorBonus: d.groundArmorBonus,
     airArmorBonus: d.airArmorBonus,
@@ -349,8 +353,10 @@ export const tierShieldScale = (tier: number): number =>
  */
 export const shieldScaleAtLevel = (level: number): number => {
   let s = 1;
+  // the threshold is the KNOBBED level, so a difficulty whose level was
+  // dialled still hands its shield scale to the runs playing at it
   for (let t = 0; t < DIFFICULTIES.length; t++)
-    if (level >= DIFFICULTIES[t].level) s = difficultyKnobsOf(t).shieldScale;
+    if (level >= difficultyKnobsOf(t).level) s = difficultyKnobsOf(t).shieldScale;
   return s;
 };
 
@@ -366,8 +372,8 @@ export const tierArmorBonus = (tier: number, flying: boolean): number => {
 export const armorBonusAtLevel = (level: number, flying: boolean): number => {
   let a = 0;
   for (let t = 0; t < DIFFICULTIES.length; t++) {
-    if (level < DIFFICULTIES[t].level) continue;
     const k = difficultyKnobsOf(t);
+    if (level < k.level) continue;
     a = flying ? k.airArmorBonus : k.groundArmorBonus;
   }
   return a;
