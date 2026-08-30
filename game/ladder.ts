@@ -29,11 +29,11 @@ import {
  *   Incursion    waves 1-20   enemy level  0
  *   Onslaught    waves 1-35   enemy level 10
  *   Nemesis      waves 1-50   enemy level 16
- *   Eradication  waves 1-50   enemy level 26   (hidden — see below)
+ *   Eradication  waves 1-50   enemy level 50   (hidden — see below)
  *
  * Nemesis plays the whole authored script, so the visible campaign ends
  * where the writing does. ERADICATION is the hidden ultimate difficulty
- * above it: the same full script Nemesis plays at enemy level 26 with +10
+ * above it: the same full script Nemesis plays at enemy level 50 with +10
  * armour on the swarm (lowTierArmorBonus — the ladder's only difficulty
  * that turns that knob), and it does not exist on a save until the tech
  * tree's "A Final Threat" node is owned (topTier in progress.ts is where
@@ -148,7 +148,7 @@ export const DIFFICULTIES: readonly {
   // prettier-ignore
   { name: "Nemesis", color: "#FF5A5A", waves: 50, level: 16, shieldScale: 5, lowTierArmorBonus: 0 },
   // ERADICATION — the hidden ultimate difficulty: Nemesis's own full script
-  // at enemy level 26, and NO extra loot bonus (see tierDropBonus). It is
+  // at enemy level 50, and NO extra loot bonus (see tierDropBonus). It is
   // in the table so every piece of ladder arithmetic covers it, but a save
   // cannot see or play it until the tech tree's "A Final Threat" node is
   // owned — that gate lives in topTier (progress.ts), not here.
@@ -164,7 +164,7 @@ export const DIFFICULTIES: readonly {
   // own plating, and no unit debuts here (the script is Nemesis's), so the
   // debut-tax lint can't be moved by it.
   // prettier-ignore
-  { name: "Eradication", color: "#A05AE5", waves: 50, level: 26, shieldScale: 5, lowTierArmorBonus: 10 },
+  { name: "Eradication", color: "#A05AE5", waves: 50, level: 50, shieldScale: 5, lowTierArmorBonus: 10 },
 ];
 
 /**
