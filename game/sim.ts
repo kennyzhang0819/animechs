@@ -892,15 +892,6 @@ export class Sim {
     return this.waitLeft > 0 ? this.waitLeft : 0;
   }
 
-  /** cut the between-waves wait short: the next wave starts entering now.
-   * A no-op while a wave is still draining (there is nothing to skip).
-   * The gap belongs to the wave loadStep already staged, so zeroing it
-   * releases THAT wave — advancing the script here would skip it outright */
-  skipWave(): void {
-    if (this.waitLeft <= 0) return;
-    this.waitLeft = 0;
-  }
-
   private addTower(gx: number, gy: number, kind: TowerKind): void {
     const sz = TOWERS[kind].size;
     this.towers.push({

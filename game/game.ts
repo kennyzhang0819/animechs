@@ -890,11 +890,6 @@ export class Game {
     this.sim.setTech(tech);
   }
 
-  /** HUD skip button: start the next wave without waiting out the timer */
-  skipWave(): void {
-    this.sim.skipWave();
-  }
-
   /** the whole script is dealt with and the core stands */
   private won(): boolean {
     return !this.sim.lost() && this.sim.remaining() <= 0;

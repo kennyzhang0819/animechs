@@ -396,10 +396,6 @@ const ORDERED_MENU: ReadonlyArray<(typeof TOWER_MENU)[number]> = BY_MINDUSTRY_VA
   (k) => MENU_BY_KIND.get(k)!,
 );
 
-/** the wave-skip button in the HUD, sized to be hit without aiming */
-const WAVE_BTN =
-  "flex h-9 w-9 shrink-0 items-center justify-center rounded border border-[#2E2E36] text-[#FFD37F] hover:border-[#FFD37F] hover:bg-[#222227]/90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
-
 /** every button in the bottom bar: the turrets and the demolish tool */
 const TOOL_BTN =
   "flex h-[4.5rem] w-14 shrink-0 flex-col items-center justify-center gap-0.5 rounded border backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
@@ -900,8 +896,9 @@ export default function Swarmfield() {
           </div>
         )}
         {/* one fixed width for the whole top-left stack, so the panel does
-            not breathe in and out as counters change and the skip box lines
-            up under it. Everything inside wraps rather than widening it */}
+            not breathe in and out as counters change and the pace strip
+            lines up under it. Everything inside wraps rather than widening
+            it */}
         {hud && (
           <div className="absolute left-[calc(1rem+var(--safe-l))] top-[calc(1rem+var(--safe-t))] flex w-80 max-w-[calc(100vw-8rem-var(--safe-l)-var(--safe-r))] flex-col items-stretch gap-2">
             <div className="w-full rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
@@ -960,29 +957,20 @@ export default function Swarmfield() {
                       </span>
                     )}
                   </div>
-                  {/* the countdown and the button that cuts it short. Both are
-                      conditional on there being a wave still pending — with the
-                      script drained there is nothing left to release */}
+                  {/* the countdown, conditional on there being a wave still
+                      pending — with the script drained there is nothing left
+                      to announce. The gap is not skippable: the pace strip
+                      below is how a player fast-forwards through it, so the
+                      wait is always paid in real ticks and the drops economy
+                      cannot be cheated by releasing waves early */}
                   <div className="flex flex-wrap items-center gap-2 text-[13px] uppercase tracking-widest text-[#EDEDEF]">
                     {hud.nextWaveIn > 0 && (
-                      <>
-                        <span>
-                          Next wave{" "}
-                          <span className="font-bold text-[#EDEDEF]">
-                            {Math.ceil(hud.nextWaveIn)}
-                          </span>
+                      <span>
+                        Next wave{" "}
+                        <span className="font-bold text-[#EDEDEF]">
+                          {Math.ceil(hud.nextWaveIn)}
                         </span>
-                        <button
-                          title="Start next wave now"
-                          aria-label="Start next wave now"
-                          onClick={() => gameRef.current?.skipWave()}
-                          className={WAVE_BTN}
-                        >
-                          <svg viewBox="0 0 12 12" className="h-4 w-4 fill-current" aria-hidden="true">
-                            <path d="M2.5 1.5v9l8-4.5z" />
-                          </svg>
-                        </button>
-                      </>
+                      </span>
                     )}
                   </div>
                 </>
