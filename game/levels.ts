@@ -578,14 +578,16 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     flying: true,
   },
   // disrupt: THE FINAL BOSS — Erekir's tier-5 missile bomber, the one kind
-  // on the roster from the other planet. Stats from
-  // mindustry/content/UnitTypes.java (armor 9; hitSize 46; rotateSpeed 2;
-  // drag 0.07) with TWO deliberate exceptions. Health is Mindustry's
-  // 12000 x8, because it arrives as a boss rather than by the squadron
-  // (x4 at first; doubled again when the up-gunned phase turrets melted
-  // it before it loomed). And speed drops from the official 1 unit/tick
+  // on the roster from the other planet. Base shape from
+  // mindustry/content/UnitTypes.java (hitSize 46; rotateSpeed 2;
+  // drag 0.07), boss-tuned in FOUR places. Health is Mindustry's 12000 x8
+  // (x4 at first; doubled again when the up-gunned phase turrets melted it
+  // before it loomed). Armour is 20 over the official 9 — past even the
+  // reign's 18, so anything hitting under ~22 pays the 10% floor and the
+  // boss shrugs off pellet AA outright; the answer is calibre, which is
+  // what the phase turrets are. Speed drops from the official 1 unit/tick
   // (7.5 tiles/s, crawler pace — it would outrun its own escort and reach
-  // the AA line alone) to 2.25 tiles/s, under even the reign's crawl: a
+  // the AA line alone) to 2.0 tiles/s, the slowest thing in the game: a
   // boss is a deadline the player watches coming, not a sprinter. Its
   // suppression field and missile racks stay behind on Erekir — enemies
   // here do not shoot — so what crosses the map is the hull, the looming
@@ -597,8 +599,8 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // is part of what the size is for.
   disrupt: {
     hp: 12000 * 8,
-    speed: 2.25 * CELL,
-    armor: 9,
+    speed: 2.0 * CELL,
+    armor: 20,
     radius: UR * 7,
     tier: 5,
     drag: 0.07,
