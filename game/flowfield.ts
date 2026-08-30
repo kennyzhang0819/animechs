@@ -71,6 +71,10 @@ export class FlowField {
   readonly spawnPtsByRegion = new Map<number, number[]>();
   readonly spawnAirByRegion = new Map<number, number[]>();
   private spawnMask: Uint8Array | null = null;
+  // the terrain-blind twin of spawnMask: every cell a zone covers, rock
+  // included. Flyers enter by this one — a zone painted over hills is a
+  // legal air door (see rasterizeSpawns)
+  private airSpawnMask: Uint8Array | null = null;
 
   // binary min-heap with lazy deletion (131,072 slots, ~2.7 per cell —
   // sized for 8 per cell back when the board was 128x128)
@@ -111,8 +115,11 @@ export class FlowField {
     spawnMask: Uint8Array,
     core: { x: number; y: number; size: number },
     goalMask?: Uint8Array,
+    airSpawnMask?: Uint8Array,
   ): void {
     this.spawnMask = spawnMask;
+    // unset falls back to the ground mask — pre-air-door callers unchanged
+    this.airSpawnMask = airSpawnMask ?? spawnMask;
     this.walk.set(blockedBase);
     this.isGoal.fill(0);
     for (const t of towers)
@@ -364,23 +371,31 @@ export class FlowField {
     this.spawnAir = [];
     this.spawnPtsByRegion.clear();
     this.spawnAirByRegion.clear();
-    const mask = this.spawnMask;
-    if (mask) {
-      const into = (map: Map<number, number[]>, region: number, i: number): void => {
-        const pads = map.get(region);
-        if (pads) pads.push(i);
-        else map.set(region, [i]);
-      };
+    const into = (map: Map<number, number[]>, region: number, i: number): void => {
+      const pads = map.get(region);
+      if (pads) pads.push(i);
+      else map.set(region, [i]);
+    };
+    // AIR PADS READ THE TERRAIN-BLIND MASK: a flyer does not care what is
+    // under it, so every cell a zone covers — hills included — is an air
+    // door. Ground pads keep the open-ground mask below.
+    const airMask = this.airSpawnMask;
+    if (airMask) {
       for (let i = 0; i < NCELLS; i++) {
-        if (!mask[i] || walk[i]) continue;
+        if (!airMask[i]) continue;
         // the boss zone is boss-only: its pads live in the ByRegion maps
         // and stay out of the any-pad lists, so a region-0 wave group can
         // never dump the ordinary swarm through the boss's door
-        const bossOnly = mask[i] === BOSS_SPAWN_REGION;
-        if (!bossOnly) this.spawnAir.push(i);
-        into(this.spawnAirByRegion, mask[i], i);
+        if (airMask[i] !== BOSS_SPAWN_REGION) this.spawnAir.push(i);
+        into(this.spawnAirByRegion, airMask[i], i);
+      }
+    }
+    const mask = this.spawnMask;
+    if (mask) {
+      for (let i = 0; i < NCELLS; i++) {
+        if (!mask[i] || walk[i]) continue;
         if (this.dist[i] < INF) {
-          if (!bossOnly) this.spawnPts.push(i);
+          if (mask[i] !== BOSS_SPAWN_REGION) this.spawnPts.push(i);
           into(this.spawnPtsByRegion, mask[i], i);
         }
       }

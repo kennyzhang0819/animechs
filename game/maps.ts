@@ -338,15 +338,21 @@ export const PALETTE: readonly PaletteSet[] = [
 /**
  * Burn the drop zones into the per-cell region layer everything downstream
  * reads: the flow field's entry points, the sim's pad picker, the editor's
- * tint. A cell belongs to a circle when its CENTRE falls inside, and only
- * when it is open ground — a drop zone laid over rock simply has fewer
- * tiles in it, which is what lets a circle overhang a corridor wall without
- * spawning anything inside the mountain. Later circles win where they
- * overlap, so the last one placed is the one you see.
+ * tint. A cell belongs to a circle when its CENTRE falls inside, and —
+ * when `blocked` is given — only when it is open ground: a drop zone laid
+ * over rock simply has fewer tiles in it, which is what lets a circle
+ * overhang a corridor wall without spawning a WALKER inside the mountain.
+ * Later circles win where they overlap, so the last one placed is the one
+ * you see.
+ *
+ * Pass `null` for the AIR mask: a flyer ignores terrain, so a zone painted
+ * entirely over hills is a perfectly good air door — the sim rasterizes
+ * both layers and flyers enter by the terrain-blind one (see
+ * Flowfield.rebuildWalk).
  */
 export function rasterizeSpawns(
   circles: readonly SpawnCircle[],
-  blocked: Uint8Array,
+  blocked: Uint8Array | null,
 ): Uint8Array {
   const spawn = new Uint8Array(NCELLS);
   for (const c of circles) {
@@ -356,7 +362,7 @@ export function rasterizeSpawns(
     for (let y = y0; y <= y1; y++)
       for (let x = x0; x <= x1; x++) {
         const i = y * COLS + x;
-        if (blocked[i]) continue;
+        if (blocked?.[i]) continue;
         const dx = x + 0.5 - c.x, dy = y + 0.5 - c.y;
         if (dx * dx + dy * dy <= r2) spawn[i] = c.region;
       }

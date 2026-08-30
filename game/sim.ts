@@ -66,7 +66,7 @@ import {
 /** module-local for the same getter reason as the constants block above */
 const UNIT_KINDS = UNIT_KINDS_IMPORT;
 import { armorBonusAtLevel, shieldScaleAtLevel, unitHpAtLevel } from "./ladder";
-import { loadMap, OFFICIAL_MAPS, terrainFromMap } from "./maps";
+import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap } from "./maps";
 import type { TechState } from "./tech";
 import { WALL_PINE, type Terrain } from "./terrain";
 import {
@@ -688,6 +688,9 @@ export class Sim {
       this.terrain.spawn,
       this.terrain.core,
       this.terrain.goal,
+      // the terrain-blind layer: flyers may enter anywhere a zone covers,
+      // so a boss door painted on the hills works for a flying boss
+      rasterizeSpawns(this.terrain.spawns, null),
     );
     this.buildGoalPts();
     this.field.compute();
