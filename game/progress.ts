@@ -13,7 +13,9 @@ import {
 } from "./items";
 import {
   affordablePoints as affordableTechPoints,
+  BY_MINDUSTRY_VALUE,
   isMaxed,
+  isTowerNode,
   NODE_SPEED,
   TECH_KINDS,
   techNode,
@@ -453,12 +455,26 @@ export function affordablePoints(p: Progress, node: TechKind, limit = Infinity):
  */
 export function buyTech(node: TechKind, count = 1): Progress | null {
   const p = loadProgress();
+  const wasOwned = (p.tech[node] ?? 0) > 0;
   const n = Math.min(Math.max(1, Math.floor(count)), affordablePoints(p, node, count));
   if (n < 1) return null;
   for (let i = 0; i < n; i++) {
     const owned = p.tech[node] ?? 0;
     pay(p.bank, techPrice(node, owned));
     p.tech[node] = owned + 1;
+  }
+  // A turret's FIRST point is its unlock, and a fresh unlock should ride
+  // the build bar without a trip through the loadout picker. A save that
+  // has never curated (loadout absent) already gets this — the bar
+  // auto-fills from whatever is unlocked — so only a curated save needs
+  // the new kind written in, and only while its picks leave a slot free:
+  // a full bar means the player has chosen all of it, so nothing is
+  // evicted on their behalf. Stored in canonical order like every other
+  // loadout write, so the save reads exactly like the bar.
+  if (!wasOwned && isTowerNode(node) && p.loadout && !p.loadout.includes(node)) {
+    const picks = p.loadout;
+    if (picks.length < techState(p.tech).barSlots)
+      p.loadout = BY_MINDUSTRY_VALUE.filter((k) => k === node || picks.includes(k));
   }
   saveProgress(p);
   return p;

@@ -784,7 +784,13 @@ export default function Swarmfield() {
     return (
       <TechTree
         progress={progress}
-        onChanged={() => setProgress(loadProgress())}
+        onChanged={() => {
+          const p = loadProgress();
+          setProgress(p);
+          // a turret's first point may have written itself into a curated
+          // loadout (see buyTech) — keep the bar's mirror of the save honest
+          setLoadout(p.loadout ?? null);
+        }}
         onBack={leaveTech}
         backLabel={techFrom === "game" ? "◂ Restart run" : undefined}
       />
