@@ -33,9 +33,11 @@ import {
  *
  * Nemesis plays the whole authored script, so the visible campaign ends
  * where the writing does. ERADICATION is the hidden ultimate difficulty
- * above it: the same full script Nemesis plays at enemy level 22, and it
- * does not exist on a save until the tech tree's "A Final Threat" node is
- * owned (topTier in progress.ts is where that gate lives).
+ * above it: the same full script Nemesis plays at enemy level 22 with +3
+ * armour on the swarm (lowTierArmorBonus — the ladder's only difficulty
+ * that turns that knob), and it does not exist on a save until the tech
+ * tree's "A Final Threat" node is owned (topTier in progress.ts is where
+ * that gate lives).
  *
  * Nothing is generated. Wave 1 of Nemesis is wave 1 of the same authored
  * list Incursion plays, with 20 levels on it — which is what lets the level
@@ -146,13 +148,20 @@ export const DIFFICULTIES: readonly {
   // prettier-ignore
   { name: "Nemesis", color: "#FF5A5A", waves: 50, level: 16, shieldScale: 5, lowTierArmorBonus: 0 },
   // ERADICATION — the hidden ultimate difficulty: Nemesis's own full script
-  // and dials at enemy level 22, and NO extra loot bonus (see
-  // tierDropBonus). It is in the table so every piece of ladder arithmetic
-  // covers it, but a save cannot see or play it until the tech tree's
-  // "A Final Threat" node is owned — that gate lives in topTier
-  // (progress.ts), not here.
+  // at enemy level 22, and NO extra loot bonus (see tierDropBonus). It is
+  // in the table so every piece of ladder arithmetic covers it, but a save
+  // cannot see or play it until the tech tree's "A Final Threat" node is
+  // owned — that gate lives in topTier (progress.ts), not here.
+  //
+  // The +3 swarm armour is the doc block's own worked calibration: a third
+  // off a duo's 9 while a spectre's 104 or a rail barely notices — the
+  // swarm outlasts chip, the heavies stay priced by their own plating. The
+  // scatter caution up there doesn't bite: only this tier turns the knob,
+  // and by Eradication the AA line is cyclone/spectre calibre, not
+  // 3-damage pellets. No unit debuts here (the script is Nemesis's), so
+  // the debut-tax lint can't be moved by it either.
   // prettier-ignore
-  { name: "Eradication", color: "#A05AE5", waves: 50, level: 22, shieldScale: 5, lowTierArmorBonus: 0 },
+  { name: "Eradication", color: "#A05AE5", waves: 50, level: 22, shieldScale: 5, lowTierArmorBonus: 3 },
 ];
 
 /**
