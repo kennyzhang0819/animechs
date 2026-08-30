@@ -14,8 +14,19 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * KIND of purchase from a turret. A turret node's points are capacity, so
  * it takes points forever; a utility is a SWITCH, so it takes exactly one
  * (see `cap`) and then reads as owned.
+ *
+ * `tower-filter` is the one utility that is not about pace: it sells a
+ * piece of UI — the build bar's filter tab — and hangs off 4x because that
+ * is roughly when a save owns enough turrets for the bar to need curating.
  */
-export const UTILITY_KINDS = ["home", "speed-2", "speed-4", "speed-8", "time-warp"] as const;
+export const UTILITY_KINDS = [
+  "home",
+  "speed-2",
+  "speed-4",
+  "speed-8",
+  "time-warp",
+  "tower-filter",
+] as const;
 export type UtilityKind = (typeof UTILITY_KINDS)[number];
 
 /** anything the tree can hold points in */
@@ -58,6 +69,10 @@ export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: s
   "time-warp": {
     name: "Time Warp",
     blurb: `Every run opens on wave ${WARP_START_WAVE}. The waves before it never arrive — and never drop.`,
+  },
+  "tower-filter": {
+    name: "Filter Tab",
+    blurb: "Adds a filter tab to the build bar — pick which turrets it shows.",
   },
 };
 
@@ -1022,6 +1037,24 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     y: 3,
   },
   {
+    // THE FILTER TAB — the one utility that sells UI rather than pace. By
+    // the time a save owns 4x it also owns enough turrets that the build
+    // bar scrolls, and this buys the tab that curates it (Swarmfield's
+    // bottom bar). It branches OFF the pace column rather than continuing
+    // it, so 8x never waits on a cosmetic.
+    //
+    // Priced at a token slice of its parent's own currency: thorium is
+    // already flowing when speed-4 is buyable, so the moment the tab could
+    // matter is the moment it is payable — and at a quarter of 4x's price
+    // it reads as the throwaway convenience it is.
+    id: "tower-filter",
+    price: { base: { thorium: 5 }, growth: 1 },
+    requires: "speed-4",
+    cap: 1,
+    x: 6,
+    y: 3,
+  },
+  {
     // TIME WARP, where 16x pace used to sit. Sixteen times is not a pace a
     // player watches, it is a way of not watching — and the thing actually
     // worth skipping is the opening, not the frame rate. So the top of the
@@ -1158,6 +1191,8 @@ export interface TechState {
    * those waves never spawn, so they never pay either.
    */
   startWave: number;
+  /** does this save own the build bar's filter tab? (the tower-filter node) */
+  towerFilter: boolean;
 }
 
 export function techState(levels: TechLevels): TechState {
@@ -1172,5 +1207,6 @@ export function techState(levels: TechLevels): TechState {
       .filter((m): m is number => m != null),
   ].sort((a, b) => a - b);
   const startWave = (levels["time-warp"] ?? 0) > 0 ? WARP_START_WAVE : 1;
-  return { unlocked, caps, speeds, startWave };
+  const towerFilter = (levels["tower-filter"] ?? 0) > 0;
+  return { unlocked, caps, speeds, startWave, towerFilter };
 }

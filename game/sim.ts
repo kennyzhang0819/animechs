@@ -794,15 +794,24 @@ export class Sim {
    *
    * Tech also decides which wave the run opens on, and that has to be
    * applied here rather than in reset() because the level is loaded before
-   * the save is read (see Game.create). Restaging the script is safe while
-   * the clock still reads zero — nothing has spawned, so the only thing
-   * being thrown away is the wave loadStep staged. A run already under way
-   * keeps the opening it started with.
+   * the save is read (see Game.create). A run already under way keeps the
+   * opening it started with.
+   *
+   * "Under way" is measured in ENEMIES, not on the clock. The render loop
+   * is already running while Game.create awaits its warmup paints, so the
+   * clock reads a few frames by the time the save's tech arrives — a
+   * `time === 0` guard here refused the restage in every visible tab and
+   * time warp only ever worked in a hidden one, where rAF never fires.
+   * What restaging must not throw away is enemies, so the honest guard is
+   * that none have entered: nothing on the field, nothing killed, nothing
+   * leaked. The moments of opening gap already elapsed restart with the
+   * restage, which no one can see.
    */
   setTech(tech: TechState | null): void {
     this.tech = tech;
     const start = Math.max(1, Math.floor(tech?.startWave ?? 1));
-    if (start !== this.startWave && this.time === 0) {
+    const untouched = this.n === 0 && this.kills === 0 && this.leaked === 0;
+    if (start !== this.startWave && untouched) {
       this.startWave = start;
       this.stageScript();
     }

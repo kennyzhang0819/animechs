@@ -447,6 +447,14 @@ export default function Swarmfield() {
   /** the top-left panel collapsed to its wave line — a saved preference
    * (Progress.hudMinimized), initialized on mount with the rest of the save */
   const [hudMin, setHudMin] = useState(false);
+  /**
+   * The build bar's filter, behind the tower-filter tech node: which turrets
+   * the player has tucked OUT of the bottom row, and whether the picker for
+   * it is open. Hidden kinds are a per-session preference, not progress —
+   * a fresh page starts with the full bar.
+   */
+  const [hidden, setHidden] = useState<ReadonlySet<TowerKind>>(new Set());
+  const [filterOpen, setFilterOpen] = useState(false);
 
   useEffect(() => {
     const p = loadProgress();
@@ -613,6 +621,24 @@ export default function Swarmfield() {
       alive = false;
     };
   }, []);
+
+  /**
+   * Show or hide one turret in the bottom bar. Hiding the kind that is
+   * currently picked for building also drops the pick — otherwise the ghost
+   * preview would keep following a button that is no longer on screen.
+   */
+  const toggleHidden = (kind: TowerKind): void => {
+    const hiding = !hidden.has(kind);
+    const next = new Set(hidden);
+    if (hiding) next.add(kind);
+    else next.delete(kind);
+    setHidden(next);
+    const g = gameRef.current;
+    if (hiding && g && hud?.buildKind === kind) {
+      g.setBuildKind(null);
+      setHud(g.ui());
+    }
+  };
 
   const pickTower = (kind: TowerKind): void => {
     const g = gameRef.current;
@@ -1049,8 +1075,14 @@ export default function Swarmfield() {
           >
             {/* a turret the tech tree has not unlocked yet is not shown at
                 all — the bar holds exactly what this run can build. A null
-                unlocked list is sandbox mode: everything, uncapped */}
-            {TOWER_MENU.filter((t) => (hud ? !hud.unlocked || hud.unlocked.includes(t.kind) : false)).map((t) => {
+                unlocked list is sandbox mode: everything, uncapped. On top
+                of that, the filter tab (once owned) tucks away whatever the
+                player toggled off in its picker */}
+            {TOWER_MENU.filter(
+              (t) =>
+                (hud ? !hud.unlocked || hud.unlocked.includes(t.kind) : false) &&
+                !(hud?.towerFilter && hidden.has(t.kind)),
+            ).map((t) => {
               const cap = hud?.caps ? hud.caps[t.kind] : null;
               const count = hud?.counts ? hud.counts[t.kind] : 0;
               // what the badge says is how many are LEFT to place, not how
@@ -1112,8 +1144,75 @@ export default function Swarmfield() {
                 </span>
               </button>
             )}
+            {/* the filter tab, sold by the tower-filter tech node: opens the
+                picker that decides which turrets the bar shows. It stays
+                gold while anything is tucked away, so a shortened bar never
+                reads as turrets going missing */}
+            {hud?.towerFilter && (
+              <button
+                title="Filter which turrets the bar shows"
+                aria-label="Filter turrets"
+                aria-pressed={filterOpen}
+                aria-expanded={filterOpen}
+                onClick={() => setFilterOpen((v) => !v)}
+                className={`${TOOL_BTN} ${
+                  filterOpen
+                    ? "border-[#FFD37F] bg-[#222227]/90 text-[#FFD37F]"
+                    : hidden.size > 0
+                      ? "border-[#2E2E36] bg-[#151518]/70 text-[#FFD37F] hover:border-[#4A4A55]"
+                      : "border-[#2E2E36] bg-[#151518]/70 text-[#A6A6AF] hover:border-[#4A4A55]"
+                }`}
+              >
+                <svg viewBox="0 0 24 24" className="h-8 w-8 fill-current" aria-hidden="true">
+                  <path d="M3 4h18v2.5L14 13.8V19l-4 2v-7.2L3 6.5z" />
+                </svg>
+                <span className="text-[11px] font-bold uppercase leading-none tracking-widest">
+                  Filter
+                </span>
+              </button>
+            )}
           </div>
         </div>
+        {/* the filter picker, floated above the bar it curates: one toggle
+            per unlocked turret. Lit = in the bar, dimmed = tucked away */}
+        {hud?.towerFilter && filterOpen && (
+          <div className="absolute bottom-[calc(6.25rem+var(--safe-b))] left-1/2 z-10 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded border border-[#2E2E36] bg-[#151518]/95 p-3 backdrop-blur">
+            <div className="mb-2 text-center text-[11px] uppercase tracking-widest text-[#71717C]">
+              Show in bar
+            </div>
+            <div
+              role="group"
+              aria-label="turret visibility"
+              className="flex max-w-[26rem] flex-wrap justify-center gap-2"
+            >
+              {TOWER_MENU.filter(
+                (t) => !hud.unlocked || hud.unlocked.includes(t.kind),
+              ).map((t) => {
+                const shown = !hidden.has(t.kind);
+                return (
+                  <button
+                    key={t.kind}
+                    title={shown ? `Hide ${t.name}` : `Show ${t.name}`}
+                    aria-pressed={shown}
+                    onClick={() => toggleHidden(t.kind)}
+                    className={`flex h-12 w-12 items-center justify-center rounded border focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+                      shown
+                        ? "border-[#FFD37F] bg-[#222227]/90"
+                        : "border-[#2E2E36] bg-[#151518]/70 opacity-40 hover:opacity-75"
+                    }`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
+                    <img
+                      src={icons[t.kind] ?? t.icon}
+                      alt={t.name}
+                      className="h-9 w-9 [image-rendering:pixelated]"
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {hud?.lost && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="w-80 max-w-[calc(100vw-2rem)] rounded border border-[#3A2430] bg-[#151518]/95 p-6 text-center">
