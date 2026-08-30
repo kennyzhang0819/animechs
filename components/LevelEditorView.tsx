@@ -444,18 +444,11 @@ export default function LevelEditorView({
    * every edit, which meant the numbers were only ever visible next to waves
    * that had not been touched since.
    */
-  /**
-   * The difficulty every per-wave SHARE is measured against. The same wave
-   * is a different slice of a 20-wave run and a 50-wave one, and the run you
-   * are authoring for is the one whose numbers you want — so it is a choice,
-   * not the wave's own debut difficulty.
-   */
-  const [against, setAgainst] = useState(TOP_TIER);
-
   const report = useMemo(() => {
     const spec = { ...level, waveGap, script: toScript(steps) };
-    return { rows: audit(spec), issues: check(spec), waves: waveGuide(spec, against) };
-  }, [level, waveGap, steps, against]);
+    // per-wave numbers are priced at the top tier — the run every wave is in
+    return { rows: audit(spec), issues: check(spec), waves: waveGuide(spec, TOP_TIER) };
+  }, [level, waveGap, steps]);
 
   const back = (): void => {
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
@@ -591,33 +584,6 @@ export default function LevelEditorView({
               </p>
             </section>
 
-            {/* which run the per-wave SHARE percentages are measured in */}
-            <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
-              <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
-                Share shown for
-              </h2>
-              <div className="flex gap-1">
-                {DIFFICULTIES.map((d, i) => (
-                  <button
-                    key={d.name}
-                    onClick={() => setAgainst(i)}
-                    className={`flex-1 rounded border px-2 py-1 text-[13px] font-bold uppercase tracking-widest ${
-                      against === i
-                        ? "bg-[#151518]"
-                        : "border-[#2E2E36] text-[#71717C] hover:border-[#4A4A55]"
-                    }`}
-                    style={against === i ? { color: d.color, borderColor: `${d.color}88` } : undefined}
-                  >
-                    {d.name}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-2 text-[12px] leading-snug text-[#71717C]">
-                Each wave's % is its share of this run's total health. A wave
-                this difficulty never sends shows no share at all.
-              </p>
-            </section>
-
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
               <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
                 Totals
@@ -651,7 +617,6 @@ export default function LevelEditorView({
                     step={step}
                     waveNo={i + 1}
                     guide={report.waves[i]}
-                    against={against}
                     index={i}
                     last={i === steps.length - 1}
                     mapRegions={mapRegions}
@@ -724,7 +689,8 @@ function Row({ label, value }: { label: string; value: string }) {
  * it takes is a pixel of settings pushed off the screen.
  */
 function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement | null {
-  const [metric, setMetric] = useState<"units" | "hp">("units");
+  // health leads: the ramp is authored in health, bodies are the flavour
+  const [metric, setMetric] = useState<"units" | "hp">("hp");
   const [at, setAt] = useState<number | null>(null);
   const n = waves.length;
   if (n < 2) return null;
@@ -759,7 +725,7 @@ function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement
       <div className="mb-1.5 flex items-baseline justify-between gap-2">
         <h2 className="text-[12px] font-bold uppercase tracking-widest text-[#71717C]">Ramp</h2>
         <span className="flex gap-1">
-          {(["units", "hp"] as const).map((m) => (
+          {(["hp", "units"] as const).map((m) => (
             <button
               key={m}
               aria-pressed={metric === m}
@@ -905,7 +871,6 @@ function StepCard({
   step,
   waveNo,
   guide,
-  against,
   index,
   last,
   mapRegions,
@@ -917,8 +882,6 @@ function StepCard({
   waveNo: number;
   /** this wave's row of the number guide */
   guide?: WaveRow;
-  /** the difficulty its share is measured in, for the tooltips */
-  against: number;
   index: number;
   last: boolean;
   mapRegions: readonly number[];
@@ -976,24 +939,10 @@ function StepCard({
           </span>
         )}
         <span className="text-[13px] text-[#71717C]">{total} enemies</span>
-        {/* the number guide, per wave: what this wave weighs and what slice
-            of the selected run that is. `share` is the one to author against
-            — 5% is filler, 25% is a spike, and a difficulty's last wave
-            should be its heaviest */}
+        {/* the number guide, per wave: what this wave weighs. The ramp
+            chart is where its slice of the run is read now */}
         {guide && (
-          <span className="flex items-center gap-2 text-[13px] text-[#71717C]">
-            <span className="font-bold text-[#A6A6AF]">{compactHp(guide.hp)} hp</span>
-            {guide.share > 0 ? (
-              <span
-                title={`share of a ${difficultyName(against)} run's total health`}
-                className={guide.share >= 0.2 ? "font-bold text-[#F0B457]" : ""}
-              >
-                {(guide.share * 100).toFixed(1)}%
-              </span>
-            ) : (
-              <span title={`${difficultyName(against)} never sends this wave`}>—</span>
-            )}
-          </span>
+          <span className="text-[13px] font-bold text-[#A6A6AF]">{compactHp(guide.hp)} hp</span>
         )}
         <CostRow cost={payout} />
         <div className="ml-auto">{controls}</div>
