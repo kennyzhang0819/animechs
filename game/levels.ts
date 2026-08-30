@@ -590,13 +590,16 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // suppression field and missile racks stay behind on Erekir — enemies
   // here do not shoot — so what crosses the map is the hull, the looming
   // pace, and 96000 health the fleet has to answer before it reaches the
-  // core. It also DRAWS a step past native scale (see UNIT_ART) — the
-  // hitbox stays hitSize 46.
+  // core. It also DRAWS half again its native scale (see UNIT_ART), and
+  // the hitbox follows the art: Mindustry's hitSize 46 grows to an
+  // effective 56 (UR * 7, just under eclipse's 7.25) so shots land where
+  // the silhouette says they should — a boss this size being HARD TO MISS
+  // is part of what the size is for.
   disrupt: {
     hp: 12000 * 8,
     speed: 2.25 * CELL,
     armor: 9,
-    radius: UR * 5.75,
+    radius: UR * 7,
     tier: 5,
     drag: 0.07,
     rotateSpeed: 2,
