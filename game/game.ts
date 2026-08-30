@@ -55,8 +55,8 @@ export interface UiState {
   /** campaign restrictions from the tech tree; null = unrestricted (editor) */
   caps: Record<TowerKind, number> | null;
   unlocked: readonly TowerKind[] | null;
-  /** the build bar's filter tab is owned (tech tree); sandbox always has it */
-  towerFilter: boolean;
+  /** loadout slots the build bar holds (tech tree); null = sandbox, uncapped */
+  barSlots: number | null;
 }
 
 export interface Stats {
@@ -935,9 +935,9 @@ export class Game {
       counts: this.sim.towerCounts(),
       caps: this.tech ? this.tech.caps : null,
       unlocked: this.tech ? Array.from(this.tech.unlocked) : null,
-      // sandbox shows every turret, which is exactly when curating the bar
-      // matters most — so the tab is simply on there
-      towerFilter: this.tech ? this.tech.towerFilter : true,
+      // sandbox stages runs for filming with the whole roster — the loadout
+      // cap is a campaign rule, so null lifts it there like the others
+      barSlots: this.tech ? this.tech.barSlots : null,
     };
   }
 

@@ -43,6 +43,7 @@ import {
   resetProgress,
   saveHudMinimized,
   saveLayout,
+  saveLoadout,
   saveSpeed,
   startingSpeed,
   techOf,
@@ -381,6 +382,9 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
   },
 ];
 
+/** menu entry by kind, for rendering the bar in the loadout's own order */
+const MENU_BY_KIND = new Map(TOWER_MENU.map((t) => [t.kind, t]));
+
 /** the two wave buttons in the HUD, sized to be hit without aiming */
 const WAVE_BTN =
   "flex h-9 w-9 shrink-0 items-center justify-center rounded border border-[#2E2E36] text-[#FFD37F] hover:border-[#FFD37F] hover:bg-[#222227]/90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
@@ -448,19 +452,20 @@ export default function Swarmfield() {
    * (Progress.hudMinimized), initialized on mount with the rest of the save */
   const [hudMin, setHudMin] = useState(false);
   /**
-   * The build bar's filter, behind the tower-filter tech node: which turrets
-   * the player has tucked OUT of the bottom row, and whether the picker for
-   * it is open. Hidden kinds are a per-session preference, not progress —
-   * a fresh page starts with the full bar.
+   * The build bar's loadout, PvZ-style: which turrets ride in its slots, in
+   * the order they were picked. Mirrors the save (Progress.loadout) — null
+   * means the save has never curated, and the bar auto-fills its slots from
+   * whatever is unlocked. `loadoutOpen` is the picker floated above the bar.
    */
-  const [hidden, setHidden] = useState<ReadonlySet<TowerKind>>(new Set());
-  const [filterOpen, setFilterOpen] = useState(false);
+  const [loadout, setLoadout] = useState<readonly TowerKind[] | null>(null);
+  const [loadoutOpen, setLoadoutOpen] = useState(false);
 
   useEffect(() => {
     const p = loadProgress();
     setProgress(p);
     setTier(topTier(p));
     setHudMin(p.hudMinimized ?? false);
+    setLoadout(p.loadout ?? null);
   }, []);
 
   useEffect(() => {
@@ -623,21 +628,48 @@ export default function Swarmfield() {
   }, []);
 
   /**
-   * Show or hide one turret in the bottom bar. Hiding the kind that is
-   * currently picked for building also drops the pick — otherwise the ghost
-   * preview would keep following a button that is no longer on screen.
+   * The turrets in the bar, in slot order. Sandbox (barSlots null) shows
+   * the whole roster. A curated save shows its picks — those still unlocked,
+   * trimmed to the slot count — and an uncurated one auto-fills its slots
+   * from the unlocked list in menu order. Auto-fill only runs while the
+   * save has never curated: once picks are saved, a removed turret STAYS
+   * removed instead of being quietly refilled.
    */
-  const toggleHidden = (kind: TowerKind): void => {
-    const hiding = !hidden.has(kind);
-    const next = new Set(hidden);
-    if (hiding) next.add(kind);
-    else next.delete(kind);
-    setHidden(next);
-    const g = gameRef.current;
-    if (hiding && g && hud?.buildKind === kind) {
-      g.setBuildKind(null);
-      setHud(g.ui());
+  const barKinds = (): TowerKind[] => {
+    if (!hud) return [];
+    const unlockedList = TOWER_MENU.filter(
+      (t) => !hud.unlocked || hud.unlocked.includes(t.kind),
+    ).map((t) => t.kind);
+    if (hud.barSlots === null) return unlockedList;
+    const picks = (loadout ?? unlockedList).filter((k) => unlockedList.includes(k));
+    return picks.slice(0, hud.barSlots);
+  };
+
+  /**
+   * Add or remove one turret from the loadout. The first edit persists the
+   * auto-filled set it started from, so what the player sees is what they
+   * are editing. Removing the kind currently picked for building also drops
+   * the pick — otherwise the ghost preview would keep following a button
+   * that is no longer on screen. Adding past the slot count is refused; the
+   * panel's count badge says why.
+   */
+  const toggleLoadout = (kind: TowerKind): void => {
+    if (!hud || hud.barSlots === null) return;
+    const cur = barKinds();
+    let next: TowerKind[];
+    if (cur.includes(kind)) {
+      next = cur.filter((k) => k !== kind);
+      const g = gameRef.current;
+      if (g && hud.buildKind === kind) {
+        g.setBuildKind(null);
+        setHud(g.ui());
+      }
+    } else {
+      if (cur.length >= hud.barSlots) return;
+      next = [...cur, kind];
     }
+    setLoadout(next);
+    saveLoadout(next);
   };
 
   const pickTower = (kind: TowerKind): void => {
@@ -1073,16 +1105,12 @@ export default function Swarmfield() {
             aria-label="tower menu"
             className="pointer-events-auto mx-auto flex w-max gap-2"
           >
-            {/* a turret the tech tree has not unlocked yet is not shown at
-                all — the bar holds exactly what this run can build. A null
-                unlocked list is sandbox mode: everything, uncapped. On top
-                of that, the filter tab (once owned) tucks away whatever the
-                player toggled off in its picker */}
-            {TOWER_MENU.filter(
-              (t) =>
-                (hud ? !hud.unlocked || hud.unlocked.includes(t.kind) : false) &&
-                !(hud?.towerFilter && hidden.has(t.kind)),
-            ).map((t) => {
+            {/* the loadout, in slot order: the turrets this save PICKED to
+                ride the bar (see barKinds), not everything it owns — owning
+                is the tech tree's business, the bar is a PvZ seed row. A
+                null unlocked list is sandbox mode: the whole roster */}
+            {barKinds().map((kind) => {
+              const t = MENU_BY_KIND.get(kind)!;
               const cap = hud?.caps ? hud.caps[t.kind] : null;
               const count = hud?.counts ? hud.counts[t.kind] : 0;
               // what the badge says is how many are LEFT to place, not how
@@ -1144,73 +1172,99 @@ export default function Swarmfield() {
                 </span>
               </button>
             )}
-            {/* the filter tab, sold by the tower-filter tech node: opens the
-                picker that decides which turrets the bar shows. It stays
-                gold while anything is tucked away, so a shortened bar never
-                reads as turrets going missing */}
-            {hud?.towerFilter && (
+            {/* the loadout editor's door. Always on the bar in campaign —
+                the SLOTS are the base rule, only their count is sold on the
+                tech tree — and absent in sandbox, where the whole roster
+                shows and there is nothing to curate */}
+            {hud && hud.barSlots !== null && (
               <button
-                title="Filter which turrets the bar shows"
-                aria-label="Filter turrets"
-                aria-pressed={filterOpen}
-                aria-expanded={filterOpen}
-                onClick={() => setFilterOpen((v) => !v)}
+                title="Edit loadout — pick which turrets ride the bar"
+                aria-label="Edit loadout"
+                aria-pressed={loadoutOpen}
+                aria-expanded={loadoutOpen}
+                onClick={() => setLoadoutOpen((v) => !v)}
                 className={`${TOOL_BTN} ${
-                  filterOpen
+                  loadoutOpen
                     ? "border-[#FFD37F] bg-[#222227]/90 text-[#FFD37F]"
-                    : hidden.size > 0
-                      ? "border-[#2E2E36] bg-[#151518]/70 text-[#FFD37F] hover:border-[#4A4A55]"
-                      : "border-[#2E2E36] bg-[#151518]/70 text-[#A6A6AF] hover:border-[#4A4A55]"
+                    : "border-[#2E2E36] bg-[#151518]/70 text-[#A6A6AF] hover:border-[#4A4A55]"
                 }`}
               >
                 <svg viewBox="0 0 24 24" className="h-8 w-8 fill-current" aria-hidden="true">
-                  <path d="M3 4h18v2.5L14 13.8V19l-4 2v-7.2L3 6.5z" />
+                  <path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z" />
                 </svg>
                 <span className="text-[11px] font-bold uppercase leading-none tracking-widest">
-                  Filter
+                  Slots
                 </span>
               </button>
             )}
           </div>
         </div>
-        {/* the filter picker, floated above the bar it curates: one toggle
-            per unlocked turret. Lit = in the bar, dimmed = tucked away */}
-        {hud?.towerFilter && filterOpen && (
+        {/* the loadout picker, floated above the bar it fills: every
+            unlocked turret, lit = riding a slot. With the bar full the
+            rest dim out until something is removed — and the count badge
+            is the one number that explains both states */}
+        {hud && hud.barSlots !== null && loadoutOpen && (
           <div className="absolute bottom-[calc(6.25rem+var(--safe-b))] left-1/2 z-10 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded border border-[#2E2E36] bg-[#151518]/95 p-3 backdrop-blur">
-            <div className="mb-2 text-center text-[11px] uppercase tracking-widest text-[#71717C]">
-              Show in bar
-            </div>
-            <div
-              role="group"
-              aria-label="turret visibility"
-              className="flex max-w-[26rem] flex-wrap justify-center gap-2"
-            >
-              {TOWER_MENU.filter(
-                (t) => !hud.unlocked || hud.unlocked.includes(t.kind),
-              ).map((t) => {
-                const shown = !hidden.has(t.kind);
-                return (
-                  <button
-                    key={t.kind}
-                    title={shown ? `Hide ${t.name}` : `Show ${t.name}`}
-                    aria-pressed={shown}
-                    onClick={() => toggleHidden(t.kind)}
-                    className={`flex h-12 w-12 items-center justify-center rounded border focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-                      shown
-                        ? "border-[#FFD37F] bg-[#222227]/90"
-                        : "border-[#2E2E36] bg-[#151518]/70 opacity-40 hover:opacity-75"
-                    }`}
+            {(() => {
+              const bar = barKinds();
+              const full = bar.length >= (hud.barSlots ?? 0);
+              return (
+                <>
+                  <div className="mb-2 flex items-baseline justify-center gap-2 text-[11px] uppercase tracking-widest">
+                    <span className="text-[#71717C]">Loadout</span>
+                    <span className={`font-bold ${full ? "text-[#FFD37F]" : "text-[#EDEDEF]"}`}>
+                      {bar.length}/{hud.barSlots}
+                    </span>
+                  </div>
+                  <div
+                    role="group"
+                    aria-label="loadout picker"
+                    className="flex max-w-[26rem] flex-wrap justify-center gap-2"
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
-                    <img
-                      src={icons[t.kind] ?? t.icon}
-                      alt={t.name}
-                      className="h-9 w-9 [image-rendering:pixelated]"
-                    />
-                  </button>
-                );
-              })}
-            </div>
+                    {TOWER_MENU.filter(
+                      (t) => !hud.unlocked || hud.unlocked.includes(t.kind),
+                    ).map((t) => {
+                      const inBar = bar.includes(t.kind);
+                      return (
+                        <button
+                          key={t.kind}
+                          title={
+                            inBar
+                              ? `Remove ${t.name} from the bar`
+                              : full
+                                ? "Bar is full — remove a turret first"
+                                : `Add ${t.name} to the bar`
+                          }
+                          aria-pressed={inBar}
+                          aria-disabled={!inBar && full}
+                          onClick={() => toggleLoadout(t.kind)}
+                          className={`flex h-12 w-12 items-center justify-center rounded border focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+                            inBar
+                              ? "border-[#FFD37F] bg-[#222227]/90"
+                              : full
+                                ? "cursor-not-allowed border-[#2E2E36] bg-[#151518]/70 opacity-25"
+                                : "border-[#2E2E36] bg-[#151518]/70 opacity-40 hover:opacity-75"
+                          }`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
+                          <img
+                            src={icons[t.kind] ?? t.icon}
+                            alt={t.name}
+                            className="h-9 w-9 [image-rendering:pixelated]"
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* a full bar that could still grow points at the fix */}
+                  {full && (hud.barSlots ?? 0) < 8 && (
+                    <div className="mt-2 text-center text-[11px] uppercase tracking-widest text-[#71717C]">
+                      More slots are sold on the tech tree
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
         {hud?.lost && (

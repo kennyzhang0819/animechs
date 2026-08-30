@@ -15,9 +15,10 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * it takes points forever; a utility is a SWITCH, so it takes exactly one
  * (see `cap`) and then reads as owned.
  *
- * `tower-filter` is the one utility that is not about pace: it sells a
- * piece of UI — the build bar's filter tab — and hangs off 4x because that
- * is roughly when a save owns enough turrets for the bar to need curating.
+ * `slot-7` and `slot-8` are the utilities that are not about pace: the
+ * build bar is a six-slot loadout (BASE_BAR_SLOTS), and each of these
+ * widens it by one. They hang off 4x because that is roughly when a save
+ * owns more turrets than the bar holds.
  */
 export const UTILITY_KINDS = [
   "home",
@@ -25,7 +26,8 @@ export const UTILITY_KINDS = [
   "speed-4",
   "speed-8",
   "time-warp",
-  "tower-filter",
+  "slot-7",
+  "slot-8",
 ] as const;
 export type UtilityKind = (typeof UTILITY_KINDS)[number];
 
@@ -57,6 +59,14 @@ export const NODE_SPEED: Readonly<Partial<Record<UtilityKind, number>>> = {
  */
 export const WARP_START_WAVE = 10;
 
+/**
+ * How many loadout slots the build bar starts with. The bar is a PvZ-style
+ * loadout rather than a shelf of everything owned: every save picks which
+ * turrets ride in it (Progress.loadout), and the two slot nodes off 4x
+ * speed raise this by one each.
+ */
+export const BASE_BAR_SLOTS = 6;
+
 /** what each utility node is called, and what owning it does */
 export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: string }>> = {
   home: {
@@ -70,9 +80,13 @@ export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: s
     name: "Time Warp",
     blurb: `Every run opens on wave ${WARP_START_WAVE}. The waves before it never arrive — and never drop.`,
   },
-  "tower-filter": {
-    name: "Filter Tab",
-    blurb: "Adds a filter tab to the build bar — pick which turrets it shows.",
+  "slot-7": {
+    name: "7th Slot",
+    blurb: "One more loadout slot — the build bar grows to seven turrets.",
+  },
+  "slot-8": {
+    name: "8th Slot",
+    blurb: "The build bar tops out at eight loadout slots.",
   },
 };
 
@@ -1037,22 +1051,30 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     y: 3,
   },
   {
-    // THE FILTER TAB — the one utility that sells UI rather than pace. By
-    // the time a save owns 4x it also owns enough turrets that the build
-    // bar scrolls, and this buys the tab that curates it (Swarmfield's
-    // bottom bar). It branches OFF the pace column rather than continuing
-    // it, so 8x never waits on a cosmetic.
+    // THE SLOT LADDER — the utilities that sell UI rather than pace. The
+    // build bar is a six-slot loadout (BASE_BAR_SLOTS), PvZ-style: every
+    // save picks which turrets ride in it, and these two switches widen it
+    // to seven and then eight. They branch OFF the pace column rather than
+    // continuing it, so 8x never waits on a cosmetic.
     //
-    // Priced at a token slice of its parent's own currency: thorium is
-    // already flowing when speed-4 is buyable, so the moment the tab could
-    // matter is the moment it is payable — and at a quarter of 4x's price
-    // it reads as the throwaway convenience it is.
-    id: "tower-filter",
+    // Priced at a token slice of the currency each one's moment drops:
+    // thorium is flowing when speed-4 is buyable — about when a save first
+    // owns more turrets than slots — and plastanium paces the eighth slot
+    // to Onslaught, the same bundle-is-the-gate rule as everything else.
+    id: "slot-7",
     price: { base: { thorium: 5 }, growth: 1 },
     requires: "speed-4",
     cap: 1,
     x: 6,
     y: 3,
+  },
+  {
+    id: "slot-8",
+    price: { base: { plastanium: 5 }, growth: 1 },
+    requires: "slot-7",
+    cap: 1,
+    x: 6,
+    y: 4,
   },
   {
     // TIME WARP, where 16x pace used to sit. Sixteen times is not a pace a
@@ -1191,8 +1213,8 @@ export interface TechState {
    * those waves never spawn, so they never pay either.
    */
   startWave: number;
-  /** does this save own the build bar's filter tab? (the tower-filter node) */
-  towerFilter: boolean;
+  /** loadout slots in the build bar: BASE_BAR_SLOTS plus owned slot nodes */
+  barSlots: number;
 }
 
 export function techState(levels: TechLevels): TechState {
@@ -1207,6 +1229,9 @@ export function techState(levels: TechLevels): TechState {
       .filter((m): m is number => m != null),
   ].sort((a, b) => a - b);
   const startWave = (levels["time-warp"] ?? 0) > 0 ? WARP_START_WAVE : 1;
-  const towerFilter = (levels["tower-filter"] ?? 0) > 0;
-  return { unlocked, caps, speeds, startWave, towerFilter };
+  const barSlots =
+    BASE_BAR_SLOTS +
+    ((levels["slot-7"] ?? 0) > 0 ? 1 : 0) +
+    ((levels["slot-8"] ?? 0) > 0 ? 1 : 0);
+  return { unlocked, caps, speeds, startWave, barSlots };
 }

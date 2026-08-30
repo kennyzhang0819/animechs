@@ -82,6 +82,14 @@ export interface Progress {
    * after a loss, after a win, and after closing the tab.
    */
   hudMinimized?: boolean;
+  /**
+   * The build bar's loadout: which turrets ride in its slots, in the order
+   * they were picked. The bar holds TechState.barSlots of them, PvZ-style —
+   * owning a turret does not put it on the bar, picking it does. Absent on
+   * a save that has never curated, which reads as "auto-fill the slots from
+   * whatever is unlocked" (see Swarmfield's bar).
+   */
+  loadout?: TowerKind[];
 }
 
 /** one emplacement, as the save keeps it: what, and which cell */
@@ -211,6 +219,11 @@ export function loadProgress(): Progress {
         const v = (p.tech as Record<string, unknown>)[k];
         if (typeof v === "number" && v > 0) tech[k] = Math.min(Math.floor(v), techCapOf(k));
       }
+      // the bar's curation shipped briefly as its own "tower-filter" node
+      // before becoming the slot ladder; a save that paid for it is granted
+      // the first slot upgrade rather than silently losing the purchase
+      const legacyFilter = (p.tech as Record<string, unknown>)["tower-filter"];
+      if (typeof legacyFilter === "number" && legacyFilter > 0) tech["slot-7"] = 1;
     }
     // none of the three grants can legitimately sit below its free starting
     // value — this also migrates saves from before the per-turret point
@@ -228,6 +241,7 @@ export function loadProgress(): Progress {
       layouts: readLayouts(p),
       speed: readSpeed(p),
       hudMinimized: p.hudMinimized === true,
+      loadout: readLoadout(p),
     };
   } catch {
     return fresh();
@@ -259,6 +273,27 @@ function readLayouts(p: { layouts?: unknown }): Record<string, TowerPlacement[]>
     if (list.length > 0) out[mapId] = list;
   }
   return out;
+}
+
+/**
+ * The loadout out of a raw save: known kinds only, deduped, order kept.
+ * Absent (undefined) and present-but-empty are different answers — absent
+ * means "never curated, auto-fill", empty means the player cleared the bar.
+ */
+function readLoadout(p: { loadout?: unknown }): TowerKind[] | undefined {
+  if (!Array.isArray(p.loadout)) return undefined;
+  const kinds = new Set<string>(TOWER_KINDS);
+  const out: TowerKind[] = [];
+  for (const k of p.loadout)
+    if (typeof k === "string" && kinds.has(k) && !out.includes(k as TowerKind))
+      out.push(k as TowerKind);
+  return out;
+}
+
+/** remember which turrets ride in the build bar's slots */
+export function saveLoadout(kinds: readonly TowerKind[]): void {
+  const p = loadProgress();
+  saveProgress({ ...p, loadout: [...kinds] });
 }
 
 /** remember what was standing on a map when the run ended */

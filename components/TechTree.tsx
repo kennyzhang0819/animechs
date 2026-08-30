@@ -32,12 +32,12 @@ const nodeName = (id: TechKind): string =>
  * block in Mindustry that means "run the clock faster" — so they get a glyph
  * instead: fast-forward for the pace switches (the name underneath says
  * which multiplier), an hourglass for time warp, which is about which wave
- * the run opens on rather than how fast it runs, and a funnel for the
- * build bar's filter tab.
+ * the run opens on rather than how fast it runs, and a grid of squares for
+ * the slot nodes that widen the build bar's loadout.
  */
 const WARP_GLYPH = "M6 3h12v2.5l-4.6 6.5 4.6 6.5V21H6v-2.5L10.6 12 6 5.5z";
 const FF_GLYPH = "M2 4v16l10-8zM12 4v16l10-8z";
-const FILTER_GLYPH = "M3 4h18v2.5L14 13.8V19l-4 2v-7.2L3 6.5z";
+const SLOT_GLYPH = "M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z";
 
 function NodeIcon({ id, lit }: { id: TechKind; lit: boolean }) {
   if (isTowerNode(id) || id === "home")
@@ -56,7 +56,13 @@ function NodeIcon({ id, lit }: { id: TechKind; lit: boolean }) {
       aria-hidden="true"
     >
       <path
-        d={id === "time-warp" ? WARP_GLYPH : id === "tower-filter" ? FILTER_GLYPH : FF_GLYPH}
+        d={
+          id === "time-warp"
+            ? WARP_GLYPH
+            : id === "slot-7" || id === "slot-8"
+              ? SLOT_GLYPH
+              : FF_GLYPH
+        }
       />
     </svg>
   );
