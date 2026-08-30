@@ -27,8 +27,8 @@ export interface Terrain {
   spawns: SpawnCircle[];
   // enemy spawn pads by region: 0 = none, N >= 1 = a pad in spawn region N.
   // Every enemy enters the field on one of these cells; wave groups that
-  // name a region use only that region's pads. A data layer — the game
-  // renders plain floor here; only the map editor draws the pad tile
+  // name a region use only that region's pads. A data layer — nothing
+  // paints these cells; the editor shows each zone as its circle overlay
   spawn: Uint8Array;
   /**
    * WHERE THE SWARM IS TRYING TO GET TO: 1 on every cell that counts as an

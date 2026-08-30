@@ -221,7 +221,7 @@ export default function BalanceView() {
           and only the size moves; the order of those bases comes from Mindustry&apos;s build
           costs, so moving one past its neighbours gives that up.{" "}
           <span className="text-[#A6A6AF]">Growth</span> is one number for the whole tree — every
-          turret climbs at the same rate, so that knob bends all fifteen ladders together. Caps
+          turret climbs at the same rate, so that knob bends every turret&apos;s ladder together. Caps
           come from footprint and nothing here changes them.
         </p>
         <div className="flex shrink-0 items-center gap-2">

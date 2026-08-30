@@ -104,7 +104,7 @@ export async function loadOfficialMaps(): Promise<MapData[]> {
  * route (router.push("/"), so module state survives the trip back), which
  * means a map edited and saved would otherwise be played from the stale
  * copy in memory. Only the map about to be played can have gone stale in a
- * way that matters, so re-reading all five — well over 400 KB, on every
+ * way that matters, so re-reading all of them — well over 400 KB, on every
  * level start — bought nothing the one document does not.
  *
  * A failed re-fetch is not fatal: an offline or 404 refresh keeps whatever
@@ -311,8 +311,8 @@ export const PALETTE: readonly PaletteSet[] = [
   { id: "boulder", label: "Boulder", kind: "decor", variants: [0, 1],
     icons: [1, 2].map((n) => `${PROPS}/boulder${n}.png`) },
   { id: "shrub", label: "Shrub", kind: "decor", variants: [2], icons: [`${ENV}/shrubs1.png`] },
-  // enemy spawn pads: a data layer — the pad tile shows in the editor only,
-  // the game renders the floor beneath it.
+  // enemy spawn pads: a data layer — no pad tile is painted anywhere; the
+  // editor shows each zone as its circle overlay over the floor.
   //
   // THE REGION ID IS `variant + 1`, NOT `variants[variant]`, and this is the
   // one set where that matters: the picker grows a swatch at a time, so the

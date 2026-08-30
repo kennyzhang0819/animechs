@@ -21,7 +21,7 @@ import { difficultyColor, difficultyName } from "@/game/ladder";
 import { CostRow, Wallet } from "./Items";
 import { TOWER_ICONS } from "./towerIcons";
 
-/** what a node is called — turret stats for the fifteen, UTILITY_INFO for the rest */
+/** what a node is called — turret stats for the turrets, UTILITY_INFO for the rest */
 const nodeName = (id: TechKind): string =>
   isTowerNode(id) ? TOWERS[id].name : UTILITY_INFO[id].name;
 
@@ -87,10 +87,9 @@ const centerY = (y: number): number => (y + 0.5) * CELL_H;
  * in BOTH axes — a page can only scroll one way, and the game one keystroke
  * away already taught everyone its camera. So the board is a fixed viewport
  * over a transformed layer, driven exactly like the field: WASD and arrows
- * pan, the wheel pans (a trackpad's two-finger scroll moves the map, both
- * axes), ctrl+wheel — which is what a pinch reaches the browser as — and
- * the floating buttons zoom, and any drag on open ground or a node drags
- * the board. The chrome floats over it.
+ * pan, the wheel zooms about the cursor (a ctrl-tagged pinch delta uses a
+ * stronger factor), the floating buttons zoom, and any drag on open ground
+ * or a node drags the board. The chrome floats over it.
  *
  * The camera lives in a REF and is applied to the layer imperatively:
  * panning at 60fps must not re-render the tree, and a re-render from
@@ -635,10 +634,10 @@ export default function TechTree({
           ))}
         </div>
         <span
-          className="pointer-events-auto absolute top-[max(1rem,var(--safe-t))] right-[max(1rem,var(--safe-r))] flex items-center rounded border border-[#2E2E36] bg-[#151518]/90 px-4 py-1.5 backdrop-blur"
+          className="pointer-events-auto absolute top-[max(1rem,var(--safe-t))] right-[max(1rem,var(--safe-r))] flex items-start rounded border border-[#2E2E36] bg-[#151518]/90 px-4 py-1.5 backdrop-blur"
           data-ui
         >
-          <Wallet bank={progress.bank} />
+          <Wallet bank={progress.bank} vertical />
         </span>
         <div
           className="absolute bottom-[max(1rem,var(--safe-b))] right-[max(1rem,var(--safe-r))] flex flex-col gap-2"

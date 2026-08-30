@@ -1,8 +1,8 @@
 # Swarmdustry
 
-Tower-defense swarm prototype: flow-field pathfinding for up to 20,000 units,
-WebGL2 instanced rendering, and 2x2 towers that block movement and reroute the
-horde in real time.
+Tower-defense swarm prototype: flow-field pathfinding for up to 22,000 units,
+WebGL2 instanced rendering, and towers (1×1 up to 4×4) that block movement and
+reroute the horde in real time.
 
 ## Run
 
@@ -22,32 +22,45 @@ stale tab or a cached bundle looks exactly like a fix not working.
 ## Architecture
 
 - `game/constants.ts` — grid, core placement, tower/unit tuning
-- `game/levels.ts` — unit stats and the tier-0 BASELINE script (4 waves)
-- `game/ladder.ts` — the campaign's only difficulty axis: enemy level, wave
-  count and drop bonus per tier, plus the budget arithmetic that sizes the
-  opening fleet
-- `game/tech.ts` — turret price curves (the volume turret is flat) and the
-  tier gates
-- `game/progress.ts` — the save: bank, tiers cleared, tech points
-- `game/terrain.ts` — seeded value-noise worldgen: mountain ranges, a carved
-  meandering valley with a branch lane, forests, outcrops, floor fringes, decor
-- `game/flowfield.ts` — grid occupancy + one Dijkstra pass from the core into a
-  per-cell direction field; units sample it bilinearly (pathfinding is O(map),
-  not O(units))
+- `game/levels.ts` — unit stats and wave-script plumbing; the authored
+  script itself (50 waves) lives in `public/levels/1.json`, loaded by
+  `loadLevelDocs()`
+- `game/ladder.ts` — the three named difficulties (Incursion / Onslaught /
+  Nemesis: wave cut, enemy level, shield scale, drop bonus each), plus the
+  audit/check arithmetic over the authored script
+- `game/tech.ts` — the tech tree: turret price bundles (one shared growth
+  constant for every turret), abilities, and the build-bar slot upgrades
+- `game/progress.ts` — the save: bank, difficulties cleared, tech points,
+  saved layouts, game speed, build-bar loadout
+- `game/items.ts` — the five currencies (copper, titanium, thorium,
+  plastanium, phase-fabric)
+- `game/maps.ts` — map documents: terrain layers, spawn regions, goal cells
+- `game/editor.ts` — the level/map editor model behind the admin views
+- `game/terrain.ts` — terrain from a map document when one exists, else
+  seeded value-noise worldgen: mountain ranges, a carved meandering valley
+  with a branch lane, forests, outcrops, floor fringes, decor
+- `game/flowfield.ts` — grid occupancy + one Dijkstra pass seeded from every
+  goal cell (the core is the fallback) into a per-cell direction field; units
+  sample it bilinearly (pathfinding is O(map), not O(units))
 - `game/sim.ts` — units in struct-of-arrays typed arrays, counting-sort spatial
   hash (separation + projectile hits), towers, projectiles, effects
-- `game/atlas.ts` — procedural sprite atlas; **swap any region for custom art**
-  (units are white sprites tinted per instance, and already rotate to face
-  their heading)
-- `game/renderer.ts` — WebGL2 instanced sprites, two draw calls per frame
-  (static terrain batch + one dynamic batch in painter's order)
+- `game/atlas.ts` — the sprite atlas, composited at load time from Mindustry
+  sprites in `public/mindustry/` plus procedural regions; **swap any region
+  for custom art** (units are white sprites tinted per instance, and already
+  rotate to face their heading)
+- `game/renderer.ts` — WebGL2 instanced sprites: static terrain, shadow and
+  wall batches, one dynamic batch in painter's order, and a shield pass
 - `game/game.ts` — rAF loop, input, 2d overlay (placement ghost), stats
-- `components/Swarmfield.tsx` — React shell: HUD, unit-count switcher, canvases
+- `components/Swarmfield.tsx` — React shell: HUD, difficulty picker,
+  six-slot build bar with its loadout picker, game-speed switcher, canvases
+- `components/TechTree.tsx` — the tech tree as a zoomable map
+- `components/LevelEditorView.tsx`, `MapEditorView.tsx`, `BalanceView.tsx` —
+  the admin authoring surfaces
 
 In dev builds the running `Game` instance is exposed as `window.__swarmfield`
 for console poking, and the ladder's tuning surface as `window.__ladder`
-(`.spec(n)` for a tier's playable spec, `.budget(n)` for what the arithmetic
-says it costs).
+(`.spec(n)` for a difficulty's playable spec, `.budget(n)` for what the
+arithmetic says it costs).
 
 ## Controls
 
@@ -64,80 +77,87 @@ One set of pointer listeners covers mouse, pen and touch (`game/game.ts`).
 
 The field claims every gesture over it — `touch-action: none` on the canvas,
 `user-scalable=no` in the viewport meta, and Safari's `gesture*` events
-swallowed — so a pinch zooms the **map** and never the page. Zoom 1 is
-"cover" (the world fills the viewport) and is also the floor; the ceiling is
-3, which is what makes a single cell aimable with a fingertip.
+swallowed — so a pinch zooms the **map** and never the page. The zoom floor
+is the whole map in frame with a little padding (`ZOOM_FIT_PAD`); the
+ceiling is 12, which is what makes a single cell aimable with a fingertip.
 
 ## Progression
 
-There is one world, played over and over at an ever-higher **tier**. Every
-wave the game will ever send is written out in `WORLDS[0].script` — the tier
-does not generate waves, it decides **how many of them a run plays**: four at
-tier 0, and three more per tier.
+There is one world and one authored script, played at three **named
+difficulties**. The difficulty does not generate waves — every wave the game
+will ever send is written in the script — it decides **how much of the
+script a run plays**, and at what enemy level.
 
-| | tier 0 | tier 4 | tier 8 | tier 16 |
-|---|---|---|---|---|
-| waves | 4 | 16 | 28 | 52 (all) |
-| enemies | 242 | 1,849 | 4,854 | 15,683 |
-| enemy health | ×1.0 | ×3.2 | ×10.3 | ×105.8 |
-| salvage | ×1.00 | ×1.60 | ×2.20 | ×3.40 |
+| | Incursion | Onslaught | Nemesis |
+|---|---|---|---|
+| waves | 20 | 35 | 50 (all) |
+| enemy level | 0 | 10 | 20 |
+| enemies | 14,825 | 33,688 | 49,839 |
+| enemy health | ×1.0 | ×1.79 | ×3.21 |
+| enemy shields | ×1 | ×5 | ×20 |
+| salvage | ×1.0 | ×1.3 | ×1.6 |
 
-Past the end of the script the wave count stops and the enemy level keeps
-climbing, so the ladder never hard-stops — it just stops adding new content
-until more waves are authored.
+The ladder is finite and that is the point: clearing Nemesis finishes the
+campaign. (A hidden Eradication difficulty above it is named but not built.)
+The table shows the authored values in `ladder.ts`; the shipped
+`public/balance.json` currently eases Nemesis to enemy level 16 (health
+×2.54) and shields ×5 while that tuning awaits migration.
 
-Only **health** scales with level (×1.06 a level; +12 levels is exactly
-double). Armour, speed, hitbox and drop stay at base forever, which is what
-keeps a tier-1 dagger worth shooting at tier 20 and a fortress unkillable by
-duos at tier 0.
+Per **level**, only health scales (×1.06 a level; +12 levels is exactly
+double). Armour, speed, hitbox and drop stay at base, which is what keeps a
+level-20 dagger worth shooting and a fortress unkillable by duos at
+Incursion. Per **difficulty** there are two more knobs in `DIFFICULTIES`:
+shield pools scale ×1/×5/×20, and flat ground/air armour bonuses exist
+(currently authored 0).
 
 ### Authoring waves
 
-Wave order *is* the difficulty gate — wave `i` first plays at tier
-`ceil((i - 4) / 3)`, shown as a `T`n badge on each row in the level editor.
-Three things do **not** come out in the wash, because the tier scales health
-and nothing else:
+Wave order *is* the difficulty gate — wave `i` first plays at the first
+difficulty whose wave cut reaches it (20/35/50), shown as a badge on each
+row in the level editor. Three things do **not** come out in the wash,
+because the level scales health and nothing else:
 
 - **Armour is a permanent multiplier.** `max(dmg - armor, 0.1 * dmg)` never
-  scales, so a fortress costs a duo line ten times its printed health at
-  every tier forever. A unit must not debut before the player can own a
-  turret out-damaging its armour.
+  scales with level, so a fortress costs a duo line ten times its printed
+  health at every difficulty forever. A unit must not debut before the
+  player can own a turret out-damaging its armour. (Two exceptions to keep
+  in mind: burning pierces armour entirely, and the lancer counts armour
+  quadruple.)
 - **Health per body is difficulty that pays nothing back.** A kill drops one
   item whatever it killed, so 100 spirocts cost ~15× what 100 daggers cost
   and pay the same 100 items. Padding a wave with tier-1 bodies is nearly
   free — cost and income rise together — which is why swarm waves can be as
   big as they look good.
-- **The currency mix must track the tree.** Prices are written at roughly
-  copper : titanium : thorium = 100 : 15 : 2.5; drift far from that and one
-  currency becomes the only real constraint.
+- **The currency mix must track the tree.** Each difficulty has a target
+  payout mix in `TARGET_DROP_RATIO` (normalised to copper = 100; Incursion
+  100 : 15 : 3.6, up to all five currencies at Nemesis); drift far from it
+  and one currency becomes the only real constraint.
 
-Two more the arithmetic can't see: **air** (hail and scorch cannot shoot up
-at all) and **crawler speed** (twice the line's pace, so they arrive before
-the kill zone is done with them).
+Two more the arithmetic can't see: **air** (hail, scorch, arc, lancer and
+ripple cannot shoot up at all) and **crawler speed** (twice the line's pace,
+so they arrive before the kill zone is done with them).
 
 Check any edit from the console — dev builds also warn on load:
 
 ```js
 __ladder.check()      // complaints; empty means the script is in line
-__ladder.audit()      // per-tier waves, units, fleet needed, step, drop ratio
-__ladder.wave(7, 3)   // what one authored wave costs at a given tier
+__ladder.audit()      // per-difficulty waves, units, fleet needed, step, drop ratio
+__ladder.wave(7, 2)   // what one authored wave costs at a given difficulty
 ```
 
 ### Economy
 
-- **The volume turret is flat-priced** (duo, 8 copper, forever). Geometric
-  prices cap the count you can afford at the logarithm of your income —
-  60–90 turrets whatever you earn — so the treadmill lives on enemy level
-  instead, where it costs the player without pricing them out. Growth stays
-  on the specialists, where a hard cap is the point.
-- **Cost bundles carry the drop ratio of the tier that unlocks them.**
+- **Growth is one constant for every turret** (`SHARED_GROWTH`, 1.01), duo
+  included — prices are effectively flat, so turret counts are capped by the
+  base bundle (hundreds of duos down to a few dozen foreshadows) and the
+  treadmill lives on enemy level instead, where it costs the player without
+  pricing them out.
+- **Drop bonus is linear per difficulty** (`DROP_BONUS_PER_TIER`, 0.3), and
+  exists only so a higher difficulty is the better farm.
 
 Nothing about pricing, turret caps, or the free loadout is derived from the
-wave script. `OPENING_DUOS` (the free fleet) is a fixed constant and the
-campaign's difficulty anchor — the opening waves are authored to fit it, not
-the other way round, so an edit that makes tier 0 heavier does not quietly
-hand out more duos to absorb it. `Check ladder` reports the gap.
-
-`COVERAGE` in `ladder.ts` is the one constant that must be **measured**
-rather than reasoned out (0.48, from a human clear of tier 0 with 84 duos).
-Re-derive it whenever the map, `waveGap`, `spawnRate`, or duo's stats change.
+wave script. `OPENING_DUOS` (50, plus `OPENING_ARCS`, 5) is a hand-tuned
+constant and the campaign's difficulty anchor — the opening waves are
+authored to fit it, not the other way round, so an edit that makes the
+opening heavier does not quietly hand out more duos to absorb it. There is
+deliberately no check on this number; it is tuned by feel.

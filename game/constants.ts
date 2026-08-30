@@ -724,7 +724,8 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   },
   // Ripple, 1:1 from mindustry/content/Blocks.java with graphite ammo
   // (ArtilleryBulletType(3, 40), 70 splash in a 22.5-unit radius): four
-  // shells every two seconds over 290 units, the longest reach in the game.
+  // shells every two seconds over 290 units — outreached only by
+  // parallax's 300 and foreshadow's 500.
   // The volley scatters on purpose — 11 degrees of inaccuracy, a velocity
   // roll in [0.8, 1] and a lifetime roll in [0.95, 1.08] — so it lands as a
   // pattern across the lane rather than four shells in one hole.

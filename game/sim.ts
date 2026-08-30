@@ -130,8 +130,8 @@ const PHYS_SCL = 1.25;
  * How far a unit of each kind has to look to find something it might be
  * touching: its own physics radius plus the widest ON ITS OWN LAYER, since
  * ground and air pass straight through one another. That layer split is
- * what keeps the antumbra's 5.75-block hitbox — more than twice anything
- * that walks — off the ground swarm's bill entirely.
+ * what keeps the eclipse's 7.25-block hitbox — nearly twice the reign, the
+ * widest thing that walks — off the ground swarm's bill entirely.
  */
 const KIND_REACH = UNIT_KINDS.map(
   (k) =>
@@ -241,7 +241,7 @@ const KIND_RADIUS = Float32Array.from(UNIT_KINDS, (k) => UNIT_STATS[k].radius);
 /**
  * The physics size split: the roster's radii cluster into a numerous small
  * class (10..18.75px — daggers to spirocts, the actual swarm) and a sparse
- * heavy class (25px up — the T4/T5 hulls, fielded in tens among thousands).
+ * heavy class (25px up — the zenith and the T4/T5 hulls).
  * Cut between the clusters. A HEAVY unit owns every pair it is part of in
  * the physics pass, so the swarm's scan window is sized by the widest
  * SMALL unit alive rather than by the reign three lanes over; the handful
@@ -278,7 +278,8 @@ const KIND_WET_IMMUNE = Uint8Array.from(UNIT_KINDS, (k) =>
 );
 /**
  * UnitType.drag per kind — the fraction of an external shove a unit sheds
- * per tick, and the only thing that reads it is a parallax beam's pull.
+ * per tick. It bleeds the pull channel, which a parallax beam's drag and a
+ * spectre round's knockback both feed (see impulse()).
  * Mindustry's own default is 0.3, which is what every kind that does not
  * state one carries.
  */
@@ -355,16 +356,15 @@ const legTmp2: Vec2 = { x: 0, y: 0 };
 /** any support unit on the roster at all? skips the pass entirely when not */
 const HAS_ABILITIES = KIND_REPAIR.some(Boolean) || KIND_SHIELD.some(Boolean) || FORCE_KINDS.length > 0;
 
-// where flyers aim: the core's center in world px — they need no flow
-// field. Per map, so a core placed low or high pulls them the right way
-
 // how fast body and chassis swivel: Mindustry's default rotateSpeed /
 // baseRotateSpeed, 5 degrees per tick
 const ROT_SPD = ((5 * Math.PI) / 180) * 60;
 /**
  * UnitType.rotateSpeed per kind, rad/s — how fast the TORSO comes round.
- * Only the heavies override it; everything else takes the default, and the
- * chassis under all of them keeps baseRotateSpeed either way
+ * Much of the roster above the T1s overrides it (fortress, atrax and
+ * spiroct at 3, the horizon at 4.5); kinds that state none take the
+ * default, and the chassis under all of them keeps baseRotateSpeed
+ * either way
  */
 const KIND_ROT = Float32Array.from(UNIT_KINDS, (k) => {
   const deg = UNIT_STATS[k].rotateSpeed;
@@ -378,7 +378,8 @@ const KIND_ROT = Float32Array.from(UNIT_KINDS, (k) => {
 export class Sim {
   readonly field = new FlowField();
   terrain!: Terrain; // assigned by reset() in the constructor
-  // the live core's center in world px (terrain.core), what flyers home on
+  // the live core's centre in world px (terrain.core) — the goal-point
+  // fallback on maps with no goal layer, and a fresh flyer's first heading
   private goalX = 0;
   private goalY = 0;
 
@@ -817,7 +818,7 @@ export class Sim {
     }
   }
 
-  /** live towers per kind — the HUD's "2/6" badges, and the cap check */
+  /** live towers per kind — the bar's remaining-count badges, and the cap check */
   towerCounts(): Record<TowerKind, number> {
     const counts = Object.fromEntries(TOWER_KINDS.map((k) => [k, 0])) as Record<TowerKind, number>;
     for (const t of this.towers) counts[t.kind]++;
@@ -1773,10 +1774,11 @@ export class Sim {
     // a leg is DOWN the moment its group's turn passes on, and that
     // transition is where Mindustry hangs everything a footstep does:
     // Fx.unitLandSmall at the foot, the step shake, and — on the units
-    // that carry it — legSplashDamage. Arkyid is the only kind on this
-    // roster with that last one, and it has nothing to land on: its 32
-    // damage over 30 units hits enemy units and buildings, and the player
-    // here fields no units and builds towers that cannot be damaged. So
+    // that carry it — legSplashDamage. Arkyid (32 over 30 units) and
+    // toxopid (80 over 60) carry that last one on this roster, and
+    // neither has anything to land on: it hits enemy units and buildings,
+    // and the player here fields no units and builds towers that cannot
+    // be damaged. So
     // what a footfall leaves behind is the dust, scaled by rippleScale
     const landed = this.ulegMove[i] & ~bits;
     if (landed !== 0 && this.fxN < FX_DUST_CAP) {

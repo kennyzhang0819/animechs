@@ -391,10 +391,10 @@ export function nodeStatus(p: Progress, node: TechKind): NodeStatus {
   const def = techNode(node);
   const owned = p.tech[node] ?? 0;
   if (def.requires && (p.tech[def.requires] ?? 0) < 1) return "hidden";
-  // "maxed" is a UTILITY state and only a utility one: a turret node's
-  // points are capacity, so there is always one more to buy. A switch that
-  // is already on has nothing left to sell, and saying so is friendlier
-  // than leaving a lit node that refuses every click
+  // "maxed" means nothing left to sell: a utility switch that is already
+  // on, or a turret that has hit techCap (CAP_TILES over its footprint).
+  // Saying so is friendlier than leaving a lit node that refuses every
+  // click
   if (isMaxed(node, owned)) return "maxed";
   if (def.requiresTier != null && !isTierCleared(p, def.requiresTier)) return "locked-tier";
   return canAfford(p.bank, techPrice(node, owned)) ? "buyable" : "poor";
@@ -473,8 +473,8 @@ export interface RunReward {
  *
  * Kills are the only income, so a defeat still banks everything the towers
  * killed on the way down — in whatever currencies those kills happened to
- * drop — multiplied by the tier's own drop bonus. Clearing a tier for the
- * first time doubles that, and moves the frontier up one.
+ * drop — multiplied by the tier's own drop bonus. Clearing the frontier
+ * tier for the first time moves it up one.
  *
  * Only call this on a run that reached its own end (won or lost):
  * abandoning mid-level is worth nothing, which is why the UI settles from

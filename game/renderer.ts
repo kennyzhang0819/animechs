@@ -504,9 +504,10 @@ interface Batch {
 }
 
 /**
- * WebGL2 instanced sprite renderer. Two draw calls per frame: a static
- * terrain batch and one dynamic batch (towers, units, projectiles, effects)
- * in painter's order.
+ * WebGL2 instanced sprite renderer. A handful of draws per frame: three
+ * static batches (floors, the wall-shadow quad on its own texture, walls),
+ * one dynamic batch (towers, units, projectiles, effects) in painter's
+ * order, then the shield gather + full-screen blit.
  */
 export class Renderer {
   private readonly gl: WebGL2RenderingContext;
@@ -596,7 +597,7 @@ export class Renderer {
 
     // floor tile + up to 8 floor-edge fades per cell (worst-case borders)
     this.terrain = this.makeBatch(NCELLS * 6 + 512);
-    // wall tiles + (editor) spawn overlays + decor/pine props
+    // wall tiles + decor/pine props
     this.walls = this.makeBatch(NCELLS * 2 + 2048);
     this.shadow = this.makeBatch(4);
     // a swarm budget, not a worst case: 12 quads is a walking mech with one
@@ -1741,11 +1742,6 @@ export class Renderer {
   }
 
   /**
-   * ShrapnelBulletType.draw, 1:1: a long triangle bolt with a short back
-   * spike and perpendicular serrations, tinted white fading to thoriumPink
-   * over its 10-tick life, all widths shrinking with fout.
-   */
-  /**
    * Arc's Lines.circle: a ring stroked at a CONSTANT width, built from
    * Lines.circleVertices(rad) tangent segments. A scaled ring sprite can't
    * stand in for this — its band thickens with the radius, so a big wave
@@ -2503,6 +2499,11 @@ export class Renderer {
     }
   }
 
+  /**
+   * ShrapnelBulletType.draw, 1:1: a long triangle bolt with a short back
+   * spike and perpendicular serrations, tinted white fading to thoriumPink
+   * over its 10-tick life, all widths shrinking with fout.
+   */
   private drawShrapnel(
     dyn: Batch,
     x: number,

@@ -70,14 +70,29 @@ export function CostRow({
 }
 
 /**
- * The wallet strip. Currencies the player has never earned stay hidden —
- * the base item is always shown so a fresh save isn't a blank box, and
- * everything past it appears the first time a kill drops one.
+ * The wallet strip. Currencies with a zero balance stay hidden — the base
+ * item is always shown so a fresh save isn't a blank box, and the rest
+ * appear while a kill's drops keep them above zero.
  */
-export function Wallet({ bank, size = "md" }: { bank: Bank; size?: keyof typeof SIZES }) {
+export function Wallet({
+  bank,
+  size = "md",
+  vertical = false,
+}: {
+  bank: Bank;
+  size?: keyof typeof SIZES;
+  /** stack one currency per line instead of the flowing strip */
+  vertical?: boolean;
+}) {
   const held = ITEM_KINDS.filter((k) => k === BASE_ITEM || bank[k] > 0);
   return (
-    <span className="inline-flex flex-wrap items-center gap-x-4 gap-y-1">
+    <span
+      className={
+        vertical
+          ? "inline-flex flex-col items-start gap-y-1"
+          : "inline-flex flex-wrap items-center gap-x-4 gap-y-1"
+      }
+    >
       {held.map((k) => (
         <ItemAmount key={k} item={k} amount={bank[k]} size={size} />
       ))}

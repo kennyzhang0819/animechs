@@ -48,9 +48,10 @@ export interface Vec2 {
 }
 
 /**
- * Grid occupancy plus a flow field: one Dijkstra pass from the core produces a
- * distance field, a fast-sweeping pass refines it into a proper eikonal one,
- * then every walkable cell gets a unit direction from that field's upwind
+ * Grid occupancy plus a flow field: one Dijkstra pass seeded from every goal
+ * cell (the core block, on a map with no goal layer) produces a distance
+ * field, a fast-sweeping pass refines it into a proper eikonal one, then
+ * every walkable cell gets a unit direction from that field's upwind
  * gradient. Units just sample the field — pathfinding is O(map), not O(units).
  */
 export class FlowField {
@@ -61,7 +62,7 @@ export class FlowField {
   readonly dirY = new Float32Array(NCELLS);
   // spawn-pad cells (indices), from the terrain's spawn layer (whose values
   // are region ids — 0 none, N >= 1 a pad in region N):
-  // spawnPts = open AND connected to the core (where walkers may enter);
+  // spawnPts = open AND connected to a goal (where walkers may enter);
   // spawnAir = every open pad (flyers ignore ground connectivity).
   // The ByRegion maps split the same lists per region id, for wave groups
   // that pin their units to one region
@@ -71,7 +72,8 @@ export class FlowField {
   readonly spawnAirByRegion = new Map<number, number[]>();
   private spawnMask: Uint8Array | null = null;
 
-  // binary min-heap with lazy deletion (sized for ~8 relaxations per cell)
+  // binary min-heap with lazy deletion (131,072 slots, ~2.7 per cell —
+  // sized for 8 per cell back when the board was 128x128)
   private readonly hKey = new Float64Array(1 << 17);
   private readonly hVal = new Int32Array(1 << 17);
   private hN = 0;
@@ -386,7 +388,7 @@ export class FlowField {
   }
 
   /**
-   * Would blocking this 2x2 footprint cut every spawn cell off from the core?
+   * Would blocking this 2x2 footprint cut every spawn cell off from the goals?
    * A BFS reachability probe — nothing is mutated and no field is recomputed.
    * 4-connectivity matches the movement rules: the no-corner-cutting check in
    * compute() only permits a diagonal when both orthogonal cells are open, so

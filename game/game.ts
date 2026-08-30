@@ -32,7 +32,7 @@ export interface UiState {
   /** 1-based wave now on the field, out of how many the level holds */
   currentWave: number;
   totalWaves: number;
-  /** the wave a "skip to wave" rush is spawning toward, or 0 when idle */
+  /** the tower kind picked in the build bar, or null for the bare cursor */
   buildKind: TowerKind | null;
   /** the demolish tool is picked: the next press sells instead of selecting */
   sellMode: boolean;
@@ -50,7 +50,7 @@ export interface UiState {
   showRoutes: boolean;
   /** what this run's kills have banked so far, by currency (see items.ts) */
   earned: Cost;
-  /** live towers per kind, for the menu's "2/6" cap badges */
+  /** live towers per kind, for the bar's remaining-count cap badges */
   counts: Record<TowerKind, number>;
   /** campaign restrictions from the tech tree; null = unrestricted (editor) */
   caps: Record<TowerKind, number> | null;
@@ -76,10 +76,11 @@ export const SPEEDS: readonly number[] = [1, 2, 4, 8, 16];
  * runs at.
  *
  * This used to be [1, 2, 4], with 8x and 16x held back as a sandbox tool.
- * All four are now the utilities path in the tech tree (tech.ts), bought
- * one cheap currency at a time, so what a player gets is read off their
- * save (TechState.speeds) rather than written here. Sandbox still shows
- * every SPEEDS entry, because sandbox ignores the tree entirely.
+ * 2x, 4x and 8x are now the utilities path in the tech tree (tech.ts),
+ * bought one cheap currency at a time, so what a player gets is read off
+ * their save (TechState.speeds) rather than written here; 16x is not sold
+ * at all — time warp took its slot. Sandbox still shows every SPEEDS
+ * entry, because sandbox ignores the tree entirely.
  */
 export const BASE_SPEEDS: readonly number[] = [1];
 
@@ -740,7 +741,7 @@ export class Game {
     // every editor save into a Turbopack HMR update it cannot apply).
     // Only the document about to be played is re-read: the editor returns
     // through a client-side route, so a saved map must not be played from
-    // the stale copy in memory — but that is true of ONE map, not five
+    // the stale copy in memory — but that is true of ONE map, not all of them
     // The level SCRIPT is re-read here too, for the same reason. Both
     // editors return through a client-side route, so an edited wave script
     // is as capable of being stale as an edited map — and applyLevelDoc

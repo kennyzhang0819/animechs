@@ -45,7 +45,7 @@ export type TowerKind = (typeof TOWER_KINDS)[number];
 
 export interface Tower {
   kind: TowerKind;
-  gx: number; // top-left cell of the 2x2 footprint
+  gx: number; // top-left cell of the size x size footprint (TOWERS[kind].size)
   gy: number;
   x: number; // world-space center
   y: number;

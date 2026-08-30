@@ -521,7 +521,8 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     flying: true,
   },
   // zenith: the T3 gunship — 700 hp, armor 5, a 2.5x2.5-block hitbox that
-  // makes it the widest thing in the sky, at 1.7 px/tick = 12.75 tiles/s
+  // makes it the widest thing in the sky below the T4/T5 hulls, at
+  // 1.7 px/tick = 12.75 tiles/s
   zenith: {
     hp: 700,
     speed: 12.75 * CELL,
@@ -532,8 +533,8 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     flying: true,
   },
   // antumbra: the air line's T4 — 7200 hp, armor 9, and a 5.75x5.75-block
-  // hitbox, more than twice the zenith across and the widest thing on the
-  // roster by some margin. At 0.8 px/tick = 6 tiles/s it also gives up
+  // hitbox, more than twice the zenith across; only the eclipse's 7.25
+  // outspans it. At 0.8 px/tick = 6 tiles/s it also gives up
   // more speed than any other upgrade takes: the zenith flies at 12.75, so
   // where the rest of the air line's appeal is arriving before the guns
   // can answer, this one crosses at half that pace and spends twice as
@@ -745,11 +746,12 @@ export interface LevelSpec {
  * other. The rate is now `count / WAVE_RELEASE_SECONDS`, so a wave's size
  * decides how HARD it arrives and never how long it takes to show up.
  *
- * 3.5 SECONDS IS NOT A TASTE, IT IS THE OLD TOTAL. The shipped script holds
- * 28,006 enemies across 50 waves, which at the authored 160/s took 175s of
- * release; 50 waves x 3.5s is the same 175s. The campaign is exactly as long
- * as it was and only the DISTRIBUTION moved — small waves stop dumping
- * instantly, big ones stop dragging.
+ * 3.5 SECONDS IS NOT A TASTE, IT IS THE OLD TOTAL. When the switch was
+ * made the script held 28,006 enemies, which at the authored 160/s took
+ * 175s of release; 50 waves x 3.5s was the same 175s. The campaign kept
+ * its length and only the DISTRIBUTION moved — small waves stop dumping
+ * instantly, big ones stop dragging. (The script has since grown to
+ * ~50,000 bodies; the per-wave 3.5s stands on its own now.)
  *
  * FOR A BIG WAVE THIS NUMBER IS AN ASPIRATION, and that is by design. A
  * failed spawn keeps its credit and goes as soon as a footprint frees up
@@ -791,7 +793,7 @@ export function levelDoc(spec: LevelSpec): LevelDoc {
 }
 
 /**
- * The campaign: ONE world, played at FOUR difficulties, and then it is over.
+ * The campaign: ONE world, played at THREE difficulties, and then it is over.
  *
  * EVERY WAVE THE GAME WILL EVER SEND IS WRITTEN OUT BELOW, in order. A
  * difficulty does not generate waves — it decides HOW MANY OF THESE a run
@@ -801,21 +803,19 @@ export function levelDoc(spec: LevelSpec): LevelDoc {
  *   Onslaught   waves 1-35   enemy level 10
  *   Nemesis     waves 1-50   enemy level 20
  *
- * So a difficulty buys two things at once: ten waves of hand-authored fight
- * nobody has seen yet, and x1.79 health on every wave below them. Neither
- * alone would carry it — the script has fielded every kind it uses by wave
- * 20, so without the levels Nemesis would just be a longer Incursion against
- * identical enemies.
+ * So a difficulty buys two things at once: fifteen waves of hand-authored
+ * fight nobody has seen yet, and x1.79 health on every wave below them.
+ * Neither alone would carry it, and new kinds keep debuting deep into the
+ * script — scepter at 21, the T5 lines through the 40s, the disrupt boss
+ * at 50 — so the upper cuts are new content, not just longer runs.
  *
- * The roster is now ahead of the script: quasar and the whole T4 line
- * (scepter, arkyid, vela, antumbra) are implemented and never sent. They
- * are the obvious material for the upper difficulties, but putting one in
- * is a balance decision and belongs in this list rather than in a stat
- * file — the editor's `Check ladder` prices the wave before you commit.
+ * Every kind on the roster is now sent somewhere in the script. Adding one
+ * to a wave is a balance decision and belongs in this list rather than in
+ * a stat file — the editor's `Check ladder` prices the wave before you
+ * commit.
  *
- * ANYTHING PAST WAVE 50 IS NEVER SENT. The list is currently longer than
- * that; check() reports the orphans, and they are content waiting for a
- * home rather than content in the game.
+ * ANYTHING PAST WAVE 50 IS NEVER SENT; check() reports any orphans past
+ * the top difficulty's cut.
  *
  * Kills are the only income: a finished run banks each dead unit's tier
  * item whether it ended in victory or defeat, times the difficulty's drop
@@ -863,8 +863,8 @@ export const WORLDS: LevelSpec[] = [
     //   air        flare     horizon  zenith     antumbra   eclipse
     //
     // KEEP SENDING TIER-1 UNITS. They are the swarm and the game is named
-    // after them. They are also nearly free in the health budget — 118 hp
-    // against a scepter's 8,100, so one T4 weighs as much as sixty-nine
+    // after them. They are also nearly free in the health budget — 150 hp
+    // against a scepter's 9,000, so one T4 weighs as much as sixty
     // daggers, and the twelve thousand extra daggers Onslaught adds cost less
     // than its two hundred scepters. Spend the budget on T3/T4/T5 counts;
     // that is the only thing that really moves a difficulty's weight.
@@ -916,8 +916,8 @@ export const WORLDS: LevelSpec[] = [
     //
     // WITHIN a segment, ramp two things at once: total bodies, and the tier
     // mix. Early waves lean T2; late waves lean T4 and T5. Wave 21's dagger
-    // wave is mace 692 / fortress 145 / scepter 7; wave 45's is mace 262 /
-    // fortress 411 / scepter 223 / reign 52. Same wave type, different game.
+    // wave is mace 177 / fortress 46 / scepter 1; wave 45's is mace 160 /
+    // fortress 275 / scepter 64 / reign 14. Same wave type, different game.
     //
     // CHECK THE TOTALS, NOT THE FEEL. A difficulty's cumulative tier counts
     // have to land on TARGET_DROP_RATIO (ladder.ts), because one kill is one

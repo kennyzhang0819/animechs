@@ -283,7 +283,7 @@ function LadderReport({
         Armour is shown beside it as composition, never folded into it: an
         armour-heavy difficulty is a different fight at the same strength.
         Step floors at 1.79x (the +10 enemy levels alone); anything above that
-        was bought by the ten new waves. Nothing here is unwinnable — prices
+        was bought by the fifteen new waves. Nothing here is unwinnable — prices
         are flat, so a steep step means more farming, not a dead end.
       </p>
     </section>

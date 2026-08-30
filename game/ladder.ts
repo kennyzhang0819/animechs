@@ -23,7 +23,8 @@ import {
  * THE LADDER — three difficulties, and then the campaign is over.
  *
  * A world ships ONE authored script. A difficulty is a CUT of that script
- * plus an enemy level, and nothing else:
+ * plus an enemy level and a few dials (shield scale, armour bonuses — see
+ * DIFFICULTIES):
  *
  *   Incursion   waves 1-20   enemy level  0
  *   Onslaught   waves 1-35   enemy level 10
@@ -62,10 +63,10 @@ export const HP_PER_LEVEL = 1.06;
  *
  * This is the half of a difficulty that makes the SAME waves harder. The
  * other half is the wave cut below, which makes the run longer. Both move
- * together on purpose: without the levels, the top difficulty would be a
- * longer opening against identical enemies, because the authored script has
- * already fielded every kind it uses by wave 20. (It does not use every
- * kind that EXISTS — see the note over WORLDS in levels.ts.)
+ * together on purpose: the levels are what keep the shared opening waves
+ * from playing identically at every difficulty. (New kinds keep debuting
+ * deep into the script — scepter at 21, the T5 lines from the mid-30s, the
+ * boss at 50 — see the note over WORLDS in levels.ts.)
  */
 export const LEVELS_PER_TIER = 10;
 
@@ -170,13 +171,13 @@ export const DIFFICULTIES: readonly {
  * moves is what the swarm is CARRYING:
  *
  *   difficulty     T1    T2    T3    T4    T5
- *   Incursion      55%   32%   14%    -     -
- *   Onslaught      30%   28%   25%   17%    -
- *   Nemesis        12%   14%   20%   35%   19%
+ *   Incursion      59%   28%   13%    -     -
+ *   Onslaught      32%   27%   25%   16%    -
+ *   Nemesis        15%   16%   21%   32%   16%
  *
  * A TIER-1 BODY IS NEARLY FREE IN THIS BUDGET and that is the key to reading
- * the table: 118 health against a tier-4's 8,100, so ONE T4 weighs as much
- * as sixty-nine daggers. Twelve thousand extra daggers at Onslaught cost less
+ * the table: 150 health against a tier-4's 9,000, so ONE T4 weighs as much
+ * as sixty daggers. Twelve thousand extra daggers at Onslaught cost less
  * health than two hundred scepters. So "send more T1" and "shift the weight
  * upward" are not in tension at all — the thing that actually sets the size
  * of the step between difficulties is the T3, T4 and T5 counts, and nothing
@@ -197,7 +198,7 @@ export const DIFFICULTIES: readonly {
  * below, never by tech — so Nemesis opens on schedule and those three are
  * the reward for engaging with it rather than a prerequisite.
  *
- * The steps these rows produce are 6.4x Incursion -> Onslaught and 6.0x Onslaught ->
+ * The steps these rows produce are 6.0x Incursion -> Onslaught and 4.9x Onslaught ->
  * Nemesis, against a WALL_STEP guideline of 4.5. That is a deliberate, known
  * overshoot: holding 4.5 forces Onslaught back onto almost exactly Incursion's own
  * ratio, and the campaign stops going anywhere. See audit().
@@ -535,10 +536,10 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
  * It exists to solve a bootstrap, not to clear a run. Kills are the only
  * income and zero turrets kill nothing, so a fresh save needs enough to
  * hold WAVE ONE; from there difficulty 1 pays for itself several times over
- * while it is still being played. Duo is flat at 8 copper forever, so the
- * fleet grows with the bank in a straight line — difficulty 1's own kills
- * bank roughly 2,100 copper, some 260 more duos, and cross the granted fleet
- * about a third of the way in.
+ * while it is still being played. Duo starts at 8 copper on a near-flat
+ * 1.01 curve, so the fleet grows with the bank almost in a straight line —
+ * difficulty 1's own kills bank some 12,500 copper, roughly 240 more duos
+ * through that curve, and cross the granted fleet early in the run.
  *
  * That is why there is no arithmetic here and no check on this number. A
  * static-fleet model would be measuring a fleet that stops existing thirty
@@ -832,9 +833,9 @@ export interface AuditRow {
  *   step = 1.79 (the +10 enemy levels) x (health of the new waves ratio)
  *
  * so 1.79x is the FLOOR — what a difficulty costs if it adds no waves at
- * all — and everything above it is bought by the ten waves it unlocks. To
- * hit a target step M, the new block of ten must weigh (M / 1.79 - 1) times
- * everything below it.
+ * all — and everything above it is bought by the fifteen waves it unlocks.
+ * To hit a target step M, the new block of fifteen must weigh
+ * (M / 1.79 - 1) times everything below it.
  *
  * Two things that do NOT come out in the wash:
  *
@@ -929,7 +930,7 @@ export function check(spec: LevelSpec = WORLD): LadderIssue[] {
       out.push({
         tier: r.tier,
         kind: "filler",
-        message: `adds ${r.waves - prev.waves} waves but only ${r.step}x the health — the ten new waves are barely paying for themselves`,
+        message: `adds ${r.waves - prev.waves} waves but only ${r.step}x the health — the new waves are barely paying for themselves`,
       });
     // The currency mix against TARGET_DROP_RATIO, every currency, named off
     // ITEM_KINDS rather than written out — so adding a tier-6 unit extends
@@ -964,10 +965,10 @@ export function check(spec: LevelSpec = WORLD): LadderIssue[] {
 
 /**
  * A difficulty costing more than this much more than the last reads as a
- * wall. Generous, because with only three gaps in the whole campaign each
+ * wall. Generous, because with only two gaps in the whole campaign each
  * one is MEANT to be a real step — the +10 enemy levels alone are 1.79x
  * before a single new wave is counted.
  */
 export const WALL_STEP = 4.5;
-/** ...and less than this, with ten new waves, reads as padding */
+/** ...and less than this, with fifteen new waves, reads as padding */
 export const FILLER_STEP = 2;

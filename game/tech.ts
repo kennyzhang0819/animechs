@@ -10,10 +10,10 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * the whole tree hidden behind it. It exists to give the tree TWO paths out
  * of one place: turrets down the middle, and the utilities off to the side.
  *
- * The four speed nodes are the utilities path, and they are a different
- * KIND of purchase from a turret. A turret node's points are capacity, so
- * it takes points forever; a utility is a SWITCH, so it takes exactly one
- * (see `cap`) and then reads as owned.
+ * The three speed nodes and time warp are the utilities path, and they are
+ * a different KIND of purchase from a turret. A turret node's points are
+ * capacity, so it takes points forever; a utility is a SWITCH, so it takes
+ * exactly one (see `cap`) and then reads as owned.
  *
  * `slot-7` and `slot-8` are the utilities that are not about pace: the
  * build bar is a six-slot loadout (BASE_BAR_SLOTS), and each of these
@@ -139,112 +139,18 @@ export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: s
  * exponent does not really decide what a turret costs — it decides how many
  * of it a player ends up with, forever, however long they play.
  *
- * THE SPAN IS FOOTPRINT, AND ONLY FOOTPRINT:
+ * NOTHING IS SOLVED ANY MORE. Growth used to be derived per node from its
+ * DPS against a footprint-sized span; that whole scheme is gone (see the
+ * Knobs doc below). Today every turret is authored at SHARED_GROWTH (1.01,
+ * near-flat), utilities sit at 1, and the hard ceiling is techCap
+ * (CAP_TILES / footprint area) — so the BASE BUNDLE is where a turret's
+ * price lives, and it is play-tested rather than computed.
  *
- *   1x1  ->  500   2x2  ->  200   3x3  ->  100   4x4  ->  60
- *
- * THIS IS THE SPAN, NOT THE CAP, and the two were one number until they
- * were not. The span is the count the ladder is SOLVED against; the cap is
- * CAP_TILES / footprint area, ten thousand tiles per turret type. Keeping
- * them separate is what lets the cap move: solve growth against the cap and
- * raising it also raises the budget, which cheapens every rung — a cap at
- * half the board measured as a 1.7-3.4x power buff at 2% of a node bill.
- * Against a fixed span, the cap costs nothing and only stops being in the
- * way. See PRICE_SPAN and CAP_TILES.
- *
- * The 4x4 row was added with spectre, meltdown and foreshadow, the first
- * size-4 blocks in the game. It is an extension of the series rather than
- * a formula: the tiles a full span commits run 500, 800, 900, 960, a
- * curve that flattens as footprints grow because the span is about how
- * much of the BOARD one turret type is priced to own, and 960 of 29,109
- * buildable cells is 3.3% — the same order as the three rows above it.
- *
- * THE RANGE MULTIPLIER IS GONE, and it is worth saying why it ever existed.
- * On the old 128x96 board these ceilings committed 76% of the 4,015
- * buildable tiles, so a short-ranged turret genuinely could not occupy the
- * board the way a long-ranged one could, and its ceiling was cut to say so.
- * The board is now 256x192 with 29,109 buildable cells: the same ceilings
- * commit 11% of it. TILE SCARCITY STOPPED BINDING, so the rule it justified
- * went with it.
- *
- * The map charges for short range on its own now, in units rather than in
- * price — a 60-unit scorch covers 7.5 tiles of a 35-tile gate, so holding
- * one gate takes about five of them abreast. Charging again in the ceiling
- * was double-counting, and it is why scorch and fuse read as overtuned on
- * the cramped map and balanced on this one.
- *
- * GROWTH IS SOLVED SO EVERY NODE COSTS THE SAME PER POINT OF DPS —
- * 7.85 copper for each point of damage-per-second its full ceiling fields.
- * The tree's whole lifetime bill is unchanged, so the campaign is the same
- * length; only the DISTRIBUTION moved. A strong turret is now expensive
- * because it is strong, and a weak one cheap because it is weak, which is
- * the entire rule and the only one to hold in your head.
- *
- * THE ONE ASSUMPTION, written down once: a splashing or piercing shot is
- * counted as catching FIVE bodies — the crowd case those turrets exist for.
- * It does not have to be true. It has to be the SAME for every turret,
- * because pricing is relative; a wrong number moves every node together and
- * cancels out. Change it here and re-solve rather than arguing per turret.
- *
- * THE GROWTHS BELOW ARE DERIVED, NOT AUTHORED — solveGrowth reproduces
- * every one of them from the base bundle, the DPS and the span, and the
- * table is kept only so the shape of the tree can be read at a glance.
- * Salvo is the single rounding casualty: its raw solve lands on 1.015650,
- * exactly on the four-place boundary, so it now rounds to 1.0157 where the
- * hand-written value rounded to 1.0156. That is parity being restored
- * rather than lost — the old number sat a whisker under the rule.
- *
- *   turret     size  DPS      span    lifetime DPS   growth
- *   duo        1x1     27     500          13,500    1.0098
- *   hail       1x1    165     500          82,500    1.0103
- *   scorch     1x1    850     500         425,000    1.0133
- *   scatter    2x2  1,450     200         290,000    1.0327
- *   salvo      2x2    217     200          43,355    1.0156
- *   fuse       3x3  4,109     100         410,870    1.0594
- *   arc        1x1    411     500         205,714    1.0120
- *   lancer     2x2    420     200          84,000    1.0216
- *   ripple     3x3    700     100          70,000    1.0453
- *   parallax   2x2     30     200           6,000    1.0007
- *   swarmer    2x2  1,925     200         385,000    1.0278
- *   cyclone    3x3  1,797     100         179,700    1.0524
- *   spectre    4x4  1,371      60          82,286    1.0671
- *   meltdown   4x4  3,364      60         201,825    1.0854
- *   foreshadow 4x4    405      60          24,300    1.0317
- *
- * THE LAST FIVE WERE SOLVED WHEN THEY STOPPED BEING STUBS, and each one
- * needed the DPS convention read rather than applied blind:
- *
- *   swarmer      4 missiles x (10 direct + 45 splash) at 60/34.3 volleys
- *   cyclone      the shell's 45.5 splashes, so x5; its SIX fragments do
- *                not splash, so their 72 is counted once
- *   spectre      pierceCap 2, so x2 — lancer's rule, not the flat x5
- *   meltdown     936 while the beam is lit, over a 230/320 duty cycle
- *   foreshadow   405, and NO crowd multiplier at all: 1350 is a BUDGET
- *                spent across everything the rail passes through, so the
- *                five bodies are already inside the number
- *
- * Only the growths moved. Every base bundle is the one the stubs shipped
- * with, because the base is settled by rule TWO (the drop ratio) and the
- * stubs already carried the right currencies — it was only the DPS the
- * placeholder bullet made unknowable.
- *
- * Arc, lancer, ripple and parallax were solved the same way. Their DPS is
- * `shots x per-shot x 60 / reload ticks`, which is what the top four rows
- * reproduce exactly; salvo's 217 and fuse's 4,109 do not fall out of it
- * (they imply reloads of 31 and 23 against the 29 and 35 the turrets
- * actually carry), so those two rows are taken as given rather than
- * recomputed. Every growth above, theirs included, IS consistent with the
- * DPS beside it under the 7.85 rule.
- *
- * PARALLAX IS WHERE THE RULE RUNS OUT. It is priced on 30 damage a second
- * because that is all the rule can see, and its actual job is dragging air
- * out of formation — see the node.
- *
- * DUO COMES OUT VERY CHEAP and that is the rule working, not a bug: at 27
- * DPS it is the weakest thing in the game, so equal cost-per-DPS prices it
- * near nothing and a single top-difficulty run roughly maxes it. Five
- * hundred duos are still only 13,500 DPS, which is a rounding error against
- * what the top difficulty sends — it stays the bootstrap, never the answer.
+ * THE ONE DPS CONVENTION, written down once: a splashing or piercing shot
+ * is counted as catching FIVE bodies — the crowd case those turrets exist
+ * for. It does not have to be true; it has to be the SAME for every
+ * turret, because the `dps` annotations only mean anything relative to one
+ * another. No price depends on them at runtime.
  *
  * `from` delays an ITEM rather than the node: `from: { titanium: 30 }` means
  * the first 30 points cost no titanium at all. The exponent is NOT restarted
@@ -256,10 +162,9 @@ export interface PriceCurve {
   /** what the FIRST point costs, per item */
   base: Cost;
   /**
-   * The per-point multiplier, AUTHORED — for the nodes the DPS rule cannot
-   * reach. Two kinds qualify: a utility, which has no damage at all, and a
-   * turret whose bundle carries no copper for the solve to be denominated in.
-   * A node that writes a dps instead has this derived and must not set it.
+   * The per-point multiplier, AUTHORED. Every turret carries SHARED_GROWTH
+   * (1.01); a utility is a one-point switch and sits at 1. Nothing derives
+   * this from dps any more.
    */
   growth?: number;
   /** point index at which an item starts being charged at all (default 0) */
@@ -315,9 +220,9 @@ const round4 = (x: number): number => Math.round(x * 1e4) / 1e4;
  * moved the base underneath you. These three are independent, so one knob does
  * one thing and a play-tested number stays where you put it.
  *
- * DPS still earns its keep as the STARTING GUESS — see recommendedBase — but
- * no price depends on it at runtime, so a new bullet type cannot silently
- * re-price the tree.
+ * DPS survives only as annotation — recommendedBase can turn it into a seed
+ * for a brand-new node, but nothing calls it any more and no price depends
+ * on it at runtime, so a new bullet type cannot silently re-price the tree.
  */
 export interface Knobs {
   /** what the first purchase costs, in the bundle's lead currency */
@@ -458,28 +363,28 @@ export interface TechNodeDef {
   price: PriceCurve;
   /**
    * The turret damage per second at its full ceiling, measured when the
-   * turret was built. THIS DRIVES THE PRICE and nothing else reads it — the
-   * sim computes real damage from the bullet, never from here.
+   * turret was built. AN ANNOTATION, NOT A PRICE INPUT: no runtime price
+   * reads it (recommendedBase can turn it into a seed for a brand-new
+   * node), and the sim computes real damage from the bullet, never from
+   * here.
    *
    * A splashing or piercing shot counts as catching FIVE bodies. That does
    * not have to be true; it has to be the SAME for every turret, because
-   * pricing is relative and a wrong number moves every node together.
+   * the numbers only mean anything relative to one another.
    *
-   * Absent on a utility, which has no damage, and on the six turrets whose
-   * bundles carry no copper for the rule to price against — both of those
-   * write an authored growth instead.
+   * Absent on a utility, which has no damage.
    */
   dps?: number;
 
   /** parent node: needs >= 1 point before this node appears in the tree */
   requires?: TechKind;
   /**
-   * Hard ceiling on points, if the node has one.
+   * Hard ceiling on points, if the node writes one.
    *
-   * TURRETS DO NOT: a turret's points ARE its placement capacity, so there
-   * is always one more to buy and the price curve is the only ceiling.
-   * A utility is a switch rather than a stack — 2x speed is on or it is
-   * not — so those stop at one and go quiet.
+   * Turrets leave it unset and get techCap instead — CAP_TILES over the
+   * footprint's area, the wall behind the near-flat price curve. A utility
+   * is a switch rather than a stack — 2x speed is on or it is not — so
+   * those stop at one and go quiet.
    */
   cap?: number;
   /**
@@ -511,9 +416,10 @@ export interface TechNodeDef {
  *
  * Two rules hold the whole thing up.
  *
- * ONE: a node growth is solved from its DPS against the SPAN its footprint
- * earns it, not chosen by feel, and one coefficient per node bends the
- * result where balance asks for it. See PriceCurve and TechNodeDef.tune.
+ * ONE: the base bundle is the price. Growth is one shared, near-flat
+ * constant for every turret (SHARED_GROWTH) and the hard wall is techCap,
+ * so what a node charges is its authored base — play-tested, not solved.
+ * See PriceCurve and Knobs.
  *
  * TWO: A COST BUNDLE MUST CARRY THE DROP RATIO OF THE DIFFICULTY THAT
  * UNLOCKS IT — and since the tier gates are gone, THE BUNDLE IS THE GATE, so
@@ -532,8 +438,8 @@ export interface TechNodeDef {
  * The turret felt overpriced; the PRICE was fine and the SHAPE was wrong.
  *
  * The currency also picks the difficulty. Plastanium appears first on the
- * nodes meant for Nemesis and phase fabric only on the ones meant for
- * Eradication, because that is where tier-4 and tier-5 enemies are — and a
+ * nodes meant for Onslaught's T4s and phase fabric only on the ones paid
+ * for by Nemesis's own T5 kills (see TARGET_DROP_RATIO in ladder.ts) — and a
  * currency nothing drops yet is an absolute lock, which is exactly why no
  * node needs a tier gate on top of it. The converse is the trap: charging a
  * currency EARLIER than intended unlocks a node into a wall, and charging it
@@ -554,9 +460,10 @@ export interface TechNodeDef {
  * six held 56% of the tree's entire copper bill — 10.1M of 17.9M — and the
  * value came back as titanium, thorium, plastanium and phase on the same six
  * nodes. What it buys is that the supply the waves pay and the demand the
- * tree charges finally have the same SHAPE: every currency now maxes the
- * whole tree in 385-391 Nemesis runs, where before plastanium needed 8,736
- * and phase could not be spent at all.
+ * tree charges finally have the same SHAPE: under the curves of the day,
+ * every currency maxed the whole tree in a comparable 385-391 Nemesis
+ * runs, where before plastanium needed 8,736 and phase could not be spent
+ * at all.
  *
  * It also had to happen for the ratio to move. The waves cut low-tier bodies
  * for room on the map (TARGET_DROP_RATIO in ladder.ts), which cuts copper
@@ -749,41 +656,13 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // flares debut inside difficulty 1, so a gate of any kind would lock the
     // answer to air behind the run that first asks for it.
     //
-    // THE ONE NODE PRICED BELOW DPS PARITY, at 0.2x what the rule asks.
-    // Flak DPS is the highest on the cheap half of the tree, but it only ever
-    // fires at AIR — and air is 12% of the health a run sends. Charging the
-    // full rate bills a turret that idles through seven eighths of the game.
-    //
-    // It was 0.4x, sat just above the geometric mean of that 12% and the 100%
-    // that says air is a CHECK you either answer or lose the run to. THE
-    // SECOND HALF OF THAT ARGUMENT NO LONGER HOLDS: salvo and parallax both
-    // shoot air and both are now buyable during Incursion (see the top of the
-    // file), so scatter is the CHEAP answer to air rather than the only one,
-    // and the multiplier falls back toward the 12% reading it started from.
-    //
-    // ITS COEFFICIENT IS 0.5, AND IT IS THE FIRST ONE CHOSEN RATHER THAN
-    // INHERITED. The node arrived here at 0.7763, which was not a decision at
-    // all: the growth had been solved when the base was 50, and halving the
-    // base to 25 without re-solving left it at 0.209x parity. That accident
-    // was invisible until the coefficient gave it a name.
-    //
-    // 0.5 is deliberate on top of it. Flak wants to be the answer a player
-    // reaches for against a flare cloud, and reaching for it means owning
-    // enough to cover more than one lane: at a mid-campaign bank this is
-    // about 295 scatters where parity affords 205, and it cuts the
-    // hundredth from 600 copper to 200.
-    //
-    // THE CUT IS ALL IN THE BASE, NOT THE GROWTH, and that is the point.
-    // Growth only decides what the two-hundredth scatter costs; a player who
-    // is losing wave 12 to a flare cloud is buying their fifteenth. Halving
-    // 50 to 25 halves the price of every point including the ones that
-    // decide that fight, and lands the lifetime bill at 0.209x parity on its
-    // own — growth is left exactly where the ceiling put it.
-    //
-    // TITANIUM DROPS 10 -> 4, further than copper does, because the old
-    // bundle had the ratio wrong: 50:10 is 5:1 against a Incursion that pays
-    // 6.67:1, so titanium ran out first and CAPPED the count no matter how
-    // much copper was banked. 25:4 is 6.25:1 and tracks the drop.
+    // PRICED WELL BELOW ITS PAPER DPS, deliberately. Flak DPS is the
+    // highest on the cheap half of the tree, but it only ever fires at AIR
+    // — and air is a small slice of the health a run sends. Flak wants to
+    // be the answer a player reaches for against a flare cloud, and
+    // reaching for it means owning enough to cover more than one lane, so
+    // the bundle charges for the slice it can shoot at, not the number on
+    // the stat card.
     //
     // COPPER AND TITANIUM ONLY. It used to want thorium, which comes from
     // tier-3 kills and so does not flow until well into a Incursion run — and
@@ -813,9 +692,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     y: 4,
   },
   {
-    // the steepest curve among the built turrets, and the most expensive
-    // node in the tree — three instant piercing rays at 105 damage each is
-    // the highest DPS on the roster, so equal cost-per-DPS charges for it.
+    // Three instant piercing rays at 105 damage each — among the highest
+    // DPS on the roster, and the price says so.
     // Nine tiles of range is no longer a discount: the map already decides
     // how much of a gate one can hold (see PriceCurve).
     // PLASTANIUM IS THE GATE: fifteen of it, and only Onslaught and Nemesis drop
@@ -855,8 +733,9 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     y: 4,
   },
   {
-    // 290 range — the longest reach in the game, and the wave-clear
-    // that answers the crawler floods. Four shells a volley at 70 splash,
+    // 290 range — outreached only by parallax's pull and foreshadow's
+    // rail, and the wave-clear that answers the crawler floods.
+    // Four shells a volley at 70 splash,
     // and like every artillery piece only the splash counts: the shell
     // arcs over its target rather than hitting it
     id: "ripple",
@@ -892,11 +771,9 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // It hangs off wave, exactly where Mindustry's tech tree puts it —
     // it used to borrow its grandparent scorch while wave did not exist.
     //
-    // THE ONE NODE THE DPS RULE CANNOT SEE, and the growth says so: 30
-    // armour-piercing damage a second on ONE target is the least in the
-    // game, so equal cost-per-DPS prices two hundred of them at 47k copper
-    // — under half what five hundred duos cost — and a Onslaught-cleared bank
-    // covers that several times over. What the rule is not counting is the
+    // A NODE THE DPS NUMBER CANNOT SEE (wave and tsunami share the
+    // problem): 30 armour-piercing damage a second on ONE target is the
+    // least in the game. What the number is not counting is the
     // pull, which is the whole turret: it drags a flare at 85% of its own
     // top speed and a horizon at 123%, i.e. backwards. Priced on damage a
     // parallax wall is nearly free and answers air outright. Left literal
@@ -967,9 +844,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // PHASE FABRIC. Twin heavy cannon — the highest sustained damage in the
     // game. Phase drops only at Nemesis and only from the T5 that arrives at
-    // the very end of it, so these three ARE the hidden difficulty's reward
-    // and they light up the moment it ships — priced there rather than told
-    // to wait there
+    // the very end of it, so these three ARE Nemesis's late-run reward —
+    // priced there rather than told to wait there
     //
     // THE PHASE SHARE ON THESE THREE IS DELIBERATELY BELOW THE DROP RATIO
     // (a quarter of the rule-TWO split, 30/40/75 -> 8/10/19). The split

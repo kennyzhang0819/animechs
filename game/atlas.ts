@@ -29,7 +29,7 @@ const uv = (x: number, y: number, w: number, h: number, inset = 0): UVRect => [
   (y + h - inset) / ATLAS_H,
 ];
 
-// row 0: 64px cells — grass floors, stone walls, unit, fx
+// row 0: 64px cells — grass floors, stone walls, fx
 // indices into UV_FLOORS: 0-2 grass, 3-5 stone, 6-8 dirt, 9-11 sand,
 // 12-14 darksand (the desert pair rides row 0's free tail; x512 stays
 // empty to keep clear space beside the ring cell at 448)
@@ -114,7 +114,8 @@ export const UV_SCORCH = uv(288, 1056, 64, 64);
 // by the dozen in every flame effect. UV_SOLID cannot stand in for it — a
 // square particle reads as a pixel cloud, not a tongue of fire
 export const UV_DISC = uv(384, 1024, 64, 64);
-// mechanical spawn-pad tile — drawn only by the map editor's terrain pass
+// mechanical spawn-pad tile — currently unused: drop zones are shown as
+// overlay circles, and no terrain pass paints spawn cells any more
 export const UV_SPAWN = uv(0, 192, 64, 64, 2);
 export const UV_RING = uv(448, 0, 64, 64);
 // a plain opaque texel, for geometry the renderer strokes itself: Lines.circle
@@ -278,8 +279,8 @@ export const UV_ARKYID_LEG_BASE = uv(640, 2700, 104, 64);
  * band above it — see that note for why the T4s need cells this size.
  *
  * antumbra takes a whole cell to itself: a flyer is one sprite with no
- * silhouette under-layer (see UNIT_ART), but at 216x240 native it is the
- * largest single piece of art on the sheet.
+ * silhouette under-layer (see UNIT_ART), but at 216x240 native only
+ * eclipse, in the T5 column, is a bigger single piece of art.
  */
 export const UV_VELA_BODY = uv(0, 3072, 256, 256);
 export const UV_VELA_BODY_SIL = uv(256, 3072, 256, 256);
@@ -1520,8 +1521,8 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(img.arkyidLegBase), 640, 2700, 104, 64);
 
   // antumbra: the same single-sprite treatment as every other flyer, at
-  // native size in a 256px cell — 216x240 is the biggest piece of art on
-  // the sheet, and it leaves only an 8px margin across its own cell
+  // native size in a 256px cell — at 216x240 only eclipse is bigger, and
+  // it leaves only an 8px margin across its own cell
   drawFacingRight(
     c, antialiased(outlined(img.antumbra, UNIT_OUTLINE, UNIT_OUTLINE_R)), 640, 3968, 216, 240,
   );
@@ -1666,7 +1667,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   drawFacingRight(c, antialiased(outlined(img.horizon, UNIT_OUTLINE, UNIT_OUTLINE_R)), 64, 1088, 72);
   drawFacingRight(c, antialiased(outlined(img.zenith, UNIT_OUTLINE, UNIT_OUTLINE_R)), 192, 1088, 112);
 
-  // the four bullet regions, white and at source size, facing +x. See the
+  // the six bullet regions, white and at source size, facing +x. See the
   // UV_BULLET note: the renderer lays the -back region under the core on
   // one rect and tints each with the firing ammo's own colour, exactly as
   // BasicBulletType.draw does
@@ -1802,7 +1803,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
  *
  * Packing is not cheap — it decodes every sprite, runs the EPX antialias
  * pass over each in JavaScript, outlines the units, and composites the lot
- * into a 1024x4096 canvas — and it depends on nothing but the sprite files,
+ * into a 2048x4096 canvas — and it depends on nothing but the sprite files,
  * so a second call can only produce a byte-identical sheet. It used to run
  * on every Game.create, which meant paying the whole cost again on every
  * level start. Now the first caller pays and everyone after shares.

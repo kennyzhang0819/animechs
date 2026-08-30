@@ -173,8 +173,8 @@ const levelSummary = (lv: LevelSpec): { waves: number; enemies: number } => {
  * The campaign menu: one world, and the TIER of the ladder to play it at.
  *
  * The frontier — the highest tier not yet cleared — is the default and the
- * headline, because it is both the hardest run available and the best-paying
- * one (a first clear pays double). Stepping down is farming: every tier
+ * headline, because it is the hardest run available and the one whose clear
+ * opens the next tier. Stepping down is farming: every tier
  * below the frontier still pays its drop bonus, which is what a player does
  * while they close the gap to the next one.
  */
@@ -396,17 +396,9 @@ const ORDERED_MENU: ReadonlyArray<(typeof TOWER_MENU)[number]> = BY_MINDUSTRY_VA
   (k) => MENU_BY_KIND.get(k)!,
 );
 
-/** the two wave buttons in the HUD, sized to be hit without aiming */
+/** the wave-skip button in the HUD, sized to be hit without aiming */
 const WAVE_BTN =
   "flex h-9 w-9 shrink-0 items-center justify-center rounded border border-[#2E2E36] text-[#FFD37F] hover:border-[#FFD37F] hover:bg-[#222227]/90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
-
-/**
- * Pause and the game menu, as buttons. Both already have a key — space and
- * esc — and a touchscreen has neither, so the same two live in the corner of
- * the field at a size a thumb can hit (44px is the platform minimum).
- */
-const ICON_BTN =
-  "flex h-11 w-11 items-center justify-center rounded border bg-[#151518]/70 backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
 
 /** every button in the bottom bar: the turrets and the demolish tool */
 const TOOL_BTN =
@@ -437,11 +429,11 @@ export default function Swarmfield() {
   // Game.create re-fetches later, keeping in-game state just as fresh
   const [mapsReady, setMapsReady] = useState(false);
   // sandbox mode, hidden until Ctrl+Shift+S like the admin page's
-  // Ctrl+Shift+M: reveals the fast-forward strip AND lifts the tech tree's
-  // turret locks and placement caps (Game.setTech(null)), so a run can be
-  // staged for filming. Leaving it drops back to whatever the save allows —
-  // but the current speed keeps running, so the control can be hidden
-  // mid-run without snapping the game back to 1x
+  // Ctrl+Shift+M: widens the pace strip to every SPEEDS multiplier AND
+  // lifts the tech tree's turret locks and placement caps
+  // (Game.setTech(null)), so a run can be staged for filming. Leaving it
+  // drops back to whatever the save allows — a sandbox-only pace steps
+  // down to the fastest speed the save owns (see the effect below)
   const [admin, setAdmin] = useState(false);
   // the campaign save (bank, cleared levels, tech nodes) — localStorage,
   // so it loads in an effect; null only for the first client frame
@@ -1111,8 +1103,9 @@ export default function Swarmfield() {
             </button>
           </div>
         )}
-        {/* The bar scrolls sideways instead of wrapping: ten turrets do not
-            fit across a phone, and a second row would eat the field. The
+        {/* The bar scrolls sideways instead of wrapping: a full loadout
+            plus the tools does not fit across a phone (sandbox shows the
+            whole roster), and a second row would eat the field. The
             scroller itself is click-through so the map keeps the space to
             either side of the buttons. */}
         <div className="pointer-events-none absolute inset-x-0 bottom-[calc(1rem+var(--safe-b))] overflow-x-auto pb-1 pl-[calc(1rem+var(--safe-l))] pr-[calc(1rem+var(--safe-r))]">

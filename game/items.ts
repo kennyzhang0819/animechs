@@ -2,8 +2,8 @@
  * The campaign currencies. Every enemy drops exactly ONE item — the one its
  * tier maps to below — so the resource a run banks is decided entirely by
  * what it was asked to kill. Daggers pay copper, maces pay titanium,
- * fortresses pay thorium, and the ladder keeps going for tiers the campaign
- * has not fielded yet.
+ * fortresses pay thorium, and every row now has units in the script behind
+ * it, up to the T5s that pay phase.
  *
  * The point of the split: tech nodes cost SEVERAL items at once (see
  * tech.ts), so a deep upgrade can't be bought by farming the easiest wave

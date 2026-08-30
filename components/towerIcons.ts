@@ -10,8 +10,6 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   scatter: `${T}/scatter/scatter-preview.png`,
   fuse: `${T}/fuse.png`,
   scorch: `${T}/scorch.png`,
-  // Parallax ships under blocks/defense rather than blocks/turrets in the
-  // source atlas — Mindustry classes it with the support blocks
   arc: `${T}/arc.png`,
   lancer: `${T}/lancer.png`,
   ripple: `${T}/ripple.png`,
@@ -19,6 +17,8 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   // atlas bakes the water into the placed one
   wave: `${T}/wave.png`,
   tsunami: `${T}/tsunami.png`,
+  // Parallax ships under blocks/defense rather than blocks/turrets in the
+  // source atlas — Mindustry classes it with the support blocks
   parallax: `/mindustry/sprites/blocks/defense/parallax.png`,
   swarmer: `${T}/swarmer.png`,
   cyclone: `${T}/cyclone/cyclone-preview.png`,

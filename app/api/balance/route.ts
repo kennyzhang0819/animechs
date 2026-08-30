@@ -45,7 +45,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!body || typeof body !== "object")
     return NextResponse.json({ error: "expected an object of knobs per node" }, { status: 400 });
 
-  // Only known nodes, only the three knobs, only finite numbers in range. The
+  // Only known nodes, only the two knobs, only finite numbers in range. The
   // bounds matter: growth is an exponent, so a fat-fingered 40 would price the
   // second turret past any bank the game can hold.
   const doc: Record<string, Record<string, number> | Record<string, Record<string, number>>> = {};

@@ -2,10 +2,10 @@ import { applyDifficultyOverrides, type DifficultyKnobs } from "./ladder";
 import { applyOverrides } from "./tech";
 
 /**
- * The balance document: one tuning coefficient per turret, plus the
- * per-difficulty dials (shield scale, ground/air armour bonus) under the
- * reserved `difficulties` key — no turret is named that, so the flat shape
- * survives.
+ * The balance document: the price knobs (base, growth) per turret, plus
+ * the per-difficulty dials (enemy level, shield scale, ground/air armour
+ * bonus) under the reserved `difficulties` key — no turret is named that,
+ * so the flat shape survives.
  *
  * It exists so the dial can be turned WITHOUT a rebuild. The admin dashboard
  * writes it, the game reads it at startup, and a node missing from it simply

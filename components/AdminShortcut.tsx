@@ -6,7 +6,8 @@ import { ADMIN_ENABLED } from "@/game/env";
 
 /**
  * Global debug shortcut, registered once in the root layout:
- * Ctrl+Shift+M toggles the map-editor admin page from anywhere.
+ * Ctrl+Shift+M toggles the admin page (map, level and balance editors)
+ * from anywhere.
  *
  * Development only — a production build never registers the key, and the
  * page it opens refuses to render there anyway (see ADMIN_ENABLED).
