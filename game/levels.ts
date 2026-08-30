@@ -810,7 +810,7 @@ export function levelDoc(spec: LevelSpec): LevelDoc {
  *
  *   Incursion   waves 1-20   enemy level  0
  *   Onslaught   waves 1-35   enemy level 10
- *   Nemesis     waves 1-50   enemy level 20
+ *   Nemesis     waves 1-50   enemy level 16
  *
  * So a difficulty buys two things at once: fifteen waves of hand-authored
  * fight nobody has seen yet, and x1.79 health on every wave below them.

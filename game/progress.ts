@@ -1,4 +1,4 @@
-import { UNIT_KINDS, unitDrop } from "./levels";
+import { UNIT_KINDS, UNIT_STATS, unitDrop, WORLD } from "./levels";
 import { OPENING_ARCS, OPENING_DUOS, tierDropBonus, TOP_TIER } from "./ladder";
 import {
   addScaled,
@@ -49,6 +49,14 @@ export interface Progress {
    * it means the switch is on.
    */
   tech: TechLevels;
+  /**
+   * Boss trophies already collected, as "<worldId>:<tier>:<kind>" keys.
+   * A boss's FIRST kill on each world+difficulty pays one surge alloy and
+   * writes its key here so the same boss can never pay twice (see
+   * grantRunReward) — which makes the bank's surge column a counter of how
+   * many distinct boss fights this save has won, not a farmable income.
+   */
+  bossKills?: string[];
   /**
    * The last layout built on each map, by map id — so a lost run does not
    * cost the player the twenty minutes of placing they already did.
@@ -240,6 +248,7 @@ export function loadProgress(): Progress {
       bank: readBank(p),
       cleared: readCleared(p),
       tech,
+      bossKills: readBossKills(p),
       layouts: readLayouts(p),
       speed: readSpeed(p),
       hudMinimized: p.hudMinimized === true,
@@ -248,6 +257,19 @@ export function loadProgress(): Progress {
   } catch {
     return fresh();
   }
+}
+
+/**
+ * The boss-trophy ledger out of a raw save: known-shape string keys only,
+ * deduped. A mangled entry drops out rather than throwing — the worst case
+ * is a boss paying its trophy a second time, which beats a dead save.
+ */
+function readBossKills(p: { bossKills?: unknown }): string[] {
+  if (!Array.isArray(p.bossKills)) return [];
+  const out: string[] = [];
+  for (const k of p.bossKills)
+    if (typeof k === "string" && k.length > 0 && !out.includes(k)) out.push(k);
+  return out;
 }
 
 /**
@@ -359,12 +381,20 @@ export function techOf(p: Progress): TechState {
 
 /**
  * The highest tier that can be attempted: every cleared one, plus the
- * frontier — capped at TOP_TIER, because the ladder is finite and ends at
- * Nemesis. A player may replay any tier below it to farm — a
- * cleared tier pays exactly what it always did — but only the frontier
- * moves the campaign forward.
+ * frontier. A player may replay any tier below it to farm — a cleared tier
+ * pays exactly what it always did — but only the frontier moves the
+ * campaign forward.
+ *
+ * ERADICATION IS HIDDEN BEHIND THE TREE, not behind clearing: the table's
+ * top tier only exists for a save that owns the "A Final Threat" node.
+ * Without it the ladder tops out one below, at Nemesis, exactly as the
+ * visible campaign always has. This is the one difficulty gated by tech —
+ * everything under it still unlocks purely by clearing the tier below.
  */
-export const topTier = (p: Progress): number => Math.min(TOP_TIER, p.cleared);
+export const topTier = (p: Progress): number => {
+  const cap = (p.tech["final-threat"] ?? 0) > 0 ? TOP_TIER : TOP_TIER - 1;
+  return Math.min(cap, p.cleared);
+};
 
 /**
  * Has the whole campaign been beaten? `cleared` runs one past the top tier
@@ -479,11 +509,15 @@ export interface RunReward {
  * Only call this on a run that reached its own end (won or lost):
  * abandoning mid-level is worth nothing, which is why the UI settles from
  * the win/loss state and never on the way out to the menu.
+ *
+ * `worldId` names the world the run was played on — it keys the boss
+ * trophies, so the same boss on a different world is a different trophy.
  */
 export function grantRunReward(
   tier: number,
   killsByKind: ArrayLike<number>,
   won: boolean,
+  worldId: string = WORLD.id,
 ): RunReward {
   const p = loadProgress();
   const n = Math.min(TOP_TIER, Math.max(0, Math.floor(tier)));
@@ -493,6 +527,22 @@ export function grantRunReward(
   // them — and that is the whole reason to push rather than farm
   const dropBonus = tierDropBonus(n);
   const earned = scaleCost(dropsForKills(killsByKind), dropBonus);
+  // THE BOSS TROPHY: a boss kind's FIRST kill on each (world, difficulty)
+  // pays exactly one surge alloy, on win or loss alike — the trophy is for
+  // killing the boss, and a run can fell it and still leak elsewhere. The
+  // key written here is what stops it ever paying again, so the bank's
+  // surge column counts distinct boss fights won, not runs farmed. No
+  // multiplier touches it: tier bonuses scale drops, and this is not a drop.
+  const bossKills = p.bossKills ?? [];
+  for (let i = 0; i < UNIT_KINDS.length; i++) {
+    const kind = UNIT_KINDS[i];
+    if (!UNIT_STATS[kind].boss || (killsByKind[i] ?? 0) <= 0) continue;
+    const key = `${worldId}:${n}:${kind}`;
+    if (bossKills.includes(key)) continue;
+    bossKills.push(key);
+    earned["surge-alloy"] = (earned["surge-alloy"] ?? 0) + 1;
+  }
+  p.bossKills = bossKills;
   credit(p.bank, earned);
   // the frontier only ever moves forward, and only by one: clearing tier 5
   // when tier 5 was the frontier opens tier 6, and replaying tier 2 later

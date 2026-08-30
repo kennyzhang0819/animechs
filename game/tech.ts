@@ -19,6 +19,14 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * build bar is a six-slot loadout (BASE_BAR_SLOTS), and each of these
  * widens it by one. They hang off 4x because that is roughly when a save
  * owns more turrets than the bar holds.
+ *
+ * THE EXPANSION BRANCH hangs off home on the LEFT — the utilities' mirror.
+ * `world-2` opens the second world on the campaign menu; under it,
+ * `final-threat` reveals the hidden Eradication difficulty on every world
+ * (topTier in progress.ts reads it), and `overdrive-projector` is a
+ * paid-for promise: the node exists and takes a point, the block itself
+ * ships later. All three are one-point switches like the rest of the
+ * utilities — none of them is a turret, so none of them is capacity.
  */
 export const UTILITY_KINDS = [
   "home",
@@ -28,6 +36,9 @@ export const UTILITY_KINDS = [
   "time-warp",
   "slot-7",
   "slot-8",
+  "world-2",
+  "final-threat",
+  "overdrive-projector",
 ] as const;
 export type UtilityKind = (typeof UTILITY_KINDS)[number];
 
@@ -87,6 +98,19 @@ export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: s
   "slot-8": {
     name: "8th Slot",
     blurb: "The build bar tops out at eight loadout slots.",
+  },
+  "world-2": {
+    name: "Second Front",
+    blurb: "Opens World 2 on the campaign menu — a second front with its own ladder.",
+  },
+  "final-threat": {
+    name: "A Final Threat",
+    blurb:
+      "Reveals Eradication — the hidden difficulty past Nemesis — on every world. No extra loot up there; only the fight.",
+  },
+  "overdrive-projector": {
+    name: "Overdrive Projector",
+    blurb: "A projector that overdrives every turret in its radius. The block ships soon — owning the node reserves it.",
   },
 };
 
@@ -981,6 +1005,58 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     cap: 1,
     x: 5,
     y: 4,
+  },
+  // ---------- THE EXPANSION BRANCH --------------------------------------
+  //
+  // Home's LEFT fork, mirroring the utilities on the right. These are
+  // one-point switches that sell CONTENT rather than pace: a world, a
+  // difficulty, a block. All three are priced in the campaign's existing
+  // currencies — surge alloy (the boss trophy) deliberately prices nothing
+  // yet, so the branch is farmable rather than progression-locked.
+  {
+    // WORLD 2. Priced at roughly HALF of one full Nemesis clear, in
+    // Nemesis's own drop-ratio shape (rule TWO) — so it opens to a player
+    // who is genuinely playing Nemesis, without demanding they farm it.
+    id: "world-2",
+    price: {
+      base: { copper: 25000, titanium: 7500, thorium: 6000, plastanium: 1050, "phase-fabric": 210 },
+      growth: 1,
+    },
+    requires: "home",
+    cap: 1,
+    x: 0,
+    y: 1,
+  },
+  {
+    // ERADICATION'S GATE. Deliberately VAST: the bundle is THREE full
+    // Nemesis clears of every currency (the audit's drops row x3, tidied),
+    // because what it sells is the campaign's hidden top — a save that owns
+    // this has finished Nemesis several times over and is asking for more.
+    // This is the one node whose gate genuinely is not "can the difficulty
+    // pay for it": Eradication drops nothing Nemesis does not, so the size
+    // of the ask is the whole gate.
+    id: "final-threat",
+    price: {
+      base: { copper: 150000, titanium: 45000, thorium: 34000, plastanium: 5300, "phase-fabric": 975 },
+      growth: 1,
+    },
+    requires: "world-2",
+    cap: 1,
+    x: 0,
+    y: 2,
+  },
+  {
+    // THE PROJECTOR'S RESERVATION. The block is not in the game yet — this
+    // node is its price and its place in the tree, bought ahead of the
+    // implementation so the phase sink exists now. When the block ships,
+    // this becomes a turret-style capacity node and the point already paid
+    // becomes its first placement.
+    id: "overdrive-projector",
+    price: { base: { "phase-fabric": 1000 }, growth: 1 },
+    requires: "world-2",
+    cap: 1,
+    x: 1,
+    y: 1,
   },
 ];
 

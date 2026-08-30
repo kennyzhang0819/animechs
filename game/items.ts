@@ -17,13 +17,22 @@
  * Mindustry also starts you on.
  */
 
-/** every currency the game knows, cheapest tier first */
+/** every currency the game knows, cheapest tier first.
+ *
+ * SURGE ALLOY IS NOT A TIER. It sits after the tier ladder because no unit
+ * tier maps to it (TIER_ITEM stops at phase fabric): the only way one ever
+ * drops is a boss's FIRST kill on a (world, difficulty) it has not been
+ * beaten on before — see grantRunReward in progress.ts. Unspent, the bank's
+ * surge column is therefore a counter of how many boss fights this save has
+ * actually won, which is what makes it the honest gate for content that
+ * should wait on progression rather than on farming. */
 export const ITEM_KINDS = [
   "copper",
   "titanium",
   "thorium",
   "plastanium",
   "phase-fabric",
+  "surge-alloy",
 ] as const;
 export type ItemKind = (typeof ITEM_KINDS)[number];
 
@@ -80,6 +89,11 @@ export const ITEM_INFO: Record<ItemKind, { name: string; icon: string; color: st
     name: "Phase Fabric",
     icon: "/mindustry/sprites/items/item-phase-fabric.png",
     color: "#F4BA6E",
+  },
+  "surge-alloy": {
+    name: "Surge Alloy",
+    icon: "/mindustry/sprites/items/item-surge-alloy.png",
+    color: "#F3E979",
   },
 };
 

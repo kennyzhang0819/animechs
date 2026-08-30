@@ -21,9 +21,9 @@ const DIFFICULTY_LIMITS = {
   // a multiplier on shield pools; three digits already means an unbreakable
   // bubble, so anything past this is a typo
   shieldScale: 1000,
-  // flat armour on every body — the armour scale itself tops out at 18
-  groundArmorBonus: 100,
-  airArmorBonus: 100,
+  // flat armour on every tier 1-3 body — the swarm's own armour tops out
+  // at spiroct's 5, so two digits is already a wall
+  lowTierArmorBonus: 100,
 } as const;
 
 const DIFFICULTY_NAMES = DIFFICULTIES.map((d) => d.name);

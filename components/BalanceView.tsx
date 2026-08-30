@@ -241,10 +241,10 @@ export default function BalanceView() {
         <p className="mb-3 max-w-3xl text-[12.5px] leading-relaxed text-[#71717C]">
           Enemy-side dials, applied at spawn. <span className="text-[#A6A6AF]">Shield ×</span>{" "}
           multiplies every shield ability&apos;s pool, cap and regen (quasar bubbles, pulsar and
-          scepter fields). <span className="text-[#A6A6AF]">Armour +</span> is added flat to every
-          body on that side; the shave is floored at 10% of the hit, so small-calibre turrets feel
-          it hardest, the lancer counts armour ×4, and burning ignores it entirely. Scatter fires
-          3-damage pellets — move air armour in ones.
+          scepter fields). <span className="text-[#A6A6AF]">Swarm armour +</span> is added flat to
+          every tier 1&ndash;3 body — the heavies keep their own plating; the shave is floored at
+          10% of the hit, so small-calibre turrets feel it hardest, the lancer counts armour ×4,
+          and burning ignores it entirely. Scatter fires 3-damage pellets — move it in ones.
         </p>
         <div className="grid gap-4 md:grid-cols-3">
           {DIFFICULTIES.map((d, tier) => {
@@ -285,28 +285,16 @@ export default function BalanceView() {
                   onReset={() => setDifficulty(tier, "shieldScale", undefined)}
                 />
                 <Knob
-                  label="Ground armour +"
-                  hint="flat armour on every walker"
-                  value={dk.groundArmorBonus}
+                  label="Swarm armour + (T1–T3)"
+                  hint="flat armour on every tier 1-3 unit; T4/T5 keep their own plating"
+                  value={dk.lowTierArmorBonus}
                   min={0}
                   max={20}
                   step={1}
                   decimals={0}
-                  bent={dk.groundArmorBonus !== da.groundArmorBonus}
-                  onChange={(v) => setDifficulty(tier, "groundArmorBonus", Math.max(0, v))}
-                  onReset={() => setDifficulty(tier, "groundArmorBonus", undefined)}
-                />
-                <Knob
-                  label="Air armour +"
-                  hint="flat armour on every flyer — scatter pays for every point"
-                  value={dk.airArmorBonus}
-                  min={0}
-                  max={20}
-                  step={1}
-                  decimals={0}
-                  bent={dk.airArmorBonus !== da.airArmorBonus}
-                  onChange={(v) => setDifficulty(tier, "airArmorBonus", Math.max(0, v))}
-                  onReset={() => setDifficulty(tier, "airArmorBonus", undefined)}
+                  bent={dk.lowTierArmorBonus !== da.lowTierArmorBonus}
+                  onChange={(v) => setDifficulty(tier, "lowTierArmorBonus", Math.max(0, v))}
+                  onReset={() => setDifficulty(tier, "lowTierArmorBonus", undefined)}
                 />
               </div>
             );

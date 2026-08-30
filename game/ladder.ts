@@ -20,19 +20,22 @@ import {
 } from "./items";
 
 /**
- * THE LADDER — three difficulties, and then the campaign is over.
+ * THE LADDER — three campaign difficulties, one hidden one above them.
  *
  * A world ships ONE authored script. A difficulty is a CUT of that script
  * plus an enemy level and a few dials (shield scale, armour bonuses — see
  * DIFFICULTIES):
  *
- *   Incursion   waves 1-20   enemy level  0
- *   Onslaught   waves 1-35   enemy level 10
- *   Nemesis     waves 1-50   enemy level 20
+ *   Incursion    waves 1-20   enemy level  0
+ *   Onslaught    waves 1-35   enemy level 10
+ *   Nemesis      waves 1-50   enemy level 16
+ *   Eradication  waves 1-50   enemy level 22   (hidden — see below)
  *
- * Nemesis plays the whole authored script, so the ladder ends where the
- * writing does. A hidden ERADICATION difficulty above it is planned and is
- * NOT modelled here — nothing below should assume it exists.
+ * Nemesis plays the whole authored script, so the visible campaign ends
+ * where the writing does. ERADICATION is the hidden ultimate difficulty
+ * above it: the same full script Nemesis plays at enemy level 22, and it
+ * does not exist on a save until the tech tree's "A Final Threat" node is
+ * owned (topTier in progress.ts is where that gate lives).
  *
  * Nothing is generated. Wave 1 of Nemesis is wave 1 of the same authored
  * list Incursion plays, with 20 levels on it — which is what lets the level
@@ -79,11 +82,12 @@ export const LEVELS_PER_TIER = 10;
  *
  * THEY ARE NAMED, NOT NUMBERED, and the names are this game's own:
  *
- *   Incursion  <  Onslaught  <  NEMESIS  <  eradication
+ *   Incursion  <  Onslaught  <  NEMESIS  <  ERADICATION
  *
- * The campaign runs the three tiers ending at Nemesis. ERADICATION is
- * reserved for the hidden ultimate difficulty and is deliberately not in
- * the table yet — a name in hand for what sits past the visible top.
+ * The campaign runs the three tiers ending at Nemesis. ERADICATION is the
+ * hidden ultimate difficulty above it — in the table so the whole ladder
+ * arithmetic covers it, but absent from a save's menu until the tech
+ * tree's "A Final Threat" node is bought (see topTier in progress.ts).
  *
  * The names escalate from a probe to a personified doom on purpose: the
  * bottom tier never calls itself easy (it is an attack, just a small one),
@@ -112,21 +116,20 @@ export const LEVELS_PER_TIER = 10;
  * incidental fire at Onslaught. Only the enemy's own shields scale; nothing on
  * the player's side reads this.
  *
- * `groundArmorBonus` / `airArmorBonus` are added FLAT to every walker's /
- * flyer's armour at spawn (Sim reads them once, into uarmor). Armour is a
- * flat shave floored at a tenth of the raw hit (Sim.applyArmor), so these
- * knobs are regressive by calibre on purpose: +3 barely dents a salvo's 28
- * or a lancer's 140, but takes a third off a duo's 9 — they make the swarm
- * outlast CHIP without inflating it against the big guns. The two sides
- * are split because their counters live on different scales: the ground
- * roster is answered by real calibre, while the anti-air line is built on
- * small pellets — a scatter shot is 3 damage, so even +1 of air armour
- * halves the game's first AA and +3 floors it outright. Raise the air knob
- * in ones, not threes. Two more cautions, both sides: the lancer counts
- * armour QUADRUPLE (armorMultiplier 4), so every +1 is -4 to the turret
- * that is supposed to answer T3/T4; and burning pierces armour entirely,
- * so it buys nothing against scorch's afterburn. checkDebuts prices the
- * bonus into its debut-tax lint.
+ * `lowTierArmorBonus` is added FLAT to the armour of every TIER 1-3 unit
+ * at spawn (Sim reads it once, into uarmor); T4 and T5 never take it.
+ * Armour is a flat shave floored at a tenth of the raw hit
+ * (Sim.applyArmor), so the knob is regressive by calibre on purpose: +3
+ * barely dents a salvo's 28 or a lancer's 140, but takes a third off a
+ * duo's 9 — it makes the SWARM outlast chip without inflating the heavies,
+ * which already carry the armour that matters (the T4/T5 debut tax is
+ * priced by the units' own plating, and this knob deliberately cannot add
+ * to it). Cautions: the anti-air line is built on small pellets — a
+ * scatter shot is 3 damage, so even +1 halves the game's first AA against
+ * the T1-T2 flyers; the lancer counts armour QUADRUPLE (armorMultiplier
+ * 4); and burning pierces armour entirely, so the knob buys nothing
+ * against scorch's afterburn. checkDebuts prices the bonus into its
+ * debut-tax lint.
  */
 export const DIFFICULTIES: readonly {
   name: string;
@@ -134,17 +137,22 @@ export const DIFFICULTIES: readonly {
   waves: number;
   level: number;
   shieldScale: number;
-  groundArmorBonus: number;
-  airArmorBonus: number;
+  lowTierArmorBonus: number;
 }[] = [
   // prettier-ignore
-  { name: "Incursion", color: "#7BE58A", waves: 20, level: 0, shieldScale: 1, groundArmorBonus: 0, airArmorBonus: 0 },
+  { name: "Incursion", color: "#7BE58A", waves: 20, level: 0, shieldScale: 1, lowTierArmorBonus: 0 },
   // prettier-ignore
-  { name: "Onslaught", color: "#FFD37F", waves: 35, level: 10, shieldScale: 5, groundArmorBonus: 0, airArmorBonus: 0 },
+  { name: "Onslaught", color: "#FFD37F", waves: 35, level: 10, shieldScale: 5, lowTierArmorBonus: 0 },
   // prettier-ignore
-  { name: "Nemesis", color: "#FF5A5A", waves: 50, level: 20, shieldScale: 20, groundArmorBonus: 0, airArmorBonus: 0 },
-  // ERADICATION (dark purple, #A05AE5) is deliberately not here yet — the
-  // hidden ultimate difficulty, named and colored before it exists
+  { name: "Nemesis", color: "#FF5A5A", waves: 50, level: 16, shieldScale: 5, lowTierArmorBonus: 0 },
+  // ERADICATION — the hidden ultimate difficulty: Nemesis's own full script
+  // and dials at enemy level 22, and NO extra loot bonus (see
+  // tierDropBonus). It is in the table so every piece of ladder arithmetic
+  // covers it, but a save cannot see or play it until the tech tree's
+  // "A Final Threat" node is owned — that gate lives in topTier
+  // (progress.ts), not here.
+  // prettier-ignore
+  { name: "Eradication", color: "#A05AE5", waves: 50, level: 22, shieldScale: 5, lowTierArmorBonus: 0 },
 ];
 
 /**
@@ -207,6 +215,11 @@ export const TARGET_DROP_RATIO: readonly (readonly number[])[] = [
   [100, 15, 3.6, 0, 0],
   [100, 24.5, 12.2, 0.8, 0],
   [100, 30, 24, 4.2, 0.85],
+  // Eradication sends Nemesis's exact script, and a uniform level multiplier
+  // cancels out of a ratio — so its row IS the Nemesis row. (Surge alloy has
+  // no column anywhere here: it never drops from waves, only from a boss's
+  // first kill — see grantRunReward in progress.ts.)
+  [100, 30, 24, 4.2, 0.85],
 ];
 
 /** how far off target a currency may drift before check() says so */
@@ -228,8 +241,17 @@ const clampTier = (tier: number): number =>
  * ladder walks with no bonus at all; the bonus exists only so a HIGHER
  * difficulty is the better farm. Without it every difficulty pays the same
  * per minute and the correct play is to grind difficulty 1 forever.
+ *
+ * ERADICATION PAYS NEMESIS'S BONUS AND NOT A STEP MORE (see tierDropBonus):
+ * it exists to be the fight above the top, not the farm above it. Nemesis
+ * stays the best loot per minute for its effort, and Eradication's own
+ * reward is the boss trophy and whatever is priced to want it.
  */
 export const DROP_BONUS_PER_TIER = 0.3;
+
+/** the last tier whose loot bonus still climbs — Nemesis. Eradication is
+ *  capped to this on purpose: NO loot bonus of its own. */
+const LOOT_BONUS_TOP = 2;
 
 /**
  * WHAT THE PLAYER IS SHOWN. Tier 0 is Incursion.
@@ -274,11 +296,11 @@ export interface DifficultyKnobs {
   /** enemy level — every unit's hp is x HP_PER_LEVEL^level, nothing else moves */
   level: number;
   shieldScale: number;
-  groundArmorBonus: number;
-  airArmorBonus: number;
+  /** flat armour added to tier 1-3 units only — see the DIFFICULTIES doc */
+  lowTierArmorBonus: number;
 }
 
-const DIFFICULTY_KNOB_KEYS = ["level", "shieldScale", "groundArmorBonus", "airArmorBonus"] as const;
+const DIFFICULTY_KNOB_KEYS = ["level", "shieldScale", "lowTierArmorBonus"] as const;
 
 /** keyed by difficulty NAME — the stable identity a saved document uses */
 const difficultyOverrides = new Map<string, Partial<DifficultyKnobs>>();
@@ -290,8 +312,7 @@ export function difficultyKnobsOf(tier: number): DifficultyKnobs {
   return {
     level: o.level ?? d.level,
     shieldScale: o.shieldScale ?? d.shieldScale,
-    groundArmorBonus: o.groundArmorBonus ?? d.groundArmorBonus,
-    airArmorBonus: o.airArmorBonus ?? d.airArmorBonus,
+    lowTierArmorBonus: o.lowTierArmorBonus ?? d.lowTierArmorBonus,
   };
 }
 
@@ -301,8 +322,7 @@ export function authoredDifficultyKnobs(tier: number): DifficultyKnobs {
   return {
     level: d.level,
     shieldScale: d.shieldScale,
-    groundArmorBonus: d.groundArmorBonus,
-    airArmorBonus: d.airArmorBonus,
+    lowTierArmorBonus: d.lowTierArmorBonus,
   };
 }
 
@@ -361,28 +381,28 @@ export const shieldScaleAtLevel = (level: number): number => {
   return s;
 };
 
-/** flat armour added to every unit at a difficulty; air and ground carry
- *  separate knobs because their counters shoot different calibres */
-export const tierArmorBonus = (tier: number, flying: boolean): number => {
-  const k = difficultyKnobsOf(tier);
-  return flying ? k.airArmorBonus : k.groundArmorBonus;
-};
+/** flat armour a unit of `unitTier` gains at a difficulty — zero above
+ *  tier 3: the knob hardens the swarm, never the heavies */
+export const tierArmorBonus = (tier: number, unitTier: number): number =>
+  unitTier <= 3 ? difficultyKnobsOf(tier).lowTierArmorBonus : 0;
 
 /** flat armour bonus at an enemy level — piecewise like shieldScaleAtLevel,
- *  and for the same reason: only levels 0, 10 and 20 are ever played */
-export const armorBonusAtLevel = (level: number, flying: boolean): number => {
+ *  and for the same reason: only the authored levels are ever played */
+export const armorBonusAtLevel = (level: number, unitTier: number): number => {
+  if (unitTier > 3) return 0;
   let a = 0;
   for (let t = 0; t < DIFFICULTIES.length; t++) {
     const k = difficultyKnobsOf(t);
     if (level < k.level) continue;
-    a = flying ? k.airArmorBonus : k.groundArmorBonus;
+    a = k.lowTierArmorBonus;
   }
   return a;
 };
 
-/** drop multiplier of a difficulty */
+/** drop multiplier of a difficulty — climbing to Nemesis and FLAT past it:
+ *  Eradication pays exactly what Nemesis does (see DROP_BONUS_PER_TIER) */
 export const tierDropBonus = (tier: number): number =>
-  1 + DROP_BONUS_PER_TIER * clampTier(tier);
+  1 + DROP_BONUS_PER_TIER * Math.min(clampTier(tier), LOOT_BONUS_TOP);
 
 /**
  * How many of the authored waves a difficulty sends, clamped to what has
@@ -631,9 +651,8 @@ export function debutViolations(spec: LevelSpec = WORLD): LadderIssue[] {
   const bad: LadderIssue[] = [];
   for (const [kind, tier] of debut) {
     // the armour a tower actually meets: printed plus the difficulty's
-    // flat bonus for the unit's side, which is what Sim spawns with
-    const armor =
-      UNIT_STATS[kind].armor + tierArmorBonus(tier, UNIT_STATS[kind].flying ?? false);
+    // low-tier bonus when the unit qualifies, which is what Sim spawns with
+    const armor = UNIT_STATS[kind].armor + tierArmorBonus(tier, UNIT_STATS[kind].tier);
     const shot = bestShotByTier(tier);
     const tax = shot / Math.max(shot - armor, 0.1 * shot);
     if (tax >= 2)
