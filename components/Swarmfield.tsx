@@ -17,6 +17,8 @@ import {
   UNIT_KINDS,
   UNIT_STATS,
   WORLD,
+  WORLDS,
+  worldById,
   waveGroups,
   type LevelSpec,
   type TowerKind,
@@ -33,7 +35,6 @@ import {
   waveGuide,
   tierDropBonus,
   tierLevel,
-  TOP_TIER,
 } from "@/game/ladder";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import {
@@ -180,19 +181,23 @@ const levelSummary = (lv: LevelSpec): { waves: number; enemies: number } => {
  */
 function TierPicker({
   progress,
+  world,
   tier,
   onTier,
   mapsReady,
   onStart,
 }: {
   progress: Progress;
+  /** which world's ladder is being picked from — WORLD until the tech
+   * tree's world-2 node puts a second one on the menu */
+  world: LevelSpec;
   tier: number;
   onTier: (t: number) => void;
   mapsReady: boolean;
   onStart: () => void;
 }) {
   const top = topTier(progress);
-  const spec = specForTier(WORLD, tier);
+  const spec = specForTier(world, tier);
   const { waves } = levelSummary(spec);
   const step = (d: number): void => onTier(Math.min(top, Math.max(0, tier + d)));
   // the salvage multiplier as the one number in the blurb — "30% more loot"
@@ -421,6 +426,13 @@ export default function Swarmfield() {
    * step it back down to farm a tier they already own.
    */
   const [tier, setTier] = useState(0);
+  /**
+   * The world the menu is pointed at. "1" until the tech tree's world-2
+   * node is owned — the picker that changes it only renders then — and
+   * always resolved through worldById so a stale id degrades to world 1.
+   */
+  const [worldId, setWorldId] = useState(WORLD.id);
+  const world = worldById(worldId) ?? WORLD;
   // the selector draws map previews, so the documents load with the menu —
   // Game.create re-fetches later, keeping in-game state just as fresh
   const [mapsReady, setMapsReady] = useState(false);
@@ -590,7 +602,15 @@ export default function Swarmfield() {
         // placement: mid-run it is still changing, and a run abandoned from
         // the pause menu should leave the last finished layout alone
         saveLayout(g.mapId(), g.layout());
-        const reward = grantRunReward(level.tier ?? 0, Array.from(g.sim.killsByKind), ui.won);
+        // level.id names the world the run was on — it keys the boss
+        // trophies, so world 2's boss is a fresh trophy even at a tier
+        // world 1's boss already paid
+        const reward = grantRunReward(
+          level.tier ?? 0,
+          Array.from(g.sim.killsByKind),
+          ui.won,
+          level.id,
+        );
         const after = loadProgress();
         setResult(reward);
         setProgress(after);
@@ -797,14 +817,35 @@ export default function Swarmfield() {
               </button>
             </div>
           )}
+          {/* the world picker exists only once the tech tree's world-2 node
+              is owned — until then there is one world and nothing to pick */}
+          {progress && (progress.tech["world-2"] ?? 0) > 0 && (
+            <div role="group" aria-label="world select" className="flex items-center gap-2">
+              {WORLDS.map((w) => (
+                <button
+                  key={w.id}
+                  aria-pressed={w.id === world.id}
+                  onClick={() => setWorldId(w.id)}
+                  className={`rounded border px-4 py-1.5 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+                    w.id === world.id
+                      ? "border-[#FFD37F] bg-[#222227] text-[#FFD37F]"
+                      : "border-[#2E2E36] bg-[#151518] text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF]"
+                  }`}
+                >
+                  {w.name}
+                </button>
+              ))}
+            </div>
+          )}
           {progress && (
             <TierPicker
               progress={progress}
+              world={world}
               tier={tier}
               onTier={setTier}
               mapsReady={mapsReady}
               onStart={() => {
-                setLevel(specForTier(WORLD, tier));
+                setLevel(specForTier(world, tier));
                 setScreen("game");
                 // raised in the same batch as the screen switch, so the game
                 // screen's FIRST paint is already covered — an effect would
@@ -1348,20 +1389,22 @@ export default function Swarmfield() {
                         <CostRow cost={result.earned} />
                       )}
                     </div>
-                    {/* the ladder is finite and ends at Nemesis,
-                        so the last first-clear has nothing to unlock — it
-                        finishes the campaign instead */}
+                    {/* the ladder is finite, so the last first-clear has
+                        nothing to unlock — it finishes the campaign. What
+                        counts as "last" is the save's OWN top (topTier):
+                        clearing Nemesis without A Final Threat owned must
+                        not announce a difficulty the menu will not show */}
                     {result.firstClear && (
                       <div className="pt-1 text-[12px] uppercase tracking-widest text-[#FFD37F]">
-                        {result.tier >= TOP_TIER ? (
-                          "Campaign complete — every wave cleared"
-                        ) : (
+                        {progress && topTier(progress) > result.tier ? (
                           <>
                             <span style={{ color: difficultyColor(result.tier + 1) }}>
                               {difficultyName(result.tier + 1)}
                             </span>{" "}
                             unlocked
                           </>
+                        ) : (
+                          "Campaign complete — every wave cleared"
                         )}
                       </div>
                     )}

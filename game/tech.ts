@@ -1010,18 +1010,16 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   //
   // Home's LEFT fork, mirroring the utilities on the right. These are
   // one-point switches that sell CONTENT rather than pace: a world, a
-  // difficulty, a block. All three are priced in the campaign's existing
-  // currencies — surge alloy (the boss trophy) deliberately prices nothing
-  // yet, so the branch is farmable rather than progression-locked.
+  // difficulty, a block.
   {
-    // WORLD 2. Priced at roughly HALF of one full Nemesis clear, in
-    // Nemesis's own drop-ratio shape (rule TWO) — so it opens to a player
-    // who is genuinely playing Nemesis, without demanding they farm it.
+    // WORLD 2 COSTS ONE SURGE ALLOY AND NOTHING ELSE — the boss trophy, not
+    // resources. The first surge a save can ever hold is world 1's boss
+    // falling on wave 50 of Nemesis (grantRunReward pays it once per
+    // world+difficulty), so this node is progression-locked by design: no
+    // amount of farming below the boss opens the second front, and the
+    // first trophy has an immediate, obvious place to be spent.
     id: "world-2",
-    price: {
-      base: { copper: 25000, titanium: 7500, thorium: 6000, plastanium: 1050, "phase-fabric": 210 },
-      growth: 1,
-    },
+    price: { base: { "surge-alloy": 1 }, growth: 1 },
     requires: "home",
     cap: 1,
     x: 0,

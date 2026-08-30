@@ -38,30 +38,52 @@ const nodeName = (id: TechKind): string =>
 const WARP_GLYPH = "M6 3h12v2.5l-4.6 6.5 4.6 6.5V21H6v-2.5L10.6 12 6 5.5z";
 const FF_GLYPH = "M2 4v16l10-8zM12 4v16l10-8z";
 const SLOT_GLYPH = "M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z";
+// a warning triangle with the bang punched out (even-odd fill) — the face
+// of A Final Threat, drawn in Eradication's own purple once it is owned
+const THREAT_GLYPH = "M12 2 22.5 20.5H1.5zM11 9h2v6h-2zM11 16.8h2v2.4h-2z";
+
+/** utility nodes whose face is a block sprite rather than a glyph: world 2
+ *  wears the launch pad (a departure to somewhere else), and the projector
+ *  node wears the block it is a reservation for */
+const UTIL_ICONS: Partial<Record<TechKind, string>> = {
+  "world-2": "/mindustry/sprites/blocks/campaign/launch-pad.png",
+  "overdrive-projector": "/mindustry/sprites/blocks/defense/overdrive-projector.png",
+};
 
 function NodeIcon({ id, lit }: { id: TechKind; lit: boolean }) {
-  if (isTowerNode(id) || id === "home")
+  const sprite = isTowerNode(id)
+    ? TOWER_ICONS[id]
+    : id === "home"
+      ? HOME_ICON
+      : UTIL_ICONS[id];
+  if (sprite)
     return (
       // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite
       <img
-        src={id === "home" ? HOME_ICON : TOWER_ICONS[id]}
+        src={sprite}
         alt=""
         className={`h-14 w-14 [image-rendering:pixelated] ${lit ? "" : "grayscale"}`}
       />
     );
+  const threat = id === "final-threat";
   return (
     <svg
       viewBox="0 0 24 24"
-      className={`h-10 w-10 ${lit ? "fill-[#FFD37F]" : "fill-[#71717C]"}`}
+      className={`h-10 w-10 ${
+        lit ? (threat ? "fill-[#A05AE5]" : "fill-[#FFD37F]") : "fill-[#71717C]"
+      }`}
       aria-hidden="true"
     >
       <path
+        fillRule="evenodd"
         d={
-          id === "time-warp"
-            ? WARP_GLYPH
-            : id === "slot-7" || id === "slot-8"
-              ? SLOT_GLYPH
-              : FF_GLYPH
+          threat
+            ? THREAT_GLYPH
+            : id === "time-warp"
+              ? WARP_GLYPH
+              : id === "slot-7" || id === "slot-8"
+                ? SLOT_GLYPH
+                : FF_GLYPH
         }
       />
     </svg>

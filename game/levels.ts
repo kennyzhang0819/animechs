@@ -641,8 +641,14 @@ void _everyKindHasATree;
  * tier is the whole drop table — a T2 kill is one titanium whether it was a
  * mace or a pulsar — so a level's difficulty mix is the only thing that
  * decides what a run banks, and no unit is quietly worth more than its tier.
+ *
+ * EXCEPT A BOSS, WHICH DROPS NOTHING AT ALL. Its entire payout is the
+ * one-time surge trophy grantRunReward pays on its first kill per
+ * world+difficulty (progress.ts). A boss is an event, not income — were it
+ * on the tier table, every replay would farm it like any other T5.
  */
 export function unitDrop(kind: UnitKind): Cost {
+  if (UNIT_STATS[kind].boss) return {};
   return { [itemForTier(UNIT_STATS[kind].tier)]: 1 };
 }
 
@@ -951,10 +957,26 @@ export const WORLDS: LevelSpec[] = [
     // document. Edit the waves in the admin level editor, or the JSON.
     script: [],
   },
+  {
+    // WORLD 2 — the SECOND FRONT, unlocked by the tech tree's "world-2"
+    // node (the campaign menu hides it until that node is owned). For now
+    // it is a DELIBERATE DUMMY: the same map and the same waves as world 1
+    // — public/levels/2.json is a copy of 1.json — standing in so the
+    // world picker, the per-world boss trophies and the unlock flow are
+    // real before the world itself is authored. Give it its own map and
+    // script when that authoring happens; nothing else needs to change.
+    id: "2",
+    name: "Second Front",
+    map: "grass-open",
+    waveGap: 15,
+    script: [],
+  },
 ];
 
 /**
- * The campaign's only world — everything above tier 0 is ladder.ts.
+ * The campaign's FIRST world — the default everywhere a single spec is
+ * wanted, and the one a fresh save plays. World 2 sits behind the tech
+ * tree's "world-2" node; the campaign menu reaches it through worldById.
  *
  * Its `script` is EMPTY until loadLevelDocs() has run. Nothing reads the
  * script at module load (the sim takes WORLDS[0] as a default parameter,

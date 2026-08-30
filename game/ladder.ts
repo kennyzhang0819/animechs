@@ -1,6 +1,7 @@
 import {
   UNIT_KINDS,
   UNIT_STATS,
+  unitDrop,
   waveGroups,
   WORLD,
   type LevelSpec,
@@ -15,7 +16,6 @@ import {
   costEntries,
   ITEM_INFO,
   ITEM_KINDS,
-  itemForTier,
   type Cost,
 } from "./items";
 
@@ -716,11 +716,12 @@ export function waveCost(step: LevelStep, level = 0): WaveCost {
       if (stats.tier >= 3) t3 += h;
       if (stats.armor >= 3) armour += h;
       if (stats.flying) air += h;
-      // the drop table lives in items.ts and covers every tier there is —
-      // reading it rather than a local triple is what lets a tier-4 unit be
-      // a stats edit instead of an economy edit
-      const drop = itemForTier(stats.tier);
-      out.drops[drop] = (out.drops[drop] ?? 0) + count;
+      // the drop table is unitDrop in levels.ts — reading it rather than a
+      // local triple is what lets a tier-4 unit be a stats edit instead of
+      // an economy edit, and it is also where a boss pays nothing: the
+      // audit must count the same drops the run actually banks
+      for (const { item, amount } of costEntries(unitDrop(kind)))
+        out.drops[item] = (out.drops[item] ?? 0) + amount * count;
     });
   }
   const share = (x: number): number => (out.hp > 0 ? x / out.hp : 0);
