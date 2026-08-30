@@ -100,8 +100,8 @@ export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: s
     blurb: "The build bar tops out at eight loadout slots.",
   },
   "world-2": {
-    name: "Second Front",
-    blurb: "Opens World 2 on the campaign menu — a second front with its own ladder.",
+    name: "Maelstrom",
+    blurb: "Opens Maelstrom on the campaign menu — a second front with its own ladder.",
   },
   "final-threat": {
     name: "A Final Threat",

@@ -89,17 +89,13 @@ export interface MapData {
 
 /** every playable map — add a JSON under public/maps/ and list its id here */
 export const OFFICIAL_MAP_IDS: readonly string[] = [
-  "grass-s",
+  // the two campaign maps, in world order
   "grass-open",
-  // the hand-drawn Three Gates, kept as its own map so the reconstruction
-  // can be compared against what it was drawn from
-  "grass-open-v1",
   "tidewater",
-  "dunes-long",
-  "stone-canyon",
-  // archived: superseded by grass-s and dunes-long, kept for reference
+  // NOT A CAMPAIGN MAP. The last survivor of the generated set the game
+  // started from, kept as the reference for what the generator produces —
+  // no world names it, so it appears in the editor and nowhere else.
   "generated-24",
-  "desert-3way",
 ];
 
 /**

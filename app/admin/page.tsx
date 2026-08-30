@@ -32,17 +32,13 @@ function Thumb({ map }: { map: MapData }) {
   );
 }
 
-/** one level's entry point: what the script currently holds, at a glance */
-function LevelCard({
-  level,
-  ready,
-  onOpen,
-}: {
-  level: LevelSpec;
-  /** documents have landed — until then the counts are the shipped script */
-  ready: boolean;
-  onOpen: () => void;
-}) {
+/**
+ * What a level's script currently holds, at a glance. This is a reading of
+ * the script rather than a component because the map card renders it: a
+ * level and the map it is played on are one thing to edit, not two, so
+ * there is one card and it carries both.
+ */
+function levelStats(level: LevelSpec) {
   let waves = 0;
   let enemies = 0;
   // WHICH MOVEMENT LAYERS THIS SCRIPT SENDS — what the card reports now
@@ -65,27 +61,73 @@ function LevelCard({
     waves++;
     enemies += n;
   }
+  return { waves, enemies, layers };
+}
+
+/**
+ * ONE CARD PER MAP, carrying both doors. A map and the level played on it
+ * were two lists that had to be read side by side to answer one question —
+ * "what is on this map, and what does it send?" — so they are one card with
+ * two buttons. A map no world names keeps the card and loses the level
+ * button; nothing here can open a level editor onto a map that has no level.
+ */
+function MapCard({
+  map,
+  level,
+  ready,
+  onEditMap,
+  onEditLevel,
+}: {
+  map: MapData;
+  /** the world played on this map, if any */
+  level?: LevelSpec;
+  /** level documents have landed — until then the counts are the shipped script */
+  ready: boolean;
+  onEditMap: () => void;
+  onEditLevel: () => void;
+}) {
+  const stats = level ? levelStats(level) : null;
   return (
-    <button
-      onClick={onOpen}
-      disabled={!ready}
-      className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3 text-left transition-colors hover:border-[#4A4A55] disabled:opacity-50"
-    >
-      <div className="flex items-baseline justify-between">
-        <span className="font-bold text-[#EDEDEF]">{level.name}</span>
-        <span className="text-[12px] uppercase tracking-widest text-[#71717C]">
-          {level.map ?? OFFICIAL_MAP_IDS[0]}
+    <div className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
+      <Thumb map={map} />
+      <div className="mt-2 flex items-baseline justify-between gap-2">
+        <span className="font-bold text-[#EDEDEF]">{map.name}</span>
+        <span className="shrink-0 text-[12px] uppercase tracking-widest text-[#71717C]">
+          {map.id}
         </span>
       </div>
-      <div className="mt-1 text-[13px] uppercase tracking-widest text-[#71717C]">
-        {waves} waves · {enemies} enemies · {level.waveGap}s gap
+      <div className="mt-1 min-h-[34px] text-[13px] text-[#71717C]">
+        {stats ? (
+          <>
+            <div className="uppercase tracking-widest">
+              {stats.waves} waves · {stats.enemies} enemies · {level!.waveGap}s gap
+            </div>
+            <div>
+              {stats.layers.size > 0
+                ? [...MOVE_LAYERS].filter((l) => stats.layers.has(l)).join(" · ")
+                : "no units"}
+            </div>
+          </>
+        ) : (
+          <div className="uppercase tracking-widest">no level — terrain only</div>
+        )}
       </div>
-      <div className="mt-1 text-[13px] text-[#71717C]">
-        {layers.size > 0
-          ? [...MOVE_LAYERS].filter((l) => layers.has(l)).join(" · ")
-          : "no units"}
+      <div className="mt-3 flex gap-2">
+        <button
+          onClick={onEditMap}
+          className="flex-1 rounded border border-[#2E2E36] px-3 py-1.5 text-[13px] font-bold text-[#A6A6AF] transition-colors hover:border-[#4A4A55] hover:text-[#EDEDEF]"
+        >
+          Edit map
+        </button>
+        <button
+          onClick={onEditLevel}
+          disabled={!level || !ready}
+          className="flex-1 rounded border border-[#2E2E36] px-3 py-1.5 text-[13px] font-bold text-[#A6A6AF] transition-colors hover:border-[#4A4A55] hover:text-[#EDEDEF] disabled:opacity-40 disabled:hover:border-[#2E2E36] disabled:hover:text-[#A6A6AF]"
+        >
+          Edit level
+        </button>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -197,38 +239,24 @@ function AdminInner() {
         {tab === "content" && (
           <>
         <h2 className="mb-3 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
-          Levels — wave composition
-        </h2>
-        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {WORLDS.map((w) => (
-            <LevelCard
-              key={w.id}
-              level={w}
-              ready={levelsReady}
-              onOpen={() => router.push(`/admin?level=${encodeURIComponent(w.id)}`)}
-            />
-          ))}
-        </div>
-
-        <h2 className="mb-3 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
-          Maps — terrain and spawn pads
+          Maps — terrain, spawn pads and wave composition
         </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {maps.map((m) => (
-            <button
-              key={m.id}
-              onClick={() => router.push(`/admin?map=${encodeURIComponent(m.id)}`)}
-              className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3 text-left transition-colors hover:border-[#4A4A55]"
-            >
-              <Thumb map={m} />
-              <div className="mt-2 flex items-baseline justify-between">
-                <span className="font-bold text-[#EDEDEF]">{m.name}</span>
-                <span className="text-[12px] uppercase tracking-widest text-[#71717C]">
-                  official
-                </span>
-              </div>
-            </button>
-          ))}
+          {maps.map((m) => {
+            const level = WORLDS.find((w) => (w.map ?? OFFICIAL_MAP_IDS[0]) === m.id);
+            return (
+              <MapCard
+                key={m.id}
+                map={m}
+                level={level}
+                ready={levelsReady}
+                onEditMap={() => router.push(`/admin?map=${encodeURIComponent(m.id)}`)}
+                onEditLevel={() =>
+                  level && router.push(`/admin?level=${encodeURIComponent(level.id)}`)
+                }
+              />
+            );
+          })}
         </div>
           </>
         )}
