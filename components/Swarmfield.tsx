@@ -52,6 +52,7 @@ import {
   type RunReward,
 } from "@/game/progress";
 import { turretIcon } from "@/game/atlas";
+import { BY_MINDUSTRY_VALUE } from "@/game/tech";
 import { isEmpty, ITEM_INFO, itemForTier } from "@/game/items";
 import { CostRow, Wallet } from "./Items";
 import TechTree from "./TechTree";
@@ -382,8 +383,18 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
   },
 ];
 
-/** menu entry by kind, for rendering the bar in the loadout's own order */
+/** menu entry by kind, for rendering the bar from a list of kinds */
 const MENU_BY_KIND = new Map(TOWER_MENU.map((t) => [t.kind, t]));
+
+/**
+ * The menu in the game's ONE canonical order — the admin balance panel's
+ * cheapest-first Mindustry ranking (BY_MINDUSTRY_VALUE). The bar and the
+ * loadout picker both read in it, so a turret keeps its place wherever it
+ * shows up: enable foreshadow and it is always last, whenever it was picked.
+ */
+const ORDERED_MENU: ReadonlyArray<(typeof TOWER_MENU)[number]> = BY_MINDUSTRY_VALUE.map(
+  (k) => MENU_BY_KIND.get(k)!,
+);
 
 /** the two wave buttons in the HUD, sized to be hit without aiming */
 const WAVE_BTN =
@@ -452,9 +463,10 @@ export default function Swarmfield() {
    * (Progress.hudMinimized), initialized on mount with the rest of the save */
   const [hudMin, setHudMin] = useState(false);
   /**
-   * The build bar's loadout, PvZ-style: which turrets ride in its slots, in
-   * the order they were picked. Mirrors the save (Progress.loadout) — null
-   * means the save has never curated, and the bar auto-fills its slots from
+   * The build bar's loadout, PvZ-style: which turrets ride in its slots —
+   * a set, not a sequence, since the bar always renders in the canonical
+   * order (ORDERED_MENU). Mirrors the save (Progress.loadout) — null means
+   * the save has never curated, and the bar auto-fills its slots from
    * whatever is unlocked. `loadoutOpen` is the picker floated above the bar.
    */
   const [loadout, setLoadout] = useState<readonly TowerKind[] | null>(null);
@@ -628,21 +640,23 @@ export default function Swarmfield() {
   }, []);
 
   /**
-   * The turrets in the bar, in slot order. Sandbox (barSlots null) shows
-   * the whole roster. A curated save shows its picks — those still unlocked,
+   * The turrets in the bar, ALWAYS in the canonical order (ORDERED_MENU) —
+   * picking foreshadow late does not put it before ripple; it slots in
+   * where the roster ranks it, last. Sandbox (barSlots null) shows the
+   * whole roster. A curated save shows its picks — those still unlocked,
    * trimmed to the slot count — and an uncurated one auto-fills its slots
-   * from the unlocked list in menu order. Auto-fill only runs while the
-   * save has never curated: once picks are saved, a removed turret STAYS
-   * removed instead of being quietly refilled.
+   * from the unlocked list. Auto-fill only runs while the save has never
+   * curated: once picks are saved, a removed turret STAYS removed instead
+   * of being quietly refilled.
    */
   const barKinds = (): TowerKind[] => {
     if (!hud) return [];
-    const unlockedList = TOWER_MENU.filter(
+    const unlockedList = ORDERED_MENU.filter(
       (t) => !hud.unlocked || hud.unlocked.includes(t.kind),
     ).map((t) => t.kind);
     if (hud.barSlots === null) return unlockedList;
-    const picks = (loadout ?? unlockedList).filter((k) => unlockedList.includes(k));
-    return picks.slice(0, hud.barSlots);
+    const picks = new Set(loadout ?? unlockedList);
+    return unlockedList.filter((k) => picks.has(k)).slice(0, hud.barSlots);
   };
 
   /**
@@ -668,8 +682,10 @@ export default function Swarmfield() {
       if (cur.length >= hud.barSlots) return;
       next = [...cur, kind];
     }
-    setLoadout(next);
-    saveLoadout(next);
+    // stored in canonical order too, so the save reads exactly like the bar
+    const ordered = BY_MINDUSTRY_VALUE.filter((k) => next.includes(k));
+    setLoadout(ordered);
+    saveLoadout(ordered);
   };
 
   const pickTower = (kind: TowerKind): void => {
@@ -1105,10 +1121,10 @@ export default function Swarmfield() {
             aria-label="tower menu"
             className="pointer-events-auto mx-auto flex w-max gap-2"
           >
-            {/* the loadout, in slot order: the turrets this save PICKED to
-                ride the bar (see barKinds), not everything it owns — owning
-                is the tech tree's business, the bar is a PvZ seed row. A
-                null unlocked list is sandbox mode: the whole roster */}
+            {/* the loadout, in the canonical roster order: the turrets this
+                save PICKED to ride the bar (see barKinds), not everything it
+                owns — owning is the tech tree's business, the bar is a PvZ
+                seed row. A null unlocked list is sandbox mode: the roster */}
             {barKinds().map((kind) => {
               const t = MENU_BY_KIND.get(kind)!;
               const cap = hud?.caps ? hud.caps[t.kind] : null;
@@ -1221,7 +1237,7 @@ export default function Swarmfield() {
                     aria-label="loadout picker"
                     className="flex max-w-[26rem] flex-wrap justify-center gap-2"
                   >
-                    {TOWER_MENU.filter(
+                    {ORDERED_MENU.filter(
                       (t) => !hud.unlocked || hud.unlocked.includes(t.kind),
                     ).map((t) => {
                       const inBar = bar.includes(t.kind);

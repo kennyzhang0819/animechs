@@ -16,9 +16,9 @@ import {
 import {
   allOverrides,
   authoredKnobs,
+  BY_MINDUSTRY_VALUE,
   globalGrowth,
   knobsOf,
-  MINDUSTRY_VALUE,
   setGlobalGrowth,
   setKnob,
   SHARED_GROWTH,
@@ -27,15 +27,10 @@ import {
   techPrice,
   type Knobs,
 } from "@/game/tech";
-import { TOWER_KINDS, type TowerKind } from "@/game/types";
+import { type TowerKind } from "@/game/types";
 
 const NUM = "font-mono tabular-nums";
 const SERIES = "#3987e5";
-
-/** the list reads cheapest-first the way Mindustry itself prices these turrets */
-const BY_MINDUSTRY_VALUE = [...TOWER_KINDS].sort(
-  (a, b) => MINDUSTRY_VALUE[a] - MINDUSTRY_VALUE[b],
-);
 
 /** the item a bundle leads with — what the graph and the knob are denominated in */
 function leadItem(tower: TowerKind): ItemKind {

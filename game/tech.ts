@@ -681,6 +681,15 @@ export const MINDUSTRY_VALUE: Record<TowerKind, number> = {
   foreshadow: 2500,
 };
 
+/**
+ * Every turret cheapest-first by that valuation — THE display order. The
+ * balance panel, the build bar and its loadout picker all read in it, so a
+ * turret keeps its place wherever it appears: foreshadow is always last.
+ */
+export const BY_MINDUSTRY_VALUE: readonly TowerKind[] = [...TOWER_KINDS].sort(
+  (a, b) => MINDUSTRY_VALUE[a] - MINDUSTRY_VALUE[b],
+);
+
 export const TECH_TREE: readonly TechNodeDef[] = [
   {
     // THE ROOT, AND THE ONLY FREE NODE. It costs nothing, every save is

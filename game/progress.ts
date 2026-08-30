@@ -83,11 +83,13 @@ export interface Progress {
    */
   hudMinimized?: boolean;
   /**
-   * The build bar's loadout: which turrets ride in its slots, in the order
-   * they were picked. The bar holds TechState.barSlots of them, PvZ-style —
-   * owning a turret does not put it on the bar, picking it does. Absent on
-   * a save that has never curated, which reads as "auto-fill the slots from
-   * whatever is unlocked" (see Swarmfield's bar).
+   * The build bar's loadout: which turrets ride in its slots. A SET in
+   * effect — the bar always renders in the roster's canonical order
+   * (BY_MINDUSTRY_VALUE in tech.ts), whatever order this holds. The bar
+   * fits TechState.barSlots of them, PvZ-style — owning a turret does not
+   * put it on the bar, picking it does. Absent on a save that has never
+   * curated, which reads as "auto-fill the slots from whatever is
+   * unlocked" (see Swarmfield's bar).
    */
   loadout?: TowerKind[];
 }
