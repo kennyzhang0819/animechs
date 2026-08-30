@@ -29,10 +29,26 @@ const uv = (x: number, y: number, w: number, h: number, inset = 0): UVRect => [
   (y + h - inset) / ATLAS_H,
 ];
 
+// the two water cells, on the free tail of the y=64 row (the land floors
+// there stop at dirtWall0's 448..512). Named up here because UV_FLOORS
+// repeats each of them three times — see its note
+const WATER_SHALLOW_UV = uv(512, 64, 64, 64, 2);
+const WATER_DEEP_UV = uv(576, 64, 64, 64, 2);
+
 // row 0: 64px cells — grass floors, stone walls, fx
 // indices into UV_FLOORS: 0-2 grass, 3-5 stone, 6-8 dirt, 9-11 sand,
 // 12-14 darksand (the desert pair rides row 0's free tail; x512 stays
-// empty to keep clear space beside the ring cell at 448)
+// empty to keep clear space beside the ring cell at 448), 15-17 shallow
+// water, 18-20 deep water on the free tail of the y=64 row.
+//
+// THE WATER GROUPS ARE THREE ENTRIES POINTING AT ONE ATLAS CELL EACH, and
+// that is deliberate rather than lazy. The renderer reads a floor's blend
+// group as `(index / 3) | 0`, so a group is three wide whether or not the
+// floor has three variants — and Mindustry ships water as a single tile,
+// not as the numbered triples every land floor has. Sharing the rect keeps
+// the group arithmetic honest without packing the same 32px sprite three
+// times: the palette only ever paints the first index of each pair, and the
+// other two exist so a hand-edited document cannot index past the table.
 export const UV_FLOORS: readonly UVRect[] = [
   uv(0, 0, 64, 64, 2),
   uv(64, 0, 64, 64, 2),
@@ -49,7 +65,18 @@ export const UV_FLOORS: readonly UVRect[] = [
   uv(768, 0, 64, 64, 2),
   uv(832, 0, 64, 64, 2),
   uv(896, 0, 64, 64, 2),
+  WATER_SHALLOW_UV,
+  WATER_SHALLOW_UV,
+  WATER_SHALLOW_UV,
+  WATER_DEEP_UV,
+  WATER_DEEP_UV,
+  WATER_DEEP_UV,
 ];
+
+/** first index of each water group — what the palette and the map
+ *  generators paint, and what `(i / 3) | 0` turns into GROUP_WATER_* */
+export const FLOOR_SHALLOW_WATER = 15;
+export const FLOOR_DEEP_WATER = 18;
 // per-group floor edge fades (Mindustry's generated <floor>-edge sprites):
 // three 192px blocks at y=768 for grass/stone/dirt, each a 3x3 of 64px
 // sub-cells in image space. A tile bordered by a higher-priority floor gets
@@ -68,10 +95,19 @@ export const UV_FLOOR_EDGES: ReadonlyArray<ReadonlyArray<readonly UVRect[]>> = [
   // darksand: no contiguous 192px block is left in the atlas, so its nine
   // sub-cells ride the y=704 gutter row, row-major from x=416
   [0, 1, 2].map((ry) => [0, 1, 2].map((rx) => uv(416 + (ry * 3 + rx) * 64, 704, 64, 64))),
+  // the water groups never overlay anything — they sit at the BOTTOM of the
+  // blend order (GROUP_PRI in renderer.ts), which is what makes the land
+  // fade into the shoreline rather than the other way round. No edge art is
+  // baked for them; stone's block stands in to keep the indices aligned,
+  // exactly as it does for sand
+  edgeBlock(272, 768), // shallow water (never drawn)
+  edgeBlock(272, 768), // deep water (never drawn)
 ];
 // 0-1 stone-wall, 2-3 dirt-wall, 5-6 carbon-wall (the darker rock).
-// Index 4 is the WALL_PINE sentinel — its slot here is a never-drawn
-// placeholder, since everything tests wall[i] === WALL_PINE explicitly
+// Indices 4 and 7 are the two SENTINELS — WALL_PINE and WALL_DEEP — whose
+// slots here are never-drawn placeholders, since everything tests those
+// values explicitly and draws the cell's floor (plus, for a pine, its prop)
+// instead of a wall sprite
 export const UV_WALLS: readonly UVRect[] = [
   uv(192, 0, 64, 64, 2),
   uv(256, 0, 64, 64, 2),
@@ -80,11 +116,13 @@ export const UV_WALLS: readonly UVRect[] = [
   uv(192, 0, 64, 64, 2), // WALL_PINE placeholder
   uv(320, 0, 64, 64, 2),
   uv(384, 0, 64, 64, 2),
+  uv(192, 0, 64, 64, 2), // WALL_DEEP placeholder
 ];
 // which wall family each UV_WALLS index belongs to (0 stone, 1 dirt,
-// 2 dark rock; -1 the pine sentinel) — StaticWall's large-draw rule works
-// per block type, so 2x2 detection must ignore the variant within a family
-export const WALL_GROUP: readonly number[] = [0, 0, 1, 1, -1, 2, 2];
+// 2 dark rock; -1 the pine and deep-water sentinels) — StaticWall's
+// large-draw rule works per block type, so 2x2 detection must ignore the
+// variant within a family
+export const WALL_GROUP: readonly number[] = [0, 0, 1, 1, -1, 2, 2, -1];
 // Mindustry's <wall>-large art: one 2x2-tile sprite per family, split into
 // per-tile quadrant UVs [row][col] in screen space (y down). Families
 // without baked large art (dirt) draw per-tile variants everywhere
@@ -938,6 +976,12 @@ const SPRITES = {
   darksand0: `${ENV}/darksand1.png`,
   darksand1: `${ENV}/darksand2.png`,
   darksand2: `${ENV}/darksand3.png`,
+  // Mindustry's two water floors (Blocks.water is the file "shallow-water",
+  // Blocks.deepwater is "deep-water"). Unlike every land floor above, these
+  // ship as ONE tile each rather than three numbered variants — see the
+  // UV_FLOORS note for how the three-wide group slot handles that
+  shallowWater: `${ENV}/shallow-water.png`,
+  deepWater: `${ENV}/deep-water.png`,
   stoneWall0: `${ENV}/stone-wall1.png`,
   stoneWall1: `${ENV}/stone-wall2.png`,
   dirtWall0: `${ENV}/dirt-wall1.png`,
@@ -1384,6 +1428,10 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(img.darksand0), 768, 0, 64, 64);
   c.drawImage(antialiased(img.darksand1), 832, 0, 64, 64);
   c.drawImage(antialiased(img.darksand2), 896, 0, 64, 64);
+  // water, on the free tail of the land-floor row — one cell each, shared
+  // by all three slots of its group (see the UV_FLOORS note)
+  c.drawImage(antialiased(img.shallowWater), 512, 64, 64, 64);
+  c.drawImage(antialiased(img.deepWater), 576, 64, 64, 64);
   // 2x2-tile "-large" wall art: 64px sources at the same 2x tile scale,
   // in the free block right of the dirt edge fades
   c.drawImage(antialiased(img.stoneWallLarge), 736, 768, 128, 128);

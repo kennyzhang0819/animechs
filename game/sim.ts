@@ -1,6 +1,9 @@
 import {
   BASE,
-  BOSS_SPAWN_REGION,
+  LAYER_BIT,
+  NCELLS,
+  type MoveLayer,
+  type ZoneKind,
   BURN_DPS as BURN_DPS_IMPORT,
   BURN_FX_CHANCE as BURN_FX_CHANCE_IMPORT,
   bulletOf as bulletOf_IMPORT,
@@ -68,7 +71,7 @@ const UNIT_KINDS = UNIT_KINDS_IMPORT;
 import { armorBonusAtLevel, shieldScaleAtLevel, unitHpAtLevel } from "./ladder";
 import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap } from "./maps";
 import type { TechState } from "./tech";
-import { WALL_PINE, type Terrain } from "./terrain";
+import { isBuildableWall, isWaterFloor, waterWalkMask, type Terrain } from "./terrain";
 import {
   FxKind,
   TOWER_KINDS,
@@ -465,6 +468,11 @@ export class Sim {
    * arrays is measurably slower than reading one
    */
   readonly ufly = new Uint8Array(MAX_UNITS);
+  /** 1 = this unit travels on the WATER layer and steers by waterField.
+   *  Kept beside ufly rather than folded into it because the two answer
+   *  different questions: ufly decides what may SHOOT at a unit, and this
+   *  decides which field it walks. */
+  readonly unav = new Uint8Array(MAX_UNITS);
   /** KIND_HEAVY[ukind[i]], same reasoning — the physics split reads it per
    * candidate */
   readonly uheavy = new Uint8Array(MAX_UNITS);
@@ -542,7 +550,7 @@ export class Sim {
   // the wave being drained, flattened to (region, kind) entries — every
   // entry runs out at the same moment (see nextWaveEntry), each spawning
   // only on its own region's pads (region 0 = any pad)
-  private waveEntries: { region: number; kind: number; left: number; total: number }[] = [];
+  private waveEntries: { kind: number; left: number; total: number }[] = [];
   /**
    * Enemies per second for the wave currently loaded — its OWN size over
    * WAVE_RELEASE_SECONDS, cached at load. Cached rather than recomputed from
@@ -645,6 +653,31 @@ export class Sim {
   // centre) on a map with no goal layer, so the old behaviour is the
   // one-goal case of the new one rather than a separate path
   private goalPts = new Float32Array(2);
+  /**
+   * The hulls' flow field — the water layer's twin of `field`. Built only
+   * on maps that actually have water (`hasWater`); on any other map it is
+   * an empty field nothing ever samples.
+   */
+  readonly waterField = new FlowField();
+  private hasWater = false;
+  /** the resolved exit mask per layer, after exitsFor's fallbacks */
+  private exitGround: Uint8Array = new Uint8Array(NCELLS);
+  private exitAir: Uint8Array = new Uint8Array(NCELLS);
+  private exitWater: Uint8Array = new Uint8Array(NCELLS);
+  /**
+   * The air layer's doors: every cell an air zone covers, rock included.
+   * Flyers keep their pads here rather than in a FlowField because they
+   * have no field — nothing about the terrain constrains where a flyer may
+   * be dropped, so there is nothing to solve.
+   */
+  private airPads: number[] = [];
+  /**
+   * The boss door's cells, split by the layer that may use them: a boss
+   * zone is terrain-blind like an air zone, but a WALKING boss still has to
+   * land on ground it can stand on, so the filtering happens per layer here
+   * rather than in the rasterizer.
+   */
+  private bossPads: Record<MoveLayer, number[]> = { ground: [], air: [], water: [] };
 
   // seal-test cache: hover asks canPlace every frame, and the test costs two
   // flow-field recomputes — remember the verdict for the last cell asked
@@ -682,22 +715,45 @@ export class Sim {
     this.terrain = terrainFromMap(doc);
     this.goalX = (this.terrain.core.x + this.terrain.core.size / 2) * CELL;
     this.goalY = (this.terrain.core.y + this.terrain.core.size / 2) * CELL;
+    // THE EXITS EACH LAYER IS AIMING AT, resolved once here so that no
+    // field and no flyer has to know the fallback rules (see exitsFor)
+    this.exitGround = this.exitsFor(LAYER_BIT.ground);
+    this.exitAir = this.exitsFor(LAYER_BIT.air);
+    this.exitWater = this.exitsFor(LAYER_BIT.water);
+    this.buildPads();
+    // the walkers' field: rock and towers block it, it enters by the ground
+    // zones, and it aims at the ground exits
     this.field.rebuildWalk(
       this.towers,
       this.terrain.blocked,
-      this.terrain.spawn,
-      this.terrain.core,
-      this.terrain.goal,
-      // the terrain-blind layer: flyers may enter anywhere a zone covers,
-      // so a boss door painted on the hills works for a flying boss
-      rasterizeSpawns(this.terrain.spawns, null),
+      this.layerPadMask(LAYER_BIT.ground),
+      this.exitGround,
     );
+    // THE HULLS' FIELD, built only where there is water to sail. It is the
+    // mirror image of the walkers' — dry land is its wall — and towers do
+    // not block it, because a tower stands on rock and rock is already the
+    // whole of its impassable set. Skipped on a map with no water, where it
+    // would be a Dijkstra over a grid with nothing in it.
+    this.hasWater = false;
+    for (let i = 0; i < this.terrain.floor.length; i++)
+      if (isWaterFloor(this.terrain.floor[i])) {
+        this.hasWater = true;
+        break;
+      }
+    if (this.hasWater)
+      this.waterField.rebuildWalk(
+        [],
+        waterWalkMask(this.terrain),
+        this.layerPadMask(LAYER_BIT.water),
+        this.exitWater,
+      );
     this.buildGoalPts();
     this.field.compute();
-    // fail LOUDLY on a broken map: with zero pads nothing ever spawns and a
-    // wave script stalls forever, which reads as a scheduler bug otherwise
-    if (this.field.spawnAir.length === 0)
-      throw new Error(`map "${doc.id}" has no spawn pads — paint some in the editor`);
+    if (this.hasWater) this.waterField.compute();
+    // fail LOUDLY on a broken map: with zero doors nothing ever spawns and
+    // a wave script stalls forever, which reads as a scheduler bug
+    if (this.airPads.length === 0 && this.field.spawnPts.length === 0)
+      throw new Error('map "' + doc.id + '" has no drop zones — paint some in the editor');
     // a core sitting on rock is always an authoring slip (a map that moved
     // its core without carving the basin, say) and it reads as "the waves
     // never finish" rather than as a broken map — so say it out loud
@@ -710,24 +766,26 @@ export class Sim {
           if (this.terrain.blocked[y * COLS + x]) walledCore++;
     if (walledCore > 0)
       console.warn(
-        `map "${doc.id}": ${walledCore} of the core's cells are walled — carve its basin open at ${this.terrain.core.x},${this.terrain.core.y}`,
+        'map "' + doc.id + '": ' + walledCore +
+          " of the core's cells are walled — carve its basin open at " +
+          this.terrain.core.x + "," + this.terrain.core.y,
       );
-    if (this.field.spawnPts.length === 0)
-      console.warn(`map "${doc.id}": no spawn pad connects to the core — ground waves will stall`);
+    // A SCRIPT SENDING A LAYER THE MAP HAS NO DOOR FOR is the only
+    // map/script mismatch left now that nothing names a region. Warned per
+    // layer, and only for layers the script actually sends, so an author
+    // hears about it before the run does.
+    const doors: ReadonlyArray<readonly [MoveLayer, number]> = [
+      ["ground", this.field.spawnPts.length],
+      ["air", this.airPads.length],
+      ["water", this.hasWater ? this.waterField.spawnPts.length : 0],
+    ];
+    for (const [layer, pads] of doors)
+      if (pads === 0 && this.scriptSends(layer))
+        console.warn(
+          'map "' + doc.id + '" has no ' + layer +
+            " drop zone that reaches an exit, but its script sends " + layer + " units",
+        );
     this.stageScript();
-    const regions = new Set<number>();
-    for (const step of this.level.script) {
-      if (!("wave" in step)) continue;
-      for (const g of waveGroups(step.wave)) if (g.region > 0) regions.add(g.region);
-    }
-    // a script naming a region the map doesn't carry falls back to any pad
-    // (see spawnPads) — a map/script mismatch, so say so up front
-    for (const r of regions) {
-      if (!this.field.spawnAirByRegion.get(r)?.length)
-        console.warn(`map "${doc.id}" has no region-${r} spawn pads — that wave group will use any pad`);
-      else if (!this.field.spawnPtsByRegion.get(r)?.length)
-        console.warn(`map "${doc.id}": no region-${r} pad connects to the core — its ground units will use any pad`);
-    }
     this.aliveByKind.fill(0);
   }
 
@@ -743,19 +801,110 @@ export class Sim {
     return false;
   }
 
+
   /**
-   * Collect every goal cell's centre, for flyers to choose from. Falls back
-   * to the core's centre so a pre-goal map is simply the one-goal case —
-   * there is no second code path for it anywhere.
+   * THE EXITS ONE MOVEMENT LAYER IS AIMING AT, with the fallbacks that stop
+   * a half-painted map from stranding anything.
+   *
+   * Three rules, in order. A layer with exits of its own uses exactly
+   * those — that is the whole point of splitting them, and it is what lets
+   * a map land its air waves somewhere its walkers can never reach. A layer
+   * with none borrows the UNION of every other layer's, because an author
+   * who painted one exit band and stopped meant it for everything rather
+   * than meaning "the flyers have nowhere to go". A map with no exits at
+   * all falls back to its core block, which is what every pre-exit map is.
+   */
+  private exitsFor(bit: number): Uint8Array {
+    const src = this.terrain.goal;
+    const out = new Uint8Array(NCELLS);
+    let mine = 0;
+    let any = 0;
+    for (let i = 0; i < NCELLS; i++) {
+      if (!src[i]) continue;
+      any++;
+      if (src[i] & bit) {
+        out[i] = 1;
+        mine++;
+      }
+    }
+    if (mine > 0) return out;
+    if (any > 0) {
+      for (let i = 0; i < NCELLS; i++) if (src[i]) out[i] = 1;
+      return out;
+    }
+    const { core } = this.terrain;
+    for (let y = core.y; y < core.y + core.size; y++)
+      for (let x = core.x; x < core.x + core.size; x++) out[y * COLS + x] = 1;
+    return out;
+  }
+
+  /** the cells one layer's zones cover, as a mask a FlowField can take */
+  private layerPadMask(bit: number): Uint8Array {
+    const src = this.terrain.spawn;
+    const out = new Uint8Array(NCELLS);
+    for (let i = 0; i < NCELLS; i++) if (src[i] & bit) out[i] = 1;
+    return out;
+  }
+
+  /**
+   * The pad lists the two field-less cases need: the flyers' doors, and the
+   * boss's door split by layer.
+   *
+   * A boss zone is rasterized terrain-blind, so a walking boss's pads are
+   * filtered here against the ground it would have to stand on, and a naval
+   * one's against water. Doing it per layer rather than in the rasterizer is
+   * what lets ONE boss zone serve whatever kind of boss a map fields.
+   */
+  private buildPads(): void {
+    const spawn = this.terrain.spawn;
+    const { blocked, floor } = this.terrain;
+    this.airPads = [];
+    this.bossPads = { ground: [], air: [], water: [] };
+    for (let i = 0; i < NCELLS; i++) {
+      const m = spawn[i];
+      if (!m) continue;
+      if (m & LAYER_BIT.air) this.airPads.push(i);
+      if (m & LAYER_BIT.boss) {
+        this.bossPads.air.push(i);
+        if (!blocked[i]) this.bossPads.ground.push(i);
+        if (isWaterFloor(floor[i])) this.bossPads.water.push(i);
+      }
+    }
+  }
+
+  /** the movement layer a unit kind travels on — the one place it is decided */
+  private layerOf(kind: UnitKind): MoveLayer {
+    const s = UNIT_STATS[kind];
+    return s.flying ? "air" : s.naval ? "water" : "ground";
+  }
+
+  /** does this level's script send anything on this layer? */
+  private scriptSends(layer: MoveLayer): boolean {
+    for (const step of this.level.script) {
+      if (!("wave" in step)) continue;
+      for (const g of waveGroups(step.wave))
+        for (let k = 0; k < g.counts.length; k++)
+          if (g.counts[k] > 0 && this.layerOf(UNIT_KINDS[k]) === layer) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Collect every AIR exit's centre, for a flyer to choose from when it
+   * spawns. Air is the one layer with no flow field — a flyer steers
+   * straight at a point — so its exits become a list of points here.
    */
   private buildGoalPts(): void {
-    const { goal, core } = this.terrain;
+    // THE AIR LAYER'S OWN EXITS, not every exit on the map. exitsFor has
+    // already applied the fallbacks, so this reads a mask that is never
+    // empty — the core's block at worst — and a flyer aims at the nearest
+    // cell of it. That is the whole of "each layer paths to its own exit"
+    // for the one layer with no field to path on.
     const pts: number[] = [];
-    for (let i = 0; i < goal.length; i++)
-      if (goal[i]) pts.push((i % COLS) * CELL + CELL / 2, (((i / COLS) | 0) + 0.5) * CELL);
-    this.goalPts = Float32Array.from(
-      pts.length > 0 ? pts : [this.goalX, this.goalY],
-    );
+    const air = this.exitAir;
+    for (let i = 0; i < air.length; i++)
+      if (air[i]) pts.push((i % COLS) * CELL + CELL / 2, (((i / COLS) | 0) + 0.5) * CELL);
+    this.goalPts = Float32Array.from(pts.length > 0 ? pts : [this.goalX, this.goalY]);
   }
 
   /**
@@ -768,11 +917,11 @@ export class Sim {
    * nearest goal and may head somewhere else, so this is the middle of a
    * fan rather than a single guaranteed track.
    */
-  airRoutes(): { x1: number; y1: number; x2: number; y2: number; region: number }[] {
+  airRoutes(): { x1: number; y1: number; x2: number; y2: number; zone: ZoneKind }[] {
     return this.terrain.spawns.map((z) => {
       const x = z.x * CELL, y = z.y * CELL;
       const g = this.nearestGoal(x, y);
-      return { x1: x, y1: y, x2: g.x, y2: g.y, region: z.region };
+      return { x1: x, y1: y, x2: g.x, y2: g.y, zone: z.zone };
     });
   }
 
@@ -1021,7 +1170,7 @@ export class Sim {
       for (const g of waveGroups(step.wave))
         for (let kind = 0; kind < g.counts.length; kind++)
           if (g.counts[kind] > 0)
-            this.waveEntries.push({ region: g.region, kind, left: g.counts[kind], total: g.counts[kind] });
+            this.waveEntries.push({ kind, left: g.counts[kind], total: g.counts[kind] });
       if (this.waveEntries.length > 0) {
         let total = 0;
         for (const e of this.waveEntries) total += e.total;
@@ -1046,11 +1195,11 @@ export class Sim {
    * from finishing, by fraction of its own total. That intermingles a mixed
    * wave from its first unit and lands every entry's last unit together,
    * instead of emptying one pile before starting the next. Entries in
-   * `skip` (their region's pads were too crowded this frame) don't compete.
+   * `skip` (their layer's doors were too crowded this frame) don't compete.
    */
   private nextWaveEntry(
     skip: ReadonlySet<unknown>,
-  ): { region: number; kind: number; left: number; total: number } | null {
+  ): { kind: number; left: number; total: number } | null {
     let best = null;
     let bestFrac = 0;
     for (const e of this.waveEntries) {
@@ -1097,7 +1246,7 @@ export class Sim {
     while (left > 0 && this.spawnAcc >= 1) {
       const e = this.nextWaveEntry(blocked);
       if (!e) break;
-      if (!this.spawnUnit(UNIT_KINDS[e.kind], e.region)) {
+      if (!this.spawnUnit(UNIT_KINDS[e.kind])) {
         blocked.add(e);
         continue;
       }
@@ -1175,10 +1324,11 @@ export class Sim {
     for (let y = gy; y < gy + sz; y++)
       for (let x = gx; x < gx + sz; x++) {
         const i = y * COLS + x;
-        // pine forests are the one un-buildable kind of blocked cell; every
-        // rock family (stone, dirt, dark carbon: indices above the sentinel
-        // too) is tower real estate
-        if (!blocked[i] || wall[i] === WALL_PINE) return false;
+        // pine forests and deep water are the un-buildable kinds of blocked
+        // cell (isBuildableWall in terrain.ts holds that rule); every rock
+        // family — stone, dirt, dark carbon, indices above the sentinels
+        // included — is tower real estate
+        if (!blocked[i] || !isBuildableWall(wall[i])) return false;
       }
     for (const t of this.towers) {
       const tsz = TOWERS[t.kind].size;
@@ -1299,34 +1449,31 @@ export class Sim {
     return true;
   }
 
-  /** the pad cells a unit may enter on: its wave group's region, or every
-   * pad for a region-less group (region 0). A region the map doesn't carry
-   * — or whose pads are all cut off — falls back to every pad, so a
-   * mismatched script keeps playing instead of stalling (warned at reset) */
-  private spawnPads(fly: boolean, region: number): number[] {
-    const all = fly ? this.field.spawnAir : this.field.spawnPts;
-    if (region <= 0) return all;
-    const byRegion = fly ? this.field.spawnAirByRegion : this.field.spawnPtsByRegion;
-    const pads = byRegion.get(region);
-    return pads && pads.length > 0 ? pads : all;
+  /**
+   * The doors one movement layer may enter by — and, for a boss, the boss
+   * door instead when the map paints one.
+   *
+   * This is where the region system used to live: a wave group named a
+   * number, the pads were looked up by that number, and an unknown number
+   * fell back to "anywhere". A unit's LAYER answers the same question
+   * without anyone authoring anything, so the only special case left is the
+   * boss, which is not a layer but a door reserved from the ordinary swarm.
+   */
+  private spawnPads(layer: MoveLayer, boss: boolean): number[] {
+    // A BOSS IGNORES ITS LAYER'S ZONES when the map paints a boss door —
+    // that is the door's whole meaning. A map WITHOUT one leaves the boss
+    // on its layer's own zones rather than falling back to "anywhere".
+    if (boss && this.bossPads[layer].length > 0) return this.bossPads[layer];
+    if (layer === "air") return this.airPads;
+    if (layer === "water") return this.hasWater ? this.waterField.spawnPts : [];
+    return this.field.spawnPts;
   }
 
-  private spawnUnit(kind: UnitKind, region: number): boolean {
+  private spawnUnit(kind: UnitKind): boolean {
     const stats = UNIT_STATS[kind];
     const fly = !!stats.flying;
-    // A BOSS IGNORES ITS WAVE GROUP'S REGION: when the map paints a boss
-    // zone, every boss-flagged kind enters from it — that is the zone's
-    // whole meaning. The check is against the ByRegion map directly, not
-    // spawnPads, because spawnPads falls back to every pad for an unknown
-    // region and a map WITHOUT a boss zone should leave the group's own
-    // region in force rather than falling back to "anywhere"
-    if (stats.boss) {
-      const byRegion = fly ? this.field.spawnAirByRegion : this.field.spawnPtsByRegion;
-      if (byRegion.get(BOSS_SPAWN_REGION)?.length) region = BOSS_SPAWN_REGION;
-    }
-    // every enemy enters on a spawn pad from the terrain's spawn layer;
-    // walkers need a pad connected to the core, flyers take any open pad
-    const pads = this.spawnPads(fly, region);
+    const layer = this.layerOf(kind);
+    const pads = this.spawnPads(layer, !!stats.boss);
     if (this.n >= MAX_UNITS || pads.length === 0) return false;
     const r = stats.radius;
     // the drop-zone test is the same broad-phase query the physics pass
@@ -1395,6 +1542,7 @@ export class Sim {
       this.uid[i] = this.nextId++;
       this.ukind[i] = UNIT_ID[kind];
       this.ufly[i] = fly ? 1 : 0;
+      this.unav[i] = layer === "water" ? 1 : 0;
       this.uheavy[i] = KIND_HEAVY[UNIT_ID[kind]];
       // start already off-line, drawn from the bias's own resting spread —
       // a wave that all began dead centre would need seconds to fan out
@@ -1621,6 +1769,7 @@ export class Sim {
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
     this.ufly[i] = this.ufly[n];
+    this.unav[i] = this.unav[n];
     this.uheavy[i] = this.uheavy[n];
     this.ulat[i] = this.ulat[n];
     this.uwalk[i] = this.uwalk[n];
@@ -2025,6 +2174,10 @@ export class Sim {
         const gl = Math.sqrt(gdx * gdx + gdy * gdy) || 1;
         flowTmp.x = gdx / gl;
         flowTmp.y = gdy / gl;
+      } else if (this.unav[i] !== 0) {
+        // a hull steers by the water field: the same solver over the mirror
+        // mask, aimed at the water exits
+        this.waterField.sample(upx[i], upy[i], flowTmp);
       } else {
         field.sample(upx[i], upy[i], flowTmp);
       }

@@ -1,5 +1,4 @@
 import {
-  BOSS_SPAWN_REGION,
   CELL as CELL_IMPORT,
   clamp as clamp_IMPORT,
   COLS as COLS_IMPORT,
@@ -49,32 +48,39 @@ export interface Vec2 {
 
 /**
  * Grid occupancy plus a flow field: one Dijkstra pass seeded from every goal
- * cell (the core block, on a map with no goal layer) produces a distance
- * field, a fast-sweeping pass refines it into a proper eikonal one, then
- * every walkable cell gets a unit direction from that field's upwind
- * gradient. Units just sample the field — pathfinding is O(map), not O(units).
+ * cell produces a distance field, a fast-sweeping pass refines it into a
+ * proper eikonal one, then every walkable cell gets a unit direction from
+ * that field's upwind gradient. Units just sample the field — pathfinding
+ * is O(map), not O(units).
+ *
+ * ONE FIELD IS ONE MOVEMENT LAYER. The class knows nothing about ground or
+ * water: it is a field over whatever passability mask it is handed, seeded
+ * from whatever goal mask it is handed. The Sim owns one for the walkers
+ * (mask: rock and towers) and one for the hulls (mask: everything that is
+ * not water), and the flyers need none at all — they steer straight at the
+ * nearest air exit, which is what "flying" means.
+ *
+ * That is also what let the region machinery go. This class used to carry a
+ * SECOND spawn mask for flyers and a pair of pads-by-region maps, because
+ * one field was serving three kinds of unit with one set of doors between
+ * them. Each layer has its own field and its own doors now, so a field's
+ * spawn list is simply "the cells of my mask a unit of my layer can enter
+ * from and actually reach a goal from".
  */
 export class FlowField {
-  readonly walk = new Uint8Array(NCELLS); // 1 = blocked
+  readonly walk = new Uint8Array(NCELLS); // 1 = impassable to THIS layer
   readonly isGoal = new Uint8Array(NCELLS);
   readonly dist = new Float32Array(NCELLS);
   readonly dirX = new Float32Array(NCELLS);
   readonly dirY = new Float32Array(NCELLS);
-  // spawn-pad cells (indices), from the terrain's spawn layer (whose values
-  // are region ids — 0 none, N >= 1 a pad in region N):
-  // spawnPts = open AND connected to a goal (where walkers may enter);
-  // spawnAir = every open pad (flyers ignore ground connectivity).
-  // The ByRegion maps split the same lists per region id, for wave groups
-  // that pin their units to one region
+  /**
+   * Cells of this layer's spawn mask that are passable AND connected to one
+   * of its goals — where a unit of this layer may actually be dropped. A
+   * pad the field cannot reach a goal from is left out rather than
+   * stranding the units that enter on it.
+   */
   spawnPts: number[] = [];
-  spawnAir: number[] = [];
-  readonly spawnPtsByRegion = new Map<number, number[]>();
-  readonly spawnAirByRegion = new Map<number, number[]>();
   private spawnMask: Uint8Array | null = null;
-  // the terrain-blind twin of spawnMask: every cell a zone covers, rock
-  // included. Flyers enter by this one — a zone painted over hills is a
-  // legal air door (see rasterizeSpawns)
-  private airSpawnMask: Uint8Array | null = null;
 
   // binary min-heap with lazy deletion (131,072 slots, ~2.7 per cell —
   // sized for 8 per cell back when the board was 128x128)
@@ -109,39 +115,34 @@ export class FlowField {
    */
   readonly clear = new Float32Array(NCELLS);
 
+  /**
+   * Re-seed the field: what blocks this layer, where it may enter, and what
+   * it is aiming at. `towers` block only layers that share the ground with
+   * them — the caller passes an empty list for a layer towers cannot touch.
+   *
+   * A goal mask with nothing in it leaves the field with no destination and
+   * every distance at infinity, which reads downstream as "this layer has
+   * nowhere to go". The Sim never lets that happen: it resolves a layer's
+   * exits (falling back to the other layers', then to the core) before it
+   * gets here, so the fallback lives in one place instead of two.
+   */
   rebuildWalk(
     towers: readonly Tower[],
     blockedBase: Uint8Array,
     spawnMask: Uint8Array,
-    core: { x: number; y: number; size: number },
-    goalMask?: Uint8Array,
-    airSpawnMask?: Uint8Array,
+    goalMask: Uint8Array,
   ): void {
     this.spawnMask = spawnMask;
-    // unset falls back to the ground mask — pre-air-door callers unchanged
-    this.airSpawnMask = airSpawnMask ?? spawnMask;
     this.walk.set(blockedBase);
     this.isGoal.fill(0);
     for (const t of towers)
       for (let y = t.gy; y < t.gy + 2; y++)
         for (let x = t.gx; x < t.gx + 2; x++) this.walk[y * COLS + x] = 1;
-    // GOAL CELLS WIN WHERE A MAP HAS THEM, and nothing below this line
-    // changes: compute() already seeds its Dijkstra from EVERY isGoal cell
-    // at distance 0, which is a multi-source shortest path — so painting a
-    // band instead of a block costs nothing and hands every cell the
-    // heading to its nearest exit. A goal cell under a tower is not a goal.
-    let goals = 0;
-    if (goalMask)
-      for (let i = 0; i < NCELLS; i++)
-        if (goalMask[i] && !this.walk[i]) {
-          this.isGoal[i] = 1;
-          goals++;
-        }
-    // no goal layer (or a map that walled every goal off) falls back to the
-    // core, so every document written before goals existed plays unchanged
-    if (goals === 0)
-      for (let y = core.y; y < core.y + core.size; y++)
-        for (let x = core.x; x < core.x + core.size; x++) this.isGoal[y * COLS + x] = 1;
+    // compute() seeds its Dijkstra from EVERY isGoal cell at distance 0,
+    // which is a multi-source shortest path — so painting a band instead of
+    // a block costs nothing and hands every cell the heading to its nearest
+    // exit. A goal cell under a tower is not a goal.
+    for (let i = 0; i < NCELLS; i++) if (goalMask[i] && !this.walk[i]) this.isGoal[i] = 1;
   }
 
   private hPush(k: number, v: number): void {
@@ -368,36 +369,14 @@ export class FlowField {
     }
 
     this.spawnPts = [];
-    this.spawnAir = [];
-    this.spawnPtsByRegion.clear();
-    this.spawnAirByRegion.clear();
-    const into = (map: Map<number, number[]>, region: number, i: number): void => {
-      const pads = map.get(region);
-      if (pads) pads.push(i);
-      else map.set(region, [i]);
-    };
-    // AIR PADS READ THE TERRAIN-BLIND MASK: a flyer does not care what is
-    // under it, so every cell a zone covers — hills included — is an air
-    // door. Ground pads keep the open-ground mask below.
-    const airMask = this.airSpawnMask;
-    if (airMask) {
-      for (let i = 0; i < NCELLS; i++) {
-        if (!airMask[i]) continue;
-        // the boss zone is boss-only: its pads live in the ByRegion maps
-        // and stay out of the any-pad lists, so a region-0 wave group can
-        // never dump the ordinary swarm through the boss's door
-        if (airMask[i] !== BOSS_SPAWN_REGION) this.spawnAir.push(i);
-        into(this.spawnAirByRegion, airMask[i], i);
-      }
-    }
     const mask = this.spawnMask;
     if (mask) {
       for (let i = 0; i < NCELLS; i++) {
-        if (!mask[i] || walk[i]) continue;
-        if (this.dist[i] < INF) {
-          if (mask[i] !== BOSS_SPAWN_REGION) this.spawnPts.push(i);
-          into(this.spawnPtsByRegion, mask[i], i);
-        }
+        // passable to this layer, covered by one of its zones, and able to
+        // reach a goal — a pad failing the last test would strand whatever
+        // entered on it, so it is not a door at all
+        if (!mask[i] || walk[i] || this.dist[i] >= INF) continue;
+        this.spawnPts.push(i);
       }
     }
   }

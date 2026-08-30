@@ -3,15 +3,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MapEditor, PATH_WIDTHS, type BrushShape } from "@/game/editor";
 import { SPAWN_RADII, SPAWN_RADIUS_DEFAULT } from "@/game/maps";
+import { MOVE_LAYERS, ZONE_KINDS } from "@/game/constants";
 import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
 import {
-  BOSS_SPAWN_REGION,
-  MAX_SPAWN_REGIONS,
   PALETTE,
+  paletteSections,
   saveMap,
-  spawnRegionIds,
-  spawnRegionStyle,
-  SPAWN_REGIONS,
+  zoneStyle,
+  ZONE_LABELS,
   type MapData,
   type PaletteSet,
 } from "@/game/maps";
@@ -208,26 +207,20 @@ export default function MapEditorView({
   const [pathWidth, setPathWidth] = useState(1);
   const [spawnRadius, setSpawnRadius] = useState(SPAWN_RADIUS_DEFAULT);
   /**
-   * How many spawn-region swatches the palette offers. NOT a limit on the
-   * map — "+" adds another, forever — just how many are on show, so the
-   * picker does not start with a wall of regions nobody is using.
-   *
-   * It opens at four (the hand-picked colours in maps.ts) or at whatever the
-   * map already paints, whichever is more: loading a map that uses region 7
-   * has to be able to select region 7, or its own zones become unreachable.
+   * The map's height in rows — mirrored out of the editor so the control can
+   * show it, and pushed back in on every change. Seeded from the document,
+   * which is the only place a map's real size has ever lived.
    */
-  const [regionSlots, setRegionSlots] = useState(() =>
-    Math.max(SPAWN_REGIONS.length, ...spawnRegionIds(map)),
+  const [mapRows, setMapRowsState] = useState(() =>
+    Math.max(1, Math.floor(map.floor.length / (map.w ?? 256))),
   );
-  /**
-   * The live slot count, mirrored out of React state because "+" both grows
-   * the row AND selects what it grew. Two setState calls in one handler read
-   * the same batched `regionSlots`, so a double-click used to add one region
-   * instead of two — the second click computed its "next" from the value the
-   * first had not committed yet. The ref is written synchronously, so each
-   * click sees the one before it.
-   */
-  const slotsRef = useRef(regionSlots);
+  const setMapRows = (n: number): void => {
+    const ed = editorRef.current;
+    if (!ed || !Number.isFinite(n)) return;
+    ed.setRows(n);
+    setMapRowsState(ed.rows);
+    setDirty(ed.dirty);
+  };
   const [layers, setLayers] = useState<TerrainLayers>({ ...ALL_LAYERS });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -471,6 +464,44 @@ export default function MapEditorView({
               ))}
             </span>
           </label>
+          {/* MAP HEIGHT — the map's own boundary, as a number you set.
+              It used to be implied by what the arrays happened to contain,
+              which is why moving an edge meant painting rock in the right
+              shape and hoping the save agreed. Everything reads this: what
+              is drawn, where the void starts, how far the camera goes, what
+              a brush may touch, and what gets written. */}
+          <label className="flex items-center justify-between gap-3 border-t border-[#2E2E36] pt-2">
+            <span className="text-[13px] uppercase tracking-widest text-[#71717C]">Height</span>
+            <span className="flex items-center gap-1">
+              {[-10, -1].map((d) => (
+                <button
+                  key={d}
+                  aria-label={`${d} rows`}
+                  onClick={() => setMapRows(mapRows + d)}
+                  className="h-6 w-8 rounded border border-[#2E2E36] text-sm text-[#A6A6AF] hover:border-[#FFD37F] hover:text-[#EDEDEF]"
+                >
+                  {d}
+                </button>
+              ))}
+              <input
+                type="number"
+                value={mapRows}
+                onChange={(e) => setMapRows(Number(e.target.value))}
+                aria-label="map height in rows"
+                className="h-6 w-14 rounded border border-[#2E2E36] bg-[#0B0B0D] px-1 text-center text-sm text-[#EDEDEF] focus:border-[#FFD37F] focus:outline-none"
+              />
+              {[1, 10].map((d) => (
+                <button
+                  key={d}
+                  aria-label={`+${d} rows`}
+                  onClick={() => setMapRows(mapRows + d)}
+                  className="h-6 w-8 rounded border border-[#2E2E36] text-sm text-[#A6A6AF] hover:border-[#FFD37F] hover:text-[#EDEDEF]"
+                >
+                  +{d}
+                </button>
+              ))}
+            </span>
+          </label>
           <div className="flex flex-col gap-1 border-t border-[#2E2E36] pt-2">
             <span className="text-[13px] uppercase tracking-widest text-[#71717C]">Layers</span>
             {LAYER_ROWS.map(([key, label]) => (
@@ -567,119 +598,99 @@ export default function MapEditorView({
           </div>
         </Panel>
 
-        {/* palette */}
+        {/* PALETTE — a tool tray, not a list.
+            Sections stack DOWN the panel, one heading per group, and each
+            group's swatches flow across and wrap inside it. The panel has a
+            fixed width so that wrapping actually happens: laying the
+            sections out side by side instead made one very wide strip that
+            crowded the map off the screen, which is the opposite of what a
+            tray is for.
+
+            The per-set names are gone: a sprite says what it paints once it
+            is grouped with its own kind, and the one thing a sprite cannot
+            say — which layer a zone or exit swatch belongs to — is said by
+            its colour bar and spelled out in the footer. */}
         <Panel
           id="palette"
           title="Palette"
-          base="translateY(-50%)"
-          className={`absolute left-4 top-1/2 max-h-[80vh] overflow-y-auto p-2 ${panel}`}
+          className={`absolute bottom-4 left-4 w-[21rem] max-w-[calc(100vw-2rem)] p-2 ${panel}`}
+          // the cap and the scroll go on the BODY, not the box: the grip bar
+          // lives outside it, so a palette taller than its cap scrolls
+          // without taking the handle that moves the panel off screen with it
+          bodyClassName="max-h-[46vh] overflow-y-auto"
         >
           <div className="flex flex-col gap-1.5">
-            {PALETTE.map((set) => (
-              <div key={set.id}>
-                <div className="mb-0.5 text-[12px] uppercase tracking-widest text-[#71717C]">
-                  {set.label}
+            {paletteSections().map((section) => (
+              <div key={section.label}>
+                <div className="mb-0.5 text-[11px] uppercase tracking-widest text-[#71717C]">
+                  {section.label}
                 </div>
-                <div className={`flex flex-wrap gap-1 ${set.kind === "spawn" ? "max-w-[172px]" : ""}`}>
-                  {/* noRandom variants mean different things (spawn regions),
-                      so they all stay pickable even with randomize on.
-                      The spawn row is as long as the player has asked for
-                      rather than as long as `icons` — every pad draws with
-                      the same sprite, and the badge is what tells them apart */}
-                  {(set.kind === "spawn"
-                    ? Array.from({ length: regionSlots }, () => set.icons[0])
-                    : randomize && !set.noRandom
-                      ? set.icons.slice(0, 1)
-                      : set.icons
-                  ).map((icon, v) => {
-                    const active =
-                      setId === set.id && ((randomize && !set.noRandom) || variant === v);
-                    const region = set.kind === "spawn" ? v + 1 : 0;
-                    return (
-                      <button
-                        key={`${set.id}:${v}`}
-                        title={
-                          region > 0
-                            ? `${set.label} ${region}`
-                            : randomize && set.icons.length > 1
-                              ? `${set.label} (random of ${set.icons.length})`
-                              : `${set.label} ${set.icons.length > 1 ? v + 1 : ""}`
-                        }
-                        aria-pressed={active}
-                        onClick={() => pick(set, v)}
-                        className={`relative flex h-10 w-10 items-center justify-center rounded border ${
-                          active
-                            ? "border-[#FFD37F] bg-[#222227]"
-                            : "border-[#2E2E36] bg-[#101013] hover:border-[#4A4A55]"
-                        }`}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
-                        <img src={icon} alt={set.label} className="h-8 w-8 [image-rendering:pixelated]" />
-                        {region > 0 && (
-                          <span
-                            className="absolute -right-1 -top-1 rounded bg-[#222227] px-1 text-[11px] font-bold"
-                            style={{ color: spawnRegionStyle(region).css }}
+                <div className="flex flex-wrap gap-1">
+                  {section.sets.flatMap((set) =>
+                    (randomize && !set.noRandom ? set.icons.slice(0, 1) : set.icons).map(
+                      (icon, v) => {
+                        const active =
+                          setId === set.id && ((randomize && !set.noRandom) || variant === v);
+                        const zone = set.kind === "spawn" ? ZONE_KINDS[v] : null;
+                        const layer = set.kind === "goal" ? MOVE_LAYERS[v] : null;
+                        const swatch = zone ?? layer;
+                        const name = swatch
+                          ? `${ZONE_LABELS[swatch]} ${set.kind === "spawn" ? "drop zone" : "exit"}`
+                          : randomize && set.icons.length > 1
+                            ? `${set.label} (random of ${set.icons.length})`
+                            : `${set.label}${set.icons.length > 1 ? ` ${v + 1}` : ""}`;
+                        return (
+                          <button
+                            key={`${set.id}:${v}`}
+                            title={name}
+                            aria-label={name}
+                            aria-pressed={active}
+                            onClick={() => pick(set, v)}
+                            className={`relative flex h-10 w-10 items-center justify-center rounded border ${
+                              active
+                                ? "border-[#FFD37F] bg-[#222227]"
+                                : "border-[#2E2E36] bg-[#101013] hover:border-[#4A4A55]"
+                            }`}
                           >
-                            {region}
-                          </span>
-                        )}
-                        {randomize && !set.noRandom && set.icons.length > 1 && (
-                          <span className="absolute -right-1 -top-1 rounded bg-[#222227] px-1 text-[11px] text-[#FFD37F]">
-                            ×{set.icons.length}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                  {/* one more region, and then one more after that. The cap
-                      is the Uint8 cell the id is stored in, not this */}
-                  {set.kind === "spawn" && (
-                    <button
-                      title={`Add spawn region ${regionSlots + 1}`}
-                      onClick={() => {
-                        const added = Math.min(slotsRef.current + 1, MAX_SPAWN_REGIONS);
-                        slotsRef.current = added;
-                        setRegionSlots(added);
-                        pick(set, added - 1); // select the region just added
-                      }}
-                      disabled={regionSlots >= MAX_SPAWN_REGIONS}
-                      className="flex h-10 w-10 items-center justify-center rounded border border-dashed border-[#4A4A55] bg-[#101013] text-[18px] leading-none text-[#A6A6AF] hover:border-[#FFD37F] hover:text-[#FFD37F] disabled:opacity-30 disabled:hover:border-[#4A4A55] disabled:hover:text-[#A6A6AF]"
-                    >
-                      +
-                    </button>
-                  )}
-                  {/* the boss zone: one reserved region past the counter,
-                      picked here rather than by adding 250 slots. Wave
-                      groups can't name it — every boss-flagged kind enters
-                      from it when the map paints one */}
-                  {set.kind === "spawn" && (
-                    <button
-                      title="Boss zone — every boss spawns from it"
-                      aria-pressed={setId === set.id && variant === BOSS_SPAWN_REGION - 1}
-                      onClick={() => pick(set, BOSS_SPAWN_REGION - 1)}
-                      className={`relative flex h-10 w-10 items-center justify-center rounded border ${
-                        setId === set.id && variant === BOSS_SPAWN_REGION - 1
-                          ? "border-[#FFD37F] bg-[#222227]"
-                          : "border-[#2E2E36] bg-[#101013] hover:border-[#4A4A55]"
-                      }`}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
-                      <img
-                        src={set.icons[0]}
-                        alt="Boss zone"
-                        className="h-8 w-8 [image-rendering:pixelated]"
-                      />
-                      <span
-                        className="absolute -right-1 -top-1 rounded bg-[#222227] px-1 text-[11px] font-bold"
-                        style={{ color: spawnRegionStyle(BOSS_SPAWN_REGION).css }}
-                      >
-                        B
-                      </span>
-                    </button>
+                            {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
+                            <img
+                              src={icon}
+                              alt=""
+                              className="h-8 w-8 [image-rendering:pixelated]"
+                            />
+                            {swatch && (
+                              <span
+                                className="absolute inset-x-1 bottom-0.5 h-1 rounded-sm"
+                                style={{ background: zoneStyle(swatch).css }}
+                              />
+                            )}
+                            {randomize && !set.noRandom && set.icons.length > 1 && (
+                              <span className="absolute -right-1 -top-1 rounded bg-[#222227] px-1 text-[11px] text-[#FFD37F]">
+                                ×{set.icons.length}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      },
+                    ),
                   )}
                 </div>
               </div>
             ))}
+          </div>
+          {/* WHAT IS IN HAND, in words, in exactly one place. The swatches
+              lost their names with the column, and for the zone and exit
+              rows that matters most: four identical dark panels differing
+              only by a colour bar. */}
+          <div className="mt-1.5 border-t border-[#2E2E36] pt-1 text-[11px] text-[#A6A6AF]">
+            {(() => {
+              const set = PALETTE.find((p) => p.id === setId) ?? PALETTE[0];
+              if (set.kind === "spawn")
+                return `${ZONE_LABELS[ZONE_KINDS[Math.min(variant, ZONE_KINDS.length - 1)]]} drop zone`;
+              if (set.kind === "goal")
+                return `${ZONE_LABELS[MOVE_LAYERS[Math.min(variant, MOVE_LAYERS.length - 1)]]} exit`;
+              return set.label;
+            })()}
           </div>
         </Panel>
       </div>

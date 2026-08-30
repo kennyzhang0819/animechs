@@ -18,6 +18,7 @@ import {
   isTowerNode,
   NODE_SPEED,
   TECH_KINDS,
+  techCap,
   techNode,
   techPrice,
   techState,
@@ -140,6 +141,46 @@ const fresh = (): Progress => ({
 });
 
 /**
+ * DEV SWITCH: GRANT EVERY TECH NODE ON LOAD. Flip to false to turn it off.
+ *
+ * This is a debugging convenience, not a game rule, and it is the honest
+ * way to hand a developer the whole tree: a save written straight into
+ * localStorage only lands in the browser profile that wrote it AND on the
+ * exact origin it wrote it to, so one poked into localhost:3000 is invisible
+ * from 127.0.0.1:3000, from a second browser, and from a private window.
+ * This is read on every load instead, so it holds everywhere the dev server
+ * is reachable from.
+ *
+ * IT NEVER APPLIES TO A PRODUCTION BUILD, whatever this is set to — the
+ * NODE_ENV guard below is what makes leaving it on merely noisy rather than
+ * a way to ship the game with its progression already finished.
+ *
+ * It grants NODES ONLY. The bank is untouched (nothing needs paying for —
+ * the points are already in), and so is `cleared`, which is what gates the
+ * difficulties: the ladder still opens by clearing the tier below it, and
+ * Eradication additionally wants the "A Final Threat" node this grants. So
+ * a fresh save with this on can field every turret at Incursion and climbs
+ * the ladder normally.
+ */
+const DEV_UNLOCK_ALL = true;
+
+/** is the dev unlock actually in force? production ignores the switch */
+const devUnlocking = (): boolean =>
+  DEV_UNLOCK_ALL && process.env.NODE_ENV !== "production";
+
+/**
+ * Raise every node to a usable number of points, keeping anything the save
+ * already holds if it is higher. 500 placements is far past what a board
+ * has room for and stays under every turret's ceiling; the clamp to
+ * techCap is what turns it into exactly 1 on the utilities, which are
+ * switches rather than stacks.
+ */
+function grantEveryNode(tech: TechLevels): TechLevels {
+  for (const k of TECH_KINDS) tech[k] = Math.max(tech[k] ?? 0, Math.min(500, techCap(k)));
+  return tech;
+}
+
+/**
  * The currency scale before scrap was dropped off the bottom of it, in the
  * old cheapest-first order. A balance saved under one of these names is
  * worth the same number of the item that took its place — the shift moved
@@ -223,7 +264,11 @@ const techCapOf = (k: TechKind): number => techNode(k).cap ?? Infinity;
 export function loadProgress(): Progress {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return fresh();
+    if (!raw) {
+      const p = fresh();
+      if (devUnlocking()) grantEveryNode(p.tech);
+      return p;
+    }
     const p = JSON.parse(raw) as Partial<Progress> & { tech?: unknown; scrap?: unknown };
     const tech: TechLevels = {};
     if (p.tech && typeof p.tech === "object") {
@@ -246,6 +291,10 @@ export function loadProgress(): Progress {
     tech.home = 1;
     tech.duo = Math.max(tech.duo ?? 0, DUO_START);
     tech.arc = Math.max(tech.arc ?? 0, ARC_START);
+    // the dev switch rides on top of a REAL save the same way it does on a
+    // fresh one, and only ever raises a count — so turning it off later
+    // gives the save back exactly as it was, minus nothing the player bought
+    if (devUnlocking()) grantEveryNode(tech);
     return {
       bank: readBank(p),
       cleared: readCleared(p),

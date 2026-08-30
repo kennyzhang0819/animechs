@@ -84,7 +84,7 @@ const TOWERS = TOWERS_IMPORT;
 const W = W_IMPORT;
 import { UNIT_KINDS, UNIT_STATS, type ForceFieldSpec, type LegSpec } from "./levels";
 import { MAX_LEGS, type Sim } from "./sim";
-import { WALL_PINE, type Terrain } from "./terrain";
+import { showsFloorCell, WALL_DEEP, type Terrain } from "./terrain";
 import { FxKind, type Effect, type RGB, type Tower, type TowerKind } from "./types";
 
 // per-kind turret tops and bullet sprites
@@ -364,13 +364,21 @@ const SHADOW_TY = 13 * MU;
 const SIDE_SWAY = 0.54 * 2.5;
 const FRONT_SWAY = 0.1 * 2.5;
 const LEG_SHADE = 0.14;
-// floor blend priority by group id (grass, stone, dirt, sand, darksand):
-// Blocks.java definition order — stone < sand < darksand < dirt < grass,
-// higher fades over lower
-const GROUP_PRI = [4, 0, 3, 1, 2] as const;
-// overlaying groups in ascending priority. Stone never overlays (lowest),
-// and sand's only inferior — stone floor — shares no map with it yet, so
-// its edge art isn't baked either
+// floor blend priority by group id (grass, stone, dirt, sand, darksand,
+// shallow water, deep water): Blocks.java definition order — water <
+// stone < sand < darksand < dirt < grass, higher fades over lower.
+//
+// THE WATER GROUPS SIT BELOW EVERYTHING, which is what draws a shoreline.
+// Mindustry declares its water floors before any land floor, so land
+// blends over water and never the reverse — the fade you see at a lake's
+// rim is the BEACH reaching into the water. Give water a high priority
+// instead and the lake grows a rim over the sand, which reads as a puddle
+// on top of the ground rather than a hole in it.
+const GROUP_PRI = [4, 0, 3, 1, 2, -1, -2] as const;
+// overlaying groups in ascending priority. Stone never overlays (lowest of
+// the land floors), and sand's only inferior — stone floor — shares no map
+// with it yet, so its edge art isn't baked either. The water groups are
+// never in here: nothing is beneath them to fade over.
 const EDGE_ORDER = [4, 2, 0] as const;
 // wall shadow strength: BlockRenderer.shadowColor is black at 0.71 — the
 // premultiplied blend of a black quad at this alpha equals its multiply
@@ -995,12 +1003,29 @@ export class Renderer {
     // EVERY cell shows its floor — that is what lets the editor paint the
     // ground a hill is standing on
     const showsFloor = (j: number): boolean =>
-      !layers.wall || !T.blocked[j] || T.wall[j] === WALL_PINE;
+      !layers.wall || showsFloorCell(T.blocked[j], T.wall[j]);
+    // A MAP IS DRAWN AT ITS OWN SIZE, not the grid's.
+    //
+    // Every document is lifted onto the full COLS x ROWS grid on load and
+    // the space past its own edge is filled with rock (terrainFromMap), so
+    // a map shorter than the board used to be drawn WITH that filler: a
+    // 182-row map rendered as 182 rows of terrain and ten more of dead
+    // apron, indistinguishable from map. Shortening a map then did nothing
+    // you could see, which is exactly the bug this fixes — the padding is
+    // scaffolding for the arrays, never something to look at.
+    //
+    // Stopping the passes at rows/cols leaves the void beyond the edge,
+    // where the haze already fades the last cells out (see haze.ts). The
+    // editor still PAINTS the whole grid, so extending a map downward keeps
+    // working: a painted cell past the edge stops being padding, and the
+    // editor re-reads the height (see MapEditor.mapRows).
+    const mapRows = Math.max(1, Math.min(ROWS, T.rows));
+    const mapCols = Math.max(1, Math.min(COLS, T.cols));
     // pass 1: floors, with Floor.drawEdges fades — a neighboring floor of
     // higher blend priority overlays its edge sub-cell for that direction.
     // Lower-priority groups overlay first, like the blenders id sort
-    for (let y = 0; y < ROWS; y++) {
-      for (let x = 0; x < COLS; x++) {
+    for (let y = 0; y < mapRows; y++) {
+      for (let x = 0; x < mapCols; x++) {
         const i = y * COLS + x;
         if (!showsFloor(i)) continue;
         const cx = (x + 0.5) * CELL, cy = (y + 0.5) * CELL;
@@ -1010,10 +1035,10 @@ export class Renderer {
           if (GROUP_PRI[og] <= pri) continue;
           for (let dy = -1; dy <= 1; dy++) {
             const ny = y + dy;
-            if (ny < 0 || ny >= ROWS) continue;
+            if (ny < 0 || ny >= mapRows) continue;
             for (let dx = -1; dx <= 1; dx++) {
               const nx = x + dx;
-              if (nx < 0 || nx >= COLS || (dx === 0 && dy === 0)) continue;
+              if (nx < 0 || nx >= mapCols || (dx === 0 && dy === 0)) continue;
               const j = ny * COLS + nx;
               if (!showsFloor(j) || ((T.floor[j] / 3) | 0) !== og) continue;
               this.push(t, cx, cy, CELL, CELL, 0, UV_FLOOR_EDGES[og][1 - dy][1 - dx], 1, 1, 1, 1);
@@ -1033,7 +1058,16 @@ export class Renderer {
     const stamp = (i: number): void => {
       mask[i * 4] = mask[i * 4 + 1] = mask[i * 4 + 2] = mask[i * 4 + 3] = 255;
     };
-    if (layers.wall) for (let i = 0; i < COLS * ROWS; i++) if (T.blocked[i]) stamp(i);
+    // DEEP WATER IS BLOCKED BUT CASTS NOTHING. The shadow is a HILL's rim —
+    // the ground beside something standing above it — and water is a hole,
+    // not a hill. Stamping it would ring every lake with the same dark
+    // fringe a cliff gets, which reads as the water being piled on the map
+    if (layers.wall)
+      for (let y = 0; y < mapRows; y++)
+        for (let x = 0; x < mapCols; x++) {
+          const i = y * COLS + x;
+          if (T.blocked[i] && T.wall[i] !== WALL_DEEP) stamp(i);
+        }
     // buildings on the ground stamp their footprint too, like Mindustry's
     // displayShadow blocks — the core sprite covers the middle, so what
     // shows is the rim hugging its sides. Towers sit on hills (already
@@ -1068,8 +1102,8 @@ export class Renderer {
       h ^= h >>> 16;
       return (h >>> 0) / 4294967296 < 0.5;
     };
-    if (layers.wall) for (let y = 0; y < ROWS; y++) {
-      for (let x = 0; x < COLS; x++) {
+    if (layers.wall) for (let y = 0; y < mapRows; y++) {
+      for (let x = 0; x < mapCols; x++) {
         const i = y * COLS + x;
         if (showsFloor(i)) continue;
         let uvr = UV_WALLS[T.wall[i]];

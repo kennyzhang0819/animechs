@@ -1,4 +1,5 @@
-import { BASE, CELL, clamp, COLS, NCELLS, ROWS } from "./constants";
+import { ALL_MOVE_BITS, BASE, CELL, clamp, COLS, LAYER_BIT, NCELLS, ROWS } from "./constants";
+import { FLOOR_SHALLOW_WATER } from "./atlas";
 import { fitSpawnCircles, rasterizeSpawns, type SpawnCircle } from "./maps";
 
 export interface Prop {
@@ -15,6 +16,65 @@ const quarterTurn = (rng: () => number): number => ((rng() * 4) | 0) * (Math.PI 
 /** wall[] value meaning "grass floor with a pine tree prop on top" */
 export const WALL_PINE = 4;
 
+/**
+ * wall[] value meaning "this blocked cell is DEEP WATER" — the second
+ * sentinel, and the mirror image of the first.
+ *
+ * A blocked cell is normally a hill: units cannot cross it and towers CAN
+ * be built on it (canPlace in sim.ts). The two sentinels are the blocked
+ * cells that are not hills, for opposite reasons — a pine forest is too
+ * dense to stand a turret on, and deep water is too deep. Both keep their
+ * floor showing instead of a wall sprite (see the renderer's showsFloor),
+ * and neither takes a tower.
+ *
+ * SHALLOW WATER HAS NO SENTINEL AND WANTS NONE. It is an ordinary floor
+ * index (FLOOR_SHALLOW_WATER) on an unblocked cell: ground units walk
+ * across it at full speed and the flow field never learns it is there,
+ * which is exactly the "wet ground you can march through" it should read
+ * as. Mindustry slows units in its own shallow water (speedMultiplier
+ * 0.5) and drowns them in deep — we take the drowning and skip the slow,
+ * because a speed penalty is a pathfinding input and shallow water is
+ * meant to cost the swarm nothing.
+ */
+export const WALL_DEEP = 7;
+
+/**
+ * Can a tower stand on this blocked cell? Every rock family can; the two
+ * sentinels cannot. Read this rather than testing WALL_PINE by hand — that
+ * test was the whole rule when pines were the only exception, and a second
+ * exception is exactly the kind of thing a scattered comparison misses.
+ */
+export const isBuildableWall = (wall: number): boolean =>
+  wall !== WALL_PINE && wall !== WALL_DEEP;
+
+/** does this cell show its floor rather than a wall sprite? true for open
+ *  ground and for both sentinels — a pine's prop and the water's surface
+ *  are drawn over the floor, never instead of it */
+export const showsFloorCell = (blocked: number, wall: number): boolean =>
+  !blocked || wall === WALL_PINE || wall === WALL_DEEP;
+
+/**
+ * Is this floor index water of either depth? The two water groups are the
+ * top of the floor table (FLOOR_SHALLOW_WATER onward in atlas.ts), so the
+ * test is a single comparison — and it is the whole definition of where a
+ * naval hull may go, the way `blocked` is the whole definition of where a
+ * walker may not.
+ */
+export const isWaterFloor = (floor: number): boolean => floor >= FLOOR_SHALLOW_WATER;
+
+/**
+ * The passability mask for the WATER layer: 1 where a hull cannot go, which
+ * is every cell that is not water. It is the mirror of `blocked` — dry land
+ * is a wall to a boat exactly as deep water is a wall to a walker — and it
+ * is built here so the flow field can stay a general "field over a mask"
+ * rather than learning what water is.
+ */
+export function waterWalkMask(t: Terrain): Uint8Array {
+  const m = new Uint8Array(t.floor.length);
+  for (let i = 0; i < m.length; i++) m[i] = isWaterFloor(t.floor[i]) ? 0 : 1;
+  return m;
+}
+
 export interface Terrain {
   blocked: Uint8Array; // mountains, forests, rocks — everything units can't cross
   floor: Uint8Array; // UV_FLOORS index per cell (pine cells: the grass underneath)
@@ -25,20 +85,36 @@ export interface Terrain {
    * a circle or paints over one must re-derive the layer, never patch it
    */
   spawns: SpawnCircle[];
-  // enemy spawn pads by region: 0 = none, N >= 1 = a pad in spawn region N.
-  // Every enemy enters the field on one of these cells; wave groups that
-  // name a region use only that region's pads. A data layer — nothing
-  // paints these cells; the editor shows each zone as its circle overlay
+  /**
+   * Where the swarm ENTERS, as a per-cell LAYER MASK of the same LAYER_BIT
+   * bits the goal layer uses, plus LAYER_BIT.boss for the boss door. Zero
+   * is "no zone covers this cell".
+   *
+   * A data layer — nothing paints these cells; the editor shows each zone
+   * as its circle overlay, and this is burned from `spawns` by
+   * rasterizeSpawns. A mask rather than an id because zones of different
+   * layers may overlap, and a byte holding one id could only remember
+   * whichever circle was painted last.
+   */
   spawn: Uint8Array;
   /**
-   * WHERE THE SWARM IS TRYING TO GET TO: 1 on every cell that counts as an
-   * exit. The flow field seeds its Dijkstra from all of them at once, so a
-   * unit heads for the NEAREST goal and the map partitions itself into
-   * watersheds — which is what lets a crowd spread like water instead of
-   * funnelling onto one point.
+   * WHERE THE SWARM IS TRYING TO GET TO, as a per-cell LAYER MASK: the
+   * LAYER_BIT bits (ground 1, air 2, water 4) of the movement layers that
+   * count this cell as an exit. Zero means the cell is not an exit at all.
    *
-   * Empty on a map authored before goals existed; the field then falls back
-   * to the core block, which is exactly what such a map means.
+   * EACH LAYER PATHS TO ITS OWN EXITS AND ONLY ITS OWN. The ground field
+   * seeds its Dijkstra from the ground-bit cells, the water field from the
+   * water-bit cells, and flyers pick the nearest air-bit cell — so a map
+   * can land its air waves on the far side of a ridge its walkers have to
+   * go round, which is the whole reason this stopped being one shared 0/1
+   * layer. A layer with no exits anywhere falls back to the union of every
+   * exit, and a map with none at all falls back to its core (see
+   * Sim.exitsFor), so nothing is ever left without a destination.
+   *
+   * Empty on a map authored before exits existed; documents written before
+   * the layer split carry a plain 0/1 `goal` array, which terrainFromMap
+   * reads as ALL_MOVE_BITS — every layer, which is exactly what one
+   * undifferentiated exit meant.
    */
   goal: Uint8Array;
   pines: Prop[]; // blocking tree cells, drawn as overhanging props
@@ -341,7 +417,7 @@ export function generateTerrain(seed: number): Terrain {
       if (!blocked[i]) strip[i] = 1;
     }
   const spawns = fitSpawnCircles(strip);
-  const spawn = rasterizeSpawns(spawns, blocked);
+  const spawn = rasterizeSpawns(spawns, { blocked, floor });
 
   return {
     blocked, floor, wall, spawns, spawn, pines, decor, valleyY,

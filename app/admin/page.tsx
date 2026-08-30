@@ -8,7 +8,15 @@ import { loadBalanceDoc } from "@/game/balance";
 import { ADMIN_ENABLED } from "@/game/env";
 import LevelEditorView from "@/components/LevelEditorView";
 import MapEditorView from "@/components/MapEditorView";
-import { loadLevelDocs, WORLDS, waveGroups, type LevelSpec } from "@/game/levels";
+import {
+  loadLevelDocs,
+  UNIT_KINDS,
+  UNIT_STATS,
+  WORLDS,
+  waveGroups,
+  type LevelSpec,
+} from "@/game/levels";
+import { MOVE_LAYERS, type MoveLayer } from "@/game/constants";
 import { drawThumb, loadOfficialMaps, OFFICIAL_MAP_IDS, type MapData } from "@/game/maps";
 
 function Thumb({ map }: { map: MapData }) {
@@ -37,14 +45,22 @@ function LevelCard({
 }) {
   let waves = 0;
   let enemies = 0;
-  const regions = new Set<number>();
+  // WHICH MOVEMENT LAYERS THIS SCRIPT SENDS — what the card reports now
+  // that no wave names a spawn region. The old line listed the region ids a
+  // script pinned its groups to; a unit's layer picks its door on its own,
+  // so what is worth knowing at a glance is which kinds of door the level
+  // is going to need the map to have.
+  const layers = new Set<MoveLayer>();
   for (const step of level.script) {
     if (!("wave" in step)) continue;
     let n = 0;
-    for (const g of waveGroups(step.wave)) {
-      for (const c of g.counts) n += c;
-      if (g.region > 0) regions.add(g.region);
-    }
+    for (const g of waveGroups(step.wave))
+      g.counts.forEach((c, i) => {
+        if (c <= 0) return;
+        n += c;
+        const s = UNIT_STATS[UNIT_KINDS[i]];
+        layers.add(s.flying ? "air" : s.naval ? "water" : "ground");
+      });
     if (n === 0) continue;
     waves++;
     enemies += n;
@@ -65,9 +81,9 @@ function LevelCard({
         {waves} waves · {enemies} enemies · {level.waveGap}s gap
       </div>
       <div className="mt-1 text-[13px] text-[#71717C]">
-        {regions.size > 0
-          ? `regions ${[...regions].sort((a, b) => a - b).join(", ")}`
-          : "any pad"}
+        {layers.size > 0
+          ? [...MOVE_LAYERS].filter((l) => layers.has(l)).join(" · ")
+          : "no units"}
       </div>
     </button>
   );

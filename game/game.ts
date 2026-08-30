@@ -4,14 +4,15 @@ import {
   OFFICIAL_MAP_IDS,
   OFFICIAL_MAPS,
   refreshMap,
-  spawnRegionStyle,
+  zoneStyle,
 } from "./maps";
 import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
 import { loadBalanceDoc } from "./balance";
 import { loadLevelDocs, UNIT_KINDS, type LevelSpec, type TowerKind, type UnitKind } from "./levels";
 import type { Cost } from "./items";
 import { dropsForKills, type TowerPlacement } from "./progress";
-import { Renderer, VOID_RGB } from "./renderer";
+import { Renderer } from "./renderer";
+import { drawHaze, fitZoom } from "./haze";
 import { Sim } from "./sim";
 import type { TechState } from "./tech";
 import type { Tower } from "./types";
@@ -154,47 +155,9 @@ function paint(): Promise<void> {
 // void beyond it reads as deliberate rather than as a missing chunk of
 // map. drawHaze is that, and it is what pays for this floor.
 //
-// The floor as a fraction of the FIT zoom — the zoom at which the map's
-// long axis exactly spans the viewport. At 0.88 the map fills 88% of the
-// tight axis and the rest is margin: enough to read the map as a shape
-// with edges, not so much that it swims in black.
-const ZOOM_FIT_PAD = 0.88;
-// How deep the haze lies over the map's rim, in CELLS — Mindustry's
-// borderDarkness blends over 2 tiles, and this is the same idea with room
-// for a softer falloff.
-//
-// Cells, and only cells. A depth that also had a floor in screen terms
-// looked better at the zoom floor and was wrong the moment anyone touched
-// the wheel: a band whose world extent depends on the zoom SLIDES across
-// the terrain as you zoom, and the eye reads that as the map's edge moving.
-// Anchored to the world it is simply part of the map, and the price — a
-// tighter fade when the whole map is on screen — is the honest one.
-// Eight cells is deeper than it sounds: the curve below spends most of its
-// density in the first third, so what actually READS as dark is two or
-// three cells — Mindustry's two tiles — and the rest is a tail thin enough
-// to have no visible end.
-const HAZE_CELLS = 8;
-/**
- * The haze's density from its outer face inward, as gradient stops.
- *
- * Solid where it meets the void — that stop is what makes the map's edge
- * stop existing — then a curve that gives up most of its weight early and
- * trails the rest out over a long tail. The tail is the whole trick: it is
- * what stops there being a depth where the haze visibly ENDS. A ramp that
- * runs out of density anywhere the eye can find draws a line there, which
- * is exactly the border a fade is meant to be hiding.
- */
-const HAZE_STOPS: readonly (readonly [number, number])[] = [
-  [0, 1],
-  [0.08, 0.84],
-  [0.18, 0.63],
-  [0.3, 0.45],
-  [0.45, 0.29],
-  [0.6, 0.17],
-  [0.75, 0.08],
-  [0.88, 0.025],
-  [1, 0],
-];
+// The floor itself, the haze depth and the haze curve live in haze.ts:
+// the map editor pulls back to the same floor over the same fade, and
+// numbers that have to agree between two cameras belong in one file.
 // A FINGERTIP COVERS FAR MORE MAP THAN A CURSOR DOES, so the ceiling has to
 // leave enough room to aim at a single cell on a phone-sized viewport.
 //
@@ -1005,9 +968,13 @@ export class Game {
    * resize() sort it out once there is a layout.
    */
   private minZoom(): number {
-    const w = this.uiCanvas.width, h = this.uiCanvas.height;
-    if (w <= 0 || h <= 0 || this.scale <= 0) return 1;
-    return Math.min(w / this.worldW, h / this.worldH) / this.scale * ZOOM_FIT_PAD;
+    return fitZoom(
+      this.uiCanvas.width,
+      this.uiCanvas.height,
+      this.worldW,
+      this.worldH,
+      this.scale,
+    );
   }
 
   /** re-read the loaded map's height and refit the camera to it */
@@ -1139,23 +1106,7 @@ export class Game {
    * remove. A plain gradient with a long enough tail has no such place.
    */
   private drawHaze(c: CanvasRenderingContext2D): void {
-    const d = HAZE_CELLS * CELL;
-    const w = this.worldW, h = this.worldH;
-    // x0,y0 is ON the edge, where the haze is solid; x1,y1 is where it has
-    // given up the last of its density over the terrain
-    const band = (x0: number, y0: number, x1: number, y1: number): CanvasGradient => {
-      const grad = c.createLinearGradient(x0, y0, x1, y1);
-      for (const [t, a] of HAZE_STOPS) grad.addColorStop(t, `rgba(${VOID_RGB},${a})`);
-      return grad;
-    };
-    c.fillStyle = band(0, 0, d, 0);
-    c.fillRect(0, 0, d, h);
-    c.fillStyle = band(w, 0, w - d, 0);
-    c.fillRect(w - d, 0, d, h);
-    c.fillStyle = band(0, 0, 0, d);
-    c.fillRect(0, 0, w, d);
-    c.fillStyle = band(0, h, 0, h - d);
-    c.fillRect(0, h - d, w, d);
+    drawHaze(c, this.worldW, this.worldH);
   }
 
   private drawOverlay(): void {
@@ -1175,7 +1126,7 @@ export class Game {
     // ordinary floor a player may want to look at and build near
     if (this.showRoutes) {
       for (const r of this.sim.airRoutes()) {
-        const col = spawnRegionStyle(r.region).css;
+        const col = zoneStyle(r.zone).css;
         c.strokeStyle = col;
         c.globalAlpha = 0.5;
         c.lineWidth = 2;
@@ -1198,7 +1149,7 @@ export class Game {
         c.fill();
       }
       for (const z of this.sim.terrain.spawns) {
-        c.strokeStyle = spawnRegionStyle(z.region).css;
+        c.strokeStyle = zoneStyle(z.zone).css;
         c.globalAlpha = 0.9;
         c.lineWidth = 2;
         c.beginPath();

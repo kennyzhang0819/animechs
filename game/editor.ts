@@ -1,9 +1,24 @@
-import { buildAtlas } from "./atlas";
-import { CELL, clamp, COLS, CORE_SIZE, H, ROWS, W } from "./constants";
+import { buildAtlas, FLOOR_SHALLOW_WATER } from "./atlas";
+import { drawHaze, fitZoom } from "./haze";
 import {
+  CELL,
+  clamp,
+  COLS,
+  CORE_SIZE,
+  H,
+  LAYER_BIT,
+  MOVE_LAYERS,
+  ROWS,
+  W,
+  ZONE_KINDS,
+  type MoveLayer,
+  type ZoneKind,
+} from "./constants";
+import {
+  contentRows,
   PALETTE,
   rasterizeSpawns,
-  spawnRegionStyle,
+  zoneStyle,
   SPAWN_RADIUS_DEFAULT,
   terrainFromMap,
   mapFromTerrain,
@@ -12,9 +27,15 @@ import {
   type SpawnCircle,
 } from "./maps";
 import { ALL_LAYERS, Renderer, type TerrainLayers } from "./renderer";
-import { WALL_PINE, type Prop, type Terrain } from "./terrain";
+import { WALL_DEEP, WALL_PINE, type Prop, type Terrain } from "./terrain";
 
-const ZOOM_MIN = 1;
+// THE ZOOM FLOOR IS NO LONGER COVER. It used to be 1 — "the world fills
+// the viewport" — which meant the one view an author needs most, the whole
+// map at once, was the one the editor refused to give: on a 256x192 board
+// cover crops the long axis and you draw a shoreline you cannot see the
+// shape of. The floor is now the game's own (fitZoom in haze.ts): pull back
+// until the map fits inside a margin of void, over the same rim haze the
+// game fades its edges with. Nothing is cropped and nothing floats.
 const ZOOM_MAX = 6;
 const UNDO_CAP = 40;
 const PAN_KEYS: Record<string, readonly [number, number]> = {
@@ -109,13 +130,55 @@ export class MapEditor {
   layers: TerrainLayers = { ...ALL_LAYERS };
   dirty = false;
 
+  /**
+   * THE MAP'S HEIGHT IN ROWS — explicit, authored, and the single thing
+   * that decides where this map ends.
+   *
+   * It used to be implied, and that is why the boundary was so slippery: a
+   * document's height was its array length, terrainFromMap padded that back
+   * up to the full grid on load, mapFromTerrain re-derived it on save by
+   * trimming rows that happened to look like padding, and the editor
+   * painted the whole grid regardless. Four different answers to "how tall
+   * is this map", none of them authoritative, and the only way to change it
+   * was to paint rock in the right shape and hope the save agreed with you.
+   *
+   * Now it is a number you set. Everything reads it: what gets drawn, where
+   * the haze falls, what the camera may reach, which cells a brush may
+   * touch, and what the save writes. Shrinking it does not destroy the rows
+   * below — they stay in the arrays, unreachable and undrawn — so growing
+   * the number back brings them straight back, until a save trims them for
+   * good.
+   */
+  rows: number;
+
+  /** the least a map may be cut to: below this there is no room to author */
+  static readonly MIN_ROWS = 16;
+
+  /** set the map's height; everything else follows on the next frame */
+  setRows(n: number): void {
+    const next = Math.max(MapEditor.MIN_ROWS, Math.min(ROWS, Math.floor(n)));
+    if (next === this.rows) return;
+    this.snapshot();
+    this.rows = next;
+    this.terrain.rows = next;
+    // the drop zones' cells are burned from the circles against the terrain,
+    // and a zone hanging off the new edge covers fewer of them
+    this.resyncSpawn();
+    this.renderer.rebuildTerrain(this, this.layers);
+    this.clampCamera();
+    this.dirty = true;
+  }
+
+
   private readonly undoStack: Snapshot[] = [];
 
-  // camera — identical model to Game: cover-scale, zoom in [1,6]
+  // camera — identical model to Game: cover-scale, and a zoom that runs
+  // from the whole-board fit (minZoom) up to ZOOM_MAX
   private scale = 1;
   private zoom = 1;
   private tlx = 0;
   private tly = 0;
+  private camPlaced = false;
   private panning = false;
   private painting = false;
   /**
@@ -153,6 +216,7 @@ export class MapEditor {
     atlas: HTMLCanvasElement,
   ) {
     this.terrain = terrainFromMap(map);
+    this.rows = this.terrain.rows;
     this.renderer = new Renderer(glCanvas, atlas);
     const ctx = uiCanvas.getContext("2d");
     if (!ctx) throw new Error("2d context unavailable");
@@ -206,7 +270,7 @@ export class MapEditor {
 
   /** current document, for saving */
   data(): MapData {
-    return mapFromTerrain(this.terrain, this.map.id, this.map.name);
+    return mapFromTerrain(this.terrain, this.map.id, this.map.name, this.rows);
   }
 
   undo(): void {
@@ -256,7 +320,7 @@ export class MapEditor {
   }
 
   private paintCell(gx: number, gy: number): void {
-    if (gx < 0 || gy < 0 || gx >= COLS || gy >= ROWS) return;
+    if (gx < 0 || gy < 0 || gx >= this.terrain.cols || gy >= this.rows) return;
     const T = this.terrain;
     const i = gy * COLS + gx;
     const set = this.set;
@@ -280,6 +344,17 @@ export class MapEditor {
       T.blocked[i] = 1;
       T.wall[i] = pick;
       if (L.props) this.removePropsAt(gx, gy);
+    } else if (set.kind === "deep") {
+      // deep water writes BOTH layers: the floor is the water surface the
+      // renderer shows, and the sentinel is what blocks the swarm and
+      // refuses a tower. Guarded by the wall layer like every other
+      // blocking brush, so hiding the hills shields the water too
+      T.floor[i] = pick;
+      if (L.wall) {
+        T.blocked[i] = 1;
+        T.wall[i] = WALL_DEEP;
+      }
+      if (L.props) this.removePropsAt(gx, gy);
     } else if (set.kind === "pine") {
       T.blocked[i] = 1;
       T.wall[i] = WALL_PINE;
@@ -300,14 +375,38 @@ export class MapEditor {
       // goal cells that are walkable, so marking a hillside costs nothing
       // and carving it open later turns those cells live — same rule the
       // drop zones follow
-      T.goal[i] = 1;
+      // exits are per layer and additive: painting the air exits over a
+      // ground exit leaves a cell both layers aim at, and the eraser below
+      // takes back only the layer in hand
+      T.goal[i] |= LAYER_BIT[this.exitLayer()];
     } else {
       // erase: strip the VISIBLE layers, keep the floor. Hiding a layer
       // therefore also shields it from the eraser
       if (L.wall) {
+        // DEEP WATER DRAINS TO SHALLOW RATHER THAN TO NOTHING. Every other
+        // blocked cell has a floor underneath it that erasing reveals; deep
+        // water's floor IS the water, so clearing only the block would
+        // leave an unblocked cell still wearing the deep surface — water
+        // the swarm walks across, which is a tile the game has no meaning
+        // for. Shallow is that cell's honest answer: the same water,
+        // no longer deep. Paint any land floor over it for dry ground.
+        if (T.blocked[i] && T.wall[i] === WALL_DEEP) T.floor[i] = FLOOR_SHALLOW_WATER;
         T.blocked[i] = 0;
         T.wall[i] = 0;
       }
+      // THE ERASER CLEARS EVERY EXIT LAYER ON THE CELL, not the one the
+      // palette happens to be pointing at.
+      //
+      // It used to lift a single layer — `& ~LAYER_BIT[exitLayer()]` — and
+      // that was unusable: picking the Erase tool IS picking a palette
+      // entry, and doing so resets the shared variant index to 0, so the
+      // "layer in hand" was always ground by the time the eraser ran. Air
+      // and water exits could be painted and never removed.
+      //
+      // Clearing all of them is also what the eraser does everywhere else:
+      // it strips the visible layers wholesale rather than one wall family
+      // or one prop kind. To take a single layer back off a cell, erase it
+      // and repaint the layers that should stay.
       if (L.goal) T.goal[i] = 0;
       if (L.props) this.removePropsAt(gx, gy);
     }
@@ -323,7 +422,7 @@ export class MapEditor {
   private resyncSpawn(): void {
     // written INTO the existing array, not swapped for a new one: the flow
     // field keeps the spawn mask by reference
-    this.terrain.spawn.set(rasterizeSpawns(this.terrain.spawns, this.terrain.blocked));
+    this.terrain.spawn.set(rasterizeSpawns(this.terrain.spawns, this.terrain));
   }
 
   /**
@@ -352,7 +451,7 @@ export class MapEditor {
   private spawnAt(gx: number, gy: number): void {
     if (!this.layers.spawn) return; // hidden means out of reach, like every layer
     const T = this.terrain;
-    const region = this.spawnRegion();
+    const zone = this.spawnZone();
     const x = gx + 0.5, y = gy + 0.5;
 
     // already dragging one: it follows the cursor and nothing else happens
@@ -363,35 +462,47 @@ export class MapEditor {
       return;
     }
 
-    // the region itself, wherever it currently sits — not "a circle under
-    // the cursor", which is what made a second one appear
-    const hit = T.spawns.findIndex((c) => c.region === region);
+    // the zone of this KIND, wherever it currently sits — not "a circle
+    // under the cursor", which is what made a second one appear.
+    //
+    // ONE ZONE PER KIND IS NOT THE RULE ANY MORE, though: a map may carry
+    // three ground zones and two air ones. What is still true is that a
+    // click on empty ground with a kind already placed should MOVE the
+    // nearest one of that kind rather than stack another on top, so the
+    // grab looks for the nearest same-kind circle within reach and only
+    // drops a fresh one when the click lands well clear of them all.
+    let hit = -1;
+    let bestD = Infinity;
+    T.spawns.forEach((c, i) => {
+      if (c.zone !== zone) return;
+      const d = Math.hypot(c.x - x, c.y - y);
+      if (d <= c.r && d < bestD) {
+        bestD = d;
+        hit = i;
+      }
+    });
     if (hit >= 0) {
-      const zone = T.spawns[hit];
-      const pickedUp = Math.hypot(zone.x - x, zone.y - y) <= zone.r;
+      const z = T.spawns[hit];
       this.grabbedSpawn = hit;
-      T.spawns[hit] = { ...zone, x, y, r: pickedUp ? zone.r : this.spawnRadius };
+      T.spawns[hit] = { ...z, x, y };
     } else {
       // fresh ground: place one at the current radius and grab it, so the
       // same press-and-drag puts it exactly where it is wanted
       this.grabbedSpawn = T.spawns.length;
-      T.spawns.push({ x, y, r: this.spawnRadius, region });
+      T.spawns.push({ x, y, r: this.spawnRadius, zone });
     }
     this.resyncSpawn();
     this.dirty = true;
   }
 
-  /**
-   * The region the drop-zone tool is currently painting: the picker's slot
-   * index plus one, NOT `set.variants[variant]`.
-   *
-   * The palette entry lists four variants because four swatches is where the
-   * picker starts, and the picker grows one at a time with no ceiling — so
-   * the index routinely runs past the end of that array. Indexing it would
-   * have every region past the fourth quietly land back on region 1.
-   */
-  private spawnRegion(): number {
-    return this.variant + 1;
+  /** the zone kind the drop-zone tool is painting — the picker's slot */
+  private spawnZone(): ZoneKind {
+    return ZONE_KINDS[Math.min(this.variant, ZONE_KINDS.length - 1)];
+  }
+
+  /** the movement layer the exit tool is painting */
+  private exitLayer(): MoveLayer {
+    return MOVE_LAYERS[Math.min(this.variant, MOVE_LAYERS.length - 1)];
   }
 
   /** eraser over a drop zone: drop every circle covering this cell */
@@ -555,7 +666,11 @@ export class MapEditor {
       (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 40);
     if (pinch || notchy) {
       const before = this.mouseWorld(e);
-      this.zoom = clamp(this.zoom * Math.exp(-dy * (pinch ? 0.012 : 0.0015)), ZOOM_MIN, ZOOM_MAX);
+      this.zoom = clamp(
+        this.zoom * Math.exp(-dy * (pinch ? 0.012 : 0.0015)),
+        this.minZoom(),
+        ZOOM_MAX,
+      );
       this.tlx = before.x - ((e.clientX - r.left) / r.width) * this.visW();
       this.tly = before.y - ((e.clientY - r.top) / r.height) * this.visH();
     } else {
@@ -596,11 +711,16 @@ export class MapEditor {
       this.clampCamera();
     }
     const p = this.mouseWorld(e);
-    const gx = clamp((p.x / CELL) | 0, 0, COLS - 1);
-    const gy = clamp((p.y / CELL) | 0, 0, ROWS - 1);
-    if (this.painting && !this.panning) this.paintStroke(gx, gy);
-    this.hoverGx = gx;
-    this.hoverGy = gy;
+    // OFF THE MAP IS OFF THE MAP: past the edge there is no cell to hover
+    // and nothing to paint, so the cursor reports nothing rather than
+    // hovering the void. The map's height is a number now (see `rows`), so
+    // this is a real boundary rather than the grid's
+    const gx = (p.x / CELL) | 0;
+    const gy = (p.y / CELL) | 0;
+    const inside = gx >= 0 && gy >= 0 && gx < this.terrain.cols && gy < this.rows;
+    if (this.painting && !this.panning && inside) this.paintStroke(gx, gy);
+    this.hoverGx = inside ? gx : -1;
+    this.hoverGy = inside ? gy : -1;
   };
 
   private readonly onLeave = (): void => {
@@ -633,8 +753,55 @@ export class MapEditor {
     // NaN camera renders the map nowhere (see Game.clampCamera)
     if (!Number.isFinite(this.tlx)) this.tlx = 0;
     if (!Number.isFinite(this.tly)) this.tly = 0;
-    this.tlx = clamp(this.tlx, 0, W - this.visW());
-    this.tly = clamp(this.tly, 0, H - this.visH());
+    // THE CENTRE OF THE SCREEN STAYS OVER THE MAP — the game's own rule,
+    // and the reason the camera may sit in the void at all. Pinning the
+    // camera inside the terrain (what this used to do) has no range left to
+    // give the moment the whole map is on screen, so it would have fought
+    // the new zoom floor for every pixel of the margin.
+    const halfW = this.visW() / 2, halfH = this.visH() / 2;
+    this.tlx = clamp(this.tlx, -halfW, this.mapW() - halfW);
+    this.tly = clamp(this.tly, -halfH, this.mapH() - halfH);
+  }
+
+
+  /**
+   * THE MAP'S OWN SIZE, in world px — what the camera bounds itself by and
+   * where the haze lays the edge, exactly as the game does it.
+   *
+   * It is the map's height rather than the grid's because a document
+   * shorter than the board is padded with rock on load, and bounding the
+   * editor by the GRID drew that padding as if it were map: shortening a
+   * map by ten rows then changed nothing you could see. Read live from the
+   * terrain so that painting past the edge grows the board back — the
+   * height is re-derived after every stroke (see refreshBounds).
+   */
+  private mapW(): number {
+    return Math.max(1, Math.min(COLS, this.terrain.cols)) * CELL;
+  }
+
+  private mapH(): number {
+    return this.rows * CELL;
+  }
+
+  /**
+   * Re-derive the map's height from what is actually painted, the same way
+   * a save does (mapFromTerrain trims trailing padding). Painting into the
+   * apron below the edge makes those rows real and the board grows to meet
+   * them; erasing the bottom back to bare padding shrinks it again. Called
+   * after every stroke, and cheap: it walks up from the last row and stops
+   * at the first row holding anything.
+   */
+  private refreshBounds(): void {
+    const rows = contentRows(this.terrain);
+    if (rows === this.terrain.rows) return;
+    this.terrain.rows = rows;
+    this.renderer.rebuildTerrain(this, this.layers);
+    this.clampCamera();
+  }
+
+  /** the zoom at which the whole map fits, with the void margin */
+  private minZoom(): number {
+    return fitZoom(this.uiCanvas.width, this.uiCanvas.height, this.mapW(), this.mapH(), this.scale);
   }
 
   private resize(): void {
@@ -650,6 +817,24 @@ export class MapEditor {
       this.uiCanvas.height = bh;
     }
     this.scale = Math.max(bw / W, bh / H);
+    this.zoom = clamp(this.zoom, this.minZoom(), ZOOM_MAX);
+    // OPEN ON THE WHOLE MAP, ONCE. The editor used to open at cover — the
+    // world filling the viewport, cropped — which is the one view that
+    // cannot show you the shape you are about to edit, and it hid the map's
+    // own edges completely. It now opens at the zoom that fits the map with
+    // the void margin around it, centred, so the board's real size is the
+    // first thing on screen. Only on the first real layout: a later resize
+    // (or a window drag) must not yank a camera the author has moved.
+    // ...and only once the canvas has a REAL laid-out size. resize() falls
+    // back to the world's own dimensions when clientWidth is still 0, which
+    // is a placeholder rather than a viewport — placing the camera against
+    // it burns the one placement on a size the screen never had
+    if (!this.camPlaced && this.glCanvas.clientWidth > 0 && this.glCanvas.clientHeight > 0) {
+      this.camPlaced = true;
+      this.zoom = this.minZoom();
+      this.tlx = (this.mapW() - this.visW()) / 2;
+      this.tly = (this.mapH() - this.visH()) / 2;
+    }
     this.clampCamera();
   }
 
@@ -687,37 +872,55 @@ export class MapEditor {
     const s = this.scale * this.zoom;
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
 
-    // The exit cells, drawn as one filled region rather than cell by cell:
-    // a goal band is hundreds of cells and stroking each would bury the
-    // terrain under a grid. Only the OUTER edges get a line, by drawing a
-    // border on each side that has no goal beside it.
+    // the map's rim, faded into the void exactly as the game fades it —
+    // drawn FIRST so exits, zones and the brush cursor stay readable over
+    // ground that is on its way out
+    drawHaze(c, this.mapW(), this.mapH());
+
+    // THE EXITS, one pass per movement layer, each in that layer's own
+    // colour — the same green/amber/blue the drop zones use, so a door and
+    // the exit it feeds read as the same thing at both ends of the map.
+    //
+    // Drawn as filled regions rather than cell by cell: an exit band is
+    // hundreds of cells and stroking each would bury the terrain under a
+    // grid. Only the OUTER edges get a line, by drawing a border on each
+    // side whose neighbour is not also an exit of that layer.
+    //
+    // Layers stack where they overlap, which is the point: a cell every
+    // layer aims at shows all three fills blended, and one painted for the
+    // flyers alone stays plainly amber next to it.
     if (this.layers.goal) {
       const G = this.terrain.goal;
-      c.fillStyle = "rgba(120,225,160,0.22)";
-      c.strokeStyle = "rgba(120,225,160,0.95)";
+      const rows = this.rows, cols = this.terrain.cols;
       c.lineWidth = 2 / s;
-      c.beginPath();
-      for (let y = 0; y < ROWS; y++)
-        for (let x = 0; x < COLS; x++) {
-          if (!G[y * COLS + x]) continue;
-          const px = x * CELL, py = y * CELL;
-          c.rect(px, py, CELL, CELL);
-        }
-      c.fill();
-      // the rim: a cell edge is an outline only where the neighbour is not
-      // also a goal, so the band reads as one shape with a clean border
-      c.beginPath();
-      for (let y = 0; y < ROWS; y++)
-        for (let x = 0; x < COLS; x++) {
-          const i = y * COLS + x;
-          if (!G[i]) continue;
-          const px = x * CELL, py = y * CELL;
-          if (y === 0 || !G[i - COLS]) { c.moveTo(px, py); c.lineTo(px + CELL, py); }
-          if (y === ROWS - 1 || !G[i + COLS]) { c.moveTo(px, py + CELL); c.lineTo(px + CELL, py + CELL); }
-          if (x === 0 || !G[i - 1]) { c.moveTo(px, py); c.lineTo(px, py + CELL); }
-          if (x === COLS - 1 || !G[i + 1]) { c.moveTo(px + CELL, py); c.lineTo(px + CELL, py + CELL); }
-        }
-      c.stroke();
+      for (const layer of MOVE_LAYERS) {
+        const bit = LAYER_BIT[layer];
+        const col = zoneStyle(layer).css;
+        let any = false;
+        c.beginPath();
+        for (let y = 0; y < rows; y++)
+          for (let x = 0; x < cols; x++) {
+            if (!(G[y * COLS + x] & bit)) continue;
+            any = true;
+            c.rect(x * CELL, y * CELL, CELL, CELL);
+          }
+        if (!any) continue;
+        c.fillStyle = col + "33";
+        c.fill();
+        c.beginPath();
+        for (let y = 0; y < rows; y++)
+          for (let x = 0; x < cols; x++) {
+            const i = y * COLS + x;
+            if (!(G[i] & bit)) continue;
+            const px = x * CELL, py = y * CELL;
+            if (y === 0 || !(G[i - COLS] & bit)) { c.moveTo(px, py); c.lineTo(px + CELL, py); }
+            if (y === rows - 1 || !(G[i + COLS] & bit)) { c.moveTo(px, py + CELL); c.lineTo(px + CELL, py + CELL); }
+            if (x === 0 || !(G[i - 1] & bit)) { c.moveTo(px, py); c.lineTo(px, py + CELL); }
+            if (x === cols - 1 || !(G[i + 1] & bit)) { c.moveTo(px + CELL, py); c.lineTo(px + CELL, py + CELL); }
+          }
+        c.strokeStyle = col;
+        c.stroke();
+      }
     }
 
     // Every placed drop zone. This ring is the ONLY thing marking a zone —
@@ -727,7 +930,7 @@ export class MapEditor {
     if (this.layers.spawn) {
       c.lineWidth = 2 / s;
       for (const z of this.terrain.spawns) {
-        c.strokeStyle = spawnRegionStyle(z.region).css;
+        c.strokeStyle = zoneStyle(z.zone).css;
         c.beginPath();
         c.arc(z.x * CELL, z.y * CELL, z.r * CELL, 0, Math.PI * 2);
         c.stroke();
@@ -752,8 +955,7 @@ export class MapEditor {
       return;
     }
     if (this.set.kind === "spawn") {
-      const region = this.spawnRegion();
-      const col = spawnRegionStyle(region).css;
+      const col = zoneStyle(this.spawnZone()).css;
       c.beginPath();
       c.arc((this.hoverGx + 0.5) * CELL, (this.hoverGy + 0.5) * CELL, this.spawnRadius * CELL, 0, Math.PI * 2);
       c.fillStyle = col + "22";

@@ -1239,20 +1239,58 @@ export const SPAWN_INVINCIBLE = 60 / TICK;
 export const SPAWN_UNMOVING = 30 / TICK;
 
 /**
- * THE BOSS SPAWN ZONE'S REGION ID — the top of the Uint8 range the spawn
- * layer stores region ids in, reserved so it can never collide with a
- * painted wave region (the editor caps those at MAX_SPAWN_REGIONS, one
- * below). A map paints at most one zone with this id, and every unit whose
- * kind carries the `boss` flag enters from it regardless of what region its
- * wave group named; a map without one lets bosses use their group's pads
- * like anything else. Its pads are kept OUT of the generic any-pad lists
- * (see Flowfield.compute), so the ordinary swarm never pours out of the
- * boss's door.
+ * THE MOVEMENT LAYERS, and the axis the whole spawn/exit model turns on.
  *
- * It lives here rather than maps.ts because the flowfield needs it and
- * imports nothing above constants; maps.ts re-exports it for the editors.
+ * A unit belongs to exactly one of these for its whole life, decided by its
+ * kind: a flyer is air, a naval hull is water, everything else walks. The
+ * layer picks which flow field it steers by, which drop zones it may enter
+ * from, and which exits it is trying to reach — three questions that used
+ * to share one answer plus a hand-authored region id on top.
+ *
+ * REGIONS ARE GONE AND THIS REPLACED THEM. A drop zone used to carry a
+ * NUMBER, and a wave group had to name the same number to use it — two
+ * places to keep in step, in two different editors, with nothing checking
+ * that they agreed. What every one of those numbers was actually FOR was
+ * "the flyers come in over there, the walkers up this lane", which is a
+ * fact about the units rather than a label a script should have to repeat.
+ * So the zone carries the layer, and each unit finds its own door.
  */
-export const BOSS_SPAWN_REGION = 255;
+export const MOVE_LAYERS = ["ground", "air", "water"] as const;
+export type MoveLayer = (typeof MOVE_LAYERS)[number];
+
+/**
+ * What a drop zone feeds: one of the movement layers, or the BOSS door.
+ *
+ * Boss is not a movement layer — a boss still walks or flies like anything
+ * else — it is a zone only boss-flagged kinds may use, and which the
+ * ordinary swarm is kept out of. It outlived the region ids because it was
+ * never really one of them: it answered to no wave group even then. A map
+ * with no boss zone lets its bosses use their own layer's zones.
+ */
+export const ZONE_KINDS = ["ground", "air", "water", "boss"] as const;
+export type ZoneKind = (typeof ZONE_KINDS)[number];
+
+/**
+ * One bit per zone kind, for the rasterized per-cell layers (Terrain.spawn
+ * and Terrain.goal). A cell can sit under several zones at once — a ground
+ * zone and an air zone are allowed to overlap — so the layer is a MASK
+ * rather than an id, which is the other half of what the old region byte
+ * got wrong: a byte could only ever remember the last circle painted over
+ * a cell.
+ *
+ * The exit layer uses the three movement bits and never the boss one: a
+ * boss leaves by its own layer's exits, like everything else.
+ */
+export const LAYER_BIT: Readonly<Record<ZoneKind, number>> = {
+  ground: 1,
+  air: 2,
+  water: 4,
+  boss: 8,
+};
+/** every movement bit at once — what an exit that serves everything means,
+ *  and what a pre-layer document's exits are read as */
+export const ALL_MOVE_BITS = LAYER_BIT.ground | LAYER_BIT.air | LAYER_BIT.water;
+
 /** Fx.unitSpawn's own 30 ticks, and Fx.spawn's — the second is run 30
  *  ticks BEHIND the first (Time.run), so it lands exactly as the unit
  *  stops being unmoving and takes its first step */

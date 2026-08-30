@@ -178,6 +178,17 @@ export interface UnitStats {
    * towers with targetAir (and bullets with collidesAir) touch them */
   flying?: boolean;
   /**
+   * NAVAL: this kind travels on the WATER layer — it moves over water and
+   * cannot cross dry land, the exact mirror of a walker. Nothing sets it
+   * yet; the roster is ground and air. It is here because the movement
+   * layers (MOVE_LAYERS in constants.ts) are what decide a unit's flow
+   * field, its drop zones and its exits, and a naval kind should be a
+   * STATS EDIT like every other unit rather than an engine change — the
+   * same way a tier-4 unit was once a stats edit that started paying a new
+   * currency.
+   */
+  naval?: boolean;
+  /**
    * Mindustry's boss (guardian) tag, made a property of the KIND rather
    * than of one spawn: this game fields its bosses as dedicated kinds, so
    * the flag lives here. For now it only marks the unit for presentation —
@@ -702,18 +713,25 @@ export type RegionWave = WaveUnits & { region: number };
 export type LevelStep = { wave: WaveUnits | readonly RegionWave[] };
 
 /**
- * Normalize a wave into region groups with counts indexed like UNIT_KINDS.
- * The plain kind-count form becomes one region-0 group (region 0 = any
- * pad); groups with nothing in them are dropped.
+ * Normalize a wave into groups of counts indexed like UNIT_KINDS. Groups
+ * with nothing in them are dropped.
+ *
+ * THE REGION IS PARSED AND DISCARDED. Documents written before movement
+ * layers carry the group form — `[{ region: 1, flare: 50 }, ...]` — and
+ * still have to load, so the shape is still read; but nothing routes by the
+ * number any more (a unit's layer picks its door), so it does not survive
+ * into the result. A wave is its counts. The level editor sums the groups
+ * it gets back into one wave and saves the plain form, so a document
+ * converts the first time it is edited.
  */
 export function waveGroups(
   wave: WaveUnits | readonly RegionWave[],
-): { region: number; counts: number[] }[] {
-  const specs: readonly RegionWave[] = Array.isArray(wave) ? wave : [{ region: 0, ...wave }];
-  const groups: { region: number; counts: number[] }[] = [];
+): { counts: number[] }[] {
+  const specs: readonly (WaveUnits | RegionWave)[] = Array.isArray(wave) ? wave : [wave];
+  const groups: { counts: number[] }[] = [];
   for (const spec of specs) {
     const counts = UNIT_KINDS.map((k) => Math.max(0, spec[k] ?? 0));
-    if (counts.some((c) => c > 0)) groups.push({ region: spec.region, counts });
+    if (counts.some((c) => c > 0)) groups.push({ counts });
   }
   return groups;
 }
@@ -959,15 +977,19 @@ export const WORLDS: LevelSpec[] = [
   },
   {
     // WORLD 2 — the SECOND FRONT, unlocked by the tech tree's "world-2"
-    // node (the campaign menu hides it until that node is owned). For now
-    // it is a DELIBERATE DUMMY: the same map and the same waves as world 1
-    // — public/levels/2.json is a copy of 1.json — standing in so the
-    // world picker, the per-world boss trophies and the unlock flow are
-    // real before the world itself is authored. Give it its own map and
-    // script when that authoring happens; nothing else needs to change.
+    // node (the campaign menu hides it until that node is owned).
+    //
+    // ITS MAP IS ITS OWN AND ITS WAVES ARE STILL WORLD 1'S. Tidewater is
+    // authored terrain — a river, a bay and three crossings, laid out at
+    // world 1's twenty-cell lane width — and it is where the second front
+    // actually differs: the same swarm, re-solved against water that
+    // blocks in one place, is walkable in another, and takes the whole
+    // southern shoulder of the final causeway out of the player's reach.
+    // public/levels/2.json is still a copy of 1.json; authoring the
+    // script is the remaining half of this world, and needs nothing here.
     id: "2",
     name: "Second Front",
-    map: "grass-open",
+    map: "tidewater",
     waveGap: 15,
     script: [],
   },

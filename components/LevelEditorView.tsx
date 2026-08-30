@@ -11,7 +11,6 @@ import {
   WAVE_RELEASE_SECONDS,
   type LevelSpec,
   type LevelStep,
-  type RegionWave,
   type UnitKind,
   type WaveUnits,
 } from "@/game/levels";
@@ -36,9 +35,11 @@ import {
   drawThumb,
   loadMap,
   OFFICIAL_MAP_IDS,
-  spawnRegionIds,
-  spawnRegionStyle,
+  zoneKindsOf,
+  zoneStyle,
+  ZONE_LABELS,
 } from "@/game/maps";
+import type { ZoneKind } from "@/game/constants";
 import { CostRow } from "./Items";
 
 /* eslint-disable @next/next/no-img-element -- raw pixel sprites, no optimization wanted */
@@ -56,35 +57,30 @@ const compactHp = (hp: number): string =>
         ? `${(hp / 1e3).toFixed(0)}k`
         : `${Math.round(hp)}`;
 
-/** region 0 is "any pad"; 1+ are the map's painted spawn regions */
-const regionCss = (region: number): string =>
-  region <= 0 ? "#A6A6AF" : spawnRegionStyle(region).css;
-
-const regionLabel = (region: number): string => (region <= 0 ? "Any pad" : `Region ${region}`);
-
 // ---------- the editing model ----------
 
 /**
  * The script is edited in a normalized form and serialized back on save.
- * Every wave is a list of REGION GROUPS here, even the ones written in the
- * plain `{ wave: { dagger: 10 } }` shorthand — that shorthand is just a
- * single group aimed at region 0, and collapsing the two cases means the
- * region controls work identically on every wave.
+ *
+ * A WAVE IS ONE GROUP OF COUNTS. It used to be a LIST of groups, each aimed
+ * at a numbered spawn region, because that was the only way to say "the
+ * flyers come in over there and the walkers up this lane". A drop zone
+ * carries its movement layer now (MOVE_LAYERS in constants.ts) and every
+ * unit finds its own door, so the region dropdown was answering a question
+ * nobody has to ask any more — and the split into groups existed only to
+ * hold it. A wave is what it always read as on disk: kinds and counts.
+ *
+ * Documents written with region groups still LOAD: waveGroups flattens
+ * them, and the counts are summed into the single group here. Saving writes
+ * the plain form back, so a level converts the first time it is edited.
  *
  * `uid` exists only so React keys survive reordering: splicing a step out of
  * the middle shifts every index below it, and index keys would make the row
  * that moved keep the input state of the row that replaced it.
  */
-interface EditGroup {
-  uid: number;
-  region: number;
-  counts: Partial<Record<UnitKind, number>>;
-}
-
-/** a step is always a wave — pacing is one waveGap for the whole level */
 interface EditStep {
   uid: number;
-  groups: EditGroup[];
+  counts: Partial<Record<UnitKind, number>>;
 }
 
 let nextUid = 1;
@@ -92,35 +88,21 @@ const uid = (): number => nextUid++;
 
 function toEditSteps(script: readonly LevelStep[]): EditStep[] {
   return script.map((step) => {
-    const groups = waveGroups(step.wave).map(({ region, counts }) => {
-      const byKind: Partial<Record<UnitKind, number>> = {};
-      counts.forEach((n, i) => {
-        if (n > 0) byKind[UNIT_KINDS[i]] = n;
+    // several region groups collapse into one wave — the counts are what
+    // survived the region system, and summing is what "both groups sent
+    // these" has always meant on the field
+    const counts: Partial<Record<UnitKind, number>> = {};
+    for (const g of waveGroups(step.wave))
+      g.counts.forEach((n, i) => {
+        if (n > 0) counts[UNIT_KINDS[i]] = (counts[UNIT_KINDS[i]] ?? 0) + n;
       });
-      return { uid: uid(), region, counts: byKind };
-    });
-    // a wave that lost every unit still has to stay editable, or deleting
-    // the last count would silently delete the wave itself
-    return {
-      uid: uid(),
-      groups: groups.length ? groups : [{ uid: uid(), region: 0, counts: {} }],
-    };
+    return { uid: uid(), counts };
   });
 }
 
-/**
- * Back to the on-disk shape. A single region-0 group round-trips to the
- * plain `{ wave: { dagger: 10 } }` form so hand-written levels stay readable
- * after an edit; anything else becomes the region-group array.
- */
+/** back to the on-disk shape — always the plain, readable form now */
 function toScript(steps: readonly EditStep[]): LevelStep[] {
-  return steps.map((step) => {
-    const live = step.groups
-      .map((g) => ({ region: g.region, counts: trimCounts(g.counts) }))
-      .filter((g) => Object.keys(g.counts).length > 0);
-    if (live.length === 1 && live[0].region === 0) return { wave: live[0].counts as WaveUnits };
-    return { wave: live.map((g) => ({ region: g.region, ...g.counts }) as RegionWave) };
-  });
+  return steps.map((step) => ({ wave: trimCounts(step.counts) as WaveUnits }));
 }
 
 /** drop zeros and blanks — a count of 0 is noise in the saved document */
@@ -291,14 +273,14 @@ function LadderReport({
 }
 
 const stepTotal = (step: EditStep): number =>
-  step.groups.reduce((sum, g) => sum + UNIT_KINDS.reduce((s, k) => s + (g.counts[k] ?? 0), 0), 0);
+  UNIT_KINDS.reduce((s, k) => s + (step.counts[k] ?? 0), 0);
 
 /** kill counts indexed like UNIT_KINDS, for the payout preview */
-function killVector(groups: readonly EditGroup[]): number[] {
+function killVector(steps: readonly EditStep[]): number[] {
   const counts = UNIT_KINDS.map(() => 0);
-  for (const g of groups)
+  for (const s of steps)
     UNIT_KINDS.forEach((k, i) => {
-      counts[i] += g.counts[k] ?? 0;
+      counts[i] += s.counts[k] ?? 0;
     });
   return counts;
 }
@@ -396,13 +378,18 @@ export default function LevelEditorView({
 
   const mapId = level.map ?? OFFICIAL_MAP_IDS[0];
 
-  /** the spawn regions this level's map actually paints. A group aimed at a
-   * region that isn't here still runs — the sim falls back to any pad and
-   * warns on the console — but that is invisible to whoever is authoring the
-   * level, so the editor flags it instead */
-  const mapRegions = useMemo<number[]>(() => {
+  /**
+   * WHICH MOVEMENT LAYERS THIS LEVEL'S MAP HAS DOORS FOR.
+   *
+   * A wave sending units of a layer the map never opens is the one
+   * map/script mismatch left — nothing else about a wave refers to the map
+   * at all now that regions are gone — so the editor reports which doors
+   * exist and the sim warns on the console when a script outruns them.
+   */
+  const mapZones = useMemo<ZoneKind[]>(() => {
     const doc = loadMap(mapId);
-    return doc ? spawnRegionIds(doc) : [1];
+    if (!doc) return [];
+    return [...zoneKindsOf(doc, Uint8Array.from(doc.blocked))].sort();
   }, [mapId]);
 
   const edit = (fn: (draft: EditStep[]) => EditStep[]): void => {
@@ -459,7 +446,7 @@ export default function LevelEditorView({
   // edits rather than the level as it was opened
   const summary = useMemo(() => {
     const waves = steps.filter((s) => stepTotal(s) > 0).length;
-    const kills = killVector(steps.flatMap((s) => s.groups));
+    const kills = killVector(steps);
     return {
       waves,
       enemies: kills.reduce((a, b) => a + b, 0),
@@ -519,10 +506,10 @@ export default function LevelEditorView({
         </header>
 
         <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-[260px_1fr]">
-          {/* ---- left rail: level settings, map regions, rollup ---- */}
+          {/* ---- left rail: level settings, map doors, rollup ---- */}
           <aside className="space-y-4 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <RampChart waves={report.waves} />
-            <RegionKey mapId={mapId} regions={mapRegions} />
+            <ZoneKey mapId={mapId} zones={mapZones} />
 
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
               <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
@@ -619,7 +606,6 @@ export default function LevelEditorView({
                     guide={report.waves[i]}
                     index={i}
                     last={i === steps.length - 1}
-                    mapRegions={mapRegions}
                     onChange={(next) =>
                       edit((s) => s.map((cur) => (cur.uid === step.uid ? next : cur)))
                     }
@@ -661,7 +647,7 @@ export default function LevelEditorView({
 }
 
 function makeStep(): EditStep {
-  return { uid: uid(), groups: [{ uid: uid(), region: 0, counts: { dagger: 10 } }] };
+  return { uid: uid(), counts: { dagger: 10 } };
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -824,7 +810,7 @@ function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement
 }
 
 
-function RegionKey({ mapId, regions }: { mapId: string; regions: readonly number[] }) {
+function ZoneKey({ mapId, zones }: { mapId: string; zones: readonly ZoneKind[] }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const doc = loadMap(mapId);
@@ -833,19 +819,23 @@ function RegionKey({ mapId, regions }: { mapId: string; regions: readonly number
   return (
     <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
       <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
-        Spawn regions
+        Drop zones
       </h2>
       <canvas ref={ref} className="w-full rounded border border-[#2E2E36] [image-rendering:pixelated]" />
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[13px]">
-        {regions.map((r) => (
-          <span key={r} className="flex items-center gap-1.5">
-            <span
-              className="inline-block h-2.5 w-2.5 rounded-sm"
-              style={{ background: regionCss(r) }}
-            />
-            <span className="text-[#A6A6AF]">{regionLabel(r)}</span>
-          </span>
-        ))}
+        {zones.length === 0 ? (
+          <span className="text-[#FF8A8A]">no drop zones — paint some in the map editor</span>
+        ) : (
+          zones.map((z) => (
+            <span key={z} className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-sm"
+                style={{ background: zoneStyle(z).css }}
+              />
+              <span className="text-[#A6A6AF]">{ZONE_LABELS[z]}</span>
+            </span>
+          ))
+        )}
       </div>
     </section>
   );
@@ -873,7 +863,6 @@ function StepCard({
   guide,
   index,
   last,
-  mapRegions,
   onChange,
   onDelete,
   onMove,
@@ -884,7 +873,6 @@ function StepCard({
   guide?: WaveRow;
   index: number;
   last: boolean;
-  mapRegions: readonly number[];
   onChange: (next: EditStep) => void;
   onDelete: () => void;
   onMove: (dir: -1 | 1) => void;
@@ -904,9 +892,8 @@ function StepCard({
   );
 
   const total = stepTotal(step);
-  const payout = dropsForKills(killVector(step.groups));
+  const payout = dropsForKills(killVector([step]));
 
-  const setGroups = (groups: EditGroup[]): void => onChange({ ...step, groups });
 
   return (
     <div className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
@@ -948,114 +935,16 @@ function StepCard({
         <div className="ml-auto">{controls}</div>
       </div>
 
-      <div className="space-y-2">
-        {step.groups.map((group) => (
-          <GroupRow
-            key={group.uid}
-            group={group}
-            mapRegions={mapRegions}
-            soleGroup={step.groups.length === 1}
-            onChange={(next) =>
-              setGroups(step.groups.map((g) => (g.uid === group.uid ? next : g)))
-            }
-            onDelete={() => setGroups(step.groups.filter((g) => g.uid !== group.uid))}
-          />
-        ))}
-      </div>
+      {/* THE WAVE'S UNITS, one row per unit tree in tier order. There is no
+          group header any more: a wave used to be a list of region groups,
+          each with a dropdown naming the spawn region its share entered
+          from, and that dropdown is exactly what the movement layers
+          replaced. Every unit now walks to the doors its own layer opens,
+          so a wave is just counts.
 
-      <button
-        onClick={() =>
-          setGroups([
-            ...step.groups,
-            // a new group defaults to the first region the current groups
-            // don't already cover, which is nearly always what a split wave
-            // wants and saves a trip to the dropdown
-            {
-              uid: uid(),
-              region:
-                mapRegions.find((r) => !step.groups.some((g) => g.region === r)) ??
-                mapRegions[0] ??
-                0,
-              counts: {},
-            },
-          ])
-        }
-        className="mt-2 rounded border border-[#2E2E36] px-2 py-0.5 text-[12px] uppercase tracking-widest text-[#71717C] hover:border-[#FFD37F] hover:text-[#FFD37F]"
-      >
-        + Region group
-      </button>
-    </div>
-  );
-}
-
-function GroupRow({
-  group,
-  mapRegions,
-  soleGroup,
-  onChange,
-  onDelete,
-}: {
-  group: EditGroup;
-  mapRegions: readonly number[];
-  /** the only group in its wave — deleting it would leave nothing to edit */
-  soleGroup: boolean;
-  onChange: (next: EditGroup) => void;
-  onDelete: () => void;
-}) {
-  // region 0 always works (any pad); a positive region the map never paints
-  // silently falls back to any pad at run time, so say so here
-  const orphan = group.region > 0 && !mapRegions.includes(group.region);
-
-  // a count of 0 is the same as absent (trimCounts drops it on save), so the
-  // grid can hold every kind and let the zeros stand for the empty slots
-  const setCount = (kind: UnitKind, n: number): void =>
-    onChange({ ...group, counts: { ...group.counts, [kind]: n } });
-
-  return (
-    <div
-      className="rounded border-l-2 bg-[#101013]/60 py-1.5 pl-2 pr-1.5"
-      style={{ borderLeftColor: regionCss(group.region) }}
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={group.region}
-          onChange={(e) => onChange({ ...group, region: Number(e.target.value) })}
-          aria-label="Spawn region"
-          className="rounded border border-[#2E2E36] bg-[#0B0B0D] px-1.5 py-1 text-[13px] font-bold focus:border-[#FFD37F] focus:outline-none"
-          style={{ color: regionCss(group.region) }}
-        >
-          <option value={0}>Any pad</option>
-          {mapRegions.map((r) => (
-            <option key={r} value={r}>
-              Region {r}
-            </option>
-          ))}
-          {orphan && <option value={group.region}>Region {group.region} (not on map)</option>}
-        </select>
-
-        {orphan && (
-          <span
-            title="This map paints no pads for that region — the sim will fall back to any pad"
-            className="text-[12px] font-bold uppercase tracking-widest text-[#F0B457]"
-          >
-            ⚠ not on map
-          </span>
-        )}
-
-        <span className="text-[13px] text-[#71717C]">
-          {UNIT_KINDS.reduce((n, k) => n + (group.counts[k] ?? 0), 0)} enemies
-        </span>
-
-        <div className="ml-auto">
-          <IconButton label="Remove region group" onClick={onDelete} disabled={soleGroup} danger>
-            ✕
-          </IconButton>
-        </div>
-      </div>
-
-      {/* one row per unit tree, tier order left to right: the slots stay in
-          the same place whatever the wave holds, so a wave's ground/air/
-          crawler mix is readable at a glance instead of being a bag of chips */}
+          The slots stay in the same place whatever the wave holds, so its
+          ground/air/crawler mix is readable at a glance instead of being a
+          bag of chips. */}
       <div className="mt-1.5 space-y-1">
         {UNIT_TREES.map((tree) => (
           <div key={tree.name} className="flex items-center gap-1.5">
@@ -1066,8 +955,8 @@ function GroupRow({
               <UnitSlot
                 key={kind}
                 kind={kind}
-                value={group.counts[kind] ?? 0}
-                onChange={(n) => setCount(kind, n)}
+                value={step.counts[kind] ?? 0}
+                onChange={(n) => onChange({ ...step, counts: { ...step.counts, [kind]: n } })}
               />
             ))}
           </div>
