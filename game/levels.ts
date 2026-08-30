@@ -581,16 +581,19 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // on the roster from the other planet. Stats from
   // mindustry/content/UnitTypes.java (armor 9; hitSize 46; rotateSpeed 2;
   // drag 0.07) with TWO deliberate exceptions. Health is Mindustry's
-  // 12000 x4, because it arrives as a boss rather than by the squadron.
-  // And speed drops from the official 1 unit/tick (7.5 tiles/s, crawler
-  // pace — it would outrun its own escort and reach the AA line alone) to
-  // 2.25 tiles/s, under even the reign's crawl: a boss is a deadline the
-  // player watches coming, not a sprinter. Its suppression field and
-  // missile racks stay behind on Erekir — enemies here do not shoot — so
-  // what crosses the map is the hull, the looming pace, and 48000 health
-  // the fleet has to answer before it reaches the core.
+  // 12000 x8, because it arrives as a boss rather than by the squadron
+  // (x4 at first; doubled again when the up-gunned phase turrets melted
+  // it before it loomed). And speed drops from the official 1 unit/tick
+  // (7.5 tiles/s, crawler pace — it would outrun its own escort and reach
+  // the AA line alone) to 2.25 tiles/s, under even the reign's crawl: a
+  // boss is a deadline the player watches coming, not a sprinter. Its
+  // suppression field and missile racks stay behind on Erekir — enemies
+  // here do not shoot — so what crosses the map is the hull, the looming
+  // pace, and 96000 health the fleet has to answer before it reaches the
+  // core. It also DRAWS a step past native scale (see UNIT_ART) — the
+  // hitbox stays hitSize 46.
   disrupt: {
-    hp: 12000 * 4,
+    hp: 12000 * 8,
     speed: 2.25 * CELL,
     armor: 9,
     radius: UR * 5.75,
@@ -899,7 +902,7 @@ export const WORLDS: LevelSpec[] = [
     // what was once a single 6.93M finale into two peers, then eased twice
     // when the ending playtested too hot — first 48-50 by a quarter, then
     // 46-50 by a further fifth (49: 1,454 bodies, 2.41M health; 50: 1,176
-    // bodies + the disrupt, 2.26M). 50's fleet is the lighter of the two
+    // bodies + the disrupt, 2.31M). 50's fleet is the lighter of the two
     // on purpose — the headroom is the boss's budget, and the boss rides
     // on top. Both waves field every line at full strength. About 8% of
     // the tail's T5 bodies were later dealt back into waves 39-45 — only

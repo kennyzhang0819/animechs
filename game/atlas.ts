@@ -532,7 +532,11 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   horizon: { uv: UV_HORIZON, sprite: UNIT_SPRITE * 2 },
   zenith: { uv: UV_ZENITH, sprite: UNIT_SPRITE * 2 },
   antumbra: { uv: UV_ANTUMBRA, sprite: UNIT_SPRITE * 4 },
-  disrupt: { uv: UV_DISRUPT, sprite: UNIT_SPRITE * 4 },
+  // the boss draws a step past its native scale ON PURPOSE — the one unit
+  // allowed to break the px-per-px convention, because presence is its
+  // job. The hitbox (UNIT_STATS radius) is untouched: the upscale is how
+  // it LOOKS, not what it is
+  disrupt: { uv: UV_DISRUPT, sprite: UNIT_SPRITE * 5 },
   // 320x321 on a 7.25-block hitbox: the sheet's biggest single piece, and
   // the only 384px cell on it — hence the odd multiplier, which is just
   // 384/64 like every other one here
