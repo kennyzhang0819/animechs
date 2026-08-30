@@ -80,8 +80,8 @@ export const SPEEDS: readonly number[] = [1, 2, 4, 8, 16];
  * 2x, 4x and 8x are now the utilities path in the tech tree (tech.ts),
  * bought one cheap currency at a time, so what a player gets is read off
  * their save (TechState.speeds) rather than written here; 16x is not sold
- * at all — time warp took its slot. Sandbox still shows every SPEEDS
- * entry, because sandbox ignores the tree entirely.
+ * at all. Sandbox still shows every SPEEDS entry, because sandbox ignores
+ * the tree entirely.
  */
 export const BASE_SPEEDS: readonly number[] = [1];
 

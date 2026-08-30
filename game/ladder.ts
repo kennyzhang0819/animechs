@@ -35,9 +35,8 @@ import {
  * where the writing does. ERADICATION is the hidden ultimate difficulty
  * above it: the same full script Nemesis plays at enemy level 36 with +10
  * armour on the swarm (lowTierArmorBonus — the ladder's only difficulty
- * that turns that knob), and it does not exist on a save until the tech
- * tree's "A Final Threat" node is owned (topTier in progress.ts is where
- * that gate lives).
+ * that turns that knob), and it does not appear on a MAP until that map's
+ * Nemesis has fallen (topTier in progress.ts is where that gate lives).
  *
  * Nothing is generated. Wave 1 of Nemesis is wave 1 of the same authored
  * list Incursion plays, with 20 levels on it — which is what lets the level
@@ -88,8 +87,12 @@ export const LEVELS_PER_TIER = 10;
  *
  * The campaign runs the three tiers ending at Nemesis. ERADICATION is the
  * hidden ultimate difficulty above it — in the table so the whole ladder
- * arithmetic covers it, but absent from a save's menu until the tech
- * tree's "A Final Threat" node is bought (see topTier in progress.ts).
+ * arithmetic covers it, but absent from a map's menu until that map's own
+ * Nemesis has been cleared (see topTier in progress.ts).
+ *
+ * THIS LADDER IS CLIMBED ONCE PER MAP. It describes what a difficulty IS;
+ * how far up it a save has got is a per-map number, so clearing Nemesis
+ * somewhere reveals Eradication there and nowhere else.
  *
  * The names escalate from a probe to a personified doom on purpose: the
  * bottom tier never calls itself easy (it is an attack, just a small one),
@@ -149,9 +152,9 @@ export const DIFFICULTIES: readonly {
   { name: "Nemesis", color: "#FF5A5A", waves: 50, level: 16, shieldScale: 5, lowTierArmorBonus: 0 },
   // ERADICATION — the hidden ultimate difficulty: Nemesis's own full script
   // at enemy level 36, and NO extra loot bonus (see tierDropBonus). It is
-  // in the table so every piece of ladder arithmetic covers it, but a save
-  // cannot see or play it until the tech tree's "A Final Threat" node is
-  // owned — that gate lives in topTier (progress.ts), not here.
+  // in the table so every piece of ladder arithmetic covers it, but a map
+  // cannot show or play it until that map's own Nemesis has been cleared —
+  // that gate lives in topTier (progress.ts), not here.
   //
   // +10 swarm armour FLOORS everything below midgame calibre against tiers
   // 1-3: a duo's 9, an arc bolt's 20 halved, cyclone's 8/12 flak — all of

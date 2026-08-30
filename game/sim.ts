@@ -197,6 +197,15 @@ const CENTER_K = 25;
 // used to add; these three forces do the rest, turning a column into a
 // front that AoE has to work through instead of a queue it enfilades.
 //
+// WHERE that front sits is not their job any more. It used to be, badly:
+// a distance field's cheapest line clips the inside of every corner, so
+// the crowd these forces spread was a crowd spread along the ROCK, and
+// force 3 below existed largely to drag it back off. The field now charges
+// the verge itself (FlowField.EDGE_COST), which puts the cheap route down
+// the middle of a lane before any of this runs — so these three are back
+// to their real job, which is width, and two of them were re-tuned for it
+// once they stopped fighting the field for position.
+//
 // All three are GROUND-only. Flyers ignore terrain and fly straight at the
 // core, so they never funnel on a corridor wall in the first place; leaving
 // them on the untouched Mindustry physics keeps a swarm reading as a swarm
@@ -217,8 +226,23 @@ const SPREAD_CLEAR = 1.7;
 //    bias decorrelates (1/s — its reciprocal is the correlation time, and
 //    it must be seconds, not frames, or the walk averages out to nothing);
 //    LAT_SIGMA is the stationary spread the re-roll is normalised to hold
-const LAT_FRAC = 0.5;
-const LAT_RELAX = 0.6;
+//
+//    Both of the first two were raised once the field started keeping the
+//    crowd off the rock, and they answer different halves of the same ask.
+//    LAT_FRAC is HOW FAR off the line a unit is willing to walk. LAT_RELAX
+//    is HOW LONG it stays committed to being off it — 0.35/s is a ~3-second
+//    correlation time against the ~1.7 it used to be, which is the
+//    difference between a unit wobbling around the ideal heading and one
+//    that actually commits to the left-hand way round something and takes
+//    it. That commitment is the whole of "accept a route that is not the
+//    best one": a bias that decorrelates faster than a fork takes to walk
+//    can never carry anybody down the other branch.
+//
+//    Neither could have been raised before. Drifting this wide off a line
+//    that already ran along the rock just pressed units into it; drifting
+//    this wide off a line down the middle of a lane is the lane getting used
+const LAT_FRAC = 0.68;
+const LAT_RELAX = 0.35;
 const LAT_SIGMA = 0.62;
 // no drift where there is no room for it, ramping in over a cell of
 // clearance above SPREAD_CLEAR
@@ -228,8 +252,17 @@ const LAT_ROOM_K = 1 / 1.1;
 //    the route rather than smearing along the rock. Only the component
 //    across the flow is used — this never brakes or hurries the advance —
 //    and it fades out past CENTER_CLEAR cells from the nearest wall
+//
+//    THE GAIN IS DOWN FROM 18, because this force is no longer the only
+//    thing holding the crowd off the rock and a second full-strength pull
+//    toward the same middle does not centre twice as well — it narrows.
+//    Stacked on the field's verge charge it squeezed the band onto the
+//    centre LINE, which trades a queue along the wall for a queue down the
+//    middle and is the same bug wearing the other hat. What is left is a
+//    corrective on top of a field that is already right: enough to keep the
+//    spread from smearing, not enough to undo it
 const CENTER_CLEAR = 3.2;
-const CENTER_GAIN = 18;
+const CENTER_GAIN = 8;
 const HCOLS = (W / HC) | 0;
 const HROWS = (H / HC) | 0;
 const HN = HCOLS * HROWS;
@@ -255,6 +288,7 @@ const KIND_HEAVY = Uint8Array.from(UNIT_KINDS, (k) => (UNIT_STATS[k].radius > HE
 // support fields, indexed like UNIT_KINDS — null for kinds with no ability
 const KIND_REPAIR = UNIT_KINDS.map((k) => UNIT_STATS[k].repairField ?? null);
 const KIND_SHIELD = UNIT_KINDS.map((k) => UNIT_STATS[k].shieldField ?? null);
+const KIND_ENERGY = UNIT_KINDS.map((k) => UNIT_STATS[k].energyField ?? null);
 const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
 const KIND_BOSS: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].boss);
 const BOSS_KINDS = KIND_BOSS.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
@@ -290,6 +324,32 @@ const KIND_DRAG = Float32Array.from(UNIT_KINDS, (k) => UNIT_STATS[k].drag ?? 0.3
 /** the gait of every legged kind, indexed like UNIT_KINDS — null for the
  * mechs and flyers, whose animation is one sliding pair of leg sprites */
 const KIND_LEGS = UNIT_KINDS.map((k) => UNIT_STATS[k].legs ?? null);
+/** the wake of every naval kind, indexed like UNIT_KINDS — null for
+ *  everything that is not a hull */
+const KIND_WAKE = UNIT_KINDS.map((k) => UNIT_STATS[k].wake ?? null);
+/**
+ * How many points of a hull's wake the sim actually keeps.
+ *
+ * Mindustry's Trail holds one point PER TICK — 20 for a risso, 70 for an
+ * omura — and redraws the lot every frame. That is a fine deal for the
+ * handful of boats a Mindustry sector fields and a poor one for a wave of
+ * them here, so the path is SUBSAMPLED: eight points spread over the same
+ * span of history the original keeps, which is 8 quads a side instead of
+ * 70. The wake is a smooth curve behind a hull that turns at a couple of
+ * degrees a tick, so the eight land on it almost exactly.
+ *
+ * One path, not two. Upstream keeps a separate Trail for each side because
+ * each is fed already-offset world points; the two are the same curve a
+ * fixed distance either side of the hull's own, so this stores the hull's
+ * and the renderer lays the offsets on at draw time (see Renderer.pushWake).
+ */
+export const WAKE_PTS = 8;
+/** seconds between wake samples per kind: the kind's own history span
+ *  (trailLength ticks) spread over the WAKE_PTS points that stand in for it */
+const KIND_WAKE_DT = Float32Array.from(UNIT_KINDS, (k) => {
+  const w = UNIT_STATS[k].wake;
+  return w ? w.length / 60 / (WAKE_PTS - 1) : 0;
+});
 /** widest leg count on the roster: the stride of the per-leg arrays */
 export const MAX_LEGS = Math.max(1, ...KIND_LEGS.map((l) => l?.count ?? 0));
 // ulegMove packs one swing bit per leg into a Uint8Array, so eight legs is
@@ -357,7 +417,11 @@ const legTmp: Vec2 = { x: 0, y: 0 };
 const legTmp2: Vec2 = { x: 0, y: 0 };
 
 /** any support unit on the roster at all? skips the pass entirely when not */
-const HAS_ABILITIES = KIND_REPAIR.some(Boolean) || KIND_SHIELD.some(Boolean) || FORCE_KINDS.length > 0;
+const HAS_ABILITIES =
+  KIND_REPAIR.some(Boolean) ||
+  KIND_SHIELD.some(Boolean) ||
+  KIND_ENERGY.some(Boolean) ||
+  FORCE_KINDS.length > 0;
 
 // how fast body and chassis swivel: Mindustry's default rotateSpeed /
 // baseRotateSpeed, 5 degrees per tick
@@ -519,6 +583,19 @@ export class Sim {
    * the direction of travel, so feet land ahead of a walking body */
   readonly ulegOX = new Float32Array(MAX_UNITS);
   readonly ulegOY = new Float32Array(MAX_UNITS);
+  // --- naval hulls (UnitStats.wake) ---
+  // The path the hull has taken, WAKE_PTS world points per unit, oldest
+  // first: the wake is drawn along it. Like a leg's foot these are world
+  // positions rather than offsets, so they travel with the unit through
+  // swap-remove or the wake of whatever is recycled into a dead boat's
+  // index snaps across the map.
+  readonly uwakeX = new Float32Array(MAX_UNITS * WAKE_PTS);
+  readonly uwakeY = new Float32Array(MAX_UNITS * WAKE_PTS);
+  /** how many of the WAKE_PTS slots have been written — a hull that has
+   *  just spawned trails a stub that grows to its full length */
+  readonly uwakeN = new Uint8Array(MAX_UNITS);
+  /** seconds until the next sample (see KIND_WAKE_DT) */
+  readonly uwakeT = new Float32Array(MAX_UNITS);
   n = 0;
   private nextId = 1;
 
@@ -560,14 +637,6 @@ export class Sim {
   private waveRate = 0;
   private waitLeft = 0;
   private spawnAcc = 0;
-  /**
-   * The wave the run OPENS on, 1-based — TechState.startWave, which is 10
-   * once the tech tree's time warp is owned. Everything before it is walked
-   * past before the first frame: those waves never enter, so their enemies
-   * come off `totalEnemies` and never pay out. `totalWaves` still counts the
-   * whole script, so the HUD reads "Wave 10 / 20" rather than renumbering.
-   */
-  private startWave = 1;
 
   /** seconds of simulated time since the level was reset (Time.time) */
   time = 0;
@@ -918,11 +987,40 @@ export class Sim {
    * fan rather than a single guaranteed track.
    */
   airRoutes(): { x1: number; y1: number; x2: number; y2: number; zone: ZoneKind }[] {
-    return this.terrain.spawns.map((z) => {
-      const x = z.x * CELL, y = z.y * CELL;
-      const g = this.nearestGoal(x, y);
-      return { x1: x, y1: y, x2: g.x, y2: g.y, zone: z.zone };
-    });
+    // ONLY WHAT ACTUALLY FLIES GETS A LINE. The straight dashed run to a
+    // door is a claim about how something travels — a flyer ignores the
+    // maze and steers at one point, so drawing its route as a line is the
+    // truth. A walker or a hull follows the flow field down whatever road
+    // the map gives it, and a line from its zone to a door crosses hills it
+    // will never cross. That was drawn for every zone, so the overlay was
+    // three quarters fiction.
+    //
+    // A boss zone earns a line only if this level's boss flies. Nothing
+    // about the zone says which — a boss zone is rasterized terrain-blind
+    // precisely so one door can serve whatever kind of boss a map fields —
+    // so the script is what settles it.
+    const flying = (z: ZoneKind) => z === "air" || (z === "boss" && this.bossFlies());
+    return this.terrain.spawns
+      .filter((z) => flying(z.zone))
+      .map((z) => {
+        const x = z.x * CELL, y = z.y * CELL;
+        const g = this.nearestGoal(x, y);
+        return { x1: x, y1: y, x2: g.x, y2: g.y, zone: z.zone };
+      });
+  }
+
+  /** does this level's script send a boss that flies? */
+  private bossFlies(): boolean {
+    for (const step of this.level.script) {
+      if (!("wave" in step)) continue;
+      for (const g of waveGroups(step.wave))
+        for (let k = 0; k < g.counts.length; k++) {
+          if (g.counts[k] <= 0) continue;
+          const s = UNIT_STATS[UNIT_KINDS[k]];
+          if (s.boss && s.flying) return true;
+        }
+    }
+    return false;
   }
 
   /** the goal cell nearest a point, in world px — a flyer's destination */
@@ -942,32 +1040,9 @@ export class Sim {
     return this.coreHp <= 0;
   }
 
-  /**
-   * Campaign restrictions on building; null lifts them (editor, dev).
-   *
-   * Tech also decides which wave the run opens on, and that has to be
-   * applied here rather than in reset() because the level is loaded before
-   * the save is read (see Game.create). A run already under way keeps the
-   * opening it started with.
-   *
-   * "Under way" is measured in ENEMIES, not on the clock. The render loop
-   * is already running while Game.create awaits its warmup paints, so the
-   * clock reads a few frames by the time the save's tech arrives — a
-   * `time === 0` guard here refused the restage in every visible tab and
-   * time warp only ever worked in a hidden one, where rAF never fires.
-   * What restaging must not throw away is enemies, so the honest guard is
-   * that none have entered: nothing on the field, nothing killed, nothing
-   * leaked. The moments of opening gap already elapsed restart with the
-   * restage, which no one can see.
-   */
+  /** campaign restrictions on building; null lifts them (editor, dev) */
   setTech(tech: TechState | null): void {
     this.tech = tech;
-    const start = Math.max(1, Math.floor(tech?.startWave ?? 1));
-    const untouched = this.n === 0 && this.kills === 0 && this.leaked === 0;
-    if (start !== this.startWave && untouched) {
-      this.startWave = start;
-      this.stageScript();
-    }
   }
 
   /** live towers per kind — the bar's remaining-count badges, and the cap check */
@@ -1027,12 +1102,11 @@ export class Sim {
    */
   currentWave(): number {
     // ...except in the OPENING gap, where there is no earlier wave to still
-    // be current: the run has not played one. Backing off there reported
-    // "wave 9" to a time-warped run that starts at 10, and "wave 0" (floored
-    // to 1) to every other one
-    const opening = this.wavesStarted <= this.startWave;
+    // be current: the run has not played one, and backing off there reported
+    // "wave 0", floored to 1
+    const opening = this.wavesStarted <= 1;
     const back = this.waitLeft > 0 && !opening ? 1 : 0;
-    return Math.max(this.startWave, this.wavesStarted - back);
+    return Math.max(1, this.wavesStarted - back);
   }
 
   /** seconds until the next wave starts entering, or 0 when one is already
@@ -1103,15 +1177,9 @@ export class Sim {
   // ---------- level script ----------
 
   /**
-   * Count the script and put its cursor on the first wave to play.
-   *
-   * Re-runnable: reset() calls it, and so does setTech when time warp
-   * changes which wave the run opens on. It counts the whole script, then
-   * walks the cursor past the `startWave - 1` waves before the opening one,
-   * taking their enemies off the total as it goes — a wave that never enters
-   * cannot be killed, so leaving it in would leave `remaining()` permanently
-   * short of zero and the level unwinnable. `wavesStarted` is set to the
-   * skipped count so the first wave to arrive still reports its real number.
+   * Count the script and put its cursor on the first wave to play. Every run
+   * opens on wave one: a save cannot buy its way past the opening any more,
+   * so there is nothing to walk the cursor past.
    *
    * An empty wave is not a wave — loadStep skips it, so it must not count
    * here either, or the HUD would promise a wave that never arrives.
@@ -1119,16 +1187,11 @@ export class Sim {
   private stageScript(): void {
     this.totalEnemies = 0;
     this.totalWaves = 0;
-    const sizes: number[] = [];
     const script = this.level.script;
     for (const step of script) {
-      if (!("wave" in step)) {
-        sizes.push(0);
-        continue;
-      }
+      if (!("wave" in step)) continue;
       let n = 0;
       for (const g of waveGroups(step.wave)) for (const c of g.counts) n += c;
-      sizes.push(n);
       if (n === 0) continue;
       this.totalWaves++;
       this.totalEnemies += n;
@@ -1137,17 +1200,6 @@ export class Sim {
     this.waitLeft = 0;
     this.spawnAcc = 0;
     this.wavesStarted = 0;
-    // never warp past the end: one wave always remains to be played, or the
-    // run would open already won
-    const skipTarget = Math.min(this.startWave - 1, Math.max(0, this.totalWaves - 1));
-    let skipped = 0;
-    for (; this.stepIdx < script.length && skipped < skipTarget; this.stepIdx++) {
-      const n = sizes[this.stepIdx];
-      if (n === 0) continue;
-      skipped++;
-      this.totalEnemies -= n;
-    }
-    this.wavesStarted = skipped;
     this.loadStep();
   }
 
@@ -1487,8 +1539,11 @@ export class Sim {
       const j = Math.max(0, CELL / 2 - r - 1);
       const x = ((ci % COLS) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
       const y = (((ci / COLS) | 0) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
-      // a big hitbox can overhang the pad into ragged rock beside it
-      if ((!fly && this.field.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly, span))
+      // a big hitbox can overhang the pad into ragged rock beside it — and
+      // for a hull, into the SHORE: the water field's mask is the mirror
+      // one, so the same test asks "is any of this boat aground?"
+      const wallField = layer === "water" ? this.waterField : this.field;
+      if ((!fly && wallField.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly, span))
         continue;
       const i = this.n++;
       // LEVEL SCALING: health rides the level curve, and the difficulty
@@ -1554,6 +1609,16 @@ export class Sim {
       this.ubrot[i] = a0;
       this.urot[i] = a0;
       if (stats.legs) this.resetLegs(i, stats.legs);
+      // a hull arrives with no wake at all: one point under it, and the
+      // trail grows out behind as it sails. Mindustry's Trail.clear on add
+      // does the same thing, and it is what stops a fresh boat from being
+      // drawn with a stripe running back to wherever the last one died
+      if (stats.wake) {
+        this.uwakeX[i * WAKE_PTS] = x;
+        this.uwakeY[i * WAKE_PTS] = y;
+        this.uwakeN[i] = 1;
+        this.uwakeT[i] = KIND_WAKE_DT[UNIT_ID[kind]];
+      }
       // Call.spawnEffect: the entrance, drawn in the arriving unit's own
       // sprite and on the heading it will be drawn at. Fx.spawn is NOT
       // fired here — Mindustry runs it 30 ticks behind, which updateStatus
@@ -1622,13 +1687,21 @@ export class Sim {
       }
       const repair = KIND_REPAIR[k];
       const shield = KIND_SHIELD[k];
-      if (!repair && !shield) continue;
-      const reload = (repair ?? shield)!.reload;
+      const energy = KIND_ENERGY[k];
+      if (!repair && !shield && !energy) continue;
+      const spec = (repair ?? shield ?? energy)!;
+      const reload = spec.reload;
       uability[i] += dt;
       if (uability[i] < reload) continue;
       uability[i] = 0;
 
-      const range = (repair ?? shield)!.range;
+      const range = spec.range;
+      // EnergyFieldAbility.maxTargets: how many units one zap may still
+      // reach. Upstream sorts the candidates by distance and takes the
+      // nearest few; this walks the hash in bucket order and stops when
+      // the budget runs out, which changes WHICH units a crowded field
+      // picks and nothing else (see EnergyFieldSpec)
+      let budget = energy ? energy.maxTargets : 0;
       // RepairFieldAbility.wasHealed / ShieldRegenFieldAbility.applied: the
       // carrier's wave only plays when the pulse actually did something
       let did = false;
@@ -1657,11 +1730,30 @@ export class Sim {
             ushieldAlpha[j] = 1;
             did = true;
           }
+          // EnergyFieldAbility: a percentage of the TARGET's own max
+          // health, halved for another carrier of the same kind, and only
+          // ever spent on something already damaged — upstream's `all`
+          // list skips an undamaged ally outright, so a full-health crowd
+          // never eats the budget
+          if (energy && budget > 0 && uhp[j] < uhpmax[j]) {
+            const mult = ukind[j] === k ? energy.sameTypeHealMult : 1;
+            uhp[j] = Math.min(
+              uhp[j] + (energy.healPercent / 100) * uhpmax[j] * mult,
+              uhpmax[j],
+            );
+            this.pushFx(upx[j], upy[j], 0.18, FxKind.Heal);
+            budget--;
+            did = true;
+          }
         }
       }
       // healWaveDynamic / shieldWave: a 22-tick ring out to the field edge
       if (did)
-        this.pushFx(upx[i], upy[i], 22 / 60, repair ? FxKind.HealWave : FxKind.ShieldWave, 0, range);
+        this.pushFx(
+          upx[i], upy[i], 22 / 60,
+          repair || energy ? FxKind.HealWave : FxKind.ShieldWave,
+          0, range,
+        );
     }
   }
 
@@ -1790,6 +1882,16 @@ export class Sim {
       this.ulegT[i] = this.ulegT[n];
       this.ulegOX[i] = this.ulegOX[n];
       this.ulegOY[i] = this.ulegOY[n];
+    }
+    // and the moved hull's wake, for the same reason its feet move
+    if (KIND_WAKE[this.ukind[i]]) {
+      const a = i * WAKE_PTS, b = n * WAKE_PTS;
+      for (let k = 0; k < WAKE_PTS; k++) {
+        this.uwakeX[a + k] = this.uwakeX[b + k];
+        this.uwakeY[a + k] = this.uwakeY[b + k];
+      }
+      this.uwakeN[i] = this.uwakeN[n];
+      this.uwakeT[i] = this.uwakeT[n];
     }
   }
 
@@ -2028,8 +2130,13 @@ export class Sim {
    * column — the classic conga line. Same magnitude, different axis.
    */
   private updatePhysics(): void {
-    const { upx, upy, urad, ufly, uvx, uvy, uhx, uhy, uid, phx, phy, bStart, bUnits } = this;
+    const { upx, upy, urad, ufly, unav, uvx, uvy, uhx, uhy, uid, phx, phy, bStart, bUnits } = this;
     const { clear } = this.field;
+    // the hulls' clearance map, so the sideways re-aim below asks how much
+    // WATER a boat has beside it rather than how much open ground — deep
+    // water scores zero on the ground map, which would have switched the
+    // re-aim off for the whole fleet
+    const wclear = this.waterField.clear;
     const n = this.n;
     for (let i = 0; i < n; i++) {
       phx[i] = upx[i];
@@ -2043,7 +2150,7 @@ export class Sim {
       const room =
         vl > 1e-3 &&
         ufly[i] === 0 &&
-        clear[
+        (unav[i] !== 0 ? wclear : clear)[
           clamp((upy[i] / CELL) | 0, 0, ROWS - 1) * COLS +
             clamp((upx[i] / CELL) | 0, 0, COLS - 1)
         ] >= SPREAD_CLEAR;
@@ -2152,13 +2259,38 @@ export class Sim {
     // and the push-off fires while a unit hugs a wall to enter a staggered
     // narrow passage, shoving it back out of the entry window forever
     const PR = WALL_R + 4, REP = 55;
-    const { isGoal, walk } = field;
 
     for (let i = this.n - 1; i >= 0; i--) {
+      const fly = this.ufly[i] !== 0;
+      const nav = this.unav[i] !== 0;
+      // THE MOVER'S OWN FIELD. Everything below that asks the terrain a
+      // question — where the exits are, where the walls are, how much room
+      // there is to spread — asks it of the layer the unit travels on, and
+      // for a hull that is the water field: its mask is the mirror of the
+      // ground's, so dry land answers `blocked` and deep water does not.
+      // Reading the ground field for a boat would have walled it out of
+      // every deep cell on the map and left it circling the shallows.
+      // Flyers still read the ground field where they read one at all —
+      // they only ever use it for `isGoal`, and a flyer's own destination
+      // was picked at spawn (see below), so the cell test is a formality.
+      const mf = nav ? this.waterField : field;
+      const { isGoal, walk } = mf;
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
       const cy = clamp((upy[i] / CELL) | 0, 0, ROWS - 1);
       const ci = cy * COLS + cx;
-      if (isGoal[ci]) {
+      // ARRIVING IS TESTED ON THE UNIT'S OWN LAYER. A walker and a hull
+      // read their own field's isGoal, which was seeded from that layer's
+      // exit mask, so both are already asking the right question.
+      //
+      // A FLYER HAS NO FIELD, and reading the ground field's isGoal here
+      // asked whether it had arrived at a GROUND exit. On a map whose air
+      // exits are the same cells as its ground exits that is accidentally
+      // right, which is why it survived; the moment a map paints air exits
+      // of its own — the whole point of per-layer exits — every flyer flew
+      // to the door it was given, found the test false, and sat on it.
+      // They pile up, nothing leaks, the wave never empties and the run
+      // cannot end. So ask the air mask, which is where the flyer was sent.
+      if (fly ? this.exitAir[ci] : isGoal[ci]) {
         this.pushFx(upx[i], upy[i], 0.4, FxKind.Breach);
         this.removeUnit(i);
         this.leaked++;
@@ -2166,7 +2298,6 @@ export class Sim {
         continue;
       }
 
-      const fly = this.ufly[i] !== 0;
       if (fly) {
         // flyers ignore the maze: aim straight at the exit they picked when
         // they spawned (the core's centre on a map with no goal layer)
@@ -2174,12 +2305,8 @@ export class Sim {
         const gl = Math.sqrt(gdx * gdx + gdy * gdy) || 1;
         flowTmp.x = gdx / gl;
         flowTmp.y = gdy / gl;
-      } else if (this.unav[i] !== 0) {
-        // a hull steers by the water field: the same solver over the mirror
-        // mask, aimed at the water exits
-        this.waterField.sample(upx[i], upy[i], flowTmp);
       } else {
-        field.sample(upx[i], upy[i], flowTmp);
+        mf.sample(upx[i], upy[i], flowTmp);
       }
       // StatusEffects.unmoving is a speedMultiplier of 0, not a freeze: a
       // unit still materialising cannot drive itself anywhere, but the
@@ -2213,7 +2340,7 @@ export class Sim {
       // corridor to spread across and no walls to crowd against, so the
       // crowd fixes a corridor needs would only add wobble up there
       if (!fly) {
-        const cl = field.clear[ci];
+        const cl = mf.clear[ci];
 
         // lateral drift. The physics re-aim above only spreads units already
         // touching; once a stream is strung out single file nothing is left
@@ -2237,10 +2364,10 @@ export class Sim {
         // the clearance transform also scores 1). Anywhere clearer, all four
         // would come back false, so they are not asked
         if (cl < 1.2) {
-          if (field.blockedPx(upx[i] + PR, upy[i])) fx -= REP;
-          if (field.blockedPx(upx[i] - PR, upy[i])) fx += REP;
-          if (field.blockedPx(upx[i], upy[i] + PR)) fy -= REP;
-          if (field.blockedPx(upx[i], upy[i] - PR)) fy += REP;
+          if (mf.blockedPx(upx[i] + PR, upy[i])) fx -= REP;
+          if (mf.blockedPx(upx[i] - PR, upy[i])) fx += REP;
+          if (mf.blockedPx(upx[i], upy[i] + PR)) fy -= REP;
+          if (mf.blockedPx(upx[i], upy[i] - PR)) fy += REP;
         }
 
         // symmetry-breaking jitter: units contesting a doorway can settle into
@@ -2257,7 +2384,7 @@ export class Sim {
         // a 1-wide slot (both sides read the same clearance) and fades out
         // once there is a comfortable margin of rock on either hand
         if (cl < CENTER_CLEAR) {
-          const cw = field.clear;
+          const cw = mf.clear;
           const gx = cw[cx < COLS - 1 ? ci + 1 : ci] - cw[cx > 0 ? ci - 1 : ci];
           const gy = cw[cy < ROWS - 1 ? ci + COLS : ci] - cw[cy > 0 ? ci - COLS : ci];
           const lean =
@@ -2317,15 +2444,15 @@ export class Sim {
       // a unit already overlapping a wall (crowd shoves) skips the veto
       // entirely so it can always walk back out. Flyers skip walls wholesale
       const x0 = upx[i], y0 = upy[i];
-      const wedged = fly || field.hitsWall(upx[i], upy[i], WALL_R);
+      const wedged = fly || mf.hitsWall(upx[i], upy[i], WALL_R);
       let nx = upx[i] + dxT;
-      if (!wedged && field.hitsWall(nx, upy[i], WALL_R)) {
+      if (!wedged && mf.hitsWall(nx, upy[i], WALL_R)) {
         const cX =
           dxT > 0
             ? Math.floor((nx + WALL_R) / CELL) * CELL - WALL_R
             : Math.ceil((nx - WALL_R) / CELL) * CELL + WALL_R;
         const fwd = dxT > 0 ? cX > upx[i] : cX < upx[i];
-        if (fwd && !field.hitsWall(cX, upy[i], WALL_R)) nx = cX;
+        if (fwd && !mf.hitsWall(cX, upy[i], WALL_R)) nx = cX;
         else {
           nx = upx[i];
           uvy[i] += Math.sign(uvy[i] || flowTmp.y || 1) * Math.abs(uvx[i]) * 0.6;
@@ -2333,13 +2460,13 @@ export class Sim {
         }
       }
       let ny = upy[i] + dyT;
-      if (!wedged && field.hitsWall(nx, ny, WALL_R)) {
+      if (!wedged && mf.hitsWall(nx, ny, WALL_R)) {
         const cY =
           dyT > 0
             ? Math.floor((ny + WALL_R) / CELL) * CELL - WALL_R
             : Math.ceil((ny - WALL_R) / CELL) * CELL + WALL_R;
         const fwd = dyT > 0 ? cY > upy[i] : cY < upy[i];
-        if (fwd && !field.hitsWall(nx, cY, WALL_R)) ny = cY;
+        if (fwd && !mf.hitsWall(nx, cY, WALL_R)) ny = cY;
         else {
           ny = upy[i];
           uvx[i] += Math.sign(uvx[i] || flowTmp.x || 1) * Math.abs(uvy[i]) * 0.6;
@@ -2369,15 +2496,60 @@ export class Sim {
       // unit still runs the pass — its feet ease back under it
       const gait = KIND_LEGS[ukind[i]];
       if (gait) this.updateLegs(i, gait, mdx, mdy, len, dt);
+      if (nav) this.updateWake(i, dt);
     }
+  }
+
+  /**
+   * One tick of a hull's wake: Trail.update, subsampled (see WAKE_PTS).
+   *
+   * Mindustry pushes a point every tick and drops the oldest once the
+   * buffer is full; this pushes one every KIND_WAKE_DT seconds and does
+   * the same, so the ring holds the same SPAN of history at a fraction of
+   * the points. The timer runs whether the boat moved or not — a hull held
+   * still by a crowd stops laying new water down and its wake shortens to
+   * a puddle under it, which is exactly what a stalled Trail does.
+   */
+  private updateWake(i: number, dt: number): void {
+    this.uwakeT[i] -= dt;
+    if (this.uwakeT[i] > 0) return;
+    const step = KIND_WAKE_DT[this.ukind[i]];
+    // one sample per call however far the clock overran (a huge frame, or
+    // 8x game speed): the next is due a full step from now, and catching
+    // up by pushing several copies of one position would only lay a
+    // pile-up of identical points
+    this.uwakeT[i] += step > 0 ? step : 1;
+    if (this.uwakeT[i] < 0) this.uwakeT[i] = step;
+    const off = i * WAKE_PTS;
+    const n = this.uwakeN[i];
+    if (n < WAKE_PTS) {
+      this.uwakeX[off + n] = this.upx[i];
+      this.uwakeY[off + n] = this.upy[i];
+      this.uwakeN[i] = n + 1;
+      return;
+    }
+    // full: shuffle the oldest out. WAKE_PTS is eight, so the copy is
+    // cheaper than the branch a ring's head index would cost every read
+    for (let k = 0; k < WAKE_PTS - 1; k++) {
+      this.uwakeX[off + k] = this.uwakeX[off + k + 1];
+      this.uwakeY[off + k] = this.uwakeY[off + k + 1];
+    }
+    this.uwakeX[off + WAKE_PTS - 1] = this.upx[i];
+    this.uwakeY[off + WAKE_PTS - 1] = this.upy[i];
   }
 
   /** push units out of freshly blocked cells (after tower placement) */
   private unstickUnits(): void {
-    const { upx, upy, ukind, field } = this;
+    const { upx, upy, ukind, unav, field } = this;
     for (let i = 0; i < this.n; i++) {
-      // flyers are allowed over walls — never teleport them off a mountain
-      if (KIND_FLYING[ukind[i]] || !field.hitsWall(upx[i], upy[i], WALL_R)) continue;
+      // flyers are allowed over walls — never teleport them off a mountain.
+      // Hulls are skipped for a different reason: this pass exists to clear
+      // units out of a cell a TOWER just took, towers stand only on high
+      // ground, and no hull is ever on high ground — so a boat reading as
+      // blocked here is a boat on the shore of its own field, and shoving
+      // it to the nearest open GROUND cell would beach it for good
+      if (KIND_FLYING[ukind[i]] || unav[i] !== 0) continue;
+      if (!field.hitsWall(upx[i], upy[i], WALL_R)) continue;
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
       const cy = clamp((upy[i] / CELL) | 0, 0, ROWS - 1);
       let done = false;

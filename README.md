@@ -24,7 +24,9 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `game/constants.ts` — grid, core placement, tower/unit tuning
 - `game/levels.ts` — unit stats and wave-script plumbing; the authored
   script itself (50 waves) lives in `public/levels/1.json`, loaded by
-  `loadLevelDocs()`
+  `loadLevelDocs()`. Six upgrade trees: ground, support, crawler, air and
+  the two **naval** lines (risso→omura, retusa→navanax), which travel on
+  the water layer and cannot leave it
 - `game/ladder.ts` — the three named difficulties (Incursion / Onslaught /
   Nemesis: wave cut, enemy level, shield scale, drop bonus each), plus the
   audit/check arithmetic over the authored script
@@ -42,16 +44,24 @@ stale tab or a cached bundle looks exactly like a fix not working.
   seeded value-noise worldgen: mountain ranges, a carved meandering valley
   with a branch lane, forests, outcrops, floor fringes, decor
 - `game/flowfield.ts` — grid occupancy + one Dijkstra pass seeded from every
-  goal cell (the core is the fallback) into a per-cell direction field; units
-  sample it bilinearly (pathfinding is O(map), not O(units))
+  goal cell (the core is the fallback), refined by an eikonal sweep into a
+  per-cell direction field; units sample it bilinearly (pathfinding is
+  O(map), not O(units)). Cells pay for **where** they are as well as how
+  far: single-file slots cost extra (`NARROW_COST`) and so does hugging the
+  rock (`EDGE_COST` over `EDGE_REACH`), so the cheapest route is not the
+  shortest one — it runs down the middle of a lane and will take a longer,
+  roomier way round rather than scrape a corner
 - `game/sim.ts` — units in struct-of-arrays typed arrays, counting-sort spatial
   hash (separation + projectile hits), towers, projectiles, effects
 - `game/atlas.ts` — the sprite atlas, composited at load time from Mindustry
   sprites in `public/mindustry/` plus procedural regions; **swap any region
   for custom art** (units are white sprites tinted per instance, and already
-  rotate to face their heading)
+  rotate to face their heading). The two water floors are the only cells
+  packed 3x3, because the water shader samples off the tile
 - `game/renderer.ts` — WebGL2 instanced sprites: static terrain, shadow and
-  wall batches, one dynamic batch in painter's order, and a shield pass
+  wall batches, one dynamic batch in painter's order, and a shield pass.
+  Water is a batch and a program of its own — Mindustry's `water.frag`,
+  ported, so the sea swells and its bright bands drift across the map
 - `game/game.ts` — rAF loop, input, 2d overlay (placement ghost), stats
 - `components/Swarmfield.tsx` — React shell: HUD, difficulty picker,
   six-slot build bar with its loadout picker, game-speed switcher, canvases
@@ -138,6 +148,15 @@ because the level scales health and nothing else:
 Two more the arithmetic can't see: **air** (hail, scorch, arc, lancer and
 ripple cannot shoot up at all) and **crawler speed** (twice the line's pace,
 so they arrive before the kill zone is done with them).
+
+And one the map decides: **naval waves need water**. The ten hulls travel
+the water layer — deep water is a road to them and a wall to everything
+else, shallow water is shared with walkers — so a wave asking for rissos
+sends nothing at all on a map with no water zones. Ships also carry
+Mindustry's automatic naval wet-immunity, which makes wave and tsunami
+useless against them; only the bryde (shield field) and the aegires (a
+22.5-tile heal field, the widest support field in the game) bring an
+ability across.
 
 Check any edit from the console — dev builds also warn on load:
 

@@ -2,7 +2,7 @@ import { CELL, HP0, UNIT_SPEED, UR } from "./constants";
 import { itemForTier, type Cost } from "./items";
 import { explain, type SaveResult } from "./types";
 
-export const UNIT_KINDS = ["dagger", "mace", "fortress", "scepter", "reign", "crawler", "atrax", "spiroct", "arkyid", "toxopid", "flare", "nova", "pulsar", "quasar", "vela", "corvus", "horizon", "zenith", "antumbra", "eclipse", "disrupt"] as const;
+export const UNIT_KINDS = ["dagger", "mace", "fortress", "scepter", "reign", "crawler", "atrax", "spiroct", "arkyid", "toxopid", "flare", "nova", "pulsar", "quasar", "vela", "corvus", "horizon", "zenith", "antumbra", "eclipse", "disrupt", "risso", "minke", "bryde", "sei", "omura", "retusa", "oxynoe", "cyerce", "aegires", "navanax"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
 
@@ -29,6 +29,16 @@ export const UNIT_ID: Record<UnitKind, number> = {
   antumbra: 18,
   eclipse: 19,
   disrupt: 20,
+  risso: 21,
+  minke: 22,
+  bryde: 23,
+  sei: 24,
+  omura: 25,
+  retusa: 26,
+  oxynoe: 27,
+  cyerce: 28,
+  aegires: 29,
+  navanax: 30,
 };
 
 /** px per Mindustry world unit — leg geometry is written in those units */
@@ -133,12 +143,71 @@ export interface ForceFieldSpec {
 }
 
 /**
+ * Mindustry's naval wake — the pair of foam trails a hull drags behind it,
+ * and the only animation a ship has (there are no legs and no chassis to
+ * slide, so without this a boat is a sprite gliding over a flat surface).
+ *
+ * WaterMoveComp keeps two Trails, one at (-x, y) and one at (+x, y) in the
+ * hull's own frame, feeds each a point every tick, and draws them as
+ * strips that taper to nothing at the tail. Everything here is that,
+ * converted to world px (the Mindustry value x MU) except `length`, which
+ * stays a count of TICKS of history — it is Trail.length, and multiplying
+ * it by the hull's speed is what makes a slow omura's 70-point wake and a
+ * quick risso's 20-point one come out the lengths they do.
+ */
+export interface WakeSpec {
+  /** UnitType.waveTrailX: half the gap between the two trails, world px */
+  x: number;
+  /** UnitType.waveTrailY: how far behind the hull's centre they start */
+  y: number;
+  /** UnitType.trailLength: ticks of history each trail holds */
+  length: number;
+  /** UnitType.trailScl: the widest half-width, at the head, world px */
+  scl: number;
+}
+
+/**
+ * Mindustry EnergyFieldAbility, reduced to what survives the port. Upstream
+ * it is an orb that every `reload` zaps the nearest `maxTargets` things in
+ * range — damage and an electrified status to enemies, a percentage heal to
+ * damaged allies. This game's enemies have nothing to shoot at (towers
+ * cannot be damaged and the player fields no units), so the damage half is
+ * dead on arrival and the HEAL is the whole ability.
+ *
+ * It is the only heal on the roster written as a PERCENTAGE rather than a
+ * flat pool (RepairFieldAbility's `amount`), which matters: 1.5% of max
+ * health is 2 hp to the dagger beside it and 330 to the reign, so the field
+ * is worth most to exactly the heavies that are hardest to kill.
+ */
+export interface EnergyFieldSpec {
+  /** percent of the target's MAX health restored per zap */
+  healPercent: number;
+  /** healing to a unit of the carrier's own kind is scaled by this */
+  sameTypeHealMult: number;
+  /**
+   * how many units one zap may reach. Mindustry sorts candidates by
+   * distance and takes this many; the scan here walks the spatial hash in
+   * bucket order and stops at the cap, so in a crowd thicker than the cap
+   * WHICH units get topped up differs — how many, and by how much, do not.
+   */
+  maxTargets: number;
+  /** seconds between zaps (Mindustry's tick reload / 60) */
+  reload: number;
+  /** the field's radius in world px */
+  range: number;
+}
+
+/**
  * The status effects a unit can carry. Mindustry has dozens; this game
  * fields exactly two — StatusEffects.burning, lit by the scorch turret,
  * and StatusEffects.wet, soaked in by the liquid turrets (wave, tsunami).
- * No kind on the roster is wet-immune (upstream reserves that for naval
- * units, which Serpulo's attack waves never field), but the immunity check
- * is generic, so declaring one here is all it would take.
+ *
+ * WET IMMUNITY BELONGS TO THE HULLS, and to nothing else. UnitType.init
+ * adds StatusEffects.wet to the immunities of every naval type the moment
+ * it detects one (the `water preset` block, alongside canDrown = false), so
+ * it is not a per-unit authoring choice upstream and is not one here — all
+ * ten ships declare it, and a wave or tsunami soaking a boat does nothing
+ * at all. Burning immunity is the opposite: two kinds have it by hand.
  */
 export type StatusKind = "burning" | "wet";
 
@@ -179,15 +248,27 @@ export interface UnitStats {
   flying?: boolean;
   /**
    * NAVAL: this kind travels on the WATER layer — it moves over water and
-   * cannot cross dry land, the exact mirror of a walker. Nothing sets it
-   * yet; the roster is ground and air. It is here because the movement
+   * cannot cross dry land, the exact mirror of a walker. The movement
    * layers (MOVE_LAYERS in constants.ts) are what decide a unit's flow
-   * field, its drop zones and its exits, and a naval kind should be a
-   * STATS EDIT like every other unit rather than an engine change — the
-   * same way a tier-4 unit was once a stats edit that started paying a new
-   * currency.
+   * field, its drop zones and its exits, so a naval kind is a STATS EDIT
+   * like every other unit — the same way a tier-4 unit was once a stats
+   * edit that started paying a new currency.
+   *
+   * Upstream never writes this either: UnitType.init sets `naval = true`
+   * for anything built on WaterMovec, which is exactly the ten hulls of
+   * the two naval trees. BOTH depths carry them — shallow water is the
+   * one floor both layers share, so a dagger wades where a risso sails —
+   * and no hull may leave the water at all, which is what makes deep
+   * water a wall to the swarm and a road to the fleet at the same time.
    */
   naval?: boolean;
+  /**
+   * The naval wake: Mindustry's two WaveTrails, one either side of the
+   * hull (UnitType.waveTrailX/waveTrailY/trailScl/trailLength, drawn by
+   * WaterMoveComp). Only naval kinds have one — a flyer's trailLength is
+   * an ENGINE trail, which none of this game's flyers sets.
+   */
+  wake?: WakeSpec;
   /**
    * Mindustry's boss (guardian) tag, made a property of the KIND rather
    * than of one spawn: this game fields its bosses as dedicated kinds, so
@@ -207,6 +288,12 @@ export interface UnitStats {
    * Shields soak damage before health does (see Sim.damageUnit).
    */
   shieldField?: { amount: number; max: number; reload: number; range: number };
+  /**
+   * Mindustry EnergyFieldAbility: every `reload` seconds, top up the
+   * damaged units in `range` by a PERCENTAGE of their own max health. See
+   * EnergyFieldSpec for what upstream's damage half loses in the port.
+   */
+  energyField?: EnergyFieldSpec;
   /**
    * Mindustry ForceFieldAbility: a standing polygonal bubble that EATS
    * bullets outright — anything absorbable crossing the outline is deleted
@@ -229,6 +316,16 @@ export interface UnitStats {
    */
   legs?: LegSpec;
 }
+
+/**
+ * A WakeSpec with UnitType's own defaults filled in. Only `y` has one that
+ * matters — waveTrailY is -3 world units unless a type says otherwise, and
+ * the two T1s are the types that don't.
+ */
+const wake = (o: Partial<WakeSpec> & Pick<WakeSpec, "x" | "length" | "scl">): WakeSpec => ({
+  y: -3 * MU,
+  ...o,
+});
 
 /** per-kind combat stats (official Mindustry numbers) */
 export const UNIT_STATS: Record<UnitKind, UnitStats> = {
@@ -620,6 +717,210 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     flying: true,
     boss: true,
   },
+
+  // ---- THE FLEET ----
+  //
+  // Ten hulls in two trees, and the roster's third movement layer. Every
+  // one of them is `naval` (UnitType.init's water preset, see UnitStats)
+  // and therefore wet-immune, and every one carries a wake. Their numbers
+  // are otherwise read off mindustry/content/UnitTypes.java like every
+  // walker's — hitSize/8 tiles of hitbox, speed x 7.5 tiles a second.
+  //
+  // A ship's speed is the thing to read twice. The naval line tops out at
+  // 8.25 tiles/s (risso) and BOTTOMS OUT at 4.65 (omura) — so the fastest
+  // boat in the game is barely quicker than a crawler, and the slowest is
+  // still quicker than a scepter. The whole fleet moves inside a band the
+  // ground roster spreads three times as wide, which is what makes a water
+  // lane read as one advancing formation rather than a strung-out column.
+
+  // risso: the fleet's T1 — 280 hp, armor 2, a 1.25x1.25-block hitbox,
+  // 1.1 units/tick = 8.25 tiles/s, the fastest hull there is. Note it
+  // opens at nearly TWICE the dagger's health with armour the dagger does
+  // not have: the naval T1 is not chaff, and a duo's 9-damage bolt is
+  // already paying 7 against it
+  risso: {
+    hp: 280,
+    speed: 8.25 * CELL,
+    armor: 2,
+    radius: UR * 1.25,
+    tier: 1,
+    drag: 0.13,
+    rotateSpeed: 3.3,
+    naval: true,
+    immunities: ["wet"],
+    wake: wake({ x: 4 * MU, length: 20, scl: 1.3 * MU }),
+  },
+  // minke: T2 — 600 hp, armor 4 (a mace's plating), a 1.625x1.625-block
+  // hitbox, 0.9 units/tick = 6.75 tiles/s
+  minke: {
+    hp: 600,
+    speed: 6.75 * CELL,
+    armor: 4,
+    radius: UR * 1.625,
+    tier: 2,
+    drag: 0.15,
+    rotateSpeed: 2.6,
+    naval: true,
+    immunities: ["wet"],
+    wake: wake({ x: 5.5 * MU, y: -4 * MU, length: 20, scl: 1.9 * MU }),
+  },
+  // bryde: T3 — 910 hp, armor 7, a 2.5x2.5-block hitbox, 0.85 units/tick
+  // = 6.375 tiles/s. The one hull in the ATTACK tree carrying an ability:
+  // ShieldRegenFieldAbility(20, 40, 60*4, 60) is the pulsar's exact field
+  // — +20 shield every 4 s to a 40 cap over 7.5 tiles — so a bryde in the
+  // middle of a formation keeps the rissos around it wearing a shield the
+  // player has to strip again every four seconds
+  bryde: {
+    hp: 910,
+    speed: 6.375 * CELL,
+    armor: 7,
+    radius: UR * 2.5,
+    tier: 3,
+    drag: 0.17,
+    rotateSpeed: 1.8,
+    naval: true,
+    immunities: ["wet"],
+    shieldField: { amount: 20, max: 40, reload: 4, range: 7.5 * CELL },
+    wake: wake({ x: 7 * MU, y: -9 * MU, length: 22, scl: 1.5 * MU }),
+  },
+  // sei: T4 — 11000 hp, armor 12, a 4.875x4.875-block hitbox, 0.73
+  // units/tick = 5.475 tiles/s. More health than the scepter at the same
+  // tier and two more points of armour, on something that also moves
+  // twice as fast: from here up the water line has the better body at
+  // every tier, and pays for it with a map most of which it cannot enter
+  sei: {
+    hp: 11000,
+    speed: 5.475 * CELL,
+    armor: 12,
+    radius: UR * 4.875,
+    tier: 4,
+    drag: 0.17,
+    rotateSpeed: 1.3,
+    naval: true,
+    immunities: ["wet"],
+    wake: wake({ x: 18 * MU, y: -21 * MU, length: 50, scl: 3 * MU }),
+  },
+  // omura: the fleet's T5 — 22000 hp, armor 16, and a 7.25x7.25-block
+  // hitbox, which is the eclipse's: the widest thing in the game, tied.
+  // 0.62 units/tick = 4.65 tiles/s, and rotateSpeed 0.9 is the slowest
+  // turn on the whole roster — this one cannot answer anything it did not
+  // already have its nose pointed at
+  omura: {
+    hp: 22000,
+    speed: 4.65 * CELL,
+    armor: 16,
+    radius: UR * 7.25,
+    tier: 5,
+    drag: 0.18,
+    rotateSpeed: 0.9,
+    naval: true,
+    immunities: ["wet"],
+    wake: wake({ x: 23 * MU, y: -32 * MU, length: 70, scl: 3.5 * MU }),
+  },
+  // retusa: the naval SUPPORT line's T1 — 270 hp, armor 3, a
+  // 1.375x1.375-block hitbox, 0.9 units/tick = 6.75 tiles/s, and
+  // rotateSpeed 5, the stock rate every ground unit turns at and the
+  // quickest hull on the water by a distance
+  //
+  // Its repair beam does not port. Where nova heals through a
+  // RepairFieldAbility, retusa heals through a WEAPON (RepairBeamWeapon,
+  // repairSpeed 0.75) — and a weapon is the one thing this game's enemies
+  // do not have, exactly as with the corvus's charged laser
+  retusa: {
+    hp: 270,
+    speed: 6.75 * CELL,
+    armor: 3,
+    radius: UR * 1.375,
+    tier: 1,
+    drag: 0.14,
+    rotateSpeed: 5,
+    naval: true,
+    immunities: ["wet"],
+    wake: wake({ x: 5 * MU, length: 20, scl: 1.3 * MU }),
+  },
+  // oxynoe: support T2 — 560 hp, armor 4, a 1.75x1.75-block hitbox, 0.83
+  // units/tick = 6.225 tiles/s
+  //
+  // Its ability IS an ability, and still does not port:
+  // StatusFieldAbility(overclock, ...) hands everything around it a speed
+  // buff, and this game fields exactly two statuses (see StatusKind).
+  // Adding a third that only one enemy kind can apply is a bigger change
+  // than the buff is worth, so the support fleet's T2 is a plain hull
+  oxynoe: {
+    hp: 560,
+    speed: 6.225 * CELL,
+    armor: 4,
+    radius: UR * 1.75,
+    tier: 2,
+    drag: 0.14,
+    rotateSpeed: 4,
+    naval: true,
+    immunities: ["wet"],
+    wake: wake({ x: 5.5 * MU, y: -4 * MU, length: 22, scl: 1.9 * MU }),
+  },
+  // cyerce: support T3 — 870 hp, armor 6, a 2.5x2.5-block hitbox, 0.86
+  // units/tick = 6.45 tiles/s: fractionally quicker than the bryde it
+  // shares a hitbox with. Its repair beam is a weapon, like retusa's, and
+  // goes the same way
+  cyerce: {
+    hp: 870,
+    speed: 6.45 * CELL,
+    armor: 6,
+    radius: UR * 2.5,
+    tier: 3,
+    drag: 0.16,
+    rotateSpeed: 2.6,
+    naval: true,
+    immunities: ["wet"],
+    wake: wake({ x: 9 * MU, y: -9 * MU, length: 23, scl: 2 * MU }),
+  },
+  // aegires: support T4 — 12000 hp, armor 12, a 5.5x5.5-block hitbox,
+  // 0.7 units/tick = 5.25 tiles/s. The most health of any T4 in the game
+  //
+  // EnergyFieldAbility(40, 65, 180) is the reason to shoot it first. Its
+  // 22.5-TILE radius is three times the 7.5 every other support field on
+  // the roster reaches — one aegires covers most of a lane — and it heals
+  // 1.5% of MAX health, so it mends an omura for 330 a zap and a risso
+  // for 4. sameTypeHealMult 0.5 halves what it does for another aegires,
+  // which is upstream's guard against a pair of them being unkillable; a
+  // pair is still twice as hard to remove as one
+  aegires: {
+    hp: 12000,
+    speed: 5.25 * CELL,
+    armor: 12,
+    radius: UR * 5.5,
+    tier: 4,
+    drag: 0.17,
+    rotateSpeed: 1.4,
+    naval: true,
+    immunities: ["wet"],
+    energyField: {
+      healPercent: 1.5,
+      sameTypeHealMult: 0.5,
+      maxTargets: 25,
+      reload: 65 / 60,
+      range: 22.5 * CELL,
+    },
+    wake: wake({ x: 18 * MU, y: -17 * MU, length: 50, scl: 3.2 * MU }),
+  },
+  // navanax: the support fleet's T5 — 20000 hp, armor 16, and the omura's
+  // 7.25x7.25-block hitbox, at 0.65 units/tick = 4.875 tiles/s. Its EMP
+  // cannon heals through its shots (healPercent 20 on the bullet), which
+  // is a weapon again, so the top of this tree is a bare hull like the
+  // top of every other support tree — corvus, vela and this one all
+  // arrive with nothing but their size
+  navanax: {
+    hp: 20000,
+    speed: 4.875 * CELL,
+    armor: 16,
+    radius: UR * 7.25,
+    tier: 5,
+    drag: 0.17,
+    rotateSpeed: 1.1,
+    naval: true,
+    immunities: ["wet"],
+    wake: wake({ x: 23 * MU, y: -32 * MU, length: 70, scl: 3.5 * MU }),
+  },
 };
 
 /**
@@ -633,6 +934,13 @@ export const UNIT_TREES = [
   { name: "Support", kinds: ["nova", "pulsar", "quasar", "vela", "corvus"] },
   { name: "Crawler", kinds: ["crawler", "atrax", "spiroct", "arkyid", "toxopid"] },
   { name: "Air", kinds: ["flare", "horizon", "zenith", "antumbra", "eclipse"] },
+  // the two water trees. They are upgrade paths like the four above, and
+  // they are also the only rows whose units need a MAP to field them: a
+  // wave asking for rissos on a map with no water sends nothing at all
+  // (Sim.spawnPads returns an empty pad list), exactly as an air wave
+  // would on a map with no air zone
+  { name: "Naval", kinds: ["risso", "minke", "bryde", "sei", "omura"] },
+  { name: "Naval support", kinds: ["retusa", "oxynoe", "cyerce", "aegires", "navanax"] },
   // not an upgrade path: the boss row holds the kinds that arrive as an
   // event rather than a stream, so its slots do not read as tiers
   { name: "Boss", kinds: ["disrupt"] },
@@ -743,7 +1051,7 @@ export interface LevelSpec {
    * must stay stable even when a world is renamed, or saves break
    */
   id: string;
-  /** the world's only display name, e.g. "The Three Gates" */
+  /** the world's only display name, e.g. "Confluence" */
   name: string;
   /** official map id this level plays on; the first official map when unset */
   map?: string;
@@ -792,7 +1100,7 @@ export interface LevelSpec {
  * The constant sets the pace where the map can keep up and gets out of the
  * way where it cannot.
  *
- * Measured on The Three Gates, which has five drop zones: every wave up to
+ * Measured on Confluence, which has five drop zones: every wave up to
  * about 230/s comes out in the full 3.5s, and wave 20 asks 716/s, gets 253/s
  * and takes 9.9s to release all 2,506 — still quicker than the 15.7s the old
  * flat 160/s gave it. So the ceiling a map imposes is a REAL limit worth
@@ -871,7 +1179,7 @@ export function levelDoc(spec: LevelSpec): LevelDoc {
 export const WORLDS: LevelSpec[] = [
   {
     id: "1",
-    name: "The Three Gates",
+    name: "Confluence",
     map: "grass-open",
     waveGap: 15,
     // ================= HOW TO AUTHOR A WAVE ========================
@@ -988,7 +1296,7 @@ export const WORLDS: LevelSpec[] = [
     // public/levels/2.json is still a copy of 1.json; authoring the
     // script is the remaining half of this world, and needs nothing here.
     id: "2",
-    name: "Second Front",
+    name: "Maelstrom",
     map: "tidewater",
     waveGap: 15,
     script: [],

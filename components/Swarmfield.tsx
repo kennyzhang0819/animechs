@@ -38,6 +38,7 @@ import {
 } from "@/game/ladder";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import {
+  clearedOn,
   grantRunReward,
   isTierCleared,
   loadProgress,
@@ -53,8 +54,8 @@ import {
   type RunReward,
 } from "@/game/progress";
 import { turretIcon } from "@/game/atlas";
-import { BY_MINDUSTRY_VALUE } from "@/game/tech";
-import { isEmpty, ITEM_INFO, itemForTier } from "@/game/items";
+import { BAND_FOR_CLEARED, bandForCleared, BY_MINDUSTRY_VALUE } from "@/game/tech";
+import { isEmpty, ITEM_INFO, ITEM_KINDS, itemForTier } from "@/game/items";
 import { CostRow, Wallet } from "./Items";
 import TechTree from "./TechTree";
 
@@ -188,15 +189,24 @@ function TierPicker({
   onStart,
 }: {
   progress: Progress;
-  /** which world's ladder is being picked from — WORLD until the tech
-   * tree's world-2 node puts a second one on the menu */
+  /** which world's ladder is being picked from. Every world is on the menu
+   * from the first run and each carries its own ladder, so this decides the
+   * whole panel: which tiers exist, which are cleared, which is the top */
   world: LevelSpec;
   tier: number;
   onTier: (t: number) => void;
   mapsReady: boolean;
   onStart: () => void;
 }) {
-  const top = topTier(progress);
+  const top = topTier(progress, world.id);
+  // WHAT THIS MAP WILL LET THROUGH. Owning a turret and being allowed to
+  // bring it are different things now (techOf/bandForCleared), and the
+  // difference is otherwise invisible: the build bar just quietly holds
+  // back everything above the band, which reads as a bug rather than a
+  // rule. So the map says so before the run starts.
+  const band = bandForCleared(clearedOn(progress, world.id));
+  const bandItem = ITEM_INFO[ITEM_KINDS[band]].name.toLowerCase();
+  const bandLocked = band < BAND_FOR_CLEARED[BAND_FOR_CLEARED.length - 1];
   const spec = specForTier(world, tier);
   const { waves } = levelSummary(spec);
   const step = (d: number): void => onTier(Math.min(top, Math.max(0, tier + d)));
@@ -223,7 +233,7 @@ function TierPicker({
       {/* no level name: there is one map in the game, so naming it labelled
           the obvious. The clear badge is the whole row now */}
       <div className="mt-3 flex items-baseline justify-end">
-        {isTierCleared(progress, tier) ? (
+        {isTierCleared(progress, world.id, tier) ? (
           <span className="text-[12px] font-bold uppercase tracking-widest text-[#7BE58A]">
             Cleared
           </span>
@@ -265,6 +275,20 @@ function TierPicker({
           +
         </button>
       </div>
+
+      {/* THE MAP'S OWN GATE, stated plainly. This is a property of the map
+          and not of the difficulty being picked, so it sits above the tier
+          blurb rather than inside it */}
+      {bandLocked && (
+        <div className="mt-3 border-t border-[#2E2E36] pt-3 text-[13px] leading-snug text-[#A6A6AF]">
+          This map allows turrets up to{" "}
+          <span className="font-bold text-[#FFD37F]">{bandItem}</span>. Clear{" "}
+          <span style={{ color: difficultyColor(top) }} className="font-bold">
+            {difficultyName(top)}
+          </span>{" "}
+          here to bring more.
+        </div>
+      )}
 
       {/* the wave count and one sentence of what the tier means — the full
           numbers (enemy level, hp multiple, exact salvage) live in the run
@@ -475,7 +499,7 @@ export default function Swarmfield() {
   useEffect(() => {
     const p = loadProgress();
     setProgress(p);
-    setTier(topTier(p));
+    setTier(topTier(p, WORLD.id));
     setHudMin(p.hudMinimized ?? false);
     setLoadout(p.loadout ?? null);
   }, []);
@@ -496,7 +520,7 @@ export default function Swarmfield() {
   useEffect(() => {
     const g = gameRef.current;
     if (!g) return;
-    const tech = techOf(loadProgress());
+    const tech = techOf(loadProgress(), worldId);
     g.setTech(admin ? null : tech);
     // dropping out of sandbox drops a sandbox-only pace with it, or the run
     // keeps running at a speed whose button is no longer on screen. What the
@@ -506,7 +530,18 @@ export default function Swarmfield() {
     if (!admin && !tech.speeds.includes(g.ui().speed))
       g.setSpeed(startingSpeed(loadProgress(), tech.speeds));
     setHud(g.ui());
-  }, [admin]);
+  }, [admin, worldId]);
+
+  /**
+   * THE PICKED TIER BELONGS TO A MAP, so switching maps has to re-clamp it.
+   * Each ladder is climbed separately: a save standing on Nemesis here is
+   * standing on Incursion next door, and leaving the number where it was
+   * would point the menu at a difficulty that map has not opened. It lands
+   * on the new map's own frontier, which is where a fresh pick belongs.
+   */
+  useEffect(() => {
+    setTier(topTier(loadProgress(), worldId));
+  }, [worldId]);
 
   useEffect(() => {
     let alive = true;
@@ -542,10 +577,10 @@ export default function Swarmfield() {
           return;
         }
         const save = loadProgress();
-        g.setTech(admin ? null : techOf(save));
+        g.setTech(admin ? null : techOf(save, worldId));
         // the pace carries across runs and across sessions — a player who
         // plays at 4x wants 4x again after a loss, not 1x and a click
-        g.setSpeed(startingSpeed(save, admin ? SPEEDS : techOf(save).speeds));
+        g.setSpeed(startingSpeed(save, admin ? SPEEDS : techOf(save, worldId).speeds));
         // stand last run's emplacements back up before the first wave. Tech
         // is applied first because placeTower checks capacity, so restoring
         // ahead of it would silently drop everything past the default caps
@@ -617,7 +652,7 @@ export default function Swarmfield() {
         // the picker follows the frontier ONLY when the frontier moved. A
         // player farming tier 2 with a frontier of 7 has chosen that tier
         // and must not be yanked back up to 7 for clearing it again
-        if (reward.firstClear) setTier(topTier(after));
+        if (reward.firstClear) setTier(topTier(after, reward.worldId));
       }
     }, 100);
     return () => {
@@ -762,7 +797,7 @@ export default function Swarmfield() {
     setResult(null);
     // the run just banked its drops — a node bought mid-overlay would not apply
     // without this re-read (tech is per-run anyway, but keep it honest)
-    g.setTech(admin ? null : techOf(loadProgress()));
+    g.setTech(admin ? null : techOf(loadProgress(), worldId));
     g.reset();
     // reset() clears the field, so the layout has to be stood back up here
     // too — Retry rebuilds the sim in place and never goes through the
@@ -823,9 +858,11 @@ export default function Swarmfield() {
               </button>
             </div>
           )}
-          {/* the world picker exists only once the tech tree's world-2 node
-              is owned — until then there is one world and nothing to pick */}
-          {progress && (progress.tech["world-2"] ?? 0) > 0 && (
+          {/* EVERY WORLD, ALWAYS. Nothing is bought to reach a map and
+              nothing carries between them: each keeps its own ladder, and
+              picking one here is what decides which ladder the panel below
+              is showing and which turrets that map will let through */}
+          {progress && WORLDS.length > 1 && (
             <div role="group" aria-label="world select" className="flex items-center gap-2">
               {WORLDS.map((w) => (
                 <button
@@ -867,7 +904,7 @@ export default function Swarmfield() {
                   resetProgress();
                   const p = loadProgress();
                   setProgress(p);
-                  setTier(topTier(p));
+                  setTier(topTier(p, worldId));
                 }
               }}
               className="text-[13px] uppercase tracking-widest text-[#71717C] underline-offset-2 hover:text-[#FF5A5A] hover:underline"
@@ -1396,13 +1433,13 @@ export default function Swarmfield() {
                       )}
                     </div>
                     {/* the ladder is finite, so the last first-clear has
-                        nothing to unlock — it finishes the campaign. What
-                        counts as "last" is the save's OWN top (topTier):
-                        clearing Nemesis without A Final Threat owned must
-                        not announce a difficulty the menu will not show */}
+                        nothing to unlock — it finishes that map. What
+                        counts as "last" is THIS MAP'S top (topTier on the
+                        world just played), so a clear never announces a
+                        difficulty this map's menu will not show */}
                     {result.firstClear && (
                       <div className="pt-1 text-[12px] uppercase tracking-widest text-[#FFD37F]">
-                        {progress && topTier(progress) > result.tier ? (
+                        {progress && topTier(progress, result.worldId) > result.tier ? (
                           <>
                             <span style={{ color: difficultyColor(result.tier + 1) }}>
                               {difficultyName(result.tier + 1)}

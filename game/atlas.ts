@@ -29,17 +29,44 @@ const uv = (x: number, y: number, w: number, h: number, inset = 0): UVRect => [
   (y + h - inset) / ATLAS_H,
 ];
 
-// the two water cells, on the free tail of the y=64 row (the land floors
-// there stop at dirtWall0's 448..512). Named up here because UV_FLOORS
-// repeats each of them three times — see its note
-const WATER_SHALLOW_UV = uv(512, 64, 64, 64, 2);
-const WATER_DEEP_UV = uv(576, 64, 64, 64, 2);
+/**
+ * The two water cells, on the free stretch under the naval band. Named up
+ * here because UV_FLOORS repeats each of them three times — see its note.
+ *
+ * THESE ARE THE ONLY FLOOR CELLS PACKED 3x3 RATHER THAN ONCE, and the ring
+ * around each is not padding: water is the one floor drawn through a
+ * shader that SAMPLES OFF THE TILE. Mindustry's water.frag displaces its
+ * read horizontally by up to a world unit per row (the swell), which on a
+ * plain 64px cell would reach into whatever sprite is packed next door and
+ * smear it across the sea. Tiling the same 32px source nine times and
+ * handing the renderer the CENTRE cell means a displaced read lands on
+ * more water — a whole tile's worth of headroom in every direction, eight
+ * times the largest displacement the shader can ask for — so the swell is
+ * seamless and no neighbour can bleed in.
+ *
+ * No inset either, for the same reason: an inset crops the tile, and a
+ * cropped tile does not line up with the copies around it.
+ */
+const WATER_TILE = 192;
+const WATER_SHALLOW_XY = [T5 + 800, 2304] as const;
+const WATER_DEEP_XY = [T5 + 800, 2496] as const;
+const waterCentre = (xy: readonly [number, number]): UVRect =>
+  uv(xy[0] + 64, xy[1] + 64, 64, 64);
+const WATER_SHALLOW_UV = waterCentre(WATER_SHALLOW_XY);
+const WATER_DEEP_UV = waterCentre(WATER_DEEP_XY);
+/**
+ * UV distance of ONE MINDUSTRY WORLD UNIT along x on a water cell — what
+ * the water shader multiplies its displacement by. A tile is 64 atlas px
+ * and 8 world units across, so this is an eighth of a cell.
+ */
+export const WATER_UV_UNIT = 64 / 8 / ATLAS_W;
 
 // row 0: 64px cells — grass floors, stone walls, fx
 // indices into UV_FLOORS: 0-2 grass, 3-5 stone, 6-8 dirt, 9-11 sand,
 // 12-14 darksand (the desert pair rides row 0's free tail; x512 stays
 // empty to keep clear space beside the ring cell at 448), 15-17 shallow
-// water, 18-20 deep water on the free tail of the y=64 row.
+// water, 18-20 deep water — the two water groups on their own 3x3 cells
+// under the naval band (see the WATER_TILE note).
 //
 // THE WATER GROUPS ARE THREE ENTRIES POINTING AT ONE ATLAS CELL EACH, and
 // that is deliberate rather than lazy. The renderer reads a floor's blend
@@ -430,6 +457,38 @@ export const UV_MISSILE = uv(T5 + 224, 1792, 36, 36);
 export const UV_MISSILE_BACK = uv(T5 + 272, 1792, 36, 36);
 
 /**
+ * THE NAVAL BAND (x=1024, y=1920..2688) — the ten hulls of the two water
+ * trees, on the free stretch of the T5 column between the bullet regions
+ * and the turret tops.
+ *
+ * A ship is drawn exactly like a flyer: ONE quad, outlined at pack time,
+ * turned to the heading the sim gave it. It has no legs to plant and no
+ * chassis to slide, so there is nothing to assemble and nothing to
+ * silhouette under — which is why this band is half the size the legged
+ * T4 bands are for the same number of units. What a hull does have instead
+ * is its wake, and that is geometry the renderer strokes from the solid
+ * texel (see WakeSpec) rather than art on this sheet.
+ *
+ * Three cell sizes, chosen the usual way — the cell sets the world scale,
+ * so each is the smallest power-of-two step that clears the art plus the
+ * 4px mip-3 margin, and every one keeps the sheet's constant 0.625 world
+ * px per native px.
+ */
+export const UV_RISSO = uv(T5, 1920, 128, 128);
+export const UV_MINKE = uv(T5 + 128, 1920, 128, 128);
+export const UV_RETUSA = uv(T5 + 256, 1920, 128, 128);
+export const UV_OXYNOE = uv(T5 + 384, 1920, 128, 128);
+export const UV_BRYDE = uv(T5, 2048, 256, 256);
+export const UV_CYERCE = uv(T5 + 256, 2048, 256, 256);
+export const UV_SEI = uv(T5 + 512, 2048, 256, 256);
+export const UV_AEGIRES = uv(T5 + 768, 2048, 256, 256);
+// the two T5 hulls take 384px cells, the size eclipse needed: omura is
+// 264x351 of art and navanax 258x366, and a 256 cell would have had to
+// scale them down and broken the constant native-px-to-world-px
+export const UV_OMURA = uv(T5, 2304, 384, 384);
+export const UV_NAVANAX = uv(T5 + 384, 2304, 384, 384);
+
+/**
  * The Incursion and Onslaught turret tops, on the free band at y=2816. Each cell
  * hugs its art exactly, like every other turret top: the renderer maps the
  * whole cell onto a size*CELL quad, so a sprite parked inside a larger cell
@@ -580,6 +639,18 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   // the only 384px cell on it — hence the odd multiplier, which is just
   // 384/64 like every other one here
   eclipse: { uv: UV_ECLIPSE, sprite: UNIT_SPRITE * 6 },
+  // the fleet: one quad apiece, like the flyers, on the naval band's three
+  // cell sizes (see the UV note there)
+  risso: { uv: UV_RISSO, sprite: UNIT_SPRITE * 2 },
+  minke: { uv: UV_MINKE, sprite: UNIT_SPRITE * 2 },
+  bryde: { uv: UV_BRYDE, sprite: UNIT_SPRITE * 4 },
+  sei: { uv: UV_SEI, sprite: UNIT_SPRITE * 4 },
+  omura: { uv: UV_OMURA, sprite: UNIT_SPRITE * 6 },
+  retusa: { uv: UV_RETUSA, sprite: UNIT_SPRITE * 2 },
+  oxynoe: { uv: UV_OXYNOE, sprite: UNIT_SPRITE * 2 },
+  cyerce: { uv: UV_CYERCE, sprite: UNIT_SPRITE * 4 },
+  aegires: { uv: UV_AEGIRES, sprite: UNIT_SPRITE * 4 },
+  navanax: { uv: UV_NAVANAX, sprite: UNIT_SPRITE * 6 },
 };
 
 // Mindustry world units → px (CELL / 8, see constants.ts)
@@ -1074,6 +1145,19 @@ const SPRITES = {
   toxopidFoot: "/mindustry/sprites/units/toxopid-foot.png",
   toxopidCannon: "/mindustry/sprites/units/weapons/toxopid-cannon.png",
   eclipse: "/mindustry/sprites/units/eclipse.png",
+  // the fleet. Each ship is a single hull sprite — the naval types' own
+  // weapons all sit on turret mounts Mindustry draws from the weapon
+  // sheets, and a hull with no assembled parts needs none of them here
+  risso: "/mindustry/sprites/units/risso.png",
+  minke: "/mindustry/sprites/units/minke.png",
+  bryde: "/mindustry/sprites/units/bryde.png",
+  sei: "/mindustry/sprites/units/sei.png",
+  omura: "/mindustry/sprites/units/omura.png",
+  retusa: "/mindustry/sprites/units/retusa.png",
+  oxynoe: "/mindustry/sprites/units/oxynoe.png",
+  cyerce: "/mindustry/sprites/units/cyerce.png",
+  aegires: "/mindustry/sprites/units/aegires.png",
+  navanax: "/mindustry/sprites/units/navanax.png",
   spawnPad: `${ENV}/dark-panel-2.png`,
   towerBase: "/mindustry/sprites/blocks/turrets/bases/block-2.png",
   towerBase1: "/mindustry/sprites/blocks/turrets/bases/block-1.png",
@@ -1428,10 +1512,31 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(img.darksand0), 768, 0, 64, 64);
   c.drawImage(antialiased(img.darksand1), 832, 0, 64, 64);
   c.drawImage(antialiased(img.darksand2), 896, 0, 64, 64);
-  // water, on the free tail of the land-floor row — one cell each, shared
-  // by all three slots of its group (see the UV_FLOORS note)
-  c.drawImage(antialiased(img.shallowWater), 512, 64, 64, 64);
-  c.drawImage(antialiased(img.deepWater), 576, 64, 64, 64);
+  // water: each 32px source antialiased once, then blitted 3x3 at the same
+  // 2x tile scale into its own 192px cell. The centre 64 is the tile a
+  // floor quad draws; the ring is the headroom the water shader displaces
+  // into (see the WATER_TILE note)
+  //
+  // The tiling happens at NATIVE size and the antialias pass runs ONCE over
+  // the whole block, not once per copy. That ordering is the difference
+  // between a sea and a chessboard: Pixmaps.antialias clips at its input's
+  // edge, so nine separately-AA'd tiles carry nine sets of clipped borders
+  // and the 64px grid of them is plainly visible across open water. Tiled
+  // first, every interior seam has its true neighbour to average against
+  // and disappears
+  const waterCell = (src: HTMLImageElement, [wx, wy]: readonly [number, number]): void => {
+    const reps = WATER_TILE / 64;
+    const block = document.createElement("canvas");
+    block.width = block.height = 32 * reps;
+    const bc = block.getContext("2d");
+    if (!bc) throw new Error("2d context unavailable for water tile");
+    bc.imageSmoothingEnabled = false;
+    for (let ry = 0; ry < reps; ry++)
+      for (let rx = 0; rx < reps; rx++) bc.drawImage(src, rx * 32, ry * 32, 32, 32);
+    c.drawImage(antialiased(block), wx, wy, WATER_TILE, WATER_TILE);
+  };
+  waterCell(img.shallowWater, WATER_SHALLOW_XY);
+  waterCell(img.deepWater, WATER_DEEP_XY);
   // 2x2-tile "-large" wall art: 64px sources at the same 2x tile scale,
   // in the free block right of the dirt edge fades
   c.drawImage(antialiased(img.stoneWallLarge), 736, 768, 128, 128);
@@ -1647,6 +1752,23 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
     c, antialiased(outlined(img.eclipse, UNIT_OUTLINE, UNIT_OUTLINE_R)),
     T5 + 192, 1600, 320, 321,
   );
+
+  // the naval band: every hull outlined and antialiased like a flyer, at
+  // native size in the cell its UV names (see the UV_RISSO note)
+  const hull = (
+    src: HTMLImageElement, cx: number, cy: number, w: number, h: number,
+  ): void =>
+    drawFacingRight(c, antialiased(outlined(src, UNIT_OUTLINE, UNIT_OUTLINE_R)), cx, cy, w, h);
+  hull(img.risso, T5 + 64, 1984, 70, 78);
+  hull(img.minke, T5 + 192, 1984, 88, 101);
+  hull(img.retusa, T5 + 320, 1984, 70, 78);
+  hull(img.oxynoe, T5 + 448, 1984, 88, 101);
+  hull(img.bryde, T5 + 128, 2176, 140, 140);
+  hull(img.cyerce, T5 + 384, 2176, 140, 140);
+  hull(img.sei, T5 + 640, 2176, 198, 228);
+  hull(img.aegires, T5 + 896, 2176, 218, 241);
+  hull(img.omura, T5 + 192, 2496, 264, 351);
+  hull(img.navanax, T5 + 576, 2496, 258, 366);
 
   // crawler parts: art then silhouettes, one flush 64px run (see UV note)
   drawFacingRight(c, antialiased(img.crawlerLeg), 480, 320, 48);

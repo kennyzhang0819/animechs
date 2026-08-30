@@ -1,4 +1,13 @@
-import { addScaled, canAfford, costEntries, pay, type Bank, type Cost, type ItemKind } from "./items";
+import {
+  addScaled,
+  canAfford,
+  costEntries,
+  ITEM_KINDS,
+  pay,
+  type Bank,
+  type Cost,
+  type ItemKind,
+} from "./items";
 import { TOWERS } from "./constants";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
@@ -10,10 +19,16 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * the whole tree hidden behind it. It exists to give the tree TWO paths out
  * of one place: turrets down the middle, and the utilities off to the side.
  *
- * The three speed nodes and time warp are the utilities path, and they are
- * a different KIND of purchase from a turret. A turret node's points are
+ * The three speed nodes are the utilities path, and they are a different
+ * KIND of purchase from a turret. A turret node's points are
  * capacity, so it takes points forever; a utility is a SWITCH, so it takes
  * exactly one (see `cap`) and then reads as owned.
+ *
+ * NOTHING HERE REACHES ACROSS MAPS. What this tree sells is OWNERSHIP, and
+ * ownership is campaign-wide; what a map will let through its door is a
+ * separate question answered by that map's own progress (bandForCleared,
+ * below). Two nodes used to break that line — one opened a second world,
+ * one revealed Eradication everywhere — and both are gone with the split.
  *
  * `slot-7` and `slot-8` are the utilities that are not about pace: the
  * build bar is a six-slot loadout (BASE_BAR_SLOTS), and each of these
@@ -33,11 +48,8 @@ export const UTILITY_KINDS = [
   "speed-2",
   "speed-4",
   "speed-8",
-  "time-warp",
   "slot-7",
   "slot-8",
-  "world-2",
-  "final-threat",
   "overdrive-projector",
 ] as const;
 export type UtilityKind = (typeof UTILITY_KINDS)[number];
@@ -64,13 +76,6 @@ export const NODE_SPEED: Readonly<Partial<Record<UtilityKind, number>>> = {
 };
 
 /**
- * The wave a save with TIME WARP opens every run on. The waves before it
- * never enter and never pay — the node buys back the opening minutes of a
- * run whose outcome they no longer decide, at the price of their drops.
- */
-export const WARP_START_WAVE = 10;
-
-/**
  * How many loadout slots the build bar starts with. The bar is a PvZ-style
  * loadout rather than a shelf of everything owned: every save picks which
  * turrets ride in it (Progress.loadout), and the two slot nodes off 4x
@@ -87,10 +92,6 @@ export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: s
   "speed-2": { name: "2x Speed", blurb: "Run the whole simulation at double pace." },
   "speed-4": { name: "4x Speed", blurb: "Quadruple pace — a wave gap stops being a wait." },
   "speed-8": { name: "8x Speed", blurb: "Eight times pace, for a board that is already holding." },
-  "time-warp": {
-    name: "Time Warp",
-    blurb: `Every run opens on wave ${WARP_START_WAVE}. The waves before it never arrive — and never drop.`,
-  },
   "slot-7": {
     name: "7th Slot",
     blurb: "One more loadout slot — the build bar grows to seven turrets.",
@@ -98,15 +99,6 @@ export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: s
   "slot-8": {
     name: "8th Slot",
     blurb: "The build bar tops out at eight loadout slots.",
-  },
-  "world-2": {
-    name: "Maelstrom",
-    blurb: "Opens Maelstrom on the campaign menu — a second front with its own ladder.",
-  },
-  "final-threat": {
-    name: "A Final Threat",
-    blurb:
-      "Reveals Eradication — the hidden difficulty past Nemesis — on every world. No extra loot up there; only the fight.",
   },
   "overdrive-projector": {
     name: "Overdrive Projector",
@@ -912,12 +904,18 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   },
   // ---------- THE UTILITIES PATH ---------------------------------------
   //
-  // Four one-point switches off home, in their own column: 2x, 4x and 8x
-  // simulation pace, then time warp. The pace switches used to be a constant
-  // — 2x and 4x free to everyone, 8x a sandbox tool nobody could reach (the
-  // old PLAYER_SPEEDS in game.ts). They are now the second thing a save can
-  // spend on. 16x is gone from the tree entirely: sandbox still offers it
-  // (SPEEDS in game.ts), but nothing sells it.
+  // Three one-point switches off home, in their own column: 2x, 4x and 8x
+  // simulation pace. These used to be a constant — 2x and 4x free to
+  // everyone, 8x a sandbox tool nobody could reach (the old PLAYER_SPEEDS in
+  // game.ts). They are now the second thing a save can spend on. 16x is gone
+  // from the tree entirely: sandbox still offers it (SPEEDS in game.ts), but
+  // nothing sells it.
+  //
+  // A FOURTH NODE USED TO TOP THE COLUMN — time warp, which opened every run
+  // on wave 10. It is gone: what it sold was the first nine waves of a run,
+  // and a run that can skip its own opening is a run whose opening was not
+  // worth playing. That is a pacing problem to fix in the script, not a
+  // purchase.
   //
   // THEY ARE PRICED AS CONVENIENCE, NOT AS POWER, and that is deliberate:
   // pace changes nothing about whether a board holds. It only decides how
@@ -940,7 +938,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
   // two multipliers are late-campaign goods.
   //
   // A CHAIN, NOT A FAN. Each one requires the one below it, so the column
-  // reads in order and a player cannot own time warp without having wanted 8x.
+  // reads in order and a player cannot own 8x without having wanted 4x.
   {
     id: "speed-2",
     price: { base: { titanium: 25 }, growth: 1 },
@@ -991,60 +989,17 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     x: 6,
     y: 4,
   },
-  {
-    // TIME WARP, where 16x pace used to sit. Sixteen times is not a pace a
-    // player watches, it is a way of not watching — and the thing actually
-    // worth skipping is the opening, not the frame rate. So the top of the
-    // column stopped selling speed and started selling the wave number.
-    //
-    // Priced in phase fabric like the node it replaced, and dearer, because
-    // this one does change a run: the first nine waves stop paying. It costs
-    // more than the three pace switches together and is still under a single
-    // mid-tree turret point — a convenience, bought once, late.
-    id: "time-warp",
-    price: { base: { "phase-fabric": 20 }, growth: 1 },
-    requires: "speed-8",
-    cap: 1,
-    x: 5,
-    y: 4,
-  },
   // ---------- THE EXPANSION BRANCH --------------------------------------
   //
-  // Home's LEFT fork, mirroring the utilities on the right. These are
-  // one-point switches that sell CONTENT rather than pace: a world, a
-  // difficulty, a block.
-  {
-    // WORLD 2 COSTS ONE SURGE ALLOY AND NOTHING ELSE — the boss trophy, not
-    // resources. The first surge a save can ever hold is world 1's boss
-    // falling on wave 50 of Nemesis (grantRunReward pays it once per
-    // world+difficulty), so this node is progression-locked by design: no
-    // amount of farming below the boss opens the second front, and the
-    // first trophy has an immediate, obvious place to be spent.
-    id: "world-2",
-    price: { base: { "surge-alloy": 1 }, growth: 1 },
-    requires: "home",
-    cap: 1,
-    x: 0,
-    y: 1,
-  },
-  {
-    // ERADICATION'S GATE. Deliberately VAST: the bundle is THREE full
-    // Nemesis clears of every currency (the audit's drops row x3, tidied),
-    // because what it sells is the campaign's hidden top — a save that owns
-    // this has finished Nemesis several times over and is asking for more.
-    // This is the one node whose gate genuinely is not "can the difficulty
-    // pay for it": Eradication drops nothing Nemesis does not, so the size
-    // of the ask is the whole gate.
-    id: "final-threat",
-    price: {
-      base: { copper: 150000, titanium: 45000, thorium: 34000, plastanium: 5300, "phase-fabric": 975 },
-      growth: 1,
-    },
-    requires: "world-2",
-    cap: 1,
-    x: 0,
-    y: 2,
-  },
+  // Home's LEFT fork, mirroring the utilities on the right. What used to
+  // hang here were two gates on CONTENT: a node that opened world 2, and one
+  // that revealed Eradication everywhere. Both are gone, and the reason is
+  // the same for each: a campaign whose maps each carry their own ladder has
+  // nowhere to put a global unlock. Every map is on the menu from the first
+  // run, and every map hides its own fourth difficulty until its own Nemesis
+  // falls. A purchase that opened either would be a purchase that reached
+  // across maps, which is the one thing this model does not do.
+  //
   {
     // THE PROJECTOR'S RESERVATION. The block is not in the game yet — this
     // node is its price and its place in the tree, bought ahead of the
@@ -1053,7 +1008,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // becomes its first placement.
     id: "overdrive-projector",
     price: { base: { "phase-fabric": 1000 }, growth: 1 },
-    requires: "world-2",
+    requires: "home",
     cap: 1,
     x: 1,
     y: 1,
@@ -1172,31 +1127,72 @@ export interface TechState {
    * in it and is never bought — it is the pace the game runs at.
    */
   speeds: readonly number[];
-  /**
-   * The wave every run opens on: 1 normally, WARP_START_WAVE once time warp
-   * is owned. The sim walks its script cursor past everything before it —
-   * those waves never spawn, so they never pay either.
-   */
-  startWave: number;
   /** loadout slots in the build bar: BASE_BAR_SLOTS plus owned slot nodes */
   barSlots: number;
 }
 
-export function techState(levels: TechLevels): TechState {
+/**
+ * A TURRET'S BAND: how far up the currency list its price reaches. Duo is
+ * copper only, so 0; salvo asks for thorium, so 2; spectre asks for phase
+ * fabric, so 4. Read off the price rather than written down anywhere,
+ * because the price is already the honest statement of how late a turret is
+ * — a node that starts asking for plastanium has moved up a band by that
+ * fact alone, and nothing else needs editing.
+ */
+export function towerBand(kind: TowerKind): number {
+  let band = 0;
+  for (const { item } of costEntries(techNode(kind).price.base))
+    band = Math.max(band, ITEM_KINDS.indexOf(item));
+  return band;
+}
+
+/**
+ * WHAT A MAP LETS YOU BRING, by how many of its difficulties you have
+ * cleared ON THAT MAP.
+ *
+ * Every map starts you at the bottom of the roster. Owning spectres does
+ * not mean you may open a new map with them: the tech tree says what a save
+ * OWNS, and this says what a map will let through its door, and they are
+ * different questions. Clearing a difficulty on a map raises that map's
+ * band for good — including when you go back to farm the tier you cleared,
+ * because the band belongs to the map's progress and not to the run.
+ *
+ * Nothing cleared buys the first three currencies, which is the roster an
+ * Incursion actually banks. Each clear opens one more, and the ladder runs
+ * out of currencies before it runs out of difficulties: Nemesis and
+ * Eradication share the full roster, since there is nothing above phase
+ * fabric to hold back.
+ */
+export const BAND_FOR_CLEARED: readonly number[] = [2, 3, 4, 4];
+
+export const bandForCleared = (cleared: number): number =>
+  BAND_FOR_CLEARED[Math.min(BAND_FOR_CLEARED.length - 1, Math.max(0, Math.floor(cleared)))];
+
+/**
+ * @param band the deepest currency this map will let a turret's price reach
+ *   (see bandForCleared). Omitted means no map gate at all — the editor and
+ *   sandbox, where a save's own tech is the only limit.
+ */
+export function techState(levels: TechLevels, band: number = ITEM_KINDS.length): TechState {
   const caps = Object.fromEntries(
     TOWER_KINDS.map((k) => [k, Math.max(0, Math.floor(levels[k] ?? 0))]),
   ) as Record<TowerKind, number>;
-  const unlocked = new Set<TowerKind>(TOWER_KINDS.filter((k) => caps[k] > 0));
+  // THE MAP GATE NARROWS `unlocked`, NOT `caps`. Everything that asks
+  // whether a turret may be placed — the build bar, the loadout picker,
+  // Sim.canPlace, Game.setBuild — already asks this one set, so a turret
+  // held back by the map is held back everywhere by one line here.
+  const unlocked = new Set<TowerKind>(
+    TOWER_KINDS.filter((k) => caps[k] > 0 && towerBand(k) <= band),
+  );
   const speeds = [
     1,
     ...UTILITY_KINDS.filter((k) => (levels[k] ?? 0) > 0)
       .map((k) => NODE_SPEED[k])
       .filter((m): m is number => m != null),
   ].sort((a, b) => a - b);
-  const startWave = (levels["time-warp"] ?? 0) > 0 ? WARP_START_WAVE : 1;
   const barSlots =
     BASE_BAR_SLOTS +
     ((levels["slot-7"] ?? 0) > 0 ? 1 : 0) +
     ((levels["slot-8"] ?? 0) > 0 ? 1 : 0);
-  return { unlocked, caps, speeds, startWave, barSlots };
+  return { unlocked, caps, speeds, barSlots };
 }

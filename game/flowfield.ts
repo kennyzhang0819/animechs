@@ -102,9 +102,41 @@ export class FlowField {
   // extra Dijkstra cost per narrow cell entered (in cell units)
   private static readonly NARROW_COST = 4;
   /**
-   * per-cell travel cost, i.e. 1 plus whatever `narrow` adds. Dijkstra pays
-   * it on entry; the eikonal sweep reads the same number as the slowness
-   * |grad dist| has to match, so both passes agree on what a cell is worth
+   * THE VERGE: how far from rock a cell stops being charged for being near
+   * it, in cells. Beyond this the cost is flat, which is the point — the
+   * penalty is "keep off the rock", not "walk the exact centre line", and
+   * a lane wider than twice this has a flat band down its middle for the
+   * crowd to spread across rather than a single cheapest thread to queue on.
+   */
+  private static readonly EDGE_REACH = 3.5;
+  /**
+   * What a cell flush against rock costs on top of its 1, tapering to
+   * nothing at EDGE_REACH.
+   *
+   * This is the number that stops the swarm scraping the walls, and it does
+   * it in the FIELD rather than in a steering force, which is the only
+   * place it can be done properly. A pure distance field's cheapest route
+   * is the geodesic, and a geodesic clips the inside of every corner: on an
+   * open map its shortest line runs along the rock for tile after tile with
+   * a lane's whole width standing empty beside it. No amount of local
+   * push-off fixes that, because the field is pulling the unit back onto
+   * the wall every tick. Charging the verge moves the cheapest route off it
+   * instead, and everything downstream — the spread, the centring, the
+   * crowd shove — then works with the field rather than against it.
+   *
+   * It also buys the second half of the same idea: the cheapest path is no
+   * longer the shortest one. At this weight a detour is worth taking if it
+   * trades a tile of wall-hugging for under ~2.2 tiles of open ground, so
+   * the field will happily walk a longer, roomier lane past a shorter tight
+   * one — and where two routes are close in length, the wide one wins.
+   */
+  private static readonly EDGE_COST = 2.2;
+  /**
+   * per-cell travel cost: 1, plus whatever `narrow` adds for single-file
+   * throughput, plus the verge charge for sitting near rock (EDGE_COST).
+   * Dijkstra pays it on entry; the eikonal sweep reads the same number as
+   * the slowness |grad dist| has to match, so both passes agree on what a
+   * cell is worth.
    */
   private readonly cost = new Float32Array(NCELLS);
   /**
@@ -286,6 +318,16 @@ export class FlowField {
         narrow[i] = 1;
         cost[i] = 1 + FlowField.NARROW_COST;
       }
+      // ...and the verge charge on top, for every cell within EDGE_REACH of
+      // rock (see EDGE_COST). SQUARED, not linear: a linear ramp has the
+      // same slope everywhere it acts, which is a steady pull toward the
+      // exact middle of any lane narrower than 2 x EDGE_REACH and would
+      // trade one queue along the wall for another down the centre line.
+      // Squared puts the whole gradient in the last cell or so before the
+      // rock, where the point is, and leaves the rest of the lane nearly
+      // flat, where the crowd is meant to be able to sit anywhere.
+      const t = (FlowField.EDGE_REACH - this.clear[i]) / (FlowField.EDGE_REACH - 1);
+      if (t > 0) cost[i] += FlowField.EDGE_COST * Math.min(1, t) * Math.min(1, t);
     }
     dist.fill(INF);
     this.hN = 0;

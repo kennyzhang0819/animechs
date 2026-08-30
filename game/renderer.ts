@@ -47,6 +47,7 @@ import {
   UV_WALLS,
   UV_WALL_LARGE,
   WALL_GROUP,
+  WATER_UV_UNIT,
   type UVRect,
 } from "./atlas";
 import {
@@ -82,9 +83,15 @@ const PAL = PAL_IMPORT;
 const ROWS = ROWS_IMPORT;
 const TOWERS = TOWERS_IMPORT;
 const W = W_IMPORT;
-import { UNIT_KINDS, UNIT_STATS, type ForceFieldSpec, type LegSpec } from "./levels";
-import { MAX_LEGS, type Sim } from "./sim";
-import { showsFloorCell, WALL_DEEP, type Terrain } from "./terrain";
+import {
+  UNIT_KINDS,
+  UNIT_STATS,
+  type ForceFieldSpec,
+  type LegSpec,
+  type WakeSpec,
+} from "./levels";
+import { MAX_LEGS, WAKE_PTS, type Sim } from "./sim";
+import { isWaterFloor, showsFloorCell, WALL_DEEP, type Terrain } from "./terrain";
 import { FxKind, type Effect, type RGB, type Tower, type TowerKind } from "./types";
 
 // per-kind turret tops and bullet sprites
@@ -351,6 +358,23 @@ const KIND_GAIT_TRIG = KIND_GAIT.map((L) => {
 });
 /** the force field each kind stands inside, null for everything else */
 const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
+/** the naval wake each kind drags, null for everything that is not a hull */
+const KIND_WAKE = UNIT_KINDS.map((k) => UNIT_STATS[k].wake ?? null);
+/** is any hull on the roster at all? the wake pass is skipped outright
+ *  when there is none, exactly as the force-field absorb pass is */
+const HAS_WAKE = KIND_WAKE.some(Boolean);
+/**
+ * The wake's colour: Mindustry's Blocks.water.mapColor multiplied by 1.5,
+ * which is what WaterMoveComp paints its two Trails in.
+ *
+ * mapColor is the average of a floor's own sprite, computed by Mindustry's
+ * sprite packer — shallow-water.png averages #5c6dbb, within a shade of
+ * Liquids.water.color, and x1.5 lifts it to this pale blue. Upstream then
+ * lerps the live colour toward whatever floor the hull is over; both water
+ * floors we field average to the same blue within a few points, so the
+ * lerp is a constant here and this is what it settles on.
+ */
+const WAKE_COL: RGB = [0x8b / 255, 0xa4 / 255, 0xff / 255];
 const TAU = Math.PI * 2;
 // Mindustry throws every shadow along (shadowTX, shadowTY) = (-12, -13)
 // world units times the caster's elevation. This game's shadows fall the
@@ -417,7 +441,14 @@ const KIND_CULL = UNIT_KINDS.map((k, i) => {
   const legs = UNIT_STATS[k].legs;
   const legReach = legs ? legs.baseOffset + legs.length * legs.maxLength + 24 : 0;
   const halo = UNIT_STATS[k].radius * 2.6 + 8;
-  return Math.max(KIND_SPRITE[i], legReach, halo) + SHADOW_OFF + 8;
+  // a hull's wake is the longest thing any kind draws: the trail holds
+  // `length` ticks of history, so at the hull's own pace it runs that far
+  // back — an omura's is 70 ticks of 0.62 units/tick, over five tiles
+  const wake = UNIT_STATS[k].wake;
+  const wakeReach = wake
+    ? (UNIT_STATS[k].speed / 60) * wake.length + Math.abs(wake.y) + wake.x + wake.scl
+    : 0;
+  return Math.max(KIND_SPRITE[i], legReach, halo, wakeReach) + SHADOW_OFF + 8;
 });
 
 /**
@@ -465,6 +496,13 @@ interface MechPart {
   dk: number;
 }
 const MECH_PARTS: MechPart[] = [];
+// pushWake's scratch: one hull's path and its per-point travel direction,
+// rebuilt in place per unit rather than allocated (the pass runs over
+// every boat on the field, every frame). WAKE_PTS points plus the live one
+const WAKE_PX = new Float64Array(WAKE_PTS + 1);
+const WAKE_PY = new Float64Array(WAKE_PTS + 1);
+const WAKE_DX = new Float64Array(WAKE_PTS + 1);
+const WAKE_DY = new Float64Array(WAKE_PTS + 1);
 
 const VS = `#version 300 es
 layout(location=0) in vec2 aCorner;
@@ -501,6 +539,88 @@ void main() {
   o = texture(uTex, vUV) * vec4(vTint.rgb * vTint.a, vTint.a);
 }`;
 
+/**
+ * The water program's vertex stage: VS, plus the fragment's world position.
+ *
+ * water.frag needs to know where on the MAP each pixel is — its swell and
+ * its glints are functions of world coordinates and time, which is what
+ * anchors the sea to the ground instead of to the screen (upstream reads
+ * u_campos for the same reason). Everything else here is VS unchanged.
+ */
+const WATER_VS = `#version 300 es
+layout(location=0) in vec2 aCorner;
+layout(location=1) in vec2 aPos;
+layout(location=2) in vec2 aSize;
+layout(location=3) in float aRot;
+layout(location=4) in vec4 aUV;
+layout(location=5) in vec4 aTint;
+uniform vec2 uRes;
+uniform float uZoom;
+uniform vec2 uOff;
+out vec2 vUV;
+out vec2 vWorld;
+out vec4 vTint;
+void main() {
+  float s = sin(aRot), c = cos(aRot);
+  vec2 sc = aCorner * aSize;
+  vec2 p = vec2(sc.x * c - sc.y * s, sc.x * s + sc.y * c) + aPos;
+  vec2 view = p * uZoom + uOff;
+  vec2 clip = view / uRes * 2.0 - 1.0;
+  gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+  vUV = mix(aUV.xy, aUV.zw, aCorner + 0.5);
+  vWorld = p;
+  vTint = aTint;
+}`;
+
+/**
+ * shaders/water.frag, ported. Two things move: the whole surface slides
+ * sideways by up to a world unit, on a sine of the row and the clock, and
+ * a band of brighter water 7 units wide in every 40 drifts across the sea
+ * on the sum of five more. Every constant below is the original's — the
+ * 40 and 7 of the band, the /5 clock, the (0.9, 0.9, 1) cast.
+ *
+ * Upstream runs this over the whole cached floor texture, so its `coords`
+ * are camera-space Mindustry world units and its displacement is measured
+ * in SCREEN texels of that cache. Here it runs per water tile, so the
+ * world position comes from the vertex stage and the displacement is
+ * converted to a UV step on the tile (uUnit, one world unit) — which is
+ * why the water cells are packed 3x3 with a tile of headroom around them
+ * (see the atlas's WATER_TILE note).
+ *
+ * One difference that cannot be helped: Mindustry's world y runs UP and
+ * this game's runs down, so every sine of `coords.y` is mirrored. The
+ * pattern is a sum of sines either way — what changes is which way the
+ * swell and the bands travel, not what they look like.
+ */
+const WATER_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uTex;
+uniform float uTime;   // Mindustry ticks
+uniform float uUnit;   // one Mindustry world unit as a UV step along x
+in vec2 vUV;
+in vec2 vWorld;
+in vec4 vTint;
+out vec4 o;
+const float mscl = 40.0;
+const float mth = 7.0;
+const float MU = ${(CELL / 8).toFixed(4)};  // px per Mindustry world unit
+void main() {
+  vec2 coords = vWorld / MU;
+  float stime = uTime / 5.0;
+  vec4 sampled = texture(uTex, vUV + vec2(sin(stime / 3.0 + coords.y / 0.75) * uUnit, 0.0));
+  vec3 color = sampled.rgb * vec3(0.9, 0.9, 1.0);
+  float tester = mod(
+    (coords.x + coords.y * 1.1 + sin(stime / 8.0 + coords.x / 5.0 - coords.y / 100.0) * 2.0) +
+    sin(stime / 20.0 + coords.y / 3.0) * 1.0 +
+    sin(stime / 10.0 - coords.y / 2.0) * 2.0 +
+    sin(stime / 7.0 + coords.y / 1.0) * 0.5 +
+    sin(coords.x / 3.0 + coords.y / 2.0) +
+    sin(stime / 20.0 + coords.x / 4.0) * 1.0, mscl);
+  if (tester < mth) color *= 1.2;
+  float a = min(sampled.a * 100.0, 1.0);
+  o = vec4(color * vTint.rgb * vTint.a, a * vTint.a);
+}`;
+
 const FLOATS = 13; // pos2 size2 rot1 uv4 tint4
 
 interface Batch {
@@ -526,6 +646,24 @@ export class Renderer {
   private readonly quadVBO: WebGLBuffer;
   private readonly tex: WebGLTexture;
   private readonly terrain: Batch;
+  /**
+   * The sea, split out of the terrain batch because it is the one floor
+   * drawn through a shader of its own. It holds nothing but the base tile
+   * of every water cell — the land's edge fades over a shoreline stay in
+   * `terrain` and draw on top, which is the blend order water has always
+   * had (GROUP_PRI puts it at the bottom)
+   */
+  private readonly water: Batch;
+  private readonly waterProg: WebGLProgram;
+  private readonly uWaterRes: WebGLUniformLocation;
+  private readonly uWaterZoom: WebGLUniformLocation;
+  private readonly uWaterOff: WebGLUniformLocation;
+  private readonly uWaterTime: WebGLUniformLocation;
+  private readonly uWaterUnit: WebGLUniformLocation;
+  /** this frame's camera, kept for the passes that run their own program */
+  private view = { zoom: 1, offX: 0, offY: 0, kPx: 1 };
+  /** seconds of sim time the sea is animated by — see drawWorld */
+  private waterTime = 0;
   // walls (and props) draw in their own batch so the shadow quad can slot
   // between floors and walls with a different texture bound
   private readonly walls: Batch;
@@ -605,6 +743,8 @@ export class Renderer {
 
     // floor tile + up to 8 floor-edge fades per cell (worst-case borders)
     this.terrain = this.makeBatch(NCELLS * 6 + 512);
+    // one quad per water cell — a map that is all sea is the worst case
+    this.water = this.makeBatch(NCELLS + 64);
     // wall tiles + decor/pine props
     this.walls = this.makeBatch(NCELLS * 2 + 2048);
     this.shadow = this.makeBatch(4);
@@ -612,12 +752,26 @@ export class Renderer {
     // mirrored gun drawn twice (silhouette rim under, art over), which is
     // what MAX_UNITS of anything is ever actually made of. The heavies cost
     // more — a scepter's three mounts make 20, a six-legged spiroct closer
-    // to 50 — and a field that was somehow ALL heavies would run this dry;
-    // they arrive in tens, among thousands of the cheap kinds that do not
+    // to 50, and a naval hull 15 (one for the boat, fourteen for the two
+    // sides of its wake) — and a field that was somehow ALL heavies would
+    // run this dry; they arrive in tens, among thousands of the cheap
+    // kinds that do not
     this.dyn = this.makeBatch(MAX_UNITS * 12 + 2048);
     // one quad per hexagonal bubble; a polygon of any other side count
     // takes one per side, so this holds a wave's worth either way
     this.shields = this.makeBatch(2048);
+
+    this.waterProg = this.link(WATER_VS, WATER_FS);
+    const needWater = (name: string): WebGLUniformLocation => {
+      const loc = gl.getUniformLocation(this.waterProg, name);
+      if (!loc) throw new Error(`${name} uniform missing`);
+      return loc;
+    };
+    this.uWaterRes = needWater("uRes");
+    this.uWaterZoom = needWater("uZoom");
+    this.uWaterOff = needWater("uOff");
+    this.uWaterTime = needWater("uTime");
+    this.uWaterUnit = needWater("uUnit");
 
     this.shieldProg = this.link(SHIELD_VS, SHIELD_FS);
     const needIn = (name: string): WebGLUniformLocation => {
@@ -931,6 +1085,82 @@ export class Renderer {
    * `stroke` across (Mindustry Lines.line). A negative stroke mirrors the
    * art, which is how the two sides of the body share one sprite.
    */
+  /**
+   * A hull's wake: Mindustry's two WaveTrails (WaterMoveComp), drawn as
+   * strips of foam that taper to nothing at the tail.
+   *
+   * Upstream keeps a Trail per side, each fed a point per tick at
+   * (+-waveTrailX, waveTrailY) in the hull's own frame, and draws each as
+   * a run of quads whose half-width grows linearly from 0 at the oldest
+   * point to `trailScl` at the newest (Trail.draw's `i/3f * size * w1`).
+   *
+   * This draws the same shape off the sim's ONE subsampled centre path
+   * (see WAKE_PTS): each stored point is offset by the local travel
+   * direction — back by waveTrailY, out by +-waveTrailX — and consecutive
+   * offsets are joined by a stroked segment. Two departures, both cheap
+   * and both invisible at the sizes involved: the strip is a chain of
+   * uniform-width segments rather than true tapering quads (the step
+   * between two of eight widths is under a pixel and a half on the widest
+   * hull there is), and the offsets are rebuilt from the path instead of
+   * being stored, which is only different from upstream while a boat is
+   * turning faster than its own wake settles.
+   *
+   * The live position is the head of the path — the trail joins the hull
+   * rather than the last sample, exactly as Trail.draw's lastX/lastY do.
+   */
+  private pushWake(b: Batch, sim: Sim, i: number, w: WakeSpec): void {
+    const m = sim.uwakeN[i];
+    if (m < 1) return;
+    const off = i * WAKE_PTS;
+    // path points oldest first, the hull's own position last
+    const M = m + 1;
+    const px = WAKE_PX, py = WAKE_PY;
+    for (let k = 0; k < m; k++) {
+      px[k] = sim.uwakeX[off + k];
+      py[k] = sim.uwakeY[off + k];
+    }
+    px[m] = sim.upx[i];
+    py[m] = sim.upy[i];
+    // the travel direction at each point: toward the next one, and at the
+    // head the heading the hull is actually drawn on. A pair of points the
+    // boat has not moved between inherits the direction behind it
+    let dx = Math.cos(sim.urot[i]), dy = Math.sin(sim.urot[i]);
+    const dxs = WAKE_DX, dys = WAKE_DY;
+    for (let k = M - 2; k >= 0; k--) {
+      const ax = px[k + 1] - px[k], ay = py[k + 1] - py[k];
+      const l = Math.hypot(ax, ay);
+      if (l > 1e-3) {
+        dx = ax / l;
+        dy = ay / l;
+      }
+      dxs[k] = dx;
+      dys[k] = dy;
+    }
+    dxs[M - 1] = Math.cos(sim.urot[i]);
+    dys[M - 1] = Math.sin(sim.urot[i]);
+    const span = M - 1;
+    for (let side = -1; side <= 1; side += 2) {
+      let x0 = 0, y0 = 0;
+      for (let k = 0; k < M; k++) {
+        // back along the heading by waveTrailY, out across it by
+        // waveTrailX — Angles.trns(rotation - 90, x * sign, y) in a frame
+        // where a unit faces +x instead of +y
+        const fx = dxs[k], fy = dys[k];
+        const x1 = px[k] + fx * w.y - fy * (side * w.x);
+        const y1 = py[k] + fy * w.y + fx * (side * w.x);
+        if (k > 0) {
+          // Trail.draw's taper: half-width 0 at the tail, trailScl at the
+          // head. One segment carries the two half-widths it spans, which
+          // add up to the full stroke between them
+          const stroke = (w.scl * (k - 1)) / span + (w.scl * k) / span;
+          this.pushSeg(b, x0, y0, x1, y1, UV_SOLID, stroke, WAKE_COL, 1);
+        }
+        x0 = x1;
+        y0 = y1;
+      }
+    }
+  }
+
   private pushSeg(
     b: Batch,
     x1: number,
@@ -992,11 +1222,13 @@ export class Renderer {
   rebuildTerrain(src: { terrain: Terrain }, layers: TerrainLayers = ALL_LAYERS): void {
     const gl = this.gl;
     const t = this.terrain;
+    const wt = this.water;
     const T = src.terrain;
     this.core = T.core;
     this.hasGoals = T.goal.some((g) => g !== 0);
     this.layers = layers;
     t.n = 0;
+    wt.n = 0;
     // does this cell show its floor (rather than a wall sprite)? pine cells
     // (and tower cells, which aren't in terrain.blocked at all) get their
     // floor painted; props draw over it below. With the wall layer hidden
@@ -1029,7 +1261,11 @@ export class Renderer {
         const i = y * COLS + x;
         if (!showsFloor(i)) continue;
         const cx = (x + 0.5) * CELL, cy = (y + 0.5) * CELL;
-        this.push(t, cx, cy, CELL, CELL, 0, UV_FLOORS[T.floor[i]], 1, 1, 1, 1);
+        // the sea goes to its own batch and its own program; every other
+        // floor, and EVERY edge fade including the ones that overlay a
+        // water cell, stays here and draws over it
+        const wet = isWaterFloor(T.floor[i]);
+        this.push(wet ? wt : t, cx, cy, CELL, CELL, 0, UV_FLOORS[T.floor[i]], 1, 1, 1, 1);
         const pri = GROUP_PRI[(T.floor[i] / 3) | 0];
         for (const og of EDGE_ORDER) {
           if (GROUP_PRI[og] <= pri) continue;
@@ -1129,16 +1365,29 @@ export class Renderer {
       for (const p of T.pines)
         this.push(w, p.x, p.y, p.size, p.size, p.rot, UV_PINE, 1, 1, 1, 1);
     }
-    for (const b of [t, sh, w]) {
+    for (const b of [t, wt, sh, w]) {
       gl.bindVertexArray(b.vao);
       gl.bindBuffer(gl.ARRAY_BUFFER, b.vbo);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, b.data, 0, b.n * FLOATS);
     }
   }
 
-  /** floors, then the shadow rim on its own texture, then walls and props */
+  /** the sea, then the land floors and their shore fades over it, then
+   *  the shadow rim on its own texture, then walls and props */
   private drawWorld(): void {
     const gl = this.gl;
+    if (this.water.n > 0) {
+      const { zoom, offX, offY, kPx } = this.view;
+      gl.useProgram(this.waterProg);
+      gl.uniform2f(this.uWaterRes, this.canvas.width / kPx, this.canvas.height / kPx);
+      gl.uniform1f(this.uWaterZoom, zoom);
+      gl.uniform2f(this.uWaterOff, offX, offY);
+      // Shaders.water's u_time is Time.time, in ticks
+      gl.uniform1f(this.uWaterTime, this.waterTime * 60);
+      gl.uniform1f(this.uWaterUnit, WATER_UV_UNIT);
+      this.draw(this.water, false);
+      gl.useProgram(this.prog);
+    }
     this.draw(this.terrain, false);
     gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
     this.draw(this.shadow, false);
@@ -1149,6 +1398,7 @@ export class Renderer {
   /** per-frame GL setup shared by the game and terrain-only render paths */
   private begin(zoom: number, offX: number, offY: number, kPx: number): void {
     const gl = this.gl;
+    this.view = { zoom, offX, offY, kPx };
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(this.prog);
@@ -1160,6 +1410,10 @@ export class Renderer {
 
   /** terrain + core only — the map editor's frame, no sim required */
   renderTerrain(zoom = 1, offX = 0, offY = 0, kPx = this.canvas.width / W): void {
+    // the editor has no sim to read a clock off, and a still sea in the
+    // map editor looks like a bug in the map — so it runs off the wall
+    // clock there, which is the same rate at 1x speed
+    this.waterTime = performance.now() / 1000;
     this.begin(zoom, offX, offY, kPx);
     this.drawWorld();
     const dyn = this.dyn;
@@ -1191,6 +1445,9 @@ export class Renderer {
    * and the canvas is always filled whatever its aspect
    */
   render(sim: Sim, zoom = 1, offX = 0, offY = 0, kPx = this.canvas.width / W): void {
+    // the sea rides SIM time, so pausing the game stills it and the speed
+    // switcher moves it, exactly like everything else on the field
+    this.waterTime = sim.time;
     this.begin(zoom, offX, offY, kPx);
     this.drawWorld();
 
@@ -1236,6 +1493,18 @@ export class Renderer {
     }
     const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
     const { ushield, ushieldAlpha, urad, uwet } = sim;
+    // the fleet's wakes, at Mindustry's Layer.debris: UNDER every unit,
+    // including the hulls that laid them, so a crowded lane does not draw
+    // one boat's foam over another boat
+    if (HAS_WAKE)
+      for (let i = 0; i < n; i++) {
+        const w = KIND_WAKE[ukind[i]];
+        if (!w) continue;
+        const cm = KIND_CULL[ukind[i]];
+        if (upx[i] < vx0 - cm || upx[i] > vx1 + cm || upy[i] < vy0 - cm || upy[i] > vy1 + cm)
+          continue;
+        this.pushWake(dyn, sim, i, w);
+      }
     // painter's order in three passes: ground units, then flyer shadows on
     // top of the crowd, then the flyers themselves above everything
     for (let pass = 0; pass < 3; pass++) {

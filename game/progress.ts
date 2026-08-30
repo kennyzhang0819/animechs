@@ -17,6 +17,7 @@ import {
   isMaxed,
   isTowerNode,
   NODE_SPEED,
+  bandForCleared,
   TECH_KINDS,
   techCap,
   techNode,
@@ -39,13 +40,18 @@ export interface Progress {
   /** one balance per currency; see items.ts for what drops which */
   bank: Bank;
   /**
-   * How many tiers of the ladder have been cleared: tiers 0 .. cleared-1
-   * are beaten, and tier `cleared` is the frontier — the highest tier that
-   * can be attempted. The ladder is DIFFICULTIES long, so `cleared`
-   * reaching TOP_TIER + 1 means the campaign is finished and there is
-   * nothing above it (isCampaignComplete).
+   * HOW FAR UP EACH MAP'S OWN LADDER THIS SAVE HAS CLIMBED, keyed by world
+   * id. On a map with value `c`, tiers 0..c-1 are beaten and tier `c` is
+   * that map's frontier — the highest it will let you attempt. `c` reaching
+   * TOP_TIER + 1 means that map is finished.
+   *
+   * ONE NUMBER PER MAP, NOT ONE FOR THE SAVE. Clearing Onslaught somewhere
+   * says nothing about anywhere else: every map is on the menu from the
+   * first run and every map is climbed from the bottom, which is also what
+   * decides the turret band it will let through (bandForCleared in tech.ts).
+   * A map absent from this record has never been won on and reads 0.
    */
-  cleared: number;
+  clearedByMap: Record<string, number>;
   /**
    * Tech points per node. On a turret the points are its placement
    * capacity; on a utility (home, the speed unlocks) there is only one and
@@ -132,7 +138,7 @@ const freshBank = (): Bank => emptyBank();
 
 const fresh = (): Progress => ({
   bank: freshBank(),
-  cleared: 0,
+  clearedByMap: {},
   // home is free and granted outright — it is the root the whole tree hangs
   // off, and a save without it would draw nothing at all. Arc's node hangs
   // off duo and duo's off home, so granting all three leaves no orphan the
@@ -231,7 +237,32 @@ function readBank(p: { bank?: unknown; scrap?: unknown }): Bank {
  * tier per world cleared. That keeps a returning player's tech gates open
  * without inventing progress they never made.
  */
-function readCleared(p: { cleared?: unknown; completed?: unknown }): number {
+function readClearedByMap(p: {
+  clearedByMap?: unknown;
+  cleared?: unknown;
+  completed?: unknown;
+}): Record<string, number> {
+  const out: Record<string, number> = {};
+  const raw =
+    p.clearedByMap && typeof p.clearedByMap === "object"
+      ? (p.clearedByMap as Record<string, unknown>)
+      : null;
+  if (raw) {
+    for (const [k, v] of Object.entries(raw))
+      if (typeof v === "number" && v > 0) out[k] = Math.floor(v);
+    return out;
+  }
+  // A PRE-SPLIT SAVE CARRIED ONE NUMBER for the whole campaign, and it was
+  // earned on the first world — that is the only map its ladder ever ran on.
+  // So it lands there and nowhere else. Handing it to every map would open
+  // maps this save has not played at a tier it has not reached on them,
+  // which is exactly the reach across maps the split exists to remove.
+  const legacy = readLegacyCleared(p);
+  if (legacy > 0) out[WORLD.id] = legacy;
+  return out;
+}
+
+function readLegacyCleared(p: { cleared?: unknown; completed?: unknown }): number {
   if (typeof p.cleared === "number" && p.cleared > 0) return Math.floor(p.cleared);
   if (Array.isArray(p.completed)) return p.completed.length;
   return 0;
@@ -297,7 +328,7 @@ export function loadProgress(): Progress {
     if (devUnlocking()) grantEveryNode(tech);
     return {
       bank: readBank(p),
-      cleared: readCleared(p),
+      clearedByMap: readClearedByMap(p),
       tech,
       bossKills: readBossKills(p),
       layouts: readLayouts(p),
@@ -426,9 +457,26 @@ export function resetProgress(): void {
   }
 }
 
-export function techOf(p: Progress): TechState {
-  return techState(p.tech);
+/**
+ * The save's tech AS ONE MAP WILL HONOUR IT. Two gates stack here and they
+ * answer different questions: `p.tech` is what this save OWNS, bought once
+ * and owned everywhere, and the map's band is what this map will let
+ * through its door, earned on that map alone. A save with every turret
+ * still opens an untouched map holding duos.
+ *
+ * Pass no world and there is no map gate — the editor and sandbox, where
+ * owning a turret is the only question worth asking.
+ */
+export function techOf(p: Progress, worldId?: string): TechState {
+  return techState(
+    p.tech,
+    worldId == null ? undefined : bandForCleared(clearedOn(p, worldId)),
+  );
 }
+
+/** how many tiers this save has cleared on one map */
+export const clearedOn = (p: Progress, worldId: string): number =>
+  Math.max(0, Math.floor(p.clearedByMap[worldId] ?? 0));
 
 /**
  * The highest tier that can be attempted: every cleared one, plus the
@@ -442,24 +490,33 @@ export function techOf(p: Progress): TechState {
  * visible campaign always has. This is the one difficulty gated by tech —
  * everything under it still unlocks purely by clearing the tier below.
  */
-export const topTier = (p: Progress): number => {
-  const cap = (p.tech["final-threat"] ?? 0) > 0 ? TOP_TIER : TOP_TIER - 1;
-  return Math.min(cap, p.cleared);
-};
+export const topTier = (p: Progress, worldId: string): number =>
+  Math.min(TOP_TIER, clearedOn(p, worldId));
+
+/**
+ * The best any map has done, for the things that are still about the SAVE
+ * rather than about a map — a tech node with a `requiresTier` gate is a
+ * purchase, and a purchase is owned campaign-wide, so it asks whether this
+ * save has ever cleared that tier anywhere.
+ */
+export const bestTierCleared = (p: Progress): number =>
+  Object.values(p.clearedByMap).reduce((a, b) => Math.max(a, Math.floor(b)), 0);
 
 /**
  * Has the whole campaign been beaten? `cleared` runs one past the top tier
  * on the final win, which is the only state that means "there is nothing
  * above this".
  */
-export const isCampaignComplete = (p: Progress): boolean => p.cleared > TOP_TIER;
+export const isCampaignComplete = (p: Progress, worldId: string): boolean =>
+  clearedOn(p, worldId) > TOP_TIER;
 
 /** has this tier been beaten? (the frontier itself has not) */
-export const isTierCleared = (p: Progress, tier: number): boolean => tier < p.cleared;
+export const isTierCleared = (p: Progress, worldId: string, tier: number): boolean =>
+  tier < clearedOn(p, worldId);
 
 /** may this tier be played at all? */
-export const isTierUnlocked = (p: Progress, tier: number): boolean =>
-  tier >= 0 && tier <= topTier(p);
+export const isTierUnlocked = (p: Progress, worldId: string, tier: number): boolean =>
+  tier >= 0 && tier <= topTier(p, worldId);
 
 /**
  * What a tree node can do right now. "hidden" nodes (parent unbought) are
@@ -477,7 +534,7 @@ export function nodeStatus(p: Progress, node: TechKind): NodeStatus {
   // Saying so is friendlier than leaving a lit node that refuses every
   // click
   if (isMaxed(node, owned)) return "maxed";
-  if (def.requiresTier != null && !isTierCleared(p, def.requiresTier)) return "locked-tier";
+  if (def.requiresTier != null && bestTierCleared(p) <= def.requiresTier) return "locked-tier";
   return canAfford(p.bank, techPrice(node, owned)) ? "buyable" : "poor";
 }
 
@@ -559,8 +616,10 @@ export interface RunReward {
   tier: number;
   /** drop multiplier the tier itself carries */
   dropBonus: number;
-  /** did this clear push the frontier up a tier? */
+  /** did this clear push THIS MAP'S frontier up a tier? */
   firstClear: boolean;
+  /** the world it was played on — its ladder is the one that moved */
+  worldId: string;
 }
 
 /**
@@ -586,7 +645,7 @@ export function grantRunReward(
 ): RunReward {
   const p = loadProgress();
   const n = Math.min(TOP_TIER, Math.max(0, Math.floor(tier)));
-  const firstClear = won && n >= p.cleared;
+  const firstClear = won && n >= clearedOn(p, worldId);
   // a tier pays the same whether or not it is new: what clearing the
   // frontier buys is the NEXT tier — more waves, more enemies, more kinds of
   // them — and that is the whole reason to push rather than farm
@@ -612,7 +671,7 @@ export function grantRunReward(
   // the frontier only ever moves forward, and only by one: clearing tier 5
   // when tier 5 was the frontier opens tier 6, and replaying tier 2 later
   // does nothing
-  if (firstClear) p.cleared = n + 1;
+  if (firstClear) p.clearedByMap[worldId] = n + 1;
   saveProgress(p);
-  return { earned, tier: n, dropBonus, firstClear };
+  return { earned, tier: n, dropBonus, firstClear, worldId };
 }
