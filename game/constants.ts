@@ -1052,10 +1052,13 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.white,
     },
   },
-  // Spectre, 1:1 from mindustry/content/Blocks.java with thorium ammo
-  // (BasicBulletType(8, 80)): a shell every seven ticks, alternating twin
-  // barrels 8 units apart (ShootAlternate) — 686 damage a second, the
-  // highest sustained figure in the game and the whole reason it exists.
+  // Spectre, from mindustry/content/Blocks.java with thorium ammo
+  // (BasicBulletType(8, 80)) — with the shell up-gunned 30% over stock,
+  // 80 -> 104, alongside meltdown and foreshadow: the phase tier is priced
+  // as the endgame and playtested under it. A shell every seven ticks,
+  // alternating twin barrels 8 units apart (ShootAlternate) — 891 damage a
+  // second, the highest sustained figure in the game and the whole reason
+  // it exists.
   //
   // pierceCap 2 makes every shell worth two bodies rather than one, and
   // knockback 0.7 shoves what survives back down the lane. Nothing about
@@ -1080,7 +1083,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     barrels: { count: 2, spread: 8 * MU },
     bullet: {
       speed: 8 * TICK * MU,
-      damage: 80,
+      damage: 104, // Mindustry's 80, +30% (see the note above)
       lifetime: (260 + 9 + 10) / 8 / TICK, // limitRange() default margin 9
       splash: 0,
       splashRadius: 0,
@@ -1107,12 +1110,13 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.thoriumAmmoBack,
     },
   },
-  // Meltdown, 1:1 from mindustry/content/Blocks.java: a LaserTurret, which
+  // Meltdown, from mindustry/content/Blocks.java: a LaserTurret, which
   // is a turret that does not fire shots at all. It lights a
-  // ContinuousLaserBulletType and HOLDS it — 78 damage to everything under
-  // the beam every five ticks, for 230 ticks, and only then does the
-  // 90-tick reload start running. 936 damage a second while it burns,
-  // against nothing at all while it cools: a 72% duty cycle.
+  // ContinuousLaserBulletType and HOLDS it — Mindustry's 78 raised 30% to
+  // 101 (the phase-tier up-gun, see spectre) to everything under the beam
+  // every five ticks, for 230 ticks, and only then does the 90-tick reload
+  // start running. 1,212 damage a second while it burns, against nothing
+  // at all while it cools: a 72% duty cycle.
   //
   // firingMoveFract halves the turret's turn rate for as long as the beam
   // is lit, so meltdown tracks a crossing target badly and a queue walking
@@ -1134,7 +1138,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     shootY: 4 * 4 * MU, // Turret's own default, as spectre's
     bullet: {
       speed: 0,
-      damage: 78, // per damageInterval, NOT per second
+      damage: 101, // per damageInterval, NOT per second — stock 78, +30%
       lifetime: 0, // the beam is turret state, not a projectile
       splash: 0,
       splashRadius: 0,
@@ -1155,15 +1159,16 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.meltdownHit,
     },
   },
-  // Foreshadow, 1:1 from mindustry/content/Blocks.java with surge ammo (a
+  // Foreshadow, from mindustry/content/Blocks.java with surge ammo (a
   // RailBulletType): 500 units of range — the only turret that outreaches
-  // the map's own lanes — and one 1350-damage shot every 200 ticks.
+  // the map's own lanes — and one 1755-damage shot every 200 ticks
+  // (Mindustry's 1350, +30%: the phase-tier up-gun, see spectre).
   //
   // THE DAMAGE IS A BUDGET, NOT A NUMBER. The rail is an instant line, and
-  // every body it punches through takes whatever is LEFT of the 1350 and
+  // every body it punches through takes whatever is LEFT of the 1755 and
   // then subtracts its own full health from it (pierceDamageFactor 1). So
-  // one shot deletes a queue until 1350 health has gone by and stops dead
-  // there — nine daggers, or one fortress and change. It kills a health
+  // one shot deletes a queue until 1755 health has gone by and stops dead
+  // there — eleven daggers, or nearly two fortresses. It kills a health
   // POOL, which is why it targets the STRONGEST thing in range rather than
   // the nearest: spending the reload on a stray crawler is the one way to
   // waste it.
@@ -1184,7 +1189,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     sort: "strongest",
     bullet: {
       speed: 0,
-      damage: 1350,
+      damage: 1755, // Mindustry's 1350, +30% (see the note above)
       lifetime: 1 / TICK, // RailBulletType's own: the damage is instant
       splash: 0,
       splashRadius: 0,

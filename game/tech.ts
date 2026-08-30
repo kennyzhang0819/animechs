@@ -980,7 +980,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // Playtested at Nemesis; do not "fix" these back to the ratio.
     id: "spectre",
     price: { base: { titanium: 200, thorium: 225, plastanium: 55, "phase-fabric": 8 }, growth: 1.01 },
-    dps: 1371,
+    // 104 x 60/7 x pierceCap 2 — the +30% phase-tier up-gun (constants.ts)
+    dps: 1783,
     requires: "cyclone",
     x: 0,
     y: 7,
@@ -989,7 +990,8 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // PHASE FABRIC. A continuous beam that melts whatever it rests on
     id: "meltdown",
     price: { base: { titanium: 275, thorium: 300, plastanium: 65, "phase-fabric": 10 }, growth: 1.01 },
-    dps: 3364,
+    // 1,212/s lit x 230/320 duty x 5 crowd — the +30% up-gun (constants.ts)
+    dps: 4356,
     requires: "lancer",
     x: 4,
     y: 5,
@@ -999,7 +1001,9 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // defence, and the only turret that can hit a spawn pad from the core
     id: "foreshadow",
     price: { base: { titanium: 450, thorium: 525, plastanium: 125, "phase-fabric": 19 }, growth: 1.01 },
-    dps: 405,
+    // 1755 x 60/200, no crowd multiplier (the budget already holds the
+    // crowd) — the +30% up-gun (constants.ts)
+    dps: 527,
     requires: "meltdown",
     x: 4,
     y: 6,
