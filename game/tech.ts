@@ -198,12 +198,14 @@ export interface PriceCurve {
 /**
  * How many tiles one turret type may cover once it is maxed. The cap is this
  * divided by the footprint area, so a full stack of any node covers the same
- * 10,000 cells — 34% of the 29,109 buildable ones — and the late game has
+ * 20,000 cells — 69% of the 29,109 buildable ones — and the late game has
  * room to answer a wave with a single turret type if it wants to.
  *
- * A CAP IS ONLY A CAP. Nothing about pricing reads it.
+ * A CAP IS ONLY A CAP. Nothing about pricing reads it — a doubling here
+ * moves the wall and not one price: what stops a stack in practice is
+ * still the geometric curve (base x growth^n), which never looks at this.
  */
-export const CAP_TILES = 10000;
+export const CAP_TILES = 20000;
 
 /**
  * The most points this node will ever take.
