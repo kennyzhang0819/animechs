@@ -29,11 +29,11 @@ import {
  *   Incursion    waves 1-20   enemy level  0
  *   Onslaught    waves 1-35   enemy level 10
  *   Nemesis      waves 1-50   enemy level 16
- *   Eradication  waves 1-50   enemy level 22   (hidden — see below)
+ *   Eradication  waves 1-50   enemy level 26   (hidden — see below)
  *
  * Nemesis plays the whole authored script, so the visible campaign ends
  * where the writing does. ERADICATION is the hidden ultimate difficulty
- * above it: the same full script Nemesis plays at enemy level 22 with +3
+ * above it: the same full script Nemesis plays at enemy level 26 with +10
  * armour on the swarm (lowTierArmorBonus — the ladder's only difficulty
  * that turns that knob), and it does not exist on a save until the tech
  * tree's "A Final Threat" node is owned (topTier in progress.ts is where
@@ -148,20 +148,23 @@ export const DIFFICULTIES: readonly {
   // prettier-ignore
   { name: "Nemesis", color: "#FF5A5A", waves: 50, level: 16, shieldScale: 5, lowTierArmorBonus: 0 },
   // ERADICATION — the hidden ultimate difficulty: Nemesis's own full script
-  // at enemy level 22, and NO extra loot bonus (see tierDropBonus). It is
+  // at enemy level 26, and NO extra loot bonus (see tierDropBonus). It is
   // in the table so every piece of ladder arithmetic covers it, but a save
   // cannot see or play it until the tech tree's "A Final Threat" node is
   // owned — that gate lives in topTier (progress.ts), not here.
   //
-  // The +3 swarm armour is the doc block's own worked calibration: a third
-  // off a duo's 9 while a spectre's 104 or a rail barely notices — the
-  // swarm outlasts chip, the heavies stay priced by their own plating. The
-  // scatter caution up there doesn't bite: only this tier turns the knob,
-  // and by Eradication the AA line is cyclone/spectre calibre, not
-  // 3-damage pellets. No unit debuts here (the script is Nemesis's), so
-  // the debut-tax lint can't be moved by it either.
+  // +10 swarm armour FLOORS everything below midgame calibre against tiers
+  // 1-3: a duo's 9, an arc bolt's 20 halved, cyclone's 8/12 flak — all of
+  // it lands at or near the 10% floor, so the small-arms economy the first
+  // three difficulties run on simply stops working here and the fleet must
+  // be spectre/meltdown/rail calibre (104 lands 94; the rail doesn't
+  // notice; the lancer's quadruple count eats 40 of its 140). That is the
+  // tier's thesis — the fight above the top — and it is deliberate. The
+  // knob still cannot touch T4/T5, whose debut tax stays priced by their
+  // own plating, and no unit debuts here (the script is Nemesis's), so the
+  // debut-tax lint can't be moved by it.
   // prettier-ignore
-  { name: "Eradication", color: "#A05AE5", waves: 50, level: 22, shieldScale: 5, lowTierArmorBonus: 3 },
+  { name: "Eradication", color: "#A05AE5", waves: 50, level: 26, shieldScale: 5, lowTierArmorBonus: 10 },
 ];
 
 /**
