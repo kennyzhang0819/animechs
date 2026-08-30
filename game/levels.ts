@@ -582,25 +582,26 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // mindustry/content/UnitTypes.java (hitSize 46; rotateSpeed 2;
   // drag 0.07), boss-tuned in FOUR places. Health is Mindustry's 12000 x8
   // (x4 at first; doubled again when the up-gunned phase turrets melted it
-  // before it loomed). Armour is 20 over the official 9 — past even the
-  // reign's 18, so anything hitting under ~22 pays the 10% floor and the
-  // boss shrugs off pellet AA outright; the answer is calibre, which is
-  // what the phase turrets are. Speed drops from the official 1 unit/tick
+  // before it loomed, then x12 when x8 still fell too fast). Armour is 30
+  // over the official 9 — far past the reign's 18, so anything hitting
+  // under ~33 pays the 10% floor: pellet AA, duos and salvos all read as
+  // sparks off the hull, and the answer is calibre, which is what the
+  // phase turrets are. Speed drops from the official 1 unit/tick
   // (7.5 tiles/s, crawler pace — it would outrun its own escort and reach
   // the AA line alone) to 2.0 tiles/s, the slowest thing in the game: a
   // boss is a deadline the player watches coming, not a sprinter. Its
   // suppression field and missile racks stay behind on Erekir — enemies
   // here do not shoot — so what crosses the map is the hull, the looming
-  // pace, and 96000 health the fleet has to answer before it reaches the
+  // pace, and 144000 health the fleet has to answer before it reaches the
   // core. It also DRAWS half again its native scale (see UNIT_ART), and
   // the hitbox follows the art: Mindustry's hitSize 46 grows to an
   // effective 56 (UR * 7, just under eclipse's 7.25) so shots land where
   // the silhouette says they should — a boss this size being HARD TO MISS
   // is part of what the size is for.
   disrupt: {
-    hp: 12000 * 8,
+    hp: 12000 * 12,
     speed: 2.0 * CELL,
-    armor: 20,
+    armor: 30,
     radius: UR * 7,
     tier: 5,
     drag: 0.07,
