@@ -431,7 +431,7 @@
     "vela": 5,
     "antumbra": 5,
     "reign": 1,
-    "toxopid": 1,
+    "toxopid": 2,
     "corvus": 1
    }
   },
@@ -449,7 +449,7 @@
     "scepter": 20,
     "vela": 6,
     "antumbra": 4,
-    "reign": 3,
+    "reign": 4,
     "corvus": 1
    }
   },
@@ -467,7 +467,7 @@
     "arkyid": 25,
     "vela": 8,
     "antumbra": 6,
-    "toxopid": 3,
+    "toxopid": 4,
     "corvus": 1,
     "eclipse": 1
    }
@@ -478,7 +478,7 @@
     "horizon": 145,
     "zenith": 174,
     "antumbra": 27,
-    "eclipse": 4
+    "eclipse": 5
    }
   },
   {
@@ -499,10 +499,10 @@
     "arkyid": 19,
     "vela": 13,
     "antumbra": 13,
-    "reign": 4,
-    "toxopid": 3,
+    "reign": 5,
+    "toxopid": 5,
     "corvus": 2,
-    "eclipse": 2
+    "eclipse": 3
    }
   },
   {
@@ -511,7 +511,7 @@
     "pulsar": 177,
     "quasar": 270,
     "vela": 55,
-    "corvus": 10
+    "corvus": 11
    }
   },
   {
@@ -528,9 +528,9 @@
     "scepter": 64,
     "vela": 19,
     "antumbra": 15,
-    "reign": 13,
-    "corvus": 4,
-    "eclipse": 3
+    "reign": 14,
+    "corvus": 5,
+    "eclipse": 4
    }
   },
   {
@@ -547,8 +547,8 @@
     "arkyid": 63,
     "vela": 20,
     "antumbra": 14,
-    "toxopid": 14,
-    "corvus": 4,
+    "toxopid": 13,
+    "corvus": 3,
     "eclipse": 3
    }
   },
@@ -558,7 +558,7 @@
     "horizon": 102,
     "zenith": 223,
     "antumbra": 67,
-    "eclipse": 17
+    "eclipse": 15
    }
   },
   {
@@ -579,9 +579,9 @@
     "arkyid": 36,
     "vela": 24,
     "antumbra": 24,
-    "reign": 10,
-    "toxopid": 10,
-    "corvus": 6,
+    "reign": 9,
+    "toxopid": 9,
+    "corvus": 5,
     "eclipse": 6
    }
   },
@@ -603,10 +603,10 @@
     "arkyid": 45,
     "vela": 23,
     "antumbra": 23,
-    "reign": 11,
-    "toxopid": 11,
+    "reign": 10,
+    "toxopid": 10,
     "corvus": 6,
-    "eclipse": 6
+    "eclipse": 5
    }
   },
   {
@@ -627,8 +627,8 @@
     "arkyid": 37,
     "vela": 19,
     "antumbra": 19,
-    "reign": 13,
-    "toxopid": 13,
+    "reign": 12,
+    "toxopid": 12,
     "corvus": 6,
     "eclipse": 6,
     "disrupt": 1

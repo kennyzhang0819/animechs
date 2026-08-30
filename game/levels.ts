@@ -901,9 +901,11 @@ export const WORLDS: LevelSpec[] = [
     // 46-50 by a further fifth (49: 1,454 bodies, 2.41M health; 50: 1,176
     // bodies + the disrupt, 2.26M). 50's fleet is the lighter of the two
     // on purpose — the headroom is the boss's budget, and the boss rides
-    // on top. Both waves field every line at full strength; they are the
-    // only two waves in the game where reign, toxopid, corvus and eclipse
-    // all appear at once.
+    // on top. Both waves field every line at full strength. About 8% of
+    // the tail's T5 bodies were later dealt back into waves 39-45 — only
+    // into waves already fielding the kind, so every debut stays put and
+    // the totals (and so the drop ratio) do not move — to thicken the
+    // ramp instead of the spike.
     //
     // Wave 35 fields scepters and arkyids but NO tier 5, because Onslaught must
     // not (see above).
