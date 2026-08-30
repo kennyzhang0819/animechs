@@ -34,7 +34,9 @@ stale tab or a cached bundle looks exactly like a fix not working.
   saved layouts, game speed, build-bar loadout
 - `game/items.ts` — the five currencies (copper, titanium, thorium,
   plastanium, phase-fabric)
-- `game/maps.ts` — map documents: terrain layers, spawn regions, goal cells
+- `game/maps.ts` — map documents: terrain layers, spawn circles, per-layer
+  exit masks — see [docs/authoring-maps.md](docs/authoring-maps.md) for how
+  to draw one and how to check it
 - `game/editor.ts` — the level/map editor model behind the admin views
 - `game/terrain.ts` — terrain from a map document when one exists, else
   seeded value-noise worldgen: mountain ranges, a carved meandering valley
