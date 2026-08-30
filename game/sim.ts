@@ -551,9 +551,14 @@ export class Sim {
   private waveRate = 0;
   private waitLeft = 0;
   private spawnAcc = 0;
-  // "skip to wave N": while this is set, the script runs with no gaps and a
-  // rushed spawn rate until wave N is the one on the field. Nothing is
-  // skipped — every wave on the way still enters, they just pile up. 0 = off
+  /**
+   * The wave the run OPENS on, 1-based — TechState.startWave, which is 10
+   * once the tech tree's time warp is owned. Everything before it is walked
+   * past before the first frame: those waves never enter, so their enemies
+   * come off `totalEnemies` and never pay out. `totalWaves` still counts the
+   * whole script, so the HUD reads "Wave 10 / 20" rather than renumbering.
+   */
+  private startWave = 1;
 
   /** seconds of simulated time since the level was reset (Time.time) */
   time = 0;
@@ -705,21 +710,11 @@ export class Sim {
       );
     if (this.field.spawnPts.length === 0)
       console.warn(`map "${doc.id}": no spawn pad connects to the core — ground waves will stall`);
-    this.totalEnemies = 0;
-    this.totalWaves = 0;
-    // an empty wave is not a wave — loadStep skips it, so it must not count
-    // here either, or the HUD would promise a wave that never arrives
+    this.stageScript();
     const regions = new Set<number>();
     for (const step of this.level.script) {
       if (!("wave" in step)) continue;
-      let n = 0;
-      for (const g of waveGroups(step.wave)) {
-        for (const c of g.counts) n += c;
-        if (g.region > 0) regions.add(g.region);
-      }
-      if (n === 0) continue;
-      this.totalWaves++;
-      this.totalEnemies += n;
+      for (const g of waveGroups(step.wave)) if (g.region > 0) regions.add(g.region);
     }
     // a script naming a region the map doesn't carry falls back to any pad
     // (see spawnPads) — a map/script mismatch, so say so up front
@@ -729,11 +724,6 @@ export class Sim {
       else if (!this.field.spawnPtsByRegion.get(r)?.length)
         console.warn(`map "${doc.id}": no region-${r} pad connects to the core — its ground units will use any pad`);
     }
-    this.stepIdx = 0;
-    this.waitLeft = 0;
-    this.spawnAcc = 0;
-    this.wavesStarted = 0;
-    this.loadStep();
     this.aliveByKind.fill(0);
   }
 
@@ -799,9 +789,23 @@ export class Sim {
     return this.coreHp <= 0;
   }
 
-  /** campaign restrictions on building; null lifts them (editor, dev) */
+  /**
+   * Campaign restrictions on building; null lifts them (editor, dev).
+   *
+   * Tech also decides which wave the run opens on, and that has to be
+   * applied here rather than in reset() because the level is loaded before
+   * the save is read (see Game.create). Restaging the script is safe while
+   * the clock still reads zero — nothing has spawned, so the only thing
+   * being thrown away is the wave loadStep staged. A run already under way
+   * keeps the opening it started with.
+   */
   setTech(tech: TechState | null): void {
     this.tech = tech;
+    const start = Math.max(1, Math.floor(tech?.startWave ?? 1));
+    if (start !== this.startWave && this.time === 0) {
+      this.startWave = start;
+      this.stageScript();
+    }
   }
 
   /** live towers per kind — the HUD's "2/6" badges, and the cap check */
@@ -860,7 +864,13 @@ export class Sim {
    * counts down to that first wave.
    */
   currentWave(): number {
-    return Math.max(1, this.wavesStarted - (this.waitLeft > 0 ? 1 : 0));
+    // ...except in the OPENING gap, where there is no earlier wave to still
+    // be current: the run has not played one. Backing off there reported
+    // "wave 9" to a time-warped run that starts at 10, and "wave 0" (floored
+    // to 1) to every other one
+    const opening = this.wavesStarted <= this.startWave;
+    const back = this.waitLeft > 0 && !opening ? 1 : 0;
+    return Math.max(this.startWave, this.wavesStarted - back);
   }
 
   /** seconds until the next wave starts entering, or 0 when one is already
@@ -938,6 +948,55 @@ export class Sim {
   }
 
   // ---------- level script ----------
+
+  /**
+   * Count the script and put its cursor on the first wave to play.
+   *
+   * Re-runnable: reset() calls it, and so does setTech when time warp
+   * changes which wave the run opens on. It counts the whole script, then
+   * walks the cursor past the `startWave - 1` waves before the opening one,
+   * taking their enemies off the total as it goes — a wave that never enters
+   * cannot be killed, so leaving it in would leave `remaining()` permanently
+   * short of zero and the level unwinnable. `wavesStarted` is set to the
+   * skipped count so the first wave to arrive still reports its real number.
+   *
+   * An empty wave is not a wave — loadStep skips it, so it must not count
+   * here either, or the HUD would promise a wave that never arrives.
+   */
+  private stageScript(): void {
+    this.totalEnemies = 0;
+    this.totalWaves = 0;
+    const sizes: number[] = [];
+    const script = this.level.script;
+    for (const step of script) {
+      if (!("wave" in step)) {
+        sizes.push(0);
+        continue;
+      }
+      let n = 0;
+      for (const g of waveGroups(step.wave)) for (const c of g.counts) n += c;
+      sizes.push(n);
+      if (n === 0) continue;
+      this.totalWaves++;
+      this.totalEnemies += n;
+    }
+    this.stepIdx = 0;
+    this.waitLeft = 0;
+    this.spawnAcc = 0;
+    this.wavesStarted = 0;
+    // never warp past the end: one wave always remains to be played, or the
+    // run would open already won
+    const skipTarget = Math.min(this.startWave - 1, Math.max(0, this.totalWaves - 1));
+    let skipped = 0;
+    for (; this.stepIdx < script.length && skipped < skipTarget; this.stepIdx++) {
+      const n = sizes[this.stepIdx];
+      if (n === 0) continue;
+      skipped++;
+      this.totalEnemies -= n;
+    }
+    this.wavesStarted = skipped;
+    this.loadStep();
+  }
 
   /**
    * Point the live state at script[stepIdx], skipping empty waves. Leaves

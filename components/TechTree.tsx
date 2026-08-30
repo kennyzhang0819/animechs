@@ -28,11 +28,15 @@ const nodeName = (id: TechKind): string =>
 /**
  * The node's face.
  *
- * Turrets and home have sprites. The speed nodes do not — there is no block
- * in Mindustry that means "run the clock faster" — so they get the one glyph
- * every player already reads as fast-forward, and the name underneath says
- * which multiplier it is.
+ * Turrets and home have sprites. The utility nodes do not — there is no
+ * block in Mindustry that means "run the clock faster" — so they get a glyph
+ * instead: fast-forward for the pace switches (the name underneath says
+ * which multiplier), an hourglass for time warp, which is about which wave
+ * the run opens on rather than how fast it runs.
  */
+const WARP_GLYPH = "M6 3h12v2.5l-4.6 6.5 4.6 6.5V21H6v-2.5L10.6 12 6 5.5z";
+const FF_GLYPH = "M2 4v16l10-8zM12 4v16l10-8z";
+
 function NodeIcon({ id, lit }: { id: TechKind; lit: boolean }) {
   if (isTowerNode(id) || id === "home")
     return (
@@ -49,7 +53,7 @@ function NodeIcon({ id, lit }: { id: TechKind; lit: boolean }) {
       className={`h-10 w-10 ${lit ? "fill-[#FFD37F]" : "fill-[#71717C]"}`}
       aria-hidden="true"
     >
-      <path d="M2 4v16l10-8zM12 4v16l10-8z" />
+      <path d={id === "time-warp" ? WARP_GLYPH : FF_GLYPH} />
     </svg>
   );
 }

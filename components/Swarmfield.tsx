@@ -58,7 +58,7 @@ import TechTree from "./TechTree";
 const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
 
 /** the level card's map preview — the admin editor's thumbnail look */
-function LevelThumb({ mapId }: { mapId: string }) {
+function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const m = loadMap(mapId);
@@ -66,9 +66,16 @@ function LevelThumb({ mapId }: { mapId: string }) {
   }, [mapId]);
   // fixed-aspect frame: maps differ in proportion (a taller world 2 next to
   // a wide world 1), and letting each canvas set its own height left the
-  // cards ragged. The preview sits centred inside a constant box instead
+  // cards ragged. The preview sits centred inside a constant box instead.
+  // `bare` drops the frame's own border and fill: on the menu the thumb is
+  // already inside the card's border, and the second box around it read as
+  // a picture of a map rather than as the map
   return (
-    <div className="flex aspect-[16/9] items-center justify-center overflow-hidden rounded border border-[#2E2E36] bg-[#101013]">
+    <div
+      className={`flex aspect-[16/9] items-center justify-center overflow-hidden rounded${
+        bare ? "" : " border border-[#2E2E36] bg-[#101013]"
+      }`}
+    >
       <canvas ref={ref} className="h-full w-full object-contain [image-rendering:pixelated]" />
     </div>
   );
@@ -108,7 +115,7 @@ function LoadingScreen({
     <div
       role="status"
       aria-live="polite"
-      aria-label={`Loading ${level.name}`}
+      aria-label="Loading"
       className={`absolute inset-0 z-20 flex items-center justify-center bg-[#101013] transition-opacity duration-[260ms] ${
         out ? "pointer-events-none opacity-0" : "opacity-100"
       }`}
@@ -118,8 +125,10 @@ function LoadingScreen({
           <LevelThumb mapId={level.map ?? OFFICIAL_MAP_IDS[0]} />
         </div>
         <div className="flex flex-col items-center gap-1.5 text-center">
+          {/* the level has no name worth printing — one map, so the headline
+              says what the screen is doing instead */}
           <h2 className="text-3xl font-bold uppercase tracking-[0.25em] text-[#EDEDEF]">
-            {level.name}
+            Loading
           </h2>
           <p className="text-[13px] uppercase tracking-widest text-[#71717C]">
             <span className="font-bold" style={{ color: difficultyColor(level.tier ?? 0) }}>
@@ -200,10 +209,13 @@ function TierPicker({
   );
 
   return (
-    <div className="w-full max-w-[22rem] rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-4">
-      {mapsReady && <LevelThumb mapId={spec.map ?? OFFICIAL_MAP_IDS[0]} />}
-      <div className="mt-3 flex items-baseline justify-between">
-        <span className="text-lg font-bold text-[#EDEDEF]">{spec.name}</span>
+    // no card chrome: with one map in the game there is nothing to tell this
+    // panel apart from, and the frame only boxed the map in
+    <div className="w-full max-w-[30rem] p-4">
+      {mapsReady && <LevelThumb mapId={spec.map ?? OFFICIAL_MAP_IDS[0]} bare />}
+      {/* no level name: there is one map in the game, so naming it labelled
+          the obvious. The clear badge is the whole row now */}
+      <div className="mt-3 flex items-baseline justify-end">
         {isTierCleared(progress, tier) ? (
           <span className="text-[12px] font-bold uppercase tracking-widest text-[#7BE58A]">
             Cleared

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import BalanceView from "@/components/BalanceView";
 import { loadBalanceDoc } from "@/game/balance";
+import { ADMIN_ENABLED } from "@/game/env";
 import LevelEditorView from "@/components/LevelEditorView";
 import MapEditorView from "@/components/MapEditorView";
 import { loadLevelDocs, WORLDS, waveGroups, type LevelSpec } from "@/game/levels";
@@ -221,6 +222,19 @@ function AdminInner() {
 }
 
 export default function AdminPage() {
+  // the editors save through dev-only API routes, so in a production build
+  // this page is a door onto nothing — say so instead of opening it
+  if (!ADMIN_ENABLED)
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#101013] px-6 text-center">
+        <p className="text-[13px] uppercase tracking-widest text-[#71717C]">
+          The editors are a development tool —{" "}
+          <a href="/" className="text-[#FFD37F] underline">
+            back to the game
+          </a>
+        </p>
+      </div>
+    );
   return (
     <Suspense fallback={null}>
       <AdminInner />

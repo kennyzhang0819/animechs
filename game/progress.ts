@@ -177,11 +177,13 @@ function readCleared(p: { cleared?: unknown; completed?: unknown }): number {
 }
 
 /**
- * Every multiplier the game has, whether or not a given save owns it: 1x
- * plus one per utility node. The tree is the authority on which of these a
- * save may USE — this is only what counts as a real number to remember.
+ * Every multiplier the game has, whether or not a given save owns it: 1x,
+ * one per utility node, and 16x — which no node sells any more but sandbox
+ * still offers, so a save made there has to be able to remember it. The tree
+ * is the authority on which of these a save may USE — this is only what
+ * counts as a real number to remember.
  */
-const ALL_SPEEDS: readonly number[] = [1, ...Object.values(NODE_SPEED)];
+const ALL_SPEEDS: readonly number[] = [1, 16, ...Object.values(NODE_SPEED)];
 
 /**
  * The remembered pace out of a raw save. Anything that is not a multiplier

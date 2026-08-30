@@ -2,16 +2,21 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { ADMIN_ENABLED } from "@/game/env";
 
 /**
  * Global debug shortcut, registered once in the root layout:
  * Ctrl+Shift+M toggles the map-editor admin page from anywhere.
+ *
+ * Development only — a production build never registers the key, and the
+ * page it opens refuses to render there anyway (see ADMIN_ENABLED).
  */
 export default function AdminShortcut() {
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
+    if (!ADMIN_ENABLED) return;
     const onKey = (e: KeyboardEvent): void => {
       // ctrl OR cmd — though Chrome on Mac reserves Cmd+Shift+M for profile
       // switching, so Ctrl+Shift+M is the combination that always arrives
