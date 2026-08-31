@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Swarmdustry</string>
+    <string name="title_activity_main">Swarmdustry</string>
+    <string name="package_name">com.swarmdustry.game</string>
+    <string name="custom_url_scheme">com.swarmdustry.game</string>
+</resources>
