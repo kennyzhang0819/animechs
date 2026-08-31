@@ -90,7 +90,7 @@ import {
   type LegSpec,
   type WakeSpec,
 } from "./levels";
-import { HUNGRY_GROWTH, HUNGRY_HUE } from "./ascension";
+import { HUNGRY_GROWTH, HUNGRY_HUE } from "./mutation";
 import { MAX_LEGS, WAKE_PTS, type Sim } from "./sim";
 import { isWaterFloor, showsFloorCell, WALL_DEEP, type Terrain } from "./terrain";
 import { FxKind, type Effect, type RGB, type Tower, type TowerKind } from "./types";
@@ -162,7 +162,7 @@ const WET_TINT: ReadonlyArray<RGB> = HP_TINT.map(
   (t): RGB => [t[0] * 0.62, t[1] * 0.75, t[2]],
 );
 /**
- * The same trick for the HUNGRY status (ascension rank 1): the hue
+ * The same trick for the HUNGRY status (mutation rank 1): the hue
  * multiplied into whatever the unit was already drawn in, one table per
  * hp third so damage still darkens it and one pair of tables so a soaked
  * hungry unit reads as both.
@@ -1201,7 +1201,7 @@ export class Renderer {
    * THE SWELL, and the one place a unit's art can be drawn at a size the
    * sim did not choose.
    *
-   * A hungry unit grows five per cent a meal (ascension.ts), and a unit's
+   * A hungry unit grows five per cent a meal (mutation.ts), and a unit's
    * art is not one quad: a mech is a dozen parts at world positions, a
    * legged hull is feet, knees and segments the SIM owns, and every one of
    * them would have to be scaled about the body's centre by hand. So the
@@ -1571,7 +1571,7 @@ export class Renderer {
         const k = ukind[i];
         if (KIND_FLYING[k] !== wantFly) continue;
         // a hungry unit that has been eating is drawn HUNGRY_GROWTH bigger
-        // per meal (ascension.ts) — art only, the sim's hitbox never moves.
+        // per meal (mutation.ts) — art only, the sim's hitbox never moves.
         // Its cull margin grows with it or a swollen unit would pop out at
         // the screen edge while half of it is still on screen
         const grow = ueaten[i] > 0 ? 1 + ueaten[i] * HUNGRY_GROWTH : 1;

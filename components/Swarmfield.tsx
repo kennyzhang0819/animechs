@@ -40,7 +40,7 @@ import {
 } from "@/game/ladder";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import {
-  activeAscension,
+  activeMutations,
   clearedOn,
   grantRunReward,
   isTierCleared,
@@ -60,7 +60,7 @@ import {
   type RunReward,
 } from "@/game/progress";
 import { turretIcon } from "@/game/atlas";
-import { ascensionAt } from "@/game/ascension";
+import { mutationAt } from "@/game/mutation";
 import { BAND_FOR_TIER, bandForTier, BY_MINDUSTRY_VALUE } from "@/game/tech";
 import { isEmpty, ITEM_INFO, ITEM_KINDS, itemForTier } from "@/game/items";
 import { CostRow, Wallet } from "./Items";
@@ -99,7 +99,7 @@ function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) 
  * The badge sits ON the preview rather than beside the name because that is
  * the thing being chosen between: a player scanning the grid is reading four
  * badges, not four sentences. Everything the map actually costs — the
- * difficulty, the wave count, the ascensions in force — is one tap deeper,
+ * difficulty, the wave count, the mutations in force — is one tap deeper,
  * on the detail panel, so the grid stays a picture and never a spec sheet.
  */
 function MapCard({
@@ -280,18 +280,18 @@ const levelSummary = (lv: LevelSpec): { waves: number; enemies: number } => {
  */
 /**
  * THE SPEC A RUN IS ACTUALLY PLAYED ON: the ladder's expansion of the
- * picked difficulty, plus whichever ascension rules the save has switched
- * on (ascension.ts).
+ * picked difficulty, plus whichever mutation rules the save has switched
+ * on (mutation.ts).
  *
  * The two are joined HERE and not in specForTier, because they answer
  * different questions and the audit arithmetic only wants one of them: a
- * tier is what the campaign sends, an ascension is what the player asked
+ * tier is what the campaign sends, a mutation is what the player asked
  * the game to do about it. Everything ladder.ts counts stays true either
- * way — an ascension changes a wave after it spawns, never what spawns.
+ * way — a mutation changes a wave after it spawns, never what spawns.
  */
 const runSpec = (world: LevelSpec, tier: number): LevelSpec => ({
   ...specForTier(world, tier),
-  ascension: activeAscension(loadProgress()),
+  mutation: activeMutations(loadProgress()),
 });
 
 function TierPicker({
@@ -331,9 +331,9 @@ function TierPicker({
   const newDrop = ITEM_INFO[itemForTier(tier + 3)].name.toLowerCase();
   // whether this difficulty's cut of the script fields a boss kind — read
   // from the waves themselves, so the warning follows the boss if it moves
-  // the ascension rules switched on for the next run, as their definitions
-  const ascensions = activeAscension(progress)
-    .map(ascensionAt)
+  // the mutation rules switched on for the next run, as their definitions
+  const mutations = activeMutations(progress)
+    .map(mutationAt)
     .filter((a): a is NonNullable<typeof a> => a !== null);
   const hasBoss = spec.script.some(
     (s) =>
@@ -433,18 +433,18 @@ function TierPicker({
         </span>
       </div>
 
-      {/* WHAT THIS RUN IS PLAYED UNDER. An ascension is switched on in the
+      {/* WHAT THIS RUN IS PLAYED UNDER. An mutation is switched on in the
           tech tree, one screen away, and it stays on until it is switched
           off — so the last thing before Deploy has to say which rules are
           in force, or a player meets them again having forgotten they
           asked for them */}
-      {ascensions.length > 0 && (
+      {mutations.length > 0 && (
         <div className="mt-3 border-t border-[#2E2E36] pt-3 text-[13px] leading-snug">
           <span className="font-bold uppercase tracking-widest text-[#FF8ACB]">
-            Ascension
+            Mutation
           </span>{" "}
           <span className="text-[#A6A6AF]">
-            {ascensions.map((a) => a.name).join(" · ")}
+            {mutations.map((a) => a.name).join(" · ")}
           </span>
         </div>
       )}
@@ -965,10 +965,10 @@ export default function Swarmfield() {
     granted.current = false;
     setResult(null);
     setProgress(loadProgress());
-    // the tech screen is also where the ascension switches live, so the
+    // the tech screen is also where the mutation switches live, so the
     // restart this button promises has to pick up any that were flipped —
     // the run's own world and difficulty are untouched
-    setLevel((lv) => (lv ? { ...lv, ascension: activeAscension(loadProgress()) } : lv));
+    setLevel((lv) => (lv ? { ...lv, mutation: activeMutations(loadProgress()) } : lv));
     setScreen("game");
   };
 

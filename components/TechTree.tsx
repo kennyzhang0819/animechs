@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { clamp, TOWERS } from "@/game/constants";
 import {
-  activeAscension,
+  activeMutations,
   affordablePoints,
-  ascensionRank,
+  mutationRank,
   buyTech,
   nodeStatus,
-  saveAscension,
+  saveMutation,
   type NodeStatus,
   type Progress,
 } from "@/game/progress";
@@ -20,7 +20,7 @@ import {
   UTILITY_INFO,
   type TechKind,
 } from "@/game/tech";
-import { ASCENSIONS, type AscensionDef } from "@/game/ascension";
+import { MUTATIONS, type MutationDef } from "@/game/mutation";
 import { difficultyColor, difficultyName } from "@/game/ladder";
 import { CostRow, Wallet } from "./Items";
 import { TOWER_ICONS } from "./towerIcons";
@@ -81,12 +81,12 @@ function NodeIcon({ id, lit }: { id: TechKind; lit: boolean }) {
 const HOME_ICON = "/mindustry/sprites/blocks/storage/core-shard.png";
 
 /**
- * THE ASCENSION COLUMN, laid out in the same grid the tech tree uses so the
+ * THE MUTATION COLUMN, laid out in the same grid the tech tree uses so the
  * two read as one board.
  *
  * IT HANGS OFF HOME, like everything else does. Home is the trunk the whole
  * board forks from — turrets down the middle, utilities off to the right,
- * the projector's reservation on the near left — and ascension is the far
+ * the projector's reservation on the near left — and mutation is the far
  * left arm of the same junction. Drawing it unattached would have made it a
  * second, unrelated board that happened to share a viewport.
  *
@@ -101,27 +101,31 @@ const HOME_ICON = "/mindustry/sprites/blocks/storage/core-shard.png";
  * top and one switch per rank EARNED, in order. A rank that has not been
  * reached is not drawn at all — not greyed, not teased. That is the tree's
  * own rule (a node stays hidden until its parent holds a point) and it is
- * the right one twice over here: what the next ascension turns out to be is
+ * the right one twice over here: what the next mutation turns out to be is
  * the reward for felling the boss, and a locked row of them would advertise
  * how long the line is, which is a promise this list is in no position to
  * make.
  */
-const ASC_X = -1;
-/** the rank marker, and the row each ascension switch sits on */
-const ascY = (level: number): number => level;
+const MUT_X = -1;
+/** the rank marker, and the row each mutation switch sits on */
+const mutY = (level: number): number => level;
 /** the column's own colour — deliberately NOT the tree's gold. Gold on this
- *  board means "bought, owned, yours"; ascension is none of those */
-const ASC_LIT = "#FF8ACB";
-/** the armed-node key for an ascension switch, in the same namespace the
+ *  board means "bought, owned, yours"; mutation is none of those */
+const MUT_LIT = "#FF8ACB";
+/** the armed-node key for a mutation switch, in the same namespace the
  *  tree's own nodes use (see `armed`) */
-const ascKey = (level: number): string => `asc-${level}`;
+const mutKey = (level: number): string => `asc-${level}`;
+
+/** the armed key for the column's marker — it opens a card like a node,
+ *  though tapping it a second time does nothing, because it does nothing */
+const MUT_MARKER = "asc-marker";
 /** three chevrons climbing — the rank marker's face */
-const ASC_GLYPH = "M12 2 4 9h5v2H4l8 7 8-7h-5V9h5z";
+const MUT_GLYPH = "M12 2 4 9h5v2H4l8 7 8-7h-5V9h5z";
 /** a disc with a wedge bitten out of it — the hungry switch's maw */
 const HUNGER_GLYPH = "M12 2a10 10 0 1 0 8.66 15L12 12l8.66-5A9.98 9.98 0 0 0 12 2z";
 
 /**
- * ONE ASCENSION SWITCH.
+ * ONE MUTATION SWITCH.
  *
  * It is a TOGGLE, not a purchase, and every part of it says so: no price
  * row, no capacity badge, no gold. It reads ON or OFF and flips on every
@@ -134,7 +138,7 @@ const HUNGER_GLYPH = "M12 2a10 10 0 1 0 8.66 15L12 12l8.66-5A9.98 9.98 0 0 0 12 
  * what a switch DOES before flipping it is being asked to change the rules
  * of their game blind.
  */
-function AscensionNode({
+function MutationNode({
   def,
   on,
   touch,
@@ -142,7 +146,7 @@ function AscensionNode({
   onArm,
   onToggle,
 }: {
-  def: AscensionDef;
+  def: MutationDef;
   on: boolean;
   touch: boolean;
   armed: boolean;
@@ -154,15 +158,15 @@ function AscensionNode({
     <div
       className="group absolute"
       style={{
-        left: centerX(ASC_X) - NODE / 2,
-        top: centerY(ascY(def.level)) - NODE / 2,
+        left: centerX(MUT_X) - NODE / 2,
+        top: centerY(mutY(def.level)) - NODE / 2,
         width: NODE,
         height: NODE,
       }}
     >
       <button
         aria-pressed={on}
-        aria-label={`${def.name}: ascension ${def.level}, ${on ? "on" : "off"}`}
+        aria-label={`${def.name}: mutation ${def.level}, ${on ? "on" : "off"}`}
         onClick={() => {
           if (touch && !armed) {
             onArm();
@@ -181,7 +185,7 @@ function AscensionNode({
           className={`h-10 w-10 ${on ? "fill-[#FF8ACB]" : "fill-[#71717C]"}`}
           aria-hidden="true"
         >
-          <path fillRule="evenodd" d={def.level === 1 ? HUNGER_GLYPH : ASC_GLYPH} />
+          <path fillRule="evenodd" d={def.level === 1 ? HUNGER_GLYPH : MUT_GLYPH} />
         </svg>
         {/* the badge is the switch's whole state, and the state is binary. A
             turret's badge counts what you own; there is nothing here to own */}
@@ -209,11 +213,11 @@ function AscensionNode({
       >
         <div className="flex items-baseline justify-between">
           <span className="font-bold text-[#EDEDEF]">{def.name}</span>
-          <span className="text-[13px] text-[#A6A6AF]">Ascension {def.level}</span>
+          <span className="text-[13px] text-[#A6A6AF]">Mutation {def.level}</span>
         </div>
         <div className="mt-1 text-[14px] text-[#A6A6AF]">{def.blurb}</div>
         <div className="mt-2 border-t border-[#2E2E36] pt-2 text-[13px] font-bold uppercase tracking-widest">
-          <span style={{ color: on ? ASC_LIT : "#71717C" }}>
+          <span style={{ color: on ? MUT_LIT : "#71717C" }}>
             {on ? "Playing with this" : "Not in play"}
           </span>
         </div>
@@ -232,9 +236,9 @@ function AscensionNode({
 const CELL_W = 160;
 const CELL_H = 132;
 const NODE = 88;
-const ALL_X = [...TECH_TREE.map((n) => n.x), ASC_X];
-const ALL_Y = [...TECH_TREE.map((n) => n.y), ...ASCENSIONS.map((a) => ascY(a.level)), 0];
-// the ascension column runs off the left of the tree's own grid, so board
+const ALL_X = [...TECH_TREE.map((n) => n.x), MUT_X];
+const ALL_Y = [...TECH_TREE.map((n) => n.y), ...MUTATIONS.map((a) => mutY(a.level)), 0];
+// the mutation column runs off the left of the tree's own grid, so board
 // space is the node grid SHIFTED to start at zero rather than the grid
 // itself — every reader goes through centerX, so this is the only place
 // that has to know
@@ -544,9 +548,9 @@ export default function TechTree({
   // the ranks it climbed to are switched on for the next run. Only the
   // ranks EARNED are drawn — the one above is not a locked node, it is not
   // on the board (see the column note at the top of the file)
-  const rank = ascensionRank(progress);
-  const active = activeAscension(progress);
-  const ascVisible = ASCENSIONS.filter((a) => a.level <= rank);
+  const rank = mutationRank(progress);
+  const active = activeMutations(progress);
+  const mutVisible = MUTATIONS.filter((a) => a.level <= rank);
 
   const chromeBtn =
     "pointer-events-auto rounded border border-[#2E2E36] bg-[#151518]/90 backdrop-blur px-3 py-1.5 text-[13px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
@@ -612,16 +616,16 @@ export default function TechTree({
                   />
                 );
               })}
-              {/* HOME'S LEFT ARM: the reach out to the ascension column.
+              {/* HOME'S LEFT ARM: the reach out to the mutation column.
                   Drawn in the column's own colour rather than the tree's
                   gold — the branch is part of the same tree, and gold on
                   this board means bought */}
               <line
                 x1={centerX(techNode("home").x)}
                 y1={centerY(techNode("home").y)}
-                x2={centerX(ASC_X)}
+                x2={centerX(MUT_X)}
                 y2={centerY(0)}
-                stroke={rank > 0 ? ASC_LIT : "#4A4A55"}
+                stroke={rank > 0 ? MUT_LIT : "#4A4A55"}
                 strokeWidth={2}
                 strokeDasharray={rank > 0 ? undefined : "6 4"}
               />
@@ -629,14 +633,14 @@ export default function TechTree({
                   is on is lit, one left off is solid and grey. There is no
                   dashed link, because there is no node past the rank for
                   one to point at */}
-              {ascVisible.map((a) => (
+              {mutVisible.map((a) => (
                 <line
                   key={`asc-${a.level}`}
-                  x1={centerX(ASC_X)}
-                  y1={centerY(ascY(a.level) - 1)}
-                  x2={centerX(ASC_X)}
-                  y2={centerY(ascY(a.level))}
-                  stroke={active.includes(a.level) ? ASC_LIT : "#4A4A55"}
+                  x1={centerX(MUT_X)}
+                  y1={centerY(mutY(a.level) - 1)}
+                  x2={centerX(MUT_X)}
+                  y2={centerY(mutY(a.level))}
+                  stroke={active.includes(a.level) ? MUT_LIT : "#4A4A55"}
                   strokeWidth={2}
                 />
               ))}
@@ -794,81 +798,84 @@ export default function TechTree({
                 </div>
               );
             })}
-            {/* THE ASCENSION COLUMN, home's left arm. The marker states the
+            {/* THE MUTATION COLUMN, home's left arm. The marker states the
                 rank the save has climbed to and takes no click; below it
                 one switch per rank EARNED, each of which toggles rather
                 than buys. At rank 0 the marker is the whole column — what
-                the first ascension is stays unsaid until a boss falls */}
+                the first mutation is stays unsaid until a boss falls */}
             <div
-              className="absolute"
+              className="group absolute"
               style={{
-                left: centerX(ASC_X) - NODE / 2,
+                left: centerX(MUT_X) - NODE / 2,
                 top: centerY(0) - NODE / 2,
                 width: NODE,
                 height: NODE,
               }}
             >
-              <div className="flex h-full w-full flex-col items-center justify-center rounded-lg border-2 border-[#4A4A55] bg-[#151518]">
+              <button
+                type="button"
+                aria-label={`Mutation: rank ${rank}`}
+                onClick={() => setArmed(MUT_MARKER)}
+                className="flex h-full w-full flex-col items-center justify-center rounded-lg border-2 border-[#4A4A55] bg-[#151518] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB]">
                 <svg
                   viewBox="0 0 24 24"
                   className={`h-8 w-8 ${rank > 0 ? "fill-[#FF8ACB]" : "fill-[#71717C]"}`}
                   aria-hidden="true"
                 >
-                  <path d={ASC_GLYPH} />
+                  <path d={MUT_GLYPH} />
                 </svg>
                 <span
                   className={`text-[13px] font-bold ${rank > 0 ? "text-[#FF8ACB]" : "text-[#71717C]"}`}
                 >
                   {rank}
                 </span>
-              </div>
+              </button>
               <div
                 className={`text-center text-[12px] font-bold uppercase tracking-widest ${
                   rank > 0 ? "text-[#EDEDEF]" : "text-[#71717C]"
                 }`}
               >
-                Ascension
+                Mutation
+              </div>
+              {/* WHAT THE COLUMN IS FOR, in the same card every other node
+                  on this board explains itself with. The marker takes no
+                  action — there is nothing here to buy or flip — but it is
+                  still the thing a player points at to ask what mutation
+                  IS, so it answers on hover and on the first tap exactly as
+                  a node does. Without it the column at rank 0 is a glyph, a
+                  zero and a word, and nothing says these are not upgrades */}
+              <div
+                className={`pointer-events-none absolute bottom-full left-1/2 z-10 mb-3 w-56 -translate-x-1/2 rounded border border-[#4A4A55] bg-[#151518] p-3 text-left shadow-lg ${
+                  touch && armed === MUT_MARKER
+                    ? "block"
+                    : "hidden group-hover:block group-focus-within:block"
+                }`}
+              >
+                <div className="flex items-baseline justify-between">
+                  <span className="font-bold text-[#EDEDEF]">Mutation</span>
+                  <span className="text-[13px] text-[#A6A6AF]">Rank {rank}</span>
+                </div>
+                <div className="mt-1 text-[14px] text-[#A6A6AF]">
+                  Difficulty modifiers that drastically change how the game plays
+                  and feels. Available after defeating your first boss.
+                </div>
               </div>
             </div>
-            {ascVisible.map((a) => (
-              <AscensionNode
+            {mutVisible.map((a) => (
+              <MutationNode
                 key={a.level}
                 def={a}
                 on={active.includes(a.level)}
                 touch={touch}
-                armed={armed === ascKey(a.level)}
-                onArm={() => setArmed(ascKey(a.level))}
+                armed={armed === mutKey(a.level)}
+                onArm={() => setArmed(mutKey(a.level))}
                 onToggle={() => {
-                  saveAscension(a.level, !active.includes(a.level));
+                  saveMutation(a.level, !active.includes(a.level));
                   onChanged();
                 }}
               />
             ))}
-            {/* WHAT THE COLUMN IS FOR, said once at its foot. Every other
-                node on the board explains itself when it is clicked; the
-                marker takes no click, so at rank 0 the column is a glyph, a
-                zero and a word — and the one thing a player needs to know
-                is that these are not upgrades.
-                It hangs off the LAST switch rather than off the marker,
-                which is the only place it cannot land on top of one: the
-                column grows downward a node at a time as ranks are earned.
-                Wider than the 88px node it is centred on, so it reads as a
-                sentence rather than a stack of single words. */}
-            <div
-              className="absolute -translate-x-1/2 text-center text-[11px] leading-snug text-[#71717C]"
-              style={{
-                left: centerX(ASC_X),
-                top:
-                  centerY(ascVisible.length > 0 ? ascY(ascVisible[ascVisible.length - 1].level) : 0) +
-                  NODE / 2 +
-                  22,
-                width: 232,
-              }}
-            >
-              Difficulty modifiers that drastically change how the game plays and
-              feels.
-              {rank === 0 && " Available after defeating your first boss."}
-            </div>
+
       </div>
 
       {/* floating chrome: the board pans underneath it. The wrapper eats no

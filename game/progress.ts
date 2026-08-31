@@ -1,7 +1,7 @@
 import { UNIT_KINDS, UNIT_STATS, unitDrop, WORLD, WORLDS } from "./levels";
 import { OFFICIAL_MAP_IDS } from "./maps";
 import { OPENING_DUOS, tierDropBonus, TOP_TIER, WORLD_REQUIRES } from "./ladder";
-import { ASCENSION_MAX, cleanAscension } from "./ascension";
+import { MUTATION_MAX, cleanMutations } from "./mutation";
 import {
   addScaled,
   canAfford,
@@ -17,6 +17,7 @@ import {
   affordablePoints as affordableTechPoints,
   BY_MINDUSTRY_VALUE,
   isMaxed,
+  isRefundable,
   isTowerNode,
   NODE_SPEED,
   bandForTier,
@@ -127,16 +128,20 @@ export interface Progress {
    */
   loadout?: TowerKind[];
   /**
-   * The ASCENSION ranks switched on for the next run (see ascension.ts) —
+   * The MUTATION ranks switched on for the next run (see mutation.ts) —
    * the optional rules the player has chosen to play under, kept across
    * runs and sessions like `speed` is, because it is a statement about how
    * this player wants to play rather than a fact about one run.
    *
    * It is a CHOICE, not a possession: what a save has EARNED is its rank,
-   * and rank is read off the boss ledger (ascensionRank) rather than stored
+   * and rank is read off the boss ledger (mutationRank) rather than stored
    * here. Absent, or empty, means the campaign as authored.
+   *
+   * A save written before the line was renamed holds this under
+   * `ascension`, which readMutations still reads — the word changed, the
+   * switches a player had flipped did not.
    */
-  ascension?: number[];
+  mutations?: number[];
 }
 
 /** one emplacement, as the save keeps it: what, and which cell */
@@ -202,7 +207,7 @@ const devUnlocking = (): boolean =>
   DEV_UNLOCK_ALL && process.env.NODE_ENV !== "production";
 
 /**
- * THE ASCENSION RANK a boss ledger is worth — how far up the tree's left
+ * THE MUTATION RANK a boss ledger is worth — how far up the tree's left
  * column that save has climbed. Zero on a fresh save, and every save starts
  * there.
  *
@@ -211,12 +216,12 @@ const devUnlocking = (): boolean =>
  * stored: a second number counting the same events is a second number that
  * can disagree with the first, and the ledger is already the save's answer
  * to "which bosses has this player beaten". A boss can therefore never pay
- * a rank twice — the ledger refuses to record it twice — so ascension is
+ * a rank twice — the ledger refuses to record it twice — so mutation is
  * earned by beating a boss somewhere new (a fresh world, or a difficulty
  * above the one it last fell on), never by farming the wave it dies on.
  *
  * THE DEV SWITCH REACHES HERE TOO (see DEV_UNLOCK_ALL). It hands a
- * developer the whole tree without playing the campaign, and the ascension
+ * developer the whole tree without playing the campaign, and the mutation
  * line is out of reach for exactly the reason the tree is: its first rank
  * sits behind a boss at the end of a fifty-wave script. Production ignores
  * the switch, so the shipped game earns every rank the honest way.
@@ -227,7 +232,7 @@ const devUnlocking = (): boolean =>
  * tree let you flip would be scrubbed back off on the very next load.
  */
 const rankOf = (bossKills: readonly string[] | undefined): number =>
-  devUnlocking() ? ASCENSION_MAX : Math.min(ASCENSION_MAX, bossKills?.length ?? 0);
+  devUnlocking() ? MUTATION_MAX : Math.min(MUTATION_MAX, bossKills?.length ?? 0);
 
 /**
  * Raise every node to a usable number of points, keeping anything the save
@@ -404,7 +409,7 @@ export function loadProgress(): Progress {
       // cleaned against the rank this save has actually earned, so a switch
       // left on by a wiped ledger (or by a hand-edited save) reads as off
       // rather than as a rule the run has no right to be playing under
-      ascension: cleanAscension((p as { ascension?: unknown }).ascension, rankOf(bossKills)),
+      mutations: readMutations(p, rankOf(bossKills)),
     };
     if (split) saveProgress(loaded);
     return loaded;
@@ -473,21 +478,36 @@ function readLoadout(p: { loadout?: unknown }): TowerKind[] | undefined {
   return out;
 }
 
+/**
+ * The switched-on ranks out of a raw save, cleaned against the rank this
+ * save has actually earned — so a switch left on by a wiped ledger, or by a
+ * hand-edited save, reads as off rather than as a rule the run has no right
+ * to be playing under.
+ *
+ * `ascension` is the field's old name and is read when the new one is
+ * absent. The line was renamed, not reset: a player who had Hungry switched
+ * on before the rename still has it switched on after.
+ */
+function readMutations(p: object, rank: number): number[] {
+  const raw = p as { mutations?: unknown; ascension?: unknown };
+  return cleanMutations(raw.mutations ?? raw.ascension, rank);
+}
+
 /** how far up the tree's left column this save has climbed — see rankOf */
-export const ascensionRank = (p: Progress): number => rankOf(p.bossKills);
+export const mutationRank = (p: Progress): number => rankOf(p.bossKills);
 
 /** the ranks this run will actually be played under: what the player
  *  switched on, held to what they have earned */
-export const activeAscension = (p: Progress): number[] =>
-  cleanAscension(p.ascension, ascensionRank(p));
+export const activeMutations = (p: Progress): number[] =>
+  cleanMutations(p.mutations, mutationRank(p));
 
-/** switch one ascension rank on or off, and remember it for the next run */
-export function saveAscension(level: number, on: boolean): Progress {
+/** switch one mutation rank on or off, and remember it for the next run */
+export function saveMutation(level: number, on: boolean): Progress {
   const p = loadProgress();
-  const have = new Set(activeAscension(p));
+  const have = new Set(activeMutations(p));
   if (on) have.add(level);
   else have.delete(level);
-  const next = { ...p, ascension: cleanAscension([...have], ascensionRank(p)) };
+  const next = { ...p, mutations: cleanMutations([...have], mutationRank(p)) };
   saveProgress(next);
   return next;
 }
@@ -813,6 +833,35 @@ export function buyTech(node: TechKind, count = 1): Progress | null {
     const picks = p.loadout;
     if (picks.length < techState(p.tech).barSlots)
       p.loadout = BY_MINDUSTRY_VALUE.filter((k) => k === node || picks.includes(k));
+  }
+  saveProgress(p);
+  return p;
+}
+
+/**
+ * Hand a node's last point back, and the price of that point with it.
+ *
+ * ONLY A REFUNDABLE NODE ANSWERS (isRefundable — today that is `duo-power`
+ * alone), and it refunds the price of the point BEING RETURNED rather than
+ * the cheapest one: a curve is walked up and must be walked back down the
+ * same steps, or a node with any climb at all becomes a money printer for
+ * anyone willing to click twice.
+ *
+ * Returns null when there is nothing to give back, so the caller can leave
+ * its control alone rather than showing a button that does nothing.
+ */
+export function refundTech(node: TechKind, count = 1): Progress | null {
+  if (!isRefundable(node)) return null;
+  const p = loadProgress();
+  const n = Math.min(Math.max(1, Math.floor(count)), p.tech[node] ?? 0);
+  if (n < 1) return null;
+  for (let i = 0; i < n; i++) {
+    const owned = p.tech[node] ?? 0;
+    // the point coming back is the (owned - 1)th, which is the one whose
+    // price was last paid
+    credit(p.bank, techPrice(node, owned - 1));
+    if (owned <= 1) delete p.tech[node];
+    else p.tech[node] = owned - 1;
   }
   saveProgress(p);
   return p;

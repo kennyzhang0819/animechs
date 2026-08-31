@@ -1,9 +1,9 @@
 /**
- * THE ASCENSION LINE — the tech tree's LEFT column, and the one thing on it
+ * THE MUTATION LINE — the tech tree's LEFT column, and the one thing on it
  * that is not bought.
  *
  * Everything else in the tree is a purchase: a bank pays, a node takes a
- * point, the save owns it forever (tech.ts). Ascension is the opposite
+ * point, the save owns it forever (tech.ts). Mutation is the opposite
  * transaction in every way, and that is why it hangs off its own column
  * rather than being squeezed into TECH_TREE:
  *
@@ -12,8 +12,8 @@
  *   is exactly what would let a player farm their way past a fight.
  *
  *   IT IS NOT OWNED, IT IS SWITCHED ON. A turret point is capacity you
- *   always have; an ascension is a rule you choose to play under, per run,
- *   and the player turns each one on and off as they like (Progress.ascension).
+ *   always have; a mutation is a rule you choose to play under, per run,
+ *   and the player turns each one on and off as they like (Progress.mutation).
  *   Reaching a rank does not force it — reaching it OFFERS it.
  *
  *   IT MAKES THE GAME HARDER, NOT EASIER. Every other node is power flowing
@@ -21,21 +21,21 @@
  *   it wants a visibly separate line: nothing on it should ever be clicked
  *   by someone who thought they were buying an upgrade.
  *
- * THE RANK STARTS AT 0 and every save begins there — no ascension exists to
+ * THE RANK STARTS AT 0 and every save begins there — no mutation exists to
  * be switched on until a boss dies. Rank is not stored: it is READ OFF the
  * boss-trophy ledger the save already keeps (Progress.bossKills, one entry
  * per distinct boss fight won — see grantRunReward). A second number
  * counting the same events could only ever drift out of step with it.
  *
- * ONE ASCENSION IS BUILT, and the list is the roadmap: rank 1 is Hungry.
+ * ONE MUTATION IS BUILT, and the list is the roadmap: rank 1 is Hungry.
  * Adding rank 2 is an entry here plus its rule in the sim; nothing about
  * the tree view, the save or the toggles needs editing to make room.
  */
 
-/** the ascension ranks, in the order they are earned. `level` IS the rank
+/** the mutation ranks, in the order they are earned. `level` IS the rank
  *  a save must reach for the entry to be offered, and the value the run
- *  spec carries (LevelSpec.ascension) */
-export interface AscensionDef {
+ *  spec carries (LevelSpec.mutation) */
+export interface MutationDef {
   /** rank this switch unlocks at, 1-based — level 0 is "none of them" */
   level: number;
   /** what it is called on the node and in the run's modifier list */
@@ -45,26 +45,26 @@ export interface AscensionDef {
 }
 
 /** rank 1: the hungry status — see HUNGRY_* below for the numbers */
-export const ASC_HUNGRY = 1;
+export const MUT_HUNGRY = 1;
 
-export const ASCENSIONS: readonly AscensionDef[] = [
+export const MUTATIONS: readonly MutationDef[] = [
   {
-    level: ASC_HUNGRY,
+    level: MUT_HUNGRY,
     name: "Hungry",
     blurb:
       "One enemy in ten spawns hungry. It eats a neighbour every second — up to ten — taking double their health and swelling with every meal. What it eats drops nothing.",
   },
 ];
 
-/** the highest rank the line offers — what a fully ascended save reads */
-export const ASCENSION_MAX = ASCENSIONS.reduce((m, a) => Math.max(m, a.level), 0);
+/** the highest rank the line offers — what a fully mutated save reads */
+export const MUTATION_MAX = MUTATIONS.reduce((m, a) => Math.max(m, a.level), 0);
 
 /** the entry for a rank, or null where the line has nothing yet */
-export const ascensionAt = (level: number): AscensionDef | null =>
-  ASCENSIONS.find((a) => a.level === level) ?? null;
+export const mutationAt = (level: number): MutationDef | null =>
+  MUTATIONS.find((a) => a.level === level) ?? null;
 
 /** is this rank switched on for the run? — the sim's one question */
-export const hasAscension = (
+export const hasMutation = (
   active: readonly number[] | undefined,
   level: number,
 ): boolean => !!active && active.includes(level);
@@ -76,15 +76,15 @@ export const hasAscension = (
  * longer degrades to the ranks it legitimately holds rather than handing
  * the sim a rule that does not exist.
  */
-export function cleanAscension(
+export function cleanMutations(
   raw: unknown,
-  rank: number = ASCENSION_MAX,
+  rank: number = MUTATION_MAX,
 ): number[] {
   if (!Array.isArray(raw)) return [];
   const out: number[] = [];
   for (const v of raw) {
     if (typeof v !== "number" || !Number.isInteger(v)) continue;
-    if (v < 1 || v > rank || !ascensionAt(v)) continue;
+    if (v < 1 || v > rank || !mutationAt(v)) continue;
     if (!out.includes(v)) out.push(v);
   }
   return out.sort((a, b) => a - b);

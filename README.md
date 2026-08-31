@@ -32,11 +32,11 @@ stale tab or a cached bundle looks exactly like a fix not working.
   audit/check arithmetic over the authored script
 - `game/tech.ts` — the tech tree: turret price bundles (one shared growth
   constant for every turret), abilities, and the build-bar slot upgrades
-- `game/ascension.ts` — the **ascension line**, the tech tree's left
+- `game/mutation.ts` — the **mutation line**, the tech tree's left
   column: optional rules the player switches on, earned one rank per boss
   felled rather than bought
 - `game/progress.ts` — the save: bank, difficulties cleared, tech points,
-  saved layouts, game speed, build-bar loadout, ascension switches
+  saved layouts, game speed, build-bar loadout, mutation switches
 - `game/items.ts` — the five currencies (copper, titanium, thorium,
   plastanium, phase-fabric)
 - `game/maps.ts` — map documents: terrain layers, spawn circles, per-layer
@@ -69,7 +69,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `components/Swarmfield.tsx` — React shell: HUD, difficulty picker,
   six-slot build bar with its loadout picker, game-speed switcher, canvases
 - `components/TechTree.tsx` — the tech tree as a zoomable map, with the
-  ascension column down its left edge
+  mutation column down its left edge
 - `components/LevelEditorView.tsx`, `MapEditorView.tsx`, `BalanceView.tsx` —
   the admin authoring surfaces
 
@@ -126,13 +126,13 @@ Incursion. Per **difficulty** there are two more knobs in `DIFFICULTIES`:
 shield pools scale ×1/×5/×20, and flat ground/air armour bonuses exist
 (currently authored 0).
 
-### Ascension
+### Mutation
 
 The tech tree forks three ways off `home`. Turrets run down the middle,
-the utilities off to the right — and the **ascension line** is the column
+the utilities off to the right — and the **mutation line** is the column
 on the far left, which is not a purchase at all.
 
-|  | the tree | the ascension line |
+|  | the tree | the mutation line |
 |---|---|---|
 | how it is got | paid for out of the bank | one rank per **boss felled** |
 | what it does | more turrets, faster pace | makes the run **harder** |
@@ -150,13 +150,13 @@ above the one it last fell on.
 **A rank not yet reached is not on the board at all** — not greyed, not
 teased. That is the tree's own rule (a node stays hidden until its parent
 holds a point), and it is the right one twice over here: what the next
-ascension turns out to be is part of the reward for felling the boss, and
+mutation turns out to be is part of the reward for felling the boss, and
 a locked row of them would advertise how long the line is. Reaching a rank
 only **offers** the switch; the player turns each one on and off in the
 tree, the deploy panel names whichever are in force, and nothing is ever
 forced on.
 
-An ascension changes what happens to a wave **after** it spawns and never
+An mutation changes what happens to a wave **after** it spawns and never
 what the script sends, so every number in `ladder.ts` — wave counts, enemy
 totals, the drop-ratio audit — stays true whichever switches are on.
 

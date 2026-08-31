@@ -6,7 +6,6 @@ import {
   type ZoneKind,
   BURN_DPS as BURN_DPS_IMPORT,
   BURN_FX_CHANCE as BURN_FX_CHANCE_IMPORT,
-  bulletOf as bulletOf_IMPORT,
   FX_SPAWN,
   FX_UNIT_SPAWN,
   SPAWN_INVINCIBLE as SPAWN_INVINCIBLE_IMPORT,
@@ -38,7 +37,6 @@ import {
 const BURN_DPS = BURN_DPS_IMPORT;
 const BURN_FX_CHANCE = BURN_FX_CHANCE_IMPORT;
 const WET_FX_CHANCE = WET_FX_CHANCE_IMPORT;
-const bulletOf = bulletOf_IMPORT;
 const SPAWN_INVINCIBLE = SPAWN_INVINCIBLE_IMPORT;
 const SPAWN_UNMOVING = SPAWN_UNMOVING_IMPORT;
 const CELL = CELL_IMPORT;
@@ -70,16 +68,16 @@ import {
 const UNIT_KINDS = UNIT_KINDS_IMPORT;
 import { armorBonusAtLevel, shieldScaleAtLevel, unitHpAtLevel } from "./ladder";
 import {
-  ASC_HUNGRY,
-  hasAscension,
+  MUT_HUNGRY,
+  hasMutation,
   HUNGRY_CHANCE,
   HUNGRY_HP_PER_MEAL,
   HUNGRY_MAX_MEALS,
   HUNGRY_PERIOD,
   HUNGRY_REACH,
-} from "./ascension";
+} from "./mutation";
 import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap } from "./maps";
-import type { TechState } from "./tech";
+import { NO_DUO_UPGRADES, upgradedDuo, type TechState } from "./tech";
 import { isBuildableWall, isWaterFloor, waterWalkMask, type Terrain } from "./terrain";
 import {
   FxKind,
@@ -533,7 +531,7 @@ export class Sim {
   readonly uwet = new Float32Array(MAX_UNITS);
   readonly uwetSlow = new Float32Array(MAX_UNITS);
   /**
-   * THE HUNGRY STATUS (ascension rank 1, ascension.ts): 1 = this unit eats
+   * THE HUNGRY STATUS (mutation rank 1, mutation.ts): 1 = this unit eats
    * its neighbours. Rolled once at spawn and never applied by anything
    * else — there is no weapon, aura or effect that makes a unit hungry, so
    * unlike burning and wet this one never changes for the rest of a life.
@@ -635,7 +633,7 @@ export class Sim {
   kills = 0;
   leaked = 0;
   /**
-   * Bodies EATEN by hungry units (ascension rank 1) — removed from the
+   * Bodies EATEN by hungry units (mutation rank 1) — removed from the
    * field without ever having been killed or leaked.
    *
    * It is its own counter and not a kill for two reasons. The HUD's kill
@@ -660,7 +658,22 @@ export class Sim {
   // the map editor's mode) places no restrictions; the campaign sets it from
   // the save's tech tree before play (see Game.setTech)
   private tech: TechState | null = null;
-  /** is ascension rank 1 switched on for this run? (see reset) */
+  /**
+   * THE DUO AS THIS SAVE HAS UPGRADED IT — the stats every duo on the field
+   * actually fires with, standing in for the stock TOWERS.duo.
+   *
+   * It is a CACHE, refreshed only when one of its two inputs moves: the
+   * save's points (setTech) and the number of duos standing (refreshDuo, at
+   * every place a tower is added, sold or cleared). Neither can change
+   * between those moments, and Duo Power's per-duo damage would otherwise
+   * mean a head count of the whole board on every bullet — five hundred
+   * scans a tick to recompute a number that did not move.
+   *
+   * The stock spec when nothing is bought, so an un-upgraded save pays
+   * nothing at all for this branch existing.
+   */
+  private duoSpec: TowerStats = TOWERS.duo;
+  /** is mutation rank 1 switched on for this run? (see reset) */
   private hungryOn = false;
   // live per-kind census, updated the moment a unit spawns or is removed
   readonly aliveByKind = new Int32Array(UNIT_KINDS.length);
@@ -820,7 +833,7 @@ export class Sim {
     // the run's rules, read once: the feed pass runs over every unit on the
     // field, and a spec lookup per unit per tick to answer a question that
     // cannot change mid-run would be pure waste
-    this.hungryOn = hasAscension(this.level.ascension, ASC_HUNGRY);
+    this.hungryOn = hasMutation(this.level.mutation, MUT_HUNGRY);
     this.coreHp = this.coreHpMax;
     this.sealGx = -1;
     this.projs.length = 0;
@@ -829,6 +842,7 @@ export class Sim {
     this.fxPts.fill(null, 0, this.fxN);
     this.fxN = 0;
     this.towers.length = 0;
+    this.refreshDuo(); // an empty board is a duo with no company
     // the official map document IS the world: map-editor saves land in its
     // JSON, and the next full page load plays them. The documents are
     // fetched before the sim is built (see Game.create), never imported.
@@ -1097,6 +1111,41 @@ export class Sim {
   /** campaign restrictions on building; null lifts them (editor, dev) */
   setTech(tech: TechState | null): void {
     this.tech = tech;
+    this.refreshDuo();
+  }
+
+  /**
+   * Re-resolve the upgraded duo. Called whenever the save's tech changes or
+   * a tower is placed, sold or cleared — see `duoSpec` for why those are
+   * the only moments that can move it.
+   *
+   * `others` is the head count MINUS ONE: Duo Power reads "each OTHER duo
+   * on the board", so a lone duo is bonusless and the hundredth one is
+   * worth 99%. Every duo on the field shares the one number, which is what
+   * makes a single cached spec the honest answer rather than an
+   * approximation of a per-turret one.
+   */
+  private refreshDuo(): void {
+    const up = this.tech?.duo ?? NO_DUO_UPGRADES;
+    let duos = 0;
+    for (const t of this.towers) if (t.kind === "duo") duos++;
+    this.duoSpec = upgradedDuo(up, Math.max(0, duos - 1));
+  }
+
+  /**
+   * The stats a turret of this kind fires with. Identical to TOWERS for
+   * every kind but duo, which the tree can upgrade (see `duoSpec`) — so
+   * every reader of a turret's live stats goes through here and no caller
+   * has to know which kinds have a branch above them.
+   */
+  private specOf(kind: TowerKind): TowerStats {
+    return kind === "duo" ? this.duoSpec : TOWERS[kind];
+  }
+
+  /** the same resolution for a bullet already in the air (cf. bulletOf) */
+  private bulletFor(kind: TowerKind, frag: boolean): BulletStats {
+    const b = this.specOf(kind).bullet;
+    return frag && b.frag ? b.frag.bullet : b;
   }
 
   /** live towers per kind — the bar's remaining-count badges, and the cap check */
@@ -1200,6 +1249,8 @@ export class Sim {
       beamRot: 0,
       beamDmgT: 0,
     });
+    // Duo Power counts the board, so the board changing is what moves it
+    this.refreshDuo();
   }
 
   update(dt: number): void {
@@ -1508,6 +1559,7 @@ export class Sim {
     const t = this.towerAt(px, py);
     if (!t) return false;
     this.towers.splice(this.towers.indexOf(t), 1);
+    this.refreshDuo();
     // the rock under it belongs to the mountain — nothing to unblock
     this.pushFx(t.x, t.y, 0.35, FxKind.Death); // demolish puff
     return true;
@@ -1653,9 +1705,9 @@ export class Sim {
       this.uburn[i] = 0;
       this.uwet[i] = 0;
       this.uwetSlow[i] = 1;
-      // THE HUNGRY ROLL (ascension rank 1) — the only place the status is
+      // THE HUNGRY ROLL (mutation rank 1) — the only place the status is
       // ever applied. One body in ten walks in with an appetite, whatever
-      // kind it is: the ascension is a rule about the SWARM, so exempting
+      // kind it is: the mutation is a rule about the SWARM, so exempting
       // the kinds it would be inconvenient on would just be authoring a
       // second wave script nobody can read. Its clock starts full, so the
       // first meal is a second after it lands rather than the instant it
@@ -1879,7 +1931,7 @@ export class Sim {
   }
 
   /**
-   * ASCENSION RANK 1 — the hungry eat (see ascension.ts for the numbers and
+   * MUTATION RANK 1 — the hungry eat (see mutation.ts for the numbers and
    * for why the rule exists).
    *
    * Every hungry unit runs its own one-second clock. When it comes up, it
@@ -2798,7 +2850,7 @@ export class Sim {
   private fireTowers(dt: number): void {
     const { upx, upy, uvx, uvy } = this;
     for (const t of this.towers) {
-      const st = TOWERS[t.kind];
+      const st = this.specOf(t.kind);
       // a tractor turret has no reload and no volley — it holds a beam
       if (st.bullet.tractor) {
         this.updateTractor(t, st, dt);
@@ -3869,7 +3921,7 @@ export class Sim {
     this.collectForceFields();
     for (let p = projs.length - 1; p >= 0; p--) {
       const pr = projs[p];
-      const b = bulletOf(pr.kind, pr.frag);
+      const b = this.bulletFor(pr.kind, pr.frag);
       // BulletType.updateHoming, BEFORE the step: the shot picks the
       // nearest target within homingRange OF ITSELF and swings toward it,
       // re-picking every tick — so a missile whose mark dies latches onto
