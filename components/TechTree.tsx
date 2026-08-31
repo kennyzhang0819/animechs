@@ -84,18 +84,27 @@ const HOME_ICON = "/mindustry/sprites/blocks/storage/core-shard.png";
  * THE ASCENSION COLUMN, laid out in the same grid the tech tree uses so the
  * two read as one board.
  *
- * IT SITS AT NEGATIVE X — one clear column to the LEFT of everything the
- * tree draws, which is why the geometry below no longer assumes the board
- * starts at zero. The tree already forks at home (turrets down the middle,
- * utilities off to the right, the projector's reservation on the near
- * left); ascension is the far left, and the gap between it and the rest is
- * the point. Nothing on it is bought, and nothing on it makes the player
- * stronger, so it must not be mistaken for another branch of upgrades.
+ * IT HANGS OFF HOME, like everything else does. Home is the trunk the whole
+ * board forks from — turrets down the middle, utilities off to the right,
+ * the projector's reservation on the near left — and ascension is the far
+ * left arm of the same junction. Drawing it unattached would have made it a
+ * second, unrelated board that happened to share a viewport.
  *
- * The column is a CHAIN: the rank marker at the top and one switch per
- * rank below it, in order. Its length is the ASCENSIONS list — a new rank
- * appears here the moment it is authored, with nothing in this file to
- * edit.
+ * IT SITS AT NEGATIVE X, which is why the geometry below no longer assumes
+ * the board starts at zero. The distance from the trunk is the point:
+ * nothing on this column is bought, and nothing on it makes the player
+ * stronger, so it must not be mistaken for another branch of upgrades. Its
+ * link to home is drawn in the column's own colour rather than the tree's
+ * gold for the same reason.
+ *
+ * THE COLUMN IS A CHAIN, AND IT ENDS AT THE SAVE'S RANK: the marker at the
+ * top and one switch per rank EARNED, in order. A rank that has not been
+ * reached is not drawn at all — not greyed, not teased. That is the tree's
+ * own rule (a node stays hidden until its parent holds a point) and it is
+ * the right one twice over here: what the next ascension turns out to be is
+ * the reward for felling the boss, and a locked row of them would advertise
+ * how long the line is, which is a promise this list is in no position to
+ * make.
  */
 const ASC_X = -1;
 /** the rank marker, and the row each ascension switch sits on */
@@ -115,9 +124,9 @@ const HUNGER_GLYPH = "M12 2a10 10 0 1 0 8.66 15L12 12l8.66-5A9.98 9.98 0 0 0 12 
  * ONE ASCENSION SWITCH.
  *
  * It is a TOGGLE, not a purchase, and every part of it says so: no price
- * row, no capacity badge, no gold. An earned switch reads ON or OFF and
- * flips on every click; an unearned one says what would earn it and refuses
- * the click, exactly like an unaffordable turret does.
+ * row, no capacity badge, no gold. It reads ON or OFF and flips on every
+ * click — there is no locked state, because a switch this save has not
+ * earned is not on the board at all (see the column note above).
  *
  * The touch rule is the tree's own (see useTouchOnly): with no hover to
  * read a node with, the first tap on a finger opens the card and the
@@ -127,7 +136,6 @@ const HUNGER_GLYPH = "M12 2a10 10 0 1 0 8.66 15L12 12l8.66-5A9.98 9.98 0 0 0 12 
  */
 function AscensionNode({
   def,
-  earned,
   on,
   touch,
   armed,
@@ -135,7 +143,6 @@ function AscensionNode({
   onToggle,
 }: {
   def: AscensionDef;
-  earned: boolean;
   on: boolean;
   touch: boolean;
   armed: boolean;
@@ -155,26 +162,19 @@ function AscensionNode({
     >
       <button
         aria-pressed={on}
-        aria-disabled={!earned}
-        aria-label={
-          earned
-            ? `${def.name}: ascension ${def.level}, ${on ? "on" : "off"}`
-            : `${def.name}: locked until ascension ${def.level}`
-        }
+        aria-label={`${def.name}: ascension ${def.level}, ${on ? "on" : "off"}`}
         onClick={() => {
           if (touch && !armed) {
             onArm();
             return;
           }
-          if (earned) onToggle();
+          onToggle();
         }}
-        className={`relative flex h-full w-full items-center justify-center rounded-lg border-2 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB] ${
+        className={`relative flex h-full w-full cursor-pointer items-center justify-center rounded-lg border-2 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB] ${
           on
             ? "border-[#FF8ACB] bg-[#2A1B24]"
-            : earned
-              ? "border-[#4A4A55] bg-[#151518] hover:border-[#FF8ACB]"
-              : "border-[#2E2E36] bg-[#151518] opacity-40"
-        } ${earned ? "cursor-pointer" : "cursor-not-allowed"}`}
+            : "border-[#4A4A55] bg-[#151518] hover:border-[#FF8ACB]"
+        }`}
       >
         <svg
           viewBox="0 0 24 24"
@@ -183,9 +183,8 @@ function AscensionNode({
         >
           <path fillRule="evenodd" d={def.level === 1 ? HUNGER_GLYPH : ASC_GLYPH} />
         </svg>
-        {/* the badge is the switch's whole state: ON, or the rank that
-            would unlock it. A turret's badge counts what you own; there is
-            nothing here to own */}
+        {/* the badge is the switch's whole state, and the state is binary. A
+            turret's badge counts what you own; there is nothing here to own */}
         <span
           className={`absolute -bottom-2 -right-2 rounded border px-1.5 text-[13px] font-bold ${
             on
@@ -193,7 +192,7 @@ function AscensionNode({
               : "border-[#2E2E36] bg-[#101013] text-[#71717C]"
           }`}
         >
-          {on ? "On" : earned ? "Off" : `A${def.level}`}
+          {on ? "On" : "Off"}
         </span>
       </button>
       <div
@@ -214,15 +213,11 @@ function AscensionNode({
         </div>
         <div className="mt-1 text-[14px] text-[#A6A6AF]">{def.blurb}</div>
         <div className="mt-2 border-t border-[#2E2E36] pt-2 text-[13px] font-bold uppercase tracking-widest">
-          {!earned ? (
-            <span className="text-[#FF8A8A]">Fell {def.level} boss{def.level === 1 ? "" : "es"} to unlock</span>
-          ) : (
-            <span style={{ color: on ? ASC_LIT : "#71717C" }}>
-              {on ? "Playing with this" : "Not in play"}
-            </span>
-          )}
+          <span style={{ color: on ? ASC_LIT : "#71717C" }}>
+            {on ? "Playing with this" : "Not in play"}
+          </span>
         </div>
-        {showCard && earned && (
+        {showCard && (
           <div className="mt-2 text-[13px] font-bold uppercase tracking-widest text-[#FF8ACB]">
             Tap again to {on ? "switch off" : "switch on"}
           </div>
@@ -546,9 +541,12 @@ export default function TechTree({
   // same rule, so buying a node is what reveals the links out of it
   const visible = TECH_TREE.filter((n) => nodeStatus(progress, n.id) !== "hidden");
   // the left column's two facts: how far the save has climbed, and which of
-  // the ranks it climbed to are switched on for the next run
+  // the ranks it climbed to are switched on for the next run. Only the
+  // ranks EARNED are drawn — the one above is not a locked node, it is not
+  // on the board (see the column note at the top of the file)
   const rank = ascensionRank(progress);
   const active = activeAscension(progress);
+  const ascVisible = ASCENSIONS.filter((a) => a.level <= rank);
 
   const chromeBtn =
     "pointer-events-auto rounded border border-[#2E2E36] bg-[#151518]/90 backdrop-blur px-3 py-1.5 text-[13px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
@@ -614,27 +612,34 @@ export default function TechTree({
                   />
                 );
               })}
-              {/* THE ASCENSION CHAIN, drawn in its own colour so the left
-                  column never reads as another branch of purchases: a
-                  switch that is ON is lit, an earned-but-off one is solid
-                  and grey, and everything past the save's rank is dashed
-                  like an unbought node */}
-              {ASCENSIONS.map((a) => {
-                const on = active.includes(a.level);
-                const earned = rank >= a.level;
-                return (
-                  <line
-                    key={`asc-${a.level}`}
-                    x1={centerX(ASC_X)}
-                    y1={centerY(ascY(a.level) - 1)}
-                    x2={centerX(ASC_X)}
-                    y2={centerY(ascY(a.level))}
-                    stroke={on ? ASC_LIT : earned ? "#4A4A55" : "#2E2E36"}
-                    strokeWidth={2}
-                    strokeDasharray={earned ? undefined : "6 4"}
-                  />
-                );
-              })}
+              {/* HOME'S LEFT ARM: the reach out to the ascension column.
+                  Drawn in the column's own colour rather than the tree's
+                  gold — the branch is part of the same tree, and gold on
+                  this board means bought */}
+              <line
+                x1={centerX(techNode("home").x)}
+                y1={centerY(techNode("home").y)}
+                x2={centerX(ASC_X)}
+                y2={centerY(0)}
+                stroke={rank > 0 ? ASC_LIT : "#4A4A55"}
+                strokeWidth={2}
+                strokeDasharray={rank > 0 ? undefined : "6 4"}
+              />
+              {/* THE CHAIN ITSELF, one link per rank EARNED — a switch that
+                  is on is lit, one left off is solid and grey. There is no
+                  dashed link, because there is no node past the rank for
+                  one to point at */}
+              {ascVisible.map((a) => (
+                <line
+                  key={`asc-${a.level}`}
+                  x1={centerX(ASC_X)}
+                  y1={centerY(ascY(a.level) - 1)}
+                  x2={centerX(ASC_X)}
+                  y2={centerY(ascY(a.level))}
+                  stroke={active.includes(a.level) ? ASC_LIT : "#4A4A55"}
+                  strokeWidth={2}
+                />
+              ))}
             </svg>
             {visible.map((n) => {
               const status: NodeStatus = nodeStatus(progress, n.id);
@@ -789,9 +794,11 @@ export default function TechTree({
                 </div>
               );
             })}
-            {/* THE ASCENSION COLUMN. The marker states the rank and takes no
-                click; below it one switch per rank, each of which toggles
-                rather than buys */}
+            {/* THE ASCENSION COLUMN, home's left arm. The marker states the
+                rank the save has climbed to and takes no click; below it
+                one switch per rank EARNED, each of which toggles rather
+                than buys. At rank 0 the marker is the whole column — what
+                the first ascension is stays unsaid until a boss falls */}
             <div
               className="absolute"
               style={{
@@ -823,11 +830,10 @@ export default function TechTree({
                 Ascension
               </div>
             </div>
-            {ASCENSIONS.map((a) => (
+            {ascVisible.map((a) => (
               <AscensionNode
                 key={a.level}
                 def={a}
-                earned={rank >= a.level}
                 on={active.includes(a.level)}
                 touch={touch}
                 armed={armed === ascKey(a.level)}

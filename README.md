@@ -138,13 +138,23 @@ on the far left, which is not a purchase at all.
 | what it does | more turrets, faster pace | makes the run **harder** |
 | owning it | permanent capacity | a **switch**, on or off per run |
 
-Every save starts at **rank 0** with the column empty. Rank is not stored:
-it is the length of the boss-trophy ledger the save already keeps
-(`Progress.bossKills`, one entry per distinct boss fight won), so a boss
-pays a rank exactly once — a new world, or a difficulty above the one it
-last fell on. Reaching a rank only **offers** the switch; the player turns
-each one on and off in the tree, the deploy panel names whichever are in
-force, and nothing is ever forced on.
+The column hangs off `home`, the same trunk everything else forks from,
+and is drawn in its own colour — gold on that board means *bought*.
+
+Every save starts at **rank 0**, where the marker is the whole column.
+Rank is not stored: it is the length of the boss-trophy ledger the save
+already keeps (`Progress.bossKills`, one entry per distinct boss fight
+won), so a boss pays a rank exactly once — a new world, or a difficulty
+above the one it last fell on.
+
+**A rank not yet reached is not on the board at all** — not greyed, not
+teased. That is the tree's own rule (a node stays hidden until its parent
+holds a point), and it is the right one twice over here: what the next
+ascension turns out to be is part of the reward for felling the boss, and
+a locked row of them would advertise how long the line is. Reaching a rank
+only **offers** the switch; the player turns each one on and off in the
+tree, the deploy panel names whichever are in force, and nothing is ever
+forced on.
 
 An ascension changes what happens to a wave **after** it spawns and never
 what the script sends, so every number in `ladder.ts` — wave counts, enemy
