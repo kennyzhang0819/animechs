@@ -1,4 +1,5 @@
-import { UNIT_KINDS, UNIT_STATS, unitDrop, WORLD } from "./levels";
+import { UNIT_KINDS, UNIT_STATS, unitDrop, WORLD, WORLDS } from "./levels";
+import { OFFICIAL_MAP_IDS } from "./maps";
 import { OPENING_ARCS, OPENING_DUOS, tierDropBonus, TOP_TIER } from "./ladder";
 import { ASCENSION_MAX, cleanAscension } from "./ascension";
 import {
@@ -24,6 +25,7 @@ import {
   techNode,
   techPrice,
   techState,
+  towerBand,
   type TechKind,
   type TechLevels,
   type TechState,
@@ -68,16 +70,27 @@ export interface Progress {
    */
   bossKills?: string[];
   /**
-   * The last layout built on each map, by map id — so a lost run does not
-   * cost the player the twenty minutes of placing they already did.
+   * The last layout built on each map AND DIFFICULTY, keyed `map@tier` (see
+   * layoutKey) — so a lost run does not cost the player the twenty minutes
+   * of placing they already did.
    *
    * Safe to keep because PLACING IS FREE: a tower costs nothing but a point
    * of its node's capacity (see Sim.canPlace), and towers build on rock, so
    * a restored layout cannot seal a route or hand back value that was spent.
    * It is convenience, not progress.
    *
+   * ONE SLOT PER DIFFICULTY, NOT ONE PER MAP. A board that holds Incursion
+   * is not the board that holds Nemesis — same terrain, a different fight —
+   * and a player stepping back down to farm wants the board they farmed
+   * with, not whatever the last hard run left standing. What crosses
+   * between them is the CLEAR: beating a difficulty for the first time
+   * stamps the winning board into the difficulty it just opened, so the
+   * next one starts from the answer to the last one (see seedLayout).
+   *
    * Keyed by MAP rather than by level: the layout is a fact about terrain,
-   * and two levels on one map want the same emplacements.
+   * and two levels on one map want the same emplacements. A key with no
+   * `@` is a PRE-SPLIT save's single per-map layout; splitLegacyLayouts
+   * copies it across on load and no key like that survives a save.
    */
   layouts?: Record<string, TowerPlacement[]>;
   /**
@@ -367,12 +380,19 @@ export function loadProgress(): Progress {
     // gives the save back exactly as it was, minus nothing the player bought
     if (devUnlocking()) grantEveryNode(tech);
     const bossKills = readBossKills(p);
-    return {
+    const clearedByMap = readClearedByMap(p);
+    const layouts = readLayouts(p);
+    // a pre-split save is rewritten here rather than re-split on every
+    // load: loadProgress runs on a timer during a run, and a migration
+    // that never settles would keep handing back boards the player has
+    // since cleared away
+    const split = splitLegacyLayouts(layouts, clearedByMap);
+    const loaded: Progress = {
       bank: readBank(p),
-      clearedByMap: readClearedByMap(p),
+      clearedByMap,
       tech,
       bossKills,
-      layouts: readLayouts(p),
+      layouts,
       speed: readSpeed(p),
       hudMinimized: p.hudMinimized === true,
       loadout: readLoadout(p),
@@ -381,6 +401,8 @@ export function loadProgress(): Progress {
       // rather than as a rule the run has no right to be playing under
       ascension: cleanAscension((p as { ascension?: unknown }).ascension, rankOf(bossKills)),
     };
+    if (split) saveProgress(loaded);
+    return loaded;
   } catch {
     return fresh();
   }
@@ -400,7 +422,12 @@ function readBossKills(p: { bossKills?: unknown }): string[] {
 }
 
 /**
- * Layouts out of a raw save. Every field is re-validated rather than trusted:
+ * Layouts out of a raw save, keys included: a `map@tier` slot and a
+ * pre-split bare `map` key both pass through untouched, because the key is
+ * only ever used to look one up (layoutFor) and an unrecognised one simply
+ * matches nothing.
+ *
+ * Every field is re-validated rather than trusted:
  * these are cell coordinates that will be replayed into placeTower, and a
  * stale or hand-edited save must degrade to "no layout" rather than throw.
  * Placement itself re-checks the terrain, so a cell that stopped being rock
@@ -466,13 +493,123 @@ export function saveLoadout(kinds: readonly TowerKind[]): void {
   saveProgress({ ...p, loadout: [...kinds] });
 }
 
-/** remember what was standing on a map when the run ended */
-export function saveLayout(mapId: string, towers: readonly TowerPlacement[]): void {
+/**
+ * How far up a map's ladder this save has climbed, found from a MAP id
+ * rather than a world id — the two are different names for the same thing
+ * from opposite sides, and layouts are filed by map while progress is
+ * filed by world. Several worlds could name one map; the furthest of them
+ * is the answer, since the map has demonstrably been beaten that far.
+ */
+function clearedOnMap(clearedByMap: Record<string, number>, mapId: string): number {
+  let best = 0;
+  for (const w of WORLDS)
+    if ((w.map ?? OFFICIAL_MAP_IDS[0]) === mapId)
+      best = Math.max(best, Math.floor(clearedByMap[w.id] ?? 0));
+  return best;
+}
+
+/**
+ * SPLIT A PRE-SPLIT SAVE'S LAYOUTS, one per map, into one per difficulty.
+ *
+ * Layouts used to be filed one to a map with no difficulty attached. Such
+ * a save has, in effect, already built that board on every difficulty it
+ * ever played, so it gets it back on every difficulty it has UNLOCKED —
+ * anything up to the map's frontier. Difficulties past the frontier are
+ * left empty on purpose: they have never been seen, and the first clear
+ * below them is what hands a board up (see seedLayout).
+ *
+ * ILLEGAL TURRETS ARE DROPPED ON THE WAY THROUGH. What a map lets you
+ * bring is decided by how far up it you have climbed (bandForCleared), and
+ * these boards were built before that rule existed — so one can easily
+ * hold a spectre on a map whose band stops at thorium. Copying it
+ * unfiltered would stand up turrets the difficulty would never let the
+ * player place by hand.
+ *
+ * A slot that already exists is never touched, and the bare key is dropped
+ * once it has been split, so this runs exactly once per save.
+ */
+function splitLegacyLayouts(
+  layouts: Record<string, TowerPlacement[]>,
+  clearedByMap: Record<string, number>,
+): boolean {
+  let changed = false;
+  for (const key of Object.keys(layouts)) {
+    if (key.includes("@")) continue;
+    const board = layouts[key];
+    delete layouts[key];
+    changed = true;
+    const cleared = clearedOnMap(clearedByMap, key);
+    const band = bandForCleared(cleared);
+    const legal = board.filter((t) => towerBand(t.kind) <= band);
+    if (legal.length === 0) continue;
+    // 0..frontier inclusive: the frontier is unlocked — it is the tier the
+    // map is offering to play next — and everything under it is beaten
+    for (let tier = 0; tier <= Math.min(TOP_TIER, cleared); tier++) {
+      const slot = layoutKey(key, tier);
+      if (!layouts[slot]) layouts[slot] = legal.map((t) => ({ ...t }));
+    }
+  }
+  return changed;
+}
+
+/** which slot a board is filed in: one map, one difficulty */
+const layoutKey = (mapId: string, tier: number): string =>
+  `${mapId}@${Math.min(TOP_TIER, Math.max(0, Math.floor(tier)))}`;
+
+/**
+ * The blueprint to stand up when a run on this map and difficulty begins.
+ *
+ * Nothing to fall back to: a save that predates the split had its one
+ * per-map board copied into every difficulty it had unlocked when it
+ * loaded (see splitLegacyLayouts), so by the time anything reads one the
+ * slots are already filled.
+ */
+export const layoutFor = (
+  p: Progress,
+  mapId: string,
+  tier: number,
+): TowerPlacement[] | undefined => p.layouts?.[layoutKey(mapId, tier)];
+
+/** remember what was standing on a map and difficulty when the run ended */
+export function saveLayout(
+  mapId: string,
+  tier: number,
+  towers: readonly TowerPlacement[],
+): void {
   const p = loadProgress();
   const layouts = { ...(p.layouts ?? {}) };
-  if (towers.length > 0) layouts[mapId] = towers.map((t) => ({ ...t }));
-  else delete layouts[mapId];
+  const key = layoutKey(mapId, tier);
+  if (towers.length > 0) layouts[key] = towers.map((t) => ({ ...t }));
+  else delete layouts[key];
   saveProgress({ ...p, layouts });
+}
+
+/**
+ * Hand a winning board forward: file it as the opening blueprint for a
+ * difficulty, but ONLY IF THAT DIFFICULTY HAS NONE. Called on a first
+ * clear, against the tier the clear just opened.
+ *
+ * The empty-slot rule is what keeps it from being a wrecking ball. A
+ * player who has already played the tier above has a board there they
+ * built on purpose, and a later replay of the tier below must not
+ * overwrite it — the paste is a leg up for a difficulty being seen for the
+ * first time, not a sync between them.
+ *
+ * The bare pre-split key is deliberately NOT consulted: it stands in for
+ * "no board here yet", and a newly opened difficulty should get the board
+ * that actually won rather than keep inheriting the legacy one.
+ */
+export function seedLayout(
+  mapId: string,
+  tier: number,
+  towers: readonly TowerPlacement[],
+): boolean {
+  if (towers.length === 0) return false;
+  const p = loadProgress();
+  const key = layoutKey(mapId, tier);
+  if (p.layouts?.[key]) return false;
+  saveProgress({ ...p, layouts: { ...(p.layouts ?? {}), [key]: towers.map((t) => ({ ...t })) } });
+  return true;
 }
 
 /** remember the pace just picked, for the next run and the next session */

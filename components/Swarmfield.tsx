@@ -45,7 +45,9 @@ import {
   loadProgress,
   resetProgress,
   saveHudMinimized,
+  layoutFor,
   saveLayout,
+  seedLayout,
   saveLoadout,
   saveSpeed,
   startingSpeed,
@@ -619,10 +621,12 @@ export default function Swarmfield() {
         // the pace carries across runs and across sessions — a player who
         // plays at 4x wants 4x again after a loss, not 1x and a click
         g.setSpeed(startingSpeed(save, admin ? SPEEDS : techOf(save, worldId).speeds));
-        // stand last run's emplacements back up before the first wave. Tech
-        // is applied first because placeTower checks capacity, so restoring
+        // stand this difficulty's board back up before the first wave —
+        // either the one that ended the last run on it, or, the first time
+        // it is played, the board that won the difficulty below. Tech is
+        // applied first because placeTower checks capacity, so restoring
         // ahead of it would silently drop everything past the default caps
-        const saved = save.layouts?.[g.mapId()];
+        const saved = layoutFor(save, g.mapId(), level.tier ?? 0);
         if (saved && saved.length > 0) g.applyLayout(saved);
         game = g;
         gameRef.current = g;
@@ -673,8 +677,11 @@ export default function Swarmfield() {
         granted.current = true;
         // the layout is saved on the RUN ENDING rather than on every
         // placement: mid-run it is still changing, and a run abandoned from
-        // the pause menu should leave the last finished layout alone
-        saveLayout(g.mapId(), g.layout());
+        // the pause menu should leave the last finished layout alone. It is
+        // filed under the difficulty that was played — every difficulty
+        // keeps its own board
+        const built = g.layout();
+        saveLayout(g.mapId(), level.tier ?? 0, built);
         // level.id names the world the run was on — it keys the boss
         // trophies, so world 2's boss is a fresh trophy even at a tier
         // world 1's boss already paid
@@ -690,7 +697,14 @@ export default function Swarmfield() {
         // the picker follows the frontier ONLY when the frontier moved. A
         // player farming tier 2 with a frontier of 7 has chosen that tier
         // and must not be yanked back up to 7 for clearing it again
-        if (reward.firstClear) setTier(topTier(after, reward.worldId));
+        if (reward.firstClear) {
+          setTier(topTier(after, reward.worldId));
+          // and the board that did it is pasted into the difficulty it just
+          // opened, so the next one is walked into with the answer to the
+          // last one standing rather than with bare rock. Only into an
+          // EMPTY slot — see seedLayout
+          seedLayout(g.mapId(), reward.tier + 1, built);
+        }
       }
     }, 100);
     return () => {
@@ -844,7 +858,7 @@ export default function Swarmfield() {
     // reset() clears the field, so the layout has to be stood back up here
     // too — Retry rebuilds the sim in place and never goes through the
     // create effect that restores it on a fresh mount
-    const saved = loadProgress().layouts?.[g.mapId()];
+    const saved = layoutFor(loadProgress(), g.mapId(), level?.tier ?? 0);
     if (saved && saved.length > 0) g.applyLayout(saved);
     setHud(g.ui());
   };
