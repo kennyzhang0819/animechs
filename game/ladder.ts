@@ -20,39 +20,43 @@ import {
 } from "./items";
 
 /**
- * THE LADDER — ONE CLIMB PER WORLD, TEN RUNGS, NO NAMES.
+ * THE LADDER — ONE CLIMB PER WORLD, TEN RUNGS, NO NAMES, ONE SCRIPT.
  *
- * A world ships ONE authored script. A rung is a CUT of that script plus an
- * enemy level and a few dials (see RUNGS):
+ * EVERY RUNG PLAYS THE WHOLE AUTHORED SCRIPT — all fifty waves, wave 1 to
+ * wave 50, the same fifty every time. A rung is not a cut of the campaign
+ * and never has more or less of it than the rung below. A rung is ONE
+ * NUMBER: the enemy level the whole script is played at.
  *
  *   rung   1   2   3   4   5   6   7   8   9  10
- *   waves 20  23  26  30  33  36  40  43  46  50
  *   level  0   4   8  12  16  20  24  28  32  36
  *
- * THERE ARE NO NAMED DIFFICULTIES ANY MORE and no jumps between them.
- * Incursion / Onslaught / Nemesis / Eradication were four rows with big
- * gaps, three of which a save crossed once and then never thought about
- * again; every one of those gaps was a wall a player had to farm at for an
- * evening before the next row would open. The same span — 20 to 50 waves,
- * enemy level 0 to 36, shield x1 to x5, swarm armour +0 to +10 — is now
- * split into TEN even rungs, and a rung is a number the player reads off a
- * counter. Rung 1 is exactly the old Incursion and rung 10 is exactly the
- * old Eradication; the eight steps in between are the ones that used to be
- * three.
+ * So the waves are the CONTENT and the rung is the DIFFICULTY, and the two
+ * are completely separate. Rung 1 is the campaign as authored; rung 2 is
+ * that same campaign with four enemy levels on it, x1.26 health a body;
+ * rung 10 is it at level 36, x8.1 health a body. Nothing about wave 37
+ * changes between them except how much health walks in.
  *
- * THE CLIMB IS THE GAME. Nothing is finite about it in shape — the ladder
- * stops at ten because ten is what is authored today (RUNG_COUNT), not
- * because clearing it is meant to end anything. `clearedByMap` is an
- * unbounded int per world, so raising RUNG_COUNT is the only edit a
- * longer ladder needs.
+ * THIS REPLACED TWO THINGS AT ONCE. There were four NAMED difficulties —
+ * Incursion / Onslaught / Nemesis / Eradication — and each was a PREFIX CUT
+ * of the script (20, 35, 50, 50 waves) as well as a level. Both are gone.
+ * The names are gone because a rung is a number the player reads off a
+ * counter, and the cuts are gone because content a difficulty withholds is
+ * content most saves never see: the last fifteen waves were the best-written
+ * in the game and two thirds of the ladder never sent them.
+ *
+ * THE LADDER SCALES BY ONE CONSTANT. RUNG_COUNT is ten today because ten is
+ * where the tuning has been checked, not because anything is finite: every
+ * rung's dials are arithmetic on its index (see RUNGS), and `clearedByMap`
+ * is an unbounded int per world, so raising RUNG_COUNT is the whole edit an
+ * eleventh rung needs.
  *
  * WHAT REPLACED THE OLD ANTI-FARM GUARD. A rung used to carry a fixed
  * roster ceiling — an Incursion was a first-three-currencies fight forever,
  * whatever the save owned (`bandForTier`, deleted). That is the right rule
- * for three rows with big gaps and the wrong one for a continuous ladder:
+ * for four rows with big gaps and the wrong one for a continuous ladder:
  * steamrolling the rung that used to kill you IS the ascension fantasy, and
- * a permission gate takes it away. The guard is now an INCOME GRADIENT
- * instead — see LOOT_PER_RUNG. Nobody farms rung 4 when rung 10 pays 28x.
+ * a permission gate takes it away. The guard is now an INCOME GRADIENT —
+ * see LOOT_PER_RUNG. Nobody farms rung 4 when rung 10 pays 10x.
  *
  * Nothing is generated. Wave 1 of rung 10 is wave 1 of the same authored
  * list rung 1 plays, with 36 levels on it — which is what lets the level
@@ -65,115 +69,111 @@ import {
  * and drop all stay at their base values forever.
  *
  * Flat armour against level-scaled health is what keeps the rungs distinct
- * rather than merely long. A rung is a level offset on this same curve, so
- * a level-20 dagger outlives a level-0 mace and still has a dagger's
+ * rather than merely harder. A rung is a level offset on this same curve,
+ * so a level-20 dagger outlives a level-0 mace and still has a dagger's
  * armour, while the level-20 fortress is still the thing chip damage cannot
  * scratch.
  */
 export const HP_PER_LEVEL = 1.06;
 
 /**
- * Enemy levels added per rung — 4 levels is x1.26 health per body.
+ * ENEMY LEVELS ADDED PER RUNG, and the only thing that makes one rung
+ * different from the next: 4 levels is x1.2625 health on every body.
  *
- * This is the half of a rung that makes the SAME waves harder. The other
- * half is the wave cut below, which makes the run longer. Both move
- * together on purpose: the levels are what keep the shared opening waves
- * from playing identically at every rung. (New kinds keep debuting deep
- * into the script — scepter at 21, the T5 lines from the mid-30s, the boss
- * at 50 — see the note over WORLDS in levels.ts.)
- *
- * It was 10 when the ladder had four rows spanning the same 0-36 levels.
- * Ten rungs over the same span is 4.
+ * It is the WHOLE step now. Under the named difficulties a step was two
+ * things multiplied — ten levels AND fifteen new waves — and the wave half
+ * is gone, so this number alone is what "one rung harder" means. That is
+ * why it is small: 1.26 is a step a fleet can answer by growing a quarter,
+ * which is roughly one evening of farming, and ten of them compound to
+ * x8.1.
  */
 export const LEVELS_PER_RUNG = 4;
 
 /**
- * THE RUNGS, and the only place their shape is written down.
+ * SHIELD SCALE PER RUNG — multiplies every shield ability's pool, cap and
+ * regen (see Sim.updateAbilities). Compounding, so rung 10 lands on x5.
  *
- * `waves` is how much of the authored script this rung plays, `level` the
- * enemy level it plays at — everything else on this page is arithmetic over
- * this table. A rung has NO NAME and NO IDENTITY beyond its number: it is
- * shown as "Level n" (rungLabel) in a colour read off its position
- * (rungColor), and that is the whole of what a player is told about it.
+ * It compounds rather than stepping evenly because shields answer a
+ * different question than health. A body's health is priced against the
+ * enemy budget, so it rides the level curve; a shield is measured in
+ * SECONDS OF ABSORBED TOWER FIRE, so it has to track the player's
+ * firepower — and firepower tracks income, which compounds (LOOT_PER_RUNG).
+ * Left flat, a quasar's 500-point bubble that buys real cover at rung 1
+ * pops to incidental fire by rung 5.
  *
- * EVERY COLUMN IS AN EVEN SPLIT OF WHAT THE FOUR OLD DIFFICULTIES SPANNED,
- * which is what makes this a re-cut rather than a re-balance:
+ * 5 ** (1/9) — nine steps from rung 1 to rung 10, so the tenth rung is the
+ * x5 the old top difficulty ran at. Written as the PER-RUNG number rather
+ * than as "x5 spread over the ladder" so an eleventh rung extends the curve
+ * instead of re-scaling every rung below it.
+ */
+export const SHIELD_PER_RUNG = 1.1958;
+
+/**
+ * FLAT ARMOUR ADDED TO EVERY TIER 1-3 BODY, from ARMOR_FROM_RUNG upward, in
+ * steps of ARMOR_PER_RUNG. Rung 10 lands on +10, the old top difficulty's
+ * value; T4 and T5 never take it.
  *
- *   waves        20 -> 50   in steps of 3 and 4
- *   level         0 -> 36   in steps of LEVELS_PER_RUNG
- *   shieldScale   1 -> 5    geometrically (see below)
- *   armour       +0 -> +10  over the back half only (see below)
- *
- * THIS LADDER IS CLIMBED ONCE PER WORLD. This table says what a rung IS;
- * how far up it a save has got is a per-world number (clearedByMap in
- * progress.ts), so standing on rung 8 somewhere says nothing about
- * anywhere else.
- *
- * The wave cuts start at 20 rather than something evener because rung 1 has
- * to be a whole arc on its own — a fresh save's entire experience of the
- * game until it clears it — and end at 50 because that is what is authored.
- *
- * `shieldScale` multiplies every shield ability's pool, cap and regen (see
- * Sim.updateAbilities). It climbs GEOMETRICALLY rather than in equal steps
- * because shields answer a different question than health. A body's health
- * is priced against the enemy budget, so it rides the level curve; a shield
- * is measured in SECONDS OF ABSORBED TOWER FIRE, so it has to track the
- * player's firepower — and firepower tracks income, which is geometric
- * (LOOT_PER_RUNG). Left flat, a quasar's 500-point bubble that buys real
- * cover at rung 1 pops to incidental fire by rung 5. Only the enemy's own
- * shields scale; nothing on the player's side reads this.
- *
- * `lowTierArmorBonus` is added FLAT to the armour of every TIER 1-3 unit
- * at spawn (Sim reads it once, into uarmor); T4 and T5 never take it.
  * Armour is a flat shave floored at a tenth of the raw hit
  * (Sim.applyArmor), so the knob is regressive by calibre on purpose: +3
  * barely dents a salvo's 28 or a lancer's 140, but takes a third off a
  * duo's 9 — it makes the SWARM outlast chip without inflating the heavies,
  * which already carry the armour that matters.
  *
- * IT STAYS AT ZERO FOR THE FIRST FIVE RUNGS and then ramps in twos. That
- * is not an even split and it is deliberate: the anti-air line is built on
- * small pellets — a scatter shot is 3 damage — so even +1 halves the game's
- * first AA against the T1-T2 flyers. A ladder that started plating the
- * swarm at rung 2 would break the opening roster before the player had any
- * other one. By rung 6 the tree has answered that, and by rung 10 the +10
- * floors everything below midgame calibre against tiers 1-3 (a duo's 9, an
- * arc bolt's 20 halved, cyclone's 8/12 flak all land at or near the 10%
- * floor), which is the top rung's thesis: the fight above the top. The knob
- * still cannot touch T4/T5, whose debut tax stays priced by their own
- * plating. checkDebuts prices the bonus into its debut-tax lint.
+ * IT STAYS AT ZERO FOR THE FIRST FIVE RUNGS. That is not an even split and
+ * it is deliberate: the anti-air line is built on small pellets — a scatter
+ * shot is 3 damage — so even +1 halves the game's first AA against the
+ * T1-T2 flyers. A ladder that started plating the swarm at rung 2 would
+ * break the opening roster before the player had any other one. By rung 6
+ * the tree has answered that, and by rung 10 the +10 floors everything
+ * below midgame calibre against tiers 1-3 (a duo's 9, an arc bolt's 20
+ * halved, cyclone's 8/12 flak all land at or near the 10% floor), which is
+ * the top rung's thesis: the fight above the top. checkDebuts prices the
+ * bonus into its debut-tax lint.
+ */
+export const ARMOR_FROM_RUNG = 6;
+export const ARMOR_PER_RUNG = 2;
+
+/** the swarm armour a rung carries, by 0-based index: nothing below
+ *  ARMOR_FROM_RUNG (an ORDINAL, so rung 6 is the first +2), then a step a
+ *  rung, which lands rung 10 on the +10 the old top difficulty ran */
+const armorAtRung = (i: number): number =>
+  Math.max(0, i + 2 - ARMOR_FROM_RUNG) * ARMOR_PER_RUNG;
+
+/** how many rungs the ladder has today — raising it is the whole edit an
+ *  eleventh rung needs, because every dial below is arithmetic on the index */
+export const RUNG_COUNT = 10;
+
+/**
+ * THE RUNGS, and the only place their shape is written down.
+ *
+ * THERE IS NO `waves` COLUMN. Every rung plays the whole authored script;
+ * see the note at the top of this file for why the prefix cuts went.
+ *
+ * Every dial is arithmetic on the rung's index, which is what makes the
+ * ladder extend rather than need re-authoring:
+ *
+ *   level        index x LEVELS_PER_RUNG        0, 4, 8, ... 36
+ *   shieldScale  SHIELD_PER_RUNG ^ index        1.00 ... 5.00
+ *   armour       +2 a rung from rung 6          0, 0, 0, 0, 0, 2, ... 10
+ *
+ * A rung has NO NAME and NO IDENTITY beyond its number: it is shown as
+ * "Level n" (rungLabel) in a colour read off its position (rungColor), and
+ * that is the whole of what a player is told about it.
+ *
+ * THIS LADDER IS CLIMBED ONCE PER WORLD. This table says what a rung IS;
+ * how far up it a save has got is a per-world number (clearedByMap in
+ * progress.ts), so standing on rung 8 somewhere says nothing about
+ * anywhere else.
  */
 export const RUNGS: readonly {
-  waves: number;
   level: number;
   shieldScale: number;
   lowTierArmorBonus: number;
-}[] = [
-  // prettier-ignore
-  { waves: 20, level:  0, shieldScale: 1,    lowTierArmorBonus:  0 },
-  // prettier-ignore
-  { waves: 23, level:  4, shieldScale: 1.2,  lowTierArmorBonus:  0 },
-  // prettier-ignore
-  { waves: 26, level:  8, shieldScale: 1.43, lowTierArmorBonus:  0 },
-  // prettier-ignore
-  { waves: 30, level: 12, shieldScale: 1.71, lowTierArmorBonus:  0 },
-  // prettier-ignore
-  { waves: 33, level: 16, shieldScale: 2.05, lowTierArmorBonus:  0 },
-  // prettier-ignore
-  { waves: 36, level: 20, shieldScale: 2.46, lowTierArmorBonus:  2 },
-  // prettier-ignore
-  { waves: 40, level: 24, shieldScale: 2.95, lowTierArmorBonus:  4 },
-  // prettier-ignore
-  { waves: 43, level: 28, shieldScale: 3.54, lowTierArmorBonus:  6 },
-  // prettier-ignore
-  { waves: 46, level: 32, shieldScale: 4.24, lowTierArmorBonus:  8 },
-  // prettier-ignore
-  { waves: 50, level: 36, shieldScale: 5,    lowTierArmorBonus: 10 },
-];
-
-/** how many rungs the ladder has today — ten, and raising it is the only
- *  edit a longer ladder needs */
-export const RUNG_COUNT = RUNGS.length;
+}[] = Array.from({ length: RUNG_COUNT }, (_, i) => ({
+  level: i * LEVELS_PER_RUNG,
+  shieldScale: Math.round(SHIELD_PER_RUNG ** i * 100) / 100,
+  lowTierArmorBonus: armorAtRung(i),
+}));
 
 /**
  * THE COLOUR OF A RUNG, and the only identity one has beyond its number.
@@ -193,86 +193,54 @@ const RUNG_COLORS: readonly [number, number, number][] = [
 ];
 
 /**
- * THE ENEMY MIX EACH RUNG SHOULD SEND, as the payout it produces: one item
- * per kill, so a wave script's unit tiers ARE the economy. Indexed like
- * RUNGS then like ITEM_KINDS, normalised to copper = 100.
+ * THE ENEMY MIX THE CAMPAIGN SHOULD SEND, as the payout it produces: one
+ * item per kill, so the wave script's unit tiers ARE the economy.
+ * Normalised to copper = 100, indexed like ITEM_KINDS.
  *
- * THREE OF THESE ROWS ARE THE DESIGN INPUT AND THE OTHER SEVEN ARE WHERE
- * THE SAME SCRIPT STANDS AT ITS OWN CUT. Rungs 1, 6 and 10 are the mixes
- * the wave script was authored to — they are the old Incursion, Onslaught
- * and Nemesis rows, unchanged, and their cuts (20, 36 and 50 waves) are
- * where the ten-rung split happens to put them. The seven in between are
- * the cumulative mix the script actually pays at those cuts, read off it
- * and written down, because a cut of an authored script cannot have a
- * target of its own that the script is not free to miss.
+ *   copper  titanium  thorium  plastanium  phase
+ *      100        30       24         4.2   0.85
  *
- * So an author still aims at rows 1, 6 and 10; check() measures every rung
- * against its row, and a rung in between drifting means bodies were moved
- * across its cut, which is a thing worth being told about.
+ * ONE ROW, BECAUSE THERE IS ONE RUN. Every rung sends the same fifty waves,
+ * so every rung banks the same SHAPE and only the size moves (the drop
+ * bonus scales every currency together, and a uniform multiplier cannot
+ * change a ratio). This used to be a row per difficulty, back when a
+ * difficulty was a prefix cut and a shorter run genuinely had a different
+ * mix in it.
  *
- * READ THESE ROWS AS WEIGHT, NOT COUNT. Every rung above the first still
- * sends tier-1 bodies by the tens of thousands — T1 stays the most numerous
- * thing on the field, and the swarm is meant to look like a swarm. What
- * moves is what the swarm is CARRYING.
+ * THIS IS THE DESIGN INPUT, NOT A CONSEQUENCE. The wave script is authored
+ * to this and the tech tree's prices are balanced to whatever it pays —
+ * never the other way round. An earlier version of this table was derived
+ * backwards from Mindustry's turret BUILD COSTS, which was wrong twice
+ * over: plastanium and phase are specialty materials there rather than
+ * rungs of a tier ladder, and their quantities carry no information about
+ * how many tier-4 enemies a wave should hold.
  *
- * A TIER-1 BODY IS NEARLY FREE IN THIS BUDGET and that is the key to reading
- * the table: 150 health against a tier-4's 9,000, so ONE T4 weighs as much
- * as sixty daggers. So "send more T1" and "shift the weight upward" are not
- * in tension at all — the thing that actually sets the size of the step
- * between rungs is the T3, T4 and T5 counts, and nothing else is close.
+ * READ IT AS WEIGHT, NOT COUNT. The script sends tier-1 bodies by the tens
+ * of thousands — T1 is the most numerous thing on the field and the swarm
+ * is meant to look like a swarm. A TIER-1 BODY IS NEARLY FREE IN THIS
+ * BUDGET: 150 health against a tier-4's 9,000, so ONE T4 weighs as much as
+ * sixty daggers. "Send more T1" and "shift the weight upward" are not in
+ * tension at all — what actually sets the run's weight is the T3, T4 and T5
+ * counts, and nothing else is close.
+ *
+ * EVERY CURRENCY DROPS FROM RUNG 1 NOW, and that is a real change. Under
+ * the prefix cuts phase fabric only appeared in the last dozen waves, so a
+ * low difficulty could not pay for a phase-priced turret at all and the
+ * price was a hard gate. A full script pays 202 phase at rung 1, so the top
+ * of the tech tree is reachable from the bottom of the ladder — slowly. The
+ * gate is now the RATE rather than the permission, which is the same trade
+ * the roster ceiling made when it was deleted.
  *
  * A run's TOTAL bodies are not its bodies on the field. Units stream in over
- * WAVE_RELEASE_SECONDS and die continuously, so a rung that sends 50,000 of
- * them never holds anything like that at once. Do not size a rung against
- * the map's area; size it against these rows and let the drop zones throttle
- * what they cannot pass.
+ * WAVE_RELEASE_SECONDS and die continuously, so a run that sends 50,000 of
+ * them never holds anything like that at once. Do not size the script
+ * against the map's area; size it against this row and let the drop zones
+ * throttle what they cannot pass.
  *
- * NOTHING GATES A CURRENCY ANY MORE. Under the old ladder a rung had a
- * fixed roster ceiling, so a currency dropping before anything charged for
- * it was a real complaint; today every node in the tree is open and the
- * bank decides (see the note at the top of tech.ts), so an early trickle of
- * plastanium is simply the first plastanium. The rows carry those trickles
- * rather than rounding them to zero.
- *
- * (Surge alloy has no column anywhere here: it never drops from waves, only
- * from a boss's first kill — see grantRunReward in progress.ts.)
+ * (Surge alloy has no column: it never drops from waves, only from a boss's
+ * first kill — see grantRunReward in progress.ts.)
  */
-export const TARGET_DROP_RATIO: readonly (readonly number[])[] = [
-  [100, 15, 3.6, 0, 0], // rung 1 — authored (the old Incursion row)
-  [100, 16, 4.1, 0, 0],
-  [100, 17.9, 5.3, 0.1, 0],
-  [100, 20, 7.4, 0.2, 0],
-  [100, 22, 9.7, 0.4, 0],
-  [100, 24.5, 12.2, 0.8, 0], // rung 6 — authored (the old Onslaught row)
-  [100, 25.5, 13.8, 1, 0],
-  [100, 26.5, 15.9, 1.4, 0.1],
-  [100, 27.8, 18.9, 2.2, 0.3],
-  [100, 30, 24, 4.2, 0.85], // rung 10 — authored (the old Nemesis row)
-];
-
-/**
- * THE DEEPEST CURRENCY A RUNG PAYS, as an index into ITEM_KINDS — read off
- * TARGET_DROP_RATIO, so it follows the authored mix rather than a second
- * table that could disagree with it.
- *
- * The menu uses it to say what a rung newly drops, and it only has anything
- * to say on the rungs where the answer CHANGES: under the ten-rung split
- * plastanium arrives at rung 3 and phase fabric at rung 8, and the seven
- * other rungs pay a deeper share of what the rung below already paid rather
- * than anything new.
- */
-export const deepestDrop = (tier: number): number => {
-  const row = TARGET_DROP_RATIO[clampTier(tier)] ?? [];
-  let deepest = 0;
-  row.forEach((share, i) => {
-    if (share > 0) deepest = i;
-  });
-  return deepest;
-};
-
-/** does this rung pay a currency the rung below it does not? */
-export const paysNewCurrency = (tier: number): boolean =>
-  clampTier(tier) > 0 && deepestDrop(tier) > deepestDrop(clampTier(tier) - 1);
+export const TARGET_DROP_RATIO: readonly number[] = [100, 30, 24, 4.2, 0.85];
 
 /** how far off target a currency may drift before check() says so */
 export const RATIO_TOLERANCE = 0.4;
@@ -286,7 +254,7 @@ const clampTier = (tier: number): number =>
 
 /**
  * LOOT PER RUNG, COMPOUNDING: rung n pays x LOOT_PER_RUNG^n on every drop.
- * Rung 10 pays x28.3 what rung 1 does, and it is the whole anti-farm guard.
+ * Rung 10 pays x10.6 what rung 1 does, and it is the whole anti-farm guard.
  *
  * IT HAD TO STOP BEING LINEAR. The old bonus was 1 + 0.3n against health
  * that compounds at 1.06 a level, which is a SHAPE problem rather than a
@@ -294,22 +262,27 @@ const clampTier = (tier: number): number =>
  * ladder somewhere in its twenties, whatever the constants. So the payout
  * compounds too.
  *
- * WHERE 1.45 COMES FROM. The number to beat is not the health step, it is
- * the HEALTH PER SECOND step — what the fleet actually has to keep up with
- * — and over these ten rungs that is x1.46 a rung (8,107 hp/s at rung 1 to
- * 244,586 at rung 10, see audit()). A rung also runs longer than the one
- * below it and kills a little faster per minute, worth about x1.03 a rung
- * on its own. 1.45 x 1.03 = x1.50 of income per MINUTE per rung, against a
- * fight that gets x1.46 harder per minute: modestly above, on purpose.
+ * WHERE 1.30 COMES FROM, and it is now exact arithmetic rather than a
+ * measurement. Every rung plays the same fifty waves for the same number of
+ * minutes and kills the same bodies, so the only thing that moves between
+ * two rungs is the level: the fight gets HP_PER_LEVEL ^ LEVELS_PER_RUNG =
+ * x1.2625 harder, both in total health and per second, and the payout gets
+ * x1.30 bigger. 1.30 against 1.2625 is a 3% surplus a rung — modestly
+ * above, on purpose.
  *
  * THE SURPLUS IS SUPPOSED TO BE SMALL, because the tech tree's own price
  * curve is geometric in points owned (g ** owned, tech.ts) and that is what
  * turns the surplus into TIME. Set this much higher and the ladder walks
- * itself; set it below the health-per-second step and every rung is a
- * worse farm than the one under it, which is the failure the linear bonus
- * had. audit() reports both steps and their ratio per rung (`grindStep`),
- * and check() complains when a rung drifts too far either way — those are
- * the numbers to tune against, never the feel of one run.
+ * itself; set it below x1.2625 and every rung is a worse farm than the one
+ * under it, which is the failure the linear bonus had. audit() reports the
+ * fight's step and the payout's step per rung and check() complains when
+ * their ratio drifts — those are the numbers to tune against, never the
+ * feel of one run.
+ *
+ * IT WAS 1.45 WHILE THE RUNGS WERE PREFIX CUTS, because a higher rung was
+ * then a LONGER run as well as a harder one and had to out-pay the extra
+ * minutes. Same fifty waves at every rung means no extra minutes to pay
+ * for, so the number came down to the level step it is measured against.
  *
  * THE TOP RUNG PAYS ITS FULL SHARE. Eradication used to be capped to the
  * bonus of the rung below it — the fight above the top, deliberately not
@@ -318,7 +291,11 @@ const clampTier = (tier: number): number =>
  * was strictly worse to play than the one before, which is the one thing
  * an ascension ladder must never be.
  */
-export const LOOT_PER_RUNG = 1.45;
+export const LOOT_PER_RUNG = 1.3;
+
+/** how much harder one rung is than the one below — the level step, and
+ *  now the ONLY thing that changes between two rungs */
+export const RUNG_HP_STEP = HP_PER_LEVEL ** LEVELS_PER_RUNG;
 
 /**
  * WHAT THE PLAYER IS SHOWN. Rung index 0 reads "Level 1".
@@ -489,35 +466,14 @@ export const armorBonusAtLevel = (level: number, unitTier: number): number => {
  *  rung included (see LOOT_PER_RUNG) */
 export const tierDropBonus = (tier: number): number => LOOT_PER_RUNG ** clampTier(tier);
 
-/**
- * How many of the authored waves a rung sends, clamped to what has actually
- * been written. A script shorter than the top rung's cut simply ends early
- * up there; a script LONGER than that cut has waves nothing ever plays,
- * which check() reports.
+/*
+ * THERE IS NO WAVE-CUT ARITHMETIC HERE ANY MORE. tierWaveCount, tierOfWave
+ * and topContentTier all answered one question — "how much of the script
+ * does this difficulty send, and which difficulty is the first to send
+ * wave i" — and every rung now sends all of it, so the answer is `all` and
+ * `the first rung` and neither is worth a function. Every wave is playable
+ * from rung 1, so no wave can be unreachable and no unit can debut late.
  */
-export const tierWaveCount = (spec: LevelSpec, tier: number): number =>
-  Math.min(spec.script.length, RUNGS[clampTier(tier)].waves);
-
-/**
- * The rung a wave first appears at — the inverse of tierWaveCount, and the
- * number an author needs when deciding where in the script to put a new
- * wave.
- *
- * Returns -1 for a wave past the top rung's cut: it is written but
- * unreachable, which is a bug in the script rather than a rung.
- */
-export const tierOfWave = (index: number): number => {
-  const n = Math.max(0, Math.floor(index)) + 1;
-  for (let d = 0; d <= TOP_TIER; d++) if (RUNGS[d].waves >= n) return d;
-  return -1;
-};
-
-/** the last rung that still unlocks a wave — always the top one */
-export const topContentTier = (spec: LevelSpec): number => {
-  for (let d = TOP_TIER; d > 0; d--)
-    if (tierWaveCount(spec, d) > tierWaveCount(spec, d - 1)) return d;
-  return 0;
-};
 
 /** one unit's health at an enemy level (armour, speed and drop never move) */
 export const unitHpAtLevel = (kind: UnitKind, level: number): number =>
@@ -525,16 +481,17 @@ export const unitHpAtLevel = (kind: UnitKind, level: number): number =>
 
 // ---------- expansion ----------
 
-/** the playable spec for one rung: the script cut to its wave count,
- * carrying the enemy level the sim scales health by */
+/**
+ * The playable spec for one rung: the WHOLE authored script, carrying the
+ * enemy level the sim scales health by.
+ *
+ * The script is passed through untouched — this used to slice it to the
+ * difficulty's cut, and that slice is the thing the ten-rung ladder
+ * removed. All a rung does now is name a level.
+ */
 export function specForTier(spec: LevelSpec, tier: number): LevelSpec {
   const n = clampTier(tier);
-  return {
-    ...spec,
-    script: spec.script.slice(0, tierWaveCount(spec, n)),
-    tier: n,
-    enemyLevel: tierLevel(n),
-  };
+  return { ...spec, tier: n, enemyLevel: tierLevel(n) };
 }
 
 // ---------- strength ----------
@@ -654,6 +611,21 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
 export const OPENING_DUOS = 100;
 
 /**
+ * HOW MUCH OF THE RUN A FRESH SAVE HAS TO HOLD ON ITS OWN — the stretch the
+ * opening loadout is measured against, and the only place debutViolations
+ * looks.
+ *
+ * IT IS NOT A CUT. Every rung sends all fifty waves and always will; this
+ * is a number about the PLAYER, not about the script. A save banks nothing
+ * until a run ends, so its first run is fought entirely on the free duos —
+ * and twenty waves is how far those were tuned to carry it, which is what
+ * this used to be the wave count of (the old Incursion). Past here a fresh
+ * save is expected to be overrun, bank what it killed, and come back with a
+ * fleet: that is the loop, not a failure of the script.
+ */
+export const OPENING_WAVES = 20;
+
+/**
  * WHICH MAP OPENS WHICH — the campaign's one piece of structure above the
  * ladders, and the only thing a map's own progress cannot buy.
  *
@@ -692,78 +664,95 @@ export const WORLD_REQUIRES: Readonly<Record<string, { world: string; tier: numb
 // ---------- the debut rule ----------
 
 /**
- * Is every currency in this node's price actually dropped at this rung?
+ * Is every currency in this node's price actually dropped by the campaign?
  * That is the whole unlock rule now — the tech tree carries no ladder
  * gates, so a node is reachable exactly when the waves pay for it (see the
  * note at the top of tech.ts).
+ *
+ * IT NO LONGER TAKES A RUNG. Every rung sends the whole script and so pays
+ * every currency; what a low rung lacks is the RATE, not the permission
+ * (see TARGET_DROP_RATIO). So this is a question about the tree and the
+ * script, and the answer is the same everywhere on the ladder.
  */
-function payableAtTier(node: TechNodeDef, tier: number): boolean {
-  const ratio = TARGET_DROP_RATIO[clampTier(tier)];
+function payable(node: TechNodeDef): boolean {
   return costEntries(node.price.base).every(
-    ({ item }) => (ratio[ITEM_KINDS.indexOf(item)] ?? 0) > 0,
+    ({ item }) => (TARGET_DROP_RATIO[ITEM_KINDS.indexOf(item)] ?? 0) > 0,
   );
 }
 
 /**
- * The best per-shot damage the player can own by the time a rung starts:
- * the strongest bullet among every turret this rung's drops can actually
- * pay for.
+ * THE BEST PER-SHOT DAMAGE A FRESH SAVE CAN BRING TO A DEBUT — and it is
+ * the duo's, full stop.
  *
- * This used to read `requiresTier`, back when a node could be told to wait
- * for a difficulty. Nothing is told to wait any more, so asking the price
- * is not a substitute for the old test — it IS the old test, written where
- * the truth lives.
+ * Every unit in the script now debuts on RUNG 1 (there are no prefix cuts
+ * left to hold one back), and rung 1 is the run a save with nothing banked
+ * plays: kills are the only income, so it owns the free duos and literally
+ * nothing else however many turrets are technically ungated. So the debut
+ * lint measures against the duo and the walk over TECH_TREE that used to
+ * find a richer rung's best bullet has nothing left to find.
+ *
+ * `payable` above is what the walk used, and it is kept because it is still
+ * the honest statement of the unlock rule (see the note at the top of
+ * tech.ts) — it is asserted once, here, so a node priced in a currency the
+ * script never drops is caught rather than silently unbuyable.
  */
-function bestShotByTier(tier: number): number {
-  // RUNG 1 IS A SPECIAL CASE AND IT IS THE ONE THAT MATTERS. A fresh
-  // save has banked nothing — kills are the only income — so it owns the
-  // free duos and literally nothing else, however many turrets are
-  // technically ungated.
-  if (clampTier(tier) <= 0) return TOWERS.duo.bullet.damage;
-  let best = 0;
-  for (const node of TECH_TREE) {
-    // the utilities path buys pace, not damage — it has no bullet to read
-    if (!isTowerNode(node.id)) continue;
-    if (!payableAtTier(node, tier)) continue;
-    best = Math.max(best, TOWERS[node.id].bullet.damage);
-  }
-  return best;
+function openingShot(): number {
+  return TOWERS.duo.bullet.damage;
+}
+
+/** every turret the campaign's own drops can pay for — the whole roster,
+ *  and a lint on that being true rather than a filter that does work */
+export function unpayableNodes(): string[] {
+  return TECH_TREE.filter((n) => isTowerNode(n.id) && !payable(n)).map((n) => String(n.id));
 }
 
 /**
- * Units whose armour meets nothing that can efficiently hurt it at the rung
- * they debut on.
+ * Units whose armour meets nothing that can efficiently hurt it, WHERE THAT
+ * ACTUALLY DECIDES ANYTHING — inside the opening stretch (OPENING_WAVES).
  *
  * This is a NOTE, not a gate. Nothing is ever unkillable — the 10% floor
  * means a duo always lands 0.9 — so a heavily armoured debut costs more
  * farming, which is a legitimate thing for a script to ask for. What it
  * reports is the size of that ask, so an author choosing it is choosing it.
+ *
+ * IT USED TO ASK WHICH DIFFICULTY A UNIT DEBUTED ON and price it against
+ * the best turret that difficulty's drops could buy. Both halves of that
+ * are gone: every kind debuts on rung 1 now (no cuts), and rung 1 is the
+ * run a save with nothing banked plays, so the answer would be "the duo"
+ * for all thirteen armoured kinds in the script and the report would be
+ * thirteen restatements of one fact. WHAT STILL VARIES IS DEPTH. A fortress
+ * on wave 10 is an ask; the disrupt on wave 50 is the finale doing its job,
+ * and a fresh save is expected to die to it and bank the run. So the lint
+ * looks only where the free duos really are the whole answer.
  */
 export function debutViolations(spec: LevelSpec = WORLD): LadderIssue[] {
+  // WHICH WAVE a kind first appears on, not which rung — every rung sends
+  // every wave, so the rung is always the first one and the number an
+  // author actually wants is how deep into the run the debut sits
   const debut = new Map<UnitKind, number>();
   spec.script.forEach((step, i) => {
-    const at = tierOfWave(i);
-    if (at < 0) return; // unreachable wave; check() reports it separately
     for (const g of waveGroups(step.wave))
       g.counts.forEach((count, k) => {
         if (count <= 0) return;
         const kind = UNIT_KINDS[k];
-        debut.set(kind, Math.min(debut.get(kind) ?? Infinity, at));
+        debut.set(kind, Math.min(debut.get(kind) ?? Infinity, i));
       });
   });
 
+  const shot = openingShot();
   const bad: LadderIssue[] = [];
-  for (const [kind, tier] of debut) {
-    // the armour a tower actually meets: printed plus the rung's low-tier
-    // bonus when the unit qualifies, which is what Sim spawns with
-    const armor = UNIT_STATS[kind].armor + tierArmorBonus(tier, UNIT_STATS[kind].tier);
-    const shot = bestShotByTier(tier);
+  for (const [kind, wave] of debut) {
+    if (wave >= OPENING_WAVES) continue;
+    // the armour a tower actually meets: printed plus rung 1's low-tier
+    // bonus when the unit qualifies, which is what Sim spawns with (rung 1
+    // authors that bonus at zero, and this reads it rather than assuming so)
+    const armor = UNIT_STATS[kind].armor + tierArmorBonus(0, UNIT_STATS[kind].tier);
     const tax = shot / Math.max(shot - armor, 0.1 * shot);
     if (tax >= 2)
       bad.push({
-        tier,
+        tier: 0,
         kind: "debut",
-        message: `${kind} (armour ${armor} with the rung's bonus) debuts here against a best shot of ${shot} — it costs a fleet ${tax.toFixed(1)}x its printed health, so budget the farming for it`,
+        message: `${kind} (armour ${armor}) debuts on wave ${wave + 1} against an opening shot of ${shot} — it costs a fresh save's fleet ${tax.toFixed(1)}x its printed health, so budget the farming for it`,
       });
   }
   return bad;
@@ -776,7 +765,7 @@ export function debutViolations(spec: LevelSpec = WORLD): LadderIssue[] {
  */
 export interface LadderIssue {
   tier: number | null;
-  kind: "debut" | "wall" | "filler" | "grind" | "economy" | "unreachable";
+  kind: "debut" | "grind" | "economy";
   message: string;
 }
 
@@ -846,18 +835,16 @@ export function waveCost(step: LevelStep, level = 0): WaveCost {
 export interface WaveRow {
   /** 1-based wave number, as the editor shows it */
   wave: number;
-  /** the rung it first appears at; -1 if past the top cut */
-  tier: number;
   units: number;
   /** printed health at enemy level 0 — the authored weight */
   hp: number;
   /**
-   * This wave's share of the health of the rung being LOOKED AT — not of
-   * the one the wave debuts on. The same wave is a different fraction of a
-   * 20-wave run and a 50-wave one, and which of those matters depends on
-   * the run you are authoring for, so the caller picks.
+   * This wave's share of the whole run's health.
    *
-   * 0 for a wave the chosen rung never sends.
+   * It used to depend on which difficulty you were looking at, because the
+   * same wave was a different fraction of a 20-wave run and a 50-wave one.
+   * Every rung plays all fifty now, and the enemy level is a uniform
+   * multiplier that cancels out of a share, so there is one answer.
    */
   share: number;
   /**
@@ -873,27 +860,23 @@ export interface WaveRow {
 }
 
 /**
- * The per-wave guide, at the authored baseline level.
+ * The per-wave guide, at the authored baseline level — one row a wave, and
+ * the same rows whichever rung is being played.
  *
- * `against` is the rung every share is measured in. Health is compared at
- * level 0 throughout — the enemy level is a uniform multiplier, so it
- * cancels out of a share and only the wave CUT actually moves the number.
+ * It used to take the rung to measure shares against. It does not need one:
+ * every rung sends every wave, and the enemy level is a uniform multiplier
+ * that cancels out of a share.
  */
-export function waveGuide(spec: LevelSpec = WORLD, against: number = TOP_TIER): WaveRow[] {
-  const d = clampTier(against);
-  const cut = tierWaveCount(spec, d);
-  const total = budget(spec, d).hp / Math.max(1e-6, tierHpScale(d));
+export function waveGuide(spec: LevelSpec = WORLD): WaveRow[] {
+  const total = budget(spec, 0).hp;
   let prev = 0;
   return spec.script.map((step, i) => {
     const c = waveCost(step, 0);
-    const tier = tierOfWave(i);
     const row: WaveRow = {
       wave: i + 1,
-      tier,
       units: c.units,
       hp: c.hp,
-      // a wave past this rung's cut is not part of its run at all
-      share: i >= cut ? 0 : c.hp / Math.max(1, total),
+      share: c.hp / Math.max(1, total),
       step: prev ? c.hp / prev : 1,
       armourShare: c.armourShare,
       airShare: c.airShare,
@@ -911,7 +894,6 @@ export interface AuditRow {
   rung: number;
   /** what the player is shown, "Level n" */
   label: string;
-  waves: number;
   units: number;
   /** enemy level the rung plays at */
   level: number;
@@ -960,9 +942,14 @@ export interface AuditRow {
   farmStep: number;
   /**
    * How much harder this rung hits per second than the one below —
-   * hpPerSecond over the rung below's. This is what the fleet has to answer,
-   * and it is the number the payout has to keep up with (NOT `step`, which
-   * counts a longer run as harder when it is only longer).
+   * hpPerSecond over the rung below's. This is what the fleet has to answer
+   * and what the payout has to keep up with.
+   *
+   * It equals `step` exactly, because every rung runs for the same number
+   * of minutes. They were different numbers when a rung was also a longer
+   * run; both are kept because they answer different questions and one of
+   * them will stop being the other again the moment a rung changes anything
+   * but the level.
    */
   climbStep: number;
   /**
@@ -989,19 +976,17 @@ export interface AuditRow {
  * and the tech tree's price ladder (growth ^ owned, tech.ts). This function
  * is where the first two are put side by side.
  *
- * `step` is the run's whole health against the run below it, and it has two
- * sources multiplied together:
+ * EVERY ROW SENDS THE SAME FIFTY WAVES, so the only column that moves
+ * between two rows is the enemy level: `step` and `climbStep` are both
+ * RUNG_HP_STEP exactly, `farmStep` is LOOT_PER_RUNG exactly, and the units,
+ * duration and drop ratio are identical all the way down. That is not a bug
+ * in the report — it is the ladder saying what it is, and it makes the one
+ * interesting column `grindStep`, the ratio between the two.
  *
- *   step = 1.26 (the +4 enemy levels) x (health of the new waves ratio)
- *
- * so 1.26x is the FLOOR — what a rung costs if it adds no waves at all —
- * and everything above it is bought by the three or four waves it unlocks.
- *
- * BUT `step` IS NOT WHAT THE FLEET FEELS. A longer run is not a harder one:
- * the same towers simply keep firing. What the fleet has to answer is
- * `climbStep` — health per SECOND against the rung below — and what pays
- * for answering it is `farmStep`, income per minute against the rung below.
- * Their ratio is `grindStep`, and that is the ladder's real shape.
+ * What the fleet has to answer is `climbStep` — health per SECOND against
+ * the rung below — and what pays for answering it is `farmStep`, income per
+ * minute against the rung below. Their ratio is `grindStep`, and that is
+ * the ladder's real shape.
  *
  * Two things that do NOT come out in the wash:
  *
@@ -1042,7 +1027,6 @@ export function audit(spec: LevelSpec = WORLD): AuditRow[] {
       tier,
       rung: rungOf(tier),
       label: rungLabel(tier),
-      waves: b.waves,
       units: b.units,
       level,
       hp: Math.round(b.hp),
@@ -1076,47 +1060,59 @@ export function check(spec: LevelSpec = WORLD): LadderIssue[] {
   const out = debutViolations(spec);
   const rows = audit(spec);
 
-  // a script longer than the top rung's cut has waves nothing ever plays —
-  // silent content loss, and the easiest edit in the world to make by
-  // accident
-  const cut = RUNGS[TOP_TIER].waves;
-  if (spec.script.length > cut)
+  // A NODE THE CAMPAIGN CANNOT PAY FOR AT ALL is the one remaining way the
+  // tree and the script can disagree, now that no rung withholds a currency
+  // (see TARGET_DROP_RATIO). It is a price authored in something the waves
+  // never drop, which reads to a player as a node that is simply broken.
+  for (const id of unpayableNodes())
     out.push({
       tier: null,
-      kind: "unreachable",
-      message: `the script has ${spec.script.length} waves but ${rungLabel(TOP_TIER)} — the top rung — only plays ${cut}, so waves ${cut + 1}-${spec.script.length} are never sent`,
+      kind: "economy",
+      message: `${id} is priced in a currency the waves never drop, so nothing can ever buy it`,
     });
 
+  // THE CURRENCY MIX, ONCE. Every rung sends the same fifty waves, so the
+  // ratio is a fact about the SCRIPT rather than about any rung — reading
+  // it off rung 1 and reporting it without a rung is the honest shape.
+  // Named off ITEM_KINDS rather than written out, so adding a tier-6 unit
+  // extends this check for free instead of leaving a currency unwatched.
+  const name = (i: number): string => ITEM_INFO[ITEM_KINDS[i]].name.toLowerCase();
+  TARGET_DROP_RATIO.forEach((target, i) => {
+    // copper is the denominator
+    if (i === 0 || target <= 0) return;
+    const got = rows[0]?.dropRatio[i] ?? 0;
+    const drift = got / target;
+    if (drift < 1 - RATIO_TOLERANCE || drift > 1 + RATIO_TOLERANCE)
+      out.push({
+        tier: null,
+        kind: "economy",
+        message: `the script pays ${name(i)} at 100:${got}, ${drift < 1 ? "under" : "over"} the 100:${target} it is authored to — ${drift.toFixed(2)}x target`,
+      });
+  });
+
   // NOTE: there is deliberately no check on the opening loadout. See
-  // OPENING_DUOS — rung 1 pays for hundreds of duos while it is still being
-  // played, so any static-fleet prediction measures a fleet that never
-  // exists. That number is tuned by feel, not by arithmetic.
+  // OPENING_DUOS — that number is tuned by feel, not by arithmetic.
+  //
+  // NOR IS THERE A WALL OR FILLER LINT ANY MORE. Both measured the health
+  // STEP between two difficulties, which was worth watching when a step was
+  // "ten levels times whatever fifteen new waves weigh" and an author could
+  // move it by editing a wave. A step is now exactly RUNG_HP_STEP, the same
+  // between every pair of rungs, and no edit to the script can change it —
+  // there is nothing left for those lints to catch.
 
   rows.forEach((r, i) => {
     const prev = rows[i - 1];
-    // NOTE: none of these are feasibility tests. Every run banks something
-    // and every turret is buyable at every rung, so a player can always farm
-    // the rung below until they can afford the next one — nothing here is
-    // unwinnable. What these measure is GRIND, which is the failure mode an
-    // idle game actually has.
-    if (prev && r.step > WALL_STEP)
-      out.push({
-        tier: r.tier,
-        kind: "wall",
-        message: `asks ${r.step}x the health of ${prev.label} — a rung of a ten-rung ladder should be a step, not a gate`,
-      });
-    if (prev && r.step < FILLER_STEP && r.waves > prev.waves)
-      out.push({
-        tier: r.tier,
-        kind: "filler",
-        message: `adds ${r.waves - prev.waves} waves but only ${r.step}x the health — the new waves are barely paying for themselves`,
-      });
     // THE LADDER'S OWN SHAPE, and the reason this lint exists at all: a
     // rung has to pay for itself. grindStep is health-per-second growth
     // over income-per-minute growth, so above GRIND_STEP the rung costs
     // materially more farming than the last one did, and below SLIDE_STEP
     // it costs materially less — a ladder that gets easier as it climbs,
     // which collapses into "always jump to the top".
+    //
+    // It is NOT a feasibility test. Every run banks something and every
+    // turret is buyable at every rung, so a player can always farm the rung
+    // below until they can afford the next one; what this measures is
+    // GRIND, which is the failure mode an idle game actually has.
     if (prev && r.grindStep > GRIND_STEP)
       out.push({
         tier: r.tier,
@@ -1129,33 +1125,6 @@ export function check(spec: LevelSpec = WORLD): LadderIssue[] {
         kind: "grind",
         message: `pays ${r.farmStep}x more per minute against only ${r.climbStep}x the fight — at ${r.grindStep}x the farming of the rung below it is cheaper to reach than the rung under it`,
       });
-    // The currency mix against TARGET_DROP_RATIO, every currency, named off
-    // ITEM_KINDS rather than written out — so adding a tier-6 unit extends
-    // this check for free instead of leaving a currency unwatched.
-    const name = (i: number): string => ITEM_INFO[ITEM_KINDS[i]].name.toLowerCase();
-    const want = TARGET_DROP_RATIO[r.tier] ?? [];
-    want.forEach((target, i) => {
-      // copper is the denominator, and a currency this rung is not meant to
-      // pay yet is not a finding — only paying one EARLY is
-      if (i === 0) return;
-      const got = r.dropRatio[i] ?? 0;
-      if (target === 0) {
-        if (got > 0)
-          out.push({
-            tier: r.tier,
-            kind: "economy",
-            message: `pays ${name(i)} at 100:${got}, earlier than the rung this ladder authors it to — check the wave that moved across the cut`,
-          });
-        return;
-      }
-      const drift = got / target;
-      if (drift < 1 - RATIO_TOLERANCE || drift > 1 + RATIO_TOLERANCE)
-        out.push({
-          tier: r.tier,
-          kind: "economy",
-          message: `pays ${name(i)} at 100:${got}, ${drift < 1 ? "under" : "over"} the 100:${target} this rung is authored to — ${drift.toFixed(2)}x target`,
-        });
-    });
   });
   return out;
 }
@@ -1169,13 +1138,13 @@ export function check(spec: LevelSpec = WORLD): LadderIssue[] {
  * the one below it, and a healthy ladder holds it just above 1.
  */
 export function grindTable(spec: LevelSpec = WORLD): string {
-  const head = "rung  waves  lvl        hp     hp/s   loot   items/min   climb   farm   grind";
+  const head = "rung  lvl         hp      hp/s    loot   items/min   climb   farm   grind";
   const rows = audit(spec).map(
     (r) =>
-      `${String(r.rung).padStart(4)}  ${String(r.waves).padStart(5)}  ${String(r.level).padStart(3)}  ${
-        (r.hp / 1e6).toFixed(2) + "M"
-      }`.padEnd(30) +
-      `${String(r.hpPerSecond).padStart(8)}  ${("x" + r.lootBonus.toFixed(2)).padStart(6)}  ${String(
+      `${String(r.rung).padStart(4)}  ${String(r.level).padStart(3)}  ${(r.hp / 1e6).toFixed(2)}M`.padEnd(
+        22,
+      ) +
+      `${String(r.hpPerSecond).padStart(9)}  ${("x" + r.lootBonus.toFixed(2)).padStart(6)}  ${String(
         r.incomePerMinute,
       ).padStart(10)}  ${r.climbStep.toFixed(2).padStart(6)}  ${r.farmStep
         .toFixed(2)
@@ -1185,19 +1154,14 @@ export function grindTable(spec: LevelSpec = WORLD): string {
 }
 
 /**
- * A rung costing more than this much more health than the last reads as a
- * wall. It was 4.5 when the ladder had four rows and each gap was MEANT to
- * be an evening of farming; ten rungs over the same span step about 1.6x
- * each, so anything past 2 is one rung doing two rungs' work.
- */
-export const WALL_STEP = 2;
-/** ...and less than this, while still adding waves, reads as padding */
-export const FILLER_STEP = 1.25;
-/**
  * The most extra farming one rung may cost over the last before check()
- * calls it a grind — see AuditRow.grindStep. The authored ladder runs
- * 0.88 to 1.11, so this is real headroom rather than a number the table
- * only just clears.
+ * calls it a grind — see AuditRow.grindStep. The authored ladder sits flat
+ * at RUNG_HP_STEP / LOOT_PER_RUNG = 0.97 on every rung, so this is real
+ * headroom rather than a number the table only just clears.
+ *
+ * WALL_STEP and FILLER_STEP used to live here, both measuring the health
+ * step between two difficulties. That step is now RUNG_HP_STEP and nothing
+ * an author can type will move it, so both are gone.
  */
 export const GRIND_STEP = 1.3;
 /** ...and the least, before a rung is cheaper to reach than the one below */

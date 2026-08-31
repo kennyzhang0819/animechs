@@ -27,11 +27,8 @@ import {
   GRIND_STEP,
   rungColor,
   rungLabel,
-  rungOf,
-  RUNGS,
   SLIDE_STEP,
   tierDropBonus,
-  tierOfWave,
   TOP_TIER,
   waveGuide,
   type WaveRow,
@@ -344,7 +341,7 @@ export default function LevelEditorView({
     // it to a layer its map cannot open, reads its real numbers here
     const spec = { ...level, waveGap, script: playedScript };
     // per-wave numbers are priced at the top tier — the run every wave is in
-    return { rows: audit(spec), waves: waveGuide(spec, TOP_TIER) };
+    return { rows: audit(spec), waves: waveGuide(spec) };
   }, [level, waveGap, playedScript]);
 
   const back = (): void => {
@@ -498,13 +495,13 @@ export default function LevelEditorView({
               </p>
             </section>
 
-            {/* ECONOMY. One row a RUNG: what a full clear banks (drop bonus
-                included) and the shape of it, normalised to copper = 100.
-                The ratio is the number to author against — the tech tree is
-                authored to — see TARGET_DROP_RATIO in ladder.ts, which the
-                check below measures every currency against. The BONUS
-                cannot move the ratio; only the mix of unit tiers the waves
-                send can. */}
+            {/* ECONOMY. One row a RUNG: what a full clear banks, drop bonus
+                included. Every rung sends the same fifty waves, so the rows
+                differ ONLY by that bonus — the shape below them is the
+                script's and is printed once. The ratio is the number to
+                author against (the tech tree is priced to it); see
+                TARGET_DROP_RATIO in ladder.ts. The bonus cannot move it —
+                only the mix of unit tiers the waves send can. */}
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
               <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
                 Payout per rung
@@ -531,11 +528,6 @@ export default function LevelEditorView({
                       {r.hpPerSecond.toLocaleString()} hp/s
                     </div>
                     <CostRow cost={r.drops} />
-                    <div className="text-[12px] text-[#71717C]">
-                      {r.dropRatio
-                        .map((v, i) => (i === 0 ? "100" : v.toFixed(v < 10 ? 1 : 0)))
-                        .join(" : ")}
-                    </div>
                     {/* THE LADDER'S SHAPE, one line: what this rung asks for
                         against what it pays. `grind` is climb / farm — how
                         many more minutes this rung costs than the one below
@@ -561,14 +553,24 @@ export default function LevelEditorView({
                   </div>
                 ))}
               </div>
-              <p className="mt-2 border-t border-[#2E2E36] pt-2 text-[12px] leading-snug text-[#71717C]">
-                Copper : titanium : thorium : plastanium : phase — targets are
-                TARGET_DROP_RATIO in ladder.ts, one row a rung. Climb is health
-                per second against the rung below, farm is items banked per
-                minute against it, and grind is the two divided: hold it just
-                above 1 and every rung costs a little more of an evening than
-                the last.
-              </p>
+              {/* THE MIX, ONCE. Every rung sends the same fifty waves, so
+                  the ratio is a fact about the SCRIPT and printing it ten
+                  times printed the same ten numbers ten times */}
+              <div className="mt-2 border-t border-[#2E2E36] pt-2">
+                <div className="text-[12px] text-[#A6A6AF]">
+                  {(report.rows[0]?.dropRatio ?? [])
+                    .map((v, i) => (i === 0 ? "100" : v.toFixed(v < 10 ? 1 : 0)))
+                    .join(" : ")}
+                </div>
+                <p className="text-[12px] leading-snug text-[#71717C]">
+                  Copper : titanium : thorium : plastanium : phase, for the whole
+                  script — the target is TARGET_DROP_RATIO in ladder.ts. Climb is
+                  health per second against the rung below, farm is items banked
+                  per minute against it, and grind is the two divided: hold it
+                  just above 1 and every rung costs a little more of an evening
+                  than the last.
+                </p>
+              </div>
             </section>
 
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
@@ -849,11 +851,11 @@ function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement
   const pts = v.map((k, i) => `${X(i).toFixed(1)},${Y(k).toFixed(1)}`);
   const line = `M${pts.join("L")}`;
   const area = `M${X(0).toFixed(1)},64L${pts.join("L")}L${X(n - 1).toFixed(1)},64Z`;
-  // one line a rung boundary. The top rung's own cut is not a boundary —
-  // there is nothing above it to divide from
-  const cuts = RUNGS.slice(0, -1)
-    .map((d) => d.waves)
-    .filter((w) => w < n);
+  /*
+   * NO CUT LINES. They marked where one named difficulty stopped sending
+   * waves and the next took over; every rung sends all of them now, so
+   * there is nothing to divide the ramp at.
+   */
   const fmt = (k: number): string =>
     k >= 1000 ? `${(k / 1000).toFixed(k >= 10000 ? 0 : 1)}k` : `${Math.round(k)}`;
 
@@ -895,18 +897,6 @@ function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement
           onMouseLeave={() => setAt(null)}
         >
           <path d={area} fill="#FFD37F" fillOpacity={0.1} />
-          {cuts.map((w) => (
-            <line
-              key={w}
-              x1={X(w - 1)}
-              x2={X(w - 1)}
-              y1={0}
-              y2={64}
-              stroke="#4A4A55"
-              strokeWidth={1}
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
           <path
             d={line}
             fill="none"
@@ -941,22 +931,15 @@ function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement
         {at === null ? (
           <>
             <span className="text-[#4A4A55]">wave 1</span>
-            {/* NINE cut lines, so they are not labelled one by one any more
-                — the rail would be a wall of text. The pointer names the
-                rung under it instead */}
-            <span className="text-[#4A4A55]">{cuts.length + 1} rungs</span>
+            <span className="text-[#4A4A55]">{n} waves, every rung</span>
             <span className="text-[#4A4A55]">peak {fmt(max)}</span>
           </>
         ) : (
           <>
             <span className="text-[#EDEDEF]">Wave {at + 1}</span>
-            {tierOfWave(at) >= 0 ? (
-              <span style={{ color: rungColor(tierOfWave(at)) }}>
-                {rungLabel(tierOfWave(at))}
-              </span>
-            ) : (
-              <span className="text-[#71717C]">unreachable</span>
-            )}
+            <span className="text-[#71717C]">
+              {(waves[at].share * 100).toFixed(1)}% of the run
+            </span>
             <span className="text-[#FFD37F]">
               {metric === "units"
                 ? `${v[at].toLocaleString()} enemies`
@@ -1064,31 +1047,12 @@ function StepCard({
         <span className="text-[14px] font-bold uppercase tracking-widest text-[#EDEDEF]">
           Wave {waveNo}
         </span>
-        {/* a wave's POSITION is its rung gate: rung n plays the first
-            20..50 waves (RUNGS in ladder.ts), so this badge is the rung a
-            wave first appears at. Moving a row up moves the fight it holds
-            down the ladder, against a smaller fleet. A wave past the top
-            rung's cut is written but never sent — that badge is a warning,
-            not a gate */}
-        {tierOfWave(index) < 0 ? (
-          <span
-            title="Past the top rung's 50-wave cut — this wave is never sent"
-            className="rounded border border-[#5B2E2E] bg-[#2A1616] px-1.5 text-[12px] font-bold uppercase tracking-widest text-[#FF8A8A]"
-          >
-            unplayed
-          </span>
-        ) : (
-          <span
-            title={`First played on ${rungLabel(tierOfWave(index))}`}
-            className="rounded border bg-[#151518] px-1.5 text-[12px] font-bold uppercase tracking-widest"
-            style={{
-              color: rungColor(tierOfWave(index)),
-              borderColor: `${rungColor(tierOfWave(index))}55`,
-            }}
-          >
-            L{rungOf(tierOfWave(index))}
-          </span>
-        )}
+        {/* NO RUNG BADGE. A wave used to carry the difficulty it first
+            appeared at, because a difficulty was a prefix cut and moving a
+            row past wave 20 changed who ever saw it. Every rung sends every
+            wave now, so a wave's position says nothing about which rungs
+            play it — only about how deep into the run it lands, which is
+            the wave number already printed beside this */}
         <span className="text-[13px] text-[#71717C]">{total} enemies</span>
         {/* the number guide, per wave: what this wave weighs. The ramp
             chart is where its slice of the run is read now */}

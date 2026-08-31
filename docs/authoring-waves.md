@@ -10,9 +10,9 @@ applied to that script on load.
 `public/levels/blueprint.json` is the only wave script that exists. It is a
 `LevelDoc` — `{ id: "blueprint", waveGap, script }` — of raw per-kind counts,
 edited in the admin level editor (**Edit level** on any map card in `/admin`)
-or by hand in the JSON. Difficulties are prefixes of it (waves 1–20 / 1–35 /
-1–50, see `RUNGS` in `game/ladder.ts`), so one document carries the
-entire game.
+or by hand in the JSON. Every rung of every world plays the whole script,
+all fifty waves — a rung only sets the enemy level (see `RUNGS` in
+`game/ladder.ts`) — so this one document carries the entire game.
 
 There are no per-world documents any more. The dev save API
 (`/api/levels`) refuses every id except `blueprint`.

@@ -1404,29 +1404,29 @@ export function blueprintDoc(): LevelDoc {
 }
 
 /**
- * The campaign: ONE world, played at TEN RUNGS of one climbing ladder.
+ * The campaign: ONE world, ONE script, played at TEN RUNGS of difficulty.
  *
- * EVERY WAVE THE GAME WILL EVER SEND IS WRITTEN OUT BELOW, in order. A rung
- * does not generate waves — it decides HOW MANY OF THESE a run plays, and
- * at what enemy level (see RUNGS in ladder.ts):
+ * EVERY WAVE THE GAME WILL EVER SEND IS WRITTEN OUT BELOW, in order, AND
+ * EVERY RUNG SENDS ALL OF THEM. A rung does not generate waves and does not
+ * cut them — it names the enemy level the whole script is played at (see
+ * RUNGS in ladder.ts):
  *
  *   rung   1   2   3   4   5   6   7   8   9  10
- *   waves 20  23  26  30  33  36  40  43  46  50
  *   level  0   4   8  12  16  20  24  28  32  36
  *
- * So a rung buys two things at once: three or four waves of hand-authored
- * fight nobody has seen yet, and x1.26 health on every wave below them.
- * Neither alone would carry it, and new kinds keep debuting deep into the
- * script — scepter at 21, the T5 lines through the 40s, the disrupt boss
- * at 50 — so the upper cuts are new content, not just longer runs.
+ * So this list is the CONTENT and the rung is the DIFFICULTY, and the two
+ * are separate: a rung buys x1.26 health on every body and nothing else.
+ * Every kind debuts on rung 1 — scepter at wave 21, the T5 lines through
+ * the 40s, the disrupt boss at 50 — because a fresh save plays the same
+ * fifty waves a maxed one does.
  *
  * Every kind on the roster is now sent somewhere in the script. Adding one
  * to a wave is a balance decision and belongs in this list rather than in
  * a stat file — the editor's `Check ladder` prices the wave before you
  * commit.
  *
- * ANYTHING PAST WAVE 50 IS NEVER SENT; check() reports any orphans past
- * the top rung's cut.
+ * THERE IS NO CUT ANY MORE, so nothing written here can be unreachable:
+ * add a wave 51 and every rung sends it.
  *
  * Kills are the only income: a finished run banks each dead unit's tier
  * item whether it ended in victory or defeat, times the rung's drop bonus
@@ -1434,9 +1434,11 @@ export function blueprintDoc(): LevelDoc {
  *
  * TWO THINGS TO KNOW WHEN EDITING THIS LIST.
  *
- * ONE — a wave's position IS its rung gate. Wave i first appears at the
- * first rung whose cut reaches it, so moving a wave earlier makes it arrive
- * against a smaller fleet. The comments below mark the cuts.
+ * ONE — a wave's position is how deep into EVERY run it lands, and nothing
+ * more. It used to be a difficulty gate as well (wave i first appeared at
+ * the first difficulty whose cut reached it), so moving a wave earlier
+ * changed who ever saw it; now it only changes how much fleet has been
+ * stood up by the time it arrives.
  *
  * TWO — armour is flat, max(dmg - armor, 0.1 * dmg), so a fortress
  * (armour 9) against a duo (damage 9) hits the 10% floor and costs a duo
@@ -1464,13 +1466,12 @@ export const WORLDS: LevelSpec[] = [
     // no transforms — so authoring guidance written in its families reads
     // literally here and re-cast elsewhere.
     //
-    // WAVES 1-20 (RUNG 1) ARE PLAYTESTED AND FIXED. Do not restructure them.
+    // WAVES 1-20 ARE PLAYTESTED AND FIXED. Do not restructure them.
     //
-    // A RUNG IS A PREFIX, NOT A SCRIPT OF ITS OWN. Rung 6 plays waves 1-36
-    // and rung 10 plays 1-50, so both REPLAY every rung-1 wave, and the rows
-    // in TARGET_DROP_RATIO describe the cumulative total of a whole run.
-    // Authoring can only ever ADD to a rung, never subtract, so rung 1's
-    // 12,500 tier-1 bodies are the floor for every rung above it.
+    // EVERY RUNG PLAYS THIS WHOLE LIST. There is one run in the game and
+    // ten difficulties to play it at, so TARGET_DROP_RATIO is ONE row —
+    // the cumulative mix of all fifty waves — and an edit anywhere in the
+    // list moves the economy of every rung at once.
     //
     //   line       T1        T2       T3         T4         T5
     //   dagger     dagger    mace     fortress   scepter    reign
@@ -1487,11 +1488,13 @@ export const WORLDS: LevelSpec[] = [
     // weight.
     //
     // TIER 5 STARTS IN THE FORTIES AND THAT IS AN ECONOMY DECISION. Phase
-    // fabric is what spectre, meltdown and foreshadow are priced in, so the
-    // wave the first reign lands on is the rung those three become buyable
-    // at (rung 8, under today's cuts). Nothing gates them but the price —
-    // moving a T5 body earlier moves the top of the tech tree earlier with
-    // it, and TARGET_DROP_RATIO's phase column is where check() notices.
+    // fabric is what spectre, meltdown and foreshadow are priced in, and
+    // the T5 count is the entire phase supply — about 200 a full clear.
+    // Since every rung plays every wave, that supply exists from rung 1
+    // and the gate on those three turrets is the RATE rather than the
+    // permission: adding T5 bodies makes the endgame turrets arrive
+    // sooner for everyone. TARGET_DROP_RATIO's phase column is where
+    // check() notices.
     //
     // THE PATTERN, past wave 20. One cycle is four waves:
     //

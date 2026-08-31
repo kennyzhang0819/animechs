@@ -484,9 +484,9 @@ export interface TechNodeDef {
    * Ladder gate: this RUNG must have been CLEARED before points can go in.
    *
    * NOTHING SETS THIS, deliberately — see the note at the top of the file.
-   * A turret that costs a currency only a deeper cut drops is already gated
-   * by its price, and saying it twice locked thorium nodes away from the
-   * rung-1 run that was banking the thorium. Reach for this only when a
+   * A turret that costs a scarce currency is already paced by its price,
+   * and saying it twice locked thorium nodes away from the run that was
+   * banking the thorium. Reach for this only when a
    * node's gate is genuinely not a currency.
    */
   requiresTier?: number;
@@ -867,10 +867,10 @@ const CORE_TREE: readonly TechNodeDef[] = [
     // DPS on the roster, and the price says so.
     // Nine tiles of range is no longer a discount: the map already decides
     // how much of a gate one can hold (see PriceCurve).
-    // PLASTANIUM IS THE GATE: fifteen of it, and nothing below rung 3 drops
-    // any at all. A save that has only cleared the opening rungs can see
-    // this node and can never pay for it, which is the same lock the old
-    // rung gate spelled out by hand
+    // PLASTANIUM IS THE PACING: fifteen of it, against the ~1,100 a full
+    // clear banks. Every rung plays every wave, so a fresh save can reach
+    // this — it just spends several runs doing it, which is the price
+    // doing the job the old rung gate did by hand
     id: "fuse",
     price: { base: { titanium: 65, thorium: 80, plastanium: 15 }, growth: 1.01 },
     dps: 4109,
@@ -986,11 +986,12 @@ const CORE_TREE: readonly TechNodeDef[] = [
   //
   // Lineage is Mindustry's own (content/SerpuloTechTree.java) and the RUNG
   // each one lands at falls out of BUILD MATERIAL, which is now the ONLY
-  // thing holding them shut: a turret whose Mindustry cost tops out at
-  // thorium or plastanium prices out to the middle rungs, and one that wants
-  // surge alloy has nothing to charge — surge never drops from a wave — so
-  // it is priced in phase fabric, which nothing below rung 8 drops. Each
-  // bundle below charges a currency its own cut is the first to pay, and a
+  // thing pacing them: a turret whose Mindustry cost tops out at thorium or
+  // plastanium is priced there, and one that wants surge alloy has nothing
+  // to charge — surge never drops from a wave — so it is priced in phase
+  // fabric, the scarcest thing the script pays (about 200 a full clear
+  // against copper's 32,000). Every rung plays every wave, so these are
+  // reachable from rung 1 and it is the QUANTITY that holds them back. A
   // child always costs at least what its parent does, so no child can open
   // before its parent even with every gate gone.
   {
@@ -1176,8 +1177,8 @@ const CORE_TREE: readonly TechNodeDef[] = [
  * by: A RUNG IS ITS TURRET'S OWN BUNDLE, SCALED.
  *
  * That is not laziness, it is rule TWO of this file (a cost bundle must
- * carry the drop ratio of the cut that unlocks it) applied to a node that
- * has no cut of its own. Scaling a bundle preserves its SHAPE exactly, so a
+ * carry the campaign's drop ratio) applied to a node that has no bundle of
+ * its own. Scaling a bundle preserves its SHAPE exactly, so a
  * scatter upgrade asks for copper and titanium in rung 1's own ratio and a
  * spectre upgrade asks for phase fabric — and because the bundle is the
  * gate, every upgrade rung becomes affordable exactly where its turret does

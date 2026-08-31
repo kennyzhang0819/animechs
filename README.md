@@ -27,9 +27,9 @@ stale tab or a cached bundle looks exactly like a fix not working.
   `loadLevelDocs()`. Six upgrade trees: ground, support, crawler, air and
   the two **naval** lines (risso→omura, retusa→navanax), which travel on
   the water layer and cannot leave it
-- `game/ladder.ts` — the **ten-rung ladder** (`RUNGS`: wave cut, enemy
-  level, shield scale and swarm armour each, plus the compounding drop
-  bonus), and the audit/check arithmetic over the authored script
+- `game/ladder.ts` — the **ten-rung ladder** (`RUNGS`: enemy level, shield
+  scale and swarm armour each, plus the compounding drop bonus), and the
+  audit/check arithmetic over the authored script
 - `game/tech.ts` — the tech tree: turret price bundles (one shared growth
   constant for every turret), abilities, and the build-bar slot upgrades
 - `game/upgrades.ts` — the **turret upgrade branches**: a chain of rungs
@@ -109,35 +109,44 @@ ceiling is 12, which is what makes a single cell aimable with a fingertip.
 
 ## Progression
 
-Each world is **one climbing ladder of ten rungs**, shown to the player as
-*Level 1* through *Level 10* and nothing else — there are no named
-difficulties and no jumps between them. A rung does not generate waves —
-every wave the game will ever send is written in the script — it decides
-**how much of the script a run plays**, and at what enemy level.
+**There is one run in the game and ten difficulties to play it at.** Every
+rung sends the whole authored script — all fifty waves, wave 1 to wave 50,
+the same fifty every time. A rung is one number: the enemy level the script
+is played at. It is shown to the player as *Level 1* through *Level 10* and
+nothing else; there are no named difficulties.
 
 | rung | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| waves | 20 | 23 | 26 | 30 | 33 | 36 | 40 | 43 | 46 | 50 |
+| waves | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 |
 | enemy level | 0 | 4 | 8 | 12 | 16 | 20 | 24 | 28 | 32 | 36 |
-| enemies | 14.8k | 19.3k | 23.6k | 27.2k | 29.5k | 35.2k | 39.9k | 43.0k | 45.9k | 49.8k |
-| run health | ×1.0 | ×1.7 | ×2.7 | ×4.3 | ×6.5 | ×11.3 | ×17.5 | ×26.7 | ×43.3 | ×75.4 |
-| enemy shields | ×1 | ×1.2 | ×1.4 | ×1.7 | ×2.1 | ×2.5 | ×3.0 | ×3.5 | ×4.2 | ×5 |
+| enemy health | ×1.00 | ×1.26 | ×1.59 | ×2.01 | ×2.54 | ×3.21 | ×4.05 | ×5.11 | ×6.45 | ×8.15 |
+| enemy shields | ×1.00 | ×1.20 | ×1.43 | ×1.71 | ×2.04 | ×2.45 | ×2.92 | ×3.50 | ×4.18 | ×5.00 |
 | swarm armour | +0 | +0 | +0 | +0 | +0 | +2 | +4 | +6 | +8 | +10 |
-| salvage | ×1.0 | ×1.5 | ×2.1 | ×3.1 | ×4.4 | ×6.4 | ×9.3 | ×13.5 | ×19.5 | ×28.3 |
+| salvage | ×1.00 | ×1.30 | ×1.69 | ×2.20 | ×2.86 | ×3.71 | ×4.83 | ×6.27 | ×8.16 | ×10.60 |
 
-This is the four old difficulties (Incursion / Onslaught / Nemesis /
-Eradication) re-cut: rung 1 is exactly the old Incursion, rung 10 exactly
-the old Eradication, and every column is an even split of the span between
-them. The ladder stops at ten because ten is what is authored
-(`RUNG_COUNT`), not because clearing it ends anything — `clearedByMap` is an
-unbounded int per world.
+Every column is arithmetic on the rung's index — `level` is
+`index × LEVELS_PER_RUNG`, shields are `SHIELD_PER_RUNG ^ index`, armour is
++2 a rung from rung 6 — so **an eleventh rung is one constant**
+(`RUNG_COUNT`). Nothing about the ladder is finite in shape;
+`clearedByMap` is an unbounded int per world.
 
-**Salvage compounds** (`LOOT_PER_RUNG`, 1.45 a rung) and the top rung pays
+Difficulties used to be **prefix cuts** as well as levels — Incursion sent
+waves 1–20, Onslaught 1–35, Nemesis and Eradication all 50 — so two thirds
+of the ladder never saw the best-written waves in the game. The cuts are
+gone. The waves are the content, the rung is the difficulty, and the two
+are completely separate.
+
+**Salvage compounds** (`LOOT_PER_RUNG`, 1.30 a rung) and the top rung pays
 its full share. That gradient is the whole anti-farm guard: a rung used to
 carry a fixed roster ceiling — an Incursion was a first-three-currencies
 fight forever, however much tech the save owned — and that is now deleted.
 Every turret a save owns is placeable at every rung; nobody farms rung 4
-when rung 10 pays 28×.
+when rung 10 pays 10.6×.
+
+Since every rung runs the same waves for the same minutes, the whole ladder
+is two constants against each other: the fight gets ×1.2625 harder a rung
+(`RUNG_HP_STEP` = 1.06⁴) and the payout gets ×1.30 bigger, a 3% surplus a
+rung that the tech tree's geometric price curve turns into time.
 
 Per **level**, only health scales (×1.06 a level; +12 levels is exactly
 double). Armour, speed, hitbox and drop stay at base, which is what keeps a
@@ -145,6 +154,12 @@ level-20 dagger worth shooting and a fortress unkillable by duos on rung 1.
 The swarm armour column is flat armour on tier 1–3 bodies only, held at zero
 for the first five rungs because a scatter pellet is 3 damage and even +1
 would halve the game's first anti-air.
+
+**Every currency drops from rung 1**, which follows from there being no
+cuts: a full clear banks ~32,000 copper down to ~200 phase fabric whatever
+the rung. So the phase-priced turrets (spectre, meltdown, foreshadow) are
+reachable from the bottom of the ladder — slowly. The gate is the rate, not
+the permission.
 
 ### Mutation
 
@@ -202,10 +217,10 @@ drops. Ten meals cost ten bodies' worth of salvage and hand back one.
 
 ### Authoring waves
 
-Wave order *is* the rung gate — wave `i` first plays at the first rung
-whose wave cut reaches it (20/23/26/30/33/36/40/43/46/50), shown as a badge on each
-row in the level editor. Three things do **not** come out in the wash,
-because the level scales health and nothing else:
+Wave order is no longer a gate of any kind — every rung sends every wave, so
+a wave's position only says how deep into the run it lands. Three things do
+**not** come out in the wash, because the level scales health and nothing
+else:
 
 - **Armour is a permanent multiplier.** `max(dmg - armor, 0.1 * dmg)` never
   scales with level, so a fortress costs a duo line ten times its printed
@@ -218,9 +233,9 @@ because the level scales health and nothing else:
   and pay the same 100 items. Padding a wave with tier-1 bodies is nearly
   free — cost and income rise together — which is why swarm waves can be as
   big as they look good.
-- **The currency mix must track the tree.** Each rung has a target payout
-  mix in `TARGET_DROP_RATIO` (normalised to copper = 100; rung 1 is
-  100 : 15 : 3.6, rung 10 pays all five currencies); drift far from it
+- **The currency mix must track the tree.** The script has one target
+  payout mix in `TARGET_DROP_RATIO` (normalised to copper = 100, and
+  100 : 30 : 24 : 4.2 : 0.85 today); drift far from it
   and one currency becomes the only real constraint.
 
 Two more the arithmetic can't see: **air** (hail, scorch, arc, lancer and
@@ -252,14 +267,13 @@ __ladder.wave(7, 2)   // what one authored wave costs at a given rung
   base bundle (hundreds of duos down to a few dozen foreshadows) and the
   treadmill lives on enemy level instead, where it costs the player without
   pricing them out.
-- **Drop bonus compounds per rung** (`LOOT_PER_RUNG`, 1.45), and exists so
+- **Drop bonus compounds per rung** (`LOOT_PER_RUNG`, 1.30), and exists so
   a higher rung is always the better farm. It is set just above the ladder's
-  own health-per-second step (×1.46 a rung), so income per minute climbs
-  ×1.50 a rung against a fight that gets ×1.46 harder — and the tech tree's
-  geometric price curve turns that small surplus into time. `__ladder.grind()`
+  own health step (`RUNG_HP_STEP` = ×1.2625 a rung) — the tech tree's
+  geometric price curve turns that 3% surplus into time. `__ladder.grind()`
   prints all three curves side by side; the last column is `grindStep`,
-  how many more minutes a rung costs than the one below (hold it just above
-  1, and `check()` complains outside 0.75–1.30).
+  how many more minutes a rung costs than the one below (hold it near 1,
+  and `check()` complains outside 0.75–1.30).
 - **An upgrade rung is its turret's own bundle, scaled** (×20 / ×90 / ×900
   for the three payable rungs, climbing at 1.25 / 1.35 / flat). Scaling
   preserves the bundle's SHAPE, so every rung carries its turret's drop

@@ -29,9 +29,8 @@ import {
   audit,
   budget,
   check,
-  deepestDrop,
   grindTable,
-  paysNewCurrency,
+  HP_PER_LEVEL,
   rungColor,
   rungLabel,
   RUNG_COUNT,
@@ -71,7 +70,7 @@ import {
 import { turretIcon } from "@/game/atlas";
 import { mutationAt } from "@/game/mutation";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
-import { isEmpty, ITEM_INFO, ITEM_KINDS } from "@/game/items";
+import { isEmpty, ITEM_INFO } from "@/game/items";
 import { CostRow, Wallet } from "./Items";
 import TechTree from "./TechTree";
 
@@ -338,17 +337,15 @@ function TierPicker({
   const { waves } = levelSummary(spec);
   const step = (d: number): void => onTier(Math.min(top, Math.max(0, tier + d)));
   // THE SALVAGE MULTIPLIER AS A MULTIPLE, not a percentage. It compounds
-  // now (LOOT_PER_RUNG), so the top rung is "x28" and a percentage there
-  // would read as 2,733% — a number nobody can compare two of at a glance
+  // now (LOOT_PER_RUNG), so the top rung is "x10.6" and a percentage there
+  // would read as 963% — a number nobody can compare two of at a glance
   const loot = tierDropBonus(tier);
-  // the currency this rung ADDS, on the two rungs that add one — plastanium
-  // and phase fabric arrive partway up the ladder, and every other rung
-  // simply pays a deeper share of what the rung below already paid
-  const newDrop = paysNewCurrency(tier)
-    ? ITEM_INFO[ITEM_KINDS[deepestDrop(tier)]].name.toLowerCase()
-    : null;
-  // whether this rung's cut of the script fields a boss kind — read from
-  // the waves themselves, so the warning follows the boss if it moves
+  // ...and the fight's own multiple beside it, which is the honest other
+  // half of the trade: every body carries x1.06 health a level, and the
+  // rung is the level (tierLevel). The two numbers are the whole decision
+  const hpMult = HP_PER_LEVEL ** tierLevel(tier);
+  // whether the script fields a boss kind — read from the waves themselves,
+  // so the warning follows the boss if it moves
   // the mutation rules switched on for the next run, as their definitions
   const mutations = activeMutations(progress)
     .map(mutationAt)
@@ -425,32 +422,30 @@ function TierPicker({
           WHAT THE RUNG WILL ADMIT any more, because a rung admits
           everything the save owns */}
       <div className="mt-3 border-t border-[#2E2E36] pt-3 text-[13px] leading-snug">
-        <span className="font-bold text-[#EDEDEF]">{waves} waves.</span>{" "}
-        <span className="text-[#A6A6AF]">
+        {/* THE WAVE COUNT IS THE SAME ON EVERY RUNG and is said anyway —
+            it is what a player picking a rung most needs to know is NOT
+            what they are choosing. What they are choosing is the two
+            multiples below it */}
+        <span className="font-bold text-[#EDEDEF]">{waves} waves</span>{" "}
+        <span className="text-[#A6A6AF]">— every level, every time.</span>
+        <div className="mt-1 text-[#A6A6AF]">
           {tier === 0 ? (
             <>The swarm at base strength — every kill drops resources for the tech tree.</>
           ) : (
             <>
-              Enemies have more health and shields, but pay{" "}
-              <span className="font-bold text-[#7BE58A]">×{loot.toFixed(2)} loot</span>
-              {newDrop && (
-                <>
-                  {" "}
-                  and start dropping{" "}
-                  <span className="font-bold text-[#FFD37F]">{newDrop}</span>
-                </>
-              )}
-              .
-              {hasBoss && (
-                <>
-                  {" "}
-                  <span className="font-bold text-[#FF8A8A]">A powerful enemy</span> will
-                  spawn.
-                </>
-              )}
+              Enemies carry{" "}
+              <span className="font-bold text-[#FF8A8A]">×{hpMult.toFixed(2)} health</span>{" "}
+              and pay{" "}
+              <span className="font-bold text-[#7BE58A]">×{loot.toFixed(2)} loot</span>.
             </>
           )}
-        </span>
+          {hasBoss && (
+            <>
+              {" "}
+              <span className="font-bold text-[#FF8A8A]">A powerful enemy</span> will spawn.
+            </>
+          )}
+        </div>
       </div>
 
       {/* WHAT THIS RUN IS PLAYED UNDER. An mutation is switched on in the
