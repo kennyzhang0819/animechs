@@ -675,6 +675,8 @@ export class Sim {
   private duoSpec: TowerStats = TOWERS.duo;
   /** is mutation rank 1 switched on for this run? (see reset) */
   private hungryOn = false;
+  /** are ambient effects being kept? (see setEffects) */
+  private fxOn = true;
   // live per-kind census, updated the moment a unit spawns or is removed
   readonly aliveByKind = new Int32Array(UNIT_KINDS.length);
   // the level script's cursor, plus the live state of the step it points at:
@@ -1112,6 +1114,36 @@ export class Sim {
   setTech(tech: TechState | null): void {
     this.tech = tech;
     this.refreshDuo();
+  }
+
+  /**
+   * AMBIENT EFFECTS OFF — the settings switch, for a device that cannot
+   * afford the particle work (a phone, mostly).
+   *
+   * It rides the line `force` already draws, and draws it for exactly the
+   * reason this switch needs drawn: an effect marked forced IS a weapon
+   * rather than dressing on one — fuse's shrapnel ray, lancer's beam and
+   * its charge glow, arc's bolt, the rail's trail — and those weapons deal
+   * instant invisible damage, so dropping them would leave a firing turret
+   * and a stalled one looking identical. Every one of them therefore
+   * survives this switch. What goes is the dressing: death puffs,
+   * footfalls, smoke, muzzle flash, burning, splashes, heal and shield
+   * rings, the lot.
+   *
+   * REFUSED AT THE PUSH, not at the draw, so an effect that is off costs
+   * nothing anywhere — not a slot, not an update, not a quad. The pool
+   * behaves exactly as it does when ambient effects have filled it (see
+   * pushSlot), which is a state every caller already handles.
+   *
+   * IT DOES NOT CHANGE WHAT THE SIM DOES. Nothing reads the pool back —
+   * effects are the sim TELLING the renderer what happened, never the
+   * other way round — so a run plays out the same either way.
+   *
+   * The renderer has a switch of its own for the decoration it owns
+   * outright (see Renderer.setEffects), and Game.setEffects works the pair.
+   */
+  setEffects(on: boolean): void {
+    this.fxOn = on;
   }
 
   /**
@@ -2297,7 +2329,11 @@ export class Sim {
     // be damaged. So
     // what a footfall leaves behind is the dust, scaled by rippleScale
     const landed = this.ulegMove[i] & ~bits;
-    if (landed !== 0 && this.fxN < FX_DUST_CAP) {
+    // fxOn is read here rather than left to pushSlot's refusal because
+    // this guard is a BUDGET check: with the effects off the pool stays
+    // near-empty, so it would read as room forever and every planted foot
+    // would roll a seed for a puff that is never taken
+    if (landed !== 0 && this.fxOn && this.fxN < FX_DUST_CAP) {
       for (let k = 0; k < n; k++) {
         if ((landed & (1 << k)) === 0) continue;
         this.pushFx(ulegFX[off + k], ulegFY[off + k], 30 / 60, FxKind.Footfall,
@@ -4177,7 +4213,8 @@ export class Sim {
    * slot is REUSED after swap-remove, so a field left unset here would be
    * whatever the previous tenant put there. The specialised pushers below
    * overwrite the lanes they own after this returns. -1 = pool refused
-   * (over FX_CAP without `force`, or the hard FX_MAX either way).
+   * (ambient effects switched off, over FX_CAP without `force`, or the
+   * hard FX_MAX either way).
    */
   private pushSlot(
     x: number,
@@ -4191,7 +4228,10 @@ export class Sim {
     force: boolean,
   ): number {
     const i = this.fxN;
-    if (i >= (force ? FX_MAX : FX_CAP)) return -1;
+    // dressing is refused outright with the switch off (see setEffects);
+    // a forced effect is a weapon and goes through either way
+    if (!force && (!this.fxOn || i >= FX_CAP)) return -1;
+    if (i >= FX_MAX) return -1;
     this.fxN = i + 1;
     this.fxX[i] = x;
     this.fxY[i] = y;
@@ -4275,9 +4315,12 @@ export class Sim {
     col?: RGB,
     force = false,
   ): void {
-    // refuse before rolling the seed, so a capped board leaves the random
-    // stream exactly where the old object push left it
-    if (kind === undefined || this.fxN >= (force ? FX_MAX : FX_CAP)) return;
+    // refuse before rolling the seed, so a capped board — or one with the
+    // effects switched off (see setEffects) — leaves the random stream
+    // exactly where the old object push left it
+    if (kind === undefined) return;
+    if (!force && (!this.fxOn || this.fxN >= FX_CAP)) return;
+    if (this.fxN >= FX_MAX) return;
     const i = this.pushSlot(
       x, y, FX_LIFE[kind], kind, rot, 0, (Math.random() * 0x7fffffff) | 0, 0, force,
     );

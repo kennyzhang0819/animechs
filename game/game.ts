@@ -873,6 +873,22 @@ export class Game {
     this.sim.setTech(tech);
   }
 
+  /**
+   * The ambient-effects switch, both halves at once — the sim stops
+   * pushing dressing into the effect pool (Sim.setEffects, which keeps
+   * every effect that IS a weapon) and the renderer drops the decoration
+   * it owns itself and stands scorch's flame back up (Renderer.setEffects).
+   *
+   * Live: it can be thrown mid-run and takes hold on the next frame.
+   * Effects already in flight play out their remaining life rather than
+   * vanishing mid-puff, which is a frame or two and reads as the tail of
+   * what was already on screen.
+   */
+  setEffects(on: boolean): void {
+    this.sim.setEffects(on);
+    this.renderer.setEffects(on);
+  }
+
   /** the whole script is dealt with and the core stands */
   private won(): boolean {
     return !this.sim.lost() && this.sim.remaining() <= 0;
