@@ -634,5 +634,33 @@
     "disrupt": 1
    }
   }
- ]
+ ],
+ "transforms": {
+  "1": [],
+  "2": [
+   {
+    "from": [
+     "crawler"
+    ],
+    "to": [
+     {
+      "family": "naval"
+     }
+    ]
+   },
+   {
+    "from": [
+     "support"
+    ],
+    "to": [
+     {
+      "family": "support"
+     },
+     {
+      "family": "navalSupport"
+     }
+    ]
+   }
+  ]
+ }
 }

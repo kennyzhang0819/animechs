@@ -1026,31 +1026,42 @@ export interface WaveTransform {
 }
 
 /**
- * Refuse a transform list that cannot mean one thing. Thrown, not logged:
- * transforms are code constants on WORLDS, so this runs once at module load
- * (below WORLDS) and a bad list fails the build or the first dev page load —
- * the same posture as _everyKindHasATree, one layer past what types reach.
+ * Why a transform list cannot mean one thing — null when it can. This is
+ * the one set of semantic rules, shared by the three places a list can
+ * come from: the WORLDS code defaults (validateWaveTransforms below turns
+ * a finding into a thrown build failure), the level editor (which shows
+ * the finding live and refuses to save over it), and the dev save API
+ * (which refuses the document).
  */
-function validateWaveTransforms(transforms: readonly WaveTransform[], where: string): void {
+export function transformsError(transforms: readonly WaveTransform[]): string | null {
   const claimed = new Set<FamilyKey>();
   for (const t of transforms) {
     if (t.from.length === 0 || t.to.length === 0)
-      throw new Error(`${where}: a wave transform needs at least one source and one target`);
+      return "a rule needs at least one source and one target family";
     for (const f of t.from) {
-      if (f === "boss") throw new Error(`${where}: the boss family cannot be transformed`);
-      if (claimed.has(f))
-        throw new Error(`${where}: family "${f}" is consumed by two transform rules`);
+      if (f === "boss") return "the boss family cannot be transformed";
+      if (claimed.has(f)) return `${FAMILY_NAME[f]} is consumed by two rules`;
       claimed.add(f);
     }
     for (const tgt of t.to) {
-      if (tgt.family === "boss")
-        throw new Error(`${where}: the boss family cannot be a transform target`);
-      if (!((tgt.weight ?? 1) > 0))
-        throw new Error(`${where}: transform weights must be positive`);
+      if (tgt.family === "boss") return "the boss family cannot be a target";
+      if (!((tgt.weight ?? 1) > 0)) return "weights must be positive";
     }
-    if (t.multiply !== undefined && !(t.multiply > 0))
-      throw new Error(`${where}: a transform multiplier must be positive`);
+    if (t.multiply !== undefined && !(t.multiply > 0)) return "a multiplier must be positive";
   }
+  return null;
+}
+
+/**
+ * Refuse a transform list that cannot mean one thing. Thrown, not logged:
+ * the shipped defaults are code constants on WORLDS, so this runs once at
+ * module load (below WORLDS) and a bad list fails the build or the first
+ * dev page load — the same posture as _everyKindHasATree, one layer past
+ * what types reach.
+ */
+function validateWaveTransforms(transforms: readonly WaveTransform[], where: string): void {
+  const err = transformsError(transforms);
+  if (err) throw new Error(`${where}: ${err}`);
 }
 
 /**
@@ -1062,6 +1073,7 @@ function validateWaveTransforms(transforms: readonly WaveTransform[], where: str
 function splitByWeight(total: number, weights: readonly number[]): number[] {
   const grand = Math.round(total);
   const sum = weights.reduce((a, b) => a + b, 0);
+  if (!(sum > 0)) return weights.map(() => 0); // a half-built rule deals nothing
   const exact = weights.map((w) => (grand * w) / sum);
   const shares = exact.map(Math.floor);
   let left = grand - shares.reduce((a, b) => a + b, 0);
@@ -1084,7 +1096,8 @@ export function applyWaveTransforms(
 ): LevelStep[] {
   if (transforms.length === 0) return [...script];
   const claimed = new Set<FamilyKey>();
-  for (const t of transforms) for (const f of t.from) claimed.add(f);
+  for (const t of transforms)
+    if (t.from.length > 0 && t.to.length > 0) for (const f of t.from) claimed.add(f);
 
   const recast = <G extends WaveUnits | RegionWave>(g: G): G => {
     const out: Partial<Record<UnitKind, number>> = {};
@@ -1093,8 +1106,12 @@ export function applyWaveTransforms(
       const n = g[k] ?? 0;
       if (n > 0 && !claimed.has(FAMILY_OF[k])) out[k] = (out[k] ?? 0) + n;
     }
-    // each rule pools its sources tier by tier and deals the pool out
+    // each rule pools its sources tier by tier and deals the pool out. A
+    // rule missing either end is skipped rather than crashed on: the level
+    // editor derives the preview live while a rule is still being built,
+    // and a half-built rule should read as "not doing anything yet"
     for (const t of transforms) {
+      if (t.from.length === 0 || t.to.length === 0) continue;
       const slots = Math.max(...t.from.map((f) => TREE_OF[f].length));
       for (let slot = 0; slot < slots; slot++) {
         let pool = 0;
@@ -1270,11 +1287,11 @@ export interface LevelSpec {
    * this list of family re-castings, applied by applyBlueprint() when the
    * blueprint loads or is saved. Unset means the blueprint verbatim.
    *
-   * These live in code, not in the document, for the same reason name and
-   * map do: a transform is the world's IDENTITY — "the second front is the
-   * naval one" — while the blueprint is its difficulty. The level editor
-   * edits the raw blueprint counts and previews any world's derived script;
-   * it never edits these.
+   * What is written here is the SHIPPED DEFAULT, exactly like the empty
+   * script below: the level editor edits each world's rules alongside the
+   * blueprint counts, and a saved document's `transforms` map replaces
+   * these wholesale (see LevelDoc). A checkout whose document predates
+   * editable rules still plays these.
    */
   transforms?: readonly WaveTransform[];
   /**
@@ -1353,6 +1370,15 @@ export interface LevelDoc {
   id: string;
   waveGap: number;
   script: LevelStep[];
+  /**
+   * Each world's re-casting rules, by world id. Editable in the level
+   * editor's rail, so they live in the document like the counts do; when
+   * the key is absent (a document from before rules were editable) every
+   * world keeps its shipped defaults from WORLDS. When present it replaces
+   * per world, wholesale — a world the map does not name plays the
+   * blueprint verbatim — never a merge, same as the script.
+   */
+  transforms?: Record<string, WaveTransform[]>;
 }
 
 /**
@@ -1678,7 +1704,52 @@ function readLevelDoc(id: string, raw: unknown): LevelDoc | null {
 
   const waveGap =
     typeof d.waveGap === "number" && d.waveGap >= 0 ? d.waveGap : commonest(waits);
-  return { id, waveGap, script };
+  const transforms = readTransforms(d.transforms);
+  return transforms ? { id, waveGap, script, transforms } : { id, waveGap, script };
+}
+
+/**
+ * Validate a document's transforms map. Anything that fails to make sense
+ * — a shape that isn't the map, an unknown family, a semantic conflict —
+ * returns undefined so the campaign plays the shipped defaults, rather
+ * than a hand-mangled rule quietly changing what a world sends. Absent is
+ * also undefined: a pre-rules document means the defaults, not "no rules".
+ *
+ * Exported for the dev save API, which runs the same check but turns
+ * undefined-on-present into a refusal instead of a fallback.
+ */
+export function readTransforms(raw: unknown): Record<string, WaveTransform[]> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const keys = new Set<string>(UNIT_TREES.map((t) => t.key));
+  const out: Record<string, WaveTransform[]> = {};
+  for (const [worldId, rules] of Object.entries(raw)) {
+    if (!Array.isArray(rules)) return undefined;
+    const list: WaveTransform[] = [];
+    for (const rule of rules) {
+      if (!rule || typeof rule !== "object") return undefined;
+      const r = rule as Partial<WaveTransform>;
+      if (!Array.isArray(r.from) || !r.from.every((f) => keys.has(f))) return undefined;
+      if (
+        !Array.isArray(r.to) ||
+        !r.to.every(
+          (t) =>
+            !!t &&
+            typeof t === "object" &&
+            keys.has((t as TransformTarget).family) &&
+            ((t as TransformTarget).weight === undefined ||
+              typeof (t as TransformTarget).weight === "number"),
+        )
+      )
+        return undefined;
+      if (r.multiply !== undefined && typeof r.multiply !== "number") return undefined;
+      const t: WaveTransform = { from: [...r.from], to: r.to.map((x) => ({ ...x })) };
+      if (r.multiply !== undefined) (t as { multiply?: number }).multiply = r.multiply;
+      list.push(t);
+    }
+    if (transformsError(list)) return undefined;
+    out[worldId] = list;
+  }
+  return out;
 }
 
 /** the most frequent value, ties going to the smaller; 10s if there are none */
@@ -1698,6 +1769,9 @@ function commonest(values: readonly number[]): number {
 export function applyBlueprint(doc: LevelDoc): void {
   blueprint = doc;
   for (const world of WORLDS) {
+    // a document that carries rules replaces every world's, wholesale (see
+    // LevelDoc.transforms); one that predates them leaves the defaults on
+    if (doc.transforms) world.transforms = doc.transforms[world.id] ?? [];
     world.waveGap = doc.waveGap;
     world.script = applyWaveTransforms(doc.script, world.transforms ?? []);
   }

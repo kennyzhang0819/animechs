@@ -19,9 +19,10 @@ There are no per-world documents any more. The dev save API
 
 ## Transforms
 
-A world's rules live in code, on its `WORLDS` entry in `game/levels.ts`
-(`LevelSpec.transforms`), because they are the world's *identity* — like its
-name and map — while the blueprint is its *difficulty*. Each rule:
+A world's rules are edited in the level editor's rail and saved into the
+blueprint document's `transforms` map (`{ "<worldId>": [rules] }`); the
+lists on `WORLDS` entries in `game/levels.ts` (`LevelSpec.transforms`) are
+the shipped defaults a pre-rules document falls back to. Each rule:
 
 ```ts
 { from: ["crawler"], to: [{ family: "naval" }] }                     // swap, tier for tier
@@ -58,10 +59,14 @@ Semantics, all enforced in `applyWaveTransforms`:
 ## In the editor
 
 The level editor always edits the blueprint's raw counts, whichever world
-opened it. For a world with transforms it also shows the rule list in the
-left rail, prices the **ramp, ladder check, payouts and totals on the
-derived script** (what that world actually sends), and the **Blueprint / As
-played** toggle flips the wave cards to the derived, read-only counts.
+opened it. The left rail holds the world's **editable rule list** — toggle
+FROM families, add TO targets with weights, set the pool multiplier — and a
+rule list that cannot mean one thing (a family claimed twice, a boss rule)
+is flagged in place and refuses to save. The **ramp, payouts (with each
+difficulty's total enemies and health) and totals are priced on the derived
+script** — what that world actually sends. The wave cards open on the
+derived, read-only **as played** view; **Show blueprint** flips them to the
+editable raw counts.
 
 Mind the map: a transform that moves volume onto a layer the map has no
 drop zones for (naval units on a dry map) sends nothing at all, exactly as
