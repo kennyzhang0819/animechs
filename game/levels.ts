@@ -1157,12 +1157,12 @@ export function transformLabel(t: WaveTransform): string {
 /**
  * What one kill of this kind pays out: exactly ONE of its tier's item. The
  * tier is the whole drop table — a T2 kill is one titanium whether it was a
- * mace or a pulsar — so a level's difficulty mix is the only thing that
+ * mace or a pulsar — so a level's tier mix is the only thing that
  * decides what a run banks, and no unit is quietly worth more than its tier.
  *
  * EXCEPT A BOSS, WHICH DROPS NOTHING AT ALL. Its entire payout is the
  * one-time surge trophy grantRunReward pays on its first kill per
- * world+difficulty (progress.ts). A boss is an event, not income — were it
+ * world+rung (progress.ts). A boss is an event, not income — were it
  * on the tier table, every replay would farm it like any other T5.
  */
 export function unitDrop(kind: UnitKind): Cost {
@@ -1247,12 +1247,12 @@ export function waveGroups(
  * A MAP'S STANDING DIFFICULTY — the badge on its card in the map select,
  * and the only thing that ranks one map against another.
  *
- * It is NOT the ladder. A tier (Incursion..Eradication) is a difficulty you
- * PICK for a run and it means the same thing on every map; a badge is a
- * property of the terrain itself — how much the lanes, the water and the
- * drop zones do to you before a single multiplier is applied. A player
- * reads the badge to choose WHERE to fight and the tier to choose HOW HARD,
- * so the two vocabularies are kept apart on purpose and never share a word.
+ * It is NOT the ladder. A rung (Level 1..10) is a difficulty you PICK for a
+ * run and it means the same thing on every map; a badge is a property of
+ * the terrain itself — how much the lanes, the water and the drop zones do
+ * to you before a single multiplier is applied. A player reads the badge to
+ * choose WHERE to fight and the rung to choose HOW HARD, so the two
+ * vocabularies are kept apart on purpose and never share a word.
  */
 export type MapBadge = "beginner" | "intermediate" | "advanced" | "expert";
 
@@ -1404,18 +1404,18 @@ export function blueprintDoc(): LevelDoc {
 }
 
 /**
- * The campaign: ONE world, played at THREE difficulties, and then it is over.
+ * The campaign: ONE world, played at TEN RUNGS of one climbing ladder.
  *
- * EVERY WAVE THE GAME WILL EVER SEND IS WRITTEN OUT BELOW, in order. A
- * difficulty does not generate waves — it decides HOW MANY OF THESE a run
- * plays, and at what enemy level (see DIFFICULTIES in ladder.ts):
+ * EVERY WAVE THE GAME WILL EVER SEND IS WRITTEN OUT BELOW, in order. A rung
+ * does not generate waves — it decides HOW MANY OF THESE a run plays, and
+ * at what enemy level (see RUNGS in ladder.ts):
  *
- *   Incursion   waves 1-20   enemy level  0
- *   Onslaught   waves 1-35   enemy level 10
- *   Nemesis     waves 1-50   enemy level 16
+ *   rung   1   2   3   4   5   6   7   8   9  10
+ *   waves 20  23  26  30  33  36  40  43  46  50
+ *   level  0   4   8  12  16  20  24  28  32  36
  *
- * So a difficulty buys two things at once: fifteen waves of hand-authored
- * fight nobody has seen yet, and x1.79 health on every wave below them.
+ * So a rung buys two things at once: three or four waves of hand-authored
+ * fight nobody has seen yet, and x1.26 health on every wave below them.
  * Neither alone would carry it, and new kinds keep debuting deep into the
  * script — scepter at 21, the T5 lines through the 40s, the disrupt boss
  * at 50 — so the upper cuts are new content, not just longer runs.
@@ -1426,17 +1426,17 @@ export function blueprintDoc(): LevelDoc {
  * commit.
  *
  * ANYTHING PAST WAVE 50 IS NEVER SENT; check() reports any orphans past
- * the top difficulty's cut.
+ * the top rung's cut.
  *
  * Kills are the only income: a finished run banks each dead unit's tier
- * item whether it ended in victory or defeat, times the difficulty's drop
- * bonus.
+ * item whether it ended in victory or defeat, times the rung's drop bonus
+ * (which compounds — see LOOT_PER_RUNG).
  *
  * TWO THINGS TO KNOW WHEN EDITING THIS LIST.
  *
- * ONE — a wave's position IS its difficulty gate. Wave i first appears at
- * the first difficulty whose cut reaches it, so moving a wave earlier makes
- * it arrive against a smaller fleet. The comments below mark the cuts.
+ * ONE — a wave's position IS its rung gate. Wave i first appears at the
+ * first rung whose cut reaches it, so moving a wave earlier makes it arrive
+ * against a smaller fleet. The comments below mark the cuts.
  *
  * TWO — armour is flat, max(dmg - armor, 0.1 * dmg), so a fortress
  * (armour 9) against a duo (damage 9) hits the 10% floor and costs a duo
@@ -1464,13 +1464,13 @@ export const WORLDS: LevelSpec[] = [
     // no transforms — so authoring guidance written in its families reads
     // literally here and re-cast elsewhere.
     //
-    // INCURSION (waves 1-20) IS PLAYTESTED AND FIXED. Do not restructure it.
+    // WAVES 1-20 (RUNG 1) ARE PLAYTESTED AND FIXED. Do not restructure them.
     //
-    // A DIFFICULTY IS A PREFIX, NOT A SCRIPT OF ITS OWN. Onslaught plays waves
-    // 1-35 and Nemesis 1-50, so both REPLAY every Incursion wave, and the rows
+    // A RUNG IS A PREFIX, NOT A SCRIPT OF ITS OWN. Rung 6 plays waves 1-36
+    // and rung 10 plays 1-50, so both REPLAY every rung-1 wave, and the rows
     // in TARGET_DROP_RATIO describe the cumulative total of a whole run.
-    // Authoring can only ever ADD to a tier, never subtract, so Incursion's
-    // 12,500 tier-1 bodies are the floor for every difficulty above it.
+    // Authoring can only ever ADD to a rung, never subtract, so rung 1's
+    // 12,500 tier-1 bodies are the floor for every rung above it.
     //
     //   line       T1        T2       T3         T4         T5
     //   dagger     dagger    mace     fortress   scepter    reign
@@ -1481,17 +1481,19 @@ export const WORLDS: LevelSpec[] = [
     // KEEP SENDING TIER-1 UNITS. They are the swarm and the game is named
     // after them. They are also nearly free in the health budget — 150 hp
     // against a scepter's 9,000, so one T4 weighs as much as sixty
-    // daggers, and the twelve thousand extra daggers Onslaught adds cost less
-    // than its two hundred scepters. Spend the budget on T3/T4/T5 counts;
-    // that is the only thing that really moves a difficulty's weight.
+    // daggers, and the twelve thousand extra daggers the middle rungs add
+    // cost less than their two hundred scepters. Spend the budget on
+    // T3/T4/T5 counts; that is the only thing that really moves a rung's
+    // weight.
     //
-    // NO TIER-5 BEFORE NEMESIS. Waves 21-35 must field none at all: phase
-    // fabric is what spectre, meltdown and foreshadow are priced in, and
-    // those three are meant to be unbuyable until Nemesis has actually been
-    // played. Adding one reign to a Onslaught wave quietly unlocks the top of
-    // the tech tree a difficulty early.
+    // TIER 5 STARTS IN THE FORTIES AND THAT IS AN ECONOMY DECISION. Phase
+    // fabric is what spectre, meltdown and foreshadow are priced in, so the
+    // wave the first reign lands on is the rung those three become buyable
+    // at (rung 8, under today's cuts). Nothing gates them but the price —
+    // moving a T5 body earlier moves the top of the tech tree earlier with
+    // it, and TARGET_DROP_RATIO's phase column is where check() notices.
     //
-    // THE PATTERN, past Incursion. One cycle is four waves:
+    // THE PATTERN, past wave 20. One cycle is four waves:
     //
     //   1  DAGGER CLASS  + partial support, and optionally a SMALL amount
     //                      of air — small is the point, not a hedge
@@ -1503,15 +1505,15 @@ export const WORLDS: LevelSpec[] = [
     // Every TWO cycles, insert one wave of PURE SUPPORT. So the repeating
     // unit is nine waves: D C A M  D C A M  S.
     //
-    // THE LAST TWO WAVES OF EACH DIFFICULTY ARE HAND-WRITTEN. On Onslaught they
-    // are a lull-then-finale PAIR — wave 34 (674 bodies, 0.23M health) drops
-    // the floor out so wave 35 (3,505 bodies, 2.17M health) lands as a 9.7x
-    // event in one wave gap. A difficulty that simply ramped to its biggest
-    // wave would arrive at the same number having spent it. The lull is
-    // quieter than the AIR wave before it, which is the quietest thing the
-    // pattern otherwise produces.
+    // THE WAVES AROUND THE OLD CUTS ARE HAND-WRITTEN, and they stay where
+    // they are: waves 34-35 are a lull-then-finale PAIR — wave 34 (674
+    // bodies, 0.23M health) drops the floor out so wave 35 (3,505 bodies,
+    // 2.17M health) lands as a 9.7x event in one wave gap. A ramp that
+    // simply climbed to its biggest wave would arrive at the same number
+    // having spent it. The lull is quieter than the AIR wave before it,
+    // which is the quietest thing the pattern otherwise produces.
     //
-    // NEMESIS'S LAST TWO ARE A DOUBLE FINALE INSTEAD: waves 49 and 50 split
+    // THE SCRIPT'S LAST TWO ARE A DOUBLE FINALE INSTEAD: waves 49 and 50 split
     // what was once a single 6.93M finale into two peers, then eased twice
     // when the ending playtested too hot — first 48-50 by a quarter, then
     // 46-50 by a further fifth (49: 1,454 bodies, 2.41M health; 50: 1,176
@@ -1523,8 +1525,7 @@ export const WORLDS: LevelSpec[] = [
     // the totals (and so the drop ratio) do not move — to thicken the
     // ramp instead of the spike.
     //
-    // Wave 35 fields scepters and arkyids but NO tier 5, because Onslaught must
-    // not (see above).
+    // Wave 35 fields scepters and arkyids but NO tier 5 (see above).
     //
     // ALL FOUR TAKE THEIR BODIES OUT OF THE GENERATED SEGMENT rather than
     // adding on top, so the cumulative ratios stay exactly on target. Resize
@@ -1535,15 +1536,15 @@ export const WORLDS: LevelSpec[] = [
     // wave is mace 177 / fortress 46 / scepter 1; wave 45's is mace 160 /
     // fortress 275 / scepter 64 / reign 14. Same wave type, different game.
     //
-    // CHECK THE TOTALS, NOT THE FEEL. A difficulty's cumulative tier counts
+    // CHECK THE TOTALS, NOT THE FEEL. A rung's cumulative tier counts
     // have to land on TARGET_DROP_RATIO (ladder.ts), because one kill is one
     // item and that ratio IS the economy — miss it and some currency becomes
     // the only real constraint while the rest pile up unspent.
     // `window.__ladder.check()` reports the drift.
     //
-    // DO NOT SIZE A DIFFICULTY AGAINST THE MAP'S AREA. A run's total bodies
+    // DO NOT SIZE A RUNG AGAINST THE MAP'S AREA. A run's total bodies
     // are not its bodies on the field: units stream in over
-    // WAVE_RELEASE_SECONDS and die continuously, so a difficulty that sends
+    // WAVE_RELEASE_SECONDS and die continuously, so a rung that sends
     // 52,000 of them never holds a fraction of that at once. If a wave
     // outruns the drop zones they simply queue (Sim.runScript). Size against
     // TARGET_DROP_RATIO and the health step, which are the limits that bind.
@@ -1560,8 +1561,8 @@ export const WORLDS: LevelSpec[] = [
     script: [],
   },
   {
-    // WORLD 2 — the SECOND FRONT, unlocked by the tech tree's "world-2"
-    // node (the campaign menu hides it until that node is owned).
+    // WORLD 2 — the SECOND FRONT, opened by climbing Confluence rather
+    // than by buying anything (see WORLD_REQUIRES in ladder.ts).
     //
     // ITS MAP IS ITS OWN AND ITS WAVES ARE THE BLUEPRINT'S, RE-CAST. It
     // plays the same fifty waves as every world; the transforms below are
@@ -1588,8 +1589,9 @@ for (const w of WORLDS) validateWaveTransforms(w.transforms ?? [], `world "${w.i
 
 /**
  * The campaign's FIRST world — the default everywhere a single spec is
- * wanted, and the one a fresh save plays. World 2 sits behind the tech
- * tree's "world-2" node; the campaign menu reaches it through worldById.
+ * wanted, and the one a fresh save plays. World 2 sits behind a rung of
+ * this one's ladder (WORLD_REQUIRES); the campaign menu reaches it through
+ * worldById.
  *
  * Its `script` is EMPTY until loadLevelDocs() has run. Nothing reads the
  * script at module load (the sim takes WORLDS[0] as a default parameter,

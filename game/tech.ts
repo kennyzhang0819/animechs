@@ -38,12 +38,18 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * capacity, so it takes points forever; a utility is a SWITCH, so it takes
  * exactly one (see `cap`) and then reads as owned.
  *
- * NOTHING HERE DECIDES WHAT A RUN MAY BRING. What this tree sells is
- * OWNERSHIP, and ownership is campaign-wide; what a DIFFICULTY will let
- * through its door is a separate question answered by the difficulty
- * itself (bandForTier, below) and by nothing else. Two nodes used to break
- * that line — one opened a second world, one revealed Eradication
- * everywhere — and both are gone with the split.
+ * NOTHING DECIDES WHAT A RUN MAY BRING ANY MORE. What this tree sells is
+ * OWNERSHIP, and ownership is campaign-wide: a turret bought is a turret
+ * placeable, on rung 1 and on rung 10 alike.
+ *
+ * A RUNG USED TO HAVE A ROSTER CEILING OF ITS OWN — `bandForTier`, a fixed
+ * per-difficulty limit on how far up the currency list a turret's price
+ * could reach, so the opening rung stayed a first-three-currencies fight
+ * forever however much tech the save owned. It is deleted. It was the
+ * anti-farm guard for a four-row ladder with big gaps, and it is exactly
+ * wrong for the ten-rung climb that replaced it: steamrolling the rung that
+ * used to kill you IS the ascension fantasy. The guard is an income
+ * gradient now — see LOOT_PER_RUNG in ladder.ts.
  *
  * THE DUO BRANCH USED TO LIVE IN THIS LIST, as four utilities that happened
  * to improve duo. It is gone from here and into upgrades.ts, along with a
@@ -57,12 +63,13 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * owns more turrets than the bar holds.
  *
  * THE EXPANSION BRANCH hangs off home on the LEFT — the utilities' mirror.
- * `world-2` opens the second world on the campaign menu; under it,
- * `final-threat` reveals the hidden Eradication difficulty on every world
- * (topTier in progress.ts reads it), and `overdrive-projector` is a
- * paid-for promise: the node exists and takes a point, the block itself
- * ships later. All three are one-point switches like the rest of the
- * utilities — none of them is a turret, so none of them is capacity.
+ * `overdrive-projector` is all that is left of it: a paid-for promise, the
+ * node exists and takes a point, the block itself ships later. It is a
+ * one-point switch like the rest of the utilities — it is not a turret, so
+ * it is not capacity. (`world-2` and `final-threat` used to sit here, one
+ * opening the second world and one revealing the hidden top difficulty;
+ * both went when maps stopped being bought and the ladder stopped having
+ * a hidden top.)
  */
 export const UTILITY_KINDS = [
   "home",
@@ -176,32 +183,41 @@ export { upgradedTower, NO_UPGRADES, type UpgradeContext, type UpgradePoints };
  * costs a single cheap point to satisfy. There is no second gate.
  *
  * THE LADDER GATES ARE GONE, AND THE CURRENCY IS THE GATE INSTEAD. Every
- * node used to be able to demand a DIFFICULTY be cleared before it would
- * take points; salvo waited on Incursion, fuse on Onslaught, and the specialists on
- * whichever tier came before the enemy they answered. That was a second gate
- * doing a job the first one already did, because A BUNDLE CANNOT BE PAID IN
- * A CURRENCY ITS DIFFICULTY DOES NOT DROP. Incursion pays copper, titanium and
- * thorium and no plastanium at all (TARGET_DROP_RATIO in ladder.ts), so
- * fuse's fifteen plastanium locks it out of a fresh save on its own, exactly
- * and automatically, with no gate written anywhere.
+ * node used to be able to demand a RUNG be cleared before it would take
+ * points; salvo waited on the opening rung, fuse on the middle of the
+ * ladder, and the specialists on whichever rung came before the enemy they
+ * answered. That was a second gate doing a job the first one already did,
+ * because A BUNDLE CANNOT BE PAID IN A CURRENCY ITS RUN DOES NOT DROP. Rung
+ * 1 pays copper, titanium and thorium and no plastanium at all
+ * (TARGET_DROP_RATIO in ladder.ts), so fuse's fifteen plastanium locks it
+ * out of a fresh save on its own, exactly and automatically, with no gate
+ * written anywhere.
  *
- * Where the two gates disagreed, the tier gate was WRONG. Thorium starts
- * dropping in Incursion at wave 7 and a full Incursion run banks 450 of it — but
- * every node that charged thorium waited on Incursion being CLEARED, so a save
- * that had not yet cleared it accumulated a currency with nowhere to spend
- * it. A player who dies at wave 17 is exactly the player who needs the next
+ * Where the two gates disagreed, the rung gate was WRONG. Thorium starts
+ * dropping at wave 7 and a full rung-1 run banks 450 of it — but every node
+ * that charged thorium waited on rung 1 being CLEARED, so a save that had
+ * not yet cleared it accumulated a currency with nowhere to spend it. A
+ * player who dies at wave 17 is exactly the player who needs the next
  * turret, and the gate was denying it to them for the crime of not already
  * being past it.
  *
  * SO EVERY NODE IS OPEN AND THE BANK DECIDES. The four this actually frees
- * during Incursion are salvo, lancer, ripple and parallax — the thorium sinks.
- * Everything above them still costs plastanium or phase fabric, which Incursion
- * and Onslaught do not pay, so they stay shut without being told to.
+ * on rung 1 are salvo, lancer, ripple and parallax — the thorium sinks.
+ * Everything above them still costs plastanium or phase fabric, which the
+ * bottom of the ladder does not pay, so they stay shut without being told
+ * to.
+ *
+ * WHERE THE PROSE BELOW STILL NAMES A CUT, it names it by the wave count or
+ * the rung. The four named difficulties this ladder was split out of map
+ * onto it exactly — Incursion is rung 1 (20 waves), Onslaught is rung 6 (36),
+ * and Nemesis and Eradication are rung 10 (50) — so a price rationale
+ * written against one of them still reads true against the rung that
+ * replaced it.
  *
  * `requiresTier` is kept on the interface and honoured by progress.ts, and
  * nothing uses it. It is the hook for content whose gate genuinely is NOT a
- * currency — the planned Eradication difficulty ships no new item, so a node
- * meant for it would have nothing else to wait on.
+ * currency: a rung high up the ladder ships no new item, so a node meant
+ * to wait for one would have nothing else to wait on.
  */
 
 /**
@@ -465,13 +481,12 @@ export interface TechNodeDef {
    */
   cap?: number;
   /**
-   * Ladder gate: this tier of the campaign must have been CLEARED before
-   * points can go in.
+   * Ladder gate: this RUNG must have been CLEARED before points can go in.
    *
    * NOTHING SETS THIS, deliberately — see the note at the top of the file.
-   * A turret that costs a currency only a later difficulty drops is already
-   * gated by its price, and saying it twice locked thorium nodes away from
-   * the Incursion run that was banking the thorium. Reach for this only when a
+   * A turret that costs a currency only a deeper cut drops is already gated
+   * by its price, and saying it twice locked thorium nodes away from the
+   * rung-1 run that was banking the thorium. Reach for this only when a
    * node's gate is genuinely not a currency.
    */
   requiresTier?: number;
@@ -587,17 +602,17 @@ export interface TechNodeDef {
  *
  * SCATTER IS WHERE THAT WENT WRONG ONCE, and it is the worked example to
  * read before touching a bundle. It asked 50 copper : 10 titanium, a 5:1
- * ratio against a Incursion that pays 6.67:1, so titanium ran dry first and put
+ * ratio against a rung-1 run that pays 6.67:1, so titanium ran dry first and put
  * a hard cap on how many a player could own however much copper they had.
  * The turret felt overpriced; the PRICE was fine and the SHAPE was wrong.
  *
- * The currency also picks the difficulty. Plastanium appears first on the
- * nodes meant for Onslaught's T4s and phase fabric only on the ones paid
- * for by Nemesis's own T5 kills (see TARGET_DROP_RATIO in ladder.ts) — and a
- * currency nothing drops yet is an absolute lock, which is exactly why no
- * node needs a tier gate on top of it. The converse is the trap: charging a
- * currency EARLIER than intended unlocks a node into a wall, and charging it
- * LATER than intended opens content a difficulty early.
+ * The currency also picks the RUNG. Plastanium appears first on the nodes
+ * meant for the T4s of the middle rungs and phase fabric only on the ones
+ * paid for by the top rungs' own T5 kills (see TARGET_DROP_RATIO in
+ * ladder.ts) — and a currency nothing drops yet is an absolute lock, which
+ * is exactly why no node needs a rung gate on top of it. The converse is
+ * the trap: charging a currency EARLIER than intended unlocks a node into a
+ * wall, and charging it LATER than intended opens content a rung early.
  *
  * DUO IS THE ONE EXEMPTION AT THE BOTTOM: copper-only, forever. A run that
  * dies before the first mace banks no titanium at all, and duo capacity has
@@ -615,7 +630,7 @@ export interface TechNodeDef {
  * value came back as titanium, thorium, plastanium and phase on the same six
  * nodes. What it buys is that the supply the waves pay and the demand the
  * tree charges finally have the same SHAPE: under the curves of the day,
- * every currency maxed the whole tree in a comparable 385-391 Nemesis
+ * every currency maxed the whole tree in a comparable 385-391 full-script
  * runs, where before plastanium needed 8,736 and phase could not be spent
  * at all.
  *
@@ -625,11 +640,11 @@ export interface TechNodeDef {
  * copper the one gate on a tree whose top half no enemy pays for.
  *
  * The early and mid nodes are untouched — copper and all. Everything a
- * Incursion run can reach is priced exactly as it was playtested, and wave
+ * rung-1 run can reach is priced exactly as it was playtested, and wave
  * joined that half of the tree on the same copper-and-titanium shape.
  *
- * Keep the FIRST point of every node payable out of the difficulty whose
- * currency it debuts on, or that node is decoration.
+ * Keep the FIRST point of every node payable out of the rung whose currency
+ * it debuts on, or that node is decoration.
  */
 /**
  * WHERE THESE BASE BUNDLES COME FROM: MINDUSTRY'S OWN BUILD COSTS.
@@ -809,7 +824,7 @@ const CORE_TREE: readonly TechNodeDef[] = [
   },
   {
     // anti-air only, and UNGATED for the same reason hail and scorch are:
-    // flares debut inside difficulty 1, so a gate of any kind would lock the
+    // flares debut inside rung 1, so a gate of any kind would lock the
     // answer to air behind the run that first asks for it.
     //
     // PRICED WELL BELOW ITS PAPER DPS, deliberately. Flak DPS is the
@@ -821,7 +836,7 @@ const CORE_TREE: readonly TechNodeDef[] = [
     // the stat card.
     //
     // COPPER AND TITANIUM ONLY. It used to want thorium, which comes from
-    // tier-3 kills and so does not flow until well into a Incursion run — and
+    // tier-3 kills and so does not flow until well into a rung-1 run — and
     // since hail hangs off this node (Mindustry's own lineage: duo ->
     // scatter -> hail), a thorium price here locked the cheap ground AoE
     // behind the T3 waves too. Upstream builds scatter from copper and lead,
@@ -836,7 +851,7 @@ const CORE_TREE: readonly TechNodeDef[] = [
   {
     // 28 damage a shell — the first turret that puts a fortress (armour 9)
     // back at its printed health instead of ten times it. THE FIRST THORIUM
-    // NODE, and so the first thing a Incursion run's thorium is for: it opens
+    // NODE, and so the first thing a rung-1 run's thorium is for: it opens
     // around wave 7, when the T3 kills that pay for it start arriving. It
     // also shoots AIR, which makes it the second answer to the flare waves
     // and half the reason scatter no longer has to be priced as the only one
@@ -852,9 +867,10 @@ const CORE_TREE: readonly TechNodeDef[] = [
     // DPS on the roster, and the price says so.
     // Nine tiles of range is no longer a discount: the map already decides
     // how much of a gate one can hold (see PriceCurve).
-    // PLASTANIUM IS THE GATE: fifteen of it, and only Onslaught and Nemesis drop
-    // any at all. A Incursion save can see this node and can never pay for it,
-    // which is the same lock the old tier gate spelled out by hand
+    // PLASTANIUM IS THE GATE: fifteen of it, and nothing below rung 3 drops
+    // any at all. A save that has only cleared the opening rungs can see
+    // this node and can never pay for it, which is the same lock the old
+    // rung gate spelled out by hand
     id: "fuse",
     price: { base: { titanium: 65, thorium: 80, plastanium: 15 }, growth: 1.01 },
     dps: 4109,
@@ -912,9 +928,9 @@ const CORE_TREE: readonly TechNodeDef[] = [
     // purchase in the game. So it takes parallax's road — the Mindustry
     // build-cost power law (see the ranking above), which lands it between
     // scatter and lancer at ~350 copper-equivalent, and the bundle carries
-    // Incursion's copper:titanium drop ratio so neither currency gates
+    // rung 1's copper:titanium drop ratio so neither currency gates
     // alone. Upstream it builds from metaglass and lead, a tier-1/2 cost:
-    // buyable mid-Incursion, like the difficulty that first wants it
+    // buyable partway through a rung-1 run, like the fight that first wants it
     id: "wave",
     price: { base: { copper: 225, titanium: 35 }, growth: 1.01 },
     dps: 4,
@@ -949,11 +965,11 @@ const CORE_TREE: readonly TechNodeDef[] = [
     // umbrella drives at 45% speed for four seconds — better than doubling
     // what every turret around it gets done. The power law puts its 790
     // Mindustry value at ~9.6k copper-equivalent, three fuses, and the
-    // bundle is cyclone's Nemesis shape scaled: no copper (rule THREE),
+    // bundle is cyclone's late-ladder shape scaled: no copper (rule THREE),
     // and PLASTANIUM IS THE GATE. Upstream its build cost tops out at
-    // thorium, but a 9.6k support piece opening mid-Incursion would trivialise
-    // the difficulty that banks it — the price says Onslaught at the earliest,
-    // so the bundle does too
+    // thorium, but a 9.6k support piece opening on rung 1 would trivialise
+    // the run that banks it — the price says the middle of the ladder at the
+    // earliest, so the bundle does too
     id: "tsunami",
     price: { base: { titanium: 360, thorium: 310, plastanium: 36 }, growth: 1.01 },
     dps: 8,
@@ -961,22 +977,22 @@ const CORE_TREE: readonly TechNodeDef[] = [
     x: 4,
     y: 5,
   },
-  // ---------- NEMESIS AND ERADICATION ----------------------------------
+  // ---------- THE TOP OF THE LADDER ------------------------------------
   //
   // These five were stubs — a tech-tree shape with duo's bullet behind it —
   // and their growths were scaffolding, because a placeholder bullet makes
   // a node's DPS unknowable. They now carry their own ammo and their own
   // solved curves; see the table in PriceCurve for what each one reads.
   //
-  // Lineage is Mindustry's own (content/SerpuloTechTree.java) and the
-  // difficulty each one lands at falls out of BUILD MATERIAL, which is now
-  // the ONLY thing holding them shut: a turret whose Mindustry cost tops out
-  // at thorium or plastanium prices out to Nemesis, and one that wants surge
-  // alloy belongs to the hidden ERADICATION difficulty that does not exist
-  // yet — so it is priced in phase fabric, which nothing below Nemesis
-  // drops. Each bundle below charges a currency its own difficulty is the
-  // first to pay, and a child always costs at least what its parent does, so
-  // no child can open before its parent even with every gate gone.
+  // Lineage is Mindustry's own (content/SerpuloTechTree.java) and the RUNG
+  // each one lands at falls out of BUILD MATERIAL, which is now the ONLY
+  // thing holding them shut: a turret whose Mindustry cost tops out at
+  // thorium or plastanium prices out to the middle rungs, and one that wants
+  // surge alloy has nothing to charge — surge never drops from a wave — so
+  // it is priced in phase fabric, which nothing below rung 8 drops. Each
+  // bundle below charges a currency its own cut is the first to pay, and a
+  // child always costs at least what its parent does, so no child can open
+  // before its parent even with every gate gone.
   {
     // PLASTANIUM. Homing missiles — they chase what they lock, so overkill
     // costs less than it does on a straight-firing line
@@ -999,9 +1015,9 @@ const CORE_TREE: readonly TechNodeDef[] = [
   },
   {
     // PHASE FABRIC. Twin heavy cannon — the highest sustained damage in the
-    // game. Phase drops only at Nemesis and only from the T5 that arrives at
-    // the very end of it, so these three ARE Nemesis's late-run reward —
-    // priced there rather than told to wait there
+    // game. Phase drops only from the T5 bodies of the last dozen waves, so
+    // these three ARE the top rungs' reward — priced there rather than told
+    // to wait there
     //
     // THE PHASE SHARE ON THESE THREE IS DELIBERATELY BELOW THE DROP RATIO
     // (a quarter of the rule-TWO split, 30/40/75 -> 8/10/19). The split
@@ -1009,7 +1025,8 @@ const CORE_TREE: readonly TechNodeDef[] = [
     // far more tower-fire than its printed health says — armour 13-18
     // floors most calibres and the escorts shield them — so per EFFORT a
     // phase is worth well over the 1.7 plastanium the old bundles implied.
-    // Playtested at Nemesis; do not "fix" these back to the ratio.
+    // Playtested on the full 50-wave script; do not "fix" these back to the
+    // ratio.
     id: "spectre",
     price: { base: { titanium: 200, thorium: 225, plastanium: 55, "phase-fabric": 8 }, growth: 1.01 },
     // 104 x 60/7 x pierceCap 2 — the +30% phase-tier up-gun (constants.ts)
@@ -1064,10 +1081,10 @@ const CORE_TREE: readonly TechNodeDef[] = [
   // WHAT PACES THEM IS THE CURRENCY, NOT THE NUMBER. Each node asks for one
   // item and a different one, so the path unfolds at exactly the rate the
   // campaign hands out new currencies — titanium from the first mace, thorium
-  // once the T3s arrive mid-Incursion, plastanium from Onslaught, phase fabric only
-  // off the T5s. That is the same rule the turrets run on (see TWO at the top
-  // of the file): the bundle is the gate, and nothing here needs a tier
-  // written on it.
+  // once the T3s arrive partway up rung 1, plastanium from the middle rungs,
+  // phase fabric only off the T5s. That is the same rule the turrets run on
+  // (see TWO at the top of the file): the bundle is the gate, and nothing
+  // here needs a rung written on it.
   //
   // THE WHOLE PATH SITS ONE CURRENCY ABOVE WHERE IT STARTED. Copper used to
   // buy 2x, which meant the first wave of a fresh save already handed over
@@ -1111,7 +1128,7 @@ const CORE_TREE: readonly TechNodeDef[] = [
     // Priced at a token slice of the currency each one's moment drops:
     // thorium is flowing when speed-4 is buyable — about when a save first
     // owns more turrets than slots — and plastanium paces the eighth slot
-    // to Onslaught, the same bundle-is-the-gate rule as everything else.
+    // to the middle rungs, the same bundle-is-the-gate rule as everything else.
     id: "slot-7",
     price: { base: { thorium: 5 }, growth: 1 },
     requires: "speed-4",
@@ -1131,12 +1148,13 @@ const CORE_TREE: readonly TechNodeDef[] = [
   //
   // Home's LEFT fork, mirroring the utilities on the right. What used to
   // hang here were two gates on CONTENT: a node that opened world 2, and one
-  // that revealed Eradication everywhere. Both are gone, and the reason is
-  // the same for each: a campaign whose maps each carry their own ladder has
-  // nowhere to put a global unlock. Every map is on the menu from the first
-  // run, and every map hides its own fourth difficulty until its own Nemesis
-  // falls. A purchase that opened either would be a purchase that reached
-  // across maps, which is the one thing this model does not do.
+  // that revealed the hidden top difficulty everywhere. Both are gone, and
+  // the reason is the same for each: a campaign whose maps each carry their
+  // own ladder has nowhere to put a global unlock. Every map is on the menu
+  // from the first run, and every rung of a map's ladder opens by clearing
+  // the rung below it there. A purchase that opened either would be a
+  // purchase that reached across maps, which is the one thing this model
+  // does not do.
   //
   {
     // THE PROJECTOR'S RESERVATION. The block is not in the game yet — this
@@ -1158,13 +1176,13 @@ const CORE_TREE: readonly TechNodeDef[] = [
  * by: A RUNG IS ITS TURRET'S OWN BUNDLE, SCALED.
  *
  * That is not laziness, it is rule TWO of this file (a cost bundle must
- * carry the drop ratio of the difficulty that unlocks it) applied to a
- * node that has no difficulty of its own. Scaling a bundle preserves its
- * SHAPE exactly, so a scatter upgrade asks for copper and titanium in
- * Incursion's own ratio and a spectre upgrade asks for phase fabric — and
- * because the bundle is the gate, every rung opens on the same difficulty
- * its turret does and never one earlier. Nothing had to be written down
- * for that to be true.
+ * carry the drop ratio of the cut that unlocks it) applied to a node that
+ * has no cut of its own. Scaling a bundle preserves its SHAPE exactly, so a
+ * scatter upgrade asks for copper and titanium in rung 1's own ratio and a
+ * spectre upgrade asks for phase fabric — and because the bundle is the
+ * gate, every upgrade rung becomes affordable exactly where its turret does
+ * and never one rung earlier. Nothing had to be written down for that to be
+ * true.
  *
  * A STAT NODE IS PRICED AGAINST THE ARMY, NOT AGAINST ONE TURRET, which is
  * why the multipliers are so large. Duo capacity is 8 copper a point and a
@@ -1184,22 +1202,22 @@ const UPGRADE_GROWTH: readonly number[] = [0, 1.25, 1.35, 1];
 
 /**
  * WHAT AN ULTIMATE COSTS, IN SURGE ALLOY AND NOTHING ELSE, indexed by the
- * turret's band (towerBand — how far up the currency list its own price
- * reaches).
+ * turret's BAND — how far up the currency list its own price reaches (see
+ * bandOfCost below).
  *
  * Surge is not a tier and never drops from a wave: a boss's first kill on
- * a (world, difficulty) pays exactly one (grantRunReward), so the bank's
- * surge column counts boss fights won. That makes it the only honest price
+ * a (world, rung) pays exactly one (grantRunReward), so the bank's surge
+ * column counts boss fights won. That makes it the only honest price
  * for a node that should wait on PROGRESSION rather than on farming, and
  * it is the whole gate — no copper, no thorium, nothing a long enough
  * grind produces.
  *
  * IT CLIMBS WITH THE TURRET because the turrets do. A duo, a scatter or a
- * ripple is a turret an Incursion fields, and one boss buys its ultimate.
- * Onslaught's plastanium turrets cost three, Nemesis's phase turrets six —
- * so transforming a foreshadow would be six boss fights' worth of trophy,
- * and a save cannot have every ultimate in the game without having cleared
- * most of the campaign on most of its maps.
+ * ripple is a turret the opening rungs field, and one boss buys its
+ * ultimate. A plastanium turret costs three, a phase turret six — so
+ * transforming a foreshadow would be six boss fights' worth of trophy, and
+ * a save cannot have every ultimate in the game without having climbed most
+ * of the ladder on most of its maps.
  *
  * THE WHOLE TABLE IS HERE THOUGH ONLY DUO AND ARC HAVE AN ULTIMATE WRITTEN
  * SO FAR (see the note at the top of upgrades.ts). It is indexed by band
@@ -1403,77 +1421,29 @@ export interface TechState {
   speeds: readonly number[];
   /** loadout slots in the build bar: BASE_BAR_SLOTS plus owned slot nodes */
   barSlots: number;
-  /**
-   * Every turret's upgrade branch as bought, points per rung. Unlike
-   * `unlocked` this is NOT narrowed by the difficulty's band: what the
-   * tree sells here is ownership, and a turret a difficulty will not admit
-   * simply never gets placed for its points to matter (see upgrades.ts).
-   */
+  /** every turret's upgrade branch as bought, points per rung */
   upgrades: Record<TowerKind, UpgradePoints>;
 }
 
 /**
- * A TURRET'S BAND: how far up the currency list its price reaches. Duo is
- * copper only, so 0; salvo asks for thorium, so 2; spectre asks for phase
- * fabric, so 4. Read off the price rather than written down anywhere,
- * because the price is already the honest statement of how late a turret is
- * — a node that starts asking for plastanium has moved up a band by that
- * fact alone, and nothing else needs editing.
- */
-export function towerBand(kind: TowerKind): number {
-  let band = 0;
-  for (const { item } of costEntries(techNode(kind).price.base))
-    band = Math.max(band, ITEM_KINDS.indexOf(item));
-  return band;
-}
-
-/**
- * WHAT A DIFFICULTY LETS YOU BRING. A PROPERTY OF THE DIFFICULTY, FIXED
- * FOREVER — nothing a save does, on this map or any other, ever moves it.
+ * EVERYTHING THE SIM AND UI NEED, DERIVED FROM THE POINT SPREAD — and the
+ * SAVE'S OWN TECH IS THE ONLY LIMIT IN IT.
  *
- * An Incursion is a first-three-currencies fight and stays one for the
- * life of the save. Not "until you clear it", not "until you clear the map"
- * — always. A player with every turret in the tree who drops back to
- * Incursion to farm plays it with duos and scorches, exactly as they did
- * the first time, because the constraint IS the difficulty. Take it away
- * on a replay and Incursion stops being a difficulty at all and becomes a
- * free harvest with the endgame roster.
- *
- * The tech tree still says what a save OWNS, and the two gates stack: this
- * is a ceiling, never a grant, and a turret has to be bought before a
- * difficulty can be asked whether it will admit it.
- *
- * Indexed BY TIER. Tier 0 gets the first three currencies, which is the
- * roster an Incursion actually banks; each difficulty up opens one more.
- * The ladder runs out of currencies before it runs out of difficulties, so
- * Nemesis and Eradication share the full roster — there is nothing above
- * phase fabric to hold back, no turret being priced in surge alloy.
+ * There used to be a second gate stacked on this one: a `band` argument
+ * naming the deepest currency the RUNG being played would let a turret's
+ * price reach (`bandForTier`, deleted — see the note at the top of this
+ * file). It is gone, and with it the whole idea that where you play decides
+ * what you may bring. A turret this save owns is a turret this save can
+ * place, at every rung of every world.
  */
-export const BAND_FOR_TIER: readonly number[] = [2, 3, 4, 4];
-
-export const bandForTier = (tier: number): number =>
-  BAND_FOR_TIER[Math.min(BAND_FOR_TIER.length - 1, Math.max(0, Math.floor(tier)))];
-
-/**
- * @param band the deepest currency this difficulty will let a turret's
- *   price reach (see bandForTier). Omitted means no difficulty gate at all
- *   — the editor and sandbox, where a save's own tech is the only limit.
- */
-export function techState(
-  levels: TechLevels,
-  band: number = ITEM_KINDS.length,
-  off?: ReadonlySet<TechKind>,
-): TechState {
+export function techState(levels: TechLevels, off?: ReadonlySet<TechKind>): TechState {
   const caps = Object.fromEntries(
     TOWER_KINDS.map((k) => [k, Math.max(0, Math.floor(levels[k] ?? 0))]),
   ) as Record<TowerKind, number>;
-  // THE DIFFICULTY GATE NARROWS `unlocked`, NOT `caps`. Everything that asks
-  // whether a turret may be placed — the build bar, the loadout picker,
-  // Sim.canPlace, Game.setBuild — already asks this one set, so a turret
-  // held back by the difficulty is held back everywhere by one line here.
-  const unlocked = new Set<TowerKind>(
-    TOWER_KINDS.filter((k) => caps[k] > 0 && towerBand(k) <= band),
-  );
+  // owning it IS being allowed to place it. Everything that asks whether a
+  // turret may be placed — the build bar, the loadout picker, Sim.canPlace,
+  // Game.setBuild — asks this one set
+  const unlocked = new Set<TowerKind>(TOWER_KINDS.filter((k) => caps[k] > 0));
   const speeds = [
     1,
     ...UTILITY_KINDS.filter((k) => (levels[k] ?? 0) > 0)

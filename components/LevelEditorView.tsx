@@ -24,10 +24,12 @@ import {
 import { dropsForKills } from "@/game/progress";
 import {
   audit,
-  difficultyColor,
-  difficultyName,
-  difficultyOf,
-  DIFFICULTIES,
+  GRIND_STEP,
+  rungColor,
+  rungLabel,
+  rungOf,
+  RUNGS,
+  SLIDE_STEP,
   tierDropBonus,
   tierOfWave,
   TOP_TIER,
@@ -49,7 +51,7 @@ import { CostRow } from "./Items";
 
 const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
 
-/** health runs to nine figures at the top difficulty; a table cell wants
+/** health runs to nine figures at the top rung; a table cell wants
  * three characters and a suffix, not 20,276,477 */
 const compactHp = (hp: number): string =>
   hp >= 1e9
@@ -327,10 +329,10 @@ export default function LevelEditorView({
    * point is to weigh an edit before committing it, so a report of the file
    * on disk would answer the wrong question.
    *
-   * The whole walk — every difficulty, every wave, and the findings —
+   * The whole walk — every rung, every wave, and the findings —
    * measures ~1.3 ms on a 50-wave script, so there is nothing to debounce and
    * no reason to make the author ask for it. Typing a count re-costs the wave
-   * under the cursor and re-steps the difficulty it belongs to, live.
+   * under the cursor and re-steps the rung it belongs to, live.
    *
    * This replaced a button that computed on demand and blanked itself on
    * every edit, which meant the numbers were only ever visible next to waves
@@ -496,31 +498,37 @@ export default function LevelEditorView({
               </p>
             </section>
 
-            {/* ECONOMY. One row a difficulty: what a full clear banks (drop
-                bonus included) and the shape of it, normalised to copper =
-                100. The ratio is the number to author against — the tech tree
-                is authored to — see TARGET_DROP_RATIO in ladder.ts, which
-                the check below measures every currency against. The BONUS
+            {/* ECONOMY. One row a RUNG: what a full clear banks (drop bonus
+                included) and the shape of it, normalised to copper = 100.
+                The ratio is the number to author against — the tech tree is
+                authored to — see TARGET_DROP_RATIO in ladder.ts, which the
+                check below measures every currency against. The BONUS
                 cannot move the ratio; only the mix of unit tiers the waves
                 send can. */}
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
               <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
-                Payout per difficulty
+                Payout per rung
               </h2>
               <div className="space-y-2">
                 {report.rows.map((r) => (
                   <div key={r.tier}>
                     <div className="flex items-baseline justify-between">
-                      <span className="text-[13px] font-bold text-[#EDEDEF]">{r.name}</span>
+                      <span
+                        className="text-[13px] font-bold"
+                        style={{ color: rungColor(r.tier) }}
+                      >
+                        {r.label}
+                      </span>
                       <span className="text-[12px] text-[#71717C]">
-                        x{tierDropBonus(r.tier).toFixed(1)}
+                        x{tierDropBonus(r.tier).toFixed(2)} loot
                       </span>
                     </div>
-                    {/* the run's whole weight at this difficulty — what the
+                    {/* the run's whole weight at this rung — what the
                         ladder table used to lead with, kept here now that
                         the table is gone */}
                     <div className="text-[12px] text-[#A6A6AF]">
-                      {r.units.toLocaleString()} enemies · {compactHp(r.hp)} hp
+                      {r.units.toLocaleString()} enemies · {compactHp(r.hp)} hp ·{" "}
+                      {r.hpPerSecond.toLocaleString()} hp/s
                     </div>
                     <CostRow cost={r.drops} />
                     <div className="text-[12px] text-[#71717C]">
@@ -528,12 +536,38 @@ export default function LevelEditorView({
                         .map((v, i) => (i === 0 ? "100" : v.toFixed(v < 10 ? 1 : 0)))
                         .join(" : ")}
                     </div>
+                    {/* THE LADDER'S SHAPE, one line: what this rung asks for
+                        against what it pays. `grind` is climb / farm — how
+                        many more minutes this rung costs than the one below
+                        — and it is the number the ladder is tuned against
+                        (see AuditRow.grindStep). The first rung has nothing
+                        below it, so it has no step to show */}
+                    {r.tier > 0 && (
+                      <div className="text-[12px] text-[#71717C]">
+                        climb x{r.climbStep.toFixed(2)} · farm x{r.farmStep.toFixed(2)} ·{" "}
+                        <span
+                          className="font-bold"
+                          style={{
+                            color:
+                              r.grindStep > GRIND_STEP || r.grindStep < SLIDE_STEP
+                                ? "#FF8A8A"
+                                : "#A6A6AF",
+                          }}
+                        >
+                          grind x{r.grindStep.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
               <p className="mt-2 border-t border-[#2E2E36] pt-2 text-[12px] leading-snug text-[#71717C]">
                 Copper : titanium : thorium : plastanium : phase — targets are
-                TARGET_DROP_RATIO in ladder.ts, one row a difficulty.
+                TARGET_DROP_RATIO in ladder.ts, one row a rung. Climb is health
+                per second against the rung below, farm is items banked per
+                minute against it, and grind is the two divided: hold it just
+                above 1 and every rung costs a little more of an evening than
+                the last.
               </p>
             </section>
 
@@ -791,7 +825,7 @@ function FloatInput({
  * THE RAMP — the live shape of the run, one point per authored wave.
  *
  * The number that matters here is not any wave's size but whether the curve
- * keeps CLIMBING ACROSS THE CUTS. One script feeds every difficulty, so a
+ * keeps CLIMBING ACROSS THE CUTS. One script feeds every rung, so a
  * ramp solved for the first cut alone spikes at it and collapses into the
  * waves after — which is invisible in a list of counts and obvious in a
  * line. The vertical rules are those cuts.
@@ -815,7 +849,9 @@ function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement
   const pts = v.map((k, i) => `${X(i).toFixed(1)},${Y(k).toFixed(1)}`);
   const line = `M${pts.join("L")}`;
   const area = `M${X(0).toFixed(1)},64L${pts.join("L")}L${X(n - 1).toFixed(1)},64Z`;
-  const cuts = DIFFICULTIES.slice(0, -1)
+  // one line a rung boundary. The top rung's own cut is not a boundary —
+  // there is nothing above it to divide from
+  const cuts = RUNGS.slice(0, -1)
     .map((d) => d.waves)
     .filter((w) => w < n);
   const fmt = (k: number): string =>
@@ -905,19 +941,18 @@ function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement
         {at === null ? (
           <>
             <span className="text-[#4A4A55]">wave 1</span>
-            {cuts.map((w) => (
-              <span key={w} style={{ color: difficultyColor(tierOfWave(w - 1)) }}>
-                {difficultyName(tierOfWave(w - 1))} ends
-              </span>
-            ))}
+            {/* NINE cut lines, so they are not labelled one by one any more
+                — the rail would be a wall of text. The pointer names the
+                rung under it instead */}
+            <span className="text-[#4A4A55]">{cuts.length + 1} rungs</span>
             <span className="text-[#4A4A55]">peak {fmt(max)}</span>
           </>
         ) : (
           <>
             <span className="text-[#EDEDEF]">Wave {at + 1}</span>
             {tierOfWave(at) >= 0 ? (
-              <span style={{ color: difficultyColor(tierOfWave(at)) }}>
-                {difficultyName(tierOfWave(at))}
+              <span style={{ color: rungColor(tierOfWave(at)) }}>
+                {rungLabel(tierOfWave(at))}
               </span>
             ) : (
               <span className="text-[#71717C]">unreachable</span>
@@ -1029,28 +1064,29 @@ function StepCard({
         <span className="text-[14px] font-bold uppercase tracking-widest text-[#EDEDEF]">
           Wave {waveNo}
         </span>
-        {/* a wave's POSITION is its difficulty gate: difficulty n plays the
-            first 20/35/50 waves, so this badge is the difficulty a wave
-            first appears at. Moving a row up moves the fight it holds down
-            the ladder, against a smaller fleet. A wave past the 50th is
-            written but never sent — that badge is a warning, not a gate */}
+        {/* a wave's POSITION is its rung gate: rung n plays the first
+            20..50 waves (RUNGS in ladder.ts), so this badge is the rung a
+            wave first appears at. Moving a row up moves the fight it holds
+            down the ladder, against a smaller fleet. A wave past the top
+            rung's cut is written but never sent — that badge is a warning,
+            not a gate */}
         {tierOfWave(index) < 0 ? (
           <span
-            title="Past Nemesis's 50-wave cut — this wave is never sent"
+            title="Past the top rung's 50-wave cut — this wave is never sent"
             className="rounded border border-[#5B2E2E] bg-[#2A1616] px-1.5 text-[12px] font-bold uppercase tracking-widest text-[#FF8A8A]"
           >
             unplayed
           </span>
         ) : (
           <span
-            title={`First played on ${difficultyName(tierOfWave(index))}`}
+            title={`First played on ${rungLabel(tierOfWave(index))}`}
             className="rounded border bg-[#151518] px-1.5 text-[12px] font-bold uppercase tracking-widest"
             style={{
-              color: difficultyColor(tierOfWave(index)),
-              borderColor: `${difficultyColor(tierOfWave(index))}55`,
+              color: rungColor(tierOfWave(index)),
+              borderColor: `${rungColor(tierOfWave(index))}55`,
             }}
           >
-            D{difficultyOf(tierOfWave(index))}
+            L{rungOf(tierOfWave(index))}
           </span>
         )}
         <span className="text-[13px] text-[#71717C]">{total} enemies</span>

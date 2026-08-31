@@ -867,7 +867,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // rule: 1:1 on every number except the water's effect (BulletStats.wet).
   // Upstream's knockback 1.7 — two and a half waves' worth of shove — is
   // traded for the deeper slow, which is the entire reason to pay a
-  // size-3, Nemesis-priced bill for a 8-DPS turret.
+  // size-3, endgame-priced bill for a 8-DPS turret.
   //
   // Twin barrels 4 units apart firing together (ShootAlternate, shots 2)
   // every 3 ticks: forty orbs a second, so it soaks a COLUMN rather than

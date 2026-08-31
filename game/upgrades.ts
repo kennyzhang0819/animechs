@@ -27,8 +27,8 @@ import { FxKind, TOWER_KINDS, type TowerKind } from "./types";
  *   4  THE ULTIMATE. One shot, paid for in SURGE ALLOY and nothing else,
  *      and it does not improve the turret so much as replace it. See
  *      ULTIMATE_SURGE in tech.ts for what one costs; the short version is
- *      that a turret's own difficulty decides, because surge is the
- *      currency a boss pays and nothing else does.
+ *      that a turret's own band decides, because surge is the currency a
+ *      boss pays and nothing else does.
  *
  * ONLY DUO AND ARC SHIP A FOURTH RUNG TODAY, and the other fifteen are
  * deliberately unwritten rather than missing: an ultimate is a turret
@@ -51,11 +51,12 @@ import { FxKind, TOWER_KINDS, type TowerKind } from "./types";
  * make it worth keeping. A maxed duo line and a bare salvo are a real
  * choice, which is the whole point.
  *
- * NOTHING HERE IS GATED BY DIFFICULTY, exactly as nothing else in the tree
- * is. What a run may BRING is the difficulty's own question (bandForTier);
- * what a save OWNS is this. The price is the only pacing, and because an
- * upgrade's bundle is its turret's bundle scaled up, an upgrade opens on
- * the same difficulty its turret does and never before it.
+ * NOTHING HERE IS GATED BY THE RUNG, exactly as nothing else in the tree
+ * is — and nothing anywhere is any more, now that a rung's roster ceiling
+ * is gone. What a save OWNS is the whole question. The price is the only
+ * pacing, and because an upgrade's bundle is its turret's bundle scaled up,
+ * an upgrade becomes affordable at the same point its turret does and never
+ * before it.
  */
 
 /** every upgrade node id, in tree order — the tech tree's third namespace */

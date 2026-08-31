@@ -29,10 +29,13 @@ import {
   audit,
   budget,
   check,
-  difficultyColor,
-  difficultyName,
+  deepestDrop,
+  grindTable,
+  paysNewCurrency,
+  rungColor,
+  rungLabel,
+  RUNG_COUNT,
   specForTier,
-  TOP_TIER,
   waveCost,
   waveGuide,
   tierDropBonus,
@@ -56,7 +59,6 @@ import {
   unlockEverything,
   layoutFor,
   saveLayout,
-  seedLayout,
   saveLoadout,
   saveSpeed,
   startingSpeed,
@@ -68,8 +70,8 @@ import {
 } from "@/game/progress";
 import { turretIcon } from "@/game/atlas";
 import { mutationAt } from "@/game/mutation";
-import { BAND_FOR_TIER, bandForTier, BY_MINDUSTRY_VALUE } from "@/game/tech";
-import { isEmpty, ITEM_INFO, ITEM_KINDS, itemForTier } from "@/game/items";
+import { BY_MINDUSTRY_VALUE } from "@/game/tech";
+import { isEmpty, ITEM_INFO, ITEM_KINDS } from "@/game/items";
 import { CostRow, Wallet } from "./Items";
 import TechTree from "./TechTree";
 
@@ -119,7 +121,7 @@ function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) 
  * The badge sits ON the preview rather than beside the name because that is
  * the thing being chosen between: a player scanning the grid is reading four
  * badges, not four sentences. Everything the map actually costs — the
- * difficulty, the wave count, the mutations in force — is one tap deeper,
+ * rung, the wave count, the mutations in force — is one tap deeper,
  * on the detail panel, so the grid stays a picture and never a spec sheet.
  */
 function MapCard({
@@ -135,9 +137,9 @@ function MapCard({
 }) {
   const badge = MAP_BADGE[world.badge ?? "beginner"];
   // how far up this map's OWN ladder the save has come. clearedOn counts
-  // cleared difficulties, so one past the last tier means the map is done
+  // cleared rungs, so reaching the rung count means the map is done
   const cleared = clearedOn(progress, world.id);
-  const total = TOP_TIER + 1;
+  const total = RUNG_COUNT;
   const finished = cleared >= total;
   // WHAT IS STILL IN THE WAY, if anything. A locked card is dimmed, refuses
   // the click, and says the requirement in place of the clear count — a map
@@ -184,9 +186,7 @@ function MapCard({
         {lock ? (
           <span className="text-[11px] font-bold uppercase tracking-widest text-[#71717C]">
             Clear{" "}
-            <span style={{ color: difficultyColor(lock.tier) }}>
-              {difficultyName(lock.tier)}
-            </span>{" "}
+            <span style={{ color: rungColor(lock.tier) }}>{rungLabel(lock.tier)}</span>{" "}
             on {lockedBy?.name ?? "the first map"}
           </span>
         ) : (
@@ -253,8 +253,8 @@ function LoadingScreen({
             Loading
           </h2>
           <p className="text-[13px] uppercase tracking-widest text-[#71717C]">
-            <span className="font-bold" style={{ color: difficultyColor(level.tier ?? 0) }}>
-              {difficultyName(level.tier ?? 0)}
+            <span className="font-bold" style={{ color: rungColor(level.tier ?? 0) }}>
+              {rungLabel(level.tier ?? 0)}
             </span>{" "}
             — {waves} waves — {enemies} enemies
           </p>
@@ -290,22 +290,23 @@ const levelSummary = (lv: LevelSpec): { waves: number; enemies: number } => {
 };
 
 /**
- * The campaign menu: one world, and the TIER of the ladder to play it at.
+ * The campaign menu: one world, and the RUNG of its ladder to play it at.
  *
- * The frontier — the highest tier not yet cleared — is the default and the
+ * The frontier — the highest rung not yet cleared — is the default and the
  * headline, because it is the hardest run available and the one whose clear
- * opens the next tier. Stepping down is farming: every tier
- * below the frontier still pays its drop bonus, which is what a player does
- * while they close the gap to the next one.
+ * opens the next. Stepping down is FARMING, and it is a real choice now
+ * rather than a punishment: a lower rung is quicker and pays less, and the
+ * whole gradient between them is LOOT_PER_RUNG. Nothing about a rung
+ * changes what you may bring to it.
  */
 /**
  * THE SPEC A RUN IS ACTUALLY PLAYED ON: the ladder's expansion of the
- * picked difficulty, plus whichever mutation rules the save has switched
+ * picked rung, plus whichever mutation rules the save has switched
  * on (mutation.ts).
  *
  * The two are joined HERE and not in specForTier, because they answer
  * different questions and the audit arithmetic only wants one of them: a
- * tier is what the campaign sends, a mutation is what the player asked
+ * rung is what the campaign sends, a mutation is what the player asked
  * the game to do about it. Everything ladder.ts counts stays true either
  * way — a mutation changes a wave after it spawns, never what spawns.
  */
@@ -325,7 +326,7 @@ function TierPicker({
   progress: Progress;
   /** which world's ladder is being picked from. Every world is on the menu
    * from the first run and each carries its own ladder, so this decides the
-   * whole panel: which tiers exist, which are cleared, which is the top */
+   * whole panel: which rungs exist, which are cleared, which is the top */
   world: LevelSpec;
   tier: number;
   onTier: (t: number) => void;
@@ -333,24 +334,21 @@ function TierPicker({
   onStart: () => void;
 }) {
   const top = topTier(progress, world.id);
-  // WHAT THIS DIFFICULTY WILL LET THROUGH. Owning a turret and being
-  // allowed to bring it are different things (techOf/bandForTier), and the
-  // difference is otherwise invisible: the build bar just quietly holds
-  // back everything above the band, which reads as a bug rather than a
-  // rule. So the difficulty says so before the run starts.
-  const band = bandForTier(tier);
-  const bandItem = ITEM_INFO[ITEM_KINDS[band]].name.toLowerCase();
-  const bandLocked = band < BAND_FOR_TIER[BAND_FOR_TIER.length - 1];
   const spec = specForTier(world, tier);
   const { waves } = levelSummary(spec);
   const step = (d: number): void => onTier(Math.min(top, Math.max(0, tier + d)));
-  // the salvage multiplier as the one number in the blurb — "30% more loot"
-  const lootPct = Math.round((tierDropBonus(tier) - 1) * 100);
-  // what a difficulty NEWLY drops: its top tier's currency. Tier 0's spread
-  // (copper through thorium) is the baseline, so it gets prose instead
-  const newDrop = ITEM_INFO[itemForTier(tier + 3)].name.toLowerCase();
-  // whether this difficulty's cut of the script fields a boss kind — read
-  // from the waves themselves, so the warning follows the boss if it moves
+  // THE SALVAGE MULTIPLIER AS A MULTIPLE, not a percentage. It compounds
+  // now (LOOT_PER_RUNG), so the top rung is "x28" and a percentage there
+  // would read as 2,733% — a number nobody can compare two of at a glance
+  const loot = tierDropBonus(tier);
+  // the currency this rung ADDS, on the two rungs that add one — plastanium
+  // and phase fabric arrive partway up the ladder, and every other rung
+  // simply pays a deeper share of what the rung below already paid
+  const newDrop = paysNewCurrency(tier)
+    ? ITEM_INFO[ITEM_KINDS[deepestDrop(tier)]].name.toLowerCase()
+    : null;
+  // whether this rung's cut of the script fields a boss kind — read from
+  // the waves themselves, so the warning follows the boss if it moves
   // the mutation rules switched on for the next run, as their definitions
   const mutations = activeMutations(progress)
     .map(mutationAt)
@@ -396,12 +394,19 @@ function TierPicker({
           −
         </button>
         <div className="text-center">
-          <div className="text-[11px] uppercase tracking-[0.3em] text-[#71717C]">Difficulty</div>
+          {/* the rung's NUMBER is the headline and the word above it is the
+              only label there is. There is nothing else to call a rung */}
+          <div className="text-[11px] uppercase tracking-[0.3em] text-[#71717C]">
+            Difficulty
+          </div>
           <div
             className="text-2xl font-bold uppercase leading-none tracking-[0.15em]"
-            style={{ color: difficultyColor(tier) }}
+            style={{ color: rungColor(tier) }}
           >
-            {difficultyName(tier)}
+            {rungLabel(tier)}
+          </div>
+          <div className="mt-0.5 text-[11px] uppercase tracking-[0.2em] text-[#4A4A55]">
+            of {RUNG_COUNT}
           </div>
         </div>
         <button
@@ -414,24 +419,11 @@ function TierPicker({
         </button>
       </div>
 
-      {/* THE DIFFICULTY'S OWN GATE, stated plainly — and stated as the
-          permanent thing it is, because a player who has cleared the game
-          will still meet it here and must not read it as something they
-          have failed to unlock yet */}
-      {bandLocked && (
-        <div className="mt-3 border-t border-[#2E2E36] pt-3 text-[13px] leading-snug text-[#A6A6AF]">
-          <span style={{ color: difficultyColor(tier) }} className="font-bold">
-            {difficultyName(tier)}
-          </span>{" "}
-          always allows turrets up to{" "}
-          <span className="font-bold text-[#FFD37F]">{bandItem}</span>, however
-          far your tech tree goes. Harder difficulties allow more.
-        </div>
-      )}
-
-      {/* the wave count and one sentence of what the tier means — the full
+      {/* the wave count and one sentence of what the rung means — the full
           numbers (enemy level, hp multiple, exact salvage) live in the run
-          itself and the editor, not on the menu */}
+          itself and the editor, not on the menu. NOTHING HERE TALKS ABOUT
+          WHAT THE RUNG WILL ADMIT any more, because a rung admits
+          everything the save owns */}
       <div className="mt-3 border-t border-[#2E2E36] pt-3 text-[13px] leading-snug">
         <span className="font-bold text-[#EDEDEF]">{waves} waves.</span>{" "}
         <span className="text-[#A6A6AF]">
@@ -439,8 +431,16 @@ function TierPicker({
             <>The swarm at base strength — every kill drops resources for the tech tree.</>
           ) : (
             <>
-              Enemies have more health and shields, but drop {newDrop} and{" "}
-              <span className="font-bold text-[#7BE58A]">{lootPct}% more loot</span>.
+              Enemies have more health and shields, but pay{" "}
+              <span className="font-bold text-[#7BE58A]">×{loot.toFixed(2)} loot</span>
+              {newDrop && (
+                <>
+                  {" "}
+                  and start dropping{" "}
+                  <span className="font-bold text-[#FFD37F]">{newDrop}</span>
+                </>
+              )}
+              .
               {hasBoss && (
                 <>
                   {" "}
@@ -638,16 +638,16 @@ export default function MechSwarm() {
   const lastTap = useRef(0);
   const [level, setLevel] = useState<LevelSpec | null>(null);
   /**
-   * The tier the menu is pointed at. It follows the frontier whenever the
+   * The rung the menu is pointed at. It follows the frontier whenever the
    * save advances — pushing is the default action and the frontier is the
-   * only tier that still pays its first-clear bonus — but the player can
-   * step it back down to farm a tier they already own.
+   * only rung that still pays its first-clear bonus — but the player can
+   * step it back down to farm a rung they already own.
    */
   const [tier, setTier] = useState(0);
   /**
-   * The world the menu is pointed at. "1" until the tech tree's world-2
-   * node is owned — the picker that changes it only renders then — and
-   * always resolved through worldById so a stale id degrades to world 1.
+   * The world the menu is pointed at. Every world is on the menu from the
+   * first run (WORLD_REQUIRES is the one exception), and it is always
+   * resolved through worldById so a stale id degrades to world 1.
    */
   const [worldId, setWorldId] = useState(WORLD.id);
   const world = worldById(worldId) ?? WORLD;
@@ -741,7 +741,7 @@ export default function MechSwarm() {
   useEffect(() => {
     const g = gameRef.current;
     if (!g) return;
-    const tech = techOf(loadProgress(), level?.tier ?? 0);
+    const tech = techOf(loadProgress());
     g.setTech(admin ? null : tech);
     // dropping out of sandbox drops a sandbox-only pace with it, or the run
     // keeps running at a speed whose button is no longer on screen. What the
@@ -754,11 +754,11 @@ export default function MechSwarm() {
   }, [admin, worldId, level?.tier]);
 
   /**
-   * THE PICKED TIER BELONGS TO A MAP, so switching maps has to re-clamp it.
-   * Each ladder is climbed separately: a save standing on Nemesis here is
-   * standing on Incursion next door, and leaving the number where it was
-   * would point the menu at a difficulty that map has not opened. It lands
-   * on the new map's own frontier, which is where a fresh pick belongs.
+   * THE PICKED RUNG BELONGS TO A WORLD, so switching worlds has to
+   * re-clamp it. Each ladder is climbed separately: a save standing on rung
+   * 8 here is standing on rung 1 next door, and leaving the number where it
+   * was would point the menu at a rung that world has not opened. It lands
+   * on the new world's own frontier, which is where a fresh pick belongs.
    */
   useEffect(() => {
     setTier(topTier(loadProgress(), worldId));
@@ -798,20 +798,20 @@ export default function MechSwarm() {
           return;
         }
         const save = loadProgress();
-        g.setTech(admin ? null : techOf(save, level.tier ?? 0));
+        g.setTech(admin ? null : techOf(save));
         // the device's own preference, read from the save rather than
         // from state: this runs once at create, and a run started right
         // after a toggle must not come up with last render's value
         g.setEffects(save.effects ?? true);
         // the pace carries across runs and across sessions — a player who
         // plays at 4x wants 4x again after a loss, not 1x and a click
-        g.setSpeed(startingSpeed(save, admin ? SPEEDS : techOf(save, level.tier ?? 0).speeds));
-        // stand this difficulty's board back up before the first wave —
-        // either the one that ended the last run on it, or, the first time
-        // it is played, the board that won the difficulty below. Tech is
-        // applied first because placeTower checks capacity, so restoring
-        // ahead of it would silently drop everything past the default caps
-        const saved = layoutFor(save, g.mapId(), level.tier ?? 0);
+        g.setSpeed(startingSpeed(save, admin ? SPEEDS : techOf(save).speeds));
+        // stand this WORLD's board back up before the first wave — one
+        // board a world now, whatever rung it was last built on, because
+        // every turret on it is legal at every rung. Tech is applied first
+        // because placeTower checks capacity, so restoring ahead of it
+        // would silently drop everything past the default caps
+        const saved = layoutFor(save, level.id);
         if (saved && saved.length > 0) g.applyLayout(saved);
         game = g;
         gameRef.current = g;
@@ -820,17 +820,20 @@ export default function MechSwarm() {
           const w = window as unknown as Record<string, unknown>;
           w.__mechswarm = g;
           // the ladder's number guide, next to the running game.
-          // `__ladder.audit()` is one row a difficulty, `.waves()` one row a
+          // `__ladder.audit()` is one row a rung, `.waves()` one row a
           // wave, and `.spec(n)` is what to hand `sim.loadLevel` to watch a
-          // difficulty actually play out
+          // rung actually play out
           w.__ladder = {
             spec: (n: number) => specForTier(WORLD, n),
             budget: (n: number) => budget(WORLD, n),
-            // the number guide: audit() is one row a difficulty, waves() is
-            // one row a wave with its share of the difficulty it belongs to
+            // the number guide: audit() is one row a rung, waves() is one
+            // row a wave with its share of the rung it belongs to
             audit: () => audit(WORLD),
             waves: () => waveGuide(WORLD),
             check: () => check(WORLD),
+            // the three compounding curves as one printable table — the
+            // thing to read after touching LOOT_PER_RUNG or a wave cut
+            grind: () => console.log(grindTable(WORLD)),
             wave: (i: number, tier = 0) => waveCost(WORLD.script[i], tierLevel(tier)),
           };
         }
@@ -863,12 +866,13 @@ export default function MechSwarm() {
         // the layout is saved on the RUN ENDING rather than on every
         // placement: mid-run it is still changing, and a run abandoned from
         // the pause menu should leave the last finished layout alone. It is
-        // filed under the difficulty that was played — every difficulty
-        // keeps its own board
+        // filed under the WORLD, so climbing a rung walks into the board
+        // that won the one below it and farming a rung back down walks into
+        // the same board again
         const built = g.layout();
-        saveLayout(g.mapId(), level.tier ?? 0, built);
+        saveLayout(level.id, built);
         // level.id names the world the run was on — it keys the boss
-        // trophies, so world 2's boss is a fresh trophy even at a tier
+        // trophies, so world 2's boss is a fresh trophy even at a rung
         // world 1's boss already paid
         const reward = grantRunReward(
           level.tier ?? 0,
@@ -880,16 +884,12 @@ export default function MechSwarm() {
         setResult(reward);
         setProgress(after);
         // the picker follows the frontier ONLY when the frontier moved. A
-        // player farming tier 2 with a frontier of 7 has chosen that tier
+        // player farming rung 2 with a frontier of 7 has chosen that rung
         // and must not be yanked back up to 7 for clearing it again
-        if (reward.firstClear) {
-          setTier(topTier(after, reward.worldId));
-          // and the board that did it is pasted into the difficulty it just
-          // opened, so the next one is walked into with the answer to the
-          // last one standing rather than with bare rock. Only into an
-          // EMPTY slot — see seedLayout
-          seedLayout(g.mapId(), reward.tier + 1, built);
-        }
+        // (the board that won needs no handing forward any more: it is
+        // already filed under this world, and the next rung stands it back
+        // up as it is)
+        if (reward.firstClear) setTier(topTier(after, reward.worldId));
       }
     }, 100);
     return () => {
@@ -930,16 +930,16 @@ export default function MechSwarm() {
    * of being quietly refilled.
    *
    * WITH ONE OVERRIDE: A BAR WITH NOTHING ON IT IS NOT A CURATION, IT IS A
-   * BROKEN SCREEN. Difficulties allow different turrets (bandForTier) and
-   * the loadout is ONE list for the whole save, so a bar curated on Nemesis
-   * can be entirely illegal on Incursion — leaving a player holding fifty
-   * duos unable to place a single one until they go and find the slots
-   * panel. When the picks leave the bar EMPTY the save is treated as
+   * BROKEN SCREEN. It cannot happen from the rung any more — every turret
+   * the save owns is legal at every rung now that the per-difficulty roster
+   * ceiling is gone — but a curation naming only turrets a LOCKED save no
+   * longer stands up still can (switching the full unlock back off is the
+   * live case). When the picks leave the bar EMPTY the save is treated as
    * uncurated here and the slots auto-fill, exactly as on a fresh save.
    *
-   * ONLY the empty case. A curation that still offers something at this
-   * difficulty is honoured as it stands, short bar and all — those are
-   * turrets the player asked for, and a half-full bar is still usable.
+   * ONLY the empty case. A curation that still offers something is honoured
+   * as it stands, short bar and all — those are turrets the player asked
+   * for, and a half-full bar is still usable.
    */
   const barKinds = (): TowerKind[] => {
     if (!hud) return [];
@@ -1039,7 +1039,7 @@ export default function MechSwarm() {
     setProgress(loadProgress());
     // the tech screen is also where the mutation switches live, so the
     // restart this button promises has to pick up any that were flipped —
-    // the run's own world and difficulty are untouched
+    // the run's own world and rung are untouched
     setLevel((lv) => (lv ? { ...lv, mutation: activeMutations(loadProgress()) } : lv));
     setScreen("game");
   };
@@ -1051,12 +1051,12 @@ export default function MechSwarm() {
     setResult(null);
     // the run just banked its drops — a node bought mid-overlay would not apply
     // without this re-read (tech is per-run anyway, but keep it honest)
-    g.setTech(admin ? null : techOf(loadProgress(), level?.tier ?? 0));
+    g.setTech(admin ? null : techOf(loadProgress()));
     g.reset();
     // reset() clears the field, so the layout has to be stood back up here
     // too — Retry rebuilds the sim in place and never goes through the
     // create effect that restores it on a fresh mount
-    const saved = layoutFor(loadProgress(), g.mapId(), level?.tier ?? 0);
+    const saved = layoutFor(loadProgress(), level?.id ?? WORLD.id);
     if (saved && saved.length > 0) g.applyLayout(saved);
     setHud(g.ui());
   };
@@ -1211,7 +1211,7 @@ export default function MechSwarm() {
               </div>
               <button
                 onClick={() => {
-                  if (window.confirm("Wipe all progress - resources, tech, and cleared tiers?")) {
+                  if (window.confirm("Wipe all progress - resources, tech, and cleared rungs?")) {
                     resetProgress();
                     const p = loadProgress();
                     setProgress(p);
@@ -1550,13 +1550,13 @@ export default function MechSwarm() {
           <div className="ui-zoom absolute left-[calc(1rem+var(--safe-l))] top-[calc(1rem+var(--safe-t))] flex w-80 max-w-[calc(100vw-8rem-var(--safe-l)-var(--safe-r))] flex-col items-stretch gap-2">
             <div className="w-full rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
               {/* the wave counter is what a run is read off, so the line
-                  carries that and the difficulty and nothing else — the level
+                  carries that and the rung and nothing else — the level
                   name is on the card that launched it. Minimized, this line
                   IS the panel: not even the next-wave countdown survives */}
               <div className="flex items-start justify-between gap-2">
                 <div className="text-[13px] uppercase tracking-widest text-[#EDEDEF] break-words">
-                  <span className="font-bold" style={{ color: difficultyColor(hud.tier) }}>
-                    {difficultyName(hud.tier)}
+                  <span className="font-bold" style={{ color: rungColor(hud.tier) }}>
+                    {rungLabel(hud.tier)}
                   </span>{" "}
                   — Wave{" "}
                   <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span> / {hud.totalWaves}
@@ -1971,9 +1971,7 @@ export default function MechSwarm() {
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="ui-zoom w-80 max-w-[calc(100vw-2rem)] rounded border border-[#1F3A2E] bg-[#151518]/95 p-6 text-center">
               <div className="text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
-                <span style={{ color: difficultyColor(hud.tier) }}>
-                  {difficultyName(hud.tier)}
-                </span>{" "}
+                <span style={{ color: rungColor(hud.tier) }}>{rungLabel(hud.tier)}</span>{" "}
                 cleared
               </div>
               <div className="mt-4 space-y-1.5 text-base text-[#EDEDEF]">
@@ -1995,22 +1993,22 @@ export default function MechSwarm() {
                         <CostRow cost={result.earned} />
                       )}
                     </div>
-                    {/* the ladder is finite, so the last first-clear has
-                        nothing to unlock — it finishes that map. What
-                        counts as "last" is THIS MAP'S top (topTier on the
-                        world just played), so a clear never announces a
-                        difficulty this map's menu will not show */}
+                    {/* the ladder runs out at RUNG_COUNT, so the last
+                        first-clear has nothing above it to announce. What
+                        counts as "last" is THIS WORLD'S top (topTier on the
+                        world just played), so a clear never announces a rung
+                        this world's menu will not show */}
                     {result.firstClear && (
                       <div className="pt-1 text-[12px] uppercase tracking-widest text-[#FFD37F]">
                         {progress && topTier(progress, result.worldId) > result.tier ? (
                           <>
-                            <span style={{ color: difficultyColor(result.tier + 1) }}>
-                              {difficultyName(result.tier + 1)}
+                            <span style={{ color: rungColor(result.tier + 1) }}>
+                              {rungLabel(result.tier + 1)}
                             </span>{" "}
                             unlocked
                           </>
                         ) : (
-                          "Campaign complete — every wave cleared"
+                          "Top of the ladder — every wave cleared"
                         )}
                       </div>
                     )}

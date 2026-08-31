@@ -489,7 +489,7 @@ export const UV_OMURA = uv(T5, 2304, 384, 384);
 export const UV_NAVANAX = uv(T5 + 384, 2304, 384, 384);
 
 /**
- * The Incursion and Onslaught turret tops, on the free band at y=2816. Each cell
+ * The early and mid turret tops, on the free band at y=2816. Each cell
  * hugs its art exactly, like every other turret top: the renderer maps the
  * whole cell onto a size*CELL quad, so a sprite parked inside a larger cell
  * would draw small. Mindustry block art is 32px a tile, so arc (size 1) is
@@ -530,7 +530,7 @@ export const UV_WAVE = uv(832, 2816, 128, 128);
 export const UV_TSUNAMI = uv(992, 2816, 96, 96);
 
 /**
- * The Nemesis and Eradication turret tops, on the free right half of the
+ * The late turret tops, on the free right half of the
  * atlas. Same rule as every other top — the cell hugs the art exactly,
  * because the renderer maps the whole cell onto a size*CELL quad.
  *
@@ -1893,7 +1893,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // scorch top: 32px source upscaled 2x, filling its 64px cell like duo's
   drawFacingRight(c, antialiased(outlined(img.scorch, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 320, 1088, 64);
 
-  // the Incursion and Onslaught turret tops (see the UV note): arc, lancer and
+  // the early and mid turret tops (see the UV note): arc, lancer and
   // parallax upscale 2x like duo's, ripple stays native like fuse's
   drawFacingRight(c, antialiased(outlined(img.arc, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 32, 2848, 64);
   drawFacingRight(c, antialiased(outlined(img.lancer, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 192, 2880, 128);
@@ -1909,7 +1909,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   drawFacingRight(c, antialiased(liquidTurret(img.wave, img.waveLiquid, img.waveTop)), 896, 2880, 128);
   drawFacingRight(c, antialiased(liquidTurret(img.tsunami, img.tsunamiLiquid, img.tsunamiTop)), 1040, 2864, 96);
 
-  // the Nemesis and Eradication tops (see the UV note): swarmer upscales
+  // the late tops (see the UV note): swarmer upscales
   // 2x like lancer's, and cyclone and the three size-4 heads stay native
   drawFacingRight(c, antialiased(outlined(img.swarmer, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1216, 2880, 128);
   drawFacingRight(c, antialiased(outlined(img.cyclonePreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1360, 2864, 96);

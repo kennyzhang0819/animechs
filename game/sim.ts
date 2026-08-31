@@ -1716,11 +1716,11 @@ export class Sim {
       if ((!fly && wallField.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly, span))
         continue;
       const i = this.n++;
-      // LEVEL SCALING: health rides the level curve, and the difficulty
-      // adds a flat armour bonus and a shield multiplier below (both from
-      // DIFFICULTIES, both piecewise per difficulty rather than per level).
-      // Speed, hitbox and drop stay exactly where UNIT_STATS put them
-      // however high the tier climbs
+      // LEVEL SCALING: health rides the level curve, and the rung adds a
+      // flat armour bonus and a shield multiplier below (both from RUNGS,
+      // both piecewise per rung rather than per level). Speed, hitbox and
+      // drop stay exactly where UNIT_STATS put them however high the rung
+      // climbs
       const hp = unitHpAtLevel(kind, this.level.enemyLevel ?? 0);
       this.upx[i] = x;
       this.upy[i] = y;
@@ -1737,16 +1737,16 @@ export class Sim {
         this.ugx[i] = g.x;
         this.ugy[i] = g.y;
       }
-      // ...plus the difficulty's flat armour bonus for tier 1-3 units
-      // (DIFFICULTIES.lowTierArmorBonus — the heavies never take it): baked
+      // ...plus the rung's flat armour bonus for tier 1-3 units
+      // (RUNGS.lowTierArmorBonus — the heavies never take it): baked
       // into uarmor here so every armour read downstream — the lancer's x4
       // included — sees it
       this.uarmor[i] = stats.armor + armorBonusAtLevel(this.level.enemyLevel ?? 0, stats.tier);
       // ForceFieldAbility.created: a carrier walks in with the bubble
       // already full, so the first tower to see one meets a whole pool of
       // shield rather than a field still charging up. The pool is scaled by
-      // the difficulty's shieldScale — shields track the player's firepower,
-      // not the hp curve (see DIFFICULTIES) — and every other read of a
+      // the rung's shieldScale — shields track the player's firepower, not
+      // the hp curve (see RUNGS) — and every other read of a
       // shield spec's max/amount/regen (updateAbilities) carries the same
       // factor, or the spawn bonus could never refill
       this.ushield[i] = stats.forceField
@@ -1831,7 +1831,7 @@ export class Sim {
     if (!HAS_ABILITIES) return;
     const { upx, upy, uhp, uhpmax, urad, ushield, ushieldAlpha, uability, ukind } = this;
     const { uforceScale, uforceDown } = this;
-    // the difficulty's shield multiplier (see DIFFICULTIES.shieldScale):
+    // the rung's shield multiplier (see RUNGS.shieldScale):
     // pool, cap and regen all carry it, so a scaled field breaks later,
     // refills proportionally faster, and is still dark for exactly
     // `cooldown` seconds when it pops

@@ -936,11 +936,6 @@ export class Game {
     };
   }
 
-  /** which map this run is played on — what a saved layout is keyed by */
-  mapId(): string {
-    return this.sim.level.map ?? OFFICIAL_MAP_IDS[0];
-  }
-
   /** what is standing right now, in save shape */
   layout(): TowerPlacement[] {
     return this.sim.towers.map((t) => ({ kind: t.kind, gx: t.gx, gy: t.gy }));

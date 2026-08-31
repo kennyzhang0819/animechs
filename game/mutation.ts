@@ -112,7 +112,7 @@ export function cleanMutations(
 // its own kind drops. Twenty meals therefore cost the player twenty bodies'
 // worth of salvage and hand back one body's worth, on top of a unit
 // carrying forty-one times the health it spawned with. The bargain is meant
-// to sting: it is what a difficulty a player OPTED INTO should feel like.
+// to sting: it is what a rule a player OPTED INTO should feel like.
 
 /** share of spawns that walk in hungry — one in twenty */
 export const HUNGRY_CHANCE = 0.05;

@@ -5,12 +5,14 @@ import { saveBalanceDoc, type BalanceDoc } from "@/game/balance";
 import { TOWERS } from "@/game/constants";
 import { costEntries, ITEM_INFO, type ItemKind } from "@/game/items";
 import {
-  allDifficultyOverrides,
-  authoredDifficultyKnobs,
-  DIFFICULTIES,
-  difficultyKnobsOf,
-  setDifficultyKnob,
-  type DifficultyKnobs,
+  allRungOverrides,
+  authoredRungKnobs,
+  RUNGS,
+  rungColor,
+  rungKnobsOf,
+  rungLabel,
+  setRungKnob,
+  type RungKnobs,
   HP_PER_LEVEL,
 } from "@/game/ladder";
 import {
@@ -157,8 +159,8 @@ export default function BalanceView() {
   }, [sel]);
 
   const setDifficulty = useCallback(
-    (tier: number, knob: keyof DifficultyKnobs, v: number | undefined) => {
-      setDifficultyKnob(tier, knob, v);
+    (tier: number, knob: keyof RungKnobs, v: number | undefined) => {
+      setRungKnob(tier, knob, v);
       setStatus(null);
       bump((n) => n + 1);
     },
@@ -167,7 +169,7 @@ export default function BalanceView() {
 
   const save = useCallback(async () => {
     const doc: BalanceDoc = { ...allOverrides() };
-    const diffs = allDifficultyOverrides();
+    const diffs = allRungOverrides();
     if (Object.keys(diffs).length > 0) doc.difficulties = diffs;
     setStatus((await saveBalanceDoc(doc)) ? "Saved" : "Save failed");
   }, []);
@@ -237,24 +239,25 @@ export default function BalanceView() {
 
       {/* enemy-side dials, saved into the same document under `difficulties` */}
       <div className="mb-4 rounded-lg border border-[#2E2E36] p-4">
-        <div className="mb-1 text-[15px] font-bold text-[#EDEDEF]">Difficulty scaling</div>
+        <div className="mb-1 text-[15px] font-bold text-[#EDEDEF]">Ladder scaling</div>
         <p className="mb-3 max-w-3xl text-[12.5px] leading-relaxed text-[#71717C]">
-          Enemy-side dials, applied at spawn. <span className="text-[#A6A6AF]">Shield ×</span>{" "}
+          Enemy-side dials, applied at spawn — one card a rung of the ten-rung ladder
+          (RUNGS in ladder.ts). <span className="text-[#A6A6AF]">Shield ×</span>{" "}
           multiplies every shield ability&apos;s pool, cap and regen (quasar bubbles, pulsar and
           scepter fields). <span className="text-[#A6A6AF]">Swarm armour +</span> is added flat to
           every tier 1&ndash;3 body — the heavies keep their own plating; the shave is floored at
           10% of the hit, so small-calibre turrets feel it hardest, the lancer counts armour ×4,
           and burning ignores it entirely. Scatter fires 3-damage pellets — move it in ones.
         </p>
-        <div className="grid gap-4 md:grid-cols-3">
-          {DIFFICULTIES.map((d, tier) => {
-            const dk = difficultyKnobsOf(tier);
-            const da = authoredDifficultyKnobs(tier);
+        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
+          {RUNGS.map((_, tier) => {
+            const dk = rungKnobsOf(tier);
+            const da = authoredRungKnobs(tier);
             return (
-              <div key={d.name} className="rounded border border-[#2E2E36] px-3 py-1">
+              <div key={tier} className="rounded border border-[#2E2E36] px-3 py-1">
                 <div className="flex items-baseline justify-between pt-2">
-                  <span className="text-[14px] font-bold" style={{ color: d.color }}>
-                    {d.name}
+                  <span className="text-[14px] font-bold" style={{ color: rungColor(tier) }}>
+                    {rungLabel(tier)}
                   </span>
                   <span className={`text-[11px] text-[#71717C] ${NUM}`}>
                     ×{(HP_PER_LEVEL ** dk.level).toFixed(2)} hp
@@ -265,7 +268,7 @@ export default function BalanceView() {
                   hint="every unit's hp is ×1.06 per level; armour, speed and drops never move"
                   value={dk.level}
                   min={0}
-                  max={40}
+                  max={60}
                   step={1}
                   decimals={0}
                   bent={dk.level !== da.level}

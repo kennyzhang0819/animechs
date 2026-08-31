@@ -1,11 +1,13 @@
-import { applyDifficultyOverrides, type DifficultyKnobs } from "./ladder";
+import { applyRungOverrides, type RungKnobs } from "./ladder";
 import { applyOverrides } from "./tech";
 
 /**
  * The balance document: the price knobs (base, growth) per turret, plus
- * the per-difficulty dials (enemy level, shield scale, ground/air armour
- * bonus) under the reserved `difficulties` key — no turret is named that,
- * so the flat shape survives.
+ * the per-rung dials (enemy level, shield scale, swarm armour bonus) under
+ * the reserved `difficulties` key — no turret is named that, so the flat
+ * shape survives. Inside that section a rung is keyed by its 1-based
+ * ORDINAL, "1" through "10" (rungKey in ladder.ts); the key was the
+ * difficulty's name back when rungs had names.
  *
  * It exists so the dial can be turned WITHOUT a rebuild. The admin dashboard
  * writes it, the game reads it at startup, and a node missing from it simply
@@ -14,16 +16,16 @@ import { applyOverrides } from "./tech";
  * how that afternoon becomes a week.
  *
  * The document is an OVERRIDE LAYER, never the source of truth. Once a
- * coefficient is settled it belongs in the node in tech.ts — or the
- * difficulty's row in ladder.ts — where it is read alongside the reasoning
+ * coefficient is settled it belongs in the node in tech.ts — or the rung's
+ * row in ladder.ts — where it is read alongside the reasoning
  * for it; this file is the scratch pad in between.
  */
 export interface BalanceDoc {
   [node: string]:
     | Partial<import("./tech").Knobs>
-    | Record<string, Partial<DifficultyKnobs>>
+    | Record<string, Partial<RungKnobs>>
     | undefined;
-  difficulties?: Record<string, Partial<DifficultyKnobs>>;
+  difficulties?: Record<string, Partial<RungKnobs>>;
 }
 
 /** where the document lives, served straight out of public/ */
@@ -46,7 +48,7 @@ export async function loadBalanceDoc(): Promise<void> {
     if (!parsed || typeof parsed !== "object") return;
     const { difficulties, ...towers } = parsed as BalanceDoc;
     applyOverrides(towers as Record<string, Partial<import("./tech").Knobs>>);
-    applyDifficultyOverrides(
+    applyRungOverrides(
       difficulties && typeof difficulties === "object" ? difficulties : {},
     );
   } catch {

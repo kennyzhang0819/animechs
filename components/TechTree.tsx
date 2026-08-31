@@ -38,7 +38,7 @@ import {
 } from "@/game/upgrades";
 import type { TowerKind } from "@/game/types";
 import { MUTATIONS, type MutationDef } from "@/game/mutation";
-import { difficultyColor, difficultyName } from "@/game/ladder";
+import { rungColor, rungLabel } from "@/game/ladder";
 import { CostRow, Wallet } from "./Items";
 import { TOWER_ICONS } from "./towerIcons";
 
@@ -126,11 +126,9 @@ const SURGE_ICON = "/mindustry/sprites/items/item-surge-alloy.png";
  * that moves. Nothing else on the board moves.
  */
 const SURGE = "#F3E979";
-// a warning triangle with the bang punched out (even-odd fill) — the face
-// of A Final Threat, drawn in Eradication's own purple once it is owned
 
-/** utility nodes whose face is a block sprite rather than a glyph: world 2
- *  the projector node wears the block it is a reservation for */
+/** utility nodes whose face is a block sprite rather than a glyph: the
+ *  projector node wears the block it is a reservation for */
 const UTIL_ICONS: Partial<Record<TechKind, string>> = {
   "overdrive-projector": "/mindustry/sprites/blocks/defense/overdrive-projector.png",
   // the two one-shot duo nodes wear the item that IS them: a graphite round
@@ -1259,8 +1257,8 @@ export default function TechTree({
                     {status === "locked-tier" ? (
                       <div className="mt-2 text-[13px] font-bold uppercase tracking-widest text-[#FF8A8A]">
                         Clear{" "}
-                        <span style={{ color: difficultyColor(techNode(n.id).requiresTier ?? 0) }}>
-                          {difficultyName(techNode(n.id).requiresTier ?? 0)}
+                        <span style={{ color: rungColor(techNode(n.id).requiresTier ?? 0) }}>
+                          {rungLabel(techNode(n.id).requiresTier ?? 0)}
                         </span>{" "}
                         first
                       </div>

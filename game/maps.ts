@@ -238,8 +238,8 @@ const PAD_RGB = [0.878, 0.459, 0.498] as const;
  * Blue for water risks reading against the water floors themselves, which
  * is why it is a lighter, harder cyan-blue than any tile — a zone ring is
  * drawn as a stroke over the ground, so it only has to beat the ground it
- * sits on rather than stand alone. Boss keeps Eradication's purple: it is
- * not a movement layer and should not read as one.
+ * sits on rather than stand alone. Boss keeps the ladder's top-rung purple
+ * (rungColor): it is not a movement layer and should not read as one.
  */
 export const ZONE_STYLES: Readonly<Record<ZoneKind, ZoneStyle>> = {
   ground: {

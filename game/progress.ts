@@ -1,6 +1,6 @@
 import { UNIT_KINDS, UNIT_STATS, unitDrop, WORLD, WORLDS } from "./levels";
 import { OFFICIAL_MAP_IDS } from "./maps";
-import { OPENING_DUOS, tierDropBonus, TOP_TIER, WORLD_REQUIRES } from "./ladder";
+import { OPENING_DUOS, RUNG_COUNT, tierDropBonus, TOP_TIER, WORLD_REQUIRES } from "./ladder";
 import { MUTATION_MAX, cleanMutations } from "./mutation";
 import {
   addScaled,
@@ -21,14 +21,12 @@ import {
   isRefundable,
   isTowerNode,
   NODE_SPEED,
-  bandForTier,
   TECH_KINDS,
   techCap,
   techNode,
   techPrice,
   techState,
   isToggleable,
-  towerBand,
   type TechKind,
   type TechLevels,
   type TechState,
@@ -46,19 +44,24 @@ export interface Progress {
   /** one balance per currency; see items.ts for what drops which */
   bank: Bank;
   /**
-   * HOW FAR UP EACH MAP'S OWN LADDER THIS SAVE HAS CLIMBED, keyed by world
-   * id. On a map with value `c`, tiers 0..c-1 are beaten and tier `c` is
-   * that map's frontier — the highest it will let you attempt. `c` reaching
-   * TOP_TIER + 1 means that map is finished.
+   * HOW FAR UP EACH WORLD'S OWN LADDER THIS SAVE HAS CLIMBED, keyed by
+   * world id. On a world with value `c`, rungs 0..c-1 are beaten and rung
+   * `c` is that world's frontier — the highest it will let you attempt. `c`
+   * reaching RUNG_COUNT means that world's ladder, as authored today, is
+   * finished.
    *
-   * ONE NUMBER PER MAP, NOT ONE FOR THE SAVE. Clearing Onslaught somewhere
-   * says nothing about anywhere else: every map is on the menu from the
-   * first run and every map is climbed from the bottom. A map absent from
-   * this record has never been won on and reads 0.
+   * ONE NUMBER PER WORLD, NOT ONE FOR THE SAVE. Clearing rung 6 somewhere
+   * says nothing about anywhere else: every world is on the menu from the
+   * first run and every world is climbed from the bottom. A world absent
+   * from this record has never been won on and reads 0.
    *
-   * IT DOES NOT DECIDE WHAT A RUN MAY BRING. That is the difficulty's own
-   * fixed property (bandForTier in tech.ts) and no amount of progress
-   * moves it.
+   * IT IS AN UNBOUNDED INT, deliberately. The ladder stops at RUNG_COUNT
+   * because that is what is authored, not because this number could not
+   * hold more — a longer ladder is a table edit in ladder.ts and nothing
+   * here.
+   *
+   * IT DOES NOT DECIDE WHAT A RUN MAY BRING. Nothing does any more: a
+   * turret this save owns is placeable at every rung (see techState).
    */
   clearedByMap: Record<string, number>;
   /**
@@ -69,34 +72,35 @@ export interface Progress {
   tech: TechLevels;
   /**
    * Boss trophies already collected, as "<worldId>:<tier>:<kind>" keys.
-   * A boss's FIRST kill on each world+difficulty pays one surge alloy and
+   * A boss's FIRST kill on each world+rung pays one surge alloy and
    * writes its key here so the same boss can never pay twice (see
    * grantRunReward) — which makes the bank's surge column a counter of how
    * many distinct boss fights this save has won, not a farmable income.
    */
   bossKills?: string[];
   /**
-   * The last layout built on each map AND DIFFICULTY, keyed `map@tier` (see
-   * layoutKey) — so a lost run does not cost the player the twenty minutes
-   * of placing they already did.
+   * ONE SAVED BOARD PER WORLD, keyed by world id — so a lost run does not
+   * cost the player the twenty minutes of placing they already did.
    *
    * Safe to keep because PLACING IS FREE: a tower costs nothing but a point
    * of its node's capacity (see Sim.canPlace), and towers build on rock, so
    * a restored layout cannot seal a route or hand back value that was spent.
    * It is convenience, not progress.
    *
-   * ONE SLOT PER DIFFICULTY, NOT ONE PER MAP. A board that holds Incursion
-   * is not the board that holds Nemesis — same terrain, a different fight —
-   * and a player stepping back down to farm wants the board they farmed
-   * with, not whatever the last hard run left standing. What crosses
-   * between them is the CLEAR: beating a difficulty for the first time
-   * stamps the winning board into the difficulty it just opened, so the
-   * next one starts from the answer to the last one (see seedLayout).
+   * ONE SLOT, NOT ONE PER RUNG. It used to be keyed `map@tier`, a board a
+   * difficulty, because the four difficulties were four different fights
+   * and a rung's roster ceiling could make a board legal on one and illegal
+   * on another. Neither is true now: the rungs are a continuous climb of the
+   * same script, every turret is legal everywhere, and a player moving one
+   * rung up or down wants the board they were just playing with rather than
+   * whatever they left standing several rungs ago. Ten slots a world would
+   * have been ten stale boards to keep in step by hand.
    *
-   * Keyed by MAP rather than by level: the layout is a fact about terrain,
-   * and two levels on one map want the same emplacements. A key with no
-   * `@` is a PRE-SPLIT save's single per-map layout; splitLegacyLayouts
-   * copies it across on load and no key like that survives a save.
+   * Keyed by WORLD rather than by map or by level: terrain is a world's,
+   * two levels on one world want the same emplacements, and two worlds on
+   * one map still send different waves at it. Keys from older saves — a
+   * bare map id, or `map@tier` — are collapsed into world slots on load by
+   * migrateLayouts, and none of them survives a save.
    */
   layouts?: Record<string, TowerPlacement[]>;
   /**
@@ -272,11 +276,10 @@ const fresh = (): Progress => ({
  * a way to ship the game with its progression already finished.
  *
  * It grants NODES ONLY. The bank is untouched (nothing needs paying for —
- * the points are already in), and so is `cleared`, which is what gates the
- * difficulties: the ladder still opens by clearing the tier below it, and
- * Eradication additionally wants the "A Final Threat" node this grants. So
- * a fresh save with this on can field every turret at Incursion and climbs
- * the ladder normally.
+ * the points are already in), and so is `clearedByMap`, which is what gates
+ * the rungs: every rung still opens by clearing the one below it, and
+ * nothing in the tree can open one. So a fresh save with this on can field
+ * every turret on rung 1 and climbs the ladder normally.
  */
 const DEV_UNLOCK_ALL = true;
 
@@ -518,11 +521,11 @@ export function loadProgress(): Progress {
     const bossKills = readBossKills(p);
     const clearedByMap = readClearedByMap(p);
     const layouts = readLayouts(p);
-    // a pre-split save is rewritten here rather than re-split on every
+    // an older save is rewritten here rather than re-collapsed on every
     // load: loadProgress runs on a timer during a run, and a migration
     // that never settles would keep handing back boards the player has
     // since cleared away
-    const split = splitLegacyLayouts(layouts, clearedByMap);
+    const split = migrateLayouts(layouts);
     const loaded: Progress = {
       bank: readBank(p),
       clearedByMap,
@@ -564,10 +567,10 @@ function readBossKills(p: { bossKills?: unknown }): string[] {
 }
 
 /**
- * Layouts out of a raw save, keys included: a `map@tier` slot and a
- * pre-split bare `map` key both pass through untouched, because the key is
- * only ever used to look one up (layoutFor) and an unrecognised one simply
- * matches nothing.
+ * Layouts out of a raw save, keys included: a world slot and either of the
+ * two older map-shaped keys all pass through untouched, because the key is
+ * only ever used to look one up (layoutFor) or to migrate it, and an
+ * unrecognised one simply matches nothing.
  *
  * Every field is re-validated rather than trusted:
  * these are cell coordinates that will be replayed into placeTower, and a
@@ -668,130 +671,72 @@ export function saveLoadout(kinds: readonly TowerKind[]): void {
 }
 
 /**
- * How far up a map's ladder this save has climbed, found from a MAP id
- * rather than a world id — the two are different names for the same thing
- * from opposite sides, and layouts are filed by map while progress is
- * filed by world. Several worlds could name one map; the furthest of them
- * is the answer, since the map has demonstrably been beaten that far.
+ * COLLAPSE AN OLDER SAVE'S LAYOUTS INTO ONE BOARD PER WORLD.
+ *
+ * Two shapes came before this one, and both were filed by MAP: a bare
+ * `map` key (one board a map, the oldest), then `map@tier` (one board a
+ * map and difficulty). Neither key means anything now — a board is a
+ * world's — so both are read out, matched to the worlds that play that
+ * map, and written back under the world id.
+ *
+ * THE DEEPEST BOARD WINS. A `map@tier` save has up to four boards for one
+ * map and only one slot to put them in, and the right one is the board
+ * from the HIGHEST difficulty it kept: that is the fight the player last
+ * solved, and every turret on it is legal at every rung now, so nothing has
+ * to be filtered out of it on the way across. A bare key loses to any
+ * `map@tier` board, being older than all of them.
+ *
+ * TWO WORLDS ON ONE MAP BOTH INHERIT IT, which is right — they have the
+ * same terrain and the board was legal on it.
+ *
+ * Every old key is dropped once it has been read, and a world slot that
+ * already exists is never touched, so this runs exactly once per save.
  */
-function clearedOnMap(clearedByMap: Record<string, number>, mapId: string): number {
-  let best = 0;
-  for (const w of WORLDS)
-    if ((w.map ?? OFFICIAL_MAP_IDS[0]) === mapId)
-      best = Math.max(best, Math.floor(clearedByMap[w.id] ?? 0));
-  return best;
-}
-
-/**
- * SPLIT A PRE-SPLIT SAVE'S LAYOUTS, one per map, into one per difficulty.
- *
- * Layouts used to be filed one to a map with no difficulty attached. Such
- * a save has, in effect, already built that board on every difficulty it
- * ever played, so it gets it back on every difficulty it has UNLOCKED —
- * anything up to the map's frontier. Difficulties past the frontier are
- * left empty on purpose: they have never been seen, and the first clear
- * below them is what hands a board up (see seedLayout).
- *
- * ILLEGAL TURRETS ARE DROPPED ON THE WAY THROUGH, DIFFICULTY BY
- * DIFFICULTY. What a run may bring is fixed by the difficulty
- * (bandForTier) and these boards were built before that rule existed, so
- * one board can easily be legal on Nemesis and illegal on Incursion.
- * Each copy is therefore filtered against the tier it lands on — the same
- * board arrives thinner the further down it goes. Copying unfiltered would
- * stand up turrets that difficulty would never let the player place by
- * hand.
- *
- * A slot that already exists is never touched, and the bare key is dropped
- * once it has been split, so this runs exactly once per save.
- */
-function splitLegacyLayouts(
-  layouts: Record<string, TowerPlacement[]>,
-  clearedByMap: Record<string, number>,
-): boolean {
+function migrateLayouts(layouts: Record<string, TowerPlacement[]>): boolean {
+  // the best board per map id: the highest tier slot seen, bare key last
+  const byMap = new Map<string, { rank: number; board: TowerPlacement[] }>();
   let changed = false;
   for (const key of Object.keys(layouts)) {
-    if (key.includes("@")) continue;
+    // a world id is never a map id, so a key already migrated is left alone
+    if (WORLDS.some((w) => w.id === key)) continue;
+    const at = key.indexOf("@");
+    const mapId = at < 0 ? key : key.slice(0, at);
+    // a bare key ranks BELOW every tier slot — it is older than all of them
+    const parsed = at < 0 ? -1 : Number(key.slice(at + 1));
+    const rank = Number.isFinite(parsed) ? parsed : -1;
     const board = layouts[key];
     delete layouts[key];
     changed = true;
-    const cleared = clearedOnMap(clearedByMap, key);
-    // 0..frontier inclusive: the frontier is unlocked — it is the tier the
-    // map is offering to play next — and everything under it is beaten
-    for (let tier = 0; tier <= Math.min(TOP_TIER, cleared); tier++) {
-      const slot = layoutKey(key, tier);
-      if (layouts[slot]) continue;
-      const band = bandForTier(tier);
-      const legal = board.filter((t) => towerBand(t.kind) <= band);
-      if (legal.length > 0) layouts[slot] = legal.map((t) => ({ ...t }));
-    }
+    const best = byMap.get(mapId);
+    if (board.length > 0 && (!best || rank > best.rank)) byMap.set(mapId, { rank, board });
   }
-  return changed;
+  if (!changed) return false;
+  for (const w of WORLDS) {
+    if (layouts[w.id]) continue;
+    const best = byMap.get(w.map ?? OFFICIAL_MAP_IDS[0]);
+    if (best) layouts[w.id] = best.board.map((t) => ({ ...t }));
+  }
+  return true;
 }
 
-/** which slot a board is filed in: one map, one difficulty */
-const layoutKey = (mapId: string, tier: number): string =>
-  `${mapId}@${Math.min(TOP_TIER, Math.max(0, Math.floor(tier)))}`;
-
 /**
- * The blueprint to stand up when a run on this map and difficulty begins.
+ * The blueprint to stand up when a run on this world begins — the board
+ * that ended the last run on it, whatever rung that was.
  *
- * Nothing to fall back to: a save that predates the split had its one
- * per-map board copied into every difficulty it had unlocked when it
- * loaded (see splitLegacyLayouts), so by the time anything reads one the
- * slots are already filled.
+ * Nothing to fall back to: an older save's boards were collapsed into
+ * world slots when it loaded (see migrateLayouts), so by the time anything
+ * reads one the slot is already filled or was always empty.
  */
-export const layoutFor = (
-  p: Progress,
-  mapId: string,
-  tier: number,
-): TowerPlacement[] | undefined => p.layouts?.[layoutKey(mapId, tier)];
+export const layoutFor = (p: Progress, worldId: string): TowerPlacement[] | undefined =>
+  p.layouts?.[worldId];
 
-/** remember what was standing on a map and difficulty when the run ended */
-export function saveLayout(
-  mapId: string,
-  tier: number,
-  towers: readonly TowerPlacement[],
-): void {
+/** remember what was standing on a world when the run ended */
+export function saveLayout(worldId: string, towers: readonly TowerPlacement[]): void {
   const p = loadProgress();
   const layouts = { ...(p.layouts ?? {}) };
-  const key = layoutKey(mapId, tier);
-  if (towers.length > 0) layouts[key] = towers.map((t) => ({ ...t }));
-  else delete layouts[key];
+  if (towers.length > 0) layouts[worldId] = towers.map((t) => ({ ...t }));
+  else delete layouts[worldId];
   saveProgress({ ...p, layouts });
-}
-
-/**
- * Hand a winning board forward: file it as the opening blueprint for a
- * difficulty, but ONLY IF THAT DIFFICULTY HAS NONE. Called on a first
- * clear, against the tier the clear just opened.
- *
- * The empty-slot rule is what keeps it from being a wrecking ball. A
- * player who has already played the tier above has a board there they
- * built on purpose, and a later replay of the tier below must not
- * overwrite it — the paste is a leg up for a difficulty being seen for the
- * first time, not a sync between them.
- *
- * The bare pre-split key is deliberately NOT consulted: it stands in for
- * "no board here yet", and a newly opened difficulty should get the board
- * that actually won rather than keep inheriting the legacy one.
- *
- * Nothing is filtered on the way up. The board is only ever handed to a
- * HARDER difficulty, and the band only widens as the ladder climbs
- * (bandForTier), so every turret that was legal where it won is legal
- * where it lands. The split migration, which pushes boards DOWNWARD into
- * easier difficulties, is the one that has to filter.
- */
-export function seedLayout(
-  mapId: string,
-  tier: number,
-  towers: readonly TowerPlacement[],
-): boolean {
-  if (towers.length === 0) return false;
-  const p = loadProgress();
-  const key = layoutKey(mapId, tier);
-  if (p.layouts?.[key]) return false;
-  saveProgress({ ...p, layouts: { ...(p.layouts ?? {}), [key]: towers.map((t) => ({ ...t })) } });
-  return true;
 }
 
 /** remember the pace just picked, for the next run and the next session */
@@ -872,18 +817,17 @@ export function resetProgress(): void {
 }
 
 /**
- * The save's tech AS ONE DIFFICULTY WILL HONOUR IT. Two gates stack here
- * and they answer different questions: `p.tech` is what this save OWNS,
- * bought once and owned everywhere, and the tier's band is what this
- * difficulty will let through its door, which is a constant of the
- * difficulty and never moves. A save with every turret still plays an
- * Incursion holding duos — the first time and the hundredth.
+ * THE SAVE'S TECH, AND THAT IS THE WHOLE ANSWER. `p.tech` is what this save
+ * owns, bought once and owned everywhere; owning a turret is now the only
+ * question worth asking about whether it may be placed.
  *
- * Pass no tier and there is no difficulty gate — the editor and sandbox,
- * where owning a turret is the only question worth asking.
+ * It used to take a tier as well, and narrow the roster to what that
+ * difficulty would admit (bandForTier, deleted — see techState in tech.ts).
+ * A save with every turret in the tree now brings every turret in the tree,
+ * to rung 1 and to rung 10 alike.
  */
-export function techOf(p: Progress, tier?: number): TechState {
-  return techState(p.tech, tier == null ? undefined : bandForTier(tier), techOffSet(p));
+export function techOf(p: Progress): TechState {
+  return techState(p.tech, techOffSet(p));
 }
 
 /** the nodes this save has switched off, as the set techState wants */
@@ -909,47 +853,46 @@ export function saveTechOn(node: TechKind, on: boolean): Progress {
   return next;
 }
 
-/** how many tiers this save has cleared on one map */
+/** how many rungs this save has cleared on one world */
 export const clearedOn = (p: Progress, worldId: string): number =>
   Math.max(0, Math.floor(p.clearedByMap[worldId] ?? 0));
 
 /**
- * The highest tier that can be attempted: every cleared one, plus the
- * frontier. A player may replay any tier below it to farm — a cleared tier
- * pays exactly what it always did — but only the frontier moves the
- * campaign forward.
+ * The highest rung that can be attempted on a world: every cleared one,
+ * plus the frontier. A player may replay any rung below it to farm — a
+ * cleared rung pays exactly what it always did — but only the frontier
+ * moves the ladder forward.
  *
- * ERADICATION IS HIDDEN BEHIND THE TREE, not behind clearing: the table's
- * top tier only exists for a save that owns the "A Final Threat" node.
- * Without it the ladder tops out one below, at Nemesis, exactly as the
- * visible campaign always has. This is the one difficulty gated by tech —
- * everything under it still unlocks purely by clearing the tier below.
+ * NOTHING IS HIDDEN BEHIND TECH. Every rung opens by clearing the rung
+ * below it and by nothing else; the old top difficulty, which needed a tech
+ * node to appear at all, went with the names.
  */
 export const topTier = (p: Progress, worldId: string): number =>
   Math.min(TOP_TIER, clearedOn(p, worldId));
 
 /**
- * The best any map has done, for the things that are still about the SAVE
- * rather than about a map — a tech node with a `requiresTier` gate is a
+ * The best any world has done, for the things that are still about the SAVE
+ * rather than about a world — a tech node with a `requiresTier` gate is a
  * purchase, and a purchase is owned campaign-wide, so it asks whether this
- * save has ever cleared that tier anywhere.
+ * save has ever cleared that rung anywhere.
  */
 export const bestTierCleared = (p: Progress): number =>
   Object.values(p.clearedByMap).reduce((a, b) => Math.max(a, Math.floor(b)), 0);
 
 /**
- * Has the whole campaign been beaten? `cleared` runs one past the top tier
- * on the final win, which is the only state that means "there is nothing
- * above this".
+ * Has this world's whole ladder been beaten? `cleared` runs one past the
+ * top rung on the final win, which is the only state that means "there is
+ * nothing above this" — until the ladder grows, which is what makes this a
+ * question about RUNG_COUNT rather than a permanent fact about the save.
  */
 export const isCampaignComplete = (p: Progress, worldId: string): boolean =>
-  clearedOn(p, worldId) > TOP_TIER;
+  clearedOn(p, worldId) >= RUNG_COUNT;
 
-/** has this tier been beaten? (the frontier itself has not) */
+/** has this rung been beaten? (the frontier itself has not) */
 export const isTierCleared = (p: Progress, worldId: string, tier: number): boolean =>
   tier < clearedOn(p, worldId);
 
-/** may this tier be played at all? */
+/** may this rung be played at all? */
 export const isTierUnlocked = (p: Progress, worldId: string, tier: number): boolean =>
   tier >= 0 && tier <= topTier(p, worldId);
 
@@ -1206,11 +1149,11 @@ function scaleCost(cost: Cost, mul: number): Cost {
 export interface RunReward {
   /** everything the run banked, by currency, after every multiplier */
   earned: Cost;
-  /** the tier that was played */
+  /** the rung that was played, 0-based */
   tier: number;
-  /** drop multiplier the tier itself carries */
+  /** drop multiplier the rung itself carries — LOOT_PER_RUNG ^ tier */
   dropBonus: number;
-  /** did this clear push THIS MAP'S frontier up a tier? */
+  /** did this clear push THIS WORLD'S frontier up a rung? */
   firstClear: boolean;
   /** the world it was played on — its ladder is the one that moved */
   worldId: string;
@@ -1221,8 +1164,8 @@ export interface RunReward {
  *
  * Kills are the only income, so a defeat still banks everything the towers
  * killed on the way down — in whatever currencies those kills happened to
- * drop — multiplied by the tier's own drop bonus. Clearing the frontier
- * tier for the first time moves it up one.
+ * drop — multiplied by the rung's own drop bonus. Clearing the frontier
+ * rung for the first time moves it up one.
  *
  * Only call this on a run that reached its own end (won or lost):
  * abandoning mid-level is worth nothing, which is why the UI settles from
@@ -1240,17 +1183,23 @@ export function grantRunReward(
   const p = loadProgress();
   const n = Math.min(TOP_TIER, Math.max(0, Math.floor(tier)));
   const firstClear = won && n >= clearedOn(p, worldId);
-  // a tier pays the same whether or not it is new: what clearing the
-  // frontier buys is the NEXT tier — more waves, more enemies, more kinds of
-  // them — and that is the whole reason to push rather than farm
+  // a rung pays the same whether or not it is new, and EVERY rung pays more
+  // than the one below it — the bonus compounds all the way to the top (see
+  // LOOT_PER_RUNG). That gradient is the only reason to push rather than
+  // farm now that no rung holds any turret back
   const dropBonus = tierDropBonus(n);
   const earned = scaleCost(dropsForKills(killsByKind), dropBonus);
-  // THE BOSS TROPHY: a boss kind's FIRST kill on each (world, difficulty)
-  // pays exactly one surge alloy, on win or loss alike — the trophy is for
+  // THE BOSS TROPHY: a boss kind's FIRST kill on each (world, rung) pays
+  // exactly one surge alloy, on win or loss alike — the trophy is for
   // killing the boss, and a run can fell it and still leak elsewhere. The
   // key written here is what stops it ever paying again, so the bank's
   // surge column counts distinct boss fights won, not runs farmed. No
-  // multiplier touches it: tier bonuses scale drops, and this is not a drop.
+  // multiplier touches it: rung bonuses scale drops, and this is not a drop.
+  //
+  // TEN RUNGS MEANS TEN TROPHIES A WORLD rather than four, because a boss
+  // fought at rung 10 is not the boss fought at rung 6. That is the surge
+  // supply widening with the ladder it is keyed to, which is what keeps the
+  // ultimates (ULTIMATE_SURGE in tech.ts) priced against progress.
   const bossKills = p.bossKills ?? [];
   for (let i = 0; i < UNIT_KINDS.length; i++) {
     const kind = UNIT_KINDS[i];
@@ -1262,8 +1211,8 @@ export function grantRunReward(
   }
   p.bossKills = bossKills;
   credit(p.bank, earned);
-  // the frontier only ever moves forward, and only by one: clearing tier 5
-  // when tier 5 was the frontier opens tier 6, and replaying tier 2 later
+  // the frontier only ever moves forward, and only by one: clearing rung 5
+  // when rung 5 was the frontier opens rung 6, and replaying rung 2 later
   // does nothing
   if (firstClear) p.clearedByMap[worldId] = n + 1;
   saveProgress(p);

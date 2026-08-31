@@ -21,7 +21,7 @@
  *
  * SURGE ALLOY IS NOT A TIER. It sits after the tier ladder because no unit
  * tier maps to it (TIER_ITEM stops at phase fabric): the only way one ever
- * drops is a boss's FIRST kill on a (world, difficulty) it has not been
+ * drops is a boss's FIRST kill on a (world, rung) it has not been
  * beaten on before — see grantRunReward in progress.ts. Unspent, the bank's
  * surge column is therefore a counter of how many boss fights this save has
  * actually won, which is what makes it the honest gate for content that

@@ -11,7 +11,7 @@ applied to that script on load.
 `LevelDoc` — `{ id: "blueprint", waveGap, script }` — of raw per-kind counts,
 edited in the admin level editor (**Edit level** on any map card in `/admin`)
 or by hand in the JSON. Difficulties are prefixes of it (waves 1–20 / 1–35 /
-1–50, see `DIFFICULTIES` in `game/ladder.ts`), so one document carries the
+1–50, see `RUNGS` in `game/ladder.ts`), so one document carries the
 entire game.
 
 There are no per-world documents any more. The dev save API
@@ -63,7 +63,7 @@ opened it. The left rail holds the world's **editable rule list** — toggle
 FROM families, add TO targets with weights, set the pool multiplier — and a
 rule list that cannot mean one thing (a family claimed twice, a boss rule)
 is flagged in place and refuses to save. The **ramp, payouts (with each
-difficulty's total enemies and health) and totals are priced on the derived
+rung's total enemies and health) and totals are priced on the derived
 script** — what that world actually sends. The wave cards open on the
 derived, read-only **as played** view; **Show blueprint** flips them to the
 editable raw counts.
