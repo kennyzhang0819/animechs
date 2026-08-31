@@ -197,9 +197,9 @@ function AdminInner() {
             <h1 className="text-xl font-bold text-[#EDEDEF]">Admin</h1>
             <p className="text-[#71717C]">
               Debug tool. Ctrl+Shift+M toggles this page. Map edits write public/maps/&lt;id&gt;.json
-              and ARE the official map; level edits write public/levels/&lt;id&gt;.json and override
-              the shipped script; balance edits write public/balance.json and override the
-              authored tuning coefficients.
+              and ARE the official map; level edits write public/levels/blueprint.json — the one
+              wave script every world plays, re-cast per world by its transforms; balance edits
+              write public/balance.json and override the authored tuning coefficients.
             </p>
           </div>
           <button

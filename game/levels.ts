@@ -930,21 +930,21 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
  * a unit's position in a row is its tier.
  */
 export const UNIT_TREES = [
-  { name: "Ground", kinds: ["dagger", "mace", "fortress", "scepter", "reign"] },
-  { name: "Support", kinds: ["nova", "pulsar", "quasar", "vela", "corvus"] },
-  { name: "Crawler", kinds: ["crawler", "atrax", "spiroct", "arkyid", "toxopid"] },
-  { name: "Air", kinds: ["flare", "horizon", "zenith", "antumbra", "eclipse"] },
+  { key: "ground", name: "Ground", kinds: ["dagger", "mace", "fortress", "scepter", "reign"] },
+  { key: "support", name: "Support", kinds: ["nova", "pulsar", "quasar", "vela", "corvus"] },
+  { key: "crawler", name: "Crawler", kinds: ["crawler", "atrax", "spiroct", "arkyid", "toxopid"] },
+  { key: "air", name: "Air", kinds: ["flare", "horizon", "zenith", "antumbra", "eclipse"] },
   // the two water trees. They are upgrade paths like the four above, and
   // they are also the only rows whose units need a MAP to field them: a
   // wave asking for rissos on a map with no water sends nothing at all
   // (Sim.spawnPads returns an empty pad list), exactly as an air wave
   // would on a map with no air zone
-  { name: "Naval", kinds: ["risso", "minke", "bryde", "sei", "omura"] },
-  { name: "Naval support", kinds: ["retusa", "oxynoe", "cyerce", "aegires", "navanax"] },
+  { key: "naval", name: "Naval", kinds: ["risso", "minke", "bryde", "sei", "omura"] },
+  { key: "navalSupport", name: "Naval support", kinds: ["retusa", "oxynoe", "cyerce", "aegires", "navanax"] },
   // not an upgrade path: the boss row holds the kinds that arrive as an
   // event rather than a stream, so its slots do not read as tiers
-  { name: "Boss", kinds: ["disrupt"] },
-] as const satisfies readonly { name: string; kinds: readonly UnitKind[] }[];
+  { key: "boss", name: "Boss", kinds: ["disrupt"] },
+] as const satisfies readonly { key: string; name: string; kinds: readonly UnitKind[] }[];
 
 /**
  * Every unit kind sits in exactly one tree. Adding a kind to UNIT_KINDS
@@ -954,6 +954,188 @@ export const UNIT_TREES = [
 type UntreedKind = Exclude<UnitKind, (typeof UNIT_TREES)[number]["kinds"][number]>;
 const _everyKindHasATree: UntreedKind extends never ? true : never = true;
 void _everyKindHasATree;
+
+// ---------- wave transforms ----------
+
+/**
+ * A FAMILY is one row of UNIT_TREES, addressed by its key. Transforms speak
+ * in families rather than kinds because a world's identity is a re-casting
+ * of whole lines — "the crawlers arrive as ships here" — and the TIER is the
+ * part that must survive the move: a slot-2 crawler (atrax) becomes the
+ * slot-2 ship (minke), never a random hull.
+ */
+export type FamilyKey = (typeof UNIT_TREES)[number]["key"];
+
+/** a family's kinds in tier order, and its display name, by key */
+const TREE_OF = (() => {
+  const out = {} as Record<FamilyKey, readonly UnitKind[]>;
+  for (const t of UNIT_TREES) out[t.key] = t.kinds;
+  return out;
+})();
+const FAMILY_NAME = (() => {
+  const out = {} as Record<FamilyKey, string>;
+  for (const t of UNIT_TREES) out[t.key] = t.name;
+  return out;
+})();
+/** the family a kind belongs to — total, per _everyKindHasATree above */
+const FAMILY_OF = (() => {
+  const out = {} as Record<UnitKind, FamilyKey>;
+  for (const t of UNIT_TREES) for (const k of t.kinds) out[k] = t.key;
+  return out;
+})();
+
+/** one destination of a transform rule; weight defaults to 1 */
+export interface TransformTarget {
+  family: FamilyKey;
+  /**
+   * this target's share of the rule's pool, against the sum of all the
+   * rule's weights. Two targets with no weights is an even split; weights
+   * of 2 and 1 send two thirds and one third.
+   */
+  weight?: number;
+}
+
+/**
+ * ONE RE-CASTING RULE: pull every unit of the `from` families out of a wave,
+ * multiply the pooled count, and deal it out across the `to` families at the
+ * SAME TIER. `{ from: ["crawler"], to: [{ family: "naval" }] }` turns every
+ * crawler-line unit into its naval equivalent; two targets split the pool by
+ * weight; `multiply: 2` sends twice the bodies it consumed.
+ *
+ * ALL RULES READ THE ORIGINAL WAVE. A rule never sees another rule's output,
+ * so order does not matter and a chain cannot double-transform: "support →
+ * air" and "air → naval" in the same list means the authored support arrives
+ * as air and the authored air as ships — the converted support does NOT sail.
+ * The price of that clarity is that each family may appear in at most one
+ * rule's `from` (validated at module load); a family no rule consumes passes
+ * through untouched, and a rule's target may be one of its own sources
+ * ("support → half support, half naval support" is exactly that).
+ *
+ * Counts stay integers by largest-remainder rounding per wave, per rule, per
+ * tier: the dealt shares always sum to round(pool × multiply), so a split
+ * never invents or swallows a body beyond the rounding of the pool itself.
+ *
+ * The boss family is not transformable — a boss is an event, not a volume
+ * (see unitDrop), and its single-kind row has no tiers to match.
+ */
+export interface WaveTransform {
+  from: readonly FamilyKey[];
+  to: readonly TransformTarget[];
+  /** scales the pooled count before it is dealt out; default 1 */
+  multiply?: number;
+}
+
+/**
+ * Refuse a transform list that cannot mean one thing. Thrown, not logged:
+ * transforms are code constants on WORLDS, so this runs once at module load
+ * (below WORLDS) and a bad list fails the build or the first dev page load —
+ * the same posture as _everyKindHasATree, one layer past what types reach.
+ */
+function validateWaveTransforms(transforms: readonly WaveTransform[], where: string): void {
+  const claimed = new Set<FamilyKey>();
+  for (const t of transforms) {
+    if (t.from.length === 0 || t.to.length === 0)
+      throw new Error(`${where}: a wave transform needs at least one source and one target`);
+    for (const f of t.from) {
+      if (f === "boss") throw new Error(`${where}: the boss family cannot be transformed`);
+      if (claimed.has(f))
+        throw new Error(`${where}: family "${f}" is consumed by two transform rules`);
+      claimed.add(f);
+    }
+    for (const tgt of t.to) {
+      if (tgt.family === "boss")
+        throw new Error(`${where}: the boss family cannot be a transform target`);
+      if (!((tgt.weight ?? 1) > 0))
+        throw new Error(`${where}: transform weights must be positive`);
+    }
+    if (t.multiply !== undefined && !(t.multiply > 0))
+      throw new Error(`${where}: a transform multiplier must be positive`);
+  }
+}
+
+/**
+ * Deal `total` (possibly fractional, after a multiplier) into integer shares
+ * proportional to `weights`, summing exactly to round(total). Largest
+ * remainder, ties to the earlier target, so the result is deterministic and
+ * a 3-support even split is always 2/1 rather than a coin flip per load.
+ */
+function splitByWeight(total: number, weights: readonly number[]): number[] {
+  const grand = Math.round(total);
+  const sum = weights.reduce((a, b) => a + b, 0);
+  const exact = weights.map((w) => (grand * w) / sum);
+  const shares = exact.map(Math.floor);
+  let left = grand - shares.reduce((a, b) => a + b, 0);
+  const order = exact
+    .map((v, i) => [v - shares[i], i] as const)
+    .sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+  for (let j = 0; left > 0; j++, left--) shares[order[j][1]]++;
+  return shares;
+}
+
+/**
+ * Run a blueprint script through a world's transform rules — the whole
+ * derivation of a world's waves from the shared blueprint (see WORLDS and
+ * applyBlueprint). No rules returns the script as-is; region groups keep
+ * their region and are re-cast group by group.
+ */
+export function applyWaveTransforms(
+  script: readonly LevelStep[],
+  transforms: readonly WaveTransform[],
+): LevelStep[] {
+  if (transforms.length === 0) return [...script];
+  const claimed = new Set<FamilyKey>();
+  for (const t of transforms) for (const f of t.from) claimed.add(f);
+
+  const recast = <G extends WaveUnits | RegionWave>(g: G): G => {
+    const out: Partial<Record<UnitKind, number>> = {};
+    // unclaimed families pass through exactly as authored
+    for (const k of UNIT_KINDS) {
+      const n = g[k] ?? 0;
+      if (n > 0 && !claimed.has(FAMILY_OF[k])) out[k] = (out[k] ?? 0) + n;
+    }
+    // each rule pools its sources tier by tier and deals the pool out
+    for (const t of transforms) {
+      const slots = Math.max(...t.from.map((f) => TREE_OF[f].length));
+      for (let slot = 0; slot < slots; slot++) {
+        let pool = 0;
+        for (const f of t.from) {
+          const kind = TREE_OF[f][slot];
+          if (kind) pool += g[kind] ?? 0;
+        }
+        if (pool <= 0) continue;
+        const shares = splitByWeight(pool * (t.multiply ?? 1), t.to.map((x) => x.weight ?? 1));
+        t.to.forEach((tgt, i) => {
+          if (shares[i] <= 0) return;
+          const kinds = TREE_OF[tgt.family];
+          const kind = kinds[Math.min(slot, kinds.length - 1)];
+          out[kind] = (out[kind] ?? 0) + shares[i];
+        });
+      }
+    }
+    return ("region" in g ? { ...out, region: (g as RegionWave).region } : out) as G;
+  };
+
+  return script.map((step) => ({
+    wave: Array.isArray(step.wave)
+      ? step.wave.map(recast)
+      : recast(step.wave as WaveUnits),
+  }));
+}
+
+/** one rule as a phrase — "Crawler → Naval", "Support → 1 Support : 1 Naval
+ * support", "Crawler + Support → Air ×2" — for the editor's rule list */
+export function transformLabel(t: WaveTransform): string {
+  const from = t.from.map((f) => FAMILY_NAME[f]).join(" + ");
+  const to = t.to
+    .map((x) =>
+      t.to.length > 1 || (x.weight ?? 1) !== 1
+        ? `${x.weight ?? 1} ${FAMILY_NAME[x.family]}`
+        : FAMILY_NAME[x.family],
+    )
+    .join(" : ");
+  const mult = t.multiply !== undefined && t.multiply !== 1 ? ` ×${t.multiply}` : "";
+  return `${from} → ${to}${mult}`;
+}
 
 /**
  * What one kill of this kind pays out: exactly ONE of its tier's item. The
@@ -1082,6 +1264,20 @@ export interface LevelSpec {
    */
   badge?: MapBadge;
   /**
+   * HOW THIS WORLD RE-CASTS THE SHARED BLUEPRINT — the Bloons model. Every
+   * world plays the SAME waves (public/levels/blueprint.json, the only
+   * script that exists); what tells one world's campaign from another is
+   * this list of family re-castings, applied by applyBlueprint() when the
+   * blueprint loads or is saved. Unset means the blueprint verbatim.
+   *
+   * These live in code, not in the document, for the same reason name and
+   * map do: a transform is the world's IDENTITY — "the second front is the
+   * naval one" — while the blueprint is its difficulty. The level editor
+   * edits the raw blueprint counts and previews any world's derived script;
+   * it never edits these.
+   */
+  transforms?: readonly WaveTransform[];
+  /**
    * seconds held between waves, and before the first one. The clock starts
    * when the previous wave has finished ENTERING the field — the last unit
    * spawning, not the last unit dying — so a level whose waves outlive the
@@ -1159,13 +1355,26 @@ export interface LevelDoc {
   script: LevelStep[];
 }
 
-/** the document form of a level, for saving and for round-trip comparison */
-export function levelDoc(spec: LevelSpec): LevelDoc {
-  return {
-    id: spec.id,
-    waveGap: spec.waveGap,
-    script: spec.script,
-  };
+/**
+ * THE BLUEPRINT'S ID — the one name a level document can have now. The
+ * campaign follows the Bloons model: one 50-wave script for every world,
+ * public/levels/blueprint.json, and a world's own waves are DERIVED from it
+ * through its transforms (see LevelSpec.transforms). There is no per-world
+ * document any more; there is the blueprint, and there are re-castings.
+ */
+export const BLUEPRINT_ID = "blueprint";
+
+/**
+ * The blueprint as last loaded or saved — the raw counts the level editor
+ * edits. Starts empty for the same reason WORLDS ships empty scripts: the
+ * document is the only copy, and an empty buffer is a visible failure where
+ * a stale second copy would be a silent different campaign.
+ */
+let blueprint: LevelDoc = { id: BLUEPRINT_ID, waveGap: 15, script: [] };
+
+/** the current blueprint document — what the level editor opens and audits */
+export function blueprintDoc(): LevelDoc {
+  return blueprint;
 }
 
 /**
@@ -1220,10 +1429,14 @@ export const WORLDS: LevelSpec[] = [
     waveGap: 15,
     // ================= HOW TO AUTHOR A WAVE ========================
     //
-    // THE SCRIPT IS public/levels/1.json. There is no copy in this file to
-    // keep in step with it — see the note above `script` at the bottom of
-    // this block. Everything below documents HOW to author a wave; WHAT the
-    // waves are lives in the document, and the admin level editor writes it.
+    // THE SCRIPT IS public/levels/blueprint.json — the ONE script every
+    // world plays (see the note above `transforms` on LevelSpec). There is
+    // no copy in this file to keep in step with it — see the note above
+    // `script` at the bottom of this block. Everything below documents HOW
+    // to author a wave; WHAT the waves are lives in the document, and the
+    // admin level editor writes it. World 1 plays the blueprint verbatim —
+    // no transforms — so authoring guidance written in its families reads
+    // literally here and re-cast elsewhere.
     //
     // INCURSION (waves 1-20) IS PLAYTESTED AND FIXED. Do not restructure it.
     //
@@ -1309,36 +1522,43 @@ export const WORLDS: LevelSpec[] = [
     // outruns the drop zones they simply queue (Sim.runScript). Size against
     // TARGET_DROP_RATIO and the health step, which are the limits that bind.
     // ==============================================================
-    // THE SCRIPT LIVES IN public/levels/1.json AND NOWHERE ELSE. It is
-    // deliberately empty here: a second copy in code is a second campaign,
-    // and the two had already diverged across all 52 waves (the code copy
-    // ran about half the bodies) before this was emptied. Whatever fails to
-    // load is visible as a level with no waves, which is the point — a
-    // silent fall back to a different, staler campaign is the bug this
-    // removes. loadLevelDocs() warns on the console when a world has no
-    // document. Edit the waves in the admin level editor, or the JSON.
+    // THE SCRIPT LIVES IN public/levels/blueprint.json AND NOWHERE ELSE.
+    // It is deliberately empty here: a second copy in code is a second
+    // campaign, and the two had already diverged across all 52 waves (the
+    // code copy ran about half the bodies) before this was emptied.
+    // Whatever fails to load is visible as a level with no waves, which is
+    // the point — a silent fall back to a different, staler campaign is
+    // the bug this removes. loadLevelDocs() warns on the console when the
+    // blueprint is missing. Edit the waves in the admin level editor, or
+    // the JSON.
     script: [],
   },
   {
     // WORLD 2 — the SECOND FRONT, unlocked by the tech tree's "world-2"
     // node (the campaign menu hides it until that node is owned).
     //
-    // ITS MAP IS ITS OWN AND ITS WAVES ARE STILL WORLD 1'S. Tidewater is
-    // authored terrain — a river, a bay and three crossings, laid out at
-    // world 1's twenty-cell lane width — and it is where the second front
-    // actually differs: the same swarm, re-solved against water that
-    // blocks in one place, is walkable in another, and takes the whole
-    // southern shoulder of the final causeway out of the player's reach.
-    // public/levels/2.json is still a copy of 1.json; authoring the
-    // script is the remaining half of this world, and needs nothing here.
+    // ITS MAP IS ITS OWN AND ITS WAVES ARE THE BLUEPRINT'S, RE-CAST. It
+    // plays the same fifty waves as every world; the transforms below are
+    // what make it the naval front. Tidewater is authored terrain — a
+    // river, a bay and three crossings — so the crawler line arrives as
+    // ships out of the water the map is made of, and the support line
+    // splits its bodies evenly between the shore and the bay.
     id: "2",
     name: "Maelstrom",
     map: "tidewater",
     badge: "advanced",
+    transforms: [
+      { from: ["crawler"], to: [{ family: "naval" }] },
+      { from: ["support"], to: [{ family: "support" }, { family: "navalSupport" }] },
+    ],
     waveGap: 15,
     script: [],
   },
 ];
+
+// a bad transform list is a programming error, caught the first time any
+// build or dev page loads this module — see validateWaveTransforms
+for (const w of WORLDS) validateWaveTransforms(w.transforms ?? [], `world "${w.id}"`);
 
 /**
  * The campaign's FIRST world — the default everywhere a single spec is
@@ -1360,22 +1580,22 @@ export function worldById(id: string): LevelSpec | null {
 // ---------- level documents ----------
 
 /**
- * Saved level documents live in public/maps' sibling, public/levels/<id>.json,
- * and are FETCHED rather than imported — same reasoning as the map documents
+ * The blueprint lives in public/maps' sibling, public/levels/blueprint.json,
+ * and is FETCHED rather than imported — same reasoning as the map documents
  * (see maps.ts): an imported JSON turns every editor save into a Turbopack
  * HMR update its runtime cannot hot-apply.
  *
- * Unlike maps, though, a level always exists in code first. WORLDS above is
- * the shipped campaign; a document, when one has been saved, REPLACES that
- * world's waveGap and script wholesale. So the source of truth for an
- * edited level is its JSON, and for an untouched one it is the array above —
- * never a merge of the two.
+ * ONE DOCUMENT, EVERY WORLD. The blueprint's raw counts are the campaign's
+ * only script; applyBlueprint() derives each world's waveGap and script from
+ * it through the world's transforms. So the source of truth for the WAVES is
+ * the JSON, and for a world's IDENTITY (name, map, transforms) it is WORLDS
+ * above — never a merge of the two.
  *
  * The overlay is applied IN PLACE, which is the whole reason this is safe to
  * call late: WORLDS is never empty, never re-ordered, and never a different
  * array object. Everything that reads it synchronously at module load —
  * Sim's `WORLDS[0]` default, WORLD, progress.ts sizing the opening loadout —
- * keeps working whether or not documents have loaded yet.
+ * keeps working whether or not the document has loaded yet.
  *
  * The free opening loadout does NOT follow this script. It is a fixed
  * design constant (OPENING_DUOS in ladder.ts) because it is the difficulty
@@ -1469,41 +1689,52 @@ function commonest(values: readonly number[]): number {
   return [...seen].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
 }
 
-/** overlay one document onto its world in place; unknown ids are ignored */
-export function applyLevelDoc(doc: LevelDoc): void {
-  const world = WORLDS.find((w) => w.id === doc.id);
-  if (!world) return;
-  world.waveGap = doc.waveGap;
-  world.script = doc.script;
+/**
+ * Overlay the blueprint onto EVERY world in place: each takes the
+ * blueprint's waveGap and its script run through the world's own transforms.
+ * This is the one place a world's waves are ever derived, so a save and a
+ * load land on identical scripts by construction.
+ */
+export function applyBlueprint(doc: LevelDoc): void {
+  blueprint = doc;
+  for (const world of WORLDS) {
+    world.waveGap = doc.waveGap;
+    world.script = applyWaveTransforms(doc.script, world.transforms ?? []);
+  }
 }
 
 /**
- * Pull every saved level document over the shipped campaign. Safe to call
- * more than once and safe to call late; a level with no document keeps
- * exactly what WORLDS declares.
+ * Pull the saved blueprint over the shipped campaign. Safe to call more
+ * than once and safe to call late; with no document every world keeps its
+ * empty script and the console says so.
+ *
+ * An index listing "1" but no blueprint is a checkout from before the
+ * blueprint model, when each world had its own document; world 1's doc IS
+ * the old blueprint (world 2's was a verbatim copy of it), so it loads
+ * under the new name rather than stranding an edited campaign.
  */
 export async function loadLevelDocs(): Promise<void> {
   const ids = await fetchLevelIndex();
-  const edited = ids.filter((id) => WORLDS.some((w) => w.id === id));
-  const docs = await Promise.all(edited.map(fetchLevelDoc));
-  for (const doc of docs) if (doc) applyLevelDoc(doc);
-  // A world whose document did not arrive has no waves at all, because the
-  // script lives only in the document now. That is a loud failure by design
-  // — the alternative was a stale second script in code, silently playing a
-  // different campaign — but it still deserves a line in the console rather
-  // than leaving someone to wonder why nothing spawns.
-  for (const w of WORLDS)
-    if (w.script.length === 0)
-      console.error(
-        `level "${w.id}" has no waves: public/levels/${w.id}.json failed to load or is missing from public/levels/index.json`,
-      );
+  const id = ids.includes(BLUEPRINT_ID) ? BLUEPRINT_ID : ids.includes("1") ? "1" : null;
+  const doc = id ? await fetchLevelDoc(id) : null;
+  if (doc) applyBlueprint({ ...doc, id: BLUEPRINT_ID });
+  // No blueprint means no waves anywhere, because the script lives only in
+  // the document. That is a loud failure by design — the alternative was a
+  // stale second script in code, silently playing a different campaign —
+  // but it still deserves a line in the console rather than leaving someone
+  // to wonder why nothing spawns.
+  if (!doc || blueprint.script.length === 0)
+    console.error(
+      `the campaign has no waves: public/levels/${BLUEPRINT_ID}.json failed to load or is missing from public/levels/index.json`,
+    );
 }
 
 /**
- * Write a level document back to public/levels/<id>.json through the
- * dev-only API, and overlay it immediately so the running tab reflects the
- * save without a reload. false means the write failed and nothing changed
- * on disk — the editor keeps its dirty flag.
+ * Write the blueprint back to public/levels/blueprint.json through the
+ * dev-only API, and overlay it immediately — every world's derived script
+ * included — so the running tab reflects the save without a reload. false
+ * means the write failed and nothing changed on disk — the editor keeps
+ * its dirty flag.
  */
 export async function saveLevel(doc: LevelDoc): Promise<SaveResult> {
   let res: Response;
@@ -1518,6 +1749,6 @@ export async function saveLevel(doc: LevelDoc): Promise<SaveResult> {
     return { ok: false, error: `could not reach the dev server (${why})` };
   }
   if (!res.ok) return { ok: false, error: await explain(res) };
-  applyLevelDoc(doc);
+  applyBlueprint(doc);
   return { ok: true };
 }

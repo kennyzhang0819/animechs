@@ -727,9 +727,9 @@ export class Game {
     // the stale copy in memory — but that is true of ONE map, not all of them
     // The level SCRIPT is re-read here too, for the same reason. Both
     // editors return through a client-side route, so an edited wave script
-    // is as capable of being stale as an edited map — and applyLevelDoc
-    // overlays onto the WORLDS entry in place, which is the object this
-    // spec already points at, so the sim built below picks it up
+    // is as capable of being stale as an edited map — and applyBlueprint
+    // derives every WORLDS entry's script in place, including the object
+    // this spec already points at, so the sim built below picks it up
     await begin("map");
     const mapId = spec.map ?? OFFICIAL_MAP_IDS[0];
     await Promise.all([

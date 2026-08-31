@@ -5,8 +5,11 @@ import {
   UNIT_KINDS,
   UNIT_STATS,
   UNIT_TREES,
-  levelDoc,
+  applyWaveTransforms,
+  blueprintDoc,
+  BLUEPRINT_ID,
   saveLevel,
+  transformLabel,
   waveGroups,
   WAVE_RELEASE_SECONDS,
   type LevelSpec,
@@ -325,6 +328,7 @@ function NumberInput({
   width = "w-20",
   min = 0,
   blankZero,
+  disabled,
   label,
 }: {
   value: number;
@@ -334,12 +338,14 @@ function NumberInput({
   /** show 0 as an empty field — a grid of every unit kind is mostly zeros,
    * and a wall of them reads as data rather than as blank slots */
   blankZero?: boolean;
+  disabled?: boolean;
   label?: string;
 }) {
   return (
     <input
       type="number"
       min={min}
+      disabled={disabled}
       aria-label={label}
       placeholder={blankZero ? "0" : undefined}
       value={blankZero && value === 0 ? "" : value}
@@ -361,20 +367,41 @@ export default function LevelEditorView({
   level: LevelSpec;
   onClose: () => void;
 }) {
-  const [steps, setSteps] = useState<EditStep[]>(() => toEditSteps(level.script));
-  const [waveGap, setWaveGap] = useState(level.waveGap);
+  // THE BUFFER IS THE BLUEPRINT — the one script every world plays, raw
+  // counts. Whichever world opened the editor, the counts being edited are
+  // the shared ones; the world contributes its map, its transforms, and the
+  // lens the audit below prices through.
+  const [steps, setSteps] = useState<EditStep[]>(() => toEditSteps(blueprintDoc().script));
+  const [waveGap, setWaveGap] = useState(blueprintDoc().waveGap);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   // why the last save was refused — null when the last attempt succeeded
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // reloading a different level through the same mounted component has to
-  // reset the buffer, or the new level opens showing the old one's script
+  // reset the buffer — the blueprint is shared, but an unsaved edit must
+  // not ride silently into another world's view
   useEffect(() => {
-    setSteps(toEditSteps(level.script));
-    setWaveGap(level.waveGap);
+    setSteps(toEditSteps(blueprintDoc().script));
+    setWaveGap(blueprintDoc().waveGap);
     setDirty(false);
   }, [level]);
+
+  const transforms = level.transforms ?? [];
+
+  // what THIS WORLD actually sends: the live buffer run through the world's
+  // transforms. Identical to the buffer when the world has none (world 1).
+  const playedScript = useMemo(
+    () => applyWaveTransforms(toScript(steps), transforms),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- transforms is level's, stable per level
+    [steps, level],
+  );
+  const playedSteps = useMemo(() => toEditSteps(playedScript), [playedScript]);
+
+  // view the derived script in the wave cards instead of the raw blueprint;
+  // read-only, because derived counts are not a thing anyone can edit
+  const [asPlayed, setAsPlayed] = useState(false);
+  const preview = asPlayed && transforms.length > 0;
 
   const mapId = level.map ?? OFFICIAL_MAP_IDS[0];
 
@@ -401,7 +428,7 @@ export default function LevelEditorView({
     setSaving(true);
     setSaveError(null);
     const res = await saveLevel({
-      ...levelDoc(level),
+      id: BLUEPRINT_ID,
       waveGap,
       script: toScript(steps),
     });
@@ -432,10 +459,13 @@ export default function LevelEditorView({
    * that had not been touched since.
    */
   const report = useMemo(() => {
-    const spec = { ...level, waveGap, script: toScript(steps) };
+    // the audit prices what THIS WORLD PLAYS — the transformed script, not
+    // the raw blueprint — so a world whose rules double a family, or move
+    // it to a layer its map cannot open, reads its real numbers here
+    const spec = { ...level, waveGap, script: playedScript };
     // per-wave numbers are priced at the top tier — the run every wave is in
     return { rows: audit(spec), issues: check(spec), waves: waveGuide(spec, TOP_TIER) };
-  }, [level, waveGap, steps]);
+  }, [level, waveGap, playedScript]);
 
   const back = (): void => {
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
@@ -443,16 +473,17 @@ export default function LevelEditorView({
   };
 
   // whole-level rollup, recomputed from the live buffer so the header tracks
-  // edits rather than the level as it was opened
+  // edits rather than the level as it was opened — priced on the played
+  // script, so a multiplying transform shows in the totals it changes
   const summary = useMemo(() => {
-    const waves = steps.filter((s) => stepTotal(s) > 0).length;
-    const kills = killVector(steps);
+    const waves = playedSteps.filter((s) => stepTotal(s) > 0).length;
+    const kills = killVector(playedSteps);
     return {
       waves,
       enemies: kills.reduce((a, b) => a + b, 0),
       payout: dropsForKills(kills),
     };
-  }, [steps]);
+  }, [playedSteps]);
 
   return (
     <div className="h-screen overflow-hidden bg-[#0B0B0D] text-[#EDEDEF]">
@@ -464,11 +495,27 @@ export default function LevelEditorView({
               {dirty && <span className="ml-1 text-[#F0B457]">●</span>}
             </h1>
             <p className="text-[14px] text-[#71717C]">
-              World {level.id} · map <span className="text-[#A6A6AF]">{mapId}</span> · saves to
-              public/levels/{level.id}.json and overrides the shipped script
+              World {level.id} · map <span className="text-[#A6A6AF]">{mapId}</span> · edits the
+              shared blueprint (public/levels/{BLUEPRINT_ID}.json) — the one script every world
+              plays{transforms.length > 0 && ", re-cast here by the rules in the rail"}
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {/* worlds with transforms can flip the wave cards between the
+                editable blueprint and the derived script they actually send */}
+            {transforms.length > 0 && (
+              <button
+                onClick={() => setAsPlayed((v) => !v)}
+                aria-pressed={asPlayed}
+                className={`rounded border px-4 py-1.5 text-[14px] uppercase tracking-widest ${
+                  asPlayed
+                    ? "border-[#7FC4FF] bg-[#16222A] text-[#7FC4FF]"
+                    : "border-[#2E2E36] text-[#A6A6AF] hover:border-[#4A4A55]"
+                }`}
+              >
+                {asPlayed ? "As played" : "Blueprint"}
+              </button>
+            )}
             <button
               onClick={save}
               disabled={saving}
@@ -510,6 +557,29 @@ export default function LevelEditorView({
           <aside className="space-y-4 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <RampChart waves={report.waves} />
             <ZoneKey mapId={mapId} zones={mapZones} />
+
+            {/* THE WORLD'S RE-CASTING RULES — identity, so they live in code
+                (LevelSpec.transforms) and are shown, never edited, here. The
+                audit, ramp and totals all price the re-cast script; only the
+                wave cards can show the raw blueprint. */}
+            {transforms.length > 0 && (
+              <section className="rounded-lg border border-[#2E4A5B] bg-[#16222A]/70 p-3">
+                <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#7FC4FF]">
+                  Wave transforms
+                </h2>
+                <ul className="space-y-1 text-[13px] text-[#A6A6AF]">
+                  {transforms.map((t, i) => (
+                    <li key={i}>{transformLabel(t)}</li>
+                  ))}
+                </ul>
+                <p className="mt-2 border-t border-[#2E4A5B] pt-2 text-[12px] leading-snug text-[#71717C]">
+                  This world plays the shared blueprint through these rules,
+                  tier for tier. Edit the blueprint counts; the rules re-cast
+                  them on load. Rules are code — LevelSpec.transforms in
+                  levels.ts.
+                </p>
+              </section>
+            )}
 
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
               <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
@@ -596,8 +666,8 @@ export default function LevelEditorView({
           {/* ---- the script ---- */}
           <main className="min-h-0 overflow-y-auto pr-1">
             {showReport && <LadderReport rows={report.rows} issues={report.issues} />}
-            <InsertBar onInsert={() => edit((s) => [makeStep(), ...s])} />
-            {steps.map((step, i) => {
+            {!preview && <InsertBar onInsert={() => edit((s) => [makeStep(), ...s])} />}
+            {(preview ? playedSteps : steps).map((step, i, all) => {
               return (
                 <div key={step.uid}>
                   <StepCard
@@ -605,7 +675,8 @@ export default function LevelEditorView({
                     waveNo={i + 1}
                     guide={report.waves[i]}
                     index={i}
-                    last={i === steps.length - 1}
+                    last={i === all.length - 1}
+                    readOnly={preview}
                     onChange={(next) =>
                       edit((s) => s.map((cur) => (cur.uid === step.uid ? next : cur)))
                     }
@@ -621,16 +692,18 @@ export default function LevelEditorView({
                       })
                     }
                   />
-                  <InsertBar
-                    onInsert={() =>
-                      edit((s) => {
-                        const at = s.findIndex((cur) => cur.uid === step.uid);
-                        const next = [...s];
-                        next.splice(at + 1, 0, makeStep());
-                        return next;
-                      })
-                    }
-                  />
+                  {!preview && (
+                    <InsertBar
+                      onInsert={() =>
+                        edit((s) => {
+                          const at = s.findIndex((cur) => cur.uid === step.uid);
+                          const next = [...s];
+                          next.splice(at + 1, 0, makeStep());
+                          return next;
+                        })
+                      }
+                    />
+                  )}
                 </div>
               );
             })}
@@ -863,6 +936,7 @@ function StepCard({
   guide,
   index,
   last,
+  readOnly,
   onChange,
   onDelete,
   onMove,
@@ -873,11 +947,13 @@ function StepCard({
   guide?: WaveRow;
   index: number;
   last: boolean;
+  /** the "as played" preview: derived counts, so nothing here can be edited */
+  readOnly?: boolean;
   onChange: (next: EditStep) => void;
   onDelete: () => void;
   onMove: (dir: -1 | 1) => void;
 }) {
-  const controls = (
+  const controls = readOnly ? null : (
     <div className="flex items-center gap-1">
       <IconButton label="Move up" onClick={() => onMove(-1)} disabled={index === 0}>
         ↑
@@ -956,6 +1032,7 @@ function StepCard({
                 key={kind}
                 kind={kind}
                 value={step.counts[kind] ?? 0}
+                disabled={readOnly}
                 onChange={(n) => onChange({ ...step, counts: { ...step.counts, [kind]: n } })}
               />
             ))}
@@ -972,10 +1049,12 @@ function StepCard({
 function UnitSlot({
   kind,
   value,
+  disabled,
   onChange,
 }: {
   kind: UnitKind;
   value: number;
+  disabled?: boolean;
   onChange: (n: number) => void;
 }) {
   const on = value > 0;
@@ -987,9 +1066,10 @@ function UnitSlot({
     >
       <button
         onClick={() => onChange(on ? 0 : 10)}
-        title={`${kind} — T${UNIT_STATS[kind].tier}${on ? " — click to clear" : ""}`}
+        disabled={disabled}
+        title={`${kind} — T${UNIT_STATS[kind].tier}${on && !disabled ? " — click to clear" : ""}`}
         aria-label={on ? `Clear ${kind}` : `Add ${kind}`}
-        className="shrink-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+        className="shrink-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] disabled:cursor-default"
       >
         <img
           src={unitIcon(kind)}
@@ -1002,6 +1082,7 @@ function UnitSlot({
         onChange={onChange}
         width="w-full min-w-0"
         blankZero
+        disabled={disabled}
         label={`${kind} count`}
       />
     </span>
