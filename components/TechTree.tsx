@@ -844,6 +844,31 @@ export default function TechTree({
                 }}
               />
             ))}
+            {/* WHAT THE COLUMN IS FOR, said once at its foot. Every other
+                node on the board explains itself when it is clicked; the
+                marker takes no click, so at rank 0 the column is a glyph, a
+                zero and a word — and the one thing a player needs to know
+                is that these are not upgrades.
+                It hangs off the LAST switch rather than off the marker,
+                which is the only place it cannot land on top of one: the
+                column grows downward a node at a time as ranks are earned.
+                Wider than the 88px node it is centred on, so it reads as a
+                sentence rather than a stack of single words. */}
+            <div
+              className="absolute -translate-x-1/2 text-center text-[11px] leading-snug text-[#71717C]"
+              style={{
+                left: centerX(ASC_X),
+                top:
+                  centerY(ascVisible.length > 0 ? ascY(ascVisible[ascVisible.length - 1].level) : 0) +
+                  NODE / 2 +
+                  22,
+                width: 232,
+              }}
+            >
+              Difficulty modifiers that drastically change how the game plays and
+              feels.
+              {rank === 0 && " Available after defeating your first boss."}
+            </div>
       </div>
 
       {/* floating chrome: the board pans underneath it. The wrapper eats no
