@@ -1026,11 +1026,22 @@ export function buyTech(node: TechKind, count = 1): Progress | null {
 export function unlockEverything(): Progress {
   const p = loadProgress();
   const bank = { ...p.bank };
+  // WHAT EVERY REFUNDABLE NODE WOULD COST AT ONCE — the ultimates, which
+  // are the only nodes grantEveryNode refuses to hand over. It is a TOTAL
+  // rather than a per-node maximum because there are seventeen of them
+  // now and a door that only ever funded the dearest one could not reach
+  // the other sixteen at all.
+  //
+  // IT IS STILL A CEILING, NOT A CREDIT, and that is what keeps it
+  // unfarmable: tapping the door twice does nothing the first tap did not,
+  // and the buy/refund cycle it enables is net zero.
+  const want: Cost = {};
   for (const k of TECH_KINDS) {
     if (!isRefundable(k)) continue;
-    for (const { item, amount } of costEntries(techPrice(k, p.tech[k] ?? 0)))
-      bank[item] = Math.max(bank[item], amount);
+    addScaled(want, techPrice(k, p.tech[k] ?? 0), 1);
   }
+  for (const { item, amount } of costEntries(want))
+    bank[item] = Math.max(bank[item], amount);
   // FLIP THE SWITCH, DO NOT POUR IN THE POINTS. loadProgress lays the whole
   // tree over the save while this is set and saveProgress peels it back
   // off, so what is stored stays the campaign the player actually played
@@ -1089,6 +1100,19 @@ export function refundTech(node: TechKind, count = 1): Progress | null {
     credit(p.bank, techPrice(node, owned - 1));
     if (owned <= 1) delete p.tech[node];
     else p.tech[node] = owned - 1;
+    // A REFUND IS REAL EVEN UNDER A GRANT, and this line is the whole
+    // reason the node cannot be farmed. `p.tech` is the GRANTED VIEW while
+    // the back door or the dev switch is on, and saveProgress writes
+    // `techBought` in its place (see Progress.techBought) — so a refund
+    // that only took the point off the view credited the currency and then
+    // watched the point come straight back on the next load. Every click
+    // was a free surge alloy. buyTech has always mirrored its purchases
+    // here; this is the same line on the way back down.
+    if (p.techBought) {
+      const had = p.techBought[node] ?? 0;
+      if (had <= 1) delete p.techBought[node];
+      else p.techBought[node] = had - 1;
+    }
   }
   saveProgress(p);
   return p;

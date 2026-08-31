@@ -77,7 +77,7 @@ import {
   HUNGRY_REACH,
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap } from "./maps";
-import { NO_DUO_UPGRADES, upgradedDuo, type TechState } from "./tech";
+import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
 import { isBuildableWall, isWaterFloor, waterWalkMask, type Terrain } from "./terrain";
 import {
   FxKind,
@@ -659,20 +659,22 @@ export class Sim {
   // the save's tech tree before play (see Game.setTech)
   private tech: TechState | null = null;
   /**
-   * THE DUO AS THIS SAVE HAS UPGRADED IT — the stats every duo on the field
-   * actually fires with, standing in for the stock TOWERS.duo.
+   * EVERY TURRET AS THIS SAVE HAS UPGRADED IT — the stats each kind on the
+   * field actually fires with, standing in for the stock TOWERS entry.
    *
    * It is a CACHE, refreshed only when one of its two inputs moves: the
-   * save's points (setTech) and the number of duos standing (refreshDuo, at
-   * every place a tower is added, sold or cleared). Neither can change
-   * between those moments, and Duo Power's per-duo damage would otherwise
-   * mean a head count of the whole board on every bullet — five hundred
-   * scans a tick to recompute a number that did not move.
+   * save's points (setTech) and the number of each kind standing
+   * (refreshSpecs, at every place a tower is added, sold or cleared).
+   * Neither can change between those moments, and duo power's per-duo
+   * damage would otherwise mean a head count of the whole board on every
+   * bullet — five hundred scans a tick to recompute a number that did not
+   * move.
    *
-   * The stock spec when nothing is bought, so an un-upgraded save pays
-   * nothing at all for this branch existing.
+   * A kind with nothing bought is simply absent, and statsFor falls back to
+   * the shared stock object — so an un-upgraded save pays nothing at all
+   * for these branches existing.
    */
-  private duoSpec: TowerStats = TOWERS.duo;
+  private specs = new Map<TowerKind, TowerStats>();
   /** is mutation rank 1 switched on for this run? (see reset) */
   private hungryOn = false;
   // live per-kind census, updated the moment a unit spawns or is removed
@@ -842,7 +844,7 @@ export class Sim {
     this.fxPts.fill(null, 0, this.fxN);
     this.fxN = 0;
     this.towers.length = 0;
-    this.refreshDuo(); // an empty board is a duo with no company
+    this.refreshSpecs(); // an empty board is a duo with no company
     // the official map document IS the world: map-editor saves land in its
     // JSON, and the next full page load plays them. The documents are
     // fetched before the sim is built (see Game.create), never imported.
@@ -1111,35 +1113,51 @@ export class Sim {
   /** campaign restrictions on building; null lifts them (editor, dev) */
   setTech(tech: TechState | null): void {
     this.tech = tech;
-    this.refreshDuo();
+    this.refreshSpecs();
   }
 
   /**
-   * Re-resolve the upgraded duo. Called whenever the save's tech changes or
-   * a tower is placed, sold or cleared — see `duoSpec` for why those are
-   * the only moments that can move it.
+   * Re-resolve every upgraded turret. Called whenever the save's tech
+   * changes or a tower is placed, sold or cleared — see `specs` for why
+   * those are the only moments that can move it.
    *
-   * `others` is the head count MINUS ONE: Duo Power reads "each OTHER duo
-   * on the board", so a lone duo is bonusless and the hundredth one is
-   * worth 99%. Every duo on the field shares the one number, which is what
-   * makes a single cached spec the honest answer rather than an
-   * approximation of a per-turret one.
+   * The head count is what a count-dependent rung reads (duo power: "each
+   * OTHER duo on the board", hence the whole board's census here). Every
+   * turret of one kind shares the one resolved spec, which is what makes a
+   * single cached object the honest answer rather than an approximation of
+   * a per-turret one.
+   *
+   * ONLY UPGRADED KINDS GET AN ENTRY. A board of stock turrets leaves the
+   * map empty and statsFor hands back the shared table object, so the census
+   * below is the entire cost of this branch on a save that has bought none
+   * of it.
    */
-  private refreshDuo(): void {
-    const up = this.tech?.duo ?? NO_DUO_UPGRADES;
-    let duos = 0;
-    for (const t of this.towers) if (t.kind === "duo") duos++;
-    this.duoSpec = upgradedDuo(up, Math.max(0, duos - 1));
+  private refreshSpecs(): void {
+    this.specs.clear();
+    const up = this.tech?.upgrades;
+    if (!up) return;
+    const counts = this.towerCounts();
+    for (const kind of TOWER_KINDS) {
+      const points = up[kind] ?? NO_UPGRADES;
+      const spec = upgradedTower(kind, points, { count: counts[kind] });
+      if (spec !== TOWERS[kind]) this.specs.set(kind, spec);
+    }
   }
 
   /**
-   * The stats a turret of this kind fires with. Identical to TOWERS for
-   * every kind but duo, which the tree can upgrade (see `duoSpec`) — so
-   * every reader of a turret's live stats goes through here and no caller
-   * has to know which kinds have a branch above them.
+   * The stats a turret of this kind fires with — the stock table unless
+   * the tree has an upgrade branch's worth of points in it (see `specs`).
+   * Every reader of a turret's live stats goes through here, so no caller
+   * has to know which kinds have been upgraded.
+   *
+   * PUBLIC, because the renderer and the field's own overlays need it too.
+   * They used to read TOWERS directly, which meant a meltdown whose beam
+   * had been lengthened damaged at the new reach and was DRAWN at the old
+   * one, and a selected turret showed a range ring its shots outran — the
+   * two halves asking different tables the same question.
    */
-  private specOf(kind: TowerKind): TowerStats {
-    return kind === "duo" ? this.duoSpec : TOWERS[kind];
+  statsFor(kind: TowerKind): TowerStats {
+    return this.specs.get(kind) ?? TOWERS[kind];
   }
 
   /**
@@ -1152,7 +1170,7 @@ export class Sim {
    * question. Anything that wants a live bullet's stats comes through here.
    */
   bulletFor(kind: TowerKind, frag: boolean): BulletStats {
-    const b = this.specOf(kind).bullet;
+    const b = this.statsFor(kind).bullet;
     return frag && b.frag ? b.frag.bullet : b;
   }
 
@@ -1257,8 +1275,9 @@ export class Sim {
       beamRot: 0,
       beamDmgT: 0,
     });
-    // Duo Power counts the board, so the board changing is what moves it
-    this.refreshDuo();
+    // a count-dependent rung (duo power) reads the board, so the board
+    // changing is what moves it
+    this.refreshSpecs();
   }
 
   update(dt: number): void {
@@ -1567,7 +1586,7 @@ export class Sim {
     const t = this.towerAt(px, py);
     if (!t) return false;
     this.towers.splice(this.towers.indexOf(t), 1);
-    this.refreshDuo();
+    this.refreshSpecs();
     // the rock under it belongs to the mountain — nothing to unblock
     this.pushFx(t.x, t.y, 0.35, FxKind.Death); // demolish puff
     return true;
@@ -2858,7 +2877,7 @@ export class Sim {
   private fireTowers(dt: number): void {
     const { upx, upy, uvx, uvy } = this;
     for (const t of this.towers) {
-      const st = this.specOf(t.kind);
+      const st = this.statsFor(t.kind);
       // a tractor turret has no reload and no volley — it holds a beam
       if (st.bullet.tractor) {
         this.updateTractor(t, st, dt);
@@ -4083,7 +4102,16 @@ export class Sim {
         if (b.splash > 0) {
           this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor);
           this.bulletFx(b.hitFx2, pr.x, pr.y, rot, b.fxColor);
-          this.splash(pr.x, pr.y, b.splashRadius, b.splash, b.collidesAir, b.collidesGround);
+          this.splash(
+            pr.x,
+            pr.y,
+            b.splashRadius,
+            b.splash,
+            b.collidesAir,
+            b.collidesGround,
+            b.burn,
+            b.wet,
+          );
         }
         // BulletType.despawned, and only that: a shot spent on a direct
         // hit was removed, not despawned, and leaves nothing behind
@@ -4127,8 +4155,18 @@ export class Sim {
    * Area damage with Mindustry's falloff (Damage.calculateDamage): full at
    * the blast center easing to 40% at the radius edge; anything whose
    * hitbox overlaps the radius is affected, armor applying per victim.
-   * Damage only — the blast the player SEES is the bullet's own hitEffect,
-   * fired beside this by whatever set the shot off.
+   * The blast the player SEES is the bullet's own hitEffect, fired beside
+   * this by whatever set the shot off.
+   *
+   * A BLAST CARRIES THE ROUND'S STATUS TOO, and that is a deliberate
+   * departure from upstream, where a status is a thing a bullet's DIRECT
+   * hit applies and a splash is only ever damage. It exists for the
+   * incendiary and freezing rungs of the upgrade branches (upgrades.ts):
+   * an artillery shell arcs OVER its target and never lands a direct hit
+   * at all, so "shells that set fire" applied to precisely nothing until
+   * the fire travelled with the blast. Every stock turret in the game
+   * either splashes or applies a status and never both, so nothing that
+   * shipped before this changes behaviour by one point.
    */
   private splash(
     x: number,
@@ -4137,6 +4175,8 @@ export class Sim {
     dmg: number,
     air: boolean,
     ground: boolean,
+    burn?: number,
+    wet?: BulletStats["wet"],
   ): void {
     const { upx, upy, uhp, uarmor, urad, ukind, bStart, bUnits, splashHits } = this;
     splashHits.length = 0;
@@ -4164,6 +4204,12 @@ export class Sim {
       const d = Math.sqrt(ddx * ddx + ddy * ddy);
       const raw = dmg * Math.max(0, 0.4 + 0.6 * (1 - d / radius));
       this.damageUnit(i, raw);
+      // the status lands on what SURVIVED the blast, exactly as it does on
+      // a direct hit — lighting a corpse is a fire nobody sees
+      if (uhp[i] > 0) {
+        if (burn && !KIND_BURN_IMMUNE[ukind[i]]) this.applyBurn(i, burn);
+        if (wet && !KIND_WET_IMMUNE[ukind[i]]) this.applyWet(i, wet);
+      }
     }
     splashHits.sort((a, b) => b - a);
     for (const i of splashHits) {

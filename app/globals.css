@@ -104,3 +104,40 @@ svg {
 *::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* ---- the ultimate node's halo ----------------------------------------
+   The fourth rung of every turret's upgrade branch (upgrades.ts) is the
+   one thing on the tech tree paid for in surge alloy, and the one thing
+   drawn as a hexagon rather than a rounded square. When it is owned AND
+   switched on it also breathes: the polygon's own glow swells and fades,
+   and a second copy of it pushes outward and dies.
+
+   MOVEMENT IS THE POINT AND IT IS RATIONED. Nothing else on that board
+   moves at all, so an ultimate that is live is findable from across a
+   zoomed-out tree without reading a single label. Two of them side by
+   side would be noise; there is at most one per turret.
+
+   Both are switched off under prefers-reduced-motion (the elements carry
+   motion-reduce: classes), and the lit colours stand on their own without
+   either. */
+@keyframes surge-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(243, 233, 121, 0.45));
+  }
+  50% {
+    filter: drop-shadow(0 0 9px rgba(243, 233, 121, 0.95));
+  }
+}
+
+@keyframes surge-halo {
+  0% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+}

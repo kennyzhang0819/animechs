@@ -16,10 +16,10 @@ import {
   type Progress,
 } from "@/game/progress";
 import {
-  DUO_UPGRADES,
   isRefundable,
   isToggleable,
   isTowerNode,
+  isUpgradeNode,
   techCap,
   TECH_TREE,
   techNode,
@@ -27,14 +27,27 @@ import {
   UTILITY_INFO,
   type TechKind,
 } from "@/game/tech";
+import {
+  TURRET_UPGRADES,
+  upgradeDef,
+  upgradeParent,
+  UPGRADE_RUNGS,
+  type TurretUpgradeDef,
+  type UpgradeGlyph,
+} from "@/game/upgrades";
+import type { TowerKind } from "@/game/types";
 import { MUTATIONS, type MutationDef } from "@/game/mutation";
 import { difficultyColor, difficultyName } from "@/game/ladder";
 import { CostRow, Wallet } from "./Items";
 import { TOWER_ICONS } from "./towerIcons";
 
-/** what a node is called — turret stats for the turrets, UTILITY_INFO for the rest */
+/** what a node is called — turret stats, the upgrade table, or UTILITY_INFO */
 const nodeName = (id: TechKind): string =>
-  isTowerNode(id) ? TOWERS[id].name : UTILITY_INFO[id].name;
+  isTowerNode(id)
+    ? TOWERS[id].name
+    : isUpgradeNode(id)
+      ? upgradeDef(id).name
+      : UTILITY_INFO[id].name;
 
 /**
  * The node's face.
@@ -56,9 +69,62 @@ const PIERCE_GLYPH = "M1 11h3v2H1zM7 11h3v2H7zM13 11h3V8l6 4-6 4v-3h-3z";
 const GLYPH: Partial<Record<TechKind, string>> = {
   "slot-7": SLOT_GLYPH,
   "slot-8": SLOT_GLYPH,
-  "duo-rof": ROF_GLYPH,
-  "duo-pierce": PIERCE_GLYPH,
 };
+
+/**
+ * THE UPGRADE CHIPS' FACES. An upgrade node has no block to wear — there is
+ * no Mindustry sprite that means "five per cent more blast radius" — so the
+ * branches share a small vocabulary of glyphs and every rung names the one
+ * that fits it (TurretUpgradeDef.glyph). Reusing eleven shapes across
+ * sixty-eight nodes is the point: a bolt means rate of fire on every turret
+ * in the game, so the row can be read at a glance without opening a card.
+ *
+ * `surge` is the exception and never appears here — an ultimate wears the
+ * surge alloy it costs (SURGE_ICON), because the thing that makes it an
+ * ultimate IS the currency.
+ */
+const UPGRADE_GLYPH: Record<Exclude<UpgradeGlyph, "surge">, string> = {
+  rate: ROF_GLYPH,
+  pierce: PIERCE_GLYPH,
+  // a wall on the left and a shot running away from it
+  range: "M3 11h11V8l6 4-6 4v-3H3zM0 4h2v16H0z",
+  // a round, nose up
+  damage: "M12 2 8 8v9a4 4 0 0 0 8 0V8z",
+  // a four-pointed burst
+  splash: "M12 1l2.2 6.8L21 10l-6.8 2.2L12 19l-2.2-6.8L3 10l6.8-2.2z",
+  // a flame
+  burn: "M12 2c3 4 1 5 3 8 1-1 1-2 1-3 2 2 3 5 3 7a7 7 0 0 1-14 0c0-3 2-6 5-8 1 2 1 3 2 4 1-3 0-5 0-8z",
+  // a snowflake
+  frost: "M11 1h2v22h-2zM2.2 5.6l1-1.73 18.6 10.74-1 1.73zM21.8 5.6l1 1.73L4.2 18.07l-1-1.73z",
+  // a clock: how long a status hangs on the thing it landed on
+  duration:
+    "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2.5a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15zM11 6h2v6.4l4.2 2.5-1 1.7L11 13.5z",
+  // a crosshair with a lock in the middle
+  homing:
+    "M11 1h2v4h-2zM11 19h2v4h-2zM1 11h4v2H1zM19 11h4v2h-4zM12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0 3a2 2 0 1 1 0 4 2 2 0 0 1 0-4z",
+  // a fan of shots leaving one muzzle
+  spread: "M12 21 3 6l2-1 7 11 7-11 2 1z",
+  // a beam with flare above and below
+  beam: "M2 10h20v4H2zM4 5h4v2H4zM16 5h4v2h-4zM4 17h4v2H4zM16 17h4v2h-4z",
+  // a flyer seen from below, and a shot going up at it
+  air: "M12 2 4 10h5l-1 5 4-3 4 3-1-5h5zM7 19h10v2H7z",
+};
+
+/** the item an ultimate is paid for, and the face it wears */
+const SURGE_ICON = "/mindustry/sprites/items/item-surge-alloy.png";
+
+/**
+ * SURGE ALLOY'S OWN COLOUR (Mindustry Items.surgeAlloy, f3e979), and the
+ * one colour on this board that is not the tree's gold.
+ *
+ * Gold means BOUGHT. An ultimate is bought too, so gold would have been
+ * true and useless — the whole job of the fourth chip is to read as a
+ * different KIND of thing from the three beside it, at a glance, without
+ * being hovered. So it gets its own shape (a hexagon, not a rounded
+ * square), its own colour, and, when it is lit and switched on, a halo
+ * that moves. Nothing else on the board moves.
+ */
+const SURGE = "#F3E979";
 // a warning triangle with the bang punched out (even-odd fill) — the face
 // of A Final Threat, drawn in Eradication's own purple once it is owned
 
@@ -260,10 +326,23 @@ function MutationNode({
 }
 
 // board geometry: nodes are squares centered in grid cells; the SVG edge
-// layer underneath connects cell centers
-const CELL_W = 160;
-const CELL_H = 132;
+// layer underneath connects cell centers.
+//
+// THE CELL GREW WHEN THE UPGRADE ROWS ARRIVED. Every turret now carries a
+// row of four chips under its name, so a cell has to hold the node, its
+// label and that row — which is also why the whole board opens further
+// out than it used to. The alternative was sixty-eight more boxes laid on
+// the grid with edges of their own, and the wings have nowhere to put
+// either without breaking the no-crossing rule (see TechNodeDef.x).
+const CELL_W = 190;
+const CELL_H = 180;
 const NODE = 88;
+/** one upgrade chip, and the row of four a turret wears */
+const CHIP = 38;
+const CHIP_GAP = 6;
+const ROW_W = UPGRADE_RUNGS * CHIP + (UPGRADE_RUNGS - 1) * CHIP_GAP;
+/** how far below a node's centre the chip row hangs — under the name label */
+const ROW_TOP = NODE / 2 + 22;
 const ALL_X = [...TECH_TREE.map((n) => n.x), MUT_X];
 const ALL_Y = [
   ...TECH_TREE.map((n) => n.y),
@@ -337,25 +416,346 @@ const stepCount = (p: Progress, node: TechKind, step: BuyStep): number =>
   affordablePoints(p, node, step === "max" ? Infinity : step);
 
 /**
- * WHAT THE DUO BRANCH IS WORTH AT ITS CURRENT POINT COUNT, in the units the
+ * WHAT AN UPGRADE IS WORTH AT ITS CURRENT POINT COUNT, in the units the
  * player actually feels.
  *
  * The blurb says what a node does; this says what it is DOING. A stacking
  * node is bought a point at a time over a whole campaign, and "5% per
  * point" is no help at all to someone deciding whether the fourteenth one
- * is worth 60,000 copper — "+65% attack speed, +70% after this" is.
+ * is worth 60,000 copper — "+65% attack speed → +70%" is. The sentence
+ * itself belongs to the rung (TurretUpgradeDef.effect); this only pins the
+ * "after this click" half onto it.
  */
-function duoEffect(id: TechKind, points: number, next: number): string | null {
-  const pct = (n: number): string => `${Math.round(n * 100)}%`;
-  if (id === "duo-rof")
-    return `+${pct(DUO_UPGRADES.ROF_PER_POINT * points)} attack speed${
-      next > points ? ` → +${pct(DUO_UPGRADES.ROF_PER_POINT * next)}` : ""
-    }`;
-  if (id === "duo-pierce")
-    return `Shots punch through ${1 + DUO_UPGRADES.PIERCE_PER_POINT * points} bodies${
-      next > points ? ` → ${1 + DUO_UPGRADES.PIERCE_PER_POINT * next}` : ""
-    }`;
-  return null;
+function upgradeEffect(def: TurretUpgradeDef, points: number, next: number): string | null {
+  if (!def.effect) return null;
+  const now = def.effect(points);
+  return next > points ? `${now} → ${def.effect(next)}` : now;
+}
+
+/**
+ * ONE UPGRADE CHIP, and the whole of the second half of this board.
+ *
+ * IT IS A NODE, NOT A BADGE. It buys points, it holds a count, it has a
+ * price card and it obeys the same touch rule as everything else here. All
+ * that is different is that it is small and it hangs off its turret
+ * instead of standing on the grid — see the note over CELL_W for why
+ * sixty-eight of these could not be boxes.
+ *
+ * WHAT A CLICK DOES, and the one place this board's rules changed:
+ *
+ *   something left to buy  ->  buy it, `step` points at a time
+ *   bought out (a one-shot, or a dial at its cap) -> SWITCH IT ON OR OFF
+ *
+ * The second line is new. A maxed node used to be inert — it refused every
+ * click and said "maxed" — and the switch that turned its effect off was a
+ * separate pill hung off the corner, which is exactly the kind of control
+ * that is missed. Toggling is also the SAFE action of the two a bought
+ * rung offers, which is why it is the one on the chip: the other is a
+ * refund, and a refund on the same click that used to buy would sooner or
+ * later be an accident. That one lives in the card, spelled out, with the
+ * currency it hands back printed under it.
+ *
+ * A RUNG WHOSE PARENT IS UNBOUGHT IS STILL DRAWN, dimmed, which is a
+ * deliberate exception to the tree's own hide-until-the-parent-is-bought
+ * rule. That rule is about not advertising branches; a row of four chips
+ * under a turret is not a branch to discover, it is the SHAPE of what the
+ * turret can become, and drawing two chips and a gap would read as a bug.
+ * The card on a locked chip says which rung comes first.
+ */
+function UpgradeChip({
+  def,
+  progress,
+  step,
+  touch,
+  armed,
+  onArm,
+  onChanged,
+}: {
+  def: TurretUpgradeDef;
+  progress: Progress;
+  step: BuyStep;
+  touch: boolean;
+  armed: boolean;
+  onArm: () => void;
+  onChanged: () => void;
+}) {
+  const status: NodeStatus = nodeStatus(progress, def.id);
+  const points = progress.tech[def.id] ?? 0;
+  const owned = points > 0;
+  const maxed = points >= def.cap;
+  const locked = status === "hidden";
+  const on = isTechOn(progress, def.id);
+  const ultimate = def.tier >= UPGRADE_RUNGS;
+  const lit = owned && on;
+  // the step is a ceiling, not a promise: a "x100" the wallet only half
+  // covers lands what it covers rather than refusing
+  const willBuy = status === "buyable" ? stepCount(progress, def.id, step) : 0;
+  // a bought-out rung has nothing left to sell, so its click is the switch
+  const toggles = maxed && isToggleable(def.id);
+  const clickable = status === "buyable" || toggles;
+  const showCard = touch && armed;
+
+  const colour = locked
+    ? { line: "#2E2E36", face: "#141417", ink: "#4A4A55" }
+    : lit && ultimate
+      ? { line: SURGE, face: "#241F0C", ink: SURGE }
+      : lit
+        ? { line: "#FFD37F", face: "#222227", ink: "#FFD37F" }
+        : owned
+          ? { line: "#5A2A2A", face: "#171214", ink: "#71717C" }
+          : { line: "#4A4A55", face: "#151518", ink: "#71717C" };
+
+  const face =
+    def.glyph === "surge" ? (
+      // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite
+      <img
+        src={SURGE_ICON}
+        alt=""
+        className={`h-5 w-5 [image-rendering:pixelated] ${lit ? "" : "grayscale opacity-70"}`}
+      />
+    ) : (
+      <svg viewBox="0 0 24 24" className="h-5 w-5" style={{ fill: colour.ink }} aria-hidden="true">
+        <path fillRule="evenodd" d={UPGRADE_GLYPH[def.glyph]} />
+      </svg>
+    );
+
+  return (
+    <div className="group/chip relative" style={{ width: CHIP, height: CHIP }}>
+      <button
+        type="button"
+        aria-disabled={!clickable}
+        aria-label={
+          locked
+            ? `${def.name}: locked, buy ${nodeName(upgradeParent(def.id) ?? def.turret)} first`
+            : clickable && touch && !armed
+              ? `${def.name}: show details, tap again to act`
+              : toggles
+                ? `${def.name}: ${on ? "on, activate to switch off" : "off, activate to switch on"}`
+                : owned
+                  ? `${def.name}: ${points} of ${def.cap} points`
+                  : `Unlock ${def.name}`
+        }
+        onClick={() => {
+          // an unbuyable chip still opens its card on touch — "why not" is
+          // the question it most needs to answer
+          if (touch && !armed) {
+            onArm();
+            return;
+          }
+          if (toggles) {
+            saveTechOn(def.id, !on);
+            onChanged();
+            return;
+          }
+          if (status !== "buyable") return;
+          if (buyTech(def.id, Math.max(1, willBuy))) onChanged();
+        }}
+        className={`group/face relative flex h-full w-full items-center justify-center focus-visible:outline-2 focus-visible:outline-offset-1 ${
+          clickable ? "cursor-pointer" : "cursor-not-allowed"
+        } ${locked ? "opacity-40" : ""}`}
+        style={{ outlineColor: ultimate ? SURGE : "#FFD37F" }}
+      >
+        {ultimate ? (
+          // THE HEXAGON. An ultimate is not a bigger version of the three
+          // chips beside it, so it is not the same shape as them either —
+          // and a border cannot be clipped into a hexagon with CSS without
+          // losing the border, so the outline is drawn as a polygon
+          <svg
+            viewBox="0 0 100 100"
+            className="absolute inset-0 h-full w-full"
+            aria-hidden="true"
+          >
+            {lit && (
+              // the halo: a second hexagon breathing out of the first, and
+              // the only moving thing on the board
+              <polygon
+                points={HEX}
+                fill="none"
+                stroke={SURGE}
+                strokeWidth={5}
+                className="origin-center animate-[surge-halo_2.6s_ease-out_infinite] motion-reduce:hidden"
+              />
+            )}
+            <polygon
+              points={HEX}
+              fill={colour.face}
+              stroke={colour.line}
+              strokeWidth={7}
+              strokeLinejoin="round"
+              className={lit ? "animate-[surge-glow_2.6s_ease-in-out_infinite] motion-reduce:animate-none" : ""}
+            />
+          </svg>
+        ) : (
+          <span
+            className={`absolute inset-0 rounded-md border-2 ${
+              // the reachable-but-unbought chips are the ones a player is
+              // deciding between, and a dim square that lights under the
+              // pointer is how they tell themselves apart from the locked
+              // ones two places along
+              !owned && !locked ? "group-hover/face:border-[#FFD37F]" : ""
+            }`}
+            style={{ borderColor: colour.line, background: colour.face }}
+          />
+        )}
+        <span className="relative flex items-center justify-center">{face}</span>
+        {/* the count, on a dial that is holding points. A one-shot has no
+            number — it is lit or it is not */}
+        {owned && def.cap > 1 && (
+          <span
+            className="absolute -bottom-1.5 -right-1.5 rounded border bg-[#101013] px-1 text-[11px] font-bold leading-tight"
+            style={{ borderColor: colour.line, color: colour.ink }}
+          >
+            {points}
+          </span>
+        )}
+        {/* switched off: the points are still owned, so say so on the chip
+            rather than only in a card nobody has opened */}
+        {owned && !on && (
+          <span className="absolute -top-1.5 -right-1.5 h-2.5 w-2.5 rounded-full border border-[#101013] bg-[#FF8A8A]" />
+        )}
+      </button>
+      {/* the card. UNLIKE EVERY OTHER CARD ON THIS BOARD IT TAKES CLICKS,
+          because a bought ultimate has an action that cannot go on the chip
+          (the refund). The gap to the chip is PADDING rather than margin so
+          a mouse travelling up to press that button never crosses dead
+          ground and closes the card under itself */}
+      <div
+        className={`absolute bottom-full left-1/2 z-20 w-64 -translate-x-1/2 pb-2 text-left ${
+          showCard ? "block" : "hidden group-hover/chip:block group-focus-within/chip:block"
+        }`}
+      >
+        <div className="rounded border border-[#4A4A55] bg-[#151518] p-3 shadow-lg">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="font-bold text-[#EDEDEF]">{def.name}</span>
+            <span className="shrink-0 text-[13px] text-[#A6A6AF]">
+              {locked
+                ? "Locked"
+                : def.cap > 1
+                  ? `${points} / ${def.cap}`
+                  : owned
+                    ? on
+                      ? "On"
+                      : "Off"
+                    : "Not bought"}
+            </span>
+          </div>
+          <div className="mt-0.5 text-[12px] uppercase tracking-widest text-[#71717C]">
+            {TOWERS[def.turret].name} · upgrade {def.tier} of {UPGRADE_RUNGS}
+          </div>
+          <div className="mt-1 text-[14px] text-[#A6A6AF]">{def.blurb}</div>
+          {!locked &&
+            (() => {
+              const line = upgradeEffect(def, points, points + Math.max(0, willBuy));
+              return line ? (
+                <div className="mt-1 text-[14px] font-bold text-[#FFD37F]">{line}</div>
+              ) : null;
+            })()}
+          {owned && !on && (
+            <div className="mt-2 text-[14px] font-bold text-[#FF8A8A]">
+              Switched off — the points are still yours, they are just not in play.
+            </div>
+          )}
+          {locked ? (
+            <div className="mt-2 border-t border-[#2E2E36] pt-2 text-[13px] font-bold uppercase tracking-widest text-[#A6A6AF]">
+              Buy {nodeName(upgradeParent(def.id) ?? def.turret)} first
+            </div>
+          ) : maxed ? (
+            <div className="mt-2 space-y-2 border-t border-[#2E2E36] pt-2">
+              {toggles && (
+                <div className="text-[13px] font-bold uppercase tracking-widest" style={{ color: on ? "#7BE58A" : "#FF8A8A" }}>
+                  {touch ? "Tap again" : "Click"} to switch {on ? "off" : "on"}
+                </div>
+              )}
+              {/* THE REFUND, and the only control on this board that undoes
+                  a purchase. It is a labelled button rather than a second
+                  meaning for the chip's own click, because surge alloy is
+                  paid out one boss fight at a time and an accidental sale
+                  is not a thing a player can simply re-earn */}
+              {isRefundable(def.id) && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (refundTech(def.id)) onChanged();
+                    }}
+                    className="w-full rounded border border-[#5A4A2A] bg-[#1A160C] px-2 py-1 text-[13px] font-bold uppercase tracking-widest text-[#F3E979] hover:border-[#F3E979]"
+                  >
+                    Sell back
+                  </button>
+                  <div className="mt-1">
+                    <CostRow cost={techPrice(def.id, points - 1)} bank={progress.bank} />
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="mt-2 border-t border-[#2E2E36] pt-2 text-[14px]">
+              {/* the full bundle: passing the bank reddens exactly the
+                  stacks it cannot cover, which is the whole "why can't I
+                  buy this" explanation */}
+              <CostRow cost={techPrice(def.id, points)} bank={progress.bank} />
+              {showCard && status === "buyable" && (
+                <div className="mt-2 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F]">
+                  Tap again to buy
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** the hexagon an ultimate is drawn as, in the chip's own 100x100 box */
+const HEX = "26,4 74,4 96,50 74,96 26,96 4,50";
+
+/** the four rungs under one turret, in tier order */
+function UpgradeRow({
+  turret,
+  x,
+  y,
+  progress,
+  step,
+  touch,
+  armed,
+  onArm,
+  onChanged,
+}: {
+  turret: TowerKind;
+  x: number;
+  y: number;
+  progress: Progress;
+  step: BuyStep;
+  touch: boolean;
+  armed: string | null;
+  onArm: (id: TechKind) => void;
+  onChanged: () => void;
+}) {
+  return (
+    <div
+      className="absolute flex"
+      style={{
+        left: centerX(x) - ROW_W / 2,
+        top: centerY(y) + ROW_TOP,
+        width: ROW_W,
+        gap: CHIP_GAP,
+      }}
+    >
+      {TURRET_UPGRADES[turret].map((def) => (
+        <UpgradeChip
+          key={def.id}
+          def={def}
+          progress={progress}
+          step={step}
+          touch={touch}
+          armed={armed === def.id}
+          onArm={() => onArm(def.id)}
+          onChanged={onChanged}
+        />
+      ))}
+    </div>
+  );
 }
 
 /**
@@ -597,8 +997,15 @@ export default function TechTree({
   }, [applyCam, zoomAt, zoomCenter]);
 
   // a node is drawn only once its parent holds a point; edges follow the
-  // same rule, so buying a node is what reveals the links out of it
-  const visible = TECH_TREE.filter((n) => nodeStatus(progress, n.id) !== "hidden");
+  // same rule, so buying a node is what reveals the links out of it.
+  //
+  // THE UPGRADE NODES ARE NOT ON THE BOARD. They share their turret's cell
+  // (see TechNodeDef.x) and are drawn as the chip row hanging off it, so
+  // laying them out here would stack sixty-eight boxes on seventeen cells
+  // and draw sixty-eight zero-length edges under them.
+  const visible = TECH_TREE.filter(
+    (n) => !isUpgradeNode(n.id) && nodeStatus(progress, n.id) !== "hidden",
+  );
   // the left column's two facts: how far the save has climbed, and which of
   // the ranks it climbed to are switched on for the next run. Only the
   // ranks EARNED are drawn — the one above is not a locked node, it is not
@@ -705,32 +1112,19 @@ export default function TechTree({
               const points = progress.tech[n.id] ?? 0;
               const name = nodeName(n.id);
               // a turret stacks capacity forever; a utility is a switch, and
-              // once it is on the node has nothing left to sell
+              // once it is on the node has nothing left to sell.
+              //
+              // EVERY NODE ON THE GRID IS ONE OR THE OTHER AGAIN. The duo
+              // branch used to be a third case here — a utility that
+              // STACKED — and it and the sixteen branches that followed it
+              // are chips now (UpgradeChip), which took the toggle and the
+              // refund off this loop with them. Nothing left on the board
+              // is refundable or switchable.
               const utility = !isTowerNode(n.id);
               const owned = points > 0;
-              // A UTILITY IS NO LONGER ALWAYS A SWITCH. The duo branch is a
-              // utility that STACKS — twenty points of rate of fire, ten of
-              // pierce — so the tick badge and the "Owned / Locked" line
-              // that used to stand in for every non-turret node now belong
-              // only to the ones that really do stop at a single point.
               const cap = techCap(n.id);
               const switchy = utility && cap <= 1;
-              const stack = utility && !switchy;
-              // THE ONE NODE THAT CAN BE HANDED BACK (duo-power). A refund
-              // is spelled as a second click on a node that is already on,
-              // which is what makes it read as a switch rather than as a
-              // shop: click to arm it, click to take it off and get the
-              // surge alloy back
-              const refundable = owned && isRefundable(n.id);
-              // THE EFFECT SWITCH (the duo branch). Owning a node and
-              // PLAYING with it are different things: the points stay in
-              // the save either way, and this only says whether they apply.
-              // It is a sibling of the node button rather than something
-              // inside it, so switching off never competes with the click
-              // that buys the next point
-              const switchable = owned && isToggleable(n.id);
-              const effectOn = isTechOn(progress, n.id);
-              const clickable = status === "buyable" || refundable;
+              const clickable = status === "buyable";
               // the step is a ceiling, not a promise: a "×100" the wallet
               // only half covers lands what it covers rather than refusing
               const willBuy = clickable ? stepCount(progress, n.id, step) : 0;
@@ -755,17 +1149,13 @@ export default function TechTree({
                     aria-label={
                       clickable && !primed
                         ? `${name}: show details, tap again to act`
-                        : refundable
-                          ? `${name}: on — activate to switch off and refund`
-                          : switchy
-                            ? owned
-                              ? `${name}: owned`
-                              : `Unlock ${name}`
-                            : stack
-                              ? `${name}: ${points} of ${cap} points`
-                              : owned
-                                ? `${name}: +${Math.max(1, willBuy)} placement capacity`
-                                : `Unlock ${name}`
+                        : switchy
+                          ? owned
+                            ? `${name}: owned`
+                            : `Unlock ${name}`
+                          : owned
+                            ? `${name}: +${Math.max(1, willBuy)} placement capacity`
+                            : `Unlock ${name}`
                     }
                     // aria-disabled rather than disabled: a node priced out
                     // of reach still has to be able to say so, and a disabled
@@ -778,10 +1168,6 @@ export default function TechTree({
                       // "why not" is the question it most needs to answer
                       if (touch && armed !== n.id) {
                         setArmed(n.id);
-                        return;
-                      }
-                      if (refundable) {
-                        if (refundTech(n.id)) onChanged();
                         return;
                       }
                       if (!clickable) return;
@@ -823,24 +1209,6 @@ export default function TechTree({
                       </svg>
                     )}
                   </button>
-                  {switchable && (
-                    <button
-                      type="button"
-                      aria-pressed={effectOn}
-                      aria-label={`${name}: effect ${effectOn ? "on, switch off" : "off, switch on"}`}
-                      onClick={() => {
-                        saveTechOn(n.id, !effectOn);
-                        onChanged();
-                      }}
-                      className={`absolute -bottom-2 -left-2 rounded border px-1.5 text-[13px] font-bold ${
-                        effectOn
-                          ? "border-[#7BE58A] bg-[#101013] text-[#7BE58A]"
-                          : "border-[#5A2A2A] bg-[#101013] text-[#FF8A8A]"
-                      }`}
-                    >
-                      {effectOn ? "On" : "Off"}
-                    </button>
-                  )}
                   <div
                     className={`text-center text-[12px] font-bold uppercase tracking-widest ${
                       owned ? "text-[#EDEDEF]" : "text-[#71717C]"
@@ -859,15 +1227,7 @@ export default function TechTree({
                     <div className="flex items-baseline justify-between">
                       <span className="font-bold text-[#EDEDEF]">{name}</span>
                       <span className="text-[13px] text-[#A6A6AF]">
-                        {switchable && !effectOn
-                          ? "Off"
-                          : switchy
-                            ? owned
-                              ? "On"
-                              : "Locked"
-                            : stack
-                              ? `${points} / ${cap}`
-                              : `Capacity ${points}`}
+                        {switchy ? (owned ? "On" : "Locked") : `Capacity ${points}`}
                       </span>
                     </div>
                     <div className="mt-1 text-[14px] text-[#A6A6AF]">
@@ -879,36 +1239,7 @@ export default function TechTree({
                             })`
                           : `Unlocks the ${name} turret with 1 placement`}
                     </div>
-                    {/* the stacking duo nodes say what they are DOING, not
-                        just what a point is worth — see duoEffect */}
-                    {stack &&
-                      (() => {
-                        const line = duoEffect(n.id, points, points + Math.max(0, willBuy));
-                        return line ? (
-                          <div className="mt-1 text-[14px] font-bold text-[#FFD37F]">{line}</div>
-                        ) : null;
-                      })()}
-                    {switchable && !effectOn && (
-                      <div className="mt-2 text-[14px] font-bold text-[#FF8A8A]">
-                        Switched off — the points are still yours, they are
-                        just not in play.
-                      </div>
-                    )}
-                    {refundable ? (
-                      <div className="mt-2 border-t border-[#2E2E36] pt-2">
-                        <div className="text-[13px] font-bold uppercase tracking-widest text-[#7BE58A]">
-                          Active
-                        </div>
-                        {/* what comes BACK, in the same shape a price is
-                            shown in — the refund is the price, exactly */}
-                        <div className="mt-1 text-[14px] text-[#A6A6AF]">
-                          {touch ? "Tap again" : "Click"} to switch off and refund
-                        </div>
-                        <div className="mt-1">
-                          <CostRow cost={techPrice(n.id, points - 1)} bank={progress.bank} />
-                        </div>
-                      </div>
-                    ) : status === "locked-tier" ? (
+                    {status === "locked-tier" ? (
                       <div className="mt-2 text-[13px] font-bold uppercase tracking-widest text-[#FF8A8A]">
                         Clear{" "}
                         <span style={{ color: difficultyColor(techNode(n.id).requiresTier ?? 0) }}>
@@ -938,6 +1269,26 @@ export default function TechTree({
                 </div>
               );
             })}
+            {/* THE UPGRADE ROWS. A sibling of the node rather than a child
+                of it, deliberately: the node's own card opens on
+                group-hover, and a chip living inside that group would pop
+                the turret's card every time a finger went near its own */}
+            {visible.map((n) =>
+              isTowerNode(n.id) && (progress.tech[n.id] ?? 0) > 0 ? (
+                <UpgradeRow
+                  key={`up-${n.id}`}
+                  turret={n.id}
+                  x={n.x}
+                  y={n.y}
+                  progress={progress}
+                  step={step}
+                  touch={touch}
+                  armed={armed}
+                  onArm={setArmed}
+                  onChanged={onChanged}
+                />
+              ) : null,
+            )}
             {/* THE MUTATION COLUMN, home's left arm. The marker states the
                 rank the save has climbed to and takes no click; below it
                 one switch per rank EARNED, each of which toggles rather

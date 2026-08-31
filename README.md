@@ -32,6 +32,13 @@ stale tab or a cached bundle looks exactly like a fix not working.
   audit/check arithmetic over the authored script
 - `game/tech.ts` — the tech tree: turret price bundles (one shared growth
   constant for every turret), abilities, and the build-bar slot upgrades
+- `game/upgrades.ts` — the **turret upgrade branches**: four rungs under
+  every turret, folded into its live `TowerStats`. Two cheap stacking
+  dials, a one-shot ammunition swap, and an **ultimate** paid for in surge
+  alloy that changes what the turret is — a scatter that shoots the
+  ground, an arc that forks three ways, a salvo that fires missiles. The
+  ultimate costs 1 surge on an Incursion turret, 3 on Onslaught's and 6 on
+  Nemesis's, and it is the only node in the tree that can be sold back
 - `game/mutation.ts` — the **mutation line**, the tech tree's left
   column: optional rules the player switches on, earned one rank per boss
   felled rather than bought
@@ -233,6 +240,13 @@ __ladder.wave(7, 2)   // what one authored wave costs at a given difficulty
   pricing them out.
 - **Drop bonus is linear per difficulty** (`DROP_BONUS_PER_TIER`, 0.3), and
   exists only so a higher difficulty is the better farm.
+- **An upgrade rung is its turret's own bundle, scaled** (×20 / ×90 / ×900
+  for the three payable rungs, climbing at 1.25 / 1.35 / flat). Scaling
+  preserves the bundle's SHAPE, so every rung carries its turret's drop
+  ratio and opens on the same difficulty the turret does — no gate is
+  written anywhere. The fourth rung is priced in surge alloy alone
+  (`ULTIMATE_SURGE`), which a boss pays once and no amount of farming
+  produces.
 
 Nothing about pricing, turret caps, or the free loadout is derived from the
 wave script. `OPENING_DUOS` (50, plus `OPENING_ARCS`, 5) is a hand-tuned

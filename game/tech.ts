@@ -8,11 +8,24 @@ import {
   type Cost,
   type ItemKind,
 } from "./items";
-import { MU, PAL, TOWERS, type TowerStats } from "./constants";
+import { TOWERS } from "./constants";
+import {
+  ALL_UPGRADES,
+  isUpgradeNode,
+  NO_UPGRADES,
+  TURRET_UPGRADES,
+  upgradedTower,
+  upgradeParent,
+  UPGRADE_KINDS,
+  type TurretUpgradeDef,
+  type UpgradeContext,
+  type UpgradeKind,
+  type UpgradePoints,
+} from "./upgrades";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
 /**
- * The nodes that are not turrets.
+ * The nodes that are neither turrets nor turret upgrades.
  *
  * `home` is the trunk everything hangs off — it is bought for nothing and
  * granted to every save, because a root that could be missed would leave
@@ -31,12 +44,11 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * that line — one opened a second world, one revealed Eradication
  * everywhere — and both are gone with the split.
  *
- * THE DUO BRANCH (`duo-rof`, `duo-pierce`, `duo-graphite`, `duo-power`)
- * is a THIRD kind of node again, and the one that breaks the old
- * switch-or-capacity split. It hangs off duo, it is not a turret, and its
- * points buy neither a placement nor a toggle — they buy STATS, applied to
- * every duo on the board at once. See DUO_UPGRADES below for what each one
- * does and why they are chained rather than parallel.
+ * THE DUO BRANCH USED TO LIVE IN THIS LIST, as four utilities that happened
+ * to improve duo. It is gone from here and into upgrades.ts, along with a
+ * branch of its own for every other turret in the game — see UPGRADE_KINDS,
+ * the tree's THIRD kind of node, whose points buy neither a placement nor a
+ * toggle but STATS.
  *
  * `slot-7` and `slot-8` are the utilities that are not about pace: the
  * build bar is a six-slot loadout (BASE_BAR_SLOTS), and each of these
@@ -59,22 +71,25 @@ export const UTILITY_KINDS = [
   "slot-7",
   "slot-8",
   "overdrive-projector",
-  "duo-rof",
-  "duo-pierce",
-  "duo-graphite",
-  "duo-power",
 ] as const;
 export type UtilityKind = (typeof UTILITY_KINDS)[number];
 
-/** anything the tree can hold points in */
-export type TechKind = TowerKind | UtilityKind;
+export { UPGRADE_KINDS, isUpgradeNode, type UpgradeKind };
 
-export const TECH_KINDS: readonly TechKind[] = [...TOWER_KINDS, ...UTILITY_KINDS];
+/** anything the tree can hold points in */
+export type TechKind = TowerKind | UtilityKind | UpgradeKind;
+
+export const TECH_KINDS: readonly TechKind[] = [
+  ...TOWER_KINDS,
+  ...UTILITY_KINDS,
+  ...UPGRADE_KINDS,
+];
 
 const UTILITY_SET: ReadonlySet<string> = new Set<string>(UTILITY_KINDS);
 
 /** is this node a turret? — the guard every turret-only reader needs */
-export const isTowerNode = (id: TechKind): id is TowerKind => !UTILITY_SET.has(id);
+export const isTowerNode = (id: TechKind): id is TowerKind =>
+  !UTILITY_SET.has(id) && !isUpgradeNode(id);
 
 /**
  * The fast-forward multiplier each utility node hands over. 1x is not in
@@ -116,197 +131,38 @@ export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: s
     name: "Overdrive Projector",
     blurb: "A projector that overdrives every turret in its radius. The block ships soon — owning the node reserves it.",
   },
-  "duo-rof": {
-    name: "Duo Rate of Fire",
-    blurb: "Every duo on the board fires 5% faster per point, up to twice its stock rate.",
-  },
-  "duo-pierce": {
-    name: "Duo Pierce",
-    blurb: "Each point lets a duo's shot punch through one more body before it is spent.",
-  },
-  "duo-graphite": {
-    name: "Graphite Rounds",
-    blurb: "Duos load graphite instead of copper: 9 damage a shot becomes 18. Bought once.",
-  },
-  "duo-power": {
-    name: "Duo Power",
-    blurb: "Every duo hits 1% harder for each OTHER duo standing. Costs one surge alloy, and can be switched off for a full refund.",
-  },
 };
 
 /**
- * THE DUO BRANCH, and what a point in each node actually does.
- *
- * WHY DUO AND NOTHING ELSE. Duo is the one turret every save owns from its
- * first purchase and the one turret a stalled save can always afford
- * (copper only, forever — see its node). That makes it the only turret an
- * upgrade branch can hang off without the branch itself needing a gate: a
- * player who can see these nodes can, by construction, already field the
- * thing they improve.
- *
- * THEY ARE A CHAIN, NOT A FAN. Each one requires the one above it, so the
- * order below is the order they are bought in, and the two cheap stacking
- * nodes are what stand between a fresh save and the two expensive
- * one-shot ones. Fanning them all off duo would have put the graphite
- * round — a flat doubling of the whole board's damage — one click from the
- * start of the game.
- *
- * NOTHING HERE IS GATED BY DIFFICULTY. The tree sells OWNERSHIP and
- * ownership is campaign-wide (see the note at the top of the file), and
- * duo is admitted by every difficulty there is (band 0), so an upgrade to
- * it is in force wherever it is. Only the price decides when a save can
- * reach one — which is the tree's own rule, applied to a stat rather than
- * to a turret.
- */
-export const DUO_UPGRADES = {
-  /** attack speed per point in `duo-rof`, applied to the reload as 1/(1+n·k) */
-  ROF_PER_POINT: 0.05,
-  /** points `duo-rof` will take — 20 × 5% is exactly double the stock rate */
-  ROF_CAP: 20,
-  /** extra bodies one shot may punch through, per point in `duo-pierce` */
-  PIERCE_PER_POINT: 1,
-  /** points `duo-pierce` will take */
-  PIERCE_CAP: 10,
-  /** what the graphite round multiplies a duo's 9 damage by */
-  GRAPHITE_DAMAGE: 2,
-  /** damage a duo gains per OTHER duo on the board, with `duo-power` on */
-  POWER_PER_DUO: 0.01,
-} as const;
-
-/** the duo branch as the sim wants it: resolved numbers, not point counts */
-export interface DuoUpgrades {
-  /** points in `duo-rof` */
-  rof: number;
-  /** points in `duo-pierce` */
-  pierce: number;
-  /** the graphite round is loaded */
-  graphite: boolean;
-  /** duo power is switched on */
-  power: boolean;
-}
-
-/** nothing bought — what a save with a bare duo plays with */
-export const NO_DUO_UPGRADES: DuoUpgrades = {
-  rof: 0,
-  pierce: 0,
-  graphite: false,
-  power: false,
-};
-
-/** does this spread of points change a duo at all? */
-export const hasDuoUpgrades = (u: DuoUpgrades): boolean =>
-  u.rof > 0 || u.pierce > 0 || u.graphite || u.power;
-
-/**
- * THE UPGRADED DUO, as one TowerStats the sim can use in place of the
- * stock one.
- *
- * `others` is how many OTHER duos are standing — the only input that is not
- * a purchase, and the whole of Duo Power. The sim recomputes this whenever
- * a tower is placed, sold or cleared rather than per shot: the count cannot
- * change between those moments, and a per-bullet head count on a board of
- * five hundred duos would be five hundred scans a tick for a number that
- * did not move.
- *
- * PIERCE IS A CAP, NOT A FLAG. A stock duo bullet has no `pierce` at all,
- * which the sim reads as "spent on the first body". One point turns pierce
- * on with a cap of two, so "+1 pierce" is one EXTRA body, and the cap keeps
- * a shot from running its whole lifetime through a lane.
- *
- * GRAPHITE ROUNDS CHANGE THE ROUND, so they change what the round LOOKS
- * like: the bullet takes the graphite ammo colours, and so does the hit
- * spark. Those two palette entries are not invented here — they are the
- * same pair hail and ripple already fire (PAL.graphiteAmmo*), which is what
- * graphite ammunition looks like everywhere in this game. Doubling a
- * turret's damage while its tracers stay exactly the same colour is a
- * change the player is told about once in a blurb and can never see again.
- */
-export function upgradedDuo(u: DuoUpgrades, others: number): TowerStats {
-  const stock = TOWERS.duo;
-  if (!hasDuoUpgrades(u)) return stock;
-  const damage =
-    stock.bullet.damage *
-    (u.graphite ? DUO_UPGRADES.GRAPHITE_DAMAGE : 1) *
-    (u.power ? 1 + DUO_UPGRADES.POWER_PER_DUO * Math.max(0, others) : 1);
-  return {
-    ...stock,
-    // attack speed is the reciprocal of reload: +100% rate is half the wait
-    reload: stock.reload / (1 + DUO_UPGRADES.ROF_PER_POINT * u.rof),
-    bullet: {
-      ...stock.bullet,
-      damage,
-      // THE GRAPHITE ROUND, 1:1 from Blocks.java's duo ammo() block:
-      //
-      //   Items.graphite, new BasicBulletType(3.5f, 18){{
-      //     width = 9f; height = 12f;
-      //     hitColor = backColor = trailColor = Pal.graphiteAmmoBack;
-      //     frontColor = Pal.graphiteAmmoFront;
-      //   }}
-      //
-      // Copper is a warm tan (eac1a8 over d39169) and graphite is a pale
-      // blue-white over blue-violet (dae1ee over 7d89d8), so the swap is
-      // the most visible thing the upgrade does — which is the point: a
-      // node that doubles every duo's damage must not fire a shot that
-      // looks identical to the one before it.
-      //
-      // backColor carries the hit and despawn effects too (hitColor is the
-      // same field upstream), which is fxColor here.
-      //
-      // NOT IMPORTED: speed 3.5 (copper 2.5), rangeChange +16, and
-      // reloadMultiplier 0.8. The first two are unasked-for buffs and the
-      // third is a NERF that would fight the rate-of-fire node two rows
-      // up; this upgrade is a damage node, so it takes graphite's damage
-      // and its look and leaves its handling alone.
-      //
-      // the sprite is optional on a bullet in general; duo has one, and a
-      // kind that did not would still take the spark colour
-      ...(u.graphite
-        ? {
-            ...(stock.bullet.sprite
-              ? {
-                  sprite: {
-                    ...stock.bullet.sprite,
-                    // Blocks.java, duo's graphite ammo: a 9x12 round where
-                    // copper's is 7x9. The size is half of why the two read
-                    // as different ammunition rather than a recolour
-                    across: 9 * MU,
-                    along: 12 * MU,
-                    back: PAL.graphiteAmmoBack,
-                    front: PAL.graphiteAmmoFront,
-                  },
-                }
-              : null),
-            fxColor: PAL.graphiteAmmoBack,
-          }
-        : null),
-      ...(u.pierce > 0
-        ? { pierce: true, pierceCap: 1 + DUO_UPGRADES.PIERCE_PER_POINT * u.pierce }
-        : null),
-    },
-  };
-}
-
-/**
- * The duo branch as bought AND AS SWITCHED ON, read off a save's point
- * spread and its off-list.
+ * THE TURRET UPGRADE BRANCHES, as the sim wants them: resolved stats, not
+ * point counts. What each rung DOES lives in upgrades.ts; what follows is
+ * how a save's point spread turns into one.
  *
  * A node in `off` reads as though it held no points at all. The points are
  * still there in the save and the node still draws as owned — this is the
  * one place that decides whether they DO anything, so a switch cannot get
  * out of step with the sim.
  */
-export const duoUpgradesOf = (
+export const upgradePointsOf = (
+  turret: TowerKind,
   levels: TechLevels,
   off?: ReadonlySet<TechKind>,
-): DuoUpgrades => {
-  const on = (k: TechKind): number => (off?.has(k) ? 0 : Math.max(0, Math.floor(levels[k] ?? 0)));
-  return {
-    rof: on("duo-rof"),
-    pierce: on("duo-pierce"),
-    graphite: on("duo-graphite") > 0,
-    power: on("duo-power") > 0,
-  };
-};
+): UpgradePoints =>
+  TURRET_UPGRADES[turret].map((u) =>
+    off?.has(u.id) ? 0 : Math.max(0, Math.floor(levels[u.id] ?? 0)),
+  );
+
+/** every turret's branch at once — TechState.upgrades */
+export const allUpgradePointsOf = (
+  levels: TechLevels,
+  off?: ReadonlySet<TechKind>,
+): Record<TowerKind, UpgradePoints> =>
+  Object.fromEntries(TOWER_KINDS.map((k) => [k, upgradePointsOf(k, levels, off)])) as Record<
+    TowerKind,
+    UpgradePoints
+  >;
+
+export { upgradedTower, NO_UPGRADES, type UpgradeContext, type UpgradePoints };
 
 /**
  * The tech tree: one square node per turret, laid out as a small graph.
@@ -624,10 +480,14 @@ export interface TechNodeDef {
    * refunded is not a tree, it is a loadout screen, and the whole weight
    * of a purchase is that it was a choice.
    *
-   * `duo-power` is the one exemption, and it earns it by being the one
-   * node whose worth depends on a board rather than on a save — see its
-   * entry in TECH_TREE. A refund returns EXACTLY what the point cost, so
-   * flipping it off and on again is free and never a way to farm.
+   * THE ULTIMATES ARE THE EXEMPTION — every turret's fourth rung, and
+   * nothing else. They earn it by being the only nodes priced in SURGE
+   * ALLOY, a currency a boss pays once and no amount of farming produces
+   * (grantRunReward): a save with three surge to its name is choosing
+   * which three turrets get transformed, and it has to be able to change
+   * its mind without felling another boss. A refund returns EXACTLY what
+   * the point cost, so flipping one off and on again is free and never a
+   * way to farm.
    */
   refundable?: boolean;
   /**
@@ -641,11 +501,12 @@ export interface TechNodeDef {
    * want to play with them can put them down without being punished for
    * having tried.
    *
-   * IT IS FOR THE ONE-SHOT NODES, NOT THE STACKING ONES. Graphite and Duo
-   * Power are each a single yes-or-no that changes what a duo IS — a
-   * different round, a different rule — so "not right now" is a sentence
-   * that means something on them. Rate of Fire and Pierce are dials: their
-   * answer is a NUMBER the player already chose by deciding how many
+   * IT IS FOR THE ONE-SHOT NODES, NOT THE STACKING ONES — every upgrade
+   * branch's third and fourth rungs, and nothing else. Each of those is a
+   * single yes-or-no that changes what the turret IS: a different round, a
+   * different target list, a different weapon. "Not right now" is a
+   * sentence that means something on them. The first two rungs are dials:
+   * their answer is a NUMBER the player already chose by deciding how many
    * points to spend, and a switch on a dial is just a second, worse way to
    * set it to zero.
    *
@@ -690,6 +551,13 @@ export interface TechNodeDef {
    *
    * y is the depth — a child sits BELOW its parent (or, in the north,
    * above it) — and x spreads siblings sideways.
+   *
+   * AN UPGRADE NODE IS NOT ON THE GRID AT ALL. The four rungs under each
+   * turret carry their turret's own cell here and are drawn as a row of
+   * chips hanging off it (TechTree.tsx), not as boxes with edges of their
+   * own. That is what keeps the crossing rule affordable: sixty-eight new
+   * nodes laid out as boxes would need sixty-eight clear cells and the
+   * edges to reach them, and the wings have nowhere to put either.
    */
   x: number;
   y: number;
@@ -884,7 +752,7 @@ export const BY_MINDUSTRY_VALUE: readonly TowerKind[] = [...TOWER_KINDS].sort(
   (a, b) => MINDUSTRY_VALUE[a] - MINDUSTRY_VALUE[b],
 );
 
-export const TECH_TREE: readonly TechNodeDef[] = [
+const CORE_TREE: readonly TechNodeDef[] = [
   {
     // THE ROOT, AND THE ONLY FREE NODE. It costs nothing, every save is
     // granted it (progress.ts), and its cap of one means it never asks for
@@ -915,88 +783,6 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     requires: "home",
     x: 3,
     y: 1,
-  },
-  {
-    // THE DUO BRANCH, first rung. See DUO_UPGRADES for what the four of
-    // them do; what follows is why they cost what they cost.
-    //
-    // A STAT NODE IS PRICED AGAINST THE ARMY, NOT AGAINST ONE TURRET. Duo
-    // capacity is 8 copper a point and a mid-campaign save owns hundreds;
-    // +5% fire rate across five hundred duos is worth twenty-five more of
-    // them, so a first point that cost what a duo costs would be free
-    // money. It leads at 250 copper for that reason, and climbs at 1.25 —
-    // far steeper than the tree's shared 1.01, because a stacking
-    // multiplier on a growing army is worth MORE every time the army
-    // grows, which is the one shape a near-flat curve cannot price.
-    //
-    // The bundle is the drop ratio (100 : 27 : 10) like everything else, so
-    // it opens on Incursion's own currencies and no gate is written here.
-    id: "duo-rof",
-    price: { base: { copper: 250, titanium: 65, thorium: 25 }, growth: 1.25 },
-    cap: 20,
-    requires: "duo",
-    x: 3,
-    y: 2,
-  },
-  {
-    // Pierce is worth more to a duo than raw damage is: a duo shoots a
-    // single small bullet at whatever is closest, and the swarm arrives in
-    // FILES. One extra body is a doubling against the thing this turret
-    // exists to be pointed at, which is why the base is five times rate of
-    // fire's and the climb is steeper still — ten points is +10 bodies a
-    // shot, and the last of them must cost like it.
-    id: "duo-pierce",
-    price: { base: { copper: 1200, titanium: 325, thorium: 120 }, growth: 1.4 },
-    cap: 10,
-    requires: "duo-rof",
-    x: 3,
-    y: 3,
-  },
-  {
-    // THE FLAT DOUBLING, bought once, and priced as the endgame purchase it
-    // is: 9 damage becomes 18 on every duo the save will ever place, past
-    // and future. PLASTANIUM IS THE GATE and nothing else needs to be — a
-    // Incursion save banks none of it (TARGET_DROP_RATIO in ladder.ts), so
-    // this node is visible and unpayable until the ladder has been climbed,
-    // exactly like fuse above it.
-    //
-    // 60,000 copper is roughly half again what a five-hundred-duo stack
-    // costs to buy outright, which is the comparison that matters: doubling
-    // what you have should not be cheaper than buying half as much again.
-    id: "duo-graphite",
-    toggle: true,
-    price: {
-      base: { copper: 60000, titanium: 16000, thorium: 6000, plastanium: 420 },
-      growth: 1,
-    },
-    cap: 1,
-    requires: "duo-pierce",
-    x: 3,
-    y: 4,
-  },
-  {
-    // ONE SURGE ALLOY, AND NOTHING ELSE. Surge is not a tier and never
-    // drops from a wave — a boss's first kill on a (world, difficulty) pays
-    // exactly one (see grantRunReward), so the bank's surge column counts
-    // boss fights won. That makes it the only honest price for a node that
-    // should wait on PROGRESSION rather than on farming, and it is the
-    // whole gate: no copper, no thorium, nothing a long enough grind
-    // produces.
-    //
-    // IT IS THE ONE NODE IN THE TREE THAT CAN BE SOLD BACK (refundTech in
-    // progress.ts). Its effect scales with how many duos are standing, so
-    // it is worth nothing on a board built around scorch and lancer and a
-    // great deal on a board of five hundred duos — and a save that has won
-    // exactly one boss fight should be able to change its mind about which
-    // of those it is playing without having to win another.
-    id: "duo-power",
-    toggle: true,
-    price: { base: { "surge-alloy": 1 }, growth: 1 },
-    cap: 1,
-    refundable: true,
-    requires: "duo-graphite",
-    x: 3,
-    y: 5,
   },
   {
     // the first AoE, and the moment tier 1 and tier 2 stop being difficulty:
@@ -1367,6 +1153,130 @@ export const TECH_TREE: readonly TechNodeDef[] = [
 ];
 
 /**
+ * WHAT AN UPGRADE RUNG COSTS, and the one rule the whole branch is priced
+ * by: A RUNG IS ITS TURRET'S OWN BUNDLE, SCALED.
+ *
+ * That is not laziness, it is rule TWO of this file (a cost bundle must
+ * carry the drop ratio of the difficulty that unlocks it) applied to a
+ * node that has no difficulty of its own. Scaling a bundle preserves its
+ * SHAPE exactly, so a scatter upgrade asks for copper and titanium in
+ * Incursion's own ratio and a spectre upgrade asks for phase fabric — and
+ * because the bundle is the gate, every rung opens on the same difficulty
+ * its turret does and never one earlier. Nothing had to be written down
+ * for that to be true.
+ *
+ * A STAT NODE IS PRICED AGAINST THE ARMY, NOT AGAINST ONE TURRET, which is
+ * why the multipliers are so large. Duo capacity is 8 copper a point and a
+ * mid-campaign save owns hundreds; +5% fire rate across five hundred duos
+ * is worth twenty-five more of them, so a first point that cost what a duo
+ * costs would be free money. The same argument holds at every scale, which
+ * is what makes ONE multiplier per rung the right shape rather than a
+ * table of seventeen.
+ *
+ * THE CLIMB IS STEEP ON THE DIALS AND FLAT ON THE ONE-SHOTS. A stacking
+ * multiplier on a growing army is worth MORE every time the army grows —
+ * the one shape the tree's near-flat SHARED_GROWTH cannot price — so the
+ * dials climb at 1.25 and 1.35. A one-shot has no ladder to climb.
+ */
+const UPGRADE_SCALE: readonly number[] = [0, 20, 90, 900];
+const UPGRADE_GROWTH: readonly number[] = [0, 1.25, 1.35, 1];
+
+/**
+ * WHAT AN ULTIMATE COSTS, IN SURGE ALLOY AND NOTHING ELSE, indexed by the
+ * turret's band (towerBand — how far up the currency list its own price
+ * reaches).
+ *
+ * Surge is not a tier and never drops from a wave: a boss's first kill on
+ * a (world, difficulty) pays exactly one (grantRunReward), so the bank's
+ * surge column counts boss fights won. That makes it the only honest price
+ * for a node that should wait on PROGRESSION rather than on farming, and
+ * it is the whole gate — no copper, no thorium, nothing a long enough
+ * grind produces.
+ *
+ * IT CLIMBS WITH THE TURRET because the turrets do. A duo, a scatter or a
+ * ripple is a turret an Incursion fields, and one boss buys its ultimate.
+ * Onslaught's plastanium turrets cost three, Nemesis's phase turrets six —
+ * so transforming a foreshadow is six boss fights' worth of trophy, and a
+ * save cannot have every ultimate in the game without having cleared most
+ * of the campaign on most of its maps.
+ */
+export const ULTIMATE_SURGE: readonly number[] = [1, 1, 1, 3, 6];
+
+/** how far up the currency list a bundle reaches — the band, off a Cost */
+const bandOfCost = (base: Cost): number => {
+  let band = 0;
+  for (const { item } of costEntries(base)) band = Math.max(band, ITEM_KINDS.indexOf(item));
+  return band;
+};
+
+/**
+ * DUO'S THREE PLAYTESTED BUNDLES, kept verbatim.
+ *
+ * They predate the scaling rule and they were tuned by hand against a
+ * board of five hundred duos, which is a board no other turret ever
+ * reaches — the rule would have charged 160 / 720 / 7,200 copper and every
+ * one of those is too cheap for a stat spread across an army that size.
+ * The rule is the default; this is the override, and a turret that earns
+ * one later belongs here beside them.
+ */
+const AUTHORED_UPGRADE_PRICE: Partial<Record<UpgradeKind, PriceCurve>> = {
+  "duo-rof": { base: { copper: 250, titanium: 65, thorium: 25 }, growth: 1.25 },
+  "duo-pierce": { base: { copper: 1200, titanium: 325, thorium: 120 }, growth: 1.4 },
+  "duo-graphite": {
+    base: { copper: 60000, titanium: 16000, thorium: 6000, plastanium: 420 },
+    growth: 1,
+  },
+};
+
+/** the price curve one rung charges — the authored bundle, or the rule */
+function upgradePrice(def: TurretUpgradeDef, turretBase: Cost): PriceCurve {
+  const authored = AUTHORED_UPGRADE_PRICE[def.id];
+  if (authored) return authored;
+  if (def.tier >= 4)
+    return { base: { "surge-alloy": ULTIMATE_SURGE[bandOfCost(turretBase)] }, growth: 1 };
+  const base: Cost = {};
+  for (const { item, amount } of costEntries(turretBase))
+    base[item] = tidy(amount * UPGRADE_SCALE[def.tier]);
+  return { base, growth: UPGRADE_GROWTH[def.tier] };
+}
+
+/**
+ * The sixty-eight upgrade nodes, derived from the table in upgrades.ts.
+ *
+ * They are a CHAIN per turret — rung one requires the turret, rung two
+ * requires rung one, and so on — which is the same edge every other node
+ * in the tree has and does the same job: the two cheap dials stand between
+ * a fresh save and the two expensive one-shots, so the ultimate can never
+ * be one click from the turret's own unlock.
+ *
+ * They carry the turret's own cell (see TechNodeDef.x) because they are
+ * drawn attached to it rather than laid out beside it.
+ */
+const UPGRADE_NODES: readonly TechNodeDef[] = ALL_UPGRADES.map((u) => {
+  const turret = CORE_TREE.find((n) => n.id === u.turret);
+  if (!turret) throw new Error(`upgrade "${u.id}" hangs off an unknown turret`);
+  return {
+    id: u.id,
+    price: upgradePrice(u, turret.price.base),
+    cap: u.cap,
+    // rung 3 changes what the turret IS and rung 4 replaces it, so both
+    // are things a save can put down without selling; a dial is not
+    toggle: u.tier >= 3,
+    // ...and only the ultimate, the one thing paid for in surge, comes back
+    refundable: u.tier >= 4,
+    requires: upgradeParent(u.id) ?? u.turret,
+    x: turret.x,
+    y: turret.y,
+  };
+});
+
+/**
+ * THE TREE AS EVERYTHING ELSE SEES IT: the authored board, plus a branch
+ * of four hanging off every turret on it.
+ */
+export const TECH_TREE: readonly TechNodeDef[] = [...CORE_TREE, ...UPGRADE_NODES];
+
+/**
  * What the NEXT point on this node costs, given how many it already holds.
  * `base * growth^owned` per item, skipping items the curve hasn't started
  * charging yet, then tidied to a readable number.
@@ -1488,11 +1398,12 @@ export interface TechState {
   /** loadout slots in the build bar: BASE_BAR_SLOTS plus owned slot nodes */
   barSlots: number;
   /**
-   * The duo branch as bought. Unlike `unlocked`, this is NOT narrowed by
-   * the difficulty's band: duo is admitted by every difficulty there is,
-   * and what the tree sells here is ownership (see DUO_UPGRADES).
+   * Every turret's upgrade branch as bought, points per rung. Unlike
+   * `unlocked` this is NOT narrowed by the difficulty's band: what the
+   * tree sells here is ownership, and a turret a difficulty will not admit
+   * simply never gets placed for its points to matter (see upgrades.ts).
    */
-  duo: DuoUpgrades;
+  upgrades: Record<TowerKind, UpgradePoints>;
 }
 
 /**
@@ -1567,5 +1478,5 @@ export function techState(
     BASE_BAR_SLOTS +
     ((levels["slot-7"] ?? 0) > 0 ? 1 : 0) +
     ((levels["slot-8"] ?? 0) > 0 ? 1 : 0);
-  return { unlocked, caps, speeds, barSlots, duo: duoUpgradesOf(levels, off) };
+  return { unlocked, caps, speeds, barSlots, upgrades: allUpgradePointsOf(levels, off) };
 }

@@ -1201,7 +1201,10 @@ export class Game {
     if (this.selected) {
       const t = this.selected;
       c.beginPath();
-      c.arc(t.x, t.y, TOWERS[t.kind].range, 0, Math.PI * 2);
+      // the LIVE range, not the table's: an upgrade branch that lengthened
+      // this turret's reach has to move the ring it is drawn with, or the
+      // ring becomes a lie about what the turret can shoot (Sim.statsFor)
+      c.arc(t.x, t.y, this.sim.statsFor(t.kind).range, 0, Math.PI * 2);
       c.fillStyle = "rgba(255,211,127,0.06)";
       c.fill();
       c.strokeStyle = "rgba(255,211,127,0.7)";

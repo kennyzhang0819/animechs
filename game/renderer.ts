@@ -67,6 +67,7 @@ import {
   SHRAPNEL,
   TOWERS as TOWERS_IMPORT,
   W as W_IMPORT,
+  type BulletStats,
 } from "./constants";
 
 // Module-local bindings for what the per-frame batch build reads per unit,
@@ -1547,7 +1548,10 @@ export class Renderer {
     // is dragging — it has no bullet, so this is its only visual
     for (const t of sim.towers) {
       if (t.beamStr > 0.01) this.drawTractorBeam(dyn, t);
-      if (t.beamT >= 0) this.drawContinuousBeam(dyn, t);
+      // the beam's LIVE stats, not the table's: a meltdown whose upgrade
+      // branch lengthened its beam has to be drawn at the length it is
+      // actually burning at (see Sim.statsFor)
+      if (t.beamT >= 0) this.drawContinuousBeam(dyn, t, sim.statsFor(t.kind).bullet.continuous);
     }
     const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
     const { ushield, ushieldAlpha, urad, uwet, uhungry, ueaten } = sim;
@@ -2694,7 +2698,6 @@ export class Renderer {
    * only thing on screen that says it is working.
    */
   private drawTractorBeam(dyn: Batch, t: Tower): void {
-    const st = TOWERS[t.kind];
     const scale = t.beamStr * 0.6; // TractorBeamTurret.laserWidth
     const x1 = t.x + Math.cos(t.angle) * 5 * MU; // shootLength
     const y1 = t.y + Math.sin(t.angle) * 5 * MU;
@@ -2767,8 +2770,11 @@ export class Renderer {
    * and Mathf.absin gives the whole thing a slow shimmer that keeps it
    * from reading as a static bar.
    */
-  private drawContinuousBeam(dyn: Batch, t: Tower): void {
-    const cont = TOWERS[t.kind].bullet.continuous;
+  private drawContinuousBeam(
+    dyn: Batch,
+    t: Tower,
+    cont: BulletStats["continuous"],
+  ): void {
     if (!cont) return;
     // held at full, then linearly out over fadeTime
     const fout = t.beamT > cont.fade ? 1 : t.beamT / cont.fade;
