@@ -145,6 +145,39 @@ export interface Progress {
    */
   techOff?: TechKind[];
   /**
+   * THE FULL UNLOCK IS ON FOR THIS SAVE — the back door's switch (see
+   * unlockEverything).
+   *
+   * It is a FLAG AND NOT A PILE OF POINTS, which is the whole reason it
+   * can be turned off again. It used to write `min(500, techCap)` into
+   * every node and then it was simply gone: granted points and bought
+   * points are the same number in the same field, so nothing could tell
+   * them apart afterwards and there was nothing to undo. Worse, the
+   * grant was permanent by accident — every save the game makes goes
+   * through loadProgress and back out through saveProgress, so the first
+   * layout stored, speed changed or run finished after the door was
+   * opened wrote the whole grant into the file as if it had been earned.
+   *
+   * Now the points are laid over the save at LOAD (see loadProgress) and
+   * stripped again at SAVE (see saveProgress), so what is on disk stays
+   * exactly what the player actually bought. Clearing this one boolean
+   * hands the real save straight back.
+   */
+  unlocked?: boolean;
+  /**
+   * WHAT THE SAVE REALLY HOLDS, when a grant has been laid over `tech`.
+   *
+   * Present only on a Progress that loadProgress granted to — the dev
+   * switch or `unlocked` above — and NEVER written to disk. It is the
+   * memory that makes the grant reversible: `tech` is the view the game
+   * plays with, this is the row the file keeps, and saveProgress writes
+   * this one whenever it exists.
+   *
+   * Every mutation path in this file is load → change → save, so without
+   * it each of those paths would quietly promote the view to the truth.
+   */
+  techBought?: TechLevels;
+  /**
    * The MUTATION ranks switched on for the next run (see mutation.ts) —
    * the optional rules the player has chosen to play under, kept across
    * runs and sessions like `speed` is, because it is a statement about how
@@ -392,7 +425,13 @@ export function loadProgress(): Progress {
     const raw = localStorage.getItem(KEY);
     if (!raw) {
       const p = fresh();
-      if (devUnlocking()) grantEveryNode(p.tech);
+      // a fresh save cannot carry the back door's flag, so only the dev
+      // switch can be granting here — but it is granting all the same, and
+      // the snapshot has to be taken or the first save would bake it in
+      if (devUnlocking()) {
+        p.techBought = { ...p.tech };
+        grantEveryNode(p.tech);
+      }
       return p;
     }
     const p = JSON.parse(raw) as Partial<Progress> & { tech?: unknown; scrap?: unknown };
@@ -420,10 +459,19 @@ export function loadProgress(): Progress {
     // never taken back, but no new save is given any
     tech.home = 1;
     tech.duo = Math.max(tech.duo ?? 0, DUO_START);
-    // the dev switch rides on top of a REAL save the same way it does on a
-    // fresh one, and only ever raises a count — so turning it off later
-    // gives the save back exactly as it was, minus nothing the player bought
-    if (devUnlocking()) grantEveryNode(tech);
+    // WHERE THE GRANT IS LAID ON, for both doors into it: the dev switch
+    // and the save's own `unlocked` flag. It rides on top of a REAL save
+    // the same way it does on a fresh one and only ever raises a count.
+    //
+    // `techBought` is the copy taken BEFORE the grant, and it is what makes
+    // "turning it off later gives the save back exactly as it was" true
+    // rather than merely intended — saveProgress writes that copy, so no
+    // amount of ordinary play can promote a granted point into a bought
+    // one. See the field's note on Progress.
+    const unlocked = p.unlocked === true;
+    const granting = devUnlocking() || unlocked;
+    const techBought = granting ? { ...tech } : undefined;
+    if (granting) grantEveryNode(tech);
     const bossKills = readBossKills(p);
     const clearedByMap = readClearedByMap(p);
     const layouts = readLayouts(p);
@@ -442,6 +490,8 @@ export function loadProgress(): Progress {
       hudMinimized: p.hudMinimized === true,
       loadout: readLoadout(p),
       techOff: readTechOff(p),
+      unlocked,
+      ...(techBought ? { techBought } : null),
       // cleaned against the rank this save has actually earned, so a switch
       // left on by a wiped ledger (or by a hand-edited save) reads as off
       // rather than as a rule the run has no right to be playing under
@@ -728,9 +778,24 @@ export function startingSpeed(p: Progress, allowed: readonly number[]): number {
   return best;
 }
 
+/**
+ * Write the save — with any UNLOCK VIEW peeled back off it first.
+ *
+ * THIS IS THE HALF THAT MAKES THE GRANT REVERSIBLE. loadProgress hands out
+ * a Progress whose `tech` may be every node in the tree; almost every
+ * writer in this file then takes that object, changes one unrelated thing
+ * — a layout, the speed, a cleared tier — and passes the whole of it back
+ * here. Storing it verbatim is what used to make the full unlock permanent
+ * and, once stored, indistinguishable from a campaign someone had played.
+ *
+ * So the granted rows never reach the disk: `techBought` is the row the
+ * file keeps, and it is dropped from the JSON along with the view.
+ */
 export function saveProgress(p: Progress): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(p));
+    const { techBought, ...rest } = p;
+    const out: Progress = techBought ? { ...rest, tech: techBought } : rest;
+    localStorage.setItem(KEY, JSON.stringify(out));
   } catch {
     // private windows / blocked storage: the run still plays, nothing sticks
   }
@@ -896,6 +961,12 @@ export function buyTech(node: TechKind, count = 1): Progress | null {
     const owned = p.tech[node] ?? 0;
     pay(p.bank, techPrice(node, owned));
     p.tech[node] = owned + 1;
+    // A PURCHASE IS REAL EVEN UNDER A GRANT, so it has to be written into
+    // the row that survives (see Progress.techBought). Without this the
+    // point would live only in the view and saveProgress would peel it
+    // straight back off — a player who bought something with the dev
+    // switch on would watch it vanish the moment they turned it off.
+    if (p.techBought) p.techBought[node] = (p.techBought[node] ?? 0) + 1;
   }
   // A turret's FIRST point is its unlock, and a fresh unlock should ride
   // the build bar without a trip through the loadout picker. A save that
@@ -960,9 +1031,39 @@ export function unlockEverything(): Progress {
     for (const { item, amount } of costEntries(techPrice(k, p.tech[k] ?? 0)))
       bank[item] = Math.max(bank[item], amount);
   }
-  saveProgress({ ...p, bank, tech: grantEveryNode({ ...p.tech }) });
+  // FLIP THE SWITCH, DO NOT POUR IN THE POINTS. loadProgress lays the whole
+  // tree over the save while this is set and saveProgress peels it back
+  // off, so what is stored stays the campaign the player actually played
+  // and lockEverything can hand it back intact.
+  saveProgress({ ...p, bank, unlocked: true });
   return loadProgress();
 }
+
+/**
+ * SHUT THE BACK DOOR: clear the full unlock and give the save back exactly
+ * as it was before the door was opened.
+ *
+ * Nothing is lost and nothing is taken. The granted points were never
+ * stored (see Progress.unlocked), so this removes a view rather than a
+ * possession: every node the player genuinely bought, every tier they
+ * cleared and every boss they felled is still there, because none of it
+ * was ever entangled with the grant.
+ *
+ * THE SURGE ALLOY THE DOOR HANDED OVER IS NOT CLAWED BACK, deliberately.
+ * It is topped up to the price of the refundable nodes so they can be
+ * tried at all (see unlockEverything), a `Math.max` that cannot stack, and
+ * a save that has been through the door is not one whose bank is being
+ * audited. Taking it back would also be wrong the moment any of it had
+ * been spent.
+ */
+export function lockEverything(): Progress {
+  const p = loadProgress();
+  saveProgress({ ...p, unlocked: false });
+  return loadProgress();
+}
+
+/** is the full unlock switched on for this save? */
+export const isUnlocked = (p: Progress): boolean => p.unlocked === true;
 
 /**
  * Hand a node's last point back, and the price of that point with it.

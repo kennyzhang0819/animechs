@@ -609,14 +609,21 @@ export interface TechNodeDef {
    * A refund hands the points back for currency and the node stops being
    * owned. A toggle keeps every point exactly where it is and only stops
    * APPLYING them, which is the difference between a shop and a settings
-   * switch. The duo branch wants the second: a save that has bought pierce
-   * and then finds it changes the turret into something it did not want to
-   * play with should be able to put it down without being punished for
-   * having tried it.
+   * switch. A save that bought graphite rounds and then found it did not
+   * want to play with them can put them down without being punished for
+   * having tried.
+   *
+   * IT IS FOR THE ONE-SHOT NODES, NOT THE STACKING ONES. Graphite and Duo
+   * Power are each a single yes-or-no that changes what a duo IS — a
+   * different round, a different rule — so "not right now" is a sentence
+   * that means something on them. Rate of Fire and Pierce are dials: their
+   * answer is a NUMBER the player already chose by deciding how many
+   * points to spend, and a switch on a dial is just a second, worse way to
+   * set it to zero.
    *
    * Only nodes whose effect is a RULE the sim reads every frame can carry
-   * this. Capacity cannot: switching off a turret's points would strand
-   * towers already standing on the board.
+   * this at all. Capacity cannot: switching off a turret's points would
+   * strand towers already standing on the board.
    */
   toggle?: boolean;
   /**
@@ -897,7 +904,6 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // The bundle is the drop ratio (100 : 27 : 10) like everything else, so
     // it opens on Incursion's own currencies and no gate is written here.
     id: "duo-rof",
-    toggle: true,
     price: { base: { copper: 250, titanium: 65, thorium: 25 }, growth: 1.25 },
     cap: 20,
     requires: "duo",
@@ -912,7 +918,6 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // fire's and the climb is steeper still — ten points is +10 bodies a
     // shot, and the last of them must cost like it.
     id: "duo-pierce",
-    toggle: true,
     price: { base: { copper: 1200, titanium: 325, thorium: 120 }, growth: 1.4 },
     cap: 10,
     requires: "duo-rof",
