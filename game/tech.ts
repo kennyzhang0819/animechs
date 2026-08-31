@@ -8,7 +8,7 @@ import {
   type Cost,
   type ItemKind,
 } from "./items";
-import { PAL, TOWERS, type TowerStats } from "./constants";
+import { MU, PAL, TOWERS, type TowerStats } from "./constants";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
 /**
@@ -235,6 +235,29 @@ export function upgradedDuo(u: DuoUpgrades, others: number): TowerStats {
     bullet: {
       ...stock.bullet,
       damage,
+      // THE GRAPHITE ROUND, 1:1 from Blocks.java's duo ammo() block:
+      //
+      //   Items.graphite, new BasicBulletType(3.5f, 18){{
+      //     width = 9f; height = 12f;
+      //     hitColor = backColor = trailColor = Pal.graphiteAmmoBack;
+      //     frontColor = Pal.graphiteAmmoFront;
+      //   }}
+      //
+      // Copper is a warm tan (eac1a8 over d39169) and graphite is a pale
+      // blue-white over blue-violet (dae1ee over 7d89d8), so the swap is
+      // the most visible thing the upgrade does — which is the point: a
+      // node that doubles every duo's damage must not fire a shot that
+      // looks identical to the one before it.
+      //
+      // backColor carries the hit and despawn effects too (hitColor is the
+      // same field upstream), which is fxColor here.
+      //
+      // NOT IMPORTED: speed 3.5 (copper 2.5), rangeChange +16, and
+      // reloadMultiplier 0.8. The first two are unasked-for buffs and the
+      // third is a NERF that would fight the rate-of-fire node two rows
+      // up; this upgrade is a damage node, so it takes graphite's damage
+      // and its look and leaves its handling alone.
+      //
       // the sprite is optional on a bullet in general; duo has one, and a
       // kind that did not would still take the spark colour
       ...(u.graphite
@@ -243,6 +266,11 @@ export function upgradedDuo(u: DuoUpgrades, others: number): TowerStats {
               ? {
                   sprite: {
                     ...stock.bullet.sprite,
+                    // Blocks.java, duo's graphite ammo: a 9x12 round where
+                    // copper's is 7x9. The size is half of why the two read
+                    // as different ammunition rather than a recolour
+                    across: 9 * MU,
+                    along: 12 * MU,
                     back: PAL.graphiteAmmoBack,
                     front: PAL.graphiteAmmoFront,
                   },

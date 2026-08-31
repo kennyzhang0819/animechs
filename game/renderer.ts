@@ -1647,7 +1647,10 @@ export class Renderer {
     }
     for (const p of sim.projs) {
       if (p.x < vx0 - 48 || p.x > vx1 + 48 || p.y < vy0 - 48 || p.y > vy1 + 48) continue;
-      const b = bulletOf(p.kind, p.frag);
+      // the SIM's resolution, not the static table: a duo the tree has
+      // upgraded fires a different bullet, and drawing the stock one made
+      // the graphite round invisible as a graphite round
+      const b = sim.bulletFor(p.kind, p.frag);
       // LiquidBulletType.draw: a water orb is not a sprite pair but a
       // filled disc of the liquid's own colour — Fill.circle(x, y,
       // orbSize). (The fout()/100 lerp toward white is a 1% shade and is

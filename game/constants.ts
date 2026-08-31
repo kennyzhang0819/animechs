@@ -23,7 +23,7 @@ export const UNIT_SPEED = 3.75 * CELL;
 
 // Mindustry's world scale: 8 world units per tile, 60 ticks per second.
 // Stats copied from the official repo convert through these.
-const MU = CELL / 8; // px per Mindustry world unit
+export const MU = CELL / 8; // px per Mindustry world unit
 const TICK = 60; // ticks per second
 
 const pal = (hex: number): RGB => [

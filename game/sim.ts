@@ -1142,8 +1142,16 @@ export class Sim {
     return kind === "duo" ? this.duoSpec : TOWERS[kind];
   }
 
-  /** the same resolution for a bullet already in the air (cf. bulletOf) */
-  private bulletFor(kind: TowerKind, frag: boolean): BulletStats {
+  /**
+   * The same resolution for a bullet already in the air (cf. bulletOf).
+   *
+   * PUBLIC BECAUSE THE RENDERER NEEDS IT TOO. It used to call the module's
+   * own bulletOf, which reads the STATIC table — so a graphite round was
+   * fired with 18 damage and its own colours and then drawn as a copper
+   * pellet, because the two halves were asking different tables the same
+   * question. Anything that wants a live bullet's stats comes through here.
+   */
+  bulletFor(kind: TowerKind, frag: boolean): BulletStats {
     const b = this.specOf(kind).bullet;
     return frag && b.frag ? b.frag.bullet : b;
   }
