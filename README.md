@@ -1,4 +1,4 @@
-# Swarmdustry
+# MechSwarm
 
 Tower-defense swarm prototype: flow-field pathfinding for up to 22,000 units,
 WebGL2 instanced rendering, and towers (1×1 up to 4×4) that block movement and
@@ -75,14 +75,14 @@ stale tab or a cached bundle looks exactly like a fix not working.
   Water is a batch and a program of its own — Mindustry's `water.frag`,
   ported, so the sea swells and its bright bands drift across the map
 - `game/game.ts` — rAF loop, input, 2d overlay (placement ghost), stats
-- `components/Swarmfield.tsx` — React shell: HUD, difficulty picker,
+- `components/MechSwarm.tsx` — React shell: HUD, difficulty picker,
   six-slot build bar with its loadout picker, game-speed switcher, canvases
 - `components/TechTree.tsx` — the tech tree as a zoomable map, with the
   mutation column down its left edge
 - `components/LevelEditorView.tsx`, `MapEditorView.tsx`, `BalanceView.tsx` —
   the admin authoring surfaces
 
-In dev builds the running `Game` instance is exposed as `window.__swarmfield`
+In dev builds the running `Game` instance is exposed as `window.__mechswarm`
 for console poking, and the ladder's tuning surface as `window.__ladder`
 (`.spec(n)` for a difficulty's playable spec, `.budget(n)` for what the
 arithmetic says it costs).

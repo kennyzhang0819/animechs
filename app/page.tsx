@@ -1,5 +1,5 @@
-import Swarmfield from "@/components/Swarmfield";
+import MechSwarm from "@/components/MechSwarm";
 
 export default function Home() {
-  return <Swarmfield />;
+  return <MechSwarm />;
 }

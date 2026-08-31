@@ -7,8 +7,8 @@ import type { CapacitorConfig } from "@capacitor/cli";
  * game's absolute fetches — /levels/1.json, /maps/… — resolve unchanged.
  */
 const config: CapacitorConfig = {
-  appId: "com.swarmdustry.game",
-  appName: "Swarmdustry",
+  appId: "com.mechswarm.game",
+  appName: "MechSwarm",
   webDir: "out",
   ios: {
     // the game paints its own background; avoid a white flash at launch

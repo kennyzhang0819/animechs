@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Swarmdustry</string>
-    <string name="title_activity_main">Swarmdustry</string>
-    <string name="package_name">com.swarmdustry.game</string>
-    <string name="custom_url_scheme">com.swarmdustry.game</string>
+    <string name="app_name">MechSwarm</string>
+    <string name="title_activity_main">MechSwarm</string>
+    <string name="package_name">com.mechswarm.game</string>
+    <string name="custom_url_scheme">com.mechswarm.game</string>
 </resources>

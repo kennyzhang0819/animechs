@@ -138,7 +138,7 @@ export interface Progress {
    * fits TechState.barSlots of them, PvZ-style — owning a turret does not
    * put it on the bar, picking it does. Absent on a save that has never
    * curated, which reads as "auto-fill the slots from whatever is
-   * unlocked" (see Swarmfield's bar).
+   * unlocked" (see MechSwarm's bar).
    */
   loadout?: TowerKind[];
   /**
@@ -213,7 +213,15 @@ export interface TowerPlacement {
   gy: number;
 }
 
-const KEY = "dagger-problem.progress.v1";
+const KEY = "mechswarm.progress.v1";
+
+/**
+ * The key the save lived under when the game was called "Sir, We Have a
+ * Dagger Problem". A browser that played it still holds a campaign there,
+ * so the loader falls back to it and the next save writes the campaign
+ * back under KEY. Removable once no live install predates the rename.
+ */
+const LEGACY_KEY = "dagger-problem.progress.v1";
 
 /**
  * The free opening loadout — a hand-tuned constant (see OPENING_DUOS in
@@ -434,7 +442,7 @@ const techCapOf = (k: TechKind): number => techNode(k).cap ?? Infinity;
 
 export function loadProgress(): Progress {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(KEY) ?? localStorage.getItem(LEGACY_KEY);
     if (!raw) {
       const p = fresh();
       // a fresh save cannot carry the back door's flag, so only the dev
@@ -825,6 +833,7 @@ export function saveProgress(p: Progress): void {
 export function resetProgress(): void {
   try {
     localStorage.removeItem(KEY);
+    localStorage.removeItem(LEGACY_KEY); // or the pre-rename save would reappear
   } catch {
     // ignore — same storage caveat as saveProgress
   }
@@ -1020,7 +1029,7 @@ export function buyTech(node: TechKind, count = 1): Progress | null {
  * get there, every time.
  *
  * IT IS A DELIBERATE ACT, NOT A FLAG. Nothing calls this on load. It is
- * reached only by the tap gesture on the settings screen (see Swarmfield),
+ * reached only by the tap gesture on the settings screen (see MechSwarm),
  * which no player finds by accident and no player is told about — the same
  * bargain Android's build-number tap makes.
  *

@@ -6,7 +6,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "--prefix",
-        "/Users/kennyzhang/Desktop/swarmfield-footage/m1-engine",
+        "/Users/kennyzhang/Desktop/mechswarm-footage/m1-engine",
         "run",
         "dev",
         "--",
@@ -20,7 +20,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "--prefix",
-        "/Users/kennyzhang/Desktop/swarmfield-footage/m2-artpass",
+        "/Users/kennyzhang/Desktop/mechswarm-footage/m2-artpass",
         "run",
         "dev",
         "--",
@@ -34,7 +34,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "--prefix",
-        "/Users/kennyzhang/Desktop/swarmfield-footage/m3-feel",
+        "/Users/kennyzhang/Desktop/mechswarm-footage/m3-feel",
         "run",
         "dev",
         "--",
@@ -48,7 +48,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "--prefix",
-        "/Users/kennyzhang/Desktop/swarmfield",
+        "/Users/kennyzhang/Desktop/mechswarm",
         "run",
         "dev",
         "--",
@@ -62,7 +62,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "--prefix",
-        "/Users/kennyzhang/Desktop/swarmfield",
+        "/Users/kennyzhang/Desktop/mechswarm",
         "run",
         "dev",
         "--",
@@ -76,7 +76,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "--prefix",
-        "/Users/kennyzhang/Desktop/swarmfield/.claude/worktrees/youtube-game-series-plan-6b9254",
+        "/Users/kennyzhang/Desktop/mechswarm/.claude/worktrees/youtube-game-series-plan-6b9254",
         "run",
         "dev",
         "--",
@@ -86,7 +86,7 @@
       "port": 3105
     },
     {
-      "name": "swarmdustry",
+      "name": "mechswarm",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",
@@ -98,7 +98,7 @@
       "port": 3110
     },
     {
-      "name": "swarmdustry-3199",
+      "name": "mechswarm-3199",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",
@@ -110,7 +110,7 @@
       "port": 3199
     },
     {
-      "name": "swarmdustry-3120",
+      "name": "mechswarm-3120",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",
@@ -122,7 +122,7 @@
       "port": 3120
     },
     {
-      "name": "swarmdustry-3000",
+      "name": "mechswarm-3000",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",

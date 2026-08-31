@@ -1,4 +1,4 @@
-package com.swarmdustry.game;
+package com.mechswarm.game;
 
 import com.getcapacitor.BridgeActivity;
 

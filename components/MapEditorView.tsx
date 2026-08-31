@@ -23,7 +23,7 @@ const LAYER_ROWS: ReadonlyArray<[keyof TerrainLayers, string]> = [
   ["core", "Core"],
 ];
 
-const POS_KEY = "swarmdustry.editor.panels.v1";
+const POS_KEY = "mechswarm.editor.panels.v1";
 
 /** remember one panel's position and minimised state */
 function persist(id: string, state: { x: number; y: number; open: boolean }): void {

@@ -73,7 +73,7 @@ import TechTree from "./TechTree";
 const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
 
 /**
- * THE TOUCH BACK DOOR's three numbers (see `taps` in Swarmfield).
+ * THE TOUCH BACK DOOR's three numbers (see `taps` in MechSwarm).
  *
  * Seven taps because that is Android's build-number count, and the count
  * being a known idiom is worth more than any number picked fresh. The
@@ -582,7 +582,7 @@ const TOOL_BTN =
   "flex h-[4.5rem] w-14 shrink-0 flex-col items-center justify-center gap-0.5 rounded border backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
 
 
-export default function Swarmfield() {
+export default function MechSwarm() {
   const glRef = useRef<HTMLCanvasElement>(null);
   const uiRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef<Game | null>(null);
@@ -796,7 +796,7 @@ export default function Swarmfield() {
         setHud(g.ui());
         if (process.env.NODE_ENV !== "production") {
           const w = window as unknown as Record<string, unknown>;
-          w.__swarmfield = g;
+          w.__mechswarm = g;
           // the ladder's number guide, next to the running game.
           // `__ladder.audit()` is one row a difficulty, `.waves()` one row a
           // wave, and `.spec(n)` is what to hand `sim.loadLevel` to watch a
@@ -881,7 +881,7 @@ export default function Swarmfield() {
       // drop the debug global too — a stale pointer to a destroyed Game
       // makes console probing silently act on the wrong instance
       const w = window as unknown as Record<string, unknown>;
-      if (w.__swarmfield === game) delete w.__swarmfield;
+      if (w.__mechswarm === game) delete w.__mechswarm;
     };
   }, [screen, level]);
 
@@ -1110,8 +1110,8 @@ export default function Swarmfield() {
             <>
               <div className="text-center">
                 <h1 className="text-3xl font-bold uppercase tracking-[0.2em] text-[#EDEDEF] sm:text-4xl sm:tracking-[0.35em]">
-                  Sir, We Have a<br />
-                  <span className="text-[#FFD37F]">Dagger Problem</span>
+                  Mech<br />
+                  <span className="text-[#FFD37F]">Swarm</span>
                 </h1>
               </div>
               <div className="flex w-full max-w-[20rem] flex-col gap-3">

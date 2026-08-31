@@ -33,7 +33,7 @@ body {
 /* Nothing in the app is a text gesture. Every screen is made of things you
    press — nodes, level cards, HUD buttons — and both iOS's long-press
    magnifier and a mouse drag's blue highlight read as the UI glitching
-   rather than as an offer. The canvas already opted out (Swarmfield); this
+   rather than as an offer. The canvas already opted out (MechSwarm); this
    is the same rule for every other screen, on every pointer — a drag on the
    admin dashboard is a slider sweep, not a selection.
 
