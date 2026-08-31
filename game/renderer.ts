@@ -90,6 +90,7 @@ import {
   type LegSpec,
   type WakeSpec,
 } from "./levels";
+import { HUNGRY_GROWTH, HUNGRY_HUE } from "./ascension";
 import { MAX_LEGS, WAKE_PTS, type Sim } from "./sim";
 import { isWaterFloor, showsFloorCell, WALL_DEEP, type Terrain } from "./terrain";
 import { FxKind, type Effect, type RGB, type Tower, type TowerKind } from "./types";
@@ -160,6 +161,25 @@ const FLAME_GRAY = [0.5, 0.5, 0.5] as const;
 const WET_TINT: ReadonlyArray<RGB> = HP_TINT.map(
   (t): RGB => [t[0] * 0.62, t[1] * 0.75, t[2]],
 );
+/**
+ * The same trick for the HUNGRY status (ascension rank 1): the hue
+ * multiplied into whatever the unit was already drawn in, one table per
+ * hp third so damage still darkens it and one pair of tables so a soaked
+ * hungry unit reads as both.
+ *
+ * IT HAS TO BE VISIBLE FROM THE FIRST FRAME. The swelling says which units
+ * have been eating, but a hungry unit that has not eaten yet is the one
+ * worth shooting FIRST, and until it takes a bite nothing else on it
+ * differs from the body beside it. Four small tables buy the player that,
+ * with no per-unit allocation and no second draw pass.
+ */
+const hungry = (rows: ReadonlyArray<RGB>): ReadonlyArray<RGB> =>
+  rows.map((t): RGB => [t[0] * HUNGRY_HUE[0], t[1] * HUNGRY_HUE[1], t[2] * HUNGRY_HUE[2]]);
+const HUNGRY_TINT = hungry(HP_TINT);
+/** the kill puff's ring colour — what a Death effect is drawn in unless
+ *  the push named one of its own */
+const DEATH_COL: RGB = [1, 0.54, 0.24];
+const WET_HUNGRY_TINT = hungry(WET_TINT);
 
 /**
  * Draw.color(a, b, t) and Draw.color(a, b, c, t): a two- or three-stop ramp
@@ -1177,6 +1197,37 @@ export class Renderer {
       uvr, tint[0], tint[1], tint[2], alpha);
   }
 
+  /**
+   * THE SWELL, and the one place a unit's art can be drawn at a size the
+   * sim did not choose.
+   *
+   * A hungry unit grows five per cent a meal (ascension.ts), and a unit's
+   * art is not one quad: a mech is a dozen parts at world positions, a
+   * legged hull is feet, knees and segments the SIM owns, and every one of
+   * them would have to be scaled about the body's centre by hand. So the
+   * scale lives here instead — one pivot and one factor, applied to
+   * position AND size as each part goes into the batch, which makes every
+   * draw path swell correctly without any of them knowing about it.
+   *
+   * Zero cost when nothing is swelling: the factor is exactly 1 for every
+   * unit that has never eaten, and the branch below is skipped outright.
+   * Height keeps its sign, so a mirrored part stays mirrored.
+   */
+  private sScale = 1;
+  private sPivotX = 0;
+  private sPivotY = 0;
+
+  /** draw everything until endScale() `f` times its size about (x, y) */
+  private beginScale(x: number, y: number, f: number): void {
+    this.sScale = f;
+    this.sPivotX = x;
+    this.sPivotY = y;
+  }
+
+  private endScale(): void {
+    this.sScale = 1;
+  }
+
   private push(
     b: Batch,
     x: number,
@@ -1191,6 +1242,13 @@ export class Renderer {
     a: number,
   ): void {
     if (b.n >= b.cap) return;
+    const f = this.sScale;
+    if (f !== 1) {
+      x = this.sPivotX + (x - this.sPivotX) * f;
+      y = this.sPivotY + (y - this.sPivotY) * f;
+      w *= f;
+      h *= f;
+    }
     let o = b.n * FLOATS;
     const d = b.data;
     d[o++] = x; d[o++] = y; d[o++] = w; d[o++] = h; d[o++] = rot;
@@ -1492,7 +1550,7 @@ export class Renderer {
       if (t.beamT >= 0) this.drawContinuousBeam(dyn, t);
     }
     const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
-    const { ushield, ushieldAlpha, urad, uwet } = sim;
+    const { ushield, ushieldAlpha, urad, uwet, uhungry, ueaten } = sim;
     // the fleet's wakes, at Mindustry's Layer.debris: UNDER every unit,
     // including the hulls that laid them, so a crowded lane does not draw
     // one boat's foam over another boat
@@ -1512,12 +1570,19 @@ export class Renderer {
       for (let i = 0; i < n; i++) {
         const k = ukind[i];
         if (KIND_FLYING[k] !== wantFly) continue;
-        const cm = KIND_CULL[k];
+        // a hungry unit that has been eating is drawn HUNGRY_GROWTH bigger
+        // per meal (ascension.ts) — art only, the sim's hitbox never moves.
+        // Its cull margin grows with it or a swollen unit would pop out at
+        // the screen edge while half of it is still on screen
+        const grow = ueaten[i] > 0 ? 1 + ueaten[i] * HUNGRY_GROWTH : 1;
+        const cm = grow === 1 ? KIND_CULL[k] : KIND_CULL[k] * grow;
         if (upx[i] < vx0 - cm || upx[i] > vx1 + cm || upy[i] < vy0 - cm || upy[i] > vy1 + cm)
           continue;
         const usz = KIND_SPRITE[k];
+        if (grow !== 1) this.beginScale(upx[i], upy[i], grow);
         if (pass === 1) {
           this.push(dyn, upx[i] + SHADOW_OFF, upy[i] + SHADOW_OFF, usz, usz, urot[i], KIND_UV[k], 0, 0, 0, SHADOW_ALPHA);
+          this.endScale();
           continue;
         }
         // UnitType.drawShield: a crux-red halo at hitSize * 1.3, its opacity
@@ -1536,7 +1601,10 @@ export class Renderer {
         // hp thirds of the unit's own max, so every kind tints alike —
         // read off the water-multiplied rows while the unit is wet
         const t3 = (uhp[i] * 3) / uhpmax[i];
-        const tint = (uwet[i] > 0 ? WET_TINT : HP_TINT)[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
+        const table = uhungry[i]
+          ? uwet[i] > 0 ? WET_HUNGRY_TINT : HUNGRY_TINT
+          : uwet[i] > 0 ? WET_TINT : HP_TINT;
+        const tint = table[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
         const legArt = KIND_LEG[k], gait = KIND_GAIT[k];
         const mech = KIND_MECH[k];
         if (legArt && gait) {
@@ -1551,6 +1619,7 @@ export class Renderer {
           // visibly swings the hull round after the course change
           this.push(dyn, upx[i], upy[i], usz, usz, urot[i], KIND_UV[k], tint[0], tint[1], tint[2], 1);
         }
+        this.endScale();
       }
     }
     // Layer.bullet - 0.01: an artillery shell's trail is laid UNDER the
@@ -1661,8 +1730,12 @@ export class Renderer {
       }
       const t = e.age / e.ttl;
       if (e.kind === FxKind.Death) {
+        // the kill puff's own orange unless the push named a colour — a
+        // body DEVOURED by a hungry unit wears the hungry hue instead, so
+        // it never reads as a kill the player's towers scored
         const s = 7 + t * 22;
-        this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 1, 0.54, 0.24, (1 - t) * 0.9);
+        const c = e.col ?? DEATH_COL;
+        this.push(dyn, e.x, e.y, s, s, 0, UV_RING, c[0], c[1], c[2], (1 - t) * 0.9);
       } else if (e.kind === FxKind.Flak) {
         this.drawFlakExplosion(dyn, e, t);
       } else if (e.kind === FxKind.BulletHit) {

@@ -1072,6 +1072,15 @@ export interface LevelSpec {
   enemyLevel?: number;
   /** which tier of the ladder this spec was expanded for; unset = baseline */
   tier?: number;
+  /**
+   * The ASCENSION ranks this run is played under (see ascension.ts) — the
+   * optional rules the player switched on, not anything the ladder decides.
+   * Unset is the campaign as authored, and is what every spec the editor
+   * and the audit arithmetic build carries: an ascension changes what
+   * happens to a wave AFTER it spawns, never what the script sends, so the
+   * numbers in ladder.ts stay true whichever of these is on.
+   */
+  ascension?: readonly number[];
 }
 
 /**

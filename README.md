@@ -32,8 +32,11 @@ stale tab or a cached bundle looks exactly like a fix not working.
   audit/check arithmetic over the authored script
 - `game/tech.ts` — the tech tree: turret price bundles (one shared growth
   constant for every turret), abilities, and the build-bar slot upgrades
+- `game/ascension.ts` — the **ascension line**, the tech tree's left
+  column: optional rules the player switches on, earned one rank per boss
+  felled rather than bought
 - `game/progress.ts` — the save: bank, difficulties cleared, tech points,
-  saved layouts, game speed, build-bar loadout
+  saved layouts, game speed, build-bar loadout, ascension switches
 - `game/items.ts` — the five currencies (copper, titanium, thorium,
   plastanium, phase-fabric)
 - `game/maps.ts` — map documents: terrain layers, spawn circles, per-layer
@@ -65,7 +68,8 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `game/game.ts` — rAF loop, input, 2d overlay (placement ghost), stats
 - `components/Swarmfield.tsx` — React shell: HUD, difficulty picker,
   six-slot build bar with its loadout picker, game-speed switcher, canvases
-- `components/TechTree.tsx` — the tech tree as a zoomable map
+- `components/TechTree.tsx` — the tech tree as a zoomable map, with the
+  ascension column down its left edge
 - `components/LevelEditorView.tsx`, `MapEditorView.tsx`, `BalanceView.tsx` —
   the admin authoring surfaces
 
@@ -121,6 +125,50 @@ level-20 dagger worth shooting and a fortress unkillable by duos at
 Incursion. Per **difficulty** there are two more knobs in `DIFFICULTIES`:
 shield pools scale ×1/×5/×20, and flat ground/air armour bonuses exist
 (currently authored 0).
+
+### Ascension
+
+The tech tree forks three ways off `home`. Turrets run down the middle,
+the utilities off to the right — and the **ascension line** is the column
+on the far left, which is not a purchase at all.
+
+|  | the tree | the ascension line |
+|---|---|---|
+| how it is got | paid for out of the bank | one rank per **boss felled** |
+| what it does | more turrets, faster pace | makes the run **harder** |
+| owning it | permanent capacity | a **switch**, on or off per run |
+
+Every save starts at **rank 0** with the column empty. Rank is not stored:
+it is the length of the boss-trophy ledger the save already keeps
+(`Progress.bossKills`, one entry per distinct boss fight won), so a boss
+pays a rank exactly once — a new world, or a difficulty above the one it
+last fell on. Reaching a rank only **offers** the switch; the player turns
+each one on and off in the tree, the deploy panel names whichever are in
+force, and nothing is ever forced on.
+
+An ascension changes what happens to a wave **after** it spawns and never
+what the script sends, so every number in `ladder.ts` — wave counts, enemy
+totals, the drop-ratio audit — stays true whichever switches are on.
+
+**Rank 1 — Hungry.** One spawn in ten walks in hungry (tinted pink, and
+it never spreads: nothing in the game applies the status). Once a second
+it reaches four tiles for a random neighbour that is not itself hungry,
+not a boss, and on its own movement layer, and swallows it: the meal is
+removed, the eater takes **double the meal's full health** onto both its
+current and its maximum pool, and it draws 5% bigger. Ten meals is the
+ceiling — twenty-one times the health it spawned with, at 1.5x size.
+
+Nothing else crosses over. Not shields, force fields, repair or shield
+auras, burning, wet, armour or speed — a dagger that eats a quasar is a
+very fat dagger. The **hitbox never moves either**: `urad` is what
+physics, splash and every targeting scan read, and the swelling is art
+(`Renderer.beginScale`, one pivot applied to every part of a unit's
+assembly as it goes into the batch).
+
+And **the eating is a tax on salvage**. A devoured body is removed without
+ever being killed, so it never touches `killsByKind` and pays no drop at
+all, while the unit that ate it still drops exactly what its own kind
+drops. Ten meals cost ten bodies' worth of salvage and hand back one.
 
 ### Authoring waves
 

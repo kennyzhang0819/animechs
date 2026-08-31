@@ -1,5 +1,6 @@
 import { UNIT_KINDS, UNIT_STATS, unitDrop, WORLD } from "./levels";
 import { OPENING_ARCS, OPENING_DUOS, tierDropBonus, TOP_TIER } from "./ladder";
+import { ASCENSION_MAX, cleanAscension } from "./ascension";
 import {
   addScaled,
   canAfford,
@@ -109,6 +110,17 @@ export interface Progress {
    * unlocked" (see Swarmfield's bar).
    */
   loadout?: TowerKind[];
+  /**
+   * The ASCENSION ranks switched on for the next run (see ascension.ts) —
+   * the optional rules the player has chosen to play under, kept across
+   * runs and sessions like `speed` is, because it is a statement about how
+   * this player wants to play rather than a fact about one run.
+   *
+   * It is a CHOICE, not a possession: what a save has EARNED is its rank,
+   * and rank is read off the boss ledger (ascensionRank) rather than stored
+   * here. Absent, or empty, means the campaign as authored.
+   */
+  ascension?: number[];
 }
 
 /** one emplacement, as the save keeps it: what, and which cell */
@@ -173,6 +185,34 @@ const DEV_UNLOCK_ALL = true;
 /** is the dev unlock actually in force? production ignores the switch */
 const devUnlocking = (): boolean =>
   DEV_UNLOCK_ALL && process.env.NODE_ENV !== "production";
+
+/**
+ * THE ASCENSION RANK a boss ledger is worth — how far up the tree's left
+ * column that save has climbed. Zero on a fresh save, and every save starts
+ * there.
+ *
+ * ONE RANK PER BOSS FELLED, and the count is the ledger ITSELF (one entry
+ * per distinct boss fight won, see grantRunReward). Nothing separate is
+ * stored: a second number counting the same events is a second number that
+ * can disagree with the first, and the ledger is already the save's answer
+ * to "which bosses has this player beaten". A boss can therefore never pay
+ * a rank twice — the ledger refuses to record it twice — so ascension is
+ * earned by beating a boss somewhere new (a fresh world, or a difficulty
+ * above the one it last fell on), never by farming the wave it dies on.
+ *
+ * THE DEV SWITCH REACHES HERE TOO (see DEV_UNLOCK_ALL). It hands a
+ * developer the whole tree without playing the campaign, and the ascension
+ * line is out of reach for exactly the reason the tree is: its first rank
+ * sits behind a boss at the end of a fifty-wave script. Production ignores
+ * the switch, so the shipped game earns every rank the honest way.
+ *
+ * IT IS ONE FUNCTION BECAUSE BOTH READERS MUST AGREE. The save loader
+ * cleans the switched-on list against this, and the tree offers switches
+ * against it; if they disagreed by so much as the dev grant, a switch the
+ * tree let you flip would be scrubbed back off on the very next load.
+ */
+const rankOf = (bossKills: readonly string[] | undefined): number =>
+  devUnlocking() ? ASCENSION_MAX : Math.min(ASCENSION_MAX, bossKills?.length ?? 0);
 
 /**
  * Raise every node to a usable number of points, keeping anything the save
@@ -326,15 +366,20 @@ export function loadProgress(): Progress {
     // fresh one, and only ever raises a count — so turning it off later
     // gives the save back exactly as it was, minus nothing the player bought
     if (devUnlocking()) grantEveryNode(tech);
+    const bossKills = readBossKills(p);
     return {
       bank: readBank(p),
       clearedByMap: readClearedByMap(p),
       tech,
-      bossKills: readBossKills(p),
+      bossKills,
       layouts: readLayouts(p),
       speed: readSpeed(p),
       hudMinimized: p.hudMinimized === true,
       loadout: readLoadout(p),
+      // cleaned against the rank this save has actually earned, so a switch
+      // left on by a wiped ledger (or by a hand-edited save) reads as off
+      // rather than as a rule the run has no right to be playing under
+      ascension: cleanAscension((p as { ascension?: unknown }).ascension, rankOf(bossKills)),
     };
   } catch {
     return fresh();
@@ -394,6 +439,25 @@ function readLoadout(p: { loadout?: unknown }): TowerKind[] | undefined {
     if (typeof k === "string" && kinds.has(k) && !out.includes(k as TowerKind))
       out.push(k as TowerKind);
   return out;
+}
+
+/** how far up the tree's left column this save has climbed — see rankOf */
+export const ascensionRank = (p: Progress): number => rankOf(p.bossKills);
+
+/** the ranks this run will actually be played under: what the player
+ *  switched on, held to what they have earned */
+export const activeAscension = (p: Progress): number[] =>
+  cleanAscension(p.ascension, ascensionRank(p));
+
+/** switch one ascension rank on or off, and remember it for the next run */
+export function saveAscension(level: number, on: boolean): Progress {
+  const p = loadProgress();
+  const have = new Set(activeAscension(p));
+  if (on) have.add(level);
+  else have.delete(level);
+  const next = { ...p, ascension: cleanAscension([...have], ascensionRank(p)) };
+  saveProgress(next);
+  return next;
 }
 
 /** remember which turrets ride in the build bar's slots */

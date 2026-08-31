@@ -69,6 +69,15 @@ import {
 /** module-local for the same getter reason as the constants block above */
 const UNIT_KINDS = UNIT_KINDS_IMPORT;
 import { armorBonusAtLevel, shieldScaleAtLevel, unitHpAtLevel } from "./ladder";
+import {
+  ASC_HUNGRY,
+  hasAscension,
+  HUNGRY_CHANCE,
+  HUNGRY_HP_PER_MEAL,
+  HUNGRY_MAX_MEALS,
+  HUNGRY_PERIOD,
+  HUNGRY_REACH,
+} from "./ascension";
 import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap } from "./maps";
 import type { TechState } from "./tech";
 import { isBuildableWall, isWaterFloor, waterWalkMask, type Terrain } from "./terrain";
@@ -119,6 +128,11 @@ const FX_DUST_CAP = 140;
  * game state this never clips — it exists so the arrays have a size.
  */
 const FX_MAX = 8192;
+/** seconds a death ring lives — the puff a body leaves wherever it went */
+const FX_DEATH = 0.35;
+/** what a DEVOURED body's ring is drawn in (see feedHungry) — the hungry
+ *  hue, so a meal never reads as a kill the player's towers scored */
+const HUNGRY_FX_COL: RGB = [1, 0.35, 0.72];
 
 // --- Mindustry unit physics (async/PhysicsProcess.java) ---
 // every unit is a circle of radius hitSize * unitCollisionRadiusScale
@@ -519,6 +533,23 @@ export class Sim {
   readonly uwet = new Float32Array(MAX_UNITS);
   readonly uwetSlow = new Float32Array(MAX_UNITS);
   /**
+   * THE HUNGRY STATUS (ascension rank 1, ascension.ts): 1 = this unit eats
+   * its neighbours. Rolled once at spawn and never applied by anything
+   * else — there is no weapon, aura or effect that makes a unit hungry, so
+   * unlike burning and wet this one never changes for the rest of a life.
+   *
+   * `ueaten` is how many meals it has taken, capped at HUNGRY_MAX_MEALS.
+   * The renderer reads BOTH: the flag tints it, the count swells it.
+   * `uhungerT` is the seconds left on its feeding clock.
+   *
+   * These are three arrays and not one packed field because the feed pass
+   * reads the flag over every unit on the field and only touches the other
+   * two for the tenth that answers yes.
+   */
+  readonly uhungry = new Uint8Array(MAX_UNITS);
+  readonly ueaten = new Uint8Array(MAX_UNITS);
+  private readonly uhungerT = new Float32Array(MAX_UNITS);
+  /**
    * a never-reused identity, Mindustry's entity id. Indices are recycled by
    * swap-remove the instant anything dies, so anything that must remember a
    * particular unit across ticks — a piercing bullet's hit list — has to
@@ -603,6 +634,22 @@ export class Sim {
   totalEnemies = 0;
   kills = 0;
   leaked = 0;
+  /**
+   * Bodies EATEN by hungry units (ascension rank 1) — removed from the
+   * field without ever having been killed or leaked.
+   *
+   * It is its own counter and not a kill for two reasons. The HUD's kill
+   * count is what the player's towers did, and crediting them with a meal
+   * they had no part in is a lie on the one number that says how the run is
+   * going. And `remaining()` is what ENDS the run: a devoured unit is gone,
+   * so it has to come off the total or a wave that eats itself can never be
+   * finished and the level never wins.
+   *
+   * killsByKind — the drop ledger — is deliberately untouched, which is the
+   * whole "hungry enemies do not drop more materials" rule: what is eaten
+   * pays nothing, and the eater still pays exactly its own kind's drop.
+   */
+  devoured = 0;
   /** kills per unit kind this run, indexed like UNIT_KINDS — the drop payout */
   readonly killsByKind = new Int32Array(UNIT_KINDS.length);
   // the core's health: every unit that reaches it takes one point. At 1
@@ -613,6 +660,8 @@ export class Sim {
   // the map editor's mode) places no restrictions; the campaign sets it from
   // the save's tech tree before play (see Game.setTech)
   private tech: TechState | null = null;
+  /** is ascension rank 1 switched on for this run? (see reset) */
+  private hungryOn = false;
   // live per-kind census, updated the moment a unit spawns or is removed
   readonly aliveByKind = new Int32Array(UNIT_KINDS.length);
   // the level script's cursor, plus the live state of the step it points at:
@@ -766,7 +815,12 @@ export class Sim {
     this.time = 0;
     this.kills = 0;
     this.leaked = 0;
+    this.devoured = 0;
     this.killsByKind.fill(0);
+    // the run's rules, read once: the feed pass runs over every unit on the
+    // field, and a spec lookup per unit per tick to answer a question that
+    // cannot change mid-run would be pure waste
+    this.hungryOn = hasAscension(this.level.ascension, ASC_HUNGRY);
     this.coreHp = this.coreHpMax;
     this.sealGx = -1;
     this.projs.length = 0;
@@ -1054,7 +1108,7 @@ export class Sim {
 
   /** enemies left to kill: still unspawned + still walking the field */
   remaining(): number {
-    return this.totalEnemies - this.kills - this.leaked;
+    return this.totalEnemies - this.kills - this.leaked - this.devoured;
   }
 
   /** per-kind head count currently on the field, indexed like UNIT_KINDS */
@@ -1161,6 +1215,11 @@ export class Sim {
     this.updateUnits(dt);
     this.updateAbilities(dt);
     this.updateStatus(dt);
+    // the hungry eat AFTER the status pass and before the towers fire, so a
+    // unit that burned to death this tick is already gone rather than being
+    // swallowed as a corpse — and so a meal's health is on the eater before
+    // anything shoots at it
+    this.feedHungry(dt);
     // ShieldComp: shieldAlpha fades out over 15 ticks once nothing refreshes it
     for (let i = 0; i < this.n; i++)
       if (this.ushieldAlpha[i] > 0) this.ushieldAlpha[i] = Math.max(0, this.ushieldAlpha[i] - dt * (60 / 15));
@@ -1594,6 +1653,16 @@ export class Sim {
       this.uburn[i] = 0;
       this.uwet[i] = 0;
       this.uwetSlow[i] = 1;
+      // THE HUNGRY ROLL (ascension rank 1) — the only place the status is
+      // ever applied. One body in ten walks in with an appetite, whatever
+      // kind it is: the ascension is a rule about the SWARM, so exempting
+      // the kinds it would be inconvenient on would just be authoring a
+      // second wave script nobody can read. Its clock starts full, so the
+      // first meal is a second after it lands rather than the instant it
+      // does
+      this.uhungry[i] = this.hungryOn && Math.random() < HUNGRY_CHANCE ? 1 : 0;
+      this.ueaten[i] = 0;
+      this.uhungerT[i] = HUNGRY_PERIOD;
       this.uid[i] = this.nextId++;
       this.ukind[i] = UNIT_ID[kind];
       this.ufly[i] = fly ? 1 : 0;
@@ -1809,12 +1878,151 @@ export class Sim {
     }
   }
 
+  /**
+   * ASCENSION RANK 1 — the hungry eat (see ascension.ts for the numbers and
+   * for why the rule exists).
+   *
+   * Every hungry unit runs its own one-second clock. When it comes up, it
+   * reaches HUNGRY_REACH for a neighbour and, if one is there, swallows it:
+   * the prey leaves the field, the eater takes DOUBLE the prey's full
+   * health onto both its current and its maximum pool, and it draws five
+   * per cent bigger. Ten meals and it is full.
+   *
+   * WHAT DOES NOT CROSS OVER IS EVERYTHING ELSE. Shields, force fields,
+   * repair and shield auras, burning, wet, armour, speed, layer, kind — a
+   * meal moves one number and nothing else, so a hungry dagger that has
+   * eaten a quasar is a very fat dagger and not a quasar.
+   *
+   * THE HITBOX NEVER MOVES EITHER. urad is what the physics pass, the
+   * projectile pass and every targeting scan read; growing it would quietly
+   * re-tune separation, splash and hit rates against a value the swarm was
+   * never balanced for. The swelling is art — the honest statement of it is
+   * that the health bar is where the meal actually went.
+   *
+   * THE CLOCK RESETS WHETHER OR NOT IT FINDS ANYTHING, so a hungry unit
+   * walking alone does not bank up an instant meal for the moment it
+   * rejoins the crowd: the rule is one attempt a second, not one meal a
+   * second held in reserve.
+   *
+   * ORDER: this runs downward like updateStatus, because eating removes a
+   * unit and removal swaps the LAST unit into the freed slot. On a downward
+   * scan that slot is always one already visited, so nothing can slip past
+   * the pass — and a unit that lands below the cursor and is visited twice
+   * cannot eat twice for it, because its clock is reset the moment it is
+   * found ready, and the clocks are ticked in the separate pass above
+   * rather than here.
+   */
+  private feedHungry(dt: number): void {
+    if (!this.hungryOn) return;
+    const { uhungry, ueaten, uhungerT, uhp, uhpmax } = this;
+    // pass one: the clocks. Separate from the eating below because that
+    // loop can visit a slot twice, and a doubly-ticked clock would feed
+    // faster than once a second
+    for (let i = 0; i < this.n; i++) if (uhungry[i]) uhungerT[i] -= dt;
+    for (let i = this.n - 1; i >= 0; i--) {
+      if (!uhungry[i] || uhungerT[i] > 0 || ueaten[i] >= HUNGRY_MAX_MEALS) continue;
+      uhungerT[i] = HUNGRY_PERIOD;
+      const j = this.preyFor(i);
+      if (j < 0) continue;
+      const meal = uhpmax[j] * HUNGRY_HP_PER_MEAL;
+      uhp[i] += meal;
+      uhpmax[i] += meal;
+      ueaten[i]++;
+      // the meal's own last frame, drawn where it stood and in the hungry
+      // colour rather than the kill puff's orange — a devoured unit is not
+      // a unit the player killed, and the effect should not claim it was
+      this.pushDeathFx(this.upx[j], this.upy[j], HUNGRY_FX_COL);
+      // removeUnit keeps the per-kind census itself, exactly as killUnit
+      // leaves it to
+      this.removeUnit(j);
+      this.devoured++;
+      // NOTHING TO PATCH UP AFTER THE SWAP. Removal moves the LAST unit
+      // into the freed slot, and the last slot is always at or above `i` on
+      // a downward scan — so the unit that moves is one this pass has
+      // already visited, possibly the eater itself. Landing below `i` means
+      // it gets visited a second time and no more: its clock was reset the
+      // moment it was found ready, so a second visit finds it fed.
+    }
+  }
+
+  /**
+   * A meal for the hungry unit at `i`: a random eligible neighbour within
+   * HUNGRY_REACH, or -1.
+   *
+   * RANDOM, NOT NEAREST. Nearest is what every targeting scan in this file
+   * does, and it is wrong here: a pack of hungry units standing in one
+   * crowd would all lock onto the same body, and nine of them would find it
+   * gone the moment the first one swallowed it. Reservoir sampling over the
+   * candidates gives each an even chance and costs one extra random per
+   * hit, with no array to build.
+   *
+   * WHAT IS EDIBLE: anything alive, not already hungry (the rule says so —
+   * hungry units do not cannibalise each other, which is what stops the
+   * whole wave collapsing into one body), not a boss (a boss is an authored
+   * event with its own health bar, not a snack), finished arriving (a unit
+   * inside its spawn invincibility is untouchable by every weapon on the
+   * map and this is no exception), and on the SAME movement layer — a
+   * walker does not pluck a flare out of the sky, and nothing eats a hull
+   * off the water it cannot stand on.
+   *
+   * The broad phase is the frame's own hash, so the stale-index guard is
+   * the same one every other scan carries: a slot that has since been
+   * recycled is re-tested against the live rows here, so the worst it can
+   * do is offer a different but equally valid neighbour.
+   */
+  private preyFor(i: number): number {
+    const { upx, upy, uhp, uhungry, ukind, ufly, unav, uspawn, urad, bStart, bUnits } = this;
+    const x = upx[i], y = upy[i];
+    const fly = ufly[i], nav = unav[i];
+    // the reach is centre-to-EDGE like Units.nearby, so a wide neighbour is
+    // in range as soon as its hitbox is
+    const pad = HUNGRY_REACH + this.rmaxAliveFor(fly === 1, fly === 0);
+    const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((x + pad) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((y + pad) / HC) | 0, 0, HROWS - 1);
+    let seen = 0, pick = -1;
+    for (let hy = hy0; hy <= hy1; hy++) {
+      const row = hy * HCOLS;
+      const e = bStart[row + hx1 + 1];
+      for (let k = bStart[row + hx0]; k < e; k++) {
+        const j = bUnits[k];
+        if (j === i || j >= this.n || uhp[j] <= 0) continue;
+        if (uhungry[j] || uspawn[j] > 0 || KIND_BOSS[ukind[j]]) continue;
+        if (ufly[j] !== fly || unav[j] !== nav) continue;
+        const dx = upx[j] - x, dy = upy[j] - y;
+        const rr = HUNGRY_REACH + urad[j];
+        if (dx * dx + dy * dy > rr * rr) continue;
+        // reservoir sampling: the nth candidate takes the slot 1-in-n of
+        // the time, which leaves every candidate equally likely
+        if (Math.random() * ++seen < 1) pick = j;
+      }
+    }
+    return pick;
+  }
+
   /** a tower kill: death puff, removal, and the per-kind drop ledger */
   private killUnit(i: number): void {
     this.killsByKind[this.ukind[i]]++;
-    this.pushFx(this.upx[i], this.upy[i], 0.35, FxKind.Death);
+    this.pushDeathFx(this.upx[i], this.upy[i]);
     this.removeUnit(i);
     this.kills++;
+  }
+
+  /**
+   * The ring a body leaves behind. Colourless is the kill puff's own
+   * orange; a colour is passed only where the body did not die to
+   * anything the player did — a devoured one (feedHungry) wears the
+   * hungry hue so the two read apart on a crowded lane.
+   */
+  private pushDeathFx(x: number, y: number, col?: RGB): void {
+    const i = this.pushSlot(x, y, FX_DEATH, FxKind.Death, 0, 0, 0, 0, false);
+    if (i >= 0 && col) {
+      this.fxHasCol[i] = 1;
+      this.fxColR[i] = col[0];
+      this.fxColG[i] = col[1];
+      this.fxColB[i] = col[2];
+    }
   }
 
   private removeUnit(i: number): void {
@@ -1858,6 +2066,9 @@ export class Sim {
     this.uburn[i] = this.uburn[n];
     this.uwet[i] = this.uwet[n];
     this.uwetSlow[i] = this.uwetSlow[n];
+    this.uhungry[i] = this.uhungry[n];
+    this.ueaten[i] = this.ueaten[n];
+    this.uhungerT[i] = this.uhungerT[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
     this.ufly[i] = this.ufly[n];

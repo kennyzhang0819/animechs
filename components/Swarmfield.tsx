@@ -38,6 +38,7 @@ import {
 } from "@/game/ladder";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import {
+  activeAscension,
   clearedOn,
   grantRunReward,
   isTierCleared,
@@ -54,6 +55,7 @@ import {
   type RunReward,
 } from "@/game/progress";
 import { turretIcon } from "@/game/atlas";
+import { ascensionAt } from "@/game/ascension";
 import { BAND_FOR_CLEARED, bandForCleared, BY_MINDUSTRY_VALUE } from "@/game/tech";
 import { isEmpty, ITEM_INFO, ITEM_KINDS, itemForTier } from "@/game/items";
 import { CostRow, Wallet } from "./Items";
@@ -180,6 +182,22 @@ const levelSummary = (lv: LevelSpec): { waves: number; enemies: number } => {
  * below the frontier still pays its drop bonus, which is what a player does
  * while they close the gap to the next one.
  */
+/**
+ * THE SPEC A RUN IS ACTUALLY PLAYED ON: the ladder's expansion of the
+ * picked difficulty, plus whichever ascension rules the save has switched
+ * on (ascension.ts).
+ *
+ * The two are joined HERE and not in specForTier, because they answer
+ * different questions and the audit arithmetic only wants one of them: a
+ * tier is what the campaign sends, an ascension is what the player asked
+ * the game to do about it. Everything ladder.ts counts stays true either
+ * way — an ascension changes a wave after it spawns, never what spawns.
+ */
+const runSpec = (world: LevelSpec, tier: number): LevelSpec => ({
+  ...specForTier(world, tier),
+  ascension: activeAscension(loadProgress()),
+});
+
 function TierPicker({
   progress,
   world,
@@ -217,6 +235,10 @@ function TierPicker({
   const newDrop = ITEM_INFO[itemForTier(tier + 3)].name.toLowerCase();
   // whether this difficulty's cut of the script fields a boss kind — read
   // from the waves themselves, so the warning follows the boss if it moves
+  // the ascension rules switched on for the next run, as their definitions
+  const ascensions = activeAscension(progress)
+    .map(ascensionAt)
+    .filter((a): a is NonNullable<typeof a> => a !== null);
   const hasBoss = spec.script.some(
     (s) =>
       "wave" in s &&
@@ -313,6 +335,22 @@ function TierPicker({
           )}
         </span>
       </div>
+
+      {/* WHAT THIS RUN IS PLAYED UNDER. An ascension is switched on in the
+          tech tree, one screen away, and it stays on until it is switched
+          off — so the last thing before Deploy has to say which rules are
+          in force, or a player meets them again having forgotten they
+          asked for them */}
+      {ascensions.length > 0 && (
+        <div className="mt-3 border-t border-[#2E2E36] pt-3 text-[13px] leading-snug">
+          <span className="font-bold uppercase tracking-widest text-[#FF8ACB]">
+            Ascension
+          </span>{" "}
+          <span className="text-[#A6A6AF]">
+            {ascensions.map((a) => a.name).join(" · ")}
+          </span>
+        </div>
+      )}
 
       <button
         onClick={onStart}
@@ -787,6 +825,10 @@ export default function Swarmfield() {
     granted.current = false;
     setResult(null);
     setProgress(loadProgress());
+    // the tech screen is also where the ascension switches live, so the
+    // restart this button promises has to pick up any that were flipped —
+    // the run's own world and difficulty are untouched
+    setLevel((lv) => (lv ? { ...lv, ascension: activeAscension(loadProgress()) } : lv));
     setScreen("game");
   };
 
@@ -888,7 +930,7 @@ export default function Swarmfield() {
               onTier={setTier}
               mapsReady={mapsReady}
               onStart={() => {
-                setLevel(specForTier(world, tier));
+                setLevel(runSpec(world, tier));
                 setScreen("game");
                 // raised in the same batch as the screen switch, so the game
                 // screen's FIRST paint is already covered — an effect would
