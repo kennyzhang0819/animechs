@@ -120,6 +120,18 @@ export interface Progress {
    */
   hudMinimized?: boolean;
   /**
+   * Ambient effects — the particle work, and nothing a weapon is made of
+   * (see Sim.setEffects). Switched OFF on a device that cannot afford
+   * them, which is the whole reason the setting exists, so it is stored
+   * the same way the pace and the HUD state are: a preference about the
+   * hardware, still true after a loss and after closing the tab.
+   *
+   * Absent means ON — the effects shipped for years before the switch did,
+   * and a save that has never seen it must not read as having turned them
+   * off. Only an explicit `false` is off.
+   */
+  effects?: boolean;
+  /**
    * The build bar's loadout: which turrets ride in its slots. A SET in
    * effect — the bar always renders in the roster's canonical order
    * (BY_MINDUSTRY_VALUE in tech.ts), whatever order this holds. The bar
@@ -488,6 +500,8 @@ export function loadProgress(): Progress {
       layouts,
       speed: readSpeed(p),
       hudMinimized: p.hudMinimized === true,
+      // absent means ON — only an explicit false switches them off
+      effects: p.effects !== false,
       loadout: readLoadout(p),
       techOff: readTechOff(p),
       unlocked,
@@ -760,6 +774,13 @@ export function saveHudMinimized(min: boolean): void {
   const p = loadProgress();
   if ((p.hudMinimized ?? false) === min) return;
   saveProgress({ ...p, hudMinimized: min });
+}
+
+/** persist the ambient-effects switch — see Progress.effects */
+export function saveEffects(on: boolean): void {
+  const p = loadProgress();
+  if ((p.effects ?? true) === on) return;
+  saveProgress({ ...p, effects: on });
 }
 
 /**

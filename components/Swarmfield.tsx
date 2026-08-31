@@ -48,6 +48,7 @@ import {
   isUnlocked,
   lockEverything,
   resetProgress,
+  saveEffects,
   saveHudMinimized,
   unlockEverything,
   layoutFor,
@@ -677,6 +678,13 @@ export default function Swarmfield() {
    * (Progress.hudMinimized), initialized on mount with the rest of the save */
   const [hudMin, setHudMin] = useState(false);
   /**
+   * Ambient effects on? A saved preference (Progress.effects) like the
+   * pace and the HUD state, because it is a fact about the DEVICE — a
+   * phone that could not afford the particles last run cannot this run
+   * either. Defaults to on; only an explicit false in the save is off.
+   */
+  const [effects, setEffects] = useState(true);
+  /**
    * The build bar's loadout, PvZ-style: which turrets ride in its slots —
    * a set, not a sequence, since the bar always renders in the canonical
    * order (ORDERED_MENU). Mirrors the save (Progress.loadout) — null means
@@ -691,6 +699,7 @@ export default function Swarmfield() {
     setProgress(p);
     setTier(topTier(p, WORLD.id));
     setHudMin(p.hudMinimized ?? false);
+    setEffects(p.effects ?? true);
     setLoadout(p.loadout ?? null);
   }, []);
 
@@ -768,6 +777,10 @@ export default function Swarmfield() {
         }
         const save = loadProgress();
         g.setTech(admin ? null : techOf(save, level.tier ?? 0));
+        // the device's own preference, read from the save rather than
+        // from state: this runs once at create, and a run started right
+        // after a toggle must not come up with last render's value
+        g.setEffects(save.effects ?? true);
         // the pace carries across runs and across sessions — a player who
         // plays at 4x wants 4x again after a loss, not 1x and a click
         g.setSpeed(startingSpeed(save, admin ? SPEEDS : techOf(save, level.tier ?? 0).speeds));
@@ -1206,6 +1219,42 @@ export default function Swarmfield() {
                   </div>
                 </div>
               )}
+              {/* THE EFFECTS SWITCH. A performance control, and the only
+                  one the game offers — so it says what it costs and what
+                  it does not, in those terms. Every turret still shows its
+                  attack with this off (see Sim.setEffects): what goes is
+                  the dressing around it */}
+              <div className="w-full max-w-[30rem] rounded border border-[#2E2E36] bg-[#151518] p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-[14px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+                      Effects — {effects ? "on" : "off"}
+                    </div>
+                    <p className="mt-1 text-[13px] leading-snug text-[#A6A6AF]">
+                      Explosions, smoke, sparks, dust and shadows. Turning them off
+                      is the biggest thing you can do for the frame rate on a phone
+                      or tablet. Every turret still shows its shot.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const next = !effects;
+                      setEffects(next);
+                      saveEffects(next); // a preference about the device
+                      // live: a run under way takes it on the next frame
+                      gameRef.current?.setEffects(next);
+                    }}
+                    className={
+                      "shrink-0 rounded border px-4 py-2 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 " +
+                      (effects
+                        ? "border-[#2E2E36] bg-[#222227] text-[#A6A6AF] hover:border-[#FFD37F] hover:text-[#FFD37F] focus-visible:outline-[#FFD37F]"
+                        : "border-[#FFD37F] bg-[#222227] text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-[#FFD37F]")
+                    }
+                  >
+                    {effects ? "Turn off" : "Turn on"}
+                  </button>
+                </div>
+              </div>
               <div className="w-full max-w-[30rem] rounded border border-[#2E2E36] bg-[#151518] p-4">
                 <div className="flex items-center justify-between gap-4">
                   <div>

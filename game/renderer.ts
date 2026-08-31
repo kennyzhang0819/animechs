@@ -733,6 +733,8 @@ export class Renderer {
   // layer visibility of whatever is currently in the static batches, so the
   // editor's core sprite (drawn per frame) matches the terrain it sits on
   private layers: TerrainLayers = ALL_LAYERS;
+  /** are ambient effects being kept? (see setEffects) */
+  private fxOn = true;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -1503,6 +1505,26 @@ export class Renderer {
    * device px per world px at zoom 1, so the view spans canvas/kPx world px
    * and the canvas is always filled whatever its aspect
    */
+  /**
+   * AMBIENT EFFECTS OFF, the renderer's half of the settings switch (the
+   * sim's half, which is most of it, is Sim.setEffects).
+   *
+   * What it covers is the decoration the RENDERER owns outright rather
+   * than takes from the effect pool: the flyers' drop shadows and the
+   * hulls' wakes. Both are per-unit quads on a crowd of thousands, which
+   * is exactly the frame this switch is for, and neither carries anything
+   * the sim would not otherwise say — a flyer is on the air layer whether
+   * or not a black copy of it is drawn underneath.
+   *
+   * It also turns ON one thing, which is the point of the whole switch:
+   * a bullet whose only visible shot WAS its effects gets a cheap stand-in
+   * (see the spriteless case in the projectile pass), so no turret goes
+   * silent for want of a particle.
+   */
+  setEffects(on: boolean): void {
+    this.fxOn = on;
+  }
+
   render(sim: Sim, zoom = 1, offX = 0, offY = 0, kPx = this.canvas.width / W): void {
     // the sea rides SIM time, so pausing the game stills it and the speed
     // switcher moves it, exactly like everything else on the field
@@ -1558,7 +1580,7 @@ export class Renderer {
     // the fleet's wakes, at Mindustry's Layer.debris: UNDER every unit,
     // including the hulls that laid them, so a crowded lane does not draw
     // one boat's foam over another boat
-    if (HAS_WAKE)
+    if (HAS_WAKE && this.fxOn)
       for (let i = 0; i < n; i++) {
         const w = KIND_WAKE[ukind[i]];
         if (!w) continue;
@@ -1570,6 +1592,10 @@ export class Renderer {
     // painter's order in three passes: ground units, then flyer shadows on
     // top of the crowd, then the flyers themselves above everything
     for (let pass = 0; pass < 3; pass++) {
+      // pass 1 is nothing but the flyers' drop shadows — a whole second
+      // quad per flyer, and the first decoration to go with the effects
+      // switched off (see setEffects)
+      if (pass === 1 && !this.fxOn) continue;
       const wantFly = pass > 0;
       for (let i = 0; i < n; i++) {
         const k = ukind[i];
@@ -1667,7 +1693,28 @@ export class Renderer {
       // entirely in its shoot and hit effects. A shot thrown by a frag
       // burst carries the CHILD ammo's sprite, not the shell's
       const sp = b.sprite;
-      if (!sp) continue;
+      if (!sp) {
+        // THE ONE TURRET THE EFFECTS SWITCH WOULD SILENCE. With its shoot
+        // and hit effects refused (Sim.setEffects), a spriteless bullet
+        // has no visible shot left at all, and scorch reads as a turret
+        // that tracks and never fires. So the bullet — which is real, and
+        // already flying — draws itself instead: one disc on the flame's
+        // own ramp, against drawShootFlame's twelve. It stays a flame
+        // tongue leaving the barrel, for a twelfth of the quads.
+        //
+        // Only with the effects OFF: with them on this would be a second
+        // flame drawn over the real one.
+        if (!this.fxOn) {
+          const fout = clamp(p.life / (p.life + p.age), 0, 1);
+          this.fillCircle(
+            dyn, p.x, p.y,
+            (0.65 + fout * 1.5) * MU,
+            ramp(LIGHT_FLAME, DARK_FLAME, FLAME_GRAY, 1 - fout),
+            1,
+          );
+        }
+        continue;
+      }
       // BasicBulletType.draw: shrinkInterp(fout) drives both axes, so a
       // pellet tapers as it flies and a shell — on Mathf.slope — opens out
       // of the barrel, peaks at half life and closes again on the way down.

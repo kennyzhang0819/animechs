@@ -727,9 +727,9 @@ export class Game {
     // the stale copy in memory — but that is true of ONE map, not all of them
     // The level SCRIPT is re-read here too, for the same reason. Both
     // editors return through a client-side route, so an edited wave script
-    // is as capable of being stale as an edited map — and applyLevelDoc
-    // overlays onto the WORLDS entry in place, which is the object this
-    // spec already points at, so the sim built below picks it up
+    // is as capable of being stale as an edited map — and applyBlueprint
+    // derives every WORLDS entry's script in place, including the object
+    // this spec already points at, so the sim built below picks it up
     await begin("map");
     const mapId = spec.map ?? OFFICIAL_MAP_IDS[0];
     await Promise.all([
@@ -871,6 +871,22 @@ export class Game {
   setTech(tech: TechState | null): void {
     this.tech = tech;
     this.sim.setTech(tech);
+  }
+
+  /**
+   * The ambient-effects switch, both halves at once — the sim stops
+   * pushing dressing into the effect pool (Sim.setEffects, which keeps
+   * every effect that IS a weapon) and the renderer drops the decoration
+   * it owns itself and stands scorch's flame back up (Renderer.setEffects).
+   *
+   * Live: it can be thrown mid-run and takes hold on the next frame.
+   * Effects already in flight play out their remaining life rather than
+   * vanishing mid-puff, which is a frame or two and reads as the tail of
+   * what was already on screen.
+   */
+  setEffects(on: boolean): void {
+    this.sim.setEffects(on);
+    this.renderer.setEffects(on);
   }
 
   /** the whole script is dealt with and the core stands */

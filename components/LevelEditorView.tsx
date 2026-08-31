@@ -5,19 +5,25 @@ import {
   UNIT_KINDS,
   UNIT_STATS,
   UNIT_TREES,
-  levelDoc,
+  applyWaveTransforms,
+  blueprintDoc,
+  BLUEPRINT_ID,
   saveLevel,
+  transformLabel,
+  transformsError,
   waveGroups,
   WAVE_RELEASE_SECONDS,
+  WORLDS,
+  type FamilyKey,
   type LevelSpec,
   type LevelStep,
   type UnitKind,
+  type WaveTransform,
   type WaveUnits,
 } from "@/game/levels";
 import { dropsForKills } from "@/game/progress";
 import {
   audit,
-  check,
   difficultyColor,
   difficultyName,
   difficultyOf,
@@ -26,9 +32,6 @@ import {
   tierOfWave,
   TOP_TIER,
   waveGuide,
-  WALL_STEP,
-  type AuditRow,
-  type LadderIssue,
   type WaveRow,
 } from "@/game/ladder";
 import {
@@ -116,161 +119,27 @@ function trimCounts(counts: Partial<Record<UnitKind, number>>): Partial<Record<U
 }
 
 /**
- * The ladder report: one row per tier, flagged where the climb is uneven.
- *
- * What it is NOT is a feasibility test. Turret prices are flat and every run
- * banks something, so a player can always farm the tier below until they can
- * afford the next — no tier here is unwinnable. `step` measures GRIND: a
- * tier costing twice what the last one did is twice the farming before it
- * opens, and a few of those stacked turn a climb into a chore. That is the
- * failure mode an idle game actually has.
+ * A transform rule as the rail edits it: the same shape the document saves
+ * (WaveTransform), just mutably typed. No uid — rules are never reordered,
+ * and every input below is controlled, so index keys hold their values.
  */
-function LadderReport({
-  rows,
-  issues,
-}: {
-  rows: readonly AuditRow[];
-  issues: readonly LadderIssue[];
-}) {
-  const byTier = new Map<number, LadderIssue[]>();
-  for (const i of issues) {
-    if (i.tier == null) continue;
-    const list = byTier.get(i.tier) ?? [];
-    list.push(i);
-    byTier.set(i.tier, list);
-  }
-  const KIND_CSS: Record<LadderIssue["kind"], string> = {
-    debut: "border-[#3A3A46] bg-[#1C1C22] text-[#A6A6AF]",
-    unreachable: "border-[#5B2E2E] bg-[#2A1616] text-[#FF8A8A]",
-    wall: "border-[#5B4A2E] bg-[#2A2116] text-[#F0B457]",
-    filler: "border-[#2E4A5B] bg-[#16222A] text-[#8DA1E3]",
-    economy: "border-[#3A3A46] bg-[#1C1C22] text-[#A6A6AF]",
-  };
-  const loose = issues.filter((i) => i.tier == null);
-
-  return (
-    <section className="mb-3 rounded-lg border border-[#2E2E36] bg-[#151518] p-3">
-      <div className="mb-2 flex items-baseline justify-between">
-        <h2 className="text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
-          Ladder check
-        </h2>
-        <span
-          className={`text-[12px] font-bold uppercase tracking-widest ${
-            issues.length ? "text-[#F0B457]" : "text-[#7BE58A]"
-          }`}
-        >
-          {issues.length
-            ? `${issues.length} finding${issues.length > 1 ? "s" : ""}`
-            : "Clean"}
-        </span>
-      </div>
-
-      {/* findings about the script as a whole, with no difficulty to sit on */}
-      {loose.length > 0 && (
-        <div className="mb-2 space-y-1">
-          {loose.map((f, n) => (
-            <div
-              key={n}
-              className={`rounded border px-1.5 py-0.5 text-[12px] leading-snug ${KIND_CSS[f.kind]}`}
-            >
-              <span className="font-bold uppercase tracking-widest">{f.kind}</span> {f.message}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* one row a difficulty. `step` is the number to author against:
-          1.79x is the floor the +10 enemy levels give for free, and
-          everything above it was bought by the fifteen new waves */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-[13px]">
-          <thead className="text-[12px] uppercase tracking-widest text-[#71717C]">
-            <tr>
-              <th className="py-1 pr-3 font-normal">Difficulty</th>
-              <th className="py-1 pr-3 font-normal">Waves</th>
-              <th className="py-1 pr-3 text-right font-normal">Lv</th>
-              <th className="py-1 pr-3 text-right font-normal">Enemies</th>
-              <th className="py-1 pr-3 text-right font-normal">Health</th>
-              <th className="py-1 pr-3 text-right font-normal">Step</th>
-              <th className="py-1 pr-3 text-right font-normal">Armour</th>
-              <th className="py-1 pr-3 text-right font-normal">T3</th>
-              <th className="py-1 font-normal">Findings</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => {
-              const found = byTier.get(r.tier) ?? [];
-              const steep = r.tier > 0 && r.step > WALL_STEP;
-              return (
-                <tr
-                  key={r.tier}
-                  className={`border-t border-[#222227] ${
-                    found.length ? "bg-[#1A1A1F]" : ""
-                  }`}
-                >
-                  <td className="py-1 pr-3 font-bold text-[#EDEDEF]">{r.name}</td>
-                  <td className="py-1 pr-3 text-[#A6A6AF]">{r.waves}</td>
-                  <td className="py-1 pr-3 text-right text-[#71717C]">{r.level}</td>
-                  <td className="py-1 pr-3 text-right text-[#A6A6AF]">
-                    {r.units.toLocaleString()}
-                  </td>
-                  <td className="py-1 pr-3 text-right text-[#A6A6AF]">
-                    {compactHp(r.hp)}
-                  </td>
-                  <td
-                    className={`py-1 pr-3 text-right font-bold ${
-                      r.tier === 0
-                        ? "text-[#4A4A55]"
-                        : steep
-                          ? "text-[#F0B457]"
-                          : "text-[#7BE58A]"
-                    }`}
-                  >
-                    {r.tier === 0 ? "—" : `${r.step.toFixed(2)}x`}
-                  </td>
-                  <td className="py-1 pr-3 text-right text-[#71717C]">
-                    {Math.round(r.armourShare * 100)}%
-                  </td>
-                  <td className="py-1 pr-3 text-right text-[#71717C]">
-                    {Math.round(r.t3Share * 100)}%
-                  </td>
-                  <td className="py-1">
-                    {found.length === 0 ? (
-                      <span className="text-[#4A4A55]">—</span>
-                    ) : (
-                      <div className="space-y-1">
-                        {found.map((f, n) => (
-                          <div
-                            key={n}
-                            className={`rounded border px-1.5 py-0.5 text-[12px] leading-snug ${KIND_CSS[f.kind]}`}
-                          >
-                            <span className="font-bold uppercase tracking-widest">
-                              {f.kind}
-                            </span>{" "}
-                            {f.message}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <p className="mt-2 border-t border-[#2E2E36] pt-2 text-[12px] leading-snug text-[#71717C]">
-        Health is printed health — the strength measure, weapon-agnostic.
-        Armour is shown beside it as composition, never folded into it: an
-        armour-heavy difficulty is a different fight at the same strength.
-        Step floors at 1.79x (the +10 enemy levels alone); anything above that
-        was bought by the fifteen new waves. Nothing here is unwinnable — prices
-        are flat, so a steep step means more farming, not a dead end.
-      </p>
-    </section>
-  );
+interface EditRule {
+  from: FamilyKey[];
+  to: { family: FamilyKey; weight?: number }[];
+  multiply?: number;
 }
+
+/** a world's rules as a fresh, mutable buffer for the rail editor */
+function toEditRules(transforms: readonly WaveTransform[] | undefined): EditRule[] {
+  return (transforms ?? []).map((t) => ({
+    from: [...t.from],
+    to: t.to.map((x) => ({ ...x })),
+    ...(t.multiply !== undefined && { multiply: t.multiply }),
+  }));
+}
+
+/** the families a rule may name — every tree but the boss row */
+const RULE_FAMILIES = UNIT_TREES.filter((t) => t.key !== "boss");
 
 const stepTotal = (step: EditStep): number =>
   UNIT_KINDS.reduce((s, k) => s + (step.counts[k] ?? 0), 0);
@@ -325,6 +194,7 @@ function NumberInput({
   width = "w-20",
   min = 0,
   blankZero,
+  disabled,
   label,
 }: {
   value: number;
@@ -334,12 +204,14 @@ function NumberInput({
   /** show 0 as an empty field — a grid of every unit kind is mostly zeros,
    * and a wall of them reads as data rather than as blank slots */
   blankZero?: boolean;
+  disabled?: boolean;
   label?: string;
 }) {
   return (
     <input
       type="number"
       min={min}
+      disabled={disabled}
       aria-label={label}
       placeholder={blankZero ? "0" : undefined}
       value={blankZero && value === 0 ? "" : value}
@@ -361,20 +233,44 @@ export default function LevelEditorView({
   level: LevelSpec;
   onClose: () => void;
 }) {
-  const [steps, setSteps] = useState<EditStep[]>(() => toEditSteps(level.script));
-  const [waveGap, setWaveGap] = useState(level.waveGap);
+  // THE BUFFER IS THE BLUEPRINT — the one script every world plays, raw
+  // counts. Whichever world opened the editor, the counts being edited are
+  // the shared ones; the world contributes its map, its transforms, and the
+  // lens the audit below prices through.
+  const [steps, setSteps] = useState<EditStep[]>(() => toEditSteps(blueprintDoc().script));
+  const [waveGap, setWaveGap] = useState(blueprintDoc().waveGap);
+  // this world's re-casting rules, editable in the rail and saved into the
+  // blueprint document's transforms map alongside the counts
+  const [rules, setRules] = useState<EditRule[]>(() => toEditRules(level.transforms));
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   // why the last save was refused — null when the last attempt succeeded
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // reloading a different level through the same mounted component has to
-  // reset the buffer, or the new level opens showing the old one's script
+  // reset the buffer — the blueprint is shared, but an unsaved edit must
+  // not ride silently into another world's view
   useEffect(() => {
-    setSteps(toEditSteps(level.script));
-    setWaveGap(level.waveGap);
+    setSteps(toEditSteps(blueprintDoc().script));
+    setWaveGap(blueprintDoc().waveGap);
+    setRules(toEditRules(level.transforms));
     setDirty(false);
   }, [level]);
+
+  // why the rules cannot mean one thing yet — shown in the rail, and the
+  // one thing that blocks a save (the API refuses the same finding)
+  const rulesError = useMemo(() => transformsError(rules), [rules]);
+
+  // what THIS WORLD actually sends: the live buffer run through the live
+  // rules. Identical to the buffer while the world has no rules.
+  const playedScript = useMemo(() => applyWaveTransforms(toScript(steps), rules), [steps, rules]);
+  const playedSteps = useMemo(() => toEditSteps(playedScript), [playedScript]);
+
+  // the wave cards show the derived script by default — the fight this
+  // world actually sends — and flip to the raw blueprint to edit counts;
+  // derived counts are not a thing anyone can edit, so the view is read-only
+  const [asPlayed, setAsPlayed] = useState(true);
+  const preview = asPlayed && rules.length > 0;
 
   const mapId = level.map ?? OFFICIAL_MAP_IDS[0];
 
@@ -397,23 +293,32 @@ export default function LevelEditorView({
     setDirty(true);
   };
 
+  const editRules = (fn: (draft: EditRule[]) => EditRule[]): void => {
+    setRules((prev) => fn(prev));
+    setDirty(true);
+  };
+
   const save = async (): Promise<void> => {
+    if (rulesError) {
+      setSaveError(`fix the transform rules first: ${rulesError}`);
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     const res = await saveLevel({
-      ...levelDoc(level),
+      id: BLUEPRINT_ID,
       waveGap,
       script: toScript(steps),
+      // the document carries EVERY world's rules (see LevelDoc.transforms),
+      // so the untouched worlds' current rules ride along with this one's
+      transforms: Object.fromEntries(
+        WORLDS.map((w) => [w.id, w.id === level.id ? rules : [...(w.transforms ?? [])]]),
+      ),
     });
     setSaving(false);
     if (res.ok) setDirty(false);
     else setSaveError(res.error);
   };
-
-  /**
-   * The summary table folds away; the per-wave numbers never do.
-   */
-  const [showReport, setShowReport] = useState(true);
 
   /**
    * THE NUMBER GUIDE, RECOMPUTED ON EVERY EDIT.
@@ -432,10 +337,13 @@ export default function LevelEditorView({
    * that had not been touched since.
    */
   const report = useMemo(() => {
-    const spec = { ...level, waveGap, script: toScript(steps) };
+    // the audit prices what THIS WORLD PLAYS — the transformed script, not
+    // the raw blueprint — so a world whose rules double a family, or move
+    // it to a layer its map cannot open, reads its real numbers here
+    const spec = { ...level, waveGap, script: playedScript };
     // per-wave numbers are priced at the top tier — the run every wave is in
-    return { rows: audit(spec), issues: check(spec), waves: waveGuide(spec, TOP_TIER) };
-  }, [level, waveGap, steps]);
+    return { rows: audit(spec), waves: waveGuide(spec, TOP_TIER) };
+  }, [level, waveGap, playedScript]);
 
   const back = (): void => {
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
@@ -443,16 +351,17 @@ export default function LevelEditorView({
   };
 
   // whole-level rollup, recomputed from the live buffer so the header tracks
-  // edits rather than the level as it was opened
+  // edits rather than the level as it was opened — priced on the played
+  // script, so a multiplying transform shows in the totals it changes
   const summary = useMemo(() => {
-    const waves = steps.filter((s) => stepTotal(s) > 0).length;
-    const kills = killVector(steps);
+    const waves = playedSteps.filter((s) => stepTotal(s) > 0).length;
+    const kills = killVector(playedSteps);
     return {
       waves,
       enemies: kills.reduce((a, b) => a + b, 0),
       payout: dropsForKills(kills),
     };
-  }, [steps]);
+  }, [playedSteps]);
 
   return (
     <div className="h-screen overflow-hidden bg-[#0B0B0D] text-[#EDEDEF]">
@@ -464,11 +373,28 @@ export default function LevelEditorView({
               {dirty && <span className="ml-1 text-[#F0B457]">●</span>}
             </h1>
             <p className="text-[14px] text-[#71717C]">
-              World {level.id} · map <span className="text-[#A6A6AF]">{mapId}</span> · saves to
-              public/levels/{level.id}.json and overrides the shipped script
+              World {level.id} · map <span className="text-[#A6A6AF]">{mapId}</span> · edits the
+              shared blueprint (public/levels/{BLUEPRINT_ID}.json) — the one script every world
+              plays{rules.length > 0 && ", re-cast here by the rules in the rail"}
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {/* worlds with rules can flip the wave cards between the derived
+                script they actually send (the default) and the editable
+                blueprint; the label names the view a click switches TO */}
+            {rules.length > 0 && (
+              <button
+                onClick={() => setAsPlayed((v) => !v)}
+                aria-pressed={asPlayed}
+                className={`rounded border px-4 py-1.5 text-[14px] uppercase tracking-widest ${
+                  asPlayed
+                    ? "border-[#7FC4FF] bg-[#16222A] text-[#7FC4FF]"
+                    : "border-[#2E2E36] text-[#A6A6AF] hover:border-[#4A4A55]"
+                }`}
+              >
+                {asPlayed ? "Show blueprint" : "Show as played"}
+              </button>
+            )}
             <button
               onClick={save}
               disabled={saving}
@@ -484,19 +410,6 @@ export default function LevelEditorView({
               </p>
             )}
             <button
-              onClick={() => setShowReport((v) => !v)}
-              aria-pressed={showReport}
-              className={`rounded border px-4 py-1.5 text-[14px] uppercase tracking-widest ${
-                showReport
-                  ? "border-[#7BE58A] bg-[#14271C] text-[#7BE58A]"
-                  : report.issues.length
-                    ? "border-[#5B4A2E] text-[#F0B457] hover:border-[#7A6440]"
-                    : "border-[#2E2E36] text-[#A6A6AF] hover:border-[#4A4A55]"
-              }`}
-            >
-              Ladder{report.issues.length ? ` · ${report.issues.length}` : ""}
-            </button>
-            <button
               onClick={back}
               className="rounded border border-[#2E2E36] px-4 py-1.5 text-[14px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55]"
             >
@@ -510,6 +423,53 @@ export default function LevelEditorView({
           <aside className="space-y-4 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <RampChart waves={report.waves} />
             <ZoneKey mapId={mapId} zones={mapZones} />
+
+            {/* THE WORLD'S RE-CASTING RULES, editable and saved into the
+                blueprint document's transforms map. The audit, ramp and
+                totals all price the re-cast script; only the wave cards can
+                show the raw blueprint. */}
+            <section className="rounded-lg border border-[#2E4A5B] bg-[#16222A]/70 p-3">
+              <div className="mb-2 flex items-baseline justify-between">
+                <h2 className="text-[12px] font-bold uppercase tracking-widest text-[#7FC4FF]">
+                  Wave transforms
+                </h2>
+                <button
+                  onClick={() => editRules((rs) => [...rs, { from: [], to: [] }])}
+                  className="rounded border border-[#2E4A5B] px-1.5 py-0.5 text-[11px] uppercase tracking-widest text-[#7FC4FF] hover:border-[#7FC4FF]"
+                >
+                  + Rule
+                </button>
+              </div>
+              {rules.length === 0 ? (
+                <p className="text-[13px] leading-snug text-[#71717C]">
+                  None — this world plays the blueprint verbatim.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {rules.map((rule, ri) => (
+                    <RuleEditor
+                      key={ri}
+                      rule={rule}
+                      onChange={(next) =>
+                        editRules((rs) => rs.map((r, i) => (i === ri ? next : r)))
+                      }
+                      onDelete={() => editRules((rs) => rs.filter((_, i) => i !== ri))}
+                    />
+                  ))}
+                </div>
+              )}
+              {rulesError && (
+                <p role="alert" className="mt-2 text-[12px] leading-snug text-[#F08A8A]">
+                  {rulesError} — the save will be refused until this is fixed
+                </p>
+              )}
+              <p className="mt-2 border-t border-[#2E4A5B] pt-2 text-[12px] leading-snug text-[#71717C]">
+                This world re-casts the shared blueprint through these rules,
+                tier for tier: a rule pools its FROM families per tier,
+                multiplies the pool, and deals it to the TO families by
+                weight. Rules save with the blueprint.
+              </p>
+            </section>
 
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
               <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
@@ -556,6 +516,12 @@ export default function LevelEditorView({
                         x{tierDropBonus(r.tier).toFixed(1)}
                       </span>
                     </div>
+                    {/* the run's whole weight at this difficulty — what the
+                        ladder table used to lead with, kept here now that
+                        the table is gone */}
+                    <div className="text-[12px] text-[#A6A6AF]">
+                      {r.units.toLocaleString()} enemies · {compactHp(r.hp)} hp
+                    </div>
                     <CostRow cost={r.drops} />
                     <div className="text-[12px] text-[#71717C]">
                       {r.dropRatio
@@ -595,9 +561,8 @@ export default function LevelEditorView({
 
           {/* ---- the script ---- */}
           <main className="min-h-0 overflow-y-auto pr-1">
-            {showReport && <LadderReport rows={report.rows} issues={report.issues} />}
-            <InsertBar onInsert={() => edit((s) => [makeStep(), ...s])} />
-            {steps.map((step, i) => {
+            {!preview && <InsertBar onInsert={() => edit((s) => [makeStep(), ...s])} />}
+            {(preview ? playedSteps : steps).map((step, i, all) => {
               return (
                 <div key={step.uid}>
                   <StepCard
@@ -605,7 +570,8 @@ export default function LevelEditorView({
                     waveNo={i + 1}
                     guide={report.waves[i]}
                     index={i}
-                    last={i === steps.length - 1}
+                    last={i === all.length - 1}
+                    readOnly={preview}
                     onChange={(next) =>
                       edit((s) => s.map((cur) => (cur.uid === step.uid ? next : cur)))
                     }
@@ -621,16 +587,18 @@ export default function LevelEditorView({
                       })
                     }
                   />
-                  <InsertBar
-                    onInsert={() =>
-                      edit((s) => {
-                        const at = s.findIndex((cur) => cur.uid === step.uid);
-                        const next = [...s];
-                        next.splice(at + 1, 0, makeStep());
-                        return next;
-                      })
-                    }
-                  />
+                  {!preview && (
+                    <InsertBar
+                      onInsert={() =>
+                        edit((s) => {
+                          const at = s.findIndex((cur) => cur.uid === step.uid);
+                          const next = [...s];
+                          next.splice(at + 1, 0, makeStep());
+                          return next;
+                        })
+                      }
+                    />
+                  )}
                 </div>
               );
             })}
@@ -656,6 +624,163 @@ function Row({ label, value }: { label: string; value: string }) {
       <dt className="text-[#71717C]">{label}</dt>
       <dd className="font-bold text-[#EDEDEF]">{value}</dd>
     </div>
+  );
+}
+
+/**
+ * One re-casting rule as a small form: FROM as family toggle chips, TO as
+ * family/weight rows, and the pool multiplier. The header echoes the rule
+ * back as a phrase the moment it means something, so the form reads as the
+ * sentence it will become in the document.
+ */
+function RuleEditor({
+  rule,
+  onChange,
+  onDelete,
+}: {
+  rule: EditRule;
+  onChange: (next: EditRule) => void;
+  onDelete: () => void;
+}) {
+  const summary =
+    rule.from.length && rule.to.length ? transformLabel(rule) : "new rule — pick from and to";
+  const setMultiply = (n: number): void => {
+    const next = { ...rule };
+    if (n === 1) delete next.multiply;
+    else next.multiply = n;
+    onChange(next);
+  };
+  return (
+    <div className="rounded border border-[#2E4A5B] bg-[#0F171D] p-2">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="min-w-0 truncate text-[12px] text-[#7FC4FF]" title={summary}>
+          {summary}
+        </span>
+        <IconButton label="Delete rule" onClick={onDelete} danger>
+          ✕
+        </IconButton>
+      </div>
+
+      <div className="text-[11px] font-bold uppercase tracking-widest text-[#71717C]">From</div>
+      <div className="mt-1 flex flex-wrap gap-1">
+        {RULE_FAMILIES.map((f) => {
+          const on = rule.from.includes(f.key);
+          return (
+            <button
+              key={f.key}
+              aria-pressed={on}
+              onClick={() =>
+                onChange({
+                  ...rule,
+                  from: on ? rule.from.filter((k) => k !== f.key) : [...rule.from, f.key],
+                })
+              }
+              className={`rounded border px-1.5 py-0.5 text-[11px] uppercase tracking-wider ${
+                on
+                  ? "border-[#7FC4FF] bg-[#16222A] text-[#7FC4FF]"
+                  : "border-[#2E2E36] text-[#71717C] hover:border-[#4A4A55]"
+              }`}
+            >
+              {f.name}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-2 flex items-center justify-between">
+        <span className="text-[11px] font-bold uppercase tracking-widest text-[#71717C]">To</span>
+        <button
+          onClick={() => onChange({ ...rule, to: [...rule.to, { family: "ground" }] })}
+          className="rounded border border-[#2E2E36] px-1.5 py-0.5 text-[11px] uppercase tracking-widest text-[#71717C] hover:border-[#4A4A55] hover:text-[#A6A6AF]"
+        >
+          + Target
+        </button>
+      </div>
+      {rule.to.map((tgt, ti) => (
+        <div key={ti} className="mt-1 flex items-center gap-1">
+          <select
+            value={tgt.family}
+            aria-label="Target family"
+            onChange={(e) =>
+              onChange({
+                ...rule,
+                to: rule.to.map((t, i) =>
+                  i === ti ? { ...t, family: e.target.value as FamilyKey } : t,
+                ),
+              })
+            }
+            className="min-w-0 flex-1 rounded border border-[#2E2E36] bg-[#0B0B0D] px-1 py-0.5 text-[13px] text-[#EDEDEF] focus:border-[#FFD37F] focus:outline-none"
+          >
+            {RULE_FAMILIES.map((f) => (
+              <option key={f.key} value={f.key}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+          <NumberInput
+            value={tgt.weight ?? 1}
+            min={1}
+            width="w-12"
+            label="Target weight"
+            onChange={(n) =>
+              onChange({
+                ...rule,
+                to: rule.to.map((t, i) => (i === ti ? { ...t, weight: n } : t)),
+              })
+            }
+          />
+          <IconButton
+            label="Remove target"
+            onClick={() => onChange({ ...rule, to: rule.to.filter((_, i) => i !== ti) })}
+            danger
+          >
+            ✕
+          </IconButton>
+        </div>
+      ))}
+
+      <label className="mt-2 flex items-center justify-between gap-2 text-[13px] text-[#A6A6AF]">
+        Multiply pool ×
+        <FloatInput value={rule.multiply ?? 1} onChange={setMultiply} label="Pool multiplier" />
+      </label>
+    </div>
+  );
+}
+
+/**
+ * A number input that keeps its decimals. NumberInput floors on purpose —
+ * a wave count is a body count — but a pool multiplier of 1.5 is a real
+ * thing to ask for, so this one holds the raw text and only pushes values
+ * that parse, letting "0." sit un-clobbered on the way to "0.5".
+ */
+function FloatInput({
+  value,
+  onChange,
+  label,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  label: string;
+}) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => {
+    // sync an outside change without stamping on in-progress typing
+    setText((cur) => (Number(cur) === value ? cur : String(value)));
+  }, [value]);
+  return (
+    <input
+      type="number"
+      step="any"
+      min={0}
+      aria-label={label}
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        const n = Number(e.target.value);
+        if (e.target.value !== "" && Number.isFinite(n)) onChange(n);
+      }}
+      className="w-14 rounded border border-[#2E2E36] bg-[#0B0B0D] px-1.5 py-0.5 text-right text-[13px] font-bold text-[#EDEDEF] focus:border-[#FFD37F] focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+    />
   );
 }
 
@@ -863,6 +988,7 @@ function StepCard({
   guide,
   index,
   last,
+  readOnly,
   onChange,
   onDelete,
   onMove,
@@ -873,11 +999,13 @@ function StepCard({
   guide?: WaveRow;
   index: number;
   last: boolean;
+  /** the "as played" preview: derived counts, so nothing here can be edited */
+  readOnly?: boolean;
   onChange: (next: EditStep) => void;
   onDelete: () => void;
   onMove: (dir: -1 | 1) => void;
 }) {
-  const controls = (
+  const controls = readOnly ? null : (
     <div className="flex items-center gap-1">
       <IconButton label="Move up" onClick={() => onMove(-1)} disabled={index === 0}>
         ↑
@@ -956,6 +1084,7 @@ function StepCard({
                 key={kind}
                 kind={kind}
                 value={step.counts[kind] ?? 0}
+                disabled={readOnly}
                 onChange={(n) => onChange({ ...step, counts: { ...step.counts, [kind]: n } })}
               />
             ))}
@@ -972,10 +1101,12 @@ function StepCard({
 function UnitSlot({
   kind,
   value,
+  disabled,
   onChange,
 }: {
   kind: UnitKind;
   value: number;
+  disabled?: boolean;
   onChange: (n: number) => void;
 }) {
   const on = value > 0;
@@ -987,9 +1118,10 @@ function UnitSlot({
     >
       <button
         onClick={() => onChange(on ? 0 : 10)}
-        title={`${kind} — T${UNIT_STATS[kind].tier}${on ? " — click to clear" : ""}`}
+        disabled={disabled}
+        title={`${kind} — T${UNIT_STATS[kind].tier}${on && !disabled ? " — click to clear" : ""}`}
         aria-label={on ? `Clear ${kind}` : `Add ${kind}`}
-        className="shrink-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+        className="shrink-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] disabled:cursor-default"
       >
         <img
           src={unitIcon(kind)}
@@ -1002,6 +1134,7 @@ function UnitSlot({
         onChange={onChange}
         width="w-full min-w-0"
         blankZero
+        disabled={disabled}
         label={`${kind} count`}
       />
     </span>
