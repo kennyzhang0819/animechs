@@ -67,6 +67,8 @@ export interface Stats {
   simMs: number;
   fps: number;
   zoom: number;
+  /** current dynamic-resolution factor, 1 = full DPR_CAP resolution */
+  res: number;
 }
 
 /** the speeds the HUD toggle offers */
@@ -173,6 +175,32 @@ function paint(): Promise<void> {
 // viewport together, so it is computed from both (see minZoom).
 const ZOOM_MAX = 12;
 
+// ---- the frame budget (see frame and resize) --------------------------
+//
+// The sim's fixed step. rAF is the display's rate, not the game's: a
+// 120Hz phone would run the whole simulation twice as often for motion
+// nobody can see, and exactly on the devices with the least CPU to spare.
+// So frame() banks real time and steps the sim in SIM_DT quanta.
+const SIM_DT = 1 / 60;
+// most catch-up steps one frame will run. dt is already clamped to 0.05s,
+// so 3 covers an honest slow frame; anything longer (a backgrounded tab,
+// a device asleep) is simply dropped rather than replayed at 16x cost —
+// the spiral where slow frames beget more sim work which begets slower
+// frames has to break somewhere, and losing banked time is the cheap end
+const SIM_STEPS_MAX = 3;
+// backing-store ceiling in device px per CSS px — see resize
+const DPR_CAP = 2;
+// dynamic resolution bounds and pacing: renderScale walks between these
+// in RES_STEP moves, at most once per RES_COOLDOWN ms, dropping when the
+// smoothed fps is under RES_DOWN_FPS and recovering above RES_UP_FPS. The
+// wide gap between the two thresholds is the hysteresis that keeps it
+// from ping-ponging on a device that hovers near either edge
+const RES_MIN = 0.6;
+const RES_STEP = 0.1;
+const RES_COOLDOWN = 2000;
+const RES_DOWN_FPS = 48;
+const RES_UP_FPS = 57;
+
 // a touch that never travels this far in CSS px is a tap — it selects the
 // tower under it — and anything further is a drag that carried the camera.
 // Distance is the whole test on purpose: with no tool picked there is no
@@ -269,6 +297,20 @@ export class Game {
   private fpsEma = 60;
   private simEma = 0;
   private destroyed = false;
+  // real time owed to the fixed-step sim (see frame) — carried between
+  // frames so a 120Hz display steps the sim on every other frame instead
+  // of twice as often, and a hitch is paid back over the next few frames
+  private simAcc = 0;
+  /**
+   * DYNAMIC RESOLUTION: the backing stores render at this fraction of the
+   * DPR-scaled CSS size. Driven by fpsEma in frame(): fill rate is what a
+   * phone GPU runs out of first, and pixels are the one cost that can be
+   * given back without touching gameplay. Quantized steps + a cooldown so
+   * the canvas is not reallocated (resize clears it) every frame while the
+   * ema wanders around a threshold.
+   */
+  private renderScale = 1;
+  private scaleNextAt = 0;
 
   private readonly onResize = (): void => this.resize();
   private readonly onKeyDown = (e: KeyboardEvent): void => {
@@ -945,6 +987,7 @@ export class Game {
       simMs: this.simEma,
       fps: Math.round(this.fpsEma),
       zoom: this.zoom,
+      res: this.renderScale,
     };
   }
 
@@ -1010,7 +1053,11 @@ export class Game {
   }
 
   private resize(): void {
-    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    // capped at 2, not 3: a dpr-3 phone renders 2.25x the pixels of dpr 2
+    // for sharpness this art style cannot show, and fullscreen fill rate
+    // is the first thing a mobile GPU runs out of. renderScale then trades
+    // further sharpness for frame time when fpsEma says the frame is late
+    const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP) * this.renderScale;
     const bw = Math.round((this.glCanvas.clientWidth || this.worldW) * dpr);
     const bh = Math.round((this.glCanvas.clientHeight || H) * dpr);
     // only skip the canvas attribute writes (they clear the canvas) — the
@@ -1065,8 +1112,22 @@ export class Game {
     // exact frame the core fell on, until retry resets the sim. The esc
     // menu holds the sim the same way. A won game keeps running — the
     // field is empty and the last death effects get to play out
-    if (!this.paused && !this.menuOpen && !this.sim.lost())
-      for (let i = 0; i < this.speed; i++) this.sim.update(dt);
+    if (!this.paused && !this.menuOpen && !this.sim.lost()) {
+      // fixed 60Hz stepping off banked real time (see SIM_DT): a 144Hz
+      // display steps on some frames and not others, a 30Hz one steps
+      // twice a frame, and both play the same game at the same rate
+      this.simAcc += dt;
+      for (let s = 0; this.simAcc >= SIM_DT && s < SIM_STEPS_MAX; s++) {
+        this.simAcc -= SIM_DT;
+        for (let i = 0; i < this.speed; i++) this.sim.update(SIM_DT);
+      }
+      // time the step cap refused is forfeit, not owed (see SIM_STEPS_MAX)
+      if (this.simAcc >= SIM_DT) this.simAcc = 0;
+    } else {
+      // a held sim owes nothing: without this, time banked while paused
+      // would replay as a burst of catch-up steps on unpause
+      this.simAcc = 0;
+    }
     const simMs = performance.now() - t0;
 
     this.renderer.render(
@@ -1080,6 +1141,21 @@ export class Game {
 
     this.fpsEma += (1 / Math.max(dt, 1e-4) - this.fpsEma) * 0.05;
     this.simEma += (simMs - this.simEma) * 0.1;
+
+    // dynamic resolution (see renderScale): trade pixels for frame time
+    // when the smoothed fps says frames are late, buy them back when it
+    // recovers. Gated on the cooldown because the step goes through
+    // resize(), which reallocates and clears both canvases
+    if (now >= this.scaleNextAt) {
+      const down = this.fpsEma < RES_DOWN_FPS && this.renderScale > RES_MIN;
+      const up = this.fpsEma > RES_UP_FPS && this.renderScale < 1;
+      if (down || up) {
+        this.renderScale = clamp(this.renderScale + (down ? -RES_STEP : RES_STEP), RES_MIN, 1);
+        this.scaleNextAt = now + RES_COOLDOWN;
+        this.resize();
+      }
+    }
+
     this.raf = requestAnimationFrame(this.frame);
   };
 
