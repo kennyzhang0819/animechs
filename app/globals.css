@@ -53,6 +53,28 @@ select,
   user-select: text;
 }
 
+/* IMAGE ASSETS ARE PART OF THE INTERFACE, NOT CONTENT TO TAKE AWAY. Every
+   picture in the app is a turret sprite, a unit icon, a currency glyph or a
+   map thumbnail sitting inside a button, and none of them is a thing to
+   drag out, save, or highlight.
+
+   `user-select: none` on body already stops the highlight; DRAGGING is a
+   separate behaviour with its own property, which is why an icon could
+   still be picked up and towed around as a ghost with selection off — and
+   on the tech tree that ghost lands in the middle of a board whose own drag
+   is the camera pan. `draggable="false"` would have to be repeated on every
+   tag and forgotten on the next one; this is the same rule stated once, and
+   it covers the canvas and the inline SVG glyphs with it. */
+img,
+canvas,
+svg {
+  -webkit-user-drag: none;
+  user-drag: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: #3A3A44 transparent;

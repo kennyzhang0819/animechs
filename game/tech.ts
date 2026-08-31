@@ -565,12 +565,41 @@ export interface TechNodeDef {
    */
   refundable?: boolean;
   /**
-   * grid position in the tree view, in cell units. The tree grows DOWNWARD:
-   * y is the depth (a child always sits on the row below its parent) and x
-   * spreads siblings sideways, so duo's trunk runs straight down the middle
-   * with scatter branching off it. Home sits above the trunk at the top,
-   * and the utilities run down their own column on the right — the same
-   * root, a visibly separate path.
+   * Grid position in the tree view, in cell units.
+   *
+   * THE BOARD HAS ONE HARD RULE: NO TWO EDGES MAY CROSS. A tech tree is
+   * read by following a line from a node you own to a node you want, and
+   * the moment two lines meet at a point that is not a node, that reading
+   * stops working — an X in the middle of open board is indistinguishable
+   * from a junction, so a player traces the wrong branch and concludes the
+   * cheap turret they are standing on unlocks the expensive one it merely
+   * passes under. It is not a matter of tidiness. It is the difference
+   * between a graph and a picture of some lines.
+   *
+   * The rule is easy to break by accident, because a node moves for
+   * reasons that have nothing to do with the edges that pass near it. It
+   * was broken exactly that way once: the duo branch took the middle
+   * column, and scorch's two children — wave to its left and, from wave,
+   * parallax back out to its right — wove across that column twice.
+   * Nothing about the duo nodes looked wrong, and nothing about scorch
+   * had changed.
+   *
+   * SO THE BOARD IS LAID OUT IN WINGS, and that is the discipline that
+   * keeps the rule. Home is the junction. The meta chains — mutations and
+   * the pace/slot switches — run NORTH out of it, at negative y, one to
+   * each side. The turrets run south, and duo's three children own three
+   * strips that never interleave: the scatter wing takes columns 0-2, the
+   * duo branch takes column 3 alone and goes straight down, and the arc
+   * wing takes 4-6. A subtree stays inside its strip, so no edge of one
+   * ever has business in another.
+   *
+   * The board is deliberately wider than it needs to be. There is no cost
+   * to an empty column and a real cost to a crossing, so when a wing runs
+   * out of room the answer is to push the wings outward, never to weave a
+   * branch back through the middle.
+   *
+   * y is the depth — a child sits BELOW its parent (or, in the north,
+   * above it) — and x spreads siblings sideways.
    */
   x: number;
   y: number;
@@ -684,10 +713,12 @@ export interface TechNodeDef {
  *
  * SWARMER AND LANCER ARE A PHOTO FINISH upstream — 152.5 against 157, three
  * per cent apart — and plastanium is worth 143 copper apiece here, so one
- * unit of it swamps that gap and the rounding flipped them. Swarmer carries
- * one plastanium rather than two for that reason alone. If a future turret
- * lands this close to a neighbour, expect to hand-pick the bundle rather
- * than trust the split.
+ * unit of it swamps that gap. Swarmer carried one plastanium for a while to
+ * keep the fitted order intact; it carries TWO now, a deliberate override of
+ * the fit rather than a correction to it. The photo finish is the reason
+ * that decision is a judgement call at all: at this spacing the power law
+ * cannot tell the two turrets apart, so the bundle is hand-picked. If a
+ * future turret lands this close to a neighbour, expect the same.
  *
  * GROWTH IS ONE CONSTANT FOR EVERY TURRET, AND THAT IS DELIBERATE. It used
  * to vary from 1.0007 to 1.0854, but those were not decisions — they were
@@ -776,7 +807,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     id: "home",
     price: { base: {}, growth: 1 },
     cap: 1,
-    x: 2,
+    x: 3,
     y: 0,
   },
   {
@@ -792,7 +823,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     price: { base: { copper: 8 }, growth: 1.01 },
     dps: 27,
     requires: "home",
-    x: 2,
+    x: 3,
     y: 1,
   },
   {
@@ -883,7 +914,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     price: { base: { copper: 20, titanium: 4 }, growth: 1.01 },
     dps: 165,
     requires: "scatter",
-    x: 1,
+    x: 2,
     y: 3,
   },
   {
@@ -920,7 +951,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     price: { base: { copper: 75, titanium: 10 }, growth: 1.01 },
     dps: 1450,
     requires: "duo",
-    x: 1,
+    x: 2,
     y: 2,
   },
   {
@@ -934,7 +965,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     price: { base: { copper: 175, titanium: 60, thorium: 20 }, growth: 1.01 },
     dps: 217,
     requires: "hail",
-    x: 1,
+    x: 2,
     y: 4,
   },
   {
@@ -975,7 +1006,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     price: { base: { copper: 150, titanium: 40, thorium: 15 }, growth: 1.01 },
     dps: 420,
     requires: "scorch",
-    x: 5,
+    x: 6,
     y: 4,
   },
   {
@@ -1009,7 +1040,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     price: { base: { copper: 225, titanium: 35 }, growth: 1.01 },
     dps: 4,
     requires: "scorch",
-    x: 2,
+    x: 4,
     y: 4,
   },
   {
@@ -1029,7 +1060,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     price: { base: { copper: 500, titanium: 125, thorium: 45 }, growth: 1.01 },
     dps: 30,
     requires: "wave",
-    x: 4,
+    x: 5,
     y: 5,
   },
   {
@@ -1048,7 +1079,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     price: { base: { titanium: 360, thorium: 310, plastanium: 36 }, growth: 1.01 },
     dps: 8,
     requires: "wave",
-    x: 2,
+    x: 4,
     y: 5,
   },
   // ---------- NEMESIS AND ERADICATION ----------------------------------
@@ -1115,7 +1146,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // 1,212/s lit x 230/320 duty x 5 crowd — the +30% up-gun (constants.ts)
     dps: 4356,
     requires: "lancer",
-    x: 5,
+    x: 6,
     y: 5,
   },
   {
@@ -1127,7 +1158,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // crowd) — the +30% up-gun (constants.ts)
     dps: 527,
     requires: "meltdown",
-    x: 5,
+    x: 6,
     y: 6,
   },
   // ---------- THE UTILITIES PATH ---------------------------------------
@@ -1172,24 +1203,24 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     price: { base: { titanium: 25 }, growth: 1 },
     requires: "home",
     cap: 1,
-    x: 6,
-    y: 1,
+    x: 4,
+    y: -1,
   },
   {
     id: "speed-4",
     price: { base: { thorium: 20 }, growth: 1 },
     requires: "speed-2",
     cap: 1,
-    x: 6,
-    y: 2,
+    x: 4,
+    y: -2,
   },
   {
     id: "speed-8",
     price: { base: { plastanium: 15 }, growth: 1 },
     requires: "speed-4",
     cap: 1,
-    x: 6,
-    y: 3,
+    x: 4,
+    y: -3,
   },
   {
     // THE SLOT LADDER — the utilities that sell UI rather than pace. The
@@ -1206,16 +1237,16 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     price: { base: { thorium: 5 }, growth: 1 },
     requires: "speed-4",
     cap: 1,
-    x: 7,
-    y: 3,
+    x: 5,
+    y: -2,
   },
   {
     id: "slot-8",
     price: { base: { plastanium: 5 }, growth: 1 },
     requires: "slot-7",
     cap: 1,
-    x: 7,
-    y: 4,
+    x: 5,
+    y: -3,
   },
   // ---------- THE EXPANSION BRANCH --------------------------------------
   //

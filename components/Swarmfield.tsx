@@ -47,6 +47,7 @@ import {
   loadProgress,
   resetProgress,
   saveHudMinimized,
+  unlockEverything,
   layoutFor,
   saveLayout,
   seedLayout,
@@ -67,6 +68,19 @@ import { CostRow, Wallet } from "./Items";
 import TechTree from "./TechTree";
 
 const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
+
+/**
+ * THE TOUCH BACK DOOR's three numbers (see `taps` in Swarmfield).
+ *
+ * Seven taps because that is Android's build-number count, and the count
+ * being a known idiom is worth more than any number picked fresh. The
+ * window is generous — a finger tapping deliberately is nowhere near a
+ * double-click's cadence — and the hint appears at three, which is one
+ * past anything a mis-tap plausibly reaches.
+ */
+const UNLOCK_TAPS = 7;
+const UNLOCK_HINT_AT = 3;
+const TAP_WINDOW_MS = 1200;
 
 /** the level card's map preview — the admin editor's thumbnail look */
 function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) {
@@ -595,6 +609,28 @@ export default function Swarmfield() {
    * they were playing rather than at the title.
    */
   const [menuView, setMenuView] = useState<"home" | "settings" | "maps" | "map">("home");
+  /**
+   * THE BACK DOOR'S TAP COUNTER — how many times the settings heading has
+   * been tapped in a row, and whether the door has been opened.
+   *
+   * The desktop debug modes are keyboard chords (Ctrl+Shift+S, Ctrl+Shift+M),
+   * which an iPad cannot type, and the dev unlock is compiled out of the
+   * build an iPad actually loads. This is the touch equivalent: seven taps
+   * on the settings heading grants the whole tree (unlockEverything).
+   *
+   * THE COUNT IS SHOWN FROM THE THIRD TAP ON, which is what makes it a
+   * secret rather than a puzzle: nothing advertises the gesture, but once
+   * you are plainly in the middle of it the game stops making you guess
+   * whether it is working. Android's build-number tap has made the same
+   * trade for years.
+   *
+   * It resets on any pause longer than TAP_WINDOW_MS and on leaving the
+   * screen, so a stray tap on the heading can never accumulate into an
+   * unlock over the course of a session.
+   */
+  const [taps, setTaps] = useState(0);
+  const [unlocked, setUnlocked] = useState(false);
+  const lastTap = useRef(0);
   const [level, setLevel] = useState<LevelSpec | null>(null);
   /**
    * The tier the menu is pointed at. It follows the frontier whenever the
@@ -1039,7 +1075,12 @@ export default function Swarmfield() {
     );
     const back = (label: string, to: "home" | "maps") => (
       <button
-        onClick={() => setMenuView(to)}
+        onClick={() => {
+          // a half-finished back-door gesture does not survive the screen
+          setTaps(0);
+          setUnlocked(false);
+          setMenuView(to);
+        }}
         className="text-[13px] uppercase tracking-widest text-[#71717C] underline-offset-2 hover:text-[#EDEDEF] hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
       >
         &#9666; {label}
@@ -1093,9 +1134,42 @@ export default function Swarmfield() {
               beside the Deploy button where a mis-tap would be costly */}
           {menuView === "settings" && (
             <>
-              <h2 className="text-[13px] font-bold uppercase tracking-[0.35em] text-[#71717C]">
+              {/* THE HEADING IS THE BACK DOOR (see `taps`). It is a button
+                  that does nothing visible for six taps, which is the whole
+                  point — it has to be reachable on a device with no
+                  keyboard and invisible to a player who is not looking for
+                  it. It lives HERE, on a screen with no canvas under it,
+                  rather than on the build stamp that floats over every
+                  screen: a tappable target in the corner of the field would
+                  be swallowing taps meant for turrets */}
+              <button
+                onClick={() => {
+                  const now = performance.now();
+                  const n = now - lastTap.current > TAP_WINDOW_MS ? 1 : taps + 1;
+                  lastTap.current = now;
+                  if (n >= UNLOCK_TAPS) {
+                    setTaps(0);
+                    setUnlocked(true);
+                    setProgress(unlockEverything());
+                    return;
+                  }
+                  setTaps(n);
+                }}
+                className="text-[13px] font-bold uppercase tracking-[0.35em] text-[#71717C] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#FFD37F]"
+              >
                 Settings
-              </h2>
+              </button>
+              {unlocked ? (
+                <p className="-mt-4 text-[12px] uppercase tracking-widest text-[#7BE58A]">
+                  Every node unlocked
+                </p>
+              ) : (
+                taps >= UNLOCK_HINT_AT && (
+                  <p className="-mt-4 text-[12px] uppercase tracking-widest text-[#71717C]">
+                    {UNLOCK_TAPS - taps} more
+                  </p>
+                )
+              )}
               <div className="w-full max-w-[30rem] rounded border border-[#2E2E36] bg-[#151518] p-4">
                 <div className="flex items-center justify-between gap-4">
                   <div>

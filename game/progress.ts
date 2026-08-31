@@ -5,6 +5,7 @@ import { MUTATION_MAX, cleanMutations } from "./mutation";
 import {
   addScaled,
   canAfford,
+  costEntries,
   credit,
   emptyBank,
   ITEM_KINDS,
@@ -240,9 +241,27 @@ const rankOf = (bossKills: readonly string[] | undefined): number =>
  * has room for and stays under every turret's ceiling; the clamp to
  * techCap is what turns it into exactly 1 on the utilities, which are
  * switches rather than stacks.
+ *
+ * A REFUNDABLE NODE IS NEVER GRANTED, AND THIS IS LOAD-BEARING. A refund
+ * hands back the price of the point being returned (refundTech), so a
+ * point that arrives free is a point that can be sold for money that was
+ * never paid. With the dev switch on it was worse than a one-off: the
+ * grant runs on every loadProgress, so refunding `duo-power` gave a surge
+ * alloy, the very next load handed the node straight back, and the pair
+ * could be cycled for as much surge as the player had patience for.
+ *
+ * Skipping them here fixes it at the root and buys an invariant worth
+ * having: OWNING A REFUNDABLE NODE MEANS IT WAS BOUGHT. So the refund is
+ * always honest, and no purchase ledger has to be kept to prove it.
+ *
+ * The node stays reachable behind the cheats — unlockEverything hands over
+ * the PRICE instead, which is the same offer without the hole.
  */
 function grantEveryNode(tech: TechLevels): TechLevels {
-  for (const k of TECH_KINDS) tech[k] = Math.max(tech[k] ?? 0, Math.min(500, techCap(k)));
+  for (const k of TECH_KINDS) {
+    if (isRefundable(k)) continue;
+    tech[k] = Math.max(tech[k] ?? 0, Math.min(500, techCap(k)));
+  }
   return tech;
 }
 
@@ -836,6 +855,56 @@ export function buyTech(node: TechKind, count = 1): Progress | null {
   }
   saveProgress(p);
   return p;
+}
+
+/**
+ * THE BACK DOOR: raise every node in the tree to a usable number of points
+ * and write it to the save, IN PRODUCTION TOO.
+ *
+ * WHY THIS EXISTS SEPARATELY FROM DEV_UNLOCK_ALL. That switch is compiled
+ * out of a production build on purpose and should stay that way — the
+ * shipped game must not hand the tree to whoever loads the page. But the
+ * only device this game is actually played on by hand is an iPad, and an
+ * iPad runs the DEPLOYED build: there is no dev server to point it at and
+ * no keyboard for the Ctrl+Shift shortcuts the desktop debug modes use. So
+ * testing anything past the first few waves meant playing the campaign to
+ * get there, every time.
+ *
+ * IT IS A DELIBERATE ACT, NOT A FLAG. Nothing calls this on load. It is
+ * reached only by the tap gesture on the settings screen (see Swarmfield),
+ * which no player finds by accident and no player is told about — the same
+ * bargain Android's build-number tap makes.
+ *
+ * NODES, exactly like the dev switch: the ladder still opens by clearing
+ * tiers, and MUTATION RANKS ARE NOT GRANTED — those hang off the boss
+ * ledger (rankOf), which is a record of fights actually won and not a
+ * thing to forge. A save that takes this door still has to fell a boss to
+ * get its first mutation.
+ *
+ * THE ONE THING IT PUTS IN THE BANK is the price of the refundable nodes,
+ * because grantEveryNode refuses to hand those over (see the invariant
+ * there) and a node this door could not reach at all would be a node that
+ * cannot be tested on the device the door exists for. So it tops the
+ * wallet up to what buying them costs and lets the player buy them
+ * normally.
+ *
+ * TOPPING UP CANNOT BE FARMED, and that is why it is a max rather than a
+ * credit. Tapping the door twice does nothing the first tap did not, and
+ * the buy/refund cycle it enables is net zero — spend the surge on the
+ * node, get the same surge back when you switch it off, and the ceiling
+ * this sets is never exceeded. A `credit` here would have reopened the
+ * very hole the invariant closes.
+ */
+export function unlockEverything(): Progress {
+  const p = loadProgress();
+  const bank = { ...p.bank };
+  for (const k of TECH_KINDS) {
+    if (!isRefundable(k)) continue;
+    for (const { item, amount } of costEntries(techPrice(k, p.tech[k] ?? 0)))
+      bank[item] = Math.max(bank[item], amount);
+  }
+  saveProgress({ ...p, bank, tech: grantEveryNode({ ...p.tech }) });
+  return loadProgress();
 }
 
 /**

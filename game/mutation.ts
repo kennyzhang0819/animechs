@@ -52,7 +52,7 @@ export const MUTATIONS: readonly MutationDef[] = [
     level: MUT_HUNGRY,
     name: "Hungry",
     blurb:
-      "One enemy in ten spawns hungry. It eats a neighbour every second — up to ten — taking double their health and swelling with every meal. What it eats drops nothing.",
+      "One enemy in twenty spawns hungry. It eats a neighbour every second — up to twenty — taking double their health and swelling with every meal. What it eats drops nothing.",
   },
 ];
 
@@ -94,25 +94,34 @@ export function cleanMutations(
 //
 // A hungry unit is not a new KIND — every wave the script sends is
 // untouched, and the level editor's arithmetic (ladder.ts) still describes
-// exactly what arrives. What changes is that one body in ten walks in with
-// an appetite, and the wave then eats itself down into fewer, fatter units.
+// exactly what arrives. What changes is that one body in twenty walks in
+// with an appetite, and the wave then eats itself down into fewer, fatter
+// units.
+//
+// RARER AND HUNGRIER, and the two moved together on purpose. Halving the
+// share while doubling the appetite leaves roughly the same number of
+// bodies eaten across a wave, so the salvage the mutation costs is about
+// what it always was — but it is concentrated. Instead of a scattering of
+// moderately swollen units there are half as many, each carrying twice the
+// pool, which is a different fight rather than a harder one: fewer things
+// to find, and each one a genuine problem when you do.
 //
 // THE PAYOUT IS THE POINT. A devoured unit is removed without ever being
 // killed, so it pays no drop at all (killsByKind is the whole ledger — see
 // dropsForKills), and the hungry unit that ate it still drops exactly what
-// its own kind drops. Ten meals therefore cost the player ten bodies' worth
-// of salvage and hand back one body's worth, on top of a unit carrying
-// twenty-one times the health it spawned with. The bargain is meant to
-// sting: it is what a difficulty a player OPTED INTO should feel like.
+// its own kind drops. Twenty meals therefore cost the player twenty bodies'
+// worth of salvage and hand back one body's worth, on top of a unit
+// carrying forty-one times the health it spawned with. The bargain is meant
+// to sting: it is what a difficulty a player OPTED INTO should feel like.
 
-/** share of spawns that walk in hungry */
-export const HUNGRY_CHANCE = 0.1;
+/** share of spawns that walk in hungry — one in twenty */
+export const HUNGRY_CHANCE = 0.05;
 
 /** seconds between feeding attempts — one meal a second, at most */
 export const HUNGRY_PERIOD = 1;
 
 /** meals one hungry unit will ever take */
-export const HUNGRY_MAX_MEALS = 10;
+export const HUNGRY_MAX_MEALS = 20;
 
 /**
  * What a meal is worth: DOUBLE the prey's full health, added to the hungry
@@ -130,8 +139,16 @@ export const HUNGRY_MAX_MEALS = 10;
  */
 export const HUNGRY_HP_PER_MEAL = 2;
 
-/** how much bigger a meal draws the unit — art only, the hitbox never
- *  moves (see the note in Sim.feedHungry) */
+/**
+ * How much bigger a meal draws the unit — art only, the hitbox never moves
+ * (see the note in Sim.feedHungry).
+ *
+ * FIVE PER CENT IS PER MEAL, so the ceiling is whatever HUNGRY_MAX_MEALS
+ * is: at twenty meals a fully fed unit is drawn at DOUBLE its sprite size.
+ * That is deliberate — the swell is the only warning the player gets of
+ * how much health is walking at them, and a unit carrying forty-one times
+ * its spawn pool should not look like one carrying two.
+ */
 export const HUNGRY_GROWTH = 0.05;
 
 /** how far a hungry unit can reach for a meal, in px (four tiles) */

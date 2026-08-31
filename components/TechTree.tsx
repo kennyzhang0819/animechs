@@ -8,12 +8,16 @@ import {
   mutationRank,
   buyTech,
   nodeStatus,
+  refundTech,
   saveMutation,
   type NodeStatus,
   type Progress,
 } from "@/game/progress";
 import {
+  DUO_UPGRADES,
+  isRefundable,
   isTowerNode,
+  techCap,
   TECH_TREE,
   techNode,
   techPrice,
@@ -40,6 +44,18 @@ const nodeName = (id: TechKind): string =>
  */
 const FF_GLYPH = "M2 4v16l10-8zM12 4v16l10-8z";
 const SLOT_GLYPH = "M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z";
+/** a bolt — duo rate of fire, the node that makes the barrel run hot */
+const ROF_GLYPH = "M13 2 4 14h6l-1 8 9-12h-6z";
+/** a shot leaving two bodies behind it — duo pierce */
+const PIERCE_GLYPH = "M1 11h3v2H1zM7 11h3v2H7zM13 11h3V8l6 4-6 4v-3h-3z";
+
+/** the glyph a sprite-less node wears; the pace switches are the default */
+const GLYPH: Partial<Record<TechKind, string>> = {
+  "slot-7": SLOT_GLYPH,
+  "slot-8": SLOT_GLYPH,
+  "duo-rof": ROF_GLYPH,
+  "duo-pierce": PIERCE_GLYPH,
+};
 // a warning triangle with the bang punched out (even-odd fill) — the face
 // of A Final Threat, drawn in Eradication's own purple once it is owned
 
@@ -47,6 +63,10 @@ const SLOT_GLYPH = "M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z";
  *  the projector node wears the block it is a reservation for */
 const UTIL_ICONS: Partial<Record<TechKind, string>> = {
   "overdrive-projector": "/mindustry/sprites/blocks/defense/overdrive-projector.png",
+  // the two one-shot duo nodes wear the item that IS them: a graphite round
+  // is graphite, and Duo Power's whole gate is the one surge alloy it costs
+  "duo-graphite": "/mindustry/sprites/items/item-graphite.png",
+  "duo-power": "/mindustry/sprites/items/item-surge-alloy.png",
 };
 
 function NodeIcon({ id, lit }: { id: TechKind; lit: boolean }) {
@@ -70,10 +90,7 @@ function NodeIcon({ id, lit }: { id: TechKind; lit: boolean }) {
       className={`h-10 w-10 ${lit ? "fill-[#FFD37F]" : "fill-[#71717C]"}`}
       aria-hidden="true"
     >
-      <path
-        fillRule="evenodd"
-        d={id === "slot-7" || id === "slot-8" ? SLOT_GLYPH : FF_GLYPH}
-      />
+      <path fillRule="evenodd" d={GLYPH[id] ?? FF_GLYPH} />
     </svg>
   );
 }
@@ -84,18 +101,19 @@ const HOME_ICON = "/mindustry/sprites/blocks/storage/core-shard.png";
  * THE MUTATION COLUMN, laid out in the same grid the tech tree uses so the
  * two read as one board.
  *
- * IT HANGS OFF HOME, like everything else does. Home is the trunk the whole
- * board forks from — turrets down the middle, utilities off to the right,
- * the projector's reservation on the near left — and mutation is the far
- * left arm of the same junction. Drawing it unattached would have made it a
- * second, unrelated board that happened to share a viewport.
+ * IT HANGS OFF HOME, like everything else does. Home is the junction the
+ * whole board forks from, and the two things that are not turrets — this
+ * column and the pace/slot switches — are its two NORTH arms. Drawing it
+ * unattached would have made it a second, unrelated board that happened to
+ * share a viewport.
  *
- * IT SITS AT NEGATIVE X, which is why the geometry below no longer assumes
- * the board starts at zero. The distance from the trunk is the point:
- * nothing on this column is bought, and nothing on it makes the player
- * stronger, so it must not be mistaken for another branch of upgrades. Its
- * link to home is drawn in the column's own colour rather than the tree's
- * gold for the same reason.
+ * IT RUNS NORTH, AT NEGATIVE Y, which is why the geometry below assumes
+ * neither axis starts at zero. North is the direction nothing is fought
+ * in: every turret grows down out of home, so a chain that grows UP out of
+ * it is visibly not part of that fight, which is the whole distinction
+ * this column needs to carry. Its link to home is drawn in the column's
+ * own colour rather than the tree's gold for the same reason — gold on
+ * this board means bought, and nothing here is.
  *
  * THE COLUMN IS A CHAIN, AND IT ENDS AT THE SAVE'S RANK: the marker at the
  * top and one switch per rank EARNED, in order. A rank that has not been
@@ -106,9 +124,16 @@ const HOME_ICON = "/mindustry/sprites/blocks/storage/core-shard.png";
  * how long the line is, which is a promise this list is in no position to
  * make.
  */
-const MUT_X = -1;
-/** the rank marker, and the row each mutation switch sits on */
-const mutY = (level: number): number => level;
+const MUT_X = 2;
+/**
+ * The rank marker's row, and the row each mutation switch sits on — going
+ * UP. Level 0 is the marker at (MUT_X, -1), just north-west of home, and
+ * every rank earned stacks one row above the last.
+ *
+ * Every reader goes through this, including the links between the switches,
+ * so the column's direction is this one line.
+ */
+const mutY = (level: number): number => -1 - level;
 /** the column's own colour — deliberately NOT the tree's gold. Gold on this
  *  board means "bought, owned, yours"; mutation is none of those */
 const MUT_LIT = "#FF8ACB";
@@ -237,17 +262,22 @@ const CELL_W = 160;
 const CELL_H = 132;
 const NODE = 88;
 const ALL_X = [...TECH_TREE.map((n) => n.x), MUT_X];
-const ALL_Y = [...TECH_TREE.map((n) => n.y), ...MUTATIONS.map((a) => mutY(a.level)), 0];
-// the mutation column runs off the left of the tree's own grid, so board
-// space is the node grid SHIFTED to start at zero rather than the grid
-// itself — every reader goes through centerX, so this is the only place
-// that has to know
+const ALL_Y = [
+  ...TECH_TREE.map((n) => n.y),
+  ...MUTATIONS.map((a) => mutY(a.level)),
+  mutY(0),
+];
+// The meta chains run NORTH out of home, so the grid starts at neither
+// zero: board space is the node grid SHIFTED to start at the origin on
+// BOTH axes. Every reader goes through centerX/centerY, so this is the
+// only place that has to know where the grid actually begins.
 const MIN_X = Math.min(...ALL_X);
+const MIN_Y = Math.min(...ALL_Y);
 const BOARD_W = (Math.max(...ALL_X) - MIN_X + 1) * CELL_W;
-const BOARD_H = (Math.max(...ALL_Y) + 1) * CELL_H;
+const BOARD_H = (Math.max(...ALL_Y) - MIN_Y + 1) * CELL_H;
 
 const centerX = (x: number): number => (x - MIN_X + 0.5) * CELL_W;
-const centerY = (y: number): number => (y + 0.5) * CELL_H;
+const centerY = (y: number): number => (y - MIN_Y + 0.5) * CELL_H;
 
 /**
  * THE TREE IS A MAP, NOT A PAGE. It used to be a vertically scrolling
@@ -302,6 +332,28 @@ const stepLabel = (s: BuyStep): string => (s === "max" ? "Max" : `×${s}`);
  */
 const stepCount = (p: Progress, node: TechKind, step: BuyStep): number =>
   affordablePoints(p, node, step === "max" ? Infinity : step);
+
+/**
+ * WHAT THE DUO BRANCH IS WORTH AT ITS CURRENT POINT COUNT, in the units the
+ * player actually feels.
+ *
+ * The blurb says what a node does; this says what it is DOING. A stacking
+ * node is bought a point at a time over a whole campaign, and "5% per
+ * point" is no help at all to someone deciding whether the fourteenth one
+ * is worth 60,000 copper — "+65% attack speed, +70% after this" is.
+ */
+function duoEffect(id: TechKind, points: number, next: number): string | null {
+  const pct = (n: number): string => `${Math.round(n * 100)}%`;
+  if (id === "duo-rof")
+    return `+${pct(DUO_UPGRADES.ROF_PER_POINT * points)} attack speed${
+      next > points ? ` → +${pct(DUO_UPGRADES.ROF_PER_POINT * next)}` : ""
+    }`;
+  if (id === "duo-pierce")
+    return `Shots punch through ${1 + DUO_UPGRADES.PIERCE_PER_POINT * points} bodies${
+      next > points ? ` → ${1 + DUO_UPGRADES.PIERCE_PER_POINT * next}` : ""
+    }`;
+  return null;
+}
 
 /**
  * Does this device answer a resting pointer with hover?
@@ -624,7 +676,7 @@ export default function TechTree({
                 x1={centerX(techNode("home").x)}
                 y1={centerY(techNode("home").y)}
                 x2={centerX(MUT_X)}
-                y2={centerY(0)}
+                y2={centerY(mutY(0))}
                 stroke={rank > 0 ? MUT_LIT : "#4A4A55"}
                 strokeWidth={2}
                 strokeDasharray={rank > 0 ? undefined : "6 4"}
@@ -637,7 +689,7 @@ export default function TechTree({
                 <line
                   key={`asc-${a.level}`}
                   x1={centerX(MUT_X)}
-                  y1={centerY(mutY(a.level) - 1)}
+                  y1={centerY(mutY(a.level - 1))}
                   x2={centerX(MUT_X)}
                   y2={centerY(mutY(a.level))}
                   stroke={active.includes(a.level) ? MUT_LIT : "#4A4A55"}
@@ -653,7 +705,21 @@ export default function TechTree({
               // once it is on the node has nothing left to sell
               const utility = !isTowerNode(n.id);
               const owned = points > 0;
-              const clickable = status === "buyable";
+              // A UTILITY IS NO LONGER ALWAYS A SWITCH. The duo branch is a
+              // utility that STACKS — twenty points of rate of fire, ten of
+              // pierce — so the tick badge and the "Owned / Locked" line
+              // that used to stand in for every non-turret node now belong
+              // only to the ones that really do stop at a single point.
+              const cap = techCap(n.id);
+              const switchy = utility && cap <= 1;
+              const stack = utility && !switchy;
+              // THE ONE NODE THAT CAN BE HANDED BACK (duo-power). A refund
+              // is spelled as a second click on a node that is already on,
+              // which is what makes it read as a switch rather than as a
+              // shop: click to arm it, click to take it off and get the
+              // surge alloy back
+              const refundable = owned && isRefundable(n.id);
+              const clickable = status === "buyable" || refundable;
               // the step is a ceiling, not a promise: a "×100" the wallet
               // only half covers lands what it covers rather than refusing
               const willBuy = clickable ? stepCount(progress, n.id, step) : 0;
@@ -677,14 +743,18 @@ export default function TechTree({
                   <button
                     aria-label={
                       clickable && !primed
-                        ? `${name}: show price, tap again to buy`
-                        : utility
-                          ? owned
-                            ? `${name}: owned`
-                            : `Unlock ${name}`
-                          : owned
-                            ? `${name}: +${Math.max(1, willBuy)} placement capacity`
-                            : `Unlock ${name}`
+                        ? `${name}: show details, tap again to act`
+                        : refundable
+                          ? `${name}: on — activate to switch off and refund`
+                          : switchy
+                            ? owned
+                              ? `${name}: owned`
+                              : `Unlock ${name}`
+                            : stack
+                              ? `${name}: ${points} of ${cap} points`
+                              : owned
+                                ? `${name}: +${Math.max(1, willBuy)} placement capacity`
+                                : `Unlock ${name}`
                     }
                     // aria-disabled rather than disabled: a node priced out
                     // of reach still has to be able to say so, and a disabled
@@ -697,6 +767,10 @@ export default function TechTree({
                       // "why not" is the question it most needs to answer
                       if (touch && armed !== n.id) {
                         setArmed(n.id);
+                        return;
+                      }
+                      if (refundable) {
+                        if (refundTech(n.id)) onChanged();
                         return;
                       }
                       if (!clickable) return;
@@ -715,7 +789,7 @@ export default function TechTree({
                         a turret's capacity. A utility has no number — it is
                         on or it is not — so it gets a tick instead */}
                     {owned &&
-                      (utility ? (
+                      (switchy ? (
                         <svg
                           viewBox="0 0 12 12"
                           className="absolute -bottom-2 -right-2 h-5 w-5 rounded border border-[#FFD37F] bg-[#101013] fill-[#FFD37F] p-0.5"
@@ -756,7 +830,13 @@ export default function TechTree({
                     <div className="flex items-baseline justify-between">
                       <span className="font-bold text-[#EDEDEF]">{name}</span>
                       <span className="text-[13px] text-[#A6A6AF]">
-                        {utility ? (owned ? "Owned" : "Locked") : `Capacity ${points}`}
+                        {switchy
+                          ? owned
+                            ? "On"
+                            : "Locked"
+                          : stack
+                            ? `${points} / ${cap}`
+                            : `Capacity ${points}`}
                       </span>
                     </div>
                     <div className="mt-1 text-[14px] text-[#A6A6AF]">
@@ -768,7 +848,30 @@ export default function TechTree({
                             })`
                           : `Unlocks the ${name} turret with 1 placement`}
                     </div>
-                    {status === "locked-tier" ? (
+                    {/* the stacking duo nodes say what they are DOING, not
+                        just what a point is worth — see duoEffect */}
+                    {stack &&
+                      (() => {
+                        const line = duoEffect(n.id, points, points + Math.max(0, willBuy));
+                        return line ? (
+                          <div className="mt-1 text-[14px] font-bold text-[#FFD37F]">{line}</div>
+                        ) : null;
+                      })()}
+                    {refundable ? (
+                      <div className="mt-2 border-t border-[#2E2E36] pt-2">
+                        <div className="text-[13px] font-bold uppercase tracking-widest text-[#7BE58A]">
+                          Active
+                        </div>
+                        {/* what comes BACK, in the same shape a price is
+                            shown in — the refund is the price, exactly */}
+                        <div className="mt-1 text-[14px] text-[#A6A6AF]">
+                          {touch ? "Tap again" : "Click"} to switch off and refund
+                        </div>
+                        <div className="mt-1">
+                          <CostRow cost={techPrice(n.id, points - 1)} bank={progress.bank} />
+                        </div>
+                      </div>
+                    ) : status === "locked-tier" ? (
                       <div className="mt-2 text-[13px] font-bold uppercase tracking-widest text-[#FF8A8A]">
                         Clear{" "}
                         <span style={{ color: difficultyColor(techNode(n.id).requiresTier ?? 0) }}>
@@ -807,7 +910,7 @@ export default function TechTree({
               className="group absolute"
               style={{
                 left: centerX(MUT_X) - NODE / 2,
-                top: centerY(0) - NODE / 2,
+                top: centerY(mutY(0)) - NODE / 2,
                 width: NODE,
                 height: NODE,
               }}
