@@ -24,11 +24,12 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * capacity, so it takes points forever; a utility is a SWITCH, so it takes
  * exactly one (see `cap`) and then reads as owned.
  *
- * NOTHING HERE REACHES ACROSS MAPS. What this tree sells is OWNERSHIP, and
- * ownership is campaign-wide; what a map will let through its door is a
- * separate question answered by that map's own progress (bandForCleared,
- * below). Two nodes used to break that line — one opened a second world,
- * one revealed Eradication everywhere — and both are gone with the split.
+ * NOTHING HERE DECIDES WHAT A RUN MAY BRING. What this tree sells is
+ * OWNERSHIP, and ownership is campaign-wide; what a DIFFICULTY will let
+ * through its door is a separate question answered by the difficulty
+ * itself (bandForTier, below) and by nothing else. Two nodes used to break
+ * that line — one opened a second world, one revealed Eradication
+ * everywhere — and both are gone with the split.
  *
  * `slot-7` and `slot-8` are the utilities that are not about pace: the
  * build bar is a six-slot loadout (BASE_BAR_SLOTS), and each of these
@@ -1147,40 +1148,45 @@ export function towerBand(kind: TowerKind): number {
 }
 
 /**
- * WHAT A MAP LETS YOU BRING, by how many of its difficulties you have
- * cleared ON THAT MAP.
+ * WHAT A DIFFICULTY LETS YOU BRING. A PROPERTY OF THE DIFFICULTY, FIXED
+ * FOREVER — nothing a save does, on this map or any other, ever moves it.
  *
- * Every map starts you at the bottom of the roster. Owning spectres does
- * not mean you may open a new map with them: the tech tree says what a save
- * OWNS, and this says what a map will let through its door, and they are
- * different questions. Clearing a difficulty on a map raises that map's
- * band for good — including when you go back to farm the tier you cleared,
- * because the band belongs to the map's progress and not to the run.
+ * An Incursion is a first-three-currencies fight and stays one for the
+ * life of the save. Not "until you clear it", not "until you clear the map"
+ * — always. A player with every turret in the tree who drops back to
+ * Incursion to farm plays it with duos and scorches, exactly as they did
+ * the first time, because the constraint IS the difficulty. Take it away
+ * on a replay and Incursion stops being a difficulty at all and becomes a
+ * free harvest with the endgame roster.
  *
- * Nothing cleared buys the first three currencies, which is the roster an
- * Incursion actually banks. Each clear opens one more, and the ladder runs
- * out of currencies before it runs out of difficulties: Nemesis and
- * Eradication share the full roster, since there is nothing above phase
- * fabric to hold back.
+ * The tech tree still says what a save OWNS, and the two gates stack: this
+ * is a ceiling, never a grant, and a turret has to be bought before a
+ * difficulty can be asked whether it will admit it.
+ *
+ * Indexed BY TIER. Tier 0 gets the first three currencies, which is the
+ * roster an Incursion actually banks; each difficulty up opens one more.
+ * The ladder runs out of currencies before it runs out of difficulties, so
+ * Nemesis and Eradication share the full roster — there is nothing above
+ * phase fabric to hold back, no turret being priced in surge alloy.
  */
-export const BAND_FOR_CLEARED: readonly number[] = [2, 3, 4, 4];
+export const BAND_FOR_TIER: readonly number[] = [2, 3, 4, 4];
 
-export const bandForCleared = (cleared: number): number =>
-  BAND_FOR_CLEARED[Math.min(BAND_FOR_CLEARED.length - 1, Math.max(0, Math.floor(cleared)))];
+export const bandForTier = (tier: number): number =>
+  BAND_FOR_TIER[Math.min(BAND_FOR_TIER.length - 1, Math.max(0, Math.floor(tier)))];
 
 /**
- * @param band the deepest currency this map will let a turret's price reach
- *   (see bandForCleared). Omitted means no map gate at all — the editor and
- *   sandbox, where a save's own tech is the only limit.
+ * @param band the deepest currency this difficulty will let a turret's
+ *   price reach (see bandForTier). Omitted means no difficulty gate at all
+ *   — the editor and sandbox, where a save's own tech is the only limit.
  */
 export function techState(levels: TechLevels, band: number = ITEM_KINDS.length): TechState {
   const caps = Object.fromEntries(
     TOWER_KINDS.map((k) => [k, Math.max(0, Math.floor(levels[k] ?? 0))]),
   ) as Record<TowerKind, number>;
-  // THE MAP GATE NARROWS `unlocked`, NOT `caps`. Everything that asks
+  // THE DIFFICULTY GATE NARROWS `unlocked`, NOT `caps`. Everything that asks
   // whether a turret may be placed — the build bar, the loadout picker,
   // Sim.canPlace, Game.setBuild — already asks this one set, so a turret
-  // held back by the map is held back everywhere by one line here.
+  // held back by the difficulty is held back everywhere by one line here.
   const unlocked = new Set<TowerKind>(
     TOWER_KINDS.filter((k) => caps[k] > 0 && towerBand(k) <= band),
   );

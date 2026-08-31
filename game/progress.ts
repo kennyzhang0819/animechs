@@ -19,7 +19,7 @@ import {
   isMaxed,
   isTowerNode,
   NODE_SPEED,
-  bandForCleared,
+  bandForTier,
   TECH_KINDS,
   techCap,
   techNode,
@@ -50,9 +50,12 @@ export interface Progress {
    *
    * ONE NUMBER PER MAP, NOT ONE FOR THE SAVE. Clearing Onslaught somewhere
    * says nothing about anywhere else: every map is on the menu from the
-   * first run and every map is climbed from the bottom, which is also what
-   * decides the turret band it will let through (bandForCleared in tech.ts).
-   * A map absent from this record has never been won on and reads 0.
+   * first run and every map is climbed from the bottom. A map absent from
+   * this record has never been won on and reads 0.
+   *
+   * IT DOES NOT DECIDE WHAT A RUN MAY BRING. That is the difficulty's own
+   * fixed property (bandForTier in tech.ts) and no amount of progress
+   * moves it.
    */
   clearedByMap: Record<string, number>;
   /**
@@ -518,12 +521,14 @@ function clearedOnMap(clearedByMap: Record<string, number>, mapId: string): numb
  * left empty on purpose: they have never been seen, and the first clear
  * below them is what hands a board up (see seedLayout).
  *
- * ILLEGAL TURRETS ARE DROPPED ON THE WAY THROUGH. What a map lets you
- * bring is decided by how far up it you have climbed (bandForCleared), and
- * these boards were built before that rule existed — so one can easily
- * hold a spectre on a map whose band stops at thorium. Copying it
- * unfiltered would stand up turrets the difficulty would never let the
- * player place by hand.
+ * ILLEGAL TURRETS ARE DROPPED ON THE WAY THROUGH, DIFFICULTY BY
+ * DIFFICULTY. What a run may bring is fixed by the difficulty
+ * (bandForTier) and these boards were built before that rule existed, so
+ * one board can easily be legal on Nemesis and illegal on Incursion.
+ * Each copy is therefore filtered against the tier it lands on — the same
+ * board arrives thinner the further down it goes. Copying unfiltered would
+ * stand up turrets that difficulty would never let the player place by
+ * hand.
  *
  * A slot that already exists is never touched, and the bare key is dropped
  * once it has been split, so this runs exactly once per save.
@@ -539,14 +544,14 @@ function splitLegacyLayouts(
     delete layouts[key];
     changed = true;
     const cleared = clearedOnMap(clearedByMap, key);
-    const band = bandForCleared(cleared);
-    const legal = board.filter((t) => towerBand(t.kind) <= band);
-    if (legal.length === 0) continue;
     // 0..frontier inclusive: the frontier is unlocked — it is the tier the
     // map is offering to play next — and everything under it is beaten
     for (let tier = 0; tier <= Math.min(TOP_TIER, cleared); tier++) {
       const slot = layoutKey(key, tier);
-      if (!layouts[slot]) layouts[slot] = legal.map((t) => ({ ...t }));
+      if (layouts[slot]) continue;
+      const band = bandForTier(tier);
+      const legal = board.filter((t) => towerBand(t.kind) <= band);
+      if (legal.length > 0) layouts[slot] = legal.map((t) => ({ ...t }));
     }
   }
   return changed;
@@ -598,6 +603,12 @@ export function saveLayout(
  * The bare pre-split key is deliberately NOT consulted: it stands in for
  * "no board here yet", and a newly opened difficulty should get the board
  * that actually won rather than keep inheriting the legacy one.
+ *
+ * Nothing is filtered on the way up. The board is only ever handed to a
+ * HARDER difficulty, and the band only widens as the ladder climbs
+ * (bandForTier), so every turret that was legal where it won is legal
+ * where it lands. The split migration, which pushes boards DOWNWARD into
+ * easier difficulties, is the one that has to filter.
  */
 export function seedLayout(
   mapId: string,
@@ -659,20 +670,18 @@ export function resetProgress(): void {
 }
 
 /**
- * The save's tech AS ONE MAP WILL HONOUR IT. Two gates stack here and they
- * answer different questions: `p.tech` is what this save OWNS, bought once
- * and owned everywhere, and the map's band is what this map will let
- * through its door, earned on that map alone. A save with every turret
- * still opens an untouched map holding duos.
+ * The save's tech AS ONE DIFFICULTY WILL HONOUR IT. Two gates stack here
+ * and they answer different questions: `p.tech` is what this save OWNS,
+ * bought once and owned everywhere, and the tier's band is what this
+ * difficulty will let through its door, which is a constant of the
+ * difficulty and never moves. A save with every turret still plays an
+ * Incursion holding duos — the first time and the hundredth.
  *
- * Pass no world and there is no map gate — the editor and sandbox, where
- * owning a turret is the only question worth asking.
+ * Pass no tier and there is no difficulty gate — the editor and sandbox,
+ * where owning a turret is the only question worth asking.
  */
-export function techOf(p: Progress, worldId?: string): TechState {
-  return techState(
-    p.tech,
-    worldId == null ? undefined : bandForCleared(clearedOn(p, worldId)),
-  );
+export function techOf(p: Progress, tier?: number): TechState {
+  return techState(p.tech, tier == null ? undefined : bandForTier(tier));
 }
 
 /** how many tiers this save has cleared on one map */

@@ -39,7 +39,6 @@ import {
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import {
   activeAscension,
-  clearedOn,
   grantRunReward,
   isTierCleared,
   loadProgress,
@@ -58,7 +57,7 @@ import {
 } from "@/game/progress";
 import { turretIcon } from "@/game/atlas";
 import { ascensionAt } from "@/game/ascension";
-import { BAND_FOR_CLEARED, bandForCleared, BY_MINDUSTRY_VALUE } from "@/game/tech";
+import { BAND_FOR_TIER, bandForTier, BY_MINDUSTRY_VALUE } from "@/game/tech";
 import { isEmpty, ITEM_INFO, ITEM_KINDS, itemForTier } from "@/game/items";
 import { CostRow, Wallet } from "./Items";
 import TechTree from "./TechTree";
@@ -219,14 +218,14 @@ function TierPicker({
   onStart: () => void;
 }) {
   const top = topTier(progress, world.id);
-  // WHAT THIS MAP WILL LET THROUGH. Owning a turret and being allowed to
-  // bring it are different things now (techOf/bandForCleared), and the
+  // WHAT THIS DIFFICULTY WILL LET THROUGH. Owning a turret and being
+  // allowed to bring it are different things (techOf/bandForTier), and the
   // difference is otherwise invisible: the build bar just quietly holds
   // back everything above the band, which reads as a bug rather than a
-  // rule. So the map says so before the run starts.
-  const band = bandForCleared(clearedOn(progress, world.id));
+  // rule. So the difficulty says so before the run starts.
+  const band = bandForTier(tier);
   const bandItem = ITEM_INFO[ITEM_KINDS[band]].name.toLowerCase();
-  const bandLocked = band < BAND_FOR_CLEARED[BAND_FOR_CLEARED.length - 1];
+  const bandLocked = band < BAND_FOR_TIER[BAND_FOR_TIER.length - 1];
   const spec = specForTier(world, tier);
   const { waves } = levelSummary(spec);
   const step = (d: number): void => onTier(Math.min(top, Math.max(0, tier + d)));
@@ -300,17 +299,18 @@ function TierPicker({
         </button>
       </div>
 
-      {/* THE MAP'S OWN GATE, stated plainly. This is a property of the map
-          and not of the difficulty being picked, so it sits above the tier
-          blurb rather than inside it */}
+      {/* THE DIFFICULTY'S OWN GATE, stated plainly — and stated as the
+          permanent thing it is, because a player who has cleared the game
+          will still meet it here and must not read it as something they
+          have failed to unlock yet */}
       {bandLocked && (
         <div className="mt-3 border-t border-[#2E2E36] pt-3 text-[13px] leading-snug text-[#A6A6AF]">
-          This map allows turrets up to{" "}
-          <span className="font-bold text-[#FFD37F]">{bandItem}</span>. Clear{" "}
-          <span style={{ color: difficultyColor(top) }} className="font-bold">
-            {difficultyName(top)}
+          <span style={{ color: difficultyColor(tier) }} className="font-bold">
+            {difficultyName(tier)}
           </span>{" "}
-          here to bring more.
+          always allows turrets up to{" "}
+          <span className="font-bold text-[#FFD37F]">{bandItem}</span>, however
+          far your tech tree goes. Harder difficulties allow more.
         </div>
       )}
 
@@ -560,7 +560,7 @@ export default function Swarmfield() {
   useEffect(() => {
     const g = gameRef.current;
     if (!g) return;
-    const tech = techOf(loadProgress(), worldId);
+    const tech = techOf(loadProgress(), level?.tier ?? 0);
     g.setTech(admin ? null : tech);
     // dropping out of sandbox drops a sandbox-only pace with it, or the run
     // keeps running at a speed whose button is no longer on screen. What the
@@ -570,7 +570,7 @@ export default function Swarmfield() {
     if (!admin && !tech.speeds.includes(g.ui().speed))
       g.setSpeed(startingSpeed(loadProgress(), tech.speeds));
     setHud(g.ui());
-  }, [admin, worldId]);
+  }, [admin, worldId, level?.tier]);
 
   /**
    * THE PICKED TIER BELONGS TO A MAP, so switching maps has to re-clamp it.
@@ -617,10 +617,10 @@ export default function Swarmfield() {
           return;
         }
         const save = loadProgress();
-        g.setTech(admin ? null : techOf(save, worldId));
+        g.setTech(admin ? null : techOf(save, level.tier ?? 0));
         // the pace carries across runs and across sessions — a player who
         // plays at 4x wants 4x again after a loss, not 1x and a click
-        g.setSpeed(startingSpeed(save, admin ? SPEEDS : techOf(save, worldId).speeds));
+        g.setSpeed(startingSpeed(save, admin ? SPEEDS : techOf(save, level.tier ?? 0).speeds));
         // stand this difficulty's board back up before the first wave —
         // either the one that ended the last run on it, or, the first time
         // it is played, the board that won the difficulty below. Tech is
@@ -853,7 +853,7 @@ export default function Swarmfield() {
     setResult(null);
     // the run just banked its drops — a node bought mid-overlay would not apply
     // without this re-read (tech is per-run anyway, but keep it honest)
-    g.setTech(admin ? null : techOf(loadProgress(), worldId));
+    g.setTech(admin ? null : techOf(loadProgress(), level?.tier ?? 0));
     g.reset();
     // reset() clears the field, so the layout has to be stood back up here
     // too — Retry rebuilds the sim in place and never goes through the
