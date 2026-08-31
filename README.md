@@ -32,13 +32,15 @@ stale tab or a cached bundle looks exactly like a fix not working.
   audit/check arithmetic over the authored script
 - `game/tech.ts` — the tech tree: turret price bundles (one shared growth
   constant for every turret), abilities, and the build-bar slot upgrades
-- `game/upgrades.ts` — the **turret upgrade branches**: four rungs under
-  every turret, folded into its live `TowerStats`. Two cheap stacking
-  dials, a one-shot ammunition swap, and an **ultimate** paid for in surge
-  alloy that changes what the turret is — a scatter that shoots the
-  ground, an arc that forks three ways, a salvo that fires missiles. The
-  ultimate costs 1 surge on an Incursion turret, 3 on Onslaught's and 6 on
-  Nemesis's, and it is the only node in the tree that can be sold back
+- `game/upgrades.ts` — the **turret upgrade branches**: a chain of rungs
+  under every turret, folded into its live `TowerStats`. Two cheap stacking
+  dials, a one-shot ammunition swap, and then an **ultimate** paid for in
+  surge alloy that changes what the turret is. The ultimate costs 1 surge
+  on an Incursion turret, 3 on Onslaught's and 6 on Nemesis's, and it is
+  the only node in the tree that can be sold back. **Only duo and arc have
+  one written so far** — the other fifteen are authored by hand as they are
+  designed; adding one is a fourth entry in a branch with
+  `tier: ULTIMATE_TIER` and its id in `UPGRADE_KINDS`, and nothing else
 - `game/mutation.ts` — the **mutation line**, the tech tree's left
   column: optional rules the player switches on, earned one rank per boss
   felled rather than bought

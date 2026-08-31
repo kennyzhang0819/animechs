@@ -12,6 +12,7 @@ import { TOWERS } from "./constants";
 import {
   ALL_UPGRADES,
   isUpgradeNode,
+  ULTIMATE_TIER,
   NO_UPGRADES,
   TURRET_UPGRADES,
   upgradedTower,
@@ -480,7 +481,7 @@ export interface TechNodeDef {
    * refunded is not a tree, it is a loadout screen, and the whole weight
    * of a purchase is that it was a choice.
    *
-   * THE ULTIMATES ARE THE EXEMPTION — every turret's fourth rung, and
+   * THE ULTIMATES ARE THE EXEMPTION — an upgrade branch's fourth rung, and
    * nothing else. They earn it by being the only nodes priced in SURGE
    * ALLOY, a currency a boss pays once and no amount of farming produces
    * (grantRunReward): a save with three surge to its name is choosing
@@ -501,7 +502,7 @@ export interface TechNodeDef {
    * want to play with them can put them down without being punished for
    * having tried.
    *
-   * IT IS FOR THE ONE-SHOT NODES, NOT THE STACKING ONES — every upgrade
+   * IT IS FOR THE ONE-SHOT NODES, NOT THE STACKING ONES — an upgrade
    * branch's third and fourth rungs, and nothing else. Each of those is a
    * single yes-or-no that changes what the turret IS: a different round, a
    * different target list, a different weapon. "Not right now" is a
@@ -552,12 +553,12 @@ export interface TechNodeDef {
    * y is the depth — a child sits BELOW its parent (or, in the north,
    * above it) — and x spreads siblings sideways.
    *
-   * AN UPGRADE NODE IS NOT ON THE GRID AT ALL. The four rungs under each
-   * turret carry their turret's own cell here and are drawn as a row of
-   * chips hanging off it (TechTree.tsx), not as boxes with edges of their
-   * own. That is what keeps the crossing rule affordable: sixty-eight new
-   * nodes laid out as boxes would need sixty-eight clear cells and the
-   * edges to reach them, and the wings have nowhere to put either.
+   * AN UPGRADE NODE IS NOT ON THE GRID AT ALL. The rungs under each turret
+   * carry their turret's own cell here and are drawn as a row of chips
+   * hanging off it (TechTree.tsx), not as boxes with edges of their own.
+   * That is what keeps the crossing rule affordable: a box per rung would
+   * need a clear cell per rung and an edge to reach it, and the wings have
+   * nowhere to put either.
    */
   x: number;
   y: number;
@@ -1196,9 +1197,14 @@ const UPGRADE_GROWTH: readonly number[] = [0, 1.25, 1.35, 1];
  * IT CLIMBS WITH THE TURRET because the turrets do. A duo, a scatter or a
  * ripple is a turret an Incursion fields, and one boss buys its ultimate.
  * Onslaught's plastanium turrets cost three, Nemesis's phase turrets six —
- * so transforming a foreshadow is six boss fights' worth of trophy, and a
- * save cannot have every ultimate in the game without having cleared most
- * of the campaign on most of its maps.
+ * so transforming a foreshadow would be six boss fights' worth of trophy,
+ * and a save cannot have every ultimate in the game without having cleared
+ * most of the campaign on most of its maps.
+ *
+ * THE WHOLE TABLE IS HERE THOUGH ONLY DUO AND ARC HAVE AN ULTIMATE WRITTEN
+ * SO FAR (see the note at the top of upgrades.ts). It is indexed by band
+ * rather than by turret precisely so that authoring the other fifteen is a
+ * question about the turret and never about its price.
  */
 export const ULTIMATE_SURGE: readonly number[] = [1, 1, 1, 3, 6];
 
@@ -1232,7 +1238,7 @@ const AUTHORED_UPGRADE_PRICE: Partial<Record<UpgradeKind, PriceCurve>> = {
 function upgradePrice(def: TurretUpgradeDef, turretBase: Cost): PriceCurve {
   const authored = AUTHORED_UPGRADE_PRICE[def.id];
   if (authored) return authored;
-  if (def.tier >= 4)
+  if (def.tier >= ULTIMATE_TIER)
     return { base: { "surge-alloy": ULTIMATE_SURGE[bandOfCost(turretBase)] }, growth: 1 };
   const base: Cost = {};
   for (const { item, amount } of costEntries(turretBase))
@@ -1241,13 +1247,13 @@ function upgradePrice(def: TurretUpgradeDef, turretBase: Cost): PriceCurve {
 }
 
 /**
- * The sixty-eight upgrade nodes, derived from the table in upgrades.ts.
+ * The upgrade nodes, derived from the table in upgrades.ts.
  *
  * They are a CHAIN per turret — rung one requires the turret, rung two
  * requires rung one, and so on — which is the same edge every other node
  * in the tree has and does the same job: the two cheap dials stand between
- * a fresh save and the two expensive one-shots, so the ultimate can never
- * be one click from the turret's own unlock.
+ * a fresh save and the expensive one-shots above them, so an ultimate can
+ * never be one click from the turret's own unlock.
  *
  * They carry the turret's own cell (see TechNodeDef.x) because they are
  * drawn attached to it rather than laid out beside it.
@@ -1261,9 +1267,9 @@ const UPGRADE_NODES: readonly TechNodeDef[] = ALL_UPGRADES.map((u) => {
     cap: u.cap,
     // rung 3 changes what the turret IS and rung 4 replaces it, so both
     // are things a save can put down without selling; a dial is not
-    toggle: u.tier >= 3,
+    toggle: u.tier >= ULTIMATE_TIER - 1,
     // ...and only the ultimate, the one thing paid for in surge, comes back
-    refundable: u.tier >= 4,
+    refundable: u.tier >= ULTIMATE_TIER,
     requires: upgradeParent(u.id) ?? u.turret,
     x: turret.x,
     y: turret.y,

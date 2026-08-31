@@ -11,12 +11,12 @@ import { FxKind, TOWER_KINDS, type TowerKind } from "./types";
  * nodes — rate of fire, pierce, graphite rounds, duo power — and they were
  * hand-written into tech.ts as utilities that happened to name duo. That
  * shape turned out to be the right one for every turret in the game, so it
- * is a TABLE now: seventeen branches of four, each one a chain, each one
- * priced off the turret it improves. Duo's four keep their original ids so
- * a save that bought them keeps them.
+ * is a TABLE now: one branch per turret, each one a chain, each one priced
+ * off the turret it improves. Duo's four keep their original ids so a save
+ * that bought them keeps them.
  *
- * THE FOUR RUNGS ARE THE SAME SHAPE EVERYWHERE, and that shape is the
- * contract this file is written to:
+ * THE RUNGS ARE THE SAME SHAPE EVERYWHERE, and that shape is the contract
+ * this file is written to:
  *
  *   1  a cheap stacking dial. Weak on its own — a few per cent a point —
  *      and bought over a campaign rather than in one go.
@@ -25,12 +25,24 @@ import { FxKind, TOWER_KINDS, type TowerKind } from "./types";
  *   3  a one-shot that is genuinely good: an ammunition swap, a doubling,
  *      a capability the stock turret does not have. Bought once.
  *   4  THE ULTIMATE. One shot, paid for in SURGE ALLOY and nothing else,
- *      and it does not improve the turret so much as replace it — a
- *      scatter that shoots the ground, an arc that forks three ways, a
- *      salvo that fires missiles. See ULTIMATE_SURGE in tech.ts for what
- *      one costs; the short version is that a turret's own difficulty
- *      decides, because surge is the currency a boss pays and nothing
- *      else does.
+ *      and it does not improve the turret so much as replace it. See
+ *      ULTIMATE_SURGE in tech.ts for what one costs; the short version is
+ *      that a turret's own difficulty decides, because surge is the
+ *      currency a boss pays and nothing else does.
+ *
+ * ONLY DUO AND ARC SHIP A FOURTH RUNG TODAY, and the other fifteen are
+ * deliberately unwritten rather than missing: an ultimate is a turret
+ * REPLACED, which is a design decision per turret and not a formula, so
+ * the fifteen are being authored by hand and land here when they are
+ * ready. Everything an ultimate needs is already standing — the price
+ * (ULTIMATE_SURGE, off the turret's own band), the refund, the switch,
+ * the hexagon and its halo on the board — so writing one is adding a
+ * fourth entry to a branch below with `tier: ULTIMATE_TIER` and its id in
+ * UPGRADE_KINDS. Nothing else has to change.
+ *
+ * A BRANCH IS THEREFORE NOT A FIXED LENGTH. Read it as an array; do not
+ * assume four. `tier` says which rung a def is, and ULTIMATE_TIER is what
+ * makes one the surge rung — never its index.
  *
  * WHY STATS AND NOT MORE TURRETS. A tech tree that only ever sells the
  * NEXT turret asks the player to abandon what they have every time they
@@ -57,7 +69,6 @@ export const UPGRADE_KINDS = [
   "scatter-loader",
   "scatter-fuse",
   "scatter-metaglass",
-  "scatter-storm",
   "arc-coils",
   "arc-reach",
   "arc-ionised",
@@ -65,59 +76,45 @@ export const UPGRADE_KINDS = [
   "hail-bore",
   "hail-charge",
   "hail-incendiary",
-  "hail-cluster",
   "scorch-pressure",
   "scorch-fuel",
   "scorch-pyratite",
-  "scorch-incinerator",
   "salvo-autoload",
   "salvo-pierce",
   "salvo-pyratite",
-  "salvo-missiles",
   "wave-pump",
   "wave-nozzle",
   "wave-cryo",
-  "wave-flashfreeze",
   "lancer-capacitor",
   "lancer-lens",
   "lancer-optics",
-  "lancer-prism",
   "ripple-barrels",
   "ripple-frag",
   "ripple-plastanium",
-  "ripple-saturation",
   "parallax-field",
   "parallax-aperture",
   "parallax-phase",
-  "parallax-singularity",
   "fuse-choke",
   "fuse-reach",
   "fuse-surge",
-  "fuse-annihilator",
   "swarmer-fins",
   "swarmer-racks",
   "swarmer-warheads",
-  "swarmer-doctrine",
   "cyclone-belt",
   "cyclone-fuse",
   "cyclone-surge",
-  "cyclone-storm",
   "tsunami-chamber",
   "tsunami-spray",
   "tsunami-cryo",
-  "tsunami-zero",
   "spectre-cooling",
   "spectre-cores",
   "spectre-surge",
-  "spectre-siege",
   "meltdown-loop",
   "meltdown-array",
   "meltdown-phase",
-  "meltdown-fusion",
   "foreshadow-caps",
   "foreshadow-servos",
   "foreshadow-surge",
-  "foreshadow-orbital",
 ] as const;
 export type UpgradeKind = (typeof UPGRADE_KINDS)[number];
 
@@ -126,8 +123,17 @@ const UPGRADE_SET: ReadonlySet<string> = new Set<string>(UPGRADE_KINDS);
 /** is this node one of the turret upgrade branches? */
 export const isUpgradeNode = (id: string): id is UpgradeKind => UPGRADE_SET.has(id);
 
-/** how many rungs every branch has — the tier numbers are 1..UPGRADE_RUNGS */
-export const UPGRADE_RUNGS = 4;
+/**
+ * THE TIER NUMBER AN ULTIMATE CARRIES. A branch's rungs are numbered from
+ * one, so `tier === ULTIMATE_TIER` is what makes a rung the surge-alloy
+ * one — and that is a property of the RUNG, not of its position in the
+ * array, because most branches do not have one yet (see the note at the
+ * top of the file). A branch's real length is its array's own.
+ */
+export const ULTIMATE_TIER = 4;
+
+/** the most rungs any one branch holds — what the tree's chip row sizes to */
+export const MAX_RUNGS = ULTIMATE_TIER;
 
 /**
  * What the branch is allowed to know about the board it is being resolved
@@ -427,58 +433,6 @@ const SCATTER: readonly TurretUpgradeDef[] = [
     // than absolutes, because our scatter's numbers are already scaled
     apply: (s) => fusedAt(wider(stronger(s, 2), 1.15), 1.35),
   },
-  {
-    id: "scatter-storm",
-    turret: "scatter",
-    tier: 4,
-    name: "Flechette Storm",
-    blurb:
-      "The flak gun stops being an anti-air gun. Four shells a burst, each bursting again into five flechettes, and every one of them bites the ground as happily as the sky.",
-    glyph: "surge",
-    cap: 1,
-    // THE TRANSFORMATION IS THE TARGET LIST, not the numbers. Scatter is
-    // the one turret in the game that cannot touch the ground at all, and
-    // an upgrade that hands it the ground hands the player a completely
-    // different block to place — which is what a surge alloy is for.
-    // Both flags have to move: `targetGround` is what the turret will
-    // acquire and `collidesGround` is what its shell will bite
-    apply: (s) =>
-      then(
-        wider(s, 1.25),
-        { shots: 4, targetGround: true },
-        {
-        collidesGround: true,
-        frag: {
-          count: 5,
-          spread: 2 * Math.PI,
-          velMin: 0.3,
-          velMax: 1,
-          offsetMin: 1 * MU,
-          offsetMax: 6 * MU,
-          bullet: {
-            speed: 2.4 * 60 * MU,
-            damage: 14,
-            lifetime: 16 / 60,
-            splash: 0,
-            splashRadius: 0,
-            collidesAir: true,
-            collidesGround: true,
-            sprite: {
-              region: "bullet",
-              across: 8 * MU,
-              along: 10 * MU,
-              shrinkX: 0,
-              shrinkY: 1,
-              back: PAL.bulletYellowBack,
-              front: PAL.bulletYellow,
-            },
-            hitFx: FxKind.BulletHit,
-            fxColor: PAL.lightOrange,
-          },
-        },
-        },
-      ),
-  },
 ];
 
 const ARC: readonly TurretUpgradeDef[] = [
@@ -576,53 +530,6 @@ const HAIL: readonly TurretUpgradeDef[] = [
     apply: (s) =>
       withBullet(stronger(s, 1.5), { burn: 6, fxColor: PAL.lightOrange }),
   },
-  {
-    id: "hail-cluster",
-    turret: "hail",
-    tier: 4,
-    name: "Cluster Munitions",
-    blurb:
-      "Three shells an arc instead of one, scattered down the lane, each cracking open into six bomblets over what it lands on.",
-    glyph: "surge",
-    cap: 1,
-    apply: (s) =>
-      then(
-        reaching(s, 1.15),
-        { shots: 3, shotDelay: 4 / 60, spread: (5 * Math.PI) / 180 },
-        {
-        // the roll that turns three shells into a pattern rather than a hole
-        lifeScaleRand: [0.8, 1.15] as const,
-        frag: {
-          count: 6,
-          spread: 2 * Math.PI,
-          velMin: 0.2,
-          velMax: 0.9,
-          offsetMin: 1 * MU,
-          offsetMax: 8 * MU,
-          bullet: {
-            speed: 1.6 * 60 * MU,
-            damage: 0,
-            lifetime: 14 / 60,
-            splash: 24,
-            splashRadius: 16 * MU,
-            collidesAir: false,
-            collidesGround: true,
-            sprite: {
-              region: "shell",
-              across: 7 * MU,
-              along: 7 * MU,
-              shrinkX: 0.5,
-              shrinkY: 0.5,
-              back: PAL.blastAmmoBack,
-              front: PAL.blastAmmoFront,
-            },
-            hitFx: FxKind.BlastExplosion,
-            fxColor: PAL.blastAmmoBack,
-          },
-        },
-        },
-      ),
-  },
 ];
 
 const SCORCH: readonly TurretUpgradeDef[] = [
@@ -660,22 +567,6 @@ const SCORCH: readonly TurretUpgradeDef[] = [
         burn: (s.bullet.burn ?? 0) * 2,
         hitRadius: (s.bullet.hitRadius ?? 2.5) * 1.4,
       }),
-  },
-  {
-    id: "scorch-incinerator",
-    turret: "scorch",
-    tier: 4,
-    name: "Incinerator",
-    blurb:
-      "Two jets instead of one, reaching nearly twice as far — as far as a duo, on the turret that has never reached past its own doorstep — and they climb: the incinerator burns flyers out of the sky.",
-    glyph: "surge",
-    cap: 1,
-    apply: (s) =>
-      then(
-        stronger(reaching(s, 1.8), 1.5),
-        { shots: 2, spread: (9 * Math.PI) / 180, targetAir: true },
-        { collidesAir: true },
-      ),
   },
 ];
 
@@ -717,39 +608,6 @@ const SALVO: readonly TurretUpgradeDef[] = [
           ? { sprite: { ...s.bullet.sprite, back: PAL.blastAmmoBack, front: PAL.blastAmmoFront } }
           : null),
       }),
-  },
-  {
-    id: "salvo-missiles",
-    turret: "salvo",
-    tier: 4,
-    name: "Missile Rack",
-    blurb:
-      "The magazine is repacked with guided warheads: seven a volley, each chasing what it locked and blasting where it lands. Salvo stops being a cannon.",
-    glyph: "surge",
-    cap: 1,
-    apply: (s) =>
-      then(
-        faster(s, 1.1),
-        { shots: 7 },
-        {
-        damage: s.bullet.damage * 1.1,
-        splash: 40,
-        splashRadius: 26 * MU,
-        homing: { power: ((0.09 * 50 * Math.PI) / 180) * 60, range: 70 * MU },
-        hitFx: FxKind.BlastExplosion,
-        fxColor: PAL.missileYellowBack,
-        ...(s.bullet.sprite
-          ? {
-              sprite: {
-                ...s.bullet.sprite,
-                region: "missile" as const,
-                back: PAL.missileYellowBack,
-                front: PAL.missileYellow,
-              },
-            }
-          : null),
-        },
-      ),
   },
 ];
 
@@ -794,34 +652,6 @@ const WAVE: readonly TurretUpgradeDef[] = [
             fxColor: PAL.lancerLaser,
           })
         : s,
-  },
-  {
-    id: "wave-flashfreeze",
-    turret: "wave",
-    tier: 4,
-    name: "Flash Freeze",
-    blurb:
-      "The stream becomes a burst. Three shots a cycle, each detonating into a freezing cloud that soaks everything inside it down to a quarter speed — a wave stops being support and starts stopping waves.",
-    glyph: "surge",
-    cap: 1,
-    // THE SPLASH IS THE POINT: a wave hoses ONE body at a time, and a
-    // status the blast carries is the only way a support turret ever
-    // catches a crowd (see Sim.splash, which learned to lay burn and wet
-    // with its damage for exactly this rung of the tree)
-    apply: (s) =>
-      then(
-        s,
-        { shots: 3, spread: (7 * Math.PI) / 180 },
-        {
-          damage: s.bullet.damage * 15,
-          splash: 12,
-          splashRadius: 24 * MU,
-          wet: { duration: (s.bullet.wet?.duration ?? 2) * 2, slow: 0.25 },
-          orb: (s.bullet.orb ?? 3 * MU) * 1.6,
-          hitFx: FxKind.HitLiquid,
-          fxColor: PAL.lancerLaser,
-        },
-      ),
   },
 ];
 
@@ -876,33 +706,6 @@ const LANCER: readonly TurretUpgradeDef[] = [
         },
       ),
   },
-  {
-    id: "lancer-prism",
-    turret: "lancer",
-    tier: 4,
-    name: "Prism Array",
-    blurb:
-      "The lens splits the beam three ways, each one cutting six bodies deeper than before, and the array tracks air. One lancer covers a front.",
-    glyph: "surge",
-    cap: 1,
-    apply: (s) =>
-      then(
-        reaching(stronger(s, 1.35), 1.15),
-        { shots: 3, spread: (11 * Math.PI) / 180, targetAir: true },
-        {
-          collidesAir: true,
-          ...(s.bullet.laser
-            ? {
-                laser: {
-                  ...s.bullet.laser,
-                  length: s.bullet.laser.length * 1.15,
-                  pierceCap: s.bullet.laser.pierceCap + 6,
-                },
-              }
-            : null),
-        },
-      ),
-  },
 ];
 
 const RIPPLE: readonly TurretUpgradeDef[] = [
@@ -943,31 +746,6 @@ const RIPPLE: readonly TurretUpgradeDef[] = [
           : {},
       ),
   },
-  {
-    id: "ripple-saturation",
-    turret: "ripple",
-    tier: 4,
-    name: "Saturation Barrage",
-    blurb:
-      "Twice the shells, scattered twice as wide over a longer arc — the lane is not shelled so much as erased. The tubes take a fifth longer to reload, and it does not matter.",
-    glyph: "surge",
-    cap: 1,
-    apply: (s) =>
-      then(
-        faster(wider(s, 1.15), 1 / 1.2),
-        {
-          shots: s.shots * 2,
-          spread: s.spread + (6 * Math.PI) / 180,
-          inaccuracy: s.inaccuracy * 1.5,
-        },
-        {
-          splash: s.bullet.splash * 1.4,
-          // a wider roll on the shell's flight time is what turns a volley
-          // into a carpet rather than a heap
-          lifeScaleRand: [0.65, 1.25] as const,
-        },
-      ),
-  },
 ];
 
 const PARALLAX: readonly TurretUpgradeDef[] = [
@@ -1002,22 +780,6 @@ const PARALLAX: readonly TurretUpgradeDef[] = [
     cap: 1,
     apply: (s) => pulling(stronger(s, 4), 1.6),
   },
-  {
-    id: "parallax-singularity",
-    turret: "parallax",
-    tier: 4,
-    name: "Singularity",
-    blurb:
-      "The field stops caring what flies. Ground units are dragged off the lane the same way flyers are, at two and a half times the force — a parallax can hold a push in place while everything else kills it.",
-    glyph: "surge",
-    cap: 1,
-    apply: (s) =>
-      then(
-        reaching(pulling(stronger(s, 6), 2.5), 1.2),
-        { targetGround: true },
-        { collidesGround: true },
-      ),
-  },
 ];
 
 const FUSE: readonly TurretUpgradeDef[] = [
@@ -1050,28 +812,6 @@ const FUSE: readonly TurretUpgradeDef[] = [
     glyph: "spread",
     cap: 1,
     apply: (s) => ({ ...stronger(s, 1.3), shots: 5, spread: (16 * Math.PI) / 180 }),
-  },
-  {
-    id: "fuse-annihilator",
-    turret: "fuse",
-    tier: 4,
-    name: "Annihilator",
-    blurb:
-      "Seven rays across a fifty-degree arc, reaching nearly twice as far, and armour stops counting. Nothing walks into a fuse's cone twice.",
-    glyph: "surge",
-    cap: 1,
-    // THE RANGE IS THE RESTRAINT HERE, not the damage. Fuse already does
-    // more damage a second than anything below the phase tier; what stops
-    // it being the only turret worth owning is that it has to be stood in
-    // front of. Nearly doubling that (and the dial above it does the rest)
-    // is a transformation; tripling it would have been a replacement for
-    // the whole roster
-    apply: (s) =>
-      then(
-        stronger(reaching(s, 1.7), 1.7),
-        { shots: 7, spread: (50 * Math.PI) / 180 },
-        { pierceArmor: true },
-      ),
   },
 ];
 
@@ -1115,60 +855,6 @@ const SWARMER: readonly TurretUpgradeDef[] = [
     cap: 1,
     apply: (s) => then(wider(s, 1.3), { shots: 6 }, { splash: s.bullet.splash * 1.6 }),
   },
-  {
-    id: "swarmer-doctrine",
-    turret: "swarmer",
-    tier: 4,
-    name: "Swarm Doctrine",
-    blurb:
-      "Twice the missiles, a lock two and a half times as wide, and each warhead throws three more of itself where it lands. The sky fills up.",
-    glyph: "surge",
-    cap: 1,
-    apply: (s) =>
-      then(
-        s,
-        { shots: s.shots * 2 },
-        {
-        ...(s.bullet.homing
-          ? {
-              homing: {
-                power: s.bullet.homing.power * 1.6,
-                range: s.bullet.homing.range * 2.5,
-              },
-            }
-          : null),
-        frag: {
-          count: 3,
-          spread: 2 * Math.PI,
-          velMin: 0.3,
-          velMax: 1,
-          offsetMin: 2 * MU,
-          offsetMax: 8 * MU,
-          bullet: {
-            speed: 2.2 * 60 * MU,
-            damage: 8,
-            lifetime: 22 / 60,
-            splash: 18,
-            splashRadius: 18 * MU,
-            collidesAir: true,
-            collidesGround: true,
-            homing: { power: ((0.08 * 50 * Math.PI) / 180) * 60, range: 60 * MU },
-            sprite: {
-              region: "missile",
-              across: 6 * MU,
-              along: 8 * MU,
-              shrinkX: 0,
-              shrinkY: 0.5,
-              back: PAL.missileYellowBack,
-              front: PAL.missileYellow,
-            },
-            hitFx: FxKind.BlastExplosion,
-            fxColor: PAL.missileYellowBack,
-          },
-        },
-        },
-      ),
-  },
 ];
 
 const CYCLONE: readonly TurretUpgradeDef[] = [
@@ -1206,37 +892,6 @@ const CYCLONE: readonly TurretUpgradeDef[] = [
         splash: s.bullet.splash * 1.5,
         ...(s.bullet.frag ? { frag: { ...s.bullet.frag, count: 10 } } : null),
       }),
-  },
-  {
-    id: "cyclone-storm",
-    turret: "cyclone",
-    tier: 4,
-    name: "Flak Storm",
-    blurb:
-      "Three shells at once, tripping almost twice as far out, and every fragment carries its own blast. A cyclone stops being a gun and becomes weather.",
-    glyph: "surge",
-    cap: 1,
-    apply: (s) =>
-      then(
-        wider(fusedAt(s, 1.8), 1.35),
-        { shots: 3, shotDelay: 3 / 60 },
-        {
-        ...(s.bullet.frag
-          ? {
-              frag: {
-                ...s.bullet.frag,
-                count: s.bullet.frag.count * 2,
-                bullet: {
-                  ...s.bullet.frag.bullet,
-                  splash: 22,
-                  splashRadius: 16 * MU,
-                  hitFx: FxKind.PlasticExplosion,
-                },
-              },
-            }
-          : null),
-        },
-      ),
   },
 ];
 
@@ -1281,30 +936,6 @@ const TSUNAMI: readonly TurretUpgradeDef[] = [
           })
         : s,
   },
-  {
-    id: "tsunami-zero",
-    turret: "tsunami",
-    tier: 4,
-    name: "Absolute Zero",
-    blurb:
-      "Four jets, each bursting into a freezing cloud that all but stops what it catches — a tenth of drive speed, for twice as long, over a crowd rather than a body. Nothing crosses a tsunami's umbrella under its own power again.",
-    glyph: "surge",
-    cap: 1,
-    apply: (s) =>
-      then(
-        s,
-        { shots: 4, spread: (8 * Math.PI) / 180 },
-        {
-          damage: s.bullet.damage * 40,
-          splash: 25,
-          splashRadius: 30 * MU,
-          wet: { duration: (s.bullet.wet?.duration ?? 4) * 2, slow: 0.1 },
-          orb: (s.bullet.orb ?? 4 * MU) * 1.5,
-          hitFx: FxKind.HitLiquid,
-          fxColor: PAL.lancerLaser,
-        },
-      ),
-  },
 ];
 
 const SPECTRE: readonly TurretUpgradeDef[] = [
@@ -1339,31 +970,6 @@ const SPECTRE: readonly TurretUpgradeDef[] = [
     cap: 1,
     apply: (s) =>
       withBullet(stronger(s, 1.35), { pierce: true, pierceCap: 5, pierceArmor: true }),
-  },
-  {
-    id: "spectre-siege",
-    turret: "spectre",
-    tier: 4,
-    name: "Siege Battery",
-    blurb:
-      "Four barrels instead of two, three shells a volley, and each one detonates where it finally stops. A spectre becomes a siege gun that flattens what it does not punch through.",
-    glyph: "surge",
-    cap: 1,
-    apply: (s) =>
-      then(
-        reaching(stronger(s, 1.4), 1.2),
-        {
-          shots: 3,
-          shotDelay: 4 / 60,
-          barrels: { count: 4, spread: (s.barrels?.spread ?? 8 * MU) * 0.8 },
-        },
-        {
-          splash: 60,
-          splashRadius: 26 * MU,
-          knockback: (s.bullet.knockback ?? 0) * 2,
-          hitFx: FxKind.BlastExplosion,
-        },
-      ),
   },
 ];
 
@@ -1409,24 +1015,6 @@ const MELTDOWN: readonly TurretUpgradeDef[] = [
         : lens;
     },
   },
-  {
-    id: "meltdown-fusion",
-    turret: "meltdown",
-    tier: 4,
-    name: "Sustained Fusion",
-    blurb:
-      "The beam burns three times as long, cools in a third of the time and tracks at full speed while lit. In practice a meltdown that has anything to point at never stops pointing at it.",
-    glyph: "surge",
-    cap: 1,
-    apply: (s) => {
-      const hot = faster(stronger(reaching(s, 1.15), 1.5), 1 / 0.35);
-      return hot.bullet.continuous
-        ? then(hot, {}, {
-            continuous: { ...hot.bullet.continuous, duration: hot.bullet.continuous.duration * 3, moveFract: 1 },
-          })
-        : hot;
-    },
-  },
 ];
 
 const FORESHADOW: readonly TurretUpgradeDef[] = [
@@ -1466,26 +1054,13 @@ const FORESHADOW: readonly TurretUpgradeDef[] = [
     cap: 1,
     apply: (s) => faster(stronger(s, 1.3), 1 / 0.6),
   },
-  {
-    id: "foreshadow-orbital",
-    turret: "foreshadow",
-    tier: 4,
-    name: "Orbital Strike",
-    blurb:
-      "Half again the range — far enough to shell a spawn pad from behind the core — two rails a shot, and two and a half times the health pool deleted by each one.",
-    glyph: "surge",
-    cap: 1,
-    apply: (s) => ({
-      ...faster(stronger(reaching(s, 1.5), 2.4), 1 / 1.15),
-      shots: 2,
-      shotDelay: 10 / 60,
-    }),
-  },
 ];
 
 /**
- * THE TABLE. Four rungs per turret, in tier order — the order they are
- * bought in, because each one requires the one above it (see tech.ts).
+ * THE TABLE. One branch per turret, in tier order — the order they are
+ * bought in, because each rung requires the one above it (see tech.ts).
+ * Three rungs on most turrets and four on duo and arc, which are the two
+ * that have an ultimate written for them so far.
  */
 export const TURRET_UPGRADES: Record<TowerKind, readonly TurretUpgradeDef[]> = {
   duo: DUO,
@@ -1530,7 +1105,14 @@ export function upgradeParent(id: UpgradeKind): UpgradeKind | null {
 /** points per rung, tier 1 first — the shape the sim and the tree both hold */
 export type UpgradePoints = readonly number[];
 
-/** nothing bought: what a stock turret plays with */
+/**
+ * Nothing bought: what a stock turret plays with.
+ *
+ * Longer than the longest branch on purpose — every reader indexes it
+ * per rung and stops at its own branch's length, so a spare zero costs
+ * nothing and a short one would read `undefined` the day a fourth rung is
+ * written for a turret that has three.
+ */
 export const NO_UPGRADES: UpgradePoints = [0, 0, 0, 0];
 
 /** does this spread of points change the turret at all? */
@@ -1542,7 +1124,7 @@ export const hasUpgrades = (p: UpgradePoints): boolean => p.some((n) => n > 0);
  *
  * The rungs are folded in TIER ORDER and each one takes the stats the one
  * before it produced, which is what lets a later rung read what an earlier
- * one wrote — the ultimate that doubles a shell count doubles the count
+ * one wrote — an ultimate that doubles a shell count doubles the count
  * rung three already raised. It also means the order is part of the
  * design: swapping two rungs would change the arithmetic, not just the
  * reading order.

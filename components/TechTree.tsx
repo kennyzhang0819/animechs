@@ -31,7 +31,8 @@ import {
   TURRET_UPGRADES,
   upgradeDef,
   upgradeParent,
-  UPGRADE_RUNGS,
+  MAX_RUNGS,
+  ULTIMATE_TIER,
   type TurretUpgradeDef,
   type UpgradeGlyph,
 } from "@/game/upgrades";
@@ -75,9 +76,9 @@ const GLYPH: Partial<Record<TechKind, string>> = {
  * THE UPGRADE CHIPS' FACES. An upgrade node has no block to wear — there is
  * no Mindustry sprite that means "five per cent more blast radius" — so the
  * branches share a small vocabulary of glyphs and every rung names the one
- * that fits it (TurretUpgradeDef.glyph). Reusing eleven shapes across
- * sixty-eight nodes is the point: a bolt means rate of fire on every turret
- * in the game, so the row can be read at a glance without opening a card.
+ * that fits it (TurretUpgradeDef.glyph). Reusing a dozen shapes across
+ * every branch in the game is the point: a bolt means rate of fire on every
+ * turret there is, so a row can be read at a glance without opening a card.
  *
  * `surge` is the exception and never appears here — an ultimate wears the
  * surge alloy it costs (SURGE_ICON), because the thing that makes it an
@@ -327,22 +328,31 @@ function MutationNode({
 
 // board geometry: nodes are squares centered in grid cells; the SVG edge
 // layer underneath connects cell centers.
-//
-// THE CELL GREW WHEN THE UPGRADE ROWS ARRIVED. Every turret now carries a
-// row of four chips under its name, so a cell has to hold the node, its
-// label and that row — which is also why the whole board opens further
-// out than it used to. The alternative was sixty-eight more boxes laid on
-// the grid with edges of their own, and the wings have nowhere to put
-// either without breaking the no-crossing rule (see TechNodeDef.x).
-const CELL_W = 190;
-const CELL_H = 180;
 const NODE = 88;
-/** one upgrade chip, and the row of four a turret wears */
+/**
+ * One upgrade chip, and the row a turret wears under its name.
+ *
+ * THE ROW IS AS WIDE AS ITS OWN BRANCH IS LONG, not as wide as the longest
+ * one: most turrets carry three rungs and duo and arc carry four (see
+ * upgrades.ts), and padding the short rows out to four would draw an empty
+ * slot that reads as a node failing to render. The widest possible row is
+ * only what the CELL has to be able to hold.
+ */
 const CHIP = 38;
 const CHIP_GAP = 6;
-const ROW_W = UPGRADE_RUNGS * CHIP + (UPGRADE_RUNGS - 1) * CHIP_GAP;
+const rowWidth = (rungs: number): number => rungs * CHIP + (rungs - 1) * CHIP_GAP;
 /** how far below a node's centre the chip row hangs — under the name label */
 const ROW_TOP = NODE / 2 + 22;
+
+// THE CELL GREW WHEN THE UPGRADE ROWS ARRIVED. Every turret now carries a
+// row of chips under its name, so a cell has to hold the node, its label
+// and the widest of those rows — which is also why the whole board opens
+// further out than it used to. The alternative was a box on the grid for
+// every rung, with an edge of its own to reach it, and the wings have
+// nowhere to put either without breaking the no-crossing rule (see
+// TechNodeDef.x).
+const CELL_W = rowWidth(MAX_RUNGS) + 20;
+const CELL_H = 180;
 const ALL_X = [...TECH_TREE.map((n) => n.x), MUT_X];
 const ALL_Y = [
   ...TECH_TREE.map((n) => n.y),
@@ -438,8 +448,8 @@ function upgradeEffect(def: TurretUpgradeDef, points: number, next: number): str
  * IT IS A NODE, NOT A BADGE. It buys points, it holds a count, it has a
  * price card and it obeys the same touch rule as everything else here. All
  * that is different is that it is small and it hangs off its turret
- * instead of standing on the grid — see the note over CELL_W for why
- * sixty-eight of these could not be boxes.
+ * instead of standing on the grid — see the note over CELL_W for why these
+ * could not be boxes.
  *
  * WHAT A CLICK DOES, and the one place this board's rules changed:
  *
@@ -457,7 +467,7 @@ function upgradeEffect(def: TurretUpgradeDef, points: number, next: number): str
  *
  * A RUNG WHOSE PARENT IS UNBOUGHT IS STILL DRAWN, dimmed, which is a
  * deliberate exception to the tree's own hide-until-the-parent-is-bought
- * rule. That rule is about not advertising branches; a row of four chips
+ * rule. That rule is about not advertising branches; the row of chips
  * under a turret is not a branch to discover, it is the SHAPE of what the
  * turret can become, and drawing two chips and a gap would read as a bug.
  * The card on a locked chip says which rung comes first.
@@ -485,7 +495,7 @@ function UpgradeChip({
   const maxed = points >= def.cap;
   const locked = status === "hidden";
   const on = isTechOn(progress, def.id);
-  const ultimate = def.tier >= UPGRADE_RUNGS;
+  const ultimate = def.tier >= ULTIMATE_TIER;
   const lit = owned && on;
   // the step is a ceiling, not a promise: a "x100" the wallet only half
   // covers lands what it covers rather than refusing
@@ -640,7 +650,8 @@ function UpgradeChip({
             </span>
           </div>
           <div className="mt-0.5 text-[12px] uppercase tracking-widest text-[#71717C]">
-            {TOWERS[def.turret].name} · upgrade {def.tier} of {UPGRADE_RUNGS}
+            {TOWERS[def.turret].name} · upgrade {def.tier} of{" "}
+            {TURRET_UPGRADES[def.turret].length}
           </div>
           <div className="mt-1 text-[14px] text-[#A6A6AF]">{def.blurb}</div>
           {!locked &&
@@ -732,17 +743,19 @@ function UpgradeRow({
   onArm: (id: TechKind) => void;
   onChanged: () => void;
 }) {
+  const rungs = TURRET_UPGRADES[turret];
+  const w = rowWidth(rungs.length);
   return (
     <div
       className="absolute flex"
       style={{
-        left: centerX(x) - ROW_W / 2,
+        left: centerX(x) - w / 2,
         top: centerY(y) + ROW_TOP,
-        width: ROW_W,
+        width: w,
         gap: CHIP_GAP,
       }}
     >
-      {TURRET_UPGRADES[turret].map((def) => (
+      {rungs.map((def) => (
         <UpgradeChip
           key={def.id}
           def={def}
@@ -1001,8 +1014,8 @@ export default function TechTree({
   //
   // THE UPGRADE NODES ARE NOT ON THE BOARD. They share their turret's cell
   // (see TechNodeDef.x) and are drawn as the chip row hanging off it, so
-  // laying them out here would stack sixty-eight boxes on seventeen cells
-  // and draw sixty-eight zero-length edges under them.
+  // laying them out here would stack every branch on its turret's one cell
+  // and draw a zero-length edge under each.
   const visible = TECH_TREE.filter(
     (n) => !isUpgradeNode(n.id) && nodeStatus(progress, n.id) !== "hidden",
   );
