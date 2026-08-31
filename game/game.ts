@@ -67,8 +67,6 @@ export interface Stats {
   simMs: number;
   fps: number;
   zoom: number;
-  /** current dynamic-resolution factor, 1 = full DPR_CAP resolution */
-  res: number;
 }
 
 /** the speeds the HUD toggle offers */
@@ -190,16 +188,6 @@ const SIM_DT = 1 / 60;
 const SIM_STEPS_MAX = 3;
 // backing-store ceiling in device px per CSS px — see resize
 const DPR_CAP = 2;
-// dynamic resolution bounds and pacing: renderScale walks between these
-// in RES_STEP moves, at most once per RES_COOLDOWN ms, dropping when the
-// smoothed fps is under RES_DOWN_FPS and recovering above RES_UP_FPS. The
-// wide gap between the two thresholds is the hysteresis that keeps it
-// from ping-ponging on a device that hovers near either edge
-const RES_MIN = 0.6;
-const RES_STEP = 0.1;
-const RES_COOLDOWN = 2000;
-const RES_DOWN_FPS = 48;
-const RES_UP_FPS = 57;
 
 // a touch that never travels this far in CSS px is a tap — it selects the
 // tower under it — and anything further is a drag that carried the camera.
@@ -301,16 +289,6 @@ export class Game {
   // frames so a 120Hz display steps the sim on every other frame instead
   // of twice as often, and a hitch is paid back over the next few frames
   private simAcc = 0;
-  /**
-   * DYNAMIC RESOLUTION: the backing stores render at this fraction of the
-   * DPR-scaled CSS size. Driven by fpsEma in frame(): fill rate is what a
-   * phone GPU runs out of first, and pixels are the one cost that can be
-   * given back without touching gameplay. Quantized steps + a cooldown so
-   * the canvas is not reallocated (resize clears it) every frame while the
-   * ema wanders around a threshold.
-   */
-  private renderScale = 1;
-  private scaleNextAt = 0;
 
   private readonly onResize = (): void => this.resize();
   private readonly onKeyDown = (e: KeyboardEvent): void => {
@@ -987,7 +965,6 @@ export class Game {
       simMs: this.simEma,
       fps: Math.round(this.fpsEma),
       zoom: this.zoom,
-      res: this.renderScale,
     };
   }
 
@@ -1055,9 +1032,8 @@ export class Game {
   private resize(): void {
     // capped at 2, not 3: a dpr-3 phone renders 2.25x the pixels of dpr 2
     // for sharpness this art style cannot show, and fullscreen fill rate
-    // is the first thing a mobile GPU runs out of. renderScale then trades
-    // further sharpness for frame time when fpsEma says the frame is late
-    const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP) * this.renderScale;
+    // is the first thing a mobile GPU runs out of
+    const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
     const bw = Math.round((this.glCanvas.clientWidth || this.worldW) * dpr);
     const bh = Math.round((this.glCanvas.clientHeight || H) * dpr);
     // only skip the canvas attribute writes (they clear the canvas) — the
@@ -1141,21 +1117,6 @@ export class Game {
 
     this.fpsEma += (1 / Math.max(dt, 1e-4) - this.fpsEma) * 0.05;
     this.simEma += (simMs - this.simEma) * 0.1;
-
-    // dynamic resolution (see renderScale): trade pixels for frame time
-    // when the smoothed fps says frames are late, buy them back when it
-    // recovers. Gated on the cooldown because the step goes through
-    // resize(), which reallocates and clears both canvases
-    if (now >= this.scaleNextAt) {
-      const down = this.fpsEma < RES_DOWN_FPS && this.renderScale > RES_MIN;
-      const up = this.fpsEma > RES_UP_FPS && this.renderScale < 1;
-      if (down || up) {
-        this.renderScale = clamp(this.renderScale + (down ? -RES_STEP : RES_STEP), RES_MIN, 1);
-        this.scaleNextAt = now + RES_COOLDOWN;
-        this.resize();
-      }
-    }
-
     this.raf = requestAnimationFrame(this.frame);
   };
 
