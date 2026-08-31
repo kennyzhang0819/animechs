@@ -8,7 +8,7 @@ import {
   type Cost,
   type ItemKind,
 } from "./items";
-import { TOWERS, type TowerStats } from "./constants";
+import { PAL, TOWERS, type TowerStats } from "./constants";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
 /**
@@ -212,6 +212,14 @@ export const hasDuoUpgrades = (u: DuoUpgrades): boolean =>
  * which the sim reads as "spent on the first body". One point turns pierce
  * on with a cap of two, so "+1 pierce" is one EXTRA body, and the cap keeps
  * a shot from running its whole lifetime through a lane.
+ *
+ * GRAPHITE ROUNDS CHANGE THE ROUND, so they change what the round LOOKS
+ * like: the bullet takes the graphite ammo colours, and so does the hit
+ * spark. Those two palette entries are not invented here — they are the
+ * same pair hail and ripple already fire (PAL.graphiteAmmo*), which is what
+ * graphite ammunition looks like everywhere in this game. Doubling a
+ * turret's damage while its tracers stay exactly the same colour is a
+ * change the player is told about once in a blurb and can never see again.
  */
 export function upgradedDuo(u: DuoUpgrades, others: number): TowerStats {
   const stock = TOWERS.duo;
@@ -227,6 +235,22 @@ export function upgradedDuo(u: DuoUpgrades, others: number): TowerStats {
     bullet: {
       ...stock.bullet,
       damage,
+      // the sprite is optional on a bullet in general; duo has one, and a
+      // kind that did not would still take the spark colour
+      ...(u.graphite
+        ? {
+            ...(stock.bullet.sprite
+              ? {
+                  sprite: {
+                    ...stock.bullet.sprite,
+                    back: PAL.graphiteAmmoBack,
+                    front: PAL.graphiteAmmoFront,
+                  },
+                }
+              : null),
+            fxColor: PAL.graphiteAmmoBack,
+          }
+        : null),
       ...(u.pierce > 0
         ? { pierce: true, pierceCap: 1 + DUO_UPGRADES.PIERCE_PER_POINT * u.pierce }
         : null),
@@ -234,13 +258,27 @@ export function upgradedDuo(u: DuoUpgrades, others: number): TowerStats {
   };
 }
 
-/** the duo branch as bought, read off a save's point spread */
-export const duoUpgradesOf = (levels: TechLevels): DuoUpgrades => ({
-  rof: Math.max(0, Math.floor(levels["duo-rof"] ?? 0)),
-  pierce: Math.max(0, Math.floor(levels["duo-pierce"] ?? 0)),
-  graphite: (levels["duo-graphite"] ?? 0) > 0,
-  power: (levels["duo-power"] ?? 0) > 0,
-});
+/**
+ * The duo branch as bought AND AS SWITCHED ON, read off a save's point
+ * spread and its off-list.
+ *
+ * A node in `off` reads as though it held no points at all. The points are
+ * still there in the save and the node still draws as owned — this is the
+ * one place that decides whether they DO anything, so a switch cannot get
+ * out of step with the sim.
+ */
+export const duoUpgradesOf = (
+  levels: TechLevels,
+  off?: ReadonlySet<TechKind>,
+): DuoUpgrades => {
+  const on = (k: TechKind): number => (off?.has(k) ? 0 : Math.max(0, Math.floor(levels[k] ?? 0)));
+  return {
+    rof: on("duo-rof"),
+    pierce: on("duo-pierce"),
+    graphite: on("duo-graphite") > 0,
+    power: on("duo-power") > 0,
+  };
+};
 
 /**
  * The tech tree: one square node per turret, laid out as a small graph.
@@ -565,6 +603,23 @@ export interface TechNodeDef {
    */
   refundable?: boolean;
   /**
+   * MAY THIS NODE'S EFFECT BE SWITCHED OFF WITHOUT SELLING IT? — see
+   * Progress.techOff.
+   *
+   * A refund hands the points back for currency and the node stops being
+   * owned. A toggle keeps every point exactly where it is and only stops
+   * APPLYING them, which is the difference between a shop and a settings
+   * switch. The duo branch wants the second: a save that has bought pierce
+   * and then finds it changes the turret into something it did not want to
+   * play with should be able to put it down without being punished for
+   * having tried it.
+   *
+   * Only nodes whose effect is a RULE the sim reads every frame can carry
+   * this. Capacity cannot: switching off a turret's points would strand
+   * towers already standing on the board.
+   */
+  toggle?: boolean;
+  /**
    * Grid position in the tree view, in cell units.
    *
    * THE BOARD HAS ONE HARD RULE: NO TWO EDGES MAY CROSS. A tech tree is
@@ -842,6 +897,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // The bundle is the drop ratio (100 : 27 : 10) like everything else, so
     // it opens on Incursion's own currencies and no gate is written here.
     id: "duo-rof",
+    toggle: true,
     price: { base: { copper: 250, titanium: 65, thorium: 25 }, growth: 1.25 },
     cap: 20,
     requires: "duo",
@@ -856,6 +912,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // fire's and the climb is steeper still — ten points is +10 bodies a
     // shot, and the last of them must cost like it.
     id: "duo-pierce",
+    toggle: true,
     price: { base: { copper: 1200, titanium: 325, thorium: 120 }, growth: 1.4 },
     cap: 10,
     requires: "duo-rof",
@@ -874,6 +931,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // costs to buy outright, which is the comparison that matters: doubling
     // what you have should not be cheaper than buying half as much again.
     id: "duo-graphite",
+    toggle: true,
     price: {
       base: { copper: 60000, titanium: 16000, thorium: 6000, plastanium: 420 },
       growth: 1,
@@ -899,6 +957,7 @@ export const TECH_TREE: readonly TechNodeDef[] = [
     // exactly one boss fight should be able to change its mind about which
     // of those it is playing without having to win another.
     id: "duo-power",
+    toggle: true,
     price: { base: { "surge-alloy": 1 }, growth: 1 },
     cap: 1,
     refundable: true,
@@ -1310,6 +1369,10 @@ export const isMaxed = (node: TechKind, owned = 0): boolean => owned >= techCap(
 /** may this node's points be handed back? — see TechNodeDef.refundable */
 export const isRefundable = (node: TechKind): boolean => techNode(node).refundable === true;
 
+/** may this node's effect be switched off while keeping it? — see
+ *  TechNodeDef.toggle */
+export const isToggleable = (node: TechKind): boolean => techNode(node).toggle === true;
+
 /**
  * How many more points this wallet buys on one node, spending nothing else.
  *
@@ -1446,7 +1509,11 @@ export const bandForTier = (tier: number): number =>
  *   price reach (see bandForTier). Omitted means no difficulty gate at all
  *   — the editor and sandbox, where a save's own tech is the only limit.
  */
-export function techState(levels: TechLevels, band: number = ITEM_KINDS.length): TechState {
+export function techState(
+  levels: TechLevels,
+  band: number = ITEM_KINDS.length,
+  off?: ReadonlySet<TechKind>,
+): TechState {
   const caps = Object.fromEntries(
     TOWER_KINDS.map((k) => [k, Math.max(0, Math.floor(levels[k] ?? 0))]),
   ) as Record<TowerKind, number>;
@@ -1467,5 +1534,5 @@ export function techState(levels: TechLevels, band: number = ITEM_KINDS.length):
     BASE_BAR_SLOTS +
     ((levels["slot-7"] ?? 0) > 0 ? 1 : 0) +
     ((levels["slot-8"] ?? 0) > 0 ? 1 : 0);
-  return { unlocked, caps, speeds, barSlots, duo: duoUpgradesOf(levels) };
+  return { unlocked, caps, speeds, barSlots, duo: duoUpgradesOf(levels, off) };
 }

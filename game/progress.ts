@@ -27,6 +27,7 @@ import {
   techNode,
   techPrice,
   techState,
+  isToggleable,
   towerBand,
   type TechKind,
   type TechLevels,
@@ -128,6 +129,21 @@ export interface Progress {
    * unlocked" (see Swarmfield's bar).
    */
   loadout?: TowerKind[];
+  /**
+   * NODES THE SAVE OWNS BUT HAS SWITCHED OFF — see TechNodeDef.toggle.
+   *
+   * Not a refund and not a loss: every point stays in `tech` and the node
+   * still draws as owned. This only says which of them are ALLOWED TO
+   * APPLY, which is the difference between a shop and a settings switch. A
+   * player who bought pierce, found it changed the turret into something
+   * they did not want to play with, and put it back down has lost nothing
+   * for having tried it.
+   *
+   * A node listed here that is not toggleable is ignored on load — the
+   * flag lives on the node, so a save cannot switch off something the tree
+   * never offered to switch off.
+   */
+  techOff?: TechKind[];
   /**
    * The MUTATION ranks switched on for the next run (see mutation.ts) —
    * the optional rules the player has chosen to play under, kept across
@@ -425,6 +441,7 @@ export function loadProgress(): Progress {
       speed: readSpeed(p),
       hudMinimized: p.hudMinimized === true,
       loadout: readLoadout(p),
+      techOff: readTechOff(p),
       // cleaned against the rank this save has actually earned, so a switch
       // left on by a wiped ledger (or by a hand-edited save) reads as off
       // rather than as a rule the run has no right to be playing under
@@ -479,6 +496,23 @@ function readLayouts(p: { layouts?: unknown }): Record<string, TowerPlacement[]>
     }
     if (list.length > 0) out[mapId] = list;
   }
+  return out;
+}
+
+/**
+ * The switched-off nodes out of a raw save: known kinds only, deduped, and
+ * only nodes the tree actually offers a switch on. A save naming anything
+ * else — hand-edited, or written when a node was toggleable and is not any
+ * more — quietly drops it rather than holding an effect off that nothing
+ * can turn back on.
+ */
+function readTechOff(p: { techOff?: unknown }): TechKind[] {
+  if (!Array.isArray(p.techOff)) return [];
+  const kinds = new Set<string>(TECH_KINDS);
+  const out: TechKind[] = [];
+  for (const k of p.techOff)
+    if (typeof k === "string" && kinds.has(k) && !out.includes(k as TechKind) && isToggleable(k as TechKind))
+      out.push(k as TechKind);
   return out;
 }
 
@@ -722,7 +756,30 @@ export function resetProgress(): void {
  * where owning a turret is the only question worth asking.
  */
 export function techOf(p: Progress, tier?: number): TechState {
-  return techState(p.tech, tier == null ? undefined : bandForTier(tier));
+  return techState(p.tech, tier == null ? undefined : bandForTier(tier), techOffSet(p));
+}
+
+/** the nodes this save has switched off, as the set techState wants */
+export const techOffSet = (p: Progress): ReadonlySet<TechKind> => new Set(p.techOff ?? []);
+
+/** is this owned node applying its effect? — the tree's On/Off state */
+export const isTechOn = (p: Progress, node: TechKind): boolean =>
+  !(p.techOff ?? []).includes(node);
+
+/**
+ * Switch one owned node's effect on or off, keeping its points either way.
+ * A node the tree offers no switch on cannot be switched: the flag is the
+ * node's, not the save's.
+ */
+export function saveTechOn(node: TechKind, on: boolean): Progress {
+  const p = loadProgress();
+  if (!isToggleable(node)) return p;
+  const off = new Set(p.techOff ?? []);
+  if (on) off.delete(node);
+  else off.add(node);
+  const next = { ...p, techOff: [...off] };
+  saveProgress(next);
+  return next;
 }
 
 /** how many tiers this save has cleared on one map */

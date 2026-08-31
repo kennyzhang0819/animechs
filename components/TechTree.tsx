@@ -10,12 +10,15 @@ import {
   nodeStatus,
   refundTech,
   saveMutation,
+  isTechOn,
+  saveTechOn,
   type NodeStatus,
   type Progress,
 } from "@/game/progress";
 import {
   DUO_UPGRADES,
   isRefundable,
+  isToggleable,
   isTowerNode,
   techCap,
   TECH_TREE,
@@ -719,6 +722,14 @@ export default function TechTree({
               // shop: click to arm it, click to take it off and get the
               // surge alloy back
               const refundable = owned && isRefundable(n.id);
+              // THE EFFECT SWITCH (the duo branch). Owning a node and
+              // PLAYING with it are different things: the points stay in
+              // the save either way, and this only says whether they apply.
+              // It is a sibling of the node button rather than something
+              // inside it, so switching off never competes with the click
+              // that buys the next point
+              const switchable = owned && isToggleable(n.id);
+              const effectOn = isTechOn(progress, n.id);
               const clickable = status === "buyable" || refundable;
               // the step is a ceiling, not a promise: a "×100" the wallet
               // only half covers lands what it covers rather than refusing
@@ -812,6 +823,24 @@ export default function TechTree({
                       </svg>
                     )}
                   </button>
+                  {switchable && (
+                    <button
+                      type="button"
+                      aria-pressed={effectOn}
+                      aria-label={`${name}: effect ${effectOn ? "on, switch off" : "off, switch on"}`}
+                      onClick={() => {
+                        saveTechOn(n.id, !effectOn);
+                        onChanged();
+                      }}
+                      className={`absolute -bottom-2 -left-2 rounded border px-1.5 text-[13px] font-bold ${
+                        effectOn
+                          ? "border-[#7BE58A] bg-[#101013] text-[#7BE58A]"
+                          : "border-[#5A2A2A] bg-[#101013] text-[#FF8A8A]"
+                      }`}
+                    >
+                      {effectOn ? "On" : "Off"}
+                    </button>
+                  )}
                   <div
                     className={`text-center text-[12px] font-bold uppercase tracking-widest ${
                       owned ? "text-[#EDEDEF]" : "text-[#71717C]"
@@ -830,13 +859,15 @@ export default function TechTree({
                     <div className="flex items-baseline justify-between">
                       <span className="font-bold text-[#EDEDEF]">{name}</span>
                       <span className="text-[13px] text-[#A6A6AF]">
-                        {switchy
-                          ? owned
-                            ? "On"
-                            : "Locked"
-                          : stack
-                            ? `${points} / ${cap}`
-                            : `Capacity ${points}`}
+                        {switchable && !effectOn
+                          ? "Off"
+                          : switchy
+                            ? owned
+                              ? "On"
+                              : "Locked"
+                            : stack
+                              ? `${points} / ${cap}`
+                              : `Capacity ${points}`}
                       </span>
                     </div>
                     <div className="mt-1 text-[14px] text-[#A6A6AF]">
@@ -857,6 +888,12 @@ export default function TechTree({
                           <div className="mt-1 text-[14px] font-bold text-[#FFD37F]">{line}</div>
                         ) : null;
                       })()}
+                    {switchable && !effectOn && (
+                      <div className="mt-2 text-[14px] font-bold text-[#FF8A8A]">
+                        Switched off — the points are still yours, they are
+                        just not in play.
+                      </div>
+                    )}
                     {refundable ? (
                       <div className="mt-2 border-t border-[#2E2E36] pt-2">
                         <div className="text-[13px] font-bold uppercase tracking-widest text-[#7BE58A]">
