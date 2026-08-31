@@ -45,6 +45,8 @@ import {
   grantRunReward,
   isTierCleared,
   loadProgress,
+  isUnlocked,
+  lockEverything,
   resetProgress,
   saveHudMinimized,
   unlockEverything,
@@ -629,7 +631,6 @@ export default function Swarmfield() {
    * unlock over the course of a session.
    */
   const [taps, setTaps] = useState(0);
-  const [unlocked, setUnlocked] = useState(false);
   const lastTap = useRef(0);
   const [level, setLevel] = useState<LevelSpec | null>(null);
   /**
@@ -1078,7 +1079,6 @@ export default function Swarmfield() {
         onClick={() => {
           // a half-finished back-door gesture does not survive the screen
           setTaps(0);
-          setUnlocked(false);
           setMenuView(to);
         }}
         className="text-[13px] uppercase tracking-widest text-[#71717C] underline-offset-2 hover:text-[#EDEDEF] hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
@@ -1149,7 +1149,6 @@ export default function Swarmfield() {
                   lastTap.current = now;
                   if (n >= UNLOCK_TAPS) {
                     setTaps(0);
-                    setUnlocked(true);
                     setProgress(unlockEverything());
                     return;
                   }
@@ -1159,16 +1158,53 @@ export default function Swarmfield() {
               >
                 Settings
               </button>
-              {unlocked ? (
-                <p className="-mt-4 text-[12px] uppercase tracking-widest text-[#7BE58A]">
-                  Every node unlocked
+              {/* The countdown only, and only mid-gesture. Whether the
+                  door is OPEN is not a message here — it is the panel
+                  below, which is the thing that can also close it */}
+              {taps >= UNLOCK_HINT_AT && (
+                <p className="-mt-4 text-[12px] uppercase tracking-widest text-[#71717C]">
+                  {UNLOCK_TAPS - taps} more
                 </p>
-              ) : (
-                taps >= UNLOCK_HINT_AT && (
-                  <p className="-mt-4 text-[12px] uppercase tracking-widest text-[#71717C]">
-                    {UNLOCK_TAPS - taps} more
-                  </p>
-                )
+              )}
+
+              {/* THE DOOR, ONCE IT IS OPEN. It appears only on a save that
+                  has actually used it, so it stays invisible to a player
+                  who has never found the gesture — but a save that HAS
+                  gone through it must never be stuck there, and a hidden
+                  way back would be a worse secret than no way back at
+                  all. Nothing here is destructive: the grant was never
+                  written to the save (Progress.unlocked), so switching it
+                  off returns the campaign underneath untouched */}
+              {progress && isUnlocked(progress) && (
+                <div className="w-full max-w-[30rem] rounded border border-[#3A5A3F] bg-[#151518] p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-[14px] font-bold uppercase tracking-widest text-[#7BE58A]">
+                        Full unlock — on
+                      </div>
+                      <p className="mt-1 text-[13px] leading-snug text-[#A6A6AF]">
+                        Every node in the tree reads as owned. Switching it off gives
+                        back the tech you actually bought — nothing you earned is
+                        lost either way.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const p = lockEverything();
+                        setProgress(p);
+                        setTier(topTier(p, worldId));
+                        // the bar's curation may name turrets that only the
+                        // grant was standing up; leave it filtering against
+                        // a roster the save no longer owns and the bar comes
+                        // back empty
+                        setLoadout(p.loadout ?? null);
+                      }}
+                      className="shrink-0 rounded border border-[#2E2E36] bg-[#222227] px-4 py-2 text-[13px] font-bold uppercase tracking-widest text-[#A6A6AF] hover:border-[#7BE58A] hover:text-[#7BE58A] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#7BE58A]"
+                    >
+                      Disable
+                    </button>
+                  </div>
+                </div>
               )}
               <div className="w-full max-w-[30rem] rounded border border-[#2E2E36] bg-[#151518] p-4">
                 <div className="flex items-center justify-between gap-4">
