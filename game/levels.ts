@@ -1044,6 +1044,27 @@ export function waveGroups(
   return groups;
 }
 
+/**
+ * A MAP'S STANDING DIFFICULTY — the badge on its card in the map select,
+ * and the only thing that ranks one map against another.
+ *
+ * It is NOT the ladder. A tier (Incursion..Eradication) is a difficulty you
+ * PICK for a run and it means the same thing on every map; a badge is a
+ * property of the terrain itself — how much the lanes, the water and the
+ * drop zones do to you before a single multiplier is applied. A player
+ * reads the badge to choose WHERE to fight and the tier to choose HOW HARD,
+ * so the two vocabularies are kept apart on purpose and never share a word.
+ */
+export type MapBadge = "beginner" | "intermediate" | "advanced" | "expert";
+
+/** the badge's own label and colour, wherever a map card shows one */
+export const MAP_BADGE: Record<MapBadge, { name: string; color: string }> = {
+  beginner: { name: "Beginner", color: "#7BE58A" },
+  intermediate: { name: "Intermediate", color: "#7FC4FF" },
+  advanced: { name: "Advanced", color: "#FFB65C" },
+  expert: { name: "Expert", color: "#FF6B6B" },
+};
+
 export interface LevelSpec {
   /**
    * save key — the world's ordinal as a string, e.g. "2". It is NOT shown
@@ -1055,6 +1076,11 @@ export interface LevelSpec {
   name: string;
   /** official map id this level plays on; the first official map when unset */
   map?: string;
+  /**
+   * How hard this map is to hold, as a badge on the map select. Unset reads
+   * as "beginner" — a map that never says otherwise is the gentle one.
+   */
+  badge?: MapBadge;
   /**
    * seconds held between waves, and before the first one. The clock starts
    * when the previous wave has finished ENTERING the field — the last unit
@@ -1190,6 +1216,7 @@ export const WORLDS: LevelSpec[] = [
     id: "1",
     name: "Confluence",
     map: "grass-open",
+    badge: "beginner",
     waveGap: 15,
     // ================= HOW TO AUTHOR A WAVE ========================
     //
@@ -1307,6 +1334,7 @@ export const WORLDS: LevelSpec[] = [
     id: "2",
     name: "Maelstrom",
     map: "tidewater",
+    badge: "advanced",
     waveGap: 15,
     script: [],
   },

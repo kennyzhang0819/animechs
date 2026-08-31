@@ -1,6 +1,6 @@
 import { UNIT_KINDS, UNIT_STATS, unitDrop, WORLD, WORLDS } from "./levels";
 import { OFFICIAL_MAP_IDS } from "./maps";
-import { OPENING_ARCS, OPENING_DUOS, tierDropBonus, TOP_TIER } from "./ladder";
+import { OPENING_DUOS, tierDropBonus, TOP_TIER, WORLD_REQUIRES } from "./ladder";
 import { ASCENSION_MAX, cleanAscension } from "./ascension";
 import {
   addScaled,
@@ -158,7 +158,6 @@ const KEY = "dagger-problem.progress.v1";
  * wave 1 banks almost nothing. Past wave 1 the run pays for its own fleet.
  */
 const DUO_START = OPENING_DUOS;
-const ARC_START = OPENING_ARCS;
 
 /** every currency starts empty — kills are the only income, so the first
  * purchase of the campaign is paid for by the first waves the duos kill */
@@ -168,10 +167,10 @@ const fresh = (): Progress => ({
   bank: freshBank(),
   clearedByMap: {},
   // home is free and granted outright — it is the root the whole tree hangs
-  // off, and a save without it would draw nothing at all. Arc's node hangs
-  // off duo and duo's off home, so granting all three leaves no orphan the
-  // tree would refuse to draw
-  tech: { home: 1, duo: DUO_START, arc: ARC_START },
+  // off, and a save without it would draw nothing at all. Duo's node hangs
+  // off home, so granting both leaves no orphan the tree would refuse to
+  // draw. Nothing else is free: see OPENING_DUOS
+  tech: { home: 1, duo: DUO_START },
 });
 
 /**
@@ -369,15 +368,18 @@ export function loadProgress(): Progress {
       const legacyFilter = (p.tech as Record<string, unknown>)["tower-filter"];
       if (typeof legacyFilter === "number" && legacyFilter > 0) tech["slot-7"] = 1;
     }
-    // none of the three grants can legitimately sit below its free starting
-    // value — this also migrates saves from before the per-turret point
-    // model, from before home existed at all, and any save written while the
-    // baseline was tuned to a smaller loadout. Points only ever go up (there
-    // is no selling a node), so a floor can never take anything from a
-    // player who has bought past it
+    // neither grant can legitimately sit below its free starting value —
+    // this also migrates saves from before the per-turret point model, from
+    // before home existed at all, and any save written while the baseline
+    // was tuned to a smaller loadout. Points only ever go up (there is no
+    // selling a node), so a floor can never take anything from a player who
+    // has bought past it.
+    //
+    // ARC HAS NO FLOOR ANY MORE, and deliberately keeps no floor: a save
+    // that was handed the five free arcs KEEPS them, because points are
+    // never taken back, but no new save is given any
     tech.home = 1;
     tech.duo = Math.max(tech.duo ?? 0, DUO_START);
-    tech.arc = Math.max(tech.arc ?? 0, ARC_START);
     // the dev switch rides on top of a REAL save the same way it does on a
     // fresh one, and only ever raises a count — so turning it off later
     // gives the save back exactly as it was, minus nothing the player bought
@@ -727,6 +729,26 @@ export const isTierCleared = (p: Progress, worldId: string, tier: number): boole
 /** may this tier be played at all? */
 export const isTierUnlocked = (p: Progress, worldId: string, tier: number): boolean =>
   tier >= 0 && tier <= topTier(p, worldId);
+
+/**
+ * WHAT IS STILL STANDING BETWEEN THIS SAVE AND A MAP — the requirement it
+ * has not met, or null when the map is open.
+ *
+ * Returns the requirement rather than a boolean because every caller that
+ * cares needs to SAY it: a locked map that will not say what unlocks it is
+ * a dead end on the screen. See WORLD_REQUIRES.
+ */
+export const worldLock = (
+  p: Progress,
+  worldId: string,
+): { world: string; tier: number } | null => {
+  const req = WORLD_REQUIRES[worldId];
+  return !req || isTierCleared(p, req.world, req.tier) ? null : req;
+};
+
+/** may this map be entered at all? */
+export const isWorldUnlocked = (p: Progress, worldId: string): boolean =>
+  worldLock(p, worldId) == null;
 
 /**
  * What a tree node can do right now. "hidden" nodes (parent unbought) are

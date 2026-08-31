@@ -581,24 +581,35 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
  * seconds into the run. Tune it by feel: too low and wave 1 wipes a fresh
  * save with no way to earn out, too high and the opening asks nothing.
  */
-export const OPENING_DUOS = 50;
+export const OPENING_DUOS = 100;
 
 /**
- * ...and five arcs beside them, for a different reason than the duos.
+ * WHICH MAP OPENS WHICH — the campaign's one piece of structure above the
+ * ladders, and the only thing a map's own progress cannot buy.
  *
- * The duos exist so wave 1 is survivable. These exist so the first hour is
- * not spent re-earning a lesson the player has already had: a duo line kills
- * a crowd one body at a time, so the opening waves are a flat grind whose
- * only lever is buying more duos. Arc chains its bolt through a file of
- * ground units, so five of them are enough to feel the difference between
- * single-target and area fire — which is the thing the tech tree is FOR, and
- * it should be legible before a player has paid for it.
+ * Each map is climbed separately and keeps its own ladder, so nothing else
+ * crosses between them. This does: a map named here stays shut until the
+ * named difficulty has fallen on the named map. Confluence teaches the
+ * game and Maelstrom assumes it has been taught, so Maelstrom asks for
+ * Confluence's Nemesis — not its first clear, which proves only that the
+ * opening waves can be held.
  *
- * FIVE, not fifty. It is a taste, not a fleet: air is untouched (arc is
- * ground-only), and five bolts do not hold a wave on their own. It buys back
- * a round or two of duo farming and no more.
+ * A map absent from this table is open from the first run, which is every
+ * map but the ones written here.
  */
-export const OPENING_ARCS = 5;
+export const WORLD_REQUIRES: Readonly<Record<string, { world: string; tier: number }>> = {
+  // Maelstrom opens on Nemesis at Confluence
+  "2": { world: "1", tier: 2 },
+};
+
+/*
+ * THE OPENING IS DUOS AND NOTHING ELSE. Five free arcs used to sit beside
+ * them as a taste of area fire before the tech tree had been paid for.
+ * They are gone: the opening bar should hold exactly what the campaign's
+ * first purchase is measured against, and a second turret in it makes the
+ * first buy a comparison rather than a discovery. Arc is now bought like
+ * everything else.
+ */
 
 // ---------- the debut rule ----------
 

@@ -20,6 +20,7 @@ import {
   WORLDS,
   worldById,
   waveGroups,
+  MAP_BADGE,
   type LevelSpec,
   type TowerKind,
   type UnitKind,
@@ -31,6 +32,7 @@ import {
   difficultyColor,
   difficultyName,
   specForTier,
+  TOP_TIER,
   waveCost,
   waveGuide,
   tierDropBonus,
@@ -39,6 +41,7 @@ import {
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import {
   activeAscension,
+  clearedOn,
   grantRunReward,
   isTierCleared,
   loadProgress,
@@ -52,6 +55,7 @@ import {
   startingSpeed,
   techOf,
   topTier,
+  worldLock,
   type Progress,
   type RunReward,
 } from "@/game/progress";
@@ -85,6 +89,97 @@ function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) 
     >
       <canvas ref={ref} className="h-full w-full object-contain [image-rendering:pixelated]" />
     </div>
+  );
+}
+
+/**
+ * ONE MAP ON THE MAP SELECT — a preview, a name, and the badge that ranks
+ * this map against the others (MAP_BADGE in levels.ts).
+ *
+ * The badge sits ON the preview rather than beside the name because that is
+ * the thing being chosen between: a player scanning the grid is reading four
+ * badges, not four sentences. Everything the map actually costs — the
+ * difficulty, the wave count, the ascensions in force — is one tap deeper,
+ * on the detail panel, so the grid stays a picture and never a spec sheet.
+ */
+function MapCard({
+  world,
+  progress,
+  mapsReady,
+  onPick,
+}: {
+  world: LevelSpec;
+  progress: Progress;
+  mapsReady: boolean;
+  onPick: () => void;
+}) {
+  const badge = MAP_BADGE[world.badge ?? "beginner"];
+  // how far up this map's OWN ladder the save has come. clearedOn counts
+  // cleared difficulties, so one past the last tier means the map is done
+  const cleared = clearedOn(progress, world.id);
+  const total = TOP_TIER + 1;
+  const finished = cleared >= total;
+  // WHAT IS STILL IN THE WAY, if anything. A locked card is dimmed, refuses
+  // the click, and says the requirement in place of the clear count — a map
+  // you cannot enter and cannot find out how to enter is a dead end
+  const lock = worldLock(progress, world.id);
+  const lockedBy = lock ? worldById(lock.world) : null;
+
+  return (
+    <button
+      onClick={onPick}
+      disabled={lock != null}
+      aria-disabled={lock != null}
+      className={`group flex flex-col overflow-hidden rounded border text-left transition-colors ${
+        lock
+          ? "cursor-not-allowed border-[#26262C] bg-[#121215]"
+          : "border-[#2E2E36] bg-[#151518] hover:border-[#FFD37F] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+      }`}
+    >
+      <div className={`relative ${lock ? "opacity-40 grayscale" : ""}`}>
+        {mapsReady ? (
+          <LevelThumb mapId={world.map ?? OFFICIAL_MAP_IDS[0]} bare />
+        ) : (
+          <div className="aspect-[16/9] bg-[#101013]" />
+        )}
+        <span
+          className="absolute left-2 top-2 rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] backdrop-blur"
+          style={{
+            color: badge.color,
+            borderColor: badge.color,
+            backgroundColor: "#101013D9",
+          }}
+        >
+          {badge.name}
+        </span>
+      </div>
+      <div className="flex items-baseline justify-between gap-3 border-t border-[#2E2E36] px-3 py-2.5">
+        <span
+          className={`text-[15px] font-bold uppercase tracking-widest ${
+            lock ? "text-[#71717C]" : "text-[#EDEDEF] group-hover:text-[#FFD37F]"
+          }`}
+        >
+          {world.name}
+        </span>
+        {lock ? (
+          <span className="text-[11px] font-bold uppercase tracking-widest text-[#71717C]">
+            Clear{" "}
+            <span style={{ color: difficultyColor(lock.tier) }}>
+              {difficultyName(lock.tier)}
+            </span>{" "}
+            on {lockedBy?.name ?? "the first map"}
+          </span>
+        ) : (
+          <span
+            className={`text-[11px] font-bold uppercase tracking-widest ${
+              finished ? "text-[#7BE58A]" : "text-[#71717C]"
+            }`}
+          >
+            {finished ? "Complete" : `${cleared}/${total} cleared`}
+          </span>
+        )}
+      </div>
+    </button>
   );
 }
 
@@ -482,6 +577,24 @@ export default function Swarmfield() {
   // the level selector is the entrance: no Game exists until a level is
   // picked, and going back to the menu tears the whole game down
   const [screen, setScreen] = useState<"menu" | "tech" | "game">("menu");
+  /**
+   * WHERE IN THE FRONT-OF-HOUSE THE PLAYER IS. The menu screen is four
+   * panels, not one: a title card, settings, the map grid, and the picked
+   * map's detail.
+   *
+   * The title card shows a game and two buttons and NOTHING else — no map,
+   * no wallet, no difficulty. Everything that used to crowd it is a
+   * property of a run, and a run has not been chosen yet; a start screen
+   * that already displays a map has quietly made the choice for you. So
+   * the resources and the ladder move behind Start, where they describe
+   * something the player has actually pointed at.
+   *
+   * It is deliberately NOT part of `screen`: leaving a run or the tech tree
+   * comes back to "menu" from several places, and this survives all of
+   * them, so a player who deploys, loses, and backs out lands on the map
+   * they were playing rather than at the title.
+   */
+  const [menuView, setMenuView] = useState<"home" | "settings" | "maps" | "map">("home");
   const [level, setLevel] = useState<LevelSpec | null>(null);
   /**
    * The tier the menu is pointed at. It follows the frontier whenever the
@@ -743,6 +856,18 @@ export default function Swarmfield() {
    * from the unlocked list. Auto-fill only runs while the save has never
    * curated: once picks are saved, a removed turret STAYS removed instead
    * of being quietly refilled.
+   *
+   * WITH ONE OVERRIDE: A BAR WITH NOTHING ON IT IS NOT A CURATION, IT IS A
+   * BROKEN SCREEN. Difficulties allow different turrets (bandForTier) and
+   * the loadout is ONE list for the whole save, so a bar curated on Nemesis
+   * can be entirely illegal on Incursion — leaving a player holding fifty
+   * duos unable to place a single one until they go and find the slots
+   * panel. When the picks leave the bar EMPTY the save is treated as
+   * uncurated here and the slots auto-fill, exactly as on a fresh save.
+   *
+   * ONLY the empty case. A curation that still offers something at this
+   * difficulty is honoured as it stands, short bar and all — those are
+   * turrets the player asked for, and a half-full bar is still usable.
    */
   const barKinds = (): TowerKind[] => {
     if (!hud) return [];
@@ -751,7 +876,8 @@ export default function Swarmfield() {
     ).map((t) => t.kind);
     if (hud.barSlots === null) return unlockedList;
     const picks = new Set(loadout ?? unlockedList);
-    return unlockedList.filter((k) => picks.has(k)).slice(0, hud.barSlots);
+    const chosen = unlockedList.filter((k) => picks.has(k));
+    return (chosen.length > 0 ? chosen : unlockedList).slice(0, hud.barSlots);
   };
 
   /**
@@ -889,96 +1015,185 @@ export default function Swarmfield() {
   }
 
   if (screen !== "game" || !level) {
+    /**
+     * THE WALLET AND THE WAY TO SPEND IT, as one strip. It is shown from
+     * the map grid inwards and never on the title card: resources only
+     * mean anything next to something to spend them on, and the last stop
+     * before Deploy is exactly where a player wants the tech tree.
+     */
+    const bank = progress && (
+      <div className="flex items-center gap-3">
+        <span className="flex items-center rounded border border-[#2E2E36] bg-[#151518] px-4 py-2">
+          <Wallet bank={progress.bank} />
+        </span>
+        <button
+          onClick={() => {
+            setTechFrom("menu");
+            setScreen("tech");
+          }}
+          className="rounded border border-[#FFD37F] bg-[#222227]/90 px-4 py-2 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+        >
+          Upgrades
+        </button>
+      </div>
+    );
+    const back = (label: string, to: "home" | "maps") => (
+      <button
+        onClick={() => setMenuView(to)}
+        className="text-[13px] uppercase tracking-widest text-[#71717C] underline-offset-2 hover:text-[#EDEDEF] hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+      >
+        &#9666; {label}
+      </button>
+    );
+    const badge = MAP_BADGE[world.badge ?? "beginner"];
+
     return (
       <div className="fixed inset-0 overflow-y-auto bg-[#101013]">
         <div className="mx-auto flex min-h-full max-w-5xl flex-col items-center justify-center gap-8 py-12 pl-[max(1.5rem,var(--safe-l))] pr-[max(1.5rem,var(--safe-r))] sm:py-16">
-          <div className="text-center">
-            <h1 className="text-3xl font-bold uppercase tracking-[0.2em] text-[#EDEDEF] sm:text-4xl sm:tracking-[0.35em]">
-              Sir, We Have a<br />
-              <span className="text-[#FFD37F]">Dagger Problem</span>
-            </h1>
-          </div>
-          {progress && (
-            <div className="flex items-center gap-3">
-              <span className="flex items-center rounded border border-[#2E2E36] bg-[#151518] px-4 py-2">
-                <Wallet bank={progress.bank} />
-              </span>
-              <button
-                onClick={() => {
-                  setTechFrom("menu");
-                  setScreen("tech");
-                }}
-                className="rounded border border-[#FFD37F] bg-[#222227]/90 px-4 py-2 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
-              >
-                Upgrades
-              </button>
-            </div>
-          )}
-          {/* EVERY WORLD, ALWAYS. Nothing is bought to reach a map and
-              nothing carries between them: each keeps its own ladder, and
-              picking one here is what decides which ladder the panel below
-              is showing and which turrets that map will let through */}
-          {progress && WORLDS.length > 1 && (
-            <div role="group" aria-label="world select" className="flex items-center gap-2">
-              {WORLDS.map((w) => (
+          {/* THE TITLE CARD. A name and two doors - nothing here describes a
+              run, because no run has been chosen yet */}
+          {menuView === "home" && (
+            <>
+              <div className="text-center">
+                <h1 className="text-3xl font-bold uppercase tracking-[0.2em] text-[#EDEDEF] sm:text-4xl sm:tracking-[0.35em]">
+                  Sir, We Have a<br />
+                  <span className="text-[#FFD37F]">Dagger Problem</span>
+                </h1>
+              </div>
+              <div className="flex w-full max-w-[20rem] flex-col gap-3">
                 <button
-                  key={w.id}
-                  aria-pressed={w.id === world.id}
-                  onClick={() => setWorldId(w.id)}
-                  className={`rounded border px-4 py-1.5 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-                    w.id === world.id
-                      ? "border-[#FFD37F] bg-[#222227] text-[#FFD37F]"
-                      : "border-[#2E2E36] bg-[#151518] text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF]"
-                  }`}
+                  onClick={() => setMenuView("maps")}
+                  className="w-full rounded border border-[#FFD37F] bg-[#222227]/90 py-3.5 text-[15px] font-bold uppercase tracking-[0.3em] text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
                 >
-                  {w.name}
+                  Start
                 </button>
-              ))}
-            </div>
+                <button
+                  onClick={() => setMenuView("settings")}
+                  className="w-full rounded border border-[#2E2E36] bg-[#151518] py-3.5 text-[15px] font-bold uppercase tracking-[0.3em] text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                >
+                  Settings
+                </button>
+              </div>
+              <p className="text-center text-[13px] uppercase tracking-widest text-[#71717C]">
+                A personal project by Zerkka &mdash; all units, art, and inspiration come from{" "}
+                <a
+                  href="https://mindustrygame.github.io/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[#A6A6AF] underline decoration-[#4A4A55] underline-offset-2 hover:text-[#EDEDEF]"
+                >
+                  Mindustry
+                </a>
+              </p>
+            </>
           )}
-          {progress && (
-            <TierPicker
-              progress={progress}
-              world={world}
-              tier={tier}
-              onTier={setTier}
-              mapsReady={mapsReady}
-              onStart={() => {
-                setLevel(runSpec(world, tier));
-                setScreen("game");
-                // raised in the same batch as the screen switch, so the game
-                // screen's FIRST paint is already covered — an effect would
-                // run after that paint and let a frame of black canvas through
-                setLoadUi({ step: firstLoadStep(), out: false });
-              }}
-            />
+
+          {/* SETTINGS - everything that changes the save rather than the run.
+              Wiping is the only one so far, and it lives here rather than
+              beside the Deploy button where a mis-tap would be costly */}
+          {menuView === "settings" && (
+            <>
+              <h2 className="text-[13px] font-bold uppercase tracking-[0.35em] text-[#71717C]">
+                Settings
+              </h2>
+              <div className="w-full max-w-[30rem] rounded border border-[#2E2E36] bg-[#151518] p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-[14px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+                      Reset save
+                    </div>
+                    <p className="mt-1 text-[13px] leading-snug text-[#A6A6AF]">
+                      Wipes resources, tech, and every cleared difficulty on every
+                      map. There is no undo.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (
+                        window.confirm("Wipe all progress - resources, tech, and cleared tiers?")
+                      ) {
+                        resetProgress();
+                        const p = loadProgress();
+                        setProgress(p);
+                        setTier(topTier(p, worldId));
+                        // the curated bar was part of the progress just
+                        // wiped. Left standing it would filter the fresh
+                        // save's build bar against turrets it no longer owns
+                        setLoadout(null);
+                      }
+                    }}
+                    className="shrink-0 rounded border border-[#5A2A2A] bg-[#221718] px-4 py-2 text-[13px] font-bold uppercase tracking-widest text-[#FF8A8A] hover:border-[#FF5A5A] hover:text-[#FF5A5A] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF5A5A]"
+                  >
+                    Wipe
+                  </button>
+                </div>
+              </div>
+              {back("Back", "home")}
+            </>
           )}
-          <div className="flex flex-col items-center gap-6">
-            <button
-              onClick={() => {
-                if (window.confirm("Wipe all progress — resources, tech, and cleared tiers?")) {
-                  resetProgress();
-                  const p = loadProgress();
-                  setProgress(p);
-                  setTier(topTier(p, worldId));
-                }
-              }}
-              className="text-[13px] uppercase tracking-widest text-[#71717C] underline-offset-2 hover:text-[#FF5A5A] hover:underline"
-            >
-              Reset save
-            </button>
-            <p className="text-center text-[13px] uppercase tracking-widest text-[#71717C]">
-              A personal project by Zerkka — all units, art, and inspiration come from{" "}
-              <a
-                href="https://mindustrygame.github.io/"
-                target="_blank"
-                rel="noreferrer"
-                className="text-[#A6A6AF] underline decoration-[#4A4A55] underline-offset-2 hover:text-[#EDEDEF]"
-              >
-                Mindustry
-              </a>
-            </p>
-          </div>
+
+          {/* THE MAP GRID. Every map is SHOWN, always — a locked one is on
+              the board saying what opens it, never hidden. Nothing is bought
+              to reach a map and nothing carries between them; each keeps its
+              own ladder (see WORLD_REQUIRES for the one exception) */}
+          {menuView === "maps" && progress && (
+            <>
+              <h2 className="text-[13px] font-bold uppercase tracking-[0.35em] text-[#71717C]">
+                Select map
+              </h2>
+              {bank}
+              <div className="grid w-full max-w-[46rem] gap-4 sm:grid-cols-2">
+                {WORLDS.map((w) => (
+                  <MapCard
+                    key={w.id}
+                    world={w}
+                    progress={progress}
+                    mapsReady={mapsReady}
+                    onPick={() => {
+                      setWorldId(w.id);
+                      setMenuView("map");
+                    }}
+                  />
+                ))}
+              </div>
+              {back("Title", "home")}
+            </>
+          )}
+
+          {/* THE PICKED MAP: its badge and name, then the ladder panel that
+              has always been the last thing before a run */}
+          {menuView === "map" && progress && (
+            <>
+              <div className="flex flex-col items-center gap-2">
+                <span
+                  className="rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em]"
+                  style={{ color: badge.color, borderColor: badge.color }}
+                >
+                  {badge.name}
+                </span>
+                <h2 className="text-2xl font-bold uppercase tracking-[0.2em] text-[#EDEDEF]">
+                  {world.name}
+                </h2>
+              </div>
+              {bank}
+              <TierPicker
+                progress={progress}
+                world={world}
+                tier={tier}
+                onTier={setTier}
+                mapsReady={mapsReady}
+                onStart={() => {
+                  setLevel(runSpec(world, tier));
+                  setScreen("game");
+                  // raised in the same batch as the screen switch, so the game
+                  // screen's FIRST paint is already covered - an effect would
+                  // run after that paint and let a frame of black canvas through
+                  setLoadUi({ step: firstLoadStep(), out: false });
+                }}
+              />
+              {back("All maps", "maps")}
+            </>
+          )}
         </div>
       </div>
     );
