@@ -801,16 +801,20 @@ export default function TechTree({
   progress,
   onChanged,
   onBack,
-  backLabel = "◂ Levels",
+  backLabel = "Back",
+  onRestart,
 }: {
   progress: Progress;
   /** a point was bought — the caller re-reads the save */
   onChanged: () => void;
+  /** the standard top-left icon button — always the way OUT of the tree */
   onBack: () => void;
-  /** where leaving goes, in words. The tree is reachable from the menu AND
-   * from a lost run, and those are different exits — one returns to the
-   * level list, the other starts the run again with what was just bought */
+  /** the back button's accessible name — the icon carries no text */
   backLabel?: string;
+  /** set when the tree was opened from a finished run: adds a labelled
+   * Restart button beside back, starting the run again with what was
+   * just bought. Back then leaves to the menu instead. */
+  onRestart?: () => void;
 }) {
   const [step, setStep] = useState<BuyStep>(1);
   const touch = useTouchOnly();
@@ -1390,9 +1394,25 @@ export default function TechTree({
           className="absolute top-[max(1rem,var(--safe-t))] left-[max(1rem,var(--safe-l))]"
           data-ui
         >
-          <button onClick={onBack} className={chromeBtn}>
-            {backLabel}
-          </button>
+          {/* the standardized back: icon only, big, top-left — the same
+              button every other screen pins there */}
+          <div className="flex items-center gap-2">
+            <button
+              aria-label={backLabel}
+              title={backLabel}
+              onClick={onBack}
+              className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded border border-[#2E2E36] bg-[#151518]/90 text-[#A6A6AF] backdrop-blur hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden="true">
+                <path d="M14.7 5.1 7.8 12l6.9 6.9 1.7-1.7L11.2 12l5.2-5.2z" />
+              </svg>
+            </button>
+            {onRestart && (
+              <button onClick={onRestart} className={`${chromeBtn} h-11 font-bold text-[#FFD37F] border-[#FFD37F] hover:bg-[#2B2B32]`}>
+                Restart run
+              </button>
+            )}
+          </div>
         </div>
         <div
           role="group"

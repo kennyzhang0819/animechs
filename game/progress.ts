@@ -132,6 +132,14 @@ export interface Progress {
    */
   effects?: boolean;
   /**
+   * The in-game HUD's size, as the --ui-scale multiplier (see globals.css)
+   * — Settings → Interface. A preference about the eyes and the device,
+   * kept across sessions like `effects` is. Absent means the shipped
+   * default (UI_SCALE_DEFAULT); only a value from UI_SCALES is ever
+   * stored, so a hand-edited save cannot draw the HUD at 0.01x.
+   */
+  uiScale?: number;
+  /**
    * The build bar's loadout: which turrets ride in its slots. A SET in
    * effect — the bar always renders in the roster's canonical order
    * (BY_MINDUSTRY_VALUE in tech.ts), whatever order this holds. The bar
@@ -435,6 +443,21 @@ function readSpeed(p: { speed?: unknown }): number | undefined {
 }
 
 /**
+ * The HUD sizes Settings offers, smallest first. These are the only values
+ * a save may hold (see readUiScale) — the setting is a picker, not a dial,
+ * so every size shown is one that was actually laid out and checked.
+ */
+export const UI_SCALES = [0.75, 0.85, 1, 1.15] as const;
+export const UI_SCALE_DEFAULT = 0.85;
+
+/** the remembered HUD size; anything not in UI_SCALES reads as never set */
+function readUiScale(p: { uiScale?: unknown }): number | undefined {
+  return typeof p.uiScale === "number" && (UI_SCALES as readonly number[]).includes(p.uiScale)
+    ? p.uiScale
+    : undefined;
+}
+
+/**
  * A node's ceiling, as the save loader needs it: a hand-edited or
  * stale save must not be able to claim four points of "2x speed".
  */
@@ -510,6 +533,7 @@ export function loadProgress(): Progress {
       hudMinimized: p.hudMinimized === true,
       // absent means ON — only an explicit false switches them off
       effects: p.effects !== false,
+      uiScale: readUiScale(p),
       loadout: readLoadout(p),
       techOff: readTechOff(p),
       unlocked,
@@ -789,6 +813,14 @@ export function saveEffects(on: boolean): void {
   const p = loadProgress();
   if ((p.effects ?? true) === on) return;
   saveProgress({ ...p, effects: on });
+}
+
+/** persist the HUD size picked in Settings → Interface — see Progress.uiScale */
+export function saveUiScale(scale: number): void {
+  if (!(UI_SCALES as readonly number[]).includes(scale)) return;
+  const p = loadProgress();
+  if ((p.uiScale ?? UI_SCALE_DEFAULT) === scale) return;
+  saveProgress({ ...p, uiScale: scale });
 }
 
 /**

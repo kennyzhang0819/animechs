@@ -51,9 +51,9 @@
 	<array>
 		<string>armv7</string>
 	</array>
+	<!-- phones play landscape only; the iPad list below keeps portrait -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
-		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>

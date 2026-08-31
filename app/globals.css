@@ -14,6 +14,27 @@
   --safe-r: env(safe-area-inset-right, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
+  /* How big the in-game HUD draws, as one multiplier. The default is
+     deliberately UNDER 1 — the panels were sized on a desktop and read
+     oversized against a phone's sliver of map — and the player sets their
+     own in Settings → Interface (Progress.uiScale, applied onto the root
+     by MechSwarm). Panels opt in with .ui-zoom; `zoom` is used rather
+     than transform because it reflows layout, so a scaled panel keeps its
+     anchor edge and its neighbours instead of overlapping them. */
+  --ui-scale: 0.85;
+}
+
+.ui-zoom {
+  zoom: var(--ui-scale);
+}
+
+/* THE ROTATE GATE (see app/layout.tsx). Shown only where all three hold:
+   portrait, a coarse pointer, and phone-narrow — 700px keeps every phone in
+   and the smallest iPad (744px logical) out. Everything else never sees it. */
+@media (orientation: portrait) and (pointer: coarse) and (max-width: 700px) {
+  .rotate-gate {
+    display: flex;
+  }
 }
 
 /* ---- dark scrollbars ---- */

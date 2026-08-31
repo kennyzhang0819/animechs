@@ -49,6 +49,9 @@ import {
   lockEverything,
   resetProgress,
   saveEffects,
+  saveUiScale,
+  UI_SCALE_DEFAULT,
+  UI_SCALES,
   saveHudMinimized,
   unlockEverything,
   layoutFor,
@@ -693,6 +696,13 @@ export default function MechSwarm() {
    */
   const [loadout, setLoadout] = useState<readonly TowerKind[] | null>(null);
   const [loadoutOpen, setLoadoutOpen] = useState(false);
+  /**
+   * The HUD size — a saved preference (Progress.uiScale) like `effects`.
+   * Which settings panel is up is NOT saved: settings always opens on the
+   * first tab the way every other screen opens at its top.
+   */
+  const [uiScale, setUiScale] = useState(UI_SCALE_DEFAULT);
+  const [settingsTab, setSettingsTab] = useState<"general" | "interface">("general");
 
   useEffect(() => {
     const p = loadProgress();
@@ -701,7 +711,19 @@ export default function MechSwarm() {
     setHudMin(p.hudMinimized ?? false);
     setEffects(p.effects ?? true);
     setLoadout(p.loadout ?? null);
+    setUiScale(p.uiScale ?? UI_SCALE_DEFAULT);
   }, []);
+
+  /**
+   * The one place the preference becomes pixels: --ui-scale on the root,
+   * which every .ui-zoom panel reads (globals.css). Set as a side effect
+   * rather than inline on a wrapper so the game screen's absolutely-placed
+   * panels can each opt in at their own root — one scaled wrapper around
+   * all of them would scale the canvas coordinate space too.
+   */
+  useEffect(() => {
+    document.documentElement.style.setProperty("--ui-scale", String(uiScale));
+  }, [uiScale]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -1039,6 +1061,178 @@ export default function MechSwarm() {
     setHud(g.ui());
   };
 
+  /**
+   * THE SETTINGS KNOBS, shared by the menu's Settings screen and the
+   * in-game pause overlay — one panel, so a knob turned mid-run is the
+   * same knob the menu shows, already in its new position. Every one of
+   * them writes the save the moment it is touched (saveEffects,
+   * saveUiScale, …), which is what makes them stick across sessions.
+   *
+   * `inGame` drops the two save-surgery rows (full unlock, reset): both
+   * rebuild progress state under a run that is still holding the old one.
+   */
+  const settingsPanel = (inGame: boolean) => (
+    <>
+      <div
+        role="tablist"
+        aria-label="settings sections"
+        className="flex overflow-hidden rounded border border-[#2E2E36] bg-[#151518]"
+      >
+        {(
+          [
+            ["general", "General"],
+            ["interface", "Interface"],
+          ] as const
+        ).map(([tab, label]) => (
+          <button
+            key={tab}
+            role="tab"
+            aria-selected={settingsTab === tab}
+            onClick={() => setSettingsTab(tab)}
+            className={`px-5 py-2 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#FFD37F] ${
+              settingsTab === tab
+                ? "bg-[#222227] text-[#FFD37F]"
+                : "text-[#71717C] hover:text-[#A6A6AF]"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {settingsTab === "interface" && (
+        <div className="flex w-full max-w-[30rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded border border-[#2E2E36] bg-[#151518] px-4 py-3">
+          <div className="text-[13px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+            UI size
+          </div>
+          <div
+            role="group"
+            aria-label="UI size"
+            className="flex overflow-hidden rounded border border-[#2E2E36]"
+          >
+            {(
+              [
+                [UI_SCALES[0], "Compact"],
+                [UI_SCALES[1], "Default"],
+                [UI_SCALES[2], "Large"],
+                [UI_SCALES[3], "XL"],
+              ] as const
+            ).map(([scale, label]) => (
+              <button
+                key={scale}
+                aria-pressed={uiScale === scale}
+                onClick={() => {
+                  setUiScale(scale);
+                  saveUiScale(scale); // remembered across sessions
+                }}
+                className={`px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#FFD37F] ${
+                  uiScale === scale
+                    ? "bg-[#222227] text-[#FFD37F]"
+                    : "text-[#71717C] hover:bg-[#222227]/60 hover:text-[#A6A6AF]"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {settingsTab === "general" && (
+        <>
+          {/* every turret still shows its shot with effects off (see
+              Sim.setEffects) — what goes is the dressing around it */}
+          <div className="flex w-full max-w-[30rem] items-center justify-between gap-4 rounded border border-[#2E2E36] bg-[#151518] px-4 py-3">
+            <div className="min-w-0">
+              <div className="text-[13px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+                Effects
+              </div>
+              <div className="text-[12px] text-[#71717C]">Turn off to improve framerate</div>
+            </div>
+            <button
+              aria-pressed={effects}
+              onClick={() => {
+                const next = !effects;
+                setEffects(next);
+                saveEffects(next); // a preference about the device
+                // live: a run under way takes it on the next frame
+                gameRef.current?.setEffects(next);
+              }}
+              className={`w-16 shrink-0 rounded border px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+                effects
+                  ? "border-[#FFD37F] bg-[#222227] text-[#FFD37F] hover:bg-[#2B2B32]"
+                  : "border-[#2E2E36] bg-[#151518] text-[#71717C] hover:border-[#4A4A55] hover:text-[#A6A6AF]"
+              }`}
+            >
+              {effects ? "On" : "Off"}
+            </button>
+          </div>
+
+          {/* THE DOOR, ONCE IT IS OPEN (see `taps`): shown only on a save
+              that has used the back door — a save that went through it must
+              never be stuck there. Nothing destructive: the grant was never
+              written to the save (Progress.unlocked), so switching it off
+              returns the campaign underneath untouched */}
+          {!inGame && progress && isUnlocked(progress) && (
+            <div className="flex w-full max-w-[30rem] items-center justify-between gap-4 rounded border border-[#3A5A3F] bg-[#151518] px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-[13px] font-bold uppercase tracking-widest text-[#7BE58A]">
+                  Full unlock
+                </div>
+                <div className="text-[12px] text-[#71717C]">
+                  Every tech node reads as owned
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  const p = lockEverything();
+                  setProgress(p);
+                  setTier(topTier(p, worldId));
+                  // the bar's curation may name turrets that only the
+                  // grant was standing up; leave it filtering against
+                  // a roster the save no longer owns and the bar comes
+                  // back empty
+                  setLoadout(p.loadout ?? null);
+                }}
+                className="shrink-0 rounded border border-[#2E2E36] bg-[#222227] px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest text-[#A6A6AF] hover:border-[#7BE58A] hover:text-[#7BE58A] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#7BE58A]"
+              >
+                Disable
+              </button>
+            </div>
+          )}
+
+          {!inGame && (
+            <div className="flex w-full max-w-[30rem] items-center justify-between gap-4 rounded border border-[#2E2E36] bg-[#151518] px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-[13px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+                  Reset save
+                </div>
+                <div className="text-[12px] text-[#71717C]">Wipes all progress — no undo</div>
+              </div>
+              <button
+                onClick={() => {
+                  if (window.confirm("Wipe all progress - resources, tech, and cleared tiers?")) {
+                    resetProgress();
+                    const p = loadProgress();
+                    setProgress(p);
+                    setTier(topTier(p, worldId));
+                    // the curated bar was part of the progress just
+                    // wiped. Left standing it would filter the fresh
+                    // save's build bar against turrets it no longer owns
+                    setLoadout(null);
+                  }
+                }}
+                className="shrink-0 rounded border border-[#5A2A2A] bg-[#221718] px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest text-[#FF8A8A] hover:border-[#FF5A5A] hover:text-[#FF5A5A] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF5A5A]"
+              >
+                Wipe
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+
   if (webglError) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-[#101013]">
@@ -1058,8 +1252,11 @@ export default function MechSwarm() {
           // loadout (see buyTech) — keep the bar's mirror of the save honest
           setLoadout(p.loadout ?? null);
         }}
-        onBack={leaveTech}
-        backLabel={techFrom === "game" ? "◂ Restart run" : undefined}
+        // after a battle the two exits split: back leaves to the menu,
+        // Restart (the labelled button beside it) re-runs with the tech
+        // just bought. From the menu there is only the one way out.
+        onBack={techFrom === "game" ? backToMenu : leaveTech}
+        onRestart={techFrom === "game" ? leaveTech : undefined}
       />
     );
   }
@@ -1087,32 +1284,67 @@ export default function MechSwarm() {
         </button>
       </div>
     );
+    /**
+     * THE ONE BACK BUTTON: icon only, big, pinned to the top-left of the
+     * viewport — the same spot on every screen that has somewhere to go
+     * back to, so the thumb never hunts for it. The label survives as the
+     * accessible name.
+     */
     const back = (label: string, to: "home" | "maps") => (
       <button
+        aria-label={label}
+        title={label}
         onClick={() => {
           // a half-finished back-door gesture does not survive the screen
           setTaps(0);
           setMenuView(to);
         }}
-        className="text-[13px] uppercase tracking-widest text-[#71717C] underline-offset-2 hover:text-[#EDEDEF] hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+        className="ui-zoom fixed left-[max(1rem,var(--safe-l))] top-[max(1rem,var(--safe-t))] z-20 flex h-11 w-11 items-center justify-center rounded border border-[#2E2E36] bg-[#151518]/80 text-[#A6A6AF] backdrop-blur hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
       >
-        &#9666; {label}
+        <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden="true">
+          <path d="M14.7 5.1 7.8 12l6.9 6.9 1.7-1.7L11.2 12l5.2-5.2z" />
+        </svg>
       </button>
     );
     const badge = MAP_BADGE[world.badge ?? "beginner"];
 
     return (
-      <div className="fixed inset-0 overflow-y-auto bg-[#101013]">
-        <div className="mx-auto flex min-h-full max-w-5xl flex-col items-center justify-center gap-8 py-12 pl-[max(1.5rem,var(--safe-l))] pr-[max(1.5rem,var(--safe-r))] sm:py-16">
+      // the title card is a SCREEN, not a page — nothing on it overflows,
+      // so it must never bounce or scroll under a finger. The deeper menu
+      // views hold lists and do scroll.
+      <div
+        className={`fixed inset-0 bg-[#101013] ${
+          menuView === "home" ? "overflow-hidden" : "overflow-y-auto"
+        }`}
+      >
+        {/* ui-zoom off the title card: the hero screen is composed at one
+            size; the working menus scale with the UI-size knob, which is
+            also what makes the knob's effect visible where it lives */}
+        <div
+          className={`mx-auto flex min-h-full max-w-5xl flex-col items-center justify-center gap-8 py-12 pl-[max(1.5rem,var(--safe-l))] pr-[max(1.5rem,var(--safe-r))] sm:py-16 ${
+            menuView === "home" ? "" : "ui-zoom"
+          }`}
+        >
           {/* THE TITLE CARD. A name and two doors - nothing here describes a
               run, because no run has been chosen yet */}
           {menuView === "home" && (
             <>
               <div className="text-center">
-                <h1 className="text-3xl font-bold uppercase tracking-[0.2em] text-[#EDEDEF] sm:text-4xl sm:tracking-[0.35em]">
-                  Mech<br />
-                  <span className="text-[#FFD37F]">Swarm</span>
+                {/* the display face (Chakra Petch) is the techy one — the
+                    body face is what makes the working UI read as terminal
+                    text, and a title set in it read as more of the same.
+                    The name is one word: it is the COLOUR that splits MECH
+                    from SWARM, not a space or a line break. */}
+                <p className="mb-2 text-[11px] uppercase tracking-[0.6em] text-[#71717C]">
+                  Swarm defense
+                </p>
+                <h1 className="font-display text-5xl font-bold uppercase tracking-[0.08em] sm:text-6xl">
+                  <span className="text-[#EDEDEF]">Mech</span>
+                  <span className="text-[#FFD37F] [text-shadow:0_0_28px_rgba(255,211,127,0.4)]">
+                    Swarm
+                  </span>
                 </h1>
+                <div className="mx-auto mt-3 h-px w-40 bg-gradient-to-r from-transparent via-[#FFD37F]/60 to-transparent sm:w-56" />
               </div>
               <div className="flex w-full max-w-[20rem] flex-col gap-3">
                 <button
@@ -1128,16 +1360,10 @@ export default function MechSwarm() {
                   Settings
                 </button>
               </div>
+              {/* the inspiration credit moved to Settings — the hero screen
+                  carries the game's own name and nothing else's */}
               <p className="text-center text-[13px] uppercase tracking-widest text-[#71717C]">
-                A personal project by Zerkka &mdash; all units, art, and inspiration come from{" "}
-                <a
-                  href="https://mindustrygame.github.io/"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[#A6A6AF] underline decoration-[#4A4A55] underline-offset-2 hover:text-[#EDEDEF]"
-                >
-                  Mindustry
-                </a>
+                A game by Zerkka
               </p>
             </>
           )}
@@ -1180,113 +1406,20 @@ export default function MechSwarm() {
                 </p>
               )}
 
-              {/* THE DOOR, ONCE IT IS OPEN. It appears only on a save that
-                  has actually used it, so it stays invisible to a player
-                  who has never found the gesture — but a save that HAS
-                  gone through it must never be stuck there, and a hidden
-                  way back would be a worse secret than no way back at
-                  all. Nothing here is destructive: the grant was never
-                  written to the save (Progress.unlocked), so switching it
-                  off returns the campaign underneath untouched */}
-              {progress && isUnlocked(progress) && (
-                <div className="w-full max-w-[30rem] rounded border border-[#3A5A3F] bg-[#151518] p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <div className="text-[14px] font-bold uppercase tracking-widest text-[#7BE58A]">
-                        Full unlock — on
-                      </div>
-                      <p className="mt-1 text-[13px] leading-snug text-[#A6A6AF]">
-                        Every node in the tree reads as owned. Switching it off gives
-                        back the tech you actually bought — nothing you earned is
-                        lost either way.
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => {
-                        const p = lockEverything();
-                        setProgress(p);
-                        setTier(topTier(p, worldId));
-                        // the bar's curation may name turrets that only the
-                        // grant was standing up; leave it filtering against
-                        // a roster the save no longer owns and the bar comes
-                        // back empty
-                        setLoadout(p.loadout ?? null);
-                      }}
-                      className="shrink-0 rounded border border-[#2E2E36] bg-[#222227] px-4 py-2 text-[13px] font-bold uppercase tracking-widest text-[#A6A6AF] hover:border-[#7BE58A] hover:text-[#7BE58A] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#7BE58A]"
-                    >
-                      Disable
-                    </button>
-                  </div>
-                </div>
-              )}
-              {/* THE EFFECTS SWITCH. A performance control, and the only
-                  one the game offers — so it says what it costs and what
-                  it does not, in those terms. Every turret still shows its
-                  attack with this off (see Sim.setEffects): what goes is
-                  the dressing around it */}
-              <div className="w-full max-w-[30rem] rounded border border-[#2E2E36] bg-[#151518] p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <div className="text-[14px] font-bold uppercase tracking-widest text-[#EDEDEF]">
-                      Effects — {effects ? "on" : "off"}
-                    </div>
-                    <p className="mt-1 text-[13px] leading-snug text-[#A6A6AF]">
-                      Explosions, smoke, sparks, dust and shadows. Turning them off
-                      is the biggest thing you can do for the frame rate on a phone
-                      or tablet. Every turret still shows its shot.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      const next = !effects;
-                      setEffects(next);
-                      saveEffects(next); // a preference about the device
-                      // live: a run under way takes it on the next frame
-                      gameRef.current?.setEffects(next);
-                    }}
-                    className={
-                      "shrink-0 rounded border px-4 py-2 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 " +
-                      (effects
-                        ? "border-[#2E2E36] bg-[#222227] text-[#A6A6AF] hover:border-[#FFD37F] hover:text-[#FFD37F] focus-visible:outline-[#FFD37F]"
-                        : "border-[#FFD37F] bg-[#222227] text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-[#FFD37F]")
-                    }
-                  >
-                    {effects ? "Turn off" : "Turn on"}
-                  </button>
-                </div>
-              </div>
-              <div className="w-full max-w-[30rem] rounded border border-[#2E2E36] bg-[#151518] p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <div className="text-[14px] font-bold uppercase tracking-widest text-[#EDEDEF]">
-                      Reset save
-                    </div>
-                    <p className="mt-1 text-[13px] leading-snug text-[#A6A6AF]">
-                      Wipes resources, tech, and every cleared difficulty on every
-                      map. There is no undo.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      if (
-                        window.confirm("Wipe all progress - resources, tech, and cleared tiers?")
-                      ) {
-                        resetProgress();
-                        const p = loadProgress();
-                        setProgress(p);
-                        setTier(topTier(p, worldId));
-                        // the curated bar was part of the progress just
-                        // wiped. Left standing it would filter the fresh
-                        // save's build bar against turrets it no longer owns
-                        setLoadout(null);
-                      }
-                    }}
-                    className="shrink-0 rounded border border-[#5A2A2A] bg-[#221718] px-4 py-2 text-[13px] font-bold uppercase tracking-widest text-[#FF8A8A] hover:border-[#FF5A5A] hover:text-[#FF5A5A] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF5A5A]"
-                  >
-                    Wipe
-                  </button>
-                </div>
-              </div>
+              {settingsPanel(false)}
+              {/* the inspiration credit lives here rather than on the title
+                  card — the hero screen carries the game's own name only */}
+              <p className="text-[12px] uppercase tracking-widest text-[#71717C]">
+                Inspired by{" "}
+                <a
+                  href="https://mindustrygame.github.io/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[#A6A6AF] underline decoration-[#4A4A55] underline-offset-2 hover:text-[#EDEDEF]"
+                >
+                  Mindustry
+                </a>
+              </p>
               {back("Back", "home")}
             </>
           )}
@@ -1393,7 +1526,7 @@ export default function MechSwarm() {
             by spawn id so a bar never trades places with its neighbour.
             pointer-events-none: it is a readout, never a control */}
         {hud && hud.bosses.length > 0 && (
-          <div className="pointer-events-none absolute left-1/2 top-[calc(0.75rem+var(--safe-t))] z-10 flex w-[min(40vw,22rem)] -translate-x-1/2 flex-col gap-1.5">
+          <div className="ui-zoom pointer-events-none absolute left-1/2 top-[calc(0.75rem+var(--safe-t))] z-10 flex w-[min(40vw,22rem)] -translate-x-1/2 flex-col gap-1.5">
             {hud.bosses.map((b) => (
               <div key={b.id}>
                 <div className="mb-0.5 text-center text-[10px] font-bold uppercase tracking-widest text-[#F25555] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
@@ -1414,7 +1547,7 @@ export default function MechSwarm() {
             lines up under it. Everything inside wraps rather than widening
             it */}
         {hud && (
-          <div className="absolute left-[calc(1rem+var(--safe-l))] top-[calc(1rem+var(--safe-t))] flex w-80 max-w-[calc(100vw-8rem-var(--safe-l)-var(--safe-r))] flex-col items-stretch gap-2">
+          <div className="ui-zoom absolute left-[calc(1rem+var(--safe-l))] top-[calc(1rem+var(--safe-t))] flex w-80 max-w-[calc(100vw-8rem-var(--safe-l)-var(--safe-r))] flex-col items-stretch gap-2">
             <div className="w-full rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
               {/* the wave counter is what a run is read off, so the line
                   carries that and the difficulty and nothing else — the level
@@ -1561,7 +1694,7 @@ export default function MechSwarm() {
           <div
             role="group"
             aria-label="view and menu"
-            className="absolute right-[calc(1rem+var(--safe-r))] top-[calc(1rem+var(--safe-t))] flex items-start gap-2"
+            className="ui-zoom absolute right-[calc(1rem+var(--safe-r))] top-[calc(1rem+var(--safe-t))] flex items-start gap-2"
           >
             {/* the swarm's entry points, and the lines flyers fly out of
                 them. Walkers read off the terrain — flyers ignore it, so
@@ -1614,7 +1747,7 @@ export default function MechSwarm() {
           <div
             role="group"
             aria-label="tower menu"
-            className="pointer-events-auto mx-auto flex w-max gap-2"
+            className="ui-zoom pointer-events-auto mx-auto flex w-max gap-2"
           >
             {/* the loadout, in the canonical roster order: the turrets this
                 save PICKED to ride the bar (see barKinds), not everything it
@@ -1715,7 +1848,7 @@ export default function MechSwarm() {
             rest dim out until something is removed — and the count badge
             is the one number that explains both states */}
         {hud && hud.barSlots !== null && loadoutOpen && (
-          <div className="absolute bottom-[calc(6.25rem+var(--safe-b))] left-1/2 z-10 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded border border-[#2E2E36] bg-[#151518]/95 p-3 backdrop-blur">
+          <div className="ui-zoom absolute bottom-[calc(6.25rem+var(--safe-b))] left-1/2 z-10 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded border border-[#2E2E36] bg-[#151518]/95 p-3 backdrop-blur">
             {(() => {
               const bar = barKinds();
               const full = bar.length >= (hud.barSlots ?? 0);
@@ -1780,7 +1913,7 @@ export default function MechSwarm() {
         )}
         {hud?.lost && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="w-80 max-w-[calc(100vw-2rem)] rounded border border-[#3A2430] bg-[#151518]/95 p-6 text-center">
+            <div className="ui-zoom w-80 max-w-[calc(100vw-2rem)] rounded border border-[#3A2430] bg-[#151518]/95 p-6 text-center">
               <div className="text-xl font-bold uppercase tracking-widest text-[#FF5A5A]">
                 Core destroyed
               </div>
@@ -1836,7 +1969,7 @@ export default function MechSwarm() {
         )}
         {hud?.won && !hud.lost && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="w-80 max-w-[calc(100vw-2rem)] rounded border border-[#1F3A2E] bg-[#151518]/95 p-6 text-center">
+            <div className="ui-zoom w-80 max-w-[calc(100vw-2rem)] rounded border border-[#1F3A2E] bg-[#151518]/95 p-6 text-center">
               <div className="text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
                 <span style={{ color: difficultyColor(hud.tier) }}>
                   {difficultyName(hud.tier)}
@@ -1895,13 +2028,18 @@ export default function MechSwarm() {
             </div>
           </div>
         )}
+        {/* THE PAUSE SHEET. Opening it holds the sim (Game.openMenu), so
+            its heading says what the run is doing — and it carries the
+            same settings panel the menu shows, because the moment a phone
+            needs the effects switch is mid-run, when the framerate dips */}
         {hud?.menuOpen && !hud.lost && !hud.won && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="w-72 max-w-[calc(100vw-2rem)] rounded border border-[#2E2E36] bg-[#151518]/95 p-6 text-center">
-              <div className="text-xl font-bold uppercase tracking-widest text-[#EDEDEF]">
-                Game menu
+            <div className="ui-zoom flex max-h-[calc(100vh-2rem)] w-[30rem] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 overflow-y-auto rounded border border-[#2E2E36] bg-[#151518]/95 p-6">
+              <div className="text-xl font-bold uppercase tracking-widest text-[#E8B45B]">
+                Paused
               </div>
-              <div className="mt-6 flex flex-col gap-3">
+              {settingsPanel(true)}
+              <div className="flex justify-center gap-3 pt-1">
                 <button
                   onClick={() => {
                     const g = gameRef.current;
