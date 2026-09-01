@@ -29,7 +29,7 @@ import {
   rungColor,
   rungLabel,
   SLIDE_STEP,
-  targetDropRatio,
+  targetShare,
   tierDropBonus,
   TOP_TIER,
   waveGuide,
@@ -568,7 +568,7 @@ export default function LevelEditorView({
                 <div className="space-y-0.5">
                   {ITEM_KINDS.map((k, i) => {
                     const got = report.rows[0]?.dropRatio[i] ?? 0;
-                    const want = targetDropRatio(level.id)[i] ?? 0;
+                    const want = targetShare(level.id, k);
                     if (got <= 0 && want <= 0) return null;
                     // both sides are normalised to their own biggest
                     // column, so the top currency reads 100 either way and

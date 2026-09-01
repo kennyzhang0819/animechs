@@ -71,6 +71,15 @@ export interface Progress {
    */
   tech: TechLevels;
   /**
+   * WHICH SAVE FORMAT THIS FILE WAS WRITTEN IN — see SAVE_VERSION.
+   *
+   * Absent means "written before the format was versioned", which is the
+   * only state in which the shape-sniffing migrations below may run. It is
+   * stamped by saveProgress on every write, so a save touched once by this
+   * build can never be mistaken for an ancient one again.
+   */
+  saveVersion?: number;
+  /**
    * Boss trophies already collected, as "<worldId>:<tier>:<kind>" keys.
    * A boss's FIRST kill on each world+rung pays one surge alloy and
    * writes its key here so the same boss can never pay twice (see
@@ -228,6 +237,28 @@ export interface TowerPlacement {
 const KEY = "mechswarm.progress.v1";
 
 /**
+ * THE SAVE FORMAT'S VERSION, stamped on every write.
+ *
+ * It exists to kill a whole CLASS of bug rather than any one bug: the
+ * migrations below used to identify an old save by SNIFFING FOR A KEY, and
+ * a key sniff is a bet that the key will never mean anything else. That bet
+ * was already lost. `readBank` read `"scrap" in bank` as "this save predates
+ * the currency shift" — and scrap is a Mindustry item with a sprite already
+ * vendored, so the day it becomes an ItemKind (see ITEM_KINDS in items.ts)
+ * every save holding one would have had its whole wallet silently shifted a
+ * step: copper read as titanium, titanium as thorium. Unrecoverable, and
+ * invisible until a player noticed their bank was wrong.
+ *
+ * So: a save with NO version is older than this line and may be sniffed,
+ * exactly as it always was — those saves are fixed, they cannot grow new
+ * keys, and the sniffs are still right about them. A save WITH a version is
+ * never sniffed again. Bump this only when the format changes in a way a
+ * loader must branch on, and gate the branch on the number rather than on
+ * the shape.
+ */
+const SAVE_VERSION = 1;
+
+/**
  * The key the save lived under when the game was called "Sir, We Have a
  * Dagger Problem". A browser that played it still holds a campaign there,
  * so the loader falls back to it and the next save writes the campaign
@@ -362,27 +393,37 @@ const LEGACY_ITEM_SHIFT: Record<string, ItemKind> = {
 /**
  * Pull the wallet out of a raw save.
  *
- * Two migrations run here. Pre-currency saves stored a single `scrap` number
- * and no bank at all. Saves from before the currency shift hold balances
- * under the old names, which are moved up a step rather than dropped —
- * silently zeroing a returning player's bank is worse than any inaccuracy in
- * the conversion. Anything missing or malformed reads as empty, not NaN.
+ * Two migrations run here, and BOTH ARE GATED ON THE SAVE BEING UNVERSIONED
+ * (see SAVE_VERSION). Pre-currency saves stored a single `scrap` number and
+ * no bank at all. Saves from before the currency shift hold balances under
+ * the old names, which are moved up a step rather than dropped — silently
+ * zeroing a returning player's bank is worse than any inaccuracy in the
+ * conversion. Anything missing or malformed reads as empty, not NaN.
+ *
+ * A NEW CURRENCY IS NOT A MIGRATION. The wallet starts from emptyBank() and
+ * only copies names it recognises, so a save written before an ItemKind
+ * existed simply has no key for it and reads zero. That is what makes the
+ * currency list cheap to grow — the expensive part was never the save, it
+ * was the hand-authored tables that index the list (see items.ts).
  */
-function readBank(p: { bank?: unknown; scrap?: unknown }): Bank {
+function readBank(p: { bank?: unknown; scrap?: unknown; saveVersion?: unknown }): Bank {
   const bank = emptyBank();
+  // an unversioned save is older than SAVE_VERSION and fixed in shape, so
+  // the sniffs below are still true of it; a versioned one is never sniffed
+  const legacy = typeof p.saveVersion !== "number";
   const raw = p.bank && typeof p.bank === "object" ? (p.bank as Record<string, unknown>) : null;
   if (raw) {
     // A PRE-SHIFT SAVE IS IDENTIFIED BY ITS SCRAP KEY, and the whole wallet
     // has to move together. Deciding per name instead would leave a pre-shift
     // save's copper sitting in copper — where it now means a currency one
     // step cheaper than the one it was earned as.
-    const preShift = "scrap" in raw;
+    const preShift = legacy && "scrap" in raw;
     for (const [k, v] of Object.entries(raw)) {
       if (typeof v !== "number" || v <= 0) continue;
       const item = preShift ? LEGACY_ITEM_SHIFT[k] : (k as ItemKind);
       if (item && item in bank) bank[item] += Math.floor(v);
     }
-  } else if (typeof p.scrap === "number" && p.scrap > 0) {
+  } else if (legacy && typeof p.scrap === "number" && p.scrap > 0) {
     bank[LEGACY_ITEM_SHIFT.scrap] = Math.floor(p.scrap); // legacy single-currency save
   }
   return bank;
@@ -801,6 +842,9 @@ export function saveProgress(p: Progress): void {
   try {
     const { techBought, ...rest } = p;
     const out: Progress = techBought ? { ...rest, tech: techBought } : rest;
+    // stamped on EVERY write, not just on new saves: one touch by this build
+    // is what takes an old file out of reach of the shape sniffs for good
+    out.saveVersion = SAVE_VERSION;
     localStorage.setItem(KEY, JSON.stringify(out));
   } catch {
     // private windows / blocked storage: the run still plays, nothing sticks

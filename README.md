@@ -258,11 +258,13 @@ else:
   source of every currency in the game. `check()` asserts items-per-second
   comes out flat across the tiers.
 - **The currency mix must track the tree, per map.** `TARGET_DROP_RATIO`
-  has a row per world, normalised to that world's own biggest column:
-  Confluence 100 : 80 on copper : titanium, Maelstrom 53 : 40 : 100 on
-  thorium : plastanium : phase. Drift far from it and one currency becomes
-  the only real constraint. What moves a row is which FAMILIES the world's
-  transforms send, which is what makes a map's economy authorable at all.
+  has a row per world naming only the currencies that world pays,
+  normalised to its own largest share: Confluence `{copper: 100,
+  titanium: 80}`, Maelstrom `{thorium: 53, plastanium: 40, phase: 100}`.
+  Drift far from it and one currency becomes the only real constraint. What
+  moves a row is which FAMILIES the world's transforms send, which is what
+  makes a map's economy authorable at all. A currency the row omits but the
+  waves pay is itself a finding, so a map cannot quietly grow an economy.
 
 Two more the arithmetic can't see: **air** (hail, scorch, arc, lancer and
 ripple cannot shoot up at all) and **crawler speed** (twice the line's pace,
@@ -317,6 +319,12 @@ __ladder.wave(7, 2)   // what one authored wave costs at a given rung
 - **There is no offline income.** No idle accrual, no "welcome back" bundle;
   every item in the bank was paid for by a run somebody watched. The loot
   curve carries the whole pacing burden, on purpose.
+- **A new currency is not a save migration.** `readBank` starts from an
+  empty wallet and copies only names it recognises, so a save written
+  before an `ItemKind` existed reads it as zero. Saves carry a
+  `saveVersion` (`game/progress.ts`) and the shape-sniffing migrations run
+  only on files older than it — which is what stops a future currency named
+  after a legacy key from silently rewriting old wallets.
 
 Nothing about pricing, turret caps, or the free loadout is derived from the
 wave script. `OPENING_DUOS` (50, plus `OPENING_ARCS`, 5) is a hand-tuned

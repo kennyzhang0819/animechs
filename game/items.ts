@@ -26,31 +26,45 @@
  * (see BASE_ITEM below).
  *
  * ---------------------------------------------------------------------
- * FIVE CURRENCIES IS THE BUDGET, AND IT IS HARD.
+ * WHAT A NEW CURRENCY ACTUALLY COSTS — because the answer moved, and an
+ * earlier version of this note had it wrong in the expensive direction.
  *
- * Adding one costs seven files — this one, tech.ts, ladder.ts, progress.ts,
- * BalanceView.tsx, Items.tsx, MechSwarm.tsx — and then, on top of the code:
+ * It is NOT a save migration. readBank (progress.ts) starts from
+ * emptyBank() and copies only the names it recognises, so a save written
+ * before an ItemKind existed simply has no key for it and reads zero. The
+ * one migration in that file exists because currencies were once RENAMED,
+ * which is a different thing entirely.
  *
- *   - `Bank` is Record<ItemKind, number> and is PERSISTED TO LOCALSTORAGE,
- *     so a new currency is a save migration every time. There is already
- *     one to look at (LEGACY_ITEM_SHIFT in progress.ts).
- *   - a hand-authored column in EVERY world's TARGET_DROP_RATIO row.
- *   - an icon and an accent colour in ITEM_INFO, below.
- *   - a pass over all twenty-four price bundles in tech.ts to decide which
- *     nodes want it, since a bundle that ignores it makes it unspendable
- *     and a bundle that leans on it makes it the only gate.
+ * It is NOT new art. Twenty-two item sprites are already vendored under
+ * public/mindustry/sprites/items/, and eleven liquids beside them.
  *
- * A NEW FAMILY MAPPED ONTO AN EXISTING CURRENCY COSTS TWO ROWS
- * (ITEM_OF_FAMILY in levels.ts). Roughly ten to one. So: families cheap and
- * many, currencies expensive and few. When a new line of enemies needs a
- * home, the answer is almost always an existing currency.
+ * What it does cost, every time:
  *
- * SEASONAL AND EVENT CONTENT NEVER BECOMES AN ItemKind. Not as an
- * exception, not "just this once":
+ *   - a FAMILY to pay it (ITEM_OF_FAMILY in levels.ts). A currency no line
+ *     drops is a currency that cannot be earned, and check() says so.
+ *   - a share in the TARGET_DROP_RATIO row of every world meant to pay it,
+ *     and a decision, for every world, that it is NOT paid there. A map
+ *     pays two or three currencies; that is what makes maps worth
+ *     rotating between, and it does not loosen because the list got longer.
+ *   - a name, an icon and an accent colour in ITEM_INFO below.
+ *   - a pass over the price bundles in tech.ts. A currency no node charges
+ *     is unspendable, and one every node charges is the only real gate.
+ *     This is the cost that grows with the LIST rather than with the
+ *     addition, and it is the one to watch: twenty currencies against
+ *     twenty-four nodes means most currencies appear in about one bundle,
+ *     which is not enough surface for a price to mean anything.
  *
- *   1. it is a permanent save migration for a currency that drops one
- *      month a year,
- *   2. it is a dead column in the bank the other eleven,
+ * So the shape of the advice stands even though the number moved: a family
+ * mapped onto an EXISTING currency is two rows and cannot be got wrong,
+ * where a new currency is a decision in every world and every price. Add
+ * currencies deliberately and in service of a map that needs one; do not
+ * add them to have more.
+ *
+ * SEASONAL AND EVENT CONTENT STILL NEVER BECOMES AN ItemKind, and that one
+ * is not a budget question at all, so a longer list does not touch it:
+ *
+ *   1. it is a permanent column for a currency that drops one month a year,
+ *   2. it is dead UI in the bank the other eleven,
  *   3. and if it buys anything on the tech tree, a player who missed the
  *      event is PERMANENTLY behind — FOMO on power, which is the bad kind.
  *
@@ -104,7 +118,14 @@ export type ItemKind = (typeof ITEM_KINDS)[number];
  */
 export const BASE_ITEM: ItemKind = ITEM_KINDS[0];
 
-/** a sparse bundle of items: a drop, a price, or a run's takings */
+/**
+ * A sparse map from currency to number, naming only the currencies it has
+ * something to say about: a drop, a price, a run's takings — and a world's
+ * authored payout MIX (TARGET_DROP_RATIO in ladder.ts), where the numbers
+ * are shares rather than quantities. Sparse is the point in every case: it
+ * is what keeps a two-currency map's row two entries long however many
+ * currencies the game grows to.
+ */
 export type Cost = Partial<Record<ItemKind, number>>;
 
 /** a full wallet — every currency, zero included (the save's bank) */

@@ -934,13 +934,14 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
  * mapping is many-to-one and a new row can share a currency that already
  * exists.
  *
- * A THEMED MAP USUALLY NEEDS NO NEW ROW AT ALL, and reaching for one is the
- * mistake to avoid. Transforms already re-cast whole lines, so a winter
- * world is "the ground line arrives as ice-walkers here" — a sprite set and
- * some stat tweaks, no new UnitKind, no new family, no economy change. There
- * are thirty-one units across seven rows already. Spend a new row on
- * genuinely new BEHAVIOUR: the two water lines earned theirs because they
- * need a map with water in it to field at all.
+ * A RE-SKINNED MAP NEEDS NO NEW ROW. Transforms already re-cast whole
+ * lines, so a winter world is "the ground line arrives as ice-walkers here"
+ * — a sprite set and some stat tweaks, no new UnitKind, no new family, no
+ * economy change. Reach for a new row when the units BEHAVE differently,
+ * the way the two water lines do: they earned theirs by needing a map with
+ * water in it to field at all. A row that would field the same way as an
+ * existing one, on the same ground, against the same turrets, is a sprite
+ * sheet wearing a data structure.
  */
 export const UNIT_TREES = [
   { key: "ground", name: "Ground", kinds: ["dagger", "mace", "fortress", "scepter", "reign"] },
@@ -1012,18 +1013,20 @@ const FAMILY_OF = (() => {
  * IT IS MANY-TO-ONE ON PURPOSE, and that is the reason it is a table rather
  * than a derivation. A new family must be able to land on an EXISTING
  * currency: the two water lines share phase fabric because they are a
- * matched pair that only exist on water maps. Families are meant to be
- * cheap and many; currencies expensive and few — a currency costs seven
- * files, a persisted Bank migration, a hand-authored column in every
- * world's TARGET_DROP_RATIO row, an icon and a pass over every price
- * bundle, where a family mapped onto an existing currency costs two lines.
- * FIVE IS THE BUDGET. Hold it.
+ * matched pair that only exist on water maps. That is the cheap move and
+ * it stays cheap however long the currency list grows — two rows, and
+ * nothing else in the game has to be told. A NEW CURRENCY is the expensive
+ * one, and what it costs is written out over ITEM_KINDS in items.ts; the
+ * short version is that it is a decision in every world's drop ratio and
+ * every price bundle, so add one when a map needs it and not to have more.
  *
- * WHICH FAMILY GOT WHICH is not arbitrary either: the STARTER world's two
- * families take the two currencies the early tech tree is priced in (see
- * WORLDS below and TARGET_DROP_RATIO in ladder.ts), because a fresh save
- * can only reach Confluence and must be able to buy its opening arsenal
- * out of what Confluence pays.
+ * WHICH FAMILY GOT WHICH is not arbitrary either: the families the FIRST
+ * OPEN MAPS send must cover the currencies the early tech tree is priced in
+ * (see WORLDS below and TARGET_DROP_RATIO in ladder.ts), because a fresh
+ * save can reach only those maps and has to buy its opening arsenal out of
+ * what they pay. Today that is one map and two currencies; open three maps
+ * at the bottom and it is whatever those three pay between them. check()
+ * enforces the rule rather than the number.
  *
  * The boss row pays NOTHING — null rather than a currency, because a boss's
  * entire payout is the one-time surge trophy (see unitDrop below).

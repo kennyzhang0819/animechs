@@ -202,15 +202,25 @@ const RUNG_COLORS: readonly [number, number, number][] = [
 ];
 
 /**
- * WHAT EACH WORLD SHOULD PAY — ONE ROW PER WORLD, keyed by world id and
- * indexed like ITEM_KINDS, each row normalised so the world's own LARGEST
- * column is 100. Surge alloy has no column at all: no family maps to it, so
- * it never drops from a wave (only a boss's first kill pays one — see
- * grantRunReward in progress.ts).
+ * WHAT EACH WORLD SHOULD PAY — one row per world, keyed by world id, each
+ * row naming ONLY the currencies that world pays and normalised so its own
+ * LARGEST share is 100. A currency a world does not pay is simply absent,
+ * which is also how it is asserted: check() complains if the waves pay a
+ * currency the row omits.
  *
- *                copper  titanium  thorium  plastanium  phase
- *   Confluence      100        80        0           0      0
- *   Maelstrom         0         0       53          40    100
+ *   Confluence   copper 100, titanium 80
+ *   Maelstrom    phase 100, thorium 53, plastanium 40
+ *
+ * IT IS SPARSE AND NAMED RATHER THAN A POSITIONAL ROW, which mattered less
+ * at five currencies than it will at twenty: an array parallel to
+ * ITEM_KINDS makes every world carry a column for every currency in the
+ * game, so a two-currency map reads as eighteen zeroes and adding a
+ * currency means editing a row that has nothing to do with it. Naming the
+ * shares makes a world's row exactly as long as its economy.
+ *
+ * Surge alloy never appears in one: no family maps to it, so it never drops
+ * from a wave (only a boss's first kill pays one — see grantRunReward in
+ * progress.ts).
  *
  * IT IS PER WORLD BECAUSE A WORLD'S CURRENCY MIX IS NOW AUTHORABLE, and
  * that is the whole payoff of family-based drops. It was a 10x5 table
@@ -268,21 +278,28 @@ const RUNG_COLORS: readonly [number, number, number][] = [
  * against the map's area; size it against these rows and let the drop zones
  * throttle what they cannot pass.
  */
-export const TARGET_DROP_RATIO: Readonly<Record<string, readonly number[]>> = {
+export const TARGET_DROP_RATIO: Readonly<Record<string, Cost>> = {
   // Confluence — the ground line and the air line
-  "1": [100, 80, 0, 0, 0],
+  "1": { copper: 100, titanium: 80 },
   // Maelstrom — the crawler line, the support line and the two water lines
-  "2": [0, 0, 53, 40, 100],
+  "2": { thorium: 53, plastanium: 40, "phase-fabric": 100 },
 };
 
 /**
- * The row a world is authored to. A world with no row of its own is a world
- * nobody has decided the economy of yet: it reads as all zeroes, which makes
- * every price unpayable there and shows up in check() rather than silently
- * inheriting somebody else's mix.
+ * The share a world is authored to pay of one currency — 0 for a currency
+ * it is not meant to pay at all.
+ *
+ * A world with no row of its own is a world nobody has decided the economy
+ * of yet: every currency reads 0, which makes every price unpayable there
+ * and shows up in check() rather than silently inheriting somebody else's
+ * mix.
  */
-export const targetDropRatio = (worldId: string): readonly number[] =>
-  TARGET_DROP_RATIO[worldId] ?? ITEM_KINDS.map(() => 0);
+export const targetShare = (worldId: string, item: ItemKind): number =>
+  TARGET_DROP_RATIO[worldId]?.[item] ?? 0;
+
+/** the currencies a world is authored to pay, in ITEM_KINDS order */
+export const targetItems = (worldId: string): ItemKind[] =>
+  ITEM_KINDS.filter((k) => targetShare(worldId, k) > 0);
 
 /** the boss trophy — the one currency no family pays and no wave drops.
  *  Every world fields the boss (the boss family cannot be re-cast), so every
@@ -832,12 +849,7 @@ const payableFrom = (node: TechNodeDef, items: ReadonlySet<ItemKind>): boolean =
  */
 function itemsOfWorlds(ids: readonly string[]): Set<ItemKind> {
   const out = new Set<ItemKind>(ids.length > 0 ? [TROPHY_ITEM] : []);
-  for (const id of ids) {
-    const row = targetDropRatio(id);
-    ITEM_KINDS.forEach((k, i) => {
-      if ((row[i] ?? 0) > 0) out.add(k);
-    });
-  }
+  for (const id of ids) for (const k of targetItems(id)) out.add(k);
   return out;
 }
 
@@ -940,18 +952,29 @@ export function strandedNodes(): string[] {
   const bad = new Map<string, string>();
   const byId = new Map(TECH_TREE.map((n) => [String(n.id), n]));
   for (const items of itemsByStage()) {
+    // PASS ONE — everything payable here that has an unpayable ancestor
+    const stuck = new Map<string, string>();
     for (const n of TECH_TREE) {
-      if (bad.has(String(n.id))) continue;
       if (costEntries(n.price.base).some(({ item }) => item === TROPHY_ITEM)) continue;
       if (!payableFrom(n, items)) continue;
       // walk up to the root: every ancestor has to be payable here too
       for (let p = n.requires; p; p = byId.get(String(p))?.requires) {
         const parent = byId.get(String(p));
         if (parent && !payableFrom(parent, items)) {
-          bad.set(String(n.id), `${String(n.id)} (behind ${String(p)})`);
+          stuck.set(String(n.id), String(p));
           break;
         }
       }
+    }
+    // PASS TWO — keep only the TOP of each stranded run, because a whole
+    // subtree behind one bad price is ONE fault and reporting it once a
+    // node buries the edit that fixes it. Re-pricing scatter into a second
+    // map's currency strands hail, then everything under hail, then all
+    // nine of their upgrade rungs: fifteen findings that are one sentence.
+    for (const [id, behind] of stuck) {
+      const parent = byId.get(id)?.requires;
+      if (parent && stuck.has(String(parent))) continue;
+      if (!bad.has(id)) bad.set(id, `${id} (behind ${behind})`);
     }
   }
   return [...bad.values()];
@@ -1384,11 +1407,12 @@ export function check(spec: LevelSpec = WORLD): LadderIssue[] {
   // THE CURRENCY MIX, ONCE PER WORLD. Every rung sends the same fifty waves,
   // so the ratio is a fact about the WORLD rather than about any rung —
   // reading it off rung 1 and reporting it without a rung is the honest
-  // shape. Named off ITEM_KINDS rather than written out, so a new currency
-  // extends this check for free instead of going unwatched.
-  const target = targetDropRatio(spec.id);
-  target.forEach((want, i) => {
-    // both sides are normalised to their own biggest column, so the world's
+  // shape. It walks EVERY currency rather than the world's own row, because
+  // the interesting failure is the one the row does not mention: a world
+  // paying something it was never meant to.
+  ITEM_KINDS.forEach((k, i) => {
+    const want = targetShare(spec.id, k);
+    // both sides are normalised to their own largest share, so the world's
     // top currency reads 100 and an authored row whose top is not 100 is
     // itself a finding — which is how the convention gets enforced
     const got = rows[0]?.dropRatio[i] ?? 0;
