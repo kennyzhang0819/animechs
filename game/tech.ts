@@ -45,7 +45,9 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * A RUNG USED TO HAVE A ROSTER CEILING OF ITS OWN — `bandForTier`, a fixed
  * per-difficulty limit on how far up the currency list a turret's price
  * could reach, so the opening rung stayed a first-three-currencies fight
- * forever however much tech the save owned. It is deleted. It was the
+ * forever however much tech the save owned. It is deleted, and the list it
+ * indexed no longer has an "up": a currency is a line of the roster now,
+ * not a rung of one (ITEM_OF_FAMILY in levels.ts). It was the
  * anti-farm guard for a four-row ladder with big gaps, and it is exactly
  * wrong for the ten-rung climb that replaced it: steamrolling the rung that
  * used to kill you IS the ascension fantasy. The guard is an income
@@ -187,25 +189,31 @@ export { upgradedTower, NO_UPGRADES, type UpgradeContext, type UpgradePoints };
  * points; salvo waited on the opening rung, fuse on the middle of the
  * ladder, and the specialists on whichever rung came before the enemy they
  * answered. That was a second gate doing a job the first one already did,
- * because A BUNDLE CANNOT BE PAID IN A CURRENCY ITS RUN DOES NOT DROP. Rung
- * 1 pays copper, titanium and thorium and no plastanium at all
- * (TARGET_DROP_RATIO in ladder.ts), so fuse's fifteen plastanium locks it
- * out of a fresh save on its own, exactly and automatically, with no gate
- * written anywhere.
+ * because A BUNDLE CANNOT BE PAID IN A CURRENCY THE MAPS A SAVE CAN REACH
+ * DO NOT DROP. Confluence pays copper and titanium and nothing else
+ * (TARGET_DROP_RATIO in ladder.ts), so fuse's thorium and plastanium lock
+ * it out of a fresh save on its own, exactly and automatically, with no
+ * gate written anywhere.
  *
- * Where the two gates disagreed, the rung gate was WRONG. Thorium starts
- * dropping at wave 7 and a full rung-1 run banks 450 of it — but every node
- * that charged thorium waited on rung 1 being CLEARED, so a save that had
- * not yet cleared it accumulated a currency with nowhere to spend it. A
- * player who dies at wave 17 is exactly the player who needs the next
- * turret, and the gate was denying it to them for the crime of not already
- * being past it.
+ * WHAT MOVED THAT LOCK FROM THE RUNG TO THE MAP. It used to be the ladder
+ * doing this: a currency came from a unit TIER, so a low rung was thin on
+ * plastanium and empty of nothing. That made the lock a RATE rather than a
+ * permission, and every rung eventually paid for everything. A currency now
+ * comes from a LINE, and a map sends only some lines, so the lock is
+ * absolute again — but keyed to the map a player is allowed on rather than
+ * to a difficulty they picked, which is a gate they can see and can clear.
  *
- * SO EVERY NODE IS OPEN AND THE BANK DECIDES. The four this actually frees
- * on rung 1 are salvo, lancer, ripple and parallax — the thorium sinks.
- * Everything above them still costs plastanium or phase fabric, which the
- * bottom of the ladder does not pay, so they stay shut without being told
- * to.
+ * Where the old two gates disagreed, the rung gate was WRONG for the same
+ * reason: a save that had not yet cleared rung 1 accumulated thorium with
+ * nowhere to spend it. A player who dies at wave 17 is exactly the player
+ * who needs the next turret, and the gate was denying it to them for the
+ * crime of not already being past it. Nothing here re-introduces that: what
+ * a map pays, it pays from its first run.
+ *
+ * SO EVERY NODE IS OPEN AND THE BANK DECIDES. Confluence's two currencies
+ * buy ten turrets — the whole opening arsenal — and everything above them
+ * wants at least one currency only Maelstrom pays, so they stay shut
+ * without being told to. ladder.ts lints both halves of that.
  *
  * WHERE THE PROSE BELOW STILL NAMES A CUT, it names it by the wave count or
  * the rung. The four named difficulties this ladder was split out of map
@@ -328,10 +336,12 @@ export interface Knobs {
  * The lead currency of a node's bundle, and what it costs as authored.
  *
  * A bundle needs a single handle for a knob to move, and the lead item is it:
- * costEntries walks ITEM_KINDS in order, so a node that charges copper leads
- * with copper and one that does not leads with its cheapest tier. Rescaling
- * from that number moves every other currency in step, which is what keeps
- * the drop-ratio shape intact while the size changes.
+ * costEntries walks ITEM_KINDS in order, so this is simply the first
+ * currency the bundle mentions — a stable pick and nothing more, since that
+ * order stopped ranking anything when currencies became lines of the roster
+ * (see ITEM_KINDS in items.ts). Rescaling from that number moves every
+ * other currency in step, which is what keeps the bundle's SHAPE intact
+ * while its size changes, and the shape is what rule TWO is about.
  */
 export function authoredBase(id: TechKind): number {
   return costEntries(techNode(id).price.base)[0]?.amount ?? 0;
@@ -340,11 +350,19 @@ export function authoredBase(id: TechKind): number {
 const overrides = new Map<TechKind, Partial<Knobs>>();
 
 /**
- * Copper per point of damage for a FIRST purchase — a rule of thumb for
- * seeding a node, not a rule the prices obey. It is the median of the ratios
- * the tree already carried, which is why duo lands back on its own 8.
+ * Lead currency per point of damage for a FIRST purchase — a rule of thumb
+ * for seeding a node, not a rule the prices obey. It is the median of the
+ * ratios the tree already carries, which is why duo lands back on its own
+ * 35.
+ *
+ * It was 0.3 while a currency was a unit tier and the whole tree was priced
+ * against a run that banked 32,000 copper. A run banks 134,000 now (a kill
+ * pays its tier's quantity rather than one item — AMOUNT_PER_TIER in
+ * levels.ts), every bundle moved with it, and re-taking the median moves
+ * this too. The property it is chosen for is unchanged: seeding duo from
+ * its own damage returns duo's own price.
  */
-export const BASE_PER_DPS = 0.3;
+export const BASE_PER_DPS = 1.3;
 
 /** what the rule of thumb would charge to start, from damage alone */
 export function recommendedBase(id: TechKind): number | null {
@@ -590,61 +608,77 @@ export interface TechNodeDef {
  * so what a node charges is its authored base — play-tested, not solved.
  * See PriceCurve and Knobs.
  *
- * TWO: A COST BUNDLE MUST CARRY THE DROP RATIO OF THE DIFFICULTY THAT
- * UNLOCKS IT — and since the tier gates are gone, THE BUNDLE IS THE GATE, so
- * this rule now decides not just what a node costs but when it exists.
- * Supply is TARGET_DROP_RATIO in ladder.ts — the enemy mix the waves are
- * authored to send — and the bundles below are shaped to match it in
- * aggregate: about 100 : 27 : 10 : 0.7 : 0.13. Get it wrong and the
- * mismatched currency becomes the ONLY real constraint while the others pile
- * up unspent, which reads to a player as a broken economy rather than a
- * tuned one.
+ * TWO: A PRICE SAYS WHAT YOU MUST FIGHT, AND WHERE.
  *
- * SCATTER IS WHERE THAT WENT WRONG ONCE, and it is the worked example to
- * read before touching a bundle. It asked 50 copper : 10 titanium, a 5:1
- * ratio against a rung-1 run that pays 6.67:1, so titanium ran dry first and put
- * a hard cap on how many a player could own however much copper they had.
- * The turret felt overpriced; the PRICE was fine and the SHAPE was wrong.
+ * A currency is a LINE OF THE ROSTER now, not a rung of one: copper is the
+ * dagger line's, titanium the air line's, thorium the crawler line's,
+ * plastanium the support line's, phase fabric the two water lines'
+ * (ITEM_OF_FAMILY in levels.ts). And a MAP pays only the lines it sends —
+ * Confluence the ground and air lines, Maelstrom the other three (see
+ * TARGET_DROP_RATIO in ladder.ts). So a bundle now says two things at once
+ * that it could not say before: which enemies you have to kill, and which
+ * map you have to be on to kill them.
  *
- * The currency also picks the RUNG. Plastanium appears first on the nodes
- * meant for the T4s of the middle rungs and phase fabric only on the ones
- * paid for by the top rungs' own T5 kills (see TARGET_DROP_RATIO in
- * ladder.ts) — and a currency nothing drops yet is an absolute lock, which
- * is exactly why no node needs a rung gate on top of it. The converse is
- * the trap: charging a currency EARLIER than intended unlocks a node into a
- * wall, and charging it LATER than intended opens content a rung early.
+ * IT USED TO SAY HOW DEEP IN THE LADDER YOU WERE, and that was the whole
+ * meaning available: currency followed unit TIER, and every world shared a
+ * tier histogram, so a price could only ever encode depth. Now scatter and
+ * parallax — the two turrets that shoot nothing but air — are priced in the
+ * AIR line's currency, and paying for them means having fought air. That is
+ * counter-play in the price list, and it costs nothing to state because the
+ * mapping was already there.
+ *
+ * THE SHAPE STILL HAS TO CARRY THE SUPPLY. Within one map, a bundle's
+ * currencies should sit near that map's authored ratio, biased toward the
+ * line the turret answers. Get it badly wrong and the mismatched currency
+ * becomes the ONLY real constraint while the rest pile up unspent, which
+ * reads to a player as a broken economy rather than a tuned one.
+ *
+ * SCATTER IS THE WORKED EXAMPLE, AND IT CUTS BOTH WAYS. It once asked 50
+ * copper : 10 titanium, a 5:1 ratio against a run that paid 6.67:1, so
+ * titanium ran dry first and capped how many a player could own however much
+ * copper they had. The turret felt overpriced; the PRICE was fine and the
+ * SHAPE was wrong. Today it deliberately leans the other way — 80 copper :
+ * 250 titanium against Confluence's 100:80 — because leaning INTO the line
+ * a turret counters is the rule, and a lean is not a mismatch as long as
+ * both currencies come off the same map.
+ *
+ * THE MAP PICKS THE HALF OF THE TREE. Everything a fresh save needs is
+ * priced in Confluence's two currencies, because Maelstrom stays shut until
+ * Confluence's rung 5 falls (WORLD_REQUIRES) and a node needing a Maelstrom
+ * currency before then is an absolute wall — ladder.ts lints exactly that.
+ * Everything from swarmer up spans BOTH maps, which is what makes rotation
+ * required rather than encouraged: no single map funds a late node.
  *
  * DUO IS THE ONE EXEMPTION AT THE BOTTOM: copper-only, forever. A run that
- * dies before the first mace banks no titanium at all, and duo capacity has
- * to stay buyable out of that run or a bad save has no way back.
+ * dies in the opening waves banks little but ground-line kills, and duo
+ * capacity has to stay buyable out of that run or a bad save has no way
+ * back. Its two dials stay copper-and-titanium for the same reason.
  *
  * THREE: THE LATE NODES PAY NO COPPER AT ALL — fuse, tsunami, swarmer,
- * cyclone, spectre, meltdown and foreshadow. It is duo's rule read from
- * the other end: copper is the bootstrap currency, and the endgame is
- * where you have outgrown it. (Tsunami arrived after the substitution
- * below and was simply born copper-free; the accounting that follows is
- * about the original six.)
+ * cyclone, spectre, meltdown and foreshadow. It is duo's rule read from the
+ * other end: copper is the bootstrap currency, and the endgame is where you
+ * have outgrown it. It used to be a deliberate substitution — those six
+ * held 56% of the tree's entire copper bill and the value was moved onto
+ * the other currencies to give supply and demand the same shape. It now
+ * falls out of rule TWO instead: the late nodes are priced on the second
+ * front, and copper is the first front's.
  *
- * This is a SUBSTITUTION, NOT A DISCOUNT, and not a price rise either. Those
- * six held 56% of the tree's entire copper bill — 10.1M of 17.9M — and the
- * value came back as titanium, thorium, plastanium and phase on the same six
- * nodes. What it buys is that the supply the waves pay and the demand the
- * tree charges finally have the same SHAPE: under the curves of the day,
- * every currency maxed the whole tree in a comparable 385-391 full-script
- * runs, where before plastanium needed 8,736 and phase could not be spent
- * at all.
+ * WHAT THE RE-PRICING PRESERVED, when the currencies changed meaning:
+ * every node's TIME TO AFFORD ITS FIRST POINT, measured in full clears of
+ * the maps that pay for it. A bundle's cost in clears is the largest of
+ * amount / that currency's supply per clear; each node kept that number,
+ * split evenly across the fronts its new bundle spans, and the amounts were
+ * then set from each currency's own supply so no one of them binds much
+ * before the others. So the tree's ORDER and its PACE are exactly what they
+ * were playtested at, and only what you must fight for each node moved.
  *
- * It also had to happen for the ratio to move. The waves cut low-tier bodies
- * for room on the map (TARGET_DROP_RATIO in ladder.ts), which cuts copper
- * income hardest; leaving the copper bill where it was would have made
- * copper the one gate on a tree whose top half no enemy pays for.
+ * The numbers themselves moved a long way, and they had to: a currency's
+ * supply per clear went from 202 phase and 32,102 copper to 125,061 and
+ * 133,849, because phase is no longer what 202 tier-5 bodies drop but what
+ * a whole fleet does.
  *
- * The early and mid nodes are untouched — copper and all. Everything a
- * rung-1 run can reach is priced exactly as it was playtested, and wave
- * joined that half of the tree on the same copper-and-titanium shape.
- *
- * Keep the FIRST point of every node payable out of the rung whose currency
- * it debuts on, or that node is decoration.
+ * Keep the FIRST point of every node payable out of the maps that are open
+ * when a player first sees it, or that node is decoration.
  */
 /**
  * WHERE THESE BASE BUNDLES COME FROM: MINDUSTRY'S OWN BUILD COSTS.
@@ -715,10 +749,12 @@ export interface TechNodeDef {
  * not a rule — break it for a node that earns it.
  *
  * TO PRICE A NEW TURRET: find its requirements in Blocks.java, sum amount x
- * Item.cost, put that through the formula, and split the result across the
- * currencies its tier charges using TARGET_DROP_RATIO — the bundle SHAPE is
- * still rule TWO below, this only decides how big it is. Move the top anchor
- * to lengthen or shorten the campaign; the order holds either way.
+ * Item.cost, and put that through the formula for a size in copper-
+ * equivalent. Then pick the LINES it answers and the maps those live on
+ * (rule TWO below), and split the size across their currencies in the
+ * proportions those maps pay them. The formula only decides how big; the
+ * bundle's shape is rule TWO. Move the top anchor to lengthen or shorten
+ * the campaign; the order holds either way.
  *
  * WHAT THE FIT ALSO TOLD US, worth reading before trusting a DPS figure: the
  * turrets that moved most are the ones where our damage number disagrees with
@@ -786,15 +822,16 @@ const CORE_TREE: readonly TechNodeDef[] = [
   },
   {
     // THE VOLUME TURRET, and the only lever a stalled player has — so it is
-    // copper-only. A run that dies before the baseline's first mace wave
-    // banks no titanium at all, and duo capacity has to stay buyable out of
-    // that run or the save is stuck.
+    // copper-only, which is now the GROUND LINE'S currency and the first
+    // thing any run on the starter map banks. A save that dies in the
+    // opening waves has killed daggers and little else, and duo capacity
+    // has to stay buyable out of that or the save is stuck.
     // Also the cheapest node in the tree, because 27 DPS is the least any
     // turret does and the price rule pays exactly that much attention to it.
     // A top-difficulty run roughly maxes it; five hundred duos are still
     // only 13,500 DPS, so it stays the thing you open with, never the answer
     id: "duo",
-    price: { base: { copper: 8 }, growth: 1.01 },
+    price: { base: { copper: 35 }, growth: 1.01 },
     dps: 27,
     requires: "home",
     x: 3,
@@ -803,9 +840,11 @@ const CORE_TREE: readonly TechNodeDef[] = [
   {
     // the first AoE, and the moment tier 1 and tier 2 stop being difficulty:
     // splash scales with bodies per blast and collapses with health per
-    // body, so one hail shell kills five daggers and chips a spiroct
+    // body, so one hail shell kills five daggers and chips a spiroct.
+    // GROUND-ONLY, so the bundle leans on the ground line's copper and asks
+    // for titanium only as the shape (rule TWO) rather than as the gate
     id: "hail",
-    price: { base: { copper: 20, titanium: 4 }, growth: 1.01 },
+    price: { base: { copper: 85, titanium: 25 }, growth: 1.01 },
     dps: 165,
     requires: "scatter",
     x: 2,
@@ -814,9 +853,12 @@ const CORE_TREE: readonly TechNodeDef[] = [
   {
     // ungated like hail and strong out of proportion to its price: a
     // piercing flame rakes a whole file of units and sets each alight, and
-    // burning ignores armour outright. 60 units of range is the whole cost
+    // burning ignores armour outright. 60 units of range is the whole cost.
+    // A GROUND-LANE ANSWER, so copper-led like hail — and pointedly NOT
+    // priced in the crawler line's thorium, which it is the classic counter
+    // to, because thorium is Maelstrom's and this sits in the opening
     id: "scorch",
-    price: { base: { copper: 20, titanium: 3 }, growth: 1.01 },
+    price: { base: { copper: 85, titanium: 25 }, growth: 1.01 },
     dps: 850,
     requires: "arc",
     x: 4,
@@ -835,14 +877,19 @@ const CORE_TREE: readonly TechNodeDef[] = [
     // the bundle charges for the slice it can shoot at, not the number on
     // the stat card.
     //
-    // COPPER AND TITANIUM ONLY. It used to want thorium, which comes from
-    // tier-3 kills and so does not flow until well into a rung-1 run — and
-    // since hail hangs off this node (Mindustry's own lineage: duo ->
-    // scatter -> hail), a thorium price here locked the cheap ground AoE
-    // behind the T3 waves too. Upstream builds scatter from copper and lead,
-    // a tier-1 cost; this is that, in our currencies
+    // TITANIUM-LED, AND THAT IS THE WHOLE POINT OF THE NEW PRICE LIST.
+    // Titanium is the AIR LINE'S currency: the only way to bank it is to
+    // kill the flares and horizons this turret exists to shoot, so the
+    // anti-air turret is bought with anti-air work. It carries copper too,
+    // because both currencies come off Confluence and a single-currency
+    // bundle would make one line the sole gate (rule TWO) — but the lean is
+    // deliberate and is not the scatter mistake repeating.
+    //
+    // NO THORIUM, and that is now a hard rule rather than a judgement: hail
+    // hangs off this node (Mindustry's own lineage: duo -> scatter -> hail),
+    // thorium is Maelstrom's, and Maelstrom is shut until Confluence rung 5
     id: "scatter",
-    price: { base: { copper: 75, titanium: 10 }, growth: 1.01 },
+    price: { base: { copper: 80, titanium: 250 }, growth: 1.01 },
     dps: 1450,
     requires: "duo",
     x: 2,
@@ -850,13 +897,18 @@ const CORE_TREE: readonly TechNodeDef[] = [
   },
   {
     // 28 damage a shell — the first turret that puts a fortress (armour 9)
-    // back at its printed health instead of ten times it. THE FIRST THORIUM
-    // NODE, and so the first thing a rung-1 run's thorium is for: it opens
-    // around wave 7, when the T3 kills that pay for it start arriving. It
-    // also shoots AIR, which makes it the second answer to the flare waves
-    // and half the reason scatter no longer has to be priced as the only one
+    // back at its printed health instead of ten times it, and the calibre
+    // the whole drop table is measured against (DROP_REFERENCE_SHOT in
+    // ladder.ts). It shoots GROUND AND AIR, which is why it is the one node
+    // in the opening priced evenly across Confluence's two currencies: it
+    // is the turret with no preference, so its bundle has none either.
+    //
+    // It used to be THE FIRST THORIUM NODE, back when thorium was the T3
+    // currency and arrived around wave 7. Thorium is the crawler line's now
+    // and Confluence sends no crawlers, so that gate is gone; what paces
+    // salvo is simply its size
     id: "salvo",
-    price: { base: { copper: 175, titanium: 60, thorium: 20 }, growth: 1.01 },
+    price: { base: { copper: 850, titanium: 700 }, growth: 1.01 },
     dps: 217,
     requires: "hail",
     x: 2,
@@ -867,12 +919,15 @@ const CORE_TREE: readonly TechNodeDef[] = [
     // DPS on the roster, and the price says so.
     // Nine tiles of range is no longer a discount: the map already decides
     // how much of a gate one can hold (see PriceCurve).
-    // PLASTANIUM IS THE PACING: fifteen of it, against the ~1,100 a full
-    // clear banks. Every rung plays every wave, so a fresh save can reach
-    // this — it just spends several runs doing it, which is the price
-    // doing the job the old rung gate did by hand
+    // THE SECOND FRONT PACES IT. A short-range wall of rays is what answers
+    // a crawler flood and the support mechs walking behind it, so the
+    // bundle leads on the crawler line's thorium and the support line's
+    // plastanium — both Maelstrom's — with titanium off Confluence to keep
+    // it a two-map purchase. A fresh save can see this node the moment it
+    // owns salvo and cannot buy it until the second front opens, which is
+    // the price doing the job the old rung gate did by hand
     id: "fuse",
-    price: { base: { titanium: 65, thorium: 80, plastanium: 15 }, growth: 1.01 },
+    price: { base: { titanium: 725, thorium: 450, plastanium: 250 }, growth: 1.01 },
     dps: 4109,
     requires: "salvo",
     x: 2,
@@ -886,19 +941,20 @@ const CORE_TREE: readonly TechNodeDef[] = [
     // plain bullet taking one body. Measured on a file of ten daggers, one
     // bolt lands 217 of its theoretical 240
     id: "arc",
-    price: { base: { copper: 50, titanium: 9 }, growth: 1.01 },
+    price: { base: { copper: 200, titanium: 60 }, growth: 1.01 },
     dps: 411,
     requires: "duo",
     x: 4,
     y: 2,
   },
   {
-    // A piercing laser; the ground answer that is not artillery.
+    // A piercing laser; the ground answer that is not artillery, so
+    // copper-led like the rest of the ground branch.
     // FOUR bodies, not the usual five — pierceCap 4 is a hard stop written
     // into the bullet, and the beam visibly ends at the fourth thing it
     // hits, so counting five would be pricing a shot it cannot fire
     id: "lancer",
-    price: { base: { copper: 150, titanium: 40, thorium: 15 }, growth: 1.01 },
+    price: { base: { copper: 625, titanium: 225 }, growth: 1.01 },
     dps: 420,
     requires: "scorch",
     x: 6,
@@ -906,12 +962,13 @@ const CORE_TREE: readonly TechNodeDef[] = [
   },
   {
     // 290 range — outreached only by parallax's pull and foreshadow's
-    // rail, and the wave-clear that answers the crawler floods.
+    // rail, and the wave-clear that answers a ground flood.
     // Four shells a volley at 70 splash,
     // and like every artillery piece only the splash counts: the shell
-    // arcs over its target rather than hitting it
+    // arcs over its target rather than hitting it.
+    // Copper-led, and the most expensive thing the opening map sells
     id: "ripple",
-    price: { base: { copper: 450, titanium: 125, thorium: 35 }, growth: 1.01 },
+    price: { base: { copper: 1900, titanium: 675 }, growth: 1.01 },
     dps: 700,
     requires: "salvo",
     x: 1,
@@ -927,19 +984,20 @@ const CORE_TREE: readonly TechNodeDef[] = [
     // free: a force multiplier priced on its own damage would be the best
     // purchase in the game. So it takes parallax's road — the Mindustry
     // build-cost power law (see the ranking above), which lands it between
-    // scatter and lancer at ~350 copper-equivalent, and the bundle carries
-    // rung 1's copper:titanium drop ratio so neither currency gates
-    // alone. Upstream it builds from metaglass and lead, a tier-1/2 cost:
-    // buyable partway through a rung-1 run, like the fight that first wants it
+    // scatter and lancer. It hoses ground and air alike, so like salvo it
+    // is priced evenly across Confluence's two currencies and neither line
+    // gates it alone
     id: "wave",
-    price: { base: { copper: 225, titanium: 35 }, growth: 1.01 },
+    price: { base: { copper: 950, titanium: 750 }, growth: 1.01 },
     dps: 4,
     requires: "scorch",
     x: 4,
     y: 4,
   },
   {
-    // Not a damage turret at all: it drags air units out of formation.
+    // Not a damage turret at all: it drags AIR units out of formation, so
+    // it is the second node after scatter priced in the air line's own
+    // titanium — you pay for the answer to air in air.
     // It hangs off wave, exactly where Mindustry's tech tree puts it —
     // it used to borrow its grandparent scorch while wave did not exist.
     //
@@ -950,9 +1008,10 @@ const CORE_TREE: readonly TechNodeDef[] = [
     // top speed and a horizon at 123%, i.e. backwards. Priced on damage a
     // parallax wall is nearly free and answers air outright. Left literal
     // rather than fudged, because the rule is the rule and a second one
-    // invented here would not be
+    // invented here would not be — the bundle's SHAPE carries the argument
+    // instead
     id: "parallax",
-    price: { base: { copper: 500, titanium: 125, thorium: 45 }, growth: 1.01 },
+    price: { base: { copper: 525, titanium: 1700 }, growth: 1.01 },
     dps: 30,
     requires: "wave",
     x: 5,
@@ -963,15 +1022,14 @@ const CORE_TREE: readonly TechNodeDef[] = [
     // tsunami and parallax off wave) and priced by wave's own argument,
     // scaled up: 8 DPS on paper, but everything crossing its 190-unit
     // umbrella drives at 45% speed for four seconds — better than doubling
-    // what every turret around it gets done. The power law puts its 790
-    // Mindustry value at ~9.6k copper-equivalent, three fuses, and the
-    // bundle is cyclone's late-ladder shape scaled: no copper (rule THREE),
-    // and PLASTANIUM IS THE GATE. Upstream its build cost tops out at
-    // thorium, but a 9.6k support piece opening on rung 1 would trivialise
-    // the run that banks it — the price says the middle of the ladder at the
-    // earliest, so the bundle does too
+    // what every turret around it gets done.
+    // THE FLEET'S CURRENCY LEADS IT, and for once the theme and the rule
+    // agree outright: a turret that floods a field with water is bought
+    // with phase fabric, which is what the two water lines pay. No copper
+    // (rule THREE), plastanium beside the phase, and titanium off
+    // Confluence so it still costs a trip to both fronts
     id: "tsunami",
-    price: { base: { titanium: 360, thorium: 310, plastanium: 36 }, growth: 1.01 },
+    price: { base: { titanium: 2400, plastanium: 775, "phase-fabric": 2700 }, growth: 1.01 },
     dps: 8,
     requires: "wave",
     x: 4,
@@ -984,52 +1042,56 @@ const CORE_TREE: readonly TechNodeDef[] = [
   // a node's DPS unknowable. They now carry their own ammo and their own
   // solved curves; see the table in PriceCurve for what each one reads.
   //
-  // Lineage is Mindustry's own (content/SerpuloTechTree.java) and the RUNG
-  // each one lands at falls out of BUILD MATERIAL, which is now the ONLY
-  // thing pacing them: a turret whose Mindustry cost tops out at thorium or
-  // plastanium is priced there, and one that wants surge alloy has nothing
-  // to charge — surge never drops from a wave — so it is priced in phase
-  // fabric, the scarcest thing the script pays (about 200 a full clear
-  // against copper's 32,000). Every rung plays every wave, so these are
-  // reachable from rung 1 and it is the QUANTITY that holds them back. A
-  // child always costs at least what its parent does, so no child can open
-  // before its parent even with every gate gone.
+  // Lineage is Mindustry's own (content/SerpuloTechTree.java). WHAT PACES
+  // THEM IS THE SECOND MAP: every one of these is priced across BOTH fronts
+  // (rule TWO), so none of them can be bought until Maelstrom opens and
+  // none of them can be bought on Maelstrom alone either. That replaced the
+  // old pacing, which was the currency LADDER — a turret whose Mindustry
+  // build cost topped out at plastanium was priced in plastanium and so
+  // waited on the T4 waves. There is no ladder left to wait on: the five
+  // currencies are five lines of the roster, and what a price now says is
+  // which lines you have to have fought. A child always costs at least what
+  // its parent does, so no child can open before its parent either.
   {
-    // PLASTANIUM. Homing missiles — they chase what they lock, so overkill
-    // costs less than it does on a straight-firing line
+    // Homing missiles — they chase what they lock, so overkill costs less
+    // than it does on a straight-firing line, which is what makes them the
+    // answer to things that run: the air line and the crawler line. Those
+    // two are exactly what the bundle charges, one currency off each map,
+    // and it is the cheapest node in the game that needs both.
     id: "swarmer",
-    price: { base: { titanium: 20, thorium: 20, plastanium: 2 }, growth: 1.01 },
+    price: { base: { titanium: 150, thorium: 95 }, growth: 1.01 },
     dps: 1925,
     requires: "salvo",
     x: 0,
     y: 5,
   },
   {
-    // PLASTANIUM. A flak wall. The reason to own it is volume of splash, which
-    // is why its ceiling is the full 3x3 band
+    // A flak wall. The reason to own it is volume of splash, which is why
+    // its ceiling is the full 3x3 band — and why it is titanium-led like
+    // every other turret that lives to shoot air, with the crawler and
+    // support lines' currencies under it for the ground it also clears
     id: "cyclone",
-    price: { base: { titanium: 70, thorium: 60, plastanium: 7 }, growth: 1.01 },
+    price: { base: { titanium: 450, thorium: 275, plastanium: 200 }, growth: 1.01 },
     dps: 1797,
     requires: "swarmer",
     x: 0,
     y: 6,
   },
   {
-    // PHASE FABRIC. Twin heavy cannon — the highest sustained damage in the
-    // game. Phase drops only from the T5 bodies of the last dozen waves, so
-    // these three ARE the top rungs' reward — priced there rather than told
-    // to wait there
+    // Twin heavy cannon — the highest sustained damage in the game, and
+    // the first of the three nodes that charge ALL FOUR of the campaign's
+    // non-copper currencies. Owning one means having fought every line the
+    // game fields except the one duo was built for.
     //
-    // THE PHASE SHARE ON THESE THREE IS DELIBERATELY BELOW THE DROP RATIO
-    // (a quarter of the rule-TWO split, 30/40/75 -> 8/10/19). The split
-    // prices a phase drop off its count in the waves, but a T5 kill costs
-    // far more tower-fire than its printed health says — armour 13-18
-    // floors most calibres and the escorts shield them — so per EFFORT a
-    // phase is worth well over the 1.7 plastanium the old bundles implied.
-    // Playtested on the full 50-wave script; do not "fix" these back to the
-    // ratio.
+    // THE OLD BUNDLES PRICED PHASE AS THE SCARCE THING — a quarter of the
+    // rule-TWO split, because phase came only from the 202 tier-5 bodies a
+    // clear sent and a T5 kill costs far more tower-fire than its printed
+    // health says. That correction is now inside the drop table itself:
+    // AMOUNT_PER_TIER pays a T5 kill 250 items against a T1's one,
+    // measured on cost-to-kill (levels.ts), so effort is priced where it
+    // belongs and the bundle can carry the honest supply ratio again.
     id: "spectre",
-    price: { base: { titanium: 200, thorium: 225, plastanium: 55, "phase-fabric": 8 }, growth: 1.01 },
+    price: { base: { titanium: 2700, thorium: 1300, plastanium: 1000, "phase-fabric": 3100 }, growth: 1.01 },
     // 104 x 60/7 x pierceCap 2 — the +30% phase-tier up-gun (constants.ts)
     dps: 1783,
     requires: "cyclone",
@@ -1037,9 +1099,11 @@ const CORE_TREE: readonly TechNodeDef[] = [
     y: 7,
   },
   {
-    // PHASE FABRIC. A continuous beam that melts whatever it rests on
+    // A continuous beam that melts whatever it rests on — the single-target
+    // answer, so it leans a little further onto the heavies' currencies
+    // than spectre does
     id: "meltdown",
-    price: { base: { titanium: 275, thorium: 300, plastanium: 65, "phase-fabric": 10 }, growth: 1.01 },
+    price: { base: { titanium: 3200, thorium: 1600, plastanium: 1300, "phase-fabric": 3700 }, growth: 1.01 },
     // 1,212/s lit x 230/320 duty x 5 crowd — the +30% up-gun (constants.ts)
     dps: 4356,
     requires: "lancer",
@@ -1047,10 +1111,12 @@ const CORE_TREE: readonly TechNodeDef[] = [
     y: 5,
   },
   {
-    // PHASE FABRIC. 500 range and one enormous shot — a sniper rather than a
-    // defence, and the only turret that can hit a spawn pad from the core
+    // 500 range and one enormous shot — a sniper rather than a defence, and
+    // the only turret that can hit a spawn pad from the core. The most
+    // expensive node in the game and the only one whose first point costs
+    // better than a twentieth of a full clear on BOTH maps
     id: "foreshadow",
-    price: { base: { titanium: 450, thorium: 525, plastanium: 125, "phase-fabric": 19 }, growth: 1.01 },
+    price: { base: { titanium: 6100, thorium: 2600, plastanium: 2400, "phase-fabric": 7100 }, growth: 1.01 },
     // 1755 x 60/200, no crowd multiplier (the budget already holds the
     // crowd) — the +30% up-gun (constants.ts)
     dps: 527,
@@ -1081,23 +1147,25 @@ const CORE_TREE: readonly TechNodeDef[] = [
   //
   // WHAT PACES THEM IS THE CURRENCY, NOT THE NUMBER. Each node asks for one
   // item and a different one, so the path unfolds at exactly the rate the
-  // campaign hands out new currencies — titanium from the first mace, thorium
-  // once the T3s arrive partway up rung 1, plastanium from the middle rungs,
-  // phase fabric only off the T5s. That is the same rule the turrets run on
-  // (see TWO at the top of the file): the bundle is the gate, and nothing
-  // here needs a rung written on it.
+  // campaign hands out new MAPS: titanium is Confluence's, so 2x is the
+  // fast-forward a starter save earns, and thorium and plastanium are
+  // Maelstrom's, so 4x and 8x wait on the second front. That is the same
+  // rule the turrets run on (see TWO at the top of the file): the bundle is
+  // the gate, and nothing here needs a rung written on it.
   //
-  // THE WHOLE PATH SITS ONE CURRENCY ABOVE WHERE IT STARTED. Copper used to
-  // buy 2x, which meant the first wave of a fresh save already handed over
-  // fast-forward — pace arrived before there was anything worth skipping.
-  // Every node moved up a tier, so thorium now tops out at 4x and the last
-  // two multipliers are late-campaign goods.
+  // IT USED TO UNFOLD ONE UNIT TIER AT A TIME, which is what those four
+  // currencies meant before they meant lines of the roster. The shape
+  // survived the move intact — one currency a node, in the order the
+  // campaign hands them over — because it was never really about tiers; it
+  // was about not selling fast-forward before there is anything worth
+  // skipping. Copper used to buy 2x, which handed a fresh save the
+  // fast-forward on its first wave.
   //
   // A CHAIN, NOT A FAN. Each one requires the one below it, so the column
   // reads in order and a player cannot own 8x without having wanted 4x.
   {
     id: "speed-2",
-    price: { base: { titanium: 25 }, growth: 1 },
+    price: { base: { titanium: 275 }, growth: 1 },
     requires: "home",
     cap: 1,
     x: 4,
@@ -1105,7 +1173,7 @@ const CORE_TREE: readonly TechNodeDef[] = [
   },
   {
     id: "speed-4",
-    price: { base: { thorium: 20 }, growth: 1 },
+    price: { base: { thorium: 175 }, growth: 1 },
     requires: "speed-2",
     cap: 1,
     x: 4,
@@ -1113,7 +1181,7 @@ const CORE_TREE: readonly TechNodeDef[] = [
   },
   {
     id: "speed-8",
-    price: { base: { plastanium: 15 }, growth: 1 },
+    price: { base: { plastanium: 675 }, growth: 1 },
     requires: "speed-4",
     cap: 1,
     x: 4,
@@ -1127,11 +1195,12 @@ const CORE_TREE: readonly TechNodeDef[] = [
     // continuing it, so 8x never waits on a cosmetic.
     //
     // Priced at a token slice of the currency each one's moment drops:
-    // thorium is flowing when speed-4 is buyable — about when a save first
-    // owns more turrets than slots — and plastanium paces the eighth slot
-    // to the middle rungs, the same bundle-is-the-gate rule as everything else.
+    // both hang off the second front, which is about when a save first owns
+    // more turrets than slots, and the eighth waits on the support line
+    // behind the seventh's crawler line — the same bundle-is-the-gate rule
+    // as everything else.
     id: "slot-7",
-    price: { base: { thorium: 5 }, growth: 1 },
+    price: { base: { thorium: 45 }, growth: 1 },
     requires: "speed-4",
     cap: 1,
     x: 5,
@@ -1139,7 +1208,7 @@ const CORE_TREE: readonly TechNodeDef[] = [
   },
   {
     id: "slot-8",
-    price: { base: { plastanium: 5 }, growth: 1 },
+    price: { base: { plastanium: 225 }, growth: 1 },
     requires: "slot-7",
     cap: 1,
     x: 5,
@@ -1163,8 +1232,13 @@ const CORE_TREE: readonly TechNodeDef[] = [
     // implementation so the phase sink exists now. When the block ships,
     // this becomes a turret-style capacity node and the point already paid
     // becomes its first placement.
+    //
+    // It is FIVE FULL CLEARS OF MAELSTROM, which is what it always was: the
+    // number moved from 1,000 to 620,000 only because phase fabric stopped
+    // being the 202 items a run's tier-5 bodies dropped and became what a
+    // whole fleet pays. Nothing about the sink changed.
     id: "overdrive-projector",
-    price: { base: { "phase-fabric": 1000 }, growth: 1 },
+    price: { base: { "phase-fabric": 620000 }, growth: 1 },
     requires: "home",
     cap: 1,
     x: 1,
@@ -1203,22 +1277,21 @@ const UPGRADE_GROWTH: readonly number[] = [0, 1.25, 1.35, 1];
 
 /**
  * WHAT AN ULTIMATE COSTS, IN SURGE ALLOY AND NOTHING ELSE, indexed by the
- * turret's BAND — how far up the currency list its own price reaches (see
- * bandOfCost below).
+ * turret's BAND — how expensive the turret is (see bandOfTurret below).
  *
- * Surge is not a tier and never drops from a wave: a boss's first kill on
- * a (world, rung) pays exactly one (grantRunReward), so the bank's surge
- * column counts boss fights won. That makes it the only honest price
+ * No family maps to surge, so it never drops from a wave at all: a boss's
+ * first kill on a (world, rung) pays exactly one (grantRunReward), so the
+ * bank's surge column counts boss fights won. That makes it the only honest price
  * for a node that should wait on PROGRESSION rather than on farming, and
  * it is the whole gate — no copper, no thorium, nothing a long enough
  * grind produces.
  *
  * IT CLIMBS WITH THE TURRET because the turrets do. A duo, a scatter or a
  * ripple is a turret the opening rungs field, and one boss buys its
- * ultimate. A plastanium turret costs three, a phase turret six — so
- * transforming a foreshadow would be six boss fights' worth of trophy, and
- * a save cannot have every ultimate in the game without having climbed most
- * of the ladder on most of its maps.
+ * ultimate. Fuse and tsunami cost three, the three turrets at the top of
+ * the tree six — so transforming a foreshadow would be six boss fights'
+ * worth of trophy, and a save cannot have every ultimate in the game
+ * without having climbed most of the ladder on most of its maps.
  *
  * THE WHOLE TABLE IS HERE THOUGH ONLY DUO AND ARC HAVE AN ULTIMATE WRITTEN
  * SO FAR (see the note at the top of upgrades.ts). It is indexed by band
@@ -1227,12 +1300,29 @@ const UPGRADE_GROWTH: readonly number[] = [0, 1.25, 1.35, 1];
  */
 export const ULTIMATE_SURGE: readonly number[] = [1, 1, 1, 3, 6];
 
-/** how far up the currency list a bundle reaches — the band, off a Cost */
-const bandOfCost = (base: Cost): number => {
-  let band = 0;
-  for (const { item } of costEntries(base)) band = Math.max(band, ITEM_KINDS.indexOf(item));
-  return band;
-};
+/**
+ * WHICH BAND A TURRET SITS IN — the index ULTIMATE_SURGE is read by.
+ *
+ * IT USED TO BE THE PRICE'S POSITION IN THE CURRENCY LIST: the highest
+ * ITEM_KINDS index the bundle mentioned, which under tier-based drops was a
+ * real statement about campaign depth (only the T4 bodies paid plastanium,
+ * only the T5s phase). Family-based drops took the ORDER out of ITEM_KINDS
+ * — the five are unordered resources now, one per line of the roster — so
+ * that reading became arithmetic on an accident of table order and would
+ * have said a naval-priced turret was "further up" than a crawler-priced
+ * one for no reason at all.
+ *
+ * WHAT IT ASKS INSTEAD IS THE QUESTION IT ALWAYS MEANT: how expensive is
+ * this turret. MINDUSTRY_VALUE is the tree's own answer — the independent
+ * opinion every base bundle was fitted to — and it keeps every turret in
+ * the same band it was in, because the currency ladder was tracking cost
+ * all along. Only swarmer and cyclone move (band 3 to band 2), and they are
+ * exactly the two the fit already flags as mispriced against upstream;
+ * neither has an ultimate authored yet, so nothing in the game changes.
+ */
+const VALUE_BANDS: readonly number[] = [40, 120, 400, 1000];
+const bandOfTurret = (turret: TowerKind): number =>
+  VALUE_BANDS.filter((v) => MINDUSTRY_VALUE[turret] >= v).length;
 
 /**
  * DUO'S THREE PLAYTESTED BUNDLES, kept verbatim.
@@ -1245,10 +1335,16 @@ const bandOfCost = (base: Cost): number => {
  * one later belongs here beside them.
  */
 const AUTHORED_UPGRADE_PRICE: Partial<Record<UpgradeKind, PriceCurve>> = {
-  "duo-rof": { base: { copper: 250, titanium: 65, thorium: 25 }, growth: 1.25 },
-  "duo-pierce": { base: { copper: 1200, titanium: 325, thorium: 120 }, growth: 1.4 },
+  // the two dials stay on the STARTER MAP'S currencies, like duo itself:
+  // a save that can place five hundred duos and cannot improve them is a
+  // save the opening map has stopped teaching. Their thorium went when
+  // thorium became Maelstrom's, which the dials must not wait on
+  "duo-rof": { base: { copper: 1000, titanium: 450 }, growth: 1.25 },
+  "duo-pierce": { base: { copper: 5000, titanium: 2200 }, growth: 1.4 },
+  // ...and the one-shot at the top of the branch spans both fronts, which
+  // is what a late node is for
   "duo-graphite": {
-    base: { copper: 60000, titanium: 16000, thorium: 6000, plastanium: 420 },
+    base: { copper: 130000, titanium: 80000, thorium: 62000, plastanium: 47000 },
     growth: 1,
   },
 };
@@ -1258,7 +1354,7 @@ function upgradePrice(def: TurretUpgradeDef, turretBase: Cost): PriceCurve {
   const authored = AUTHORED_UPGRADE_PRICE[def.id];
   if (authored) return authored;
   if (def.tier >= ULTIMATE_TIER)
-    return { base: { "surge-alloy": ULTIMATE_SURGE[bandOfCost(turretBase)] }, growth: 1 };
+    return { base: { "surge-alloy": ULTIMATE_SURGE[bandOfTurret(def.turret)] }, growth: 1 };
   const base: Cost = {};
   for (const { item, amount } of costEntries(turretBase))
     base[item] = tidy(amount * UPGRADE_SCALE[def.tier]);

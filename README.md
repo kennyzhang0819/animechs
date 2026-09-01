@@ -48,7 +48,10 @@ stale tab or a cached bundle looks exactly like a fix not working.
   points, one saved layout per world, game speed, build-bar loadout,
   mutation switches
 - `game/items.ts` — the five currencies (copper, titanium, thorium,
-  plastanium, phase-fabric)
+  plastanium, phase-fabric) plus the boss trophy (surge-alloy). A currency
+  is a **line of the roster**, not a rung of one: `ITEM_OF_FAMILY` in
+  `levels.ts` maps ground → copper, air → titanium, crawler → thorium,
+  support → plastanium, both water lines → phase fabric
 - `game/maps.ts` — map documents: terrain layers, spawn circles, per-layer
   exit masks — see [docs/authoring-maps.md](docs/authoring-maps.md) for how
   to draw one and how to check it
@@ -155,11 +158,29 @@ The swarm armour column is flat armour on tier 1–3 bodies only, held at zero
 for the first five rungs because a scatter pellet is 3 damage and even +1
 would halve the game's first anti-air.
 
-**Every currency drops from rung 1**, which follows from there being no
-cuts: a full clear banks ~32,000 copper down to ~200 phase fabric whatever
-the rung. So the phase-priced turrets (spectre, meltdown, foreshadow) are
-reachable from the bottom of the ladder — slowly. The gate is the rate, not
-the permission.
+**Every currency a map pays drops from its rung 1**, which follows from
+there being no cuts: a full clear of Confluence banks ~134,000 copper and
+~107,000 titanium whatever the rung, and one of Maelstrom banks its three.
+So the rung is never a permission gate, only a rate.
+
+**But a MAP is a permission gate, and that is the point.** A map sends only
+a few unit lines, and a line is a currency, so each map pays two or three of
+the five and no map pays them all:
+
+| map | lines it sends | it pays |
+| --- | --- | --- |
+| Confluence | ground, air | copper, titanium |
+| Maelstrom | crawler, support, naval + naval support | thorium, plastanium, phase fabric |
+
+Every tech price is a bundle, so **no single map funds the tree** — the
+whole opening arsenal is priced in Confluence's two currencies (it has to
+be: Maelstrom stays shut until Confluence rung 5 falls), and everything from
+swarmer up spans both maps. Rotating is required, not encouraged.
+`__ladder.check()` lints both halves: a node no map can ever pay for, and a
+node the open maps can afford but not unlock.
+
+Each map's currencies are drawn on its card in the map select, derived from
+the script it actually plays so a world cannot lie about what it drops.
 
 ### Mutation
 
@@ -228,15 +249,20 @@ else:
   player can own a turret out-damaging its armour. (Two exceptions to keep
   in mind: burning pierces armour entirely, and the lancer counts armour
   quadruple.)
-- **Health per body is difficulty that pays nothing back.** A kill drops one
-  item whatever it killed, so 100 spirocts cost ~15× what 100 daggers cost
-  and pay the same 100 items. Padding a wave with tier-1 bodies is nearly
-  free — cost and income rise together — which is why swarm waves can be as
-  big as they look good.
-- **The currency mix must track the tree.** The script has one target
-  payout mix in `TARGET_DROP_RATIO` (normalised to copper = 100, and
-  100 : 30 : 24 : 4.2 : 0.85 today); drift far from it
-  and one currency becomes the only real constraint.
+- **A kill pays its family's currency in its tier's quantity.** The family
+  picks WHAT (`ITEM_OF_FAMILY`), the tier picks HOW MUCH
+  (`AMOUNT_PER_TIER` = 1, 3, 6, 80, 250 — fitted to each tier's mean cost
+  to kill, printed health through the armour shave at salvo's 28-damage
+  shell). That table is the anti-farm guard across tiers, the way
+  `LOOT_PER_RUNG` is across rungs: without it a T1 swarm would be the best
+  source of every currency in the game. `check()` asserts items-per-second
+  comes out flat across the tiers.
+- **The currency mix must track the tree, per map.** `TARGET_DROP_RATIO`
+  has a row per world, normalised to that world's own biggest column:
+  Confluence 100 : 80 on copper : titanium, Maelstrom 53 : 40 : 100 on
+  thorium : plastanium : phase. Drift far from it and one currency becomes
+  the only real constraint. What moves a row is which FAMILIES the world's
+  transforms send, which is what makes a map's economy authorable at all.
 
 Two more the arithmetic can't see: **air** (hail, scorch, arc, lancer and
 ripple cannot shoot up at all) and **crawler speed** (twice the line's pace,
@@ -279,8 +305,18 @@ __ladder.wave(7, 2)   // what one authored wave costs at a given rung
   preserves the bundle's SHAPE, so every rung carries its turret's drop
   ratio and becomes affordable where the turret does — no gate is
   written anywhere. The fourth rung is priced in surge alloy alone
-  (`ULTIMATE_SURGE`), which a boss pays once and no amount of farming
-  produces.
+  (`ULTIMATE_SURGE`, indexed by the turret's Mindustry valuation), which a
+  boss pays once and no amount of farming produces.
+- **A price says what you must fight.** Scatter and parallax shoot nothing
+  but air and are priced in the air line's titanium; tsunami floods a field
+  and is priced in the fleet's phase fabric; duo stays copper-only forever
+  so a stalled save can always earn out of ground kills. When the currencies
+  changed meaning, every node kept its **time to afford its first point**,
+  measured in full clears — so the tree's order and pace are what they were
+  playtested at, and only what you must fight for each node moved.
+- **There is no offline income.** No idle accrual, no "welcome back" bundle;
+  every item in the bank was paid for by a run somebody watched. The loot
+  curve carries the whole pacing burden, on purpose.
 
 Nothing about pricing, turret caps, or the free loadout is derived from the
 wave script. `OPENING_DUOS` (50, plus `OPENING_ARCS`, 5) is a hand-tuned

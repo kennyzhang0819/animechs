@@ -636,15 +636,14 @@
   }
  ],
  "transforms": {
-  "1": [],
-  "2": [
+  "1": [
    {
     "from": [
      "crawler"
     ],
     "to": [
      {
-      "family": "naval"
+      "family": "ground"
      }
     ]
    },
@@ -654,8 +653,27 @@
     ],
     "to": [
      {
-      "family": "support"
-     },
+      "family": "air"
+     }
+    ]
+   }
+  ],
+  "2": [
+   {
+    "from": [
+     "ground"
+    ],
+    "to": [
+     {
+      "family": "naval"
+     }
+    ]
+   },
+   {
+    "from": [
+     "air"
+    ],
+    "to": [
      {
       "family": "navalSupport"
      }

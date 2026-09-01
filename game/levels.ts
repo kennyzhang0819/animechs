@@ -1,5 +1,5 @@
 import { CELL, HP0, UNIT_SPEED, UR } from "./constants";
-import { itemForTier, type Cost } from "./items";
+import { ITEM_KINDS, type Cost, type ItemKind } from "./items";
 import { explain, type SaveResult } from "./types";
 
 export const UNIT_KINDS = ["dagger", "mace", "fortress", "scepter", "reign", "crawler", "atrax", "spiroct", "arkyid", "toxopid", "flare", "nova", "pulsar", "quasar", "vela", "corvus", "horizon", "zenith", "antumbra", "eclipse", "disrupt", "risso", "minke", "bryde", "sei", "omura", "retusa", "oxynoe", "cyerce", "aegires", "navanax"] as const;
@@ -928,6 +928,19 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
  * order. This is the shape a level author thinks in — "more ground, less
  * air" — so the level editor lays its unit inputs out one tree per row, and
  * a unit's position in a row is its tier.
+ *
+ * A ROW IS ALSO A CURRENCY (see ITEM_OF_FAMILY below), so adding one is an
+ * economy decision as well as a roster one — but a cheap one, because the
+ * mapping is many-to-one and a new row can share a currency that already
+ * exists.
+ *
+ * A THEMED MAP USUALLY NEEDS NO NEW ROW AT ALL, and reaching for one is the
+ * mistake to avoid. Transforms already re-cast whole lines, so a winter
+ * world is "the ground line arrives as ice-walkers here" — a sprite set and
+ * some stat tweaks, no new UnitKind, no new family, no economy change. There
+ * are thirty-one units across seven rows already. Spend a new row on
+ * genuinely new BEHAVIOUR: the two water lines earned theirs because they
+ * need a map with water in it to field at all.
  */
 export const UNIT_TREES = [
   { key: "ground", name: "Ground", kinds: ["dagger", "mace", "fortress", "scepter", "reign"] },
@@ -983,6 +996,89 @@ const FAMILY_OF = (() => {
   for (const t of UNIT_TREES) for (const k of t.kinds) out[k] = t.key;
   return out;
 })();
+
+/**
+ * WHICH CURRENCY A FAMILY PAYS — a TABLE, and deliberately not a formula.
+ *
+ * THIS IS THE WHOLE CHANGE. Currency used to be read off the unit's TIER
+ * (itemForTier, deleted): T1 paid copper, T5 paid phase. That made a
+ * world's currency mix a consequence of its tier histogram — and a world's
+ * transforms re-cast whole FAMILIES while deliberately preserving tier (see
+ * WaveTransform), so no transform could ever change what a world paid. The
+ * only lever left was spawn frequency per tier, which is difficulty. Point
+ * the same lookup at the family instead and the transforms BECOME the
+ * currency dial, with no new machinery at all.
+ *
+ * IT IS MANY-TO-ONE ON PURPOSE, and that is the reason it is a table rather
+ * than a derivation. A new family must be able to land on an EXISTING
+ * currency: the two water lines share phase fabric because they are a
+ * matched pair that only exist on water maps. Families are meant to be
+ * cheap and many; currencies expensive and few — a currency costs seven
+ * files, a persisted Bank migration, a hand-authored column in every
+ * world's TARGET_DROP_RATIO row, an icon and a pass over every price
+ * bundle, where a family mapped onto an existing currency costs two lines.
+ * FIVE IS THE BUDGET. Hold it.
+ *
+ * WHICH FAMILY GOT WHICH is not arbitrary either: the STARTER world's two
+ * families take the two currencies the early tech tree is priced in (see
+ * WORLDS below and TARGET_DROP_RATIO in ladder.ts), because a fresh save
+ * can only reach Confluence and must be able to buy its opening arsenal
+ * out of what Confluence pays.
+ *
+ * The boss row pays NOTHING — null rather than a currency, because a boss's
+ * entire payout is the one-time surge trophy (see unitDrop below).
+ */
+export const ITEM_OF_FAMILY: Readonly<Record<FamilyKey, ItemKind | null>> = {
+  ground: "copper",
+  air: "titanium",
+  crawler: "thorium",
+  support: "plastanium",
+  naval: "phase-fabric",
+  // shares naval's currency: the two water lines are a matched pair, and a
+  // sixth currency for the escorts of a fleet would be a currency that only
+  // ever drops beside another one
+  navalSupport: "phase-fabric",
+  boss: null,
+};
+
+/**
+ * HOW MANY ITEMS ONE KILL PAYS, by the unit's TIER — the other half of the
+ * drop, and NOT optional.
+ *
+ * Every unit used to drop exactly ONE item and the tier decided the
+ * CURRENCY, so quantity never scaled and the tier ladder was silently doing
+ * all of the income balancing: a dagger and a reign both paid one, but the
+ * reign's one was phase fabric. Move currency onto the family and leave
+ * quantity flat and the economy INVERTS on the first run — T1 bodies arrive
+ * in the tens of thousands and die instantly, so farming daggers would be
+ * the best source of every currency in the game. This table is what stops
+ * that, and with the tier no longer choosing the currency it is the only
+ * remaining reason to fight deep tiers at all.
+ *
+ * IT TRACKS COST TO KILL, NOT FEEL. Each row is the mean EFFECTIVE health
+ * of that tier across the six combat lines — printed health times the
+ * armour tax max(dmg - armor, 0.1 * dmg) — normalised so a T1 body pays 1:
+ *
+ *   tier          T1     T2     T3      T4       T5
+ *   effective    183    570  1,110  14,521   45,643
+ *   ratio       1.00   3.11   6.06   79.32   249.33
+ *   paid           1      3      6      80      250
+ *
+ * THE ARMOUR TAX IS TAKEN AT SALVO'S 28-DAMAGE SHELL, and the reference is
+ * written down because a flat shave makes every such number a statement
+ * about the denominator: 28 is the median per-shot calibre of the shooting
+ * roster (TOWERS in constants.ts) and the first one that puts a fortress
+ * back at its printed health rather than ten times it. Re-derive the row if
+ * the roster's calibres move; do not nudge it by feel.
+ *
+ * This is deliberately NOT the same measure as ladder.ts's `waveHp`, which
+ * is printed health and armour-blind on purpose — that number weighs a wave
+ * against the fleet, and folding one turret's armour tax into it would say
+ * more about the turret than about the wave. Cost-to-kill is a different
+ * question, and a payout is exactly where it belongs: check() lints that
+ * items-per-second comes out flat across the tiers because of this row.
+ */
+export const AMOUNT_PER_TIER: readonly number[] = [1, 3, 6, 80, 250];
 
 /** one destination of a transform rule; weight defaults to 1 */
 export interface TransformTarget {
@@ -1155,19 +1251,55 @@ export function transformLabel(t: WaveTransform): string {
 }
 
 /**
- * What one kill of this kind pays out: exactly ONE of its tier's item. The
- * tier is the whole drop table — a T2 kill is one titanium whether it was a
- * mace or a pulsar — so a level's tier mix is the only thing that
- * decides what a run banks, and no unit is quietly worth more than its tier.
+ * WHAT ONE KILL PAYS: its FAMILY picks the currency, its TIER picks the
+ * amount. A dagger and a crawler are both tier 1 and both pay one item —
+ * one copper and one thorium, because one walks in the ground line and the
+ * other in the crawler line. A reign pays 250 copper, a toxopid 250
+ * thorium.
+ *
+ * So a world's takings are decided by WHICH LINES its transforms send, and
+ * a wave's tier mix only decides how big the pile is. That is the whole
+ * point of moving off the tier table: the transforms already re-cast whole
+ * families, so a world's currency mix became something an author sets
+ * rather than something the shared script dictates.
  *
  * EXCEPT A BOSS, WHICH DROPS NOTHING AT ALL. Its entire payout is the
  * one-time surge trophy grantRunReward pays on its first kill per
- * world+rung (progress.ts). A boss is an event, not income — were it
- * on the tier table, every replay would farm it like any other T5.
+ * world+rung (progress.ts). A boss is an event, not income — were it on the
+ * drop table, every replay would farm it like any other T5.
  */
 export function unitDrop(kind: UnitKind): Cost {
   if (UNIT_STATS[kind].boss) return {};
-  return { [itemForTier(UNIT_STATS[kind].tier)]: 1 };
+  const item = ITEM_OF_FAMILY[FAMILY_OF[kind]];
+  if (!item) return {};
+  const tier = Math.max(1, Math.floor(UNIT_STATS[kind].tier));
+  return { [item]: AMOUNT_PER_TIER[Math.min(tier, AMOUNT_PER_TIER.length) - 1] };
+}
+
+/**
+ * EVERY CURRENCY A WORLD ACTUALLY PAYS, in ITEM_KINDS order — derived from
+ * the script it plays and never hand-authored per world.
+ *
+ * It reads the PLAYED script (the blueprint after this world's transforms,
+ * see applyBlueprint), so a world cannot lie about what it drops: change
+ * its re-casting rules and this changes with them. That matters because
+ * "which map pays what" is now the primary reason to pick one map over
+ * another, and the map-select card shows this row of icons.
+ *
+ * An unloaded world has an empty script and so pays nothing — the same
+ * visible failure an empty wave list is, rather than a stale guess derived
+ * from the rules alone.
+ */
+export function worldItems(spec: LevelSpec): ItemKind[] {
+  const paid = new Set<ItemKind>();
+  for (const step of spec.script)
+    for (const g of waveGroups(step.wave))
+      g.counts.forEach((count, i) => {
+        if (count <= 0) return;
+        const item = ITEM_OF_FAMILY[FAMILY_OF[UNIT_KINDS[i]]];
+        if (item) paid.add(item);
+      });
+  return ITEM_KINDS.filter((k) => paid.has(k));
 }
 
 /**
@@ -1428,9 +1560,11 @@ export function blueprintDoc(): LevelDoc {
  * THERE IS NO CUT ANY MORE, so nothing written here can be unreachable:
  * add a wave 51 and every rung sends it.
  *
- * Kills are the only income: a finished run banks each dead unit's tier
- * item whether it ended in victory or defeat, times the rung's drop bonus
- * (which compounds — see LOOT_PER_RUNG).
+ * Kills are the only income: a finished run banks, for each dead unit, the
+ * currency of its FAMILY in the quantity of its TIER (unitDrop), whether it
+ * ended in victory or defeat, times the rung's drop bonus (which compounds
+ * — see LOOT_PER_RUNG). Which world was played decides WHICH currencies
+ * came back; how deep the run got decides how many.
  *
  * TWO THINGS TO KNOW WHEN EDITING THIS LIST.
  *
@@ -1454,6 +1588,27 @@ export const WORLDS: LevelSpec[] = [
     name: "Confluence",
     map: "grass-open",
     badge: "beginner",
+    // CONFLUENCE IS THE GROUND LINE AND THE AIR LINE, AND NOTHING ELSE —
+    // two families, so two currencies (copper and titanium), which is what
+    // makes it the map a fresh save can fund its whole opening arsenal on.
+    //
+    // It used to play the blueprint verbatim, which meant all four land
+    // families and so, under family-based drops, four of the five
+    // currencies off the starter map alone. A map that pays nearly
+    // everything is a map nobody ever leaves, and rotating maps is the
+    // whole reason a map has a currency mix at all (see ITEM_OF_FAMILY).
+    //
+    // Confluence is also where the game is taught, and two lines is what
+    // there is room to teach: hold a ground lane, and answer air. The
+    // crawler line arrives as the dagger line here and the support line as
+    // the air line — same tiers and the same body counts, so the run comes
+    // out within a per cent of the blueprint's own weight (27.66M against
+    // 27.77M health) and what really moves is the silhouettes and the
+    // takings.
+    transforms: [
+      { from: ["crawler"], to: [{ family: "ground" }] },
+      { from: ["support"], to: [{ family: "air" }] },
+    ],
     waveGap: 15,
     // ================= HOW TO AUTHOR A WAVE ========================
     //
@@ -1462,22 +1617,33 @@ export const WORLDS: LevelSpec[] = [
     // no copy in this file to keep in step with it — see the note above
     // `script` at the bottom of this block. Everything below documents HOW
     // to author a wave; WHAT the waves are lives in the document, and the
-    // admin level editor writes it. World 1 plays the blueprint verbatim —
-    // no transforms — so authoring guidance written in its families reads
-    // literally here and re-cast elsewhere.
+    // admin level editor writes it. EVERY world re-casts the blueprint now
+    // (see the transforms above), so authoring guidance written in the
+    // blueprint's own four land families reads literally in the blueprint
+    // and re-cast in every world — including this one.
     //
     // WAVES 1-20 ARE PLAYTESTED AND FIXED. Do not restructure them.
     //
     // EVERY RUNG PLAYS THIS WHOLE LIST. There is one run in the game and
-    // ten difficulties to play it at, so TARGET_DROP_RATIO is ONE row —
-    // the cumulative mix of all fifty waves — and an edit anywhere in the
-    // list moves the economy of every rung at once.
+    // ten difficulties to play it at, so a world's TARGET_DROP_RATIO is ONE
+    // row — the cumulative mix of all fifty waves — and an edit anywhere in
+    // the list moves the economy of every rung at once. There is a row PER
+    // WORLD because each world re-casts these families differently, and it
+    // is the family mix that decides which currencies a world pays.
     //
     //   line       T1        T2       T3         T4         T5
     //   dagger     dagger    mace     fortress   scepter    reign
     //   crawler    crawler   atrax    spiroct    arkyid     toxopid
     //   support    nova      pulsar   quasar     vela       corvus
     //   air        flare     horizon  zenith     antumbra   eclipse
+    //
+    // A LINE IS ALSO A CURRENCY NOW (ITEM_OF_FAMILY above): the dagger
+    // line pays copper, air titanium, crawler thorium, support plastanium
+    // and the two water lines phase fabric. So moving bodies BETWEEN lines
+    // in the blueprint moves the whole campaign's currency mix, on every
+    // world at once — check() reports the drift against each world's
+    // authored TARGET_DROP_RATIO row. Moving bodies between TIERS inside a
+    // line changes how much a line pays and not what it pays.
     //
     // KEEP SENDING TIER-1 UNITS. They are the swarm and the game is named
     // after them. They are also nearly free in the health budget — 150 hp
@@ -1487,14 +1653,14 @@ export const WORLDS: LevelSpec[] = [
     // T3/T4/T5 counts; that is the only thing that really moves a rung's
     // weight.
     //
-    // TIER 5 STARTS IN THE FORTIES AND THAT IS AN ECONOMY DECISION. Phase
-    // fabric is what spectre, meltdown and foreshadow are priced in, and
-    // the T5 count is the entire phase supply — about 200 a full clear.
-    // Since every rung plays every wave, that supply exists from rung 1
-    // and the gate on those three turrets is the RATE rather than the
-    // permission: adding T5 bodies makes the endgame turrets arrive
-    // sooner for everyone. TARGET_DROP_RATIO's phase column is where
-    // check() notices.
+    // TIER 5 IS AN ECONOMY DECISION, BUT NO LONGER A CURRENCY'S WHOLE
+    // SUPPLY. A T5 body used to be the only source of phase fabric — some
+    // 200 a full clear — so the T5 count alone paced the three endgame
+    // turrets. Under family-based drops phase is the water lines' currency
+    // and a T5 kill pays 250 of ITS OWN line's item (AMOUNT_PER_TIER), so
+    // what the T4/T5 counts now set is the SIZE of every currency at once
+    // and not the shape. Adding T5 bodies still makes the whole tree
+    // arrive sooner for everyone; it no longer favours one turret.
     //
     // THE PATTERN, past wave 20. One cycle is four waves:
     //
@@ -1539,11 +1705,12 @@ export const WORLDS: LevelSpec[] = [
     // wave is mace 177 / fortress 46 / scepter 1; wave 45's is mace 160 /
     // fortress 275 / scepter 64 / reign 14. Same wave type, different game.
     //
-    // CHECK THE TOTALS, NOT THE FEEL. A rung's cumulative tier counts
-    // have to land on TARGET_DROP_RATIO (ladder.ts), because one kill is one
-    // item and that ratio IS the economy — miss it and some currency becomes
-    // the only real constraint while the rest pile up unspent.
-    // `window.__ladder.check()` reports the drift.
+    // CHECK THE TOTALS, NOT THE FEEL. A run's cumulative FAMILY counts,
+    // weighted by AMOUNT_PER_TIER, have to land on each world's
+    // TARGET_DROP_RATIO row (ladder.ts) — that ratio IS the economy, and
+    // missing it makes one currency the only real constraint while the
+    // rest pile up unspent. `window.__ladder.check()` reports the drift,
+    // world by world.
     //
     // DO NOT SIZE A RUNG AGAINST THE MAP'S AREA. A run's total bodies
     // are not its bodies on the field: units stream in over
@@ -1570,16 +1737,33 @@ export const WORLDS: LevelSpec[] = [
     // ITS MAP IS ITS OWN AND ITS WAVES ARE THE BLUEPRINT'S, RE-CAST. It
     // plays the same fifty waves as every world; the transforms below are
     // what make it the naval front. Tidewater is authored terrain — a
-    // river, a bay and three crossings — so the crawler line arrives as
-    // ships out of the water the map is made of, and the support line
-    // splits its bodies evenly between the shore and the bay.
+    // river, a bay and three crossings — and the water is where the volume
+    // of the campaign arrives here.
     id: "2",
     name: "Maelstrom",
     map: "tidewater",
     badge: "advanced",
+    // MAELSTROM PAYS THE OTHER THREE CURRENCIES, and that is the point of
+    // it. Confluence pays copper and titanium; the crawler, support and
+    // water lines pay thorium, plastanium and phase fabric, and every one
+    // of them is here and nowhere else. Five currencies at two-to-three a
+    // map is why there are two maps and why the top of the tech tree is
+    // priced across both (see TARGET_DROP_RATIO in ladder.ts).
+    //
+    // THREE FAMILIES IS THE CEILING and this map sits on it. Prefer two.
+    //
+    // The re-casting: the dagger line puts to sea as the battle fleet and
+    // the air line as the fleet's escorts, so Tidewater's river and bay
+    // carry the volume the ground lanes carry on Confluence; the crawler
+    // line walks the crossings and the support line walks with it. NOTHING
+    // BUT THE BOSS FLIES HERE — the boss row is the one family a transform
+    // may not touch — which is the sharpest thing one map can say about
+    // itself next to another, and it makes the run about 6% heavier than
+    // the blueprint (33.0M against 27.8M) because a hull outweighs the
+    // walker it replaces at every tier.
     transforms: [
-      { from: ["crawler"], to: [{ family: "naval" }] },
-      { from: ["support"], to: [{ family: "support" }, { family: "navalSupport" }] },
+      { from: ["ground"], to: [{ family: "naval" }] },
+      { from: ["air"], to: [{ family: "navalSupport" }] },
     ],
     waveGap: 15,
     script: [],

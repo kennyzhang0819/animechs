@@ -25,14 +25,17 @@ import { dropsForKills } from "@/game/progress";
 import {
   audit,
   GRIND_STEP,
+  RATIO_TOLERANCE,
   rungColor,
   rungLabel,
   SLIDE_STEP,
+  targetDropRatio,
   tierDropBonus,
   TOP_TIER,
   waveGuide,
   type WaveRow,
 } from "@/game/ladder";
+import { ITEM_INFO, ITEM_KINDS } from "@/game/items";
 import {
   drawThumb,
   loadMap,
@@ -498,10 +501,12 @@ export default function LevelEditorView({
             {/* ECONOMY. One row a RUNG: what a full clear banks, drop bonus
                 included. Every rung sends the same fifty waves, so the rows
                 differ ONLY by that bonus — the shape below them is the
-                script's and is printed once. The ratio is the number to
+                world's and is printed once. The ratio is the number to
                 author against (the tech tree is priced to it); see
-                TARGET_DROP_RATIO in ladder.ts. The bonus cannot move it —
-                only the mix of unit tiers the waves send can. */}
+                TARGET_DROP_RATIO in ladder.ts, which has a row PER WORLD
+                now. The bonus cannot move it — only THIS WORLD'S family mix
+                can, which means its re-casting rules and the blueprint's
+                own counts. */}
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
               <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
                 Payout per rung
@@ -553,22 +558,52 @@ export default function LevelEditorView({
                   </div>
                 ))}
               </div>
-              {/* THE MIX, ONCE. Every rung sends the same fifty waves, so
-                  the ratio is a fact about the SCRIPT and printing it ten
-                  times printed the same ten numbers ten times */}
+              {/* THE MIX, ONCE, AGAINST THIS WORLD'S OWN ROW. Every rung
+                  sends the same fifty waves, so the ratio is a fact about
+                  the WORLD and printing it ten times printed the same ten
+                  numbers ten times. Only the currencies one side or the
+                  other actually mentions are listed — five columns of which
+                  three are zero is a table about the other maps. */}
               <div className="mt-2 border-t border-[#2E2E36] pt-2">
-                <div className="text-[12px] text-[#A6A6AF]">
-                  {(report.rows[0]?.dropRatio ?? [])
-                    .map((v, i) => (i === 0 ? "100" : v.toFixed(v < 10 ? 1 : 0)))
-                    .join(" : ")}
+                <div className="space-y-0.5">
+                  {ITEM_KINDS.map((k, i) => {
+                    const got = report.rows[0]?.dropRatio[i] ?? 0;
+                    const want = targetDropRatio(level.id)[i] ?? 0;
+                    if (got <= 0 && want <= 0) return null;
+                    // both sides are normalised to their own biggest
+                    // column, so the top currency reads 100 either way and
+                    // an authored row whose top is not 100 shows up here
+                    const off =
+                      want > 0
+                        ? Math.abs(got / want - 1) > RATIO_TOLERANCE
+                        : got > 0;
+                    return (
+                      <div key={k} className="flex items-baseline justify-between gap-3">
+                        <span className="text-[12px]" style={{ color: ITEM_INFO[k].color }}>
+                          {ITEM_INFO[k].name}
+                        </span>
+                        <span
+                          className={`text-[12px] tabular-nums ${off ? "text-[#FF8A8A]" : "text-[#A6A6AF]"}`}
+                        >
+                          {got.toFixed(got < 10 ? 1 : 0)}
+                          <span className="text-[#71717C]">
+                            {" / "}
+                            {want.toFixed(want < 10 ? 1 : 0)}
+                          </span>
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
-                <p className="text-[12px] leading-snug text-[#71717C]">
-                  Copper : titanium : thorium : plastanium : phase, for the whole
-                  script — the target is TARGET_DROP_RATIO in ladder.ts. Climb is
-                  health per second against the rung below, farm is items banked
-                  per minute against it, and grind is the two divided: hold it
-                  just above 1 and every rung costs a little more of an evening
-                  than the last.
+                <p className="mt-1 text-[12px] leading-snug text-[#71717C]">
+                  What this world pays / what it is authored to, both
+                  normalised so its biggest currency reads 100 — the target
+                  is its row of TARGET_DROP_RATIO in ladder.ts, and what
+                  moves it is which FAMILIES the world&apos;s rules send.
+                  Climb is health per second against the rung below, farm is
+                  items banked per minute against it, and grind is the two
+                  divided: hold it just above 1 and every rung costs a little
+                  more of an evening than the last.
                 </p>
               </div>
             </section>

@@ -19,6 +19,7 @@ import {
   WORLD,
   WORLDS,
   worldById,
+  worldItems,
   waveGroups,
   MAP_BADGE,
   type LevelSpec,
@@ -71,7 +72,7 @@ import { turretIcon } from "@/game/atlas";
 import { mutationAt } from "@/game/mutation";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
 import { isEmpty, ITEM_INFO } from "@/game/items";
-import { CostRow, Wallet } from "./Items";
+import { CostRow, ItemIcons, Wallet } from "./Items";
 import TechTree from "./TechTree";
 
 const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
@@ -114,14 +115,25 @@ function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) 
 }
 
 /**
- * ONE MAP ON THE MAP SELECT — a preview, a name, and the badge that ranks
- * this map against the others (MAP_BADGE in levels.ts).
+ * ONE MAP ON THE MAP SELECT — a preview, a name, the badge that ranks this
+ * map against the others (MAP_BADGE in levels.ts), and WHAT IT PAYS.
  *
  * The badge sits ON the preview rather than beside the name because that is
  * the thing being chosen between: a player scanning the grid is reading four
  * badges, not four sentences. Everything the map actually costs — the
  * rung, the wave count, the mutations in force — is one tap deeper,
  * on the detail panel, so the grid stays a picture and never a spec sheet.
+ *
+ * THE CURRENCY ROW IS THE EXCEPTION, and it earns the space. A map sends
+ * only a few unit LINES and each line pays its own currency
+ * (ITEM_OF_FAMILY in levels.ts), so each map pays two or three of the five
+ * and no map pays them all — which makes "which map pays what" the primary
+ * reason to pick one. Two or three sprites read at a glance where a
+ * sentence would not.
+ *
+ * IT IS DERIVED, NEVER AUTHORED PER MAP. worldItems() reads the script the
+ * world actually plays, so a world whose re-casting rules change cannot
+ * lie here about what it drops.
  */
 function MapCard({
   world,
@@ -145,6 +157,9 @@ function MapCard({
   // you cannot enter and cannot find out how to enter is a dead end
   const lock = worldLock(progress, world.id);
   const lockedBy = lock ? worldById(lock.world) : null;
+  // the currencies this map's lines pay — empty until the level documents
+  // have loaded, which is the same visible failure an empty wave list is
+  const pays = mapsReady ? worldItems(world) : [];
 
   return (
     <button
@@ -175,12 +190,17 @@ function MapCard({
         </span>
       </div>
       <div className="flex items-baseline justify-between gap-3 border-t border-[#2E2E36] px-3 py-2.5">
-        <span
-          className={`text-[15px] font-bold uppercase tracking-widest ${
-            lock ? "text-[#71717C]" : "text-[#EDEDEF] group-hover:text-[#FFD37F]"
-          }`}
-        >
-          {world.name}
+        <span className="flex min-w-0 flex-col gap-1">
+          <span
+            className={`text-[15px] font-bold uppercase tracking-widest ${
+              lock ? "text-[#71717C]" : "text-[#EDEDEF] group-hover:text-[#FFD37F]"
+            }`}
+          >
+            {world.name}
+          </span>
+          {/* what this map pays — icons only, because the AMOUNT is a
+              property of the run and this is a property of the map */}
+          <ItemIcons items={pays} className={lock ? "opacity-40" : ""} />
         </span>
         {lock ? (
           <span className="text-[11px] font-bold uppercase tracking-widest text-[#71717C]">

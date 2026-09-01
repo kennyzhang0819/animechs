@@ -1124,10 +1124,14 @@ export function refundTech(node: TechKind, count = 1): Progress | null {
 }
 
 /**
- * The bundle a run's kills are worth before the ladder's multipliers. Each
- * kind pays its own tier's item, so the shape of this bundle is the shape of
- * the wave that died: a pure dagger push is copper only, a spiroct column is
- * thorium only.
+ * The bundle a run's kills are worth before the ladder's multipliers.
+ *
+ * Each kind pays its FAMILY'S currency in its TIER'S quantity (unitDrop in
+ * levels.ts), so the shape of this bundle is the shape of the LINES that
+ * died: a pure dagger push is copper only, a spiroct column thorium only,
+ * and a run on a world whose transforms send neither banks neither. It is
+ * also why a run's takings say which map was played — the world decides
+ * which lines arrive, and the lines decide the currencies.
  */
 export function dropsForKills(killsByKind: ArrayLike<number>): Cost {
   const total: Cost = {};
@@ -1166,6 +1170,14 @@ export interface RunReward {
  * killed on the way down — in whatever currencies those kills happened to
  * drop — multiplied by the rung's own drop bonus. Clearing the frontier
  * rung for the first time moves it up one.
+ *
+ * NOTHING ACCRUES WHILE THE APP IS SHUT. There is no offline income, no
+ * idle tick and no "welcome back, you earned this while you were away".
+ * Every item in the bank was paid for by a run somebody watched, and that
+ * is a design commitment rather than a feature not written yet. It puts the
+ * whole pacing burden on the loot curve — LOOT_PER_RUNG for the ladder,
+ * AMOUNT_PER_TIER for the kill — which is where it is legible and tunable,
+ * rather than in a clock nobody is looking at.
  *
  * Only call this on a run that reached its own end (won or lost):
  * abandoning mid-level is worth nothing, which is why the UI settles from

@@ -1,31 +1,84 @@
 /**
- * The campaign currencies. Every enemy drops exactly ONE item — the one its
- * tier maps to below — so the resource a run banks is decided entirely by
- * what it was asked to kill. Daggers pay copper, maces pay titanium,
- * fortresses pay thorium, and every row now has units in the script behind
- * it, up to the T5s that pay phase.
+ * The campaign currencies. Every enemy drops ONE currency — the one its
+ * FAMILY maps to (ITEM_OF_FAMILY in levels.ts) — and how MUCH of it is
+ * decided by the unit's tier (AMOUNT_PER_TIER, same file). So the resource
+ * a run banks is decided by WHICH LINES it was asked to fight, and the
+ * depth of those lines only sets the size of the pile.
  *
- * The point of the split: tech nodes cost SEVERAL items at once (see
- * tech.ts), so a deep upgrade can't be bought by farming the easiest wave
- * forever — the higher tiers want titanium and thorium, and the only place
- * those come from is heavier enemies.
+ * THIS USED TO BE A TIER LADDER: T1 paid copper, T2 titanium, and so on up
+ * to the T5s paying phase. That made the currency mix a consequence of the
+ * script's tier histogram, which every world shares — a world's transforms
+ * re-cast whole FAMILIES and deliberately preserve tier, so no world could
+ * ever pay a different mix from any other. Currency-by-family points the
+ * same machinery at the axis transforms actually move: a world's currency
+ * mix is now an authored property of its family mix, and the transforms are
+ * the dial (see TARGET_DROP_RATIO in ladder.ts).
+ *
+ * The point of the split survives the move: tech nodes cost SEVERAL items
+ * at once (see tech.ts) and no single map pays them all, so a deep upgrade
+ * cannot be bought by farming one map forever — rotating maps is what pays
+ * for the top of the tree.
  *
  * SCRAP IS DELIBERATELY NOT HERE. Mindustry's own progression runs copper →
  * titanium → thorium → plastanium → phase fabric, and scrap sits off to the
- * side of it as salvage rather than as a rung. Starting the campaign on
- * copper means the cheapest currency a player ever holds is the one
- * Mindustry also starts you on.
+ * side of it as salvage rather than as a rung. The names are kept because
+ * they are the ones the sprites carry; the ORDER no longer means anything
+ * (see BASE_ITEM below).
+ *
+ * ---------------------------------------------------------------------
+ * FIVE CURRENCIES IS THE BUDGET, AND IT IS HARD.
+ *
+ * Adding one costs seven files — this one, tech.ts, ladder.ts, progress.ts,
+ * BalanceView.tsx, Items.tsx, MechSwarm.tsx — and then, on top of the code:
+ *
+ *   - `Bank` is Record<ItemKind, number> and is PERSISTED TO LOCALSTORAGE,
+ *     so a new currency is a save migration every time. There is already
+ *     one to look at (LEGACY_ITEM_SHIFT in progress.ts).
+ *   - a hand-authored column in EVERY world's TARGET_DROP_RATIO row.
+ *   - an icon and an accent colour in ITEM_INFO, below.
+ *   - a pass over all twenty-four price bundles in tech.ts to decide which
+ *     nodes want it, since a bundle that ignores it makes it unspendable
+ *     and a bundle that leans on it makes it the only gate.
+ *
+ * A NEW FAMILY MAPPED ONTO AN EXISTING CURRENCY COSTS TWO ROWS
+ * (ITEM_OF_FAMILY in levels.ts). Roughly ten to one. So: families cheap and
+ * many, currencies expensive and few. When a new line of enemies needs a
+ * home, the answer is almost always an existing currency.
+ *
+ * SEASONAL AND EVENT CONTENT NEVER BECOMES AN ItemKind. Not as an
+ * exception, not "just this once":
+ *
+ *   1. it is a permanent save migration for a currency that drops one
+ *      month a year,
+ *   2. it is a dead column in the bank the other eleven,
+ *   3. and if it buys anything on the tech tree, a player who missed the
+ *      event is PERMANENTLY behind — FOMO on power, which is the bad kind.
+ *
+ * An event currency is a separate, EXPIRING system with its own field on
+ * Progress, buying event-only rewards — a skin, a map, a loadout slot. The
+ * tech tree never learns it exists.
+ * ---------------------------------------------------------------------
  */
 
-/** every currency the game knows, cheapest tier first.
+/** every currency the game knows.
  *
- * SURGE ALLOY IS NOT A TIER. It sits after the tier ladder because no unit
- * tier maps to it (TIER_ITEM stops at phase fabric): the only way one ever
- * drops is a boss's FIRST kill on a (world, rung) it has not been
- * beaten on before — see grantRunReward in progress.ts. Unspent, the bank's
- * surge column is therefore a counter of how many boss fights this save has
- * actually won, which is what makes it the honest gate for content that
- * should wait on progression rather than on farming. */
+ * THE ORDER IS NOT A LADDER ANY MORE. It was, when a currency was a unit
+ * tier: copper → titanium → thorium → plastanium → phase read as the
+ * campaign's own progression, and code could ask "how far up the list does
+ * this price reach" and get a meaningful answer. Under family-based drops
+ * these are five UNORDERED resources — copper is the ground line's,
+ * titanium the air line's, thorium the crawler line's, plastanium the
+ * support line's, phase fabric the two water lines' — so the only thing
+ * this order still fixes is the layout of the parallel rows that index it
+ * (TARGET_DROP_RATIO) and the order stacks are drawn in.
+ *
+ * SURGE ALLOY IS STILL THE ODD ONE OUT, and now for one reason rather than
+ * two: no FAMILY maps to it, so it never drops from a wave at all. The only
+ * way one is ever paid is a boss's FIRST kill on a (world, rung) it has not
+ * been beaten on before — see grantRunReward in progress.ts. Unspent, the
+ * bank's surge column is therefore a counter of how many boss fights this
+ * save has actually won, which is what makes it the honest gate for content
+ * that should wait on progression rather than on farming. */
 export const ITEM_KINDS = [
   "copper",
   "titanium",
@@ -37,32 +90,19 @@ export const ITEM_KINDS = [
 export type ItemKind = (typeof ITEM_KINDS)[number];
 
 /**
- * Unit tier → the item that tier drops. T1 pays copper and nothing else, T2
- * titanium, T3 thorium, T4 plastanium, T5 phase fabric. Add a tier-6 unit
- * and this table (plus ITEM_KINDS) is the only place that needs a new row.
+ * THE REFERENCE CURRENCY — not "the first rung" any more.
  *
- * Every row now has units behind it. Both of the last two lines landed as
- * pure stats edits with this file untouched — scepter, arkyid, vela and
- * antumbra started paying plastanium, then reign, toxopid, corvus and
- * eclipse started paying phase fabric — which is what the split is for.
+ * It used to be the cheapest tier's item and the first thing a fresh save
+ * ever earned, which made it the natural denominator for a ratio and the
+ * natural always-visible column in the bank. Under family-based drops the
+ * list has no cheapest end (see ITEM_KINDS): copper is simply the ground
+ * line's currency, and the ground line is what the starter world sends most
+ * of. So this still names the column a fresh save fills first and the one
+ * the wallet always shows — it just no longer claims to be the bottom of
+ * anything. Ratios normalise to a world's OWN largest column now, because a
+ * world that pays no copper cannot be measured against it (ladder.ts).
  */
-export const TIER_ITEM: readonly ItemKind[] = [
-  "copper",
-  "titanium",
-  "thorium",
-  "plastanium",
-  "phase-fabric",
-];
-
-/** the cheapest currency — what a fresh save earns first, and what the
- * volume turret is priced in. Every "normalised to X = 100" ratio uses it */
 export const BASE_ITEM: ItemKind = ITEM_KINDS[0];
-
-/** the item a tier-N unit drops; tiers past the table fall back to the top */
-export function itemForTier(tier: number): ItemKind {
-  const i = Math.max(1, Math.floor(tier)) - 1;
-  return TIER_ITEM[Math.min(i, TIER_ITEM.length - 1)];
-}
 
 /** a sparse bundle of items: a drop, a price, or a run's takings */
 export type Cost = Partial<Record<ItemKind, number>>;
