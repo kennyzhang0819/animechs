@@ -794,6 +794,22 @@ export default function MechSwarm() {
    * re-opening never lands somewhere the player did not ask for.
    */
   const [pauseSettings, setPauseSettings] = useState(false);
+  /**
+   * THE IN-RUN SANDBOX DOOR'S TAP COUNTER — the touch equivalent of
+   * Ctrl+Shift+S, seven taps on the pause overlay's heading.
+   *
+   * Same bargain and the same numbers as the settings door (see `taps`):
+   * the chord is unreachable on a tablet, so the gesture is the only way
+   * in there, and nothing advertises it. It lives on the PAUSE OVERLAY
+   * rather than on the field because the field is covered in turret
+   * targets — a tappable area over the map would be swallowing taps meant
+   * for building — and because the sim is held while the overlay is up, so
+   * a seven-tap gesture costs the player no waves.
+   *
+   * It resets whenever the overlay closes, with `pauseSettings`.
+   */
+  const [sandboxTaps, setSandboxTaps] = useState(0);
+  const lastSandboxTap = useRef(0);
 
   useEffect(() => {
     const p = loadProgress();
@@ -974,6 +990,9 @@ export default function MechSwarm() {
         const after = loadProgress();
         setResult(reward);
         setProgress(after);
+        // the run is over, so its sandbox is too — a retry from the results
+        // panel starts on what the save actually owns (see `admin`)
+        setAdmin(false);
         // the picker follows the frontier ONLY when the frontier moved. A
         // player farming rung 2 with a frontier of 7 has chosen that rung
         // and must not be yanked back up to 7 for clearing it again
@@ -1108,7 +1127,10 @@ export default function MechSwarm() {
    */
   const menuOpen = hud?.menuOpen ?? false;
   useEffect(() => {
-    if (!menuOpen) setPauseSettings(false);
+    if (!menuOpen) {
+      setPauseSettings(false);
+      setSandboxTaps(0); // a half-finished gesture never survives a close
+    }
   }, [menuOpen]);
 
   const openMenu = (): void => {
@@ -1121,6 +1143,10 @@ export default function MechSwarm() {
   const backToMenu = (): void => {
     granted.current = false;
     setResult(null);
+    // SANDBOX BELONGS TO THE RUN IT WAS OPENED IN. Abandoning is one of the
+    // three ways a run ends (the other two settle in the poll above), and
+    // every one of them puts the next run back on what the save owns
+    setAdmin(false);
     setProgress(loadProgress());
     setScreen("menu");
   };
@@ -2119,9 +2145,53 @@ export default function MechSwarm() {
         {hud?.menuOpen && !hud.lost && !hud.won && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
             <div className="ui-zoom flex max-h-[calc(100vh-2rem)] w-[30rem] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 overflow-y-auto rounded border border-[#2E2E36] bg-[#151518]/95 p-6">
-              <div className="text-xl font-bold uppercase tracking-widest text-[#E8B45B]">
+              {/* THE HEADING IS THE SANDBOX DOOR (see `sandboxTaps`) — a
+                  button that does nothing visible for six taps. On a keyboard
+                  it is Ctrl+Shift+S and this is beneath noticing; on a tablet
+                  it is the only way in */}
+              <button
+                onClick={() => {
+                  const now = performance.now();
+                  const n =
+                    now - lastSandboxTap.current > TAP_WINDOW_MS ? 1 : sandboxTaps + 1;
+                  lastSandboxTap.current = now;
+                  if (n >= UNLOCK_TAPS) {
+                    setSandboxTaps(0);
+                    setAdmin((v) => !v);
+                    return;
+                  }
+                  setSandboxTaps(n);
+                }}
+                className="text-xl font-bold uppercase tracking-widest text-[#E8B45B] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#FFD37F]"
+              >
                 Paused
-              </div>
+              </button>
+              {/* the countdown only, and only mid-gesture — whether the door
+                  is open is said by the row below, which is also what closes
+                  it. Seven taps to leave would be a punishment */}
+              {sandboxTaps >= UNLOCK_HINT_AT && (
+                <p className="-mt-3 text-[12px] uppercase tracking-widest text-[#71717C]">
+                  {UNLOCK_TAPS - sandboxTaps} more
+                </p>
+              )}
+              {admin && !pauseSettings && (
+                <div className="flex w-full max-w-[20rem] items-center justify-between gap-3 rounded border border-[#4A3A5B] bg-[#1A1522] px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-bold uppercase tracking-widest text-[#C9A7FF]">
+                      Sandbox
+                    </div>
+                    <div className="text-[12px] text-[#71717C]">
+                      Every turret and pace — this run only
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setAdmin(false)}
+                    className="shrink-0 rounded border border-[#4A3A5B] px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest text-[#C9A7FF] hover:border-[#C9A7FF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#C9A7FF]"
+                  >
+                    Off
+                  </button>
+                </div>
+              )}
               {/* THE MENU, or the settings it hides. One press deep, and the
                   press back out is the same button in the same place */}
               {pauseSettings ? (
