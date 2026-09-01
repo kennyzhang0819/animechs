@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BASE_SPEEDS,
   firstLoadStep,
@@ -42,7 +42,6 @@ import {
 } from "@/game/ladder";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import {
-  activeMutations,
   clearedOn,
   grantRunReward,
   isTierCleared,
@@ -68,7 +67,13 @@ import {
   type RunReward,
 } from "@/game/progress";
 import { turretIcon } from "@/game/atlas";
-import { mutationAt } from "@/game/mutation";
+import {
+  mutationBudget,
+  mutationById,
+  mutationCost,
+  rollMutations,
+  type MutationId,
+} from "@/game/mutation";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
 import { isEmpty, ITEM_INFO } from "@/game/items";
 import { CostRow, Wallet } from "./Items";
@@ -120,7 +125,7 @@ function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) 
  * The badge sits ON the preview rather than beside the name because that is
  * the thing being chosen between: a player scanning the grid is reading four
  * badges, not four sentences. Everything the map actually costs — the
- * rung, the wave count, the mutations in force — is one tap deeper,
+ * rung, the wave count, the mutators rolled for it — is one tap deeper,
  * on the detail panel, so the grid stays a picture and never a spec sheet.
  */
 function MapCard({
@@ -313,18 +318,27 @@ const levelSummary = (lv: LevelSpec): { waves: number; enemies: number } => {
  */
 /**
  * THE SPEC A RUN IS ACTUALLY PLAYED ON: the ladder's expansion of the
- * picked rung, plus whichever mutation rules the save has switched
- * on (mutation.ts).
+ * picked rung, plus the mutators rolled for it (mutation.ts).
  *
  * The two are joined HERE and not in specForTier, because they answer
  * different questions and the audit arithmetic only wants one of them: a
- * rung is what the campaign sends, a mutation is what the player asked
- * the game to do about it. Everything ladder.ts counts stays true either
- * way — a mutation changes a wave after it spawns, never what spawns.
+ * rung is what the campaign sends, a mutator is what happens to it on the
+ * way in. Everything ladder.ts counts stays true either way — a mutator
+ * changes a wave after it spawns, never what spawns.
+ *
+ * THE ROLL IS PASSED IN, NOT MADE HERE, and that is the whole reason this
+ * takes a third argument. The deploy panel SHOWS the rules before the
+ * button is pressed; rolling again on the press would deploy a run under
+ * rules the player was never shown, which is the one thing a mode built
+ * on a surprise roll cannot afford to do.
  */
-const runSpec = (world: LevelSpec, tier: number): LevelSpec => ({
+const runSpec = (
+  world: LevelSpec,
+  tier: number,
+  mutation: readonly MutationId[],
+): LevelSpec => ({
   ...specForTier(world, tier),
-  mutation: activeMutations(loadProgress()),
+  ...(mutation.length > 0 ? { mutation } : null),
 });
 
 /**
@@ -359,7 +373,8 @@ function MapDialog({
   tier: number;
   onTier: (t: number) => void;
   mapsReady: boolean;
-  onStart: () => void;
+  /** deploy, under exactly the mutators this panel has been showing */
+  onStart: (mutation: readonly MutationId[]) => void;
   onClose: () => void;
 }) {
   const top = topTier(progress, world.id);
@@ -378,10 +393,26 @@ function MapDialog({
   const hpMult = HP_PER_LEVEL ** tierLevel(tier);
   const badge = MAP_BADGE[world.badge ?? "beginner"];
   const cleared = isTierCleared(progress, world.id, tier);
-  // the mutation rules switched on for the next run, as their definitions
-  const mutations = activeMutations(progress)
-    .map(mutationAt)
-    .filter((a): a is NonNullable<typeof a> => a !== null);
+  /**
+   * THE ROLL FOR THIS DEPLOY — three or four rules the difficulty's budget
+   * pays for, on a world that mutates, and nothing at all on one that does
+   * not (see LevelSpec.mutators).
+   *
+   * IT IS ROLLED ONCE PER DIFFICULTY, HERE. Re-rolling on every render
+   * would spin the list under the player's eyes; rolling at Deploy would
+   * deploy rules that were never shown. Keying it on the rung is the
+   * honest middle: step the difficulty and you are asking a different
+   * question, so you get a different answer, and whatever the panel is
+   * showing when Deploy is pressed is exactly what the run is played
+   * under (onStart carries it).
+   */
+  const rolled = useMemo(
+    () => (world.mutators ? rollMutations(mutationBudget(tier)) : []),
+    [world, tier],
+  );
+  const mutations = rolled
+    .map(mutationById)
+    .filter((m): m is NonNullable<typeof m> => m !== null);
   // whether the script fields a boss kind — read from the waves themselves,
   // so the warning follows the boss if it moves
   const hasBoss = spec.script.some(
@@ -510,8 +541,12 @@ function MapDialog({
             </dl>
 
             {/* the two things that are true of the RUN rather than of the
-                dial: a boss in the script, and the rules the player switched
-                on in the tech tree and may well have forgotten */}
+                dial: a boss in the script, and the mutators this map rolled
+                for the difficulty picked above. The roll is NOT a warning
+                to be skimmed — it is the run's rules, and it moves every
+                time the stepper does, so it is spelled out in full rather
+                than named. The tech tree's codex lists what else could
+                have come up */}
             {(hasBoss || mutations.length > 0) && (
               <div className="mt-2 space-y-0.5 text-[12px] leading-snug">
                 {hasBoss && (
@@ -521,11 +556,21 @@ function MapDialog({
                   </div>
                 )}
                 {mutations.length > 0 && (
-                  <div className="text-[#A6A6AF]">
-                    <span className="font-bold uppercase tracking-widest text-[#FF8ACB]">
-                      Mutation
-                    </span>{" "}
-                    {mutations.map((a) => a.name).join(" · ")}
+                  <div>
+                    <div className="flex items-baseline justify-between">
+                      <span className="font-bold uppercase tracking-widest text-[#FF8ACB]">
+                        Mutators
+                      </span>
+                      <span className="text-[#71717C]">
+                        {mutationCost(rolled)} / {mutationBudget(tier)} pts
+                      </span>
+                    </div>
+                    {mutations.map((m) => (
+                      <div key={m.id} className="text-[#A6A6AF]">
+                        <span className="font-bold text-[#EDEDEF]">{m.name}</span>{" "}
+                        {m.blurb}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -543,7 +588,7 @@ function MapDialog({
                 description and the one irreversible control on the panel */}
             <div className="mt-auto pt-5">
               <button
-                onClick={onStart}
+                onClick={() => onStart(rolled)}
                 className="w-full rounded border border-[#FFD37F] bg-[#222227]/90 py-2 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
               >
                 Deploy
@@ -1166,10 +1211,10 @@ export default function MechSwarm() {
     granted.current = false;
     setResult(null);
     setProgress(loadProgress());
-    // the tech screen is also where the mutation switches live, so the
-    // restart this button promises has to pick up any that were flipped —
-    // the run's own world and rung are untouched
-    setLevel((lv) => (lv ? { ...lv, mutation: activeMutations(loadProgress()) } : lv));
+    // the run's spec is untouched — its world, its rung and the mutators
+    // rolled for it when it was deployed. Nothing on the tech screen can
+    // change any of the three, and a restart that re-rolled would hand a
+    // player a fresh set of rules for losing under the old ones
     setScreen("game");
   };
 
@@ -1594,8 +1639,8 @@ export default function MechSwarm() {
             onTier={setTier}
             mapsReady={mapsReady}
             onClose={() => setMenuView("maps")}
-            onStart={() => {
-              setLevel(runSpec(world, tier));
+            onStart={(mutation) => {
+              setLevel(runSpec(world, tier, mutation));
               setScreen("game");
               // raised in the same batch as the screen switch, so the game
               // screen's FIRST paint is already covered - an effect would

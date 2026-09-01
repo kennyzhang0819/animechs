@@ -68,13 +68,13 @@ import {
 const UNIT_KINDS = UNIT_KINDS_IMPORT;
 import { armorBonusAtLevel, shieldScaleAtLevel, unitHpAtLevel } from "./ladder";
 import {
-  MUT_HUNGRY,
   hasMutation,
   HUNGRY_CHANCE,
   HUNGRY_HP_PER_MEAL,
   HUNGRY_MAX_MEALS,
   HUNGRY_PERIOD,
   HUNGRY_REACH,
+  SPEEDY_SPEED,
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap } from "./maps";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
@@ -531,7 +531,7 @@ export class Sim {
   readonly uwet = new Float32Array(MAX_UNITS);
   readonly uwetSlow = new Float32Array(MAX_UNITS);
   /**
-   * THE HUNGRY STATUS (mutation rank 1, mutation.ts): 1 = this unit eats
+   * THE HUNGRY STATUS (the Hungry mutator, mutation.ts): 1 = this unit eats
    * its neighbours. Rolled once at spawn and never applied by anything
    * else — there is no weapon, aura or effect that makes a unit hungry, so
    * unlike burning and wet this one never changes for the rest of a life.
@@ -633,7 +633,7 @@ export class Sim {
   kills = 0;
   leaked = 0;
   /**
-   * Bodies EATEN by hungry units (mutation rank 1) — removed from the
+   * Bodies EATEN by hungry units (the Hungry mutator) — removed from the
    * field without ever having been killed or leaked.
    *
    * It is its own counter and not a kill for two reasons. The HUD's kill
@@ -675,8 +675,16 @@ export class Sim {
    * for these branches existing.
    */
   private specs = new Map<TowerKind, TowerStats>();
-  /** is mutation rank 1 switched on for this run? (see reset) */
+  /** is the Hungry mutator in force this run? (see reset) */
   private hungryOn = false;
+  /**
+   * Is the Speedy mutator in force this run? (see reset)
+   *
+   * It is read in exactly two places — the spawn, where it doubles the
+   * unit's stat speed once and for all, and applyWet, where it refuses the
+   * slow. Nothing in the per-tick movement pass knows the mutator exists.
+   */
+  private speedyOn = false;
   /** are ambient effects being kept? (see setEffects) */
   private fxOn = true;
   // live per-kind census, updated the moment a unit spawns or is removed
@@ -837,7 +845,8 @@ export class Sim {
     // the run's rules, read once: the feed pass runs over every unit on the
     // field, and a spec lookup per unit per tick to answer a question that
     // cannot change mid-run would be pure waste
-    this.hungryOn = hasMutation(this.level.mutation, MUT_HUNGRY);
+    this.hungryOn = hasMutation(this.level.mutation, "hungry");
+    this.speedyOn = hasMutation(this.level.mutation, "speedy");
     this.coreHp = this.coreHpMax;
     this.sealGx = -1;
     this.projs.length = 0;
@@ -1728,7 +1737,11 @@ export class Sim {
       this.uvy[i] = 0;
       this.uhp[i] = hp;
       this.uhpmax[i] = hp;
-      this.uspd[i] = stats.speed;
+      // SPEEDY (mutation.ts) is a stat, not a status: the doubling lands
+      // here, once, so every reader of uspd — the drive, the chassis turn
+      // rate, the leg cycle — is already looking at the speed this unit
+      // actually travels at
+      this.uspd[i] = stats.speed * (this.speedyOn ? SPEEDY_SPEED : 1);
       this.urad[i] = r;
       // flyers never read the flow field, so the routing the field does for
       // free has to be done by hand for them — once, here, not per tick
@@ -1764,8 +1777,8 @@ export class Sim {
       this.uburn[i] = 0;
       this.uwet[i] = 0;
       this.uwetSlow[i] = 1;
-      // THE HUNGRY ROLL (mutation rank 1) — the only place the status is
-      // ever applied. One body in ten walks in with an appetite, whatever
+      // THE HUNGRY ROLL (the Hungry mutator) — the only place the status is
+      // ever applied. One body in twenty walks in with an appetite, whatever
       // kind it is: the mutation is a rule about the SWARM, so exempting
       // the kinds it would be inconvenient on would just be authoring a
       // second wave script nobody can read. Its clock starts full, so the
@@ -1990,7 +2003,7 @@ export class Sim {
   }
 
   /**
-   * MUTATION RANK 1 — the hungry eat (see mutation.ts for the numbers and
+   * THE HUNGRY MUTATOR — the hungry eat (see mutation.ts for the numbers and
    * for why the rule exists).
    *
    * Every hungry unit runs its own one-second clock. When it comes up, it
@@ -3859,9 +3872,17 @@ export class Sim {
       if (this.uburn[i] > 0) return; // still alight: the water was spent quenching
       this.uburn[i] = 0;
     }
-    if (this.uwet[i] > 0 && spec.slow > this.uwetSlow[i]) return;
+    // SPEEDY (mutation.ts) is immunity to the SLOW, not to the status. The
+    // soak still lands, still tints, still puts a fire out and still
+    // carries whatever the ammunition does — it is simply worth a
+    // multiplier of 1, so every "strongest slow wins" comparison below and
+    // every drive read in updateUnits behaves exactly as it does on a dry
+    // unit. Refusing the status outright would have deleted the
+    // fire-dousing rule with it, which is not what the card promises.
+    const slow = this.speedyOn ? 1 : spec.slow;
+    if (this.uwet[i] > 0 && slow > this.uwetSlow[i]) return;
     this.uwet[i] = spec.duration;
-    this.uwetSlow[i] = spec.slow;
+    this.uwetSlow[i] = slow;
   }
 
   /** Mindustry Damage.applyArmor: flat reduction, floored at 10% of the raw hit */

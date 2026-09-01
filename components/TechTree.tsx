@@ -3,13 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { clamp, TOWERS } from "@/game/constants";
 import {
-  activeMutations,
   affordablePoints,
-  mutationRank,
   buyTech,
   nodeStatus,
   refundTech,
-  saveMutation,
   isTechOn,
   saveTechOn,
   type NodeStatus,
@@ -37,8 +34,14 @@ import {
   type UpgradeGlyph,
 } from "@/game/upgrades";
 import type { TowerKind } from "@/game/types";
-import { MUTATIONS, type MutationDef } from "@/game/mutation";
-import { rungColor, rungLabel } from "@/game/ladder";
+import {
+  MUTATIONS,
+  MUT_PICK_MAX,
+  MUT_PICK_MIN,
+  mutationBudget,
+  type MutationDef,
+} from "@/game/mutation";
+import { RUNG_COUNT, rungColor, rungLabel } from "@/game/ladder";
 import { CostRow, Wallet } from "./Items";
 import { TOWER_ICONS } from "./towerIcons";
 
@@ -166,159 +169,171 @@ function NodeIcon({ id, lit }: { id: TechKind; lit: boolean }) {
 const HOME_ICON = "/mindustry/sprites/blocks/storage/core-shard.png";
 
 /**
- * THE MUTATION COLUMN, laid out in the same grid the tech tree uses so the
- * two read as one board.
+ * THE MUTATOR CODEX — a PANEL on this page, and deliberately NOT a branch
+ * of the board behind it.
  *
- * IT HANGS OFF HOME, like everything else does. Home is the junction the
- * whole board forks from, and the two things that are not turrets — this
- * column and the pace/slot switches — are its two NORTH arms. Drawing it
- * unattached would have made it a second, unrelated board that happened to
- * share a viewport.
+ * Mutation used to be the tree's left column: a chain of switches hanging
+ * off home that a player flipped on for a harder run. It is not that any
+ * more (see mutation.ts). Mutators are ROLLED — the map decides that it
+ * mutates, the difficulty decides how many points the roll may spend, and
+ * three or four rules come back. There is nothing here to buy, nothing to
+ * own and nothing to switch, so there is nothing for a node to BE.
  *
- * IT RUNS NORTH, AT NEGATIVE Y, which is why the geometry below assumes
- * neither axis starts at zero. North is the direction nothing is fought
- * in: every turret grows down out of home, so a chain that grows UP out of
- * it is visibly not part of that fight, which is the whole distinction
- * this column needs to carry. Its link to home is drawn in the column's
- * own colour rather than the tree's gold for the same reason — gold on
- * this board means bought, and nothing here is.
+ * IT STILL BELONGS ON THIS PAGE. This is the screen a player comes to in
+ * order to ask "what can happen to me, and what can I do about it" — the
+ * wallet, the prices and the ladder colours all live here. A codex that
+ * lists every rule that can be rolled, and what each is worth, is the
+ * other half of that question. It just must not be reachable BY MISTAKE
+ * from a board where every other click spends money, which is what a
+ * chrome button and a panel buy that an eleventh branch cannot.
  *
- * THE COLUMN IS A CHAIN, AND IT ENDS AT THE SAVE'S RANK: the marker at the
- * top and one switch per rank EARNED, in order. A rank that has not been
- * reached is not drawn at all — not greyed, not teased. That is the tree's
- * own rule (a node stays hidden until its parent holds a point) and it is
- * the right one twice over here: what the next mutation turns out to be is
- * the reward for felling the boss, and a locked row of them would advertise
- * how long the line is, which is a promise this list is in no position to
- * make.
+ * WHAT IT SHOWS AND WHY. Every mutator, cheapest first, with its point
+ * cost — and the budget every difficulty hands the roller. Nothing is
+ * hidden and nothing is teased: a player about to deploy onto a mutating
+ * map is entitled to know the whole pool it will be drawn from, exactly
+ * as a StarCraft II player can read the mutator list before queueing. The
+ * surprise is meant to be WHICH ones, not what exists.
  */
-const MUT_X = 2;
-/**
- * The rank marker's row, and the row each mutation switch sits on — going
- * UP. Level 0 is the marker at (MUT_X, -1), just north-west of home, and
- * every rank earned stacks one row above the last.
- *
- * Every reader goes through this, including the links between the switches,
- * so the column's direction is this one line.
- */
-const mutY = (level: number): number => -1 - level;
-/** the column's own colour — deliberately NOT the tree's gold. Gold on this
- *  board means "bought, owned, yours"; mutation is none of those */
+/** the codex's colour, kept from the old column — deliberately NOT the
+ *  tree's gold, because gold on this page means "bought, owned, yours" */
 const MUT_LIT = "#FF8ACB";
-/** the armed-node key for a mutation switch, in the same namespace the
- *  tree's own nodes use (see `armed`) */
-const mutKey = (level: number): string => `asc-${level}`;
-
-/** the armed key for the column's marker — it opens a card like a node,
- *  though tapping it a second time does nothing, because it does nothing */
-const MUT_MARKER = "asc-marker";
-/** three chevrons climbing — the rank marker's face */
+/** three chevrons climbing — the codex button's face, and the fallback
+ *  card glyph for a mutator with no face of its own */
 const MUT_GLYPH = "M12 2 4 9h5v2H4l8 7 8-7h-5V9h5z";
-/** a disc with a wedge bitten out of it — the hungry switch's maw */
+/** a disc with a wedge bitten out of it — Hungry's maw */
 const HUNGER_GLYPH = "M12 2a10 10 0 1 0 8.66 15L12 12l8.66-5A9.98 9.98 0 0 0 12 2z";
+/** a chevron pair running right — Speedy */
+const SPEED_GLYPH = "M2 5l8 7-8 7V5zM12 5l8 7-8 7V5z";
+
+/** the face a mutator wears on its card; MUT_GLYPH is the fallback, so a
+ *  rule added without art still draws as something */
+const MUT_FACE: Record<string, string> = {
+  hungry: HUNGER_GLYPH,
+  speedy: SPEED_GLYPH,
+};
 
 /**
- * ONE MUTATION SWITCH.
- *
- * It is a TOGGLE, not a purchase, and every part of it says so: no price
- * row, no capacity badge, no gold. It reads ON or OFF and flips on every
- * click — there is no locked state, because a switch this save has not
- * earned is not on the board at all (see the column note above).
- *
- * The touch rule is the tree's own (see useTouchOnly): with no hover to
- * read a node with, the first tap on a finger opens the card and the
- * second one acts. Toggling costs nothing, but a player who cannot see
- * what a switch DOES before flipping it is being asked to change the rules
- * of their game blind.
+ * WHAT A COST MEANS, in one word — the scale documented on MUT_COST_MIN.
+ * A number alone says a mutator is dearer than another one; the word says
+ * what dearer BUYS, which is the thing a player reading the list for the
+ * first time actually needs.
  */
-function MutationNode({
-  def,
-  on,
-  touch,
-  armed,
-  onArm,
-  onToggle,
-}: {
-  def: MutationDef;
-  on: boolean;
-  touch: boolean;
-  armed: boolean;
-  onArm: () => void;
-  onToggle: () => void;
-}) {
-  const showCard = touch && armed;
+const costBand = (cost: number): { label: string; color: string } =>
+  cost <= 2
+    ? { label: "Light", color: "#7BE58A" }
+    : cost <= 4
+      ? { label: "Heavy", color: "#FFB65C" }
+      : { label: "Brutal", color: "#FF6B6B" };
+
+/** one mutator, as the codex lists it */
+function MutationCard({ def }: { def: MutationDef }) {
+  const band = costBand(def.cost);
   return (
-    <div
-      className="group absolute"
-      style={{
-        left: centerX(MUT_X) - NODE / 2,
-        top: centerY(mutY(def.level)) - NODE / 2,
-        width: NODE,
-        height: NODE,
-      }}
-    >
-      <button
-        aria-pressed={on}
-        aria-label={`${def.name}: mutation ${def.level}, ${on ? "on" : "off"}`}
-        onClick={() => {
-          if (touch && !armed) {
-            onArm();
-            return;
-          }
-          onToggle();
-        }}
-        className={`relative flex h-full w-full cursor-pointer items-center justify-center rounded-lg border-2 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB] ${
-          on
-            ? "border-[#FF8ACB] bg-[#2A1B24]"
-            : "border-[#4A4A55] bg-[#151518] hover:border-[#FF8ACB]"
-        }`}
+    <li className="flex gap-3 rounded border border-[#2E2E36] bg-[#151518] p-3">
+      <svg
+        viewBox="0 0 24 24"
+        className="mt-0.5 h-8 w-8 shrink-0 fill-[#FF8ACB]"
+        aria-hidden="true"
       >
-        <svg
-          viewBox="0 0 24 24"
-          className={`h-10 w-10 ${on ? "fill-[#FF8ACB]" : "fill-[#71717C]"}`}
-          aria-hidden="true"
-        >
-          <path fillRule="evenodd" d={def.level === 1 ? HUNGER_GLYPH : MUT_GLYPH} />
-        </svg>
-        {/* the badge is the switch's whole state, and the state is binary. A
-            turret's badge counts what you own; there is nothing here to own */}
-        <span
-          className={`absolute -bottom-2 -right-2 rounded border px-1.5 text-[13px] font-bold ${
-            on
-              ? "border-[#FF8ACB] bg-[#101013] text-[#FF8ACB]"
-              : "border-[#2E2E36] bg-[#101013] text-[#71717C]"
-          }`}
-        >
-          {on ? "On" : "Off"}
-        </span>
-      </button>
-      <div
-        className={`text-center text-[12px] font-bold uppercase tracking-widest ${
-          on ? "text-[#EDEDEF]" : "text-[#71717C]"
-        }`}
-      >
-        {def.name}
-      </div>
-      <div
-        className={`pointer-events-none absolute bottom-full left-1/2 z-10 mb-3 w-56 -translate-x-1/2 rounded border border-[#4A4A55] bg-[#151518] p-3 text-left shadow-lg ${
-          showCard ? "block" : "hidden group-hover:block group-focus-within:block"
-        }`}
-      >
-        <div className="flex items-baseline justify-between">
+        <path fillRule="evenodd" d={MUT_FACE[def.id] ?? MUT_GLYPH} />
+      </svg>
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-baseline gap-x-2">
           <span className="font-bold text-[#EDEDEF]">{def.name}</span>
-          <span className="text-[13px] text-[#A6A6AF]">Mutation {def.level}</span>
-        </div>
-        <div className="mt-1 text-[14px] text-[#A6A6AF]">{def.blurb}</div>
-        <div className="mt-2 border-t border-[#2E2E36] pt-2 text-[13px] font-bold uppercase tracking-widest">
-          <span style={{ color: on ? MUT_LIT : "#71717C" }}>
-            {on ? "Playing with this" : "Not in play"}
+          <span className="text-[12px] font-bold uppercase tracking-widest" style={{ color: band.color }}>
+            {band.label}
+          </span>
+          <span className="ml-auto shrink-0 rounded border border-[#FF8ACB] px-1.5 text-[13px] font-bold text-[#FF8ACB]">
+            {def.cost} pts
           </span>
         </div>
-        {showCard && (
-          <div className="mt-2 text-[13px] font-bold uppercase tracking-widest text-[#FF8ACB]">
-            Tap again to {on ? "switch off" : "switch on"}
+        <p className="mt-1 text-[14px] leading-snug text-[#A6A6AF]">{def.blurb}</p>
+      </div>
+    </li>
+  );
+}
+
+/**
+ * THE PANEL. A dialog over the board rather than a screen of its own: the
+ * tree is what the player was looking at, and what a mutator costs them is
+ * only meaningful next to what they can afford to answer it with.
+ *
+ * THE BUDGET ROW IS THE POINT OF THE WHOLE PANEL. The catalog alone reads
+ * as trivia; the catalog beside "difficulty 7 spends 17 points on three or
+ * four of these" is a plan. It is drawn in the ladder's own rung colours,
+ * so the row lines up with every other place a difficulty is named.
+ */
+function MutationPanel({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div
+      className="pointer-events-auto fixed inset-0 z-20 flex items-center justify-center bg-black/70 p-4"
+      onPointerDown={(e) => {
+        // the backdrop closes; a press inside the panel is the panel's
+        if (e.target === e.currentTarget) onClose();
+      }}
+      data-ui
+    >
+      <div
+        role="dialog"
+        aria-label="Mutators"
+        className="flex max-h-full w-full max-w-lg flex-col rounded border border-[#FF8ACB] bg-[#101013] p-4 shadow-lg"
+      >
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-[15px] font-bold uppercase tracking-widest text-[#FF8ACB]">
+            Mutators
+          </h2>
+          <button
+            onClick={onClose}
+            aria-label="close"
+            className="rounded border border-[#2E2E36] px-2 py-0.5 text-[13px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB]"
+          >
+            Close
+          </button>
+        </div>
+        <p className="mt-2 text-[14px] leading-snug text-[#A6A6AF]">
+          Some maps are always played under mutators. You do not choose them:
+          the difficulty you pick sets a point budget, and{" "}
+          <span className="font-bold text-[#EDEDEF]">
+            {MUT_PICK_MIN} to {MUT_PICK_MAX} rules
+          </span>{" "}
+          are rolled to fit it when you deploy. Every rule changes a wave
+          after it lands — never what the map sends you.
+        </p>
+
+        <div className="mt-3 border-t border-[#2E2E36] pt-3">
+          <div className="text-[12px] uppercase tracking-widest text-[#71717C]">
+            Budget by difficulty
           </div>
-        )}
+          <div className="mt-1 flex flex-wrap gap-1">
+            {Array.from({ length: RUNG_COUNT }, (_, t) => (
+              <div
+                key={t}
+                title={`${rungLabel(t)}: ${mutationBudget(t)} points`}
+                className="flex min-w-[38px] flex-1 flex-col items-center rounded border border-[#2E2E36] bg-[#151518] px-1 py-0.5"
+              >
+                <span className="text-[11px] font-bold" style={{ color: rungColor(t) }}>
+                  {t + 1}
+                </span>
+                <span className="text-[13px] font-bold text-[#EDEDEF]">
+                  {mutationBudget(t)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <ul className="mt-3 flex-1 space-y-2 overflow-y-auto border-t border-[#2E2E36] pt-3">
+          {MUTATIONS.map((m) => (
+            <MutationCard key={m.id} def={m} />
+          ))}
+        </ul>
       </div>
     </div>
   );
@@ -351,13 +366,9 @@ const ROW_TOP = NODE / 2 + 22;
 // TechNodeDef.x).
 const CELL_W = rowWidth(MAX_RUNGS) + 20;
 const CELL_H = 180;
-const ALL_X = [...TECH_TREE.map((n) => n.x), MUT_X];
-const ALL_Y = [
-  ...TECH_TREE.map((n) => n.y),
-  ...MUTATIONS.map((a) => mutY(a.level)),
-  mutY(0),
-];
-// The meta chains run NORTH out of home, so the grid starts at neither
+const ALL_X = TECH_TREE.map((n) => n.x);
+const ALL_Y = TECH_TREE.map((n) => n.y);
+// The utility chain runs NORTH out of home, so the grid starts at neither
 // zero: board space is the node grid SHIFTED to start at the origin on
 // BOTH axes. Every reader goes through centerX/centerY, so this is the
 // only place that has to know where the grid actually begins.
@@ -820,6 +831,9 @@ export default function TechTree({
   // is allowed to spend on. Tapping a different node moves the question there
   // rather than buying it
   const [armed, setArmed] = useState<string | null>(null);
+  // is the mutator codex open? It is a panel over the board rather than a
+  // branch of it — see the note above MutationPanel
+  const [codex, setCodex] = useState(false);
 
   // ---- the camera (see the note above PAN_KEYS) -------------------------
   const viewRef = useRef<HTMLDivElement>(null);
@@ -1021,14 +1035,6 @@ export default function TechTree({
   const visible = TECH_TREE.filter(
     (n) => !isUpgradeNode(n.id) && nodeStatus(progress, n.id) !== "hidden",
   );
-  // the left column's two facts: how far the save has climbed, and which of
-  // the ranks it climbed to are switched on for the next run. Only the
-  // ranks EARNED are drawn — the one above is not a locked node, it is not
-  // on the board (see the column note at the top of the file)
-  const rank = mutationRank(progress);
-  const active = activeMutations(progress);
-  const mutVisible = MUTATIONS.filter((a) => a.level <= rank);
-
   const chromeBtn =
     "pointer-events-auto rounded border border-[#2E2E36] bg-[#151518]/90 backdrop-blur px-3 py-1.5 text-[13px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
 
@@ -1093,34 +1099,6 @@ export default function TechTree({
                   />
                 );
               })}
-              {/* HOME'S LEFT ARM: the reach out to the mutation column.
-                  Drawn in the column's own colour rather than the tree's
-                  gold — the branch is part of the same tree, and gold on
-                  this board means bought */}
-              <line
-                x1={centerX(techNode("home").x)}
-                y1={centerY(techNode("home").y)}
-                x2={centerX(MUT_X)}
-                y2={centerY(mutY(0))}
-                stroke={rank > 0 ? MUT_LIT : "#4A4A55"}
-                strokeWidth={2}
-                strokeDasharray={rank > 0 ? undefined : "6 4"}
-              />
-              {/* THE CHAIN ITSELF, one link per rank EARNED — a switch that
-                  is on is lit, one left off is solid and grey. There is no
-                  dashed link, because there is no node past the rank for
-                  one to point at */}
-              {mutVisible.map((a) => (
-                <line
-                  key={`asc-${a.level}`}
-                  x1={centerX(MUT_X)}
-                  y1={centerY(mutY(a.level - 1))}
-                  x2={centerX(MUT_X)}
-                  y2={centerY(mutY(a.level))}
-                  stroke={active.includes(a.level) ? MUT_LIT : "#4A4A55"}
-                  strokeWidth={2}
-                />
-              ))}
             </svg>
             {visible.map((n) => {
               const status: NodeStatus = nodeStatus(progress, n.id);
@@ -1304,84 +1282,6 @@ export default function TechTree({
                 />
               ) : null,
             )}
-            {/* THE MUTATION COLUMN, home's left arm. The marker states the
-                rank the save has climbed to and takes no click; below it
-                one switch per rank EARNED, each of which toggles rather
-                than buys. At rank 0 the marker is the whole column — what
-                the first mutation is stays unsaid until a boss falls */}
-            <div
-              className="group absolute"
-              style={{
-                left: centerX(MUT_X) - NODE / 2,
-                top: centerY(mutY(0)) - NODE / 2,
-                width: NODE,
-                height: NODE,
-              }}
-            >
-              <button
-                type="button"
-                aria-label={`Mutation: rank ${rank}`}
-                onClick={() => setArmed(MUT_MARKER)}
-                className="flex h-full w-full flex-col items-center justify-center rounded-lg border-2 border-[#4A4A55] bg-[#151518] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB]">
-                <svg
-                  viewBox="0 0 24 24"
-                  className={`h-8 w-8 ${rank > 0 ? "fill-[#FF8ACB]" : "fill-[#71717C]"}`}
-                  aria-hidden="true"
-                >
-                  <path d={MUT_GLYPH} />
-                </svg>
-                <span
-                  className={`text-[13px] font-bold ${rank > 0 ? "text-[#FF8ACB]" : "text-[#71717C]"}`}
-                >
-                  {rank}
-                </span>
-              </button>
-              <div
-                className={`text-center text-[12px] font-bold uppercase tracking-widest ${
-                  rank > 0 ? "text-[#EDEDEF]" : "text-[#71717C]"
-                }`}
-              >
-                Mutation
-              </div>
-              {/* WHAT THE COLUMN IS FOR, in the same card every other node
-                  on this board explains itself with. The marker takes no
-                  action — there is nothing here to buy or flip — but it is
-                  still the thing a player points at to ask what mutation
-                  IS, so it answers on hover and on the first tap exactly as
-                  a node does. Without it the column at rank 0 is a glyph, a
-                  zero and a word, and nothing says these are not upgrades */}
-              <div
-                className={`pointer-events-none absolute bottom-full left-1/2 z-10 mb-3 w-56 -translate-x-1/2 rounded border border-[#4A4A55] bg-[#151518] p-3 text-left shadow-lg ${
-                  touch && armed === MUT_MARKER
-                    ? "block"
-                    : "hidden group-hover:block group-focus-within:block"
-                }`}
-              >
-                <div className="flex items-baseline justify-between">
-                  <span className="font-bold text-[#EDEDEF]">Mutation</span>
-                  <span className="text-[13px] text-[#A6A6AF]">Rank {rank}</span>
-                </div>
-                <div className="mt-1 text-[14px] text-[#A6A6AF]">
-                  Difficulty modifiers that drastically change how the game plays
-                  and feels. Available after defeating your first boss.
-                </div>
-              </div>
-            </div>
-            {mutVisible.map((a) => (
-              <MutationNode
-                key={a.level}
-                def={a}
-                on={active.includes(a.level)}
-                touch={touch}
-                armed={armed === mutKey(a.level)}
-                onArm={() => setArmed(mutKey(a.level))}
-                onToggle={() => {
-                  saveMutation(a.level, !active.includes(a.level));
-                  onChanged();
-                }}
-              />
-            ))}
-
       </div>
 
       {/* floating chrome: the board pans underneath it. The wrapper eats no
@@ -1410,6 +1310,21 @@ export default function TechTree({
                 Restart run
               </button>
             )}
+            {/* THE CODEX, beside back rather than on the board: it is the
+                one control on this page that spends nothing, and the whole
+                reason mutators are not a branch is that a page where every
+                click costs money is no place for a rule you cannot buy */}
+            <button
+              onClick={() => setCodex(true)}
+              aria-haspopup="dialog"
+              className={`${chromeBtn} flex h-11 items-center gap-2 font-bold`}
+              style={{ color: MUT_LIT, borderColor: MUT_LIT }}
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden="true">
+                <path d={MUT_GLYPH} />
+              </svg>
+              Mutators
+            </button>
           </div>
         </div>
         <div
@@ -1461,6 +1376,7 @@ export default function TechTree({
             −
           </button>
         </div>
+        {codex && <MutationPanel onClose={() => setCodex(false)} />}
       </div>
     </div>
   );

@@ -41,12 +41,11 @@ stale tab or a cached bundle looks exactly like a fix not working.
   one written so far** — the other fifteen are authored by hand as they are
   designed; adding one is a fourth entry in a branch with
   `tier: ULTIMATE_TIER` and its id in `UPGRADE_KINDS`, and nothing else
-- `game/mutation.ts` — the **mutation line**, the tech tree's left
-  column: optional rules the player switches on, earned one rank per boss
-  felled rather than bought
+- `game/mutation.ts` — the **mutators**: the catalog of rules a run can be
+  played under, what each is worth in points, and the roller that draws
+  three or four of them to fit a difficulty's budget
 - `game/progress.ts` — the save: bank, rungs cleared per world, tech
-  points, one saved layout per world, game speed, build-bar loadout,
-  mutation switches
+  points, one saved layout per world, game speed, build-bar loadout
 - `game/items.ts` — the five currencies (copper, titanium, thorium,
   plastanium, phase-fabric)
 - `game/maps.ts` — map documents: terrain layers, spawn circles, per-layer
@@ -78,8 +77,8 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `game/game.ts` — rAF loop, input, 2d overlay (placement ghost), stats
 - `components/MechSwarm.tsx` — React shell: HUD, rung picker,
   six-slot build bar with its loadout picker, game-speed switcher, canvases
-- `components/TechTree.tsx` — the tech tree as a zoomable map, with the
-  mutation column down its left edge
+- `components/TechTree.tsx` — the tech tree as a zoomable map, plus the
+  **mutator codex** as a panel over it
 - `components/LevelEditorView.tsx`, `MapEditorView.tsx`, `BalanceView.tsx` —
   the admin authoring surfaces
 
@@ -161,47 +160,66 @@ the rung. So the phase-priced turrets (spectre, meltdown, foreshadow) are
 reachable from the bottom of the ladder — slowly. The gate is the rate, not
 the permission.
 
-### Mutation
+### Mutators
 
-The tech tree forks three ways off `home`. Turrets run down the middle,
-the utilities off to the right — and the **mutation line** is the column
-on the far left, which is not a purchase at all.
+Some maps are always played under **mutators** — rules that change what
+happens to a wave after it lands. **Nobody picks them.** The map decides
+that it mutates, the **difficulty decides the budget**, and three or four
+rules are rolled to fit it when you deploy. It is the StarCraft II model,
+and the mode it exists for is endgame resource farming: the same fifty
+waves, a different set of rules every time.
 
-|  | the tree | the mutation line |
+|  | the tech tree | a mutator |
 |---|---|---|
-| how it is got | paid for out of the bank | one rank per **boss felled** |
+| how it is got | paid for out of the bank | **rolled for you** at deploy |
 | what it does | more turrets, faster pace | makes the run **harder** |
-| owning it | permanent capacity | a **switch**, on or off per run |
+| how long it lasts | permanent capacity | **that run only** |
 
-The column hangs off `home`, the same trunk everything else forks from,
-and is drawn in its own colour — gold on that board means *bought*.
+This replaces the old *mutation line*, a column of switches on the tech
+tree earned one rank per boss felled. Nobody flips an optional handicap
+with no reward attached — and the game had to be balanced as though
+everybody did. So it became the opposite thing: mandatory, unchosen, and
+attached to the maps that want it.
 
-Every save starts at **rank 0**, where the marker is the whole column.
-Rank is not stored: it is the length of the boss-trophy ledger the save
-already keeps (`Progress.bossKills`, one entry per distinct boss fight
-won), so a boss pays a rank exactly once — a new world, or a rung above the
-one it last fell on.
+**Where it is mandatory:** any world whose `LevelSpec` sets `mutators`,
+which is meant to be **every world past the first**. World 1 is where the
+fleet is still being stood up and a roll on top of that is a wall rather
+than a challenge; by the second front the player is strong enough that the
+script is a formality, and the roll is what puts the fight back in it.
+*(It is not switched on anywhere yet — with two rules in the catalog, a
+roll of "three or four" is just "both".)*
 
-**A rank not yet reached is not on the board at all** — not greyed, not
-teased. That is the tree's own rule (a node stays hidden until its parent
-holds a point), and it is the right one twice over here: what the next
-mutation turns out to be is part of the reward for felling the boss, and
-a locked row of them would advertise how long the line is. Reaching a rank
-only **offers** the switch; the player turns each one on and off in the
-tree, the deploy panel names whichever are in force, and nothing is ever
-forced on.
+**The costs are the only balance dial.** A mutator is worth points
+(`MutationDef.cost`, 1–6 — light, heavy, brutal), a difficulty affords
+them or does not, and which rules a difficulty sees falls out of the
+arithmetic rather than a per-difficulty list:
 
-An mutation changes what happens to a wave **after** it spawns and never
-what the script sends, so every number in `ladder.ts` — wave counts, enemy
-totals, the drop-ratio audit — stays true whichever switches are on.
+| rung | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| points | 6 | 8 | 10 | 11 | 13 | 15 | 17 | 19 | 20 | 22 |
 
-**Rank 1 — Hungry.** One spawn in ten walks in hungry (tinted pink, and
-it never spreads: nothing in the game applies the status). Once a second
-it reaches four tiles for a random neighbour that is not itself hungry,
-not a boss, and on its own movement layer, and swallows it: the meal is
-removed, the eater takes **double the meal's full health** onto both its
-current and its maximum pool, and it draws 5% bigger. Ten meals is the
-ceiling — twenty-one times the health it spawned with, at 1.5x size.
+The roller shuffles the catalog, walks it taking whatever the remaining
+budget covers, and keeps the fullest of two dozen such walks — **most
+rules first, then most points spent**, because spending the budget *is*
+the difficulty curve. The whole catalog is public: the tech tree page
+carries a **codex** panel listing every rule and its cost, so the surprise
+is which ones turn up and never what exists. The deploy panel spells out
+the roll in full before the button is pressed, and the run plays under
+exactly what it showed.
+
+**A mutator changes a wave after it spawns and never what the script
+sends**, so every number in `ladder.ts` — wave counts, enemy totals, the
+drop-ratio audit — stays true whatever was rolled. A rule that wants to
+change the script is a wave transform, not a mutator.
+
+**Hungry — 4 points.** One spawn in twenty walks in hungry (tinted pink,
+and it never spreads: nothing in the game applies the status). Once a
+second it reaches four tiles for a random neighbour that is not itself
+hungry, not a boss, and on its own movement layer, and swallows it: the
+meal is removed, the eater takes **double the meal's full health** onto
+both its current and its maximum pool, and it draws 5% bigger. Twenty
+meals is the ceiling — forty-one times the health it spawned with, at
+double size.
 
 Nothing else crosses over. Not shields, force fields, repair or shield
 auras, burning, wet, armour or speed — a dagger that eats a quasar is a
@@ -213,7 +231,23 @@ assembly as it goes into the batch).
 And **the eating is a tax on salvage**. A devoured body is removed without
 ever being killed, so it never touches `killsByKind` and pays no drop at
 all, while the unit that ate it still drops exactly what its own kind
-drops. Ten meals cost ten bodies' worth of salvage and hand back one.
+drops. Twenty meals cost twenty bodies' worth of salvage and hand back
+one.
+
+**Speedy — 5 points.** Every enemy walks in at **double speed** and
+**cannot be slowed**. Two halves of one rule, because either alone has an
+answer: doubled speed is answered by a liquid turret, and slow immunity is
+answered by not building one. It adds no health at all — it halves the
+time every emplacement on the board has to spend its damage in, which is
+why it is the dearest thing in the catalog and why the audit arithmetic,
+which counts bodies and health, sees nothing.
+
+The immunity is to the **slow**, not to the status: a soaked unit is still
+soaked, still tinted, still puts out a fire it is carrying, still takes
+whatever the ammunition does (`Sim.applyWet` holds the soak at a
+multiplier of 1). The speed is applied once at spawn, as a stat, so every
+reader of `uspd` — the drive, the chassis turn rate, the leg cycle — is
+already looking at the speed the unit really travels at.
 
 ### Authoring waves
 

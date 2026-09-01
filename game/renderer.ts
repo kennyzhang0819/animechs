@@ -163,7 +163,7 @@ const WET_TINT: ReadonlyArray<RGB> = HP_TINT.map(
   (t): RGB => [t[0] * 0.62, t[1] * 0.75, t[2]],
 );
 /**
- * The same trick for the HUNGRY status (mutation rank 1): the hue
+ * The same trick for the HUNGRY status (the Hungry mutator): the hue
  * multiplied into whatever the unit was already drawn in, one table per
  * hp third so damage still darkens it and one pair of tables so a soaked
  * hungry unit reads as both.

@@ -1,6 +1,9 @@
 import { CELL, HP0, UNIT_SPEED, UR } from "./constants";
 import { itemForTier, type Cost } from "./items";
 import { explain, type SaveResult } from "./types";
+// type only — mutation.ts must never depend on the campaign, and this
+// import must never become a value one or the two files form a cycle
+import type { MutationId } from "./mutation";
 
 export const UNIT_KINDS = ["dagger", "mace", "fortress", "scepter", "reign", "crawler", "atrax", "spiroct", "arkyid", "toxopid", "flare", "nova", "pulsar", "quasar", "vela", "corvus", "horizon", "zenith", "antumbra", "eclipse", "disrupt", "risso", "minke", "bryde", "sei", "omura", "retusa", "oxynoe", "cyerce", "aegires", "navanax"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
@@ -1312,14 +1315,32 @@ export interface LevelSpec {
   /** which tier of the ladder this spec was expanded for; unset = baseline */
   tier?: number;
   /**
-   * The MUTATION ranks this run is played under (see mutation.ts) — the
-   * optional rules the player switched on, not anything the ladder decides.
-   * Unset is the campaign as authored, and is what every spec the editor
-   * and the audit arithmetic build carries: a mutation changes what
-   * happens to a wave AFTER it spawns, never what the script sends, so the
-   * numbers in ladder.ts stay true whichever of these is on.
+   * DOES THIS WORLD ROLL MUTATORS? — the switch that makes a map a
+   * roguelike challenge run rather than the campaign as authored.
+   *
+   * It is meant to be set on every world PAST THE FIRST. World 1 is where
+   * a fleet is still being stood up and its ladder is the campaign; a roll
+   * on top of that is a wall, not a challenge. Everywhere else the player
+   * arrives already strong, and the roll is what puts the fight back in a
+   * script they have cleared before — which is what makes those maps worth
+   * farming (see mutation.ts).
+   *
+   * IT IS NOT A PLAYER SETTING and there is no UI that flips it. A world
+   * either plays under rolled rules or it does not, and which rules those
+   * are is decided by the DIFFICULTY the player picked, at deploy.
    */
-  mutation?: readonly number[];
+  mutators?: boolean;
+  /**
+   * The MUTATORS this run is played under (see mutation.ts) — what the
+   * roll came back with when the run was deployed, not anything the ladder
+   * or the player decides.
+   *
+   * Unset is the campaign as authored, and is what every spec the editor
+   * and the audit arithmetic build carries: a mutator changes what happens
+   * to a wave AFTER it spawns, never what the script sends, so the numbers
+   * in ladder.ts stay true whatever was rolled.
+   */
+  mutation?: readonly MutationId[];
 }
 
 /**
@@ -1577,6 +1598,13 @@ export const WORLDS: LevelSpec[] = [
     name: "Maelstrom",
     map: "tidewater",
     badge: "advanced",
+    // MUTATORS BELONG HERE — `mutators: true` is the whole of what turns
+    // this world into a rolled challenge run (see LevelSpec.mutators and
+    // mutation.ts). It is deliberately NOT set yet: the catalog is two
+    // rules long, and a roll of "three or four" out of two is every run
+    // playing under both. It goes on when the catalog is deep enough for
+    // a roll to be a roll, and every world authored after this one takes
+    // it from the start.
     transforms: [
       { from: ["crawler"], to: [{ family: "naval" }] },
       { from: ["support"], to: [{ family: "support" }, { family: "navalSupport" }] },

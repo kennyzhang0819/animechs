@@ -1,7 +1,6 @@
 import { UNIT_KINDS, UNIT_STATS, unitDrop, WORLD, WORLDS } from "./levels";
 import { OFFICIAL_MAP_IDS } from "./maps";
 import { OPENING_DUOS, RUNG_COUNT, tierDropBonus, TOP_TIER, WORLD_REQUIRES } from "./ladder";
-import { MUTATION_MAX, cleanMutations } from "./mutation";
 import {
   addScaled,
   canAfford,
@@ -230,20 +229,17 @@ export interface Progress {
    */
   techBought?: TechLevels;
   /**
-   * The MUTATION ranks switched on for the next run (see mutation.ts) —
-   * the optional rules the player has chosen to play under, kept across
-   * runs and sessions like `speed` is, because it is a statement about how
-   * this player wants to play rather than a fact about one run.
+   * THERE IS NO `mutations` FIELD ANY MORE, and its absence is the whole
+   * of what the save has to say about mutators.
    *
-   * It is a CHOICE, not a possession: what a save has EARNED is its rank,
-   * and rank is read off the boss ledger (mutationRank) rather than stored
-   * here. Absent, or empty, means the campaign as authored.
-   *
-   * A save written before the line was renamed holds this under
-   * `ascension`, which readMutations still reads — the word changed, the
-   * switches a player had flipped did not.
+   * It used to hold the ranks a player had switched on for their next run,
+   * because mutation was an opt-in handicap earned off the boss ledger.
+   * Mutators are now ROLLED per deploy, from the difficulty's budget (see
+   * mutation.ts), so there is nothing to remember between runs: the roll
+   * belongs to the run spec and dies with it. An old save's `mutations` or
+   * `ascension` array is simply ignored on load — no migration, because
+   * there is no field left for it to migrate into.
    */
-  mutations?: number[];
 }
 
 /** one emplacement, as the save keeps it: what, and which cell */
@@ -341,37 +337,6 @@ const DEV_UNLOCK_ALL = true;
  */
 const devUnlocking = (p?: { devGrantOff?: boolean }): boolean =>
   DEV_UNLOCK_ALL && process.env.NODE_ENV !== "production" && p?.devGrantOff !== true;
-
-/**
- * THE MUTATION RANK a boss ledger is worth — how far up the tree's left
- * column that save has climbed. Zero on a fresh save, and every save starts
- * there.
- *
- * ONE RANK PER BOSS FELLED, and the count is the ledger ITSELF (one entry
- * per distinct boss fight won, see grantRunReward). Nothing separate is
- * stored: a second number counting the same events is a second number that
- * can disagree with the first, and the ledger is already the save's answer
- * to "which bosses has this player beaten". A boss can therefore never pay
- * a rank twice — the ledger refuses to record it twice — so mutation is
- * earned by beating a boss somewhere new (a fresh world, or a difficulty
- * above the one it last fell on), never by farming the wave it dies on.
- *
- * THE DEV SWITCH REACHES HERE TOO (see DEV_UNLOCK_ALL). It hands a
- * developer the whole tree without playing the campaign, and the mutation
- * line is out of reach for exactly the reason the tree is: its first rank
- * sits behind a boss at the end of a fifty-wave script. Production ignores
- * the switch, so the shipped game earns every rank the honest way.
- *
- * IT IS ONE FUNCTION BECAUSE BOTH READERS MUST AGREE. The save loader
- * cleans the switched-on list against this, and the tree offers switches
- * against it; if they disagreed by so much as the dev grant, a switch the
- * tree let you flip would be scrubbed back off on the very next load.
- */
-const rankOf = (
-  bossKills: readonly string[] | undefined,
-  save?: { devGrantOff?: boolean },
-): number =>
-  devUnlocking(save) ? MUTATION_MAX : Math.min(MUTATION_MAX, bossKills?.length ?? 0);
 
 /**
  * Raise every node to a usable number of points, keeping anything the save
@@ -614,10 +579,6 @@ export function loadProgress(): Progress {
       unlocked,
       ...(devGrantOff ? { devGrantOff } : null),
       ...(techBought ? { techBought } : null),
-      // cleaned against the rank this save has actually earned, so a switch
-      // left on by a wiped ledger (or by a hand-edited save) reads as off
-      // rather than as a rule the run has no right to be playing under
-      mutations: readMutations(p, rankOf(bossKills, { devGrantOff })),
     };
     if (split) saveProgress(loaded);
     return loaded;
@@ -701,40 +662,6 @@ function readLoadout(p: { loadout?: unknown }): TowerKind[] | undefined {
     if (typeof k === "string" && kinds.has(k) && !out.includes(k as TowerKind))
       out.push(k as TowerKind);
   return out;
-}
-
-/**
- * The switched-on ranks out of a raw save, cleaned against the rank this
- * save has actually earned — so a switch left on by a wiped ledger, or by a
- * hand-edited save, reads as off rather than as a rule the run has no right
- * to be playing under.
- *
- * `ascension` is the field's old name and is read when the new one is
- * absent. The line was renamed, not reset: a player who had Hungry switched
- * on before the rename still has it switched on after.
- */
-function readMutations(p: object, rank: number): number[] {
-  const raw = p as { mutations?: unknown; ascension?: unknown };
-  return cleanMutations(raw.mutations ?? raw.ascension, rank);
-}
-
-/** how far up the tree's left column this save has climbed — see rankOf */
-export const mutationRank = (p: Progress): number => rankOf(p.bossKills, p);
-
-/** the ranks this run will actually be played under: what the player
- *  switched on, held to what they have earned */
-export const activeMutations = (p: Progress): number[] =>
-  cleanMutations(p.mutations, mutationRank(p));
-
-/** switch one mutation rank on or off, and remember it for the next run */
-export function saveMutation(level: number, on: boolean): Progress {
-  const p = loadProgress();
-  const have = new Set(activeMutations(p));
-  if (on) have.add(level);
-  else have.delete(level);
-  const next = { ...p, mutations: cleanMutations([...have], mutationRank(p)) };
-  saveProgress(next);
-  return next;
 }
 
 /** remember which turrets ride in the build bar's slots */
@@ -1104,10 +1031,9 @@ export function buyTech(node: TechKind, count = 1): Progress | null {
  * bargain Android's build-number tap makes.
  *
  * NODES, exactly like the dev switch: the ladder still opens by clearing
- * tiers, and MUTATION RANKS ARE NOT GRANTED — those hang off the boss
- * ledger (rankOf), which is a record of fights actually won and not a
- * thing to forge. A save that takes this door still has to fell a boss to
- * get its first mutation.
+ * tiers, and there is nothing else for this door to hand over — a run's
+ * mutators are rolled at deploy from the difficulty picked (mutation.ts)
+ * and were never a thing a save could own.
  *
  * THE ONE THING IT PUTS IN THE BANK is the price of the refundable nodes,
  * because grantEveryNode refuses to hand those over (see the invariant
