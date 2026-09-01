@@ -198,6 +198,25 @@ export interface Progress {
    */
   unlocked?: boolean;
   /**
+   * THIS SAVE HAS DECLINED THE DEV GRANT — the wipe's half of the back
+   * door (see resetProgress and DEV_UNLOCK_ALL).
+   *
+   * The dev switch is read on every load rather than written once, which
+   * is what makes it reach every browser the dev server is open in — and
+   * what made "Reset save" a lie on a dev build: the file went, the whole
+   * tree came straight back on the next load, and what the player had
+   * asked for was a fresh campaign. So the wipe leaves this behind, and
+   * it is the ONE thing a wipe writes: a fresh save that says, in the
+   * save itself, that the grant is not wanted here.
+   *
+   * It is not a lock on the tree. The tap door (unlockEverything) still
+   * opens it, and clearing the browser's storage by hand puts the dev
+   * switch back where it was — this only says that a player who asked for
+   * an empty save is not handed 500 points of everything a heartbeat
+   * later. Production never grants anything, so there it is inert.
+   */
+  devGrantOff?: boolean;
+  /**
    * WHAT THE SAVE REALLY HOLDS, when a grant has been laid over `tech`.
    *
    * Present only on a Progress that loadProgress granted to — the dev
@@ -314,9 +333,14 @@ const fresh = (): Progress => ({
  */
 const DEV_UNLOCK_ALL = true;
 
-/** is the dev unlock actually in force? production ignores the switch */
-const devUnlocking = (): boolean =>
-  DEV_UNLOCK_ALL && process.env.NODE_ENV !== "production";
+/**
+ * Is the dev unlock actually in force for this save? Production ignores
+ * the switch, and so does a save that has been wiped since — the wipe
+ * writes `devGrantOff` precisely so the grant does not walk back in on
+ * the very next load (see resetProgress).
+ */
+const devUnlocking = (p?: { devGrantOff?: boolean }): boolean =>
+  DEV_UNLOCK_ALL && process.env.NODE_ENV !== "production" && p?.devGrantOff !== true;
 
 /**
  * THE MUTATION RANK a boss ledger is worth — how far up the tree's left
@@ -343,8 +367,11 @@ const devUnlocking = (): boolean =>
  * against it; if they disagreed by so much as the dev grant, a switch the
  * tree let you flip would be scrubbed back off on the very next load.
  */
-const rankOf = (bossKills: readonly string[] | undefined): number =>
-  devUnlocking() ? MUTATION_MAX : Math.min(MUTATION_MAX, bossKills?.length ?? 0);
+const rankOf = (
+  bossKills: readonly string[] | undefined,
+  save?: { devGrantOff?: boolean },
+): number =>
+  devUnlocking(save) ? MUTATION_MAX : Math.min(MUTATION_MAX, bossKills?.length ?? 0);
 
 /**
  * Raise every node to a usable number of points, keeping anything the save
@@ -556,7 +583,11 @@ export function loadProgress(): Progress {
     // amount of ordinary play can promote a granted point into a bought
     // one. See the field's note on Progress.
     const unlocked = p.unlocked === true;
-    const granting = devUnlocking() || unlocked;
+    // a wiped save carries the refusal, and it outranks the dev switch —
+    // see Progress.devGrantOff. The tap door is still a door: `unlocked`
+    // is the player asking for the grant, and asking gets it
+    const devGrantOff = p.devGrantOff === true;
+    const granting = devUnlocking({ devGrantOff }) || unlocked;
     const techBought = granting ? { ...tech } : undefined;
     if (granting) grantEveryNode(tech);
     const bossKills = readBossKills(p);
@@ -581,11 +612,12 @@ export function loadProgress(): Progress {
       loadout: readLoadout(p),
       techOff: readTechOff(p),
       unlocked,
+      ...(devGrantOff ? { devGrantOff } : null),
       ...(techBought ? { techBought } : null),
       // cleaned against the rank this save has actually earned, so a switch
       // left on by a wiped ledger (or by a hand-edited save) reads as off
       // rather than as a rule the run has no right to be playing under
-      mutations: readMutations(p, rankOf(bossKills)),
+      mutations: readMutations(p, rankOf(bossKills, { devGrantOff })),
     };
     if (split) saveProgress(loaded);
     return loaded;
@@ -687,7 +719,7 @@ function readMutations(p: object, rank: number): number[] {
 }
 
 /** how far up the tree's left column this save has climbed — see rankOf */
-export const mutationRank = (p: Progress): number => rankOf(p.bossKills);
+export const mutationRank = (p: Progress): number => rankOf(p.bossKills, p);
 
 /** the ranks this run will actually be played under: what the player
  *  switched on, held to what they have earned */
@@ -851,10 +883,29 @@ export function saveProgress(p: Progress): void {
   }
 }
 
+/**
+ * WIPE THE SAVE — and mean it, on a dev build too.
+ *
+ * Removing the file is only half the job while the dev switch is on: it is
+ * read on every load, so the next loadProgress would hand the fresh save
+ * all 500 points of every turret and the whole tree with it, and the
+ * player who pressed Wipe would watch their campaign come back finished.
+ * The back door's `unlocked` flag lives IN the save and goes with it; the
+ * dev switch does not, so the refusal has to be written down.
+ *
+ * So a wipe under the switch stores one fresh save carrying `devGrantOff`
+ * — an empty campaign that says the grant is not wanted here — instead of
+ * storing nothing. With the switch off (production, always) there is
+ * nothing to refuse and the keys simply go, exactly as before.
+ *
+ * The grant is still one tap away: the settings door (unlockEverything)
+ * asks for it explicitly and gets it.
+ */
 export function resetProgress(): void {
   try {
     localStorage.removeItem(KEY);
     localStorage.removeItem(LEGACY_KEY); // or the pre-rename save would reappear
+    if (devUnlocking()) saveProgress({ ...fresh(), devGrantOff: true });
   } catch {
     // ignore — same storage caveat as saveProgress
   }
@@ -1173,7 +1224,7 @@ export function refundTech(node: TechKind, count = 1): Progress | null {
  * Each kind pays its FAMILY'S currency in its TIER'S quantity (unitDrop in
  * levels.ts), so the shape of this bundle is the shape of the LINES that
  * died: a pure dagger push is copper only, a spiroct column thorium only,
- * and a run on a world whose transforms send neither banks neither. It is
+ * and a run on a world whose script sends neither banks neither. It is
  * also why a run's takings say which map was played — the world decides
  * which lines arrive, and the lines decide the currencies.
  */
@@ -1219,9 +1270,9 @@ export interface RunReward {
  * idle tick and no "welcome back, you earned this while you were away".
  * Every item in the bank was paid for by a run somebody watched, and that
  * is a design commitment rather than a feature not written yet. It puts the
- * whole pacing burden on the loot curve — LOOT_PER_RUNG for the ladder,
- * AMOUNT_PER_TIER for the kill — which is where it is legible and tunable,
- * rather than in a clock nobody is looking at.
+ * whole pacing burden on the loot curve — LOOT_PER_RUNG for the ladder and
+ * the script's own tier mix for the kill (itemForTier) — which is where it
+ * is legible and tunable, rather than in a clock nobody is looking at.
  *
  * Only call this on a run that reached its own end (won or lost):
  * abandoning mid-level is worth nothing, which is why the UI settles from
