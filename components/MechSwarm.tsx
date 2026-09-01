@@ -12,10 +12,10 @@ import {
   type UiState,
 } from "@/game/game";
 import { loadBalanceDoc } from "@/game/balance";
+import { loadLayoutDoc } from "@/game/layout";
 import {
   loadLevelDocs,
   UNIT_KINDS,
-  UNIT_STATS,
   WORLD,
   WORLDS,
   worldById,
@@ -39,6 +39,8 @@ import {
   waveGuide,
   tierDropBonus,
   tierLevel,
+  tierMutationCount,
+  tierMutationPoints,
 } from "@/game/ladder";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import {
@@ -68,7 +70,6 @@ import {
 } from "@/game/progress";
 import { turretIcon } from "@/game/atlas";
 import {
-  mutationBudget,
   mutationById,
   mutationCost,
   rollMutations,
@@ -394,34 +395,33 @@ function MapDialog({
   const badge = MAP_BADGE[world.badge ?? "beginner"];
   const cleared = isTierCleared(progress, world.id, tier);
   /**
-   * THE ROLL FOR THIS DEPLOY — three or four rules the difficulty's budget
-   * pays for, on a world that mutates, and nothing at all on one that does
-   * not (see LevelSpec.mutators).
+   * THE ROLL FOR THIS DEPLOY — as many rules as the difficulty asks for,
+   * costing no more than the points it carries (tierMutationCount and
+   * tierMutationPoints, both dials on the rung). Level 1 carries zero of
+   * each and so rolls nothing; every step above it mutates.
+   *
+   * THE MAP NO LONGER HAS A SAY. This used to be gated on
+   * `LevelSpec.mutators`, a per-world switch that was never turned on —
+   * so the ladder decides alone now, on every world, and the first tier
+   * is where "the campaign as authored" lives (see mutation.ts).
    *
    * IT IS ROLLED ONCE PER DIFFICULTY, HERE. Re-rolling on every render
    * would spin the list under the player's eyes; rolling at Deploy would
-   * deploy rules that were never shown. Keying it on the rung is the
+   * deploy rules that were never shown. Keying it on the tier is the
    * honest middle: step the difficulty and you are asking a different
    * question, so you get a different answer, and whatever the panel is
    * showing when Deploy is pressed is exactly what the run is played
    * under (onStart carries it).
    */
   const rolled = useMemo(
-    () => (world.mutators ? rollMutations(mutationBudget(tier)) : []),
+    // `world` is in the deps on purpose though the roll no longer reads it:
+    // pointing the panel at a different map is a different question too
+    () => rollMutations(tierMutationPoints(tier), tierMutationCount(tier)),
     [world, tier],
   );
   const mutations = rolled
     .map(mutationById)
     .filter((m): m is NonNullable<typeof m> => m !== null);
-  // whether the script fields a boss kind — read from the waves themselves,
-  // so the warning follows the boss if it moves
-  const hasBoss = spec.script.some(
-    (s) =>
-      "wave" in s &&
-      waveGroups(s.wave).some((g) =>
-        g.counts.some((c, i) => c > 0 && UNIT_STATS[UNIT_KINDS[i]].boss),
-      ),
-  );
 
   // Escape closes it, like every dialog anyone has ever met
   useEffect(() => {
@@ -540,39 +540,28 @@ function MapDialog({
               </div>
             </dl>
 
-            {/* the two things that are true of the RUN rather than of the
-                dial: a boss in the script, and the mutators this map rolled
-                for the difficulty picked above. The roll is NOT a warning
-                to be skimmed — it is the run's rules, and it moves every
-                time the stepper does, so it is spelled out in full rather
-                than named. The tech tree's codex lists what else could
-                have come up */}
-            {(hasBoss || mutations.length > 0) && (
+            {/* what is true of the RUN rather than of the dial: the mutators
+                rolled for the difficulty picked above. The roll is NOT a
+                warning to be skimmed — it is the run's rules, and it moves
+                every time the stepper does, so it is spelled out in full
+                rather than named. The codex tab lists what else could have
+                come up */}
+            {mutations.length > 0 && (
               <div className="mt-2 space-y-0.5 text-[12px] leading-snug">
-                {hasBoss && (
-                  <div className="text-[#A6A6AF]">
-                    <span className="font-bold text-[#FF8A8A]">A powerful enemy</span> will
-                    spawn.
+                <div className="flex items-baseline justify-between">
+                  <span className="font-bold uppercase tracking-widest text-[#FF8ACB]">
+                    Mutators
+                  </span>
+                  <span className="text-[#71717C]">
+                    {mutationCost(rolled)} / {tierMutationPoints(tier)} pts
+                  </span>
+                </div>
+                {mutations.map((m) => (
+                  <div key={m.id} className="text-[#A6A6AF]">
+                    <span className="font-bold text-[#EDEDEF]">{m.name}</span>{" "}
+                    {m.blurb}
                   </div>
-                )}
-                {mutations.length > 0 && (
-                  <div>
-                    <div className="flex items-baseline justify-between">
-                      <span className="font-bold uppercase tracking-widest text-[#FF8ACB]">
-                        Mutators
-                      </span>
-                      <span className="text-[#71717C]">
-                        {mutationCost(rolled)} / {mutationBudget(tier)} pts
-                      </span>
-                    </div>
-                    {mutations.map((m) => (
-                      <div key={m.id} className="text-[#A6A6AF]">
-                        <span className="font-bold text-[#EDEDEF]">{m.name}</span>{" "}
-                        {m.blurb}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                ))}
               </div>
             )}
 
@@ -921,7 +910,12 @@ export default function MechSwarm() {
     // level documents overlay WORLDS in place (see levels.ts), so a script
     // edited in the admin level editor is what the menu counts and the run
     // plays. A level with no document keeps the campaign as shipped
-    Promise.all([loadOfficialMaps(), loadLevelDocs(), loadBalanceDoc()])
+    Promise.all([
+      loadOfficialMaps(),
+      loadLevelDocs(),
+      loadBalanceDoc(),
+      loadLayoutDoc(),
+    ])
       .then(() => {
         if (alive) setMapsReady(true);
       })

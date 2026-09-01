@@ -1315,21 +1315,17 @@ export interface LevelSpec {
   /** which tier of the ladder this spec was expanded for; unset = baseline */
   tier?: number;
   /**
-   * DOES THIS WORLD ROLL MUTATORS? — the switch that makes a map a
-   * roguelike challenge run rather than the campaign as authored.
+   * THERE IS NO `mutators` SWITCH HERE ANY MORE. It was a per-world
+   * boolean — "does this map roll rules" — meant to be set on every world
+   * past the first, and it was never set on any of them.
    *
-   * It is meant to be set on every world PAST THE FIRST. World 1 is where
-   * a fleet is still being stood up and its ladder is the campaign; a roll
-   * on top of that is a wall, not a challenge. Everywhere else the player
-   * arrives already strong, and the roll is what puts the fight back in a
-   * script they have cleared before — which is what makes those maps worth
-   * farming (see mutation.ts).
-   *
-   * IT IS NOT A PLAYER SETTING and there is no UI that flips it. A world
-   * either plays under rolled rules or it does not, and which rules those
-   * are is decided by the DIFFICULTY the player picked, at deploy.
+   * THE LADDER DECIDES INSTEAD, alone, on every map: a tier carries how
+   * many rules it rolls and what they may cost (RungKnobs.mutationCount
+   * and .mutationPoints), and the bottom tier carries zero of each. That
+   * says "Level 1 is the campaign as authored" with the same number that
+   * tunes everything above it, and it means a world cannot be authored
+   * into a state where its difficulty stepper does nothing.
    */
-  mutators?: boolean;
   /**
    * The MUTATORS this run is played under (see mutation.ts) — what the
    * roll came back with when the run was deployed, not anything the ladder
@@ -1598,13 +1594,11 @@ export const WORLDS: LevelSpec[] = [
     name: "Maelstrom",
     map: "tidewater",
     badge: "advanced",
-    // MUTATORS BELONG HERE — `mutators: true` is the whole of what turns
-    // this world into a rolled challenge run (see LevelSpec.mutators and
-    // mutation.ts). It is deliberately NOT set yet: the catalog is two
-    // rules long, and a roll of "three or four" out of two is every run
-    // playing under both. It goes on when the catalog is deep enough for
-    // a roll to be a roll, and every world authored after this one takes
-    // it from the start.
+    // NOTHING HERE TURNS MUTATORS ON any more — every world rolls them
+    // from Level 2 up, and how many is the tier's own dial (see
+    // mutation.ts and RungKnobs). With a two-rule catalog a roll of three
+    // is simply both of them; the variety arrives with the rules, not with
+    // a switch on this map.
     transforms: [
       { from: ["crawler"], to: [{ family: "naval" }] },
       { from: ["support"], to: [{ family: "support" }, { family: "navalSupport" }] },

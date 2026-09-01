@@ -77,8 +77,20 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `game/game.ts` — rAF loop, input, 2d overlay (placement ghost), stats
 - `components/MechSwarm.tsx` — React shell: HUD, rung picker,
   six-slot build bar with its loadout picker, game-speed switcher, canvases
-- `components/TechTree.tsx` — the tech tree as a zoomable map, plus the
-  **mutator codex** as a panel over it
+- `game/layout.ts` — **where every tech-tree node sits**: one editable
+  integer grid over turrets, utilities and upgrade rungs alike. The
+  authored cells are the starting point; `public/tree.json` overrides them
+  and the admin dashboard's Tech tree tab writes it
+- `components/Board.tsx` — the pan-and-zoom camera every board is drawn on
+  (tech tree, mutator codex, tree editor), and the chrome they share
+- `components/TechTree.tsx` — the tech tree board, and the tab strip that
+  switches to the codex beside it. Every upgrade rung is a **node with an
+  edge into it** — turret → rung 1 → rung 2 → ultimate — laid out on the
+  same grid the turrets are, not a row of chips under its turret
+- `components/TreeEditorView.tsx` — the layout editor: drag a node, it
+  snaps to the grid, Save writes `public/tree.json`
+- `components/MutationTree.tsx` — the **mutator codex** as a board of its
+  own: one thumbnail per rule, severity in the border, the rule on hover
 - `components/LevelEditorView.tsx`, `MapEditorView.tsx`, `BalanceView.tsx` —
   the admin authoring surfaces
 
@@ -181,29 +193,38 @@ with no reward attached — and the game had to be balanced as though
 everybody did. So it became the opposite thing: mandatory, unchosen, and
 attached to the maps that want it.
 
-**Where it is mandatory:** any world whose `LevelSpec` sets `mutators`,
-which is meant to be **every world past the first**. World 1 is where the
-fleet is still being stood up and a roll on top of that is a wall rather
-than a challenge; by the second front the player is strong enough that the
-script is a formality, and the roll is what puts the fight back in it.
-*(It is not switched on anywhere yet — with two rules in the catalog, a
-roll of "three or four" is just "both".)*
+**Where it is mandatory:** **every deploy from Level 2 up, on every map.**
+The gate is the ladder, not the world — a tier carries how many rules it
+rolls and what they may cost (`RungKnobs.mutationCount` and
+`.mutationPoints`, both dials on the balance tab), and Level 1 carries zero
+of each. That is the whole of what "Level 1 is the campaign as authored"
+means. The per-world `LevelSpec.mutators` switch is gone; it was never
+turned on, and it could only ever say yes or no where the ladder can say
+how much.
 
 **The costs are the only balance dial.** A mutator is worth points
 (`MutationDef.cost`, 1–6 — light, heavy, brutal), a difficulty affords
 them or does not, and which rules a difficulty sees falls out of the
-arithmetic rather than a per-difficulty list:
+arithmetic rather than a per-difficulty list. The count climbs far more
+slowly than the budget: points buy **weight** (the same slots, filled with
+worse things) and the count buys **breadth**, which is the scarcer of the
+two. Both rows are the authored defaults, and both are knobs:
 
 | rung | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| points | 6 | 8 | 10 | 11 | 13 | 15 | 17 | 19 | 20 | 22 |
+| rules | 0 | 3 | 3 | 3 | 3 | 4 | 4 | 4 | 4 | 5 |
+| points | 0 | 8 | 10 | 11 | 13 | 15 | 17 | 19 | 20 | 22 |
 
 The roller shuffles the catalog, walks it taking whatever the remaining
 budget covers, and keeps the fullest of two dozen such walks — **most
 rules first, then most points spent**, because spending the budget *is*
-the difficulty curve. The whole catalog is public: the tech tree page
-carries a **codex** panel listing every rule and its cost, so the surprise
-is which ones turn up and never what exists. The deploy panel spells out
+the difficulty curve. The whole catalog is public: the upgrade screen
+is two tabs, and the second is a **codex board** — the same pan-and-zoom
+map the tech tree is drawn on, holding one thumbnail per rule. The border
+colour is how bad it is (light / heavy / brutal) and the hover card is the
+rule in a sentence; no cost, no tier, no arithmetic, because none of that
+is a player's question. The one number on the screen is the points each
+difficulty spends. The surprise is which rules turn up, never what exists. The deploy panel spells out
 the roll in full before the button is pressed, and the run plays under
 exactly what it showed.
 

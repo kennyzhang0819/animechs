@@ -568,12 +568,17 @@ export interface TechNodeDef {
    * y is the depth — a child sits BELOW its parent (or, in the north,
    * above it) — and x spreads siblings sideways.
    *
-   * AN UPGRADE NODE IS NOT ON THE GRID AT ALL. The rungs under each turret
-   * carry their turret's own cell here and are drawn as a row of chips
-   * hanging off it (TechTree.tsx), not as boxes with edges of their own.
-   * That is what keeps the crossing rule affordable: a box per rung would
-   * need a clear cell per rung and an edge to reach it, and the wings have
-   * nowhere to put either.
+   * AN UPGRADE NODE IS NOT ON THIS GRID, and still is not — but it IS a
+   * box with an edge into it. The rungs under a turret carry their
+   * turret's own cell here and are laid out INSIDE it, as a horizontal
+   * chain under the turret's name (TechTree.tsx). So the grid stays a grid
+   * of turrets, the wings keep their strips, and the crossing rule holds:
+   * a chain never leaves its own cell, and a turret's outgoing edges leave
+   * from BELOW its chain rather than through it.
+   *
+   * They were a row of unconnected chips until then, which was cheaper and
+   * said less — a chip cannot show what comes before it, and every other
+   * relationship on the board is a line.
    */
   x: number;
   y: number;

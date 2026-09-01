@@ -3,7 +3,8 @@ import { applyOverrides } from "./tech";
 
 /**
  * The balance document: the price knobs (base, growth) per turret, plus
- * the per-rung dials (enemy level, shield scale, swarm armour bonus) under
+ * the per-rung dials (enemy level, shield scale, swarm armour bonus, and
+ * the mutator roll's count and points) under
  * the reserved `difficulties` key — no turret is named that, so the flat
  * shape survives. Inside that section a rung is keyed by its 1-based
  * ORDINAL, "1" through "10" (rungKey in ladder.ts); the key was the

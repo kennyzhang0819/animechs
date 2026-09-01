@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import BalanceView from "@/components/BalanceView";
+import TreeEditorView from "@/components/TreeEditorView";
 import { loadBalanceDoc } from "@/game/balance";
+import { loadLayoutDoc } from "@/game/layout";
 import { ADMIN_ENABLED } from "@/game/env";
 import LevelEditorView from "@/components/LevelEditorView";
 import MapEditorView from "@/components/MapEditorView";
@@ -138,7 +140,8 @@ function AdminInner() {
   const openLevel = params.get("level");
   // the tab lives in the URL like the editors do, so a reload lands back
   // where you were mid-tune
-  const tab = params.get("tab") === "balance" ? "balance" : "content";
+  const raw = params.get("tab");
+  const tab = raw === "balance" || raw === "tree" ? raw : "content";
   const [maps, setMaps] = useState<MapData[]>([]);
   const [open, setOpen] = useState<MapData | null>(null);
   // level documents overlay WORLDS in place, so this is a "have they landed
@@ -148,6 +151,9 @@ function AdminInner() {
   // and the same for the balance document: the tab must not open on the
   // authored coefficients and then save those over what is on disk
   const [balanceReady, setBalanceReady] = useState(false);
+  // and the same for the tech-tree layout: the editor must not open on the
+  // authored cells and then save those over a layout already on disk
+  const [layoutReady, setLayoutReady] = useState(false);
 
   // the documents live in public/maps/ and public/levels/ and are fetched,
   // not imported
@@ -161,6 +167,9 @@ function AdminInner() {
     });
     loadBalanceDoc().then(() => {
       if (alive) setBalanceReady(true);
+    });
+    loadLayoutDoc().then(() => {
+      if (alive) setLayoutReady(true);
     });
     return () => {
       alive = false;
@@ -189,6 +198,12 @@ function AdminInner() {
       return <LevelEditorView level={level} onClose={() => router.push("/admin")} />;
   }
 
+  // the tree editor is the board itself, full screen and pannable, so it
+  // replaces the page the way the map and level editors do rather than
+  // sitting in a panel on it
+  if (tab === "tree" && layoutReady)
+    return <TreeEditorView onClose={() => router.push("/admin")} />;
+
   return (
     <div className="min-h-screen bg-[#0B0B0D] p-8">
       <div className="mx-auto max-w-5xl">
@@ -214,6 +229,7 @@ function AdminInner() {
           {([
             ["content", "Levels & maps"],
             ["balance", "Balance"],
+            ["tree", "Tech tree"],
           ] as const).map(([id, label]) => (
             <button
               key={id}

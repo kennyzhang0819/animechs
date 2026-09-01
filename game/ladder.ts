@@ -12,6 +12,11 @@ import {
 import { TOWERS } from "./constants";
 import { isTowerNode, TECH_TREE, type TechNodeDef } from "./tech";
 import {
+  MUT_COUNT_MAX,
+  mutationBudget,
+  mutationPicks,
+} from "./mutation";
+import {
   BASE_ITEM,
   costEntries,
   ITEM_INFO,
@@ -169,10 +174,17 @@ export const RUNGS: readonly {
   level: number;
   shieldScale: number;
   lowTierArmorBonus: number;
+  mutationPoints: number;
+  mutationCount: number;
 }[] = Array.from({ length: RUNG_COUNT }, (_, i) => ({
   level: i * LEVELS_PER_RUNG,
   shieldScale: Math.round(SHIELD_PER_RUNG ** i * 100) / 100,
   lowTierArmorBonus: armorAtRung(i),
+  // the two mutation columns are arithmetic on the index like the rest,
+  // and both are zero at rung 1: the bottom of the ladder is the campaign
+  // as authored (see mutation.ts)
+  mutationPoints: mutationBudget(i),
+  mutationCount: mutationPicks(i),
 }));
 
 /**
@@ -352,9 +364,41 @@ export interface RungKnobs {
   shieldScale: number;
   /** flat armour added to tier 1-3 units only — see the RUNGS doc */
   lowTierArmorBonus: number;
+  /**
+   * THE MUTATION PAIR — what this tier's roll may spend, and how many
+   * rules it comes back with (see mutation.ts). They are dials here rather
+   * than constants there because they are the tier's difficulty, in the
+   * same sense enemy level is, and they want tuning by the same afternoon
+   * of small edits and re-runs.
+   *
+   * BOTH ARE ZERO ON THE BOTTOM TIER as authored, which is the whole of
+   * what "Level 1 is the campaign as authored" means now. There is no
+   * per-world mutation switch any more; a run mutates because the tier it
+   * is played at says how much.
+   */
+  mutationPoints: number;
+  /** how many rules the roll returns, 0 to MUT_COUNT_MAX */
+  mutationCount: number;
 }
 
-const RUNG_KNOB_KEYS = ["level", "shieldScale", "lowTierArmorBonus"] as const;
+const RUNG_KNOB_KEYS = [
+  "level",
+  "shieldScale",
+  "lowTierArmorBonus",
+  "mutationPoints",
+  "mutationCount",
+] as const;
+
+/**
+ * The ceiling a dial may be set to, where it has one. Only the mutator
+ * count does: it indexes nothing, but a hand-edited document asking for
+ * forty simultaneous rules would deploy a run nobody wrote, and the cap is
+ * a design statement (MUT_COUNT_MAX) rather than a UI convenience — so it
+ * is enforced on write and on load, not only in the stepper.
+ */
+const RUNG_KNOB_MAX: Partial<Record<keyof RungKnobs, number>> = {
+  mutationCount: MUT_COUNT_MAX,
+};
 
 /**
  * Keyed by the rung's ORDINAL as a string — "1" through "10".
@@ -378,6 +422,8 @@ export function rungKnobsOf(tier: number): RungKnobs {
     level: o.level ?? d.level,
     shieldScale: o.shieldScale ?? d.shieldScale,
     lowTierArmorBonus: o.lowTierArmorBonus ?? d.lowTierArmorBonus,
+    mutationPoints: o.mutationPoints ?? d.mutationPoints,
+    mutationCount: o.mutationCount ?? d.mutationCount,
   };
 }
 
@@ -388,6 +434,8 @@ export function authoredRungKnobs(tier: number): RungKnobs {
     level: d.level,
     shieldScale: d.shieldScale,
     lowTierArmorBonus: d.lowTierArmorBonus,
+    mutationPoints: d.mutationPoints,
+    mutationCount: d.mutationCount,
   };
 }
 
@@ -399,8 +447,9 @@ export function setRungKnob(
 ): void {
   const key = rungKey(tier);
   const o: Partial<RungKnobs> = { ...(rungOverrides.get(key) ?? {}) };
+  const ceiling = RUNG_KNOB_MAX[knob];
   if (value === undefined || !Number.isFinite(value) || value < 0) delete o[knob];
-  else o[knob] = value;
+  else o[knob] = ceiling === undefined ? value : Math.min(ceiling, value);
   if (Object.keys(o).length === 0) rungOverrides.delete(key);
   else rungOverrides.set(key, o);
 }
@@ -420,7 +469,9 @@ export function applyRungOverrides(doc: Record<string, Partial<RungKnobs>>): voi
     const clean: Partial<RungKnobs> = {};
     for (const k of RUNG_KNOB_KEYS) {
       const n = v[k];
-      if (typeof n === "number" && Number.isFinite(n) && n >= 0) clean[k] = n;
+      if (typeof n !== "number" || !Number.isFinite(n) || n < 0) continue;
+      const ceiling = RUNG_KNOB_MAX[k];
+      clean[k] = ceiling === undefined ? n : Math.min(ceiling, n);
     }
     if (Object.keys(clean).length > 0) rungOverrides.set(key, clean);
   }
@@ -461,6 +512,21 @@ export const armorBonusAtLevel = (level: number, unitTier: number): number => {
   }
   return a;
 };
+
+/**
+ * THE MUTATION PAIR IN FORCE AT A TIER — the two numbers a deploy hands
+ * rollMutations, and the only way anything outside this file should ask.
+ *
+ * Every reader goes through these rather than through mutationBudget and
+ * mutationPicks directly, because those are the AUTHORED curves and these
+ * are what the balance document may have bent. The deploy panel, the codex
+ * and the run itself must all be reading the same pair, or the panel would
+ * promise a roll the run does not play.
+ */
+export const tierMutationPoints = (tier: number): number =>
+  rungKnobsOf(tier).mutationPoints;
+export const tierMutationCount = (tier: number): number =>
+  rungKnobsOf(tier).mutationCount;
 
 /** drop multiplier of a rung — compounding all the way to the top, the top
  *  rung included (see LOOT_PER_RUNG) */
@@ -631,25 +697,25 @@ export const OPENING_WAVES = 20;
  *
  * Each map is climbed separately and keeps its own ladder, so nothing else
  * crosses between them. This does: a map named here stays shut until the
- * named RUNG has fallen on the named map. Confluence teaches the game and
- * Maelstrom assumes it has been taught, so Maelstrom asks for a real climb
- * on Confluence rather than its first clear, which proves only that the
- * opening waves can be held.
+ * named TIER has fallen on the named map. Confluence teaches the game, so
+ * Maelstrom asks that the game has been picked up at all before it opens —
+ * one clear of Confluence's first level, and no more.
  *
- * IT ASKS FOR THE MIDDLE OF THE LADDER, NOT THE TOP. Under the named
- * difficulties this was "clear Nemesis" — the third of four rows, the
- * visible top of the campaign. Held literally that would now be rung 10,
- * and gating the second world behind the whole ladder makes the second
- * world content nobody sees. Rung 5 plays 33 waves at enemy level 16 —
- * the level the old Nemesis itself ran at — which is the same statement
- * about what the player has been taught, a third of the way sooner.
+ * IT IS A HANDSHAKE, NOT A CLIMB. This asked for the middle of the ladder
+ * once, on the argument that Maelstrom assumes Confluence has been taught.
+ * The cost of being right about that is a second map nobody sees: every
+ * tier sends all fifty waves, so a player who wants a different map is
+ * being asked to finish most of this one first. Level 1 is the smallest
+ * gate that still means the player has actually played — it proves the
+ * opening waves can be held (see OPENING_WAVES) — and the difficulty
+ * stepper is where the rest of the challenge lives anyway.
  *
  * A map absent from this table is open from the first run, which is every
  * map but the ones written here.
  */
 export const WORLD_REQUIRES: Readonly<Record<string, { world: string; tier: number }>> = {
-  // Maelstrom opens once Confluence's rung 5 has fallen
-  "2": { world: "1", tier: 4 },
+  // Maelstrom opens once Confluence's level 1 has fallen
+  "2": { world: "1", tier: 0 },
 };
 
 /*

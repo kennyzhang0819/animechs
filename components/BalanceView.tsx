@@ -15,6 +15,7 @@ import {
   type RungKnobs,
   HP_PER_LEVEL,
 } from "@/game/ladder";
+import { MUT_COUNT_MAX, MUT_COUNT_MIN, MUT_COST_MAX } from "@/game/mutation";
 import {
   allOverrides,
   authoredKnobs,
@@ -240,14 +241,8 @@ export default function BalanceView() {
       {/* enemy-side dials, saved into the same document under `difficulties` */}
       <div className="mb-4 rounded-lg border border-[#2E2E36] p-4">
         <div className="mb-1 text-[15px] font-bold text-[#EDEDEF]">Ladder scaling</div>
-        <p className="mb-3 max-w-3xl text-[12.5px] leading-relaxed text-[#71717C]">
-          Enemy-side dials, applied at spawn — one card a rung of the ten-rung ladder
-          (RUNGS in ladder.ts). <span className="text-[#A6A6AF]">Shield ×</span>{" "}
-          multiplies every shield ability&apos;s pool, cap and regen (quasar bubbles, pulsar and
-          scepter fields). <span className="text-[#A6A6AF]">Swarm armour +</span> is added flat to
-          every tier 1&ndash;3 body — the heavies keep their own plating; the shave is floored at
-          10% of the hit, so small-calibre turrets feel it hardest, the lancer counts armour ×4,
-          and burning ignores it entirely. Scatter fires 3-damage pellets — move it in ones.
+        <p className="mb-3 text-[12.5px] text-[#71717C]">
+          One card a rung. The mutator roll runs from {rungLabel(1)} up, on every map.
         </p>
         <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
           {RUNGS.map((_, tier) => {
@@ -265,7 +260,7 @@ export default function BalanceView() {
                 </div>
                 <Knob
                   label="Enemy level"
-                  hint="every unit's hp is ×1.06 per level; armour, speed and drops never move"
+                  hint="hp ×1.06 per level"
                   value={dk.level}
                   min={0}
                   max={60}
@@ -277,7 +272,7 @@ export default function BalanceView() {
                 />
                 <Knob
                   label="Shield ×"
-                  hint="multiplier on every shield pool, cap and regen"
+                  hint="every shield pool, cap and regen"
                   value={dk.shieldScale}
                   min={0}
                   max={50}
@@ -289,7 +284,7 @@ export default function BalanceView() {
                 />
                 <Knob
                   label="Swarm armour + (T1–T3)"
-                  hint="flat armour on every tier 1-3 unit; T4/T5 keep their own plating"
+                  hint="flat, T1–T3 only"
                   value={dk.lowTierArmorBonus}
                   min={0}
                   max={20}
@@ -299,6 +294,49 @@ export default function BalanceView() {
                   onChange={(v) => setDifficulty(tier, "lowTierArmorBonus", Math.max(0, v))}
                   onReset={() => setDifficulty(tier, "lowTierArmorBonus", undefined)}
                 />
+                {/* THE MUTATOR PAIR STARTS AT LEVEL 2. The bottom rung is the
+                    campaign as authored (see mutation.ts) — that is a design
+                    rule rather than a setting, so its card says so instead of
+                    offering two dials whose only correct value is zero */}
+                {tier === 0 ? (
+                  <div className="border-t border-[#2E2E36] py-3 text-[11.5px] text-[#71717C]">
+                    <span className="text-[13px] font-bold text-[#EDEDEF]">Mutators</span>
+                    <p className="mt-1">None — the roll starts at {rungLabel(1)}.</p>
+                  </div>
+                ) : (
+                  <>
+                <Knob
+                  label="Mutators"
+                  hint={`rules rolled, ${MUT_COUNT_MIN}–${MUT_COUNT_MAX}`}
+                  value={dk.mutationCount}
+                  min={MUT_COUNT_MIN}
+                  max={MUT_COUNT_MAX}
+                  step={1}
+                  decimals={0}
+                  bent={dk.mutationCount !== da.mutationCount}
+                  onChange={(v) =>
+                    setDifficulty(
+                      tier,
+                      "mutationCount",
+                      Math.min(MUT_COUNT_MAX, Math.max(0, Math.round(v))),
+                    )
+                  }
+                  onReset={() => setDifficulty(tier, "mutationCount", undefined)}
+                />
+                <Knob
+                  label="Mutator points"
+                  hint={`what they may cost together; a rule is 1–${MUT_COST_MAX}`}
+                  value={dk.mutationPoints}
+                  min={0}
+                  max={40}
+                  step={1}
+                  decimals={0}
+                  bent={dk.mutationPoints !== da.mutationPoints}
+                  onChange={(v) => setDifficulty(tier, "mutationPoints", Math.max(0, v))}
+                  onReset={() => setDifficulty(tier, "mutationPoints", undefined)}
+                />
+                  </>
+                )}
               </div>
             );
           })}

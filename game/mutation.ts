@@ -4,11 +4,11 @@
  *
  * THIS IS THE STARCRAFT II MODEL, and every decision below follows from
  * it. Each mutator carries a POINT COST that says how much harder it makes
- * the run; a difficulty carries a BUDGET; and picking a difficulty rolls
- * three or four mutators that fit inside that budget (rollMutations). The
- * player never picks a mutator, never switches one off, and never sees the
- * roll coming — that is the whole appeal of the mode, and it is why this
- * file has no toggle in it any more.
+ * the run; a difficulty carries a BUDGET and a COUNT; and picking a
+ * difficulty rolls that many mutators to fit inside that budget
+ * (rollMutations). The player never picks a mutator, never switches one
+ * off, and never sees the roll coming — that is the whole appeal of the
+ * mode, and it is why this file has no toggle in it any more.
  *
  * WHY IT STOPPED BEING A TECH-TREE LINE. Mutation used to be the tree's
  * left column: a rank per boss felled, and a switch per rank the player
@@ -17,14 +17,21 @@
  * had to be BALANCED as though everyone did. So it became the opposite
  * thing: MANDATORY, on the maps that want it, and unchosen.
  *
- * WHERE IT IS MANDATORY: any world that sets `mutators` on its LevelSpec,
- * which is meant to be every world past the first (see the note there).
- * World 1 is the campaign as authored — it is where the fleet is still
- * being stood up, and a roll on top of that is not a challenge, it is a
- * wall. By the time a player reaches the second front they are strong
- * enough that the fifty waves are a formality, and the roll is what makes
- * the map a fight again. This is ENDGAME RESOURCE FARMING with a roguelike
- * shape: the same script, a different set of rules every time you deploy.
+ * WHERE IT IS MANDATORY: EVERY DEPLOY FROM LEVEL 2 UP, on every world.
+ * The gate is the LADDER, not the map — a run is played under the points
+ * and the count its difficulty carries (mutationBudget, mutationPicks,
+ * both of them dials on the rung: see RungKnobs in ladder.ts), and Level 1
+ * carries zero of each.
+ *
+ * IT USED TO BE A PER-WORLD SWITCH (`LevelSpec.mutators`) and that was one
+ * gate too many. A map either mutated or it did not, and the difficulty
+ * only decided how hard — so the first world could never be made harder
+ * and every world after it could never be played straight. Hanging it on
+ * the rung instead says the same thing with one number: Level 1 is the
+ * campaign as authored, which is where the fleet is still being stood up
+ * and a roll on top of that is a wall rather than a challenge. Every step
+ * above it is the same script under rules nobody chose, which is ENDGAME
+ * RESOURCE FARMING with a roguelike shape.
  *
  * THE COSTS ARE THE ONLY BALANCE DIAL. A mutator is not "for" a difficulty
  * — it is worth a number of points, and a difficulty can afford it or
@@ -49,7 +56,17 @@ export interface MutationDef {
   id: MutationId;
   /** what it is called on the codex card and in the deploy panel */
   name: string;
-  /** the rule, in one sentence, as the codex states it */
+  /**
+   * THE RULE, IN ONE SHORT SENTENCE — what the codex card and the deploy
+   * panel both print.
+   *
+   * IT SAYS WHAT HAPPENS, NOT HOW IT IS IMPLEMENTED. These used to spell
+   * out the meal cap, the health multiplier and which statuses survive; a
+   * player reading a card wants to know what is about to be done to them,
+   * and the exact arithmetic is in the notes further down this file where
+   * it can be kept honest. Anything that does not change how the run is
+   * PLAYED does not belong in the sentence.
+   */
   blurb: string;
   /**
    * WHAT IT IS WORTH, in the budget a difficulty hands the roller. See
@@ -81,17 +98,16 @@ export const MUT_COST_MAX = 6;
 export const MUTATIONS: readonly MutationDef[] = [
   {
     id: "hungry",
-    name: "Hungry",
+    name: "Hungry Mechs",
     cost: 4,
     blurb:
-      "One enemy in twenty spawns hungry. It eats a neighbour every second — up to twenty — taking double their health and swelling with every meal. What it eats drops nothing.",
+      "Hungry mechs eats its neighbours and become stronger with every meal.",
   },
   {
     id: "speedy",
     name: "Speedy",
     cost: 5,
-    blurb:
-      "Every enemy moves twice as fast and cannot be slowed. Water, cryofluid and every other soaking still lands — it just no longer costs them a step.",
+    blurb: "Every enemy moves twice as fast, and nothing can slow them.",
   },
 ];
 
@@ -152,29 +168,45 @@ const sortByCatalog = (ids: readonly MutationId[]): MutationId[] =>
 
 // ---------- THE ROLL ----------------------------------------------------
 
-/** how many rules a run is played under — never fewer, never more */
-export const MUT_PICK_MIN = 3;
-export const MUT_PICK_MAX = 4;
+/**
+ * HOW MANY RULES A RUN IS PLAYED UNDER — the range the dial may be set to,
+ * not a range the roller picks from.
+ *
+ * The count used to be rolled as well: three or four, chosen at random
+ * alongside the rules themselves. It is a DIAL ON THE TIER now
+ * (RungKnobs.mutationCount in ladder.ts), because the count is the one
+ * part of a mutating run that is a difficulty curve rather than a
+ * surprise — a player stepping from Level 5 to Level 6 is entitled to see
+ * what they are taking on, and "three or four, we shall see" is not
+ * something a ladder can be tuned against.
+ *
+ * ZERO IS A LEGAL SETTING and it is what Level 1 carries: a tier with no
+ * rules is the campaign as authored. Five is the ceiling for the same
+ * reason MUT_COST_MAX is six — a run under six simultaneous rules is not a
+ * harder run, it is a different game, and nothing in the catalog is
+ * written to be read alongside that many others.
+ */
+export const MUT_COUNT_MIN = 0;
+export const MUT_COUNT_MAX = 5;
 
 /**
  * THE BUDGET A DIFFICULTY HANDS THE ROLLER, as points.
  *
- * It is arithmetic on the rung index for the same reason RUNGS is (see
+ * It is arithmetic on the tier index for the same reason RUNGS is (see
  * ladder.ts): a ladder that extends must not need this table re-authored.
- * The bottom rung affords three light rules; the top affords four heavy
- * ones, or three brutal ones and change.
+ * Level 1 spends nothing at all; Level 2 affords three light rules, and
+ * the top affords four heavy ones, or three brutal ones and change.
  *
- *   rung    1    2    3    4    5    6    7    8    9   10
- *   points  6    8   10   11   13   15   17   19   20   22
+ *   tier    1    2    3    4    5    6    7    8    9   10
+ *   points  0    8   10   11   13   15   17   19   20   22
  *
- * THE FLOOR IS MUT_PICK_MIN x MUT_COST_MIN and that is not a coincidence:
- * the bottom rung must be able to pay for a full roll of the lightest
- * rules there are, or the lowest difficulty would quietly be the one with
- * the FEWEST rules, which is a mercy nobody asked for and nobody would
- * understand.
+ * IT IS ONLY WHERE THE DIAL STARTS. Every one of these numbers is a knob
+ * on the rung (RungKnobs.mutationPoints), bendable from the admin balance
+ * tab without a rebuild, exactly like enemy level and shield scale. What
+ * is authored here is what a Reset returns to.
  *
- * IT ONLY HOLDS ONCE THE CATALOG HAS LIGHT RULES IN IT. Today's two
- * entries cost 4 and 5, so the bottom rungs genuinely cannot afford three
+ * IT ONLY READS TRUE ONCE THE CATALOG HAS LIGHT RULES IN IT. Today's two
+ * entries cost 4 and 5, so the lower tiers genuinely cannot afford three
  * of anything and roll what they can (see rollMutations). That is the
  * catalog being short, not the budget being wrong — the fix is cheap
  * mutators, and the arithmetic here is already waiting for them.
@@ -182,28 +214,69 @@ export const MUT_PICK_MAX = 4;
 export const MUT_BUDGET_BASE = 6;
 export const MUT_BUDGET_PER_RUNG = 1.8;
 
-/** the points a rung (0-based, as the ladder counts them) may spend */
+/**
+ * The points a tier (0-based, as the ladder counts them) may spend.
+ *
+ * THE BOTTOM TIER IS ZERO AND THAT IS NOT THE ARITHMETIC — it is the rule
+ * that Level 1 is the campaign as authored, applied here so that every
+ * reader of the curve gets it rather than each one having to remember.
+ * The arithmetic starts at Level 2, which is what the table prints.
+ */
 export const mutationBudget = (tier: number): number =>
-  Math.round(MUT_BUDGET_BASE + MUT_BUDGET_PER_RUNG * Math.max(0, tier));
+  tier <= 0 ? 0 : Math.round(MUT_BUDGET_BASE + MUT_BUDGET_PER_RUNG * tier);
 
-// the floor above, as an invariant rather than a paragraph: the bottom
-// rung must be able to pay for a full roll of the lightest rules the scale
-// allows, or the easiest difficulty would be the one with the fewest rules
-if (MUT_BUDGET_BASE < MUT_PICK_MIN * MUT_COST_MIN)
+/**
+ * HOW MANY RULES A TIER ROLLS, as authored — the other half of the pair,
+ * and the ladder's real difficulty curve.
+ *
+ * Three from Level 2, one more every MUT_PICKS_EVERY tiers, capped at
+ * MUT_COUNT_MAX:
+ *
+ *   tier    1    2    3    4    5    6    7    8    9   10
+ *   rules   0    3    3    3    3    4    4    4    4    5
+ *
+ * A DEARER RULE AND AN EXTRA RULE ARE DIFFERENT KINDS OF HARDER, which is
+ * why this climbs so much more slowly than the budget does. Points buy
+ * WEIGHT — the same slots, filled with worse things. The count buys
+ * BREADTH, and breadth is what invalidates a way of playing outright,
+ * because every rule added is another answer the board has to hold at the
+ * same time. Breadth is the scarcer of the two, so it moves in whole
+ * steps and rarely.
+ */
+export const MUT_PICKS_BASE = 3;
+export const MUT_PICKS_EVERY = 4;
+
+export const mutationPicks = (tier: number): number =>
+  tier <= 0
+    ? 0
+    : Math.min(
+        MUT_COUNT_MAX,
+        MUT_PICKS_BASE + Math.floor((tier - 1) / MUT_PICKS_EVERY),
+      );
+
+// The floor, as an invariant rather than a paragraph: the FIRST mutating
+// tier must be able to pay for its own full roll at the lightest cost the
+// scale allows, or the easiest mutating difficulty would quietly be the
+// one with the fewest rules. Checking tier 1 checks all of them — the
+// budget climbs by MUT_BUDGET_PER_RUNG a tier and the count by a quarter
+// of a rule, so the purse only ever gets roomier per slot.
+if (mutationBudget(1) < mutationPicks(1) * MUT_COST_MIN)
   throw new Error(
-    `the bottom rung's ${MUT_BUDGET_BASE} points cannot pay for ${MUT_PICK_MIN} mutators`,
+    `Level 2's ${mutationBudget(1)} points cannot pay for ${mutationPicks(1)} mutators`,
   );
 
 /** how many shuffles the roller tries before keeping its best (see below) */
 const ROLL_TRIES = 24;
 
 /**
- * ROLL A RUN'S MUTATORS: three or four rules, together fitting the budget.
+ * ROLL A RUN'S MUTATORS: `want` rules, together fitting the budget.
  *
- * THE COUNT IS PICKED FIRST AND THE BUDGET IS SPENT ON IT, rather than the
- * other way round. Filling a budget greedily until it ran out would make
- * every high difficulty a four-rule run and every low one a three-rule
- * run, which is a ramp the point costs already provide — what a player
+ * THE COUNT COMES IN AND THE BUDGET IS SPENT ON IT, rather than the budget
+ * deciding how many. Filling a budget greedily until it ran out would make
+ * every high difficulty a five-rule run and every low one a three-rule
+ * run, which is a ramp the point costs already provide — and it would take
+ * the count away from the ladder, which is the one place a difficulty is
+ * supposed to be legible in advance (see MUT_COUNT_MAX). What a player
  * should not be able to predict is WHICH rules, not how many.
  *
  * THE PASS IS A SHUFFLE AND A WALK: take each rule the remaining budget
@@ -222,19 +295,18 @@ const ROLL_TRIES = 24;
  * which a catalog of any size has plenty.
  *
  * IT NEVER OVERSPENDS AND IT NEVER REPEATS A RULE. It can return fewer
- * than MUT_PICK_MIN, but only when the catalog cannot honestly do better:
- * a two-entry catalog at the bottom rung is one rule, because a second one
- * would be a rule the budget has not paid for.
+ * rules than were asked for, but only when the catalog cannot honestly do
+ * better: a two-entry catalog at a low tier is one rule, because a second
+ * one would be a rule the budget has not paid for. A `want` of zero — what
+ * Level 1 carries — returns nothing without touching the catalog at all.
  */
 export function rollMutations(
   budget: number,
+  want: number,
   rand: () => number = Math.random,
 ): MutationId[] {
-  const span = MUT_PICK_MAX - MUT_PICK_MIN + 1;
-  const want = Math.min(
-    MUTATIONS.length,
-    MUT_PICK_MIN + Math.floor(rand() * span),
-  );
+  want = Math.min(MUTATIONS.length, Math.max(0, Math.floor(want)));
+  if (want === 0 || budget <= 0) return [];
   let best: MutationDef[] = [];
   let bestSpend = -1;
   for (let t = 0; t < ROLL_TRIES; t++) {

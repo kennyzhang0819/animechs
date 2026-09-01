@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { clamp, TOWERS } from "@/game/constants";
+import { useEffect, useRef, useState } from "react";
+import { TOWERS } from "@/game/constants";
 import {
   affordablePoints,
   buyTech,
@@ -23,6 +23,7 @@ import {
   techPrice,
   UTILITY_INFO,
   type TechKind,
+  type TechNodeDef,
 } from "@/game/tech";
 import {
   TURRET_UPGRADES,
@@ -34,16 +35,18 @@ import {
   type UpgradeGlyph,
 } from "@/game/upgrades";
 import type { TowerKind } from "@/game/types";
-import {
-  MUTATIONS,
-  MUT_PICK_MAX,
-  MUT_PICK_MIN,
-  mutationBudget,
-  type MutationDef,
-} from "@/game/mutation";
-import { RUNG_COUNT, rungColor, rungLabel } from "@/game/ladder";
+import { rungColor, rungLabel } from "@/game/ladder";
+import { cellOf, GRID, LAYOUT_IDS } from "@/game/layout";
 import { CostRow, Wallet } from "./Items";
 import { TOWER_ICONS } from "./towerIcons";
+import Board, {
+  BackButton,
+  BoardTabs,
+  CHROME_BTN,
+  useTouchOnly,
+  type Cam,
+} from "./Board";
+import MutationTree, { MUT_GLYPH, MUT_LIT } from "./MutationTree";
 
 /** what a node is called — turret stats, the upgrade table, or UTILITY_INFO */
 const nodeName = (id: TechKind): string =>
@@ -168,252 +171,69 @@ function NodeIcon({ id, lit }: { id: TechKind; lit: boolean }) {
 
 const HOME_ICON = "/mindustry/sprites/blocks/storage/core-shard.png";
 
-/**
- * THE MUTATOR CODEX — a PANEL on this page, and deliberately NOT a branch
- * of the board behind it.
- *
- * Mutation used to be the tree's left column: a chain of switches hanging
- * off home that a player flipped on for a harder run. It is not that any
- * more (see mutation.ts). Mutators are ROLLED — the map decides that it
- * mutates, the difficulty decides how many points the roll may spend, and
- * three or four rules come back. There is nothing here to buy, nothing to
- * own and nothing to switch, so there is nothing for a node to BE.
- *
- * IT STILL BELONGS ON THIS PAGE. This is the screen a player comes to in
- * order to ask "what can happen to me, and what can I do about it" — the
- * wallet, the prices and the ladder colours all live here. A codex that
- * lists every rule that can be rolled, and what each is worth, is the
- * other half of that question. It just must not be reachable BY MISTAKE
- * from a board where every other click spends money, which is what a
- * chrome button and a panel buy that an eleventh branch cannot.
- *
- * WHAT IT SHOWS AND WHY. Every mutator, cheapest first, with its point
- * cost — and the budget every difficulty hands the roller. Nothing is
- * hidden and nothing is teased: a player about to deploy onto a mutating
- * map is entitled to know the whole pool it will be drawn from, exactly
- * as a StarCraft II player can read the mutator list before queueing. The
- * surprise is meant to be WHICH ones, not what exists.
- */
-/** the codex's colour, kept from the old column — deliberately NOT the
- *  tree's gold, because gold on this page means "bought, owned, yours" */
-const MUT_LIT = "#FF8ACB";
-/** three chevrons climbing — the codex button's face, and the fallback
- *  card glyph for a mutator with no face of its own */
-const MUT_GLYPH = "M12 2 4 9h5v2H4l8 7 8-7h-5V9h5z";
-/** a disc with a wedge bitten out of it — Hungry's maw */
-const HUNGER_GLYPH = "M12 2a10 10 0 1 0 8.66 15L12 12l8.66-5A9.98 9.98 0 0 0 12 2z";
-/** a chevron pair running right — Speedy */
-const SPEED_GLYPH = "M2 5l8 7-8 7V5zM12 5l8 7-8 7V5z";
-
-/** the face a mutator wears on its card; MUT_GLYPH is the fallback, so a
- *  rule added without art still draws as something */
-const MUT_FACE: Record<string, string> = {
-  hungry: HUNGER_GLYPH,
-  speedy: SPEED_GLYPH,
-};
-
-/**
- * WHAT A COST MEANS, in one word — the scale documented on MUT_COST_MIN.
- * A number alone says a mutator is dearer than another one; the word says
- * what dearer BUYS, which is the thing a player reading the list for the
- * first time actually needs.
- */
-const costBand = (cost: number): { label: string; color: string } =>
-  cost <= 2
-    ? { label: "Light", color: "#7BE58A" }
-    : cost <= 4
-      ? { label: "Heavy", color: "#FFB65C" }
-      : { label: "Brutal", color: "#FF6B6B" };
-
-/** one mutator, as the codex lists it */
-function MutationCard({ def }: { def: MutationDef }) {
-  const band = costBand(def.cost);
-  return (
-    <li className="flex gap-3 rounded border border-[#2E2E36] bg-[#151518] p-3">
-      <svg
-        viewBox="0 0 24 24"
-        className="mt-0.5 h-8 w-8 shrink-0 fill-[#FF8ACB]"
-        aria-hidden="true"
-      >
-        <path fillRule="evenodd" d={MUT_FACE[def.id] ?? MUT_GLYPH} />
-      </svg>
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          <span className="font-bold text-[#EDEDEF]">{def.name}</span>
-          <span className="text-[12px] font-bold uppercase tracking-widest" style={{ color: band.color }}>
-            {band.label}
-          </span>
-          <span className="ml-auto shrink-0 rounded border border-[#FF8ACB] px-1.5 text-[13px] font-bold text-[#FF8ACB]">
-            {def.cost} pts
-          </span>
-        </div>
-        <p className="mt-1 text-[14px] leading-snug text-[#A6A6AF]">{def.blurb}</p>
-      </div>
-    </li>
-  );
-}
-
-/**
- * THE PANEL. A dialog over the board rather than a screen of its own: the
- * tree is what the player was looking at, and what a mutator costs them is
- * only meaningful next to what they can afford to answer it with.
- *
- * THE BUDGET ROW IS THE POINT OF THE WHOLE PANEL. The catalog alone reads
- * as trivia; the catalog beside "difficulty 7 spends 17 points on three or
- * four of these" is a plan. It is drawn in the ladder's own rung colours,
- * so the row lines up with every other place a difficulty is named.
- */
-function MutationPanel({ onClose }: { onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  return (
-    <div
-      className="pointer-events-auto fixed inset-0 z-20 flex items-center justify-center bg-black/70 p-4"
-      onPointerDown={(e) => {
-        // the backdrop closes; a press inside the panel is the panel's
-        if (e.target === e.currentTarget) onClose();
-      }}
-      data-ui
-    >
-      <div
-        role="dialog"
-        aria-label="Mutators"
-        className="flex max-h-full w-full max-w-lg flex-col rounded border border-[#FF8ACB] bg-[#101013] p-4 shadow-lg"
-      >
-        <div className="flex items-baseline justify-between">
-          <h2 className="text-[15px] font-bold uppercase tracking-widest text-[#FF8ACB]">
-            Mutators
-          </h2>
-          <button
-            onClick={onClose}
-            aria-label="close"
-            className="rounded border border-[#2E2E36] px-2 py-0.5 text-[13px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB]"
-          >
-            Close
-          </button>
-        </div>
-        <p className="mt-2 text-[14px] leading-snug text-[#A6A6AF]">
-          Some maps are always played under mutators. You do not choose them:
-          the difficulty you pick sets a point budget, and{" "}
-          <span className="font-bold text-[#EDEDEF]">
-            {MUT_PICK_MIN} to {MUT_PICK_MAX} rules
-          </span>{" "}
-          are rolled to fit it when you deploy. Every rule changes a wave
-          after it lands — never what the map sends you.
-        </p>
-
-        <div className="mt-3 border-t border-[#2E2E36] pt-3">
-          <div className="text-[12px] uppercase tracking-widest text-[#71717C]">
-            Budget by difficulty
-          </div>
-          <div className="mt-1 flex flex-wrap gap-1">
-            {Array.from({ length: RUNG_COUNT }, (_, t) => (
-              <div
-                key={t}
-                title={`${rungLabel(t)}: ${mutationBudget(t)} points`}
-                className="flex min-w-[38px] flex-1 flex-col items-center rounded border border-[#2E2E36] bg-[#151518] px-1 py-0.5"
-              >
-                <span className="text-[11px] font-bold" style={{ color: rungColor(t) }}>
-                  {t + 1}
-                </span>
-                <span className="text-[13px] font-bold text-[#EDEDEF]">
-                  {mutationBudget(t)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <ul className="mt-3 flex-1 space-y-2 overflow-y-auto border-t border-[#2E2E36] pt-3">
-          {MUTATIONS.map((m) => (
-            <MutationCard key={m.id} def={m} />
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
-}
-
 // board geometry: nodes are squares centered in grid cells; the SVG edge
 // layer underneath connects cell centers.
 const NODE = 88;
-/**
- * One upgrade chip, and the row a turret wears under its name.
- *
- * THE ROW IS AS WIDE AS ITS OWN BRANCH IS LONG, not as wide as the longest
- * one: most turrets carry three rungs and duo and arc carry four (see
- * upgrades.ts), and padding the short rows out to four would draw an empty
- * slot that reads as a node failing to render. The widest possible row is
- * only what the CELL has to be able to hold.
- */
-const CHIP = 38;
-const CHIP_GAP = 6;
-const rowWidth = (rungs: number): number => rungs * CHIP + (rungs - 1) * CHIP_GAP;
-/** how far below a node's centre the chip row hangs — under the name label */
-const ROW_TOP = NODE / 2 + 22;
-
-// THE CELL GREW WHEN THE UPGRADE ROWS ARRIVED. Every turret now carries a
-// row of chips under its name, so a cell has to hold the node, its label
-// and the widest of those rows — which is also why the whole board opens
-// further out than it used to. The alternative was a box on the grid for
-// every rung, with an edge of its own to reach it, and the wings have
-// nowhere to put either without breaking the no-crossing rule (see
-// TechNodeDef.x).
-const CELL_W = rowWidth(MAX_RUNGS) + 20;
-const CELL_H = 180;
-const ALL_X = TECH_TREE.map((n) => n.x);
-const ALL_Y = TECH_TREE.map((n) => n.y);
-// The utility chain runs NORTH out of home, so the grid starts at neither
-// zero: board space is the node grid SHIFTED to start at the origin on
-// BOTH axes. Every reader goes through centerX/centerY, so this is the
-// only place that has to know where the grid actually begins.
-const MIN_X = Math.min(...ALL_X);
-const MIN_Y = Math.min(...ALL_Y);
-const BOARD_W = (Math.max(...ALL_X) - MIN_X + 1) * CELL_W;
-const BOARD_H = (Math.max(...ALL_Y) - MIN_Y + 1) * CELL_H;
-
-const centerX = (x: number): number => (x - MIN_X + 0.5) * CELL_W;
-const centerY = (y: number): number => (y - MIN_Y + 0.5) * CELL_H;
+/** an upgrade rung's box — smaller than a turret's, because a rung is a
+ *  step along a branch and the turret is where the branch starts */
+const UP = 64;
 
 /**
- * THE TREE IS A MAP, NOT A PAGE. It used to be a vertically scrolling
- * document, which stopped working the moment the board outgrew one screen
- * in BOTH axes — a page can only scroll one way, and the game one keystroke
- * away already taught everyone its camera. So the board is a fixed viewport
- * over a transformed layer, driven exactly like the field: WASD and arrows
- * pan, the wheel zooms about the cursor (a ctrl-tagged pinch delta uses a
- * stronger factor), the floating buttons zoom, and any drag on open ground
- * or a node drags the board. The chrome floats over it.
+ * THE UPGRADE RUNGS ARE NODES ON THE BOARD, and the board is a skill tree
+ * rather than a table.
  *
- * The camera lives in a REF and is applied to the layer imperatively:
- * panning at 60fps must not re-render the tree, and a re-render from
- * buying a point re-applies the same transform from the ref, so the two
- * paths can never disagree.
+ * They were a strip of 38px chips tucked under the turret's name with
+ * nothing joining them. A chip is a badge, not a node: it cannot say what
+ * comes before it, so a player could not see that Overload sits BEHIND
+ * Piercing rounds without opening both cards — and every other
+ * relationship on this board is a line.
+ *
+ * A ROW UNDER THE TURRET WAS NOT THE ANSWER EITHER. Four boxes in a gutter
+ * is still a table; it just has lines in it. What a skill tree does — Path
+ * of Exile is the reference — is let a branch LEAVE its hub and travel, so
+ * the shape of the board tells you where you are before you have read a
+ * word. So a rung is a node on the same grid every turret is on, out in
+ * the open board beside its turret, with an edge into it.
  */
-const ZOOM_MIN = 0.35;
-const ZOOM_MAX = 2.5;
-/** screen px of board that can never be panned off screen */
-const EDGE_KEEP = 140;
-/** pan speed while a key is held, in SCREEN px/s — zoom-independent */
-const PAN_SPEED = 900;
-/** finger travel (screen px) past which a gesture is a drag, not a tap */
-const DRAG_PX = 8;
 
-const PAN_KEYS: Readonly<Record<string, readonly [number, number]>> = {
-  w: [0, -1],
-  a: [-1, 0],
-  s: [0, 1],
-  d: [1, 0],
-  ArrowUp: [0, -1],
-  ArrowLeft: [-1, 0],
-  ArrowDown: [0, 1],
-  ArrowRight: [1, 0],
+/**
+ * WHERE EVERY NODE SITS comes from game/layout.ts, which is one editable
+ * grid over turrets, utilities and upgrade rungs alike — and which the
+ * admin dashboard's Tech tree tab drags around and saves. Nothing about
+ * the board's shape is decided in this file any more; all it does is size
+ * itself to whatever the layout came back with.
+ */
+
+/** half a node's box — the turrets are the big ones */
+const half = (id: string): number => (isUpgradeNode(id) ? UP / 2 : NODE / 2);
+/** room for the name label under a turret, and daylight at the edges */
+const MARGIN = 90;
+
+/**
+ * THE BOARD IS AS BIG AS WHAT IS ON IT, measured rather than declared: a
+ * node dragged out to the left in the editor simply makes the board wider,
+ * and the camera's fit-on-mount follows it. A cell count could not do that
+ * — it would clip whatever was dragged past the last column.
+ */
+const px = (id: string): { x: number; y: number } => {
+  const c = cellOf(id);
+  return { x: c.x * GRID, y: c.y * GRID };
 };
+const IDS = LAYOUT_IDS as readonly string[];
+const MIN_X = Math.min(...IDS.map((id) => px(id).x - half(id))) - MARGIN;
+const MIN_Y = Math.min(...IDS.map((id) => px(id).y - half(id))) - MARGIN;
+const BOARD_W = Math.max(...IDS.map((id) => px(id).x + half(id))) + MARGIN - MIN_X;
+const BOARD_H = Math.max(...IDS.map((id) => px(id).y + half(id))) + MARGIN - MIN_Y;
+
+/** where a node sits on the board */
+const nodeX = (id: string): number => px(id).x - MIN_X;
+const nodeY = (id: string): number => px(id).y - MIN_Y;
+
+/**
+ * The board's camera — pan, zoom, and every gesture that drives them —
+ * lives in Board.tsx, which the mutator codex shares (see the note there).
+ * All this file still decides is how big the layer is and what is on it.
+ */
 
 /**
  * How many points one click buys. The volume turret is flat-priced, so a
@@ -483,6 +303,8 @@ function upgradeEffect(def: TurretUpgradeDef, points: number, next: number): str
  */
 function UpgradeChip({
   def,
+  left,
+  top,
   progress,
   step,
   touch,
@@ -491,6 +313,10 @@ function UpgradeChip({
   onChanged,
 }: {
   def: TurretUpgradeDef;
+  /** the node's centre in board px — it places itself, like every other
+   *  box on this board */
+  left: number;
+  top: number;
   progress: Progress;
   step: BuyStep;
   touch: boolean;
@@ -530,16 +356,19 @@ function UpgradeChip({
       <img
         src={SURGE_ICON}
         alt=""
-        className={`h-5 w-5 [image-rendering:pixelated] ${lit ? "" : "grayscale opacity-70"}`}
+        className={`h-8 w-8 [image-rendering:pixelated] ${lit ? "" : "grayscale opacity-70"}`}
       />
     ) : (
-      <svg viewBox="0 0 24 24" className="h-5 w-5" style={{ fill: colour.ink }} aria-hidden="true">
+      <svg viewBox="0 0 24 24" className="h-8 w-8" style={{ fill: colour.ink }} aria-hidden="true">
         <path fillRule="evenodd" d={UPGRADE_GLYPH[def.glyph]} />
       </svg>
     );
 
   return (
-    <div className="group/chip relative" style={{ width: CHIP, height: CHIP }}>
+    <div
+      className="group/chip absolute"
+      style={{ left: left - UP / 2, top: top - UP / 2, width: UP, height: UP }}
+    >
       <button
         type="button"
         aria-disabled={!clickable}
@@ -621,7 +450,7 @@ function UpgradeChip({
             number — it is lit or it is not */}
         {owned && def.cap > 1 && (
           <span
-            className="absolute -bottom-1.5 -right-1.5 rounded border bg-[#101013] px-1 text-[11px] font-bold leading-tight"
+            className="absolute -bottom-2 -right-2 rounded border bg-[#101013] px-1.5 text-[12px] font-bold leading-tight"
             style={{ borderColor: colour.line, color: colour.ink }}
           >
             {points}
@@ -630,7 +459,7 @@ function UpgradeChip({
         {/* switched off: the points are still owned, so say so on the chip
             rather than only in a card nobody has opened */}
         {owned && !on && (
-          <span className="absolute -top-1.5 -right-1.5 h-2.5 w-2.5 rounded-full border border-[#101013] bg-[#FF8A8A]" />
+          <span className="absolute -top-2 -right-2 h-3 w-3 rounded-full border border-[#101013] bg-[#FF8A8A]" />
         )}
       </button>
       {/* the card. UNLIKE EVERY OTHER CARD ON THIS BOARD IT TAKES CLICKS,
@@ -730,7 +559,14 @@ function UpgradeChip({
 /** the hexagon an ultimate is drawn as, in the chip's own 100x100 box */
 const HEX = "26,4 74,4 96,50 74,96 26,96 4,50";
 
-/** the four rungs under one turret, in tier order */
+/**
+ * THE CHAIN UNDER ONE TURRET, in tier order.
+ *
+ * A sibling of the turret's own node rather than a child of it,
+ * deliberately: the turret's card opens on group-hover, and a rung living
+ * inside that group would pop the turret's card every time a pointer went
+ * near its own.
+ */
 function UpgradeRow({
   turret,
   x,
@@ -753,21 +589,14 @@ function UpgradeRow({
   onChanged: () => void;
 }) {
   const rungs = TURRET_UPGRADES[turret];
-  const w = rowWidth(rungs.length);
   return (
-    <div
-      className="absolute flex"
-      style={{
-        left: centerX(x) - w / 2,
-        top: centerY(y) + ROW_TOP,
-        width: w,
-        gap: CHIP_GAP,
-      }}
-    >
-      {rungs.map((def) => (
+    <>
+      {rungs.map((def, i) => (
         <UpgradeChip
           key={def.id}
           def={def}
+          left={nodeX(def.id)}
+          top={nodeY(def.id)}
           progress={progress}
           step={step}
           touch={touch}
@@ -776,35 +605,69 @@ function UpgradeRow({
           onChanged={onChanged}
         />
       ))}
-    </div>
+    </>
   );
 }
 
 /**
- * Does this device answer a resting pointer with hover?
+ * THE EDGES INTO A TURRET'S CHAIN: one down from the turret's own box into
+ * rung 1, then one along between each pair of rungs.
  *
- * A mouse reads a node before spending on it for free — you rest on it, the
- * price card opens, you decide. A finger has no resting state: the only way
- * it can ask "what is this and what does it cost" is to press the thing, and
- * on a tree where pressing SPENDS, that question costs money to ask.
- *
- * So on a touchscreen the first tap on a node is the hover — it opens the
- * card and buys nothing — and every tap after it on that same node buys, so
- * a player who wants ten points still just taps ten more times. Desktop is
- * untouched: hover already separates reading from buying there, and making a
- * mouse click twice would be a tax paid for a problem it does not have.
+ * They follow the board's own rule — a lit edge means the far end is
+ * BOUGHT, a dashed grey one means it is not — so the chain says at a
+ * glance how far down it a player has actually got, which is the whole
+ * thing a strip of unconnected chips could never say.
  */
-function useTouchOnly(): boolean {
-  const [touch, setTouch] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(hover: none)");
-    const read = (): void => setTouch(mq.matches);
-    read();
-    mq.addEventListener("change", read);
-    return () => mq.removeEventListener("change", read);
-  }, []);
-  return touch;
+function UpgradeEdges({
+  turret,
+  x,
+  y,
+  progress,
+}: {
+  turret: TowerKind;
+  x: number;
+  y: number;
+  progress: Progress;
+}) {
+  const rungs = TURRET_UPGRADES[turret];
+  const n = rungs.length;
+  return (
+    <>
+      {rungs.map((def, i) => {
+        const bought = (progress.tech[def.id] ?? 0) > 0;
+        return (
+          <line
+            key={def.id}
+            x1={nodeX(i === 0 ? turret : rungs[i - 1].id)}
+            y1={nodeY(i === 0 ? turret : rungs[i - 1].id)}
+            x2={nodeX(def.id)}
+            y2={nodeY(def.id)}
+            stroke={bought ? "#FFD37F" : "#4A4A55"}
+            strokeWidth={2}
+            strokeDasharray={bought ? undefined : "6 4"}
+          />
+        );
+      })}
+    </>
+  );
 }
+
+/**
+ * THE TWO BOARDS THIS SCREEN IS. The tree is what you own; the codex is
+ * what can be done to you. They are tabs rather than two entries in the
+ * menu because the answer to "is this upgrade worth it" is on the other
+ * one, and a player comparing them should not have to go back out to the
+ * map list to do it.
+ *
+ * A crown for the tree — the thing at the top of everything you buy — and
+ * the codex's own climbing chevrons for the mutators.
+ */
+const TREE_GLYPH = "M3 19h18v2H3zM3 6l5 4 4-7 4 7 5-4-2 11H5z";
+const TABS = [
+  { id: "tech", label: "Tech", color: "#FFD37F", glyph: TREE_GLYPH },
+  { id: "mutators", label: "Mutators", color: MUT_LIT, glyph: MUT_GLYPH },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
 
 export default function TechTree({
   progress,
@@ -831,199 +694,30 @@ export default function TechTree({
   // is allowed to spend on. Tapping a different node moves the question there
   // rather than buying it
   const [armed, setArmed] = useState<string | null>(null);
-  // is the mutator codex open? It is a panel over the board rather than a
-  // branch of it — see the note above MutationPanel
-  const [codex, setCodex] = useState(false);
+  /**
+   * THE TWO BOARDS BEHIND ONE BACK BUTTON — which one is showing, and the
+   * camera each of them left behind.
+   *
+   * The mutator codex used to be a modal over this board; it is a board of
+   * its own now (see MutationTree). A tab switch UNMOUNTS the one you were
+   * on, so the cameras are kept up here, where they outlive both, and the
+   * tree you had panned to the arc branch is still there when you come
+   * back from reading what Speedy does.
+   */
+  const [tab, setTab] = useState<TabId>("tech");
+  const treeCam = useRef<Cam | null>(null);
+  const codexCam = useRef<Cam | null>(null);
+  const tabStrip = <BoardTabs tabs={TABS} active={tab} onPick={setTab} />;
 
-  // ---- the camera (see the note above PAN_KEYS) -------------------------
-  const viewRef = useRef<HTMLDivElement>(null);
-  const boardRef = useRef<HTMLDivElement>(null);
-  // (x, y) is the visible top-left in board px, z the scale
-  const cam = useRef({ x: 0, y: 0, z: 1 });
-  const camPlaced = useRef(false);
-  // live pointers, for drag-pan and pinch; screen px travelled this gesture,
-  // which is what tells a tap (buy) from a drag (pan) on the same node
-  const pointers = useRef(new Map<number, { x: number; y: number }>());
-  const dragPx = useRef(0);
-  const keysDown = useRef(new Set<string>());
-
-  const camCss = (): string => {
-    const c = cam.current;
-    return `translate(${-c.x * c.z}px, ${-c.y * c.z}px) scale(${c.z})`;
-  };
-
-  /** clamp so EDGE_KEEP screen px of board always stay on screen, then
-   *  write the transform straight onto the layer — no re-render to pan */
-  const applyCam = useCallback((): void => {
-    const view = viewRef.current, board = boardRef.current;
-    if (!view || !board) return;
-    const c = cam.current;
-    c.x = clamp(c.x, -(view.clientWidth - EDGE_KEEP) / c.z, BOARD_W - EDGE_KEEP / c.z);
-    c.y = clamp(c.y, -(view.clientHeight - EDGE_KEEP) / c.z, BOARD_H - EDGE_KEEP / c.z);
-    board.style.transform = camCss();
-  }, []);
-
-  /** zoom about a screen point, so what is under the cursor stays put */
-  const zoomAt = useCallback(
-    (sx: number, sy: number, factor: number): void => {
-      const c = cam.current;
-      const z2 = clamp(c.z * factor, ZOOM_MIN, ZOOM_MAX);
-      c.x += sx / c.z - sx / z2;
-      c.y += sy / c.z - sy / z2;
-      c.z = z2;
-      applyCam();
-    },
-    [applyCam],
-  );
-
-  /** the floating +/- buttons and the +/- keys zoom about the middle */
-  const zoomCenter = useCallback(
-    (factor: number): void => {
-      const view = viewRef.current;
-      if (!view) return;
-      zoomAt(view.clientWidth / 2, view.clientHeight / 2, factor);
-    },
-    [zoomAt],
-  );
-
-  useEffect(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    // first mount: fit the whole board on screen, centered, and never again
-    // — a re-render from buying a point must not yank the camera home
-    if (!camPlaced.current) {
-      camPlaced.current = true;
-      const z = clamp(
-        Math.min(view.clientWidth / (BOARD_W + 120), view.clientHeight / (BOARD_H + 200)),
-        ZOOM_MIN,
-        1.15,
-      );
-      cam.current = {
-        x: (BOARD_W - view.clientWidth / z) / 2,
-        y: (BOARD_H - view.clientHeight / z) / 2,
-        z,
-      };
-    }
-    applyCam();
-
-    // native and non-passive: React's wheel listener cannot preventDefault,
-    // and without it a ctrl+wheel (which is also what a trackpad pinch
-    // arrives as) zooms the PAGE instead of the board.
-    //
-    // THE WHEEL ZOOMS, exactly like the field one keystroke away — about
-    // the cursor, so what you point at stays put. A pinch's ctrl-tagged
-    // events carry tiny deltas, so it takes the game's own stronger
-    // factor; deltaMode 1 is a line-scrolling mouse (Firefox), whose
-    // deltas are in lines rather than px
-    const onWheel = (e: WheelEvent): void => {
-      e.preventDefault();
-      const r = view.getBoundingClientRect();
-      const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
-      const k = e.ctrlKey || e.metaKey ? 0.01 : 0.0015;
-      zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-dy * k));
-    };
-    view.addEventListener("wheel", onWheel, { passive: false });
-
-    const keyOf = (e: KeyboardEvent): string =>
-      e.key.length === 1 ? e.key.toLowerCase() : e.key;
-    const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return; // browser shortcuts stay theirs
-      const k = keyOf(e);
-      if (PAN_KEYS[k]) {
-        keysDown.current.add(k);
-        e.preventDefault(); // arrows would otherwise walk the focus/page
-      } else if (k === "+" || k === "=") zoomCenter(1.25);
-      else if (k === "-" || k === "_") zoomCenter(0.8);
-    };
-    const onKeyUp = (e: KeyboardEvent): void => {
-      keysDown.current.delete(keyOf(e));
-    };
-    // missed keyups (cmd+tab away mid-pan) must not leave the camera drifting
-    const onBlur = (): void => keysDown.current.clear();
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    window.addEventListener("blur", onBlur);
-
-    // held-key panning runs on its own rAF clock so the speed is per
-    // second, not per keydown repeat
-    let raf = 0;
-    let last = performance.now();
-    const frame = (now: number): void => {
-      const dt = Math.min(0.1, (now - last) / 1000);
-      last = now;
-      let dx = 0, dy = 0;
-      for (const k of keysDown.current) {
-        const v = PAN_KEYS[k];
-        if (v) {
-          dx += v[0];
-          dy += v[1];
-        }
-      }
-      if (dx !== 0 || dy !== 0) {
-        const c = cam.current;
-        c.x += (dx * PAN_SPEED * dt) / c.z;
-        c.y += (dy * PAN_SPEED * dt) / c.z;
-        applyCam();
-      }
-      raf = requestAnimationFrame(frame);
-    };
-    raf = requestAnimationFrame(frame);
-
-    // drags are tracked on the window so one that leaves the viewport (or a
-    // node button) keeps panning until the button comes up
-    const onMove = (e: PointerEvent): void => {
-      const pts = pointers.current;
-      const prev = pts.get(e.pointerId);
-      if (!prev) return;
-      if (pts.size >= 2) {
-        // pinch: zoom by the distance ratio about the midpoint, and pan by
-        // the midpoint's own travel — one gesture does both, like the field
-        const other = [...pts.entries()].find(([id]) => id !== e.pointerId)?.[1];
-        if (other) {
-          const r = view.getBoundingClientRect();
-          const d0 = Math.hypot(prev.x - other.x, prev.y - other.y);
-          const d1 = Math.hypot(e.clientX - other.x, e.clientY - other.y);
-          const mx = (e.clientX + other.x) / 2 - r.left;
-          const my = (e.clientY + other.y) / 2 - r.top;
-          if (d0 > 1) zoomAt(mx, my, d1 / d0);
-          const c = cam.current;
-          c.x -= (e.clientX - prev.x) / 2 / c.z;
-          c.y -= (e.clientY - prev.y) / 2 / c.z;
-          applyCam();
-        }
-        dragPx.current = 1000; // a pinch is never a tap
-      } else {
-        const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
-        dragPx.current += Math.abs(dx) + Math.abs(dy);
-        if (dragPx.current > DRAG_PX) {
-          const c = cam.current;
-          c.x -= dx / c.z;
-          c.y -= dy / c.z;
-          applyCam();
-        }
-      }
-      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    };
-    const onUp = (e: PointerEvent): void => {
-      pointers.current.delete(e.pointerId);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-    const onResize = (): void => applyCam();
-    window.addEventListener("resize", onResize);
-    return () => {
-      view.removeEventListener("wheel", onWheel);
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("blur", onBlur);
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-      window.removeEventListener("resize", onResize);
-      cancelAnimationFrame(raf);
-    };
-  }, [applyCam, zoomAt, zoomCenter]);
+  if (tab === "mutators")
+    return (
+      <MutationTree
+        onBack={onBack}
+        backLabel={backLabel}
+        tabs={tabStrip}
+        cam={codexCam}
+      />
+    );
 
   // a node is drawn only once its parent holds a point; edges follow the
   // same rule, so buying a node is what reveals the links out of it.
@@ -1035,48 +729,68 @@ export default function TechTree({
   const visible = TECH_TREE.filter(
     (n) => !isUpgradeNode(n.id) && nodeStatus(progress, n.id) !== "hidden",
   );
-  const chromeBtn =
-    "pointer-events-auto rounded border border-[#2E2E36] bg-[#151518]/90 backdrop-blur px-3 py-1.5 text-[13px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
+
+  /**
+   * The floating chrome. Board's wrapper eats no pointer events; each
+   * control opts back in (CHROME_BTN does) and carries `data-ui`, so a drag
+   * that starts on a button grabs the button rather than the board.
+   */
+  const chrome = (
+    <>
+      <div
+        className="absolute top-[max(1rem,var(--safe-t))] left-[max(1rem,var(--safe-l))] flex flex-wrap items-center gap-2"
+        data-ui
+      >
+        <BackButton label={backLabel} onClick={onBack} />
+        {onRestart && (
+          <button
+            onClick={onRestart}
+            className={`${CHROME_BTN} h-11 font-bold text-[#FFD37F] border-[#FFD37F] hover:bg-[#2B2B32]`}
+          >
+            Restart run
+          </button>
+        )}
+        {tabStrip}
+      </div>
+      {/* THE BUY STEPPER SITS AT THE BOTTOM, not across the top, because
+          the top-left corner now holds a tab strip as well as back — and a
+          strip long enough to name two boards will reach the middle of a
+          phone. Bottom-centre is also where the codex pins its budget rail,
+          so both boards put their one always-on reference in the same place */}
+      <div
+        role="group"
+        aria-label="points per click"
+        className="pointer-events-auto absolute bottom-[max(1rem,var(--safe-b))] left-1/2 flex -translate-x-1/2 items-center gap-2 rounded border border-[#2E2E36] bg-[#151518]/90 px-3 py-1.5 backdrop-blur"
+        data-ui
+      >
+        <span className="text-[12px] uppercase tracking-widest text-[#71717C]">Buy</span>
+        {BUY_STEPS.map((s) => (
+          <button
+            key={String(s)}
+            aria-pressed={step === s}
+            onClick={() => setStep(s)}
+            className={`rounded border px-3 py-1 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+              step === s
+                ? "border-[#FFD37F] bg-[#222227] text-[#FFD37F]"
+                : "border-[#2E2E36] bg-[#151518] text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF]"
+            }`}
+          >
+            {stepLabel(s)}
+          </button>
+        ))}
+      </div>
+      <span
+        className="pointer-events-auto absolute top-[max(1rem,var(--safe-t))] right-[max(1rem,var(--safe-r))] flex items-start rounded border border-[#2E2E36] bg-[#151518]/90 px-4 py-1.5 backdrop-blur"
+        data-ui
+      >
+        <Wallet bank={progress.bank} vertical />
+      </span>
+    </>
+  );
 
   return (
-    <div
-      ref={viewRef}
-      className="fixed inset-0 touch-none select-none overflow-hidden bg-[#101013]"
-      onPointerDown={(e) => {
-        if (e.pointerType === "mouse" && e.button !== 0) return;
-        // a fresh gesture starts its tap-vs-drag budget over — BEFORE the
-        // chrome check, or a click after a drag would still read as one
-        if (pointers.current.size === 0) dragPx.current = 0;
-        // the floating chrome is UI, not map: its buttons never drag the board
-        if ((e.target as Element).closest("[data-ui]")) return;
-        pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      }}
-      onClickCapture={(e) => {
-        // a drag that happened to start on a node must not spend on it
-        if (dragPx.current > DRAG_PX) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-      }}
-    >
-      {/* NO will-change here, deliberately: promoting the layer makes the
-          browser rasterize it once and stretch that texture as you zoom,
-          which is exactly "why is the text blurry". Un-promoted, every
-          transform change re-rasterizes at the live scale, and a board
-          this small re-rasters well inside a frame */}
-      <div
-        ref={boardRef}
-        className="absolute left-0 top-0"
-        style={{
-          width: BOARD_W,
-          height: BOARD_H,
-          transformOrigin: "0 0",
-          // re-renders (buying a point) re-apply the ref's own transform,
-          // so React and the imperative pan can never disagree
-          transform: camCss(),
-        }}
-      >
-        <svg
+    <Board width={BOARD_W} height={BOARD_H} cam={treeCam} chrome={chrome}>
+      <svg
           className="absolute inset-0"
           width={BOARD_W}
           height={BOARD_H}
@@ -1089,16 +803,29 @@ export default function TechTree({
                 return (
                   <line
                     key={`${n.requires}-${n.id}`}
-                    x1={centerX(parent.x)}
-                    y1={centerY(parent.y)}
-                    x2={centerX(n.x)}
-                    y2={centerY(n.y)}
+                    x1={nodeX(parent.id)}
+                    y1={nodeY(parent.id)}
+                    x2={nodeX(n.id)}
+                    y2={nodeY(n.id)}
                     stroke={bought ? "#FFD37F" : "#4A4A55"}
                     strokeWidth={2}
                     strokeDasharray={bought ? undefined : "6 4"}
                   />
                 );
               })}
+              {/* the chains, in the same layer so every edge on this board
+                  is drawn under every box on it */}
+              {visible.map((n) =>
+                isTowerNode(n.id) && (progress.tech[n.id] ?? 0) > 0 ? (
+                  <UpgradeEdges
+                    key={`ue-${n.id}`}
+                    turret={n.id}
+                    x={n.x}
+                    y={n.y}
+                    progress={progress}
+                  />
+                ) : null,
+              )}
             </svg>
             {visible.map((n) => {
               const status: NodeStatus = nodeStatus(progress, n.id);
@@ -1132,8 +859,8 @@ export default function TechTree({
                   key={n.id}
                   className="group absolute"
                   style={{
-                    left: centerX(n.x) - NODE / 2,
-                    top: centerY(n.y) - NODE / 2,
+                    left: nodeX(n.id) - NODE / 2,
+                    top: nodeY(n.id) - NODE / 2,
                     width: NODE,
                     height: NODE,
                   }}
@@ -1262,10 +989,7 @@ export default function TechTree({
                 </div>
               );
             })}
-            {/* THE UPGRADE ROWS. A sibling of the node rather than a child
-                of it, deliberately: the node's own card opens on
-                group-hover, and a chip living inside that group would pop
-                the turret's card every time a finger went near its own */}
+            {/* THE UPGRADE CHAINS — see the note over UpgradeRow */}
             {visible.map((n) =>
               isTowerNode(n.id) && (progress.tech[n.id] ?? 0) > 0 ? (
                 <UpgradeRow
@@ -1282,102 +1006,6 @@ export default function TechTree({
                 />
               ) : null,
             )}
-      </div>
-
-      {/* floating chrome: the board pans underneath it. The wrapper eats no
-          pointer events; each control opts back in and carries data-ui so a
-          drag starting on it never grabs the board */}
-      <div className="pointer-events-none absolute inset-0">
-        <div
-          className="absolute top-[max(1rem,var(--safe-t))] left-[max(1rem,var(--safe-l))]"
-          data-ui
-        >
-          {/* the standardized back: icon only, big, top-left — the same
-              button every other screen pins there */}
-          <div className="flex items-center gap-2">
-            <button
-              aria-label={backLabel}
-              title={backLabel}
-              onClick={onBack}
-              className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded border border-[#2E2E36] bg-[#151518]/90 text-[#A6A6AF] backdrop-blur hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
-            >
-              <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden="true">
-                <path d="M14.7 5.1 7.8 12l6.9 6.9 1.7-1.7L11.2 12l5.2-5.2z" />
-              </svg>
-            </button>
-            {onRestart && (
-              <button onClick={onRestart} className={`${chromeBtn} h-11 font-bold text-[#FFD37F] border-[#FFD37F] hover:bg-[#2B2B32]`}>
-                Restart run
-              </button>
-            )}
-            {/* THE CODEX, beside back rather than on the board: it is the
-                one control on this page that spends nothing, and the whole
-                reason mutators are not a branch is that a page where every
-                click costs money is no place for a rule you cannot buy */}
-            <button
-              onClick={() => setCodex(true)}
-              aria-haspopup="dialog"
-              className={`${chromeBtn} flex h-11 items-center gap-2 font-bold`}
-              style={{ color: MUT_LIT, borderColor: MUT_LIT }}
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden="true">
-                <path d={MUT_GLYPH} />
-              </svg>
-              Mutators
-            </button>
-          </div>
-        </div>
-        <div
-          role="group"
-          aria-label="points per click"
-          className="pointer-events-auto absolute top-[max(1rem,var(--safe-t))] left-1/2 flex -translate-x-1/2 items-center gap-2 rounded border border-[#2E2E36] bg-[#151518]/90 px-3 py-1.5 backdrop-blur"
-          data-ui
-        >
-          <span className="text-[12px] uppercase tracking-widest text-[#71717C]">
-            Buy
-          </span>
-          {BUY_STEPS.map((s) => (
-            <button
-              key={String(s)}
-              aria-pressed={step === s}
-              onClick={() => setStep(s)}
-              className={`rounded border px-3 py-1 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-                step === s
-                  ? "border-[#FFD37F] bg-[#222227] text-[#FFD37F]"
-                  : "border-[#2E2E36] bg-[#151518] text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF]"
-              }`}
-            >
-              {stepLabel(s)}
-            </button>
-          ))}
-        </div>
-        <span
-          className="pointer-events-auto absolute top-[max(1rem,var(--safe-t))] right-[max(1rem,var(--safe-r))] flex items-start rounded border border-[#2E2E36] bg-[#151518]/90 px-4 py-1.5 backdrop-blur"
-          data-ui
-        >
-          <Wallet bank={progress.bank} vertical />
-        </span>
-        <div
-          className="absolute bottom-[max(1rem,var(--safe-b))] right-[max(1rem,var(--safe-r))] flex flex-col gap-2"
-          data-ui
-        >
-          <button
-            aria-label="zoom in"
-            onClick={() => zoomCenter(1.25)}
-            className={`${chromeBtn} flex h-10 w-10 items-center justify-center p-0 text-[17px] font-bold`}
-          >
-            +
-          </button>
-          <button
-            aria-label="zoom out"
-            onClick={() => zoomCenter(0.8)}
-            className={`${chromeBtn} flex h-10 w-10 items-center justify-center p-0 text-[17px] font-bold`}
-          >
-            −
-          </button>
-        </div>
-        {codex && <MutationPanel onClose={() => setCodex(false)} />}
-      </div>
-    </div>
+    </Board>
   );
 }

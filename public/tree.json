@@ -1,0 +1,54 @@
+{
+ "speed-4": {
+  "x": 12,
+  "y": -5
+ },
+ "speed-8": {
+  "x": 12,
+  "y": -7
+ },
+ "slot-8": {
+  "x": 15,
+  "y": -7
+ },
+ "slot-7": {
+  "x": 15,
+  "y": -5
+ },
+ "scatter": {
+  "x": 6,
+  "y": 6
+ },
+ "duo-graphite": {
+  "x": 12,
+  "y": 4
+ },
+ "duo-power": {
+  "x": 13,
+  "y": 4
+ },
+ "spectre-cooling": {
+  "x": 0,
+  "y": 22
+ },
+ "spectre-cores": {
+  "x": 0,
+  "y": 23
+ },
+ "spectre-surge": {
+  "x": -1,
+  "y": 24
+ },
+ "wave-cryo": {
+  "x": 9,
+  "y": 13
+ },
+ "salvo-pierce": {
+  "x": 4,
+  "y": 12
+ },
+ "salvo-pyratite": {
+  "x": 3,
+  "y": 12
+ }
+}

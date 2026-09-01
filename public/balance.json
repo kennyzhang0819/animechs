@@ -1,1 +1,38 @@
-{}
+{
+ "difficulties": {
+  "2": {
+   "level": 10,
+   "shieldScale": 5
+  },
+  "3": {
+   "level": 15,
+   "shieldScale": 5
+  },
+  "4": {
+   "level": 20,
+   "shieldScale": 5
+  },
+  "5": {
+   "shieldScale": 5
+  },
+  "6": {
+   "shieldScale": 5,
+   "lowTierArmorBonus": 0
+  },
+  "7": {
+   "shieldScale": 5,
+   "lowTierArmorBonus": 0
+  },
+  "8": {
+   "shieldScale": 5,
+   "lowTierArmorBonus": 0
+  },
+  "9": {
+   "shieldScale": 5,
+   "lowTierArmorBonus": 0
+  },
+  "10": {
+   "lowTierArmorBonus": 0
+  }
+ }
+}
