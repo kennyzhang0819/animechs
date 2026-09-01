@@ -21,6 +21,7 @@ import {
 } from "@/game/tech";
 import { upgradeDef } from "@/game/upgrades";
 import Board, { BackButton, CHROME_BTN, type Cam } from "./Board";
+import { NodeFace } from "./techIcons";
 
 /**
  * THE TECH-TREE LAYOUT EDITOR — drag a node, drop it on a cell.
@@ -34,10 +35,13 @@ import Board, { BackButton, CHROME_BTN, type Cam } from "./Board";
  * writes it.
  *
  * IT IS THE REAL BOARD, not a diagram of it. Same camera, same grid, same
- * edges, the same boxes at the same sizes — because a layout that reads
- * well in a schematic and badly in the game is exactly the failure this
- * tool is meant to prevent. What it adds is the grid itself, drawn, and
- * the drag.
+ * edges, the same boxes at the same sizes, and THE SAME FACES — the block
+ * sprites and glyphs of techIcons.tsx, not name labels. That last one is
+ * not decoration: a scatter's icon and the word "SCATTER" are not the same
+ * size, the same weight or the same amount of visual noise, so a layout
+ * composed against labels is composed against the wrong picture, which is
+ * exactly the failure this tool exists to prevent. What it adds is the
+ * grid itself, drawn, and the drag.
  *
  * EVERY NODE IS SHOWN, bought or not, locked or not. The player's board
  * hides a branch until its parent is paid for; a layout has to be composed
@@ -251,8 +255,18 @@ export default function TreeEditorView({ onClose }: { onClose: () => void }) {
               opacity: on ? 0.85 : 1,
             }}
           >
+            {/* the face the game draws, at the size the game draws it —
+                and the name UNDER the box rather than inside it, so a node
+                is the same silhouette here as it is over there and the
+                label is the editor's own annotation on top */}
+            <NodeFace
+              id={id}
+              sprite={isUpgradeNode(id) ? "h-8 w-8" : "h-14 w-14"}
+              glyph={isUpgradeNode(id) ? "h-8 w-8" : "h-10 w-10"}
+              color={ink}
+            />
             <span
-              className="px-1 text-[11px] font-bold uppercase leading-tight tracking-wide"
+              className="pointer-events-none absolute left-1/2 top-full w-28 -translate-x-1/2 pt-0.5 text-[10px] font-bold uppercase leading-tight tracking-wide"
               style={{ color: ink }}
             >
               {nameOf(id)}

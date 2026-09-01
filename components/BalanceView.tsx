@@ -242,7 +242,10 @@ export default function BalanceView() {
       <div className="mb-4 rounded-lg border border-[#2E2E36] p-4">
         <div className="mb-1 text-[15px] font-bold text-[#EDEDEF]">Ladder scaling</div>
         <p className="mb-3 text-[12.5px] text-[#71717C]">
-          One card a rung. The mutator roll runs from {rungLabel(1)} up, on every map.
+          One card a rung, and three dials on it: a rung scales enemy health and the
+          mutator roll, and nothing else. Swarm armour and shield scale used to be
+          columns here and are mutators now (Armored Swarms, Overshields). The roll runs
+          from {rungLabel(1)} up, on every map.
         </p>
         <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
           {RUNGS.map((_, tier) => {
@@ -269,30 +272,6 @@ export default function BalanceView() {
                   bent={dk.level !== da.level}
                   onChange={(v) => setDifficulty(tier, "level", Math.max(0, v))}
                   onReset={() => setDifficulty(tier, "level", undefined)}
-                />
-                <Knob
-                  label="Shield ×"
-                  hint="every shield pool, cap and regen"
-                  value={dk.shieldScale}
-                  min={0}
-                  max={50}
-                  step={0.5}
-                  decimals={1}
-                  bent={dk.shieldScale !== da.shieldScale}
-                  onChange={(v) => setDifficulty(tier, "shieldScale", Math.max(0, v))}
-                  onReset={() => setDifficulty(tier, "shieldScale", undefined)}
-                />
-                <Knob
-                  label="Swarm armour + (T1–T3)"
-                  hint="flat, T1–T3 only"
-                  value={dk.lowTierArmorBonus}
-                  min={0}
-                  max={20}
-                  step={1}
-                  decimals={0}
-                  bent={dk.lowTierArmorBonus !== da.lowTierArmorBonus}
-                  onChange={(v) => setDifficulty(tier, "lowTierArmorBonus", Math.max(0, v))}
-                  onReset={() => setDifficulty(tier, "lowTierArmorBonus", undefined)}
                 />
                 {/* THE MUTATOR PAIR STARTS AT LEVEL 2. The bottom rung is the
                     campaign as authored (see mutation.ts) — that is a design

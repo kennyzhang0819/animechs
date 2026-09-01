@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
 import { RUNG_COUNT } from "@/game/ladder";
+import { MUT_COUNT_MAX } from "@/game/mutation";
 import { TECH_KINDS } from "@/game/tech";
 
 /** the two knobs, and the sane range each one may be saved in */
@@ -13,17 +14,22 @@ const LIMITS = {
   growth: 4,
 } as const;
 
-/** the per-rung dials under the reserved `difficulties` key */
+/**
+ * The per-rung dials under the reserved `difficulties` key — EVERY dial a
+ * rung has (RungKnobs in ladder.ts), because a knob missing from this map
+ * is silently dropped on save and reads to the user as a dial that will not
+ * stick. Shield scale used to be here and is the Overshields mutator now.
+ */
 const DIFFICULTY_LIMITS = {
   // enemy level: hp is x1.06^level, so 100 is already x339 health and
   // anything past it is a typo
   level: 100,
-  // a multiplier on shield pools; three digits already means an unbreakable
-  // bubble, so anything past this is a typo
-  shieldScale: 1000,
-  // flat armour on every tier 1-3 body — the swarm's own armour tops out
-  // at spiroct's 5, so two digits is already a wall
-  lowTierArmorBonus: 100,
+  // what a roll may spend. The catalog's dearest rule is MUT_COST_MAX, so a
+  // budget past a few dozen is buying rules that do not exist
+  mutationPoints: 100,
+  // how many rules the roll returns; the design ceiling, enforced here and
+  // again on load (applyRungOverrides)
+  mutationCount: MUT_COUNT_MAX,
 } as const;
 
 /**

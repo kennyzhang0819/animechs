@@ -95,54 +95,32 @@ export const HP_PER_LEVEL = 1.06;
 export const LEVELS_PER_RUNG = 4;
 
 /**
- * SHIELD SCALE PER RUNG — multiplies every shield ability's pool, cap and
- * regen (see Sim.updateAbilities). Compounding, so rung 10 lands on x5.
+ * A RUNG SCALES HEALTH AND THE ROLL, AND NOTHING ELSE. Two columns of this
+ * table have left it, and both left the same way — as named rules a deploy
+ * can be played under rather than curves nobody could see:
  *
- * It compounds rather than stepping evenly because shields answer a
- * different question than health. A body's health is priced against the
- * enemy budget, so it rides the level curve; a shield is measured in
- * SECONDS OF ABSORBED TOWER FIRE, so it has to track the player's
- * firepower — and firepower tracks income, which compounds (LOOT_PER_RUNG).
- * Left flat, a quasar's 500-point bubble that buys real cover at rung 1
- * pops to incidental fire by rung 5.
+ *   SWARM ARMOUR — flat armour on every tier 1-3 body, +2 a rung from the
+ *   sixth up, landing +10 at the top. It is the Armored Swarms mutator now
+ *   (ARMORED_ARMOR in mutation.ts).
  *
- * 5 ** (1/9) — nine steps from rung 1 to rung 10, so the tenth rung is the
- * x5 the old top difficulty ran at. Written as the PER-RUNG number rather
- * than as "x5 spread over the ladder" so an eleventh rung extends the curve
- * instead of re-scaling every rung below it.
+ *   SHIELD SCALE — every shield ability's pool, cap and regen, compounding
+ *   from x1.00 to x5.00 across the ladder. It is the Overshields mutator
+ *   now (OVERSHIELD_SCALE in mutation.ts).
+ *
+ * Both were sound as ARITHMETIC and wrong as LADDER. A rung's job is to
+ * say how much fight there is, and health times the level curve says that
+ * exactly; a rule that only bites against small calibre, or only against
+ * the one kind that carries a force field, is a rule about HOW the fight
+ * goes — which is a mutator, printed on the card before Deploy and either
+ * in force or not. So what is left on a rung is the enemy level, what its
+ * roll may spend, and how many rules that roll returns.
+ *
+ * ONE CONSEQUENCE IS DELIBERATE AND WORTH KNOWING: shield tower pools no longer
+ * climb with the tier (they rode shieldScale). A shield tower is now a fixed
+ * obstacle that grows with the WAVE (SHIELD_TOWER_MEGA_WAVE) and with Overshields
+ * if the roll pairs them, which is the same thing the rest of the catalog
+ * does.
  */
-export const SHIELD_PER_RUNG = 1.1958;
-
-/**
- * FLAT ARMOUR ADDED TO EVERY TIER 1-3 BODY, from ARMOR_FROM_RUNG upward, in
- * steps of ARMOR_PER_RUNG. Rung 10 lands on +10, the old top difficulty's
- * value; T4 and T5 never take it.
- *
- * Armour is a flat shave floored at a tenth of the raw hit
- * (Sim.applyArmor), so the knob is regressive by calibre on purpose: +3
- * barely dents a salvo's 28 or a lancer's 140, but takes a third off a
- * duo's 9 — it makes the SWARM outlast chip without inflating the heavies,
- * which already carry the armour that matters.
- *
- * IT STAYS AT ZERO FOR THE FIRST FIVE RUNGS. That is not an even split and
- * it is deliberate: the anti-air line is built on small pellets — a scatter
- * shot is 3 damage — so even +1 halves the game's first AA against the
- * T1-T2 flyers. A ladder that started plating the swarm at rung 2 would
- * break the opening roster before the player had any other one. By rung 6
- * the tree has answered that, and by rung 10 the +10 floors everything
- * below midgame calibre against tiers 1-3 (a duo's 9, an arc bolt's 20
- * halved, cyclone's 8/12 flak all land at or near the 10% floor), which is
- * the top rung's thesis: the fight above the top. checkDebuts prices the
- * bonus into its debut-tax lint.
- */
-export const ARMOR_FROM_RUNG = 6;
-export const ARMOR_PER_RUNG = 2;
-
-/** the swarm armour a rung carries, by 0-based index: nothing below
- *  ARMOR_FROM_RUNG (an ORDINAL, so rung 6 is the first +2), then a step a
- *  rung, which lands rung 10 on the +10 the old top difficulty ran */
-const armorAtRung = (i: number): number =>
-  Math.max(0, i + 2 - ARMOR_FROM_RUNG) * ARMOR_PER_RUNG;
 
 /** how many rungs the ladder has today — raising it is the whole edit an
  *  eleventh rung needs, because every dial below is arithmetic on the index */
@@ -158,8 +136,6 @@ export const RUNG_COUNT = 10;
  * ladder extend rather than need re-authoring:
  *
  *   level        index x LEVELS_PER_RUNG        0, 4, 8, ... 36
- *   shieldScale  SHIELD_PER_RUNG ^ index        1.00 ... 5.00
- *   armour       +2 a rung from rung 6          0, 0, 0, 0, 0, 2, ... 10
  *
  * A rung has NO NAME and NO IDENTITY beyond its number: it is shown as
  * "Level n" (rungLabel) in a colour read off its position (rungColor), and
@@ -172,14 +148,10 @@ export const RUNG_COUNT = 10;
  */
 export const RUNGS: readonly {
   level: number;
-  shieldScale: number;
-  lowTierArmorBonus: number;
   mutationPoints: number;
   mutationCount: number;
 }[] = Array.from({ length: RUNG_COUNT }, (_, i) => ({
   level: i * LEVELS_PER_RUNG,
-  shieldScale: Math.round(SHIELD_PER_RUNG ** i * 100) / 100,
-  lowTierArmorBonus: armorAtRung(i),
   // the two mutation columns are arithmetic on the index like the rest,
   // and both are zero at rung 1: the bottom of the ladder is the campaign
   // as authored (see mutation.ts)
@@ -361,9 +333,6 @@ export const tierHpScale = (tier: number): number => HP_PER_LEVEL ** tierLevel(t
 export interface RungKnobs {
   /** enemy level — every unit's hp is x HP_PER_LEVEL^level, nothing else moves */
   level: number;
-  shieldScale: number;
-  /** flat armour added to tier 1-3 units only — see the RUNGS doc */
-  lowTierArmorBonus: number;
   /**
    * THE MUTATION PAIR — what this tier's roll may spend, and how many
    * rules it comes back with (see mutation.ts). They are dials here rather
@@ -383,8 +352,6 @@ export interface RungKnobs {
 
 const RUNG_KNOB_KEYS = [
   "level",
-  "shieldScale",
-  "lowTierArmorBonus",
   "mutationPoints",
   "mutationCount",
 ] as const;
@@ -420,8 +387,6 @@ export function rungKnobsOf(tier: number): RungKnobs {
   const o = rungOverrides.get(rungKey(tier)) ?? {};
   return {
     level: o.level ?? d.level,
-    shieldScale: o.shieldScale ?? d.shieldScale,
-    lowTierArmorBonus: o.lowTierArmorBonus ?? d.lowTierArmorBonus,
     mutationPoints: o.mutationPoints ?? d.mutationPoints,
     mutationCount: o.mutationCount ?? d.mutationCount,
   };
@@ -432,8 +397,6 @@ export function authoredRungKnobs(tier: number): RungKnobs {
   const d = RUNGS[clampTier(tier)];
   return {
     level: d.level,
-    shieldScale: d.shieldScale,
-    lowTierArmorBonus: d.lowTierArmorBonus,
     mutationPoints: d.mutationPoints,
     mutationCount: d.mutationCount,
   };
@@ -476,42 +439,6 @@ export function applyRungOverrides(doc: Record<string, Partial<RungKnobs>>): voi
     if (Object.keys(clean).length > 0) rungOverrides.set(key, clean);
   }
 }
-
-/** shield multiplier of a rung */
-export const tierShieldScale = (tier: number): number => rungKnobsOf(tier).shieldScale;
-
-/**
- * Shield multiplier at an enemy level: the scale of the highest rung whose
- * level the given one has reached. Piecewise-constant on purpose — a run
- * only ever plays the levels the rungs name (tierLevel), so a curve through
- * the levels in between would be tuning nothing.
- */
-export const shieldScaleAtLevel = (level: number): number => {
-  let s = 1;
-  // the threshold is the KNOBBED level, so a rung whose level was dialled
-  // still hands its shield scale to the runs playing at it
-  for (let t = 0; t <= TOP_TIER; t++)
-    if (level >= rungKnobsOf(t).level) s = rungKnobsOf(t).shieldScale;
-  return s;
-};
-
-/** flat armour a unit of `unitTier` gains at a rung — zero above tier 3:
- *  the knob hardens the swarm, never the heavies */
-export const tierArmorBonus = (tier: number, unitTier: number): number =>
-  unitTier <= 3 ? rungKnobsOf(tier).lowTierArmorBonus : 0;
-
-/** flat armour bonus at an enemy level — piecewise like shieldScaleAtLevel,
- *  and for the same reason: only the authored levels are ever played */
-export const armorBonusAtLevel = (level: number, unitTier: number): number => {
-  if (unitTier > 3) return 0;
-  let a = 0;
-  for (let t = 0; t <= TOP_TIER; t++) {
-    const k = rungKnobsOf(t);
-    if (level < k.level) continue;
-    a = k.lowTierArmorBonus;
-  }
-  return a;
-};
 
 /**
  * THE MUTATION PAIR IN FORCE AT A TIER — the two numbers a deploy hands
@@ -602,7 +529,7 @@ export interface Budget {
   /** share of health carried by units with armour 3 or more */
   armourShare: number;
   /** share of health carried by units with a shield ability — ehp the hp
-   *  column cannot see, and it grows by tierShieldScale on top */
+   *  column cannot see, and Overshields multiplies it on top */
   shieldShare: number;
   /** share of health that flies — hail and scorch cannot touch it at all */
   airShare: number;
@@ -809,10 +736,12 @@ export function debutViolations(spec: LevelSpec = WORLD): LadderIssue[] {
   const bad: LadderIssue[] = [];
   for (const [kind, wave] of debut) {
     if (wave >= OPENING_WAVES) continue;
-    // the armour a tower actually meets: printed plus rung 1's low-tier
-    // bonus when the unit qualifies, which is what Sim spawns with (rung 1
-    // authors that bonus at zero, and this reads it rather than assuming so)
-    const armor = UNIT_STATS[kind].armor + tierArmorBonus(0, UNIT_STATS[kind].tier);
+    // the armour a tower actually meets — the PRINTED value, which is what
+    // an unmutated run spawns with. Armored Swarms plates the light bodies
+    // on top of this, and is deliberately not priced in here: the lint is
+    // about the script an author wrote, and a rolled rule is not the
+    // script's doing (see mutation.ts)
+    const armor = UNIT_STATS[kind].armor;
     const tax = shot / Math.max(shot - armor, 0.1 * shot);
     if (tax >= 2)
       bad.push({
@@ -973,8 +902,8 @@ export interface AuditRow {
   duration: number;
   t3Share: number;
   armourShare: number;
-  /** share of health carried by shield-ability units, whose pools are also
-   *  multiplied by this rung's shieldScale */
+  /** share of health carried by shield-ability units, whose pools are
+   *  multiplied again if the run is played under Overshields */
   shieldShare: number;
   /** the multiplier this rung puts on every drop — LOOT_PER_RUNG^tier */
   lootBonus: number;

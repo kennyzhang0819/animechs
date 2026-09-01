@@ -28,6 +28,8 @@ import {
   UV_TOWER_BASE1,
   UV_TOWER_BASE3,
   UV_TOWER_BASE4,
+  UV_SHIELD_TOWER,
+  UV_DISC_BIG,
   UV_SCORCH,
   UV_ARC,
   UV_LANCER,
@@ -54,6 +56,7 @@ import {
   BASE,
   bulletOf as bulletOf_IMPORT,
   CELL as CELL_IMPORT,
+  towerMaxHp,
   clamp as clamp_IMPORT,
   COLS as COLS_IMPORT,
   FX_LIFE,
@@ -91,7 +94,7 @@ import {
   type LegSpec,
   type WakeSpec,
 } from "./levels";
-import { HUNGRY_GROWTH, HUNGRY_HUE } from "./mutation";
+import { HUNGRY_GROWTH, HUNGRY_HUE, SHIELD_TOWER_COL, SHIELD_TOWER_SIZE } from "./mutation";
 import { MAX_LEGS, WAKE_PTS, type Sim } from "./sim";
 import { isWaterFloor, showsFloorCell, WALL_DEEP, type Terrain } from "./terrain";
 import { FxKind, type Effect, type RGB, type Tower, type TowerKind } from "./types";
@@ -162,6 +165,9 @@ const FLAME_GRAY = [0.5, 0.5, 0.5] as const;
 const WET_TINT: ReadonlyArray<RGB> = HP_TINT.map(
   (t): RGB => [t[0] * 0.62, t[1] * 0.75, t[2]],
 );
+/** a tower that is DOWN or ENTOMBED: dark and desaturated — a state, not
+ *  a wound, so it must not read as another step of the red hp ramp */
+const TOWER_DARK: RGB = [0.42, 0.41, 0.47];
 /**
  * The same trick for the HUNGRY status (the Hungry mutator): the hue
  * multiplied into whatever the unit was already drawn in, one table per
@@ -288,6 +294,17 @@ void main() {
  * the texture coordinate; the sine patterns are symmetric, so this only
  * decides which way the hatch leans. And the output is premultiplied,
  * matching this renderer's blend func rather than Arc's.
+ *
+ * THE HATCH IS OPT-OUT, AND THE FILL'S ALPHA IS THE SWITCH (see
+ * SHIELD_PLAIN). Everything lands in ONE buffer and is blitted in ONE
+ * pass — that is what merges overlapping bubbles under a single rim, and
+ * it is not worth giving up — so "this shape wants no hatch" has to
+ * travel INSIDE the buffer rather than beside it. It rides the fill's
+ * alpha: both values sit above the 0.9 the edge detect tests, so the rim
+ * is found identically either way, and the interior simply asks which
+ * side of SHIELD_HATCH_MIN it fell on. A shield tower's dome is drawn plain
+ * (its diagonals read as damage over a lane full of units); a carrier's
+ * bubble keeps Mindustry's hatch.
  */
 const SHIELD_FS = `#version 300 es
 precision highp float;
@@ -300,6 +317,10 @@ in vec2 vUV;
 out vec4 o;
 const float ALPHA = 0.18;
 const float EDGE = 2.0;
+// fills at or above this keep Mindustry's travelling diagonals; below it
+// (but still over the 0.9 the edge detect wants) the interior gets the
+// same flat wash with no hatch crossing it — see the SHIELD_PLAIN note
+const float HATCH_MIN = 0.97;
 void main() {
   vec2 T = vUV;
   vec2 coords = vec2(T.x * uCam.z + uCam.x, (1.0 - T.y) * uCam.w + uCam.y);
@@ -314,8 +335,11 @@ void main() {
     // maxed.a * 100 saturates: the rim is drawn at full opacity
     o = vec4(maxed.rgb, 1.0);
   } else if (color.a > 0.0) {
+    // the interior is the SAME flat wash for both kinds — a plain shield
+    // is a carrier's bubble with the diagonals switched off, nothing else
     vec3 rgb = color.rgb;
-    if (mod(coords.x / uDp + coords.y / uDp
+    if (color.a >= HATCH_MIN
+        && mod(coords.x / uDp + coords.y / uDp
           + sin(coords.x / uDp / 5.0) * 3.0
           + sin(coords.y / uDp / 5.0) * 3.0
           + uTime / 4.0, 10.0) < 2.0) rgb *= 1.65;
@@ -327,6 +351,17 @@ void main() {
 
 /** Shaders.ShieldShader's u_dp, Scl.scl(1) — the UI scale, 1 at 1x */
 const SHIELD_DP = 1;
+/**
+ * The fill alpha that asks the shield shader for NO HATCH — a rim and a
+ * flat interior, nothing crossing it (see SHIELD_FS's HATCH_MIN).
+ *
+ * It is 0.94 rather than anything lower because the edge detect tests
+ * against 0.9: the value has to read as SOLID to the pass that finds the
+ * outline while reading as a flag to the pass that decorates the inside.
+ * The two jobs share one channel, so the window between them is narrow on
+ * purpose — anything under 0.9 would stop being a shield shape at all.
+ */
+const SHIELD_PLAIN = 0.94;
 /**
  * The scene's clear colour, #0B0B0B — the void the map sits in, and what
  * the shield pass has to hand back after borrowing the clear for its own
@@ -1563,8 +1598,29 @@ export class Renderer {
         : sz === 3 ? UV_TOWER_BASE3
         : sz === 2 ? UV_TOWER_BASE
         : UV_TOWER_BASE1;
-      this.push(dyn, t.x, t.y, px, px, 0, base, 1, 1, 1, 1);
-      this.push(dyn, t.x, t.y, px, px, t.angle, UV_TURRETS[t.kind], 1, 1, 1, 1);
+      // a hurt tower wears the units' own hp-thirds red (HP_TINT), so
+      // "this is taking damage" reads identically on both sides of the
+      // fight; a DOWNED or ENTOMBED one goes dark instead — a state, not
+      // a wound
+      let tint: readonly [number, number, number];
+      if (t.downT > 0 || t.tombShieldTower >= 0) tint = TOWER_DARK;
+      else {
+        const t3 = (t.hp * 3) / towerMaxHp(t.kind);
+        tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
+      }
+      this.push(dyn, t.x, t.y, px, px, 0, base, tint[0], tint[1], tint[2], 1);
+      this.push(dyn, t.x, t.y, px, px, t.angle, UV_TURRETS[t.kind], tint[0], tint[1], tint[2], 1);
+    }
+    // the shieldTowers, AFTER the towers: a shield tower that entombed a turret is
+    // drawn over it, which is the whole picture — the turret is under the
+    // building. Dead shieldTowers draw nothing; their ground is open again
+    for (const s of sim.shieldTowers) {
+      if (s.hp <= 0) continue;
+      const spx = SHIELD_TOWER_SIZE * CELL;
+      if (s.x < vx0 - spx || s.x > vx1 + spx || s.y < vy0 - spx || s.y > vy1 + spx) continue;
+      const t3 = (s.hp * 3) / s.hpMax;
+      const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
+      this.push(dyn, s.x, s.y, spx, spx, 0, UV_SHIELD_TOWER, tint[0], tint[1], tint[2], 1);
     }
     // a tractor turret's beam sits over the turrets and under the units it
     // is dragging — it has no bullet, so this is its only visual
@@ -1965,15 +2021,16 @@ export class Renderer {
    */
   private drawForceFields(sim: Sim, buffered: boolean): void {
     const { upx, upy, ushield, ushieldAlpha, uforceScale, ukind, n } = sim;
+    const { vx0, vy0, vx1, vy1 } = this;
+    const b = this.shields;
     // the census answers "is any carrier even alive" without touching the
-    // units — a wave with no quasar in it skips the whole scan
+    // units — a wave with no quasar in it skips the whole scan. The
+    // shieldTowers below are NOT gated by it: their domes stand between waves,
+    // which is exactly when no carrier is alive
     let carriers = 0;
     for (let k = 0; k < KIND_FORCE.length; k++)
       if (KIND_FORCE[k]) carriers += sim.aliveByKind[k];
-    if (carriers === 0) return;
-    const { vx0, vy0, vx1, vy1 } = this;
-    const b = this.shields;
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; carriers > 0 && i < n; i++) {
       const spec = KIND_FORCE[ukind[i]];
       // ForceFieldAbility.draw draws nothing at all while the pool is empty
       if (!spec || ushield[i] <= 0) continue;
@@ -2000,6 +2057,41 @@ export class Renderer {
       } else {
         this.fillPoly(b, upx[i], upy[i], spec.sides, rad, spec.rotation, col, 0.09 + 0.08 * w);
         this.strokePoly(b, upx[i], upy[i], spec.sides, rad, spec.rotation, 1.5 * MU, col, 1);
+      }
+    }
+    // THE SHIELD TOWERS' DOMES (the Shield Towers mutator): same pass, same
+    // shader, their own RED — many-sided so they read as circles against
+    // the carriers' hexagons, exactly as their colour reads against amber
+    for (const s of sim.shieldTowers) {
+      if (s.hp <= 0 || s.shield <= 0) continue;
+      const rad = s.domeR * s.scale;
+      if (rad < 1) continue;
+      const bm = rad + 16;
+      if (s.x < vx0 - bm || s.x > vx1 + bm || s.y < vy0 - bm || s.y > vy1 + bm) continue;
+      const w = Math.min(1, s.shieldAlpha);
+      const col: RGB = [
+        SHIELD_TOWER_COL[0] + (1 - SHIELD_TOWER_COL[0]) * w,
+        SHIELD_TOWER_COL[1] + (1 - SHIELD_TOWER_COL[1]) * w,
+        SHIELD_TOWER_COL[2] + (1 - SHIELD_TOWER_COL[2]) * w,
+      ];
+      if (buffered) {
+        // ONE QUAD, NEVER A FAN. fillPoly builds anything but a hexagon
+        // out of `sides` textured triangles, and at any alpha below 1 the
+        // slopes they share double-blend into a spoke — twenty-four
+        // radial creases converging on the middle of the dome. The disc
+        // is a single sprite, so its interior is perfectly flat and the
+        // edge detect gets a clean circle to find a rim around.
+        //
+        // SHIELD_PLAIN, not 1, is what drops the HATCH and nothing else
+        // (see SHIELD_FS): the dome keeps the rim and the flat interior
+        // wash a carrier's bubble has, because that wash is what reads as
+        // a volume of sheltered ground. Only the travelling diagonals go,
+        // and they go because a dome sits over a lane with a wave walking
+        // through it, where they read as damage rather than as a field
+        this.fillDisc(b, s.x, s.y, rad, col, SHIELD_PLAIN);
+      } else {
+        this.fillDisc(b, s.x, s.y, rad, col, 0.09 + 0.08 * w);
+        this.strokeCircle(b, s.x, s.y, rad, 1.5 * MU, col[0], col[1], col[2], 1);
       }
     }
   }
@@ -2080,7 +2172,23 @@ export class Renderer {
     gl.uniform1f(this.uZoom, zoom);
     gl.uniform2f(this.uOff, offX, offY);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    // MAX, NOT THE USUAL OVER — this buffer is a UNION MASK, not a
+    // painting, and the difference shows up wherever two shields overlap.
+    //
+    // Premultiplied over ADDS: two 0.94 fills land on 0.9964, three on
+    // 0.9998. That is invisible to the rim (everything over 0.9 is
+    // "inside") but it is exactly what SHIELD_PLAIN encodes itself in, so
+    // an overlap crossed HATCH_MIN and the shared lens between two plain
+    // domes came out wearing the diagonals neither of them has. Colours
+    // drifted the same way, brightening every overlap.
+    //
+    // max(src, dst) is what a union actually means: an overlap reads back
+    // exactly what one shield wrote, so the flag survives it, and the
+    // antialiased rim of one disc laid over another's interior takes the
+    // larger of the two instead of punching a translucent ring into it.
+    gl.blendEquation(gl.MAX);
     this.draw(this.shields, true);
+    gl.blendEquation(gl.FUNC_ADD);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.useProgram(this.shieldProg);
@@ -2220,6 +2328,29 @@ export class Renderer {
   ): void {
     if (radius <= 0.01 || a <= 0.004) return;
     this.push(dyn, cx, cy, radius * 2, radius * 2, 0, UV_DISC, col[0], col[1], col[2], a);
+  }
+
+  /**
+   * The same disc off the BIG source region (UV_DISC_BIG) — what the
+   * shield domes fill with.
+   *
+   * fillCircle's 64px sprite is right for a flame puff a few pixels
+   * across and wrong for a dome sixteen tiles wide: the atlas magnifies
+   * with NEAREST, so at that size its edge arrives as a staircase, and
+   * the shield shader then traces its rim faithfully around every step.
+   * Same shape, same call, a source big enough that the biggest dome is
+   * barely a blow-up at all.
+   */
+  private fillDisc(
+    dyn: Batch,
+    cx: number,
+    cy: number,
+    radius: number,
+    col: RGB,
+    a: number,
+  ): void {
+    if (radius <= 0.01 || a <= 0.004) return;
+    this.push(dyn, cx, cy, radius * 2, radius * 2, 0, UV_DISC_BIG, col[0], col[1], col[2], a);
   }
 
   /** Lines.lineAngle: a stroke-wide bar running `len` from (x, y) at `ang` */

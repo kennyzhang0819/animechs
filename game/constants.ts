@@ -1211,6 +1211,30 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
 };
 
 /**
+ * TOWER HEALTH — every tower has a pool, and in the base game NOTHING
+ * TOUCHES IT. Enemies never attack; the only things that hurt a tower are
+ * rules that say so (the Volatile mutator today), so a run rolled without
+ * one plays exactly as it always has and the pool is a dead field.
+ *
+ * A tower at zero DOES NOT DIE. It goes DOWN: stops firing, stops
+ * targeting, greys out — and stands back up at full health after
+ * TOWER_DOWN_TIME. The player keeps everything they own, always; what a
+ * "kill" costs them is SECONDS OF DPS, which is the same currency Speedy
+ * taxes and just as invisible to the ladder's audit arithmetic. Selling
+ * and replacing a downed tower is allowed — a rebuild is slower than the
+ * timer for anything bigger than a duo, so there is nothing to cheese.
+ *
+ * The pool scales with the FOOTPRINT, not the price: a duo is paper and a
+ * spectre is a bunker, which is what the art already says.
+ */
+export const TOWER_HP_PER_CELL = 250;
+/** seconds a downed tower spends regenerating before it stands back up */
+export const TOWER_DOWN_TIME = 10;
+/** a tower's full pool — footprint area times the per-cell constant */
+export const towerMaxHp = (kind: import("./types").TowerKind): number =>
+  TOWERS[kind].size * TOWERS[kind].size * TOWER_HP_PER_CELL;
+
+/**
  * The stats driving one live projectile. Almost always the firing turret's
  * own ammo — the exception is a shot thrown by BulletType.createFrags,
  * which is the PARENT ammo's child and has its own speed, damage, life and

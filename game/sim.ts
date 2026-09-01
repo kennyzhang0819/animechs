@@ -18,7 +18,9 @@ import {
   H as H_IMPORT,
   MAX_UNITS,
   ROWS as ROWS_IMPORT,
+  TOWER_DOWN_TIME,
   TOWERS as TOWERS_IMPORT,
+  towerMaxHp,
   UR,
   W as W_IMPORT,
   WALL_R as WALL_R_IMPORT,
@@ -66,18 +68,35 @@ import {
 
 /** module-local for the same getter reason as the constants block above */
 const UNIT_KINDS = UNIT_KINDS_IMPORT;
-import { armorBonusAtLevel, shieldScaleAtLevel, unitHpAtLevel } from "./ladder";
+import { unitHpAtLevel } from "./ladder";
 import {
+  ARMORED_ARMOR,
+  ARMORED_MAX_TIER,
   hasMutation,
+  mutationsInForce,
+  OVERSHIELD_SCALE,
   HUNGRY_CHANCE,
   HUNGRY_HP_PER_MEAL,
   HUNGRY_MAX_MEALS,
   HUNGRY_PERIOD,
   HUNGRY_REACH,
+  SHIELD_TOWER_BODY_R,
+  SHIELD_TOWER_DOME_R,
+  SHIELD_TOWER_HP,
+  SHIELD_TOWER_MAX_ALIVE,
+  SHIELD_TOWER_MEGA_DOME_R,
+  SHIELD_TOWER_MEGA_SCALE,
+  SHIELD_TOWER_MEGA_WAVE,
+  SHIELD_TOWER_SHIELD,
+  SHIELD_TOWER_SHIELD_DELAY,
+  SHIELD_TOWER_SIZE,
+  SHIELD_TOWER_SPAWN_PERIOD,
   SPEEDY_SPEED,
+  VOLATILE_DMG,
+  VOLATILE_RADIUS,
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap } from "./maps";
-import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
+import { CORE_HP_BASE, NO_UPGRADES, upgradedTower, type TechState } from "./tech";
 import { isBuildableWall, isWaterFloor, waterWalkMask, type Terrain } from "./terrain";
 import {
   FxKind,
@@ -297,6 +316,8 @@ const KIND_RADIUS = Float32Array.from(UNIT_KINDS, (k) => UNIT_STATS[k].radius);
  */
 const HEAVY_R = 20;
 const KIND_HEAVY = Uint8Array.from(UNIT_KINDS, (k) => (UNIT_STATS[k].radius > HEAVY_R ? 1 : 0));
+// the currency ladder (UNIT_STATS.tier, 1-5) — what a Volatile blast reads
+const KIND_TIER = Uint8Array.from(UNIT_KINDS, (k) => UNIT_STATS[k].tier);
 // support fields, indexed like UNIT_KINDS — null for kinds with no ability
 const KIND_REPAIR = UNIT_KINDS.map((k) => UNIT_STATS[k].repairField ?? null);
 const KIND_SHIELD = UNIT_KINDS.map((k) => UNIT_STATS[k].shieldField ?? null);
@@ -449,6 +470,40 @@ const KIND_ROT = Float32Array.from(UNIT_KINDS, (k) => {
   const deg = UNIT_STATS[k].rotateSpeed;
   return deg === undefined ? ROT_SPD : ((deg * Math.PI) / 180) * 60;
 });
+
+/**
+ * ONE SHIELD TOWER — the Shield Towers mutator's structure (mutation.ts
+ * has the whole design). The shield state mirrors a unit's (shield /
+ * shieldAlpha / scale are ushield / ushieldAlpha / uforceScale under other
+ * names) so the renderer's shield pass can treat a dome exactly as it
+ * treats a carrier's bubble.
+ *
+ * A shield tower EMERGES mid-run (updateShieldTowers rolls the spot) and a destroyed
+ * one is gone for good — hp 0 is its tombstone. The ENTRY, though, is
+ * never removed from Sim.shieldTowers and the array is never reordered, so an
+ * index into it (a tower's aimShieldTower, the player's focus, an entombed
+ * tower's tombShieldTower, a pierce ledger sentinel) is stable for the run.
+ */
+export interface ShieldTower {
+  gx: number; // top-left cell of the 3x3 footprint
+  gy: number;
+  x: number; // world-space centre
+  y: number;
+  hp: number; // body pool — hittable only once the dome is down. 0 = dead
+  hpMax: number;
+  shield: number; // the dome's pool; 0 = dome down, regenerating
+  shieldMax: number;
+  shieldAlpha: number; // whitening flash on a hit, fading like a unit's
+  scale: number; // dome radius lerp, ForceFieldAbility.radiusScale
+  /** this shield tower's dome radius in px — SHIELD_TOWER_DOME_R, or the mega one.
+   *  Per-shield tower rather than a constant because the two sizes coexist:
+   *  ordinary shieldTowers raised before the mega wave keep standing after it */
+  domeR: number;
+  /** a MEGA shield tower (mutation.ts): five times the pools, four times the
+   *  dome's area. Everything else about it is an ordinary shield tower */
+  mega: boolean;
+  regenT: number; // seconds until the dome reforms whole (reset on any hit)
+}
 
 /**
  * The whole simulation: units in struct-of-arrays, a spatial hash for
@@ -650,9 +705,17 @@ export class Sim {
   devoured = 0;
   /** kills per unit kind this run, indexed like UNIT_KINDS — the drop payout */
   readonly killsByKind = new Int32Array(UNIT_KINDS.length);
-  // the core's health: every unit that reaches it takes one point. At 1
-  // max, the first leak is the loss — raise this when cores get tougher
-  readonly coreHpMax = 1;
+  /**
+   * THE CORE'S HEALTH: every body that reaches it takes one point, and the
+   * run is won for as long as any are left.
+   *
+   * IT COMES FROM THE SAVE (TechState.coreHp — the Core Plating node), so
+   * a fresh campaign plays the game it has always played: one point, and
+   * the first leak is the loss. A save that has bought plating gets a
+   * board it may lose bodies through. CORE_HP_BASE is the floor and the
+   * editor's value, because a sandbox with no tech still has to be losable.
+   */
+  coreHpMax = CORE_HP_BASE;
   coreHp = this.coreHpMax;
   // which towers may be built and how many of each — null (the default, and
   // the map editor's mode) places no restrictions; the campaign sets it from
@@ -685,6 +748,22 @@ export class Sim {
    * slow. Nothing in the per-tick movement pass knows the mutator exists.
    */
   private speedyOn = false;
+  /** is the Armored Swarms mutator in force this run? (see reset) — read
+   *  at the spawn only, where it plates the light bodies once */
+  private armoredOn = false;
+  /**
+   * THE MULTIPLIER EVERY SHIELD POOL, CAP AND REGEN CARRIES: 1 normally,
+   * OVERSHIELD_SCALE under Overshields (mutation.ts), and it covers unit
+   * force fields and shield tower domes alike.
+   *
+   * It is a field rather than a call because it used to be one — a rung's
+   * shieldScale, looked up per spawn and per ability tick from the enemy
+   * level. The ladder does not scale shields any more, so what is left is
+   * a run-long constant: read once here, and every reader of a shield
+   * spec's max/amount/regen multiplies by it or the pool and its refill
+   * would disagree.
+   */
+  private shieldScale = 1;
   /** are ambient effects being kept? (see setEffects) */
   private fxOn = true;
   // live per-kind census, updated the moment a unit spawns or is removed
@@ -717,6 +796,36 @@ export class Sim {
 
   towers: Tower[] = [];
   projs: Projectile[] = [];
+
+  /**
+   * THE RUN'S SHIELD TOWERS (the Shield Towers mutator, mutation.ts) —
+   * empty unless the rule was rolled. Entries are appended as shieldTowers
+   * emerge and NEVER removed or reordered (a dead shield tower keeps its slot at
+   * hp 0), so an index into this array is stable for the whole run and
+   * everything — tower aim, the player's focus, entombment, a pierce
+   * shot's been-there list — holds indices freely.
+   */
+  readonly shieldTowers: ShieldTower[] = [];
+  /** is any shield tower's dome standing this tick? — the projectile pass's
+   *  cheap gate on the absorb sweep, refreshed by updateShieldTowers */
+  private domesUp = false;
+  /** is the Shield Towers mutator in force this run? (see reset) */
+  private shieldTowersOn = false;
+  /** seconds until the next shield tower tries to rise */
+  private shieldTowerT = 0;
+
+  /**
+   * THE PLAYER'S FOCUS MARK — one tapped target the whole board is told
+   * about (setFocus*). Either a unit (uid + index hint, maintained across
+   * swap-removes exactly as fldI is) or a shield tower index; never both. Every
+   * turret that can reach the mark drops what it was doing for it.
+   */
+  private focusUid = -1;
+  private focusIdx = -1;
+  private focusShieldTower = -1;
+
+  /** is the Volatile mutator in force this run? (see reset) */
+  private volatileOn = false;
 
   // --- effects, in struct-of-arrays like the units ---
   // These used to be an array of small objects, allocated on every push —
@@ -845,8 +954,22 @@ export class Sim {
     // the run's rules, read once: the feed pass runs over every unit on the
     // field, and a spec lookup per unit per tick to answer a question that
     // cannot change mid-run would be pure waste
-    this.hungryOn = hasMutation(this.level.mutation, "hungry");
-    this.speedyOn = hasMutation(this.level.mutation, "speedy");
+    // ...the level's own rules and the deploy's roll as one list
+    // (mutationsInForce): the sim never asks which of the two a rule came
+    // from, only whether it is in force
+    const inForce = mutationsInForce(this.level.intrinsicMutation, this.level.mutation);
+    this.hungryOn = hasMutation(inForce, "hungry");
+    this.speedyOn = hasMutation(inForce, "speedy");
+    this.armoredOn = hasMutation(inForce, "armored");
+    this.shieldScale = hasMutation(inForce, "overshields") ? OVERSHIELD_SCALE : 1;
+    this.volatileOn = hasMutation(inForce, "volatile");
+    this.shieldTowersOn = hasMutation(inForce, "shieldTowers");
+    this.shieldTowers.length = 0;
+    this.shieldTowerT = 0;
+    this.domesUp = false;
+    this.focusUid = -1;
+    this.focusIdx = -1;
+    this.focusShieldTower = -1;
     this.coreHp = this.coreHpMax;
     this.sealGx = -1;
     this.projs.length = 0;
@@ -1124,6 +1247,16 @@ export class Sim {
   /** campaign restrictions on building; null lifts them (editor, dev) */
   setTech(tech: TechState | null): void {
     this.tech = tech;
+    // the plating is read here rather than per leak.
+    //
+    // SETTING TECH BEFORE THE RUN STARTS FILLS THE POOL; setting it after
+    // may only ever lower it. Staging a run is a setTech on a sim whose
+    // clock has not moved, and that has to end with a full core or the
+    // plating would only take effect on the run after the one it was
+    // bought for. Mid-run — the dev tools, and nothing else — it must not
+    // heal, or the switch becomes a repair button.
+    this.coreHpMax = tech?.coreHp ?? CORE_HP_BASE;
+    this.coreHp = this.time === 0 ? this.coreHpMax : Math.min(this.coreHp, this.coreHpMax);
     this.refreshSpecs();
   }
 
@@ -1293,6 +1426,10 @@ export class Sim {
       gy,
       x: (gx + sz / 2) * CELL,
       y: (gy + sz / 2) * CELL,
+      hp: towerMaxHp(kind),
+      downT: 0,
+      aimShieldTower: -1,
+      tombShieldTower: -1,
       cd: Math.random() * 0.1,
       angle: 0,
       target: -1,
@@ -1342,6 +1479,9 @@ export class Sim {
     // ShieldComp: shieldAlpha fades out over 15 ticks once nothing refreshes it
     for (let i = 0; i < this.n; i++)
       if (this.ushieldAlpha[i] > 0) this.ushieldAlpha[i] = Math.max(0, this.ushieldAlpha[i] - dt * (60 / 15));
+    // shieldTowers run before the towers so a dome that regenerated this tick
+    // absorbs the volley fired this tick, never one late
+    this.updateShieldTowers(dt);
     this.fireTowers(dt);
     this.updateProjectiles(dt);
 
@@ -1565,6 +1705,13 @@ export class Sim {
       if (gx < t.gx + tsz && t.gx < gx + sz && gy < t.gy + tsz && t.gy < gy + sz)
         return false;
     }
+    // a LIVE shield tower owns its ground: selling a buried turret is allowed,
+    // but nothing builds back under the dome until the shield tower is dead
+    for (const s of this.shieldTowers) {
+      if (s.hp <= 0) continue;
+      if (gx < s.gx + SHIELD_TOWER_SIZE && s.gx < gx + sz && gy < s.gy + SHIELD_TOWER_SIZE && s.gy < gy + sz)
+        return false;
+    }
     return true;
   }
 
@@ -1750,21 +1897,19 @@ export class Sim {
         this.ugx[i] = g.x;
         this.ugy[i] = g.y;
       }
-      // ...plus the rung's flat armour bonus for tier 1-3 units
-      // (RUNGS.lowTierArmorBonus — the heavies never take it): baked
-      // into uarmor here so every armour read downstream — the lancer's x4
-      // included — sees it
-      this.uarmor[i] = stats.armor + armorBonusAtLevel(this.level.enemyLevel ?? 0, stats.tier);
+      // ...plus ARMORED SWARMS' plating on the light bodies (mutation.ts —
+      // the heavies never take it): baked into uarmor here so every armour
+      // read downstream — the lancer's x4 included — sees it
+      this.uarmor[i] =
+        stats.armor +
+        (this.armoredOn && stats.tier <= ARMORED_MAX_TIER ? ARMORED_ARMOR : 0);
       // ForceFieldAbility.created: a carrier walks in with the bubble
       // already full, so the first tower to see one meets a whole pool of
-      // shield rather than a field still charging up. The pool is scaled by
-      // the rung's shieldScale — shields track the player's firepower, not
-      // the hp curve (see RUNGS) — and every other read of a
-      // shield spec's max/amount/regen (updateAbilities) carries the same
-      // factor, or the spawn bonus could never refill
-      this.ushield[i] = stats.forceField
-        ? stats.forceField.max * shieldScaleAtLevel(this.level.enemyLevel ?? 0)
-        : 0;
+      // shield rather than a field still charging up. The pool carries the
+      // run's shield multiplier (this.shieldScale — Overshields, or 1), and
+      // so does every other read of a shield spec's max/amount/regen
+      // (updateAbilities), or the spawn bonus could never refill
+      this.ushield[i] = stats.forceField ? stats.forceField.max * this.shieldScale : 0;
       this.ushieldAlpha[i] = 0;
       this.uforceScale[i] = 0;
       this.uforceDown[i] = 0;
@@ -1844,11 +1989,11 @@ export class Sim {
     if (!HAS_ABILITIES) return;
     const { upx, upy, uhp, uhpmax, urad, ushield, ushieldAlpha, uability, ukind } = this;
     const { uforceScale, uforceDown } = this;
-    // the rung's shield multiplier (see RUNGS.shieldScale):
-    // pool, cap and regen all carry it, so a scaled field breaks later,
-    // refills proportionally faster, and is still dark for exactly
-    // `cooldown` seconds when it pops
-    const ss = shieldScaleAtLevel(this.level.enemyLevel ?? 0);
+    // the run's shield multiplier (Overshields, else 1): pool, cap and
+    // regen all carry it, so a scaled field breaks later, refills
+    // proportionally faster, and is still dark for exactly `cooldown`
+    // seconds when it pops
+    const ss = this.shieldScale;
     for (let i = 0; i < this.n; i++) {
       const k = ukind[i];
       const force = KIND_FORCE[k];
@@ -2129,6 +2274,10 @@ export class Sim {
   private killUnit(i: number): void {
     this.killsByKind[this.ukind[i]]++;
     this.pushDeathFx(this.upx[i], this.upy[i]);
+    // VOLATILE (mutation.ts): the body's parting blast, before the arrays
+    // reshuffle under it
+    if (this.volatileOn)
+      this.volatileBlast(this.upx[i], this.upy[i], this.urad[i], this.ukind[i]);
     this.removeUnit(i);
     this.kills++;
   }
@@ -2161,6 +2310,15 @@ export class Sim {
     for (let f = this.fldN - 1; f >= 0; f--) {
       if (this.fldI[f] === i) this.fldI[f] = this.fldI[--this.fldN];
       else if (this.fldI[f] === n) this.fldI[f] = i;
+    }
+    // the player's focus mark rides the same reshuffle: the marked unit
+    // dying clears the mark for good, and the unit swapped down into its
+    // slot drags the index hint with it (see setFocusUnit)
+    if (this.focusIdx === i) {
+      this.focusIdx = -1;
+      this.focusUid = -1;
+    } else if (this.focusIdx === n) {
+      this.focusIdx = i;
     }
     this.upx[i] = this.upx[n];
     this.upy[i] = this.upy[n];
@@ -2630,10 +2788,21 @@ export class Sim {
       // They pile up, nothing leaks, the wave never empties and the run
       // cannot end. So ask the air mask, which is where the flyer was sent.
       if (fly ? this.exitAir[ci] : isGoal[ci]) {
+        // A LEAK PAYS NOTHING. killsByKind is the whole drop ledger (see
+        // dropsForKills) and a body that walked off the board was never
+        // killed, so it is not in it — the salvage a leak costs is the
+        // salvage the player would have had for stopping it.
+        //
+        // A BOSS THAT REACHES THE CORE ENDS THE RUN whatever the plating
+        // says. Plating is armour against the SWARM: it buys back the
+        // bodies a board cannot quite hold, and a script that builds to one
+        // enemy must not have that enemy become a body you shrug off. So a
+        // boss takes the whole pool rather than a point of it.
+        const boss = UNIT_STATS[UNIT_KINDS[this.ukind[i]]].boss;
         this.pushFx(upx[i], upy[i], 0.4, FxKind.Breach);
         this.removeUnit(i);
         this.leaked++;
-        if (this.coreHp > 0) this.coreHp--;
+        this.coreHp = boss ? 0 : Math.max(0, this.coreHp - 1);
         continue;
       }
 
@@ -2917,6 +3086,348 @@ export class Sim {
     return d;
   }
 
+  // ---------- shieldTowers & tower health ----------
+
+  /**
+   * The shieldTowers' own clock: the spawn timer rolling new ones, dome swell,
+   * shield regen, and the whitening flash fading exactly as a unit's does.
+   * Also settles domesUp, the one-boolean gate the projectile pass reads
+   * before paying for an absorb sweep nothing could pass. A no-op on every
+   * run the mutator was not rolled for (shieldTowers stays empty).
+   */
+  private updateShieldTowers(dt: number): void {
+    // the timer idles at the cap and while the rule is off — a shield tower
+    // rises SHIELD_TOWER_SPAWN_PERIOD after the previous ATTEMPT, not after a
+    // death, so a player who clears them fast simply sees the next sooner
+    if (this.shieldTowersOn) {
+      const alive = this.shieldTowers.reduce((n2, s) => n2 + (s.hp > 0 ? 1 : 0), 0);
+      if (alive < SHIELD_TOWER_MAX_ALIVE) {
+        this.shieldTowerT -= dt;
+        if (this.shieldTowerT <= 0) {
+          this.shieldTowerT = SHIELD_TOWER_SPAWN_PERIOD;
+          this.trySpawnShieldTower();
+        }
+      }
+    }
+    this.domesUp = false;
+    for (const s of this.shieldTowers) {
+      if (s.hp <= 0) continue; // dead for good — its slot is a tombstone
+      // ForceFieldAbility.radiusScale: the dome swells in rather than snapping
+      s.scale = Math.min(1, s.scale + dt * 2);
+      if (s.shieldAlpha > 0) s.shieldAlpha = Math.max(0, s.shieldAlpha - dt * (60 / 15));
+      // THE DOME REFORMS WHOLE (see SHIELD_TOWER_SHIELD_DELAY): four seconds
+      // without a hit on either pool and the whole thing is back, rather
+      // than a trickle whose first twenty seconds played like no dome at
+      // all. Any hit restarts the clock, so a board committing fire keeps
+      // it open and a board that looks away pays for the dome twice
+      if (s.regenT > 0) {
+        s.regenT -= dt;
+        if (s.regenT <= 0 && s.shield < s.shieldMax) {
+          s.shield = s.shieldMax;
+          s.shieldAlpha = 1; // the flash a fresh dome comes back on
+          this.pushFx(s.x, s.y, 0.5, FxKind.ShieldWave);
+        }
+      }
+      if (s.shield > 0 && s.scale > 0.5) this.domesUp = true;
+    }
+  }
+
+  /**
+   * Roll a spot and raise a shield tower on it. A candidate 3x3 must lie inside
+   * the map, off the core, off every drop zone and exit, off water — and
+   * it must not seal the swarm's last route (the same BFS probe a ground
+   * structure would use). It also has to MATTER: a footprint that neither
+   * touches walkable ground nor buries a tower is a shield tower in a corner
+   * nobody visits, so the roll refuses it. Two dozen tries, then give up
+   * until the next period — a crowded map simply mutates less.
+   */
+  private trySpawnShieldTower(): void {
+    const { blocked, wall } = this.terrain;
+    for (let tries = 0; tries < 24; tries++) {
+      const gx = 1 + ((Math.random() * (this.terrain.cols - SHIELD_TOWER_SIZE - 2)) | 0);
+      const gy = 1 + ((Math.random() * (this.terrain.rows - SHIELD_TOWER_SIZE - 2)) | 0);
+      // TURRET GROUND ONLY: every cell of the footprint has to be rock a
+      // tower could itself have been built on — blocked, and not one of
+      // the un-buildable kinds (isBuildableWall: no pine, no deep water).
+      //
+      // That one test replaces every rule this roller used to carry. A
+      // shield tower on rock cannot cork a drop zone, cannot stand in a lane,
+      // cannot sit on water and cannot seal the swarm's route, because
+      // rock is already impassable and already none of those things — so
+      // the core apron, the spawn/exit test, the water test and the BFS
+      // seal probe are all gone rather than merely passing every time.
+      let ok = true;
+      for (let y = gy; y < gy + SHIELD_TOWER_SIZE && ok; y++)
+        for (let x = gx; x < gx + SHIELD_TOWER_SIZE; x++) {
+          const i = y * COLS + x;
+          if (!blocked[i] || !isBuildableWall(wall[i])) {
+            ok = false;
+            break;
+          }
+        }
+      if (!ok) continue;
+      // ...and never on top of another shield tower. Harmless at a cap of three
+      // and near-certain at twenty: rock is a small share of the map, so
+      // without this the roller stacks them on the same few outcrops
+      for (const o of this.shieldTowers) {
+        if (o.hp <= 0) continue;
+        if (
+          gx < o.gx + SHIELD_TOWER_SIZE && o.gx < gx + SHIELD_TOWER_SIZE &&
+          gy < o.gy + SHIELD_TOWER_SIZE && o.gy < gy + SHIELD_TOWER_SIZE
+        ) {
+          ok = false;
+          break;
+        }
+      }
+      if (!ok) continue;
+      const towersHit: Tower[] = [];
+      for (const t of this.towers) {
+        const tsz = TOWERS[t.kind].size;
+        if (gx < t.gx + tsz && t.gx < gx + SHIELD_TOWER_SIZE && gy < t.gy + tsz && t.gy < gy + SHIELD_TOWER_SIZE)
+          towersHit.push(t);
+      }
+
+      // the spot holds — raise it. Both pools ride the run's shield
+      // multiplier, so a shield tower rolled alongside Overshields is the
+      // five-times obstacle that rule promises everywhere else
+      const ss = this.shieldScale;
+      // PAST SHIELD_TOWER_MEGA_WAVE EVERY NEW SHIELD TOWER IS A MEGA ONE. The wave
+      // decides, not the tier: what it is scaling against is how built-out
+      // the player's board is by now, and the run's shield multiplier is
+      // already underneath it (see mutation.ts)
+      const mega = this.currentWave() >= SHIELD_TOWER_MEGA_WAVE;
+      const pool = ss * (mega ? SHIELD_TOWER_MEGA_SCALE : 1);
+      const idx = this.shieldTowers.length;
+      this.shieldTowers.push({
+        gx,
+        gy,
+        x: (gx + SHIELD_TOWER_SIZE / 2) * CELL,
+        y: (gy + SHIELD_TOWER_SIZE / 2) * CELL,
+        hp: SHIELD_TOWER_HP * pool,
+        hpMax: SHIELD_TOWER_HP * pool,
+        shield: SHIELD_TOWER_SHIELD * pool,
+        shieldMax: SHIELD_TOWER_SHIELD * pool,
+        shieldAlpha: 0,
+        scale: 0,
+        domeR: mega ? SHIELD_TOWER_MEGA_DOME_R : SHIELD_TOWER_DOME_R,
+        mega,
+        regenT: 0,
+      });
+      // OPTION E — THE SHIELD TOWER ENTOMBS THE TURRET. A buried turret is
+      // disabled, not destroyed: it drops everything mid-flight and comes
+      // back the moment the shield tower dies. A hostage, never a loss
+      for (const t of towersHit) {
+        t.tombShieldTower = idx;
+        t.target = -1;
+        t.targetIdx = -1;
+        t.burstLeft = 0;
+        t.chargeT = -1;
+        t.beamT = -1;
+        t.beamStr = 0;
+        t.aimShieldTower = -1;
+      }
+      // NOTHING TOUCHES THE FLOW FIELD. A shield tower stands on rock the swarm
+      // could never walk anyway, so raising one changes no route and costs
+      // no Dijkstra — which is what makes a cap of twenty affordable
+      this.pushFx(this.shieldTowers[idx].x, this.shieldTowers[idx].y, 0.7, FxKind.ShieldWave);
+      this.pushFx(this.shieldTowers[idx].x, this.shieldTowers[idx].y, 0.35, FxKind.Shockwave);
+      return;
+    }
+  }
+
+  /**
+   * All shield tower damage funnels through here: shield first — the dome
+   * shelters the body for exactly as long as it stands — then the body.
+   * Any hit, either pool, restarts the regen delay. A body at zero DIES
+   * FOR GOOD: the lane it blocked reopens, every turret it entombed
+   * stands back up, and its slot in the array becomes a tombstone.
+   */
+  private damageShieldTower(s: ShieldTower, dmg: number): void {
+    if (s.hp <= 0) return;
+    s.regenT = SHIELD_TOWER_SHIELD_DELAY;
+    if (s.shield > 0) {
+      s.shield -= dmg;
+      s.shieldAlpha = 1;
+      if (s.shield <= 0) {
+        s.shield = 0;
+        // the dome pops the way a carrier's does — same effect, its own red
+        this.pushFx(
+          s.x, s.y, 0.5, FxKind.ShieldBreak,
+          Math.random() * Math.PI, s.domeR * s.scale, 0, 24,
+        );
+      }
+      return;
+    }
+    s.hp -= dmg;
+    if (s.hp > 0) return;
+    s.hp = 0;
+    s.scale = 0;
+    s.shield = 0;
+    const idx = this.shieldTowers.indexOf(s);
+    // free the hostages — an entombed turret comes back the moment the
+    // shield tower dies, at whatever health it went under with
+    for (const t of this.towers) if (t.tombShieldTower === idx) t.tombShieldTower = -1;
+    // no lane to reopen: the footprint was rock (see trySpawnShieldTower), so
+    // the swarm's routes never knew this shield tower existed
+    // a dead shield tower is no longer anyone's mark
+    if (this.focusShieldTower === idx) this.focusShieldTower = -1;
+    this.pushFx(s.x, s.y, 0.6, FxKind.Breach);
+    this.pushFx(s.x, s.y, 0.5, FxKind.Shockwave);
+  }
+
+  /**
+   * An instant weapon's hit on a shield tower (see fireShot): the sweeps behind
+   * laser/lightning/rail/ray know only the unit arrays, so a volley aimed
+   * at a shield tower hands its damage over directly, with the hit effect at the
+   * body's rim on the shot's own line so the beam visibly ENDS somewhere.
+   */
+  private shieldTowerHit(s: ShieldTower, dmg: number, fx: BulletFx | undefined, angle: number, col?: RGB): void {
+    if (s.hp <= 0) return;
+    this.damageShieldTower(s, dmg);
+    this.bulletFx(
+      fx,
+      s.x - Math.cos(angle) * SHIELD_TOWER_BODY_R,
+      s.y - Math.sin(angle) * SHIELD_TOWER_BODY_R,
+      angle,
+      col,
+    );
+  }
+
+  /** the nearest live shield tower within reach — what an IDLE turret spends its
+   *  reload on, and only an idle one (see fireTowers) */
+  private idleShieldTowerFor(t: Tower, r2t: number): number {
+    let best = -1, bd = r2t;
+    for (let i = 0; i < this.shieldTowers.length; i++) {
+      const s = this.shieldTowers[i];
+      if (s.hp <= 0) continue;
+      const dx = s.x - t.x, dy = s.y - t.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bd) {
+        bd = d2;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Tower damage — the Volatile mutator's blast is the only caller today,
+   * and nothing calls it in an unmutated run. At zero the tower goes DOWN,
+   * never away: downT starts, everything mid-flight is let go of, and
+   * fireTowers stands it back up at full health when the timer ends. A
+   * downed tower is untouchable — chained blasts cannot keep one on the
+   * floor forever.
+   */
+  private damageTower(t: Tower, dmg: number): void {
+    if (t.downT > 0 || t.tombShieldTower >= 0) return;
+    t.hp -= dmg;
+    if (t.hp > 0) return;
+    t.hp = 0;
+    t.downT = TOWER_DOWN_TIME;
+    // let go of everything: the queued volley, the charge, the held beam,
+    // the tractor's grip, the target — a knocked-out turret holds nothing
+    t.target = -1;
+    t.targetIdx = -1;
+    t.burstLeft = 0;
+    t.chargeT = -1;
+    t.beamT = -1;
+    t.beamStr = 0;
+    t.aimShieldTower = -1;
+    this.pushFx(t.x, t.y, 0.5, FxKind.Breach);
+  }
+
+  /**
+   * VOLATILE (mutation.ts): the dead body's parting blast, billed to every
+   * standing tower whose footprint it reaches. Tier decides the damage and
+   * the body's own hitbox widens the reach — a fortress pops like a shell,
+   * a dagger like a firecracker. Towers only; the swarm never hurts itself.
+   */
+  private volatileBlast(x: number, y: number, urad: number, kind: number): void {
+    const reach = VOLATILE_RADIUS + urad;
+    const dmg = VOLATILE_DMG[Math.min(KIND_TIER[kind], VOLATILE_DMG.length - 1)];
+    for (const t of this.towers) {
+      const half = (TOWERS[t.kind].size * CELL) / 2;
+      const r = reach + half;
+      const dx = t.x - x, dy = t.y - y;
+      if (dx * dx + dy * dy < r * r) this.damageTower(t, dmg);
+    }
+    this.pushFx(x, y, 0.35, FxKind.Shockwave);
+  }
+
+  // ---------- the player's focus mark ----------
+
+  /**
+   * Mark one unit for focus fire: every turret in range drops what it was
+   * doing for it (see fireTowers). The mark is a uid plus an index hint
+   * maintained across swap-removes, exactly as the force-field carrier
+   * list is — it dies with the unit and is never dangling.
+   */
+  setFocusUnit(idx: number): void {
+    if (idx < 0 || idx >= this.n) return;
+    this.focusUid = this.uid[idx];
+    this.focusIdx = idx;
+    this.focusShieldTower = -1;
+  }
+
+  /** mark one shield tower for focus fire — same contract, the other kind */
+  setFocusShieldTower(idx: number): void {
+    if (idx < 0 || idx >= this.shieldTowers.length || this.shieldTowers[idx].hp <= 0) return;
+    this.focusShieldTower = idx;
+    this.focusUid = -1;
+    this.focusIdx = -1;
+  }
+
+  clearFocus(): void {
+    this.focusUid = -1;
+    this.focusIdx = -1;
+    this.focusShieldTower = -1;
+  }
+
+  /**
+   * Where the focus mark should be drawn, in world px — the overlay's
+   * arrow. `top` is above the target's art; null when nothing is marked
+   * (or the marked unit has died since, which clears the mark for good).
+   */
+  focusMark(): { x: number; y: number; top: number } | null {
+    if (this.focusShieldTower >= 0) {
+      const s = this.shieldTowers[this.focusShieldTower];
+      if (!s || s.hp <= 0) return null;
+      return { x: s.x, y: s.y, top: s.y - SHIELD_TOWER_SIZE * CELL * 0.75 };
+    }
+    if (this.focusIdx >= 0 && this.focusIdx < this.n && this.uid[this.focusIdx] === this.focusUid) {
+      const i = this.focusIdx;
+      return { x: this.upx[i], y: this.upy[i], top: this.upy[i] - this.urad[i] * 2.4 - 6 };
+    }
+    return null;
+  }
+
+  /** the unit under a tap, if any — a hit-test against live hitboxes with
+   *  a little slop so a fingertip can pick a dagger out of a lane */
+  unitAt(px: number, py: number): number {
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < this.n; i++) {
+      const dx = this.upx[i] - px, dy = this.upy[i] - py;
+      const d2 = dx * dx + dy * dy;
+      const r = Math.max(this.urad[i] * 1.6, 10);
+      if (d2 < r * r && d2 < bd) {
+        bd = d2;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /** the shield tower whose footprint (or body circle) covers a world point */
+  shieldTowerAt(px: number, py: number): number {
+    for (let i = 0; i < this.shieldTowers.length; i++) {
+      const s = this.shieldTowers[i];
+      if (s.hp <= 0) continue;
+      const gx = (px / CELL) | 0, gy = (py / CELL) | 0;
+      if (gx >= s.gx && gx < s.gx + SHIELD_TOWER_SIZE && gy >= s.gy && gy < s.gy + SHIELD_TOWER_SIZE) return i;
+    }
+    return -1;
+  }
+
   /**
    * The Turret.java loop: reload runs regardless of targeting, queued volley
    * shots fire on their shotDelay timers at the turret's current rotation,
@@ -2926,6 +3437,27 @@ export class Sim {
   private fireTowers(dt: number): void {
     const { upx, upy, uvx, uvy } = this;
     for (const t of this.towers) {
+      // an ENTOMBED tower (a shield tower rose over it — see trySpawnShieldTower)
+      // does nothing at all until the shield tower dies and hands it back
+      if (t.tombShieldTower >= 0) continue;
+      // a DOWNED tower spends the whole timer standing back up: it fires
+      // nothing, targets nothing, and smokes so the state reads from orbit
+      if (t.downT > 0) {
+        t.downT -= dt;
+        if (t.downT <= 0) {
+          t.downT = 0;
+          t.hp = towerMaxHp(t.kind);
+          this.pushFx(t.x, t.y, 0.4, FxKind.Heal);
+        } else if (Math.random() < dt * 2.5) {
+          const sz = TOWERS[t.kind].size * CELL;
+          this.pushFx(
+            t.x + (Math.random() - 0.5) * sz * 0.6,
+            t.y + (Math.random() - 0.5) * sz * 0.6,
+            0.6, FxKind.SmokeCloud,
+          );
+        }
+        continue;
+      }
       const st = this.statsFor(t.kind);
       // a tractor turret has no reload and no volley — it holds a beam
       if (st.bullet.tractor) {
@@ -2975,28 +3507,55 @@ export class Sim {
       // bestTarget and TowerStats.sort
       const r2t = st.range * st.range;
       let best = -1;
-      if (
-        t.target >= 0 &&
-        t.targetIdx >= 0 &&
-        t.targetIdx < this.n &&
-        this.uid[t.targetIdx] === t.target
-      ) {
-        const dx = upx[t.targetIdx] - t.x, dy = upy[t.targetIdx] - t.y;
-        if (dx * dx + dy * dy < r2t) best = t.targetIdx;
+      let shr: ShieldTower | null = null;
+      // THE PLAYER'S MARK FIRST (setFocusUnit / setFocusShieldTower): a tapped
+      // target overrides both the held target and the scan for every
+      // turret that can reach it. At most one of the two kinds is ever set
+      if (this.focusIdx >= 0 && this.uid[this.focusIdx] === this.focusUid) {
+        const fi = this.focusIdx;
+        if (this.ufly[fi] !== 0 ? st.targetAir : st.targetGround) {
+          const dx = upx[fi] - t.x, dy = upy[fi] - t.y;
+          if (dx * dx + dy * dy < r2t) best = fi;
+        }
+      } else if (this.focusShieldTower >= 0 && st.targetGround) {
+        const s = this.shieldTowers[this.focusShieldTower];
+        if (s && s.hp > 0) {
+          const dx = s.x - t.x, dy = s.y - t.y;
+          if (dx * dx + dy * dy < r2t) shr = s;
+        }
       }
-      t.targetT -= dt;
-      if (best < 0 || t.targetT <= 0) {
-        const hasTargets =
-          (st.targetAir && this.nAliveAir > 0) ||
-          (st.targetGround && this.nAliveGround > 0);
-        best = hasTargets
-          ? this.bestTarget(t.x, t.y, st.range, st.targetAir, st.targetGround, st.sort === "strongest")
-          : -1;
-        t.targetT = TARGET_INTERVAL;
-        t.target = best >= 0 ? this.uid[best] : -1;
+      if (best < 0 && !shr) {
+        if (
+          t.target >= 0 &&
+          t.targetIdx >= 0 &&
+          t.targetIdx < this.n &&
+          this.uid[t.targetIdx] === t.target
+        ) {
+          const dx = upx[t.targetIdx] - t.x, dy = upy[t.targetIdx] - t.y;
+          if (dx * dx + dy * dy < r2t) best = t.targetIdx;
+        }
+        t.targetT -= dt;
+        if (best < 0 || t.targetT <= 0) {
+          const hasTargets =
+            (st.targetAir && this.nAliveAir > 0) ||
+            (st.targetGround && this.nAliveGround > 0);
+          best = hasTargets
+            ? this.bestTarget(t.x, t.y, st.range, st.targetAir, st.targetGround, st.sort === "strongest")
+            : -1;
+          t.targetT = TARGET_INTERVAL;
+          t.target = best >= 0 ? this.uid[best] : -1;
+        }
+        // IDLE HANDS CHEW THE MAP'S SHIELD TOWERS: only a turret with nothing
+        // else in range spends its reload on one unforced, so clearing a
+        // shield tower idly costs time between waves and never mid-wave DPS
+        if (best < 0 && st.targetGround && this.shieldTowers.length > 0) {
+          const si = this.idleShieldTowerFor(t, r2t);
+          if (si >= 0) shr = this.shieldTowers[si];
+        }
       }
       t.targetIdx = best;
-      if (best < 0) {
+      t.aimShieldTower = shr ? this.shieldTowers.indexOf(shr) : -1;
+      if (best < 0 && !shr) {
         // nothing in range: a beam already lit keeps burning down its
         // duration where it is, exactly as Mindustry's held bullet does
         continue;
@@ -3004,10 +3563,11 @@ export class Sim {
 
       // Predict.intercept: aim where target and bullet paths cross. Hitscan
       // bullets (speed ~0) aim straight at the target, like Mindustry's
-      // predictTarget guard (bullet.speed >= 0.01 or no lead at all)
-      const dx = upx[best] - t.x, dy = upy[best] - t.y;
+      // predictTarget guard (bullet.speed >= 0.01 or no lead at all).
+      // A shield tower is a building: no velocity, no lead, aim at the centre
+      const dx = (shr ? shr.x : upx[best]) - t.x, dy = (shr ? shr.y : upy[best]) - t.y;
       let aimX = dx, aimY = dy;
-      if (st.bullet.speed >= 1) {
+      if (!shr && st.bullet.speed >= 1) {
         const tvx = uvx[best], tvy = uvy[best];
         const s2 = st.bullet.speed * st.bullet.speed;
         const qa = tvx * tvx + tvy * tvy - s2;
@@ -3199,6 +3759,11 @@ export class Sim {
     // bullet itself draws nothing at all
     this.bulletFx(st.bullet.shootFx, x, y, a, st.bullet.fxColor);
     this.bulletFx(st.bullet.smokeFx, x, y, a, st.bullet.fxColor);
+    // aimed at a shield tower, the INSTANT weapons hand their damage straight to
+    // it — the sweeps behind laser/lightning/rail/ray know only the unit
+    // arrays. Projectile weapons need nothing here: their shots really fly,
+    // and the shield tower's dome and body collide them like anything else
+    const shrT = t.aimShieldTower >= 0 ? this.shieldTowers[t.aimShieldTower] : null;
     if (st.bullet.lightning) {
       const pts = this.lightningBolt(
         x, y, a,
@@ -3211,6 +3776,7 @@ export class Sim {
         st.bullet.fxColor,
       );
       this.pushBolt(x, y, st.bullet.lifetime, pts, true); // the bolt IS arc's shot
+      if (shrT) this.shieldTowerHit(shrT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
       return;
     }
     if (st.bullet.laser) {
@@ -3227,10 +3793,12 @@ export class Sim {
       );
       // forced: the beam is lancer's entire visible shot (damage is instant)
       this.pushFx(x, y, st.bullet.lifetime, FxKind.Laser, a, reached, 0, 0, true);
+      if (shrT) this.shieldTowerHit(shrT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
       return;
     }
     if (st.bullet.rail) {
       this.railShot(x, y, a, st.bullet);
+      if (shrT) this.shieldTowerHit(shrT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
       return;
     }
     if (st.bullet.ray) {
@@ -3247,6 +3815,7 @@ export class Sim {
       );
       // forced: the ray is fuse's entire visible shot (damage is instant)
       this.pushFx(x, y, st.bullet.lifetime, FxKind.Shrapnel, a, st.bullet.ray.length, 0, 0, true);
+      if (shrT) this.shieldTowerHit(shrT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
       return;
     }
     // Mindustry scaleLife (Turret.java): an artillery shell's lifetime
@@ -3753,6 +4322,12 @@ export class Sim {
       }
       dead.sort((p, q) => q - p);
       for (const i of dead) if (uhp[i] <= 0) this.killUnit(i);
+      // a beam held on a shield tower burns it exactly as it burns a unit — the
+      // collide line above knows only the unit arrays (see fireShot)
+      if (t.aimShieldTower >= 0) {
+        const s = this.shieldTowers[t.aimShieldTower];
+        if (s && s.hp > 0) this.shieldTowerHit(s, b.damage, b.hitFx, t.beamRot, b.fxColor);
+      }
     }
     t.beamT -= dt;
     if (t.beamT <= 0) {
@@ -3997,6 +4572,20 @@ export class Sim {
       this.pushFx(px, py, 12 / 60, FxKind.Absorb);
       return true;
     }
+    // the shieldTowers' domes eat shots exactly as a carrier's bubble does —
+    // circles rather than polygons, and the damage lands in the shield tower's
+    // own shield pool (see damageShieldTower)
+    if (this.domesUp) {
+      for (const s of this.shieldTowers) {
+        if (s.hp <= 0 || s.shield <= 0 || s.scale < 0.5) continue;
+        const rad = s.domeR * s.scale;
+        const dx = px - s.x, dy = py - s.y;
+        if (dx * dx + dy * dy > rad * rad) continue;
+        this.damageShieldTower(s, damage);
+        this.pushFx(px, py, 12 / 60, FxKind.Absorb);
+        return true;
+      }
+    }
     return false;
   }
 
@@ -4050,8 +4639,10 @@ export class Sim {
         }
       }
 
-      // a force field eats the shot where it stands: no hit, no splash
-      if (this.fldN > 0 && this.absorb(pr.x, pr.y, b.damage)) {
+      // a force field eats the shot where it stands: no hit, no splash —
+      // and a shield tower's dome the same way (domesUp gates its half of the
+      // sweep the way fldN gates the carriers')
+      if ((this.fldN > 0 || this.domesUp) && this.absorb(pr.x, pr.y, b.damage)) {
         projs[p] = projs[projs.length - 1];
         projs.pop();
         continue;
@@ -4149,6 +4740,35 @@ export class Sim {
         }
         hits.sort((a2, b2) => b2 - a2);
         for (const i of hits) if (uhp[i] <= 0) this.killUnit(i);
+        // a shield tower's BODY is a target no bucket holds: there are at most a
+        // handful alive, so a direct circle test per shot costs less than
+        // teaching the spatial hash about buildings. The dome (absorbed
+        // above, wider than the body) shields it for as long as it stands,
+        // so a shot landing here with the dome up was already spent
+        if (!dead && this.shieldTowers.length > 0) {
+          for (let si = 0; si < this.shieldTowers.length; si++) {
+            const s = this.shieldTowers[si];
+            if (s.hp <= 0) continue;
+            // the pierce ledger holds unit uids; a shield tower rides it as a
+            // negative sentinel no uid can collide with
+            const sid = -1000 - si;
+            if (pr.pierced && pr.pierced.includes(sid)) continue;
+            const sdx = s.x - pr.x, sdy = s.y - pr.y;
+            const hr = SHIELD_TOWER_BODY_R + brad;
+            if (sdx * sdx + sdy * sdy >= hr * hr) continue;
+            this.damageShieldTower(s, b.damage);
+            this.bulletFx(b.hitFx, pr.x, pr.y, Math.atan2(pr.vy, pr.vx), b.fxColor);
+            if (!pr.pierced) {
+              dead = true;
+              break;
+            }
+            pr.pierced.push(sid);
+            if (b.pierceCap !== undefined && pr.pierced.length >= b.pierceCap) {
+              dead = true;
+              break;
+            }
+          }
+        }
       }
       if (dead) {
         const rot = Math.atan2(pr.vy, pr.vx);
@@ -4252,6 +4872,19 @@ export class Sim {
         const dx = upx[i] - x, dy = upy[i] - y;
         const rr = radius + urad[i];
         if (dx * dx + dy * dy < rr * rr) splashHits.push(i);
+      }
+    }
+    // shieldTowers stand in blasts too: the body is a fat circle, so a shell
+    // landing beside one chips it exactly as it chips a unit — this is the
+    // only way artillery (whose shells never collide) hurts one at all
+    if (ground) {
+      for (const s of this.shieldTowers) {
+        if (s.hp <= 0) continue;
+        const sdx = s.x - x, sdy = s.y - y;
+        const rr = radius + SHIELD_TOWER_BODY_R;
+        if (sdx * sdx + sdy * sdy >= rr * rr) continue;
+        const d = Math.sqrt(sdx * sdx + sdy * sdy);
+        this.damageShieldTower(s, dmg * Math.max(0, 0.4 + 0.6 * (1 - d / radius)));
       }
     }
     // damage first (indices stay stable), then remove the dead from the

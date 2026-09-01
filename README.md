@@ -27,20 +27,25 @@ stale tab or a cached bundle looks exactly like a fix not working.
   `loadLevelDocs()`. Six upgrade trees: ground, support, crawler, air and
   the two **naval** lines (risso→omura, retusa→navanax), which travel on
   the water layer and cannot leave it
-- `game/ladder.ts` — the **ten-rung ladder** (`RUNGS`: enemy level, shield
-  scale and swarm armour each, plus the compounding drop bonus), and the
-  audit/check arithmetic over the authored script
+- `game/ladder.ts` — the **ten-rung ladder** (`RUNGS`: enemy level and the
+  mutator roll each, plus the compounding drop bonus), and the audit/check
+  arithmetic over the authored script
 - `game/tech.ts` — the tech tree: turret price bundles (one shared growth
   constant for every turret), abilities, and the build-bar slot upgrades
 - `game/upgrades.ts` — the **turret upgrade branches**: a chain of rungs
-  under every turret, folded into its live `TowerStats`. Two cheap stacking
-  dials, a one-shot ammunition swap, and then an **ultimate** paid for in
-  surge alloy that changes what the turret is. The ultimate costs 1 surge
-  on an early turret, 3 on a plastanium one and 6 on a phase one, and it is
-  the only node in the tree that can be sold back. **Only duo and arc have
-  one written so far** — the other fifteen are authored by hand as they are
-  designed; adding one is a fourth entry in a branch with
-  `tier: ULTIMATE_TIER` and its id in `UPGRADE_KINDS`, and nothing else
+  under every turret, folded into its live `TowerStats`. Most rungs are
+  stacking dials of **100 points** (`CAP_DIAL`) — the number written in
+  each one is what it is worth FULLY BOUGHT, not what a click hands over.
+  Rungs that COUNT things (bodies pierced, lightning nodes) take 8-10
+  points and give one per point (`CAP_COUNT`): padding a count out to a
+  hundred adds no progress, it only hides it. Then a one-shot ammunition
+  swap, and an **ultimate** paid for in surge alloy that changes what the
+  turret is. The ultimate costs 1 surge on an early turret, 3 on a
+  plastanium one and 6 on a phase one, and it is the only node in the tree
+  that can be sold back. **Only duo and arc have one written so far** — the
+  other fifteen are authored by hand as they are designed; adding one is a
+  fourth entry in a branch with `tier: ULTIMATE_TIER` and its id in
+  `UPGRADE_KINDS`, and nothing else
 - `game/mutation.ts` — the **mutators**: the catalog of rules a run can be
   played under, what each is worth in points, and the roller that draws
   three or four of them to fit a difficulty's budget
@@ -87,12 +92,25 @@ stale tab or a cached bundle looks exactly like a fix not working.
   switches to the codex beside it. Every upgrade rung is a **node with an
   edge into it** — turret → rung 1 → rung 2 → ultimate — laid out on the
   same grid the turrets are, not a row of chips under its turret
+- `components/techIcons.tsx` — what every tech node LOOKS like: block
+  sprites, the upgrade glyph vocabulary, the surge icon. Shared, so the
+  game's board and the layout editor draw the same faces
 - `components/TreeEditorView.tsx` — the layout editor: drag a node, it
-  snaps to the grid, Save writes `public/tree.json`
+  snaps to the grid, Save writes `public/tree.json`. It draws the real
+  faces at the real sizes — composing a layout against name labels would
+  be composing against the wrong picture
 - `components/MutationTree.tsx` — the **mutator codex** as a board of its
   own: one thumbnail per rule, severity in the border, the rule on hover
 - `components/LevelEditorView.tsx`, `MapEditorView.tsx`, `BalanceView.tsx` —
   the admin authoring surfaces
+- `components/SandboxView.tsx` — the admin **Sandbox** tab, and the one
+  door in the game where a mutator is CHOSEN rather than rolled: pick a
+  world, a difficulty and any combination of rules (over the tier's budget
+  if you like), and deploy. It hands off as a query string onto the game
+  page — `/?sandbox=1&world=…&tier=…&mut=…`, consumed and stripped by the
+  sandbox effect in `MechSwarm.tsx` — so the exact run that reproduced a
+  bug is a URL you can paste into a report. The run starts in sandbox
+  mode: whole tree unlocked, caps lifted, every pace offered
 
 In dev builds the running `Game` instance is exposed as `window.__mechswarm`
 for console poking, and the ladder's tuning surface as `window.__ladder`
@@ -131,13 +149,14 @@ nothing else; there are no named difficulties.
 | waves | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 |
 | enemy level | 0 | 4 | 8 | 12 | 16 | 20 | 24 | 28 | 32 | 36 |
 | enemy health | ×1.00 | ×1.26 | ×1.59 | ×2.01 | ×2.54 | ×3.21 | ×4.05 | ×5.11 | ×6.45 | ×8.15 |
-| enemy shields | ×1.00 | ×1.20 | ×1.43 | ×1.71 | ×2.04 | ×2.45 | ×2.92 | ×3.50 | ×4.18 | ×5.00 |
-| swarm armour | +0 | +0 | +0 | +0 | +0 | +2 | +4 | +6 | +8 | +10 |
+| rules rolled | 0 | 3 | 3 | 3 | 3 | 4 | 4 | 4 | 4 | 5 |
+| mutator points | 0 | 8 | 10 | 11 | 13 | 15 | 17 | 19 | 20 | 22 |
 | salvage | ×1.00 | ×1.30 | ×1.69 | ×2.20 | ×2.86 | ×3.71 | ×4.83 | ×6.27 | ×8.16 | ×10.60 |
 
+**A rung scales enemy health and the mutator roll, and nothing else.**
 Every column is arithmetic on the rung's index — `level` is
-`index × LEVELS_PER_RUNG`, shields are `SHIELD_PER_RUNG ^ index`, armour is
-+2 a rung from rung 6 — so **an eleventh rung is one constant**
+`index × LEVELS_PER_RUNG`, the roll's two dials are `mutationBudget` and
+`mutationPicks` of it — so **an eleventh rung is one constant**
 (`RUNG_COUNT`). Nothing about the ladder is finite in shape;
 `clearedByMap` is an unbounded int per world.
 
@@ -162,9 +181,22 @@ rung that the tech tree's geometric price curve turns into time.
 Per **level**, only health scales (×1.06 a level; +12 levels is exactly
 double). Armour, speed, hitbox and drop stay at base, which is what keeps a
 level-20 dagger worth shooting and a fortress unkillable by duos on rung 1.
-The swarm armour column is flat armour on tier 1–3 bodies only, held at zero
-for the first five rungs because a scatter pellet is 3 damage and even +1
-would halve the game's first anti-air.
+
+Two columns have **left** this table, and both left the same way — as named
+rules a deploy can be played under rather than curves nobody could see.
+**Swarm armour** was flat armour on tier 1–3 bodies, +2 a rung from rung 6
+up to +10 at the top; it is the **Armored Swarms** mutator now. **Shield
+scale** multiplied every shield pool, cap and regen, compounding ×1.00 to
+×5.00 across the ladder; it is the **Overshields** mutator now. Both were
+sound as arithmetic and wrong as ladder: a rung's job is to say how much
+fight there is, and a rule that only bites against small calibre, or only
+against the one kind carrying a force field, is a rule about *how* the
+fight goes. That is a mutator — printed on the card before Deploy, and
+either in force or not.
+
+One consequence is deliberate: **shield tower pools no longer climb with the
+tier.** A shield tower grows with the wave (mega shieldTowers from wave 35) and with
+Overshields if the roll pairs them, like everything else in the catalog.
 
 **Every currency drops from rung 1**, which follows from there being no
 cuts: a full clear banks ~32,000 copper down to ~200 phase fabric whatever
@@ -172,14 +204,32 @@ the rung. So the phase-priced turrets (spectre, meltdown, foreshadow) are
 reachable from the bottom of the ladder — slowly. The gate is the rate, not
 the permission.
 
+### The core
+
+**The core has one point of health and every leak takes one.** A run is won
+for as long as any is left — clear the script and the level is yours,
+whatever walked past on the way. **Core Plating** (the `core-hp` node off
+home) buys the rest: one point each, to a hundred (`CORE_HP_MAX`), which is
+the only forgiveness anywhere in the game and priced like a turret branch
+rather than like the one-point switches beside it.
+
+**A boss that reaches the core ends the run whatever the plating says.** The
+plating is armour against the SWARM — it buys back the bodies a board cannot
+quite hold — and a script that builds towards one enemy must not have that
+enemy become something you shrug off.
+
+**A leak pays nothing.** `killsByKind` is the whole drop ledger and a body
+that walked off the board was never killed, so the salvage a leak costs is
+the salvage the player would have had for stopping it.
+
 ### Mutators
 
-Some maps are always played under **mutators** — rules that change what
-happens to a wave after it lands. **Nobody picks them.** The map decides
-that it mutates, the **difficulty decides the budget**, and three or four
-rules are rolled to fit it when you deploy. It is the StarCraft II model,
-and the mode it exists for is endgame resource farming: the same fifty
-waves, a different set of rules every time.
+Every deploy from Level 2 up is played under **mutators** — rules that
+change what happens to a wave after it lands. **Nobody picks them.** The
+**difficulty decides the budget and the count**, and that many rules are
+rolled to fit it when you deploy. It is the StarCraft II model, and the
+mode it exists for is endgame resource farming: the same fifty waves, a
+different set of rules every time.
 
 |  | the tech tree | a mutator |
 |---|---|---|
@@ -201,6 +251,21 @@ of each. That is the whole of what "Level 1 is the campaign as authored"
 means. The per-world `LevelSpec.mutators` switch is gone; it was never
 turned on, and it could only ever say yes or no where the ladder can say
 how much.
+
+**A level may carry rules of its own, by design.**
+`LevelSpec.intrinsicMutation` is a list of mutators a world is *always*
+played under — **Maelstrom** carries **Overshields**, which is what makes
+the naval front the shielded front. Three things follow, and they are the
+whole contract: it applies at **Level 1** too (for a world authored with
+rules on it, that *is* the campaign as authored); it is **never rolled**
+(the roller is handed it as an exclusion, so a deploy cannot spend points
+on a rule the run already has); and it is **never charged** (the tier's
+budget buys the roll on top of it). The deploy panel lists it beside the
+roll, tagged *always*, and `mutationsInForce` is the one place the two are
+joined. This is not the old switch coming back: that said "this map is
+allowed to mutate, at whatever strength the difficulty says", which put a
+level in charge of a difficulty curve. This says "this map is the shielded
+one", which is authorship.
 
 **The costs are the only balance dial.** A mutator is worth points
 (`MutationDef.cost`, 1–6 — light, heavy, brutal), a difficulty affords
@@ -233,6 +298,81 @@ sends**, so every number in `ladder.ts` — wave counts, enemy totals, the
 drop-ratio audit — stays true whatever was rolled. A rule that wants to
 change the script is a wave transform, not a mutator.
 
+**Volatile — 3 points.** Every enemy detonates when it dies, and the blast
+damages the towers it reaches — about two cells, plus the body's own
+hitbox, with the damage set by the body's **tier** (a dagger is a scratch,
+a fortress a real dent) and never by its level, because tower health does
+not climb the ladder and neither may the thing that spends it. This is the
+rule that makes tower health a mechanic at all: **nothing in the base game
+hurts a tower.** Every tower has a pool (`towerMaxHp`, footprint-scaled),
+a hurt one wears the units' own red hp tint, and one at zero goes **down,
+never away** — dark, silent, smoking, and back at full health ten seconds
+later (`TOWER_DOWN_TIME`). What a swarm of detonating daggers costs is
+windows of silence in the kill zone, the same audit-invisible currency
+Speedy taxes — and it taxes **point-blank play specifically**: scorch,
+fuse, arc and the duo wall on the choke feel it in proportion to how many
+bodies die at their feet, while a long-range board barely pays. Selling
+and replacing a downed tower is allowed; a rebuild is slower than the
+timer for anything bigger than a duo.
+
+**Overshields — 3 points.** Every force field on the field comes up **five
+times the pool** it was — the bubble a quasar walks in with, and the shield tower
+domes if Shield Towers is rolled alongside. Pool, cap and regen all carry
+the factor, so a scaled field breaks later, refills proportionally faster,
+and is dark for exactly the same cooldown when it pops. This was the
+ladder's **shield scale** column until it became a rule nobody chose (see
+above); five is the old top-rung value, kept whole. Like Speedy and
+Volatile it costs the player **time, not bodies** — it adds no health the
+audit arithmetic can see, it delays damage the board was already going to
+do. Priced at 3 because one unit kind carries the swarm's force fields, so
+a board that can break one is inconvenienced rather than beaten; rolled
+beside Shield Towers it is worth considerably more, which is what a big
+budget is *for*. **Maelstrom plays under it always** (see intrinsic rules
+above).
+
+**Shield Towers — 4 points.** Every so often a 3×3 shield tower rises somewhere
+on the map (25 s for the first, one attempt every 45 s after, at most three
+standing) and stands a **red force dome** over the ground around it: the
+player's projectiles crossing the dome are absorbed into its shield pool,
+so enemies under it are safe from projectile fire until the pool breaks —
+and the dome **reforms whole** four seconds after the last hit on either
+pool — not by degrees, because a dome at 12% is not a weaker obstacle, it is
+one more volley. Any hit restarts that clock, so sustained fire holds a
+shield tower open and looking away for four seconds means paying for the dome
+again.
+Only with the dome down can the body be hurt, and a destroyed shield tower is
+**gone for good**; the timer raises the next elsewhere. From **wave 35** every new shield tower rises as a **mega shield tower**: five times
+both pools and a dome sixteen tiles across, wider than most turrets reach
+from one emplacement, so a whole section of the board has to be pointed at
+it rather than whatever happened to be idle. Both pools ride the run's
+shield multiplier — five times these numbers under Overshields, exactly
+these numbers otherwise — and the **body is four times the dome** — a structure that died quickly would
+never give the regen a chance to matter, since every hit on either pool
+restarts the delay. Sustained fire holds a dome suppressed and grinds the
+body down; break off for a wave and you come back to a dome to break twice.
+The dome draws as **a carrier's bubble with the diagonals switched off**
+(`SHIELD_PLAIN`) — same rim, same flat interior wash, no travelling hatch,
+because a dome sits over a lane full of units and Mindustry's diagonals
+laid across them read as damage. It is also filled as ONE disc sprite
+rather than through `fillPoly`, which fans any non-hexagon into `sides`
+textured triangles whose shared slopes double-blend into radial creases.
+Instant weapons — lancer, arc, fuse, foreshadow, meltdown's beam — are not
+absorbed (exactly as unit force fields never absorb them), which quietly
+makes the beam roster the shield tower-breaking roster.
+
+Where it lands is part of the rule. A shield tower's footprint blocks open lane
+(the swarm routes around it; the spot roller refuses anything that would
+seal the last route, cork a drop zone, or sit on water) — and one that
+lands over towers **entombs** them: a buried turret is disabled and
+untouchable, never destroyed, and stands back up the moment the shield tower
+dies. Turrets chew shieldTowers **only when idle** — a turret with nothing else
+in range spends its reload on one, so clearing a shield tower costs time between
+waves, never mid-wave DPS. The player can **tap** a shield tower — or any enemy
+— to focus it: every turret in range drops what it was doing for the
+marked target, which wears a bobbing red arrow. Spending mid-wave DPS on a
+dome is a choice with a price, and that choice is the whole game of the
+rule.
+
 **Hungry — 4 points.** One spawn in twenty walks in hungry (tinted pink,
 and it never spreads: nothing in the game applies the status). Once a
 second it reaches four tiles for a random neighbour that is not itself
@@ -254,6 +394,23 @@ ever being killed, so it never touches `killsByKind` and pays no drop at
 all, while the unit that ate it still drops exactly what its own kind
 drops. Twenty meals cost twenty bodies' worth of salvage and hand back
 one.
+
+**Armored Swarms — 4 points.** Every unit of **tier 3 or below** spawns
+with **+10 flat armour**; tier 4 and 5 take none, because a fortress and a
+zenith already carry the plating that matters and hardening them further
+would only make the run longer. Armour is a flat shave floored at a tenth
+of the raw hit, so the rule is **regressive by calibre** on purpose: +10 is
+nothing to a lancer's 140 and ×1.55 effective health against a salvo's 28,
+but it floors a duo's 9 and a scatter pellet's 3 outright — those guns land
+a tenth of what they print and no more. So it does not say "the swarm is
+tougher", it says **"the cheap guns stop counting"**, and the answer to it
+is calibre: bigger emplacements, and an anti-air line that is not built out
+of pellets. It is priced as Heavy rather than Brutal because that answer
+exists and is affordable — but rolled early, before the tree has anything
+with weight behind it, it is the harshest 4 in the catalog.
+
+This was the ladder's own **swarm armour** column until it became a rule
+nobody chose (see above); ten is the old top-rung value, kept whole.
 
 **Speedy — 5 points.** Every enemy walks in at **double speed** and
 **cannot be slowed**. Two halves of one rule, because either alone has an

@@ -40,6 +40,11 @@ export interface UiState {
   paused: boolean;
   /** the core is destroyed — the field is frozen behind the score screen */
   lost: boolean;
+  /** the core's remaining health, and the pool the save's plating bought
+   *  (tech.ts, CORE_HP_BASE + Core Plating). At a max of 1 there is nothing
+   *  to report — the first leak is the loss — so the HUD stays quiet */
+  coreHp: number;
+  coreHpMax: number;
   /** every enemy in the script is down — the success screen takes over */
   won: boolean;
   kills: number;
@@ -383,8 +388,8 @@ export class Game {
         this.sim.sellTowerAt(p.x, p.y);
         this.dropSelectionIfGone();
       } else {
-        // normal cursor: clicking a tower shows its range, empty ground clears
-        this.selected = this.sim.towerAt(p.x, p.y);
+        // normal cursor: the shared inspect/focus tap (see inspectAt)
+        this.inspectAt(p);
       }
     } else if (e.button === 2) {
       e.preventDefault();
@@ -623,7 +628,7 @@ export class Game {
     this.selling = false;
     this.clearHover();
     // a press that never travelled, with no tool picked, is the touch
-    // spelling of a click: show that tower's range
+    // spelling of a click: the shared inspect/focus tap (see inspectAt)
     if (
       ended &&
       tap &&
@@ -631,9 +636,44 @@ export class Game {
       !this.sellMode &&
       Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < TAP_PX
     ) {
-      const p = this.mouseWorld(e);
-      this.selected = this.sim.towerAt(p.x, p.y);
+      this.inspectAt(this.mouseWorld(e));
     }
+  }
+
+  /**
+   * THE BARE-CURSOR TAP, shared by mouse click and touch tap. What it does
+   * depends on what is under the point, checked in the order a player
+   * means them:
+   *
+   *   an ENEMY   — mark it for FOCUS FIRE: every turret in range drops
+   *                what it was doing for it (Sim.setFocusUnit), and the
+   *                mark wears a bobbing arrow so there is never a question
+   *                of what the board is angry at
+   *   a SHIELD TOWER   — the same mark, on the mutator's structure
+   *   a TOWER    — inspect it (the range ring), as it always has
+   *   nothing    — clear everything: selection and mark alike
+   *
+   * Units first because they are small, moving, and the thing a panicking
+   * player is jabbing at; a tower is big, still, and easy to hit on
+   * purpose. Tapping a tower deliberately KEEPS the mark — inspecting your
+   * own range while the board burns something down is not a change of mind.
+   */
+  private inspectAt(p: { x: number; y: number }): void {
+    const ui = this.sim.unitAt(p.x, p.y);
+    if (ui >= 0) {
+      this.sim.setFocusUnit(ui);
+      this.selected = null;
+      return;
+    }
+    const si = this.sim.shieldTowerAt(p.x, p.y);
+    if (si >= 0) {
+      this.sim.setFocusShieldTower(si);
+      this.selected = null;
+      return;
+    }
+    const t = this.sim.towerAt(p.x, p.y);
+    this.selected = t;
+    if (!t) this.sim.clearFocus();
   }
 
   /** is this world point on the map at all, or out in the void past it? */
@@ -923,6 +963,8 @@ export class Game {
       speed: this.speed,
       showRoutes: this.showRoutes,
       lost: this.sim.lost(),
+      coreHp: this.sim.coreHp,
+      coreHpMax: this.sim.coreHpMax,
       won: this.won(),
       kills: this.sim.kills,
       menuOpen: this.menuOpen,
@@ -1223,6 +1265,30 @@ export class Game {
       c.stroke();
       const selPx = TOWERS[t.kind].size * CELL;
       c.strokeRect(t.gx * CELL + 1, t.gy * CELL + 1, selPx - 2, selPx - 2);
+    }
+
+    // THE FOCUS MARK (Sim.setFocusUnit / setFocusShieldTower): a bobbing red
+    // arrow over the tapped target, so what the board was told to burn is
+    // never a question. Rides sim time, so it holds still under pause and
+    // keeps pace at 4x exactly as its target does
+    const mark = this.sim.focusMark();
+    if (mark) {
+      const bob = Math.sin(this.sim.time * 6) * 3;
+      const ax = mark.x, ay = mark.top - 12 + bob;
+      c.beginPath();
+      c.moveTo(ax, ay + 10); // the tip, pointing down at the target
+      c.lineTo(ax - 8, ay - 2);
+      c.lineTo(ax - 3.5, ay - 2);
+      c.lineTo(ax - 3.5, ay - 11);
+      c.lineTo(ax + 3.5, ay - 11);
+      c.lineTo(ax + 3.5, ay - 2);
+      c.lineTo(ax + 8, ay - 2);
+      c.closePath();
+      c.fillStyle = "#FF5A5A";
+      c.fill();
+      c.strokeStyle = "rgba(24,10,10,0.9)";
+      c.lineWidth = 1.5;
+      c.stroke();
     }
 
     // demolish mode: outline what a press would pull down, so the tool reads

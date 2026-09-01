@@ -23,15 +23,25 @@
  * both of them dials on the rung: see RungKnobs in ladder.ts), and Level 1
  * carries zero of each.
  *
- * IT USED TO BE A PER-WORLD SWITCH (`LevelSpec.mutators`) and that was one
- * gate too many. A map either mutated or it did not, and the difficulty
- * only decided how hard — so the first world could never be made harder
- * and every world after it could never be played straight. Hanging it on
- * the rung instead says the same thing with one number: Level 1 is the
- * campaign as authored, which is where the fleet is still being stood up
- * and a roll on top of that is a wall rather than a challenge. Every step
- * above it is the same script under rules nobody chose, which is ENDGAME
- * RESOURCE FARMING with a roguelike shape.
+ * THE ROLL USED TO BE A PER-WORLD SWITCH (`LevelSpec.mutators`) and that
+ * was one gate too many. A map either mutated or it did not, and the
+ * difficulty only decided how hard — so the first world could never be
+ * made harder and every world after it could never be played straight.
+ * Hanging the roll on the tier instead says the same thing with one
+ * number: Level 1 is the campaign as authored, which is where the fleet is
+ * still being stood up and a roll on top of that is a wall rather than a
+ * challenge. Every step above it is the same script under rules nobody
+ * chose, which is ENDGAME RESOURCE FARMING with a roguelike shape.
+ *
+ * A LEVEL MAY STILL CARRY RULES OF ITS OWN, and that is a different thing
+ * from the switch above. `LevelSpec.intrinsicMutation` is a list of rules
+ * a world is ALWAYS played under — at every tier, the bottom one included
+ * — because they are part of what that world is rather than part of how
+ * hard it is being played. They are never rolled and never charged against
+ * the tier's points (see mutationsInForce and rollMutations' `exclude`).
+ * The old switch said "this map is allowed to mutate, at whatever strength
+ * the difficulty says", which put a level in charge of a difficulty curve;
+ * this says "this map is the shielded one", which is authorship.
  *
  * THE COSTS ARE THE ONLY BALANCE DIAL. A mutator is not "for" a difficulty
  * — it is worth a number of points, and a difficulty can afford it or
@@ -49,7 +59,13 @@
 /** every mutator that exists, by id. The id is what a run spec carries
  *  (LevelSpec.mutation) and what the sim asks about — never the name, and
  *  never an index, so the catalog can be reordered freely */
-export type MutationId = "hungry" | "speedy";
+export type MutationId =
+  | "volatile"
+  | "overshields"
+  | "shieldTowers"
+  | "hungry"
+  | "armored"
+  | "speedy";
 
 export interface MutationDef {
   /** stable key, in the run spec and in the sim's questions */
@@ -97,11 +113,39 @@ export const MUT_COST_MAX = 6;
  */
 export const MUTATIONS: readonly MutationDef[] = [
   {
+    id: "volatile",
+    name: "Volatile",
+    cost: 3,
+    blurb:
+      "Enemies detonate when they die, and the blast scorches your turrets.",
+  },
+  {
+    id: "overshields",
+    name: "Overshields",
+    cost: 3,
+    blurb:
+      "Every force field on the field comes up five times the pool it was, shield tower domes included.",
+  },
+  {
+    id: "shieldTowers",
+    name: "Shield Towers",
+    cost: 4,
+    blurb:
+      "Shield towers rise on the high ground, sheltering the swarm under red domes until they are destroyed.",
+  },
+  {
     id: "hungry",
     name: "Hungry Mechs",
     cost: 4,
     blurb:
       "Hungry mechs eats its neighbours and become stronger with every meal.",
+  },
+  {
+    id: "armored",
+    name: "Armored Swarms",
+    cost: 4,
+    blurb:
+      "The swarm's light bodies walk in plated, and small-calibre fire barely scratches them.",
   },
   {
     id: "speedy",
@@ -130,6 +174,28 @@ for (const m of MUTATIONS) {
 /** the entry for an id, or null for one no build of the game knows */
 export const mutationById = (id: string): MutationDef | null =>
   MUTATIONS.find((m) => m.id === id) ?? null;
+
+/**
+ * EVERY RULE A RUN IS PLAYED UNDER: the ones the LEVEL carries by design
+ * (LevelSpec.intrinsicMutation) and the ones the deploy ROLLED for it
+ * (LevelSpec.mutation), as one clean list in catalog order.
+ *
+ * The two are separate fields and one question. A level's own rules are
+ * part of what that world IS — the naval front is a shielded front at
+ * every tier, including the bottom one, and it is not spending the tier's
+ * points to be — while the roll is what this particular deploy came back
+ * with. Nothing downstream of this call needs to know which is which: the
+ * sim asks what is in force, and the answer is the union.
+ *
+ * IT IS THE ONLY WAY TO ASK. Every entry point that can start a run — the
+ * campaign deploy, the sandbox, the editor's preview, `__ladder.spec` —
+ * goes through here or through the sim, so a level cannot be played
+ * without the rules it was authored with.
+ */
+export const mutationsInForce = (
+  intrinsic: readonly MutationId[] | undefined,
+  rolled: readonly MutationId[] | undefined,
+): MutationId[] => cleanMutations([...(intrinsic ?? []), ...(rolled ?? [])]);
 
 /** is this rule in force for the run? — the sim's one question */
 export const hasMutation = (
@@ -303,16 +369,21 @@ const ROLL_TRIES = 24;
 export function rollMutations(
   budget: number,
   want: number,
+  exclude: readonly MutationId[] = [],
   rand: () => number = Math.random,
 ): MutationId[] {
-  want = Math.min(MUTATIONS.length, Math.max(0, Math.floor(want)));
+  // the rules a level already plays under by design are not in the draw and
+  // are not paid for out of this budget (see mutationsInForce): rolling one
+  // of them would spend points to change nothing
+  const pool = MUTATIONS.filter((m) => !exclude.includes(m.id));
+  want = Math.min(pool.length, Math.max(0, Math.floor(want)));
   if (want === 0 || budget <= 0) return [];
   let best: MutationDef[] = [];
   let bestSpend = -1;
   for (let t = 0; t < ROLL_TRIES; t++) {
     const take: MutationDef[] = [];
     let spent = 0;
-    for (const m of shuffled(MUTATIONS, rand)) {
+    for (const m of shuffled(pool, rand)) {
       if (take.length >= want) break;
       if (spent + m.cost > budget) continue;
       take.push(m);
@@ -405,6 +476,50 @@ export const HUNGRY_REACH = 80;
  *  — the only way to spot one before it has taken its first bite */
 export const HUNGRY_HUE: readonly [number, number, number] = [1, 0.55, 0.86];
 
+// ---------- ARMORED -----------------------------------------------------
+//
+// EVERY TIER 1-3 BODY GAINS ARMORED_ARMOR FLAT ARMOUR. The heavies take
+// none: a fortress and a zenith already carry the plating that matters,
+// and doubling down on them would only make the rule "the same fight, but
+// longer". What it hardens is the SWARM — the bodies the script sends by
+// the thousand and the player kills with the cheap, fast, small-calibre
+// half of the roster.
+//
+// IT USED TO BE A COLUMN OF THE LADDER (RungKnobs.lowTierArmorBonus): +2 a
+// tier from the sixth tier up, landing +10 at the top. That was one dial
+// too many in a place that already has one. Enemy level is the ladder's
+// difficulty and it is arithmetic on the tier index; a second curve that
+// only bit at the top half, only against three unit tiers, and only
+// against small guns, was a mutator wearing a ladder's clothes — so it is
+// a mutator now, rolled like everything else, and the ladder is the level
+// curve and the mutation pair and nothing else.
+//
+// TEN IS THE OLD TOP-TIER VALUE, kept whole rather than re-derived. Armour
+// is a flat shave floored at a tenth of the raw hit (Sim.applyArmor), so
+// the rule is REGRESSIVE BY CALIBRE on purpose: +10 is nothing to a
+// lancer's 140 and 1.55x effective health against a salvo's 28, but it
+// floors a duo's 9 and a scatter's 3 outright — those guns land a tenth of
+// what they print and no more. That asymmetry IS the mutator. It does not
+// say "the swarm is tougher", it says "the cheap guns stop counting", and
+// the answer to it is calibre: bigger emplacements, and an anti-air line
+// that is not built out of pellets.
+//
+// IT IS PRICED AS HEAVY RATHER THAN BRUTAL because that answer exists and
+// is affordable. The board that already holds the run holds it under this
+// rule too, more slowly; the board built entirely out of duo walls and
+// scatters does not, and has to be rebuilt. Rolled early, before the tree
+// has anything with weight behind it, it is the harshest 4 in the catalog
+// — which is the honest reading of a rule whose whole content is "your
+// opening roster is a tenth as good".
+
+/** flat armour added to every unit of tier 3 or below under Armored
+ *  Swarms — applied once at spawn (Sim.spawnUnit), so every armour read
+ *  downstream, the lancer's x4 included, already sees it */
+export const ARMORED_ARMOR = 10;
+
+/** the top unit tier the plating reaches; T4 and T5 never take it */
+export const ARMORED_MAX_TIER = 3;
+
 // ---------- SPEEDY ------------------------------------------------------
 //
 // THE SWARM ARRIVES TWICE AS FAST AND CANNOT BE SLOWED. Two halves of one
@@ -433,3 +548,209 @@ export const HUNGRY_HUE: readonly [number, number, number] = [1, 0.55, 0.86];
 /** the drive-speed multiplier every unit walks in with under Speedy —
  *  applied once at spawn (Sim.spawnUnit), never per tick */
 export const SPEEDY_SPEED = 2;
+
+// ---------- OVERSHIELDS -------------------------------------------------
+//
+// EVERY FORCE FIELD IS FIVE TIMES THE POOL IT WAS — the unit bubbles a
+// quasar walks in with, and the shield tower domes if Shield Towers is rolled
+// alongside. Pool, cap and regen all carry the factor, so a scaled field
+// breaks later, refills proportionally faster, and is dark for exactly the
+// same `cooldown` seconds when it pops.
+//
+// IT USED TO BE A COLUMN OF THE LADDER (RungKnobs.shieldScale): 1.00 at the
+// bottom compounding to 5.00 at the top, on the reasoning that a shield is
+// measured in SECONDS OF ABSORBED TOWER FIRE and so has to track the
+// player's firepower rather than the health curve. That reasoning was
+// sound and it is exactly why this is a mutator rather than a deleted
+// feature — but as a per-tier column it was a second difficulty curve
+// nobody could see, bending one unit kind's bubble by an amount no screen
+// ever printed. As a rule it is legible: it is named, it is on the card
+// before Deploy, and it is either in force or it is not.
+//
+// FIVE IS THE OLD TOP-TIER VALUE, kept whole rather than re-derived.
+//
+// WHAT IT COSTS THE PLAYER IS TIME, NOT BODIES. A shield adds no health to
+// the audit arithmetic and no bodies to the script; it delays the damage a
+// board was already going to do, which is the same audit-invisible
+// currency Speedy and Volatile tax. Priced at 3 because the swarm's force
+// fields are carried by one kind — a quasar's bubble shelters what stands
+// near it — so a board that can break one is inconvenienced rather than
+// beaten. Rolled beside Shield Towers it is worth considerably more than
+// three, and that is the catalog working as intended: rules that compound
+// are what a big budget is FOR.
+
+/** the multiplier every shield pool, cap and regen carries under
+ *  Overshields — read once per run (Sim.reset), never per tick */
+export const OVERSHIELD_SCALE = 5;
+
+// ---------- VOLATILE ----------------------------------------------------
+//
+// EVERY ENEMY DETONATES WHEN IT DIES, AND THE BLAST DAMAGES TOWERS. This
+// is the rule that turns tower health (towerMaxHp in constants.ts) from a
+// dead field into a mechanic: nothing else in the game hurts a tower.
+//
+// IT TAXES POINT-BLANK PLAY SPECIFICALLY. A blast reaches under two cells,
+// so only the emplacements built against the lane — scorch, fuse, arc, a
+// duo wall on the choke — ever feel it, and they feel it in proportion to
+// how many bodies die at their feet. A long-range board is untouched. That
+// asymmetry is the design: the mutator does not say "your towers take
+// damage", it says "the kill zone cannot also be the front row", which is
+// a layout problem rather than a stat problem.
+//
+// A DOWNED TOWER IS SECONDS, NOT SALVAGE. The tower stands back up at full
+// health after TOWER_DOWN_TIME, so what a swarm of detonating daggers
+// costs the player is windows of silence in the kill zone — the same
+// currency Speedy taxes, invisible to the audit arithmetic in exactly the
+// same way, and priced lighter because a well-spread board barely pays it.
+//
+// THE DAMAGE SCALES WITH THE BODY'S TIER, NOT ITS LEVEL. Tier is the
+// currency ladder (UNIT_STATS.tier, 1-5): a dagger's pop is a scratch and
+// a fortress's is a real dent, at every difficulty alike. Scaling with
+// level would make the rule unpayable at Level 10 for the same reason
+// armour is never level-scaled — tower health does not climb the ladder,
+// so neither may the thing that spends it.
+
+/** blast reach from the dead body's centre, in px (1.75 cells of 20) —
+ *  plus the body's own hitbox radius, so a fortress's boom is wider than
+ *  a flare's. A literal rather than CELL because this file deliberately
+ *  imports nothing */
+export const VOLATILE_RADIUS = 35;
+
+/** blast damage to each tower in reach, by the dead unit's tier (index 0
+ *  unused). Tier 4-5 bodies are bosses and boss-adjacent — their deaths
+ *  are the run's punctuation marks and should feel like it */
+export const VOLATILE_DMG: readonly number[] = [0, 12, 30, 70, 150, 300];
+
+// ---------- SHIELD TOWERS ----------------------------------------------
+//
+// SHIELD TOWERS RISE MID-RUN AND SHELTER THE SWARM UNTIL THEY FALL. Every
+// so often a 3x3 shield tower emerges somewhere on the map and stands a RED
+// force dome over the ground around it: any of the player's projectiles
+// crossing the dome is absorbed into its shield pool, so the enemies
+// walking under it are safe from projectile fire until the pool is broken
+// — and the dome REFORMS WHOLE whenever it is left alone for
+// SHIELD_TOWER_SHIELD_DELAY. Only with the
+// dome down can the shield tower's body be hurt, and a destroyed shield tower is GONE
+// FOR GOOD; another rises elsewhere on the timer. Instant weapons —
+// lancer, arc, fuse, foreshadow, meltdown's held beam — are not absorbed,
+// exactly as unit force fields never absorb them: aimed at the shield tower
+// they damage shield first, then body, which quietly makes the beam
+// roster the shield tower-breaking roster.
+//
+// IT RISES ON TURRET GROUND, AND THAT IS THE WHOLE COST. A shield tower only
+// ever lands on BUILDABLE ROCK — the same highground a turret needs, and
+// never on the lanes — so it takes no pathing decision away from the
+// swarm and every emplacement away from the player. The dome still hangs
+// over the road beside it, which is where the sheltering happens; what
+// the footprint costs is somewhere to shoot from.
+//
+// AND A SHIELD TOWER THAT LANDS OVER TOWERS ENTOMBS THEM: a buried turret is
+// disabled, not destroyed, untouchable, and stands back up the moment the
+// shield tower dies. "My scorch is hostage under that dome" is an objective,
+// not a loss; nothing the player owns is ever taken permanently.
+//
+// TURRETS CHEW SHIELD TOWERS ONLY WHEN IDLE — a turret with nothing else in
+// range spends its reload on one, so clearing a shield tower costs time between
+// waves and never mid-wave DPS. The player can TAP a shield tower (or any
+// enemy) to focus it, forcing every turret in range onto it: spending
+// mid-wave DPS on the dome becomes a choice with a cost, which is the
+// whole game of the rule.
+//
+// BOTH POOLS RIDE THE RUN'S SHIELD MULTIPLIER, which is to say they are
+// five times these numbers when Overshields is in force and exactly these
+// numbers otherwise. They used to ride the TIER's shield scale, so a
+// shield tower grew with the ladder on its own; what makes one a real obstacle
+// late now is the wave (SHIELD_TOWER_MEGA_WAVE) and the company it is rolled
+// with. Like every rule here it is invisible to the audit arithmetic: it
+// adds no bodies and no health, it just makes the player's damage arrive
+// later.
+//
+// px literals below assume CELL = 20; this file deliberately imports
+// nothing (see VOLATILE_RADIUS).
+
+/** the footprint's edge, in cells — always square */
+export const SHIELD_TOWER_SIZE = 3;
+/** the hittable body, from the shield tower's centre (1.4 cells) */
+export const SHIELD_TOWER_BODY_R = 28;
+/** the dome the shield pass draws and the absorb sweep tests (8 cells) */
+export const SHIELD_TOWER_DOME_R = 160;
+/**
+ * Body pool, before the tier's shield scale.
+ *
+ * IT IS FOUR TIMES THE DOME'S, and that ratio is the rule's whole pacing.
+ * The dome is the part that comes back: every hit — on either pool —
+ * restarts SHIELD_TOWER_SHIELD_DELAY, so a board pouring fire into a shield tower
+ * holds the dome suppressed and grinds the body down, while a board that
+ * looks away for four seconds finds the whole dome back. A body that dies
+ * quickly never gives that trade a chance to happen: the dome pops, a
+ * couple of volleys finish the structure, and SHIELD_TOWER_SHIELD_DELAY below
+ * never gets to matter. A long body is what turns the shield tower into an
+ * objective you have to COMMIT to — break off to deal with a wave and you
+ * come back to a dome to break twice.
+ */
+export const SHIELD_TOWER_HP = 12000;
+/** dome pool, before the tier's shield scale */
+export const SHIELD_TOWER_SHIELD = 3000;
+/**
+ * SECONDS OF PEACE BEFORE THE DOME COMES BACK — WHOLE, not by degrees.
+ *
+ * It used to be a regen DELAY in front of a trickle (90 shield a second,
+ * so a broken dome took half a minute to mean anything), and a trickle is
+ * the wrong shape for this: a dome at 12% is not a weaker obstacle, it is
+ * one more volley, so every second of that climb played exactly like no
+ * dome at all. Reforming whole makes the rule binary the way the player
+ * experiences it — the dome is either up and eating your shots or it is
+ * not — and puts the decision where it belongs: BREAK OFF FOR FOUR
+ * SECONDS AND YOU PAY FOR THE WHOLE DOME AGAIN.
+ *
+ * Any hit on EITHER pool restarts this clock, so sustained fire holds a
+ * shield tower open while it is ground down, and the moment a wave pulls the
+ * board's attention away the shield tower seals itself back up.
+ */
+export const SHIELD_TOWER_SHIELD_DELAY = 4;
+/**
+ * Seconds between one shield tower rising and the next trying to. There is no
+ * opening grace: the first attempt lands on the run's first tick, so a
+ * board is choosing where to build around a shield tower from the start rather
+ * than laying out a defence and having one dropped into it later.
+ */
+export const SHIELD_TOWER_SPAWN_PERIOD = 30;
+/**
+ * Shield Towers standing at once, at most — the timer idles at the cap.
+ *
+ * TWENTY, WHICH IS A LANDSCAPE RATHER THAN AN EVENT. At three the rule
+ * was a handful of objectives to clear; at twenty, and only ever on
+ * BUILDABLE ROCK (see the spot roller in sim.ts), the shieldTowers are
+ * competing with the player for the same real estate the turrets want.
+ * The cost stops being "go and break that" and becomes "there is nowhere
+ * left to stand", which is a far better fit for a rule that never touches
+ * the swarm's health.
+ */
+export const SHIELD_TOWER_MAX_ALIVE = 20;
+
+// ---------- THE MEGA SHIELD TOWER --------------------------------------
+//
+// PAST WAVE 35 THE SHIELD TOWERS STOP BEING A CHORE AND BECOME A WALL. Same
+// rule, same regen, five times the pools and a dome four times the area —
+// sixteen tiles across, which is wider than most turrets can reach from
+// one emplacement and therefore a thing a whole SECTION of the board has
+// to be pointed at rather than whatever happened to be idle.
+//
+// IT IS A LATE-RUN ANSWER TO A LATE-RUN BOARD. A wave-35 defence is
+// upgraded, dense and largely automatic; a 60,000-point dome that reforms
+// whole every four seconds is one of the few things left that can make it
+// stop and choose. The threshold is the WAVE, not the tier, because what
+// it is scaling against is how built-out the player is — and the pools
+// still ride the tier's shield scale on top, exactly as the ordinary
+// shield tower's do.
+
+/** the wave from which every new shield tower rises as a mega shield tower */
+export const SHIELD_TOWER_MEGA_WAVE = 35;
+/** what a mega shield tower multiplies both pools by */
+export const SHIELD_TOWER_MEGA_SCALE = 5;
+/** its dome, in px (16 cells) — four times the ordinary dome's area */
+export const SHIELD_TOWER_MEGA_DOME_R = 320;
+/** the dome's colour — RED, deliberately not the amber of friendly
+ *  shields: amber means "the swarm is protected by one of its own", red
+ *  means "the RULE is protecting them", and the two must never read alike */
+export const SHIELD_TOWER_COL: readonly [number, number, number] = [1.0, 0.36, 0.36];

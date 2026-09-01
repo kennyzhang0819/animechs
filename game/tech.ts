@@ -73,6 +73,7 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  */
 export const UTILITY_KINDS = [
   "home",
+  "core-hp",
   "speed-2",
   "speed-4",
   "speed-8",
@@ -118,11 +119,31 @@ export const NODE_SPEED: Readonly<Partial<Record<UtilityKind, number>>> = {
  */
 export const BASE_BAR_SLOTS = 6;
 
+/**
+ * THE CORE'S HEALTH: what it starts with, and how much plating can be
+ * bolted onto it.
+ *
+ * ONE POINT IS THE STOCK CORE, and that is the game as it has always
+ * played: a single leak ends the run. The plating node (core-hp) is what
+ * turns that into a resource — every point is one more body the board may
+ * let through and still hold — and the two numbers add up to a round
+ * hundred at the top so the HUD reads as a percentage without ever having
+ * been one.
+ */
+export const CORE_HP_BASE = 1;
+export const CORE_HP_CAP = 99;
+export const CORE_HP_MAX = CORE_HP_BASE + CORE_HP_CAP;
+
 /** what each utility node is called, and what owning it does */
 export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: string }>> = {
   home: {
     name: "Home",
     blurb: "The root of the tree. Turrets run down the middle, utilities off to the side.",
+  },
+  "core-hp": {
+    name: "Core Plating",
+    blurb:
+      "One more point of core health a point. A run is won while the core still stands — but a boss that reaches it ends the run whatever is left.",
   },
   "speed-2": { name: "2x Speed", blurb: "Run the whole simulation at double pace." },
   "speed-4": { name: "4x Speed", blurb: "Quadruple pace — a wave gap stops being a wait." },
@@ -1163,6 +1184,34 @@ const CORE_TREE: readonly TechNodeDef[] = [
   // does not do.
   //
   {
+    /**
+     * CORE PLATING — the one node that buys MISTAKES.
+     *
+     * A core starts on a single point of health (CORE_HP_BASE), so one
+     * leaked body ends the run. Every point here is one more, to a hundred
+     * (CORE_HP_CAP + the base), and the run is won for as long as any of
+     * them are left.
+     *
+     * IT IS THE ONLY FORGIVENESS IN THE GAME and that is why it is priced
+     * like a turret branch rather than like the one-point switches beside
+     * it. The FIRST point is the one that matters most — it is the
+     * difference between a perfect run and a run — so the curve climbs from
+     * a bundle a mid-campaign save can already afford, and the hundredth
+     * point is a whole campaign's banking.
+     *
+     * A BOSS IS NOT COVERED BY IT, deliberately (see Sim's leak handler). A
+     * hundred points of plating that let a player shrug off the one enemy
+     * the script builds towards would turn the boss into a formality; it is
+     * armour against the swarm and against nothing else.
+     */
+    id: "core-hp",
+    price: { base: { copper: 1200, titanium: 320, thorium: 120 }, growth: 1.05 },
+    requires: "home",
+    cap: CORE_HP_CAP,
+    x: 2,
+    y: -1,
+  },
+  {
     // THE PROJECTOR'S RESERVATION. The block is not in the game yet — this
     // node is its price and its place in the tree, bought ahead of the
     // implementation so the phase sink exists now. When the block ships,
@@ -1201,10 +1250,24 @@ const CORE_TREE: readonly TechNodeDef[] = [
  * THE CLIMB IS STEEP ON THE DIALS AND FLAT ON THE ONE-SHOTS. A stacking
  * multiplier on a growing army is worth MORE every time the army grows —
  * the one shape the tree's near-flat SHARED_GROWTH cannot price — so the
- * dials climb at 1.25 and 1.35. A one-shot has no ladder to climb.
+ * dials climb hard and a one-shot has no ladder to climb at all.
+ *
+ * THE PRICE IS AUTHORED AGAINST A REFERENCE CAP AND RE-CUT FOR THE REAL
+ * ONE. These numbers were written when every tier-1 rung took 15 points
+ * and every tier-2 rung took 10, and they still mean exactly that; a rung
+ * that now takes a hundred (CAP_DIAL) gets the same total spread over more
+ * clicks, at a base and a climb derived below rather than typed twice.
+ *
+ * SO WIDENING A RUNG COSTS THE PLAYER NOTHING AND DISCOUNTS THEM NOTHING.
+ * The same +5% attack speed costs what it always did; it is simply seven
+ * purchases instead of one. And a COUNTING rung (CAP_COUNT, where a point
+ * is a whole body pierced) keeps the authored curve untouched, because its
+ * cap is the one the price was written for.
  */
 const UPGRADE_SCALE: readonly number[] = [0, 20, 90, 900];
 const UPGRADE_GROWTH: readonly number[] = [0, 1.25, 1.35, 1];
+/** the point count each tier's numbers above were authored against */
+const UPGRADE_REF_CAP: readonly number[] = [0, 15, 10, 1];
 
 /**
  * WHAT AN ULTIMATE COSTS, IN SURGE ALLOY AND NOTHING ELSE, indexed by the
@@ -1250,7 +1313,11 @@ const bandOfCost = (base: Cost): number => {
  * one later belongs here beside them.
  */
 const AUTHORED_UPGRADE_PRICE: Partial<Record<UpgradeKind, PriceCurve>> = {
-  "duo-rof": { base: { copper: 250, titanium: 65, thorium: 25 }, growth: 1.25 },
+  // duo-rof takes a hundred points, so its bundle is the twenty-point one
+  // re-cut by hand the way reCut does it for everything else: a fifth of
+  // the base at the fifth root of the climb. duo-pierce COUNTS bodies and
+  // still takes ten, so its authored bundle stands as written.
+  "duo-rof": { base: { copper: 46, titanium: 12, thorium: 5 }, growth: 1.0456 },
   "duo-pierce": { base: { copper: 1200, titanium: 325, thorium: 120 }, growth: 1.4 },
   "duo-graphite": {
     base: { copper: 60000, titanium: 16000, thorium: 6000, plastanium: 420 },
@@ -1258,16 +1325,46 @@ const AUTHORED_UPGRADE_PRICE: Partial<Record<UpgradeKind, PriceCurve>> = {
   },
 };
 
+/**
+ * SPREAD A TIER'S AUTHORED PRICE OVER A DIFFERENT NUMBER OF POINTS, without
+ * changing what the whole rung costs.
+ *
+ * The climb takes the r-th root, so `growth^cap` is exactly what
+ * `authored^ref` was — the last point costs the same multiple of the first
+ * that it always did. Then the base is scaled by the ratio of the two
+ * climbs' step sizes, which is what makes the SUMS equal and not merely
+ * similar: a geometric series is base x (g^n - 1)/(g - 1), the numerators
+ * are now identical, so matching (g - 1) matches the totals exactly.
+ *
+ * A CAP SHORTER THAN THE REFERENCE IS LEFT ALONE (the clamp). Those are the
+ * counting rungs, whose cap is the count and whose price was authored
+ * against exactly that — a "re-cut" there would be inventing a change
+ * nobody asked for.
+ */
+function reCut(scale: number, growth: number, cap: number, ref: number) {
+  const r = Math.max(1, cap / ref);
+  if (r === 1) return { scale, growth };
+  if (growth === 1) return { scale: scale / r, growth };
+  const g = growth ** (1 / r);
+  return { scale: scale * ((g - 1) / (growth - 1)), growth: g };
+}
+
 /** the price curve one rung charges — the authored bundle, or the rule */
 function upgradePrice(def: TurretUpgradeDef, turretBase: Cost): PriceCurve {
   const authored = AUTHORED_UPGRADE_PRICE[def.id];
   if (authored) return authored;
   if (def.tier >= ULTIMATE_TIER)
     return { base: { "surge-alloy": ULTIMATE_SURGE[bandOfCost(turretBase)] }, growth: 1 };
+  const cut = reCut(
+    UPGRADE_SCALE[def.tier],
+    UPGRADE_GROWTH[def.tier],
+    def.cap,
+    UPGRADE_REF_CAP[def.tier],
+  );
   const base: Cost = {};
   for (const { item, amount } of costEntries(turretBase))
-    base[item] = tidy(amount * UPGRADE_SCALE[def.tier]);
-  return { base, growth: UPGRADE_GROWTH[def.tier] };
+    base[item] = tidy(amount * cut.scale);
+  return { base, growth: round4(cut.growth) };
 }
 
 /**
@@ -1429,6 +1526,8 @@ export interface TechState {
   barSlots: number;
   /** every turret's upgrade branch as bought, points per rung */
   upgrades: Record<TowerKind, UpgradePoints>;
+  /** how many bodies the core survives — CORE_HP_BASE plus the plating */
+  coreHp: number;
 }
 
 /**
@@ -1460,5 +1559,17 @@ export function techState(levels: TechLevels, off?: ReadonlySet<TechKind>): Tech
     BASE_BAR_SLOTS +
     ((levels["slot-7"] ?? 0) > 0 ? 1 : 0) +
     ((levels["slot-8"] ?? 0) > 0 ? 1 : 0);
-  return { unlocked, caps, speeds, barSlots, upgrades: allUpgradePointsOf(levels, off) };
+  // The plating reads `off` for the same reason everything else does: the
+  // switch is what decides whether points DO anything, and one node that
+  // ignored it would be a node whose "switched off" card lied. It has no
+  // toggle on the board today, so this is the guard rather than the path.
+  const plating = off?.has("core-hp") ? 0 : Math.max(0, Math.floor(levels["core-hp"] ?? 0));
+  return {
+    unlocked,
+    caps,
+    speeds,
+    barSlots,
+    upgrades: allUpgradePointsOf(levels, off),
+    coreHp: CORE_HP_BASE + Math.min(CORE_HP_CAP, plating),
+  };
 }

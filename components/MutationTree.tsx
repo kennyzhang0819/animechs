@@ -63,11 +63,26 @@ export const MUT_LIT = "#FF8ACB";
 export const MUT_GLYPH = "M12 2 4 9h5v2H4l8 7 8-7h-5V9h5z";
 /** a disc with a wedge bitten out of it — Hungry's maw */
 const HUNGER_GLYPH = "M12 2a10 10 0 1 0 8.66 15L12 12l8.66-5A9.98 9.98 0 0 0 12 2z";
+/** an eight-point burst — Volatile's detonation */
+const VOLATILE_GLYPH =
+  "M12 1l2 6 5-3-3 5 6 2-6 2 3 5-5-3-2 6-2-6-5 3 3-5-6-2 6-2-3-5 5 3z";
+/** a dome on a base — the Shield Towers' silhouette */
+const SHIELD_TOWER_GLYPH = "M4 14a8 8 0 0 1 16 0v2H4zM6 18h12v3H6z";
+/** a hexagonal bubble, doubled — Overshields' force field */
+const OVERSHIELD_GLYPH =
+  "M12 1 2.5 6.5v11L12 23l9.5-5.5v-11zm0 2.3 7.5 4.34v8.72L12 20.7l-7.5-4.34V7.64zm0 3.2L7.3 9.2v5.6l4.7 2.7 4.7-2.7V9.2z";
+/** a shield with a plate seam across it — Armored Swarms */
+const ARMORED_GLYPH =
+  "M12 1.5 3.5 4.5v7c0 5 3.6 9.3 8.5 11 4.9-1.7 8.5-6 8.5-11v-7zM5.3 10.2h13.4v2.2H5.3z";
 
 /** the face a mutator wears on its card, as a path; MUT_GLYPH is the
  *  fallback, so a rule added without art still draws as something */
 const MUT_FACE: Record<string, string> = {
   hungry: HUNGER_GLYPH,
+  volatile: VOLATILE_GLYPH,
+  shieldTowers: SHIELD_TOWER_GLYPH,
+  armored: ARMORED_GLYPH,
+  overshields: OVERSHIELD_GLYPH,
 };
 
 /**

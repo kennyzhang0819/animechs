@@ -179,6 +179,25 @@ export const UV_SCORCH = uv(288, 1056, 64, 64);
 // by the dozen in every flame effect. UV_SOLID cannot stand in for it — a
 // square particle reads as a pixel cloud, not a tongue of fire
 export const UV_DISC = uv(384, 1024, 64, 64);
+/**
+ * A BIG smooth disc, 256px, for the shield domes (the Shield Towers
+ * mutator) — the same shape as UV_DISC and nothing like the same
+ * resolution.
+ *
+ * The atlas magnifies with NEAREST, deliberately: it is pixel art and the
+ * whole roster wants crisp texels when zoomed in. A dome is the one thing
+ * drawn through it that is NOT pixel art — it is a smooth curve blown up
+ * to sixteen tiles across — so the 64px disc reaches it at 5x
+ * magnification and its edge arrives as a staircase of eight-pixel steps.
+ * At 256px the biggest dome in the game is a 1.25x blow-up and the
+ * smallest is a MINIFICATION, which takes the mipmap path and comes out
+ * smoother still.
+ *
+ * Its own edge is drawn antialiased into the atlas canvas, so what the
+ * shield shader's edge detect sees is a clean alpha ramp rather than a
+ * hard step — which is what the rim is traced around.
+ */
+export const UV_DISC_BIG = uv(1472, 2944, 256, 256);
 // mechanical spawn-pad tile — currently unused: drop zones are shown as
 // overlay circles, and no terrain pass paints spawn cells any more
 export const UV_SPAWN = uv(0, 192, 64, 64, 2);
@@ -548,6 +567,15 @@ export const UV_SPECTRE = uv(1440, 2816, 128, 128);
 export const UV_MELTDOWN = uv(1600, 2816, 128, 128);
 export const UV_FORESHADOW = uv(1760, 2816, 128, 128);
 export const UV_TOWER_BASE4 = uv(1152, 2976, 128, 128);
+
+/**
+ * The shield tower (the Shield Towers mutator, mutation.ts): Mindustry's
+ * force projector, 96px of 3x3 block art at native scale, on the free
+ * stretch right of block-4. It never rotates — the renderer draws it
+ * axis-aligned over its footprint like a tower base — and it is outlined
+ * like every other block so it reads as a built thing, not floor decor.
+ */
+export const UV_SHIELD_TOWER = uv(1312, 2976, 96, 96);
 
 export const UV_CRAWLER_LEG = uv(448, 288, 64, 64);
 export const UV_CRAWLER_BASE = uv(512, 288, 64, 64);
@@ -1183,6 +1211,9 @@ const SPRITES = {
   // parallax is filed under defense, not turrets — it damages almost
   // nothing and Mindustry classes it with the support blocks
   parallax: "/mindustry/sprites/blocks/defense/parallax.png",
+  // the shield tower wears the force projector's art — the one Mindustry
+  // block whose whole job is standing a dome, which is this structure's too
+  shieldTower: "/mindustry/sprites/blocks/defense/force-projector.png",
   towerBase4: "/mindustry/sprites/blocks/turrets/bases/block-4.png",
   swarmer: "/mindustry/sprites/blocks/turrets/swarmer.png",
   // cyclone's own art is the bare head; its three barrels are separate
@@ -1871,6 +1902,14 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.arc(416, 1056, 27, 0, TAU);
   c.fill();
 
+  // the shield domes' disc (1472,2944) — the same shape at 256px, with a
+  // 4px inset so the antialiased rim keeps clear of the cell edge and no
+  // mip level can drag a neighbour into it (see UV_DISC_BIG)
+  c.fillStyle = "#ffffff";
+  c.beginPath();
+  c.arc(1600, 3072, 124, 0, TAU);
+  c.fill();
+
   // turret base: 64px block-2 upscaled 2x into a 128px cell
   c.drawImage(antialiased(img.towerBase), 64, 128, 128, 128);
 
@@ -1918,6 +1957,10 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   drawFacingRight(c, antialiased(outlined(img.foreshadow, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1824, 2880, 128);
   // ...and the 4x4 base under the last three, at native 128px like block-3
   c.drawImage(antialiased(img.towerBase4), 1152, 2976, 128, 128);
+  // the shield tower beside it, native 96px, outlined like the blocks —
+  // NOT drawFacingRight: the structure never rotates, so its art stays
+  // exactly as authored
+  c.drawImage(antialiased(outlined(img.shieldTower, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1312, 2976, 96, 96);
 
   // duo top and 1x1 base: 32px sources upscaled 2x into 64px cells
   drawFacingRight(c, antialiased(outlined(img.duoPreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 160, 480, 64);

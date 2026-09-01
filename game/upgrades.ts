@@ -302,14 +302,59 @@ const then = (
 /** percent, as the cards print it */
 const pct = (n: number): string => `${Math.round(n * 100)}%`;
 
-/** a stacking dial: the same per-point multiplier and the same sentence */
+/**
+ * HOW MANY POINTS A STACKING DIAL TAKES.
+ *
+ * It was fifteen or twenty, and one click was worth four to six per cent.
+ * A hundred clicks worth half a per cent each is the same node — the same
+ * total, the same price for the same effect (see UPGRADE_GROWTH in
+ * tech.ts) — and it plays completely differently, because the thing a
+ * player is actually buying on this board is PROGRESS and a dial with
+ * fifteen stops runs out of it in an afternoon.
+ *
+ * NOT EVERY RUNG TAKES A HUNDRED. A bullet swap and an ultimate are still
+ * bought once (cap 1): they change what the turret IS rather than how much
+ * of it there is, and there is no such thing as forty per cent of graphite
+ * ammunition.
+ */
+export const CAP_DIAL = 100;
+
+/**
+ * A COUNTING RUNG TAKES FAR FEWER POINTS, AND EACH ONE IS A WHOLE STEP.
+ *
+ * Some rungs count things - bodies punched through, lightning nodes
+ * walked, degrees of cone - and a hundredth of a body is not a thing.
+ * These briefly ran at CAP_DIAL with a step every tenth point, and that
+ * was the wrong trade in both directions: nine clicks in ten changed
+ * nothing the player could see, and the tenth did what one click used to.
+ * Padding a count out to a hundred adds no progress, it only hides it.
+ *
+ * SO A COUNT IS BOUGHT ONE AT A TIME and the cap is the count. What the
+ * hundred-point dials buy is the illusion of a long climb on a number
+ * where an extra half a per cent is genuinely worth something; a body
+ * pierced is not that number, and nine clicks that do nothing are not
+ * progress however many of them there are.
+ */
+const CAP_COUNT = 10;
+/** the two rungs whose count is worth more per step, so they stop sooner */
+const CAP_COUNT_SHORT = 8;
+
+/**
+ * A STACKING DIAL, AND THE NUMBER IN IT IS WHAT THE NODE IS WORTH AT FULL
+ * — not what one click hands over.
+ *
+ * That is deliberate and it is the whole reason this reads. A per-click
+ * figure was legible when a dial had fifteen stops; at a hundred it is a
+ * crumb (0.006) that says nothing about the node and cannot be compared
+ * with the node beside it. "Sixty per cent attack speed, fully bought" can.
+ */
 const dial = (
-  per: number,
+  total: number,
   label: string,
   build: (s: TowerStats, mul: number) => TowerStats,
 ): Pick<TurretUpgradeDef, "apply" | "effect"> => ({
-  apply: (s, n) => build(s, 1 + per * n),
-  effect: (n) => `+${pct(per * n)} ${label}`,
+  apply: (s, n) => build(s, 1 + (total / CAP_DIAL) * n),
+  effect: (n) => `+${pct((total / CAP_DIAL) * n)} ${label}`,
 });
 
 // ---------------------------------------------------------------------------
@@ -322,10 +367,10 @@ const DUO: readonly TurretUpgradeDef[] = [
     turret: "duo",
     tier: 1,
     name: "Rate of Fire",
-    blurb: "Every duo on the board fires 5% faster per point, up to twice its stock rate.",
+    blurb: "Every duo on the board fires faster — up to twice its stock rate, fully bought.",
     glyph: "rate",
-    cap: 20,
-    ...dial(0.05, "attack speed", faster),
+    cap: CAP_DIAL,
+    ...dial(1.0, "attack speed", faster),
   },
   {
     id: "duo-pierce",
@@ -334,7 +379,7 @@ const DUO: readonly TurretUpgradeDef[] = [
     name: "Pierce",
     blurb: "Each point lets a duo's shot punch through one more body before it is spent.",
     glyph: "pierce",
-    cap: 10,
+    cap: CAP_COUNT,
     // PIERCE IS A CAP, NOT A FLAG. A stock duo bullet has no `pierce` at
     // all, which the sim reads as "spent on the first body". One point
     // turns pierce on with a cap of two, so "+1 pierce" is one EXTRA body,
@@ -404,10 +449,10 @@ const SCATTER: readonly TurretUpgradeDef[] = [
     turret: "scatter",
     tier: 1,
     name: "Belt Loader",
-    blurb: "A shorter cycle between bursts — 4% more flak in the air per point.",
+    blurb: "A shorter cycle between bursts — 60% more flak in the air, fully bought.",
     glyph: "rate",
-    cap: 15,
-    ...dial(0.04, "attack speed", faster),
+    cap: CAP_DIAL,
+    ...dial(0.6, "attack speed", faster),
   },
   {
     id: "scatter-fuse",
@@ -416,9 +461,9 @@ const SCATTER: readonly TurretUpgradeDef[] = [
     name: "Proximity Fuse",
     blurb: "The shell goes off further from what set it off, and the blast reaches further still.",
     glyph: "homing",
-    cap: 10,
-    apply: (s, n) => wider(fusedAt(s, 1 + 0.08 * n), 1 + 0.04 * n),
-    effect: (n) => `+${pct(0.08 * n)} fuse range, +${pct(0.04 * n)} blast`,
+    cap: CAP_DIAL,
+    apply: (s, n) => wider(fusedAt(s, 1 + 0.008 * n), 1 + 0.004 * n),
+    effect: (n) => `+${pct(0.008 * n)} fuse range, +${pct(0.004 * n)} blast`,
   },
   {
     id: "scatter-metaglass",
@@ -444,22 +489,25 @@ const ARC: readonly TurretUpgradeDef[] = [
     name: "Overcharged Coils",
     blurb: "Six per cent more current down the bolt for every point.",
     glyph: "damage",
-    cap: 15,
-    ...dial(0.06, "damage", stronger),
+    cap: CAP_DIAL,
+    ...dial(0.9, "damage", stronger),
   },
   {
     id: "arc-reach",
     turret: "arc",
     tier: 2,
     name: "Extended Arcs",
-    blurb: "The bolt walks two more nodes per point before it dies — a longer file, further back.",
+    blurb: "The bolt walks one more node per point before it dies — a longer file, further back.",
     glyph: "range",
-    cap: 10,
+    cap: CAP_COUNT,
     apply: (s, n) =>
       withBullet(s, {
         lightning: { length: (s.bullet.lightning?.length ?? 0) + 2 * n },
       }),
-    effect: (n) => `Bolt walks ${Math.floor(((TOWERS.arc.bullet.lightning?.length ?? 0) + 2 * n) / 2)} nodes`,
+    effect: (n) =>
+      `Bolt walks ${Math.floor(
+        ((TOWERS.arc.bullet.lightning?.length ?? 0) + 2 * n) / 2,
+      )} nodes`,
   },
   {
     id: "arc-ionised",
@@ -500,20 +548,20 @@ const HAIL: readonly TurretUpgradeDef[] = [
     turret: "hail",
     tier: 1,
     name: "Rifled Bore",
-    blurb: "Four per cent off the reload per point — a shell a second is the ceiling.",
+    blurb: "Sixty per cent off the reload, fully bought — a shell a second is the ceiling.",
     glyph: "rate",
-    cap: 15,
-    ...dial(0.04, "attack speed", faster),
+    cap: CAP_DIAL,
+    ...dial(0.6, "attack speed", faster),
   },
   {
     id: "hail-charge",
     turret: "hail",
     tier: 2,
     name: "Bigger Charge",
-    blurb: "More propellant behind the shell: the blast widens 5% a point.",
+    blurb: "More propellant behind the shell: the blast widens by half, fully bought.",
     glyph: "splash",
-    cap: 10,
-    ...dial(0.05, "blast radius", wider),
+    cap: CAP_DIAL,
+    ...dial(0.5, "blast radius", wider),
   },
   {
     id: "hail-incendiary",
@@ -539,21 +587,21 @@ const SCORCH: readonly TurretUpgradeDef[] = [
     turret: "scorch",
     tier: 1,
     name: "Pressure Feed",
-    blurb: "Five per cent more reach per point, on the turret whose only real fault is its reach.",
+    blurb: "Three quarters more reach, fully bought, on the turret whose only real fault is its reach.",
     glyph: "range",
-    cap: 15,
-    ...dial(0.05, "range", reaching),
+    cap: CAP_DIAL,
+    ...dial(0.75, "range", reaching),
   },
   {
     id: "scorch-fuel",
     turret: "scorch",
     tier: 2,
     name: "Rich Fuel",
-    blurb: "Six tenths of a second longer burning per point — and burning ignores armour.",
+    blurb: "Six more seconds of burning, fully bought — and burning ignores armour.",
     glyph: "burn",
-    cap: 10,
-    apply: (s, n) => withBullet(s, { burn: (s.bullet.burn ?? 0) + 0.6 * n }),
-    effect: (n) => `Burns for ${((TOWERS.scorch.bullet.burn ?? 0) + 0.6 * n).toFixed(1)}s`,
+    cap: CAP_DIAL,
+    apply: (s, n) => withBullet(s, { burn: (s.bullet.burn ?? 0) + 0.06 * n }),
+    effect: (n) => `Burns for ${((TOWERS.scorch.bullet.burn ?? 0) + 0.06 * n).toFixed(1)}s`,
   },
   {
     id: "scorch-pyratite",
@@ -577,10 +625,10 @@ const SALVO: readonly TurretUpgradeDef[] = [
     turret: "salvo",
     tier: 1,
     name: "Autoloader",
-    blurb: "Four per cent off the wait between volleys per point.",
+    blurb: "Sixty per cent off the wait between volleys, fully bought.",
     glyph: "rate",
-    cap: 15,
-    ...dial(0.04, "attack speed", faster),
+    cap: CAP_DIAL,
+    ...dial(0.6, "attack speed", faster),
   },
   {
     id: "salvo-pierce",
@@ -589,7 +637,7 @@ const SALVO: readonly TurretUpgradeDef[] = [
     name: "Piercing Rounds",
     blurb: "Hardened cores: each point takes one more body out of a file per shell.",
     glyph: "pierce",
-    cap: 8,
+    cap: CAP_COUNT_SHORT,
     apply: (s, n) => piercing(s, n),
     effect: (n) => `Shells punch through ${1 + n} bodies`,
   },
@@ -618,24 +666,24 @@ const WAVE: readonly TurretUpgradeDef[] = [
     turret: "wave",
     tier: 1,
     name: "High-Pressure Pump",
-    blurb: "Four tenths of a second longer soaking per point — a slow that outlives the stream.",
+    blurb: "Six more seconds of soaking, fully bought — a slow that outlives the stream.",
     glyph: "duration",
-    cap: 15,
+    cap: CAP_DIAL,
     apply: (s, n) =>
       s.bullet.wet
-        ? withBullet(s, { wet: { ...s.bullet.wet, duration: s.bullet.wet.duration + 0.4 * n } })
+        ? withBullet(s, { wet: { ...s.bullet.wet, duration: s.bullet.wet.duration + 0.06 * n } })
         : s,
-    effect: (n) => `Soaked for ${((TOWERS.wave.bullet.wet?.duration ?? 0) + 0.4 * n).toFixed(1)}s`,
+    effect: (n) => `Soaked for ${((TOWERS.wave.bullet.wet?.duration ?? 0) + 0.06 * n).toFixed(1)}s`,
   },
   {
     id: "wave-nozzle",
     turret: "wave",
     tier: 2,
     name: "Wide Nozzle",
-    blurb: "Five per cent more reach per point — one wave covering two lanes instead of one.",
+    blurb: "Half again the reach, fully bought — one wave covering two lanes instead of one.",
     glyph: "range",
-    cap: 10,
-    ...dial(0.05, "range", reaching),
+    cap: CAP_DIAL,
+    ...dial(0.5, "range", reaching),
   },
   {
     id: "wave-cryo",
@@ -662,10 +710,10 @@ const LANCER: readonly TurretUpgradeDef[] = [
     turret: "lancer",
     tier: 1,
     name: "Capacitor Bank",
-    blurb: "Five per cent more charge behind the beam per point.",
+    blurb: "Three quarters more charge behind the beam, fully bought.",
     glyph: "damage",
-    cap: 15,
-    ...dial(0.05, "damage", stronger),
+    cap: CAP_DIAL,
+    ...dial(0.75, "damage", stronger),
   },
   {
     id: "lancer-lens",
@@ -674,7 +722,7 @@ const LANCER: readonly TurretUpgradeDef[] = [
     name: "Focusing Lens",
     blurb: "The beam holds together through one more body per point before it gives out.",
     glyph: "pierce",
-    cap: 8,
+    cap: CAP_COUNT_SHORT,
     apply: (s, n) =>
       s.bullet.laser
         ? withBullet(s, { laser: { ...s.bullet.laser, pierceCap: s.bullet.laser.pierceCap + n } })
@@ -715,20 +763,20 @@ const RIPPLE: readonly TurretUpgradeDef[] = [
     turret: "ripple",
     tier: 1,
     name: "Long Barrels",
-    blurb: "Five per cent further down the lane per point, from the turret that already reaches furthest.",
+    blurb: "Three quarters further down the lane, fully bought, from the turret that already reaches furthest.",
     glyph: "range",
-    cap: 15,
-    ...dial(0.05, "range", reaching),
+    cap: CAP_DIAL,
+    ...dial(0.75, "range", reaching),
   },
   {
     id: "ripple-frag",
     turret: "ripple",
     tier: 2,
     name: "Fragmentation",
-    blurb: "A thinner casing and more of it: the blast widens 5% a point.",
+    blurb: "A thinner casing and more of it: the blast widens by half, fully bought.",
     glyph: "splash",
-    cap: 10,
-    ...dial(0.05, "blast radius", wider),
+    cap: CAP_DIAL,
+    ...dial(0.5, "blast radius", wider),
   },
   {
     id: "ripple-plastanium",
@@ -755,20 +803,20 @@ const PARALLAX: readonly TurretUpgradeDef[] = [
     turret: "parallax",
     tier: 1,
     name: "Stronger Field",
-    blurb: "Six per cent more pull per point — and the pull is the whole turret.",
+    blurb: "Ninety per cent more pull, fully bought — and the pull is the whole turret.",
     glyph: "homing",
-    cap: 15,
-    ...dial(0.06, "pull", pulling),
+    cap: CAP_DIAL,
+    ...dial(0.9, "pull", pulling),
   },
   {
     id: "parallax-aperture",
     turret: "parallax",
     tier: 2,
     name: "Wide Aperture",
-    blurb: "Five per cent more reach per point, on the second-longest range in the game.",
+    blurb: "Half again the reach, fully bought, on the second-longest range in the game.",
     glyph: "range",
-    cap: 10,
-    ...dial(0.05, "range", reaching),
+    cap: CAP_DIAL,
+    ...dial(0.5, "range", reaching),
   },
   {
     id: "parallax-phase",
@@ -789,20 +837,20 @@ const FUSE: readonly TurretUpgradeDef[] = [
     turret: "fuse",
     tier: 1,
     name: "Choked Barrels",
-    blurb: "Five per cent more behind each ray per point.",
+    blurb: "Three quarters more behind each ray, fully bought.",
     glyph: "damage",
-    cap: 15,
-    ...dial(0.05, "damage", stronger),
+    cap: CAP_DIAL,
+    ...dial(0.75, "damage", stronger),
   },
   {
     id: "fuse-reach",
     turret: "fuse",
     tier: 2,
     name: "Extended Rays",
-    blurb: "Five per cent more reach per point, on the shortest range in the game.",
+    blurb: "Half again the reach, fully bought, on the shortest range in the game.",
     glyph: "range",
-    cap: 10,
-    ...dial(0.05, "range", reaching),
+    cap: CAP_DIAL,
+    ...dial(0.5, "range", reaching),
   },
   {
     id: "fuse-surge",
@@ -822,29 +870,29 @@ const SWARMER: readonly TurretUpgradeDef[] = [
     turret: "swarmer",
     tier: 1,
     name: "Guidance Fins",
-    blurb: "Eight per cent tighter turns and a wider lock per point — fewer missiles wasted on air.",
+    blurb: "Tighter turns and a wider lock, fully bought — fewer missiles wasted on air.",
     glyph: "homing",
-    cap: 15,
+    cap: CAP_DIAL,
     apply: (s, n) =>
       s.bullet.homing
         ? withBullet(s, {
             homing: {
-              power: s.bullet.homing.power * (1 + 0.08 * n),
-              range: s.bullet.homing.range * (1 + 0.04 * n),
+              power: s.bullet.homing.power * (1 + 0.012 * n),
+              range: s.bullet.homing.range * (1 + 0.006 * n),
             },
           })
         : s,
-    effect: (n) => `+${pct(0.08 * n)} turn, +${pct(0.04 * n)} lock`,
+    effect: (n) => `+${pct(0.012 * n)} turn, +${pct(0.006 * n)} lock`,
   },
   {
     id: "swarmer-racks",
     turret: "swarmer",
     tier: 2,
     name: "Missile Racks",
-    blurb: "Four per cent off the reload per point.",
+    blurb: "Forty per cent off the reload, fully bought.",
     glyph: "rate",
-    cap: 10,
-    ...dial(0.04, "attack speed", faster),
+    cap: CAP_DIAL,
+    ...dial(0.4, "attack speed", faster),
   },
   {
     id: "swarmer-warheads",
@@ -864,20 +912,20 @@ const CYCLONE: readonly TurretUpgradeDef[] = [
     turret: "cyclone",
     tier: 1,
     name: "Belt Feed",
-    blurb: "Four per cent off the cycle per point, on a gun that already never stops.",
+    blurb: "Sixty per cent off the cycle, fully bought, on a gun that already never stops.",
     glyph: "rate",
-    cap: 15,
-    ...dial(0.04, "attack speed", faster),
+    cap: CAP_DIAL,
+    ...dial(0.6, "attack speed", faster),
   },
   {
     id: "cyclone-fuse",
     turret: "cyclone",
     tier: 2,
     name: "Proximity Fuse",
-    blurb: "The shell trips six per cent further from what set it off per point.",
+    blurb: "The shell trips sixty per cent further from what set it off, fully bought.",
     glyph: "homing",
-    cap: 10,
-    ...dial(0.06, "fuse range", fusedAt),
+    cap: CAP_DIAL,
+    ...dial(0.6, "fuse range", fusedAt),
   },
   {
     id: "cyclone-surge",
@@ -902,24 +950,25 @@ const TSUNAMI: readonly TurretUpgradeDef[] = [
     turret: "tsunami",
     tier: 1,
     name: "Pressure Chamber",
-    blurb: "Six tenths of a second longer under the umbrella per point.",
+    blurb: "Nine more seconds under the umbrella, fully bought.",
     glyph: "duration",
-    cap: 15,
+    cap: CAP_DIAL,
     apply: (s, n) =>
       s.bullet.wet
-        ? withBullet(s, { wet: { ...s.bullet.wet, duration: s.bullet.wet.duration + 0.6 * n } })
+        ? withBullet(s, { wet: { ...s.bullet.wet, duration: s.bullet.wet.duration + 0.09 * n } })
         : s,
-    effect: (n) => `Soaked for ${((TOWERS.tsunami.bullet.wet?.duration ?? 0) + 0.6 * n).toFixed(1)}s`,
+    effect: (n) =>
+      `Soaked for ${((TOWERS.tsunami.bullet.wet?.duration ?? 0) + 0.09 * n).toFixed(1)}s`,
   },
   {
     id: "tsunami-spray",
     turret: "tsunami",
     tier: 2,
     name: "Wide Spray",
-    blurb: "Five per cent more umbrella per point.",
+    blurb: "Half again the umbrella, fully bought.",
     glyph: "range",
-    cap: 10,
-    ...dial(0.05, "range", reaching),
+    cap: CAP_DIAL,
+    ...dial(0.5, "range", reaching),
   },
   {
     id: "tsunami-cryo",
@@ -945,20 +994,20 @@ const SPECTRE: readonly TurretUpgradeDef[] = [
     turret: "spectre",
     tier: 1,
     name: "Cooling Jacket",
-    blurb: "Four per cent off the cycle per point, on the highest sustained damage in the game.",
+    blurb: "Sixty per cent off the cycle, fully bought, on the highest sustained damage in the game.",
     glyph: "rate",
-    cap: 15,
-    ...dial(0.04, "attack speed", faster),
+    cap: CAP_DIAL,
+    ...dial(0.6, "attack speed", faster),
   },
   {
     id: "spectre-cores",
     turret: "spectre",
     tier: 2,
     name: "Hardened Cores",
-    blurb: "Five per cent more shell per point.",
+    blurb: "Half again the shell, fully bought.",
     glyph: "damage",
-    cap: 10,
-    ...dial(0.05, "damage", stronger),
+    cap: CAP_DIAL,
+    ...dial(0.5, "damage", stronger),
   },
   {
     id: "spectre-surge",
@@ -980,20 +1029,20 @@ const MELTDOWN: readonly TurretUpgradeDef[] = [
     turret: "meltdown",
     tier: 1,
     name: "Coolant Loop",
-    blurb: "Five per cent less cooling between beams per point.",
+    blurb: "Three quarters less cooling between beams, fully bought.",
     glyph: "rate",
-    cap: 15,
-    ...dial(0.05, "cooling speed", faster),
+    cap: CAP_DIAL,
+    ...dial(0.75, "cooling speed", faster),
   },
   {
     id: "meltdown-array",
     turret: "meltdown",
     tier: 2,
     name: "Focusing Array",
-    blurb: "Five per cent more energy in the beam per point.",
+    blurb: "Half again the energy in the beam, fully bought.",
     glyph: "damage",
-    cap: 10,
-    ...dial(0.05, "damage", stronger),
+    cap: CAP_DIAL,
+    ...dial(0.5, "damage", stronger),
   },
   {
     id: "meltdown-phase",
@@ -1024,10 +1073,10 @@ const FORESHADOW: readonly TurretUpgradeDef[] = [
     turret: "foreshadow",
     tier: 1,
     name: "Rail Capacitors",
-    blurb: "Five per cent more budget behind the rail per point — and the budget IS the shot.",
+    blurb: "Three quarters more budget behind the rail, fully bought — and the budget IS the shot.",
     glyph: "damage",
-    cap: 15,
-    ...dial(0.05, "damage", stronger),
+    cap: CAP_DIAL,
+    ...dial(0.75, "damage", stronger),
   },
   {
     id: "foreshadow-servos",
@@ -1037,11 +1086,13 @@ const FORESHADOW: readonly TurretUpgradeDef[] = [
     blurb:
       "Fifteen per cent faster on the turntable per point, and a degree more slack in the cone — the rail commits less and fires more.",
     glyph: "spread",
-    cap: 10,
+    // a COUNTING rung: the cone is whole degrees, so the traverse dial
+    // rides its cap rather than the other way round
+    cap: CAP_COUNT,
     apply: (s, n) => ({
       ...s,
       rotateSpeed: s.rotateSpeed * (1 + 0.15 * n),
-      shootCone: s.shootCone + ((1 * Math.PI) / 180) * n,
+      shootCone: s.shootCone + (Math.PI / 180) * n,
     }),
     effect: (n) => `+${pct(0.15 * n)} traverse, ${2 + n}° cone`,
   },

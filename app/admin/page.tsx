@@ -10,6 +10,7 @@ import { loadLayoutDoc } from "@/game/layout";
 import { ADMIN_ENABLED } from "@/game/env";
 import LevelEditorView from "@/components/LevelEditorView";
 import MapEditorView from "@/components/MapEditorView";
+import SandboxView from "@/components/SandboxView";
 import {
   loadLevelDocs,
   UNIT_KINDS,
@@ -141,7 +142,8 @@ function AdminInner() {
   // the tab lives in the URL like the editors do, so a reload lands back
   // where you were mid-tune
   const raw = params.get("tab");
-  const tab = raw === "balance" || raw === "tree" ? raw : "content";
+  const tab =
+    raw === "balance" || raw === "tree" || raw === "sandbox" ? raw : "content";
   const [maps, setMaps] = useState<MapData[]>([]);
   const [open, setOpen] = useState<MapData | null>(null);
   // level documents overlay WORLDS in place, so this is a "have they landed
@@ -230,6 +232,7 @@ function AdminInner() {
             ["content", "Levels & maps"],
             ["balance", "Balance"],
             ["tree", "Tech tree"],
+            ["sandbox", "Sandbox"],
           ] as const).map(([id, label]) => (
             <button
               key={id}
@@ -244,6 +247,13 @@ function AdminInner() {
             </button>
           ))}
         </div>
+
+        {tab === "sandbox" &&
+          (levelsReady ? (
+            <SandboxView />
+          ) : (
+            <p className="text-[#71717C]">Reading the level documents…</p>
+          ))}
 
         {tab === "balance" &&
           (balanceReady ? (

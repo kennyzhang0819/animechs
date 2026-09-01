@@ -1315,17 +1315,36 @@ export interface LevelSpec {
   /** which tier of the ladder this spec was expanded for; unset = baseline */
   tier?: number;
   /**
-   * THERE IS NO `mutators` SWITCH HERE ANY MORE. It was a per-world
-   * boolean — "does this map roll rules" — meant to be set on every world
-   * past the first, and it was never set on any of them.
+   * THE RULES THIS LEVEL IS ALWAYS PLAYED UNDER, by design — part of what
+   * the world IS rather than part of how hard it is being played.
    *
-   * THE LADDER DECIDES INSTEAD, alone, on every map: a tier carries how
-   * many rules it rolls and what they may cost (RungKnobs.mutationCount
-   * and .mutationPoints), and the bottom tier carries zero of each. That
-   * says "Level 1 is the campaign as authored" with the same number that
-   * tunes everything above it, and it means a world cannot be authored
-   * into a state where its difficulty stepper does nothing.
+   * IT IS NOT THE OLD `mutators` SWITCH. That was a per-world boolean —
+   * "does this map roll rules" — which handed a level control of a
+   * difficulty curve and was never set on anything. This is a LIST OF
+   * NAMED RULES: an author says "the naval front is the shielded front"
+   * and every deploy on it, at every tier, plays under exactly that.
+   *
+   * THREE THINGS FALL OUT OF "BY DESIGN" and they are the whole contract:
+   *
+   *   IT APPLIES AT LEVEL 1. The bottom tier is the campaign as authored,
+   *   and for a world authored with rules on it, this IS the campaign as
+   *   authored. The tier decides what is ROLLED, not what is true.
+   *
+   *   IT IS NEVER ROLLED. The roll is handed these as an exclusion
+   *   (rollMutations), so a deploy cannot come back with a rule the level
+   *   already has and spend the tier's points changing nothing.
+   *
+   *   IT IS NEVER CHARGED. The tier's budget buys the roll on top of this,
+   *   so an intrinsic rule makes a world harder at every tier rather than
+   *   crowding out the rules that make one deploy different from the next.
+   *
+   * A rule here is subject to the same hard law as a rolled one: it
+   * changes what happens to a wave AFTER it spawns, never what the script
+   * sends, so every number in ladder.ts stays true on a world that carries
+   * three of them. Anything that wants to change the script is a
+   * WaveTransform, which is the field above.
    */
+  intrinsicMutation?: readonly MutationId[];
   /**
    * The MUTATORS this run is played under (see mutation.ts) — what the
    * roll came back with when the run was deployed, not anything the ladder
@@ -1594,11 +1613,13 @@ export const WORLDS: LevelSpec[] = [
     name: "Maelstrom",
     map: "tidewater",
     badge: "advanced",
-    // NOTHING HERE TURNS MUTATORS ON any more — every world rolls them
-    // from Level 2 up, and how many is the tier's own dial (see
-    // mutation.ts and RungKnobs). With a two-rule catalog a roll of three
-    // is simply both of them; the variety arrives with the rules, not with
-    // a switch on this map.
+    // THE SHIELDED FRONT, at every tier including the first. Overshields
+    // is not rolled here and is not paid for out of the tier's points (see
+    // intrinsicMutation): it is what this world is. The naval line is the
+    // fleet that arrives with its bubbles up, and a quasar shepherding
+    // ships across a bay is the fight Tidewater was drawn for — the ladder
+    // then rolls whatever else it can afford ON TOP of that.
+    intrinsicMutation: ["overshields"],
     transforms: [
       { from: ["crawler"], to: [{ family: "naval" }] },
       { from: ["support"], to: [{ family: "support" }, { family: "navalSupport" }] },

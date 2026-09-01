@@ -70,8 +70,10 @@ import {
 } from "@/game/progress";
 import { turretIcon } from "@/game/atlas";
 import {
+  cleanMutations,
   mutationById,
   mutationCost,
+  mutationsInForce,
   rollMutations,
   type MutationId,
 } from "@/game/mutation";
@@ -321,6 +323,12 @@ const levelSummary = (lv: LevelSpec): { waves: number; enemies: number } => {
  * THE SPEC A RUN IS ACTUALLY PLAYED ON: the ladder's expansion of the
  * picked rung, plus the mutators rolled for it (mutation.ts).
  *
+ * ONLY THE ROLL GOES IN `mutation`. A world's own rules
+ * (LevelSpec.intrinsicMutation) are already on the spec this spreads, and
+ * the sim unions the two itself (mutationsInForce) — copying them in here
+ * as well would make "what was rolled" unanswerable, which the points line
+ * on the deploy panel needs to stay honest.
+ *
  * The two are joined HERE and not in specForTier, because they answer
  * different questions and the audit arithmetic only wants one of them: a
  * rung is what the campaign sends, a mutator is what happens to it on the
@@ -400,10 +408,12 @@ function MapDialog({
    * tierMutationPoints, both dials on the rung). Level 1 carries zero of
    * each and so rolls nothing; every step above it mutates.
    *
-   * THE MAP NO LONGER HAS A SAY. This used to be gated on
-   * `LevelSpec.mutators`, a per-world switch that was never turned on —
-   * so the ladder decides alone now, on every world, and the first tier
-   * is where "the campaign as authored" lives (see mutation.ts).
+   * THE MAP HAS NO SAY IN THE ROLL, and one say beside it. What the tier
+   * rolls is the tier's business on every world (the old per-world
+   * `mutators` switch is long gone) — but a world may CARRY rules of its
+   * own by design (LevelSpec.intrinsicMutation), and those are handed to
+   * the roller as an exclusion so it cannot spend the tier's points on a
+   * rule the run already plays under.
    *
    * IT IS ROLLED ONCE PER DIFFICULTY, HERE. Re-rolling on every render
    * would spin the list under the player's eyes; rolling at Deploy would
@@ -414,14 +424,20 @@ function MapDialog({
    * under (onStart carries it).
    */
   const rolled = useMemo(
-    // `world` is in the deps on purpose though the roll no longer reads it:
-    // pointing the panel at a different map is a different question too
-    () => rollMutations(tierMutationPoints(tier), tierMutationCount(tier)),
+    () =>
+      rollMutations(
+        tierMutationPoints(tier),
+        tierMutationCount(tier),
+        world.intrinsicMutation ?? [],
+      ),
     [world, tier],
   );
-  const mutations = rolled
+  /** what the run is played under, roll and level alike — the player's
+   *  question is "what is true of this deploy", not "which half is which" */
+  const mutations = mutationsInForce(world.intrinsicMutation, rolled)
     .map(mutationById)
     .filter((m): m is NonNullable<typeof m> => m !== null);
+  const intrinsic = new Set(world.intrinsicMutation ?? []);
 
   // Escape closes it, like every dialog anyone has ever met
   useEffect(() => {
@@ -558,7 +574,16 @@ function MapDialog({
                 </div>
                 {mutations.map((m) => (
                   <div key={m.id} className="text-[#A6A6AF]">
-                    <span className="font-bold text-[#EDEDEF]">{m.name}</span>{" "}
+                    <span className="font-bold text-[#EDEDEF]">{m.name}</span>
+                    {/* a rule the WORLD carries is not news that changes
+                        with the stepper, and a player who steps the
+                        difficulty and sees it stay put deserves to be told
+                        why rather than left to notice */}
+                    {intrinsic.has(m.id) && (
+                      <span className="ml-1 text-[10px] uppercase tracking-widest text-[#71717C]">
+                        always
+                      </span>
+                    )}{" "}
                     {m.blurb}
                   </div>
                 ))}
@@ -924,6 +949,42 @@ export default function MechSwarm() {
       alive = false;
     };
   }, []);
+
+  /**
+   * THE SANDBOX HANDOFF (admin → game): `/?sandbox=1&world=…&tier=…&mut=…`,
+   * written by the admin page's Sandbox tab and consumed here.
+   *
+   * It waits on `mapsReady` because a run's spec is the LEVEL DOCUMENT's
+   * script, not the shipped one — deploying before the documents land
+   * would quietly play the campaign as compiled rather than as authored,
+   * which is the one thing a debug tool must not do silently.
+   *
+   * THE RULES COME FROM THE URL AND ARE NEVER ROLLED. That is the whole
+   * point of the door: the campaign's mutators arrive by dice
+   * (rollMutations) and cannot be asked for, so testing one meant
+   * re-deploying until it turned up. `cleanMutations` still filters the
+   * list — a hand-typed or stale id degrades to the rules that exist
+   * rather than reaching the sim as a name it has never heard of.
+   *
+   * The query is STRIPPED once consumed (replaceState, no reload), so
+   * abandoning the run lands on an ordinary menu and a refresh mid-run
+   * does not silently re-deploy something the player has already left.
+   */
+  useEffect(() => {
+    if (!mapsReady || typeof window === "undefined") return;
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("sandbox") !== "1") return;
+    const w = worldById(q.get("world") ?? "") ?? WORLD;
+    const t = Math.max(0, Math.min(RUNG_COUNT - 1, Math.floor(Number(q.get("tier")) || 0)));
+    const mutation = cleanMutations((q.get("mut") ?? "").split(",").filter(Boolean));
+    window.history.replaceState(null, "", window.location.pathname);
+    setWorldId(w.id);
+    setTier(t);
+    setAdmin(true); // a sandbox run: whole tree, no caps, every pace
+    setLevel(runSpec(w, t, mutation));
+    setScreen("game");
+    setLoadUi({ step: firstLoadStep(), out: false });
+  }, [mapsReady]);
 
   useEffect(() => {
     if (screen !== "game" || !level || !glRef.current || !uiRef.current) return;
@@ -1711,11 +1772,41 @@ export default function MechSwarm() {
                   IS the panel: not even the next-wave countdown survives */}
               <div className="flex items-start justify-between gap-2">
                 <div className="text-[13px] uppercase tracking-widest text-[#EDEDEF] break-words">
-                  <span className="font-bold" style={{ color: rungColor(hud.tier) }}>
-                    {rungLabel(hud.tier)}
-                  </span>{" "}
-                  — Wave{" "}
-                  <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span> / {hud.totalWaves}
+                  <div>
+                    <span className="font-bold" style={{ color: rungColor(hud.tier) }}>
+                      {rungLabel(hud.tier)}
+                    </span>{" "}
+                    — Wave{" "}
+                    <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span> /{" "}
+                    {hud.totalWaves}
+                  </div>
+                  {/* THE CORE'S HEALTH, on its OWN line and only where
+                      there is any to report.
+                      A stock core has one point: the first leak is the loss,
+                      and a "1 / 1" that never moves until the run is over is
+                      a number nobody needs. A plated core is a pool the
+                      player is SPENDING, so it goes in the block that
+                      survives minimizing, beside the wave counter that is
+                      the other thing a run is read off. */}
+                  {hud.coreHpMax > 1 && (
+                    <div className="text-[#71717C]">
+                      Core{" "}
+                      <span
+                        className="font-bold"
+                        style={{
+                          color:
+                            hud.coreHp > hud.coreHpMax / 2
+                              ? "#7BE58A"
+                              : hud.coreHp > 1
+                                ? "#FFD37F"
+                                : "#FF5A5A",
+                        }}
+                      >
+                        {hud.coreHp}
+                      </span>{" "}
+                      / {hud.coreHpMax}
+                    </div>
+                  )}
                 </div>
                 <button
                   title={hudMin ? "Show run details" : "Hide run details"}

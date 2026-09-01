@@ -49,6 +49,32 @@ export interface Tower {
   gy: number;
   x: number; // world-space center
   y: number;
+  /**
+   * The tower's health pool (towerMaxHp in constants.ts). Nothing in the
+   * base game touches it — only rules that say so (the Volatile mutator).
+   * At zero the tower goes DOWN rather than dying: `downT` starts, the
+   * tower stops firing, and it stands back up at full health when the
+   * timer runs out. The player never loses a tower they own.
+   */
+  hp: number;
+  /** seconds of regeneration left; 0 = standing. A downed tower fires
+   *  nothing, targets nothing, and takes no further damage */
+  downT: number;
+  /**
+   * The shield tower ENTOMBING this tower, as an index into Sim.shieldTowers — or -1,
+   * the usual case. The Shield Towers mutator may raise a shield tower over a
+   * tower's rock: the buried turret is disabled and untouchable, never
+   * destroyed, and stands back up the moment its shield tower dies.
+   */
+  tombShieldTower: number;
+  /**
+   * Which shield tower this tower's current volley is aimed at, as an index into
+   * Sim.shieldTowers — or -1, the usual case, when it is aimed at a unit. The
+   * instant weapons (laser, lightning, rail, ray, the held beam) damage
+   * their target directly rather than via a projectile, so fireShot has to
+   * know when "the target" is a shield tower and not a unit index.
+   */
+  aimShieldTower: number;
   cd: number; // reload: seconds until the next volley is ready
   angle: number;
   // Turret.target under BaseTurret.targetInterval: the unit this turret is
