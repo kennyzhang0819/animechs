@@ -34,13 +34,7 @@ import { type TowerKind } from "@/game/types";
 const NUM = "font-mono tabular-nums";
 const SERIES = "#3987e5";
 
-/**
- * The item a bundle leads with — what the graph and the knob are denominated
- * in. It is simply the first the bundle mentions in ITEM_KINDS order, which
- * is a stable pick and nothing more: that order stopped meaning progression
- * when currencies became lines of the roster rather than unit tiers (see
- * ITEM_KINDS in items.ts), so this names a denominator, never a rank.
- */
+/** the item a bundle leads with — what the graph and the knob are denominated in */
 function leadItem(tower: TowerKind): ItemKind {
   const first = costEntries(techNode(tower).price.base)[0];
   return (first?.item ?? "copper") as ItemKind;

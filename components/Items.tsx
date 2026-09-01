@@ -37,39 +37,6 @@ export function ItemAmount({
 }
 
 /**
- * WHICH CURRENCIES, WITHOUT THE AMOUNTS — a row of sprites and nothing
- * else, for the places that describe a SOURCE rather than a sum.
- *
- * The map-select card is the case it exists for: what a map pays is a
- * property of the map, and how much is a property of the run, so a card
- * that printed numbers would be printing a number that changes every run.
- */
-export function ItemIcons({
-  items,
-  size = "sm",
-  className = "",
-}: {
-  items: readonly ItemKind[];
-  size?: keyof typeof SIZES;
-  className?: string;
-}) {
-  if (items.length === 0) return null;
-  return (
-    <span className={`inline-flex items-center gap-1.5 ${className}`}>
-      {items.map((k) => (
-        <img
-          key={k}
-          src={ITEM_INFO[k].icon}
-          alt={ITEM_INFO[k].name}
-          title={ITEM_INFO[k].name}
-          className={`${SIZES[size]} shrink-0 [image-rendering:pixelated]`}
-        />
-      ))}
-    </span>
-  );
-}
-
-/**
  * A price or a payout, one stack per currency it mentions. Pass `bank` and
  * every stack the wallet can't cover turns red on its own, so a cost that
  * fails on thorium alone says exactly that instead of just "too expensive".

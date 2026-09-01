@@ -19,7 +19,6 @@ import {
   WORLD,
   WORLDS,
   worldById,
-  worldItems,
   waveGroups,
   MAP_BADGE,
   type LevelSpec,
@@ -72,7 +71,7 @@ import { turretIcon } from "@/game/atlas";
 import { mutationAt } from "@/game/mutation";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
 import { isEmpty, ITEM_INFO } from "@/game/items";
-import { CostRow, ItemIcons, Wallet } from "./Items";
+import { CostRow, Wallet } from "./Items";
 import TechTree from "./TechTree";
 
 const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
@@ -115,25 +114,14 @@ function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) 
 }
 
 /**
- * ONE MAP ON THE MAP SELECT — a preview, a name, the badge that ranks this
- * map against the others (MAP_BADGE in levels.ts), and WHAT IT PAYS.
+ * ONE MAP ON THE MAP SELECT — a preview, a name, and the badge that ranks
+ * this map against the others (MAP_BADGE in levels.ts).
  *
  * The badge sits ON the preview rather than beside the name because that is
  * the thing being chosen between: a player scanning the grid is reading four
  * badges, not four sentences. Everything the map actually costs — the
  * rung, the wave count, the mutations in force — is one tap deeper,
  * on the detail panel, so the grid stays a picture and never a spec sheet.
- *
- * THE CURRENCY ROW IS THE EXCEPTION, and it earns the space. A map sends
- * only a few unit LINES and each line pays its own currency
- * (ITEM_OF_FAMILY in levels.ts), so each map pays two or three of the five
- * and no map pays them all — which makes "which map pays what" the primary
- * reason to pick one. Two or three sprites read at a glance where a
- * sentence would not.
- *
- * IT IS DERIVED, NEVER AUTHORED PER MAP. worldItems() reads the script the
- * world actually plays, so a world whose re-casting rules change cannot
- * lie here about what it drops.
  */
 function MapCard({
   world,
@@ -148,18 +136,14 @@ function MapCard({
 }) {
   const badge = MAP_BADGE[world.badge ?? "beginner"];
   // how far up this map's OWN ladder the save has come. clearedOn counts
-  // cleared rungs, so reaching the rung count means the map is done
+  // cleared levels, so reaching the count means the map is done
   const cleared = clearedOn(progress, world.id);
-  const total = RUNG_COUNT;
-  const finished = cleared >= total;
+  const finished = cleared >= RUNG_COUNT;
   // WHAT IS STILL IN THE WAY, if anything. A locked card is dimmed, refuses
   // the click, and says the requirement in place of the clear count — a map
   // you cannot enter and cannot find out how to enter is a dead end
   const lock = worldLock(progress, world.id);
   const lockedBy = lock ? worldById(lock.world) : null;
-  // the currencies this map's lines pay — empty until the level documents
-  // have loaded, which is the same visible failure an empty wave list is
-  const pays = mapsReady ? worldItems(world) : [];
 
   return (
     <button
@@ -190,17 +174,12 @@ function MapCard({
         </span>
       </div>
       <div className="flex items-baseline justify-between gap-3 border-t border-[#2E2E36] px-3 py-2.5">
-        <span className="flex min-w-0 flex-col gap-1">
-          <span
-            className={`text-[15px] font-bold uppercase tracking-widest ${
-              lock ? "text-[#71717C]" : "text-[#EDEDEF] group-hover:text-[#FFD37F]"
-            }`}
-          >
-            {world.name}
-          </span>
-          {/* what this map pays — icons only, because the AMOUNT is a
-              property of the run and this is a property of the map */}
-          <ItemIcons items={pays} className={lock ? "opacity-40" : ""} />
+        <span
+          className={`text-[15px] font-bold uppercase tracking-widest ${
+            lock ? "text-[#71717C]" : "text-[#EDEDEF] group-hover:text-[#FFD37F]"
+          }`}
+        >
+          {world.name}
         </span>
         {lock ? (
           <span className="text-[11px] font-bold uppercase tracking-widest text-[#71717C]">
@@ -214,7 +193,17 @@ function MapCard({
               finished ? "text-[#7BE58A]" : "text-[#71717C]"
             }`}
           >
-            {finished ? "Complete" : `${cleared}/${total} cleared`}
+            {/* HOW FAR, NEVER HOW FAR OF WHAT. The card names the highest
+                level this save has cleared here and nothing else — a
+                denominator would tell a player on their first map exactly
+                how long the climb is, which is a number the game is better
+                for never printing. "Complete" is the only end-state, and by
+                then they have earned knowing */}
+            {finished
+              ? "Complete"
+              : cleared > 0
+                ? `${rungLabel(cleared - 1)} cleared`
+                : "New"}
           </span>
         )}
       </div>
@@ -248,7 +237,11 @@ function LoadingScreen({
   step: LoadStep;
   out: boolean;
 }) {
-  const { waves, enemies } = levelSummary(level);
+  // NO BODY COUNT. The line names the difficulty and the length of the run
+  // and stops there: how many enemies are coming is the run's own answer to
+  // give, wave by wave, and a total printed before the first one lands is a
+  // number the player can do nothing with
+  const { waves } = levelSummary(level);
   // steps, not bytes: nothing here streams, so the bar fills a stage at a
   // time rather than pretending to a percentage it cannot know
   const done = LOAD_STEPS.indexOf(step) + 1;
@@ -275,7 +268,7 @@ function LoadingScreen({
             <span className="font-bold" style={{ color: rungColor(level.tier ?? 0) }}>
               {rungLabel(level.tier ?? 0)}
             </span>{" "}
-            — {waves} waves — {enemies} enemies
+            — {waves} waves
           </p>
         </div>
         <div className="flex w-full flex-col gap-2">
@@ -334,42 +327,63 @@ const runSpec = (world: LevelSpec, tier: number): LevelSpec => ({
   mutation: activeMutations(loadProgress()),
 });
 
-function TierPicker({
+/**
+ * THE MAP DIALOG — everything a run is chosen by, over the grid it was
+ * chosen from.
+ *
+ * It used to be a fourth menu SCREEN, which cost a page transition each way
+ * to say four numbers and pushed the grid out of sight, so comparing two
+ * maps meant travelling. A dialog keeps the board behind it and closes back
+ * onto the card that opened it.
+ *
+ * IT MUST NEVER SCROLL. Two columns — the map on the left, what the run is
+ * on the right — and a body sized to fit a laptop and a held-sideways phone
+ * alike. Anything that would need a scrollbar here belongs in the run or in
+ * the tech tree instead: this is the last glance before Deploy, not a
+ * briefing.
+ */
+function MapDialog({
   progress,
   world,
   tier,
   onTier,
   mapsReady,
   onStart,
+  onClose,
 }: {
   progress: Progress;
   /** which world's ladder is being picked from. Every world is on the menu
    * from the first run and each carries its own ladder, so this decides the
-   * whole panel: which rungs exist, which are cleared, which is the top */
+   * whole panel: which levels exist, which are cleared, which is the top */
   world: LevelSpec;
   tier: number;
   onTier: (t: number) => void;
   mapsReady: boolean;
   onStart: () => void;
+  onClose: () => void;
 }) {
   const top = topTier(progress, world.id);
   const spec = specForTier(world, tier);
   const { waves } = levelSummary(spec);
   const step = (d: number): void => onTier(Math.min(top, Math.max(0, tier + d)));
   // THE SALVAGE MULTIPLIER AS A MULTIPLE, not a percentage. It compounds
-  // now (LOOT_PER_RUNG), so the top rung is "x10.6" and a percentage there
+  // now (LOOT_PER_RUNG), so the top level is "x10.6" and a percentage there
   // would read as 963% — a number nobody can compare two of at a glance
   const loot = tierDropBonus(tier);
   // ...and the fight's own multiple beside it, which is the honest other
   // half of the trade: every body carries x1.06 health a level, and the
-  // rung is the level (tierLevel). The two numbers are the whole decision
+  // difficulty IS the level (tierLevel). The two are the whole decision, so
+  // they sit side by side and are ALWAYS both shown — at difficulty 1 they
+  // read x1.00, which is what makes the stepper legible
   const hpMult = HP_PER_LEVEL ** tierLevel(tier);
-  // whether the script fields a boss kind — read from the waves themselves,
-  // so the warning follows the boss if it moves
+  const badge = MAP_BADGE[world.badge ?? "beginner"];
+  const cleared = isTierCleared(progress, world.id, tier);
   // the mutation rules switched on for the next run, as their definitions
   const mutations = activeMutations(progress)
     .map(mutationAt)
     .filter((a): a is NonNullable<typeof a> => a !== null);
+  // whether the script fields a boss kind — read from the waves themselves,
+  // so the warning follows the boss if it moves
   const hasBoss = spec.script.some(
     (s) =>
       "wave" in s &&
@@ -378,118 +392,166 @@ function TierPicker({
       ),
   );
 
+  // Escape closes it, like every dialog anyone has ever met
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
-    // no card chrome: with one map in the game there is nothing to tell this
-    // panel apart from, and the frame only boxed the map in
-    <div className="w-full max-w-[30rem] p-4">
-      {mapsReady && <LevelThumb mapId={spec.map ?? OFFICIAL_MAP_IDS[0]} bare />}
-      {/* no level name: there is one map in the game, so naming it labelled
-          the obvious. The clear badge is the whole row now */}
-      <div className="mt-3 flex items-baseline justify-end">
-        {isTierCleared(progress, world.id, tier) ? (
-          <span className="text-[12px] font-bold uppercase tracking-widest text-[#7BE58A]">
-            Cleared
-          </span>
-        ) : (
-          <span className="text-[12px] font-bold uppercase tracking-widest text-[#FFD37F]">
-            New
-          </span>
-        )}
-      </div>
-
+    // the backdrop closes it too — a click outside a dialog means "not this
+    // one", and on a phone it is a bigger target than any button
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+    >
       <div
-        role="group"
-        aria-label="difficulty select"
-        className="mt-3 flex items-center justify-between gap-2"
+        role="dialog"
+        aria-modal="true"
+        aria-label={world.name}
+        onClick={(e) => e.stopPropagation()}
+        className="ui-zoom w-full max-w-[44rem] rounded border border-[#2E2E36] bg-[#151518] p-4 shadow-2xl"
       >
-        <button
-          aria-label="lower difficulty"
-          disabled={tier <= 0}
-          onClick={() => step(-1)}
-          className="h-9 w-9 rounded border border-[#2E2E36] text-lg font-bold text-[#A6A6AF] enabled:hover:border-[#FFD37F] enabled:hover:text-[#EDEDEF] disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
-        >
-          −
-        </button>
-        <div className="text-center">
-          {/* the rung's NUMBER is the headline and the word above it is the
-              only label there is. There is nothing else to call a rung */}
-          <div className="text-[11px] uppercase tracking-[0.3em] text-[#71717C]">
-            Difficulty
+        <div className="grid gap-4 sm:grid-cols-2">
+          {/* LEFT: the map itself, badged exactly as its card was, so the
+              thing clicked and the thing opened are visibly the same */}
+          <div className="relative self-start">
+            {mapsReady ? (
+              <LevelThumb mapId={spec.map ?? OFFICIAL_MAP_IDS[0]} bare />
+            ) : (
+              <div className="aspect-[16/9] rounded bg-[#101013]" />
+            )}
+            <span
+              className="absolute left-2 top-2 rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] backdrop-blur"
+              style={{
+                color: badge.color,
+                borderColor: badge.color,
+                backgroundColor: "#101013D9",
+              }}
+            >
+              {badge.name}
+            </span>
           </div>
-          <div
-            className="text-2xl font-bold uppercase leading-none tracking-[0.15em]"
-            style={{ color: rungColor(tier) }}
-          >
-            {rungLabel(tier)}
-          </div>
-          <div className="mt-0.5 text-[11px] uppercase tracking-[0.2em] text-[#4A4A55]">
-            of {RUNG_COUNT}
+
+          {/* RIGHT: the name, the one dial, and what the dial buys */}
+          <div className="flex flex-col">
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 className="truncate text-lg font-bold uppercase tracking-[0.2em] text-[#EDEDEF]">
+                {world.name}
+              </h2>
+              <span
+                className={`shrink-0 text-[11px] font-bold uppercase tracking-widest ${
+                  cleared ? "text-[#7BE58A]" : "text-[#FFD37F]"
+                }`}
+              >
+                {cleared ? "Cleared" : "New"}
+              </span>
+            </div>
+
+            <div
+              role="group"
+              aria-label="difficulty select"
+              className="mt-3 flex items-center justify-between gap-2"
+            >
+              <button
+                aria-label="lower difficulty"
+                disabled={tier <= 0}
+                onClick={() => step(-1)}
+                className="h-9 w-9 rounded border border-[#2E2E36] text-lg font-bold text-[#A6A6AF] enabled:hover:border-[#FFD37F] enabled:hover:text-[#EDEDEF] disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+              >
+                −
+              </button>
+              <div className="text-center">
+                {/* the level's NUMBER is the headline and the word above it
+                    is the only label there is — and nothing sits under it,
+                    because how long the ladder runs is not the player's to
+                    know (see MapCard) */}
+                <div className="text-[11px] uppercase tracking-[0.3em] text-[#71717C]">
+                  Difficulty
+                </div>
+                <div
+                  className="text-2xl font-bold uppercase leading-none tracking-[0.15em]"
+                  style={{ color: rungColor(tier) }}
+                >
+                  {rungLabel(tier)}
+                </div>
+              </div>
+              <button
+                aria-label="higher difficulty"
+                disabled={tier >= top}
+                onClick={() => step(1)}
+                className="h-9 w-9 rounded border border-[#2E2E36] text-lg font-bold text-[#A6A6AF] enabled:hover:border-[#FFD37F] enabled:hover:text-[#EDEDEF] disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+              >
+                +
+              </button>
+            </div>
+
+            {/* THE WHOLE TRADE, AS THREE NUMBERS. Prose said the same thing
+                in four lines and could not be compared between two levels at
+                a glance; a row can. The wave count is here because it is the
+                thing a player most needs to know is NOT what they are
+                choosing — it is the same on every level */}
+            <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-[#2E2E36] pt-3 text-center">
+              <div>
+                <dt className="text-[10px] uppercase tracking-widest text-[#71717C]">Waves</dt>
+                <dd className="text-[15px] font-bold text-[#EDEDEF]">{waves}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] uppercase tracking-widest text-[#71717C]">Health</dt>
+                <dd className="text-[15px] font-bold text-[#FF8A8A]">×{hpMult.toFixed(2)}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] uppercase tracking-widest text-[#71717C]">Loot</dt>
+                <dd className="text-[15px] font-bold text-[#7BE58A]">×{loot.toFixed(2)}</dd>
+              </div>
+            </dl>
+
+            {/* the two things that are true of the RUN rather than of the
+                dial: a boss in the script, and the rules the player switched
+                on in the tech tree and may well have forgotten */}
+            {(hasBoss || mutations.length > 0) && (
+              <div className="mt-2 space-y-0.5 text-[12px] leading-snug">
+                {hasBoss && (
+                  <div className="text-[#A6A6AF]">
+                    <span className="font-bold text-[#FF8A8A]">A powerful enemy</span> will
+                    spawn.
+                  </div>
+                )}
+                {mutations.length > 0 && (
+                  <div className="text-[#A6A6AF]">
+                    <span className="font-bold uppercase tracking-widest text-[#FF8ACB]">
+                      Mutation
+                    </span>{" "}
+                    {mutations.map((a) => a.name).join(" · ")}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ONE ACTION. The dialog asks a single question — this map,
+                at this difficulty, yes or no — and the tech tree is on the
+                grid one Escape behind, next to the wallet that pays for it,
+                which is where a player who is not deploying is heading
+                anyway */}
+            {/* the gap is on the WRAPPER, not the button: padding on the
+                button itself would push its own label off centre. mt-auto
+                pins the row to the bottom of the column when the map beside
+                it is the taller half, and pt-5 keeps daylight between the
+                description and the one irreversible control on the panel */}
+            <div className="mt-auto pt-5">
+              <button
+                onClick={onStart}
+                className="w-full rounded border border-[#FFD37F] bg-[#222227]/90 py-2 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+              >
+                Deploy
+              </button>
+            </div>
           </div>
         </div>
-        <button
-          aria-label="higher difficulty"
-          disabled={tier >= top}
-          onClick={() => step(1)}
-          className="h-9 w-9 rounded border border-[#2E2E36] text-lg font-bold text-[#A6A6AF] enabled:hover:border-[#FFD37F] enabled:hover:text-[#EDEDEF] disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
-        >
-          +
-        </button>
       </div>
-
-      {/* the wave count and one sentence of what the rung means — the full
-          numbers (enemy level, hp multiple, exact salvage) live in the run
-          itself and the editor, not on the menu. NOTHING HERE TALKS ABOUT
-          WHAT THE RUNG WILL ADMIT any more, because a rung admits
-          everything the save owns */}
-      <div className="mt-3 border-t border-[#2E2E36] pt-3 text-[13px] leading-snug">
-        {/* THE WAVE COUNT IS THE SAME ON EVERY RUNG and is said anyway —
-            it is what a player picking a rung most needs to know is NOT
-            what they are choosing. What they are choosing is the two
-            multiples below it */}
-        <span className="font-bold text-[#EDEDEF]">{waves} waves</span>{" "}
-        <span className="text-[#A6A6AF]">— every level, every time.</span>
-        <div className="mt-1 text-[#A6A6AF]">
-          {tier === 0 ? (
-            <>The swarm at base strength — every kill drops resources for the tech tree.</>
-          ) : (
-            <>
-              Enemies carry{" "}
-              <span className="font-bold text-[#FF8A8A]">×{hpMult.toFixed(2)} health</span>{" "}
-              and pay{" "}
-              <span className="font-bold text-[#7BE58A]">×{loot.toFixed(2)} loot</span>.
-            </>
-          )}
-          {hasBoss && (
-            <>
-              {" "}
-              <span className="font-bold text-[#FF8A8A]">A powerful enemy</span> will spawn.
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* WHAT THIS RUN IS PLAYED UNDER. An mutation is switched on in the
-          tech tree, one screen away, and it stays on until it is switched
-          off — so the last thing before Deploy has to say which rules are
-          in force, or a player meets them again having forgotten they
-          asked for them */}
-      {mutations.length > 0 && (
-        <div className="mt-3 border-t border-[#2E2E36] pt-3 text-[13px] leading-snug">
-          <span className="font-bold uppercase tracking-widest text-[#FF8ACB]">
-            Mutation
-          </span>{" "}
-          <span className="text-[#A6A6AF]">
-            {mutations.map((a) => a.name).join(" · ")}
-          </span>
-        </div>
-      )}
-
-      <button
-        onClick={onStart}
-        className="mt-3 w-full rounded border border-[#FFD37F] bg-[#222227]/90 py-2 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
-      >
-        Deploy
-      </button>
     </div>
   );
 }
@@ -718,6 +780,20 @@ export default function MechSwarm() {
    */
   const [uiScale, setUiScale] = useState(UI_SCALE_DEFAULT);
   const [settingsTab, setSettingsTab] = useState<"general" | "interface">("general");
+  /**
+   * IS THE PAUSE OVERLAY SHOWING SETTINGS? The overlay is a MENU first —
+   * Resume, Settings, Abandon — and the knobs live one press behind it.
+   *
+   * They used to sit open on the panel, which put a UI-size stepper and an
+   * effects toggle between a paused player and the Resume button they had
+   * come for. Pausing is nearly always "stop for a second", not "change my
+   * settings", so the common case gets the short list and the rare one gets
+   * a press.
+   *
+   * It falls back to the menu whenever the overlay closes (below), so
+   * re-opening never lands somewhere the player did not ask for.
+   */
+  const [pauseSettings, setPauseSettings] = useState(false);
 
   useEffect(() => {
     const p = loadProgress();
@@ -1023,6 +1099,18 @@ export default function MechSwarm() {
     setHud(g.ui());
   };
 
+  /**
+   * THE PAUSE OVERLAY ALWAYS RE-OPENS ON ITS MENU, never on the settings a
+   * previous pause left showing. It hangs off the overlay's own state
+   * because Esc opens and closes it inside the sim (Game.onKeyDown) rather
+   * than through openMenu below — a reset written into the button would be
+   * a rule that only holds for players who use the button.
+   */
+  const menuOpen = hud?.menuOpen ?? false;
+  useEffect(() => {
+    if (!menuOpen) setPauseSettings(false);
+  }, [menuOpen]);
+
   const openMenu = (): void => {
     const g = gameRef.current;
     if (!g) return;
@@ -1321,8 +1409,6 @@ export default function MechSwarm() {
         </svg>
       </button>
     );
-    const badge = MAP_BADGE[world.badge ?? "beginner"];
-
     return (
       // the title card is a SCREEN, not a page — nothing on it overflows,
       // so it must never bounce or scroll under a finger. The deeper menu
@@ -1443,7 +1529,7 @@ export default function MechSwarm() {
               the board saying what opens it, never hidden. Nothing is bought
               to reach a map and nothing carries between them; each keeps its
               own ladder (see WORLD_REQUIRES for the one exception) */}
-          {menuView === "maps" && progress && (
+          {(menuView === "maps" || menuView === "map") && progress && (
             <>
               <h2 className="text-[13px] font-bold uppercase tracking-[0.35em] text-[#71717C]">
                 Select map
@@ -1467,41 +1553,31 @@ export default function MechSwarm() {
             </>
           )}
 
-          {/* THE PICKED MAP: its badge and name, then the ladder panel that
-              has always been the last thing before a run */}
-          {menuView === "map" && progress && (
-            <>
-              <div className="flex flex-col items-center gap-2">
-                <span
-                  className="rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em]"
-                  style={{ color: badge.color, borderColor: badge.color }}
-                >
-                  {badge.name}
-                </span>
-                <h2 className="text-2xl font-bold uppercase tracking-[0.2em] text-[#EDEDEF]">
-                  {world.name}
-                </h2>
-              </div>
-              {bank}
-              <TierPicker
-                progress={progress}
-                world={world}
-                tier={tier}
-                onTier={setTier}
-                mapsReady={mapsReady}
-                onStart={() => {
-                  setLevel(runSpec(world, tier));
-                  setScreen("game");
-                  // raised in the same batch as the screen switch, so the game
-                  // screen's FIRST paint is already covered - an effect would
-                  // run after that paint and let a frame of black canvas through
-                  setLoadUi({ step: firstLoadStep(), out: false });
-                }}
-              />
-              {back("All maps", "maps")}
-            </>
-          )}
         </div>
+
+        {/* THE PICKED MAP, as a dialog over the grid it was picked from. It
+            sits OUTSIDE the zoom wrapper on purpose: `ui-zoom` is a CSS
+            `zoom`, and a fixed backdrop inside one covers the scaled box
+            rather than the viewport. The panel carries its own ui-zoom, so
+            the UI-size knob still moves it */}
+        {menuView === "map" && progress && (
+          <MapDialog
+            progress={progress}
+            world={world}
+            tier={tier}
+            onTier={setTier}
+            mapsReady={mapsReady}
+            onClose={() => setMenuView("maps")}
+            onStart={() => {
+              setLevel(runSpec(world, tier));
+              setScreen("game");
+              // raised in the same batch as the screen switch, so the game
+              // screen's FIRST paint is already covered - an effect would
+              // run after that paint and let a frame of black canvas through
+              setLoadUi({ step: firstLoadStep(), out: false });
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -1736,12 +1812,7 @@ export default function MechSwarm() {
             <button
               aria-label="Game menu"
               title="Game menu (Esc)"
-              onClick={() => {
-                const g = gameRef.current;
-                if (!g) return;
-                g.openMenu();
-                setHud(g.ui());
-              }}
+              onClick={openMenu}
               className="rounded border border-[#2E2E36] bg-[#151518]/70 p-[6px] text-[#EDEDEF] backdrop-blur hover:border-[#4A4A55] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
             >
               <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" aria-hidden="true">
@@ -2051,26 +2122,47 @@ export default function MechSwarm() {
               <div className="text-xl font-bold uppercase tracking-widest text-[#E8B45B]">
                 Paused
               </div>
-              {settingsPanel(true)}
-              <div className="flex justify-center gap-3 pt-1">
-                <button
-                  onClick={() => {
-                    const g = gameRef.current;
-                    if (!g) return;
-                    g.closeMenu();
-                    setHud(g.ui());
-                  }}
-                  className="rounded border border-[#FFD37F] bg-[#222227]/90 px-5 py-2 text-base font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
-                >
-                  Resume
-                </button>
-                <button
-                  onClick={backToMenu}
-                  className="rounded border border-[#3A2430] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#FF8A8A] hover:border-[#FF5A5A] hover:bg-[#2A1620]/80 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF5A5A]"
-                >
-                  Abandon run
-                </button>
-              </div>
+              {/* THE MENU, or the settings it hides. One press deep, and the
+                  press back out is the same button in the same place */}
+              {pauseSettings ? (
+                <>
+                  {settingsPanel(true)}
+                  <button
+                    onClick={() => setPauseSettings(false)}
+                    className="w-full max-w-[20rem] rounded border border-[#2E2E36] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:bg-[#222227]/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                  >
+                    Back
+                  </button>
+                </>
+              ) : (
+                <div className="flex w-full max-w-[20rem] flex-col gap-2">
+                  <button
+                    onClick={() => {
+                      const g = gameRef.current;
+                      if (!g) return;
+                      g.closeMenu();
+                      setHud(g.ui());
+                    }}
+                    className="w-full rounded border border-[#FFD37F] bg-[#222227]/90 px-5 py-2 text-base font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                  >
+                    Resume
+                  </button>
+                  <button
+                    onClick={() => setPauseSettings(true)}
+                    className="w-full rounded border border-[#2E2E36] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:bg-[#222227]/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                  >
+                    Settings
+                  </button>
+                  {/* the one thing here that cannot be undone sits last and
+                      alone, in the colour nothing else on the panel wears */}
+                  <button
+                    onClick={backToMenu}
+                    className="w-full rounded border border-[#3A2430] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#FF8A8A] hover:border-[#FF5A5A] hover:bg-[#2A1620]/80 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF5A5A]"
+                  >
+                    Abandon run
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

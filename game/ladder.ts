@@ -1,11 +1,9 @@
 import {
-  AMOUNT_PER_TIER,
   UNIT_KINDS,
   UNIT_STATS,
   unitDrop,
   waveGroups,
   WORLD,
-  WORLDS,
   type LevelSpec,
   type LevelStep,
   type UnitKind,
@@ -14,11 +12,11 @@ import {
 import { TOWERS } from "./constants";
 import { isTowerNode, TECH_TREE, type TechNodeDef } from "./tech";
 import {
+  BASE_ITEM,
   costEntries,
   ITEM_INFO,
   ITEM_KINDS,
   type Cost,
-  type ItemKind,
 } from "./items";
 
 /**
@@ -59,13 +57,6 @@ import {
  * steamrolling the rung that used to kill you IS the ascension fantasy, and
  * a permission gate takes it away. The guard is now an INCOME GRADIENT —
  * see LOOT_PER_RUNG. Nobody farms rung 4 when rung 10 pays 10x.
- *
- * THAT GUARD HAS A SECOND AXIS NOW. LOOT_PER_RUNG stops one RUNG being a
- * better farm than another; AMOUNT_PER_TIER (levels.ts) stops one TIER
- * being one, which it had no need to do while the tier chose the currency
- * and a T1 kill simply could not pay for a phase-priced turret. Under
- * family-based drops it can, so quantity has to carry that weight —
- * check() lints it.
  *
  * Nothing is generated. Wave 1 of rung 10 is wave 1 of the same authored
  * list rung 1 plays, with 36 levels on it — which is what lets the level
@@ -202,127 +193,57 @@ const RUNG_COLORS: readonly [number, number, number][] = [
 ];
 
 /**
- * WHAT EACH WORLD SHOULD PAY — one row per world, keyed by world id, each
- * row naming ONLY the currencies that world pays and normalised so its own
- * LARGEST share is 100. A currency a world does not pay is simply absent,
- * which is also how it is asserted: check() complains if the waves pay a
- * currency the row omits.
+ * THE ENEMY MIX THE CAMPAIGN SHOULD SEND, as the payout it produces: one
+ * item per kill, so the wave script's unit tiers ARE the economy.
+ * Normalised to copper = 100, indexed like ITEM_KINDS.
  *
- *   Confluence   copper 100, titanium 80
- *   Maelstrom    phase 100, thorium 53, plastanium 40
+ *   copper  titanium  thorium  plastanium  phase
+ *      100        30       24         4.2   0.85
  *
- * IT IS SPARSE AND NAMED RATHER THAN A POSITIONAL ROW, which mattered less
- * at five currencies than it will at twenty: an array parallel to
- * ITEM_KINDS makes every world carry a column for every currency in the
- * game, so a two-currency map reads as eighteen zeroes and adding a
- * currency means editing a row that has nothing to do with it. Naming the
- * shares makes a world's row exactly as long as its economy.
+ * ONE ROW, BECAUSE THERE IS ONE RUN. Every rung sends the same fifty waves,
+ * so every rung banks the same SHAPE and only the size moves (the drop
+ * bonus scales every currency together, and a uniform multiplier cannot
+ * change a ratio). This used to be a row per difficulty, back when a
+ * difficulty was a prefix cut and a shorter run genuinely had a different
+ * mix in it.
  *
- * Surge alloy never appears in one: no family maps to it, so it never drops
- * from a wave (only a boss's first kill pays one — see grantRunReward in
- * progress.ts).
+ * THIS IS THE DESIGN INPUT, NOT A CONSEQUENCE. The wave script is authored
+ * to this and the tech tree's prices are balanced to whatever it pays —
+ * never the other way round. An earlier version of this table was derived
+ * backwards from Mindustry's turret BUILD COSTS, which was wrong twice
+ * over: plastanium and phase are specialty materials there rather than
+ * rungs of a tier ladder, and their quantities carry no information about
+ * how many tier-4 enemies a wave should hold.
  *
- * IT IS PER WORLD BECAUSE A WORLD'S CURRENCY MIX IS NOW AUTHORABLE, and
- * that is the whole payoff of family-based drops. It was a 10x5 table
- * (a row per named difficulty), then one 5-element row when every rung
- * started sending the whole script — ten rungs playing one script bank one
- * shape, and a uniform loot multiplier cannot change a ratio. What makes it
- * a table again is not the ladder: it is that a world RE-CASTS the shared
- * blueprint by FAMILY (LevelSpec.transforms) and a family is a currency
- * (ITEM_OF_FAMILY in levels.ts), so choosing a world's family mix chooses
- * what it pays. Under tier-based drops that was impossible by construction:
- * transforms preserve tier, so every world paid the same mix forever.
+ * READ IT AS WEIGHT, NOT COUNT. The script sends tier-1 bodies by the tens
+ * of thousands — T1 is the most numerous thing on the field and the swarm
+ * is meant to look like a swarm. A TIER-1 BODY IS NEARLY FREE IN THIS
+ * BUDGET: 150 health against a tier-4's 9,000, so ONE T4 weighs as much as
+ * sixty daggers. "Send more T1" and "shift the weight upward" are not in
+ * tension at all — what actually sets the run's weight is the T3, T4 and T5
+ * counts, and nothing else is close.
  *
- * EACH MAP PAYS ONE TO THREE CURRENCIES, AND TWO IS THE TARGET. That is the
- * mechanism that makes a player rotate maps instead of settling on the one
- * they like: a tech node's price is a bundle, no map pays every currency in
- * it, so rotation is not encouraged but REQUIRED. Confluence sends the
- * ground and air lines and pays their two currencies; Maelstrom sends the
- * crawler, support and water lines and pays the other three. Five
- * currencies at two a map needs at least three maps for full coverage;
- * there are two, so one of them carries three. That is the ceiling, not the
- * plan — a third map is what the ceiling is waiting for.
- *
- * THE STARTER MAP'S TWO ARE THE TWO THE EARLY TREE IS PRICED IN, and that is
- * a hard constraint rather than a preference: WORLD_REQUIRES keeps
- * Maelstrom shut until Confluence's rung 5 has fallen, so a fresh save has
- * copper and titanium and NOTHING ELSE until then. Every node it needs on
- * the way there must be priced in those two alone — see reachability in
- * check(), which is a lint precisely because it is not something a playtest
- * would notice until it was too late.
- *
- * THIS IS THE DESIGN INPUT, NOT A CONSEQUENCE. The wave script and each
- * world's transforms are authored to these rows and the tech tree's prices
- * are balanced to what they pay — never the other way round. An earlier
- * version of this table was derived backwards from Mindustry's turret BUILD
- * COSTS, which was wrong twice over: plastanium and phase are specialty
- * materials there rather than lines of a roster, and their quantities carry
- * no information about how many tier-4 enemies a wave should hold.
- *
- * READ IT AS WEIGHT, NOT COUNT. A kill pays its family's currency in its
- * TIER'S quantity (AMOUNT_PER_TIER in levels.ts: 1, 3, 6, 80, 250), so the
- * columns are not body counts — a tier-1 body is nearly free in this budget
- * and a tier-4 is worth eighty of them, which is roughly what it costs to
- * kill. "Send more T1" and "shift the weight upward" are not in tension at
- * all: what sets a run's weight, and its payout, is the T3/T4/T5 counts.
- *
- * BECAUSE THE TIER SPLIT IS SHARED, THE COLUMNS ONLY MOVE WITH THE FAMILY
- * MIX. Every world plays the same blueprint and transforms preserve tier,
- * so a full clear of ANY world banks the same TOTAL number of items; all a
- * row says is how that total is divided. Moving bodies between lines in the
- * blueprint moves every world's row at once.
+ * EVERY CURRENCY DROPS FROM RUNG 1 NOW, and that is a real change. Under
+ * the prefix cuts phase fabric only appeared in the last dozen waves, so a
+ * low difficulty could not pay for a phase-priced turret at all and the
+ * price was a hard gate. A full script pays 202 phase at rung 1, so the top
+ * of the tech tree is reachable from the bottom of the ladder — slowly. The
+ * gate is now the RATE rather than the permission, which is the same trade
+ * the roster ceiling made when it was deleted.
  *
  * A run's TOTAL bodies are not its bodies on the field. Units stream in over
  * WAVE_RELEASE_SECONDS and die continuously, so a run that sends 50,000 of
  * them never holds anything like that at once. Do not size the script
- * against the map's area; size it against these rows and let the drop zones
+ * against the map's area; size it against this row and let the drop zones
  * throttle what they cannot pass.
- */
-export const TARGET_DROP_RATIO: Readonly<Record<string, Cost>> = {
-  // Confluence — the ground line and the air line
-  "1": { copper: 100, titanium: 80 },
-  // Maelstrom — the crawler line, the support line and the two water lines
-  "2": { thorium: 53, plastanium: 40, "phase-fabric": 100 },
-};
-
-/**
- * The share a world is authored to pay of one currency — 0 for a currency
- * it is not meant to pay at all.
  *
- * A world with no row of its own is a world nobody has decided the economy
- * of yet: every currency reads 0, which makes every price unpayable there
- * and shows up in check() rather than silently inheriting somebody else's
- * mix.
+ * (Surge alloy has no column: it never drops from waves, only from a boss's
+ * first kill — see grantRunReward in progress.ts.)
  */
-export const targetShare = (worldId: string, item: ItemKind): number =>
-  TARGET_DROP_RATIO[worldId]?.[item] ?? 0;
+export const TARGET_DROP_RATIO: readonly number[] = [100, 30, 24, 4.2, 0.85];
 
-/** the currencies a world is authored to pay, in ITEM_KINDS order */
-export const targetItems = (worldId: string): ItemKind[] =>
-  ITEM_KINDS.filter((k) => targetShare(worldId, k) > 0);
-
-/** the boss trophy — the one currency no family pays and no wave drops.
- *  Every world fields the boss (the boss family cannot be re-cast), so every
- *  world can pay a surge price; see itemsOfWorlds. */
-export const TROPHY_ITEM: ItemKind = "surge-alloy";
-
-/** how far off its world's authored row a currency may drift before check()
- *  says so */
+/** how far off target a currency may drift before check() says so */
 export const RATIO_TOLERANCE = 0.4;
-
-/**
- * How far one tier's items-per-second may sit from the run's average before
- * check() calls it the farm.
- *
- * It is wider than RATIO_TOLERANCE because AMOUNT_PER_TIER is ONE number a
- * tier and a tier is not one unit: at the reference calibre the tier-5 line
- * runs from the corvus's 26,500 effective health to the reign's 67,200, so
- * a script leaning on either end moves the tier's average cost-to-kill by
- * a third on its own without anything being wrong. What this has to catch
- * is a tier that is a materially better farm than the rest, and half again
- * is that.
- */
-export const TIER_INCOME_TOLERANCE = 0.5;
 
 /** the last rung there is — index 9, the tenth */
 export const TOP_TIER = RUNG_COUNT - 1;
@@ -371,14 +292,6 @@ const clampTier = (tier: number): number =>
  * an ascension ladder must never be.
  */
 export const LOOT_PER_RUNG = 1.3;
-
-/*
- * ...AND THE OTHER HALF OF THE ANTI-FARM GUARD IS AMOUNT_PER_TIER, in
- * levels.ts. This one keeps the RUNGS honest against each other; that one
- * keeps the TIERS honest, so no single tier is the efficient thing to farm
- * inside a run. They are separate numbers because they answer separate
- * questions and only one of them is a curve.
- */
 
 /** how much harder one rung is than the one below — the level step, and
  *  now the ONLY thing that changes between two rungs */
@@ -566,75 +479,6 @@ export const tierDropBonus = (tier: number): number => LOOT_PER_RUNG ** clampTie
 export const unitHpAtLevel = (kind: UnitKind, level: number): number =>
   UNIT_STATS[kind].hp * HP_PER_LEVEL ** Math.max(0, level);
 
-/**
- * THE CALIBRE COST-TO-KILL IS MEASURED AT — salvo's 28-damage shell, and
- * the same reference AMOUNT_PER_TIER (levels.ts) was derived against.
- *
- * Armour is a flat shave floored at a tenth of the raw hit, so every
- * effective-health number is a statement about its denominator and the
- * denominator has to be written down. 28 is the median per-shot damage of
- * the shooting roster (TOWERS) and the first calibre that puts a fortress
- * back at its printed health instead of ten times it.
- *
- * IT IS NOT USED TO WEIGH A WAVE, and that is deliberate: `waveHp` and
- * `budget` stay armour-blind because a wave is measured against a FLEET,
- * never against one turret (see the note over waveHp). A PAYOUT is the one
- * place a single denominator is the honest choice, because the question it
- * answers — how much fighting did this body cost — has no fleet in it.
- */
-export const DROP_REFERENCE_SHOT = 28;
-
-/** what one body costs to kill: printed health through the flat armour
- *  shave at DROP_REFERENCE_SHOT */
-export const unitKillCost = (kind: UnitKind, level = 0): number => {
-  const armor = UNIT_STATS[kind].armor;
-  const shot = DROP_REFERENCE_SHOT;
-  return unitHpAtLevel(kind, level) * (shot / Math.max(shot - armor, 0.1 * shot));
-};
-
-/**
- * ITEMS PER SECOND OF FIGHTING, ONE ENTRY PER UNIT TIER — the number the
- * flat-income lint reads.
- *
- * A tier's "seconds" are its share of the run's total cost to kill: the run
- * lasts a fixed number of minutes whatever it sends, so the only honest way
- * to divide those minutes between tiers is by how much of the fight each
- * one is. A tier paying more items per second than the others is a tier
- * worth farming on its own, and under family-based drops that is the ONE
- * way the economy can be gamed — the currency is chosen by the family, so
- * quantity is all that is left to get wrong.
- *
- * Measured at the authored baseline level, which is rung 1: the enemy level
- * is a uniform multiplier on health and the drop bonus a uniform multiplier
- * on the payout, so neither can change the shape this reports.
- *
- * A BOSS IS LEFT OUT ENTIRELY. It pays no drop at all (its payout is the
- * surge trophy), so counting its 144,000 health as fighting nobody was paid
- * for would report the finale as a tier that pays nothing.
- */
-export function tierIncomeRates(spec: LevelSpec = WORLD): number[] {
-  const items = AMOUNT_PER_TIER.map(() => 0);
-  const effort = AMOUNT_PER_TIER.map(() => 0);
-  for (const step of spec.script)
-    for (const g of waveGroups(step.wave))
-      g.counts.forEach((count, i) => {
-        if (count <= 0) return;
-        const kind = UNIT_KINDS[i];
-        const stats = UNIT_STATS[kind];
-        if (stats.boss) return;
-        const t =
-          Math.min(AMOUNT_PER_TIER.length, Math.max(1, Math.floor(stats.tier))) - 1;
-        for (const { amount } of costEntries(unitDrop(kind))) items[t] += amount * count;
-        effort[t] += unitKillCost(kind) * count;
-      });
-  const total = effort.reduce((a, b) => a + b, 0);
-  const duration = spec.script.length * (spec.waveGap + WAVE_RELEASE_SECONDS);
-  return items.map((n, t) => {
-    const seconds = total > 0 ? (duration * effort[t]) / total : 0;
-    return seconds > 0 ? n / seconds : 0;
-  });
-}
-
 // ---------- expansion ----------
 
 /**
@@ -820,81 +664,20 @@ export const WORLD_REQUIRES: Readonly<Record<string, { world: string; tier: numb
 // ---------- the debut rule ----------
 
 /**
- * PAYABLE IS A ROSTER QUESTION NOW, not a ladder one — and it takes a SET
- * of currencies rather than nothing at all.
+ * Is every currency in this node's price actually dropped by the campaign?
+ * That is the whole unlock rule now — the tech tree carries no ladder
+ * gates, so a node is reachable exactly when the waves pay for it (see the
+ * note at the top of tech.ts).
  *
- * It used to need neither a rung nor a map: every rung sent the whole
- * script and so paid every currency, so "does the campaign drop this?" had
- * one answer everywhere. THAT PREMISE DIED WITH MAP-SCOPED RESOURCES. A map
- * pays only the currencies of the families it sends (TARGET_DROP_RATIO), so
- * whether a price can be met is a question about WHICH MAPS ARE OPEN — and
- * a node priced in the water lines' currency is simply unbuyable on a dry
- * world, which is a property of the campaign rather than a fault in the
- * node. check() asks it twice: once against the whole roster (a node no map
- * can ever pay for is broken), and once against the maps a save can reach
- * before the next one opens (a node it can afford but not unlock is a wall).
+ * IT NO LONGER TAKES A RUNG. Every rung sends the whole script and so pays
+ * every currency; what a low rung lacks is the RATE, not the permission
+ * (see TARGET_DROP_RATIO). So this is a question about the tree and the
+ * script, and the answer is the same everywhere on the ladder.
  */
-const payableFrom = (node: TechNodeDef, items: ReadonlySet<ItemKind>): boolean =>
-  costEntries(node.price.base).every(({ item }) => items.has(item));
-
-/**
- * Every currency the named worlds pay between them, as authored.
- *
- * SURGE ALLOY IS IN EVERY SET AND HAS NO COLUMN TO BE IN. It is the boss
- * trophy rather than a drop (grantRunReward in progress.ts), and the boss
- * family is the one family a world's transforms may not re-cast — so every
- * world that plays the campaign fields the boss and every world can pay a
- * surge price. Leaving it out would report the two ultimates, which are
- * priced in surge and nothing else, as nodes no map can ever buy.
- */
-function itemsOfWorlds(ids: readonly string[]): Set<ItemKind> {
-  const out = new Set<ItemKind>(ids.length > 0 ? [TROPHY_ITEM] : []);
-  for (const id of ids) for (const k of targetItems(id)) out.add(k);
-  return out;
-}
-
-/**
- * THE WORLDS A SAVE CAN ENTER, IN THE ORDER THEY OPEN — one array of world
- * ids per stage, each stage holding what the stage before it unlocked.
- *
- * Stage 0 is what a FRESH SAVE can play: every world WORLD_REQUIRES does
- * not name. Each later stage adds the worlds whose requirement names a
- * world already open — and a requirement is a RUNG on that world, which
- * costs only playing it, so nothing bought can bring a stage forward or
- * hold one back. That is what makes a stage's currencies a hard fact about
- * a save rather than a guess about its bank.
- *
- * Today that is two stages: Confluence, then Maelstrom behind its rung 5.
- */
-export function worldStages(): string[][] {
-  const stages: string[][] = [];
-  const open = new Set<string>();
-  let pool = WORLDS.map((w) => w.id);
-  while (pool.length > 0) {
-    const next = pool.filter((id) => {
-      const req = WORLD_REQUIRES[id];
-      return !req || open.has(req.world);
-    });
-    // a requirement naming a world that does not exist (or a cycle between
-    // two) would spin here forever; stop and let those worlds fall out
-    if (next.length === 0) break;
-    stages.push(next);
-    for (const id of next) open.add(id);
-    pool = pool.filter((id) => !open.has(id));
-  }
-  return stages;
-}
-
-/** the currencies a save holds once everything up to and including each
- *  stage has opened — the wallet the tech tree may assume at that point */
-function itemsByStage(): Set<ItemKind>[] {
-  const out: Set<ItemKind>[] = [];
-  const seen: string[] = [];
-  for (const stage of worldStages()) {
-    seen.push(...stage);
-    out.push(itemsOfWorlds(seen));
-  }
-  return out;
+function payable(node: TechNodeDef): boolean {
+  return costEntries(node.price.base).every(
+    ({ item }) => (TARGET_DROP_RATIO[ITEM_KINDS.indexOf(item)] ?? 0) > 0,
+  );
 }
 
 /**
@@ -908,100 +691,19 @@ function itemsByStage(): Set<ItemKind>[] {
  * lint measures against the duo and the walk over TECH_TREE that used to
  * find a richer rung's best bullet has nothing left to find.
  *
- * `payableFrom` above is what the walk used, and it is kept because it is
- * still the honest statement of the unlock rule (see the note at the top of
- * tech.ts) — check() asserts it twice, once against the whole roster and
- * once against the maps a save can actually reach.
+ * `payable` above is what the walk used, and it is kept because it is still
+ * the honest statement of the unlock rule (see the note at the top of
+ * tech.ts) — it is asserted once, here, so a node priced in a currency the
+ * script never drops is caught rather than silently unbuyable.
  */
 function openingShot(): number {
   return TOWERS.duo.bullet.damage;
 }
 
-/** every node NO map in the campaign can ever pay for — a lint on that
- *  list being empty rather than a filter that does any work */
+/** every turret the campaign's own drops can pay for — the whole roster,
+ *  and a lint on that being true rather than a filter that does work */
 export function unpayableNodes(): string[] {
-  const all = itemsOfWorlds(WORLDS.map((w) => w.id));
-  return TECH_TREE.filter((n) => !payableFrom(n, all)).map((n) => String(n.id));
-}
-
-/**
- * NODES A SAVE CAN AFFORD BUT CANNOT REACH — the map-1 lockout, as a lint.
- *
- * A node is bought by paying for it, and its only other gate is that its
- * PARENT holds a point. So a node whose own price the currently open maps
- * pay for, hanging under a parent whose price they do NOT, is a node the
- * player watches their bank grow past and can do nothing with. That is the
- * exact failure the second map's lock can create: Maelstrom stays shut
- * until Confluence rung 5 falls, so anything priced in Maelstrom's three
- * currencies is a hard stop on a fresh save, and a copper-and-titanium node
- * sitting above one is stranded behind it.
- *
- * It is checked at EVERY stage, not just the first, because the same shape
- * repeats every time a map opens the one after it. `home` has no parent and
- * costs nothing, so the walk always has somewhere to start.
- *
- * A NODE PRICED IN THE TROPHY IS EXEMPT. Surge alloy is not farmed, it is
- * won — one per boss fight, and the ultimates are the only things that
- * charge it. "The bank grows past this node" is the complaint here, and a
- * trophy does not grow: waiting behind a deep parent is what an ultimate is
- * FOR (see ULTIMATE_SURGE in tech.ts), not a wall in front of it.
- */
-export function strandedNodes(): string[] {
-  // one entry a node however many stages strand it: the fix is the same
-  // edit either way, and repeating it once a stage reads as several faults
-  const bad = new Map<string, string>();
-  const byId = new Map(TECH_TREE.map((n) => [String(n.id), n]));
-  for (const items of itemsByStage()) {
-    // PASS ONE — everything payable here that has an unpayable ancestor
-    const stuck = new Map<string, string>();
-    for (const n of TECH_TREE) {
-      if (costEntries(n.price.base).some(({ item }) => item === TROPHY_ITEM)) continue;
-      if (!payableFrom(n, items)) continue;
-      // walk up to the root: every ancestor has to be payable here too
-      for (let p = n.requires; p; p = byId.get(String(p))?.requires) {
-        const parent = byId.get(String(p));
-        if (parent && !payableFrom(parent, items)) {
-          stuck.set(String(n.id), String(p));
-          break;
-        }
-      }
-    }
-    // PASS TWO — keep only the TOP of each stranded run, because a whole
-    // subtree behind one bad price is ONE fault and reporting it once a
-    // node buries the edit that fixes it. Re-pricing scatter into a second
-    // map's currency strands hail, then everything under hail, then all
-    // nine of their upgrade rungs: fifteen findings that are one sentence.
-    for (const [id, behind] of stuck) {
-      const parent = byId.get(id)?.requires;
-      if (parent && stuck.has(String(parent))) continue;
-      if (!bad.has(id)) bad.set(id, `${id} (behind ${behind})`);
-    }
-  }
-  return [...bad.values()];
-}
-
-/**
- * HOW MANY TURRETS THE OPENING MAPS MUST BE ABLE TO BUY between them.
- *
- * A fresh save can only play stage 0 (Confluence), so stage 0's currencies
- * have to fund everything it takes to reach the rung that opens the second
- * map. HOW MUCH FIREPOWER THAT IS, NOTHING HERE CAN SAY — it is a playtest
- * question and this is arithmetic. What arithmetic can say is that the
- * answer is not one turret: the opening has to answer volume, ground, air
- * and armour at once, which is four different turrets before anything is
- * chosen rather than forced. Five is that plus one, and it is a FLOOR to
- * trip on, not a target — the opening pays for ten today. Its whole job is
- * that re-pricing a node into a later map's currency cannot quietly empty
- * the opening without somebody being told.
- */
-export const OPENING_ROSTER_MIN = 5;
-
-/** the turrets a save can buy before any second map opens */
-export function openingRoster(): string[] {
-  const items = itemsByStage()[0] ?? new Set<ItemKind>();
-  return TECH_TREE.filter((n) => isTowerNode(n.id) && payableFrom(n, items)).map((n) =>
-    String(n.id),
-  );
+  return TECH_TREE.filter((n) => isTowerNode(n.id) && !payable(n)).map((n) => String(n.id));
 }
 
 /**
@@ -1080,7 +782,7 @@ export interface WaveCost {
   armourShare: number;
   /** how much of it flies — hail and scorch cannot touch these at all */
   airShare: number;
-  /** what the wave pays: each kill's family currency in its tier's quantity */
+  /** one item per kill, by unit tier: what the wave pays */
   drops: Cost;
 }
 
@@ -1108,9 +810,9 @@ export function waveCost(step: LevelStep, level = 0): WaveCost {
       if (stats.armor >= 3) armour += h;
       if (stats.flying) air += h;
       // the drop table is unitDrop in levels.ts — reading it rather than a
-      // local table is what lets a new unit be a stats edit instead of an
-      // economy edit, and it is also where a boss pays nothing: the audit
-      // must count the same drops the run actually banks
+      // local triple is what lets a tier-4 unit be a stats edit instead of
+      // an economy edit, and it is also where a boss pays nothing: the
+      // audit must count the same drops the run actually banks
       for (const { item, amount } of costEntries(unitDrop(kind)))
         out.drops[item] = (out.drops[item] ?? 0) + amount * count;
     });
@@ -1211,28 +913,20 @@ export interface AuditRow {
   /** the multiplier this rung puts on every drop — LOOT_PER_RUNG^tier */
   lootBonus: number;
   /**
-   * What a full clear of THIS WORLD actually banks, per currency, INCLUDING
-   * this rung's drop bonus. A kill pays its family's currency in its tier's
-   * quantity, so this is the world's family mix priced out — which is why
-   * the transforms and the wave script are the only things that set the
-   * economy.
+   * What a full clear actually banks, per currency, INCLUDING this rung's
+   * drop bonus. One item per kill, so this is just the enemy mix priced out
+   * — which is why the wave script is the only thing that sets the economy.
    */
   drops: Cost;
   /**
-   * The same thing as a shape: the world's own LARGEST column = 100,
-   * indexed like ITEM_KINDS.
+   * The same thing as a shape: normalised to the base item (copper) = 100,
+   * indexed like ITEM_KINDS. The drop BONUS cannot move this — it scales
+   * every currency together — so the ratio is decided purely by how many
+   * T1/T2/T3 bodies the waves send.
    *
-   * IT IS NOT NORMALISED TO COPPER ANY MORE. Copper was the T1 currency and
-   * so always the biggest column; it is the ground line's currency now, and
-   * a world that sends no ground line pays none of it at all — dividing by
-   * zero, or by a currency the world has nothing to do with. Its own
-   * largest column is the one denominator every world has.
-   *
-   * The drop BONUS cannot move this: it scales every currency together, and
-   * a uniform multiplier cannot change a ratio.
-   *
-   * WHAT TO AIM AT: this world's row of TARGET_DROP_RATIO, above. check()
-   * reports any currency that has drifted more than RATIO_TOLERANCE off it.
+   * WHAT TO AIM AT: TARGET_DROP_RATIO, above — the enemy mix this rung is
+   * supposed to send. check() reports any currency that has drifted more
+   * than RATIO_TOLERANCE off it.
    */
   dropRatio: number[];
   /**
@@ -1296,18 +990,13 @@ export interface AuditRow {
  *
  * Two things that do NOT come out in the wash:
  *
- * HEALTH PER BODY IS NO LONGER DIFFICULTY THAT PAYS NOTHING BACK, and that
- * is what AMOUNT_PER_TIER (levels.ts) bought. A kill used to drop exactly
- * one item whatever it killed, so 100 spirocts cost fifteen times what 100
- * daggers cost and paid the same hundred items; a kill now pays its tier's
- * quantity, fitted to cost-to-kill, so the two come out level. check()
- * lints that they still do. Padding a wave with tier-1 bodies is still
- * cheap in the health budget — it is simply no longer free money.
+ * HEALTH PER BODY is difficulty that pays nothing back. A kill drops one
+ * item whatever it killed, so 100 spirocts cost fifteen times what 100
+ * daggers cost and pay the same hundred items in a different currency.
+ * Padding a wave with tier-1 bodies is close to free.
  *
  * THE CURRENCY MIX has to stay near what the tree charges, or one currency
- * becomes the only real constraint while the others pile up unspent — and
- * it is now a per-WORLD question, because a world pays only the lines it
- * sends.
+ * becomes the only real constraint while the others pile up unspent.
  */
 export function audit(spec: LevelSpec = WORLD): AuditRow[] {
   const rows: AuditRow[] = [];
@@ -1330,8 +1019,7 @@ export function audit(spec: LevelSpec = WORLD): AuditRow[] {
       paid[item] = Math.round(amount * bonus);
       items += amount * bonus;
     }
-    // the world's own biggest column is the denominator — see dropRatio
-    const s = Math.max(1, ...ITEM_KINDS.map((k) => drops[k] ?? 0));
+    const s = Math.max(1, drops[BASE_ITEM] ?? 0);
     const perMinute = items / Math.max(1e-6, b.duration / 60);
     const farmStep = prev ? perMinute / Math.max(1e-6, prev.incomePerMinute) : 1;
     const climbStep = prev ? b.hpPerSecond / Math.max(1e-6, prev.hpPerSecond) : 1;
@@ -1350,7 +1038,9 @@ export function audit(spec: LevelSpec = WORLD): AuditRow[] {
       shieldShare: +b.shieldShare.toFixed(2),
       lootBonus: +bonus.toFixed(2),
       drops: paid,
-      dropRatio: ITEM_KINDS.map((k) => Math.round((1000 * (drops[k] ?? 0)) / s) / 10),
+      dropRatio: ITEM_KINDS.map((k) =>
+        k === BASE_ITEM ? 100 : Math.round((1000 * (drops[k] ?? 0)) / s) / 10,
+      ),
       incomePerMinute: Math.round(perMinute),
       farmStep: +farmStep.toFixed(2),
       climbStep: +climbStep.toFixed(2),
@@ -1370,92 +1060,35 @@ export function check(spec: LevelSpec = WORLD): LadderIssue[] {
   const out = debutViolations(spec);
   const rows = audit(spec);
 
-  const name = (i: number): string => ITEM_INFO[ITEM_KINDS[i]].name.toLowerCase();
-
-  // A NODE NO MAP CAN EVER PAY FOR is the first way the tree and the roster
-  // can disagree: a price authored in a currency no world's families drop,
-  // which reads to a player as a node that is simply broken.
+  // A NODE THE CAMPAIGN CANNOT PAY FOR AT ALL is the one remaining way the
+  // tree and the script can disagree, now that no rung withholds a currency
+  // (see TARGET_DROP_RATIO). It is a price authored in something the waves
+  // never drop, which reads to a player as a node that is simply broken.
   for (const id of unpayableNodes())
     out.push({
       tier: null,
       kind: "economy",
-      message: `${id} is priced in a currency no map pays, so nothing can ever buy it`,
+      message: `${id} is priced in a currency the waves never drop, so nothing can ever buy it`,
     });
 
-  // ...AND A NODE THE OPEN MAPS CAN AFFORD BUT NOT UNLOCK is the second,
-  // and the one map-scoped resources introduced. See strandedNodes.
-  for (const id of strandedNodes())
-    out.push({
-      tier: null,
-      kind: "economy",
-      message: `${id} is payable on the maps a save can reach but hangs under a node that is not, so the bank grows past it with nothing to spend on`,
-    });
-
-  // THE OPENING HAS TO BE AN ARSENAL, not a turret. Stage 0's currencies
-  // are all a fresh save will ever hold until the second map opens, so a
-  // node re-priced into a later map's currency can quietly empty it.
-  const opening = openingRoster();
-  if (opening.length < OPENING_ROSTER_MIN)
-    out.push({
-      tier: null,
-      kind: "economy",
-      message: `the maps a fresh save can enter pay for only ${opening.length} turret${
-        opening.length === 1 ? "" : "s"
-      } (${opening.join(", ")}) — under the ${OPENING_ROSTER_MIN} the opening is tuned to`,
-    });
-
-  // THE CURRENCY MIX, ONCE PER WORLD. Every rung sends the same fifty waves,
-  // so the ratio is a fact about the WORLD rather than about any rung —
-  // reading it off rung 1 and reporting it without a rung is the honest
-  // shape. It walks EVERY currency rather than the world's own row, because
-  // the interesting failure is the one the row does not mention: a world
-  // paying something it was never meant to.
-  ITEM_KINDS.forEach((k, i) => {
-    const want = targetShare(spec.id, k);
-    // both sides are normalised to their own largest share, so the world's
-    // top currency reads 100 and an authored row whose top is not 100 is
-    // itself a finding — which is how the convention gets enforced
+  // THE CURRENCY MIX, ONCE. Every rung sends the same fifty waves, so the
+  // ratio is a fact about the SCRIPT rather than about any rung — reading
+  // it off rung 1 and reporting it without a rung is the honest shape.
+  // Named off ITEM_KINDS rather than written out, so adding a tier-6 unit
+  // extends this check for free instead of leaving a currency unwatched.
+  const name = (i: number): string => ITEM_INFO[ITEM_KINDS[i]].name.toLowerCase();
+  TARGET_DROP_RATIO.forEach((target, i) => {
+    // copper is the denominator
+    if (i === 0 || target <= 0) return;
     const got = rows[0]?.dropRatio[i] ?? 0;
-    if (want <= 0) {
-      if (got > 0)
-        out.push({
-          tier: null,
-          kind: "economy",
-          message: `${spec.name} pays ${name(i)} at ${got}:100 but is authored to pay none of it — a map's currencies are its identity, so either the rules or the row is wrong`,
-        });
-      return;
-    }
-    const drift = got / want;
+    const drift = got / target;
     if (drift < 1 - RATIO_TOLERANCE || drift > 1 + RATIO_TOLERANCE)
       out.push({
         tier: null,
         kind: "economy",
-        message: `${spec.name} pays ${name(i)} at ${got}:100, ${drift < 1 ? "under" : "over"} the ${want}:100 it is authored to — ${drift.toFixed(2)}x target`,
+        message: `the script pays ${name(i)} at 100:${got}, ${drift < 1 ? "under" : "over"} the 100:${target} it is authored to — ${drift.toFixed(2)}x target`,
       });
   });
-
-  // ONE TIER MUST NOT BE A BETTER FARM THAN ANOTHER. With the currency read
-  // off the FAMILY, quantity is the only thing left that makes a deep tier
-  // worth fighting — so if items-per-second is not roughly flat across the
-  // tiers, the script has a single most efficient tier in it and a player
-  // who finds it has no reason to kill anything else. AMOUNT_PER_TIER is
-  // authored against cost-to-kill precisely so this comes out flat; this is
-  // the assertion that it still does.
-  const perTier = tierIncomeRates(spec);
-  const live = perTier.filter((v) => v > 0);
-  if (live.length > 1) {
-    const mean = live.reduce((a, b) => a + b, 0) / live.length;
-    perTier.forEach((rate, t) => {
-      if (rate <= 0) return;
-      const drift = rate / mean;
-      if (drift < 1 - TIER_INCOME_TOLERANCE || drift > 1 + TIER_INCOME_TOLERANCE)
-        out.push({
-          tier: null,
-          kind: "economy",
-          message: `tier ${t + 1} pays ${drift.toFixed(2)}x the run's average items per second — AMOUNT_PER_TIER[${t}] is ${AMOUNT_PER_TIER[t]} against a cost-to-kill that wants ${(AMOUNT_PER_TIER[t] / drift).toFixed(1)}`,
-        });
-    });
-  }
 
   // NOTE: there is deliberately no check on the opening loadout. See
   // OPENING_DUOS — that number is tuned by feel, not by arithmetic.

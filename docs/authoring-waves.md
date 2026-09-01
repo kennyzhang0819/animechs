@@ -25,7 +25,7 @@ lists on `WORLDS` entries in `game/levels.ts` (`LevelSpec.transforms`) are
 the shipped defaults a pre-rules document falls back to. Each rule:
 
 ```ts
-{ from: ["ground"], to: [{ family: "naval" }] }                      // swap, tier for tier
+{ from: ["crawler"], to: [{ family: "naval" }] }                     // swap, tier for tier
 { from: ["support"], to: [{ family: "support" },
                           { family: "navalSupport" }] }              // even split
 { from: ["crawler", "support"], to: [{ family: "air" }], multiply: 2 } // pooled, 2x the bodies
@@ -34,32 +34,6 @@ the shipped defaults a pre-rules document falls back to. Each rule:
 Families are the rows of `UNIT_TREES`, addressed by key: `ground`,
 `support`, `crawler`, `air`, `naval`, `navalSupport` (`boss` is not
 transformable — a boss is an event, not a volume).
-
-**A transform is also an economy edit, and this is the biggest thing to know
-before writing one.** A family *is* a currency (`ITEM_OF_FAMILY` in
-`game/levels.ts`):
-
-| family | pays |
-| --- | --- |
-| ground | copper |
-| air | titanium |
-| crawler | thorium |
-| support | plastanium |
-| naval, navalSupport | phase fabric |
-
-So a world's rules decide **which currencies its map pays** — that is the
-whole reason a world has an economy of its own, since every world plays the
-same script and tier survives every move. Aim for **two currencies a map,
-three at the absolute most**: every tech price is a bundle, so it is the
-narrowness of each map that makes rotating between maps required rather than
-optional. Each world is authored to a row of `TARGET_DROP_RATIO`
-(`game/ladder.ts`) and `__ladder.check()` reports the drift, including a
-world paying a currency its row says it should not.
-
-And check the reachability rule before moving a family off the starter map:
-`WORLD_REQUIRES` keeps Maelstrom shut until Confluence rung 5, so anything a
-fresh save must buy has to be priced in what Confluence pays. `check()`
-lints that too.
 
 Semantics, all enforced in `applyWaveTransforms`:
 
@@ -76,10 +50,7 @@ Semantics, all enforced in `applyWaveTransforms`:
   and `weight: 1` send two thirds and one third.
 - **`multiply`** scales the pool before the split, so `multiply: 2` on a
   rule sending crawlers to air returns twice the air bodies — and twice the
-  titanium, which the editor's ladder check will price for you. Note that
-  multiplying is the one thing a rule can do that changes how MUCH a world
-  pays rather than only what; everything else moves the mix and leaves the
-  total alone.
+  drops, which the editor's ladder check will price for you.
 - **Counts stay integers** by largest-remainder rounding per wave, per rule,
   per tier (ties to the earlier target), so a split never invents or loses a
   body beyond rounding the pool itself, and the same blueprint always

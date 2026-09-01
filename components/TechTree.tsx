@@ -1461,9 +1461,6 @@ export default function TechTree({
             −
           </button>
         </div>
-        <div className="absolute bottom-[max(1rem,var(--safe-b))] left-[max(1rem,var(--safe-l))] text-[11px] uppercase tracking-widest text-[#4A4A55]">
-          drag · wasd to pan &nbsp;—&nbsp; scroll to zoom
-        </div>
       </div>
     </div>
   );
