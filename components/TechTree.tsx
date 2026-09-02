@@ -394,10 +394,12 @@ function UpgradeChip({
                   : "Not bought"}
             </span>
           </div>
-          <div className="mt-0.5 text-[12px] uppercase tracking-widest text-[#71717C]">
-            {TOWERS[def.turret].name} · upgrade {def.tier} of{" "}
-            {TURRET_UPGRADES[def.turret].length}
-          </div>
+          {/* WHAT IT DOES, AND NOTHING ABOUT WHERE IT SITS. This line used
+              to read "Duo · upgrade 2 of 5", which is the chain's
+              bookkeeping rather than the player's question: the chip is
+              already drawn on the Duo's own row, in order, so the position
+              was being said twice and the turret once too often. What is
+              left is the sentence and the number it moves */}
           <div className="mt-1 text-[14px] text-[#A6A6AF]">{def.blurb}</div>
           {(() => {
             const line = upgradeEffect(def, points, points + Math.max(0, willBuy));

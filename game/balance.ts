@@ -1,14 +1,19 @@
 import { applyRungOverrides, type RungKnobs } from "./ladder";
+import { applyMutationCostOverrides } from "./mutation";
 import { applyOverrides } from "./tech";
 
 /**
  * The balance document: the price knobs (base, growth) per turret, plus
- * the per-rung dials (enemy level, shield scale, swarm armour bonus, and
- * the mutator roll's count and points) under
- * the reserved `difficulties` key — no turret is named that, so the flat
- * shape survives. Inside that section a rung is keyed by its 1-based
- * ORDINAL, "1" through "10" (rungKey in ladder.ts); the key was the
- * difficulty's name back when rungs had names.
+ * two reserved sections — no turret is named either, so the flat shape
+ * survives.
+ *
+ *   `difficulties`  the per-rung dials (enemy level, and the mutator
+ *                   roll's count and points), keyed by a rung's 1-based
+ *                   ORDINAL, "1" through "10" (rungKey in ladder.ts); the
+ *                   key was the difficulty's name back when rungs had names
+ *   `mutations`     what each mutator is WORTH, keyed by its catalog id
+ *                   (mutationCostOf in mutation.ts) — the one dial that
+ *                   decides which difficulties can afford which rules
  *
  * It exists so the dial can be turned WITHOUT a rebuild. The admin dashboard
  * writes it, the game reads it at startup, and a node missing from it simply
@@ -25,8 +30,10 @@ export interface BalanceDoc {
   [node: string]:
     | Partial<import("./tech").Knobs>
     | Record<string, Partial<RungKnobs>>
+    | Record<string, number>
     | undefined;
   difficulties?: Record<string, Partial<RungKnobs>>;
+  mutations?: Record<string, number>;
 }
 
 /** where the document lives, served straight out of public/ */
@@ -47,10 +54,13 @@ export async function loadBalanceDoc(): Promise<void> {
     if (!res.ok) return;
     const parsed = (await res.json()) as unknown;
     if (!parsed || typeof parsed !== "object") return;
-    const { difficulties, ...towers } = parsed as BalanceDoc;
+    const { difficulties, mutations, ...towers } = parsed as BalanceDoc;
     applyOverrides(towers as Record<string, Partial<import("./tech").Knobs>>);
     applyRungOverrides(
       difficulties && typeof difficulties === "object" ? difficulties : {},
+    );
+    applyMutationCostOverrides(
+      mutations && typeof mutations === "object" ? mutations : {},
     );
   } catch {
     // offline, or a half-written file mid-save: the authored numbers stand

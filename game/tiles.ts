@@ -57,10 +57,13 @@ export type FloorKind =
   | "dirt"
   | "sand"
   | "darksand"
-  | "snow"
-  | "ice"
   | "moss"
+  | "sporeMoss"
+  | "mud"
   | "shale"
+  | "snow"
+  | "salt"
+  | "ice"
   | "basalt"
   | "hotrock"
   | "magmarock";
@@ -71,11 +74,20 @@ export const FLOOR_STYLE: Readonly<Record<FloorKind, FloorStyle>> = {
   dirt: { base: "#8f6b4a", light: "#9b7654", dark: "#7d5c3f", mark: "pebble" },
   sand: { base: "#cfb488", light: "#d9c095", dark: "#c2a77b", mark: "ripple" },
   darksand: { base: "#4a4644", light: "#54504d", dark: "#3e3a38", mark: "ripple" },
-  snow: { base: "#dfe4ea", light: "#eaeef2", dark: "#d1d8e0", mark: "patch" },
-  ice: { base: "#a9bfd8", light: "#b9cce3", dark: "#96adc8", mark: "crack" },
-  moss: { base: "#4f7a52", light: "#5a8a5d", dark: "#446a47", mark: "patch" },
-  shale: { base: "#6b7280", light: "#767d8b", dark: "#5e6573", mark: "crack" },
-  basalt: { base: "#4b4a4d", light: "#555357", dark: "#403f42", mark: "patch" },
+  // THE MARSH. Moss here is the purple spore growth, not a green one — the
+  // spore walls, pines and waters it sits among are all violet, and a
+  // green floor under a violet forest reads as two maps. Spore moss is the
+  // same ground further gone, and mud is the black wet earth between
+  moss: { base: "#6c4774", light: "#785282", dark: "#5e3d66", mark: "patch" },
+  sporeMoss: { base: "#714a88", light: "#7f5697", dark: "#623f78", mark: "pebble" },
+  mud: { base: "#372220", light: "#432b28", dark: "#2b1a18", mark: "ripple" },
+  // the bare rocks
+  shale: { base: "#5f5a80", light: "#6a658c", dark: "#524d72", mark: "crack" },
+  basalt: { base: "#413e3e", light: "#4b4848", dark: "#363333", mark: "patch" },
+  // the frozen set, toned to the snow and ice walls beside them
+  snow: { base: "#e6ecf2", light: "#f1f4f8", dark: "#d8e0e9", mark: "patch" },
+  salt: { base: "#f0f1f5", light: "#f9f9fb", dark: "#e2e4ea", mark: "crack" },
+  ice: { base: "#cfcff6", light: "#dcdcfb", dark: "#bcbcea", mark: "crack" },
   hotrock: { base: "#4e3b35", light: "#5a4640", dark: "#402f2b", accent: "#d86a3a", mark: "vein" },
   magmarock: { base: "#5a3a30", light: "#66443a", dark: "#4a2e26", accent: "#f08a4a", mark: "vein" },
 };

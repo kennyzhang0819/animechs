@@ -131,7 +131,7 @@ export const MUTATIONS: readonly MutationDef[] = [
     name: "Shield Towers",
     cost: 4,
     blurb:
-      "Shield towers rise on the high ground, sheltering the swarm under red domes until they are destroyed.",
+      "Shield towers rise on the high ground, sheltering the swarm under red domes until they are destroyed. The later the wave, the harder they are to bring down.",
   },
   {
     id: "hungry",
@@ -175,6 +175,70 @@ for (const m of MUTATIONS) {
 export const mutationById = (id: string): MutationDef | null =>
   MUTATIONS.find((m) => m.id === id) ?? null;
 
+// ---------- WHAT A RULE COSTS, AND BENDING IT --------------------------
+//
+// THE COST IS THE ONLY BALANCE DIAL THIS FILE HAS, so it is the one thing
+// here the admin dashboard can turn without a rebuild — the same bargain
+// tech.ts strikes for turret prices and ladder.ts for the rung dials. A
+// cost decides which difficulties can afford a rule at all, so finding the
+// right number is an afternoon of small edits and re-rolls, and
+// recompiling between each one is how that afternoon becomes a week.
+//
+// THE OVERRIDE IS A SCRATCH PAD, NEVER THE SOURCE OF TRUTH. Once a number
+// is settled it belongs on the entry in MUTATIONS above, where it sits
+// next to the blurb that justifies it; the map below is what holds it in
+// the meantime. Everything that asks what a rule is worth goes through
+// mutationCostOf — the roller, the deploy panel, the codex bands and the
+// sandbox — so a bent cost is bent everywhere or the panel would promise a
+// roll the run does not play.
+//
+// ONE THING THE OVERRIDE DELIBERATELY DOES NOT DO IS REORDER THE CATALOG.
+// MUTATIONS is authored cheapest-first and sortByCatalog reads that order,
+// not the costs; a bent cost changes what a rule is worth without moving
+// it in the codex, which keeps a run's printed roll stable while a number
+// is being swept.
+
+/** costs the dashboard has bent, by id — empty in a shipped run */
+const costOverrides = new Map<MutationId, number>();
+
+/** what a rule is worth right now — authored unless the document bent it */
+export const mutationCostOf = (id: MutationId): number =>
+  costOverrides.get(id) ?? mutationById(id)?.cost ?? 0;
+
+/** what the catalog authored — where a Reset returns to */
+export const authoredMutationCost = (id: MutationId): number =>
+  mutationById(id)?.cost ?? 0;
+
+/**
+ * Price one rule somewhere else; undefined restores the authored value.
+ * Clamped to the scale and rounded, because every reader treats a cost as
+ * whole points against a whole budget.
+ */
+export function setMutationCost(id: MutationId, value: number | undefined): void {
+  if (value === undefined || !Number.isFinite(value)) {
+    costOverrides.delete(id);
+    return;
+  }
+  const n = Math.min(MUT_COST_MAX, Math.max(MUT_COST_MIN, Math.round(value)));
+  if (n === authoredMutationCost(id)) costOverrides.delete(id);
+  else costOverrides.set(id, n);
+}
+
+/** only what has actually been bent, for the balance document */
+export function allMutationCostOverrides(): Record<string, number> {
+  return Object.fromEntries(costOverrides);
+}
+
+/** replace every cost override at once — what a saved document applies */
+export function applyMutationCostOverrides(doc: Record<string, unknown>): void {
+  costOverrides.clear();
+  for (const m of MUTATIONS) {
+    const v = doc[m.id];
+    if (typeof v !== "number" || !Number.isFinite(v)) continue;
+    setMutationCost(m.id, v);
+  }
+}
+
 /**
  * EVERY RULE A RUN IS PLAYED UNDER: the ones the LEVEL carries by design
  * (LevelSpec.intrinsicMutation) and the ones the deploy ROLLED for it
@@ -205,7 +269,7 @@ export const hasMutation = (
 
 /** what a set of mutators is worth, for the panel that prints the roll */
 export const mutationCost = (active: readonly MutationId[]): number =>
-  active.reduce((sum, id) => sum + (mutationById(id)?.cost ?? 0), 0);
+  active.reduce((sum, id) => sum + mutationCostOf(id), 0);
 
 /**
  * Clean a raw list of mutator ids: known ids only, no duplicates, in
@@ -385,9 +449,13 @@ export function rollMutations(
     let spent = 0;
     for (const m of shuffled(pool, rand)) {
       if (take.length >= want) break;
-      if (spent + m.cost > budget) continue;
+      // mutationCostOf, not m.cost: the roll has to spend what the dashboard
+      // says a rule is worth, or a bent cost would move every panel except
+      // the one that actually picks the rules
+      const price = mutationCostOf(m.id);
+      if (spent + price > budget) continue;
       take.push(m);
-      spent += m.cost;
+      spent += price;
     }
     if (take.length > best.length || (take.length === best.length && spent > bestSpend)) {
       best = take;
@@ -628,8 +696,8 @@ export const VOLATILE_DMG: readonly number[] = [0, 12, 30, 70, 150, 300];
 // force dome over the ground around it: any of the player's projectiles
 // crossing the dome is absorbed into its shield pool, so the enemies
 // walking under it are safe from projectile fire until the pool is broken
-// — and the dome REFORMS WHOLE whenever it is left alone for
-// SHIELD_TOWER_SHIELD_DELAY. Only with the
+// — and the dome REFORMS WHOLE, SHIELD_TOWER_SHIELD_DELAY after it breaks,
+// no matter what is being fired at it meanwhile. Only with the
 // dome down can the shield tower's body be hurt, and a destroyed shield tower is GONE
 // FOR GOOD; another rises elsewhere on the timer. Instant weapons —
 // lancer, arc, fuse, foreshadow, meltdown's held beam — are not absorbed,
@@ -656,14 +724,14 @@ export const VOLATILE_DMG: readonly number[] = [0, 12, 30, 70, 150, 300];
 // mid-wave DPS on the dome becomes a choice with a cost, which is the
 // whole game of the rule.
 //
-// BOTH POOLS RIDE THE RUN'S SHIELD MULTIPLIER, which is to say they are
-// five times these numbers when Overshields is in force and exactly these
-// numbers otherwise. They used to ride the TIER's shield scale, so a
-// shield tower grew with the ladder on its own; what makes one a real obstacle
-// late now is the wave (SHIELD_TOWER_MEGA_WAVE) and the company it is rolled
-// with. Like every rule here it is invisible to the audit arithmetic: it
-// adds no bodies and no health, it just makes the player's damage arrive
-// later.
+// BOTH POOLS ARE SET BY THE WAVE THE SHIELD TOWER RISES ON and then ride
+// the run's shield multiplier — see THE WAVE CURVE below. They used to
+// ride the TIER's shield scale, so a shield tower grew with the ladder
+// and not with the run; a rule whose whole cost is the player's damage
+// arriving later has to grow the way the player's damage does, which is
+// per wave. Like every rule here it is invisible to the audit arithmetic:
+// it adds no bodies and no health, it just makes the player's damage
+// arrive later.
 //
 // px literals below assume CELL = 20; this file deliberately imports
 // nothing (see VOLATILE_RADIUS).
@@ -675,24 +743,25 @@ export const SHIELD_TOWER_BODY_R = 28;
 /** the dome the shield pass draws and the absorb sweep tests (8 cells) */
 export const SHIELD_TOWER_DOME_R = 160;
 /**
- * Body pool, before the tier's shield scale.
+ * Body pool AT WAVE ONE, before the wave curve and the run's multiplier.
  *
  * IT IS FOUR TIMES THE DOME'S, and that ratio is the rule's whole pacing.
  * The dome is the part that comes back: every hit — on either pool —
- * restarts SHIELD_TOWER_SHIELD_DELAY, so a board pouring fire into a shield tower
- * holds the dome suppressed and grinds the body down, while a board that
- * looks away for four seconds finds the whole dome back. A body that dies
- * quickly never gives that trade a chance to happen: the dome pops, a
- * couple of volleys finish the structure, and SHIELD_TOWER_SHIELD_DELAY below
- * never gets to matter. A long body is what turns the shield tower into an
- * objective you have to COMMIT to — break off to deal with a wave and you
- * come back to a dome to break twice.
+ * opens a SHIELD_TOWER_SHIELD_DELAY window and no more: a board pouring
+ * fire into a shield tower has exactly that long on the body before the
+ * whole dome is back, whether or not it ever stopped shooting. A body
+ * that dies inside one window never gives that trade a chance to happen:
+ * the dome pops, a couple of volleys finish the structure, and
+ * SHIELD_TOWER_SHIELD_DELAY below never gets to matter. A long body is
+ * what turns the shield tower into an objective you have to COMMIT to —
+ * several windows deep, with a whole dome to break at the start of each.
  */
 export const SHIELD_TOWER_HP = 12000;
-/** dome pool, before the tier's shield scale */
+/** dome pool at wave one, before the wave curve and the run's multiplier */
 export const SHIELD_TOWER_SHIELD = 3000;
 /**
- * SECONDS OF PEACE BEFORE THE DOME COMES BACK — WHOLE, not by degrees.
+ * SECONDS FROM THE DOME BREAKING TO THE DOME RETURNING — WHOLE, not by
+ * degrees, and NOT INTERRUPTIBLE.
  *
  * It used to be a regen DELAY in front of a trickle (90 shield a second,
  * so a broken dome took half a minute to mean anything), and a trickle is
@@ -700,14 +769,26 @@ export const SHIELD_TOWER_SHIELD = 3000;
  * one more volley, so every second of that climb played exactly like no
  * dome at all. Reforming whole makes the rule binary the way the player
  * experiences it — the dome is either up and eating your shots or it is
- * not — and puts the decision where it belongs: BREAK OFF FOR FOUR
- * SECONDS AND YOU PAY FOR THE WHOLE DOME AGAIN.
+ * not.
  *
- * Any hit on EITHER pool restarts this clock, so sustained fire holds a
- * shield tower open while it is ground down, and the moment a wave pulls the
- * board's attention away the shield tower seals itself back up.
+ * THE CLOCK STARTS WHEN THE DOME BREAKS AND NOTHING RESTARTS IT. Hits used
+ * to, and that quietly turned the rule inside out: a board with enough
+ * turrets pointed at a shield tower never let four idle seconds happen, so
+ * the dome it broke once simply never came back and the whole reform
+ * mechanic only existed for players who were already winning. Now the
+ * regen is a promise the shield tower keeps regardless — commit fire and
+ * you get exactly this long to spend on the body before you are paying
+ * for the dome a second time, which is the trade the rule is for.
+ *
+ * BREAKING IT IS ALSO THE ONLY THING THAT STARTS IT. There is no other
+ * shield regeneration in this rule at all: a dome chipped to 40% and left
+ * alone stays at 40% forever, because a dome's only job is to be up or
+ * down and a partial one is already down as far as the next volley cares.
+ * That is one clock, one trigger and one outcome — the whole behaviour of
+ * a dome fits in a sentence, which is what a player has to be able to
+ * predict mid-wave.
  */
-export const SHIELD_TOWER_SHIELD_DELAY = 4;
+export const SHIELD_TOWER_SHIELD_DELAY = 10;
 /**
  * Seconds between one shield tower rising and the next trying to. There is no
  * opening grace: the first attempt lands on the run's first tick, so a
@@ -728,6 +809,50 @@ export const SHIELD_TOWER_SPAWN_PERIOD = 30;
  */
 export const SHIELD_TOWER_MAX_ALIVE = 20;
 
+// ---------- THE WAVE CURVE ---------------------------------------------
+//
+// BOTH POOLS ARE SET BY THE WAVE THE SHIELD TOWER RISES ON, AND THEY
+// COMPOUND. A flat 15,000 was an obstacle for about twenty waves and then
+// scenery: a late board focuses several thousand damage a second onto one
+// point, so a fixed pool that took a minute to chew at wave five was gone
+// inside five seconds at wave forty, dome and body together, before the
+// four-second reform clock could ever matter. The rule needs to cost the
+// same DECISION at every point in the run, and the only thing that grows
+// underneath it is the player's damage — so the pools grow the way that
+// does, by a percentage a wave rather than by a step.
+//
+// TEN PER CENT A WAVE, WHICH IS A HUNDREDFOLD ACROSS A FIFTY-WAVE RUN.
+// The curve is anchored at 1.00 on wave one, so nothing about the opening
+// changes; by wave twenty a shield tower is worth six of the old ones,
+// by thirty-five twenty-five, and the last shield towers of a run are
+// genuinely something a board has to commit to. The alternative — a
+// bigger flat number — makes the early game unplayable to fix the late
+// one, which is the trade a compounding curve exists to avoid.
+//
+// IT IS FIXED AT SPAWN, NEVER RE-READ. A shield tower carries the wave it
+// rose on for the rest of the run, which is what makes clearing them
+// promptly worth anything: the tower you leave standing through ten waves
+// stays the cheap one it was born as, and the one that replaces it does
+// not.
+
+/**
+ * What each wave multiplies the previous wave's pools by.
+ *
+ * Compounding, not linear, because what it is racing is compounding: a
+ * board's damage per second climbs by upgrades and by better bands, both
+ * of which multiply. A linear curve loses that race by construction —
+ * it is only ever a question of which wave it starts losing on.
+ */
+export const SHIELD_TOWER_WAVE_GROWTH = 1.1;
+
+/**
+ * The multiplier on both pools for a shield tower rising on `wave`. 1.00
+ * on wave one, ~2.4 by ten, ~6.1 by twenty, ~25 by thirty-five, ~107 by
+ * fifty. The run's shield multiplier (Overshields, or 1) rides on top.
+ */
+export const shieldTowerWaveScale = (wave: number): number =>
+  Math.pow(SHIELD_TOWER_WAVE_GROWTH, Math.max(0, wave - 1));
+
 // ---------- THE MEGA SHIELD TOWER --------------------------------------
 //
 // PAST WAVE 35 THE SHIELD TOWERS STOP BEING A CHORE AND BECOME A WALL. Same
@@ -736,18 +861,17 @@ export const SHIELD_TOWER_MAX_ALIVE = 20;
 // one emplacement and therefore a thing a whole SECTION of the board has
 // to be pointed at rather than whatever happened to be idle.
 //
-// IT IS A LATE-RUN ANSWER TO A LATE-RUN BOARD. A wave-35 defence is
-// upgraded, dense and largely automatic; a 60,000-point dome that reforms
-// whole every four seconds is one of the few things left that can make it
-// stop and choose. The threshold is the WAVE, not the tier, because what
-// it is scaling against is how built-out the player is — and the pools
-// still ride the tier's shield scale on top, exactly as the ordinary
-// shield tower's do.
+// IT IS A LATE-RUN ANSWER TO A LATE-RUN BOARD, AND IT IS ABOUT REACH NOW.
+// The mega shield tower used to multiply both pools by five as well; the
+// wave curve above already passes five times somewhere around wave
+// eighteen and reaches twenty-five by thirty-five, so a second multiplier
+// on top only put a cliff in the middle of a curve that was supposed to
+// be smooth. What wave 35 buys is the DOME — sixteen tiles across, wider
+// than most turrets reach from one emplacement — and the pools behind it
+// are simply what the wave says they are.
 
 /** the wave from which every new shield tower rises as a mega shield tower */
 export const SHIELD_TOWER_MEGA_WAVE = 35;
-/** what a mega shield tower multiplies both pools by */
-export const SHIELD_TOWER_MEGA_SCALE = 5;
 /** its dome, in px (16 cells) — four times the ordinary dome's area */
 export const SHIELD_TOWER_MEGA_DOME_R = 320;
 /** the dome's colour — RED, deliberately not the amber of friendly

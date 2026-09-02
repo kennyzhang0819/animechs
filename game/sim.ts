@@ -85,12 +85,12 @@ import {
   SHIELD_TOWER_HP,
   SHIELD_TOWER_MAX_ALIVE,
   SHIELD_TOWER_MEGA_DOME_R,
-  SHIELD_TOWER_MEGA_SCALE,
   SHIELD_TOWER_MEGA_WAVE,
   SHIELD_TOWER_SHIELD,
   SHIELD_TOWER_SHIELD_DELAY,
   SHIELD_TOWER_SIZE,
   SHIELD_TOWER_SPAWN_PERIOD,
+  shieldTowerWaveScale,
   SPEEDY_SPEED,
   VOLATILE_DMG,
   VOLATILE_RADIUS,
@@ -3115,14 +3115,15 @@ export class Sim {
       // ForceFieldAbility.radiusScale: the dome swells in rather than snapping
       s.scale = Math.min(1, s.scale + dt * 2);
       if (s.shieldAlpha > 0) s.shieldAlpha = Math.max(0, s.shieldAlpha - dt * (60 / 15));
-      // THE DOME REFORMS WHOLE (see SHIELD_TOWER_SHIELD_DELAY): four seconds
-      // without a hit on either pool and the whole thing is back, rather
-      // than a trickle whose first twenty seconds played like no dome at
-      // all. Any hit restarts the clock, so a board committing fire keeps
-      // it open and a board that looks away pays for the dome twice
+      // THE DOME REFORMS WHOLE (see SHIELD_TOWER_SHIELD_DELAY): ten seconds
+      // after it BROKE the whole thing is back. This clock is the only
+      // shield regeneration the rule has — a dented dome does not tick up,
+      // a broken one does not trickle, and nothing here restarts a running
+      // clock, so sustained fire buys one window on the body and not an
+      // indefinite one
       if (s.regenT > 0) {
         s.regenT -= dt;
-        if (s.regenT <= 0 && s.shield < s.shieldMax) {
+        if (s.regenT <= 0) {
           s.shield = s.shieldMax;
           s.shieldAlpha = 1; // the flash a fresh dome comes back on
           this.pushFx(s.x, s.y, 0.5, FxKind.ShieldWave);
@@ -3187,16 +3188,19 @@ export class Sim {
           towersHit.push(t);
       }
 
-      // the spot holds — raise it. Both pools ride the run's shield
-      // multiplier, so a shield tower rolled alongside Overshields is the
-      // five-times obstacle that rule promises everywhere else
-      const ss = this.shieldScale;
-      // PAST SHIELD_TOWER_MEGA_WAVE EVERY NEW SHIELD TOWER IS A MEGA ONE. The wave
-      // decides, not the tier: what it is scaling against is how built-out
-      // the player's board is by now, and the run's shield multiplier is
-      // already underneath it (see mutation.ts)
-      const mega = this.currentWave() >= SHIELD_TOWER_MEGA_WAVE;
-      const pool = ss * (mega ? SHIELD_TOWER_MEGA_SCALE : 1);
+      // the spot holds — raise it. BOTH POOLS ARE SET BY THE WAVE IT RISES
+      // ON and fixed there for the rest of the run (shieldTowerWaveScale:
+      // ten per cent a wave, compounding), then multiplied by the run's
+      // shield multiplier, so a shield tower rolled alongside Overshields
+      // is the five-times obstacle that rule promises everywhere else.
+      // Nothing re-reads the wave afterwards — an old shield tower left
+      // standing stays as cheap as the wave that made it
+      const wave = this.currentWave();
+      const pool = this.shieldScale * shieldTowerWaveScale(wave);
+      // PAST SHIELD_TOWER_MEGA_WAVE EVERY NEW SHIELD TOWER IS A MEGA ONE —
+      // which now buys the DOME's reach and nothing else, because the wave
+      // curve above is already carrying the pools past it (see mutation.ts)
+      const mega = wave >= SHIELD_TOWER_MEGA_WAVE;
       const idx = this.shieldTowers.length;
       this.shieldTowers.push({
         gx,
@@ -3238,18 +3242,27 @@ export class Sim {
   /**
    * All shield tower damage funnels through here: shield first — the dome
    * shelters the body for exactly as long as it stands — then the body.
-   * Any hit, either pool, restarts the regen delay. A body at zero DIES
-   * FOR GOOD: the lane it blocked reopens, every turret it entombed
-   * stands back up, and its slot in the array becomes a tombstone.
+   * A hit that leaves the dome short of whole STARTS the reform clock if
+   * it is not already running, and a hit never restarts a clock that is:
+   * the dome is coming back SHIELD_TOWER_SHIELD_DELAY after it went, and
+   * no amount of fire postpones that. A body at zero DIES FOR GOOD: the
+   * lane it blocked reopens, every turret it entombed stands back up, and
+   * its slot in the array becomes a tombstone.
    */
   private damageShieldTower(s: ShieldTower, dmg: number): void {
     if (s.hp <= 0) return;
-    s.regenT = SHIELD_TOWER_SHIELD_DELAY;
     if (s.shield > 0) {
       s.shield -= dmg;
       s.shieldAlpha = 1;
       if (s.shield <= 0) {
         s.shield = 0;
+        // BREAKING IT IS THE ONLY THING THAT STARTS THE CLOCK, and nothing
+        // restarts it: a board that keeps shooting must not be able to
+        // push the dome's return out in front of itself forever, which is
+        // exactly what restarting on every hit did. A dome merely DENTED
+        // stays dented — there is no trickle and no top-up anywhere in
+        // this rule, only whole domes and broken ones
+        s.regenT = SHIELD_TOWER_SHIELD_DELAY;
         // the dome pops the way a carrier's does — same effect, its own red
         this.pushFx(
           s.x, s.y, 0.5, FxKind.ShieldBreak,
