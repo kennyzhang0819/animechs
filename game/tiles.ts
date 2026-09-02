@@ -234,24 +234,23 @@ export const tileIcon = (kind: FloorKind, variant: number): string =>
   `/tiles/${kind}${(variant % FLOOR_VARIANTS) + 1}.png`;
 
 /* ======================================================================
- * THE HILL BLOCKS — the rock a lane is cut through.
+ * THE HILL BLOCKS — the rock a lane is cut through, painted exactly like
+ * the floors.
  *
- * The lesson from Mindustry's walls is not the bevel, it is the SHADING:
- * three flat tones in a few big smooth regions. Each tile is one boulder
- * — a rounded shape filling most of the cell, in the mid tone — lit from
- * a corner: the boulder's cap on the lit side is the light tone, its
- * underside on the far side the dark tone, and the sliver of tile beyond
- * the boulder's outline is light on the lit side and dark on the other,
- * so the cell's edges meet the next cell's as the joins between stones.
- * Nothing else. No lumps, no highlights, no marks on the face: the tones
- * are regions, not lighting on detail, which is what keeps a top-down
- * map flat. Light comes from the top-left here, where Mindustry lights
- * from the top-right, and the boulders are rounder than its chipped
- * ones.
+ * The map is seen from straight above and everything on it is FLAT. A
+ * wall tile is a face colour with big soft rounded patches on it, some a
+ * shade lighter and some a shade darker, placed freely — no light
+ * direction, no cap and no underside, because a shape lit from one side
+ * and shaded on the other is a ball standing up out of the picture
+ * whatever the tones are. Nothing sits at the cell's edge, so
+ * neighbouring cells run together and an outcrop reads as one mass, and
+ * the only depth on the whole map is the renderer's blurred shadow along
+ * the outcrop's edge (WALL_SHADOW_A, and the same pass on the menu),
+ * which belongs at the edge of the rock and nowhere on it.
  *
- * A 2×2 cluster of rock takes ONE boulder twice the size (the field's
- * large-draw rule, UV_WALL_LARGE), which is what makes an outcrop read
- * as a few big stones with small ones at its edges; `span` paints it.
+ * A 2×2 cluster of rock takes ONE block twice the size (the field's
+ * large-draw rule, UV_WALL_LARGE), with patches to match; `span` paints
+ * that one.
  * ====================================================================== */
 
 export type WallKind =
@@ -268,16 +267,16 @@ export type WallKind =
   | "dacite";
 
 export interface WallStyle {
-  /** the boulder's mid tone */
+  /** the rock's face */
   face: string;
-  /** its lit cap, and its shaded underside */
+  /** a shade up and a shade down, for the patches */
   light: string;
   dark: string;
   /**
-   * the grain of the rock — how far the light reaches round the stone:
-   * rough  — a narrow cap and a deep underside, the bare rocks
-   * soft   — a wide cap and a shallow underside, the earths and snow
-   * glassy — a wide cap and a deep underside, ice and salt
+   * the grain of the rock:
+   * rough  — a light patch and a dark one, the bare rocks
+   * soft   — one or two light patches, the earths and snow
+   * glassy — two light patches, one wide, ice and salt
    */
   grain: "rough" | "soft" | "glassy";
 }
@@ -318,44 +317,34 @@ export function paintWall(
   const put = (x: number, y: number, c: string): void => {
     if (x >= 0 && y >= 0 && x < N && y < N) grid[y * N + x] = c;
   };
-  // the light: from the top-left. `cap` is how big the lit crescent is
-  // and `shade` how deep the shadowed one, as fractions of the stone
-  const LX = -0.55, LY = -0.83;
-  const [cap, shade] =
-    st.grain === "rough" ? [0.5, 0.82] : st.grain === "soft" ? [0.62, 0.9] : [0.6, 0.8];
-  // the boulder: one round stone nearly the size of the cell, pushed a
-  // little toward the light so the shadow wedge beyond it in the far
-  // corner is the bigger one, its outline swelling and dipping a little
-  // round the circumference so no two tiles hold the same stone
-  const R = N / 2 - 0.4;
-  const cx = N / 2 + LX * N * 0.06 + (rng() - 0.5) * N * 0.06;
-  const cy = N / 2 + LY * N * 0.06 + (rng() - 0.5) * N * 0.06;
-  const a2 = rng() * Math.PI * 2, a3 = rng() * Math.PI * 2;
-  const k2 = 0.06 + rng() * 0.05, k3 = 0.03 + rng() * 0.04;
-  const radiusAt = (th: number): number => R * (1 + k2 * Math.sin(2 * th + a2) + k3 * Math.sin(3 * th + a3));
-  const inside = (x: number, y: number): boolean => {
-    const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
-    return Math.hypot(dx, dy) <= radiusAt(Math.atan2(dy, dx));
+  // a patch keeps one pixel off the rim, so the seam is always plain face
+  // and any cell sits flush against any other
+  const RIM = 1;
+  const patch = (c: string, r: number, squash = 0.8): void => {
+    const most = (N - RIM * 2) / 2 - 0.3; // the biggest patch the tile can hold
+    const rx = Math.min(most, r), ry = Math.min(most, Math.max(1.5, r * squash));
+    const cx = RIM + rx + rng() * Math.max(0, N - RIM * 2 - rx * 2);
+    const cy = RIM + ry + rng() * Math.max(0, N - RIM * 2 - ry * 2);
+    ellipse(cx, cy, rx, ry, (x, y) => put(x, y, c));
   };
-  // THE CRESCENTS. The lit cap is a smaller disc pushed toward the light;
-  // the underside is what lies outside a larger disc pushed the same way.
-  // Both boundaries curve with the stone, which is the difference between
-  // a ball and a chamfered block
-  const capX = cx + LX * R * 0.42, capY = cy + LY * R * 0.42, capR = R * cap;
-  const shX = cx + LX * R * 0.22, shY = cy + LY * R * 0.22, shR = R * shade;
-  for (let y = 0; y < N; y++)
-    for (let x = 0; x < N; x++) {
-      const px = x + 0.5, py = y + 0.5;
-      if (inside(x, y)) {
-        const inCap = Math.hypot(px - capX, py - capY) <= capR;
-        const inBody = Math.hypot(px - shX, py - shY) <= shR;
-        put(x, y, inCap ? st.light : inBody ? st.face : st.dark);
-      } else {
-        // off the stone: the ground between boulders, lit or in shadow
-        const t = -((px - N / 2) * LX + (py - N / 2) * LY);
-        put(x, y, t > 0 ? st.light : st.dark);
-      }
+
+  const reps = span * span;
+  for (let r = 0; r < reps; r++) {
+    switch (st.grain) {
+      case "rough":
+        patch(st.light, 3.5 + rng() * 1.5);
+        patch(st.dark, 2.5 + rng());
+        break;
+      case "soft":
+        patch(st.light, 4 + rng() * 1.5);
+        if (rng() < 0.6) patch(st.light, 2.2 + rng());
+        break;
+      case "glassy":
+        patch(st.light, 4 + rng() * 1.5, 0.55);
+        patch(st.light, 2.2 + rng());
+        break;
     }
+  }
 
   const P = TILE_PX * span;
   const out = new Uint8ClampedArray(new ArrayBuffer(P * P * 4));
