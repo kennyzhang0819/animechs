@@ -23,12 +23,15 @@ import { floorCanvas, FLOOR_VARIANTS, type FloorKind } from "@/game/tiles";
  * slowly drifting offset, the swarm on top, and a black wash. The field
  * is a texture; the only geometry per frame is a few dozen mechs.
  *
+ * THE SCENES CYCLE (SCENE_HOLD / SCENE_FADE): every biome the game has
+ * gets its turn, each dissolving into the next, with the next one rolled
+ * in the background while the current one is on screen.
+ *
  * WHAT IT MUST NEVER DO is compete with the menu on top of it. The wash
  * (`dim`) is the contract: the title card sits under a light one, and the
  * deeper menus, which are lists of cards to read, pull it darker. It also
- * holds still under prefers-reduced-motion (one frame), stops when the
- * tab is hidden, and draws at 30fps because a walking mech does not need
- * 60.
+ * holds still under prefers-reduced-motion (one frame, one scene) and
+ * stops when the tab is hidden.
  */
 
 const ENV = "/mindustry/sprites/blocks/environment/";
@@ -38,7 +41,16 @@ const UNITS = "/mindustry/sprites/units/";
 const SPRITE_TILE = 32;
 /** the ground cells drawn around the viewport so the camera can drift */
 const MARGIN_TILES = 3;
-const FPS = 30;
+/**
+ * THE SCENES CYCLE. One world is a picture; the whole environment set is
+ * the game. Each scene holds for SCENE_HOLD seconds and then dissolves
+ * into the next biome over SCENE_FADE, in a shuffled order that shows
+ * every environment before repeating one. The next world is rolled and
+ * rasterized in the background while the current one is on screen, so a
+ * switch never stalls a frame.
+ */
+const SCENE_HOLD = 3;
+const SCENE_FADE = 1;
 /** Pal.engine, the glow a flyer trails */
 const ENGINE = "#ffbb64";
 /** the swarm's own red, painted onto every mech's cell */
@@ -256,7 +268,8 @@ interface Mech {
   s: number;
   /** how far off the lane's centre this one walks, -1..1 */
   lane: number;
-  /** the leg cycle, in px walked */
+  /** where in the leg cycle this one started, in px — the cycle itself is
+   *  this plus the distance walked since, never accumulated frame to frame */
   walk: number;
   /** a phase for the little swing every walker adds to its line */
   phase: number;
@@ -292,7 +305,13 @@ interface World {
  * reproducible from its seed, which is only useful for debugging and
  * costs nothing.
  */
-async function buildWorld(vw: number, vh: number, dpr: number, seed: number): Promise<World> {
+async function buildWorld(
+  vw: number,
+  vh: number,
+  dpr: number,
+  seed: number,
+  biomeIndex: number,
+): Promise<World> {
   const rng = mulberry32(seed);
   // the tile in css px: about sixty across a desktop, held to a whole
   // multiple of the sprite's own pixels so the ground stays crisp
@@ -300,7 +319,7 @@ async function buildWorld(vw: number, vh: number, dpr: number, seed: number): Pr
   const cols = Math.ceil(vw / tile) + MARGIN_TILES * 2;
   const rows = Math.ceil(vh / tile) + MARGIN_TILES * 2;
 
-  const biome = pick(rng, BIOMES);
+  const biome = BIOMES[((biomeIndex % BIOMES.length) + BIOMES.length) % BIOMES.length];
   const second = pick(rng, SECOND);
   const heat = rng() < 0.3;
   const dir: 1 | -1 = rng() < 0.5 ? 1 : -1;
@@ -559,14 +578,37 @@ export default function MenuBackground({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     let alive = true;
+    /** the scene on screen, and when it arrived (ms) */
     let world: World | null = null;
+    let shownAt = 0;
+    /** the scene after it, rolled ahead of time; null while it is building */
+    let next: World | null = null;
+    let building = false;
+    /** when the dissolve into `next` began, or 0 while holding */
+    let fadeAt = 0;
     let raf = 0;
-    let last = 0;
-    let t0 = performance.now();
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const still = window.matchMedia("(prefers-reduced-motion: reduce)");
-    // a fresh world every launch
-    const seed = (Math.random() * 0x7fffffff) | 0;
+    // the biomes in a fresh order every launch, walked in turn
+    const order = BIOMES.map((_, i) => i);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    let cursor = 0;
+    const seedOf = (): number => (Math.random() * 0x7fffffff) | 0;
+
+    /** roll the scene after the current one, off the frame loop */
+    const buildNext = async (): Promise<void> => {
+      if (building) return;
+      building = true;
+      const vw = canvas.clientWidth, vh = canvas.clientHeight;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const built = await buildWorld(vw, vh, dpr, seedOf(), order[cursor % order.length]);
+      cursor++;
+      building = false;
+      if (alive) next = built;
+    };
 
     /** draw one part of a mech: centred on (x, y), facing `rot`, at the
      *  sprite's own size times the world's scale, optionally mirrored
@@ -594,10 +636,12 @@ export default function MenuBackground({
      * A walking mech, layered the way the field layers one (pushMech):
      * legs stride along the facing on a four-stride cycle — the swinging
      * leg lifts and shortens by half — then the chassis, the gun pair
-     * slung under it, and the body riding a little sway.
+     * slung under it, and the body riding a little sway. `walk` is the
+     * distance walked, in px, and the whole cycle is a function of it.
      */
     const drawMech = (
       m: Mech,
+      walk: number,
       x: number,
       y: number,
       rot: number,
@@ -607,7 +651,7 @@ export default function MenuBackground({
     ): void => {
       const a = m.art, kind = a.kind;
       const stride = kind.stride * mu;
-      const raw = m.walk % (stride * 4);
+      const raw = walk % (stride * 4);
       const ext = raw > stride * 3 ? raw - stride * 4 : raw > stride ? stride * 2 - raw : raw;
       const lift = Math.sin(((raw / stride) * Math.PI) / 2);
       const cr = Math.cos(rot), sr = Math.sin(rot);
@@ -626,19 +670,16 @@ export default function MenuBackground({
       drawPart(a.body, shadow, x + ox, y + oy, rot, k);
     };
 
-    const frame = (now: number): void => {
-      const wd = world;
-      if (!wd) return;
-      const vw = canvas.clientWidth, vh = canvas.clientHeight;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      if (canvas.width !== Math.round(vw * dpr) || canvas.height !== Math.round(vh * dpr)) {
-        canvas.width = Math.round(vw * dpr);
-        canvas.height = Math.round(vh * dpr);
-      }
-      const t = (now - t0) / 1000;
+    /**
+     * One scene at one moment: the ground, the column, the escort. `t` is
+     * seconds since the scene arrived, and EVERYTHING is a function of it —
+     * where a mech stands, where its legs are, where the camera has
+     * wandered — so nothing accumulates frame to frame and a dropped frame
+     * costs nothing but the frame.
+     */
+    const drawScene = (wd: World, t: number): void => {
       const k = wd.tile / SPRITE_TILE; // css px per raw sprite px
       const mu = wd.tile / 8; // css px per Mindustry world unit
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
       // the camera: a slow wander inside the margin, so the field is never
       // still and never shows its edge
@@ -671,20 +712,17 @@ export default function MenuBackground({
       // the column: shadows first so no mech's shadow lands on another's
       // hull, then the mechs, back of the lane first
       const walkers = wd.mechs.map((mc) => {
-        const speed = mc.art.kind.speed * wd.tile;
+        const walked = mc.art.kind.speed * wd.tile * t;
         const swing = Math.sin(t * 0.9 + mc.phase) * wd.tile * 0.25;
-        const p = place(mc.s + speed * t, mc.lane, swing);
-        return { mc, p, walk: mc.walk + speed * t };
+        return { mc, p: place(mc.s + walked, mc.lane, swing), walk: mc.walk + walked };
       });
       walkers.sort((a, b) => a.p.y - b.p.y);
-      ctx.globalAlpha = 0.5;
-      for (const wk of walkers) {
-        const mc = wk.mc;
-        mc.walk = wk.walk;
-        drawMech(mc, wk.p.x + wd.tile * 0.15, wk.p.y + wd.tile * 0.2, wk.p.rot, k, mu, true);
-      }
-      ctx.globalAlpha = 1;
-      for (const wk of walkers) drawMech(wk.mc, wk.p.x, wk.p.y, wk.p.rot, k, mu, false);
+      const alpha = ctx.globalAlpha;
+      ctx.globalAlpha = alpha * 0.5;
+      for (const wk of walkers)
+        drawMech(wk.mc, wk.walk, wk.p.x + wd.tile * 0.15, wk.p.y + wd.tile * 0.2, wk.p.rot, k, mu, true);
+      ctx.globalAlpha = alpha;
+      for (const wk of walkers) drawMech(wk.mc, wk.walk, wk.p.x, wk.p.y, wk.p.rot, k, mu, false);
 
       // the escort: flares over the column, higher and faster, weaving
       // across the lane rather than holding a line
@@ -695,9 +733,9 @@ export default function MenuBackground({
           const weave = Math.sin(t * 0.5 + f.phase) * wd.tile * 1.5;
           const p = place(f.s + f.speed * t, f.lane * 0.6, weave);
           const bank = Math.cos(t * 0.5 + f.phase) * 0.35 * wd.dir;
-          ctx.globalAlpha = 0.4;
+          ctx.globalAlpha = alpha * 0.4;
           drawPart(fl, true, p.x + lift * 0.5, p.y + lift, p.rot + bank, k);
-          ctx.globalAlpha = 1;
+          ctx.globalAlpha = alpha;
           // the engine: a glow behind the body, breathing with the frame
           const flick = 0.75 + 0.25 * Math.sin(t * 17 + f.phase * 7);
           const r = fl.w * k * 0.11 * flick;
@@ -706,7 +744,7 @@ export default function MenuBackground({
           ctx.save();
           ctx.globalCompositeOperation = "lighter";
           ctx.fillStyle = ENGINE;
-          ctx.globalAlpha = 0.85;
+          ctx.globalAlpha = alpha * 0.85;
           ctx.beginPath();
           ctx.arc(ex, ey, r, 0, Math.PI * 2);
           ctx.fill();
@@ -715,7 +753,42 @@ export default function MenuBackground({
           ctx.arc(ex, ey, r * 0.45, 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
+          ctx.globalAlpha = alpha;
           drawPart(fl, false, p.x, p.y, p.rot + bank, k);
+        }
+      }
+    };
+
+    const frame = (now: number): void => {
+      const wd = world;
+      if (!wd) return;
+      const vw = canvas.clientWidth, vh = canvas.clientHeight;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      if (canvas.width !== Math.round(vw * dpr) || canvas.height !== Math.round(vh * dpr)) {
+        canvas.width = Math.round(vw * dpr);
+        canvas.height = Math.round(vh * dpr);
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.globalAlpha = 1;
+      drawScene(wd, (now - shownAt) / 1000);
+
+      // THE DISSOLVE: once the hold is up and the next scene is rolled, it
+      // is drawn over this one at a rising alpha — ground, column and all,
+      // so the whole picture crosses at once — and takes over at the end
+      if (!still.matches) {
+        if (fadeAt === 0 && next && now - shownAt >= SCENE_HOLD * 1000) fadeAt = now;
+        if (fadeAt !== 0 && next) {
+          const f = Math.min(1, (now - fadeAt) / (SCENE_FADE * 1000));
+          ctx.globalAlpha = f * f * (3 - 2 * f);
+          drawScene(next, (now - fadeAt) / 1000);
+          ctx.globalAlpha = 1;
+          if (f >= 1) {
+            world = next;
+            shownAt = fadeAt;
+            next = null;
+            fadeAt = 0;
+            void buildNext();
+          }
         }
       }
 
@@ -724,11 +797,12 @@ export default function MenuBackground({
       ctx.fillRect(0, 0, vw, vh);
     };
 
+    // every frame the display offers: a walking mech read at a throttled
+    // 30 as a stutter, because the throttle landed on alternate 33ms and
+    // 50ms gaps, and the draw is cheap enough that there is nothing to save
     const loop = (now: number): void => {
       if (!alive) return;
       raf = requestAnimationFrame(loop);
-      if (now - last < 1000 / FPS) return;
-      last = now;
       frame(now);
     };
 
@@ -736,13 +810,19 @@ export default function MenuBackground({
       const vw = canvas.clientWidth, vh = canvas.clientHeight;
       if (vw === 0 || vh === 0) return;
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const built = await buildWorld(vw, vh, dpr, seed);
+      const built = await buildWorld(vw, vh, dpr, seedOf(), order[cursor % order.length]);
+      cursor++;
       if (!alive) return;
       world = built;
-      t0 = performance.now();
+      next = null;
+      fadeAt = 0;
+      shownAt = performance.now();
       cancelAnimationFrame(raf);
-      if (still.matches) frame(t0);
-      else if (!document.hidden) raf = requestAnimationFrame(loop);
+      if (still.matches) frame(shownAt);
+      else {
+        if (!document.hidden) raf = requestAnimationFrame(loop);
+        void buildNext();
+      }
     };
 
     // a still page repaints only when the wash changes; a moving one is

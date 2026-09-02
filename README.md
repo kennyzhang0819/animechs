@@ -96,7 +96,9 @@ stale tab or a cached bundle looks exactly like a fix not working.
   swarm walks it — daggers and crawlers in the crowd, maces and the odd
   fortress among them — each turning with the lane's bends and striding
   on the field's own leg cycle, with a few flares weaving escort overhead.
-  Rasterized once; a few dozen sprites a frame. It holds still under
+  Every biome gets its turn: scenes hold for `SCENE_HOLD` seconds and
+  dissolve into the next, rolled in the background. Rasterized once a
+  scene; a few dozen sprites a frame. It holds still under
   prefers-reduced-motion and stops when the tab is hidden
 - `app/globals.css` — **the kit**: `.ms-btn` / `.ms-pane` / `.ms-seg` /
   `.ms-bar` and their variants are Mindustry's nine-patch UI sprites
