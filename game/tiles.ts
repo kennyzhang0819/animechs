@@ -241,20 +241,19 @@ export const tileIcon = (kind: FloorKind, variant: number): string =>
  *
  * Mindustry's walls are what its floors are not: highly worked. Every
  * block carries a wide diagonal bevel, lit along its top-left edge and
- * shadowed along its bottom-right, with chunky notched corners, and that
- * bevel is the second most recognisable thing about its ground after the
- * speckle. A block here is a plateau instead: a flat face inside a thin
- * dark outline, corners knocked off to round it, a single light lip along
- * the top and a dark line above the bottom so it stands up off the floor
- * without pretending to a 45° light. The outline is only a step darker
- * than the face: at full contrast every outcrop turned into a grid from
- * map height, and the field's own blurred shadow already draws the rim. The face carries the family's mark —
- * strata on shale, a crack on stone and ice, clumps on dirt, ripples on
- * sand — so a rock is still a texture, only a quieter one.
+ * shadowed along its bottom-right, with chunky notched corners, so an
+ * outcrop is a stack of bricks. The rock here is a SURFACE instead: no
+ * outline, no bevel, nothing at the cell's edge at all, so neighbouring
+ * cells run together and an outcrop reads as one mass — the field's own
+ * blurred shadow under the rock (WALL_SHADOW_A in the renderer, and the
+ * same pass on the menu) is what lifts it off the floor. The detail is on
+ * the face: angular light facets, each with a line of shade under its
+ * lower edge, and diagonal crevices — the way a low-poly rock catches
+ * light, and nothing like the floor's level cracks and ripples.
  *
  * A 2×2 cluster of rock takes ONE block twice the size (the field's
- * large-draw rule, UV_WALL_LARGE), which is what makes an outcrop read as
- * a mass rather than as a stack of bricks; `span` paints that one.
+ * large-draw rule, UV_WALL_LARGE), with facets to match; `span` paints
+ * that one.
  * ====================================================================== */
 
 export type WallKind =
@@ -271,31 +270,33 @@ export type WallKind =
   | "dacite";
 
 export interface WallStyle {
-  /** the plateau's face */
+  /** the rock's face */
   face: string;
-  /** the lip along the top, and the marks that catch light */
+  /** the facets that catch the light */
   light: string;
-  /** the shade above the bottom edge, and the marks that sit in shadow */
+  /** the crevices, and the shade under a facet */
   dark: string;
-  /** the outline */
-  edge: string;
-  /** what the face wears: see the floor marks, plus `strata` — two or
-   *  three level dark lines, the bedding of a sedimentary rock */
-  mark: "patch" | "crack" | "ripple" | "strata" | "clump";
+  /**
+   * the grain of the rock:
+   * rough  — two facets and a crevice, the bare stones
+   * soft   — one rounded facet and a short crevice, the earths and snow
+   * glassy — one facet and two long thin crevices, ice and salt
+   */
+  grain: "rough" | "soft" | "glassy";
 }
 
 export const WALL_STYLE: Readonly<Record<WallKind, WallStyle>> = {
-  stone: { face: "#8f8f99", light: "#a6a6b0", dark: "#71717b", edge: "#62626c", mark: "crack" },
-  dirt: { face: "#a07753", light: "#b58a63", dark: "#846040", edge: "#6e5036", mark: "clump" },
-  dark: { face: "#4c5158", light: "#5e646c", dark: "#3b4046", edge: "#30343a", mark: "crack" },
-  spore: { face: "#8b5ba2", light: "#a271b8", dark: "#734a89", edge: "#593a68", mark: "patch" },
-  shale: { face: "#7d7ba0", light: "#9391b3", dark: "#66648a", edge: "#53516e", mark: "strata" },
-  snow: { face: "#eef2f7", light: "#ffffff", dark: "#d3dbe5", edge: "#b6bfcb", mark: "patch" },
-  ice: { face: "#dadafc", light: "#f2f2ff", dark: "#bdbdef", edge: "#a1a1d2", mark: "crack" },
-  salt: { face: "#f4f5f8", light: "#ffffff", dark: "#dcdfe6", edge: "#c3c7cf", mark: "crack" },
-  sand: { face: "#e3caa5", light: "#f0ddc0", dark: "#c9ae88", edge: "#ad9268", mark: "ripple" },
-  dune: { face: "#5b5755", light: "#6c6866", dark: "#4a4644", edge: "#3a3735", mark: "ripple" },
-  dacite: { face: "#a6a6bb", light: "#bcbccf", dark: "#8c8ca1", edge: "#767689", mark: "strata" },
+  stone: { face: "#84848f", light: "#9b9ba6", dark: "#65656f", grain: "rough" },
+  dirt: { face: "#9a7250", light: "#b08862", dark: "#7a583b", grain: "soft" },
+  dark: { face: "#474c53", light: "#5b6169", dark: "#33373d", grain: "rough" },
+  spore: { face: "#84579a", light: "#9d6fb3", dark: "#67407a", grain: "soft" },
+  shale: { face: "#75739a", light: "#8f8db1", dark: "#5a5878", grain: "rough" },
+  snow: { face: "#e9eef4", light: "#ffffff", dark: "#cbd5e0", grain: "soft" },
+  ice: { face: "#d4d4fa", light: "#f0f0ff", dark: "#aeaee6", grain: "glassy" },
+  salt: { face: "#f1f2f6", light: "#ffffff", dark: "#d3d7df", grain: "glassy" },
+  sand: { face: "#dcc39e", light: "#eedbbb", dark: "#bfa47d", grain: "soft" },
+  dune: { face: "#575351", light: "#6a6663", dark: "#403c3a", grain: "soft" },
+  dacite: { face: "#9f9fb4", light: "#b9b9cc", dark: "#82829a", grain: "rough" },
 };
 
 export const WALL_KINDS = Object.keys(WALL_STYLE) as WallKind[];
@@ -303,7 +304,8 @@ export const WALL_VARIANTS = 2;
 
 /**
  * Paint one block: `span` tiles on a side (1 or 2), as `TILE_PX * span`
- * square RGBA. Opaque throughout — a wall cell has no floor under it.
+ * square RGBA. Opaque throughout — a wall cell has no floor under it —
+ * and plain at every edge, so any cell sits flush against any other.
  */
 export function paintWall(
   kind: WallKind,
@@ -313,101 +315,77 @@ export function paintWall(
   const st = WALL_STYLE[kind];
   const N = TILE_LOGICAL * span;
   const rng = mulberry32(
-    1000 + WALL_KINDS.indexOf(kind) * 131 + (variant % WALL_VARIANTS) * 17 + span * 977,
+    2000 + WALL_KINDS.indexOf(kind) * 131 + (variant % WALL_VARIANTS) * 17 + span * 977,
   );
   const grid = new Array<string>(N * N).fill(st.face);
   const put = (x: number, y: number, c: string): void => {
     if (x >= 0 && y >= 0 && x < N && y < N) grid[y * N + x] = c;
   };
-  // the outline, the rounded corners, the lip and the shade
-  for (let i = 0; i < N; i++) {
-    put(i, 0, st.edge);
-    put(i, N - 1, st.edge);
-    put(0, i, st.edge);
-    put(N - 1, i, st.edge);
-    if (i > 1 && i < N - 2) {
-      put(i, 1, st.light);
-      put(i, N - 2, st.dark);
-    }
-  }
-  for (const [cx, cy] of [[0, 0], [N - 1, 0], [0, N - 1], [N - 1, N - 1]] as const) {
-    const sx = cx === 0 ? 1 : -1, sy = cy === 0 ? 1 : -1;
-    put(cx + sx, cy, st.edge);
-    put(cx, cy + sy, st.edge);
-    put(cx + sx, cy + sy, st.edge);
-  }
-  // marks stay inside the lip and the shade
-  const RIM = 3;
+  // a mark keeps one pixel off the rim, so nothing is cut at a seam and
+  // the seam itself is always plain face
+  const RIM = 1;
   const spot = (w: number, h: number): [number, number] => [
     RIM + Math.floor(rng() * Math.max(1, N - RIM * 2 - w)),
     RIM + Math.floor(rng() * Math.max(1, N - RIM * 2 - h)),
   ];
-  const blob = (c: string, w: number, h: number): void => {
-    const [x, y] = spot(w, h);
-    for (let j = 0; j < h; j++)
-      for (let i = 0; i < w; i++) {
-        const corner = (i === 0 || i === w - 1) && (j === 0 || j === h - 1);
-        if (corner && (w > 2 || h > 2)) continue;
-        put(x + i, y + j, c);
-      }
+  /**
+   * A FACET: a lit plate — a few rows of light, each row shifted a step
+   * from the last so the plate leans, with the end rows a pixel shorter
+   * and a line of shade along its lower edge. A plane the light lands on,
+   * not a spot, and not a triangle: a right-angled patch at this size
+   * reads as an arrowhead, and a field of arrowheads is a pattern
+   */
+  const facet = (size: number, rounded: boolean): void => {
+    const w = size + 1, h = Math.max(2, Math.round(size * 0.6));
+    const lean = rng() < 0.5 ? 1 : -1;
+    const [x, y] = spot(w + h, h + 1);
+    const x0 = lean > 0 ? x : x + h;
+    for (let j = 0; j < h; j++) {
+      const sx = x0 + lean * Math.floor(j / (rounded ? 2 : 1));
+      const trim = j === 0 || j === h - 1 ? 1 : 0;
+      for (let i = trim; i < w - trim; i++) put(sx + i, y + j, st.light);
+    }
+    // the shade under it, along the plate's lower edge
+    const bx = x0 + lean * Math.floor((h - 1) / (rounded ? 2 : 1));
+    for (let i = 1; i < w - 1; i++) put(bx + i, y + h, st.dark);
   };
-  const crack = (c: string): void => {
-    const len = 3 + Math.floor(rng() * 3) + span;
-    let [x, y] = spot(len, len);
-    const dx = rng() < 0.5 ? 1 : 0, dy = 1 - dx;
-    const bend = 1 + Math.floor(rng() * (len - 2));
+  /** A CREVICE: a diagonal line, stepping one across for one down, with
+   *  a kink partway — the floor's cracks are level, so this is the one
+   *  place a diagonal appears on the ground */
+  const crevice = (len: number): void => {
+    let [x, y] = spot(len + 1, len + 1);
+    const sx = rng() < 0.5 ? 1 : -1;
+    if (sx < 0) x += len;
+    const kink = 1 + Math.floor(rng() * Math.max(1, len - 2));
     for (let k = 0; k < len; k++) {
-      put(x, y, c);
-      if (k === bend) {
-        x += dy * (x < N / 2 ? 1 : -1);
-        y += dx * (y < N / 2 ? 1 : -1);
-        put(x, y, c);
+      put(x, y, st.dark);
+      if (k === kink) {
+        put(x + sx, y, st.dark);
+        x += sx;
       }
-      x += dx;
-      y += dy;
+      x += sx;
+      y += 1;
     }
   };
-  const dash = (c: string): void => {
-    const w = 3 + Math.floor(rng() * 2);
-    const [x, y] = spot(w, 1);
-    for (let i = 0; i < w; i++) put(x + i, y, c);
-  };
-  const strata = (): void => {
-    // level lines that run most of the face, broken once
-    const w = N - RIM * 2 - 2 - Math.floor(rng() * 3);
-    const [x, y] = spot(w, 1);
-    const gap = 1 + Math.floor(rng() * (w - 2));
-    for (let i = 0; i < w; i++) if (i !== gap) put(x + i, y, st.dark);
-  };
+
   const reps = span * span;
-  switch (st.mark) {
-    case "patch":
-      for (let r = 0; r < reps; r++) {
-        blob(st.light, 3, 2);
-        if (rng() < 0.6) blob(st.dark, 2, 2);
-      }
-      break;
-    case "crack":
-      for (let r = 0; r < reps; r++) {
-        crack(st.dark);
-        if (rng() < 0.5) blob(st.light, 3, 2);
-      }
-      break;
-    case "ripple":
-      for (let r = 0; r < reps; r++) {
-        dash(st.light);
-        dash(st.dark);
-      }
-      break;
-    case "strata":
-      for (let r = 0; r < reps + 1; r++) strata();
-      break;
-    case "clump":
-      for (let r = 0; r < reps; r++) {
-        blob(st.dark, 3, 2);
-        blob(st.light, 2, 2);
-      }
-      break;
+  for (let r = 0; r < reps; r++) {
+    switch (st.grain) {
+      case "rough":
+        facet(4 + Math.floor(rng() * 2) + span, false);
+        facet(3 + Math.floor(rng() * 2), false);
+        crevice(4 + Math.floor(rng() * 3));
+        break;
+      case "soft":
+        facet(4 + Math.floor(rng() * 2) + span, true);
+        if (rng() < 0.6) crevice(3 + Math.floor(rng() * 2));
+        break;
+      case "glassy":
+        facet(3 + Math.floor(rng() * 2) + span, false);
+        crevice(5 + Math.floor(rng() * 3));
+        crevice(4 + Math.floor(rng() * 3));
+        break;
+    }
   }
 
   const P = TILE_PX * span;

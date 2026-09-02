@@ -70,17 +70,17 @@ stale tab or a cached bundle looks exactly like a fix not working.
   roomier way round rather than scrape a corner
 - `game/sim.ts` — units in struct-of-arrays typed arrays, counting-sort spatial
   hash (separation + projectile hits), towers, projectiles, effects
-- `game/tiles.ts` — **the ground tiles**, the game's own floor art: a
-  16-pixel tile painted at load (a flat base, one or two soft patches, a
-  crack or a ripple or a single pebble — never Mindustry's speckle), two
-  paintings a floor with the third slot drawing the first turned half a
-  turn. The **hill blocks** are painted here too: a flat plateau face in a
-  thin outline with rounded corners, a light lip along the top and a dark
-  line above the bottom for relief (no 45° bevel), a family mark on the
-  face (strata, a crack, clumps, ripples), two blocks a family and one 2×2
-  block for the field's large-draw rule. The atlas, the menu background,
-  the map thumbnails and the editor palette all read from it;
-  `npm run gen:tiles` writes the palette's PNGs into `public/tiles/`
+- `game/tiles.ts` — **the ground tiles and the hill blocks**, the game's
+  own terrain art: a 16-pixel tile painted at load. A floor is a flat base
+  with one or two soft patches and a single mark (a crack, a ripple, one
+  pebble — never Mindustry's speckle); a wall is a continuous rock surface
+  with no outline or bevel at all, lit plates and diagonal crevices on its
+  face, so an outcrop reads as one mass and the field's own shadow lifts
+  it off the floor. Two paintings a family, the floors' third slot drawing
+  the first turned half a turn, and a 2×2 block per wall family for the
+  large-draw rule. The atlas, the menu background, the map thumbnails and
+  the editor palette all read from it; `npm run gen:tiles` writes the
+  palette's PNGs into `public/tiles/`
 - `game/atlas.ts` — the sprite atlas, composited at load time from Mindustry
   sprites in `public/mindustry/` plus procedural regions; **swap any region
   for custom art** (units are white sprites tinted per instance, and already
