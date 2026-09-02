@@ -10,6 +10,7 @@ import {
   UV_DECOR,
   UV_FLOORS,
   UV_PINE,
+  UV_PINES,
   UV_RING,
   UV_FUSE,
   UV_HEX,
@@ -141,12 +142,29 @@ const PAL_HEAL = [0x98 / 255, 0xff / 255, 0xa9 / 255] as const;
  * the atlas is packed from, one per floor GROUP (UV_FLOORS carries three
  * variants of each, and they average alike).
  */
+// ONE ROW PER FLOOR GROUP, in UV_FLOORS order — the mean colour of the
+// family's first tile, which is what a puff of it kicked up looks like.
+// The water groups have rows of their own so the table can be indexed by
+// group directly: it used to stop at the five land families and wrap
+// (`% length`), which quietly dusted a shoreline in grass.
 const FLOOR_DUST: readonly RGB[] = [
   [0x6e / 255, 0xab / 255, 0x5e / 255], // grass
   [0x56 / 255, 0x56 / 255, 0x5c / 255], // stone
   [0x67 / 255, 0x40 / 255, 0x36 / 255], // dirt
   [0xd8 / 255, 0xb2 / 255, 0x90 / 255], // sand
   [0x3f / 255, 0x3c / 255, 0x3c / 255], // darksand
+  [0x5c / 255, 0x6d / 255, 0xba / 255], // shallow water
+  [0x50 / 255, 0x5f / 255, 0xa6 / 255], // deep water
+  [0x70 / 255, 0x46 / 255, 0x77 / 255], // moss
+  [0x70 / 255, 0x49 / 255, 0x87 / 255], // spore moss
+  [0x35 / 255, 0x1f / 255, 0x1b / 255], // mud
+  [0x60 / 255, 0x5b / 255, 0x83 / 255], // shale
+  [0xe8 / 255, 0xee / 255, 0xf3 / 255], // snow
+  [0xf5 / 255, 0xf6 / 255, 0xf9 / 255], // salt
+  [0xd3 / 255, 0xd2 / 255, 0xfc / 255], // ice
+  [0x40 / 255, 0x3d / 255, 0x3d / 255], // basalt
+  [0x60 / 255, 0x4b / 255, 0x94 / 255], // shallow spore water
+  [0x44 / 255, 0x35 / 255, 0x6b / 255], // deep spore water
 ];
 /** Pal.lancerLaser #a9d8ff — arc's bolt and lancer's beam are both drawn
  * in it, and both wash out to white as they fade */
@@ -454,12 +472,31 @@ const LEG_SHADE = 0.14;
 // rim is the BEACH reaching into the water. Give water a high priority
 // instead and the lake grows a rim over the sand, which reads as a puddle
 // on top of the ground rather than a hole in it.
-const GROUP_PRI = [4, 0, 3, 1, 2, -1, -2] as const;
-// overlaying groups in ascending priority. Stone never overlays (lowest of
-// the land floors), and sand's only inferior — stone floor — shares no map
-// with it yet, so its edge art isn't baked either. The water groups are
-// never in here: nothing is beneath them to fade over.
-const EDGE_ORDER = [4, 2, 0] as const;
+//
+// The second environment band's eight land families continue upward from
+// the first band's top (grass, 4) in Mindustry's own rough order: the bare
+// rocks first, then the frozen pair with snow drifting over ice, then the
+// marsh, where moss creeps over mud and the spore growth creeps over the
+// moss. The spore waters join the clear ones at the bottom.
+const GROUP_PRI = [
+  4, 0, 3, 1, 2, -1, -2,
+  11, // moss
+  12, // spore moss
+  10, // mud
+  5, // shale
+  9, // snow
+  7, // salt
+  8, // ice
+  6, // basalt
+  -3, // shallow spore water
+  -4, // deep spore water
+] as const;
+// overlaying groups in ascending priority — darksand, dirt, grass, then
+// the second band's eight. Stone never overlays (lowest of the land
+// floors), and sand's only inferior — stone floor — shares no map with it
+// yet, so its edge art isn't baked either. The water groups are never in
+// here: nothing is beneath them to fade over.
+const EDGE_ORDER = [4, 2, 0, 10, 14, 12, 13, 11, 9, 7, 8] as const;
 // wall shadow strength: BlockRenderer.shadowColor is black at 0.71 — the
 // premultiplied blend of a black quad at this alpha equals its multiply
 const WALL_SHADOW_A = 0.71;
@@ -1458,8 +1495,10 @@ export class Renderer {
     if (layers.props) {
       for (const d of T.decor)
         this.push(w, d.x, d.y, d.size, d.size, d.rot, UV_DECOR[d.kind], 1, 1, 1, 1);
+      // a pine's kind picks its forest (UV_PINES); kind 0 is the original
+      // tree, which is what every pine saved before the table existed is
       for (const p of T.pines)
-        this.push(w, p.x, p.y, p.size, p.size, p.rot, UV_PINE, 1, 1, 1, 1);
+        this.push(w, p.x, p.y, p.size, p.size, p.rot, UV_PINES[p.kind] ?? UV_PINE, 1, 1, 1, 1);
     }
     for (const b of [t, wt, sh, w]) {
       gl.bindVertexArray(b.vao);

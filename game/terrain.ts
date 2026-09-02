@@ -1,5 +1,5 @@
 import { ALL_MOVE_BITS, BASE, CELL, clamp, COLS, LAYER_BIT, NCELLS, ROWS } from "./constants";
-import { FLOOR_SHALLOW_WATER } from "./atlas";
+import { DECOR_TILES, WATER_FLOOR_GROUPS } from "./atlas";
 import { fitSpawnCircles, rasterizeSpawns, type SpawnCircle } from "./maps";
 
 export interface Prop {
@@ -7,7 +7,10 @@ export interface Prop {
   y: number;
   size: number; // fixed per sprite type — native tile scale, never randomized
   rot: number; // radians, quarter-turn steps so the pixel art stays crisp
-  kind: number; // index into UV_DECOR (unused for pines)
+  /** which sprite: an index into UV_DECOR for decor, into UV_PINES for a
+   *  pine. 0 is the original of each, so props saved before either table
+   *  had a second row keep drawing what they drew */
+  kind: number;
 }
 
 /** random quarter-turn — props vary by rotation, never by size */
@@ -54,13 +57,19 @@ export const showsFloorCell = (blocked: number, wall: number): boolean =>
   !blocked || wall === WALL_PINE || wall === WALL_DEEP;
 
 /**
- * Is this floor index water of either depth? The two water groups are the
- * top of the floor table (FLOOR_SHALLOW_WATER onward in atlas.ts), so the
- * test is a single comparison — and it is the whole definition of where a
- * naval hull may go, the way `blocked` is the whole definition of where a
- * walker may not.
+ * Is this floor index water of any kind? It is the whole definition of
+ * where a naval hull may go, the way `blocked` is the whole definition of
+ * where a walker may not.
+ *
+ * It reads the floor's GROUP against WATER_FLOOR_GROUPS rather than
+ * comparing the index against FLOOR_SHALLOW_WATER, which is what it used
+ * to do while the two waters were the last groups in the table. They are
+ * not any more — a new floor family has to be appended, because its index
+ * is baked into every map document on disk — so "above the waterline"
+ * stopped meaning wet the first time a land family landed past them.
  */
-export const isWaterFloor = (floor: number): boolean => floor >= FLOOR_SHALLOW_WATER;
+export const isWaterFloor = (floor: number): boolean =>
+  WATER_FLOOR_GROUPS.includes((floor / 3) | 0);
 
 /**
  * The passability mask for the WATER layer: 1 where a hull cannot go, which
@@ -398,12 +407,13 @@ export function generateTerrain(seed: number): Terrain {
     if (blocked[i]) continue;
     if (x >= BASE.x - 6 && y >= BASE.y - 4 && y < BASE.y + BASE.size + 4) continue;
     const shrub = floor[i] < 3 && rng() < 0.45; // shrubs only look right on grass
+    const kind = shrub ? 2 : (rng() * 2) | 0;
     decor.push({
       x: (x + 0.5) * CELL,
       y: (y + 0.5) * CELL,
-      size: shrub ? CELL : CELL * 1.5, // native scale: 32px shrub, 48px boulder
+      size: CELL * DECOR_TILES[kind], // native scale, per sprite
       rot: quarterTurn(rng),
-      kind: shrub ? 2 : (rng() * 2) | 0,
+      kind,
     });
   }
 

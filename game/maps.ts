@@ -17,8 +17,29 @@ import {
  * Never change it — it is a fact about files already on disk.
  */
 export const LEGACY_COLS = 128;
-import { isWaterFloor, WALL_PINE, type Prop, type Terrain } from "./terrain";
-import { FLOOR_DEEP_WATER, FLOOR_SHALLOW_WATER } from "./atlas";
+import { isWaterFloor, WALL_DEEP, WALL_PINE, type Prop, type Terrain } from "./terrain";
+import {
+  FLOOR_BASALT,
+  FLOOR_DEEP_TAINTED_WATER,
+  FLOOR_DEEP_WATER,
+  FLOOR_ICE,
+  FLOOR_MOSS,
+  FLOOR_MUD,
+  FLOOR_SALT,
+  FLOOR_SHALE,
+  FLOOR_SHALLOW_WATER,
+  FLOOR_SNOW,
+  FLOOR_SPORE_MOSS,
+  FLOOR_TAINTED_WATER,
+  WALL_DACITE,
+  WALL_DUNE,
+  WALL_ICE,
+  WALL_SALT,
+  WALL_SAND,
+  WALL_SHALE,
+  WALL_SNOW,
+  WALL_SPORE,
+} from "./atlas";
 import { explain, type SaveResult } from "./types";
 
 /**
@@ -89,9 +110,13 @@ export interface MapData {
 
 /** every playable map — add a JSON under public/maps/ and list its id here */
 export const OFFICIAL_MAP_IDS: readonly string[] = [
-  // the two campaign maps, in world order
+  // the campaign maps, in world order
   "grass-open",
   "tidewater",
+  // The spore archipelago. NO WORLD CLAIMS IT YET, so it opens in the
+  // editor and is played by nothing — the map is finished terrain waiting
+  // on a world to name it (WORLDS in levels.ts) and a tier to reach it.
+  "quagmire",
   // NOT A CAMPAIGN MAP. The last survivor of the generated set the game
   // started from, kept as the reference for what the generator produces —
   // no world names it, so it appears in the editor and nowhere else.
@@ -324,6 +349,34 @@ export const PALETTE: readonly PaletteSet[] = [
     icons: [`${ENV}/shallow-water.png`] },
   { id: "deep-water", label: "Deep water", kind: "deep", variants: [FLOOR_DEEP_WATER],
     icons: [`${ENV}/deep-water.png`] },
+  // THE SECOND ENVIRONMENT BAND (see the ENV2 note in atlas.ts). Mindustry's
+  // "moss" is the purple spore growth, not a green one, so moss, spore moss,
+  // mud and the two spore waters are one marsh palette; shale and basalt are
+  // bare rock, and snow, ice and salt are the frozen set
+  { id: "moss", label: "Moss", kind: "floor", variants: [FLOOR_MOSS, FLOOR_MOSS + 1, FLOOR_MOSS + 2],
+    icons: [1, 2, 3].map((n) => `${ENV}/moss${n}.png`) },
+  { id: "spore-moss", label: "Spore moss", kind: "floor",
+    variants: [FLOOR_SPORE_MOSS, FLOOR_SPORE_MOSS + 1, FLOOR_SPORE_MOSS + 2],
+    icons: [1, 2, 3].map((n) => `${ENV}/spore-moss${n}.png`) },
+  { id: "mud", label: "Mud", kind: "floor", variants: [FLOOR_MUD, FLOOR_MUD + 1, FLOOR_MUD + 2],
+    icons: [1, 2, 3].map((n) => `${ENV}/mud${n}.png`) },
+  { id: "shale", label: "Shale", kind: "floor",
+    variants: [FLOOR_SHALE, FLOOR_SHALE + 1, FLOOR_SHALE + 2],
+    icons: [1, 2, 3].map((n) => `${ENV}/shale${n}.png`) },
+  { id: "basalt", label: "Basalt", kind: "floor",
+    variants: [FLOOR_BASALT, FLOOR_BASALT + 1, FLOOR_BASALT + 2],
+    icons: [1, 2, 3].map((n) => `${ENV}/basalt${n}.png`) },
+  { id: "snow", label: "Snow", kind: "floor", variants: [FLOOR_SNOW, FLOOR_SNOW + 1, FLOOR_SNOW + 2],
+    icons: [1, 2, 3].map((n) => `${ENV}/snow${n}.png`) },
+  { id: "ice", label: "Ice", kind: "floor", variants: [FLOOR_ICE, FLOOR_ICE + 1, FLOOR_ICE + 2],
+    icons: [1, 2, 3].map((n) => `${ENV}/ice${n}.png`) },
+  // salt and both spore waters ship as ONE tile each, like the clear waters
+  { id: "salt", label: "Salt", kind: "floor", variants: [FLOOR_SALT],
+    icons: [`${ENV}/salt.png`] },
+  { id: "spore-water", label: "Spore water", kind: "floor", variants: [FLOOR_TAINTED_WATER],
+    icons: [`${ENV}/tainted-water.png`] },
+  { id: "deep-spore-water", label: "Deep spore water", kind: "deep",
+    variants: [FLOOR_DEEP_TAINTED_WATER], icons: [`${ENV}/deep-tainted-water.png`] },
   { id: "stone-wall", label: "Stone wall", kind: "wall", variants: [0, 1],
     icons: [1, 2].map((n) => `${ENV}/stone-wall${n}.png`) },
   { id: "dirt-wall", label: "Dirt wall", kind: "wall", variants: [2, 3],
@@ -332,6 +385,24 @@ export const PALETTE: readonly PaletteSet[] = [
   // wall indices jump straight to 5-6
   { id: "dark-wall", label: "Dark rock", kind: "wall", variants: [5, 6],
     icons: [1, 2].map((n) => `${ENV}/carbon-wall${n}.png`) },
+  // the second band's rock, all of it past the two sentinels and so all of
+  // it ordinary buildable wall
+  { id: "spore-wall", label: "Spore wall", kind: "wall", variants: [WALL_SPORE, WALL_SPORE + 1],
+    icons: [1, 2].map((n) => `${ENV}/spore-wall${n}.png`) },
+  { id: "shale-wall", label: "Shale wall", kind: "wall", variants: [WALL_SHALE, WALL_SHALE + 1],
+    icons: [1, 2].map((n) => `${ENV}/shale-wall${n}.png`) },
+  { id: "dacite-wall", label: "Dacite wall", kind: "wall", variants: [WALL_DACITE, WALL_DACITE + 1],
+    icons: [1, 2].map((n) => `${ENV}/dacite-wall${n}.png`) },
+  { id: "sand-wall", label: "Sand wall", kind: "wall", variants: [WALL_SAND, WALL_SAND + 1],
+    icons: [1, 2].map((n) => `${ENV}/sand-wall${n}.png`) },
+  { id: "dune-wall", label: "Dune wall", kind: "wall", variants: [WALL_DUNE, WALL_DUNE + 1],
+    icons: [1, 2].map((n) => `${ENV}/dune-wall${n}.png`) },
+  { id: "snow-wall", label: "Snow wall", kind: "wall", variants: [WALL_SNOW, WALL_SNOW + 1],
+    icons: [1, 2].map((n) => `${ENV}/snow-wall${n}.png`) },
+  { id: "ice-wall", label: "Ice wall", kind: "wall", variants: [WALL_ICE, WALL_ICE + 1],
+    icons: [1, 2].map((n) => `${ENV}/ice-wall${n}.png`) },
+  { id: "salt-wall", label: "Salt wall", kind: "wall", variants: [WALL_SALT, WALL_SALT + 1],
+    icons: [1, 2].map((n) => `${ENV}/salt-wall${n}.png`) },
   // the path tool: drags carve an enemy road through rock at roughly the
   // width the generated maps use, with a little wobble on the edges, and
   // lay this floor down its middle. Variants are the road surface
@@ -339,10 +410,28 @@ export const PALETTE: readonly PaletteSet[] = [
     icons: [1, 2, 3].map((n) => `${ENV}/dirt${n}.png`) },
   { id: "path-darksand", label: "Sand path", kind: "path", variants: [12, 13, 14],
     icons: [1, 2, 3].map((n) => `${ENV}/darksand${n}.png`) },
-  { id: "pine", label: "Pine", kind: "pine", variants: [0], icons: [`${ENV}/pine.png`] },
+  { id: "path-mud", label: "Mud path", kind: "path",
+    variants: [FLOOR_MUD, FLOOR_MUD + 1, FLOOR_MUD + 2],
+    icons: [1, 2, 3].map((n) => `${ENV}/mud${n}.png`) },
+  // ONE PINE SET, THREE FORESTS: the variant is the tree (UV_PINES), not a
+  // reshuffle of the same one, so a marsh is forested in spore pines and a
+  // snowfield in snow pines without a second blocking brush
+  { id: "pine", label: "Pine", kind: "pine", variants: [0, 1, 2], noRandom: true,
+    icons: [`${ENV}/pine.png`, `${ENV}/spore-pine.png`, `${ENV}/snow-pine.png`] },
   { id: "boulder", label: "Boulder", kind: "decor", variants: [0, 1],
     icons: [1, 2].map((n) => `${PROPS}/boulder${n}.png`) },
-  { id: "shrub", label: "Shrub", kind: "decor", variants: [2], icons: [`${ENV}/shrubs1.png`] },
+  { id: "shrub", label: "Shrub", kind: "decor", variants: [2, 11],
+    icons: [1, 2].map((n) => `${ENV}/shrubs${n}.png`) },
+  { id: "spore-cluster", label: "Spore cluster", kind: "decor", variants: [3, 4, 5],
+    icons: [1, 2, 3].map((n) => `${PROPS}/spore-cluster${n}.png`) },
+  { id: "pur-bush", label: "Purple bush", kind: "decor", variants: [6],
+    icons: [`${PROPS}/pur-bush.png`] },
+  { id: "shale-boulder", label: "Shale boulder", kind: "decor", variants: [7, 8],
+    icons: [1, 2].map((n) => `${PROPS}/shale-boulder${n}.png`) },
+  { id: "snow-boulder", label: "Snow boulder", kind: "decor", variants: [9, 10],
+    icons: [1, 2].map((n) => `${PROPS}/snow-boulder${n}.png`) },
+  { id: "sand-boulder", label: "Sand boulder", kind: "decor", variants: [12, 13],
+    icons: [1, 2].map((n) => `${PROPS}/sand-boulder${n}.png`) },
   // DROP ZONES: a data layer — no pad tile is painted anywhere; the editor
   // shows each zone as its circle overlay over the floor.
   //
@@ -391,10 +480,14 @@ export const PALETTE: readonly PaletteSet[] = [
  * paletteSections() checks the two lists agree rather than trusting them.
  */
 export const PALETTE_SECTIONS: readonly { label: string; ids: readonly string[] }[] = [
-  { label: "Ground", ids: ["grass", "stone", "dirt", "sand", "darksand", "water", "deep-water"] },
-  { label: "Walls", ids: ["stone-wall", "dirt-wall", "dark-wall", "pine"] },
-  { label: "Paths", ids: ["path-dirt", "path-darksand"] },
-  { label: "Props", ids: ["boulder", "shrub"] },
+  { label: "Ground", ids: ["grass", "stone", "dirt", "sand", "darksand", "moss", "spore-moss",
+    "mud", "shale", "basalt", "snow", "ice", "salt"] },
+  { label: "Water", ids: ["water", "deep-water", "spore-water", "deep-spore-water"] },
+  { label: "Walls", ids: ["stone-wall", "dirt-wall", "dark-wall", "spore-wall", "shale-wall",
+    "dacite-wall", "sand-wall", "dune-wall", "snow-wall", "ice-wall", "salt-wall", "pine"] },
+  { label: "Paths", ids: ["path-dirt", "path-darksand", "path-mud"] },
+  { label: "Props", ids: ["boulder", "shrub", "spore-cluster", "pur-bush", "shale-boulder",
+    "snow-boulder", "sand-boulder"] },
   { label: "Zones", ids: ["spawn", "goal", "core"] },
   { label: "Tools", ids: ["erase"] },
 ];
@@ -749,14 +842,33 @@ const FLOOR_TONES = [
   "#3f3c3c", "#413e3e", "#3f3c3c", // darksand
   "#4c6b9c", "#4c6b9c", "#4c6b9c", // shallow water
   "#2f4d7a", "#2f4d7a", "#2f4d7a", // deep water
+  // the second environment band (see the ENV2 note in atlas.ts)
+  "#704677", "#6c4373", "#74497b", // moss
+  "#704987", "#6c4583", "#754d8c", // spore moss
+  "#351f1b", "#38221e", "#331d19", // mud
+  "#605b83", "#5c577f", "#645f87", // shale
+  "#e8eef3", "#e4ebf1", "#ecf1f5", // snow
+  "#f5f6f9", "#f5f6f9", "#f5f6f9", // salt
+  "#d3d2fc", "#cfcefa", "#d7d6fe", // ice
+  "#403d3d", "#3d3a3a", "#434040", // basalt
+  "#604b94", "#604b94", "#604b94", // shallow spore water
+  "#44356b", "#44356b", "#44356b", // deep spore water
 ];
-// index 4 (the pine sentinel) never reaches this table — drawThumb tests
-// WALL_PINE first — but the slot keeps 5-6 (dark carbon rock) aligned.
-// Index 7 (WALL_DEEP) DOES reach it: a deep-water cell is blocked, so the
-// thumbnail looks its tone up here rather than in FLOOR_TONES, and it has
-// to come back water-coloured or every lake would draw as rock
+// Neither SENTINEL reaches this table: drawThumb tests both first. The
+// pine slot (4) is a placeholder that keeps 5-6 (dark carbon rock)
+// aligned, and so is the deep-water slot (7) — a deep cell is blocked, but
+// its colour is the WATER it is, which only its floor index knows. Reading
+// it from here instead is what painted a spore lake in clear-water blue.
 const WALL_TONES = [
-  "#5c5c66", "#565660", "#6e4f35", "#674a32", "#000000", "#3e454a", "#3a4046", "#2f4d7a",
+  "#5c5c66", "#565660", "#6e4f35", "#674a32", "#000000", "#3e454a", "#3a4046", "#000000",
+  "#7e4e87", "#7a4a83", // spore
+  "#686a91", "#64668d", // shale
+  "#d9e0ec", "#d5dce8", // snow
+  "#c0bef6", "#bcbaf2", // ice
+  "#dee1e9", "#dadde5", // salt
+  "#eecbab", "#eac7a7", // sand
+  "#525050", "#4e4c4c", // dune
+  "#9292a7", "#8e8ea3", // dacite
 ];
 const PINE_TONE = "#2e6e35";
 
@@ -772,11 +884,12 @@ export function drawThumb(map: MapData, canvas: HTMLCanvasElement): void {
   for (let y = 0; y < rows; y++)
     for (let x = 0; x < COLS; x++) {
       const i = y * COLS + x;
-      c.fillStyle = map.blocked[i]
-        ? map.wall[i] === WALL_PINE
-          ? PINE_TONE
-          : WALL_TONES[map.wall[i]] ?? WALL_TONES[0]
-        : FLOOR_TONES[map.floor[i]] ?? FLOOR_TONES[0];
+      c.fillStyle =
+        map.blocked[i] && map.wall[i] !== WALL_DEEP
+          ? map.wall[i] === WALL_PINE
+            ? PINE_TONE
+            : WALL_TONES[map.wall[i]] ?? WALL_TONES[0]
+          : FLOOR_TONES[map.floor[i]] ?? FLOOR_TONES[0];
       c.fillRect(x, y, 1, 1);
     }
   // core marker. Spawn zones are deliberately NOT drawn: a thumbnail is a

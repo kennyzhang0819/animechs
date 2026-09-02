@@ -1,4 +1,4 @@
-import { buildAtlas, FLOOR_SHALLOW_WATER } from "./atlas";
+import { buildAtlas, DECOR_TILES, FLOOR_SHALLOW_WATER, SHALLOW_FOR_DEEP } from "./atlas";
 import { drawHaze, fitZoom } from "./haze";
 import {
   CELL,
@@ -359,14 +359,16 @@ export class MapEditor {
       T.blocked[i] = 1;
       T.wall[i] = WALL_PINE;
       this.removePropsAt(gx, gy);
-      T.pines.push({ x: cx, y: cy, size: CELL * 1.5, rot, kind: 0 });
+      // the variant is the forest (UV_PINES) — every pine is 48px art on a
+      // 32px tile, so they all overhang by the same half tile
+      T.pines.push({ x: cx, y: cy, size: CELL * 1.5, rot, kind: pick });
     } else if (set.kind === "decor") {
       if (T.blocked[i]) return; // props live on open ground, like the generator's
       this.removePropsAt(gx, gy);
       T.decor.push({
         x: cx,
         y: cy,
-        size: pick === 2 ? CELL : CELL * 1.5, // shrubs are 32px art, boulders 48px
+        size: CELL * DECOR_TILES[pick], // native scale, per sprite
         rot,
         kind: pick,
       });
@@ -390,7 +392,8 @@ export class MapEditor {
         // the swarm walks across, which is a tile the game has no meaning
         // for. Shallow is that cell's honest answer: the same water,
         // no longer deep. Paint any land floor over it for dry ground.
-        if (T.blocked[i] && T.wall[i] === WALL_DEEP) T.floor[i] = FLOOR_SHALLOW_WATER;
+        if (T.blocked[i] && T.wall[i] === WALL_DEEP)
+          T.floor[i] = SHALLOW_FOR_DEEP[T.floor[i]] ?? FLOOR_SHALLOW_WATER;
         T.blocked[i] = 0;
         T.wall[i] = 0;
       }

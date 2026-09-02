@@ -16,7 +16,7 @@ changing the height means resizing the arrays, not setting a field.
 | --- | --- |
 | `blocked` | 0/1 — the only thing pathfinding reads |
 | `wall` | `UV_WALLS` index; `WALL_PINE` (4) and `WALL_DEEP` (7) are blocked but still show their floor |
-| `floor` | `UV_FLOORS` index; `FLOOR_SHALLOW_WATER` 15, `FLOOR_DEEP_WATER` 18 |
+| `floor` | `UV_FLOORS` index; `FLOOR_SHALLOW_WATER` 15, `FLOOR_DEEP_WATER` 18, the spore pair 45 and 48 |
 | `spawns` | circles `{x, y, r, zone}`, zone one of `ground` / `air` / `water` / `boss` |
 | `exits` | per-cell **layer mask** — ground 1, air 2, water 4, ORed |
 | `core` | `{x, y}`, top-left cell |
@@ -34,6 +34,14 @@ Hand-drawing gives you a map that looks hand-drawn. Author from geometry
 instead: a script that stamps a handful of primitives, writes the JSON, and
 **refuses to write if its own checks fail**. Roughly thirty numbers should
 describe a whole map.
+
+The scripts live in `scripts/maps/`, one per map over a shared `geom.mjs`
+(the arc-only path builder, the raster helpers, and a PNG writer). Each
+takes its output path and an optional preview image:
+
+```
+node scripts/maps/quagmire.mjs public/maps/quagmire.json preview.png
+```
 
 The primitives that carry a map:
 
@@ -70,6 +78,14 @@ through.
 
 ## Water
 
+There are two waters, the clear pair and the spore pair, and **which floor
+indices are wet is a list, not a range** — `WATER_FLOOR_GROUPS` in
+`game/atlas.ts`. A new floor family has to be APPENDED, because its index
+is baked into every document already on disk, so the first land family
+added after the waters put dry ground above the old `floor >= 15` line.
+Add a family, add its group to that list if it is wet, and `isWaterFloor`
+keeps meaning what it says.
+
 Shallow water is walkable by ground units and costs nothing to path
 through; deep water (`WALL_DEEP`) blocks them. **A river must be deep bank
 to bank.** A shallow fringe along the banks is a continuous walkable
@@ -93,6 +109,16 @@ broken map. Every one of these has caught a real bug:
 - **Bend angles.** Walk each stamped centreline over an 8-cell chord and
   bucket the heading swings. Per-sample angles on a rasterised curve are
   mostly rounding noise; the 8-cell chord is what a unit actually crosses.
+- **No leg loops.** A "steer at this point, then run to it" move has no
+  answer when the point sits inside the turning circle, and what it does
+  instead is turn nearly all the way round. Compare each leg's length
+  against its straight line and refuse anything much longer: the result is
+  a road that still passes every other check and is a spiral through the
+  sea.
+- **Room to build.** Towers only stand on BLOCKED cells that are not one of
+  the two sentinels, so a map made mostly of water and road has nowhere to
+  put a turret. Count the rock, and count the 4x4 footprints in it — the
+  biggest turret needs sixteen contiguous cells of it.
 
 Print the numbers on every run. `sharpest turn: 13 degrees` is a fact you
 can act on; "looks smooth" is not.

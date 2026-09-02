@@ -1,8 +1,20 @@
 "use client";
 
-import { MUTATIONS, MUT_COST_MAX, type MutationDef } from "@/game/mutation";
-import { RUNG_COUNT, rungColor, rungLabel, tierMutationPoints } from "@/game/ladder";
+import {
+  MUTATIONS,
+  mutationCostOf,
+  MUT_COST_MAX,
+  type MutationDef,
+} from "@/game/mutation";
 import Board, { BackButton, useTouchOnly, type Cam } from "./Board";
+// the face and the weight live beside the deploy dialog that also draws
+// them (mutationFace.tsx) — one rule must not read Brutal here and
+// Heavy there
+import { bandOf, MutationFace, MUT_GLYPH, MUT_LIT } from "./mutationFace";
+
+/** the tab strip over both boards wears the codex glyph — re-exported so
+ *  TechTree keeps asking the board it is a tab of, not a module below it */
+export { MUT_GLYPH, MUT_LIT };
 import { useState, type ReactNode, type RefObject } from "react";
 
 /**
@@ -43,115 +55,18 @@ import { useState, type ReactNode, type RefObject } from "react";
  * it opens, a finger taps it and it opens, and nothing on this board ever
  * costs anything to ask about.
  *
- * ONE NUMBER SURVIVED, on the rail: the points each difficulty spends.
- * That is not the algorithm leaking out — it is the ladder, and it is the
- * only thing here that tells a player stepping from Level 5 to Level 6
- * what they are taking on.
+ * AND NOW NO NUMBERS AT ALL. A rail along the bottom used to print what
+ * each difficulty spends on its roll, and a bordered banner over the grid
+ * used to say the roll happens at deploy. Both were true and neither was
+ * the player's question, which is "what can happen to me, and how bad is
+ * it" — a face and a border colour answer that, and a points table only
+ * invites arithmetic about a roll nobody controls. What is left on this
+ * board is the tiles, the tab strip and the way back.
  *
  * NOTHING IS HIDDEN AND NOTHING IS TEASED: every rule that exists is
  * drawn, exactly as a StarCraft II player can read the mutator list before
  * queueing. The surprise is meant to be WHICH ones, not what exists.
  */
-
-/** the codex's colour, kept from the old column — deliberately NOT the
- *  tree's gold, because gold on the other board means "bought, owned,
- *  yours", and there is nothing here to own */
-export const MUT_LIT = "#FF8ACB";
-
-/** three chevrons climbing — the codex tab's face, and the fallback card
- *  glyph for a mutator with no face of its own */
-export const MUT_GLYPH = "M12 2 4 9h5v2H4l8 7 8-7h-5V9h5z";
-/** a disc with a wedge bitten out of it — Hungry's maw */
-const HUNGER_GLYPH = "M12 2a10 10 0 1 0 8.66 15L12 12l8.66-5A9.98 9.98 0 0 0 12 2z";
-/** an eight-point burst — Volatile's detonation */
-const VOLATILE_GLYPH =
-  "M12 1l2 6 5-3-3 5 6 2-6 2 3 5-5-3-2 6-2-6-5 3 3-5-6-2 6-2-3-5 5 3z";
-/** a dome on a base — the Shield Towers' silhouette */
-const SHIELD_TOWER_GLYPH = "M4 14a8 8 0 0 1 16 0v2H4zM6 18h12v3H6z";
-/** a hexagonal bubble, doubled — Overshields' force field */
-const OVERSHIELD_GLYPH =
-  "M12 1 2.5 6.5v11L12 23l9.5-5.5v-11zm0 2.3 7.5 4.34v8.72L12 20.7l-7.5-4.34V7.64zm0 3.2L7.3 9.2v5.6l4.7 2.7 4.7-2.7V9.2z";
-/** a shield with a plate seam across it — Armored Swarms */
-const ARMORED_GLYPH =
-  "M12 1.5 3.5 4.5v7c0 5 3.6 9.3 8.5 11 4.9-1.7 8.5-6 8.5-11v-7zM5.3 10.2h13.4v2.2H5.3z";
-
-/** the face a mutator wears on its card, as a path; MUT_GLYPH is the
- *  fallback, so a rule added without art still draws as something */
-const MUT_FACE: Record<string, string> = {
-  hungry: HUNGER_GLYPH,
-  volatile: VOLATILE_GLYPH,
-  shieldTowers: SHIELD_TOWER_GLYPH,
-  armored: ARMORED_GLYPH,
-  overshields: OVERSHIELD_GLYPH,
-};
-
-/**
- * ART, where a rule has some — pixel sprites, drawn at the scale the
- * turret icons are, because a card whose whole job is "how bad is this"
- * leads with a face rather than a number. A drawn icon beats a path the
- * moment one exists, so the glyphs below are only ever reached by a rule
- * nobody has illustrated yet.
- */
-const MUT_ART: Record<string, string> = {
-  hungry: "/mutators/hungry.png",
-  speedy: "/mutators/speedy.png",
-};
-
-/** the card's face: the sprite if the rule has one, else its glyph */
-function MutationFace({ id, size }: { id: string; size: string }) {
-  const art = MUT_ART[id];
-  if (art)
-    return (
-      // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite
-      <img
-        src={art}
-        alt=""
-        className={`${size} shrink-0 object-contain [image-rendering:pixelated]`}
-      />
-    );
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={`${size} shrink-0 fill-current`}
-      style={{ color: MUT_LIT }}
-      aria-hidden="true"
-    >
-      <path fillRule="evenodd" d={MUT_FACE[id] ?? MUT_GLYPH} />
-    </svg>
-  );
-}
-
-/**
- * THE THREE WEIGHTS — a border colour and a word, and no longer a column.
- *
- * THE COST SCALE (MUT_COST_MIN), WORN RATHER THAN PRINTED. `max` is the
- * top cost that lands in the band; it picks the tile's border colour and
- * is never shown, because a player does not need to know Speedy is worth
- * five points to know it is the worst thing in the catalog. The word turns
- * up once, in the hover card, where it is the answer to "how bad is this".
- *
- * The tiles used to be grouped under these as three labelled columns.
- * Grouping was a second thing to read before you could read anything else,
- * and with the colour on every border it said nothing the border did not.
- *
- * The last band must reach MUT_COST_MAX or a legal mutator would have no
- * colour at all (checked below, the way mutation.ts checks its own
- * catalog).
- */
-const BANDS: readonly { label: string; color: string; max: number }[] = [
-  { label: "Light", color: "#7BE58A", max: 2 },
-  { label: "Heavy", color: "#FFB65C", max: 4 },
-  { label: "Brutal", color: "#FF6B6B", max: MUT_COST_MAX },
-];
-
-if (BANDS[BANDS.length - 1].max < MUT_COST_MAX)
-  throw new Error(
-    `the weights stop at ${BANDS[BANDS.length - 1].max} but a mutator may cost ${MUT_COST_MAX}`,
-  );
-
-/** how bad a rule is, as the hover card says it */
-const bandOf = (cost: number): { label: string; color: string } =>
-  BANDS.find((b) => cost <= b.max) ?? BANDS[BANDS.length - 1];
 
 // ---------- board geometry ---------------------------------------------
 //
@@ -174,23 +89,29 @@ const CELL_H = 140;
 /** how many tiles a row holds before it wraps */
 const GRID_COLS = 6;
 
-const ROOT_W = 520;
-const ROOT_H = 86;
-const ROOT_Y = 56;
-const GRID_Y = 200;
+/**
+ * WHERE THE FIRST ROW STARTS. There is no banner over it any more — the
+ * board opened with a bordered frame reading "Mutators / rolled for you at
+ * deploy", which is a caption on a shelf of faces that already says it,
+ * and a title nobody needs is a thing to scroll past on a phone. The tiles
+ * ARE the answer, so they start near the top.
+ */
+const GRID_Y = 70;
 
 const COUNT = MUTATIONS.length;
 const COLS = Math.max(1, Math.min(GRID_COLS, COUNT));
 const ROWS = Math.max(1, Math.ceil(COUNT / COLS));
 
 const GRID_W = COLS * CELL_W;
-const BOARD_W = Math.max(GRID_W, ROOT_W) + PAD * 2;
-/** the board carries a taller bottom margin than top, so the fit-on-mount
- *  zoom leaves the ladder rail somewhere to sit that is not on top of the
- *  last row of tiles */
-const BOTTOM_PAD = 150;
+const BOARD_W = GRID_W + PAD * 2;
+/** matched to GRID_Y, so the fit-on-mount zoom centres the tiles. It was
+ *  half again as deep to leave the ladder rail somewhere to sit that was
+ *  not on top of the last row; with the rail gone that margin was just a
+ *  shelf of tiles sitting high on the screen */
+const BOTTOM_PAD = GRID_Y;
 const BOARD_H = GRID_Y + ROWS * CELL_H + BOTTOM_PAD;
-const ROOT_CX = BOARD_W / 2;
+/** the board's centre line — every row of tiles is centred on it */
+const GRID_CX = BOARD_W / 2;
 
 /** the centre of tile `i`, in board px. A short last row is centred under
  *  the full ones rather than left-aligned under them */
@@ -200,7 +121,7 @@ function tileAt(i: number): { cx: number; cy: number } {
   const col = i - row * COLS;
   const rowW = inRow * CELL_W;
   return {
-    cx: ROOT_CX - rowW / 2 + (col + 0.5) * CELL_W,
+    cx: GRID_CX - rowW / 2 + (col + 0.5) * CELL_W,
     cy: GRID_Y + (row + 0.5) * CELL_H,
   };
 }
@@ -228,7 +149,7 @@ function MutationTile({
   armed: string | null;
   onArm: (id: string | null) => void;
 }) {
-  const band = bandOf(def.cost);
+  const band = bandOf(mutationCostOf(def.id));
   const { cx, cy } = tileAt(index);
   // on touch the card follows `armed`, not the pointer: iOS does not
   // reliably focus a <button> it was tapped on, so hanging the card off
@@ -273,56 +194,6 @@ function MutationTile({
   );
 }
 
-/**
- * THE LADDER RAIL — pinned to the bottom, not laid on the board.
- *
- * THE ONE NUMBER ON THIS SCREEN: what each difficulty spends on its roll.
- * It is here rather than on the cards because it is the only thing true of
- * every card at once, and because it is the ladder rather than the
- * algorithm — a player stepping up a difficulty can see the number go up
- * without ever being told what a rule costs.
- *
- * IT CARRIED THE RULE COUNT TOO AND THAT WAS ONE NUMBER TOO MANY. Two
- * figures per tile read as a spec sheet; one reads as a difficulty.
- *
- * LEVEL 1 IS DRAWN AS A DASH RATHER THAN A ZERO. A tier that rolls nothing
- * is not a tier that rolls cheaply, and a zero reads as the bottom of a
- * scale rather than as "off".
- */
-function LadderRail() {
-  return (
-    <div
-      className="pointer-events-auto absolute bottom-[max(1rem,var(--safe-b))] left-1/2 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded border border-[#2E2E36] bg-[#151518]/90 px-3 py-1.5 backdrop-blur"
-      data-ui
-    >
-      <span className="text-[12px] uppercase tracking-widest text-[#71717C]">
-        Mutation points
-      </span>
-      <div className="flex flex-wrap justify-center gap-1">
-        {Array.from({ length: RUNG_COUNT }, (_, t) => {
-          const pts = tierMutationPoints(t);
-          return (
-            <div
-              key={t}
-              title={`${rungLabel(t)}: ${pts} mutation points`}
-              className="flex min-w-[38px] items-baseline justify-center gap-1 rounded border border-[#2E2E36] bg-[#101013] px-1.5 py-0.5"
-            >
-              <span className="text-[11px] font-bold" style={{ color: rungColor(t) }}>
-                {t + 1}
-              </span>
-              <span
-                className={`text-[13px] font-bold ${pts > 0 ? "text-[#EDEDEF]" : "text-[#4A4A55]"}`}
-              >
-                {pts > 0 ? pts : "—"}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 export default function MutationTree({
   onBack,
   backLabel,
@@ -353,36 +224,9 @@ export default function MutationTree({
             <BackButton label={backLabel} onClick={onBack} />
             {tabs}
           </div>
-          <LadderRail />
         </>
       }
     >
-      {/* the root: one line, because the tiles are the rest of the answer */}
-      <div
-        className="absolute flex flex-col justify-center rounded-lg border-2 bg-[#151518] px-5 text-center"
-        style={{
-          left: ROOT_CX - ROOT_W / 2,
-          top: ROOT_Y,
-          width: ROOT_W,
-          height: ROOT_H,
-          borderColor: MUT_LIT,
-        }}
-      >
-        <div
-          className="text-[15px] font-bold uppercase tracking-widest"
-          style={{ color: MUT_LIT }}
-        >
-          Mutators
-        </div>
-        <p className="mt-1 text-[14px] leading-snug text-[#A6A6AF]">
-          Rolled for you at deploy, from{" "}
-          <span className="font-bold" style={{ color: rungColor(1) }}>
-            {rungLabel(1)}
-          </span>{" "}
-          up.
-        </p>
-      </div>
-
       {MUTATIONS.map((m, i) => (
         <MutationTile
           key={m.id}

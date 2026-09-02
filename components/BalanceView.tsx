@@ -15,7 +15,18 @@ import {
   type RungKnobs,
   HP_PER_LEVEL,
 } from "@/game/ladder";
-import { MUT_COUNT_MAX, MUT_COUNT_MIN, MUT_COST_MAX } from "@/game/mutation";
+import {
+  allMutationCostOverrides,
+  authoredMutationCost,
+  MUTATIONS,
+  mutationCostOf,
+  MUT_COUNT_MAX,
+  MUT_COUNT_MIN,
+  MUT_COST_MAX,
+  MUT_COST_MIN,
+  setMutationCost,
+  type MutationId,
+} from "@/game/mutation";
 import {
   allOverrides,
   authoredKnobs,
@@ -168,10 +179,18 @@ export default function BalanceView() {
     [],
   );
 
+  const setMutCost = useCallback((id: MutationId, v: number | undefined) => {
+    setMutationCost(id, v);
+    setStatus(null);
+    bump((n) => n + 1);
+  }, []);
+
   const save = useCallback(async () => {
     const doc: BalanceDoc = { ...allOverrides() };
     const diffs = allRungOverrides();
     if (Object.keys(diffs).length > 0) doc.difficulties = diffs;
+    const muts = allMutationCostOverrides();
+    if (Object.keys(muts).length > 0) doc.mutations = muts;
     setStatus((await saveBalanceDoc(doc)) ? "Saved" : "Save failed");
   }, []);
 
@@ -316,6 +335,61 @@ export default function BalanceView() {
                 />
                   </>
                 )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* WHAT EACH RULE IS WORTH, saved into the same document under
+          `mutations`. It sits under the ladder card because the two are one
+          arithmetic: a rung hands out points, these spend them, and a cost
+          nudged by one changes which rungs can afford the rule at all */}
+      <div className="mb-4 rounded-lg border border-[#2E2E36] p-4">
+        <div className="mb-1 text-[15px] font-bold text-[#EDEDEF]">Mutator costs</div>
+        <p className="mb-3 max-w-3xl text-[12.5px] text-[#71717C]">
+          What a rule costs the roll, on the published {MUT_COST_MIN}–{MUT_COST_MAX} scale:{" "}
+          <span className="text-[#7BE58A]">1–2 light</span>,{" "}
+          <span className="text-[#FFB65C]">3–4 heavy</span>,{" "}
+          <span className="text-[#FF6B6B]">5–6 brutal</span>. A cost is about how much of the
+          player&apos;s game the rule takes away, not how much health it adds. Raising one
+          prices it out of the lower rungs; the catalog keeps its authored order either way,
+          so the codex does not reshuffle while you sweep.
+        </p>
+        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
+          {MUTATIONS.map((m) => {
+            const cost = mutationCostOf(m.id);
+            const authoredCost = authoredMutationCost(m.id);
+            const col = cost <= 2 ? "#7BE58A" : cost <= 4 ? "#FFB65C" : "#FF6B6B";
+            // which rungs can still afford it AT ALL — the number the cost
+            // actually decides, and the reason to be turning this knob
+            const afford = RUNGS.reduce(
+              (n, _, tier) => n + (tier > 0 && rungKnobsOf(tier).mutationPoints >= cost ? 1 : 0),
+              0,
+            );
+            return (
+              <div key={m.id} className="rounded border border-[#2E2E36] px-3 py-1">
+                <div className="flex items-baseline justify-between pt-2">
+                  <span className="text-[14px] font-bold" style={{ color: col }}>
+                    {m.name}
+                  </span>
+                  <span className={`text-[11px] text-[#71717C] ${NUM}`}>
+                    {afford}/{RUNGS.length - 1} rungs
+                  </span>
+                </div>
+                <p className="pt-1 text-[11.5px] leading-snug text-[#71717C]">{m.blurb}</p>
+                <Knob
+                  label="Cost"
+                  hint={`points against the roll's budget, ${MUT_COST_MIN}–${MUT_COST_MAX}`}
+                  value={cost}
+                  min={MUT_COST_MIN}
+                  max={MUT_COST_MAX}
+                  step={1}
+                  decimals={0}
+                  bent={cost !== authoredCost}
+                  onChange={(v) => setMutCost(m.id, v)}
+                  onReset={() => setMutCost(m.id, undefined)}
+                />
               </div>
             );
           })}

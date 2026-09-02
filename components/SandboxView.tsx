@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   MUTATIONS,
   MUT_COST_MAX,
+  mutationCostOf,
   mutationById,
   mutationCost,
   type MutationId,
@@ -163,9 +164,11 @@ export default function SandboxView() {
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {MUTATIONS.map((m) => {
             const on = picked.includes(m.id);
+            // mutationCostOf, not m.cost: the dashboard may have repriced it
+            const cost = mutationCostOf(m.id);
             // the codex's own three weights, by cost — light / heavy / brutal
             const band =
-              m.cost <= 2 ? "#7BE58A" : m.cost <= 4 ? "#FFB65C" : "#FF6B6B";
+              cost <= 2 ? "#7BE58A" : cost <= 4 ? "#FFB65C" : "#FF6B6B";
             return (
               <button
                 key={m.id}
@@ -183,7 +186,7 @@ export default function SandboxView() {
                     {m.name}
                   </span>
                   <span className="shrink-0 text-[11px] uppercase tracking-widest text-[#71717C]">
-                    {m.cost}/{MUT_COST_MAX} pts
+                    {cost}/{MUT_COST_MAX} pts
                   </span>
                 </div>
                 <p className="mt-1 text-[12px] leading-snug text-[#71717C]">{m.blurb}</p>

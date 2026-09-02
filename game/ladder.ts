@@ -116,10 +116,10 @@ export const LEVELS_PER_RUNG = 4;
  * roll may spend, and how many rules that roll returns.
  *
  * ONE CONSEQUENCE IS DELIBERATE AND WORTH KNOWING: shield tower pools no longer
- * climb with the tier (they rode shieldScale). A shield tower is now a fixed
- * obstacle that grows with the WAVE (SHIELD_TOWER_MEGA_WAVE) and with Overshields
- * if the roll pairs them, which is the same thing the rest of the catalog
- * does.
+ * climb with the tier (they rode shieldScale). A shield tower grows with the
+ * WAVE it rises on instead (shieldTowerWaveScale, ten per cent a wave), and
+ * with Overshields if the roll pairs them, which is the same thing the rest
+ * of the catalog does.
  */
 
 /** how many rungs the ladder has today — raising it is the whole edit an

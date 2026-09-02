@@ -30,6 +30,33 @@ const uv = (x: number, y: number, w: number, h: number, inset = 0): UVRect => [
 ];
 
 /**
+ * THE SECOND ENVIRONMENT BAND — 1024x896 in the atlas's bottom-right
+ * corner, and every piece of terrain that arrived after the first two
+ * campaign maps lives in it.
+ *
+ * The first band is row 0 and the gutters around it, and it is FULL: the
+ * original five floor families, three wall families and their edge fades
+ * took every 64px cell that row had. A sixth family cannot be squeezed in
+ * beside them, and scattering one across whatever gutter cells happen to
+ * be free (which is how darksand's edge fade ended up on the y=704 row) is
+ * how a layout stops being readable.
+ *
+ * So the new families take a block instead. A floor family is FIVE
+ * sprites at once — three tile variants, a 192px generated edge fade, and
+ * usually a wall pair with 2x2 "-large" art — and keeping all of them in
+ * one rectangle is what lets a family be added by reading one comment
+ * rather than five. The block is laid out in rows, dy by dy, below.
+ *
+ * Everything here is addressed through `e2`, so the whole band can be
+ * MOVED by changing one pair of numbers — which matters, because this is
+ * the last big empty rectangle a 2048x4096 sheet has.
+ */
+const ENV2_X = 1024;
+const ENV2_Y = 3200;
+const e2 = (dx: number, dy: number, w: number, h: number, inset = 0): UVRect =>
+  uv(ENV2_X + dx, ENV2_Y + dy, w, h, inset);
+
+/**
  * The two water cells, on the free stretch under the naval band. Named up
  * here because UV_FLOORS repeats each of them three times — see its note.
  *
@@ -50,10 +77,16 @@ const uv = (x: number, y: number, w: number, h: number, inset = 0): UVRect => [
 const WATER_TILE = 192;
 const WATER_SHALLOW_XY = [T5 + 800, 2304] as const;
 const WATER_DEEP_XY = [T5 + 800, 2496] as const;
+// the SPORE waters, on the second environment band's bottom row — same 3x3
+// packing and the same reason for it
+const WATER_TAINTED_XY = [ENV2_X + 576, ENV2_Y + 640] as const;
+const WATER_DEEP_TAINTED_XY = [ENV2_X + 768, ENV2_Y + 640] as const;
 const waterCentre = (xy: readonly [number, number]): UVRect =>
   uv(xy[0] + 64, xy[1] + 64, 64, 64);
 const WATER_SHALLOW_UV = waterCentre(WATER_SHALLOW_XY);
 const WATER_DEEP_UV = waterCentre(WATER_DEEP_XY);
+const WATER_TAINTED_UV = waterCentre(WATER_TAINTED_XY);
+const WATER_DEEP_TAINTED_UV = waterCentre(WATER_DEEP_TAINTED_XY);
 /**
  * UV distance of ONE MINDUSTRY WORLD UNIT along x on a water cell — what
  * the water shader multiplies its displacement by. A tile is 64 atlas px
@@ -98,12 +131,91 @@ export const UV_FLOORS: readonly UVRect[] = [
   WATER_DEEP_UV,
   WATER_DEEP_UV,
   WATER_DEEP_UV,
+  // ---- the second environment band's floors, groups 7-16 ----
+  // Appended, never inserted: a floor index is written into every map
+  // document on disk, so the only safe place for a new family is past the
+  // end. That is also why the water groups are no longer the tail of the
+  // table and `isWaterFloor` is no longer "index >= 15" — see
+  // WATER_FLOOR_GROUPS below.
+  e2(0, 0, 64, 64, 2), // moss
+  e2(64, 0, 64, 64, 2),
+  e2(128, 0, 64, 64, 2),
+  e2(192, 0, 64, 64, 2), // spore moss
+  e2(256, 0, 64, 64, 2),
+  e2(320, 0, 64, 64, 2),
+  e2(384, 0, 64, 64, 2), // mud
+  e2(448, 0, 64, 64, 2),
+  e2(512, 0, 64, 64, 2),
+  e2(576, 0, 64, 64, 2), // shale
+  e2(640, 0, 64, 64, 2),
+  e2(704, 0, 64, 64, 2),
+  e2(768, 0, 64, 64, 2), // snow
+  e2(832, 0, 64, 64, 2),
+  e2(896, 0, 64, 64, 2),
+  // salt ships as ONE tile, like the waters — the three entries share it,
+  // for the same reason the water groups do (see the note above)
+  e2(960, 0, 64, 64, 2),
+  e2(960, 0, 64, 64, 2),
+  e2(960, 0, 64, 64, 2),
+  e2(0, 64, 64, 64, 2), // ice
+  e2(64, 64, 64, 64, 2),
+  e2(128, 64, 64, 64, 2),
+  e2(192, 64, 64, 64, 2), // basalt
+  e2(256, 64, 64, 64, 2),
+  e2(320, 64, 64, 64, 2),
+  // the spore waters, one tile each like the clear pair
+  WATER_TAINTED_UV,
+  WATER_TAINTED_UV,
+  WATER_TAINTED_UV,
+  WATER_DEEP_TAINTED_UV,
+  WATER_DEEP_TAINTED_UV,
+  WATER_DEEP_TAINTED_UV,
 ];
 
 /** first index of each water group — what the palette and the map
  *  generators paint, and what `(i / 3) | 0` turns into GROUP_WATER_* */
 export const FLOOR_SHALLOW_WATER = 15;
 export const FLOOR_DEEP_WATER = 18;
+// first index of each second-band group, in table order
+export const FLOOR_MOSS = 21;
+export const FLOOR_SPORE_MOSS = 24;
+export const FLOOR_MUD = 27;
+export const FLOOR_SHALE = 30;
+export const FLOOR_SNOW = 33;
+export const FLOOR_SALT = 36;
+export const FLOOR_ICE = 39;
+export const FLOOR_BASALT = 42;
+export const FLOOR_TAINTED_WATER = 45;
+export const FLOOR_DEEP_TAINTED_WATER = 48;
+
+/**
+ * WHICH FLOOR GROUPS ARE WATER — the whole definition of where a hull may
+ * sail and where a walker drowns, and the reason it is a list rather than
+ * a comparison.
+ *
+ * It used to be `floor >= FLOOR_SHALLOW_WATER`, which was exact while the
+ * two waters were the last two groups in the table. They cannot stay last:
+ * a floor index is baked into every saved map document, so a new family
+ * has to be APPENDED, and the first one appended put land above the
+ * waterline. Naming the groups is the version of the rule that survives
+ * the next family too.
+ */
+export const WATER_FLOOR_GROUPS: readonly number[] = [
+  5, // shallow water
+  6, // deep water
+  15, // shallow spore water
+  16, // deep spore water
+];
+
+/**
+ * What a DEEP water cell drains to when its block is erased — the same
+ * water, no longer deep. Each deep group answers with its own shallow one,
+ * so draining a spore lake does not leave a clear puddle in it.
+ */
+export const SHALLOW_FOR_DEEP: Readonly<Record<number, number>> = {
+  [FLOOR_DEEP_WATER]: FLOOR_SHALLOW_WATER,
+  [FLOOR_DEEP_TAINTED_WATER]: FLOOR_TAINTED_WATER,
+};
 // per-group floor edge fades (Mindustry's generated <floor>-edge sprites):
 // three 192px blocks at y=768 for grass/stone/dirt, each a 3x3 of 64px
 // sub-cells in image space. A tile bordered by a higher-priority floor gets
@@ -129,6 +241,18 @@ export const UV_FLOOR_EDGES: ReadonlyArray<ReadonlyArray<readonly UVRect[]>> = [
   // exactly as it does for sand
   edgeBlock(272, 768), // shallow water (never drawn)
   edgeBlock(272, 768), // deep water (never drawn)
+  // the second band's land families each carry their own baked fade, on
+  // the two 192px rows at the bottom of the block
+  edgeBlock(ENV2_X + 0, ENV2_Y + 448), // moss
+  edgeBlock(ENV2_X + 192, ENV2_Y + 448), // spore moss
+  edgeBlock(ENV2_X + 384, ENV2_Y + 448), // mud
+  edgeBlock(ENV2_X + 576, ENV2_Y + 448), // shale
+  edgeBlock(ENV2_X + 768, ENV2_Y + 448), // snow
+  edgeBlock(ENV2_X + 384, ENV2_Y + 640), // salt
+  edgeBlock(ENV2_X + 0, ENV2_Y + 640), // ice
+  edgeBlock(ENV2_X + 192, ENV2_Y + 640), // basalt
+  edgeBlock(272, 768), // shallow spore water (never drawn)
+  edgeBlock(272, 768), // deep spore water (never drawn)
 ];
 // 0-1 stone-wall, 2-3 dirt-wall, 5-6 carbon-wall (the darker rock).
 // Indices 4 and 7 are the two SENTINELS — WALL_PINE and WALL_DEEP — whose
@@ -144,12 +268,44 @@ export const UV_WALLS: readonly UVRect[] = [
   uv(320, 0, 64, 64, 2),
   uv(384, 0, 64, 64, 2),
   uv(192, 0, 64, 64, 2), // WALL_DEEP placeholder
+  // ---- the second environment band's rock, families 3-10 ----
+  // Past the two sentinels, so nothing here needs a special case: every
+  // one of these is ordinary buildable rock (isBuildableWall names only
+  // the sentinels, and both of them are behind us)
+  e2(384, 64, 64, 64, 2), // spore wall
+  e2(448, 64, 64, 64, 2),
+  e2(512, 64, 64, 64, 2), // shale wall
+  e2(576, 64, 64, 64, 2),
+  e2(640, 64, 64, 64, 2), // snow wall
+  e2(704, 64, 64, 64, 2),
+  e2(768, 64, 64, 64, 2), // ice wall
+  e2(832, 64, 64, 64, 2),
+  e2(896, 64, 64, 64, 2), // salt wall
+  e2(960, 64, 64, 64, 2),
+  e2(0, 128, 64, 64, 2), // sand wall
+  e2(64, 128, 64, 64, 2),
+  e2(128, 128, 64, 64, 2), // dune wall
+  e2(192, 128, 64, 64, 2),
+  e2(256, 128, 64, 64, 2), // dacite wall
+  e2(320, 128, 64, 64, 2),
 ];
 // which wall family each UV_WALLS index belongs to (0 stone, 1 dirt,
-// 2 dark rock; -1 the pine and deep-water sentinels) — StaticWall's
-// large-draw rule works per block type, so 2x2 detection must ignore the
-// variant within a family
-export const WALL_GROUP: readonly number[] = [0, 0, 1, 1, -1, 2, 2, -1];
+// 2 dark rock, then the second band's eight; -1 the pine and deep-water
+// sentinels) — StaticWall's large-draw rule works per block type, so 2x2
+// detection must ignore the variant within a family
+export const WALL_GROUP: readonly number[] = [
+  0, 0, 1, 1, -1, 2, 2, -1,
+  3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10,
+];
+/** first index of each second-band wall family */
+export const WALL_SPORE = 8;
+export const WALL_SHALE = 10;
+export const WALL_SNOW = 12;
+export const WALL_ICE = 14;
+export const WALL_SALT = 16;
+export const WALL_SAND = 18;
+export const WALL_DUNE = 20;
+export const WALL_DACITE = 22;
 // Mindustry's <wall>-large art: one 2x2-tile sprite per family, split into
 // per-tile quadrant UVs [row][col] in screen space (y down). Families
 // without baked large art (dirt) draw per-tile variants everywhere
@@ -159,6 +315,15 @@ export const UV_WALL_LARGE: ReadonlyArray<ReadonlyArray<readonly UVRect[]> | nul
   largeQuads(736, 768), // stone-wall-large
   null, // dirt: fringe slopes, aligned 2x2 blocks are rare — not baked
   largeQuads(864, 768), // carbon-wall-large
+  // the second band's eight, all on one 128px row of the block
+  largeQuads(ENV2_X + 0, ENV2_Y + 224), // spore
+  largeQuads(ENV2_X + 128, ENV2_Y + 224), // shale
+  largeQuads(ENV2_X + 256, ENV2_Y + 224), // snow
+  largeQuads(ENV2_X + 384, ENV2_Y + 224), // ice
+  largeQuads(ENV2_X + 512, ENV2_Y + 224), // salt
+  largeQuads(ENV2_X + 640, ENV2_Y + 224), // sand
+  largeQuads(ENV2_X + 768, ENV2_Y + 224), // dune
+  largeQuads(ENV2_X + 896, ENV2_Y + 224), // dacite
 ];
 // flare lives on a gutter row (see the mech-part note below) — its old cell
 // at (384,0) had dirt within a mip-3 texel below and the ring to its right
@@ -588,10 +753,53 @@ export const UV_CRAWLER_BODY_SIL = uv(768, 288, 64, 64);
 export const UV_TRI = uv(320, 384, 64, 64, 2);
 // row 3: 96px prop cells — overhanging 48px sources at 2x
 export const UV_PINE = uv(0, 288, 96, 96);
+/**
+ * THE FOREST KINDS, indexed by a pine prop's `kind`.
+ *
+ * A pine used to be the one prop with no variation at all — WALL_PINE
+ * meant "the pine", and Prop.kind was documented as unused on one. It is
+ * the index into this table now, so a map can be forested in the tree that
+ * belongs to its biome; kind 0 is the original, so every pine already on
+ * disk keeps drawing exactly what it drew.
+ */
+export const UV_PINES: readonly UVRect[] = [
+  UV_PINE,
+  e2(384, 128, 96, 96), // spore pine
+  e2(480, 128, 96, 96), // snow pine
+];
+/**
+ * Ground clutter, indexed by a decor prop's `kind`. Each cell is its
+ * source at 2x and NOTHING MORE — the renderer maps the whole cell onto a
+ * size x size quad, so a 40px sprite parked in a 96px cell would draw at
+ * two thirds scale beside its neighbours. DECOR_TILES below is the other
+ * half of that: how many TILES across each one is at native scale.
+ */
 export const UV_DECOR: readonly UVRect[] = [
   uv(96, 288, 96, 96), // boulder1
   uv(192, 288, 96, 96), // boulder2
-  uv(288, 288, 64, 64), // shrubs
+  uv(288, 288, 64, 64), // shrubs1
+  e2(576, 128, 80, 80), // spore cluster 1
+  e2(656, 128, 80, 80), // spore cluster 2
+  e2(736, 128, 80, 80), // spore cluster 3
+  e2(816, 128, 64, 64), // purple bush
+  e2(880, 128, 64, 64), // shale boulder 1
+  e2(944, 128, 64, 64), // shale boulder 2
+  e2(0, 352, 96, 96), // snow boulder 1
+  e2(96, 352, 96, 96), // snow boulder 2
+  e2(192, 352, 64, 64), // shrubs2
+  e2(256, 352, 64, 64), // sand boulder 1
+  e2(320, 352, 64, 64), // sand boulder 2
+];
+/**
+ * How wide each decor sprite is IN TILES at Mindustry's own scale — a
+ * 32px prop covers one 32px tile, a 48px boulder overhangs to 1.5, a 40px
+ * spore cluster to 1.25. Multiply by CELL for the world size to draw it
+ * at. This was a conditional on the shrub's index while there were three
+ * props and two sizes between them; a table is what stops the fourth size
+ * from having to be another branch.
+ */
+export const DECOR_TILES: readonly number[] = [
+  1.5, 1.5, 1, 1.25, 1.25, 1.25, 1, 1, 1, 1.5, 1.5, 1, 1, 1,
 ];
 
 /**
@@ -1092,6 +1300,71 @@ const SPRITES = {
   edgeStencil: `${ENV}/edge-stencil.png`,
   pine: `${ENV}/pine.png`,
   shrubs: `${ENV}/shrubs1.png`,
+  // ---- the second environment band (see the ENV2 note) ----
+  // Mindustry's "moss" IS the purple spore growth, not a green one; the
+  // two moss families and the spore waters are one palette, which is what
+  // makes them a biome rather than a handful of extra tiles
+  moss0: `${ENV}/moss1.png`,
+  moss1: `${ENV}/moss2.png`,
+  moss2: `${ENV}/moss3.png`,
+  sporeMoss0: `${ENV}/spore-moss1.png`,
+  sporeMoss1: `${ENV}/spore-moss2.png`,
+  sporeMoss2: `${ENV}/spore-moss3.png`,
+  mud0: `${ENV}/mud1.png`,
+  mud1: `${ENV}/mud2.png`,
+  mud2: `${ENV}/mud3.png`,
+  shale0: `${ENV}/shale1.png`,
+  shale1: `${ENV}/shale2.png`,
+  shale2: `${ENV}/shale3.png`,
+  snow0: `${ENV}/snow1.png`,
+  snow1: `${ENV}/snow2.png`,
+  snow2: `${ENV}/snow3.png`,
+  salt: `${ENV}/salt.png`,
+  ice0: `${ENV}/ice1.png`,
+  ice1: `${ENV}/ice2.png`,
+  ice2: `${ENV}/ice3.png`,
+  basalt0: `${ENV}/basalt1.png`,
+  basalt1: `${ENV}/basalt2.png`,
+  basalt2: `${ENV}/basalt3.png`,
+  taintedWater: `${ENV}/tainted-water.png`,
+  deepTaintedWater: `${ENV}/deep-tainted-water.png`,
+  sporeWall0: `${ENV}/spore-wall1.png`,
+  sporeWall1: `${ENV}/spore-wall2.png`,
+  shaleWall0: `${ENV}/shale-wall1.png`,
+  shaleWall1: `${ENV}/shale-wall2.png`,
+  snowWall0: `${ENV}/snow-wall1.png`,
+  snowWall1: `${ENV}/snow-wall2.png`,
+  iceWall0: `${ENV}/ice-wall1.png`,
+  iceWall1: `${ENV}/ice-wall2.png`,
+  saltWall0: `${ENV}/salt-wall1.png`,
+  saltWall1: `${ENV}/salt-wall2.png`,
+  sandWall0: `${ENV}/sand-wall1.png`,
+  sandWall1: `${ENV}/sand-wall2.png`,
+  duneWall0: `${ENV}/dune-wall1.png`,
+  duneWall1: `${ENV}/dune-wall2.png`,
+  daciteWall0: `${ENV}/dacite-wall1.png`,
+  daciteWall1: `${ENV}/dacite-wall2.png`,
+  sporeWallLarge: `${ENV}/spore-wall-large.png`,
+  shaleWallLarge: `${ENV}/shale-wall-large.png`,
+  snowWallLarge: `${ENV}/snow-wall-large.png`,
+  iceWallLarge: `${ENV}/ice-wall-large.png`,
+  saltWallLarge: `${ENV}/salt-wall-large.png`,
+  sandWallLarge: `${ENV}/sand-wall-large.png`,
+  duneWallLarge: `${ENV}/dune-wall-large.png`,
+  daciteWallLarge: `${ENV}/dacite-wall-large.png`,
+  sporePine: `${ENV}/spore-pine.png`,
+  snowPine: `${ENV}/snow-pine.png`,
+  shrubs2: `${ENV}/shrubs2.png`,
+  sporeCluster0: "/mindustry/sprites/blocks/props/spore-cluster1.png",
+  sporeCluster1: "/mindustry/sprites/blocks/props/spore-cluster2.png",
+  sporeCluster2: "/mindustry/sprites/blocks/props/spore-cluster3.png",
+  purBush: "/mindustry/sprites/blocks/props/pur-bush.png",
+  shaleBoulder0: "/mindustry/sprites/blocks/props/shale-boulder1.png",
+  shaleBoulder1: "/mindustry/sprites/blocks/props/shale-boulder2.png",
+  snowBoulder0: "/mindustry/sprites/blocks/props/snow-boulder1.png",
+  snowBoulder1: "/mindustry/sprites/blocks/props/snow-boulder2.png",
+  sandBoulder0: "/mindustry/sprites/blocks/props/sand-boulder1.png",
+  sandBoulder1: "/mindustry/sprites/blocks/props/sand-boulder2.png",
   boulder0: "/mindustry/sprites/blocks/props/boulder1.png",
   boulder1: "/mindustry/sprites/blocks/props/boulder2.png",
   daggerBase: "/mindustry/sprites/units/dagger-base.png",
@@ -1608,6 +1881,71 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(img.boulder0), 96, 288, 96, 96);
   c.drawImage(antialiased(img.boulder1), 192, 288, 96, 96);
   c.drawImage(antialiased(img.shrubs), 288, 288, 64, 64);
+
+  // ---------- the second environment band ----------
+  // Same rules as row 0, one block over: 32px floor and wall sources at 2x
+  // into 64px cells, 64px "-large" art at 2x into 128px cells, props at 2x
+  // into cells cut to their own art, and a generated edge fade per land
+  // family. The only reason it is written as loops rather than as the
+  // hand-placed calls above is that there are eight families of each and a
+  // list is the honest way to say so
+  const at2 = (key: SpriteKey, dx: number, dy: number, cell: number): void =>
+    c.drawImage(antialiased(img[key]), ENV2_X + dx, ENV2_Y + dy, cell, cell);
+  const floors: SpriteKey[] = [
+    "moss0", "moss1", "moss2",
+    "sporeMoss0", "sporeMoss1", "sporeMoss2",
+    "mud0", "mud1", "mud2",
+    "shale0", "shale1", "shale2",
+    "snow0", "snow1", "snow2",
+    "salt",
+  ];
+  floors.forEach((k, i) => at2(k, i * 64, 0, 64));
+  const rowB: SpriteKey[] = [
+    "ice0", "ice1", "ice2",
+    "basalt0", "basalt1", "basalt2",
+    "sporeWall0", "sporeWall1",
+    "shaleWall0", "shaleWall1",
+    "snowWall0", "snowWall1",
+    "iceWall0", "iceWall1",
+    "saltWall0", "saltWall1",
+  ];
+  rowB.forEach((k, i) => at2(k, i * 64, 64, 64));
+  const rowC: SpriteKey[] = [
+    "sandWall0", "sandWall1",
+    "duneWall0", "duneWall1",
+    "daciteWall0", "daciteWall1",
+  ];
+  rowC.forEach((k, i) => at2(k, i * 64, 128, 64));
+  const larges: SpriteKey[] = [
+    "sporeWallLarge", "shaleWallLarge", "snowWallLarge", "iceWallLarge",
+    "saltWallLarge", "sandWallLarge", "duneWallLarge", "daciteWallLarge",
+  ];
+  larges.forEach((k, i) => at2(k, i * 128, 224, 128));
+  // the band's props, each in a cell cut to its own source at 2x
+  at2("sporePine", 384, 128, 96);
+  at2("snowPine", 480, 128, 96);
+  at2("sporeCluster0", 576, 128, 80);
+  at2("sporeCluster1", 656, 128, 80);
+  at2("sporeCluster2", 736, 128, 80);
+  at2("purBush", 816, 128, 64);
+  at2("shaleBoulder0", 880, 128, 64);
+  at2("shaleBoulder1", 944, 128, 64);
+  at2("snowBoulder0", 0, 352, 96);
+  at2("snowBoulder1", 96, 352, 96);
+  at2("shrubs2", 192, 352, 64);
+  at2("sandBoulder0", 256, 352, 64);
+  at2("sandBoulder1", 320, 352, 64);
+  // one generated edge fade per land family, in UV_FLOOR_EDGES order
+  const edges: SpriteKey[] = ["moss0", "sporeMoss0", "mud0", "shale0", "snow0"];
+  edges.forEach((k, i) =>
+    c.drawImage(antialiased(makeEdge(img[k])), ENV2_X + i * 192, ENV2_Y + 448, 192, 192),
+  );
+  const edges2: SpriteKey[] = ["ice0", "basalt0", "salt"];
+  edges2.forEach((k, i) =>
+    c.drawImage(antialiased(makeEdge(img[k])), ENV2_X + i * 192, ENV2_Y + 640, 192, 192),
+  );
+  waterCell(img.taintedWater, WATER_TAINTED_XY);
+  waterCell(img.deepTaintedWater, WATER_DEEP_TAINTED_XY);
 
   // mech parts (row y=576, 128px pitch — see the UV block note): each
   // source centered at native size in its own 64px cell so the renderer can

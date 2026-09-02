@@ -2,7 +2,12 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
 import { RUNG_COUNT } from "@/game/ladder";
-import { MUT_COUNT_MAX } from "@/game/mutation";
+import {
+  MUTATIONS,
+  MUT_COST_MAX,
+  MUT_COST_MIN,
+  MUT_COUNT_MAX,
+} from "@/game/mutation";
 import { TECH_KINDS } from "@/game/tech";
 
 /** the two knobs, and the sane range each one may be saved in */
@@ -42,6 +47,14 @@ const RUNG_KEYS: readonly string[] = Array.from({ length: RUNG_COUNT }, (_, i) =
 );
 
 /**
+ * The keys the `mutations` section may name — a rule's catalog id, and
+ * nothing else. A cost saved for an id no build knows is a typo that would
+ * sit in the file forever doing nothing, so it is a 400 rather than a
+ * silent drop.
+ */
+const MUTATION_KEYS: readonly string[] = MUTATIONS.map((m) => m.id);
+
+/**
  * Dev-only balance persistence: the admin dashboard POSTs the knobs it has
  * bent and this writes public/balance.json, which the game reads over the
  * authored values at startup (see game/balance.ts).
@@ -61,7 +74,10 @@ export async function POST(req: Request): Promise<NextResponse> {
   // Only known nodes, only the two knobs, only finite numbers in range. The
   // bounds matter: growth is an exponent, so a fat-fingered 40 would price the
   // second turret past any bank the game can hold.
-  const doc: Record<string, Record<string, number> | Record<string, Record<string, number>>> = {};
+  const doc: Record<
+    string,
+    Record<string, number> | Record<string, Record<string, number>>
+  > = {};
   for (const [id, raw] of Object.entries(body as Record<string, unknown>)) {
     // the reserved section: dials per RUNG ORDINAL, not per tech node
     if (id === "difficulties") {
@@ -84,6 +100,32 @@ export async function POST(req: Request): Promise<NextResponse> {
         if (Object.keys(out).length > 0) section[name] = out;
       }
       if (Object.keys(section).length > 0) doc.difficulties = section;
+      continue;
+    }
+    // the other reserved section: what each RULE is worth, by catalog id
+    if (id === "mutations") {
+      if (!raw || typeof raw !== "object")
+        return NextResponse.json({ error: "bad mutations section" }, { status: 400 });
+      const section: Record<string, number> = {};
+      for (const [mid, v] of Object.entries(raw as Record<string, unknown>)) {
+        if (!MUTATION_KEYS.includes(mid))
+          return NextResponse.json({ error: `unknown mutator ${mid}` }, { status: 400 });
+        // whole points on the published scale: every reader spends these
+        // against a whole budget, so a 2.5 would round differently in
+        // different places and a 9 would buy a rule the design forbids
+        if (
+          typeof v !== "number" ||
+          !Number.isInteger(v) ||
+          v < MUT_COST_MIN ||
+          v > MUT_COST_MAX
+        )
+          return NextResponse.json(
+            { error: `bad cost for ${mid}; the scale is ${MUT_COST_MIN}-${MUT_COST_MAX} whole points` },
+            { status: 400 },
+          );
+        section[mid] = v;
+      }
+      if (Object.keys(section).length > 0) doc.mutations = section;
       continue;
     }
     if (!(TECH_KINDS as readonly string[]).includes(id))

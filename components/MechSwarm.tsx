@@ -72,15 +72,18 @@ import { turretIcon } from "@/game/atlas";
 import {
   cleanMutations,
   mutationById,
-  mutationCost,
+  mutationCostOf,
   mutationsInForce,
   rollMutations,
+  type MutationDef,
   type MutationId,
 } from "@/game/mutation";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
 import { isEmpty, ITEM_INFO } from "@/game/items";
 import { CostRow, Wallet } from "./Items";
 import TechTree from "./TechTree";
+import { useTouchOnly } from "./Board";
+import { bandOf, MutationFace } from "./mutationFace";
 
 const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
 
@@ -351,6 +354,89 @@ const runSpec = (
 });
 
 /**
+ * ONE RULE IN THE DEPLOY DIALOG: its face in a bordered square, and the
+ * sentence in a card that opens on hover.
+ *
+ * IT IS THE CODEX TILE WITH THE BOARD TAKEN OUT — same face, same band
+ * colour on the border, same touch rule (the first tap opens the card),
+ * because a player who has read the codex has already learned this
+ * gesture. What it drops is the name under the square and the geometry
+ * around it: this is a row inside a dialog, not a shelf on a board.
+ *
+ * THE CARD OPENS UPWARD. Everything below this row is the Deploy button
+ * and the bottom of the panel, so a card hanging down would either be
+ * clipped or would cover the one control the dialog exists to offer.
+ */
+function MutationChip({
+  def,
+  always,
+  fromRight,
+  touch,
+  armed,
+  onArm,
+}: {
+  def: MutationDef;
+  /** a rule the WORLD carries rather than one the difficulty rolled */
+  always: boolean;
+  /**
+   * Hang the card off this chip's RIGHT edge instead of its left.
+   *
+   * The card is wider than the whole row of chips, so one anchored left
+   * under the last chip runs off a narrow landscape phone entirely — 43px
+   * of it, measured, at 667px wide. Chips in the right half of the row
+   * open leftward instead, which keeps every card inside the dialog
+   * without measuring anything at runtime.
+   */
+  fromRight: boolean;
+  touch: boolean;
+  armed: string | null;
+  onArm: (id: string | null) => void;
+}) {
+  const band = bandOf(mutationCostOf(def.id));
+  // on touch the card follows `armed`, not the pointer: iOS does not
+  // reliably focus a <button> it was tapped on, so hanging the card off
+  // focus-within alone would leave taps opening nothing
+  const showCard = touch && armed === def.id;
+  return (
+    <div className="group relative">
+      <button
+        type="button"
+        aria-label={`${def.name}: ${band.label} mutator${always ? ", always in force on this map" : ""}. ${def.blurb}`}
+        onClick={() => onArm(armed === def.id ? null : def.id)}
+        className="flex h-7 w-7 items-center justify-center rounded border bg-[#151518] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB]"
+        style={{ borderColor: band.color }}
+      >
+        <MutationFace id={def.id} size="h-5 w-5" />
+      </button>
+      {/* what this rule does — opened by resting on the chip with a mouse,
+          and by a tap with a finger */}
+      <div
+        className={`pointer-events-none absolute bottom-full z-10 mb-2 w-56 rounded border p-2.5 text-left shadow-lg ${
+          fromRight ? "right-0" : "left-0"
+        } ${showCard ? "block" : "hidden group-hover:block group-focus-within:block"}`}
+        style={{ borderColor: band.color, background: "#151518" }}
+      >
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-[13px] font-bold text-[#EDEDEF]">{def.name}</span>
+          <span
+            className="shrink-0 text-[11px] font-bold uppercase tracking-widest"
+            style={{ color: band.color }}
+          >
+            {/* a rule the world carries does not move when the stepper
+                does, and a player who steps the difficulty and sees it
+                stay put deserves to be told why rather than left to
+                notice. It says ALWAYS instead of its weight because it is
+                not being paid for out of the tier's points at all */}
+            {always ? "Always" : band.label}
+          </span>
+        </div>
+        <div className="mt-1 text-[12.5px] leading-snug text-[#A6A6AF]">{def.blurb}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * THE MAP DIALOG — everything a run is chosen by, over the grid it was
  * chosen from.
  *
@@ -438,6 +524,10 @@ function MapDialog({
     .map(mutationById)
     .filter((m): m is NonNullable<typeof m> => m !== null);
   const intrinsic = new Set(world.intrinsicMutation ?? []);
+  // the chips' hover card follows the pointer on a mouse and `armed` on a
+  // finger — the codex board's rule, for the same reason (see MutationChip)
+  const touch = useTouchOnly();
+  const [armed, setArmed] = useState<string | null>(null);
 
   // Escape closes it, like every dialog anyone has ever met
   useEffect(() => {
@@ -556,37 +646,40 @@ function MapDialog({
               </div>
             </dl>
 
-            {/* what is true of the RUN rather than of the dial: the mutators
-                rolled for the difficulty picked above. The roll is NOT a
-                warning to be skimmed — it is the run's rules, and it moves
-                every time the stepper does, so it is spelled out in full
-                rather than named. The codex tab lists what else could have
-                come up */}
+            {/* WHAT IS TRUE OF THE RUN rather than of the dial: every rule
+                this deploy is played under — the ones the WORLD carries by
+                design and the ones the difficulty ROLLED, as one row,
+                because the player's question is "what is true of this
+                deploy" and not "which half is which".
+
+                A ROW OF FACES, NOT A PARAGRAPH. It used to spell each rule
+                out in a sentence, which is four lines of prose in a dialog
+                whose one question is yes-or-no, and which pushed Deploy
+                further down the panel every time the stepper rolled
+                another rule. A face is read at a glance and a repeat
+                player already knows what it means; the sentence is one
+                hover (or one tap) away for the player who does not, which
+                is the codex board's own gesture, on purpose. */}
             {mutations.length > 0 && (
-              <div className="mt-2 space-y-0.5 text-[12px] leading-snug">
-                <div className="flex items-baseline justify-between">
-                  <span className="font-bold uppercase tracking-widest text-[#FF8ACB]">
-                    Mutators
-                  </span>
-                  <span className="text-[#71717C]">
-                    {mutationCost(rolled)} / {tierMutationPoints(tier)} pts
-                  </span>
+              <div className="mt-2 text-[12px] leading-snug">
+                <div className="flex items-center gap-2">
+                    <span className="font-bold uppercase tracking-widest text-[#FF8ACB]">
+                      Mutators
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {mutations.map((m, i) => (
+                        <MutationChip
+                          key={m.id}
+                          def={m}
+                          always={intrinsic.has(m.id)}
+                          fromRight={i >= mutations.length / 2}
+                          touch={touch}
+                          armed={armed}
+                          onArm={setArmed}
+                        />
+                      ))}
+                    </div>
                 </div>
-                {mutations.map((m) => (
-                  <div key={m.id} className="text-[#A6A6AF]">
-                    <span className="font-bold text-[#EDEDEF]">{m.name}</span>
-                    {/* a rule the WORLD carries is not news that changes
-                        with the stepper, and a player who steps the
-                        difficulty and sees it stay put deserves to be told
-                        why rather than left to notice */}
-                    {intrinsic.has(m.id) && (
-                      <span className="ml-1 text-[10px] uppercase tracking-widest text-[#71717C]">
-                        always
-                      </span>
-                    )}{" "}
-                    {m.blurb}
-                  </div>
-                ))}
               </div>
             )}
 
