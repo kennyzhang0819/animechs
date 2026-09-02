@@ -40,15 +40,15 @@ export interface FloorStyle {
   /** a contrasting colour, for the cracks that glow (hot rock) */
   accent?: string;
   /**
-   * the one kind of mark this ground wears:
-   * patch — a soft blob or two a shade off the base
-   * tuft  — patches, plus a short pair of blades
-   * crack — a thin dark line with a bend in it
-   * ripple — a light dash or two, wind-blown
-   * pebble — a patch and one small stone
-   * vein  — an accent-coloured crack
+   * the one kind of mark this ground wears — every one of them round:
+   * soft    — one or two light blobs, a shade up from the ground
+   * tussock — light blobs and one small dark clump
+   * spotted — a light blob and a dark one
+   * dune    — wide, low light ellipses, wind-blown
+   * pebbled — a light blob and a shaded stone
+   * ember   — glowing accent spots and a dark blob
    */
-  mark: "patch" | "tuft" | "crack" | "ripple" | "pebble" | "vein";
+  mark: "soft" | "tussock" | "spotted" | "dune" | "pebbled" | "ember";
 }
 
 export type FloorKind =
@@ -69,27 +69,27 @@ export type FloorKind =
   | "magmarock";
 
 export const FLOOR_STYLE: Readonly<Record<FloorKind, FloorStyle>> = {
-  grass: { base: "#6a9b52", light: "#78a95c", dark: "#5c8a46", mark: "tuft" },
-  stone: { base: "#7c7c84", light: "#878790", dark: "#6b6b73", mark: "crack" },
-  dirt: { base: "#8f6b4a", light: "#9b7654", dark: "#7d5c3f", mark: "pebble" },
-  sand: { base: "#cfb488", light: "#d9c095", dark: "#c2a77b", mark: "ripple" },
-  darksand: { base: "#4a4644", light: "#54504d", dark: "#3e3a38", mark: "ripple" },
+  grass: { base: "#6a9b52", light: "#78a95c", dark: "#5c8a46", mark: "tussock" },
+  stone: { base: "#7c7c84", light: "#878790", dark: "#6b6b73", mark: "spotted" },
+  dirt: { base: "#8f6b4a", light: "#9b7654", dark: "#7d5c3f", mark: "pebbled" },
+  sand: { base: "#cfb488", light: "#d9c095", dark: "#c2a77b", mark: "dune" },
+  darksand: { base: "#4a4644", light: "#54504d", dark: "#3e3a38", mark: "dune" },
   // THE MARSH. Moss here is the purple spore growth, not a green one — the
   // spore walls, pines and waters it sits among are all violet, and a
   // green floor under a violet forest reads as two maps. Spore moss is the
   // same ground further gone, and mud is the black wet earth between
-  moss: { base: "#6c4774", light: "#785282", dark: "#5e3d66", mark: "patch" },
-  sporeMoss: { base: "#714a88", light: "#7f5697", dark: "#623f78", mark: "pebble" },
-  mud: { base: "#372220", light: "#432b28", dark: "#2b1a18", mark: "ripple" },
+  moss: { base: "#6c4774", light: "#785282", dark: "#5e3d66", mark: "soft" },
+  sporeMoss: { base: "#714a88", light: "#7f5697", dark: "#623f78", mark: "pebbled" },
+  mud: { base: "#372220", light: "#432b28", dark: "#2b1a18", mark: "dune" },
   // the bare rocks
-  shale: { base: "#5f5a80", light: "#6a658c", dark: "#524d72", mark: "crack" },
-  basalt: { base: "#413e3e", light: "#4b4848", dark: "#363333", mark: "patch" },
+  shale: { base: "#5f5a80", light: "#6a658c", dark: "#524d72", mark: "spotted" },
+  basalt: { base: "#413e3e", light: "#4b4848", dark: "#363333", mark: "soft" },
   // the frozen set, toned to the snow and ice walls beside them
-  snow: { base: "#e6ecf2", light: "#f1f4f8", dark: "#d8e0e9", mark: "patch" },
-  salt: { base: "#f0f1f5", light: "#f9f9fb", dark: "#e2e4ea", mark: "crack" },
-  ice: { base: "#cfcff6", light: "#dcdcfb", dark: "#bcbcea", mark: "crack" },
-  hotrock: { base: "#4e3b35", light: "#5a4640", dark: "#402f2b", accent: "#d86a3a", mark: "vein" },
-  magmarock: { base: "#5a3a30", light: "#66443a", dark: "#4a2e26", accent: "#f08a4a", mark: "vein" },
+  snow: { base: "#e6ecf2", light: "#f1f4f8", dark: "#d8e0e9", mark: "soft" },
+  salt: { base: "#f0f1f5", light: "#f9f9fb", dark: "#e2e4ea", mark: "spotted" },
+  ice: { base: "#cfcff6", light: "#dcdcfb", dark: "#bcbcea", mark: "spotted" },
+  hotrock: { base: "#4e3b35", light: "#5a4640", dark: "#402f2b", accent: "#d86a3a", mark: "ember" },
+  magmarock: { base: "#5a3a30", light: "#66443a", dark: "#4a2e26", accent: "#f08a4a", mark: "ember" },
 };
 
 export const FLOOR_KINDS = Object.keys(FLOOR_STYLE) as FloorKind[];
@@ -107,6 +107,37 @@ const hex = (c: string): [number, number, number] => [
   parseInt(c.slice(3, 5), 16),
   parseInt(c.slice(5, 7), 16),
 ];
+
+/** a colour part way from `a` to `b` */
+const mix = (a: string, b: string, t: number): string => {
+  const [ar, ag, ab] = hex(a), [br, bg, bb] = hex(b);
+  const ch = (x: number, y: number): string =>
+    Math.round(x + (y - x) * t)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${ch(ar, br)}${ch(ag, bg)}${ch(ab, bb)}`;
+};
+
+/**
+ * EVERY MARK IS ROUND. Visit each cell inside an ellipse, handing the
+ * callback its position as (u, v) in [-1, 1] across the ellipse, so a
+ * caller can shade the top of a lump differently from its underside. The
+ * ellipse is tested at cell centres, which at this size gives the soft,
+ * slightly lumpy outline pixel art wants rather than a hard geometric one.
+ */
+const ellipse = (
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  fn: (x: number, y: number, u: number, v: number) => void,
+): void => {
+  for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++)
+    for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
+      const u = (x + 0.5 - cx) / rx, v = (y + 0.5 - cy) / ry;
+      if (u * u + v * v <= 1) fn(x, y, u, v);
+    }
+};
 
 /**
  * Paint one tile: `TILE_PX`×`TILE_PX` RGBA, row-major, fully opaque.
@@ -130,89 +161,48 @@ export function paintFloor(kind: FloorKind, variant: number): Uint8ClampedArray<
     RIM + Math.floor(rng() * (N - RIM * 2 - w)),
     RIM + Math.floor(rng() * (N - RIM * 2 - h)),
   ];
-  /** a soft blob: a rectangle with its corners knocked off */
-  const blob = (c: string, w: number, h: number): void => {
-    const [x, y] = spot(w, h);
-    for (let j = 0; j < h; j++)
-      for (let i = 0; i < w; i++) {
-        const corner = (i === 0 || i === w - 1) && (j === 0 || j === h - 1);
-        if (corner && (w > 2 || h > 2)) continue;
-        put(x + i, y + j, c);
-      }
+  /** a blob: a rounded patch of one colour, a little wider than tall */
+  const blob = (c: string, r: number, squash = 0.8): void => {
+    const rx = r, ry = Math.max(1.5, r * squash);
+    const cx = RIM + rx + rng() * (N - RIM * 2 - rx * 2);
+    const cy = RIM + ry + rng() * (N - RIM * 2 - ry * 2);
+    ellipse(cx, cy, rx, ry, (x, y) => put(x, y, c));
   };
-  // NOTHING HERE IS ONE PIXEL WIDE. A hairline on a 16-pixel tile reads
-  // as a scratch, and a ground full of scratches reads as worn rather
-  // than drawn; Mindustry's marks are chunky for the same reason. Every
-  // line below is two logical pixels thick — four in the tile, eight in
-  // the atlas cell — which is what makes a crack a crack and a dash a
-  // dash from a normal zoom
-  const THICK = 2;
-  /** a crack: a line two wide that walks 4-6 steps with one bend in it */
-  const crack = (c: string): void => {
-    const len = 4 + Math.floor(rng() * 3);
-    let [x, y] = spot(len + 1, len + 1);
-    const dx = rng() < 0.5 ? 1 : 0, dy = 1 - dx;
-    const bend = 1 + Math.floor(rng() * (len - 2));
-    // thickened across the direction of travel
-    const stroke = (px: number, py: number): void => {
-      for (let t = 0; t < THICK; t++) put(px + dy * t, py + dx * t, c);
-    };
-    for (let k = 0; k < len; k++) {
-      stroke(x, y);
-      if (k === bend) {
-        // turn once, toward the side of the tile with more room
-        x += dy * (x < N / 2 ? 1 : -1);
-        y += dx * (y < N / 2 ? 1 : -1);
-        stroke(x, y);
-      }
-      x += dx;
-      y += dy;
-    }
-  };
-  /** a ripple: a light dash, four or five wide, two high */
-  const dash = (c: string): void => {
-    const w = 4 + Math.floor(rng() * 2);
-    const [x, y] = spot(w, THICK);
-    for (let j = 0; j < THICK; j++) for (let i = 0; i < w; i++) put(x + i, y + j, c);
+  /** a stone: a dark lump with the light on its top */
+  const stone = (r: number): void => {
+    const rx = r, ry = r * 0.85;
+    const cx = RIM + rx + rng() * (N - RIM * 2 - rx * 2);
+    const cy = RIM + ry + rng() * (N - RIM * 2 - ry * 2);
+    ellipse(cx, cy, rx, ry, (x, y, u, v) => put(x, y, v < -0.25 && Math.abs(u) < 0.75 ? st.light : st.dark));
   };
 
   switch (st.mark) {
-    case "patch":
-      blob(st.light, 4 + Math.floor(rng() * 2), 3 + Math.floor(rng() * 2));
-      if (rng() < 0.6) blob(st.dark, 3 + Math.floor(rng() * 2), 3);
+    case "soft":
+      blob(st.light, 3 + rng() * 1.5);
+      if (rng() < 0.7) blob(st.light, 2.2 + rng());
       break;
-    case "tuft": {
-      blob(st.light, 4, 3 + Math.floor(rng() * 2));
-      if (rng() < 0.5) blob(st.dark, 3, 4);
-      // two blades side by side, each two wide, one taller than the other
-      const [x, y] = spot(4, 4);
-      for (let j = 1; j < 4; j++) for (let i = 0; i < 2; i++) put(x + i, y + j, st.dark);
-      for (let j = 0; j < 4; j++) for (let i = 2; i < 4; i++) put(x + i, y + j, st.dark);
+    case "tussock":
+      blob(st.light, 3 + rng() * 1.5);
+      blob(st.light, 2 + rng());
+      blob(st.dark, 1.6 + rng() * 0.6, 1);
       break;
-    }
-    case "crack":
-      crack(st.dark);
-      blob(st.light, 4, 3);
+    case "spotted":
+      blob(st.light, 3 + rng() * 1.5);
+      blob(st.dark, 2 + rng() * 0.8);
       break;
-    case "ripple":
-      dash(st.light);
-      if (rng() < 0.7) dash(st.light);
-      if (rng() < 0.4) dash(st.dark);
+    case "dune":
+      blob(st.light, 3.5 + rng() * 1.5, 0.4);
+      blob(st.light, 3 + rng(), 0.4);
+      if (rng() < 0.5) blob(st.dark, 2.5 + rng(), 0.4);
       break;
-    case "pebble": {
-      blob(st.light, 4 + Math.floor(rng() * 2), 3);
-      if (rng() < 0.5) blob(st.dark, 3, 3);
-      // one stone: a dark lump with the light catching its top
-      const [x, y] = spot(3, 4);
-      for (let j = 2; j < 4; j++) for (let i = 0; i < 3; i++) put(x + i, y + j, st.dark);
-      put(x, y + 1, st.light);
-      put(x + 1, y + 1, st.light);
+    case "pebbled":
+      blob(st.light, 3 + rng() * 1.5);
+      stone(1.8 + rng() * 0.5);
       break;
-    }
-    case "vein":
-      crack(st.accent ?? st.light);
-      if (kind === "magmarock") crack(st.accent ?? st.light);
-      blob(st.dark, 4, 3);
+    case "ember":
+      blob(st.dark, 3 + rng() * 1.5);
+      blob(st.accent ?? st.light, 1.6 + rng() * 0.6);
+      if (kind === "magmarock") blob(st.accent ?? st.light, 1.4 + rng() * 0.6);
       break;
   }
 
@@ -247,20 +237,19 @@ export const tileIcon = (kind: FloorKind, variant: number): string =>
  * THE HILL BLOCKS — the rock a lane is cut through, painted like the
  * floors.
  *
- * Mindustry's walls are what its floors are not: highly worked. Every
- * block carries a wide diagonal bevel, lit along its top-left edge and
- * shadowed along its bottom-right, with chunky notched corners, so an
- * outcrop is a stack of bricks. The rock here is a SURFACE instead: no
- * outline, no bevel, nothing at the cell's edge at all, so neighbouring
- * cells run together and an outcrop reads as one mass — the field's own
- * blurred shadow under the rock (WALL_SHADOW_A in the renderer, and the
- * same pass on the menu) is what lifts it off the floor. The detail is on
- * the face: angular light facets, each with a line of shade under its
- * lower edge, and diagonal crevices — the way a low-poly rock catches
- * light, and nothing like the floor's level cracks and ripples.
+ * Mindustry shades each wall tile as one rounded boulder in three tones,
+ * lit from a corner, with smaller lumps inside it. The rock here borrows
+ * the idea of the lump and drops the one-boulder-per-tile: a tile is a
+ * plain face with two or three rounded lumps of different sizes piled on
+ * it, each with a light cap and a dark underside, and NOTHING at the
+ * cell's edge — so neighbouring cells run together and an outcrop reads
+ * as one continuous rubble surface, with the field's own blurred shadow
+ * (WALL_SHADOW_A in the renderer, and the same pass on the menu) lifting
+ * the whole of it off the floor. No lines anywhere: every mark is an
+ * ellipse.
  *
  * A 2×2 cluster of rock takes ONE block twice the size (the field's
- * large-draw rule, UV_WALL_LARGE), with facets to match; `span` paints
+ * large-draw rule, UV_WALL_LARGE), with lumps to match; `span` paints
  * that one.
  * ====================================================================== */
 
@@ -286,9 +275,9 @@ export interface WallStyle {
   dark: string;
   /**
    * the grain of the rock:
-   * rough  — two facets and a crevice, the bare stones
-   * soft   — one rounded facet and a short crevice, the earths and snow
-   * glassy — one facet and two long thin crevices, ice and salt
+   * rough  — a big stone and a small one, the bare rocks
+   * soft   — a big low stone, sometimes a small one, the earths and snow
+   * glassy — a big stone with a wide bright cap and a small one, ice and salt
    */
   grain: "rough" | "soft" | "glassy";
 }
@@ -329,74 +318,45 @@ export function paintWall(
   const put = (x: number, y: number, c: string): void => {
     if (x >= 0 && y >= 0 && x < N && y < N) grid[y * N + x] = c;
   };
-  // a mark keeps one pixel off the rim, so nothing is cut at a seam and
-  // the seam itself is always plain face
+  // a lump keeps one pixel off the rim, so the seam is always plain face
+  // and any cell sits flush against any other
   const RIM = 1;
-  const spot = (w: number, h: number): [number, number] => [
-    RIM + Math.floor(rng() * Math.max(1, N - RIM * 2 - w)),
-    RIM + Math.floor(rng() * Math.max(1, N - RIM * 2 - h)),
-  ];
+  const body = mix(st.face, st.light, 0.35);
   /**
-   * A FACET: a lit plate — a few rows of light, each row shifted a step
-   * from the last so the plate leans, with the end rows a pixel shorter
-   * and a line of shade along its lower edge. A plane the light lands on,
-   * not a spot, and not a triangle: a right-angled patch at this size
-   * reads as an arrowhead, and a field of arrowheads is a pattern
+   * A LUMP: a rounded stone with the light on its top and its underside
+   * in shade — the top cap is the light tone, the lower band the dark,
+   * and the body between them a shade up from the face so the lump
+   * stands proud of it. `cap` is how far down the light reaches
    */
-  const facet = (size: number, rounded: boolean): void => {
-    const w = size + 2, h = Math.max(3, Math.round(size * 0.7));
-    const lean = rng() < 0.5 ? 1 : -1;
-    const [x, y] = spot(w + h, h + 2);
-    const x0 = lean > 0 ? x : x + h;
-    for (let j = 0; j < h; j++) {
-      const sx = x0 + lean * Math.floor(j / (rounded ? 2 : 1));
-      const trim = j === 0 || j === h - 1 ? 1 : 0;
-      for (let i = trim; i < w - trim; i++) put(sx + i, y + j, st.light);
-    }
-    // the shade under it, two deep, along the plate's lower edge
-    const bx = x0 + lean * Math.floor((h - 1) / (rounded ? 2 : 1));
-    for (let j = 0; j < 2; j++) for (let i = 1; i < w - 1; i++) put(bx + i, y + h + j, st.dark);
-  };
-  /** A CREVICE: a diagonal line two wide, stepping one across for one
-   *  down, with a kink partway — the floor's cracks are level, so this is
-   *  the one place a diagonal appears on the ground. Two wide for the
-   *  same reason every floor mark is: a hairline is a scratch */
-  const crevice = (len: number): void => {
-    let [x, y] = spot(len + 2, len + 1);
-    const sx = rng() < 0.5 ? 1 : -1;
-    if (sx < 0) x += len + 1;
-    const kink = 1 + Math.floor(rng() * Math.max(1, len - 2));
-    const stroke = (px: number, py: number): void => {
-      put(px, py, st.dark);
-      put(px + 1, py, st.dark);
-    };
-    for (let k = 0; k < len; k++) {
-      stroke(x, y);
-      if (k === kink) {
-        x += sx;
-        stroke(x, y);
-      }
-      x += sx;
-      y += 1;
-    }
+  const lump = (r: number, cap: number): void => {
+    const most = (N - RIM * 2) / 2 - 0.3; // the biggest lump the tile can hold
+    const rx = Math.min(most, r * (0.9 + rng() * 0.3)), ry = Math.min(most, r * (0.75 + rng() * 0.2));
+    const cx = RIM + rx + rng() * Math.max(0, N - RIM * 2 - rx * 2);
+    const cy = RIM + ry + rng() * Math.max(0, N - RIM * 2 - ry * 2);
+    ellipse(cx, cy, rx, ry, (x, y, u, v) => {
+      const edge = u * u + v * v;
+      if (v > 0.35 && edge > 0.45) put(x, y, st.dark);
+      else if (v < cap && edge < 0.8) put(x, y, st.light);
+      else put(x, y, body);
+    });
   };
 
   const reps = span * span;
   for (let r = 0; r < reps; r++) {
     switch (st.grain) {
+      // one big stone a tile, with a small one beside it — a rock is a few
+      // large lumps, not a scatter of pebbles
       case "rough":
-        facet(4 + Math.floor(rng() * 2) + span, false);
-        facet(3 + Math.floor(rng() * 2), false);
-        crevice(4 + Math.floor(rng() * 3));
+        lump(5 + rng() * 1.5, -0.1);
+        lump(2.2 + rng() * 0.8, -0.2);
         break;
       case "soft":
-        facet(4 + Math.floor(rng() * 2) + span, true);
-        if (rng() < 0.6) crevice(3 + Math.floor(rng() * 2));
+        lump(5.5 + rng() * 1.5, 0);
+        if (rng() < 0.6) lump(2.4 + rng() * 0.8, 0);
         break;
       case "glassy":
-        facet(3 + Math.floor(rng() * 2) + span, false);
-        crevice(5 + Math.floor(rng() * 3));
-        crevice(4 + Math.floor(rng() * 3));
+        lump(5 + rng() * 1.5, 0.2);
+        lump(2 + rng() * 0.8, 0.1);
         break;
     }
   }
