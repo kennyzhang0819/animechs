@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { floorCanvas, FLOOR_VARIANTS, type FloorKind } from "@/game/tiles";
+import {
+  floorCanvas,
+  FLOOR_VARIANTS,
+  wallCanvas,
+  WALL_VARIANTS,
+  type FloorKind,
+  type WallKind,
+} from "@/game/tiles";
 
 /**
  * THE MENU'S GROUND — the game, seen from above, before anyone has built
@@ -59,8 +66,8 @@ const CELL_TINT = "#e55454";
 interface Biome {
   /** the ground: one of the game's own painted floors (game/tiles.ts) */
   floor: FloorKind;
-  wall: readonly string[];
-  large: string;
+  /** the rock: one of the painted wall families */
+  wall: WallKind;
   /** a tree that grows on this ground, planted at the foot of the rock */
   prop?: string;
   /** the boulders scattered on it */
@@ -70,51 +77,43 @@ interface Biome {
 const BIOMES: readonly Biome[] = [
   {
     floor: "sand",
-    wall: ["sand-wall1", "sand-wall2"],
-    large: "sand-wall-large",
+    wall: "sand",
     boulder: ["sand-boulder1", "sand-boulder2"],
   },
   {
     floor: "shale",
-    wall: ["shale-wall1", "shale-wall2"],
-    large: "shale-wall-large",
+    wall: "shale",
     boulder: ["shale-boulder1", "shale-boulder2"],
   },
   {
     floor: "ice",
-    wall: ["ice-wall1", "ice-wall2"],
-    large: "ice-wall-large",
+    wall: "ice",
     boulder: ["snow-boulder1", "snow-boulder2"],
   },
   {
     floor: "moss",
-    wall: ["spore-wall1", "spore-wall2"],
-    large: "spore-wall-large",
+    wall: "spore",
     prop: "spore-pine",
   },
   {
     floor: "dirt",
-    wall: ["dirt-wall1", "dirt-wall2"],
-    large: "dirt-wall-large",
+    wall: "dirt",
     boulder: ["boulder1", "boulder2"],
   },
   {
     floor: "darksand",
-    wall: ["dune-wall1", "dune-wall2"],
-    large: "dune-wall-large",
+    wall: "dune",
     boulder: ["basalt-boulder1", "basalt-boulder2"],
   },
   {
     floor: "snow",
-    wall: ["snow-wall1", "snow-wall2"],
-    large: "snow-wall-large",
+    wall: "snow",
     prop: "snow-pine",
     boulder: ["snow-boulder1", "snow-boulder2"],
   },
   {
     floor: "grass",
-    wall: ["dirt-wall1", "dirt-wall2"],
-    large: "dirt-wall-large",
+    wall: "dirt",
     prop: "pine",
     boulder: ["boulder1", "boulder2"],
   },
@@ -124,13 +123,11 @@ const BIOMES: readonly Biome[] = [
 const SECOND: readonly Biome[] = [
   {
     floor: "basalt",
-    wall: ["dune-wall1", "dune-wall2"],
-    large: "dune-wall-large",
+    wall: "dune",
   },
   {
     floor: "stone",
-    wall: ["stone-wall1", "stone-wall2"],
-    large: "stone-wall-large",
+    wall: "stone",
   },
 ];
 
@@ -345,10 +342,6 @@ async function buildWorld(
 
   // every sprite this world needs, fetched once and together
   const names = new Set<string>([
-    ...biome.wall,
-    biome.large,
-    ...second.wall,
-    second.large,
     ...(biome.prop ? [biome.prop] : []),
     ...(biome.boulder ?? []),
   ]);
@@ -377,13 +370,22 @@ async function buildWorld(
   });
   const sprite = (n: string): HTMLImageElement | null => sprites.get(n) ?? null;
   // the floors are painted, not fetched — one canvas per kind and variant
-  const floors = new Map<string, HTMLCanvasElement>();
+  const painted = new Map<string, HTMLCanvasElement>();
   const floorTile = (kind: FloorKind, v: number): HTMLCanvasElement => {
-    const key = `${kind}${v}`;
-    let c = floors.get(key);
+    const key = `f${kind}${v}`;
+    let c = painted.get(key);
     if (!c) {
       c = floorCanvas(kind, v);
-      floors.set(key, c);
+      painted.set(key, c);
+    }
+    return c;
+  };
+  const wallTile = (kind: WallKind, v: number, span: number): HTMLCanvasElement => {
+    const key = `w${kind}${v}x${span}`;
+    let c = painted.get(key);
+    if (!c) {
+      c = wallCanvas(kind, v, span);
+      painted.set(key, c);
     }
     return c;
   };
@@ -392,8 +394,8 @@ async function buildWorld(
   const isWall = new Uint8Array(cols * rows);
   const floorOf = new Array<FloorKind>(cols * rows);
   const floorVar = new Uint8Array(cols * rows);
-  const wallOf = new Array<string>(cols * rows);
-  const largeOf = new Array<string>(cols * rows);
+  const wallOf = new Array<WallKind>(cols * rows);
+  const wallVar = new Uint8Array(cols * rows);
   for (let y = 0; y < rows; y++)
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
@@ -401,8 +403,8 @@ async function buildWorld(
       if (secondNoise(x / 25, y / 25) > 0.62) b = second;
       floorOf[i] = b.floor;
       floorVar[i] = Math.floor(rng() * FLOOR_VARIANTS);
-      wallOf[i] = pick(rng, b.wall);
-      largeOf[i] = b.large;
+      wallOf[i] = b.wall;
+      wallVar[i] = Math.floor(rng() * WALL_VARIANTS);
       if (heat) {
         const h = heatNoise(x / 45, y / 45);
         if (h > 0.6) {
@@ -455,8 +457,10 @@ async function buildWorld(
   g.fill();
   g.restore();
 
-  // THE ROCK. A 2×2 cluster aligned to the even grid takes the large
-  // sprite — the same rule the field's renderer uses (UV_WALL_LARGE)
+  // THE ROCK. A 2×2 cluster aligned to the even grid takes one block
+  // twice the size — the same rule the field's renderer uses
+  // (UV_WALL_LARGE) — and that is what makes an outcrop read as a mass
+  // rather than as bricks
   const covered = new Uint8Array(cols * rows);
   for (let y = 0; y < rows; y++)
     for (let x = 0; x < cols; x++) {
@@ -468,15 +472,14 @@ async function buildWorld(
         wallAt(x + 1, y) &&
         wallAt(x, y + 1) &&
         wallAt(x + 1, y + 1) &&
-        largeOf[i + 1] === largeOf[i] &&
-        largeOf[i + cols] === largeOf[i] &&
-        largeOf[i + cols + 1] === largeOf[i] &&
-        sprite(largeOf[i]) !== null;
+        wallOf[i + 1] === wallOf[i] &&
+        wallOf[i + cols] === wallOf[i] &&
+        wallOf[i + cols + 1] === wallOf[i];
       if (big) {
-        cell(largeOf[i], x, y, 2);
+        g.drawImage(wallTile(wallOf[i], 0, 2), x * tile, y * tile, tile * 2, tile * 2);
         covered[i] = covered[i + 1] = covered[i + cols] = covered[i + cols + 1] = 1;
       } else {
-        cell(wallOf[i], x, y);
+        g.drawImage(wallTile(wallOf[i], wallVar[i], 1), x * tile, y * tile, tile, tile);
         covered[i] = 1;
       }
     }

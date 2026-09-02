@@ -9,7 +9,9 @@
 // (node --experimental-strip-types lets this import the .ts directly.)
 import { mkdirSync, writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
-import { FLOOR_KINDS, FLOOR_VARIANTS, paintFloor, TILE_PX } from "../game/tiles.ts";
+import {
+  FLOOR_KINDS, FLOOR_VARIANTS, paintFloor, paintWall, TILE_PX, WALL_KINDS, WALL_VARIANTS,
+} from "../game/tiles.ts";
 
 const crcTable = new Uint32Array(256).map((_, n) => {
   let c = n;
@@ -53,5 +55,11 @@ for (const kind of FLOOR_KINDS)
   for (let v = 0; v < FLOOR_VARIANTS; v++) {
     const file = `public/tiles/${kind}${v + 1}.png`;
     writeFileSync(file, png(paintFloor(kind, v), TILE_PX, TILE_PX));
+    console.log("wrote", file);
+  }
+for (const kind of WALL_KINDS)
+  for (let v = 0; v < WALL_VARIANTS; v++) {
+    const file = `public/tiles/wall-${kind}${v + 1}.png`;
+    writeFileSync(file, png(paintWall(kind, v), TILE_PX, TILE_PX));
     console.log("wrote", file);
   }

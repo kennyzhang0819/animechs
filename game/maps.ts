@@ -40,7 +40,7 @@ import {
   WALL_SNOW,
   WALL_SPORE,
 } from "./atlas";
-import { FLOOR_STYLE, tileIcon } from "./tiles";
+import { FLOOR_STYLE, tileIcon, wallIcon, WALL_STYLE } from "./tiles";
 import { explain, type SaveResult } from "./types";
 
 /**
@@ -381,31 +381,31 @@ export const PALETTE: readonly PaletteSet[] = [
   { id: "deep-spore-water", label: "Deep spore water", kind: "deep",
     variants: [FLOOR_DEEP_TAINTED_WATER], icons: [`${ENV}/deep-tainted-water.png`] },
   { id: "stone-wall", label: "Stone wall", kind: "wall", variants: [0, 1],
-    icons: [1, 2].map((n) => `${ENV}/stone-wall${n}.png`) },
+    icons: [0, 1].map((v) => wallIcon("stone", v)) },
   { id: "dirt-wall", label: "Dirt wall", kind: "wall", variants: [2, 3],
-    icons: [1, 2].map((n) => `${ENV}/dirt-wall${n}.png`) },
+    icons: [0, 1].map((v) => wallIcon("dirt", v)) },
   // the darker rock (carbon wall); variant 4 is the pine sentinel, so the
   // wall indices jump straight to 5-6
   { id: "dark-wall", label: "Dark rock", kind: "wall", variants: [5, 6],
-    icons: [1, 2].map((n) => `${ENV}/carbon-wall${n}.png`) },
+    icons: [0, 1].map((v) => wallIcon("dark", v)) },
   // the second band's rock, all of it past the two sentinels and so all of
   // it ordinary buildable wall
   { id: "spore-wall", label: "Spore wall", kind: "wall", variants: [WALL_SPORE, WALL_SPORE + 1],
-    icons: [1, 2].map((n) => `${ENV}/spore-wall${n}.png`) },
+    icons: [0, 1].map((v) => wallIcon("spore", v)) },
   { id: "shale-wall", label: "Shale wall", kind: "wall", variants: [WALL_SHALE, WALL_SHALE + 1],
-    icons: [1, 2].map((n) => `${ENV}/shale-wall${n}.png`) },
+    icons: [0, 1].map((v) => wallIcon("shale", v)) },
   { id: "dacite-wall", label: "Dacite wall", kind: "wall", variants: [WALL_DACITE, WALL_DACITE + 1],
-    icons: [1, 2].map((n) => `${ENV}/dacite-wall${n}.png`) },
+    icons: [0, 1].map((v) => wallIcon("dacite", v)) },
   { id: "sand-wall", label: "Sand wall", kind: "wall", variants: [WALL_SAND, WALL_SAND + 1],
-    icons: [1, 2].map((n) => `${ENV}/sand-wall${n}.png`) },
+    icons: [0, 1].map((v) => wallIcon("sand", v)) },
   { id: "dune-wall", label: "Dune wall", kind: "wall", variants: [WALL_DUNE, WALL_DUNE + 1],
-    icons: [1, 2].map((n) => `${ENV}/dune-wall${n}.png`) },
+    icons: [0, 1].map((v) => wallIcon("dune", v)) },
   { id: "snow-wall", label: "Snow wall", kind: "wall", variants: [WALL_SNOW, WALL_SNOW + 1],
-    icons: [1, 2].map((n) => `${ENV}/snow-wall${n}.png`) },
+    icons: [0, 1].map((v) => wallIcon("snow", v)) },
   { id: "ice-wall", label: "Ice wall", kind: "wall", variants: [WALL_ICE, WALL_ICE + 1],
-    icons: [1, 2].map((n) => `${ENV}/ice-wall${n}.png`) },
+    icons: [0, 1].map((v) => wallIcon("ice", v)) },
   { id: "salt-wall", label: "Salt wall", kind: "wall", variants: [WALL_SALT, WALL_SALT + 1],
-    icons: [1, 2].map((n) => `${ENV}/salt-wall${n}.png`) },
+    icons: [0, 1].map((v) => wallIcon("salt", v)) },
   // the path tool: drags carve an enemy road through rock at roughly the
   // width the generated maps use, with a little wobble on the edges, and
   // lay this floor down its middle. Variants are the road surface
@@ -862,15 +862,14 @@ const FLOOR_TONES = [
 // its colour is the WATER it is, which only its floor index knows. Reading
 // it from here instead is what painted a spore lake in clear-water blue.
 const WALL_TONES = [
-  "#5c5c66", "#565660", "#6e4f35", "#674a32", "#000000", "#3e454a", "#3a4046", "#000000",
-  "#7e4e87", "#7a4a83", // spore
-  "#686a91", "#64668d", // shale
-  "#d9e0ec", "#d5dce8", // snow
-  "#c0bef6", "#bcbaf2", // ice
-  "#dee1e9", "#dadde5", // salt
-  "#eecbab", "#eac7a7", // sand
-  "#525050", "#4e4c4c", // dune
-  "#9292a7", "#8e8ea3", // dacite
+  WALL_STYLE.stone.face, WALL_STYLE.stone.face,
+  WALL_STYLE.dirt.face, WALL_STYLE.dirt.face,
+  "#000000", // WALL_PINE placeholder
+  WALL_STYLE.dark.face, WALL_STYLE.dark.face,
+  "#000000", // WALL_DEEP placeholder
+  ...(["spore", "shale", "snow", "ice", "salt", "sand", "dune", "dacite"] as const).flatMap(
+    (k) => [WALL_STYLE[k].face, WALL_STYLE[k].face],
+  ),
 ];
 const PINE_TONE = "#2e6e35";
 

@@ -234,3 +234,206 @@ export function floorCanvas(kind: FloorKind, variant: number): HTMLCanvasElement
 /** where the editor's palette icons are written (scripts/gen-tiles.mjs) */
 export const tileIcon = (kind: FloorKind, variant: number): string =>
   `/tiles/${kind}${(variant % FLOOR_VARIANTS) + 1}.png`;
+
+/* ======================================================================
+ * THE HILL BLOCKS — the rock a lane is cut through, painted like the
+ * floors.
+ *
+ * Mindustry's walls are what its floors are not: highly worked. Every
+ * block carries a wide diagonal bevel, lit along its top-left edge and
+ * shadowed along its bottom-right, with chunky notched corners, and that
+ * bevel is the second most recognisable thing about its ground after the
+ * speckle. A block here is a plateau instead: a flat face inside a thin
+ * dark outline, corners knocked off to round it, a single light lip along
+ * the top and a dark line above the bottom so it stands up off the floor
+ * without pretending to a 45° light. The outline is only a step darker
+ * than the face: at full contrast every outcrop turned into a grid from
+ * map height, and the field's own blurred shadow already draws the rim. The face carries the family's mark —
+ * strata on shale, a crack on stone and ice, clumps on dirt, ripples on
+ * sand — so a rock is still a texture, only a quieter one.
+ *
+ * A 2×2 cluster of rock takes ONE block twice the size (the field's
+ * large-draw rule, UV_WALL_LARGE), which is what makes an outcrop read as
+ * a mass rather than as a stack of bricks; `span` paints that one.
+ * ====================================================================== */
+
+export type WallKind =
+  | "stone"
+  | "dirt"
+  | "dark"
+  | "spore"
+  | "shale"
+  | "snow"
+  | "ice"
+  | "salt"
+  | "sand"
+  | "dune"
+  | "dacite";
+
+export interface WallStyle {
+  /** the plateau's face */
+  face: string;
+  /** the lip along the top, and the marks that catch light */
+  light: string;
+  /** the shade above the bottom edge, and the marks that sit in shadow */
+  dark: string;
+  /** the outline */
+  edge: string;
+  /** what the face wears: see the floor marks, plus `strata` — two or
+   *  three level dark lines, the bedding of a sedimentary rock */
+  mark: "patch" | "crack" | "ripple" | "strata" | "clump";
+}
+
+export const WALL_STYLE: Readonly<Record<WallKind, WallStyle>> = {
+  stone: { face: "#8f8f99", light: "#a6a6b0", dark: "#71717b", edge: "#62626c", mark: "crack" },
+  dirt: { face: "#a07753", light: "#b58a63", dark: "#846040", edge: "#6e5036", mark: "clump" },
+  dark: { face: "#4c5158", light: "#5e646c", dark: "#3b4046", edge: "#30343a", mark: "crack" },
+  spore: { face: "#8b5ba2", light: "#a271b8", dark: "#734a89", edge: "#593a68", mark: "patch" },
+  shale: { face: "#7d7ba0", light: "#9391b3", dark: "#66648a", edge: "#53516e", mark: "strata" },
+  snow: { face: "#eef2f7", light: "#ffffff", dark: "#d3dbe5", edge: "#b6bfcb", mark: "patch" },
+  ice: { face: "#dadafc", light: "#f2f2ff", dark: "#bdbdef", edge: "#a1a1d2", mark: "crack" },
+  salt: { face: "#f4f5f8", light: "#ffffff", dark: "#dcdfe6", edge: "#c3c7cf", mark: "crack" },
+  sand: { face: "#e3caa5", light: "#f0ddc0", dark: "#c9ae88", edge: "#ad9268", mark: "ripple" },
+  dune: { face: "#5b5755", light: "#6c6866", dark: "#4a4644", edge: "#3a3735", mark: "ripple" },
+  dacite: { face: "#a6a6bb", light: "#bcbccf", dark: "#8c8ca1", edge: "#767689", mark: "strata" },
+};
+
+export const WALL_KINDS = Object.keys(WALL_STYLE) as WallKind[];
+export const WALL_VARIANTS = 2;
+
+/**
+ * Paint one block: `span` tiles on a side (1 or 2), as `TILE_PX * span`
+ * square RGBA. Opaque throughout — a wall cell has no floor under it.
+ */
+export function paintWall(
+  kind: WallKind,
+  variant: number,
+  span = 1,
+): Uint8ClampedArray<ArrayBuffer> {
+  const st = WALL_STYLE[kind];
+  const N = TILE_LOGICAL * span;
+  const rng = mulberry32(
+    1000 + WALL_KINDS.indexOf(kind) * 131 + (variant % WALL_VARIANTS) * 17 + span * 977,
+  );
+  const grid = new Array<string>(N * N).fill(st.face);
+  const put = (x: number, y: number, c: string): void => {
+    if (x >= 0 && y >= 0 && x < N && y < N) grid[y * N + x] = c;
+  };
+  // the outline, the rounded corners, the lip and the shade
+  for (let i = 0; i < N; i++) {
+    put(i, 0, st.edge);
+    put(i, N - 1, st.edge);
+    put(0, i, st.edge);
+    put(N - 1, i, st.edge);
+    if (i > 1 && i < N - 2) {
+      put(i, 1, st.light);
+      put(i, N - 2, st.dark);
+    }
+  }
+  for (const [cx, cy] of [[0, 0], [N - 1, 0], [0, N - 1], [N - 1, N - 1]] as const) {
+    const sx = cx === 0 ? 1 : -1, sy = cy === 0 ? 1 : -1;
+    put(cx + sx, cy, st.edge);
+    put(cx, cy + sy, st.edge);
+    put(cx + sx, cy + sy, st.edge);
+  }
+  // marks stay inside the lip and the shade
+  const RIM = 3;
+  const spot = (w: number, h: number): [number, number] => [
+    RIM + Math.floor(rng() * Math.max(1, N - RIM * 2 - w)),
+    RIM + Math.floor(rng() * Math.max(1, N - RIM * 2 - h)),
+  ];
+  const blob = (c: string, w: number, h: number): void => {
+    const [x, y] = spot(w, h);
+    for (let j = 0; j < h; j++)
+      for (let i = 0; i < w; i++) {
+        const corner = (i === 0 || i === w - 1) && (j === 0 || j === h - 1);
+        if (corner && (w > 2 || h > 2)) continue;
+        put(x + i, y + j, c);
+      }
+  };
+  const crack = (c: string): void => {
+    const len = 3 + Math.floor(rng() * 3) + span;
+    let [x, y] = spot(len, len);
+    const dx = rng() < 0.5 ? 1 : 0, dy = 1 - dx;
+    const bend = 1 + Math.floor(rng() * (len - 2));
+    for (let k = 0; k < len; k++) {
+      put(x, y, c);
+      if (k === bend) {
+        x += dy * (x < N / 2 ? 1 : -1);
+        y += dx * (y < N / 2 ? 1 : -1);
+        put(x, y, c);
+      }
+      x += dx;
+      y += dy;
+    }
+  };
+  const dash = (c: string): void => {
+    const w = 3 + Math.floor(rng() * 2);
+    const [x, y] = spot(w, 1);
+    for (let i = 0; i < w; i++) put(x + i, y, c);
+  };
+  const strata = (): void => {
+    // level lines that run most of the face, broken once
+    const w = N - RIM * 2 - 2 - Math.floor(rng() * 3);
+    const [x, y] = spot(w, 1);
+    const gap = 1 + Math.floor(rng() * (w - 2));
+    for (let i = 0; i < w; i++) if (i !== gap) put(x + i, y, st.dark);
+  };
+  const reps = span * span;
+  switch (st.mark) {
+    case "patch":
+      for (let r = 0; r < reps; r++) {
+        blob(st.light, 3, 2);
+        if (rng() < 0.6) blob(st.dark, 2, 2);
+      }
+      break;
+    case "crack":
+      for (let r = 0; r < reps; r++) {
+        crack(st.dark);
+        if (rng() < 0.5) blob(st.light, 3, 2);
+      }
+      break;
+    case "ripple":
+      for (let r = 0; r < reps; r++) {
+        dash(st.light);
+        dash(st.dark);
+      }
+      break;
+    case "strata":
+      for (let r = 0; r < reps + 1; r++) strata();
+      break;
+    case "clump":
+      for (let r = 0; r < reps; r++) {
+        blob(st.dark, 3, 2);
+        blob(st.light, 2, 2);
+      }
+      break;
+  }
+
+  const P = TILE_PX * span;
+  const out = new Uint8ClampedArray(new ArrayBuffer(P * P * 4));
+  for (let y = 0; y < P; y++)
+    for (let x = 0; x < P; x++) {
+      const [r, g, b] = hex(grid[Math.floor(y / TILE_SCALE) * N + Math.floor(x / TILE_SCALE)]);
+      const o = (y * P + x) * 4;
+      out[o] = r;
+      out[o + 1] = g;
+      out[o + 2] = b;
+      out[o + 3] = 255;
+    }
+  return out;
+}
+
+/** the painted block as a canvas: 32px for one tile, 64px for a 2×2 */
+export function wallCanvas(kind: WallKind, variant: number, span = 1): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  c.width = c.height = TILE_PX * span;
+  const g = c.getContext("2d");
+  if (!g) throw new Error("2d context unavailable for wall tile");
+  g.putImageData(new ImageData(paintWall(kind, variant, span), TILE_PX * span, TILE_PX * span), 0, 0);
+  return c;
+}
+
+/** where the editor's palette icons for walls are written */
+export const wallIcon = (kind: WallKind, variant: number): string =>
+  `/tiles/wall-${kind}${(variant % WALL_VARIANTS) + 1}.png`;

@@ -1,5 +1,12 @@
 import { UNIT_SPRITE } from "./constants";
-import { floorCanvas, FLOOR_VARIANTS, type FloorKind } from "./tiles";
+import {
+  floorCanvas,
+  FLOOR_VARIANTS,
+  wallCanvas,
+  WALL_VARIANTS,
+  type FloorKind,
+  type WallKind,
+} from "./tiles";
 import type { UnitKind } from "./levels";
 
 // The sheet began as a 1024 square and grew as the roster outgrew it. Every
@@ -1293,14 +1300,7 @@ const SPRITES = {
   // UV_FLOORS note for how the three-wide group slot handles that
   shallowWater: `${ENV}/shallow-water.png`,
   deepWater: `${ENV}/deep-water.png`,
-  stoneWall0: `${ENV}/stone-wall1.png`,
-  stoneWall1: `${ENV}/stone-wall2.png`,
-  dirtWall0: `${ENV}/dirt-wall1.png`,
-  dirtWall1: `${ENV}/dirt-wall2.png`,
-  carbonWall0: `${ENV}/carbon-wall1.png`,
-  carbonWall1: `${ENV}/carbon-wall2.png`,
-  stoneWallLarge: `${ENV}/stone-wall-large.png`,
-  carbonWallLarge: `${ENV}/carbon-wall-large.png`,
+  // (the walls are painted from game/tiles.ts too — see packAtlas)
   edgeStencil: `${ENV}/edge-stencil.png`,
   pine: `${ENV}/pine.png`,
   shrubs: `${ENV}/shrubs1.png`,
@@ -1311,30 +1311,6 @@ const SPRITES = {
   // (the band's land floors are painted from game/tiles.ts, like row 0's)
   taintedWater: `${ENV}/tainted-water.png`,
   deepTaintedWater: `${ENV}/deep-tainted-water.png`,
-  sporeWall0: `${ENV}/spore-wall1.png`,
-  sporeWall1: `${ENV}/spore-wall2.png`,
-  shaleWall0: `${ENV}/shale-wall1.png`,
-  shaleWall1: `${ENV}/shale-wall2.png`,
-  snowWall0: `${ENV}/snow-wall1.png`,
-  snowWall1: `${ENV}/snow-wall2.png`,
-  iceWall0: `${ENV}/ice-wall1.png`,
-  iceWall1: `${ENV}/ice-wall2.png`,
-  saltWall0: `${ENV}/salt-wall1.png`,
-  saltWall1: `${ENV}/salt-wall2.png`,
-  sandWall0: `${ENV}/sand-wall1.png`,
-  sandWall1: `${ENV}/sand-wall2.png`,
-  duneWall0: `${ENV}/dune-wall1.png`,
-  duneWall1: `${ENV}/dune-wall2.png`,
-  daciteWall0: `${ENV}/dacite-wall1.png`,
-  daciteWall1: `${ENV}/dacite-wall2.png`,
-  sporeWallLarge: `${ENV}/spore-wall-large.png`,
-  shaleWallLarge: `${ENV}/shale-wall-large.png`,
-  snowWallLarge: `${ENV}/snow-wall-large.png`,
-  iceWallLarge: `${ENV}/ice-wall-large.png`,
-  saltWallLarge: `${ENV}/salt-wall-large.png`,
-  sandWallLarge: `${ENV}/sand-wall-large.png`,
-  duneWallLarge: `${ENV}/dune-wall-large.png`,
-  daciteWallLarge: `${ENV}/dacite-wall-large.png`,
   sporePine: `${ENV}/spore-pine.png`,
   snowPine: `${ENV}/snow-pine.png`,
   shrubs2: `${ENV}/shrubs2.png`,
@@ -1797,19 +1773,24 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(floor("grass", 0)), 0, 0, 64, 64);
   c.drawImage(antialiased(floor("grass", 1)), 64, 0, 64, 64);
   c.drawImage(antialiased(floor("grass", 2)), 128, 0, 64, 64);
-  // walls ride the same antialias pass the game's packer runs over them
-  c.drawImage(antialiased(img.stoneWall0), 192, 0, 64, 64);
-  c.drawImage(antialiased(img.stoneWall1), 256, 0, 64, 64);
+  // THE WALLS ARE PAINTED TOO (game/tiles.ts): two blocks a family, and a
+  // 2×2 block where the family has a large cell. They ride the same
+  // antialias pass the floors do
+  const wall = (kind: WallKind, slot: number): HTMLCanvasElement =>
+    wallCanvas(kind, slot % WALL_VARIANTS);
+  const wallLarge = (kind: WallKind): HTMLCanvasElement => wallCanvas(kind, 0, 2);
+  c.drawImage(antialiased(wall("stone", 0)), 192, 0, 64, 64);
+  c.drawImage(antialiased(wall("stone", 1)), 256, 0, 64, 64);
   c.drawImage(antialiased(floor("stone", 0)), 64, 64, 64, 64);
   c.drawImage(antialiased(floor("stone", 1)), 128, 64, 64, 64);
   c.drawImage(antialiased(floor("stone", 2)), 192, 64, 64, 64);
   c.drawImage(antialiased(floor("dirt", 0)), 256, 64, 64, 64);
   c.drawImage(antialiased(floor("dirt", 1)), 320, 64, 64, 64);
   c.drawImage(antialiased(floor("dirt", 2)), 384, 64, 64, 64);
-  c.drawImage(antialiased(img.dirtWall0), 448, 64, 64, 64);
-  c.drawImage(antialiased(img.dirtWall1), 0, 128, 64, 64);
-  c.drawImage(antialiased(img.carbonWall0), 320, 0, 64, 64);
-  c.drawImage(antialiased(img.carbonWall1), 384, 0, 64, 64);
+  c.drawImage(antialiased(wall("dirt", 0)), 448, 64, 64, 64);
+  c.drawImage(antialiased(wall("dirt", 1)), 0, 128, 64, 64);
+  c.drawImage(antialiased(wall("dark", 0)), 320, 0, 64, 64);
+  c.drawImage(antialiased(wall("dark", 1)), 384, 0, 64, 64);
   // desert floors on row 0's free tail (see the UV_FLOORS note)
   c.drawImage(antialiased(floor("sand", 0)), 576, 0, 64, 64);
   c.drawImage(antialiased(floor("sand", 1)), 640, 0, 64, 64);
@@ -1844,8 +1825,8 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   waterCell(img.deepWater, WATER_DEEP_XY);
   // 2x2-tile "-large" wall art: 64px sources at the same 2x tile scale,
   // in the free block right of the dirt edge fades
-  c.drawImage(antialiased(img.stoneWallLarge), 736, 768, 128, 128);
-  c.drawImage(antialiased(img.carbonWallLarge), 864, 768, 128, 128);
+  c.drawImage(antialiased(wallLarge("stone")), 736, 768, 128, 128);
+  c.drawImage(antialiased(wallLarge("dark")), 864, 768, 128, 128);
   c.drawImage(antialiased(img.spawnPad), 0, 192, 64, 64);
 
   // floor edge fades, generated exactly like the game's sprite packer
@@ -1904,25 +1885,22 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
     for (let slot = 0; slot < 3; slot++)
       c.drawImage(antialiased(floor(k, slot)), ENV2_X + (i * 3 + slot) * 64, ENV2_Y + 64, 64, 64);
   });
-  const rowB: SpriteKey[] = [
-    "sporeWall0", "sporeWall1",
-    "shaleWall0", "shaleWall1",
-    "snowWall0", "snowWall1",
-    "iceWall0", "iceWall1",
-    "saltWall0", "saltWall1",
-  ];
-  rowB.forEach((k, i) => at2(k, (6 + i) * 64, 64, 64));
-  const rowC: SpriteKey[] = [
-    "sandWall0", "sandWall1",
-    "duneWall0", "duneWall1",
-    "daciteWall0", "daciteWall1",
-  ];
-  rowC.forEach((k, i) => at2(k, i * 64, 128, 64));
-  const larges: SpriteKey[] = [
-    "sporeWallLarge", "shaleWallLarge", "snowWallLarge", "iceWallLarge",
-    "saltWallLarge", "sandWallLarge", "duneWallLarge", "daciteWallLarge",
-  ];
-  larges.forEach((k, i) => at2(k, i * 128, 224, 128));
+  // the band's walls, painted: a pair a family in UV_WALLS order, and the
+  // 2×2 blocks on their own row in UV_WALL_LARGE order
+  const rowB: WallKind[] = ["spore", "shale", "snow", "ice", "salt"];
+  rowB.forEach((k, i) => {
+    for (let v = 0; v < 2; v++)
+      c.drawImage(antialiased(wall(k, v)), ENV2_X + (6 + i * 2 + v) * 64, ENV2_Y + 64, 64, 64);
+  });
+  const rowC: WallKind[] = ["sand", "dune", "dacite"];
+  rowC.forEach((k, i) => {
+    for (let v = 0; v < 2; v++)
+      c.drawImage(antialiased(wall(k, v)), ENV2_X + (i * 2 + v) * 64, ENV2_Y + 128, 64, 64);
+  });
+  const larges: WallKind[] = ["spore", "shale", "snow", "ice", "salt", "sand", "dune", "dacite"];
+  larges.forEach((k, i) =>
+    c.drawImage(antialiased(wallLarge(k)), ENV2_X + i * 128, ENV2_Y + 224, 128, 128),
+  );
   // the band's props, each in a cell cut to its own source at 2x
   at2("sporePine", 384, 128, 96);
   at2("snowPine", 480, 128, 96);
