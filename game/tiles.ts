@@ -237,23 +237,21 @@ export const tileIcon = (kind: FloorKind, variant: number): string =>
   `/tiles/${kind}${(variant % FLOOR_VARIANTS) + 1}.png`;
 
 /* ======================================================================
- * THE HILL BLOCKS — the rock a lane is cut through, painted like the
- * floors and quieter than them.
+ * THE HILL BLOCKS — the rock a lane is cut through.
  *
- * The map is seen from straight above and everything on it is FLAT. A
- * wall tile is a face colour with, at most, one soft rounded patch a
- * shade lighter on it — no dark patches, which read as holes in the
- * rock, and no light direction, which reads as a ball. The SECOND
- * painting of every family is plain face: half the cells of an outcrop
- * carry nothing at all, so a hill is a mass of colour with a few pale
- * patches drifting over it rather than a field of spots. Nothing sits at
- * the cell's edge, so neighbouring cells run together, and the only depth
- * on the whole map is the renderer's blurred shadow along the outcrop's
- * edge (WALL_SHADOW_A, and the same pass on the menu).
+ * The shading is Mindustry's wall rule, read off its sprites: the top-
+ * right corner of a tile is the light tone, the bottom-left corner the
+ * dark tone, and a wide band of the mid tone runs diagonally between
+ * them, its two boundaries wandering a little so the bands are not
+ * ruled lines. Every tile carries the same corners, so an outcrop reads
+ * as stacked stones each lit from the same side — the boulder props use
+ * the same rule on a rounded silhouette. On top of the bands the first
+ * painting carries one pale patch and the second nothing, as before.
+ * Nothing else: no lumps, no marks, and nothing that reads as a sphere.
  *
  * A 2×2 cluster of rock takes ONE block twice the size (the field's
- * large-draw rule, UV_WALL_LARGE), which carries two patches; `span`
- * paints that one.
+ * large-draw rule, UV_WALL_LARGE), shaded corner to corner across the
+ * whole block; `span` paints that one.
  * ====================================================================== */
 
 export type WallKind =
@@ -270,17 +268,17 @@ export type WallKind =
   | "dacite";
 
 export interface WallStyle {
-  /** the rock's face */
+  /** the mid tone: the band across the middle of the tile */
   face: string;
-  /** a shade up, for the patch */
+  /** the lit corner, top-right */
   light: string;
-  /** a shade down — kept for the thumbnails and the dust, never painted */
+  /** the shaded corner, bottom-left */
   dark: string;
   /**
-   * the grain of the rock — the shape of its one patch:
-   * rough  — a round patch, the bare rocks
-   * soft   — a big round patch, the earths and snow
-   * glassy — a wide low patch, ice and salt
+   * the grain of the rock — how much of the tile the corners take:
+   * rough  — a narrow lit corner and a deep shaded one, the bare rocks
+   * soft   — both corners shallow, the earths and snow
+   * glassy — a wide lit corner and a shallow shaded one, ice and salt
    */
   grain: "rough" | "soft" | "glassy";
 }
@@ -321,8 +319,27 @@ export function paintWall(
   const put = (x: number, y: number, c: string): void => {
     if (x >= 0 && y >= 0 && x < N && y < N) grid[y * N + x] = c;
   };
-  // a patch keeps one pixel off the rim, so the seam is always plain face
-  // and any cell sits flush against any other
+  // THE BANDS. `t` runs from -1 at the bottom-left corner to +1 at the
+  // top-right; the two thresholds cut the tile into the shaded corner,
+  // the mid band and the lit corner, and a slow wobble along each
+  // boundary keeps them from being ruled lines
+  const [litAt, darkAt] =
+    st.grain === "rough" ? [0.3, -0.3] : st.grain === "soft" ? [0.4, -0.4] : [0.15, -0.4];
+  const w1 = rng() * Math.PI * 2, w2 = rng() * Math.PI * 2, w3 = rng() * Math.PI * 2;
+  for (let y = 0; y < N; y++)
+    for (let x = 0; x < N; x++) {
+      const t = (x + 0.5 - (y + 0.5)) / N;
+      const along = (x + y) / N; // position along the boundary
+      const wobble =
+        0.09 * Math.sin(along * Math.PI * 2 + w1) +
+        0.05 * Math.sin(along * Math.PI * 5 + w2) +
+        0.04 * Math.sin(t * Math.PI * 3 + w3);
+      const v = t + wobble;
+      put(x, y, v > litAt ? st.light : v < darkAt ? st.dark : st.face);
+    }
+
+  // a patch keeps one pixel off the rim, so the seam is always plain
+  // band and any cell sits flush against any other
   const RIM = 1;
   const patch = (c: string, r: number, squash = 0.8): void => {
     const most = (N - RIM * 2) / 2 - 0.3; // the biggest patch the tile can hold
@@ -332,8 +349,8 @@ export function paintWall(
     ellipse(cx, cy, rx, ry, (x, y) => put(x, y, c));
   };
 
-  // the second painting is plain face; the first carries one patch a
-  // tile of its span (two on a 2×2 block, not four)
+  // the second painting is the bands alone; the first carries one pale
+  // patch a tile of its span (two on a 2×2 block, not four)
   const patches = variant % WALL_VARIANTS === 0 ? span : 0;
   for (let r = 0; r < patches; r++) {
     switch (st.grain) {

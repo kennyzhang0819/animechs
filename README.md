@@ -71,20 +71,19 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `game/sim.ts` — units in struct-of-arrays typed arrays, counting-sort spatial
   hash (separation + projectile hits), towers, projectiles, effects
 - `game/tiles.ts` — **the ground tiles and the hill blocks**, the game's
-  own terrain art, painted at load on a 16-pixel grid, and FLAT: the map
-  is seen from straight above. A floor is a base colour with one to three
-  soft rounded patches a shade off it (a shaded stone on dirt, wide low
-  dunes on sand, glowing spots on hot rock), its dark tone eased toward
-  the base. A wall is the rock's colour with at most one pale patch, and
-  its second painting is plain face, so an outcrop is a mass with a few
-  patches drifting over it; nothing sits at a cell's edge, and the
-  renderer's shadow along the outcrop's edge is the only depth cue
-  anywhere. No lines, no dark spots on rock, no lit sides. Two paintings
-  a family, the floors' third slot drawing the first turned half a turn,
-  and a 2×2 block per wall family for the large-draw rule. The atlas, the
-  menu background, the map thumbnails and the editor palette all read
-  from it; `npm run gen:tiles` writes the palette's PNGs into
-  `public/tiles/`
+  own terrain art, painted at load on a 16-pixel grid. A floor is a base
+  colour with one to three soft rounded patches a shade off it (a shaded
+  stone on dirt, wide low dunes on sand, glowing spots on hot rock), its
+  dark tone eased toward the base, and never a line. A wall is shaded the
+  way Mindustry shades its walls: the top-right corner in the light tone,
+  the bottom-left in the dark, and a wide mid band running diagonally
+  between them with wandering edges — then at most one pale patch on
+  top, and the second painting is the bands alone. A 2×2 cluster is one
+  block shaded corner to corner across the whole of it. Two paintings a
+  family, the floors' third slot drawing the first turned half a turn.
+  The atlas, the menu background, the map thumbnails and the editor
+  palette all read from it; `npm run gen:tiles` writes the palette's
+  PNGs into `public/tiles/`
 - `game/atlas.ts` — the sprite atlas, composited at load time from Mindustry
   sprites in `public/mindustry/` plus procedural regions; **swap any region
   for custom art** (units are white sprites tinted per instance, and already
