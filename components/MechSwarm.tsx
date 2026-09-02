@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   BASE_SPEEDS,
   firstLoadStep,
@@ -81,6 +81,7 @@ import { BY_MINDUSTRY_VALUE } from "@/game/tech";
 import { isEmpty, ITEM_INFO } from "@/game/items";
 import { CostRow, Wallet } from "./Items";
 import TechTree from "./TechTree";
+import MenuBackground from "./MenuBackground";
 
 const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
 
@@ -112,8 +113,8 @@ function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) 
   // a picture of a map rather than as the map
   return (
     <div
-      className={`flex aspect-[16/9] items-center justify-center overflow-hidden rounded${
-        bare ? "" : " border border-[#2E2E36] bg-[#101013]"
+      className={`flex aspect-[16/9] items-center justify-center overflow-hidden${
+        bare ? "" : " ms-pane-solid"
       }`}
     >
       <canvas ref={ref} className="h-full w-full object-contain [image-rendering:pixelated]" />
@@ -158,32 +159,25 @@ function MapCard({
       onClick={onPick}
       disabled={lock != null}
       aria-disabled={lock != null}
-      className={`group flex flex-col overflow-hidden rounded border text-left transition-colors ${
+      className={`group ms-pane-solid flex flex-col overflow-hidden text-left transition-colors ${
         lock
-          ? "cursor-not-allowed border-[#26262C] bg-[#121215]"
-          : "border-[#2E2E36] bg-[#151518] hover:border-[#FFD37F] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+          ? "cursor-not-allowed border-[#252525]"
+          : "hover:border-[#FFD37F] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FFD37F]"
       }`}
     >
       <div className={`relative ${lock ? "opacity-40 grayscale" : ""}`}>
         {mapsReady ? (
           <LevelThumb mapId={world.map ?? OFFICIAL_MAP_IDS[0]} bare />
         ) : (
-          <div className="aspect-[16/9] bg-[#101013]" />
+          <div className="aspect-[16/9] bg-[#0b0b0d]" />
         )}
-        <span
-          className="absolute left-2 top-2 rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] backdrop-blur"
-          style={{
-            color: badge.color,
-            borderColor: badge.color,
-            backgroundColor: "#101013D9",
-          }}
-        >
+        <span className="ms-badge absolute left-2 top-2" style={{ color: badge.color }}>
           {badge.name}
         </span>
       </div>
-      <div className="flex items-baseline justify-between gap-3 border-t border-[#2E2E36] px-3 py-2.5">
+      <div className="ms-rule-t flex items-baseline justify-between gap-3 px-3 py-2.5">
         <span
-          className={`text-[15px] font-bold uppercase tracking-widest ${
+          className={`font-display text-[15px] font-bold uppercase tracking-widest ${
             lock ? "text-[#71717C]" : "text-[#EDEDEF] group-hover:text-[#FFD37F]"
           }`}
         >
@@ -258,7 +252,7 @@ function LoadingScreen({
       role="status"
       aria-live="polite"
       aria-label="Loading"
-      className={`absolute inset-0 z-20 flex items-center justify-center bg-[#101013] transition-opacity duration-[260ms] ${
+      className={`absolute inset-0 z-20 flex items-center justify-center bg-[#0b0b0d] transition-opacity duration-[260ms] ${
         out ? "pointer-events-none opacity-0" : "opacity-100"
       }`}
     >
@@ -269,7 +263,7 @@ function LoadingScreen({
         <div className="flex flex-col items-center gap-1.5 text-center">
           {/* the level has no name worth printing — one map, so the headline
               says what the screen is doing instead */}
-          <h2 className="text-3xl font-bold uppercase tracking-[0.25em] text-[#EDEDEF]">
+          <h2 className="font-display text-3xl font-bold uppercase tracking-[0.25em] text-[#EDEDEF]">
             Loading
           </h2>
           <p className="text-[13px] uppercase tracking-widest text-[#71717C]">
@@ -280,9 +274,9 @@ function LoadingScreen({
           </p>
         </div>
         <div className="flex w-full flex-col gap-2">
-          <div className="h-1 w-full overflow-hidden rounded-full bg-[#2E2E36]">
+          <div className="ms-bar w-full">
             <div
-              className="h-full rounded-full bg-[#FFD37F] transition-[width] duration-200 ease-out"
+              className="transition-[width] duration-200 ease-out"
               style={{ width: `${(done / LOAD_STEPS.length) * 100}%` }}
             />
           </div>
@@ -460,7 +454,7 @@ function MapDialog({
         aria-modal="true"
         aria-label={world.name}
         onClick={(e) => e.stopPropagation()}
-        className="ui-zoom w-full max-w-[44rem] rounded border border-[#2E2E36] bg-[#151518] p-4 shadow-2xl"
+        className="ui-zoom ms-pane-solid w-full max-w-[44rem] p-4 shadow-2xl"
       >
         <div className="grid gap-4 sm:grid-cols-2">
           {/* LEFT: the map itself, badged exactly as its card was, so the
@@ -469,16 +463,9 @@ function MapDialog({
             {mapsReady ? (
               <LevelThumb mapId={spec.map ?? OFFICIAL_MAP_IDS[0]} bare />
             ) : (
-              <div className="aspect-[16/9] rounded bg-[#101013]" />
+              <div className="aspect-[16/9] bg-[#0b0b0d]" />
             )}
-            <span
-              className="absolute left-2 top-2 rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] backdrop-blur"
-              style={{
-                color: badge.color,
-                borderColor: badge.color,
-                backgroundColor: "#101013D9",
-              }}
-            >
+            <span className="ms-badge absolute left-2 top-2" style={{ color: badge.color }}>
               {badge.name}
             </span>
           </div>
@@ -486,7 +473,7 @@ function MapDialog({
           {/* RIGHT: the name, the one dial, and what the dial buys */}
           <div className="flex flex-col">
             <div className="flex items-baseline justify-between gap-2">
-              <h2 className="truncate text-lg font-bold uppercase tracking-[0.2em] text-[#EDEDEF]">
+              <h2 className="truncate font-display text-lg font-bold uppercase tracking-[0.2em] text-[#EDEDEF]">
                 {world.name}
               </h2>
               <span
@@ -507,7 +494,7 @@ function MapDialog({
                 aria-label="lower difficulty"
                 disabled={tier <= 0}
                 onClick={() => step(-1)}
-                className="h-9 w-9 rounded border border-[#2E2E36] text-lg font-bold text-[#A6A6AF] enabled:hover:border-[#FFD37F] enabled:hover:text-[#EDEDEF] disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                className="ms-btn h-9 w-9 p-0 text-lg"
               >
                 −
               </button>
@@ -530,7 +517,7 @@ function MapDialog({
                 aria-label="higher difficulty"
                 disabled={tier >= top}
                 onClick={() => step(1)}
-                className="h-9 w-9 rounded border border-[#2E2E36] text-lg font-bold text-[#A6A6AF] enabled:hover:border-[#FFD37F] enabled:hover:text-[#EDEDEF] disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                className="ms-btn h-9 w-9 p-0 text-lg"
               >
                 +
               </button>
@@ -541,7 +528,7 @@ function MapDialog({
                 a glance; a row can. The wave count is here because it is the
                 thing a player most needs to know is NOT what they are
                 choosing — it is the same on every level */}
-            <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-[#2E2E36] pt-3 text-center">
+            <dl className="ms-rule-t mt-3 grid grid-cols-3 gap-2 pt-3 text-center">
               <div>
                 <dt className="text-[10px] uppercase tracking-widest text-[#71717C]">Waves</dt>
                 <dd className="text-[15px] font-bold text-[#EDEDEF]">{waves}</dd>
@@ -603,7 +590,7 @@ function MapDialog({
             <div className="mt-auto pt-5">
               <button
                 onClick={() => onStart(rolled)}
-                className="w-full rounded border border-[#FFD37F] bg-[#222227]/90 py-2 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                className="ms-btn ms-btn-accent w-full py-2.5 text-[13px] tracking-[0.3em]"
               >
                 Deploy
               </button>
@@ -717,8 +704,7 @@ const ORDERED_MENU: ReadonlyArray<(typeof TOWER_MENU)[number]> = BY_MINDUSTRY_VA
 );
 
 /** every button in the bottom bar: the turrets and the demolish tool */
-const TOOL_BTN =
-  "flex h-[4.5rem] w-14 shrink-0 flex-col items-center justify-center gap-0.5 rounded border backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
+const TOOL_BTN = "ms-btn h-[4.5rem] w-14 shrink-0 flex-col gap-0.5 p-0";
 
 
 export default function MechSwarm() {
@@ -1305,7 +1291,7 @@ export default function MechSwarm() {
       <div
         role="tablist"
         aria-label="settings sections"
-        className="flex overflow-hidden rounded border border-[#2E2E36] bg-[#151518]"
+        className="ms-seg"
       >
         {(
           [
@@ -1318,11 +1304,7 @@ export default function MechSwarm() {
             role="tab"
             aria-selected={settingsTab === tab}
             onClick={() => setSettingsTab(tab)}
-            className={`px-5 py-2 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#FFD37F] ${
-              settingsTab === tab
-                ? "bg-[#222227] text-[#FFD37F]"
-                : "text-[#71717C] hover:text-[#A6A6AF]"
-            }`}
+            className="ms-btn px-5 py-2 text-[13px]"
           >
             {label}
           </button>
@@ -1330,14 +1312,14 @@ export default function MechSwarm() {
       </div>
 
       {settingsTab === "interface" && (
-        <div className="flex w-full max-w-[30rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded border border-[#2E2E36] bg-[#151518] px-4 py-3">
+        <div className="ms-pane flex w-full max-w-[30rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
           <div className="text-[13px] font-bold uppercase tracking-widest text-[#EDEDEF]">
             UI size
           </div>
           <div
             role="group"
             aria-label="UI size"
-            className="flex overflow-hidden rounded border border-[#2E2E36]"
+            className="ms-seg"
           >
             {(
               [
@@ -1354,11 +1336,7 @@ export default function MechSwarm() {
                   setUiScale(scale);
                   saveUiScale(scale); // remembered across sessions
                 }}
-                className={`px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#FFD37F] ${
-                  uiScale === scale
-                    ? "bg-[#222227] text-[#FFD37F]"
-                    : "text-[#71717C] hover:bg-[#222227]/60 hover:text-[#A6A6AF]"
-                }`}
+                className="ms-btn px-3 py-1.5 text-[13px]"
               >
                 {label}
               </button>
@@ -1371,7 +1349,7 @@ export default function MechSwarm() {
         <>
           {/* every turret still shows its shot with effects off (see
               Sim.setEffects) — what goes is the dressing around it */}
-          <div className="flex w-full max-w-[30rem] items-center justify-between gap-4 rounded border border-[#2E2E36] bg-[#151518] px-4 py-3">
+          <div className="ms-pane flex w-full max-w-[30rem] items-center justify-between gap-4 px-4 py-3">
             <div className="min-w-0">
               <div className="text-[13px] font-bold uppercase tracking-widest text-[#EDEDEF]">
                 Effects
@@ -1387,11 +1365,7 @@ export default function MechSwarm() {
                 // live: a run under way takes it on the next frame
                 gameRef.current?.setEffects(next);
               }}
-              className={`w-16 shrink-0 rounded border px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-                effects
-                  ? "border-[#FFD37F] bg-[#222227] text-[#FFD37F] hover:bg-[#2B2B32]"
-                  : "border-[#2E2E36] bg-[#151518] text-[#71717C] hover:border-[#4A4A55] hover:text-[#A6A6AF]"
-              }`}
+              className="ms-btn w-16 shrink-0 px-3 py-1.5 text-[13px]"
             >
               {effects ? "On" : "Off"}
             </button>
@@ -1403,7 +1377,7 @@ export default function MechSwarm() {
               written to the save (Progress.unlocked), so switching it off
               returns the campaign underneath untouched */}
           {!inGame && progress && isUnlocked(progress) && (
-            <div className="flex w-full max-w-[30rem] items-center justify-between gap-4 rounded border border-[#3A5A3F] bg-[#151518] px-4 py-3">
+            <div className="ms-pane flex w-full max-w-[30rem] items-center justify-between gap-4 border-[#3A5A3F] px-4 py-3">
               <div className="min-w-0">
                 <div className="text-[13px] font-bold uppercase tracking-widest text-[#7BE58A]">
                   Full unlock
@@ -1423,7 +1397,7 @@ export default function MechSwarm() {
                   // back empty
                   setLoadout(p.loadout ?? null);
                 }}
-                className="shrink-0 rounded border border-[#2E2E36] bg-[#222227] px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest text-[#A6A6AF] hover:border-[#7BE58A] hover:text-[#7BE58A] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#7BE58A]"
+                className="ms-btn shrink-0 px-3 py-1.5 text-[13px]"
               >
                 Disable
               </button>
@@ -1431,7 +1405,7 @@ export default function MechSwarm() {
           )}
 
           {!inGame && (
-            <div className="flex w-full max-w-[30rem] items-center justify-between gap-4 rounded border border-[#2E2E36] bg-[#151518] px-4 py-3">
+            <div className="ms-pane flex w-full max-w-[30rem] items-center justify-between gap-4 px-4 py-3">
               <div className="min-w-0">
                 <div className="text-[13px] font-bold uppercase tracking-widest text-[#EDEDEF]">
                   Reset save
@@ -1451,7 +1425,7 @@ export default function MechSwarm() {
                     setLoadout(null);
                   }
                 }}
-                className="shrink-0 rounded border border-[#5A2A2A] bg-[#221718] px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest text-[#FF8A8A] hover:border-[#FF5A5A] hover:text-[#FF5A5A] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF5A5A]"
+                className="ms-btn ms-btn-red shrink-0 px-3 py-1.5 text-[13px]"
               >
                 Wipe
               </button>
@@ -1464,7 +1438,7 @@ export default function MechSwarm() {
 
   if (webglError) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-[#101013]">
+      <div className="fixed inset-0 flex items-center justify-center bg-[#0b0b0d]">
         <p className="p-8 text-center text-[#A6A6AF]">{webglError}</p>
       </div>
     );
@@ -1499,7 +1473,7 @@ export default function MechSwarm() {
      */
     const bank = progress && (
       <div className="flex items-center gap-3">
-        <span className="flex items-center rounded border border-[#2E2E36] bg-[#151518] px-4 py-2">
+        <span className="ms-pane flex items-center px-4 py-2">
           <Wallet bank={progress.bank} />
         </span>
         <button
@@ -1507,7 +1481,7 @@ export default function MechSwarm() {
             setTechFrom("menu");
             setScreen("tech");
           }}
-          className="rounded border border-[#FFD37F] bg-[#222227]/90 px-4 py-2 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+          className="ms-btn ms-btn-accent px-4 py-2 text-[13px]"
         >
           Upgrades
         </button>
@@ -1528,7 +1502,7 @@ export default function MechSwarm() {
           setTaps(0);
           setMenuView(to);
         }}
-        className="ui-zoom fixed left-[max(1rem,var(--safe-l))] top-[max(1rem,var(--safe-t))] z-20 flex h-11 w-11 items-center justify-center rounded border border-[#2E2E36] bg-[#151518]/80 text-[#A6A6AF] backdrop-blur hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+        className="ui-zoom ms-btn fixed left-[max(1rem,var(--safe-l))] top-[max(1rem,var(--safe-t))] z-20 h-11 w-11 p-0 text-[#a2a2a2] hover:text-white"
       >
         <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden="true">
           <path d="M14.7 5.1 7.8 12l6.9 6.9 1.7-1.7L11.2 12l5.2-5.2z" />
@@ -1540,15 +1514,21 @@ export default function MechSwarm() {
       // so it must never bounce or scroll under a finger. The deeper menu
       // views hold lists and do scroll.
       <div
-        className={`fixed inset-0 bg-[#101013] ${
+        className={`fixed inset-0 bg-[#0b0b0d] ${
           menuView === "home" ? "overflow-hidden" : "overflow-y-auto"
         }`}
       >
+        {/* THE GROUND: a rolled world drifting under the whole front of
+            house (MenuBackground). It is mounted once here rather than per
+            view so walking Title → Start → a map never re-rolls it; only
+            the wash over it changes — Mindustry's 0.3 on the title card,
+            and darker under the map grid, which is a thing to read */}
+        <MenuBackground dim={menuView === "home" ? 0.3 : 0.62} />
         {/* ui-zoom off the title card: the hero screen is composed at one
             size; the working menus scale with the UI-size knob, which is
             also what makes the knob's effect visible where it lives */}
         <div
-          className={`mx-auto flex min-h-full max-w-5xl flex-col items-center justify-center gap-8 py-12 pl-[max(1.5rem,var(--safe-l))] pr-[max(1.5rem,var(--safe-r))] sm:py-16 ${
+          className={`relative mx-auto flex min-h-full max-w-5xl flex-col items-center justify-center gap-8 py-12 pl-[max(1.5rem,var(--safe-l))] pr-[max(1.5rem,var(--safe-r))] sm:py-16 ${
             menuView === "home" ? "" : "ui-zoom"
           }`}
         >
@@ -1562,34 +1542,36 @@ export default function MechSwarm() {
                     text, and a title set in it read as more of the same.
                     The name is one word: it is the COLOUR that splits MECH
                     from SWARM, not a space or a line break. */}
-                <p className="mb-2 text-[11px] uppercase tracking-[0.6em] text-[#71717C]">
+                <p className="mb-2 text-[11px] uppercase tracking-[0.6em] text-[#a2a2a2] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
                   Swarm defense
                 </p>
-                <h1 className="font-display text-5xl font-bold uppercase tracking-[0.08em] sm:text-6xl">
+                <h1 className="font-display text-5xl font-bold uppercase tracking-[0.08em] [text-shadow:0_3px_0_rgba(0,0,0,0.85),0_0_32px_rgba(0,0,0,0.9)] sm:text-6xl">
                   <span className="text-[#EDEDEF]">Mech</span>
-                  <span className="text-[#FFD37F] [text-shadow:0_0_28px_rgba(255,211,127,0.4)]">
+                  <span className="text-[#FFD37F] [text-shadow:0_3px_0_rgba(0,0,0,0.85),0_0_28px_rgba(255,211,127,0.45)]">
                     Swarm
                   </span>
                 </h1>
-                <div className="mx-auto mt-3 h-px w-40 bg-gradient-to-r from-transparent via-[#FFD37F]/60 to-transparent sm:w-56" />
+                {/* the rule under the name: Mindustry's dialog title
+                    underline, an accent bar with the bevel's black under it */}
+                <div className="mx-auto mt-3 h-[3px] w-40 bg-[#FFD37F] shadow-[0_3px_0_rgba(0,0,0,0.8)] sm:w-56" />
               </div>
               <div className="flex w-full max-w-[20rem] flex-col gap-3">
                 <button
                   onClick={() => setMenuView("maps")}
-                  className="w-full rounded border border-[#FFD37F] bg-[#222227]/90 py-3.5 text-[15px] font-bold uppercase tracking-[0.3em] text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                  className="ms-btn ms-btn-accent w-full py-3.5 text-[15px] tracking-[0.3em]"
                 >
                   Start
                 </button>
                 <button
                   onClick={() => setMenuView("settings")}
-                  className="w-full rounded border border-[#2E2E36] bg-[#151518] py-3.5 text-[15px] font-bold uppercase tracking-[0.3em] text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                  className="ms-btn w-full py-3.5 text-[15px] tracking-[0.3em]"
                 >
                   Settings
                 </button>
               </div>
               {/* the inspiration credit moved to Settings — the hero screen
                   carries the game's own name and nothing else's */}
-              <p className="text-center text-[13px] uppercase tracking-widest text-[#71717C]">
+              <p className="text-center text-[13px] uppercase tracking-widest text-[#a2a2a2] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
                 A game by Zerkka
               </p>
             </>
@@ -1620,7 +1602,7 @@ export default function MechSwarm() {
                   }
                   setTaps(n);
                 }}
-                className="text-[13px] font-bold uppercase tracking-[0.35em] text-[#71717C] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#FFD37F]"
+                className="ms-heading text-[15px] tracking-[0.35em] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#FFD37F]"
               >
                 Settings
               </button>
@@ -1657,7 +1639,7 @@ export default function MechSwarm() {
               own ladder (see WORLD_REQUIRES for the one exception) */}
           {(menuView === "maps" || menuView === "map") && progress && (
             <>
-              <h2 className="text-[13px] font-bold uppercase tracking-[0.35em] text-[#71717C]">
+              <h2 className="ms-heading text-[15px] tracking-[0.35em]">
                 Select map
               </h2>
               {bank}
@@ -1735,7 +1717,7 @@ export default function MechSwarm() {
         {hud?.paused && (
           // on a phone the wave panel already fills the top of the screen, so
           // the badge drops onto the map rather than landing on top of it
-          <div className="absolute left-1/2 top-[30%] -translate-x-1/2 rounded border border-[#E8B45B] bg-[#151518]/70 px-3 py-1.5 text-base font-bold uppercase tracking-widest text-[#E8B45B] backdrop-blur sm:top-[calc(1rem+var(--safe-t))]">
+          <div className="ms-pane absolute left-1/2 top-[30%] -translate-x-1/2 border-[#FFD37F] px-4 py-1.5 font-display text-base font-bold uppercase tracking-[0.3em] text-[#FFD37F] sm:top-[calc(1rem+var(--safe-t))]">
             Paused
           </div>
         )}
@@ -1749,9 +1731,9 @@ export default function MechSwarm() {
                 <div className="mb-0.5 text-center text-[10px] font-bold uppercase tracking-widest text-[#F25555] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
                   {b.kind}
                 </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full border border-[#2E2E36] bg-[#151518]/80">
+                <div className="ms-bar w-full">
                   <div
-                    className="h-full rounded-full bg-[#F25555] transition-[width] duration-150 ease-linear"
+                    className="bg-[#e55454] transition-[width] duration-150 ease-linear"
                     style={{ width: `${Math.max(0, Math.min(100, (100 * b.hp) / b.max))}%` }}
                   />
                 </div>
@@ -1765,7 +1747,7 @@ export default function MechSwarm() {
             it */}
         {hud && (
           <div className="ui-zoom absolute left-[calc(1rem+var(--safe-l))] top-[calc(1rem+var(--safe-t))] flex w-80 max-w-[calc(100vw-8rem-var(--safe-l)-var(--safe-r))] flex-col items-stretch gap-2">
-            <div className="w-full rounded border border-[#2E2E36] bg-[#151518]/70 px-3 py-1.5 backdrop-blur">
+            <div className="ms-pane w-full px-3 py-1.5">
               {/* the wave counter is what a run is read off, so the line
                   carries that and the rung and nothing else — the level
                   name is on the card that launched it. Minimized, this line
@@ -1817,7 +1799,7 @@ export default function MechSwarm() {
                     setHudMin(next);
                     saveHudMinimized(next); // a preference, kept across runs
                   }}
-                  className="shrink-0 rounded px-1 text-[13px] leading-5 text-[#71717C] hover:bg-[#222227]/60 hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                  className="ms-btn ms-btn-ghost shrink-0 px-1 py-0 text-[13px] leading-5"
                 >
                   <svg viewBox="0 0 12 12" className="h-3.5 w-3.5 fill-current" aria-hidden="true">
                     {hudMin ? <path d="M6 3l4.5 5h-9z" /> : <path d="M6 9L1.5 4h9z" />}
@@ -1884,7 +1866,7 @@ export default function MechSwarm() {
               <div
                 role="group"
                 aria-label="speed controls"
-                className="flex self-start overflow-hidden rounded border border-[#2E2E36] bg-[#151518]/70 backdrop-blur"
+                className="ms-seg self-start"
               >
                 <button
                   title={hud.paused ? "Resume (space)" : "Pause (space)"}
@@ -1896,11 +1878,7 @@ export default function MechSwarm() {
                     g.togglePause();
                     setHud(g.ui());
                   }}
-                  className={`border-r border-[#2E2E36] px-3 py-1.5 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-                    hud.paused
-                      ? "bg-[#222227] text-[#E8B45B]"
-                      : "text-[#EDEDEF] hover:bg-[#222227]/60"
-                  }`}
+                  className="ms-btn px-3 py-1.5"
                 >
                   <svg viewBox="0 0 12 12" className="h-4 w-4 fill-current" aria-hidden="true">
                     {hud.paused ? (
@@ -1924,11 +1902,7 @@ export default function MechSwarm() {
                       saveSpeed(mult);
                       setHud(g.ui());
                     }}
-                    className={`px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-                      hud.speed === mult
-                        ? "bg-[#222227] text-[#FFD37F]"
-                        : "text-[#EDEDEF] hover:bg-[#222227]/60"
-                    }`}
+                    className="ms-btn px-3 py-1.5 text-[13px]"
                   >
                     {mult}x
                   </button>
@@ -1956,11 +1930,7 @@ export default function MechSwarm() {
                 g.toggleRoutes();
                 setHud(g.ui());
               }}
-              className={`rounded border px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-                hud.showRoutes
-                  ? "border-[#FFD37F] bg-[#222227]/90 text-[#FFD37F]"
-                  : "border-[#2E2E36] bg-[#151518]/70 text-[#EDEDEF] hover:border-[#4A4A55]"
-              }`}
+              className="ms-btn px-3 py-1.5 text-[13px]"
             >
               Spawns &amp; routes
             </button>
@@ -1969,7 +1939,7 @@ export default function MechSwarm() {
               aria-label="Game menu"
               title="Game menu (Esc)"
               onClick={openMenu}
-              className="rounded border border-[#2E2E36] bg-[#151518]/70 p-[6px] text-[#EDEDEF] backdrop-blur hover:border-[#4A4A55] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+              className="ms-btn p-[6px]"
             >
               <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" aria-hidden="true">
                 <path
@@ -2011,11 +1981,7 @@ export default function MechSwarm() {
                   aria-label={left === null ? t.name : `${t.name}, ${left} left`}
                   aria-pressed={hud?.buildKind === t.kind}
                   onClick={() => pickTower(t.kind)}
-                  className={`${TOOL_BTN} ${
-                    hud?.buildKind === t.kind
-                      ? "border-[#FFD37F] bg-[#222227]/90"
-                      : "border-[#2E2E36] bg-[#151518]/70 hover:border-[#4A4A55]"
-                  }`}
+                  className={TOOL_BTN}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
                   <img
@@ -2044,11 +2010,7 @@ export default function MechSwarm() {
                 aria-label="Demolish"
                 aria-pressed={hud.sellMode}
                 onClick={toggleSell}
-                className={`${TOOL_BTN} ${
-                  hud.sellMode
-                    ? "border-[#FF5A5A] bg-[#2A1620]/90 text-[#FF5A5A]"
-                    : "border-[#2E2E36] bg-[#151518]/70 text-[#A6A6AF] hover:border-[#4A4A55]"
-                }`}
+                className={`${TOOL_BTN} ms-btn-red ${hud.sellMode ? "" : "text-[#a2a2a2]"}`}
               >
                 <svg viewBox="0 0 12 12" className="h-8 w-8 fill-current" aria-hidden="true">
                   <path d="M4.6 1.1h2.8l.6 1h2v1.2H2V2.1h2zM2.9 4.6h6.2l-.5 6.3H3.4z" />
@@ -2069,11 +2031,7 @@ export default function MechSwarm() {
                 aria-pressed={loadoutOpen}
                 aria-expanded={loadoutOpen}
                 onClick={() => setLoadoutOpen((v) => !v)}
-                className={`${TOOL_BTN} ${
-                  loadoutOpen
-                    ? "border-[#FFD37F] bg-[#222227]/90 text-[#FFD37F]"
-                    : "border-[#2E2E36] bg-[#151518]/70 text-[#A6A6AF] hover:border-[#4A4A55]"
-                }`}
+                className={`${TOOL_BTN} ${loadoutOpen ? "" : "text-[#a2a2a2]"}`}
               >
                 <svg viewBox="0 0 24 24" className="h-8 w-8 fill-current" aria-hidden="true">
                   <path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z" />
@@ -2090,7 +2048,7 @@ export default function MechSwarm() {
             rest dim out until something is removed — and the count badge
             is the one number that explains both states */}
         {hud && hud.barSlots !== null && loadoutOpen && (
-          <div className="ui-zoom absolute bottom-[calc(6.25rem+var(--safe-b))] left-1/2 z-10 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded border border-[#2E2E36] bg-[#151518]/95 p-3 backdrop-blur">
+          <div className="ui-zoom ms-pane absolute bottom-[calc(6.25rem+var(--safe-b))] left-1/2 z-10 max-w-[calc(100vw-2rem)] -translate-x-1/2 p-3">
             {(() => {
               const bar = barKinds();
               const full = bar.length >= (hud.barSlots ?? 0);
@@ -2124,12 +2082,8 @@ export default function MechSwarm() {
                           aria-pressed={inBar}
                           aria-disabled={!inBar && full}
                           onClick={() => toggleLoadout(t.kind)}
-                          className={`flex h-12 w-12 items-center justify-center rounded border focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-                            inBar
-                              ? "border-[#FFD37F] bg-[#222227]/90"
-                              : full
-                                ? "cursor-not-allowed border-[#2E2E36] bg-[#151518]/70 opacity-25"
-                                : "border-[#2E2E36] bg-[#151518]/70 opacity-40 hover:opacity-75"
+                          className={`ms-btn h-12 w-12 p-0 ${
+                            inBar ? "" : full ? "opacity-30" : "opacity-50 hover:opacity-90"
                           }`}
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
@@ -2155,8 +2109,8 @@ export default function MechSwarm() {
         )}
         {hud?.lost && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="ui-zoom w-80 max-w-[calc(100vw-2rem)] rounded border border-[#3A2430] bg-[#151518]/95 p-6 text-center">
-              <div className="text-xl font-bold uppercase tracking-widest text-[#FF5A5A]">
+            <div className="ui-zoom ms-pane-solid w-80 max-w-[calc(100vw-2rem)] border-[#6b2a2a] p-6 text-center">
+              <div className="font-display text-xl font-bold uppercase tracking-widest text-[#e55454]">
                 Core destroyed
               </div>
               <div className="mt-4 space-y-1 text-base text-[#EDEDEF]">
@@ -2187,20 +2141,20 @@ export default function MechSwarm() {
                     setTechFrom("game");
                     setScreen("tech");
                   }}
-                  className="w-full rounded border border-[#FFD37F] bg-[#222227]/90 px-5 py-2 text-base font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                  className="ms-btn ms-btn-accent w-full px-5 py-2 text-base"
                 >
                   Upgrades
                 </button>
                 <div className="flex justify-center gap-3">
                 <button
                   onClick={retry}
-                  className="rounded border border-[#2E2E36] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#EDEDEF] hover:border-[#4A4A55] hover:bg-[#222227]/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                  className="ms-btn px-5 py-2 text-base"
                 >
                   Retry
                 </button>
                 <button
                   onClick={backToMenu}
-                  className="rounded border border-[#2E2E36] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#EDEDEF] hover:border-[#4A4A55] hover:bg-[#222227]/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                  className="ms-btn px-5 py-2 text-base"
                 >
                   Levels
                 </button>
@@ -2211,8 +2165,8 @@ export default function MechSwarm() {
         )}
         {hud?.won && !hud.lost && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="ui-zoom w-80 max-w-[calc(100vw-2rem)] rounded border border-[#1F3A2E] bg-[#151518]/95 p-6 text-center">
-              <div className="text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
+            <div className="ui-zoom ms-pane-solid w-80 max-w-[calc(100vw-2rem)] border-[#2f5a3a] p-6 text-center">
+              <div className="font-display text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
                 <span style={{ color: rungColor(hud.tier) }}>{rungLabel(hud.tier)}</span>{" "}
                 cleared
               </div>
@@ -2222,7 +2176,7 @@ export default function MechSwarm() {
                 </div>
                 {result && (
                   <>
-                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[#2E2E36] pt-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t-2 border-[#454545] pt-1.5">
                       <span className="font-bold text-[#EDEDEF]">
                         Salvaged
                         <span className="ml-1 font-normal text-[#EDEDEF]">
@@ -2260,7 +2214,7 @@ export default function MechSwarm() {
               <div className="mt-6 flex justify-center">
                 <button
                   onClick={backToMenu}
-                  className="rounded border border-[#7BE58A] bg-[#14271C]/90 px-6 py-2 text-base font-bold uppercase tracking-widest text-[#7BE58A] hover:bg-[#1A3324] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#7BE58A]"
+                  className="ms-btn ms-btn-green px-6 py-2 text-base"
                 >
                   Continue
                 </button>
@@ -2274,7 +2228,7 @@ export default function MechSwarm() {
             needs the effects switch is mid-run, when the framerate dips */}
         {hud?.menuOpen && !hud.lost && !hud.won && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="ui-zoom flex max-h-[calc(100vh-2rem)] w-[30rem] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 overflow-y-auto rounded border border-[#2E2E36] bg-[#151518]/95 p-6">
+            <div className="ui-zoom ms-pane flex max-h-[calc(100vh-2rem)] w-[30rem] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 overflow-y-auto p-6">
               {/* THE HEADING IS THE SANDBOX DOOR (see `sandboxTaps`) — a
                   button that does nothing visible for six taps. On a keyboard
                   it is Ctrl+Shift+S and this is beneath noticing; on a tablet
@@ -2292,7 +2246,7 @@ export default function MechSwarm() {
                   }
                   setSandboxTaps(n);
                 }}
-                className="text-xl font-bold uppercase tracking-widest text-[#E8B45B] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#FFD37F]"
+                className="font-display text-xl font-bold uppercase tracking-[0.3em] text-[#FFD37F] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#FFD37F]"
               >
                 Paused
               </button>
@@ -2305,7 +2259,7 @@ export default function MechSwarm() {
                 </p>
               )}
               {admin && !pauseSettings && (
-                <div className="flex w-full max-w-[20rem] items-center justify-between gap-3 rounded border border-[#4A3A5B] bg-[#1A1522] px-3 py-2">
+                <div className="ms-pane flex w-full max-w-[20rem] items-center justify-between gap-3 border-[#6b4f8a] px-3 py-2">
                   <div className="min-w-0">
                     <div className="text-[13px] font-bold uppercase tracking-widest text-[#C9A7FF]">
                       Sandbox
@@ -2316,7 +2270,8 @@ export default function MechSwarm() {
                   </div>
                   <button
                     onClick={() => setAdmin(false)}
-                    className="shrink-0 rounded border border-[#4A3A5B] px-3 py-1.5 text-[13px] font-bold uppercase tracking-widest text-[#C9A7FF] hover:border-[#C9A7FF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#C9A7FF]"
+                    className="ms-btn ms-btn-tint shrink-0 px-3 py-1.5 text-[13px]"
+                    style={{ "--ms-tint": "#c9a7ff" } as CSSProperties}
                   >
                     Off
                   </button>
@@ -2329,7 +2284,7 @@ export default function MechSwarm() {
                   {settingsPanel(true)}
                   <button
                     onClick={() => setPauseSettings(false)}
-                    className="w-full max-w-[20rem] rounded border border-[#2E2E36] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:bg-[#222227]/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                    className="ms-btn w-full max-w-[20rem] px-5 py-2 text-base"
                   >
                     Back
                   </button>
@@ -2343,13 +2298,13 @@ export default function MechSwarm() {
                       g.closeMenu();
                       setHud(g.ui());
                     }}
-                    className="w-full rounded border border-[#FFD37F] bg-[#222227]/90 px-5 py-2 text-base font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                    className="ms-btn ms-btn-accent w-full px-5 py-2 text-base"
                   >
                     Resume
                   </button>
                   <button
                     onClick={() => setPauseSettings(true)}
-                    className="w-full rounded border border-[#2E2E36] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:bg-[#222227]/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+                    className="ms-btn w-full px-5 py-2 text-base"
                   >
                     Settings
                   </button>
@@ -2357,7 +2312,7 @@ export default function MechSwarm() {
                       alone, in the colour nothing else on the panel wears */}
                   <button
                     onClick={backToMenu}
-                    className="w-full rounded border border-[#3A2430] px-5 py-2 text-base font-bold uppercase tracking-widest text-[#FF8A8A] hover:border-[#FF5A5A] hover:bg-[#2A1620]/80 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF5A5A]"
+                    className="ms-btn ms-btn-red w-full px-5 py-2 text-base"
                   >
                     Abandon run
                   </button>

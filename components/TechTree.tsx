@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { TOWERS } from "@/game/constants";
 import {
   affordablePoints,
@@ -263,7 +263,7 @@ function UpgradeChip({
         ? { line: "#FFD37F", face: "#222227", ink: "#FFD37F" }
         : owned
           ? { line: "#5A2A2A", face: "#171214", ink: "#71717C" }
-          : { line: "#4A4A55", face: "#151518", ink: "#71717C" };
+          : { line: "#454545", face: "#0b0b0d", ink: "#71717C" };
 
   const face = (
     <NodeFace
@@ -344,7 +344,7 @@ function UpgradeChip({
           </svg>
         ) : (
           <span
-            className={`absolute inset-0 rounded-md border-2 ${
+            className={`absolute inset-0 border-[3px] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.85)] ${
               // the reachable-but-unbought chips are the ones a player is
               // deciding between, and a dim square that lights under the
               // pointer is how they tell themselves apart from the ones
@@ -359,7 +359,7 @@ function UpgradeChip({
             number — it is lit or it is not */}
         {owned && def.cap > 1 && (
           <span
-            className="absolute -bottom-2 -right-2 rounded border bg-[#101013] px-1.5 text-[12px] font-bold leading-tight"
+            className="absolute -bottom-2 -right-2 border-2 bg-[#0b0b0d] px-1.5 text-[12px] font-bold leading-tight"
             style={{ borderColor: colour.line, color: colour.ink }}
           >
             {points}
@@ -368,7 +368,7 @@ function UpgradeChip({
         {/* switched off: the points are still owned, so say so on the chip
             rather than only in a card nobody has opened */}
         {owned && !on && (
-          <span className="absolute -top-2 -right-2 h-3 w-3 rounded-full border border-[#101013] bg-[#FF8A8A]" />
+          <span className="absolute -top-2 -right-2 h-3 w-3 border-2 border-[#0b0b0d] bg-[#e55454]" />
         )}
       </button>
       {/* the card. UNLIKE EVERY OTHER CARD ON THIS BOARD IT TAKES CLICKS,
@@ -381,7 +381,7 @@ function UpgradeChip({
           showCard ? "block" : "hidden group-hover/chip:block group-focus-within/chip:block"
         }`}
       >
-        <div className="rounded border border-[#4A4A55] bg-[#151518] p-3 shadow-lg">
+        <div className="ms-pane-solid p-3 shadow-lg">
           <div className="flex items-baseline justify-between gap-2">
             <span className="font-bold text-[#EDEDEF]">{def.name}</span>
             <span className="shrink-0 text-[13px] text-[#A6A6AF]">
@@ -411,7 +411,7 @@ function UpgradeChip({
             </div>
           )}
           {maxed ? (
-            <div className="mt-2 space-y-2 border-t border-[#2E2E36] pt-2">
+            <div className="mt-2 space-y-2 border-t-2 border-[#454545] pt-2">
               {toggles && (
                 <div className="text-[13px] font-bold uppercase tracking-widest" style={{ color: on ? "#7BE58A" : "#FF8A8A" }}>
                   {touch ? "Tap again" : "Click"} to switch {on ? "off" : "on"}
@@ -429,7 +429,8 @@ function UpgradeChip({
                     onClick={() => {
                       if (refundTech(def.id)) onChanged();
                     }}
-                    className="w-full rounded border border-[#5A4A2A] bg-[#1A160C] px-2 py-1 text-[13px] font-bold uppercase tracking-widest text-[#F3E979] hover:border-[#F3E979]"
+                    className="ms-btn ms-btn-tint w-full px-2 py-1 text-[13px]"
+                    style={{ "--ms-tint": SURGE } as CSSProperties}
                   >
                     Sell back
                   </button>
@@ -440,7 +441,7 @@ function UpgradeChip({
               )}
             </div>
           ) : (
-            <div className="mt-2 border-t border-[#2E2E36] pt-2 text-[14px]">
+            <div className="mt-2 border-t-2 border-[#454545] pt-2 text-[14px]">
               {/* the full bundle: passing the bank reddens exactly the
                   stacks it cannot cover, which is the whole "why can't I
                   buy this" explanation */}
@@ -686,7 +687,7 @@ export default function TechTree({
       <div
         role="group"
         aria-label="points per click"
-        className="pointer-events-auto absolute bottom-[max(1rem,var(--safe-b))] left-1/2 flex -translate-x-1/2 items-center gap-2 rounded border border-[#2E2E36] bg-[#151518]/90 px-3 py-1.5 backdrop-blur"
+        className="pointer-events-auto ms-pane absolute bottom-[max(1rem,var(--safe-b))] left-1/2 flex -translate-x-1/2 items-center gap-2 px-3 py-1.5"
         data-ui
       >
         <span className="text-[12px] uppercase tracking-widest text-[#71717C]">Buy</span>
@@ -695,18 +696,14 @@ export default function TechTree({
             key={String(s)}
             aria-pressed={step === s}
             onClick={() => setStep(s)}
-            className={`rounded border px-3 py-1 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-              step === s
-                ? "border-[#FFD37F] bg-[#222227] text-[#FFD37F]"
-                : "border-[#2E2E36] bg-[#151518] text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF]"
-            }`}
+            className="ms-btn px-3 py-1 text-[13px]"
           >
             {stepLabel(s)}
           </button>
         ))}
       </div>
       <span
-        className="pointer-events-auto absolute top-[max(1rem,var(--safe-t))] right-[max(1rem,var(--safe-r))] flex items-start rounded border border-[#2E2E36] bg-[#151518]/90 px-4 py-1.5 backdrop-blur"
+        className="pointer-events-auto ms-pane absolute top-[max(1rem,var(--safe-t))] right-[max(1rem,var(--safe-r))] flex items-start px-4 py-1.5"
         data-ui
       >
         <Wallet bank={progress.bank} vertical />
@@ -819,12 +816,12 @@ export default function TechTree({
                       if (!clickable) return;
                       if (buyTech(n.id, Math.max(1, willBuy))) onChanged();
                     }}
-                    className={`relative flex h-full w-full items-center justify-center rounded-lg border-2 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+                    className={`relative flex h-full w-full items-center justify-center border-[3px] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.85)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
                       owned
-                        ? "border-[#FFD37F] bg-[#222227]"
+                        ? "border-[#FFD37F] bg-[#2a2416]"
                         : status === "locked-tier"
-                          ? "border-[#2E2E36] bg-[#151518] opacity-40"
-                          : "border-[#4A4A55] bg-[#151518] hover:border-[#FFD37F]"
+                          ? "border-[#252525] bg-[#0b0b0d] opacity-40"
+                          : "border-[#454545] bg-[#0b0b0d] hover:border-[#FFD37F]"
                     } ${clickable ? "cursor-pointer" : "cursor-not-allowed"}`}
                   >
                     <NodeIcon id={n.id} lit={owned} />
@@ -835,20 +832,20 @@ export default function TechTree({
                       (switchy ? (
                         <svg
                           viewBox="0 0 12 12"
-                          className="absolute -bottom-2 -right-2 h-5 w-5 rounded border border-[#FFD37F] bg-[#101013] fill-[#FFD37F] p-0.5"
+                          className="absolute -bottom-2 -right-2 h-5 w-5 border-2 border-[#FFD37F] bg-[#0b0b0d] fill-[#FFD37F] p-0.5"
                           aria-hidden="true"
                         >
                           <path d="M10 2.8 4.6 9.4 2 6.6l1-1 1.6 1.7L9 2z" />
                         </svg>
                       ) : (
-                        <span className="absolute -bottom-2 -right-2 rounded border border-[#FFD37F] bg-[#101013] px-1.5 text-[13px] font-bold text-[#FFD37F]">
+                        <span className="absolute -bottom-2 -right-2 border-2 border-[#FFD37F] bg-[#0b0b0d] px-1.5 text-[13px] font-bold text-[#FFD37F]">
                           ×{points}
                         </span>
                       ))}
                     {status === "locked-tier" && (
                       <svg
                         viewBox="0 0 12 12"
-                        className="absolute -bottom-2 -right-2 h-5 w-5 rounded border border-[#2E2E36] bg-[#101013] fill-[#A6A6AF] p-0.5"
+                        className="absolute -bottom-2 -right-2 h-5 w-5 border-2 border-[#454545] bg-[#0b0b0d] fill-[#A6A6AF] p-0.5"
                         aria-hidden="true"
                       >
                         <path d="M3.5 5V3.8a2.5 2.5 0 0 1 5 0V5H9a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h.5zm1.2 0h2.6V3.8a1.3 1.3 0 0 0-2.6 0V5z" />
@@ -866,7 +863,7 @@ export default function TechTree({
                       resting on the node with a mouse, and by the first tap
                       with a finger */}
                   <div
-                    className={`pointer-events-none absolute left-1/2 z-10 w-56 -translate-x-1/2 rounded border border-[#4A4A55] bg-[#151518] p-3 text-left shadow-lg ${
+                    className={`pointer-events-none ms-pane-solid absolute left-1/2 z-10 w-56 -translate-x-1/2 p-3 text-left shadow-lg ${
                       showCard ? "block" : "hidden group-hover:block group-focus-within:block"
                     } ${n.y === 0 ? "top-full mt-5" : "bottom-full mb-3"}`}
                   >
@@ -894,7 +891,7 @@ export default function TechTree({
                         first
                       </div>
                     ) : status === "maxed" ? null : (
-                      <div className="mt-2 border-t border-[#2E2E36] pt-2 text-[14px]">
+                      <div className="mt-2 border-t-2 border-[#454545] pt-2 text-[14px]">
                         {/* the full bundle: every currency this tier wants.
                             Passing the bank reddens exactly the stacks it
                             can't cover, which is the whole "why can't I buy

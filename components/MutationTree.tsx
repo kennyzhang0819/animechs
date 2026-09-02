@@ -242,7 +242,7 @@ function MutationTile({
       <button
         aria-label={`${def.name}: ${band.label} mutator. ${def.blurb}`}
         onClick={() => onArm(armed === def.id ? null : def.id)}
-        className="flex h-full w-full items-center justify-center rounded-lg border-2 bg-[#151518] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB]"
+        className="flex h-full w-full items-center justify-center border-[3px] bg-[#0b0b0d] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.85)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB]"
         style={{ borderColor: band.color }}
       >
         <MutationFace id={def.id} size="h-14 w-14" />
@@ -253,10 +253,10 @@ function MutationTile({
       {/* hover card: what this rule does — opened by resting on the tile
           with a mouse, and by a tap with a finger */}
       <div
-        className={`pointer-events-none absolute left-1/2 top-full z-10 mt-5 w-56 -translate-x-1/2 rounded border p-3 text-left shadow-lg ${
+        className={`pointer-events-none absolute left-1/2 top-full z-10 mt-5 w-56 -translate-x-1/2 border-[3px] p-3 text-left shadow-lg ${
           showCard ? "block" : "hidden group-hover:block group-focus-within:block"
         }`}
-        style={{ borderColor: band.color, background: "#151518" }}
+        style={{ borderColor: band.color, background: "#0b0b0d" }}
       >
         <div className="flex items-baseline justify-between gap-2">
           <span className="font-bold text-[#EDEDEF]">{def.name}</span>
@@ -292,7 +292,7 @@ function MutationTile({
 function LadderRail() {
   return (
     <div
-      className="pointer-events-auto absolute bottom-[max(1rem,var(--safe-b))] left-1/2 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded border border-[#2E2E36] bg-[#151518]/90 px-3 py-1.5 backdrop-blur"
+      className="pointer-events-auto ms-pane absolute bottom-[max(1rem,var(--safe-b))] left-1/2 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-x-3 gap-y-1 px-3 py-1.5"
       data-ui
     >
       <span className="text-[12px] uppercase tracking-widest text-[#71717C]">
@@ -305,7 +305,7 @@ function LadderRail() {
             <div
               key={t}
               title={`${rungLabel(t)}: ${pts} mutation points`}
-              className="flex min-w-[38px] items-baseline justify-center gap-1 rounded border border-[#2E2E36] bg-[#101013] px-1.5 py-0.5"
+              className="flex min-w-[38px] items-baseline justify-center gap-1 border-2 border-[#454545] bg-black/70 px-1.5 py-0.5"
             >
               <span className="text-[11px] font-bold" style={{ color: rungColor(t) }}>
                 {t + 1}
@@ -359,7 +359,7 @@ export default function MutationTree({
     >
       {/* the root: one line, because the tiles are the rest of the answer */}
       <div
-        className="absolute flex flex-col justify-center rounded-lg border-2 bg-[#151518] px-5 text-center"
+        className="absolute flex flex-col justify-center border-[3px] bg-[#0b0b0d] px-5 text-center shadow-[inset_0_0_0_1px_rgba(0,0,0,0.85)]"
         style={{
           left: ROOT_CX - ROOT_W / 2,
           top: ROOT_Y,

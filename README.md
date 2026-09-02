@@ -82,6 +82,21 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `game/game.ts` — rAF loop, input, 2d overlay (placement ghost), stats
 - `components/MechSwarm.tsx` — React shell: HUD, rung picker,
   six-slot build bar with its loadout picker, game-speed switcher, canvases
+- `components/MenuBackground.tsx` — the title screen's ground: a small
+  world rolled fresh every launch from the environment sprites (a
+  floor/wall pair, a second rock, two ores, a quarter chance each of heat
+  and a buried installation), rasterized once, with a squadron of flyers
+  drifting over it at 45° under a black wash — Mindustry's `MenuRenderer`
+  in a 2d canvas. It holds still under prefers-reduced-motion and stops
+  when the tab is hidden
+- `app/globals.css` — **the kit**: `.ms-btn` / `.ms-pane` / `.ms-seg` /
+  `.ms-bar` and their variants are Mindustry's nine-patch UI sprites
+  (`public/mindustry/sprites/ui/button*.9.png`, `pane*.9.png`) written as
+  CSS — a 3px `#454545` bevel with square corners on a black fill, gold on
+  hover, white on press, sunk to `#252525` when disabled, gold-washed when
+  a toggle is on (`aria-pressed` / `aria-selected` drive it, so a button
+  never carries its state in its class list). Every screen is built from
+  these; Tailwind utilities on top only size and place them
 - `game/layout.ts` — **where every tech-tree node sits**: one editable
   integer grid over turrets, utilities and upgrade rungs alike. The
   authored cells are the starting point; `public/tree.json` overrides them

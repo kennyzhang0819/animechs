@@ -5,6 +5,282 @@
   --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* ---- THE KIT: how every button and panel in the game is drawn -----------
+   The chrome used to be a SaaS idiom — 1px hairlines in near-black greys,
+   rounded corners, a hover that nudged the border one shade lighter — and
+   it read as a dashboard sitting on top of a game rather than as the game.
+
+   The look here is lifted from Mindustry's own nine-patch UI sprites
+   (public/mindustry/sprites/ui): `button.9.png` is a black fill inside a
+   4px #454545 bevel with square corners; `button-over` swaps the bevel for
+   the accent gold, `button-down` for white, `button-disabled` sinks the
+   whole thing into #252525; `pane.9.png` is the same bevel around a black
+   fill at 60% so the field shows through; `flat-down-base` (a checked
+   toggle) is the accent bevel on black. Every class below is one of those
+   sprites written as CSS, so a button can carry any Tailwind utility on top
+   (width, font size) and still be the same button.
+
+   Corners are SQUARE everywhere. A rounded corner is the one thing pixel
+   art cannot draw, and it is the single strongest tell that a panel was
+   made with a web toolkit. */
+:root {
+  --ms-accent: #ffd37f; /* Pal.accent */
+  --ms-accent-dim: rgba(255, 211, 127, 0.14);
+  --ms-gray: #454545; /* Pal.gray — the bevel on every sprite */
+  --ms-gray-dark: #2b2b2b;
+  --ms-disabled: #252525; /* button-disabled.9.png */
+  --ms-red: #e55454; /* Pal.negativeStat / button-red */
+  --ms-green: #7be58a;
+  --ms-surge: #f3e979;
+  --ms-ink: #ffffff;
+  --ms-ink-dim: #a2a2a2; /* Pal.lightishGray */
+  --ms-ink-faint: #6f6f6f;
+  --ms-fill: rgba(0, 0, 0, 0.62); /* pane.9.png's #00000099 */
+  --ms-fill-solid: #0b0b0d;
+  --ms-bevel: 3px;
+}
+
+@layer components {
+  /* the pane: what every floating panel, sheet and card sits in. The
+     translucent fill is deliberate — over the field it lets the map read
+     through, and on the menu it lets the terrain behind it read through */
+  .ms-pane {
+    border: var(--ms-bevel) solid var(--ms-gray);
+    background: var(--ms-fill);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.85);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
+  .ms-pane-solid {
+    border: var(--ms-bevel) solid var(--ms-gray);
+    background: var(--ms-fill-solid);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.85);
+  }
+  /* wavepane.9.png: a bar with no bevel of its own, a rule along one edge */
+  .ms-rule-b {
+    border-bottom: var(--ms-bevel) solid var(--ms-gray);
+  }
+  .ms-rule-t {
+    border-top: var(--ms-bevel) solid var(--ms-gray);
+  }
+
+  /* THE BUTTON. Colour lives on the BEVEL, not the fill: rest is grey,
+     hover is gold, the press is white and a toggle that is on is gold with
+     a wash of gold behind it — exactly the four sprites. The 1px inner
+     shadow is the pixel of black the nine-patch keeps between bevel and
+     fill, and it is what stops the bevel reading as a CSS border. */
+  .ms-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border: var(--ms-bevel) solid var(--ms-gray);
+    background: rgba(0, 0, 0, 0.72);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+    color: var(--ms-ink);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    line-height: 1.2;
+    cursor: pointer;
+    user-select: none;
+    transition:
+      border-color 90ms linear,
+      background-color 90ms linear,
+      color 90ms linear;
+  }
+  .ms-btn:hover:not(:disabled):not([aria-disabled="true"]) {
+    border-color: var(--ms-accent);
+  }
+  .ms-btn:active:not(:disabled):not([aria-disabled="true"]) {
+    border-color: #ffffff;
+    transform: translateY(1px);
+  }
+  .ms-btn:focus-visible {
+    outline: 2px solid var(--ms-accent);
+    outline-offset: 2px;
+  }
+  .ms-btn:disabled,
+  .ms-btn[aria-disabled="true"] {
+    border-color: var(--ms-disabled);
+    background: var(--ms-disabled);
+    color: var(--ms-ink-faint);
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  /* a toggle that is ON, or a tab that is showing: flat-down-base.9.png */
+  .ms-btn[aria-pressed="true"],
+  .ms-btn[aria-selected="true"],
+  .ms-btn.ms-on {
+    border-color: var(--ms-accent);
+    background: var(--ms-accent-dim);
+    color: var(--ms-accent);
+  }
+  /* the one action a screen is FOR — Start, Deploy, Resume, Continue — is
+     gold at rest, and hovering it fills the button rather than the bevel */
+  .ms-btn-accent {
+    border-color: var(--ms-accent);
+    color: var(--ms-accent);
+    background: rgba(0, 0, 0, 0.72);
+  }
+  .ms-btn-accent:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: var(--ms-accent-dim);
+    color: #ffffff;
+  }
+  /* the one thing that cannot be undone: red at rest, redder on hover */
+  .ms-btn-red {
+    border-color: #6b2a2a;
+    color: var(--ms-red);
+  }
+  .ms-btn-red:hover:not(:disabled):not([aria-disabled="true"]) {
+    border-color: var(--ms-red);
+    background: rgba(229, 84, 84, 0.12);
+    color: #ffffff;
+  }
+  .ms-btn-red:focus-visible {
+    outline-color: var(--ms-red);
+  }
+  .ms-btn-green {
+    border-color: var(--ms-green);
+    color: var(--ms-green);
+  }
+  .ms-btn-green:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: rgba(123, 229, 138, 0.12);
+    color: #ffffff;
+  }
+  .ms-btn-green:focus-visible {
+    outline-color: var(--ms-green);
+  }
+  .ms-btn-red[aria-pressed="true"],
+  .ms-btn-red.ms-on {
+    border-color: var(--ms-red);
+    background: rgba(229, 84, 84, 0.16);
+    color: var(--ms-red);
+  }
+  /* a bevel in any other colour (a tab wearing its own board's colour,
+     the sandbox row's purple) — set --ms-tint inline */
+  .ms-btn-tint {
+    border-color: var(--ms-tint);
+    color: var(--ms-tint);
+  }
+  .ms-btn-tint:hover:not(:disabled):not([aria-disabled="true"]) {
+    border-color: var(--ms-tint);
+    background: color-mix(in srgb, var(--ms-tint) 14%, transparent);
+    color: #ffffff;
+  }
+  .ms-btn-tint[aria-pressed="true"],
+  .ms-btn-tint[aria-selected="true"],
+  .ms-btn-tint.ms-on {
+    border-color: var(--ms-tint);
+    background: color-mix(in srgb, var(--ms-tint) 14%, transparent);
+    color: var(--ms-tint);
+  }
+  /* cleart: no bevel until it is hovered — for the small, quiet controls
+     (the HUD's collapse chevron, the difficulty stepper's arrows) */
+  .ms-btn-ghost {
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+    color: var(--ms-ink-dim);
+  }
+  .ms-btn-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
+    color: var(--ms-ink);
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  /* THE SEGMENT STRIP: one pane holding several buttons that share their
+     bevels — the pace strip, the settings tabs, the UI-size picker. The
+     children lose their own bevels and are parted by a rule the same
+     colour as the frame, and whichever is on wears the accent wash. */
+  .ms-seg {
+    display: inline-flex;
+    align-items: stretch;
+    border: var(--ms-bevel) solid var(--ms-gray);
+    background: var(--ms-fill);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.85);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
+  .ms-seg > .ms-btn {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+  }
+  .ms-seg > .ms-btn + .ms-btn {
+    border-left: var(--ms-bevel) solid var(--ms-gray);
+  }
+  .ms-seg > .ms-btn:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--ms-accent);
+  }
+  .ms-seg > .ms-btn:active:not(:disabled):not([aria-disabled="true"]) {
+    transform: none;
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .ms-seg > .ms-btn[aria-pressed="true"],
+  .ms-seg > .ms-btn[aria-selected="true"],
+  .ms-seg > .ms-btn.ms-on {
+    background: var(--ms-accent-dim);
+    color: var(--ms-accent);
+    box-shadow: inset 0 -3px 0 var(--ms-accent);
+  }
+  .ms-seg > .ms-btn:focus-visible {
+    outline-offset: -3px;
+  }
+
+  /* THE BAR: bar.9.png — a squared trough with the fill flush inside it.
+     Used for loading and for boss health; never rounded */
+  .ms-bar {
+    position: relative;
+    height: 10px;
+    border: 2px solid var(--ms-gray);
+    background: rgba(0, 0, 0, 0.75);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+    overflow: hidden;
+  }
+  .ms-bar > * {
+    height: 100%;
+    background: var(--ms-accent);
+    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.35);
+  }
+
+  /* a heading with the accent rule under it, the way Mindustry titles a
+     dialog: the word, then a line the width of the panel */
+  .ms-heading {
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    font-weight: 700;
+    color: var(--ms-ink);
+  }
+
+  /* a badge: the small label pinned onto a picture (a map's rank) */
+  .ms-badge {
+    display: inline-block;
+    border: 2px solid currentColor;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 0.1rem 0.5rem;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    line-height: 1.4;
+  }
+
+  /* THE BOARD'S GROUND — the tech tree and the codex pan over this. A
+     faint grid, because a board is a map and a map has a graticule; it is
+     drawn in the board's own px so it pans and zooms with the nodes */
+  .ms-grid {
+    background-color: #0d0d10;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+}
+
 /* The device's own reserved edges — the notch, the rounded corners, the home
    indicator — as plain numbers the HUD can add to its own margins. The page
    is laid out under all of them (viewport-fit=cover in app/layout.tsx) so the
@@ -98,7 +374,7 @@ svg {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #3A3A44 transparent;
+  scrollbar-color: #454545 transparent;
 }
 
 *::-webkit-scrollbar {
@@ -111,14 +387,13 @@ svg {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #3A3A44;
+  background: #454545;
   border: 2px solid transparent;
   background-clip: padding-box;
-  border-radius: 999px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: #55555F;
+  background: #ffd37f;
   background-clip: padding-box;
 }
 

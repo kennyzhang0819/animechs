@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -78,7 +79,7 @@ const PAN_KEYS: Readonly<Record<string, readonly [number, number]>> = {
  * controls is shared rather than copied.
  */
 export const CHROME_BTN =
-  "pointer-events-auto rounded border border-[#2E2E36] bg-[#151518]/90 backdrop-blur px-3 py-1.5 text-[13px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]";
+  "pointer-events-auto ms-btn px-3 py-1.5 text-[13px] text-[#a2a2a2] hover:text-white";
 
 /** the standardized back: icon only, big, top-left — the same button every
  *  screen in the game pins in the same corner */
@@ -88,7 +89,7 @@ export function BackButton({ label, onClick }: { label: string; onClick: () => v
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded border border-[#2E2E36] bg-[#151518]/90 text-[#A6A6AF] backdrop-blur hover:border-[#4A4A55] hover:text-[#EDEDEF] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+      className="pointer-events-auto ms-btn h-11 w-11 p-0 text-[#a2a2a2] hover:text-white"
     >
       <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden="true">
         <path d="M14.7 5.1 7.8 12l6.9 6.9 1.7-1.7L11.2 12l5.2-5.2z" />
@@ -119,7 +120,7 @@ export function BoardTabs<T extends string>({
     <div
       role="tablist"
       aria-label="board"
-      className="pointer-events-auto flex items-center gap-1 rounded border border-[#2E2E36] bg-[#151518]/90 p-1 backdrop-blur"
+      className="pointer-events-auto ms-pane flex items-center gap-1 p-1"
     >
       {tabs.map((t) => {
         const on = t.id === active;
@@ -129,10 +130,10 @@ export function BoardTabs<T extends string>({
             role="tab"
             aria-selected={on}
             onClick={() => onPick(t.id)}
-            className={`flex h-9 items-center gap-2 rounded border px-3 text-[13px] font-bold uppercase tracking-widest focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-              on ? "bg-[#222227]" : "border-transparent text-[#A6A6AF] hover:text-[#EDEDEF]"
+            className={`ms-btn h-9 gap-2 px-3 text-[13px] ${
+              on ? "ms-btn-tint ms-on" : "ms-btn-ghost text-[#a2a2a2]"
             }`}
-            style={on ? { color: t.color, borderColor: t.color } : undefined}
+            style={{ "--ms-tint": t.color } as CSSProperties}
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden="true">
               <path fillRule="evenodd" d={t.glyph} />
@@ -398,7 +399,7 @@ export default function Board({
   return (
     <div
       ref={viewRef}
-      className="fixed inset-0 touch-none select-none overflow-hidden bg-[#101013]"
+      className="fixed inset-0 touch-none select-none overflow-hidden bg-[#08080a]"
       onPointerDown={(e) => {
         if (e.pointerType === "mouse" && e.button !== 0) return;
         // a fresh gesture starts its tap-vs-drag budget over — BEFORE the
@@ -423,7 +424,7 @@ export default function Board({
           this small re-rasters well inside a frame */}
       <div
         ref={boardRef}
-        className="absolute left-0 top-0"
+        className="ms-grid absolute left-0 top-0"
         style={{
           width,
           height,
