@@ -457,22 +457,19 @@ export const PROP_KINDS = Object.keys(PROP_STYLE) as PropKind[];
  * lumpy; the whole of it is then shaded by ONE diagonal the way a wall
  * tile is — light past one threshold, shade past the other, the body
  * between, the boundaries wandering a little — so a boulder is a flat
- * shape lit from the top-right and never a pile of spheres. A one-pixel
- * rim in the shade tone closes the silhouette, which is what keeps a
- * pale boulder from melting into pale ground.
+ * shape lit from the top-right and never a pile of spheres. There is no
+ * outline: the silhouette is the shading's own edge, as on the tiles.
  */
 export function paintProp(kind: PropKind): Uint8ClampedArray<ArrayBuffer> {
   const st: PropStyle = PROP_STYLE[kind];
   const N = st.size / TILE_SCALE;
   const rng = mulberry32(5000 + st.seed * 331);
-  // which piece each cell belongs to: 0 is nothing, and a pod is its own
-  // piece so the rim runs between pods as well as round them
+  // which cells the shape covers (0 is nothing)
   const piece = new Uint8Array(N * N);
-  const mark = (x: number, y: number, id: number): void => {
-    if (x >= 0 && y >= 0 && x < N && y < N) piece[y * N + x] = id;
-  };
-  const lump = (cx: number, cy: number, r: number, squash = 1, id = 1): void =>
-    ellipse(cx, cy, r, r * squash, (x, y) => mark(x, y, id));
+  const lump = (cx: number, cy: number, r: number, squash = 1): void =>
+    ellipse(cx, cy, r, r * squash, (x, y) => {
+      if (x >= 0 && y >= 0 && x < N && y < N) piece[y * N + x] = 1;
+    });
   const c = N / 2;
   let litAt = 0.22, darkAt = -0.26;
   let trunk = false;
@@ -527,12 +524,12 @@ export function paintProp(kind: PropKind): Uint8ClampedArray<ArrayBuffer> {
       break;
     }
     case "pods": {
-      // three pods of three sizes leaning together, each its own piece
+      // three pods of three sizes leaning together
       const a0 = rng() * Math.PI * 2;
       const rs = [0.26, 0.2, 0.16].map((r) => N * r);
       for (let i = 0; i < 3; i++) {
         const b = a0 + (i / 3) * Math.PI * 2;
-        lump(c + Math.cos(b) * N * 0.17, c + Math.sin(b) * N * 0.17, rs[i], 1, i + 1);
+        lump(c + Math.cos(b) * N * 0.17, c + Math.sin(b) * N * 0.17, rs[i]);
       }
       break;
     }
@@ -545,8 +542,7 @@ export function paintProp(kind: PropKind): Uint8ClampedArray<ArrayBuffer> {
   const grid = new Array<string | null>(N * N).fill(null);
   for (let y = 0; y < N; y++)
     for (let x = 0; x < N; x++) {
-      const id = piece[y * N + x];
-      if (!id) continue;
+      if (!piece[y * N + x]) continue;
       const t = (x + 0.5 - c - (y + 0.5 - c)) / N;
       const along = (x + y) / N;
       const v = t + 0.06 * Math.sin(along * Math.PI * 2 + w1) + 0.04 * Math.sin(along * Math.PI * 5 + w2);
@@ -565,23 +561,8 @@ export function paintProp(kind: PropKind): Uint8ClampedArray<ArrayBuffer> {
         if (px >= 0 && py >= 0 && px < N && py < N) grid[py * N + px] = i % 3 === 0 ? shade : light;
       });
     }
-  } else {
-    // the rim: every cell with an empty neighbour, or one of another
-    // piece, turns to the dark tone, so the silhouette closes in one
-    // round line
-    const rimmed = grid.slice();
-    for (let y = 0; y < N; y++)
-      for (let x = 0; x < N; x++) {
-        const id = piece[y * N + x];
-        if (!id) continue;
-        const other = (dx: number, dy: number): boolean => {
-          const nx = x + dx, ny = y + dy;
-          return nx < 0 || ny < 0 || nx >= N || ny >= N || piece[ny * N + nx] !== id;
-        };
-        if (other(1, 0) || other(-1, 0) || other(0, 1) || other(0, -1)) rimmed[y * N + x] = dark;
-      }
-    for (let i = 0; i < N * N; i++) grid[i] = rimmed[i];
-    if (trunk) ellipse(c, c, 1.6, 1.6, (x, y) => { grid[y * N + x] = dark; });
+  } else if (trunk) {
+    ellipse(c, c, 1.6, 1.6, (x, y) => { grid[y * N + x] = dark; });
   }
 
   const P = st.size;
