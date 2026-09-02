@@ -234,23 +234,24 @@ export const tileIcon = (kind: FloorKind, variant: number): string =>
   `/tiles/${kind}${(variant % FLOOR_VARIANTS) + 1}.png`;
 
 /* ======================================================================
- * THE HILL BLOCKS — the rock a lane is cut through, painted like the
- * floors.
+ * THE HILL BLOCKS — the rock a lane is cut through.
  *
- * Mindustry shades each wall tile as one rounded boulder in three tones,
- * lit from a corner, with smaller lumps inside it. The rock here borrows
- * the idea of the lump and drops the one-boulder-per-tile: a tile is a
- * plain face with two or three rounded lumps of different sizes piled on
- * it, each with a light cap and a dark underside, and NOTHING at the
- * cell's edge — so neighbouring cells run together and an outcrop reads
- * as one continuous rubble surface, with the field's own blurred shadow
- * (WALL_SHADOW_A in the renderer, and the same pass on the menu) lifting
- * the whole of it off the floor. No lines anywhere: every mark is an
- * ellipse.
+ * The lesson from Mindustry's walls is not the bevel, it is the SHADING:
+ * three flat tones in a few big smooth regions. Each tile is one boulder
+ * — a rounded shape filling most of the cell, in the mid tone — lit from
+ * a corner: the boulder's cap on the lit side is the light tone, its
+ * underside on the far side the dark tone, and the sliver of tile beyond
+ * the boulder's outline is light on the lit side and dark on the other,
+ * so the cell's edges meet the next cell's as the joins between stones.
+ * Nothing else. No lumps, no highlights, no marks on the face: the tones
+ * are regions, not lighting on detail, which is what keeps a top-down
+ * map flat. Light comes from the top-left here, where Mindustry lights
+ * from the top-right, and the boulders are rounder than its chipped
+ * ones.
  *
- * A 2×2 cluster of rock takes ONE block twice the size (the field's
- * large-draw rule, UV_WALL_LARGE), with lumps to match; `span` paints
- * that one.
+ * A 2×2 cluster of rock takes ONE boulder twice the size (the field's
+ * large-draw rule, UV_WALL_LARGE), which is what makes an outcrop read
+ * as a few big stones with small ones at its edges; `span` paints it.
  * ====================================================================== */
 
 export type WallKind =
@@ -267,17 +268,16 @@ export type WallKind =
   | "dacite";
 
 export interface WallStyle {
-  /** the rock's face */
+  /** the boulder's mid tone */
   face: string;
-  /** the facets that catch the light */
+  /** its lit cap, and its shaded underside */
   light: string;
-  /** the crevices, and the shade under a facet */
   dark: string;
   /**
-   * the grain of the rock:
-   * rough  — a big stone and a small one, the bare rocks
-   * soft   — a big low stone, sometimes a small one, the earths and snow
-   * glassy — a big stone with a wide bright cap and a small one, ice and salt
+   * the grain of the rock — how far the light reaches round the stone:
+   * rough  — a narrow cap and a deep underside, the bare rocks
+   * soft   — a wide cap and a shallow underside, the earths and snow
+   * glassy — a wide cap and a deep underside, ice and salt
    */
   grain: "rough" | "soft" | "glassy";
 }
@@ -318,48 +318,44 @@ export function paintWall(
   const put = (x: number, y: number, c: string): void => {
     if (x >= 0 && y >= 0 && x < N && y < N) grid[y * N + x] = c;
   };
-  // a lump keeps one pixel off the rim, so the seam is always plain face
-  // and any cell sits flush against any other
-  const RIM = 1;
-  const body = mix(st.face, st.light, 0.35);
-  /**
-   * A LUMP: a rounded stone with the light on its top and its underside
-   * in shade — the top cap is the light tone, the lower band the dark,
-   * and the body between them a shade up from the face so the lump
-   * stands proud of it. `cap` is how far down the light reaches
-   */
-  const lump = (r: number, cap: number): void => {
-    const most = (N - RIM * 2) / 2 - 0.3; // the biggest lump the tile can hold
-    const rx = Math.min(most, r * (0.9 + rng() * 0.3)), ry = Math.min(most, r * (0.75 + rng() * 0.2));
-    const cx = RIM + rx + rng() * Math.max(0, N - RIM * 2 - rx * 2);
-    const cy = RIM + ry + rng() * Math.max(0, N - RIM * 2 - ry * 2);
-    ellipse(cx, cy, rx, ry, (x, y, u, v) => {
-      const edge = u * u + v * v;
-      if (v > 0.35 && edge > 0.45) put(x, y, st.dark);
-      else if (v < cap && edge < 0.8) put(x, y, st.light);
-      else put(x, y, body);
-    });
+  // the light: from the top-left. `cap` is how big the lit crescent is
+  // and `shade` how deep the shadowed one, as fractions of the stone
+  const LX = -0.55, LY = -0.83;
+  const [cap, shade] =
+    st.grain === "rough" ? [0.5, 0.82] : st.grain === "soft" ? [0.62, 0.9] : [0.6, 0.8];
+  // the boulder: one round stone nearly the size of the cell, pushed a
+  // little toward the light so the shadow wedge beyond it in the far
+  // corner is the bigger one, its outline swelling and dipping a little
+  // round the circumference so no two tiles hold the same stone
+  const R = N / 2 - 0.4;
+  const cx = N / 2 + LX * N * 0.06 + (rng() - 0.5) * N * 0.06;
+  const cy = N / 2 + LY * N * 0.06 + (rng() - 0.5) * N * 0.06;
+  const a2 = rng() * Math.PI * 2, a3 = rng() * Math.PI * 2;
+  const k2 = 0.06 + rng() * 0.05, k3 = 0.03 + rng() * 0.04;
+  const radiusAt = (th: number): number => R * (1 + k2 * Math.sin(2 * th + a2) + k3 * Math.sin(3 * th + a3));
+  const inside = (x: number, y: number): boolean => {
+    const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+    return Math.hypot(dx, dy) <= radiusAt(Math.atan2(dy, dx));
   };
-
-  const reps = span * span;
-  for (let r = 0; r < reps; r++) {
-    switch (st.grain) {
-      // one big stone a tile, with a small one beside it — a rock is a few
-      // large lumps, not a scatter of pebbles
-      case "rough":
-        lump(5 + rng() * 1.5, -0.1);
-        lump(2.2 + rng() * 0.8, -0.2);
-        break;
-      case "soft":
-        lump(5.5 + rng() * 1.5, 0);
-        if (rng() < 0.6) lump(2.4 + rng() * 0.8, 0);
-        break;
-      case "glassy":
-        lump(5 + rng() * 1.5, 0.2);
-        lump(2 + rng() * 0.8, 0.1);
-        break;
+  // THE CRESCENTS. The lit cap is a smaller disc pushed toward the light;
+  // the underside is what lies outside a larger disc pushed the same way.
+  // Both boundaries curve with the stone, which is the difference between
+  // a ball and a chamfered block
+  const capX = cx + LX * R * 0.42, capY = cy + LY * R * 0.42, capR = R * cap;
+  const shX = cx + LX * R * 0.22, shY = cy + LY * R * 0.22, shR = R * shade;
+  for (let y = 0; y < N; y++)
+    for (let x = 0; x < N; x++) {
+      const px = x + 0.5, py = y + 0.5;
+      if (inside(x, y)) {
+        const inCap = Math.hypot(px - capX, py - capY) <= capR;
+        const inBody = Math.hypot(px - shX, py - shY) <= shR;
+        put(x, y, inCap ? st.light : inBody ? st.face : st.dark);
+      } else {
+        // off the stone: the ground between boulders, lit or in shadow
+        const t = -((px - N / 2) * LX + (py - N / 2) * LY);
+        put(x, y, t > 0 ? st.light : st.dark);
+      }
     }
-  }
 
   const P = TILE_PX * span;
   const out = new Uint8ClampedArray(new ArrayBuffer(P * P * 4));
