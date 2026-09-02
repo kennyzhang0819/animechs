@@ -327,6 +327,9 @@ export function paintWall(
   // boundary keeps them from being ruled lines
   const [litAt, darkAt] =
     st.grain === "rough" ? [0.3, -0.3] : st.grain === "soft" ? [0.4, -0.4] : [0.15, -0.4];
+  // the shaded corner, eased toward the face: at full strength it read
+  // as a hole in the rock rather than the far side of it
+  const dark = mix(st.dark, st.face, 0.45);
   const w1 = rng() * Math.PI * 2, w2 = rng() * Math.PI * 2, w3 = rng() * Math.PI * 2;
   for (let y = 0; y < N; y++)
     for (let x = 0; x < N; x++) {
@@ -337,7 +340,7 @@ export function paintWall(
         0.05 * Math.sin(along * Math.PI * 5 + w2) +
         0.04 * Math.sin(t * Math.PI * 3 + w3);
       const v = t + wobble;
-      put(x, y, v > litAt ? st.light : v < darkAt ? st.dark : st.face);
+      put(x, y, v > litAt ? st.light : v < darkAt ? dark : st.face);
     }
 
   // a patch keeps one pixel off the rim, so the seam is always plain
