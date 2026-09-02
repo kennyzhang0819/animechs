@@ -96,7 +96,13 @@ import {
   type LegSpec,
   type WakeSpec,
 } from "./levels";
-import { HUNGRY_GROWTH, HUNGRY_HUE, SHIELD_TOWER_COL, SHIELD_TOWER_SIZE } from "./mutation";
+import {
+  AMPHIBIOUS_GROWTH,
+  HUNGRY_GROWTH,
+  HUNGRY_HUE,
+  SHIELD_TOWER_COL,
+  SHIELD_TOWER_SIZE,
+} from "./mutation";
 import { MAX_LEGS, WAKE_PTS, type Sim } from "./sim";
 import { isWaterFloor, showsFloorCell, WALL_DEEP, type Terrain } from "./terrain";
 import { FxKind, type Effect, type RGB, type Tower, type TowerKind } from "./types";
@@ -1684,7 +1690,7 @@ export class Renderer {
       if (t.beamT >= 0) this.drawContinuousBeam(dyn, t, sim.statsFor(t.kind).bullet.continuous);
     }
     const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
-    const { ushield, ushieldAlpha, urad, uwet, uhungry, ueaten } = sim;
+    const { ushield, ushieldAlpha, urad, uwet, uhungry, ueaten, uwade } = sim;
     // the fleet's wakes, at Mindustry's Layer.debris: UNDER every unit,
     // including the hulls that laid them, so a crowded lane does not draw
     // one boat's foam over another boat
@@ -1709,10 +1715,17 @@ export class Renderer {
         const k = ukind[i];
         if (KIND_FLYING[k] !== wantFly) continue;
         // a hungry unit that has been eating is drawn HUNGRY_GROWTH bigger
-        // per meal (mutation.ts) — art only, the sim's hitbox never moves.
-        // Its cull margin grows with it or a swollen unit would pop out at
-        // the screen edge while half of it is still on screen
-        const grow = ueaten[i] > 0 ? 1 + ueaten[i] * HUNGRY_GROWTH : 1;
+        // per meal, and a waded one AMPHIBIOUS_GROWTH bigger per crossing
+        // (mutation.ts) — art only, the sim's hitbox never moves. Its cull
+        // margin grows with it or a swollen unit would pop out at the
+        // screen edge while half of it is still on screen.
+        //
+        // The two ADD, because a body can be both and the player needs to
+        // see that it is: on Quagmire a fed, five-times-forded crawler is
+        // the single most dangerous thing in the lane and it must not look
+        // like either one of those alone
+        const swell = ueaten[i] * HUNGRY_GROWTH + uwade[i] * AMPHIBIOUS_GROWTH;
+        const grow = swell > 0 ? 1 + swell : 1;
         const cm = grow === 1 ? KIND_CULL[k] : KIND_CULL[k] * grow;
         if (upx[i] < vx0 - cm || upx[i] > vx1 + cm || upy[i] < vy0 - cm || upy[i] > vy1 + cm)
           continue;
@@ -1908,9 +1921,16 @@ export class Renderer {
         this.drawShootSmoke(dyn, e, t, e.kind === FxKind.SmokeBig);
       } else if (e.kind === FxKind.Shockwave) {
         // Fx.shockwaveSmaller: one white ring running out of the blast,
-        // greying and thinning as it goes
+        // greying and thinning as it goes.
+        //
+        // A VOLATILE POP CARRIES ITS OWN REACH in e.len (Sim.volatileBlast)
+        // so the ring stops exactly where the damage did. The rule is a
+        // layout problem (mutation.ts), and a player cannot solve a layout
+        // problem they have to guess the size of. Everything else that
+        // throws a shockwave keeps Mindustry's fixed 22 units.
         const col = ramp(PAL.white, PAL.lightGray, null, t);
-        this.strokeCircle(dyn, e.x, e.y, t * 22 * MU, ((1 - t) * 2 + 0.2) * MU,
+        const reach = e.len ? e.len : 22 * MU;
+        this.strokeCircle(dyn, e.x, e.y, t * reach, ((1 - t) * 2 + 0.2) * MU,
           col[0], col[1], col[2], RING_ALPHA);
       } else if (e.kind === FxKind.SparkShoot) {
         this.drawSparkShoot(dyn, e, t);

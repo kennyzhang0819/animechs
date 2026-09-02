@@ -6,6 +6,24 @@ import { BASE_ITEM, costEntries, ITEM_INFO, ITEM_KINDS, type Bank, type Cost, ty
 
 const SIZES = { sm: "h-4 w-4", md: "h-5 w-5" } as const;
 
+/**
+ * A COUNT AS A STACK READS IT. Late-campaign banks run to eight and nine
+ * digits, and a wallet strip that prints 1,284,301,776 is a number nobody
+ * reads and a strip that wraps onto three lines — so past a million the
+ * count is abbreviated to one decimal: 1.3m, 4.0b.
+ *
+ * IT STARTS AT A MILLION, NOT A THOUSAND, deliberately. A price of 1,200
+ * copper is a price a player counts against a bank of 3,400; rounding
+ * those to 1.2k and 3.4k would blur the exact comparison the shop is for,
+ * and nothing under a million is too long to print in full.
+ */
+export const itemCount = (n: number): string =>
+  n >= 1e9
+    ? `${(n / 1e9).toFixed(1)}b`
+    : n >= 1e6
+      ? `${(n / 1e6).toFixed(1)}m`
+      : Math.round(n).toLocaleString();
+
 /** one currency's sprite and amount, tinted with that item's colour */
 export function ItemAmount({
   item,
@@ -31,7 +49,7 @@ export function ItemAmount({
         alt={info.name}
         className={`${SIZES[size]} shrink-0 [image-rendering:pixelated] ${short ? "opacity-70" : ""}`}
       />
-      {amount}
+      {itemCount(amount)}
     </span>
   );
 }

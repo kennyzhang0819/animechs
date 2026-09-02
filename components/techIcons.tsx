@@ -97,10 +97,8 @@ export const SURGE = "#F3E979";
 
 export const HOME_ICON = "/mindustry/sprites/blocks/storage/core-shard.png";
 
-/** utility nodes whose face is a block sprite rather than a glyph: the
- *  projector node wears the block it is a reservation for */
+/** utility nodes whose face is an item or block sprite rather than a glyph */
 const UTIL_ICONS: Partial<Record<TechKind, string>> = {
-  "overdrive-projector": "/mindustry/sprites/blocks/defense/overdrive-projector.png",
   // the two one-shot duo nodes wear the item that IS them: a graphite round
   // is graphite, and Duo Power's whole gate is the one surge alloy it costs
   "duo-graphite": "/mindustry/sprites/items/item-graphite.png",

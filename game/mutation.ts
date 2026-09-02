@@ -61,12 +61,14 @@
  *  never an index, so the catalog can be reordered freely */
 export type MutationId =
   | "volatile"
+  | "mitosis"
   | "overshields"
   | "shieldTowers"
   | "hungry"
   | "armored"
   | "speedy"
-  | "hydrophobic";
+  | "hydrophobic"
+  | "amphibious";
 
 export interface MutationDef {
   /** stable key, in the run spec and in the sim's questions */
@@ -98,7 +100,7 @@ export interface MutationDef {
    *
    * The roller skips these entirely (rollMutations), so the ONLY way one
    * reaches a run is a world naming it in LevelSpec.intrinsicMutation —
-   * which is checked in levels.ts, because an exclusive rule on no world
+   * which is checked in levels.ts, because a special rule on no world
    * is a rule no build of the game can ever play.
    *
    * WHY THE FLAG EXISTS. A mutator that reads the TERRAIN is worth
@@ -110,7 +112,7 @@ export interface MutationDef {
    * anywhere — which is why this is a flag on the entry rather than
    * something inferred from the intrinsic lists.
    *
-   * ITS COST IS A LABEL, NOT A PRICE. An exclusive rule is never rolled
+   * ITS COST IS A LABEL, NOT A PRICE. A special rule is never rolled
    * and never charged against a tier's budget (see intrinsicMutation), so
    * the number only picks the band its card is drawn in — how bad the
    * codex says it is. It still has to sit on the scale, because the
@@ -120,7 +122,7 @@ export interface MutationDef {
    * place a rule is chosen rather than rolled), which is how one gets
    * tested on a map that does not carry it.
    */
-  exclusive?: boolean;
+  special?: boolean;
 }
 
 /**
@@ -138,8 +140,9 @@ export const MUT_COST_MIN = 1;
 export const MUT_COST_MAX = 6;
 
 /**
- * THE CATALOG, cheapest first — which is also codex order, so the list a
- * player reads climbs from the survivable to the ruinous.
+ * THE CATALOG, HARDEST FIRST — which is also codex order, so the list a
+ * player reads opens on the map-bound SPECIAL rules and then falls from
+ * the ruinous to the survivable.
  *
  * THESE COSTS CAME OFF THE DASHBOARD. They rode in public/balance.json's
  * `mutations` section while they were being tuned and are authored here
@@ -149,18 +152,31 @@ export const MUT_COST_MAX = 6;
  */
 export const MUTATIONS: readonly MutationDef[] = [
   {
-    id: "armored",
-    name: "Armored Swarms",
-    cost: 1,
-    blurb:
-      "Lower tier units gain massive armor boosts.",
+    id: "amphibious",
+    name: "Amphibious",
+    cost: 5,
+    special: true,
+    blurb: "Ground enemies that wade come out faster, tougher and healing.",
   },
   {
-    id: "volatile",
-    name: "Volatile",
-    cost: 2,
+    id: "hydrophobic",
+    name: "Hydrophobic",
+    cost: 4,
+    special: true,
+    blurb: "Turrets built near water attack slower.",
+  },
+  {
+    id: "hungry",
+    name: "Hungry Mechs",
+    cost: 4,
     blurb:
-      "Enemies detonate when they die and damages nearby turrets.",
+      "Hungry mechs eats its neighbours and become stronger with every meal.",
+  },
+  {
+    id: "speedy",
+    name: "Speedy",
+    cost: 4,
+    blurb: "Every enemy moves twice as fast, and nothing can slow them.",
   },
   {
     id: "overshields",
@@ -177,24 +193,25 @@ export const MUTATIONS: readonly MutationDef[] = [
       "Shield towers rise periodically, obsorbing bullets until they are destroyed.",
   },
   {
-    id: "hungry",
-    name: "Hungry Mechs",
-    cost: 4,
+    id: "volatile",
+    name: "Volatile",
+    cost: 2,
     blurb:
-      "Hungry mechs eats its neighbours and become stronger with every meal.",
+      "Enemies detonate when they die and damages nearby turrets.",
   },
   {
-    id: "speedy",
-    name: "Speedy",
-    cost: 4,
-    blurb: "Every enemy moves twice as fast, and nothing can slow them.",
+    id: "mitosis",
+    name: "Mitosis",
+    cost: 2,
+    blurb:
+      "Every enemy breaks apart into tier one units when it dies.",
   },
   {
-    id: "hydrophobic",
-    name: "Hydrophobic",
-    cost: 4,
-    exclusive: true,
-    blurb: "Turrets built near water attack slower.",
+    id: "armored",
+    name: "Armored Swarms",
+    cost: 1,
+    blurb:
+      "Lower tier units gain massive armor boosts.",
   },
 ];
 
@@ -212,6 +229,22 @@ for (const m of MUTATIONS) {
     );
   if (MUTATIONS.filter((o) => o.id === m.id).length > 1)
     throw new Error(`two mutators share the id "${m.id}"`);
+}
+
+// ...AND IT IS AUTHORED HARDEST FIRST, which is codex order, so the check
+// belongs here with the rest of them. This is not fussiness: the order is
+// a comment above the list and nothing enforced it, so a rule added by one
+// hand while another reordered the list lands wherever the merge put it —
+// which is exactly how Mitosis came to sit above two rules dearer than it,
+// silently, in a merge that reported itself clean.
+for (let i = 1; i < MUTATIONS.length; i++) {
+  const prev = MUTATIONS[i - 1];
+  const here = MUTATIONS[i];
+  if (here.cost > prev.cost)
+    throw new Error(
+      `the catalog is authored hardest first, but "${here.id}" (${here.cost}) ` +
+        `sits below "${prev.id}" (${prev.cost})`,
+    );
 }
 
 /** the entry for an id, or null for one no build of the game knows */
@@ -236,7 +269,7 @@ export const mutationById = (id: string): MutationDef | null =>
 // roll the run does not play.
 //
 // ONE THING THE OVERRIDE DELIBERATELY DOES NOT DO IS REORDER THE CATALOG.
-// MUTATIONS is authored cheapest-first and sortByCatalog reads that order,
+// MUTATIONS is authored hardest-first and sortByCatalog reads that order,
 // not the costs; a bent cost changes what a rule is worth without moving
 // it in the codex, which keeps a run's printed roll stable while a number
 // is being swept.
@@ -332,7 +365,7 @@ export function cleanMutations(raw: unknown): MutationId[] {
   return sortByCatalog(out);
 }
 
-/** catalog order, so a roll always reads cheapest rule first */
+/** catalog order, so a roll always reads its heaviest rule first */
 const sortByCatalog = (ids: readonly MutationId[]): MutationId[] =>
   [...ids].sort(
     (a, b) =>
@@ -483,10 +516,10 @@ export function rollMutations(
   // are not paid for out of this budget (see mutationsInForce): rolling one
   // of them would spend points to change nothing.
   //
-  // An EXCLUSIVE rule is out of the draw on every map, not just the one
-  // that carries it (MutationDef.exclusive) — it belongs to a world, and a
+  // A SPECIAL rule is out of the draw on every map, not just the one
+  // that carries it (MutationDef.special) — it belongs to a world, and a
   // world that wants it names it.
-  const pool = MUTATIONS.filter((m) => !m.exclusive && !exclude.includes(m.id));
+  const pool = MUTATIONS.filter((m) => !m.special && !exclude.includes(m.id));
   want = Math.min(pool.length, Math.max(0, Math.floor(want)));
   if (want === 0 || budget <= 0) return [];
   let best: MutationDef[] = [];
@@ -672,7 +705,7 @@ export const SPEEDY_SPEED = 2;
 // the crossings and the bay, the ground a naval front makes you want — is
 // the ground that costs you most of your damage to hold.
 //
-// IT IS EXCLUSIVE BECAUSE IT IS WORTH NOTHING ON A DRY MAP. Confluence
+// IT IS SPECIAL BECAUSE IT IS WORTH NOTHING ON A DRY MAP. Confluence
 // has no water at all, so a roll of this there would be a slot spent
 // changing not one shot, and a player reading their roll would learn
 // nothing from it. Measured over the three maps as authored, counting
@@ -716,6 +749,87 @@ export const HYDROPHOBIC_RANGE = 10;
  *  used to start every second now takes three and a third */
 export const HYDROPHOBIC_RATE = 0.3;
 
+// ---------- AMPHIBIOUS --------------------------------------------------
+//
+// QUAGMIRE'S OWN RULE. A walker that steps into water comes out of it
+// BETTER: faster, tougher, harder to kill and healing as it goes — and it
+// can do that five times over a route, so a body that has forded every
+// crossing on the way in arrives as something the board has not fought
+// before.
+//
+// IT IS THE MAP, TURNED AGAINST THE PLAYER. Quagmire's water is not
+// scenery and it is not a wall — every ground lane on it is crossed by a
+// ford, three on the trunk road alone, because the map was drawn so a
+// walker never has a dry route. Under this rule that stops being
+// decoration and becomes the swarm's upgrade path: the crossings the
+// player is trying to hold are the exact squares that make the thing
+// walking through them worse.
+//
+// EACH BONUS IS A SHARE OF THE UNIT'S OWN NUMBERS, not a flat amount, so
+// one rule reads the same on a 150-hp crawler and a 22,000-hp toxopid: a
+// stack is always "a fifth again of what you were", never "+30 hp", which
+// would be everything to the first and nothing to the second. The one
+// exception is ARMOUR, and it is a deliberate one — the crawler line's T1
+// has armour 0, so a percentage of it is a percentage of nothing, and the
+// rule would skip the very body it is most about. Armour is therefore a
+// flat step on the same scale ARMORED_ARMOR uses.
+//
+// A STACK IS AN ENTRY, NOT A DURATION. It is taken the moment a unit
+// crosses from dry ground into water and never again until it has left
+// and come back, so the gain is paid for by ROUTE — how many crossings a
+// body has walked through — rather than by loitering. A swarm that pools
+// in a ford does not ratchet; a swarm that has come the long way in does.
+//
+// THE PERCENTAGES ARE OF WHAT IT SPAWNED WITH, read once per stack from
+// the kind and the tier's level curve rather than from the unit's current
+// pool. Off the CURRENT pool the stacks would compound, and worse, a
+// hungry unit's meals would feed the wading bonus and the wading bonus
+// would feed the next meal — two rules multiplying each other is not a
+// number anyone can tune.
+//
+// WHAT IT DOES NOT TOUCH: the hitbox, the layer, the kind. A waded
+// crawler is a fast fat crawler, and it still cannot swim — deep water is
+// impassable to it exactly as before, and the rule only ever fires on the
+// shallow ground the map already lets it walk on.
+
+/** how many times one body may take the bonus */
+export const AMPHIBIOUS_MAX_STACKS = 5;
+
+/** health added per stack, as a share of the health it spawned with — put
+ *  on the CURRENT pool as well as the maximum, so wading heals */
+export const AMPHIBIOUS_HP = 0.15;
+
+/**
+ * Drive speed added per stack, as a share of the speed it spawned with
+ * (Speedy's doubling included — a share of what it actually walks at).
+ *
+ * THIS IS THE ONE THAT OUTRUNS SPEEDY. Five stacks is +250%, so a body
+ * that has forded every crossing on the way in is travelling faster than
+ * the same body under Speedy, which doubles and stops. That is deliberate
+ * and it is the rule's teeth: Speedy is handed out by a roll and applies
+ * to everything, while this has to be WALKED for, one crossing at a time,
+ * and only the bodies that took the long way in arrive carrying it. What
+ * it costs the player is the thing a tower defence cannot buy back —
+ * seconds in the kill zone — and on Quagmire the south gate is where a
+ * swarm can actually bank the full five.
+ */
+export const AMPHIBIOUS_SPEED = 0.5;
+
+/** armour added per stack, FLAT — see the note above on why this one is
+ *  not a percentage. Five stacks is ARMORED_ARMOR, the plating Armored
+ *  Swarms hands out, arrived at the hard way */
+export const AMPHIBIOUS_ARMOR = 2;
+
+/** healing per stack per second, as a share of the health it spawned with:
+ *  at the cap a body mends itself in twenty seconds, which chip damage
+ *  cannot outrun and a real kill zone does not notice */
+export const AMPHIBIOUS_REGEN = 0.01;
+
+/** how much bigger a waded body DRAWS per stack — art only, like the
+ *  hungry swelling it sits alongside (HUNGRY_GROWTH). The sim's hitbox
+ *  never moves; this is how a player picks the upgraded ones out of a lane */
+export const AMPHIBIOUS_GROWTH = 0.04;
+
 // ---------- OVERSHIELDS -------------------------------------------------
 //
 // EVERY FORCE FIELD IS FIVE TIMES THE POOL IT WAS — the unit bubbles a
@@ -756,13 +870,20 @@ export const OVERSHIELD_SCALE = 5;
 // is the rule that turns tower health (towerMaxHp in constants.ts) from a
 // dead field into a mechanic: nothing else in the game hurts a tower.
 //
-// IT TAXES POINT-BLANK PLAY SPECIFICALLY. A blast reaches under two cells,
-// so only the emplacements built against the lane — scorch, fuse, arc, a
-// duo wall on the choke — ever feel it, and they feel it in proportion to
-// how many bodies die at their feet. A long-range board is untouched. That
-// asymmetry is the design: the mutator does not say "your towers take
-// damage", it says "the kill zone cannot also be the front row", which is
-// a layout problem rather than a stat problem.
+// IT TAXES POINT-BLANK PLAY SPECIFICALLY. A blast reaches three and a half
+// cells, so the emplacements built against the lane — scorch, fuse, arc, a
+// duo wall on the choke — feel it hardest, and they feel it in proportion
+// to how many bodies die at their feet. A long-range board is still
+// untouched. That asymmetry is the design: the mutator does not say "your
+// towers take damage", it says "the kill zone cannot also be the front
+// row", which is a layout problem rather than a stat problem.
+//
+// THE REACH WAS DOUBLED FROM 1.75 CELLS and it changed the rule's shape,
+// not just its strength. At 1.75 only the turret a body actually died on
+// top of paid; at 3.5 the whole SECOND rank behind the choke pays too, so
+// spacing a line off the lane by one turret no longer buys immunity —
+// which is the point, because one turret of clearance was a habit rather
+// than a decision.
 //
 // A DOWNED TOWER IS SECONDS, NOT SALVAGE. The tower stands back up at full
 // health after TOWER_DOWN_TIME, so what a swarm of detonating daggers
@@ -777,16 +898,127 @@ export const OVERSHIELD_SCALE = 5;
 // armour is never level-scaled — tower health does not climb the ladder,
 // so neither may the thing that spends it.
 
-/** blast reach from the dead body's centre, in px (1.75 cells of 20) —
+/** blast reach from the dead body's centre, in px (3.5 cells of 20) —
  *  plus the body's own hitbox radius, so a fortress's boom is wider than
  *  a flare's. A literal rather than CELL because this file deliberately
- *  imports nothing */
-export const VOLATILE_RADIUS = 35;
+ *  imports nothing.
+ *
+ *  THE RING DRAWN FOR THE POP IS SIZED FROM THIS. Sim.volatileBlast hands
+ *  the reach to the shockwave effect, so what a player sees is exactly
+ *  what took the damage — change this number and the visual follows */
+export const VOLATILE_RADIUS = 70;
 
 /** blast damage to each tower in reach, by the dead unit's tier (index 0
  *  unused). Tier 4-5 bodies are bosses and boss-adjacent — their deaths
  *  are the run's punctuation marks and should feel like it */
 export const VOLATILE_DMG: readonly number[] = [0, 12, 30, 70, 150, 300];
+
+// ---------- MITOSIS -----------------------------------------------------
+//
+// EVERY BODY THE PLAYER KILLS BREAKS INTO TIER-1 BODIES, more of them the
+// heavier the thing that died. A mace leaves two daggers behind, a reign
+// leaves twelve — so a kill stops being the end of a fight and becomes the
+// start of a smaller one, and the board that could only just clear the
+// wave now has to clear it twice.
+//
+// IT IS A RULE ABOUT THROUGHPUT, NOT ABOUT HEALTH. The brood is the
+// cheapest thing in the game: a dagger at whatever the level curve says,
+// no armour, no shield, no ability. A turret that can kill things fast
+// barely notices it. What it takes apart is the board built to kill a few
+// EXPENSIVE things — the long-reload heavies, the single-target snipers,
+// the lancer line whose whole answer to a fortress is one shot that is
+// worth it. Those turrets spend the same reload on a dagger, and the
+// mutator hands them eleven more of them to spend it on.
+//
+// IT TERMINATES BECAUSE A BROOD BODY DOES NOT BROOD. That is a property
+// of the BODY, carried on the unit itself (Sim.ubrood) and read once when
+// it dies — not a zero in the table below. A brood that bred in its turn
+// would be a chain reaction with no upper bound: one dagger, one dagger,
+// forever, and a wave that can never be finished is not a harder wave.
+//
+// PUTTING THE GUARANTEE ON THE UNIT IS WHAT LETS THE TABLE BE A DIAL. It
+// used to live in the arithmetic — tier 1 bred nothing, so everything the
+// rule created was sterile by virtue of its tier — and that quietly made
+// "does this terminate?" a question about a balance number, so the day
+// someone gave T1 a brood the game would hang rather than play
+// differently. With the flag, every row below is free to be tuned to
+// whatever the fight wants, tier 1 included, and the rule stays exactly
+// ONE generation deep however it is set.
+//
+// A BROOD BODY IS A REAL UNIT AND PAYS A REAL DROP. It is killed like
+// anything else, so it lands in killsByKind and pays out one copper, the
+// T1 currency (see unitDrop in levels.ts). That is deliberate: the game's
+// standing rule is that a tier is the whole drop table and no body is
+// quietly worth more OR LESS than its tier, and a mutator that minted
+// invisible units would be the first exception to it. So the rule gives
+// the player copper — the cheapest of the five — in exchange for the one
+// thing a tower defence cannot buy, which is time in the kill zone. That
+// is the bargain, and it is why this sits in the LIGHT band next to
+// Volatile rather than up with Hungry: it is noticed every wave and it
+// decides no run on its own.
+//
+// A LEAK IS NOT A DEATH. A body that walks off the board was never killed
+// (Sim.updateUnits removes it without going through killUnit), so it
+// leaves no brood — the same line Volatile draws, and the same reason:
+// the rule is about what happens where the player is fighting.
+//
+// THE BROOD KEEPS ITS PARENT'S LAYER. A flyer leaves flyers, a hull
+// leaves hulls, a walker leaves walkers — the sim picks the T1 kinds that
+// travel on the dead unit's movement layer (MITOSIS_KINDS in sim.ts).
+// Anything else would drop daggers into deep water and flares onto a lane
+// they have no business on, and a brood that cannot walk where it landed
+// is a brood the player never has to answer.
+
+/**
+ * HOW MANY TIER-1 BODIES A DEATH LEAVES, by the dead unit's tier (index 0
+ * unused).
+ *
+ * The curve is roughly the tier's own weight rather than a flat number: a
+ * T2 is worth a couple of daggers and a T5 is worth a small wave, which is
+ * about what those bodies cost to kill in the first place. Twelve at the
+ * top is the number this was set to — enough that a reign dying inside the
+ * kill zone visibly refills it, and few enough that a board with any
+ * splash at all is not simply overrun by its own success.
+ *
+ * TIER 1 BREAKS INTO ONE, which is what makes the card's "every enemy"
+ * literally true rather than nearly true. It is the cheapest row here and
+ * the one the player meets most: a killed dagger leaves a dagger, so
+ * clearing the T1 stream costs twice the shots it used to and no more —
+ * and it costs it ONCE, because the body it left is brood and brood does
+ * not brood (see above). A player watching the swarm should never have to
+ * work out which of the things dying in front of them the rule applies to.
+ */
+export const MITOSIS_BROOD: readonly number[] = [0, 1, 2, 4, 7, 12];
+
+/**
+ * How far from the body a brood member may land, in px (a little under two
+ * cells of 20). Wide enough that twelve of them are not one stack, tight
+ * enough that they are unmistakably what the dead thing left behind.
+ */
+export const MITOSIS_SPREAD = 36;
+
+/**
+ * Placement attempts per brood member before it is given up on. A body
+ * that dies against rock, on a shoreline or in a crush of its own kin
+ * leaves a smaller brood than the table promises, and that is the honest
+ * outcome — the alternative is stacking units inside walls.
+ */
+export const MITOSIS_TRIES = 6;
+
+// The table is authored by hand, so the table checks itself — the same
+// bargain the catalog above makes. Termination is NOT what is checked
+// here: that is Sim.ubrood's job and no row below can break it. What a bad
+// row CAN do is quieter and worth catching anyway — a fractional or
+// negative count is a spawn loop that runs a nonsense number of times, and
+// a table that does not reach tier 5 is a rule that silently switches
+// itself off on exactly the deaths it was written for.
+if (MITOSIS_BROOD.length <= 5)
+  throw new Error(
+    `Mitosis's brood table stops at tier ${MITOSIS_BROOD.length - 1}; unit tiers run to 5`,
+  );
+for (let t = 1; t < MITOSIS_BROOD.length; t++)
+  if (!Number.isInteger(MITOSIS_BROOD[t]) || MITOSIS_BROOD[t] < 0)
+    throw new Error(`Mitosis has tier ${t} leaving ${MITOSIS_BROOD[t]} bodies — that is not a count`);
 
 // ---------- SHIELD TOWERS ----------------------------------------------
 //

@@ -1621,7 +1621,7 @@ export const WORLDS: LevelSpec[] = [
     // then rolls whatever else it can afford ON TOP of that.
     //
     // AND THE SHORELINE IS TAXED. Hydrophobic is Maelstrom's own rule and
-    // no other map's (MutationDef.exclusive): a turret built within reach
+    // no other map's (MutationDef.special): a turret built within reach
     // of water attacks at less than a third of its rate, so the bank that
     // overlooks the crossings — the ground a naval front makes you want —
     // is the ground that costs most of your damage to hold. About a third
@@ -1673,7 +1673,27 @@ export const WORLDS: LevelSpec[] = [
     map: "quagmire",
     // the water is not a river here, it is what the map is made of, and
     // every lane is crossed by something that ignores it
-    badge: "expert",
+    badge: "advanced",
+    // AND THE CROSSINGS ARM THE SWARM. Amphibious is Quagmire's own rule
+    // and no other map's (MutationDef.special): a walker that steps into
+    // water comes out faster, tougher and healing, five times over if it
+    // fords five times. It belongs to this map because this map was drawn
+    // with no dry route, so the squares the player most wants to hold are
+    // the squares that upgrade whatever walks through them.
+    //
+    // WHAT A WALK ACTUALLY BANKS, measured over the three ground zones by
+    // sampling shortest routes to the exits (median, and the worst seen):
+    //
+    //   east trunk     1 crossing   (2 at worst)
+    //   north gate     2            (5)
+    //   south gate     3            (7, so the cap binds)
+    //
+    // Every lane pays at least one, which is the property that matters —
+    // and the south is where a body can arrive fully stacked. If those
+    // numbers ever flatten out the fix is the MAP (a wider ford, another
+    // crossing), not the rule: the rule is only ever worth what the route
+    // makes it worth, and on a map with one river it would be a footnote.
+    intrinsicMutation: ["amphibious"],
     transforms: [
       { from: ["ground"], to: [{ family: "naval" }] },
       { from: ["air"], to: [{ family: "navalSupport" }] },
@@ -1687,16 +1707,16 @@ export const WORLDS: LevelSpec[] = [
 // build or dev page loads this module — see validateWaveTransforms
 for (const w of WORLDS) validateWaveTransforms(w.transforms ?? [], `world "${w.id}"`);
 
-// An EXCLUSIVE mutator is out of every roll (MutationDef.exclusive), so a
+// A SPECIAL mutator is out of every roll (MutationDef.special), so a
 // world naming it in `intrinsicMutation` is the ONLY way one is ever
 // played. One that no world names is therefore dead code that still shows
 // up on the codex shelf, promising the player a rule they cannot meet —
 // caught here, at module load, rather than by nobody.
 for (const m of MUTATIONS) {
-  if (!m.exclusive) continue;
+  if (!m.special) continue;
   if (!WORLDS.some((w) => (w.intrinsicMutation ?? []).includes(m.id)))
     throw new Error(
-      `exclusive mutator "${m.id}" is on no world's intrinsicMutation — nothing can ever play it`,
+      `special mutator "${m.id}" is on no world's intrinsicMutation — nothing can ever play it`,
     );
 }
 

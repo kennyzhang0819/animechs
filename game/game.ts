@@ -1227,7 +1227,7 @@ export class Game {
    * as well, and lighting those would be telling the player about ground
    * they can never build on in the first place.
    *
-   * Periwinkle, the same blue the codex draws an exclusive rule in
+   * Periwinkle, the same blue the codex draws a special rule in
    * (mutationFace.tsx) — a player who has read the card should recognise
    * the colour on the ground without being told twice.
    */
@@ -1382,7 +1382,7 @@ export class Game {
       const ok = this.sim.canPlace(this.hoverGx, this.hoverGy, this.buildKind);
       const x = this.hoverGx * CELL, y = this.hoverGy * CELL;
       // a legal spot that the Hydrophobic rule TAXES is drawn in the
-      // exclusive rule's own blue rather than the ordinary amber: the
+      // special rule's own blue rather than the ordinary amber: the
       // placement is allowed, so it must not read as refused, but most of
       // a turret's damage is worth a colour of its own
       const soaked = ok && this.sim.isWaterlogged(this.hoverGx, this.hoverGy, this.buildKind);

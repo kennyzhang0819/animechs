@@ -1,6 +1,7 @@
 import {
   BASE,
   LAYER_BIT,
+  MOVE_LAYERS,
   NCELLS,
   type MoveLayer,
   type ZoneKind,
@@ -91,8 +92,16 @@ import {
   SHIELD_TOWER_SIZE,
   SHIELD_TOWER_SPAWN_PERIOD,
   shieldTowerWaveScale,
+  AMPHIBIOUS_ARMOR,
+  AMPHIBIOUS_HP,
+  AMPHIBIOUS_MAX_STACKS,
+  AMPHIBIOUS_REGEN,
+  AMPHIBIOUS_SPEED,
   HYDROPHOBIC_RANGE,
   HYDROPHOBIC_RATE,
+  MITOSIS_BROOD,
+  MITOSIS_SPREAD,
+  MITOSIS_TRIES,
   SPEEDY_SPEED,
   VOLATILE_DMG,
   VOLATILE_RADIUS,
@@ -327,6 +336,40 @@ const KIND_ENERGY = UNIT_KINDS.map((k) => UNIT_STATS[k].energyField ?? null);
 const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
 const KIND_BOSS: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].boss);
 const BOSS_KINDS = KIND_BOSS.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
+/** the pad list a brood spawn is handed — it picks its own spot, so there
+ *  are no doors to draw from and nothing to allocate per body */
+const EMPTY_PADS: readonly number[] = [];
+/**
+ * MITOSIS (mutation.ts): the tier-1 kinds a death may break into, grouped
+ * by the movement layer they travel on — ground gets dagger, crawler and
+ * nova, air gets flare, water gets risso and retusa.
+ *
+ * THE LAYER IS THE WHOLE FILTER and it is not a convenience. A brood is
+ * dropped where its parent fell, so a kind that cannot stand there is a
+ * kind that spawns inside rock or aground on a shoreline — the same test
+ * spawnUnit runs at the doors, failed on every attempt. Picking from the
+ * parent's own layer means the brood always has somewhere to walk.
+ *
+ * Bosses are out of the roster (never of the brood — a boss is an
+ * authored event, not something a mace leaves behind), which today
+ * removes nothing: the one boss kind is T5.
+ */
+const MITOSIS_KINDS: Record<MoveLayer, readonly number[]> = (() => {
+  const out = { ground: [], air: [], water: [] } as Record<MoveLayer, number[]>;
+  UNIT_KINDS.forEach((k, i) => {
+    const s = UNIT_STATS[k];
+    if (s.tier !== 1 || s.boss) return;
+    out[s.flying ? "air" : s.naval ? "water" : "ground"].push(i);
+  });
+  // A LAYER WITH NO T1 KIND WOULD SILENTLY SWALLOW THE RULE on everything
+  // that travels it — a whole movement layer immune to a mutator the card
+  // says is universal — so the roster checks itself the way the mutator
+  // catalog does, at load rather than on the death that happens to need it
+  for (const layer of MOVE_LAYERS)
+    if (out[layer].length === 0)
+      throw new Error(`no tier-1 unit kind travels on the ${layer} layer — Mitosis cannot brood there`);
+  return out;
+})();
 /** kind ids that carry a force field — the absorb pass is skipped outright
  * when none of them is on the field, so the scan costs nothing in a wave
  * without one */
@@ -605,6 +648,49 @@ export class Sim {
   readonly ueaten = new Uint8Array(MAX_UNITS);
   private readonly uhungerT = new Float32Array(MAX_UNITS);
   /**
+   * THE AMPHIBIOUS RULE (mutation.ts), in two bytes a unit.
+   *
+   * `uwade` is how many times this body has stepped into water, capped at
+   * AMPHIBIOUS_MAX_STACKS — the whole of the bonus it is carrying, since
+   * the gains themselves are already baked into uhpmax, uspd and uarmor.
+   * The renderer reads it to swell a waded body, exactly as it reads
+   * ueaten for a fed one.
+   *
+   * `uwet01` is only whether the unit was standing in water on the LAST
+   * tick, which is what turns a position into an ENTRY: a stack is taken
+   * on the 0 -> 1 crossing and never while it stands there. Named apart
+   * from `uwet` on purpose — that one is the liquid turrets' status, a
+   * countdown in seconds, and the two are unrelated.
+   */
+  readonly uwade = new Uint8Array(MAX_UNITS);
+  private readonly uwet01 = new Uint8Array(MAX_UNITS);
+  /**
+   * MITOSIS (mutation.ts): 1 on a body this rule PUT on the field, 0 on
+   * one that walked in through a door.
+   *
+   * IT IS THE TERMINATION GUARANTEE, and it is a property of the body
+   * rather than arithmetic on the tier table. A brood that could brood
+   * again is a chain with no upper bound — one dagger, one dagger, forever
+   * — and a wave that can never be finished is not a harder wave. Saying
+   * it here says it once and says it for good: whatever the table is
+   * edited to, whatever tiers are added, whatever a dashboard bends, the
+   * rule is exactly ONE generation deep and the swarm cannot outrun the
+   * script that sent it.
+   *
+   * IT USED TO BE A ZERO IN THE TABLE — tier 1 bred nothing, so the chain
+   * ended because everything it created was tier 1. That worked and it was
+   * the wrong place to put it: it made "does this terminate?" a question
+   * about a balance dial, so the day someone gave T1 a brood the game
+   * would hang rather than play differently. With the flag, the table is
+   * free to be a pure balance dial again — which is why tier 1 has a brood
+   * of its own now, and why the card can honestly say EVERY enemy.
+   *
+   * A byte a unit rather than a bit in ufly's neighbourhood for the same
+   * reason the three hungry arrays are three arrays: killUnit reads it once
+   * per death and nothing else reads it at all.
+   */
+  private readonly ubrood = new Uint8Array(MAX_UNITS);
+  /**
    * a never-reused identity, Mindustry's entity id. Indices are recycled by
    * swap-remove the instant anything dies, so anything that must remember a
    * particular unit across ticks — a piercing bullet's hit list — has to
@@ -829,6 +915,12 @@ export class Sim {
   /** is the Volatile mutator in force this run? (see reset) */
   private volatileOn = false;
 
+  /** is the Amphibious rule in force this run? (see reset) */
+  private amphibiousOn = false;
+  /** is the Mitosis mutator in force this run? (see reset, and splitUnit
+   *  for what a death then leaves behind) */
+  private mitosisOn = false;
+
   /**
    * WHICH CELLS THE HYDROPHOBIC RULE TAXES — 1 where a turret's reload
    * runs at HYDROPHOBIC_RATE, 0 everywhere else. Null on the ordinary run
@@ -839,6 +931,19 @@ export class Sim {
    * (buildWaterlogged). A tower reads it exactly once, when it is placed.
    */
   private waterlogged: Uint8Array | null = null;
+
+  /**
+   * WHICH CELLS COUNT AS WATER TO A WALKER, for the Amphibious rule — 1 on
+   * any water floor, shallow or deep. Null on a run the rule is not in
+   * force for, which is also the cheap test.
+   *
+   * Deep water is in the mask even though no walker can ever stand on it:
+   * leaving it out would be a second, subtly different definition of
+   * "water" from the one the map, the renderer and Hydrophobic all use,
+   * and the cells it would drop are ones the ground layer cannot reach
+   * anyway (they are blocked). One meaning of water, in one place.
+   */
+  private wadeable: Uint8Array | null = null;
 
   // --- effects, in struct-of-arrays like the units ---
   // These used to be an array of small objects, allocated on every push —
@@ -976,7 +1081,9 @@ export class Sim {
     this.armoredOn = hasMutation(inForce, "armored");
     this.shieldScale = hasMutation(inForce, "overshields") ? OVERSHIELD_SCALE : 1;
     this.volatileOn = hasMutation(inForce, "volatile");
+    this.mitosisOn = hasMutation(inForce, "mitosis");
     this.shieldTowersOn = hasMutation(inForce, "shieldTowers");
+    this.amphibiousOn = hasMutation(inForce, "amphibious");
     this.shieldTowers.length = 0;
     this.shieldTowerT = 0;
     this.domesUp = false;
@@ -1002,6 +1109,8 @@ export class Sim {
     // the Hydrophobic mask needs the terrain, so it is built here rather
     // than up with the other rules — and only where the rule is in force
     this.waterlogged = hasMutation(inForce, "hydrophobic") ? this.buildWaterlogged() : null;
+    // ...and the walkers' side of the same question (the Amphibious rule)
+    this.wadeable = this.amphibiousOn ? this.buildWadeable() : null;
     this.goalX = (this.terrain.base.x + this.terrain.base.size / 2) * CELL;
     this.goalY = (this.terrain.base.y + this.terrain.base.size / 2) * CELL;
     // THE EXITS EACH LAYER IS AIMING AT, resolved once here so that no
@@ -1494,6 +1603,10 @@ export class Sim {
     // swallowed as a corpse — and so a meal's health is on the eater before
     // anything shoots at it
     this.feedHungry(dt);
+    // the waders gain AFTER the status pass for the same reason: a body
+    // that burned to death this tick is already gone, and a stack taken
+    // this tick is on the unit before anything shoots at it
+    this.updateAmphibious(dt);
     // ShieldComp: shieldAlpha fades out over 15 ticks once nothing refreshes it
     for (let i = 0; i < this.n; i++)
       if (this.ushieldAlpha[i] > 0) this.ushieldAlpha[i] = Math.max(0, this.ushieldAlpha[i] - dt * (60 / 15));
@@ -1753,6 +1866,76 @@ export class Sim {
     return out;
   }
 
+  /** every water cell, shallow or deep — the Amphibious rule's ground */
+  private buildWadeable(): Uint8Array {
+    const { floor } = this.terrain;
+    const out = new Uint8Array(COLS * ROWS);
+    for (let i = 0; i < out.length; i++) if (isWaterFloor(floor[i])) out[i] = 1;
+    return out;
+  }
+
+  /** is this world point standing in water? 0/1 rather than a boolean so it
+   *  drops straight into the Uint8Array that remembers it */
+  private inWater(x: number, y: number): 0 | 1 {
+    const mask = this.wadeable;
+    if (!mask) return 0;
+    const gx = (x / CELL) | 0;
+    const gy = (y / CELL) | 0;
+    if (gx < 0 || gy < 0 || gx >= COLS || gy >= ROWS) return 0;
+    return mask[gy * COLS + gx] ? 1 : 0;
+  }
+
+  /**
+   * THE AMPHIBIOUS RULE (mutation.ts): walkers come out of water better
+   * than they went in.
+   *
+   * Two jobs in one walk over the ground units. The first is the ENTRY
+   * test — a body that was dry last tick and is wet now takes a stack, up
+   * to AMPHIBIOUS_MAX_STACKS, and the stack's worth of health, speed and
+   * armour lands on it there and then. The second is the healing every
+   * stacked body carries afterwards, wet or dry: the water changed what it
+   * IS, so the mending does not stop at the bank.
+   *
+   * THE PERCENTAGES COME OFF WHAT IT SPAWNED WITH, recomputed here from
+   * the kind and the tier rather than read off the unit's current pool —
+   * see the note in mutation.ts on why compounding is the thing to avoid.
+   * It is the same pair of expressions spawnUnit uses, and it runs at most
+   * five times in a body's life, so recomputing costs less than the array
+   * it would take to remember.
+   *
+   * FLYERS AND HULLS ARE NOT ASKED. A hull is never out of the water, so
+   * it would cap out on its first tick; a flyer is never in it. The rule
+   * is about the walk.
+   */
+  private updateAmphibious(dt: number): void {
+    if (!this.amphibiousOn) return;
+    const { upx, upy, uhp, uhpmax, uspd, uarmor, uwade, uwet01, ufly, unav, ukind } = this;
+    const level = this.level.enemyLevel ?? 0;
+    for (let i = 0; i < this.n; i++) {
+      if (ufly[i] || unav[i]) continue;
+      const wet = this.inWater(upx[i], upy[i]);
+      // THE CROSSING, not the standing: only a dry -> wet step pays
+      if (wet && !uwet01[i] && uwade[i] < AMPHIBIOUS_MAX_STACKS) {
+        const kind = UNIT_KINDS[ukind[i]];
+        const stats = UNIT_STATS[kind];
+        const base = unitHpAtLevel(kind, level);
+        uwade[i]++;
+        // health goes on BOTH pools, so a stack is a heal and a bigger tank
+        const gain = base * AMPHIBIOUS_HP;
+        uhpmax[i] += gain;
+        uhp[i] += gain;
+        uspd[i] += stats.speed * (this.speedyOn ? SPEEDY_SPEED : 1) * AMPHIBIOUS_SPEED;
+        uarmor[i] += AMPHIBIOUS_ARMOR;
+        this.pushFx(upx[i], upy[i], 0.4, FxKind.Heal);
+      }
+      uwet01[i] = wet;
+      if (uwade[i] > 0 && uhp[i] < uhpmax[i]) {
+        const base = unitHpAtLevel(UNIT_KINDS[ukind[i]], level);
+        uhp[i] = Math.min(uhp[i] + base * AMPHIBIOUS_REGEN * uwade[i] * dt, uhpmax[i]);
+      }
+    }
+  }
+
   /** is the Hydrophobic rule in force? — what the build ghost asks before
    *  it bothers to test any ground */
   get hydrophobicOn(): boolean {
@@ -1950,24 +2133,52 @@ export class Sim {
     return this.field.spawnPts;
   }
 
-  private spawnUnit(kind: UnitKind): boolean {
+  /**
+   * Put one unit on the board, at a door or — under MITOSIS (mutation.ts)
+   * — around a point on the field.
+   *
+   * `brood` is the ONE thing that changes, and it changes three lines:
+   * where the candidate spots come from, how many are tried, and whether
+   * the arrival is invincible. Everything under those lines is the same
+   * unit-building code the wave script runs, ON PURPOSE — a brood body
+   * carries the level's health curve, the run's Armored plating, the run's
+   * Speedy doubling and, above all, its own roll of THE HUNGRY APPETITE.
+   * One body in twenty walks in hungry whatever put it on the field
+   * (HUNGRY_CHANCE): the rule is about the swarm, not about the door it
+   * came through, so a rule that spawns bodies feeds that one too, and a
+   * second construction path here is how those two rules would quietly
+   * stop composing.
+   */
+  private spawnUnit(kind: UnitKind, brood?: { x: number; y: number }): boolean {
     const stats = UNIT_STATS[kind];
     const fly = !!stats.flying;
     const layer = this.layerOf(kind);
-    const pads = this.spawnPads(layer, !!stats.boss);
-    if (this.n >= MAX_UNITS || pads.length === 0) return false;
+    const pads = brood ? EMPTY_PADS : this.spawnPads(layer, !!stats.boss);
+    if (this.n >= MAX_UNITS || (!brood && pads.length === 0)) return false;
     const r = stats.radius;
     // the drop-zone test is the same broad-phase query the physics pass
     // runs, so it needs the same reach: a ring of 1 would let two antumbras
     // land inside one another and start the wave already shoving
     const span = KIND_SPAN[UNIT_ID[kind]];
-    for (let a = 0; a < 8; a++) {
-      const ci = pads[(Math.random() * pads.length) | 0];
-      // jitter within the pad, but keep the hitbox inside the cell when it
-      // fits (a mace is wider than a tile — it spawns pad-centered)
-      const j = Math.max(0, CELL / 2 - r - 1);
-      const x = ((ci % COLS) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
-      const y = (((ci / COLS) | 0) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
+    const tries = brood ? MITOSIS_TRIES : 8;
+    for (let a = 0; a < tries; a++) {
+      let x: number, y: number;
+      if (brood) {
+        // a ring around the body, clamped inside the world — the wall and
+        // crowding tests below are the same ones a door spot has to pass,
+        // so a brood never lands in rock or aground on a shoreline
+        const ang = Math.random() * Math.PI * 2;
+        const d = Math.sqrt(Math.random()) * MITOSIS_SPREAD;
+        x = clamp(brood.x + Math.cos(ang) * d, r, W - r);
+        y = clamp(brood.y + Math.sin(ang) * d, r, H - r);
+      } else {
+        const ci = pads[(Math.random() * pads.length) | 0];
+        // jitter within the pad, but keep the hitbox inside the cell when it
+        // fits (a mace is wider than a tile — it spawns pad-centered)
+        const j = Math.max(0, CELL / 2 - r - 1);
+        x = ((ci % COLS) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
+        y = (((ci / COLS) | 0) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
+      }
       // a big hitbox can overhang the pad into ragged rock beside it — and
       // for a hull, into the SHORE: the water field's mask is the mirror
       // one, so the same test asks "is any of this boat aground?"
@@ -2021,10 +2232,23 @@ export class Sim {
       this.uability[i] = 0;
       this.upullx[i] = 0;
       this.upully[i] = 0;
-      this.uspawn[i] = SPAWN_INVINCIBLE;
+      // THE ARRIVAL CLOCK IS A DOOR RULE, so a brood does not get one: the
+      // invincibility is there to stop a drop zone being camped, and a body
+      // that broke out of another body in the middle of the kill zone is
+      // already past every door on the map. Twelve untouchable daggers a
+      // reign would be a gift rather than a mutator — a brood is killable
+      // the instant it lands, by the same splash that killed its parent
+      this.uspawn[i] = brood ? 0 : SPAWN_INVINCIBLE;
       this.uburn[i] = 0;
       this.uwet[i] = 0;
       this.uwetSlow[i] = 1;
+      // AMPHIBIOUS (mutation.ts): every body walks in dry and unstacked,
+      // whatever ground it happens to have been dropped onto — a drop zone
+      // is not a crossing, and crediting one would hand the bonus out for
+      // free to whichever zones a map happens to have painted on wet ground
+      this.uwade[i] = 0;
+      this.uwet01[i] =
+        this.amphibiousOn && layer === "ground" ? this.inWater(x, y) : 0;
       // THE HUNGRY ROLL (the Hungry mutator) — the only place the status is
       // ever applied. One body in twenty walks in with an appetite, whatever
       // kind it is: the mutation is a rule about the SWARM, so exempting
@@ -2033,6 +2257,9 @@ export class Sim {
       // first meal is a second after it lands rather than the instant it
       // does
       this.uhungry[i] = this.hungryOn && Math.random() < HUNGRY_CHANCE ? 1 : 0;
+      // ...and the one thing a brood body carries that a door body does
+      // not: the mark that says it may not brood in its turn (see ubrood)
+      this.ubrood[i] = brood ? 1 : 0;
       this.ueaten[i] = 0;
       this.uhungerT[i] = HUNGRY_PERIOD;
       this.uid[i] = this.nextId++;
@@ -2375,14 +2602,55 @@ export class Sim {
 
   /** a tower kill: death puff, removal, and the per-kind drop ledger */
   private killUnit(i: number): void {
-    this.killsByKind[this.ukind[i]]++;
-    this.pushDeathFx(this.upx[i], this.upy[i]);
+    const kind = this.ukind[i];
+    const x = this.upx[i], y = this.upy[i];
+    // read before the row is recycled under us: a body Mitosis put here
+    // does not brood in its turn (see ubrood)
+    const wasBrood = this.ubrood[i];
+    this.killsByKind[kind]++;
+    this.pushDeathFx(x, y);
     // VOLATILE (mutation.ts): the body's parting blast, before the arrays
     // reshuffle under it
-    if (this.volatileOn)
-      this.volatileBlast(this.upx[i], this.upy[i], this.urad[i], this.ukind[i]);
+    if (this.volatileOn) this.volatileBlast(x, y, this.urad[i], kind);
     this.removeUnit(i);
     this.kills++;
+    // MITOSIS (mutation.ts): what the body breaks into, AFTER the removal
+    // rather than before it. Spawning first would append the brood above
+    // the dead row and leave removeUnit swapping a live newborn down into
+    // it — legal, but it would put brood indices inside the pending-removal
+    // lists every caller of killUnit is halfway through. Removing first
+    // means the brood only ever lands on slots those lists have already
+    // finished with, and a stale index there meets a body with health,
+    // which every one of them re-tests for
+    if (this.mitosisOn && !wasBrood) this.splitUnit(x, y, kind);
+  }
+
+  /**
+   * MITOSIS (mutation.ts): the brood one dead body leaves — MITOSIS_BROOD
+   * tier-1 units for its tier, each a random kind off its own movement
+   * layer, scattered within MITOSIS_SPREAD of where it fell.
+   *
+   * IT NEVER RUNS TWICE ON THE SAME LINEAGE. killUnit only calls this for
+   * a body that is not itself brood (ubrood), so the rule is exactly ONE
+   * generation deep however the table is tuned — the guarantee is a
+   * property of the body rather than arithmetic on MITOSIS_BROOD, which
+   * leaves that table free to be nothing but a balance dial.
+   *
+   * A BROOD MEMBER THAT FINDS NOWHERE TO STAND IS SIMPLY NOT BORN. A body
+   * dying against rock, on a shoreline or in a crush of its own kin leaves
+   * fewer than the table promises — spawnUnit's own wall and crowding
+   * tests decide, exactly as they do at a door — and the alternative would
+   * be stacking units inside walls to hit a number nobody is counting.
+   */
+  private splitUnit(x: number, y: number, kind: number): void {
+    const tier = KIND_TIER[kind];
+    const want = tier < MITOSIS_BROOD.length ? MITOSIS_BROOD[tier] : 0;
+    if (want <= 0) return;
+    // the parent's own layer, so the brood can walk where it landed
+    const s = UNIT_STATS[UNIT_KINDS[kind]];
+    const pool = MITOSIS_KINDS[s.flying ? "air" : s.naval ? "water" : "ground"];
+    for (let b = 0; b < want; b++)
+      this.spawnUnit(UNIT_KINDS[pool[(Math.random() * pool.length) | 0]], { x, y });
   }
 
   /**
@@ -2454,10 +2722,13 @@ export class Sim {
     this.uhungry[i] = this.uhungry[n];
     this.ueaten[i] = this.ueaten[n];
     this.uhungerT[i] = this.uhungerT[n];
+    this.ubrood[i] = this.ubrood[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
     this.ufly[i] = this.ufly[n];
     this.unav[i] = this.unav[n];
+    this.uwade[i] = this.uwade[n];
+    this.uwet01[i] = this.uwet01[n];
     this.uheavy[i] = this.uheavy[n];
     this.ulat[i] = this.ulat[n];
     this.uwalk[i] = this.uwalk[n];
@@ -3467,7 +3738,9 @@ export class Sim {
       const dx = t.x - x, dy = t.y - y;
       if (dx * dx + dy * dy < r * r) this.damageTower(t, dmg);
     }
-    this.pushFx(x, y, 0.35, FxKind.Shockwave);
+    // the ring is sized from the blast itself (see the Shockwave branch in
+    // the renderer), so the pop a player sees is the pop that hit them
+    this.pushFx(x, y, 0.35, FxKind.Shockwave, 0, reach);
   }
 
   // ---------- the player's focus mark ----------

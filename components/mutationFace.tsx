@@ -55,8 +55,16 @@ const MUT_FACE: Record<string, string> = {
   speedy: "M13.4 1.5 4 13.4h5.2L8 22.5 19.4 10h-5.6z",
   /** an open mouth mid-bite — Hungry eats the bodies */
   hungry: "M12 12 22.5 6.2A11.5 11.5 0 1 0 22.5 17.8z",
+  /** a droplet with a rising chevron inside it — Amphibious is what comes
+   *  UP out of the water, stronger than it went in */
+  amphibious:
+    "M12 1.6c4.3 5 7.3 8.9 7.3 12.4a7.3 7.3 0 0 1-14.6 0c0-3.5 3-7.4 7.3-12.4zM12 8.4l4.4 5.1h-2.6v4.4h-3.6v-4.4H7.6z",
   /** a droplet — Hydrophobic is the water itself, standing too close */
   hydrophobic: "M12 1.6c4.3 5 7.3 8.9 7.3 12.4a7.3 7.3 0 0 1-14.6 0c0-3.5 3-7.4 7.3-12.4z",
+  /** one body and the two it came apart into — Mitosis is a death that
+   *  leaves more of them standing than it took away */
+  mitosis:
+    "M2 12a6 6 0 1 0 12 0a6 6 0 1 0-12 0zM15.5 6.5a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0zM15.5 17.5a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0z",
   /** a burst — Volatile is what happens when one of them dies */
   volatile: "M12.0 1.0 13.8 7.6 19.8 4.2 16.4 10.2 23.0 12.0 16.4 13.8 19.8 19.8 13.8 16.4 12.0 23.0 10.2 16.4 4.2 19.8 7.6 13.8 1.0 12.0 7.6 10.2 4.2 4.2 10.2 7.6z",
 };
@@ -100,13 +108,13 @@ const BANDS: readonly { label: string; color: string; max: number }[] = [
 ];
 
 /**
- * THE FOURTH BAND, OFF THE SCALE: an EXCLUSIVE rule (MutationDef.exclusive)
+ * THE FOURTH BAND, OFF THE SCALE: an SPECIAL rule (MutationDef.special)
  * — one that belongs to a single map and is never rolled anywhere.
  *
  * IT IS NOT A WEIGHT, WHICH IS WHY IT IS NOT IN THE LIST ABOVE. The three
  * bands answer "how bad is this", read off a cost the roller actually
- * spends. An exclusive rule is never rolled and never charged, so its cost
- * is a label rather than a price (see MutationDef.exclusive) and colouring
+ * spends. A special rule is never rolled and never charged, so its cost
+ * is a label rather than a price (see MutationDef.special) and colouring
  * it amber would tell the player it competes for a slot in a roll it can
  * never appear in. The blue says the true thing instead: this one is not
  * in the draw — it is where you are standing.
@@ -115,7 +123,7 @@ const BANDS: readonly { label: string; color: string; max: number }[] = [
  * It reads as a different KIND of card at a glance, and it is far enough
  * from the codex tab's pink (MUT_LIT) not to be mistaken for selection.
  */
-const EXCLUSIVE_BAND = { label: "Exclusive", color: "#8AA2FF" } as const;
+const SPECIAL_BAND = { label: "Special", color: "#8AA2FF" } as const;
 
 if (BANDS[BANDS.length - 1].max < MUT_COST_MAX)
   throw new Error(
@@ -128,10 +136,10 @@ export const bandOf = (cost: number): { label: string; color: string } =>
 
 /**
  * The band a RULE wears — the only form the three screens should use.
- * Exclusive first, weight after, because "not in the draw" outranks "how
+ * Special first, weight after, because "not in the draw" outranks "how
  * dear" on a card the draw can never produce. A null def (an id from a
  * save this build does not know) falls through to the lightest band, the
  * same way an undrawn rule falls through to the codex chevrons.
  */
 export const bandFor = (def: MutationDef | null): { label: string; color: string } =>
-  def?.exclusive ? EXCLUSIVE_BAND : bandOf(def ? mutationCostOf(def.id) : 0);
+  def?.special ? SPECIAL_BAND : bandOf(def ? mutationCostOf(def.id) : 0);

@@ -354,12 +354,12 @@ export default function BalanceView() {
           <span className="text-[#FF6B6B]">5–6 brutal</span>. A cost is about how much of the
           player&apos;s game the rule takes away, not how much health it adds. Raising one
           prices it out of the lower rungs; the catalog keeps its authored order either way,
-          so the codex does not reshuffle while you sweep. EXCLUSIVE rules are not listed:
+          so the codex does not reshuffle while you sweep. SPECIAL rules are not listed:
           they belong to one map, are never rolled and are never charged against a rung, so
           their cost buys nothing and there is nothing here to bend.
         </p>
         <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
-          {MUTATIONS.filter((m) => !m.exclusive).map((m) => {
+          {MUTATIONS.filter((m) => !m.special).map((m) => {
             const cost = mutationCostOf(m.id);
             const authoredCost = authoredMutationCost(m.id);
             const col = cost <= 2 ? "#7BE58A" : cost <= 4 ? "#FFB65C" : "#FF6B6B";

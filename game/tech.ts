@@ -62,14 +62,13 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * widens it by one. They hang off 4x because that is roughly when a save
  * owns more turrets than the bar holds.
  *
- * THE EXPANSION BRANCH hangs off home on the LEFT — the utilities' mirror.
- * `overdrive-projector` is all that is left of it: a paid-for promise, the
- * node exists and takes a point, the block itself ships later. It is a
- * one-point switch like the rest of the utilities — it is not a turret, so
- * it is not capacity. (`world-2` and `final-threat` used to sit here, one
- * opening the second world and one revealing the hidden top difficulty;
- * both went when maps stopped being bought and the ladder stopped having
- * a hidden top.)
+ * THE EXPANSION BRANCH that hung off home on the LEFT is gone. It held
+ * `overdrive-projector`, a paid-for promise whose block never shipped —
+ * a node that took a point and did nothing is a worse deal than no node,
+ * so it is out until the block exists. (`world-2` and `final-threat` used
+ * to sit there too, one opening the second world and one revealing the
+ * hidden top difficulty; both went when maps stopped being bought and the
+ * ladder stopped having a hidden top.)
  */
 export const UTILITY_KINDS = [
   "home",
@@ -79,7 +78,6 @@ export const UTILITY_KINDS = [
   "speed-8",
   "slot-7",
   "slot-8",
-  "overdrive-projector",
 ] as const;
 export type UtilityKind = (typeof UTILITY_KINDS)[number];
 
@@ -155,10 +153,6 @@ export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: s
   "slot-8": {
     name: "8th Slot",
     blurb: "The build bar tops out at eight loadout slots.",
-  },
-  "overdrive-projector": {
-    name: "Overdrive Projector",
-    blurb: "A projector that overdrives every turret in its radius. The block ships soon — owning the node reserves it.",
   },
 };
 
@@ -1210,19 +1204,6 @@ const MAIN_TREE: readonly TechNodeDef[] = [
     cap: LIVES_CAP,
     x: 2,
     y: -1,
-  },
-  {
-    // THE PROJECTOR'S RESERVATION. The block is not in the game yet — this
-    // node is its price and its place in the tree, bought ahead of the
-    // implementation so the phase sink exists now. When the block ships,
-    // this becomes a turret-style capacity node and the point already paid
-    // becomes its first placement.
-    id: "overdrive-projector",
-    price: { base: { "phase-fabric": 1000 }, growth: 1 },
-    requires: "home",
-    cap: 1,
-    x: 1,
-    y: 1,
   },
 ];
 

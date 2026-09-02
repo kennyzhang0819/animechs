@@ -411,12 +411,11 @@ function MutationChip({
             className="shrink-0 text-[11px] font-bold uppercase tracking-widest"
             style={{ color: band.color }}
           >
-            {/* a rule the world carries does not move when the stepper
-                does, and a player who steps the difficulty and sees it
-                stay put deserves to be told why rather than left to
-                notice. It says ALWAYS instead of its weight because it is
-                not being paid for out of the tier's points at all */}
-            {always ? "Always" : band.label}
+            {/* the weight, whether or not the world carries this rule.
+                A map-bound rule already reads as SPECIAL in its own blue,
+                so the corner is free to say the one thing every card says
+                in the same place: how heavy this is */}
+            {band.label}
           </span>
         </div>
         <div className="mt-1 text-[12.5px] leading-snug text-[#A6A6AF]">{def.blurb}</div>
@@ -1844,7 +1843,8 @@ export default function MechSwarm() {
               {/* the wave counter is what a run is read off, so the line
                   carries that and the rung and nothing else — the level
                   name is on the card that launched it. Minimized, this line
-                  IS the panel: not even the next-wave countdown survives */}
+                  IS the panel: neither the next-wave countdown nor the
+                  lives pool survives */}
               <div className="flex items-start justify-between gap-2">
                 <div className="text-[13px] uppercase tracking-widest text-[#EDEDEF] break-words">
                   <div>
@@ -1860,10 +1860,12 @@ export default function MechSwarm() {
                       A stock base has one point: the first leak is the loss,
                       and a "1 / 1" that never moves until the run is over is
                       a number nobody needs. A plated base is a pool the
-                      player is SPENDING, so it goes in the block that
-                      survives minimizing, beside the wave counter that is
-                      the other thing a run is read off. */}
-                  {hud.livesMax > 1 && (
+                      player is SPENDING — but minimizing is a request for
+                      the BOARD, and a panel that shrinks to two lines
+                      instead of one has not honoured it. So lives fold away
+                      with the rest and the minimized panel is the wave line
+                      alone. */}
+                  {hud.livesMax > 1 && !hudMin && (
                     <div className="text-[#71717C]">
                       Lives{" "}
                       <span
