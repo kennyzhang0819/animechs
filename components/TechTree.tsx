@@ -13,7 +13,7 @@ import {
   type Progress,
 } from "@/game/progress";
 import {
-  CORE_HP_BASE,
+  LIVES_BASE,
   isRefundable,
   isToggleable,
   isTowerNode,
@@ -74,14 +74,14 @@ function NodeIcon({ id, lit }: { id: TechKind; lit: boolean }) {
  * needs a noun.
  *
  * Every stacking node on this board is a turret and its points are
- * PLACEMENTS — except Core Plating, whose points are core health. A card
+ * PLACEMENTS — except Extra Lives, whose points are lives. A card
  * that told a player they had bought 99 placements of a thing that cannot
  * be placed would be the only outright lie on the screen.
  */
 const stackWord = (id: TechKind): string =>
-  id === "core-hp" ? "core health" : "placement capacity";
+  id === "lives" ? "lives" : "placement capacity";
 const stackNow = (id: TechKind, points: number): string =>
-  id === "core-hp" ? `${CORE_HP_BASE + points} core HP` : `Capacity ${points}`;
+  id === "lives" ? `${LIVES_BASE + points} lives` : `Capacity ${points}`;
 
 // board geometry: nodes are squares centered in grid cells; the SVG edge
 // layer underneath connects cell centers.

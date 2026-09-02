@@ -4,7 +4,7 @@ import {
   CELL,
   clamp,
   COLS,
-  CORE_SIZE,
+  BASE_SIZE,
   H,
   LAYER_BIT,
   MOVE_LAYERS,
@@ -56,7 +56,7 @@ interface Snapshot {
   spawns: SpawnCircle[];
   pines: Prop[];
   decor: Prop[];
-  core: { x: number; y: number; size: number };
+  base: { x: number; y: number; size: number };
 }
 
 const quarterTurn = (): number => ((Math.random() * 4) | 0) * (Math.PI / 2);
@@ -282,7 +282,7 @@ export class MapEditor {
     this.terrain.spawns = s.spawns;
     this.terrain.pines = s.pines;
     this.terrain.decor = s.decor;
-    this.terrain.core = s.core;
+    this.terrain.base = s.base;
     this.resyncSpawn();
     this.dirty = true;
     this.renderer.rebuildTerrain(this, this.layers);
@@ -307,7 +307,7 @@ export class MapEditor {
       spawns: this.terrain.spawns.map((c) => ({ ...c })),
       pines: this.terrain.pines.map((p) => ({ ...p })),
       decor: this.terrain.decor.map((p) => ({ ...p })),
-      core: { ...this.terrain.core },
+      base: { ...this.terrain.base },
     });
     if (this.undoStack.length > UNDO_CAP) this.undoStack.shift();
   }
@@ -562,37 +562,37 @@ export class MapEditor {
   }
 
   /**
-   * Move the core so its footprint is centred on the cursor. A map has one
-   * core, so this is a move rather than an add: the old position simply
-   * stops being the core. The ground it lands on is cleared — the footprint
-   * itself plus a one-cell apron — because a core sitting in rock is one
+   * Move the base so its footprint is centred on the cursor. A map has one
+   * base, so this is a move rather than an add: the old position simply
+   * stops being the base. The ground it lands on is cleared — the footprint
+   * itself plus a one-cell apron — because a base sitting in rock is one
    * the swarm can never reach.
    */
-  private placeCore(gx: number, gy: number): void {
+  private placeBase(gx: number, gy: number): void {
     const T = this.terrain;
-    const half = (CORE_SIZE / 2) | 0;
-    const x0 = clamp(gx - half, 0, COLS - CORE_SIZE);
-    const y0 = clamp(gy - half, 0, ROWS - CORE_SIZE);
-    for (let y = y0 - 1; y < y0 + CORE_SIZE + 1; y++)
-      for (let x = x0 - 1; x < x0 + CORE_SIZE + 1; x++) {
+    const half = (BASE_SIZE / 2) | 0;
+    const x0 = clamp(gx - half, 0, COLS - BASE_SIZE);
+    const y0 = clamp(gy - half, 0, ROWS - BASE_SIZE);
+    for (let y = y0 - 1; y < y0 + BASE_SIZE + 1; y++)
+      for (let x = x0 - 1; x < x0 + BASE_SIZE + 1; x++) {
         if (x < 0 || y < 0 || x >= COLS || y >= ROWS) continue;
         const i = y * COLS + x;
         T.blocked[i] = 0;
         T.wall[i] = 0;
         this.removePropsAt(x, y);
-        // the core always clears its own ground: a core you cannot reach is
+        // the base always clears its own ground: a base you cannot reach is
         // a broken map, so this one ignores layer visibility
       }
-    T.core = { x: x0, y: y0, size: CORE_SIZE };
-    // clearing the core's ground opens cells that a drop zone overhanging it
+    T.base = { x: x0, y: y0, size: BASE_SIZE };
+    // clearing the base's ground opens cells that a drop zone overhanging it
     // would now cover, so the entry set has to be re-derived
     this.resyncSpawn();
     this.dirty = true;
   }
 
   private paintAt(gx: number, gy: number): void {
-    if (this.set.kind === "core") {
-      this.placeCore(gx, gy);
+    if (this.set.kind === "base") {
+      this.placeBase(gx, gy);
       return;
     }
     if (this.set.kind === "path") {
@@ -945,11 +945,11 @@ export class MapEditor {
 
     // the path tool is round and much wider than a brush — preview it as
     // the circle it actually carves
-    if (this.set.kind === "core") {
-      const half = (CORE_SIZE / 2) | 0;
-      const x0 = clamp(this.hoverGx - half, 0, COLS - CORE_SIZE) * CELL;
-      const y0 = clamp(this.hoverGy - half, 0, ROWS - CORE_SIZE) * CELL;
-      const side = CORE_SIZE * CELL;
+    if (this.set.kind === "base") {
+      const half = (BASE_SIZE / 2) | 0;
+      const x0 = clamp(this.hoverGx - half, 0, COLS - BASE_SIZE) * CELL;
+      const y0 = clamp(this.hoverGy - half, 0, ROWS - BASE_SIZE) * CELL;
+      const side = BASE_SIZE * CELL;
       c.fillStyle = "rgba(255,211,127,0.18)";
       c.fillRect(x0, y0, side, side);
       c.strokeStyle = "rgba(255,211,127,0.9)";

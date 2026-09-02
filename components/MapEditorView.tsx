@@ -20,7 +20,7 @@ const LAYER_ROWS: ReadonlyArray<[keyof TerrainLayers, string]> = [
   ["props", "Props"],
   ["spawn", "Spawn pads"],
   ["goal", "Exits"],
-  ["core", "Core"],
+  ["base", "Base"],
 ];
 
 const POS_KEY = "mechswarm.editor.panels.v1";
@@ -276,7 +276,7 @@ export default function MapEditorView({
       ed.layers.props !== layers.props ||
       ed.layers.spawn !== layers.spawn ||
       ed.layers.goal !== layers.goal ||
-      ed.layers.core !== layers.core
+      ed.layers.base !== layers.base
     ) {
       ed.layers = { ...layers };
       // exits live in the per-frame overlay rather than the static batches,

@@ -15,7 +15,6 @@ import { loadBalanceDoc } from "@/game/balance";
 import { loadLayoutDoc } from "@/game/layout";
 import {
   loadLevelDocs,
-  UNIT_KINDS,
   WORLD,
   WORLDS,
   worldById,
@@ -23,7 +22,6 @@ import {
   MAP_BADGE,
   type LevelSpec,
   type TowerKind,
-  type UnitKind,
 } from "@/game/levels";
 import {
   audit,
@@ -85,8 +83,6 @@ import TechTree from "./TechTree";
 import { useTouchOnly } from "./Board";
 import { bandOf, MutationFace } from "./mutationFace";
 import MenuBackground from "./MenuBackground";
-
-const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
 
 /**
  * THE TOUCH BACK DOOR's three numbers (see `taps` in MechSwarm).
@@ -1783,6 +1779,11 @@ export default function MechSwarm() {
     );
   }
 
+  // how much is on the field right now, as one number — the HUD's enemy
+  // count. byKind is the per-kind census the sim keeps anyway; the panel
+  // only ever wants the total (see the count in the wave panel below).
+  const alive = hud ? hud.byKind.reduce((a, b) => a + b, 0) : 0;
+
   return (
     // touch-none hands every gesture over the field to Game: without it the
     // browser claims the drag for a scroll and the pinch for a page zoom, and
@@ -1855,31 +1856,31 @@ export default function MechSwarm() {
                     <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span> /{" "}
                     {hud.totalWaves}
                   </div>
-                  {/* THE CORE'S HEALTH, on its OWN line and only where
+                  {/* THE BASE'S HEALTH, on its OWN line and only where
                       there is any to report.
-                      A stock core has one point: the first leak is the loss,
+                      A stock base has one point: the first leak is the loss,
                       and a "1 / 1" that never moves until the run is over is
-                      a number nobody needs. A plated core is a pool the
+                      a number nobody needs. A plated base is a pool the
                       player is SPENDING, so it goes in the block that
                       survives minimizing, beside the wave counter that is
                       the other thing a run is read off. */}
-                  {hud.coreHpMax > 1 && (
+                  {hud.livesMax > 1 && (
                     <div className="text-[#71717C]">
-                      Core{" "}
+                      Lives{" "}
                       <span
                         className="font-bold"
                         style={{
                           color:
-                            hud.coreHp > hud.coreHpMax / 2
+                            hud.lives > hud.livesMax / 2
                               ? "#7BE58A"
-                              : hud.coreHp > 1
+                              : hud.lives > 1
                                 ? "#FFD37F"
                                 : "#FF5A5A",
                         }}
                       >
-                        {hud.coreHp}
+                        {hud.lives}
                       </span>{" "}
-                      / {hud.coreHpMax}
+                      / {hud.livesMax}
                     </div>
                   )}
                 </div>
@@ -1905,25 +1906,14 @@ export default function MechSwarm() {
                     {/* what the run has banked so far, one stack per currency —
                         empty until the first kill, so it doesn't sit at "0" */}
                     <CostRow cost={hud.earned} />
-                    {hud.remaining > 0 && (
-                      // icon + count only; wraps rather than running off the
-                      // viewport once a level fields more kinds than fit on a line
-                      <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 font-bold text-[#EDEDEF]">
-                        {UNIT_KINDS.map(
-                          (k, i) =>
-                            hud.byKind[i] > 0 && (
-                              <span key={k} className="flex items-center gap-1.5">
-                                {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
-                                <img
-                                  src={unitIcon(k)}
-                                  alt={k}
-                                  className="h-5 w-5 shrink-0 object-contain [image-rendering:pixelated]"
-                                />
-                                {hud.byKind[i]}
-                              </span>
-                            ),
-                        )}
-                      </span>
+                    {alive > 0 && (
+                      // ONE NUMBER, NOT A ROSTER. The per-kind icon row said
+                      // what was on the field down to the last crawler, which
+                      // is a census nobody reads mid-wave — and it grew a line
+                      // taller every time a level fielded another kind. What a
+                      // player wants off this corner is "how much is still
+                      // coming at me", so that is all it says now.
+                      <span className="font-bold text-[#EDEDEF]">{alive} enemies</span>
                     )}
                   </div>
                   {/* the countdown, conditional on there being a wave still
@@ -2204,7 +2194,7 @@ export default function MechSwarm() {
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="ui-zoom ms-pane-solid w-80 max-w-[calc(100vw-2rem)] border-[#6b2a2a] p-6 text-center">
               <div className="font-display text-xl font-bold uppercase tracking-widest text-[#e55454]">
-                Core destroyed
+                Out of lives
               </div>
               <div className="mt-4 space-y-1 text-base text-[#EDEDEF]">
                 <div>

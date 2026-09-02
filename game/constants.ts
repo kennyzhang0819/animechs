@@ -70,8 +70,8 @@ export const PAL = {
 
 /**
  * BasicBulletType.draw, 1:1. Mindustry lays a `-back` region and a shorter
- * core region on the SAME rect, each tinted with its own ammo colour, so
- * the longer back shows as a rim off the core's nose and tail. Both are
+ * inner region on the SAME rect, each tinted with its own ammo colour, so
+ * the longer back shows as a rim off the inner region's nose and tail. Both are
  * packed uncropped — pack.json's ignoredWhitespaceStrings keeps everything
  * under `effects/` at its full source rect — so `across` and `along` size
  * the whole region, transparent border and all, exactly as Draw.rect does.
@@ -134,7 +134,7 @@ export interface BulletStats {
   laser?: {
     length: number; // px
     pierceCap: number; // how many units one beam may hit
-    width: number; // px — the drawn beam's core width
+    width: number; // px — the drawn beam's inner width
   };
   // Mindustry LightningBulletType: no projectile either. The shot spawns a
   // bolt that WALKS — `length / 2` nodes, each damaging what it lands on
@@ -1348,12 +1348,12 @@ export const SHRAPNEL = {
   toColor: PAL.thoriumPink,
 } as const;
 
-// the DEFAULT core: 5x5 core-nucleus of walkable goal cells. A map document
-// may place its own core anywhere (MapData.core), so nothing but the
-// fallback should read BASE directly — the live position is terrain.core
+// the DEFAULT base: a 5x5 block of walkable goal cells. A map document
+// may place its own base anywhere (MapData.base), so nothing but the
+// fallback should read BASE directly — the live position is terrain.base
 export const BASE = { x: 120, y: 33, size: 5 };
-/** every core is this many cells square */
-export const CORE_SIZE = BASE.size;
+/** every base is this many cells square */
+export const BASE_SIZE = BASE.size;
 
 // damage tint per hp third — full hp renders the sprite as-is
 // (gray armor, orange cell, like Mindustry); hits darken and redden it

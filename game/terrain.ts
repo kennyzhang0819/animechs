@@ -117,7 +117,7 @@ export interface Terrain {
    * can land its air waves on the far side of a ridge its walkers have to
    * go round, which is the whole reason this stopped being one shared 0/1
    * layer. A layer with no exits anywhere falls back to the union of every
-   * exit, and a map with none at all falls back to its core (see
+   * exit, and a map with none at all falls back to its base (see
    * Sim.exitsFor), so nothing is ever left without a destination.
    *
    * Empty on a map authored before exits existed; documents written before
@@ -129,8 +129,8 @@ export interface Terrain {
   pines: Prop[]; // blocking tree cells, drawn as overhanging props
   decor: Prop[]; // non-blocking props: boulders, shrubs
   valleyY: Float32Array; // carved main-valley centerline per column
-  /** this map's core: top-left cell + edge length, in cells */
-  core: { x: number; y: number; size: number };
+  /** this map's base: top-left cell + edge length, in cells */
+  base: { x: number; y: number; size: number };
   /** how many columns of the grid this map actually uses — the horizontal
    * twin of `rows`. A document drawn on the old narrower board lands in the
    * left of the grid and the camera stops at its edge */
@@ -204,7 +204,7 @@ export function generateTerrain(seed: number): Terrain {
   // The crest line wanders, the width breathes along the ridge, and it
   // swells into broad roots where the spur meets the top/bottom ranges —
   // so the ridges read as mountains instead of uniform bars
-  const coreCy = BASE.y + BASE.size / 2;
+  const baseCy = BASE.y + BASE.size / 2;
   const spurXs: number[] = [];
   const spurs = 2 + (rng() < 0.6 ? 1 : 0);
   for (let s = 0; s < spurs; s++)
@@ -229,13 +229,13 @@ export function generateTerrain(seed: number): Terrain {
   // from the midline, cosine-interpolated — consecutive spur holes are
   // guaranteed on opposite sides, so the lane serpentines by construction
   const valleyY = new Float32Array(COLS);
-  const pts: Array<[number, number]> = [[0, clamp(coreCy + rng() * 30 - 15, 10, ROWS - 11)]];
+  const pts: Array<[number, number]> = [[0, clamp(baseCy + rng() * 30 - 15, 10, ROWS - 11)]];
   let side = rng() < 0.5 ? -1 : 1;
   for (const sx of spurXs) {
-    pts.push([sx, clamp(coreCy + side * (12 + rng() * 9), 9, ROWS - 10)]);
+    pts.push([sx, clamp(baseCy + side * (12 + rng() * 9), 9, ROWS - 10)]);
     side = -side;
   }
-  pts.push([COLS - 1, coreCy]);
+  pts.push([COLS - 1, baseCy]);
   let seg = 0;
   for (let x = 0; x < COLS; x++) {
     while (seg < pts.length - 2 && x > pts[seg + 1][0]) seg++;
@@ -339,7 +339,7 @@ export function generateTerrain(seed: number): Terrain {
   for (let n = 0; n < rocks; n++)
     rock(12 + rng() * (COLS - 30), 4 + rng() * (ROWS - 8), 0.9 + rng() * 1.6);
 
-  // guaranteed clearings: the spawn mouth on the left, the core on the right.
+  // guaranteed clearings: the spawn mouth on the left, the base on the right.
   // the mouth continues as a funnel that tapers into the carved lane, so
   // late-placed rocks can never pinch the swarm's way out of the strip
   for (let x = 0; x < 16; x++) {
@@ -432,8 +432,8 @@ export function generateTerrain(seed: number): Terrain {
   return {
     blocked, floor, wall, spawns, spawn, pines, decor, valleyY,
     // the procedural terrain has no authored exits, so it plays off its
-    // core exactly as it always has (see Terrain.goal)
+    // base exactly as it always has (see Terrain.goal)
     goal: new Uint8Array(NCELLS),
-    core: { ...BASE }, rows: ROWS, cols: COLS,
+    base: { ...BASE }, rows: ROWS, cols: COLS,
   };
 }

@@ -96,7 +96,7 @@ import {
   VOLATILE_RADIUS,
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap } from "./maps";
-import { CORE_HP_BASE, NO_UPGRADES, upgradedTower, type TechState } from "./tech";
+import { LIVES_BASE, NO_UPGRADES, upgradedTower, type TechState } from "./tech";
 import { isBuildableWall, isWaterFloor, waterWalkMask, type Terrain } from "./terrain";
 import {
   FxKind,
@@ -238,7 +238,7 @@ const CENTER_K = 25;
 // once they stopped fighting the field for position.
 //
 // All three are GROUND-only. Flyers ignore terrain and fly straight at the
-// core, so they never funnel on a corridor wall in the first place; leaving
+// base, so they never funnel on a corridor wall in the first place; leaving
 // them on the untouched Mindustry physics keeps a swarm reading as a swarm
 // rather than a wobbling cloud.
 //
@@ -512,7 +512,7 @@ export interface ShieldTower {
 export class Sim {
   readonly field = new FlowField();
   terrain!: Terrain; // assigned by reset() in the constructor
-  // the live core's centre in world px (terrain.core) — the goal-point
+  // the live base's centre in world px (terrain.base) — the goal-point
   // fallback on maps with no goal layer, and a fresh flyer's first heading
   private goalX = 0;
   private goalY = 0;
@@ -629,7 +629,7 @@ export class Sim {
    * prefers to walk. Wanders on a multi-second clock, so two units that
    * left the same pad a moment apart are soon aiming at different lanes and
    * the stream between them widens into a band. Unused by flyers, which
-   * steer straight at the core and are never nudged off it
+   * steer straight at the base and are never nudged off it
    */
   readonly ulat = new Float32Array(MAX_UNITS);
   /**
@@ -706,17 +706,17 @@ export class Sim {
   /** kills per unit kind this run, indexed like UNIT_KINDS — the drop payout */
   readonly killsByKind = new Int32Array(UNIT_KINDS.length);
   /**
-   * THE CORE'S HEALTH: every body that reaches it takes one point, and the
+   * THE BASE'S HEALTH: every body that reaches it takes one point, and the
    * run is won for as long as any are left.
    *
-   * IT COMES FROM THE SAVE (TechState.coreHp — the Core Plating node), so
+   * IT COMES FROM THE SAVE (TechState.lives — the Extra Lives node), so
    * a fresh campaign plays the game it has always played: one point, and
    * the first leak is the loss. A save that has bought plating gets a
-   * board it may lose bodies through. CORE_HP_BASE is the floor and the
+   * board it may lose bodies through. LIVES_BASE is the floor and the
    * editor's value, because a sandbox with no tech still has to be losable.
    */
-  coreHpMax = CORE_HP_BASE;
-  coreHp = this.coreHpMax;
+  livesMax = LIVES_BASE;
+  lives = this.livesMax;
   // which towers may be built and how many of each — null (the default, and
   // the map editor's mode) places no restrictions; the campaign sets it from
   // the save's tech tree before play (see Game.setTech)
@@ -901,7 +901,7 @@ export class Sim {
   private fldN = 0;
   private readonly flowTmp: Vec2 = { x: 0, y: 0 };
   // every goal cell's centre in world px, as flat x,y pairs — what a
-  // spawning flyer scans to pick its destination. One entry (the core's
+  // spawning flyer scans to pick its destination. One entry (the base's
   // centre) on a map with no goal layer, so the old behaviour is the
   // one-goal case of the new one rather than a separate path
   private goalPts = new Float32Array(2);
@@ -970,7 +970,7 @@ export class Sim {
     this.focusUid = -1;
     this.focusIdx = -1;
     this.focusShieldTower = -1;
-    this.coreHp = this.coreHpMax;
+    this.lives = this.livesMax;
     this.sealGx = -1;
     this.projs.length = 0;
     // drop the fx pool: the count is the pool, but the bolt-path refs must
@@ -986,8 +986,8 @@ export class Sim {
     const doc = (this.level.map ? loadMap(this.level.map) : null) ?? OFFICIAL_MAPS[0];
     if (!doc) throw new Error("official maps not loaded — await loadOfficialMaps() first");
     this.terrain = terrainFromMap(doc);
-    this.goalX = (this.terrain.core.x + this.terrain.core.size / 2) * CELL;
-    this.goalY = (this.terrain.core.y + this.terrain.core.size / 2) * CELL;
+    this.goalX = (this.terrain.base.x + this.terrain.base.size / 2) * CELL;
+    this.goalY = (this.terrain.base.y + this.terrain.base.size / 2) * CELL;
     // THE EXITS EACH LAYER IS AIMING AT, resolved once here so that no
     // field and no flyer has to know the fallback rules (see exitsFor)
     this.exitGround = this.exitsFor(LAYER_BIT.ground);
@@ -1027,21 +1027,21 @@ export class Sim {
     // a wave script stalls forever, which reads as a scheduler bug
     if (this.airPads.length === 0 && this.field.spawnPts.length === 0)
       throw new Error('map "' + doc.id + '" has no drop zones — paint some in the editor');
-    // a core sitting on rock is always an authoring slip (a map that moved
-    // its core without carving the basin, say) and it reads as "the waves
+    // a base sitting on rock is always an authoring slip (a map that moved
+    // its base without carving the basin, say) and it reads as "the waves
     // never finish" rather than as a broken map — so say it out loud
     // ...on a map that still HAS one. A goal-layer map never seeds from the
-    // core, so its core cells are decoration and may sit under rock
-    let walledCore = 0;
+    // base, so its base cells are decoration and may sit under rock
+    let walledBase = 0;
     if (!this.usesGoalLayer())
-      for (let y = this.terrain.core.y; y < this.terrain.core.y + this.terrain.core.size; y++)
-        for (let x = this.terrain.core.x; x < this.terrain.core.x + this.terrain.core.size; x++)
-          if (this.terrain.blocked[y * COLS + x]) walledCore++;
-    if (walledCore > 0)
+      for (let y = this.terrain.base.y; y < this.terrain.base.y + this.terrain.base.size; y++)
+        for (let x = this.terrain.base.x; x < this.terrain.base.x + this.terrain.base.size; x++)
+          if (this.terrain.blocked[y * COLS + x]) walledBase++;
+    if (walledBase > 0)
       console.warn(
-        'map "' + doc.id + '": ' + walledCore +
-          " of the core's cells are walled — carve its basin open at " +
-          this.terrain.core.x + "," + this.terrain.core.y,
+        'map "' + doc.id + '": ' + walledBase +
+          " of the base's cells are walled — carve its basin open at " +
+          this.terrain.base.x + "," + this.terrain.base.y,
       );
     // A SCRIPT SENDING A LAYER THE MAP HAS NO DOOR FOR is the only
     // map/script mismatch left now that nothing names a region. Warned per
@@ -1067,7 +1067,7 @@ export class Sim {
     this.reset();
   }
 
-  /** does this map route the swarm to painted goal cells rather than a core? */
+  /** does this map route the swarm to painted goal cells rather than a base? */
   usesGoalLayer(): boolean {
     const g = this.terrain.goal;
     for (let i = 0; i < g.length; i++) if (g[i]) return true;
@@ -1085,7 +1085,7 @@ export class Sim {
    * with none borrows the UNION of every other layer's, because an author
    * who painted one exit band and stopped meant it for everything rather
    * than meaning "the flyers have nowhere to go". A map with no exits at
-   * all falls back to its core block, which is what every pre-exit map is.
+   * all falls back to its base block, which is what every pre-exit map is.
    */
   private exitsFor(bit: number): Uint8Array {
     const src = this.terrain.goal;
@@ -1105,9 +1105,9 @@ export class Sim {
       for (let i = 0; i < NCELLS; i++) if (src[i]) out[i] = 1;
       return out;
     }
-    const { core } = this.terrain;
-    for (let y = core.y; y < core.y + core.size; y++)
-      for (let x = core.x; x < core.x + core.size; x++) out[y * COLS + x] = 1;
+    const { base } = this.terrain;
+    for (let y = base.y; y < base.y + base.size; y++)
+      for (let x = base.x; x < base.x + base.size; x++) out[y * COLS + x] = 1;
     return out;
   }
 
@@ -1170,7 +1170,7 @@ export class Sim {
   private buildGoalPts(): void {
     // THE AIR LAYER'S OWN EXITS, not every exit on the map. exitsFor has
     // already applied the fallbacks, so this reads a mask that is never
-    // empty — the core's block at worst — and a flyer aims at the nearest
+    // empty — the base's block at worst — and a flyer aims at the nearest
     // cell of it. That is the whole of "each layer paths to its own exit"
     // for the one layer with no field to path on.
     const pts: number[] = [];
@@ -1239,9 +1239,9 @@ export class Sim {
     return { x: bx, y: by };
   }
 
-  /** the core is down — the game freezes and the score screen takes over */
+  /** the base is down — the game freezes and the score screen takes over */
   lost(): boolean {
-    return this.coreHp <= 0;
+    return this.lives <= 0;
   }
 
   /** campaign restrictions on building; null lifts them (editor, dev) */
@@ -1251,12 +1251,12 @@ export class Sim {
     //
     // SETTING TECH BEFORE THE RUN STARTS FILLS THE POOL; setting it after
     // may only ever lower it. Staging a run is a setTech on a sim whose
-    // clock has not moved, and that has to end with a full core or the
+    // clock has not moved, and that has to end with a full base or the
     // plating would only take effect on the run after the one it was
     // bought for. Mid-run — the dev tools, and nothing else — it must not
     // heal, or the switch becomes a repair button.
-    this.coreHpMax = tech?.coreHp ?? CORE_HP_BASE;
-    this.coreHp = this.time === 0 ? this.coreHpMax : Math.min(this.coreHp, this.coreHpMax);
+    this.livesMax = tech?.lives ?? LIVES_BASE;
+    this.lives = this.time === 0 ? this.livesMax : Math.min(this.lives, this.livesMax);
     this.refreshSpecs();
   }
 
@@ -1629,7 +1629,7 @@ export class Sim {
 
   // ---------- placement ----------
 
-  /** the 2x2 footprint is on the map, off the core, and free of walls */
+  /** the 2x2 footprint is on the map, off the base, and free of walls */
   private cellsFree(gx: number, gy: number): boolean {
     if (gx < 0 || gy < 0 || gx > COLS - 2 || gy > ROWS - 2) return false;
     const { walk, isGoal } = this.field;
@@ -1664,7 +1664,7 @@ export class Sim {
     return true;
   }
 
-  /** would this footprint cut the swarm's last route to the core? */
+  /** would this footprint cut the swarm's last route to the base? */
   private wouldSeal(gx: number, gy: number): boolean {
     if (gx === this.sealGx && gy === this.sealGy) return this.sealResult;
     const sealed = this.field.sealsSpawns(gx, gy);
@@ -2793,7 +2793,7 @@ export class Sim {
         // killed, so it is not in it — the salvage a leak costs is the
         // salvage the player would have had for stopping it.
         //
-        // A BOSS THAT REACHES THE CORE ENDS THE RUN whatever the plating
+        // A BOSS THAT REACHES THE BASE ENDS THE RUN whatever the plating
         // says. Plating is armour against the SWARM: it buys back the
         // bodies a board cannot quite hold, and a script that builds to one
         // enemy must not have that enemy become a body you shrug off. So a
@@ -2802,13 +2802,13 @@ export class Sim {
         this.pushFx(upx[i], upy[i], 0.4, FxKind.Breach);
         this.removeUnit(i);
         this.leaked++;
-        this.coreHp = boss ? 0 : Math.max(0, this.coreHp - 1);
+        this.lives = boss ? 0 : Math.max(0, this.lives - 1);
         continue;
       }
 
       if (fly) {
         // flyers ignore the maze: aim straight at the exit they picked when
-        // they spawned (the core's centre on a map with no goal layer)
+        // they spawned (the base's centre on a map with no goal layer)
         const gdx = this.ugx[i] - upx[i], gdy = this.ugy[i] - upy[i];
         const gl = Math.sqrt(gdx * gdx + gdy * gdy) || 1;
         flowTmp.x = gdx / gl;
@@ -2844,7 +2844,7 @@ export class Sim {
 
       // every steering force below is ground-only: flyers never probe,
       // jitter, center, or drift. They ignore the maze entirely and hold the
-      // straight line to the core they have always flown — open sky has no
+      // straight line to the base they have always flown — open sky has no
       // corridor to spread across and no walls to crowd against, so the
       // crowd fixes a corridor needs would only add wobble up there
       if (!fly) {
@@ -3135,7 +3135,7 @@ export class Sim {
 
   /**
    * Roll a spot and raise a shield tower on it. A candidate 3x3 must lie inside
-   * the map, off the core, off every drop zone and exit, off water — and
+   * the map, off the base, off every drop zone and exit, off water — and
    * it must not seal the swarm's last route (the same BFS probe a ground
    * structure would use). It also has to MATTER: a footprint that neither
    * touches walkable ground nor buries a tower is a shield tower in a corner
@@ -3155,7 +3155,7 @@ export class Sim {
       // shield tower on rock cannot cork a drop zone, cannot stand in a lane,
       // cannot sit on water and cannot seal the swarm's route, because
       // rock is already impassable and already none of those things — so
-      // the core apron, the spawn/exit test, the water test and the BFS
+      // the base apron, the spawn/exit test, the water test and the BFS
       // seal probe are all gone rather than merely passing every time.
       let ok = true;
       for (let y = gy; y < gy + SHIELD_TOWER_SIZE && ok; y++)

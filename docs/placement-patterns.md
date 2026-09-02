@@ -212,7 +212,7 @@ inventory, from `Blocks.java`'s environment region, with a verdict per group.
 **Serpulo floors** — stone, crater-stone, char, basalt, hotrock, magmarock,
 sand, darksand, dirt, mud, dacite, grass, salt, snow, ice, ice-snow, shale,
 moss, spore-moss, redmat, bluemat, pebbles, tendrils, metal-floor (×5 +
-3 damaged), dark-panel (×6), dark-metal, core-zone.
+3 damaged), dark-panel (×6), dark-metal, base-zone.
 
 **Serpulo liquids** — shallow water, deep water, tainted water, deep tainted
 water, sand-water, darksand-water, darksand-tainted-water, tar, pooled
@@ -396,4 +396,4 @@ to it. So:
 - [Synergies — Luck be a Landlord Wiki](https://luck-be-a-landlord.fandom.com/wiki/Synergies)
 - [Map features — Rogue Tower Wiki](https://rogue-tower.fandom.com/wiki/Map_features)
 - [Towers — Rogue Tower Wiki](https://rogue-tower.fandom.com/wiki/Towers)
-- [Mindustry `Blocks.java` — the environment region](https://github.com/Anuken/Mindustry/blob/master/core/src/mindustry/content/Blocks.java)
+- [Mindustry `Blocks.java` — the environment region](https://github.com/Anuken/Mindustry/blob/master/base/src/mindustry/content/Blocks.java)

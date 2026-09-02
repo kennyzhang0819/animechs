@@ -15,64 +15,62 @@
  * which is the whole of what the three screens agree on.
  */
 
-import { MUT_COST_MAX } from "@/game/mutation";
+import { MUT_COST_MAX, mutationCostOf } from "@/game/mutation";
+import type { MutationId } from "@/game/mutation";
 
 /** the codex's colour, kept from the old column — deliberately NOT the
  *  tree's gold, because gold on the other board means "bought, owned,
- *  yours", and there is nothing here to own */
+ *  yours", and there is nothing here to own. The tab strip still wears it;
+ *  a card's own face wears its band (see MutationFace). */
 export const MUT_LIT = "#FF8ACB";
 
 /** three chevrons climbing — the codex tab's face, and the fallback card
  *  glyph for a mutator with no face of its own */
 export const MUT_GLYPH = "M12 2 4 9h5v2H4l8 7 8-7h-5V9h5z";
-/** a dome on a base — the Shield Towers' silhouette */
-const SHIELD_TOWER_GLYPH = "M4 14a8 8 0 0 1 16 0v2H4zM6 18h12v3H6z";
-/** a shield with a plate seam across it — Armored Swarms */
-const ARMORED_GLYPH =
-  "M12 1.5 3.5 4.5v7c0 5 3.6 9.3 8.5 11 4.9-1.7 8.5-6 8.5-11v-7zM5.3 10.2h13.4v2.2H5.3z";
 
 /**
- * The face a mutator wears on its card, as a path — the stand-in for a
- * rule nobody has drawn yet. MUT_ART wins wherever it has an entry, so a
- * rule listed in both would have a glyph that never renders: when art
- * lands for one of these, its line here goes.
+ * THE FACES — one path per rule, no sprites.
+ *
+ * THESE USED TO BE PNGs. Four rules carried pixel art and the rest carried
+ * paths, so a shelf of mutators was half drawn art and half line glyph, at
+ * two different weights, and neither half could take the band's colour —
+ * the art was whatever colour it had been painted. Every face is a path
+ * now: one weight, and every one of them tinted by how bad the rule is.
+ *
+ * Drawn on a 24x24 box, solid fills, no strokes — they are read at 20px on
+ * the deploy chips, so anything finer than a 2px limb disappears there.
+ * Two of them cut a hole with fillRule="evenodd" (the shields), which is
+ * why the <path> below sets it.
  */
 const MUT_FACE: Record<string, string> = {
-  shieldTowers: SHIELD_TOWER_GLYPH,
-  armored: ARMORED_GLYPH,
+  /** a dome on a base — the Shield Towers' silhouette */
+  shieldTowers: "M4 14a8 8 0 0 1 16 0v2H4zM6 18h12v3H6z",
+  /** a shield with a plate seam across it — Armored Swarms */
+  armored:
+    "M12 1.5 3.5 4.5v7c0 5 3.6 9.3 8.5 11 4.9-1.7 8.5-6 8.5-11v-7zM5.3 10.2h13.4v2.2H5.3z",
+  /** the same shield carrying a plus — Overshields is armour ADDED */
+  overshields:
+    "M12 1.5 3.5 4.5v7c0 5 3.6 9.3 8.5 11 4.9-1.7 8.5-6 8.5-11v-7zM10.9 6.6h2.2v3.3h3.3v2.2h-3.3v3.3h-2.2v-3.3H7.6V9.9h3.3z",
+  /** a bolt — Speedy, and the only rule in the catalog worth five */
+  speedy: "M13.4 1.5 4 13.4h5.2L8 22.5 19.4 10h-5.6z",
+  /** an open mouth mid-bite — Hungry eats the bodies */
+  hungry: "M12 12 22.5 6.2A11.5 11.5 0 1 0 22.5 17.8z",
+  /** a burst — Volatile is what happens when one of them dies */
+  volatile: "M12.0 1.0 13.8 7.6 19.8 4.2 16.4 10.2 23.0 12.0 16.4 13.8 19.8 19.8 13.8 16.4 12.0 23.0 10.2 16.4 4.2 19.8 7.6 13.8 1.0 12.0 7.6 10.2 4.2 4.2 10.2 7.6z",
 };
 
 /**
- * ART, where a rule has some — pixel sprites, drawn at the scale the
- * turret icons are, because a card whose whole job is "how bad is this"
- * leads with a face rather than a number. A drawn icon beats a path the
- * moment one exists, so the glyphs above are only ever reached by a rule
- * nobody has illustrated yet.
+ * The card's face: the rule's glyph, tinted by its band. A mutator's whole
+ * job on a shelf is "how bad is this", so the face answers it before the
+ * border does — Light green, Heavy amber, Brutal red — and a rule nobody
+ * has drawn yet falls back to the codex's own chevrons in the same colour.
  */
-const MUT_ART: Record<string, string> = {
-  hungry: "/mutators/hungry.png",
-  speedy: "/mutators/speedy.png",
-  volatile: "/mutators/volatile.png",
-  overshields: "/mutators/overshields.png",
-};
-
-/** the card's face: the sprite if the rule has one, else its glyph */
 export function MutationFace({ id, size }: { id: string; size: string }) {
-  const art = MUT_ART[id];
-  if (art)
-    return (
-      // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite
-      <img
-        src={art}
-        alt=""
-        className={`${size} shrink-0 object-contain [image-rendering:pixelated]`}
-      />
-    );
   return (
     <svg
       viewBox="0 0 24 24"
       className={`${size} shrink-0 fill-current`}
-      style={{ color: MUT_LIT }}
+      style={{ color: bandOf(mutationCostOf(id as MutationId)).color }}
       aria-hidden="true"
     >
       <path fillRule="evenodd" d={MUT_FACE[id] ?? MUT_GLYPH} />

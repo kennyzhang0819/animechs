@@ -19,11 +19,17 @@ changing the height means resizing the arrays, not setting a field.
 | `floor` | `UV_FLOORS` index; `FLOOR_SHALLOW_WATER` 15, `FLOOR_DEEP_WATER` 18, the spore pair 45 and 48 |
 | `spawns` | circles `{x, y, r, zone}`, zone one of `ground` / `air` / `water` / `boss` |
 | `exits` | per-cell **layer mask** — ground 1, air 2, water 4, ORed |
-| `core` | `{x, y}`, top-left cell |
+| `base` | `{x, y}`, top-left cell |
+
+**AN EXIT BELONGS ON A BORDER.** The swarm is walking off the edge of the
+world, past whatever stands in the road; a goal cell in open field is a
+unit marching into the middle of the map and vanishing. grass-open's exits
+are the `x=255` column and tidewater's are the bottom band — put the base
+near that edge, run the lane through it and out, and mark the rim.
 
 Spawns and exits are per layer and independent: a ground zone only feeds
 ground units, and they only path to cells whose exit mask has bit 1. A
-layer with no exits of its own falls back to the union, then to the core
+layer with no exits of its own falls back to the union, then to the base
 (`exitsFor` in `game/sim.ts`), so a missing band degrades rather than
 strands. Boss zones are **terrain-blind** — the boss flies, so it needs no
 road and no reachable ground under it.
@@ -51,6 +57,18 @@ The primitives that carry a map:
 - **Circular arcs**, not corners. A turn's gentleness is its radius: over an
   8-cell chord, `r` cells of radius swings `8/r` radians. r=45 is ~10°, r=20
   is ~23°. Anything that reads as a corner is a radius you did not pick.
+  A "steer at this point, then run to it" move has no answer when the point
+  sits inside the turning circle — it loops instead, so compare each leg
+  against its straight line and refuse the ones that are much longer.
+- **No loose rocks in open water.** An islet dropped in a sea lane pinches
+  it to something no hull fits down, and the fleet queues up behind it and
+  dies there. Give the composition its rock as coast — long masses along
+  the edges that close the empty corners — and keep the middle of a lane
+  clear.
+- **Blobs, not discs.** A disc is the one shape a stamp gets for free and
+  the one shape nothing in nature has, so a map of discs reads as a map of
+  discs. An ellipse with a long axis pointed somewhere and two cosine lobes
+  on its radius is the same handful of numbers and reads as a coastline.
 - **S-bends** for changes of height. Two arcs of one radius, the second
   mirroring the first: the road leaves level and arrives level, so it can be
   joined to a straight run with nothing at the join. A *single* quarter arc
@@ -115,6 +133,27 @@ broken map. Every one of these has caught a real bug:
   against its straight line and refuse anything much longer: the result is
   a road that still passes every other check and is a spiral through the
   sea.
+- **Every way through is a lane wide.** THIS IS THE RULE, and it is not
+  the same as "a route exists": a channel pinched to nine cells by an islet
+  is connected, passable, and no use at all to something 21 across. Measure
+  it — clearance is the distance to the nearest cell a unit cannot occupy,
+  so twice it is the width there — and report the WIDEST corridor that
+  still joins each drop zone to an exit. It holds for the fleet as much as
+  the swarm: water is a lane too. The cheapest way to make it true rather
+  than to keep chasing it is a morphological OPENING of the sea by a
+  lane-wide disc, exactly as the rock gets: erode, dilate back, and every
+  channel too narrow to sail silts up into coast.
+- **Every exit is on the rim.** One line, and it is the difference between
+  an exit and a hole in the ground.
+- **No gate is a short cut.** Measure each gate's run TO THE EDGE — a
+  tributary's own length plus what is left of the trunk from where it
+  joins — and compare them. A gate half the length of its neighbours is
+  the one every wave will pour down.
+- **Islands that touch are one island.** If the terrain is islands linked
+  by causeways, count the stretches of each road that lie outside every
+  island and check both the count and the length. One blob a few cells too
+  fat swallows its neighbour's channel and the archipelago quietly becomes
+  a single landmass with roads on it.
 - **Room to build.** Towers only stand on BLOCKED cells that are not one of
   the two sentinels, so a map made mostly of water and road has nowhere to
   put a turret. Count the rock, and count the 4x4 footprints in it — the

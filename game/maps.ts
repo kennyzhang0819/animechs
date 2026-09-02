@@ -104,8 +104,13 @@ export interface MapData {
   // carved-valley centerline per column — generator metadata the sim's
   // seed-tower search reads; older documents fall back to a flat line
   valleyY?: number[];
-  /** where this map's core sits (top-left cell). Absent = the default BASE
-   * position, which is what every pre-per-core document means */
+  /** where this map's base sits (top-left cell). Absent = the default BASE
+   * position, which is what every pre-per-base document means */
+  base?: { x: number; y: number };
+  /** THE SAME FIELD UNDER ITS OLD NAME. Documents written before the base
+   * stopped being called a core carry `core`, and they are on disk in
+   * public/maps and in players' exported files, so the reader still takes
+   * it. Nothing writes it: mapFromTerrain emits `base` only. */
   core?: { x: number; y: number };
 }
 
@@ -185,7 +190,7 @@ export type PaintKind =
   | "goal"
   | "erase"
   | "path"
-  | "core"
+  | "base"
   /** deep water: blocks the swarm like a wall, takes no tower like a pine
    *  — a floor index plus the WALL_DEEP sentinel (see terrain.ts) */
   | "deep";
@@ -447,9 +452,9 @@ export const PALETTE: readonly PaletteSet[] = [
   { id: "spawn", label: "Drop zone", kind: "spawn",
     variants: ZONE_KINDS.map((_, i) => i), noRandom: true,
     icons: ZONE_KINDS.map(() => `${ENV}/dark-panel-2.png`) },
-  // the core: a map has exactly one, so placing it MOVES it. The click
-  // clears the ground it lands on, since a walled core is unreachable
-  { id: "core", label: "Core", kind: "core", variants: [0], noRandom: true,
+  // the base: a map has exactly one, so placing it MOVES it. The click
+  // clears the ground it lands on, since a walled base is unreachable
+  { id: "base", label: "Base", kind: "base", variants: [0], noRandom: true,
     icons: ["/mindustry/sprites/blocks/storage/core-nucleus.png"] },
   // THE EXITS: where the swarm is trying to GET TO, one variant per
   // movement layer (the variant indexes MOVE_LAYERS). Like drop zones this
@@ -458,7 +463,7 @@ export const PALETTE: readonly PaletteSet[] = [
   //
   // Painting is per layer and additive: a cell can be a ground exit and an
   // air exit at once, and the eraser takes back only the layer in hand. A
-  // map with any exit at all routes to them instead of to its core, and a
+  // map with any exit at all routes to them instead of to its base, and a
   // LAYER with none falls back to the union of the rest, so painting only
   // the ground exits never strands the flyers (see Sim.exitsFor).
   { id: "goal", label: "Exit", kind: "goal",
@@ -491,7 +496,7 @@ export const PALETTE_SECTIONS: readonly { label: string; ids: readonly string[] 
   { label: "Paths", ids: ["path-dirt", "path-darksand", "path-mud"] },
   { label: "Props", ids: ["boulder", "shrub", "spore-cluster", "pur-bush", "shale-boulder",
     "snow-boulder", "sand-boulder"] },
-  { label: "Zones", ids: ["spawn", "goal", "core"] },
+  { label: "Zones", ids: ["spawn", "goal", "base"] },
   { label: "Tools", ids: ["erase"] },
 ];
 
@@ -718,11 +723,11 @@ export function mapFromTerrain(
     // without it is read as LEGACY_COLS, so omitting it here would corrupt
     // every map the editor touches the next time the board grows
     w: COLS,
-    core: { x: t.core.x, y: t.core.y },
+    base: { x: t.base.x, y: t.base.y },
     floor: Array.from(t.floor.subarray(0, n)),
     wall: Array.from(t.wall.subarray(0, n)),
     blocked: Array.from(t.blocked.subarray(0, n)),
-    // omitted entirely on a core map, so its document stays as it was.
+    // omitted entirely on a base map, so its document stays as it was.
     // Written as `exits` rather than `goal`: the values are LAYER MASKS
     // now, and a reader has to be able to tell a 1 that means "ground
     // only" from a legacy 1 that meant "everyone"
@@ -772,7 +777,9 @@ export function terrainFromMap(m: MapData): Terrain {
   const sw = m.w ?? LEGACY_COLS;
   const blocked = lift(m.blocked, 1, sw);
   const floor = lift(m.floor, 3, sw);
-  const core = { x: m.core?.x ?? BASE.x, y: m.core?.y ?? BASE.y, size: BASE.size };
+  // `core` is the field's old name — see MapData.core
+  const at = m.base ?? m.core;
+  const base = { x: at?.x ?? BASE.x, y: at?.y ?? BASE.y, size: BASE.size };
   const spawns = spawnCirclesOf(m, blocked);
   // THE EXITS, and the one place a pre-layer document is translated: a
   // legacy `goal` array holds 0/1 and meant "everything comes here", so
@@ -794,8 +801,8 @@ export function terrainFromMap(m: MapData): Terrain {
     decor: m.decor.map((p) => ({ ...p })),
     valleyY: m.valleyY
       ? Float32Array.from(m.valleyY)
-      : new Float32Array(COLS).fill(core.y + core.size / 2),
-    core,
+      : new Float32Array(COLS).fill(base.y + base.size / 2),
+    base,
     rows: Math.max(1, Math.min(ROWS, Math.floor(m.floor.length / sw))),
     cols: Math.max(1, Math.min(COLS, sw)),
   };
@@ -893,11 +900,9 @@ export function drawThumb(map: MapData, canvas: HTMLCanvasElement): void {
           : FLOOR_TONES[map.floor[i]] ?? FLOOR_TONES[0];
       c.fillRect(x, y, 1, 1);
     }
-  // core marker. Spawn zones are deliberately NOT drawn: a thumbnail is a
-  // picture of the place, and at 1px per cell a zone ring is a coloured arc
-  // clipped by the map edge that reads as an artefact rather than as
-  // information. The map editor's own canvas still paints them, which is
-  // where they are actually being authored
-  c.fillStyle = "#ffd37f";
-  c.fillRect(map.core?.x ?? BASE.x, map.core?.y ?? BASE.y, BASE.size, BASE.size);
+  // NOTHING BUT THE GROUND. Neither the base nor the spawn zones are drawn:
+  // a thumbnail is a picture of the place, and at 1px per cell a marker is a
+  // coloured square sitting on the terrain that reads as an artefact rather
+  // than as information. The map editor's own canvas still paints both,
+  // which is where they are actually being authored
 }

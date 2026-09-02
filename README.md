@@ -21,7 +21,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
 
 ## Architecture
 
-- `game/constants.ts` — grid, core placement, tower/unit tuning
+- `game/constants.ts` — grid, base placement, tower/unit tuning
 - `game/levels.ts` — unit stats and wave-script plumbing; the authored
   script itself (50 waves) lives in `public/levels/1.json`, loaded by
   `loadLevelDocs()`. Six upgrade trees: ground, support, crawler, air and
@@ -61,7 +61,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   seeded value-noise worldgen: mountain ranges, a carved meandering valley
   with a branch lane, forests, outcrops, floor fringes, decor
 - `game/flowfield.ts` — grid occupancy + one Dijkstra pass seeded from every
-  goal cell (the core is the fallback), refined by an eikonal sweep into a
+  goal cell (the base is the fallback), refined by an eikonal sweep into a
   per-cell direction field; units sample it bilinearly (pathfinding is
   O(map), not O(units)). Cells pay for **where** they are as well as how
   far: single-file slots cost extra (`NARROW_COST`) and so does hugging the
@@ -237,16 +237,16 @@ the rung. So the phase-priced turrets (spectre, meltdown, foreshadow) are
 reachable from the bottom of the ladder — slowly. The gate is the rate, not
 the permission.
 
-### The core
+### The base
 
-**The core has one point of health and every leak takes one.** A run is won
+**The base has one point of health and every leak takes one.** A run is won
 for as long as any is left — clear the script and the level is yours,
-whatever walked past on the way. **Core Plating** (the `core-hp` node off
-home) buys the rest: one point each, to a hundred (`CORE_HP_MAX`), which is
+whatever walked past on the way. **Base Plating** (the `lives` node off
+home) buys the rest: one point each, to a hundred (`LIVES_MAX`), which is
 the only forgiveness anywhere in the game and priced like a turret branch
 rather than like the one-point switches beside it.
 
-**A boss that reaches the core ends the run whatever the plating says.** The
+**A boss that reaches the base ends the run whatever the plating says.** The
 plating is armour against the SWARM — it buys back the bodies a board cannot
 quite hold — and a script that builds towards one enemy must not have that
 enemy become something you shrug off.

@@ -285,7 +285,7 @@ const LEGACY_KEY = "dagger-problem.progress.v1";
  * The free opening loadout — a hand-tuned constant (see OPENING_DUOS in
  * ladder.ts).
  *
- * The core has one hit point, so a run demands a 100% kill rate. A fresh
+ * The base has one hit point, so a run demands a 100% kill rate. A fresh
  * save that cannot hold wave 1 is not a challenge, it is a die-and-grind
  * loop with no way out, because kills are the only income and a wipe on
  * wave 1 banks almost nothing. Past wave 1 the run pays for its own fleet.
@@ -525,6 +525,15 @@ export function loadProgress(): Progress {
       // the first slot upgrade rather than silently losing the purchase
       const legacyFilter = (p.tech as Record<string, unknown>)["tower-filter"];
       if (typeof legacyFilter === "number" && legacyFilter > 0) tech["slot-7"] = 1;
+      // the extra-lives node shipped as "core-hp" while the base was still
+      // called a core. Same node, same points, renamed with the word: a
+      // save that paid for plating keeps every point of it
+      const legacyPlating = (p.tech as Record<string, unknown>)["core-hp"];
+      if (typeof legacyPlating === "number" && legacyPlating > 0)
+        tech.lives = Math.min(
+          Math.max(tech.lives ?? 0, Math.floor(legacyPlating)),
+          techCapOf("lives"),
+        );
     }
     // neither grant can legitimately sit below its free starting value —
     // this also migrates saves from before the per-turret point model, from

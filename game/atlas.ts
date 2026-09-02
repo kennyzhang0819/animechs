@@ -397,10 +397,10 @@ export const UV_RING = uv(448, 0, 64, 64);
 // empty-looking hole in there is still spoken for. Inset well past the mip-3
 // footprint so every sampled level stays pure white
 export const UV_SOLID = uv(224, 928, 32, 32, 8);
-// row 2: 128px cells — turret base, turret top, core
+// row 2: 128px cells — turret base, turret top, the player's base
 export const UV_TOWER_BASE = uv(64, 128, 128, 128);
 export const UV_TURRET = uv(192, 128, 128, 128);
-export const UV_CORE = uv(320, 128, 160, 160);
+export const UV_BASE = uv(320, 128, 160, 160);
 // row 4 (y=384): scatter turret top
 export const UV_SCATTER = uv(0, 384, 128, 128);
 // fuse rides at native 96px (like block-3): stretching the 96px source to
@@ -443,7 +443,7 @@ export const UV_FLAMETHROWER_SIL = uv(928, 960, 64, 64);
 // fortress parts ride 128px cells — the T3 art outgrows the 64px cells
 // above (body 100x80, leg 80x60 at native scale). The art row fills the
 // free strip right of block-3 at y=384; the silhouette row sits in the
-// free space right of the core at y=128. Cells are 128px wide so even the
+// free space right of the base at y=128. Cells are 128px wide so even the
 // 3px-dilated silhouettes keep >=4px of transparent margin (see the
 // mip-bleed note on the mech row)
 export const UV_FORTRESS_LEG = uv(512, 384, 128, 128);
@@ -649,7 +649,7 @@ export const UV_ECLIPSE = uv(T5, 1408, 384, 384);
  * exactly that ratio.
  *
  * The `-back` sprite is the longer of each pair: 40px of art in bullet's
- * 52 against the core's 28, and 32 of shell's 36 against 20. Drawn into the
+ * 52 against the inner region's 28, and 32 of shell's 36 against 20. Drawn into the
  * same box it therefore sticks out fore and aft, which is the rim you see
  * on every Mindustry shot. Both face +x, like all the other rotated art.
  */
@@ -1460,8 +1460,8 @@ const SPRITES = {
   parallaxLaserEnd: "/mindustry/sprites/effects/parallax-laser-end.png",
   shell: "/mindustry/sprites/effects/shell.png",
   shellBack: "/mindustry/sprites/effects/shell-back.png",
-  core: "/mindustry/sprites/blocks/storage/core-nucleus.png",
-  coreTeam: "/mindustry/sprites/blocks/storage/core-nucleus-team.png",
+  base: "/mindustry/sprites/blocks/storage/core-nucleus.png",
+  baseTeam: "/mindustry/sprites/blocks/storage/core-nucleus-team.png",
   bullet: "/mindustry/sprites/effects/bullet.png",
   bulletBack: "/mindustry/sprites/effects/bullet-back.png",
 } as const;
@@ -1497,8 +1497,8 @@ async function loadImages(): Promise<Record<SpriteKey, HTMLImageElement>> {
 // unoutlined (their dark edging is hand-drawn into the source art).
 const UNIT_OUTLINE = "#565666"; // Pal.darkerMetal
 const BLOCK_OUTLINE = "#404049"; // Block.outlineColor
-const UNIT_OUTLINE_R = 3; // UnitType.outlineRadius
-const BLOCK_OUTLINE_R = 4; // Block.outlineRadius
+const UNIT_OUTLINE_R = 0; // UnitType.outlineRadius
+const BLOCK_OUTLINE_R = 0; // Block.outlineRadius
 
 /**
  * Faithful port of Arc's Pixmaps.outline(region, color, radius) with the
@@ -1512,6 +1512,13 @@ function outlined(src: HTMLImageElement, color: string, radius: number): HTMLCan
   const cv = document.createElement("canvas");
   cv.width = w;
   cv.height = h;
+  if (radius <= 0) {
+    const plain = cv.getContext("2d");
+    if (!plain) throw new Error("2d context unavailable for outline");
+    plain.imageSmoothingEnabled = false;
+    plain.drawImage(src, 0, 0);
+    return cv;
+  }
   // read-back canvas: both this pass and silhouetted() pull the pixels out
   // with getImageData, and a GPU-backed canvas has to stall and copy back
   // every time. Say so up front and the browser keeps it in system memory
@@ -1586,7 +1593,7 @@ const WATER_COLOR = "#596ab8";
  * A LiquidTurret's draw stack (Mindustry DrawTurret), baked flat at pack
  * time: the outlined turret art, the `-liquid` window — a white mask,
  * tinted the liquid's colour with the multiply + destination-in recipe the
- * core's team overlay uses — and the untinted `-top` specular gleam over
+ * base's team overlay uses — and the untinted `-top` specular gleam over
  * the water. The window is drawn FULL: upstream its alpha is the turret's
  * ammo fraction, and these turrets consume nothing here, so a live liquid
  * layer would only ever be this constant.
@@ -2182,7 +2189,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   drawFacingRight(c, antialiased(outlined(img.zenith, UNIT_OUTLINE, UNIT_OUTLINE_R)), 192, 1088, 112);
 
   // the six bullet regions, white and at source size, facing +x. See the
-  // UV_BULLET note: the renderer lays the -back region under the core on
+  // UV_BULLET note: the renderer lays the -back region under the inner one on
   // one rect and tints each with the firing ammo's own colour, exactly as
   // BasicBulletType.draw does
   drawFacingRight(c, antialiased(img.bullet), T5 + 26, 1818, 52);
@@ -2305,20 +2312,20 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.closePath();
   c.fill();
 
-  // core-nucleus at native 160px: base block, then the team overlay tinted
+  // the base building at native 160px: the block, then the team overlay tinted
   // sharded-yellow the way Mindustry composites team regions
-  c.drawImage(antialiased(img.core), 320, 128, 160, 160);
-  const coreTeam = antialiased(img.coreTeam);
+  c.drawImage(antialiased(img.base), 320, 128, 160, 160);
+  const baseTeam = antialiased(img.baseTeam);
   const team = document.createElement("canvas");
   team.width = team.height = 160;
   const tc = team.getContext("2d");
   if (!tc) throw new Error("2d context unavailable");
-  tc.drawImage(coreTeam, 0, 0, 160, 160);
+  tc.drawImage(baseTeam, 0, 0, 160, 160);
   tc.globalCompositeOperation = "multiply";
   tc.fillStyle = TEAM_COLOR;
   tc.fillRect(0, 0, 160, 160);
   tc.globalCompositeOperation = "destination-in";
-  tc.drawImage(coreTeam, 0, 0, 160, 160);
+  tc.drawImage(baseTeam, 0, 0, 160, 160);
   c.drawImage(team, 320, 128);
 
   return a;

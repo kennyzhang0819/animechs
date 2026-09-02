@@ -155,7 +155,7 @@ export class FlowField {
    * A goal mask with nothing in it leaves the field with no destination and
    * every distance at infinity, which reads downstream as "this layer has
    * nowhere to go". The Sim never lets that happen: it resolves a layer's
-   * exits (falling back to the other layers', then to the core) before it
+   * exits (falling back to the other layers', then to the base) before it
    * gets here, so the fallback lives in one place instead of two.
    */
   rebuildWalk(
@@ -264,7 +264,7 @@ export class FlowField {
    * a few 45-degree seams and every unit in an open field walks the same ray,
    * single file. An eikonal field's gradient is isotropic: two units a tile
    * apart get two slightly different headings, both aimed straight at the
-   * core, so a wide crowd stays wide.
+   * base, so a wide crowd stays wide.
    */
   private sweepEikonal(): void {
     const { walk, isGoal, dist, cost } = this;

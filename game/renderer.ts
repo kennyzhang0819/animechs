@@ -7,7 +7,7 @@ import {
   type MechArt,
   UNIT_ART,
   UV_SOLID,
-  UV_CORE,
+  UV_BASE,
   UV_DECOR,
   UV_FLOORS,
   UV_PINE,
@@ -123,7 +123,7 @@ const UV_TURRETS: Record<TowerKind, UVRect> = {
 };
 /**
  * The two regions BasicBulletType.draw lays on one rect: the longer `-back`
- * first, then the core over it. Which pair a shot uses is ammo data
+ * first, then the base over it. Which pair a shot uses is ammo data
  * (BulletSprite.region) — the colours are too, so one pair covers every
  * ammo type in the game.
  */
@@ -520,14 +520,14 @@ export interface TerrainLayers {
   props: boolean;
   spawn: boolean;
   goal: boolean;
-  core: boolean;
+  base: boolean;
 }
 export const ALL_LAYERS: TerrainLayers = {
   wall: true,
   props: true,
   spawn: true,
   goal: true,
-  core: true,
+  base: true,
 };
 
 // flyer drop shadow: painter's offset + premultiplied black tint
@@ -808,15 +808,15 @@ export class Renderer {
   private vy0 = 0;
   private vx1 = W;
   private vy1 = H;
-  // the core of the terrain currently in the static batches; renderTerrain
+  // the base of the terrain currently in the static batches; renderTerrain
   // (the editor) has no sim to ask, so rebuildTerrain leaves it here
-  private core = { ...BASE };
-  // a goal-layer map routes the swarm to painted exit cells and has no core
+  private base = { ...BASE };
+  // a goal-layer map routes the swarm to painted exit cells and has no base
   // to defend, so it draws none — the sprite would otherwise sit in the
   // middle of the exit band promising something the map does not have
   private hasGoals = false;
   // layer visibility of whatever is currently in the static batches, so the
-  // editor's core sprite (drawn per frame) matches the terrain it sits on
+  // editor's base sprite (drawn per frame) matches the terrain it sits on
   private layers: TerrainLayers = ALL_LAYERS;
   /** are ambient effects being kept? (see setEffects) */
   private fxOn = true;
@@ -1370,7 +1370,7 @@ export class Renderer {
     const t = this.terrain;
     const wt = this.water;
     const T = src.terrain;
-    this.core = T.core;
+    this.base = T.base;
     this.hasGoals = T.goal.some((g) => g !== 0);
     this.layers = layers;
     t.n = 0;
@@ -1451,12 +1451,12 @@ export class Renderer {
           if (T.blocked[i] && T.wall[i] !== WALL_DEEP) stamp(i);
         }
     // buildings on the ground stamp their footprint too, like Mindustry's
-    // displayShadow blocks — the core sprite covers the middle, so what
+    // displayShadow blocks — the base sprite covers the middle, so what
     // shows is the rim hugging its sides. Towers sit on hills (already
     // fully stamped as blocked cells), so they need nothing extra
-    if (layers.core && !this.hasGoals)
-      for (let y = T.core.y; y < T.core.y + T.core.size; y++)
-        for (let x = T.core.x; x < T.core.x + T.core.size; x++) stamp(y * COLS + x);
+    if (layers.base && !this.hasGoals)
+      for (let y = T.base.y; y < T.base.y + T.base.size; y++)
+        for (let x = T.base.x; x < T.base.x + T.base.size; x++) stamp(y * COLS + x);
     gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, mask);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
@@ -1556,7 +1556,7 @@ export class Renderer {
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
   }
 
-  /** terrain + core only — the map editor's frame, no sim required */
+  /** terrain + base only — the map editor's frame, no sim required */
   renderTerrain(zoom = 1, offX = 0, offY = 0, kPx = this.canvas.width / W): void {
     // the editor has no sim to read a clock off, and a still sea in the
     // map editor looks like a bug in the map — so it runs off the wall
@@ -1566,22 +1566,22 @@ export class Renderer {
     this.drawWorld();
     const dyn = this.dyn;
     dyn.n = 0;
-    // the core of the map last built into the terrain batch (see
+    // the base of the map last built into the terrain batch (see
     // rebuildTerrain) — a map may put it anywhere, not just at BASE
-    const core = this.core;
-    if (!this.layers.core || this.hasGoals) {
+    const base = this.base;
+    if (!this.layers.base || this.hasGoals) {
       this.draw(dyn, true);
       return;
     }
-    const coreSz = core.size * CELL;
+    const baseSz = base.size * CELL;
     this.push(
       dyn,
-      (core.x + core.size / 2) * CELL,
-      (core.y + core.size / 2) * CELL,
-      coreSz,
-      coreSz,
+      (base.x + base.size / 2) * CELL,
+      (base.y + base.size / 2) * CELL,
+      baseSz,
+      baseSz,
       0,
-      UV_CORE,
+      UV_BASE,
       1, 1, 1, 1,
     );
     this.draw(dyn, true);
@@ -2031,25 +2031,25 @@ export class Renderer {
         this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 0.34, 0.89, 0.54, (1 - t) * 0.9);
       }
     }
-    // core last, above units and breach fx — arrivals disappear beneath it.
+    // base last, above units and breach fx — arrivals disappear beneath it.
     // A goal-layer map draws none: its exits are the map edge, and there is
     // no building there to swallow anything
     if (!this.hasGoals) {
-      const core = sim.terrain.core;
-      const coreSz = core.size * CELL;
+      const base = sim.terrain.base;
+      const baseSz = base.size * CELL;
       this.push(
         dyn,
-        (core.x + core.size / 2) * CELL,
-        (core.y + core.size / 2) * CELL,
-        coreSz,
-        coreSz,
+        (base.x + base.size / 2) * CELL,
+        (base.y + base.size / 2) * CELL,
+        baseSz,
+        baseSz,
         0,
-        UV_CORE,
+        UV_BASE,
         1, 1, 1, 1,
       );
     }
     this.draw(dyn, true);
-    // Layer.shields is above every one of those, the core included, and it
+    // Layer.shields is above every one of those, the base included, and it
     // is its own pass: gather the fills, then blit the buffer over the
     // finished frame
     this.blitShields(zoom, offX, offY, kPx, sim.time, buffered);
@@ -2776,16 +2776,16 @@ export class Renderer {
    * Fx.lancerLaserCharge over Fx.lancerLaserChargeBegin — Mindustry's
    * MultiEffect, drawn off one entity because the pair never appears apart.
    * Fourteen sparks fall INWARD on the muzzle (their length runs on fout,
-   * so the ring closes) over 38 ticks, while a blue core swells under a
+   * so the ring closes) over 38 ticks, while a blue base swells under a
    * white one for 60 and then snaps out over the last tenth.
    */
   private drawLancerCharge(dyn: Batch, e: Effect, t: number): void {
     // Mathf.curve(fin, 0.9): nothing until the last tenth, then a hard
     // collapse — the flash of the shot actually leaving
     const margin = 1 - Math.max(0, (t - 0.9) / 0.1);
-    const core = Math.min(margin, t);
-    this.fillCircle(dyn, e.x, e.y, core * 3 * MU, PAL_LANCER, 1);
-    this.fillCircle(dyn, e.x, e.y, core * 2 * MU, PAL.white, 1);
+    const base = Math.min(margin, t);
+    this.fillCircle(dyn, e.x, e.y, base * 3 * MU, PAL_LANCER, 1);
+    this.fillCircle(dyn, e.x, e.y, base * 2 * MU, PAL.white, 1);
     if (t >= LANCER_CHARGE_SPARK) return;
     const s = t / LANCER_CHARGE_SPARK;
     const bar = ((1 - Math.abs(s - 0.5) * 2) * 3 + 1) * MU; // fslope
@@ -2872,7 +2872,7 @@ export class Renderer {
 
   /**
    * LaserBulletType.draw, 1:1: three passes of the same beam, each half the
-   * width of the last, so the bright core sits inside a wide translucent
+   * width of the last, so the bright base sits inside a wide translucent
    * sheath. Each pass adds a tip triangle and a pair of flares out the
    * sides of the muzzle, and the whole thing grows to length over the first
    * fifth of its life and thins out over the rest.
@@ -2992,7 +2992,7 @@ export class Renderer {
   /**
    * ContinuousLaserBulletType.draw, 1:1: meltdown's beam. FOUR passes of
    * the same line, each narrower and whiter than the last — a broad
-   * translucent wash, two hotter cores inside it and a white filament down
+   * translucent wash, two hotter bases inside it and a white filament down
    * the middle — with a flame front capping both ends of every pass. The
    * layering is the entire look: no single pass is the beam.
    *

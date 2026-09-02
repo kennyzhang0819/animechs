@@ -19,7 +19,7 @@ import { TOWER_ICONS } from "./towerIcons";
  * no block in Mindustry that means "run the clock faster" — so they get a
  * glyph instead: fast-forward for the pace switches (the name underneath
  * says which multiplier), a grid of squares for the slot nodes, a plated
- * shield for core plating.
+ * shield for base plating.
  */
 const FF_GLYPH = "M2 4v16l10-8zM12 4v16l10-8z";
 const SLOT_GLYPH = "M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z";
@@ -27,7 +27,7 @@ const SLOT_GLYPH = "M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z";
 const ROF_GLYPH = "M13 2 4 14h6l-1 8 9-12h-6z";
 /** a shot leaving two bodies behind it — pierce */
 const PIERCE_GLYPH = "M1 11h3v2H1zM7 11h3v2H7zM13 11h3V8l6 4-6 4v-3h-3z";
-/** a shield with a plate across it — Core Plating, the one node that buys
+/** a shield with a plate across it — Extra Lives, the one node that buys
  *  mistakes rather than firepower */
 const PLATE_GLYPH =
   "M12 2 4 5v6c0 4.4 3.4 8.5 8 9.9 4.6-1.4 8-5.5 8-9.9V5zm-6 8h12v2H6z";
@@ -36,7 +36,7 @@ const PLATE_GLYPH =
 const GLYPH: Partial<Record<TechKind, string>> = {
   "slot-7": SLOT_GLYPH,
   "slot-8": SLOT_GLYPH,
-  "core-hp": PLATE_GLYPH,
+  "lives": PLATE_GLYPH,
 };
 
 /**

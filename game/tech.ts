@@ -73,7 +73,7 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  */
 export const UTILITY_KINDS = [
   "home",
-  "core-hp",
+  "lives",
   "speed-2",
   "speed-4",
   "speed-8",
@@ -120,19 +120,19 @@ export const NODE_SPEED: Readonly<Partial<Record<UtilityKind, number>>> = {
 export const BASE_BAR_SLOTS = 6;
 
 /**
- * THE CORE'S HEALTH: what it starts with, and how much plating can be
+ * THE BASE'S HEALTH: what it starts with, and how much plating can be
  * bolted onto it.
  *
- * ONE POINT IS THE STOCK CORE, and that is the game as it has always
- * played: a single leak ends the run. The plating node (core-hp) is what
+ * ONE POINT IS THE STOCK BASE, and that is the game as it has always
+ * played: a single leak ends the run. The plating node (lives) is what
  * turns that into a resource — every point is one more body the board may
  * let through and still hold — and the two numbers add up to a round
  * hundred at the top so the HUD reads as a percentage without ever having
  * been one.
  */
-export const CORE_HP_BASE = 1;
-export const CORE_HP_CAP = 99;
-export const CORE_HP_MAX = CORE_HP_BASE + CORE_HP_CAP;
+export const LIVES_BASE = 1;
+export const LIVES_CAP = 99;
+export const LIVES_MAX = LIVES_BASE + LIVES_CAP;
 
 /** what each utility node is called, and what owning it does */
 export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: string }>> = {
@@ -140,10 +140,10 @@ export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: s
     name: "Home",
     blurb: "The root of the tree. Turrets run down the middle, utilities off to the side.",
   },
-  "core-hp": {
-    name: "Core Plating",
+  "lives": {
+    name: "Extra Lives",
     blurb:
-      "One more point of core health a point. A run is won while the core still stands — but a boss that reaches it ends the run whatever is left.",
+      "One more life a point. A run is won while a life is left — but a boss that reaches the base ends the run whatever is in hand.",
   },
   "speed-2": { name: "2x Speed", blurb: "Run the whole simulation at double pace." },
   "speed-4": { name: "4x Speed", blurb: "Quadruple pace — a wave gap stops being a wait." },
@@ -794,7 +794,7 @@ export const BY_MINDUSTRY_VALUE: readonly TowerKind[] = [...TOWER_KINDS].sort(
   (a, b) => MINDUSTRY_VALUE[a] - MINDUSTRY_VALUE[b],
 );
 
-const CORE_TREE: readonly TechNodeDef[] = [
+const MAIN_TREE: readonly TechNodeDef[] = [
   {
     // THE ROOT, AND THE ONLY FREE NODE. It costs nothing, every save is
     // granted it (progress.ts), and its cap of one means it never asks for
@@ -1074,7 +1074,7 @@ const CORE_TREE: readonly TechNodeDef[] = [
   },
   {
     // PHASE FABRIC. 500 range and one enormous shot — a sniper rather than a
-    // defence, and the only turret that can hit a spawn pad from the core
+    // defence, and the only turret that can hit a spawn pad from the base
     id: "foreshadow",
     price: { base: { titanium: 450, thorium: 525, plastanium: 125, "phase-fabric": 19 }, growth: 1.01 },
     // 1755 x 60/200, no crowd multiplier (the budget already holds the
@@ -1185,11 +1185,11 @@ const CORE_TREE: readonly TechNodeDef[] = [
   //
   {
     /**
-     * CORE PLATING — the one node that buys MISTAKES.
+     * EXTRA LIVES — the one node that buys MISTAKES.
      *
-     * A core starts on a single point of health (CORE_HP_BASE), so one
+     * A base starts on a single point of health (LIVES_BASE), so one
      * leaked body ends the run. Every point here is one more, to a hundred
-     * (CORE_HP_CAP + the base), and the run is won for as long as any of
+     * (LIVES_CAP + the base), and the run is won for as long as any of
      * them are left.
      *
      * IT IS THE ONLY FORGIVENESS IN THE GAME and that is why it is priced
@@ -1204,10 +1204,10 @@ const CORE_TREE: readonly TechNodeDef[] = [
      * the script builds towards would turn the boss into a formality; it is
      * armour against the swarm and against nothing else.
      */
-    id: "core-hp",
+    id: "lives",
     price: { base: { copper: 1200, titanium: 320, thorium: 120 }, growth: 1.05 },
     requires: "home",
-    cap: CORE_HP_CAP,
+    cap: LIVES_CAP,
     x: 2,
     y: -1,
   },
@@ -1380,7 +1380,7 @@ function upgradePrice(def: TurretUpgradeDef, turretBase: Cost): PriceCurve {
  * drawn attached to it rather than laid out beside it.
  */
 const UPGRADE_NODES: readonly TechNodeDef[] = ALL_UPGRADES.map((u) => {
-  const turret = CORE_TREE.find((n) => n.id === u.turret);
+  const turret = MAIN_TREE.find((n) => n.id === u.turret);
   if (!turret) throw new Error(`upgrade "${u.id}" hangs off an unknown turret`);
   return {
     id: u.id,
@@ -1401,7 +1401,7 @@ const UPGRADE_NODES: readonly TechNodeDef[] = ALL_UPGRADES.map((u) => {
  * THE TREE AS EVERYTHING ELSE SEES IT: the authored board, plus a branch
  * of four hanging off every turret on it.
  */
-export const TECH_TREE: readonly TechNodeDef[] = [...CORE_TREE, ...UPGRADE_NODES];
+export const TECH_TREE: readonly TechNodeDef[] = [...MAIN_TREE, ...UPGRADE_NODES];
 
 /**
  * What the NEXT point on this node costs, given how many it already holds.
@@ -1526,8 +1526,8 @@ export interface TechState {
   barSlots: number;
   /** every turret's upgrade branch as bought, points per rung */
   upgrades: Record<TowerKind, UpgradePoints>;
-  /** how many bodies the core survives — CORE_HP_BASE plus the plating */
-  coreHp: number;
+  /** how many bodies the base survives — LIVES_BASE plus the plating */
+  lives: number;
 }
 
 /**
@@ -1563,13 +1563,13 @@ export function techState(levels: TechLevels, off?: ReadonlySet<TechKind>): Tech
   // switch is what decides whether points DO anything, and one node that
   // ignored it would be a node whose "switched off" card lied. It has no
   // toggle on the board today, so this is the guard rather than the path.
-  const plating = off?.has("core-hp") ? 0 : Math.max(0, Math.floor(levels["core-hp"] ?? 0));
+  const plating = off?.has("lives") ? 0 : Math.max(0, Math.floor(levels["lives"] ?? 0));
   return {
     unlocked,
     caps,
     speeds,
     barSlots,
     upgrades: allUpgradePointsOf(levels, off),
-    coreHp: CORE_HP_BASE + Math.min(CORE_HP_CAP, plating),
+    lives: LIVES_BASE + Math.min(LIVES_CAP, plating),
   };
 }

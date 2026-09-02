@@ -38,13 +38,13 @@ export interface UiState {
   /** the demolish tool is picked: the next press sells instead of selecting */
   sellMode: boolean;
   paused: boolean;
-  /** the core is destroyed — the field is frozen behind the score screen */
+  /** the base is destroyed — the field is frozen behind the score screen */
   lost: boolean;
-  /** the core's remaining health, and the pool the save's plating bought
-   *  (tech.ts, CORE_HP_BASE + Core Plating). At a max of 1 there is nothing
+  /** the base's remaining health, and the pool the save's plating bought
+   *  (tech.ts, LIVES_BASE + Extra Lives). At a max of 1 there is nothing
    *  to report — the first leak is the loss — so the HUD stays quiet */
-  coreHp: number;
-  coreHpMax: number;
+  lives: number;
+  livesMax: number;
   /** every enemy in the script is down — the success screen takes over */
   won: boolean;
   kills: number;
@@ -929,7 +929,7 @@ export class Game {
     this.renderer.setEffects(on);
   }
 
-  /** the whole script is dealt with and the core stands */
+  /** the whole script is dealt with and the base stands */
   private won(): boolean {
     return !this.sim.lost() && this.sim.remaining() <= 0;
   }
@@ -963,8 +963,8 @@ export class Game {
       speed: this.speed,
       showRoutes: this.showRoutes,
       lost: this.sim.lost(),
-      coreHp: this.sim.coreHp,
-      coreHpMax: this.sim.coreHpMax,
+      lives: this.sim.lives,
+      livesMax: this.sim.livesMax,
       won: this.won(),
       kills: this.sim.kills,
       menuOpen: this.menuOpen,
@@ -1138,7 +1138,7 @@ export class Game {
 
     const t0 = performance.now();
     // a lost game freezes mid-carnage: the score screen sits over the
-    // exact frame the core fell on, until retry resets the sim. The esc
+    // exact frame the base fell on, until retry resets the sim. The esc
     // menu holds the sim the same way. A won game keeps running — the
     // field is empty and the last death effects get to play out
     if (!this.paused && !this.menuOpen && !this.sim.lost()) {
@@ -1306,7 +1306,7 @@ export class Game {
     }
 
     if (this.buildKind && this.hoverGx >= 0 && !this.panning) {
-      // red marks anything that blocks the spot: walls, the core, units
+      // red marks anything that blocks the spot: walls, the base, units
       // underneath, or a placement that would seal the swarm's last route
       const sz = TOWERS[this.buildKind].size;
       const px = sz * CELL;

@@ -269,15 +269,13 @@
     line-height: 1.4;
   }
 
-  /* THE BOARD'S GROUND — the tech tree and the codex pan over this. A
-     faint grid, because a board is a map and a map has a graticule; it is
-     drawn in the board's own px so it pans and zooms with the nodes */
+  /* THE BOARD'S GROUND — the tech tree and the codex pan over this. Plain
+     dark, no graticule: the ruled lines competed with the nodes, so the
+     board is now a bare field and the nodes are the only marks on it. The
+     fill matches the viewport behind it (Board.tsx's #08080a) so the panned
+     sheet's edge never shows as a lighter rectangle. */
   .ms-grid {
-    background-color: #0d0d10;
-    background-image:
-      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
-    background-size: 40px 40px;
+    background-color: #08080a;
   }
 }
 

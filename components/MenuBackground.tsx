@@ -14,7 +14,7 @@ import {
  * THE MENU'S GROUND — the game, seen from above, before anyone has built
  * anything on it.
  *
- * MechSwarm is a horde walking a valley toward a core, steered by a flow
+ * MechSwarm is a horde walking a valley toward a base, steered by a flow
  * field around whatever is in the way. So the title screen is that: a
  * lane carved through rock, rolled fresh every launch the way the game's
  * own worldgen carves one (terrain.ts), and a swarm of the game's own

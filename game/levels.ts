@@ -246,7 +246,7 @@ export interface UnitStats {
    * what makes a heavy look like it is dragging its guns round.
    */
   rotateSpeed?: number;
-  /** flying units ignore terrain and head straight for the core; only
+  /** flying units ignore terrain and head straight for the base; only
    * towers with targetAir (and bullets with collidesAir) touch them */
   flying?: boolean;
   /**
@@ -704,7 +704,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // suppression field and missile racks stay behind on Erekir — enemies
   // here do not shoot — so what crosses the map is the hull, the looming
   // pace, and 144000 health the fleet has to answer before it reaches the
-  // core. It also DRAWS half again its native scale (see UNIT_ART), and
+  // base. It also DRAWS half again its native scale (see UNIT_ART), and
   // the hitbox follows the art: Mindustry's hitSize 46 grows to an
   // effective 56 (UR * 7, just under eclipse's 7.25) so shots land where
   // the silhouette says they should — a boss this size being HARD TO MISS
