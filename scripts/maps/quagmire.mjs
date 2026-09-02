@@ -504,8 +504,8 @@ const build = () => {
   //    AN EXIT IS ON THE BORDER. The swarm is walking OFF the west edge of
   //    the world, past the base standing in the road; it is not walking to
   //    a patch of ground in the middle of the field and vanishing. Both
-  //    other campaign maps do it this way — grass-open's exits are the
-  //    x=255 column, tidewater's the bottom band — and the flow field
+  //    other campaign maps do it this way — confluence's exits are the
+  //    x=255 column, maelstrom's the bottom band — and the flow field
   //    reads whatever is marked, so the only thing that makes an exit an
   //    edge is putting it on one.
   const spawns = [

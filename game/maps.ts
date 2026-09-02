@@ -114,19 +114,26 @@ export interface MapData {
   core?: { x: number; y: number };
 }
 
-/** every playable map — add a JSON under public/maps/ and list its id here */
+/**
+ * Every playable map — add a JSON under public/maps/ and list its id here.
+ *
+ * AN ID IS THE MAP'S OWN NAME, slugged: Confluence is "confluence", Seed 24
+ * is "seed-24". They used to describe the terrain instead (grass-open,
+ * tidewater), which meant the id and the name a player reads were two
+ * different vocabularies and every lookup was a translation. A map that is
+ * renamed is renamed in both places, and LEGACY_MAP_IDS in progress.ts is
+ * where the old spellings are answered for.
+ */
 export const OFFICIAL_MAP_IDS: readonly string[] = [
   // the campaign maps, in world order
-  "grass-open",
-  "tidewater",
-  // The spore archipelago. NO WORLD CLAIMS IT YET, so it opens in the
-  // editor and is played by nothing — the map is finished terrain waiting
-  // on a world to name it (WORLDS in levels.ts) and a tier to reach it.
+  "confluence",
+  "maelstrom",
+  // the spore archipelago — world 3, the front with no air line over it
   "quagmire",
   // NOT A CAMPAIGN MAP. The last survivor of the generated set the game
   // started from, kept as the reference for what the generator produces —
   // no world names it, so it appears in the editor and nowhere else.
-  "generated-24",
+  "seed-24",
 ];
 
 /**

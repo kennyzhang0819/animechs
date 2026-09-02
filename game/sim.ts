@@ -91,6 +91,8 @@ import {
   SHIELD_TOWER_SIZE,
   SHIELD_TOWER_SPAWN_PERIOD,
   shieldTowerWaveScale,
+  HYDROPHOBIC_RANGE,
+  HYDROPHOBIC_RATE,
   SPEEDY_SPEED,
   VOLATILE_DMG,
   VOLATILE_RADIUS,
@@ -827,6 +829,17 @@ export class Sim {
   /** is the Volatile mutator in force this run? (see reset) */
   private volatileOn = false;
 
+  /**
+   * WHICH CELLS THE HYDROPHOBIC RULE TAXES — 1 where a turret's reload
+   * runs at HYDROPHOBIC_RATE, 0 everywhere else. Null on the ordinary run
+   * where the rule is not in force, which is also the cheap test: the mask
+   * is only ever BUILT on a map that carries the rule.
+   *
+   * It is terrain, so it is built once per level and never touched again
+   * (buildWaterlogged). A tower reads it exactly once, when it is placed.
+   */
+  private waterlogged: Uint8Array | null = null;
+
   // --- effects, in struct-of-arrays like the units ---
   // These used to be an array of small objects, allocated on every push —
   // and a fuse-heavy board at 8x speed pushes thousands a second, which is
@@ -986,6 +999,9 @@ export class Sim {
     const doc = (this.level.map ? loadMap(this.level.map) : null) ?? OFFICIAL_MAPS[0];
     if (!doc) throw new Error("official maps not loaded — await loadOfficialMaps() first");
     this.terrain = terrainFromMap(doc);
+    // the Hydrophobic mask needs the terrain, so it is built here rather
+    // than up with the other rules — and only where the rule is in force
+    this.waterlogged = hasMutation(inForce, "hydrophobic") ? this.buildWaterlogged() : null;
     this.goalX = (this.terrain.base.x + this.terrain.base.size / 2) * CELL;
     this.goalY = (this.terrain.base.y + this.terrain.base.size / 2) * CELL;
     // THE EXITS EACH LAYER IS AIMING AT, resolved once here so that no
@@ -1431,6 +1447,8 @@ export class Sim {
       aimShieldTower: -1,
       tombShieldTower: -1,
       cd: Math.random() * 0.1,
+      // Hydrophobic (mutation.ts): read the ground once, here, and carry it
+      fireRate: this.isWaterlogged(gx, gy, kind) ? HYDROPHOBIC_RATE : 1,
       angle: 0,
       target: -1,
       targetIdx: -1,
@@ -1679,6 +1697,91 @@ export class Sim {
    * not floor), free of other towers. They overlook the lanes and never
    * touch the flow field — the rock was already unwalkable.
    */
+  /**
+   * THE HYDROPHOBIC MASK: every cell within HYDROPHOBIC_RANGE of water.
+   *
+   * "Water" is any water FLOOR, shallow or deep (isWaterFloor) — a ford a
+   * unit wades and a channel a hull sails are the same wet ground to a
+   * turret standing beside them, and a rule the player has to squint at to
+   * predict is a rule they cannot plan around.
+   *
+   * The distance is a 5-7-11 chamfer in fifths of a cell, which is the
+   * same approximation the map generators measure their lane clearances
+   * with (scripts/maps/geom.mjs) — within about 2% of true Euclidean,
+   * and two linear passes rather than a search per cell. It runs over the
+   * WHOLE grid including rock, because rock is exactly where turrets go.
+   */
+  private buildWaterlogged(): Uint8Array {
+    const { floor } = this.terrain;
+    const n = COLS * ROWS;
+    const INF = 1 << 20;
+    const d = new Int32Array(n).fill(INF);
+    for (let i = 0; i < n; i++) if (isWaterFloor(floor[i])) d[i] = 0;
+    // the two half-kernels, as (dx, dy, cost) — the second is the first
+    // mirrored through the origin, which is what makes the pair exact
+    const FWD = [
+      [-1, -2, 11], [1, -2, 11],
+      [-2, -1, 11], [-1, -1, 7], [0, -1, 5], [1, -1, 7], [2, -1, 11],
+      [-1, 0, 5],
+    ];
+    const sweep = (fwd: boolean) => {
+      const y0 = fwd ? 0 : ROWS - 1;
+      const yEnd = fwd ? ROWS : -1;
+      const yStep = fwd ? 1 : -1;
+      for (let y = y0; y !== yEnd; y += yStep) {
+        const x0 = fwd ? 0 : COLS - 1;
+        const xEnd = fwd ? COLS : -1;
+        const xStep = fwd ? 1 : -1;
+        for (let x = x0; x !== xEnd; x += xStep) {
+          const i = y * COLS + x;
+          if (d[i] === 0) continue;
+          for (const [ox, oy, c] of FWD) {
+            const nx = x + (fwd ? ox : -ox);
+            const ny = y + (fwd ? oy : -oy);
+            if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+            const v = d[ny * COLS + nx] + c;
+            if (v < d[i]) d[i] = v;
+          }
+        }
+      }
+    };
+    sweep(true);
+    sweep(false);
+    const out = new Uint8Array(n);
+    const reach = HYDROPHOBIC_RANGE * 5;
+    for (let i = 0; i < n; i++) if (d[i] <= reach) out[i] = 1;
+    return out;
+  }
+
+  /** is the Hydrophobic rule in force? — what the build ghost asks before
+   *  it bothers to test any ground */
+  get hydrophobicOn(): boolean {
+    return this.waterlogged !== null;
+  }
+
+  /** the taxed cells themselves, or null where the rule is not in force —
+   *  for the one caller that wants to PAINT them (Game's build overlay)
+   *  rather than ask about a single footprint */
+  waterloggedMask(): Uint8Array | null {
+    return this.waterlogged;
+  }
+
+  /**
+   * Would a turret of `kind` placed here fire slowed? True if ANY
+   * cell of its footprint is within reach of water — a turret is one
+   * building, so one wet corner soaks the whole thing rather than the
+   * penalty depending on which cell the game happens to measure from.
+   */
+  isWaterlogged(gx: number, gy: number, kind: TowerKind): boolean {
+    const mask = this.waterlogged;
+    if (!mask) return false;
+    const sz = TOWERS[kind].size;
+    for (let y = gy; y < gy + sz; y++)
+      for (let x = gx; x < gx + sz; x++)
+        if (x >= 0 && y >= 0 && x < COLS && y < ROWS && mask[y * COLS + x]) return true;
+    return false;
+  }
+
   canPlace(gx: number, gy: number, kind: TowerKind): boolean {
     // tech gate first: a locked tower or an exhausted cap refuses everywhere,
     // so the drag-chain and keyboard paths can't sidestep the menu
@@ -3485,7 +3588,9 @@ export class Sim {
       // LaserTurret.updateTile runs the reload only while `bullets` is
       // EMPTY, and the turret lets go of its beam at the end of
       // shootDuration — so the fade tail cools alongside the turret
-      if (t.cd > 0 && !(cont && t.beamT > cont.fade)) t.cd -= dt;
+      // ...at the TOWER'S rate, which is 1 for everything except a turret
+      // the Hydrophobic rule has waterlogged (mutation.ts)
+      if (t.cd > 0 && !(cont && t.beamT > cont.fade)) t.cd -= dt * t.fireRate;
 
       // a queued volley that is still charging: the shots are already spent
       // from the reload's point of view, they just have not left yet

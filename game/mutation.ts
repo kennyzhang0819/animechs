@@ -65,7 +65,8 @@ export type MutationId =
   | "shieldTowers"
   | "hungry"
   | "armored"
-  | "speedy";
+  | "speedy"
+  | "hydrophobic";
 
 export interface MutationDef {
   /** stable key, in the run spec and in the sim's questions */
@@ -92,6 +93,34 @@ export interface MutationDef {
    * dearest things here.
    */
   cost: number;
+  /**
+   * A RULE THAT BELONGS TO A MAP AND IS NEVER ROLLED ANYWHERE.
+   *
+   * The roller skips these entirely (rollMutations), so the ONLY way one
+   * reaches a run is a world naming it in LevelSpec.intrinsicMutation —
+   * which is checked in levels.ts, because an exclusive rule on no world
+   * is a rule no build of the game can ever play.
+   *
+   * WHY THE FLAG EXISTS. A mutator that reads the TERRAIN is worth
+   * different amounts on different maps, and on some maps it is worth
+   * nothing at all: Hydrophobic slows a turret built near water, and
+   * Confluence has no water, so rolling it there would spend a slot and a
+   * player's attention on a rule that changes not one shot. Overshields
+   * has the opposite shape — it is Maelstrom's by design AND a fair roll
+   * anywhere — which is why this is a flag on the entry rather than
+   * something inferred from the intrinsic lists.
+   *
+   * ITS COST IS A LABEL, NOT A PRICE. An exclusive rule is never rolled
+   * and never charged against a tier's budget (see intrinsicMutation), so
+   * the number only picks the band its card is drawn in — how bad the
+   * codex says it is. It still has to sit on the scale, because the
+   * player reads it off the same shelf as everything else.
+   *
+   * The sandbox still ticks these on deliberately (SandboxView is the one
+   * place a rule is chosen rather than rolled), which is how one gets
+   * tested on a map that does not carry it.
+   */
+  exclusive?: boolean;
 }
 
 /**
@@ -159,6 +188,13 @@ export const MUTATIONS: readonly MutationDef[] = [
     name: "Speedy",
     cost: 4,
     blurb: "Every enemy moves twice as fast, and nothing can slow them.",
+  },
+  {
+    id: "hydrophobic",
+    name: "Hydrophobic",
+    cost: 4,
+    exclusive: true,
+    blurb: "Turrets built near water attack slower.",
   },
 ];
 
@@ -445,8 +481,12 @@ export function rollMutations(
 ): MutationId[] {
   // the rules a level already plays under by design are not in the draw and
   // are not paid for out of this budget (see mutationsInForce): rolling one
-  // of them would spend points to change nothing
-  const pool = MUTATIONS.filter((m) => !exclude.includes(m.id));
+  // of them would spend points to change nothing.
+  //
+  // An EXCLUSIVE rule is out of the draw on every map, not just the one
+  // that carries it (MutationDef.exclusive) — it belongs to a world, and a
+  // world that wants it names it.
+  const pool = MUTATIONS.filter((m) => !m.exclusive && !exclude.includes(m.id));
   want = Math.min(pool.length, Math.max(0, Math.floor(want)));
   if (want === 0 || budget <= 0) return [];
   let best: MutationDef[] = [];
@@ -623,6 +663,58 @@ export const ARMORED_MAX_TIER = 3;
 /** the drive-speed multiplier every unit walks in with under Speedy —
  *  applied once at spawn (Sim.spawnUnit), never per tick */
 export const SPEEDY_SPEED = 2;
+
+// ---------- HYDROPHOBIC -------------------------------------------------
+//
+// MAELSTROM'S OWN RULE, and the first one in the catalog that reads the
+// TERRAIN rather than the wave: a turret built near water fires at less
+// than a third of its rate, so the shoreline — the ground that overlooks
+// the crossings and the bay, the ground a naval front makes you want — is
+// the ground that costs you most of your damage to hold.
+//
+// IT IS EXCLUSIVE BECAUSE IT IS WORTH NOTHING ON A DRY MAP. Confluence
+// has no water at all, so a roll of this there would be a slot spent
+// changing not one shot, and a player reading their roll would learn
+// nothing from it. Measured over the three maps as authored, counting
+// every 3x3 turret footprint whose ground is entirely buildable rock:
+//
+//   Confluence  30,512 sites,      0 within reach of water   ( 0%)
+//   Maelstrom   20,448 sites,  7,242 within reach            (35%)
+//   Quagmire    11,462 sites,  8,143 within reach            (71%)
+//
+// Maelstrom's 35% is the number this was tuned to: a third of the board
+// taxed is a real decision every time you place something, and the rest
+// still dry is a board that can be held by someone who thinks about it.
+// Quagmire's 71% is why the flag matters even between two wet maps — the
+// same rule there is nearly a different rule, and if it ever goes on
+// Quagmire it should be re-costed rather than reused.
+//
+// THE REACH AND THE RATE MOVE TOGETHER and were set as a pair. Widening
+// the band taxes more of the board; deepening the cut makes each taxed
+// square worth less. At 8 cells and half rate this covered 30% of
+// Maelstrom at a cost a player could shrug off by building one turret
+// deeper; 10 and 0.3 is the version that actually decides where a line
+// goes.
+//
+// THE PENALTY IS FIXED WHEN THE TURRET IS PLACED and never re-read. The
+// water does not move, so nothing would ever change it; a turret carries
+// its own reload rate (Tower.fireRate) rather than the sim asking the
+// terrain on every tick of every barrel.
+//
+// IT SLOWS THE RELOAD, NOT THE VOLLEY. A wet turret's shots still leave
+// the barrel at the spacing its weapon has (Sim.fireTowers' burst timers);
+// what stretches is how often a volley starts, which is what "attacks
+// slower" means to a player watching one. A TRACTOR turret has no reload
+// at all and so is untouched — it is not a damage piece, and taxing it
+// would be taxing nothing.
+
+/** how far from water the tax reaches, in cells — measured from any water
+ *  floor, shallow or deep, to the nearest cell of the turret's footprint */
+export const HYDROPHOBIC_RANGE = 10;
+
+/** what a waterlogged turret's reload runs at — 70% off, so a volley it
+ *  used to start every second now takes three and a third */
+export const HYDROPHOBIC_RATE = 0.3;
 
 // ---------- OVERSHIELDS -------------------------------------------------
 //

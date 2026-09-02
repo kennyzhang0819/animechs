@@ -76,6 +76,13 @@ export interface Tower {
    */
   aimShieldTower: number;
   cd: number; // reload: seconds until the next volley is ready
+  /**
+   * How fast this tower's reload runs: 1 everywhere, HYDROPHOBIC_RATE on
+   * a tower built near water while the Hydrophobic rule is in force (see
+   * mutation.ts). Fixed when the tower is PLACED — the water does not
+   * move, so nothing re-reads it.
+   */
+  fireRate: number;
   angle: number;
   // Turret.target under BaseTurret.targetInterval: the unit this turret is
   // tracking, held between the periodic re-picks rather than re-chosen

@@ -15,8 +15,8 @@
  * which is the whole of what the three screens agree on.
  */
 
-import { MUT_COST_MAX, mutationCostOf } from "@/game/mutation";
-import type { MutationId } from "@/game/mutation";
+import { MUT_COST_MAX, mutationById, mutationCostOf } from "@/game/mutation";
+import type { MutationDef, MutationId } from "@/game/mutation";
 
 /** the codex's colour, kept from the old column — deliberately NOT the
  *  tree's gold, because gold on the other board means "bought, owned,
@@ -55,6 +55,8 @@ const MUT_FACE: Record<string, string> = {
   speedy: "M13.4 1.5 4 13.4h5.2L8 22.5 19.4 10h-5.6z",
   /** an open mouth mid-bite — Hungry eats the bodies */
   hungry: "M12 12 22.5 6.2A11.5 11.5 0 1 0 22.5 17.8z",
+  /** a droplet — Hydrophobic is the water itself, standing too close */
+  hydrophobic: "M12 1.6c4.3 5 7.3 8.9 7.3 12.4a7.3 7.3 0 0 1-14.6 0c0-3.5 3-7.4 7.3-12.4z",
   /** a burst — Volatile is what happens when one of them dies */
   volatile: "M12.0 1.0 13.8 7.6 19.8 4.2 16.4 10.2 23.0 12.0 16.4 13.8 19.8 19.8 13.8 16.4 12.0 23.0 10.2 16.4 4.2 19.8 7.6 13.8 1.0 12.0 7.6 10.2 4.2 4.2 10.2 7.6z",
 };
@@ -70,7 +72,7 @@ export function MutationFace({ id, size }: { id: string; size: string }) {
     <svg
       viewBox="0 0 24 24"
       className={`${size} shrink-0 fill-current`}
-      style={{ color: bandOf(mutationCostOf(id as MutationId)).color }}
+      style={{ color: bandFor(mutationById(id)).color }}
       aria-hidden="true"
     >
       <path fillRule="evenodd" d={MUT_FACE[id] ?? MUT_GLYPH} />
@@ -97,6 +99,24 @@ const BANDS: readonly { label: string; color: string; max: number }[] = [
   { label: "Brutal", color: "#FF6B6B", max: MUT_COST_MAX },
 ];
 
+/**
+ * THE FOURTH BAND, OFF THE SCALE: an EXCLUSIVE rule (MutationDef.exclusive)
+ * — one that belongs to a single map and is never rolled anywhere.
+ *
+ * IT IS NOT A WEIGHT, WHICH IS WHY IT IS NOT IN THE LIST ABOVE. The three
+ * bands answer "how bad is this", read off a cost the roller actually
+ * spends. An exclusive rule is never rolled and never charged, so its cost
+ * is a label rather than a price (see MutationDef.exclusive) and colouring
+ * it amber would tell the player it competes for a slot in a roll it can
+ * never appear in. The blue says the true thing instead: this one is not
+ * in the draw — it is where you are standing.
+ *
+ * Periwinkle rather than the green/amber/red ramp for exactly that reason.
+ * It reads as a different KIND of card at a glance, and it is far enough
+ * from the codex tab's pink (MUT_LIT) not to be mistaken for selection.
+ */
+const EXCLUSIVE_BAND = { label: "Exclusive", color: "#8AA2FF" } as const;
+
 if (BANDS[BANDS.length - 1].max < MUT_COST_MAX)
   throw new Error(
     `the weights stop at ${BANDS[BANDS.length - 1].max} but a mutator may cost ${MUT_COST_MAX}`,
@@ -105,3 +125,13 @@ if (BANDS[BANDS.length - 1].max < MUT_COST_MAX)
 /** how bad a rule is, as the hover card says it */
 export const bandOf = (cost: number): { label: string; color: string } =>
   BANDS.find((b) => cost <= b.max) ?? BANDS[BANDS.length - 1];
+
+/**
+ * The band a RULE wears — the only form the three screens should use.
+ * Exclusive first, weight after, because "not in the draw" outranks "how
+ * dear" on a card the draw can never produce. A null def (an id from a
+ * save this build does not know) falls through to the lightest band, the
+ * same way an undrawn rule falls through to the codex chevrons.
+ */
+export const bandFor = (def: MutationDef | null): { label: string; color: string } =>
+  def?.exclusive ? EXCLUSIVE_BAND : bandOf(def ? mutationCostOf(def.id) : 0);

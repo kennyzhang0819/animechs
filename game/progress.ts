@@ -701,6 +701,19 @@ export function saveLoadout(kinds: readonly TowerKind[]): void {
  * Every old key is dropped once it has been read, and a world slot that
  * already exists is never touched, so this runs exactly once per save.
  */
+/**
+ * MAP IDS AS THE OLDEST SAVES SPELL THEM. The ids became the maps' own
+ * names — grass-open is Confluence, tidewater is Maelstrom — and the keys
+ * migrateLayouts reads were written before that, so a board saved under
+ * the old spelling would find no world to land in. One line each, and they
+ * only ever matter to a save from before world slots existed.
+ */
+const LEGACY_MAP_IDS: Readonly<Record<string, string>> = {
+  "grass-open": "confluence",
+  tidewater: "maelstrom",
+  "generated-24": "seed-24",
+};
+
 function migrateLayouts(layouts: Record<string, TowerPlacement[]>): boolean {
   // the best board per map id: the highest tier slot seen, bare key last
   const byMap = new Map<string, { rank: number; board: TowerPlacement[] }>();
@@ -709,7 +722,8 @@ function migrateLayouts(layouts: Record<string, TowerPlacement[]>): boolean {
     // a world id is never a map id, so a key already migrated is left alone
     if (WORLDS.some((w) => w.id === key)) continue;
     const at = key.indexOf("@");
-    const mapId = at < 0 ? key : key.slice(0, at);
+    const spelt = at < 0 ? key : key.slice(0, at);
+    const mapId = LEGACY_MAP_IDS[spelt] ?? spelt;
     // a bare key ranks BELOW every tier slot — it is older than all of them
     const parsed = at < 0 ? -1 : Number(key.slice(at + 1));
     const rank = Number.isFinite(parsed) ? parsed : -1;

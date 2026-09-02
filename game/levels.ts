@@ -3,7 +3,7 @@ import { itemForTier, type Cost } from "./items";
 import { explain, type SaveResult } from "./types";
 // type only — mutation.ts must never depend on the campaign, and this
 // import must never become a value one or the two files form a cycle
-import type { MutationId } from "./mutation";
+import { MUTATIONS, type MutationId } from "./mutation";
 
 export const UNIT_KINDS = ["dagger", "mace", "fortress", "scepter", "reign", "crawler", "atrax", "spiroct", "arkyid", "toxopid", "flare", "nova", "pulsar", "quasar", "vela", "corvus", "horizon", "zenith", "antumbra", "eclipse", "disrupt", "risso", "minke", "bryde", "sei", "omura", "retusa", "oxynoe", "cyerce", "aegires", "navanax"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
@@ -1488,7 +1488,7 @@ export const WORLDS: LevelSpec[] = [
   {
     id: "1",
     name: "Confluence",
-    map: "grass-open",
+    map: "confluence",
     badge: "beginner",
     waveGap: 15,
     // ================= HOW TO AUTHOR A WAVE ========================
@@ -1605,13 +1605,13 @@ export const WORLDS: LevelSpec[] = [
     //
     // ITS MAP IS ITS OWN AND ITS WAVES ARE THE BLUEPRINT'S, RE-CAST. It
     // plays the same fifty waves as every world; the transforms below are
-    // what make it the naval front. Tidewater is authored terrain — a
-    // river, a bay and three crossings — so the crawler line arrives as
-    // ships out of the water the map is made of, and the support line
-    // splits its bodies evenly between the shore and the bay.
+    // what make it the naval front. Maelstrom is authored terrain — a
+    // river, a bay and three crossings — so both of the blueprint's flying
+    // and marching lines arrive out of the water the map is made of, and
+    // what walks is the dagger class rather than the crawler class.
     id: "2",
     name: "Maelstrom",
-    map: "tidewater",
+    map: "maelstrom",
     badge: "advanced",
     // THE SHIELDED FRONT, at every tier including the first. Overshields
     // is not rolled here and is not paid for out of the tier's points (see
@@ -1619,10 +1619,64 @@ export const WORLDS: LevelSpec[] = [
     // fleet that arrives with its bubbles up, and a quasar shepherding
     // ships across a bay is the fight Tidewater was drawn for — the ladder
     // then rolls whatever else it can afford ON TOP of that.
-    intrinsicMutation: ["overshields"],
+    //
+    // AND THE SHORELINE IS TAXED. Hydrophobic is Maelstrom's own rule and
+    // no other map's (MutationDef.exclusive): a turret built within reach
+    // of water attacks at less than a third of its rate, so the bank that
+    // overlooks the crossings — the ground a naval front makes you want —
+    // is the ground that costs most of your damage to hold. About a third
+    // of this map's turret sites are inside that reach; the rest of the
+    // board is dry and holds nothing back. It is what makes a water map
+    // play like one rather than a land map with a river drawn on it.
+    intrinsicMutation: ["overshields", "hydrophobic"],
+    //
+    // FOUR LANES, TWO OF THEM AFLOAT, and no air at all:
+    //
+    //   crawler ->  ground         the walking line is the DAGGER class:
+    //                              a line that marches a lane, against a
+    //                              map whose lanes are crossings
+    //   ground  ->  naval          the blueprint's own marching volume,
+    //                              re-cast as hulls
+    //   air     ->  navalSupport   nothing flies over the bay; the flyers
+    //                              arrive as the support hulls instead
+    //   support ->  support        the walking support line is untouched
     transforms: [
-      { from: ["crawler"], to: [{ family: "naval" }] },
-      { from: ["support"], to: [{ family: "support" }, { family: "navalSupport" }] },
+      { from: ["crawler"], to: [{ family: "ground" }] },
+      { from: ["ground"], to: [{ family: "naval" }] },
+      { from: ["air"], to: [{ family: "navalSupport" }] },
+    ],
+    waveGap: 15,
+    script: [],
+  },
+  {
+    // WORLD 3 — THE SPORE ARCHIPELAGO, and the front with nothing in the
+    // air over it.
+    //
+    // NOT ONE FLYER. On an archipelago the air line is the answer to the
+    // map: a flyer crosses the water the terrain spends fifty waves making
+    // you respect. So it is re-cast as hulls, and what is left is FOUR
+    // LANES, two on foot and two afloat:
+    //
+    //   crawler ->  crawler        the walking line is the CRAWLER class,
+    //                              untouched — things that swarm a lane
+    //                              rather than march down it, which is
+    //                              what a shore is bad at holding
+    //   ground  ->  naval          the marching volume, as hulls
+    //   air     ->  navalSupport   and the flyers as the support hulls
+    //   support ->  support        the walking support line is untouched
+    //
+    // IT IS MAELSTROM'S SHAPE WITH THE OTHER GROUND CLASS. The two water
+    // worlds field the same four lanes and differ in what walks: daggers
+    // there, crawlers here.
+    id: "3",
+    name: "Quagmire",
+    map: "quagmire",
+    // the water is not a river here, it is what the map is made of, and
+    // every lane is crossed by something that ignores it
+    badge: "expert",
+    transforms: [
+      { from: ["ground"], to: [{ family: "naval" }] },
+      { from: ["air"], to: [{ family: "navalSupport" }] },
     ],
     waveGap: 15,
     script: [],
@@ -1632,6 +1686,19 @@ export const WORLDS: LevelSpec[] = [
 // a bad transform list is a programming error, caught the first time any
 // build or dev page loads this module — see validateWaveTransforms
 for (const w of WORLDS) validateWaveTransforms(w.transforms ?? [], `world "${w.id}"`);
+
+// An EXCLUSIVE mutator is out of every roll (MutationDef.exclusive), so a
+// world naming it in `intrinsicMutation` is the ONLY way one is ever
+// played. One that no world names is therefore dead code that still shows
+// up on the codex shelf, promising the player a rule they cannot meet —
+// caught here, at module load, rather than by nobody.
+for (const m of MUTATIONS) {
+  if (!m.exclusive) continue;
+  if (!WORLDS.some((w) => (w.intrinsicMutation ?? []).includes(m.id)))
+    throw new Error(
+      `exclusive mutator "${m.id}" is on no world's intrinsicMutation — nothing can ever play it`,
+    );
+}
 
 /**
  * The campaign's FIRST world — the default everywhere a single spec is

@@ -7,6 +7,7 @@ import {
   zoneStyle,
 } from "./maps";
 import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
+import { isBuildableWall } from "./terrain";
 import { loadBalanceDoc } from "./balance";
 import { loadLevelDocs, UNIT_KINDS, type LevelSpec, type TowerKind, type UnitKind } from "./levels";
 import type { Cost } from "./items";
@@ -231,6 +232,25 @@ export class Game {
   private worldW = W;
   private hoverGx = -1;
   private hoverGy = -1;
+  /**
+   * THE HYDROPHOBIC COASTLINE, painted once and blitted while the build
+   * menu is open — one pixel per cell, lit on the rock a turret would fire
+   * a fraction of its rate from (Sim.waterloggedMask).
+   *
+   * A RULE THE PLAYER CANNOT SEE IS A RULE THEY CANNOT PLAN AROUND, and
+   * this one is invisible by nature: the penalty lives in the GROUND, and
+   * a turret standing on taxed rock looks exactly like one that is not.
+   * The deploy panel names the rule; this is where it becomes a place.
+   *
+   * It is only up while something is being placed, because it is a
+   * building decision and nothing else — a permanent wash over a third of
+   * the map would compete with every unit on it.
+   *
+   * Null means "not built yet", which is also how it is invalidated: it is
+   * per-map, so reset() drops it and the next build hover pays for the
+   * rebuild once.
+   */
+  private soakLayer: HTMLCanvasElement | null = null;
   // the same hover in world px: the placement ghost wants the grid cell, but
   // the demolish highlight has to ask the sim what is actually under there
   private hoverX = -1;
@@ -1005,6 +1025,7 @@ export class Game {
 
   reset(): void {
     this.sim.reset();
+    this.soakLayer = null; // a new level is a new coastline
     this.menuOpen = false;
     this.fitToMap();
     this.renderer.rebuildTerrain(this.sim);
@@ -1199,6 +1220,39 @@ export class Game {
     drawHaze(c, this.worldW, this.worldH);
   }
 
+  /**
+   * Paint the Hydrophobic mask onto a COLS x ROWS bitmap — ONLY where a
+   * turret could actually stand, which is buildable rock (isBuildableWall,
+   * the same test canPlace makes). The mask itself covers water and road
+   * as well, and lighting those would be telling the player about ground
+   * they can never build on in the first place.
+   *
+   * Periwinkle, the same blue the codex draws an exclusive rule in
+   * (mutationFace.tsx) — a player who has read the card should recognise
+   * the colour on the ground without being told twice.
+   */
+  private buildSoakLayer(): HTMLCanvasElement | null {
+    const mask = this.sim.waterloggedMask();
+    if (!mask) return null;
+    const cv = document.createElement("canvas");
+    cv.width = COLS;
+    cv.height = ROWS;
+    const cc = cv.getContext("2d");
+    if (!cc) return null;
+    const img = cc.createImageData(COLS, ROWS);
+    const { blocked, wall } = this.sim.terrain;
+    for (let i = 0; i < mask.length; i++) {
+      if (!mask[i] || !blocked[i] || !isBuildableWall(wall[i])) continue;
+      const p = i * 4;
+      img.data[p] = 0x8a;
+      img.data[p + 1] = 0xa2;
+      img.data[p + 2] = 0xff;
+      img.data[p + 3] = 255;
+    }
+    cc.putImageData(img, 0, 0);
+    return cv;
+  }
+
   private drawOverlay(): void {
     const c = this.uictx;
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -1210,6 +1264,21 @@ export class Game {
     // a build ghost at the map's rim has to stay readable even where the
     // ground under it is fading out
     this.drawHaze(c);
+
+    // THE TAXED SHORE, while a turret is in hand. Under the routes and the
+    // ghost, both of which are decisions being made ON TOP of it
+    if (this.buildKind && this.sim.hydrophobicOn) {
+      const layer = this.soakLayer ?? (this.soakLayer = this.buildSoakLayer());
+      if (layer) {
+        c.globalAlpha = 0.3;
+        // one pixel per cell blown up to CELL: no smoothing, or the edge
+        // of the tax would blur across the cells it does not cover
+        c.imageSmoothingEnabled = false;
+        c.drawImage(layer, 0, 0, W, H);
+        c.imageSmoothingEnabled = true;
+        c.globalAlpha = 1;
+      }
+    }
 
     // ROUTES, under everything else so a selection ring still reads on top.
     // Drop zones are rings rather than discs: the ground inside one is
@@ -1312,9 +1381,19 @@ export class Game {
       const px = sz * CELL;
       const ok = this.sim.canPlace(this.hoverGx, this.hoverGy, this.buildKind);
       const x = this.hoverGx * CELL, y = this.hoverGy * CELL;
-      c.fillStyle = ok ? "rgba(255,211,127,0.14)" : "rgba(255,90,90,0.3)";
+      // a legal spot that the Hydrophobic rule TAXES is drawn in the
+      // exclusive rule's own blue rather than the ordinary amber: the
+      // placement is allowed, so it must not read as refused, but most of
+      // a turret's damage is worth a colour of its own
+      const soaked = ok && this.sim.isWaterlogged(this.hoverGx, this.hoverGy, this.buildKind);
+      const tint = !ok
+        ? ["rgba(255,90,90,0.3)", "rgba(255,90,90,0.9)"]
+        : soaked
+          ? ["rgba(138,162,255,0.22)", "rgba(138,162,255,0.95)"]
+          : ["rgba(255,211,127,0.14)", "rgba(255,211,127,0.85)"];
+      c.fillStyle = tint[0];
       c.fillRect(x, y, px, px);
-      c.strokeStyle = ok ? "rgba(255,211,127,0.85)" : "rgba(255,90,90,0.9)";
+      c.strokeStyle = tint[1];
       c.lineWidth = 1.5;
       c.strokeRect(x + 1, y + 1, px - 2, px - 2);
       // interior lines so the ghost reads as the cells it occupies

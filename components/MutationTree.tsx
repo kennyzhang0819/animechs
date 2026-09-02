@@ -2,7 +2,6 @@
 
 import {
   MUTATIONS,
-  mutationCostOf,
   MUT_COST_MAX,
   type MutationDef,
 } from "@/game/mutation";
@@ -10,7 +9,7 @@ import Board, { BackButton, useTouchOnly, type Cam } from "./Board";
 // the face and the weight live beside the deploy dialog that also draws
 // them (mutationFace.tsx) — one rule must not read Brutal here and
 // Heavy there
-import { bandOf, MutationFace, MUT_GLYPH, MUT_LIT } from "./mutationFace";
+import { bandFor, MutationFace, MUT_GLYPH, MUT_LIT } from "./mutationFace";
 
 /** the tab strip over both boards wears the codex glyph — re-exported so
  *  TechTree keeps asking the board it is a tab of, not a module below it */
@@ -149,7 +148,7 @@ function MutationTile({
   armed: string | null;
   onArm: (id: string | null) => void;
 }) {
-  const band = bandOf(mutationCostOf(def.id));
+  const band = bandFor(def);
   const { cx, cy } = tileAt(index);
   // on touch the card follows `armed`, not the pointer: iOS does not
   // reliably focus a <button> it was tapped on, so hanging the card off

@@ -23,8 +23,8 @@ changing the height means resizing the arrays, not setting a field.
 
 **AN EXIT BELONGS ON A BORDER.** The swarm is walking off the edge of the
 world, past whatever stands in the road; a goal cell in open field is a
-unit marching into the middle of the map and vanishing. grass-open's exits
-are the `x=255` column and tidewater's are the bottom band — put the base
+unit marching into the middle of the map and vanishing. confluence's exits
+are the `x=255` column and maelstrom's are the bottom band — put the base
 near that edge, run the lane through it and out, and mark the rim.
 
 Spawns and exits are per layer and independent: a ground zone only feeds

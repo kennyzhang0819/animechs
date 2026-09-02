@@ -70,7 +70,6 @@ import { turretIcon } from "@/game/atlas";
 import {
   cleanMutations,
   mutationById,
-  mutationCostOf,
   mutationsInForce,
   rollMutations,
   type MutationDef,
@@ -81,7 +80,7 @@ import { isEmpty, ITEM_INFO } from "@/game/items";
 import { CostRow, Wallet } from "./Items";
 import TechTree from "./TechTree";
 import { useTouchOnly } from "./Board";
-import { bandOf, MutationFace } from "./mutationFace";
+import { bandFor, MutationFace } from "./mutationFace";
 import MenuBackground from "./MenuBackground";
 
 /**
@@ -382,7 +381,7 @@ function MutationChip({
   armed: string | null;
   onArm: (id: string | null) => void;
 }) {
-  const band = bandOf(mutationCostOf(def.id));
+  const band = bandFor(def);
   // on touch the card follows `armed`, not the pointer: iOS does not
   // reliably focus a <button> it was tapped on, so hanging the card off
   // focus-within alone would leave taps opening nothing
