@@ -88,7 +88,8 @@ export interface MutationDef {
    * WHAT IT IS WORTH, in the budget a difficulty hands the roller. See
    * MUT_COST_MIN/MAX for the scale, and note that the cost is about how
    * much of the player's game it takes away, not about how much health it
-   * adds: Speedy adds no health at all and is the dearest thing here.
+   * adds: Speedy adds no health at all and is still one of the two
+   * dearest things here.
    */
   cost: number;
 }
@@ -110,28 +111,41 @@ export const MUT_COST_MAX = 6;
 /**
  * THE CATALOG, cheapest first — which is also codex order, so the list a
  * player reads climbs from the survivable to the ruinous.
+ *
+ * THESE COSTS CAME OFF THE DASHBOARD. They rode in public/balance.json's
+ * `mutations` section while they were being tuned and are authored here
+ * now; that file is empty again. Nothing in the catalog spends into the
+ * BRUTAL band today — the scale still allows it (MUT_COST_MAX), no rule
+ * currently earns it.
  */
 export const MUTATIONS: readonly MutationDef[] = [
   {
+    id: "armored",
+    name: "Armored Swarms",
+    cost: 1,
+    blurb:
+      "Lower tier units gain massive armor boosts.",
+  },
+  {
     id: "volatile",
     name: "Volatile",
-    cost: 3,
+    cost: 2,
     blurb:
-      "Enemies detonate when they die, and the blast scorches your turrets.",
+      "Enemies detonate when they die and damages nearby turrets.",
   },
   {
     id: "overshields",
     name: "Overshields",
     cost: 3,
     blurb:
-      "Every force field on the field comes up five times the pool it was, shield tower domes included.",
+      "Force fields are five times as strong.",
   },
   {
     id: "shieldTowers",
     name: "Shield Towers",
-    cost: 4,
+    cost: 3,
     blurb:
-      "Shield towers rise on the high ground, sheltering the swarm under red domes until they are destroyed. The later the wave, the harder they are to bring down.",
+      "Shield towers rise periodically, obsorbing bullets until they are destroyed.",
   },
   {
     id: "hungry",
@@ -141,16 +155,9 @@ export const MUTATIONS: readonly MutationDef[] = [
       "Hungry mechs eats its neighbours and become stronger with every meal.",
   },
   {
-    id: "armored",
-    name: "Armored Swarms",
-    cost: 4,
-    blurb:
-      "The swarm's light bodies walk in plated, and small-calibre fire barely scratches them.",
-  },
-  {
     id: "speedy",
     name: "Speedy",
-    cost: 5,
+    cost: 4,
     blurb: "Every enemy moves twice as fast, and nothing can slow them.",
   },
 ];
@@ -595,7 +602,7 @@ export const ARMORED_MAX_TIER = 3;
 // an answer: doubled speed is answered by a liquid turret, and slow
 // immunity is answered by simply not building one. Together they say the
 // thing the mutator is for — the time a player buys between the drop zone
-// and the core is gone, and no amount of water buys it back.
+// and the base is gone, and no amount of water buys it back.
 //
 // IT ADDS NO HEALTH, WHICH IS WHY IT COSTS WHAT IT DOES. Every other dial
 // in the game makes bodies harder to kill; this one shortens the window

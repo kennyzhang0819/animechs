@@ -34,6 +34,12 @@ import { NodeFace } from "./techIcons";
  * (public/tree.json, see game/layout.ts) and this is the thing that
  * writes it.
  *
+ * WHAT YOU MOVE IS THE LAYOUT. There is no reset and no revert: the
+ * document this writes is the truth, and the authored cells in layout.ts
+ * are only the seed a node starts from before anyone has ever dragged it.
+ * A tool that offers to throw an afternoon of composition away in one
+ * click will eventually be asked to, by accident.
+ *
  * IT IS THE REAL BOARD, not a diagram of it. Same camera, same grid, same
  * edges, the same boxes at the same sizes, and THE SAME FACES — the block
  * sprites and glyphs of techIcons.tsx, not name labels. That last one is
@@ -102,12 +108,6 @@ export default function TreeEditorView({ onClose }: { onClose: () => void }) {
     setStatus((await saveLayoutDoc(allLayoutOverrides())) ? "Saved" : "Save failed");
   }, []);
 
-  const resetAll = useCallback(() => {
-    for (const id of LAYOUT_IDS) setCell(id, undefined);
-    setStatus(null);
-    bump((n) => n + 1);
-  }, []);
-
   /**
    * THE DRAG. It is on the node rather than on the board because the board
    * under it is already listening for a drag of its own — that one pans the
@@ -159,13 +159,6 @@ export default function TreeEditorView({ onClose }: { onClose: () => void }) {
             <button onClick={save} className={`${CHROME_BTN} h-11 font-bold text-[#EDEDEF]`}>
               Save
             </button>
-            <button
-              onClick={resetAll}
-              disabled={moved === 0}
-              className={`${CHROME_BTN} h-11 disabled:opacity-30`}
-            >
-              Reset all
-            </button>
             <span className="rounded border border-[#2E2E36] bg-[#151518]/90 px-3 py-1.5 text-[13px] text-[#71717C] backdrop-blur">
               {moved} moved{status ? ` · ${status}` : ""}
             </span>
@@ -174,9 +167,9 @@ export default function TreeEditorView({ onClose }: { onClose: () => void }) {
             className="absolute bottom-[max(1rem,var(--safe-b))] left-1/2 max-w-[calc(100vw-10rem)] -translate-x-1/2 rounded border border-[#2E2E36] bg-[#151518]/90 px-3 py-1.5 text-[12.5px] leading-snug text-[#71717C] backdrop-blur"
             data-ui
           >
-            Drag a node to move it; it snaps to the grid. Double-click one to send it back
-            to its authored cell. Save writes public/tree.json, which the game reads over
-            the authored layout at startup.
+            Drag a node to move it; it snaps to the grid. There is no undo and nothing
+            to reset to: what is on this board is the layout. Save writes
+            public/tree.json, which the game reads over the authored layout at startup.
           </div>
         </>
       }
@@ -233,11 +226,6 @@ export default function TreeEditorView({ onClose }: { onClose: () => void }) {
             onPointerMove={onMove(id)}
             onPointerUp={onUp}
             onPointerCancel={onUp}
-            onDoubleClick={() => {
-              setCell(id, undefined);
-              setStatus(null);
-              bump((n) => n + 1);
-            }}
             title={`${nameOf(id)} — ${cellOf(id).x}, ${cellOf(id).y}${
               isMoved(id)
                 ? ` (authored ${authoredCell(id).x}, ${authoredCell(id).y})`

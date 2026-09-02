@@ -33,12 +33,12 @@ import {
  * NUMBER: the enemy level the whole script is played at.
  *
  *   rung   1   2   3   4   5   6   7   8   9  10
- *   level  0   4   8  12  16  20  24  28  32  36
+ *   level  0  10  15  20  25  30  35  40  45  50
  *
  * So the waves are the CONTENT and the rung is the DIFFICULTY, and the two
  * are completely separate. Rung 1 is the campaign as authored; rung 2 is
- * that same campaign with four enemy levels on it, x1.26 health a body;
- * rung 10 is it at level 36, x8.1 health a body. Nothing about wave 37
+ * that same campaign with ten enemy levels on it, x1.79 health a body;
+ * rung 10 is it at level 50, x18.4 health a body. Nothing about wave 37
  * changes between them except how much health walks in.
  *
  * THIS REPLACED TWO THINGS AT ONCE. There were four NAMED difficulties —
@@ -61,10 +61,10 @@ import {
  * for four rows with big gaps and the wrong one for a continuous ladder:
  * steamrolling the rung that used to kill you IS the ascension fantasy, and
  * a permission gate takes it away. The guard is now an INCOME GRADIENT —
- * see LOOT_PER_RUNG. Nobody farms rung 4 when rung 10 pays 10x.
+ * see LOOT_PER_RUNG. Nobody farms rung 4 when rung 10 pays 14x.
  *
  * Nothing is generated. Wave 1 of rung 10 is wave 1 of the same authored
- * list rung 1 plays, with 36 levels on it — which is what lets the level
+ * list rung 1 plays, with 50 levels on it — which is what lets the level
  * editor be the whole authoring surface.
  */
 
@@ -83,16 +83,28 @@ export const HP_PER_LEVEL = 1.06;
 
 /**
  * ENEMY LEVELS ADDED PER RUNG, and the only thing that makes one rung
- * different from the next: 4 levels is x1.2625 health on every body.
+ * different from the next: 5 levels is x1.338 health on every body.
  *
  * It is the WHOLE step now. Under the named difficulties a step was two
  * things multiplied — ten levels AND fifteen new waves — and the wave half
- * is gone, so this number alone is what "one rung harder" means. That is
- * why it is small: 1.26 is a step a fleet can answer by growing a quarter,
- * which is roughly one evening of farming, and ten of them compound to
- * x8.1.
+ * is gone, so this number alone is what "one rung harder" means. It stays
+ * small on purpose: a third more health is a step a fleet can answer by
+ * growing a third, which is roughly one evening of farming.
+ *
+ * THESE ARE THE NUMBERS THE DASHBOARD SETTLED ON. They rode in
+ * public/balance.json as per-rung overrides for as long as they were being
+ * tuned; they are the authored ladder now, and that file is empty again.
  */
-export const LEVELS_PER_RUNG = 4;
+export const LEVELS_PER_RUNG = 5;
+
+/**
+ * THE FIRST STEP IS THE BIG ONE: Level 1 is the campaign at level 0, and
+ * Level 2 lands ten levels up rather than five. Level 1 is the tutorial
+ * rung — no mutators, no scaling, the script exactly as authored — so the
+ * gap out of it is the gap out of "as authored" and into the ladder
+ * proper. Every step above it is LEVELS_PER_RUNG.
+ */
+export const LEVELS_FIRST_STEP = 10;
 
 /**
  * A RUNG SCALES HEALTH AND THE ROLL, AND NOTHING ELSE. Two columns of this
@@ -135,7 +147,7 @@ export const RUNG_COUNT = 10;
  * Every dial is arithmetic on the rung's index, which is what makes the
  * ladder extend rather than need re-authoring:
  *
- *   level        index x LEVELS_PER_RUNG        0, 4, 8, ... 36
+ *   level        the first step, then one per rung  0, 10, 15, ... 50
  *
  * A rung has NO NAME and NO IDENTITY beyond its number: it is shown as
  * "Level n" (rungLabel) in a colour read off its position (rungColor), and
@@ -151,7 +163,9 @@ export const RUNGS: readonly {
   mutationPoints: number;
   mutationCount: number;
 }[] = Array.from({ length: RUNG_COUNT }, (_, i) => ({
-  level: i * LEVELS_PER_RUNG,
+  // rung 1 is level 0 flat; the ladder proper starts a full
+  // LEVELS_FIRST_STEP up and climbs LEVELS_PER_RUNG a rung from there
+  level: i === 0 ? 0 : LEVELS_FIRST_STEP + (i - 1) * LEVELS_PER_RUNG,
   // the two mutation columns are arithmetic on the index like the rest,
   // and both are zero at rung 1: the bottom of the ladder is the campaign
   // as authored (see mutation.ts)
@@ -238,7 +252,7 @@ const clampTier = (tier: number): number =>
 
 /**
  * LOOT PER RUNG, COMPOUNDING: rung n pays x LOOT_PER_RUNG^n on every drop.
- * Rung 10 pays x10.6 what rung 1 does, and it is the whole anti-farm guard.
+ * Rung 10 pays x13.9 what rung 1 does, and it is the whole anti-farm guard.
  *
  * IT HAD TO STOP BEING LINEAR. The old bonus was 1 + 0.3n against health
  * that compounds at 1.06 a level, which is a SHAPE problem rather than a
@@ -246,19 +260,27 @@ const clampTier = (tier: number): number =>
  * ladder somewhere in its twenties, whatever the constants. So the payout
  * compounds too.
  *
- * WHERE 1.30 COMES FROM, and it is now exact arithmetic rather than a
+ * WHERE 1.34 COMES FROM, and it is now exact arithmetic rather than a
  * measurement. Every rung plays the same fifty waves for the same number of
  * minutes and kills the same bodies, so the only thing that moves between
  * two rungs is the level: the fight gets HP_PER_LEVEL ^ LEVELS_PER_RUNG =
- * x1.2625 harder, both in total health and per second, and the payout gets
- * x1.30 bigger. 1.30 against 1.2625 is a 3% surplus a rung — modestly
- * above, on purpose.
+ * x1.338 harder, both in total health and per second, and the payout gets
+ * x1.34 bigger. 1.34 against 1.338 is a surplus of a tenth of a percent a
+ * rung — the payout and the fight now climb at the same rate, and the
+ * ladder is neither a treadmill nor a slide.
+ *
+ * IT WAS 1.30 AGAINST A FOUR-LEVEL STEP, which was a 3% surplus back when
+ * a rung was x1.2625. The step went 4 -> 5 levels when the dashboard's
+ * ladder was made authored, which turned that surplus into a 3% DEFICIT —
+ * every rung a slightly worse farm than the one under it — and this number
+ * followed it up. Tune the two together or not at all: audit()/check()
+ * report both steps per rung.
  *
  * THE SURPLUS IS SUPPOSED TO BE SMALL, because the tech tree's own price
  * curve is geometric in points owned (g ** owned, tech.ts) and that is what
- * turns the surplus into TIME. Set this much higher and the ladder walks
- * itself; set it below x1.2625 and every rung is a worse farm than the one
- * under it, which is the failure the linear bonus had. audit() reports the
+ * turns the small surplus into TIME. Set this much higher and the ladder walks
+ * itself; set it below the fight's own step and every rung is a worse farm than the
+ * one under it, which is the failure the linear bonus had. audit() reports the
  * fight's step and the payout's step per rung and check() complains when
  * their ratio drifts — those are the numbers to tune against, never the
  * feel of one run.
@@ -275,7 +297,7 @@ const clampTier = (tier: number): number =>
  * was strictly worse to play than the one before, which is the one thing
  * an ascension ladder must never be.
  */
-export const LOOT_PER_RUNG = 1.3;
+export const LOOT_PER_RUNG = 1.34;
 
 /** how much harder one rung is than the one below — the level step, and
  *  now the ONLY thing that changes between two rungs */
@@ -1151,7 +1173,7 @@ export function grindTable(spec: LevelSpec = WORLD): string {
 /**
  * The most extra farming one rung may cost over the last before check()
  * calls it a grind — see AuditRow.grindStep. The authored ladder sits flat
- * at RUNG_HP_STEP / LOOT_PER_RUNG = 0.97 on every rung, so this is real
+ * at RUNG_HP_STEP / LOOT_PER_RUNG = 1.00 on every rung, so this is real
  * headroom rather than a number the table only just clears.
  *
  * WALL_STEP and FILLER_STEP used to live here, both measuring the health
