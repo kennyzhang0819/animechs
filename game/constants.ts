@@ -337,6 +337,9 @@ export const LANCER_CHARGE_SPARK = 38 / 60;
 export interface TowerStats {
   name: string;
   size: number; // footprint in tiles (size x size)
+  /** Mindustry's own block health for this turret, BEFORE TOWER_HP_SCALE
+   *  — see towerMaxHp for where each number comes from */
+  health: number;
   range: number; // px
   reload: number; // s per volley
   shots: number; // bullets per volley
@@ -387,6 +390,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   duo: {
     name: "Duo",
     size: 1,
+    health: 250,
     range: 160 * MU,
     reload: 20 / TICK,
     shots: 1,
@@ -429,6 +433,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   hail: {
     name: "Hail",
     size: 1,
+    health: 260,
     range: 235 * MU,
     reload: 60 / TICK,
     shots: 1,
@@ -476,6 +481,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   salvo: {
     name: "Salvo",
     size: 2,
+    health: 960,
     range: 190 * MU,
     reload: 29 / TICK,
     shots: 4,
@@ -518,6 +524,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   scatter: {
     name: "Scatter",
     size: 2,
+    health: 800,
     range: 220 * MU,
     reload: 18 / TICK,
     shots: 2,
@@ -566,6 +573,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   fuse: {
     name: "Fuse",
     size: 3,
+    health: 1980,
     range: 90 * MU,
     reload: 35 / TICK,
     shots: 3,
@@ -606,6 +614,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   scorch: {
     name: "Scorch",
     size: 1,
+    health: 400,
     range: 60 * MU,
     reload: 6 / TICK,
     shots: 1,
@@ -650,6 +659,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   arc: {
     name: "Arc",
     size: 1,
+    health: 260,
     range: 90 * MU,
     reload: 35 / TICK,
     shots: 1,
@@ -692,6 +702,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   lancer: {
     name: "Lancer",
     size: 2,
+    health: 1120,
     range: 165 * MU,
     reload: 80 / TICK,
     chargeTime: 40 / TICK,
@@ -732,6 +743,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   ripple: {
     name: "Ripple",
     size: 3,
+    health: 1170,
     range: 290 * MU,
     minRange: 50 * MU,
     reload: 120 / TICK,
@@ -794,6 +806,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   wave: {
     name: "Wave",
     size: 2,
+    health: 1000,
     range: 110 * MU,
     reload: 3 / TICK,
     shots: 1,
@@ -840,6 +853,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   parallax: {
     name: "Parallax",
     size: 2,
+    health: 640,
     range: 300 * MU,
     reload: 0, // continuous: no volley clock at all
     shots: 1,
@@ -879,6 +893,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   tsunami: {
     name: "Tsunami",
     size: 3,
+    health: 2250,
     range: 190 * MU,
     reload: 3 / TICK,
     shots: 2,
@@ -921,6 +936,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   swarmer: {
     name: "Swarmer",
     size: 2,
+    health: 1200,
     range: 240 * MU,
     reload: (60 * 4) / 7 / TICK,
     shots: 4,
@@ -981,6 +997,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   cyclone: {
     name: "Cyclone",
     size: 3,
+    health: 1305,
     range: 200 * MU,
     reload: 10 / TICK,
     shots: 1,
@@ -1067,6 +1084,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   spectre: {
     name: "Spectre",
     size: 4,
+    health: 2560,
     range: 260 * MU,
     reload: 7 / TICK,
     shots: 1,
@@ -1126,6 +1144,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   meltdown: {
     name: "Meltdown",
     size: 4,
+    health: 3200,
     range: 195 * MU,
     reload: 90 / TICK,
     shots: 1,
@@ -1176,6 +1195,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   foreshadow: {
     name: "Foreshadow",
     size: 4,
+    health: 2400,
     range: 500 * MU,
     reload: 200 / TICK,
     shots: 1,
@@ -1224,15 +1244,37 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
  * and replacing a downed tower is allowed — a rebuild is slower than the
  * timer for anything bigger than a duo, so there is nothing to cheese.
  *
- * The pool scales with the FOOTPRINT, not the price: a duo is paper and a
- * spectre is a bunker, which is what the art already says.
+ * THE POOL IS MINDUSTRY'S OWN BLOCK HEALTH, TIMES ONE DIAL. Each turret's
+ * `health` in TOWERS is the upstream number, read out of Blocks.java and
+ * Block.init: four of them are authored outright (duo 250, hail 260, arc
+ * 260, scorch 400) and the rest are `scaledHealth * size^2` — the
+ * per-turret scaledHealth where one is set, else Block's default of 40
+ * grown by the healthScaling of every item in the build cost (thorium
+ * +0.2, plastanium +0.1, surge and phase +0.25), rounded to five.
+ *
+ *   duo 250   hail 260   arc 260   scorch 400
+ *   scatter 800   parallax 640   salvo 960   wave 1000   lancer 1120   swarmer 1200
+ *   ripple 1170   cyclone 1305   fuse 1980   tsunami 2250
+ *   foreshadow 2400   spectre 2560   meltdown 3200
+ *
+ * It used to be 250 a cell, which made a duo exactly Mindustry's and a
+ * spectre one and a half times it, and the size-2s all the same. The
+ * upstream numbers are not tidy — a lancer outlasts a scatter, a duo
+ * outlasts a parallax — but they are the ones every other stat here is
+ * faithful to, and the oddities are Mindustry's own.
+ *
+ * THE DIAL IS WHY THEY ARE HIGHER THAN UPSTREAM. In Mindustry a turret
+ * stands behind walls and is not meant to take fire; here there are no
+ * walls and the turret IS the front, so every pool is scaled by
+ * TOWER_HP_SCALE. Two is the number: a duo takes 500, which is forty
+ * dagger pops or under two reign pops, and a meltdown takes 6,400.
  */
-export const TOWER_HP_PER_CELL = 250;
+export const TOWER_HP_SCALE = 2;
 /** seconds a downed tower spends regenerating before it stands back up */
 export const TOWER_DOWN_TIME = 10;
-/** a tower's full pool — footprint area times the per-cell constant */
+/** a tower's full pool — Mindustry's health for the block, times the dial */
 export const towerMaxHp = (kind: import("./types").TowerKind): number =>
-  TOWERS[kind].size * TOWERS[kind].size * TOWER_HP_PER_CELL;
+  TOWERS[kind].health * TOWER_HP_SCALE;
 
 /**
  * The stats driving one live projectile. Almost always the firing turret's
@@ -1355,13 +1397,43 @@ export const BASE = { x: 120, y: 33, size: 5 };
 /** every base is this many cells square */
 export const BASE_SIZE = BASE.size;
 
-// damage tint per hp third — full hp renders the sprite as-is
-// (gray armor, orange cell, like Mindustry); hits darken and redden it
+/**
+ * DAMAGE TINT PER HP THIRD — full health renders the sprite as-is (grey
+ * armour, orange cell, like Mindustry), and a hit greys it down: soot,
+ * not blood.
+ *
+ * IT USED TO REDDEN. That put the game's one alarm colour on the thing
+ * the player is winning against, so a lane full of nearly-dead bodies
+ * read as danger — and it was the same red the HUD spends on the last
+ * life and the build ghost spends on "you cannot place this". Red is for
+ * the player's problems now. The swarm's damage is a body going dark,
+ * which is what a burning machine does, and the sim puts smoke on it to
+ * say the same thing twice (DAMAGE_SMOKE_BELOW).
+ *
+ * A neutral grey rather than a warm or cool one, so the water tint and
+ * the hungry hue multiply into it cleanly — a wet, hurt unit is a darker
+ * blue, not a muddy purple. Towers wear the same table, so "this is
+ * taking damage" still reads identically on both sides of the fight.
+ */
 export const HP_TINT: ReadonlyArray<readonly [number, number, number]> = [
-  [0.65, 0.4, 0.38],
-  [1.0, 0.72, 0.65],
+  [0.5, 0.5, 0.52],
+  [0.76, 0.76, 0.78],
   [1.0, 1.0, 1.0],
 ];
+
+/**
+ * DAMAGE SMOKE (Sim.updateStatus): a unit below this share of its pool
+ * sheds grey puffs, thickening toward death. Half, so it starts at the
+ * same moment the tint's middle step does — one threshold, said two ways.
+ */
+export const DAMAGE_SMOKE_BELOW = 0.5;
+/** puffs a second at death's door, for a dagger-sized body; the sim scales
+ *  it by the hitbox, so a toxopid at the same health pours several times
+ *  this. Mathf.chanceDelta-style: a per-second chance scaled by dt */
+export const DAMAGE_SMOKE_RATE = 5;
+/** seconds one puff lives — short, so a body that is healed stops
+ *  smoking within a breath rather than trailing it */
+export const DAMAGE_SMOKE_LIFE = 0.55;
 
 export const clamp = (v: number, a: number, b: number): number =>
   v < a ? a : v > b ? b : v;

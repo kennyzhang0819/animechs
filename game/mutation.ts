@@ -870,20 +870,22 @@ export const OVERSHIELD_SCALE = 5;
 // is the rule that turns tower health (towerMaxHp in constants.ts) from a
 // dead field into a mechanic: nothing else in the game hurts a tower.
 //
-// IT TAXES POINT-BLANK PLAY SPECIFICALLY. A blast reaches three and a half
-// cells, so the emplacements built against the lane — scorch, fuse, arc, a
-// duo wall on the choke — feel it hardest, and they feel it in proportion
-// to how many bodies die at their feet. A long-range board is still
-// untouched. That asymmetry is the design: the mutator does not say "your
-// towers take damage", it says "the kill zone cannot also be the front
-// row", which is a layout problem rather than a stat problem.
+// IT TAXES POINT-BLANK PLAY SPECIFICALLY. A blast reaches from a little
+// over two cells (a dagger) to six (a tier-5 body), so the emplacements
+// built against the lane — scorch, fuse, arc, a duo wall on the choke —
+// feel it hardest, and they feel it in proportion to how many bodies die
+// at their feet and how heavy those bodies were. A long-range board is
+// still untouched. That asymmetry is the design: the mutator does not
+// say "your towers take damage", it says "the kill zone cannot also be
+// the front row", which is a layout problem rather than a stat problem.
 //
-// THE REACH WAS DOUBLED FROM 1.75 CELLS and it changed the rule's shape,
-// not just its strength. At 1.75 only the turret a body actually died on
-// top of paid; at 3.5 the whole SECOND rank behind the choke pays too, so
-// spacing a line off the lane by one turret no longer buys immunity —
-// which is the point, because one turret of clearance was a habit rather
-// than a decision.
+// THE REACH CLIMBS WITH THE TIER (VOLATILE_RADIUS) and that is what gives
+// the rule its shape rather than just its strength. A dagger's pop only
+// ever costs the turret it died on top of; a reign's takes the whole
+// second rank behind the choke with it, so spacing a line off the lane
+// by one turret buys immunity from the chaff and none at all from the
+// thing that was worth killing — which is the point, because one turret
+// of clearance was a habit rather than a decision.
 //
 // A DOWNED TOWER IS SECONDS, NOT SALVAGE. The tower stands back up at full
 // health after TOWER_DOWN_TIME, so what a swarm of detonating daggers
@@ -898,20 +900,40 @@ export const OVERSHIELD_SCALE = 5;
 // armour is never level-scaled — tower health does not climb the ladder,
 // so neither may the thing that spends it.
 
-/** blast reach from the dead body's centre, in px (3.5 cells of 20) —
- *  plus the body's own hitbox radius, so a fortress's boom is wider than
- *  a flare's. A literal rather than CELL because this file deliberately
- *  imports nothing.
+/**
+ * BLAST REACH from the dead body's centre, in px, BY THE DEAD UNIT'S TIER
+ * (index 0 unused) — plus the body's own hitbox radius on top, so a
+ * fortress's boom is wider than a flare's even within a tier. Literals
+ * rather than CELL because this file deliberately imports nothing.
  *
- *  THE RING DRAWN FOR THE POP IS SIZED FROM THIS. Sim.volatileBlast hands
- *  the reach to the shockwave effect, so what a player sees is exactly
- *  what took the damage — change this number and the visual follows */
-export const VOLATILE_RADIUS = 70;
+ *   tier     1      2      3      4      5
+ *   cells    2.25   2.75   3.5    4.5    6
+ *
+ * THE REACH CLIMBS WITH THE TIER AND THE DAMAGE TABLE BELOW DOES NOT MOVE
+ * FOR IT. The two tables are the rule's two axes: VOLATILE_DMG says how
+ * hard each tower in reach is hit, this says how many towers are in
+ * reach, and a heavy body is worse on both. A tier-5 dying inside the
+ * kill zone is meant to be an EVENT — six cells is a whole emplacement,
+ * not a front row — while a dagger's pop stays the firecracker it was.
+ *
+ * THE RING DRAWN FOR THE POP IS SIZED FROM THIS. Sim.volatileBlast hands
+ * the reach to the shockwave effect, so what a player sees is exactly
+ * what took the damage — change a row and the visual follows.
+ */
+export const VOLATILE_RADIUS: readonly number[] = [0, 45, 55, 70, 90, 120];
 
 /** blast damage to each tower in reach, by the dead unit's tier (index 0
  *  unused). Tier 4-5 bodies are bosses and boss-adjacent — their deaths
  *  are the run's punctuation marks and should feel like it */
 export const VOLATILE_DMG: readonly number[] = [0, 12, 30, 70, 150, 300];
+
+// the two tables are read side by side with one tier index (Sim.volatileBlast),
+// so they have to reach the same tier — a reach table that stopped short
+// would give the heaviest deaths no blast at all, silently
+if (VOLATILE_RADIUS.length !== VOLATILE_DMG.length)
+  throw new Error(
+    `Volatile's reach table has ${VOLATILE_RADIUS.length} rows and its damage table ${VOLATILE_DMG.length}`,
+  );
 
 // ---------- MITOSIS -----------------------------------------------------
 //

@@ -1,5 +1,7 @@
 # Authoring maps
 
+The checklist is `map-rules.md`; this is the reasoning behind it.
+
 A map is a JSON document in `public/maps/`, listed by id in
 `OFFICIAL_MAP_IDS` (`game/maps.ts`). A world claims one by name in
 `WORLDS[].map` (`game/levels.ts`); a map no world claims still opens in the
@@ -93,6 +95,42 @@ once and leaves concave ones — the rim, the walls lining a lane —
 untouched. r=8 is a light file. It can only remove rock, and only rock a
 disc that size cannot fit inside, so nothing thicker than 2r is ever cut
 through.
+
+## Dressing
+
+The geometry is the map; the floors, the rock families and the clutter
+are its paint, and the paint comes from rules, not from a brush.
+`scripts/maps/dress.mjs` repaints an authored document from a palette and
+writes `blocked`, `exits`, `spawns` and `base` back untouched:
+
+```
+node scripts/maps/dress.mjs confluence [preview.png]
+```
+
+**RE-RUNNING IT OVERWRITES EVERY FLOOR, WALL AND PROP ON THAT MAP.** Paint
+in the editor or in the script's `STYLES` table, never both — a hand edit
+survives exactly until the next run.
+
+The rules are the ones Quagmire and the start screen already use, and
+they are what makes a map read as a place rather than as a colour:
+
+- **One rock, and NOTHING OUTLINES A ROAD.** A road is cut through the
+  rock and the rock on both sides of it is the same rock. Lining the
+  roads with a second family was tried and it reads as a drawing with an
+  ink line round every path. The road is traceable because the rock
+  contrasts with the FLOOR: dark dune over pale sand on Confluence.
+- **A coast, where there is water, and a BROAD one.** Quagmire's heart is
+  the island at 0.58 of its own outline, so its pale dacite rim is about
+  forty percent of every mass. The coast follows the SEA and not the
+  roads, and the line between it and the heart is wobbled by noise.
+- **Outcrops.** Patches of the rim family deep in the heart, where a
+  low-frequency noise runs high — the start screen's second rock.
+- **A second floor**, in patches the same way. **Scree** at the foot of
+  the rock, a darker floor a cell or so deep, broken up by noise. A
+  **third floor** only where the road is wide enough to be a plain.
+- **Clutter along the road's edges** and never down its middle, never in
+  a drop zone, never round the base. A boulder is a thing to walk round;
+  the column walks the middle.
 
 ## Water
 

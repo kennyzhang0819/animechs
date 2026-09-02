@@ -202,9 +202,12 @@ const FLAME_GRAY = [0.5, 0.5, 0.5] as const;
 const WET_TINT: ReadonlyArray<RGB> = HP_TINT.map(
   (t): RGB => [t[0] * 0.62, t[1] * 0.75, t[2]],
 );
-/** a tower that is DOWN or ENTOMBED: dark and desaturated — a state, not
- *  a wound, so it must not read as another step of the red hp ramp */
-const TOWER_DARK: RGB = [0.42, 0.41, 0.47];
+/** a tower that is DOWN or ENTOMBED: darker than any step of the hp ramp
+ *  and pulled toward blue, so it is a STATE rather than the last wound.
+ *  The ramp went grey (HP_TINT), which is why this is no longer merely
+ *  "dark" — a badly hurt tower is grey too, and the two have to read
+ *  apart at a glance without the smoke's help */
+const TOWER_DARK: RGB = [0.3, 0.3, 0.4];
 /**
  * The same trick for the HUNGRY status (the Hungry mutator): the hue
  * multiplied into whatever the unit was already drawn in, one table per
@@ -339,9 +342,11 @@ void main() {
  * travel INSIDE the buffer rather than beside it. It rides the fill's
  * alpha: both values sit above the 0.9 the edge detect tests, so the rim
  * is found identically either way, and the interior simply asks which
- * side of SHIELD_HATCH_MIN it fell on. A shield tower's dome is drawn plain
- * (its diagonals read as damage over a lane full of units); a carrier's
- * bubble keeps Mindustry's hatch.
+ * side of SHIELD_HATCH_MIN it fell on. Everything on the roster is drawn
+ * plain now — the shield towers' domes first, because their diagonals read
+ * as damage over a lane full of units, and then the carriers' bubbles for
+ * the same reason. The hatch stays in the shader, switched off by the
+ * fill, for anything that ever wants Mindustry's full treatment back.
  */
 const SHIELD_FS = `#version 300 es
 precision highp float;
@@ -1656,10 +1661,10 @@ export class Renderer {
         : sz === 3 ? UV_TOWER_BASE3
         : sz === 2 ? UV_TOWER_BASE
         : UV_TOWER_BASE1;
-      // a hurt tower wears the units' own hp-thirds red (HP_TINT), so
+      // a hurt tower wears the units' own hp-thirds grey (HP_TINT), so
       // "this is taking damage" reads identically on both sides of the
-      // fight; a DOWNED or ENTOMBED one goes dark instead — a state, not
-      // a wound
+      // fight; a DOWNED or ENTOMBED one goes dark blue instead — a state,
+      // not a wound
       let tint: readonly [number, number, number];
       if (t.downT > 0 || t.tombShieldTower >= 0) tint = TOWER_DARK;
       else {
@@ -2011,6 +2016,8 @@ export class Renderer {
             (e.rot ?? 0) + (side * 140 * Math.PI) / 180, PAL.orangeSpark, 1);
       } else if (e.kind === FxKind.SmokeCloud) {
         this.drawSmokeCloud(dyn, e, t);
+      } else if (e.kind === FxKind.DamageSmoke) {
+        this.drawDamageSmoke(dyn, e, t);
       } else if (e.kind === FxKind.HitMeltdown) {
         // Fx.hitMeltdown: six bars flicking off whatever the beam is
         // resting on, in the beam's own hot orange
@@ -2125,7 +2132,12 @@ export class Renderer {
         SHIELD_COL[2] + (1 - SHIELD_COL[2]) * w,
       ];
       if (buffered) {
-        this.fillPoly(b, upx[i], upy[i], spec.sides, rad, spec.rotation, col, 1);
+        // SHIELD_PLAIN, not 1: the rim and the flat interior wash, and none
+        // of the travelling diagonals — the same treatment the shield
+        // towers' domes get below, and for the same reason. The hatch
+        // moved over whatever walked under it, which over a lane read as
+        // damage on the bodies rather than as a field around them
+        this.fillPoly(b, upx[i], upy[i], spec.sides, rad, spec.rotation, col, SHIELD_PLAIN);
       } else {
         this.fillPoly(b, upx[i], upy[i], spec.sides, rad, spec.rotation, col, 0.09 + 0.08 * w);
         this.strokePoly(b, upx[i], upy[i], spec.sides, rad, spec.rotation, 1.5 * MU, col, 1);
@@ -2683,6 +2695,23 @@ export class Renderer {
    * randLenVectors, each fading in and out on its OWN clock — an alpha
    * that peaks when that mote is halfway through its life.
    */
+  /**
+   * The soot a hurt unit sheds (Sim.updateStatus): a few grey puffs
+   * leaving the body, swelling and thinning as they go, and drifting UP the
+   * screen the way smoke does. Fx.smokeCloud's shape at a unit's scale —
+   * e.len carries the hitbox radius, so a toxopid's smoke is not a
+   * dagger's — and none of Mindustry's fire, which this game does not
+   * field. A deviation: upstream units do not smoke, buildings do.
+   */
+  private drawDamageSmoke(dyn: Batch, e: Effect, t: number): void {
+    const spread = (e.len ?? 10) * 0.7; // len is the hitbox radius; 10 is UR, a bare dagger
+    const rise = t * 6 * MU;
+    this.cloud(e.seed ?? 1, 4, spread, t, (x, y, pfin, pfout) => {
+      this.fillCircle(dyn, e.x + x, e.y + y - rise, (0.6 + pfout * 2.4) * MU, PAL.gray,
+        (0.5 - Math.abs(pfin - 0.5)) * 1.7);
+    });
+  }
+
   private drawSmokeCloud(dyn: Batch, e: Effect, t: number): void {
     this.cloud(e.seed ?? 1, 30, 30 * MU, t, (x, y, pfin, pfout) => {
       this.fillCircle(dyn, e.x + x, e.y + y, (0.5 + pfout * 4) * MU, PAL.gray,

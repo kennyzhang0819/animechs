@@ -890,6 +890,22 @@ export default function MechSwarm() {
    * (Progress.hudMinimized), initialized on mount with the rest of the save */
   const [hudMin, setHudMin] = useState(false);
   /**
+   * THE RULES THIS RUN IS PLAYED UNDER, for the corner panel — the level's
+   * own and the roll alike, as the deploy dialog listed them. A player who
+   * skimmed the dialog and is now three waves in wants to know why the
+   * swarm is doing what it is doing; this is where that answer lives on
+   * the field. It folds away with the rest of the details (hudMin).
+   */
+  const hudRules = useMemo(
+    () =>
+      level
+        ? mutationsInForce(level.intrinsicMutation, level.mutation)
+            .map(mutationById)
+            .filter((m): m is NonNullable<typeof m> => m !== null)
+        : [],
+    [level],
+  );
+  /**
    * Ambient effects on? A saved preference (Progress.effects) like the
    * pace and the HUD state, because it is a fact about the DEVICE — a
    * phone that could not afford the particles last run cannot this run
@@ -1865,23 +1881,39 @@ export default function MechSwarm() {
                       instead of one has not honoured it. So lives fold away
                       with the rest and the minimized panel is the wave line
                       alone. */}
-                  {hud.livesMax > 1 && !hudMin && (
+                  {/* ...and the enemy count shares that line, in the same
+                      voice. ONE NUMBER, NOT A ROSTER: the per-kind icon row
+                      said what was on the field down to the last crawler,
+                      which is a census nobody reads mid-wave. What a player
+                      wants off this corner is "how much is still coming at
+                      me", so that is all it says */}
+                  {!hudMin && (hud.livesMax > 1 || alive > 0) && (
                     <div className="text-[#71717C]">
-                      Lives{" "}
-                      <span
-                        className="font-bold"
-                        style={{
-                          color:
-                            hud.lives > hud.livesMax / 2
-                              ? "#7BE58A"
-                              : hud.lives > 1
-                                ? "#FFD37F"
-                                : "#FF5A5A",
-                        }}
-                      >
-                        {hud.lives}
-                      </span>{" "}
-                      / {hud.livesMax}
+                      {hud.livesMax > 1 && (
+                        <>
+                          Lives{" "}
+                          <span
+                            className="font-bold"
+                            style={{
+                              color:
+                                hud.lives > hud.livesMax / 2
+                                  ? "#7BE58A"
+                                  : hud.lives > 1
+                                    ? "#FFD37F"
+                                    : "#FF5A5A",
+                            }}
+                          >
+                            {hud.lives}
+                          </span>{" "}
+                          / {hud.livesMax}
+                        </>
+                      )}
+                      {hud.livesMax > 1 && alive > 0 && <span className="mx-2">·</span>}
+                      {alive > 0 && (
+                        <>
+                          <span className="font-bold text-[#EDEDEF]">{alive}</span> enemies
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1903,19 +1935,37 @@ export default function MechSwarm() {
               </div>
               {!hudMin && (
                 <>
+                  {/* THE RULES IN FORCE, as the deploy dialog's chips at a
+                      third the size — face and band border, name and rule on
+                      hover. No hover card machinery: this corner is glanced
+                      at, not studied, and the codex is a tap away */}
+                  {hudRules.length > 0 && (
+                    <div
+                      className="mb-1.5 flex flex-wrap items-center gap-1"
+                      role="list"
+                      aria-label="rules in force"
+                    >
+                      {hudRules.map((def) => {
+                        const band = bandFor(def);
+                        return (
+                          <span
+                            key={def.id}
+                            role="listitem"
+                            title={`${def.name} — ${def.blurb}`}
+                            aria-label={`${def.name}: ${def.blurb}`}
+                            className="flex h-5 w-5 items-center justify-center border bg-[#0b0b0d]"
+                            style={{ borderColor: band.color }}
+                          >
+                            <MutationFace id={def.id} size="h-3.5 w-3.5" />
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
                     {/* what the run has banked so far, one stack per currency —
                         empty until the first kill, so it doesn't sit at "0" */}
                     <CostRow cost={hud.earned} />
-                    {alive > 0 && (
-                      // ONE NUMBER, NOT A ROSTER. The per-kind icon row said
-                      // what was on the field down to the last crawler, which
-                      // is a census nobody reads mid-wave — and it grew a line
-                      // taller every time a level fielded another kind. What a
-                      // player wants off this corner is "how much is still
-                      // coming at me", so that is all it says now.
-                      <span className="font-bold text-[#EDEDEF]">{alive} enemies</span>
-                    )}
                   </div>
                   {/* the countdown, conditional on there being a wave still
                       pending — with the script drained there is nothing left

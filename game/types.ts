@@ -207,6 +207,7 @@ export const enum FxKind {
   Wet = 38,
   ShootLiquid = 39, // Fx.shootLiquid — the spray a liquid turret's muzzle throws
   HitLiquid = 40, // Fx.hitLiquid — droplets scattering where an orb lands
+  DamageSmoke = 41, // the soot a hurt unit sheds — this game's own, see Sim.updateStatus
 }
 
 /** an r,g,b triple in 0..1, the form every draw call wants */

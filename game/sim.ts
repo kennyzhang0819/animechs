@@ -7,6 +7,9 @@ import {
   type ZoneKind,
   BURN_DPS as BURN_DPS_IMPORT,
   BURN_FX_CHANCE as BURN_FX_CHANCE_IMPORT,
+  DAMAGE_SMOKE_BELOW,
+  DAMAGE_SMOKE_LIFE,
+  DAMAGE_SMOKE_RATE,
   FX_SPAWN,
   FX_UNIT_SPAWN,
   SPAWN_INVINCIBLE as SPAWN_INVINCIBLE_IMPORT,
@@ -2435,7 +2438,7 @@ export class Sim {
    * swap-removed without skipping its neighbour.
    */
   private updateStatus(dt: number): void {
-    const { uburn, uwet, uhp, upx, upy, urad, uspawn } = this;
+    const { uburn, uwet, uhp, uhpmax, upx, upy, urad, uspawn } = this;
     for (let i = this.n - 1; i >= 0; i--) {
       // the arrival clock. Mindustry schedules Fx.spawn with Time.run(30),
       // which lands on the frame `unmoving` expires — so the ring going up
@@ -2458,6 +2461,25 @@ export class Sim {
           const a = Math.random() * Math.PI * 2;
           const r = (Math.random() * 2 - 1) * (urad[i] / 2);
           this.pushFx(upx[i] + Math.cos(a) * r, upy[i] + Math.sin(a) * r, 80 / 60, FxKind.Wet);
+        }
+      }
+      // DAMAGE SMOKE: a body under DAMAGE_SMOKE_BELOW of its pool sheds
+      // soot, and the lower it gets the thicker it pours — the tint has
+      // gone grey (HP_TINT), and this is the other half of "that one is
+      // nearly dead". Scaled by the hitbox so a toxopid smokes like the
+      // building it is and a dagger like a dagger. pushFx refuses it with
+      // effects off (setEffects), which is the whole of that switch — no
+      // second gate here
+      if (uhp[i] < uhpmax[i] * DAMAGE_SMOKE_BELOW) {
+        const hurt = 1 - uhp[i] / (uhpmax[i] * DAMAGE_SMOKE_BELOW); // 0 at the line, 1 at death
+        const size = urad[i] / UR;
+        if (Math.random() < DAMAGE_SMOKE_RATE * hurt * size * dt) {
+          const a = Math.random() * Math.PI * 2;
+          const r = (Math.random() * 2 - 1) * (urad[i] / 2);
+          this.pushFx(
+            upx[i] + Math.cos(a) * r, upy[i] + Math.sin(a) * r,
+            DAMAGE_SMOKE_LIFE, FxKind.DamageSmoke, 0, urad[i], (Math.random() * 1e9) | 0,
+          );
         }
       }
       if (uburn[i] <= 0) continue;
@@ -3730,8 +3752,11 @@ export class Sim {
    * a dagger like a firecracker. Towers only; the swarm never hurts itself.
    */
   private volatileBlast(x: number, y: number, urad: number, kind: number): void {
-    const reach = VOLATILE_RADIUS + urad;
-    const dmg = VOLATILE_DMG[Math.min(KIND_TIER[kind], VOLATILE_DMG.length - 1)];
+    // one tier index into both tables: the reach climbs with the tier and
+    // the damage does too, and the body's own hitbox widens either
+    const tier = Math.min(KIND_TIER[kind], VOLATILE_DMG.length - 1);
+    const reach = VOLATILE_RADIUS[tier] + urad;
+    const dmg = VOLATILE_DMG[tier];
     for (const t of this.towers) {
       const half = (TOWERS[t.kind].size * CELL) / 2;
       const r = reach + half;
