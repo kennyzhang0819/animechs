@@ -13,8 +13,9 @@
  * The coarser grid is the point: a chunkier pixel reads as a different
  * hand. On it a floor is a flat base colour and a FEW things — one or two
  * soft patches a shade off the base, a ripple, a crack, at most one
- * pebble — never a field of dots. Two variants a floor, not three; the
- * third slot every table still has draws the first again.
+ * pebble — never a field of dots. Two paintings a floor: one with a
+ * single mark on it and one plain; the third slot every table still has
+ * draws the first again, turned.
  *
  * Everything is deterministic: a (kind, variant) pair paints the same
  * pixels every time, in the browser and in the script that writes the
@@ -40,13 +41,14 @@ export interface FloorStyle {
   /** a contrasting colour, for the cracks that glow (hot rock) */
   accent?: string;
   /**
-   * the one kind of mark this ground wears — every one of them round:
-   * soft    — one or two light blobs, a shade up from the ground
-   * tussock — light blobs and one small dark clump
-   * spotted — a light blob and a dark one
-   * dune    — wide, low light ellipses, wind-blown
-   * pebbled — a light blob and a shaded stone
-   * ember   — glowing accent spots and a dark blob
+   * the one kind of mark this ground wears — every one of them round,
+   * and one to a tile:
+   * soft    — a light blob, a shade up from the ground
+   * tussock — a light blob, or a small dark clump
+   * spotted — a light blob, or a dark one
+   * dune    — a wide, low light ellipse, wind-blown
+   * pebbled — a light blob, or a shaded stone
+   * ember   — a glowing accent spot
    */
   mark: "soft" | "tussock" | "spotted" | "dune" | "pebbled" | "ember";
 }
@@ -179,35 +181,35 @@ export function paintFloor(kind: FloorKind, variant: number): Uint8ClampedArray<
     ellipse(cx, cy, rx, ry, (x, y, u, v) => put(x, y, v < -0.25 && Math.abs(u) < 0.75 ? st.light : dark));
   };
 
-  switch (st.mark) {
-    case "soft":
-      blob(st.light, 3 + rng() * 1.5);
-      if (rng() < 0.7) blob(st.light, 2.2 + rng());
-      break;
-    case "tussock":
-      blob(st.light, 3 + rng() * 1.5);
-      blob(st.light, 2 + rng());
-      blob(dark, 1.6 + rng() * 0.6, 1);
-      break;
-    case "spotted":
-      blob(st.light, 3 + rng() * 1.5);
-      blob(dark, 2 + rng() * 0.8);
-      break;
-    case "dune":
-      blob(st.light, 3.5 + rng() * 1.5, 0.4);
-      blob(st.light, 3 + rng(), 0.4);
-      if (rng() < 0.5) blob(dark, 2.5 + rng(), 0.4);
-      break;
-    case "pebbled":
-      blob(st.light, 3 + rng() * 1.5);
-      stone(1.8 + rng() * 0.5);
-      break;
-    case "ember":
-      blob(dark, 3 + rng() * 1.5);
-      blob(st.accent ?? st.light, 1.6 + rng() * 0.6);
-      if (kind === "magmarock") blob(st.accent ?? st.light, 1.4 + rng() * 0.6);
-      break;
-  }
+  // THE SECOND PAINTING IS PLAIN GROUND, and the first carries ONE mark.
+  // Two or three marks on every cell was a field of dots; with a third
+  // of the cells bare and one mark on the rest, the ground is a colour
+  // with something on it here and there, which is what ground looks like
+  // from above
+  if (variant % FLOOR_VARIANTS === 0)
+    switch (st.mark) {
+      case "soft":
+        blob(st.light, 3 + rng() * 1.5);
+        break;
+      case "tussock":
+        if (rng() < 0.5) blob(st.light, 3 + rng() * 1.5);
+        else blob(dark, 1.8 + rng() * 0.6, 1);
+        break;
+      case "spotted":
+        if (rng() < 0.6) blob(st.light, 3 + rng() * 1.5);
+        else blob(dark, 2 + rng() * 0.8);
+        break;
+      case "dune":
+        blob(st.light, 3.5 + rng() * 1.5, 0.4);
+        break;
+      case "pebbled":
+        if (rng() < 0.5) blob(st.light, 3 + rng() * 1.5);
+        else stone(1.8 + rng() * 0.5);
+        break;
+      case "ember":
+        blob(st.accent ?? st.light, 1.6 + rng() * 0.6);
+        break;
+    }
 
   const out = new Uint8ClampedArray(new ArrayBuffer(TILE_PX * TILE_PX * 4));
   for (let y = 0; y < TILE_PX; y++)

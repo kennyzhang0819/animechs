@@ -1752,24 +1752,14 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.imageSmoothingEnabled = false; // integer upscales keep the pixel art crisp
 
   // THE LAND FLOORS: painted, not loaded (game/tiles.ts). Each floor has
-  // two paintings and three slots — every table downstream is three wide,
-  // so the third slot draws the first painting again, turned half a turn:
-  // the same art, but a mark that no longer sits in the same corner of
-  // every other cell, which is what keeps two paintings from tiling into a
-  // lattice. They are 32px like the sprites they replaced and ride the
-  // same antialias pass into the same 64px cells
-  const floor = (kind: FloorKind, slot: number): HTMLCanvasElement => {
-    const tile = floorCanvas(kind, slot % FLOOR_VARIANTS);
-    if (slot < FLOOR_VARIANTS) return tile;
-    const turned = document.createElement("canvas");
-    turned.width = turned.height = tile.width;
-    const tc = turned.getContext("2d");
-    if (!tc) throw new Error("2d context unavailable for floor tile");
-    tc.translate(tile.width / 2, tile.height / 2);
-    tc.rotate(Math.PI);
-    tc.drawImage(tile, -tile.width / 2, -tile.height / 2);
-    return turned;
-  };
+  // two paintings — one with a single mark on it, one plain — and three
+  // slots, because every table downstream is three wide. The plain one
+  // takes TWO of the three, so a mark lands on one cell in three: any
+  // denser and the ground reads as a field of dots. They are 32px like
+  // the sprites they replaced and ride the same antialias pass into the
+  // same 64px cells
+  const floor = (kind: FloorKind, slot: number): HTMLCanvasElement =>
+    floorCanvas(kind, slot === 0 ? 0 : 1);
   c.drawImage(antialiased(floor("grass", 0)), 0, 0, 64, 64);
   c.drawImage(antialiased(floor("grass", 1)), 64, 0, 64, 64);
   c.drawImage(antialiased(floor("grass", 2)), 128, 0, 64, 64);

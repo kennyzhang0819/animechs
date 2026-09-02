@@ -72,18 +72,18 @@ stale tab or a cached bundle looks exactly like a fix not working.
   hash (separation + projectile hits), towers, projectiles, effects
 - `game/tiles.ts` — **the ground tiles and the hill blocks**, the game's
   own terrain art, painted at load on a 16-pixel grid. A floor is a base
-  colour with one to three soft rounded patches a shade off it (a shaded
-  stone on dirt, wide low dunes on sand, glowing spots on hot rock), its
-  dark tone eased toward the base, and never a line. A wall is shaded the
-  way Mindustry shades its walls: the top-right corner in the light tone,
-  the bottom-left in the dark, and a wide mid band running diagonally
-  between them with wandering edges — then at most one pale patch on
-  top, and the second painting is the bands alone. A 2×2 cluster is one
-  block shaded corner to corner across the whole of it. Two paintings a
-  family, the floors' third slot drawing the first turned half a turn.
-  The atlas, the menu background, the map thumbnails and the editor
-  palette all read from it; `npm run gen:tiles` writes the palette's
-  PNGs into `public/tiles/`
+  colour with ONE soft rounded mark on it (a light patch, a shaded stone
+  on dirt, a wide low dune on sand, a glowing spot on hot rock), its dark
+  tone eased toward the base; its second painting is plain ground, and
+  that plain one fills two of the three slots, so a mark lands on one
+  cell in three. A wall is shaded the way Mindustry shades its walls: the
+  top-right corner in the light tone, the bottom-left in the dark, and a
+  wide mid band running diagonally between them with wandering edges —
+  then at most one pale patch on top, and the second painting is the
+  bands alone. A 2×2 cluster is one block shaded corner to corner across
+  the whole of it. The atlas, the menu background, the map thumbnails and
+  the editor palette all read from it; `npm run gen:tiles` writes the
+  palette's PNGs into `public/tiles/`
 - `game/atlas.ts` — the sprite atlas, composited at load time from Mindustry
   sprites in `public/mindustry/` plus procedural regions; **swap any region
   for custom art** (units are white sprites tinted per instance, and already
