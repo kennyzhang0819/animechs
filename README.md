@@ -74,14 +74,17 @@ stale tab or a cached bundle looks exactly like a fix not working.
   own terrain art, painted at load on a 16-pixel grid, and FLAT: the map
   is seen from straight above. A floor is a base colour with one to three
   soft rounded patches a shade off it (a shaded stone on dirt, wide low
-  dunes on sand, glowing spots on hot rock); a wall is the same thing in
-  the rock's colours, with nothing at the cell's edge so an outcrop reads
-  as one mass and the renderer's shadow along its edge is the only depth
-  cue anywhere. No lines, no lit sides. Two paintings a family, the
-  floors' third slot drawing the first turned half a turn, and a 2×2
-  block per wall family for the large-draw rule. The atlas, the menu
-  background, the map thumbnails and the editor palette all read from it;
-  `npm run gen:tiles` writes the palette's PNGs into `public/tiles/`
+  dunes on sand, glowing spots on hot rock), its dark tone eased toward
+  the base. A wall is the rock's colour with at most one pale patch, and
+  its second painting is plain face, so an outcrop is a mass with a few
+  patches drifting over it; nothing sits at a cell's edge, and the
+  renderer's shadow along the outcrop's edge is the only depth cue
+  anywhere. No lines, no dark spots on rock, no lit sides. Two paintings
+  a family, the floors' third slot drawing the first turned half a turn,
+  and a 2×2 block per wall family for the large-draw rule. The atlas, the
+  menu background, the map thumbnails and the editor palette all read
+  from it; `npm run gen:tiles` writes the palette's PNGs into
+  `public/tiles/`
 - `game/atlas.ts` — the sprite atlas, composited at load time from Mindustry
   sprites in `public/mindustry/` plus procedural regions; **swap any region
   for custom art** (units are white sprites tinted per instance, and already

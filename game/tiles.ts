@@ -150,6 +150,9 @@ export function paintFloor(kind: FloorKind, variant: number): Uint8ClampedArray<
   // every kind and variant gets its own, fixed roll
   const rng = mulberry32(FLOOR_KINDS.indexOf(kind) * 131 + (variant % FLOOR_VARIANTS) * 17 + 7);
   const grid = new Array<string>(N * N).fill(st.base);
+  // the dark tone, eased toward the ground: a dark spot at full strength
+  // reads as a hole, and a floor wants texture rather than holes
+  const dark = mix(st.dark, st.base, 0.4);
   const put = (x: number, y: number, c: string): void => {
     if (x >= 0 && y >= 0 && x < N && y < N) grid[y * N + x] = c;
   };
@@ -173,7 +176,7 @@ export function paintFloor(kind: FloorKind, variant: number): Uint8ClampedArray<
     const rx = r, ry = r * 0.85;
     const cx = RIM + rx + rng() * (N - RIM * 2 - rx * 2);
     const cy = RIM + ry + rng() * (N - RIM * 2 - ry * 2);
-    ellipse(cx, cy, rx, ry, (x, y, u, v) => put(x, y, v < -0.25 && Math.abs(u) < 0.75 ? st.light : st.dark));
+    ellipse(cx, cy, rx, ry, (x, y, u, v) => put(x, y, v < -0.25 && Math.abs(u) < 0.75 ? st.light : dark));
   };
 
   switch (st.mark) {
@@ -184,23 +187,23 @@ export function paintFloor(kind: FloorKind, variant: number): Uint8ClampedArray<
     case "tussock":
       blob(st.light, 3 + rng() * 1.5);
       blob(st.light, 2 + rng());
-      blob(st.dark, 1.6 + rng() * 0.6, 1);
+      blob(dark, 1.6 + rng() * 0.6, 1);
       break;
     case "spotted":
       blob(st.light, 3 + rng() * 1.5);
-      blob(st.dark, 2 + rng() * 0.8);
+      blob(dark, 2 + rng() * 0.8);
       break;
     case "dune":
       blob(st.light, 3.5 + rng() * 1.5, 0.4);
       blob(st.light, 3 + rng(), 0.4);
-      if (rng() < 0.5) blob(st.dark, 2.5 + rng(), 0.4);
+      if (rng() < 0.5) blob(dark, 2.5 + rng(), 0.4);
       break;
     case "pebbled":
       blob(st.light, 3 + rng() * 1.5);
       stone(1.8 + rng() * 0.5);
       break;
     case "ember":
-      blob(st.dark, 3 + rng() * 1.5);
+      blob(dark, 3 + rng() * 1.5);
       blob(st.accent ?? st.light, 1.6 + rng() * 0.6);
       if (kind === "magmarock") blob(st.accent ?? st.light, 1.4 + rng() * 0.6);
       break;
@@ -234,23 +237,23 @@ export const tileIcon = (kind: FloorKind, variant: number): string =>
   `/tiles/${kind}${(variant % FLOOR_VARIANTS) + 1}.png`;
 
 /* ======================================================================
- * THE HILL BLOCKS — the rock a lane is cut through, painted exactly like
- * the floors.
+ * THE HILL BLOCKS — the rock a lane is cut through, painted like the
+ * floors and quieter than them.
  *
  * The map is seen from straight above and everything on it is FLAT. A
- * wall tile is a face colour with big soft rounded patches on it, some a
- * shade lighter and some a shade darker, placed freely — no light
- * direction, no cap and no underside, because a shape lit from one side
- * and shaded on the other is a ball standing up out of the picture
- * whatever the tones are. Nothing sits at the cell's edge, so
- * neighbouring cells run together and an outcrop reads as one mass, and
- * the only depth on the whole map is the renderer's blurred shadow along
- * the outcrop's edge (WALL_SHADOW_A, and the same pass on the menu),
- * which belongs at the edge of the rock and nowhere on it.
+ * wall tile is a face colour with, at most, one soft rounded patch a
+ * shade lighter on it — no dark patches, which read as holes in the
+ * rock, and no light direction, which reads as a ball. The SECOND
+ * painting of every family is plain face: half the cells of an outcrop
+ * carry nothing at all, so a hill is a mass of colour with a few pale
+ * patches drifting over it rather than a field of spots. Nothing sits at
+ * the cell's edge, so neighbouring cells run together, and the only depth
+ * on the whole map is the renderer's blurred shadow along the outcrop's
+ * edge (WALL_SHADOW_A, and the same pass on the menu).
  *
  * A 2×2 cluster of rock takes ONE block twice the size (the field's
- * large-draw rule, UV_WALL_LARGE), with patches to match; `span` paints
- * that one.
+ * large-draw rule, UV_WALL_LARGE), which carries two patches; `span`
+ * paints that one.
  * ====================================================================== */
 
 export type WallKind =
@@ -269,14 +272,15 @@ export type WallKind =
 export interface WallStyle {
   /** the rock's face */
   face: string;
-  /** a shade up and a shade down, for the patches */
+  /** a shade up, for the patch */
   light: string;
+  /** a shade down — kept for the thumbnails and the dust, never painted */
   dark: string;
   /**
-   * the grain of the rock:
-   * rough  — a light patch and a dark one, the bare rocks
-   * soft   — one or two light patches, the earths and snow
-   * glassy — two light patches, one wide, ice and salt
+   * the grain of the rock — the shape of its one patch:
+   * rough  — a round patch, the bare rocks
+   * soft   — a big round patch, the earths and snow
+   * glassy — a wide low patch, ice and salt
    */
   grain: "rough" | "soft" | "glassy";
 }
@@ -328,20 +332,19 @@ export function paintWall(
     ellipse(cx, cy, rx, ry, (x, y) => put(x, y, c));
   };
 
-  const reps = span * span;
-  for (let r = 0; r < reps; r++) {
+  // the second painting is plain face; the first carries one patch a
+  // tile of its span (two on a 2×2 block, not four)
+  const patches = variant % WALL_VARIANTS === 0 ? span : 0;
+  for (let r = 0; r < patches; r++) {
     switch (st.grain) {
       case "rough":
-        patch(st.light, 3.5 + rng() * 1.5);
-        patch(st.dark, 2.5 + rng());
+        patch(st.light, 3 + rng() * 1.5);
         break;
       case "soft":
         patch(st.light, 4 + rng() * 1.5);
-        if (rng() < 0.6) patch(st.light, 2.2 + rng());
         break;
       case "glassy":
         patch(st.light, 4 + rng() * 1.5, 0.55);
-        patch(st.light, 2.2 + rng());
         break;
     }
   }
