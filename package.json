@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "gen:tiles": "node --experimental-strip-types scripts/gen-tiles.mjs",
     "build:mobile": "bash scripts/build-mobile.sh",
     "cap:sync": "npx cap sync",
     "mobile": "bash scripts/build-mobile.sh && npx cap sync"

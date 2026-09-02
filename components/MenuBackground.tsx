@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { floorCanvas, FLOOR_VARIANTS, type FloorKind } from "@/game/tiles";
 
 /**
  * THE MENU'S GROUND — the game, seen from above, before anyone has built
@@ -44,7 +45,8 @@ const ENGINE = "#ffbb64";
 const CELL_TINT = "#e55454";
 
 interface Biome {
-  floor: readonly string[];
+  /** the ground: one of the game's own painted floors (game/tiles.ts) */
+  floor: FloorKind;
   wall: readonly string[];
   large: string;
   /** a tree that grows on this ground, planted at the foot of the rock */
@@ -55,50 +57,50 @@ interface Biome {
 
 const BIOMES: readonly Biome[] = [
   {
-    floor: ["sand-floor1", "sand-floor2", "sand-floor3"],
+    floor: "sand",
     wall: ["sand-wall1", "sand-wall2"],
     large: "sand-wall-large",
     boulder: ["sand-boulder1", "sand-boulder2"],
   },
   {
-    floor: ["shale1", "shale2", "shale3"],
+    floor: "shale",
     wall: ["shale-wall1", "shale-wall2"],
     large: "shale-wall-large",
     boulder: ["shale-boulder1", "shale-boulder2"],
   },
   {
-    floor: ["ice1", "ice2", "ice3"],
+    floor: "ice",
     wall: ["ice-wall1", "ice-wall2"],
     large: "ice-wall-large",
     boulder: ["snow-boulder1", "snow-boulder2"],
   },
   {
-    floor: ["moss1", "moss2", "moss3"],
+    floor: "moss",
     wall: ["spore-wall1", "spore-wall2"],
     large: "spore-wall-large",
     prop: "spore-pine",
   },
   {
-    floor: ["dirt1", "dirt2", "dirt3"],
+    floor: "dirt",
     wall: ["dirt-wall1", "dirt-wall2"],
     large: "dirt-wall-large",
     boulder: ["boulder1", "boulder2"],
   },
   {
-    floor: ["darksand1", "darksand2", "darksand3"],
+    floor: "darksand",
     wall: ["dune-wall1", "dune-wall2"],
     large: "dune-wall-large",
     boulder: ["basalt-boulder1", "basalt-boulder2"],
   },
   {
-    floor: ["snow1", "snow2", "snow3"],
+    floor: "snow",
     wall: ["snow-wall1", "snow-wall2"],
     large: "snow-wall-large",
     prop: "snow-pine",
     boulder: ["snow-boulder1", "snow-boulder2"],
   },
   {
-    floor: ["grass1", "grass2", "grass3"],
+    floor: "grass",
     wall: ["dirt-wall1", "dirt-wall2"],
     large: "dirt-wall-large",
     prop: "pine",
@@ -109,19 +111,19 @@ const BIOMES: readonly Biome[] = [
 /** a second rock, laid over the first in patches */
 const SECOND: readonly Biome[] = [
   {
-    floor: ["basalt1", "basalt2", "basalt3"],
+    floor: "basalt",
     wall: ["dune-wall1", "dune-wall2"],
     large: "dune-wall-large",
   },
   {
-    floor: ["stone1", "stone2", "stone3"],
+    floor: "stone",
     wall: ["stone-wall1", "stone-wall2"],
     large: "stone-wall-large",
   },
 ];
 
 /** the heat gradient, coolest first — some worlds run hot */
-const HEAT = ["basalt1", "hotrock1", "hotrock2", "magmarock1", "magmarock2"] as const;
+const HEAT: readonly FloorKind[] = ["basalt", "hotrock", "hotrock", "magmarock", "magmarock"];
 
 /**
  * A mech kind, with the numbers the field draws it by: gun mount offsets
@@ -324,15 +326,12 @@ async function buildWorld(vw: number, vh: number, dpr: number, seed: number): Pr
 
   // every sprite this world needs, fetched once and together
   const names = new Set<string>([
-    ...biome.floor,
     ...biome.wall,
     biome.large,
-    ...second.floor,
     ...second.wall,
     second.large,
     ...(biome.prop ? [biome.prop] : []),
     ...(biome.boulder ?? []),
-    ...(heat ? HEAT : []),
   ]);
   const list = [...names];
   const unitNames = MECHS.flatMap((m) => [
@@ -358,10 +357,22 @@ async function buildWorld(vw: number, vh: number, dpr: number, seed: number): Pr
     if (img) units.set(n, img);
   });
   const sprite = (n: string): HTMLImageElement | null => sprites.get(n) ?? null;
+  // the floors are painted, not fetched — one canvas per kind and variant
+  const floors = new Map<string, HTMLCanvasElement>();
+  const floorTile = (kind: FloorKind, v: number): HTMLCanvasElement => {
+    const key = `${kind}${v}`;
+    let c = floors.get(key);
+    if (!c) {
+      c = floorCanvas(kind, v);
+      floors.set(key, c);
+    }
+    return c;
+  };
 
   // ---- the ground ----
   const isWall = new Uint8Array(cols * rows);
-  const floorOf = new Array<string>(cols * rows);
+  const floorOf = new Array<FloorKind>(cols * rows);
+  const floorVar = new Uint8Array(cols * rows);
   const wallOf = new Array<string>(cols * rows);
   const largeOf = new Array<string>(cols * rows);
   for (let y = 0; y < rows; y++)
@@ -369,7 +380,8 @@ async function buildWorld(vw: number, vh: number, dpr: number, seed: number): Pr
       const i = y * cols + x;
       let b = biome;
       if (secondNoise(x / 25, y / 25) > 0.62) b = second;
-      floorOf[i] = pick(rng, b.floor);
+      floorOf[i] = b.floor;
+      floorVar[i] = Math.floor(rng() * FLOOR_VARIANTS);
       wallOf[i] = pick(rng, b.wall);
       largeOf[i] = b.large;
       if (heat) {
@@ -405,7 +417,10 @@ async function buildWorld(vw: number, vh: number, dpr: number, seed: number): Pr
   };
 
   for (let y = 0; y < rows; y++)
-    for (let x = 0; x < cols; x++) cell(floorOf[y * cols + x], x, y);
+    for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+      g.drawImage(floorTile(floorOf[i], floorVar[i]), x * tile, y * tile, tile, tile);
+    }
 
   // THE SHADOW under the rock: one path of every wall cell, filled once
   // through a blur, which is where the soft dark rim along the lane's

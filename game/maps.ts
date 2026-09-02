@@ -19,6 +19,7 @@ import {
 export const LEGACY_COLS = 128;
 import { isWaterFloor, WALL_PINE, type Prop, type Terrain } from "./terrain";
 import { FLOOR_DEEP_WATER, FLOOR_SHALLOW_WATER } from "./atlas";
+import { FLOOR_STYLE, tileIcon } from "./tiles";
 import { explain, type SaveResult } from "./types";
 
 /**
@@ -299,16 +300,18 @@ const ENV = "/mindustry/sprites/blocks/environment";
 const PROPS = "/mindustry/sprites/blocks/props";
 
 export const PALETTE: readonly PaletteSet[] = [
+  // the land floors are the game's own tiles (game/tiles.ts): two
+  // paintings a floor in three slots, the third repeating the first
   { id: "grass", label: "Grass", kind: "floor", variants: [0, 1, 2],
-    icons: [1, 2, 3].map((n) => `${ENV}/grass${n}.png`) },
+    icons: [0, 1, 2].map((v) => tileIcon("grass", v)) },
   { id: "stone", label: "Stone", kind: "floor", variants: [3, 4, 5],
-    icons: [1, 2, 3].map((n) => `${ENV}/stone${n}.png`) },
+    icons: [0, 1, 2].map((v) => tileIcon("stone", v)) },
   { id: "dirt", label: "Dirt", kind: "floor", variants: [6, 7, 8],
-    icons: [1, 2, 3].map((n) => `${ENV}/dirt${n}.png`) },
+    icons: [0, 1, 2].map((v) => tileIcon("dirt", v)) },
   { id: "sand", label: "Sand", kind: "floor", variants: [9, 10, 11],
-    icons: [1, 2, 3].map((n) => `${ENV}/sand-floor${n}.png`) },
+    icons: [0, 1, 2].map((v) => tileIcon("sand", v)) },
   { id: "darksand", label: "Darksand", kind: "floor", variants: [12, 13, 14],
-    icons: [1, 2, 3].map((n) => `${ENV}/darksand${n}.png`) },
+    icons: [0, 1, 2].map((v) => tileIcon("darksand", v)) },
   // THE TWO WATERS, and they are different KINDS of paint, not two floors.
   //
   // Shallow water is an ordinary floor: it clears the cell like any other
@@ -741,12 +744,13 @@ export async function saveMap(map: MapData): Promise<SaveResult> {
 // ---------- thumbnails ----------
 
 /** per-cell preview colors, mirroring the atlas art's average tones */
+// the land tones are the tiles' own base colours, so a thumbnail is the
+// map in miniature rather than a chart of it
 const FLOOR_TONES = [
-  "#7ab648", "#74ae45", "#6ea843", // grass
-  "#8a8a93", "#84848d", "#7e7e87", // stone
-  "#a5764f", "#9e7049", "#976a44", // dirt
-  "#d8b290", "#dbb492", "#d9b391", // sand
-  "#3f3c3c", "#413e3e", "#3f3c3c", // darksand
+  ...(["grass", "stone", "dirt", "sand", "darksand"] as const).flatMap((k) => {
+    const t = FLOOR_STYLE[k].base;
+    return [t, t, t];
+  }),
   "#4c6b9c", "#4c6b9c", "#4c6b9c", // shallow water
   "#2f4d7a", "#2f4d7a", "#2f4d7a", // deep water
 ];

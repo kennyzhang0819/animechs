@@ -1,4 +1,5 @@
 import { UNIT_SPRITE } from "./constants";
+import { floorCanvas, FLOOR_VARIANTS, type FloorKind } from "./tiles";
 import type { UnitKind } from "./levels";
 
 // The sheet began as a 1024 square and grew as the roster outgrew it. Every
@@ -60,6 +61,8 @@ const WATER_DEEP_UV = waterCentre(WATER_DEEP_XY);
  * and 8 world units across, so this is an eighth of a cell.
  */
 export const WATER_UV_UNIT = 64 / 8 / ATLAS_W;
+/** px cropped from every side of a 64px land-floor cell — see UV_FLOORS */
+const FLOOR_INSET = 8;
 
 // row 0: 64px cells — grass floors, stone walls, fx
 // indices into UV_FLOORS: 0-2 grass, 3-5 stone, 6-8 dirt, 9-11 sand,
@@ -76,22 +79,32 @@ export const WATER_UV_UNIT = 64 / 8 / ATLAS_W;
 // the group arithmetic honest without packing the same 32px sprite three
 // times: the palette only ever paints the first index of each pair, and the
 // other two exist so a hand-edited document cannot index past the table.
+//
+// THE LAND FLOORS ARE INSET BY 8, NOT 2. The cells are packed edge to edge
+// and the texture is sampled through mipmaps, so a floor drawn small — the
+// whole map in frame — reads texels that straddle the cell's border and
+// carry a stripe of whatever is packed next door. Mindustry's speckled
+// floors hid that in their own noise; a flat tile shows it as a hairline
+// along every row. Eight px keeps the sample inside its own cell down to
+// the 8px mip, which is smaller than the map ever draws. The painted tiles
+// keep their marks off the outer two logical pixels (tiles.ts) so the crop
+// removes plain ground and nothing else
 export const UV_FLOORS: readonly UVRect[] = [
-  uv(0, 0, 64, 64, 2),
-  uv(64, 0, 64, 64, 2),
-  uv(128, 0, 64, 64, 2),
-  uv(64, 64, 64, 64, 2),
-  uv(128, 64, 64, 64, 2),
-  uv(192, 64, 64, 64, 2),
-  uv(256, 64, 64, 64, 2),
-  uv(320, 64, 64, 64, 2),
-  uv(384, 64, 64, 64, 2),
-  uv(576, 0, 64, 64, 2),
-  uv(640, 0, 64, 64, 2),
-  uv(704, 0, 64, 64, 2),
-  uv(768, 0, 64, 64, 2),
-  uv(832, 0, 64, 64, 2),
-  uv(896, 0, 64, 64, 2),
+  uv(0, 0, 64, 64, FLOOR_INSET),
+  uv(64, 0, 64, 64, FLOOR_INSET),
+  uv(128, 0, 64, 64, FLOOR_INSET),
+  uv(64, 64, 64, 64, FLOOR_INSET),
+  uv(128, 64, 64, 64, FLOOR_INSET),
+  uv(192, 64, 64, 64, FLOOR_INSET),
+  uv(256, 64, 64, 64, FLOOR_INSET),
+  uv(320, 64, 64, 64, FLOOR_INSET),
+  uv(384, 64, 64, 64, FLOOR_INSET),
+  uv(576, 0, 64, 64, FLOOR_INSET),
+  uv(640, 0, 64, 64, FLOOR_INSET),
+  uv(704, 0, 64, 64, FLOOR_INSET),
+  uv(768, 0, 64, 64, FLOOR_INSET),
+  uv(832, 0, 64, 64, FLOOR_INSET),
+  uv(896, 0, 64, 64, FLOOR_INSET),
   WATER_SHALLOW_UV,
   WATER_SHALLOW_UV,
   WATER_SHALLOW_UV,
@@ -1059,22 +1072,11 @@ export const LEG_ART: Partial<Record<UnitKind, LegArt>> = {
 };
 
 const ENV = "/mindustry/sprites/blocks/environment";
+// THE LAND FLOORS ARE NOT IN THIS TABLE. They are the game's own art,
+// painted at load from game/tiles.ts (see packAtlas) rather than loaded
+// from Mindustry's speckled floor sprites; only the two waters, which the
+// water shader was written against, still come from files.
 const SPRITES = {
-  grass0: `${ENV}/grass1.png`,
-  grass1: `${ENV}/grass2.png`,
-  grass2: `${ENV}/grass3.png`,
-  stone0: `${ENV}/stone1.png`,
-  stone1: `${ENV}/stone2.png`,
-  stone2: `${ENV}/stone3.png`,
-  dirt0: `${ENV}/dirt1.png`,
-  dirt1: `${ENV}/dirt2.png`,
-  dirt2: `${ENV}/dirt3.png`,
-  sand0: `${ENV}/sand-floor1.png`,
-  sand1: `${ENV}/sand-floor2.png`,
-  sand2: `${ENV}/sand-floor3.png`,
-  darksand0: `${ENV}/darksand1.png`,
-  darksand1: `${ENV}/darksand2.png`,
-  darksand2: `${ENV}/darksand3.png`,
   // Mindustry's two water floors (Blocks.water is the file "shallow-water",
   // Blocks.deepwater is "deep-water"). Unlike every land floor above, these
   // ship as ONE tile each rather than three numbered variants — see the
@@ -1519,30 +1521,48 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   if (!c) throw new Error("2d context unavailable for atlas build");
   c.imageSmoothingEnabled = false; // integer upscales keep the pixel art crisp
 
-  // ground + wall tiles: 32px sources upscaled 2x into 64px cells
-  c.drawImage(antialiased(img.grass0), 0, 0, 64, 64);
-  c.drawImage(antialiased(img.grass1), 64, 0, 64, 64);
-  c.drawImage(antialiased(img.grass2), 128, 0, 64, 64);
+  // THE LAND FLOORS: painted, not loaded (game/tiles.ts). Each floor has
+  // two paintings and three slots — every table downstream is three wide,
+  // so the third slot draws the first painting again, turned half a turn:
+  // the same art, but a mark that no longer sits in the same corner of
+  // every other cell, which is what keeps two paintings from tiling into a
+  // lattice. They are 32px like the sprites they replaced and ride the
+  // same antialias pass into the same 64px cells
+  const floor = (kind: FloorKind, slot: number): HTMLCanvasElement => {
+    const tile = floorCanvas(kind, slot % FLOOR_VARIANTS);
+    if (slot < FLOOR_VARIANTS) return tile;
+    const turned = document.createElement("canvas");
+    turned.width = turned.height = tile.width;
+    const tc = turned.getContext("2d");
+    if (!tc) throw new Error("2d context unavailable for floor tile");
+    tc.translate(tile.width / 2, tile.height / 2);
+    tc.rotate(Math.PI);
+    tc.drawImage(tile, -tile.width / 2, -tile.height / 2);
+    return turned;
+  };
+  c.drawImage(antialiased(floor("grass", 0)), 0, 0, 64, 64);
+  c.drawImage(antialiased(floor("grass", 1)), 64, 0, 64, 64);
+  c.drawImage(antialiased(floor("grass", 2)), 128, 0, 64, 64);
   // walls ride the same antialias pass the game's packer runs over them
   c.drawImage(antialiased(img.stoneWall0), 192, 0, 64, 64);
   c.drawImage(antialiased(img.stoneWall1), 256, 0, 64, 64);
-  c.drawImage(antialiased(img.stone0), 64, 64, 64, 64);
-  c.drawImage(antialiased(img.stone1), 128, 64, 64, 64);
-  c.drawImage(antialiased(img.stone2), 192, 64, 64, 64);
-  c.drawImage(antialiased(img.dirt0), 256, 64, 64, 64);
-  c.drawImage(antialiased(img.dirt1), 320, 64, 64, 64);
-  c.drawImage(antialiased(img.dirt2), 384, 64, 64, 64);
+  c.drawImage(antialiased(floor("stone", 0)), 64, 64, 64, 64);
+  c.drawImage(antialiased(floor("stone", 1)), 128, 64, 64, 64);
+  c.drawImage(antialiased(floor("stone", 2)), 192, 64, 64, 64);
+  c.drawImage(antialiased(floor("dirt", 0)), 256, 64, 64, 64);
+  c.drawImage(antialiased(floor("dirt", 1)), 320, 64, 64, 64);
+  c.drawImage(antialiased(floor("dirt", 2)), 384, 64, 64, 64);
   c.drawImage(antialiased(img.dirtWall0), 448, 64, 64, 64);
   c.drawImage(antialiased(img.dirtWall1), 0, 128, 64, 64);
   c.drawImage(antialiased(img.carbonWall0), 320, 0, 64, 64);
   c.drawImage(antialiased(img.carbonWall1), 384, 0, 64, 64);
   // desert floors on row 0's free tail (see the UV_FLOORS note)
-  c.drawImage(antialiased(img.sand0), 576, 0, 64, 64);
-  c.drawImage(antialiased(img.sand1), 640, 0, 64, 64);
-  c.drawImage(antialiased(img.sand2), 704, 0, 64, 64);
-  c.drawImage(antialiased(img.darksand0), 768, 0, 64, 64);
-  c.drawImage(antialiased(img.darksand1), 832, 0, 64, 64);
-  c.drawImage(antialiased(img.darksand2), 896, 0, 64, 64);
+  c.drawImage(antialiased(floor("sand", 0)), 576, 0, 64, 64);
+  c.drawImage(antialiased(floor("sand", 1)), 640, 0, 64, 64);
+  c.drawImage(antialiased(floor("sand", 2)), 704, 0, 64, 64);
+  c.drawImage(antialiased(floor("darksand", 0)), 768, 0, 64, 64);
+  c.drawImage(antialiased(floor("darksand", 1)), 832, 0, 64, 64);
+  c.drawImage(antialiased(floor("darksand", 2)), 896, 0, 64, 64);
   // water: each 32px source antialiased once, then blitted 3x3 at the same
   // 2x tile scale into its own 192px cell. The centre 64 is the tile a
   // floor quad draws; the ring is the headroom the water shader displaces
@@ -1578,7 +1598,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // (tools Generators.java "edge stencils"): the floor texture tiled 3x3 at
   // native 32px, multiplied per-pixel by the 96px edge-stencil alpha ring,
   // then upscaled 2x into the atlas like every other tile
-  const makeEdge = (floorImg: HTMLImageElement): HTMLCanvasElement => {
+  const makeEdge = (floorImg: HTMLImageElement | HTMLCanvasElement): HTMLCanvasElement => {
     const e = document.createElement("canvas");
     e.width = e.height = 96;
     const ec = e.getContext("2d");
@@ -1593,12 +1613,12 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
     return e;
   };
   // the pack task antialiases generated edges like everything else
-  c.drawImage(antialiased(makeEdge(img.grass0)), 16, 768, 192, 192);
-  c.drawImage(antialiased(makeEdge(img.stone0)), 272, 768, 192, 192);
-  c.drawImage(antialiased(makeEdge(img.dirt0)), 528, 768, 192, 192);
+  c.drawImage(antialiased(makeEdge(floor("grass", 0))), 16, 768, 192, 192);
+  c.drawImage(antialiased(makeEdge(floor("stone", 0))), 272, 768, 192, 192);
+  c.drawImage(antialiased(makeEdge(floor("dirt", 0))), 528, 768, 192, 192);
   // darksand's edge fade, sliced into its nine scattered cells (see the
   // UV_FLOOR_EDGES note) — AA'd whole first, exactly once, like the blocks
-  const dsEdge = antialiased(makeEdge(img.darksand0));
+  const dsEdge = antialiased(makeEdge(floor("darksand", 0)));
   for (let ry = 0; ry < 3; ry++)
     for (let rx = 0; rx < 3; rx++)
       c.drawImage(dsEdge, rx * 32, ry * 32, 32, 32, 416 + (ry * 3 + rx) * 64, 704, 64, 64);
