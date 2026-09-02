@@ -228,20 +228,12 @@ interface LoadUi {
 }
 
 /** the screen shown while a level is being prepared */
-function LoadingScreen({
-  level,
-  step,
-  out,
-}: {
-  level: LevelSpec;
-  step: LoadStep;
-  out: boolean;
-}) {
-  // NO BODY COUNT. The line names the difficulty and the length of the run
-  // and stops there: how many enemies are coming is the run's own answer to
-  // give, wave by wave, and a total printed before the first one lands is a
-  // number the player can do nothing with
-  const { waves } = levelSummary(level);
+function LoadingScreen({ step, out }: { step: LoadStep; out: boolean }) {
+  // NOTHING ABOUT THE RUN. No map, no tier, no wave count: what is coming is
+  // the run's own answer to give, wave by wave, and a preview printed before
+  // the first enemy lands is something the player can do nothing with. The
+  // screen says it is loading and shows how far along it is, and stops there
+
   // steps, not bytes: nothing here streams, so the bar fills a stage at a
   // time rather than pretending to a percentage it cannot know
   const done = LOAD_STEPS.indexOf(step) + 1;
@@ -255,22 +247,9 @@ function LoadingScreen({
       }`}
     >
       <div className="flex w-full max-w-md flex-col items-center gap-6 px-8">
-        <div className="w-full">
-          <LevelThumb mapId={level.map ?? OFFICIAL_MAP_IDS[0]} />
-        </div>
-        <div className="flex flex-col items-center gap-1.5 text-center">
-          {/* the level has no name worth printing — one map, so the headline
-              says what the screen is doing instead */}
-          <h2 className="font-display text-3xl font-bold uppercase tracking-[0.25em] text-[#EDEDEF]">
-            Loading
-          </h2>
-          <p className="text-[13px] uppercase tracking-widest text-[#71717C]">
-            <span className="font-bold" style={{ color: rungColor(level.tier ?? 0) }}>
-              {rungLabel(level.tier ?? 0)}
-            </span>{" "}
-            — {waves} waves
-          </p>
-        </div>
+        <h2 className="font-display text-3xl font-bold uppercase tracking-[0.25em] text-[#EDEDEF]">
+          Loading
+        </h2>
         <div className="flex w-full flex-col gap-2">
           <div className="ms-bar w-full">
             <div
@@ -1819,9 +1798,7 @@ export default function MechSwarm() {
             hud?.buildKind || hud?.sellMode ? "cursor-crosshair" : "cursor-default"
           }`}
         />
-        {loadUi && (
-          <LoadingScreen level={level} step={loadUi.step} out={loadUi.out} />
-        )}
+        {loadUi && <LoadingScreen step={loadUi.step} out={loadUi.out} />}
         {hud?.paused && (
           // on a phone the wave panel already fills the top of the screen, so
           // the badge drops onto the map rather than landing on top of it
