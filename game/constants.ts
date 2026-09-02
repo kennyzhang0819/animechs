@@ -1231,6 +1231,68 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
 };
 
 /**
+ * WHAT A TURRET IS, in one sentence, for the card the tech tree opens over
+ * its node.
+ *
+ * The node itself can only ever say what BUYING it does — "+1 Duo
+ * placement" — which is the shopkeeper's half of the question and not the
+ * player's. The player is choosing between seventeen guns they have never
+ * fired, so the card has to say what the gun DOES: how it delivers damage,
+ * and the one quirk that decides where it wants to stand.
+ *
+ * IT IS PROSE, NOT A STAT BLOCK. The numbers are already on the board and
+ * in the balance page, and repeating them here would go stale the first
+ * time constants above are touched. What does not go stale is the shape of
+ * the thing — an arc chains, a ripple lobs, a foreshadow takes one enormous
+ * shot — so that is what is written.
+ *
+ * WHO IT SHOOTS AT IS NOT IN HERE. That line is derived from targetAir and
+ * targetGround (see targetingLine below) so it can never contradict the
+ * stats, and so a rung that grants air targeting — arc's Ionised Air —
+ * moves it for free.
+ */
+export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
+  duo: "A cheap single-barrel gun. One small bullet at a time at the nearest body — the turret every board starts with, and the one that stays worth having in numbers.",
+  scatter: "A flak gun. Its shells burst near a flyer rather than hitting it, damaging everything caught in the blast.",
+  arc: "Fires a lightning bolt that walks from body to body down a file, so it is worth most aimed along a lane rather than across one.",
+  hail: "Artillery. Arcs a shell over the ground and explodes where it lands, hitting a cluster instead of a body. It never fires at a flyer.",
+  scorch: "A flamethrower with barely any reach. Enormous close-range damage and it sets what it touches alight — burning ignores armour.",
+  salvo: "Fires a four-shell volley in quick succession, then spends a while reloading. Steady damage against single hard targets.",
+  wave: "Sprays water. It does almost no damage; what it does is soak enemies so they move slower, for the turrets behind it.",
+  lancer: "Charges, then fires a beam that cuts through a whole line of bodies at once. Armour counts quadruple against it, so it struggles on heavily armoured waves until Charged Optics.",
+  ripple: "Long-range artillery. Lobs four shells an arc onto a wide patch of ground — the longest reach short of a foreshadow, and it never fires at a flyer.",
+  parallax: "A tractor beam. It drags flyers backwards down the lane and does small armour-piercing damage while it holds them; the pull is the point, not the damage.",
+  fuse: "A close-range shotgun. Three heavy rays at once in a tight cone, with almost no reach — it wants to stand where the lane bends.",
+  swarmer: "Fires homing missiles that chase their target and explode on contact, so very little of a volley is ever wasted.",
+  cyclone: "A high-rate flak cannon. A constant stream of shells that burst into fragments near whatever they hit.",
+  tsunami: "A heavy water sprayer covering a wide area. Like the wave it barely damages anything — it soaks a whole lane at once so everything in it slows.",
+  spectre: "A twin-barrel heavy machine gun with the highest sustained damage in the game, alternating between barrels so it never stops firing.",
+  meltdown: "Holds a continuous laser on one target, burning through it for as long as it stays in range.",
+  foreshadow: "An extreme-range railgun firing one enormous shot on a long reload. It picks the highest-health target in range rather than the nearest.",
+};
+
+/**
+ * WHO A TURRET WILL SHOOT AT, as the one line the card prints under the
+ * description. Derived rather than authored so it cannot drift from the
+ * stats, and so it follows an upgraded turret: pass the stats the player
+ * actually has and arc reads "ground and air" the moment Ionised Air is
+ * bought.
+ *
+ * A turret that targets NEITHER cannot exist today, and the fallback says
+ * so plainly rather than pretending — a silent empty string would hide the
+ * bug that produced it.
+ */
+export const targetingLine = (s: TowerStats): string =>
+  s.targetAir && s.targetGround
+    ? "Targets both ground and air units"
+    : s.targetAir
+      ? "Targets air units only"
+      : s.targetGround
+        ? "Targets ground units only"
+        : "Targets nothing";
+
+
+/**
  * TOWER HEALTH — every tower has a pool, and in the base game NOTHING
  * TOUCHES IT. Enemies never attack; the only things that hurt a tower are
  * rules that say so (the Volatile mutator today), so a run rolled without

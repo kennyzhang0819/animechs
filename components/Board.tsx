@@ -227,6 +227,14 @@ export default function Board({
     c.x = clamp(c.x, -(view.clientWidth - EDGE_KEEP) / c.z, width - EDGE_KEEP / c.z);
     c.y = clamp(c.y, -(view.clientHeight - EDGE_KEEP) / c.z, height - EDGE_KEEP / c.z);
     board.style.transform = camCss();
+    // THE INVERSE SCALE, for anything inside the board that must not shrink
+    // with it. A hover card is anchored to a node — so it has to live in the
+    // scaled layer — but it is TEXT, and at the zoom floor (0.2) a 15px card
+    // paints at 3px, which is why the tree's cards read as grey smudges when
+    // the whole board is fitted on screen. A child that counter-scales by
+    // this holds its screen size at every zoom. Written here rather than
+    // pushed through React because the pan path deliberately never re-renders
+    board.style.setProperty("--ms-inv", String(1 / c.z));
     // the owner's copy tracks every frame, so an unmount mid-pan still
     // leaves the tab exactly where it was let go of
     camStore.current = { ...c };
@@ -432,6 +440,7 @@ export default function Board({
           // re-renders (buying a point) re-apply the ref's own transform,
           // so React and the imperative pan can never disagree
           transform: camCss(),
+          ["--ms-inv" as string]: String(1 / (cam.current.z || 1)),
         }}
       >
         {children}

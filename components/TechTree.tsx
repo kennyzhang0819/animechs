@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { TOWERS } from "@/game/constants";
+import { TOWERS, TOWER_DESC, targetingLine } from "@/game/constants";
 import {
   affordablePoints,
   buyTech,
@@ -9,6 +9,7 @@ import {
   refundTech,
   isTechOn,
   saveTechOn,
+  techOffSet,
   type NodeStatus,
   type Progress,
 } from "@/game/progress";
@@ -22,6 +23,8 @@ import {
   TECH_TREE,
   techNode,
   techPrice,
+  upgradePointsOf,
+  upgradedTower,
   UTILITY_INFO,
   type TechKind,
   type TechNodeDef,
@@ -377,9 +380,14 @@ function UpgradeChip({
           a mouse travelling up to press that button never crosses dead
           ground and closes the card under itself */}
       <div
-        className={`absolute bottom-full left-1/2 z-20 w-64 -translate-x-1/2 pb-2 text-left ${
+        className={`absolute bottom-full left-1/2 z-20 w-64 pb-2 text-left ${
           showCard ? "block" : "hidden group-hover/chip:block group-focus-within/chip:block"
         }`}
+        /* counter-scaled for the same reason as the node card above */
+        style={{
+          transform: "translateX(-50%) scale(var(--ms-inv, 1))",
+          transformOrigin: "bottom center",
+        }}
       >
         <div className="ms-pane-solid p-3 shadow-lg">
           <div className="flex items-baseline justify-between gap-2">
@@ -865,9 +873,23 @@ export default function TechTree({
                       resting on the node with a mouse, and by the first tap
                       with a finger */}
                   <div
-                    className={`pointer-events-none ms-pane-solid absolute left-1/2 z-10 w-56 -translate-x-1/2 p-3 text-left shadow-lg ${
+                    className={`pointer-events-none ms-pane-solid absolute left-1/2 z-10 w-56 p-3 text-left shadow-lg ${
                       showCard ? "block" : "hidden group-hover:block group-focus-within:block"
                     } ${n.y === 0 ? "top-full mt-5" : "bottom-full mb-3"}`}
+                    /* COUNTER-SCALED, so the card is the same size on screen
+                       at every zoom. It has to live inside the board's scaled
+                       layer to stay anchored to its node, and at the zoom
+                       floor that layer is at 0.2 — a card that scaled with it
+                       painted its 15px text at 3px, which is unreadable and
+                       was being mistaken for the card not rendering at all.
+                       The origin is the edge touching the node, so the card
+                       grows away from it and never covers what is hovered.
+                       Written inline because it replaces Tailwind's own
+                       -translate-x-1/2, which shares the transform property */
+                    style={{
+                      transform: "translateX(-50%) scale(var(--ms-inv, 1))",
+                      transformOrigin: n.y === 0 ? "top center" : "bottom center",
+                    }}
                   >
                     <div className="flex items-baseline justify-between">
                       <span className="font-bold text-[#EDEDEF]">{name}</span>
@@ -884,6 +906,33 @@ export default function TechTree({
                             })`
                           : `Unlocks the ${name} turret with 1 placement`}
                     </div>
+                    {/* WHAT THE GUN ACTUALLY DOES, on a turret node only.
+                        The line above is the purchase — placements bought —
+                        and it is no help at all to someone choosing between
+                        seventeen turrets they have never fired. This is the
+                        turret itself: how it delivers damage, then who it
+                        will shoot at.
+
+                        THE TARGETING LINE IS RESOLVED AGAINST THE PLAYER'S
+                        OWN UPGRADES, not the stock table, so arc reads
+                        "ground and air" the moment Ionised Air is bought
+                        rather than contradicting the branch hanging off it.
+                        The head count is irrelevant to targeting, so a zero
+                        context is honest here — no board is in scope. */}
+                    {isTowerNode(n.id) && (
+                      <>
+                        <div className="mt-2 text-[13px] leading-snug text-[#A6A6AF]">
+                          {TOWER_DESC[n.id]}
+                        </div>
+                        <div className="mt-1.5 text-[12px] font-bold uppercase tracking-wide text-[#71717C]">
+                          {targetingLine(
+                            upgradedTower(n.id, upgradePointsOf(n.id, progress.tech, techOffSet(progress)), {
+                              count: 0,
+                            }),
+                          )}
+                        </div>
+                      </>
+                    )}
                     {status === "locked-tier" ? (
                       <div className="mt-2 text-[13px] font-bold uppercase tracking-widest text-[#FF8A8A]">
                         Clear{" "}
