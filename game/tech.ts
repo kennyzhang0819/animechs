@@ -141,18 +141,18 @@ export const UTILITY_INFO: Readonly<Record<UtilityKind, { name: string; blurb: s
   "lives": {
     name: "Extra Lives",
     blurb:
-      "One more life a point. A run is won while a life is left — but a boss that reaches the base ends the run whatever is in hand.",
+      "+1 life per point. A boss that reaches the base still ends the run, whatever lives are in hand.",
   },
-  "speed-2": { name: "2x Speed", blurb: "Run the whole simulation at double pace." },
-  "speed-4": { name: "4x Speed", blurb: "Quadruple pace — a wave gap stops being a wait." },
-  "speed-8": { name: "8x Speed", blurb: "Eight times pace, for a board that is already holding." },
+  "speed-2": { name: "2x Speed", blurb: "Allows running the game at 2x speed." },
+  "speed-4": { name: "4x Speed", blurb: "Allows running the game at 4x speed." },
+  "speed-8": { name: "8x Speed", blurb: "Allows running the game at 8x speed." },
   "slot-7": {
     name: "7th Slot",
-    blurb: "One more loadout slot — the build bar grows to seven turrets.",
+    blurb: "+1 loadout slot. The build bar holds 7 turrets instead of 6.",
   },
   "slot-8": {
     name: "8th Slot",
-    blurb: "The build bar tops out at eight loadout slots.",
+    blurb: "+1 loadout slot. The build bar holds 8 turrets instead of 7.",
   },
 };
 

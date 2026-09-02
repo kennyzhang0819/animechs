@@ -187,11 +187,10 @@ export interface TurretUpgradeDef {
   /** the upgraded stats, given the points held and the board it stands on */
   apply: (s: TowerStats, points: number, ctx: UpgradeContext) => TowerStats;
   /**
-   * WHAT THE NODE IS DOING RIGHT NOW, not what a point is worth. A dial is
-   * bought a point at a time over a whole campaign, and "+4% a point" is no
-   * help to someone deciding whether the fourteenth one is worth paying
-   * for — "+56% attack speed" is. Absent on the one-shots, whose blurb
-   * already says the whole story.
+   * WHAT THE NODE IS DOING RIGHT NOW — the running total at the points
+   * held, which the blurb cannot know. The blurb says what one point buys
+   * and where the dial stops; this says where the dial is standing.
+   * Absent on the one-shots, whose blurb already says the whole story.
    */
   effect?: (points: number) => string;
 }
@@ -340,13 +339,15 @@ const CAP_COUNT = 10;
 const CAP_COUNT_SHORT = 8;
 
 /**
- * A STACKING DIAL, AND THE NUMBER IN IT IS WHAT THE NODE IS WORTH AT FULL
- * — not what one click hands over.
+ * A STACKING DIAL. `total` is what the node is worth at its cap, and the
+ * `effect` line reports the running total at the points held.
  *
- * That is deliberate and it is the whole reason this reads. A per-click
- * figure was legible when a dial had fifteen stops; at a hundred it is a
- * crumb (0.006) that says nothing about the node and cannot be compared
- * with the node beside it. "Sixty per cent attack speed, fully bought" can.
+ * THE BLURB SAYS BOTH, AND IT LEADS WITH THE PER-POINT FIGURE: "+0.6%
+ * attack speed per point, up to +60%". A blurb that only quoted the full
+ * total ("sixty per cent attack speed, fully bought") answered a question
+ * nobody was asking at the moment of the click — what the player is
+ * deciding is whether to spend THIS point, so that is the number that goes
+ * first, with the ceiling after it for scale.
  */
 const dial = (
   total: number,
@@ -367,7 +368,7 @@ const DUO: readonly TurretUpgradeDef[] = [
     turret: "duo",
     tier: 1,
     name: "Rate of Fire",
-    blurb: "Every duo on the board fires faster — up to twice its stock rate, fully bought.",
+    blurb: "+1% attack speed per point, up to +100%.",
     glyph: "rate",
     cap: CAP_DIAL,
     ...dial(1.0, "attack speed", faster),
@@ -377,7 +378,8 @@ const DUO: readonly TurretUpgradeDef[] = [
     turret: "duo",
     tier: 2,
     name: "Pierce",
-    blurb: "Each point lets a duo's shot punch through one more body before it is spent.",
+    blurb:
+      "+1 pierce per point, up to +10. Shots punch through that many bodies instead of stopping at the first.",
     glyph: "pierce",
     cap: CAP_COUNT,
     // PIERCE IS A CAP, NOT A FLAG. A stock duo bullet has no `pierce` at
@@ -392,7 +394,7 @@ const DUO: readonly TurretUpgradeDef[] = [
     turret: "duo",
     tier: 3,
     name: "Graphite Rounds",
-    blurb: "Duos load graphite instead of copper: 9 damage a shot becomes 18. Bought once.",
+    blurb: "Loads graphite instead of copper: 9 damage a shot becomes 18. Bought once.",
     glyph: "damage",
     cap: 1,
     // THE GRAPHITE ROUND, 1:1 from Blocks.java's duo ammo() block:
@@ -433,8 +435,7 @@ const DUO: readonly TurretUpgradeDef[] = [
     turret: "duo",
     tier: 4,
     name: "Duo Power",
-    blurb:
-      "Every duo hits 1% harder for each OTHER duo standing. A hundred of them is a hundred per cent.",
+    blurb: "+1% damage for every OTHER duo standing. A hundred duos is +99% damage each.",
     glyph: "surge",
     cap: 1,
     apply: (s, _n, ctx) => stronger(s, 1 + 0.01 * Math.max(0, ctx.count - 1)),
@@ -449,7 +450,7 @@ const SCATTER: readonly TurretUpgradeDef[] = [
     turret: "scatter",
     tier: 1,
     name: "Belt Loader",
-    blurb: "A shorter cycle between bursts — 60% more flak in the air, fully bought.",
+    blurb: "+0.6% attack speed per point, up to +60%.",
     glyph: "rate",
     cap: CAP_DIAL,
     ...dial(0.6, "attack speed", faster),
@@ -459,7 +460,7 @@ const SCATTER: readonly TurretUpgradeDef[] = [
     turret: "scatter",
     tier: 2,
     name: "Proximity Fuse",
-    blurb: "The shell goes off further from what set it off, and the blast reaches further still.",
+    blurb: "+0.8% fuse range and +0.4% blast radius per point, up to +80% and +40%.",
     glyph: "homing",
     cap: CAP_DIAL,
     apply: (s, n) => wider(fusedAt(s, 1 + 0.008 * n), 1 + 0.004 * n),
@@ -471,7 +472,7 @@ const SCATTER: readonly TurretUpgradeDef[] = [
     tier: 3,
     name: "Metaglass Flak",
     blurb:
-      "Metaglass instead of lead: double the damage, half again the blast, and a fuse that trips a third further out.",
+      "Loads metaglass instead of lead: +100% damage, +15% blast radius, +35% fuse range. Bought once.",
     glyph: "damage",
     cap: 1,
     // Mindustry's own metaglass flak is scatter's best ammo — damage 5
@@ -487,7 +488,7 @@ const ARC: readonly TurretUpgradeDef[] = [
     turret: "arc",
     tier: 1,
     name: "Overcharged Coils",
-    blurb: "Six per cent more current down the bolt for every point.",
+    blurb: "+0.9% damage per point, up to +90%.",
     glyph: "damage",
     cap: CAP_DIAL,
     ...dial(0.9, "damage", stronger),
@@ -497,7 +498,8 @@ const ARC: readonly TurretUpgradeDef[] = [
     turret: "arc",
     tier: 2,
     name: "Extended Arcs",
-    blurb: "The bolt walks one more node per point before it dies — a longer file, further back.",
+    blurb:
+      "+1 chain node per point, up to +10. The bolt jumps to that many more bodies before it dies.",
     glyph: "range",
     cap: CAP_COUNT,
     apply: (s, n) =>
@@ -514,7 +516,7 @@ const ARC: readonly TurretUpgradeDef[] = [
     turret: "arc",
     tier: 3,
     name: "Ionised Air",
-    blurb: "Charged air carries. The arc reaches a third further and finally jumps to flyers.",
+    blurb: "+30% range, and the arc can hit air units. Bought once.",
     glyph: "air",
     cap: 1,
     apply: (s) => then(reaching(s, 1.3), { targetAir: true }, { collidesAir: true }),
@@ -525,7 +527,7 @@ const ARC: readonly TurretUpgradeDef[] = [
     tier: 4,
     name: "Tesla Cascade",
     blurb:
-      "Three bolts a shot instead of one, each walking twice as far and catching everything within eight units of the nodes it lands on. A lane in front of an arc stops being a lane.",
+      "3 bolts a shot instead of 1: +50% damage, +35% attack speed, each bolt chains twice as far, and every node it lands on hits everything within 8 units. Bought once.",
     glyph: "surge",
     cap: 1,
     apply: (s) =>
@@ -548,7 +550,7 @@ const HAIL: readonly TurretUpgradeDef[] = [
     turret: "hail",
     tier: 1,
     name: "Rifled Bore",
-    blurb: "Sixty per cent off the reload, fully bought — a shell a second is the ceiling.",
+    blurb: "+0.6% attack speed per point, up to +60%.",
     glyph: "rate",
     cap: CAP_DIAL,
     ...dial(0.6, "attack speed", faster),
@@ -558,7 +560,7 @@ const HAIL: readonly TurretUpgradeDef[] = [
     turret: "hail",
     tier: 2,
     name: "Bigger Charge",
-    blurb: "More propellant behind the shell: the blast widens by half, fully bought.",
+    blurb: "+0.5% blast radius per point, up to +50%.",
     glyph: "splash",
     cap: CAP_DIAL,
     ...dial(0.5, "blast radius", wider),
@@ -569,7 +571,7 @@ const HAIL: readonly TurretUpgradeDef[] = [
     tier: 3,
     name: "Incendiary Shells",
     blurb:
-      "Pyratite in the shell: half again the blast damage, and everything caught in it burns for six seconds.",
+      "Loads pyratite shells: +50% damage, and everything caught in the blast burns for 6s. Burning ignores armour. Bought once.",
     glyph: "burn",
     cap: 1,
     // A STATUS LAID BY A BLAST, which is a thing only this tier of the
@@ -587,7 +589,7 @@ const SCORCH: readonly TurretUpgradeDef[] = [
     turret: "scorch",
     tier: 1,
     name: "Pressure Feed",
-    blurb: "Three quarters more reach, fully bought, on the turret whose only real fault is its reach.",
+    blurb: "+0.75% range per point, up to +75%.",
     glyph: "range",
     cap: CAP_DIAL,
     ...dial(0.75, "range", reaching),
@@ -597,7 +599,7 @@ const SCORCH: readonly TurretUpgradeDef[] = [
     turret: "scorch",
     tier: 2,
     name: "Rich Fuel",
-    blurb: "Six more seconds of burning, fully bought — and burning ignores armour.",
+    blurb: "+0.06s burn duration per point, up to +6s. Burning ignores armour.",
     glyph: "burn",
     cap: CAP_DIAL,
     apply: (s, n) => withBullet(s, { burn: (s.bullet.burn ?? 0) + 0.06 * n }),
@@ -608,7 +610,8 @@ const SCORCH: readonly TurretUpgradeDef[] = [
     turret: "scorch",
     tier: 3,
     name: "Pyratite Feed",
-    blurb: "Pyratite instead of coal: nearly double the damage and twice as long alight.",
+    blurb:
+      "Burns pyratite instead of coal: +90% damage, double burn duration, +40% flame radius. Bought once.",
     glyph: "damage",
     cap: 1,
     apply: (s) =>
@@ -625,7 +628,7 @@ const SALVO: readonly TurretUpgradeDef[] = [
     turret: "salvo",
     tier: 1,
     name: "Autoloader",
-    blurb: "Sixty per cent off the wait between volleys, fully bought.",
+    blurb: "+0.6% attack speed per point, up to +60%.",
     glyph: "rate",
     cap: CAP_DIAL,
     ...dial(0.6, "attack speed", faster),
@@ -635,7 +638,7 @@ const SALVO: readonly TurretUpgradeDef[] = [
     turret: "salvo",
     tier: 2,
     name: "Piercing Rounds",
-    blurb: "Hardened bases: each point takes one more body out of a file per shell.",
+    blurb: "+1 pierce per point, up to +8. Each shell takes that many more bodies out of a file.",
     glyph: "pierce",
     cap: CAP_COUNT_SHORT,
     apply: (s, n) => piercing(s, n),
@@ -646,7 +649,8 @@ const SALVO: readonly TurretUpgradeDef[] = [
     turret: "salvo",
     tier: 3,
     name: "Pyratite Shells",
-    blurb: "Half again the damage, and everything a shell touches burns for five seconds.",
+    blurb:
+      "Loads pyratite shells: +50% damage, and anything a shell touches burns for 5s. Bought once.",
     glyph: "burn",
     cap: 1,
     apply: (s) =>
@@ -666,7 +670,7 @@ const WAVE: readonly TurretUpgradeDef[] = [
     turret: "wave",
     tier: 1,
     name: "High-Pressure Pump",
-    blurb: "Six more seconds of soaking, fully bought — a slow that outlives the stream.",
+    blurb: "+0.06s slow duration per point, up to +6s.",
     glyph: "duration",
     cap: CAP_DIAL,
     apply: (s, n) =>
@@ -680,7 +684,7 @@ const WAVE: readonly TurretUpgradeDef[] = [
     turret: "wave",
     tier: 2,
     name: "Wide Nozzle",
-    blurb: "Half again the reach, fully bought — one wave covering two lanes instead of one.",
+    blurb: "+0.5% range per point, up to +50%.",
     glyph: "range",
     cap: CAP_DIAL,
     ...dial(0.5, "range", reaching),
@@ -691,7 +695,7 @@ const WAVE: readonly TurretUpgradeDef[] = [
     tier: 3,
     name: "Cryofluid Mix",
     blurb:
-      "Cryofluid in the tank: what it soaks drives at 40% speed rather than 65%, and stays soaked half again as long.",
+      "Uses cryofluid instead of water: soaked enemies move at 40% speed rather than 65%, and stay soaked 50% longer. Bought once.",
     glyph: "frost",
     cap: 1,
     apply: (s) =>
@@ -710,7 +714,7 @@ const LANCER: readonly TurretUpgradeDef[] = [
     turret: "lancer",
     tier: 1,
     name: "Capacitor Bank",
-    blurb: "Three quarters more charge behind the beam, fully bought.",
+    blurb: "+0.75% damage per point, up to +75%.",
     glyph: "damage",
     cap: CAP_DIAL,
     ...dial(0.75, "damage", stronger),
@@ -720,7 +724,7 @@ const LANCER: readonly TurretUpgradeDef[] = [
     turret: "lancer",
     tier: 2,
     name: "Focusing Lens",
-    blurb: "The beam holds together through one more body per point before it gives out.",
+    blurb: "+1 beam pierce per point, up to +8. The beam holds through that many more bodies.",
     glyph: "pierce",
     cap: CAP_COUNT_SHORT,
     apply: (s, n) =>
@@ -735,7 +739,7 @@ const LANCER: readonly TurretUpgradeDef[] = [
     tier: 3,
     name: "Charged Optics",
     blurb:
-      "A faster charge, a heavier beam, and no more quadruple armour: lancer stops being the turret a fortress laughs at.",
+      "Armour stops counting quadruple against the beam: −60% charge time, +40% beam width. Bought once.",
     glyph: "beam",
     cap: 1,
     // armorMultiplier 4 is stock lancer's one real weakness — armour
@@ -763,7 +767,7 @@ const RIPPLE: readonly TurretUpgradeDef[] = [
     turret: "ripple",
     tier: 1,
     name: "Long Barrels",
-    blurb: "Three quarters further down the lane, fully bought, from the turret that already reaches furthest.",
+    blurb: "+0.75% range per point, up to +75%.",
     glyph: "range",
     cap: CAP_DIAL,
     ...dial(0.75, "range", reaching),
@@ -773,7 +777,7 @@ const RIPPLE: readonly TurretUpgradeDef[] = [
     turret: "ripple",
     tier: 2,
     name: "Fragmentation",
-    blurb: "A thinner casing and more of it: the blast widens by half, fully bought.",
+    blurb: "+0.5% blast radius per point, up to +50%.",
     glyph: "splash",
     cap: CAP_DIAL,
     ...dial(0.5, "blast radius", wider),
@@ -783,7 +787,7 @@ const RIPPLE: readonly TurretUpgradeDef[] = [
     turret: "ripple",
     tier: 3,
     name: "Plastanium Shells",
-    blurb: "Six shells an arc instead of four, and a third more blast behind each one.",
+    blurb: "Loads plastanium shells: 6 shells an arc instead of 4, +35% damage. Bought once.",
     glyph: "spread",
     cap: 1,
     apply: (s) =>
@@ -803,7 +807,7 @@ const PARALLAX: readonly TurretUpgradeDef[] = [
     turret: "parallax",
     tier: 1,
     name: "Stronger Field",
-    blurb: "Ninety per cent more pull, fully bought — and the pull is the whole turret.",
+    blurb: "+0.9% pull force per point, up to +90%.",
     glyph: "homing",
     cap: CAP_DIAL,
     ...dial(0.9, "pull", pulling),
@@ -813,7 +817,7 @@ const PARALLAX: readonly TurretUpgradeDef[] = [
     turret: "parallax",
     tier: 2,
     name: "Wide Aperture",
-    blurb: "Half again the reach, fully bought, on the second-longest range in the game.",
+    blurb: "+0.5% range per point, up to +50%.",
     glyph: "range",
     cap: CAP_DIAL,
     ...dial(0.5, "range", reaching),
@@ -824,7 +828,7 @@ const PARALLAX: readonly TurretUpgradeDef[] = [
     tier: 3,
     name: "Phase Coils",
     blurb:
-      "Phase fabric in the emitter: four times the armour-piercing damage and half again the pull. The beam starts killing what it drags.",
+      "Phase fabric in the emitter: +300% armour-piercing damage and +60% pull force. Bought once.",
     glyph: "damage",
     cap: 1,
     apply: (s) => pulling(stronger(s, 4), 1.6),
@@ -837,7 +841,7 @@ const FUSE: readonly TurretUpgradeDef[] = [
     turret: "fuse",
     tier: 1,
     name: "Choked Barrels",
-    blurb: "Three quarters more behind each ray, fully bought.",
+    blurb: "+0.75% damage per point, up to +75%.",
     glyph: "damage",
     cap: CAP_DIAL,
     ...dial(0.75, "damage", stronger),
@@ -847,7 +851,7 @@ const FUSE: readonly TurretUpgradeDef[] = [
     turret: "fuse",
     tier: 2,
     name: "Extended Rays",
-    blurb: "Half again the reach, fully bought, on the shortest range in the game.",
+    blurb: "+0.5% range per point, up to +50%.",
     glyph: "range",
     cap: CAP_DIAL,
     ...dial(0.5, "range", reaching),
@@ -857,7 +861,7 @@ const FUSE: readonly TurretUpgradeDef[] = [
     turret: "fuse",
     tier: 3,
     name: "Surge Shot",
-    blurb: "Five rays a shot instead of three, spread wider, each a third heavier.",
+    blurb: "5 rays a shot instead of 3: +30% damage, and a wider spread. Bought once.",
     glyph: "spread",
     cap: 1,
     apply: (s) => ({ ...stronger(s, 1.3), shots: 5, spread: (16 * Math.PI) / 180 }),
@@ -870,7 +874,7 @@ const SWARMER: readonly TurretUpgradeDef[] = [
     turret: "swarmer",
     tier: 1,
     name: "Guidance Fins",
-    blurb: "Tighter turns and a wider lock, fully bought — fewer missiles wasted on air.",
+    blurb: "+1.2% missile turn rate and +0.6% lock range per point, up to +120% and +60%.",
     glyph: "homing",
     cap: CAP_DIAL,
     apply: (s, n) =>
@@ -889,7 +893,7 @@ const SWARMER: readonly TurretUpgradeDef[] = [
     turret: "swarmer",
     tier: 2,
     name: "Missile Racks",
-    blurb: "Forty per cent off the reload, fully bought.",
+    blurb: "+0.4% attack speed per point, up to +40%.",
     glyph: "rate",
     cap: CAP_DIAL,
     ...dial(0.4, "attack speed", faster),
@@ -899,7 +903,7 @@ const SWARMER: readonly TurretUpgradeDef[] = [
     turret: "swarmer",
     tier: 3,
     name: "Surge Warheads",
-    blurb: "Six missiles a volley, each with half again the blast over a third more ground.",
+    blurb: "6 missiles a volley instead of 4: +60% splash damage, +30% blast radius. Bought once.",
     glyph: "splash",
     cap: 1,
     apply: (s) => then(wider(s, 1.3), { shots: 6 }, { splash: s.bullet.splash * 1.6 }),
@@ -912,7 +916,7 @@ const CYCLONE: readonly TurretUpgradeDef[] = [
     turret: "cyclone",
     tier: 1,
     name: "Belt Feed",
-    blurb: "Sixty per cent off the cycle, fully bought, on a gun that already never stops.",
+    blurb: "+0.6% attack speed per point, up to +60%.",
     glyph: "rate",
     cap: CAP_DIAL,
     ...dial(0.6, "attack speed", faster),
@@ -922,7 +926,7 @@ const CYCLONE: readonly TurretUpgradeDef[] = [
     turret: "cyclone",
     tier: 2,
     name: "Proximity Fuse",
-    blurb: "The shell trips sixty per cent further from what set it off, fully bought.",
+    blurb: "+0.6% fuse range per point, up to +60%.",
     glyph: "homing",
     cap: CAP_DIAL,
     ...dial(0.6, "fuse range", fusedAt),
@@ -933,7 +937,7 @@ const CYCLONE: readonly TurretUpgradeDef[] = [
     tier: 3,
     name: "Surge Rounds",
     blurb:
-      "Surge alloy in the casing: half again the blast, a third more on the hit, and ten fragments out of every shell instead of six.",
+      "Surge alloy casings: +30% direct damage, +50% splash damage, and 10 fragments a shell instead of 6. Bought once.",
     glyph: "splash",
     cap: 1,
     apply: (s) =>
@@ -950,7 +954,7 @@ const TSUNAMI: readonly TurretUpgradeDef[] = [
     turret: "tsunami",
     tier: 1,
     name: "Pressure Chamber",
-    blurb: "Nine more seconds under the umbrella, fully bought.",
+    blurb: "+0.09s slow duration per point, up to +9s.",
     glyph: "duration",
     cap: CAP_DIAL,
     apply: (s, n) =>
@@ -965,7 +969,7 @@ const TSUNAMI: readonly TurretUpgradeDef[] = [
     turret: "tsunami",
     tier: 2,
     name: "Wide Spray",
-    blurb: "Half again the umbrella, fully bought.",
+    blurb: "+0.5% range per point, up to +50%.",
     glyph: "range",
     cap: CAP_DIAL,
     ...dial(0.5, "range", reaching),
@@ -975,7 +979,8 @@ const TSUNAMI: readonly TurretUpgradeDef[] = [
     turret: "tsunami",
     tier: 3,
     name: "Cryofluid Mix",
-    blurb: "Cryofluid in the tank: what it soaks drives at a quarter speed rather than 45%.",
+    blurb:
+      "Uses cryofluid instead of water: soaked enemies move at 25% speed rather than 45%, and stay soaked 40% longer. Bought once.",
     glyph: "frost",
     cap: 1,
     apply: (s) =>
@@ -994,7 +999,7 @@ const SPECTRE: readonly TurretUpgradeDef[] = [
     turret: "spectre",
     tier: 1,
     name: "Cooling Jacket",
-    blurb: "Sixty per cent off the cycle, fully bought, on the highest sustained damage in the game.",
+    blurb: "+0.6% attack speed per point, up to +60%.",
     glyph: "rate",
     cap: CAP_DIAL,
     ...dial(0.6, "attack speed", faster),
@@ -1004,7 +1009,7 @@ const SPECTRE: readonly TurretUpgradeDef[] = [
     turret: "spectre",
     tier: 2,
     name: "Hardened Bases",
-    blurb: "Half again the shell, fully bought.",
+    blurb: "+0.5% damage per point, up to +50%.",
     glyph: "damage",
     cap: CAP_DIAL,
     ...dial(0.5, "damage", stronger),
@@ -1015,7 +1020,7 @@ const SPECTRE: readonly TurretUpgradeDef[] = [
     tier: 3,
     name: "Surge Shells",
     blurb:
-      "A third more damage, five bodies to a shell instead of two, and armour stops counting at all.",
+      "Surge shells: +35% damage, 5 pierce instead of 2, and armour is ignored entirely. Bought once.",
     glyph: "pierce",
     cap: 1,
     apply: (s) =>
@@ -1029,7 +1034,7 @@ const MELTDOWN: readonly TurretUpgradeDef[] = [
     turret: "meltdown",
     tier: 1,
     name: "Coolant Loop",
-    blurb: "Three quarters less cooling between beams, fully bought.",
+    blurb: "+0.75% attack speed per point, up to +75%.",
     glyph: "rate",
     cap: CAP_DIAL,
     ...dial(0.75, "cooling speed", faster),
@@ -1039,7 +1044,7 @@ const MELTDOWN: readonly TurretUpgradeDef[] = [
     turret: "meltdown",
     tier: 2,
     name: "Focusing Array",
-    blurb: "Half again the energy in the beam, fully bought.",
+    blurb: "+0.5% damage per point, up to +50%.",
     glyph: "damage",
     cap: CAP_DIAL,
     ...dial(0.5, "damage", stronger),
@@ -1049,8 +1054,7 @@ const MELTDOWN: readonly TurretUpgradeDef[] = [
     turret: "meltdown",
     tier: 3,
     name: "Phase Lens",
-    blurb:
-      "A third more reach, and the beam bites every three and a half ticks rather than every five.",
+    blurb: "+35% range, and the beam bites every 3.5 ticks instead of every 5. Bought once.",
     glyph: "beam",
     cap: 1,
     apply: (s) => {
@@ -1073,7 +1077,7 @@ const FORESHADOW: readonly TurretUpgradeDef[] = [
     turret: "foreshadow",
     tier: 1,
     name: "Rail Capacitors",
-    blurb: "Three quarters more budget behind the rail, fully bought — and the budget IS the shot.",
+    blurb: "+0.75% damage per point, up to +75%.",
     glyph: "damage",
     cap: CAP_DIAL,
     ...dial(0.75, "damage", stronger),
@@ -1083,8 +1087,7 @@ const FORESHADOW: readonly TurretUpgradeDef[] = [
     turret: "foreshadow",
     tier: 2,
     name: "Servo Motors",
-    blurb:
-      "Fifteen per cent faster on the turntable per point, and a degree more slack in the cone — the rail commits less and fires more.",
+    blurb: "+15% traverse speed and +1° firing cone per point, up to 10 points.",
     glyph: "spread",
     // a COUNTING rung: the cone is whole degrees, so the traverse dial
     // rides its cap rather than the other way round
@@ -1101,7 +1104,7 @@ const FORESHADOW: readonly TurretUpgradeDef[] = [
     turret: "foreshadow",
     tier: 3,
     name: "Surge Rail",
-    blurb: "A third more budget a shot, fired in six tenths of the time.",
+    blurb: "+30% damage, and the reload drops to 60% of stock. Bought once.",
     glyph: "rate",
     cap: 1,
     apply: (s) => faster(stronger(s, 1.3), 1 / 0.6),
