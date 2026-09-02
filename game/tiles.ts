@@ -140,51 +140,59 @@ export function paintFloor(kind: FloorKind, variant: number): Uint8ClampedArray<
         put(x + i, y + j, c);
       }
   };
-  /** a crack: a line that walks 4-6 steps with one bend in it */
+  // NOTHING HERE IS ONE PIXEL WIDE. A hairline on a 16-pixel tile reads
+  // as a scratch, and a ground full of scratches reads as worn rather
+  // than drawn; Mindustry's marks are chunky for the same reason. Every
+  // line below is two logical pixels thick — four in the tile, eight in
+  // the atlas cell — which is what makes a crack a crack and a dash a
+  // dash from a normal zoom
+  const THICK = 2;
+  /** a crack: a line two wide that walks 4-6 steps with one bend in it */
   const crack = (c: string): void => {
     const len = 4 + Math.floor(rng() * 3);
-    let [x, y] = spot(len, len);
+    let [x, y] = spot(len + 1, len + 1);
     const dx = rng() < 0.5 ? 1 : 0, dy = 1 - dx;
     const bend = 1 + Math.floor(rng() * (len - 2));
+    // thickened across the direction of travel
+    const stroke = (px: number, py: number): void => {
+      for (let t = 0; t < THICK; t++) put(px + dy * t, py + dx * t, c);
+    };
     for (let k = 0; k < len; k++) {
-      put(x, y, c);
+      stroke(x, y);
       if (k === bend) {
         // turn once, toward the side of the tile with more room
         x += dy * (x < N / 2 ? 1 : -1);
         y += dx * (y < N / 2 ? 1 : -1);
-        put(x, y, c);
+        stroke(x, y);
       }
       x += dx;
       y += dy;
     }
   };
-  /** a ripple: a light dash, three or four wide, one high */
+  /** a ripple: a light dash, four or five wide, two high */
   const dash = (c: string): void => {
-    const w = 3 + Math.floor(rng() * 2);
-    const [x, y] = spot(w, 1);
-    for (let i = 0; i < w; i++) put(x + i, y, c);
+    const w = 4 + Math.floor(rng() * 2);
+    const [x, y] = spot(w, THICK);
+    for (let j = 0; j < THICK; j++) for (let i = 0; i < w; i++) put(x + i, y + j, c);
   };
 
   switch (st.mark) {
     case "patch":
-      blob(st.light, 3 + Math.floor(rng() * 2), 2 + Math.floor(rng() * 2));
-      if (rng() < 0.6) blob(st.dark, 2 + Math.floor(rng() * 2), 2);
+      blob(st.light, 4 + Math.floor(rng() * 2), 3 + Math.floor(rng() * 2));
+      if (rng() < 0.6) blob(st.dark, 3 + Math.floor(rng() * 2), 3);
       break;
     case "tuft": {
-      blob(st.light, 3, 2 + Math.floor(rng() * 2));
-      if (rng() < 0.5) blob(st.dark, 2, 3);
-      // two blades, side by side, one taller than the other
-      const [x, y] = spot(2, 3);
-      put(x, y + 1, st.dark);
-      put(x, y + 2, st.dark);
-      put(x + 1, y, st.dark);
-      put(x + 1, y + 1, st.dark);
-      put(x + 1, y + 2, st.dark);
+      blob(st.light, 4, 3 + Math.floor(rng() * 2));
+      if (rng() < 0.5) blob(st.dark, 3, 4);
+      // two blades side by side, each two wide, one taller than the other
+      const [x, y] = spot(4, 4);
+      for (let j = 1; j < 4; j++) for (let i = 0; i < 2; i++) put(x + i, y + j, st.dark);
+      for (let j = 0; j < 4; j++) for (let i = 2; i < 4; i++) put(x + i, y + j, st.dark);
       break;
     }
     case "crack":
       crack(st.dark);
-      blob(st.light, 3, 2);
+      blob(st.light, 4, 3);
       break;
     case "ripple":
       dash(st.light);
@@ -192,19 +200,19 @@ export function paintFloor(kind: FloorKind, variant: number): Uint8ClampedArray<
       if (rng() < 0.4) dash(st.dark);
       break;
     case "pebble": {
-      blob(st.light, 3 + Math.floor(rng() * 2), 2);
-      if (rng() < 0.5) blob(st.dark, 2, 2);
-      // one stone: a dark pixel with the light catching its top
-      const [x, y] = spot(2, 2);
-      put(x, y + 1, st.dark);
-      put(x + 1, y + 1, st.dark);
-      put(x, y, st.light);
+      blob(st.light, 4 + Math.floor(rng() * 2), 3);
+      if (rng() < 0.5) blob(st.dark, 3, 3);
+      // one stone: a dark lump with the light catching its top
+      const [x, y] = spot(3, 4);
+      for (let j = 2; j < 4; j++) for (let i = 0; i < 3; i++) put(x + i, y + j, st.dark);
+      put(x, y + 1, st.light);
+      put(x + 1, y + 1, st.light);
       break;
     }
     case "vein":
       crack(st.accent ?? st.light);
       if (kind === "magmarock") crack(st.accent ?? st.light);
-      blob(st.dark, 3, 2);
+      blob(st.dark, 4, 3);
       break;
   }
 
@@ -336,32 +344,37 @@ export function paintWall(
    * reads as an arrowhead, and a field of arrowheads is a pattern
    */
   const facet = (size: number, rounded: boolean): void => {
-    const w = size + 1, h = Math.max(2, Math.round(size * 0.6));
+    const w = size + 2, h = Math.max(3, Math.round(size * 0.7));
     const lean = rng() < 0.5 ? 1 : -1;
-    const [x, y] = spot(w + h, h + 1);
+    const [x, y] = spot(w + h, h + 2);
     const x0 = lean > 0 ? x : x + h;
     for (let j = 0; j < h; j++) {
       const sx = x0 + lean * Math.floor(j / (rounded ? 2 : 1));
       const trim = j === 0 || j === h - 1 ? 1 : 0;
       for (let i = trim; i < w - trim; i++) put(sx + i, y + j, st.light);
     }
-    // the shade under it, along the plate's lower edge
+    // the shade under it, two deep, along the plate's lower edge
     const bx = x0 + lean * Math.floor((h - 1) / (rounded ? 2 : 1));
-    for (let i = 1; i < w - 1; i++) put(bx + i, y + h, st.dark);
+    for (let j = 0; j < 2; j++) for (let i = 1; i < w - 1; i++) put(bx + i, y + h + j, st.dark);
   };
-  /** A CREVICE: a diagonal line, stepping one across for one down, with
-   *  a kink partway — the floor's cracks are level, so this is the one
-   *  place a diagonal appears on the ground */
+  /** A CREVICE: a diagonal line two wide, stepping one across for one
+   *  down, with a kink partway — the floor's cracks are level, so this is
+   *  the one place a diagonal appears on the ground. Two wide for the
+   *  same reason every floor mark is: a hairline is a scratch */
   const crevice = (len: number): void => {
-    let [x, y] = spot(len + 1, len + 1);
+    let [x, y] = spot(len + 2, len + 1);
     const sx = rng() < 0.5 ? 1 : -1;
-    if (sx < 0) x += len;
+    if (sx < 0) x += len + 1;
     const kink = 1 + Math.floor(rng() * Math.max(1, len - 2));
+    const stroke = (px: number, py: number): void => {
+      put(px, py, st.dark);
+      put(px + 1, py, st.dark);
+    };
     for (let k = 0; k < len; k++) {
-      put(x, y, st.dark);
+      stroke(x, y);
       if (k === kink) {
-        put(x + sx, y, st.dark);
         x += sx;
+        stroke(x, y);
       }
       x += sx;
       y += 1;
