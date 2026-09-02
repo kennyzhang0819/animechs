@@ -40,7 +40,7 @@ import {
   WALL_SNOW,
   WALL_SPORE,
 } from "./atlas";
-import { FLOOR_STYLE, tileIcon, wallIcon, WALL_STYLE } from "./tiles";
+import { FLOOR_STYLE, propIcon, tileIcon, wallIcon, WALL_STYLE } from "./tiles";
 import { explain, type SaveResult } from "./types";
 
 /**
@@ -327,7 +327,6 @@ export const zoneLayer = (zone: ZoneKind): MoveLayer | null =>
 const LEGACY_BOSS_REGION = 255;
 
 const ENV = "/mindustry/sprites/blocks/environment";
-const PROPS = "/mindustry/sprites/blocks/props";
 
 export const PALETTE: readonly PaletteSet[] = [
   // the land floors are the game's own tiles (game/tiles.ts): two
@@ -425,21 +424,21 @@ export const PALETTE: readonly PaletteSet[] = [
   // reshuffle of the same one, so a marsh is forested in spore pines and a
   // snowfield in snow pines without a second blocking brush
   { id: "pine", label: "Pine", kind: "pine", variants: [0, 1, 2], noRandom: true,
-    icons: [`${ENV}/pine.png`, `${ENV}/spore-pine.png`, `${ENV}/snow-pine.png`] },
+    icons: [propIcon("pine"), propIcon("sporePine"), propIcon("snowPine")] },
   { id: "boulder", label: "Boulder", kind: "decor", variants: [0, 1],
-    icons: [1, 2].map((n) => `${PROPS}/boulder${n}.png`) },
+    icons: [propIcon("boulder0"), propIcon("boulder1")] },
   { id: "shrub", label: "Shrub", kind: "decor", variants: [2, 11],
-    icons: [1, 2].map((n) => `${ENV}/shrubs${n}.png`) },
+    icons: [propIcon("shrubs"), propIcon("shrubs2")] },
   { id: "spore-cluster", label: "Spore cluster", kind: "decor", variants: [3, 4, 5],
-    icons: [1, 2, 3].map((n) => `${PROPS}/spore-cluster${n}.png`) },
+    icons: [propIcon("sporeCluster0"), propIcon("sporeCluster1"), propIcon("sporeCluster2")] },
   { id: "pur-bush", label: "Purple bush", kind: "decor", variants: [6],
-    icons: [`${PROPS}/pur-bush.png`] },
+    icons: [propIcon("purBush")] },
   { id: "shale-boulder", label: "Shale boulder", kind: "decor", variants: [7, 8],
-    icons: [1, 2].map((n) => `${PROPS}/shale-boulder${n}.png`) },
+    icons: [propIcon("shaleBoulder0"), propIcon("shaleBoulder1")] },
   { id: "snow-boulder", label: "Snow boulder", kind: "decor", variants: [9, 10],
-    icons: [1, 2].map((n) => `${PROPS}/snow-boulder${n}.png`) },
+    icons: [propIcon("snowBoulder0"), propIcon("snowBoulder1")] },
   { id: "sand-boulder", label: "Sand boulder", kind: "decor", variants: [12, 13],
-    icons: [1, 2].map((n) => `${PROPS}/sand-boulder${n}.png`) },
+    icons: [propIcon("sandBoulder0"), propIcon("sandBoulder1")] },
   // DROP ZONES: a data layer — no pad tile is painted anywhere; the editor
   // shows each zone as its circle overlay over the floor.
   //

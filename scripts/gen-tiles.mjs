@@ -1,4 +1,4 @@
-// Writes the floor tiles as PNGs into public/tiles/ — the editor's palette
+// Writes the floor tiles, walls and props as PNGs into public/tiles/ — the editor's palette
 // picker shows them as <img>, and an <img> wants a file. The game itself
 // never reads these: the atlas and the menu paint the same tiles straight
 // from game/tiles.ts at load. Re-run after touching FLOOR_STYLE or
@@ -10,7 +10,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import {
-  FLOOR_KINDS, FLOOR_VARIANTS, paintFloor, paintWall, TILE_PX, WALL_KINDS, WALL_VARIANTS,
+  FLOOR_KINDS, FLOOR_VARIANTS, paintFloor, paintProp, paintWall, PROP_KINDS, PROP_STYLE, TILE_PX,
+  WALL_KINDS, WALL_VARIANTS,
 } from "../game/tiles.ts";
 
 const crcTable = new Uint32Array(256).map((_, n) => {
@@ -63,3 +64,8 @@ for (const kind of WALL_KINDS)
     writeFileSync(file, png(paintWall(kind, v), TILE_PX, TILE_PX));
     console.log("wrote", file);
   }
+for (const kind of PROP_KINDS) {
+  const file = `public/tiles/prop-${kind}.png`;
+  writeFileSync(file, png(paintProp(kind), PROP_STYLE[kind].size, PROP_STYLE[kind].size));
+  console.log("wrote", file);
+}

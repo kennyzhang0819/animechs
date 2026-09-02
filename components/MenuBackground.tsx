@@ -8,6 +8,8 @@ import {
   WALL_VARIANTS,
   type FloorKind,
   type WallKind,
+  propCanvas,
+  type PropKind,
 } from "@/game/tiles";
 
 /**
@@ -41,8 +43,6 @@ import {
  * stops when the tab is hidden.
  */
 
-const ENV = "/mindustry/sprites/blocks/environment/";
-const PROPS = "/mindustry/sprites/blocks/props/";
 const UNITS = "/mindustry/sprites/units/";
 /** the raw sprites are 4× — one 8-unit tile is a 32px image */
 const SPRITE_TILE = 32;
@@ -69,53 +69,53 @@ interface Biome {
   /** the rock: one of the painted wall families */
   wall: WallKind;
   /** a tree that grows on this ground, planted at the foot of the rock */
-  prop?: string;
+  prop?: PropKind;
   /** the boulders scattered on it */
-  boulder?: readonly string[];
+  boulder?: readonly PropKind[];
 }
 
 const BIOMES: readonly Biome[] = [
   {
     floor: "sand",
     wall: "sand",
-    boulder: ["sand-boulder1", "sand-boulder2"],
+    boulder: ["sandBoulder0", "sandBoulder1"],
   },
   {
     floor: "shale",
     wall: "shale",
-    boulder: ["shale-boulder1", "shale-boulder2"],
+    boulder: ["shaleBoulder0", "shaleBoulder1"],
   },
   {
     floor: "ice",
     wall: "ice",
-    boulder: ["snow-boulder1", "snow-boulder2"],
+    boulder: ["snowBoulder0", "snowBoulder1"],
   },
   {
     floor: "moss",
     wall: "spore",
-    prop: "spore-pine",
+    prop: "sporePine",
   },
   {
     floor: "dirt",
     wall: "dirt",
-    boulder: ["boulder1", "boulder2"],
+    boulder: ["boulder0", "boulder1"],
   },
   {
     floor: "darksand",
     wall: "dune",
-    boulder: ["basalt-boulder1", "basalt-boulder2"],
+    boulder: ["basaltBoulder0", "basaltBoulder1"],
   },
   {
     floor: "snow",
     wall: "snow",
-    prop: "snow-pine",
-    boulder: ["snow-boulder1", "snow-boulder2"],
+    prop: "snowPine",
+    boulder: ["snowBoulder0", "snowBoulder1"],
   },
   {
     floor: "grass",
     wall: "dirt",
     prop: "pine",
-    boulder: ["boulder1", "boulder2"],
+    boulder: ["boulder0", "boulder1"],
   },
 ];
 
@@ -340,12 +340,8 @@ async function buildWorld(
     centreRow + a1 * Math.sin((cx / l1) * Math.PI * 2 + p1) + a2 * Math.sin((cx / l2) * Math.PI * 2 + p2);
   const laneHalfTiles = (cx: number): number => wBase + wSwing * Math.sin((cx / l3) * Math.PI * 2 + p3);
 
-  // every sprite this world needs, fetched once and together
-  const names = new Set<string>([
-    ...(biome.prop ? [biome.prop] : []),
-    ...(biome.boulder ?? []),
-  ]);
-  const list = [...names];
+  // the props are painted, not fetched (game/tiles.ts); the units are
+  // sprites, fetched once and together
   const unitNames = MECHS.flatMap((m) => [
     m.name,
     `${m.name}-base`,
@@ -353,22 +349,24 @@ async function buildWorld(
     ...(m.cell ? [`${m.name}-cell`] : []),
     ...(m.gun ? [`weapons/${m.gun.name}`] : []),
   ]);
-  const [imgs, unitImgs, flareImg] = await Promise.all([
-    Promise.all(list.map((n) => loadImage(`${n.includes("boulder") ? PROPS : ENV}${n}.png`))),
+  const [unitImgs, flareImg] = await Promise.all([
     Promise.all(unitNames.map((n) => loadImage(`${UNITS}${n}.png`))),
     loadImage(`${UNITS}flare.png`),
   ]);
-  const sprites = new Map<string, HTMLImageElement>();
-  list.forEach((n, i) => {
-    const img = imgs[i];
-    if (img) sprites.set(n, img);
-  });
+  const props = new Map<PropKind, HTMLCanvasElement>();
   const units = new Map<string, HTMLImageElement>();
   unitNames.forEach((n, i) => {
     const img = unitImgs[i];
     if (img) units.set(n, img);
   });
-  const sprite = (n: string): HTMLImageElement | null => sprites.get(n) ?? null;
+  const sprite = (n: PropKind): HTMLCanvasElement => {
+    let c = props.get(n);
+    if (!c) {
+      c = propCanvas(n);
+      props.set(n, c);
+    }
+    return c;
+  };
   // the floors are painted, not fetched — one canvas per kind and variant
   const painted = new Map<string, HTMLCanvasElement>();
   const floorTile = (kind: FloorKind, v: number): HTMLCanvasElement => {
@@ -432,10 +430,6 @@ async function buildWorld(
   const g = ground.getContext("2d")!;
   g.imageSmoothingEnabled = false;
   g.scale(dpr, dpr);
-  const cell = (n: string | null, x: number, y: number, span = 1): void => {
-    const img = n && sprite(n);
-    if (img) g.drawImage(img, x * tile, y * tile, tile * span, tile * span);
-  };
 
   for (let y = 0; y < rows; y++)
     for (let x = 0; x < cols; x++) {
@@ -494,7 +488,7 @@ async function buildWorld(
       const onLane = Math.abs(y + 0.5 - laneRow(x + 0.5)) < laneHalfTiles(x + 0.5) - 1;
       const nearRock = wallAt(x - 1, y) || wallAt(x + 1, y) || wallAt(x, y - 1) || wallAt(x, y + 1);
       const r = rng();
-      let n: string | null = null;
+      let n: PropKind | null = null;
       if (biome.prop && nearRock && r < 0.16) n = biome.prop;
       else if (!onLane && biome.boulder && r < 0.03) n = pick(rng, biome.boulder);
       const img = n && sprite(n);

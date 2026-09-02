@@ -79,11 +79,17 @@ stale tab or a cached bundle looks exactly like a fix not working.
   cell in three. A wall is shaded the way Mindustry shades its walls: the
   top-right corner in the light tone, the bottom-left in the dark, and a
   wide mid band running diagonally between them with wandering edges —
-  then at most one pale patch on top, and the second painting is the
-  bands alone. A 2×2 cluster is one block shaded corner to corner across
-  the whole of it. The atlas, the menu background, the map thumbnails and
-  the editor palette all read from it; `npm run gen:tiles` writes the
-  palette's PNGs into `public/tiles/`
+  then one small pale pebble on the mid band, and the second painting is
+  the bands alone. A 2×2 cluster is one block shaded corner to corner across
+  the whole of it. The props are painted the same way (`PROP_STYLE`,
+  `paintProp`): a boulder is two or three discs overlapping, a pine a ring
+  of lobes round a crown with the trunk a dark dot, a spore cluster three
+  pods, each shaded by one diagonal across the whole silhouette with no
+  outline round it, and the shrub squares are patches of
+  ground with round tussocks rather than things standing on it. The atlas,
+  the menu background, the map thumbnails and the editor palette all read
+  from it; `npm run gen:tiles` writes the palette's PNGs into
+  `public/tiles/`
 - `game/atlas.ts` — the sprite atlas, composited at load time from Mindustry
   sprites in `public/mindustry/` plus procedural regions; **swap any region
   for custom art** (units are white sprites tinted per instance, and already
