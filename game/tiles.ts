@@ -343,32 +343,25 @@ export function paintWall(
       put(x, y, v > litAt ? st.light : v < darkAt ? dark : st.face);
     }
 
-  // a patch keeps one pixel off the rim, so the seam is always plain
-  // band and any cell sits flush against any other
-  const RIM = 1;
-  const patch = (c: string, r: number, squash = 0.8): void => {
-    const most = (N - RIM * 2) / 2 - 0.3; // the biggest patch the tile can hold
-    const rx = Math.min(most, r), ry = Math.min(most, Math.max(1.5, r * squash));
-    const cx = RIM + rx + rng() * Math.max(0, N - RIM * 2 - rx * 2);
-    const cy = RIM + ry + rng() * Math.max(0, N - RIM * 2 - ry * 2);
-    ellipse(cx, cy, rx, ry, (x, y) => put(x, y, c));
-  };
-
-  // the second painting is the bands alone; the first carries one pale
-  // patch a tile of its span (two on a 2×2 block, not four)
-  const patches = variant % WALL_VARIANTS === 0 ? span : 0;
-  for (let r = 0; r < patches; r++) {
-    switch (st.grain) {
-      case "rough":
-        patch(st.light, 3 + rng() * 1.5);
+  // ONE ROCK. The first painting carries a single small pebble in the
+  // light tone, sat on the mid band and clear of the rim so any cell
+  // sits flush against any other; the second painting is the bands
+  // alone. A 2×2 block gets one pebble too, not one a tile
+  if (variant % WALL_VARIANTS === 0) {
+    const RIM = 2;
+    const r = 1.8 + rng() * 0.6;
+    let cx = N / 2, cy = N / 2;
+    for (let tries = 0; tries < 12; tries++) {
+      const x = RIM + r + rng() * (N - RIM * 2 - r * 2);
+      const y = RIM + r + rng() * (N - RIM * 2 - r * 2);
+      const t = (x - y) / N;
+      if (t < litAt - 0.12 && t > darkAt + 0.12) {
+        cx = x;
+        cy = y;
         break;
-      case "soft":
-        patch(st.light, 4 + rng() * 1.5);
-        break;
-      case "glassy":
-        patch(st.light, 4 + rng() * 1.5, 0.55);
-        break;
+      }
     }
+    ellipse(cx, cy, r, r * 0.9, (x, y) => put(x, y, st.light));
   }
 
   const P = TILE_PX * span;

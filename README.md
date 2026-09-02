@@ -79,8 +79,8 @@ stale tab or a cached bundle looks exactly like a fix not working.
   cell in three. A wall is shaded the way Mindustry shades its walls: the
   top-right corner in the light tone, the bottom-left in the dark, and a
   wide mid band running diagonally between them with wandering edges —
-  then at most one pale patch on top, and the second painting is the
-  bands alone. A 2×2 cluster is one block shaded corner to corner across
+  then one small pale pebble on the mid band, and the second painting is
+  the bands alone. A 2×2 cluster is one block shaded corner to corner across
   the whole of it. The atlas, the menu background, the map thumbnails and
   the editor palette all read from it; `npm run gen:tiles` writes the
   palette's PNGs into `public/tiles/`
