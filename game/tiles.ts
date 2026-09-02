@@ -535,9 +535,13 @@ export function paintProp(kind: PropKind): Uint8ClampedArray<ArrayBuffer> {
     }
   }
 
-  // THE SHADING: one diagonal across the whole shape, as on a wall tile
-  const { mid, light, dark } = st.tones;
-  const shade = mix(dark, mid, 0.35);
+  // THE SHADING: one diagonal across the whole shape, as on a wall tile,
+  // but gentler than a wall's: a prop is set down at any quarter turn, so
+  // its lit side may face any way, and a strong one would read as a
+  // different light on every rock. Both bands are eased toward the body
+  const { mid, light: lightTone, dark } = st.tones;
+  const light = mix(lightTone, mid, 0.4);
+  const shade = mix(dark, mid, 0.55);
   const w1 = rng() * Math.PI * 2, w2 = rng() * Math.PI * 2;
   const grid = new Array<string | null>(N * N).fill(null);
   for (let y = 0; y < N; y++)
@@ -562,7 +566,8 @@ export function paintProp(kind: PropKind): Uint8ClampedArray<ArrayBuffer> {
       });
     }
   } else if (trunk) {
-    ellipse(c, c, 1.6, 1.6, (x, y) => { grid[y * N + x] = dark; });
+    // the trunk seen from above: a small dot a shade down, not a hole
+    ellipse(c, c, 1.2, 1.2, (x, y) => { grid[y * N + x] = shade; });
   }
 
   const P = st.size;
