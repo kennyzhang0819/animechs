@@ -2,6 +2,8 @@ import { UNIT_SPRITE } from "./constants";
 import {
   floorCanvas,
   FLOOR_VARIANTS,
+  propCanvas,
+  type PropKind,
   wallCanvas,
   WALL_VARIANTS,
   type FloorKind,
@@ -1302,8 +1304,6 @@ const SPRITES = {
   deepWater: `${ENV}/deep-water.png`,
   // (the walls are painted from game/tiles.ts too — see packAtlas)
   edgeStencil: `${ENV}/edge-stencil.png`,
-  pine: `${ENV}/pine.png`,
-  shrubs: `${ENV}/shrubs1.png`,
   // ---- the second environment band (see the ENV2 note) ----
   // Mindustry's "moss" IS the purple spore growth, not a green one; the
   // two moss families and the spore waters are one palette, which is what
@@ -1311,21 +1311,6 @@ const SPRITES = {
   // (the band's land floors are painted from game/tiles.ts, like row 0's)
   taintedWater: `${ENV}/tainted-water.png`,
   deepTaintedWater: `${ENV}/deep-tainted-water.png`,
-  sporePine: `${ENV}/spore-pine.png`,
-  snowPine: `${ENV}/snow-pine.png`,
-  shrubs2: `${ENV}/shrubs2.png`,
-  sporeCluster0: "/mindustry/sprites/blocks/props/spore-cluster1.png",
-  sporeCluster1: "/mindustry/sprites/blocks/props/spore-cluster2.png",
-  sporeCluster2: "/mindustry/sprites/blocks/props/spore-cluster3.png",
-  purBush: "/mindustry/sprites/blocks/props/pur-bush.png",
-  shaleBoulder0: "/mindustry/sprites/blocks/props/shale-boulder1.png",
-  shaleBoulder1: "/mindustry/sprites/blocks/props/shale-boulder2.png",
-  snowBoulder0: "/mindustry/sprites/blocks/props/snow-boulder1.png",
-  snowBoulder1: "/mindustry/sprites/blocks/props/snow-boulder2.png",
-  sandBoulder0: "/mindustry/sprites/blocks/props/sand-boulder1.png",
-  sandBoulder1: "/mindustry/sprites/blocks/props/sand-boulder2.png",
-  boulder0: "/mindustry/sprites/blocks/props/boulder1.png",
-  boulder1: "/mindustry/sprites/blocks/props/boulder2.png",
   daggerBase: "/mindustry/sprites/units/dagger-base.png",
   dagger: "/mindustry/sprites/units/dagger.png",
   daggerLeg: "/mindustry/sprites/units/dagger-leg.png",
@@ -1848,11 +1833,14 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
     for (let rx = 0; rx < 3; rx++)
       c.drawImage(dsEdge, rx * 32, ry * 32, 32, 32, 416 + (ry * 3 + rx) * 64, 704, 64, 64);
 
-  // props: 48px overhanging sources at 2x into 96px cells
-  c.drawImage(antialiased(img.pine), 0, 288, 96, 96);
-  c.drawImage(antialiased(img.boulder0), 96, 288, 96, 96);
-  c.drawImage(antialiased(img.boulder1), 192, 288, 96, 96);
-  c.drawImage(antialiased(img.shrubs), 288, 288, 64, 64);
+  // THE PROPS ARE PAINTED TOO (game/tiles.ts): each at its native size,
+  // 2x into a cell cut to it, through the same antialias pass
+  const prop = (kind: PropKind, dx: number, dy: number, cell: number): void =>
+    c.drawImage(antialiased(propCanvas(kind)), dx, dy, cell, cell);
+  prop("pine", 0, 288, 96);
+  prop("boulder0", 96, 288, 96);
+  prop("boulder1", 192, 288, 96);
+  prop("shrubs", 288, 288, 64);
 
   // ---------- the second environment band ----------
   // Same rules as row 0, one block over: 32px floor and wall sources at 2x
@@ -1891,20 +1879,22 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   larges.forEach((k, i) =>
     c.drawImage(antialiased(wallLarge(k)), ENV2_X + i * 128, ENV2_Y + 224, 128, 128),
   );
-  // the band's props, each in a cell cut to its own source at 2x
-  at2("sporePine", 384, 128, 96);
-  at2("snowPine", 480, 128, 96);
-  at2("sporeCluster0", 576, 128, 80);
-  at2("sporeCluster1", 656, 128, 80);
-  at2("sporeCluster2", 736, 128, 80);
-  at2("purBush", 816, 128, 64);
-  at2("shaleBoulder0", 880, 128, 64);
-  at2("shaleBoulder1", 944, 128, 64);
-  at2("snowBoulder0", 0, 352, 96);
-  at2("snowBoulder1", 96, 352, 96);
-  at2("shrubs2", 192, 352, 64);
-  at2("sandBoulder0", 256, 352, 64);
-  at2("sandBoulder1", 320, 352, 64);
+  // the band's props, painted, each in a cell cut to its own size at 2x
+  const prop2 = (kind: PropKind, dx: number, dy: number, cell: number): void =>
+    prop(kind, ENV2_X + dx, ENV2_Y + dy, cell);
+  prop2("sporePine", 384, 128, 96);
+  prop2("snowPine", 480, 128, 96);
+  prop2("sporeCluster0", 576, 128, 80);
+  prop2("sporeCluster1", 656, 128, 80);
+  prop2("sporeCluster2", 736, 128, 80);
+  prop2("purBush", 816, 128, 64);
+  prop2("shaleBoulder0", 880, 128, 64);
+  prop2("shaleBoulder1", 944, 128, 64);
+  prop2("snowBoulder0", 0, 352, 96);
+  prop2("snowBoulder1", 96, 352, 96);
+  prop2("shrubs2", 192, 352, 64);
+  prop2("sandBoulder0", 256, 352, 64);
+  prop2("sandBoulder1", 320, 352, 64);
   // one generated edge fade per land family, in UV_FLOOR_EDGES order
   const edges: FloorKind[] = ["moss", "sporeMoss", "mud", "shale", "snow"];
   edges.forEach((k, i) =>
