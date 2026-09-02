@@ -3,45 +3,44 @@
 import { useEffect, useRef } from "react";
 
 /**
- * THE MENU'S GROUND — a small world that exists to be looked at.
+ * THE MENU'S GROUND — the game, seen from above, before anyone has built
+ * anything on it.
  *
- * Mindustry's title screen is not a picture; it is a map (MenuRenderer):
- * a 100×50 world rolled fresh every launch from a floor/wall pair and a
- * couple of ores, drawn under a black wash at 30%, with a squadron of
- * flyers drifting across it at 45°. This is that, in a 2d canvas, from
- * the same sprites the game already ships.
+ * MechSwarm is a horde walking a valley toward a core, steered by a flow
+ * field around whatever is in the way. So the title screen is that: a
+ * lane carved through rock, rolled fresh every launch the way the game's
+ * own worldgen carves one (terrain.ts), and a swarm of the game's own
+ * mechs marching down it — daggers and crawlers in the crowd, maces and
+ * the odd fortress lumbering among them — each one turning with the
+ * lane's bends and walking on the same leg cycle the field draws
+ * (Renderer.pushMech). A few flares fly escort over the column.
  *
- * HOW IT IS BUILT. The world is generated once and rasterized once into
- * an offscreen canvas — floors, ore overlays, a blurred shadow under the
- * rock, the rock itself (2×2 clusters take the large wall sprite, as the
- * game's own renderer does), then the props. Every frame after that is
- * one drawImage of that canvas at a slow-drifting offset, the flyers on
- * top, and the wash. That is what keeps it cheaper than a WebGL run
- * would be — the field is a texture, and the only geometry per frame is
- * a dozen sprites.
+ * HOW IT IS BUILT. The ground is generated once and rasterized once into
+ * an offscreen canvas — floors, a blurred shadow under the rock, the
+ * rock (2×2 clusters take the large wall sprite, as the field does), then
+ * the props. Every frame after that is one drawImage of that canvas at a
+ * slowly drifting offset, the swarm on top, and a black wash. The field
+ * is a texture; the only geometry per frame is a few dozen mechs.
  *
  * WHAT IT MUST NEVER DO is compete with the menu on top of it. The wash
- * (`dim`) is the whole contract: the title screen sits at Mindustry's
- * 0.3 and the deeper menus, which are lists of cards to read, pull it
- * darker. It also stops animating under prefers-reduced-motion (one
- * frame, then still), when the tab is hidden, and it draws at 30fps
- * because nothing in it moves fast enough to want 60.
+ * (`dim`) is the contract: the title card sits under a light one, and the
+ * deeper menus, which are lists of cards to read, pull it darker. It also
+ * holds still under prefers-reduced-motion (one frame), stops when the
+ * tab is hidden, and draws at 30fps because a walking mech does not need
+ * 60.
  */
 
 const ENV = "/mindustry/sprites/blocks/environment/";
-/** boulders are props, and the props live in a folder of their own */
 const PROPS = "/mindustry/sprites/blocks/props/";
 const UNITS = "/mindustry/sprites/units/";
-/** Mindustry's raw sprites are 4× — one 8-unit tile is a 32px image */
+/** the raw sprites are 4× — one 8-unit tile is a 32px image */
 const SPRITE_TILE = 32;
 /** the ground cells drawn around the viewport so the camera can drift */
 const MARGIN_TILES = 3;
 const FPS = 30;
-/** flyer heading: up and to the right, the fixed 45° of the original */
-const HEADING = -Math.PI / 4;
 /** Pal.engine, the glow a flyer trails */
 const ENGINE = "#ffbb64";
-/** the crux team's red — the swarm's own colour, on the flyers' cells */
+/** the swarm's own red, painted onto every mech's cell */
 const CELL_TINT = "#e55454";
 
 interface Biome {
@@ -54,7 +53,6 @@ interface Biome {
   boulder?: readonly string[];
 }
 
-/** the pairs the original rolls between, plus the two this game also has */
 const BIOMES: readonly Biome[] = [
   {
     floor: ["sand-floor1", "sand-floor2", "sand-floor3"],
@@ -108,7 +106,7 @@ const BIOMES: readonly Biome[] = [
   },
 ];
 
-/** the second pair: patches of a different rock laid over the first */
+/** a second rock, laid over the first in patches */
 const SECOND: readonly Biome[] = [
   {
     floor: ["basalt1", "basalt2", "basalt3"],
@@ -122,32 +120,30 @@ const SECOND: readonly Biome[] = [
   },
 ];
 
-/** the heat gradient, coolest first — rolled in a quarter of worlds */
+/** the heat gradient, coolest first — some worlds run hot */
 const HEAT = ["basalt1", "hotrock1", "hotrock2", "magmarock1", "magmarock2"] as const;
-/** a buried installation — rolled in a quarter of worlds */
-const TECH_FLOOR = ["metal-floor", "metal-floor-2", "metal-floor-3", "metal-floor-5"] as const;
-const TECH_WALL = ["dark-panel-1", "dark-panel-2", "dark-panel-3"] as const;
-const ORES = ["copper", "lead", "scrap", "coal", "titanium", "thorium"] as const;
 
-interface Flyer {
+/**
+ * A mech kind, with the numbers the field draws it by: gun mount offsets
+ * in Mindustry world units (lateral, forward), the stride in world units,
+ * and how fast it walks in tiles a second. Sizes come from the sprites.
+ */
+interface MechKind {
   name: string;
-  /** how many of them cross the field */
-  count: readonly [number, number];
-  /** tiles per second */
+  gun?: { name: string; x: number; y: number };
+  stride: number;
   speed: number;
-  /** where the engine sits, as a fraction of the sprite behind its centre */
-  engine: number;
-  /** has a `-cell` sprite to paint in the team colour (the flare has none) */
-  cell?: boolean;
+  /** has a `-cell` sprite to paint in the swarm's colour */
+  cell: boolean;
+  /** the crowd share: how many of this kind walk the lane */
+  count: readonly [number, number];
 }
 
-const FLYERS: readonly Flyer[] = [
-  { name: "flare", count: [16, 34], speed: 1.1, engine: 0.3 },
-  { name: "horizon", count: [8, 18], speed: 0.8, engine: 0.32, cell: true },
-  { name: "zenith", count: [5, 10], speed: 0.55, engine: 0.34, cell: true },
-  { name: "mono", count: [12, 24], speed: 0.9, engine: 0.28, cell: true },
-  { name: "poly", count: [8, 16], speed: 0.75, engine: 0.3, cell: true },
-  { name: "mega", count: [4, 8], speed: 0.5, engine: 0.33, cell: true },
+const MECHS: readonly MechKind[] = [
+  { name: "dagger", gun: { name: "large-weapon", x: 4, y: 2 }, stride: 4, speed: 0.95, cell: false, count: [14, 24] },
+  { name: "crawler", stride: 4, speed: 1.35, cell: true, count: [8, 16] },
+  { name: "mace", gun: { name: "flamethrower", x: 5, y: 0 }, stride: 4 + (10 - 8) / 2.1, speed: 0.7, cell: true, count: [3, 6] },
+  { name: "fortress", gun: { name: "artillery", x: 9, y: 1 }, stride: 4 + (13 - 8) / 2.1, speed: 0.5, cell: true, count: [0, 2] },
 ];
 
 const mulberry32 = (seed: number) => (): number => {
@@ -194,12 +190,8 @@ const loadImage = (src: string): Promise<HTMLImageElement | null> =>
     img.src = src;
   });
 
-/** a sprite with its cell painted in a team colour, the way units are drawn */
-function tintCell(
-  base: HTMLImageElement,
-  cell: HTMLImageElement | null,
-  colour: string,
-): HTMLCanvasElement {
+/** a sprite with its cell painted in the swarm's colour */
+function tintCell(base: HTMLImageElement, cell: HTMLImageElement | null): HTMLCanvasElement {
   const c = document.createElement("canvas");
   c.width = base.width;
   c.height = base.height;
@@ -212,14 +204,14 @@ function tintCell(
     const tg = t.getContext("2d")!;
     tg.drawImage(cell, 0, 0);
     tg.globalCompositeOperation = "source-in";
-    tg.fillStyle = colour;
+    tg.fillStyle = CELL_TINT;
     tg.fillRect(0, 0, t.width, t.height);
     g.drawImage(t, 0, 0);
   }
   return c;
 }
 
-/** a silhouette of a sprite, for its shadow */
+/** a black silhouette of a sprite, for its shadow */
 function silhouette(src: CanvasImageSource, w: number, h: number): HTMLCanvasElement {
   const c = document.createElement("canvas");
   c.width = w;
@@ -232,11 +224,47 @@ function silhouette(src: CanvasImageSource, w: number, h: number): HTMLCanvasEle
   return c;
 }
 
-interface Unit {
-  x: number;
-  y: number;
-  /** a phase for its own bob and engine flicker */
+/** one sprite and its shadow, both at the raw sprite's size */
+interface Part {
+  art: CanvasImageSource;
+  sil: CanvasImageSource;
+  w: number;
+  h: number;
+}
+
+const partOf = (art: CanvasImageSource, w: number, h: number): Part => ({
+  art,
+  sil: silhouette(art, w, h),
+  w,
+  h,
+});
+
+/** a mech's assembly: what the field layers, from the ground up */
+interface MechArt {
+  kind: MechKind;
+  leg: Part;
+  base: Part;
+  body: Part;
+  gun: Part | null;
+}
+
+interface Mech {
+  art: MechArt;
+  /** distance along the lane, in px */
+  s: number;
+  /** how far off the lane's centre this one walks, -1..1 */
+  lane: number;
+  /** the leg cycle, in px walked */
+  walk: number;
+  /** a phase for the little swing every walker adds to its line */
   phase: number;
+}
+
+interface Flyer {
+  s: number;
+  lane: number;
+  phase: number;
+  speed: number;
 }
 
 interface World {
@@ -246,13 +274,14 @@ interface World {
   tile: number;
   w: number;
   h: number;
-  flyer: Flyer;
-  sprite: HTMLCanvasElement;
-  shadow: HTMLCanvasElement;
-  /** how big the flyer draws, in css px */
-  size: number;
-  units: Unit[];
-  speed: number;
+  /** the lane's centreline (css px) and half-width (tiles) at any x */
+  laneY: (x: number) => number;
+  laneHalf: (x: number) => number;
+  /** +1 walks left to right, -1 the other way */
+  dir: 1 | -1;
+  mechs: Mech[];
+  flare: Part | null;
+  flyers: Flyer[];
 }
 
 /**
@@ -271,19 +300,27 @@ async function buildWorld(vw: number, vh: number, dpr: number, seed: number): Pr
 
   const biome = pick(rng, BIOMES);
   const second = pick(rng, SECOND);
-  const heat = rng() < 0.25;
-  const tech = rng() < 0.25;
-  const ore1 = pick(rng, ORES);
-  let ore2 = pick(rng, ORES);
-  if (ore2 === ore1) ore2 = ORES[(ORES.indexOf(ore1) + 1) % ORES.length];
-  const flyer = pick(rng, FLYERS);
+  const heat = rng() < 0.3;
+  const dir: 1 | -1 = rng() < 0.5 ? 1 : -1;
 
-  const wallNoise = makeNoise(rng);
+  const rockNoise = makeNoise(rng);
   const secondNoise = makeNoise(rng);
   const heatNoise = makeNoise(rng);
-  const techNoise = makeNoise(rng);
-  const oreNoise1 = makeNoise(rng);
-  const oreNoise2 = makeNoise(rng);
+  const pocketNoise = makeNoise(rng);
+
+  /**
+   * THE LANE: a meander through the rock, two sine waves deep so it never
+   * repeats on screen, its width breathing along its length. It sits in
+   * the middle of the screen, where the column walks behind the buttons
+   * rather than under the name.
+   */
+  const a1 = rows * (0.08 + rng() * 0.08), l1 = cols * (0.35 + rng() * 0.25), p1 = rng() * 7;
+  const a2 = rows * (0.03 + rng() * 0.04), l2 = cols * (0.12 + rng() * 0.1), p2 = rng() * 7;
+  const wBase = 4.5 + rng() * 1.5, wSwing = 1.5 + rng(), l3 = cols * (0.2 + rng() * 0.2), p3 = rng() * 7;
+  const centreRow = rows * (0.42 + rng() * 0.16);
+  const laneRow = (cx: number): number =>
+    centreRow + a1 * Math.sin((cx / l1) * Math.PI * 2 + p1) + a2 * Math.sin((cx / l2) * Math.PI * 2 + p2);
+  const laneHalfTiles = (cx: number): number => wBase + wSwing * Math.sin((cx / l3) * Math.PI * 2 + p3);
 
   // every sprite this world needs, fetched once and together
   const names = new Set<string>([
@@ -296,30 +333,37 @@ async function buildWorld(vw: number, vh: number, dpr: number, seed: number): Pr
     ...(biome.prop ? [biome.prop] : []),
     ...(biome.boulder ?? []),
     ...(heat ? HEAT : []),
-    ...(tech ? [...TECH_FLOOR, ...TECH_WALL] : []),
-    "shrubs1",
-    "shrubs2",
-    ...[1, 2, 3].flatMap((i) => [`ore-${ore1}${i}`, `ore-${ore2}${i}`]),
   ]);
   const list = [...names];
-  const [imgs, unitBase, unitCell] = await Promise.all([
+  const unitNames = MECHS.flatMap((m) => [
+    m.name,
+    `${m.name}-base`,
+    `${m.name}-leg`,
+    ...(m.cell ? [`${m.name}-cell`] : []),
+    ...(m.gun ? [`weapons/${m.gun.name}`] : []),
+  ]);
+  const [imgs, unitImgs, flareImg] = await Promise.all([
     Promise.all(list.map((n) => loadImage(`${n.includes("boulder") ? PROPS : ENV}${n}.png`))),
-    loadImage(`${UNITS}${flyer.name}.png`),
-    flyer.cell ? loadImage(`${UNITS}${flyer.name}-cell.png`) : Promise.resolve(null),
+    Promise.all(unitNames.map((n) => loadImage(`${UNITS}${n}.png`))),
+    loadImage(`${UNITS}flare.png`),
   ]);
   const sprites = new Map<string, HTMLImageElement>();
   list.forEach((n, i) => {
     const img = imgs[i];
     if (img) sprites.set(n, img);
   });
+  const units = new Map<string, HTMLImageElement>();
+  unitNames.forEach((n, i) => {
+    const img = unitImgs[i];
+    if (img) units.set(n, img);
+  });
   const sprite = (n: string): HTMLImageElement | null => sprites.get(n) ?? null;
 
-  // ---- the ground: floor, wall, and what is on each cell ----
+  // ---- the ground ----
   const isWall = new Uint8Array(cols * rows);
   const floorOf = new Array<string>(cols * rows);
   const wallOf = new Array<string>(cols * rows);
   const largeOf = new Array<string>(cols * rows);
-  const oreOf = new Array<string | null>(cols * rows).fill(null);
   for (let y = 0; y < rows; y++)
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
@@ -328,25 +372,22 @@ async function buildWorld(vw: number, vh: number, dpr: number, seed: number): Pr
       floorOf[i] = pick(rng, b.floor);
       wallOf[i] = pick(rng, b.wall);
       largeOf[i] = b.large;
-      const wallHere = wallNoise(x / 18, y / 18) > 0.585;
-      if (tech && techNoise(x / 34, y / 34) > 0.64) {
-        floorOf[i] = pick(rng, TECH_FLOOR);
-        wallOf[i] = pick(rng, TECH_WALL);
-        largeOf[i] = "";
-      } else if (heat) {
+      if (heat) {
         const h = heatNoise(x / 45, y / 45);
         if (h > 0.6) {
           const k = Math.min(HEAT.length - 1, Math.floor(((h - 0.6) / 0.22) * HEAT.length));
           floorOf[i] = HEAT[k];
         }
       }
-      isWall[i] = wallHere ? 1 : 0;
-      if (!wallHere) {
-        // veins, not carpets: the thresholds sit high enough that an ore
-        // is a patch you can point at rather than the colour of the floor
-        if (oreNoise1(x / 28, y / 28) > 0.67) oreOf[i] = `ore-${ore1}${1 + Math.floor(rng() * 3)}`;
-        else if (oreNoise2(x / 14, y / 14) > 0.7) oreOf[i] = `ore-${ore2}${1 + Math.floor(rng() * 3)}`;
-      }
+      // the lane is open; the rest is rock with pockets of floor in it —
+      // the branch lanes and dead ends the flow field would route around.
+      // The lane's edge is roughened by noise so it is a valley and not a
+      // stripe
+      const off = Math.abs(y + 0.5 - laneRow(x + 0.5));
+      const half = laneHalfTiles(x + 0.5) + (rockNoise(x / 6, y / 6) - 0.5) * 3;
+      const inLane = off < half;
+      const pocket = pocketNoise(x / 11, y / 11) > 0.6;
+      isWall[i] = inLane || pocket ? 0 : 1;
     }
   const wallAt = (x: number, y: number): boolean =>
     x >= 0 && y >= 0 && x < cols && y < rows && isWall[y * cols + x] === 1;
@@ -364,15 +405,11 @@ async function buildWorld(vw: number, vh: number, dpr: number, seed: number): Pr
   };
 
   for (let y = 0; y < rows; y++)
-    for (let x = 0; x < cols; x++) {
-      const i = y * cols + x;
-      cell(floorOf[i], x, y);
-      if (oreOf[i]) cell(oreOf[i], x, y);
-    }
+    for (let x = 0; x < cols; x++) cell(floorOf[y * cols + x], x, y);
 
-  // THE SHADOW: the original fills a black rect under every solid block
-  // and blurs the buffer, which is where the soft dark rim around every
-  // outcrop comes from. One path, one blurred fill.
+  // THE SHADOW under the rock: one path of every wall cell, filled once
+  // through a blur, which is where the soft dark rim along the lane's
+  // edge comes from
   g.save();
   g.beginPath();
   for (let y = 0; y < rows; y++)
@@ -384,15 +421,14 @@ async function buildWorld(vw: number, vh: number, dpr: number, seed: number): Pr
   g.fill();
   g.restore();
 
-  // THE ROCK. A 2×2 cluster of wall aligned to the even grid takes the
-  // large sprite — the same rule the field's renderer uses (UV_WALL_LARGE)
+  // THE ROCK. A 2×2 cluster aligned to the even grid takes the large
+  // sprite — the same rule the field's renderer uses (UV_WALL_LARGE)
   const covered = new Uint8Array(cols * rows);
   for (let y = 0; y < rows; y++)
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
       if (!isWall[i] || covered[i]) continue;
       const big =
-        largeOf[i] !== "" &&
         x % 2 === 0 &&
         y % 2 === 0 &&
         wallAt(x + 1, y) &&
@@ -411,59 +447,86 @@ async function buildWorld(vw: number, vh: number, dpr: number, seed: number): Pr
       }
     }
 
-  // THE PROPS: trees at the foot of the rock, shrubs and boulders on open
-  // ground. Trees are 48px sprites — a tile and a half — drawn centred on
-  // their cell so they overhang, which is what makes them read as standing
-  // on the ground rather than tiled into it
+  // THE PROPS: trees at the foot of the rock and boulders on open ground —
+  // but never on the lane itself, which the column has to be able to walk
+  // down
   for (let y = 0; y < rows; y++)
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
       if (isWall[i]) continue;
+      const onLane = Math.abs(y + 0.5 - laneRow(x + 0.5)) < laneHalfTiles(x + 0.5) - 1;
       const nearRock = wallAt(x - 1, y) || wallAt(x + 1, y) || wallAt(x, y - 1) || wallAt(x, y + 1);
       const r = rng();
       let n: string | null = null;
-      // shrubs only where something already grows: one green blob on a
-      // bare rock world reads as a glitch, not as a plant
       if (biome.prop && nearRock && r < 0.16) n = biome.prop;
-      else if (biome.boulder && r < 0.02) n = pick(rng, biome.boulder);
-      else if (biome.prop && r < 0.03) n = pick(rng, ["shrubs1", "shrubs2"]);
+      else if (!onLane && biome.boulder && r < 0.03) n = pick(rng, biome.boulder);
       const img = n && sprite(n);
       if (!img) continue;
       const s = (img.width / SPRITE_TILE) * tile;
-      const cx = (x + 0.5) * tile, cy = (y + 0.5) * tile;
       g.save();
-      g.translate(cx, cy);
+      g.translate((x + 0.5) * tile, (y + 0.5) * tile);
       g.rotate((Math.floor(rng() * 4) * Math.PI) / 2);
       g.drawImage(img, -s / 2, -s / 2, s, s);
       g.restore();
     }
 
-  // ---- the squadron ----
-  const base = unitBase ?? sprite("shrubs1")!;
-  const sprited = tintCell(base, unitCell, CELL_TINT);
-  const size = (base.width / SPRITE_TILE) * tile;
+  // ---- the swarm ----
   const w = cols * tile, h = rows * tile;
-  const n = flyer.count[0] + Math.floor(rng() * (flyer.count[1] - flyer.count[0]));
-  const units: Unit[] = [];
-  for (let i = 0; i < n; i++)
-    units.push({ x: rng() * w, y: rng() * h, phase: rng() * Math.PI * 2 });
+  const arts: MechArt[] = [];
+  for (const kind of MECHS) {
+    const body = units.get(kind.name), base = units.get(`${kind.name}-base`), leg = units.get(`${kind.name}-leg`);
+    if (!body || !base || !leg) continue;
+    const gunImg = kind.gun ? units.get(`weapons/${kind.gun.name}`) : null;
+    const tinted = tintCell(body, kind.cell ? (units.get(`${kind.name}-cell`) ?? null) : null);
+    arts.push({
+      kind,
+      leg: partOf(leg, leg.width, leg.height),
+      base: partOf(base, base.width, base.height),
+      body: partOf(tinted, body.width, body.height),
+      gun: gunImg ? partOf(gunImg, gunImg.width, gunImg.height) : null,
+    });
+  }
+  const mechs: Mech[] = [];
+  for (const art of arts) {
+    const [lo, hi] = art.kind.count;
+    const n = lo + Math.floor(rng() * (hi - lo + 1));
+    for (let i = 0; i < n; i++)
+      mechs.push({
+        art,
+        s: rng() * (w + tile * 8),
+        // the heavies keep to the middle of the lane, the small ones spill
+        // to its edges — the sort a crowd falls into on its own
+        lane: (rng() * 2 - 1) * (art.kind.name === "fortress" ? 0.4 : 0.85),
+        walk: rng() * 1000,
+        phase: rng() * Math.PI * 2,
+      });
+  }
+  const flyers: Flyer[] = [];
+  const nf = 3 + Math.floor(rng() * 4);
+  for (let i = 0; i < nf; i++)
+    flyers.push({
+      s: rng() * (w + tile * 8),
+      lane: rng() * 2 - 1,
+      phase: rng() * Math.PI * 2,
+      speed: (1.6 + rng() * 0.5) * tile,
+    });
 
   return {
     ground,
     tile,
     w,
     h,
-    flyer,
-    sprite: sprited,
-    shadow: silhouette(sprited, sprited.width, sprited.height),
-    size,
-    units,
-    speed: flyer.speed * tile,
+    laneY: (x) => laneRow(x / tile) * tile,
+    laneHalf: (x) => laneHalfTiles(x / tile),
+    dir,
+    mechs,
+    flare: flareImg ? partOf(flareImg, flareImg.width, flareImg.height) : null,
+    flyers,
   };
 }
 
 export default function MenuBackground({
-  /** the black wash over the field, 0–1. Mindustry's title sits at 0.3 */
+  /** the black wash over the field, 0–1 */
   dim = 0.3,
 }: {
   dim?: number;
@@ -487,8 +550,66 @@ export default function MenuBackground({
     let t0 = performance.now();
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const still = window.matchMedia("(prefers-reduced-motion: reduce)");
-    // a fresh world every launch, like the original
+    // a fresh world every launch
     const seed = (Math.random() * 0x7fffffff) | 0;
+
+    /** draw one part of a mech: centred on (x, y), facing `rot`, at the
+     *  sprite's own size times the world's scale, optionally mirrored
+     *  across its facing and shortened along it */
+    const drawPart = (
+      p: Part,
+      shadow: boolean,
+      x: number,
+      y: number,
+      rot: number,
+      k: number,
+      mirror = false,
+      along = 1,
+    ): void => {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rot + Math.PI / 2); // the art faces up; rot 0 is +x
+      if (mirror) ctx.scale(-1, 1);
+      const pw = p.w * k, ph = p.h * k * along;
+      ctx.drawImage(shadow ? p.sil : p.art, -pw / 2, -ph / 2, pw, ph);
+      ctx.restore();
+    };
+
+    /**
+     * A walking mech, layered the way the field layers one (pushMech):
+     * legs stride along the facing on a four-stride cycle — the swinging
+     * leg lifts and shortens by half — then the chassis, the gun pair
+     * slung under it, and the body riding a little sway.
+     */
+    const drawMech = (
+      m: Mech,
+      x: number,
+      y: number,
+      rot: number,
+      k: number,
+      mu: number,
+      shadow: boolean,
+    ): void => {
+      const a = m.art, kind = a.kind;
+      const stride = kind.stride * mu;
+      const raw = m.walk % (stride * 4);
+      const ext = raw > stride * 3 ? raw - stride * 4 : raw > stride ? stride * 2 - raw : raw;
+      const lift = Math.sin(((raw / stride) * Math.PI) / 2);
+      const cr = Math.cos(rot), sr = Math.sin(rot);
+      const sway = lift * 0.54 * mu, fsway = Math.sin((raw / stride) * Math.PI) * 0.1 * mu;
+      const ox = -sr * sway + cr * fsway, oy = cr * sway + sr * fsway;
+      for (let side = -1; side <= 1; side += 2) {
+        const shorten = 1 - Math.max(-lift * side, 0) * 0.5;
+        drawPart(a.leg, shadow, x + cr * ext * side, y + sr * ext * side, rot, k, side < 0, shorten);
+      }
+      drawPart(a.base, shadow, x, y, rot, k);
+      if (a.gun && kind.gun) {
+        const gx = kind.gun.x * mu, gy = kind.gun.y * mu;
+        for (let side = -1; side <= 1; side += 2)
+          drawPart(a.gun, shadow, x + ox + cr * gy - sr * gx * side, y + oy + sr * gy + cr * gx * side, rot, k, side < 0);
+      }
+      drawPart(a.body, shadow, x + ox, y + oy, rot, k);
+    };
 
     const frame = (now: number): void => {
       const wd = world;
@@ -500,63 +621,87 @@ export default function MenuBackground({
         canvas.height = Math.round(vh * dpr);
       }
       const t = (now - t0) / 1000;
+      const k = wd.tile / SPRITE_TILE; // css px per raw sprite px
+      const mu = wd.tile / 8; // css px per Mindustry world unit
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
-      // the camera: a slow figure-of-eight inside the margin, so the field
-      // is never still and never shows its edge
+      // the camera: a slow wander inside the margin, so the field is never
+      // still and never shows its edge
       const m = MARGIN_TILES * wd.tile;
       const ox = -m + Math.sin(t * 0.07) * m * 0.8;
       const oy = -m + Math.sin(t * 0.05 + 1.3) * m * 0.8;
       ctx.drawImage(wd.ground, ox, oy, wd.w, wd.h);
-
-      // the squadron, on a heading of 45° and wrapping off one edge onto
-      // the other, each with a shadow on the ground beneath it and an
-      // engine flickering behind it — drawn as the field draws them
-      const ux = Math.cos(HEADING) * wd.speed, uy = Math.sin(HEADING) * wd.speed;
-      const half = wd.size / 2;
-      const pad = wd.size;
-      const lift = wd.tile * 0.55;
       ctx.imageSmoothingEnabled = true;
-      for (const u of wd.units) {
-        const bob = Math.sin(t * 0.63 + u.phase) * wd.tile * 0.35;
-        // world position, wrapped inside the ground plus a sprite of slack
-        const px = (((u.x + ux * t + pad) % (wd.w + pad * 2)) + wd.w + pad * 2) % (wd.w + pad * 2) - pad;
-        const py = (((u.y + uy * t + pad) % (wd.h + pad * 2)) + wd.h + pad * 2) % (wd.h + pad * 2) - pad;
-        const sx = px + ox, sy = py + oy + bob;
-        // shadow: the silhouette, offset by the flyer's height off the ground
-        ctx.save();
-        ctx.globalAlpha = 0.45;
-        ctx.translate(sx + lift * 0.4, sy + lift);
-        ctx.rotate(HEADING + Math.PI / 2);
-        ctx.drawImage(wd.shadow, -half, -half, wd.size, wd.size);
-        ctx.restore();
+
+      // where a walker is: `s` along the lane, wrapped so the column never
+      // ends, its own place across the lane, and a little swing of its own
+      // so a crowd does not march in lockstep. It faces the way the lane
+      // bends where it stands — the flow field's answer, read off the
+      // centreline's slope one step ahead
+      const span = wd.w + wd.tile * 8, pad = wd.tile * 4;
+      const place = (
+        s: number,
+        lane: number,
+        swing: number,
+      ): { x: number; y: number; rot: number } => {
+        const along = ((s % span) + span) % span - pad;
+        const gx = wd.dir > 0 ? along : wd.w - along;
+        const half = (wd.laneHalf(gx) - 1.2) * wd.tile;
+        const gy = wd.laneY(gx) + lane * half + swing;
+        const step = wd.tile * 2 * wd.dir;
+        const y2 = wd.laneY(gx + step) + lane * (wd.laneHalf(gx + step) - 1.2) * wd.tile;
+        return { x: gx + ox, y: gy + oy, rot: Math.atan2(y2 - gy, step) };
+      };
+
+      // the column: shadows first so no mech's shadow lands on another's
+      // hull, then the mechs, back of the lane first
+      const walkers = wd.mechs.map((mc) => {
+        const speed = mc.art.kind.speed * wd.tile;
+        const swing = Math.sin(t * 0.9 + mc.phase) * wd.tile * 0.25;
+        const p = place(mc.s + speed * t, mc.lane, swing);
+        return { mc, p, walk: mc.walk + speed * t };
+      });
+      walkers.sort((a, b) => a.p.y - b.p.y);
+      ctx.globalAlpha = 0.5;
+      for (const wk of walkers) {
+        const mc = wk.mc;
+        mc.walk = wk.walk;
+        drawMech(mc, wk.p.x + wd.tile * 0.15, wk.p.y + wd.tile * 0.2, wk.p.rot, k, mu, true);
       }
-      for (const u of wd.units) {
-        const bob = Math.sin(t * 0.63 + u.phase) * wd.tile * 0.35;
-        const px = (((u.x + ux * t + pad) % (wd.w + pad * 2)) + wd.w + pad * 2) % (wd.w + pad * 2) - pad;
-        const py = (((u.y + uy * t + pad) % (wd.h + pad * 2)) + wd.h + pad * 2) % (wd.h + pad * 2) - pad;
-        const sx = px + ox, sy = py + oy + bob;
-        ctx.save();
-        ctx.translate(sx, sy);
-        ctx.rotate(HEADING + Math.PI / 2);
-        // the engine: a glow behind the body, breathing with the frame
-        const flick = 0.75 + 0.25 * Math.sin(t * 17 + u.phase * 7);
-        const r = wd.size * 0.11 * flick;
-        ctx.globalCompositeOperation = "lighter";
-        ctx.fillStyle = ENGINE;
-        ctx.globalAlpha = 0.85;
-        ctx.beginPath();
-        ctx.arc(0, half * wd.flyer.engine * 2, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "#ffffff";
-        ctx.globalAlpha = 0.9;
-        ctx.beginPath();
-        ctx.arc(0, half * wd.flyer.engine * 2, r * 0.45, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalCompositeOperation = "source-over";
-        ctx.globalAlpha = 1;
-        ctx.drawImage(wd.sprite, -half, -half, wd.size, wd.size);
-        ctx.restore();
+      ctx.globalAlpha = 1;
+      for (const wk of walkers) drawMech(wk.mc, wk.p.x, wk.p.y, wk.p.rot, k, mu, false);
+
+      // the escort: flares over the column, higher and faster, weaving
+      // across the lane rather than holding a line
+      if (wd.flare) {
+        const lift = wd.tile * 0.7;
+        const fl = wd.flare;
+        for (const f of wd.flyers) {
+          const weave = Math.sin(t * 0.5 + f.phase) * wd.tile * 1.5;
+          const p = place(f.s + f.speed * t, f.lane * 0.6, weave);
+          const bank = Math.cos(t * 0.5 + f.phase) * 0.35 * wd.dir;
+          ctx.globalAlpha = 0.4;
+          drawPart(fl, true, p.x + lift * 0.5, p.y + lift, p.rot + bank, k);
+          ctx.globalAlpha = 1;
+          // the engine: a glow behind the body, breathing with the frame
+          const flick = 0.75 + 0.25 * Math.sin(t * 17 + f.phase * 7);
+          const r = fl.w * k * 0.11 * flick;
+          const back = fl.h * k * 0.32;
+          const ex = p.x - Math.cos(p.rot + bank) * back, ey = p.y - Math.sin(p.rot + bank) * back;
+          ctx.save();
+          ctx.globalCompositeOperation = "lighter";
+          ctx.fillStyle = ENGINE;
+          ctx.globalAlpha = 0.85;
+          ctx.beginPath();
+          ctx.arc(ex, ey, r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#ffffff";
+          ctx.beginPath();
+          ctx.arc(ex, ey, r * 0.45, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          drawPart(fl, false, p.x, p.y, p.rot + bank, k);
+        }
       }
 
       // the wash

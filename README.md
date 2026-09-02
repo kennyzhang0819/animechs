@@ -82,13 +82,15 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `game/game.ts` — rAF loop, input, 2d overlay (placement ghost), stats
 - `components/MechSwarm.tsx` — React shell: HUD, rung picker,
   six-slot build bar with its loadout picker, game-speed switcher, canvases
-- `components/MenuBackground.tsx` — the title screen's ground: a small
-  world rolled fresh every launch from the environment sprites (a
-  floor/wall pair, a second rock, two ores, a quarter chance each of heat
-  and a buried installation), rasterized once, with a squadron of flyers
-  drifting over it at 45° under a black wash — Mindustry's `MenuRenderer`
-  in a 2d canvas. It holds still under prefers-reduced-motion and stops
-  when the tab is hidden
+- `components/MenuBackground.tsx` — the title screen's ground: the game
+  seen from above before anyone has built on it. A lane meanders through
+  rock rolled fresh every launch (a floor/wall pair, a second rock in
+  patches, pockets of open floor, sometimes a heat gradient), and the
+  swarm walks it — daggers and crawlers in the crowd, maces and the odd
+  fortress among them — each turning with the lane's bends and striding
+  on the field's own leg cycle, with a few flares weaving escort overhead.
+  Rasterized once; a few dozen sprites a frame. It holds still under
+  prefers-reduced-motion and stops when the tab is hidden
 - `app/globals.css` — **the kit**: `.ms-btn` / `.ms-pane` / `.ms-seg` /
   `.ms-bar` and their variants are Mindustry's nine-patch UI sprites
   (`public/mindustry/sprites/ui/button*.9.png`, `pane*.9.png`) written as

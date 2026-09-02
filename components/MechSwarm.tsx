@@ -1521,9 +1521,9 @@ export default function MechSwarm() {
         {/* THE GROUND: a rolled world drifting under the whole front of
             house (MenuBackground). It is mounted once here rather than per
             view so walking Title → Start → a map never re-rolls it; only
-            the wash over it changes — Mindustry's 0.3 on the title card,
-            and darker under the map grid, which is a thing to read */}
-        <MenuBackground dim={menuView === "home" ? 0.3 : 0.62} />
+            the wash over it changes — light on the title card, darker
+            under the map grid, which is a thing to read */}
+        <MenuBackground dim={menuView === "home" ? 0.38 : 0.66} />
         {/* ui-zoom off the title card: the hero screen is composed at one
             size; the working menus scale with the UI-size knob, which is
             also what makes the knob's effect visible where it lives */}
