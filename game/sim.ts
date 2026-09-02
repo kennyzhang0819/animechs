@@ -643,6 +643,32 @@ export class Sim {
   readonly ueaten = new Uint8Array(MAX_UNITS);
   private readonly uhungerT = new Float32Array(MAX_UNITS);
   /**
+   * MITOSIS (mutation.ts): 1 on a body this rule PUT on the field, 0 on
+   * one that walked in through a door.
+   *
+   * IT IS THE TERMINATION GUARANTEE, and it is a property of the body
+   * rather than arithmetic on the tier table. A brood that could brood
+   * again is a chain with no upper bound — one dagger, one dagger, forever
+   * — and a wave that can never be finished is not a harder wave. Saying
+   * it here says it once and says it for good: whatever the table is
+   * edited to, whatever tiers are added, whatever a dashboard bends, the
+   * rule is exactly ONE generation deep and the swarm cannot outrun the
+   * script that sent it.
+   *
+   * IT USED TO BE A ZERO IN THE TABLE — tier 1 bred nothing, so the chain
+   * ended because everything it created was tier 1. That worked and it was
+   * the wrong place to put it: it made "does this terminate?" a question
+   * about a balance dial, so the day someone gave T1 a brood the game
+   * would hang rather than play differently. With the flag, the table is
+   * free to be a pure balance dial again — which is why tier 1 has a brood
+   * of its own now, and why the card can honestly say EVERY enemy.
+   *
+   * A byte a unit rather than a bit in ufly's neighbourhood for the same
+   * reason the three hungry arrays are three arrays: killUnit reads it once
+   * per death and nothing else reads it at all.
+   */
+  private readonly ubrood = new Uint8Array(MAX_UNITS);
+  /**
    * a never-reused identity, Mindustry's entity id. Indices are recycled by
    * swap-remove the instant anything dies, so anything that must remember a
    * particular unit across ticks — a piercing bullet's hit list — has to
@@ -2110,6 +2136,9 @@ export class Sim {
       // first meal is a second after it lands rather than the instant it
       // does
       this.uhungry[i] = this.hungryOn && Math.random() < HUNGRY_CHANCE ? 1 : 0;
+      // ...and the one thing a brood body carries that a door body does
+      // not: the mark that says it may not brood in its turn (see ubrood)
+      this.ubrood[i] = brood ? 1 : 0;
       this.ueaten[i] = 0;
       this.uhungerT[i] = HUNGRY_PERIOD;
       this.uid[i] = this.nextId++;
@@ -2454,6 +2483,9 @@ export class Sim {
   private killUnit(i: number): void {
     const kind = this.ukind[i];
     const x = this.upx[i], y = this.upy[i];
+    // read before the row is recycled under us: a body Mitosis put here
+    // does not brood in its turn (see ubrood)
+    const wasBrood = this.ubrood[i];
     this.killsByKind[kind]++;
     this.pushDeathFx(x, y);
     // VOLATILE (mutation.ts): the body's parting blast, before the arrays
@@ -2469,7 +2501,7 @@ export class Sim {
     // means the brood only ever lands on slots those lists have already
     // finished with, and a stale index there meets a body with health,
     // which every one of them re-tests for
-    if (this.mitosisOn) this.splitUnit(x, y, kind);
+    if (this.mitosisOn && !wasBrood) this.splitUnit(x, y, kind);
   }
 
   /**
@@ -2477,11 +2509,11 @@ export class Sim {
    * tier-1 units for its tier, each a random kind off its own movement
    * layer, scattered within MITOSIS_SPREAD of where it fell.
    *
-   * IT TERMINATES ON THE TABLE, not on a depth counter or a flag on the
-   * unit: MITOSIS_BROOD[1] is zero, so a brood body — which is always tier
-   * 1 — breeds nothing, and the chain is one generation deep by
-   * construction. mutation.ts asserts that at load, which is what lets
-   * this carry no depth bookkeeping in the unit rows at all.
+   * IT NEVER RUNS TWICE ON THE SAME LINEAGE. killUnit only calls this for
+   * a body that is not itself brood (ubrood), so the rule is exactly ONE
+   * generation deep however the table is tuned — the guarantee is a
+   * property of the body rather than arithmetic on MITOSIS_BROOD, which
+   * leaves that table free to be nothing but a balance dial.
    *
    * A BROOD MEMBER THAT FINDS NOWHERE TO STAND IS SIMPLY NOT BORN. A body
    * dying against rock, on a shoreline or in a crush of its own kin leaves
@@ -2569,6 +2601,7 @@ export class Sim {
     this.uhungry[i] = this.uhungry[n];
     this.ueaten[i] = this.ueaten[n];
     this.uhungerT[i] = this.uhungerT[n];
+    this.ubrood[i] = this.ubrood[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
     this.ufly[i] = this.ufly[n];

@@ -168,7 +168,7 @@ export const MUTATIONS: readonly MutationDef[] = [
     name: "Mitosis",
     cost: 2,
     blurb:
-      "Every enemy above tier one breaks into a brood of tier one units when it dies.",
+      "Every enemy breaks apart into tier one units when it dies.",
   },
   {
     id: "overshields",
@@ -813,13 +813,20 @@ export const VOLATILE_DMG: readonly number[] = [0, 12, 30, 70, 150, 300];
 // worth it. Those turrets spend the same reload on a dagger, and the
 // mutator hands them eleven more of them to spend it on.
 //
-// IT TERMINATES BECAUSE T1 BREAKS INTO NOTHING. A brood body that bred
-// again would be a chain reaction with no upper bound: one dagger, one
-// dagger, forever, and a wave that can never be finished is not a harder
-// wave. Index 1 of the table below being zero IS the termination proof —
-// every body the rule creates is tier 1, and tier 1 creates none — which
-// is why it is a table rather than a formula, and why the invariant is
-// checked below rather than trusted.
+// IT TERMINATES BECAUSE A BROOD BODY DOES NOT BROOD. That is a property
+// of the BODY, carried on the unit itself (Sim.ubrood) and read once when
+// it dies — not a zero in the table below. A brood that bred in its turn
+// would be a chain reaction with no upper bound: one dagger, one dagger,
+// forever, and a wave that can never be finished is not a harder wave.
+//
+// PUTTING THE GUARANTEE ON THE UNIT IS WHAT LETS THE TABLE BE A DIAL. It
+// used to live in the arithmetic — tier 1 bred nothing, so everything the
+// rule created was sterile by virtue of its tier — and that quietly made
+// "does this terminate?" a question about a balance number, so the day
+// someone gave T1 a brood the game would hang rather than play
+// differently. With the flag, every row below is free to be tuned to
+// whatever the fight wants, tier 1 included, and the rule stays exactly
+// ONE generation deep however it is set.
 //
 // A BROOD BODY IS A REAL UNIT AND PAYS A REAL DROP. It is killed like
 // anything else, so it lands in killsByKind and pays out one copper, the
@@ -847,7 +854,7 @@ export const VOLATILE_DMG: readonly number[] = [0, 12, 30, 70, 150, 300];
 
 /**
  * HOW MANY TIER-1 BODIES A DEATH LEAVES, by the dead unit's tier (index 0
- * unused, index 1 zero — see the termination note above).
+ * unused).
  *
  * The curve is roughly the tier's own weight rather than a flat number: a
  * T2 is worth a couple of daggers and a T5 is worth a small wave, which is
@@ -855,8 +862,16 @@ export const VOLATILE_DMG: readonly number[] = [0, 12, 30, 70, 150, 300];
  * top is the number this was set to — enough that a reign dying inside the
  * kill zone visibly refills it, and few enough that a board with any
  * splash at all is not simply overrun by its own success.
+ *
+ * TIER 1 BREAKS INTO ONE, which is what makes the card's "every enemy"
+ * literally true rather than nearly true. It is the cheapest row here and
+ * the one the player meets most: a killed dagger leaves a dagger, so
+ * clearing the T1 stream costs twice the shots it used to and no more —
+ * and it costs it ONCE, because the body it left is brood and brood does
+ * not brood (see above). A player watching the swarm should never have to
+ * work out which of the things dying in front of them the rule applies to.
  */
-export const MITOSIS_BROOD: readonly number[] = [0, 0, 2, 4, 7, 12];
+export const MITOSIS_BROOD: readonly number[] = [0, 1, 2, 4, 7, 12];
 
 /**
  * How far from the body a brood member may land, in px (a little under two
@@ -873,14 +888,20 @@ export const MITOSIS_SPREAD = 36;
  */
 export const MITOSIS_TRIES = 6;
 
-// The termination invariant, as code rather than a paragraph: a tier that
-// breeds its own tier is an unbounded chain, and the table is authored by
-// hand, so the table checks itself (the same bargain the catalog above
-// makes).
-if (MITOSIS_BROOD[1] !== 0)
+// The table is authored by hand, so the table checks itself — the same
+// bargain the catalog above makes. Termination is NOT what is checked
+// here: that is Sim.ubrood's job and no row below can break it. What a bad
+// row CAN do is quieter and worth catching anyway — a fractional or
+// negative count is a spawn loop that runs a nonsense number of times, and
+// a table that does not reach tier 5 is a rule that silently switches
+// itself off on exactly the deaths it was written for.
+if (MITOSIS_BROOD.length <= 5)
   throw new Error(
-    `Mitosis has tier 1 breeding ${MITOSIS_BROOD[1]} more tier 1 bodies — that never ends`,
+    `Mitosis's brood table stops at tier ${MITOSIS_BROOD.length - 1}; unit tiers run to 5`,
   );
+for (let t = 1; t < MITOSIS_BROOD.length; t++)
+  if (!Number.isInteger(MITOSIS_BROOD[t]) || MITOSIS_BROOD[t] < 0)
+    throw new Error(`Mitosis has tier ${t} leaving ${MITOSIS_BROOD[t]} bodies — that is not a count`);
 
 // ---------- SHIELD TOWERS ----------------------------------------------
 //
