@@ -57,6 +57,10 @@ const MUT_FACE: Record<string, string> = {
   hungry: "M12 12 22.5 6.2A11.5 11.5 0 1 0 22.5 17.8z",
   /** a droplet — Hydrophobic is the water itself, standing too close */
   hydrophobic: "M12 1.6c4.3 5 7.3 8.9 7.3 12.4a7.3 7.3 0 0 1-14.6 0c0-3.5 3-7.4 7.3-12.4z",
+  /** one body and the two it came apart into — Mitosis is a death that
+   *  leaves more of them standing than it took away */
+  mitosis:
+    "M2 12a6 6 0 1 0 12 0a6 6 0 1 0-12 0zM15.5 6.5a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0zM15.5 17.5a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0z",
   /** a burst — Volatile is what happens when one of them dies */
   volatile: "M12.0 1.0 13.8 7.6 19.8 4.2 16.4 10.2 23.0 12.0 16.4 13.8 19.8 19.8 13.8 16.4 12.0 23.0 10.2 16.4 4.2 19.8 7.6 13.8 1.0 12.0 7.6 10.2 4.2 4.2 10.2 7.6z",
 };

@@ -61,6 +61,7 @@
  *  never an index, so the catalog can be reordered freely */
 export type MutationId =
   | "volatile"
+  | "mitosis"
   | "overshields"
   | "shieldTowers"
   | "hungry"
@@ -161,6 +162,13 @@ export const MUTATIONS: readonly MutationDef[] = [
     cost: 2,
     blurb:
       "Enemies detonate when they die and damages nearby turrets.",
+  },
+  {
+    id: "mitosis",
+    name: "Mitosis",
+    cost: 2,
+    blurb:
+      "Every enemy above tier one breaks into a brood of tier one units when it dies.",
   },
   {
     id: "overshields",
@@ -787,6 +795,92 @@ export const VOLATILE_RADIUS = 35;
  *  unused). Tier 4-5 bodies are bosses and boss-adjacent — their deaths
  *  are the run's punctuation marks and should feel like it */
 export const VOLATILE_DMG: readonly number[] = [0, 12, 30, 70, 150, 300];
+
+// ---------- MITOSIS -----------------------------------------------------
+//
+// EVERY BODY THE PLAYER KILLS BREAKS INTO TIER-1 BODIES, more of them the
+// heavier the thing that died. A mace leaves two daggers behind, a reign
+// leaves twelve — so a kill stops being the end of a fight and becomes the
+// start of a smaller one, and the board that could only just clear the
+// wave now has to clear it twice.
+//
+// IT IS A RULE ABOUT THROUGHPUT, NOT ABOUT HEALTH. The brood is the
+// cheapest thing in the game: a dagger at whatever the level curve says,
+// no armour, no shield, no ability. A turret that can kill things fast
+// barely notices it. What it takes apart is the board built to kill a few
+// EXPENSIVE things — the long-reload heavies, the single-target snipers,
+// the lancer line whose whole answer to a fortress is one shot that is
+// worth it. Those turrets spend the same reload on a dagger, and the
+// mutator hands them eleven more of them to spend it on.
+//
+// IT TERMINATES BECAUSE T1 BREAKS INTO NOTHING. A brood body that bred
+// again would be a chain reaction with no upper bound: one dagger, one
+// dagger, forever, and a wave that can never be finished is not a harder
+// wave. Index 1 of the table below being zero IS the termination proof —
+// every body the rule creates is tier 1, and tier 1 creates none — which
+// is why it is a table rather than a formula, and why the invariant is
+// checked below rather than trusted.
+//
+// A BROOD BODY IS A REAL UNIT AND PAYS A REAL DROP. It is killed like
+// anything else, so it lands in killsByKind and pays out one copper, the
+// T1 currency (see unitDrop in levels.ts). That is deliberate: the game's
+// standing rule is that a tier is the whole drop table and no body is
+// quietly worth more OR LESS than its tier, and a mutator that minted
+// invisible units would be the first exception to it. So the rule gives
+// the player copper — the cheapest of the five — in exchange for the one
+// thing a tower defence cannot buy, which is time in the kill zone. That
+// is the bargain, and it is why this sits in the LIGHT band next to
+// Volatile rather than up with Hungry: it is noticed every wave and it
+// decides no run on its own.
+//
+// A LEAK IS NOT A DEATH. A body that walks off the board was never killed
+// (Sim.updateUnits removes it without going through killUnit), so it
+// leaves no brood — the same line Volatile draws, and the same reason:
+// the rule is about what happens where the player is fighting.
+//
+// THE BROOD KEEPS ITS PARENT'S LAYER. A flyer leaves flyers, a hull
+// leaves hulls, a walker leaves walkers — the sim picks the T1 kinds that
+// travel on the dead unit's movement layer (MITOSIS_KINDS in sim.ts).
+// Anything else would drop daggers into deep water and flares onto a lane
+// they have no business on, and a brood that cannot walk where it landed
+// is a brood the player never has to answer.
+
+/**
+ * HOW MANY TIER-1 BODIES A DEATH LEAVES, by the dead unit's tier (index 0
+ * unused, index 1 zero — see the termination note above).
+ *
+ * The curve is roughly the tier's own weight rather than a flat number: a
+ * T2 is worth a couple of daggers and a T5 is worth a small wave, which is
+ * about what those bodies cost to kill in the first place. Twelve at the
+ * top is the number this was set to — enough that a reign dying inside the
+ * kill zone visibly refills it, and few enough that a board with any
+ * splash at all is not simply overrun by its own success.
+ */
+export const MITOSIS_BROOD: readonly number[] = [0, 0, 2, 4, 7, 12];
+
+/**
+ * How far from the body a brood member may land, in px (a little under two
+ * cells of 20). Wide enough that twelve of them are not one stack, tight
+ * enough that they are unmistakably what the dead thing left behind.
+ */
+export const MITOSIS_SPREAD = 36;
+
+/**
+ * Placement attempts per brood member before it is given up on. A body
+ * that dies against rock, on a shoreline or in a crush of its own kin
+ * leaves a smaller brood than the table promises, and that is the honest
+ * outcome — the alternative is stacking units inside walls.
+ */
+export const MITOSIS_TRIES = 6;
+
+// The termination invariant, as code rather than a paragraph: a tier that
+// breeds its own tier is an unbounded chain, and the table is authored by
+// hand, so the table checks itself (the same bargain the catalog above
+// makes).
+if (MITOSIS_BROOD[1] !== 0)
+  throw new Error(
+    `Mitosis has tier 1 breeding ${MITOSIS_BROOD[1]} more tier 1 bodies — that never ends`,
+  );
 
 // ---------- SHIELD TOWERS ----------------------------------------------
 //

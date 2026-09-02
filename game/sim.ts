@@ -1,6 +1,7 @@
 import {
   BASE,
   LAYER_BIT,
+  MOVE_LAYERS,
   NCELLS,
   type MoveLayer,
   type ZoneKind,
@@ -93,6 +94,9 @@ import {
   shieldTowerWaveScale,
   HYDROPHOBIC_RANGE,
   HYDROPHOBIC_RATE,
+  MITOSIS_BROOD,
+  MITOSIS_SPREAD,
+  MITOSIS_TRIES,
   SPEEDY_SPEED,
   VOLATILE_DMG,
   VOLATILE_RADIUS,
@@ -327,6 +331,40 @@ const KIND_ENERGY = UNIT_KINDS.map((k) => UNIT_STATS[k].energyField ?? null);
 const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
 const KIND_BOSS: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].boss);
 const BOSS_KINDS = KIND_BOSS.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
+/** the pad list a brood spawn is handed — it picks its own spot, so there
+ *  are no doors to draw from and nothing to allocate per body */
+const EMPTY_PADS: readonly number[] = [];
+/**
+ * MITOSIS (mutation.ts): the tier-1 kinds a death may break into, grouped
+ * by the movement layer they travel on — ground gets dagger, crawler and
+ * nova, air gets flare, water gets risso and retusa.
+ *
+ * THE LAYER IS THE WHOLE FILTER and it is not a convenience. A brood is
+ * dropped where its parent fell, so a kind that cannot stand there is a
+ * kind that spawns inside rock or aground on a shoreline — the same test
+ * spawnUnit runs at the doors, failed on every attempt. Picking from the
+ * parent's own layer means the brood always has somewhere to walk.
+ *
+ * Bosses are out of the roster (never of the brood — a boss is an
+ * authored event, not something a mace leaves behind), which today
+ * removes nothing: the one boss kind is T5.
+ */
+const MITOSIS_KINDS: Record<MoveLayer, readonly number[]> = (() => {
+  const out = { ground: [], air: [], water: [] } as Record<MoveLayer, number[]>;
+  UNIT_KINDS.forEach((k, i) => {
+    const s = UNIT_STATS[k];
+    if (s.tier !== 1 || s.boss) return;
+    out[s.flying ? "air" : s.naval ? "water" : "ground"].push(i);
+  });
+  // A LAYER WITH NO T1 KIND WOULD SILENTLY SWALLOW THE RULE on everything
+  // that travels it — a whole movement layer immune to a mutator the card
+  // says is universal — so the roster checks itself the way the mutator
+  // catalog does, at load rather than on the death that happens to need it
+  for (const layer of MOVE_LAYERS)
+    if (out[layer].length === 0)
+      throw new Error(`no tier-1 unit kind travels on the ${layer} layer — Mitosis cannot brood there`);
+  return out;
+})();
 /** kind ids that carry a force field — the absorb pass is skipped outright
  * when none of them is on the field, so the scan costs nothing in a wave
  * without one */
@@ -829,6 +867,10 @@ export class Sim {
   /** is the Volatile mutator in force this run? (see reset) */
   private volatileOn = false;
 
+  /** is the Mitosis mutator in force this run? (see reset, and splitUnit
+   *  for what a death then leaves behind) */
+  private mitosisOn = false;
+
   /**
    * WHICH CELLS THE HYDROPHOBIC RULE TAXES — 1 where a turret's reload
    * runs at HYDROPHOBIC_RATE, 0 everywhere else. Null on the ordinary run
@@ -976,6 +1018,7 @@ export class Sim {
     this.armoredOn = hasMutation(inForce, "armored");
     this.shieldScale = hasMutation(inForce, "overshields") ? OVERSHIELD_SCALE : 1;
     this.volatileOn = hasMutation(inForce, "volatile");
+    this.mitosisOn = hasMutation(inForce, "mitosis");
     this.shieldTowersOn = hasMutation(inForce, "shieldTowers");
     this.shieldTowers.length = 0;
     this.shieldTowerT = 0;
@@ -1950,24 +1993,52 @@ export class Sim {
     return this.field.spawnPts;
   }
 
-  private spawnUnit(kind: UnitKind): boolean {
+  /**
+   * Put one unit on the board, at a door or — under MITOSIS (mutation.ts)
+   * — around a point on the field.
+   *
+   * `brood` is the ONE thing that changes, and it changes three lines:
+   * where the candidate spots come from, how many are tried, and whether
+   * the arrival is invincible. Everything under those lines is the same
+   * unit-building code the wave script runs, ON PURPOSE — a brood body
+   * carries the level's health curve, the run's Armored plating, the run's
+   * Speedy doubling and, above all, its own roll of THE HUNGRY APPETITE.
+   * One body in twenty walks in hungry whatever put it on the field
+   * (HUNGRY_CHANCE): the rule is about the swarm, not about the door it
+   * came through, so a rule that spawns bodies feeds that one too, and a
+   * second construction path here is how those two rules would quietly
+   * stop composing.
+   */
+  private spawnUnit(kind: UnitKind, brood?: { x: number; y: number }): boolean {
     const stats = UNIT_STATS[kind];
     const fly = !!stats.flying;
     const layer = this.layerOf(kind);
-    const pads = this.spawnPads(layer, !!stats.boss);
-    if (this.n >= MAX_UNITS || pads.length === 0) return false;
+    const pads = brood ? EMPTY_PADS : this.spawnPads(layer, !!stats.boss);
+    if (this.n >= MAX_UNITS || (!brood && pads.length === 0)) return false;
     const r = stats.radius;
     // the drop-zone test is the same broad-phase query the physics pass
     // runs, so it needs the same reach: a ring of 1 would let two antumbras
     // land inside one another and start the wave already shoving
     const span = KIND_SPAN[UNIT_ID[kind]];
-    for (let a = 0; a < 8; a++) {
-      const ci = pads[(Math.random() * pads.length) | 0];
-      // jitter within the pad, but keep the hitbox inside the cell when it
-      // fits (a mace is wider than a tile — it spawns pad-centered)
-      const j = Math.max(0, CELL / 2 - r - 1);
-      const x = ((ci % COLS) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
-      const y = (((ci / COLS) | 0) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
+    const tries = brood ? MITOSIS_TRIES : 8;
+    for (let a = 0; a < tries; a++) {
+      let x: number, y: number;
+      if (brood) {
+        // a ring around the body, clamped inside the world — the wall and
+        // crowding tests below are the same ones a door spot has to pass,
+        // so a brood never lands in rock or aground on a shoreline
+        const ang = Math.random() * Math.PI * 2;
+        const d = Math.sqrt(Math.random()) * MITOSIS_SPREAD;
+        x = clamp(brood.x + Math.cos(ang) * d, r, W - r);
+        y = clamp(brood.y + Math.sin(ang) * d, r, H - r);
+      } else {
+        const ci = pads[(Math.random() * pads.length) | 0];
+        // jitter within the pad, but keep the hitbox inside the cell when it
+        // fits (a mace is wider than a tile — it spawns pad-centered)
+        const j = Math.max(0, CELL / 2 - r - 1);
+        x = ((ci % COLS) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
+        y = (((ci / COLS) | 0) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
+      }
       // a big hitbox can overhang the pad into ragged rock beside it — and
       // for a hull, into the SHORE: the water field's mask is the mirror
       // one, so the same test asks "is any of this boat aground?"
@@ -2021,7 +2092,13 @@ export class Sim {
       this.uability[i] = 0;
       this.upullx[i] = 0;
       this.upully[i] = 0;
-      this.uspawn[i] = SPAWN_INVINCIBLE;
+      // THE ARRIVAL CLOCK IS A DOOR RULE, so a brood does not get one: the
+      // invincibility is there to stop a drop zone being camped, and a body
+      // that broke out of another body in the middle of the kill zone is
+      // already past every door on the map. Twelve untouchable daggers a
+      // reign would be a gift rather than a mutator — a brood is killable
+      // the instant it lands, by the same splash that killed its parent
+      this.uspawn[i] = brood ? 0 : SPAWN_INVINCIBLE;
       this.uburn[i] = 0;
       this.uwet[i] = 0;
       this.uwetSlow[i] = 1;
@@ -2375,14 +2452,52 @@ export class Sim {
 
   /** a tower kill: death puff, removal, and the per-kind drop ledger */
   private killUnit(i: number): void {
-    this.killsByKind[this.ukind[i]]++;
-    this.pushDeathFx(this.upx[i], this.upy[i]);
+    const kind = this.ukind[i];
+    const x = this.upx[i], y = this.upy[i];
+    this.killsByKind[kind]++;
+    this.pushDeathFx(x, y);
     // VOLATILE (mutation.ts): the body's parting blast, before the arrays
     // reshuffle under it
-    if (this.volatileOn)
-      this.volatileBlast(this.upx[i], this.upy[i], this.urad[i], this.ukind[i]);
+    if (this.volatileOn) this.volatileBlast(x, y, this.urad[i], kind);
     this.removeUnit(i);
     this.kills++;
+    // MITOSIS (mutation.ts): what the body breaks into, AFTER the removal
+    // rather than before it. Spawning first would append the brood above
+    // the dead row and leave removeUnit swapping a live newborn down into
+    // it — legal, but it would put brood indices inside the pending-removal
+    // lists every caller of killUnit is halfway through. Removing first
+    // means the brood only ever lands on slots those lists have already
+    // finished with, and a stale index there meets a body with health,
+    // which every one of them re-tests for
+    if (this.mitosisOn) this.splitUnit(x, y, kind);
+  }
+
+  /**
+   * MITOSIS (mutation.ts): the brood one dead body leaves — MITOSIS_BROOD
+   * tier-1 units for its tier, each a random kind off its own movement
+   * layer, scattered within MITOSIS_SPREAD of where it fell.
+   *
+   * IT TERMINATES ON THE TABLE, not on a depth counter or a flag on the
+   * unit: MITOSIS_BROOD[1] is zero, so a brood body — which is always tier
+   * 1 — breeds nothing, and the chain is one generation deep by
+   * construction. mutation.ts asserts that at load, which is what lets
+   * this carry no depth bookkeeping in the unit rows at all.
+   *
+   * A BROOD MEMBER THAT FINDS NOWHERE TO STAND IS SIMPLY NOT BORN. A body
+   * dying against rock, on a shoreline or in a crush of its own kin leaves
+   * fewer than the table promises — spawnUnit's own wall and crowding
+   * tests decide, exactly as they do at a door — and the alternative would
+   * be stacking units inside walls to hit a number nobody is counting.
+   */
+  private splitUnit(x: number, y: number, kind: number): void {
+    const tier = KIND_TIER[kind];
+    const want = tier < MITOSIS_BROOD.length ? MITOSIS_BROOD[tier] : 0;
+    if (want <= 0) return;
+    // the parent's own layer, so the brood can walk where it landed
+    const s = UNIT_STATS[UNIT_KINDS[kind]];
+    const pool = MITOSIS_KINDS[s.flying ? "air" : s.naval ? "water" : "ground"];
+    for (let b = 0; b < want; b++)
+      this.spawnUnit(UNIT_KINDS[pool[(Math.random() * pool.length) | 0]], { x, y });
   }
 
   /**
