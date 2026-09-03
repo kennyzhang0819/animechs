@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { TOWERS, TOWER_DESC, targetingLine } from "@/game/constants";
 import {
   buyTech,
+  canRefund,
   levelOf,
   nodeStatus,
   pointsFree,
@@ -15,7 +16,6 @@ import {
   type Progress,
 } from "@/game/progress";
 import {
-  isRefundable,
   isToggleable,
   isTowerNode,
   isUpgradeNode,
@@ -136,16 +136,52 @@ const nodeY = (id: string): number => px(id).y - MIN_Y;
 
 /**
  * WHY A NODE CANNOT BE BOUGHT, in the player's own words — the line the
- * card leads with when the click would do nothing. A node with no
- * reason is buyable.
+ * card leads with when the click would do nothing. Only the level gate
+ * gets a sentence: a node the save cannot yet afford already prints its
+ * price in red, and the level strip in the corner says what is in hand.
  */
 function whyNot(p: Progress, id: TechKind, status: NodeStatus): string | null {
   const def = techNode(id);
   if (status === "locked-level")
     return `Reach level ${def.requiresLevel} first (you are level ${levelOf(p)}).`;
-  if (status === "poor")
-    return `Needs ${techPoints(id)} ${techPoints(id) === 1 ? "point" : "points"} — you have ${pointsFree(p)}. Every level is a point.`;
   return null;
+}
+
+/**
+ * THE REFUND BUTTON, on any owned node's card that can go: hands the node
+ * back and its points with it (refundTech). It is a labelled button
+ * rather than a second meaning for the node's own click, because a click
+ * that used to buy and now sells would sooner or later be an accident. A
+ * node still holding up a child simply does not offer it — the branch is
+ * taken back from its tip, and the board's own edges say which tip.
+ */
+function RefundButton({
+  progress,
+  id,
+  onChanged,
+}: {
+  progress: Progress;
+  id: TechKind;
+  onChanged: () => void;
+}) {
+  if (!canRefund(progress, id)) return null;
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => {
+          if (refundTech(id)) onChanged();
+        }}
+        className="ms-btn ms-btn-tint w-full px-2 py-1 text-[13px]"
+        style={{ "--ms-tint": SURGE } as CSSProperties}
+      >
+        Refund
+      </button>
+      <div className="mt-1">
+        <PointsAmount amount={techPoints(id)} />
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -369,28 +405,7 @@ function UpgradeChip({
                   {touch ? "Tap again" : "Click"} to switch {on ? "off" : "on"}
                 </div>
               )}
-              {/* THE REFUND, and the only control on this board that undoes
-                  a purchase. It is a labelled button rather than a second
-                  meaning for the chip's own click, because an ultimate is
-                  three levels' worth of points and an accidental sale is
-                  not a thing a player can simply re-earn */}
-              {isRefundable(def.id) && (
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (refundTech(def.id)) onChanged();
-                    }}
-                    className="ms-btn ms-btn-tint w-full px-2 py-1 text-[13px]"
-                    style={{ "--ms-tint": SURGE } as CSSProperties}
-                  >
-                    Sell back
-                  </button>
-                  <div className="mt-1">
-                    <PointsAmount amount={cost} />
-                  </div>
-                </div>
-              )}
+              <RefundButton progress={progress} id={def.id} onChanged={onChanged} />
             </div>
           ) : (
             <div className="mt-2 border-t-2 border-[#454545] pt-2 text-[14px]">
@@ -766,11 +781,15 @@ export default function TechTree({
                     {name}
                   </div>
                   {/* hover card: what this node does — opened by resting on
-                      the node with a mouse, and by the first tap with a finger */}
+                      the node with a mouse, and by the first tap with a
+                      finger. IT TAKES CLICKS, like the chip card, because an
+                      owned node carries its refund button; the gap to the
+                      node is padding rather than margin so a mouse crossing
+                      it never closes the card under itself */}
                   <div
-                    className={`pointer-events-none ms-pane-solid absolute left-1/2 z-10 w-56 p-3 text-left shadow-lg ${
+                    className={`absolute left-1/2 z-10 w-56 text-left ${
                       showCard ? "block" : "hidden group-hover:block group-focus-within:block"
-                    } ${n.y === 0 ? "top-full mt-5" : "bottom-full mb-3"}`}
+                    } ${n.y === 0 ? "top-full pt-5" : "bottom-full pb-3"}`}
                     /* COUNTER-SCALED, so the card is the same size on screen
                        at every zoom. It has to live inside the board's scaled
                        layer to stay anchored to its node, and at the zoom
@@ -782,6 +801,7 @@ export default function TechTree({
                       transformOrigin: n.y === 0 ? "top center" : "bottom center",
                     }}
                   >
+                  <div className="ms-pane-solid p-3 shadow-lg">
                     <div className="flex items-baseline justify-between">
                       <span className="font-bold text-[#EDEDEF]">{name}</span>
                       <span className="text-[13px] text-[#A6A6AF]">
@@ -822,6 +842,11 @@ export default function TechTree({
                         )}
                       </div>
                     )}
+                    {owned && canRefund(progress, n.id) && (
+                      <div className="mt-2 border-t-2 border-[#454545] pt-2 text-[14px]">
+                        <RefundButton progress={progress} id={n.id} onChanged={onChanged} />
+                      </div>
+                    )}
                     {/* the card is only open on touch because a tap opened
                         it, and on touch a tap is what spends — so say so */}
                     {showCard && clickable && (
@@ -829,6 +854,7 @@ export default function TechTree({
                         Tap again to buy
                       </div>
                     )}
+                  </div>
                   </div>
                 </div>
               );

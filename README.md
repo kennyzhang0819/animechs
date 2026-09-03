@@ -42,8 +42,8 @@ stale tab or a cached bundle looks exactly like a fix not working.
   under every turret, folded into its live `TowerStats`. **Every rung is
   bought once**: two stat steps (one point each), a one-shot ammunition
   swap (two points), and an **ultimate** (three points, level-gated) that
-  changes what the turret is and is the only node in the tree that can be
-  sold back. **Only duo and arc have an ultimate written so far** — the
+  changes what the turret is. **Only duo and arc have an ultimate written
+  so far** — the
   other fifteen are authored by hand as they are designed; adding one is a
   fourth entry in a branch with `tier: ULTIMATE_TIER` and its id in
   `UPGRADE_KINDS`, and nothing else
@@ -256,8 +256,10 @@ ammunition swap is two; an ultimate is three. Tier-2 turrets wait for
 level 4, tier-3 for level 10, ultimates for level 15 (`TIER_LEVEL_GATE`,
 `ULTIMATE_LEVEL_GATE`). The tree holds close to a hundred points and a
 full ladder on one world is about level 17, so nobody maxes it from one
-world and every point is a choice. Home and duo are free. The pace strip
-stops at 4x; base plating is not sold.
+world. **Every node can be refunded** for exactly the points it cost, from
+the tip of its branch inward — a node still holding up a child does not
+offer it — so a point is never a mistake to grind out of. Home and duo are
+free. The pace strip stops at 4x; base plating is not sold.
 
 ### The base
 

@@ -184,19 +184,6 @@ export interface TechNodeDef {
   /** player level the save must have reached before this node takes a point */
   requiresLevel?: number;
   /**
-   * CAN THIS NODE BE SOLD BACK? Default no, and that is the tree's rule
-   * rather than an oversight: a tech tree whose every point could be
-   * refunded is not a tree, it is a loadout screen, and the whole weight
-   * of a purchase is that it was a choice.
-   *
-   * THE ULTIMATES ARE THE EXEMPTION — an upgrade branch's fourth rung, and
-   * nothing else. Three points is a real share of a campaign's total, and
-   * an ultimate changes what a turret IS; a save has to be able to change
-   * its mind about which turrets get transformed without grinding three
-   * levels back. A refund returns exactly the points paid.
-   */
-  refundable?: boolean;
-  /**
    * MAY THIS NODE'S EFFECT BE SWITCHED OFF WITHOUT SELLING IT? — see
    * Progress.techOff.
    *
@@ -427,8 +414,6 @@ const UPGRADE_NODES: readonly TechNodeDef[] = ALL_UPGRADES.map((u) => {
     // rung 3 changes what the turret IS and rung 4 replaces it, so both
     // are things a save can put down without selling; a stat rung is not
     toggle: u.tier >= AMMO_TIER,
-    // ...and only the ultimate comes back
-    refundable: ultimate,
     requires: upgradeParent(u.id) ?? u.turret,
     x: parent.x,
     y: parent.y,
@@ -452,8 +437,22 @@ export function techNode(id: TechKind): TechNodeDef {
 /** what owning this node costs, in skill points */
 export const techPoints = (node: TechKind): number => techNode(node).points;
 
-/** may this node be handed back? — see TechNodeDef.refundable */
-export const isRefundable = (node: TechKind): boolean => techNode(node).refundable === true;
+/**
+ * MAY THIS NODE BE HANDED BACK? Every node that cost anything can be,
+ * and the points come straight back — the tree is respec-able, Bloons
+ * style, so a point is never a mistake a player has to grind out of. The
+ * two free nodes (home, duo) have nothing to hand back and never leave.
+ *
+ * The one rule is the tree's own shape: a node cannot go while anything
+ * that REQUIRES it is still owned — a branch is taken back from its tip
+ * (canRefund in progress.ts).
+ */
+export const isRefundable = (node: TechKind): boolean => techPoints(node) > 0;
+
+/** the nodes that hang off this one — what has to go before it can */
+export function childrenOf(node: TechKind): TechKind[] {
+  return TECH_TREE.filter((n) => n.requires === node).map((n) => n.id);
+}
 
 /** may this node's effect be switched off while keeping it? — see
  *  TechNodeDef.toggle */

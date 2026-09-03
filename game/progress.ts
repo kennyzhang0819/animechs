@@ -8,6 +8,7 @@ import {
 } from "./economy";
 import {
   BY_MINDUSTRY_VALUE,
+  childrenOf,
   isRefundable,
   isTowerNode,
   NODE_SPEED,
@@ -603,17 +604,30 @@ export function buyTech(node: TechKind): Progress | null {
 }
 
 /**
- * Hand a node back, and the points it cost with it. ONLY A REFUNDABLE
- * NODE ANSWERS (the ultimates). Points are derived, so the refund is the
- * node ceasing to be owned and nothing else — there is nothing to credit
- * and nothing to farm.
+ * MAY THIS NODE BE HANDED BACK RIGHT NOW? Owned, worth something, and
+ * nothing that hangs off it still owned — a branch is taken back from its
+ * tip, so the tree's shape holds and no owned node is ever left without
+ * the node it requires.
+ */
+export const canRefund = (p: Progress, node: TechKind): boolean =>
+  owns(p.tech, node) &&
+  isRefundable(node) &&
+  childrenOf(node).every((c) => !owns(p.tech, c));
+
+/**
+ * Hand a node back, and the points it cost with it. Points are derived,
+ * so the refund is the node ceasing to be owned and nothing else — there
+ * is nothing to credit and nothing to farm. A node still holding up a
+ * child refuses (canRefund).
  */
 export function refundTech(node: TechKind): Progress | null {
-  if (!isRefundable(node)) return null;
   const p = loadProgress();
-  if (!owns(p.tech, node)) return null;
+  if (!canRefund(p, node)) return null;
   delete p.tech[node];
   if (p.techBought) delete p.techBought[node];
+  // a turret handed back leaves the bar too, or the bar would carry a
+  // button for a turret the save no longer owns
+  if (isTowerNode(node) && p.loadout) p.loadout = p.loadout.filter((k) => k !== node);
   saveProgress(p);
   return p;
 }
