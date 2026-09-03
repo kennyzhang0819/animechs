@@ -17,20 +17,31 @@
  * the same rules are put on the first two maps here, once, from the
  * masks they already carry:
  *
- *   heart         the rock is ONE family, road or no road: a road is cut
- *                 through the rock, and the rock on both sides of it is
- *                 the same rock. NOTHING OUTLINES A ROAD
- *   outcrops      patches of a second family where a low-frequency noise
- *                 runs high — the menu's second rock
+ *   EVERY SHAPE IS DERIVED FROM THE MAP'S OWN GEOMETRY. Quagmire's heart
+ *   is the island's own outline shrunk to 0.58, so every patch on it is
+ *   a copy of the thing it sits in. Nothing here is placed at random and
+ *   nothing is a noise threshold: each patch is a contour of the roads —
+ *   the same road edge, read at a distance — and so it follows the path.
+ *
+ *   rock          ONE family beside every road: a road is cut through the
+ *                 rock and the rock either side of it is the same rock.
+ *                 NOTHING OUTLINES A ROAD
+ *   core          the second family deep in a mass, past a set depth from
+ *                 anything that is not rock — the mass's own outline
+ *                 shrunk, exactly as Quagmire's heart is. A mass thinner
+ *                 than twice the depth has no core and stays one rock
  *   coast         where there is water, the rock near it is the coast
  *                 family, BROAD — Quagmire's rim is forty percent of each
- *                 island — and the line wobbled by noise. It follows the
- *                 SEA; a road through the heart gets no rim of its own
- *   patches       the road's second floor, the same way
- *   foot          scree at the foot of the rock: the road's cells that
- *                 touch it wear a darker floor, broken up by noise
- *   flats         a third floor in the wide open places only, where the
- *                 road has room to be a plain rather than a lane
+ *                 island. It follows the SEA; a road gets no rim
+ *   patches       the road's second floor as a FEW LARGE blobs — an
+ *                 ellipse with a long axis and two cosine lobes, wider
+ *                 than the road is, clipped to the road — so each one is
+ *                 a big geometric shape that takes the road's own edges
+ *                 where it overruns them. A chain of small shapes down
+ *                 the road was tried and reads as worms
+ *   flat          a third floor in the wide open places only: further
+ *                 still from the rock, so it lives in the plazas and
+ *                 takes their shape
  *   shore         a beach band along the water (Maelstrom)
  *   boulders      a light scatter along the road's edges, never in its
  *                 middle, never in a drop zone, never round the base
@@ -41,7 +52,7 @@
  * write if any of them moved.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { clearance, rng, png } from "./geom.mjs";
+import { blob, clearance, discOffsets, rng, png, stampBlob } from "./geom.mjs";
 
 // The atlas indices this paints with — COPIED from game/atlas.ts, as the
 // other generators do: the generator is plain node and the atlas reaches
@@ -80,25 +91,32 @@ const CELL = 20; // world px per cell (game/constants.ts)
  * the first of a pair.
  */
 const STYLES = {
-  // WORLD 1 IS THE DESERT. Sand roads under dark dune cliffs, the pale
-  // sandstone showing where the masses are thick, dark sand blown across
-  // the road in drifts and lying as scree at the foot of the rock, and
-  // salt where the road opens into a flat.
+  // WORLD 1 IS THE DESERT. Sand roads under dark dune cliffs, ochre
+  // outcrops where the rock breaks, dirt blown across the road in drifts,
+  // and salt where the road opens into a flat.
   confluence: {
     seed: 0xd35e,
     road: {
       base: FLOOR_SAND,
-      patch: { floor: FLOOR_DIRT, at: 0.6, scale: 14 },
-      foot: { floor: FLOOR_DARKSAND, depth: 1.2, scale: 5 },
-      flat: { floor: FLOOR_SALT, at: 0.72, scale: 24, clear: 7 },
+      // the worn track down the middle of the road, and salt where the
+      // road opens into a plaza: both are the road's own edge read at a
+      // distance, so both follow it
+      patches: { floor: FLOOR_DIRT, count: 8, r: [26, 44], squash: 0.55 },
+      // a pan is the plaza's shape, grown: the cells furthest from any
+      // rock, then dilated by `grow`. Lowering `clear` instead would put a
+      // strip of salt down the middle of every road
+      flat: { floor: FLOOR_SALT, clear: 11, wobble: 1.5, scale: 30, grow: 4 },
     },
     rock: {
       // dark dune rock, pale sand road: the road is traceable because the
       // rock is dark, not because anything lines it. The outcrops are the
       // ochre dirt wall — sandstone would be the sand road's own tone, and
       // a pale patch in dark rock would read as a pocket of road
-      heart: WALL_DUNE,
-      outcrop: { wall: WALL_DIRT, at: 0.62, scale: 22 },
+      base: WALL_DUNE,
+      // the ochre core: each mass's outline shrunk by twelve cells
+      // the ochre core: each mass's outline shrunk by eighteen cells, so
+      // it is there where a mass is thick and absent where it is a wall
+      core: { wall: WALL_DIRT, depth: 18, wobble: 3, scale: 40 },
       under: FLOOR_SAND,
     },
     props: { decor: DECOR.sandBoulder, per: 30 },
@@ -113,12 +131,11 @@ const STYLES = {
     seed: 0x3a1f,
     road: {
       base: FLOOR_STONE,
-      patch: { floor: FLOOR_SHALE, at: 0.6, scale: 15 },
+      patches: { floor: FLOOR_SHALE, count: 7, r: [26, 44], squash: 0.55 },
       shore: { floor: FLOOR_DARKSAND, depth: 2.5, scale: 7 },
     },
     rock: {
-      heart: WALL_DARK,
-      outcrop: { wall: WALL_SHALE, at: 0.66, scale: 22 },
+      base: WALL_DARK,
       // BROAD, AS QUAGMIRE'S IS. Its heart is the island at 0.58 of its
       // own outline, so the pale rim is some forty percent of every mass
       // — a coast, not a line round the water. The rock between the arms
@@ -178,15 +195,94 @@ const dress = (doc, st) => {
   // is, how far from water anything is
   const dFromRock = clearance(W, H, (i) => !rock(i));
   const dFromWater = clearance(W, H, (i) => !water(i));
+  const dInRock = clearance(W, H, rock);
 
   const nRim = makeNoise(rnd);
-  const nOut = makeNoise(rnd);
-  const nPatch = makeNoise(rnd);
   const nFoot = makeNoise(rnd);
-  const nFlat = makeNoise(rnd);
   const nShore = makeNoise(rnd);
 
-  const count = { coast: 0, heart: 0, outcrop: 0, base: 0, patch: 0, foot: 0, flat: 0, shore: 0 };
+  /**
+   * A CONTOUR: the cells of `ok` at least `depth` from anything that is
+   * not `ok`, the threshold wandering by `wobble` on a slow noise so the
+   * band is not a ruled offset of the edge — then OPENED by a small disc,
+   * which files the slivers off: a contour of a road edge inherits every
+   * one-cell notch the road has, and the opening rounds those away the
+   * way it rounds the hills (see authoring-maps.md).
+   */
+  const contour = (cfg, ok, dist) => {
+    const mask = new Uint8Array(N);
+    if (!cfg) return mask;
+    const nz = makeNoise(rnd);
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (ok(i) && dist[i] >= cfg.depth + (nz(x / cfg.scale, y / cfg.scale) - 0.5) * 2 * cfg.wobble) mask[i] = 1;
+      }
+    const off = discOffsets(3);
+    const fits = new Uint8Array(N);
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        let all = 1;
+        for (const [dx, dy] of off) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H || !mask[ny * W + nx]) { all = 0; break; }
+        }
+        fits[y * W + x] = all;
+      }
+    const out = new Uint8Array(N);
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        if (!fits[y * W + x]) continue;
+        for (const [dx, dy] of off) {
+          const nx = x + dx, ny = y + dy;
+          if (nx >= 0 && ny >= 0 && nx < W && ny < H) out[ny * W + nx] = 1;
+        }
+      }
+    if (!cfg.grow) return out;
+    // grown: the same shape, `grow` cells larger on every side, still on
+    // `ok` cells only
+    const grown = new Uint8Array(N);
+    const goff = discOffsets(cfg.grow);
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        if (!out[y * W + x]) continue;
+        for (const [dx, dy] of goff) {
+          const nx = x + dx, ny = y + dy;
+          if (nx >= 0 && ny >= 0 && nx < W && ny < H && ok(ny * W + nx)) grown[ny * W + nx] = 1;
+        }
+      }
+    return grown;
+  };
+  /**
+   * A FEW LARGE BLOBS: `count` of them, each an ellipse of `r` cells on
+   * its long axis and `squash` of that across, pointed somewhere at
+   * random and bent by two cosine lobes — Quagmire's island shape, at a
+   * size wider than the road. Centred on an `ok` cell and stamped onto
+   * `ok` cells only, so where a patch overruns the road it is clipped to
+   * the road's own edge and reads as a big shape lying across it.
+   */
+  const patches = (cfg, ok) => {
+    const mask = new Uint8Array(N);
+    if (!cfg) return mask;
+    for (let n = 0, tries = 0; n < cfg.count && tries < cfg.count * 80; tries++) {
+      const x = (rnd() * W) | 0, y = (rnd() * H) | 0;
+      if (!ok(y * W + x)) continue;
+      const rx = cfg.r[0] + rnd() * (cfg.r[1] - cfg.r[0]);
+      const ry = rx * (cfg.squash + rnd() * 0.25);
+      const b = blob(x + 0.5, y + 0.5, rx, ry, rnd() * 180, [
+        [0.06 + rnd() * 0.06, 3, rnd() * Math.PI * 2],
+        [0.04 + rnd() * 0.04, 2, rnd() * Math.PI * 2],
+      ]);
+      stampBlob(W, H, b, (j) => { if (ok(j)) mask[j] = 1; });
+      n++;
+    }
+    return mask;
+  };
+  const core = contour(st.rock.core, rock, dInRock);
+  const track = patches(st.road.patches, open);
+  const flats = contour(st.road.flat && { ...st.road.flat, depth: st.road.flat.clear }, open, dFromRock);
+
+  const count = { coast: 0, rockBase: 0, core: 0, base: 0, track: 0, foot: 0, flat: 0, shore: 0 };
 
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
@@ -197,12 +293,12 @@ const dress = (doc, st) => {
         if (r.coast && dFromWater[i] <= r.coast.depth + (nRim(x / r.coast.scale, y / r.coast.scale) - 0.5) * r.coast.wobble) {
           wall[i] = pair(r.coast.wall);
           count.coast++;
-        } else if (nOut(x / r.outcrop.scale, y / r.outcrop.scale) > r.outcrop.at) {
-          wall[i] = pair(r.outcrop.wall);
-          count.outcrop++;
+        } else if (core[i]) {
+          wall[i] = pair(r.core.wall);
+          count.core++;
         } else {
-          wall[i] = pair(r.heart);
-          count.heart++;
+          wall[i] = pair(r.base);
+          count.rockBase++;
         }
       } else if (open(i)) {
         const r = st.road;
@@ -215,12 +311,12 @@ const dress = (doc, st) => {
         } else if (r.foot && dFromRock[i] <= r.foot.depth + (nFoot(x / r.foot.scale, y / r.foot.scale) - 0.5) * 3) {
           floor[i] = variant(r.foot.floor);
           count.foot++;
-        } else if (r.flat && dFromRock[i] >= r.flat.clear && nFlat(x / r.flat.scale, y / r.flat.scale) > r.flat.at) {
+        } else if (flats[i]) {
           floor[i] = variant(r.flat.floor);
           count.flat++;
-        } else if (r.patch && nPatch(x / r.patch.scale, y / r.patch.scale) > r.patch.at) {
-          floor[i] = variant(r.patch.floor);
-          count.patch++;
+        } else if (track[i]) {
+          floor[i] = variant(r.patches.floor);
+          count.track++;
         } else {
           floor[i] = variant(r.base);
           count.base++;
@@ -288,10 +384,10 @@ const check = (doc, out) => {
   say(floor.length === doc.floor.length && wall.length === doc.wall.length, `layer sizes kept: ${floor.length}`);
   const c = out.count;
   const pct = (v) => ((100 * v) / N).toFixed(1);
-  console.log(`  -- rock: heart ${c.heart} (${pct(c.heart)}%)  outcrop ${c.outcrop} (${pct(c.outcrop)}%)  coast ${c.coast} (${pct(c.coast)}%)`);
-  console.log(`  -- road: base ${c.base}  patch ${c.patch}  foot ${c.foot}  flat ${c.flat}  shore ${c.shore}`);
+  console.log(`  -- rock: base ${c.rockBase} (${pct(c.rockBase)}%)  core ${c.core} (${pct(c.core)}%)  coast ${c.coast} (${pct(c.coast)}%)`);
+  console.log(`  -- road: base ${c.base}  track ${c.track}  foot ${c.foot}  flat ${c.flat}  shore ${c.shore}`);
   console.log(`  -- boulders: ${c.boulders} on ${c.edgeCells} edge cells`);
-  say(c.outcrop > 0 && c.heart > 0, "both rock families are on the map");
+  say(c.rockBase > 0 && (c.core > 0 || c.coast > 0), "both rock families are on the map");
   return fails;
 };
 

@@ -48,9 +48,12 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 - Paint comes from rules, not a brush: the map's script, or `scripts/maps/dress.mjs` for the hand-drawn ones. Re-running overwrites every floor, wall and prop.
 - One rock family. Nothing outlines a road; the rock either side of a road is the same rock.
 - Where there is water, a coast family, BROAD: Quagmire's rim is about 40% of every mass. It follows the sea, never the roads.
-- Outcrops of the second family in low-frequency noise patches.
+- Every shape is DERIVED FROM THE GEOMETRY, never placed at random and never a noise threshold. Quagmire's heart is the island's own outline shrunk.
+- The rock's second family is a CORE: each mass's outline shrunk by a set depth, so it shows only where the mass is thick.
+- The road's second floor is a FEW LARGE blobs, wider than the road and clipped to it, so each takes the road's own edges. Not a chain of small shapes down the road: that reads as worms.
+- A third floor only in the plazas: the cells furthest from any rock, taking the plaza's own shape.
 - The rock contrasts with the floor, not with a line: dark dune over pale sand, dark carbon over grey stone.
-- Floors: a base, a second in drifts, scree a cell deep at the rock's foot, a third only where the road is a plain, a shore band on water.
+- No dark floor along the rock's foot. Under the wall shadow it is a black line round every road at a distance.
 - Boulders along the road's edges. Never down the middle, never in a drop zone, never round the base.
 - No props while the terrain is being judged.
 

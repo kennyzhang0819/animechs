@@ -1,3 +1,4 @@
+import { BUILD } from "./version";
 import { atlasReady, buildAtlas } from "./atlas";
 import {
   loadOfficialMaps,
@@ -913,6 +914,110 @@ export class Game {
     }
   }
 
+  /**
+   * THE HAIRLINE DIAGNOSTIC. `?diag=1` on the sandbox door runs it: the
+   * next few frames are drawn at a handful of zooms, each frame is read
+   * back from the GPU before the browser composites it, and every column
+   * and row that is darker than both its neighbours across most of the
+   * frame — a seam between tiles, which is what a hairline is — is
+   * counted. The report lands in a <pre> over the page, with the GPU's
+   * name and the pixel ratio, so it can be screenshotted from a machine
+   * whose rendering cannot be seen from here. Dev tooling; not a feature.
+   */
+  private diagZooms: number[] = [];
+  private diagOut: string[] = [];
+  private diagZoomWas = 1;
+  private diagTlWas: [number, number] = [0, 0];
+
+  diagnose(zooms: number[] = [1, 2.5, 6]): void {
+    this.diagZoomWas = this.zoom;
+    this.diagTlWas = [this.tlx, this.tly];
+    this.diagOut = [
+      `build ${BUILD}  gpu ${this.renderer.gpuName()}`,
+      `dpr ${window.devicePixelRatio}  canvas ${this.glCanvas.width}x${this.glCanvas.height}  css ${this.glCanvas.clientWidth}x${this.glCanvas.clientHeight}  scale ${this.scale.toFixed(4)}`,
+    ];
+    this.diagZooms = zooms.slice();
+  }
+
+  private diagScan(): void {
+    const z = this.diagZooms.shift() ?? 1;
+    const w = this.glCanvas.width, h = Math.max(1, this.glCanvas.height - 160);
+    const d = this.renderer.readFrame(0, 0, w, h);
+    const L = (x: number, y: number): number => {
+      const i = ((h - 1 - y) * w + x) * 4;
+      return 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    };
+    // A HAIRLINE PIXEL is one darker than both of its neighbours across
+    // it by a clear margin — a dark line one pixel wide, of ANY length.
+    // Each one is also placed against the cell grid: the boundaries fall
+    // at `phase + k * pitch` device px, so a pixel within one px of one is
+    // ON a tile edge, and the share of hairline pixels that are is the
+    // whole question — a seam between tiles lives on the grid, and a
+    // driver's texture bleed does not care where the grid is
+    const pitch = CELL * z * this.scale;
+    const onEdge = (p: number, phase: number): boolean => {
+      const m = (((p - phase) % pitch) + pitch) % pitch;
+      return m <= 1 || pitch - m <= 1;
+    };
+    const phaseX = (((-this.tlx * z * this.scale) % pitch) + pitch) % pitch;
+    const phaseY = (((-this.tly * z * this.scale) % pitch) + pitch) % pitch;
+    const DARK = 20;
+    let v = 0, vEdge = 0, hz = 0, hEdge = 0;
+    // the longest vertical runs of hairline pixels, to say where they are
+    const runs: Array<{ x: number; y: number; len: number; lum: number }> = [];
+    for (let x = 1; x < w - 1; x++) {
+      let run = 0, runY = 0, runLum = 0;
+      const edge = onEdge(x, phaseX);
+      for (let y = 0; y < h; y++) {
+        const l = L(x, y);
+        const hair = l < Math.min(L(x - 1, y), L(x + 1, y)) - DARK;
+        if (hair) {
+          v++;
+          if (edge) vEdge++;
+          if (!run) { runY = y; runLum = 0; }
+          run++;
+          runLum += l;
+        }
+        if ((!hair || y === h - 1) && run) {
+          if (run >= 6) runs.push({ x, y: runY, len: run, lum: runLum / run });
+          run = 0;
+        }
+      }
+    }
+    for (let y = 1; y < h - 1; y++) {
+      const edge = onEdge(y, phaseY);
+      for (let x = 0; x < w; x++)
+        if (L(x, y) < Math.min(L(x, y - 1), L(x, y + 1)) - DARK) {
+          hz++;
+          if (edge) hEdge++;
+        }
+    }
+    runs.sort((a, b) => b.len - a.len);
+    const pct = (a: number, b: number): string => (b ? `${Math.round((100 * a) / b)}%` : "-");
+    const where = runs
+      .slice(0, 6)
+      .map((r) => {
+        const m = (((r.x - phaseX) % pitch) + pitch) % pitch;
+        return `x${r.x} y${r.y} len${r.len} lum${r.lum.toFixed(0)} edge${Math.min(m, pitch - m).toFixed(1)}px`;
+      })
+      .join("; ");
+    this.diagOut.push(
+      `zoom ${z}: ${pitch.toFixed(2)} px/cell — hairline px: vertical ${v} (${pct(vEdge, v)} on a cell edge), horizontal ${hz} (${pct(hEdge, hz)} on a cell edge)`,
+      `  longest vertical runs: ${where || "none"}`,
+    );
+    if (this.diagZooms.length) return;
+    this.zoom = this.diagZoomWas;
+    this.tlx = this.diagTlWas[0];
+    this.tly = this.diagTlWas[1];
+    const pre = document.createElement("pre");
+    pre.id = "diag";
+    pre.textContent = this.diagOut.join("\n");
+    pre.style.cssText =
+      "position:fixed;left:8px;top:80px;z-index:1000;margin:0;padding:8px;background:#000c;color:#fff;font:11px/1.3 monospace;white-space:pre;user-select:text;max-width:calc(100vw - 16px);overflow:auto";
+    document.body.appendChild(pre);
+    console.log(this.diagOut.join("\n"));
+  }
+
   /** the on-screen menu button — esc, for a screen with no keyboard */
   openMenu(): void {
     if (this.sim.lost() || this.won()) return;
@@ -1180,6 +1285,14 @@ export class Game {
     }
     const simMs = performance.now() - t0;
 
+    if (this.diagZooms.length) {
+      // each scan looks at the middle of the map, not wherever the camera
+      // happened to be — the spawn corner at a close zoom is mostly void
+      this.zoom = this.diagZooms[0];
+      const k = this.scale * this.zoom;
+      this.tlx = (this.worldW - this.glCanvas.width / k) / 2;
+      this.tly = (this.worldH - this.glCanvas.height / k) / 2;
+    }
     this.renderer.render(
       this.sim,
       this.zoom,
@@ -1187,6 +1300,7 @@ export class Game {
       -this.tly * this.zoom,
       this.scale,
     );
+    if (this.diagZooms.length) this.diagScan();
     this.drawOverlay();
 
     this.fpsEma += (1 / Math.max(dt, 1e-4) - this.fpsEma) * 0.05;

@@ -346,9 +346,11 @@ export function paintWall(
   // ONE ROCK. The first painting carries a single small pebble in the
   // light tone, sat on the mid band and clear of the rim so any cell
   // sits flush against any other; the second painting is the bands
-  // alone. A 2×2 block gets one pebble too, not one a tile
+  // alone. A 2×2 block gets one pebble too, not one a tile. Four logical
+  // px off the rim: the atlas crops that ring away (WALL_INSET), and a
+  // pebble that reached it would be cut at the seam
   if (variant % WALL_VARIANTS === 0) {
-    const RIM = 2;
+    const RIM = 4;
     const r = 1.8 + rng() * 0.6;
     let cx = N / 2, cy = N / 2;
     for (let tries = 0; tries < 12; tries++) {
@@ -476,17 +478,14 @@ export function paintProp(kind: PropKind): Uint8ClampedArray<ArrayBuffer> {
 
   switch (st.shape) {
     case "boulder": {
-      // two or three lumps, the big one a little off centre and the
-      // others tucked against it, so the outline is a lumpy oval and not
-      // a circle
-      const R = N * 0.34;
+      // ONE ROUND STONE. It was two or three lumps once, for a lumpy
+      // outline, and at the size a boulder is drawn the lumps read as a
+      // ragged edge rather than as a rock. A single ellipse, a shade
+      // wider than tall and set a little off centre, is round at every
+      // zoom; the diagonal shading below is what makes it a stone
+      const R = N * 0.36;
       const a = rng() * Math.PI * 2;
-      lump(c + Math.cos(a) * N * 0.06, c + Math.sin(a) * N * 0.06, R, 0.85 + rng() * 0.15);
-      const n = 2 + (rng() < 0.5 ? 1 : 0);
-      for (let i = 0; i < n; i++) {
-        const b = a + Math.PI * (0.6 + i * 0.7) + rng() * 0.4;
-        lump(c + Math.cos(b) * R * 0.7, c + Math.sin(b) * R * 0.7, R * (0.5 + rng() * 0.2));
-      }
+      lump(c + Math.cos(a) * N * 0.04, c + Math.sin(a) * N * 0.04, R, 0.86 + rng() * 0.1);
       break;
     }
     case "tree": {

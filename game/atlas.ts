@@ -245,8 +245,31 @@ export const SHALLOW_FOR_DEEP: Readonly<Record<number, number>> = {
 // sub-cells in image space. A tile bordered by a higher-priority floor gets
 // that floor's sub-cell (col 1-dx, row 1-dy) overlaid, so the neighbor's
 // texture fades across the tile seam exactly like Floor.drawEdges
+//
+// THE FADES ARE INSET ON THE BLOCK'S OUTER EDGES, and this is the hairline
+// round every tile that the flat floors made visible. A fade sub-cell is
+// drawn over a whole tile, so its outer edge lands on the tile's FAR
+// border, and with no inset the sampler there reads whatever the atlas
+// packs beside the 192px block. Mindustry's own blocks had empty space
+// round them, and empty is transparent, which under premultiplied alpha
+// contributes nothing; the second band packs its fades edge to edge with
+// each other and, for salt, with the deep spore water, whose dark purple
+// then leaked into a one-pixel line down the side of every sand tile that
+// touched a flat. The same inset the floors have (FLOOR_INSET) on the
+// outer sides only: those crop the transparent tail of the fade, which is
+// nothing lost, while the inner seams between sub-cells and the side that
+// meets the centre stay as they are, so the fade still reaches the shared
+// border at full strength.
+const EDGE_INSET = FLOOR_INSET;
 const edgeBlock = (bx: number, by: number): ReadonlyArray<readonly UVRect[]> =>
-  [0, 1, 2].map((ry) => [0, 1, 2].map((rx) => uv(bx + rx * 64, by + ry * 64, 64, 64)));
+  [0, 1, 2].map((ry) =>
+    [0, 1, 2].map((rx): UVRect => [
+      (bx + rx * 64 + (rx === 0 ? EDGE_INSET : 0)) / ATLAS_W,
+      (by + ry * 64 + (ry === 0 ? EDGE_INSET : 0)) / ATLAS_H,
+      (bx + rx * 64 + 64 - (rx === 2 ? EDGE_INSET : 0)) / ATLAS_W,
+      (by + ry * 64 + 64 - (ry === 2 ? EDGE_INSET : 0)) / ATLAS_H,
+    ]),
+  );
 export const UV_FLOOR_EDGES: ReadonlyArray<ReadonlyArray<readonly UVRect[]>> = [
   edgeBlock(16, 768), // grass
   edgeBlock(272, 768), // stone (baked but never overlays — lowest priority)
@@ -256,8 +279,11 @@ export const UV_FLOOR_EDGES: ReadonlyArray<ReadonlyArray<readonly UVRect[]>> = [
   // stands in to keep the group indices aligned
   edgeBlock(272, 768),
   // darksand: no contiguous 192px block is left in the atlas, so its nine
-  // sub-cells ride the y=704 gutter row, row-major from x=416
-  [0, 1, 2].map((ry) => [0, 1, 2].map((rx) => uv(416 + (ry * 3 + rx) * 64, 704, 64, 64))),
+  // sub-cells ride the y=704 gutter row, row-major from x=416. Each one
+  // sits beside a DIFFERENT sub-cell's opaque inner side there, so these
+  // are inset on all four sides — the crop on the inner side takes a few
+  // px of full-strength fade, which the stretch puts back at the border
+  [0, 1, 2].map((ry) => [0, 1, 2].map((rx) => uv(416 + (ry * 3 + rx) * 64, 704, 64, 64, EDGE_INSET))),
   // the water groups never overlay anything — they sit at the BOTTOM of the
   // blend order (GROUP_PRI in renderer.ts), which is what makes the land
   // fade into the shoreline rather than the other way round. No edge art is
@@ -278,40 +304,53 @@ export const UV_FLOOR_EDGES: ReadonlyArray<ReadonlyArray<readonly UVRect[]>> = [
   edgeBlock(272, 768), // shallow spore water (never drawn)
   edgeBlock(272, 768), // deep spore water (never drawn)
 ];
+/**
+ * px cropped from every side of a 64px wall cell — the floors' rule
+ * (FLOOR_INSET), for the same reason. The sheet is sampled through
+ * mipmaps, and a wall drawn small reads texels that straddle the cell's
+ * border and carry whatever is packed beside it: another family's tone,
+ * or the empty (premultiplied black) space the second band's rows leave
+ * under and beside their rock. Two px kept the sample inside the cell at
+ * mip 1 and no further, which showed as a dark hairline round every tile
+ * the moment the map was zoomed out. Eight keeps it inside down to the
+ * 8px mip on a 64-aligned cell. The painted walls keep their one pebble
+ * four logical px off the rim (tiles.ts), so the crop takes plain band.
+ */
+const WALL_INSET = 8;
 // 0-1 stone-wall, 2-3 dirt-wall, 5-6 carbon-wall (the darker rock).
 // Indices 4 and 7 are the two SENTINELS — WALL_PINE and WALL_DEEP — whose
 // slots here are never-drawn placeholders, since everything tests those
 // values explicitly and draws the cell's floor (plus, for a pine, its prop)
 // instead of a wall sprite
 export const UV_WALLS: readonly UVRect[] = [
-  uv(192, 0, 64, 64, 2),
-  uv(256, 0, 64, 64, 2),
-  uv(448, 64, 64, 64, 2),
-  uv(0, 128, 64, 64, 2),
-  uv(192, 0, 64, 64, 2), // WALL_PINE placeholder
-  uv(320, 0, 64, 64, 2),
-  uv(384, 0, 64, 64, 2),
-  uv(192, 0, 64, 64, 2), // WALL_DEEP placeholder
+  uv(192, 0, 64, 64, WALL_INSET),
+  uv(256, 0, 64, 64, WALL_INSET),
+  uv(448, 64, 64, 64, WALL_INSET),
+  uv(0, 128, 64, 64, WALL_INSET),
+  uv(192, 0, 64, 64, WALL_INSET), // WALL_PINE placeholder
+  uv(320, 0, 64, 64, WALL_INSET),
+  uv(384, 0, 64, 64, WALL_INSET),
+  uv(192, 0, 64, 64, WALL_INSET), // WALL_DEEP placeholder
   // ---- the second environment band's rock, families 3-10 ----
   // Past the two sentinels, so nothing here needs a special case: every
   // one of these is ordinary buildable rock (isBuildableWall names only
   // the sentinels, and both of them are behind us)
-  e2(384, 64, 64, 64, 2), // spore wall
-  e2(448, 64, 64, 64, 2),
-  e2(512, 64, 64, 64, 2), // shale wall
-  e2(576, 64, 64, 64, 2),
-  e2(640, 64, 64, 64, 2), // snow wall
-  e2(704, 64, 64, 64, 2),
-  e2(768, 64, 64, 64, 2), // ice wall
-  e2(832, 64, 64, 64, 2),
-  e2(896, 64, 64, 64, 2), // salt wall
-  e2(960, 64, 64, 64, 2),
-  e2(0, 128, 64, 64, 2), // sand wall
-  e2(64, 128, 64, 64, 2),
-  e2(128, 128, 64, 64, 2), // dune wall
-  e2(192, 128, 64, 64, 2),
-  e2(256, 128, 64, 64, 2), // dacite wall
-  e2(320, 128, 64, 64, 2),
+  e2(384, 64, 64, 64, WALL_INSET), // spore wall
+  e2(448, 64, 64, 64, WALL_INSET),
+  e2(512, 64, 64, 64, WALL_INSET), // shale wall
+  e2(576, 64, 64, 64, WALL_INSET),
+  e2(640, 64, 64, 64, WALL_INSET), // snow wall
+  e2(704, 64, 64, 64, WALL_INSET),
+  e2(768, 64, 64, 64, WALL_INSET), // ice wall
+  e2(832, 64, 64, 64, WALL_INSET),
+  e2(896, 64, 64, 64, WALL_INSET), // salt wall
+  e2(960, 64, 64, 64, WALL_INSET),
+  e2(0, 128, 64, 64, WALL_INSET), // sand wall
+  e2(64, 128, 64, 64, WALL_INSET),
+  e2(128, 128, 64, 64, WALL_INSET), // dune wall
+  e2(192, 128, 64, 64, WALL_INSET),
+  e2(256, 128, 64, 64, WALL_INSET), // dacite wall
+  e2(320, 128, 64, 64, WALL_INSET),
 ];
 // which wall family each UV_WALLS index belongs to (0 stone, 1 dirt,
 // 2 dark rock, then the second band's eight; -1 the pine and deep-water
@@ -332,9 +371,23 @@ export const WALL_DUNE = 20;
 export const WALL_DACITE = 22;
 // Mindustry's <wall>-large art: one 2x2-tile sprite per family, split into
 // per-tile quadrant UVs [row][col] in screen space (y down). Families
-// without baked large art (dirt) draw per-tile variants everywhere
+// without baked large art (dirt) draw per-tile variants everywhere.
+//
+// THE INSET IS ON THE BLOCK'S OUTER EDGES ONLY. The four quadrants are one
+// continuous painting, so a texel straddling the seam between two of them
+// averages art that belongs on both sides — that is what a seamless block
+// looks like through a mipmap. Insetting the inner edges as well would
+// skip a strip of the painting at every seam and break the bands that
+// run corner to corner across the whole block.
 const largeQuads = (x: number, y: number): ReadonlyArray<readonly UVRect[]> =>
-  [0, 1].map((row) => [0, 1].map((col) => uv(x + col * 64, y + row * 64, 64, 64, 2)));
+  [0, 1].map((row) =>
+    [0, 1].map((col): UVRect => [
+      (x + col * 64 + (col === 0 ? WALL_INSET : 0)) / ATLAS_W,
+      (y + row * 64 + (row === 0 ? WALL_INSET : 0)) / ATLAS_H,
+      (x + col * 64 + 64 - (col === 1 ? WALL_INSET : 0)) / ATLAS_W,
+      (y + row * 64 + 64 - (row === 1 ? WALL_INSET : 0)) / ATLAS_H,
+    ]),
+  );
 export const UV_WALL_LARGE: ReadonlyArray<ReadonlyArray<readonly UVRect[]> | null> = [
   largeQuads(736, 768), // stone-wall-large
   null, // dirt: fringe slopes, aligned 2x2 blocks are rare — not baked
@@ -776,7 +829,18 @@ export const UV_CRAWLER_BODY_SIL = uv(768, 288, 64, 64);
 // time for shrapnel rays (Drawf.tri)
 export const UV_TRI = uv(320, 384, 64, 64, 2);
 // row 3: 96px prop cells — overhanging 48px sources at 2x
-export const UV_PINE = uv(0, 288, 96, 96);
+/**
+ * px cropped from every side of a prop cell. A prop is a shape on a
+ * transparent ground, and its cell is cut to its art with nothing round
+ * it, so the quad's edge sampled the atlas cell packed NEXT to it — the
+ * large wall blocks above the second band's boulders, the turret sprites
+ * under the first row's — and half a texel of that arrived along one side
+ * of every prop as a faint edge. Four px is enough for the mips a prop is
+ * drawn at, and every painted prop keeps its shape well clear of the rim
+ * (the tightest, a pine's canopy, stops six px short of a 96px cell).
+ */
+const PROP_INSET = 4;
+export const UV_PINE = uv(0, 288, 96, 96, PROP_INSET);
 /**
  * THE FOREST KINDS, indexed by a pine prop's `kind`.
  *
@@ -788,8 +852,8 @@ export const UV_PINE = uv(0, 288, 96, 96);
  */
 export const UV_PINES: readonly UVRect[] = [
   UV_PINE,
-  e2(384, 128, 96, 96), // spore pine
-  e2(480, 128, 96, 96), // snow pine
+  e2(384, 128, 96, 96, PROP_INSET), // spore pine
+  e2(480, 128, 96, 96, PROP_INSET), // snow pine
 ];
 /**
  * Ground clutter, indexed by a decor prop's `kind`. Each cell is its
@@ -799,20 +863,20 @@ export const UV_PINES: readonly UVRect[] = [
  * half of that: how many TILES across each one is at native scale.
  */
 export const UV_DECOR: readonly UVRect[] = [
-  uv(96, 288, 96, 96), // boulder1
-  uv(192, 288, 96, 96), // boulder2
-  uv(288, 288, 64, 64), // shrubs1
-  e2(576, 128, 80, 80), // spore cluster 1
-  e2(656, 128, 80, 80), // spore cluster 2
-  e2(736, 128, 80, 80), // spore cluster 3
-  e2(816, 128, 64, 64), // purple bush
-  e2(880, 128, 64, 64), // shale boulder 1
-  e2(944, 128, 64, 64), // shale boulder 2
-  e2(0, 352, 96, 96), // snow boulder 1
-  e2(96, 352, 96, 96), // snow boulder 2
-  e2(192, 352, 64, 64), // shrubs2
-  e2(256, 352, 64, 64), // sand boulder 1
-  e2(320, 352, 64, 64), // sand boulder 2
+  uv(96, 288, 96, 96, PROP_INSET), // boulder1
+  uv(192, 288, 96, 96, PROP_INSET), // boulder2
+  uv(288, 288, 64, 64, PROP_INSET), // shrubs1
+  e2(576, 128, 80, 80, PROP_INSET), // spore cluster 1
+  e2(656, 128, 80, 80, PROP_INSET), // spore cluster 2
+  e2(736, 128, 80, 80, PROP_INSET), // spore cluster 3
+  e2(816, 128, 64, 64, PROP_INSET), // purple bush
+  e2(880, 128, 64, 64, PROP_INSET), // shale boulder 1
+  e2(944, 128, 64, 64, PROP_INSET), // shale boulder 2
+  e2(0, 352, 96, 96, PROP_INSET), // snow boulder 1
+  e2(96, 352, 96, 96, PROP_INSET), // snow boulder 2
+  e2(192, 352, 64, 64, PROP_INSET), // shrubs2
+  e2(256, 352, 64, 64, PROP_INSET), // sand boulder 1
+  e2(320, 352, 64, 64, PROP_INSET), // sand boulder 2
 ];
 /**
  * How wide each decor sprite is IN TILES at Mindustry's own scale — a

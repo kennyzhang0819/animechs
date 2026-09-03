@@ -936,6 +936,8 @@ export default function MechSwarm() {
    * It resets whenever the overlay closes, with `pauseSettings`.
    */
   const [sandboxTaps, setSandboxTaps] = useState(0);
+  /** the sandbox door asked for the hairline diagnostic — see the handoff */
+  const diagRef = useRef(false);
   const lastSandboxTap = useRef(0);
 
   useEffect(() => {
@@ -1045,6 +1047,9 @@ export default function MechSwarm() {
     const w = worldById(q.get("world") ?? "") ?? WORLD;
     const t = Math.max(0, Math.min(RUNG_COUNT - 1, Math.floor(Number(q.get("tier")) || 0)));
     const mutation = cleanMutations((q.get("mut") ?? "").split(",").filter(Boolean));
+    // `&diag=1` asks for the hairline diagnostic (Game.diagnose) once the
+    // run is up. Read here, because the next line takes the query away
+    diagRef.current = q.get("diag") === "1";
     window.history.replaceState(null, "", window.location.pathname);
     setWorldId(w.id);
     setTier(t);
@@ -1091,6 +1096,9 @@ export default function MechSwarm() {
         game = g;
         gameRef.current = g;
         setHud(g.ui());
+        // the hairline diagnostic (Game.diagnose), a few frames in, once
+        // the atlas is up and the first frames have drawn
+        if (diagRef.current) timers.push(setTimeout(() => g.diagnose(), 2500));
         if (process.env.NODE_ENV !== "production") {
           const w = window as unknown as Record<string, unknown>;
           w.__mechswarm = g;

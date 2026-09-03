@@ -2,15 +2,26 @@
 
 import { useEffect, useRef } from "react";
 import {
-  floorCanvas,
-  FLOOR_VARIANTS,
-  wallCanvas,
-  WALL_VARIANTS,
-  type FloorKind,
-  type WallKind,
-  propCanvas,
-  type PropKind,
-} from "@/game/tiles";
+  buildAtlas,
+  FLOOR_BASALT,
+  FLOOR_ICE,
+  FLOOR_MOSS,
+  FLOOR_MUD,
+  FLOOR_SALT,
+  FLOOR_SHALE,
+  FLOOR_SNOW,
+  FLOOR_SPORE_MOSS,
+  WALL_DACITE,
+  WALL_DUNE,
+  WALL_ICE,
+  WALL_SHALE,
+  WALL_SNOW,
+  WALL_SPORE,
+} from "@/game/atlas";
+import { CELL, COLS, NCELLS } from "@/game/constants";
+import { dressGrid, type DressStyle } from "@/game/dress";
+import { Renderer, WALL_SHADOW_A } from "@/game/renderer";
+import type { Terrain } from "@/game/terrain";
 
 /**
  * THE MENU'S GROUND — the game, seen from above, before anyone has built
@@ -63,76 +74,68 @@ const ENGINE = "#ffbb64";
 /** the swarm's own red, painted onto every mech's cell */
 const CELL_TINT = "#e55454";
 
-interface Biome {
-  /** the ground: one of the game's own painted floors (game/tiles.ts) */
-  floor: FloorKind;
-  /** the rock: one of the painted wall families */
-  wall: WallKind;
-  /** a tree that grows on this ground, planted at the foot of the rock */
-  prop?: PropKind;
-  /** the boulders scattered on it */
-  boulder?: readonly PropKind[];
-}
+// the first band's floors and walls, by the atlas's own numbering (the
+// second band's are exported from game/atlas.ts by name)
+const FLOOR_GRASS = 0, FLOOR_STONE = 3, FLOOR_DIRT = 6, FLOOR_SAND = 9, FLOOR_DARKSAND = 12;
+const WALL_STONE = 0, WALL_DIRT = 2, WALL_DARK = 5;
+// decor kinds (UV_DECOR): boulders, spore clusters, shale, snow and sand boulders
+const BOULDERS = [0, 1], SPORES = [3, 4, 5], SHALE_BOULDERS = [7, 8], SNOW_BOULDERS = [9, 10], SAND_BOULDERS = [12, 13];
 
-const BIOMES: readonly Biome[] = [
-  {
-    floor: "sand",
-    wall: "sand",
-    boulder: ["sandBoulder0", "sandBoulder1"],
-  },
-  {
-    floor: "shale",
-    wall: "shale",
-    boulder: ["shaleBoulder0", "shaleBoulder1"],
-  },
-  {
-    floor: "ice",
-    wall: "ice",
-    boulder: ["snowBoulder0", "snowBoulder1"],
-  },
-  {
-    floor: "moss",
-    wall: "spore",
-    prop: "sporePine",
-  },
-  {
-    floor: "dirt",
-    wall: "dirt",
-    boulder: ["boulder0", "boulder1"],
-  },
-  {
-    floor: "darksand",
-    wall: "dune",
-    boulder: ["basaltBoulder0", "basaltBoulder1"],
-  },
-  {
-    floor: "snow",
-    wall: "snow",
-    prop: "snowPine",
-    boulder: ["snowBoulder0", "snowBoulder1"],
-  },
-  {
-    floor: "grass",
-    wall: "dirt",
-    prop: "pine",
-    boulder: ["boulder0", "boulder1"],
-  },
+/**
+ * THE BIOMES, each a dressing (game/dress.ts) — the same rules the
+ * campaign maps are painted with, in the field's own indices: one rock
+ * with a core of a second where it is thick, a base floor with a few
+ * large patches of a second, and boulders along the road's edges. The
+ * numbers are the campaign's scaled to a title screen sixty cells across.
+ */
+const biome = (
+  road: DressStyle["road"],
+  rock: DressStyle["rock"],
+  kinds: readonly number[],
+): DressStyle => ({ road, rock, props: { kinds, per: 30 } });
+const PATCH = { count: 4, r: [10, 18] as const, squash: 0.55 };
+const BIOMES: readonly DressStyle[] = [
+  biome(
+    { base: FLOOR_SAND, patches: { floor: FLOOR_DIRT, ...PATCH }, flat: { floor: FLOOR_SALT, clear: 5.5, grow: 2 } },
+    { base: WALL_DUNE, core: { wall: WALL_DIRT, depth: 8 } },
+    SAND_BOULDERS,
+  ),
+  biome(
+    { base: FLOOR_SHALE, patches: { floor: FLOOR_STONE, ...PATCH } },
+    { base: WALL_SHALE, core: { wall: WALL_DARK, depth: 8 } },
+    SHALE_BOULDERS,
+  ),
+  biome(
+    { base: FLOOR_ICE, patches: { floor: FLOOR_SNOW, ...PATCH } },
+    { base: WALL_ICE, core: { wall: WALL_SNOW, depth: 8 } },
+    SNOW_BOULDERS,
+  ),
+  biome(
+    { base: FLOOR_MOSS, patches: { floor: FLOOR_SPORE_MOSS, ...PATCH }, flat: { floor: FLOOR_MUD, clear: 5.5, grow: 2 } },
+    { base: WALL_DACITE, core: { wall: WALL_SPORE, depth: 8 } },
+    SPORES,
+  ),
+  biome(
+    { base: FLOOR_DIRT, patches: { floor: FLOOR_STONE, ...PATCH } },
+    { base: WALL_DIRT, core: { wall: WALL_STONE, depth: 8 } },
+    BOULDERS,
+  ),
+  biome(
+    { base: FLOOR_DARKSAND, patches: { floor: FLOOR_BASALT, ...PATCH } },
+    { base: WALL_DUNE, core: { wall: WALL_DARK, depth: 8 } },
+    BOULDERS,
+  ),
+  biome(
+    { base: FLOOR_SNOW, patches: { floor: FLOOR_ICE, ...PATCH } },
+    { base: WALL_SNOW, core: { wall: WALL_ICE, depth: 8 } },
+    SNOW_BOULDERS,
+  ),
+  biome(
+    { base: FLOOR_GRASS, patches: { floor: FLOOR_DIRT, ...PATCH } },
+    { base: WALL_DIRT, core: { wall: WALL_STONE, depth: 8 } },
+    BOULDERS,
+  ),
 ];
-
-/** a second rock, laid over the first in patches */
-const SECOND: readonly Biome[] = [
-  {
-    floor: "basalt",
-    wall: "dune",
-  },
-  {
-    floor: "stone",
-    wall: "stone",
-  },
-];
-
-/** the heat gradient, coolest first — some worlds run hot */
-const HEAT: readonly FloorKind[] = ["basalt", "hotrock", "hotrock", "magmarock", "magmarock"];
 
 /**
  * A mech kind, with the numbers the field draws it by: gun mount offsets
@@ -189,8 +192,6 @@ function makeNoise(rng: () => number): (x: number, y: number) => number {
     val((x + ox) * 4.31, (y + oy) * 4.31) * 0.17;
 }
 
-const pick = <T,>(rng: () => number, list: readonly T[]): T =>
-  list[Math.min(list.length - 1, Math.floor(rng() * list.length))];
 
 /** an image, or null if it is missing — a missing tile is a gap, never a crash */
 const loadImage = (src: string): Promise<HTMLImageElement | null> =>
@@ -279,6 +280,12 @@ interface Flyer {
   speed: number;
 }
 
+/** the field's renderer on a canvas of its own, shared by every scene */
+interface Gpu {
+  renderer: Renderer;
+  canvas: HTMLCanvasElement;
+}
+
 interface World {
   /** the rasterized ground, in device px */
   ground: HTMLCanvasElement;
@@ -289,6 +296,8 @@ interface World {
   /** the lane's centreline (css px) and half-width (tiles) at any x */
   laneY: (x: number) => number;
   laneHalf: (x: number) => number;
+  /** how lit the ground is at a point (css px), 0..1 — the hill's shadow */
+  litAt: (x: number, y: number) => number;
   /** +1 walks left to right, -1 the other way */
   dir: 1 | -1;
   mechs: Mech[];
@@ -308,6 +317,7 @@ async function buildWorld(
   dpr: number,
   seed: number,
   biomeIndex: number,
+  gpu: Gpu,
 ): Promise<World> {
   const rng = mulberry32(seed);
   // the tile in css px: about sixty across a desktop, held to a whole
@@ -316,14 +326,10 @@ async function buildWorld(
   const cols = Math.ceil(vw / tile) + MARGIN_TILES * 2;
   const rows = Math.ceil(vh / tile) + MARGIN_TILES * 2;
 
-  const biome = BIOMES[((biomeIndex % BIOMES.length) + BIOMES.length) % BIOMES.length];
-  const second = pick(rng, SECOND);
-  const heat = rng() < 0.3;
+  const style = BIOMES[((biomeIndex % BIOMES.length) + BIOMES.length) % BIOMES.length];
   const dir: 1 | -1 = rng() < 0.5 ? 1 : -1;
 
   const rockNoise = makeNoise(rng);
-  const secondNoise = makeNoise(rng);
-  const heatNoise = makeNoise(rng);
   const pocketNoise = makeNoise(rng);
 
   /**
@@ -340,8 +346,7 @@ async function buildWorld(
     centreRow + a1 * Math.sin((cx / l1) * Math.PI * 2 + p1) + a2 * Math.sin((cx / l2) * Math.PI * 2 + p2);
   const laneHalfTiles = (cx: number): number => wBase + wSwing * Math.sin((cx / l3) * Math.PI * 2 + p3);
 
-  // the props are painted, not fetched (game/tiles.ts); the units are
-  // sprites, fetched once and together
+  // the units are sprites, fetched once and together
   const unitNames = MECHS.flatMap((m) => [
     m.name,
     `${m.name}-base`,
@@ -353,153 +358,63 @@ async function buildWorld(
     Promise.all(unitNames.map((n) => loadImage(`${UNITS}${n}.png`))),
     loadImage(`${UNITS}flare.png`),
   ]);
-  const props = new Map<PropKind, HTMLCanvasElement>();
   const units = new Map<string, HTMLImageElement>();
   unitNames.forEach((n, i) => {
     const img = unitImgs[i];
     if (img) units.set(n, img);
   });
-  const sprite = (n: PropKind): HTMLCanvasElement => {
-    let c = props.get(n);
-    if (!c) {
-      c = propCanvas(n);
-      props.set(n, c);
-    }
-    return c;
-  };
-  // the floors are painted, not fetched — one canvas per kind and variant
-  const painted = new Map<string, HTMLCanvasElement>();
-  const floorTile = (kind: FloorKind, v: number): HTMLCanvasElement => {
-    const key = `f${kind}${v}`;
-    let c = painted.get(key);
-    if (!c) {
-      c = floorCanvas(kind, v);
-      painted.set(key, c);
-    }
-    return c;
-  };
-  const wallTile = (kind: WallKind, v: number, span: number): HTMLCanvasElement => {
-    const key = `w${kind}${v}x${span}`;
-    let c = painted.get(key);
-    if (!c) {
-      c = wallCanvas(kind, v, span);
-      painted.set(key, c);
-    }
-    return c;
-  };
 
-  // ---- the ground ----
-  const isWall = new Uint8Array(cols * rows);
-  const floorOf = new Array<FloorKind>(cols * rows);
-  const floorVar = new Uint8Array(cols * rows);
-  const wallOf = new Array<WallKind>(cols * rows);
-  const wallVar = new Uint8Array(cols * rows);
+  // ---- the ground: a terrain, dressed and drawn by the field's renderer ----
+  // The lane is open; the rest is rock with pockets of floor in it — the
+  // branch lanes and dead ends the flow field would route around. The
+  // lane's edge is roughened by noise so it is a valley and not a stripe
+  const blocked = new Uint8Array(cols * rows);
   for (let y = 0; y < rows; y++)
     for (let x = 0; x < cols; x++) {
-      const i = y * cols + x;
-      let b = biome;
-      if (secondNoise(x / 25, y / 25) > 0.62) b = second;
-      floorOf[i] = b.floor;
-      floorVar[i] = Math.floor(rng() * FLOOR_VARIANTS);
-      wallOf[i] = b.wall;
-      wallVar[i] = Math.floor(rng() * WALL_VARIANTS);
-      if (heat) {
-        const h = heatNoise(x / 45, y / 45);
-        if (h > 0.6) {
-          const k = Math.min(HEAT.length - 1, Math.floor(((h - 0.6) / 0.22) * HEAT.length));
-          floorOf[i] = HEAT[k];
-        }
-      }
-      // the lane is open; the rest is rock with pockets of floor in it —
-      // the branch lanes and dead ends the flow field would route around.
-      // The lane's edge is roughened by noise so it is a valley and not a
-      // stripe
       const off = Math.abs(y + 0.5 - laneRow(x + 0.5));
       const half = laneHalfTiles(x + 0.5) + (rockNoise(x / 6, y / 6) - 0.5) * 3;
       const inLane = off < half;
       const pocket = pocketNoise(x / 11, y / 11) > 0.6;
-      isWall[i] = inLane || pocket ? 0 : 1;
+      blocked[y * cols + x] = inLane || pocket ? 0 : 1;
     }
-  const wallAt = (x: number, y: number): boolean =>
-    x >= 0 && y >= 0 && x < cols && y < rows && isWall[y * cols + x] === 1;
-
-  // ---- rasterize ----
+  // dressed by the campaign's rules (game/dress.ts), then lifted onto the
+  // field's grid: the scene sits in its top-left corner, and the renderer
+  // draws a map at its own size (Terrain.rows/cols), not the grid's
+  const grid = { w: cols, h: rows, blocked, floor: new Uint8Array(cols * rows), wall: new Uint8Array(cols * rows) };
+  const decor = dressGrid(grid, style, rng);
+  const lift = (src: Uint8Array, pad: number): Uint8Array => {
+    const out = new Uint8Array(NCELLS).fill(pad);
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) out[y * COLS + x] = src[y * cols + x];
+    return out;
+  };
+  const terrain: Terrain = {
+    blocked: lift(blocked, 1),
+    floor: lift(grid.floor, 0),
+    wall: lift(grid.wall, 0),
+    spawns: [],
+    spawn: new Uint8Array(NCELLS),
+    goal: new Uint8Array(NCELLS),
+    pines: [],
+    decor,
+    valleyY: new Float32Array(COLS),
+    base: { x: 0, y: 0, size: 5 },
+    rows,
+    cols,
+  };
+  // THE FIELD'S OWN RENDERER draws it — floors with their edge fades, the
+  // hill shadow with its reach, the rock in its 2x2 blocks, the boulders —
+  // once, into the GL canvas, and the frame is copied out into the ground
+  // image the scene scrolls. No drop zones, no exits, no base: it is a
+  // place, not a level
+  const gw = Math.round(cols * tile * dpr), gh = Math.round(rows * tile * dpr);
+  gpu.canvas.width = gw;
+  gpu.canvas.height = gh;
+  gpu.renderer.rebuildTerrain({ terrain }, { wall: true, props: true, spawn: false, goal: false, base: false });
+  gpu.renderer.renderTerrain(1, 0, 0, gw / (cols * CELL));
   const ground = document.createElement("canvas");
-  ground.width = Math.round(cols * tile * dpr);
-  ground.height = Math.round(rows * tile * dpr);
-  const g = ground.getContext("2d")!;
-  g.imageSmoothingEnabled = false;
-  g.scale(dpr, dpr);
-
-  for (let y = 0; y < rows; y++)
-    for (let x = 0; x < cols; x++) {
-      const i = y * cols + x;
-      g.drawImage(floorTile(floorOf[i], floorVar[i]), x * tile, y * tile, tile, tile);
-    }
-
-  // THE SHADOW under the rock: one path of every wall cell, filled once
-  // through a blur, which is where the soft dark rim along the lane's
-  // edge comes from
-  g.save();
-  g.beginPath();
-  for (let y = 0; y < rows; y++)
-    for (let x = 0; x < cols; x++)
-      if (isWall[y * cols + x]) g.rect(x * tile, y * tile, tile, tile);
-  g.fillStyle = "rgba(0,0,0,0.6)";
-  g.filter = `blur(${Math.max(2, tile / 5)}px)`;
-  g.translate(tile * 0.1, tile * 0.15);
-  g.fill();
-  g.restore();
-
-  // THE ROCK. A 2×2 cluster aligned to the even grid takes one block
-  // twice the size — the same rule the field's renderer uses
-  // (UV_WALL_LARGE) — and that is what makes an outcrop read as a mass
-  // rather than as bricks
-  const covered = new Uint8Array(cols * rows);
-  for (let y = 0; y < rows; y++)
-    for (let x = 0; x < cols; x++) {
-      const i = y * cols + x;
-      if (!isWall[i] || covered[i]) continue;
-      const big =
-        x % 2 === 0 &&
-        y % 2 === 0 &&
-        wallAt(x + 1, y) &&
-        wallAt(x, y + 1) &&
-        wallAt(x + 1, y + 1) &&
-        wallOf[i + 1] === wallOf[i] &&
-        wallOf[i + cols] === wallOf[i] &&
-        wallOf[i + cols + 1] === wallOf[i];
-      if (big) {
-        g.drawImage(wallTile(wallOf[i], 0, 2), x * tile, y * tile, tile * 2, tile * 2);
-        covered[i] = covered[i + 1] = covered[i + cols] = covered[i + cols + 1] = 1;
-      } else {
-        g.drawImage(wallTile(wallOf[i], wallVar[i], 1), x * tile, y * tile, tile, tile);
-        covered[i] = 1;
-      }
-    }
-
-  // THE PROPS: trees at the foot of the rock and boulders on open ground —
-  // but never on the lane itself, which the column has to be able to walk
-  // down
-  for (let y = 0; y < rows; y++)
-    for (let x = 0; x < cols; x++) {
-      const i = y * cols + x;
-      if (isWall[i]) continue;
-      const onLane = Math.abs(y + 0.5 - laneRow(x + 0.5)) < laneHalfTiles(x + 0.5) - 1;
-      const nearRock = wallAt(x - 1, y) || wallAt(x + 1, y) || wallAt(x, y - 1) || wallAt(x, y + 1);
-      const r = rng();
-      let n: PropKind | null = null;
-      if (biome.prop && nearRock && r < 0.16) n = biome.prop;
-      else if (!onLane && biome.boulder && r < 0.03) n = pick(rng, biome.boulder);
-      const img = n && sprite(n);
-      if (!img) continue;
-      const s = (img.width / SPRITE_TILE) * tile;
-      g.save();
-      g.translate((x + 0.5) * tile, (y + 0.5) * tile);
-      g.rotate((Math.floor(rng() * 4) * Math.PI) / 2);
-      g.drawImage(img, -s / 2, -s / 2, s, s);
-      g.restore();
-    }
+  ground.width = gw;
+  ground.height = gh;
+  ground.getContext("2d")!.drawImage(gpu.canvas, 0, 0);
 
   // ---- the swarm ----
   const w = cols * tile, h = rows * tile;
@@ -549,6 +464,18 @@ async function buildWorld(
     h,
     laneY: (x) => laneRow(x / tile) * tile,
     laneHalf: (x) => laneHalfTiles(x / tile),
+    // the renderer keeps the shade of the terrain it last built, and this
+    // scene's is the one it last built until the next scene is rolled —
+    // so read it now, into the scene, rather than through the renderer
+    litAt: ((shade: Float32Array) => (x: number, y: number): number => {
+      const fx = x / tile - 0.5, fy = y / tile - 0.5;
+      const x0 = Math.max(0, Math.min(cols - 2, Math.floor(fx)));
+      const y0 = Math.max(0, Math.min(rows - 2, Math.floor(fy)));
+      const tx = Math.max(0, Math.min(1, fx - x0)), ty = Math.max(0, Math.min(1, fy - y0));
+      const a = shade[y0 * COLS + x0], b = shade[y0 * COLS + x0 + 1];
+      const c = shade[(y0 + 1) * COLS + x0], d = shade[(y0 + 1) * COLS + x0 + 1];
+      return 1 - WALL_SHADOW_A * (a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty);
+    })(gpu.renderer.shadeCopy()),
     dir,
     mechs,
     flare: flareImg ? partOf(flareImg, flareImg.width, flareImg.height) : null,
@@ -596,12 +523,33 @@ export default function MenuBackground({
     const seedOf = (): number => (Math.random() * 0x7fffffff) | 0;
 
     /** roll the scene after the current one, off the frame loop */
+    /** the renderer, made once the atlas is up; null where WebGL2 is not */
+    let gpu: Gpu | null = null;
+    let gpuFailed = false;
+    const getGpu = async (): Promise<Gpu | null> => {
+      if (gpu || gpuFailed) return gpu;
+      try {
+        const atlas = await buildAtlas();
+        const c = document.createElement("canvas");
+        gpu = { renderer: new Renderer(c, atlas), canvas: c };
+      } catch {
+        // no WebGL2: the menu keeps its plain ground, as the game would
+        // refuse to start anyway
+        gpuFailed = true;
+      }
+      return gpu;
+    };
     const buildNext = async (): Promise<void> => {
       if (building) return;
       building = true;
       const vw = canvas.clientWidth, vh = canvas.clientHeight;
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const built = await buildWorld(vw, vh, dpr, seedOf(), order[cursor % order.length]);
+      const g = await getGpu();
+      if (!g) {
+        building = false;
+        return;
+      }
+      const built = await buildWorld(vw, vh, dpr, seedOf(), order[cursor % order.length], g);
       cursor++;
       building = false;
       if (alive) next = built;
@@ -720,6 +668,17 @@ export default function MenuBackground({
         drawMech(wk.mc, wk.walk, wk.p.x + wd.tile * 0.15, wk.p.y + wd.tile * 0.2, wk.p.rot, k, mu, true);
       ctx.globalAlpha = alpha;
       for (const wk of walkers) drawMech(wk.mc, wk.walk, wk.p.x, wk.p.y, wk.p.rot, k, mu, false);
+      // THE HILL'S SHADOW FALLS ON THE COLUMN as it does on the field: a
+      // mech at a cliff foot is darkened by the shade at its feet — its
+      // own black silhouette laid over it at one minus how lit the ground
+      // is there, which is the multiply the field's tint does
+      for (const wk of walkers) {
+        const lit = wd.litAt(wk.p.x - ox, wk.p.y - oy);
+        if (lit > 0.995) continue;
+        ctx.globalAlpha = alpha * (1 - lit);
+        drawMech(wk.mc, wk.walk, wk.p.x, wk.p.y, wk.p.rot, k, mu, true);
+      }
+      ctx.globalAlpha = alpha;
 
       // the escort: flares over the column, higher and faster, weaving
       // across the lane rather than holding a line
@@ -807,7 +766,9 @@ export default function MenuBackground({
       const vw = canvas.clientWidth, vh = canvas.clientHeight;
       if (vw === 0 || vh === 0) return;
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const built = await buildWorld(vw, vh, dpr, seedOf(), order[cursor % order.length]);
+      const g = await getGpu();
+      if (!g) return;
+      const built = await buildWorld(vw, vh, dpr, seedOf(), order[cursor % order.length], g);
       cursor++;
       if (!alive) return;
       world = built;
@@ -848,6 +809,8 @@ export default function MenuBackground({
     return () => {
       alive = false;
       cancelAnimationFrame(raf);
+      // hand the GL context back: a renderer holds the atlas on the GPU
+      gpu?.canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
       if (resizeTimer) clearTimeout(resizeTimer);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("resize", onResize);

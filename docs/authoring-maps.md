@@ -123,11 +123,22 @@ they are what makes a map read as a place rather than as a colour:
   the island at 0.58 of its own outline, so its pale dacite rim is about
   forty percent of every mass. The coast follows the SEA and not the
   roads, and the line between it and the heart is wobbled by noise.
-- **Outcrops.** Patches of the rim family deep in the heart, where a
-  low-frequency noise runs high — the start screen's second rock.
-- **A second floor**, in patches the same way. **Scree** at the foot of
-  the rock, a darker floor a cell or so deep, broken up by noise. A
-  **third floor** only where the road is wide enough to be a plain.
+- **Every shape comes from the geometry.** Quagmire's heart is the
+  island's own outline shrunk to 0.58, and that is the rule: a patch is
+  a copy of the thing it sits in, read at a distance, never a noise
+  threshold (a ragged coastline) and never a blob dropped at random (a
+  handful of coins). The rock's second family is a **core**, each mass's
+  outline shrunk by a set depth, so it shows only where the mass is
+  thick and a thin wall stays one rock.
+- **The road's second floor is a few large patches.** Blobs wider than
+  the road, a dozen or fewer to a map, clipped to the road so that where
+  one overruns it the road's own edge becomes the patch's. A chain of
+  small shapes strung down the road was tried and reads as worms. A
+  **third floor** only in the plazas: the cells furthest from any rock,
+  which take the plaza's own shape. **No scree.** A darker
+  floor a cell deep along the rock's foot was tried; under the wall
+  shadow it is a black line round every road as soon as the map is
+  zoomed out.
 - **Clutter along the road's edges** and never down its middle, never in
   a drop zone, never round the base. A boulder is a thing to walk round;
   the column walks the middle.

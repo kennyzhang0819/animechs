@@ -523,7 +523,18 @@ const GROUP_PRI = [
 const EDGE_ORDER = [4, 2, 0, 10, 14, 12, 13, 11, 9, 7, 8] as const;
 // wall shadow strength: BlockRenderer.shadowColor is black at 0.71 — the
 // premultiplied blend of a black quad at this alpha equals its multiply
-const WALL_SHADOW_A = 0.71;
+export const WALL_SHADOW_A = 0.71;
+/**
+ * How far the hill's shadow reaches onto the floor, in cells. Mindustry's
+ * buffer is one texel a tile and nothing more, so its rim is the bilinear
+ * ramp between a rock cell's centre and the next floor cell's — half a
+ * cell of falloff, which on the speckled originals read as a cliff and on
+ * the flat pale floors reads as a hairline. So the mask carries its own
+ * falloff: a floor cell `d` cells from the nearest rock is shaded by
+ * 1 - d / SHADOW_REACH, on top of the filter's ramp, and the hill stands
+ * on a shadow two cells wide rather than a line.
+ */
+const SHADOW_REACH = 2;
 /** which terrain layers the static batches draw; the editor hides one to
  * work on what sits underneath it */
 export interface TerrainLayers {
@@ -646,8 +657,17 @@ void main() {
   vTint = aTint;
 }`;
 
+// HIGHP, NOT MEDIUMP. The atlas is 2048x4096, so a texture coordinate has
+// to resolve 1/4096 along v, and a mediump float — 16-bit on any GPU that
+// takes the qualifier at its word: every mobile part, and desktop drivers
+// that map it to half floats — has ten bits of mantissa. That puts the
+// sample somewhere within about two texels of where it was asked for,
+// and the miss is not random: it steps in lockstep across a tile and
+// lands past its edge in a line, which on the ground is a hairline round
+// every cell. A driver that ignores mediump never shows it, which is why
+// it renders clean on one machine and lined on the next
 const FS = `#version 300 es
-precision mediump float;
+precision highp float;
 uniform sampler2D uTex;
 in vec2 vUV;
 in vec4 vTint;
@@ -826,6 +846,15 @@ export class Renderer {
   // to defend, so it draws none — the sprite would otherwise sit in the
   // middle of the exit band promising something the map does not have
   private hasGoals = false;
+  /**
+   * The hill shadow as the CPU sees it: the mask's shade per cell, 0..1,
+   * kept from rebuildTerrain so whatever STANDS on the ground — a walker,
+   * a hull, a boulder — can be darkened by the shade at its feet. The
+   * quad darkens the floor; this darkens what is on it. Flyers are above
+   * it and stay lit.
+   */
+  private shade = new Float32Array(NCELLS);
+  private readonly shadeTint: [number, number, number] = [1, 1, 1];
   // layer visibility of whatever is currently in the static batches, so the
   // editor's base sprite (drawn per frame) matches the terrain it sits on
   private layers: TerrainLayers = ALL_LAYERS;
@@ -1468,6 +1497,42 @@ export class Renderer {
     if (layers.base && !this.hasGoals)
       for (let y = T.base.y; y < T.base.y + T.base.size; y++)
         for (let x = T.base.x; x < T.base.x + T.base.size; x++) stamp(y * COLS + x);
+    // THE REACH (see SHADOW_REACH): every unstamped cell takes its distance
+    // to the nearest stamped one — a 5-7-11 chamfer, two passes — and a
+    // partial texel from it. Deep water is unstamped and so takes shade
+    // from a hill beside it like any floor, which a cliff over a sea does
+    {
+      const n = COLS * ROWS;
+      const d = new Float32Array(n);
+      for (let i = 0; i < n; i++) d[i] = mask[i * 4 + 3] ? 0 : 1e9;
+      const relax = (i: number, j: number, w: number): void => {
+        if (d[j] + w < d[i]) d[i] = d[j] + w;
+      };
+      for (let y = 0; y < ROWS; y++)
+        for (let x = 0; x < COLS; x++) {
+          const i = y * COLS + x;
+          if (x > 0) relax(i, i - 1, 5);
+          if (y > 0) relax(i, i - COLS, 5);
+          if (x > 0 && y > 0) relax(i, i - COLS - 1, 7);
+          if (x < COLS - 1 && y > 0) relax(i, i - COLS + 1, 7);
+        }
+      for (let y = ROWS - 1; y >= 0; y--)
+        for (let x = COLS - 1; x >= 0; x--) {
+          const i = y * COLS + x;
+          if (x < COLS - 1) relax(i, i + 1, 5);
+          if (y < ROWS - 1) relax(i, i + COLS, 5);
+          if (x < COLS - 1 && y < ROWS - 1) relax(i, i + COLS + 1, 7);
+          if (x > 0 && y < ROWS - 1) relax(i, i + COLS - 1, 7);
+        }
+      for (let i = 0; i < n; i++) {
+        if (mask[i * 4 + 3]) continue;
+        const v = Math.max(0, 1 - d[i] / 5 / SHADOW_REACH);
+        if (v <= 0) continue;
+        const b = Math.round(v * 255);
+        mask[i * 4] = mask[i * 4 + 1] = mask[i * 4 + 2] = mask[i * 4 + 3] = b;
+      }
+    }
+    for (let i = 0; i < COLS * ROWS; i++) this.shade[i] = mask[i * 4 + 3] / 255;
     gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, mask);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
@@ -1517,8 +1582,12 @@ export class Renderer {
       }
     }
     if (layers.props) {
-      for (const d of T.decor)
-        this.push(w, d.x, d.y, d.size, d.size, d.rot, UV_DECOR[d.kind], 1, 1, 1, 1);
+      // a boulder stands in the hill's shadow like anything else on the
+      // ground; a pine is the hill (its cell casts), so it is not shaded
+      for (const d of T.decor) {
+        const lit = this.litAt(d.x, d.y);
+        this.push(w, d.x, d.y, d.size, d.size, d.rot, UV_DECOR[d.kind], lit, lit, lit, 1);
+      }
       // a pine's kind picks its forest (UV_PINES); kind 0 is the original
       // tree, which is what every pine saved before the table existed is
       for (const p of T.pines)
@@ -1568,6 +1637,50 @@ export class Renderer {
   }
 
   /** terrain + base only — the map editor's frame, no sim required */
+  /**
+   * How lit the ground is at a world point, 0..1: one minus the hill
+   * shadow there, read off the shade mask with the same bilinear the GPU
+   * applies to the floor, so a thing standing on the ground is darkened
+   * exactly as the ground under it is.
+   */
+  /** the shade mask of the terrain last built, per cell 0..1 — a copy, for
+   *  a caller that will outlive the next rebuild (the title screen) */
+  shadeCopy(): Float32Array {
+    return Float32Array.from(this.shade);
+  }
+
+  litAt(x: number, y: number): number {
+    const fx = x / CELL - 0.5, fy = y / CELL - 0.5;
+    const x0 = Math.max(0, Math.min(COLS - 2, Math.floor(fx)));
+    const y0 = Math.max(0, Math.min(ROWS - 2, Math.floor(fy)));
+    const tx = Math.max(0, Math.min(1, fx - x0)), ty = Math.max(0, Math.min(1, fy - y0));
+    const s = this.shade;
+    const a = s[y0 * COLS + x0], b = s[y0 * COLS + x0 + 1];
+    const c = s[(y0 + 1) * COLS + x0], d = s[(y0 + 1) * COLS + x0 + 1];
+    const v = a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty;
+    return 1 - WALL_SHADOW_A * v;
+  }
+
+  /**
+   * The frame just drawn, as RGBA rows from the top-left — only valid in
+   * the same task as the draw, before the browser composites the canvas.
+   * A diagnostic's hook, not a feature: see Game.diagnose.
+   */
+  readFrame(x: number, y: number, w: number, h: number): Uint8Array {
+    const gl = this.gl;
+    const buf = new Uint8Array(w * h * 4);
+    gl.readPixels(x, this.canvas.height - y - h, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    return buf;
+  }
+
+  /** what the browser says it is drawing with */
+  gpuName(): string {
+    const gl = this.gl;
+    const ext = gl.getExtension("WEBGL_debug_renderer_info");
+    const r = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    return String(r);
+  }
+
   renderTerrain(zoom = 1, offX = 0, offY = 0, kPx = this.canvas.width / W): void {
     // the editor has no sim to read a clock off, and a still sea in the
     // map editor looks like a bug in the map — so it runs off the wall
@@ -1695,7 +1808,7 @@ export class Renderer {
       if (t.beamT >= 0) this.drawContinuousBeam(dyn, t, sim.statsFor(t.kind).bullet.continuous);
     }
     const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
-    const { ushield, ushieldAlpha, urad, uwet, uhungry, ueaten, uwade } = sim;
+    const { ushield, ushieldAlpha, urad, uwet, uhungry, ufly, ueaten, uwade } = sim;
     // the fleet's wakes, at Mindustry's Layer.debris: UNDER every unit,
     // including the hulls that laid them, so a crowded lane does not draw
     // one boat's foam over another boat
@@ -1760,7 +1873,18 @@ export class Renderer {
         const table = uhungry[i]
           ? uwet[i] > 0 ? WET_HUNGRY_TINT : HUNGRY_TINT
           : uwet[i] > 0 ? WET_TINT : HP_TINT;
-        const tint = table[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
+        let tint: RGB = table[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
+        // in the hill's shadow, a walker or a hull is darkened by the shade
+        // at its feet — the same shade the floor under it wears
+        if (!ufly[i]) {
+          const lit = this.litAt(upx[i], upy[i]);
+          if (lit < 1) {
+            this.shadeTint[0] = tint[0] * lit;
+            this.shadeTint[1] = tint[1] * lit;
+            this.shadeTint[2] = tint[2] * lit;
+            tint = this.shadeTint;
+          }
+        }
         const legArt = KIND_LEG[k], gait = KIND_GAIT[k];
         const mech = KIND_MECH[k];
         if (legArt && gait) {
