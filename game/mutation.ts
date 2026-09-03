@@ -968,13 +968,13 @@ if (VOLATILE_RADIUS.length !== VOLATILE_DMG.length)
 // ONE generation deep however it is set.
 //
 // A BROOD BODY IS A REAL UNIT AND PAYS A REAL DROP. It is killed like
-// anything else, so it lands in killsByKind and pays out one copper, the
-// T1 currency (see unitDrop in levels.ts). That is deliberate: the game's
-// standing rule is that a tier is the whole drop table and no body is
-// quietly worth more OR LESS than its tier, and a mutator that minted
+// anything else, so it lands in killsByKind and pays a tier-1 drop — one
+// scrap, two XP (see unitDrop in levels.ts). That is deliberate: the
+// game's standing rule is that a tier is the whole drop table and no body
+// is quietly worth more OR LESS than its tier, and a mutator that minted
 // invisible units would be the first exception to it. So the rule gives
-// the player copper — the cheapest of the five — in exchange for the one
-// thing a tower defence cannot buy, which is time in the kill zone. That
+// the player a tier-1 drop — the smallest there is — in exchange for the
+// one thing a tower defence cannot buy, which is time in the kill zone. That
 // is the bargain, and it is why this sits in the LIGHT band next to
 // Volatile rather than up with Hungry: it is noticed every wave and it
 // decides no run on its own.

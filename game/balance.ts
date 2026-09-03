@@ -1,37 +1,36 @@
+import { applyScrapPriceOverrides } from "./economy";
 import { applyRungOverrides, type RungKnobs } from "./ladder";
 import { applyMutationCostOverrides } from "./mutation";
-import { applyOverrides } from "./tech";
 
 /**
- * The balance document: the price knobs (base, growth) per turret, plus
- * two reserved sections — no turret is named either, so the flat shape
- * survives.
+ * The balance document: three sections, each a dial the dashboard turns.
  *
- *   `difficulties`  the per-rung dials (enemy level, and the mutator
- *                   roll's count and points), keyed by a rung's 1-based
- *                   ORDINAL, "1" through "10" (rungKey in ladder.ts); the
- *                   key was the difficulty's name back when rungs had names
+ *   `prices`        what each turret costs IN SCRAP, keyed by turret kind
+ *                   (scrapPriceOf in economy.ts) — the in-run economy's
+ *                   only price list
+ *   `difficulties`  the per-rung dials (enemy level, the mutator roll's
+ *                   count and points, the XP bonus), keyed by a rung's
+ *                   1-based ORDINAL, "1" through "10" (rungKey in ladder.ts)
  *   `mutations`     what each mutator is WORTH, keyed by its catalog id
  *                   (mutationCostOf in mutation.ts) — the one dial that
  *                   decides which difficulties can afford which rules
  *
  * It exists so the dial can be turned WITHOUT a rebuild. The admin dashboard
- * writes it, the game reads it at startup, and a node missing from it simply
- * keeps the coefficient tech.ts authored. Finding a good number is an
+ * writes it, the game reads it at startup, and a key missing from it simply
+ * keeps the number the code authored. Finding a good number is an
  * afternoon of small edits and re-runs, and recompiling between each one is
  * how that afternoon becomes a week.
  *
  * The document is an OVERRIDE LAYER, never the source of truth. Once a
- * coefficient is settled it belongs in the node in tech.ts — or the rung's
- * row in ladder.ts — where it is read alongside the reasoning
- * for it; this file is the scratch pad in between.
+ * number is settled it belongs in TOWER_PRICE in economy.ts — or the
+ * rung's row in ladder.ts — where it is read alongside the reasoning for
+ * it; this file is the scratch pad in between.
+ *
+ * Older documents kept per-turret `{base, growth}` bundles at the top
+ * level, from the five-currency tree. Those keys are ignored on load.
  */
 export interface BalanceDoc {
-  [node: string]:
-    | Partial<import("./tech").Knobs>
-    | Record<string, Partial<RungKnobs>>
-    | Record<string, number>
-    | undefined;
+  prices?: Record<string, number>;
   difficulties?: Record<string, Partial<RungKnobs>>;
   mutations?: Record<string, number>;
 }
@@ -54,8 +53,8 @@ export async function loadBalanceDoc(): Promise<void> {
     if (!res.ok) return;
     const parsed = (await res.json()) as unknown;
     if (!parsed || typeof parsed !== "object") return;
-    const { difficulties, mutations, ...towers } = parsed as BalanceDoc;
-    applyOverrides(towers as Record<string, Partial<import("./tech").Knobs>>);
+    const { prices, difficulties, mutations } = parsed as BalanceDoc;
+    applyScrapPriceOverrides(prices && typeof prices === "object" ? prices : {});
     applyRungOverrides(
       difficulties && typeof difficulties === "object" ? difficulties : {},
     );

@@ -1,5 +1,5 @@
 import { CELL, HP0, UNIT_SPEED, UR } from "./constants";
-import { itemForTier, type Cost } from "./items";
+import { addDrop, dropForTier, emptyDrop, type Drop } from "./economy";
 import { explain, type SaveResult } from "./types";
 // type only — mutation.ts must never depend on the campaign, and this
 // import must never become a value one or the two files form a cycle
@@ -223,10 +223,9 @@ export interface UnitStats {
   /** collision radius in world px — half the square hitbox edge */
   radius: number;
   /**
-   * Unit tier, 1-5. The tier alone decides WHICH currency a kill pays out —
-   * T1 drops copper, T2 titanium, T3 thorium, T4 plastanium, T5 phase
-   * fabric (see items.ts) — so a level's enemy mix is what determines the
-   * resources a run banks.
+   * Unit tier, 1-5. The tier alone decides what a kill pays — its scrap
+   * into the run and its XP into the save (DROP_BY_TIER in economy.ts) —
+   * so a level's enemy mix is what determines what a run banks.
    */
   tier: number;
   /**
@@ -1158,19 +1157,28 @@ export function transformLabel(t: WaveTransform): string {
 }
 
 /**
- * What one kill of this kind pays out: exactly ONE of its tier's item. The
- * tier is the whole drop table — a T2 kill is one titanium whether it was a
- * mace or a pulsar — so a level's tier mix is the only thing that
- * decides what a run banks, and no unit is quietly worth more than its tier.
- *
- * EXCEPT A BOSS, WHICH DROPS NOTHING AT ALL. Its entire payout is the
- * one-time surge trophy grantRunReward pays on its first kill per
- * world+rung (progress.ts). A boss is an event, not income — were it
- * on the tier table, every replay would farm it like any other T5.
+ * What one kill of this kind pays out: its TIER's drop (DROP_BY_TIER in
+ * economy.ts) — scrap into the run and XP into the save. The tier is the
+ * whole drop table: a T2 kill pays the same whether it was a mace or a
+ * pulsar, so a level's tier mix is the only thing that decides what a run
+ * banks, and no unit is quietly worth more than its tier. A boss pays
+ * BOSS_DROP, once a run, whatever its tier says.
  */
-export function unitDrop(kind: UnitKind): Cost {
-  if (UNIT_STATS[kind].boss) return {};
-  return { [itemForTier(UNIT_STATS[kind].tier)]: 1 };
+export function unitDrop(kind: UnitKind): Drop {
+  const s = UNIT_STATS[kind];
+  return dropForTier(s.tier, s.boss === true);
+}
+
+/**
+ * What a run's kills are worth: each kind's drop times how many of it
+ * died. The shape of the total is the shape of the LINES that died — a
+ * pure dagger push pays a trickle, a spiroct column pays real scrap.
+ */
+export function dropsForKills(killsByKind: ArrayLike<number>): Drop {
+  const total = emptyDrop();
+  for (let i = 0; i < UNIT_KINDS.length; i++)
+    addDrop(total, unitDrop(UNIT_KINDS[i]), killsByKind[i] ?? 0);
+  return total;
 }
 
 /**
@@ -1464,9 +1472,9 @@ export function blueprintDoc(): LevelDoc {
  * THERE IS NO CUT ANY MORE, so nothing written here can be unreachable:
  * add a wave 51 and every rung sends it.
  *
- * Kills are the only income: a finished run banks each dead unit's tier
- * item whether it ended in victory or defeat, times the rung's drop bonus
- * (which compounds — see LOOT_PER_RUNG).
+ * Kills are the income: every dead body pays its tier's scrap into the run
+ * and its tier's XP into the save, win or lose (economy.ts), and the rung
+ * multiplies the XP (tierXpBonus in ladder.ts).
  *
  * TWO THINGS TO KNOW WHEN EDITING THIS LIST.
  *
@@ -1505,9 +1513,10 @@ export const WORLDS: LevelSpec[] = [
     // WAVES 1-20 ARE PLAYTESTED AND FIXED. Do not restructure them.
     //
     // EVERY RUNG PLAYS THIS WHOLE LIST. There is one run in the game and
-    // ten difficulties to play it at, so TARGET_DROP_RATIO is ONE row —
-    // the cumulative mix of all fifty waves — and an edit anywhere in the
-    // list moves the economy of every rung at once.
+    // ten difficulties to play it at, so the STAGE TABLE (stageAudit in
+    // ladder.ts) is one table — what waves 1-20, 21-35 and 36-50 pay —
+    // and an edit anywhere in the list moves the economy of every rung
+    // at once.
     //
     //   line       T1        T2       T3         T4         T5
     //   dagger     dagger    mace     fortress   scepter    reign
@@ -1523,14 +1532,12 @@ export const WORLDS: LevelSpec[] = [
     // T3/T4/T5 counts; that is the only thing that really moves a rung's
     // weight.
     //
-    // TIER 5 STARTS IN THE FORTIES AND THAT IS AN ECONOMY DECISION. Phase
-    // fabric is what spectre, meltdown and foreshadow are priced in, and
-    // the T5 count is the entire phase supply — about 200 a full clear.
-    // Since every rung plays every wave, that supply exists from rung 1
-    // and the gate on those three turrets is the RATE rather than the
-    // permission: adding T5 bodies makes the endgame turrets arrive
-    // sooner for everyone. TARGET_DROP_RATIO's phase column is where
-    // check() notices.
+    // TIER 5 STARTS IN THE FORTIES AND THAT IS AN ECONOMY DECISION. A T5
+    // pays fifty scrap a head, and the tier-3 turrets (fuse up to
+    // foreshadow) are priced for what waves 36-50 pay — so where the heavy
+    // bodies land is where the heavy turrets become affordable. Move them
+    // earlier and stage 2 buys a spectre; check() notices through the
+    // stage table.
     //
     // THE PATTERN, past wave 20. One cycle is four waves:
     //
@@ -1575,18 +1582,18 @@ export const WORLDS: LevelSpec[] = [
     // wave is mace 177 / fortress 46 / scepter 1; wave 45's is mace 160 /
     // fortress 275 / scepter 64 / reign 14. Same wave type, different game.
     //
-    // CHECK THE TOTALS, NOT THE FEEL. A rung's cumulative tier counts
-    // have to land on TARGET_DROP_RATIO (ladder.ts), because one kill is one
-    // item and that ratio IS the economy — miss it and some currency becomes
-    // the only real constraint while the rest pile up unspent.
-    // `window.__ladder.check()` reports the drift.
+    // CHECK THE TOTALS, NOT THE FEEL. Each stage's cumulative tier counts
+    // have to pay for its tier's turrets (STAGE_BOARDS in ladder.ts),
+    // because one kill is one fixed drop and those sums ARE the economy —
+    // miss it and a tier is priced out of its own stage, or bought by the
+    // stage before. `window.__ladder.check()` reports it.
     //
     // DO NOT SIZE A RUNG AGAINST THE MAP'S AREA. A run's total bodies
     // are not its bodies on the field: units stream in over
     // WAVE_RELEASE_SECONDS and die continuously, so a rung that sends
     // 52,000 of them never holds a fraction of that at once. If a wave
     // outruns the drop zones they simply queue (Sim.runScript). Size against
-    // TARGET_DROP_RATIO and the health step, which are the limits that bind.
+    // the stage table, which is the limit that binds.
     // ==============================================================
     // THE SCRIPT LIVES IN public/levels/blueprint.json AND NOWHERE ELSE.
     // It is deliberately empty here: a second copy in code is a second
@@ -1755,15 +1762,14 @@ export function worldById(id: string): LevelSpec | null {
  * The overlay is applied IN PLACE, which is the whole reason this is safe to
  * call late: WORLDS is never empty, never re-ordered, and never a different
  * array object. Everything that reads it synchronously at module load —
- * Sim's `WORLDS[0]` default, WORLD, progress.ts sizing the opening loadout —
- * keeps working whether or not the document has loaded yet.
+ * Sim's `WORLDS[0]` default, WORLD — keeps working whether or not the
+ * document has loaded yet.
  *
- * The free opening loadout does NOT follow this script. It is a fixed
- * design constant (OPENING_DUOS in ladder.ts) because it is the difficulty
- * anchor: the author decides how hard the first run should be and writes
- * the opening waves to fit that fleet, rather than the fleet silently
- * growing to absorb whatever the waves became. `Check ladder` in the level
- * editor reports the gap.
+ * The opening scrap does NOT follow this script. It is a fixed design
+ * constant (SCRAP_START in economy.ts) because it is the difficulty
+ * anchor: the author decides how hard the first waves should be and
+ * writes them to fit that opening board, rather than the stipend silently
+ * growing to absorb whatever the waves became.
  */
 async function fetchLevelDoc(id: string): Promise<LevelDoc | null> {
   try {

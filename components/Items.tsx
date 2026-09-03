@@ -1,21 +1,28 @@
 "use client";
 
-import { BASE_ITEM, costEntries, ITEM_INFO, ITEM_KINDS, type Bank, type Cost, type ItemKind } from "@/game/items";
+import {
+  levelProgress,
+  POINT_COLOR,
+  SCRAP_COLOR,
+  SCRAP_ICON,
+  XP_COLOR,
+  type Drop,
+} from "@/game/economy";
 
 /* eslint-disable @next/next/no-img-element -- raw pixel sprites, no optimization wanted */
 
 const SIZES = { sm: "h-4 w-4", md: "h-5 w-5" } as const;
+type Size = keyof typeof SIZES;
 
 /**
- * A COUNT AS A STACK READS IT. Late-campaign banks run to eight and nine
- * digits, and a wallet strip that prints 1,284,301,776 is a number nobody
- * reads and a strip that wraps onto three lines — so past a million the
- * count is abbreviated to one decimal: 1.3m, 4.0b.
+ * A COUNT AS A STACK READS IT. Lifetime XP runs to seven and eight
+ * digits, and a strip that prints 12,840,301 is a number nobody reads —
+ * so past a million the count is abbreviated to one decimal: 1.3m.
  *
  * IT STARTS AT A MILLION, NOT A THOUSAND, deliberately. A price of 1,200
- * copper is a price a player counts against a bank of 3,400; rounding
- * those to 1.2k and 3.4k would blur the exact comparison the shop is for,
- * and nothing under a million is too long to print in full.
+ * scrap is a price a player counts against 3,400 in hand; rounding those
+ * to 1.2k and 3.4k would blur the exact comparison the bar is for, and
+ * nothing under a million is too long to print in full.
  */
 export const itemCount = (n: number): string =>
   n >= 1e9
@@ -24,29 +31,49 @@ export const itemCount = (n: number): string =>
       ? `${(n / 1e6).toFixed(1)}m`
       : Math.round(n).toLocaleString();
 
-/** one currency's sprite and amount, tinted with that item's colour */
-export function ItemAmount({
-  item,
+/** the XP star — there is no Mindustry item for experience */
+function XpStar({ className }: { className: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={`${className} shrink-0`} aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"
+      />
+    </svg>
+  );
+}
+
+/** a skill point: the tree's own diamond */
+function PointGem({ className }: { className: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={`${className} shrink-0`} aria-hidden="true">
+      <path fill="currentColor" d="M12 2l7 10-7 10-7-10z" />
+    </svg>
+  );
+}
+
+/** scrap, as the bar and the HUD print it — tinted, sprite first */
+export function ScrapAmount({
   amount,
   size = "sm",
   short,
+  className = "",
 }: {
-  item: ItemKind;
   amount: number;
-  size?: keyof typeof SIZES;
-  /** the player can't cover this amount — draw it as a shortfall */
+  size?: Size;
+  /** the run can't cover this amount — draw it as a shortfall */
   short?: boolean;
+  className?: string;
 }) {
-  const info = ITEM_INFO[item];
   return (
     <span
-      className="inline-flex items-center gap-1 font-bold"
-      style={{ color: short ? "#FF8A8A" : info.color }}
-      title={info.name}
+      className={`inline-flex items-center gap-1 font-bold ${className}`}
+      style={{ color: short ? "#FF8A8A" : SCRAP_COLOR }}
+      title="Scrap"
     >
       <img
-        src={info.icon}
-        alt={info.name}
+        src={SCRAP_ICON}
+        alt="Scrap"
         className={`${SIZES[size]} shrink-0 [image-rendering:pixelated] ${short ? "opacity-70" : ""}`}
       />
       {itemCount(amount)}
@@ -54,66 +81,108 @@ export function ItemAmount({
   );
 }
 
-/**
- * A price or a payout, one stack per currency it mentions. Pass `bank` and
- * every stack the wallet can't cover turns red on its own, so a cost that
- * fails on thorium alone says exactly that instead of just "too expensive".
- */
-export function CostRow({
-  cost,
-  bank,
+/** experience, wherever a run's takings or a save's total are printed */
+export function XpAmount({
+  amount,
   size = "sm",
   className = "",
 }: {
-  cost: Cost;
-  bank?: Bank;
-  size?: keyof typeof SIZES;
+  amount: number;
+  size?: Size;
   className?: string;
 }) {
-  const entries = costEntries(cost);
-  if (entries.length === 0) return null;
   return (
-    <span className={`inline-flex flex-wrap items-center gap-x-3 gap-y-1 ${className}`}>
-      {entries.map(({ item, amount }) => (
-        <ItemAmount
-          key={item}
-          item={item}
-          amount={amount}
-          size={size}
-          short={bank ? bank[item] < amount : false}
-        />
-      ))}
+    <span
+      className={`inline-flex items-center gap-1 font-bold ${className}`}
+      style={{ color: XP_COLOR }}
+      title="Experience"
+    >
+      <XpStar className={SIZES[size]} />
+      {itemCount(amount)} XP
+    </span>
+  );
+}
+
+/** skill points — what the tech tree is paid in */
+export function PointsAmount({
+  amount,
+  size = "sm",
+  short,
+  className = "",
+}: {
+  amount: number;
+  size?: Size;
+  /** the save cannot cover this many — draw it as a shortfall */
+  short?: boolean;
+  className?: string;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 font-bold ${className}`}
+      style={{ color: short ? "#FF8A8A" : POINT_COLOR }}
+      title="Skill points"
+    >
+      <PointGem className={SIZES[size]} />
+      {amount} {amount === 1 ? "point" : "points"}
     </span>
   );
 }
 
 /**
- * The wallet strip. Currencies with a zero balance stay hidden — the base
- * item is always shown so a fresh save isn't a blank box, and the rest
- * appear while a kill's drops keep them above zero.
+ * A drop — what a wave, a stage or a run pays — as its two stacks. Either
+ * half hides when it is zero, so a row never prints "0 XP".
  */
-export function Wallet({
-  bank,
-  size = "md",
-  vertical = false,
+export function DropRow({
+  drop,
+  size = "sm",
+  className = "",
 }: {
-  bank: Bank;
-  size?: keyof typeof SIZES;
-  /** stack one currency per line instead of the flowing strip */
-  vertical?: boolean;
+  drop: Drop;
+  size?: Size;
+  className?: string;
 }) {
-  const held = ITEM_KINDS.filter((k) => k === BASE_ITEM || bank[k] > 0);
+  if (drop.scrap <= 0 && drop.xp <= 0) return null;
   return (
-    <span
-      className={
-        vertical
-          ? "inline-flex flex-col items-start gap-y-1"
-          : "inline-flex flex-wrap items-center gap-x-4 gap-y-1"
-      }
-    >
-      {held.map((k) => (
-        <ItemAmount key={k} item={k} amount={bank[k]} size={size} />
-      ))}
+    <span className={`inline-flex flex-wrap items-center gap-x-3 gap-y-1 ${className}`}>
+      {drop.scrap > 0 && <ScrapAmount amount={drop.scrap} size={size} />}
+      {drop.xp > 0 && <XpAmount amount={drop.xp} size={size} />}
+    </span>
+  );
+}
+
+/**
+ * THE LEVEL STRIP: the player's level, the XP bar to the next one, and
+ * the points they have to spend. It is the one thing every menu shows
+ * beside the way to spend it (the tech tree), and the one number a
+ * results screen is about.
+ */
+export function LevelStrip({
+  xp,
+  points,
+  size = "md",
+}: {
+  xp: number;
+  /** unspent skill points */
+  points: number;
+  size?: Size;
+}) {
+  const { level, into, need } = levelProgress(xp);
+  return (
+    <span className="inline-flex items-center gap-3">
+      <span className="font-bold uppercase tracking-widest text-[#EDEDEF]">
+        Level <span style={{ color: POINT_COLOR }}>{level}</span>
+      </span>
+      <span
+        className="ms-bar h-2 w-24"
+        title={`${itemCount(into)} / ${itemCount(need)} XP to level ${level + 1}`}
+        aria-label={`${itemCount(into)} of ${itemCount(need)} XP to level ${level + 1}`}
+      >
+        <span
+          className="block h-full"
+          style={{ width: `${Math.min(100, (100 * into) / Math.max(1, need))}%`, background: XP_COLOR }}
+        />
+      </span>
+      <PointsAmount amount={points} size={size} />
     </span>
   );
 }

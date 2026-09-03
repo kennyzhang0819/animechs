@@ -63,6 +63,7 @@ import {
   UNIT_RMAX_AIR,
   UNIT_RMAX_GROUND,
   UNIT_STATS,
+  unitDrop,
   waveGroups,
   type LegSpec,
   type LevelSpec,
@@ -110,7 +111,15 @@ import {
   VOLATILE_RADIUS,
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap } from "./maps";
-import { LIVES_BASE, NO_UPGRADES, upgradedTower, type TechState } from "./tech";
+import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
+import {
+  leakCost,
+  LIVES_START,
+  SCRAP_START,
+  scrapPriceOf,
+  sellValue,
+  waveBonusScrap,
+} from "./economy";
 import { isBuildableWall, isWaterFloor, waterWalkMask, type Terrain } from "./terrain";
 import {
   FxKind,
@@ -797,17 +806,24 @@ export class Sim {
   /** kills per unit kind this run, indexed like UNIT_KINDS — the drop payout */
   readonly killsByKind = new Int32Array(UNIT_KINDS.length);
   /**
-   * THE BASE'S HEALTH: every body that reaches it takes one point, and the
-   * run is won for as long as any are left.
-   *
-   * IT COMES FROM THE SAVE (TechState.lives — the Extra Lives node), so
-   * a fresh campaign plays the game it has always played: one point, and
-   * the first leak is the loss. A save that has bought plating gets a
-   * board it may lose bodies through. LIVES_BASE is the floor and the
-   * editor's value, because a sandbox with no tech still has to be losable.
+   * THE BASE'S HEALTH: a hundred on every run (LIVES_START), and every
+   * body that reaches it takes its tier's bite (leakCost) — a dagger one,
+   * a scepter eight, a boss the lot. The run is won for as long as any is
+   * left. Nothing sells more: plating is not a purchase any more.
    */
-  livesMax = LIVES_BASE;
+  livesMax = LIVES_START;
   lives = this.livesMax;
+  /**
+   * THE RUN'S MONEY (economy.ts). Opens at SCRAP_START, every kill drops
+   * its tier's scrap, every wave staged pays its bonus, every turret
+   * placed costs its price and every one sold refunds SELL_REFUND of it.
+   * Charged only under a tech state — a sandbox or an editor (tech null)
+   * builds for free and the counter just runs.
+   */
+  scrap = SCRAP_START;
+  /** scrap the run has taken in, kills and wave bonuses alike — the tally
+   *  the results screen reads */
+  scrapEarned = 0;
   // which towers may be built and how many of each — null (the default, and
   // the map editor's mode) places no restrictions; the campaign sets it from
   // the save's tech tree before play (see Game.setTech)
@@ -1072,6 +1088,8 @@ export class Sim {
     this.leaked = 0;
     this.devoured = 0;
     this.killsByKind.fill(0);
+    this.scrap = SCRAP_START;
+    this.scrapEarned = 0;
     // the run's rules, read once: the feed pass runs over every unit on the
     // field, and a spec lookup per unit per tick to answer a question that
     // cannot change mid-run would be pure waste
@@ -1372,20 +1390,17 @@ export class Sim {
     return this.lives <= 0;
   }
 
-  /** campaign restrictions on building; null lifts them (editor, dev) */
+  /** campaign restrictions on building; null lifts them (editor, dev) —
+   *  and null is also what makes building FREE (see canPlace) */
   setTech(tech: TechState | null): void {
     this.tech = tech;
-    // the plating is read here rather than per leak.
-    //
-    // SETTING TECH BEFORE THE RUN STARTS FILLS THE POOL; setting it after
-    // may only ever lower it. Staging a run is a setTech on a sim whose
-    // clock has not moved, and that has to end with a full base or the
-    // plating would only take effect on the run after the one it was
-    // bought for. Mid-run — the dev tools, and nothing else — it must not
-    // heal, or the switch becomes a repair button.
-    this.livesMax = tech?.lives ?? LIVES_BASE;
-    this.lives = this.time === 0 ? this.livesMax : Math.min(this.lives, this.livesMax);
     this.refreshSpecs();
+  }
+
+  /** is building charged? — a campaign run, as opposed to an editor or the
+   *  sandbox, which both build for nothing */
+  get charging(): boolean {
+    return this.tech !== null;
   }
 
   /**
@@ -1680,6 +1695,11 @@ export class Sim {
         for (const e of this.waveEntries) total += e.total;
         this.waveRate = waveSpawnRate(total);
         this.wavesStarted++;
+        // THE WAVE BONUS, paid as the wave is staged — at the top of its
+        // gap, which is exactly when a board wants scrap to spend
+        const bonus = waveBonusScrap(this.wavesStarted);
+        this.scrap += bonus;
+        this.scrapEarned += bonus;
         // hold the gap, then let this wave drain — waitLeft gates runScript
         this.waitLeft = Math.max(0, this.level.waveGap);
         return;
@@ -1969,13 +1989,12 @@ export class Sim {
   }
 
   canPlace(gx: number, gy: number, kind: TowerKind): boolean {
-    // tech gate first: a locked tower or an exhausted cap refuses everywhere,
-    // so the drag-chain and keyboard paths can't sidestep the menu
+    // tech gate first: a locked tower or an unaffordable one refuses
+    // everywhere, so the drag-chain and keyboard paths can't sidestep the
+    // menu. A sandbox or an editor (tech null) is not charged at all
     if (this.tech) {
       if (!this.tech.unlocked.has(kind)) return false;
-      let count = 0;
-      for (const t of this.towers) if (t.kind === kind) count++;
-      if (count >= this.tech.caps[kind]) return false;
+      if (this.scrap < scrapPriceOf(kind)) return false;
     }
     const sz = TOWERS[kind].size;
     if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
@@ -2007,6 +2026,7 @@ export class Sim {
   placeTower(gx: number, gy: number, kind: TowerKind): PlaceResult {
     if (!this.canPlace(gx, gy, kind)) return "invalid";
     this.addTower(gx, gy, kind);
+    if (this.charging) this.scrap -= scrapPriceOf(kind);
     return "ok";
   }
 
@@ -2064,6 +2084,9 @@ export class Sim {
     if (!t) return false;
     this.towers.splice(this.towers.indexOf(t), 1);
     this.refreshSpecs();
+    // SELL_REFUND of the price back (economy.ts): a board is a commitment,
+    // and tearing the opening wall down to fund the next tier costs a fifth
+    if (this.charging) this.scrap += sellValue(t.kind);
     // the rock under it belongs to the mountain — nothing to unblock
     this.pushFx(t.x, t.y, 0.35, FxKind.Death); // demolish puff
     return true;
@@ -2630,6 +2653,10 @@ export class Sim {
     // does not brood in its turn (see ubrood)
     const wasBrood = this.ubrood[i];
     this.killsByKind[kind]++;
+    // the kill's scrap, into the run — fixed per tier (economy.ts)
+    const drop = unitDrop(UNIT_KINDS[kind]).scrap;
+    this.scrap += drop;
+    this.scrapEarned += drop;
     this.pushDeathFx(x, y);
     // VOLATILE (mutation.ts): the body's parting blast, before the arrays
     // reshuffle under it
@@ -3186,19 +3213,18 @@ export class Sim {
       if (fly ? this.exitAir[ci] : isGoal[ci]) {
         // A LEAK PAYS NOTHING. killsByKind is the whole drop ledger (see
         // dropsForKills) and a body that walked off the board was never
-        // killed, so it is not in it — the salvage a leak costs is the
-        // salvage the player would have had for stopping it.
+        // killed, so it is not in it — the scrap and the XP a leak costs
+        // are what the player would have had for stopping it.
         //
-        // A BOSS THAT REACHES THE BASE ENDS THE RUN whatever the plating
-        // says. Plating is armour against the SWARM: it buys back the
-        // bodies a board cannot quite hold, and a script that builds to one
-        // enemy must not have that enemy become a body you shrug off. So a
-        // boss takes the whole pool rather than a point of it.
-        const boss = UNIT_STATS[UNIT_KINDS[this.ukind[i]]].boss;
+        // AND IT BITES BY TIER (leakCost): a dagger takes one life, a
+        // scepter eight. A BOSS THAT REACHES THE BASE ENDS THE RUN — a
+        // script that builds to one enemy must not have that enemy become
+        // a body you shrug off, so it takes the whole pool.
+        const stats = UNIT_STATS[UNIT_KINDS[this.ukind[i]]];
         this.pushFx(upx[i], upy[i], 0.4, FxKind.Breach);
         this.removeUnit(i);
         this.leaked++;
-        this.lives = boss ? 0 : Math.max(0, this.lives - 1);
+        this.lives = Math.max(0, this.lives - leakCost(stats.tier, stats.boss === true));
         continue;
       }
 

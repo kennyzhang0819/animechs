@@ -1,9 +1,20 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { saveBalanceDoc, type BalanceDoc } from "@/game/balance";
 import { TOWERS } from "@/game/constants";
-import { costEntries, ITEM_INFO, type ItemKind } from "@/game/items";
+import {
+  allScrapPriceOverrides,
+  authoredScrapPrice,
+  pricePerTile,
+  SCRAP_START,
+  scrapPriceOf,
+  setScrapPrice,
+  STAGES,
+  TOWER_TIER,
+  WAVE_BONUS_BASE,
+  WAVE_BONUS_PER_WAVE,
+} from "@/game/economy";
 import {
   allRungOverrides,
   authoredRungKnobs,
@@ -12,9 +23,12 @@ import {
   rungKnobsOf,
   rungLabel,
   setRungKnob,
+  stageAudit,
+  STAGE_BOARDS,
   type RungKnobs,
   HP_PER_LEVEL,
 } from "@/game/ladder";
+import { WORLD } from "@/game/levels";
 import {
   allMutationCostOverrides,
   authoredMutationCost,
@@ -27,54 +41,11 @@ import {
   setMutationCost,
   type MutationId,
 } from "@/game/mutation";
-import {
-  allOverrides,
-  authoredKnobs,
-  BY_MINDUSTRY_VALUE,
-  globalGrowth,
-  knobsOf,
-  setGlobalGrowth,
-  setKnob,
-  SHARED_GROWTH,
-  techCap,
-  techNode,
-  techPrice,
-  type Knobs,
-} from "@/game/tech";
+import { BY_MINDUSTRY_VALUE } from "@/game/tech";
 import { type TowerKind } from "@/game/types";
+import { ScrapAmount, XpAmount } from "./Items";
 
 const NUM = "font-mono tabular-nums";
-const SERIES = "#3987e5";
-
-/** the item a bundle leads with — what the graph and the knob are denominated in */
-function leadItem(tower: TowerKind): ItemKind {
-  const first = costEntries(techNode(tower).price.base)[0];
-  return (first?.item ?? "copper") as ItemKind;
-}
-
-/** every currency in this node's bundle, in ITEM_KINDS order */
-function itemsOf(tower: TowerKind): ItemKind[] {
-  return costEntries(techNode(tower).price.base).map((e) => e.item as ItemKind);
-}
-
-/** the whole nth purchase (1-indexed), not just its lead currency */
-function bundleAt(tower: TowerKind, n: number): Partial<Record<ItemKind, number>> {
-  return techPrice(tower, n - 1);
-}
-
-/** one currency of the nth purchase */
-function priceAt(tower: TowerKind, n: number, item: ItemKind): number {
-  return techPrice(tower, n - 1)[item] ?? 0;
-}
-
-const fmt = (x: number): string =>
-  x >= 1e9
-    ? (x / 1e9).toFixed(1) + "B"
-    : x >= 1e6
-      ? (x / 1e6).toFixed(1) + "M"
-      : x >= 1e4
-        ? Math.round(x / 1e3) + "k"
-        : Math.round(x).toLocaleString();
 
 /**
  * One slider plus one number field, because neither alone is enough: the
@@ -144,31 +115,24 @@ function Knob({
   );
 }
 
+const TIER_COLOR: Record<number, string> = { 1: "#7BE58A", 2: "#FFB65C", 3: "#FF6B6B" };
+
 export default function BalanceView() {
   const [sel, setSel] = useState<TowerKind>("duo");
   const [, bump] = useState(0);
   const [status, setStatus] = useState<string | null>(null);
-  const [span, setSpan] = useState(200);
-  const [hover, setHover] = useState<number | null>(null);
 
-  const k = knobsOf(sel);
-  const authored = authoredKnobs(sel);
-  const node = techNode(sel);
-  const cap = techCap(sel);
-  const lead = leadItem(sel);
-  const shown = Math.min(cap, Math.max(10, span));
+  const price = scrapPriceOf(sel);
+  const authored = authoredScrapPrice(sel);
 
-  const setGrowth = useCallback((v: number | undefined) => {
-    setGlobalGrowth(v);
-    setStatus(null);
-    bump((n) => n + 1);
-  }, []);
-
-  const set = useCallback((knob: keyof Knobs, v: number | undefined) => {
-    setKnob(sel, knob, v);
-    setStatus(null);
-    bump((n) => n + 1);
-  }, [sel]);
+  const setPrice = useCallback(
+    (kind: TowerKind, v: number | undefined) => {
+      setScrapPrice(kind, v);
+      setStatus(null);
+      bump((n) => n + 1);
+    },
+    [],
+  );
 
   const setDifficulty = useCallback(
     (tier: number, knob: keyof RungKnobs, v: number | undefined) => {
@@ -186,7 +150,9 @@ export default function BalanceView() {
   }, []);
 
   const save = useCallback(async () => {
-    const doc: BalanceDoc = { ...allOverrides() };
+    const doc: BalanceDoc = {};
+    const prices = allScrapPriceOverrides();
+    if (Object.keys(prices).length > 0) doc.prices = prices;
     const diffs = allRungOverrides();
     if (Object.keys(diffs).length > 0) doc.difficulties = diffs;
     const muts = allMutationCostOverrides();
@@ -194,57 +160,19 @@ export default function BalanceView() {
     setStatus((await saveBalanceDoc(doc)) ? "Saved" : "Save failed");
   }, []);
 
-  // the curve, plus the running total, sampled across the window on screen
-  const curve = useMemo(() => {
-    const step = Math.max(1, Math.round(shown / 240));
-    const ns: number[] = [];
-    for (let n = 1; n <= shown; n += step) ns.push(n);
-    if (ns[ns.length - 1] !== shown) ns.push(shown);
-    // every currency rides the same growth, so these come out parallel — which
-    // is the point: the graph should show that the whole bundle moves together
-    return itemsOf(sel).map((item) => ({
-      item,
-      pts: ns.map((n) => ({ n, p: priceAt(sel, n, item) })),
-    }));
-    // knobs live in module state, so the bump counter is the real dependency
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sel, shown, k.base, k.growth]);
-
-  const spendTo = useCallback(
-    (n: number): Partial<Record<ItemKind, number>> => {
-      const total: Partial<Record<ItemKind, number>> = {};
-      for (let i = 1; i <= n; i++)
-        for (const e of costEntries(bundleAt(sel, i)))
-          total[e.item as ItemKind] = (total[e.item as ItemKind] ?? 0) + e.amount;
-      return total;
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sel, k.base, k.growth],
-  );
-
-  const W = 720, H = 300, PL = 62, PR = 16, PT = 14, PB = 30;
-  const IW = W - PL - PR, IH = H - PT - PB;
-  const top = Math.max(1, ...curve.flatMap((c) => c.pts.map((q) => q.p))) * 1.05;
-  const X = (n: number) => PL + ((n - 1) / Math.max(1, shown - 1)) * IW;
-  const Y = (p: number) => PT + IH - (p / top) * IH;
-  const pathOf = (pts: { n: number; p: number }[]) =>
-    pts.map((c, i) => (i ? "L" : "M") + X(c.n).toFixed(1) + " " + Y(c.p).toFixed(1)).join("");
-  const yTicks = [0, top / 2, top];
-  const firstBundle = costEntries(bundleAt(sel, 1));
-  // growth is global now, so a turret is bent only by its own base
-  const bentAny = k.base !== authored.base;
+  // the stage table, recomputed on every bump so a price edit shows at
+  // once in the column it changes
+  const stages = stageAudit(WORLD);
 
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
         <p className="max-w-3xl text-[13px] leading-relaxed text-[#71717C]">
-          One knob per turret: <span className="text-[#A6A6AF]">base</span>, what its first
-          purchase costs. Editing it rescales the whole bundle, so the drop-ratio shape survives
-          and only the size moves; the order of those bases comes from Mindustry&apos;s build
-          costs, so moving one past its neighbours gives that up.{" "}
-          <span className="text-[#A6A6AF]">Growth</span> is one number for the whole tree — every
-          turret climbs at the same rate, so that knob bends every turret&apos;s ladder together. Caps
-          come from footprint and nothing here changes them.
+          Three dials, one document. A turret&apos;s <span className="text-[#A6A6AF]">price</span>{" "}
+          is what it costs to place, in scrap, inside a run — held against what the
+          waves of its stage pay in the table below. A rung&apos;s dials are the mutator
+          roll and the XP bonus (enemy level is a mechanism the ladder no longer turns,
+          left here at zero). A mutator&apos;s cost decides which rungs can afford it.
         </p>
         <div className="flex shrink-0 items-center gap-2">
           {status && <span className="text-[13px] text-[#71717C]">{status}</span>}
@@ -257,14 +185,66 @@ export default function BalanceView() {
         </div>
       </div>
 
+      {/* THE STAGE TABLE — the one thing the turret prices are authored
+          against (TOWER_PRICE in economy.ts): what each stage's waves pay,
+          and how many of the tier's turrets that buys */}
+      <div className="mb-4 rounded-lg border border-[#2E2E36] p-4">
+        <div className="mb-1 text-[15px] font-bold text-[#EDEDEF]">Stages</div>
+        <p className="mb-3 max-w-3xl text-[12.5px] text-[#71717C]">
+          The run is three stages and the roster is three tiers, and a tier is priced so its
+          stage is roughly what buys it. <span className="text-[#A6A6AF]">Boards</span> is
+          how many of the tier&apos;s turrets the stage&apos;s scrap buys at the tier&apos;s mean
+          price; the healthy band is printed beside it. Stage 1 includes the opening{" "}
+          {SCRAP_START} scrap; every stage includes its wave bonuses ({WAVE_BONUS_BASE} +{" "}
+          {WAVE_BONUS_PER_WAVE} a wave).
+        </p>
+        <div className="grid gap-4 md:grid-cols-3">
+          {stages.map((s) => {
+            const band = STAGE_BOARDS[s.tier];
+            const ok = s.boards >= band.min && s.boards <= band.max;
+            return (
+              <div key={s.tier} className="rounded border border-[#2E2E36] px-3 py-2">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[14px] font-bold" style={{ color: TIER_COLOR[s.tier] }}>
+                    Tier {s.tier}
+                  </span>
+                  <span className={`text-[11px] text-[#71717C] ${NUM}`}>
+                    waves {s.from}–{s.to} · {s.units.toLocaleString()} enemies
+                  </span>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3">
+                  <ScrapAmount amount={s.scrap} />
+                  <XpAmount amount={s.xp} />
+                </div>
+                <div className={`mt-1 text-[12px] ${NUM}`}>
+                  <span className="text-[#71717C]">prices </span>
+                  <span className="text-[#A6A6AF]">
+                    {s.cheapest}–{s.dearest}, mean {s.mean}
+                  </span>
+                </div>
+                <div className={`text-[12px] ${NUM}`}>
+                  <span className="text-[#71717C]">boards </span>
+                  <span className="font-bold" style={{ color: ok ? "#A6A6AF" : "#FF8A8A" }}>
+                    {s.boards}
+                  </span>
+                  <span className="text-[#5A5A63]">
+                    {" "}
+                    (want {band.min}–{band.max})
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* enemy-side dials, saved into the same document under `difficulties` */}
       <div className="mb-4 rounded-lg border border-[#2E2E36] p-4">
-        <div className="mb-1 text-[15px] font-bold text-[#EDEDEF]">Ladder scaling</div>
+        <div className="mb-1 text-[15px] font-bold text-[#EDEDEF]">Ladder</div>
         <p className="mb-3 text-[12.5px] text-[#71717C]">
-          One card a rung, and three dials on it: a rung scales enemy health and the
-          mutator roll, and nothing else. Swarm armour and shield scale used to be
-          columns here and are mutators now (Armored Swarms, Overshields). The roll runs
-          from {rungLabel(1)} up, on every map.
+          One card a rung. A rung is the mutator roll it carries and the XP it pays;
+          every body walks in at the same health on every rung. The enemy-level dial is
+          still wired — health ×{HP_PER_LEVEL} a level — and authored to zero.
         </p>
         <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
           {RUNGS.map((_, tier) => {
@@ -281,16 +261,16 @@ export default function BalanceView() {
                   </span>
                 </div>
                 <Knob
-                  label="Enemy level"
-                  hint="hp ×1.06 per level"
-                  value={dk.level}
-                  min={0}
-                  max={60}
-                  step={1}
-                  decimals={0}
-                  bent={dk.level !== da.level}
-                  onChange={(v) => setDifficulty(tier, "level", Math.max(0, v))}
-                  onReset={() => setDifficulty(tier, "level", undefined)}
+                  label="XP bonus"
+                  hint="what the run's XP is multiplied by"
+                  value={dk.xpBonus}
+                  min={1}
+                  max={10}
+                  step={0.05}
+                  decimals={2}
+                  bent={dk.xpBonus !== da.xpBonus}
+                  onChange={(v) => setDifficulty(tier, "xpBonus", Math.max(0, v))}
+                  onReset={() => setDifficulty(tier, "xpBonus", undefined)}
                 />
                 {/* THE MUTATOR PAIR STARTS AT LEVEL 2. The bottom rung is the
                     campaign as authored (see mutation.ts) — that is a design
@@ -303,38 +283,50 @@ export default function BalanceView() {
                   </div>
                 ) : (
                   <>
-                <Knob
-                  label="Mutators"
-                  hint={`rules rolled, ${MUT_COUNT_MIN}–${MUT_COUNT_MAX}`}
-                  value={dk.mutationCount}
-                  min={MUT_COUNT_MIN}
-                  max={MUT_COUNT_MAX}
-                  step={1}
-                  decimals={0}
-                  bent={dk.mutationCount !== da.mutationCount}
-                  onChange={(v) =>
-                    setDifficulty(
-                      tier,
-                      "mutationCount",
-                      Math.min(MUT_COUNT_MAX, Math.max(0, Math.round(v))),
-                    )
-                  }
-                  onReset={() => setDifficulty(tier, "mutationCount", undefined)}
-                />
-                <Knob
-                  label="Mutator points"
-                  hint={`what they may cost together; a rule is 1–${MUT_COST_MAX}`}
-                  value={dk.mutationPoints}
-                  min={0}
-                  max={40}
-                  step={1}
-                  decimals={0}
-                  bent={dk.mutationPoints !== da.mutationPoints}
-                  onChange={(v) => setDifficulty(tier, "mutationPoints", Math.max(0, v))}
-                  onReset={() => setDifficulty(tier, "mutationPoints", undefined)}
-                />
+                    <Knob
+                      label="Mutators"
+                      hint={`rules rolled, ${MUT_COUNT_MIN}–${MUT_COUNT_MAX}`}
+                      value={dk.mutationCount}
+                      min={MUT_COUNT_MIN}
+                      max={MUT_COUNT_MAX}
+                      step={1}
+                      decimals={0}
+                      bent={dk.mutationCount !== da.mutationCount}
+                      onChange={(v) =>
+                        setDifficulty(
+                          tier,
+                          "mutationCount",
+                          Math.min(MUT_COUNT_MAX, Math.max(0, Math.round(v))),
+                        )
+                      }
+                      onReset={() => setDifficulty(tier, "mutationCount", undefined)}
+                    />
+                    <Knob
+                      label="Mutator points"
+                      hint={`what they may cost together; a rule is 1–${MUT_COST_MAX}`}
+                      value={dk.mutationPoints}
+                      min={0}
+                      max={40}
+                      step={1}
+                      decimals={0}
+                      bent={dk.mutationPoints !== da.mutationPoints}
+                      onChange={(v) => setDifficulty(tier, "mutationPoints", Math.max(0, v))}
+                      onReset={() => setDifficulty(tier, "mutationPoints", undefined)}
+                    />
                   </>
                 )}
+                <Knob
+                  label="Enemy level"
+                  hint="hp ×1.06 per level — authored 0, kept for experiments"
+                  value={dk.level}
+                  min={0}
+                  max={60}
+                  step={1}
+                  decimals={0}
+                  bent={dk.level !== da.level}
+                  onChange={(v) => setDifficulty(tier, "level", Math.max(0, v))}
+                  onReset={() => setDifficulty(tier, "level", undefined)}
+                />
               </div>
             );
           })}
@@ -398,13 +390,13 @@ export default function BalanceView() {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
-        {/* turret picker */}
+      {/* THE PRICE LIST, saved under `prices`. One number a turret: what it
+          costs to place. The picker on the left carries the tier and the
+          price per tile, which is the number two turrets are compared by */}
+      <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
         <div className="max-h-[560px] overflow-y-auto rounded-lg border border-[#2E2E36]">
           {BY_MINDUSTRY_VALUE.map((t) => {
-            const kk = knobsOf(t);
-            const a = authoredKnobs(t);
-            const dirty = kk.base !== a.base;
+            const dirty = scrapPriceOf(t) !== authoredScrapPrice(t);
             return (
               <button
                 key={t}
@@ -414,213 +406,52 @@ export default function BalanceView() {
                 }`}
               >
                 <span className={t === sel ? "font-bold text-[#EDEDEF]" : "text-[#A6A6AF]"}>
+                  <span className="mr-2 text-[11px]" style={{ color: TIER_COLOR[TOWER_TIER[t]] }}>
+                    T{TOWER_TIER[t]}
+                  </span>
                   {TOWERS[t].name}
                   {dirty && <span className="ml-1 text-[#3987e5]">•</span>}
                 </span>
                 <span className={`shrink-0 text-[11px] text-[#71717C] ${NUM}`}>
-                  {TOWERS[t].size}×{TOWERS[t].size} · cap {techCap(t).toLocaleString()}
+                  {scrapPriceOf(t)} · {TOWERS[t].size}×{TOWERS[t].size} ·{" "}
+                  {Math.round(pricePerTile(t))}/tile
                 </span>
               </button>
             );
           })}
         </div>
 
-        {/* knobs and graph */}
         <div className="rounded-lg border border-[#2E2E36] p-4">
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
             <div>
               <span className="text-[15px] font-bold text-[#EDEDEF]">{TOWERS[sel].name}</span>
               <span className={`ml-2 text-[12px] text-[#71717C] ${NUM}`}>
-                {TOWERS[sel].size}×{TOWERS[sel].size} · cap {cap.toLocaleString()}
-                {node.dps !== undefined && ` · ${node.dps.toLocaleString()} dps`}
+                tier {TOWER_TIER[sel]} · {TOWERS[sel].size}×{TOWERS[sel].size}
               </span>
             </div>
             <div className={`text-[12px] text-[#71717C] ${NUM}`}>
-              {firstBundle.length} {firstBundle.length === 1 ? "currency" : "currencies"}, all
-              riding the same growth
+              priced for waves {STAGES[TOWER_TIER[sel] - 1].from}–{STAGES[TOWER_TIER[sel] - 1].to}
             </div>
           </div>
-
-          <div className="grid gap-4 md:grid-cols-[290px_1fr]">
-            <div>
-              <Knob
-                label="Base"
-                hint={`${ITEM_INFO[lead].name} for the first one; the rest of the bundle follows`}
-                value={k.base}
-                min={1}
-                max={Math.max(50, Math.round(authored.base * 4))}
-                step={1}
-                decimals={0}
-                bent={k.base !== authored.base}
-                onChange={(v) => set("base", Math.max(0.01, v))}
-                onReset={() => set("base", undefined)}
-              />
-
-              <Knob
-                label="Growth (every turret)"
-                hint="cost multiplier per purchase, shared by the whole tree — small numbers compound hard"
-                value={globalGrowth()}
-                min={1}
-                max={1.2}
-                step={0.0001}
-                decimals={4}
-                bent={globalGrowth() !== SHARED_GROWTH}
-                onChange={(v) => setGrowth(v)}
-                onReset={() => setGrowth(undefined)}
-              />
-              <div className="border-t border-[#2E2E36] pt-3">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-[12px] text-[#71717C]">Graph range</span>
-                  <span className={`text-[12px] text-[#A6A6AF] ${NUM}`}>
-                    1 – {shown.toLocaleString()}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={10}
-                  max={cap}
-                  step={10}
-                  value={shown}
-                  onChange={(e) => setSpan(Number(e.target.value))}
-                  className="mt-2 w-full accent-[#71717C]"
-                  aria-label="Graph range"
-                />
-              </div>
-              {bentAny && (
-                <button
-                  onClick={() => {
-                    set("base", undefined);
-                  }}
-                  className="mt-3 w-full rounded border border-[#2E2E36] px-2 py-1.5 text-[12px] text-[#A6A6AF] hover:border-[#4A4A55]"
-                >
-                  Reset this turret
-                </button>
-              )}
-            </div>
-
-            <div>
-              <svg
-                viewBox={`0 0 ${W} ${H}`}
-                className="w-full"
-                role="img"
-                aria-label={`${TOWERS[sel].name}: ${ITEM_INFO[lead].name} per purchase across the first ${shown}`}
-                onPointerMove={(e) => {
-                  const r = e.currentTarget.getBoundingClientRect();
-                  const sx = ((e.clientX - r.left) / r.width) * W;
-                  if (sx < PL - 6 || sx > W - PR + 6) return setHover(null);
-                  setHover(
-                    Math.max(1, Math.min(shown, Math.round(1 + ((sx - PL) / IW) * (shown - 1)))),
-                  );
-                }}
-                onPointerLeave={() => setHover(null)}
-              >
-                {yTicks.map((v) => (
-                  <g key={v}>
-                    <line
-                      x1={PL}
-                      y1={Y(v)}
-                      x2={W - PR}
-                      y2={Y(v)}
-                      stroke="#2b2e2f"
-                      strokeWidth={1}
-                    />
-                    <text
-                      x={PL - 8}
-                      y={Y(v) + 4}
-                      textAnchor="end"
-                      className={NUM}
-                      fontSize={11}
-                      fill="#898781"
-                    >
-                      {fmt(v)}
-                    </text>
-                  </g>
-                ))}
-                {curve.map((c) => (
-                  <path
-                    key={c.item}
-                    d={pathOf(c.pts)}
-                    fill="none"
-                    stroke={ITEM_INFO[c.item].color}
-                    strokeWidth={2}
-                    strokeLinejoin="round"
-                    strokeLinecap="round"
-                  />
-                ))}
-                {hover !== null && (
-                  <>
-                    <line
-                      x1={X(hover)}
-                      y1={PT}
-                      x2={X(hover)}
-                      y2={PT + IH}
-                      stroke="#898781"
-                      strokeWidth={1}
-                    />
-                    {curve.map((c) => (
-                      <circle
-                        key={c.item}
-                        cx={X(hover)}
-                        cy={Y(priceAt(sel, hover, c.item))}
-                        r={4}
-                        fill={ITEM_INFO[c.item].color}
-                        stroke="#0B0B0D"
-                        strokeWidth={2}
-                      />
-                    ))}
-                  </>
-                )}
-                <line x1={PL} y1={PT + IH} x2={W - PR} y2={PT + IH} stroke="#383835" strokeWidth={1} />
-                <text x={PL} y={H - 8} fontSize={11} fill="#898781" className={NUM}>
-                  1
-                </text>
-                <text
-                  x={W - PR}
-                  y={H - 8}
-                  textAnchor="end"
-                  fontSize={11}
-                  fill="#898781"
-                  className={NUM}
-                >
-                  {shown.toLocaleString()}
-                </text>
-              </svg>
-
-              <div className="mt-1 rounded border border-[#2E2E36] bg-[#0B0B0D] p-3">
-                <div className={`text-[12.5px] ${NUM}`}>
-                  <div className="mb-1 text-[#71717C]">
-                    {hover === null ? (
-                      "first purchase — hover the graph to read any other"
-                    ) : (
-                      <>
-                        purchase{" "}
-                        <span className="text-[#EDEDEF]">{hover.toLocaleString()}</span>
-                      </>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-x-5 gap-y-1">
-                    {itemsOf(sel).map((it) => (
-                      <span key={it} className="inline-flex items-center gap-1.5">
-                        <span
-                          className="inline-block h-2.5 w-2.5 rounded-sm"
-                          style={{ background: ITEM_INFO[it].color }}
-                        />
-                        <span className="text-[#EDEDEF]">
-                          {Math.round(priceAt(sel, hover ?? 1, it)).toLocaleString()}
-                        </span>
-                        <span className="text-[#71717C]">{ITEM_INFO[it].name}</span>
-                        {hover !== null && (
-                          <span className="text-[#5A5A63]">
-                            ({fmt(spendTo(hover)[it] ?? 0)} spent)
-                          </span>
-                        )}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <Knob
+            label="Price"
+            hint="scrap to place one; selling returns 80% of it"
+            value={price}
+            min={10}
+            max={Math.max(500, authored * 3)}
+            step={10}
+            decimals={0}
+            bent={price !== authored}
+            onChange={(v) => setPrice(sel, Math.max(1, v))}
+            onReset={() => setPrice(sel, undefined)}
+          />
+          <p className="mt-2 text-[12.5px] leading-relaxed text-[#71717C]">
+            The stage table above is what this number is authored against: a tier-
+            {TOWER_TIER[sel]} turret should be a real purchase during waves{" "}
+            {STAGES[TOWER_TIER[sel] - 1].from}–{STAGES[TOWER_TIER[sel] - 1].to} and out of reach
+            before them. Within a tier the order follows Mindustry&apos;s build costs; move a
+            price past its neighbours and that order is given up.
+          </p>
         </div>
       </div>
     </div>

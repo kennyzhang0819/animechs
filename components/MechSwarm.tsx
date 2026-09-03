@@ -27,18 +27,18 @@ import {
   audit,
   budget,
   check,
-  grindTable,
-  HP_PER_LEVEL,
   rungColor,
   rungLabel,
   RUNG_COUNT,
   specForTier,
+  stageAudit,
+  stageTable,
   waveCost,
   waveGuide,
-  tierDropBonus,
   tierLevel,
   tierMutationCount,
   tierMutationPoints,
+  tierXpBonus,
 } from "@/game/ladder";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import {
@@ -55,8 +55,7 @@ import {
   UI_SCALES,
   saveHudMinimized,
   unlockEverything,
-  layoutFor,
-  saveLayout,
+  pointsFree,
   saveLoadout,
   saveSpeed,
   startingSpeed,
@@ -76,8 +75,8 @@ import {
   type MutationId,
 } from "@/game/mutation";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
-import { isEmpty, ITEM_INFO } from "@/game/items";
-import { CostRow, Wallet } from "./Items";
+import { FIRST_CLEAR_XP, levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
+import { itemCount, LevelStrip, PointsAmount, ScrapAmount, XpAmount } from "./Items";
 import TechTree from "./TechTree";
 import { useTouchOnly } from "./Board";
 import { bandFor, MutationFace } from "./mutationFace";
@@ -266,6 +265,38 @@ function LoadingScreen({ step, out }: { step: LoadStep; out: boolean }) {
   );
 }
 
+/**
+ * THE LEVEL LINE ON A RESULTS PANEL: "Level 4 → 6" when the run climbed,
+ * else how far into the current level the save now stands. A run that
+ * banked XP and moved nothing visible would read as a run that paid
+ * nothing, so the bar is always there.
+ */
+function LevelUpLine({ result }: { result: RunReward }) {
+  const p = loadProgress();
+  const { level, into, need } = levelProgress(p.xp);
+  const climbed = result.levelAfter > result.levelBefore;
+  return (
+    <div className="pt-1 text-[12px] uppercase tracking-widest text-[#A6A6AF]">
+      {climbed ? (
+        <>
+          Level <span style={{ color: POINT_COLOR }}>{result.levelBefore}</span> →{" "}
+          <span className="font-bold" style={{ color: POINT_COLOR }}>
+            {result.levelAfter}
+          </span>
+          <span className="ml-2">
+            <PointsAmount amount={pointsFree(p)} />
+          </span>
+        </>
+      ) : (
+        <>
+          Level <span style={{ color: POINT_COLOR }}>{level}</span> ·{" "}
+          {itemCount(into)} / {itemCount(need)} XP
+        </>
+      )}
+    </div>
+  );
+}
+
 /** what a level card advertises: how many waves, how many enemies total */
 const levelSummary = (lv: LevelSpec): { waves: number; enemies: number } => {
   let waves = 0, enemies = 0;
@@ -443,18 +474,14 @@ function MapDialog({
   const spec = specForTier(world, tier);
   const { waves } = levelSummary(spec);
   const step = (d: number): void => onTier(Math.min(top, Math.max(0, tier + d)));
-  // THE SALVAGE MULTIPLIER AS A MULTIPLE, not a percentage. It compounds
-  // now (LOOT_PER_RUNG), so the top level is "x10.6" and a percentage there
-  // would read as 963% — a number nobody can compare two of at a glance
-  const loot = tierDropBonus(tier);
-  // ...and the fight's own multiple beside it, which is the honest other
-  // half of the trade: every body carries x1.06 health a level, and the
-  // difficulty IS the level (tierLevel). The two are the whole decision, so
-  // they sit side by side and are ALWAYS both shown — at difficulty 1 they
-  // read x1.00, which is what makes the stepper legible
-  const hpMult = HP_PER_LEVEL ** tierLevel(tier);
+  // THE XP MULTIPLIER AS A MULTIPLE: the whole of what a higher level PAYS.
+  // Scrap is the same on every level — the run is priced against the
+  // script, not the rung — so the trade is rules against XP, and the
+  // first clear's bonus is the other half of it
+  const xpMult = tierXpBonus(tier);
   const badge = MAP_BADGE[world.badge ?? "beginner"];
   const cleared = isTierCleared(progress, world.id, tier);
+  const firstClearXp = Math.round(FIRST_CLEAR_XP * xpMult);
   /**
    * THE ROLL FOR THIS DEPLOY — as many rules as the difficulty asks for,
    * costing no more than the points it carries (tierMutationCount and
@@ -590,19 +617,29 @@ function MapDialog({
                 in four lines and could not be compared between two levels at
                 a glance; a row can. The wave count is here because it is the
                 thing a player most needs to know is NOT what they are
-                choosing — it is the same on every level */}
+                choosing — it is the same on every level; so is every body's
+                health, which is why there is no column for it */}
             <dl className="ms-rule-t mt-3 grid grid-cols-3 gap-2 pt-3 text-center">
               <div>
                 <dt className="text-[10px] uppercase tracking-widest text-[#71717C]">Waves</dt>
                 <dd className="text-[15px] font-bold text-[#EDEDEF]">{waves}</dd>
               </div>
               <div>
-                <dt className="text-[10px] uppercase tracking-widest text-[#71717C]">Health</dt>
-                <dd className="text-[15px] font-bold text-[#FF8A8A]">×{hpMult.toFixed(2)}</dd>
+                <dt className="text-[10px] uppercase tracking-widest text-[#71717C]">XP</dt>
+                <dd className="text-[15px] font-bold" style={{ color: XP_COLOR }}>
+                  ×{xpMult.toFixed(2)}
+                </dd>
               </div>
               <div>
-                <dt className="text-[10px] uppercase tracking-widest text-[#71717C]">Loot</dt>
-                <dd className="text-[15px] font-bold text-[#7BE58A]">×{loot.toFixed(2)}</dd>
+                <dt className="text-[10px] uppercase tracking-widest text-[#71717C]">
+                  First clear
+                </dt>
+                <dd
+                  className="text-[15px] font-bold"
+                  style={{ color: cleared ? "#71717C" : "#7BE58A" }}
+                >
+                  {cleared ? "Claimed" : `+${itemCount(firstClearXp)}`}
+                </dd>
               </div>
             </dl>
 
@@ -1086,13 +1123,10 @@ export default function MechSwarm() {
         // the pace carries across runs and across sessions — a player who
         // plays at 4x wants 4x again after a loss, not 1x and a click
         g.setSpeed(startingSpeed(save, admin ? SPEEDS : techOf(save).speeds));
-        // stand this WORLD's board back up before the first wave — one
-        // board a world now, whatever rung it was last built on, because
-        // every turret on it is legal at every rung. Tech is applied first
-        // because placeTower checks capacity, so restoring ahead of it
-        // would silently drop everything past the default caps
-        const saved = layoutFor(save, level.id);
-        if (saved && saved.length > 0) g.applyLayout(saved);
+        // NO SAVED BOARD STANDS BACK UP. A board is bought in scrap now,
+        // from the opening stipend outward, so every run starts on bare
+        // rock — restoring last run's turrets would be handing them over
+        // for nothing
         game = g;
         gameRef.current = g;
         setHud(g.ui());
@@ -1114,9 +1148,11 @@ export default function MechSwarm() {
             audit: () => audit(WORLD),
             waves: () => waveGuide(WORLD),
             check: () => check(WORLD),
-            // the three compounding curves as one printable table — the
-            // thing to read after touching LOOT_PER_RUNG or a wave cut
-            grind: () => console.log(grindTable(WORLD)),
+            // the three stages against their turret tiers, and the XP
+            // ladder, as one printable table — the thing to read after
+            // touching a price or a wave
+            stages: () => stageAudit(WORLD),
+            grind: () => console.log(stageTable(WORLD)),
             wave: (i: number, tier = 0) => waveCost(WORLD.script[i], tierLevel(tier)),
           };
         }
@@ -1146,17 +1182,8 @@ export default function MechSwarm() {
       setHud(ui);
       if ((ui.lost || ui.won) && !granted.current) {
         granted.current = true;
-        // the layout is saved on the RUN ENDING rather than on every
-        // placement: mid-run it is still changing, and a run abandoned from
-        // the pause menu should leave the last finished layout alone. It is
-        // filed under the WORLD, so climbing a rung walks into the board
-        // that won the one below it and farming a rung back down walks into
-        // the same board again
-        const built = g.layout();
-        saveLayout(level.id, built);
-        // level.id names the world the run was on — it keys the boss
-        // trophies, so world 2's boss is a fresh trophy even at a rung
-        // world 1's boss already paid
+        // level.id names the world the run was on — its ladder is the one
+        // a first clear moves
         const reward = grantRunReward(
           level.tier ?? 0,
           Array.from(g.sim.killsByKind),
@@ -1357,12 +1384,9 @@ export default function MechSwarm() {
     // the run just banked its drops — a node bought mid-overlay would not apply
     // without this re-read (tech is per-run anyway, but keep it honest)
     g.setTech(admin ? null : techOf(loadProgress()));
+    // reset() clears the field and the scrap: a retry is a fresh run on
+    // bare rock, exactly like the first attempt
     g.reset();
-    // reset() clears the field, so the layout has to be stood back up here
-    // too — Retry rebuilds the sim in place and never goes through the
-    // create effect that restores it on a fresh mount
-    const saved = layoutFor(loadProgress(), level?.id ?? WORLD.id);
-    if (saved && saved.length > 0) g.applyLayout(saved);
     setHud(g.ui());
   };
 
@@ -1556,15 +1580,15 @@ export default function MechSwarm() {
 
   if (screen !== "game" || !level) {
     /**
-     * THE WALLET AND THE WAY TO SPEND IT, as one strip. It is shown from
-     * the map grid inwards and never on the title card: resources only
-     * mean anything next to something to spend them on, and the last stop
+     * THE LEVEL AND THE WAY TO SPEND IT, as one strip. It is shown from
+     * the map grid inwards and never on the title card: a level only means
+     * anything next to something to spend its points on, and the last stop
      * before Deploy is exactly where a player wants the tech tree.
      */
     const bank = progress && (
       <div className="flex items-center gap-3">
         <span className="ms-pane flex items-center px-4 py-2">
-          <Wallet bank={progress.bank} />
+          <LevelStrip xp={progress.xp} points={pointsFree(progress)} />
         </span>
         <button
           onClick={() => {
@@ -1872,28 +1896,24 @@ export default function MechSwarm() {
                       which is a census nobody reads mid-wave. What a player
                       wants off this corner is "how much is still coming at
                       me", so that is all it says */}
-                  {!hudMin && (hud.livesMax > 1 || alive > 0) && (
+                  {!hudMin && (
                     <div className="text-[#71717C]">
-                      {hud.livesMax > 1 && (
-                        <>
-                          Lives{" "}
-                          <span
-                            className="font-bold"
-                            style={{
-                              color:
-                                hud.lives > hud.livesMax / 2
-                                  ? "#7BE58A"
-                                  : hud.lives > 1
-                                    ? "#FFD37F"
-                                    : "#FF5A5A",
-                            }}
-                          >
-                            {hud.lives}
-                          </span>{" "}
-                          / {hud.livesMax}
-                        </>
-                      )}
-                      {hud.livesMax > 1 && alive > 0 && <span className="mx-2">·</span>}
+                      Lives{" "}
+                      <span
+                        className="font-bold"
+                        style={{
+                          color:
+                            hud.lives > hud.livesMax / 2
+                              ? "#7BE58A"
+                              : hud.lives > hud.livesMax / 5
+                                ? "#FFD37F"
+                                : "#FF5A5A",
+                        }}
+                      >
+                        {hud.lives}
+                      </span>{" "}
+                      / {hud.livesMax}
+                      {alive > 0 && <span className="mx-2">·</span>}
                       {alive > 0 && (
                         <>
                           <span className="font-bold text-[#EDEDEF]">{alive}</span> enemies
@@ -1947,10 +1967,14 @@ export default function MechSwarm() {
                       })}
                     </div>
                   )}
+                  {/* THE RUN'S MONEY, in the biggest type on the panel: it
+                      is the number every build decision is made against.
+                      Sandbox and the editors build free, so they show
+                      nothing here. The XP beside it is what the run has
+                      earned the save so far, before the level's bonus */}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
-                    {/* what the run has banked so far, one stack per currency —
-                        empty until the first kill, so it doesn't sit at "0" */}
-                    <CostRow cost={hud.earned} />
+                    {hud.scrap !== null && <ScrapAmount amount={hud.scrap} size="md" className="text-xl" />}
+                    {hud.xp > 0 && <XpAmount amount={hud.xp} />}
                   </div>
                   {/* the countdown, conditional on there being a wave still
                       pending — with the script drained there is nothing left
@@ -2086,21 +2110,20 @@ export default function MechSwarm() {
                 seed row. A null unlocked list is sandbox mode: the roster */}
             {barKinds().map((kind) => {
               const t = MENU_BY_KIND.get(kind)!;
-              const cap = hud?.caps ? hud.caps[t.kind] : null;
-              const count = hud?.counts ? hud.counts[t.kind] : 0;
-              // what the badge says is how many are LEFT to place, not how
-              // many are standing — that is the number a build decision needs,
-              // and "0" reads faster than working out 6/6
-              const left = cap === null ? null : Math.max(0, cap - count);
-              const full = left === 0;
+              // what the badge says is the PRICE, in scrap — the number a
+              // build decision is made against — and it reddens the moment
+              // the run cannot cover it. Free builds (sandbox, the editors)
+              // carry no number at all
+              const price = hud?.scrap === null || !hud ? null : hud.prices[t.kind];
+              const poor = price !== null && hud !== null && hud.scrap !== null && hud.scrap < price;
               return (
                 <button
                   key={t.kind}
-                  title={t.name}
-                  aria-label={left === null ? t.name : `${t.name}, ${left} left`}
+                  title={price === null ? t.name : `${t.name} — ${price} scrap`}
+                  aria-label={price === null ? t.name : `${t.name}, ${price} scrap`}
                   aria-pressed={hud?.buildKind === t.kind}
                   onClick={() => pickTower(t.kind)}
-                  className={TOOL_BTN}
+                  className={`${TOOL_BTN} ${poor ? "opacity-60" : ""}`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
                   <img
@@ -2108,13 +2131,13 @@ export default function MechSwarm() {
                     alt=""
                     className="h-10 w-10 [image-rendering:pixelated]"
                   />
-                  {left !== null && (
+                  {price !== null && (
                     <span
-                      className={`text-base font-bold leading-none ${
-                        full ? "text-[#FFD37F]" : "text-white"
+                      className={`text-[13px] font-bold leading-none ${
+                        poor ? "text-[#FF8A8A]" : "text-white"
                       }`}
                     >
-                      {left}
+                      {price}
                     </span>
                   )}
                 </button>
@@ -2241,13 +2264,14 @@ export default function MechSwarm() {
                 <div>
                   Kills <span className="font-bold text-[#EDEDEF]">{hud.kills}</span>
                 </div>
-                {result && !isEmpty(result.earned) && (
+                {result && result.total > 0 && (
                   <div className="space-y-1 pt-1">
-                    {/* kills are the only income, so a loss still pays for
+                    {/* kills are the income, so a loss still pays for
                         everything the towers killed on the way down —
                         which is what makes a failed push into progress */}
-                    <div>Salvaged (×{result.dropBonus.toFixed(2)})</div>
-                    <CostRow cost={result.earned} className="justify-center" />
+                    <div>Earned (×{result.xpBonus.toFixed(2)})</div>
+                    <XpAmount amount={result.total} className="justify-center" />
+                    <LevelUpLine result={result} />
                   </div>
                 )}
               </div>
@@ -2297,17 +2321,20 @@ export default function MechSwarm() {
                   <>
                     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t-2 border-[#454545] pt-1.5">
                       <span className="font-bold text-[#EDEDEF]">
-                        Salvaged
+                        Earned
                         <span className="ml-1 font-normal text-[#EDEDEF]">
-                          ×{result.dropBonus.toFixed(2)}
+                          ×{result.xpBonus.toFixed(2)}
                         </span>
                       </span>
-                      {isEmpty(result.earned) ? (
-                        <span className="text-[#EDEDEF]">nothing</span>
-                      ) : (
-                        <CostRow cost={result.earned} />
-                      )}
+                      <XpAmount amount={result.xp} />
                     </div>
+                    {result.firstClearXp > 0 && (
+                      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                        <span className="font-bold text-[#7BE58A]">First clear</span>
+                        <XpAmount amount={result.firstClearXp} />
+                      </div>
+                    )}
+                    <LevelUpLine result={result} />
                     {/* the ladder runs out at RUNG_COUNT, so the last
                         first-clear has nothing above it to announce. What
                         counts as "last" is THIS WORLD'S top (topTier on the

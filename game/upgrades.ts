@@ -1,62 +1,46 @@
 import { MU, PAL, TOWERS, type BulletStats, type TowerStats } from "./constants";
-import { FxKind, TOWER_KINDS, type TowerKind } from "./types";
+import { TOWER_KINDS, type TowerKind } from "./types";
 
 /**
- * THE TURRET UPGRADE BRANCHES — four nodes hanging off every turret in the
- * tree, and the one part of the tech tree whose points buy neither a
- * placement nor a switch but STATS, applied to every turret of that kind
+ * THE TURRET UPGRADE BRANCHES — a chain of nodes hanging off every turret
+ * in the tree, and the part of the tech tree whose points buy neither a
+ * turret nor a switch but STATS, applied to every turret of that kind
  * standing on the board at once.
  *
- * IT STARTED AS DUO'S BRANCH AND IT IS NOW EVERY TURRET'S. Duo had four
- * nodes — rate of fire, pierce, graphite rounds, duo power — and they were
- * hand-written into tech.ts as utilities that happened to name duo. That
- * shape turned out to be the right one for every turret in the game, so it
- * is a TABLE now: one branch per turret, each one a chain, each one priced
- * off the turret it improves. Duo's four keep their original ids so a save
- * that bought them keeps them.
+ * EVERY RUNG IS BOUGHT ONCE. The tree is paid in SKILL POINTS now — one a
+ * player level (economy.ts), a few dozen over a whole campaign — so a rung
+ * is a single click that does its whole job, never a dial of a hundred
+ * half-per-cent stops. The shape of a branch is the contract this file is
+ * written to:
  *
- * THE RUNGS ARE THE SAME SHAPE EVERYWHERE, and that shape is the contract
- * this file is written to:
- *
- *   1  a cheap stacking dial. Weak on its own — a few per cent a point —
- *      and bought over a campaign rather than in one go.
- *   2  a second stacking dial on a DIFFERENT axis, so the two do not
- *      compete for the same number. Also weak per point.
+ *   1  a solid multiplier on one axis — rate, damage, range, pull. One
+ *      point, and the turret is noticeably better at what it already does.
+ *   2  a second step on a DIFFERENT axis, so the two never compete for the
+ *      same number. One point.
  *   3  a one-shot that is genuinely good: an ammunition swap, a doubling,
- *      a capability the stock turret does not have. Bought once.
- *   4  THE ULTIMATE. One shot, paid for in SURGE ALLOY and nothing else,
- *      and it does not improve the turret so much as replace it. See
- *      ULTIMATE_SURGE in tech.ts for what one costs; the short version is
- *      that a turret's own band decides, because surge is the currency a
- *      boss pays and nothing else does.
+ *      a capability the stock turret does not have. Two points (see
+ *      AMMO_POINTS in tech.ts).
+ *   4  THE ULTIMATE. Three points and a level gate, and it does not
+ *      improve the turret so much as replace it.
  *
  * ONLY DUO AND ARC SHIP A FOURTH RUNG TODAY, and the other fifteen are
  * deliberately unwritten rather than missing: an ultimate is a turret
  * REPLACED, which is a design decision per turret and not a formula, so
- * the fifteen are being authored by hand and land here when they are
- * ready. Everything an ultimate needs is already standing — the price
- * (ULTIMATE_SURGE, off the turret's own band), the refund, the switch,
- * the hexagon and its halo on the board — so writing one is adding a
- * fourth entry to a branch below with `tier: ULTIMATE_TIER` and its id in
- * UPGRADE_KINDS. Nothing else has to change.
+ * they are authored by hand and land here when they are ready. Writing one
+ * is adding a fourth entry to a branch below with `tier: ULTIMATE_TIER`
+ * and its id in UPGRADE_KINDS. Nothing else has to change.
  *
  * A BRANCH IS THEREFORE NOT A FIXED LENGTH. Read it as an array; do not
  * assume four. `tier` says which rung a def is, and ULTIMATE_TIER is what
- * makes one the surge rung — never its index.
+ * makes one the ultimate — never its index.
  *
  * WHY STATS AND NOT MORE TURRETS. A tech tree that only ever sells the
  * NEXT turret asks the player to abandon what they have every time they
- * climb a rung — the duos that carried the first ten waves are dead weight
- * by wave thirty. These branches are the other offer: keep what works and
- * make it worth keeping. A maxed duo line and a bare salvo are a real
- * choice, which is the whole point.
- *
- * NOTHING HERE IS GATED BY THE RUNG, exactly as nothing else in the tree
- * is — and nothing anywhere is any more, now that a rung's roster ceiling
- * is gone. What a save OWNS is the whole question. The price is the only
- * pacing, and because an upgrade's bundle is its turret's bundle scaled up,
- * an upgrade becomes affordable at the same point its turret does and never
- * before it.
+ * climb a stage — the duos that carried the first ten waves are dead
+ * weight by wave thirty. These branches are the other offer: keep what
+ * works and make it worth keeping. A maxed duo line and a bare salvo are a
+ * real choice, which is the whole point — and in-run, where every turret
+ * costs scrap, an upgraded cheap turret is a cheaper answer.
  */
 
 /** every upgrade node id, in tree order — the tech tree's third namespace */
@@ -126,14 +110,17 @@ export const isUpgradeNode = (id: string): id is UpgradeKind => UPGRADE_SET.has(
 
 /**
  * THE TIER NUMBER AN ULTIMATE CARRIES. A branch's rungs are numbered from
- * one, so `tier === ULTIMATE_TIER` is what makes a rung the surge-alloy
- * one — and that is a property of the RUNG, not of its position in the
- * array, because most branches do not have one yet (see the note at the
- * top of the file). A branch's real length is its array's own.
+ * one, so `tier === ULTIMATE_TIER` is what makes a rung the ultimate —
+ * and that is a property of the RUNG, not of its position in the array,
+ * because most branches do not have one yet (see the note at the top of
+ * the file). A branch's real length is its array's own.
  */
 export const ULTIMATE_TIER = 4;
 
-/** the most rungs any one branch holds — what the tree's chip row sizes to */
+/** the tier of the one-shot ammunition rung — the two-point one */
+export const AMMO_TIER = 3;
+
+/** the most rungs any one branch holds — what the tree's chain sizes to */
 export const MAX_RUNGS = ULTIMATE_TIER;
 
 /**
@@ -182,17 +169,8 @@ export interface TurretUpgradeDef {
    * player cannot tell apart.
    */
   glyph: UpgradeGlyph;
-  /** the most points this rung will take — 1 for the two one-shots */
-  cap: number;
-  /** the upgraded stats, given the points held and the board it stands on */
-  apply: (s: TowerStats, points: number, ctx: UpgradeContext) => TowerStats;
-  /**
-   * WHAT THE NODE IS DOING RIGHT NOW — the running total at the points
-   * held, which the blurb cannot know. The blurb says what one point buys
-   * and where the dial stops; this says where the dial is standing.
-   * Absent on the one-shots, whose blurb already says the whole story.
-   */
-  effect?: (points: number) => string;
+  /** the upgraded stats, given the board it stands on */
+  apply: (s: TowerStats, ctx: UpgradeContext) => TowerStats;
 }
 
 // ---------------------------------------------------------------------------
@@ -282,6 +260,12 @@ const piercing = (s: TowerStats, extra: number): TowerStats =>
     pierceCap: (s.bullet.pierceCap ?? 1) + extra,
   });
 
+/** a longer soak, on the two liquid turrets */
+const soaking = (s: TowerStats, extraSeconds: number): TowerStats =>
+  s.bullet.wet
+    ? withBullet(s, { wet: { ...s.bullet.wet, duration: s.bullet.wet.duration + extraSeconds } })
+    : s;
+
 /**
  * The composed stats with a few turret fields and a few bullet fields
  * replaced — the shape almost every ultimate wants, because an ultimate is
@@ -298,66 +282,6 @@ const then = (
   bullet: Partial<BulletStats> = {},
 ): TowerStats => ({ ...s, ...turret, bullet: { ...s.bullet, ...bullet } });
 
-/** percent, as the cards print it */
-const pct = (n: number): string => `${Math.round(n * 100)}%`;
-
-/**
- * HOW MANY POINTS A STACKING DIAL TAKES.
- *
- * It was fifteen or twenty, and one click was worth four to six per cent.
- * A hundred clicks worth half a per cent each is the same node — the same
- * total, the same price for the same effect (see UPGRADE_GROWTH in
- * tech.ts) — and it plays completely differently, because the thing a
- * player is actually buying on this board is PROGRESS and a dial with
- * fifteen stops runs out of it in an afternoon.
- *
- * NOT EVERY RUNG TAKES A HUNDRED. A bullet swap and an ultimate are still
- * bought once (cap 1): they change what the turret IS rather than how much
- * of it there is, and there is no such thing as forty per cent of graphite
- * ammunition.
- */
-export const CAP_DIAL = 100;
-
-/**
- * A COUNTING RUNG TAKES FAR FEWER POINTS, AND EACH ONE IS A WHOLE STEP.
- *
- * Some rungs count things - bodies punched through, lightning nodes
- * walked, degrees of cone - and a hundredth of a body is not a thing.
- * These briefly ran at CAP_DIAL with a step every tenth point, and that
- * was the wrong trade in both directions: nine clicks in ten changed
- * nothing the player could see, and the tenth did what one click used to.
- * Padding a count out to a hundred adds no progress, it only hides it.
- *
- * SO A COUNT IS BOUGHT ONE AT A TIME and the cap is the count. What the
- * hundred-point dials buy is the illusion of a long climb on a number
- * where an extra half a per cent is genuinely worth something; a body
- * pierced is not that number, and nine clicks that do nothing are not
- * progress however many of them there are.
- */
-const CAP_COUNT = 10;
-/** the two rungs whose count is worth more per step, so they stop sooner */
-const CAP_COUNT_SHORT = 8;
-
-/**
- * A STACKING DIAL. `total` is what the node is worth at its cap, and the
- * `effect` line reports the running total at the points held.
- *
- * THE BLURB SAYS BOTH, AND IT LEADS WITH THE PER-POINT FIGURE: "+0.6%
- * attack speed per point, up to +60%". A blurb that only quoted the full
- * total ("sixty per cent attack speed, fully bought") answered a question
- * nobody was asking at the moment of the click — what the player is
- * deciding is whether to spend THIS point, so that is the number that goes
- * first, with the ceiling after it for scale.
- */
-const dial = (
-  total: number,
-  label: string,
-  build: (s: TowerStats, mul: number) => TowerStats,
-): Pick<TurretUpgradeDef, "apply" | "effect"> => ({
-  apply: (s, n) => build(s, 1 + (total / CAP_DIAL) * n),
-  effect: (n) => `+${pct((total / CAP_DIAL) * n)} ${label}`,
-});
-
 // ---------------------------------------------------------------------------
 // THE BRANCHES
 // ---------------------------------------------------------------------------
@@ -368,35 +292,30 @@ const DUO: readonly TurretUpgradeDef[] = [
     turret: "duo",
     tier: 1,
     name: "Rate of Fire",
-    blurb: "+1% attack speed per point, up to +100%.",
+    blurb: "+50% attack speed.",
     glyph: "rate",
-    cap: CAP_DIAL,
-    ...dial(1.0, "attack speed", faster),
+    apply: (s) => faster(s, 1.5),
   },
   {
     id: "duo-pierce",
     turret: "duo",
     tier: 2,
     name: "Pierce",
-    blurb:
-      "+1 pierce per point, up to +10. Shots punch through that many bodies instead of stopping at the first.",
+    blurb: "Shots punch through 3 bodies instead of stopping at the first.",
     glyph: "pierce",
-    cap: CAP_COUNT,
     // PIERCE IS A CAP, NOT A FLAG. A stock duo bullet has no `pierce` at
-    // all, which the sim reads as "spent on the first body". One point
-    // turns pierce on with a cap of two, so "+1 pierce" is one EXTRA body,
-    // and the cap keeps a shot from running its whole lifetime down a lane
-    apply: (s, n) => piercing(s, n),
-    effect: (n) => `Shots punch through ${1 + n} bodies`,
+    // all, which the sim reads as "spent on the first body". Two extra
+    // bodies makes a cap of three, and the cap keeps a shot from running
+    // its whole lifetime down a lane
+    apply: (s) => piercing(s, 2),
   },
   {
     id: "duo-graphite",
     turret: "duo",
     tier: 3,
     name: "Graphite Rounds",
-    blurb: "Loads graphite instead of copper: 9 damage a shot becomes 18. Bought once.",
+    blurb: "Loads graphite instead of copper: 9 damage a shot becomes 18.",
     glyph: "damage",
-    cap: 1,
     // THE GRAPHITE ROUND, 1:1 from Blocks.java's duo ammo() block:
     //
     //   Items.graphite, new BasicBulletType(3.5f, 18){{
@@ -437,10 +356,7 @@ const DUO: readonly TurretUpgradeDef[] = [
     name: "Duo Power",
     blurb: "+1% damage for every OTHER duo standing. A hundred duos is +99% damage each.",
     glyph: "surge",
-    cap: 1,
-    apply: (s, _n, ctx) => stronger(s, 1 + 0.01 * Math.max(0, ctx.count - 1)),
-    // there is no point count to report — what it is worth is the board,
-    // and the board is not in scope here. The card says so instead
+    apply: (s, ctx) => stronger(s, 1 + 0.01 * Math.max(0, ctx.count - 1)),
   },
 ];
 
@@ -450,31 +366,26 @@ const SCATTER: readonly TurretUpgradeDef[] = [
     turret: "scatter",
     tier: 1,
     name: "Belt Loader",
-    blurb: "+0.6% attack speed per point, up to +60%.",
+    blurb: "+40% attack speed.",
     glyph: "rate",
-    cap: CAP_DIAL,
-    ...dial(0.6, "attack speed", faster),
+    apply: (s) => faster(s, 1.4),
   },
   {
     id: "scatter-fuse",
     turret: "scatter",
     tier: 2,
     name: "Proximity Fuse",
-    blurb: "+0.8% fuse range and +0.4% blast radius per point, up to +80% and +40%.",
+    blurb: "+50% fuse range and +25% blast radius.",
     glyph: "homing",
-    cap: CAP_DIAL,
-    apply: (s, n) => wider(fusedAt(s, 1 + 0.008 * n), 1 + 0.004 * n),
-    effect: (n) => `+${pct(0.008 * n)} fuse range, +${pct(0.004 * n)} blast`,
+    apply: (s) => wider(fusedAt(s, 1.5), 1.25),
   },
   {
     id: "scatter-metaglass",
     turret: "scatter",
     tier: 3,
     name: "Metaglass Flak",
-    blurb:
-      "Loads metaglass instead of lead: +100% damage, +15% blast radius, +35% fuse range. Bought once.",
+    blurb: "Loads metaglass instead of lead: +100% damage, +15% blast radius, +35% fuse range.",
     glyph: "damage",
-    cap: 1,
     // Mindustry's own metaglass flak is scatter's best ammo — damage 5
     // over lead's 3 and splashDamage 33 over 22. Taken as ratios rather
     // than absolutes, because our scatter's numbers are already scaled
@@ -488,37 +399,30 @@ const ARC: readonly TurretUpgradeDef[] = [
     turret: "arc",
     tier: 1,
     name: "Overcharged Coils",
-    blurb: "+0.9% damage per point, up to +90%.",
+    blurb: "+50% damage.",
     glyph: "damage",
-    cap: CAP_DIAL,
-    ...dial(0.9, "damage", stronger),
+    apply: (s) => stronger(s, 1.5),
   },
   {
     id: "arc-reach",
     turret: "arc",
     tier: 2,
     name: "Extended Arcs",
-    blurb:
-      "+1 chain node per point, up to +10. The bolt jumps to that many more bodies before it dies.",
+    blurb: "The bolt jumps to 4 more bodies before it dies.",
     glyph: "range",
-    cap: CAP_COUNT,
-    apply: (s, n) =>
+    // a lightning length is two per node walked
+    apply: (s) =>
       withBullet(s, {
-        lightning: { length: (s.bullet.lightning?.length ?? 0) + 2 * n },
+        lightning: { length: (s.bullet.lightning?.length ?? 0) + 8 },
       }),
-    effect: (n) =>
-      `Bolt walks ${Math.floor(
-        ((TOWERS.arc.bullet.lightning?.length ?? 0) + 2 * n) / 2,
-      )} nodes`,
   },
   {
     id: "arc-ionised",
     turret: "arc",
     tier: 3,
     name: "Ionised Air",
-    blurb: "+30% range, and the arc can hit air units. Bought once.",
+    blurb: "+30% range, and the arc can hit air units.",
     glyph: "air",
-    cap: 1,
     apply: (s) => then(reaching(s, 1.3), { targetAir: true }, { collidesAir: true }),
   },
   {
@@ -527,9 +431,8 @@ const ARC: readonly TurretUpgradeDef[] = [
     tier: 4,
     name: "Tesla Cascade",
     blurb:
-      "3 bolts a shot instead of 1: +50% damage, +35% attack speed, each bolt chains twice as far, and every node it lands on hits everything within 8 units. Bought once.",
+      "3 bolts a shot instead of 1: +50% damage, +35% attack speed, each bolt chains twice as far, and every node it lands on hits everything within 8 units.",
     glyph: "surge",
-    cap: 1,
     apply: (s) =>
       then(
         faster(stronger(s, 1.5), 1.35),
@@ -550,20 +453,18 @@ const HAIL: readonly TurretUpgradeDef[] = [
     turret: "hail",
     tier: 1,
     name: "Rifled Bore",
-    blurb: "+0.6% attack speed per point, up to +60%.",
+    blurb: "+40% attack speed.",
     glyph: "rate",
-    cap: CAP_DIAL,
-    ...dial(0.6, "attack speed", faster),
+    apply: (s) => faster(s, 1.4),
   },
   {
     id: "hail-charge",
     turret: "hail",
     tier: 2,
     name: "Bigger Charge",
-    blurb: "+0.5% blast radius per point, up to +50%.",
+    blurb: "+30% blast radius.",
     glyph: "splash",
-    cap: CAP_DIAL,
-    ...dial(0.5, "blast radius", wider),
+    apply: (s) => wider(s, 1.3),
   },
   {
     id: "hail-incendiary",
@@ -571,15 +472,13 @@ const HAIL: readonly TurretUpgradeDef[] = [
     tier: 3,
     name: "Incendiary Shells",
     blurb:
-      "Loads pyratite shells: +50% damage, and everything caught in the blast burns for 6s. Burning ignores armour. Bought once.",
+      "Loads pyratite shells: +50% damage, and everything caught in the blast burns for 6s. Burning ignores armour.",
     glyph: "burn",
-    cap: 1,
     // A STATUS LAID BY A BLAST, which is a thing only this tier of the
     // tree does. An artillery shell arcs OVER its target and never lands a
     // direct hit, so a burn on the bullet would have burned nothing at all
     // until Sim.splash learned to carry the status with the damage
-    apply: (s) =>
-      withBullet(stronger(s, 1.5), { burn: 6, fxColor: PAL.lightOrange }),
+    apply: (s) => withBullet(stronger(s, 1.5), { burn: 6, fxColor: PAL.lightOrange }),
   },
 ];
 
@@ -589,31 +488,26 @@ const SCORCH: readonly TurretUpgradeDef[] = [
     turret: "scorch",
     tier: 1,
     name: "Pressure Feed",
-    blurb: "+0.75% range per point, up to +75%.",
+    blurb: "+40% range.",
     glyph: "range",
-    cap: CAP_DIAL,
-    ...dial(0.75, "range", reaching),
+    apply: (s) => reaching(s, 1.4),
   },
   {
     id: "scorch-fuel",
     turret: "scorch",
     tier: 2,
     name: "Rich Fuel",
-    blurb: "+0.06s burn duration per point, up to +6s. Burning ignores armour.",
+    blurb: "Burns for 3s longer. Burning ignores armour.",
     glyph: "burn",
-    cap: CAP_DIAL,
-    apply: (s, n) => withBullet(s, { burn: (s.bullet.burn ?? 0) + 0.06 * n }),
-    effect: (n) => `Burns for ${((TOWERS.scorch.bullet.burn ?? 0) + 0.06 * n).toFixed(1)}s`,
+    apply: (s) => withBullet(s, { burn: (s.bullet.burn ?? 0) + 3 }),
   },
   {
     id: "scorch-pyratite",
     turret: "scorch",
     tier: 3,
     name: "Pyratite Feed",
-    blurb:
-      "Burns pyratite instead of coal: +90% damage, double burn duration, +40% flame radius. Bought once.",
+    blurb: "Burns pyratite instead of coal: +90% damage, double burn duration, +40% flame radius.",
     glyph: "damage",
-    cap: 1,
     apply: (s) =>
       withBullet(stronger(s, 1.9), {
         burn: (s.bullet.burn ?? 0) * 2,
@@ -628,31 +522,26 @@ const SALVO: readonly TurretUpgradeDef[] = [
     turret: "salvo",
     tier: 1,
     name: "Autoloader",
-    blurb: "+0.6% attack speed per point, up to +60%.",
+    blurb: "+40% attack speed.",
     glyph: "rate",
-    cap: CAP_DIAL,
-    ...dial(0.6, "attack speed", faster),
+    apply: (s) => faster(s, 1.4),
   },
   {
     id: "salvo-pierce",
     turret: "salvo",
     tier: 2,
     name: "Piercing Rounds",
-    blurb: "+1 pierce per point, up to +8. Each shell takes that many more bodies out of a file.",
+    blurb: "Each shell takes 2 more bodies out of a file.",
     glyph: "pierce",
-    cap: CAP_COUNT_SHORT,
-    apply: (s, n) => piercing(s, n),
-    effect: (n) => `Shells punch through ${1 + n} bodies`,
+    apply: (s) => piercing(s, 2),
   },
   {
     id: "salvo-pyratite",
     turret: "salvo",
     tier: 3,
     name: "Pyratite Shells",
-    blurb:
-      "Loads pyratite shells: +50% damage, and anything a shell touches burns for 5s. Bought once.",
+    blurb: "Loads pyratite shells: +50% damage, and anything a shell touches burns for 5s.",
     glyph: "burn",
-    cap: 1,
     apply: (s) =>
       withBullet(stronger(s, 1.5), {
         burn: 5,
@@ -670,24 +559,18 @@ const WAVE: readonly TurretUpgradeDef[] = [
     turret: "wave",
     tier: 1,
     name: "High-Pressure Pump",
-    blurb: "+0.06s slow duration per point, up to +6s.",
+    blurb: "Soaked enemies stay slowed 3s longer.",
     glyph: "duration",
-    cap: CAP_DIAL,
-    apply: (s, n) =>
-      s.bullet.wet
-        ? withBullet(s, { wet: { ...s.bullet.wet, duration: s.bullet.wet.duration + 0.06 * n } })
-        : s,
-    effect: (n) => `Soaked for ${((TOWERS.wave.bullet.wet?.duration ?? 0) + 0.06 * n).toFixed(1)}s`,
+    apply: (s) => soaking(s, 3),
   },
   {
     id: "wave-nozzle",
     turret: "wave",
     tier: 2,
     name: "Wide Nozzle",
-    blurb: "+0.5% range per point, up to +50%.",
+    blurb: "+30% range.",
     glyph: "range",
-    cap: CAP_DIAL,
-    ...dial(0.5, "range", reaching),
+    apply: (s) => reaching(s, 1.3),
   },
   {
     id: "wave-cryo",
@@ -695,9 +578,8 @@ const WAVE: readonly TurretUpgradeDef[] = [
     tier: 3,
     name: "Cryofluid Mix",
     blurb:
-      "Uses cryofluid instead of water: soaked enemies move at 40% speed rather than 65%, and stay soaked 50% longer. Bought once.",
+      "Uses cryofluid instead of water: soaked enemies move at 40% speed rather than 65%, and stay soaked 50% longer.",
     glyph: "frost",
-    cap: 1,
     apply: (s) =>
       s.bullet.wet
         ? withBullet(s, {
@@ -714,34 +596,29 @@ const LANCER: readonly TurretUpgradeDef[] = [
     turret: "lancer",
     tier: 1,
     name: "Capacitor Bank",
-    blurb: "+0.75% damage per point, up to +75%.",
+    blurb: "+50% damage.",
     glyph: "damage",
-    cap: CAP_DIAL,
-    ...dial(0.75, "damage", stronger),
+    apply: (s) => stronger(s, 1.5),
   },
   {
     id: "lancer-lens",
     turret: "lancer",
     tier: 2,
     name: "Focusing Lens",
-    blurb: "+1 beam pierce per point, up to +8. The beam holds through that many more bodies.",
+    blurb: "The beam holds through 3 more bodies.",
     glyph: "pierce",
-    cap: CAP_COUNT_SHORT,
-    apply: (s, n) =>
+    apply: (s) =>
       s.bullet.laser
-        ? withBullet(s, { laser: { ...s.bullet.laser, pierceCap: s.bullet.laser.pierceCap + n } })
+        ? withBullet(s, { laser: { ...s.bullet.laser, pierceCap: s.bullet.laser.pierceCap + 3 } })
         : s,
-    effect: (n) => `Beam cuts ${(TOWERS.lancer.bullet.laser?.pierceCap ?? 0) + n} deep`,
   },
   {
     id: "lancer-optics",
     turret: "lancer",
     tier: 3,
     name: "Charged Optics",
-    blurb:
-      "Armour stops counting quadruple against the beam: −60% charge time, +40% beam width. Bought once.",
+    blurb: "Armour stops counting quadruple against the beam: −60% charge time, +40% beam width.",
     glyph: "beam",
-    cap: 1,
     // armorMultiplier 4 is stock lancer's one real weakness — armour
     // counts QUADRUPLE against it, which is why a 140-damage beam does
     // almost nothing to the things that most need hitting. Putting it back
@@ -767,29 +644,26 @@ const RIPPLE: readonly TurretUpgradeDef[] = [
     turret: "ripple",
     tier: 1,
     name: "Long Barrels",
-    blurb: "+0.75% range per point, up to +75%.",
+    blurb: "+40% range.",
     glyph: "range",
-    cap: CAP_DIAL,
-    ...dial(0.75, "range", reaching),
+    apply: (s) => reaching(s, 1.4),
   },
   {
     id: "ripple-frag",
     turret: "ripple",
     tier: 2,
     name: "Fragmentation",
-    blurb: "+0.5% blast radius per point, up to +50%.",
+    blurb: "+30% blast radius.",
     glyph: "splash",
-    cap: CAP_DIAL,
-    ...dial(0.5, "blast radius", wider),
+    apply: (s) => wider(s, 1.3),
   },
   {
     id: "ripple-plastanium",
     turret: "ripple",
     tier: 3,
     name: "Plastanium Shells",
-    blurb: "Loads plastanium shells: 6 shells an arc instead of 4, +35% damage. Bought once.",
+    blurb: "Loads plastanium shells: 6 shells an arc instead of 4, +35% damage.",
     glyph: "spread",
-    cap: 1,
     apply: (s) =>
       then(
         stronger(s, 1.35),
@@ -807,30 +681,26 @@ const PARALLAX: readonly TurretUpgradeDef[] = [
     turret: "parallax",
     tier: 1,
     name: "Stronger Field",
-    blurb: "+0.9% pull force per point, up to +90%.",
+    blurb: "+50% pull force.",
     glyph: "homing",
-    cap: CAP_DIAL,
-    ...dial(0.9, "pull", pulling),
+    apply: (s) => pulling(s, 1.5),
   },
   {
     id: "parallax-aperture",
     turret: "parallax",
     tier: 2,
     name: "Wide Aperture",
-    blurb: "+0.5% range per point, up to +50%.",
+    blurb: "+30% range.",
     glyph: "range",
-    cap: CAP_DIAL,
-    ...dial(0.5, "range", reaching),
+    apply: (s) => reaching(s, 1.3),
   },
   {
     id: "parallax-phase",
     turret: "parallax",
     tier: 3,
     name: "Phase Coils",
-    blurb:
-      "Phase fabric in the emitter: +300% armour-piercing damage and +60% pull force. Bought once.",
+    blurb: "Phase fabric in the emitter: +300% armour-piercing damage and +60% pull force.",
     glyph: "damage",
-    cap: 1,
     apply: (s) => pulling(stronger(s, 4), 1.6),
   },
 ];
@@ -841,29 +711,26 @@ const FUSE: readonly TurretUpgradeDef[] = [
     turret: "fuse",
     tier: 1,
     name: "Choked Barrels",
-    blurb: "+0.75% damage per point, up to +75%.",
+    blurb: "+50% damage.",
     glyph: "damage",
-    cap: CAP_DIAL,
-    ...dial(0.75, "damage", stronger),
+    apply: (s) => stronger(s, 1.5),
   },
   {
     id: "fuse-reach",
     turret: "fuse",
     tier: 2,
     name: "Extended Rays",
-    blurb: "+0.5% range per point, up to +50%.",
+    blurb: "+30% range.",
     glyph: "range",
-    cap: CAP_DIAL,
-    ...dial(0.5, "range", reaching),
+    apply: (s) => reaching(s, 1.3),
   },
   {
     id: "fuse-surge",
     turret: "fuse",
     tier: 3,
     name: "Surge Shot",
-    blurb: "5 rays a shot instead of 3: +30% damage, and a wider spread. Bought once.",
+    blurb: "5 rays a shot instead of 3: +30% damage, and a wider spread.",
     glyph: "spread",
-    cap: 1,
     apply: (s) => ({ ...stronger(s, 1.3), shots: 5, spread: (16 * Math.PI) / 180 }),
   },
 ];
@@ -874,38 +741,34 @@ const SWARMER: readonly TurretUpgradeDef[] = [
     turret: "swarmer",
     tier: 1,
     name: "Guidance Fins",
-    blurb: "+1.2% missile turn rate and +0.6% lock range per point, up to +120% and +60%.",
+    blurb: "+60% missile turn rate and +30% lock range.",
     glyph: "homing",
-    cap: CAP_DIAL,
-    apply: (s, n) =>
+    apply: (s) =>
       s.bullet.homing
         ? withBullet(s, {
             homing: {
-              power: s.bullet.homing.power * (1 + 0.012 * n),
-              range: s.bullet.homing.range * (1 + 0.006 * n),
+              power: s.bullet.homing.power * 1.6,
+              range: s.bullet.homing.range * 1.3,
             },
           })
         : s,
-    effect: (n) => `+${pct(0.012 * n)} turn, +${pct(0.006 * n)} lock`,
   },
   {
     id: "swarmer-racks",
     turret: "swarmer",
     tier: 2,
     name: "Missile Racks",
-    blurb: "+0.4% attack speed per point, up to +40%.",
+    blurb: "+30% attack speed.",
     glyph: "rate",
-    cap: CAP_DIAL,
-    ...dial(0.4, "attack speed", faster),
+    apply: (s) => faster(s, 1.3),
   },
   {
     id: "swarmer-warheads",
     turret: "swarmer",
     tier: 3,
     name: "Surge Warheads",
-    blurb: "6 missiles a volley instead of 4: +60% splash damage, +30% blast radius. Bought once.",
+    blurb: "6 missiles a volley instead of 4: +60% splash damage, +30% blast radius.",
     glyph: "splash",
-    cap: 1,
     apply: (s) => then(wider(s, 1.3), { shots: 6 }, { splash: s.bullet.splash * 1.6 }),
   },
 ];
@@ -916,20 +779,18 @@ const CYCLONE: readonly TurretUpgradeDef[] = [
     turret: "cyclone",
     tier: 1,
     name: "Belt Feed",
-    blurb: "+0.6% attack speed per point, up to +60%.",
+    blurb: "+40% attack speed.",
     glyph: "rate",
-    cap: CAP_DIAL,
-    ...dial(0.6, "attack speed", faster),
+    apply: (s) => faster(s, 1.4),
   },
   {
     id: "cyclone-fuse",
     turret: "cyclone",
     tier: 2,
     name: "Proximity Fuse",
-    blurb: "+0.6% fuse range per point, up to +60%.",
+    blurb: "+40% fuse range.",
     glyph: "homing",
-    cap: CAP_DIAL,
-    ...dial(0.6, "fuse range", fusedAt),
+    apply: (s) => fusedAt(s, 1.4),
   },
   {
     id: "cyclone-surge",
@@ -937,9 +798,8 @@ const CYCLONE: readonly TurretUpgradeDef[] = [
     tier: 3,
     name: "Surge Rounds",
     blurb:
-      "Surge alloy casings: +30% direct damage, +50% splash damage, and 10 fragments a shell instead of 6. Bought once.",
+      "Surge alloy casings: +30% direct damage, +50% splash damage, and 10 fragments a shell instead of 6.",
     glyph: "splash",
-    cap: 1,
     apply: (s) =>
       withBullet(stronger(s, 1.3), {
         splash: s.bullet.splash * 1.5,
@@ -954,25 +814,18 @@ const TSUNAMI: readonly TurretUpgradeDef[] = [
     turret: "tsunami",
     tier: 1,
     name: "Pressure Chamber",
-    blurb: "+0.09s slow duration per point, up to +9s.",
+    blurb: "Soaked enemies stay slowed 4s longer.",
     glyph: "duration",
-    cap: CAP_DIAL,
-    apply: (s, n) =>
-      s.bullet.wet
-        ? withBullet(s, { wet: { ...s.bullet.wet, duration: s.bullet.wet.duration + 0.09 * n } })
-        : s,
-    effect: (n) =>
-      `Soaked for ${((TOWERS.tsunami.bullet.wet?.duration ?? 0) + 0.09 * n).toFixed(1)}s`,
+    apply: (s) => soaking(s, 4),
   },
   {
     id: "tsunami-spray",
     turret: "tsunami",
     tier: 2,
     name: "Wide Spray",
-    blurb: "+0.5% range per point, up to +50%.",
+    blurb: "+30% range.",
     glyph: "range",
-    cap: CAP_DIAL,
-    ...dial(0.5, "range", reaching),
+    apply: (s) => reaching(s, 1.3),
   },
   {
     id: "tsunami-cryo",
@@ -980,9 +833,8 @@ const TSUNAMI: readonly TurretUpgradeDef[] = [
     tier: 3,
     name: "Cryofluid Mix",
     blurb:
-      "Uses cryofluid instead of water: soaked enemies move at 25% speed rather than 45%, and stay soaked 40% longer. Bought once.",
+      "Uses cryofluid instead of water: soaked enemies move at 25% speed rather than 45%, and stay soaked 40% longer.",
     glyph: "frost",
-    cap: 1,
     apply: (s) =>
       s.bullet.wet
         ? withBullet(s, {
@@ -999,30 +851,26 @@ const SPECTRE: readonly TurretUpgradeDef[] = [
     turret: "spectre",
     tier: 1,
     name: "Cooling Jacket",
-    blurb: "+0.6% attack speed per point, up to +60%.",
+    blurb: "+40% attack speed.",
     glyph: "rate",
-    cap: CAP_DIAL,
-    ...dial(0.6, "attack speed", faster),
+    apply: (s) => faster(s, 1.4),
   },
   {
     id: "spectre-bases",
     turret: "spectre",
     tier: 2,
     name: "Hardened Bases",
-    blurb: "+0.5% damage per point, up to +50%.",
+    blurb: "+30% damage.",
     glyph: "damage",
-    cap: CAP_DIAL,
-    ...dial(0.5, "damage", stronger),
+    apply: (s) => stronger(s, 1.3),
   },
   {
     id: "spectre-surge",
     turret: "spectre",
     tier: 3,
     name: "Surge Shells",
-    blurb:
-      "Surge shells: +35% damage, 5 pierce instead of 2, and armour is ignored entirely. Bought once.",
+    blurb: "Surge shells: +35% damage, 5 pierce instead of 2, and armour is ignored entirely.",
     glyph: "pierce",
-    cap: 1,
     apply: (s) =>
       withBullet(stronger(s, 1.35), { pierce: true, pierceCap: 5, pierceArmor: true }),
   },
@@ -1034,29 +882,26 @@ const MELTDOWN: readonly TurretUpgradeDef[] = [
     turret: "meltdown",
     tier: 1,
     name: "Coolant Loop",
-    blurb: "+0.75% attack speed per point, up to +75%.",
+    blurb: "+50% cooling speed — the beam is back sooner.",
     glyph: "rate",
-    cap: CAP_DIAL,
-    ...dial(0.75, "cooling speed", faster),
+    apply: (s) => faster(s, 1.5),
   },
   {
     id: "meltdown-array",
     turret: "meltdown",
     tier: 2,
     name: "Focusing Array",
-    blurb: "+0.5% damage per point, up to +50%.",
+    blurb: "+30% damage.",
     glyph: "damage",
-    cap: CAP_DIAL,
-    ...dial(0.5, "damage", stronger),
+    apply: (s) => stronger(s, 1.3),
   },
   {
     id: "meltdown-phase",
     turret: "meltdown",
     tier: 3,
     name: "Phase Lens",
-    blurb: "+35% range, and the beam bites every 3.5 ticks instead of every 5. Bought once.",
+    blurb: "+35% range, and the beam bites every 3.5 ticks instead of every 5.",
     glyph: "beam",
-    cap: 1,
     apply: (s) => {
       const lens = reaching(s, 1.35);
       return lens.bullet.continuous
@@ -1077,36 +922,30 @@ const FORESHADOW: readonly TurretUpgradeDef[] = [
     turret: "foreshadow",
     tier: 1,
     name: "Rail Capacitors",
-    blurb: "+0.75% damage per point, up to +75%.",
+    blurb: "+50% damage.",
     glyph: "damage",
-    cap: CAP_DIAL,
-    ...dial(0.75, "damage", stronger),
+    apply: (s) => stronger(s, 1.5),
   },
   {
     id: "foreshadow-servos",
     turret: "foreshadow",
     tier: 2,
     name: "Servo Motors",
-    blurb: "+15% traverse speed and +1° firing cone per point, up to 10 points.",
+    blurb: "Double traverse speed and a 5° wider firing cone.",
     glyph: "spread",
-    // a COUNTING rung: the cone is whole degrees, so the traverse dial
-    // rides its cap rather than the other way round
-    cap: CAP_COUNT,
-    apply: (s, n) => ({
+    apply: (s) => ({
       ...s,
-      rotateSpeed: s.rotateSpeed * (1 + 0.15 * n),
-      shootCone: s.shootCone + (Math.PI / 180) * n,
+      rotateSpeed: s.rotateSpeed * 2,
+      shootCone: s.shootCone + (Math.PI / 180) * 5,
     }),
-    effect: (n) => `+${pct(0.15 * n)} traverse, ${2 + n}° cone`,
   },
   {
     id: "foreshadow-surge",
     turret: "foreshadow",
     tier: 3,
     name: "Surge Rail",
-    blurb: "+30% damage, and the reload drops to 60% of stock. Bought once.",
+    blurb: "+30% damage, and the reload drops to 60% of stock.",
     glyph: "rate",
-    cap: 1,
     apply: (s) => faster(stronger(s, 1.3), 1 / 0.6),
   },
 ];
@@ -1157,7 +996,8 @@ export function upgradeParent(id: UpgradeKind): UpgradeKind | null {
   return def.tier <= 1 ? null : TURRET_UPGRADES[def.turret][def.tier - 2].id;
 }
 
-/** points per rung, tier 1 first — the shape the sim and the tree both hold */
+/** owned-or-not per rung, tier 1 first — the shape the sim and the tree
+ *  both hold. Every entry is 0 or 1 now that a rung is bought once */
 export type UpgradePoints = readonly number[];
 
 /**
@@ -1197,8 +1037,7 @@ export function upgradedTower(
   const rungs = TURRET_UPGRADES[kind];
   let s = stock;
   for (let i = 0; i < rungs.length; i++) {
-    const n = Math.max(0, Math.floor(points[i] ?? 0));
-    if (n > 0) s = rungs[i].apply(s, n, ctx);
+    if ((points[i] ?? 0) > 0) s = rungs[i].apply(s, ctx);
   }
   return s;
 }

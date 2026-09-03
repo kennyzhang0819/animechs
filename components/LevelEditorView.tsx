@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  dropsForKills,
   UNIT_KINDS,
   UNIT_STATS,
   UNIT_TREES,
@@ -21,14 +22,11 @@ import {
   type WaveTransform,
   type WaveUnits,
 } from "@/game/levels";
-import { dropsForKills } from "@/game/progress";
 import {
   audit,
-  GRIND_STEP,
   rungColor,
   rungLabel,
-  SLIDE_STEP,
-  tierDropBonus,
+  stageAudit,
   TOP_TIER,
   waveGuide,
   type WaveRow,
@@ -42,7 +40,7 @@ import {
   ZONE_LABELS,
 } from "@/game/maps";
 import type { ZoneKind } from "@/game/constants";
-import { CostRow } from "./Items";
+import { DropRow, ScrapAmount, XpAmount } from "./Items";
 
 /* eslint-disable @next/next/no-img-element -- raw pixel sprites, no optimization wanted */
 
@@ -495,80 +493,58 @@ export default function LevelEditorView({
               </p>
             </section>
 
-            {/* ECONOMY. One row a RUNG: what a full clear banks, drop bonus
-                included. Every rung sends the same fifty waves, so the rows
-                differ ONLY by that bonus — the shape below them is the
-                script's and is printed once. The ratio is the number to
-                author against (the tech tree is priced to it); see
-                TARGET_DROP_RATIO in ladder.ts. The bonus cannot move it —
-                only the mix of unit tiers the waves send can. */}
+            {/* ECONOMY. THE THREE STAGES against the three turret tiers:
+                what the waves in each pay, and how many of the tier's
+                turrets that buys at the mean price. This is the table the
+                turret prices are authored against (TOWER_PRICE in
+                economy.ts) — a stage that buys too few of its tier is a
+                tier the run never fields, one that buys hundreds was the
+                previous stage's turret with a bigger number on it. */}
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
               <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
-                Payout per rung
+                Stages
               </h2>
               <div className="space-y-2">
-                {report.rows.map((r) => (
-                  <div key={r.tier}>
+                {stageAudit({ ...level, waveGap, script: playedScript }).map((s) => (
+                  <div key={s.tier}>
                     <div className="flex items-baseline justify-between">
-                      <span
-                        className="text-[13px] font-bold"
-                        style={{ color: rungColor(r.tier) }}
-                      >
-                        {r.label}
+                      <span className="text-[13px] font-bold text-[#EDEDEF]">
+                        Tier {s.tier} · waves {s.from}–{s.to}
                       </span>
                       <span className="text-[12px] text-[#71717C]">
-                        x{tierDropBonus(r.tier).toFixed(2)} loot
+                        {s.units.toLocaleString()} enemies
                       </span>
                     </div>
-                    {/* the run's whole weight at this rung — what the
-                        ladder table used to lead with, kept here now that
-                        the table is gone */}
-                    <div className="text-[12px] text-[#A6A6AF]">
-                      {r.units.toLocaleString()} enemies · {compactHp(r.hp)} hp ·{" "}
-                      {r.hpPerSecond.toLocaleString()} hp/s
+                    <DropRow drop={{ scrap: s.scrap, xp: s.xp }} />
+                    <div className="text-[12px] text-[#71717C]">
+                      buys{" "}
+                      <span className="font-bold text-[#A6A6AF]">{s.boards}</span> tier-{s.tier}{" "}
+                      turrets at {s.mean} (from {s.cheapest} to {s.dearest})
                     </div>
-                    <CostRow cost={r.drops} />
-                    {/* THE LADDER'S SHAPE, one line: what this rung asks for
-                        against what it pays. `grind` is climb / farm — how
-                        many more minutes this rung costs than the one below
-                        — and it is the number the ladder is tuned against
-                        (see AuditRow.grindStep). The first rung has nothing
-                        below it, so it has no step to show */}
-                    {r.tier > 0 && (
-                      <div className="text-[12px] text-[#71717C]">
-                        climb x{r.climbStep.toFixed(2)} · farm x{r.farmStep.toFixed(2)} ·{" "}
-                        <span
-                          className="font-bold"
-                          style={{
-                            color:
-                              r.grindStep > GRIND_STEP || r.grindStep < SLIDE_STEP
-                                ? "#FF8A8A"
-                                : "#A6A6AF",
-                          }}
-                        >
-                          grind x{r.grindStep.toFixed(2)}
-                        </span>
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
-              {/* THE MIX, ONCE. Every rung sends the same fifty waves, so
-                  the ratio is a fact about the SCRIPT and printing it ten
-                  times printed the same ten numbers ten times */}
+              {/* THE XP LADDER, once: every rung sends the same waves, so
+                  the only column that moves is the bonus */}
               <div className="mt-2 border-t border-[#2E2E36] pt-2">
-                <div className="text-[12px] text-[#A6A6AF]">
-                  {(report.rows[0]?.dropRatio ?? [])
-                    .map((v, i) => (i === 0 ? "100" : v.toFixed(v < 10 ? 1 : 0)))
-                    .join(" : ")}
+                <div className="mb-1 text-[12px] uppercase tracking-widest text-[#71717C]">
+                  XP per rung
                 </div>
-                <p className="text-[12px] leading-snug text-[#71717C]">
-                  Copper : titanium : thorium : plastanium : phase, for the whole
-                  script — the target is TARGET_DROP_RATIO in ladder.ts. Climb is
-                  health per second against the rung below, farm is items banked
-                  per minute against it, and grind is the two divided: hold it
-                  just above 1 and every rung costs a little more of an evening
-                  than the last.
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12px]">
+                  {report.rows.map((r) => (
+                    <div key={r.tier} className="flex items-baseline justify-between">
+                      <span className="font-bold" style={{ color: rungColor(r.tier) }}>
+                        {r.label}
+                      </span>
+                      <span className="text-[#A6A6AF]">
+                        ×{r.xpBonus.toFixed(2)} · <XpAmount amount={r.xp} />
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-1 text-[12px] leading-snug text-[#71717C]">
+                  Scrap is fixed per kill and the same on every rung; the rung
+                  multiplies the XP. A first clear pays a bonus on top of it.
                 </p>
               </div>
             </section>
@@ -590,7 +566,7 @@ export default function LevelEditorView({
                 <div className="mb-1 text-[12px] uppercase tracking-widest text-[#71717C]">
                   Full-clear payout
                 </div>
-                <CostRow cost={summary.payout} />
+                <DropRow drop={summary.payout} />
               </div>
             </section>
           </aside>
@@ -1059,7 +1035,7 @@ function StepCard({
         {guide && (
           <span className="text-[13px] font-bold text-[#A6A6AF]">{compactHp(guide.hp)} hp</span>
         )}
-        <CostRow cost={payout} />
+        <DropRow drop={payout} />
         <div className="ml-auto">{controls}</div>
       </div>
 

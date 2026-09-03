@@ -85,11 +85,11 @@ is a chore you perform before the wave. Four guards, all used below:
 
 ## The seventeen
 
-Grouped by **band** — how far up the currency list a turret's price reaches
-(`bandOfCost`, `game/tech.ts`), which is already the game's own measure of how
-late a turret is. One condition in the copper and titanium bands, two or a
-shape in thorium, a compound with a cost in plastanium, and a rare authored
-terrain feature in phase.
+Grouped by **band** — the bands below predate the three-tier scrap economy
+(`TOWER_TIER`, `game/economy.ts`) and map onto it roughly: copper and
+titanium are tier 1, thorium tier 2, plastanium and phase tier 3. One
+condition in the cheap bands, two or a shape in the middle, a compound with
+a cost above that, and a rare authored terrain feature at the top.
 
 ### Copper band — the pattern that teaches the system
 
@@ -97,7 +97,7 @@ terrain feature in phase.
 | --- | --- | --- |
 | **duo** | **Firing line** | +8% fire rate per other duo in the same unbroken orthogonal run, counted both ways, max 4 → **+32%** |
 
-Duo is 1×1, costs 8 copper and you own hundreds. A *run* rather than a
+Duo is 1×1, costs 60 scrap and a board holds dozens. A *run* rather than a
 neighbour count is deliberate: a 2×2 huddle and a straight row both give two
 orthogonal neighbours, so counting neighbours would teach nothing about shape.
 Counting the run teaches the whole system in one turret — **the picture on the
@@ -366,10 +366,10 @@ to it. So:
 
 - The caps above are the balance. A perfectly-played board runs roughly
   **+25–35%** effective damage, not double.
-- `OPENING_DUOS` (50, plus 5 arcs) is the campaign's difficulty anchor and it is
-  hand-tuned by feel. Fifty duos that can form firing lines are worth more than
-  fifty that cannot. **Re-feel the opening after this lands**, and expect the
-  number to want to come down.
+- `SCRAP_START` (750, a dozen duos) is the campaign's difficulty anchor and it
+  is hand-tuned by feel. A dozen duos that can form firing lines are worth more
+  than a dozen that cannot. **Re-feel the opening after this lands**, and expect
+  the number to want to come down.
 - There is a natural mutator in here: **Interference — placement patterns give
   nothing this run.** Brutal band, 5–6 points. It costs the player exactly what
   they built into their layout and the audit sees nothing, which is the

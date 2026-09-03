@@ -10,9 +10,17 @@ import {
 import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
 import { isBuildableWall } from "./terrain";
 import { loadBalanceDoc } from "./balance";
-import { loadLevelDocs, UNIT_KINDS, type LevelSpec, type TowerKind, type UnitKind } from "./levels";
-import type { Cost } from "./items";
-import { dropsForKills, type TowerPlacement } from "./progress";
+import {
+  dropsForKills,
+  loadLevelDocs,
+  UNIT_KINDS,
+  type LevelSpec,
+  type TowerKind,
+  type UnitKind,
+} from "./levels";
+import { scrapPriceOf, sellValue } from "./economy";
+import type { TowerPlacement } from "./progress";
+import { TOWER_KINDS } from "./types";
 import { Renderer } from "./renderer";
 import { drawHaze, fitZoom } from "./haze";
 import { Sim } from "./sim";
@@ -42,9 +50,7 @@ export interface UiState {
   paused: boolean;
   /** the base is destroyed — the field is frozen behind the score screen */
   lost: boolean;
-  /** the base's remaining health, and the pool the save's plating bought
-   *  (tech.ts, LIVES_BASE + Extra Lives). At a max of 1 there is nothing
-   *  to report — the first leak is the loss — so the HUD stays quiet */
+  /** the base's remaining health out of LIVES_START (economy.ts) */
   lives: number;
   livesMax: number;
   /** every enemy in the script is down — the success screen takes over */
@@ -56,12 +62,23 @@ export interface UiState {
   speed: number;
   /** is the drop-zone and air-route overlay on? */
   showRoutes: boolean;
-  /** what this run's kills have banked so far, by currency (see items.ts) */
-  earned: Cost;
-  /** live towers per kind, for the bar's remaining-count cap badges */
+  /**
+   * THE RUN'S SCRAP (economy.ts): what is in hand to build with, or null
+   * when building is free — a sandbox or an editor, where a counter would
+   * be a number that means nothing
+   */
+  scrap: number | null;
+  /** everything the run has taken in so far, kills and wave bonuses */
+  scrapEarned: number;
+  /** the XP this run's kills are worth so far, before the rung bonus */
+  xp: number;
+  /** what each turret costs to place right now, in scrap */
+  prices: Record<TowerKind, number>;
+  /** what each turret sells back for */
+  refunds: Record<TowerKind, number>;
+  /** live towers per kind, for the bar's standing-count badges */
   counts: Record<TowerKind, number>;
-  /** campaign restrictions from the tech tree; null = unrestricted (editor) */
-  caps: Record<TowerKind, number> | null;
+  /** the turrets the save may field; null = unrestricted (editor, sandbox) */
   unlocked: readonly TowerKind[] | null;
   /** loadout slots the build bar holds (tech tree); null = sandbox, uncapped */
   barSlots: number | null;
@@ -78,6 +95,12 @@ export interface Stats {
 
 /** the speeds the HUD toggle offers */
 export const SPEEDS: readonly number[] = [1, 2, 4, 8, 16];
+
+/** every turret's scrap price, read fresh so a dashboard edit shows at once */
+const PRICES = (): Record<TowerKind, number> =>
+  Object.fromEntries(TOWER_KINDS.map((k) => [k, scrapPriceOf(k)])) as Record<TowerKind, number>;
+const REFUNDS = (): Record<TowerKind, number> =>
+  Object.fromEntries(TOWER_KINDS.map((k) => [k, sellValue(k)])) as Record<TowerKind, number>;
 
 /**
  * The multipliers a save has BEFORE it buys any — just the pace the game
@@ -1093,9 +1116,12 @@ export class Game {
       won: this.won(),
       kills: this.sim.kills,
       menuOpen: this.menuOpen,
-      earned: dropsForKills(this.sim.killsByKind),
+      scrap: this.sim.charging ? Math.floor(this.sim.scrap) : null,
+      scrapEarned: Math.floor(this.sim.scrapEarned),
+      xp: dropsForKills(this.sim.killsByKind).xp,
+      prices: PRICES(),
+      refunds: REFUNDS(),
       counts: this.sim.towerCounts(),
-      caps: this.tech ? this.tech.caps : null,
       unlocked: this.tech ? Array.from(this.tech.unlocked) : null,
       // sandbox stages runs for filming with the whole roster — the loadout
       // cap is a campaign rule, so null lifts it there like the others

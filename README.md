@@ -27,32 +27,32 @@ stale tab or a cached bundle looks exactly like a fix not working.
   `loadLevelDocs()`. Six upgrade trees: ground, support, crawler, air and
   the two **naval** lines (risso→omura, retusa→navanax), which travel on
   the water layer and cannot leave it
-- `game/ladder.ts` — the **ten-rung ladder** (`RUNGS`: enemy level and the
-  mutator roll each, plus the compounding drop bonus), and the audit/check
-  arithmetic over the authored script
-- `game/tech.ts` — the tech tree: turret price bundles (one shared growth
-  constant for every turret), abilities, and the build-bar slot upgrades
+- `game/economy.ts` — **the economy**: scrap (in-run money), XP (meta
+  progress), the fixed per-tier drop table, the three turret tiers and
+  their scrap prices, the sell refund, the level curve, the first-clear
+  bonus, and the base's hundred lives
+- `game/ladder.ts` — the **ten-rung ladder** (`RUNGS`: the mutator roll
+  and the XP bonus each; the enemy-level dial is wired and authored to
+  zero), and the audit/check arithmetic over the authored script — the
+  **stage table** (`stageAudit`) that the turret prices are tuned against
+- `game/tech.ts` — the tech tree, paid in **skill points** (one a level):
+  turret unlocks, the upgrade rungs, the pace and slot switches, and the
+  level gates on the deeper tiers
 - `game/upgrades.ts` — the **turret upgrade branches**: a chain of rungs
-  under every turret, folded into its live `TowerStats`. Most rungs are
-  stacking dials of **100 points** (`CAP_DIAL`) — the number written in
-  each one is what it is worth FULLY BOUGHT, not what a click hands over.
-  Rungs that COUNT things (bodies pierced, lightning nodes) take 8-10
-  points and give one per point (`CAP_COUNT`): padding a count out to a
-  hundred adds no progress, it only hides it. Then a one-shot ammunition
-  swap, and an **ultimate** paid for in surge alloy that changes what the
-  turret is. The ultimate costs 1 surge on an early turret, 3 on a
-  plastanium one and 6 on a phase one, and it is the only node in the tree
-  that can be sold back. **Only duo and arc have one written so far** — the
+  under every turret, folded into its live `TowerStats`. **Every rung is
+  bought once**: two stat steps (one point each), a one-shot ammunition
+  swap (two points), and an **ultimate** (three points, level-gated) that
+  changes what the turret is and is the only node in the tree that can be
+  sold back. **Only duo and arc have an ultimate written so far** — the
   other fifteen are authored by hand as they are designed; adding one is a
   fourth entry in a branch with `tier: ULTIMATE_TIER` and its id in
   `UPGRADE_KINDS`, and nothing else
 - `game/mutation.ts` — the **mutators**: the catalog of rules a run can be
   played under, what each is worth in points, and the roller that draws
   three or four of them to fit a difficulty's budget
-- `game/progress.ts` — the save: bank, rungs cleared per world, tech
-  points, one saved layout per world, game speed, build-bar loadout
-- `game/items.ts` — the five currencies (copper, titanium, thorium,
-  plastanium, phase-fabric)
+- `game/progress.ts` — the save: lifetime XP, rungs cleared per world,
+  the nodes owned, game speed, build-bar loadout. Level and free points
+  are derived from XP and from what is owned, never stored
 - `game/maps.ts` — map documents: terrain layers, spawn circles, per-layer
   exit masks — see [docs/authoring-maps.md](docs/authoring-maps.md) for how
   to draw one and how to check it
@@ -100,8 +100,9 @@ stale tab or a cached bundle looks exactly like a fix not working.
   Water is a batch and a program of its own — Mindustry's `water.frag`,
   ported, so the sea swells and its bright bands drift across the map
 - `game/game.ts` — rAF loop, input, 2d overlay (placement ghost), stats
-- `components/MechSwarm.tsx` — React shell: HUD, rung picker,
-  six-slot build bar with its loadout picker, game-speed switcher, canvases
+- `components/MechSwarm.tsx` — React shell: HUD (scrap, lives, XP), rung
+  picker, six-slot build bar with prices and its loadout picker, game-speed
+  switcher, results screens, canvases
 - `components/MenuBackground.tsx` — the title screen's ground: the game
   seen from above before anyone has built on it. A lane meanders through
   rock rolled fresh every launch (a floor/wall pair, a second rock in
@@ -154,7 +155,8 @@ stale tab or a cached bundle looks exactly like a fix not working.
 In dev builds the running `Game` instance is exposed as `window.__mechswarm`
 for console poking, and the ladder's tuning surface as `window.__ladder`
 (`.spec(n)` for a rung's playable spec, `.budget(n)` for what the
-arithmetic says it costs).
+arithmetic says it costs, `.stages()` for the stage table, `.grind()` to
+print it).
 
 ## Controls
 
@@ -179,87 +181,95 @@ ceiling is 12, which is what makes a single cell aimable with a fingertip.
 
 **There is one run in the game and ten difficulties to play it at.** Every
 rung sends the whole authored script — all fifty waves, wave 1 to wave 50,
-the same fifty every time. A rung is one number: the enemy level the script
-is played at. It is shown to the player as *Level 1* through *Level 10* and
-nothing else; there are no named difficulties.
+the same fifty every time, **and every body at the same health**. A rung is
+what its mutator roll may spend, how many rules it returns, and how much
+the run's XP is multiplied by. It is shown to the player as *Level 1*
+through *Level 10* and nothing else; there are no named difficulties.
 
 | rung | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
 |---|---|---|---|---|---|---|---|---|---|---|
 | waves | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 |
-| enemy level | 0 | 4 | 8 | 12 | 16 | 20 | 24 | 28 | 32 | 36 |
-| enemy health | ×1.00 | ×1.26 | ×1.59 | ×2.01 | ×2.54 | ×3.21 | ×4.05 | ×5.11 | ×6.45 | ×8.15 |
+| enemy health | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 |
 | rules rolled | 0 | 3 | 3 | 3 | 3 | 4 | 4 | 4 | 4 | 5 |
 | mutator points | 0 | 8 | 10 | 11 | 13 | 15 | 17 | 19 | 20 | 22 |
-| salvage | ×1.00 | ×1.30 | ×1.69 | ×2.20 | ×2.86 | ×3.71 | ×4.83 | ×6.27 | ×8.16 | ×10.60 |
+| XP bonus | ×1.0 | ×1.3 | ×1.6 | ×1.9 | ×2.2 | ×2.5 | ×2.8 | ×3.1 | ×3.4 | ×3.7 |
 
-**A rung scales enemy health and the mutator roll, and nothing else.**
-Every column is arithmetic on the rung's index — `level` is
-`index × LEVELS_PER_RUNG`, the roll's two dials are `mutationBudget` and
-`mutationPicks` of it — so **an eleventh rung is one constant**
-(`RUNG_COUNT`). Nothing about the ladder is finite in shape;
-`clearedByMap` is an unbounded int per world.
+**A rung scales the mutator roll and the XP, and nothing else.** Enemy
+level — Mindustry's ×1.06-a-level health curve — is still a mechanism
+(`HP_PER_LEVEL`, `LevelSpec.enemyLevel`, the balance dashboard's dial) and
+the ladder no longer turns it: every rung is authored at level 0.
+Difficulty is rules, not hit points. Every column is arithmetic on the
+rung's index, so **an eleventh rung is one constant** (`RUNG_COUNT`).
 
-Difficulties used to be **prefix cuts** as well as levels — Incursion sent
-waves 1–20, Onslaught 1–35, Nemesis and Eradication all 50 — so two thirds
-of the ladder never saw the best-written waves in the game. The cuts are
-gone. The waves are the content, the rung is the difficulty, and the two
-are completely separate.
+### Two currencies that never touch
 
-**Salvage compounds** (`LOOT_PER_RUNG`, 1.30 a rung) and the top rung pays
-its full share. That gradient is the whole anti-farm guard: a rung used to
-carry a fixed roster ceiling — an Incursion was a first-three-currencies
-fight forever, however much tech the save owned — and that is now deleted.
-Every turret a save owns is placeable at every rung; nobody farms rung 4
-when rung 10 pays 10.6×.
+**Scrap is the run's money.** Every run opens with `SCRAP_START` (750),
+every kill drops its tier's scrap, every wave staged pays a small bonus,
+and every turret placed costs scrap. Selling returns `SELL_REFUND` (80%)
+of the price. Nothing carries between runs: a run is solved from its
+opening board to its last wave on what it earns, and the correct opening
+on wave 1 is a dozen duos, not the best turret the save owns.
 
-Since every rung runs the same waves for the same minutes, the whole ladder
-is two constants against each other: the fight gets ×1.2625 harder a rung
-(`RUNG_HP_STEP` = 1.06⁴) and the payout gets ×1.30 bigger, a 3% surplus a
-rung that the tech tree's geometric price curve turns into time.
+**XP is the save's progress.** The same kills pay XP, the rung multiplies
+it (the XP bonus above), and the **first clear of any (world, rung)** pays
+`FIRST_CLEAR_XP` on top, multiplied the same way. XP turns into **player
+level** through a power-law curve (`xpToNext`), and **every level is one
+skill point** to spend on the tech tree.
 
-Per **level**, only health scales (×1.06 a level; +12 levels is exactly
-double). Armour, speed, hitbox and drop stay at base, which is what keeps a
-level-20 dagger worth shooting and a fortress unkillable by duos on rung 1.
+| tier | scrap | XP |
+|---|---|---|
+| T1 | 1 | 2 |
+| T2 | 3 | 5 |
+| T3 | 8 | 12 |
+| T4 | 20 | 30 |
+| T5 | 50 | 80 |
+| boss | 500 | 1000 |
 
-Two columns have **left** this table, and both left the same way — as named
-rules a deploy can be played under rather than curves nobody could see.
-**Swarm armour** was flat armour on tier 1–3 bodies, +2 a rung from rung 6
-up to +10 at the top; it is the **Armored Swarms** mutator now. **Shield
-scale** multiplied every shield pool, cap and regen, compounding ×1.00 to
-×5.00 across the ladder; it is the **Overshields** mutator now. Both were
-sound as arithmetic and wrong as ladder: a rung's job is to say how much
-fight there is, and a rule that only bites against small calibre, or only
-against the one kind carrying a force field, is a rule about *how* the
-fight goes. That is a mutator — printed on the card before Deploy, and
-either in force or not.
+**Drops are fixed.** A tier-1 body always pays this, on every rung, on
+every map. Scrap income is a fact about the script, which is what lets the
+turret prices be authored against it.
 
-One consequence is deliberate: **shield tower pools no longer climb with the
-tier.** A shield tower grows with the wave (mega shieldTowers from wave 35) and with
-Overshields if the roll pairs them, like everything else in the catalog.
+### Three stages, three tiers
 
-**Every currency drops from rung 1**, which follows from there being no
-cuts: a full clear banks ~32,000 copper down to ~200 phase fabric whatever
-the rung. So the phase-priced turrets (spectre, meltdown, foreshadow) are
-reachable from the bottom of the ladder — slowly. The gate is the rate, not
-the permission.
+The roster is cut into three tiers along Mindustry's build-cost order
+(`TOWER_TIER`), and the run into three stages (`STAGES`): waves 1–20,
+21–35 and 36–50. **A tier is priced so its stage is roughly what buys it.**
+Against the shipped script:
+
+| stage | waves | scrap paid | tier | prices | buys about |
+|---|---|---|---|---|---|
+| 1 | 1–20 | ~24,000 | duo, scorch, hail, arc, scatter, wave | 60–300 | 150 turrets |
+| 2 | 21–35 | ~51,000 | swarmer, lancer, salvo, ripple, parallax, cyclone | 900–1,800 | 40 turrets |
+| 3 | 36–50 | ~83,000 | fuse, tsunami, spectre, meltdown, foreshadow | 4,000–12,000 | 11 turrets |
+
+The stage table (`stageAudit`, on the balance dashboard and the level
+editor) is where this is checked; `check()` complains when a stage buys
+too few or too many of its tier (`STAGE_BOARDS`). Selling the opening
+board back at 80% is how the transition into the next tier is funded,
+which is exactly the decision each stage asks.
+
+### The tech tree
+
+**The tree is paid in skill points and every node is bought once.** A
+turret unlock is one point; so is each of the two stat rungs under it; an
+ammunition swap is two; an ultimate is three. Tier-2 turrets wait for
+level 4, tier-3 for level 10, ultimates for level 15 (`TIER_LEVEL_GATE`,
+`ULTIMATE_LEVEL_GATE`). The tree holds close to a hundred points and a
+full ladder on one world is about level 17, so nobody maxes it from one
+world and every point is a choice. Home and duo are free. The pace strip
+stops at 4x; base plating is not sold.
 
 ### The base
 
-**The base has one point of health and every leak takes one.** A run is won
-for as long as any is left — clear the script and the level is yours,
-whatever walked past on the way. **Base Plating** (the `lives` node off
-home) buys the rest: one point each, to a hundred (`LIVES_MAX`), which is
-the only forgiveness anywhere in the game and priced like a turret branch
-rather than like the one-point switches beside it.
-
-**A boss that reaches the base ends the run whatever the plating says.** The
-plating is armour against the SWARM — it buys back the bodies a board cannot
-quite hold — and a script that builds towards one enemy must not have that
-enemy become something you shrug off.
+**The base has a hundred lives (`LIVES_START`) and a leak bites by tier**
+(`LEAK_LIVES_BY_TIER`: 1, 2, 4, 8, 16). A run is won for as long as any is
+left. **A boss that reaches the base ends the run** whatever is left — a
+script that builds towards one enemy must not have that enemy become
+something you shrug off.
 
 **A leak pays nothing.** `killsByKind` is the whole drop ledger and a body
-that walked off the board was never killed, so the salvage a leak costs is
-the salvage the player would have had for stopping it.
+that walked off the board was never killed, so the scrap and the XP a leak
+costs are what the player would have had for stopping it.
 
 ### Mutators
 
@@ -469,25 +479,24 @@ already looking at the speed the unit really travels at.
 ### Authoring waves
 
 Wave order is no longer a gate of any kind — every rung sends every wave, so
-a wave's position only says how deep into the run it lands. Three things do
-**not** come out in the wash, because the level scales health and nothing
-else:
+a wave's position only says how deep into the run it lands — but it says
+which STAGE it lands in, and a stage is priced (see *Three stages, three
+tiers*). Three things to hold in mind:
 
-- **Armour is a permanent multiplier.** `max(dmg - armor, 0.1 * dmg)` never
-  scales with level, so a fortress costs a duo line ten times its printed
-  health at every rung forever. A unit must not debut before the
-  player can own a turret out-damaging its armour. (Two exceptions to keep
-  in mind: burning pierces armour entirely, and the lancer counts armour
-  quadruple.)
-- **Health per body is difficulty that pays nothing back.** A kill drops one
-  item whatever it killed, so 100 spirocts cost ~15× what 100 daggers cost
-  and pay the same 100 items. Padding a wave with tier-1 bodies is nearly
-  free — cost and income rise together — which is why swarm waves can be as
-  big as they look good.
-- **The currency mix must track the tree.** The script has one target
-  payout mix in `TARGET_DROP_RATIO` (normalised to copper = 100, and
-  100 : 30 : 24 : 4.2 : 0.85 today); drift far from it
-  and one currency becomes the only real constraint.
+- **Armour is a permanent multiplier.** `max(dmg - armor, 0.1 * dmg)`, so
+  a fortress costs a duo line ten times its printed health on every rung.
+  A unit must not debut before the player can afford a turret
+  out-damaging its armour. (Two exceptions to keep in mind: burning
+  pierces armour entirely, and the lancer counts armour quadruple.)
+- **Health per body is difficulty that pays back by tier, not by health.**
+  A kill drops its tier's scrap whatever the body's health, so a wave of
+  tier-3 bodies pays eight a head however hard they were. Padding a wave
+  with tier-1 bodies is nearly free — cost and income rise together —
+  which is why swarm waves can be as big as they look good.
+- **A stage's income is its tier's budget.** Move heavy bodies earlier
+  and stage 1 pays for tier-2 turrets; thin stage 3 and nobody fields a
+  spectre. `check()` reports a stage that buys too few or too many of its
+  tier (`STAGE_BOARDS`).
 
 Two more the arithmetic can't see: **air** (hail, scorch, arc, lancer and
 ripple cannot shoot up at all) and **crawler speed** (twice the line's pace,
@@ -506,36 +515,27 @@ Check any edit from the console — dev builds also warn on load:
 
 ```js
 __ladder.check()      // complaints; empty means the script is in line
-__ladder.audit()      // per-rung waves, units, fleet needed, step, drop ratio
-__ladder.grind()      // the three compounding curves as one table (see below)
-__ladder.wave(7, 2)   // what one authored wave costs at a given rung
+__ladder.audit()      // per-rung waves, units, health, XP
+__ladder.stages()     // the three stages against their tiers
+__ladder.grind()      // the stage table and the XP ladder, printed
+__ladder.wave(7, 2)   // what one authored wave weighs and pays
 ```
 
 ### Economy
 
-- **Growth is one constant for every turret** (`SHARED_GROWTH`, 1.01), duo
-  included — prices are effectively flat, so turret counts are capped by the
-  base bundle (hundreds of duos down to a few dozen foreshadows) and the
-  treadmill lives on enemy level instead, where it costs the player without
-  pricing them out.
-- **Drop bonus compounds per rung** (`LOOT_PER_RUNG`, 1.30), and exists so
-  a higher rung is always the better farm. It is set just above the ladder's
-  own health step (`RUNG_HP_STEP` = ×1.2625 a rung) — the tech tree's
-  geometric price curve turns that 3% surplus into time. `__ladder.grind()`
-  prints all three curves side by side; the last column is `grindStep`,
-  how many more minutes a rung costs than the one below (hold it near 1,
-  and `check()` complains outside 0.75–1.30).
-- **An upgrade rung is its turret's own bundle, scaled** (×20 / ×90 / ×900
-  for the three payable rungs, climbing at 1.25 / 1.35 / flat). Scaling
-  preserves the bundle's SHAPE, so every rung carries its turret's drop
-  ratio and becomes affordable where the turret does — no gate is
-  written anywhere. The fourth rung is priced in surge alloy alone
-  (`ULTIMATE_SURGE`), which a boss pays once and no amount of farming
-  produces.
-
-Nothing about pricing, turret caps, or the free loadout is derived from the
-wave script. `OPENING_DUOS` (50, plus `OPENING_ARCS`, 5) is a hand-tuned
-constant and the campaign's difficulty anchor — the opening waves are
-authored to fit it, not the other way round, so an edit that makes the
-opening heavier does not quietly hand out more duos to absorb it. There is
-deliberately no check on this number; it is tuned by feel.
+- **Scrap prices are authored per turret** (`TOWER_PRICE` in
+  `economy.ts`) against the stage income above, and bent from the balance
+  dashboard (`scrapPriceOf` reads an override layer, saved under `prices`
+  in `public/balance.json`). Within a tier the order follows Mindustry's
+  build costs; the size is what the stage pays.
+- **The XP bonus is linear** (`XP_STEP_PER_RUNG`, +30% a rung), because
+  the fight no longer compounds: a compounding payout against flat health
+  would make the top rung the only one worth playing.
+- **Nothing in the run is free.** Sandbox and the editors (`tech` null on
+  the sim) build for nothing and show no scrap; every campaign run is
+  charged. There is no saved board any more — a board is bought from the
+  opening stipend outward, every run.
+- **The level curve** is `XP_LEVEL_BASE × level^XP_LEVEL_POWER` to the
+  next level (15,000 × n^1.35). A full rung-1 clear pays about 245,000 XP
+  in kills plus the first-clear bonus and lands around level 5; a wipe at
+  the end of stage 1 lands level 2.
