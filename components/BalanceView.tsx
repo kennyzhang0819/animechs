@@ -435,7 +435,7 @@ export default function BalanceView() {
           </div>
           <Knob
             label="Price"
-            hint="scrap to place one; selling returns 80% of it"
+            hint="scrap to place one; selling returns all of it"
             value={price}
             min={10}
             max={Math.max(500, authored * 3)}

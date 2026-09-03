@@ -2084,8 +2084,8 @@ export class Sim {
     if (!t) return false;
     this.towers.splice(this.towers.indexOf(t), 1);
     this.refreshSpecs();
-    // SELL_REFUND of the price back (economy.ts): a board is a commitment,
-    // and tearing the opening wall down to fund the next tier costs a fifth
+    // the whole price back (SELL_REFUND, economy.ts): a board is never a
+    // commitment, and re-laying it to fund the next tier costs nothing
     if (this.charging) this.scrap += sellValue(t.kind);
     // the rock under it belongs to the mountain — nothing to unblock
     this.pushFx(t.x, t.y, 0.35, FxKind.Death); // demolish puff

@@ -119,12 +119,12 @@ export const waveBonusScrap = (wave: number): number =>
   WAVE_BONUS_BASE + WAVE_BONUS_PER_WAVE * Math.max(0, Math.floor(wave));
 
 /**
- * What a sold turret hands back, as a fraction of its price. Below one so
- * that a board is a commitment: re-laying the whole field every wave costs
- * a fifth of it each time, and the choice to tear down the duo wall to
- * fund a salvo line is a real one.
+ * What a sold turret hands back, as a fraction of its price. THE WHOLE
+ * PRICE: a board is never a commitment, and tearing the duo wall down to
+ * fund a salvo line costs nothing but the seconds it takes. What a stage
+ * asks is WHEN to make that swap, not whether it can be afforded.
  */
-export const SELL_REFUND = 0.8;
+export const SELL_REFUND = 1;
 
 /** the scrap a sale returns for a turret of this kind */
 export const sellValue = (kind: TowerKind): number =>
@@ -195,7 +195,7 @@ export function stageOfWave(wave: number): (typeof STAGES)[number] {
  *
  *   TIER 2 (waves 21-35, ~48,600 scrap). A thousand and up — six to fifteen
  *   duos each, so one is a real save in stage 1 and a wave's income in
- *   stage 2. Selling the opening board back at SELL_REFUND is how the
+ *   stage 2. Selling the opening board back in full (SELL_REFUND) is how the
  *   transition is funded, which is exactly the decision the stage asks.
  *
  *   TIER 3 (waves 36-50, ~79,100 scrap). Four thousand and up — a wave or

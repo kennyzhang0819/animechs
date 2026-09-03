@@ -1970,12 +1970,13 @@ export default function MechSwarm() {
                   {/* THE RUN'S MONEY, in the biggest type on the panel: it
                       is the number every build decision is made against.
                       Sandbox and the editors build free, so they show
-                      nothing here. The XP beside it is what the run has
-                      earned the save so far, before the level's bonus */}
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
-                    {hud.scrap !== null && <ScrapAmount amount={hud.scrap} size="md" className="text-xl" />}
-                    {hud.xp > 0 && <XpAmount amount={hud.xp} />}
-                  </div>
+                      nothing here. The XP the run is earning is NOT here —
+                      it is the results screen's news, not the field's */}
+                  {hud.scrap !== null && (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
+                      <ScrapAmount amount={hud.scrap} size="md" className="text-xl" />
+                    </div>
+                  )}
                   {/* the countdown, conditional on there being a wave still
                       pending — with the script drained there is nothing left
                       to announce. The gap is not skippable: the pace strip

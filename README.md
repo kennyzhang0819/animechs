@@ -205,8 +205,8 @@ rung's index, so **an eleventh rung is one constant** (`RUNG_COUNT`).
 
 **Scrap is the run's money.** Every run opens with `SCRAP_START` (750),
 every kill drops its tier's scrap, every wave staged pays a small bonus,
-and every turret placed costs scrap. Selling returns `SELL_REFUND` (80%)
-of the price. Nothing carries between runs: a run is solved from its
+and every turret placed costs scrap. Selling returns the whole price
+(`SELL_REFUND` is 1). Nothing carries between runs: a run is solved from its
 opening board to its last wave on what it earns, and the correct opening
 on wave 1 is a dozen duos, not the best turret the save owns.
 
@@ -245,8 +245,8 @@ Against the shipped script:
 The stage table (`stageAudit`, on the balance dashboard and the level
 editor) is where this is checked; `check()` complains when a stage buys
 too few or too many of its tier (`STAGE_BOARDS`). Selling the opening
-board back at 80% is how the transition into the next tier is funded,
-which is exactly the decision each stage asks.
+board back in full is how the transition into the next tier is funded;
+what each stage asks is when to make that swap.
 
 ### The tech tree
 
