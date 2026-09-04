@@ -64,17 +64,24 @@ export const isEmptyDrop = (d: Drop): boolean => d.scrap === 0 && d.xp === 0;
  * audit in ladder.ts. Against the shipped script (public/levels/blueprint.json)
  * the kills alone pay about:
  *
- *   waves  1-20   ~21,700 scrap
- *   waves 21-35   ~48,600 scrap
- *   waves 36-50   ~79,100 scrap
+ *   waves  1-20   ~217,000 scrap
+ *   waves 21-35   ~486,000 scrap
+ *   waves 36-50   ~791,000 scrap
+ *
+ * THE SCRAP IS GENEROUS ON PURPOSE. A run is meant to be cleared FIRST
+ * TRY by a player who builds sensibly, the way a Bloons map is — the
+ * fifty waves are the fixed thing and the money is tuned to them, not the
+ * other way round. Headless runs of the shipped script with a plain
+ * round-robin builder clear all fifty at this income and die on wave 11
+ * at half of it, so this is the floor, not a ceiling.
  */
 export const DROP_BY_TIER: readonly Drop[] = [
   { scrap: 0, xp: 0 },
-  { scrap: 1, xp: 2 },
-  { scrap: 3, xp: 5 },
-  { scrap: 8, xp: 12 },
-  { scrap: 20, xp: 30 },
-  { scrap: 50, xp: 80 },
+  { scrap: 10, xp: 2 },
+  { scrap: 30, xp: 5 },
+  { scrap: 80, xp: 12 },
+  { scrap: 200, xp: 30 },
+  { scrap: 500, xp: 80 },
 ];
 
 /**
@@ -84,7 +91,7 @@ export const DROP_BY_TIER: readonly Drop[] = [
  * any more (surge alloy, gone with the bank) — the first-clear bonus
  * (FIRST_CLEAR_XP) is what pays for the run being NEW.
  */
-export const BOSS_DROP: Drop = { scrap: 500, xp: 1000 };
+export const BOSS_DROP: Drop = { scrap: 5000, xp: 1000 };
 
 /** the drop for a unit tier; a boss pays BOSS_DROP whatever its tier */
 export function dropForTier(tier: number, boss = false): Drop {
@@ -98,13 +105,13 @@ export function dropForTier(tier: number, boss = false): Drop {
 // ---------------------------------------------------------------------------
 
 /**
- * What a run opens with. Enough for a dozen duos, or a handful of duos
- * and one of the other tier-1 turrets — wave 1 is forty daggers and wave 5
- * is under two hundred tier-1 bodies, so the opening asks for a board,
- * not for a choice between two boards. Past wave 1 the run pays for
+ * What a run opens with. A hundred-odd tier-1 turrets' worth — wave 1 is
+ * forty daggers but wave 9 is five hundred crawlers and wave 10 six
+ * hundred daggers, and the opening has to buy the board that meets them
+ * before their own kills have paid for it. Past wave 10 the run pays for
  * itself.
  */
-export const SCRAP_START = 750;
+export const SCRAP_START = 7500;
 
 /**
  * THE WAVE BONUS, paid the moment a wave starts entering: a small stipend
@@ -113,8 +120,8 @@ export const SCRAP_START = 750;
  * deliberately a rounding error against the kill drops (about 5% of a
  * full run's scrap) — the swarm is the income, this is the floor under it.
  */
-export const WAVE_BONUS_BASE = 25;
-export const WAVE_BONUS_PER_WAVE = 5;
+export const WAVE_BONUS_BASE = 250;
+export const WAVE_BONUS_PER_WAVE = 50;
 export const waveBonusScrap = (wave: number): number =>
   WAVE_BONUS_BASE + WAVE_BONUS_PER_WAVE * Math.max(0, Math.floor(wave));
 
@@ -167,9 +174,13 @@ export const towersOfTier = (tier: TowerTier): TowerKind[] =>
 
 /**
  * THE STAGES OF A RUN, as 1-based inclusive wave ranges — the three
- * stretches the three turret tiers are priced for. A stage is a pricing
- * concept and nothing in the sim reads it; the audit (ladder.ts) sums what
- * each one pays and holds it against its tier's prices.
+ * stretches the three turret tiers are priced for, AND THE GATE ON THEM:
+ * a tier's turrets cannot be placed before its stage opens (unlockWaveOf,
+ * read by Sim.canPlace). Waves 1-20 are solved with tier 1, tier 2 joins
+ * at 21, tier 3 at 36 — so every run is an early game, a mid game and a
+ * late game, and no run opens on the best turret the save owns. The
+ * audit (ladder.ts) sums what each stage pays and holds it against its
+ * tier's prices.
  */
 export const STAGES: readonly { tier: TowerTier; from: number; to: number }[] = [
   { tier: 1, from: 1, to: 20 },
@@ -182,6 +193,17 @@ export function stageOfWave(wave: number): (typeof STAGES)[number] {
   for (const s of STAGES) if (wave <= s.to) return s;
   return STAGES[STAGES.length - 1];
 }
+
+/** the first wave a turret may be placed on — its tier's stage opening */
+export function unlockWaveOf(kind: TowerKind): number {
+  const tier = TOWER_TIER[kind];
+  for (const s of STAGES) if (s.tier === tier) return s.from;
+  return 1;
+}
+
+/** may this turret be placed while `wave` (1-based) is the current one? */
+export const tierOpenAt = (kind: TowerKind, wave: number): boolean =>
+  wave >= unlockWaveOf(kind);
 
 /**
  * WHAT EVERY TURRET COSTS, in scrap, AUTHORED.

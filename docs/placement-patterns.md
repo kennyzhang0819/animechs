@@ -366,7 +366,7 @@ to it. So:
 
 - The caps above are the balance. A perfectly-played board runs roughly
   **+25–35%** effective damage, not double.
-- `SCRAP_START` (750, a dozen duos) is the campaign's difficulty anchor and it
+- `SCRAP_START` (7,500, a hundred-odd tier-1 turrets) is the campaign's difficulty anchor and it
   is hand-tuned by feel. A dozen duos that can form firing lines are worth more
   than a dozen that cannot. **Re-feel the opening after this lands**, and expect
   the number to want to come down.

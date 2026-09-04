@@ -118,6 +118,7 @@ import {
   SCRAP_START,
   scrapPriceOf,
   sellValue,
+  tierOpenAt,
   waveBonusScrap,
 } from "./economy";
 import { isBuildableWall, isWaterFloor, waterWalkMask, type Terrain } from "./terrain";
@@ -1994,6 +1995,9 @@ export class Sim {
     // menu. A sandbox or an editor (tech null) is not charged at all
     if (this.tech) {
       if (!this.tech.unlocked.has(kind)) return false;
+      // the stage gate: tier 2 waits for wave 21, tier 3 for wave 36
+      // (STAGES in economy.ts) — a campaign rule, like the price
+      if (!tierOpenAt(kind, this.currentWave())) return false;
       if (this.scrap < scrapPriceOf(kind)) return false;
     }
     const sz = TOWERS[kind].size;
@@ -3603,12 +3607,18 @@ export class Sim {
         }
       }
       if (!ok) continue;
-      const towersHit: Tower[] = [];
+      // ...and never on a turret. A shield tower takes FREE rock only: the
+      // board the player built is theirs, and a mutator that buried it
+      // would be a mutator that undid their choices. A map with no free
+      // rock left simply raises nothing this period
       for (const t of this.towers) {
         const tsz = TOWERS[t.kind].size;
-        if (gx < t.gx + tsz && t.gx < gx + SHIELD_TOWER_SIZE && gy < t.gy + tsz && t.gy < gy + SHIELD_TOWER_SIZE)
-          towersHit.push(t);
+        if (gx < t.gx + tsz && t.gx < gx + SHIELD_TOWER_SIZE && gy < t.gy + tsz && t.gy < gy + SHIELD_TOWER_SIZE) {
+          ok = false;
+          break;
+        }
       }
+      if (!ok) continue;
 
       // the spot holds — raise it. BOTH POOLS ARE SET BY THE WAVE IT RISES
       // ON and fixed there for the rest of the run (shieldTowerWaveScale:
@@ -3639,19 +3649,6 @@ export class Sim {
         mega,
         regenT: 0,
       });
-      // OPTION E — THE SHIELD TOWER ENTOMBS THE TURRET. A buried turret is
-      // disabled, not destroyed: it drops everything mid-flight and comes
-      // back the moment the shield tower dies. A hostage, never a loss
-      for (const t of towersHit) {
-        t.tombShieldTower = idx;
-        t.target = -1;
-        t.targetIdx = -1;
-        t.burstLeft = 0;
-        t.chargeT = -1;
-        t.beamT = -1;
-        t.beamStr = 0;
-        t.aimShieldTower = -1;
-      }
       // NOTHING TOUCHES THE FLOW FIELD. A shield tower stands on rock the swarm
       // could never walk anyway, so raising one changes no route and costs
       // no Dijkstra — which is what makes a cap of twenty affordable

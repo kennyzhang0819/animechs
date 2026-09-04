@@ -203,12 +203,15 @@ rung's index, so **an eleventh rung is one constant** (`RUNG_COUNT`).
 
 ### Two currencies that never touch
 
-**Scrap is the run's money.** Every run opens with `SCRAP_START` (750),
+**Scrap is the run's money.** Every run opens with `SCRAP_START` (7,500),
 every kill drops its tier's scrap, every wave staged pays a small bonus,
 and every turret placed costs scrap. Selling returns the whole price
 (`SELL_REFUND` is 1). Nothing carries between runs: a run is solved from its
-opening board to its last wave on what it earns, and the correct opening
-on wave 1 is a dozen duos, not the best turret the save owns.
+opening board to its last wave on what it earns. Tiers are gated by wave
+(`STAGES`): tier 1 only until wave 20, tier 2 from 21, tier 3 from 36 — so
+every run has an early, a mid and a late game, and the opening board is
+never the best turret the save owns. The income is tuned so a sensible
+board clears all fifty first try.
 
 **XP is the save's progress.** The same kills pay XP, the rung multiplies
 it (the XP bonus above), and the **first clear of any (world, rung)** pays

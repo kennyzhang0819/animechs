@@ -75,7 +75,7 @@ import {
   type MutationId,
 } from "@/game/mutation";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
-import { FIRST_CLEAR_XP, levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
+import { FIRST_CLEAR_XP, levelProgress, POINT_COLOR, unlockWaveOf, XP_COLOR } from "@/game/economy";
 import { itemCount, LevelStrip, PointsAmount, ScrapAmount, XpAmount } from "./Items";
 import TechTree from "./TechTree";
 import { useTouchOnly } from "./Board";
@@ -2117,14 +2117,26 @@ export default function MechSwarm() {
               // carry no number at all
               const price = hud?.scrap === null || !hud ? null : hud.prices[t.kind];
               const poor = price !== null && hud !== null && hud.scrap !== null && hud.scrap < price;
+              // the stage gate (STAGES in economy.ts): a tier-2 or tier-3
+              // turret rides the bar from wave 1 but stays shut until its
+              // stage opens, and the badge says which wave that is
+              const opens = unlockWaveOf(t.kind);
+              const locked = price !== null && hud !== null && hud.currentWave < opens;
+              const label =
+                price === null
+                  ? t.name
+                  : locked
+                    ? `${t.name} — unlocks on wave ${opens}`
+                    : `${t.name} — ${price} scrap`;
               return (
                 <button
                   key={t.kind}
-                  title={price === null ? t.name : `${t.name} — ${price} scrap`}
-                  aria-label={price === null ? t.name : `${t.name}, ${price} scrap`}
+                  title={label}
+                  aria-label={label}
                   aria-pressed={hud?.buildKind === t.kind}
+                  aria-disabled={locked}
                   onClick={() => pickTower(t.kind)}
-                  className={`${TOOL_BTN} ${poor ? "opacity-60" : ""}`}
+                  className={`${TOOL_BTN} ${locked ? "opacity-40" : poor ? "opacity-60" : ""}`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
                   <img
@@ -2135,10 +2147,10 @@ export default function MechSwarm() {
                   {price !== null && (
                     <span
                       className={`text-[13px] font-bold leading-none ${
-                        poor ? "text-[#FF8A8A]" : "text-white"
+                        locked ? "text-[#a2a2a2]" : poor ? "text-[#FF8A8A]" : "text-white"
                       }`}
                     >
-                      {price}
+                      {locked ? `W${opens}` : price}
                     </span>
                   )}
                 </button>

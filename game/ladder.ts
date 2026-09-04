@@ -636,9 +636,9 @@ export function stageAudit(spec: LevelSpec = WORLD): StageRow[] {
  * is a board, tier 2 a line, tier 3 a handful.
  */
 export const STAGE_BOARDS: Readonly<Record<TowerTier, { min: number; max: number }>> = {
-  1: { min: 80, max: 250 },
-  2: { min: 20, max: 80 },
-  3: { min: 5, max: 25 },
+  1: { min: 800, max: 2500 },
+  2: { min: 200, max: 800 },
+  3: { min: 50, max: 250 },
 };
 
 /** one rung, weighed — the row the editor's ladder check renders */
