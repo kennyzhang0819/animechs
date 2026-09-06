@@ -2,6 +2,8 @@
 /.next
 /out
 /build
+# scripts/playtest.mjs transpiles the game modules here
+/.playtest
 .DS_Store
 *.tsbuildinfo
 next-env.d.ts

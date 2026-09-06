@@ -802,22 +802,24 @@ export const AMPHIBIOUS_HP = 0.15;
  * Drive speed added per stack, as a share of the speed it spawned with
  * (Speedy's doubling included — a share of what it actually walks at).
  *
- * THIS IS THE ONE THAT OUTRUNS SPEEDY. Five stacks is +250%, so a body
- * that has forded every crossing on the way in is travelling faster than
- * the same body under Speedy, which doubles and stops. That is deliberate
- * and it is the rule's teeth: Speedy is handed out by a roll and applies
- * to everything, while this has to be WALKED for, one crossing at a time,
- * and only the bodies that took the long way in arrive carrying it. What
- * it costs the player is the thing a tower defence cannot buy back —
- * seconds in the kill zone — and on Quagmire the south gate is where a
- * swarm can actually bank the full five.
+ * FIVE STACKS IS +50%, short of Speedy's doubling on purpose. It was
+ * +250% — a crawler that forded every crossing on Quagmire arrived at
+ * three and a half times its pace — and that was a swarm no tier-1 board
+ * could catch: the headless playtest lost the map on wave 4 with every
+ * leak a crawler, at half the authored counts. The rule keeps its teeth
+ * in the health and the plating; the speed is what a kill zone can still
+ * answer. It still has to be WALKED for, one crossing at a time, and only
+ * the bodies that took the long way in arrive carrying it.
  */
-export const AMPHIBIOUS_SPEED = 0.5;
+export const AMPHIBIOUS_SPEED = 0.1;
 
 /** armour added per stack, FLAT — see the note above on why this one is
- *  not a percentage. Five stacks is ARMORED_ARMOR, the plating Armored
- *  Swarms hands out, arrived at the hard way */
-export const AMPHIBIOUS_ARMOR = 2;
+ *  not a percentage. Five stacks is two and a half plates — it was ten,
+ *  the whole of ARMORED_ARMOR, and a body wearing ten plates is a body a
+ *  duo hits for its floor, which on Quagmire was every crawler by wave
+ *  four and every mace by wave twelve. The health is the rule's weight
+ *  now; the plating is the edge that makes a hail worth more than a duo */
+export const AMPHIBIOUS_ARMOR = 0.5;
 
 /** healing per stack per second, as a share of the health it spawned with:
  *  at the cap a body mends itself in twenty seconds, which chip damage

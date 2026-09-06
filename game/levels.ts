@@ -44,6 +44,17 @@ export const UNIT_ID: Record<UnitKind, number> = {
   navanax: 30,
 };
 
+/**
+ * THE HULLS SAIL SLOWER THAN MINDUSTRY'S. A risso's stock 1.1 units a tick
+ * is 8.25 tiles a second — more than twice a dagger — and on a water
+ * route a third the length of Confluence's march that is a boat a
+ * wave-1 board sees for five seconds. Every naval speed below carries
+ * this factor: a risso at 4.5 tiles a second is still the fastest tier-1
+ * body in the game, and a fleet is still a fleet, but the front can be
+ * held by the turrets a fresh run has. Change it here, not per hull.
+ */
+const NAVAL_PACE = 0.55;
+
 /** px per Mindustry world unit — leg geometry is written in those units */
 const MU = CELL / 8;
 
@@ -742,7 +753,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // already paying 7 against it
   risso: {
     hp: 280,
-    speed: 8.25 * CELL,
+    speed: 8.25 * CELL * NAVAL_PACE,
     armor: 2,
     radius: UR * 1.25,
     tier: 1,
@@ -756,7 +767,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // hitbox, 0.9 units/tick = 6.75 tiles/s
   minke: {
     hp: 600,
-    speed: 6.75 * CELL,
+    speed: 6.75 * CELL * NAVAL_PACE,
     armor: 4,
     radius: UR * 1.625,
     tier: 2,
@@ -774,7 +785,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // player has to strip again every four seconds
   bryde: {
     hp: 910,
-    speed: 6.375 * CELL,
+    speed: 6.375 * CELL * NAVAL_PACE,
     armor: 7,
     radius: UR * 2.5,
     tier: 3,
@@ -792,7 +803,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // every tier, and pays for it with a map most of which it cannot enter
   sei: {
     hp: 11000,
-    speed: 5.475 * CELL,
+    speed: 5.475 * CELL * NAVAL_PACE,
     armor: 12,
     radius: UR * 4.875,
     tier: 4,
@@ -809,7 +820,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // already have its nose pointed at
   omura: {
     hp: 22000,
-    speed: 4.65 * CELL,
+    speed: 4.65 * CELL * NAVAL_PACE,
     armor: 16,
     radius: UR * 7.25,
     tier: 5,
@@ -830,7 +841,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // do not have, exactly as with the corvus's charged laser
   retusa: {
     hp: 270,
-    speed: 6.75 * CELL,
+    speed: 6.75 * CELL * NAVAL_PACE,
     armor: 3,
     radius: UR * 1.375,
     tier: 1,
@@ -850,7 +861,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // than the buff is worth, so the support fleet's T2 is a plain hull
   oxynoe: {
     hp: 560,
-    speed: 6.225 * CELL,
+    speed: 6.225 * CELL * NAVAL_PACE,
     armor: 4,
     radius: UR * 1.75,
     tier: 2,
@@ -866,7 +877,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // goes the same way
   cyerce: {
     hp: 870,
-    speed: 6.45 * CELL,
+    speed: 6.45 * CELL * NAVAL_PACE,
     armor: 6,
     radius: UR * 2.5,
     tier: 3,
@@ -888,7 +899,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // pair is still twice as hard to remove as one
   aegires: {
     hp: 12000,
-    speed: 5.25 * CELL,
+    speed: 5.25 * CELL * NAVAL_PACE,
     armor: 12,
     radius: UR * 5.5,
     tier: 4,
@@ -913,7 +924,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // arrive with nothing but their size
   navanax: {
     hp: 20000,
-    speed: 4.875 * CELL,
+    speed: 4.875 * CELL * NAVAL_PACE,
     armor: 16,
     radius: UR * 7.25,
     tier: 5,
@@ -1403,7 +1414,9 @@ export const WORLDS: LevelSpec[] = [
     map: "maelstrom",
     badge: "advanced",
     // THE NAVAL FRONT DOES NOT END: twenty minutes on the clock against a
-    // fleet that keeps coming (Mission.survive)
+    // fleet that keeps coming (Mission.survive). Ten-second gaps: hulls are
+    // big and the water doors pass a wave slower than the schedule, so a
+    // shorter gap is what gets the clock to wave forty-five
     mission: { kind: "survive", minutes: 20 },
     intrinsicMutation: ["overshields", "hydrophobic"],
     waveGap: 15,
@@ -1414,9 +1427,17 @@ export const WORLDS: LevelSpec[] = [
     name: "Quagmire",
     map: "quagmire",
     badge: "advanced",
-    // THE PRECISION MAP: the swamp is held or it is lost. Few lives, and a
-    // script authored lighter than Confluence's to match
-    mission: { kind: "hold", lives: 10 },
+    // THE SWAMP: forty waves, held with the full hundred, because its goal
+    // is the whole western edge and its bodies wade in heavier than they
+    // spawned (Amphibious). The script is Confluence's first forty,
+    // marched by the dagger line instead of the crawlers and sailed by
+    // the naval line, at seven tenths of the bodies in the first stage
+    // and nine in the last; its first twenty waves send no tier-3 body,
+    // so the heavies arrive with the turrets that can hurt them. Forty
+    // rather than fifty because the last ten were the tier-5 hulls, and a
+    // hundred lives did not survive them on this front — the headless
+    // playtest holds the forty with sixty-odd to spare
+    mission: { kind: "hold" },
     intrinsicMutation: ["amphibious"],
     waveGap: 15,
     script: [],

@@ -1,0 +1,415 @@
+#!/usr/bin/env node
+/**
+ * THE HEADLESS PLAYTEST: run a map through the real sim with a builder
+ * bot at the keyboard, and report where it gets to.
+ *
+ *   npm run playtest -- --world 1            # Confluence, rung 1, shipped economy
+ *   npm run playtest -- --world 2 --log 5    # Maelstrom, a line every 5 waves
+ *   npm run playtest -- --world 1 --scale 0.5 --cap 300 --mix all
+ *
+ * The bot is deliberately ordinary: it walks the map's routes (ground,
+ * water and air), scores every buildable cell by how much route it can
+ * reach that nothing else covers yet, and spends its scrap round-robin
+ * on the stage's tier of turret — tier 1 until wave 20, tier 2 from 21,
+ * tier 3 from 36, exactly as the gate allows. It never sells, never
+ * upgrades a placement, and never reads the wave ahead. A script it
+ * clears is a script a person who builds sensibly clears; a script it
+ * dies on at wave 11 is a script with a wall.
+ *
+ * Options:
+ *   --world <id>     WORLDS id (default 1)
+ *   --tier <n>       rung, 0-based (default 0 — no rolled mutators)
+ *   --mutators a,b   mutators to play under (default none; intrinsic ones always apply)
+ *   --level <n>      player level for the track's upgrades (default 1 — stock turrets)
+ *   --lives <n>      override the mission's lives
+ *   --scale <x>      multiply every turret price (default 1)
+ *   --start <n>      opening scrap (default SCRAP_START)
+ *   --cap <n>        most turrets the bot may place (default unlimited)
+ *   --mix stage|all|duo   what it buys: the stage's tier, every open tier, or duos only
+ *   --log <n>        print a line every n waves (default 5)
+ *   --seconds <n>    give up after this much sim time (default 2400)
+ *   --probe <n>      seconds of turret-less dry run the bot learns the routes from (default 180)
+ *   --json           print the report as JSON
+ *   --no-build       skip the TypeScript transpile (use the last one)
+ *
+ * The game modules are transpiled to .playtest/dist with tsc on every run
+ * (about ten seconds); nothing in the repo depends on that folder.
+ */
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const DIST = path.join(ROOT, ".playtest", "dist");
+const require = createRequire(import.meta.url);
+
+// ---------- args ----------
+
+const args = process.argv.slice(2);
+const opt = (name, def) => {
+  const i = args.indexOf(`--${name}`);
+  if (i < 0) return def;
+  const v = args[i + 1];
+  return v === undefined || v.startsWith("--") ? true : v;
+};
+const flag = (name) => args.includes(`--${name}`);
+const WORLD_ID = String(opt("world", "1"));
+const TIER = +opt("tier", 0);
+const MUTATORS = String(opt("mutators", "")).split(",").filter(Boolean);
+const LEVEL = +opt("level", 1);
+const LIVES = opt("lives", null);
+const SCALE = +opt("scale", 1);
+const START = opt("start", null);
+const CAP = +opt("cap", Infinity);
+const MIX_MODE = String(opt("mix", "stage"));
+const LOG_EVERY = +opt("log", 5);
+const MAX_SECONDS = +opt("seconds", 2400);
+const PROBE_SECONDS = +opt("probe", 180);
+const JSON_OUT = flag("json");
+
+// ---------- transpile ----------
+
+if (!flag("no-build") || !existsSync(path.join(DIST, "sim.js"))) {
+  mkdirSync(DIST, { recursive: true });
+  const r = spawnSync(
+    "npx",
+    [
+      "tsc",
+      "game/sim.ts", "game/ladder.ts", "game/track.ts", "game/mutation.ts",
+      "--outDir", DIST, "--module", "commonjs", "--target", "es2022",
+      "--moduleResolution", "node", "--esModuleInterop", "--skipLibCheck",
+      "--noEmitOnError", "false", "--resolveJsonModule",
+    ],
+    { cwd: ROOT, stdio: "pipe", encoding: "utf8" },
+  );
+  if (!existsSync(path.join(DIST, "sim.js"))) {
+    console.error(r.stdout, r.stderr);
+    process.exit(1);
+  }
+}
+
+const L = require(path.join(DIST, "levels.js"));
+const E = require(path.join(DIST, "economy.js"));
+const C = require(path.join(DIST, "constants.js"));
+const M = require(path.join(DIST, "maps.js"));
+const LA = require(path.join(DIST, "ladder.js"));
+const TR = require(path.join(DIST, "track.js"));
+const TER = require(path.join(DIST, "terrain.js"));
+const MU = require(path.join(DIST, "mutation.js"));
+const TY = require(path.join(DIST, "types.js"));
+const { Sim } = require(path.join(DIST, "sim.js"));
+
+// ---------- documents ----------
+
+const pub = (...p) => path.join(ROOT, "public", ...p);
+const ids = JSON.parse(readFileSync(pub("levels", "index.json"), "utf8"));
+for (const id of ids) {
+  const doc = JSON.parse(readFileSync(pub("levels", `${id}.json`), "utf8"));
+  L.applyLevelDoc({ ...doc, id });
+}
+for (const id of M.OFFICIAL_MAP_IDS) {
+  const f = pub("maps", `${id}.json`);
+  if (existsSync(f)) M.OFFICIAL_MAPS.push(JSON.parse(readFileSync(f, "utf8")));
+}
+
+const world = L.worldById(WORLD_ID);
+if (!world) {
+  console.error(`no world "${WORLD_ID}"; have ${L.WORLDS.map((w) => w.id).join(", ")}`);
+  process.exit(1);
+}
+const spec = { ...LA.specForTier(world, TIER), mutation: MUTATORS };
+if (LIVES !== null) spec.mission = { ...spec.mission, lives: +LIVES };
+
+// ---------- the bot ----------
+
+const { COLS, ROWS, CELL, TOWERS } = C;
+const SUPPORT = new Set(["wave", "tsunami", "parallax", "meltdown"]);
+const MIX = {
+  1: ["duo", "hail", "scorch", "scatter"],
+  2: ["swarmer", "salvo", "ripple", "cyclone"],
+  3: ["spectre", "fuse", "foreshadow"],
+};
+const stageTier = (w) => E.stageOfWave(w).tier;
+const mixFor = (t) =>
+  MIX_MODE === "duo"
+    ? ["duo"]
+    : MIX_MODE === "all"
+      ? [...MIX[1], ...(t >= 2 ? MIX[2] : []), ...(t >= 3 ? MIX[3] : [])]
+      : MIX[t];
+
+/**
+ * WHERE THE SWARM ACTUALLY GOES: a dry run of the script with no turrets,
+ * sampled every half second, as visit counts per cell and layer. A traced
+ * gradient line misses the way a wide bay fans a fleet out, and a bot
+ * that only covers the line loses to what sails past the ends of it. The
+ * probe is the first few minutes of the same script under the same rules.
+ */
+function heatRoutes(seconds) {
+  const probe = new Sim(spec);
+  probe.setTech(null);
+  const hits = [new Float32Array(COLS * ROWS), new Float32Array(COLS * ROWS)]; // ground, water
+  let next = 0;
+  while (probe.time < seconds) {
+    for (let s = 0; s < 30; s++) probe.update(1 / 60);
+    if (probe.time < next) continue;
+    next += 0.5;
+    for (let i = 0; i < probe.n; i++) {
+      if (probe.ufly[i]) continue;
+      const gx = (probe.upx[i] / CELL) | 0, gy = (probe.upy[i] / CELL) | 0;
+      if (gx < 0 || gy < 0 || gx >= COLS || gy >= ROWS) continue;
+      hits[probe.unav[i] ? 1 : 0][gy * COLS + gx] += 1;
+    }
+  }
+  const cellsOf = (h) => {
+    const out = [];
+    for (let i = 0; i < h.length; i++) if (h[i] > 0) out.push([i % COLS, (i / COLS) | 0, h[i]]);
+    return out;
+  };
+  return { ground: cellsOf(hits[0]), water: cellsOf(hits[1]) };
+}
+
+/** follow a flow field's gradient from every spawn to a goal: the cells the swarm walks */
+function routeCells(field) {
+  const cells = new Set();
+  for (const sp of field.spawnPts) {
+    let cur = sp;
+    for (let n = 0; n < 6000; n++) {
+      cells.add(cur);
+      if (field.isGoal[cur]) break;
+      const x = cur % COLS, y = (cur / COLS) | 0;
+      let best = cur, bd = field.dist[cur];
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+          const ni = ny * COLS + nx;
+          if (field.walk[ni]) continue;
+          if (field.dist[ni] < bd) { bd = field.dist[ni]; best = ni; }
+        }
+      if (best === cur) break;
+      cur = best;
+    }
+  }
+  return [...cells].map((i) => [i % COLS, (i / COLS) | 0]);
+}
+
+/** the straight lines flyers take, sampled every other cell */
+function airCells(sim) {
+  const out = [];
+  for (const r of sim.airRoutes()) {
+    const x1 = r.x1 / CELL, y1 = r.y1 / CELL, x2 = r.x2 / CELL, y2 = r.y2 / CELL;
+    const n = Math.max(1, Math.round(Math.hypot(x2 - x1, y2 - y1) / 2));
+    for (let i = 0; i <= n; i++) out.push([x1 + ((x2 - x1) * i) / n, y1 + ((y2 - y1) * i) / n]);
+  }
+  return out;
+}
+
+function play() {
+  for (const k of TY.TOWER_KINDS)
+    E.setScrapPrice(k, Math.max(1, Math.round(E.scrapPriceOf(k) * SCALE)));
+  if (START !== null) E.SCRAP_START = +START;
+
+  const sim = new Sim(spec);
+  sim.setTech(TR.techStateFor(LEVEL));
+
+  // THE ROUTES, one per movement layer, and WHAT EACH IS WORTH: the share
+  // of the script's health that walks, flies or sails. A naval map's
+  // rissos on wave 1 are the water route's business, and a bot that
+  // spread its opening board along an empty crawler corridor would lose
+  // the map before learning that
+  // the routes as walked (heatRoutes), falling back to the traced gradient
+  // where the probe saw nothing on a layer the script sends later
+  const heat = heatRoutes(PROBE_SECONDS);
+  const ground = heat.ground.length ? heat.ground : routeCells(sim.field).map(([x, y]) => [x, y, 1]);
+  const water = heat.water.length ? heat.water : routeCells(sim.waterField).map(([x, y]) => [x, y, 1]);
+  const air = airCells(sim);
+  // ...weighed over a WINDOW of the script — this wave and the next few —
+  // because what matters to a placement is what is about to arrive, not
+  // the boss that flies in on wave 50. Re-weighed every wave
+  const LOOK = 8;
+  const layerShare = (from) => {
+    const share = { 0: 0, 1: 0, 2: 0 };
+    const steps = spec.script.slice(Math.max(0, from - 1), from - 1 + LOOK);
+    for (const step of steps.length ? steps : spec.script)
+      for (const g of L.waveGroups(step.wave))
+        g.counts.forEach((n, i) => {
+          if (n <= 0) return;
+          const st = L.UNIT_STATS[L.UNIT_KINDS[i]];
+          share[st.flying ? 1 : st.naval ? 2 : 0] += LA.unitHpAtLevel(L.UNIT_KINDS[i], 0) * n;
+        });
+    const total = share[0] + share[1] + share[2] || 1;
+    return { 0: share[0] / total, 1: share[1] / total, 2: share[2] / total };
+  };
+  const groundAll = [...ground, ...water];
+  // a cell's own weight is how often the probe saw a body on it, scaled so
+  // each layer's cells sum to one — the layer share then says how much
+  // the layer matters right now
+  const norm = (cells) => { let t = 0; for (const c of cells) t += c[2]; return cells.map(([x, y, h]) => [x, y, h / (t || 1)]); };
+  const g2 = norm(ground.filter((_, i) => i % 2 === 0)), w2 = norm(water.filter((_, i) => i % 2 === 0));
+  const a2 = norm(air.filter((_, i) => i % 2 === 0).map(([x, y]) => [x, y, 1]));
+  const route = [
+    ...g2.map(([x, y, h]) => ({ x, y, layer: 0, h })),
+    ...a2.map(([x, y, h]) => ({ x, y, layer: 1, h })),
+    ...w2.map(([x, y, h]) => ({ x, y, layer: 2, h })),
+  ];
+  const routeWeight = new Float32Array(route.length);
+  const reweigh = (wave) => {
+    const w = layerShare(wave);
+    for (let i = 0; i < route.length; i++) routeWeight[i] = w[route[i].layer] * route[i].h * route.length;
+  };
+  reweigh(1);
+
+  // every buildable cell within reach of a route, on a checkerboard so the
+  // scoring loop stays cheap
+  const { blocked, wall } = sim.terrain;
+  const cands = [];
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++) {
+      const i = y * COLS + x;
+      if (!blocked[i] || !TER.isBuildableWall(wall[i]) || (x + y) % 2) continue;
+      let dg = 1e9, da = 1e9;
+      for (const [rx, ry] of groundAll) { const d = Math.hypot(rx - x, ry - y); if (d < dg) dg = d; }
+      for (const [rx, ry] of air) { const d = Math.hypot(rx - x, ry - y); if (d < da) da = d; }
+      if (dg > 30 && da > 30) continue;
+      cands.push({ x, y, dg, da });
+    }
+
+  const cover = new Float32Array(route.length);
+  const occ = new Uint8Array(COLS * ROWS);
+  const free = (x, y, sz) => {
+    if (x + sz > COLS || y + sz > ROWS) return false;
+    for (let yy = y; yy < y + sz; yy++)
+      for (let xx = x; xx < x + sz; xx++) if (occ[yy * COLS + xx]) return false;
+    return true;
+  };
+  const reachCache = new Map();
+  const reach = (kind) => {
+    const st = TOWERS[kind];
+    const key = `${st.size}:${Math.round(st.range)}:${st.targetAir}${st.targetGround}`;
+    if (reachCache.has(key)) return reachCache.get(key);
+    const sz = st.size, r = st.range / CELL;
+    const lists = cands.map((c) => {
+      const okG = st.targetGround && c.dg <= r + 1, okA = st.targetAir && c.da <= r + 1;
+      if (!okG && !okA) return null;
+      const cx = c.x + sz / 2, cy = c.y + sz / 2;
+      const idx = [];
+      for (let i = 0; i < route.length; i++) {
+        const q = route[i];
+        if (q.layer === 1 ? !st.targetAir : !st.targetGround) continue;
+        if (Math.hypot(q.x - cx, q.y - cy) <= r) idx.push(i);
+      }
+      return idx.length ? Int32Array.from(idx) : null;
+    });
+    reachCache.set(key, lists);
+    return lists;
+  };
+  const place = (kind) => {
+    const sz = TOWERS[kind].size;
+    const lists = reach(kind);
+    for (let guard = 0; guard < 50; guard++) {
+      let best = -1, bs = -1;
+      for (let ci = 0; ci < cands.length; ci++) {
+        const l = lists[ci];
+        if (!l) continue;
+        const c = cands[ci];
+        if (!free(c.x, c.y, sz)) continue;
+        let s = 0;
+        for (let j = 0; j < l.length; j++) s += routeWeight[l[j]] / (1 + cover[l[j]]);
+        if (s <= 1e-6) continue;
+        // a spot the Hydrophobic rule would drown fires at a fraction of
+        // the rate, and is worth exactly that fraction
+        if (sim.isWaterlogged(c.x, c.y, kind)) s *= MU.HYDROPHOBIC_RATE;
+        if (s > bs) { bs = s; best = ci; }
+      }
+      if (best < 0) return false;
+      const c = cands[best];
+      // a spot the map refuses is struck off for this footprint rather
+      // than retried forever
+      if (!sim.canPlace(c.x, c.y, kind)) {
+        lists[best] = null;
+        continue;
+      }
+      sim.placeTower(c.x, c.y, kind);
+      for (let yy = c.y; yy < c.y + sz; yy++)
+        for (let xx = c.x; xx < c.x + sz; xx++) occ[yy * COLS + xx] = 1;
+      for (const i of lists[best]) cover[i] += 1;
+      return true;
+    }
+    return false;
+  };
+
+  const counts = () => {
+    const out = {};
+    for (const [k, n] of Object.entries(sim.towerCounts())) if (n > 0) out[k] = n;
+    return out;
+  };
+  const leaks = () => {
+    const out = {};
+    L.UNIT_KINDS.forEach((k, i) => { if (sim.leakedByKind[i] > 0) out[k] = sim.leakedByKind[i]; });
+    return out;
+  };
+
+  let rot = 0;
+  const log = [];
+  let lastWave = 0;
+  const t0 = Date.now();
+  while (!sim.lost() && !sim.won() && sim.time < MAX_SECONDS) {
+    for (let s = 0; s < 30; s++) sim.update(1 / 60);
+    const w = sim.currentWave();
+    // what to buy follows the gate, which follows the clock (Sim.stageWave)
+    const mix = mixFor(stageTier(sim.stageWave()));
+    let stuck = 0;
+    for (let tries = 0; tries < 40; tries++) {
+      const kind = mix[rot % mix.length];
+      if (sim.scrap < E.scrapPriceOf(kind) || sim.towers.length >= CAP) break;
+      if (place(kind)) rot++;
+      else { rot++; if (++stuck > mix.length) break; }
+    }
+    if (w !== lastWave) {
+      lastWave = w;
+      reweigh(w);
+      if (w % LOG_EVERY === 0 || w === 1)
+        log.push({
+          wave: w, time: Math.round(sim.time), lives: sim.lives, leaked: sim.leaked,
+          scrap: Math.round(sim.scrap), towers: sim.towers.length, counts: counts(),
+        });
+    }
+  }
+  const won = sim.won();
+  return {
+    world: `${world.id} ${world.name}`, mission: L.missionText(world).title, tier: TIER,
+    mutators: [...(world.intrinsicMutation ?? []), ...MUTATORS], level: LEVEL,
+    scale: SCALE, start: E.SCRAP_START,
+    outcome: won ? "WON" : sim.lost() ? "LOST" : "TIMEOUT",
+    wave: sim.currentWave(), time: Math.round(sim.time), lives: sim.lives, livesMax: sim.livesMax,
+    kills: sim.kills, leaked: sim.leaked, leaks: leaks(), loopLevel: sim.loopLevel,
+    towers: sim.towers.length, counts: counts(),
+    scrapEarned: Math.round(sim.scrapEarned), scrapLeft: Math.round(sim.scrap),
+    wall: Math.round((Date.now() - t0) / 1000), log,
+  };
+}
+
+const r = play();
+const mmss = (t) => `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+if (JSON_OUT) {
+  console.log(JSON.stringify(r, null, 1));
+} else {
+  console.log(
+    `${r.world} — ${r.mission} — rung ${r.tier + 1}${r.mutators.length ? ` [${r.mutators.join(", ")}]` : ""} — level ${r.level}` +
+      `${r.scale !== 1 ? ` — prices x${r.scale}` : ""}`,
+  );
+  console.log(
+    `${r.outcome} at wave ${r.wave}, ${mmss(r.time)} in — lives ${r.lives}/${r.livesMax}, kills ${r.kills}, leaked ${r.leaked}` +
+      `${r.loopLevel ? `, tide +${r.loopLevel} levels` : ""} — ${r.towers} turrets, scrap earned ${r.scrapEarned} (${r.scrapLeft} unspent) — ${r.wall}s wall`,
+  );
+  if (r.leaked > 0) console.log(`leaks: ${Object.entries(r.leaks).map(([k, n]) => `${k} ${n}`).join(", ")}`);
+  console.log(`board: ${Object.entries(r.counts).map(([k, n]) => `${k} ${n}`).join(", ")}`);
+  for (const l of r.log)
+    console.log(
+      `  w${String(l.wave).padStart(2)} ${mmss(l.time).padStart(5)}  lives ${String(l.lives).padStart(3)}  leaked ${String(l.leaked).padStart(3)}  scrap ${String(l.scrap).padStart(6)}  turrets ${String(l.towers).padStart(4)}  ${Object.entries(l.counts).map(([k, n]) => `${k} ${n}`).join(", ")}`,
+    );
+}
+process.exit(r.outcome === "WON" ? 0 : 2);

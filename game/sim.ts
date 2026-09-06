@@ -66,6 +66,7 @@ import {
   missionLives,
   unitDrop,
   waveGroups,
+  WAVE_RELEASE_SECONDS,
   type LegSpec,
   type LevelSpec,
   type UnitKind,
@@ -77,12 +78,17 @@ const UNIT_KINDS = UNIT_KINDS_IMPORT;
 import { unitHpAtLevel } from "./ladder";
 
 /**
- * How many enemy levels each repeat of a survive mission's last wave adds
- * (Sim.loadStep): three levels is HP_PER_LEVEL^3, about +19% health a
- * repeat, so a twenty-minute clock over a fifty-wave script climbs a
- * handful of steps rather than a cliff.
+ * THE TIDE: what a survive mission sends once its script is spent. The
+ * last SURVIVE_CYCLE_WAVES waves go again as a cycle, and every cycle
+ * adds SURVIVE_LOOP_LEVELS to the enemy level every body spawns at —
+ * three levels is HP_PER_LEVEL^3, about +19% health a cycle, so a clock
+ * that outlives its script by a few minutes climbs a handful of steps
+ * rather than a cliff. Four waves rather than one so the tide keeps the
+ * script's rhythm (a lull, a spike) instead of sending its finale on a
+ * loop.
  */
 const SURVIVE_LOOP_LEVELS = 3;
+const SURVIVE_CYCLE_WAVES = 4;
 import {
   ARMORED_ARMOR,
   ARMORED_MAX_TIER,
@@ -815,6 +821,8 @@ export class Sim {
   devoured = 0;
   /** kills per unit kind this run, indexed like UNIT_KINDS — the drop payout */
   readonly killsByKind = new Int32Array(UNIT_KINDS.length);
+  /** leaks per unit kind this run, indexed like UNIT_KINDS — what got through */
+  readonly leakedByKind = new Int32Array(UNIT_KINDS.length);
   /**
    * THE BASE'S HEALTH: a hundred on every run (LIVES_START), and every
    * body that reaches it takes its tier's bite (leakCost) — a dagger one,
@@ -1114,6 +1122,7 @@ export class Sim {
     this.leaked = 0;
     this.devoured = 0;
     this.killsByKind.fill(0);
+    this.leakedByKind.fill(0);
     this.scrap = SCRAP_START;
     this.scrapEarned = 0;
     // the run's rules, read once: the feed pass runs over every unit on the
@@ -1597,6 +1606,21 @@ export class Sim {
     return Math.max(1, this.wavesStarted - back);
   }
 
+  /**
+   * THE WAVE THE CLOCK SAYS IT IS — what the stage gate reads. A wave is
+   * scheduled every waveGap + WAVE_RELEASE_SECONDS, and on a map whose
+   * drop zones cannot pass a big wave that fast the script falls behind
+   * its own schedule (Sim.runScript queues what will not fit). The tiers
+   * open on the schedule rather than on the count, so a congested map
+   * does not hold a player at tier 1 into the fourteenth minute; the
+   * larger of the two is taken, so a run that is AHEAD of schedule is
+   * never held back either.
+   */
+  stageWave(): number {
+    const cadence = Math.max(1, this.level.waveGap + WAVE_RELEASE_SECONDS);
+    return Math.max(this.currentWave(), Math.floor(this.time / cadence) + 1);
+  }
+
   /** seconds until the next wave starts entering, or 0 when one is already
    * draining (or the script has run out) */
   nextWaveIn(): number {
@@ -1752,17 +1776,23 @@ export class Sim {
     }
     // THE SCRIPT IS SPENT. On a hold that is the end of the level; on a
     // survive with time still on the clock it is the tide turning: the
-    // last wave goes again, a few enemy levels heavier, and counts toward
-    // the run like any other wave. Recursion is one level deep by
-    // construction — lastWaveIdx names a wave that is not empty
+    // last few waves go again as a cycle, a few enemy levels heavier, and
+    // count toward the run like any other wave. Recursion is one level
+    // deep by construction — lastWaveIdx names a wave that is not empty,
+    // and the cursor is put at or before it
     if (this.deadline > 0 && this.time < this.deadline && this.lastWaveIdx >= 0) {
-      const step = script[this.lastWaveIdx];
-      let n = 0;
-      for (const g of waveGroups(step.wave)) for (const c of g.counts) n += c;
-      this.totalEnemies += n;
-      this.totalWaves++;
+      const from = Math.max(0, this.lastWaveIdx - (SURVIVE_CYCLE_WAVES - 1));
+      for (let i = from; i <= this.lastWaveIdx; i++) {
+        const step = script[i];
+        if (!("wave" in step)) continue;
+        let n = 0;
+        for (const g of waveGroups(step.wave)) for (const c of g.counts) n += c;
+        if (n === 0) continue;
+        this.totalEnemies += n;
+        this.totalWaves++;
+      }
       this.loopLevel += SURVIVE_LOOP_LEVELS;
-      this.stepIdx = this.lastWaveIdx;
+      this.stepIdx = from;
       this.loadStep();
     }
   }
@@ -2056,7 +2086,7 @@ export class Sim {
       if (!this.tech.unlocked.has(kind)) return false;
       // the stage gate: tier 2 waits for wave 21, tier 3 for wave 36
       // (STAGES in economy.ts) — a campaign rule, like the price
-      if (!tierOpenAt(kind, this.currentWave())) return false;
+      if (!tierOpenAt(kind, this.stageWave())) return false;
       if (this.scrap < scrapPriceOf(kind)) return false;
     }
     const sz = TOWERS[kind].size;
@@ -3285,6 +3315,7 @@ export class Sim {
         // a body you shrug off, so it takes the whole pool.
         const stats = UNIT_STATS[UNIT_KINDS[this.ukind[i]]];
         this.pushFx(upx[i], upy[i], 0.4, FxKind.Breach);
+        this.leakedByKind[this.ukind[i]]++;
         this.removeUnit(i);
         this.leaked++;
         this.lives = Math.max(0, this.lives - leakCost(stats.tier, stats.boss === true));

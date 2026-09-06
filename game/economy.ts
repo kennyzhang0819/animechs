@@ -176,7 +176,9 @@ export const towersOfTier = (tier: TowerTier): TowerKind[] =>
  * THE STAGES OF A RUN, as 1-based inclusive wave ranges — the three
  * stretches the three turret tiers are priced for, AND THE GATE ON THEM:
  * a tier's turrets cannot be placed before its stage opens (unlockWaveOf,
- * read by Sim.canPlace). Waves 1-20 are solved with tier 1, tier 2 joins
+ * read by Sim.canPlace against the wave the CLOCK says it is —
+ * Sim.stageWave — so a map whose waves queue behind its drop zones still
+ * opens its tiers on time). Waves 1-20 are solved with tier 1, tier 2 joins
  * at 21, tier 3 at 36 — so every run is an early game, a mid game and a
  * late game, and no run opens on the best turret the save owns. The
  * audit (ladder.ts) sums what each stage pays and holds it against its

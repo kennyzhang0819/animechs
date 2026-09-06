@@ -1996,7 +1996,7 @@ export default function MechSwarm() {
               // turret rides the bar from wave 1 but stays shut until its
               // stage opens, and the badge says which wave that is
               const opens = unlockWaveOf(t.kind);
-              const locked = price !== null && hud !== null && hud.currentWave < opens;
+              const locked = price !== null && hud !== null && hud.stageWave < opens;
               const label =
                 price === null
                   ? t.name

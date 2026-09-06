@@ -281,7 +281,19 @@ levels heavier each repeat, until time ends the run. Each map carries
 its own wave script (`public/levels/<id>.json`, edited in the admin level
 editor) — there is no shared blueprint and no family re-casting any more.
 Confluence holds fifty waves with a hundred lives; Maelstrom survives
-twenty minutes on the naval front; Quagmire holds with ten lives.
+twenty minutes on the naval front; Quagmire holds the swamp's forty with
+a hundred, against a lighter, tier-2-capped opening.
+
+**Every map is checked headless.** `npm run playtest -- --world <id>`
+runs the real sim with an ordinary builder bot at the keyboard (route
+coverage from a dry run, the stage's tier bought round-robin, never a
+sale) and reports where it gets to. Shipped numbers, rung 1, stock
+turrets: Confluence clears in about 19 minutes with 100/100 lives and
+~2,000 turrets against 49,839 bodies; Maelstrom lasts its 20 minutes to
+wave 45 with 64–100 lives and ~1,500 turrets against ~44,000; Quagmire
+clears its forty in about 18 minutes with 67–79 lives and ~1,330 turrets
+against 31,000. Run it after any wave, price, mutator or unit edit — a
+map the bot loses is a map with a wall in it.
 
 ### The base
 

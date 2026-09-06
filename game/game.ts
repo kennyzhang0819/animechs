@@ -43,6 +43,8 @@ export interface UiState {
   nextWaveIn: number;
   /** 1-based wave now on the field, out of how many the level holds */
   currentWave: number;
+  /** the wave the clock says it is — what the stage gate reads (Sim.stageWave) */
+  stageWave: number;
   totalWaves: number;
   /** the tower kind picked in the build bar, or null for the bare cursor */
   buildKind: TowerKind | null;
@@ -861,6 +863,7 @@ export class Game {
       bosses: this.sim.bossBars().map((b) => ({ ...b, kind: UNIT_KINDS[b.kind] })),
       nextWaveIn: this.sim.nextWaveIn(),
       currentWave: this.sim.currentWave(),
+      stageWave: this.sim.stageWave(),
       totalWaves: this.sim.totalWaves,
       buildKind: this.buildKind,
       paused: this.paused,
