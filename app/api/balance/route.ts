@@ -8,7 +8,7 @@ import {
   MUT_COST_MIN,
   MUT_COUNT_MAX,
 } from "@/game/mutation";
-import { TECH_KINDS } from "@/game/tech";
+import { TOWER_KINDS } from "@/game/types";
 
 /** the two knobs, and the sane range each one may be saved in */
 const LIMITS = {
@@ -128,7 +128,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       if (Object.keys(section).length > 0) doc.mutations = section;
       continue;
     }
-    if (!(TECH_KINDS as readonly string[]).includes(id))
+    if (!(TOWER_KINDS as readonly string[]).includes(id))
       return NextResponse.json({ error: `unknown node ${id}` }, { status: 400 });
     if (!raw || typeof raw !== "object")
       return NextResponse.json({ error: `bad knobs for ${id}` }, { status: 400 });

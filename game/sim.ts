@@ -850,7 +850,7 @@ export class Sim {
   scrapEarned = 0;
   // which towers may be built and how many of each — null (the default, and
   // the map editor's mode) places no restrictions; the campaign sets it from
-  // the save's tech tree before play (see Game.setTech)
+  // the save's level through the track before play (see Game.setTech)
   private tech: TechState | null = null;
   /**
    * EVERY TURRET AS THIS SAVE HAS UPGRADED IT — the stats each kind on the

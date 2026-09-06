@@ -84,7 +84,7 @@ export interface UiState {
   counts: Record<TowerKind, number>;
   /** the turrets the save may field; null = unrestricted (editor, sandbox) */
   unlocked: readonly TowerKind[] | null;
-  /** loadout slots the build bar holds (tech tree); null = sandbox, uncapped */
+  /** loadout slots the build bar holds (the whole roster); null = sandbox, uncapped */
   barSlots: number | null;
 }
 
@@ -107,15 +107,10 @@ const REFUNDS = (): Record<TowerKind, number> =>
   Object.fromEntries(TOWER_KINDS.map((k) => [k, sellValue(k)])) as Record<TowerKind, number>;
 
 /**
- * The multipliers a save has BEFORE it buys any — just the pace the game
- * runs at.
- *
- * This used to be [1, 2, 4], with 8x and 16x held back as a sandbox tool.
- * 2x, 4x and 8x are now the utilities path in the tech tree (tech.ts),
- * bought one cheap currency at a time, so what a player gets is read off
- * their save (TechState.speeds) rather than written here; 16x is not sold
- * at all. Sandbox still shows every SPEEDS entry, because sandbox ignores
- * the tree entirely.
+ * The multipliers a save has BEFORE the track hands it any — just the
+ * pace the game runs at. 2x and 4x are level rewards (track.ts), so what
+ * a player gets is read off their save (TechState.speeds) rather than
+ * written here; 8x and 16x are sandbox tools and never earned.
  */
 export const BASE_SPEEDS: readonly number[] = [1];
 

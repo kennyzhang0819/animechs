@@ -395,21 +395,6 @@ export function budget(spec: LevelSpec, tier = 0): Budget {
   };
 }
 
-/**
- * WHICH MAP OPENS WHICH — the campaign's one piece of structure above the
- * ladders, and the only thing a map's own progress cannot buy.
- *
- * Each map is climbed separately and keeps its own ladder, so nothing else
- * crosses between them. This does: a map named here stays shut until the
- * named TIER has fallen on the named map. Confluence teaches the game, so
- * Maelstrom asks that the game has been picked up at all before it opens —
- * one clear of Confluence's first level, and no more. A map absent from
- * this table is open from the first run.
- */
-export const WORLD_REQUIRES: Readonly<Record<string, { world: string; tier: number }>> = {
-  // Maelstrom opens once Confluence's level 1 has fallen
-  "2": { world: "1", tier: 0 },
-};
 
 // ---------- the debut rule ----------
 

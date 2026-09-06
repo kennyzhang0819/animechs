@@ -137,7 +137,7 @@ export interface UpgradeContext {
   count: number;
 }
 
-/** the chip face an upgrade wears in the tree — see GLYPH in TechTree.tsx */
+/** the chip face an upgrade wears — kept on the rung for whatever draws it next */
 export type UpgradeGlyph =
   | "rate"
   | "pierce"

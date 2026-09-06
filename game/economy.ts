@@ -15,7 +15,7 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  *          the rung played multiplies it (tierXpBonus in ladder.ts), and
  *          the first clear of any (world, rung) pays FIRST_CLEAR_XP on top.
  *          XP turns into PLAYER LEVEL through the curve below, and every
- *          level is ONE SKILL POINT to spend on the tech tree (tech.ts).
+ *          level is a rung on the track (track.ts): maps, paces, upgrades.
  *
  * THIS REPLACED FIVE CURRENCIES AND A COUNT MODEL. The bank used to hold
  * copper, titanium, thorium, plastanium and phase fabric, one per enemy
@@ -57,11 +57,11 @@ export const isEmptyDrop = (d: Drop): boolean => d.scrap === 0 && d.xp === 0;
  * WHAT EACH UNIT TIER PAYS, indexed by tier (index 0 is unused). A T1
  * always drops exactly this; a T5 always drops exactly that.
  *
- * The shape is the point. The blueprint sends tier-1 bodies by the
+ * The shape is the point. Confluence sends tier-1 bodies by the
  * thousand and tier-5 bodies by the dozen, so the low rows are cheap per
  * body and the high rows are dear, and the three stages of a run come out
  * paying what the three turret tiers cost — see TOWER_PRICE and the stage
- * audit in ladder.ts. Against the shipped script (public/levels/blueprint.json)
+ * audit in ladder.ts. Against Confluence's script (public/levels/1.json)
  * the kills alone pay about:
  *
  *   waves  1-20   ~217,000 scrap
@@ -287,21 +287,22 @@ export const pricePerTile = (kind: TowerKind): number =>
 
 /**
  * THE LEVEL CURVE. Going from level n to n+1 costs XP_LEVEL_BASE x n to
- * the power XP_LEVEL_POWER, so the ladder gets steeper the way an idle
- * game's does — never a wall, always a little more than the last one.
+ * the power XP_LEVEL_POWER, so the track gets steeper the way a co-op
+ * commander's does — never a wall, always a little more than the last one.
  *
- *   level    2      3      4       5       6       7       8       10
- *   to next  15k    38k    67k     97k     133k    169k    208k    ~290k
+ *   level    2      3      4      5      6      7      8      10     30
+ *   to next  10k    25k    44k    65k    88k    113k   139k   ~195k  ~1.0m
+ *   total    10k    35k    80k    145k   233k   346k   485k   ~843k  ~12.1m
  *
- * WHAT THAT MEANS AGAINST THE SCRIPT. A full rung-1 clear of the shipped
- * blueprint pays about 245,000 XP in kills plus the first-clear bonus, so
- * a first clear lands around level 5; a wipe at the end of stage 1 pays
- * about 40,000 and lands level 2. Ten rungs on one world, with the rung
- * bonus, are about 7,000,000 XP — level 17 or so. The tree has close to a
- * hundred points in it (tech.ts), so nobody maxes it from one world, and
- * every point is a choice.
+ * WHAT THAT MEANS AGAINST A MAP. A full rung-1 clear of Confluence pays
+ * about 245,000 XP in kills plus the first-clear bonus, so the first run
+ * lands around level 6 — the second pace and the second map fall out of
+ * the opening night; a wipe at the end of stage 1 pays about 40,000 and
+ * lands level 3. Ten rungs on one world, with the rung bonus, are about
+ * 7,000,000 XP — level 25 or so; the top of the track (MAX_LEVEL in
+ * track.ts) takes a second map's ladder or a lot of Brutal.
  */
-export const XP_LEVEL_BASE = 15000;
+export const XP_LEVEL_BASE = 10000;
 export const XP_LEVEL_POWER = 1.35;
 
 /** XP needed to climb from `level` to `level + 1` */
@@ -338,11 +339,6 @@ export function levelProgress(xp: number): { level: number; into: number; need: 
   return { level, into: Math.max(0, Math.floor(xp)) - xpAtLevel(level), need: xpToNext(level) };
 }
 
-/**
- * ONE SKILL POINT A LEVEL — level 1 is the fresh save and pays none, so
- * the points a save has ever earned is its level minus one.
- */
-export const pointsForLevel = (level: number): number => Math.max(0, level - 1);
 
 /**
  * THE FIRST-CLEAR BONUS: paid once for beating any (world, rung) the save

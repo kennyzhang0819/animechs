@@ -8,6 +8,7 @@ import {
   XP_COLOR,
   type Drop,
 } from "@/game/economy";
+import { nextRewardLevel, rewardsAt, rewardText } from "@/game/track";
 
 /* eslint-disable @next/next/no-img-element -- raw pixel sprites, no optimization wanted */
 
@@ -39,15 +40,6 @@ function XpStar({ className }: { className: string }) {
         fill="currentColor"
         d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"
       />
-    </svg>
-  );
-}
-
-/** a skill point: the tree's own diamond */
-function PointGem({ className }: { className: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={`${className} shrink-0`} aria-hidden="true">
-      <path fill="currentColor" d="M12 2l7 10-7 10-7-10z" />
     </svg>
   );
 }
@@ -103,31 +95,6 @@ export function XpAmount({
   );
 }
 
-/** skill points — what the tech tree is paid in */
-export function PointsAmount({
-  amount,
-  size = "sm",
-  short,
-  className = "",
-}: {
-  amount: number;
-  size?: Size;
-  /** the save cannot cover this many — draw it as a shortfall */
-  short?: boolean;
-  className?: string;
-}) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1 font-bold ${className}`}
-      style={{ color: short ? "#FF8A8A" : POINT_COLOR }}
-      title="Skill points"
-    >
-      <PointGem className={SIZES[size]} />
-      {amount} {amount === 1 ? "point" : "points"}
-    </span>
-  );
-}
-
 /**
  * A drop — what a wave, a stage or a run pays — as its two stacks. Either
  * half hides when it is zero, so a row never prints "0 XP".
@@ -152,21 +119,14 @@ export function DropRow({
 
 /**
  * THE LEVEL STRIP: the player's level, the XP bar to the next one, and
- * the points they have to spend. It is the one thing every menu shows
- * beside the way to spend it (the tech tree), and the one number a
- * results screen is about.
+ * the next thing the track hands out. It is the one thing every menu
+ * shows beside the way to read it (the progress screen), and the one
+ * number a results screen is about.
  */
-export function LevelStrip({
-  xp,
-  points,
-  size = "md",
-}: {
-  xp: number;
-  /** unspent skill points */
-  points: number;
-  size?: Size;
-}) {
+export function LevelStrip({ xp }: { xp: number }) {
   const { level, into, need } = levelProgress(xp);
+  const nextAt = nextRewardLevel(level);
+  const next = nextAt === null ? [] : rewardsAt(nextAt);
   return (
     <span className="inline-flex items-center gap-3">
       <span className="font-bold uppercase tracking-widest text-[#EDEDEF]">
@@ -182,7 +142,24 @@ export function LevelStrip({
           style={{ width: `${Math.min(100, (100 * into) / Math.max(1, need))}%`, background: XP_COLOR }}
         />
       </span>
-      <PointsAmount amount={points} size={size} />
+      {/* the next unlock, named: what the bar is FOR. Past the top of the
+          track there is nothing to name and the strip says so */}
+      <span className="text-[11px] uppercase tracking-widest text-[#71717C]">
+        {nextAt === null ? (
+          "Top of the track"
+        ) : (
+          <>
+            Level {nextAt}:{" "}
+            <span className="text-[#A6A6AF]">
+              {next
+                .slice(0, 2)
+                .map(rewardText)
+                .join(", ")}
+              {next.length > 2 ? ` +${next.length - 2}` : ""}
+            </span>
+          </>
+        )}
+      </span>
     </span>
   );
 }

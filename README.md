@@ -44,24 +44,25 @@ stale tab or a cached bundle looks exactly like a fix not working.
   and the XP bonus each; the enemy-level dial is wired and authored to
   zero), and the audit/check arithmetic over the authored script — the
   **stage table** (`stageAudit`) that the turret prices are tuned against
-- `game/tech.ts` — the tech tree, paid in **skill points** (one a level):
-  turret unlocks, the upgrade rungs, the pace and slot switches, and the
-  level gates on the deeper tiers
+- `game/track.ts` — the **level track**: what every player level hands
+  out (a map opens, a pace switches on, a turret gains an upgrade rung),
+  built by rule from the upgrade branches and a short hand-placed list,
+  and `techStateFor(level)` — what a save at that level may do
+- `game/tech.ts` — `TechState`, the shape the sim and the bar read a
+  save's allowances in, and the roster's canonical order
 - `game/upgrades.ts` — the **turret upgrade branches**: a chain of rungs
-  under every turret, folded into its live `TowerStats`. **Every rung is
-  bought once**: two stat steps (one point each), a one-shot ammunition
-  swap (two points), and an **ultimate** (three points, level-gated) that
-  changes what the turret is. **Only duo and arc have an ultimate written
-  so far** — the
-  other fifteen are authored by hand as they are designed; adding one is a
-  fourth entry in a branch with `tier: ULTIMATE_TIER` and its id in
-  `UPGRADE_KINDS`, and nothing else
+  under every turret, folded into its live `TowerStats` — two stat
+  steps, a one-shot ammunition swap, and an **ultimate** that changes what
+  the turret is. The track deals them out by level. **Only duo and arc
+  have an ultimate written so far** — the other fifteen are authored by
+  hand as they are designed; adding one is a fourth entry in a branch with
+  `tier: ULTIMATE_TIER` and its id in `UPGRADE_KINDS`, and nothing else
 - `game/mutation.ts` — the **mutators**: the catalog of rules a run can be
   played under, what each is worth in points, and the roller that draws
   three or four of them to fit a difficulty's budget
 - `game/progress.ts` — the save: lifetime XP, rungs cleared per world,
-  the nodes owned, game speed, build-bar loadout. Level and free points
-  are derived from XP and from what is owned, never stored
+  game speed, build-bar loadout. The level, and everything the track
+  hands out at it, is derived from XP and never stored
 - `game/storage.ts` — **where the save file lives**: one slot behind
   three calls, localStorage in a browser and a file on disk under the
   desktop shell (through the bridge `desktop/src/preload.ts` puts on
@@ -135,16 +136,11 @@ stale tab or a cached bundle looks exactly like a fix not working.
   a toggle is on (`aria-pressed` / `aria-selected` drive it, so a button
   never carries its state in its class list). Every screen is built from
   these; Tailwind utilities on top only size and place them
-- `game/layout.ts` — **where every tech-tree node sits**: one editable
-  integer grid over turrets, utilities and upgrade rungs alike. The
-  authored cells are the starting point; `public/tree.json` overrides them
-  and the admin dashboard's Tech tree tab writes it
-- `components/Board.tsx` — the pan-and-zoom camera every board is drawn on
-  (tech tree, mutator codex, tree editor), and the chrome they share
-- `components/TechTree.tsx` — the tech tree board, and the tab strip that
-  switches to the codex beside it. Every upgrade rung is a **node with an
-  edge into it** — turret → rung 1 → rung 2 → ultimate — laid out on the
-  same grid the turrets are, not a row of chips under its turret
+- `components/Board.tsx` — the pan-and-zoom camera the mutator codex is
+  drawn on, and the chrome it shares with the progress screen
+- `components/Progress.tsx` — the **progress screen**: the track top to
+  bottom, one row a level with what it hands out, the current row carrying
+  the XP bar; the mutator codex is its second tab
 - `components/techIcons.tsx` — what every tech node LOOKS like: block
   sprites, the upgrade glyph vocabulary, the surge icon. Shared, so the
   game's board and the layout editor draw the same faces
@@ -228,8 +224,9 @@ board clears all fifty first try.
 **XP is the save's progress.** The same kills pay XP, the rung multiplies
 it (the XP bonus above), and the **first clear of any (world, rung)** pays
 `FIRST_CLEAR_XP` on top, multiplied the same way. XP turns into **player
-level** through a power-law curve (`xpToNext`), and **every level is one
-skill point** to spend on the tech tree.
+level** through a power-law curve (`xpToNext`), and **every level is a
+rung on the track** (`game/track.ts`) that hands out a map, a pace or a
+turret upgrade — nothing is chosen and nothing is bought.
 
 | tier | scrap | XP |
 |---|---|---|
@@ -263,18 +260,28 @@ too few or too many of its tier (`STAGE_BOARDS`). Selling the opening
 board back in full is how the transition into the next tier is funded;
 what each stage asks is when to make that swap.
 
-### The tech tree
+### The level track
 
-**The tree is paid in skill points and every node is bought once.** A
-turret unlock is one point; so is each of the two stat rungs under it; an
-ammunition swap is two; an ultimate is three. Tier-2 turrets wait for
-level 4, tier-3 for level 10, ultimates for level 15 (`TIER_LEVEL_GATE`,
-`ULTIMATE_LEVEL_GATE`). The tree holds close to a hundred points and a
-full ladder on one world is about level 17, so nobody maxes it from one
-world. **Every node can be refunded** for exactly the points it cost, from
-the tip of its branch inward — a node still holding up a child does not
-offer it — so a point is never a mistake to grind out of. Home and duo are
-free. The pace strip stops at 4x; base plating is not sold.
+**Every turret is available on every attempt.** What a fresh save cannot
+do is field a spectre on wave 1 — the stage gate inside the run does that,
+not the save. The track makes turrets *better*: thirty levels, each one
+handing out fixed rewards (`TRACK` in `game/track.ts`) — 2x speed at
+level 2, Maelstrom at 3, 4x at 5, Quagmire at 7, and the fifty-odd
+upgrade rungs dealt across the rest, cheapest tier first, ultimates from
+level 20. The progress screen lists the whole track; the results screen
+names what a climb handed out. A first Confluence clear lands around
+level 6; the top of the track is about twelve million XP.
+
+### Missions
+
+**Every map is its own assignment** (`LevelSpec.mission`): *hold* — clear
+every wave the script sends, with the mission's lives — or *survive* —
+last the clock out; a spent script sends its last wave again, a few enemy
+levels heavier each repeat, until time ends the run. Each map carries
+its own wave script (`public/levels/<id>.json`, edited in the admin level
+editor) — there is no shared blueprint and no family re-casting any more.
+Confluence holds fifty waves with a hundred lives; Maelstrom survives
+twenty minutes on the naval front; Quagmire holds with ten lives.
 
 ### The base
 

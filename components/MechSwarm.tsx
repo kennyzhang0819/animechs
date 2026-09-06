@@ -12,7 +12,6 @@ import {
   type UiState,
 } from "@/game/game";
 import { loadBalanceDoc } from "@/game/balance";
-import { loadLayoutDoc } from "@/game/layout";
 import {
   loadLevelDocs,
   MAP_BADGE,
@@ -53,7 +52,6 @@ import {
   UI_SCALE_DEFAULT,
   UI_SCALES,
   saveHudMinimized,
-  pointsFree,
   saveLoadout,
   saveSpeed,
   startingSpeed,
@@ -73,9 +71,10 @@ import {
   type MutationId,
 } from "@/game/mutation";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
+import { rewardsAt, rewardText } from "@/game/track";
 import { FIRST_CLEAR_XP, levelProgress, POINT_COLOR, unlockWaveOf, XP_COLOR } from "@/game/economy";
-import { itemCount, LevelStrip, PointsAmount, ScrapAmount, XpAmount } from "./Items";
-import TechTree from "./TechTree";
+import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
+import ProgressView from "./Progress";
 import { bandFor, MutationFace } from "./mutationFace";
 import MenuBackground from "./MenuBackground";
 
@@ -133,7 +132,6 @@ function MapCard({
   // the click, and says the requirement in place of the clear count — a map
   // you cannot enter and cannot find out how to enter is a dead end
   const lock = worldLock(progress, world.id);
-  const lockedBy = lock ? worldById(lock.world) : null;
 
   return (
     <button
@@ -166,9 +164,7 @@ function MapCard({
         </span>
         {lock ? (
           <span className="text-[11px] font-bold uppercase tracking-widest text-[#71717C]">
-            Clear{" "}
-            <span style={{ color: rungColor(lock.tier) }}>{rungLabel(lock.tier)}</span>{" "}
-            on {lockedBy?.name ?? "the first map"}
+            Opens at <span style={{ color: POINT_COLOR }}>level {lock.level}</span>
           </span>
         ) : (
           <span
@@ -265,17 +261,30 @@ function LevelUpLine({ result }: { result: RunReward }) {
   const p = loadProgress();
   const { level, into, need } = levelProgress(p.xp);
   const climbed = result.levelAfter > result.levelBefore;
+  // everything the climb handed out, every level of it — the reason a
+  // results screen is worth reading
+  const earned: string[] = [];
+  for (let l = result.levelBefore + 1; l <= result.levelAfter; l++)
+    for (const r of rewardsAt(l)) earned.push(rewardText(r));
   return (
     <div className="pt-1 text-[12px] uppercase tracking-widest text-[#A6A6AF]">
       {climbed ? (
         <>
-          Level <span style={{ color: POINT_COLOR }}>{result.levelBefore}</span> →{" "}
-          <span className="font-bold" style={{ color: POINT_COLOR }}>
-            {result.levelAfter}
-          </span>
-          <span className="ml-2">
-            <PointsAmount amount={pointsFree(p)} />
-          </span>
+          <div>
+            Level <span style={{ color: POINT_COLOR }}>{result.levelBefore}</span> →{" "}
+            <span className="font-bold" style={{ color: POINT_COLOR }}>
+              {result.levelAfter}
+            </span>
+          </div>
+          {earned.length > 0 && (
+            <div className="mt-1 flex flex-wrap justify-center gap-1">
+              {earned.map((t, i) => (
+                <span key={i} className="ms-badge text-[#FFD37F]">
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
         </>
       ) : (
         <>
@@ -836,8 +845,8 @@ export default function MechSwarm() {
   const [tier, setTier] = useState(0);
   /**
    * The world the menu is pointed at. Every world is on the menu from the
-   * first run (WORLD_REQUIRES is the one exception), and it is always
-   * resolved through worldById so a stale id degrades to world 1.
+   * first run (a locked one says the level that opens it), and it is
+   * always resolved through worldById so a stale id degrades to world 1.
    */
   const [worldId, setWorldId] = useState(WORLD.id);
   const world = worldById(worldId) ?? WORLD;
@@ -846,7 +855,7 @@ export default function MechSwarm() {
   const [mapsReady, setMapsReady] = useState(false);
   // sandbox mode, hidden until Ctrl+Shift+S like the admin page's
   // Ctrl+Shift+M: widens the pace strip to every SPEEDS multiplier AND
-  // lifts the tech tree's turret locks and placement caps
+  // lifts the stage gate and the price of every placement
   // (Game.setTech(null)), so a run can be staged for filming. Leaving it
   // drops back to whatever the save allows — a sandbox-only pace steps
   // down to the fastest speed the save owns (see the effect below)
@@ -861,7 +870,7 @@ export default function MechSwarm() {
   const [loadUi, setLoadUi] = useState<LoadUi | null>(null);
   const granted = useRef(false);
   /**
-   * Where the tech tree was opened FROM. A loss is the moment the tree is
+   * Where the progress screen was opened FROM. A loss is the moment it is
    * most worth reading — the run just banked everything its towers killed on
    * the way down — so the defeat panel offers it, and leaving from there has
    * to come back to the run rather than dump the player on the level list.
@@ -995,7 +1004,6 @@ export default function MechSwarm() {
       loadOfficialMaps(),
       loadLevelDocs(),
       loadBalanceDoc(),
-      loadLayoutDoc(),
     ])
       .then(() => {
         if (alive) setMapsReady(true);
@@ -1289,7 +1297,7 @@ export default function MechSwarm() {
   };
 
   /**
-   * Leave the tech tree. From the menu that is just the level list; from a
+   * Leave the progress screen. From the menu that is just the level list; from a
    * lost run it restarts the run — the screen switch tears the Game down and
    * rebuilds it, and Game.create reads the save, so whatever was just bought
    * is already fielded. The grant latch has to be cleared or the new run
@@ -1462,35 +1470,27 @@ export default function MechSwarm() {
 
   if (screen === "tech" && progress) {
     return (
-      <TechTree
+      <ProgressView
         progress={progress}
-        onChanged={() => {
-          const p = loadProgress();
-          setProgress(p);
-          // a turret's first point may have written itself into a curated
-          // loadout (see buyTech) — keep the bar's mirror of the save honest
-          setLoadout(p.loadout ?? null);
-        }}
-        // after a battle the two exits split: back leaves to the menu,
-        // Restart (the labelled button beside it) re-runs with the tech
-        // just bought. From the menu there is only the one way out.
+        // after a battle the exit is the menu; from the menu it is the menu
+        // too, one step back
         onBack={techFrom === "game" ? backToMenu : leaveTech}
-        onRestart={techFrom === "game" ? leaveTech : undefined}
+        backLabel={techFrom === "game" ? "Back to menu" : "Back"}
       />
     );
   }
 
   if (screen !== "game" || !level) {
     /**
-     * THE LEVEL AND THE WAY TO SPEND IT, as one strip. It is shown from
-     * the map grid inwards and never on the title card: a level only means
-     * anything next to something to spend its points on, and the last stop
-     * before Deploy is exactly where a player wants the tech tree.
+     * THE LEVEL AND WHAT IT IS CLIMBING TOWARD, as one strip. It is shown
+     * from the map grid inwards and never on the title card: a level only
+     * means anything next to the track it is a rung of, and the last stop
+     * before Deploy is exactly where a player wants to see what is next.
      */
     const bank = progress && (
       <div className="flex items-center gap-3">
         <span className="ms-pane flex items-center px-4 py-2">
-          <LevelStrip xp={progress.xp} points={pointsFree(progress)} />
+          <LevelStrip xp={progress.xp} />
         </span>
         <button
           onClick={() => {
@@ -1499,7 +1499,7 @@ export default function MechSwarm() {
           }}
           className="ms-btn ms-btn-accent px-4 py-2 text-[13px]"
         >
-          Upgrades
+          Progress
         </button>
       </div>
     );
@@ -1617,7 +1617,7 @@ export default function MechSwarm() {
           {/* THE MAP GRID. Every map is SHOWN, always — a locked one is on
               the board saying what opens it, never hidden. Nothing is bought
               to reach a map and nothing carries between them; each keeps its
-              own ladder (see WORLD_REQUIRES for the one exception) */}
+              own ladder, and the track (track.ts) says when a map opens */}
           {(menuView === "maps" || menuView === "map") && progress && (
             <>
               <h2 className="ms-heading text-[15px] tracking-[0.35em]">
@@ -2163,7 +2163,7 @@ export default function MechSwarm() {
                   }}
                   className="ms-btn ms-btn-accent w-full px-5 py-2 text-base"
                 >
-                  Upgrades
+                  Progress
                 </button>
                 <div className="flex justify-center gap-3">
                 <button
