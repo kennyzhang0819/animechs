@@ -9,6 +9,7 @@ import {
   H as H_IMPORT,
 } from "./constants";
 import type { Tower } from "./types";
+import { TOWERS } from "./constants";
 
 // Module-local bindings for the constants blockedPx/hitsWall/sample read:
 // an imported binding is a getter call under CommonJS interop (dev server,
@@ -167,9 +168,11 @@ export class FlowField {
     this.spawnMask = spawnMask;
     this.walk.set(blockedBase);
     this.isGoal.fill(0);
-    for (const t of towers)
-      for (let y = t.gy; y < t.gy + 2; y++)
-        for (let x = t.gx; x < t.gx + 2; x++) this.walk[y * COLS + x] = 1;
+    for (const t of towers) {
+      const sz = TOWERS[t.kind].size;
+      for (let y = t.gy; y < t.gy + sz; y++)
+        for (let x = t.gx; x < t.gx + sz; x++) this.walk[y * COLS + x] = 1;
+    }
     // compute() seeds its Dijkstra from EVERY isGoal cell at distance 0,
     // which is a multi-source shortest path — so painting a band instead of
     // a block costs nothing and hands every cell the heading to its nearest
@@ -430,7 +433,7 @@ export class FlowField {
    * compute() only permits a diagonal when both orthogonal cells are open, so
    * a diagonal never connects anything a 4-connected path doesn't.
    */
-  sealsSpawns(bgx: number, bgy: number): boolean {
+  sealsSpawns(bgx: number, bgy: number, size = 2): boolean {
     const { walk, isGoal, bfsSeen: seen, bfsQ: q } = this;
     seen.fill(0);
     let n = 0;
@@ -446,7 +449,7 @@ export class FlowField {
       for (const [dx, dy] of D4) {
         const nx = x + dx, ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
-        if (nx >= bgx && nx < bgx + 2 && ny >= bgy && ny < bgy + 2) continue;
+        if (nx >= bgx && nx < bgx + size && ny >= bgy && ny < bgy + size) continue;
         const ni = ny * COLS + nx;
         if (seen[ni] || walk[ni]) continue;
         seen[ni] = 1;

@@ -888,11 +888,11 @@ export const OVERSHIELD_SCALE = 5;
 // thing that was worth killing — which is the point, because one turret
 // of clearance was a habit rather than a decision.
 //
-// A DOWNED TOWER IS SECONDS, NOT SALVAGE. The tower stands back up at full
-// health after TOWER_DOWN_TIME, so what a swarm of detonating daggers
-// costs the player is windows of silence in the kill zone — the same
-// currency Speedy taxes, invisible to the audit arithmetic in exactly the
-// same way, and priced lighter because a well-spread board barely pays it.
+// A WRECKED TOWER IS GONE. What a swarm of detonating daggers costs the
+// player is turrets — the scrap to stand them back up, and the silence in
+// the kill zone until they do — which is the same currency the coming
+// enemy attacks will spend, and the reason this rule is priced as a
+// preview of them rather than as a mutator of its own.
 //
 // THE DAMAGE SCALES WITH THE BODY'S TIER, NOT ITS LEVEL. Tier is the
 // currency ladder (UNIT_STATS.tier, 1-5): a dagger's pop is a scratch and

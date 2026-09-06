@@ -285,6 +285,19 @@ on the naval front at a six-second gap, Quagmire's forty in the swamp
 against a lighter, tier-2-capped opening — a hundred lives each. The
 survive shape is wired and waiting for a map that wants it.
 
+**Structures stand anywhere unoccupied, open ground included, and they
+block.** A turret on the swarm's path is a wall as well as a gun: the
+walkers' flow field re-solves once per tick when a footprint goes up or
+comes down (`Sim.claimGround`, about ten milliseconds), and a placement
+that would seal the swarm's last route is refused — for now. A structure
+has Mindustry's block health times `TOWER_HP_SCALE`; hurt, it greys and
+smokes like a unit, and at zero it is **wrecked and gone**, its ground
+open again. Today only the Volatile mutator's blast reaches that pool.
+**Enemy attacks are next**: every unit will attack-move, walking at the
+base and hitting whatever stands in the way, and the seal refusal goes
+with them (see the note on `Sim.damageTower`). The headless bot still
+builds on rock only.
+
 **Every map is checked headless.** `npm run playtest -- --world <id>`
 runs the real sim with an ordinary builder bot at the keyboard (route
 coverage from a dry run, the stage's tier bought round-robin, never a

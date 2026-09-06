@@ -22,7 +22,6 @@ import {
   H as H_IMPORT,
   MAX_UNITS,
   ROWS as ROWS_IMPORT,
-  TOWER_DOWN_TIME,
   TOWERS as TOWERS_IMPORT,
   towerMaxHp,
   UR,
@@ -1107,6 +1106,16 @@ export class Sim {
   private sealGx = -1;
   private sealGy = -1;
   private sealResult = false;
+  /**
+   * THE WALKERS' FIELD NEEDS RECOMPUTING: a structure was placed on, or
+   * wrecked off, open ground since the last tick. Placement marks the
+   * cells at once (so the next canPlace and the seal check see them) and
+   * the ten-millisecond Dijkstra runs ONCE, at the top of the next
+   * update, however many towers a drag-chain laid in one frame.
+   */
+  private fieldDirty = false;
+  /** the ground drop zones, as a mask — nothing may be built on one */
+  private groundPads: Uint8Array = new Uint8Array(NCELLS);
 
   /** a Sim is always born on a level — building a default world and then
    * calling loadLevel solved the flow field twice and threw the first away */
@@ -1182,12 +1191,9 @@ export class Sim {
     this.buildPads();
     // the walkers' field: rock and towers block it, it enters by the ground
     // zones, and it aims at the ground exits
-    this.field.rebuildWalk(
-      this.towers,
-      this.terrain.blocked,
-      this.layerPadMask(LAYER_BIT.ground),
-      this.exitGround,
-    );
+    this.groundPads = this.layerPadMask(LAYER_BIT.ground);
+    this.fieldDirty = false;
+    this.field.rebuildWalk(this.towers, this.terrain.blocked, this.groundPads, this.exitGround);
     // THE HULLS' FIELD, built only where there is water to sail. It is the
     // mirror image of the walkers' — dry land is its wall — and towers do
     // not block it, because a tower stands on rock and rock is already the
@@ -1636,7 +1642,6 @@ export class Sim {
       x: (gx + sz / 2) * CELL,
       y: (gy + sz / 2) * CELL,
       hp: towerMaxHp(kind),
-      downT: 0,
       aimShieldTower: -1,
       tombShieldTower: -1,
       cd: Math.random() * 0.1,
@@ -1664,6 +1669,7 @@ export class Sim {
       beamRot: 0,
       beamDmgT: 0,
     });
+    this.claimGround(gx, gy, sz, true);
     // a count-dependent rung (duo power) reads the board, so the board
     // changing is what moves it
     this.refreshSpecs();
@@ -1675,6 +1681,14 @@ export class Sim {
     // while the sim is paused
     this.time += dt;
     this.runScript(dt);
+
+    // a structure went up on, or came down off, open ground: re-solve the
+    // walkers' field once for the whole frame's worth of changes
+    if (this.fieldDirty) {
+      this.fieldDirty = false;
+      this.field.compute();
+      this.unstickUnits();
+    }
 
     this.updateAliveBounds();
     this.buildHash();
@@ -1873,22 +1887,10 @@ export class Sim {
 
   // ---------- placement ----------
 
-  /** the 2x2 footprint is on the map, off the base, and free of walls */
-  private cellsFree(gx: number, gy: number): boolean {
-    if (gx < 0 || gy < 0 || gx > COLS - 2 || gy > ROWS - 2) return false;
-    const { walk, isGoal } = this.field;
-    for (let y = gy; y < gy + 2; y++)
-      for (let x = gx; x < gx + 2; x++) {
-        const i = y * COLS + x;
-        if (walk[i] || isGoal[i]) return false;
-      }
-    return true;
-  }
-
   /** no unit may be standing on (or overhanging into) the footprint */
-  private areaClearOfUnits(gx: number, gy: number): boolean {
+  private areaClearOfUnits(gx: number, gy: number, sz: number): boolean {
     const x0 = gx * CELL, y0 = gy * CELL;
-    const x1 = x0 + CELL * 2, y1 = y0 + CELL * 2;
+    const x1 = x0 + CELL * sz, y1 = y0 + CELL * sz;
     const hx0 = clamp(((x0 - UNIT_RMAX) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((y0 - UNIT_RMAX) / HC) | 0, 0, HROWS - 1);
     const hx1 = clamp(((x1 + UNIT_RMAX) / HC) | 0, 0, HCOLS - 1);
@@ -1909,9 +1911,9 @@ export class Sim {
   }
 
   /** would this footprint cut the swarm's last route to the base? */
-  private wouldSeal(gx: number, gy: number): boolean {
+  private wouldSeal(gx: number, gy: number, sz: number): boolean {
     if (gx === this.sealGx && gy === this.sealGy) return this.sealResult;
-    const sealed = this.field.sealsSpawns(gx, gy);
+    const sealed = this.field.sealsSpawns(gx, gy, sz);
     this.sealGx = gx;
     this.sealGy = gy;
     this.sealResult = sealed;
@@ -2091,15 +2093,29 @@ export class Sim {
     }
     const sz = TOWERS[kind].size;
     if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
-    const { blocked, wall } = this.terrain;
+    const { blocked, wall, floor } = this.terrain;
+    const { isGoal } = this.field;
+    // does any cell of the footprint stand on OPEN GROUND — in the swarm's
+    // way, where a structure is a wall as well as a gun?
+    let onGround = false;
     for (let y = gy; y < gy + sz; y++)
       for (let x = gx; x < gx + sz; x++) {
         const i = y * COLS + x;
-        // pine forests and deep water are the un-buildable kinds of blocked
-        // cell (isBuildableWall in terrain.ts holds that rule); every rock
-        // family — stone, dirt, dark carbon, indices above the sentinels
-        // included — is tower real estate
-        if (!blocked[i] || !isBuildableWall(wall[i])) return false;
+        if (blocked[i]) {
+          // pine forests and deep water are the un-buildable kinds of
+          // blocked cell (isBuildableWall in terrain.ts holds that rule);
+          // every rock family — stone, dirt, dark carbon, indices above
+          // the sentinels included — is tower real estate
+          if (!isBuildableWall(wall[i])) return false;
+          continue;
+        }
+        // OPEN GROUND IS REAL ESTATE TOO — the RTS turn: a structure can
+        // stand anywhere unoccupied and it blocks the swarm that walks
+        // there. Never on water (no hull-footed turrets), never on the
+        // base line the walkers are aiming at, never on a drop zone (a
+        // corked door spawns nothing)
+        if (isWaterFloor(floor[i]) || isGoal[i] || this.groundPads[i]) return false;
+        onGround = true;
       }
     for (const t of this.towers) {
       const tsz = TOWERS[t.kind].size;
@@ -2112,6 +2128,16 @@ export class Sim {
       if (s.hp <= 0) continue;
       if (gx < s.gx + SHIELD_TOWER_SIZE && s.gx < gx + sz && gy < s.gy + SHIELD_TOWER_SIZE && s.gy < gy + sz)
         return false;
+    }
+    if (onGround) {
+      // nothing underfoot, and — UNTIL THE SWARM CAN ATTACK — never the
+      // last route sealed. Blocking is the point (a wall the swarm has to
+      // walk around is a longer kill zone); a wall the swarm cannot walk
+      // around at all is a free win only because it cannot yet chew
+      // through it. When units attack (see damageTower), this refusal
+      // goes and a sealed wall is simply a wall about to be hit
+      if (!this.areaClearOfUnits(gx, gy, sz)) return false;
+      if (this.wouldSeal(gx, gy, sz)) return false;
     }
     return true;
   }
@@ -2155,6 +2181,39 @@ export class Sim {
   }
 
   /**
+   * A structure's footprint on the walkers' field. Rock is already a wall
+   * and stays one whichever way this goes; OPEN GROUND under a structure
+   * becomes a wall while it stands (`on`) and opens again when it comes
+   * down. The field itself is re-solved once, at the next tick
+   * (fieldDirty), and the seal check's cache is stale either way.
+   */
+  private claimGround(gx: number, gy: number, sz: number, on: boolean): void {
+    const { blocked } = this.terrain;
+    const { walk } = this.field;
+    let changed = false;
+    for (let y = gy; y < gy + sz; y++)
+      for (let x = gx; x < gx + sz; x++) {
+        const i = y * COLS + x;
+        if (blocked[i]) continue;
+        walk[i] = on ? 1 : 0;
+        changed = true;
+      }
+    if (changed) {
+      this.fieldDirty = true;
+      this.sealGx = -1;
+    }
+  }
+
+  /** take a structure off the board — sold or wrecked, the ground is the swarm's again */
+  private removeTower(t: Tower): void {
+    const at = this.towers.indexOf(t);
+    if (at < 0) return;
+    this.towers.splice(at, 1);
+    this.claimGround(t.gx, t.gy, TOWERS[t.kind].size, false);
+    this.refreshSpecs();
+  }
+
+  /**
    * Chain demolition, the mirror of placeLine: walk the drag segment a cell
    * at a time and pull down every tower it crosses. Sampling at most one
    * cell apart means a fast drag cannot skip over a footprint, and
@@ -2175,32 +2234,12 @@ export class Sim {
   sellTowerAt(px: number, py: number): boolean {
     const t = this.towerAt(px, py);
     if (!t) return false;
-    this.towers.splice(this.towers.indexOf(t), 1);
-    this.refreshSpecs();
+    this.removeTower(t);
     // the whole price back (SELL_REFUND, economy.ts): a board is never a
     // commitment, and re-laying it to fund the next tier costs nothing
     if (this.charging) this.scrap += sellValue(t.kind);
-    // the rock under it belongs to the mountain — nothing to unblock
     this.pushFx(t.x, t.y, 0.35, FxKind.Death); // demolish puff
     return true;
-  }
-
-  /**
-   * Future ground-placed structures build on the floor with the full rule
-   * set towers used to have: free walkable cells, no units underfoot, and
-   * no sealing of the swarm's last route. Blocks the cells and recomputes
-   * the flow. Unused today — kept wired for when such structures exist.
-   */
-  placeGroundStructure(gx: number, gy: number): PlaceResult {
-    if (!this.cellsFree(gx, gy) || !this.areaClearOfUnits(gx, gy)) return "invalid";
-    if (this.wouldSeal(gx, gy)) return "would-seal";
-    const { walk } = this.field;
-    for (let y = gy; y < gy + 2; y++)
-      for (let x = gx; x < gx + 2; x++) walk[y * COLS + x] = 1;
-    this.field.compute();
-    this.sealGx = -1; // the wall layout changed; cached verdicts are stale
-    this.unstickUnits();
-    return "ok";
   }
 
   // ---------- spawning ----------
@@ -3568,10 +3607,12 @@ export class Sim {
     for (let i = 0; i < this.n; i++) {
       // flyers are allowed over walls — never teleport them off a mountain.
       // Hulls are skipped for a different reason: this pass exists to clear
-      // units out of a cell a TOWER just took, towers stand only on high
-      // ground, and no hull is ever on high ground — so a boat reading as
-      // blocked here is a boat on the shore of its own field, and shoving
-      // it to the nearest open GROUND cell would beach it for good
+      // walkers out of cells a STRUCTURE just took (canPlace refuses a
+      // footprint with a unit under it, but a unit can drift into one
+      // between the check and the tick), no structure stands on water —
+      // so a boat reading as blocked here is a boat on the shore of its
+      // own field, and shoving it to the nearest open GROUND cell would
+      // beach it for good
       if (KIND_FLYING[ukind[i]] || unav[i] !== 0) continue;
       if (!field.hitsWall(upx[i], upy[i], WALL_R)) continue;
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
@@ -3833,29 +3874,26 @@ export class Sim {
   }
 
   /**
-   * Tower damage — the Volatile mutator's blast is the only caller today,
-   * and nothing calls it in an unmutated run. At zero the tower goes DOWN,
-   * never away: downT starts, everything mid-flight is let go of, and
-   * fireTowers stands it back up at full health when the timer ends. A
-   * downed tower is untouchable — chained blasts cannot keep one on the
-   * floor forever.
+   * STRUCTURE DAMAGE. At zero the structure is WRECKED: a blast, the
+   * demolish puff, and it is gone — the board is a thing the swarm can
+   * take apart, and its ground is the swarm's again (removeTower).
+   *
+   * WHO CALLS THIS TODAY: the Volatile mutator's blast, and nothing else.
+   * WHO WILL CALL IT VERY SOON: every unit on the field. The next turn of
+   * the game is the RTS one — units attack-move, walking at the base and
+   * hitting whatever stands in the way — and this is the hook their
+   * weapons will land on. Until they do, a structure on open ground is a
+   * wall the swarm walks around, never through, which is why canPlace
+   * still refuses to seal the last route.
    */
   private damageTower(t: Tower, dmg: number): void {
-    if (t.downT > 0 || t.tombShieldTower >= 0) return;
+    if (t.tombShieldTower >= 0) return;
     t.hp -= dmg;
     if (t.hp > 0) return;
     t.hp = 0;
-    t.downT = TOWER_DOWN_TIME;
-    // let go of everything: the queued volley, the charge, the held beam,
-    // the tractor's grip, the target — a knocked-out turret holds nothing
-    t.target = -1;
-    t.targetIdx = -1;
-    t.burstLeft = 0;
-    t.chargeT = -1;
-    t.beamT = -1;
-    t.beamStr = 0;
-    t.aimShieldTower = -1;
     this.pushFx(t.x, t.y, 0.5, FxKind.Breach);
+    this.pushFx(t.x, t.y, 0.35, FxKind.Death);
+    this.removeTower(t);
   }
 
   /**
@@ -3870,7 +3908,8 @@ export class Sim {
     const tier = Math.min(KIND_TIER[kind], VOLATILE_DMG.length - 1);
     const reach = VOLATILE_RADIUS[tier] + urad;
     const dmg = VOLATILE_DMG[tier];
-    for (const t of this.towers) {
+    // over a copy: a wrecked tower leaves the list under the loop
+    for (const t of [...this.towers]) {
       const half = (TOWERS[t.kind].size * CELL) / 2;
       const r = reach + half;
       const dx = t.x - x, dy = t.y - y;
@@ -3967,23 +4006,22 @@ export class Sim {
       // an ENTOMBED tower (a shield tower rose over it — see trySpawnShieldTower)
       // does nothing at all until the shield tower dies and hands it back
       if (t.tombShieldTower >= 0) continue;
-      // a DOWNED tower spends the whole timer standing back up: it fires
-      // nothing, targets nothing, and smokes so the state reads from orbit
-      if (t.downT > 0) {
-        t.downT -= dt;
-        if (t.downT <= 0) {
-          t.downT = 0;
-          t.hp = towerMaxHp(t.kind);
-          this.pushFx(t.x, t.y, 0.4, FxKind.Heal);
-        } else if (Math.random() < dt * 2.5) {
-          const sz = TOWERS[t.kind].size * CELL;
+      // DAMAGE SMOKE, the units' own rule (updateStatus): under half its
+      // pool a structure sheds soot, thicker the lower it gets, scaled by
+      // its footprint so a spectre smokes like the building it is. The
+      // tint has gone grey (renderer, HP_TINT); this is the other half
+      const maxHp = towerMaxHp(t.kind);
+      if (t.hp < maxHp * DAMAGE_SMOKE_BELOW) {
+        const hurt = 1 - t.hp / (maxHp * DAMAGE_SMOKE_BELOW);
+        const cells = TOWERS[t.kind].size;
+        if (Math.random() < DAMAGE_SMOKE_RATE * hurt * cells * dt) {
+          const sz = cells * CELL;
           this.pushFx(
             t.x + (Math.random() - 0.5) * sz * 0.6,
             t.y + (Math.random() - 0.5) * sz * 0.6,
-            0.6, FxKind.SmokeCloud,
+            DAMAGE_SMOKE_LIFE, FxKind.DamageSmoke, 0, sz / 2, (Math.random() * 1e9) | 0,
           );
         }
-        continue;
       }
       const st = this.statsFor(t.kind);
       // a tractor turret has no reload and no volley — it holds a beam

@@ -1310,18 +1310,13 @@ export const targetingLine = (s: TowerStats): string =>
 
 
 /**
- * TOWER HEALTH — every tower has a pool, and in the base game NOTHING
- * TOUCHES IT. Enemies never attack; the only things that hurt a tower are
- * rules that say so (the Volatile mutator today), so a run rolled without
- * one plays exactly as it always has and the pool is a dead field.
- *
- * A tower at zero DOES NOT DIE. It goes DOWN: stops firing, stops
- * targeting, greys out — and stands back up at full health after
- * TOWER_DOWN_TIME. The player keeps everything they own, always; what a
- * "kill" costs them is SECONDS OF DPS, which is the same currency Speedy
- * taxes and just as invisible to the ladder's audit arithmetic. Selling
- * and replacing a downed tower is allowed — a rebuild is slower than the
- * timer for anything bigger than a duo, so there is nothing to cheese.
+ * TOWER HEALTH — every structure has a pool, and A STRUCTURE AT ZERO IS
+ * WRECKED: gone from the board, its ground open to the swarm again
+ * (Sim.damageTower). Today only a rule that says so hurts one (the
+ * Volatile mutator's blast). ENEMY ATTACKS ARE COMING: every unit will
+ * attack-move — walk at the base and hit whatever stands in the way — and
+ * this pool is the thing they will be hitting, so the numbers below are
+ * about to matter on every run rather than on one roll.
  *
  * THE POOL IS MINDUSTRY'S OWN BLOCK HEALTH, TIMES ONE DIAL. Each turret's
  * `health` in TOWERS is the upstream number, read out of Blocks.java and
@@ -1336,21 +1331,14 @@ export const targetingLine = (s: TowerStats): string =>
  *   ripple 1170   cyclone 1305   fuse 1980   tsunami 2250
  *   foreshadow 2400   spectre 2560   meltdown 3200
  *
- * It used to be 250 a cell, which made a duo exactly Mindustry's and a
- * spectre one and a half times it, and the size-2s all the same. The
- * upstream numbers are not tidy — a lancer outlasts a scatter, a duo
- * outlasts a parallax — but they are the ones every other stat here is
- * faithful to, and the oddities are Mindustry's own.
- *
  * THE DIAL IS WHY THEY ARE HIGHER THAN UPSTREAM. In Mindustry a turret
- * stands behind walls and is not meant to take fire; here there are no
- * walls and the turret IS the front, so every pool is scaled by
- * TOWER_HP_SCALE. Two is the number: a duo takes 500, which is forty
- * dagger pops or under two reign pops, and a meltdown takes 6,400.
+ * stands behind walls and is not meant to take fire; here the turret IS
+ * the wall — it stands on open ground in the swarm's path if the player
+ * puts it there — so every pool is scaled by TOWER_HP_SCALE. Two is the
+ * number: a duo takes 500, which is forty dagger pops or under two reign
+ * pops, and a meltdown takes 6,400.
  */
 export const TOWER_HP_SCALE = 2;
-/** seconds a downed tower spends regenerating before it stands back up */
-export const TOWER_DOWN_TIME = 10;
 /** a tower's full pool — Mindustry's health for the block, times the dial */
 export const towerMaxHp = (kind: import("./types").TowerKind): number =>
   TOWERS[kind].health * TOWER_HP_SCALE;

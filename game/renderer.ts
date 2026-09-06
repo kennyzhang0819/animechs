@@ -1776,10 +1776,10 @@ export class Renderer {
         : UV_TOWER_BASE1;
       // a hurt tower wears the units' own hp-thirds grey (HP_TINT), so
       // "this is taking damage" reads identically on both sides of the
-      // fight; a DOWNED or ENTOMBED one goes dark blue instead — a state,
-      // not a wound
+      // fight — and smokes like them too (Sim.fireTowers); an ENTOMBED one
+      // goes dark blue instead — a state, not a wound
       let tint: readonly [number, number, number];
-      if (t.downT > 0 || t.tombShieldTower >= 0) tint = TOWER_DARK;
+      if (t.tombShieldTower >= 0) tint = TOWER_DARK;
       else {
         const t3 = (t.hp * 3) / towerMaxHp(t.kind);
         tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
