@@ -46,15 +46,12 @@ import {
   grantRunReward,
   isTierCleared,
   loadProgress,
-  isUnlocked,
-  lockEverything,
   resetProgress,
   saveEffects,
   saveUiScale,
   UI_SCALE_DEFAULT,
   UI_SCALES,
   saveHudMinimized,
-  unlockEverything,
   pointsFree,
   saveLoadout,
   saveSpeed,
@@ -78,22 +75,8 @@ import { BY_MINDUSTRY_VALUE } from "@/game/tech";
 import { FIRST_CLEAR_XP, levelProgress, POINT_COLOR, unlockWaveOf, XP_COLOR } from "@/game/economy";
 import { itemCount, LevelStrip, PointsAmount, ScrapAmount, XpAmount } from "./Items";
 import TechTree from "./TechTree";
-import { useTouchOnly } from "./Board";
 import { bandFor, MutationFace } from "./mutationFace";
 import MenuBackground from "./MenuBackground";
-
-/**
- * THE TOUCH BACK DOOR's three numbers (see `taps` in MechSwarm).
- *
- * Seven taps because that is Android's build-number count, and the count
- * being a known idiom is worth more than any number picked fresh. The
- * window is generous — a finger tapping deliberately is nowhere near a
- * double-click's cadence — and the hint appears at three, which is one
- * past anything a mis-tap plausibly reaches.
- */
-const UNLOCK_TAPS = 7;
-const UNLOCK_HINT_AT = 3;
-const TAP_WINDOW_MS = 1200;
 
 /** the level card's map preview — the admin editor's thumbnail look */
 function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) {
@@ -357,10 +340,9 @@ const runSpec = (
  * sentence in a card that opens on hover.
  *
  * IT IS THE CODEX TILE WITH THE BOARD TAKEN OUT — same face, same band
- * colour on the border, same touch rule (the first tap opens the card),
- * because a player who has read the codex has already learned this
- * gesture. What it drops is the name under the square and the geometry
- * around it: this is a row inside a dialog, not a shelf on a board.
+ * colour on the border, same hover card. What it drops is the name under
+ * the square and the geometry around it: this is a row inside a dialog,
+ * not a shelf on a board.
  *
  * THE CARD OPENS UPWARD. Everything below this row is the Deploy button
  * and the bottom of the panel, so a card hanging down would either be
@@ -370,9 +352,6 @@ function MutationChip({
   def,
   always,
   fromRight,
-  touch,
-  armed,
-  onArm,
 }: {
   def: MutationDef;
   /** a rule the WORLD carries rather than one the difficulty rolled */
@@ -387,32 +366,24 @@ function MutationChip({
    * without measuring anything at runtime.
    */
   fromRight: boolean;
-  touch: boolean;
-  armed: string | null;
-  onArm: (id: string | null) => void;
 }) {
   const band = bandFor(def);
-  // on touch the card follows `armed`, not the pointer: iOS does not
-  // reliably focus a <button> it was tapped on, so hanging the card off
-  // focus-within alone would leave taps opening nothing
-  const showCard = touch && armed === def.id;
   return (
     <div className="group relative">
       <button
         type="button"
         aria-label={`${def.name}: ${band.label} mutator${always ? ", always in force on this map" : ""}. ${def.blurb}`}
-        onClick={() => onArm(armed === def.id ? null : def.id)}
         className="flex h-7 w-7 items-center justify-center border-2 bg-[#0b0b0d] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB]"
         style={{ borderColor: band.color }}
       >
         <MutationFace id={def.id} size="h-5 w-5" />
       </button>
-      {/* what this rule does — opened by resting on the chip with a mouse,
-          and by a tap with a finger */}
+      {/* what this rule does — opened by resting on the chip, or by
+          focusing it from the keyboard */}
       <div
-        className={`pointer-events-none absolute bottom-full z-10 mb-2 w-56 border-[3px] p-2.5 text-left shadow-lg ${
+        className={`pointer-events-none absolute bottom-full z-10 mb-2 hidden w-56 border-[3px] p-2.5 text-left shadow-lg group-hover:block group-focus-within:block ${
           fromRight ? "right-0" : "left-0"
-        } ${showCard ? "block" : "hidden group-hover:block group-focus-within:block"}`}
+        }`}
         style={{ borderColor: band.color, background: "#0b0b0d" }}
       >
         <div className="flex items-baseline justify-between gap-2">
@@ -518,10 +489,6 @@ function MapDialog({
     .map(mutationById)
     .filter((m): m is NonNullable<typeof m> => m !== null);
   const intrinsic = new Set(world.intrinsicMutation ?? []);
-  // the chips' hover card follows the pointer on a mouse and `armed` on a
-  // finger — the codex board's rule, for the same reason (see MutationChip)
-  const touch = useTouchOnly();
-  const [armed, setArmed] = useState<string | null>(null);
 
   // Escape closes it, like every dialog anyone has ever met
   useEffect(() => {
@@ -670,9 +637,6 @@ function MapDialog({
                           def={m}
                           always={intrinsic.has(m.id)}
                           fromRight={i >= mutations.length / 2}
-                          touch={touch}
-                          armed={armed}
-                          onArm={setArmed}
                         />
                       ))}
                     </div>
@@ -840,27 +804,6 @@ export default function MechSwarm() {
    * they were playing rather than at the title.
    */
   const [menuView, setMenuView] = useState<"home" | "settings" | "maps" | "map">("home");
-  /**
-   * THE BACK DOOR'S TAP COUNTER — how many times the settings heading has
-   * been tapped in a row, and whether the door has been opened.
-   *
-   * The desktop debug modes are keyboard chords (Ctrl+Shift+S, Ctrl+Shift+M),
-   * which an iPad cannot type, and the dev unlock is compiled out of the
-   * build an iPad actually loads. This is the touch equivalent: seven taps
-   * on the settings heading grants the whole tree (unlockEverything).
-   *
-   * THE COUNT IS SHOWN FROM THE THIRD TAP ON, which is what makes it a
-   * secret rather than a puzzle: nothing advertises the gesture, but once
-   * you are plainly in the middle of it the game stops making you guess
-   * whether it is working. Android's build-number tap has made the same
-   * trade for years.
-   *
-   * It resets on any pause longer than TAP_WINDOW_MS and on leaving the
-   * screen, so a stray tap on the heading can never accumulate into an
-   * unlock over the course of a session.
-   */
-  const [taps, setTaps] = useState(0);
-  const lastTap = useRef(0);
   const [level, setLevel] = useState<LevelSpec | null>(null);
   /**
    * The rung the menu is pointed at. It follows the frontier whenever the
@@ -958,24 +901,8 @@ export default function MechSwarm() {
    * re-opening never lands somewhere the player did not ask for.
    */
   const [pauseSettings, setPauseSettings] = useState(false);
-  /**
-   * THE IN-RUN SANDBOX DOOR'S TAP COUNTER — the touch equivalent of
-   * Ctrl+Shift+S, seven taps on the pause overlay's heading.
-   *
-   * Same bargain and the same numbers as the settings door (see `taps`):
-   * the chord is unreachable on a tablet, so the gesture is the only way
-   * in there, and nothing advertises it. It lives on the PAUSE OVERLAY
-   * rather than on the field because the field is covered in turret
-   * targets — a tappable area over the map would be swallowing taps meant
-   * for building — and because the sim is held while the overlay is up, so
-   * a seven-tap gesture costs the player no waves.
-   *
-   * It resets whenever the overlay closes, with `pauseSettings`.
-   */
-  const [sandboxTaps, setSandboxTaps] = useState(0);
   /** the sandbox door asked for the hairline diagnostic — see the handoff */
   const diagRef = useRef(false);
-  const lastSandboxTap = useRef(0);
 
   useEffect(() => {
     const p = loadProgress();
@@ -1302,18 +1229,6 @@ export default function MechSwarm() {
     setHud(g.ui());
   };
 
-  /**
-   * The demolish tool. On a mouse it doubles the right button; on a
-   * touchscreen it is the only way to sell at all, so it is a mode picked
-   * from the bar rather than a modifier held down.
-   */
-  const toggleSell = (): void => {
-    const g = gameRef.current;
-    if (!g) return;
-    g.setSellMode(!hud?.sellMode);
-    setHud(g.ui());
-  };
-
   const togglePause = (): void => {
     const g = gameRef.current;
     if (!g) return;
@@ -1330,10 +1245,7 @@ export default function MechSwarm() {
    */
   const menuOpen = hud?.menuOpen ?? false;
   useEffect(() => {
-    if (!menuOpen) {
-      setPauseSettings(false);
-      setSandboxTaps(0); // a half-finished gesture never survives a close
-    }
+    if (!menuOpen) setPauseSettings(false);
   }, [menuOpen]);
 
   const openMenu = (): void => {
@@ -1485,38 +1397,6 @@ export default function MechSwarm() {
             </button>
           </div>
 
-          {/* THE DOOR, ONCE IT IS OPEN (see `taps`): shown only on a save
-              that has used the back door — a save that went through it must
-              never be stuck there. Nothing destructive: the grant was never
-              written to the save (Progress.unlocked), so switching it off
-              returns the campaign underneath untouched */}
-          {!inGame && progress && isUnlocked(progress) && (
-            <div className="ms-pane flex w-full max-w-[30rem] items-center justify-between gap-4 border-[#3A5A3F] px-4 py-3">
-              <div className="min-w-0">
-                <div className="text-[13px] font-bold uppercase tracking-widest text-[#7BE58A]">
-                  Full unlock
-                </div>
-                <div className="text-[12px] text-[#71717C]">
-                  Every tech node reads as owned
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  const p = lockEverything();
-                  setProgress(p);
-                  setTier(topTier(p, worldId));
-                  // the bar's curation may name turrets that only the
-                  // grant was standing up; leave it filtering against
-                  // a roster the save no longer owns and the bar comes
-                  // back empty
-                  setLoadout(p.loadout ?? null);
-                }}
-                className="ms-btn shrink-0 px-3 py-1.5 text-[13px]"
-              >
-                Disable
-              </button>
-            </div>
-          )}
 
           {!inGame && (
             <div className="ms-pane flex w-full max-w-[30rem] items-center justify-between gap-4 px-4 py-3">
@@ -1611,12 +1491,8 @@ export default function MechSwarm() {
       <button
         aria-label={label}
         title={label}
-        onClick={() => {
-          // a half-finished back-door gesture does not survive the screen
-          setTaps(0);
-          setMenuView(to);
-        }}
-        className="ui-zoom ms-btn fixed left-[max(1rem,var(--safe-l))] top-[max(1rem,var(--safe-t))] z-20 h-11 w-11 p-0 text-[#a2a2a2] hover:text-white"
+        onClick={() => setMenuView(to)}
+        className="ui-zoom ms-btn fixed left-[1rem] top-[1rem] z-20 h-11 w-11 p-0 text-[#a2a2a2] hover:text-white"
       >
         <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden="true">
           <path d="M14.7 5.1 7.8 12l6.9 6.9 1.7-1.7L11.2 12l5.2-5.2z" />
@@ -1642,7 +1518,7 @@ export default function MechSwarm() {
             size; the working menus scale with the UI-size knob, which is
             also what makes the knob's effect visible where it lives */}
         <div
-          className={`relative mx-auto flex min-h-full max-w-5xl flex-col items-center justify-center gap-8 py-12 pl-[max(1.5rem,var(--safe-l))] pr-[max(1.5rem,var(--safe-r))] sm:py-16 ${
+          className={`relative mx-auto flex min-h-full max-w-5xl flex-col items-center justify-center gap-8 py-12 pl-[1.5rem] pr-[1.5rem] sm:py-16 ${
             menuView === "home" ? "" : "ui-zoom"
           }`}
         >
@@ -1696,38 +1572,7 @@ export default function MechSwarm() {
               beside the Deploy button where a mis-tap would be costly */}
           {menuView === "settings" && (
             <>
-              {/* THE HEADING IS THE BACK DOOR (see `taps`). It is a button
-                  that does nothing visible for six taps, which is the whole
-                  point — it has to be reachable on a device with no
-                  keyboard and invisible to a player who is not looking for
-                  it. It lives HERE, on a screen with no canvas under it,
-                  rather than on the build stamp that floats over every
-                  screen: a tappable target in the corner of the field would
-                  be swallowing taps meant for turrets */}
-              <button
-                onClick={() => {
-                  const now = performance.now();
-                  const n = now - lastTap.current > TAP_WINDOW_MS ? 1 : taps + 1;
-                  lastTap.current = now;
-                  if (n >= UNLOCK_TAPS) {
-                    setTaps(0);
-                    setProgress(unlockEverything());
-                    return;
-                  }
-                  setTaps(n);
-                }}
-                className="ms-heading text-[15px] tracking-[0.35em] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#FFD37F]"
-              >
-                Settings
-              </button>
-              {/* The countdown only, and only mid-gesture. Whether the
-                  door is OPEN is not a message here — it is the panel
-                  below, which is the thing that can also close it */}
-              {taps >= UNLOCK_HINT_AT && (
-                <p className="-mt-4 text-[12px] uppercase tracking-widest text-[#71717C]">
-                  {UNLOCK_TAPS - taps} more
-                </p>
-              )}
+              <h2 className="ms-heading text-[15px] tracking-[0.35em]">Settings</h2>
 
               {settingsPanel(false)}
               {/* the inspiration credit lives here rather than on the title
@@ -1810,31 +1655,29 @@ export default function MechSwarm() {
   const alive = hud ? hud.byKind.reduce((a, b) => a + b, 0) : 0;
 
   return (
-    // touch-none hands every gesture over the field to Game: without it the
-    // browser claims the drag for a scroll and the pinch for a page zoom, and
-    // the map underneath never moves. select-none and the callout keep a
-    // press-and-drag from turning into a text selection or an iOS share sheet
-    <div className="fixed inset-0 overflow-hidden bg-black select-none [-webkit-touch-callout:none]">
+    // select-none keeps a press-and-drag across the field from turning into
+    // a text selection
+    <div className="fixed inset-0 overflow-hidden bg-black select-none">
       <div className="relative h-full w-full">
         <canvas
           ref={glRef}
           width={2560}
           height={1440}
-          className="block h-full w-full touch-none"
+          className="block h-full w-full"
         />
         <canvas
           ref={uiRef}
           width={2560}
           height={1440}
-          className={`absolute inset-0 h-full w-full touch-none ${
-            hud?.buildKind || hud?.sellMode ? "cursor-crosshair" : "cursor-default"
+          className={`absolute inset-0 h-full w-full ${
+            hud?.buildKind ? "cursor-crosshair" : "cursor-default"
           }`}
         />
         {loadUi && <LoadingScreen step={loadUi.step} out={loadUi.out} />}
         {hud?.paused && (
           // on a phone the wave panel already fills the top of the screen, so
           // the badge drops onto the map rather than landing on top of it
-          <div className="ms-pane absolute left-1/2 top-[30%] -translate-x-1/2 border-[#FFD37F] px-4 py-1.5 font-display text-base font-bold uppercase tracking-[0.3em] text-[#FFD37F] sm:top-[calc(1rem+var(--safe-t))]">
+          <div className="ms-pane absolute left-1/2 top-[30%] -translate-x-1/2 border-[#FFD37F] px-4 py-1.5 font-display text-base font-bold uppercase tracking-[0.3em] text-[#FFD37F] sm:top-[1rem]">
             Paused
           </div>
         )}
@@ -1842,7 +1685,7 @@ export default function MechSwarm() {
             by spawn id so a bar never trades places with its neighbour.
             pointer-events-none: it is a readout, never a control */}
         {hud && hud.bosses.length > 0 && (
-          <div className="ui-zoom pointer-events-none absolute left-1/2 top-[calc(0.75rem+var(--safe-t))] z-10 flex w-[min(40vw,22rem)] -translate-x-1/2 flex-col gap-1.5">
+          <div className="ui-zoom pointer-events-none absolute left-1/2 top-[0.75rem] z-10 flex w-[min(40vw,22rem)] -translate-x-1/2 flex-col gap-1.5">
             {hud.bosses.map((b) => (
               <div key={b.id}>
                 <div className="mb-0.5 text-center text-[10px] font-bold uppercase tracking-widest text-[#F25555] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
@@ -1863,7 +1706,7 @@ export default function MechSwarm() {
             lines up under it. Everything inside wraps rather than widening
             it */}
         {hud && (
-          <div className="ui-zoom absolute left-[calc(1rem+var(--safe-l))] top-[calc(1rem+var(--safe-t))] flex w-80 max-w-[calc(100vw-8rem-var(--safe-l)-var(--safe-r))] flex-col items-stretch gap-2">
+          <div className="ui-zoom absolute left-[1rem] top-[1rem] flex w-80 max-w-[calc(100vw-8rem)] flex-col items-stretch gap-2">
             <div className="ms-pane w-full px-3 py-1.5">
               {/* the wave counter is what a run is read off, so the line
                   carries that and the rung and nothing else — the level
@@ -2059,7 +1902,7 @@ export default function MechSwarm() {
           <div
             role="group"
             aria-label="view and menu"
-            className="ui-zoom absolute right-[calc(1rem+var(--safe-r))] top-[calc(1rem+var(--safe-t))] flex items-start gap-2"
+            className="ui-zoom absolute right-[1rem] top-[1rem] flex items-start gap-2"
           >
             {/* the swarm's entry points, and the lines flyers fly out of
                 them. Walkers read off the terrain — flyers ignore it, so
@@ -2099,7 +1942,7 @@ export default function MechSwarm() {
             whole roster), and a second row would eat the field. The
             scroller itself is click-through so the map keeps the space to
             either side of the buttons. */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-[calc(1rem+var(--safe-b))] overflow-x-auto pb-1 pl-[calc(1rem+var(--safe-l))] pr-[calc(1rem+var(--safe-r))]">
+        <div className="pointer-events-none absolute inset-x-0 bottom-[1rem] overflow-x-auto pb-1 pl-[1rem] pr-[1rem]">
           <div
             role="group"
             aria-label="tower menu"
@@ -2156,25 +1999,6 @@ export default function MechSwarm() {
                 </button>
               );
             })}
-            {/* demolish rides in the bar with the turrets because on a
-                touchscreen it is a tool like they are — there is no right
-                button to hold instead */}
-            {hud && (
-              <button
-                title="Demolish (or right-click)"
-                aria-label="Demolish"
-                aria-pressed={hud.sellMode}
-                onClick={toggleSell}
-                className={`${TOOL_BTN} ms-btn-red ${hud.sellMode ? "" : "text-[#a2a2a2]"}`}
-              >
-                <svg viewBox="0 0 12 12" className="h-8 w-8 fill-current" aria-hidden="true">
-                  <path d="M4.6 1.1h2.8l.6 1h2v1.2H2V2.1h2zM2.9 4.6h6.2l-.5 6.3H3.4z" />
-                </svg>
-                <span className="text-[11px] font-bold uppercase leading-none tracking-widest">
-                  Sell
-                </span>
-              </button>
-            )}
             {/* the loadout editor's door. Always on the bar in campaign —
                 the SLOTS are the base rule, only their count is sold on the
                 tech tree — and absent in sandbox, where the whole roster
@@ -2203,7 +2027,7 @@ export default function MechSwarm() {
             rest dim out until something is removed — and the count badge
             is the one number that explains both states */}
         {hud && hud.barSlots !== null && loadoutOpen && (
-          <div className="ui-zoom ms-pane absolute bottom-[calc(6.25rem+var(--safe-b))] left-1/2 z-10 max-w-[calc(100vw-2rem)] -translate-x-1/2 p-3">
+          <div className="ui-zoom ms-pane absolute bottom-[6.25rem] left-1/2 z-10 max-w-[calc(100vw-2rem)] -translate-x-1/2 p-3">
             {(() => {
               const bar = barKinds();
               const full = bar.length >= (hud.barSlots ?? 0);
@@ -2388,35 +2212,11 @@ export default function MechSwarm() {
         {hud?.menuOpen && !hud.lost && !hud.won && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
             <div className="ui-zoom ms-pane flex max-h-[calc(100vh-2rem)] w-[30rem] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 overflow-y-auto p-6">
-              {/* THE HEADING IS THE SANDBOX DOOR (see `sandboxTaps`) — a
-                  button that does nothing visible for six taps. On a keyboard
-                  it is Ctrl+Shift+S and this is beneath noticing; on a tablet
-                  it is the only way in */}
-              <button
-                onClick={() => {
-                  const now = performance.now();
-                  const n =
-                    now - lastSandboxTap.current > TAP_WINDOW_MS ? 1 : sandboxTaps + 1;
-                  lastSandboxTap.current = now;
-                  if (n >= UNLOCK_TAPS) {
-                    setSandboxTaps(0);
-                    setAdmin((v) => !v);
-                    return;
-                  }
-                  setSandboxTaps(n);
-                }}
-                className="font-display text-xl font-bold uppercase tracking-[0.3em] text-[#FFD37F] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#FFD37F]"
-              >
+              {/* the sandbox door is Ctrl+Shift+S; the row below says when
+                  it is open, and is also what closes it */}
+              <h2 className="font-display text-xl font-bold uppercase tracking-[0.3em] text-[#FFD37F]">
                 Paused
-              </button>
-              {/* the countdown only, and only mid-gesture — whether the door
-                  is open is said by the row below, which is also what closes
-                  it. Seven taps to leave would be a punishment */}
-              {sandboxTaps >= UNLOCK_HINT_AT && (
-                <p className="-mt-3 text-[12px] uppercase tracking-widest text-[#71717C]">
-                  {UNLOCK_TAPS - sandboxTaps} more
-                </p>
-              )}
+              </h2>
               {admin && !pauseSettings && (
                 <div className="ms-pane flex w-full max-w-[20rem] items-center justify-between gap-3 border-[#6b4f8a] px-3 py-2">
                   <div className="min-w-0">

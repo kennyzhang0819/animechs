@@ -8,6 +8,7 @@
   "scripts": {
     "compile": "tsc -p tsconfig.json",
     "start": "npm run compile && electron .",
+    "dev": "npm run compile && electron .",
     "pack": "npm run compile && electron-builder --dir",
     "pack:steam": "npm run compile && electron-builder --dir --win --linux",
     "test": "npm run compile && node test/smoke.mjs"

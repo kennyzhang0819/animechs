@@ -279,43 +279,23 @@
   }
 }
 
-/* The device's own reserved edges — the notch, the rounded corners, the home
-   indicator — as plain numbers the HUD can add to its own margins. The page
-   is laid out under all of them (viewport-fit=cover in app/layout.tsx) so the
-   map runs edge to edge; only the controls step back out of the way. */
 :root {
-  --safe-t: env(safe-area-inset-top, 0px);
-  --safe-r: env(safe-area-inset-right, 0px);
-  --safe-b: env(safe-area-inset-bottom, 0px);
-  --safe-l: env(safe-area-inset-left, 0px);
-  /* How big the in-game HUD draws, as one multiplier. The default is
-     deliberately UNDER 1 — the panels were sized on a desktop and read
-     oversized against a phone's sliver of map — and the player sets their
-     own in Settings → Interface (Progress.uiScale, applied onto the root
-     by MechSwarm). Panels opt in with .ui-zoom; `zoom` is used rather
-     than transform because it reflows layout, so a scaled panel keeps its
+  /* How big the in-game HUD draws, as one multiplier. The panels were
+     sized on a desktop, so the default is 1; the player sets their own in
+     Settings → Interface (Progress.uiScale, applied onto the root by
+     MechSwarm). Panels opt in with .ui-zoom; `zoom` is used rather than
+     transform because it reflows layout, so a scaled panel keeps its
      anchor edge and its neighbours instead of overlapping them. */
-  --ui-scale: 0.85;
+  --ui-scale: 1;
 }
 
 .ui-zoom {
   zoom: var(--ui-scale);
 }
 
-/* THE ROTATE GATE (see app/layout.tsx). Shown only where all three hold:
-   portrait, a coarse pointer, and phone-narrow — 700px keeps every phone in
-   and the smallest iPad (744px logical) out. Everything else never sees it. */
-@media (orientation: portrait) and (pointer: coarse) and (max-width: 700px) {
-  .rotate-gate {
-    display: flex;
-  }
-}
-
 /* ---- dark scrollbars ---- */
 html {
   color-scheme: dark;
-  /* rotating a phone must not re-flow the HUD at a bigger font size */
-  -webkit-text-size-adjust: 100%;
 }
 
 /* No pull-to-refresh and no rubber-banding: a drag on the map is the camera,
@@ -326,18 +306,17 @@ body {
 }
 
 /* Nothing in the app is a text gesture. Every screen is made of things you
-   press — nodes, level cards, HUD buttons — and both iOS's long-press
-   magnifier and a mouse drag's blue highlight read as the UI glitching
-   rather than as an offer. The canvas already opted out (MechSwarm); this
-   is the same rule for every other screen, on every pointer — a drag on the
-   admin dashboard is a slider sweep, not a selection.
+   press — nodes, level cards, HUD buttons — and a mouse drag's blue
+   highlight reads as the UI glitching rather than as an offer. The canvas
+   already opted out (MechSwarm); this is the same rule for every other
+   screen — a drag on the admin dashboard is a slider sweep, not a
+   selection.
 
    Inputs opt back in: user-select inherits, and a field you cannot put a
    caret in is not a field. */
 body {
   -webkit-user-select: none;
   user-select: none;
-  -webkit-touch-callout: none;
 }
 
 input,
@@ -367,7 +346,6 @@ svg {
   user-drag: none;
   -webkit-user-select: none;
   user-select: none;
-  -webkit-touch-callout: none;
 }
 
 * {

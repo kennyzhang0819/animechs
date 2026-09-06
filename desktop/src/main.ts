@@ -24,6 +24,21 @@ function bundleDir(): string {
     : path.resolve(__dirname, "..", "..", "out");
 }
 
+/**
+ * THE DEV SERVER, instead of the export: `--dev-url=http://localhost:3000`
+ * points the window at Next's dev server (scripts/desktop-dev.mjs at the
+ * repo root starts both), so the game is developed inside the shell it
+ * ships in — hot reload, the admin editors and their API routes, and the
+ * save on disk. Only honoured in an unpackaged shell.
+ */
+function devUrl(): string | null {
+  if (app.isPackaged) return null;
+  const arg = process.argv.find((a) => a.startsWith("--dev-url="));
+  return arg ? arg.slice("--dev-url=".length) : null;
+}
+const DEV_URL = devUrl();
+const ORIGIN = DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN;
+
 // one data directory whatever the package is called: %APPDATA%/MechSwarm,
 // ~/.config/MechSwarm, ~/Library/Application Support/MechSwarm
 app.setPath("userData", path.join(app.getPath("appData"), "MechSwarm"));
@@ -85,23 +100,32 @@ function createWindow(): BrowserWindow {
   win.once("ready-to-show", () => win.show());
   win.on("close", () => saveWindowState(userData, win));
 
-  // the page is the game and nothing else: no navigating off app://, and
-  // a link that wants a browser gets the system one
+  // the page is the game and nothing else: no navigating off its origin,
+  // and a link that wants a browser gets the system one
   win.webContents.on("will-navigate", (event, url) => {
-    if (!url.startsWith(APP_ORIGIN)) event.preventDefault();
+    if (!url.startsWith(ORIGIN)) event.preventDefault();
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
 
-  void win.loadURL(`${APP_ORIGIN}/`);
+  if (DEV_URL) {
+    // the dev server may still be compiling when the window opens: keep
+    // knocking until it answers, instead of showing Chromium's error page
+    const load = (): void => {
+      win.loadURL(DEV_URL).catch(() => setTimeout(load, 1000));
+    };
+    load();
+  } else {
+    void win.loadURL(`${APP_ORIGIN}/`);
+  }
   return win;
 }
 
 void app.whenReady().then(() => {
   const root = bundleDir();
-  if (!fs.existsSync(path.join(root, "index.html"))) {
+  if (!DEV_URL && !fs.existsSync(path.join(root, "index.html"))) {
     dialog.showErrorBox(
       "MechSwarm",
       `No game bundle at ${root}.\n\nRun \`npm run build:static\` at the repository root first.`,
@@ -109,7 +133,7 @@ void app.whenReady().then(() => {
     app.exit(1);
     return;
   }
-  serveBundle(root);
+  if (!DEV_URL) serveBundle(root);
   installSaveHandlers(savesDir(userData));
   installSteamHandlers(steam);
   buildMenu();

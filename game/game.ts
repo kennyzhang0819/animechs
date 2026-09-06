@@ -46,7 +46,6 @@ export interface UiState {
   /** the tower kind picked in the build bar, or null for the bare cursor */
   buildKind: TowerKind | null;
   /** the demolish tool is picked: the next press sells instead of selecting */
-  sellMode: boolean;
   paused: boolean;
   /** the base is destroyed — the field is frozen behind the score screen */
   lost: boolean;
@@ -216,17 +215,6 @@ const SIM_DT = 1 / 60;
 // the spiral where slow frames beget more sim work which begets slower
 // frames has to break somewhere, and losing banked time is the cheap end
 const SIM_STEPS_MAX = 3;
-// backing-store ceiling in device px per CSS px — see resize
-const DPR_CAP = 2;
-
-// a touch that never travels this far in CSS px is a tap — it selects the
-// tower under it — and anything further is a drag that carried the camera.
-// Distance is the whole test on purpose: with no tool picked there is no
-// other gesture a stationary finger could mean, so resting on a turret to
-// read its range must not time out into nothing
-const TAP_PX = 12;
-// Safari-only, and absent from the DOM typings — hence plain strings
-const GESTURES = ["gesturestart", "gesturechange", "gestureend"];
 const PAN_KEYS: Record<string, readonly [number, number]> = {
   KeyW: [0, -1],
   KeyS: [0, 1],
@@ -289,10 +277,6 @@ export class Game {
   // cursor mode: null is the normal cursor (click a tower to inspect its
   // range); a kind from the tower menu turns on the ghost + paint placement
   private buildKind: TowerKind | null = null;
-  // demolish mode: the third cursor state, and the only way to sell on a
-  // touchscreen — a finger has no second button to mirror. On a mouse it is
-  // simply the left button doing what the right one already does
-  private sellMode = false;
   private selected: Tower | null = null;
   private building = false;
   private buildFrom = { x: 0, y: 0 };
@@ -304,16 +288,6 @@ export class Game {
   private sellFrom = { x: 0, y: 0 };
   private lastMouse = { x: 0, y: 0 };
   private readonly keysDown = new Set<string>();
-  // live touch points in client px, keyed by pointerId and in the order they
-  // went down: one finger pans (or paints, with a tool picked), two pinch
-  private readonly touches = new Map<number, { x: number; y: number }>();
-  private pinchDist = 0;
-  // a pinch is applied once a frame rather than once an event: pointermove
-  // arrives per FINGER, so reading the spread on each one would measure a
-  // moved finger against a stale one — two fingers sliding across the screen
-  // together would wobble the zoom instead of only panning
-  private pinchDirty = false;
-  private tapStart: { x: number; y: number } | null = null;
   private paused = false;
   /**
    * The route overlay: drop zones, and the lines flyers fly out of them.
@@ -350,9 +324,8 @@ export class Game {
         this.menuOpen = false;
         return;
       }
-      if (this.buildKind || this.sellMode || this.selected || this.building) {
+      if (this.buildKind || this.selected || this.building) {
         this.buildKind = null;
-        this.sellMode = false;
         this.selected = null;
         this.building = false;
         return;
@@ -380,12 +353,6 @@ export class Game {
   // missed keyups (cmd+tab away mid-pan) would leave the camera drifting
   private readonly onBlur = (): void => {
     this.keysDown.clear();
-    // a touch stranded by a lost focus would make the next press read as the
-    // second finger of a pinch that never started
-    this.touches.clear();
-    this.pinchDist = 0;
-    this.pinchDirty = false;
-    this.tapStart = null;
   };
   private readonly onWheel = (e: WheelEvent): void => {
     e.preventDefault();
@@ -424,13 +391,6 @@ export class Game {
         this.building = true;
         this.buildFrom = p;
         this.buildTo(p, false);
-      } else if (this.sellMode) {
-        // demolish mode puts the right button's whole chain on the left one:
-        // pull down what is under the press, keep pulling on the drag
-        this.selling = true;
-        this.sellFrom = p;
-        this.sim.sellTowerAt(p.x, p.y);
-        this.dropSelectionIfGone();
       } else {
         // normal cursor: the shared inspect/focus tap (see inspectAt)
         this.inspectAt(p);
@@ -440,9 +400,8 @@ export class Game {
       this.building = false;
       // right-click still escapes build mode first — you reach for it to put
       // the ghost away, and that press must never also demolish something
-      if (this.buildKind || this.sellMode) {
+      if (this.buildKind) {
         this.buildKind = null;
-        this.sellMode = false;
         return;
       }
       // otherwise it demolishes on press and chains from here, exactly like
@@ -485,11 +444,7 @@ export class Game {
     }
     this.setHover(p);
   };
-  private readonly onLeave = (e: PointerEvent): void => {
-    // leaving is a cursor idea. A finger's boundary events arrive AFTER its
-    // pointerup — so honouring them here would undo what touchUp just set up,
-    // and lifting one finger out of a pinch would leave the other one dead
-    if (e.pointerType === "touch") return;
+  private readonly onLeave = (): void => {
     this.clearHover();
     this.panning = false;
     this.building = false;
@@ -505,187 +460,8 @@ export class Game {
   }
   private readonly onContext = (e: Event): void => e.preventDefault();
 
-  // ---- pointer routing -------------------------------------------------
-  // One set of listeners covers mouse, pen and touch. Mouse and pen keep the
-  // three-button scheme above; a finger has no buttons and no hover, so touch
-  // gets its own gestures: one finger pans, or paints with a tool picked from
-  // the bar, and two fingers pinch the MAP — never the page (see the viewport
-  // meta in app/layout.tsx and onGesture below).
-  private readonly onPointerDown = (e: PointerEvent): void => {
-    if (e.pointerType === "touch") this.touchDown(e);
-    else this.onMouseDown(e);
-  };
-  private readonly onPointerMove = (e: PointerEvent): void => {
-    if (e.pointerType === "touch") this.touchMove(e);
-    else this.onMove(e);
-  };
-  private readonly onPointerUp = (e: PointerEvent): void => {
-    // pointercancel is the system taking the touch away (a call arriving, an
-    // edge swipe): the gesture ends, but it was never a tap
-    if (e.pointerType === "touch") this.touchUp(e, e.type === "pointerup");
-    else this.onMouseUp();
-  };
-  // Safari's own pinch, which honours neither user-scalable=no nor
-  // touch-action: without these a two-finger gesture zooms the PAGE, blowing
-  // the HUD up off the screen instead of zooming the map underneath it
-  private readonly onGesture = (e: Event): void => e.preventDefault();
-
-  /** the first two fingers down, which are the pair a pinch reads */
-  private touchPair(): readonly [{ x: number; y: number }, { x: number; y: number }] | null {
-    const [a, b] = this.touches.values();
-    return a && b ? [a, b] : null;
-  }
-
-  private touchSpread(): number {
-    const p = this.touchPair();
-    return p ? Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) : 0;
-  }
-
-  private touchMid(): { x: number; y: number } {
-    const p = this.touchPair();
-    return p ? { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2 } : this.lastMouse;
-  }
-
-  private touchDown(e: PointerEvent): void {
-    // kills the synthetic mouse events, the long-press callout, and the text
-    // selection a drag across the canvas would otherwise start
-    e.preventDefault();
-    this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (this.touches.size === 2) {
-      // the second finger takes the gesture over: whatever the first one was
-      // doing stops where it is, and the pair drives zoom and pan together
-      this.building = false;
-      this.selling = false;
-      this.panning = false;
-      this.tapStart = null;
-      this.clearHover();
-      this.pinchDist = this.touchSpread();
-      this.lastMouse = this.touchMid();
-      this.pinchDirty = false;
-      return;
-    }
-    if (this.touches.size > 2) return; // a third finger changes nothing
-    const p = this.mouseWorld(e);
-    this.tapStart = { x: e.clientX, y: e.clientY };
-    if (this.buildKind) {
-      // exactly the left button's chain: place under the press, then paint
-      this.building = true;
-      this.buildFrom = p;
-      this.buildTo(p, false);
-      this.setHover(p);
-    } else if (this.sellMode) {
-      this.selling = true;
-      this.sellFrom = p;
-      this.sim.sellTowerAt(p.x, p.y);
-      this.dropSelectionIfGone();
-      this.setHover(p);
-    } else {
-      // with no tool picked the finger IS the camera; a press that never
-      // travels is a tap instead, and selects on release
-      this.panning = true;
-      this.panMoved = 0;
-      this.lastMouse = { x: e.clientX, y: e.clientY };
-    }
-  }
-
-  private touchMove(e: PointerEvent): void {
-    const t = this.touches.get(e.pointerId);
-    if (!t) return;
-    t.x = e.clientX;
-    t.y = e.clientY;
-    if (this.touches.size >= 2) {
-      this.pinchDirty = true; // applied in frame(), once both fingers are current
-      return;
-    }
-    const r = this.uiCanvas.getBoundingClientRect();
-    if (r.width <= 0 || r.height <= 0) return;
-    if (this.panning) {
-      const dx = e.clientX - this.lastMouse.x;
-      const dy = e.clientY - this.lastMouse.y;
-      this.panMoved += Math.abs(dx) + Math.abs(dy);
-      this.tlx -= (dx / r.width) * this.visW();
-      this.tly -= (dy / r.height) * this.visH();
-      this.lastMouse = { x: e.clientX, y: e.clientY };
-      this.clampCamera();
-      return;
-    }
-    const p = this.mouseWorld(e);
-    if (this.building) this.buildTo(p, true);
-    if (this.selling) {
-      this.sim.sellLine(this.sellFrom.x, this.sellFrom.y, p.x, p.y);
-      this.sellFrom = p;
-      this.dropSelectionIfGone();
-    }
-    this.setHover(p);
-  }
-
   /**
-   * Two fingers: the distance between them sets the zoom, and the point
-   * between them carries the map. Anchoring on the PREVIOUS midpoint is what
-   * makes both work at once — the world under the fingers stays under the
-   * fingers whether they spread, close, or slide across the screen together.
-   */
-  private pinch(): void {
-    if (this.touches.size < 2) return;
-    const r = this.uiCanvas.getBoundingClientRect();
-    if (r.width <= 0 || r.height <= 0) return;
-    const mid = this.touchMid();
-    const dist = this.touchSpread();
-    const before = this.mouseWorld({ clientX: this.lastMouse.x, clientY: this.lastMouse.y });
-    if (this.pinchDist > 0 && dist > 0)
-      this.zoom = clamp(this.zoom * (dist / this.pinchDist), this.minZoom(), ZOOM_MAX);
-    this.pinchDist = dist;
-    this.lastMouse = mid;
-    this.tlx = before.x - ((mid.x - r.left) / r.width) * this.visW();
-    this.tly = before.y - ((mid.y - r.top) / r.height) * this.visH();
-    this.clampCamera();
-  }
-
-  private touchUp(e: PointerEvent, ended: boolean): void {
-    if (!this.touches.delete(e.pointerId)) return;
-    if (this.touches.size >= 2) {
-      // a spare finger left: re-anchor the pinch on the two that remain
-      this.pinchDist = this.touchSpread();
-      this.lastMouse = this.touchMid();
-      this.pinchDirty = false;
-      return;
-    }
-    if (this.touches.size === 1) {
-      // out of the pinch and back to one finger. Re-anchor on it, or the
-      // camera jumps by the gap between it and the midpoint it was following
-      const [only] = this.touches.values();
-      if (only) this.lastMouse = { x: only.x, y: only.y };
-      this.pinchDist = 0;
-      this.pinchDirty = false;
-      this.panMoved = 0;
-      this.tapStart = null;
-      // a pinch never resumes a paint stroke — only the camera
-      this.panning = !this.buildKind && !this.sellMode;
-      return;
-    }
-    const tap = this.tapStart;
-    this.tapStart = null;
-    this.pinchDist = 0;
-    this.pinchDirty = false;
-    this.panning = false;
-    this.building = false;
-    this.selling = false;
-    this.clearHover();
-    // a press that never travelled, with no tool picked, is the touch
-    // spelling of a click: the shared inspect/focus tap (see inspectAt)
-    if (
-      ended &&
-      tap &&
-      !this.buildKind &&
-      !this.sellMode &&
-      Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < TAP_PX
-    ) {
-      this.inspectAt(this.mouseWorld(e));
-    }
-  }
-
-  /**
-   * THE BARE-CURSOR TAP, shared by mouse click and touch tap. What it does
+   * THE BARE-CURSOR TAP. What it does
    * depends on what is under the point, checked in the order a player
    * means them:
    *
@@ -726,7 +502,7 @@ export class Game {
   }
 
   /**
-   * The build chain, shared by press and drag on both mouse and touch:
+   * The build chain, shared by press and drag:
    * paint from wherever the chain last was to here (`chain`), or drop a
    * single tower under the point that starts it.
    *
@@ -859,13 +635,12 @@ export class Game {
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("blur", this.onBlur);
-    window.addEventListener("pointerup", this.onPointerUp);
-    window.addEventListener("pointercancel", this.onPointerUp);
+    window.addEventListener("pointerup", this.onMouseUp);
+    window.addEventListener("pointercancel", this.onMouseUp);
     window.addEventListener("wheel", this.onWinWheel, { passive: false });
-    for (const g of GESTURES) window.addEventListener(g, this.onGesture, { passive: false });
     uiCanvas.addEventListener("wheel", this.onWheel, { passive: false });
-    uiCanvas.addEventListener("pointerdown", this.onPointerDown);
-    uiCanvas.addEventListener("pointermove", this.onPointerMove);
+    uiCanvas.addEventListener("pointerdown", this.onMouseDown);
+    uiCanvas.addEventListener("pointermove", this.onMove);
     uiCanvas.addEventListener("pointerleave", this.onLeave);
     uiCanvas.addEventListener("contextmenu", this.onContext);
 
@@ -904,13 +679,12 @@ export class Game {
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
     window.removeEventListener("blur", this.onBlur);
-    window.removeEventListener("pointerup", this.onPointerUp);
-    window.removeEventListener("pointercancel", this.onPointerUp);
+    window.removeEventListener("pointerup", this.onMouseUp);
+    window.removeEventListener("pointercancel", this.onMouseUp);
     window.removeEventListener("wheel", this.onWinWheel);
-    for (const g of GESTURES) window.removeEventListener(g, this.onGesture);
     this.uiCanvas.removeEventListener("wheel", this.onWheel);
-    this.uiCanvas.removeEventListener("pointerdown", this.onPointerDown);
-    this.uiCanvas.removeEventListener("pointermove", this.onPointerMove);
+    this.uiCanvas.removeEventListener("pointerdown", this.onMouseDown);
+    this.uiCanvas.removeEventListener("pointermove", this.onMove);
     this.uiCanvas.removeEventListener("pointerleave", this.onLeave);
     this.uiCanvas.removeEventListener("contextmenu", this.onContext);
   }
@@ -918,23 +692,7 @@ export class Game {
   setBuildKind(kind: TowerKind | null): void {
     if (kind && this.tech && !this.tech.unlocked.has(kind)) return;
     this.buildKind = kind;
-    if (kind) {
-      this.sellMode = false;
-      this.selected = null;
-    }
-  }
-
-  /**
-   * The demolish tool. On a mouse it is a convenience over the right button;
-   * on a touchscreen it is the only way to sell at all, which is why it sits
-   * in the tower bar next to the turrets rather than behind a modifier.
-   */
-  setSellMode(on: boolean): void {
-    this.sellMode = on;
-    if (on) {
-      this.buildKind = null;
-      this.selected = null;
-    }
+    if (kind) this.selected = null;
   }
 
   /**
@@ -1045,7 +803,6 @@ export class Game {
   openMenu(): void {
     if (this.sim.lost() || this.won()) return;
     this.buildKind = null;
-    this.sellMode = false;
     this.menuOpen = true;
   }
 
@@ -1106,7 +863,6 @@ export class Game {
       currentWave: this.sim.currentWave(),
       totalWaves: this.sim.totalWaves,
       buildKind: this.buildKind,
-      sellMode: this.sellMode,
       paused: this.paused,
       speed: this.speed,
       showRoutes: this.showRoutes,
@@ -1235,10 +991,7 @@ export class Game {
   }
 
   private resize(): void {
-    // capped at 2, not 3: a dpr-3 phone renders 2.25x the pixels of dpr 2
-    // for sharpness this art style cannot show, and fullscreen fill rate
-    // is the first thing a mobile GPU runs out of
-    const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
+    const dpr = window.devicePixelRatio || 1;
     const bw = Math.round((this.glCanvas.clientWidth || this.worldW) * dpr);
     const bh = Math.round((this.glCanvas.clientHeight || H) * dpr);
     // only skip the canvas attribute writes (they clear the canvas) — the
@@ -1274,11 +1027,6 @@ export class Game {
     if (this.destroyed) return;
     const dt = clamp((now - this.last) / 1000, 0, 0.05) || 0.016;
     this.last = now;
-
-    if (this.pinchDirty) {
-      this.pinchDirty = false;
-      this.pinch();
-    }
 
     // keyboard pan: half a viewport per second
     for (const code of this.keysDown) {
@@ -1498,20 +1246,6 @@ export class Game {
       c.strokeStyle = "rgba(24,10,10,0.9)";
       c.lineWidth = 1.5;
       c.stroke();
-    }
-
-    // demolish mode: outline what a press would pull down, so the tool reads
-    // as a tool and not as a mode with nothing to show for itself
-    if (this.sellMode && this.hoverX >= 0 && !this.panning) {
-      const t = this.sim.towerAt(this.hoverX, this.hoverY);
-      if (t) {
-        const px = TOWERS[t.kind].size * CELL;
-        c.fillStyle = "rgba(255,90,90,0.28)";
-        c.fillRect(t.gx * CELL, t.gy * CELL, px, px);
-        c.strokeStyle = "rgba(255,90,90,0.9)";
-        c.lineWidth = 1.5;
-        c.strokeRect(t.gx * CELL + 1, t.gy * CELL + 1, px - 2, px - 2);
-      }
     }
 
     if (this.buildKind && this.hoverGx >= 0 && !this.panning) {

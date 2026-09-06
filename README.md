@@ -11,8 +11,11 @@ npm install
 npm run dev   # Next.js + Turbopack
 ```
 
-The game ships to Steam as an Electron app around the same bundle:
-`npm run desktop` builds and launches it, `npm run desktop:pack:steam`
+**The game is a desktop game**, shipped to Steam as an Electron app
+around the same bundle, and played with a mouse and a keyboard — there is
+no touch input and no phone layout. `npm run desktop:dev` runs the dev
+server inside the shell, which is where to develop; `npm run desktop`
+builds and launches the static export; `npm run desktop:pack:steam`
 leaves the Windows and Linux depots under `desktop/release/`. The shell
 lives in `desktop/` (its own npm package — `cd desktop && npm install`
 once); see [docs/desktop.md](docs/desktop.md).
@@ -170,22 +173,21 @@ print it).
 
 ## Controls
 
-One set of pointer listeners covers mouse, pen and touch (`game/game.ts`).
+Mouse and keyboard (`game/game.ts`); the game is a desktop game and there
+is no touch input.
 
-| | mouse | touch |
-|---|---|---|
-| build | left press, drag to chain | press, drag to chain |
-| demolish | right press, drag to chain | the **Sell** tool in the bar, then drag |
-| inspect a turret's range | left click, with no tool picked | tap, with no tool picked |
-| pan | middle drag, WASD/arrows, two-finger scroll | one-finger drag, or two |
-| zoom | wheel, trackpad pinch | pinch |
-| pause / menu | space / esc | the two buttons in the top-right corner |
+| | |
+|---|---|
+| build | left press, drag to chain |
+| demolish | right press, drag to chain |
+| inspect a turret's range | left click, with no tool picked |
+| pan | middle drag, WASD/arrows, two-finger trackpad scroll |
+| zoom | wheel, trackpad pinch |
+| pause / menu | space / esc, or the two buttons in the top-right corner |
+| fullscreen | F11 (Ctrl+Cmd+F on macOS), in the desktop shell |
 
-The field claims every gesture over it — `touch-action: none` on the canvas,
-`user-scalable=no` in the viewport meta, and Safari's `gesture*` events
-swallowed — so a pinch zooms the **map** and never the page. The zoom floor
-is the whole map in frame with a little padding (`ZOOM_FIT_PAD`); the
-ceiling is 12, which is what makes a single cell aimable with a fingertip.
+The zoom floor is the whole map in frame with a little padding
+(`ZOOM_FIT_PAD`); the ceiling is 12.
 
 ## Progression
 

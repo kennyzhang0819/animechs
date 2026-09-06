@@ -5,7 +5,7 @@ import {
   MUT_COST_MAX,
   type MutationDef,
 } from "@/game/mutation";
-import Board, { BackButton, useTouchOnly, type Cam } from "./Board";
+import Board, { BackButton, type Cam } from "./Board";
 // the face and the weight live beside the deploy dialog that also draws
 // them (mutationFace.tsx) — one rule must not read Brutal here and
 // Heavy there
@@ -14,7 +14,7 @@ import { bandFor, MutationFace, MUT_GLYPH, MUT_LIT } from "./mutationFace";
 /** the tab strip over both boards wears the codex glyph — re-exported so
  *  TechTree keeps asking the board it is a tab of, not a module below it */
 export { MUT_GLYPH, MUT_LIT };
-import { useState, type ReactNode, type RefObject } from "react";
+import { type ReactNode, type RefObject } from "react";
 
 /**
  * THE MUTATOR CODEX — a BOARD of its own, behind a tab, beside the tech
@@ -130,7 +130,7 @@ function tileAt(i: number): { cx: number; cy: number } {
  * under it, and the rule in a card that opens on hover.
  *
  * IT IS THE TECH TREE'S NODE WITH THE MONEY TAKEN OUT. Same square, same
- * label, same card, same touch rule — the first tap opens the card — and
+ * label, same card, and
  * that is the whole point: a player who has learned one board has learned
  * this one. What it does not have is a second tap that spends, because
  * there is nothing here to buy.
@@ -138,30 +138,20 @@ function tileAt(i: number): { cx: number; cy: number } {
 function MutationTile({
   def,
   index,
-  touch,
-  armed,
-  onArm,
 }: {
   def: MutationDef;
   index: number;
-  touch: boolean;
-  armed: string | null;
-  onArm: (id: string | null) => void;
 }) {
   const band = bandFor(def);
   const { cx, cy } = tileAt(index);
-  // on touch the card follows `armed`, not the pointer: iOS does not
-  // reliably focus a <button> it was tapped on, so hanging the card off
-  // focus-within alone would leave taps opening nothing
-  const showCard = touch && armed === def.id;
   return (
     <div
       className="group absolute"
       style={{ left: cx - NODE / 2, top: cy - NODE / 2, width: NODE, height: NODE }}
     >
       <button
+        type="button"
         aria-label={`${def.name}: ${band.label} mutator. ${def.blurb}`}
-        onClick={() => onArm(armed === def.id ? null : def.id)}
         className="flex h-full w-full items-center justify-center border-[3px] bg-[#0b0b0d] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.85)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB]"
         style={{ borderColor: band.color }}
       >
@@ -170,12 +160,10 @@ function MutationTile({
       <div className="text-center text-[12px] font-bold uppercase tracking-widest text-[#EDEDEF]">
         {def.name}
       </div>
-      {/* hover card: what this rule does — opened by resting on the tile
-          with a mouse, and by a tap with a finger */}
+      {/* hover card: what this rule does — opened by resting on the tile,
+          or by focusing it from the keyboard */}
       <div
-        className={`pointer-events-none absolute left-1/2 top-full z-10 mt-5 w-56 -translate-x-1/2 border-[3px] p-3 text-left shadow-lg ${
-          showCard ? "block" : "hidden group-hover:block group-focus-within:block"
-        }`}
+        className="pointer-events-none absolute left-1/2 top-full z-10 mt-5 hidden w-56 -translate-x-1/2 border-[3px] p-3 text-left shadow-lg group-hover:block group-focus-within:block"
         style={{ borderColor: band.color, background: "#0b0b0d" }}
       >
         <div className="flex items-baseline justify-between gap-2">
@@ -206,9 +194,6 @@ export default function MutationTree({
   tabs: ReactNode;
   cam: RefObject<Cam | null>;
 }) {
-  const touch = useTouchOnly();
-  // the one tile a finger has opened; tapping another moves the card there
-  const [armed, setArmed] = useState<string | null>(null);
   return (
     <Board
       width={BOARD_W}
@@ -217,7 +202,7 @@ export default function MutationTree({
       chrome={
         <>
           <div
-            className="absolute top-[max(1rem,var(--safe-t))] left-[max(1rem,var(--safe-l))] flex items-center gap-2"
+            className="absolute top-[1rem] left-[1rem] flex items-center gap-2"
             data-ui
           >
             <BackButton label={backLabel} onClick={onBack} />
@@ -231,9 +216,6 @@ export default function MutationTree({
           key={m.id}
           def={m}
           index={i}
-          touch={touch}
-          armed={armed}
-          onArm={setArmed}
         />
       ))}
     </Board>

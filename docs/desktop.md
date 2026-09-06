@@ -8,11 +8,22 @@ game finds it through one bridge on `window` (see below).
 ## Build and run
 
 ```bash
+npm run desktop:dev        # DEVELOP HERE: Next's dev server inside the shell
 npm run desktop            # static export into out/, then launch the shell
 npm run desktop:pack       # + electron-builder → desktop/release/<os>-unpacked/
 npm run desktop:pack:steam # Windows and Linux unpacked dirs, from any OS
 npm run desktop:test       # the smoke test (needs out/ and a display; see below)
 ```
+
+**`desktop:dev` is the development loop.** It starts `next dev` and the
+shell together (scripts/desktop-dev.mjs) and points the window at the
+server (`--dev-url`, honoured only by an unpackaged shell), so hot reload,
+the admin editors (Ctrl+Shift+M) and their file-writing API routes all
+work, the save lands in the same file on disk the shipped game uses, and
+closing the window ends both. The shell keeps retrying the URL until Next
+has compiled, so the order they come up in does not matter. F12 opens
+DevTools. A bare browser tab on `npm run dev` still works but falls back
+to localStorage for its save, and nothing ships that way.
 
 or the halves separately:
 
@@ -38,7 +49,7 @@ by design; the admin page is compiled out of a production bundle too.
 
 | file | does |
 |---|---|
-| `desktop/src/main.ts` | the window (size and fullscreen remembered in `window.json`), the menu accelerators (F11 fullscreen, Ctrl+Cmd+F on macOS), single instance, no navigation off the game |
+| `desktop/src/main.ts` | the window (size and fullscreen remembered in `window.json`), the menu accelerators (F11 fullscreen, Ctrl+Cmd+F on macOS), single instance, no navigation off the game, the `--dev-url` mode |
 | `desktop/src/serve.ts` | serves `out/` on **`app://game/`**. The game fetches by absolute path — `/levels/…`, `/maps/…`, `/_next/static/…` — which `file://` cannot resolve, so the export gets a scheme with a root. `/admin` → `admin.html`, Next-style; nothing outside `out/` is ever served |
 | `desktop/src/saves.ts` | the save file: `progress.json` under the data directory, written atomically with a `.bak` of the previous save |
 | `desktop/src/steam.ts` | Steamworks, off until there is an app id |
@@ -119,6 +130,7 @@ and needs signing and notarization before Gatekeeper lets it run; the
 npm run build:static
 cd desktop && npm test                      # against dist/ + ../out
 SMOKE_EXECUTABLE=release/linux-unpacked/mechswarm npm test   # against a packed build
+SMOKE_DEV_URL=http://localhost:3000 npm test                  # through --dev-url, server running
 ```
 
 It launches the shell under Playwright's Electron driver and checks that

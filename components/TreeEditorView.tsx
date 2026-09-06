@@ -152,7 +152,7 @@ export default function TreeEditorView({ onClose }: { onClose: () => void }) {
       chrome={
         <>
           <div
-            className="absolute top-[max(1rem,var(--safe-t))] left-[max(1rem,var(--safe-l))] flex flex-wrap items-center gap-2"
+            className="absolute top-[1rem] left-[1rem] flex flex-wrap items-center gap-2"
             data-ui
           >
             <BackButton label="Back to admin" onClick={onClose} />
@@ -164,7 +164,7 @@ export default function TreeEditorView({ onClose }: { onClose: () => void }) {
             </span>
           </div>
           <div
-            className="absolute bottom-[max(1rem,var(--safe-b))] left-1/2 max-w-[calc(100vw-10rem)] -translate-x-1/2 rounded border border-[#2E2E36] bg-[#151518]/90 px-3 py-1.5 text-[12.5px] leading-snug text-[#71717C] backdrop-blur"
+            className="absolute bottom-[1rem] left-1/2 max-w-[calc(100vw-10rem)] -translate-x-1/2 rounded border border-[#2E2E36] bg-[#151518]/90 px-3 py-1.5 text-[12.5px] leading-snug text-[#71717C] backdrop-blur"
             data-ui
           >
             Drag a node to move it; it snaps to the grid. There is no undo and nothing

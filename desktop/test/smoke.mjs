@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
 const out = path.resolve(root, "..", "out");
-if (!process.env.SMOKE_EXECUTABLE && !fs.existsSync(path.join(out, "index.html"))) {
+if (!process.env.SMOKE_EXECUTABLE && !process.env.SMOKE_DEV_URL && !fs.existsSync(path.join(out, "index.html"))) {
   console.error(`no bundle at ${out}: run \`npm run build:static\` at the repo root first`);
   process.exit(1);
 }
@@ -20,15 +20,20 @@ if (!process.env.SMOKE_EXECUTABLE && !fs.existsSync(path.join(out, "index.html")
 // an appData of our own, so the test never touches a real save
 const appData = fs.mkdtempSync(path.join(os.tmpdir(), "mechswarm-smoke-"));
 // SMOKE_EXECUTABLE=release/linux-unpacked/mechswarm runs the same checks
-// against a packed build instead of dist/ + ../out.
+// against a packed build instead of dist/ + ../out; SMOKE_DEV_URL=
+// http://localhost:3000 runs them against a Next dev server through the
+// shell's --dev-url mode (start the server first).
 //
 // --no-sandbox and software GL are for a CI box with no GPU and no user
 // namespace; a real desktop needs neither
 const packed = process.env.SMOKE_EXECUTABLE;
+const devUrl = process.env.SMOKE_DEV_URL;
+const origin = devUrl ? new URL(devUrl).origin : "app://game";
 const app = await electron.launch({
   ...(packed ? { executablePath: path.resolve(packed) } : {}),
   args: [
     ...(packed ? [] : [root]),
+    ...(devUrl ? [`--dev-url=${devUrl}`] : []),
     "--no-sandbox",
     "--use-gl=angle",
     "--use-angle=swiftshader",
@@ -46,8 +51,8 @@ const check = (name, ok, detail = "") => {
 try {
   const page = await app.firstWindow();
   await page.waitForLoadState("domcontentloaded");
-  check("page is served on app://game/", page.url().startsWith("app://game/"), page.url());
-  await page.waitForSelector("canvas", { timeout: 30_000 });
+  check(`page is served on ${origin}/`, page.url().startsWith(`${origin}/`), page.url());
+  await page.waitForSelector("canvas", { timeout: devUrl ? 120_000 : 30_000 });
 
   const probe = await page.evaluate(async () => {
     const res = await fetch("/levels/index.json");

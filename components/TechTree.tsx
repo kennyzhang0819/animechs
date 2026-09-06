@@ -43,7 +43,6 @@ import Board, {
   BackButton,
   BoardTabs,
   CHROME_BTN,
-  useTouchOnly,
   type Cam,
 } from "./Board";
 import MutationTree, { MUT_GLYPH, MUT_LIT } from "./MutationTree";
@@ -225,9 +224,6 @@ function UpgradeChip({
   left,
   top,
   progress,
-  touch,
-  armed,
-  onArm,
   onChanged,
 }: {
   def: TurretUpgradeDef;
@@ -236,9 +232,6 @@ function UpgradeChip({
   left: number;
   top: number;
   progress: Progress;
-  touch: boolean;
-  armed: boolean;
-  onArm: () => void;
   onChanged: () => void;
 }) {
   const status: NodeStatus = nodeStatus(progress, def.id);
@@ -250,7 +243,6 @@ function UpgradeChip({
   // an owned rung has nothing left to sell, so its click is the switch
   const toggles = owned && isToggleable(def.id);
   const clickable = status === "buyable" || toggles;
-  const showCard = touch && armed;
   const reason = whyNot(progress, def.id, status);
 
   const colour = lit && ultimate
@@ -280,21 +272,13 @@ function UpgradeChip({
         type="button"
         aria-disabled={!clickable}
         aria-label={
-          clickable && touch && !armed
-              ? `${def.name}: show details, tap again to act`
-              : toggles
-                ? `${def.name}: ${on ? "on, activate to switch off" : "off, activate to switch on"}`
-                : owned
-                  ? `${def.name}: owned`
-                  : `Unlock ${def.name} for ${cost} ${cost === 1 ? "point" : "points"}`
+          toggles
+            ? `${def.name}: ${on ? "on, activate to switch off" : "off, activate to switch on"}`
+            : owned
+              ? `${def.name}: owned`
+              : `Unlock ${def.name} for ${cost} ${cost === 1 ? "point" : "points"}`
         }
         onClick={() => {
-          // an unbuyable chip still opens its card on touch — "why not" is
-          // the question it most needs to answer
-          if (touch && !armed) {
-            onArm();
-            return;
-          }
           if (toggles) {
             saveTechOn(def.id, !on);
             onChanged();
@@ -374,9 +358,7 @@ function UpgradeChip({
           a mouse travelling up to press that button never crosses dead
           ground and closes the card under itself */}
       <div
-        className={`absolute bottom-full left-1/2 z-20 w-64 pb-2 text-left ${
-          showCard ? "block" : "hidden group-hover/chip:block group-focus-within/chip:block"
-        }`}
+        className="absolute bottom-full left-1/2 z-20 hidden w-64 pb-2 text-left group-hover/chip:block group-focus-within/chip:block"
         /* counter-scaled for the same reason as the node card above */
         style={{
           transform: "translateX(-50%) scale(var(--ms-inv, 1))",
@@ -402,7 +384,7 @@ function UpgradeChip({
             <div className="mt-2 space-y-2 border-t-2 border-[#454545] pt-2">
               {toggles && (
                 <div className="text-[13px] font-bold uppercase tracking-widest" style={{ color: on ? "#7BE58A" : "#FF8A8A" }}>
-                  {touch ? "Tap again" : "Click"} to switch {on ? "off" : "on"}
+                  Click to switch {on ? "off" : "on"}
                 </div>
               )}
               <RefundButton progress={progress} id={def.id} onChanged={onChanged} />
@@ -412,11 +394,6 @@ function UpgradeChip({
               <PointsAmount amount={cost} short={status === "poor"} />
               {reason && (
                 <div className="mt-1 text-[13px] text-[#FF8A8A]">{reason}</div>
-              )}
-              {showCard && status === "buyable" && (
-                <div className="mt-2 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F]">
-                  Tap again to buy
-                </div>
               )}
             </div>
           )}
@@ -468,18 +445,12 @@ function UpgradeRow({
   x,
   y,
   progress,
-  touch,
-  armed,
-  onArm,
   onChanged,
 }: {
   turret: TowerKind;
   x: number;
   y: number;
   progress: Progress;
-  touch: boolean;
-  armed: string | null;
-  onArm: (id: TechKind) => void;
   onChanged: () => void;
 }) {
   return (
@@ -491,9 +462,6 @@ function UpgradeRow({
           left={nodeX(def.id)}
           top={nodeY(def.id)}
           progress={progress}
-          touch={touch}
-          armed={armed === def.id}
-          onArm={() => onArm(def.id)}
           onChanged={onChanged}
         />
       ))}
@@ -579,11 +547,6 @@ export default function TechTree({
    * just bought. Back then leaves to the menu instead. */
   onRestart?: () => void;
 }) {
-  const touch = useTouchOnly();
-  // the one node a finger has already asked about, and so the one node a tap
-  // is allowed to spend on. Tapping a different node moves the question there
-  // rather than buying it
-  const [armed, setArmed] = useState<string | null>(null);
   /**
    * THE TWO BOARDS BEHIND ONE BACK BUTTON — which one is showing, and the
    * camera each of them left behind.
@@ -628,7 +591,7 @@ export default function TechTree({
   const chrome = (
     <>
       <div
-        className="absolute top-[max(1rem,var(--safe-t))] left-[max(1rem,var(--safe-l))] flex flex-wrap items-center gap-2"
+        className="absolute top-[1rem] left-[1rem] flex flex-wrap items-center gap-2"
         data-ui
       >
         <BackButton label={backLabel} onClick={onBack} />
@@ -647,7 +610,7 @@ export default function TechTree({
           reference on this board, and the answer to every "why can't I"
           a dim node asks */}
       <span
-        className="pointer-events-auto ms-pane absolute top-[max(1rem,var(--safe-t))] right-[max(1rem,var(--safe-r))] flex items-start px-4 py-1.5"
+        className="pointer-events-auto ms-pane absolute top-[1rem] right-[1rem] flex items-start px-4 py-1.5"
         data-ui
       >
         <LevelStrip xp={progress.xp} points={pointsFree(progress)} />
@@ -702,12 +665,6 @@ export default function TechTree({
               const cost = techPoints(n.id);
               const clickable = status === "buyable";
               const reason = whyNot(progress, n.id, status);
-              // a mouse is always primed — its hover already did the asking
-              const primed = !touch || armed === n.id;
-              // on touch the card follows `armed`, not the pointer: iOS does
-              // not reliably focus a <button> it was tapped on, so hanging the
-              // card off focus-within alone would leave taps opening nothing
-              const showCard = touch && armed === n.id;
               return (
                 <div
                   key={n.id}
@@ -721,24 +678,16 @@ export default function TechTree({
                 >
                   <button
                     aria-label={
-                      clickable && !primed
-                        ? `${name}: show details, tap again to act`
-                        : owned
-                          ? `${name}: owned`
-                          : `Unlock ${name} for ${cost} ${cost === 1 ? "point" : "points"}`
+                      owned
+                        ? `${name}: owned`
+                        : `Unlock ${name} for ${cost} ${cost === 1 ? "point" : "points"}`
                     }
                     // aria-disabled rather than disabled: a node out of reach
                     // still has to be able to say so, and a disabled button
-                    // takes no focus — which on a touchscreen, where there is
-                    // no hover either, left its card with no way to be opened
+                    // takes no focus, which would leave its card with no way
+                    // to be opened from the keyboard
                     aria-disabled={!clickable}
                     onClick={() => {
-                      // an unbuyable node still opens its card on touch —
-                      // "why not" is the question it most needs to answer
-                      if (touch && armed !== n.id) {
-                        setArmed(n.id);
-                        return;
-                      }
                       if (!clickable) return;
                       if (buyTech(n.id)) onChanged();
                     }}
@@ -781,15 +730,15 @@ export default function TechTree({
                     {name}
                   </div>
                   {/* hover card: what this node does — opened by resting on
-                      the node with a mouse, and by the first tap with a
-                      finger. IT TAKES CLICKS, like the chip card, because an
+                      the node, or by focusing it from the keyboard. IT TAKES
+                      CLICKS, like the chip card, because an
                       owned node carries its refund button; the gap to the
                       node is padding rather than margin so a mouse crossing
                       it never closes the card under itself */}
                   <div
-                    className={`absolute left-1/2 z-10 w-56 text-left ${
-                      showCard ? "block" : "hidden group-hover:block group-focus-within:block"
-                    } ${n.y === 0 ? "top-full pt-5" : "bottom-full pb-3"}`}
+                    className={`absolute left-1/2 z-10 hidden w-56 text-left group-hover:block group-focus-within:block ${
+                      n.y === 0 ? "top-full pt-5" : "bottom-full pb-3"
+                    }`}
                     /* COUNTER-SCALED, so the card is the same size on screen
                        at every zoom. It has to live inside the board's scaled
                        layer to stay anchored to its node, and at the zoom
@@ -847,13 +796,6 @@ export default function TechTree({
                         <RefundButton progress={progress} id={n.id} onChanged={onChanged} />
                       </div>
                     )}
-                    {/* the card is only open on touch because a tap opened
-                        it, and on touch a tap is what spends — so say so */}
-                    {showCard && clickable && (
-                      <div className="mt-2 text-[13px] font-bold uppercase tracking-widest text-[#FFD37F]">
-                        Tap again to buy
-                      </div>
-                    )}
                   </div>
                   </div>
                 </div>
@@ -868,9 +810,6 @@ export default function TechTree({
                   x={n.x}
                   y={n.y}
                   progress={progress}
-                  touch={touch}
-                  armed={armed}
-                  onArm={setArmed}
                   onChanged={onChanged}
                 />
               ) : null,

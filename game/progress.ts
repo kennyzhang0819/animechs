@@ -106,14 +106,6 @@ export interface Progress {
    */
   techOff?: TechKind[];
   /**
-   * THE FULL UNLOCK IS ON FOR THIS SAVE — the back door's switch (see
-   * unlockEverything). A FLAG AND NOT A PILE OF NODES, which is the whole
-   * reason it can be turned off again: the nodes are laid over the save
-   * at LOAD (loadProgress) and stripped again at SAVE (saveProgress), so
-   * what is on disk stays exactly what the player actually earned.
-   */
-  unlocked?: boolean;
-  /**
    * THIS SAVE HAS DECLINED THE DEV GRANT — the wipe's half of the back
    * door (see resetProgress and DEV_UNLOCK_ALL). A wiped save on a dev
    * build would otherwise have the whole tree handed straight back on the
@@ -244,7 +236,7 @@ function readSpeed(p: { speed?: unknown }): number | undefined {
  * a save may hold (see readUiScale) — the setting is a picker, not a dial.
  */
 export const UI_SCALES = [0.75, 0.85, 1, 1.15] as const;
-export const UI_SCALE_DEFAULT = 0.85;
+export const UI_SCALE_DEFAULT = 1;
 
 /** the remembered HUD size; anything not in UI_SCALES reads as never set */
 function readUiScale(p: { uiScale?: unknown }): number | undefined {
@@ -298,9 +290,8 @@ export function loadProgress(): Progress {
     const raw = readSave();
     if (!raw) {
       const p = fresh();
-      // a fresh save cannot carry the back door's flag, so only the dev
-      // switch can be granting here — but it is granting all the same, and
-      // the snapshot has to be taken or the first save would bake it in
+      // the dev switch may be granting on a fresh save too, and the
+      // snapshot has to be taken or the first save would bake it in
       if (devUnlocking()) {
         p.techBought = { ...p.tech };
         grantEveryNode(p.tech);
@@ -316,13 +307,13 @@ export function loadProgress(): Progress {
       !migrated && typeof p.xp === "number" && p.xp > 0
         ? Math.floor(p.xp)
         : migratedXp(tech, clearedByMap);
-    // WHERE THE GRANT IS LAID ON, for both doors into it: the dev switch
-    // and the save's own `unlocked` flag. `techBought` is the copy taken
-    // BEFORE the grant, and saveProgress writes that copy, so no amount of
-    // ordinary play can promote a granted node into an owned one
-    const unlocked = p.unlocked === true;
+    // WHERE THE DEV GRANT IS LAID ON. `techBought` is the copy taken BEFORE
+    // the grant, and saveProgress writes that copy, so no amount of ordinary
+    // play can promote a granted node into an owned one. (An `unlocked`
+    // flag from the old touch-only back door is ignored: the tree it granted
+    // was never written to disk, so an old save simply loses the grant.)
     const devGrantOff = p.devGrantOff === true;
-    const granting = devUnlocking({ devGrantOff }) || unlocked;
+    const granting = devUnlocking({ devGrantOff });
     const techBought = granting ? { ...tech } : undefined;
     if (granting) grantEveryNode(tech);
     const loaded: Progress = {
@@ -336,7 +327,6 @@ export function loadProgress(): Progress {
       uiScale: readUiScale(p),
       loadout: readLoadout(p),
       techOff: readTechOff(p),
-      unlocked,
       ...(devGrantOff ? { devGrantOff } : null),
       ...(techBought ? { techBought } : null),
     };
@@ -621,31 +611,6 @@ export function refundTech(node: TechKind): Progress | null {
   saveProgress(p);
   return p;
 }
-
-/**
- * THE BACK DOOR: own every node in the tree, IN PRODUCTION TOO — reached
- * only by the tap gesture on the settings screen (see MechSwarm), the
- * same bargain Android's build-number tap makes. FLIPS THE SWITCH, DOES
- * NOT POUR IN THE NODES: loadProgress lays the whole tree over the save
- * while this is set and saveProgress peels it back off, so what is stored
- * stays the campaign the player actually played.
- */
-export function unlockEverything(): Progress {
-  const p = loadProgress();
-  saveProgress({ ...p, unlocked: true });
-  return loadProgress();
-}
-
-/** SHUT THE BACK DOOR: clear the full unlock and give the save back
- *  exactly as it was before the door was opened */
-export function lockEverything(): Progress {
-  const p = loadProgress();
-  saveProgress({ ...p, unlocked: false });
-  return loadProgress();
-}
-
-/** is the full unlock switched on for this save? */
-export const isUnlocked = (p: Progress): boolean => p.unlocked === true;
 
 // ---------- settling a run ----------
 

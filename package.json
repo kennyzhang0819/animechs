@@ -10,6 +10,7 @@
     "gen:tiles": "node --experimental-strip-types scripts/gen-tiles.mjs",
     "build:static": "bash scripts/build-static.sh",
     "desktop": "npm run build:static && npm --prefix desktop run start",
+    "desktop:dev": "node scripts/desktop-dev.mjs",
     "desktop:pack": "npm run build:static && npm --prefix desktop run pack",
     "desktop:pack:steam": "npm run build:static && npm --prefix desktop run pack:steam",
     "desktop:test": "npm --prefix desktop test"

@@ -146,34 +146,6 @@ export function BoardTabs<T extends string>({
   );
 }
 
-/**
- * Does this device answer a resting pointer with hover?
- *
- * A mouse reads a node for free — you rest on it, its card opens, you
- * decide. A finger has no resting state: the only way it can ask "what is
- * this" is to press the thing, and on the tech tree, where pressing SPENDS,
- * that question costs money to ask. So on a touchscreen the first tap on a
- * node is the hover — it opens the card and buys nothing — and every tap
- * after it on that same node buys. Desktop is untouched: hover already
- * separates reading from buying there, and making a mouse click twice would
- * be a tax paid for a problem it does not have.
- *
- * It lives here because both boards need it. The codex has nothing to buy,
- * so a tap there only ever opens a card — but it needs the same answer to
- * the same question, and two copies of a media query would sooner or later
- * disagree.
- */
-export function useTouchOnly(): boolean {
-  const [touch, setTouch] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(hover: none)");
-    const read = (): void => setTouch(mq.matches);
-    read();
-    mq.addEventListener("change", read);
-    return () => mq.removeEventListener("change", read);
-  }, []);
-  return touch;
-}
 
 /**
  * The viewport, the transformed layer, and every gesture that moves it.
@@ -407,7 +379,7 @@ export default function Board({
   return (
     <div
       ref={viewRef}
-      className="fixed inset-0 touch-none select-none overflow-hidden bg-[#08080a]"
+      className="fixed inset-0 select-none overflow-hidden bg-[#08080a]"
       onPointerDown={(e) => {
         if (e.pointerType === "mouse" && e.button !== 0) return;
         // a fresh gesture starts its tap-vs-drag budget over — BEFORE the
@@ -450,7 +422,7 @@ export default function Board({
       <div className="pointer-events-none absolute inset-0">
         {chrome}
         <div
-          className="absolute bottom-[max(1rem,var(--safe-b))] right-[max(1rem,var(--safe-r))] flex flex-col gap-2"
+          className="absolute bottom-[1rem] right-[1rem] flex flex-col gap-2"
           data-ui
         >
           <button
