@@ -1,0 +1,6 @@
+/node_modules
+/dist
+/release
+# the dev-only app id file steamworks reads when the shell is launched
+# outside Steam — see docs/desktop.md
+/steam_appid.txt

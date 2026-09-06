@@ -6,10 +6,5 @@
 *.tsbuildinfo
 next-env.d.ts
 
-# capacitor: cap sync copies the web bundle into the native projects
-ios/App/App/public
-ios/App/App/capacitor.config.json
-android/app/src/main/assets/public
-android/app/src/main/assets/capacitor.config.json
-# build-mobile.sh sets app/api aside here during the static export
+# build-static.sh sets app/api aside here during the static export
 /.api-stash

@@ -11,6 +11,12 @@ npm install
 npm run dev   # Next.js + Turbopack
 ```
 
+The game ships to Steam as an Electron app around the same bundle:
+`npm run desktop` builds and launches it, `npm run desktop:pack:steam`
+leaves the Windows and Linux depots under `desktop/release/`. The shell
+lives in `desktop/` (its own npm package — `cd desktop && npm install`
+once); see [docs/desktop.md](docs/desktop.md).
+
 ### Build number
 
 `game/version.ts` holds `BUILD`, shown small and grey at the bottom-right
@@ -53,6 +59,10 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `game/progress.ts` — the save: lifetime XP, rungs cleared per world,
   the nodes owned, game speed, build-bar loadout. Level and free points
   are derived from XP and from what is owned, never stored
+- `game/storage.ts` — **where the save file lives**: one slot behind
+  three calls, localStorage in a browser and a file on disk under the
+  desktop shell (through the bridge `desktop/src/preload.ts` puts on
+  `window`). The only place the game knows it might be on a desktop
 - `game/maps.ts` — map documents: terrain layers, spawn circles, per-layer
   exit masks — see [docs/authoring-maps.md](docs/authoring-maps.md) for how
   to draw one and how to check it

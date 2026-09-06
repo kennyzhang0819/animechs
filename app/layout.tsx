@@ -47,13 +47,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${display.variable} ${mono.variable} font-mono font-medium bg-[#0B0B0D] text-[15px] leading-snug text-[#C9C9D4] antialiased`}>
         <AdminShortcut />
         {children}
-        {/* THE ROTATE GATE, for phone BROWSERS only. The native shells are
-            locked to landscape at the OS level (Info.plist / the Android
-            manifest), but Safari has no orientation lock, so a phone held
-            upright gets this sheet instead of a game squeezed into a
-            portrait sliver. Pure CSS: globals.css shows it only under
-            (portrait + coarse pointer + phone-narrow), which leaves
-            desktops, iPads and every landscape phone untouched. */}
+        {/* THE ROTATE GATE, for phone BROWSERS only. Safari has no
+            orientation lock, so a phone held upright gets this sheet
+            instead of a game squeezed into a portrait sliver. Pure CSS:
+            globals.css shows it only under (portrait + coarse pointer +
+            phone-narrow), which leaves desktops (and the desktop shell),
+            iPads and every landscape phone untouched. */}
         <div className="rotate-gate fixed inset-0 z-[100] hidden flex-col items-center justify-center gap-4 bg-[#0B0B0D] px-8 text-center">
           <svg viewBox="0 0 24 24" className="h-12 w-12 text-[#FFD37F]" aria-hidden="true">
             <path

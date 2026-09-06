@@ -1,0 +1,35 @@
+# electron-builder: packs the shell (dist/), the game bundle (../out, from
+# `npm run build:static` at the repo root) and steamworks.js into an
+# unpacked directory per OS under release/ — which is exactly what SteamPipe
+# uploads as a depot. Installers are deliberately not built: Steam is the
+# installer.
+appId: com.mechswarm.game
+productName: MechSwarm
+directories:
+  output: release
+files:
+  - dist/**
+  - package.json
+extraResources:
+  # the static export, served on app://game/ by dist/serve.js
+  - from: ../out
+    to: game
+asarUnpack:
+  # native module + the Steam redistributable beside it
+  - node_modules/steamworks.js/dist/**
+win:
+  target: dir
+  extraFiles:
+    # steam_api64.dll is looked up next to the executable
+    - from: node_modules/steamworks.js/dist/win64/steam_api64.dll
+      to: .
+linux:
+  target: dir
+  category: Game
+  executableName: mechswarm
+  extraFiles:
+    - from: node_modules/steamworks.js/dist/linux64/libsteam_api.so
+      to: .
+mac:
+  target: dir
+  category: public.app-category.games

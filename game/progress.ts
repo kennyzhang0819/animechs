@@ -24,13 +24,14 @@ import {
   type TechState,
 } from "./tech";
 import { TOWER_KINDS, type TowerKind } from "./types";
+import { clearSave, readSave, writeSave } from "./storage";
 
 /**
  * The player's persistent campaign state: lifetime XP, how far up each
  * world's ladder they have climbed, and which tech nodes they own. Lives in
- * localStorage — the game is client-only — and every reader goes through
- * loadProgress() so a wiped or mangled save degrades to a fresh campaign
- * instead of a crash.
+ * ONE SAVE SLOT (storage.ts: localStorage in a browser, a file under the
+ * desktop shell) and every reader goes through loadProgress() so a wiped
+ * or mangled save degrades to a fresh campaign instead of a crash.
  */
 export interface Progress {
   /**
@@ -136,8 +137,6 @@ export interface TowerPlacement {
   gy: number;
 }
 
-const KEY = "mechswarm.progress.v1";
-
 /**
  * THE SAVE FORMAT'S VERSION, stamped on every write.
  *
@@ -153,14 +152,6 @@ const KEY = "mechswarm.progress.v1";
  * loses only numbers that had stopped meaning anything.
  */
 const SAVE_VERSION = 2;
-
-/**
- * The key the save lived under when the game was called "Sir, We Have a
- * Dagger Problem". A browser that played it still holds a campaign there,
- * so the loader falls back to it and the next save writes the campaign
- * back under KEY. Removable once no live install predates the rename.
- */
-const LEGACY_KEY = "dagger-problem.progress.v1";
 
 const fresh = (): Progress => ({
   xp: 0,
@@ -304,7 +295,7 @@ function migratedXp(tech: TechLevels, clearedByMap: Record<string, number>): num
 
 export function loadProgress(): Progress {
   try {
-    const raw = localStorage.getItem(KEY) ?? localStorage.getItem(LEGACY_KEY);
+    const raw = readSave();
     if (!raw) {
       const p = fresh();
       // a fresh save cannot carry the back door's flag, so only the dev
@@ -445,9 +436,9 @@ export function saveProgress(p: Progress): void {
     const { techBought, ...rest } = p;
     const out: Progress = techBought ? { ...rest, tech: techBought } : rest;
     out.saveVersion = SAVE_VERSION;
-    localStorage.setItem(KEY, JSON.stringify(out));
+    writeSave(JSON.stringify(out));
   } catch {
-    // private windows / blocked storage: the run still plays, nothing sticks
+    // a save that cannot be serialized: the run still plays, nothing sticks
   }
 }
 
@@ -458,8 +449,7 @@ export function saveProgress(p: Progress): void {
  */
 export function resetProgress(): void {
   try {
-    localStorage.removeItem(KEY);
-    localStorage.removeItem(LEGACY_KEY); // or the pre-rename save would reappear
+    clearSave();
     if (devUnlocking()) saveProgress({ ...fresh(), devGrantOff: true });
   } catch {
     // ignore — same storage caveat as saveProgress
