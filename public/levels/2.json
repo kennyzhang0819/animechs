@@ -1,6 +1,6 @@
 {
  "id": "2",
- "waveGap": 10,
+ "waveGap": 6,
  "script": [
   {
    "wave": {

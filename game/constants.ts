@@ -95,6 +95,15 @@ export interface BulletSprite {
   front: RGB; // BasicBulletType.frontColor
 }
 
+/**
+ * WHAT ELECTRICITY AND A HELD BEAM DO TO A HULL: twice the damage. A boat
+ * is a big, fast, armoured body on a route the ballistic turrets reach
+ * late, and the naval front needed a counter that is a CHOICE rather than
+ * more of everything — arc, lancer and meltdown are that choice (see
+ * BulletStats.navalMultiplier).
+ */
+export const NAVAL_BONUS = 2;
+
 export interface BulletStats {
   speed: number; // px/s
   damage: number; // direct-hit damage
@@ -157,6 +166,11 @@ export interface BulletStats {
   // Mindustry damagePierce / damageContinuousPierce: skip armour entirely.
   // A shield still soaks it (see Sim.damageUnit)
   pierceArmor?: boolean;
+  // WATER CONDUCTS. Damage is multiplied by this against a naval hull —
+  // the electric and beam weapons (arc, lancer, meltdown) carry NAVAL_BONUS
+  // so a fleet has an answer the ballistic line is not, and nothing else
+  // sets it. Unset is 1
+  navalMultiplier?: number;
   // Mindustry lifeScaleRandMin/Max: the shell's lifetime is multiplied by a
   // roll in this range at spawn, which is what scatters a volley of
   // artillery along its firing line instead of stacking it on one point
@@ -673,6 +687,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     bullet: {
       speed: 0,
       damage: 20,
+      navalMultiplier: NAVAL_BONUS,
       // Fx.lightning's own 10 ticks: the bolt is instant, and this is only
       // how long the drawn arc lingers
       lifetime: 10 / TICK,
@@ -718,6 +733,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     bullet: {
       speed: 0,
       damage: 140,
+      navalMultiplier: NAVAL_BONUS,
       lifetime: 16 / TICK, // the beam's fade — the damage is instant
       splash: 0,
       splashRadius: 0,
@@ -1159,6 +1175,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     bullet: {
       speed: 0,
       damage: 101, // per damageInterval, NOT per second — stock 78, +30%
+      navalMultiplier: NAVAL_BONUS,
       lifetime: 0, // the beam is turret state, not a projectile
       splash: 0,
       splashRadius: 0,
@@ -1254,12 +1271,12 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
 export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   duo: "A cheap single-barrel gun. One small bullet at a time at the nearest body — the turret every board starts with, and the one that stays worth having in numbers.",
   scatter: "A flak gun. Its shells burst near a flyer rather than hitting it, damaging everything caught in the blast.",
-  arc: "Fires a lightning bolt that walks from body to body down a file, so it is worth most aimed along a lane rather than across one.",
+  arc: "Fires a lightning bolt that walks from body to body down a file, so it is worth most aimed along a lane rather than across one. Water conducts: twice the damage to a hull.",
   hail: "Artillery. Arcs a shell over the ground and explodes where it lands, hitting a cluster instead of a body. It never fires at a flyer.",
   scorch: "A flamethrower with barely any reach. Enormous close-range damage and it sets what it touches alight — burning ignores armour.",
   salvo: "Fires a four-shell volley in quick succession, then spends a while reloading. Steady damage against single hard targets.",
   wave: "Sprays water. It does almost no damage; what it does is soak enemies so they move slower, for the turrets behind it.",
-  lancer: "Charges, then fires a beam that cuts through a whole line of bodies at once. Armour counts quadruple against it, so it struggles on heavily armoured waves until Charged Optics.",
+  lancer: "Charges, then fires a beam that cuts through a whole line of bodies at once. Armour counts quadruple against it, so it struggles on heavily armoured waves until Charged Optics. Twice the damage to a hull.",
   ripple: "Long-range artillery. Lobs four shells an arc onto a wide patch of ground — the longest reach short of a foreshadow, and it never fires at a flyer.",
   parallax: "A tractor beam. It drags flyers backwards down the lane and does small armour-piercing damage while it holds them; the pull is the point, not the damage.",
   fuse: "A close-range shotgun. Three heavy rays at once in a tight cone, with almost no reach — it wants to stand where the lane bends.",
@@ -1267,7 +1284,7 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   cyclone: "A high-rate flak cannon. A constant stream of shells that burst into fragments near whatever they hit.",
   tsunami: "A heavy water sprayer covering a wide area. Like the wave it barely damages anything — it soaks a whole lane at once so everything in it slows.",
   spectre: "A twin-barrel heavy machine gun with the highest sustained damage in the game, alternating between barrels so it never stops firing.",
-  meltdown: "Holds a continuous laser on one target, burning through it for as long as it stays in range.",
+  meltdown: "Holds a continuous laser on one target, burning through it for as long as it stays in range. Twice the damage to a hull.",
   foreshadow: "An extreme-range railgun firing one enormous shot on a long reload. It picks the highest-health target in range rather than the nearest.",
 };
 

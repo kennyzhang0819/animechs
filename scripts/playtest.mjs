@@ -131,13 +131,18 @@ const MIX = {
   2: ["swarmer", "salvo", "ripple", "cyclone"],
   3: ["spectre", "fuse", "foreshadow"],
 };
+// water conducts (NAVAL_BONUS in constants.ts): on a front that is mostly
+// hulls the bot brings the beam turrets a person would. Not the arc: its
+// reach is short enough that a shoreline placement is a Hydrophobic one
+const WET = { 1: [], 2: ["lancer"], 3: ["meltdown"] };
 const stageTier = (w) => E.stageOfWave(w).tier;
-const mixFor = (t) =>
+const tierMix = (t, wet) => (wet ? [...MIX[t], ...WET[t]] : MIX[t]);
+const mixFor = (t, wet = false) =>
   MIX_MODE === "duo"
     ? ["duo"]
     : MIX_MODE === "all"
-      ? [...MIX[1], ...(t >= 2 ? MIX[2] : []), ...(t >= 3 ? MIX[3] : [])]
-      : MIX[t];
+      ? [...tierMix(1, wet), ...(t >= 2 ? tierMix(2, wet) : []), ...(t >= 3 ? tierMix(3, wet) : [])]
+      : tierMix(t, wet);
 
 /**
  * WHERE THE SWARM ACTUALLY GOES: a dry run of the script with no turrets,
@@ -256,8 +261,10 @@ function play() {
     ...w2.map(([x, y, h]) => ({ x, y, layer: 2, h })),
   ];
   const routeWeight = new Float32Array(route.length);
+  let wet = false;
   const reweigh = (wave) => {
     const w = layerShare(wave);
+    wet = w[2] >= 0.3;
     for (let i = 0; i < route.length; i++) routeWeight[i] = w[route[i].layer] * route[i].h * route.length;
   };
   reweigh(1);
@@ -360,7 +367,7 @@ function play() {
     for (let s = 0; s < 30; s++) sim.update(1 / 60);
     const w = sim.currentWave();
     // what to buy follows the gate, which follows the clock (Sim.stageWave)
-    const mix = mixFor(stageTier(sim.stageWave()));
+    const mix = mixFor(stageTier(sim.stageWave()), wet);
     let stuck = 0;
     for (let tries = 0; tries < 40; tries++) {
       const kind = mix[rot % mix.length];

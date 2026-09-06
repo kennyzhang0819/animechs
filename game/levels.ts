@@ -1413,11 +1413,11 @@ export const WORLDS: LevelSpec[] = [
     name: "Maelstrom",
     map: "maelstrom",
     badge: "advanced",
-    // THE NAVAL FRONT DOES NOT END: twenty minutes on the clock against a
-    // fleet that keeps coming (Mission.survive). Ten-second gaps: hulls are
-    // big and the water doors pass a wave slower than the schedule, so a
-    // shorter gap is what gets the clock to wave forty-five
-    mission: { kind: "survive", minutes: 20 },
+    // THE NAVAL FRONT: hold the fifty. Six-second gaps, because hulls are
+    // big and the water doors pass a wave slower than the schedule — the
+    // late waves are bound by their own release, not the gap — so the
+    // short gap is what keeps the run near twenty-five minutes
+    mission: { kind: "hold" },
     intrinsicMutation: ["overshields", "hydrophobic"],
     waveGap: 15,
     script: [],

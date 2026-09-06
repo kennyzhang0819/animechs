@@ -4297,6 +4297,7 @@ export class Sim {
       const pts = this.lightningBolt(
         x, y, a,
         st.bullet.damage,
+        st.bullet.navalMultiplier ?? 1,
         st.bullet.lightning.length,
         st.bullet.hitRadius ?? 2.5,
         st.bullet.collidesAir,
@@ -4315,6 +4316,7 @@ export class Sim {
         st.bullet.damage,
         st.bullet.laser.pierceCap,
         st.bullet.armorMultiplier ?? 1,
+        st.bullet.navalMultiplier ?? 1,
         st.bullet.collidesAir,
         st.bullet.collidesGround,
         st.bullet.hitFx,
@@ -4639,6 +4641,7 @@ export class Sim {
     y: number,
     angle: number,
     damage: number,
+    navalMult: number,
     length: number,
     brad: number,
     air: boolean,
@@ -4661,7 +4664,7 @@ export class Sim {
       // is actually dealt
       const victim = this.nearestUnit(x, y, brad, air, ground);
       if (victim >= 0) {
-        this.damageUnit(victim, damage);
+        this.damageUnit(victim, damage, false, 1, navalMult);
         if (uhp[victim] > 0) this.bulletFx(hitFx, x, y, rot, fxColor);
         else if (!hits.includes(victim)) hits.push(victim);
       }
@@ -4728,6 +4731,7 @@ export class Sim {
     damage: number,
     pierceCap: number,
     armorMult: number,
+    navalMult: number,
     air: boolean,
     ground: boolean,
     hitFx: BulletFx | undefined,
@@ -4748,7 +4752,7 @@ export class Sim {
     const dead: number[] = [];
     for (let k = 0; k < order.length && (pierceCap <= 0 || k < pierceCap); k++) {
       const i = hits[order[k]];
-      this.damageUnit(i, damage, false, armorMult);
+      this.damageUnit(i, damage, false, armorMult, navalMult);
       if (uhp[i] > 0) this.bulletFx(hitFx, upx[i], upy[i], angle, fxColor);
       else dead.push(i);
     }
@@ -4845,7 +4849,7 @@ export class Sim {
       const dead: number[] = [];
       // pierceCap -1: the beam stops for nothing
       for (const i of hits) {
-        this.damageUnit(i, b.damage, b.pierceArmor ?? false, b.armorMultiplier ?? 1);
+        this.damageUnit(i, b.damage, b.pierceArmor ?? false, b.armorMultiplier ?? 1, b.navalMultiplier ?? 1);
         if (uhp[i] > 0) this.bulletFx(b.hitFx, upx[i], upy[i], t.beamRot, b.fxColor);
         else dead.push(i);
       }
@@ -5007,11 +5011,20 @@ export class Sim {
    * damage, so a lancer's 4 means armour counts quadruple against it and
    * the same beam is worth far less to a fortress than to a dagger.
    */
-  private damageUnit(i: number, raw: number, pierceArmor = false, armorMult = 1): void {
+  private damageUnit(
+    i: number,
+    raw: number,
+    pierceArmor = false,
+    armorMult = 1,
+    navalMult = 1,
+  ): void {
     // StatusEffects.invincible, healthMultiplier infinity: every hit lands
     // on a unit still arriving for exactly nothing. It runs a full second,
     // half of it after the unit has started walking
     if (this.uspawn[i] > 0) return;
+    // water conducts (BulletStats.navalMultiplier): a hull takes the
+    // electric and beam weapons' hit scaled up, before armour sees it
+    if (navalMult !== 1 && this.unav[i] !== 0) raw *= navalMult;
     let amount = pierceArmor ? raw : Sim.applyArmor(raw, this.uarmor[i] * armorMult);
     if (this.ushield[i] > 0.0001) {
       this.ushieldAlpha[i] = 1;
