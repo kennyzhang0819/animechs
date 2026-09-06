@@ -1,54 +1,34 @@
 import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
-import {
-  BLUEPRINT_ID,
-  readTransforms,
-  UNIT_KINDS,
-  type LevelDoc,
-  type LevelStep,
-} from "@/game/levels";
+import { UNIT_KINDS, worldById, type LevelDoc, type LevelStep } from "@/game/levels";
 
 /**
- * Dev-only level persistence: the admin level editor POSTs the BLUEPRINT —
- * the one script every world plays — and this writes it to
- * public/levels/blueprint.json, which the campaign derives every world's
- * waves from at startup (see applyBlueprint in levels.ts).
+ * Dev-only level persistence: the admin level editor POSTs one world's
+ * document and this writes it to public/levels/<id>.json, which the
+ * campaign loads onto that world at startup (see loadLevelDocs in
+ * levels.ts).
  *
- * Only the blueprint id can be written — the id goes straight into a path,
- * and per-world documents no longer exist, so anything else is refused
- * rather than sanitized. Production builds refuse outright, exactly like
- * /api/maps.
+ * Only a world the campaign table holds can be written — the id goes
+ * straight into a path, so anything else is refused rather than
+ * sanitized. Production builds refuse outright, exactly like /api/maps.
  */
 export async function POST(req: Request): Promise<NextResponse> {
   if (process.env.NODE_ENV === "production")
     return NextResponse.json({ error: "level editing is a dev tool" }, { status: 403 });
 
   const doc = (await req.json()) as Partial<LevelDoc>;
-  if (doc.id !== BLUEPRINT_ID)
-    return NextResponse.json(
-      { error: `only the shared blueprint ("${BLUEPRINT_ID}") can be saved` },
-      { status: 400 },
-    );
+  if (typeof doc.id !== "string" || !worldById(doc.id))
+    return NextResponse.json({ error: "not a world the campaign holds" }, { status: 400 });
   if (typeof doc.waveGap !== "number" || !(doc.waveGap >= 0) || doc.waveGap > 3600)
     return NextResponse.json({ error: "bad wave gap" }, { status: 400 });
   if (!Array.isArray(doc.script) || !doc.script.every(isStep))
     return NextResponse.json({ error: "bad script" }, { status: 400 });
-  // readTransforms is the loader's own validator; a map it would throw away
-  // must not reach the disk, where it would silently fall back to defaults
-  const transforms = doc.transforms === undefined ? undefined : readTransforms(doc.transforms);
-  if (doc.transforms !== undefined && !transforms)
-    return NextResponse.json({ error: "bad transforms" }, { status: 400 });
-
   const dir = path.join(process.cwd(), "public", "levels");
   await mkdir(dir, { recursive: true }); // first save creates the folder
   await writeFile(
     path.join(dir, `${doc.id}.json`),
-    JSON.stringify(
-      { id: doc.id, waveGap: doc.waveGap, script: doc.script, ...(transforms && { transforms }) },
-      null,
-      1,
-    ),
+    JSON.stringify({ id: doc.id, waveGap: doc.waveGap, script: doc.script }, null, 1),
   );
   await addToIndex(dir, doc.id);
   return NextResponse.json({ ok: true });

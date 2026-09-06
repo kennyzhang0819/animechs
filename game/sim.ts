@@ -63,6 +63,7 @@ import {
   UNIT_RMAX_AIR,
   UNIT_RMAX_GROUND,
   UNIT_STATS,
+  missionLives,
   unitDrop,
   waveGroups,
   type LegSpec,
@@ -74,6 +75,14 @@ import {
 /** module-local for the same getter reason as the constants block above */
 const UNIT_KINDS = UNIT_KINDS_IMPORT;
 import { unitHpAtLevel } from "./ladder";
+
+/**
+ * How many enemy levels each repeat of a survive mission's last wave adds
+ * (Sim.loadStep): three levels is HP_PER_LEVEL^3, about +19% health a
+ * repeat, so a twenty-minute clock over a fifty-wave script climbs a
+ * handful of steps rather than a cliff.
+ */
+const SURVIVE_LOOP_LEVELS = 3;
 import {
   ARMORED_ARMOR,
   ARMORED_MAX_TIER,
@@ -815,6 +824,20 @@ export class Sim {
   livesMax = LIVES_START;
   lives = this.livesMax;
   /**
+   * THE MISSION'S CLOCK, in seconds of run time: a survive mission is won
+   * the moment `time` reaches it. 0 on a hold mission, which has no clock
+   * — it is won when the script is spent (see won).
+   */
+  deadline = 0;
+  /**
+   * HOW MANY LEVELS THE TIDE HAS RISEN. A survive mission whose script
+   * runs out before its clock sends its LAST wave again, and every repeat
+   * adds SURVIVE_LOOP_LEVELS to the enemy level every body spawns at
+   * (loadStep) — so the waves keep coming and keep getting heavier until
+   * the clock, not the script, ends the run.
+   */
+  loopLevel = 0;
+  /**
    * THE RUN'S MONEY (economy.ts). Opens at SCRAP_START, every kill drops
    * its tier's scrap, every wave staged pays its bonus, every turret
    * placed costs its price and every one sold refunds SELL_REFUND of it.
@@ -885,6 +908,8 @@ export class Sim {
   // still running: a wave stays current through the wait that follows it
   totalWaves = 0;
   private wavesStarted = 0;
+  /** index of the script's last non-empty wave — what a survive mission repeats */
+  private lastWaveIdx = -1;
   // the wave being drained, flattened to (region, kind) entries — every
   // entry runs out at the same moment (see nextWaveEntry), each spawning
   // only on its own region's pads (region 0 = any pad)
@@ -1112,7 +1137,12 @@ export class Sim {
     this.focusUid = -1;
     this.focusIdx = -1;
     this.focusShieldTower = -1;
+    // the mission sets the base's health and the clock (levels.ts)
+    const mission = this.level.mission;
+    this.livesMax = missionLives(mission);
     this.lives = this.livesMax;
+    this.deadline = mission.kind === "survive" ? mission.minutes * 60 : 0;
+    this.loopLevel = 0;
     this.sealGx = -1;
     this.projs.length = 0;
     // drop the fx pool: the count is the pool, but the bolt-path refs must
@@ -1391,6 +1421,17 @@ export class Sim {
     return this.lives <= 0;
   }
 
+  /**
+   * IS THE MISSION MET? A hold is won when every body the script sends is
+   * down (and it sent some); a survive when the clock has run out. Never
+   * while the base is dead — a clock that ran out on a lost base is a loss.
+   */
+  won(): boolean {
+    if (this.lost()) return false;
+    if (this.deadline > 0) return this.time >= this.deadline;
+    return this.totalEnemies > 0 && this.remaining() <= 0;
+  }
+
   /** campaign restrictions on building; null lifts them (editor, dev) —
    *  and null is also what makes building FREE (see canPlace) */
   setTech(tech: TechState | null): void {
@@ -1656,13 +1697,16 @@ export class Sim {
     this.totalEnemies = 0;
     this.totalWaves = 0;
     const script = this.level.script;
-    for (const step of script) {
+    this.lastWaveIdx = -1;
+    for (let i = 0; i < script.length; i++) {
+      const step = script[i];
       if (!("wave" in step)) continue;
       let n = 0;
       for (const g of waveGroups(step.wave)) for (const c of g.counts) n += c;
       if (n === 0) continue;
       this.totalWaves++;
       this.totalEnemies += n;
+      this.lastWaveIdx = i;
     }
     this.stepIdx = 0;
     this.waitLeft = 0;
@@ -1705,6 +1749,21 @@ export class Sim {
         this.waitLeft = Math.max(0, this.level.waveGap);
         return;
       }
+    }
+    // THE SCRIPT IS SPENT. On a hold that is the end of the level; on a
+    // survive with time still on the clock it is the tide turning: the
+    // last wave goes again, a few enemy levels heavier, and counts toward
+    // the run like any other wave. Recursion is one level deep by
+    // construction — lastWaveIdx names a wave that is not empty
+    if (this.deadline > 0 && this.time < this.deadline && this.lastWaveIdx >= 0) {
+      const step = script[this.lastWaveIdx];
+      let n = 0;
+      for (const g of waveGroups(step.wave)) for (const c of g.counts) n += c;
+      this.totalEnemies += n;
+      this.totalWaves++;
+      this.loopLevel += SURVIVE_LOOP_LEVELS;
+      this.stepIdx = this.lastWaveIdx;
+      this.loadStep();
     }
   }
 
@@ -1934,7 +1993,7 @@ export class Sim {
   private updateAmphibious(dt: number): void {
     if (!this.amphibiousOn) return;
     const { upx, upy, uhp, uhpmax, uspd, uarmor, uwade, uwet01, ufly, unav, ukind } = this;
-    const level = this.level.enemyLevel ?? 0;
+    const level = (this.level.enemyLevel ?? 0) + this.loopLevel;
     for (let i = 0; i < this.n; i++) {
       if (ufly[i] || unav[i]) continue;
       const wet = this.inWater(upx[i], upy[i]);
@@ -2221,7 +2280,7 @@ export class Sim {
       // both piecewise per rung rather than per level). Speed, hitbox and
       // drop stay exactly where UNIT_STATS put them however high the rung
       // climbs
-      const hp = unitHpAtLevel(kind, this.level.enemyLevel ?? 0);
+      const hp = unitHpAtLevel(kind, (this.level.enemyLevel ?? 0) + this.loopLevel);
       this.upx[i] = x;
       this.upy[i] = y;
       this.uvx[i] = 0;

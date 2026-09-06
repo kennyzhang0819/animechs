@@ -6,20 +6,14 @@ import {
   UNIT_KINDS,
   UNIT_STATS,
   UNIT_TREES,
-  applyWaveTransforms,
-  blueprintDoc,
-  BLUEPRINT_ID,
+  levelDocOf,
+  missionText,
   saveLevel,
-  transformLabel,
-  transformsError,
   waveGroups,
   WAVE_RELEASE_SECONDS,
-  WORLDS,
-  type FamilyKey,
   type LevelSpec,
   type LevelStep,
   type UnitKind,
-  type WaveTransform,
   type WaveUnits,
 } from "@/game/levels";
 import {
@@ -115,29 +109,6 @@ function trimCounts(counts: Partial<Record<UnitKind, number>>): Partial<Record<U
   return out;
 }
 
-/**
- * A transform rule as the rail edits it: the same shape the document saves
- * (WaveTransform), just mutably typed. No uid — rules are never reordered,
- * and every input below is controlled, so index keys hold their values.
- */
-interface EditRule {
-  from: FamilyKey[];
-  to: { family: FamilyKey; weight?: number }[];
-  multiply?: number;
-}
-
-/** a world's rules as a fresh, mutable buffer for the rail editor */
-function toEditRules(transforms: readonly WaveTransform[] | undefined): EditRule[] {
-  return (transforms ?? []).map((t) => ({
-    from: [...t.from],
-    to: t.to.map((x) => ({ ...x })),
-    ...(t.multiply !== undefined && { multiply: t.multiply }),
-  }));
-}
-
-/** the families a rule may name — every tree but the boss row */
-const RULE_FAMILIES = UNIT_TREES.filter((t) => t.key !== "boss");
-
 const stepTotal = (step: EditStep): number =>
   UNIT_KINDS.reduce((s, k) => s + (step.counts[k] ?? 0), 0);
 
@@ -230,44 +201,27 @@ export default function LevelEditorView({
   level: LevelSpec;
   onClose: () => void;
 }) {
-  // THE BUFFER IS THE BLUEPRINT — the one script every world plays, raw
-  // counts. Whichever world opened the editor, the counts being edited are
-  // the shared ones; the world contributes its map, its transforms, and the
-  // lens the audit below prices through.
-  const [steps, setSteps] = useState<EditStep[]>(() => toEditSteps(blueprintDoc().script));
-  const [waveGap, setWaveGap] = useState(blueprintDoc().waveGap);
-  // this world's re-casting rules, editable in the rail and saved into the
-  // blueprint document's transforms map alongside the counts
-  const [rules, setRules] = useState<EditRule[]>(() => toEditRules(level.transforms));
+  // THE BUFFER IS THIS WORLD'S OWN SCRIPT — raw counts from its document
+  // (public/levels/<id>.json); the world contributes its map, its mission
+  // and the lens the audit below prices through.
+  const [steps, setSteps] = useState<EditStep[]>(() => toEditSteps(levelDocOf(level.id).script));
+  const [waveGap, setWaveGap] = useState(levelDocOf(level.id).waveGap);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   // why the last save was refused — null when the last attempt succeeded
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // reloading a different level through the same mounted component has to
-  // reset the buffer — the blueprint is shared, but an unsaved edit must
-  // not ride silently into another world's view
+  // reset the buffer — an unsaved edit must not ride silently into another
+  // world's view
   useEffect(() => {
-    setSteps(toEditSteps(blueprintDoc().script));
-    setWaveGap(blueprintDoc().waveGap);
-    setRules(toEditRules(level.transforms));
+    setSteps(toEditSteps(levelDocOf(level.id).script));
+    setWaveGap(levelDocOf(level.id).waveGap);
     setDirty(false);
   }, [level]);
 
-  // why the rules cannot mean one thing yet — shown in the rail, and the
-  // one thing that blocks a save (the API refuses the same finding)
-  const rulesError = useMemo(() => transformsError(rules), [rules]);
-
-  // what THIS WORLD actually sends: the live buffer run through the live
-  // rules. Identical to the buffer while the world has no rules.
-  const playedScript = useMemo(() => applyWaveTransforms(toScript(steps), rules), [steps, rules]);
-  const playedSteps = useMemo(() => toEditSteps(playedScript), [playedScript]);
-
-  // the wave cards show the derived script by default — the fight this
-  // world actually sends — and flip to the raw blueprint to edit counts;
-  // derived counts are not a thing anyone can edit, so the view is read-only
-  const [asPlayed, setAsPlayed] = useState(true);
-  const preview = asPlayed && rules.length > 0;
+  // the script as the document will hold it — what every number below prices
+  const script = useMemo(() => toScript(steps), [steps]);
 
   const mapId = level.map ?? OFFICIAL_MAP_IDS[0];
 
@@ -290,28 +244,10 @@ export default function LevelEditorView({
     setDirty(true);
   };
 
-  const editRules = (fn: (draft: EditRule[]) => EditRule[]): void => {
-    setRules((prev) => fn(prev));
-    setDirty(true);
-  };
-
   const save = async (): Promise<void> => {
-    if (rulesError) {
-      setSaveError(`fix the transform rules first: ${rulesError}`);
-      return;
-    }
     setSaving(true);
     setSaveError(null);
-    const res = await saveLevel({
-      id: BLUEPRINT_ID,
-      waveGap,
-      script: toScript(steps),
-      // the document carries EVERY world's rules (see LevelDoc.transforms),
-      // so the untouched worlds' current rules ride along with this one's
-      transforms: Object.fromEntries(
-        WORLDS.map((w) => [w.id, w.id === level.id ? rules : [...(w.transforms ?? [])]]),
-      ),
-    });
+    const res = await saveLevel({ id: level.id, waveGap, script });
     setSaving(false);
     if (res.ok) setDirty(false);
     else setSaveError(res.error);
@@ -334,13 +270,9 @@ export default function LevelEditorView({
    * that had not been touched since.
    */
   const report = useMemo(() => {
-    // the audit prices what THIS WORLD PLAYS — the transformed script, not
-    // the raw blueprint — so a world whose rules double a family, or move
-    // it to a layer its map cannot open, reads its real numbers here
-    const spec = { ...level, waveGap, script: playedScript };
-    // per-wave numbers are priced at the top tier — the run every wave is in
+    const spec = { ...level, waveGap, script };
     return { rows: audit(spec), waves: waveGuide(spec) };
-  }, [level, waveGap, playedScript]);
+  }, [level, waveGap, script]);
 
   const back = (): void => {
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
@@ -348,17 +280,16 @@ export default function LevelEditorView({
   };
 
   // whole-level rollup, recomputed from the live buffer so the header tracks
-  // edits rather than the level as it was opened — priced on the played
-  // script, so a multiplying transform shows in the totals it changes
+  // edits rather than the level as it was opened
   const summary = useMemo(() => {
-    const waves = playedSteps.filter((s) => stepTotal(s) > 0).length;
-    const kills = killVector(playedSteps);
+    const waves = steps.filter((s) => stepTotal(s) > 0).length;
+    const kills = killVector(steps);
     return {
       waves,
       enemies: kills.reduce((a, b) => a + b, 0),
       payout: dropsForKills(kills),
     };
-  }, [playedSteps]);
+  }, [steps]);
 
   return (
     <div className="h-screen overflow-hidden bg-[#0B0B0D] text-[#EDEDEF]">
@@ -370,28 +301,12 @@ export default function LevelEditorView({
               {dirty && <span className="ml-1 text-[#F0B457]">●</span>}
             </h1>
             <p className="text-[14px] text-[#71717C]">
-              World {level.id} · map <span className="text-[#A6A6AF]">{mapId}</span> · edits the
-              shared blueprint (public/levels/{BLUEPRINT_ID}.json) — the one script every world
-              plays{rules.length > 0 && ", re-cast here by the rules in the rail"}
+              World {level.id} · map <span className="text-[#A6A6AF]">{mapId}</span> · mission{" "}
+              <span className="text-[#A6A6AF]">{missionText({ ...level, script }).title}</span> ·
+              edits public/levels/{level.id}.json
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {/* worlds with rules can flip the wave cards between the derived
-                script they actually send (the default) and the editable
-                blueprint; the label names the view a click switches TO */}
-            {rules.length > 0 && (
-              <button
-                onClick={() => setAsPlayed((v) => !v)}
-                aria-pressed={asPlayed}
-                className={`rounded border px-4 py-1.5 text-[14px] uppercase tracking-widest ${
-                  asPlayed
-                    ? "border-[#7FC4FF] bg-[#16222A] text-[#7FC4FF]"
-                    : "border-[#2E2E36] text-[#A6A6AF] hover:border-[#4A4A55]"
-                }`}
-              >
-                {asPlayed ? "Show blueprint" : "Show as played"}
-              </button>
-            )}
             <button
               onClick={save}
               disabled={saving}
@@ -420,53 +335,6 @@ export default function LevelEditorView({
           <aside className="space-y-4 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <RampChart waves={report.waves} />
             <ZoneKey mapId={mapId} zones={mapZones} />
-
-            {/* THE WORLD'S RE-CASTING RULES, editable and saved into the
-                blueprint document's transforms map. The audit, ramp and
-                totals all price the re-cast script; only the wave cards can
-                show the raw blueprint. */}
-            <section className="rounded-lg border border-[#2E4A5B] bg-[#16222A]/70 p-3">
-              <div className="mb-2 flex items-baseline justify-between">
-                <h2 className="text-[12px] font-bold uppercase tracking-widest text-[#7FC4FF]">
-                  Wave transforms
-                </h2>
-                <button
-                  onClick={() => editRules((rs) => [...rs, { from: [], to: [] }])}
-                  className="rounded border border-[#2E4A5B] px-1.5 py-0.5 text-[11px] uppercase tracking-widest text-[#7FC4FF] hover:border-[#7FC4FF]"
-                >
-                  + Rule
-                </button>
-              </div>
-              {rules.length === 0 ? (
-                <p className="text-[13px] leading-snug text-[#71717C]">
-                  None — this world plays the blueprint verbatim.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {rules.map((rule, ri) => (
-                    <RuleEditor
-                      key={ri}
-                      rule={rule}
-                      onChange={(next) =>
-                        editRules((rs) => rs.map((r, i) => (i === ri ? next : r)))
-                      }
-                      onDelete={() => editRules((rs) => rs.filter((_, i) => i !== ri))}
-                    />
-                  ))}
-                </div>
-              )}
-              {rulesError && (
-                <p role="alert" className="mt-2 text-[12px] leading-snug text-[#F08A8A]">
-                  {rulesError} — the save will be refused until this is fixed
-                </p>
-              )}
-              <p className="mt-2 border-t border-[#2E4A5B] pt-2 text-[12px] leading-snug text-[#71717C]">
-                This world re-casts the shared blueprint through these rules,
-                tier for tier: a rule pools its FROM families per tier,
-                multiplies the pool, and deals it to the TO families by
-                weight. Rules save with the blueprint.
-              </p>
-            </section>
 
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
               <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
@@ -505,7 +373,7 @@ export default function LevelEditorView({
                 Stages
               </h2>
               <div className="space-y-2">
-                {stageAudit({ ...level, waveGap, script: playedScript }).map((s) => (
+                {stageAudit({ ...level, waveGap, script }).map((s) => (
                   <div key={s.tier}>
                     <div className="flex items-baseline justify-between">
                       <span className="text-[13px] font-bold text-[#EDEDEF]">
@@ -573,8 +441,8 @@ export default function LevelEditorView({
 
           {/* ---- the script ---- */}
           <main className="min-h-0 overflow-y-auto pr-1">
-            {!preview && <InsertBar onInsert={() => edit((s) => [makeStep(), ...s])} />}
-            {(preview ? playedSteps : steps).map((step, i, all) => {
+            <InsertBar onInsert={() => edit((s) => [makeStep(), ...s])} />
+            {steps.map((step, i, all) => {
               return (
                 <div key={step.uid}>
                   <StepCard
@@ -583,7 +451,6 @@ export default function LevelEditorView({
                     guide={report.waves[i]}
                     index={i}
                     last={i === all.length - 1}
-                    readOnly={preview}
                     onChange={(next) =>
                       edit((s) => s.map((cur) => (cur.uid === step.uid ? next : cur)))
                     }
@@ -599,7 +466,7 @@ export default function LevelEditorView({
                       })
                     }
                   />
-                  {!preview && (
+                  {(
                     <InsertBar
                       onInsert={() =>
                         edit((s) => {
@@ -636,163 +503,6 @@ function Row({ label, value }: { label: string; value: string }) {
       <dt className="text-[#71717C]">{label}</dt>
       <dd className="font-bold text-[#EDEDEF]">{value}</dd>
     </div>
-  );
-}
-
-/**
- * One re-casting rule as a small form: FROM as family toggle chips, TO as
- * family/weight rows, and the pool multiplier. The header echoes the rule
- * back as a phrase the moment it means something, so the form reads as the
- * sentence it will become in the document.
- */
-function RuleEditor({
-  rule,
-  onChange,
-  onDelete,
-}: {
-  rule: EditRule;
-  onChange: (next: EditRule) => void;
-  onDelete: () => void;
-}) {
-  const summary =
-    rule.from.length && rule.to.length ? transformLabel(rule) : "new rule — pick from and to";
-  const setMultiply = (n: number): void => {
-    const next = { ...rule };
-    if (n === 1) delete next.multiply;
-    else next.multiply = n;
-    onChange(next);
-  };
-  return (
-    <div className="rounded border border-[#2E4A5B] bg-[#0F171D] p-2">
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <span className="min-w-0 truncate text-[12px] text-[#7FC4FF]" title={summary}>
-          {summary}
-        </span>
-        <IconButton label="Delete rule" onClick={onDelete} danger>
-          ✕
-        </IconButton>
-      </div>
-
-      <div className="text-[11px] font-bold uppercase tracking-widest text-[#71717C]">From</div>
-      <div className="mt-1 flex flex-wrap gap-1">
-        {RULE_FAMILIES.map((f) => {
-          const on = rule.from.includes(f.key);
-          return (
-            <button
-              key={f.key}
-              aria-pressed={on}
-              onClick={() =>
-                onChange({
-                  ...rule,
-                  from: on ? rule.from.filter((k) => k !== f.key) : [...rule.from, f.key],
-                })
-              }
-              className={`rounded border px-1.5 py-0.5 text-[11px] uppercase tracking-wider ${
-                on
-                  ? "border-[#7FC4FF] bg-[#16222A] text-[#7FC4FF]"
-                  : "border-[#2E2E36] text-[#71717C] hover:border-[#4A4A55]"
-              }`}
-            >
-              {f.name}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-2 flex items-center justify-between">
-        <span className="text-[11px] font-bold uppercase tracking-widest text-[#71717C]">To</span>
-        <button
-          onClick={() => onChange({ ...rule, to: [...rule.to, { family: "ground" }] })}
-          className="rounded border border-[#2E2E36] px-1.5 py-0.5 text-[11px] uppercase tracking-widest text-[#71717C] hover:border-[#4A4A55] hover:text-[#A6A6AF]"
-        >
-          + Target
-        </button>
-      </div>
-      {rule.to.map((tgt, ti) => (
-        <div key={ti} className="mt-1 flex items-center gap-1">
-          <select
-            value={tgt.family}
-            aria-label="Target family"
-            onChange={(e) =>
-              onChange({
-                ...rule,
-                to: rule.to.map((t, i) =>
-                  i === ti ? { ...t, family: e.target.value as FamilyKey } : t,
-                ),
-              })
-            }
-            className="min-w-0 flex-1 rounded border border-[#2E2E36] bg-[#0B0B0D] px-1 py-0.5 text-[13px] text-[#EDEDEF] focus:border-[#FFD37F] focus:outline-none"
-          >
-            {RULE_FAMILIES.map((f) => (
-              <option key={f.key} value={f.key}>
-                {f.name}
-              </option>
-            ))}
-          </select>
-          <NumberInput
-            value={tgt.weight ?? 1}
-            min={1}
-            width="w-12"
-            label="Target weight"
-            onChange={(n) =>
-              onChange({
-                ...rule,
-                to: rule.to.map((t, i) => (i === ti ? { ...t, weight: n } : t)),
-              })
-            }
-          />
-          <IconButton
-            label="Remove target"
-            onClick={() => onChange({ ...rule, to: rule.to.filter((_, i) => i !== ti) })}
-            danger
-          >
-            ✕
-          </IconButton>
-        </div>
-      ))}
-
-      <label className="mt-2 flex items-center justify-between gap-2 text-[13px] text-[#A6A6AF]">
-        Multiply pool ×
-        <FloatInput value={rule.multiply ?? 1} onChange={setMultiply} label="Pool multiplier" />
-      </label>
-    </div>
-  );
-}
-
-/**
- * A number input that keeps its decimals. NumberInput floors on purpose —
- * a wave count is a body count — but a pool multiplier of 1.5 is a real
- * thing to ask for, so this one holds the raw text and only pushes values
- * that parse, letting "0." sit un-clobbered on the way to "0.5".
- */
-function FloatInput({
-  value,
-  onChange,
-  label,
-}: {
-  value: number;
-  onChange: (n: number) => void;
-  label: string;
-}) {
-  const [text, setText] = useState(String(value));
-  useEffect(() => {
-    // sync an outside change without stamping on in-progress typing
-    setText((cur) => (Number(cur) === value ? cur : String(value)));
-  }, [value]);
-  return (
-    <input
-      type="number"
-      step="any"
-      min={0}
-      aria-label={label}
-      value={text}
-      onChange={(e) => {
-        setText(e.target.value);
-        const n = Number(e.target.value);
-        if (e.target.value !== "" && Number.isFinite(n)) onChange(n);
-      }}
-      className="w-14 rounded border border-[#2E2E36] bg-[#0B0B0D] px-1.5 py-0.5 text-right text-[13px] font-bold text-[#EDEDEF] focus:border-[#FFD37F] focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-    />
   );
 }
 

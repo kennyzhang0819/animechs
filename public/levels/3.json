@@ -1,0 +1,638 @@
+{
+ "id": "3",
+ "waveGap": 15,
+ "script": [
+  {
+   "wave": {
+    "risso": 40
+   }
+  },
+  {
+   "wave": {
+    "crawler": 37,
+    "risso": 49
+   }
+  },
+  {
+   "wave": {
+    "nova": 14,
+    "risso": 72,
+    "minke": 7
+   }
+  },
+  {
+   "wave": {
+    "crawler": 132,
+    "atrax": 24,
+    "nova": 17
+   }
+  },
+  {
+   "wave": {
+    "crawler": 75,
+    "nova": 19,
+    "risso": 93
+   }
+  },
+  {
+   "wave": {
+    "pulsar": 20,
+    "risso": 104,
+    "minke": 51
+   }
+  },
+  {
+   "wave": {
+    "crawler": 115,
+    "spiroct": 18,
+    "risso": 115
+   }
+  },
+  {
+   "wave": {
+    "risso": 101,
+    "minke": 49,
+    "retusa": 50
+   }
+  },
+  {
+   "wave": {
+    "crawler": 493,
+    "atrax": 27,
+    "spiroct": 20,
+    "nova": 82,
+    "pulsar": 26
+   }
+  },
+  {
+   "wave": {
+    "nova": 89,
+    "pulsar": 40,
+    "risso": 591,
+    "minke": 74,
+    "bryde": 22
+   }
+  },
+  {
+   "wave": {
+    "crawler": 635,
+    "nova": 63,
+    "retusa": 159
+   }
+  },
+  {
+   "wave": {
+    "retusa": 170,
+    "oxynoe": 65
+   }
+  },
+  {
+   "wave": {
+    "crawler": 541,
+    "atrax": 104,
+    "spiroct": 38,
+    "nova": 72,
+    "pulsar": 17
+   }
+  },
+  {
+   "wave": {
+    "nova": 76,
+    "pulsar": 18,
+    "quasar": 3,
+    "risso": 765,
+    "minke": 184,
+    "bryde": 27
+   }
+  },
+  {
+   "wave": {
+    "crawler": 1213,
+    "risso": 809
+   }
+  },
+  {
+   "wave": {
+    "nova": 937,
+    "pulsar": 245,
+    "quasar": 15
+   }
+  },
+  {
+   "wave": {
+    "retusa": 448,
+    "oxynoe": 129,
+    "cyerce": 31
+   }
+  },
+  {
+   "wave": {
+    "nova": 235,
+    "pulsar": 90,
+    "risso": 563,
+    "minke": 225
+   }
+  },
+  {
+   "wave": {
+    "crawler": 1474,
+    "atrax": 235,
+    "spiroct": 67
+   }
+  },
+  {
+   "wave": {
+    "quasar": 35,
+    "risso": 2052,
+    "bryde": 104,
+    "oxynoe": 245,
+    "cyerce": 70
+   }
+  },
+  {
+   "wave": {
+    "nova": 303,
+    "pulsar": 55,
+    "quasar": 14,
+    "risso": 983,
+    "minke": 177,
+    "bryde": 46,
+    "sei": 1,
+    "retusa": 227,
+    "oxynoe": 41,
+    "cyerce": 11
+   }
+  },
+  {
+   "wave": {
+    "crawler": 898,
+    "atrax": 180,
+    "spiroct": 53,
+    "arkyid": 1,
+    "nova": 276,
+    "pulsar": 55,
+    "quasar": 16,
+    "vela": 1,
+    "retusa": 207,
+    "oxynoe": 42,
+    "cyerce": 12
+   }
+  },
+  {
+   "wave": {
+    "retusa": 687,
+    "oxynoe": 154,
+    "cyerce": 50,
+    "aegires": 1
+   }
+  },
+  {
+   "wave": {
+    "crawler": 354,
+    "atrax": 88,
+    "spiroct": 32,
+    "arkyid": 1,
+    "nova": 236,
+    "pulsar": 59,
+    "quasar": 22,
+    "vela": 1,
+    "risso": 354,
+    "minke": 88,
+    "bryde": 33,
+    "sei": 1,
+    "retusa": 236,
+    "oxynoe": 58,
+    "cyerce": 22
+   }
+  },
+  {
+   "wave": {
+    "nova": 201,
+    "pulsar": 55,
+    "quasar": 23,
+    "vela": 1,
+    "risso": 653,
+    "minke": 181,
+    "bryde": 76,
+    "sei": 2,
+    "retusa": 150,
+    "oxynoe": 42,
+    "cyerce": 17
+   }
+  },
+  {
+   "wave": {
+    "crawler": 580,
+    "atrax": 179,
+    "spiroct": 84,
+    "arkyid": 3,
+    "nova": 178,
+    "pulsar": 55,
+    "quasar": 26,
+    "vela": 1,
+    "retusa": 134,
+    "oxynoe": 41,
+    "cyerce": 19
+   }
+  },
+  {
+   "wave": {
+    "retusa": 434,
+    "oxynoe": 149,
+    "cyerce": 79,
+    "aegires": 3
+   }
+  },
+  {
+   "wave": {
+    "crawler": 219,
+    "atrax": 83,
+    "spiroct": 50,
+    "arkyid": 2,
+    "nova": 146,
+    "pulsar": 56,
+    "quasar": 34,
+    "vela": 2,
+    "risso": 220,
+    "minke": 83,
+    "bryde": 50,
+    "sei": 2,
+    "retusa": 146,
+    "oxynoe": 56,
+    "cyerce": 33,
+    "aegires": 1
+   }
+  },
+  {
+   "wave": {
+    "nova": 428,
+    "pulsar": 181,
+    "quasar": 123,
+    "vela": 6
+   }
+  },
+  {
+   "wave": {
+    "nova": 107,
+    "pulsar": 51,
+    "quasar": 38,
+    "vela": 2,
+    "risso": 349,
+    "minke": 164,
+    "bryde": 125,
+    "sei": 7,
+    "retusa": 80,
+    "oxynoe": 38,
+    "cyerce": 29,
+    "aegires": 2
+   }
+  },
+  {
+   "wave": {
+    "crawler": 304,
+    "atrax": 159,
+    "spiroct": 137,
+    "arkyid": 9,
+    "nova": 94,
+    "pulsar": 49,
+    "quasar": 42,
+    "vela": 3,
+    "retusa": 70,
+    "oxynoe": 37,
+    "cyerce": 32,
+    "aegires": 2
+   }
+  },
+  {
+   "wave": {
+    "retusa": 224,
+    "oxynoe": 131,
+    "cyerce": 127,
+    "aegires": 10
+   }
+  },
+  {
+   "wave": {
+    "crawler": 112,
+    "atrax": 72,
+    "spiroct": 79,
+    "arkyid": 7,
+    "nova": 74,
+    "pulsar": 48,
+    "quasar": 53,
+    "vela": 4,
+    "risso": 112,
+    "minke": 73,
+    "bryde": 79,
+    "sei": 7,
+    "retusa": 74,
+    "oxynoe": 48,
+    "cyerce": 53,
+    "aegires": 4
+   }
+  },
+  {
+   "wave": {
+    "crawler": 150,
+    "atrax": 50,
+    "spiroct": 25,
+    "arkyid": 2,
+    "nova": 75,
+    "pulsar": 25,
+    "quasar": 10,
+    "risso": 150,
+    "minke": 50,
+    "bryde": 25,
+    "sei": 2,
+    "retusa": 75,
+    "oxynoe": 25,
+    "cyerce": 10
+   }
+  },
+  {
+   "wave": {
+    "crawler": 550,
+    "atrax": 300,
+    "spiroct": 240,
+    "arkyid": 35,
+    "nova": 300,
+    "pulsar": 175,
+    "quasar": 135,
+    "vela": 18,
+    "risso": 550,
+    "minke": 300,
+    "bryde": 240,
+    "sei": 35,
+    "retusa": 300,
+    "oxynoe": 175,
+    "cyerce": 135,
+    "aegires": 17
+   }
+  },
+  {
+   "wave": {
+    "nova": 207,
+    "pulsar": 53,
+    "quasar": 31,
+    "vela": 2,
+    "risso": 674,
+    "minke": 173,
+    "bryde": 102,
+    "sei": 7,
+    "omura": 1,
+    "retusa": 156,
+    "oxynoe": 40,
+    "cyerce": 23,
+    "aegires": 2
+   }
+  },
+  {
+   "wave": {
+    "crawler": 615,
+    "atrax": 176,
+    "spiroct": 116,
+    "arkyid": 9,
+    "toxopid": 1,
+    "nova": 189,
+    "pulsar": 54,
+    "quasar": 35,
+    "vela": 3,
+    "retusa": 142,
+    "oxynoe": 40,
+    "cyerce": 27,
+    "aegires": 2
+   }
+  },
+  {
+   "wave": {
+    "retusa": 471,
+    "oxynoe": 149,
+    "cyerce": 111,
+    "aegires": 10,
+    "navanax": 1
+   }
+  },
+  {
+   "wave": {
+    "crawler": 242,
+    "atrax": 85,
+    "spiroct": 71,
+    "arkyid": 7,
+    "toxopid": 2,
+    "nova": 162,
+    "pulsar": 57,
+    "quasar": 48,
+    "vela": 5,
+    "corvus": 1,
+    "risso": 242,
+    "minke": 86,
+    "bryde": 72,
+    "sei": 8,
+    "omura": 1,
+    "retusa": 162,
+    "oxynoe": 57,
+    "cyerce": 48,
+    "aegires": 5
+   }
+  },
+  {
+   "wave": {
+    "nova": 138,
+    "pulsar": 54,
+    "quasar": 51,
+    "vela": 6,
+    "corvus": 1,
+    "risso": 447,
+    "minke": 176,
+    "bryde": 166,
+    "sei": 20,
+    "omura": 4,
+    "retusa": 103,
+    "oxynoe": 40,
+    "cyerce": 38,
+    "aegires": 4
+   }
+  },
+  {
+   "wave": {
+    "crawler": 397,
+    "atrax": 174,
+    "spiroct": 185,
+    "arkyid": 25,
+    "toxopid": 4,
+    "nova": 122,
+    "pulsar": 53,
+    "quasar": 57,
+    "vela": 8,
+    "corvus": 1,
+    "retusa": 92,
+    "oxynoe": 40,
+    "cyerce": 43,
+    "aegires": 6,
+    "navanax": 1
+   }
+  },
+  {
+   "wave": {
+    "retusa": 298,
+    "oxynoe": 145,
+    "cyerce": 174,
+    "aegires": 27,
+    "navanax": 5
+   }
+  },
+  {
+   "wave": {
+    "crawler": 150,
+    "atrax": 81,
+    "spiroct": 110,
+    "arkyid": 19,
+    "toxopid": 5,
+    "nova": 100,
+    "pulsar": 54,
+    "quasar": 74,
+    "vela": 13,
+    "corvus": 2,
+    "risso": 151,
+    "minke": 82,
+    "bryde": 110,
+    "sei": 20,
+    "omura": 5,
+    "retusa": 100,
+    "oxynoe": 54,
+    "cyerce": 73,
+    "aegires": 13,
+    "navanax": 3
+   }
+  },
+  {
+   "wave": {
+    "nova": 293,
+    "pulsar": 177,
+    "quasar": 270,
+    "vela": 55,
+    "corvus": 11
+   }
+  },
+  {
+   "wave": {
+    "nova": 73,
+    "pulsar": 49,
+    "quasar": 85,
+    "vela": 19,
+    "corvus": 5,
+    "risso": 239,
+    "minke": 160,
+    "bryde": 275,
+    "sei": 64,
+    "omura": 14,
+    "retusa": 55,
+    "oxynoe": 37,
+    "cyerce": 63,
+    "aegires": 15,
+    "navanax": 4
+   }
+  },
+  {
+   "wave": {
+    "crawler": 167,
+    "atrax": 124,
+    "spiroct": 242,
+    "arkyid": 63,
+    "toxopid": 13,
+    "nova": 51,
+    "pulsar": 38,
+    "quasar": 74,
+    "vela": 20,
+    "corvus": 3,
+    "retusa": 38,
+    "oxynoe": 29,
+    "cyerce": 55,
+    "aegires": 14,
+    "navanax": 3
+   }
+  },
+  {
+   "wave": {
+    "retusa": 123,
+    "oxynoe": 102,
+    "cyerce": 223,
+    "aegires": 67,
+    "navanax": 15
+   }
+  },
+  {
+   "wave": {
+    "crawler": 46,
+    "atrax": 42,
+    "spiroct": 105,
+    "arkyid": 36,
+    "toxopid": 9,
+    "nova": 30,
+    "pulsar": 28,
+    "quasar": 70,
+    "vela": 24,
+    "corvus": 5,
+    "risso": 46,
+    "minke": 42,
+    "bryde": 105,
+    "sei": 36,
+    "omura": 9,
+    "retusa": 30,
+    "oxynoe": 28,
+    "cyerce": 70,
+    "aegires": 24,
+    "navanax": 6
+   }
+  },
+  {
+   "wave": {
+    "crawler": 198,
+    "atrax": 99,
+    "spiroct": 120,
+    "arkyid": 45,
+    "toxopid": 10,
+    "nova": 102,
+    "pulsar": 57,
+    "quasar": 66,
+    "vela": 23,
+    "corvus": 6,
+    "risso": 198,
+    "minke": 99,
+    "bryde": 120,
+    "sei": 45,
+    "omura": 10,
+    "retusa": 102,
+    "oxynoe": 57,
+    "cyerce": 66,
+    "aegires": 23,
+    "navanax": 5
+   }
+  },
+  {
+   "wave": {
+    "crawler": 144,
+    "atrax": 81,
+    "spiroct": 102,
+    "arkyid": 37,
+    "toxopid": 12,
+    "nova": 81,
+    "pulsar": 48,
+    "quasar": 57,
+    "vela": 19,
+    "corvus": 6,
+    "disrupt": 1,
+    "risso": 144,
+    "minke": 81,
+    "bryde": 102,
+    "sei": 37,
+    "omura": 12,
+    "retusa": 81,
+    "oxynoe": 48,
+    "cyerce": 57,
+    "aegires": 19,
+    "navanax": 6
+   }
+  }
+ ]
+}

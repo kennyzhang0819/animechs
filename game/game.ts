@@ -15,6 +15,7 @@ import {
   loadLevelDocs,
   UNIT_KINDS,
   type LevelSpec,
+  type Mission,
   type TowerKind,
   type UnitKind,
 } from "./levels";
@@ -52,8 +53,12 @@ export interface UiState {
   /** the base's remaining health out of LIVES_START (economy.ts) */
   lives: number;
   livesMax: number;
-  /** every enemy in the script is down — the success screen takes over */
+  /** the mission is met (Sim.won) — the success screen takes over */
   won: boolean;
+  /** what this map asks (levels.ts): the HUD says it the way the deploy panel did */
+  mission: Mission;
+  /** seconds left on a survive mission's clock; 0 where there is no clock */
+  timeLeft: number;
   kills: number;
   /** the esc game menu is up: sim held, resume or abandon from the overlay */
   menuOpen: boolean;
@@ -836,7 +841,7 @@ export class Game {
 
   /** the whole script is dealt with and the base stands */
   private won(): boolean {
-    return !this.sim.lost() && this.sim.remaining() <= 0;
+    return this.sim.won();
   }
 
   /** the esc menu's Resume button */
@@ -870,6 +875,8 @@ export class Game {
       lives: this.sim.lives,
       livesMax: this.sim.livesMax,
       won: this.won(),
+      mission: this.sim.level.mission,
+      timeLeft: Math.max(0, this.sim.deadline - this.sim.time),
       kills: this.sim.kills,
       menuOpen: this.menuOpen,
       scrap: this.sim.charging ? Math.floor(this.sim.scrap) : null,

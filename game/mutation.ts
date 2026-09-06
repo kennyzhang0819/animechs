@@ -52,8 +52,8 @@
  * A MUTATOR CHANGES A WAVE AFTER IT SPAWNS, NEVER WHAT THE SCRIPT SENDS.
  * That is a hard rule and it is what keeps ladder.ts honest: wave counts,
  * enemy totals and the drop-ratio audit stay true whatever the roll came
- * back with. A rule that wants to change the script is a wave transform
- * (see WaveTransform), not a mutator.
+ * back with. A rule that wants to change the script is an edit to the
+ * map's own script, not a mutator.
  */
 
 /** every mutator that exists, by id. The id is what a run spec carries
@@ -218,9 +218,8 @@ export const MUTATIONS: readonly MutationDef[] = [
 /**
  * A CATALOG THAT BREAKS ITS OWN RULES IS A PROGRAMMING ERROR, and it is
  * caught the first time any build or page loads this module rather than on
- * the deploy that happens to roll the offending entry. It is the same
- * bargain validateWaveTransforms makes in levels.ts: the list is authored
- * by hand, so the list checks itself.
+ * the deploy that happens to roll the offending entry: the list is
+ * authored by hand, so the list checks itself.
  */
 for (const m of MUTATIONS) {
   if (!Number.isInteger(m.cost) || m.cost < MUT_COST_MIN || m.cost > MUT_COST_MAX)

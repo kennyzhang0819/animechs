@@ -15,11 +15,12 @@ import { loadBalanceDoc } from "@/game/balance";
 import { loadLayoutDoc } from "@/game/layout";
 import {
   loadLevelDocs,
-  WORLD,
-  WORLDS,
-  worldById,
-  waveGroups,
   MAP_BADGE,
+  missionText,
+  waveGroups,
+  WORLD,
+  worldById,
+  WORLDS,
   type LevelSpec,
   type TowerKind,
 } from "@/game/levels";
@@ -254,6 +255,12 @@ function LoadingScreen({ step, out }: { step: LoadStep; out: boolean }) {
  * banked XP and moved nothing visible would read as a run that paid
  * nothing, so the bar is always there.
  */
+/** seconds as m:ss — the survive clock's face */
+const clock = (seconds: number): string => {
+  const s = Math.max(0, Math.ceil(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
+
 function LevelUpLine({ result }: { result: RunReward }) {
   const p = loadProgress();
   const { level, into, need } = levelProgress(p.xp);
@@ -444,6 +451,7 @@ function MapDialog({
   const top = topTier(progress, world.id);
   const spec = specForTier(world, tier);
   const { waves } = levelSummary(spec);
+  const mission = missionText(spec);
   const step = (d: number): void => onTier(Math.min(top, Math.max(0, tier + d)));
   // THE XP MULTIPLIER AS A MULTIPLE: the whole of what a higher level PAYS.
   // Scrap is the same on every level — the run is priced against the
@@ -541,6 +549,16 @@ function MapDialog({
                 {cleared ? "Cleared" : "New"}
               </span>
             </div>
+            {/* THE MISSION — what this map asks, in one line and one clause.
+                Every map is its own assignment (LevelSpec.mission), and it
+                is the first thing a player needs to know about a map after
+                its name */}
+            <div className="mt-1.5 text-[12px] leading-snug">
+              <span className="font-bold uppercase tracking-widest text-[#7FC4FF]">
+                {mission.title}
+              </span>
+              <span className="text-[#A6A6AF]"> — {mission.detail}</span>
+            </div>
 
             <div
               role="group"
@@ -588,8 +606,12 @@ function MapDialog({
                 health, which is why there is no column for it */}
             <dl className="ms-rule-t mt-3 grid grid-cols-3 gap-2 pt-3 text-center">
               <div>
-                <dt className="text-[10px] uppercase tracking-widest text-[#71717C]">Waves</dt>
-                <dd className="text-[15px] font-bold text-[#EDEDEF]">{waves}</dd>
+                <dt className="text-[10px] uppercase tracking-widest text-[#71717C]">
+                  {spec.mission.kind === "survive" ? "Clock" : "Waves"}
+                </dt>
+                <dd className="text-[15px] font-bold text-[#EDEDEF]">
+                  {spec.mission.kind === "survive" ? clock(spec.mission.minutes * 60) : waves}
+                </dd>
               </div>
               <div>
                 <dt className="text-[10px] uppercase tracking-widest text-[#71717C]">XP</dt>
@@ -1719,9 +1741,19 @@ export default function MechSwarm() {
                     <span className="font-bold" style={{ color: rungColor(hud.tier) }}>
                       {rungLabel(hud.tier)}
                     </span>{" "}
-                    — Wave{" "}
-                    <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span> /{" "}
-                    {hud.totalWaves}
+                    — Wave <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span>
+                    {hud.mission.kind === "survive" ? (
+                      // THE CLOCK IS THE MISSION on a survive map: the wave
+                      // count keeps climbing past the script, so the
+                      // denominator is time, not waves
+                      <>
+                        {" "}
+                        · <span className="font-bold text-[#7FC4FF]">{clock(hud.timeLeft)}</span>{" "}
+                        left
+                      </>
+                    ) : (
+                      <> / {hud.totalWaves}</>
+                    )}
                   </div>
                   {/* THE BASE'S HEALTH, on its OWN line and only where
                       there is any to report.
@@ -2095,8 +2127,16 @@ export default function MechSwarm() {
               <div className="mt-4 space-y-1 text-base text-[#EDEDEF]">
                 <div>
                   Reached wave{" "}
-                  <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span> of{" "}
-                  {hud.totalWaves}
+                  <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span>
+                  {hud.mission.kind === "survive" ? (
+                    <>
+                      {" "}
+                      with <span className="font-bold text-[#EDEDEF]">{clock(hud.timeLeft)}</span>{" "}
+                      left
+                    </>
+                  ) : (
+                    <> of {hud.totalWaves}</>
+                  )}
                 </div>
                 <div>
                   Kills <span className="font-bold text-[#EDEDEF]">{hud.kills}</span>
@@ -2147,8 +2187,11 @@ export default function MechSwarm() {
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="ui-zoom ms-pane-solid w-80 max-w-[calc(100vw-2rem)] border-[#2f5a3a] p-6 text-center">
               <div className="font-display text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
-                <span style={{ color: rungColor(hud.tier) }}>{rungLabel(hud.tier)}</span>{" "}
-                cleared
+                {hud.mission.kind === "survive" ? "Survived" : "Line held"}
+              </div>
+              <div className="mt-1 text-[12px] uppercase tracking-widest text-[#71717C]">
+                <span style={{ color: rungColor(hud.tier) }}>{rungLabel(hud.tier)}</span> ·{" "}
+                {missionText(level).title}
               </div>
               <div className="mt-4 space-y-1.5 text-base text-[#EDEDEF]">
                 <div>
