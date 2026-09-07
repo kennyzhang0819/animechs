@@ -23,6 +23,7 @@
  *   --level <n>      player level for the track's upgrades (default 1 — stock turrets)
  *   --lives <n>      override the mission's lives
  *   --scale <x>      multiply every turret price (default 1)
+ *   --unit-damage <x>  the swarm's damage to structures, as a multiple of Mindustry's (default: the shipped dial, weapons.ts)
  *   --start <n>      opening scrap (default SCRAP_START)
  *   --cap <n>        most turrets the bot may place (default unlimited)
  *   --mix stage|all|duo   what it buys: the stage's tier, every open tier, or duos only
@@ -61,6 +62,7 @@ const MUTATORS = String(opt("mutators", "")).split(",").filter(Boolean);
 const LEVEL = +opt("level", 1);
 const LIVES = opt("lives", null);
 const SCALE = +opt("scale", 1);
+const UNIT_DAMAGE = opt("unit-damage", null);
 const START = opt("start", null);
 const CAP = +opt("cap", Infinity);
 const MIX_MODE = String(opt("mix", "stage"));
@@ -98,6 +100,7 @@ const LA = require(path.join(DIST, "ladder.js"));
 const TR = require(path.join(DIST, "track.js"));
 const TER = require(path.join(DIST, "terrain.js"));
 const MU = require(path.join(DIST, "mutation.js"));
+const WP = require(path.join(DIST, "weapons.js"));
 const TY = require(path.join(DIST, "types.js"));
 const { Sim } = require(path.join(DIST, "sim.js"));
 
@@ -216,6 +219,7 @@ function play() {
   for (const k of TY.TOWER_KINDS)
     E.setScrapPrice(k, Math.max(1, Math.round(E.scrapPriceOf(k) * SCALE)));
   if (START !== null) E.SCRAP_START = +START;
+  if (UNIT_DAMAGE !== null) WP.setUnitDamageScale(+UNIT_DAMAGE);
 
   const sim = new Sim(spec);
   sim.setTech(TR.techStateFor(LEVEL));
@@ -389,7 +393,7 @@ function play() {
   return {
     world: `${world.id} ${world.name}`, mission: L.missionText(world).title, tier: TIER,
     mutators: [...(world.intrinsicMutation ?? []), ...MUTATORS], level: LEVEL,
-    scale: SCALE, start: E.SCRAP_START,
+    scale: SCALE, start: E.SCRAP_START, unitDamage: WP.unitDamageScale(),
     outcome: won ? "WON" : sim.lost() ? "LOST" : "TIMEOUT",
     wave: sim.currentWave(), time: Math.round(sim.time), lives: sim.lives, livesMax: sim.livesMax,
     kills: sim.kills, leaked: sim.leaked, leaks: leaks(), loopLevel: sim.loopLevel,
@@ -406,7 +410,7 @@ if (JSON_OUT) {
 } else {
   console.log(
     `${r.world} — ${r.mission} — rung ${r.tier + 1}${r.mutators.length ? ` [${r.mutators.join(", ")}]` : ""} — level ${r.level}` +
-      `${r.scale !== 1 ? ` — prices x${r.scale}` : ""}`,
+      `${r.scale !== 1 ? ` — prices x${r.scale}` : ""} — unit damage x${r.unitDamage}`,
   );
   console.log(
     `${r.outcome} at wave ${r.wave}, ${mmss(r.time)} in — lives ${r.lives}/${r.livesMax}, kills ${r.kills}, leaked ${r.leaked}` +

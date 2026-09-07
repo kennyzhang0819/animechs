@@ -285,29 +285,38 @@ on the naval front at a six-second gap, Quagmire's forty in the swamp
 against a lighter, tier-2-capped opening — a hundred lives each. The
 survive shape is wired and waiting for a map that wants it.
 
-**Structures stand anywhere unoccupied, open ground included, and they
-block.** A turret on the swarm's path is a wall as well as a gun: the
-walkers' flow field re-solves once per tick when a footprint goes up or
-comes down (`Sim.claimGround`, about ten milliseconds), and a placement
-that would seal the swarm's last route is refused — for now. A structure
-has Mindustry's block health times `TOWER_HP_SCALE`; hurt, it greys and
-smokes like a unit, and at zero it is **wrecked and gone**, its ground
-open again. Today only the Volatile mutator's blast reaches that pool.
-**Enemy attacks are next**: every unit will attack-move, walking at the
-base and hitting whatever stands in the way, and the seal refusal goes
-with them (see the note on `Sim.damageTower`). The headless bot still
-builds on rock only.
+**Structures stand anywhere unoccupied, open ground included, and the
+swarm attacks them.** Every unit attack-moves, Mindustry's GroundAI: it
+walks the field toward the base and every weapon it carries fires at the
+nearest structure within reach on the way (`game/weapons.ts` is the
+arsenal — each unit's mounts, reloads, bullets and splash after
+`UnitTypes.java`; the numbers were written from memory of that file and
+carry VERIFY notes where they are not certain). A structure on open
+ground is solid to the body but **passable to the path at a cost**
+(`STRUCTURE_COST`, Mindustry's own 70): the field routes around a wall
+when the way round is cheaper and into it when it is not, and the bodies
+pressed into it shoot it. So a wall across the lane is not a seal, it is
+a fight at the wall. Structures have Mindustry's block health times
+`TOWER_HP_SCALE`; hurt, they grey and smoke like units; at zero they are
+wrecked and gone, their ground open again. Bullets, missiles and shells
+fly (`Sim.shots`) and hit the structure under them; beams, bolts, flames,
+saps, fields and bombs land at once; a crawler is its own bomb.
+`setUnitDamageScale` is the one dial over the swarm's bite, and the
+playtest takes it as `--unit-damage`. The headless bot still builds on
+rock only and never rebuilds what it loses.
 
 **Every map is checked headless.** `npm run playtest -- --world <id>`
 runs the real sim with an ordinary builder bot at the keyboard (route
 coverage from a dry run, the stage's tier bought round-robin, never a
-sale) and reports where it gets to. Shipped numbers, rung 1, stock
-turrets: Confluence clears in about 19 minutes with 100/100 lives and
-~2,000 turrets against 49,839 bodies; Maelstrom clears its fifty in about
-25 minutes with 94–100 lives and ~1,450 turrets against 49,839; Quagmire
-clears its forty in about 18 minutes with 67–79 lives and ~1,330 turrets
-against 31,000. Run it after any wave, price, mutator or unit edit — a
-map the bot loses is a map with a wall in it.
+sale, never a rebuild) and reports where it gets to. With the swarm
+shooting back at the shipped dial (`unitDamageScale` 0.015): Confluence
+clears in about 20 minutes with 100/100 lives and ~800 turrets standing
+against 49,839 bodies; Maelstrom falls on wave 17 and Quagmire on wave
+19, both to hulls shooting the shoreline turrets faster than a bot that
+never rebuilds can replace them — the naval front is the next thing to
+balance, and the dial and `TOWER_HP_SCALE` are the two numbers to do it
+with. Run it after any wave, price, weapon, mutator or unit edit — a map
+the bot loses is a map with a wall in it.
 
 ### The base
 

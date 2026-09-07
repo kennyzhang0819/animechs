@@ -136,6 +136,7 @@ import {
   waveBonusScrap,
 } from "./economy";
 import { isBuildableWall, isWaterFloor, waterWalkMask, type Terrain } from "./terrain";
+import { MAX_WEAPONS, unitDamageScale, UNIT_REACH, UNIT_WEAPONS } from "./weapons";
 import {
   FxKind,
   TOWER_KINDS,
@@ -143,6 +144,7 @@ import {
   type RGB,
   type Tower,
   type TowerKind,
+  type EnemyShot,
 } from "./types";
 
 /** px per Mindustry world unit — the ported turret geometry is in those */
@@ -736,6 +738,29 @@ export class Sim {
    *  different questions: ufly decides what may SHOOT at a unit, and this
    *  decides which field it walks. */
   readonly unav = new Uint8Array(MAX_UNITS);
+  /**
+   * THE SWARM'S GUNS (weapons.ts). Per unit: a reload clock per weapon
+   * slot (MAX_WEAPONS wide), the structure it has picked to shoot, when
+   * it next looks for one, and how long a held beam has left. The target
+   * is an object reference rather than an index because towers are
+   * spliced out from under everything when they are sold or wrecked.
+   */
+  private readonly ucd = new Float32Array(MAX_UNITS * MAX_WEAPONS);
+  private readonly utT = new Float32Array(MAX_UNITS);
+  private readonly ubeamT = new Float32Array(MAX_UNITS);
+  private readonly utgt: (Tower | null)[] = new Array<Tower | null>(MAX_UNITS).fill(null);
+  /**
+   * WHICH STRUCTURE STANDS ON EACH CELL — every footprint cell of every
+   * live tower, rock or ground, kept by claimGround. It is how a unit
+   * finds something to shoot (nearestStructure) and how a shot in flight
+   * knows it has arrived (updateEnemyShots): one read per cell, never a
+   * walk of the tower list.
+   */
+  private readonly cellTower: (Tower | null)[] = new Array<Tower | null>(NCELLS).fill(null);
+  /** the swarm's bullets, missiles and shells in flight (see EnemyShot) */
+  readonly shots: EnemyShot[] = [];
+  /** crawlers that went off on a structure: gone, and paid for by no one */
+  exploded = 0;
   /** KIND_HEAVY[ukind[i]], same reasoning — the physics split reads it per
    * candidate */
   readonly uheavy = new Uint8Array(MAX_UNITS);
@@ -1103,9 +1128,6 @@ export class Sim {
 
   // seal-test cache: hover asks canPlace every frame, and the test costs two
   // flow-field recomputes — remember the verdict for the last cell asked
-  private sealGx = -1;
-  private sealGy = -1;
-  private sealResult = false;
   /**
    * THE WALKERS' FIELD NEEDS RECOMPUTING: a structure was placed on, or
    * wrecked off, open ground since the last tick. Placement marks the
@@ -1161,13 +1183,15 @@ export class Sim {
     this.lives = this.livesMax;
     this.deadline = mission.kind === "survive" ? mission.minutes * 60 : 0;
     this.loopLevel = 0;
-    this.sealGx = -1;
     this.projs.length = 0;
     // drop the fx pool: the count is the pool, but the bolt-path refs must
     // actually go or the last run's arrays sit unreachable-but-held
     this.fxPts.fill(null, 0, this.fxN);
     this.fxN = 0;
     this.towers.length = 0;
+    this.cellTower.fill(null);
+    this.shots.length = 0;
+    this.exploded = 0;
     this.refreshSpecs(); // an empty board is a duo with no company
     // the official map document IS the world: map-editor saves land in its
     // JSON, and the next full page load plays them. The documents are
@@ -1557,7 +1581,7 @@ export class Sim {
 
   /** enemies left to kill: still unspawned + still walking the field */
   remaining(): number {
-    return this.totalEnemies - this.kills - this.leaked - this.devoured;
+    return this.totalEnemies - this.kills - this.leaked - this.devoured - this.exploded;
   }
 
   /** per-kind head count currently on the field, indexed like UNIT_KINDS */
@@ -1635,7 +1659,7 @@ export class Sim {
 
   private addTower(gx: number, gy: number, kind: TowerKind): void {
     const sz = TOWERS[kind].size;
-    this.towers.push({
+    const tower: Tower = {
       kind,
       gx,
       gy,
@@ -1668,8 +1692,9 @@ export class Sim {
       beamOY: 0,
       beamRot: 0,
       beamDmgT: 0,
-    });
-    this.claimGround(gx, gy, sz, true);
+    };
+    this.towers.push(tower);
+    this.claimGround(tower, true);
     // a count-dependent rung (duo power) reads the board, so the board
     // changing is what moves it
     this.refreshSpecs();
@@ -1713,6 +1738,8 @@ export class Sim {
     this.updateShieldTowers(dt);
     this.fireTowers(dt);
     this.updateProjectiles(dt);
+    this.updateUnitWeapons(dt);
+    this.updateEnemyShots(dt);
 
     const { fxAge, fxTtl } = this;
     for (let e = this.fxN - 1; e >= 0; e--) {
@@ -1885,6 +1912,282 @@ export class Sim {
     if (left === 0) this.nextStep();
   }
 
+  // ---------- the swarm's guns ----------
+
+  /**
+   * THE NEAREST STRUCTURE WITHIN REACH of a point, by centre — read off
+   * cellTower in rings outward, so the first ring that holds anything
+   * ends the search. A unit asks this every few tenths of a second
+   * (utT), never every tick.
+   */
+  private nearestStructure(x: number, y: number, reach: number): Tower | null {
+    const cx = clamp((x / CELL) | 0, 0, COLS - 1);
+    const cy = clamp((y / CELL) | 0, 0, ROWS - 1);
+    const R = Math.min(COLS, Math.ceil(reach / CELL) + 2);
+    const grid = this.cellTower;
+    let best: Tower | null = null;
+    let bd = Infinity;
+    const consider = (i: number): void => {
+      const t = grid[i];
+      if (!t) return;
+      const half = (TOWERS[t.kind].size * CELL) / 2;
+      const dx = t.x - x, dy = t.y - y;
+      const d = Math.sqrt(dx * dx + dy * dy) - half;
+      if (d <= reach && d < bd) {
+        bd = d;
+        best = t;
+      }
+    };
+    consider(cy * COLS + cx);
+    for (let r = 1; r <= R; r++) {
+      const x0 = cx - r, x1 = cx + r, y0 = cy - r, y1 = cy + r;
+      for (let xx = x0; xx <= x1; xx++) {
+        if (xx < 0 || xx >= COLS) continue;
+        if (y0 >= 0) consider(y0 * COLS + xx);
+        if (y1 < ROWS) consider(y1 * COLS + xx);
+      }
+      for (let yy = y0 + 1; yy <= y1 - 1; yy++) {
+        if (yy < 0 || yy >= ROWS) continue;
+        if (x0 >= 0) consider(yy * COLS + x0);
+        if (x1 < COLS) consider(yy * COLS + x1);
+      }
+      // a ring further out cannot hold a structure nearer than one already
+      // found a full ring closer; one extra ring covers the footprint slack
+      if (best && r * CELL > bd + CELL * 2) break;
+    }
+    return best;
+  }
+
+  /** every live structure whose footprint comes within r of a point, once each */
+  private structuresWithin(x: number, y: number, r: number, out: Tower[]): Tower[] {
+    out.length = 0;
+    const R = Math.ceil(r / CELL) + 1;
+    const cx = (x / CELL) | 0, cy = (y / CELL) | 0;
+    for (let yy = Math.max(0, cy - R); yy <= Math.min(ROWS - 1, cy + R); yy++)
+      for (let xx = Math.max(0, cx - R); xx <= Math.min(COLS - 1, cx + R); xx++) {
+        const t = this.cellTower[yy * COLS + xx];
+        if (!t || out.includes(t)) continue;
+        const half = (TOWERS[t.kind].size * CELL) / 2;
+        const dx = t.x - x, dy = t.y - y;
+        if (Math.sqrt(dx * dx + dy * dy) - half <= r) out.push(t);
+      }
+    return out;
+  }
+
+  private readonly splashOut: Tower[] = [];
+
+  /** a unit's hit on a structure, through the one dial (unitDamageScale) */
+  private hitStructure(t: Tower, dmg: number): void {
+    if (dmg <= 0) return;
+    this.damageTower(t, dmg * unitDamageScale());
+  }
+
+  /** a burst at a point: splash to every structure it reaches */
+  private splashStructures(x: number, y: number, splash: number, radius: number): void {
+    if (splash <= 0 || radius <= 0) return;
+    for (const t of this.structuresWithin(x, y, radius, this.splashOut)) this.hitStructure(t, splash);
+  }
+
+  /** is the structure still standing — and within this reach of the point? */
+  private inReach(t: Tower, x: number, y: number, reach: number): boolean {
+    if (this.cellTower[t.gy * COLS + t.gx] !== t) return false;
+    const half = (TOWERS[t.kind].size * CELL) / 2;
+    const dx = t.x - x, dy = t.y - y;
+    return Math.sqrt(dx * dx + dy * dy) - half <= reach;
+  }
+
+  /**
+   * EVERY UNIT ATTACK-MOVES. It walks the field as it always has, and
+   * meanwhile every weapon it carries (UNIT_WEAPONS) fires at the nearest
+   * structure within its reach — Mindustry's GroundAI: pathfind to the
+   * core, shoot whatever the guns can see on the way. A structure across
+   * its route is one it is pressed into by the field (FlowField.soft), in
+   * reach of everything it has.
+   *
+   * Instant weapons (beams, bolts, flames, saps, fields, bombs) land the
+   * moment they fire; the rest put a shot in flight (shots, updateEnemyShots).
+   * A crawler's weapon is itself: it goes off on the structure and is gone.
+   */
+  private updateUnitWeapons(dt: number): void {
+    const { upx, upy, ukind, uspawn, ucd, utT, ubeamT, utgt } = this;
+    for (let i = this.n - 1; i >= 0; i--) {
+      if (uspawn[i] > 0) continue; // still arriving, untouchable and unarmed
+      const kind = UNIT_KINDS[ukind[i]];
+      const ws = UNIT_WEAPONS[kind];
+      if (ws.length === 0) continue;
+      const x = upx[i], y = upy[i];
+      // the target, re-picked every few tenths of a second, dropped the
+      // moment it dies or walks out of the longest gun's reach
+      utT[i] -= dt;
+      let tgt = utgt[i];
+      if (tgt && !this.inReach(tgt, x, y, UNIT_REACH[kind])) tgt = null;
+      if (utT[i] <= 0 || !tgt) {
+        utT[i] = 0.3 + Math.random() * 0.2;
+        tgt = this.nearestStructure(x, y, UNIT_REACH[kind]);
+        utgt[i] = tgt;
+      }
+      let exploded = false;
+      for (let w = 0; w < ws.length && !exploded; w++) {
+        const wp = ws[w];
+        const slot = i * MAX_WEAPONS + w;
+        if (wp.beam) {
+          // a held beam: while it burns it bites every interval, and the
+          // reload only starts once it has gone out
+          if (ubeamT[i] > 0) {
+            ubeamT[i] -= dt;
+            ucd[slot] -= dt;
+            if (ucd[slot] <= 0) {
+              ucd[slot] += wp.beam.interval;
+              if (tgt && this.inReach(tgt, x, y, wp.range)) {
+                this.hitStructure(tgt, wp.damage);
+                this.beamFx(x, y, tgt, wp.beam.interval * 1.5);
+              }
+            }
+            if (ubeamT[i] <= 0) ucd[slot] = wp.reload;
+            continue;
+          }
+          ucd[slot] -= dt;
+          if (ucd[slot] <= 0 && tgt && this.inReach(tgt, x, y, wp.range)) {
+            ubeamT[i] = wp.beam.duration;
+            ucd[slot] = 0;
+          }
+          continue;
+        }
+        ucd[slot] -= dt;
+        if (ucd[slot] > 0) continue;
+        if (!tgt || !this.inReach(tgt, x, y, wp.range)) {
+          ucd[slot] = 0; // ready, waiting for something in reach
+          continue;
+        }
+        // a mirrored pair fires twice a reload, alternating: one mount's
+        // worth of gap between shots
+        ucd[slot] = wp.reload / wp.mounts;
+        const shots = wp.shots ?? 1;
+        switch (wp.fx) {
+          case "bullet":
+          case "missile":
+          case "shell": {
+            for (let k = 0; k < shots; k++) this.fireUnitShot(x, y, tgt, wp, k);
+            break;
+          }
+          case "laser":
+          case "sap":
+          case "rail": {
+            for (let k = 0; k < shots; k++) this.hitStructure(tgt, wp.damage);
+            this.beamFx(x, y, tgt, wp.fx === "rail" ? 0.5 : 0.25);
+            break;
+          }
+          case "lightning": {
+            for (let k = 0; k < shots; k++) {
+              this.hitStructure(tgt, wp.damage);
+              this.boltFx(x, y, tgt);
+            }
+            break;
+          }
+          case "flame": {
+            for (let k = 0; k < shots; k++) this.hitStructure(tgt, wp.damage);
+            this.pushFx(x, y, 0.3, FxKind.Flame, Math.atan2(tgt.y - y, tgt.x - x));
+            this.pushFx(tgt.x, tgt.y, 0.25, FxKind.FlameHit);
+            break;
+          }
+          case "bomb": {
+            // dropped where the unit is — the crawler's own body included
+            this.hitStructure(tgt, wp.damage);
+            this.splashStructures(x, y, wp.splash ?? 0, wp.splashRadius ?? 0);
+            this.pushFx(x, y, 0.4, FxKind.Flak);
+            if (wp.suicide) {
+              this.pushFx(x, y, 0.35, FxKind.Shockwave, 0, wp.splashRadius ?? 0);
+              this.removeUnit(i);
+              this.exploded++;
+              exploded = true;
+            }
+            break;
+          }
+          case "field": {
+            // EnergyFieldAbility: one pulse to every structure in reach
+            const hit = this.structuresWithin(x, y, wp.range, this.splashOut);
+            const max = wp.maxTargets ?? hit.length;
+            for (let k = 0; k < hit.length && k < max; k++) {
+              this.hitStructure(hit[k], wp.damage);
+              this.boltFx(x, y, hit[k]);
+            }
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  /** a bullet, missile or shell leaves the unit for the structure */
+  private fireUnitShot(x: number, y: number, tgt: Tower, wp: import("./weapons").UnitWeapon, k: number): void {
+    const half = (TOWERS[tgt.kind].size * CELL) / 2;
+    // aim at the footprint, with a little spread so a burst is a burst
+    const ax = tgt.x + (Math.random() * 2 - 1) * half * 0.6;
+    const ay = tgt.y + (Math.random() * 2 - 1) * half * 0.6;
+    const dx = ax - x, dy = ay - y;
+    const d = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+    const a = Math.atan2(dy, dx) + (Math.random() * 2 - 1) * 0.05 + (k - ((wp.shots ?? 1) - 1) / 2) * 0.06;
+    const sp = wp.speed;
+    // a shell lives exactly long enough to reach where it was aimed; a
+    // bullet flies its full range and stops at what it hits on the way
+    const life = wp.fx === "shell" ? d / sp : wp.range / sp;
+    this.shots.push({
+      x, y,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      life,
+      damage: wp.damage,
+      splash: wp.splash ?? 0,
+      splashRadius: wp.splashRadius ?? 0,
+      fx: wp.fx,
+    });
+    this.pushFx(x, y, 0.15, wp.fx === "bullet" ? FxKind.ShootSmall : FxKind.ShootBig, a);
+  }
+
+  /** the beam from a unit to the structure it is burning */
+  private beamFx(x: number, y: number, tgt: Tower, ttl: number): void {
+    const dx = tgt.x - x, dy = tgt.y - y;
+    this.pushFx(x, y, ttl, FxKind.Laser, Math.atan2(dy, dx), Math.sqrt(dx * dx + dy * dy));
+  }
+
+  /** a bolt from a unit to the structure, jagged once in the middle */
+  private boltFx(x: number, y: number, tgt: Tower): void {
+    const mx = (x + tgt.x) / 2 + (Math.random() - 0.5) * 12;
+    const my = (y + tgt.y) / 2 + (Math.random() - 0.5) * 12;
+    this.pushBolt(x, y, 0.2, [x, y, mx, my, tgt.x, tgt.y]);
+  }
+
+  /**
+   * THE SWARM'S SHOTS IN FLIGHT. Each flies its heading; the structure
+   * under it — one cellTower read — is what it hits. A shell that runs
+   * out of life bursts where it is (that is where it was aimed); a
+   * missile does the same; a bullet that reaches nothing is spent.
+   */
+  private updateEnemyShots(dt: number): void {
+    const shots = this.shots;
+    for (let p = shots.length - 1; p >= 0; p--) {
+      const sh = shots[p];
+      sh.x += sh.vx * dt;
+      sh.y += sh.vy * dt;
+      sh.life -= dt;
+      const off = sh.x < 0 || sh.y < 0 || sh.x >= W || sh.y >= H;
+      const t = off ? null : this.cellTower[((sh.y / CELL) | 0) * COLS + ((sh.x / CELL) | 0)];
+      if (t) {
+        this.hitStructure(t, sh.damage);
+        if (sh.splash > 0) {
+          this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius);
+          this.pushFx(sh.x, sh.y, 0.35, FxKind.BlastExplosion, 0, sh.splashRadius);
+        } else this.pushFx(sh.x, sh.y, 0.2, FxKind.BulletHit, Math.atan2(sh.vy, sh.vx));
+      } else if (sh.life <= 0 && !off && sh.splash > 0) {
+        this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius);
+        this.pushFx(sh.x, sh.y, 0.35, FxKind.BlastExplosion, 0, sh.splashRadius);
+      }
+      if (t || off || sh.life <= 0) {
+        shots[p] = shots[shots.length - 1];
+        shots.pop();
+      }
+    }
+  }
+
   // ---------- placement ----------
 
   /** no unit may be standing on (or overhanging into) the footprint */
@@ -1911,14 +2214,7 @@ export class Sim {
   }
 
   /** would this footprint cut the swarm's last route to the base? */
-  private wouldSeal(gx: number, gy: number, sz: number): boolean {
-    if (gx === this.sealGx && gy === this.sealGy) return this.sealResult;
-    const sealed = this.field.sealsSpawns(gx, gy, sz);
-    this.sealGx = gx;
-    this.sealGy = gy;
-    this.sealResult = sealed;
-    return sealed;
-  }
+
 
   /**
    * Towers build on HIGHGROUND only: mountain/rock wall cells (not forest,
@@ -2129,16 +2425,11 @@ export class Sim {
       if (gx < s.gx + SHIELD_TOWER_SIZE && s.gx < gx + sz && gy < s.gy + SHIELD_TOWER_SIZE && s.gy < gy + sz)
         return false;
     }
-    if (onGround) {
-      // nothing underfoot, and — UNTIL THE SWARM CAN ATTACK — never the
-      // last route sealed. Blocking is the point (a wall the swarm has to
-      // walk around is a longer kill zone); a wall the swarm cannot walk
-      // around at all is a free win only because it cannot yet chew
-      // through it. When units attack (see damageTower), this refusal
-      // goes and a sealed wall is simply a wall about to be hit
-      if (!this.areaClearOfUnits(gx, gy, sz)) return false;
-      if (this.wouldSeal(gx, gy, sz)) return false;
-    }
+    // nothing underfoot. Sealing the swarm's route is allowed: a wall it
+    // cannot walk around is a wall it walks INTO and shoots (the field
+    // routes through structures at a cost — FlowField.soft), so a seal
+    // is not a win, it is a fight at the wall
+    if (onGround && !this.areaClearOfUnits(gx, gy, sz)) return false;
     return true;
   }
 
@@ -2187,21 +2478,23 @@ export class Sim {
    * down. The field itself is re-solved once, at the next tick
    * (fieldDirty), and the seal check's cache is stale either way.
    */
-  private claimGround(gx: number, gy: number, sz: number, on: boolean): void {
+  private claimGround(t: Tower, on: boolean): void {
     const { blocked } = this.terrain;
-    const { walk } = this.field;
+    const { walk, soft } = this.field;
+    const sz = TOWERS[t.kind].size;
     let changed = false;
-    for (let y = gy; y < gy + sz; y++)
-      for (let x = gx; x < gx + sz; x++) {
+    for (let y = t.gy; y < t.gy + sz; y++)
+      for (let x = t.gx; x < t.gx + sz; x++) {
         const i = y * COLS + x;
+        this.cellTower[i] = on ? t : null;
         if (blocked[i]) continue;
+        // solid to the body, soft to the path: the swarm may route
+        // through it, and shoots it when it gets there
         walk[i] = on ? 1 : 0;
+        soft[i] = on ? 1 : 0;
         changed = true;
       }
-    if (changed) {
-      this.fieldDirty = true;
-      this.sealGx = -1;
-    }
+    if (changed) this.fieldDirty = true;
   }
 
   /** take a structure off the board — sold or wrecked, the ground is the swarm's again */
@@ -2209,7 +2502,7 @@ export class Sim {
     const at = this.towers.indexOf(t);
     if (at < 0) return;
     this.towers.splice(at, 1);
-    this.claimGround(t.gx, t.gy, TOWERS[t.kind].size, false);
+    this.claimGround(t, false);
     this.refreshSpecs();
   }
 
@@ -2425,6 +2718,14 @@ export class Sim {
       this.ufly[i] = fly ? 1 : 0;
       this.unav[i] = layer === "water" ? 1 : 0;
       this.uheavy[i] = KIND_HEAVY[UNIT_ID[kind]];
+      // the guns arrive at a random point in their reload, so a wave does
+      // not open fire in one volley; the target search is staggered too
+      this.utgt[i] = null;
+      this.utT[i] = Math.random() * 0.4;
+      this.ubeamT[i] = 0;
+      const ws = UNIT_WEAPONS[kind];
+      for (let w = 0; w < MAX_WEAPONS; w++)
+        this.ucd[i * MAX_WEAPONS + w] = w < ws.length ? Math.random() * ws[w].reload : 0;
       // start already off-line, drawn from the bias's own resting spread —
       // a wave that all began dead centre would need seconds to fan out
       this.ulat[i] = clamp((Math.random() * 2 - 1) * LAT_SIGMA * 1.7, -1, 1);
@@ -2896,6 +3197,12 @@ export class Sim {
     this.upully[i] = this.upully[n];
     this.uspawn[i] = this.uspawn[n];
     this.uforceScale[i] = this.uforceScale[n];
+    this.utgt[i] = this.utgt[n];
+    this.utgt[n] = null;
+    this.utT[i] = this.utT[n];
+    this.ubeamT[i] = this.ubeamT[n];
+    for (let w = 0; w < MAX_WEAPONS; w++)
+      this.ucd[i * MAX_WEAPONS + w] = this.ucd[n * MAX_WEAPONS + w];
     this.uforceDown[i] = this.uforceDown[n];
     this.uburn[i] = this.uburn[n];
     this.uwet[i] = this.uwet[n];
@@ -3878,13 +4185,11 @@ export class Sim {
    * demolish puff, and it is gone — the board is a thing the swarm can
    * take apart, and its ground is the swarm's again (removeTower).
    *
-   * WHO CALLS THIS TODAY: the Volatile mutator's blast, and nothing else.
-   * WHO WILL CALL IT VERY SOON: every unit on the field. The next turn of
-   * the game is the RTS one — units attack-move, walking at the base and
-   * hitting whatever stands in the way — and this is the hook their
-   * weapons will land on. Until they do, a structure on open ground is a
-   * wall the swarm walks around, never through, which is why canPlace
-   * still refuses to seal the last route.
+   * WHO CALLS THIS: every unit on the field (updateUnitWeapons and the
+   * shots it fires — weapons.ts is the arsenal), and the Volatile
+   * mutator's blast. The swarm attack-moves: it walks at the base and
+   * hits whatever stands in the way, and a wall across its route is a
+   * wall it chews through.
    */
   private damageTower(t: Tower, dmg: number): void {
     if (t.tombShieldTower >= 0) return;

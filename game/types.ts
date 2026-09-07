@@ -122,6 +122,26 @@ export interface Tower {
   beamDmgT: number; // Bullet.timer(1, damageInterval): the beam's own clock
 }
 
+/**
+ * A UNIT'S SHOT IN FLIGHT — a bullet, missile or shell fired at a
+ * structure (Sim.updateUnitWeapons). A flat record like Projectile, but
+ * its own list: it hits STRUCTURES, by the cell it is over, and never a
+ * unit, so it runs none of the swarm's collision machinery. `tx, ty` is
+ * where a shell was aimed — it bursts there when its life runs out even
+ * if it hit nothing on the way.
+ */
+export interface EnemyShot {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  damage: number;
+  splash: number;
+  splashRadius: number;
+  fx: import("./weapons").WeaponFx;
+}
+
 export interface Projectile {
   kind: TowerKind; // which tower's bullet stats drive it
   x: number;

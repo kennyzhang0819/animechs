@@ -10,6 +10,7 @@ import {
 } from "./constants";
 import type { Tower } from "./types";
 import { TOWERS } from "./constants";
+import { STRUCTURE_COST } from "./weapons";
 
 // Module-local bindings for the constants blockedPx/hitsWall/sample read:
 // an imported binding is a getter call under CommonJS interop (dev server,
@@ -70,6 +71,17 @@ export interface Vec2 {
  */
 export class FlowField {
   readonly walk = new Uint8Array(NCELLS); // 1 = impassable to THIS layer
+  /**
+   * A STRUCTURE STANDS HERE, on ground the layer could otherwise walk.
+   * Solid to the body (walk is 1, hitsWall says so) but NOT to the path:
+   * compute() routes through a soft cell at STRUCTURE_COST, so the swarm
+   * walks around a wall when the way round is cheaper and into it when it
+   * is not — and a body pressed into a wall it cannot pass shoots it
+   * (Sim.updateUnitWeapons). Mindustry's own ground pathing.
+   */
+  readonly soft = new Uint8Array(NCELLS);
+  /** walk and not soft — what the path solver treats as rock */
+  private readonly solid = new Uint8Array(NCELLS);
   readonly isGoal = new Uint8Array(NCELLS);
   readonly dist = new Float32Array(NCELLS);
   readonly dirX = new Float32Array(NCELLS);
@@ -91,8 +103,6 @@ export class FlowField {
   private popKey = 0;
 
   // scratch for sealsSpawns
-  private readonly bfsSeen = new Uint8Array(NCELLS);
-  private readonly bfsQ = new Int32Array(NCELLS);
 
   // per-cell entry-cost flag: 1-wide slots, bends, and diagonal pinches.
   // Such cells are physically passable (units thread them one at a time)
@@ -167,11 +177,16 @@ export class FlowField {
   ): void {
     this.spawnMask = spawnMask;
     this.walk.set(blockedBase);
+    this.soft.fill(0);
     this.isGoal.fill(0);
     for (const t of towers) {
       const sz = TOWERS[t.kind].size;
       for (let y = t.gy; y < t.gy + sz; y++)
-        for (let x = t.gx; x < t.gx + sz; x++) this.walk[y * COLS + x] = 1;
+        for (let x = t.gx; x < t.gx + sz; x++) {
+          const i = y * COLS + x;
+          if (!blockedBase[i]) this.soft[i] = 1;
+          this.walk[i] = 1;
+        }
     }
     // compute() seeds its Dijkstra from EVERY isGoal cell at distance 0,
     // which is a multi-source shortest path — so painting a band instead of
@@ -270,7 +285,7 @@ export class FlowField {
    * base, so a wide crowd stays wide.
    */
   private sweepEikonal(): void {
-    const { walk, isGoal, dist, cost } = this;
+    const { solid, isGoal, dist, cost } = this;
     for (let round = 0; round < 2; round++) {
       for (let s = 0; s < 4; s++) {
         const rx = (s & 1) !== 0, ry = (s & 2) !== 0;
@@ -280,14 +295,14 @@ export class FlowField {
           for (let xx = 0; xx < COLS; xx++) {
             const x = rx ? COLS - 1 - xx : xx;
             const i = row + x;
-            if (walk[i] || isGoal[i]) continue;
+            if (solid[i] || isGoal[i]) continue;
             const a = Math.min(
-              x > 0 && !walk[i - 1] ? dist[i - 1] : INF,
-              x < COLS - 1 && !walk[i + 1] ? dist[i + 1] : INF,
+              x > 0 && !solid[i - 1] ? dist[i - 1] : INF,
+              x < COLS - 1 && !solid[i + 1] ? dist[i + 1] : INF,
             );
             const b = Math.min(
-              y > 0 && !walk[i - COLS] ? dist[i - COLS] : INF,
-              y < ROWS - 1 && !walk[i + COLS] ? dist[i + COLS] : INF,
+              y > 0 && !solid[i - COLS] ? dist[i - COLS] : INF,
+              y < ROWS - 1 && !solid[i + COLS] ? dist[i + COLS] : INF,
             );
             if (a >= INF && b >= INF) continue;
             const f = cost[i];
@@ -306,11 +321,18 @@ export class FlowField {
   }
 
   compute(): void {
-    const { walk, isGoal, dist, dirX, dirY, narrow, cost } = this;
+    const { walk, soft, solid, isGoal, dist, dirX, dirY, narrow, cost } = this;
     this.computeClearance();
+    for (let i = 0; i < NCELLS; i++) solid[i] = walk[i] && !soft[i] ? 1 : 0;
     for (let i = 0; i < NCELLS; i++) {
       narrow[i] = 0;
       cost[i] = 1;
+      // a structure's cell is on the path at a price, and nothing else
+      // about the lane (narrowness, the verge) is asked of it
+      if (soft[i]) {
+        cost[i] = 1 + STRUCTURE_COST;
+        continue;
+      }
       if (walk[i]) continue;
       const x = i % COLS, y = (i / COLS) | 0;
       const bL = x <= 0 || walk[i - 1] === 1;
@@ -348,9 +370,9 @@ export class FlowField {
         const nx = x + dx, ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
         const ni = ny * COLS + nx;
-        if (walk[ni]) continue;
+        if (solid[ni]) continue;
         // no cutting corners diagonally through a blocked cell
-        if (dx !== 0 && dy !== 0 && (walk[y * COLS + nx] || walk[ny * COLS + x])) continue;
+        if (dx !== 0 && dy !== 0 && (solid[y * COLS + nx] || solid[ny * COLS + x])) continue;
         const nd = dist[i] + c + cost[ni] - 1;
         if (nd < dist[ni] - 1e-6) {
           dist[ni] = nd;
@@ -379,11 +401,13 @@ export class FlowField {
       // upwind gradient: on each axis, lean toward the cheaper side by
       // exactly how much cheaper it is. Both magnitudes vary continuously
       // with the field, so the heading turns smoothly across open ground
-      // rather than snapping between eight compass points
-      const xm = x > 0 && !walk[i - 1] ? dist[i - 1] : INF;
-      const xp = x < COLS - 1 && !walk[i + 1] ? dist[i + 1] : INF;
-      const ym = y > 0 && !walk[i - COLS] ? dist[i - COLS] : INF;
-      const yp = y < ROWS - 1 && !walk[i + COLS] ? dist[i + COLS] : INF;
+      // rather than snapping between eight compass points. A SOFT
+      // neighbour counts: the heading leans INTO a structure the path
+      // runs through, which is what presses the body against it
+      const xm = x > 0 && !solid[i - 1] ? dist[i - 1] : INF;
+      const xp = x < COLS - 1 && !solid[i + 1] ? dist[i + 1] : INF;
+      const ym = y > 0 && !solid[i - COLS] ? dist[i - COLS] : INF;
+      const yp = y < ROWS - 1 && !solid[i + COLS] ? dist[i + COLS] : INF;
       let bx = 0, by = 0;
       if (xm < xp) { if (xm < d) bx = xm - d; } else if (xp < d) bx = d - xp;
       if (ym < yp) { if (ym < d) by = ym - d; } else if (yp < d) by = d - yp;
@@ -426,38 +450,7 @@ export class FlowField {
     }
   }
 
-  /**
-   * Would blocking this 2x2 footprint cut every spawn cell off from the goals?
-   * A BFS reachability probe — nothing is mutated and no field is recomputed.
-   * 4-connectivity matches the movement rules: the no-corner-cutting check in
-   * compute() only permits a diagonal when both orthogonal cells are open, so
-   * a diagonal never connects anything a 4-connected path doesn't.
-   */
-  sealsSpawns(bgx: number, bgy: number, size = 2): boolean {
-    const { walk, isGoal, bfsSeen: seen, bfsQ: q } = this;
-    seen.fill(0);
-    let n = 0;
-    for (let i = 0; i < NCELLS; i++)
-      if (isGoal[i] && !walk[i]) {
-        seen[i] = 1;
-        q[n++] = i;
-      }
-    for (let h = 0; h < n; h++) {
-      const i = q[h];
-      const x = i % COLS, y = (i / COLS) | 0;
-      if (this.spawnMask?.[i]) return false; // a spawn pad is still reachable
-      for (const [dx, dy] of D4) {
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
-        if (nx >= bgx && nx < bgx + size && ny >= bgy && ny < bgy + size) continue;
-        const ni = ny * COLS + nx;
-        if (seen[ni] || walk[ni]) continue;
-        seen[ni] = 1;
-        q[n++] = ni;
-      }
-    }
-    return true;
-  }
+  
 
   /** bilinear sample of the direction field at a world position */
   sample(px: number, py: number, out: Vec2): void {

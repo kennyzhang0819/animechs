@@ -188,6 +188,13 @@ const FLOOR_DUST: readonly RGB[] = [
 /** Pal.lancerLaser #a9d8ff — arc's bolt and lancer's beam are both drawn
  * in it, and both wash out to white as they fade */
 const PAL_LANCER = PAL.lancerLaser;
+/** how each kind of swarm shot is drawn: sprite size along/across the heading, and the pair's colours */
+const SHOT_LOOK: Record<string, { along: number; across: number; back: RGB; front: RGB }> = {
+  bullet: { along: 12 * MU, across: 9 * MU, back: PAL.copperAmmoBack, front: PAL.copperAmmoFront },
+  missile: { along: 8 * MU, across: 8 * MU, back: PAL.missileYellowBack, front: PAL.missileYellow },
+  shell: { along: 14 * MU, across: 14 * MU, back: PAL.gray, front: PAL.lightGray },
+};
+
 /** Pal.lightFlame #ffdd55, Pal.darkFlame #db401c, and Arc's Color.gray */
 const LIGHT_FLAME = [0xff / 255, 0xdd / 255, 0x55 / 255] as const;
 const DARK_FLAME = [0xdb / 255, 0x40 / 255, 0x1c / 255] as const;
@@ -1979,6 +1986,16 @@ export class Renderer {
       const [back, front] = BULLET_REGIONS[sp.region];
       this.push(dyn, p.x, p.y, along, across, rot, back, sp.back[0], sp.back[1], sp.back[2], 1);
       this.push(dyn, p.x, p.y, along, across, rot, front, sp.front[0], sp.front[1], sp.front[2], 1);
+    }
+    // THE SWARM'S SHOTS (Sim.shots): the standard bullet sprite pair, in
+    // the ammo's colours — copper for a gun, missile yellow for a warhead,
+    // grey for a shell — drawn along their heading like the turrets' own
+    for (const sh of sim.shots) {
+      if (sh.x < vx0 - 48 || sh.x > vx1 + 48 || sh.y < vy0 - 48 || sh.y > vy1 + 48) continue;
+      const rot = Math.atan2(sh.vy, sh.vx);
+      const look = SHOT_LOOK[sh.fx] ?? SHOT_LOOK.bullet;
+      this.push(dyn, sh.x, sh.y, look.along, look.across, rot, UV_BULLET_BACK, look.back[0], look.back[1], look.back[2], 1);
+      this.push(dyn, sh.x, sh.y, look.along, look.across, rot, UV_BULLET, look.front[0], look.front[1], look.front[2], 1);
     }
     for (let f = 0; f < fxN; f++) {
       const kind = fxKind[f] as FxKind;
