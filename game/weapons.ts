@@ -92,19 +92,14 @@ export interface UnitWeapon {
 }
 
 /**
- * ONE DIAL OVER EVERY UNIT WEAPON. Mindustry's numbers are written for a
- * game whose waves are two daggers and forty at the end; this game's
- * open on forty and end on two and a half thousand, so a swarm at
- * Mindustry's per-body bite has fifty to a hundred times the fire of the
- * wave those numbers were tuned against, and at x1 the headless bot's
- * opening board is gone by wave six on every map. The conversion is a
- * body here being a small fraction of the fight a body there is: at
- * x0.02 the bot — which never rebuilds and never walls — dies on
- * Confluence's wave 48, at x0.01 it clears with every life. Balance the
- * swarm's bite here (setUnitDamageScale), not row by row — the rows are
- * Mindustry's, and meant to stay so.
+ * ONE DIAL OVER EVERY UNIT WEAPON, at 1: the rows below are Mindustry's
+ * and the swarm bites exactly as they say. Balance is not done yet; when
+ * it is, it is done here (setUnitDamageScale) and on TOWER_HP_SCALE, not
+ * row by row — the rows are meant to stay Mindustry's. For the record:
+ * with the turrets at twice upstream health, x1 lost every map by wave
+ * six and x0.015 cleared Confluence; the turrets are at ten times now.
  */
-let damageScale = 0.015;
+let damageScale = 1;
 export const unitDamageScale = (): number => damageScale;
 export function setUnitDamageScale(x: number): void {
   damageScale = Math.max(0, x);

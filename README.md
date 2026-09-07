@@ -301,22 +301,21 @@ a fight at the wall. Structures have Mindustry's block health times
 wrecked and gone, their ground open again. Bullets, missiles and shells
 fly (`Sim.shots`) and hit the structure under them; beams, bolts, flames,
 saps, fields and bombs land at once; a crawler is its own bomb.
-`setUnitDamageScale` is the one dial over the swarm's bite, and the
-playtest takes it as `--unit-damage`. The headless bot still builds on
-rock only and never rebuilds what it loses.
+Structures carry **ten times** Mindustry's block health (`TOWER_HP_SCALE`)
+and the swarm's damage is Mindustry's own, unscaled (`setUnitDamageScale`
+at 1) — balance is deliberately not done yet, and those two numbers are
+where it will be done. The playtest takes the dial as `--unit-damage`.
+The headless bot still builds on rock only and never rebuilds what it
+loses.
 
 **Every map is checked headless.** `npm run playtest -- --world <id>`
 runs the real sim with an ordinary builder bot at the keyboard (route
 coverage from a dry run, the stage's tier bought round-robin, never a
-sale, never a rebuild) and reports where it gets to. With the swarm
-shooting back at the shipped dial (`unitDamageScale` 0.015): Confluence
-clears in about 20 minutes with 100/100 lives and ~800 turrets standing
-against 49,839 bodies; Maelstrom falls on wave 17 and Quagmire on wave
-19, both to hulls shooting the shoreline turrets faster than a bot that
-never rebuilds can replace them — the naval front is the next thing to
-balance, and the dial and `TOWER_HP_SCALE` are the two numbers to do it
-with. Run it after any wave, price, weapon, mutator or unit edit — a map
-the bot loses is a map with a wall in it.
+sale, never a rebuild) and reports where it gets to. Balance is not
+done: with the swarm at Mindustry's damage and the turrets at ten times
+Mindustry's health, expect the bot to lose every map early. Run it after
+any wave, price, weapon, mutator or unit edit — a map the bot loses is a
+map with a wall in it.
 
 ### The base
 

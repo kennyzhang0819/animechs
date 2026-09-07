@@ -1334,11 +1334,13 @@ export const targetingLine = (s: TowerStats): string =>
  * THE DIAL IS WHY THEY ARE HIGHER THAN UPSTREAM. In Mindustry a turret
  * stands behind walls and is not meant to take fire; here the turret IS
  * the wall — it stands on open ground in the swarm's path if the player
- * puts it there — so every pool is scaled by TOWER_HP_SCALE. Two is the
- * number: a duo takes 500, which is forty dagger pops or under two reign
- * pops, and a meltdown takes 6,400.
+ * puts it there, and the swarm shoots it with Mindustry's own guns
+ * (weapons.ts) — so every pool is TEN TIMES the upstream block health: a
+ * duo takes 2,500, a meltdown 32,000. Balance is not done yet and this
+ * is the one number it will be done with, alongside the swarm's dial
+ * (setUnitDamageScale).
  */
-export const TOWER_HP_SCALE = 2;
+export const TOWER_HP_SCALE = 10;
 /** a tower's full pool — Mindustry's health for the block, times the dial */
 export const towerMaxHp = (kind: import("./types").TowerKind): number =>
   TOWERS[kind].health * TOWER_HP_SCALE;
