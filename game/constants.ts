@@ -66,7 +66,35 @@ export const PAL = {
   white: pal(0xffffff),
   lightGray: pal(0xbfbfbf), // Arc Color.lightGray
   gray: pal(0x7f7f7f), // Arc Color.gray
+  lightishGray: pal(0xa2a2a2),
+  stoneGray: pal(0x8f8f8f),
+  /** Pal.heal — the support line's whole palette: nova's bolts, pulsar's
+   *  arcs, quasar's and corvus's beams, the naval support's plasma */
+  heal: pal(0x98ffa9),
+  /** the crawler line's purple: Pal.sap is the light, sapBullet the
+   *  beam and shell face, sapBulletBack the shell rim and the blast sparks */
+  sap: pal(0x665c9f),
+  sapBullet: pal(0xbf92f9),
+  sapBulletBack: pal(0x6d56bf),
+  /** Pal.suppress — Pal.sap x 1.6, the disrupt missile's spark */
+  suppress: pal(0xa393fe),
+  /** Pal.unitFront / unitBack — zenith's missiles */
+  unitFront: pal(0xffa665),
+  unitBack: pal(0xd06b53),
+  surge: pal(0xf3e979),
+  /** Liquids.slag.color — what an atrax spits */
+  slag: pal(0xffa166),
 } as const;
+
+/**
+ * Team.crux.color — the enemy faction's red. Mindustry tints every unit's
+ * `-cell` region with its team colour (UnitType.drawCell), colours its
+ * shield halo in it (UnitType.shieldColor) and burns its engines in it
+ * (UnitEngine.draw); the swarm here is the crux team, so all three wear
+ * this. The player's sharded amber (Pal.accent) stays on the core.
+ */
+export const TEAM_CRUX = "#f25555";
+export const TEAM_CRUX_RGB: RGB = pal(0xf25555);
 
 /**
  * BasicBulletType.draw, 1:1. Mindustry lays a `-back` region and a shorter

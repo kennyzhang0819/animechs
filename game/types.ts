@@ -174,10 +174,21 @@ export interface EnemyShot {
   vx: number;
   vy: number;
   life: number;
+  /** seconds flown — with `life` it is the shot's fin/fout, which is what
+   *  its sprite shrinks on (BasicBulletType.draw) */
+  age: number;
   damage: number;
   splash: number;
   splashRadius: number;
-  fx: import("./weapons").WeaponFx;
+  /** how it is drawn and what it leaves where it lands — the weapon's
+   *  ShotLook, shared by every shot that weapon fires */
+  look: import("./weapons").ShotLook;
+  /** a bomb (BombBulletType, collides = false) falls where it was dropped
+   *  and bursts when its fuse runs out; nothing it passes over is hit */
+  collide: boolean;
+  /** ArtilleryBulletType.update's trail clock, and the missiles' chance
+   *  roll — see Sim.updateEnemyShots */
+  trailT: number;
 }
 
 export interface Projectile {
@@ -264,6 +275,34 @@ export const enum FxKind {
   ShootLiquid = 39, // Fx.shootLiquid — the spray a liquid turret's muzzle throws
   HitLiquid = 40, // Fx.hitLiquid — droplets scattering where an orb lands
   DamageSmoke = 41, // the soot a hurt unit sheds — this game's own, see Sim.updateStatus
+  // ---- what the swarm's own weapons draw (game/weapons.ts) -------------
+  /** SapBulletType.draw: the spider line, a Drawf.laser from the mount to
+   *  the target that retracts onto the mount as it fades. `sides` names
+   *  its SapStyle, `len`/`rot` where it reached */
+  Sap = 42,
+  /** Fx.chainLightning — EnergyFieldAbility's damageEffect: a straight
+   *  jittered chain from the unit to each thing its field hit, white
+   *  washing into its colour. The path rides fxPts like a bolt's */
+  ChainLightning = 43,
+  Pulverize = 44, // Fx.pulverize — the crawler's own burst
+  SapExplosion = 45, // Fx.sapExplosion — the purple artillery's landing
+  MassiveExplosion = 46, // Fx.massiveExplosion — bryde's shell
+  RailShoot = 47, // Fx.railShoot — omura's muzzle
+  RailTrail = 48, // Fx.railTrail — laid every 60 units down omura's line
+  /** navanax's emp burst: the ring at the splash radius (`len`) with ten
+   *  spikes on its rim, and the flash inside it */
+  EmpHit = 49,
+  EmpTrail = 50, // the emp round's trailEffect — two wings across its line
+  HitLaserBlast = 51, // Fx.hitLaserBlast — a laser's landing, in its colour
+  HitMeltHeal = 52, // Fx.hitMeltHeal — where a green beam rests
+  HitLaser = 53, // Fx.hitLaser — a heal bolt's landing
+  GreenCloud = 54, // Fx.greenCloud — the retusa torpedo's afterglow
+  /** ExplosionEffect with a style (`sides` into EXPLOSION_STYLES): cyerce's
+   *  plasma missile and the disrupt missile's burst */
+  Explosion = 55,
+  ShootBig2 = 56, // Fx.shootBig2 — the big artillery's muzzle
+  HitEmpSpark = 57, // Fx.hitEmpSpark — the emp cannon's muzzle spray
+  ShootHeal = 58, // Fx.shootHeal — a heal-coloured shootSmall
 }
 
 /** an r,g,b triple in 0..1, the form every draw call wants */

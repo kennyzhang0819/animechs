@@ -314,8 +314,13 @@ swarm attacks them.** Every unit attack-moves, Mindustry's GroundAI: it
 walks the field toward the base and every weapon it carries fires at the
 nearest structure within reach on the way (`game/weapons.ts` is the
 arsenal — each unit's mounts, reloads, bullets and splash after
-`UnitTypes.java`; the numbers were written from memory of that file and
-carry VERIFY notes where they are not certain). A structure on open
+`UnitTypes.java`. Every weapon's LOOK — sprite, size, colours, beam
+palette, what lands where it hits — is read off that file and the bullet
+classes 1:1; the bite was written from memory before the repository was
+reachable and each row notes where upstream now differs, keeping its own
+number until a balance pass). The swarm is Mindustry's crux team: every
+unit wears its `-cell` region in crux red, its shields and force fields
+are that red, and a flyer's engines burn in it. A structure on open
 ground is solid to the body but **passable to the path at a cost**
 (`STRUCTURE_COST`, Mindustry's own 70): the field routes around a wall
 when the way round is cheaper and into it when it is not, and the bodies

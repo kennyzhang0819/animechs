@@ -1,4 +1,4 @@
-import { UNIT_SPRITE } from "./constants";
+import { TEAM_CRUX, UNIT_SPRITE } from "./constants";
 import {
   floorCanvas,
   FLOOR_VARIANTS,
@@ -716,6 +716,33 @@ export const UV_SHELL_BACK = uv(T5 + 176, 1792, 36, 36);
 // rule — white, source size, facing +x
 export const UV_MISSILE = uv(T5 + 224, 1792, 36, 36);
 export const UV_MISSILE_BACK = uv(T5 + 272, 1792, 36, 36);
+/**
+ * THE SWARM'S OWN BULLET SPRITES, on the rest of the same band (x=1344..,
+ * y=1792..1920, the free stretch between the turrets' pairs and the naval
+ * hulls). The same rule as the three pairs above — white, source size,
+ * facing +x, the `-back` beside its front:
+ *
+ *   - circle-bullet (48): navanax's emp round;
+ *   - mine-bullet (64): the retusa's torpedo;
+ *   - missile-large (56): cyerce's plasma missile;
+ *   - disrupt-missile (39x60): the disrupt's missile UNIT, which is drawn as
+ *     itself — coloured art with Pal.darkOutline, so it takes the outline
+ *     pass a unit sprite does and is pushed untinted;
+ *   - laser (4x48) and laser-end (72): what Drawf.laser draws a sap beam
+ *     with — the strip is the beam's cross-section (4 along, 48 across,
+ *     so it is packed unrotated and stretched along the line), the cap a
+ *     soft disc laid on each end.
+ */
+export const UV_CIRCLE_BULLET = uv(T5 + 336, 1792, 48, 48);
+export const UV_CIRCLE_BULLET_BACK = uv(T5 + 392, 1792, 48, 48);
+export const UV_MINE_BULLET = uv(T5 + 448, 1792, 64, 64);
+export const UV_MINE_BULLET_BACK = uv(T5 + 520, 1792, 64, 64);
+export const UV_MISSILE_LARGE = uv(T5 + 592, 1792, 56, 56);
+export const UV_MISSILE_LARGE_BACK = uv(T5 + 656, 1792, 56, 56);
+export const UV_DISRUPT_MISSILE = uv(T5 + 720, 1792, 64, 64);
+export const UV_LASER_END = uv(T5 + 800, 1792, 72, 72);
+export const UV_LASER = uv(T5 + 896, 1814, 4, 48);
+// the second row of the band, under the small ones: nothing yet
 
 /**
  * THE NAVAL BAND (x=1024, y=1920..2688) — the ten hulls of the two water
@@ -998,6 +1025,48 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
 
 // Mindustry world units → px (CELL / 8, see constants.ts)
 const MU = 2.5;
+
+/**
+ * UnitType.UnitEngine: where a flyer's engine flame burns, in px off the
+ * unit's centre — `x` across its heading, `y` along it (negative is
+ * astern) — its radius and the way the inner white disc is thrown
+ * (`rotation`, radians, in the unit's frame). UnitEngine.draw paints the
+ * outer disc in the OWNING TEAM's colour (engineColor is null on every
+ * flyer here), which is the second place the crux red shows on a unit.
+ *
+ * A type that sets none gets one on its axis at (0, -engineOffset) of
+ * engineSize, rotation -90 (UnitType.init); the disrupt sets two mirrored
+ * pairs and so gets none on its axis. The disrupt draws half again its
+ * native scale (UNIT_ART), so its offsets are scaled with it.
+ */
+export interface UnitEngine {
+  x: number;
+  y: number;
+  radius: number;
+  rotation: number;
+}
+const engine = (x: number, y: number, radius: number, rotDeg: number, scl = 1): UnitEngine => ({
+  x: x * MU * scl,
+  y: y * MU * scl,
+  radius: radius * MU * scl,
+  rotation: (rotDeg * Math.PI) / 180,
+});
+const axial = (offset: number, size: number): readonly UnitEngine[] => [engine(0, -offset, size, -90)];
+const mirrored = (x: number, y: number, radius: number, rotDeg: number, scl: number): readonly UnitEngine[] => [
+  engine(x, y, radius, rotDeg, scl),
+  engine(-x, y, radius, (180 - rotDeg + 360) % 360, scl),
+];
+export const UNIT_ENGINES: Partial<Record<UnitKind, readonly UnitEngine[]>> = {
+  flare: axial(5.75, 2.5), // engineOffset 5.75, engineSize default 2.5
+  horizon: axial(7.8, 2.5),
+  zenith: axial(12, 3),
+  antumbra: axial(21, 5.3),
+  eclipse: axial(38, 7.3),
+  disrupt: [
+    ...mirrored(95 / 4, -56 / 4, 5, 330, 1.5),
+    ...mirrored(89 / 4, -95 / 4, 4, 315, 1.5),
+  ],
+};
 
 /** part art + walk-cycle geometry for a ground (mech) unit */
 export interface MechArt {
@@ -1540,6 +1609,52 @@ const SPRITES = {
   baseTeam: "/mindustry/sprites/blocks/storage/core-nucleus-team.png",
   bullet: "/mindustry/sprites/effects/bullet.png",
   bulletBack: "/mindustry/sprites/effects/bullet-back.png",
+  // the swarm's own bullet sprites beyond the turrets' three pairs (see
+  // UV_CIRCLE_BULLET): the emp round, the retusa torpedo, cyerce's plasma
+  // missile, the disrupt's missile unit, and the sap beam's line and cap
+  circleBullet: "/mindustry/sprites/effects/circle-bullet.png",
+  circleBulletBack: "/mindustry/sprites/effects/circle-bullet-back.png",
+  mineBullet: "/mindustry/sprites/effects/mine-bullet.png",
+  mineBulletBack: "/mindustry/sprites/effects/mine-bullet-back.png",
+  missileLarge: "/mindustry/sprites/effects/missile-large.png",
+  missileLargeBack: "/mindustry/sprites/effects/missile-large-back.png",
+  disruptMissile: "/mindustry/sprites/units/weapons/disrupt-missile.png",
+  laser: "/mindustry/sprites/effects/laser.png",
+  laserEnd: "/mindustry/sprites/effects/laser-end.png",
+  // THE TEAM CELLS: every unit's `-cell` region, the part of its hull
+  // Mindustry paints in the owning team's colour (UnitType.drawCell). The
+  // dagger and the flare have none of their own and fall back to
+  // power-cell, exactly as UnitType.load does
+  powerCell: "/mindustry/sprites/units/power-cell.png",
+  maceCell: "/mindustry/sprites/units/mace-cell.png",
+  fortressCell: "/mindustry/sprites/units/fortress-cell.png",
+  scepterCell: "/mindustry/sprites/units/scepter-cell.png",
+  reignCell: "/mindustry/sprites/units/reign-cell.png",
+  crawlerCell: "/mindustry/sprites/units/crawler-cell.png",
+  atraxCell: "/mindustry/sprites/units/atrax-cell.png",
+  spiroctCell: "/mindustry/sprites/units/spiroct-cell.png",
+  arkyidCell: "/mindustry/sprites/units/arkyid-cell.png",
+  toxopidCell: "/mindustry/sprites/units/toxopid-cell.png",
+  novaCell: "/mindustry/sprites/units/nova-cell.png",
+  pulsarCell: "/mindustry/sprites/units/pulsar-cell.png",
+  quasarCell: "/mindustry/sprites/units/quasar-cell.png",
+  velaCell: "/mindustry/sprites/units/vela-cell.png",
+  corvusCell: "/mindustry/sprites/units/corvus-cell.png",
+  horizonCell: "/mindustry/sprites/units/horizon-cell.png",
+  zenithCell: "/mindustry/sprites/units/zenith-cell.png",
+  antumbraCell: "/mindustry/sprites/units/antumbra-cell.png",
+  eclipseCell: "/mindustry/sprites/units/eclipse-cell.png",
+  disruptCell: "/mindustry/sprites/units/disrupt-cell.png",
+  rissoCell: "/mindustry/sprites/units/risso-cell.png",
+  minkeCell: "/mindustry/sprites/units/minke-cell.png",
+  brydeCell: "/mindustry/sprites/units/bryde-cell.png",
+  seiCell: "/mindustry/sprites/units/sei-cell.png",
+  omuraCell: "/mindustry/sprites/units/omura-cell.png",
+  retusaCell: "/mindustry/sprites/units/retusa-cell.png",
+  oxynoeCell: "/mindustry/sprites/units/oxynoe-cell.png",
+  cyerceCell: "/mindustry/sprites/units/cyerce-cell.png",
+  aegiresCell: "/mindustry/sprites/units/aegires-cell.png",
+  navanaxCell: "/mindustry/sprites/units/navanax-cell.png",
 } as const;
 
 // Mindustry's sharded (player) team color — the team overlay multiplies by it
@@ -1583,8 +1698,9 @@ const BLOCK_OUTLINE_R = 0; // Block.outlineRadius
  * game's packed sprites. Runs at native sprite resolution; upscales after,
  * so outline thickness stays proportional to the art like in Mindustry.
  */
-function outlined(src: HTMLImageElement, color: string, radius: number): HTMLCanvasElement {
-  const w = src.naturalWidth, h = src.naturalHeight;
+function outlined(src: HTMLImageElement | HTMLCanvasElement, color: string, radius: number): HTMLCanvasElement {
+  const w = src instanceof HTMLImageElement ? src.naturalWidth : src.width;
+  const h = src instanceof HTMLImageElement ? src.naturalHeight : src.height;
   const cv = document.createElement("canvas");
   cv.width = w;
   cv.height = h;
@@ -1637,6 +1753,46 @@ function outlined(src: HTMLImageElement, color: string, radius: number): HTMLCan
     }
   }
   cc.putImageData(out, 0, 0);
+  return cv;
+}
+
+/**
+ * UnitType.drawCell, baked at pack time: the unit's `-cell` region laid over
+ * its body, tinted the OWNING TEAM's colour — `Draw.color(cellColor(unit));
+ * Draw.rect(cellRegion, unit.x, unit.y, ...)`. Both regions are centred on
+ * the unit, so the cell sits centred on the body whatever their sizes (a
+ * risso's cell is packed on a 96px square around a 70x78 hull). The tint
+ * is the base's team-overlay recipe — multiply, then destination-in to
+ * keep the cell's own alpha — which is what Draw.color does to a sprite.
+ *
+ * The swarm is the crux team, so every cell is crux red. Mindustry darkens
+ * the cell toward black as the unit's health falls (cellColor lerps from
+ * black by healthf); here the whole body greys on the same signal
+ * (HP_TINT), so a baked full-health cell darkens with it.
+ */
+function withCell(body: HTMLImageElement, cell: HTMLImageElement): HTMLCanvasElement {
+  const w = body.naturalWidth, h = body.naturalHeight;
+  const cv = document.createElement("canvas");
+  cv.width = w;
+  cv.height = h;
+  const cc = cv.getContext("2d");
+  if (!cc) throw new Error("2d context unavailable for team cell");
+  cc.imageSmoothingEnabled = false;
+  cc.drawImage(body, 0, 0);
+  const cw = cell.naturalWidth, ch = cell.naturalHeight;
+  const tinted = document.createElement("canvas");
+  tinted.width = cw;
+  tinted.height = ch;
+  const tc = tinted.getContext("2d");
+  if (!tc) throw new Error("2d context unavailable for team cell tint");
+  tc.imageSmoothingEnabled = false;
+  tc.drawImage(cell, 0, 0);
+  tc.globalCompositeOperation = "multiply";
+  tc.fillStyle = TEAM_CRUX;
+  tc.fillRect(0, 0, cw, ch);
+  tc.globalCompositeOperation = "destination-in";
+  tc.drawImage(cell, 0, 0);
+  cc.drawImage(tinted, Math.round((w - cw) / 2), Math.round((h - ch) / 2));
   return cv;
 }
 
@@ -2011,11 +2167,11 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // is pre-offset to one side — the renderer mirrors it for the other leg
   drawFacingRight(c, antialiased(img.daggerLeg), 64, 608, 48);
   drawFacingRight(c, antialiased(img.daggerBase), 192, 608, 48);
-  drawFacingRight(c, antialiased(img.dagger), 320, 608, 48);
+  drawFacingRight(c, antialiased(withCell(img.dagger, img.powerCell)), 320, 608, 48);
   drawFacingRight(c, antialiased(img.largeWeapon), 448, 608, 48);
   drawFacingRight(c, antialiased(img.maceLeg), 576, 608, 64);
   drawFacingRight(c, antialiased(img.maceBase), 704, 608, 64);
-  drawFacingRight(c, antialiased(img.mace), 832, 608, 64);
+  drawFacingRight(c, antialiased(withCell(img.mace, img.maceCell)), 832, 608, 64);
   // flamethrower is 48x56 — rotate it to face +x by hand
   c.save();
   c.translate(960, 608);
@@ -2026,14 +2182,14 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // fortress parts at native size in their 128px cells (see the UV note)
   drawFacingRight(c, antialiased(img.fortressLeg), 576, 448, 80, 60);
   drawFacingRight(c, antialiased(img.fortressBase), 704, 448, 64);
-  drawFacingRight(c, antialiased(img.fortress), 832, 448, 100, 80);
+  drawFacingRight(c, antialiased(withCell(img.fortress, img.fortressCell)), 832, 448, 100, 80);
   drawFacingRight(c, antialiased(img.artillery), 960, 448, 48, 56);
 
   // support line: each part at native size in its own cell, art left of the
   // silhouettes on the same row (see the UV note)
   drawFacingRight(c, antialiased(img.novaLeg), 64, 544, 48);
   drawFacingRight(c, antialiased(img.novaBase), 192, 544, 48);
-  drawFacingRight(c, antialiased(img.nova), 320, 544, 56);
+  drawFacingRight(c, antialiased(withCell(img.nova, img.novaCell)), 320, 544, 56);
   drawFacingRight(c, antialiased(img.healWeapon), 448, 544, 48);
   drawFacingRight(c, silhouetted(img.novaLeg), 576, 544, 48);
   drawFacingRight(c, silhouetted(img.novaBase), 704, 544, 48);
@@ -2041,7 +2197,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   drawFacingRight(c, silhouetted(img.healWeapon), 960, 544, 48);
   drawFacingRight(c, antialiased(img.pulsarLeg), 64, 672, 64);
   drawFacingRight(c, antialiased(img.pulsarBase), 192, 672, 48);
-  drawFacingRight(c, antialiased(img.pulsar), 320, 672, 68, 58);
+  drawFacingRight(c, antialiased(withCell(img.pulsar, img.pulsarCell)), 320, 672, 68, 58);
   drawFacingRight(c, antialiased(img.healShotgun), 448, 672, 50);
   drawFacingRight(c, silhouetted(img.pulsarLeg), 576, 672, 64);
   drawFacingRight(c, silhouetted(img.pulsarBase), 704, 672, 48);
@@ -2052,7 +2208,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // every other unit draws at
   drawFacingRight(c, antialiased(img.quasarLeg), 64, 1728, 80);
   drawFacingRight(c, antialiased(img.quasarBase), 192, 1728, 80);
-  drawFacingRight(c, antialiased(img.quasar), 320, 1728, 80);
+  drawFacingRight(c, antialiased(withCell(img.quasar, img.quasarCell)), 320, 1728, 80);
   drawFacingRight(c, antialiased(img.beamWeapon), 448, 1728, 80);
   drawFacingRight(c, silhouetted(img.quasarLeg), 576, 1728, 80);
   drawFacingRight(c, silhouetted(img.quasarBase), 704, 1728, 80);
@@ -2062,7 +2218,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // scepter parts on the T4 band's 256px cells (see the UV note): each
   // source at native size, so it keeps the 0.625 world px per native px
   // every other unit draws at
-  drawFacingRight(c, antialiased(img.scepter), 128, 2176, 170, 140);
+  drawFacingRight(c, antialiased(withCell(img.scepter, img.scepterCell)), 128, 2176, 170, 140);
   drawFacingRight(c, silhouetted(img.scepter), 384, 2176, 170, 140);
   drawFacingRight(c, antialiased(img.scepterLeg), 640, 2176, 128);
   drawFacingRight(c, silhouetted(img.scepterLeg), 896, 2176, 128);
@@ -2076,7 +2232,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // vela's parts on the second T4 band, same 256px cells and same native
   // scale. Its main gun has no sprite (see the MECH_ART note) — the pair
   // of repair-beam pods is all there is to bolt on
-  drawFacingRight(c, antialiased(img.vela), 128, 3200, 170, 140);
+  drawFacingRight(c, antialiased(withCell(img.vela, img.velaCell)), 128, 3200, 170, 140);
   drawFacingRight(c, silhouetted(img.vela), 384, 3200, 170, 140);
   drawFacingRight(c, antialiased(img.velaLeg), 640, 3200, 128);
   drawFacingRight(c, silhouetted(img.velaLeg), 896, 3200, 128);
@@ -2088,7 +2244,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // arkyid: hull and guns on 256px cells, the sap gun being the spiroct's
   // own weapon sprite again — packed a second time here because a legged
   // unit draws every gun at its own LegArt.sprite, and arkyid's is 256
-  drawFacingRight(c, antialiased(img.arkyid), 128, 3712, 128);
+  drawFacingRight(c, antialiased(withCell(img.arkyid, img.arkyidCell)), 128, 3712, 128);
   drawFacingRight(c, silhouetted(img.arkyid), 384, 3712, 128);
   drawFacingRight(c, antialiased(img.spiroctWeapon), 640, 3712, 48, 56);
   drawFacingRight(c, silhouetted(img.spiroctWeapon), 896, 3712, 48, 56);
@@ -2109,20 +2265,22 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // native size in a 256px cell — at 216x240 only eclipse is bigger, and
   // it leaves only an 8px margin across its own cell
   drawFacingRight(
-    c, antialiased(outlined(img.antumbra, UNIT_OUTLINE, UNIT_OUTLINE_R)), 640, 3968, 216, 240,
+    c, antialiased(outlined(withCell(img.antumbra, img.antumbraCell), UNIT_OUTLINE, UNIT_OUTLINE_R)),
+    640, 3968, 216, 240,
   );
 
   // disrupt: the boss, same single-quad flyer treatment as antumbra, at
   // native 243x243 in the cell beside it
   drawFacingRight(
-    c, antialiased(outlined(img.disrupt, UNIT_OUTLINE, UNIT_OUTLINE_R)), 896, 3968, 243, 243,
+    c, antialiased(outlined(withCell(img.disrupt, img.disruptCell), UNIT_OUTLINE, UNIT_OUTLINE_R)),
+    896, 3968, 243, 243,
   );
 
   // ---- the T5 column (x=1024) ----
   // reign: a mech like the scepter, so the same four parts on 256px cells.
   // reign-weapon is Weapon(x=21.5, y=1, top=false) — a gun slung under
   // each side of a chassis wide enough to carry it
-  drawFacingRight(c, antialiased(img.reign), T5 + 128, 128, 214, 140);
+  drawFacingRight(c, antialiased(withCell(img.reign, img.reignCell)), T5 + 128, 128, 214, 140);
   drawFacingRight(c, silhouetted(img.reign), T5 + 384, 128, 214, 140);
   drawFacingRight(c, antialiased(img.reignBase), T5 + 640, 128, 152, 124);
   drawFacingRight(c, silhouetted(img.reignBase), T5 + 896, 128, 152, 124);
@@ -2136,7 +2294,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // exist in the sprite set (only a -heat overlay does), and Weapon.draw
   // skips a region it cannot find, so the charged laser you see in game is
   // painted into the hull itself. Same as the vela one tier below it
-  drawFacingRight(c, antialiased(img.corvus), T5 + 128, 640, 214, 140);
+  drawFacingRight(c, antialiased(withCell(img.corvus, img.corvusCell)), T5 + 128, 640, 214, 140);
   drawFacingRight(c, silhouetted(img.corvus), T5 + 384, 640, 214, 140);
   drawFacingRight(c, antialiased(img.corvusBase), T5 + 640, 640, 152, 124);
   drawFacingRight(c, silhouetted(img.corvusBase), T5 + 896, 640, 152, 124);
@@ -2145,7 +2303,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // Its other weapon is the large purple mount the arkyid already carries,
   // packed once at UV_ARKYID_MOUNT and shared — both units draw their guns
   // at the same 256px cell scale, so the cell is reusable as it stands
-  drawFacingRight(c, antialiased(img.toxopid), T5 + 128, 896, 160, 190);
+  drawFacingRight(c, antialiased(withCell(img.toxopid, img.toxopidCell)), T5 + 128, 896, 160, 190);
   drawFacingRight(c, silhouetted(img.toxopid), T5 + 384, 896, 160, 190);
   drawFacingRight(c, antialiased(img.toxopidCannon), T5 + 640, 896, 206, 220);
   drawFacingRight(c, silhouetted(img.toxopidCannon), T5 + 896, 896, 206, 220);
@@ -2176,31 +2334,31 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // eclipse: one outlined quad like every flyer, at native size in the
   // sheet's only 384px cell
   drawFacingRight(
-    c, antialiased(outlined(img.eclipse, UNIT_OUTLINE, UNIT_OUTLINE_R)),
+    c, antialiased(outlined(withCell(img.eclipse, img.eclipseCell), UNIT_OUTLINE, UNIT_OUTLINE_R)),
     T5 + 192, 1600, 320, 321,
   );
 
   // the naval band: every hull outlined and antialiased like a flyer, at
   // native size in the cell its UV names (see the UV_RISSO note)
   const hull = (
-    src: HTMLImageElement, cx: number, cy: number, w: number, h: number,
+    src: HTMLImageElement, cell: HTMLImageElement, cx: number, cy: number, w: number, h: number,
   ): void =>
-    drawFacingRight(c, antialiased(outlined(src, UNIT_OUTLINE, UNIT_OUTLINE_R)), cx, cy, w, h);
-  hull(img.risso, T5 + 64, 1984, 70, 78);
-  hull(img.minke, T5 + 192, 1984, 88, 101);
-  hull(img.retusa, T5 + 320, 1984, 70, 78);
-  hull(img.oxynoe, T5 + 448, 1984, 88, 101);
-  hull(img.bryde, T5 + 128, 2176, 140, 140);
-  hull(img.cyerce, T5 + 384, 2176, 140, 140);
-  hull(img.sei, T5 + 640, 2176, 198, 228);
-  hull(img.aegires, T5 + 896, 2176, 218, 241);
-  hull(img.omura, T5 + 192, 2496, 264, 351);
-  hull(img.navanax, T5 + 576, 2496, 258, 366);
+    drawFacingRight(c, antialiased(outlined(withCell(src, cell), UNIT_OUTLINE, UNIT_OUTLINE_R)), cx, cy, w, h);
+  hull(img.risso, img.rissoCell, T5 + 64, 1984, 70, 78);
+  hull(img.minke, img.minkeCell, T5 + 192, 1984, 88, 101);
+  hull(img.retusa, img.retusaCell, T5 + 320, 1984, 70, 78);
+  hull(img.oxynoe, img.oxynoeCell, T5 + 448, 1984, 88, 101);
+  hull(img.bryde, img.brydeCell, T5 + 128, 2176, 140, 140);
+  hull(img.cyerce, img.cyerceCell, T5 + 384, 2176, 140, 140);
+  hull(img.sei, img.seiCell, T5 + 640, 2176, 198, 228);
+  hull(img.aegires, img.aegiresCell, T5 + 896, 2176, 218, 241);
+  hull(img.omura, img.omuraCell, T5 + 192, 2496, 264, 351);
+  hull(img.navanax, img.navanaxCell, T5 + 576, 2496, 258, 366);
 
   // crawler parts: art then silhouettes, one flush 64px run (see UV note)
   drawFacingRight(c, antialiased(img.crawlerLeg), 480, 320, 48);
   drawFacingRight(c, antialiased(img.crawlerBase), 544, 320, 48);
-  drawFacingRight(c, antialiased(img.crawler), 608, 320, 48);
+  drawFacingRight(c, antialiased(withCell(img.crawler, img.crawlerCell)), 608, 320, 48);
   drawFacingRight(c, silhouetted(img.crawlerLeg), 672, 320, 48);
   drawFacingRight(c, silhouetted(img.crawlerBase), 736, 320, 48);
   drawFacingRight(c, silhouetted(img.crawler), 800, 320, 48);
@@ -2208,7 +2366,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // the legged crawler line (see the UV note): body, mount plate and guns
   // face +x on 128px cells, feet the same on 64px ones. A JOINT is drawn
   // with no rotation at all in Mindustry, so its cell is packed upright.
-  drawFacingRight(c, antialiased(img.atrax), 64, 1216, 88, 64);
+  drawFacingRight(c, antialiased(withCell(img.atrax, img.atraxCell)), 64, 1216, 88, 64);
   drawFacingRight(c, antialiased(img.atraxBase), 192, 1216, 64);
   drawFacingRight(c, antialiased(img.atraxWeapon), 320, 1216, 48, 56);
   drawFacingRight(c, silhouetted(img.atrax), 448, 1216, 88, 64);
@@ -2223,7 +2381,7 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(img.atraxLeg), 272, 1296, 36, 26);
   c.drawImage(antialiased(img.atraxLegBase), 336, 1296, 36, 26);
 
-  drawFacingRight(c, antialiased(img.spiroct), 64, 1472, 94, 75);
+  drawFacingRight(c, antialiased(withCell(img.spiroct, img.spiroctCell)), 64, 1472, 94, 75);
   drawFacingRight(c, antialiased(img.spiroctWeapon), 192, 1472, 48, 56);
   drawFacingRight(c, antialiased(img.spiroctMount), 320, 1472, 48);
   drawFacingRight(c, silhouetted(img.spiroct), 448, 1472, 94, 75);
@@ -2261,13 +2419,17 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   const fc = flare.getContext("2d");
   if (!fc) throw new Error("2d context unavailable");
   fc.imageSmoothingEnabled = false;
-  fc.drawImage(antialiased(outlined(img.flare, UNIT_OUTLINE, UNIT_OUTLINE_R)), 8, 8, 48, 48);
+  fc.drawImage(antialiased(outlined(withCell(img.flare, img.powerCell), UNIT_OUTLINE, UNIT_OUTLINE_R)), 8, 8, 48, 48);
   drawFacingRight(c, flare, 64, 736, 64);
 
   // horizon and zenith: same single-sprite treatment as flare, at native
   // size in their own 128px cells
-  drawFacingRight(c, antialiased(outlined(img.horizon, UNIT_OUTLINE, UNIT_OUTLINE_R)), 64, 1088, 72);
-  drawFacingRight(c, antialiased(outlined(img.zenith, UNIT_OUTLINE, UNIT_OUTLINE_R)), 192, 1088, 112);
+  drawFacingRight(
+    c, antialiased(outlined(withCell(img.horizon, img.horizonCell), UNIT_OUTLINE, UNIT_OUTLINE_R)), 64, 1088, 72,
+  );
+  drawFacingRight(
+    c, antialiased(outlined(withCell(img.zenith, img.zenithCell), UNIT_OUTLINE, UNIT_OUTLINE_R)), 192, 1088, 112,
+  );
 
   // the six bullet regions, white and at source size, facing +x. See the
   // UV_BULLET note: the renderer lays the -back region under the inner one on
@@ -2279,6 +2441,22 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   drawFacingRight(c, antialiased(img.shellBack), T5 + 194, 1810, 36);
   drawFacingRight(c, antialiased(img.missile), T5 + 242, 1810, 36);
   drawFacingRight(c, antialiased(img.missileBack), T5 + 290, 1810, 36);
+  // the swarm's own (see UV_CIRCLE_BULLET): fronts and backs at source size
+  drawFacingRight(c, antialiased(img.circleBullet), T5 + 360, 1816, 48);
+  drawFacingRight(c, antialiased(img.circleBulletBack), T5 + 416, 1816, 48);
+  drawFacingRight(c, antialiased(img.mineBullet), T5 + 480, 1824, 64);
+  drawFacingRight(c, antialiased(img.mineBulletBack), T5 + 552, 1824, 64);
+  drawFacingRight(c, antialiased(img.missileLarge), T5 + 620, 1820, 56);
+  drawFacingRight(c, antialiased(img.missileLargeBack), T5 + 684, 1820, 56);
+  // the disrupt missile is a unit: outlined like one, at native 39x60 in
+  // the middle of its 64 cell
+  drawFacingRight(
+    c, antialiased(outlined(img.disruptMissile, "#2d2f39", UNIT_OUTLINE_R)), T5 + 752, 1824, 39, 60,
+  );
+  // the sap beam's cap, unrotated — a disc — and its 4x48 cross-section
+  // strip exactly on the rect its UV names
+  c.drawImage(antialiased(img.laserEnd), T5 + 800, 1792, 72, 72);
+  c.drawImage(antialiased(img.laser), T5 + 896, 1814, 4, 48);
 
   // ring (448,0) — procedural
   c.strokeStyle = "#ffffff";
