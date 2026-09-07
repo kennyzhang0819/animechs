@@ -34,6 +34,7 @@ import {
   ZONE_LABELS,
 } from "@/game/maps";
 import type { ZoneKind } from "@/game/constants";
+import { MISSION_XP } from "@/game/economy";
 import { DropRow, ScrapAmount, XpAmount } from "./Items";
 
 /* eslint-disable @next/next/no-img-element -- raw pixel sprites, no optimization wanted */
@@ -384,7 +385,10 @@ export default function LevelEditorView({
                         {s.units.toLocaleString()} enemies
                       </span>
                     </div>
-                    <DropRow drop={{ scrap: s.scrap, xp: s.xp }} />
+                    <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <ScrapAmount amount={s.scrap} />
+                      <XpAmount amount={s.xp} />
+                    </span>
                     <div className="text-[14px] text-[#71717C]">
                       buys{" "}
                       <span className="font-bold text-[#A6A6AF]">{s.boards}</span> tier-{s.tier}{" "}
@@ -412,8 +416,10 @@ export default function LevelEditorView({
                   ))}
                 </div>
                 <p className="mt-1 text-[14px] leading-snug text-[#71717C]">
-                  Scrap is fixed per kill and the same on every rung; the rung
-                  multiplies the XP, and a random map pays a quarter more.
+                  Scrap is fixed per kill and the same on every rung. XP is paid per
+                  wave cleared — a fixed pot a clear, ramping from the first wave to
+                  the last — and the rung multiplies it; a random map pays a quarter
+                  more.
                 </p>
               </div>
             </section>
@@ -435,7 +441,10 @@ export default function LevelEditorView({
                 <div className="mb-1 text-[14px] uppercase tracking-widest text-[#71717C]">
                   Full-clear payout
                 </div>
-                <DropRow drop={summary.payout} />
+                <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <DropRow drop={summary.payout} />
+                  {summary.waves > 0 && <XpAmount amount={MISSION_XP} />}
+                </span>
               </div>
             </section>
           </aside>
@@ -746,7 +755,10 @@ function StepCard({
         {guide && (
           <span className="text-[15px] font-bold text-[#A6A6AF]">{compactHp(guide.hp)} hp</span>
         )}
+        {/* the kills' scrap, and beside it what CLEARING the wave banks —
+            its share of the mission's pot, off its position in the script */}
         <DropRow drop={payout} />
+        {guide && <XpAmount amount={guide.xp} />}
         <div className="ml-auto">{controls}</div>
       </div>
 

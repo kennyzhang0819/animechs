@@ -951,10 +951,12 @@ if (VOLATILE_RADIUS.length !== VOLATILE_DMG.length)
 //
 // A BROOD BODY IS A REAL UNIT AND PAYS A REAL DROP. It is killed like
 // anything else, so it lands in killsByKind and pays its kind's drop —
-// tier-1 scrap, and XP for the health it soaked (see unitDrop in
-// levels.ts). That is deliberate: the game's standing rule is that no
-// body is quietly worth more OR LESS than any other of its kind, and a
-// mutator that minted invisible units would be the first exception to it.
+// tier-1 scrap (see unitDrop in levels.ts). It also answers for its
+// parent's WAVE (Sim.uwave): the wave is not cleared, and its XP not
+// banked, until the brood is down too. That is deliberate: the game's
+// standing rule is that no body is quietly worth more OR LESS than any
+// other of its kind, and a mutator that minted invisible units would be
+// the first exception to it.
 // So the rule gives the player the smallest drop there is — in exchange
 // for the one thing a tower defence cannot buy, which is time in the
 // kill zone. That

@@ -16,11 +16,13 @@ import { TOWERS } from "./constants";
 import {
   addDrop,
   emptyDrop,
+  MISSION_XP,
   SCRAP_START,
   scrapPriceOf,
   STAGES,
   towersOfTier,
   waveBonusScrap,
+  waveXp,
   type Drop,
   type TowerTier,
 } from "./economy";
@@ -544,8 +546,9 @@ export interface WaveCost {
   armourShare: number;
   /** how much of it flies — hail and scorch cannot touch these at all */
   airShare: number;
-  /** what the wave's KILLS pay — scrap into the run, XP before the rung
-   *  bonus. The wave bonus is not in here; see waveBonusScrap */
+  /** what the wave's KILLS pay — scrap into the run. The wave bonus is
+   *  not in here (see waveBonusScrap), and neither is XP: a wave's XP is
+   *  its share of the mission pot (waveXp), not a fact about its bodies */
   drops: Drop;
 }
 
@@ -608,13 +611,16 @@ export interface WaveRow {
   t3Share: number;
   /** what the wave pays: its kills plus its wave bonus */
   scrap: number;
-  /** XP before the rung bonus */
+  /** what CLEARING the wave banks — its share of MISSION_XP, before the
+   *  rung bonus. It reads off the wave's position and the script's
+   *  length, never off what the wave holds */
   xp: number;
 }
 
 /** the per-wave guide, at the authored baseline — one row a wave */
 export function waveGuide(spec: LevelSpec = WORLD): WaveRow[] {
   const total = budget(spec, 0).hp;
+  const waves = spec.script.length;
   let prev = 0;
   return spec.script.map((step, i) => {
     const c = waveCost(step, 0);
@@ -628,7 +634,7 @@ export function waveGuide(spec: LevelSpec = WORLD): WaveRow[] {
       airShare: c.airShare,
       t3Share: c.t3Share,
       scrap: c.drops.scrap + waveBonusScrap(i + 1),
-      xp: c.drops.xp,
+      xp: waveXp(i + 1, waves),
     };
     prev = c.hp;
     return row;
@@ -649,7 +655,7 @@ export interface StageRow {
   units: number;
   /** scrap the stage's kills and wave bonuses pay */
   scrap: number;
-  /** XP the stage's kills pay, before the rung bonus */
+  /** XP clearing the stage's waves banks, before the rung bonus */
   xp: number;
   /** the tier's turret prices, cheapest to dearest */
   cheapest: number;
@@ -729,7 +735,7 @@ export interface AuditRow {
   xpBonus: number;
   /** scrap a full clear pays — the same on every rung, by design */
   scrap: number;
-  /** XP a full clear's kills pay at this rung, bonus included */
+  /** XP a full clear pays at this rung: the mission pot, bonus included */
   xp: number;
 }
 
@@ -742,7 +748,9 @@ export function audit(spec: LevelSpec = WORLD): AuditRow[] {
   const rows: AuditRow[] = [];
   const guide = waveGuide(spec);
   const scrap = guide.reduce((a, r) => a + r.scrap, 0);
-  const xp = guide.reduce((a, r) => a + r.xp, 0);
+  // the pot, not the sum of the guide's rounded shares: a full clear pays
+  // exactly MISSION_XP (missionXp), whatever the rounding did per wave
+  const xp = guide.length > 0 ? MISSION_XP : 0;
   for (let tier = 0; tier <= TOP_TIER; tier++) {
     const run = specForTier(spec, tier);
     const b = budget(spec, tier);
@@ -823,5 +831,5 @@ export function stageTable(spec: LevelSpec = WORLD): string {
   return [head, ...rows, "", xpHead, ...xpRows].join("\n");
 }
 
-/** what one run's kills are worth, for the results overlay and the HUD */
+/** what one run's kills are worth in scrap — the XP is missionXp, off the waves cleared */
 export const runDrops = (killsByKind: ArrayLike<number>): Drop => dropsForKills(killsByKind);

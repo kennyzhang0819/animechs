@@ -39,9 +39,10 @@ stale tab or a cached bundle looks exactly like a fix not working.
   the two **naval** lines (risso→omura, retusa→navanax), which travel on
   the water layer and cannot leave it
 - `game/economy.ts` — **the economy**: scrap (in-run money), XP (meta
-  progress), the per-tier scrap table and the health-priced XP
-  (`HP_PER_XP`), the three turret tiers and their scrap prices, the sell
-  refund, the level curve and the random-map bonus
+  progress), the per-tier scrap table, the fixed mission pot and how it
+  is dealt out per wave cleared (`MISSION_XP`, `waveXpShare`), the three
+  turret tiers and their scrap prices, the sell refund, the level curve
+  and the random-map bonus
 - `game/ladder.ts` — the **ten-rung ladder** (`RUNGS`: the mutator roll
   and the XP bonus each; the enemy-level dial is wired and authored to
   zero), and the audit/check arithmetic over the authored script — the
@@ -246,34 +247,53 @@ opening board to its last wave on what it earns. There is no gate inside
 a run: whatever the save owns it may place from wave 1. The income is
 tuned so a sensible board clears all fifty first try.
 
-**XP is the save's progress.** The same kills pay XP, the rung multiplies
-it (the XP bonus above), and a run on a **random map** — the menu's
-default — pays `RANDOM_MAP_XP_BONUS` (a quarter) more on top. There is no
-first-clear bonus: a clear is worth what its kills were worth, first time
-or fifth, and every level is open from the first run. XP turns into **player
-level** through a power-law curve (`xpToNext`), and **every level is a
-rung on the track** (`game/track.ts`) that hands out a map, a pace or a
-turret upgrade — nothing is chosen and nothing is bought.
+**XP is the save's progress, and it is paid for objectives, not kills.**
+Every mission is worth the same fixed pot — `MISSION_XP`, 100,000 — for
+a full clear, and the pot is dealt out **one wave at a time as the waves
+are cleared**, the way a StarCraft II co-op mission pays for each
+objective met. A wave is cleared when every body it sent is down (killed,
+devoured or blown up; `Sim.wavesCleared`), and it banks its share that
+moment. The shares ramp linearly from wave 1 to the last (`WAVE_XP_RAMP`:
+the last wave pays three times the first) and sum to exactly the pot, so
+on the fifty-wave script wave 1 is worth 1% and wave 50 is worth 3%. A
+run that dies keeps what it cleared; a win pays the whole pot however
+the last wave ended. The rung multiplies it (the XP bonus above), and a
+run on a **random map** — the menu's default — pays `RANDOM_MAP_XP_BONUS`
+(a quarter) more on top. There is no first-clear bonus: a clear is worth
+the pot, first time or fifth, and every level is open from the first run.
+XP turns into **player level** through a power-law curve (`xpToNext`),
+and **every level is a rung on the track** (`game/track.ts`) that hands
+out a map, a pace or a turret upgrade — nothing is chosen and nothing is
+bought.
 
-**Scrap comes off the tier; XP comes off the health.** A kill pays its
-tier's scrap (`SCRAP_BY_TIER`, a boss `BOSS_SCRAP`) and one XP for every
-`HP_PER_XP` (110) points of health it carried, rounded, never less than
-one — so a body is worth to the save exactly what it cost to kill.
+| waves cleared | 1 | 10 | 20 | 30 | 40 | 50 |
+|---|---|---|---|---|---|---|
+| XP banked (base rung) | 1,000 | 11,837 | 27,756 | 47,756 | 71,837 | 100,000 |
 
-| tier | scrap | XP (health ÷ 110) |
-|---|---|---|
-| T1 | 10 | 1–3 |
-| T2 | 30 | 3–5 |
-| T3 | 80 | 6–9 |
-| T4 | 200 | 65–109 |
-| T5 | 500 | 164–218 |
-| boss | 5,000 | 1,309 |
+**Why.** XP used to come off the same kills, one point per 110 hp of the
+body, and that put the pot where the health was: waves 1–20 paid under a
+tenth of a clear and waves 36–50 two thirds of it, so a save that could
+hold twenty waves and not thirty was earning at a twentieth of the rate
+of one that cleared. Twenty waves now bank 27,756 against the 23,377 they
+paid before, and three times the share of the run.
+
+**Scrap comes off the tier, and kills pay nothing else.** A kill pays its
+tier's scrap (`SCRAP_BY_TIER`, a boss `BOSS_SCRAP`) and no XP at all.
+
+| tier | scrap |
+|---|---|
+| T1 | 10 |
+| T2 | 30 |
+| T3 | 80 |
+| T4 | 200 |
+| T5 | 500 |
+| boss | 5,000 |
 
 **Drops are fixed.** A dagger always pays this, on every rung, on every
 map. Scrap income is a fact about the script, which is what lets the
-turret prices be authored against it; XP is a fact about the fight, which
-is what keeps a wave of heavies from being cheaper to farm than a wave of
-daggers.
+turret prices be authored against it; XP is a fact about how far the run
+got, which is what keeps a wave of heavies from being the only thing
+worth killing.
 
 ### Three stages, three price bands
 
@@ -309,7 +329,7 @@ switched off for now (`UPGRADES_ON_TRACK`), so a turret plays at its stock
 stats whatever the save's level. A turret the save has not reached rides
 the build bar greyed, with the level that opens it. The progress screen
 lists the whole track; the results screen names what a climb handed out. A
-first Confluence clear lands around level 6; the top of the track is about
+first Confluence clear lands around level 5; the top of the track is about
 2.3 million XP.
 
 ### One script, three families a deploy
@@ -622,6 +642,6 @@ __ladder.wave(7, 2)   // what one authored wave weighs and pays
   charged. There is no saved board any more — a board is bought from the
   opening stipend outward, every run.
 - **The level curve** is `XP_LEVEL_BASE × level^XP_LEVEL_POWER` to the
-  next level (15,000 × n^1.35). A full rung-1 clear pays about 245,000 XP
-  in kills and lands around level 5; a wipe at
-  the end of stage 1 lands level 2.
+  next level (5,000 × n^1.35). A full rung-1 clear pays the 100,000 XP
+  pot and lands level 5; a wipe at the end of stage 1 (twenty waves
+  cleared, ~27,800 XP) lands level 3.

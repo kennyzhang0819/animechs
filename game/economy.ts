@@ -11,11 +11,15 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  *          price. Nothing carries between runs — a run is solved from
  *          its opening board to its last wave on what it earns.
  *
- *   XP     is META progress. The same kills pay XP — one for every
- *          HP_PER_XP points of health the body carried, not a number off
- *          the tier table — the rung played multiplies it (tierXpBonus
- *          in ladder.ts), and
- *          a random map pays RANDOM_MAP_XP_BONUS more on top.
+ *   XP     is META progress, and IT IS PAID FOR OBJECTIVES, NOT KILLS.
+ *          Every mission is worth the same fixed MISSION_XP for a full
+ *          clear, and that pot is dealt out one wave at a time as the
+ *          waves are CLEARED — the way a StarCraft II co-op mission pays
+ *          for each objective met rather than for each body dropped.
+ *          Wave 1 is worth a sliver (WAVE_XP_RAMP), the last wave a few
+ *          times that, and the shares sum to the whole pot. The rung
+ *          played multiplies it (tierXpBonus in ladder.ts) and a random
+ *          map pays RANDOM_MAP_XP_BONUS more on top.
  *          XP turns into PLAYER LEVEL through the curve below, and every
  *          level is a rung on the track (track.ts): maps, paces, upgrades.
  *
@@ -28,38 +32,44 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * its count. Scrap is what puts an early, a middle and a late game back
  * inside one run, and the level ladder is what the tree is paid in now.
  *
- * DROPS ARE FIXED. A dagger always pays the same scrap and the same XP,
- * on every rung, on every map. Difficulty scales the XP through the
- * rung's bonus and nothing else — scrap income is a fact about the SCRIPT,
- * which is what lets the turret prices below be authored against it.
+ * KILLS DROP SCRAP AND NOTHING ELSE. A dagger always pays the same scrap,
+ * on every rung, on every map — scrap income is a fact about the SCRIPT,
+ * which is what lets the turret prices below be authored against it. XP
+ * used to come off the same kills (one point per 110 hp of the body), and
+ * that put most of a run's XP behind the tier-5 wall: the last fifteen
+ * waves paid two thirds of a clear and the first twenty under a tenth, so
+ * a run that died on wave 25 banked almost nothing for the twenty-four
+ * waves it held. Paying for the WAVE rather than the BODY is what fixes
+ * that — see MISSION_XP.
  */
 
 // ---------------------------------------------------------------------------
 // DROPS
 // ---------------------------------------------------------------------------
 
-/** what one kill pays: scrap into the run, XP into the save */
+/**
+ * what one kill pays: scrap into the run. It is a record and not a bare
+ * number because it used to carry XP too, and every ledger that sums
+ * drops (a wave's, a stage's, a run's) reads it by name
+ */
 export interface Drop {
   scrap: number;
-  xp: number;
 }
 
-export const emptyDrop = (): Drop => ({ scrap: 0, xp: 0 });
+export const emptyDrop = (): Drop => ({ scrap: 0 });
 
 /** n copies of a drop folded into an accumulator */
 export function addDrop(into: Drop, d: Drop, n = 1): void {
   if (n <= 0) return;
   into.scrap += d.scrap * n;
-  into.xp += d.xp * n;
 }
 
-export const isEmptyDrop = (d: Drop): boolean => d.scrap === 0 && d.xp === 0;
+export const isEmptyDrop = (d: Drop): boolean => d.scrap === 0;
 
 /**
  * WHAT EACH UNIT TIER PAYS IN SCRAP, indexed by tier (index 0 is unused).
  * A T1 always drops exactly this; a T5 always drops exactly that. XP is
- * NOT on this table any more — it comes off the body's health, see
- * HP_PER_XP below.
+ * NOT on this table — a kill pays no XP at all, see MISSION_XP.
  *
  * The shape is the point. Confluence sends tier-1 bodies by the
  * thousand and tier-5 bodies by the dozen, so the low rows are cheap per
@@ -83,63 +93,15 @@ export const SCRAP_BY_TIER: readonly number[] = [0, 10, 30, 80, 200, 500];
 
 /**
  * A boss is one body a run and its SCRAP is an event: a lump for the
- * board that fells it, whatever tier it is. Its XP is NOT a lump any
- * more — it is the same health arithmetic every other body gets, and it
- * lands in the same place anyway: the disrupt's 144,000 hp pay 1,309
- * against the 1,000 the old lump handed out, because a boss is already a
- * boss by carrying six reigns' health.
+ * board that fells it, whatever tier it is.
  */
 export const BOSS_SCRAP = 5000;
 
-/**
- * XP IS HEALTH. A kill pays one XP for every HP_PER_XP points of health
- * the body carried, rounded, and never less than one — so what a unit is
- * worth to the save is exactly how much work it took to kill, and no
- * body is quietly worth more or less than the damage it soaked.
- *
- * IT USED TO BE A FLAT NUMBER PER TIER (2/5/12/30/80, a boss 1000) and
- * the two disagreed badly at both ends. A dagger (150 hp) and a risso
- * (280) both paid 2. An aegires carries eighty daggers' health and paid
- * fifteen times a dagger's XP; a reign carries a hundred and sixty and
- * paid forty. So the swarm waves were the XP farm and the heavies were
- * nearly free to skip, which is backwards — the tier-5 wall is the part
- * of the run that has to be built for. On this rule an aegires pays 109
- * and a reign 218, and a wave is worth what it makes you kill.
- *
- * Tier is still the whole SCRAP table, because scrap is priced against
- * the SCRIPT (the stage audit in ladder.ts, and the turret prices tuned
- * to it). XP is priced against the FIGHT.
- *
- * THE RATE IS SET SO THE REFERENCE SCRIPT PAYS WHAT IT ALWAYS DID. At 110
- * a full Confluence clear pays ~246,500 XP against the old table's
- * ~246,000, so the level curve below — and the "first run lands around
- * level 6" it is written against — still holds. The other two shipped
- * scripts move, and that is the rule working: Maelstrom is a heavier
- * script and now pays a fifth more for it.
- *
- * THE BOTTOM OF THE TABLE COMPRESSES, on purpose. Everything under about
- * 165 hp pays the same 1 — a flare, a nova, a dagger, a crawler — because
- * XP is a whole number and the floor is one. The alternative was
- * fractional drops, and a body that pays nothing at all is worse than a
- * cheap tier being flat.
- *
- * A body's health here is the AUTHORED health (UNIT_STATS in levels.ts),
- * not what the rung or a mutator made of it: what a kill pays is a fact
- * about the kind, and the rung already multiplies the whole run's XP
- * through tierXpBonus.
- */
-export const HP_PER_XP = 110;
-
-/** what a body of `hp` health pays the save when it dies */
-export const xpForHp = (hp: number): number =>
-  Math.max(1, Math.round(Math.max(0, hp) / HP_PER_XP));
-
-/** the drop for one unit: scrap off its tier, XP off its health */
-export function dropForUnit(tier: number, hp: number, boss = false): Drop {
+/** the drop for one unit: scrap off its tier, a boss its lump */
+export function dropForUnit(tier: number, boss = false): Drop {
   const i = Math.max(1, Math.floor(tier));
   return {
     scrap: boss ? BOSS_SCRAP : SCRAP_BY_TIER[Math.min(i, SCRAP_BY_TIER.length - 1)],
-    xp: xpForHp(hp),
   };
 }
 
@@ -337,6 +299,83 @@ export const pricePerTile = (kind: TowerKind): number =>
 // ---------------------------------------------------------------------------
 
 /**
+ * WHAT A MISSION IS WORTH, in XP, before the rung and map bonuses: the
+ * whole pot a full clear pays, THE SAME ON EVERY MAP AND EVERY SCRIPT.
+ * Nothing about the bodies moves it — not their tier, not their health,
+ * not how many there were. A mission is one assignment and it pays one
+ * price for being done.
+ *
+ * THE POT IS DEALT OUT BY OBJECTIVE, and the objectives are the waves:
+ * every wave the run CLEARS (every body it sent is down — killed,
+ * devoured or blown up) banks that wave's share the moment its last body
+ * drops, and a run that dies on wave 25 keeps what waves 1 to 24 paid. A
+ * win is every objective met and pays the whole pot, however the last
+ * wave ended. Kills pay nothing: they drop scrap (SCRAP_BY_TIER) and that
+ * is the whole of what a body is worth.
+ *
+ * WHY. Under the kill rule the pot was ~246,000 XP on the reference
+ * script and it sat where the health sat: waves 1-20 paid 23,000 of it
+ * (under a tenth), waves 36-50 paid 161,000 (two thirds). A save that
+ * could hold twenty waves and not thirty was earning at a twentieth of
+ * the rate of one that cleared, which made the early ladder a grind and
+ * the tier-5 wall the only thing worth killing. On this rule the same
+ * twenty waves pay 27,755 of 100,000 — more XP than before in absolute
+ * terms, and three times the share.
+ */
+export const MISSION_XP = 100_000;
+
+/**
+ * HOW THE POT RAMPS ACROSS THE WAVES: the last wave's share is this many
+ * times the first wave's, and the shares between climb linearly. At 3 on
+ * a fifty-wave script wave 1 pays 1% of the pot and wave 50 pays 3% —
+ * every wave is worth something, and the deep ones are worth the most
+ * because they are the hardest to reach. Shares always sum to exactly 1
+ * whatever the wave count, so a shorter script pays the same pot in
+ * fewer, larger pieces.
+ */
+export const WAVE_XP_RAMP = 3;
+
+/**
+ * The share of MISSION_XP that clearing wave `wave` (1-based) of a
+ * `waves`-wave mission pays, in [0, 1]. Linear from 1 to WAVE_XP_RAMP
+ * across the script, normalised so the whole script sums to 1: the sum
+ * of the raw weights 1 + (r - 1) x (w - 1) / (n - 1) over n waves is
+ * n x (1 + r) / 2.
+ */
+export function waveXpShare(wave: number, waves: number): number {
+  const n = Math.max(1, Math.floor(waves));
+  const w = Math.floor(wave);
+  if (w < 1 || w > n) return 0;
+  if (n === 1) return 1;
+  const weight = 1 + ((WAVE_XP_RAMP - 1) * (w - 1)) / (n - 1);
+  return weight / ((n * (1 + WAVE_XP_RAMP)) / 2);
+}
+
+/** the XP clearing one wave banks, before the rung and map bonuses */
+export const waveXp = (wave: number, waves: number): number =>
+  Math.round(MISSION_XP * waveXpShare(wave, waves));
+
+/**
+ * WHAT A RUN HAS EARNED, before the rung and map bonuses: the shares of
+ * the first `cleared` waves of a `waves`-wave mission, and the whole pot
+ * once every wave is cleared. Summed wave by wave from the rounded
+ * per-wave payouts rather than from the closed form, so what the HUD
+ * counts up during a run and what the results screen banks at the end
+ * are the same arithmetic — and the last wave's share is whatever brings
+ * the total to exactly MISSION_XP, so rounding never leaves a clear a
+ * point short.
+ */
+export function missionXp(cleared: number, waves: number): number {
+  const n = Math.max(0, Math.floor(waves));
+  const c = Math.min(n, Math.max(0, Math.floor(cleared)));
+  if (n === 0) return 0;
+  if (c >= n) return MISSION_XP;
+  let total = 0;
+  for (let w = 1; w <= c; w++) total += waveXp(w, n);
+  return total;
+}
+
+/**
  * THE LEVEL CURVE. Going from level n to n+1 costs XP_LEVEL_BASE x n to
  * the power XP_LEVEL_POWER, so the track gets steeper the way a co-op
  * commander's does — never a wall, always a little more than the last one.
@@ -345,18 +384,19 @@ export const pricePerTile = (kind: TowerKind): number =>
  *   to next  5k     13k    22k    32k    44k    56k    70k    ~98k   ~470k
  *   total    5k     18k    40k    72k    116k   173k   243k   ~421k  ~6.0m
  *
- * WHAT THAT MEANS AGAINST A MAP. A full Nemesis clear of Confluence
- * pays about 246,000 XP in kills, so the first run lands around level 8;
- * Incursion sends a quarter of that swarm and pays a quarter of it. The
- * end of the ROSTER phase (ROSTER_TOP in track.ts, where the last wall
- * opens) stands at about 1,140,000 XP: five clears at Nemesis, two or
- * three up the mutated difficulties, and the whole build bar is owned.
- * The MUTATOR phase behind it runs to about 3,550,000 — three times as
- * far for nine rules, which is deliberate: those levels are not the game
- * being handed over, they are the long tail a save keeps earning after
- * it already owns everything. The base was halved from 10,000 so the
- * first level falls out of the first wave or two rather than the first
- * stage.
+ * WHAT THAT MEANS AGAINST A MAP. A full clear at the base rung pays
+ * MISSION_XP (100,000), so the first run lands around level 5; a wipe
+ * after twenty waves banks ~27,800 and lands level 3. The rung bonus is
+ * the multiplier on all of it (tierXpBonus, up to x5.5), and that is
+ * where the long tail is paid: the end of the ROSTER phase (ROSTER_TOP
+ * in track.ts, where the last wall opens) stands at about 1,140,000 XP —
+ * eleven base clears, or four or five up the mutated difficulties, and
+ * the whole build bar is owned. The MUTATOR phase behind it runs to
+ * about 3,550,000 — three times as far for nine rules, which is
+ * deliberate: those levels are not the game being handed over, they are
+ * the long tail a save keeps earning after it already owns everything.
+ * The base was halved from 10,000 so the first level falls out of the
+ * first few waves rather than the first stage.
  */
 export const XP_LEVEL_BASE = 5000;
 export const XP_LEVEL_POWER = 1.35;
@@ -401,7 +441,7 @@ export function levelProgress(xp: number): { level: number; into: number; need: 
  * the map. The menu's map macro defaults to Random, and a player who
  * leaves it there banks a quarter more XP than one who chose — a nudge
  * towards playing every front rather than farming the one they know.
- * Multiplies the run's kill XP the same way the rung's bonus does
+ * Multiplies the run's objective XP the same way the rung's bonus does
  * (grantRunReward), so it stacks: the top difficulty on a random map is x5.5 x1.25.
  */
 export const RANDOM_MAP_XP_BONUS = 0.25;

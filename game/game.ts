@@ -10,7 +10,6 @@ import {
 import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
 import { loadBalanceDoc } from "./balance";
 import {
-  dropsForKills,
   loadLevelDocs,
   UNIT_KINDS,
   type LevelSpec,
@@ -18,7 +17,7 @@ import {
   type TowerKind,
   type UnitKind,
 } from "./levels";
-import { scrapPriceOf, sellValue } from "./economy";
+import { missionXp, scrapPriceOf, sellValue } from "./economy";
 import type { TowerPlacement } from "./progress";
 import { TOWER_KINDS } from "./types";
 import { Renderer } from "./renderer";
@@ -75,7 +74,9 @@ export interface UiState {
   scrap: number | null;
   /** everything the run has taken in so far, kills and wave bonuses */
   scrapEarned: number;
-  /** the XP this run's kills are worth so far, before the rung bonus */
+  /** how many of the mission's waves are cleared — every body they sent is down */
+  wavesCleared: number;
+  /** the XP those cleared waves have banked so far, before the rung bonus */
   xp: number;
   /** what each turret costs to place right now, in scrap */
   prices: Record<TowerKind, number>;
@@ -878,7 +879,8 @@ export class Game {
       menuOpen: this.menuOpen,
       scrap: this.sim.charging ? Math.floor(this.sim.scrap) : null,
       scrapEarned: Math.floor(this.sim.scrapEarned),
-      xp: dropsForKills(this.sim.killsByKind).xp,
+      wavesCleared: this.sim.wavesCleared(),
+      xp: missionXp(this.sim.wavesCleared(), this.sim.totalWaves),
       prices: PRICES(),
       refunds: REFUNDS(),
       counts: this.sim.towerCounts(),

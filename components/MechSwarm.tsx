@@ -1212,9 +1212,12 @@ export default function MechSwarm() {
         granted.current = true;
         // level.id names the world the run was on; runRandom says whether
         // the game picked it, which is what the map bonus is paid for
+        // the waves cleared are the objectives met, and the objectives are
+        // what the mission pays for (missionXp) — a win is every one
         const reward = grantRunReward(
           level.tier ?? 0,
-          Array.from(g.sim.killsByKind),
+          ui.wavesCleared,
+          ui.totalWaves,
           ui.won,
           level.id,
           runRandom,
@@ -2337,10 +2340,17 @@ export default function MechSwarm() {
                 <div>
                   Kills <span className="font-bold text-[#EDEDEF]">{hud.kills}</span>
                 </div>
+                {result && (
+                  <div>
+                    Waves cleared{" "}
+                    <span className="font-bold text-[#EDEDEF]">{result.wavesCleared}</span>
+                    {hud.mission.kind === "survive" ? null : <> of {result.totalWaves}</>}
+                  </div>
+                )}
                 {result && result.xp > 0 && (
                   <div className="space-y-1 pt-1">
-                    {/* kills are the income, so a loss still pays for
-                        everything the towers killed on the way down —
+                    {/* the waves are the objectives, so a loss still pays
+                        for every wave the board cleared on the way down —
                         which is what makes a failed push into progress */}
                     <div>Earned (×{result.xpBonus.toFixed(2)})</div>
                     <XpAmount amount={result.xp} className="justify-center" />

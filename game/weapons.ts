@@ -60,6 +60,7 @@ const rng = (speed: number, lifetime: number): number => u(speed * lifetime);
 /** how a shot is drawn, and how it lands */
 export type WeaponFx =
   | "bullet" // a sprite that flies and hits what it reaches
+  | "gun" // instant, NO round drawn: a gun splash at the muzzle and the hit
   | "missile" // the same, splash on arrival
   | "shell" // artillery: flies to where it was aimed and splashes there
   | "flame" // instant, short, a flame tongue at the target
@@ -253,9 +254,14 @@ export interface UnitWeapon {
   plasma?: boolean;
   /** field: EnergyFieldAbility.color, for the chain and the orbit */
   fieldColor?: RGB;
-  /** rail / laser: what the muzzle throws */
+  /** rail / laser / gun: what the muzzle throws (a gun: Fx.shootSmall unless set) */
   shoot?: FxKind;
   shootLen?: number;
+  /** gun: the powder behind the flash, if any (a copper round's Fx.shootSmallSmoke) */
+  smoke?: FxKind;
+  /** gun: the colour the splash ramps into — the round's hitColor, what
+   *  Effect.at is handed for a shootEffect. Pal.lightOrange unless set */
+  shootColor?: RGB;
 }
 
 /**
@@ -527,16 +533,27 @@ const healBolt: ShotLook = {
   hitColor: PAL.heal,
 };
 
-/** Bullets.standardCopper: BasicBulletType(2.5, 9), lifetime 60 */
+/**
+ * Bullets.standardCopper: BasicBulletType(2.5, 9), lifetime 60 — THE BITE
+ * ONLY. The round itself is not drawn any more: the tier-1 guns (dagger,
+ * risso) fire as a "gun", an instant hit with the round's own muzzle
+ * splash (Fx.shootSmall and its smoke, in the round's lightOrange) and
+ * nothing crossing the field. Forty daggers' worth of yellow rounds was
+ * the busiest thing on the screen in the opening waves and said nothing
+ * a flash at the muzzle does not; the reload, damage and range are the
+ * same numbers they were.
+ */
 const copper = (name: string, reload: number, mounts: number): UnitWeapon => ({
   name,
   reload: t(reload),
   mounts,
   damage: 9,
   range: rng(2.5, 60),
-  speed: spd(2.5),
-  fx: "bullet",
-  look: basic(7, 9),
+  speed: 0,
+  fx: "gun",
+  shoot: FxKind.ShootSmall,
+  smoke: FxKind.SmokeSmall,
+  shootColor: PAL.lightOrange,
 });
 
 /**
@@ -852,16 +869,13 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // Pal.heal / white with a heal trail, homing, splash 40 in 32, going off
   // as Fx.blastExplosion + Fx.greenCloud. upstream: reload 90 with
   // shoot.shots 3, lifetime 87, maxRange 50 — plus a LaserBolt pair the
-  // row does not carry
+  // row does not carry. Like the other tier-1 rounds it is a "gun" now:
+  // the torpedo is not drawn, the hit is instant, and the mount throws
+  // its own Fx.shootHeal splash in the torpedo's heal green
   retusa: [
     {
-      name: "retusa-torpedo", reload: t(60), mounts: 1, damage: 22, range: u(140), speed: spd(1.4), fx: "bullet",
-      look: {
-        region: "mine-bullet", width: u(8), height: u(8), shrinkX: 0, shrinkY: 0,
-        back: PAL.heal, front: WHITE,
-        shoot: FxKind.ShootHeal, hit: FxKind.GreenCloud, hitColor: PAL.heal,
-        puff: { chance: 0.5, size: u(1.5), color: PAL.heal },
-      },
+      name: "retusa-torpedo", reload: t(60), mounts: 1, damage: 22, range: u(140), speed: 0, fx: "gun",
+      shoot: FxKind.ShootHeal, shootColor: PAL.heal,
     },
   ],
   // plasma-mount-weapon pair: reload 5, BulletType(3.4, 23) flame, lifetime

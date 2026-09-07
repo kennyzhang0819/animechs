@@ -1,6 +1,6 @@
-import { dropsForKills, WORLD, WORLDS } from "./levels";
+import { WORLD, WORLDS } from "./levels";
 import { tierXpBonus, TOP_TIER } from "./ladder";
-import { levelForXp, RANDOM_MAP_XP_BONUS } from "./economy";
+import { levelForXp, missionXp, RANDOM_MAP_XP_BONUS } from "./economy";
 import { MAX_LEVEL, techStateFor, worldUnlockLevel } from "./track";
 import type { TechState } from "./tech";
 import { clearSave, readSave, writeSave } from "./storage";
@@ -15,9 +15,9 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  */
 export interface Progress {
   /**
-   * LIFETIME XP, the save's one number. Every kill pays its tier's XP,
-   * the rung multiplies it, a random map adds a quarter (grantRunReward),
-   * and it only ever goes up. The player's LEVEL is read off it through
+   * LIFETIME XP, the save's one number. Every wave cleared pays its share
+   * of the mission's pot (missionXp), the rung multiplies it, a random
+   * map adds a quarter (grantRunReward), and it only ever goes up. The player's LEVEL is read off it through
    * the curve in economy.ts, and the level is a rung on the track
    * (track.ts) — every map, pace and upgrade the save has is a function
    * of this number. Nothing is stored twice.
@@ -324,8 +324,12 @@ export const isWorldUnlocked = (p: Progress, worldId: string): boolean =>
 // ---------- settling a run ----------
 
 export interface RunReward {
-  /** XP the run banked: the kills, times every bonus below */
+  /** XP the run banked: the waves it cleared, times every bonus below */
   xp: number;
+  /** how many of the mission's waves the run cleared — every one on a win */
+  wavesCleared: number;
+  /** how many waves the mission held */
+  totalWaves: number;
   /** the whole multiplier the run carried — rung times map */
   xpBonus: number;
   /** the XP multiplier the rung carried */
@@ -344,11 +348,13 @@ export interface RunReward {
 /**
  * Settle a FINISHED run into the save.
  *
- * Kills are the income, so a defeat still banks the XP for everything the
- * towers killed on the way down, times the rung's XP bonus and — on a map
- * the game picked — the random-map bonus. A win records the level as
- * beaten on that world (clearedByMap) and pays nothing for it: a clear is
- * worth exactly what its kills were worth.
+ * Waves are the objectives, so a defeat still banks the share of the
+ * mission's pot for every wave the board cleared on the way down
+ * (missionXp), times the rung's XP bonus and — on a map the game picked —
+ * the random-map bonus. A win is every objective met: it pays the whole
+ * pot whatever the last wave's bodies were doing when the mission ended,
+ * and records the level as beaten on that world (clearedByMap). Kills
+ * pay nothing here; they paid scrap into the run as it went.
  *
  * NOTHING ACCRUES WHILE THE APP IS SHUT. There is no offline income and
  * no idle tick: every point of XP was paid for by a run somebody watched.
@@ -359,7 +365,8 @@ export interface RunReward {
  */
 export function grantRunReward(
   tier: number,
-  killsByKind: ArrayLike<number>,
+  wavesCleared: number,
+  totalWaves: number,
   won: boolean,
   worldId: string = WORLD.id,
   randomMap = false,
@@ -368,13 +375,17 @@ export function grantRunReward(
   const n = Math.min(TOP_TIER, Math.max(0, Math.floor(tier)));
   const tierBonus = tierXpBonus(n);
   const bonus = tierBonus * (randomMap ? 1 + RANDOM_MAP_XP_BONUS : 1);
-  const xp = Math.round(dropsForKills(killsByKind).xp * bonus);
+  const waves = Math.max(0, Math.floor(totalWaves));
+  const cleared = won ? waves : Math.min(waves, Math.max(0, Math.floor(wavesCleared)));
+  const xp = Math.round(missionXp(cleared, waves) * bonus);
   const levelBefore = levelOf(p);
   p.xp += xp;
   if (won) p.clearedByMap[worldId] = Math.max(bestClearOn(p, worldId), n + 1);
   saveProgress(p);
   return {
     xp,
+    wavesCleared: cleared,
+    totalWaves: waves,
     xpBonus: bonus,
     tierBonus,
     randomMap,

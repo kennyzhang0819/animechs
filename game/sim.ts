@@ -748,6 +748,23 @@ export class Sim {
    */
   private readonly ubrood = new Uint8Array(MAX_UNITS);
   /**
+   * THE WAVE EVERY BODY BELONGS TO, 1-based: the number loadStep staged
+   * it under, and a brood member's is its parent's. It is what makes a
+   * wave an OBJECTIVE (MISSION_XP in economy.ts): a wave is cleared when
+   * every body carrying its number is off the field, and that is the
+   * moment its share of the mission's XP is banked — see wavesCleared.
+   */
+  private readonly uwave = new Uint16Array(MAX_UNITS);
+  /** bodies each wave has put on the field so far, by wave number (index
+   *  0 unused) — the script's own and any brood born into it */
+  private waveSpawned: number[] = [];
+  /** bodies of each wave that have left the field: killed, devoured or
+   *  blown up. removeUnit is the one door out, so it keeps this */
+  private waveDown: number[] = [];
+  /** has the wave finished ENTERING? Until its last body is through the
+   *  door a wave is not clearable however empty the field looks */
+  private waveEntered: boolean[] = [];
+  /**
    * a never-reused identity, Mindustry's entity id. Indices are recycled by
    * swap-remove the instant anything dies, so anything that must remember a
    * particular unit across ticks — a piercing bullet's hit list — has to
@@ -1820,6 +1837,22 @@ export class Sim {
     return this.waitLeft > 0 ? this.waitLeft : 0;
   }
 
+  /**
+   * HOW MANY WAVES ARE CLEARED — the objectives met, and what the run's
+   * XP is paid for (missionXp in economy.ts). A wave is cleared when it
+   * has finished entering and every body it put on the field, brood
+   * included, is down: killed, devoured or blown up. Counted over every
+   * wave staged rather than as a prefix, because waves overlap on a long
+   * field — a wave 8 whose last fortress is still walking must not hold
+   * wave 9's payout back once wave 9 is dead to the last dagger.
+   */
+  wavesCleared(): number {
+    let n = 0;
+    for (let w = 1; w <= this.wavesStarted; w++)
+      if (this.waveEntered[w] && (this.waveDown[w] ?? 0) >= (this.waveSpawned[w] ?? 0)) n++;
+    return n;
+  }
+
   private addTower(gx: number, gy: number, kind: TowerKind): void {
     const sz = TOWERS[kind].size;
     const tower: Tower = {
@@ -1940,6 +1973,9 @@ export class Sim {
     this.waitLeft = 0;
     this.spawnAcc = 0;
     this.wavesStarted = 0;
+    this.waveSpawned.length = 0;
+    this.waveDown.length = 0;
+    this.waveEntered.length = 0;
     this.loadStep();
   }
 
@@ -2003,6 +2039,9 @@ export class Sim {
 
   /** move to the next step, resetting the drain credit so waves start clean */
   private nextStep(): void {
+    // the wave just drained is through the door: from here it is cleared
+    // the moment its last body drops (wavesCleared)
+    this.waveEntered[this.wavesStarted] = true;
     this.stepIdx++;
     this.spawnAcc = 0;
     this.loadStep();
@@ -2363,6 +2402,20 @@ export class Sim {
             for (let k = 0; k < shots; k++) this.fireUnitShot(x, y, tgt, wp, k);
             break;
           }
+          case "gun": {
+            // A ROUND WITH NO BODY: the hit lands the moment the trigger is
+            // pulled and the only thing drawn is the gun's own splash at
+            // the muzzle — no projectile crosses the field (weapons.ts:
+            // the dagger's and the boats' copper rounds, the retusa's
+            // torpedo). Splash, where a row carries it, bursts on the
+            // target the way the round would have
+            for (let k = 0; k < shots; k++) {
+              this.hitStructure(tgt, wp.damage);
+              if (wp.splash) this.splashStructures(tgt.x, tgt.y, wp.splash, wp.splashRadius ?? 0);
+              this.fireUnitGun(x, y, aim + (k - (shots - 1) / 2) * 0.06, wp);
+            }
+            break;
+          }
           case "laser": {
             this.fireUnitLaser(x, y, aim, tgt, wp);
             break;
@@ -2475,6 +2528,21 @@ export class Sim {
         }
       }
     }
+  }
+
+  /**
+   * THE GUN SPLASH — what a "gun" weapon draws instead of a round: the
+   * bullet's own shootEffect (Fx.shootSmall's flash unless the row says
+   * otherwise) and its smoke, thrown off the muzzle on the aim in the
+   * round's colour, exactly as fireUnitShot throws them behind a shot. The
+   * shot itself is the part that is gone.
+   */
+  private fireUnitGun(x: number, y: number, a: number, wp: UnitWeapon): void {
+    const shoot = wp.shoot ?? FxKind.ShootSmall;
+    const col = wp.shootColor ?? PAL.lightOrange;
+    const seed = (Math.random() * 0x7fffffff) | 0;
+    this.pushFxCol(x, y, fxLife(shoot), shoot, a, 0, col, 0, false, seed);
+    if (wp.smoke !== undefined) this.pushFxCol(x, y, fxLife(wp.smoke), wp.smoke, a, 0, col, 0, false, seed + 1);
   }
 
   /** a bullet, missile or shell leaves the unit for the structure */
@@ -3066,7 +3134,7 @@ export class Sim {
    * second construction path here is how those two rules would quietly
    * stop composing.
    */
-  private spawnUnit(kind: UnitKind, brood?: { x: number; y: number }): boolean {
+  private spawnUnit(kind: UnitKind, brood?: { x: number; y: number }, wave = this.wavesStarted): boolean {
     const stats = UNIT_STATS[kind];
     const fly = !!stats.flying;
     const layer = this.layerOf(kind);
@@ -3221,6 +3289,10 @@ export class Sim {
       // does when the unmoving half of the clock runs out
       this.pushSpawnFx(x, y, a0, UNIT_ID[kind]);
       this.aliveByKind[UNIT_ID[kind]]++;
+      // the wave this body answers for (see uwave): the one being drained,
+      // or the parent's for brood
+      this.uwave[i] = wave;
+      this.waveSpawned[wave] = (this.waveSpawned[wave] ?? 0) + 1;
       return true;
     }
     return false;
@@ -3556,6 +3628,7 @@ export class Sim {
     // read before the row is recycled under us: a body Mitosis put here
     // does not brood in its turn (see ubrood)
     const wasBrood = this.ubrood[i];
+    const wave = this.uwave[i];
     this.killsByKind[kind]++;
     // the kill's scrap, into the run — fixed per tier (economy.ts)
     const drop = unitDrop(UNIT_KINDS[kind]).scrap;
@@ -3575,7 +3648,7 @@ export class Sim {
     // means the brood only ever lands on slots those lists have already
     // finished with, and a stale index there meets a body with health,
     // which every one of them re-tests for
-    if (this.mitosisOn && !wasBrood) this.splitUnit(x, y, kind);
+    if (this.mitosisOn && !wasBrood) this.splitUnit(x, y, kind, wave);
   }
 
   /**
@@ -3595,15 +3668,17 @@ export class Sim {
    * tests decide, exactly as they do at a door — and the alternative would
    * be stacking units inside walls to hit a number nobody is counting.
    */
-  private splitUnit(x: number, y: number, kind: number): void {
+  private splitUnit(x: number, y: number, kind: number, wave: number): void {
     const tier = KIND_TIER[kind];
     const want = tier < MITOSIS_BROOD.length ? MITOSIS_BROOD[tier] : 0;
     if (want <= 0) return;
     // the parent's own layer, so the brood can walk where it landed
     const s = UNIT_STATS[UNIT_KINDS[kind]];
     const pool = MITOSIS_KINDS[s.flying ? "air" : s.naval ? "water" : "ground"];
+    // the brood answers for its parent's wave: a wave is not cleared while
+    // what its bodies broke into is still walking
     for (let b = 0; b < want; b++)
-      this.spawnUnit(UNIT_KINDS[pool[(Math.random() * pool.length) | 0]], { x, y });
+      this.spawnUnit(UNIT_KINDS[pool[(Math.random() * pool.length) | 0]], { x, y }, wave);
   }
 
   /**
@@ -3624,6 +3699,8 @@ export class Sim {
 
   private removeUnit(i: number): void {
     this.aliveByKind[this.ukind[i]]--;
+    // one fewer body between the wave and being cleared (wavesCleared)
+    this.waveDown[this.uwave[i]] = (this.waveDown[this.uwave[i]] ?? 0) + 1;
     const n = --this.n;
     // the projectile pass holds its force-field carriers by index, and a
     // shot that kills what it hits reshuffles them mid-pass: the dead
@@ -3682,6 +3759,7 @@ export class Sim {
     this.ueaten[i] = this.ueaten[n];
     this.uhungerT[i] = this.uhungerT[n];
     this.ubrood[i] = this.ubrood[n];
+    this.uwave[i] = this.uwave[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
     this.ufly[i] = this.ufly[n];

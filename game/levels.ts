@@ -226,11 +226,9 @@ export interface EnergyFieldSpec {
 export type StatusKind = "burning" | "wet";
 
 export interface UnitStats {
-  /**
-   * Health, and so also WHAT THE KILL IS WORTH: XP is one point per
-   * HP_PER_XP of this (economy.ts), so raising a unit's health raises
-   * what killing it pays, by construction.
-   */
+  /** Health. What a kill pays does NOT read it: a kill drops its tier's
+   *  scrap (economy.ts) and no XP at all — XP is paid per wave cleared
+   *  (MISSION_XP), so a heavier body is only a heavier body */
   hp: number;
   /** world px/s */
   speed: number;
@@ -240,9 +238,9 @@ export interface UnitStats {
   radius: number;
   /**
    * Unit tier, 1-5. The tier decides the SCRAP a kill pays into the run
-   * (SCRAP_BY_TIER in economy.ts); the XP it pays into the save comes off
-   * `hp` instead (HP_PER_XP), so a level's enemy mix decides what a run
-   * banks in both currencies but by two different measures.
+   * (SCRAP_BY_TIER in economy.ts) — the only thing a kill pays. A level's
+   * enemy mix therefore decides the run's income and nothing about the
+   * save's XP, which is a fact about the waves cleared (MISSION_XP).
    */
   tier: number;
   /**
@@ -976,13 +974,15 @@ void _everyKindHasATree;
 
 export function unitDrop(kind: UnitKind): Drop {
   const s = UNIT_STATS[kind];
-  return dropForUnit(s.tier, s.hp, s.boss === true);
+  return dropForUnit(s.tier, s.boss === true);
 }
 
 /**
- * What a run's kills are worth: each kind's drop times how many of it
- * died. The shape of the total is the shape of the LINES that died — a
- * pure dagger push pays a trickle, a spiroct column pays real scrap.
+ * What a run's kills are worth IN SCRAP: each kind's drop times how many
+ * of it died. The shape of the total is the shape of the LINES that died
+ * — a pure dagger push pays a trickle, a spiroct column pays real scrap.
+ * No XP is in here: the save is paid per wave cleared (missionXp in
+ * economy.ts), never per body.
  */
 export function dropsForKills(killsByKind: ArrayLike<number>): Drop {
   const total = emptyDrop();
@@ -1367,9 +1367,10 @@ export function levelDocOf(_worldId?: string): LevelDoc {
  * rung changes the rules rolled and the XP paid, never the script — so
  * every number the audit prints about a map is true at every rung.
  *
- * Kills are the income: every dead body pays its tier's scrap into the run
- * and its tier's XP into the save, win or lose (economy.ts), and the rung
- * multiplies the XP (tierXpBonus in ladder.ts).
+ * Kills are the run's income: every dead body pays its tier's scrap into
+ * the run (economy.ts). The save is paid by the WAVE: every wave cleared
+ * banks its share of MISSION_XP, win or lose, and the rung multiplies it
+ * (tierXpBonus in ladder.ts).
  *
  * Armour is flat, max(dmg - armor, 0.1 * dmg), so a fortress (armour 9)
  * against a duo (damage 9) hits the 10% floor and costs a duo line ten

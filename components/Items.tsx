@@ -95,8 +95,10 @@ export function XpAmount({
 }
 
 /**
- * A drop — what a wave, a stage or a run pays — as its two stacks. Either
- * half hides when it is zero, so a row never prints "0 XP".
+ * A drop — what a wave's, a stage's or a run's KILLS pay — as its scrap
+ * stack. It hides when it is zero, so a row never prints "0 scrap". There
+ * is no XP half: kills pay none (economy.ts, MISSION_XP), and a row that
+ * shows what clearing a wave banks prints an XpAmount beside this.
  */
 export function DropRow({
   drop,
@@ -107,11 +109,10 @@ export function DropRow({
   size?: Size;
   className?: string;
 }) {
-  if (drop.scrap <= 0 && drop.xp <= 0) return null;
+  if (drop.scrap <= 0) return null;
   return (
     <span className={`inline-flex flex-wrap items-center gap-x-3 gap-y-1 ${className}`}>
-      {drop.scrap > 0 && <ScrapAmount amount={drop.scrap} size={size} />}
-      {drop.xp > 0 && <XpAmount amount={drop.xp} size={size} />}
+      <ScrapAmount amount={drop.scrap} size={size} />
     </span>
   );
 }

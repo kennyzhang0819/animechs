@@ -397,6 +397,7 @@ function play() {
         log.push({
           wave: w, time: Math.round(sim.time), core: Math.round((100 * sim.core.hp) / sim.core.hpMax),
           scrap: Math.round(sim.scrap), towers: sim.towers.length, counts: counts(),
+          cleared: sim.wavesCleared(),
         });
     }
   }
@@ -408,6 +409,10 @@ function play() {
     outcome: won ? "WON" : sim.lost() ? "LOST" : "TIMEOUT",
     wave: sim.currentWave(), time: Math.round(sim.time), core: Math.round((100 * sim.core.hp) / sim.core.hpMax),
     kills: sim.kills, loopLevel: sim.loopLevel,
+    // the objectives met and what they bank before the rung bonus: a win
+    // is every wave, however the last one ended (grantRunReward)
+    cleared: won ? sim.totalWaves : sim.wavesCleared(), waves: sim.totalWaves,
+    xp: E.missionXp(won ? sim.totalWaves : sim.wavesCleared(), sim.totalWaves),
     towers: sim.towers.length, counts: counts(),
     scrapEarned: Math.round(sim.scrapEarned), scrapLeft: Math.round(sim.scrap),
     wall: Math.round((Date.now() - t0) / 1000), log,
@@ -424,13 +429,13 @@ if (JSON_OUT) {
       `${r.scale !== 1 ? ` — prices x${r.scale}` : ""} — unit damage x${r.unitDamage}`,
   );
   console.log(
-    `${r.outcome} at wave ${r.wave}, ${mmss(r.time)} in — core ${r.core}%, kills ${r.kills}` +
+    `${r.outcome} at wave ${r.wave}, ${mmss(r.time)} in — core ${r.core}%, kills ${r.kills}, ${r.cleared}/${r.waves} waves cleared for ${r.xp} xp` +
       `${r.loopLevel ? `, tide +${r.loopLevel} levels` : ""} — ${r.towers} turrets, scrap earned ${r.scrapEarned} (${r.scrapLeft} unspent) — ${r.wall}s wall`,
   );
   console.log(`board: ${Object.entries(r.counts).map(([k, n]) => `${k} ${n}`).join(", ")}`);
   for (const l of r.log)
     console.log(
-      `  w${String(l.wave).padStart(2)} ${mmss(l.time).padStart(5)}  core ${String(l.core).padStart(3)}%  scrap ${String(l.scrap).padStart(6)}  turrets ${String(l.towers).padStart(4)}  ${Object.entries(l.counts).map(([k, n]) => `${k} ${n}`).join(", ")}`,
+      `  w${String(l.wave).padStart(2)} ${mmss(l.time).padStart(5)}  core ${String(l.core).padStart(3)}%  cleared ${String(l.cleared).padStart(2)}  scrap ${String(l.scrap).padStart(6)}  turrets ${String(l.towers).padStart(4)}  ${Object.entries(l.counts).map(([k, n]) => `${k} ${n}`).join(", ")}`,
     );
 }
 process.exit(r.outcome === "WON" ? 0 : 2);
