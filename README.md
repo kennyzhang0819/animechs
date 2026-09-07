@@ -34,8 +34,8 @@ stale tab or a cached bundle looks exactly like a fix not working.
 
 - `game/constants.ts` — grid, base placement, tower/unit tuning
 - `game/levels.ts` — unit stats and wave-script plumbing; the authored
-  script itself (50 waves) lives in `public/levels/1.json`, loaded by
-  `loadLevelDocs()`. Six upgrade trees: ground, support, crawler, air and
+  script itself (50 waves) lives in `public/levels/campaign.json`, loaded
+  by `loadLevelDocs()`. Six upgrade trees: ground, support, crawler, air and
   the two **naval** lines (risso→omura, retusa→navanax), which travel on
   the water layer and cannot leave it
 - `game/economy.ts` — **the economy**: scrap (in-run money), XP (meta
@@ -47,11 +47,13 @@ stale tab or a cached bundle looks exactly like a fix not working.
   and the XP bonus each; the enemy-level dial is wired and authored to
   zero), and the audit/check arithmetic over the authored script — the
   **stage table** (`stageAudit`) that the turret prices are tuned against
-- `game/track.ts` — the **level track**: the fifteen-level unlocking
-  phase, every level of it opening a turret or a wall (`UNLOCKS`), plus a
-  short hand-placed list (the maps, 2x speed), and `techStateFor(level)`
-  — what a save at that level may do. The turret upgrade rungs are off
-  the track for now (`UPGRADES_ON_TRACK`)
+- `game/track.ts` — the **level track**, in two phases: the roster phase,
+  levels 1 to `ROSTER_TOP` (15), every level of it opening a turret or a
+  wall (`UNLOCKS`) with the maps hand-placed beside them (`PLACED`); then
+  the mutator phase to `MAX_LEVEL` (24), one rule a level into the deck
+  the deploy roll draws from (`MUTATOR_UNLOCKS`). `techStateFor(level)` is
+  what a save at that level may do. The turret upgrade rungs are off the
+  track for now (`UPGRADES_ON_TRACK`)
 - `game/tech.ts` — `TechState`, the shape the sim and the bar read a
   save's allowances in, and the roster's canonical order
 - `game/upgrades.ts` — the **turret upgrade branches**: a chain of rungs
@@ -128,7 +130,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   ported, so the sea swells and its bright bands drift across the map
 - `game/game.ts` — rAF loop, input, 2d overlay (placement ghost), stats
 - `components/MechSwarm.tsx` — React shell: HUD (scrap, core health, XP), rung
-  picker, six-slot build bar with prices and its loadout picker, game-speed
+  picker, eight-slot build bar with prices and its loadout picker, game-speed
   switcher, results screens, canvases
 - `components/MenuBackground.tsx` — the title screen's ground: **the game
   itself, playing behind the menu**. Not a picture of it — a `Sim` on one
@@ -164,13 +166,10 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `components/Progress.tsx` — the **progress screen**: the track top to
   bottom, one row a level with what it hands out, the current row carrying
   the XP bar; the mutator codex is its second tab
-- `components/techIcons.tsx` — what every tech node LOOKS like: block
-  sprites, the upgrade glyph vocabulary, the surge icon. Shared, so the
-  game's board and the layout editor draw the same faces
-- `components/TreeEditorView.tsx` — the layout editor: drag a node, it
-  snaps to the grid, Save writes `public/tree.json`. It draws the real
-  faces at the real sizes — composing a layout against name labels would
-  be composing against the wrong picture
+- `components/towerIcons.ts` — the menu sprite per structure, shared by
+  the build bar and the progress track
+- `components/mutationFace.tsx` — what a mutator LOOKS like: the glyph
+  every codex tile, track chip and in-run badge draws from
 - `components/MutationTree.tsx` — the **mutator codex** as a board of its
   own: one thumbnail per rule, severity in the border, the rule on hover
 - `components/LevelEditorView.tsx`, `MapEditorView.tsx`, `BalanceView.tsx` —
@@ -182,7 +181,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   page — `/?sandbox=1&world=…&tier=…&mut=…`, consumed and stripped by the
   sandbox effect in `MechSwarm.tsx` — so the exact run that reproduced a
   bug is a URL you can paste into a report. The run starts in sandbox
-  mode: whole tree unlocked, caps lifted, every pace offered
+  mode: the whole roster unlocked, nothing charged, every pace offered
 
 In dev builds the running `Game` instance is exposed as `window.__mechswarm`
 for console poking, and the ladder's tuning surface as `window.__ladder`
@@ -319,20 +318,27 @@ next stage's income; what each stage asks is what to stop buying.
 
 ### The level track
 
-**The track is the unlocking phase, and nothing else.** A fresh save
-opens with five structures — the copper wall, duo, hail, scatter and
-salvo (`STARTING_ROSTER` in `game/track.ts`) — and **every one of levels
-2 to 15 opens at least one new turret or wall** (`UNLOCKS`), the lancer,
-ripple and spectre first, the titanium and thorium walls last. At level
-15 the save owns the whole roster of 23 and the track is done: nothing is
-handed out above it. Maelstrom rides level 3 and Quagmire level 7, and 2x
-speed is the last thing on the track at 15. The turret upgrade rungs are
-switched off for now (`UPGRADES_ON_TRACK`), so a turret plays at its stock
-stats whatever the save's level. A turret the save has not reached rides
-the build bar greyed, with the level that opens it. The progress screen
-lists the whole track; the results screen names what a climb handed out. A
-first Confluence clear lands level 6 at Nemesis, level 4 at Incursion;
-the top of the track is about 1.9 million XP.
+**The track has two phases, and they pull opposite ways.** The **roster
+phase** is levels 1 to 15: a fresh save opens with five structures — the
+copper wall, duo, hail, scatter and salvo (`STARTING_ROSTER` in
+`game/track.ts`) — and **every one of levels 2 to 15 opens at least one new
+turret or wall** (`UNLOCKS`), the lancer, ripple and spectre first, the
+titanium and thorium walls last. At level 15 the save owns the whole roster
+of 23. Maelstrom rides level 3 and Quagmire level 7, and no pace is on the
+track at all — every multiplier above 1x is a sandbox tool.
+
+The **mutator phase** is levels 16 to `MAX_LEVEL` (24), and it hands out
+trouble instead: one rule a level, lightest first, into the deck the deploy
+roll draws from (`MUTATOR_UNLOCKS`). A save still inside the roster phase
+plays clean runs at every rung, and every level past fifteen is one more
+thing that can go wrong. Nothing is handed out above 24.
+
+The turret upgrade rungs are switched off for now (`UPGRADES_ON_TRACK`), so
+a turret plays at its stock stats whatever the save's level. A turret the
+save has not reached rides the build bar greyed, with the level that opens
+it. The progress screen lists the whole track; the results screen names what
+a climb handed out. A first Confluence clear lands level 6 at Nemesis, level
+4 at Incursion; the top of the track is about 1.9 million XP.
 
 ### One script, three families a deploy
 
@@ -364,13 +370,11 @@ families dealt, every square above it one mutator in force.
 **Every map is its own assignment** (`LevelSpec.mission`): *hold* — clear
 every wave the script sends with the core standing — or *survive* —
 last the clock out; a spent script sends its last wave again, a few enemy
-levels heavier each repeat, until time ends the run. Each map carries
-its own wave script (`public/levels/<id>.json`, edited in the admin level
-editor) — there is no shared blueprint and no family re-casting any more.
-Every shipped map is a hold: Confluence's fifty waves, Maelstrom's fifty
-on the naval front at a six-second gap, Quagmire's forty in the swamp
-against a lighter, tier-2-capped opening. The survive shape is wired and
-waiting for a map that wants it.
+levels heavier each repeat, until time ends the run. The waves themselves
+are the campaign's shared script (`public/levels/campaign.json`, above) —
+what makes one map's run different from another's is its ground, its doors
+and the family roll those doors allow. Every shipped map is a hold; the
+survive shape is wired and waiting for a map that wants it.
 
 **Structures stand anywhere unoccupied, open ground included, and the
 swarm attacks them.** Every unit attack-moves, Mindustry's GroundAI: it
@@ -445,17 +449,16 @@ rolled to fit it when you deploy. It is the StarCraft II model, and the
 mode it exists for is endgame resource farming: the same fifty waves, a
 different set of rules every time.
 
-|  | the tech tree | a mutator |
+|  | a track reward | a mutator |
 |---|---|---|
-| how it is got | paid for out of the bank | **rolled for you** at deploy |
-| what it does | more turrets, faster pace | makes the run **harder** |
-| how long it lasts | permanent capacity | **that run only** |
+| how it is got | **handed to you** at a level | **rolled for you** at deploy |
+| what it does | more turrets, more maps | makes the run **harder** |
+| how long it lasts | permanent | **that run only** |
 
 This replaces the old *mutation line*, a column of switches on the tech
 tree earned one rank per boss felled. Nobody flips an optional handicap
 with no reward attached — and the game had to be balanced as though
-everybody did. So it became the opposite thing: mandatory, unchosen, and
-attached to the maps that want it.
+everybody did. So it became the opposite thing: mandatory and unchosen.
 
 **Where it is mandatory:** **every deploy above Nemesis, on every
 map.** The gate is the ladder, not the world — a tier carries how many
@@ -472,6 +475,12 @@ map-bound "special" rules only Maelstrom and Quagmire could play; they are
 ordinary catalog entries now, and a terrain rule simply reads whatever
 terrain it lands on.
 
+**The deck is the save's, though.** The roll draws only from the rules the
+track has opened (`mutatorsAt` in `game/track.ts`, fed to `rollMutations`
+as its `exclude`), so a save still inside the roster phase plays clean runs
+at every rung, and the deck fills one rule a level from 16 to 24 — see
+*The level track* above.
+
 **Overshields — 3 points.** Every force field on the field comes up **five
 times the pool** it was — the bubble a quasar walks in with, and the shield tower
 domes if Shield Towers is rolled alongside. Pool, cap and regen all carry
@@ -484,29 +493,36 @@ audit arithmetic can see, it delays damage the board was already going to
 do. Priced at 3 because one unit kind carries the swarm's force fields, so
 a board that can break one is inconvenienced rather than beaten; rolled
 beside Shield Towers it is worth considerably more, which is what a big
-budget is *for*. **Maelstrom plays under it always** (see intrinsic rules
-above).
+budget is *for*.
 
-**Shield Towers — 4 points.** Every so often a 3×3 shield tower rises somewhere
-on the map (25 s for the first, one attempt every 45 s after, at most three
-standing) and stands a **red force dome** over the ground around it: the
-player's projectiles crossing the dome are absorbed into its shield pool,
-so enemies under it are safe from projectile fire until the pool breaks —
-and the dome **reforms whole** four seconds after the last hit on either
-pool — not by degrees, because a dome at 12% is not a weaker obstacle, it is
-one more volley. Any hit restarts that clock, so sustained fire holds a
-shield tower open and looking away for four seconds means paying for the dome
-again.
+**Shield Towers — 3 points.** Every so often a 3×3 shield tower rises somewhere
+on the map (`SHIELD_TOWER_SPAWN_PERIOD`, 30 s, with no opening grace — the
+first attempt lands on the run's first tick — and at most
+`SHIELD_TOWER_MAX_ALIVE`, twenty, standing) and stands a **red force dome**
+over the ground around it: the player's projectiles crossing the dome are
+absorbed into its shield pool, so enemies under it are safe from projectile
+fire until the pool breaks — and the dome **reforms whole**
+`SHIELD_TOWER_SHIELD_DELAY` (ten) seconds after it BROKE, not by degrees,
+because a dome at 12% is not a weaker obstacle, it is one more volley.
+**Nothing restarts that clock**: breaking the dome is the only thing that
+starts it, a dented dome never ticks up, and committed fire buys exactly one
+ten-second window on the body — not an indefinite one.
 Only with the dome down can the body be hurt, and a destroyed shield tower is
-**gone for good**; the timer raises the next elsewhere. From **wave 35** every new shield tower rises as a **mega shield tower**: five times
-both pools and a dome sixteen tiles across, wider than most turrets reach
-from one emplacement, so a whole section of the board has to be pointed at
-it rather than whatever happened to be idle. Both pools ride the run's
-shield multiplier — five times these numbers under Overshields, exactly
-these numbers otherwise — and the **body is four times the dome** — a structure that died quickly would
-never give the regen a chance to matter, since every hit on either pool
-restarts the delay. Sustained fire holds a dome suppressed and grinds the
-body down; break off for a wave and you come back to a dome to break twice.
+**gone for good**; the timer raises the next elsewhere. Both pools are set by
+the **wave the tower rises on** and fixed there for the rest of the run
+(`shieldTowerWaveScale`: `SHIELD_TOWER_WAVE_GROWTH`, ten per cent a wave,
+compounding — ~6x by wave twenty, ~107x by fifty), then multiplied by the
+run's shield multiplier, so a shield tower rolled beside Overshields is the
+five-times obstacle that rule promises everywhere else. From **wave 35** every
+new shield tower rises as a **mega shield tower**: the same pools the wave
+curve gives it, behind a dome sixteen tiles across — four times the area,
+wider than most turrets reach from one emplacement, so a whole section of the
+board has to be pointed at it rather than whatever happened to be idle. The
+**body is four times the dome** (`SHIELD_TOWER_HP` 12,000 against
+`SHIELD_TOWER_SHIELD` 3,000) — a structure that died inside one window would
+never give the reform a chance to matter, and a long body is what turns the
+tower into an objective you have to commit to, several windows deep with a
+whole dome to break at the start of each.
 The dome draws as **a carrier's bubble with the diagonals switched off**
 (`SHIELD_PLAIN`) — same rim, same flat interior wash, no travelling hatch,
 because a dome sits over a lane full of units and Mindustry's diagonals
@@ -517,12 +533,13 @@ Instant weapons — lancer, arc, fuse, foreshadow, meltdown's beam — are not
 absorbed (exactly as unit force fields never absorb them), which quietly
 makes the beam roster the shield tower-breaking roster.
 
-Where it lands is part of the rule. A shield tower's footprint blocks open lane
-(the swarm routes around it; the spot roller refuses anything that would
-seal the last route, cork a drop zone, or sit on water) — and one that
-lands over towers **entombs** them: a buried turret is disabled and
-untouchable, never destroyed, and stands back up the moment the shield tower
-dies. Turrets chew shieldTowers **only when idle** — a turret with nothing else
+Where it lands is part of the rule. A shield tower rises **only on rock** — a
+cell no turret and no unit could occupy anyway — which is one test in place of
+every rule the roller used to carry: rock cannot cork a drop zone, stand in a
+lane, sit on water or seal the swarm's route. It never lands on a turret
+either, so nothing the player built is ever taken; what the dome costs is
+the ground beside it, which stays un-buildable until the tower is dead.
+Turrets chew shieldTowers **only when idle** — a turret with nothing else
 in range spends its reload on one, so clearing a shield tower costs time between
 waves, never mid-wave DPS. The player can **tap** a shield tower — or any enemy
 — to focus it: every turret in range drops what it was doing for the
@@ -552,7 +569,7 @@ all, while the unit that ate it still drops exactly what its own kind
 drops. Twenty meals cost twenty bodies' worth of salvage and hand back
 one.
 
-**Armored Swarms — 4 points.** Every unit of **tier 3 or below** spawns
+**Armored Swarms — 1 point.** Every unit of **tier 3 or below** spawns
 with **+10 flat armour**; tier 4 and 5 take none, because a fortress and a
 zenith already carry the plating that matters and hardening them further
 would only make the run longer. Armour is a flat shave floored at a tenth
@@ -562,14 +579,17 @@ but it floors a duo's 9 and a scatter pellet's 3 outright — those guns land
 a tenth of what they print and no more. So it does not say "the swarm is
 tougher", it says **"the cheap guns stop counting"**, and the answer to it
 is calibre: bigger emplacements, and an anti-air line that is not built out
-of pellets. It is priced as Heavy rather than Brutal because that answer
-exists and is affordable — but rolled early, before the tree has anything
-with weight behind it, it is the harshest 4 in the catalog.
+of pellets. It is priced LIGHT because that answer exists and is
+affordable: the board that already holds the run holds it under this rule
+too, more slowly. It is the cheapest entry in the catalog and the first
+thing the mutator phase hands out (level 16), which is what makes it the
+rule every mutating save meets first.
 
 This was the ladder's own **swarm armour** column until it became a rule
 nobody chose (see above); ten is the old top-rung value, kept whole.
 
-**Speedy — 5 points.** Every enemy walks in at **double speed** and
+**Speedy — 5 points** (authored at 4 in `MUTATIONS`, bent to 5 by the price
+override in `public/balance.json`). Every enemy walks in at **double speed** and
 **cannot be slowed**. Two halves of one rule, because either alone has an
 answer: doubled speed is answered by a liquid turret, and slow immunity is
 answered by not building one. It adds no health at all — it halves the

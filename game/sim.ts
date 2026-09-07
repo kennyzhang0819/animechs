@@ -1244,10 +1244,9 @@ export class Sim {
     this.scrapEarned = 0;
     // the run's rules, read once: the feed pass runs over every unit on the
     // field, and a spec lookup per unit per tick to answer a question that
-    // cannot change mid-run would be pure waste
-    // ...the level's own rules and the deploy's roll as one list
-    // (mutationsInForce): the sim never asks which of the two a rule came
-    // from, only whether it is in force
+    // cannot change mid-run would be pure waste. mutationsInForce is what
+    // the deploy rolled, cleaned into catalog order — no level carries
+    // rules of its own
     const inForce = mutationsInForce(this.level.mutation);
     this.hungryOn = hasMutation(inForce, "hungry");
     this.speedyOn = hasMutation(inForce, "speedy");
@@ -2950,8 +2949,8 @@ export class Sim {
         const i = y * COLS + x;
         if (blocked[i] || isGoal[i] || this.groundPads[i] || this.cellTower[i]) return false;
       }
-    // a LIVE shield tower owns its ground: selling a buried turret is allowed,
-    // but nothing builds back under the dome until the shield tower is dead
+    // a LIVE shield tower owns its ground: nothing builds under its
+    // footprint until the shield tower is dead
     for (const s of this.shieldTowers) {
       if (s.hp <= 0) continue;
       if (gx < s.gx + SHIELD_TOWER_SIZE && s.gx < gx + sz && gy < s.gy + SHIELD_TOWER_SIZE && s.gy < gy + sz)
@@ -4529,22 +4528,22 @@ export class Sim {
   }
 
   /**
-   * Roll a spot and raise a shield tower on it. A candidate 3x3 must lie inside
-   * the map, off the base, off every drop zone and exit, off water — and
-   * it must not seal the swarm's last route (the same BFS probe a ground
-   * structure would use). It also has to MATTER: a footprint that neither
-   * touches walkable ground nor buries a tower is a shield tower in a corner
-   * nobody visits, so the roll refuses it. Two dozen tries, then give up
-   * until the next period — a crowded map simply mutates less.
+   * Roll a spot and raise a shield tower on it. A candidate 3x3 must be
+   * BUILDABLE ROCK throughout (no pine, no deep water), clear of every
+   * other shield tower and of every turret. Rock carries the rest of the
+   * old rule set for free — it is already off the lanes, off the water and
+   * off the drop zones — so no seal probe or apron test is needed. Two
+   * dozen tries, then give up until the next period: a map with no free
+   * rock left simply raises nothing this period.
    */
   private trySpawnShieldTower(): void {
     const { blocked, wall } = this.terrain;
     for (let tries = 0; tries < 24; tries++) {
       const gx = 1 + ((Math.random() * (this.terrain.cols - SHIELD_TOWER_SIZE - 2)) | 0);
       const gy = 1 + ((Math.random() * (this.terrain.rows - SHIELD_TOWER_SIZE - 2)) | 0);
-      // TURRET GROUND ONLY: every cell of the footprint has to be rock a
-      // tower could itself have been built on — blocked, and not one of
-      // the un-buildable kinds (isBuildableWall: no pine, no deep water).
+      // ROCK ONLY: every cell of the footprint has to be blocked, and not
+      // one of the un-buildable kinds (isBuildableWall: no pine, no deep
+      // water).
       //
       // That one test replaces every rule this roller used to carry. A
       // shield tower on rock cannot cork a drop zone, cannot stand in a lane,
@@ -4562,9 +4561,9 @@ export class Sim {
           }
         }
       if (!ok) continue;
-      // ...and never on top of another shield tower. Harmless at a cap of three
-      // and near-certain at twenty: rock is a small share of the map, so
-      // without this the roller stacks them on the same few outcrops
+      // ...and never on top of another shield tower. Near-certain at a cap
+      // of twenty: rock is a small share of the map, so without this the
+      // roller stacks them on the same few outcrops
       for (const o of this.shieldTowers) {
         if (o.hp <= 0) continue;
         if (

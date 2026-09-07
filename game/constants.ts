@@ -1327,11 +1327,10 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
 };
 
 /**
- * WHAT A TURRET IS, in one sentence, for the card the tech tree opens over
- * its node.
+ * WHAT A TURRET IS, in one sentence, for the hover card the build bar and
+ * the progress track open over it.
  *
- * The node itself can only ever say what BUYING it does — "+1 Duo
- * placement" — which is the shopkeeper's half of the question and not the
+ * A name and a price are the shopkeeper's half of the question, not the
  * player's. The player is choosing between seventeen guns they have never
  * fired, so the card has to say what the gun DOES: how it delivers damage,
  * and the one quirk that decides where it wants to stand.

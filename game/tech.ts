@@ -16,13 +16,13 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * turret's upgrade points.
  */
 export interface TechState {
-  /** the turrets a run may field: the starting seven and every one the
-   *  track has handed out (track.ts, turretsAt) */
+  /** the structures a run may field: STARTING_ROSTER's five and every one
+   *  the track has handed out (track.ts, turretsAt) */
   unlocked: ReadonlySet<TowerKind>;
   /**
-   * The fast-forward multipliers this save may use, ascending. 1x is
-   * always in it — it is the pace the game runs at; the rest are the
-   * track's paces (speedsAt).
+   * The fast-forward multipliers this save may use, ascending. 1x is all
+   * a campaign save ever has — the track hands out no pace (PLACED in
+   * track.ts) and speedsAt says so; 2x and up are sandbox tools.
    */
   speeds: readonly number[];
   /** how many turrets the build bar holds — BAR_SLOTS, on every save */
@@ -35,9 +35,9 @@ export { upgradedTower, NO_UPGRADES, type UpgradeContext, type UpgradePoints };
 
 /**
  * THE BUILD BAR'S WIDTH: eight seed slots, PvZ-style, on every save. The
- * roster is seventeen turrets and grows with the level (track.ts), so past
- * eight the player curates — the loadout picker beside the bar is where a
- * turret is swapped in — and the bar never has to scroll on a laptop.
+ * roster is twenty-three structures and grows with the level (track.ts),
+ * so past eight the player curates — the loadout picker beside the bar is
+ * where one is swapped in — and the bar never has to scroll on a laptop.
  */
 export const BAR_SLOTS = 8;
 

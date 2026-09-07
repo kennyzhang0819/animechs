@@ -7,7 +7,7 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 - A map is `public/maps/<id>.json`, listed in `OFFICIAL_MAP_IDS`; a world claims it by name in `WORLDS[].map`.
 - Layers are flat arrays indexed `y * w + x`; height is `floor.length / w`.
 - `blocked` is the only thing pathfinding reads.
-- `wall` sentinels: `WALL_PINE` (4) and `WALL_DEEP` (7) are blocked, show their floor, and take no tower.
+- `wall` sentinels: `WALL_PINE` (4) and `WALL_DEEP` (7) are blocked, show their floor, and are not buildable rock (`isBuildableWall`).
 - Water floors are a list (`WATER_FLOOR_GROUPS`), not a range. Append floor families; never insert.
 - Atlas indices are copied into `mindustry.mjs`, named identically. When a family moves, grep both.
 
@@ -48,10 +48,10 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 
 ## Room to build
 
-- Towers stand only on blocked cells that are not sentinels. Count the rock.
-- More than 200 4x4 footprints; more than 8,000 rock cells.
+- Structures take OPEN GROUND only (`Sim.canPlace`) — never rock, forest or deep water — so a map's open floor is the whole of where a defence can go.
+- The generator still counts ROCK: more than 8,000 rock cells and more than 200 4x4 all-rock footprints. Those two checks predate open-ground placement and now measure the shield towers' ground (`trySpawnShieldTower`) and the map's bulk, not the player's.
 
 ## Rules of play a map must respect
 
-- A special mutator is map-bound: it is named in one world's `intrinsicMutation` or it throws at load.
+- No map carries mutators of its own. Every rule is in every roll on every map (`rollMutations`); a terrain rule reads whatever terrain it lands on.
 - Amphibious counts water crossings on the ground routes; Hydrophobic taxes rock within 10 cells of water. Moving water moves both.

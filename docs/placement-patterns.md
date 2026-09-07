@@ -21,9 +21,9 @@ worth having:
   balance work. A map with a long thin ridge is a duo map; a map with a
   four-wide seam over the choke is a spectre map. The author decides by
   drawing, not by writing a rule.
-- **The tech tree stops being the only axis.** Upgrades buy *stats*, mutators
-  take them away; a pattern buys neither — it asks a question about the
-  ground and it is answered by looking.
+- **The level track stops being the only axis.** Upgrades buy *stats*,
+  mutators take them away; a pattern buys neither — it asks a question about
+  the ground and it is answered by looking.
 
 ## What other games do with adjacency
 
@@ -143,11 +143,10 @@ Salvo's is the first pattern that changes a turret's *shape of fire* rather
 than a multiplier — three salvos in a row are a different weapon, not a
 stronger one, which is the Loop Hero lesson at a small scale.
 
-Lancer's is the **named pair**, and it names arc for a reason: arc is lancer's
-own ancestor in the tree (`duo → arc → scorch → lancer`) and the two are the
-same weapon at two scales. A player who kept their opening arcs standing gets
-paid for it, which is exactly the thing `upgrades.ts` says the tree exists to
-reward — *keep what works*.
+Lancer's is the **named pair**, and it names arc for a reason: the two are
+the same weapon at two scales, and arc opens ten levels earlier. A player who
+kept their opening arcs standing gets paid for it, which is exactly the thing
+`upgrades.ts` says a stat branch exists to reward — *keep what works*.
 
 Ripple's asks for a **3×3 hole in a platform with rock on all four sides**,
 which is the scarcest geometry on any current map and needs an author to
@@ -170,7 +169,7 @@ something away. Fuse is already a 90-range point-blank shotgun, so −15% is a
 genuine cost and a wall of three is a decision rather than free value.
 
 Cyclone's wants **five different kinds within three cells** — a hard ask that
-can only be met by a player who owns most of the tree and is willing to build
+can only be met by a player who owns most of the roster and is willing to build
 a genuinely mixed emplacement instead of a monoculture. It is the anti-spam
 pattern, and it is priced in *breadth of ownership*, which nothing else in the
 game charges for.
@@ -318,10 +317,9 @@ it belongs in exactly one place per map.
 `refreshSpecs`). A placement bonus is per *turret*. That is the whole of the
 work.
 
-It is not much work, because there are only five readers:
-`sim.ts:2929` (the tower tick), `sim.ts:1214` (`bulletFor`), `renderer.ts:1576`
-(the continuous beam), `game.ts:1218` (the range ring), and `refreshSpecs`
-itself.
+It is not much work, because there are only five readers: the tower tick and
+`bulletFor` in `sim.ts`, the continuous beam in `renderer.ts`, the range ring
+in `game.ts`, and `refreshSpecs` itself.
 
 The cheap shape:
 
@@ -350,7 +348,7 @@ pattern's name and its current value under the footprint, and marks the cells
 or turrets feeding it. When the value is zero it says so in grey, which is how
 a player learns the rule exists at all.
 
-Second: **the turret's tech tree card carries the pattern in one sentence**,
+Second: **the turret's hover card carries the pattern in one sentence**,
 beside its stats. Seventeen sentences, and the whole system is documented
 inside the game.
 
@@ -380,7 +378,7 @@ to it. So:
 1. Wall ores + graphitic wall (batch 1). No rules, and it unblocks spectre.
 2. `placement.ts`, `Tower.bonus`, per-tower `statsFor`. Ship with the copper
    and titanium bands only — six patterns, all satisfiable on today's maps.
-3. The build-ghost preview and the tech-tree sentence. Do not ship 2 without 3.
+3. The build-ghost preview and the hover-card sentence. Do not ship 2 without 3.
 4. Thorium and plastanium bands.
 5. Batch 3 hazard floors, and the flow-field decision they force.
 6. The phase band, once its terrain exists.

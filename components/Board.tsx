@@ -12,31 +12,31 @@ import {
 import { clamp } from "@/game/constants";
 
 /**
- * A BOARD IS A MAP, NOT A PAGE — and there is now more than one of them,
- * which is why the camera lives here instead of inside the tech tree.
+ * A BOARD IS A MAP, NOT A PAGE — and it is shared, which is why the camera
+ * lives here rather than inside the one screen that draws on it.
  *
- * The tree used to be a vertically scrolling document, which stopped
- * working the moment it outgrew one screen in BOTH axes: a page can only
- * scroll one way, and the game one keystroke away already taught everyone
- * its camera. So a board is a fixed viewport over a transformed layer,
+ * The screen it was written for was a vertically scrolling document, which
+ * stopped working the moment it outgrew one screen in BOTH axes: a page can
+ * only scroll one way, and the game one keystroke away already taught
+ * everyone its camera. So a board is a fixed viewport over a transformed layer,
  * driven exactly like the field — WASD and arrows pan, the wheel zooms
  * about the cursor (a ctrl-tagged pinch delta uses a stronger factor), the
  * floating buttons zoom, and any drag on open ground or on a node drags the
  * board. The chrome floats over it.
  *
  * The camera lives in a REF and is applied to the layer imperatively:
- * panning at 60fps must not re-render the board, and a re-render from
- * buying a point re-applies the same transform from the ref, so the two
- * paths can never disagree.
+ * panning at 60fps must not re-render the board, and any re-render
+ * re-applies the same transform from the ref, so the two paths can never
+ * disagree.
  *
- * WHY THE CAMERA CAN BE OWNED FROM OUTSIDE (the `cam` prop). The tech tree
- * and the mutator codex are two boards behind one tab strip, so switching
- * tabs UNMOUNTS a board. A camera kept in here would then be re-fitted
- * every time, and a player who panned to the arc branch, glanced at the
- * mutators and came back would find the board yanked home. A parent that
- * outlives both tabs hands each one a ref and the pan survives the switch.
- * `null` means "never placed" — the board fits itself on first mount and
- * never again.
+ * WHY THE CAMERA CAN BE OWNED FROM OUTSIDE (the `cam` prop). The progress
+ * track and the mutator codex sit behind one tab strip (Progress.tsx), so
+ * switching tabs UNMOUNTS what is on the board. A camera kept in here
+ * would then be re-fitted every time, and a player who panned across the
+ * codex, glanced at the track and came back would find the board yanked
+ * home. A parent that outlives both tabs hands each one a ref and the pan
+ * survives the switch. `null` means "never placed" — the board fits itself
+ * on first mount and never again.
  */
 export interface Cam {
   /** the visible top-left, in board px */
@@ -47,10 +47,9 @@ export interface Cam {
 }
 
 /**
- * The zoom floor is low enough for the WHOLE tech tree to fit on a laptop
- * — that board grew by more than half when the upgrade rungs became nodes
- * with edges of their own, and a fit-on-mount that clamps is a board whose
- * first frame is a corner of itself.
+ * The zoom floor is low enough for the WHOLE of the widest board to fit on
+ * a laptop — a fit-on-mount that clamps is a board whose first frame is a
+ * corner of itself.
  */
 export const ZOOM_MIN = 0.2;
 export const ZOOM_MAX = 2.5;

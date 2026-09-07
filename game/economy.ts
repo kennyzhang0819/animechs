@@ -75,8 +75,8 @@ export const isEmptyDrop = (d: Drop): boolean => d.scrap === 0;
  * thousand and tier-5 bodies by the dozen, so the low rows are cheap per
  * body and the high rows are dear, and the three stages of a run come out
  * paying what the three turret tiers cost — see TOWER_PRICE and the stage
- * audit in ladder.ts. Against Confluence's script (public/levels/1.json)
- * the kills alone pay about:
+ * audit in ladder.ts. Against the campaign's script
+ * (public/levels/campaign.json) the kills alone pay about:
  *
  *   waves  1-20   ~217,000 scrap
  *   waves 21-35   ~486,000 scrap

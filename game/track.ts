@@ -244,7 +244,7 @@ const TURRETS_DEALT = dealTurrets();
   });
 })();
 
-/** the level a turret joins the roster — 1 for the starting seven */
+/** the level a turret joins the roster — 1 for STARTING_ROSTER's five */
 export function turretUnlockLevel(kind: TowerKind): number {
   for (const [level, kinds] of TURRETS_DEALT) if (kinds.includes(kind)) return level;
   return 1;
@@ -303,7 +303,8 @@ const UPGRADES_ON_TRACK = false;
 
 const DEALT: Map<number, UpgradeKind[]> = UPGRADES_ON_TRACK ? dealUpgrades() : new Map();
 
-/** every reward a level hands out: maps and paces first, then the turrets, then the rungs */
+/** every reward a level hands out: the placed ones first (the maps), then
+ *  the turrets, then the mutator, then the upgrade rungs */
 export function rewardsAt(level: number): Reward[] {
   const out: Reward[] = PLACED.filter((p) => p.level === level).map((p) => p.reward);
   for (const id of TURRETS_DEALT.get(level) ?? []) out.push({ kind: "turret", id });
@@ -357,7 +358,7 @@ export function speedsAt(level: number): number[] {
   return out.sort((a, b) => a - b);
 }
 
-/** the turrets a level has on the roster: the starting seven and every one dealt so far */
+/** the turrets a level has on the roster: STARTING_ROSTER's five and every one dealt so far */
 export function turretsAt(level: number): Set<TowerKind> {
   const out = new Set<TowerKind>();
   for (let l = 1; l <= Math.min(level, MAX_LEVEL); l++)

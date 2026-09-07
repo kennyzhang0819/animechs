@@ -15,9 +15,9 @@
  * flipped on if they fancied a harder game. Nobody flips those switches —
  * an optional handicap with no reward attached is one nobody takes, and it
  * had to be BALANCED as though everyone did. So it became the opposite
- * thing: MANDATORY, on the maps that want it, and unchosen.
+ * thing: MANDATORY and unchosen.
  *
- * WHERE IT IS MANDATORY: EVERY DEPLOY FROM LEVEL 2 UP, on every world.
+ * WHERE IT IS MANDATORY: EVERY DEPLOY ABOVE NEMESIS, on every world.
  * The gate is the LADDER, not the map — a run is played under the points
  * and the count its difficulty carries (mutationBudget, mutationPicks,
  * both of them dials on the rung: see RungKnobs in ladder.ts), and the four
@@ -33,15 +33,14 @@
  * of that is a wall rather than a challenge. Every step above Nemesis
  * is the same full script under rules nobody chose, which is ENDGAME RESOURCE FARMING with a roguelike shape.
  *
- * A LEVEL MAY STILL CARRY RULES OF ITS OWN, and that is a different thing
- * from the switch above. `LevelSpec.intrinsicMutation` is a list of rules
- * a world is ALWAYS played under — at every tier, the bottom one included
- * — because they are part of what that world is rather than part of how
- * hard it is being played. They are never rolled and never charged against
- * the tier's points (see mutationsInForce and rollMutations' `exclude`).
- * The old switch said "this map is allowed to mutate, at whatever strength
- * the difficulty says", which put a level in charge of a difficulty curve;
- * this says "this map is the shielded one", which is authorship.
+ * NO LEVEL CARRIES RULES OF ITS OWN. All maps are equal: the roll is the
+ * whole answer (mutationsInForce), and a rule that reads the terrain
+ * simply reads whatever terrain it landed on.
+ *
+ * WHAT A SAVE MAY BE DEALT IS ITS OWN, THOUGH. The track opens one rule a
+ * level through the mutator phase (MUTATOR_UNLOCKS in track.ts) and the
+ * deploy passes everything still shut as rollMutations' `exclude`, so a
+ * save inside the roster phase plays clean runs at every rung.
  *
  * THE COSTS ARE THE ONLY BALANCE DIAL. A mutator is not "for" a difficulty
  * — it is worth a number of points, and a difficulty can afford it or
@@ -91,8 +90,8 @@ export interface MutationDef {
    * WHAT IT IS WORTH, in the budget a difficulty hands the roller. See
    * MUT_COST_MIN/MAX for the scale, and note that the cost is about how
    * much of the player's game it takes away, not about how much health it
-   * adds: Speedy adds no health at all and is still one of the two
-   * dearest things here.
+   * adds: Speedy adds no health at all and is still one of the dearest
+   * things here.
    */
   cost: number;
 }
@@ -113,14 +112,13 @@ export const MUT_COST_MAX = 6;
 
 /**
  * THE CATALOG, HARDEST FIRST — which is also codex order, so the list a
- * player reads opens on the map-bound SPECIAL rules and then falls from
- * the ruinous to the survivable.
+ * player reads falls from the ruinous to the survivable. The track deals
+ * it the other way up (MUTATOR_UNLOCKS in track.ts, lightest first).
  *
- * THESE COSTS CAME OFF THE DASHBOARD. They rode in public/balance.json's
- * `mutations` section while they were being tuned and are authored here
- * now; that file is empty again. Nothing in the catalog spends into the
- * BRUTAL band today — the scale still allows it (MUT_COST_MAX), no rule
- * currently earns it.
+ * WHAT IS AUTHORED HERE IS WHAT A RESET RETURNS TO. Every cost is bendable
+ * from the admin balance tab, which writes an override into
+ * public/balance.json's `mutations` section, and mutationCostOf — never
+ * `m.cost` — is what the roller and the panels read.
  */
 export const MUTATIONS: readonly MutationDef[] = [
   {
@@ -378,11 +376,10 @@ export const MUT_COUNT_MAX = 5;
  * tab without a rebuild, exactly like enemy level and shield scale. What
  * is authored here is what a Reset returns to.
  *
- * IT ONLY READS TRUE ONCE THE CATALOG HAS LIGHT RULES IN IT. Today's two
- * entries cost 4 and 5, so the lower tiers genuinely cannot afford three
- * of anything and roll what they can (see rollMutations). That is the
- * catalog being short, not the budget being wrong — the fix is cheap
- * mutators, and the arithmetic here is already waiting for them.
+ * THE CATALOG SPANS THE SCALE NOW — nine rules from 1 to 5 — so the first
+ * mutating tier can genuinely pay for three light ones and the top can
+ * pay for four heavy ones. A roll that comes back short is the budget
+ * being spent honestly, not the catalog being empty (see rollMutations).
  */
 export const MUT_BUDGET_BASE = 6;
 export const MUT_BUDGET_PER_RUNG = 1.8;
@@ -632,13 +629,14 @@ export const HUNGRY_HUE: readonly [number, number, number] = [1, 0.55, 0.86];
 // the answer to it is calibre: bigger emplacements, and an anti-air line
 // that is not built out of pellets.
 //
-// IT IS PRICED AS HEAVY RATHER THAN BRUTAL because that answer exists and
-// is affordable. The board that already holds the run holds it under this
-// rule too, more slowly; the board built entirely out of duo walls and
-// scatters does not, and has to be rebuilt. Rolled early, before the tree
-// has anything with weight behind it, it is the harshest 4 in the catalog
-// — which is the honest reading of a rule whose whole content is "your
-// opening roster is a tenth as good".
+// IT IS PRICED LIGHT because that answer exists and is affordable. The
+// board that already holds the run holds it under this rule too, more
+// slowly; the board built entirely out of duo walls and scatters does
+// not, and has to be rebuilt. It is the cheapest entry in the catalog and
+// the first thing the mutator phase opens (MUTATOR_UNLOCKS, level 16), so
+// it is the rule every mutating save meets before any other — which is
+// the right introduction to a catalog whose whole business is taking
+// answers away.
 
 /** flat armour added to every unit of tier 3 or below under Armored
  *  Swarms — applied once at spawn (Sim.spawnUnit), so every armour read
@@ -1043,17 +1041,16 @@ for (let t = 1; t < MITOSIS_BROOD.length; t++)
 // they damage shield first, then body, which quietly makes the beam
 // roster the shield tower-breaking roster.
 //
-// IT RISES ON TURRET GROUND, AND THAT IS THE WHOLE COST. A shield tower only
-// ever lands on BUILDABLE ROCK — the same highground a turret needs, and
-// never on the lanes — so it takes no pathing decision away from the
-// swarm and every emplacement away from the player. The dome still hangs
-// over the road beside it, which is where the sheltering happens; what
-// the footprint costs is somewhere to shoot from.
-//
-// AND A SHIELD TOWER THAT LANDS OVER TOWERS ENTOMBS THEM: a buried turret is
-// disabled, not destroyed, untouchable, and stands back up the moment the
-// shield tower dies. "My scorch is hostage under that dome" is an objective,
-// not a loss; nothing the player owns is ever taken permanently.
+// IT RISES ON ROCK, AND THAT ONE TEST IS THE WHOLE SITING RULE. A shield
+// tower only ever lands on BUILDABLE ROCK (isBuildableWall: no pine, no
+// deep water) — never on open ground, which is where structures and units
+// both live. Rock is already impassable and already unbuildable, so a
+// footprint on it cannot cork a drop zone, stand in a lane, sit on water,
+// seal the swarm's route or land on a turret, and the roller needs none
+// of the tests it used to carry for those. What the rule costs is the
+// OPEN GROUND under the dome, which canPlace holds shut while the tower
+// lives: the dome hangs over the road beside it, and the emplacements
+// that would have covered that road cannot be built until it is dead.
 //
 // TURRETS CHEW SHIELD TOWERS ONLY WHEN IDLE — a turret with nothing else in
 // range spends its reload on one, so clearing a shield tower costs time between
@@ -1154,7 +1151,7 @@ export const SHIELD_TOWER_MAX_ALIVE = 20;
 // scenery: a late board focuses several thousand damage a second onto one
 // point, so a fixed pool that took a minute to chew at wave five was gone
 // inside five seconds at wave forty, dome and body together, before the
-// four-second reform clock could ever matter. The rule needs to cost the
+// reform clock (SHIELD_TOWER_SHIELD_DELAY) could ever matter. The rule needs to cost the
 // same DECISION at every point in the run, and the only thing that grows
 // underneath it is the player's damage — so the pools grow the way that
 // does, by a percentage a wave rather than by a step.
@@ -1194,8 +1191,8 @@ export const shieldTowerWaveScale = (wave: number): number =>
 // ---------- THE MEGA SHIELD TOWER --------------------------------------
 //
 // PAST WAVE 35 THE SHIELD TOWERS STOP BEING A CHORE AND BECOME A WALL. Same
-// rule, same regen, five times the pools and a dome four times the area —
-// sixteen tiles across, which is wider than most turrets can reach from
+// rule, same regen, the pools the wave curve gives them, and a dome four
+// times the area — sixteen tiles across, which is wider than most turrets can reach from
 // one emplacement and therefore a thing a whole SECTION of the board has
 // to be pointed at rather than whatever happened to be idle.
 //

@@ -404,7 +404,7 @@ function play() {
   const won = sim.won();
   return {
     world: `${world.id} ${world.name}`, mission: L.missionText(world).title, tier: TIER,
-    mutators: [...(world.intrinsicMutation ?? []), ...MUTATORS], level: LEVEL,
+    mutators: [...MUTATORS], level: LEVEL,
     scale: SCALE, start: E.SCRAP_START, unitDamage: WP.unitDamageScale(),
     outcome: won ? "WON" : sim.lost() ? "LOST" : "TIMEOUT",
     wave: sim.currentWave(), time: Math.round(sim.time), core: Math.round((100 * sim.core.hp) / sim.core.hpMax),

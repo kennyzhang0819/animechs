@@ -106,14 +106,13 @@ export interface MapData {
  * is "seed-24". They used to describe the terrain instead (grass-open,
  * tidewater), which meant the id and the name a player reads were two
  * different vocabularies and every lookup was a translation. A map that is
- * renamed is renamed in both places, and LEGACY_MAP_IDS in progress.ts is
- * where the old spellings are answered for.
+ * renamed is renamed in both places.
  */
 export const OFFICIAL_MAP_IDS: readonly string[] = [
   // the campaign maps, in world order
   "confluence",
   "maelstrom",
-  // the spore archipelago — world 3, the front with no air line over it
+  // the spore swamp — world 3
   "quagmire",
   // the second batch, worlds 4 to 9 — every one a spec over
   // scripts/maps/mindustry.mjs: the earthy one, the snowy one, the two

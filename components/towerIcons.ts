@@ -2,7 +2,7 @@ import type { TowerKind } from "@/game/types";
 
 const T = "/mindustry/sprites/blocks/turrets";
 
-/** raw menu sprite per tower, shared by the build menu and the tech tree */
+/** raw menu sprite per tower, shared by the build menu and the progress track */
 export const TOWER_ICONS: Record<TowerKind, string> = {
   duo: `${T}/duo/duo-preview.png`,
   hail: `${T}/hail.png`,

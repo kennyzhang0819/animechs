@@ -1321,10 +1321,10 @@ export const waveSpawnRate = (count: number): number =>
 
 /**
  * The editable half of a level: everything the admin level editor writes,
- * one document per world at public/levels/<id>.json. Identity and
- * presentation (name, map, mission) stay in code — an editor that could
- * rename a world or move it to another map would be editing the campaign's
- * structure, not its difficulty.
+ * as one document at public/levels/campaign.json (CAMPAIGN_DOC_ID below —
+ * every map plays it). Identity and presentation (name, map, mission) stay
+ * in code — an editor that could rename a world or move it to another map
+ * would be editing the campaign's structure, not its difficulty.
  */
 export interface LevelDoc {
   id: string;
@@ -1482,14 +1482,15 @@ export const WORLDS: LevelSpec[] = [
     // outruns the drop zones they simply queue (Sim.runScript). Size against
     // the stage table, which is the limit that binds.
     // ==============================================================
-    // THE SCRIPT LIVES IN public/levels/1.json AND NOWHERE ELSE. It is
-    // deliberately empty here: a second copy in code is a second campaign,
-    // and the two had already diverged across all 52 waves (the code copy
-    // ran about half the bodies) before this was emptied. Whatever fails
-    // to load is visible as a level with no waves, which is the point — a
-    // silent fall back to a different, staler campaign is the bug this
-    // removes. loadLevelDocs() warns on the console when the document is
-    // missing. Edit the waves in the admin level editor, or the JSON.
+    // THE SCRIPT LIVES IN public/levels/campaign.json AND NOWHERE ELSE. It
+    // is deliberately empty here: a second copy in code is a second
+    // campaign, and the two had already diverged across every wave (the
+    // code copy ran about half the bodies) before this was emptied.
+    // Whatever fails to load is visible as a level with no waves, which is
+    // the point — a silent fall back to a different, staler campaign is
+    // the bug this removes. loadLevelDocs() warns on the console when the
+    // document is missing. Edit the waves in the admin level editor, or
+    // the JSON.
     script: [],
   },
   {
@@ -1503,10 +1504,9 @@ export const WORLDS: LevelSpec[] = [
     id: "2",
     name: "Maelstrom",
     map: "maelstrom",
-    // THE NAVAL FRONT: hold the fifty. Six-second gaps, because hulls are
-    // big and the water doors pass a wave slower than the schedule — the
-    // late waves are bound by their own release, not the gap — so the
-    // short gap is what keeps the run near twenty-five minutes
+    // THE NAVAL FRONT: hold the campaign's fifty. Hulls are big and the
+    // water doors pass a wave slower than the schedule, so the late waves
+    // here are bound by their own release rather than by the gap
     mission: { kind: "hold" },
     waveGap: 15,
     script: [],
@@ -1515,10 +1515,10 @@ export const WORLDS: LevelSpec[] = [
     id: "3",
     name: "Quagmire",
     map: "quagmire",
-    // THE SWAMP: forty waves, held with the full hundred, because its core
-    // stands on the west edge behind one causeway and its bodies wade in
-    // heavier than they spawned. It plays the campaign's fifty like every
-    // map; its doors decide which families the die may deal it.
+    // THE SWAMP: its core stands on the west edge behind one causeway and
+    // its bodies wade in heavier than they spawned. It plays the
+    // campaign's fifty like every map; its doors decide which families the
+    // die may deal it.
     mission: { kind: "hold" },
     waveGap: 15,
     script: [],

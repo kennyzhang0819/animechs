@@ -27,7 +27,7 @@ const mono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "MechSwarm",
   description:
-    "Incremental swarm defense: every run banks resources toward a tech tree of towers and placements, across a campaign of worlds — thousands of units on a WebGL flow field.",
+    "Incremental swarm defense: every run banks XP up a level track that opens towers, maps and mutators, across a campaign of worlds — thousands of units on a WebGL flow field.",
 };
 
 export const viewport: Viewport = {

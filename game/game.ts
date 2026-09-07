@@ -900,11 +900,11 @@ export class Game {
   /**
    * Rebuild a saved layout, and return how much of it stood back up.
    *
-   * Every placement goes through placeTower, so the map and the tech tree
-   * both get a veto: a cell that stopped being rock since the layout was
-   * saved, or a turret whose capacity has since been spent elsewhere in the
-   * same list, simply drops out. A map edited under a save therefore loses
-   * the towers that no longer fit rather than restoring them into walls.
+   * Every placement goes through placeTower, so the map and the save's
+   * roster both get a veto: a cell that stopped being open ground since
+   * the layout was saved, or a turret the save no longer owns, simply
+   * drops out. A map edited under a save therefore loses the towers that
+   * no longer fit rather than restoring them into walls.
    */
   applyLayout(towers: readonly TowerPlacement[]): number {
     let placed = 0;

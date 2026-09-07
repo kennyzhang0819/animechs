@@ -44,7 +44,7 @@ common, and what the generator is built to reproduce:
   stray lumps, and no two stretches alike. The previous approach here —
   arcs of chosen radius, cosine-lobed blobs, a 21-cell lane everywhere —
   produced maps that read as drawings of maps. It is retired.
-- **Most of the board is rock.** Open ground is 15% to 40% of a land map
+- **Most of the board is rock.** Open ground is 15% to 45% of a land map
   (Ground Zero 14%, Frozen Forest 33%, Stained Mountains 36%, Salt Flats
   49%); the rest is wall, forest and water. A map is rooms and corridors
   cut out of rock, not rock dropped onto a plain.
@@ -219,8 +219,10 @@ broken map. Every one of these is printed on every run:
 - **Composition.** Open ground between 15% and 45% of the board, the
   floor families' shares, forest, water, holes, lumps, ruins, props.
 - **Room to build.** More than 8,000 rock cells and more than 200 4x4
-  footprints, because towers stand on rock and the biggest needs sixteen
-  contiguous cells of it.
+  all-rock footprints. Both checks predate open-ground placement: a
+  structure takes OPEN GROUND only (`Sim.canPlace`), so what these now
+  measure is the map's bulk and the ground a shield tower can rise on,
+  not where the player's guns go.
 
 Print the numbers on every run. `widest way through 6.0 cells — pinched at
 (70,188)` is a fact you can act on; "looks fine" is not.

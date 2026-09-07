@@ -908,8 +908,8 @@ export default function MechSwarm() {
    * no level, no difficulty. Everything that describes a run lives behind
    * Start, where it describes something the player is about to do.
    *
-   * It is deliberately NOT part of `screen`: leaving a run or the tech tree
-   * comes back to "menu" from several places, and this survives all of
+   * It is deliberately NOT part of `screen`: leaving a run or the progress
+   * screen comes back to "menu" from several places, and this survives all of
    * them, so a player who deploys, loses, and backs out lands on the deploy
    * screen with their picks rather than at the title.
    */
@@ -2179,7 +2179,7 @@ export default function MechSwarm() {
           >
             {/* the loadout, in the canonical roster order: the turrets this
                 save PICKED to ride the bar (see barKinds), not everything it
-                owns — owning is the tech tree's business, the bar is a PvZ
+                owns — owning is the level track's business, the bar is a PvZ
                 seed row. A null unlocked list is sandbox mode: the roster */}
             {barKinds().map((kind, slot) => {
               const t = MENU_BY_KIND.get(kind)!;

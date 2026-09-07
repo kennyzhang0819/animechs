@@ -2,26 +2,27 @@ import { MU, PAL, TOWERS, type BulletStats, type TowerStats } from "./constants"
 import { TOWER_KINDS, type TowerKind } from "./types";
 
 /**
- * THE TURRET UPGRADE BRANCHES — a chain of nodes hanging off every turret
- * in the tree, and the part of the tech tree whose points buy neither a
- * turret nor a switch but STATS, applied to every turret of that kind
- * standing on the board at once.
+ * THE TURRET UPGRADE BRANCHES — a chain of rungs hanging off every turret,
+ * the one reward that buys neither a turret nor a rule but STATS, applied
+ * to every turret of that kind standing on the board at once.
  *
- * EVERY RUNG IS BOUGHT ONCE. The tree is paid in SKILL POINTS now — one a
- * player level (economy.ts), a few dozen over a whole campaign — so a rung
- * is a single click that does its whole job, never a dial of a hundred
- * half-per-cent stops. The shape of a branch is the contract this file is
- * written to:
+ * NOTHING HANDS THEM OUT TODAY. UPGRADES_ON_TRACK in track.ts is false, so
+ * every turret plays at its stock stats; the branches, their blurbs and
+ * the dealing arithmetic are all intact and waiting to be put back
+ * somewhere that is not the unlocking phase.
+ *
+ * EVERY RUNG IS DEALT ONCE, whole — a rung does its job the moment it
+ * lands, never as a dial of a hundred half-per-cent stops. The shape of a
+ * branch is the contract this file is written to:
  *
  *   1  a solid multiplier on one axis — rate, damage, range, pull. One
  *      point, and the turret is noticeably better at what it already does.
  *   2  a second step on a DIFFERENT axis, so the two never compete for the
  *      same number. One point.
  *   3  a one-shot that is genuinely good: an ammunition swap, a doubling,
- *      a capability the stock turret does not have. Two points (see
- *      AMMO_POINTS in tech.ts).
- *   4  THE ULTIMATE. Three points and a level gate, and it does not
- *      improve the turret so much as replace it.
+ *      a capability the stock turret does not have.
+ *   4  THE ULTIMATE. The last rung of a branch, and it does not improve
+ *      the turret so much as replace it.
  *
  * ONLY DUO AND ARC SHIP A FOURTH RUNG TODAY, and the other fifteen are
  * deliberately unwritten rather than missing: an ultimate is a turret
@@ -34,7 +35,7 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * assume four. `tier` says which rung a def is, and ULTIMATE_TIER is what
  * makes one the ultimate — never its index.
  *
- * WHY STATS AND NOT MORE TURRETS. A tech tree that only ever sells the
+ * WHY STATS AND NOT MORE TURRETS. A track that only ever opens the
  * NEXT turret asks the player to abandon what they have every time they
  * climb a stage — the duos that carried the first ten waves are dead
  * weight by wave thirty. These branches are the other offer: keep what
@@ -43,7 +44,7 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * costs scrap, an upgraded cheap turret is a cheaper answer.
  */
 
-/** every upgrade node id, in tree order — the tech tree's third namespace */
+/** every upgrade rung id, in branch order — the track's third reward namespace */
 export const UPGRADE_KINDS = [
   // duo's four keep the ids they shipped with: a save's points are keyed
   // by id, and renaming one would silently delete what a player bought

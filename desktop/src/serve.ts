@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 
 /**
  * THE GAME'S ORIGIN INSIDE THE SHELL. The static export fetches its
- * documents by absolute path — /levels/1.json, /maps/…, /_next/static/… —
+ * documents by absolute path — /levels/…, /maps/…, /_next/static/… —
  * so it cannot be loaded off file://; it needs a scheme with a root. This
  * registers app:// as a standard scheme (a host, relative URLs, fetch,
  * streams) and serves the export's directory at app://game/.

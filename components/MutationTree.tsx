@@ -52,7 +52,7 @@ import { type ReactNode, type RefObject } from "react";
  * is the colour of the tile's border and nothing else. There is no
  * grouping left to read, no header over a column and no number on a card.
  * The words — the rule, and the word for how bad it is — are in the hover
- * card, which is the tech tree's own gesture: a mouse rests on a tile and
+ * card, which is the build bar's own gesture: a mouse rests on a tile and
  * it opens, a finger taps it and it opens, and nothing on this board ever
  * costs anything to ask about.
  *
@@ -85,12 +85,12 @@ import { type ReactNode, type RefObject } from "react";
 // only arithmetic left is where the next tile goes.
 //
 // It is still a BOARD rather than a page: the catalog is meant to grow,
-// and a shelf of thirty rules wants the same camera the tech tree has
-// rather than a scrollbar. Two rules fit on a phone today; the layout is
-// the same either way.
+// and a shelf of rules wants the same camera the game field has rather
+// than a scrollbar. Nine rules fit on a laptop today; the layout is the
+// same either way.
 
 const PAD = 90;
-/** the tile itself — the same 88px square the tech tree's nodes are, so
+/** the tile itself — the same 88px square the track's chips are, so
  *  the two boards read as one game */
 const NODE = 88;
 /** cell = tile + the name under it + the gap to the next one */

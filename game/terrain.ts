@@ -98,8 +98,9 @@ export function waterWalkMask(t: Terrain): Uint8Array {
  * It is `isBuildableWall` that decides what a hill is, and not by accident
  * — "rock standing above the floor" is one idea, and a second predicate
  * spelling it out again is a second place for the sentinel list to go
- * stale. Same set, for the same reason: what a turret can stand on is what
- * a flyer flies around, and what SIGHT stops at (Sim.hasSight).
+ * stale. Same set, for the same reason: what a flyer flies around is what
+ * SIGHT stops at (Sim.hasSight). Structures do NOT stand on it — they take
+ * open ground only (Sim.canPlace).
  */
 export function airWalkMask(t: Terrain): Uint8Array {
   const m = new Uint8Array(t.blocked.length);
@@ -313,8 +314,9 @@ export function generateTerrain(seed: number): Terrain {
       }
   }
 
-  // rock blobs: bare stone that doubles as TOWER PLATFORMS — towers build
-  // only on highground, so rocks near the lane are the player's real estate
+  // rock blobs: bare stone standing in the open. Structures take open
+  // ground only (Sim.canPlace), so a rock is cover and an obstacle rather
+  // than a platform — it shapes the lane the guns are placed along
   const rock = (rx: number, ry: number, r: number): void => {
     for (let yy = Math.max(1, Math.ceil(ry - r)); yy <= Math.min(ROWS - 2, ry + r); yy++)
       for (let xx = Math.max(8, Math.ceil(rx - r)); xx <= Math.min(COLS - 10, rx + r); xx++) {
