@@ -8,21 +8,21 @@ game finds it through one bridge on `window` (see below).
 ## Build and run
 
 ```bash
-npm run desktop:dev        # DEVELOP HERE: Next's dev server inside the shell
+npm run dev                # DEVELOP HERE: Next's dev server inside the shell
 npm run desktop            # static export into out/, then launch the shell
 npm run desktop:pack       # + electron-builder → desktop/release/<os>-unpacked/
 npm run desktop:pack:steam # Windows and Linux unpacked dirs, from any OS
 npm run desktop:test       # the smoke test (needs out/ and a display; see below)
 ```
 
-**`desktop:dev` is the development loop.** It starts `next dev` and the
+**`npm run dev` is the development loop.** It starts `next dev` and the
 shell together (scripts/desktop-dev.mjs) and points the window at the
 server (`--dev-url`, honoured only by an unpackaged shell), so hot reload,
 the admin editors (Ctrl+Shift+M) and their file-writing API routes all
 work, the save lands in the same file on disk the shipped game uses, and
 closing the window ends both. The shell keeps retrying the URL until Next
 has compiled, so the order they come up in does not matter. F12 opens
-DevTools. A bare browser tab on `npm run dev` still works but falls back
+DevTools. A bare browser tab on `npm run dev:web` still works but falls back
 to localStorage for its save, and nothing ships that way.
 
 or the halves separately:
@@ -32,7 +32,7 @@ npm run build:static           # BUILD_TARGET=static export → out/
 npm --prefix desktop run start # compile desktop/src → desktop/dist, run Electron
 ```
 
-`desktop/` is its own npm package (`npm run desktop:dev` runs `npm ci`
+`desktop/` is its own npm package (`npm run dev` runs `npm ci`
 there on first run; by hand, `cd desktop && npm install` once — Electron
 fetches its binary in that package's postinstall) so that Electron,
 electron-builder and steamworks.js stay out of the web build, and so that the packed app carries steamworks.js and nothing else

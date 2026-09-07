@@ -7,7 +7,7 @@
  *   The read is synchronous over IPC because it happens once, at boot, and
  *   every caller of loadProgress is written for a value, not a promise;
  *   the writes are fire-and-forget. Steam Cloud picks the file up from
- *   there. `npm run desktop:dev` runs the dev server inside the shell, so
+ *   there. `npm run dev` runs the dev server inside the shell, so
  *   development saves land in the same file.
  * - A BARE BROWSER TAB on the dev server, with no shell around it:
  *   localStorage, so the tab still has a campaign. Nothing ships this way.

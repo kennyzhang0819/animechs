@@ -1,4 +1,4 @@
-// `npm run desktop:dev`: the Next dev server and the Electron shell, one
+// `npm run dev`: the Next dev server and the Electron shell, one
 // command, both torn down together. The shell is pointed at the server
 // (--dev-url, see desktop/src/main.ts) and keeps retrying until Next has
 // compiled, so the order they come up in does not matter.
@@ -22,7 +22,7 @@ if (!fs.existsSync(path.join(desktop, "node_modules", "electron", "dist"))) {
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 
-const next = spawn(npm, ["run", "dev", "--", "--port", port], {
+const next = spawn(npm, ["run", "dev:web", "--", "--port", port], {
   cwd: root,
   stdio: "inherit",
   shell: process.platform === "win32",

@@ -6,7 +6,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",
-        "dev",
+        "dev:web",
         "--",
         "-p",
         "3000"
@@ -18,7 +18,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",
-        "dev",
+        "dev:web",
         "--",
         "-p",
         "3199"
@@ -30,7 +30,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",
-        "dev",
+        "dev:web",
         "--",
         "-p",
         "3311"
@@ -53,7 +53,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",
-        "dev",
+        "dev:web",
         "--",
         "-p",
         "3422"
@@ -65,7 +65,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",
-        "dev",
+        "dev:web",
         "--",
         "-p",
         "3517"

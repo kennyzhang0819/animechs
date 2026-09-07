@@ -8,16 +8,17 @@ reroute the horde in real time.
 
 ```bash
 npm install
-npm run dev   # Next.js + Turbopack
+npm run dev       # the desktop app: Next's dev server inside the Electron shell
+npm run dev:web   # a bare browser tab: Next.js + Turbopack, nothing around it
 ```
 
 **The game is a desktop game**, shipped to Steam as an Electron app
 around the same bundle, and played with a mouse and a keyboard — there is
-no touch input and no phone layout. `npm run desktop:dev` runs the dev
-server inside the shell, which is where to develop; `npm run desktop`
+no touch input and no phone layout. `npm run dev` is the development
+loop, and runs the dev server inside the shell; `npm run desktop`
 builds and launches the static export; `npm run desktop:pack:steam`
 leaves the Windows and Linux depots under `desktop/release/`. The shell
-lives in `desktop/` (its own npm package; `npm run desktop:dev` installs it
+lives in `desktop/` (its own npm package; `npm run dev` installs it
 on first run, or `cd desktop && npm install` by hand); see
 [docs/desktop.md](docs/desktop.md).
 
