@@ -284,7 +284,7 @@ const runSpec = (
  * A MACRO — one of the two dials on the start screen, printed as a row:
  * what it is on the left, what it is set to on the right, and the whole
  * row a button that opens the list to change it. The value is what a
- * player reads at a glance ("Random · +25% XP", "Scourge · +90% XP"), so
+ * player reads at a glance ("Random · +25% XP", "Scourge · 80% XP"), so
  * it gets the ink and the label sits small beside it.
  */
 function MacroButton({
@@ -437,13 +437,16 @@ function PickRow({
   );
 }
 
-/** a multiplier as the extra it pays: x1.30 prints as "+30% XP", x0.40 as
- *  "-60% XP", and x1 — Nemesis, the rung the pot is priced for — as "Base XP" */
+/** a bonus as the extra it pays on top: x1.25 prints as "+25% XP" — the random map's line */
 const xpBonusText = (mult: number): string => {
   const pct = Math.round((mult - 1) * 100);
-  if (pct === 0) return "Base XP";
-  return pct > 0 ? `+${pct}% XP` : `${pct}% XP`;
+  return pct > 0 ? `+${pct}% XP` : "Base XP";
 };
+
+/** a rung's multiplier as its share of the mission pot: Incursion prints
+ *  "40% XP", Nemesis — the rung the pot is priced for — "100% XP", the
+ *  top rung "220% XP" */
+const xpShareText = (mult: number): string => `${Math.round(mult * 100)}% XP`;
 
 /**
  * THE MAP LIST. Random leads and is the default: the game picks any open
@@ -629,7 +632,7 @@ function DifficultyPicker({
       </DetailLine>
       <DetailLine label="Mutators">{rules === 0 ? "None" : `${rules} rules`}</DetailLine>
       <DetailLine label="Pays">
-        <span style={{ color: XP_COLOR }}>{xpBonusText(tierXpBonus(focus))}</span>
+        <span style={{ color: XP_COLOR }}>{xpShareText(tierXpBonus(focus))}</span>
       </DetailLine>
       <SelectButton onClick={() => onPick(focus)} />
     </>
@@ -1796,12 +1799,12 @@ export default function MechSwarm() {
                   </MacroButton>
                   <MacroButton
                     label="Difficulty"
-                    value={`${rungLabel(tier)}, ${xpBonusText(tierXpBonus(tier))}`}
+                    value={`${rungLabel(tier)}, ${xpShareText(tierXpBonus(tier))}`}
                     onClick={() => setPicker("difficulty")}
                   >
                     <span style={{ color: rungColor(tier) }}>{rungLabel(tier)}</span>
                     <span className="text-[14px]" style={{ color: XP_COLOR }}>
-                      {xpBonusText(tierXpBonus(tier))}
+                      {xpShareText(tierXpBonus(tier))}
                     </span>
                   </MacroButton>
                 </div>
