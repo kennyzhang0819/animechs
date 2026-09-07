@@ -128,17 +128,22 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `components/MechSwarm.tsx` — React shell: HUD (scrap, core health, XP), rung
   picker, six-slot build bar with prices and its loadout picker, game-speed
   switcher, results screens, canvases
-- `components/MenuBackground.tsx` — the title screen's ground: the game
-  seen from above before anyone has built on it. A lane meanders through
-  rock rolled fresh every launch (a floor/wall pair, a second rock in
-  patches, pockets of open floor, sometimes a heat gradient), and the
-  swarm walks it — daggers and crawlers in the crowd, maces and the odd
-  fortress among them — each turning with the lane's bends and striding
-  on the field's own leg cycle, with a few flares weaving escort overhead.
-  Every biome gets its turn: scenes hold for `SCENE_HOLD` seconds and
-  dissolve into the next, rolled in the background. Rasterized once a
-  scene; a few dozen sprites a frame. It holds still under
-  prefers-reduced-motion and stops when the tab is hidden
+- `components/MenuBackground.tsx` — the title screen's ground: **the game
+  itself, playing behind the menu**. Not a picture of it — a `Sim` on one
+  of the campaign's own maps, stepped at the same fixed 1/60 a run is and
+  drawn by the same renderer, so the bodies walking the lane are a wave's
+  bodies on the real flow field and the turrets shooting them are real
+  turrets with the sim's own shells, beams, smoke and deaths. Nobody is
+  playing, so it builds its own line: it traces the walkers' route down
+  the flow field and stands strongpoints of turrets off its shoulders, a
+  burst before the scene is shown and one every `BUILD_EVERY` after,
+  which is also how the line is repaired as the swarm eats it. The camera
+  finds the busiest patch of field, preferring one with guns in it, and
+  eases there. Each campaign map gets its turn: a scene holds for
+  `SCENE_HOLD` seconds, goes to black, and the next map is built behind
+  the black one piece of work per frame so nothing lands as a freeze. It
+  holds still under prefers-reduced-motion and stops when the tab is
+  hidden
 - `app/globals.css` — **the kit**: `.ms-btn` / `.ms-pane` / `.ms-seg` /
   `.ms-bar` and their variants are Mindustry's nine-patch UI sprites
   (`public/mindustry/sprites/ui/button*.9.png`, `pane*.9.png`) written as

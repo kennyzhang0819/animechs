@@ -1,164 +1,146 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import {
-  buildAtlas,
-  FLOOR_BASALT,
-  FLOOR_ICE,
-  FLOOR_MOSS,
-  FLOOR_MUD,
-  FLOOR_SALT,
-  FLOOR_SHALE,
-  FLOOR_SNOW,
-  FLOOR_SPORE_MOSS,
-  WALL_DACITE,
-  WALL_DUNE,
-  WALL_ICE,
-  WALL_SHALE,
-  WALL_SNOW,
-  WALL_SPORE,
-} from "@/game/atlas";
-import { CELL, COLS, NCELLS } from "@/game/constants";
-import { dressGrid, type DressStyle } from "@/game/dress";
-import { Renderer, WALL_SHADOW_A } from "@/game/renderer";
-import type { Terrain } from "@/game/terrain";
+import { buildAtlas } from "@/game/atlas";
+import { CELL, clamp, COLS, ROWS, TOWERS, type ZoneKind } from "@/game/constants";
+import type { LevelSpec, UnitKind } from "@/game/levels";
+import { loadMap, spawnCirclesOf } from "@/game/maps";
+import { Renderer } from "@/game/renderer";
+import { Sim } from "@/game/sim";
+import type { TowerKind } from "@/game/types";
 
 /**
- * THE MENU'S GROUND — the game, seen from above, before anyone has built
- * anything on it.
+ * THE MENU'S GROUND — the game itself, playing behind the front of house.
  *
- * MechSwarm is a horde walking a valley toward a base, steered by a flow
- * field around whatever is in the way. So the title screen is that: a
- * lane carved through rock, rolled fresh every launch the way the game's
- * own worldgen carves one (terrain.ts), and a swarm of the game's own
- * mechs marching down it — daggers and crawlers in the crowd, maces and
- * the odd fortress lumbering among them — each one turning with the
- * lane's bends and walking on the same leg cycle the field draws
- * (Renderer.pushMech). A few flares fly escort over the column.
+ * Nothing here is a picture of the game. It is a Sim (game/sim.ts) on one
+ * of the campaign's own maps, stepped at the same fixed 1/60 the run is
+ * stepped at and drawn by the same WebGL renderer the run is drawn by. So
+ * the units walking the lane are the units a wave sends, steered by the
+ * real flow field around the real rock; the turrets are real turrets,
+ * placed on real ground, tracking and firing under the real fire loop;
+ * and the smoke, the shells, the beams, the burning and the deaths are
+ * the sim's own effects rather than a set of sprites drawn to look like
+ * them. It USED to be a hand-drawn column of mechs marching down a
+ * meandering lane over ground rolled by rules of its own — a diorama that
+ * had to be kept in step with a game it shared no code with. This shares
+ * all of it.
  *
- * HOW IT IS BUILT. The ground is generated once and rasterized once into
- * an offscreen canvas — floors, a blurred shadow under the rock, the
- * rock (2×2 clusters take the large wall sprite, as the field does), then
- * the props. Every frame after that is one drawImage of that canvas at a
- * slowly drifting offset, the swarm on top, and a black wash. The field
- * is a texture; the only geometry per frame is a few dozen mechs.
+ * WHO BUILDS THE LINE. Nobody is playing, so the background plays itself
+ * (see planSpots / placeOne): it traces the walkers' route down the flow
+ * field from the drop zones to the core, and stands turrets off both
+ * shoulders of that route — a burst of them before the scene is shown,
+ * and one every so often after, which is also how the line is repaired as
+ * the swarm chews through it. Building is free here (Sim.tech stays null,
+ * as it does in the sandbox and the editors), because a menu has no run
+ * and therefore no scrap.
  *
- * THE SCENES CYCLE (SCENE_HOLD / SCENE_FADE): every biome the game has
- * gets its turn, each dissolving into the next, with the next one rolled
- * in the background while the current one is on screen.
+ * WHAT IT LOOKS AT. The camera picks the busiest patch of field — the
+ * coarse bucket holding the most bodies, with a thumb on the scale for
+ * buckets that hold turrets, so it prefers a fight to a crowd walking
+ * through empty ground — and eases toward it. It never cuts.
+ *
+ * THE SCENES CYCLE: each campaign map gets its turn, held for SCENE_HOLD
+ * seconds and then taken to black over SCENE_FADE. The next map is built
+ * WHILE the screen is black, one piece of work per frame (see the task
+ * queue in `startScene`), so carving a map and warming it up never lands
+ * as one long freeze on a page whose buttons a player might be reaching
+ * for.
  *
  * WHAT IT MUST NEVER DO is compete with the menu on top of it. The wash
  * (`dim`) is the contract: the title card sits under a light one, and the
  * deeper menus, which are lists of cards to read, pull it darker. It also
- * holds still under prefers-reduced-motion (one frame, one scene) and
- * stops when the tab is hidden.
+ * holds still under prefers-reduced-motion — the scene is built and
+ * warmed, then frozen on one frame — and stops when the tab is hidden.
  */
-
-const UNITS = "/mindustry/sprites/units/";
-/** the raw sprites are 4× — one 8-unit tile is a 32px image */
-const SPRITE_TILE = 32;
-/** the ground cells drawn around the viewport so the camera can drift */
-const MARGIN_TILES = 3;
-/**
- * THE SCENES CYCLE. One world is a picture; the whole environment set is
- * the game. Each scene holds for SCENE_HOLD seconds and then dissolves
- * into the next biome over SCENE_FADE, in a shuffled order that shows
- * every environment before repeating one. The next world is rolled and
- * rasterized in the background while the current one is on screen, so a
- * switch never stalls a frame.
- */
-const SCENE_HOLD = 3;
-const SCENE_FADE = 1;
-/** Pal.engine, the glow a flyer trails */
-const ENGINE = "#ffbb64";
-/** the swarm's own red, painted onto every mech's cell */
-const CELL_TINT = "#e55454";
-
-// the first band's floors and walls, by the atlas's own numbering (the
-// second band's are exported from game/atlas.ts by name)
-const FLOOR_GRASS = 0, FLOOR_STONE = 3, FLOOR_DIRT = 6, FLOOR_SAND = 9, FLOOR_DARKSAND = 12;
-const WALL_STONE = 0, WALL_DIRT = 2, WALL_DARK = 5;
-// decor kinds (UV_DECOR): boulders, spore clusters, shale, snow and sand boulders
-const BOULDERS = [0, 1], SPORES = [3, 4, 5], SHALE_BOULDERS = [7, 8], SNOW_BOULDERS = [9, 10], SAND_BOULDERS = [12, 13];
 
 /**
- * THE BIOMES, each a dressing (game/dress.ts) — the same rules the
- * campaign maps are painted with, in the field's own indices: one rock
- * with a core of a second where it is thick, a base floor with a few
- * large patches of a second, and boulders along the road's edges. The
- * numbers are the campaign's scaled to a title screen sixty cells across.
+ * The campaign's own fronts, in world order (WORLDS in levels.ts) — every
+ * map a run is actually played on, and nothing else. The editor's
+ * references and the imported Mindustry maps are left out: no world plays
+ * them, and some carry no drop zone at all, which is not a map a sim can
+ * be built on.
  */
-const biome = (
-  road: DressStyle["road"],
-  rock: DressStyle["rock"],
-  kinds: readonly number[],
-): DressStyle => ({ road, rock, props: { kinds, per: 30 } });
-const PATCH = { count: 4, r: [10, 18] as const, squash: 0.55 };
-const BIOMES: readonly DressStyle[] = [
-  biome(
-    { base: FLOOR_SAND, patches: { floor: FLOOR_DIRT, ...PATCH }, flat: { floor: FLOOR_SALT, clear: 5.5, grow: 2 } },
-    { base: WALL_DUNE, core: { wall: WALL_DIRT, depth: 8 } },
-    SAND_BOULDERS,
-  ),
-  biome(
-    { base: FLOOR_SHALE, patches: { floor: FLOOR_STONE, ...PATCH } },
-    { base: WALL_SHALE, core: { wall: WALL_DARK, depth: 8 } },
-    SHALE_BOULDERS,
-  ),
-  biome(
-    { base: FLOOR_ICE, patches: { floor: FLOOR_SNOW, ...PATCH } },
-    { base: WALL_ICE, core: { wall: WALL_SNOW, depth: 8 } },
-    SNOW_BOULDERS,
-  ),
-  biome(
-    { base: FLOOR_MOSS, patches: { floor: FLOOR_SPORE_MOSS, ...PATCH }, flat: { floor: FLOOR_MUD, clear: 5.5, grow: 2 } },
-    { base: WALL_DACITE, core: { wall: WALL_SPORE, depth: 8 } },
-    SPORES,
-  ),
-  biome(
-    { base: FLOOR_DIRT, patches: { floor: FLOOR_STONE, ...PATCH } },
-    { base: WALL_DIRT, core: { wall: WALL_STONE, depth: 8 } },
-    BOULDERS,
-  ),
-  biome(
-    { base: FLOOR_DARKSAND, patches: { floor: FLOOR_BASALT, ...PATCH } },
-    { base: WALL_DUNE, core: { wall: WALL_DARK, depth: 8 } },
-    BOULDERS,
-  ),
-  biome(
-    { base: FLOOR_SNOW, patches: { floor: FLOOR_ICE, ...PATCH } },
-    { base: WALL_SNOW, core: { wall: WALL_ICE, depth: 8 } },
-    SNOW_BOULDERS,
-  ),
-  biome(
-    { base: FLOOR_GRASS, patches: { floor: FLOOR_DIRT, ...PATCH } },
-    { base: WALL_DIRT, core: { wall: WALL_STONE, depth: 8 } },
-    BOULDERS,
-  ),
+const MENU_MAPS = [
+  "confluence",
+  "maelstrom",
+  "quagmire",
+  "greenwood",
+  "tundra",
+  "crater",
+  "shoals",
+  "riverlands",
+  "estuary",
+] as const;
+
+/** seconds one map is watched, and the black it is taken out through */
+const SCENE_HOLD = 45;
+const SCENE_FADE = 0.9;
+
+/**
+ * How much of the fight has already happened when a scene is uncovered.
+ * A map that faded in on wave zero would show a minute of empty ground
+ * before the first body arrived, so the sim is stepped this many seconds
+ * behind the black — in chunks of PREWARM_CHUNK steps a frame, because
+ * the point of doing it behind the black is to not freeze the page.
+ */
+const PREWARM = 24;
+const PREWARM_CHUNK = 90;
+
+// the sim's fixed step, and the catch-up cap — both exactly as Game runs
+// them, so the menu's sim steps like a run's rather than in whatever
+// quanta the display happens to offer
+const SIM_DT = 1 / 60;
+const SIM_STEPS_MAX = 3;
+
+/** turrets standing before the scene is shown, and the most it will hold */
+const OPENING_TURRETS = 40;
+const MAX_TURRETS = 70;
+/** seconds between the placements that extend and repair the line */
+const BUILD_EVERY = 0.8;
+/** seconds between re-tracing the route — a line changes where the swarm walks */
+const REPLAN_EVERY = 14;
+
+/**
+ * THE GUNS THE LINE IS BUILT FROM, and how often each turns up. It is a
+ * spread rather than a best-of: a menu wants a duo's tracer, a ripple's
+ * shells, an arc's lightning and a meltdown's beam all on screen at once,
+ * which is what the weights buy. Scatter carries the weight it does
+ * because it is the only cheap answer to a flare, and a background with
+ * unanswered air in it is a background of things flying past.
+ *
+ * The tractor (parallax) and the naval turret (tsunami) sit it out: one
+ * deals no damage and the other only reaches water.
+ */
+const GUNS: readonly { kind: TowerKind; weight: number }[] = [
+  { kind: "duo", weight: 6 },
+  { kind: "scatter", weight: 5 },
+  { kind: "hail", weight: 3 },
+  { kind: "scorch", weight: 3 },
+  { kind: "arc", weight: 3 },
+  { kind: "lancer", weight: 3 },
+  { kind: "salvo", weight: 3 },
+  { kind: "fuse", weight: 2 },
+  { kind: "ripple", weight: 2 },
+  { kind: "wave", weight: 1 },
+  { kind: "swarmer", weight: 2 },
+  { kind: "cyclone", weight: 2 },
+  { kind: "spectre", weight: 1 },
+  { kind: "meltdown", weight: 1 },
+  { kind: "foreshadow", weight: 1 },
 ];
+const GUN_TOTAL = GUNS.reduce((a, g) => a + g.weight, 0);
 
-/**
- * A mech kind, with the numbers the field draws it by: gun mount offsets
- * in Mindustry world units (lateral, forward), the stride in world units,
- * and how fast it walks in tiles a second. Sizes come from the sprites.
- */
-interface MechKind {
-  name: string;
-  gun?: { name: string; x: number; y: number };
-  stride: number;
-  speed: number;
-  /** has a `-cell` sprite to paint in the swarm's colour */
-  cell: boolean;
-  /** the crowd share: how many of this kind walk the lane */
-  count: readonly [number, number];
-}
+/** the camera's buckets, in cells — coarse enough that a fight fills one */
+const BUCKET = 12;
+const BUCKETS_X = Math.ceil(COLS / BUCKET);
+const BUCKETS_Y = Math.ceil(ROWS / BUCKET);
+/** seconds between the camera choosing where to look */
+const LOOK_EVERY = 2.4;
 
-const MECHS: readonly MechKind[] = [
-  { name: "dagger", gun: { name: "large-weapon", x: 4, y: 2 }, stride: 4, speed: 0.95, cell: false, count: [14, 24] },
-  { name: "crawler", stride: 4, speed: 1.35, cell: true, count: [8, 16] },
-  { name: "mace", gun: { name: "flamethrower", x: 5, y: 0 }, stride: 4 + (10 - 8) / 2.1, speed: 0.7, cell: true, count: [3, 6] },
-  { name: "fortress", gun: { name: "artillery", x: 9, y: 1 }, stride: 4 + (13 - 8) / 2.1, speed: 0.5, cell: true, count: [0, 2] },
-];
+/** roughly how many cells the viewport shows across, and the limits on a cell */
+const CELLS_ACROSS = 46;
+const CELL_PX_MIN = 13;
+const CELL_PX_MAX = 30;
 
 const mulberry32 = (seed: number) => (): number => {
   seed |= 0;
@@ -168,663 +150,540 @@ const mulberry32 = (seed: number) => (): number => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
-/** 3-octave value noise in [0,1], a fresh lattice per call */
-function makeNoise(rng: () => number): (x: number, y: number) => number {
-  const seed = (rng() * 0x7fffffff) | 0;
-  const ox = rng() * 512, oy = rng() * 512;
-  const lattice = (ix: number, iy: number): number => {
-    let h = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + seed) | 0;
-    h = Math.imul(h ^ (h >>> 13), 1274126177);
-    h ^= h >>> 16;
-    return (h >>> 0) / 4294967296;
+type Wave = Partial<Record<UnitKind, number>>;
+/** the group, but only where the map has a door for it (see menuSpec) */
+const when = (open: boolean, w: Wave): Wave => (open ? w : {});
+
+/**
+ * THE MENU'S OWN WAVES — not a campaign script.
+ *
+ * A world's script opens with a handful of daggers and takes twenty
+ * minutes to become a battle, which is the right shape for a run and the
+ * wrong one for forty-five seconds of background. These four waves are
+ * already a fight on the first one, and the mission is `survive`, so the
+ * LAST of them is sent again and again a level tougher each time
+ * (Sim.loadStep) for as long as the scene is up.
+ *
+ * A LAYER WITH NO DOOR IS NEVER SENT. A wave that asks for flyers on a
+ * map with no air zone never finishes spawning and the script stalls
+ * behind it, so what the map carries decides what the waves hold.
+ */
+function menuScript(air: boolean, water: boolean): LevelSpec["script"] {
+  return [
+    { wave: { dagger: 34, crawler: 22, ...when(air, { flare: 10 }) } },
+    {
+      wave: {
+        dagger: 26, mace: 8, atrax: 14, nova: 8,
+        ...when(air, { flare: 8, horizon: 4 }),
+        ...when(water, { risso: 6 }),
+      },
+    },
+    {
+      wave: {
+        dagger: 36, crawler: 30, mace: 10, spiroct: 6, pulsar: 6,
+        ...when(air, { horizon: 6 }),
+        ...when(water, { minke: 4 }),
+      },
+    },
+    {
+      wave: {
+        dagger: 34, crawler: 26, mace: 10, fortress: 3, atrax: 10, spiroct: 5,
+        nova: 8, pulsar: 6, quasar: 3,
+        ...when(air, { flare: 10, horizon: 5, zenith: 3 }),
+        ...when(water, { minke: 3, bryde: 2 }),
+      },
+    },
+  ];
+}
+
+/** blocked is only read for pre-drop-zone documents, which are all gone */
+const NO_MASK = new Uint8Array(0);
+
+/**
+ * The level this map is watched under. `survive` with a clock nothing will
+ * ever run out, so the last wave repeats for the life of the scene.
+ */
+function menuSpec(mapId: string): LevelSpec {
+  const doc = loadMap(mapId);
+  // a document written before drop zones carried a numeric region, which
+  // spawnCirclesOf reads as a ground door with an air twin beside it —
+  // so that is what one is assumed to hold
+  const zones: Set<ZoneKind> =
+    doc?.spawns ?
+      new Set(spawnCirclesOf(doc, NO_MASK).map((c) => c.zone))
+    : new Set<ZoneKind>(["ground", "air"]);
+  return {
+    id: `menu-${mapId}`,
+    name: "Attract",
+    map: mapId,
+    mission: { kind: "survive", minutes: 600 },
+    waveGap: 9,
+    script: menuScript(zones.has("air"), zones.has("water")),
   };
-  const val = (x: number, y: number): number => {
-    const ix = Math.floor(x), iy = Math.floor(y);
-    const fx = x - ix, fy = y - iy;
-    const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
-    const a = lattice(ix, iy), b = lattice(ix + 1, iy);
-    const c = lattice(ix, iy + 1), d = lattice(ix + 1, iy + 1);
-    return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
-  };
-  return (x, y) =>
-    val(x + ox, y + oy) * 0.55 +
-    val((x + ox) * 2.17, (y + oy) * 2.17) * 0.28 +
-    val((x + ox) * 4.31, (y + oy) * 4.31) * 0.17;
 }
 
-
-/** an image, or null if it is missing — a missing tile is a gap, never a crash */
-const loadImage = (src: string): Promise<HTMLImageElement | null> =>
-  new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = src;
-  });
-
-/** a sprite with its cell painted in the swarm's colour */
-function tintCell(base: HTMLImageElement, cell: HTMLImageElement | null): HTMLCanvasElement {
-  const c = document.createElement("canvas");
-  c.width = base.width;
-  c.height = base.height;
-  const g = c.getContext("2d")!;
-  g.drawImage(base, 0, 0);
-  if (cell) {
-    const t = document.createElement("canvas");
-    t.width = cell.width;
-    t.height = cell.height;
-    const tg = t.getContext("2d")!;
-    tg.drawImage(cell, 0, 0);
-    tg.globalCompositeOperation = "source-in";
-    tg.fillStyle = CELL_TINT;
-    tg.fillRect(0, 0, t.width, t.height);
-    g.drawImage(t, 0, 0);
-  }
-  return c;
-}
-
-/** a black silhouette of a sprite, for its shadow */
-function silhouette(src: CanvasImageSource, w: number, h: number): HTMLCanvasElement {
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  const g = c.getContext("2d")!;
-  g.drawImage(src, 0, 0);
-  g.globalCompositeOperation = "source-in";
-  g.fillStyle = "#000";
-  g.fillRect(0, 0, w, h);
-  return c;
-}
-
-/** one sprite and its shadow, both at the raw sprite's size */
-interface Part {
-  art: CanvasImageSource;
-  sil: CanvasImageSource;
-  w: number;
-  h: number;
-}
-
-const partOf = (art: CanvasImageSource, w: number, h: number): Part => ({
-  art,
-  sil: silhouette(art, w, h),
-  w,
-  h,
-});
-
-/** a mech's assembly: what the field layers, from the ground up */
-interface MechArt {
-  kind: MechKind;
-  leg: Part;
-  base: Part;
-  body: Part;
-  gun: Part | null;
-}
-
-interface Mech {
-  art: MechArt;
-  /** distance along the lane, in px */
-  s: number;
-  /** how far off the lane's centre this one walks, -1..1 */
-  lane: number;
-  /** where in the leg cycle this one started, in px — the cycle itself is
-   *  this plus the distance walked since, never accumulated frame to frame */
-  walk: number;
-  /** a phase for the little swing every walker adds to its line */
-  phase: number;
-}
-
-interface Flyer {
-  s: number;
-  lane: number;
-  phase: number;
-  speed: number;
-}
-
-/** the field's renderer on a canvas of its own, shared by every scene */
-interface Gpu {
-  renderer: Renderer;
-  canvas: HTMLCanvasElement;
-}
-
-interface World {
-  /** the rasterized ground, in device px */
-  ground: HTMLCanvasElement;
-  /** tile size in css px, and the ground's size in css px */
-  tile: number;
-  w: number;
-  h: number;
-  /** the lane's centreline (css px) and half-width (tiles) at any x */
-  laneY: (x: number) => number;
-  laneHalf: (x: number) => number;
-  /** how lit the ground is at a point (css px), 0..1 — the hill's shadow */
-  litAt: (x: number, y: number) => number;
-  /** +1 walks left to right, -1 the other way */
-  dir: 1 | -1;
-  mechs: Mech[];
-  flare: Part | null;
-  flyers: Flyer[];
+interface Spot {
+  x: number;
+  y: number;
 }
 
 /**
- * Roll and rasterize one world for a viewport of `vw`×`vh` css px.
- * Everything random is drawn from one seeded generator so a world is
- * reproducible from its seed, which is only useful for debugging and
- * costs nothing.
+ * WHERE THE SWARM WILL WALK, read off the field it walks by: start at a
+ * handful of drop-zone cells spread across the map's doors and follow the
+ * flow field's own gradient to the core, sampling as you go. This is the
+ * route in the strict sense — the same vectors the units will steer by —
+ * so a turret stood beside it is a turret in the fight, whatever shape
+ * the map is.
  */
-async function buildWorld(
-  vw: number,
-  vh: number,
-  dpr: number,
-  seed: number,
-  biomeIndex: number,
-  gpu: Gpu,
-): Promise<World> {
-  const rng = mulberry32(seed);
-  // the tile in css px: about sixty across a desktop, held to a whole
-  // multiple of the sprite's own pixels so the ground stays crisp
-  const tile = 8 * Math.max(2, Math.min(4, Math.round(vw / 60 / 8)));
-  const cols = Math.ceil(vw / tile) + MARGIN_TILES * 2;
-  const rows = Math.ceil(vh / tile) + MARGIN_TILES * 2;
-
-  const style = BIOMES[((biomeIndex % BIOMES.length) + BIOMES.length) % BIOMES.length];
-  const dir: 1 | -1 = rng() < 0.5 ? 1 : -1;
-
-  const rockNoise = makeNoise(rng);
-  const pocketNoise = makeNoise(rng);
-
-  /**
-   * THE LANE: a meander through the rock, two sine waves deep so it never
-   * repeats on screen, its width breathing along its length. It sits in
-   * the middle of the screen, where the column walks behind the buttons
-   * rather than under the name.
-   */
-  const a1 = rows * (0.08 + rng() * 0.08), l1 = cols * (0.35 + rng() * 0.25), p1 = rng() * 7;
-  const a2 = rows * (0.03 + rng() * 0.04), l2 = cols * (0.12 + rng() * 0.1), p2 = rng() * 7;
-  const wBase = 4.5 + rng() * 1.5, wSwing = 1.5 + rng(), l3 = cols * (0.2 + rng() * 0.2), p3 = rng() * 7;
-  const centreRow = rows * (0.42 + rng() * 0.16);
-  const laneRow = (cx: number): number =>
-    centreRow + a1 * Math.sin((cx / l1) * Math.PI * 2 + p1) + a2 * Math.sin((cx / l2) * Math.PI * 2 + p2);
-  const laneHalfTiles = (cx: number): number => wBase + wSwing * Math.sin((cx / l3) * Math.PI * 2 + p3);
-
-  // the units are sprites, fetched once and together
-  const unitNames = MECHS.flatMap((m) => [
-    m.name,
-    `${m.name}-base`,
-    `${m.name}-leg`,
-    ...(m.cell ? [`${m.name}-cell`] : []),
-    ...(m.gun ? [`weapons/${m.gun.name}`] : []),
-  ]);
-  const [unitImgs, flareImg] = await Promise.all([
-    Promise.all(unitNames.map((n) => loadImage(`${UNITS}${n}.png`))),
-    loadImage(`${UNITS}flare.png`),
-  ]);
-  const units = new Map<string, HTMLImageElement>();
-  unitNames.forEach((n, i) => {
-    const img = unitImgs[i];
-    if (img) units.set(n, img);
-  });
-
-  // ---- the ground: a terrain, dressed and drawn by the field's renderer ----
-  // The lane is open; the rest is rock with pockets of floor in it — the
-  // branch lanes and dead ends the flow field would route around. The
-  // lane's edge is roughened by noise so it is a valley and not a stripe
-  const blocked = new Uint8Array(cols * rows);
-  for (let y = 0; y < rows; y++)
-    for (let x = 0; x < cols; x++) {
-      const off = Math.abs(y + 0.5 - laneRow(x + 0.5));
-      const half = laneHalfTiles(x + 0.5) + (rockNoise(x / 6, y / 6) - 0.5) * 3;
-      const inLane = off < half;
-      const pocket = pocketNoise(x / 11, y / 11) > 0.6;
-      blocked[y * cols + x] = inLane || pocket ? 0 : 1;
+function routePoints(sim: Sim, rng: () => number): { x: number; y: number; nx: number; ny: number }[] {
+  const field = sim.field;
+  const starts = field.spawnPts;
+  const out: { x: number; y: number; nx: number; ny: number }[] = [];
+  if (starts.length === 0) return out;
+  const LANES = 6;
+  const v = { x: 0, y: 0 };
+  for (let lane = 0; lane < LANES; lane++) {
+    const at = Math.floor(((lane + rng()) / LANES) * starts.length) % starts.length;
+    const cell = starts[at];
+    let x = ((cell % COLS) + 0.5) * CELL;
+    let y = (((cell / COLS) | 0) + 0.5) * CELL;
+    for (let step = 0; step < 1500; step++) {
+      field.sample(x, y, v);
+      if (v.x === 0 && v.y === 0) break; // a dead end: nothing walks on from here
+      if (step % 4 === 0) out.push({ x, y, nx: -v.y, ny: v.x });
+      x += v.x * CELL * 0.5;
+      y += v.y * CELL * 0.5;
+      const gx = clamp((x / CELL) | 0, 0, COLS - 1);
+      const gy = clamp((y / CELL) | 0, 0, ROWS - 1);
+      if (field.isGoal[gy * COLS + gx]) break;
     }
-  // dressed by the campaign's rules (game/dress.ts), then lifted onto the
-  // field's grid: the scene sits in its top-left corner, and the renderer
-  // draws a map at its own size (Terrain.rows/cols), not the grid's
-  const grid = { w: cols, h: rows, blocked, floor: new Uint8Array(cols * rows), wall: new Uint8Array(cols * rows) };
-  const decor = dressGrid(grid, style, rng);
-  const lift = (src: Uint8Array, pad: number): Uint8Array => {
-    const out = new Uint8Array(NCELLS).fill(pad);
-    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) out[y * COLS + x] = src[y * cols + x];
-    return out;
-  };
-  const terrain: Terrain = {
-    blocked: lift(blocked, 1),
-    floor: lift(grid.floor, 0),
-    wall: lift(grid.wall, 0),
-    spawns: [],
-    spawn: new Uint8Array(NCELLS),
-    pines: [],
-    decor,
-    valleyY: new Float32Array(COLS),
-    base: { x: 0, y: 0, size: 5 },
-    rows,
-    cols,
-  };
-  // THE FIELD'S OWN RENDERER draws it — floors with their edge fades, the
-  // hill shadow with its reach, the rock in its 2x2 blocks, the boulders —
-  // once, into the GL canvas, and the frame is copied out into the ground
-  // image the scene scrolls. No drop zones, no exits, no base: it is a
-  // place, not a level
-  const gw = Math.round(cols * tile * dpr), gh = Math.round(rows * tile * dpr);
-  gpu.canvas.width = gw;
-  gpu.canvas.height = gh;
-  gpu.renderer.rebuildTerrain({ terrain }, { wall: true, props: true, spawn: false, base: false });
-  gpu.renderer.renderTerrain(1, 0, 0, gw / (cols * CELL));
-  const ground = document.createElement("canvas");
-  ground.width = gw;
-  ground.height = gh;
-  ground.getContext("2d")!.drawImage(gpu.canvas, 0, 0);
-
-  // ---- the swarm ----
-  const w = cols * tile, h = rows * tile;
-  const arts: MechArt[] = [];
-  for (const kind of MECHS) {
-    const body = units.get(kind.name), base = units.get(`${kind.name}-base`), leg = units.get(`${kind.name}-leg`);
-    if (!body || !base || !leg) continue;
-    const gunImg = kind.gun ? units.get(`weapons/${kind.gun.name}`) : null;
-    const tinted = tintCell(body, kind.cell ? (units.get(`${kind.name}-cell`) ?? null) : null);
-    arts.push({
-      kind,
-      leg: partOf(leg, leg.width, leg.height),
-      base: partOf(base, base.width, base.height),
-      body: partOf(tinted, body.width, body.height),
-      gun: gunImg ? partOf(gunImg, gunImg.width, gunImg.height) : null,
-    });
   }
-  const mechs: Mech[] = [];
-  for (const art of arts) {
-    const [lo, hi] = art.kind.count;
-    const n = lo + Math.floor(rng() * (hi - lo + 1));
-    for (let i = 0; i < n; i++)
-      mechs.push({
-        art,
-        s: rng() * (w + tile * 8),
-        // the heavies keep to the middle of the lane, the small ones spill
-        // to its edges — the sort a crowd falls into on its own
-        lane: (rng() * 2 - 1) * (art.kind.name === "fortress" ? 0.4 : 0.85),
-        walk: rng() * 1000,
-        phase: rng() * Math.PI * 2,
-      });
-  }
-  const flyers: Flyer[] = [];
-  const nf = 3 + Math.floor(rng() * 4);
-  for (let i = 0; i < nf; i++)
-    flyers.push({
-      s: rng() * (w + tile * 8),
-      lane: rng() * 2 - 1,
-      phase: rng() * Math.PI * 2,
-      speed: (1.6 + rng() * 0.5) * tile,
-    });
+  return out;
+}
 
-  return {
-    ground,
-    tile,
-    w,
-    h,
-    laneY: (x) => laneRow(x / tile) * tile,
-    laneHalf: (x) => laneHalfTiles(x / tile),
-    // the renderer keeps the shade of the terrain it last built, and this
-    // scene's is the one it last built until the next scene is rolled —
-    // so read it now, into the scene, rather than through the renderer
-    litAt: ((shade: Float32Array) => (x: number, y: number): number => {
-      const fx = x / tile - 0.5, fy = y / tile - 0.5;
-      const x0 = Math.max(0, Math.min(cols - 2, Math.floor(fx)));
-      const y0 = Math.max(0, Math.min(rows - 2, Math.floor(fy)));
-      const tx = Math.max(0, Math.min(1, fx - x0)), ty = Math.max(0, Math.min(1, fy - y0));
-      const a = shade[y0 * COLS + x0], b = shade[y0 * COLS + x0 + 1];
-      const c = shade[(y0 + 1) * COLS + x0], d = shade[(y0 + 1) * COLS + x0 + 1];
-      return 1 - WALL_SHADOW_A * (a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty);
-    })(gpu.renderer.shadeCopy()),
-    dir,
-    mechs,
-    flare: flareImg ? partOf(flareImg, flareImg.width, flareImg.height) : null,
-    flyers,
-  };
+/**
+ * Turret ground: STRONGPOINTS along the route, not a picket fence down
+ * the whole of it.
+ *
+ * Seventy turrets spread evenly over a map this size is one gun every few
+ * screens — which is what a first pass at this did, and it put the camera
+ * on a crowd walking through empty ground about as often as on a fight.
+ * A handful of clusters is both what a player actually builds and what a
+ * background needs: somewhere for a wave to break.
+ *
+ * Each post takes a short run of the route and stands its guns off BOTH
+ * shoulders, a couple of cells clear, so the lane through it stays open —
+ * a line built ACROSS the road is a wall the swarm stops and chews, which
+ * is a duller picture than one it has to walk past.
+ *
+ * The posts are interleaved rather than concatenated, so the opening
+ * burst raises all of them a little instead of finishing the first two.
+ */
+function planSpots(sim: Sim, rng: () => number): Spot[] {
+  const route = routePoints(sim, rng);
+  if (route.length === 0) return [];
+  const POSTS = 5;
+  /** route samples either side of a post's centre */
+  const SPAN = 5;
+  const posts: Spot[][] = [];
+  for (let p = 0; p < POSTS; p++) {
+    const at = Math.floor(((p + 0.15 + rng() * 0.7) / POSTS) * route.length);
+    const post: Spot[] = [];
+    for (let i = Math.max(0, at - SPAN); i < Math.min(route.length, at + SPAN); i++) {
+      const q = route[i];
+      for (const side of [-1, 1]) {
+        const off = (2.2 + rng() * 3.2) * CELL;
+        post.push({ x: q.x + q.nx * side * off, y: q.y + q.ny * side * off });
+      }
+    }
+    for (let i = post.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [post[i], post[j]] = [post[j], post[i]];
+    }
+    posts.push(post);
+  }
+  const spots: Spot[] = [];
+  const longest = Math.max(...posts.map((p) => p.length));
+  for (let i = 0; i < longest; i += 2)
+    for (const post of posts) spots.push(...post.slice(i, i + 2));
+  return spots;
+}
+
+function pickGun(rng: () => number): TowerKind {
+  let r = rng() * GUN_TOTAL;
+  for (const g of GUNS) {
+    r -= g.weight;
+    if (r <= 0) return g.kind;
+  }
+  return GUNS[0].kind;
+}
+
+/**
+ * Stand one turret, at the next spot that will take one. A spot is spent
+ * whether or not it worked — the ground may be rock, another turret, or
+ * simply have somebody standing on it (Sim.canPlace refuses all three) —
+ * and the caller re-plans when the list runs out.
+ */
+function placeOne(sim: Sim, spots: Spot[], rng: () => number): boolean {
+  for (let tries = 0; tries < 32; tries++) {
+    const s = spots.shift();
+    if (!s) return false;
+    const kind = pickGun(rng);
+    const size = TOWERS[kind].size;
+    const gx = Math.round(s.x / CELL - size / 2);
+    const gy = Math.round(s.y / CELL - size / 2);
+    if (sim.placeTower(gx, gy, kind) === "ok") return true;
+  }
+  return false;
 }
 
 export default function MenuBackground({
   /** the black wash over the field, 0–1 */
   dim = 0.3,
+  /** ambient effects, the settings switch — the field's own, not a copy */
+  effects = true,
 }: {
   dim?: number;
+  effects?: boolean;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  // read by the draw loop every frame: changing the wash never rebuilds
-  // the world, it only repaints the next frame
+  const washRef = useRef<HTMLDivElement>(null);
+  // read by the draw loop every frame: changing either only changes the
+  // next frame, and neither rebuilds anything
   const dimRef = useRef(dim);
   dimRef.current = dim;
-  const redraw = useRef<(() => void) | null>(null);
+  const fxRef = useRef(effects);
+  const applyFx = useRef<((on: boolean) => void) | null>(null);
 
   useEffect(() => {
     const canvas = ref.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    const wash = washRef.current;
+    if (!canvas || !wash) return;
+
     let alive = true;
-    /** the scene on screen, and when it arrived (ms) */
-    let world: World | null = null;
-    let shownAt = 0;
-    /** the scene after it, rolled ahead of time; null while it is building */
-    let next: World | null = null;
-    let building = false;
-    /** when the dissolve into `next` began, or 0 while holding */
-    let fadeAt = 0;
     let raf = 0;
-    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const still = window.matchMedia("(prefers-reduced-motion: reduce)");
-    // the biomes in a fresh order every launch, walked in turn
-    const order = BIOMES.map((_, i) => i);
+
+    let sim: Sim | null = null;
+    let renderer: Renderer | null = null;
+    let rng = mulberry32((Math.random() * 0x7fffffff) | 0);
+
+    // the maps in a fresh order every launch, walked in turn
+    const order = MENU_MAPS.map((_, i) => i);
     for (let i = order.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [order[i], order[j]] = [order[j], order[i]];
     }
     let cursor = 0;
-    const seedOf = (): number => (Math.random() * 0x7fffffff) | 0;
 
-    /** roll the scene after the current one, off the frame loop */
-    /** the renderer, made once the atlas is up; null where WebGL2 is not */
-    let gpu: Gpu | null = null;
-    let gpuFailed = false;
-    const getGpu = async (): Promise<Gpu | null> => {
-      if (gpu || gpuFailed) return gpu;
-      try {
-        const atlas = await buildAtlas();
-        const c = document.createElement("canvas");
-        gpu = { renderer: new Renderer(c, atlas), canvas: c };
-      } catch {
-        // no WebGL2: the menu keeps its plain ground, as the game would
-        // refuse to start anyway
-        gpuFailed = true;
+    /**
+     * The scene's state machine. `build` runs the task queue a step a
+     * frame behind a black screen; `run` is the scene on show, and its
+     * clock is what SCENE_HOLD is measured against.
+     */
+    let phase: "idle" | "build" | "run" = "idle";
+    let tasks: (() => void)[] = [];
+    /** 1 is black, 0 is the scene at its own wash */
+    let fade = 1;
+    let held = 0;
+    let leaving = false;
+    /** has the scene on show been painted? — only a still page reads it */
+    let drawn = false;
+
+    // the line's builder
+    let spots: Spot[] = [];
+    let buildT = 0;
+    let replanT = 0;
+
+    // the camera, in world px, and where it is easing to
+    const cam = { x: 0, y: 0, tx: 0, ty: 0, look: 0 };
+    let camReady = false;
+    const score = new Float32Array(BUCKETS_X * BUCKETS_Y);
+    const guns = new Float32Array(BUCKETS_X * BUCKETS_Y);
+    let simAcc = 0;
+
+    const worldW = (): number => (sim ? sim.terrain.cols * CELL : COLS * CELL);
+    const worldH = (): number => (sim ? sim.terrain.rows * CELL : ROWS * CELL);
+
+    /**
+     * WHERE THE FIGHT IS: the coarsest possible answer, which is all a
+     * camera needs. Bodies are counted into buckets a dozen cells across
+     * and a bucket standing turrets counts for more, so the eye is taken
+     * to a wave breaking on a line rather than to the biggest crowd —
+     * which, early in a scene, is a crowd walking through empty ground.
+     */
+    const lookAt = (s: Sim): void => {
+      score.fill(0);
+      guns.fill(0);
+      for (const t of s.towers) {
+        const bx = clamp((t.gx / BUCKET) | 0, 0, BUCKETS_X - 1);
+        const by = clamp((t.gy / BUCKET) | 0, 0, BUCKETS_Y - 1);
+        guns[by * BUCKETS_X + bx] += 1;
       }
-      return gpu;
-    };
-    const buildNext = async (): Promise<void> => {
-      if (building) return;
-      building = true;
-      const vw = canvas.clientWidth, vh = canvas.clientHeight;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const g = await getGpu();
-      if (!g) {
-        building = false;
+      for (let i = 0; i < s.n; i++) {
+        const bx = clamp((s.upx[i] / (CELL * BUCKET)) | 0, 0, BUCKETS_X - 1);
+        const by = clamp((s.upy[i] / (CELL * BUCKET)) | 0, 0, BUCKETS_Y - 1);
+        score[by * BUCKETS_X + bx] += 1;
+      }
+      // a bucket holding both is a bucket where a wave is breaking on a
+      // line, and one of those beats the biggest crowd on the map every
+      // time — so where any exists, nothing else is even considered
+      let contested = false;
+      for (let i = 0; i < score.length; i++)
+        if (score[i] > 0 && guns[i] > 0) {
+          contested = true;
+          break;
+        }
+      let best = -1;
+      let bestAt = -1;
+      for (let i = 0; i < score.length; i++) {
+        if (score[i] === 0 || (contested && guns[i] === 0)) continue;
+        const v = score[i] * (1 + Math.min(4, guns[i]) * 0.5);
+        if (v > best) {
+          best = v;
+          bestAt = i;
+        }
+      }
+      // an empty field (the gap before the first wave) has nothing to look
+      // at but the thing the swarm is coming for
+      if (bestAt < 0) {
+        cam.tx = s.core.x;
+        cam.ty = s.core.y;
         return;
       }
-      const built = await buildWorld(vw, vh, dpr, seedOf(), order[cursor % order.length], g);
+      cam.tx = ((bestAt % BUCKETS_X) + 0.5) * BUCKET * CELL;
+      cam.ty = (((bestAt / BUCKETS_X) | 0) + 0.5) * BUCKET * CELL;
+    };
+
+    /** the sim and the builder, one step of dt */
+    const advance = (dt: number): void => {
+      const s = sim;
+      if (!s) return;
+      buildT -= dt;
+      if (buildT <= 0) {
+        buildT = BUILD_EVERY;
+        if (s.towers.length < MAX_TURRETS && !placeOne(s, spots, rng)) replanT = 0;
+      }
+      replanT -= dt;
+      if (replanT <= 0) {
+        replanT = REPLAN_EVERY;
+        spots = planSpots(s, rng);
+      }
+      s.update(dt);
+    };
+
+    /**
+     * Everything a scene costs, one item per frame. The screen is black
+     * for the whole queue, so carving a map, uploading its terrain and
+     * running two dozen seconds of sim never lands as a single freeze —
+     * the menu's own buttons stay live throughout.
+     */
+    const startScene = (): void => {
+      const mapId = MENU_MAPS[order[cursor % order.length]];
       cursor++;
-      building = false;
-      if (alive) next = built;
+      rng = mulberry32((Math.random() * 0x7fffffff) | 0);
+      tasks = [
+        () => {
+          const spec = menuSpec(mapId);
+          if (sim) sim.loadLevel(spec);
+          else sim = new Sim(spec);
+          sim.setEffects(fxRef.current);
+        },
+        () => {
+          renderer?.rebuildTerrain(sim!);
+        },
+        () => {
+          const s = sim!;
+          spots = planSpots(s, rng);
+          // the opening line goes up on empty ground, where nothing can be
+          // standing in the way of it — hence before a single sim step
+          for (let i = 0; i < OPENING_TURRETS; i++)
+            if (!placeOne(s, spots, rng)) {
+              spots = planSpots(s, rng);
+              if (!placeOne(s, spots, rng)) break;
+            }
+          buildT = BUILD_EVERY;
+          replanT = REPLAN_EVERY;
+          camReady = false;
+          drawn = false;
+        },
+      ];
+      for (let done = 0; done < PREWARM / SIM_DT; done += PREWARM_CHUNK)
+        tasks.push(() => {
+          for (let i = 0; i < PREWARM_CHUNK; i++) advance(SIM_DT);
+        });
+      phase = "build";
+      held = 0;
+      leaving = false;
+      simAcc = 0;
     };
 
-    /** draw one part of a mech: centred on (x, y), facing `rot`, at the
-     *  sprite's own size times the world's scale, optionally mirrored
-     *  across its facing and shortened along it */
-    const drawPart = (
-      p: Part,
-      shadow: boolean,
-      x: number,
-      y: number,
-      rot: number,
-      k: number,
-      mirror = false,
-      along = 1,
-    ): void => {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(rot + Math.PI / 2); // the art faces up; rot 0 is +x
-      if (mirror) ctx.scale(-1, 1);
-      const pw = p.w * k, ph = p.h * k * along;
-      ctx.drawImage(shadow ? p.sil : p.art, -pw / 2, -ph / 2, pw, ph);
-      ctx.restore();
+    /** the camera's own state, once the scene it is looking at exists */
+    const aimCamera = (dt: number, k: number): void => {
+      const s = sim;
+      if (!s) return;
+      cam.look -= dt;
+      if (cam.look <= 0 || !camReady) {
+        cam.look = LOOK_EVERY;
+        lookAt(s);
+      }
+      if (!camReady) {
+        cam.x = cam.tx;
+        cam.y = cam.ty;
+        camReady = true;
+      } else {
+        // an exponential ease: a camera that never cuts, and never
+        // arrives so slowly that it is always behind the fight
+        const a = 1 - Math.exp(-dt / 1.4);
+        cam.x += (cam.tx - cam.x) * a;
+        cam.y += (cam.ty - cam.y) * a;
+      }
+      // THE VIEW STAYS ON THE MAP. The world ends in rock and darkness, so
+      // a sliver of void past it would read as a hole rather than as an
+      // edge — where the map is narrower than the view, it is centred
+      const halfW = canvas.width / (2 * k);
+      const halfH = canvas.height / (2 * k);
+      cam.x = worldW() > halfW * 2 ? clamp(cam.x, halfW, worldW() - halfW) : worldW() / 2;
+      cam.y = worldH() > halfH * 2 ? clamp(cam.y, halfH, worldH() - halfH) : worldH() / 2;
     };
 
-    /**
-     * A walking mech, layered the way the field layers one (pushMech):
-     * legs stride along the facing on a four-stride cycle — the swinging
-     * leg lifts and shortens by half — then the chassis, the gun pair
-     * slung under it, and the body riding a little sway. `walk` is the
-     * distance walked, in px, and the whole cycle is a function of it.
-     */
-    const drawMech = (
-      m: Mech,
-      walk: number,
-      x: number,
-      y: number,
-      rot: number,
-      k: number,
-      mu: number,
-      shadow: boolean,
-    ): void => {
-      const a = m.art, kind = a.kind;
-      const stride = kind.stride * mu;
-      const raw = walk % (stride * 4);
-      const ext = raw > stride * 3 ? raw - stride * 4 : raw > stride ? stride * 2 - raw : raw;
-      const lift = Math.sin(((raw / stride) * Math.PI) / 2);
-      const cr = Math.cos(rot), sr = Math.sin(rot);
-      const sway = lift * 0.54 * mu, fsway = Math.sin((raw / stride) * Math.PI) * 0.1 * mu;
-      const ox = -sr * sway + cr * fsway, oy = cr * sway + sr * fsway;
-      for (let side = -1; side <= 1; side += 2) {
-        const shorten = 1 - Math.max(-lift * side, 0) * 0.5;
-        drawPart(a.leg, shadow, x + cr * ext * side, y + sr * ext * side, rot, k, side < 0, shorten);
-      }
-      drawPart(a.base, shadow, x, y, rot, k);
-      if (a.gun && kind.gun) {
-        const gx = kind.gun.x * mu, gy = kind.gun.y * mu;
-        for (let side = -1; side <= 1; side += 2)
-          drawPart(a.gun, shadow, x + ox + cr * gy - sr * gx * side, y + oy + sr * gy + cr * gx * side, rot, k, side < 0);
-      }
-      drawPart(a.body, shadow, x + ox, y + oy, rot, k);
-    };
-
-    /**
-     * One scene at one moment: the ground, the column, the escort. `t` is
-     * seconds since the scene arrived, and EVERYTHING is a function of it —
-     * where a mech stands, where its legs are, where the camera has
-     * wandered — so nothing accumulates frame to frame and a dropped frame
-     * costs nothing but the frame.
-     */
-    const drawScene = (wd: World, t: number): void => {
-      const k = wd.tile / SPRITE_TILE; // css px per raw sprite px
-      const mu = wd.tile / 8; // css px per Mindustry world unit
-      ctx.imageSmoothingEnabled = false;
-      // the camera: a slow wander inside the margin, so the field is never
-      // still and never shows its edge
-      const m = MARGIN_TILES * wd.tile;
-      const ox = -m + Math.sin(t * 0.07) * m * 0.8;
-      const oy = -m + Math.sin(t * 0.05 + 1.3) * m * 0.8;
-      ctx.drawImage(wd.ground, ox, oy, wd.w, wd.h);
-      ctx.imageSmoothingEnabled = true;
-
-      // where a walker is: `s` along the lane, wrapped so the column never
-      // ends, its own place across the lane, and a little swing of its own
-      // so a crowd does not march in lockstep. It faces the way the lane
-      // bends where it stands — the flow field's answer, read off the
-      // centreline's slope one step ahead
-      const span = wd.w + wd.tile * 8, pad = wd.tile * 4;
-      const place = (
-        s: number,
-        lane: number,
-        swing: number,
-      ): { x: number; y: number; rot: number } => {
-        const along = ((s % span) + span) % span - pad;
-        const gx = wd.dir > 0 ? along : wd.w - along;
-        const half = (wd.laneHalf(gx) - 1.2) * wd.tile;
-        const gy = wd.laneY(gx) + lane * half + swing;
-        const step = wd.tile * 2 * wd.dir;
-        const y2 = wd.laneY(gx + step) + lane * (wd.laneHalf(gx + step) - 1.2) * wd.tile;
-        return { x: gx + ox, y: gy + oy, rot: Math.atan2(y2 - gy, step) };
-      };
-
-      // the column: shadows first so no mech's shadow lands on another's
-      // hull, then the mechs, back of the lane first
-      const walkers = wd.mechs.map((mc) => {
-        const walked = mc.art.kind.speed * wd.tile * t;
-        const swing = Math.sin(t * 0.9 + mc.phase) * wd.tile * 0.25;
-        return { mc, p: place(mc.s + walked, mc.lane, swing), walk: mc.walk + walked };
-      });
-      walkers.sort((a, b) => a.p.y - b.p.y);
-      const alpha = ctx.globalAlpha;
-      ctx.globalAlpha = alpha * 0.5;
-      for (const wk of walkers)
-        drawMech(wk.mc, wk.walk, wk.p.x + wd.tile * 0.15, wk.p.y + wd.tile * 0.2, wk.p.rot, k, mu, true);
-      ctx.globalAlpha = alpha;
-      for (const wk of walkers) drawMech(wk.mc, wk.walk, wk.p.x, wk.p.y, wk.p.rot, k, mu, false);
-      // THE HILL'S SHADOW FALLS ON THE COLUMN as it does on the field: a
-      // mech at a cliff foot is darkened by the shade at its feet — its
-      // own black silhouette laid over it at one minus how lit the ground
-      // is there, which is the multiply the field's tint does
-      for (const wk of walkers) {
-        const lit = wd.litAt(wk.p.x - ox, wk.p.y - oy);
-        if (lit > 0.995) continue;
-        ctx.globalAlpha = alpha * (1 - lit);
-        drawMech(wk.mc, wk.walk, wk.p.x, wk.p.y, wk.p.rot, k, mu, true);
-      }
-      ctx.globalAlpha = alpha;
-
-      // the escort: flares over the column, higher and faster, weaving
-      // across the lane rather than holding a line
-      if (wd.flare) {
-        const lift = wd.tile * 0.7;
-        const fl = wd.flare;
-        for (const f of wd.flyers) {
-          const weave = Math.sin(t * 0.5 + f.phase) * wd.tile * 1.5;
-          const p = place(f.s + f.speed * t, f.lane * 0.6, weave);
-          const bank = Math.cos(t * 0.5 + f.phase) * 0.35 * wd.dir;
-          ctx.globalAlpha = alpha * 0.4;
-          drawPart(fl, true, p.x + lift * 0.5, p.y + lift, p.rot + bank, k);
-          ctx.globalAlpha = alpha;
-          // the engine: a glow behind the body, breathing with the frame
-          const flick = 0.75 + 0.25 * Math.sin(t * 17 + f.phase * 7);
-          const r = fl.w * k * 0.11 * flick;
-          const back = fl.h * k * 0.32;
-          const ex = p.x - Math.cos(p.rot + bank) * back, ey = p.y - Math.sin(p.rot + bank) * back;
-          ctx.save();
-          ctx.globalCompositeOperation = "lighter";
-          ctx.fillStyle = ENGINE;
-          ctx.globalAlpha = alpha * 0.85;
-          ctx.beginPath();
-          ctx.arc(ex, ey, r, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = "#ffffff";
-          ctx.beginPath();
-          ctx.arc(ex, ey, r * 0.45, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-          ctx.globalAlpha = alpha;
-          drawPart(fl, false, p.x, p.y, p.rot + bank, k);
-        }
-      }
-    };
-
-    const frame = (now: number): void => {
-      const wd = world;
-      if (!wd) return;
-      const vw = canvas.clientWidth, vh = canvas.clientHeight;
+    const frame = (now: number, dt: number): void => {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      if (canvas.width !== Math.round(vw * dpr) || canvas.height !== Math.round(vh * dpr)) {
-        canvas.width = Math.round(vw * dpr);
-        canvas.height = Math.round(vh * dpr);
+      const vw = canvas.clientWidth;
+      const vh = canvas.clientHeight;
+      if (vw === 0 || vh === 0) return;
+      const bw = Math.round(vw * dpr);
+      const bh = Math.round(vh * dpr);
+      let resized = false;
+      if (canvas.width !== bw || canvas.height !== bh) {
+        canvas.width = bw;
+        canvas.height = bh;
+        resized = true;
       }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.globalAlpha = 1;
-      drawScene(wd, (now - shownAt) / 1000);
 
-      // THE DISSOLVE: once the hold is up and the next scene is rolled, it
-      // is drawn over this one at a rising alpha — ground, column and all,
-      // so the whole picture crosses at once — and takes over at the end
-      if (!still.matches) {
-        if (fadeAt === 0 && next && now - shownAt >= SCENE_HOLD * 1000) fadeAt = now;
-        if (fadeAt !== 0 && next) {
-          const f = Math.min(1, (now - fadeAt) / (SCENE_FADE * 1000));
-          ctx.globalAlpha = f * f * (3 - 2 * f);
-          drawScene(next, (now - fadeAt) / 1000);
-          ctx.globalAlpha = 1;
-          if (f >= 1) {
-            world = next;
-            shownAt = fadeAt;
-            next = null;
-            fadeAt = 0;
-            void buildNext();
+      if (phase === "idle") {
+        // the official map documents are fetched by the shell around this
+        // (MechSwarm), so the first scene starts the frame they land
+        if (loadMap(MENU_MAPS[order[0]])) startScene();
+      } else if (phase === "build") {
+        const task = tasks.shift();
+        if (task) task();
+        if (tasks.length === 0) {
+          phase = "run";
+          held = 0;
+        }
+      } else {
+        // the sim runs in fixed quanta with real time banked between
+        // frames, exactly as a run does — a hitch is paid back over the
+        // next few frames rather than replayed at once
+        if (!still.matches) {
+          simAcc += Math.min(dt, 0.05);
+          for (let i = 0; i < SIM_STEPS_MAX && simAcc >= SIM_DT; i++) {
+            advance(SIM_DT);
+            simAcc -= SIM_DT;
           }
+          held += dt;
         }
       }
 
-      // the wash
-      ctx.fillStyle = `rgba(0,0,0,${Math.max(0, Math.min(1, dimRef.current))})`;
-      ctx.fillRect(0, 0, vw, vh);
+      // the black: full while a scene is being built, easing off as it
+      // comes in and back on as it goes out
+      if (phase !== "run") fade = 1;
+      else if (leaving) fade = Math.min(1, fade + dt / SCENE_FADE);
+      else fade = Math.max(0, fade - dt / SCENE_FADE);
+
+      // a lost core is a scene that has nothing left to show: the swarm
+      // stands on a dead building and the guns are gone. Leave early
+      if (
+        phase === "run" &&
+        !leaving &&
+        !still.matches &&
+        (held >= SCENE_HOLD || (sim?.lost() ?? false))
+      )
+        leaving = true;
+      if (leaving && fade >= 1) startScene();
+
+      const s = sim;
+      // a still page draws its one frame and then leaves the canvas alone
+      // — the loop keeps turning only so the wash still answers the menu
+      if (s && renderer && phase !== "build" && (!still.matches || !drawn || resized)) {
+        drawn = true;
+        const cellPx = clamp(vw / CELLS_ACROSS, CELL_PX_MIN, CELL_PX_MAX);
+        // a slow breath on the zoom, so a still camera is never quite still
+        const k = (cellPx / CELL) * (1 + Math.sin(now / 14000) * 0.04) * dpr;
+        aimCamera(still.matches ? 0 : dt, k);
+        // kPx 1 makes `zoom` device px per world px outright, and the
+        // offset is what puts the camera's point in the middle of the
+        // canvas (see the note over Renderer.render)
+        renderer.render(s, k, canvas.width / 2 - cam.x * k, canvas.height / 2 - cam.y * k, 1);
+      }
+
+      wash.style.opacity = String(clamp(dimRef.current + (1 - dimRef.current) * fade, 0, 1));
     };
 
-    // every frame the display offers: a walking mech read at a throttled
-    // 30 as a stutter, because the throttle landed on alternate 33ms and
-    // 50ms gaps, and the draw is cheap enough that there is nothing to save
+    let last = performance.now();
     const loop = (now: number): void => {
       if (!alive) return;
       raf = requestAnimationFrame(loop);
-      frame(now);
+      const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+      last = now;
+      frame(now, dt);
     };
 
-    const start = async (): Promise<void> => {
-      const vw = canvas.clientWidth, vh = canvas.clientHeight;
-      if (vw === 0 || vh === 0) return;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const g = await getGpu();
-      if (!g) return;
-      const built = await buildWorld(vw, vh, dpr, seedOf(), order[cursor % order.length], g);
-      cursor++;
-      if (!alive) return;
-      world = built;
-      next = null;
-      fadeAt = 0;
-      shownAt = performance.now();
-      cancelAnimationFrame(raf);
-      if (still.matches) frame(shownAt);
-      else {
+    // the atlas is packed once per page and shared with the game; without
+    // WebGL2 there is no menu ground and no game either, so the wash is
+    // simply left over black
+    void buildAtlas()
+      .then((atlas) => {
+        if (!alive) return;
+        renderer = new Renderer(canvas, atlas);
+        renderer.setEffects(fxRef.current);
+        last = performance.now();
         if (!document.hidden) raf = requestAnimationFrame(loop);
-        void buildNext();
-      }
-    };
+      })
+      .catch(() => {});
 
-    // a still page repaints only when the wash changes; a moving one is
-    // repainting anyway
-    redraw.current = () => {
-      if (still.matches && world) frame(performance.now());
+    applyFx.current = (on: boolean) => {
+      sim?.setEffects(on);
+      renderer?.setEffects(on);
     };
 
     // the tab going away stops the clock; coming back restarts it in
     // place, so a menu left open all afternoon costs nothing while unseen
     const onVisibility = (): void => {
       cancelAnimationFrame(raf);
-      if (!document.hidden && !still.matches && world) raf = requestAnimationFrame(loop);
-    };
-    // a resize is a different viewport, which is a different world size —
-    // rolled again after the drag settles rather than on every pixel
-    const onResize = (): void => {
-      if (resizeTimer) clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => void start(), 250);
+      if (!document.hidden && renderer) {
+        last = performance.now();
+        raf = requestAnimationFrame(loop);
+      }
     };
     document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("resize", onResize);
-    still.addEventListener("change", onVisibility);
-    void start();
 
     return () => {
       alive = false;
+      applyFx.current = null;
       cancelAnimationFrame(raf);
-      // hand the GL context back: a renderer holds the atlas on the GPU
-      gpu?.canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
-      if (resizeTimer) clearTimeout(resizeTimer);
       document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("resize", onResize);
-      still.removeEventListener("change", onVisibility);
-      redraw.current = null;
+      // hand the GL context back: a renderer holds the atlas and the
+      // terrain batches on the GPU
+      canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
+      sim = null;
+      renderer = null;
     };
   }, []);
 
   useEffect(() => {
-    redraw.current?.();
-  }, [dim]);
+    fxRef.current = effects;
+    applyFx.current?.(effects);
+  }, [effects]);
 
   return (
     <div className="pointer-events-none fixed inset-0" aria-hidden="true">
       <canvas ref={ref} className="block h-full w-full" />
+      {/* the wash: one div rather than a fill on the canvas, so a scene
+          change can take the whole picture to black without the renderer
+          knowing anything about it */}
+      <div ref={washRef} className="absolute inset-0 bg-black" style={{ opacity: 1 }} />
       {/* the vignette: the corners fall away so the eye lands on the middle
           of the screen, where the title and the buttons are */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,rgba(0,0,0,0.55)_100%)]" />

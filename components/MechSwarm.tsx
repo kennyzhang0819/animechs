@@ -1689,12 +1689,15 @@ export default function MechSwarm() {
       // whose Settings button is clipped off the bottom. A finger cannot
       // bounce it: html and body refuse overscroll (globals.css)
       <div className="fixed inset-0 overflow-y-auto bg-[#0b0b0d]">
-        {/* THE GROUND: a rolled world drifting under the whole front of
-            house (MenuBackground). It is mounted once here rather than per
-            view so walking Title → Start → a pick never re-rolls it; only
-            the wash over it changes — light on the title card, darker
-            under the deploy screen, which is a thing to read */}
-        <MenuBackground dim={menuView === "home" ? 0.38 : 0.66} />
+        {/* THE GROUND: the game itself, playing behind the menu
+            (MenuBackground) — a campaign map with the swarm walking it and
+            a line of turrets fighting it, on the real sim. It is mounted
+            once here rather than per view so walking Title → Start → a
+            pick never restarts the fight; only the wash over it changes —
+            light on the title card, darker under the deploy screen, which
+            is a thing to read. The effects switch reaches it too: a device
+            that cannot afford the particles cannot afford them here */}
+        <MenuBackground dim={menuView === "home" ? 0.38 : 0.66} effects={effects} />
         {/* EVERY VIEW TAKES THE UI-SIZE KNOB, the title card included: it
             used to sit out at one composed size, and a knob that scaled
             every screen but the first one read as the first one being
