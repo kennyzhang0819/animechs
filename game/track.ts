@@ -40,9 +40,9 @@ import {
  *   to be harder — which is the reward a tower defence player is actually
  *   climbing for, and it means the track no longer dies at fifteen.
  *
- * Levelling past MAX_LEVEL still happens (XP has no ceiling) and pays
- * nothing, which is the honest shape for a game whose roster and whose
- * catalog are both finite.
+ * Levelling past MAX_LEVEL still happens (up to LEVEL_CAP in economy.ts,
+ * a thousand) and pays nothing, which is the honest shape for a game
+ * whose roster and whose catalog are both finite.
  *
  * THE ROSTER IS WRITTEN, THE REST IS PLACED. UNLOCKS is a hand-authored
  * order because the shape of the opening — which gun answers which wave,

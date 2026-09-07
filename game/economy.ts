@@ -376,63 +376,84 @@ export function missionXp(cleared: number, waves: number): number {
 }
 
 /**
- * THE LEVEL CURVE. Going from level n to n+1 costs XP_LEVEL_BASE x n to
- * the power XP_LEVEL_POWER, so the track gets steeper the way a co-op
- * commander's does — never a wall, always a little more than the last one.
+ * THE LEVEL CURVE, in two pieces.
  *
- *   level    2      3      4      5      6      7      8      10     30
- *   to next  5k     13k    22k    32k    44k    56k    70k    ~98k   ~470k
- *   total    5k     18k    40k    72k    116k   173k   243k   ~421k  ~6.0m
+ *   THE CLIMB, levels 1 to XP_LEVEL_PLATEAU (100). Going from level n to
+ *   n+1 costs XP_LEVEL_BASE x n to the power XP_LEVEL_POWER — a little
+ *   more than the last one every time, never a wall. The power is UNDER
+ *   one on purpose: the step still grows every level, but slower than
+ *   the level number does, so a hundred levels of climbing top out at a
+ *   few hundred thousand a level rather than the millions a steeper
+ *   power reaches by level 30.
+ *
+ *   THE PLATEAU, levels 100 to LEVEL_CAP (1000). Every level costs the
+ *   same XP_LEVEL_FLAT (500,000): the long tail a save keeps earning
+ *   after it owns everything, with the tick of a level at a fixed, known
+ *   price — five base clears, or one at the top rung.
+ *
+ *   level    2      3      5      10     24     50     100     1000
+ *   to next  5k     9.5k   22k    42k    92k    183k   500k    500k
+ *   total    5k     14k    46k    186k   1.1m   3.9m   17.8m   468m
  *
  * WHAT THAT MEANS AGAINST A MAP. A full clear at the base rung pays
- * MISSION_XP (100,000), so the first run lands around level 5; a wipe
- * after twenty waves banks ~27,800 and lands level 3. The rung bonus is
- * the multiplier on all of it (tierXpBonus, up to x5.5), and that is
- * where the long tail is paid: the end of the ROSTER phase (ROSTER_TOP
- * in track.ts, where the last wall opens) stands at about 1,140,000 XP —
- * eleven base clears, or four or five up the mutated difficulties, and
- * the whole build bar is owned. The MUTATOR phase behind it runs to
- * about 3,550,000 — three times as far for nine rules, which is
- * deliberate: those levels are not the game being handed over, they are
- * the long tail a save keeps earning after it already owns everything.
- * The base was halved from 10,000 so the first level falls out of the
- * first few waves rather than the first stage.
+ * MISSION_XP (100,000), so the first run lands around level 7; a wipe
+ * after twenty waves banks ~27,800 and lands level 3. The rung bonus
+ * (tierXpBonus, up to x5.5) is the multiplier on all of it, and that is
+ * how the track is climbed: the end of the ROSTER phase (ROSTER_TOP in
+ * track.ts, where the last wall opens) stands at about 441,000 XP —
+ * four or five base clears, or one at the top rung — and the MUTATOR
+ * phase behind it runs to about 1,120,000 at MAX_LEVEL (24). Everything
+ * above that is the long tail: level 100 is 17.8 million, and the cap
+ * is 468 million. Nothing on the track is handed out up there
+ * (track.ts); the number is the number.
  */
 export const XP_LEVEL_BASE = 5000;
-export const XP_LEVEL_POWER = 1.35;
+export const XP_LEVEL_POWER = 0.92;
+/** the level the climb stops at and the plateau begins */
+export const XP_LEVEL_PLATEAU = 100;
+/** what every level on the plateau costs */
+export const XP_LEVEL_FLAT = 500_000;
+/** the highest level a save can stand at; XP past it banks and does nothing */
+export const LEVEL_CAP = 1000;
 
 /** XP needed to climb from `level` to `level + 1` */
 export const xpToNext = (level: number): number =>
-  Math.round(XP_LEVEL_BASE * Math.max(1, level) ** XP_LEVEL_POWER);
+  level >= XP_LEVEL_PLATEAU
+    ? XP_LEVEL_FLAT
+    : Math.round(XP_LEVEL_BASE * Math.max(1, level) ** XP_LEVEL_POWER);
 
 /** total XP at which `level` is reached — level 1 is zero */
 export function xpAtLevel(level: number): number {
   let total = 0;
-  for (let l = 1; l < level; l++) total += xpToNext(l);
+  for (let l = 1; l < Math.min(level, LEVEL_CAP); l++) total += xpToNext(l);
   return total;
 }
 
 /**
- * The level a lifetime XP total stands at. A loop rather than a closed
- * form: the sum of a power law has none, and a save's level is a two-digit
- * number, so the walk is a few dozen additions.
+ * The level a lifetime XP total stands at, LEVEL_CAP at most. A loop
+ * rather than a closed form: the sum of a power law has none, and the
+ * walk is at most a thousand additions.
  */
 export function levelForXp(xp: number): number {
   let level = 1;
   let left = Math.max(0, Math.floor(xp));
-  for (;;) {
+  while (level < LEVEL_CAP) {
     const need = xpToNext(level);
     if (left < need) return level;
     left -= need;
     level++;
   }
+  return LEVEL_CAP;
 }
 
 /** how far into the current level a total is: xp earned since it, and the
  *  xp the next one needs */
 export function levelProgress(xp: number): { level: number; into: number; need: number } {
   const level = levelForXp(xp);
-  return { level, into: Math.max(0, Math.floor(xp)) - xpAtLevel(level), need: xpToNext(level) };
+  const need = xpToNext(level);
+  // at the cap the bar is simply full: there is no next level to fill toward
+  const into = level >= LEVEL_CAP ? need : Math.max(0, Math.floor(xp)) - xpAtLevel(level);
+  return { level, into, need };
 }
 
 
