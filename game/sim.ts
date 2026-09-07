@@ -22,6 +22,8 @@ import {
   WET_FX_CHANCE as WET_FX_CHANCE_IMPORT,
   H as H_IMPORT,
   MAX_UNITS,
+  PAL,
+  TEAM_CRUX_RGB,
   ROWS as ROWS_IMPORT,
   TOWERS as TOWERS_IMPORT,
   towerMaxHp,
@@ -133,7 +135,14 @@ import {
   waveBonusScrap,
 } from "./economy";
 import { isBuildableWall, isWaterFloor, waterWalkMask, type Terrain } from "./terrain";
-import { MAX_WEAPONS, unitDamageScale, UNIT_REACH, UNIT_WEAPONS } from "./weapons";
+import {
+  MAX_WEAPONS,
+  unitDamageScale,
+  UNIT_REACH,
+  UNIT_WEAPONS,
+  EXPLOSION_STYLES,
+  type UnitWeapon,
+} from "./weapons";
 import {
   FxKind,
   TOWER_KINDS,
@@ -149,6 +158,25 @@ import {
 
 /** px per Mindustry world unit — the ported turret geometry is in those */
 const MU = CELL / 8;
+
+/**
+ * An effect kind's Mindustry lifetime in seconds: FX_LIFE for the bullet
+ * effects the turrets share, and the swarm's own kinds spelled out here
+ * (Fx.<name>'s first argument, in ticks)
+ */
+const UNIT_FX_LIFE: Partial<Record<FxKind, number>> = {
+  [FxKind.HitLaser]: 8 / 60,
+  [FxKind.ShootHeal]: 8 / 60,
+  [FxKind.ShootBig2]: 10 / 60,
+  [FxKind.HitEmpSpark]: 40 / 60,
+  [FxKind.SapExplosion]: 25 / 60,
+  [FxKind.MassiveExplosion]: 30 / 60,
+  [FxKind.Pulverize]: 40 / 60,
+};
+const fxLife = (kind: FxKind): number =>
+  (FX_LIFE as Partial<Record<FxKind, number>>)[kind] ?? UNIT_FX_LIFE[kind] ?? 20 / 60;
+/** ExplosionEffect lifetimes by style (EXPLOSION_STYLES) */
+const EXPLOSION_LIFE: readonly number[] = EXPLOSION_STYLES.map((e) => e.lifetime);
 
 /**
  * How many effects may be alive at once, shared by everything that throws
@@ -746,8 +774,19 @@ export class Sim {
    */
   private readonly ucd = new Float32Array(MAX_UNITS * MAX_WEAPONS);
   private readonly utT = new Float32Array(MAX_UNITS);
-  private readonly ubeamT = new Float32Array(MAX_UNITS);
-  private readonly utgt: (Structure | null)[] = new Array<Structure | null>(MAX_UNITS).fill(null);
+  /**
+   * The held beam's clock and the charge's — public, because the renderer
+   * draws both LIVE off the unit rather than off the effect pool: a vela's
+   * beam is a thing the unit is doing for two and a half seconds, and the
+   * ring a corvus gathers before it fires follows the hull. `ubeamT` is
+   * seconds of beam left, `ucharge` seconds of charge left (weapons.ts
+   * `charge`); `uheldRot` the heading the beam or charge is aimed on,
+   * fixed when it began. UNIT_HELD names the weapon
+   */
+  readonly ubeamT = new Float32Array(MAX_UNITS);
+  readonly ucharge = new Float32Array(MAX_UNITS);
+  readonly uheldRot = new Float32Array(MAX_UNITS);
+  readonly utgt: (Structure | null)[] = new Array<Structure | null>(MAX_UNITS).fill(null);
   /**
    * WHICH STRUCTURE STANDS ON EACH CELL — every footprint cell of every
    * live tower, rock or ground, kept by claimGround. It is how a unit
@@ -1994,7 +2033,7 @@ export class Sim {
    * A crawler's weapon is itself: it goes off on the structure and is gone.
    */
   private updateUnitWeapons(dt: number): void {
-    const { upx, upy, ukind, uspawn, ucd, utT, ubeamT, utgt } = this;
+    const { upx, upy, urot, ukind, uspawn, ucd, utT, ubeamT, ucharge, uheldRot, utgt } = this;
     for (let i = this.n - 1; i >= 0; i--) {
       if (uspawn[i] > 0) continue; // still arriving, untouchable and unarmed
       const kind = UNIT_KINDS[ukind[i]];
@@ -2017,24 +2056,68 @@ export class Sim {
         const slot = i * MAX_WEAPONS + w;
         if (wp.beam) {
           // a held beam: while it burns it bites every interval, and the
-          // reload only starts once it has gone out
+          // reload only starts once it has gone out. Fx.hitMeltHeal (its
+          // hitEffect) flicks off whatever it is resting on at each bite
           if (ubeamT[i] > 0) {
             ubeamT[i] -= dt;
             ucd[slot] -= dt;
+            // the mount is fixed to the hull (rotate = false), and the hull
+            // turns onto its target at the type's rotateSpeed — the vela's
+            // 1.8 degrees a tick; the beam swings with it
+            if (tgt) {
+              const want = Math.atan2(tgt.y - y, tgt.x - x);
+              let d = want - uheldRot[i];
+              while (d > Math.PI) d -= Math.PI * 2;
+              while (d < -Math.PI) d += Math.PI * 2;
+              const step = ((1.8 * Math.PI) / 180) * 60 * dt;
+              uheldRot[i] += Math.abs(d) <= step ? d : Math.sign(d) * step;
+            }
             if (ucd[slot] <= 0) {
               ucd[slot] += wp.beam.interval;
               if (tgt && this.inReach(tgt, x, y, wp.range)) {
                 this.hitStructure(tgt, wp.damage);
-                this.beamFx(x, y, tgt, wp.beam.interval * 1.5);
+                this.pushFxCol(tgt.x, tgt.y, 12 / 60, FxKind.HitMeltHeal, 0, 0, PAL.heal);
               }
             }
-            if (ubeamT[i] <= 0) ucd[slot] = wp.reload;
+            if (ubeamT[i] <= 0) ucd[slot] = wp.reload - (wp.charge ?? 0);
+            continue;
+          }
+          if (ucharge[i] > 0) {
+            // charging (shoot.firstShotDelay): the beam opens when it runs out
+            ucharge[i] -= dt;
+            if (ucharge[i] <= 0) {
+              ubeamT[i] = wp.beam.duration;
+              ucd[slot] = 0;
+              if (tgt) uheldRot[i] = Math.atan2(tgt.y - y, tgt.x - x);
+            }
             continue;
           }
           ucd[slot] -= dt;
           if (ucd[slot] <= 0 && tgt && this.inReach(tgt, x, y, wp.range)) {
-            ubeamT[i] = wp.beam.duration;
-            ucd[slot] = 0;
+            uheldRot[i] = Math.atan2(tgt.y - y, tgt.x - x);
+            if (wp.charge) ucharge[i] = wp.charge;
+            else {
+              ubeamT[i] = wp.beam.duration;
+              ucd[slot] = 0;
+            }
+          }
+          continue;
+        }
+        if (wp.charge) {
+          // a charged shot (corvus): the glow gathers for firstShotDelay
+          // on the heading it was aimed on, then the beam goes down it
+          if (ucharge[i] > 0) {
+            ucharge[i] -= dt;
+            if (ucharge[i] <= 0) {
+              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp);
+              ucd[slot] = wp.reload - wp.charge;
+            }
+            continue;
+          }
+          ucd[slot] -= dt;
+          if (ucd[slot] <= 0 && tgt && this.inReach(tgt, x, y, wp.range)) {
+            uheldRot[i] = Math.atan2(tgt.y - y, tgt.x - x);
+            ucharge[i] = wp.charge;
           }
           continue;
         }
@@ -2048,6 +2131,7 @@ export class Sim {
         // worth of gap between shots
         ucd[slot] = wp.reload / wp.mounts;
         const shots = wp.shots ?? 1;
+        const aim = Math.atan2(tgt.y - y, tgt.x - x);
         switch (wp.fx) {
           case "bullet":
           case "missile":
@@ -2055,46 +2139,112 @@ export class Sim {
             for (let k = 0; k < shots; k++) this.fireUnitShot(x, y, tgt, wp, k);
             break;
           }
-          case "laser":
-          case "sap":
-          case "rail": {
+          case "laser": {
+            this.fireUnitLaser(x, y, aim, tgt, wp);
+            break;
+          }
+          case "sap": {
+            // SapBulletType: the line lands on the target and retracts onto
+            // the mount as it fades (the draw lerps its far end back over fin)
             for (let k = 0; k < shots; k++) this.hitStructure(tgt, wp.damage);
-            this.beamFx(x, y, tgt, wp.fx === "rail" ? 0.5 : 0.25);
+            const st = wp.sap;
+            if (st) {
+              const dx = tgt.x - x, dy = tgt.y - y;
+              this.pushFxCol(x, y, st.lifetime, FxKind.Sap, aim, Math.sqrt(dx * dx + dy * dy), st.color, st.id, true);
+            }
+            this.pushFx(x, y, FX_LIFE[FxKind.ShootSmall], FxKind.ShootSmall, aim);
+            break;
+          }
+          case "shrapnel": {
+            // ShrapnelBulletType: an instant serrated ray its full length,
+            // one per shot, fanned by ShootSpread; Fx.sparkShoot at the muzzle
+            const st = wp.shrapnel;
+            for (let k = 0; k < shots; k++) {
+              this.hitStructure(tgt, wp.damage);
+              const a = aim + (k - (shots - 1) / 2) * (wp.spread ?? 0);
+              if (st) this.pushFx(x, y, 10 / 60, FxKind.Shrapnel, a, wp.range, 0, st.id, true);
+            }
+            this.pushFxCol(x, y, FX_LIFE[FxKind.SparkShoot], FxKind.SparkShoot, aim, 0, PAL.white);
             break;
           }
           case "lightning": {
+            // LightningBulletType: each shot is a Lightning.create walk out
+            // of the muzzle, in the bullet's colour, `inaccuracy` off the aim
+            const bt = wp.bolt;
             for (let k = 0; k < shots; k++) {
               this.hitStructure(tgt, wp.damage);
-              this.boltFx(x, y, tgt);
+              if (bt) {
+                const a = aim + (Math.random() * 2 - 1) * bt.inaccuracy;
+                this.unitBolt(x, y, a, bt.length + Math.floor(Math.random() * (bt.lengthRand + 1)), bt.color);
+              }
             }
+            this.pushFxCol(x, y, 8 / 60, FxKind.ShootHeal, aim, 0, wp.bolt?.color ?? PAL.heal);
             break;
           }
           case "flame": {
+            // Fx.shootSmallFlame out of the barrel and Fx.hitFlameSmall on
+            // the wall — or their plasma pair, white through heal to grey
             for (let k = 0; k < shots; k++) this.hitStructure(tgt, wp.damage);
-            this.pushFx(x, y, 0.3, FxKind.Flame, Math.atan2(tgt.y - y, tgt.x - x));
-            this.pushFx(tgt.x, tgt.y, 0.25, FxKind.FlameHit);
-            break;
-          }
-          case "bomb": {
-            // dropped where the unit is — the crawler's own body included
-            this.hitStructure(tgt, wp.damage);
-            this.splashStructures(x, y, wp.splash ?? 0, wp.splashRadius ?? 0);
-            this.pushFx(x, y, 0.4, FxKind.Flak);
-            if (wp.suicide) {
-              this.pushFx(x, y, 0.35, FxKind.Shockwave, 0, wp.splashRadius ?? 0);
-              this.removeUnit(i);
-              this.exploded++;
-              exploded = true;
+            const seed = (Math.random() * 0x7fffffff) | 0;
+            if (wp.plasma) {
+              this.pushFxCol(x, y, 32 / 60, FxKind.Flame, aim, 0, PAL.heal, 1, false, seed);
+              this.pushFxCol(tgt.x, tgt.y, 14 / 60, FxKind.FlameHit, aim, 0, PAL.heal, 0, false, seed + 1);
+            } else {
+              this.pushFx(x, y, 32 / 60, FxKind.Flame, aim, 0, seed);
+              this.pushFx(tgt.x, tgt.y, 14 / 60, FxKind.FlameHit, aim, 0, seed + 1);
             }
             break;
           }
+          case "bomb": {
+            if (wp.suicide) {
+              // the crawler IS the bullet: Fx.pulverize where it went off,
+              // and the body's own death blast, centred on itself
+              this.hitStructure(tgt, wp.damage);
+              this.splashStructures(x, y, wp.splash ?? 0, wp.splashRadius ?? 0);
+              this.pushFx(x, y, 40 / 60, FxKind.Pulverize, 0, 0, (Math.random() * 0x7fffffff) | 0);
+              this.pushDeathFx(x, y);
+              this.removeUnit(i);
+              this.exploded++;
+              exploded = true;
+            } else if (wp.look) {
+              // BombBulletType: dropped where the unit is on its heading, a
+              // fused shot that barely moves (speed 0.7 under drag 0.05 —
+              // some fourteen units in all, so half that speed for its
+              // whole fuse) and bursts when the fuse runs out
+              const bs = 0.35 * MU * 60;
+              this.shots.push({
+                x, y, vx: Math.cos(urot[i]) * bs, vy: Math.sin(urot[i]) * bs,
+                life: wp.look.lifetime ?? 0.5, age: 0,
+                damage: wp.damage, splash: wp.splash ?? 0, splashRadius: wp.splashRadius ?? 0,
+                look: wp.look, collide: wp.look.collide !== false, trailT: 0,
+              });
+            }
+            break;
+          }
+          case "rail": {
+            // RailBulletType: Fx.railShoot at the muzzle, Fx.railTrail every
+            // 60 units down the line (pointEffectSpace), Fx.railHit on what
+            // it punched through, Fx.shootBig2 smoke — all its 500 units
+            this.hitStructure(tgt, wp.damage);
+            this.pushFx(x, y, 24 / 60, FxKind.RailShoot, aim, 0, 0, 0, true);
+            this.pushFx(x, y, 10 / 60, FxKind.ShootBig2, aim);
+            const ca = Math.cos(aim), sa = Math.sin(aim);
+            for (let d = 0; d <= wp.range; d += 60 * MU)
+              this.pushFx(x + ca * d, y + sa * d, 16 / 60, FxKind.RailTrail, aim, 0, 0, 0, true);
+            this.pushFx(tgt.x, tgt.y, 18 / 60, FxKind.RailHit, aim, 0, 0, 0, true);
+            break;
+          }
           case "field": {
-            // EnergyFieldAbility: one pulse to every structure in reach
+            // EnergyFieldAbility: one pulse to every structure in reach, a
+            // Fx.chainLightning to each and Fx.hitLaserBlast off the unit
+            // toward it, in the ability's colour
             const hit = this.structuresWithin(x, y, wp.range, this.splashOut);
             const max = wp.maxTargets ?? hit.length;
+            const col = wp.fieldColor ?? PAL.heal;
             for (let k = 0; k < hit.length && k < max; k++) {
               this.hitStructure(hit[k], wp.damage);
-              this.boltFx(x, y, hit[k]);
+              this.chainFx(x, y, hit[k], col);
+              this.pushFxCol(x, y, 12 / 60, FxKind.HitLaserBlast, Math.atan2(hit[k].y - y, hit[k].x - x), 0, col);
             }
             break;
           }
@@ -2104,7 +2254,9 @@ export class Sim {
   }
 
   /** a bullet, missile or shell leaves the unit for the structure */
-  private fireUnitShot(x: number, y: number, tgt: Structure, wp: import("./weapons").UnitWeapon, k: number): void {
+  private fireUnitShot(x: number, y: number, tgt: Structure, wp: UnitWeapon, k: number): void {
+    const look = wp.look;
+    if (!look) return;
     const half = (this.sizeOf(tgt) * CELL) / 2;
     // aim at the footprint, with a little spread so a burst is a burst
     const ax = tgt.x + (Math.random() * 2 - 1) * half * 0.6;
@@ -2119,26 +2271,97 @@ export class Sim {
     this.shots.push({
       x, y,
       vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-      life,
+      life, age: 0,
       damage: wp.damage,
       splash: wp.splash ?? 0,
       splashRadius: wp.splashRadius ?? 0,
-      fx: wp.fx,
+      look,
+      collide: look.collide !== false,
+      trailT: 0,
     });
-    this.pushFx(x, y, 0.15, wp.fx === "bullet" ? FxKind.ShootSmall : FxKind.ShootBig, a);
+    // the bullet's own shootEffect and smokeEffect, in its hitColor (what
+    // Effect.at is handed for a shootEffect) — sparkShoot ramps into it
+    const fc = look.hitColor ?? look.back;
+    const seed = (Math.random() * 0x7fffffff) | 0;
+    this.pushFxCol(x, y, fxLife(look.shoot), look.shoot, a, 0, fc, 0, false, seed);
+    if (look.smoke) this.pushFxCol(x, y, fxLife(look.smoke), look.smoke, a, 0, fc, 0, false, seed + 1);
   }
 
-  /** the beam from a unit to the structure it is burning */
-  private beamFx(x: number, y: number, tgt: Structure, ttl: number): void {
+  /**
+   * LaserBulletType: an instant beam its FULL length down the aim —
+   * Mindustry stops a laser only at a block that absorbs lasers, so it runs
+   * through the structure it hit and on to its length. The target takes
+   * the damage; the shootEffect (Fx.hitLancer, or eclipse's shockwave)
+   * goes off at the muzzle
+   */
+  private fireUnitLaser(x: number, y: number, aim: number, tgt: Structure | null, wp: UnitWeapon): void {
+    if (tgt && this.inReach(tgt, x, y, wp.range)) this.hitStructure(tgt, wp.damage);
+    const st = wp.laser;
+    if (!st) return;
+    this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, wp.range, 0, st.id, true);
+    if (wp.shoot === FxKind.Shockwave) this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, wp.shootLen ?? 0);
+    else if (wp.shoot !== undefined) this.pushFx(x, y, fxLife(wp.shoot), wp.shoot, aim, 0, (Math.random() * 0x7fffffff) | 0);
+    if (tgt) this.pushFxCol(tgt.x, tgt.y, 12 / 60, FxKind.HitLaserBlast, aim, 0, st.colors[st.colors.length - 1][0]);
+  }
+
+  /**
+   * Lightning.create for a unit's bolt: a walk of `length / 2` nodes out
+   * of the muzzle, each 15 units (hitRange / 2) on, the heading wandering
+   * up to 20 degrees a step and every node jittered 3 units — the path
+   * Fx.lightning strokes. The structure the weapon picked already took the
+   * damage; this is the shape of the shot
+   */
+  private unitBolt(x: number, y: number, angle: number, length: number, col: RGB): void {
+    const pts: number[] = [];
+    let rot = angle;
+    const nodes = Math.max(2, (length / 2) | 0);
+    for (let k = 0; k < nodes; k++) {
+      pts.push(x + (Math.random() * 2 - 1) * 3 * MU, y + (Math.random() * 2 - 1) * 3 * MU);
+      rot += (Math.random() * 2 - 1) * (20 * Math.PI) / 180;
+      x += Math.cos(rot) * 15 * MU;
+      y += Math.sin(rot) * 15 * MU;
+    }
+    const i = this.pushSlot(pts[0], pts[1], 10 / 60, FxKind.Lightning, 0, 0, 0, 0, true);
+    if (i >= 0) {
+      this.fxPts[i] = pts;
+      this.fxHasCol[i] = 1;
+      this.fxColR[i] = col[0];
+      this.fxColG[i] = col[1];
+      this.fxColB[i] = col[2];
+    }
+  }
+
+  /**
+   * Fx.chainLightning: a chain from the unit to what its field hit, a link
+   * every 6 units with each joint thrown up to 3 units off the line — the
+   * point list is built here, as Mindustry builds it in the draw, so the
+   * renderer only strokes it
+   */
+  private chainFx(x: number, y: number, tgt: Structure, col: RGB): void {
     const dx = tgt.x - x, dy = tgt.y - y;
-    this.pushFx(x, y, ttl, FxKind.Laser, Math.atan2(dy, dx), Math.sqrt(dx * dx + dy * dy));
-  }
-
-  /** a bolt from a unit to the structure, jagged once in the middle */
-  private boltFx(x: number, y: number, tgt: Structure): void {
-    const mx = (x + tgt.x) / 2 + (Math.random() - 0.5) * 12;
-    const my = (y + tgt.y) / 2 + (Math.random() - 0.5) * 12;
-    this.pushBolt(x, y, 0.2, [x, y, mx, my, tgt.x, tgt.y]);
+    const dst = Math.sqrt(dx * dx + dy * dy);
+    if (dst < 1) return;
+    const nx = dx / dst, ny = dy / dst;
+    const range = 6 * MU;
+    const links = Math.max(1, Math.ceil(dst / range));
+    const spacing = dst / links;
+    const pts: number[] = [x, y];
+    for (let k = 0; k < links; k++) {
+      if (k === links - 1) pts.push(tgt.x, tgt.y);
+      else {
+        const len = (k + 1) * spacing;
+        const ra = Math.random() * Math.PI * 2, rl = range / 2;
+        pts.push(x + nx * len + Math.cos(ra) * rl, y + ny * len + Math.sin(ra) * rl);
+      }
+    }
+    const i = this.pushSlot(x, y, 20 / 60, FxKind.ChainLightning, 0, 0, 0, 0, true);
+    if (i >= 0) {
+      this.fxPts[i] = pts;
+      this.fxHasCol[i] = 1;
+      this.fxColR[i] = col[0];
+      this.fxColG[i] = col[1];
+      this.fxColB[i] = col[2];
+    }
   }
 
   /**
@@ -2154,22 +2377,71 @@ export class Sim {
       sh.x += sh.vx * dt;
       sh.y += sh.vy * dt;
       sh.life -= dt;
+      sh.age += dt;
+      const look = sh.look;
+      // ArtilleryBulletType.update's trail, on its own clock — and the
+      // missiles' Fx.missileTrail, a puff on a chance per tick
+      if (look.trail) {
+        const fin = sh.age / (sh.age + sh.life);
+        const slope = 1 - Math.abs(fin - 0.5) * 2;
+        sh.trailT += dt;
+        if (sh.trailT >= ((3 + slope * 2) * look.trail.mult) / 60) {
+          sh.trailT = 0;
+          this.pushTrail(sh.x, sh.y, slope * look.trail.size, look.trail.color);
+        }
+      } else if (look.puff && Math.random() < look.puff.chance * dt * 60) {
+        this.pushTrail(sh.x, sh.y, look.puff.size, look.puff.color);
+      }
       const off = sh.x < 0 || sh.y < 0 || sh.x >= W || sh.y >= H;
-      const t = off ? null : this.cellTower[((sh.y / CELL) | 0) * COLS + ((sh.x / CELL) | 0)];
+      const t = off || !sh.collide ? null : this.cellTower[((sh.y / CELL) | 0) * COLS + ((sh.x / CELL) | 0)];
       if (t) {
         this.hitStructure(t, sh.damage);
+        if (sh.splash > 0) this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius);
+        this.shotHitFx(sh);
+      } else if (sh.life <= 0 && !off) {
+        // a shell, a missile or a bomb bursts where it ran out (that is
+        // where it was aimed); a bullet dies quietly, despawnEffect aside
         if (sh.splash > 0) {
           this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius);
-          this.pushFx(sh.x, sh.y, 0.35, FxKind.BlastExplosion, 0, sh.splashRadius);
-        } else this.pushFx(sh.x, sh.y, 0.2, FxKind.BulletHit, Math.atan2(sh.vy, sh.vx));
-      } else if (sh.life <= 0 && !off && sh.splash > 0) {
-        this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius);
-        this.pushFx(sh.x, sh.y, 0.35, FxKind.BlastExplosion, 0, sh.splashRadius);
+          this.shotHitFx(sh);
+        } else if (look.hit === FxKind.HitLaser) this.shotHitFx(sh);
       }
       if (t || off || sh.life <= 0) {
         shots[p] = shots[shots.length - 1];
         shots.pop();
       }
+    }
+  }
+
+  /** BulletType.hitEffect.at(x, y, rotation, hitColor) for a swarm shot */
+  private shotHitFx(sh: EnemyShot): void {
+    const look = sh.look;
+    const rot = Math.atan2(sh.vy, sh.vx);
+    switch (look.hit) {
+      case FxKind.BlastExplosion:
+      case FxKind.Flak:
+      case FxKind.SapExplosion:
+      case FxKind.MassiveExplosion:
+        this.pushFx(sh.x, sh.y, fxLife(look.hit), look.hit, 0, sh.splashRadius, (Math.random() * 0x7fffffff) | 0);
+        break;
+      case FxKind.EmpHit:
+        this.pushFxCol(sh.x, sh.y, 50 / 60, FxKind.EmpHit, 0, sh.splashRadius, look.hitColor ?? PAL.heal, 0,
+          false, (Math.random() * 0x7fffffff) | 0);
+        break;
+      case FxKind.Explosion:
+        this.pushFx(sh.x, sh.y, EXPLOSION_LIFE[look.hitStyle ?? 0] ?? 22 / 60, FxKind.Explosion, 0, 0,
+          (Math.random() * 0x7fffffff) | 0, look.hitStyle ?? 0);
+        break;
+      case FxKind.GreenCloud:
+        // the retusa torpedo: MultiEffect(blastExplosion, greenCloud)
+        this.pushFx(sh.x, sh.y, fxLife(FxKind.BlastExplosion), FxKind.BlastExplosion, 0, 0, (Math.random() * 0x7fffffff) | 0);
+        this.pushFxCol(sh.x, sh.y, 80 / 60, FxKind.GreenCloud, 0, 0, look.hitColor ?? PAL.heal, 0, false,
+          (Math.random() * 0x7fffffff) | 0);
+        break;
+      default:
+        // hitBulletColor / hitLiquid / hitLaser: a ramp into the shot's colour
+        this.pushFxCol(sh.x, sh.y, fxLife(look.hit), look.hit, rot, 0, look.hitColor ?? look.back, 0, false,
+          (Math.random() * 0x7fffffff) | 0);
     }
   }
 
@@ -2692,6 +2964,8 @@ export class Sim {
       this.utgt[i] = null;
       this.utT[i] = Math.random() * 0.4;
       this.ubeamT[i] = 0;
+      this.ucharge[i] = 0;
+      this.uheldRot[i] = 0;
       const ws = UNIT_WEAPONS[kind];
       for (let w = 0; w < MAX_WEAPONS; w++)
         this.ucd[i * MAX_WEAPONS + w] = w < ws.length ? Math.random() * ws[w].reload : 0;
@@ -2762,10 +3036,11 @@ export class Sim {
         // outage, and the field is dark for exactly `cooldown` seconds
         if (ushield[i] <= 0 && !uforceDown[i]) {
           ushield[i] -= force.cooldown * force.regen * ss;
-          // Fx.shieldBreak: the outline snapping outward as it pops
-          this.pushFx(
+          // Fx.shieldBreak: the outline snapping outward as it pops, in
+          // the unit's shieldColor — its team's red
+          this.pushFxCol(
             upx[i], upy[i], 40 / 60, FxKind.ShieldBreak,
-            force.rotation, force.radius * uforceScale[i], 0, force.sides,
+            force.rotation, force.radius * uforceScale[i], TEAM_CRUX_RGB, force.sides,
           );
         }
         uforceDown[i] = ushield[i] <= 0 ? 1 : 0;
@@ -2844,11 +3119,12 @@ export class Sim {
         }
       }
       // healWaveDynamic / shieldWave: a 22-tick ring out to the field edge
+      // — the shield one in the unit's shieldColor, its team's red
       if (did)
-        this.pushFx(
+        this.pushFxCol(
           upx[i], upy[i], 22 / 60,
           repair || energy ? FxKind.HealWave : FxKind.ShieldWave,
-          0, range,
+          0, range, repair || energy ? PAL.heal : TEAM_CRUX_RGB,
         );
     }
   }
@@ -5853,6 +6129,32 @@ export class Sim {
     force = false,
   ): void {
     this.pushSlot(x, y, ttl, kind, rot, len, seed, sides, force);
+  }
+
+  /**
+   * pushFx with Effect.at's colour argument and a style index in `sides`:
+   * the swarm's weapons, whose looks are data (weapons.ts) rather than a
+   * kind apiece. `force` as on pushFx
+   */
+  private pushFxCol(
+    x: number,
+    y: number,
+    ttl: number,
+    kind: FxKind,
+    rot: number,
+    len: number,
+    col: RGB,
+    sides = 0,
+    force = false,
+    seed = 0,
+  ): void {
+    const i = this.pushSlot(x, y, ttl, kind, rot, len, seed, sides, force);
+    if (i >= 0) {
+      this.fxHasCol[i] = 1;
+      this.fxColR[i] = col[0];
+      this.fxColG[i] = col[1];
+      this.fxColB[i] = col[2];
+    }
   }
 
   /**

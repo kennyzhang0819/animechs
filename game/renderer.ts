@@ -23,6 +23,17 @@ import {
   UV_SHELL_BACK,
   UV_MISSILE,
   UV_MISSILE_BACK,
+  UV_CIRCLE_BULLET,
+  UV_CIRCLE_BULLET_BACK,
+  UV_MINE_BULLET,
+  UV_MINE_BULLET_BACK,
+  UV_MISSILE_LARGE,
+  UV_MISSILE_LARGE_BACK,
+  UV_DISRUPT_MISSILE,
+  UV_LASER,
+  UV_LASER_END,
+  UNIT_ENGINES,
+  type UnitEngine,
   UV_HAIL,
   UV_DISC,
   UV_DUO,
@@ -75,7 +86,7 @@ import {
   NCELLS,
   PAL as PAL_IMPORT,
   ROWS as ROWS_IMPORT,
-  SHRAPNEL,
+  TEAM_CRUX_RGB,
   TOWERS as TOWERS_IMPORT,
   W as W_IMPORT,
   type BulletStats,
@@ -110,6 +121,18 @@ import {
   SHIELD_TOWER_SIZE,
 } from "./mutation";
 import { MAX_LEGS, WAKE_PTS, type Sim } from "./sim";
+import {
+  BEAM_STYLES,
+  EXPLOSION_STYLES,
+  LASER_STYLES,
+  MELTDOWN_BEAM,
+  SAP_STYLES,
+  SHRAPNEL_STYLES,
+  UNIT_HELD,
+  UNIT_WEAPONS,
+  type BeamStyle,
+  type ShotRegion,
+} from "./weapons";
 import { isWaterFloor, showsFloorCell, WALL_DEEP, type Terrain } from "./terrain";
 import { FxKind, type Effect, type RGB, type Tower, type TowerKind } from "./types";
 
@@ -200,11 +223,20 @@ const FLOOR_DUST: readonly RGB[] = [
 /** Pal.lancerLaser #a9d8ff — arc's bolt and lancer's beam are both drawn
  * in it, and both wash out to white as they fade */
 const PAL_LANCER = PAL.lancerLaser;
-/** how each kind of swarm shot is drawn: sprite size along/across the heading, and the pair's colours */
-const SHOT_LOOK: Record<string, { along: number; across: number; back: RGB; front: RGB }> = {
-  bullet: { along: 12 * MU, across: 9 * MU, back: PAL.copperAmmoBack, front: PAL.copperAmmoFront },
-  missile: { along: 8 * MU, across: 8 * MU, back: PAL.missileYellowBack, front: PAL.missileYellow },
-  shell: { along: 14 * MU, across: 14 * MU, back: PAL.gray, front: PAL.lightGray },
+/**
+ * The region pair behind each of the swarm's ShotLook sprites (weapons.ts):
+ * `-back` first, front over it, exactly as BULLET_REGIONS does for the
+ * turrets. The disrupt missile is a unit's own coloured art and has no
+ * back; an orb is no sprite at all (LiquidBulletType.draw is a disc).
+ */
+const SHOT_REGIONS: Record<Exclude<ShotRegion, "orb">, readonly [UVRect | null, UVRect]> = {
+  bullet: [UV_BULLET_BACK, UV_BULLET],
+  shell: [UV_SHELL_BACK, UV_SHELL],
+  missile: [UV_MISSILE_BACK, UV_MISSILE],
+  "missile-large": [UV_MISSILE_LARGE_BACK, UV_MISSILE_LARGE],
+  "circle-bullet": [UV_CIRCLE_BULLET_BACK, UV_CIRCLE_BULLET],
+  "mine-bullet": [UV_MINE_BULLET_BACK, UV_MINE_BULLET],
+  "disrupt-missile": [null, UV_DISRUPT_MISSILE],
 };
 
 /** Pal.lightFlame #ffdd55, Pal.darkFlame #db401c, and Arc's Color.gray */
@@ -277,17 +309,12 @@ const SPREAD_60 = (60 * Math.PI) / 180;
 const ABSIN = (x: number, scl: number, mag: number): number =>
   (Math.sin(x / (scl * 2)) * mag + mag) / 2;
 /**
- * ContinuousLaserBulletType.colors, r/g/b/a. The two washes carry their
- * alpha in the hex (0x55 and 0xaa) — they are meant to be seen THROUGH,
- * which is what layers the beam rather than stacking four bars.
+ * ContinuousLaserBulletType.colors ride the BeamStyle (weapons.ts) — the
+ * two outer washes carry their alpha (0x55 and 0xaa on meltdown's); they
+ * are meant to be seen THROUGH, which is what layers the beam rather than
+ * stacking four bars. backLength and frontLength, the two flame fronts'
+ * reach, are the class's and shared by every beam.
  */
-const CL_COLORS: ReadonlyArray<readonly [number, number, number, number]> = [
-  [0xec / 255, 0x74 / 255, 0x58 / 255, 0x55 / 255],
-  [0xec / 255, 0x74 / 255, 0x58 / 255, 0xaa / 255],
-  [0xff / 255, 0x9c / 255, 0x5a / 255, 1],
-  [1, 1, 1, 1],
-];
-/** its backLength and frontLength, the two flame fronts' reach */
 const CL_BACK = 7 * (CELL / 8);
 const CL_FRONT = 35 * (CELL / 8);
 const SPREAD_120 = (120 * Math.PI) / 180;
@@ -306,13 +333,29 @@ const rng = (): number => {
   return (x >>> 0) / 4294967296;
 };
 /**
- * Pal.shield #ffd37f — the warm amber Mindustry uses for friendly shields
- * (force projectors and the like). UnitType.shieldColor defaults to the
- * OWNING team's colour, which for the crux enemy is a red that this game's
- * low-hp unit tint already owns; the amber keeps "shielded" and "nearly
- * dead" telling apart at a glance.
+ * Pal.shield #ffd37f — the warm amber Mindustry uses for the PLAYER's
+ * shields: the shield tower's dome, its waves and its break, and Fx.absorb
+ * (Pal.accent) wherever a shot dies on an outline.
  */
 const SHIELD_COL = [0xff / 255, 0xd3 / 255, 0x7f / 255] as const;
+/**
+ * UnitType.shieldColor: null on every unit, so a unit's shield is drawn in
+ * the OWNING TEAM's colour — the halo under it (drawShield), the force
+ * field it stands inside (ForceFieldAbility.draw), the wave its regen
+ * field throws and the outline that snaps when the field pops. The swarm
+ * is the crux team, so all four are crux red. It used to be the amber
+ * above, to keep clear of a red low-health tint that has since gone grey
+ * (HP_TINT); nothing else on the swarm is red now, so the faction colour
+ * is free to say "enemy" the way it does in the original.
+ */
+const UNIT_SHIELD_COL: RGB = TEAM_CRUX_RGB;
+/**
+ * UnitEngine.draw: the flame behind a flyer, a disc in the team's colour
+ * breathing on Mathf.absin(Time.time, 2, radius / 4) with a white disc
+ * half its size thrown a quarter-radius toward the hull. Drawn under the
+ * body — engineLayer is a hair below the unit's own.
+ */
+const ENGINE_INNER: RGB = [1, 1, 1];
 /**
  * Mindustry's shield look is a post-process, not geometry. Everything on
  * Layer.shields is filled SOLID into an offscreen buffer cleared to
@@ -468,6 +511,15 @@ const KIND_GAIT_TRIG = KIND_GAIT.map((L) => {
 });
 /** the force field each kind stands inside, null for everything else */
 const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
+/** the engines a flyer burns (UNIT_ENGINES), null for anything that has none */
+const KIND_ENGINES = UNIT_KINDS.map((k) => UNIT_ENGINES[k] ?? null);
+/** the held beam or charged shot each kind carries (UNIT_HELD), null for the rest */
+const KIND_HELD = UNIT_KINDS.map((k) => UNIT_HELD[k]);
+/** the kinds whose weapon is an energy field: the orbit is drawn round them always */
+const KIND_FIELD = UNIT_KINDS.map((k): null | { range: number; color: RGB } => {
+  const w = UNIT_WEAPONS[k].find((x) => x.fx === "field");
+  return w ? { range: w.range, color: w.fieldColor ?? PAL.heal } : null;
+});
 /** the naval wake each kind drags, null for everything that is not a hull */
 const KIND_WAKE = UNIT_KINDS.map((k) => UNIT_STATS[k].wake ?? null);
 /** is any hull on the roster at all? the wake pass is skipped outright
@@ -1808,7 +1860,10 @@ export class Renderer {
         // clear at the centre and carries the colour at its rim
         const sr = urad[i] * 2 * 1.3 * 2;
         this.push(dyn, upx[i], upy[i], sr, sr, 0, UV_RING,
-          SHIELD_COL[0], SHIELD_COL[1], SHIELD_COL[2],
+          // shieldColor lerped to white by the hit flash, at 0.7 x alpha
+          UNIT_SHIELD_COL[0] + (1 - UNIT_SHIELD_COL[0]) * Math.min(1, ushieldAlpha[i]),
+          UNIT_SHIELD_COL[1] + (1 - UNIT_SHIELD_COL[1]) * Math.min(1, ushieldAlpha[i]),
+          UNIT_SHIELD_COL[2] + (1 - UNIT_SHIELD_COL[2]) * Math.min(1, ushieldAlpha[i]),
           0.7 * (0.3 + 0.7 * ushieldAlpha[i]));
       }
       // hp thirds of the unit's own max, so every kind tints alike —
@@ -1836,6 +1891,9 @@ export class Renderer {
       } else if (mech) {
         this.pushMech(dyn, mech, upx[i], upy[i], urot[i], ubrot[i], uwalk[i], tint);
       } else {
+        // the engine flames first, under the hull, in the team's red
+        const eng = KIND_ENGINES[k];
+        if (eng) this.pushEngines(dyn, upx[i], upy[i], urot[i], eng, sim.time);
         // a flyer is one flat quad on the heading the sim turned it to.
         // That is its own UnitType.rotateSpeed, not its velocity: the
         // stock 5 deg/tick is close enough to instant that the light
@@ -1983,6 +2041,34 @@ export class Renderer {
     // swallowed by it
     this.pushUnitPass(dyn, sim, 0);
     this.pushUnitPass(dyn, sim, 1);
+    // WHAT A UNIT IS DOING RIGHT NOW, drawn off the unit rather than the
+    // effect pool: a vela's held beam for as long as it burns, the green
+    // ring a corvus gathers before its shot, and the energy field's orbit
+    // round an aegires. Each follows its hull as Mindustry's do
+    // (parentizeEffects), which a pooled effect at a fixed point cannot
+    {
+      const { ubeamT, ucharge, uheldRot, utgt, urot } = sim;
+      for (let i = 0; i < n; i++) {
+        const k = ukind[i];
+        const held = KIND_HELD[k], field = KIND_FIELD[k];
+        if (!held && !field) continue;
+        const reach = Math.max(held?.range ?? 0, field?.range ?? 0) + 40;
+        if (upx[i] < vx0 - reach || upx[i] > vx1 + reach || upy[i] < vy0 - reach || upy[i] > vy1 + reach)
+          continue;
+        if (field) this.drawEnergyField(dyn, upx[i], upy[i], urot[i], field.range, field.color, sim.time, !!utgt[i]);
+        if (!held) continue;
+        if (ubeamT[i] > 0 && held.beam && held.beamStyle) {
+          // ContinuousLaserBulletType: held at full, then out over fadeTime (16 ticks)
+          const fade = 16 / 60;
+          const fout = ubeamT[i] > fade ? 1 : ubeamT[i] / fade;
+          this.drawBeam(dyn, upx[i], upy[i], uheldRot[i], held.range * fout, fout, sim.time * 60, held.beamStyle);
+        }
+        if (ucharge[i] > 0 && held.charge) {
+          const col = held.beamStyle?.colors[1][0] ?? held.laser?.colors[1][0] ?? PAL.heal;
+          this.drawGreenCharge(dyn, upx[i], upy[i], 1 - ucharge[i] / held.charge, !!held.beam, col);
+        }
+      }
+    }
     // Layer.bullet - 0.01: an artillery shell's trail is laid UNDER the
     // shells, so a volley's puffs never sit on top of the shot that made
     // them. It is the only effect below that line, which is why it takes a
@@ -2061,15 +2147,35 @@ export class Renderer {
       this.push(dyn, p.x, p.y, along, across, rot, back, sp.back[0], sp.back[1], sp.back[2], 1);
       this.push(dyn, p.x, p.y, along, across, rot, front, sp.front[0], sp.front[1], sp.front[2], 1);
     }
-    // THE SWARM'S SHOTS (Sim.shots): the standard bullet sprite pair, in
-    // the ammo's colours — copper for a gun, missile yellow for a warhead,
-    // grey for a shell — drawn along their heading like the turrets' own
+    // THE SWARM'S SHOTS (Sim.shots): BasicBulletType.draw off each weapon's
+    // own ShotLook (weapons.ts) — its sprite pair at its size in its
+    // colours, shrinking on fout as the class says, a LaserBolt's lines
+    // over it, or a liquid orb's plain disc
     for (const sh of sim.shots) {
       if (sh.x < vx0 - 48 || sh.x > vx1 + 48 || sh.y < vy0 - 48 || sh.y > vy1 + 48) continue;
-      const rot = Math.atan2(sh.vy, sh.vx);
-      const look = SHOT_LOOK[sh.fx] ?? SHOT_LOOK.bullet;
-      this.push(dyn, sh.x, sh.y, look.along, look.across, rot, UV_BULLET_BACK, look.back[0], look.back[1], look.back[2], 1);
-      this.push(dyn, sh.x, sh.y, look.along, look.across, rot, UV_BULLET, look.front[0], look.front[1], look.front[2], 1);
+      const look = sh.look;
+      // a bomb has no velocity: it keeps the heading it was dropped on, 0
+      const rot = sh.vx === 0 && sh.vy === 0 ? 0 : Math.atan2(sh.vy, sh.vx);
+      if (look.region === "orb") {
+        // LiquidBulletType.draw: Fill.circle in the liquid's colour
+        this.fillCircle(dyn, sh.x, sh.y, look.width / 2, look.back, 1);
+        continue;
+      }
+      const fout = clamp(sh.life / (sh.life + sh.age), 0, 1);
+      const shrink = look.slope ? 1 - Math.abs(fout - 0.5) * 2 : fout;
+      const along = look.height * (1 - look.shrinkY + look.shrinkY * shrink);
+      const across = look.width * (1 - look.shrinkX + look.shrinkX * shrink);
+      const [back, front] = SHOT_REGIONS[look.region];
+      if (back) this.push(dyn, sh.x, sh.y, along, across, rot, back, look.back[0], look.back[1], look.back[2], 1);
+      this.push(dyn, sh.x, sh.y, along, across, rot, front, look.front[0], look.front[1], look.front[2], 1);
+      if (look.bolt) {
+        // LaserBoltBulletType.draw: a 2-wide line the bolt's length in the
+        // back colour, and one half as long in the front colour, centred
+        const cx = sh.x - (Math.cos(rot) * look.height) / 2, cy = sh.y - (Math.sin(rot) * look.height) / 2;
+        this.strokeLine(dyn, cx, cy, rot, look.height, 2 * MU, look.back, 1);
+        this.strokeLine(dyn, sh.x - (Math.cos(rot) * look.height) / 4, sh.y - (Math.sin(rot) * look.height) / 4,
+          rot, look.height / 2, 2 * MU, look.front, 1);
+      }
     }
     for (let f = 0; f < fxN; f++) {
       const kind = fxKind[f] as FxKind;
@@ -2078,7 +2184,7 @@ export class Renderer {
       // The line-shaped kinds carry their reach as data — a beam's length
       // in its len lane, a bolt's whole path in fxPts — so they widen
       // their own margin; everything else fits inside the flat pad
-      if (kind === FxKind.Lightning) {
+      if (kind === FxKind.Lightning || kind === FxKind.ChainLightning) {
         const pts = fxPts[f];
         if (pts && pts.length >= 2) {
           // 120px pad: a bolt's longest segment (a chain jump across the
@@ -2095,7 +2201,8 @@ export class Renderer {
         let em = FX_CULL_PAD;
         if (
           kind === FxKind.Laser || kind === FxKind.Shrapnel ||
-          kind === FxKind.HealWave || kind === FxKind.ShieldBreak
+          kind === FxKind.HealWave || kind === FxKind.ShieldBreak ||
+          kind === FxKind.Sap || kind === FxKind.EmpHit
         )
           em += fxLen[f];
         else if (kind === FxKind.UnitSpawn) em += KIND_SPRITE[fxUnit[f]] * 2;
@@ -2175,13 +2282,13 @@ export class Renderer {
         // shieldWave:      circle(4 + finpow*60) in the shield colour at a=0.7
         const heal = e.kind === FxKind.HealWave;
         const grow = heal ? (e.len ?? 0) : 60 * MU;
+        // a unit's regen field throws its wave in the team colour (e.col);
+        // the shield tower's is the player's amber
+        const wc: RGB = heal ? PAL_HEAL : e.col ?? SHIELD_COL;
         this.strokeCircle(dyn, e.x, e.y, 4 * MU + FIN_POW(t) * grow, (1 - t) * 2 * MU,
-          heal ? PAL_HEAL[0] : SHIELD_COL[0],
-          heal ? PAL_HEAL[1] : SHIELD_COL[1],
-          heal ? PAL_HEAL[2] : SHIELD_COL[2],
-          (heal ? 1 : 0.7) * RING_ALPHA);
+          wc[0], wc[1], wc[2], (heal ? 1 : 0.7) * RING_ALPHA);
       } else if (e.kind === FxKind.Shrapnel) {
-        this.drawShrapnel(dyn, e.x, e.y, e.rot ?? 0, e.len ?? 0, t);
+        this.drawShrapnel(dyn, e.x, e.y, e.rot ?? 0, e.len ?? 0, t, SHRAPNEL_STYLES[e.sides ?? 0] ?? SHRAPNEL_STYLES[0]);
       } else if (e.kind === FxKind.Flame) {
         this.drawShootFlame(dyn, e, t);
       } else if (e.kind === FxKind.FlameHit) {
@@ -2267,7 +2374,72 @@ export class Renderer {
         // Fx.shieldBreak: stroke(fout*3), poly(sides, radius + fin) — the
         // outline snapping outward as the bubble pops
         this.strokePoly(dyn, e.x, e.y, e.sides ?? 6, (e.len ?? 0) + FIN_POW(t) * MU,
-          e.rot ?? 0, (1 - t) * 3 * MU, SHIELD_COL, RING_ALPHA);
+          e.rot ?? 0, (1 - t) * 3 * MU, e.col ?? SHIELD_COL, RING_ALPHA);
+      } else if (e.kind === FxKind.Sap) {
+        this.drawSap(dyn, e, t);
+      } else if (e.kind === FxKind.ChainLightning) {
+        this.drawChainLightning(dyn, e, t);
+      } else if (e.kind === FxKind.Pulverize) {
+        // Fx.pulverize: five stone-grey diamonds tumbling 3 + 8 units out
+        const side = ((1 - t) * 2 + 0.5) * MU;
+        this.scatter(e.seed ?? 1, 5, (3 + t * 8) * MU, 0, Math.PI, (x, y) => {
+          this.push(dyn, e.x + x, e.y + y, side * 2, side * 2, Math.PI / 4, UV_SOLID,
+            PAL.stoneGray[0], PAL.stoneGray[1], PAL.stoneGray[2], 1);
+        });
+      } else if (e.kind === FxKind.SapExplosion) {
+        this.drawSapExplosion(dyn, e, t);
+      } else if (e.kind === FxKind.MassiveExplosion) {
+        this.drawMassiveExplosion(dyn, e, t);
+      } else if (e.kind === FxKind.RailShoot) {
+        this.drawRailShoot(dyn, e, t);
+      } else if (e.kind === FxKind.RailTrail) {
+        // Fx.railTrail: two coppery blades along the line, fore and aft
+        for (const side of [0, 1])
+          this.tri(dyn, e.x, e.y, 10 * (1 - t) * MU, 24 * MU, (e.rot ?? 0) + side * Math.PI, PAL.orangeSpark, 1);
+      } else if (e.kind === FxKind.EmpHit) {
+        this.drawEmpHit(dyn, e, t);
+      } else if (e.kind === FxKind.HitLaserBlast || e.kind === FxKind.HitMeltHeal) {
+        // Fx.hitLaserBlast: hitLancer's eight bars in the beam's colour;
+        // Fx.hitMeltHeal: six of them, 18 units, stroke 2, in Pal.heal
+        const meltHeal = e.kind === FxKind.HitMeltHeal;
+        const col = e.col ?? PAL.heal;
+        const bar = ((1 - t) * 4 + 1) * MU;
+        const stroke = (1 - t) * (meltHeal ? 2 : 1.5) * MU;
+        this.scatter(e.seed ?? 1, meltHeal ? 6 : 8, FIN_POW(t) * (meltHeal ? 18 : 17) * MU, 0, Math.PI,
+          (x, y, bearing) => {
+            this.strokeLine(dyn, e.x + x, e.y + y, bearing, bar, stroke, col, 1);
+          });
+      } else if (e.kind === FxKind.HitLaser) {
+        // Fx.hitLaser: one ring to 5 units, white into the bolt's colour
+        const col = ramp(PAL.white, e.col ?? PAL_HEAL, null, t);
+        this.strokeCircle(dyn, e.x, e.y, t * 5 * MU, (0.5 + (1 - t)) * MU, col[0], col[1], col[2], RING_ALPHA);
+      } else if (e.kind === FxKind.GreenCloud) {
+        // Fx.greenCloud: seven heal puffs boiling out to 9 units
+        const col = e.col ?? PAL_HEAL;
+        this.cloud(e.seed ?? 1, 7, 9 * MU, t, (x, y, _pfin, pfout) => {
+          this.fillCircle(dyn, e.x + x, e.y + y, 5 * pfout * MU, col, 1);
+        });
+      } else if (e.kind === FxKind.Explosion) {
+        this.drawExplosion(dyn, e, t, EXPLOSION_STYLES[e.sides ?? 0] ?? EXPLOSION_STYLES[0]);
+      } else if (e.kind === FxKind.ShootBig2) {
+        // Fx.shootBig2: shootBig's shape, lightOrange cooling to grey, a
+        // 29-unit tongue and a 5-unit stub
+        const col = ramp(PAL.lightOrange, PAL.gray, null, t);
+        const w = (1.2 + 8 * (1 - t)) * MU;
+        this.tri(dyn, e.x, e.y, w, 29 * (1 - t) * MU, e.rot ?? 0, col, 1);
+        this.tri(dyn, e.x, e.y, w, 5 * (1 - t) * MU, (e.rot ?? 0) + Math.PI, col, 1);
+      } else if (e.kind === FxKind.ShootHeal) {
+        // Fx.shootHeal: shootSmall's shape in Pal.heal, 17 units
+        const col = e.col ?? PAL_HEAL;
+        const w = (1 + 5 * (1 - t)) * MU;
+        this.tri(dyn, e.x, e.y, w, 17 * (1 - t) * MU, e.rot ?? 0, col, 1);
+        this.tri(dyn, e.x, e.y, w, 4 * (1 - t) * MU, (e.rot ?? 0) + Math.PI, col, 1);
+      } else if (e.kind === FxKind.HitEmpSpark) {
+        // Fx.hitEmpSpark: eighteen heal bars thrown all round, 27 units
+        const bar = ((1 - t) * 6 + 1) * MU;
+        this.scatter(e.seed ?? 1, 18, FIN_POW(t) * 27 * MU, 0, Math.PI, (x, y, bearing) => {
+          this.strokeLine(dyn, e.x + x, e.y + y, bearing, bar, (1 - t) * 1.6 * MU, PAL_HEAL, 1);
+        });
       } else {
         const s = 9 + t * 30;
         this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 0.34, 0.89, 0.54, (1 - t) * 0.9);
@@ -2344,9 +2516,9 @@ export class Renderer {
       // pick it up without knowing anything about the carrier
       const w = Math.min(1, ushieldAlpha[i]);
       const col: RGB = [
-        SHIELD_COL[0] + (1 - SHIELD_COL[0]) * w,
-        SHIELD_COL[1] + (1 - SHIELD_COL[1]) * w,
-        SHIELD_COL[2] + (1 - SHIELD_COL[2]) * w,
+        UNIT_SHIELD_COL[0] + (1 - UNIT_SHIELD_COL[0]) * w,
+        UNIT_SHIELD_COL[1] + (1 - UNIT_SHIELD_COL[1]) * w,
+        UNIT_SHIELD_COL[2] + (1 - UNIT_SHIELD_COL[2]) * w,
       ];
       if (buffered) {
         // SHIELD_PLAIN, not 1: the rim and the flat interior wash, and none
@@ -3074,12 +3246,17 @@ export class Renderer {
    */
   private drawShootFlame(dyn: Batch, e: Effect, t: number): void {
     const fout = 1 - t;
-    const col = ramp(LIGHT_FLAME, DARK_FLAME, FLAME_GRAY, t);
+    // oxynoe's plasma-mount-weapon (sides 1): white through Pal.heal to
+    // grey, eight motes rather than twelve — the plasma torch's own effect
+    const plasma = (e.sides ?? 0) === 1;
+    const col = plasma
+      ? ramp(PAL.white, e.col ?? PAL_HEAL, FLAME_GRAY, t)
+      : ramp(LIGHT_FLAME, DARK_FLAME, FLAME_GRAY, t);
     const len = FIN_POW(t) * 60 * MU;
     const rad = (0.65 + fout * 1.5) * MU;
     const rot = e.rot ?? 0;
     rngSeed(e.seed ?? 1);
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < (plasma ? 8 : 12); i++) {
       const a = rot + (rng() * 2 - 1) * SPREAD_10;
       const l = rng() * len;
       this.fillCircle(dyn, e.x + Math.cos(a) * l, e.y + Math.sin(a) * l, rad, col, 1);
@@ -3092,7 +3269,8 @@ export class Renderer {
    */
   private drawHitFlame(dyn: Batch, e: Effect, t: number): void {
     const fout = 1 - t;
-    const col = ramp(LIGHT_FLAME, DARK_FLAME, null, t);
+    // Fx.hitFlamePlasma when a colour rides in: white into it
+    const col = e.col ? ramp(PAL.white, e.col, null, t) : ramp(LIGHT_FLAME, DARK_FLAME, null, t);
     const len = (1 + t * 15) * MU;
     const stroke = (0.5 + fout) * MU;
     const rot = e.rot ?? 0;
@@ -3125,10 +3303,12 @@ export class Renderer {
     if (!pts || pts.length < 4) return;
     const stroke = 3 * MU * (1 - t);
     if (stroke <= 0.01) return;
+    // color(e.color, Color.white, fin): arc's is lancer blue, pulsar's heal
+    const base = e.col ?? PAL_LANCER;
     const col: RGB = [
-      PAL_LANCER[0] + (1 - PAL_LANCER[0]) * t,
-      PAL_LANCER[1] + (1 - PAL_LANCER[1]) * t,
-      PAL_LANCER[2] + (1 - PAL_LANCER[2]) * t,
+      base[0] + (1 - base[0]) * t,
+      base[1] + (1 - base[1]) * t,
+      base[2] + (1 - base[2]) * t,
     ];
     for (let i = 0; i + 3 < pts.length; i += 2)
       this.pushSeg(dyn, pts[i], pts[i + 1], pts[i + 2], pts[i + 3], UV_SOLID, stroke, col);
@@ -3152,14 +3332,13 @@ export class Renderer {
     const baseLen = (e.len ?? 0) * Math.min(1, t / 0.2); // Mathf.curve(fin, 0, 0.2)
     if (baseLen <= 0.01) return;
     const cos = Math.cos(rot), sin = Math.sin(rot);
-    const width = 15 * MU; // LaserBulletType.width
-    const SIDE_LEN = 29 * MU, SIDE_WIDTH = 0.7, FALLOFF = 0.5;
-    // colors[0] is the same blue at 0.4 alpha, colors[1] solid, colors[2] white
-    const passes: ReadonlyArray<readonly [RGB, number]> = [
-      [PAL_LANCER, 0.4],
-      [PAL_LANCER, 1],
-      [[1, 1, 1], 1],
-    ];
+    // the style rides `sides`: 0 is lancer's (the class default), the rest
+    // the swarm's own beams — quasar's and corvus's green, eclipse's orange
+    const st = LASER_STYLES[e.sides ?? 0] ?? LASER_STYLES[0];
+    const width = st.width * MU; // LaserBulletType.width
+    const SIDE_LEN = st.sideLength * MU, SIDE_WIDTH = st.sideWidth, SIDE_ANGLE = st.sideAngle, FALLOFF = 0.5;
+    // colors[0] is the beam at 0.4 alpha, colors[1] solid, colors[2] white
+    const passes = st.colors;
     const tri = (
       tx: number, ty: number, w: number, l: number, a: number, col: RGB, alpha: number,
     ): void => {
@@ -3181,7 +3360,7 @@ export class Renderer {
         this.fillCircle(dyn, e.x, e.y, cwidth * fout, col, alpha);
         for (const sgn of [1, -1])
           tri(e.x, e.y, SIDE_WIDTH * fout * cwidth, SIDE_LEN * compound,
-            rot + (sgn * Math.PI) / 2, col, alpha);
+            rot + sgn * SIDE_ANGLE, col, alpha);
       }
       compound *= FALLOFF;
     }
@@ -3274,30 +3453,48 @@ export class Renderer {
     if (!cont) return;
     // held at full, then linearly out over fadeTime
     const fout = t.beamT > cont.fade ? 1 : t.beamT / cont.fade;
-    const len = cont.length * fout;
-    if (len <= 0.01) return;
-    const rot = t.beamRot;
     // Time.time, in ticks — the beam's own elapsed life does for a clock
     const time = (cont.duration + cont.fade - t.beamT) * 60;
+    this.drawBeam(dyn, t.beamOX, t.beamOY, t.beamRot, cont.length * fout, fout, time, MELTDOWN_BEAM);
+  }
+
+  /**
+   * ContinuousLaserBulletType.draw, 1:1, for any beam: `len` is what the
+   * beam reaches this frame (its length times fout), `time` in ticks is
+   * the clock its shimmer and oscillation run on, and the style carries
+   * the four washes and the width — meltdown's, or a vela's green.
+   */
+  private drawBeam(
+    dyn: Batch,
+    ox: number,
+    oy: number,
+    rot: number,
+    len: number,
+    fout: number,
+    time: number,
+    style: BeamStyle,
+  ): void {
+    if (len <= 0.01) return;
     const shimmer = 1 + ABSIN(time, 1, 0.1);
-    const width = 9 + ABSIN(time, 0.8, 1.5); // width + absin(oscScl, oscMag)
+    const width = style.width + ABSIN(time, 0.8, 1.5); // width + absin(oscScl, oscMag)
     const body = Math.max(0, len - CL_FRONT);
-    const bx = t.beamOX + Math.cos(rot) * body, by = t.beamOY + Math.sin(rot) * body;
-    for (let i = 0; i < CL_COLORS.length; i++) {
-      const [cr, cg, cb, ca] = CL_COLORS[i];
+    const bx = ox + Math.cos(rot) * body, by = oy + Math.sin(rot) * body;
+    const colors = style.colors;
+    for (let i = 0; i < colors.length; i++) {
+      const [[cr, cg, cb], ca] = colors[i];
       const col: RGB = [
         Math.min(1, cr * shimmer),
         Math.min(1, cg * shimmer),
         Math.min(1, cb * shimmer),
       ];
-      const colorFin = i / (CL_COLORS.length - 1);
+      const colorFin = i / (colors.length - 1);
       // strokeFrom 2 -> strokeTo 0.5: every pass inside the one before it
       const stroke = width * fout * (2 + (0.5 - 2) * colorFin) * MU;
       // pointyScaling: the innermost passes keep a full-length nose while
       // the outer wash is stubbier, which is what sharpens the tip
-      const lenScl = 1 - i / CL_COLORS.length + (i / CL_COLORS.length) * 0.75;
-      this.strokeLine(dyn, t.beamOX, t.beamOY, rot, body, stroke, col, ca);
-      this.flameFront(dyn, t.beamOX, t.beamOY, rot + Math.PI, CL_BACK, stroke / 2, col, ca);
+      const lenScl = 1 - i / colors.length + (i / colors.length) * 0.75;
+      this.strokeLine(dyn, ox, oy, rot, body, stroke, col, ca);
+      this.flameFront(dyn, ox, oy, rot + Math.PI, CL_BACK, stroke / 2, col, ca);
       this.flameFront(dyn, bx, by, rot, CL_FRONT * lenScl, stroke / 2, col, ca);
     }
   }
@@ -3382,8 +3579,9 @@ export class Renderer {
 
   /**
    * ShrapnelBulletType.draw, 1:1: a long triangle bolt with a short back
-   * spike and perpendicular serrations, tinted white fading to thoriumPink
-   * over its 10-tick life, all widths shrinking with fout.
+   * spike and perpendicular serrations, tinted from the style's first
+   * colour to its second (fuse: white to thoriumPink; toxopid: sapBullet to
+   * sapBulletBack) over its 10-tick life, all widths shrinking with fout.
    */
   private drawShrapnel(
     dyn: Batch,
@@ -3392,8 +3590,8 @@ export class Renderer {
     rot: number,
     len: number,
     t: number,
+    S: (typeof SHRAPNEL_STYLES)[number],
   ): void {
-    const S = SHRAPNEL;
     const fout = 1 - t;
     const r = S.fromColor[0] + (S.toColor[0] - S.fromColor[0]) * t;
     const g = S.fromColor[1] + (S.toColor[1] - S.fromColor[1]) * t;
@@ -3411,5 +3609,266 @@ export class Renderer {
     }
     tri(x, y, S.width * fout, len + S.tipPad, rot);
     tri(x, y, S.width * fout, S.backLen, rot + Math.PI);
+  }
+
+  /**
+   * UnitEngine.draw for every engine a flyer carries: the offset turned
+   * onto the unit's heading (x across, y along), the outer disc in the
+   * team colour breathing on absin(Time.time, 2, radius / 4), the white
+   * inner disc half its size thrown a quarter-radius the engine's own way
+   * (rotation -90 on an axial engine: forward, into the hull).
+   */
+  private pushEngines(
+    dyn: Batch,
+    ux: number,
+    uy: number,
+    rot: number,
+    engines: readonly UnitEngine[],
+    time: number,
+  ): void {
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    const ticks = time * 60;
+    for (const en of engines) {
+      // the unit's frame: y runs along the heading, x across it
+      const ex = ux + cos * en.y - sin * en.x, ey = uy + sin * en.y + cos * en.x;
+      const rad = en.radius + ABSIN(ticks, 2, en.radius / 4);
+      this.fillCircle(dyn, ex, ey, rad, UNIT_SHIELD_COL, 1);
+      // Angles.trns(rot + rotation, rad / 4), subtracted, with rot the
+      // unit's heading less 90: an axial engine's -90 puts the disc
+      // FORWARD of the flame, into the hull
+      const a = rot - Math.PI / 2 + en.rotation;
+      this.fillCircle(dyn, ex - Math.cos(a) * (rad / 4), ey - Math.sin(a) * (rad / 4), rad / 2, ENGINE_INNER, 1);
+    }
+  }
+
+  /**
+   * EnergyFieldAbility.draw: the orb over the hull — a disc of the field's
+   * colour with a white core, both breathing on absin(20, 0.1) — five arc
+   * sectors turning one way just outside it, and, while the field has
+   * something to hit (curStroke), five more turning the other way out at
+   * the field's range: the ring the aegires is known by.
+   */
+  private drawEnergyField(
+    dyn: Batch,
+    x: number,
+    y: number,
+    rot: number,
+    range: number,
+    col: RGB,
+    time: number,
+    active: boolean,
+  ): void {
+    const ticks = time * 60;
+    const orb = 5 * MU * (1 + ABSIN(ticks, 20, 0.1));
+    this.fillCircle(dyn, x, y, orb, col, 1);
+    this.fillCircle(dyn, x, y, orb / 2, PAL.white, 1);
+    const stroke = (0.7 + ABSIN(ticks, 20, 0.7)) * MU;
+    const SECTORS = 5, SECTOR = 0.14, SPEED = (0.5 * Math.PI) / 180;
+    for (let i = 0; i < SECTORS; i++) {
+      const a = rot + (i * Math.PI * 2) / SECTORS - ticks * SPEED;
+      this.strokeArc(dyn, x, y, orb + 3 * MU, a, SECTOR * Math.PI * 2, stroke, col, 1);
+    }
+    if (active)
+      for (let i = 0; i < SECTORS; i++) {
+        const a = rot + (i * Math.PI * 2) / SECTORS + ticks * SPEED;
+        this.strokeArc(dyn, x, y, range, a, SECTOR * Math.PI * 2, stroke, col, 1);
+      }
+  }
+
+  /** Lines.arc: a `sweep`-wide slice of a ring, stroked at a constant width */
+  private strokeArc(
+    dyn: Batch,
+    cx: number,
+    cy: number,
+    radius: number,
+    from: number,
+    sweep: number,
+    stroke: number,
+    col: RGB,
+    a: number,
+  ): void {
+    if (radius <= 0.01 || stroke <= 0.01) return;
+    const sides = Math.max(2, Math.ceil((11 + (radius / MU) * 0.6) * (sweep / (Math.PI * 2))));
+    const step = sweep / sides;
+    const chord = 2 * radius * Math.sin(step / 2) + stroke * 0.5;
+    for (let i = 0; i < sides; i++) {
+      const ang = from + (i + 0.5) * step;
+      this.push(dyn, cx + Math.cos(ang) * radius, cy + Math.sin(ang) * radius, chord, stroke,
+        ang + Math.PI / 2, UV_SOLID, col[0], col[1], col[2], a);
+    }
+  }
+
+  /**
+   * Fx.greenLaserCharge (corvus, 80 ticks) and Fx.greenLaserChargeSmall
+   * (vela, 40): a ring in the beam's colour closing in on the muzzle as
+   * the charge fills — from 100 units, or 50 — and, on the big one, a
+   * green disc swelling under a white one while twenty motes fall inward.
+   */
+  private drawGreenCharge(dyn: Batch, x: number, y: number, fin: number, small: boolean, col: RGB): void {
+    const fout = 1 - fin;
+    const stroke = fin * 2 * MU;
+    if (small) {
+      this.strokeCircle(dyn, x, y, fout * 50 * MU, stroke, col[0], col[1], col[2], 1);
+      return;
+    }
+    this.strokeCircle(dyn, x, y, (4 + fout * 100) * MU, stroke, col[0], col[1], col[2], 1);
+    this.fillCircle(dyn, x, y, fin * 20 * MU, col, 1);
+    this.scatter(7, 20, 40 * fout * MU, 0, Math.PI, (dx, dy) => {
+      this.fillCircle(dyn, x + dx, y + dy, fin * 5 * MU, col, 1);
+    });
+    this.fillCircle(dyn, x, y, fin * 10 * MU, PAL.white, 1);
+  }
+
+  /**
+   * SapBulletType.draw, 1:1: Drawf.laser from the mount to the far end,
+   * which starts on the target and lerps back onto the mount over the
+   * bullet's life, at width x fout — the "laser" strip stretched along the
+   * line at 12 x scale, inset 2 x scale at each end, and the "laser-end"
+   * disc on both ends at 18 x scale, all in the sap's colour.
+   */
+  private drawSap(dyn: Batch, e: Effect, t: number): void {
+    const st = SAP_STYLES[e.sides ?? 0] ?? SAP_STYLES[0];
+    const col = e.col ?? st.color;
+    const scale = st.width * (1 - t);
+    if (scale <= 0.005) return;
+    const rot = e.rot ?? 0;
+    const reach = (e.len ?? 0) * (1 - t);
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    const x2 = e.x + cos * reach, y2 = e.y + sin * reach;
+    const inset = 2 * scale * MU;
+    const cap = 18 * scale * MU;
+    if (reach > inset * 2)
+      this.pushSeg(dyn, e.x + cos * inset, e.y + sin * inset, x2 - cos * inset, y2 - sin * inset,
+        UV_LASER, 12 * scale * MU, col);
+    this.push(dyn, e.x, e.y, cap, cap, rot + Math.PI, UV_LASER_END, col[0], col[1], col[2], 1);
+    this.push(dyn, x2, y2, cap, cap, rot, UV_LASER_END, col[0], col[1], col[2], 1);
+  }
+
+  /**
+   * Fx.chainLightning, 1:1: the jittered chain the sim built (fxPts),
+   * stroked 2.5 units wide and fading, white washing into the field's
+   * colour — no joint dots, unlike a bolt.
+   */
+  private drawChainLightning(dyn: Batch, e: Effect, t: number): void {
+    const pts = e.pts;
+    if (!pts || pts.length < 4) return;
+    const stroke = 2.5 * MU * (1 - t);
+    if (stroke <= 0.01) return;
+    const col = ramp(PAL.white, e.col ?? PAL_HEAL, null, t);
+    for (let i = 0; i + 3 < pts.length; i += 2)
+      this.pushSeg(dyn, pts[i], pts[i + 1], pts[i + 2], pts[i + 3], UV_SOLID, stroke, col);
+  }
+
+  /**
+   * Fx.sapExplosion, 1:1: blastExplosion's three passes in the sap purples
+   * and thrown far wider — a sapBullet ring out to 80 units in the first
+   * six of 25 ticks, nine grey cinders over 70 and eight sapBulletBack
+   * sparks over 60.
+   */
+  private drawSapExplosion(dyn: Batch, e: Effect, t: number): void {
+    const fout = 1 - t;
+    const RING = 6 / 25;
+    if (t < RING) {
+      const s = t / RING;
+      this.strokeCircle(dyn, e.x, e.y, (3 + s * 80) * MU, 3 * (1 - s) * MU,
+        PAL.sapBullet[0], PAL.sapBullet[1], PAL.sapBullet[2], RING_ALPHA);
+    }
+    const grit = (fout * 4 + 0.5) * MU;
+    this.scatter(e.seed ?? 1, 9, (2 + 70 * FIN_POW(t)) * MU, 0, Math.PI, (x, y) => {
+      this.fillCircle(dyn, e.x + x, e.y + y, grit, PAL.gray, 1);
+    });
+    const spark = (1 + fout * 3) * MU;
+    this.scatter((e.seed ?? 1) + 1, 8, (1 + 60 * FIN_POW(t)) * MU, 0, Math.PI, (x, y, bearing) => {
+      this.strokeLine(dyn, e.x + x, e.y + y, bearing, spark, fout * MU, PAL.sapBulletBack, 1);
+    });
+  }
+
+  /**
+   * Fx.massiveExplosion, 1:1: the missile palette again, bigger and slower
+   * — a ring to 34 units over seven of 30 ticks, eight cinders over 30,
+   * six sparks over 29.
+   */
+  private drawMassiveExplosion(dyn: Batch, e: Effect, t: number): void {
+    const fout = 1 - t;
+    const RING = 7 / 30;
+    if (t < RING) {
+      const s = t / RING;
+      this.strokeCircle(dyn, e.x, e.y, (4 + s * 30) * MU, 3 * (1 - s) * MU,
+        PAL.missileYellow[0], PAL.missileYellow[1], PAL.missileYellow[2], RING_ALPHA);
+    }
+    const grit = (fout * 4 + 0.5) * MU;
+    this.scatter(e.seed ?? 1, 8, (2 + 30 * FIN_POW(t)) * MU, 0, Math.PI, (x, y) => {
+      this.fillCircle(dyn, e.x + x, e.y + y, grit, PAL.gray, 1);
+    });
+    const spark = (1 + fout * 4) * MU;
+    this.scatter((e.seed ?? 1) + 1, 6, (1 + 29 * FIN_POW(t)) * MU, 0, Math.PI, (x, y, bearing) => {
+      this.strokeLine(dyn, e.x + x, e.y + y, bearing, spark, fout * MU, PAL.missileYellowBack, 1);
+    });
+  }
+
+  /**
+   * ExplosionEffect, 1:1, off its style: a wave in waveColor over waveLife
+   * ticks from waveRadBase out by waveRad, `smokes` cinders in smokeColor
+   * over smokeRad, `sparks` bars in sparkColor over sparkRad.
+   */
+  private drawExplosion(dyn: Batch, e: Effect, t: number, S: (typeof EXPLOSION_STYLES)[number]): void {
+    const fout = 1 - t;
+    const life = S.lifetime * 60;
+    const RING = S.waveLife / life;
+    if (t < RING) {
+      const s = t / RING;
+      this.strokeCircle(dyn, e.x, e.y, (S.waveRadBase + s * S.waveRad) * MU, S.waveStroke * (1 - s) * MU,
+        S.waveColor[0], S.waveColor[1], S.waveColor[2], RING_ALPHA);
+    }
+    if (S.smokeSize > 0) {
+      const grit = (fout * S.smokeSize + S.smokeSizeBase) * MU;
+      this.scatter(e.seed ?? 1, S.smokes, (2 + S.smokeRad * FIN_POW(t)) * MU, 0, Math.PI, (x, y) => {
+        this.fillCircle(dyn, e.x + x, e.y + y, grit, S.smokeColor, 1);
+      });
+    }
+    const spark = (1 + fout * S.sparkLen) * MU;
+    this.scatter((e.seed ?? 1) + 1, S.sparks, (1 + S.sparkRad * FIN_POW(t)) * MU, 0, Math.PI, (x, y, bearing) => {
+      this.strokeLine(dyn, e.x + x, e.y + y, bearing, spark, fout * S.sparkStroke * MU, S.sparkColor, 1);
+    });
+  }
+
+  /**
+   * Fx.railShoot, 1:1: a white-to-lightGray ring out to 50 units over the
+   * first ten of 24 ticks, and two orangeSpark blades 85 units long thrown
+   * square to the shot, thinning as it goes.
+   */
+  private drawRailShoot(dyn: Batch, e: Effect, t: number): void {
+    const RING = 10 / 24;
+    if (t < RING) {
+      const s = t / RING;
+      const col = ramp(PAL.white, PAL.lightGray, null, s);
+      this.strokeCircle(dyn, e.x, e.y, s * 50 * MU, ((1 - s) * 3 + 0.2) * MU, col[0], col[1], col[2], RING_ALPHA);
+    }
+    for (const side of [-1, 1])
+      this.tri(dyn, e.x, e.y, 13 * (1 - t) * MU, 85 * MU, (e.rot ?? 0) + (side * Math.PI) / 2, PAL.orangeSpark, 1);
+  }
+
+  /**
+   * The emp round's hitEffect, 1:1: a heal disc filling the whole splash
+   * radius for the first seven of 50 ticks, a ring at the radius stroked
+   * 3 x fout, ten spikes 50 units long standing on its rim at a seeded
+   * roll, and a heal flash with a white core at the centre.
+   */
+  private drawEmpHit(dyn: Batch, e: Effect, t: number): void {
+    const fout = 1 - t;
+    const rad = e.len ?? 100 * MU;
+    const col = e.col ?? PAL_HEAL;
+    const FLASH = 7 / 50;
+    if (t < FLASH) this.fillDisc(dyn, e.x, e.y, rad, col, (1 - t / FLASH) * 0.6);
+    this.strokeCircle(dyn, e.x, e.y, rad, fout * 3 * MU, col[0], col[1], col[2], 1);
+    const POINTS = 10;
+    rngSeed(e.seed ?? 1);
+    const offset = rng() * Math.PI * 2;
+    for (let i = 0; i < POINTS; i++) {
+      const a = (i * Math.PI * 2) / POINTS + offset;
+      this.tri(dyn, e.x + Math.cos(a) * rad, e.y + Math.sin(a) * rad, 6 * MU, 50 * fout * MU, a, col, 1);
+    }
+    this.fillCircle(dyn, e.x, e.y, 12 * fout * MU, col, 1);
+    this.fillCircle(dyn, e.x, e.y, 6 * fout * MU, PAL.white, 1);
   }
 }
