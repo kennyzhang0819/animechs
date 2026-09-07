@@ -379,22 +379,27 @@ export function missionXp(cleared: number, waves: number): number {
 }
 
 /**
- * THE LEVEL CURVE, in two pieces.
+ * THE LEVEL CURVE, in three pieces.
  *
- *   THE CLIMB, levels 1 to XP_LEVEL_PLATEAU (100). Going from level n to
- *   n+1 costs XP_LEVEL_BASE x n to the power XP_LEVEL_POWER — a little
- *   more than the last one every time, never a wall. The power is set so
- *   the hundredth step is just under a million: 5,000 at level 1,
- *   ~61,000 at 10, ~422,000 at 50, ~942,000 at 99.
+ *   THE CLIMB, levels 1 to XP_LEVEL_KNEE (15) — the track (track.ts),
+ *   where every level opens something. Going from level n to n+1 costs
+ *   XP_LEVEL_BASE x n to the power XP_LEVEL_POWER — a little more than
+ *   the last one every time, never a wall: 5,000 at level 1, ~61,000 at
+ *   10, ~110,000 at 15.
+ *
+ *   THE RAMP, levels 15 to XP_LEVEL_PLATEAU (100). The step climbs in a
+ *   straight line from what level 15 cost to XP_LEVEL_FLAT at level 100
+ *   — about 4,600 more a level — so no level on the way up ever costs
+ *   more than a level on the plateau does. Level 99 is ~495,000.
  *
  *   THE PLATEAU, levels 100 to LEVEL_CAP (1000). Every level costs the
  *   same XP_LEVEL_FLAT (500,000): the long tail a save keeps earning
  *   after it owns everything, with the tick of a level at a fixed, known
  *   price — five Nemesis clears, or two or three at the top rung.
  *
- *   level    2      3      5      10     24     50     100     1000
- *   to next  5k     11k    24k    61k    178k   422k   500k    500k
- *   total    5k     16k    58k    288k   2.0m   9.9m   44m     494m
+ *   level    2      3      5      10     15     24     50     100    1000
+ *   to next  5k     11k    24k    61k    110k   151k   270k   500k   500k
+ *   total    5k     16k    58k    288k   714k   1.9m   7.2m   26m    476m
  *
  * WHAT THAT MEANS AGAINST A MAP. A full clear at Nemesis pays MISSION_XP
  * (100,000) and lands level 6; at Incursion it pays 40,000 and lands
@@ -404,24 +409,32 @@ export function missionXp(cleared: number, waves: number): number {
  * ROSTER phase (ROSTER_TOP in track.ts, where the last wall opens)
  * stands at about 714,000 XP — seven or eight Nemesis clears, or three
  * or four at the top rung — and the MUTATOR phase behind it runs to
- * about 2,000,000 at MAX_LEVEL (24). Everything above that is the long
- * tail: level 100 is 44 million, and the cap is 494 million. Nothing on
+ * about 1,900,000 at MAX_LEVEL (24). Everything above that is the long
+ * tail: level 100 is 26 million, and the cap is 476 million. Nothing on
  * the track is handed out up there (track.ts); the number is the number.
  */
 export const XP_LEVEL_BASE = 5000;
 export const XP_LEVEL_POWER = 1.14;
-/** the level the climb stops at and the plateau begins */
+/** the level the power curve hands over to the straight ramp */
+export const XP_LEVEL_KNEE = 15;
+/** the level the ramp reaches the plateau */
 export const XP_LEVEL_PLATEAU = 100;
-/** what every level on the plateau costs */
+/** what every level on the plateau costs — and what the ramp climbs to */
 export const XP_LEVEL_FLAT = 500_000;
 /** the highest level a save can stand at; XP past it banks and does nothing */
 export const LEVEL_CAP = 1000;
 
+/** the climb's step: XP_LEVEL_BASE x level to the power */
+const climbStep = (level: number): number => XP_LEVEL_BASE * Math.max(1, level) ** XP_LEVEL_POWER;
+
 /** XP needed to climb from `level` to `level + 1` */
-export const xpToNext = (level: number): number =>
-  level >= XP_LEVEL_PLATEAU
-    ? XP_LEVEL_FLAT
-    : Math.round(XP_LEVEL_BASE * Math.max(1, level) ** XP_LEVEL_POWER);
+export function xpToNext(level: number): number {
+  if (level >= XP_LEVEL_PLATEAU) return XP_LEVEL_FLAT;
+  if (level < XP_LEVEL_KNEE) return Math.round(climbStep(level));
+  const knee = climbStep(XP_LEVEL_KNEE);
+  const t = (level - XP_LEVEL_KNEE) / (XP_LEVEL_PLATEAU - XP_LEVEL_KNEE);
+  return Math.round(knee + (XP_LEVEL_FLAT - knee) * t);
+}
 
 /** total XP at which `level` is reached — level 1 is zero */
 export function xpAtLevel(level: number): number {

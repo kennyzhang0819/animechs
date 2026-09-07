@@ -332,7 +332,7 @@ stats whatever the save's level. A turret the save has not reached rides
 the build bar greyed, with the level that opens it. The progress screen
 lists the whole track; the results screen names what a climb handed out. A
 first Confluence clear lands level 6 at Nemesis, level 4 at Incursion;
-the top of the track is about 2 million XP.
+the top of the track is about 1.9 million XP.
 
 ### One script, three families a deploy
 
@@ -646,9 +646,10 @@ __ladder.wave(7, 2)   // what one authored wave weighs and pays
   charged. There is no saved board any more — a board is bought from the
   opening stipend outward, every run.
 - **The level curve** is `XP_LEVEL_BASE × level^XP_LEVEL_POWER` to the
-  next level (5,000 × n^1.14) for the first hundred levels — 5,000 at
-  level 1, ~942,000 at level 99 — and a flat `XP_LEVEL_FLAT` (500,000) a
-  level from 100 to the cap at 1,000 (`LEVEL_CAP`). A full Nemesis clear
-  pays the 100,000 XP pot and lands level 6, and eight of them reach
-  level 15; a wipe at the end of stage 1 (twenty waves cleared, ~27,800
-  XP) lands level 3.
+  next level (5,000 × n^1.14) up the track to level 15 (`XP_LEVEL_KNEE`;
+  5,000 at level 1, ~110,000 at 15), then a straight ramp from there to
+  `XP_LEVEL_FLAT` (500,000) at level 100, then flat at 500,000 a level to
+  the cap at 1,000 (`LEVEL_CAP`), so no level ever costs more than a
+  plateau level. A full Nemesis clear pays the 100,000 XP pot and lands
+  level 6, and eight of them reach level 15; a wipe at the end of stage 1
+  (twenty waves cleared, ~27,800 XP) lands level 3.
