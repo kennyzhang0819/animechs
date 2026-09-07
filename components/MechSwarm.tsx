@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   BASE_SPEEDS,
   firstLoadStep,
@@ -65,7 +65,6 @@ import {
   mutationById,
   mutationsInForce,
   rollMutations,
-  type MutationDef,
   type MutationId,
 } from "@/game/mutation";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
@@ -75,7 +74,6 @@ import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
 import ProgressView from "./Progress";
 import { bandFor, MutationFace } from "./mutationFace";
 import MenuBackground from "./MenuBackground";
-import { HoverCard, useHoverCard } from "./HoverCard";
 
 /** the level card's map preview — the admin editor's thumbnail look */
 function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) {
@@ -84,15 +82,16 @@ function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) 
     const m = loadMap(mapId);
     if (m && ref.current) drawThumb(m, ref.current);
   }, [mapId]);
-  // fixed-aspect frame: maps differ in proportion (a taller world 2 next to
-  // a wide world 1), and letting each canvas set its own height left the
-  // cards ragged. The preview sits centred inside a constant box instead.
+  // fixed-aspect frame: every campaign map is square (Mindustry's own
+  // 256x256, see scripts/maps/mindustry.mjs), so the frame is square too;
+  // a reference document of another shape sits centred inside it rather
+  // than setting its own height and leaving the cards ragged.
   // `bare` drops the frame's own border and fill: on the menu the thumb is
   // already inside the card's border, and the second box around it read as
   // a picture of a map rather than as the map
   return (
     <div
-      className={`flex aspect-[16/9] items-center justify-center overflow-hidden${
+      className={`flex aspect-square items-center justify-center overflow-hidden${
         bare ? "" : " ms-pane-solid"
       }`}
     >
@@ -245,20 +244,13 @@ const levelSummary = (lv: LevelSpec): { waves: number; enemies: number } => {
  * ONLY THE ROLL GOES IN `mutation`. A world's own rules
  * (LevelSpec.intrinsicMutation) are already on the spec this spreads, and
  * the sim unions the two itself (mutationsInForce) — copying them in here
- * as well would make "what was rolled" unanswerable, which the points line
- * on the deploy panel needs to stay honest.
+ * as well would make "what was rolled" unanswerable.
  *
  * The two are joined HERE and not in specForTier, because they answer
  * different questions and the audit arithmetic only wants one of them: a
  * rung is what the campaign sends, a mutator is what happens to it on the
  * way in. Everything ladder.ts counts stays true either way — a mutator
  * changes a wave after it spawns, never what spawns.
- *
- * THE ROLL IS PASSED IN, NOT MADE HERE, and that is the whole reason this
- * takes a third argument. The deploy panel SHOWS the rules before the
- * button is pressed; rolling again on the press would deploy a run under
- * rules the player was never shown, which is the one thing a mode built
- * on a surprise roll cannot afford to do.
  */
 const runSpec = (
   world: LevelSpec,
@@ -268,60 +260,6 @@ const runSpec = (
   ...specForTier(world, tier),
   ...(mutation.length > 0 ? { mutation } : null),
 });
-
-/**
- * ONE RULE IN THE DEPLOY DIALOG: its face in a bordered square, and the
- * sentence in a card that opens on hover.
- *
- * IT IS THE CODEX TILE WITH THE BOARD TAKEN OUT — same face, same band
- * colour on the border, same hover card. What it drops is the name under
- * the square and the geometry around it: this is a row inside a dialog,
- * not a shelf on a board.
- *
- * THE CARD OPENS UPWARD. Everything below this row is the Deploy button
- * and the bottom of the panel, so a card hanging down would either be
- * clipped or would cover the one control the dialog exists to offer.
- */
-function MutationChip({
-  def,
-  always,
-  fromRight,
-}: {
-  def: MutationDef;
-  /** a rule the WORLD carries rather than one the difficulty rolled */
-  always: boolean;
-  /**
-   * Hang the card off this chip's RIGHT edge instead of its left.
-   *
-   * The card is wider than the whole row of chips, so one anchored left
-   * under the last chip runs off a narrow landscape phone entirely — 43px
-   * of it, measured, at 667px wide. Chips in the right half of the row
-   * open leftward instead, which keeps every card inside the dialog
-   * without measuring anything at runtime.
-   */
-  fromRight: boolean;
-}) {
-  const band = bandFor(def);
-  // the shared HoverCard (HoverCard.tsx), opening upward off the chip
-  const tip = useHoverCard("up");
-  return (
-    <div className="relative">
-      <button
-        ref={tip.ref as RefObject<HTMLButtonElement | null>}
-        type="button"
-        aria-label={`${def.name}: ${band.label} mutator${always ? ", always in force on this map" : ""}. ${def.blurb}`}
-        {...tip.anchorProps}
-        className="flex h-7 w-7 items-center justify-center border-2 bg-[#0b0b0d] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB]"
-        style={{ borderColor: band.color }}
-      >
-        <MutationFace id={def.id} size="h-5 w-5" />
-      </button>
-      <HoverCard tip={tip} title={def.name} tag={band.label} color={band.color} align={fromRight ? "center" : "left"}>
-        {def.blurb}
-      </HoverCard>
-    </div>
-  );
-}
 
 /**
  * A MACRO — one of the two dials on the start screen, printed as a row:
@@ -471,7 +409,7 @@ function MapPicker({
   return (
     <PickerDialog title="Map" onClose={onClose}>
       <PickRow selected={pick == null} onPick={() => onPick(null)}>
-        <div className="flex aspect-[16/9] w-20 shrink-0 items-center justify-center bg-[#0b0b0d] text-[#FFD37F]">
+        <div className="flex aspect-square w-20 shrink-0 items-center justify-center bg-[#0b0b0d] text-[#FFD37F]">
           <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
             <circle cx="8" cy="8" r="1.7" fill="currentColor" />
@@ -508,7 +446,7 @@ function MapPicker({
               {mapsReady ? (
                 <LevelThumb mapId={w.map ?? OFFICIAL_MAP_IDS[0]} bare />
               ) : (
-                <div className="aspect-[16/9] bg-[#0b0b0d]" />
+                <div className="aspect-square bg-[#0b0b0d]" />
               )}
             </div>
             <div className="min-w-0 flex-1">
@@ -539,10 +477,9 @@ function MapPicker({
 
 /**
  * THE DIFFICULTY LIST: the ten levels, every one open, each saying what
- * it pays over Level 1 — the whole trade in one column. Scrap is the same
- * on every level (the run is priced against the script, not the rung),
- * so the only thing a higher level buys is XP, and the only thing it
- * costs is the rules it rolls; both are on the row.
+ * it pays over Level 1 and nothing else. THE ROW DOES NOT SPELL OUT WHAT A
+ * LEVEL DOES — no health multiplier, no count of the rules it rolls. A
+ * player finds out by playing it; the only promise on the row is the XP.
  */
 function DifficultyPicker({
   tier,
@@ -556,7 +493,6 @@ function DifficultyPicker({
   return (
     <PickerDialog title="Difficulty" onClose={onClose}>
       {Array.from({ length: RUNG_COUNT }, (_, t) => {
-        const rules = tierMutationCount(t);
         return (
           <PickRow key={t} selected={t === tier} onPick={() => onPick(t)}>
             <span
@@ -565,11 +501,7 @@ function DifficultyPicker({
             >
               {rungLabel(t)}
             </span>
-            <span className="min-w-0 flex-1 text-[11px] text-[#71717C]">
-              {rules === 0
-                ? "As authored — no mutators"
-                : `${rules} mutator${rules === 1 ? "" : "s"} rolled`}
-            </span>
+            <span className="min-w-0 flex-1" />
             <span
               className="shrink-0 text-[12px] font-bold uppercase tracking-widest"
               style={{ color: XP_COLOR }}
@@ -813,45 +745,6 @@ export default function MechSwarm() {
             .filter((m): m is NonNullable<typeof m> => m !== null)
         : [],
     [level],
-  );
-  /**
-   * THE ROLL FOR A PICKED MAP — as many rules as the difficulty asks for,
-   * costing no more than the points it carries (both dials on the rung),
-   * with the world's own rules handed to the roller as an exclusion so it
-   * cannot spend the tier's points on a rule the run already plays under.
-   * Level 1 carries zero of each and so rolls nothing.
-   *
-   * IT IS ROLLED ONCE PER (MAP, DIFFICULTY), HERE, and the deploy screen
-   * shows it under the macros, so whatever is on screen when Start is
-   * pressed is exactly what the run is played under (startRun carries it).
-   * Re-rolling on every render would spin the list under the player's
-   * eyes; rolling at Start would deploy rules that were never shown.
-   *
-   * A RANDOM MAP ROLLS AT START, because the exclusion is the map's and
-   * the map is not known until then. That deploy is a surprise by design
-   * — the bonus is paid for exactly that — and the rules in force are on
-   * the HUD from the first wave (hudRules), so nothing is hidden for long.
-   */
-  const previewRoll = useMemo(
-    () =>
-      pickedWorld
-        ? rollMutations(
-            tierMutationPoints(tier),
-            tierMutationCount(tier),
-            pickedWorld.intrinsicMutation ?? [],
-          )
-        : [],
-    [pickedWorld, tier],
-  );
-  /** every rule the previewed deploy is played under — the map's own and the roll */
-  const previewRules = useMemo(
-    () =>
-      pickedWorld
-        ? mutationsInForce(pickedWorld.intrinsicMutation, previewRoll)
-            .map(mutationById)
-            .filter((m): m is NonNullable<typeof m> => m !== null)
-        : [],
-    [pickedWorld, previewRoll],
   );
   /**
    * Ambient effects on? A saved preference (Progress.effects) like the
@@ -1163,9 +1056,9 @@ export default function MechSwarm() {
       (t) => t.kind,
     );
     if (hud.barSlots === null) return owned;
-    // an uncurated save rides the STARTING ROSTER — the seven guns and the
-    // copper wall, one of every job and exactly a bar's worth — rather
-    // than the cheapest eight, which the walls would fill on their own
+    // an uncurated save rides the STARTING ROSTER — the four guns and the
+    // copper wall a first board is made of — rather than the cheapest
+    // eight, which the walls would fill on their own
     const start = owned.filter((k) => STARTING_ROSTER.includes(k));
     const picks = new Set(loadout ?? (start.length > 0 ? start : owned));
     const chosen = owned.filter((k) => picks.has(k));
@@ -1269,10 +1162,22 @@ export default function MechSwarm() {
   };
 
   /**
-   * START, from the macros as they stand. A picked map deploys under the
-   * roll the screen has been showing; Random resolves to any map the
-   * track has opened and rolls for it here. The picks are remembered
-   * (saveRunPick) so the next launch opens on them.
+   * START, from the macros as they stand. Random resolves to any map the
+   * track has opened; the picks are remembered (saveRunPick) so the next
+   * launch opens on them.
+   *
+   * THE MUTATORS ARE ROLLED HERE, ON THE PRESS, and this is the only
+   * place they are rolled. As many rules as the difficulty asks for,
+   * costing no more than the points it carries (both dials on the rung),
+   * with the world's own rules handed to the roller as an exclusion so it
+   * cannot spend the tier's points on a rule the run already plays under.
+   * Level 1 carries zero of each and so rolls nothing.
+   *
+   * IT USED TO ROLL ON THE DEPLOY SCREEN, once per (map, difficulty), so
+   * that the panel could show the roll before the press. Nothing shows it
+   * now — a run's rules are the run's news — so the roll waits for the
+   * press, which is also what makes it a roll: a preview a player could
+   * see was a preview a player could re-roll by touching a macro.
    */
   const startRun = (): void => {
     const p = progress ?? loadProgress();
@@ -1282,9 +1187,11 @@ export default function MechSwarm() {
     const picked = pickedWorld && worldLock(p, pickedWorld.id) == null ? pickedWorld : null;
     const random = picked == null;
     const w = picked ?? open[Math.floor(Math.random() * open.length)] ?? WORLD;
-    const roll = random
-      ? rollMutations(tierMutationPoints(tier), tierMutationCount(tier), w.intrinsicMutation ?? [])
-      : previewRoll;
+    const roll = rollMutations(
+      tierMutationPoints(tier),
+      tierMutationCount(tier),
+      w.intrinsicMutation ?? [],
+    );
     saveRunPick(tier, picked?.id ?? null);
     setRunRandom(random);
     setLevel(runSpec(w, tier, roll));
@@ -1500,31 +1407,30 @@ export default function MechSwarm() {
     );
     const randomLabel = xpBonusText(1 + RANDOM_MAP_XP_BONUS);
     return (
-      // the title card is a SCREEN, not a page — nothing on it overflows,
-      // so it must never bounce or scroll under a finger. The deeper menu
-      // views hold lists and do scroll.
-      <div
-        className={`fixed inset-0 bg-[#0b0b0d] ${
-          menuView === "home" ? "overflow-hidden" : "overflow-y-auto"
-        }`}
-      >
+      // every menu view scrolls if it has to: the title card fits any
+      // screen at 100%, but at a big UI size on a short screen it can
+      // stand taller than the viewport, and a card that scrolls beats one
+      // whose Settings button is clipped off the bottom. A finger cannot
+      // bounce it: html and body refuse overscroll (globals.css)
+      <div className="fixed inset-0 overflow-y-auto bg-[#0b0b0d]">
         {/* THE GROUND: a rolled world drifting under the whole front of
             house (MenuBackground). It is mounted once here rather than per
             view so walking Title → Start → a pick never re-rolls it; only
             the wash over it changes — light on the title card, darker
             under the deploy screen, which is a thing to read */}
         <MenuBackground dim={menuView === "home" ? 0.38 : 0.66} />
-        {/* ui-zoom off the title card: the hero screen is composed at one
-            size; the working menus scale with the UI-size knob, which is
-            also what makes the knob's effect visible where it lives */}
-        {/* the working views clear the corner chrome (back, the level and
-            Progress) with a top pad in their own zoomed units, so a HUD
-            at 200% does not stand the heading under the level strip — and
-            the centring is SAFE: a column taller than the screen starts at
-            the pad and scrolls, instead of spilling out of both ends */}
+        {/* EVERY VIEW TAKES THE UI-SIZE KNOB, the title card included: it
+            used to sit out at one composed size, and a knob that scaled
+            every screen but the first one read as the first one being
+            broken. The working views also clear the corner chrome (back,
+            the level and Progress) with a top pad in their own zoomed
+            units, so a HUD at 200% does not stand the heading under the
+            level strip — and the centring is SAFE: a column taller than
+            the screen starts at the pad and scrolls, instead of spilling
+            out of both ends */}
         <div
-          className={`relative mx-auto flex min-h-full max-w-5xl flex-col items-center gap-8 py-12 pl-[1.5rem] pr-[1.5rem] [justify-content:safe_center] sm:py-16 ${
-            menuView === "home" ? "" : "ui-zoom pt-20 sm:pt-20"
+          className={`ui-zoom relative mx-auto flex min-h-full max-w-5xl flex-col items-center gap-8 py-12 pl-[1.5rem] pr-[1.5rem] [justify-content:safe_center] sm:py-16 ${
+            menuView === "home" ? "" : "pt-20 sm:pt-20"
           }`}
         >
           {/* THE TITLE CARD. A name and two doors - nothing here describes a
@@ -1606,28 +1512,15 @@ export default function MechSwarm() {
                     </span>
                   </MacroButton>
                 </div>
-                {/* WHAT A PICKED MAP WILL BE PLAYED UNDER — the map's own
-                    rules and the roll for this level, as a row of faces
-                    (see MutationChip). A random map shows nothing here: its
-                    roll waits for the map, and that surprise is what the
-                    bonus pays for */}
-                {previewRules.length > 0 && (
-                  <div className="flex items-center gap-2 px-1 text-[12px]">
-                    <span className="font-bold uppercase tracking-widest text-[#FF8ACB] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
-                      Mutators
-                    </span>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {previewRules.map((m, i) => (
-                        <MutationChip
-                          key={m.id}
-                          def={m}
-                          always={(pickedWorld?.intrinsicMutation ?? []).includes(m.id)}
-                          fromRight={i >= previewRules.length / 2}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {/* NOTHING HERE SAYS WHAT THE RUN WILL BE PLAYED UNDER.
+                    The roll used to sit under the macros as a row of
+                    faces, which meant the deploy screen answered the
+                    question the first wave is supposed to: a player read
+                    the rules, weighed them and re-picked the map to
+                    re-roll them. The rules are a thing the run tells you,
+                    not a thing the menu offers — they are on the HUD
+                    (hudRules) from the first frame of the field, and the
+                    codex on the progress screen says what each one does */}
                 {/* ONE ACTION, at the bottom: this map, at this level, go */}
                 <button
                   onClick={startRun}

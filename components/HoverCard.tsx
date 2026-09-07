@@ -25,6 +25,20 @@ import { createPortal } from "react-dom";
 
 export type HoverDir = "up" | "down";
 
+/**
+ * THE UI-SIZE KNOB THE CARD IS DRAWN UNDER. The card carries .ui-zoom,
+ * and CSS `zoom` multiplies EVERY length on the element it is set on —
+ * `left` and `top` included, not just the box. Its anchor's rectangle
+ * comes back from getBoundingClientRect in real screen pixels, so pinning
+ * the card at those numbers puts it at scale-times-too-far from the
+ * corner: at 1.25 a chip at x=400 got its card at x=500. Dividing the
+ * point by the scale lands it where the anchor is at any UI size.
+ */
+function uiScale(): number {
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--ui-scale"));
+  return Number.isFinite(v) && v > 0 ? v : 1;
+}
+
 export interface HoverAnchor {
   ref: RefObject<HTMLElement | null>;
   /** the anchor's screen point while open — null is closed */
@@ -44,7 +58,10 @@ export function useHoverCard(dir: HoverDir): HoverAnchor {
   const [at, setAt] = useState<HoverAnchor["at"]>(null);
   const open = (): void => {
     const r = ref.current?.getBoundingClientRect();
-    if (r) setAt({ x: r.left, y: dir === "up" ? r.top : r.bottom, w: r.width });
+    if (!r) return;
+    // stored already in the card's own (zoomed) coordinate space — see uiScale
+    const z = uiScale();
+    setAt({ x: r.left / z, y: (dir === "up" ? r.top : r.bottom) / z, w: r.width / z });
   };
   const close = (): void => setAt(null);
   return {

@@ -435,13 +435,6 @@ const SHIELD_PLAIN = 0.94;
  * is meant to be out there.
  */
 const CLEAR = [0.043, 0.043, 0.043] as const;
-/**
- * The same colour as CSS `r,g,b` components. begin() clears the whole
- * canvas to it, so everything outside the map's rectangle already IS this
- * colour — which is what lets the edge haze (Game.drawHaze) land on the
- * void seamlessly instead of ending on a visible seam.
- */
-export const VOID_RGB = CLEAR.map((v) => Math.round(v * 255)).join(",");
 /** Arc Interp.pow3Out, the curve behind EffectContainer.finpow() */
 const FIN_POW = (f: number): number => 1 - Math.pow(1 - f, 3);
 /**
@@ -557,9 +550,11 @@ export const WALL_SHADOW_A = 0.71;
  * then 0.625, 0.875 and solid — so a ridge keeps its lit face and a range
  * goes black inside, and the bilinear ramp between cells is the gradient.
  * (Mindustry also marks a cell at 4 whose four neighbours are all at 4
- * with a 5; that draws identically, so it is not kept.) It is drawn LAST,
- * over units and shields alike — Layer.darkness sits above everything
- * that moves, so a flyer crossing a range is swallowed by it.
+ * with a 5; that draws identically, so it is not kept.) It is drawn over
+ * the ground units, the effects and the shields — Layer.darkness sits
+ * above all of those — but UNDER the flyers: Mindustry swallows a flyer
+ * crossing a range, and this game does not, because a flyer is above the
+ * terrain wherever it is (see pushUnitPass).
  */
 const DARK_RADIUS = 4;
 /** which terrain layers the static batches draw; the editor hides one to
@@ -1467,7 +1462,7 @@ export class Renderer {
     // scaffolding for the arrays, never something to look at.
     //
     // Stopping the passes at rows/cols leaves the void beyond the edge,
-    // where the haze already fades the last cells out (see haze.ts). The
+    // which the rim's rock darkens into on its own (drawDarkness). The
     // editor still PAINTS the whole grid, so extending a map downward keeps
     // working: a painted cell past the edge stops being padding, and the
     // editor re-reads the height (see MapEditor.mapRows).
@@ -1763,9 +1758,100 @@ export class Renderer {
   }
 
   /**
+   * One painter's pass over the crowd (drawFrame): 0 is the ground units
+   * and hulls, 1 the flyers' drop shadows over them, 2 the flyers
+   * themselves. Passes 0 and 1 go into the frame's batch under the
+   * bullets and effects; pass 2 is drawn on its own AFTER the hill
+   * darkness, because a flyer is above the terrain, never inside it.
+   */
+  private pushUnitPass(dyn: Batch, sim: Sim, pass: number): void {
+    const { vx0, vy0, vx1, vy1 } = this;
+    const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
+    const { ushield, ushieldAlpha, urad, uwet, uhungry, ufly, ueaten, uwade } = sim;
+    // pass 1 is nothing but the flyers' drop shadows — a whole second
+    // quad per flyer, and the first decoration to go with the effects
+    // switched off (see setEffects)
+    if (pass === 1 && !this.fxOn) return;
+    const wantFly = pass > 0;
+    for (let i = 0; i < n; i++) {
+      const k = ukind[i];
+      if (KIND_FLYING[k] !== wantFly) continue;
+      // a hungry unit that has been eating is drawn HUNGRY_GROWTH bigger
+      // per meal, and a waded one AMPHIBIOUS_GROWTH bigger per crossing
+      // (mutation.ts) — art only, the sim's hitbox never moves. Its cull
+      // margin grows with it or a swollen unit would pop out at the
+      // screen edge while half of it is still on screen.
+      //
+      // The two ADD, because a body can be both and the player needs to
+      // see that it is: on Quagmire a fed, five-times-forded crawler is
+      // the single most dangerous thing in the lane and it must not look
+      // like either one of those alone
+      const swell = ueaten[i] * HUNGRY_GROWTH + uwade[i] * AMPHIBIOUS_GROWTH;
+      const grow = swell > 0 ? 1 + swell : 1;
+      const cm = grow === 1 ? KIND_CULL[k] : KIND_CULL[k] * grow;
+      if (upx[i] < vx0 - cm || upx[i] > vx1 + cm || upy[i] < vy0 - cm || upy[i] > vy1 + cm)
+        continue;
+      const usz = KIND_SPRITE[k];
+      if (grow !== 1) this.beginScale(upx[i], upy[i], grow);
+      if (pass === 1) {
+        this.push(dyn, upx[i] + SHADOW_OFF, upy[i] + SHADOW_OFF, usz, usz, urot[i], KIND_UV[k], 0, 0, 0, SHADOW_ALPHA);
+        this.endScale();
+        continue;
+      }
+      // UnitType.drawShield: a crux-red halo at hitSize * 1.3, its opacity
+      // spiking to full on a hit or a fresh pulse and fading out after.
+      // A force field carrier sets drawShields = false — its pool is
+      // already on screen as the bubble, and a halo under it would read
+      // as a second, smaller shield
+      if (ushield[i] > 0.0001 && !KIND_FORCE[k]) {
+        // UnitType.drawShield: Fill.light at hitSize * 1.3 — a disc that is
+        // clear at the centre and carries the colour at its rim
+        const sr = urad[i] * 2 * 1.3 * 2;
+        this.push(dyn, upx[i], upy[i], sr, sr, 0, UV_RING,
+          SHIELD_COL[0], SHIELD_COL[1], SHIELD_COL[2],
+          0.7 * (0.3 + 0.7 * ushieldAlpha[i]));
+      }
+      // hp thirds of the unit's own max, so every kind tints alike —
+      // read off the water-multiplied rows while the unit is wet
+      const t3 = (uhp[i] * 3) / uhpmax[i];
+      const table = uhungry[i]
+        ? uwet[i] > 0 ? WET_HUNGRY_TINT : HUNGRY_TINT
+        : uwet[i] > 0 ? WET_TINT : HP_TINT;
+      let tint: RGB = table[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
+      // in the hill's shadow, a walker or a hull is darkened by the shade
+      // at its feet — the same shade the floor under it wears
+      if (!ufly[i]) {
+        const lit = this.litAt(upx[i], upy[i]);
+        if (lit < 1) {
+          this.shadeTint[0] = tint[0] * lit;
+          this.shadeTint[1] = tint[1] * lit;
+          this.shadeTint[2] = tint[2] * lit;
+          tint = this.shadeTint;
+        }
+      }
+      const legArt = KIND_LEG[k], gait = KIND_GAIT[k];
+      const mech = KIND_MECH[k];
+      if (legArt && gait) {
+        this.pushLegs(dyn, legArt, gait, sim, i, tint);
+      } else if (mech) {
+        this.pushMech(dyn, mech, upx[i], upy[i], urot[i], ubrot[i], uwalk[i], tint);
+      } else {
+        // a flyer is one flat quad on the heading the sim turned it to.
+        // That is its own UnitType.rotateSpeed, not its velocity: the
+        // stock 5 deg/tick is close enough to instant that the light
+        // flyers read as banking with their drift, while antumbra's 1.9
+        // visibly swings the hull round after the course change
+        this.push(dyn, upx[i], upy[i], usz, usz, urot[i], KIND_UV[k], tint[0], tint[1], tint[2], 1);
+      }
+      this.endScale();
+    }
+  }
+
+  /**
    * The darkness inside the hills (DARK_RADIUS), over the finished frame:
-   * Layer.darkness is above units, effects and shields, so this is the
-   * last thing drawn in world space.
+   * Layer.darkness is above the ground units, the effects and the shields.
+   * Only the flyers come after it (drawFrame) — they are above the
+   * terrain, so a range never darkens them.
    */
   private drawDarkness(): void {
     const gl = this.gl;
@@ -1877,8 +1963,7 @@ export class Renderer {
       // actually burning at (see Sim.statsFor)
       if (t.beamT >= 0) this.drawContinuousBeam(dyn, t, sim.statsFor(t.kind).bullet.continuous);
     }
-    const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
-    const { ushield, ushieldAlpha, urad, uwet, uhungry, ufly, ueaten, uwade } = sim;
+    const { upx, upy, ukind, n } = sim;
     // the fleet's wakes, at Mindustry's Layer.debris: UNDER every unit,
     // including the hulls that laid them, so a crowded lane does not draw
     // one boat's foam over another boat
@@ -1892,86 +1977,12 @@ export class Renderer {
         this.pushWake(dyn, sim, i, w);
       }
     // painter's order in three passes: ground units, then flyer shadows on
-    // top of the crowd, then the flyers themselves above everything
-    for (let pass = 0; pass < 3; pass++) {
-      // pass 1 is nothing but the flyers' drop shadows — a whole second
-      // quad per flyer, and the first decoration to go with the effects
-      // switched off (see setEffects)
-      if (pass === 1 && !this.fxOn) continue;
-      const wantFly = pass > 0;
-      for (let i = 0; i < n; i++) {
-        const k = ukind[i];
-        if (KIND_FLYING[k] !== wantFly) continue;
-        // a hungry unit that has been eating is drawn HUNGRY_GROWTH bigger
-        // per meal, and a waded one AMPHIBIOUS_GROWTH bigger per crossing
-        // (mutation.ts) — art only, the sim's hitbox never moves. Its cull
-        // margin grows with it or a swollen unit would pop out at the
-        // screen edge while half of it is still on screen.
-        //
-        // The two ADD, because a body can be both and the player needs to
-        // see that it is: on Quagmire a fed, five-times-forded crawler is
-        // the single most dangerous thing in the lane and it must not look
-        // like either one of those alone
-        const swell = ueaten[i] * HUNGRY_GROWTH + uwade[i] * AMPHIBIOUS_GROWTH;
-        const grow = swell > 0 ? 1 + swell : 1;
-        const cm = grow === 1 ? KIND_CULL[k] : KIND_CULL[k] * grow;
-        if (upx[i] < vx0 - cm || upx[i] > vx1 + cm || upy[i] < vy0 - cm || upy[i] > vy1 + cm)
-          continue;
-        const usz = KIND_SPRITE[k];
-        if (grow !== 1) this.beginScale(upx[i], upy[i], grow);
-        if (pass === 1) {
-          this.push(dyn, upx[i] + SHADOW_OFF, upy[i] + SHADOW_OFF, usz, usz, urot[i], KIND_UV[k], 0, 0, 0, SHADOW_ALPHA);
-          this.endScale();
-          continue;
-        }
-        // UnitType.drawShield: a crux-red halo at hitSize * 1.3, its opacity
-        // spiking to full on a hit or a fresh pulse and fading out after.
-        // A force field carrier sets drawShields = false — its pool is
-        // already on screen as the bubble, and a halo under it would read
-        // as a second, smaller shield
-        if (ushield[i] > 0.0001 && !KIND_FORCE[k]) {
-          // UnitType.drawShield: Fill.light at hitSize * 1.3 — a disc that is
-          // clear at the centre and carries the colour at its rim
-          const sr = urad[i] * 2 * 1.3 * 2;
-          this.push(dyn, upx[i], upy[i], sr, sr, 0, UV_RING,
-            SHIELD_COL[0], SHIELD_COL[1], SHIELD_COL[2],
-            0.7 * (0.3 + 0.7 * ushieldAlpha[i]));
-        }
-        // hp thirds of the unit's own max, so every kind tints alike —
-        // read off the water-multiplied rows while the unit is wet
-        const t3 = (uhp[i] * 3) / uhpmax[i];
-        const table = uhungry[i]
-          ? uwet[i] > 0 ? WET_HUNGRY_TINT : HUNGRY_TINT
-          : uwet[i] > 0 ? WET_TINT : HP_TINT;
-        let tint: RGB = table[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
-        // in the hill's shadow, a walker or a hull is darkened by the shade
-        // at its feet — the same shade the floor under it wears
-        if (!ufly[i]) {
-          const lit = this.litAt(upx[i], upy[i]);
-          if (lit < 1) {
-            this.shadeTint[0] = tint[0] * lit;
-            this.shadeTint[1] = tint[1] * lit;
-            this.shadeTint[2] = tint[2] * lit;
-            tint = this.shadeTint;
-          }
-        }
-        const legArt = KIND_LEG[k], gait = KIND_GAIT[k];
-        const mech = KIND_MECH[k];
-        if (legArt && gait) {
-          this.pushLegs(dyn, legArt, gait, sim, i, tint);
-        } else if (mech) {
-          this.pushMech(dyn, mech, upx[i], upy[i], urot[i], ubrot[i], uwalk[i], tint);
-        } else {
-          // a flyer is one flat quad on the heading the sim turned it to.
-          // That is its own UnitType.rotateSpeed, not its velocity: the
-          // stock 5 deg/tick is close enough to instant that the light
-          // flyers read as banking with their drift, while antumbra's 1.9
-          // visibly swings the hull round after the course change
-          this.push(dyn, upx[i], upy[i], usz, usz, urot[i], KIND_UV[k], tint[0], tint[1], tint[2], 1);
-        }
-        this.endScale();
-      }
-    }
+    // top of the crowd, then the flyers themselves above everything — the
+    // last of those is not here: it is drawn after the darkness at the
+    // end of the frame (pushUnitPass), so a flyer crossing a range is not
+    // swallowed by it
+    this.pushUnitPass(dyn, sim, 0);
+    this.pushUnitPass(dyn, sim, 1);
     // Layer.bullet - 0.01: an artillery shell's trail is laid UNDER the
     // shells, so a volley's puffs never sit on top of the shot that made
     // them. It is the only effect below that line, which is why it takes a
@@ -2278,6 +2289,14 @@ export class Renderer {
     // finished frame
     this.blitShields(zoom, offX, offY, kPx, sim.time, buffered);
     this.drawDarkness();
+    // THE FLYERS, LAST OF ALL — above the darkness, not under it. Mindustry
+    // draws Layer.darkness over its flyingUnit layer, so a flyer crossing a
+    // range goes black inside it; here a flyer is always above the
+    // terrain, and the crowd's ground pass, the bullets and the effects are
+    // already on the frame under it
+    dyn.n = 0;
+    this.pushUnitPass(dyn, sim, 2);
+    this.draw(dyn, true);
   }
 
   /**

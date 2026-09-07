@@ -23,23 +23,37 @@ import {
  * read top to bottom is the whole progression, which is what a tree of
  * purchases never managed to be.
  *
- * THE TURRETS ARE ON THE TRACK. A fresh save opens with the seven of
- * STARTING_ROSTER — a gun for every job, duo to spectre — and the other
- * ten are dealt up the track (dealTurrets), cheapest first by Mindustry's
- * own build cost, one every third level. There is no gate inside a run
- * any more: what the save owns it may place from wave 1, and what it does
- * not own is greyed on the bar with the level that opens it.
+ * THE TRACK IS THE UNLOCKING PHASE, AND NOTHING ELSE. Every one of its
+ * fifteen levels opens at least one new thing to build — a turret or a
+ * wall — and level 15 is the last: the save owns the whole roster there
+ * and the track is finished. Levelling past it still happens (XP has no
+ * ceiling) and pays nothing, which is the honest shape for a game whose
+ * roster is finite. A fresh save opens with STARTING_ROSTER, the five
+ * that make a first board; the other eighteen are handed out one or two
+ * a level by UNLOCKS below. There is no gate inside a run: what the save
+ * owns it may place from wave 1.
  *
- * THE TRACK IS BUILT, NOT WRITTEN. The maps and paces are placed by hand
- * below (PLACED); the turrets and the fifty-odd upgrade rungs are dealt
- * by rule, so every level past the first hands out about two things, no
- * upgrade lands before its turret does, and no ultimate before TIER_FROM
- * says. Rewriting a rung's blurb in upgrades.ts, or adding a turret to the
- * roster, re-deals the track with no edit here.
+ * THE ROSTER IS WRITTEN, THE REST IS PLACED. UNLOCKS is a hand-authored
+ * order because the shape of the opening — which gun answers which wave,
+ * when the walls arrive — is a design decision and not an arithmetic on
+ * build cost, which is what dealt it before. The list is checked at import
+ * (every kind exactly once, every level carrying something), so adding a
+ * turret to the roster fails loudly here rather than quietly opening
+ * nothing.
+ *
+ * THE UPGRADE RUNGS ARE OFF THE TRACK. Every turret buff the track used
+ * to hand out is switched off at UPGRADES_ON_TRACK — the rungs, their
+ * blurbs and the dealing arithmetic are all still here and still
+ * typecheck, waiting to be put back somewhere that is not the unlocking
+ * phase.
  */
 
-/** the top of the track — the level at which every reward is out */
-export const MAX_LEVEL = 30;
+/**
+ * The top of the track — the level at which every reward is out. It is
+ * the length of the unlocking phase: fifteen levels, fifteen openings,
+ * and nothing after it.
+ */
+export const MAX_LEVEL = 15;
 
 export type Reward =
   | { kind: "world"; worldId: string }
@@ -51,62 +65,108 @@ export type Reward =
 const PLACED: readonly { level: number; reward: Reward }[] = [
   { level: 3, reward: { kind: "world", worldId: "2" } },
   { level: 7, reward: { kind: "world", worldId: "3" } },
-  // 2x is the only pace the track hands out, and it is the LAST thing on
-  // it: a run at full pace is the game as designed, and fast-forward is
+  // 2x is the only pace the track hands out, and it rides the LAST level
+  // of it: a run at full pace is the game as designed, and fast-forward is
   // the reward for having climbed the whole track. 4x and up are sandbox
   // tools (SPEEDS in game.ts, behind the admin door), never earned
   { level: MAX_LEVEL, reward: { kind: "speed", mult: 2 } },
 ];
 
 /**
- * WHAT A FRESH SAVE FIELDS: the seven turrets every attempt opens with.
- * One of every job — the volume gun, the flak, the artillery, the beam,
- * the burst, the long artillery and the heavy — so a first run is a whole
- * defence rather than a duo wall waiting for the track.
+ * WHAT A FRESH SAVE FIELDS: the five structures a first board is made of.
+ * The volume gun, the flak, the light artillery and the burst — enough to
+ * answer ground, air and a clump — and one wall to stand in the lane.
+ *
+ * IT USED TO BE EIGHT, with the lancer, the ripple and the SPECTRE in it,
+ * which handed a new save the top of the roster before its first wave and
+ * left the track that much less to open. Those three are the first things
+ * the track hands out instead (UNLOCKS): still early, still inside the
+ * opening night, but earned.
  */
 export const STARTING_ROSTER: readonly TowerKind[] = [
   // the copper wall opens with the guns: a lane with nothing to stand in
-  // it is the one board the swarm walks straight through. The two heavier
-  // walls are dealt up the track with the rest
+  // it is the one board the swarm walks straight through. The heavier
+  // walls are handed out up the track with the rest
   "copper-wall",
   "duo",
-  "scatter",
   "hail",
-  "lancer",
+  "scatter",
   "salvo",
-  "ripple",
-  "spectre",
 ];
 
-/** the first level a turret past the starting seven lands on, and the gap
- *  between the rest — ten turrets over levels 2..29, so the whole track
- *  keeps opening guns rather than the first third of it */
-const TURRET_FROM = 2;
-const TURRET_EVERY = 3;
-
 /**
- * Deal the turrets the save does not start with up the track, cheapest
- * first by Mindustry's build cost (BY_MINDUSTRY_VALUE), one every
- * TURRET_EVERY levels from TURRET_FROM. Level 1 carries the starting
- * roster, so the progress screen names every gun somewhere.
+ * WHAT EVERY LEVEL OPENS, level 2 to MAX_LEVEL. One new thing a level,
+ * two where the tail had to double up to fit the whole roster inside the
+ * phase; a level with nothing in it is a bug, and the check below throws
+ * on one.
+ *
+ * THE ORDER IS ROUGHLY BY WEIGHT, with two deliberate breaks:
+ *
+ *   THE THREE THAT LEFT THE STARTING ROSTER COME FIRST. The lancer, the
+ *   ripple and the spectre are levels 2, 3 and 4 — early, because a save
+ *   that used to have them for free should not have to climb far for
+ *   them, and not free, because a track whose first rungs open nothing is
+ *   not a track.
+ *
+ *   THE WALLS COME LAST. The copper wall is in the opening board and the
+ *   rest of the material ladder — titanium, then thorium, each with its
+ *   2x2 — rides the back of the phase, where a run is being built to hold
+ *   a lane rather than to shoot down a wave. Sorting them by build cost
+ *   put titanium at level 2, ahead of every gun, which is backwards: a
+ *   wall is what you add once the guns cannot hold on their own.
  */
+const UNLOCKS: readonly (readonly TowerKind[])[] = [
+  /*  2 */ ["lancer"],
+  /*  3 */ ["ripple"],
+  /*  4 */ ["spectre"],
+  /*  5 */ ["scorch"],
+  /*  6 */ ["arc"],
+  /*  7 */ ["wave"],
+  /*  8 */ ["swarmer"],
+  /*  9 */ ["parallax"],
+  /* 10 */ ["cyclone"],
+  /* 11 */ ["fuse"],
+  /* 12 */ ["tsunami", "copper-wall-large"],
+  /* 13 */ ["meltdown", "titanium-wall"],
+  /* 14 */ ["foreshadow", "titanium-wall-large"],
+  /* 15 */ ["thorium-wall", "thorium-wall-large"],
+];
+
+/** the roster by the level it opens on: the starting five on 1, UNLOCKS after */
 function dealTurrets(): Map<number, TowerKind[]> {
   const out = new Map<number, TowerKind[]>();
   out.set(1, [...STARTING_ROSTER]);
-  const start = new Set(STARTING_ROSTER);
-  let level = TURRET_FROM;
-  for (const k of BY_MINDUSTRY_VALUE) {
-    if (start.has(k)) continue;
-    const at = Math.min(level, MAX_LEVEL);
-    const list = out.get(at) ?? [];
-    list.push(k);
-    out.set(at, list);
-    level += TURRET_EVERY;
-  }
+  UNLOCKS.forEach((kinds, i) => out.set(i + 2, [...kinds]));
   return out;
 }
 
 const TURRETS_DEALT = dealTurrets();
+
+/**
+ * THE TRACK OPENS THE WHOLE ROSTER, AND OPENS SOMETHING EVERY LEVEL. Both
+ * halves are checked at import: a kind on no level could never be built,
+ * a kind on two would be handed out twice, and a level inside the phase
+ * that opens nothing is a dead rung on a track that exists to open
+ * things. Adding a turret to TOWER_KINDS without placing it here fails on
+ * the first import rather than in a player's save.
+ */
+(() => {
+  const seen = new Map<TowerKind, number>();
+  for (const [level, kinds] of TURRETS_DEALT)
+    for (const k of kinds) {
+      const had = seen.get(k);
+      if (had !== undefined)
+        throw new Error(`the track opens "${k}" twice, on levels ${had} and ${level}`);
+      seen.set(k, level);
+    }
+  for (const k of TOWER_KINDS)
+    if (!seen.has(k)) throw new Error(`the track never opens "${k}" — no level hands it out`);
+  if (UNLOCKS.length !== MAX_LEVEL - 1)
+    throw new Error(`UNLOCKS covers levels 2-${UNLOCKS.length + 1}; the track runs to ${MAX_LEVEL}`);
+  UNLOCKS.forEach((kinds, i) => {
+    if (kinds.length === 0) throw new Error(`level ${i + 2} opens nothing`);
+  });
+})();
 
 /** the level a turret joins the roster — 1 for the starting seven */
 export function turretUnlockLevel(kind: TowerKind): number {
@@ -151,7 +211,21 @@ function dealUpgrades(): Map<number, UpgradeKind[]> {
   return out;
 }
 
-const DEALT = dealUpgrades();
+/**
+ * THE TURRET BUFFS ARE OFF THE TRACK. Flip this to true and the rungs
+ * deal up it exactly as they did; dealUpgrades, upgradesAt and the rung
+ * blurbs in upgrades.ts are live code either way. With it false every
+ * turret plays at its stock stats at every level, and the track is the
+ * roster and nothing else.
+ *
+ * ONE THING TO FIX BEFORE FLIPPING IT BACK: TIER_FROM holds the old
+ * thirty-level track's floors (ultimates from 20), which is past the end
+ * of a fifteen-level one. Wherever the buffs land next, those floors are
+ * a fraction of the track's length rather than the numbers below.
+ */
+const UPGRADES_ON_TRACK = false;
+
+const DEALT: Map<number, UpgradeKind[]> = UPGRADES_ON_TRACK ? dealUpgrades() : new Map();
 
 /** every reward a level hands out: maps and paces first, then the turrets, then the rungs */
 export function rewardsAt(level: number): Reward[] {

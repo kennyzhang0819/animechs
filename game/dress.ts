@@ -1,14 +1,15 @@
 /**
- * DRESSING, in the game: the rules scripts/maps/dress.mjs paints the
- * campaign maps with, for a grid built at runtime — the title screen's
- * ground. The two are kept in step by hand; the script is plain node and
- * this is the browser, and neither can import the other.
+ * DRESSING, in the game, for a grid built at runtime — the title screen's
+ * ground (MenuBackground.tsx). These are the rules the campaign maps were
+ * painted with before they became Mindustry-style generated maps
+ * (scripts/maps/mindustry.mjs, docs/authoring-maps.md); the menu keeps
+ * them because its ground is a single meandering lane, which is the shape
+ * they were written for.
  *
- * The rules (docs/map-rules.md, "Dressing"): every shape is derived from
- * the geometry. The rock is ONE family beside every road, with a CORE of
- * a second family where a mass is thick — its own outline shrunk by a set
- * depth, the way Quagmire's heart is its island shrunk. The floor is a
- * base with a FEW LARGE blobs of a second floor, wider than the road and
+ * The rules: every shape is derived from the geometry. The rock is ONE
+ * family beside every road, with a CORE of a second family where a mass
+ * is thick — its own outline shrunk by a set depth. The floor is a base
+ * with a FEW LARGE blobs of a second floor, wider than the road and
  * clipped to it, and a third floor only in the plazas, the cells furthest
  * from any rock. Boulders lie along the road's edges, never down its
  * middle.
@@ -49,7 +50,7 @@ type Rng = () => number;
 
 /**
  * Distance from every cell to the nearest cell that fails `pass`, in
- * cells — the 5-7-11 chamfer, two passes, that geom.mjs uses. Off the
+ * cells — the 5-7-11 chamfer, two passes, that scripts/maps/geom.mjs uses. Off the
  * board counts as passable.
  */
 export function chamfer(w: number, h: number, pass: (i: number) => boolean): Float32Array {

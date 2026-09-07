@@ -22,7 +22,7 @@ import { scrapPriceOf, sellValue } from "./economy";
 import type { TowerPlacement } from "./progress";
 import { TOWER_KINDS } from "./types";
 import { Renderer } from "./renderer";
-import { drawHaze, fitZoom } from "./haze";
+import { fitZoom } from "./fit";
 import { Sim } from "./sim";
 import type { TechState } from "./tech";
 import type { Tower } from "./types";
@@ -177,14 +177,15 @@ function paint(): Promise<void> {
 // around at cover is a poor way to answer it.
 //
 // What made cover the floor was that anything past it shows empty space.
-// Mindustry answers that with borderDarkness (World.getDarkness): the
-// outermost tiles ramp to black, so the world ends in a soft edge and the
-// void beyond it reads as deliberate rather than as a missing chunk of
-// map. drawHaze is that, and it is what pays for this floor.
+// Every map's rim is rock, and the darkness inside the hills
+// (Renderer.drawDarkness, Mindustry's own darkness buffer) takes that
+// rock to black on its own, so the world ends in a soft edge and the void
+// beyond it reads as deliberate rather than as a missing chunk of map.
+// That is what pays for this floor; the haze that used to be laid over
+// the rim on top of it is gone.
 //
-// The floor itself, the haze depth and the haze curve live in haze.ts:
-// the map editor pulls back to the same floor over the same fade, and
-// numbers that have to agree between two cameras belong in one file.
+// The floor itself lives in fit.ts: the map editor pulls back to the same
+// floor, and a number two cameras have to agree on belongs in one file.
 // A FINGERTIP COVERS FAR MORE MAP THAN A CURSOR DOES, so the ceiling has to
 // leave enough room to aim at a single cell on a phone-sized viewport.
 //
@@ -1082,32 +1083,6 @@ export class Game {
   };
 
   /**
-   * The map's rim, hazed into the void it sits in.
-   *
-   * Mindustry's borderDarkness (World.getDarkness): the outermost tiles
-   * ramp to black so the world ends in a soft edge instead of a cut. Same
-   * idea, four gradients instead of per-tile darkness — this board has no
-   * darkness channel, and a straight edge each way is all there is to hide.
-   *
-   * It is the CLEAR colour rather than black because that is what is
-   * actually out there: the GL pass clears the whole canvas to it before
-   * any terrain lands, so the first stop of each gradient is the exact
-   * colour of the pixel beyond it and the map's edge stops existing.
-   * Corners take haze from two bands, which is right — it pools where they
-   * meet, and alpha compositing gets there smoothly on its own.
-   *
-   * This replaced a lumpier version that baked billows into a strip and
-   * stretched it along each edge. Irregularity that is BUILT is
-   * irregularity you can find: every lump had a radius, and where the brush
-   * ran past the inner face of the band it was cut off square, which put a
-   * visible straight border in the one place the whole effect exists to
-   * remove. A plain gradient with a long enough tail has no such place.
-   */
-  private drawHaze(c: CanvasRenderingContext2D): void {
-    drawHaze(c, this.worldW, this.worldH);
-  }
-
-  /**
    * Paint the Hydrophobic mask onto a COLS x ROWS bitmap — ONLY where a
    * turret could actually stand, which is open ground (the first test
    * canPlace makes: not blocked — shallows included, deep water not). The
@@ -1148,10 +1123,6 @@ export class Game {
     // world-space transform through the camera
     const s = this.scale * this.zoom;
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
-    // first, so everything below stays crisp on top of it: a range ring or
-    // a build ghost at the map's rim has to stay readable even where the
-    // ground under it is fading out
-    this.drawHaze(c);
 
     // THE TAXED SHORE, while a turret is in hand. Under the routes and the
     // ghost, both of which are decisions being made ON TOP of it

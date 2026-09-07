@@ -36,7 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {children}
         {/* the build stamp: the only proof of WHICH build this browser is
             running — see game/version.ts, and bump it every change */}
-        <div className="pointer-events-none fixed bottom-[0.375rem] right-[0.5rem] z-50 text-[10px] text-[#5A5A63]">
+        <div className="ui-zoom pointer-events-none fixed bottom-[0.375rem] right-[0.5rem] z-50 text-[10px] text-[#5A5A63]">
           v{BUILD}
         </div>
       </body>

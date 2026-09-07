@@ -1,5 +1,5 @@
 import { buildAtlas, DECOR_TILES, FLOOR_SHALLOW_WATER, SHALLOW_FOR_DEEP } from "./atlas";
-import { drawHaze, fitZoom } from "./haze";
+import { fitZoom } from "./fit";
 import {
   CELL,
   clamp,
@@ -30,9 +30,9 @@ import { WALL_DEEP, WALL_PINE, type Prop, type Terrain } from "./terrain";
 // the viewport" — which meant the one view an author needs most, the whole
 // map at once, was the one the editor refused to give: on a 256x192 board
 // cover crops the long axis and you draw a shoreline you cannot see the
-// shape of. The floor is now the game's own (fitZoom in haze.ts): pull back
-// until the map fits inside a margin of void, over the same rim haze the
-// game fades its edges with. Nothing is cropped and nothing floats.
+// shape of. The floor is now the game's own (fitZoom in fit.ts): pull back
+// until the map fits inside a margin of void. Nothing is cropped and
+// nothing floats.
 const ZOOM_MAX = 6;
 const UNDO_CAP = 40;
 const PAN_KEYS: Record<string, readonly [number, number]> = {
@@ -139,8 +139,8 @@ export class MapEditor {
    * is this map", none of them authoritative, and the only way to change it
    * was to paint rock in the right shape and hope the save agreed with you.
    *
-   * Now it is a number you set. Everything reads it: what gets drawn, where
-   * the haze falls, what the camera may reach, which cells a brush may
+   * Now it is a number you set. Everything reads it: what gets drawn, what
+   * the camera may reach, which cells a brush may
    * touch, and what the save writes. Shrinking it does not destroy the rows
    * below — they stay in the arrays, unreachable and undrawn — so growing
    * the number back brings them straight back, until a save trims them for
@@ -737,8 +737,8 @@ export class MapEditor {
 
 
   /**
-   * THE MAP'S OWN SIZE, in world px — what the camera bounds itself by and
-   * where the haze lays the edge, exactly as the game does it.
+   * THE MAP'S OWN SIZE, in world px — what the camera bounds itself by,
+   * exactly as the game does it.
    *
    * It is the map's height rather than the grid's because a document
    * shorter than the board is padded with rock on load, and bounding the
@@ -843,11 +843,6 @@ export class MapEditor {
     c.clearRect(0, 0, this.uiCanvas.width, this.uiCanvas.height);
     const s = this.scale * this.zoom;
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
-
-    // the map's rim, faded into the void exactly as the game fades it —
-    // drawn FIRST so zones and the brush cursor stay readable over
-    // ground that is on its way out
-    drawHaze(c, this.mapW(), this.mapH());
 
     // Every placed drop zone. This ring is the ONLY thing marking a zone —
     // the floor inside it is drawn as plain ground — so it is drawn before

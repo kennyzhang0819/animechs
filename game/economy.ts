@@ -5,14 +5,16 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * THE ECONOMY, in two currencies that never touch.
  *
  *   SCRAP  is IN-RUN money. Every run starts with SCRAP_START, every kill
- *          drops its tier's scrap (DROP_BY_TIER), every wave that lands
+ *          drops its tier's scrap (SCRAP_BY_TIER), every wave that lands
  *          pays a small bonus (waveBonusScrap), and every turret placed
  *          costs scrap (TOWER_PRICE). Selling refunds SELL_REFUND of the
  *          price. Nothing carries between runs — a run is solved from
  *          its opening board to its last wave on what it earns.
  *
- *   XP     is META progress. The same kills pay XP (DROP_BY_TIER again),
- *          the rung played multiplies it (tierXpBonus in ladder.ts), and
+ *   XP     is META progress. The same kills pay XP — one for every
+ *          HP_PER_XP points of health the body carried, not a number off
+ *          the tier table — the rung played multiplies it (tierXpBonus
+ *          in ladder.ts), and
  *          a random map pays RANDOM_MAP_XP_BONUS more on top.
  *          XP turns into PLAYER LEVEL through the curve below, and every
  *          level is a rung on the track (track.ts): maps, paces, upgrades.
@@ -26,8 +28,8 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * its count. Scrap is what puts an early, a middle and a late game back
  * inside one run, and the level ladder is what the tree is paid in now.
  *
- * DROPS ARE FIXED. A tier-1 body always pays the same scrap and the same
- * XP, on every rung, on every map. Difficulty scales the XP through the
+ * DROPS ARE FIXED. A dagger always pays the same scrap and the same XP,
+ * on every rung, on every map. Difficulty scales the XP through the
  * rung's bonus and nothing else — scrap income is a fact about the SCRIPT,
  * which is what lets the turret prices below be authored against it.
  */
@@ -54,8 +56,10 @@ export function addDrop(into: Drop, d: Drop, n = 1): void {
 export const isEmptyDrop = (d: Drop): boolean => d.scrap === 0 && d.xp === 0;
 
 /**
- * WHAT EACH UNIT TIER PAYS, indexed by tier (index 0 is unused). A T1
- * always drops exactly this; a T5 always drops exactly that.
+ * WHAT EACH UNIT TIER PAYS IN SCRAP, indexed by tier (index 0 is unused).
+ * A T1 always drops exactly this; a T5 always drops exactly that. XP is
+ * NOT on this table any more — it comes off the body's health, see
+ * HP_PER_XP below.
  *
  * The shape is the point. Confluence sends tier-1 bodies by the
  * thousand and tier-5 bodies by the dozen, so the low rows are cheap per
@@ -75,30 +79,68 @@ export const isEmptyDrop = (d: Drop): boolean => d.scrap === 0 && d.xp === 0;
  * round-robin builder clear all fifty at this income and die on wave 11
  * at half of it, so this is the floor, not a ceiling.
  */
-export const DROP_BY_TIER: readonly Drop[] = [
-  { scrap: 0, xp: 0 },
-  { scrap: 10, xp: 2 },
-  { scrap: 30, xp: 5 },
-  { scrap: 80, xp: 12 },
-  { scrap: 200, xp: 30 },
-  { scrap: 500, xp: 80 },
-];
+export const SCRAP_BY_TIER: readonly number[] = [0, 10, 30, 80, 200, 500];
 
 /**
- * A boss is one body a run and it pays like an event: a lump of scrap for
- * the board that fells it, and a lump of XP for the save. It is on the
- * table rather than off it because there is no once-only trophy currency
- * any more (surge alloy, gone with the bank), and nothing pays for a run
- * being NEW: a clear is worth what its kills were worth, first time or
- * fifth.
+ * A boss is one body a run and its SCRAP is an event: a lump for the
+ * board that fells it, whatever tier it is. Its XP is NOT a lump any
+ * more — it is the same health arithmetic every other body gets, and it
+ * lands in the same place anyway: the disrupt's 144,000 hp pay 1,309
+ * against the 1,000 the old lump handed out, because a boss is already a
+ * boss by carrying six reigns' health.
  */
-export const BOSS_DROP: Drop = { scrap: 5000, xp: 1000 };
+export const BOSS_SCRAP = 5000;
 
-/** the drop for a unit tier; a boss pays BOSS_DROP whatever its tier */
-export function dropForTier(tier: number, boss = false): Drop {
-  if (boss) return BOSS_DROP;
+/**
+ * XP IS HEALTH. A kill pays one XP for every HP_PER_XP points of health
+ * the body carried, rounded, and never less than one — so what a unit is
+ * worth to the save is exactly how much work it took to kill, and no
+ * body is quietly worth more or less than the damage it soaked.
+ *
+ * IT USED TO BE A FLAT NUMBER PER TIER (2/5/12/30/80, a boss 1000) and
+ * the two disagreed badly at both ends. A dagger (150 hp) and a risso
+ * (280) both paid 2. An aegires carries eighty daggers' health and paid
+ * fifteen times a dagger's XP; a reign carries a hundred and sixty and
+ * paid forty. So the swarm waves were the XP farm and the heavies were
+ * nearly free to skip, which is backwards — the tier-5 wall is the part
+ * of the run that has to be built for. On this rule an aegires pays 109
+ * and a reign 218, and a wave is worth what it makes you kill.
+ *
+ * Tier is still the whole SCRAP table, because scrap is priced against
+ * the SCRIPT (the stage audit in ladder.ts, and the turret prices tuned
+ * to it). XP is priced against the FIGHT.
+ *
+ * THE RATE IS SET SO THE REFERENCE SCRIPT PAYS WHAT IT ALWAYS DID. At 110
+ * a full Confluence clear pays ~246,500 XP against the old table's
+ * ~246,000, so the level curve below — and the "first run lands around
+ * level 6" it is written against — still holds. The other two shipped
+ * scripts move, and that is the rule working: Maelstrom is a heavier
+ * script and now pays a fifth more for it.
+ *
+ * THE BOTTOM OF THE TABLE COMPRESSES, on purpose. Everything under about
+ * 165 hp pays the same 1 — a flare, a nova, a dagger, a crawler — because
+ * XP is a whole number and the floor is one. The alternative was
+ * fractional drops, and a body that pays nothing at all is worse than a
+ * cheap tier being flat.
+ *
+ * A body's health here is the AUTHORED health (UNIT_STATS in levels.ts),
+ * not what the rung or a mutator made of it: what a kill pays is a fact
+ * about the kind, and the rung already multiplies the whole run's XP
+ * through tierXpBonus.
+ */
+export const HP_PER_XP = 110;
+
+/** what a body of `hp` health pays the save when it dies */
+export const xpForHp = (hp: number): number =>
+  Math.max(1, Math.round(Math.max(0, hp) / HP_PER_XP));
+
+/** the drop for one unit: scrap off its tier, XP off its health */
+export function dropForUnit(tier: number, hp: number, boss = false): Drop {
   const i = Math.max(1, Math.floor(tier));
-  return DROP_BY_TIER[Math.min(i, DROP_BY_TIER.length - 1)];
+  return {
+    scrap: boss ? BOSS_SCRAP : SCRAP_BY_TIER[Math.min(i, SCRAP_BY_TIER.length - 1)],
+    xp: xpForHp(hp),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -303,12 +345,13 @@ export const pricePerTile = (kind: TowerKind): number =>
  *   to next  10k    25k    44k    65k    88k    113k   139k   ~195k  ~1.0m
  *   total    10k    35k    80k    145k   233k   346k   485k   ~843k  ~12.1m
  *
- * WHAT THAT MEANS AGAINST A MAP. A full rung-1 clear of Confluence pays
- * about 245,000 XP in kills, so the first run lands around level 6 — the
- * second pace and the second map fall out of the opening night; a wipe at the end of stage 1 pays about 40,000 and
- * lands level 3. Ten rungs on one world, with the rung bonus, are about
- * 7,000,000 XP — level 25 or so; the top of the track (MAX_LEVEL in
- * track.ts) takes a second map's ladder or a lot of Brutal.
+ * WHAT THAT MEANS AGAINST A MAP. A full Level-1 clear of Confluence pays
+ * about 246,000 XP in kills, so the first run lands around level 6 — the
+ * second map falls out of the opening night; a wipe at the end of stage 1
+ * pays about 40,000 and lands level 3. The top of the track (MAX_LEVEL in
+ * track.ts, where the last turrets and 2x speed are) stands at about
+ * 2,300,000 XP: nine or ten clears at Level 1, three or four up the
+ * difficulty list, and the unlocking phase is over.
  */
 export const XP_LEVEL_BASE = 10000;
 export const XP_LEVEL_POWER = 1.35;
@@ -354,7 +397,7 @@ export function levelProgress(xp: number): { level: number; into: number; need: 
  * leaves it there banks a quarter more XP than one who chose — a nudge
  * towards playing every front rather than farming the one they know.
  * Multiplies the run's kill XP the same way the rung's bonus does
- * (grantRunReward), so it stacks: Level 10 on a random map is x3.70 x1.25.
+ * (grantRunReward), so it stacks: Level 10 on a random map is x5.5 x1.25.
  */
 export const RANDOM_MAP_XP_BONUS = 0.25;
 

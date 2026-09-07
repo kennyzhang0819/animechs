@@ -38,24 +38,27 @@ stale tab or a cached bundle looks exactly like a fix not working.
   the two **naval** lines (risso→omura, retusa→navanax), which travel on
   the water layer and cannot leave it
 - `game/economy.ts` — **the economy**: scrap (in-run money), XP (meta
-  progress), the fixed per-tier drop table, the three turret tiers and
-  their scrap prices, the sell refund, the level curve and the random-map
-  bonus
+  progress), the per-tier scrap table and the health-priced XP
+  (`HP_PER_XP`), the three turret tiers and their scrap prices, the sell
+  refund, the level curve and the random-map bonus
 - `game/ladder.ts` — the **ten-rung ladder** (`RUNGS`: the mutator roll
   and the XP bonus each; the enemy-level dial is wired and authored to
   zero), and the audit/check arithmetic over the authored script — the
   **stage table** (`stageAudit`) that the turret prices are tuned against
-- `game/track.ts` — the **level track**: what every player level hands
-  out (a map opens, a pace switches on, a turret gains an upgrade rung),
-  built by rule from the upgrade branches and a short hand-placed list,
-  and `techStateFor(level)` — what a save at that level may do
+- `game/track.ts` — the **level track**: the fifteen-level unlocking
+  phase, every level of it opening a turret or a wall (`UNLOCKS`), plus a
+  short hand-placed list (the maps, 2x speed), and `techStateFor(level)`
+  — what a save at that level may do. The turret upgrade rungs are off
+  the track for now (`UPGRADES_ON_TRACK`)
 - `game/tech.ts` — `TechState`, the shape the sim and the bar read a
   save's allowances in, and the roster's canonical order
 - `game/upgrades.ts` — the **turret upgrade branches**: a chain of rungs
   under every turret, folded into its live `TowerStats` — two stat
   steps, a one-shot ammunition swap, and an **ultimate** that changes what
-  the turret is. The track deals them out by level. **Only duo and arc
-  have an ultimate written so far** — the other fifteen are authored by
+  the turret is. **The track does not hand any of them out at the moment**
+  (`UPGRADES_ON_TRACK` in `game/track.ts` is false), so every turret plays
+  at its stock stats; the branches are intact and waiting. **Only duo and
+  arc have an ultimate written so far** — the other fifteen are authored by
   hand as they are designed; adding one is a fourth entry in a branch with
   `tier: ULTIMATE_TIER` and its id in `UPGRADE_KINDS`, and nothing else
 - `game/mutation.ts` — the **mutators**: the catalog of rules a run can be
@@ -69,8 +72,15 @@ stale tab or a cached bundle looks exactly like a fix not working.
   desktop shell (through the bridge `desktop/src/preload.ts` puts on
   `window`). The only place the game knows it might be on a desktop
 - `game/maps.ts` — map documents: terrain layers, spawn circles, the
-  core's cell — see [docs/authoring-maps.md](docs/authoring-maps.md) for
-  how to draw one and how to check it
+  core's cell. **Every campaign map is 256x256 — Mindustry's size — and
+  is generated, never drawn**: `scripts/maps/<id>.mjs` is a few dozen
+  numbers handed to `scripts/maps/mindustry.mjs`, which builds the map
+  the way Mindustry's own generator does (noise rock, rooms, brushed
+  routes, chokes, holes, the floor's own wall, forests, ruins, clutter)
+  and refuses to write it while a check fails — see
+  [docs/authoring-maps.md](docs/authoring-maps.md) for what makes a
+  Mindustry map read as one and [docs/map-rules.md](docs/map-rules.md)
+  for the checklist
 - `game/editor.ts` — the level/map editor model behind the admin views
 - `game/terrain.ts` — terrain from a map document when one exists, else
   seeded value-noise worldgen: mountain ranges, a carved meandering valley
@@ -201,7 +211,7 @@ through *Level 10* and nothing else; there are no named difficulties.
 | enemy health | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 |
 | rules rolled | 0 | 3 | 3 | 3 | 3 | 4 | 4 | 4 | 4 | 5 |
 | mutator points | 0 | 8 | 10 | 11 | 13 | 15 | 17 | 19 | 20 | 22 |
-| XP bonus | ×1.0 | ×1.3 | ×1.6 | ×1.9 | ×2.2 | ×2.5 | ×2.8 | ×3.1 | ×3.4 | ×3.7 |
+| XP bonus | ×1.0 | ×1.5 | ×2.0 | ×2.5 | ×3.0 | ×3.5 | ×4.0 | ×4.5 | ×5.0 | ×5.5 |
 
 **A rung scales the mutator roll and the XP, and nothing else.** Enemy
 level — Mindustry's ×1.06-a-level health curve — is still a mechanism
@@ -229,18 +239,25 @@ level** through a power-law curve (`xpToNext`), and **every level is a
 rung on the track** (`game/track.ts`) that hands out a map, a pace or a
 turret upgrade — nothing is chosen and nothing is bought.
 
-| tier | scrap | XP |
-|---|---|---|
-| T1 | 1 | 2 |
-| T2 | 3 | 5 |
-| T3 | 8 | 12 |
-| T4 | 20 | 30 |
-| T5 | 50 | 80 |
-| boss | 500 | 1000 |
+**Scrap comes off the tier; XP comes off the health.** A kill pays its
+tier's scrap (`SCRAP_BY_TIER`, a boss `BOSS_SCRAP`) and one XP for every
+`HP_PER_XP` (110) points of health it carried, rounded, never less than
+one — so a body is worth to the save exactly what it cost to kill.
 
-**Drops are fixed.** A tier-1 body always pays this, on every rung, on
-every map. Scrap income is a fact about the script, which is what lets the
-turret prices be authored against it.
+| tier | scrap | XP (health ÷ 110) |
+|---|---|---|
+| T1 | 10 | 1–3 |
+| T2 | 30 | 3–5 |
+| T3 | 80 | 6–9 |
+| T4 | 200 | 65–109 |
+| T5 | 500 | 164–218 |
+| boss | 5,000 | 1,309 |
+
+**Drops are fixed.** A dagger always pays this, on every rung, on every
+map. Scrap income is a fact about the script, which is what lets the
+turret prices be authored against it; XP is a fact about the fight, which
+is what keeps a wave of heavies from being cheaper to farm than a wave of
+daggers.
 
 ### Three stages, three price bands
 
@@ -264,17 +281,20 @@ next stage's income; what each stage asks is what to stop buying.
 
 ### The level track
 
-**A fresh save opens with seven turrets** — duo, scatter, hail, lancer,
-salvo, ripple and spectre (`STARTING_ROSTER` in `game/track.ts`) — and
-the other ten are handed out up the track, cheapest first by Mindustry's
-build cost, one every third level from level 2. Thirty levels, each one
-handing out fixed rewards (`TRACK`) — Maelstrom at 3, Quagmire at 7, the
-turrets, 2x speed at the very top, and the fifty-odd upgrade rungs
-dealt across the rest, cheapest tier first, never before their turret,
-ultimates from level 20. A turret the save has not reached rides the build
-bar greyed, with the level that opens it. The progress screen lists the whole track; the results screen
-names what a climb handed out. A first Confluence clear lands around
-level 6; the top of the track is about twelve million XP.
+**The track is the unlocking phase, and nothing else.** A fresh save
+opens with five structures — the copper wall, duo, hail, scatter and
+salvo (`STARTING_ROSTER` in `game/track.ts`) — and **every one of levels
+2 to 15 opens at least one new turret or wall** (`UNLOCKS`), the lancer,
+ripple and spectre first, the titanium and thorium walls last. At level
+15 the save owns the whole roster of 23 and the track is done: nothing is
+handed out above it. Maelstrom rides level 3 and Quagmire level 7, and 2x
+speed is the last thing on the track at 15. The turret upgrade rungs are
+switched off for now (`UPGRADES_ON_TRACK`), so a turret plays at its stock
+stats whatever the save's level. A turret the save has not reached rides
+the build bar greyed, with the level that opens it. The progress screen
+lists the whole track; the results screen names what a climb handed out. A
+first Confluence clear lands around level 6; the top of the track is about
+2.3 million XP.
 
 ### Missions
 
@@ -598,7 +618,7 @@ __ladder.wave(7, 2)   // what one authored wave weighs and pays
   dashboard (`scrapPriceOf` reads an override layer, saved under `prices`
   in `public/balance.json`). Within a tier the order follows Mindustry's
   build costs; the size is what the stage pays.
-- **The XP bonus is linear** (`XP_STEP_PER_RUNG`, +30% a rung), because
+- **The XP bonus is linear** (`XP_STEP_PER_RUNG`, +50% a rung), because
   the fight no longer compounds: a compounding payout against flat health
   would make the top rung the only one worth playing.
 - **Nothing in the run is free.** Sandbox and the editors (`tech` null on

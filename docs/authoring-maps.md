@@ -8,11 +8,213 @@ A map is a JSON document in `public/maps/`, listed by id in
 editor and is playable by nothing. `/admin` has both doors — **Edit map**
 for terrain, **Edit level** for the wave script.
 
-## The document
+**Every campaign map is generated, never drawn**, by a spec file in
+`scripts/maps/` over the shared generator `scripts/maps/mindustry.mjs`:
+
+```
+node scripts/maps/confluence.mjs [public/maps/confluence.json] [preview.png]
+```
+
+It prints its numbers, writes a preview if asked, and **refuses to write
+the document while a check fails**. RE-RUNNING IT OVERWRITES THE WHOLE
+DOCUMENT: a hand edit in the map editor survives exactly until the next
+run, so a change to a campaign map is a change to its spec.
+
+## The size
+
+**Every campaign map is 256x256, which is Mindustry's size.** Mindustry
+has no single map size — its editor opens a new map at 200x200 and its
+Serpulo campaign runs from Desolate Rift's 110x400 to the Planetary
+Terminal's 512x512 — but the two references this repository imports whole,
+Ground Zero and Cratered Battleground, are 256x256, and that is also every
+column and row the grid has (`COLS`, `ROWS`). The old 256x182 widescreen
+board is gone; a map is square, as every Mindustry map is. `SIZE` in
+`mindustry.mjs` is the one number.
+
+## What makes a Mindustry map look right
+
+The four references in `public/maps/` (Ground Zero, Frozen Forest,
+Cratered Battleground, Biomass Synthesis Facility — imported by
+`scripts/maps/import-msav.mjs`, in the editor and playable by nothing) and
+a dozen more of Mindustry's own saves were read for this. What they have in
+common, and what the generator is built to reproduce:
+
+- **Nothing is geometric.** No arc, no disc, no ellipse, no lane of one
+  width. Every edge is a noise contour: ragged, with two-cell notches and
+  stray lumps, and no two stretches alike. The previous approach here —
+  arcs of chosen radius, cosine-lobed blobs, a 21-cell lane everywhere —
+  produced maps that read as drawings of maps. It is retired.
+- **Most of the board is rock.** Open ground is 15% to 40% of a land map
+  (Ground Zero 14%, Frozen Forest 33%, Stained Mountains 36%, Salt Flats
+  49%); the rest is wall, forest and water. A map is rooms and corridors
+  cut out of rock, not rock dropped onto a plain.
+- **Rooms and corridors, of varying width.** Space is a network of
+  clearings twenty to forty cells across joined by corridors that narrow
+  and widen as they go — eight cells at a choke, sixteen or twenty in
+  between — with bays and alcoves bitten into every edge and small rocks
+  left standing in the open. A chokepoint is where a corridor happens to
+  be thin, not a wall with a door in it.
+- **More than one way through.** Rooms connect to more than one other
+  room, and thin walls have holes in them, so part of a wave can take a
+  side way. But the core sits in a pocket of rock with one mouth.
+- **The wall is the floor's wall.** Two to four floor families in large
+  noise patches with fuzzy edges, one of them dominant (55% to 80%), and
+  the rock standing on each family is that family's own wall: sand wall
+  over sand, dune wall over darksand, snow wall over snow, spore wall over
+  moss. The biome reads from the floor; the rock is its floor a shade
+  darker, and nothing outlines a road.
+- **Water with a shore.** Lakes and seas from a slow noise, deep in the
+  heart, shallow at the edge, and shallow is walkable ground — a road
+  across a lake is a ford. A naval map is a coast: the sea along one or
+  two edges, up to 60% of the board, with the core within gun reach of
+  the water.
+- **Forests, clutter and ruins.** Pines in noise-shaped stands beside the
+  floors they grow on (up to 40% of a forest map), boulders of the
+  floor's own stone scattered thickest along the rock, bushes and spore
+  clusters by family, and derelict buildings — rectangles of dark floor
+  with broken walls — in the rooms.
+- **One landmark.** A salt basin, a crater, a lake in the middle, a bay
+  under the core. Every map has one thing the eye goes to.
+
+## The pipeline
+
+`mindustry.mjs` is Mindustry's `SerpuloPlanetGenerator`, step for step,
+on this game's document shape:
+
+1. **Rock from noise.** A domain-warped three-octave value noise, cut at
+   a threshold, with the rim pushed up so the border is always rock.
+   `rock.threshold` sets how much of the board is wall before anything is
+   carved (lower is more rock); `scale` sets the size of the pockets and
+   `warp` how far the contour is pushed around.
+2. **Water** from a second, slower noise plus a per-map `bias`: a sea along
+   an edge (Maelstrom's `min(255 - x, y)`), lakes as wells around points
+   (Confluence, Quagmire's pool). Below `level` is shallow; below
+   `level - shore` is deep.
+3. **Rooms.** The drop zones, the core and the spec's `rooms`, each a disc
+   whose radius wobbles round its outline by noise. The core's clearing
+   is dry.
+4. **Routes.** For every ground drop zone, an A* through its `via` rooms
+   to the core over a cost that prefers ground already open — Mindustry's
+   `solid ? 70 : 0` — with rock dear, deep water dearer and a little noise
+   so the path wanders. A brush follows the path whose radius wanders
+   between `width[0]` and `width[1]`, so the corridor narrows and widens
+   as it goes. `links` between rooms are carved the same way and make the
+   loops. Water routes (`layer: "water"`) are carved FIRST and cut deep
+   channels; a ground route brushed across one turns that stretch to
+   shallow, which is a ford. Named `chokes` pinch the open cells near a
+   point to an exact width.
+5. **Distort, bays, cells.** A light domain warp takes the tube out of the
+   brushed corridors; rock within a few cells of open ground is opened
+   where a fine noise says so (`bays`), which is what puts the alcoves on
+   a room; two passes of the 4-5 cellular rule take out the specks. Small
+   `lumps` of rock are dropped into the wide rooms.
+6. **The citadel.** Where a `funnel` is named, the core's clearing is
+   ringed with rock and the ring has one gate, a corridor of the choke's
+   width toward the funnel point. A noise map is open in too many places
+   for "wall the mouth and nothing reaches the core" to come true by
+   luck; the ring makes it true by construction.
+7. **The minimum gap.** The biggest walker (a reign) is four cells across
+   and the biggest hull (an omura) seven, so every THROUGH gap is at least
+   `GAP_GROUND` (5) on land and `GAP_WATER` (11) at sea: a morphological
+   opening by that disc silts every thinner gap shut. The notches the
+   opening would also have filled — most of what makes an edge ragged —
+   are put back afterwards, one ring at a time, each ring labelled by the
+   component it grew from, and a cell whose neighbours carry two labels is
+   refused: a notch may deepen an edge as far as it likes and may never
+   become the bridge the opening just removed. Then open ground the core
+   cannot be walked to from is filled (Mindustry's `inverseFloodFill`),
+   the rim is sealed, and on a map with water zones any pond nearer the
+   core than the sea is drained, because the sim sends every hull to the
+   water nearest the core whichever puddle that is.
+8. **Holes.** Thin walls between two open places are punched where the
+   hole shortens nobody's walk to the core by more than 15% and the
+   funnel still holds. A hole is texture and a second way in, never a
+   short cut.
+9. **Paint.** Floor families from a slow noise cut at its own quantiles,
+   so a `weight` is the fraction of the board that family covers; the
+   wall over a rock cell is its family's `wall`. A `beach` floor rings the
+   water; a `flats` floor fills the cells of the big rooms furthest from
+   any rock. A `forest` turns rock beside the named floors into pines in
+   noise-shaped stands within `depth` of open ground — never a cell a
+   walker uses, so the routes are unchanged. `ruins` are rectangles of
+   basalt with broken dark walls, placed only where a route's width of
+   open ground surrounds them. Clutter is each family's own boulder and
+   bush, thick along the rock, thin in the open, never in a drop zone and
+   never round the core.
+10. **Checks**, then the document.
+
+## The spec
+
+A spec is forty-odd numbers. Confluence's, as a guide:
+
+| field | what |
+| --- | --- |
+| `seed` | the RNG seed; a re-run is the same map |
+| `rock` | `threshold`, `scale`, `warp` — the noise rock |
+| `water` | `scale`, `level`, `shore`, `warp`, `bias(x, y)`, and `shallow`/`deep` floors for the spore pair |
+| `floors` | `scale`, `warp`, `families: [{ floor, wall, weight }]` — the dominant family first |
+| `beach`, `flats` | a floor by the water (`depth`, optional `wall`) and a floor in the open middles (`clear`) |
+| `rooms` | `{ x, y, r, wobble?, water? }` — the clearings, indexed |
+| `core` | `{ x, y, r }` — the core's cell and its clearing |
+| `spawns` | `{ x, y, r, zone }` — ground, air, water, boss |
+| `routes` | `{ spawn, via: [room…], to?, width: [choke, lane], layer? }` |
+| `links` | `{ rooms: [a, b], width, layer? }` — the loops |
+| `chokes` | `{ x, y, w, reach }` — pinch to `w` within `reach` |
+| `funnel` | `{ x, y, r }` — the one mouth every ground route crosses |
+| `holes`, `lumps`, `ruins` | how many of each |
+| `forest` | `{ kind, on: [floors], threshold, depth }` |
+| `coreWaterReach` | how near the core the hulls' goal must be |
+
+Widths are in cells and are the brush's diameter; the smoothing passes
+shave about one, so a route's `width[0]` of 8 is a corridor of 7, which
+is the floor (`ROUTE_MIN_GROUND`). Room indices are what `via` and
+`links` name; `"spawn:3"` names a drop zone and `"core"` the core.
+
+## Check what you drew
+
+A generator that does not verify itself is a generator that quietly ships a
+broken map. Every one of these is printed on every run:
+
+- **The core** is 5x5 open dry ground, off every drop zone.
+- **Every ground zone reaches the core; every water zone reaches the
+  hulls' goal**, the water nearest the core as the sim finds it. `0 pads`
+  means the zone is off the open ground.
+- **Every way through is wide enough.** Clearance is the distance to the
+  nearest cell a unit cannot occupy, so twice it is the corridor's width
+  there; the check reports the WIDEST route that still joins each zone to
+  its goal and wants 7 on land, 11 at sea, and names the cells it pinches
+  at when it does not. A route exists is not the question.
+- **No gate is a short cut.** The walks to the core from every ground
+  zone are within 50% of each other.
+- **The funnel holds.** Wall it and no ground zone reaches the core.
+- **Open == reachable.** No orphan pocket; the rim is sealed.
+- **Composition.** Open ground between 15% and 45% of the board, the
+  floor families' shares, forest, water, holes, lumps, ruins, props.
+- **Room to build.** More than 8,000 rock cells and more than 200 4x4
+  footprints, because towers stand on rock and the biggest needs sixteen
+  contiguous cells of it.
+
+Print the numbers on every run. `widest way through 6.0 cells — pinched at
+(70,188)` is a fact you can act on; "looks fine" is not.
+
+## Water
+
+There are two waters, the clear pair and the spore pair, and **which floor
+indices are wet is a list, not a range** — `WATER_FLOOR_GROUPS` in
+`game/atlas.ts`. A new floor family has to be APPENDED, because its index
+is baked into every document already on disk. Add a family, add its group
+to that list if it is wet, and `isWaterFloor` keeps meaning what it says.
+
+Shallow water is walkable by ground units and costs nothing to path
+through; deep water (`WALL_DEEP`) blocks them. Both are sailable. A
+shallow fringe round a lake is a corridor for walkers, and on these maps
+that is meant: a ford is where a road crosses water, and the route checks
+measure what is actually walkable, fringes included.
+
+## Documents
 
 Every layer is a flat array indexed `y * w + x`. `w` is the width the
-document was saved at; **height falls out of `floor.length / w`**, so
-changing the height means resizing the arrays, not setting a field.
+document was saved at; **height falls out of `floor.length / w`**.
 
 | field | what |
 | --- | --- |
@@ -22,191 +224,15 @@ changing the height means resizing the arrays, not setting a field.
 | `spawns` | circles `{x, y, r, zone}`, zone one of `ground` / `air` / `water` / `boss` |
 | `base` | `{x, y}`, the core's top-left cell |
 
-**THE CORE IS THE DESTINATION, AND THE MAP IS SEALED.** There are no exit
-cells any more and no open rim: every border cell is rock, and the swarm
-walks at the core (`Sim.coreGoal`), presses against it and shoots. Put the
-core on open ground at the END of the lane — where the old exit band was —
-with its 5x5 footprint clear (the loader warns about a walled core), and
-run the lane to it. Hulls sail to the water nearest the core and fire
-from the shore (`Sim.waterGoal`), so a naval map wants its core within
-gun reach of the water. `scripts/maps/seal.mjs` does the sealing and the
-core placement for an existing document.
+**THE CORE IS THE DESTINATION, AND THE MAP IS SEALED.** Every border cell
+is rock, and the swarm walks at the core (`Sim.coreGoal`), presses against
+it and shoots. Hulls sail to the water nearest the core and fire from the
+shore (`Sim.waterGoal`), so a naval map wants its core within gun reach of
+the water — `coreWaterReach` in the spec is that number. Spawns are per
+layer and independent; boss zones are terrain-blind.
 
-Spawns are per layer and independent: a ground zone only feeds ground
-units. Boss zones are **terrain-blind** — the boss flies, so it needs no
-road and no reachable ground under it.
-
-## Drawing paths
-
-Hand-drawing gives you a map that looks hand-drawn. Author from geometry
-instead: a script that stamps a handful of primitives, writes the JSON, and
-**refuses to write if its own checks fail**. Roughly thirty numbers should
-describe a whole map.
-
-The scripts live in `scripts/maps/`, one per map over a shared `geom.mjs`
-(the arc-only path builder, the raster helpers, and a PNG writer). Each
-takes its output path and an optional preview image:
-
-```
-node scripts/maps/quagmire.mjs public/maps/quagmire.json preview.png
-```
-
-The primitives that carry a map:
-
-- **A lane of constant width.** Stamp a disc of radius `LANE` along a
-  centreline. 21 cells across is the campaign width — wide enough for a
-  swarm to spread and for towers to line both sides.
-- **Circular arcs**, not corners. A turn's gentleness is its radius: over an
-  8-cell chord, `r` cells of radius swings `8/r` radians. r=45 is ~10°, r=20
-  is ~23°. Anything that reads as a corner is a radius you did not pick.
-  A "steer at this point, then run to it" move has no answer when the point
-  sits inside the turning circle — it loops instead, so compare each leg
-  against its straight line and refuse the ones that are much longer.
-- **No loose rocks in open water.** An islet dropped in a sea lane pinches
-  it to something no hull fits down, and the fleet queues up behind it and
-  dies there. Give the composition its rock as coast — long masses along
-  the edges that close the empty corners — and keep the middle of a lane
-  clear.
-- **Blobs, not discs.** A disc is the one shape a stamp gets for free and
-  the one shape nothing in nature has, so a map of discs reads as a map of
-  discs. An ellipse with a long axis pointed somewhere and two cosine lobes
-  on its radius is the same handful of numbers and reads as a coastline.
-- **S-bends** for changes of height. Two arcs of one radius, the second
-  mirroring the first: the road leaves level and arrives level, so it can be
-  joined to a straight run with nothing at the join. A *single* quarter arc
-  from 90° to 0° ends heading **north** — join that to a level run and you
-  have built a right angle.
-- **Flared mouths** at the border. A gate is not a circle stamped on the
-  edge; it is the lane widening into one. Ease from ~68 cells at the border
-  to the lane width over about 40% of the run
-  (`LANE + (MOUTH - LANE) * (1 - t/0.42)^1.7`).
-
-Merge tributaries at a **lean, not square**. Turning a side road the full
-90° so it arrives parallel is geometrically neater and looks worse: it makes
-a T with a square notch where the tributary's outer wall butts the trunk.
-Stop the arc short — 65 of the 90 — and merge at ~25°, and the junction
-opens into a wishbone.
-
-**Round the hills last.** The rock between two meeting roads is nobody's
-drawing — it is the leftover of the angle they cross at, so a shallow merge
-leaves a blade. A morphological opening of the rock by a disc (erode by the
-disc, dilate back) puts the disc's radius on every convex rock corner at
-once and leaves concave ones — the rim, the walls lining a lane —
-untouched. r=8 is a light file. It can only remove rock, and only rock a
-disc that size cannot fit inside, so nothing thicker than 2r is ever cut
-through.
-
-## Dressing
-
-The geometry is the map; the floors, the rock families and the clutter
-are its paint, and the paint comes from rules, not from a brush.
-`scripts/maps/dress.mjs` repaints an authored document from a palette and
-writes `blocked`, `spawns` and `base` back untouched:
-
-```
-node scripts/maps/dress.mjs confluence [preview.png]
-```
-
-**RE-RUNNING IT OVERWRITES EVERY FLOOR, WALL AND PROP ON THAT MAP.** Paint
-in the editor or in the script's `STYLES` table, never both — a hand edit
-survives exactly until the next run.
-
-The rules are the ones Quagmire and the start screen already use, and
-they are what makes a map read as a place rather than as a colour:
-
-- **One rock, and NOTHING OUTLINES A ROAD.** A road is cut through the
-  rock and the rock on both sides of it is the same rock. Lining the
-  roads with a second family was tried and it reads as a drawing with an
-  ink line round every path. The road is traceable because the rock
-  contrasts with the FLOOR: dark dune over pale sand on Confluence.
-- **A coast, where there is water, and a BROAD one.** Quagmire's heart is
-  the island at 0.58 of its own outline, so its pale dacite rim is about
-  forty percent of every mass. The coast follows the SEA and not the
-  roads, and the line between it and the heart is wobbled by noise.
-- **Every shape comes from the geometry.** Quagmire's heart is the
-  island's own outline shrunk to 0.58, and that is the rule: a patch is
-  a copy of the thing it sits in, read at a distance, never a noise
-  threshold (a ragged coastline) and never a blob dropped at random (a
-  handful of coins). The rock's second family is a **core**, each mass's
-  outline shrunk by a set depth, so it shows only where the mass is
-  thick and a thin wall stays one rock.
-- **The road's second floor is a few large patches.** Blobs wider than
-  the road, a dozen or fewer to a map, clipped to the road so that where
-  one overruns it the road's own edge becomes the patch's. A chain of
-  small shapes strung down the road was tried and reads as worms. A
-  **third floor** only in the plazas: the cells furthest from any rock,
-  which take the plaza's own shape. **No scree.** A darker
-  floor a cell deep along the rock's foot was tried; under the wall
-  shadow it is a black line round every road as soon as the map is
-  zoomed out.
-- **Clutter along the road's edges** and never down its middle, never in
-  a drop zone, never round the base. A boulder is a thing to walk round;
-  the column walks the middle.
-
-## Water
-
-There are two waters, the clear pair and the spore pair, and **which floor
-indices are wet is a list, not a range** — `WATER_FLOOR_GROUPS` in
-`game/atlas.ts`. A new floor family has to be APPENDED, because its index
-is baked into every document already on disk, so the first land family
-added after the waters put dry ground above the old `floor >= 15` line.
-Add a family, add its group to that list if it is wet, and `isWaterFloor`
-keeps meaning what it says.
-
-Shallow water is walkable by ground units and costs nothing to path
-through; deep water (`WALL_DEEP`) blocks them. **A river must be deep bank
-to bank.** A shallow fringe along the banks is a continuous walkable
-corridor the length of the river, and the swarm will find it — units path
-through a one-cell gap as happily as a highway. Leave shallow only where
-you mean a ford.
-
-## Check what you drew
-
-A generator that does not verify itself is a generator that quietly ships a
-broken map. Every one of these has caught a real bug:
-
-- **Every spawn zone reaches the core.** Count the pads inside each circle
-  using the zone's own radius, then flood from them. `0 pads` means the zone
-  is off the roads. Exclude boss zones.
-- **The choke holds.** Wall the intended choke point and re-flood: if any
-  gate still reaches the core, there is a second route you did not draw.
-- **Open == reachable.** Any open cell the flood misses is an orphan pocket.
-- **No footholds off a lane.** Walk the river banks and count walkable
-  cells that are not on the ground lane. Anything but zero is a shortcut.
-- **Bend angles.** Walk each stamped centreline over an 8-cell chord and
-  bucket the heading swings. Per-sample angles on a rasterised curve are
-  mostly rounding noise; the 8-cell chord is what a unit actually crosses.
-- **No leg loops.** A "steer at this point, then run to it" move has no
-  answer when the point sits inside the turning circle, and what it does
-  instead is turn nearly all the way round. Compare each leg's length
-  against its straight line and refuse anything much longer: the result is
-  a road that still passes every other check and is a spiral through the
-  sea.
-- **Every way through is a lane wide.** THIS IS THE RULE, and it is not
-  the same as "a route exists": a channel pinched to nine cells by an islet
-  is connected, passable, and no use at all to something 21 across. Measure
-  it — clearance is the distance to the nearest cell a unit cannot occupy,
-  so twice it is the width there — and report the WIDEST corridor that
-  still joins each drop zone to the core. It holds for the fleet as much as
-  the swarm: water is a lane too. The cheapest way to make it true rather
-  than to keep chasing it is a morphological OPENING of the sea by a
-  lane-wide disc, exactly as the rock gets: erode, dilate back, and every
-  channel too narrow to sail silts up into coast.
-- **The rim is sealed.** Every border cell is rock; an open rim cell is a
-  hole in the world.
-- **No gate is a short cut.** Measure each gate's run TO THE CORE — a
-  tributary's own length plus what is left of the trunk from where it
-  joins — and compare them. A gate half the length of its neighbours is
-  the one every wave will pour down.
-- **Islands that touch are one island.** If the terrain is islands linked
-  by causeways, count the stretches of each road that lie outside every
-  island and check both the count and the length. One blob a few cells too
-  fat swallows its neighbour's channel and the archipelago quietly becomes
-  a single landmass with roads on it.
-- **Room to build.** Towers only stand on BLOCKED cells that are not one of
-  the two sentinels, so a map made mostly of water and road has nowhere to
-  put a turret. Count the rock, and count the 4x4 footprints in it — the
-  biggest turret needs sixteen contiguous cells of it.
-
-Print the numbers on every run. `sharpest turn: 13 degrees` is a fact you
-can act on; "looks smooth" is not.
+The atlas indices a generator paints with are COPIED into
+`mindustry.mjs` rather than imported, because the generator is plain node
+and the atlas reaches for a canvas at load. Keep the names identical and
+grep both when a family moves. `scripts/maps/seal.mjs` still brings an
+older or imported document up to the sealed-rim rule in place.

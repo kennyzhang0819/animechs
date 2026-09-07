@@ -1,5 +1,5 @@
 import { CELL, HP0, UNIT_SPEED, UR } from "./constants";
-import { addDrop, dropForTier, emptyDrop, type Drop } from "./economy";
+import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 import { explain, type SaveResult } from "./types";
 // type only — mutation.ts must never depend on the campaign, and this
 // import must never become a value one or the two files form a cycle
@@ -226,6 +226,11 @@ export interface EnergyFieldSpec {
 export type StatusKind = "burning" | "wet";
 
 export interface UnitStats {
+  /**
+   * Health, and so also WHAT THE KILL IS WORTH: XP is one point per
+   * HP_PER_XP of this (economy.ts), so raising a unit's health raises
+   * what killing it pays, by construction.
+   */
   hp: number;
   /** world px/s */
   speed: number;
@@ -234,9 +239,10 @@ export interface UnitStats {
   /** collision radius in world px — half the square hitbox edge */
   radius: number;
   /**
-   * Unit tier, 1-5. The tier alone decides what a kill pays — its scrap
-   * into the run and its XP into the save (DROP_BY_TIER in economy.ts) —
-   * so a level's enemy mix is what determines what a run banks.
+   * Unit tier, 1-5. The tier decides the SCRAP a kill pays into the run
+   * (SCRAP_BY_TIER in economy.ts); the XP it pays into the save comes off
+   * `hp` instead (HP_PER_XP), so a level's enemy mix decides what a run
+   * banks in both currencies but by two different measures.
    */
   tier: number;
   /**
@@ -970,7 +976,7 @@ void _everyKindHasATree;
 
 export function unitDrop(kind: UnitKind): Drop {
   const s = UNIT_STATS[kind];
-  return dropForTier(s.tier, s.boss === true);
+  return dropForUnit(s.tier, s.hp, s.boss === true);
 }
 
 /**
@@ -1370,10 +1376,11 @@ export const WORLDS: LevelSpec[] = [
     //
     // ITS MAP IS ITS OWN AND ITS WAVES ARE THE BLUEPRINT'S, RE-CAST. It
     // plays the same fifty waves as every world; the transforms below are
-    // what make it the naval front. Maelstrom is authored terrain — a
-    // river, a bay and three crossings — so both of the blueprint's flying
-    // and marching lines arrive out of the water the map is made of, and
-    // what walks is the dagger class rather than the crawler class.
+    // what make it the naval front. Maelstrom is a coast — the sea along
+    // its north and east edges, a bay under the core — so both of the
+    // blueprint's flying and marching lines arrive out of the water the
+    // map is made of, and what walks is the dagger class rather than the
+    // crawler class.
     id: "2",
     name: "Maelstrom",
     map: "maelstrom",
@@ -1390,9 +1397,9 @@ export const WORLDS: LevelSpec[] = [
     id: "3",
     name: "Quagmire",
     map: "quagmire",
-    // THE SWAMP: forty waves, held with the full hundred, because its goal
-    // is the whole western edge and its bodies wade in heavier than they
-    // spawned (Amphibious). The script is Confluence's first forty,
+    // THE SWAMP: forty waves, held with the full hundred, because its core
+    // stands on the west edge behind one causeway and its bodies wade in
+    // heavier than they spawned (Amphibious). The script is Confluence's first forty,
     // marched by the dagger line instead of the crawlers and sailed by
     // the naval line, at seven tenths of the bodies in the first stage
     // and nine in the last; its first twenty waves send no tier-3 body,

@@ -70,17 +70,19 @@ export const HP_PER_LEVEL = 1.06;
 
 /**
  * HOW MUCH MORE XP EACH RUNG PAYS THAN THE ONE BELOW, linear: rung n pays
- * x (1 + XP_STEP_PER_RUNG x n). Level 10 pays x3.7 what Level 1 does.
+ * x (1 + XP_STEP_PER_RUNG x n). Level 10 pays x5.5 what Level 1 does.
  *
  * LINEAR, NOT COMPOUNDING, because the fight does not compound any more.
  * The old loot bonus compounded at 1.34 a rung to keep pace with health
  * that compounded at the same rate; with health flat, a compounding payout
  * would make the top rung the only one worth playing by a factor of
  * fourteen, and the mutator roll — the thing that actually makes a high
- * rung harder — is not fourteen times harder. A third more a rung is a
- * gradient a player feels and a farm they still choose.
+ * rung harder — is not fourteen times harder. Half again a rung is a
+ * gradient a player feels and a farm they still choose: it was a third,
+ * and playtests said the rules a high rung rolls make it a good deal more
+ * than a third harder.
  */
-export const XP_STEP_PER_RUNG = 0.3;
+export const XP_STEP_PER_RUNG = 0.5;
 
 /** how many rungs the ladder has today — raising it is the whole edit an
  *  eleventh rung needs, because every dial below is arithmetic on the index */
