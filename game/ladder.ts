@@ -82,8 +82,12 @@ import { MUT_COUNT_MAX, MUT_FIRST_TIER, mutationBudget, mutationPicks } from "./
 export const HP_PER_LEVEL = 1.06;
 
 /**
- * HOW MUCH MORE XP EACH RUNG PAYS THAN THE ONE BELOW, linear: rung n pays
- * x (1 + XP_STEP_PER_RUNG x n). The top rung pays x5.5 what Incursion does.
+ * HOW MUCH MORE XP EACH RUNG PAYS THAN THE ONE BELOW, linear: rung n
+ * carries a raw weight of 1 + XP_STEP_PER_RUNG x n, and the ladder is
+ * NORMALISED so that the last named difficulty (XP_BASE_TIER, Nemesis —
+ * the whole script, no rules) is x1: that is the rung the mission pot
+ * (MISSION_XP in economy.ts) is priced for. Incursion pays x0.4 of it,
+ * Nemesis +6 pays x2.2 — the top rung still pays x5.5 what Incursion does.
  *
  * LINEAR, NOT COMPOUNDING, because the fight does not compound any more.
  * The old loot bonus compounded at 1.34 a rung to keep pace with health
@@ -112,6 +116,13 @@ export const DIFFICULTY_NAMES: readonly string[] = [
   "Scourge",
   "Nemesis",
 ];
+
+/**
+ * THE RUNG THE MISSION POT IS PRICED FOR: the last named difficulty,
+ * where the script is sent whole. A clear there pays exactly MISSION_XP;
+ * the size ramp below it pays a share, the rules ramp above it a bonus.
+ */
+export const XP_BASE_TIER = DIFFICULTY_NAMES.length - 1;
 
 /**
  * THE SHARE OF EVERY WAVE'S COUNT A RUNG SENDS. The named difficulties
@@ -149,7 +160,7 @@ export const RUNGS: readonly {
   // is the campaign as authored, at a size (see mutation.ts)
   mutationPoints: mutationBudget(i),
   mutationCount: mutationPicks(i),
-  xpBonus: 1 + XP_STEP_PER_RUNG * i,
+  xpBonus: (1 + XP_STEP_PER_RUNG * i) / (1 + XP_STEP_PER_RUNG * XP_BASE_TIER),
 }));
 
 /**

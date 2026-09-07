@@ -299,11 +299,14 @@ export const pricePerTile = (kind: TowerKind): number =>
 // ---------------------------------------------------------------------------
 
 /**
- * WHAT A MISSION IS WORTH, in XP, before the rung and map bonuses: the
- * whole pot a full clear pays, THE SAME ON EVERY MAP AND EVERY SCRIPT.
- * Nothing about the bodies moves it — not their tier, not their health,
- * not how many there were. A mission is one assignment and it pays one
- * price for being done.
+ * WHAT A MISSION IS WORTH, in XP: the whole pot a full clear pays AT
+ * NEMESIS — the last named difficulty, the script sent whole with no
+ * rules (XP_BASE_TIER in ladder.ts) — THE SAME ON EVERY MAP AND EVERY
+ * SCRIPT. Nothing about the bodies moves it — not their tier, not their
+ * health, not how many there were. A mission is one assignment and it
+ * pays one price for being done. The rung multiplies it from there
+ * (tierXpBonus: Incursion x0.4, Nemesis +6 x2.2) and a random map adds
+ * a quarter.
  *
  * THE POT IS DEALT OUT BY OBJECTIVE, and the objectives are the waves:
  * every wave the run CLEARS (every body it sent is down — killed,
@@ -319,8 +322,8 @@ export const pricePerTile = (kind: TowerKind): number =>
  * could hold twenty waves and not thirty was earning at a twentieth of
  * the rate of one that cleared, which made the early ladder a grind and
  * the tier-5 wall the only thing worth killing. On this rule the same
- * twenty waves pay 27,755 of 100,000 — more XP than before in absolute
- * terms, and three times the share.
+ * twenty waves pay 27,755 of 100,000 at Nemesis — more XP than before in
+ * absolute terms, and three times the share.
  */
 export const MISSION_XP = 100_000;
 
@@ -385,32 +388,32 @@ export function missionXp(cleared: number, waves: number): number {
  *   ~61,000 at 10, ~422,000 at 50, ~942,000 at 99.
  *
  *   THE PLATEAU, levels 100 to LEVEL_CAP (1000). Every level costs the
- *   same XP_LEVEL_FLAT (1,000,000): the long tail a save keeps earning
+ *   same XP_LEVEL_FLAT (500,000): the long tail a save keeps earning
  *   after it owns everything, with the tick of a level at a fixed, known
- *   price — ten base clears, or two at the top rung.
+ *   price — five Nemesis clears, or two or three at the top rung.
  *
  *   level    2      3      5      10     24     50     100     1000
- *   to next  5k     11k    24k    61k    178k   422k   1m      1m
- *   total    5k     16k    58k    288k   2.0m   9.9m   44m     944m
+ *   to next  5k     11k    24k    61k    178k   422k   500k    500k
+ *   total    5k     16k    58k    288k   2.0m   9.9m   44m     494m
  *
- * WHAT THAT MEANS AGAINST A MAP. A full clear at the base rung pays
- * MISSION_XP (100,000), so the first run lands level 6; a wipe after
- * twenty waves banks ~27,800 and lands level 3. The rung bonus
- * (tierXpBonus, up to x5.5) is the multiplier on all of it, and that is
- * how the track is climbed: the end of the ROSTER phase (ROSTER_TOP in
- * track.ts, where the last wall opens) stands at about 714,000 XP —
- * seven base clears, or one or two at the top rung — and the MUTATOR
- * phase behind it runs to about 2,000,000 at MAX_LEVEL (24). Everything
- * above that is the long tail: level 100 is 44 million, and the cap is
- * 944 million. Nothing on the track is handed out up there (track.ts);
- * the number is the number.
+ * WHAT THAT MEANS AGAINST A MAP. A full clear at Nemesis pays MISSION_XP
+ * (100,000) and lands level 6; at Incursion it pays 40,000 and lands
+ * level 4; a Nemesis wipe after twenty waves banks ~27,800 and lands
+ * level 3. The rung bonus (tierXpBonus, x0.4 to x2.2) is the multiplier
+ * on all of it, and that is how the track is climbed: the end of the
+ * ROSTER phase (ROSTER_TOP in track.ts, where the last wall opens)
+ * stands at about 714,000 XP — seven or eight Nemesis clears, or three
+ * or four at the top rung — and the MUTATOR phase behind it runs to
+ * about 2,000,000 at MAX_LEVEL (24). Everything above that is the long
+ * tail: level 100 is 44 million, and the cap is 494 million. Nothing on
+ * the track is handed out up there (track.ts); the number is the number.
  */
 export const XP_LEVEL_BASE = 5000;
 export const XP_LEVEL_POWER = 1.14;
 /** the level the climb stops at and the plateau begins */
 export const XP_LEVEL_PLATEAU = 100;
 /** what every level on the plateau costs */
-export const XP_LEVEL_FLAT = 1_000_000;
+export const XP_LEVEL_FLAT = 500_000;
 /** the highest level a save can stand at; XP past it banks and does nothing */
 export const LEVEL_CAP = 1000;
 
@@ -461,7 +464,7 @@ export function levelProgress(xp: number): { level: number; into: number; need: 
  * leaves it there banks a quarter more XP than one who chose — a nudge
  * towards playing every front rather than farming the one they know.
  * Multiplies the run's objective XP the same way the rung's bonus does
- * (grantRunReward), so it stacks: the top difficulty on a random map is x5.5 x1.25.
+ * (grantRunReward), so it stacks: the top difficulty on a random map is x2.2 x1.25.
  */
 export const RANDOM_MAP_XP_BONUS = 0.25;
 

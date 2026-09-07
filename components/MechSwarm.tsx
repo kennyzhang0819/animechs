@@ -437,10 +437,12 @@ function PickRow({
   );
 }
 
-/** a multiplier as the extra it pays: x1.30 prints as "+30% XP", x1 as "Base XP" */
+/** a multiplier as the extra it pays: x1.30 prints as "+30% XP", x0.40 as
+ *  "-60% XP", and x1 — Nemesis, the rung the pot is priced for — as "Base XP" */
 const xpBonusText = (mult: number): string => {
   const pct = Math.round((mult - 1) * 100);
-  return pct > 0 ? `+${pct}% XP` : "Base XP";
+  if (pct === 0) return "Base XP";
+  return pct > 0 ? `+${pct}% XP` : `${pct}% XP`;
 };
 
 /**

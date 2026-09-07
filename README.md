@@ -228,7 +228,7 @@ for a difficulty: a level is the player's.
 | enemy health | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 |
 | rules rolled | 0 | 0 | 0 | 0 | 3 | 3 | 3 | 3 | 4 | 4 |
 | mutator points | 0 | 0 | 0 | 0 | 8 | 10 | 11 | 13 | 15 | 17 |
-| XP bonus | ×1.0 | ×1.5 | ×2.0 | ×2.5 | ×3.0 | ×3.5 | ×4.0 | ×4.5 | ×5.0 | ×5.5 |
+| XP bonus | ×0.4 | ×0.6 | ×0.8 | ×1.0 | ×1.2 | ×1.4 | ×1.6 | ×1.8 | ×2.0 | ×2.2 |
 
 **A rung scales the count, the mutator roll and the XP, and nothing else.** Enemy
 level — Mindustry's ×1.06-a-level health curve — is still a mechanism
@@ -248,10 +248,12 @@ a run: whatever the save owns it may place from wave 1. The income is
 tuned so a sensible board clears all fifty first try.
 
 **XP is the save's progress, and it is paid for objectives, not kills.**
-Every mission is worth the same fixed pot — `MISSION_XP`, 100,000 — for
-a full clear, and the pot is dealt out **one wave at a time as the waves
-are cleared**, the way a StarCraft II co-op mission pays for each
-objective met. A wave is cleared when every body it sent is down (killed,
+Every mission is worth the same fixed pot — `MISSION_XP`, 100,000 for a
+full clear **at Nemesis**, the last named difficulty (the rungs below pay
+a share of it, the rungs above a bonus; see the XP bonus row above) —
+and the pot is dealt out **one wave at a time as the waves are
+cleared**, the way a StarCraft II co-op mission pays for each objective
+met. A wave is cleared when every body it sent is down (killed,
 devoured or blown up; `Sim.wavesCleared`), and it banks its share that
 moment. The shares ramp linearly from wave 1 to the last (`WAVE_XP_RAMP`:
 the last wave pays three times the first) and sum to exactly the pot, so
@@ -268,7 +270,7 @@ bought.
 
 | waves cleared | 1 | 10 | 20 | 30 | 40 | 50 |
 |---|---|---|---|---|---|---|
-| XP banked (base rung) | 1,000 | 11,837 | 27,756 | 47,756 | 71,837 | 100,000 |
+| XP banked (Nemesis) | 1,000 | 11,837 | 27,756 | 47,756 | 71,837 | 100,000 |
 
 **Why.** XP used to come off the same kills, one point per 110 hp of the
 body, and that put the pot where the health was: waves 1–20 paid under a
@@ -329,8 +331,8 @@ switched off for now (`UPGRADES_ON_TRACK`), so a turret plays at its stock
 stats whatever the save's level. A turret the save has not reached rides
 the build bar greyed, with the level that opens it. The progress screen
 lists the whole track; the results screen names what a climb handed out. A
-first Confluence clear lands level 6; the top of the track is about
-2 million XP.
+first Confluence clear lands level 6 at Nemesis, level 4 at Incursion;
+the top of the track is about 2 million XP.
 
 ### One script, three families a deploy
 
@@ -634,16 +636,19 @@ __ladder.wave(7, 2)   // what one authored wave weighs and pays
   dashboard (`scrapPriceOf` reads an override layer, saved under `prices`
   in `public/balance.json`). Within a tier the order follows Mindustry's
   build costs; the size is what the stage pays.
-- **The XP bonus is linear** (`XP_STEP_PER_RUNG`, +50% a rung), because
-  the fight no longer compounds: a compounding payout against flat health
-  would make the top rung the only one worth playing.
+- **The XP bonus is linear** (`XP_STEP_PER_RUNG`, half an Incursion a
+  rung), normalised so Nemesis is ×1 (`XP_BASE_TIER`) — the pot is priced
+  for the full script — because the fight no longer compounds: a
+  compounding payout against flat health would make the top rung the
+  only one worth playing.
 - **Nothing in the run is free.** Sandbox and the editors (`tech` null on
   the sim) build for nothing and show no scrap; every campaign run is
   charged. There is no saved board any more — a board is bought from the
   opening stipend outward, every run.
 - **The level curve** is `XP_LEVEL_BASE × level^XP_LEVEL_POWER` to the
   next level (5,000 × n^1.14) for the first hundred levels — 5,000 at
-  level 1, ~942,000 at level 99 — and a flat `XP_LEVEL_FLAT` (1,000,000)
-  a level from 100 to the cap at 1,000 (`LEVEL_CAP`). A full rung-1 clear
-  pays the 100,000 XP pot and lands level 6; a wipe at the end of stage 1
-  (twenty waves cleared, ~27,800 XP) lands level 3.
+  level 1, ~942,000 at level 99 — and a flat `XP_LEVEL_FLAT` (500,000) a
+  level from 100 to the cap at 1,000 (`LEVEL_CAP`). A full Nemesis clear
+  pays the 100,000 XP pot and lands level 6, and eight of them reach
+  level 15; a wipe at the end of stage 1 (twenty waves cleared, ~27,800
+  XP) lands level 3.
