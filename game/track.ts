@@ -1,5 +1,6 @@
 import { TOWER_DESC, TOWERS } from "./constants";
 import { WORLDS } from "./levels";
+import { MUTATIONS, mutationById, type MutationId } from "./mutation";
 import { BAR_SLOTS, BY_MINDUSTRY_VALUE, type TechState } from "./tech";
 import { TOWER_KINDS, type TowerKind } from "./types";
 import {
@@ -23,15 +24,25 @@ import {
  * read top to bottom is the whole progression, which is what a tree of
  * purchases never managed to be.
  *
- * THE TRACK IS THE UNLOCKING PHASE, AND NOTHING ELSE. Every one of its
- * fifteen levels opens at least one new thing to build — a turret or a
- * wall — and level 15 is the last: the save owns the whole roster there
- * and the track is finished. Levelling past it still happens (XP has no
- * ceiling) and pays nothing, which is the honest shape for a game whose
- * roster is finite. A fresh save opens with STARTING_ROSTER, the five
- * that make a first board; the other eighteen are handed out one or two
- * a level by UNLOCKS below. There is no gate inside a run: what the save
- * owns it may place from wave 1.
+ * THE TRACK HAS TWO PHASES, AND THEY PULL OPPOSITE WAYS.
+ *
+ *   THE ROSTER PHASE, levels 1 to ROSTER_TOP. Every level opens at least
+ *   one new thing to build — a turret or a wall — and at the top of it the
+ *   save owns the whole bar. A fresh save opens with STARTING_ROSTER, the
+ *   five that make a first board; the other eighteen are handed out one or
+ *   two a level by UNLOCKS below. There is no gate inside a run: what the
+ *   save owns it may place from wave 1.
+ *
+ *   THE MUTATOR PHASE, ROSTER_TOP + 1 to MAX_LEVEL. There is nothing left
+ *   to build, so what a level hands out is a RULE: one mutator a level,
+ *   lightest first, added to the deck the deploy roll draws from
+ *   (MUTATOR_UNLOCKS). The reward for climbing is that the game is allowed
+ *   to be harder — which is the reward a tower defence player is actually
+ *   climbing for, and it means the track no longer dies at fifteen.
+ *
+ * Levelling past MAX_LEVEL still happens (XP has no ceiling) and pays
+ * nothing, which is the honest shape for a game whose roster and whose
+ * catalog are both finite.
  *
  * THE ROSTER IS WRITTEN, THE REST IS PLACED. UNLOCKS is a hand-authored
  * order because the shape of the opening — which gun answers which wave,
@@ -49,16 +60,68 @@ import {
  */
 
 /**
- * The top of the track — the level at which every reward is out. It is
- * the length of the unlocking phase: fifteen levels, fifteen openings,
- * and nothing after it.
+ * THE END OF THE ROSTER PHASE — the level at which the last wall opens
+ * and the build bar is complete. Everything under it is the game being
+ * handed to the player; everything over it is the game being taken back
+ * (the mutators, below).
  */
-export const MAX_LEVEL = 15;
+export const ROSTER_TOP = 15;
+
+/**
+ * THE MUTATOR PHASE — one rule a level, LIGHTEST FIRST, from ROSTER_TOP + 1.
+ *
+ * A rule that is not on this list yet is not in the deck: the deploy roll
+ * draws only from what the save has opened (mutatorsAt, and the exclude
+ * it feeds rollMutations), so a fresh save plays clean runs and every
+ * level past fifteen puts one more thing that can go wrong into the bag.
+ * That is the honest second half for a game whose first half is "here is
+ * another gun": once there are no guns left to hand out, the only thing
+ * left to hand out is trouble.
+ *
+ * THE ORDER IS BY WEIGHT, ASCENDING — the reverse of the codex, which
+ * reads hardest first. Armored costs one point and is noticed; Amphibious
+ * costs five and decides runs. The player meets them in that order, so
+ * each level past the roster is a slightly worse deck rather than a cliff
+ * at sixteen.
+ */
+const MUTATOR_UNLOCKS: readonly MutationId[] = [
+  /* 16 */ "armored",
+  /* 17 */ "mitosis",
+  /* 18 */ "volatile",
+  /* 19 */ "shieldTowers",
+  /* 20 */ "overshields",
+  /* 21 */ "speedy",
+  /* 22 */ "hungry",
+  /* 23 */ "hydrophobic",
+  /* 24 */ "amphibious",
+];
+
+/**
+ * The top of the track — the level at which every reward is out: the
+ * roster phase and the mutator phase behind it. Levelling past it still
+ * happens and pays nothing.
+ */
+export const MAX_LEVEL = ROSTER_TOP + MUTATOR_UNLOCKS.length;
+
+/** THE CATALOG IS DEALT WHOLE, ONCE EACH. A rule on no level could never
+ *  be rolled, and a rule on two would open twice — both are import-time
+ *  failures here rather than a deck that quietly plays short */
+(() => {
+  const seen = new Set<MutationId>();
+  for (const id of MUTATOR_UNLOCKS) {
+    if (!mutationById(id)) throw new Error(`the track opens "${id}", which is not a mutator`);
+    if (seen.has(id)) throw new Error(`the track opens the mutator "${id}" twice`);
+    seen.add(id);
+  }
+  for (const m of MUTATIONS)
+    if (!seen.has(m.id)) throw new Error(`the track never opens the mutator "${m.id}"`);
+})();
 
 export type Reward =
   | { kind: "world"; worldId: string }
   | { kind: "speed"; mult: number }
   | { kind: "turret"; id: TowerKind }
+  | { kind: "mutator"; id: MutationId }
   | { kind: "upgrade"; id: UpgradeKind };
 
 /** the rewards placed by hand — the structure of the campaign */
@@ -101,7 +164,7 @@ export const STARTING_ROSTER: readonly TowerKind[] = [
 ];
 
 /**
- * WHAT EVERY LEVEL OPENS, level 2 to MAX_LEVEL. One new thing a level,
+ * WHAT EVERY LEVEL OPENS, level 2 to ROSTER_TOP. One new thing a level,
  * two where the tail had to double up to fit the whole roster inside the
  * phase; a level with nothing in it is a bug, and the check below throws
  * on one.
@@ -172,8 +235,10 @@ const TURRETS_DEALT = dealTurrets();
     }
   for (const k of TOWER_KINDS)
     if (!seen.has(k)) throw new Error(`the track never opens "${k}" — no level hands it out`);
-  if (UNLOCKS.length !== MAX_LEVEL - 1)
-    throw new Error(`UNLOCKS covers levels 2-${UNLOCKS.length + 1}; the track runs to ${MAX_LEVEL}`);
+  if (UNLOCKS.length !== ROSTER_TOP - 1)
+    throw new Error(
+      `UNLOCKS covers levels 2-${UNLOCKS.length + 1}; the roster phase runs to ${ROSTER_TOP}`,
+    );
   UNLOCKS.forEach((kinds, i) => {
     if (kinds.length === 0) throw new Error(`level ${i + 2} opens nothing`);
   });
@@ -242,6 +307,8 @@ const DEALT: Map<number, UpgradeKind[]> = UPGRADES_ON_TRACK ? dealUpgrades() : n
 export function rewardsAt(level: number): Reward[] {
   const out: Reward[] = PLACED.filter((p) => p.level === level).map((p) => p.reward);
   for (const id of TURRETS_DEALT.get(level) ?? []) out.push({ kind: "turret", id });
+  const mut = MUTATOR_UNLOCKS[level - ROSTER_TOP - 1];
+  if (mut) out.push({ kind: "mutator", id: mut });
   for (const id of DEALT.get(level) ?? []) out.push({ kind: "upgrade", id });
   return out;
 }
@@ -251,6 +318,29 @@ export const TRACK: readonly { level: number; rewards: Reward[] }[] = Array.from
   { length: MAX_LEVEL },
   (_, i) => ({ level: i + 1, rewards: rewardsAt(i + 1) }),
 );
+
+/** the mutators a level has put in the deck — empty through the whole
+ *  roster phase, the lot of them at the top of the track */
+export function mutatorsAt(level: number): Set<MutationId> {
+  return new Set(MUTATOR_UNLOCKS.slice(0, Math.max(0, Math.min(level, MAX_LEVEL) - ROSTER_TOP)));
+}
+
+/**
+ * THE RULES THIS SAVE CANNOT MEET YET — what the deploy roll is told to
+ * keep out of the draw (rollMutations' `exclude`). A save inside the
+ * roster phase excludes the whole catalog and plays clean runs.
+ */
+export function lockedMutators(level: number): MutationId[] {
+  const open = mutatorsAt(level);
+  return MUTATIONS.filter((m) => !open.has(m.id)).map((m) => m.id);
+}
+
+/** the level a mutator joins the deck — MAX_LEVEL + 1 for one the track
+ *  somehow never opens, which the import check above makes impossible */
+export function mutatorUnlockLevel(id: MutationId): number {
+  const i = MUTATOR_UNLOCKS.indexOf(id);
+  return i < 0 ? MAX_LEVEL + 1 : ROSTER_TOP + 1 + i;
+}
 
 /** the level a map opens at — 1 for a map the track never names */
 export function worldUnlockLevel(worldId: string): number {
@@ -301,6 +391,7 @@ export function rewardText(r: Reward): string {
   if (r.kind === "world") return `${WORLDS.find((w) => w.id === r.worldId)?.name ?? "A map"} opens`;
   if (r.kind === "speed") return `${r.mult}x speed`;
   if (r.kind === "turret") return `${TOWERS[r.id].wall ? "Wall" : "Turret"}: ${TOWER_NAME[r.id]}`;
+  if (r.kind === "mutator") return `Mutator: ${mutationById(r.id)?.name ?? r.id}`;
   const u = upgradeDef(r.id);
   return `${TOWER_NAME[u.turret]}: ${u.name}`;
 }
@@ -314,6 +405,8 @@ export function rewardBlurb(r: Reward): string {
   if (r.kind === "world") return "A new map on the deploy screen, with its own front and its own rules.";
   if (r.kind === "speed") return `Fast-forward: a run may be played at ${r.mult}x pace from the strip under the wave panel.`;
   if (r.kind === "turret") return TOWER_DESC[r.id];
+  if (r.kind === "mutator")
+    return `${mutationById(r.id)?.blurb ?? ""} From here on a run may roll it.`;
   return upgradeDef(r.id).blurb;
 }
 

@@ -348,11 +348,15 @@ export const pricePerTile = (kind: TowerKind): number =>
  * WHAT THAT MEANS AGAINST A MAP. A full Nemesis clear of Confluence
  * pays about 246,000 XP in kills, so the first run lands around level 8;
  * Incursion sends a quarter of that swarm and pays a quarter of it. The
- * top of the track (MAX_LEVEL in track.ts, where the last turrets and 2x
- * speed are) stands at about 1,150,000 XP: five clears at Nemesis,
- * two or three up the mutated difficulties, and the unlocking phase is
- * over. The base was halved from 10,000 so the first level falls out of
- * the first wave or two rather than the first stage.
+ * end of the ROSTER phase (ROSTER_TOP in track.ts, where the last wall
+ * opens) stands at about 1,140,000 XP: five clears at Nemesis, two or
+ * three up the mutated difficulties, and the whole build bar is owned.
+ * The MUTATOR phase behind it runs to about 3,550,000 — three times as
+ * far for nine rules, which is deliberate: those levels are not the game
+ * being handed over, they are the long tail a save keeps earning after
+ * it already owns everything. The base was halved from 10,000 so the
+ * first level falls out of the first wave or two rather than the first
+ * stage.
  */
 export const XP_LEVEL_BASE = 5000;
 export const XP_LEVEL_POWER = 1.35;

@@ -28,6 +28,16 @@ import { createPortal } from "react-dom";
 export type HoverDir = "up" | "down";
 
 /**
+ * WHICH WAY A CARD OPENS. "up" and "down" are the anchor's own choice;
+ * "auto" leaves it to the SCREEN, resolved at the moment the card opens —
+ * an anchor in the top half opens downward, one in the bottom half opens
+ * upward. That is what a scrolling list needs: the same chip is near the
+ * top of the window on one scroll position and near the bottom on
+ * another, and a fixed direction puts the card off-screen at one of them.
+ */
+export type HoverWant = HoverDir | "auto";
+
+/**
  * THE UI-SIZE KNOB THE CARD IS DRAWN UNDER. The card carries .ui-zoom,
  * and CSS `zoom` multiplies EVERY length on the element it is set on —
  * `left` and `top` included, not just the box. Its anchor's rectangle
@@ -55,15 +65,19 @@ export interface HoverAnchor {
 }
 
 /** the hover/focus state and the anchor's rectangle, for one HoverCard */
-export function useHoverCard(dir: HoverDir): HoverAnchor {
+export function useHoverCard(want: HoverWant): HoverAnchor {
   const ref = useRef<HTMLElement | null>(null);
   const [at, setAt] = useState<HoverAnchor["at"]>(null);
+  const [dir, setDir] = useState<HoverDir>(want === "auto" ? "up" : want);
   const open = (): void => {
     const r = ref.current?.getBoundingClientRect();
     if (!r) return;
+    // an "auto" anchor picks its side from where it is standing right now
+    const d: HoverDir = want === "auto" ? (r.top > window.innerHeight / 2 ? "up" : "down") : want;
+    setDir(d);
     // stored already in the card's own (zoomed) coordinate space — see uiScale
     const z = uiScale();
-    setAt({ x: r.left / z, y: (dir === "up" ? r.top : r.bottom) / z, w: r.width / z });
+    setAt({ x: r.left / z, y: (d === "up" ? r.top : r.bottom) / z, w: r.width / z });
   };
   const close = (): void => setAt(null);
   return {

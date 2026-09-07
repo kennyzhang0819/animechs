@@ -55,6 +55,7 @@ import {
 import { drawThumb, loadMap, loadOfficialMaps, mapLayers, OFFICIAL_MAP_IDS } from "@/game/maps";
 import {
   bestClearOn,
+  effectiveLevel,
   grantRunReward,
   loadProgress,
   resetProgress,
@@ -82,7 +83,7 @@ import {
   type MutationId,
 } from "@/game/mutation";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
-import { rewardsAt, rewardText, STARTING_ROSTER } from "@/game/track";
+import { lockedMutators, rewardsAt, rewardText, STARTING_ROSTER } from "@/game/track";
 import { levelProgress, POINT_COLOR, RANDOM_MAP_XP_BONUS, XP_COLOR } from "@/game/economy";
 import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
 import ProgressView from "./Progress";
@@ -1464,7 +1465,15 @@ export default function MechSwarm() {
     const picked = pickedWorld && worldLock(p, pickedWorld.id) == null ? pickedWorld : null;
     const random = picked == null;
     const w = picked ?? open[Math.floor(Math.random() * open.length)] ?? WORLD;
-    const roll = rollMutations(tierMutationPoints(tier), tierMutationCount(tier));
+    // THE DECK IS WHAT THE TRACK HAS OPENED. Past the roster phase every
+    // level puts one more rule in the bag (MUTATOR_UNLOCKS); everything
+    // still locked is kept out of this draw, so a save inside the roster
+    // phase deploys clean however hard the tier it picked is
+    const roll = rollMutations(
+      tierMutationPoints(tier),
+      tierMutationCount(tier),
+      lockedMutators(effectiveLevel(p)),
+    );
     // THE FAMILY DIE: three of the families this map's doors allow, in
     // the order the script's slots are dealt to them (rollFamilies)
     const families = rollFamilies(mapLayers(w.map));

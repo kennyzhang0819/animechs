@@ -1,14 +1,19 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
+import { WORLDS } from "@/game/levels";
+import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
+import { mutationById } from "@/game/mutation";
 import { effectiveLevel, levelOf, type Progress } from "@/game/progress";
-import { MAX_LEVEL, rewardBlurb, rewardText, TRACK, type Reward } from "@/game/track";
+import { MAX_LEVEL, rewardBlurb, rewardText, ROSTER_TOP, TRACK, type Reward } from "@/game/track";
+import { upgradeDef } from "@/game/upgrades";
 import { BackButton, BoardTabs, type Cam } from "./Board";
 import { HoverCard, useHoverCard } from "./HoverCard";
 import { itemCount } from "./Items";
 import MutationTree from "./MutationTree";
-import { MUT_GLYPH, MUT_LIT } from "./mutationFace";
+import { bandFor, MutationFace, MUT_GLYPH, MUT_LIT } from "./mutationFace";
+import { TOWER_ICONS } from "./towerIcons";
 
 /**
  * THE PROGRESS SCREEN: the track, centred on where the save stands.
@@ -41,33 +46,88 @@ const REWARD_COLOR: Record<Reward["kind"], string> = {
   world: "#7BE58A",
   speed: "#7FC4FF",
   turret: "#FF9A62",
+  // a mutator wears the codex's pink on the track, not its own weight
+  // band: the band lives on the codex board where a shelf of rules is
+  // being compared, and on the track the question is only "what kind of
+  // thing is this row handing me". The FACE inside the chip is still
+  // tinted by the band (MutationFace), so the weight is there to read
+  mutator: MUT_LIT,
   upgrade: "#FFD37F",
 };
 
+/** the map document a world is played on — the first official map is the
+ *  fallback, exactly as the deploy screen's card resolves it */
+function worldMapId(worldId: string): string {
+  return WORLDS.find((w) => w.id === worldId)?.map ?? OFFICIAL_MAP_IDS[0];
+}
+
 /**
- * One reward on a track row, with WHAT IT DOES a hover away: the chip
- * names the thing ("Duo: Rate of Fire") and the card that opens on it
- * says the effect in a sentence (rewardBlurb). Focusable, so the keyboard
- * gets the same card the mouse does.
+ * A map reward's face: the map itself, painted at 1px per cell into a
+ * chip-sized canvas (drawThumb, the same picture the deploy card shows).
+ * The documents are fetched with the menu, but this screen can be opened
+ * before that settles, so a miss re-runs the fetch and paints on the way
+ * back rather than leaving an empty square.
+ */
+function MapThumb({ mapId }: { mapId: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const map = loadMap(mapId);
+    if (map) {
+      if (ref.current) drawThumb(map, ref.current);
+      return;
+    }
+    void loadOfficialMaps()
+      .then(() => alive && setTick((t) => t + 1))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [mapId, tick]);
+  return <canvas ref={ref} className="h-full w-full object-cover [image-rendering:pixelated]" />;
+}
+
+/** what a reward chip WEARS: the turret's own menu sprite, the map's own
+ *  thumbnail, a pace as its multiplier. An upgrade rung shows the turret
+ *  it buffs — the ring colour is what separates it from owning the gun */
+function RewardFace({ reward }: { reward: Reward }) {
+  if (reward.kind === "world") return <MapThumb mapId={worldMapId(reward.worldId)} />;
+  if (reward.kind === "speed")
+    return <span className="font-display text-[13px] font-bold leading-none">{reward.mult}x</span>;
+  if (reward.kind === "mutator") return <MutationFace id={reward.id} size="h-6 w-6" />;
+  const kind = reward.kind === "turret" ? reward.id : upgradeDef(reward.id).turret;
+  return (
+    <img
+      src={TOWER_ICONS[kind]}
+      alt=""
+      className="h-[26px] w-[26px] object-contain [image-rendering:pixelated]"
+    />
+  );
+}
+
+/**
+ * One reward on a track row, AS A PICTURE: the turret's sprite or the
+ * map's thumbnail in a square the colour of its kind, with the words a
+ * hover away. The chip used to print "Turret: Meltdown" and a row of them
+ * read as a paragraph; the sprite is the thing the player will look for
+ * in the build bar, and the map is the place they will play, so the face
+ * is the label and the card behind it carries the name and the sentence
+ * (rewardText, rewardBlurb). Focusable, so the keyboard gets the same
+ * card the mouse does, and the name still rides in aria-label for a
+ * screen reader, which cannot see the sprite at all.
  *
  * The card is the shared HoverCard, portalled onto the body (see that
  * file for why): nothing in the track — its edge masks, a dimmed row —
- * can fade it. It opens up from a climbed row and down from a row ahead
- * (`dir`), which keeps it on the screen at either end of the list.
+ * can fade it, and it opens away from whichever edge of the window the
+ * chip is nearest ("auto"), which keeps it on screen at any scroll.
  */
-function RewardChip({
-  reward,
-  reached,
-  dir,
-}: {
-  reward: Reward;
-  reached: boolean;
-  /** which way the card opens — see TrackRow for why it is not always up */
-  dir: "up" | "down";
-}) {
+function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
   const color = REWARD_COLOR[reward.kind];
   const text = rewardText(reward);
-  const tip = useHoverCard(dir);
+  // "auto": the list scrolls, so which side of the window a chip is on is
+  // not a property of its row — the card picks its side when it opens
+  const tip = useHoverCard("auto");
   return (
     <>
       <span
@@ -75,14 +135,21 @@ function RewardChip({
         tabIndex={0}
         aria-label={`${text}. ${rewardBlurb(reward)}`}
         {...tip.anchorProps}
-        className={`ms-badge inline-flex cursor-default items-center gap-1 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-          reached ? "" : "opacity-50"
+        className={`relative flex h-9 w-9 shrink-0 cursor-default items-center justify-center overflow-hidden border-2 bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+          reached ? "" : "opacity-45"
         }`}
-        style={{ color }}
+        style={{ borderColor: color, color }}
       >
-        {text}
+        <RewardFace reward={reward} />
       </span>
-      <HoverCard tip={tip} title={text} color={color}>
+      <HoverCard
+        tip={tip}
+        title={text}
+        // the weight is the one thing a mutator's card says that a
+        // turret's cannot: it is the answer to "how bad is this"
+        tag={reward.kind === "mutator" ? bandFor(mutationById(reward.id)).label : undefined}
+        color={color}
+      >
         {rewardBlurb(reward)}
       </HoverCard>
     </>
@@ -98,7 +165,7 @@ function TrackRow({
   current,
   into,
   need,
-  dir,
+  rowRef,
 }: {
   level: number;
   rewards: readonly Reward[];
@@ -106,12 +173,13 @@ function TrackRow({
   current: boolean;
   into: number;
   need: number;
-  /** is this row above the save's level (a climbed one) or at or below it? */
-  dir: "up" | "down";
+  /** set on the row the save is ON — the one the list scrolls to on open */
+  rowRef?: RefObject<HTMLDivElement | null>;
 }) {
   const top = level === MAX_LEVEL;
   return (
     <div
+      ref={rowRef}
       role="listitem"
       aria-current={current ? "step" : undefined}
       // an unreached row is dimmed through its CONTENT (the grey number,
@@ -121,8 +189,10 @@ function TrackRow({
         current ? "border-[#FFD37F]" : reached ? "" : "border-[#252525]"
       }`}
     >
-      <div className="w-16 shrink-0">
-        <div className="text-[12px] uppercase tracking-widest text-[#71717C]">Level</div>
+      {/* the number alone. It used to carry a "LEVEL" caption over it,
+          fifteen times down one screen, saying nothing the column's
+          position did not */}
+      <div className="w-10 shrink-0 pt-1.5">
         <div
           className="font-display text-xl font-bold leading-none"
           style={{ color: reached ? POINT_COLOR : "#71717C" }}
@@ -138,7 +208,7 @@ function TrackRow({
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {rewards.map((r, i) => (
-              <RewardChip key={i} reward={r} reached={reached} dir={dir} />
+              <RewardChip key={i} reward={r} reached={reached} />
             ))}
           </div>
         )}
@@ -177,10 +247,8 @@ export default function ProgressView({
 }) {
   const [tab, setTab] = useState<TabId>("track");
   const codexCam = useRef<Cam | null>(null);
+  const here = useRef<HTMLDivElement | null>(null);
   const tabStrip = <BoardTabs tabs={TABS} active={tab} onPick={setTab} />;
-
-  if (tab === "mutators")
-    return <MutationTree onBack={onBack} backLabel={backLabel} tabs={tabStrip} cam={codexCam} />;
 
   const level = levelOf(progress);
   // what the save PLAYS at — the whole track while the back door is open
@@ -188,6 +256,32 @@ export default function ProgressView({
   const { into, need } = levelProgress(progress.xp);
   // the dev switch plays every save at the top of the track (progress.ts)
   const door = plays > level;
+
+  /**
+   * THE LIST OPENS ON THE SAVE. It scrolls now — twenty-four rows do not
+   * fit on a laptop and the second half of the track was simply
+   * unreadable — but where it STARTS is still the answer to "where am I",
+   * so the current row is put in the middle of the window before the
+   * first paint (useLayoutEffect, "instant": a progress screen that
+   * animates its way down to your level on every open is a screen you
+   * have to wait for). After that the wheel is the player's.
+   */
+  useLayoutEffect(() => {
+    if (tab === "track") here.current?.scrollIntoView({ block: "center", behavior: "instant" });
+  }, [tab, level]);
+
+  if (tab === "mutators")
+    return (
+      <MutationTree
+        onBack={onBack}
+        backLabel={backLabel}
+        // the codex dims what the track has not opened — the level it
+        // reads is the one the save PLAYS at, dev door included
+        level={plays}
+        tabs={tabStrip}
+        cam={codexCam}
+      />
+    );
 
   const row = (l: number) => {
     const { rewards } = TRACK[l - 1];
@@ -200,12 +294,10 @@ export default function ProgressView({
         current={l === level && !door}
         into={into}
         need={need}
-        dir={l <= level ? "up" : "down"}
+        rowRef={l === Math.min(level, MAX_LEVEL) ? here : undefined}
       />
     );
   };
-  const climbed = TRACK.filter((t) => t.level < level).map((t) => row(t.level));
-  const ahead = TRACK.filter((t) => t.level > level).map((t) => row(t.level));
 
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#0B0B0D] text-[#EDEDEF]">
@@ -224,24 +316,47 @@ export default function ProgressView({
         )}
       </div>
 
-      {/* THE TRACK, PINNED TO ITS CENTRE. The row the save is on stays in
-          the middle of the screen; the rows above stack up from it and
-          the rows below stack down, each half clipped and faded at the
-          edge of the screen rather than scrolled. */}
-      <div role="list" className="ui-zoom mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col px-[calc(1rem+var(--safe-l))] pr-[calc(1rem+var(--safe-r))]">
-        <div
-          className="flex min-h-0 flex-1 flex-col justify-end gap-1.5 overflow-hidden pb-1.5 pt-[calc(4.5rem+var(--safe-t))]"
-          style={{ maskImage: "linear-gradient(to bottom, transparent 4rem, black 45%)" }}
-        >
-          {climbed}
-        </div>
-        {row(level)}
-        <div
-          className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden pt-1.5 pb-[calc(1rem+var(--safe-b))]"
-          style={{ maskImage: "linear-gradient(to top, transparent, black 45%)" }}
-        >
-          {ahead}
-        </div>
+      {/* THE WHOLE TRACK, IN ONE SCROLLER. It used to be three boxes — the
+          climbed half, the current row, the half ahead — pinned so that
+          nothing ever scrolled, which worked while the track was fifteen
+          rows and hid a third of it once the mutator phase doubled it.
+          One column now, faded at both edges rather than cut, scrolled to
+          the save's own row on open. */}
+      <div
+        role="list"
+        className="ui-zoom mx-auto flex w-full max-w-2xl flex-1 flex-col gap-1.5 overflow-y-auto px-4 pt-[6.5rem] pb-12"
+        // THE PADDING MATCHES THE FADE. It also stopped asking for safe-area
+        // insets it never had: the classes here read calc(1rem+var(--safe-l))
+        // and nothing in the app defines --safe-*, so every one of those
+        // paddings was an invalid declaration the browser dropped on the
+        // floor — which is why the first row used to sit under the chrome. The list's own top padding is the
+        // point at which the mask turns opaque (6.5rem, clear of the
+        // chrome) and its bottom padding clears the bottom fade — so at
+        // either end of the scroll the first and last rows are FULLY
+        // readable, and everything between the ends dissolves under the
+        // back button rather than being cut off by it
+        style={{
+          maskImage:
+            "linear-gradient(to bottom, transparent 3.5rem, black 6.5rem, black calc(100% - 2rem), transparent 100%)",
+        }}
+      >
+        {TRACK.map((t) => (
+          <div key={t.level} className="contents">
+            {/* WHERE THE TRACK TURNS: everything above this line is a
+                thing to build, everything below it is a rule that can be
+                rolled at you. Two words, once, on the one row where the
+                colour of the chips changes meaning */}
+            {t.level === ROSTER_TOP + 1 && (
+              <div className="flex items-center gap-3 px-1 pt-2 pb-0.5">
+                <span className="text-[12px] uppercase tracking-widest" style={{ color: MUT_LIT }}>
+                  Mutators
+                </span>
+                <span className="h-px flex-1" style={{ background: `${MUT_LIT}44` }} />
+              </div>
+            )}
+            {row(t.level)}
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ import {
   MUT_COST_MAX,
   type MutationDef,
 } from "@/game/mutation";
+import { mutatorUnlockLevel } from "@/game/track";
 import Board, { BackButton, type Cam } from "./Board";
 import { HoverCard, useHoverCard } from "./HoverCard";
 // the face and the weight live beside the deploy dialog that also draws
@@ -66,6 +67,15 @@ import { type ReactNode, type RefObject } from "react";
  * NOTHING IS HIDDEN AND NOTHING IS TEASED: every rule that exists is
  * drawn, exactly as a StarCraft II player can read the mutator list before
  * queueing. The surprise is meant to be WHICH ones, not what exists.
+ *
+ * WHAT IS DRAWN AND WHAT IS IN THE DECK ARE TWO DIFFERENT THINGS. The
+ * track opens one rule a level past its roster phase (MUTATOR_UNLOCKS in
+ * track.ts), and until it does, that rule cannot be rolled at this save.
+ * A locked tile is therefore DIMMED and its border goes grey — it is
+ * still drawn, still named, still readable, because a codex that hides
+ * what is coming is the tease this board refuses to be. The card says
+ * which level puts it in the deck, which is the one number a locked tile
+ * owes the player.
  */
 
 // ---------- board geometry ---------------------------------------------
@@ -139,11 +149,17 @@ function tileAt(i: number): { cx: number; cy: number } {
 function MutationTile({
   def,
   index,
+  level,
 }: {
   def: MutationDef;
   index: number;
+  /** the level this save plays at — what decides whether the rule is in
+   *  the deck yet (mutatorUnlockLevel) */
+  level: number;
 }) {
   const band = bandFor(def);
+  const opens = mutatorUnlockLevel(def.id);
+  const locked = level < opens;
   const { cx, cy } = tileAt(index);
   // the card is the shared HoverCard on the body (see HoverCard.tsx): it
   // stays one size whatever the board is zoomed to, and nothing on the
@@ -163,17 +179,41 @@ function MutationTile({
     >
       <button
         type="button"
-        aria-label={`${def.name}: ${band.label} mutator. ${def.blurb}`}
-        className="flex w-full items-center justify-center border-[3px] bg-[#0b0b0d] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.85)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB]"
-        style={{ height: NODE, borderColor: band.color }}
+        aria-label={`${def.name}: ${band.label} mutator. ${def.blurb}${
+          locked ? ` Locked — opens at level ${opens}.` : ""
+        }`}
+        // a locked tile is dimmed through its CONTENT and its border, not
+        // through the wrapper: the name under it and the card that opens
+        // on it are read at full strength either way
+        className={`flex w-full items-center justify-center border-[3px] bg-[#0b0b0d] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.85)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB] ${
+          locked ? "opacity-40" : ""
+        }`}
+        style={{ height: NODE, borderColor: locked ? "#3A3A40" : band.color }}
       >
         <MutationFace id={def.id} size="h-14 w-14" />
       </button>
-      <div className="text-center text-[14px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+      <div
+        className="text-center text-[14px] font-bold uppercase tracking-widest"
+        style={{ color: locked ? "#71717C" : "#EDEDEF" }}
+      >
         {def.name}
       </div>
-      <HoverCard tip={tip} title={def.name} tag={band.label} color={band.color} align="center">
+      <HoverCard
+        tip={tip}
+        title={def.name}
+        // a locked rule's corner says WHEN, not how bad: the weight is
+        // what to fear about a rule you can meet, and the level is the
+        // only thing worth knowing about one you cannot
+        tag={locked ? `Level ${opens}` : band.label}
+        color={locked ? "#71717C" : band.color}
+        align="center"
+      >
         {def.blurb}
+        {locked && (
+          <span className="mt-1 block" style={{ color: "#71717C" }}>
+            Not in the deck yet — level {opens} puts it in.
+          </span>
+        )}
       </HoverCard>
     </div>
   );
@@ -182,11 +222,15 @@ function MutationTile({
 export default function MutationTree({
   onBack,
   backLabel,
+  level,
   tabs,
   cam,
 }: {
   onBack: () => void;
   backLabel: string;
+  /** the level the save PLAYS at — the dev door's level, not the raw one,
+   *  so a fully unlocked save reads a fully lit codex */
+  level: number;
   /** the strip that switches boards — built by the screen that owns both,
    *  so the two tabs can never disagree about what the other is called */
   tabs: ReactNode;
@@ -214,6 +258,7 @@ export default function MutationTree({
           key={m.id}
           def={m}
           index={i}
+          level={level}
         />
       ))}
     </Board>
