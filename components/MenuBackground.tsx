@@ -41,7 +41,17 @@ import type { TowerKind } from "@/game/types";
  * part that matters: a muzzle flash, a shell burst and a dying unit are
  * all effects, so the effect pool is a map of where something is
  * happening and a crowd walking through empty ground makes none of it.
- * Then it eases there. It never cuts.
+ *
+ * IT CUTS THERE, THROUGH BLACK — it does not pan. The camera holds one
+ * shot dead still for SHOT_HOLD seconds, dips to black over SHOT_FADE,
+ * moves while nothing can be seen, and comes back up somewhere else. It
+ * USED to ease across the field on an exponential, which meant the
+ * background was permanently sliding under a menu nobody was reading it
+ * through: ground scrolling behind a list of cards is a distraction, and
+ * a lane of mechs swimming sideways past the title is worse. A still
+ * frame that changes is calm; a moving frame never is. A shot only
+ * changes when the fight has actually moved (SHOT_MOVE) — the camera
+ * would rather sit on a good one than cut to its neighbour.
  *
  * THE SCENES CYCLE: each campaign map gets its turn, held for SCENE_HOLD
  * seconds and then taken to black over SCENE_FADE. The next map is built
@@ -157,8 +167,20 @@ const SCREENS: readonly TowerKind[] = [
 const BUCKET = 12;
 const BUCKETS_X = Math.ceil(COLS / BUCKET);
 const BUCKETS_Y = Math.ceil(ROWS / BUCKET);
-/** seconds between the camera choosing where to look */
-const LOOK_EVERY = 2.4;
+/**
+ * ONE SHOT: how long the camera holds still on a patch of field, the
+ * black it changes shot through (each way), and how soon it asks again
+ * after a look that was not worth cutting for.
+ */
+const SHOT_HOLD = 9;
+const SHOT_FADE = 0.32;
+const SHOT_RETRY = 1.6;
+/**
+ * How far, in cells, the fight has to have moved before a cut is worth
+ * making. A cut to the bucket next door reads as a glitch rather than as
+ * a change of view, so under this the camera simply stays where it is.
+ */
+const SHOT_MOVE = BUCKET * 0.8;
 /**
  * What one live effect is worth against one body when the camera scores a
  * patch of field. Well over one, on purpose: a bucket of effects is a
@@ -505,8 +527,9 @@ export default function MenuBackground({
     let buildT = 0;
     let replanT = 0;
 
-    // the camera, in world px, and where it is easing to
-    const cam = { x: 0, y: 0, tx: 0, ty: 0, look: 0 };
+    // the camera, in world px: where it is, the shot it is cutting to,
+    // the hold left on the current one and the black it cuts through
+    const cam = { x: 0, y: 0, tx: 0, ty: 0, hold: 0, black: 0, cutting: false };
     let camReady = false;
     const score = new Float32Array(BUCKETS_X * BUCKETS_Y);
     const guns = new Float32Array(BUCKETS_X * BUCKETS_Y);
@@ -646,29 +669,56 @@ export default function MenuBackground({
     const aimCamera = (dt: number, k: number): void => {
       const s = sim;
       if (!s) return;
-      cam.look -= dt;
-      if (cam.look <= 0 || !camReady) {
-        cam.look = LOOK_EVERY;
-        lookAt(s);
-      }
-      if (!camReady) {
-        cam.x = cam.tx;
-        cam.y = cam.ty;
-        camReady = true;
-      } else {
-        // an exponential ease: a camera that never cuts, and never
-        // arrives so slowly that it is always behind the fight
-        const a = 1 - Math.exp(-dt / 1.4);
-        cam.x += (cam.tx - cam.x) * a;
-        cam.y += (cam.ty - cam.y) * a;
-      }
       // THE VIEW STAYS ON THE MAP. The world ends in rock and darkness, so
       // a sliver of void past it would read as a hole rather than as an
-      // edge — where the map is narrower than the view, it is centred
+      // edge — where the map is narrower than the view, it is centred.
+      // Both the shot on screen and the one being cut to are held to it,
+      // so a target that clamps back onto the current shot is correctly
+      // read as no move at all rather than as a cut worth making
       const halfW = canvas.width / (2 * k);
       const halfH = canvas.height / (2 * k);
-      cam.x = worldW() > halfW * 2 ? clamp(cam.x, halfW, worldW() - halfW) : worldW() / 2;
-      cam.y = worldH() > halfH * 2 ? clamp(cam.y, halfH, worldH() - halfH) : worldH() / 2;
+      const onMap = (p: { x: number; y: number }): void => {
+        p.x = worldW() > halfW * 2 ? clamp(p.x, halfW, worldW() - halfW) : worldW() / 2;
+        p.y = worldH() > halfH * 2 ? clamp(p.y, halfH, worldH() - halfH) : worldH() / 2;
+      };
+
+      if (!camReady) {
+        // the first shot of a scene is set behind the scene's own black,
+        // so it costs nothing to take it outright
+        lookAt(s);
+        cam.x = cam.tx;
+        cam.y = cam.ty;
+        cam.hold = SHOT_HOLD;
+        cam.black = 0;
+        cam.cutting = false;
+        camReady = true;
+      } else if (cam.cutting) {
+        cam.black += dt / SHOT_FADE;
+        if (cam.black >= 1) {
+          // the move itself, made with nothing on screen to move
+          cam.black = 1;
+          cam.cutting = false;
+          cam.hold = SHOT_HOLD;
+          cam.x = cam.tx;
+          cam.y = cam.ty;
+        }
+      } else {
+        cam.black = Math.max(0, cam.black - dt / SHOT_FADE);
+        cam.hold -= dt;
+        if (cam.hold <= 0) {
+          lookAt(s);
+          const t = { x: cam.tx, y: cam.ty };
+          onMap(t);
+          cam.tx = t.x;
+          cam.ty = t.y;
+          // a scene already on its way out is not worth a cut: the black
+          // it is leaving through would swallow the new shot anyway
+          const moved = Math.hypot(cam.tx - cam.x, cam.ty - cam.y) >= SHOT_MOVE * CELL;
+          cam.cutting = moved && !leaving;
+          if (!cam.cutting) cam.hold = SHOT_RETRY;
+        }
+      }
+      onMap(cam);
     };
 
     const frame = (now: number, dt: number): void => {
@@ -742,7 +792,11 @@ export default function MenuBackground({
         renderer.render(s, k, canvas.width / 2 - cam.x * k, canvas.height / 2 - cam.y * k, 1);
       }
 
-      wash.style.opacity = String(clamp(dimRef.current + (1 - dimRef.current) * fade, 0, 1));
+      // the wash carries both blacks — the scene change's and the cut's —
+      // whichever is deeper, so a cut landing at the end of a scene never
+      // lifts the black the scene is leaving through
+      const dark = Math.max(fade, camReady ? cam.black : 0);
+      wash.style.opacity = String(clamp(dimRef.current + (1 - dimRef.current) * dark, 0, 1));
     };
 
     let last = performance.now();
