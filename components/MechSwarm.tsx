@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import {
   BASE_SPEEDS,
   firstLoadStep,
@@ -75,6 +75,7 @@ import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
 import ProgressView from "./Progress";
 import { bandFor, MutationFace } from "./mutationFace";
 import MenuBackground from "./MenuBackground";
+import { HoverCard, useHoverCard } from "./HoverCard";
 
 /** the level card's map preview — the admin editor's thumbnail look */
 function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) {
@@ -301,39 +302,23 @@ function MutationChip({
   fromRight: boolean;
 }) {
   const band = bandFor(def);
+  // the shared HoverCard (HoverCard.tsx), opening upward off the chip
+  const tip = useHoverCard("up");
   return (
-    <div className="group relative">
+    <div className="relative">
       <button
+        ref={tip.ref as RefObject<HTMLButtonElement | null>}
         type="button"
         aria-label={`${def.name}: ${band.label} mutator${always ? ", always in force on this map" : ""}. ${def.blurb}`}
+        {...tip.anchorProps}
         className="flex h-7 w-7 items-center justify-center border-2 bg-[#0b0b0d] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB]"
         style={{ borderColor: band.color }}
       >
         <MutationFace id={def.id} size="h-5 w-5" />
       </button>
-      {/* what this rule does — opened by resting on the chip, or by
-          focusing it from the keyboard */}
-      <div
-        className={`pointer-events-none absolute bottom-full z-10 mb-2 hidden w-56 border-[3px] p-2.5 text-left shadow-lg group-hover:block group-focus-within:block ${
-          fromRight ? "right-0" : "left-0"
-        }`}
-        style={{ borderColor: band.color, background: "#0b0b0d" }}
-      >
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="text-[13px] font-bold text-[#EDEDEF]">{def.name}</span>
-          <span
-            className="shrink-0 text-[11px] font-bold uppercase tracking-widest"
-            style={{ color: band.color }}
-          >
-            {/* the weight, whether or not the world carries this rule.
-                A map-bound rule already reads as SPECIAL in its own blue,
-                so the corner is free to say the one thing every card says
-                in the same place: how heavy this is */}
-            {band.label}
-          </span>
-        </div>
-        <div className="mt-1 text-[12.5px] leading-snug text-[#A6A6AF]">{def.blurb}</div>
-      </div>
+      <HoverCard tip={tip} title={def.name} tag={band.label} color={band.color} align={fromRight ? "center" : "left"}>
+        {def.blurb}
+      </HoverCard>
     </div>
   );
 }

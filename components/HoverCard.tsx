@@ -1,0 +1,108 @@
+"use client";
+
+import { useRef, useState, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
+
+/**
+ * THE HOVER CARD — one tooltip for every chip, tile and face in the game:
+ * a bordered black card with a title, an optional tag in the corner, and
+ * a sentence. The track's reward chips (Progress), the codex tiles
+ * (MutationTree) and the deploy screen's mutator faces (MechSwarm) all
+ * open this one.
+ *
+ * IT IS PORTALLED ONTO THE BODY AND PINNED BY THE ANCHOR'S SCREEN
+ * RECTANGLE, never rendered inside the thing it describes. That is the
+ * whole point of it: a card that lives inside a row lives under that
+ * row's mask, opacity, overflow and stacking order, and every one of
+ * those has made a tooltip translucent, clipped or buried at some point.
+ * On the body it is fully opaque, always on top, and the same size
+ * whatever board zoom or row fade its anchor sits under (it takes the
+ * UI-size knob, ui-zoom, and nothing else).
+ *
+ * Usage: `const tip = useHoverCard("up")`, spread `tip.anchorProps` onto
+ * the element the card hangs off, and render `<HoverCard tip={tip} …/>`.
+ */
+
+export type HoverDir = "up" | "down";
+
+export interface HoverAnchor {
+  ref: RefObject<HTMLElement | null>;
+  /** the anchor's screen point while open — null is closed */
+  at: { x: number; y: number; w: number } | null;
+  dir: HoverDir;
+  anchorProps: {
+    onMouseEnter: () => void;
+    onMouseLeave: () => void;
+    onFocus: () => void;
+    onBlur: () => void;
+  };
+}
+
+/** the hover/focus state and the anchor's rectangle, for one HoverCard */
+export function useHoverCard(dir: HoverDir): HoverAnchor {
+  const ref = useRef<HTMLElement | null>(null);
+  const [at, setAt] = useState<HoverAnchor["at"]>(null);
+  const open = (): void => {
+    const r = ref.current?.getBoundingClientRect();
+    if (r) setAt({ x: r.left, y: dir === "up" ? r.top : r.bottom, w: r.width });
+  };
+  const close = (): void => setAt(null);
+  return {
+    ref,
+    at,
+    dir,
+    anchorProps: { onMouseEnter: open, onMouseLeave: close, onFocus: open, onBlur: close },
+  };
+}
+
+export function HoverCard({
+  tip,
+  title,
+  tag,
+  color,
+  children,
+  align = "left",
+}: {
+  tip: HoverAnchor;
+  title: string;
+  /** a short word in the corner, in the border colour — a mutator's weight */
+  tag?: string;
+  /** the border, and the tag */
+  color: string;
+  /** the sentence */
+  children: ReactNode;
+  /** hang off the anchor's left edge, or centre on it */
+  align?: "left" | "center";
+}) {
+  if (!tip.at || typeof document === "undefined") return null;
+  const { x, y, w } = tip.at;
+  const dy = tip.dir === "up" ? "calc(-100% - 8px)" : "8px";
+  const dx = align === "center" ? "-50%" : "0";
+  return createPortal(
+    <span
+      role="tooltip"
+      className="ui-zoom pointer-events-none fixed z-50 block w-64 border-[3px] p-2.5 text-left normal-case tracking-normal shadow-lg"
+      style={{
+        left: align === "center" ? x + w / 2 : x,
+        top: y,
+        transform: `translate(${dx}, ${dy})`,
+        borderColor: color,
+        background: "#0b0b0d",
+      }}
+    >
+      <span className="flex items-baseline justify-between gap-2">
+        <span className="text-[13px] font-bold text-[#EDEDEF]">{title}</span>
+        {tag && (
+          <span
+            className="shrink-0 text-[11px] font-bold uppercase tracking-widest"
+            style={{ color }}
+          >
+            {tag}
+          </span>
+        )}
+      </span>
+      <span className="mt-1 block text-[12.5px] leading-snug text-[#A6A6AF]">{children}</span>
+    </span>,
+    document.body,
+  );
+}

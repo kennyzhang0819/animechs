@@ -6,6 +6,7 @@ import {
   type MutationDef,
 } from "@/game/mutation";
 import Board, { BackButton, type Cam } from "./Board";
+import { HoverCard, useHoverCard } from "./HoverCard";
 // the face and the weight live beside the deploy dialog that also draws
 // them (mutationFace.tsx) — one rule must not read Brutal here and
 // Heavy there
@@ -144,39 +145,36 @@ function MutationTile({
 }) {
   const band = bandFor(def);
   const { cx, cy } = tileAt(index);
+  // the card is the shared HoverCard on the body (see HoverCard.tsx): it
+  // stays one size whatever the board is zoomed to, and nothing on the
+  // board can clip or fade it. Centred under the tile, opening downward
+  const tip = useHoverCard("down");
   return (
+    // the whole tile — face AND name — is the anchor, so the card opens
+    // under the name rather than across it. Focus bubbles up from the
+    // button, so the keyboard opens it the same way
     <div
-      className="group absolute"
-      style={{ left: cx - NODE / 2, top: cy - NODE / 2, width: NODE, height: NODE }}
+      ref={tip.ref as RefObject<HTMLDivElement | null>}
+      {...tip.anchorProps}
+      // no height on the wrapper: it grows to take the name in, so its
+      // rectangle (the card's anchor) ends under the name and not the face
+      className="absolute"
+      style={{ left: cx - NODE / 2, top: cy - NODE / 2, width: NODE }}
     >
       <button
         type="button"
         aria-label={`${def.name}: ${band.label} mutator. ${def.blurb}`}
-        className="flex h-full w-full items-center justify-center border-[3px] bg-[#0b0b0d] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.85)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB]"
-        style={{ borderColor: band.color }}
+        className="flex w-full items-center justify-center border-[3px] bg-[#0b0b0d] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.85)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FF8ACB]"
+        style={{ height: NODE, borderColor: band.color }}
       >
         <MutationFace id={def.id} size="h-14 w-14" />
       </button>
       <div className="text-center text-[12px] font-bold uppercase tracking-widest text-[#EDEDEF]">
         {def.name}
       </div>
-      {/* hover card: what this rule does — opened by resting on the tile,
-          or by focusing it from the keyboard */}
-      <div
-        className="pointer-events-none absolute left-1/2 top-full z-10 mt-5 hidden w-56 -translate-x-1/2 border-[3px] p-3 text-left shadow-lg group-hover:block group-focus-within:block"
-        style={{ borderColor: band.color, background: "#0b0b0d" }}
-      >
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="font-bold text-[#EDEDEF]">{def.name}</span>
-          <span
-            className="text-[12px] font-bold uppercase tracking-widest"
-            style={{ color: band.color }}
-          >
-            {band.label}
-          </span>
-        </div>
-        <div className="mt-1 text-[14px] leading-snug text-[#A6A6AF]">{def.blurb}</div>
-      </div>
+      <HoverCard tip={tip} title={def.name} tag={band.label} color={band.color} align="center">
+        {def.blurb}
+      </HoverCard>
     </div>
   );
 }
