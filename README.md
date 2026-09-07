@@ -214,8 +214,8 @@ rung's index, so **an eleventh rung is one constant** (`RUNG_COUNT`).
 
 **Scrap is the run's money.** Every run opens with `SCRAP_START` (7,500),
 every kill drops its tier's scrap, every wave staged pays a small bonus,
-and every turret placed costs scrap. Selling returns the whole price
-(`SELL_REFUND` is 1). Nothing carries between runs: a run is solved from its
+and every turret placed costs scrap. Selling returns nothing
+(`SELL_REFUND` is 0): a placed turret is spent. Nothing carries between runs: a run is solved from its
 opening board to its last wave on what it earns. Tiers are gated by wave
 (`STAGES`): tier 1 only until wave 20, tier 2 from 21, tier 3 from 36 — so
 every run has an early, a mid and a late game, and the opening board is

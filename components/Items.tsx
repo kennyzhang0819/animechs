@@ -8,7 +8,6 @@ import {
   XP_COLOR,
   type Drop,
 } from "@/game/economy";
-import { nextRewardLevel, rewardsAt, rewardText } from "@/game/track";
 
 /* eslint-disable @next/next/no-img-element -- raw pixel sprites, no optimization wanted */
 
@@ -118,48 +117,15 @@ export function DropRow({
 }
 
 /**
- * THE LEVEL STRIP: the player's level, the XP bar to the next one, and
- * the next thing the track hands out. It is the one thing every menu
- * shows beside the way to read it (the progress screen), and the one
- * number a results screen is about.
+ * THE LEVEL STRIP: the player's level, and only that. The bar to the next
+ * level and what it hands out live on the progress screen, one press
+ * away; the menu names the number and nothing else.
  */
 export function LevelStrip({ xp }: { xp: number }) {
-  const { level, into, need } = levelProgress(xp);
-  const nextAt = nextRewardLevel(level);
-  const next = nextAt === null ? [] : rewardsAt(nextAt);
+  const { level } = levelProgress(xp);
   return (
-    <span className="inline-flex items-center gap-3">
-      <span className="font-bold uppercase tracking-widest text-[#EDEDEF]">
-        Level <span style={{ color: POINT_COLOR }}>{level}</span>
-      </span>
-      <span
-        className="ms-bar h-2 w-24"
-        title={`${itemCount(into)} / ${itemCount(need)} XP to level ${level + 1}`}
-        aria-label={`${itemCount(into)} of ${itemCount(need)} XP to level ${level + 1}`}
-      >
-        <span
-          className="block h-full"
-          style={{ width: `${Math.min(100, (100 * into) / Math.max(1, need))}%`, background: XP_COLOR }}
-        />
-      </span>
-      {/* the next unlock, named: what the bar is FOR. Past the top of the
-          track there is nothing to name and the strip says so */}
-      <span className="text-[11px] uppercase tracking-widest text-[#71717C]">
-        {nextAt === null ? (
-          "Top of the track"
-        ) : (
-          <>
-            Level {nextAt}:{" "}
-            <span className="text-[#A6A6AF]">
-              {next
-                .slice(0, 2)
-                .map(rewardText)
-                .join(", ")}
-              {next.length > 2 ? ` +${next.length - 2}` : ""}
-            </span>
-          </>
-        )}
-      </span>
+    <span className="font-bold uppercase tracking-widest text-[#EDEDEF]">
+      Level <span style={{ color: POINT_COLOR }}>{level}</span>
     </span>
   );
 }

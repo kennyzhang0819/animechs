@@ -14,7 +14,6 @@ import {
 import { loadBalanceDoc } from "@/game/balance";
 import {
   loadLevelDocs,
-  MAP_BADGE,
   missionText,
   waveGroups,
   WORLD,
@@ -103,14 +102,12 @@ function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) 
 }
 
 /**
- * ONE MAP ON THE MAP SELECT — a preview, a name, and the badge that ranks
- * this map against the others (MAP_BADGE in levels.ts).
- *
- * The badge sits ON the preview rather than beside the name because that is
- * the thing being chosen between: a player scanning the grid is reading four
- * badges, not four sentences. Everything the map actually costs — the
- * rung, the wave count, the mutators rolled for it — is one tap deeper,
- * on the detail panel, so the grid stays a picture and never a spec sheet.
+ * ONE MAP ON THE MAP SELECT — a preview and a name. No map is ranked
+ * against another: every map is as hard as the tier it is played at, and
+ * the tier is the same dial on all of them. Everything the map actually
+ * costs — the tier, the wave count, the mutators rolled for it — is one
+ * tap deeper, on the detail panel, so the grid stays a picture and never a
+ * spec sheet.
  */
 function MapCard({
   world,
@@ -123,7 +120,6 @@ function MapCard({
   mapsReady: boolean;
   onPick: () => void;
 }) {
-  const badge = MAP_BADGE[world.badge ?? "beginner"];
   // how far up this map's OWN ladder the save has come. clearedOn counts
   // cleared levels, so reaching the count means the map is done
   const cleared = clearedOn(progress, world.id);
@@ -150,9 +146,6 @@ function MapCard({
         ) : (
           <div className="aspect-[16/9] bg-[#0b0b0d]" />
         )}
-        <span className="ms-badge absolute left-2 top-2" style={{ color: badge.color }}>
-          {badge.name}
-        </span>
       </div>
       <div className="ms-rule-t flex items-baseline justify-between gap-3 px-3 py-2.5">
         <span
@@ -467,7 +460,6 @@ function MapDialog({
   // script, not the rung — so the trade is rules against XP, and the
   // first clear's bonus is the other half of it
   const xpMult = tierXpBonus(tier);
-  const badge = MAP_BADGE[world.badge ?? "beginner"];
   const cleared = isTierCleared(progress, world.id, tier);
   const firstClearXp = Math.round(FIRST_CLEAR_XP * xpMult);
   /**
@@ -531,7 +523,7 @@ function MapDialog({
         className="ui-zoom ms-pane-solid w-full max-w-[44rem] p-4 shadow-2xl"
       >
         <div className="grid gap-4 sm:grid-cols-2">
-          {/* LEFT: the map itself, badged exactly as its card was, so the
+          {/* LEFT: the map itself, exactly as its card showed it, so the
               thing clicked and the thing opened are visibly the same */}
           <div className="relative self-start">
             {mapsReady ? (
@@ -539,9 +531,6 @@ function MapDialog({
             ) : (
               <div className="aspect-[16/9] bg-[#0b0b0d]" />
             )}
-            <span className="ms-badge absolute left-2 top-2" style={{ color: badge.color }}>
-              {badge.name}
-            </span>
           </div>
 
           {/* RIGHT: the name, the one dial, and what the dial buys */}
@@ -1482,16 +1471,16 @@ export default function MechSwarm() {
 
   if (screen !== "game" || !level) {
     /**
-     * THE LEVEL AND WHAT IT IS CLIMBING TOWARD, as one strip. It is shown
-     * from the map grid inwards and never on the title card: a level only
-     * means anything next to the track it is a rung of, and the last stop
-     * before Deploy is exactly where a player wants to see what is next.
+     * THE LEVEL AND THE WAY TO READ IT: the number, and the Progress button
+     * to its right, pinned to the top-RIGHT corner — the opposite corner
+     * from back, so each corner holds one thing. Shown from the map grid
+     * inwards and never on the title card: a level only means anything
+     * next to the track it is a tier of, and the last stop before Deploy
+     * is exactly where a player wants to see what is next.
      */
     const bank = progress && (
-      <div className="flex items-center gap-3">
-        <span className="ms-pane flex items-center px-4 py-2">
-          <LevelStrip xp={progress.xp} />
-        </span>
+      <div className="ui-zoom fixed right-[1rem] top-[1rem] z-20 flex h-11 items-center gap-3 text-[13px]">
+        <LevelStrip xp={progress.xp} />
         <button
           onClick={() => {
             setTechFrom("menu");

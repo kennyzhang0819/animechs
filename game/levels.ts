@@ -1059,27 +1059,6 @@ export function waveGroups(
 }
 
 /**
- * A MAP'S STANDING DIFFICULTY — the badge on its card in the map select,
- * and the only thing that ranks one map against another.
- *
- * It is NOT the ladder. A rung (Level 1..10) is a difficulty you PICK for a
- * run and it means the same thing on every map; a badge is a property of
- * the terrain itself — how much the lanes, the water and the drop zones do
- * to you before a single multiplier is applied. A player reads the badge to
- * choose WHERE to fight and the rung to choose HOW HARD, so the two
- * vocabularies are kept apart on purpose and never share a word.
- */
-export type MapBadge = "beginner" | "intermediate" | "advanced" | "expert";
-
-/** the badge's own label and colour, wherever a map card shows one */
-export const MAP_BADGE: Record<MapBadge, { name: string; color: string }> = {
-  beginner: { name: "Beginner", color: "#7BE58A" },
-  intermediate: { name: "Intermediate", color: "#7FC4FF" },
-  advanced: { name: "Advanced", color: "#FFB65C" },
-  expert: { name: "Expert", color: "#FF6B6B" },
-};
-
-/**
  * A MAP'S MISSION. Two shapes so far:
  *
  *   hold     — clear every wave the script sends. The classic assignment.
@@ -1128,11 +1107,6 @@ export interface LevelSpec {
   name: string;
   /** official map id this level plays on; the first official map when unset */
   map?: string;
-  /**
-   * How hard this map is to hold, as a badge on the map select. Unset reads
-   * as "beginner" — a map that never says otherwise is the gentle one.
-   */
-  badge?: MapBadge;
   /**
    * WHAT THIS MAP ASKS OF A RUN — the mission (see Mission). Every map is
    * its own assignment, the way a co-op map is: hold the line for every
@@ -1292,7 +1266,6 @@ export const WORLDS: LevelSpec[] = [
     id: "1",
     name: "Confluence",
     map: "confluence",
-    badge: "beginner",
     // THE OPENING ASSIGNMENT: hold every wave with the full hundred lives
     mission: { kind: "hold" },
     waveGap: 15,
@@ -1412,7 +1385,6 @@ export const WORLDS: LevelSpec[] = [
     id: "2",
     name: "Maelstrom",
     map: "maelstrom",
-    badge: "advanced",
     // THE NAVAL FRONT: hold the fifty. Six-second gaps, because hulls are
     // big and the water doors pass a wave slower than the schedule — the
     // late waves are bound by their own release, not the gap — so the
@@ -1426,7 +1398,6 @@ export const WORLDS: LevelSpec[] = [
     id: "3",
     name: "Quagmire",
     map: "quagmire",
-    badge: "advanced",
     // THE SWAMP: forty waves, held with the full hundred, because its goal
     // is the whole western edge and its bodies wade in heavier than they
     // spawned (Amphibious). The script is Confluence's first forty,

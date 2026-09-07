@@ -2528,8 +2528,9 @@ export class Sim {
     const t = this.towerAt(px, py);
     if (!t) return false;
     this.removeTower(t);
-    // the whole price back (SELL_REFUND, economy.ts): a board is never a
-    // commitment, and re-laying it to fund the next tier costs nothing
+    // nothing back (SELL_REFUND is 0, economy.ts): a placed turret is
+    // spent, and demolishing it only clears the ground. The dial stays
+    // wired so a refund can be tried again from one number
     if (this.charging) this.scrap += sellValue(t.kind);
     this.pushFx(t.x, t.y, 0.35, FxKind.Death); // demolish puff
     return true;
