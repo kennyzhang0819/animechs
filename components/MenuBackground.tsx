@@ -26,18 +26,22 @@ import type { TowerKind } from "@/game/types";
  * all of it.
  *
  * WHO BUILDS THE LINE. Nobody is playing, so the background plays itself
- * (see planSpots / placeOne): it traces the walkers' route down the flow
- * field from the drop zones to the core, and stands turrets off both
- * shoulders of that route — a burst of them before the scene is shown,
- * and one every so often after, which is also how the line is repaired as
- * the swarm chews through it. Building is free here (Sim.tech stays null,
- * as it does in the sandbox and the editors), because a menu has no run
- * and therefore no scrap.
+ * (see planBuilds / formation): it traces the walkers' route down the
+ * flow field from the drop zones to the core, picks a handful of
+ * stretches of it, and lays a real formation on each — a wall screen
+ * along the lane with ranks of guns racked up behind it, one kind to a
+ * rank, flush, square to the lane. A burst of it goes up before the scene
+ * is shown and one placement every so often after, which is also how the
+ * line is repaired as the swarm chews through it. Building is free here
+ * (Sim.tech stays null, as it does in the sandbox and the editors),
+ * because a menu has no run and therefore no scrap.
  *
- * WHAT IT LOOKS AT. The camera picks the busiest patch of field — the
- * coarse bucket holding the most bodies, with a thumb on the scale for
- * buckets that hold turrets, so it prefers a fight to a crowd walking
- * through empty ground — and eases toward it. It never cuts.
+ * WHAT IT LOOKS AT. The camera scores the field in coarse buckets by
+ * what is IN them — bodies, and the sim's own live effects, which is the
+ * part that matters: a muzzle flash, a shell burst and a dying unit are
+ * all effects, so the effect pool is a map of where something is
+ * happening and a crowd walking through empty ground makes none of it.
+ * Then it eases there. It never cuts.
  *
  * THE SCENES CYCLE: each campaign map gets its turn, held for SCENE_HOLD
  * seconds and then taken to black over SCENE_FADE. The next map is built
@@ -92,43 +96,62 @@ const PREWARM_CHUNK = 90;
 const SIM_DT = 1 / 60;
 const SIM_STEPS_MAX = 3;
 
-/** turrets standing before the scene is shown, and the most it will hold */
-const OPENING_TURRETS = 40;
-const MAX_TURRETS = 70;
+/**
+ * Structures standing before the scene is shown, and the most it will
+ * hold. Both count walls as well as guns — a screen is a placement like
+ * any other — so the numbers are larger than the turret counts they
+ * replaced without the field holding more guns.
+ */
+const OPENING_TURRETS = 95;
+const MAX_TURRETS = 150;
 /** seconds between the placements that extend and repair the line */
 const BUILD_EVERY = 0.8;
-/** seconds between re-tracing the route — a line changes where the swarm walks */
-const REPLAN_EVERY = 14;
+/** the least time between two route traces, once a plan has been spent */
+const REPLAN_EVERY = 5;
 
 /**
- * THE GUNS THE LINE IS BUILT FROM, and how often each turns up. It is a
- * spread rather than a best-of: a menu wants a duo's tracer, a ripple's
- * shells, an arc's lightning and a meltdown's beam all on screen at once,
- * which is what the weights buy. Scatter carries the weight it does
- * because it is the only cheap answer to a flare, and a background with
- * unanswered air in it is a background of things flying past.
+ * WHAT A RANK IS MADE OF, split by footprint, because a rank is one kind
+ * flush against itself and kinds of different sizes do not tile together.
  *
- * The tractor (parallax) and the naval turret (tsunami) sit it out: one
- * deals no damage and the other only reaches water.
+ * It is a spread rather than a best-of: a menu wants a duo's tracer, a
+ * ripple's shells, an arc's lightning and a meltdown's beam on screen
+ * over the course of a scene, so the list is wide and the dice are the
+ * only thing choosing. Duo appears twice because a wall of duos is the
+ * most recognisable thing anyone ever builds in this game.
+ *
+ * SCATTER IS THE AA and is written into the bastion by name rather than
+ * rolled: it is the cheap answer to a flare, and a background with
+ * unanswered air in it is a background of things flying past. The tractor
+ * (parallax) and the naval turret (tsunami) sit it out — one deals no
+ * damage and the other only reaches water.
  */
-const GUNS: readonly { kind: TowerKind; weight: number }[] = [
-  { kind: "duo", weight: 6 },
-  { kind: "scatter", weight: 5 },
-  { kind: "hail", weight: 3 },
-  { kind: "scorch", weight: 3 },
-  { kind: "arc", weight: 3 },
-  { kind: "lancer", weight: 3 },
-  { kind: "salvo", weight: 3 },
-  { kind: "fuse", weight: 2 },
-  { kind: "ripple", weight: 2 },
-  { kind: "wave", weight: 1 },
-  { kind: "swarmer", weight: 2 },
-  { kind: "cyclone", weight: 2 },
-  { kind: "spectre", weight: 1 },
-  { kind: "meltdown", weight: 1 },
-  { kind: "foreshadow", weight: 1 },
+/** the ones: a firing line is ranks of these */
+const LIGHT: readonly TowerKind[] = ["duo", "duo", "hail", "scorch", "arc"];
+/** the twos: a block is a rectangle of these */
+const MEDIUM: readonly TowerKind[] = ["salvo", "scatter", "lancer", "swarmer", "wave"];
+/** the threes and fours a bastion is built around */
+const HEAVY: readonly TowerKind[] = [
+  "ripple",
+  "cyclone",
+  "fuse",
+  "spectre",
+  "meltdown",
+  "foreshadow",
 ];
-const GUN_TOTAL = GUNS.reduce((a, g) => a + g.weight, 0);
+/**
+ * THE SCREEN: the wall that stands between the swarm and the guns. Its
+ * whole job is to be shot at, which is why a post wears one — a rank of
+ * turrets with nothing in front of it is a rank that dies to the first
+ * mace.
+ */
+const SCREENS: readonly TowerKind[] = [
+  "copper-wall",
+  "titanium-wall",
+  "thorium-wall",
+  "copper-wall-large",
+  "titanium-wall-large",
+  "thorium-wall-large",
+];
 
 /** the camera's buckets, in cells — coarse enough that a fight fills one */
 const BUCKET = 12;
@@ -136,6 +159,13 @@ const BUCKETS_X = Math.ceil(COLS / BUCKET);
 const BUCKETS_Y = Math.ceil(ROWS / BUCKET);
 /** seconds between the camera choosing where to look */
 const LOOK_EVERY = 2.4;
+/**
+ * What one live effect is worth against one body when the camera scores a
+ * patch of field. Well over one, on purpose: a bucket of effects is a
+ * bucket where guns are firing and things are coming apart, and that is
+ * the thing worth looking at.
+ */
+const FX_WEIGHT = 2.5;
 
 /** roughly how many cells the viewport shows across, and the limits on a cell */
 const CELLS_ACROSS = 46;
@@ -170,27 +200,27 @@ const when = (open: boolean, w: Wave): Wave => (open ? w : {});
  */
 function menuScript(air: boolean, water: boolean): LevelSpec["script"] {
   return [
-    { wave: { dagger: 34, crawler: 22, ...when(air, { flare: 10 }) } },
+    { wave: { dagger: 80, crawler: 60, ...when(air, { flare: 20 }) } },
     {
       wave: {
-        dagger: 26, mace: 8, atrax: 14, nova: 8,
-        ...when(air, { flare: 8, horizon: 4 }),
-        ...when(water, { risso: 6 }),
+        dagger: 70, mace: 20, atrax: 34, nova: 18,
+        ...when(air, { flare: 18, horizon: 8 }),
+        ...when(water, { risso: 12 }),
       },
     },
     {
       wave: {
-        dagger: 36, crawler: 30, mace: 10, spiroct: 6, pulsar: 6,
-        ...when(air, { horizon: 6 }),
-        ...when(water, { minke: 4 }),
+        dagger: 90, crawler: 70, mace: 24, spiroct: 14, pulsar: 14,
+        ...when(air, { horizon: 14 }),
+        ...when(water, { minke: 8 }),
       },
     },
     {
       wave: {
-        dagger: 34, crawler: 26, mace: 10, fortress: 3, atrax: 10, spiroct: 5,
-        nova: 8, pulsar: 6, quasar: 3,
-        ...when(air, { flare: 10, horizon: 5, zenith: 3 }),
-        ...when(water, { minke: 3, bryde: 2 }),
+        dagger: 90, crawler: 66, mace: 26, fortress: 8, atrax: 26, spiroct: 12,
+        nova: 18, pulsar: 14, quasar: 6,
+        ...when(air, { flare: 24, horizon: 12, zenith: 6 }),
+        ...when(water, { minke: 6, bryde: 4 }),
       },
     },
   ];
@@ -217,14 +247,24 @@ function menuSpec(mapId: string): LevelSpec {
     name: "Attract",
     map: mapId,
     mission: { kind: "survive", minutes: 600 },
-    waveGap: 9,
+    waveGap: 7,
     script: menuScript(zones.has("air"), zones.has("water")),
   };
 }
 
-interface Spot {
+/** one placement in a formation's build order */
+interface Build {
+  gx: number;
+  gy: number;
+  kind: TowerKind;
+}
+
+/** a point on the walkers' route, with the direction they take through it */
+interface RoutePt {
   x: number;
   y: number;
+  dx: number;
+  dy: number;
 }
 
 /**
@@ -232,13 +272,13 @@ interface Spot {
  * handful of drop-zone cells spread across the map's doors and follow the
  * flow field's own gradient to the core, sampling as you go. This is the
  * route in the strict sense — the same vectors the units will steer by —
- * so a turret stood beside it is a turret in the fight, whatever shape
- * the map is.
+ * so a line stood beside it is a line in the fight, whatever shape the
+ * map is.
  */
-function routePoints(sim: Sim, rng: () => number): { x: number; y: number; nx: number; ny: number }[] {
+function routePoints(sim: Sim, rng: () => number): RoutePt[] {
   const field = sim.field;
   const starts = field.spawnPts;
-  const out: { x: number; y: number; nx: number; ny: number }[] = [];
+  const out: RoutePt[] = [];
   if (starts.length === 0) return out;
   const LANES = 6;
   const v = { x: 0, y: 0 };
@@ -250,7 +290,7 @@ function routePoints(sim: Sim, rng: () => number): { x: number; y: number; nx: n
     for (let step = 0; step < 1500; step++) {
       field.sample(x, y, v);
       if (v.x === 0 && v.y === 0) break; // a dead end: nothing walks on from here
-      if (step % 4 === 0) out.push({ x, y, nx: -v.y, ny: v.x });
+      if (step % 4 === 0) out.push({ x, y, dx: v.x, dy: v.y });
       x += v.x * CELL * 0.5;
       y += v.y * CELL * 0.5;
       const gx = clamp((x / CELL) | 0, 0, COLS - 1);
@@ -261,78 +301,148 @@ function routePoints(sim: Sim, rng: () => number): { x: number; y: number; nx: n
   return out;
 }
 
+const pick = <T,>(list: readonly T[], rng: () => number): T =>
+  list[Math.floor(rng() * list.length) % list.length];
+
 /**
- * Turret ground: STRONGPOINTS along the route, not a picket fence down
- * the whole of it.
+ * ONE STRONGPOINT, laid out the way a person lays one out.
  *
- * Seventy turrets spread evenly over a map this size is one gun every few
+ * A player does not sprinkle turrets. They pick a stretch of lane, run a
+ * WALL along it to eat the incoming fire, and rack the guns up behind it
+ * in RANKS — a row of duos, another row of duos, a block of salvos, a
+ * pair of heavies with a screen in front. Everything is one kind to a
+ * row, everything is flush against its neighbour, and the whole thing is
+ * square to the lane rather than to the compass.
+ *
+ * So that is what this builds. The lane's own direction at the post
+ * decides the axis (snapped to the grid: a rank reads as a rank only when
+ * it is straight), the caller says which shoulder, and the ranks are
+ * stacked outwards from a couple of cells of clear ground — the screen
+ * first, so it stands between the swarm and the guns, then the guns.
+ *
+ * Every cell is checked against the sim before it is queued, so a rank
+ * that runs into rock is simply cut short there. A post that cannot fit
+ * anything worth having is dropped and another stretch of lane is tried
+ * (see planBuilds), which is why a formation never comes out as three
+ * turrets in a puddle.
+ */
+function formation(sim: Sim, p: RoutePt, side: 1 | -1, rng: () => number): Build[] {
+  // the axis, snapped to the grid — a rank is straight or it is not a rank
+  const horizontal = Math.abs(p.dx) >= Math.abs(p.dy);
+  const cx = clamp(Math.round(p.x / CELL), 0, COLS - 1);
+  const cy = clamp(Math.round(p.y / CELL), 0, ROWS - 1);
+  const out: Build[] = [];
+  /** cells of open lane left in front of the screen */
+  let depth = 3;
+
+  /** one rank: `count` blocks of one kind, flush, centred on the post */
+  const rank = (kind: TowerKind, count: number): void => {
+    const s = TOWERS[kind].size;
+    const first = -Math.floor(count / 2) * s;
+    for (let i = 0; i < count; i++) {
+      const along = first + i * s;
+      // the footprint's top-left: outward is +depth on the near side and
+      // -(depth + s - 1) on the far one, so both shoulders leave the same
+      // gap of lane rather than one of them burying its screen in it
+      const away = side > 0 ? depth : -(depth + s - 1);
+      const gx = horizontal ? cx + along : cx + away;
+      const gy = horizontal ? cy + away : cy + along;
+      if (sim.canPlace(gx, gy, kind)) out.push({ gx, gy, kind });
+    }
+    depth += s;
+  };
+
+  // THE RANKS ARE CHOSEN FIRST so the screen in front can be cut to their
+  // width — a wall that overhangs the guns it covers is wasted, and one
+  // that falls short leaves an end open
+  const ranks: { kind: TowerKind; count: number }[] = [];
+  const shape = rng();
+  if (shape < 0.42) {
+    // A FIRING LINE: two ranks of ones, mostly the same gun twice
+    const gun = pick(LIGHT, rng);
+    const n = 6 + Math.floor(rng() * 4);
+    ranks.push({ kind: gun, count: n });
+    ranks.push({ kind: rng() < 0.65 ? gun : pick(LIGHT, rng), count: n });
+  } else if (shape < 0.78) {
+    // A BLOCK: a rectangle of 2x2s, two deep, with a rank of ones behind
+    const gun = pick(MEDIUM, rng);
+    const n = 3 + Math.floor(rng() * 2);
+    ranks.push({ kind: gun, count: n });
+    ranks.push({ kind: gun, count: n });
+    ranks.push({ kind: pick(LIGHT, rng), count: n * 2 });
+  } else {
+    // A BASTION: a pair of heavies, a rank of AA behind them, and ones
+    // behind that — the shape that goes up where a lane has to hold
+    const big = pick(HEAVY, rng);
+    ranks.push({ kind: big, count: 2 });
+    ranks.push({ kind: "scatter", count: 2 });
+    ranks.push({ kind: pick(LIGHT, rng), count: 4 + Math.floor(rng() * 3) });
+  }
+
+  const span = Math.max(...ranks.map((r) => r.count * TOWERS[r.kind].size));
+  // most posts wear a screen; the odd bare gun line is what a player
+  // leaves behind when the wave arrived before the walls did
+  if (rng() < 0.8) {
+    const wall = pick(SCREENS, rng);
+    rank(wall, Math.ceil(span / TOWERS[wall].size));
+  }
+  for (const r of ranks) rank(r.kind, r.count);
+  return out;
+}
+
+/**
+ * THE LINE, as a build order: a handful of strongpoints along the route
+ * rather than a picket fence down the whole of it.
+ *
+ * Turrets spread evenly over a map this size are one gun every few
  * screens — which is what a first pass at this did, and it put the camera
  * on a crowd walking through empty ground about as often as on a fight.
- * A handful of clusters is both what a player actually builds and what a
- * background needs: somewhere for a wave to break.
+ * Clusters are both what a player actually builds and what a background
+ * needs: somewhere for a wave to break.
  *
- * Each post takes a short run of the route and stands its guns off BOTH
- * shoulders, a couple of cells clear, so the lane through it stays open —
- * a line built ACROSS the road is a wall the swarm stops and chews, which
- * is a duller picture than one it has to walk past.
- *
- * The posts are interleaved rather than concatenated, so the opening
- * burst raises all of them a little instead of finishing the first two.
+ * Posts are kept WHOLE in the queue rather than interleaved, so a burst
+ * that runs out halfway down the list leaves finished formations and bare
+ * ground rather than a scatter of singles everywhere.
  */
-function planSpots(sim: Sim, rng: () => number): Spot[] {
+function planBuilds(sim: Sim, rng: () => number): Build[] {
   const route = routePoints(sim, rng);
   if (route.length === 0) return [];
-  const POSTS = 5;
-  /** route samples either side of a post's centre */
-  const SPAN = 5;
-  const posts: Spot[][] = [];
+  const POSTS = 4;
+  /** a formation with fewer cells than this is a puddle, not a post */
+  const WORTH = 10;
+  const out: Build[] = [];
   for (let p = 0; p < POSTS; p++) {
-    const at = Math.floor(((p + 0.15 + rng() * 0.7) / POSTS) * route.length);
-    const post: Spot[] = [];
-    for (let i = Math.max(0, at - SPAN); i < Math.min(route.length, at + SPAN); i++) {
-      const q = route[i];
-      for (const side of [-1, 1]) {
-        const off = (2.2 + rng() * 3.2) * CELL;
-        post.push({ x: q.x + q.nx * side * off, y: q.y + q.ny * side * off });
+    // each post owns a stretch of the route and picks its own spot in it,
+    // so two posts never land on top of each other
+    for (let tries = 0; tries < 6; tries++) {
+      const at = Math.floor(((p + rng()) / POSTS) * route.length) % route.length;
+      // BOTH SHOULDERS ARE LAID OUT AND THE BETTER ONE KEPT. One side of
+      // a lane is often water or a cliff, and a formation that rolled
+      // that side came out as the three cells of it that fitted — which
+      // is exactly the scatter this is here to stop
+      const a = formation(sim, route[at], 1, rng);
+      const b = formation(sim, route[at], -1, rng);
+      const built = a.length >= b.length ? a : b;
+      if (built.length >= WORTH) {
+        out.push(...built);
+        break;
       }
     }
-    for (let i = post.length - 1; i > 0; i--) {
-      const j = Math.floor(rng() * (i + 1));
-      [post[i], post[j]] = [post[j], post[i]];
-    }
-    posts.push(post);
   }
-  const spots: Spot[] = [];
-  const longest = Math.max(...posts.map((p) => p.length));
-  for (let i = 0; i < longest; i += 2)
-    for (const post of posts) spots.push(...post.slice(i, i + 2));
-  return spots;
-}
-
-function pickGun(rng: () => number): TowerKind {
-  let r = rng() * GUN_TOTAL;
-  for (const g of GUNS) {
-    r -= g.weight;
-    if (r <= 0) return g.kind;
-  }
-  return GUNS[0].kind;
+  return out;
 }
 
 /**
- * Stand one turret, at the next spot that will take one. A spot is spent
- * whether or not it worked — the ground may be rock, another turret, or
- * simply have somebody standing on it (Sim.canPlace refuses all three) —
- * and the caller re-plans when the list runs out.
+ * Stand the next thing in the queue. A cell that will not take one is
+ * dropped and the next tried — the ground may have been taken, or have
+ * somebody standing on it (Sim.canPlace refuses both), and a rank with a
+ * gap in it is what a line under fire looks like anyway.
  */
-function placeOne(sim: Sim, spots: Spot[], rng: () => number): boolean {
-  for (let tries = 0; tries < 32; tries++) {
-    const s = spots.shift();
-    if (!s) return false;
-    const kind = pickGun(rng);
-    const size = TOWERS[kind].size;
-    const gx = Math.round(s.x / CELL - size / 2);
-    const gy = Math.round(s.y / CELL - size / 2);
-    if (sim.placeTower(gx, gy, kind) === "ok") return true;
+function placeNext(sim: Sim, queue: Build[]): boolean {
+  for (let tries = 0; tries < 48; tries++) {
+    const b = queue.shift();
+    if (!b) return false;
+    if (sim.placeTower(b.gx, b.gy, b.kind) === "ok") return true;
   }
   return false;
 }
@@ -391,7 +501,7 @@ export default function MenuBackground({
     let drawn = false;
 
     // the line's builder
-    let spots: Spot[] = [];
+    let queue: Build[] = [];
     let buildT = 0;
     let replanT = 0;
 
@@ -406,16 +516,26 @@ export default function MenuBackground({
     const worldH = (): number => (sim ? sim.terrain.rows * CELL : ROWS * CELL);
 
     /**
-     * WHERE THE FIGHT IS: the coarsest possible answer, which is all a
-     * camera needs. Bodies are counted into buckets a dozen cells across
-     * and a bucket standing turrets counts for more, so the eye is taken
-     * to a wave breaking on a line rather than to the biggest crowd —
-     * which, early in a scene, is a crowd walking through empty ground.
+     * WHERE THE FIGHT IS. Bodies are counted into buckets a dozen cells
+     * across — and so are the sim's EFFECTS, which is the part that
+     * matters: a muzzle flash, a shell burst, a death puff and a burning
+     * body are all effects, so the effect pool is a direct map of where
+     * something is happening. A crowd walking through empty ground makes
+     * none of them.
+     *
+     * Standing guns get a small nudge on top, so that when the field IS
+     * quiet the camera waits somewhere a wave will arrive rather than
+     * somewhere it has already passed. An earlier version made guns a
+     * hard requirement and it looked at a post with three stragglers
+     * dying at it while eighty bodies walked a lane off screen.
      */
     const lookAt = (s: Sim): void => {
       score.fill(0);
       guns.fill(0);
       for (const t of s.towers) {
+        // a wall is not a gun: a bucket holding nothing but a screen is a
+        // bucket where nothing is being shot
+        if (TOWERS[t.kind].wall) continue;
         const bx = clamp((t.gx / BUCKET) | 0, 0, BUCKETS_X - 1);
         const by = clamp((t.gy / BUCKET) | 0, 0, BUCKETS_Y - 1);
         guns[by * BUCKETS_X + bx] += 1;
@@ -425,20 +545,16 @@ export default function MenuBackground({
         const by = clamp((s.upy[i] / (CELL * BUCKET)) | 0, 0, BUCKETS_Y - 1);
         score[by * BUCKETS_X + bx] += 1;
       }
-      // a bucket holding both is a bucket where a wave is breaking on a
-      // line, and one of those beats the biggest crowd on the map every
-      // time — so where any exists, nothing else is even considered
-      let contested = false;
-      for (let i = 0; i < score.length; i++)
-        if (score[i] > 0 && guns[i] > 0) {
-          contested = true;
-          break;
-        }
+      for (let e = 0; e < s.fxN; e++) {
+        const bx = clamp((s.fxX[e] / (CELL * BUCKET)) | 0, 0, BUCKETS_X - 1);
+        const by = clamp((s.fxY[e] / (CELL * BUCKET)) | 0, 0, BUCKETS_Y - 1);
+        score[by * BUCKETS_X + bx] += FX_WEIGHT;
+      }
       let best = -1;
       let bestAt = -1;
       for (let i = 0; i < score.length; i++) {
-        if (score[i] === 0 || (contested && guns[i] === 0)) continue;
-        const v = score[i] * (1 + Math.min(4, guns[i]) * 0.5);
+        if (score[i] === 0) continue;
+        const v = score[i] * (1 + Math.min(4, guns[i]) * 0.3);
         if (v > best) {
           best = v;
           bestAt = i;
@@ -459,15 +575,20 @@ export default function MenuBackground({
     const advance = (dt: number): void => {
       const s = sim;
       if (!s) return;
+      replanT -= dt;
       buildT -= dt;
       if (buildT <= 0) {
         buildT = BUILD_EVERY;
-        if (s.towers.length < MAX_TURRETS && !placeOne(s, spots, rng)) replanT = 0;
-      }
-      replanT -= dt;
-      if (replanT <= 0) {
-        replanT = REPLAN_EVERY;
-        spots = planSpots(s, rng);
+        // A PLAN IS FINISHED BEFORE ANOTHER IS DRAWN UP. Replacing the
+        // queue on a timer left every post half-built — a rank of three
+        // duos and a wall going nowhere — because a placement a second
+        // never gets through a hundred-cell plan in fourteen seconds. A
+        // fresh route is only traced once the last one is spent, and the
+        // route HAS changed by then: what was built on it changed it
+        if (s.towers.length < MAX_TURRETS && !placeNext(s, queue) && replanT <= 0) {
+          queue = planBuilds(s, rng);
+          replanT = REPLAN_EVERY;
+        }
       }
       s.update(dt);
     };
@@ -494,14 +615,17 @@ export default function MenuBackground({
         },
         () => {
           const s = sim!;
-          spots = planSpots(s, rng);
-          // the opening line goes up on empty ground, where nothing can be
-          // standing in the way of it — hence before a single sim step
-          for (let i = 0; i < OPENING_TURRETS; i++)
-            if (!placeOne(s, spots, rng)) {
-              spots = planSpots(s, rng);
-              if (!placeOne(s, spots, rng)) break;
-            }
+          // THE OPENING LINE goes up on empty ground, where nothing can be
+          // standing in the way of it — hence before a single sim step.
+          // Plans are built OUT, not counted out: a post is worth having
+          // whole, so the round ends when the plan is spent and another
+          // is drawn up only if the field is still thin
+          queue = [];
+          for (let round = 0; round < 3 && s.towers.length < OPENING_TURRETS; round++) {
+            if (queue.length === 0) queue = planBuilds(s, rng);
+            if (queue.length === 0) break;
+            while (s.towers.length < OPENING_TURRETS && placeNext(s, queue));
+          }
           buildT = BUILD_EVERY;
           replanT = REPLAN_EVERY;
           camReady = false;

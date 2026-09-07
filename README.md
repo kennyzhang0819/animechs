@@ -134,12 +134,17 @@ stale tab or a cached bundle looks exactly like a fix not working.
   drawn by the same renderer, so the bodies walking the lane are a wave's
   bodies on the real flow field and the turrets shooting them are real
   turrets with the sim's own shells, beams, smoke and deaths. Nobody is
-  playing, so it builds its own line: it traces the walkers' route down
-  the flow field and stands strongpoints of turrets off its shoulders, a
-  burst before the scene is shown and one every `BUILD_EVERY` after,
-  which is also how the line is repaired as the swarm eats it. The camera
-  finds the busiest patch of field, preferring one with guns in it, and
-  eases there. Each campaign map gets its turn: a scene holds for
+  playing, so it builds its own line, and it builds it the way a person
+  does: it traces the walkers' route down the flow field, picks a handful
+  of stretches of it, and lays a real formation on each — a wall screen
+  along the lane with ranks of guns racked up behind it, one kind to a
+  rank, flush, square to the lane. A firing line of duos, a block of
+  salvos, a bastion round a pair of heavies. A burst of it goes up before
+  the scene is shown and one placement every `BUILD_EVERY` after, which
+  is also how the line is repaired as the swarm eats it. The camera
+  scores the field by bodies AND by live effects — a muzzle flash, a
+  shell burst, a dying unit — so it finds the fight rather than the
+  biggest crowd, and eases there. Each campaign map gets its turn: a scene holds for
   `SCENE_HOLD` seconds, goes to black, and the next map is built behind
   the black one piece of work per frame so nothing lands as a freeze. It
   holds still under prefers-reduced-motion and stops when the tab is
