@@ -17,8 +17,9 @@ no touch input and no phone layout. `npm run desktop:dev` runs the dev
 server inside the shell, which is where to develop; `npm run desktop`
 builds and launches the static export; `npm run desktop:pack:steam`
 leaves the Windows and Linux depots under `desktop/release/`. The shell
-lives in `desktop/` (its own npm package — `cd desktop && npm install`
-once); see [docs/desktop.md](docs/desktop.md).
+lives in `desktop/` (its own npm package; `npm run desktop:dev` installs it
+on first run, or `cd desktop && npm install` by hand); see
+[docs/desktop.md](docs/desktop.md).
 
 ### Build number
 

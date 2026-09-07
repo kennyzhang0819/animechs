@@ -32,9 +32,10 @@ npm run build:static           # BUILD_TARGET=static export → out/
 npm --prefix desktop run start # compile desktop/src → desktop/dist, run Electron
 ```
 
-`desktop/` is its own npm package (`cd desktop && npm install` once) so
-that Electron, electron-builder and steamworks.js stay out of the web
-build, and so that the packed app carries steamworks.js and nothing else
+`desktop/` is its own npm package (`npm run desktop:dev` runs `npm ci`
+there on first run; by hand, `cd desktop && npm install` once — Electron
+fetches its binary in that package's postinstall) so that Electron,
+electron-builder and steamworks.js stay out of the web build, and so that the packed app carries steamworks.js and nothing else
 from `node_modules` — never Next or React, which are already compiled
 into `out/`.
 
