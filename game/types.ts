@@ -34,7 +34,7 @@ export const TOWER_KINDS = [
   "wave",
   "parallax",
   "tsunami",
-  // extreme and eradication
+  // extreme and nemesis
   "swarmer",
   "cyclone",
   "spectre",

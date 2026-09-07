@@ -24,7 +24,7 @@ import { TOWER_KINDS } from "./types";
 import { Renderer } from "./renderer";
 import { fitZoom } from "./fit";
 import { Sim } from "./sim";
-import type { TechState } from "./tech";
+import { BAR_SLOTS, type TechState } from "./tech";
 import type { Tower } from "./types";
 
 export interface UiState {
@@ -40,6 +40,8 @@ export interface UiState {
   bosses: { id: number; kind: UnitKind; hp: number; max: number }[];
   /** seconds until the next wave, or 0 while one is already coming in */
   nextWaveIn: number;
+  /** seconds of simulated time since the run started (Sim.time) */
+  elapsed: number;
   /** 1-based wave now on the field, out of how many the level holds */
   currentWave: number;
   totalWaves: number;
@@ -83,8 +85,8 @@ export interface UiState {
   counts: Record<TowerKind, number>;
   /** the turrets the save may field; null = unrestricted (editor, sandbox) */
   unlocked: readonly TowerKind[] | null;
-  /** loadout slots the build bar holds (the whole roster); null = sandbox, uncapped */
-  barSlots: number | null;
+  /** loadout slots the build bar holds — BAR_SLOTS everywhere, sandbox included */
+  barSlots: number;
 }
 
 export interface Stats {
@@ -859,6 +861,7 @@ export class Game {
       byKind: this.sim.aliveByKindList(),
       bosses: this.sim.bossBars().map((b) => ({ ...b, kind: UNIT_KINDS[b.kind] })),
       nextWaveIn: this.sim.nextWaveIn(),
+      elapsed: this.sim.time,
       currentWave: this.sim.currentWave(),
       totalWaves: this.sim.totalWaves,
       buildKind: this.buildKind,
@@ -880,9 +883,10 @@ export class Game {
       refunds: REFUNDS(),
       counts: this.sim.towerCounts(),
       unlocked: this.tech ? Array.from(this.tech.unlocked) : null,
-      // sandbox stages runs for filming with the whole roster — the loadout
-      // cap is a campaign rule, so null lifts it there like the others
-      barSlots: this.tech ? this.tech.barSlots : null,
+      // the bar is eight slots wide EVERYWHERE, sandbox and admin
+      // included: the whole roster laid out at once is a wall of buttons,
+      // and picking eight of it is the loadout decision either way
+      barSlots: BAR_SLOTS,
     };
   }
 
@@ -1144,22 +1148,27 @@ export class Game {
     // ordinary floor a player may want to look at and build near
     if (this.showRoutes) {
       for (const r of this.sim.airRoutes()) {
+        const p = r.pts;
+        if (p.length < 4) continue;
         const col = zoneStyle(r.zone).css;
         c.strokeStyle = col;
         c.globalAlpha = 0.5;
         c.lineWidth = 2;
         c.setLineDash([10, 8]);
         c.beginPath();
-        c.moveTo(r.x1, r.y1);
-        c.lineTo(r.x2, r.y2);
+        c.moveTo(p[0], p[1]);
+        for (let k = 2; k < p.length; k += 2) c.lineTo(p[k], p[k + 1]);
         c.stroke();
         c.setLineDash([]);
-        // the arrowhead settles which end is the destination
-        const a = Math.atan2(r.y2 - r.y1, r.x2 - r.x1);
-        const hx = r.x2 - Math.cos(a) * 14, hy = r.y2 - Math.sin(a) * 14;
+        // the arrowhead settles which end is the destination, and it lies
+        // along the LAST leg — the route is a curve now, so the heading of
+        // the whole line is not the heading it arrives on
+        const ex = p[p.length - 2], ey = p[p.length - 1];
+        const a = Math.atan2(ey - p[p.length - 3], ex - p[p.length - 4]);
+        const hx = ex - Math.cos(a) * 14, hy = ey - Math.sin(a) * 14;
         c.globalAlpha = 0.85;
         c.beginPath();
-        c.moveTo(r.x2, r.y2);
+        c.moveTo(ex, ey);
         c.lineTo(hx - Math.sin(a) * 7, hy + Math.cos(a) * 7);
         c.lineTo(hx + Math.sin(a) * 7, hy - Math.cos(a) * 7);
         c.closePath();

@@ -143,7 +143,7 @@ function IconButton({
       aria-label={label}
       onClick={onClick}
       disabled={disabled}
-      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded border text-[13px] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded border text-[15px] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
         disabled
           ? "cursor-not-allowed border-[#222227] text-[#4A4A55]"
           : danger
@@ -187,7 +187,7 @@ function NumberInput({
         const n = Number(e.target.value);
         onChange(Number.isFinite(n) ? Math.max(min, Math.floor(n)) : min);
       }}
-      className={`${width} rounded border border-[#2E2E36] bg-[#0B0B0D] px-1.5 py-0.5 text-right text-[14px] font-bold text-[#EDEDEF] focus:border-[#FFD37F] focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+      className={`${width} rounded border border-[#2E2E36] bg-[#0B0B0D] px-1.5 py-0.5 text-right text-[16px] font-bold text-[#EDEDEF] focus:border-[#FFD37F] focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
     />
   );
 }
@@ -201,9 +201,10 @@ export default function LevelEditorView({
   level: LevelSpec;
   onClose: () => void;
 }) {
-  // THE BUFFER IS THIS WORLD'S OWN SCRIPT — raw counts from its document
-  // (public/levels/<id>.json); the world contributes its map, its mission
-  // and the lens the audit below prices through.
+  // THE BUFFER IS THE CAMPAIGN'S SCRIPT — raw counts from the one document
+  // every map plays (public/levels/campaign.json); the world contributes
+  // its map, its mission and the lens the audit below prices through. A
+  // save from any world's editor is a save of the campaign.
   const [steps, setSteps] = useState<EditStep[]>(() => toEditSteps(levelDocOf(level.id).script));
   const [waveGap, setWaveGap] = useState(levelDocOf(level.id).waveGap);
   const [dirty, setDirty] = useState(false);
@@ -300,7 +301,7 @@ export default function LevelEditorView({
               {level.name} — level editor
               {dirty && <span className="ml-1 text-[#F0B457]">●</span>}
             </h1>
-            <p className="text-[14px] text-[#71717C]">
+            <p className="text-[16px] text-[#71717C]">
               World {level.id} · map <span className="text-[#A6A6AF]">{mapId}</span> · mission{" "}
               <span className="text-[#A6A6AF]">{missionText({ ...level, script }).title}</span> ·
               edits public/levels/{level.id}.json
@@ -310,20 +311,20 @@ export default function LevelEditorView({
             <button
               onClick={save}
               disabled={saving}
-              className="rounded border border-[#FFD37F] bg-[#222227] px-4 py-1.5 text-[14px] font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] disabled:opacity-50"
+              className="rounded border border-[#FFD37F] bg-[#222227] px-4 py-1.5 text-[16px] font-bold uppercase tracking-widest text-[#FFD37F] hover:bg-[#2B2B32] disabled:opacity-50"
             >
               {saving ? "Saving…" : saveError ? "Save failed — retry" : "Save"}
             </button>
             {/* the route explains every refusal; show it rather than
                 leaving the author guessing at a rejected script */}
             {saveError && (
-              <p role="alert" className="max-w-xs text-[13px] leading-snug text-[#F08A8A]">
+              <p role="alert" className="max-w-xs text-[15px] leading-snug text-[#F08A8A]">
                 {saveError}
               </p>
             )}
             <button
               onClick={back}
-              className="rounded border border-[#2E2E36] px-4 py-1.5 text-[14px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55]"
+              className="rounded border border-[#2E2E36] px-4 py-1.5 text-[16px] uppercase tracking-widest text-[#A6A6AF] hover:border-[#4A4A55]"
             >
               Back
             </button>
@@ -337,15 +338,15 @@ export default function LevelEditorView({
             <ZoneKey mapId={mapId} zones={mapZones} />
 
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
-              <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
+              <h2 className="mb-2 text-[14px] font-bold uppercase tracking-widest text-[#71717C]">
                 Level
               </h2>
-              <p className="mb-3 text-[13px] leading-snug text-[#71717C]">
+              <p className="mb-3 text-[15px] leading-snug text-[#71717C]">
                 Every wave walks on over {WAVE_RELEASE_SECONDS}s whatever its
                 size, so a bigger wave arrives harder rather than later. Waves
                 the drop zones cannot pass that fast simply queue.
               </p>
-              <label className="flex items-center justify-between gap-2 text-[14px] text-[#A6A6AF]">
+              <label className="flex items-center justify-between gap-2 text-[16px] text-[#A6A6AF]">
                 Time between waves
                 <NumberInput
                   value={waveGap}
@@ -355,7 +356,7 @@ export default function LevelEditorView({
                   }}
                 />
               </label>
-              <p className="mt-1 text-[13px] leading-snug text-[#71717C]">
+              <p className="mt-1 text-[15px] leading-snug text-[#71717C]">
                 Seconds held before each wave. The clock starts when the previous wave has
                 finished entering, not when it dies.
               </p>
@@ -369,22 +370,22 @@ export default function LevelEditorView({
                 tier the run never fields, one that buys hundreds was the
                 previous stage's turret with a bigger number on it. */}
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
-              <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
+              <h2 className="mb-2 text-[14px] font-bold uppercase tracking-widest text-[#71717C]">
                 Stages
               </h2>
               <div className="space-y-2">
                 {stageAudit({ ...level, waveGap, script }).map((s) => (
                   <div key={s.tier}>
                     <div className="flex items-baseline justify-between">
-                      <span className="text-[13px] font-bold text-[#EDEDEF]">
+                      <span className="text-[15px] font-bold text-[#EDEDEF]">
                         Tier {s.tier} · waves {s.from}–{s.to}
                       </span>
-                      <span className="text-[12px] text-[#71717C]">
+                      <span className="text-[14px] text-[#71717C]">
                         {s.units.toLocaleString()} enemies
                       </span>
                     </div>
                     <DropRow drop={{ scrap: s.scrap, xp: s.xp }} />
-                    <div className="text-[12px] text-[#71717C]">
+                    <div className="text-[14px] text-[#71717C]">
                       buys{" "}
                       <span className="font-bold text-[#A6A6AF]">{s.boards}</span> tier-{s.tier}{" "}
                       turrets at {s.mean} (from {s.cheapest} to {s.dearest})
@@ -395,10 +396,10 @@ export default function LevelEditorView({
               {/* THE XP LADDER, once: every rung sends the same waves, so
                   the only column that moves is the bonus */}
               <div className="mt-2 border-t border-[#2E2E36] pt-2">
-                <div className="mb-1 text-[12px] uppercase tracking-widest text-[#71717C]">
+                <div className="mb-1 text-[14px] uppercase tracking-widest text-[#71717C]">
                   XP per rung
                 </div>
-                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12px]">
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[14px]">
                   {report.rows.map((r) => (
                     <div key={r.tier} className="flex items-baseline justify-between">
                       <span className="font-bold" style={{ color: rungColor(r.tier) }}>
@@ -410,7 +411,7 @@ export default function LevelEditorView({
                     </div>
                   ))}
                 </div>
-                <p className="mt-1 text-[12px] leading-snug text-[#71717C]">
+                <p className="mt-1 text-[14px] leading-snug text-[#71717C]">
                   Scrap is fixed per kill and the same on every rung; the rung
                   multiplies the XP, and a random map pays a quarter more.
                 </p>
@@ -418,10 +419,10 @@ export default function LevelEditorView({
             </section>
 
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
-              <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
+              <h2 className="mb-2 text-[14px] font-bold uppercase tracking-widest text-[#71717C]">
                 Totals
               </h2>
-              <dl className="space-y-1 text-[14px]">
+              <dl className="space-y-1 text-[16px]">
                 <Row label="Waves" value={String(summary.waves)} />
                 <Row label="Enemies" value={String(summary.enemies)} />
                 <Row label="Gap time" value={`${summary.waves * waveGap}s`} />
@@ -431,7 +432,7 @@ export default function LevelEditorView({
                 />
               </dl>
               <div className="mt-2 border-t border-[#2E2E36] pt-2">
-                <div className="mb-1 text-[12px] uppercase tracking-widest text-[#71717C]">
+                <div className="mb-1 text-[14px] uppercase tracking-widest text-[#71717C]">
                   Full-clear payout
                 </div>
                 <DropRow drop={summary.payout} />
@@ -482,7 +483,7 @@ export default function LevelEditorView({
               );
             })}
             {steps.length === 0 && (
-              <p className="py-8 text-center text-[14px] text-[#71717C]">
+              <p className="py-8 text-center text-[16px] text-[#71717C]">
                 Empty script — add a wave to begin.
               </p>
             )}
@@ -558,14 +559,14 @@ function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement
   return (
     <div className="sticky top-0 z-10 rounded-lg border border-[#2E2E36] bg-[#151518] p-2.5">
       <div className="mb-1.5 flex items-baseline justify-between gap-2">
-        <h2 className="text-[12px] font-bold uppercase tracking-widest text-[#71717C]">Ramp</h2>
+        <h2 className="text-[14px] font-bold uppercase tracking-widest text-[#71717C]">Ramp</h2>
         <span className="flex gap-1">
           {(["hp", "units"] as const).map((m) => (
             <button
               key={m}
               aria-pressed={metric === m}
               onClick={() => setMetric(m)}
-              className={`rounded px-1.5 text-[11px] uppercase tracking-wider ${
+              className={`rounded px-1.5 text-[13px] uppercase tracking-wider ${
                 metric === m ? "text-[#FFD37F]" : "text-[#4A4A55] hover:text-[#71717C]"
               }`}
             >
@@ -613,7 +614,7 @@ function RampChart({ waves }: { waves: readonly WaveRow[] }): React.ReactElement
           />
         )}
       </div>
-      <div className="mt-1 flex justify-between gap-2 text-[11px]">
+      <div className="mt-1 flex justify-between gap-2 text-[13px]">
         {at === null ? (
           <>
             <span className="text-[#4A4A55]">wave 1</span>
@@ -647,11 +648,11 @@ function ZoneKey({ mapId, zones }: { mapId: string; zones: readonly ZoneKind[] }
   }, [mapId]);
   return (
     <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
-      <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
+      <h2 className="mb-2 text-[14px] font-bold uppercase tracking-widest text-[#71717C]">
         Drop zones
       </h2>
       <canvas ref={ref} className="w-full rounded border border-[#2E2E36] [image-rendering:pixelated]" />
-      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[13px]">
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[15px]">
         {zones.length === 0 ? (
           <span className="text-[#FF8A8A]">no drop zones — paint some in the map editor</span>
         ) : (
@@ -677,7 +678,7 @@ function InsertBar({ onInsert }: { onInsert: () => void }) {
       <div className="h-px flex-1 bg-[#1E1E24]" />
       <button
         onClick={onInsert}
-        className="rounded border border-[#2E2E36] px-2 py-0.5 text-[12px] uppercase tracking-widest text-[#71717C] opacity-0 transition-opacity hover:border-[#FFD37F] hover:text-[#FFD37F] focus-visible:opacity-100 group-hover:opacity-100"
+        className="rounded border border-[#2E2E36] px-2 py-0.5 text-[14px] uppercase tracking-widest text-[#71717C] opacity-0 transition-opacity hover:border-[#FFD37F] hover:text-[#FFD37F] focus-visible:opacity-100 group-hover:opacity-100"
       >
         + Wave
       </button>
@@ -730,7 +731,7 @@ function StepCard({
   return (
     <div className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
       <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="text-[14px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+        <span className="text-[16px] font-bold uppercase tracking-widest text-[#EDEDEF]">
           Wave {waveNo}
         </span>
         {/* NO RUNG BADGE. A wave used to carry the difficulty it first
@@ -739,11 +740,11 @@ function StepCard({
             wave now, so a wave's position says nothing about which rungs
             play it — only about how deep into the run it lands, which is
             the wave number already printed beside this */}
-        <span className="text-[13px] text-[#71717C]">{total} enemies</span>
+        <span className="text-[15px] text-[#71717C]">{total} enemies</span>
         {/* the number guide, per wave: what this wave weighs. The ramp
             chart is where its slice of the run is read now */}
         {guide && (
-          <span className="text-[13px] font-bold text-[#A6A6AF]">{compactHp(guide.hp)} hp</span>
+          <span className="text-[15px] font-bold text-[#A6A6AF]">{compactHp(guide.hp)} hp</span>
         )}
         <DropRow drop={payout} />
         <div className="ml-auto">{controls}</div>
@@ -762,7 +763,7 @@ function StepCard({
       <div className="mt-1.5 space-y-1">
         {UNIT_TREES.map((tree) => (
           <div key={tree.name} className="flex items-center gap-1.5">
-            <span className="w-16 shrink-0 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
+            <span className="w-16 shrink-0 text-[14px] font-bold uppercase tracking-widest text-[#71717C]">
               {tree.name}
             </span>
             {tree.kinds.map((kind) => (

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Chakra_Petch, IBM_Plex_Mono } from "next/font/google";
+import { Barlow, Chakra_Petch, IBM_Plex_Mono } from "next/font/google";
 import AdminShortcut from "@/components/AdminShortcut";
 import { BUILD } from "@/game/version";
 import "./globals.css";
@@ -8,6 +8,14 @@ const display = Chakra_Petch({
   weight: ["600", "700"],
   subsets: ["latin"],
   variable: "--font-display",
+});
+
+// THE BODY FACE: a sturdy industrial sans. The mono used to carry the body
+// as well and read too thin at small sizes; it stays for numbers only.
+const body = Barlow({
+  weight: ["500", "600", "700"],
+  subsets: ["latin"],
+  variable: "--font-body",
 });
 
 const mono = IBM_Plex_Mono({
@@ -31,7 +39,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${display.variable} ${mono.variable} font-mono font-medium bg-[#0B0B0D] text-[15px] leading-snug text-[#C9C9D4] antialiased`}>
+      <body className={`${display.variable} ${body.variable} ${mono.variable} font-body font-medium bg-[#0B0B0D] text-[18px] leading-snug text-[#C9C9D4] antialiased`}>
         <AdminShortcut />
         {children}
         {/* the build stamp: the only proof of WHICH build this browser is

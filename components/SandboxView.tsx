@@ -27,7 +27,9 @@ import { WORLDS } from "@/game/levels";
  *
  * IT IS NOT A DIFFICULTY PICKER AND MUST NEVER BECOME ONE. The run it
  * starts is a SANDBOX run — the whole tech tree unlocked, every placement
- * cap lifted, every game speed offered (MechSwarm's `admin` mode) — so
+ * cap lifted, every game speed offered (MechSwarm's `admin` mode; the
+ * build bar's eight slots still hold, so a sandbox run picks a loadout
+ * like any other) — so
  * nothing it banks is a claim about the campaign's balance, and the panel
  * says so rather than leaving it to be inferred.
  *
@@ -68,17 +70,18 @@ export default function SandboxView() {
 
   return (
     <div className="space-y-6">
-      <p className="max-w-3xl text-[13px] text-[#71717C]">
+      <p className="max-w-3xl text-[15px] text-[#71717C]">
         Deploy a run under <span className="text-[#A6A6AF]">exactly</span> the rules ticked
         below — the only place in the game where a mutator is chosen rather than rolled. The
         run starts in <span className="text-[#A6A6AF]">sandbox mode</span>: the whole tech
-        tree unlocked, placement caps lifted and every game speed available, so nothing it
-        banks says anything about campaign balance.
+        tree unlocked, placement caps lifted and every game speed available (the build bar
+        still holds eight slots, so pick a loadout), so nothing it banks says anything about
+        campaign balance.
       </p>
 
       {/* WORLD */}
       <section>
-        <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
+        <h2 className="mb-2 text-[14px] font-bold uppercase tracking-widest text-[#71717C]">
           World
         </h2>
         <div className="flex flex-wrap gap-2">
@@ -86,14 +89,14 @@ export default function SandboxView() {
             <button
               key={w.id}
               onClick={() => setWorldId(w.id)}
-              className={`rounded border px-3 py-2 text-[13px] font-bold transition-colors ${
+              className={`rounded border px-3 py-2 text-[15px] font-bold transition-colors ${
                 worldId === w.id
                   ? "border-[#EDEDEF] bg-[#EDEDEF]/10 text-[#EDEDEF]"
                   : "border-[#2E2E36] text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF]"
               }`}
             >
               {w.name}
-              <span className="ml-2 text-[11px] font-normal uppercase tracking-widest text-[#71717C]">
+              <span className="ml-2 text-[13px] font-normal uppercase tracking-widest text-[#71717C]">
                 {w.map ?? "default map"}
               </span>
             </button>
@@ -103,7 +106,7 @@ export default function SandboxView() {
 
       {/* TIER */}
       <section>
-        <h2 className="mb-2 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
+        <h2 className="mb-2 text-[14px] font-bold uppercase tracking-widest text-[#71717C]">
           Difficulty — enemy level, the roll it would make, and payout
         </h2>
         <div className="flex flex-wrap gap-1.5">
@@ -111,7 +114,7 @@ export default function SandboxView() {
             <button
               key={i}
               onClick={() => setTier(i)}
-              className={`w-[4.5rem] rounded border px-2 py-1.5 text-[12px] font-bold transition-colors ${
+              className={`w-[4.5rem] rounded border px-2 py-1.5 text-[14px] font-bold transition-colors ${
                 tier === i
                   ? "border-current bg-white/10"
                   : "border-[#2E2E36] hover:border-[#4A4A55]"
@@ -122,37 +125,22 @@ export default function SandboxView() {
             </button>
           ))}
         </div>
-        <p className="mt-2 text-[12px] text-[#71717C]">
+        <p className="mt-2 text-[14px] text-[#71717C]">
           {rungLabel(tier)} would roll{" "}
           <span className="text-[#A6A6AF]">
             {rolls} rule{rolls === 1 ? "" : "s"}
           </span>{" "}
           for <span className="text-[#A6A6AF]">{budget} points</span> in the campaign.
         </p>
-        {/* a world's OWN rules are not ticked and cannot be un-ticked: they
-            are what that world is (LevelSpec.intrinsicMutation), and a
-            sandbox that quietly dropped them would be testing a level the
-            campaign does not have */}
-        {(world.intrinsicMutation ?? []).length > 0 && (
-          <p className="mt-1 text-[12px] text-[#71717C]">
-            {world.name} is always played under{" "}
-            <span className="text-[#A6A6AF]">
-              {(world.intrinsicMutation ?? [])
-                .map((id) => mutationById(id)?.name ?? id)
-                .join(", ")}
-            </span>{" "}
-            — by design, at every tier, on top of anything ticked below.
-          </p>
-        )}
       </section>
 
       {/* MUTATORS */}
       <section>
         <div className="mb-2 flex items-baseline justify-between gap-3">
-          <h2 className="text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
+          <h2 className="text-[14px] font-bold uppercase tracking-widest text-[#71717C]">
             Mutators — tick any, in any combination
           </h2>
-          <span className="text-[12px] tracking-widest">
+          <span className="text-[14px] tracking-widest">
             <span className={over ? "text-[#FFB65C]" : "text-[#A6A6AF]"}>{spent} pts</span>
             <span className="text-[#71717C]">
               {" "}
@@ -180,16 +168,16 @@ export default function SandboxView() {
               >
                 <div className="flex items-baseline justify-between gap-2">
                   <span
-                    className="text-[13px] font-bold"
+                    className="text-[15px] font-bold"
                     style={{ color: on ? band : "#A6A6AF" }}
                   >
                     {m.name}
                   </span>
-                  <span className="shrink-0 text-[11px] uppercase tracking-widest text-[#71717C]">
+                  <span className="shrink-0 text-[13px] uppercase tracking-widest text-[#71717C]">
                     {cost}/{MUT_COST_MAX} pts
                   </span>
                 </div>
-                <p className="mt-1 text-[12px] leading-snug text-[#71717C]">{m.blurb}</p>
+                <p className="mt-1 text-[14px] leading-snug text-[#71717C]">{m.blurb}</p>
               </button>
             );
           })}
@@ -197,13 +185,13 @@ export default function SandboxView() {
         <div className="mt-2 flex gap-2">
           <button
             onClick={() => setPicked(MUTATIONS.map((m) => m.id))}
-            className="rounded border border-[#2E2E36] px-3 py-1 text-[12px] text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF]"
+            className="rounded border border-[#2E2E36] px-3 py-1 text-[14px] text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF]"
           >
             All
           </button>
           <button
             onClick={() => setPicked([])}
-            className="rounded border border-[#2E2E36] px-3 py-1 text-[12px] text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF]"
+            className="rounded border border-[#2E2E36] px-3 py-1 text-[14px] text-[#A6A6AF] hover:border-[#4A4A55] hover:text-[#EDEDEF]"
           >
             None
           </button>
@@ -212,7 +200,7 @@ export default function SandboxView() {
 
       <button
         onClick={start}
-        className="w-full rounded-lg border-2 border-[#FFD37F] bg-[#FFD37F]/10 px-4 py-3 text-[14px] font-bold uppercase tracking-widest text-[#FFD37F] transition-colors hover:bg-[#FFD37F]/20"
+        className="w-full rounded-lg border-2 border-[#FFD37F] bg-[#FFD37F]/10 px-4 py-3 text-[16px] font-bold uppercase tracking-widest text-[#FFD37F] transition-colors hover:bg-[#FFD37F]/20"
       >
         Deploy sandbox run
       </button>

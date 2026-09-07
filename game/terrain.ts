@@ -84,6 +84,29 @@ export function waterWalkMask(t: Terrain): Uint8Array {
   return m;
 }
 
+/**
+ * The passability mask for the AIR layer: 1 on a HILL, 0 everywhere else.
+ *
+ * A flyer is not stopped by terrain — it can sit inside a mountain if a
+ * crowd shoves it there — but it does not ROUTE through one. It reads a
+ * field over this mask exactly as a walker reads one over `blocked`, so
+ * the swarm comes over the same saddles and gaps a player can see on the
+ * map instead of cutting one invisible straight line from its door to the
+ * core. The two sentinels are open sky: a pine canopy is something to fly
+ * over, and deep water is the whole reason air and naval exist.
+ *
+ * It is `isBuildableWall` that decides what a hill is, and not by accident
+ * — "rock standing above the floor" is one idea, and a second predicate
+ * spelling it out again is a second place for the sentinel list to go
+ * stale. Same set, for the same reason: what a turret can stand on is what
+ * a flyer flies around, and what SIGHT stops at (Sim.hasSight).
+ */
+export function airWalkMask(t: Terrain): Uint8Array {
+  const m = new Uint8Array(t.blocked.length);
+  for (let i = 0; i < m.length; i++) m[i] = t.blocked[i] && isBuildableWall(t.wall[i]) ? 1 : 0;
+  return m;
+}
+
 export interface Terrain {
   blocked: Uint8Array; // mountains, forests, rocks — everything units can't cross
   floor: Uint8Array; // UV_FLOORS index per cell (pine cells: the grass underneath)

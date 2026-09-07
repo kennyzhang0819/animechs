@@ -342,18 +342,19 @@ export const pricePerTile = (kind: TowerKind): number =>
  * commander's does — never a wall, always a little more than the last one.
  *
  *   level    2      3      4      5      6      7      8      10     30
- *   to next  10k    25k    44k    65k    88k    113k   139k   ~195k  ~1.0m
- *   total    10k    35k    80k    145k   233k   346k   485k   ~843k  ~12.1m
+ *   to next  5k     13k    22k    32k    44k    56k    70k    ~98k   ~470k
+ *   total    5k     18k    40k    72k    116k   173k   243k   ~421k  ~6.0m
  *
- * WHAT THAT MEANS AGAINST A MAP. A full Level-1 clear of Confluence pays
- * about 246,000 XP in kills, so the first run lands around level 6 — the
- * second map falls out of the opening night; a wipe at the end of stage 1
- * pays about 40,000 and lands level 3. The top of the track (MAX_LEVEL in
- * track.ts, where the last turrets and 2x speed are) stands at about
- * 2,300,000 XP: nine or ten clears at Level 1, three or four up the
- * difficulty list, and the unlocking phase is over.
+ * WHAT THAT MEANS AGAINST A MAP. A full Nemesis clear of Confluence
+ * pays about 246,000 XP in kills, so the first run lands around level 8;
+ * Incursion sends a quarter of that swarm and pays a quarter of it. The
+ * top of the track (MAX_LEVEL in track.ts, where the last turrets and 2x
+ * speed are) stands at about 1,150,000 XP: five clears at Nemesis,
+ * two or three up the mutated difficulties, and the unlocking phase is
+ * over. The base was halved from 10,000 so the first level falls out of
+ * the first wave or two rather than the first stage.
  */
-export const XP_LEVEL_BASE = 10000;
+export const XP_LEVEL_BASE = 5000;
 export const XP_LEVEL_POWER = 1.35;
 
 /** XP needed to climb from `level` to `level + 1` */
@@ -397,7 +398,7 @@ export function levelProgress(xp: number): { level: number; into: number; need: 
  * leaves it there banks a quarter more XP than one who chose — a nudge
  * towards playing every front rather than farming the one they know.
  * Multiplies the run's kill XP the same way the rung's bonus does
- * (grantRunReward), so it stacks: Level 10 on a random map is x5.5 x1.25.
+ * (grantRunReward), so it stacks: the top difficulty on a random map is x5.5 x1.25.
  */
 export const RANDOM_MAP_XP_BONUS = 0.25;
 

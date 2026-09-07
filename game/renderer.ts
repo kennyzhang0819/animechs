@@ -467,17 +467,30 @@ const SHIELD_DP = 1;
  */
 const SHIELD_PLAIN = 0.94;
 /**
- * The scene's clear colour, #0B0B0B — the void the map sits in, and what
- * the shield pass has to hand back after borrowing the clear for its own
+ * The scene's clear colour — the void the map sits in, and what the
+ * shield pass has to hand back after borrowing the clear for its own
  * buffer.
  *
  * Neutral on purpose. This used to be a navy #0A101F, which read as sky
  * behind the map rather than as nothing: the moment the camera could pull
  * back past the edges (see Game.minZoom) the map looked like it was
- * floating on water. Grey-black is the absence of a colour, which is what
- * is meant to be out there.
+ * floating on water. Black is the absence of a colour, which is what is
+ * meant to be out there.
+ *
+ * IT IS PURE BLACK BECAUSE THE MAP'S OWN EDGE ALREADY IS. Every campaign
+ * map is walled in, and the inside of a wall mass saturates to opaque
+ * black a few cells deep (DARK_RADIUS, Mindustry's addDarkness) — so the
+ * last thing the map draws at its rim is #000000. This was #0B0B0B, two
+ * levels lighter, and the difference drew a crisp rectangle around the
+ * whole board: the eye cannot read either shade as a colour but it reads
+ * the HARD EDGE between them instantly, which told the player exactly
+ * where the world stopped. Matching the darkness the map ends in is what
+ * makes the board sit in nothing instead of on a slab of it.
+ *
+ * Anything that changes this has to move the darkness with it, or the
+ * rectangle comes back.
  */
-const CLEAR = [0.043, 0.043, 0.043] as const;
+const CLEAR = [0, 0, 0] as const;
 /** Arc Interp.pow3Out, the curve behind EffectContainer.finpow() */
 const FIN_POW = (f: number): number => 1 - Math.pow(1 - f, 3);
 /**
@@ -1050,7 +1063,7 @@ export class Renderer {
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1); // #0B0B0B
+    gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1); // the map ends in this too
   }
 
   private link(vs: string, fs: string): WebGLProgram {

@@ -7,7 +7,9 @@ import {
   WORLD,
   type LevelSpec,
   type LevelStep,
+  type RegionWave,
   type UnitKind,
+  type WaveUnits,
   WAVE_RELEASE_SECONDS,
 } from "./levels";
 import { TOWERS } from "./constants";
@@ -22,27 +24,36 @@ import {
   type Drop,
   type TowerTier,
 } from "./economy";
-import { MUT_COUNT_MAX, mutationBudget, mutationPicks } from "./mutation";
+import { MUT_COUNT_MAX, MUT_FIRST_TIER, mutationBudget, mutationPicks } from "./mutation";
 
 /**
- * THE LADDER — ONE CLIMB PER WORLD, TEN RUNGS, NO NAMES, ONE SCRIPT.
+ * THE LADDER — ONE CLIMB PER WORLD, TEN RUNGS, FOUR NAMES, ONE SCRIPT.
  *
  * EVERY RUNG PLAYS THE WHOLE AUTHORED SCRIPT — all fifty waves, wave 1 to
  * wave 50, the same fifty every time, and EVERY BODY AT THE SAME HEALTH.
- * A rung is two numbers: what its mutator roll may spend and how many
- * rules it returns (mutation.ts), and one more: how much the XP it pays is
- * multiplied by (tierXpBonus). That is the whole difference between Level
- * 1 and Level 10 — the rules the run is played under, and what it is
- * worth.
+ * What changes is HOW MANY come and WHAT RULES they come under:
+ *
+ *   Incursion     a quarter of every wave's count       no rules
+ *   Onslaught     half                                  no rules
+ *   Scourge       three quarters                        no rules
+ *   Nemesis       the script as authored, every body    no rules
+ *   Nemesis +1 to +6   the full swarm, under a mutator roll that
+ *                 spends more and returns more with every step (mutation.ts)
+ *
+ * So a rung is three numbers: the share of the count it sends
+ * (COUNT_SCALE), what its mutator roll may spend and how many rules it
+ * returns, and one more: how much the XP it pays is multiplied by
+ * (tierXpBonus). The four NAMED difficulties are a size ramp; the six
+ * above them are a rules ramp on top of the biggest size.
  *
  * THE HEALTH CURVE IS STILL HERE AND NOT USED. A rung used to be an enemy
  * LEVEL as well — every body's health times HP_PER_LEVEL ^ level, up to
  * x8 at the top — and that column is authored to zero on every rung now.
  * The mechanism stays (unitHpAtLevel, LevelSpec.enemyLevel, the balance
  * dashboard's dial), because a map or a mutator may want it one day; the
- * ladder simply does not turn it. Difficulty is rules, not hit points,
- * which is what makes Level 10 a different fight rather than the same
- * fight eight times over.
+ * ladder simply does not turn it. Difficulty is count and then rules, not
+ * hit points, which is what makes the top rung a different fight rather
+ * than the same fight eight times over.
  *
  * WHAT A RUNG PAYS. Scrap is fixed per kill and never scales (economy.ts):
  * a rung's run banks the same scrap as any other, because scrap is what
@@ -70,7 +81,7 @@ export const HP_PER_LEVEL = 1.06;
 
 /**
  * HOW MUCH MORE XP EACH RUNG PAYS THAN THE ONE BELOW, linear: rung n pays
- * x (1 + XP_STEP_PER_RUNG x n). Level 10 pays x5.5 what Level 1 does.
+ * x (1 + XP_STEP_PER_RUNG x n). The top rung pays x5.5 what Incursion does.
  *
  * LINEAR, NOT COMPOUNDING, because the fight does not compound any more.
  * The old loot bonus compounded at 1.34 a rung to keep pace with health
@@ -89,13 +100,31 @@ export const XP_STEP_PER_RUNG = 0.5;
 export const RUNG_COUNT = 10;
 
 /**
+ * THE NAMED DIFFICULTIES, in order, one per rung of the size ramp. The
+ * rungs above the last name are that name with a "+n" (rungLabel): the
+ * same full swarm, n steps of mutators on top.
+ */
+export const DIFFICULTY_NAMES: readonly string[] = [
+  "Incursion",
+  "Onslaught",
+  "Scourge",
+  "Nemesis",
+];
+
+/**
+ * THE SHARE OF EVERY WAVE'S COUNT A RUNG SENDS. The named difficulties
+ * climb a quarter at a time to the script as authored; everything above
+ * sends the whole of it. A count that scales to nothing still sends one
+ * body — a boss wave at Incursion is still a boss wave.
+ */
+export const COUNT_SCALE: readonly number[] = [0.25, 0.5, 0.75, 1];
+
+/**
  * THE RUNGS, and the only place their shape is written down.
  *
  * Every dial is arithmetic on the rung's index, which is what makes the
- * ladder extend rather than need re-authoring. A rung has NO NAME and NO
- * IDENTITY beyond its number: it is shown as "Level n" (rungLabel) in a
- * colour read off its position (rungColor), and that is the whole of what
- * a player is told about it.
+ * ladder extend rather than need re-authoring. A rung is shown by name
+ * (rungLabel) in a colour read off its position (rungColor).
  *
  * THIS LADDER IS CLIMBED ONCE PER WORLD. This table says what a rung IS;
  * how far up it a save has got is a per-world number (clearedByMap in
@@ -104,15 +133,18 @@ export const RUNG_COUNT = 10;
  */
 export const RUNGS: readonly {
   level: number;
+  countScale: number;
   mutationPoints: number;
   mutationCount: number;
   xpBonus: number;
 }[] = Array.from({ length: RUNG_COUNT }, (_, i) => ({
   // authored flat: the level curve is a mechanism the ladder does not use
   level: 0,
+  // the size ramp, then the whole script
+  countScale: COUNT_SCALE[Math.min(i, COUNT_SCALE.length - 1)],
   // the two mutation columns are arithmetic on the index like the rest,
-  // and both are zero at rung 1: the bottom of the ladder is the campaign
-  // as authored (see mutation.ts)
+  // and both are zero on every named difficulty: the bottom of the ladder
+  // is the campaign as authored, at a size (see mutation.ts)
   mutationPoints: mutationBudget(i),
   mutationCount: mutationPicks(i),
   xpBonus: 1 + XP_STEP_PER_RUNG * i,
@@ -140,15 +172,28 @@ const clampTier = (tier: number): number =>
   Math.min(TOP_TIER, Math.max(0, Math.floor(tier)));
 
 /**
- * WHAT THE PLAYER IS SHOWN. Rung index 0 reads "Level 1".
+ * WHAT THE PLAYER IS SHOWN. Rung index 0 reads "Incursion", index 3
+ * "Nemesis", index 4 "Nemesis +1" and so on up.
  *
  * `tier` is 0-based everywhere in the code and in window.__ladder, because
  * tier 0 indexes RUNGS and an offset there would put a +1 in the middle of
  * the arithmetic. Nothing player-facing should ever print that index — use
  * this. Every label goes through here, so the internal index and the shown
- * number meet in exactly one place.
+ * name meet in exactly one place. "Level" is never the word: a level is
+ * the player's, and a difficulty is a difficulty.
  */
-export const rungLabel = (tier: number): string => `Level ${clampTier(tier) + 1}`;
+export function rungLabel(tier: number): string {
+  const t = clampTier(tier);
+  const last = DIFFICULTY_NAMES.length - 1;
+  return t <= last ? DIFFICULTY_NAMES[t] : `${DIFFICULTY_NAMES[last]} +${t - last}`;
+}
+
+/** the count share a rung sends, 0.25 at the bottom, 1 from Nemesis up */
+export const tierCountScale = (tier: number): number => RUNGS[clampTier(tier)].countScale;
+
+/** how many mutator steps above Nemesis a rung stands — 0 on every named one */
+export const tierMutationStep = (tier: number): number =>
+  Math.max(0, clampTier(tier) - MUT_FIRST_TIER + 1);
 
 /**
  * The rung's colour, wherever its label is shown — green through gold and
@@ -199,8 +244,9 @@ export interface RungKnobs {
    * rules it comes back with (see mutation.ts). They are dials here rather
    * than constants there because they ARE the tier's difficulty now.
    *
-   * BOTH ARE ZERO ON THE BOTTOM TIER as authored, which is the whole of
-   * what "Level 1 is the campaign as authored" means.
+   * BOTH ARE ZERO ON EVERY NAMED DIFFICULTY as authored, which is the
+   * whole of what "Incursion through Nemesis are the campaign as
+   * authored, at a size" means.
    */
   mutationPoints: number;
   /** how many rules the roll returns, 0 to MUT_COUNT_MAX */
@@ -308,13 +354,45 @@ export const unitHpAtLevel = (kind: UnitKind, level: number): number =>
 // ---------- expansion ----------
 
 /**
- * The playable spec for one rung: the WHOLE authored script, carrying the
- * enemy level the sim scales health by (zero, as authored) and the rung
- * it was expanded for.
+ * The playable spec for one rung: the WHOLE authored script at the rung's
+ * count share (COUNT_SCALE), carrying the enemy level the sim scales
+ * health by (zero, as authored) and the rung it was expanded for.
+ *
+ * THE COUNT IS SCALED HERE AND NOWHERE ELSE, so the sim, the audit
+ * (budget) and the picker's detail card all read the same swarm. Every
+ * region contingent scales on its own and a nonzero count never rounds to
+ * nothing — a wave that sends one of something sends that one at every
+ * size, which keeps a boss wave a boss wave.
  */
 export function specForTier(spec: LevelSpec, tier: number): LevelSpec {
   const n = clampTier(tier);
-  return { ...spec, tier: n, enemyLevel: tierLevel(n) };
+  const scale = tierCountScale(n);
+  const script =
+    scale === 1
+      ? spec.script
+      : spec.script.map((step) => ({
+          ...step,
+          wave: scaleWave(step.wave, scale),
+        }));
+  return { ...spec, script, tier: n, enemyLevel: tierLevel(n) };
+}
+
+/** one wave at a share of its count — the group form keeps its region ids */
+function scaleWave(
+  wave: WaveUnits | readonly RegionWave[],
+  scale: number,
+): WaveUnits | readonly RegionWave[] {
+  const scaleUnits = <T extends WaveUnits>(w: T): T => {
+    const out = { ...w };
+    for (const k of UNIT_KINDS) {
+      const c = w[k] ?? 0;
+      if (c > 0) out[k] = Math.max(1, Math.round(c * scale));
+    }
+    return out;
+  };
+  return Array.isArray(wave)
+    ? (wave as readonly RegionWave[]).map(scaleUnits)
+    : scaleUnits(wave as WaveUnits);
 }
 
 // ---------- strength ----------

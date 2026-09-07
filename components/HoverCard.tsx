@@ -21,6 +21,8 @@ import { createPortal } from "react-dom";
  *
  * Usage: `const tip = useHoverCard("up")`, spread `tip.anchorProps` onto
  * the element the card hangs off, and render `<HoverCard tip={tip} …/>`.
+ * `align` picks which of the anchor's edges it grows from, so a card on
+ * an anchor in the right margin (the field's deal stack) opens inward.
  */
 
 export type HoverDir = "up" | "down";
@@ -88,19 +90,25 @@ export function HoverCard({
   color: string;
   /** the sentence */
   children: ReactNode;
-  /** hang off the anchor's left edge, or centre on it */
-  align?: "left" | "center";
+  /**
+   * WHICH EDGE THE CARD HANGS OFF. `left` (the default) runs it rightward
+   * from the anchor's left edge, `center` centres it, and `right` runs it
+   * LEFTWARD from the anchor's right edge — which is what an anchor in
+   * the screen's right margin needs, since a 16rem card started at that
+   * anchor's left edge would open off the side of the window.
+   */
+  align?: "left" | "center" | "right";
 }) {
   if (!tip.at || typeof document === "undefined") return null;
   const { x, y, w } = tip.at;
   const dy = tip.dir === "up" ? "calc(-100% - 8px)" : "8px";
-  const dx = align === "center" ? "-50%" : "0";
+  const dx = align === "center" ? "-50%" : align === "right" ? "-100%" : "0";
   return createPortal(
     <span
       role="tooltip"
       className="ui-zoom pointer-events-none fixed z-50 block w-64 border-[3px] p-2.5 text-left normal-case tracking-normal shadow-lg"
       style={{
-        left: align === "center" ? x + w / 2 : x,
+        left: align === "center" ? x + w / 2 : align === "right" ? x + w : x,
         top: y,
         transform: `translate(${dx}, ${dy})`,
         borderColor: color,
@@ -108,17 +116,17 @@ export function HoverCard({
       }}
     >
       <span className="flex items-baseline justify-between gap-2">
-        <span className="text-[13px] font-bold text-[#EDEDEF]">{title}</span>
+        <span className="text-[15px] font-bold text-[#EDEDEF]">{title}</span>
         {tag && (
           <span
-            className="shrink-0 text-[11px] font-bold uppercase tracking-widest"
+            className="shrink-0 text-[13px] font-bold uppercase tracking-widest"
             style={{ color }}
           >
             {tag}
           </span>
         )}
       </span>
-      <span className="mt-1 block text-[12.5px] leading-snug text-[#A6A6AF]">{children}</span>
+      <span className="mt-1 block text-[14.5px] leading-snug text-[#A6A6AF]">{children}</span>
     </span>,
     document.body,
   );

@@ -101,8 +101,12 @@ on this game's document shape:
    as it goes. `links` between rooms are carved the same way and make the
    loops. Water routes (`layer: "water"`) are carved FIRST and cut deep
    channels; a ground route brushed across one turns that stretch to
-   shallow, which is a ford. Named `chokes` pinch the open cells near a
-   point to an exact width.
+   shallow, which is a ford. A channel's cost carries a heavy noise term,
+   so a river hunts the noise's low ground and meanders instead of
+   running a ruled canal. Named `chokes` pinch the open cells near a
+   point to an exact width; the choke at the funnel point is a straight
+   strip from the core through the funnel, carved as well as kept, so
+   that it and the citadel's gate are the same nine cells.
 5. **Distort, bays, cells.** A light domain warp takes the tube out of the
    brushed corridors; rock within a few cells of open ground is opened
    where a fine noise says so (`bays`), which is what puts the alcoves on
@@ -143,6 +147,28 @@ on this game's document shape:
    never round the core.
 10. **Checks**, then the document.
 
+## The campaign maps
+
+Nine specs, nine themes. Every one is `scripts/maps/<id>.mjs`.
+
+| map | world | the place | the layout |
+| --- | --- | --- | --- |
+| Confluence | 1 | desert: sand, darksand, stone, a salt basin, two lakes | four gates on three edges flow into one antechamber before a core on the east edge |
+| Maelstrom | 2 | storm coast: the sea along the north and east | three ground gates walk the coast; the hulls sail down it to a bay under the core |
+| Quagmire | 3 | spore swamp: tainted lakes, a spore river, spore pines | three gates on the east, every road fords the river, the core on the west edge behind one causeway |
+| Greenwood | 4 | earthy: dirt roads under dirt cliffs, grass, pine stands, two lakes | four gates on three edges, the core in the north-east corner |
+| Tundra | 5 | snowy: snow, ice round two frozen lakes, shale, snow pines | four gates on the south corners and the sides, the core on the north edge |
+| Crater | 6 | basalt and darksand, the core in a crater in the middle | six gates round the edge, six mouths in the crater's rim, no funnel |
+| Shoals | 7 | archipelago: two thirds sea, sand islands, salt flats | roads between islands are bars of shallow; hulls from the north and south seas; the core on the west island |
+| Riverlands | 8 | grass, dirt and sand banks; three rivers meet in a pool beside a core in the middle | five ground gates from the north and the corners ford the rivers; hulls sail the rivers in |
+| Estuary | 9 | the sea fills the south, a river from the north-east, two lakes | four gates inland, the core on the north shore where the river opens out |
+
+Two of the nine have no funnel. Crater and Riverlands put the core in
+the middle of the board and let it be attacked from every side; their
+chokes are the mouths round the core's clearing rather than one gate,
+and the funnel check is simply not run. The other seven put the core in
+a pocket of rock with one mouth.
+
 ## The spec
 
 A spec is forty-odd numbers. Confluence's, as a guide:
@@ -154,7 +180,7 @@ A spec is forty-odd numbers. Confluence's, as a guide:
 | `water` | `scale`, `level`, `shore`, `warp`, `bias(x, y)`, and `shallow`/`deep` floors for the spore pair |
 | `floors` | `scale`, `warp`, `families: [{ floor, wall, weight }]` — the dominant family first |
 | `beach`, `flats` | a floor by the water (`depth`, optional `wall`) and a floor in the open middles (`clear`) |
-| `rooms` | `{ x, y, r, wobble?, water? }` — the clearings, indexed |
+| `rooms` | `{ x, y, r, wobble?, water?, dry? }` — the clearings, indexed; a `water` room is a bay, a `dry` room an island |
 | `core` | `{ x, y, r }` — the core's cell and its clearing |
 | `spawns` | `{ x, y, r, zone }` — ground, air, water, boss |
 | `routes` | `{ spawn, via: [room…], to?, width: [choke, lane], layer? }` |
@@ -167,7 +193,9 @@ A spec is forty-odd numbers. Confluence's, as a guide:
 
 Widths are in cells and are the brush's diameter; the smoothing passes
 shave about one, so a route's `width[0]` of 8 is a corridor of 7, which
-is the floor (`ROUTE_MIN_GROUND`). Room indices are what `via` and
+is the floor (`ROUTE_MIN_GROUND`). A water route's `width[0]` is 16: the
+distortion moves each bank by up to three cells on its own, and a river
+that dips under `GAP_WATER` anywhere is silted shut there. Room indices are what `via` and
 `links` name; `"spawn:3"` names a drop zone and `"core"` the core.
 
 ## Check what you drew

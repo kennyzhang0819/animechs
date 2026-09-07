@@ -53,12 +53,14 @@ export interface Vec2 {
  * that field's upwind gradient. Units just sample the field — pathfinding
  * is O(map), not O(units).
  *
- * ONE FIELD IS ONE MOVEMENT LAYER. The class knows nothing about ground or
- * water: it is a field over whatever passability mask it is handed, seeded
- * from whatever goal mask it is handed. The Sim owns one for the walkers
- * (mask: rock and towers) and one for the hulls (mask: everything that is
- * not water), and the flyers need none at all — they steer straight at the
- * nearest air exit, which is what "flying" means.
+ * ONE FIELD IS ONE MOVEMENT LAYER. The class knows nothing about ground,
+ * water or air: it is a field over whatever passability mask it is handed,
+ * seeded from whatever goal mask it is handed. The Sim owns three — the
+ * walkers' (mask: rock and towers), the hulls' (mask: everything that is
+ * not water) and the flyers' (mask: the hills, and nothing else). The
+ * third is the odd one, and only in how it is USED: a walker or a hull is
+ * stopped by its mask, while a flyer merely routes by its own and is free
+ * to be shoved straight through it.
  *
  * That is also what let the region machinery go. This class used to carry a
  * SECOND spawn mask for flyers and a pair of pads-by-region maps, because

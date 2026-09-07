@@ -1,6 +1,7 @@
 import {
   BASE,
   CORE_HP,
+  INF,
   LAYER_BIT,
   MOVE_LAYERS,
   NCELLS,
@@ -126,7 +127,7 @@ import {
   VOLATILE_DMG,
   VOLATILE_RADIUS,
 } from "./mutation";
-import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap } from "./maps";
+import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap, type SpawnCircle } from "./maps";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
 import {
   SCRAP_START,
@@ -134,7 +135,7 @@ import {
   sellValue,
   waveBonusScrap,
 } from "./economy";
-import { isBuildableWall, isWaterFloor, waterWalkMask, type Terrain } from "./terrain";
+import { airWalkMask, isBuildableWall, isWaterFloor, waterWalkMask, type Terrain } from "./terrain";
 import {
   MAX_WEAPONS,
   unitDamageScale,
@@ -305,10 +306,10 @@ const CENTER_K = 25;
 // to their real job, which is width, and two of them were re-tuned for it
 // once they stopped fighting the field for position.
 //
-// All three are GROUND-only. Flyers ignore terrain and fly straight at the
-// base, so they never funnel on a corridor wall in the first place; leaving
-// them on the untouched Mindustry physics keeps a swarm reading as a swarm
-// rather than a wobbling cloud.
+// All three are GROUND-only. A flyer routes round the hills (airField) but
+// is never STOPPED by one, so it has no corridor wall to funnel on in the
+// first place; leaving flyers on the untouched Mindustry physics keeps a
+// swarm reading as a swarm rather than a wobbling cloud.
 //
 // 1. Overlaps resolve sideways first. PUSH_LONG is the fraction of a
 //    front-to-back shove that stays front-to-back; PUSH_SIDE is how hard
@@ -1144,11 +1145,50 @@ export class Sim {
   private hasWater = false;
   /**
    * The air layer's doors: every cell an air zone covers, rock included.
-   * Flyers keep their pads here rather than in a FlowField because they
-   * have no field — nothing about the terrain constrains where a flyer may
-   * be dropped, so there is nothing to solve.
+   * Flyers keep their pads here rather than in `airField.spawnPts` because
+   * a door is not a route — nothing about the terrain constrains where a
+   * flyer may be DROPPED, and a pad on a peak is a perfectly good one. The
+   * field below decides where it goes from there, not whether it may land.
    */
   private airPads: number[] = [];
+  /**
+   * ...and the part of that list that is OPEN SKY: a pad the air field has
+   * a heading at. A drop zone is rasterized terrain-blind, so a circle
+   * painted over the rim or across a massif has cells buried in rock, and a
+   * flyer entering on one would fly the fallback straight line out of the
+   * mountain before its route ever began. Entering on the open part of the
+   * same circle puts it on its road at once — which is what the other two
+   * layers already do (FlowField.spawnPts drops a pad that cannot reach a
+   * goal). A zone with NO open cell keeps every cell it has: a door that
+   * only opens inside a peak is still a door.
+   */
+  private airOpen: number[] = [];
+  private bossAirOpen: number[] = [];
+  /**
+   * THE FLYERS' FIELD — the third of the three, over airWalkMask: hills
+   * are its walls, and nothing else on the map is. A flyer used to hold
+   * one straight line from its door to the core, which crossed whatever
+   * the line happened to cross; it steers by this instead, so it comes
+   * round a mountain the way the rest of the swarm does and only crosses
+   * one where there is no way round.
+   *
+   * A HILL IS NOT AN OBSTACLE, only a detour: nothing collides a flyer
+   * with terrain (see updateUnits — every wall test there is behind
+   * `!fly`), so a crowd CAN shove one inside a peak. The field has no
+   * heading in there, and airHeading falls back to the straight line at
+   * the core, which flies it back out into open sky.
+   *
+   * Structures are not in it (the footprint list is empty): a turret is
+   * something to fly over, not around. Which is also why it is never
+   * dirtied — building and selling cannot change it, only a new map can.
+   */
+  readonly airField = new FlowField();
+  /**
+   * WHERE THE HILLS ARE (airWalkMask), kept because two different questions
+   * ask it: what a flyer routes around, and what a shot cannot be taken
+   * through (hasSight). Rebuilt with the terrain and never after.
+   */
+  private hills: Uint8Array = new Uint8Array(NCELLS);
   /**
    * The boss door's cells, split by the layer that may use them: a boss
    * zone is terrain-blind like an air zone, but a WALKING boss still has to
@@ -1191,7 +1231,7 @@ export class Sim {
     // ...the level's own rules and the deploy's roll as one list
     // (mutationsInForce): the sim never asks which of the two a rule came
     // from, only whether it is in force
-    const inForce = mutationsInForce(this.level.intrinsicMutation, this.level.mutation);
+    const inForce = mutationsInForce(this.level.mutation);
     this.hungryOn = hasMutation(inForce, "hungry");
     this.speedyOn = hasMutation(inForce, "speedy");
     this.armoredOn = hasMutation(inForce, "armored");
@@ -1273,9 +1313,21 @@ export class Sim {
         this.layerPadMask(LAYER_BIT.water),
         this.waterGoal(),
       );
+    // THE FLYERS' FIELD, and the mask sight is traced through (hasSight):
+    // one array, because "a hill" is one idea. Towers are left out of it
+    // on purpose — see airField — so it is solved once here and never
+    // again, however much is built or sold during the run.
+    this.hills = airWalkMask(this.terrain);
+    this.airField.rebuildWalk([], this.hills, this.layerPadMask(LAYER_BIT.air), this.coreGoal());
     this.buildGoalPts();
     this.field.compute();
     if (this.hasWater) this.waterField.compute();
+    this.airField.compute();
+    // ...which is what the open-sky pad lists need, so they are picked here
+    // rather than in buildPads: a pad is open sky only once there is a
+    // field to ask
+    this.airOpen = this.openSky(this.airPads);
+    this.bossAirOpen = this.openSky(this.bossPads.air);
     // fail LOUDLY on a broken map: with zero doors nothing ever spawns and
     // a wave script stalls forever, which reads as a scheduler bug
     if (this.airPads.length === 0 && this.field.spawnPts.length === 0)
@@ -1302,6 +1354,17 @@ export class Sim {
       ["air", this.airPads.length],
       ["water", this.hasWater ? this.waterField.spawnPts.length : 0],
     ];
+    // ...and an AIR door with no open sky in it. Not broken — a flyer
+    // entering inside a peak still gets out, it just flies the fallback
+    // straight line to do it, which is the one case where the swarm's route
+    // is not the route the overlay and the map imply. Worth saying: moving
+    // the circle a few cells off the rim is all it takes.
+    if (this.airPads.length > 0 && this.airOpen.length === 0 && this.scriptSends("air"))
+      console.warn(
+        'map "' + doc.id +
+          '": every air drop zone is buried in rock — flyers will enter inside it and fly straight out' +
+          " before they pick up a route. Move the circles onto open sky.",
+      );
     for (const [layer, pads] of doors)
       if (pads === 0 && this.scriptSends(layer))
         console.warn(
@@ -1396,6 +1459,12 @@ export class Sim {
     }
   }
 
+  /** the cells of an air pad list the air field actually has a road from */
+  private openSky(pads: readonly number[]): number[] {
+    const { walk, dist } = this.airField;
+    return pads.filter((i) => !walk[i] && dist[i] < INF);
+  }
+
   /** the movement layer a unit kind travels on — the one place it is decided */
   private layerOf(kind: UnitKind): MoveLayer {
     const s = UNIT_STATS[kind];
@@ -1419,23 +1488,23 @@ export class Sim {
   }
 
   /**
-   * THE LINES FLYERS ACTUALLY FLY, one per drop zone — what the route
-   * overlay draws. Walkers follow the flow field, which the terrain already
-   * shows; flyers ignore it completely and cut whatever straight line their
-   * spawn happens to pick, which is invisible until they are on top of you.
+   * THE LINES FLYERS ACTUALLY FLY, one polyline per drop zone — what the
+   * route overlay draws. It is the air field walked from the zone's centre,
+   * the same way a flyer walks it, so the curve on screen bends round the
+   * same mountains the swarm will.
    *
-   * Drawn from each zone's centre. A flyer entering at the rim picks its own
-   * nearest goal and may head somewhere else, so this is the middle of a
-   * fan rather than a single guaranteed track.
+   * It was one straight segment while a flyer flew one straight line, and
+   * the whole point of drawing it was that the line was the truth. The
+   * flyers route now (airField), so the truth is a route.
+   *
+   * Traced from each zone's CENTRE. A flyer entering at the rim starts on a
+   * neighbouring streamline and arrives by a slightly different road, so
+   * this is the middle of a fan rather than a rail.
    */
-  airRoutes(): { x1: number; y1: number; x2: number; y2: number; zone: ZoneKind }[] {
-    // ONLY WHAT ACTUALLY FLIES GETS A LINE. The straight dashed run to a
-    // door is a claim about how something travels — a flyer ignores the
-    // maze and steers at one point, so drawing its route as a line is the
-    // truth. A walker or a hull follows the flow field down whatever road
-    // the map gives it, and a line from its zone to a door crosses hills it
-    // will never cross. That was drawn for every zone, so the overlay was
-    // three quarters fiction.
+  airRoutes(): { pts: number[]; zone: ZoneKind }[] {
+    // ONLY WHAT ACTUALLY FLIES GETS A LINE. Walkers and hulls read fields
+    // the terrain itself already shows the shape of, and a drawn route per
+    // zone would be three quarters redundant overlay.
     //
     // A boss zone earns a line only if this level's boss flies. Nothing
     // about the zone says which — a boss zone is rasterized terrain-blind
@@ -1445,10 +1514,63 @@ export class Sim {
     return this.terrain.spawns
       .filter((z) => flying(z.zone))
       .map((z) => {
-        const x = z.x * CELL, y = z.y * CELL;
-        const g = this.nearestGoal(x, y);
-        return { x1: x, y1: y, x2: g.x, y2: g.y, zone: z.zone };
+        const from = this.airDoor(z);
+        return { pts: this.airTrace(from.x, from.y), zone: z.zone };
       });
+  }
+
+  /**
+   * Where a zone's flyers actually come out, in world px: its centre when
+   * that is open sky, and otherwise the open cell of the circle nearest to
+   * it. A door painted across a massif or over the map's rock rim has its
+   * middle buried, and spawnPads hands those flyers the open part of the
+   * circle (airOpen) — so tracing the overlay from the buried centre would
+   * draw a road out of a mountain nothing takes.
+   */
+  private airDoor(z: SpawnCircle): { x: number; y: number } {
+    const cx = z.x * CELL, cy = z.y * CELL;
+    const gi = clamp(z.y | 0, 0, ROWS - 1) * COLS + clamp(z.x | 0, 0, COLS - 1);
+    if (!this.airField.walk[gi]) return { x: cx, y: cy };
+    const pads = z.zone === "boss" ? this.bossAirOpen : this.airOpen;
+    const r2 = (z.r + 1) * (z.r + 1);
+    let bx = cx, by = cy, best = Infinity;
+    for (const i of pads) {
+      const x = (i % COLS) + 0.5, y = ((i / COLS) | 0) + 0.5;
+      const d = (x - z.x) * (x - z.x) + (y - z.y) * (y - z.y);
+      if (d > r2 || d >= best) continue;
+      best = d;
+      bx = x * CELL;
+      by = y * CELL;
+    }
+    return { x: bx, y: by };
+  }
+
+  /**
+   * One flyer's road from a point to the core, as flat x,y pairs: step
+   * along airHeading until the hold radius, exactly as updateUnits does.
+   *
+   * The step is a cell and a half — long enough that a 256-cell crossing is
+   * a couple of hundred points rather than a couple of thousand, short
+   * enough that a turn round a headland still reads as a curve. The cap is
+   * the safety net for a field that somehow circulates: an overlay must not
+   * be able to hang the frame.
+   */
+  private airTrace(x: number, y: number): number[] {
+    const g = this.nearestGoal(x, y);
+    const hold = (this.core.size * CELL) / 2 + CELL * 1.5;
+    const step = CELL * 1.5;
+    const pts = [x, y];
+    const dir: Vec2 = { x: 0, y: 0 };
+    for (let n = 0; n < 400; n++) {
+      const dx = g.x - x, dy = g.y - y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d <= hold) break;
+      this.airHeading(x, y, dx / d, dy / d, dir);
+      x += dir.x * Math.min(step, d);
+      y += dir.y * Math.min(step, d);
+      pts.push(x, y);
+    }
+    return pts;
   }
 
   /** does this level's script send a boss that flies? */
@@ -1475,6 +1597,28 @@ export class Sim {
       if (d < best) { best = d; bx = p[k]; by = p[k + 1]; }
     }
     return { x: bx, y: by };
+  }
+
+  /**
+   * A FLYER'S HEADING at a point: the air field's, or the straight line to
+   * its goal where the field has none.
+   *
+   * The fallback is not a failure case, it is the other half of the rule.
+   * The field is silent in exactly two places — inside a hill, and over the
+   * core itself (compute() zeroes the heading on a goal cell) — and in both
+   * the straight line is the right answer: from inside a peak it flies the
+   * shortest way back out into open sky, and over the core there is nowhere
+   * left to route to. Hills bend a flyer's path; they never trap one.
+   *
+   * `gx, gy` is the already-normalized direction to the unit's goal, which
+   * updateUnits has in hand anyway.
+   */
+  private airHeading(x: number, y: number, gx: number, gy: number, out: Vec2): void {
+    this.airField.sample(x, y, out);
+    if (out.x * out.x + out.y * out.y < 0.25) {
+      out.x = gx;
+      out.y = gy;
+    }
   }
 
   /** the core is down — the game freezes and the score screen takes over */
@@ -1944,7 +2088,69 @@ export class Sim {
     return isCore(s) ? s.size : TOWERS[s.kind].size;
   }
 
-  private nearestStructure(x: number, y: number, reach: number): Structure | null {
+  /**
+   * IS THERE A HILL IN THE WAY? A supercover walk of the hill mask from one
+   * world point to another, cell by cell (Amanatides-Woo), true when the
+   * line gets through.
+   *
+   * NEITHER END CELL IS TESTED, and both exclusions earn their keep. The
+   * near one: a body shoved into a peak, or standing on the lip of one, is
+   * not blind — it would otherwise be unable to see anything at all,
+   * forever. The far one: the target's own cell is the thing being looked
+   * AT, and a shot arriving at it has already arrived.
+   *
+   * Only hills stop sight. Not structures — the swarm shoots the wall in
+   * front of it and the gun behind it alike, which is Mindustry's ground
+   * AI and the whole reason a wall is worth building. Not forest, not deep
+   * water: neither stands above the floor (see airWalkMask, the same mask).
+   */
+  private hasSight(x0: number, y0: number, x1: number, y1: number): boolean {
+    let cx = clamp((x0 / CELL) | 0, 0, COLS - 1), cy = clamp((y0 / CELL) | 0, 0, ROWS - 1);
+    const ex = clamp((x1 / CELL) | 0, 0, COLS - 1), ey = clamp((y1 / CELL) | 0, 0, ROWS - 1);
+    if (cx === ex && cy === ey) return true;
+    const dx = x1 - x0, dy = y1 - y0;
+    const sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1;
+    // distance along the ray to the first cell boundary on each axis, and
+    // the distance between boundaries after that — both in units of the
+    // ray's own length, so the smaller of the two always names the next
+    // cell the line enters
+    let tx = dx === 0 ? Infinity : ((dx > 0 ? cx + 1 : cx) * CELL - x0) / dx;
+    let ty = dy === 0 ? Infinity : ((dy > 0 ? cy + 1 : cy) * CELL - y0) / dy;
+    const gx = dx === 0 ? Infinity : Math.abs(CELL / dx);
+    const gy = dy === 0 ? Infinity : Math.abs(CELL / dy);
+    const hills = this.hills;
+    // the walk cannot outlast the board even diagonally corner to corner;
+    // the cap is there so a degenerate ray can never spin
+    for (let n = COLS + ROWS + 2; n > 0; n--) {
+      if (tx < ty) {
+        cx += sx;
+        tx += gx;
+      } else {
+        cy += sy;
+        ty += gy;
+      }
+      if (cx === ex && cy === ey) return true;
+      if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) return false;
+      if (hills[cy * COLS + cx]) return false;
+    }
+    return false;
+  }
+
+  /**
+   * CAN THIS BODY SEE THAT BUILDING? The line runs to the nearest point of
+   * the structure's FOOTPRINT, not to its middle: a 3x3 core is a wall of a
+   * thing, and asking for sight of the one cell at its centre would have a
+   * unit standing at its flank unable to shoot the side it is touching.
+   *
+   * Flyers never ask. They see everything inside their reach — a hill is
+   * something they are looking down on.
+   */
+  private canSee(t: Structure, x: number, y: number): boolean {
+    const half = (this.sizeOf(t) * CELL) / 2;
+    return this.hasSight(x, y, clamp(x, t.x - half, t.x + half), clamp(y, t.y - half, t.y + half));
+  }
+
+  private nearestStructure(x: number, y: number, reach: number, sighted: boolean): Structure | null {
     const cx = clamp((x / CELL) | 0, 0, COLS - 1);
     const cy = clamp((y / CELL) | 0, 0, ROWS - 1);
     const R = Math.min(COLS, Math.ceil(reach / CELL) + 2);
@@ -1957,7 +2163,9 @@ export class Sim {
       const half = (this.sizeOf(t) * CELL) / 2;
       const dx = t.x - x, dy = t.y - y;
       const d = Math.sqrt(dx * dx + dy * dy) - half;
-      if (d <= reach && d < bd) {
+      // the cheap tests first: the raycast is only spent on a candidate
+      // that would actually be taken
+      if (d <= reach && d < bd && (!sighted || this.canSee(t, x, y))) {
         bd = d;
         best = t;
       }
@@ -2040,14 +2248,30 @@ export class Sim {
       const ws = UNIT_WEAPONS[kind];
       if (ws.length === 0) continue;
       const x = upx[i], y = upy[i];
+      // A GROUND OR NAVAL BODY SHOOTS WHAT IT CAN SEE. Reach is not sight:
+      // a hill between the two is a hill, and the swarm has to come round
+      // it before it can open up on what is behind. A FLYER is looking down
+      // and sees its whole radius (canSee) — that, and not the ability to
+      // cross a mountain, is what the air layer is worth.
+      const sighted = this.ufly[i] === 0;
       // the target, re-picked every few tenths of a second, dropped the
-      // moment it dies or walks out of the longest gun's reach
+      // moment it dies, walks out of the longest gun's reach, or goes
+      // behind rock — the sight test rides here, once per body per tick,
+      // rather than in inReach, which every weapon calls every tick
       utT[i] -= dt;
       let tgt = utgt[i];
-      if (tgt && !this.inReach(tgt, x, y, UNIT_REACH[kind])) tgt = null;
-      if (utT[i] <= 0 || !tgt) {
+      const had = tgt !== null;
+      if (tgt && (!this.inReach(tgt, x, y, UNIT_REACH[kind]) || (sighted && !this.canSee(tgt, x, y))))
+        tgt = null;
+      // ...on the clock, or the moment the one it had is gone. A body that
+      // has NOTHING waits for the clock like everyone else rather than
+      // re-scanning every tick: an empty search is the most expensive one
+      // there is (it walks every ring out to reach, and now casts a ray at
+      // each candidate), and it is exactly the search a swarm still crossing
+      // open ground is running. `had` is what tells the two apart
+      if (utT[i] <= 0 || (had && !tgt)) {
         utT[i] = 0.3 + Math.random() * 0.2;
-        tgt = this.nearestStructure(x, y, UNIT_REACH[kind]);
+        tgt = this.nearestStructure(x, y, UNIT_REACH[kind], sighted);
         utgt[i] = tgt;
       }
       let exploded = false;
@@ -2819,8 +3043,9 @@ export class Sim {
     // A BOSS IGNORES ITS LAYER'S ZONES when the map paints a boss door —
     // that is the door's whole meaning. A map WITHOUT one leaves the boss
     // on its layer's own zones rather than falling back to "anywhere".
-    if (boss && this.bossPads[layer].length > 0) return this.bossPads[layer];
-    if (layer === "air") return this.airPads;
+    if (boss && this.bossPads[layer].length > 0)
+      return layer === "air" && this.bossAirOpen.length > 0 ? this.bossAirOpen : this.bossPads[layer];
+    if (layer === "air") return this.airOpen.length > 0 ? this.airOpen : this.airPads;
     if (layer === "water") return this.hasWater ? this.waterField.spawnPts : [];
     return this.field.spawnPts;
   }
@@ -2896,8 +3121,9 @@ export class Sim {
       // actually travels at
       this.uspd[i] = stats.speed * (this.speedyOn ? SPEEDY_SPEED : 1);
       this.urad[i] = r;
-      // flyers never read the flow field, so the routing the field does for
-      // free has to be done by hand for them — once, here, not per tick
+      // the core, resolved once here rather than per tick: it is where the
+      // air field aims (coreGoal) and where a flyer with no field under it
+      // steers by hand (airHeading)
       if (fly) {
         const g = this.nearestGoal(x, y);
         this.ugx[i] = g.x;
@@ -3874,9 +4100,12 @@ export class Sim {
       // ground's, so dry land answers `blocked` and deep water does not.
       // Reading the ground field for a boat would have walled it out of
       // every deep cell on the map and left it circling the shallows.
-      // Flyers still read the ground field where they read one at all —
-      // they only ever use it for `isGoal`, and a flyer's own destination
-      // was picked at spawn (see below), so the cell test is a formality.
+      // A FLYER NEVER READS THIS ONE. Its own field (airField) gives it a
+      // heading and nothing else: every reader of `mf` below is a body
+      // meeting terrain — clearance to spread into, walls to push off, a
+      // wall to slide along — and terrain is not something a flyer meets.
+      // It is left pointing at the ground field so the guards below can
+      // stay plain `!fly` tests rather than a third branch that never runs.
       const mf = nav ? this.waterField : field;
       const { walk } = mf;
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
@@ -3889,15 +4118,16 @@ export class Sim {
       // does the same from the shore.
 
       if (fly) {
-        // flyers ignore the maze: they fly the straight line to the core
-        // and HOLD over its edge once there — Mindustry's FlyingAI circles
-        // what it attacks; this one hovers, and its guns do the rest
+        // flyers take the air field's route round the hills and HOLD over
+        // the core's edge once there — Mindustry's FlyingAI circles what it
+        // attacks; this one hovers, and its guns do the rest
         // (updateUnitWeapons)
         const gdx = this.ugx[i] - upx[i], gdy = this.ugy[i] - upy[i];
         const gl = Math.sqrt(gdx * gdx + gdy * gdy) || 1;
-        const hold = gl <= (this.core.size * CELL) / 2 + CELL * 1.5;
-        flowTmp.x = hold ? 0 : gdx / gl;
-        flowTmp.y = hold ? 0 : gdy / gl;
+        if (gl <= (this.core.size * CELL) / 2 + CELL * 1.5) {
+          flowTmp.x = 0;
+          flowTmp.y = 0;
+        } else this.airHeading(upx[i], upy[i], gdx / gl, gdy / gl, flowTmp);
       } else {
         mf.sample(upx[i], upy[i], flowTmp);
       }
@@ -3928,10 +4158,10 @@ export class Sim {
       let fx = 0, fy = 0;
 
       // every steering force below is ground-only: flyers never probe,
-      // jitter, center, or drift. They ignore the maze entirely and hold the
-      // straight line to the base they have always flown — open sky has no
-      // corridor to spread across and no walls to crowd against, so the
-      // crowd fixes a corridor needs would only add wobble up there
+      // jitter, center, or drift. Their field bends them round a mountain
+      // but nothing up there stops them — no corridor to spread across and
+      // no wall to crowd against, so the crowd fixes a corridor needs would
+      // only add wobble
       if (!fly) {
         const cl = mf.clear[ci];
 

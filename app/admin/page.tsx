@@ -93,11 +93,11 @@ function MapCard({
       <Thumb map={map} />
       <div className="mt-2 flex items-baseline justify-between gap-2">
         <span className="font-bold text-[#EDEDEF]">{map.name}</span>
-        <span className="shrink-0 text-[12px] uppercase tracking-widest text-[#71717C]">
+        <span className="shrink-0 text-[14px] uppercase tracking-widest text-[#71717C]">
           {map.id}
         </span>
       </div>
-      <div className="mt-1 min-h-[34px] text-[13px] text-[#71717C]">
+      <div className="mt-1 min-h-[34px] text-[15px] text-[#71717C]">
         {stats ? (
           <>
             <div className="uppercase tracking-widest">
@@ -116,14 +116,14 @@ function MapCard({
       <div className="mt-3 flex gap-2">
         <button
           onClick={onEditMap}
-          className="flex-1 rounded border border-[#2E2E36] px-3 py-1.5 text-[13px] font-bold text-[#A6A6AF] transition-colors hover:border-[#4A4A55] hover:text-[#EDEDEF]"
+          className="flex-1 rounded border border-[#2E2E36] px-3 py-1.5 text-[15px] font-bold text-[#A6A6AF] transition-colors hover:border-[#4A4A55] hover:text-[#EDEDEF]"
         >
           Edit map
         </button>
         <button
           onClick={onEditLevel}
           disabled={!level || !ready}
-          className="flex-1 rounded border border-[#2E2E36] px-3 py-1.5 text-[13px] font-bold text-[#A6A6AF] transition-colors hover:border-[#4A4A55] hover:text-[#EDEDEF] disabled:opacity-40 disabled:hover:border-[#2E2E36] disabled:hover:text-[#A6A6AF]"
+          className="flex-1 rounded border border-[#2E2E36] px-3 py-1.5 text-[15px] font-bold text-[#A6A6AF] transition-colors hover:border-[#4A4A55] hover:text-[#EDEDEF] disabled:opacity-40 disabled:hover:border-[#2E2E36] disabled:hover:text-[#A6A6AF]"
         >
           Edit level
         </button>
@@ -200,8 +200,8 @@ function AdminInner() {
             <h1 className="text-xl font-bold text-[#EDEDEF]">Admin</h1>
             <p className="text-[#71717C]">
               Debug tool. Ctrl+Shift+M toggles this page. Map edits write public/maps/&lt;id&gt;.json
-              and ARE the official map; level edits write public/levels/blueprint.json — the one
-              wave script every world plays, re-cast per world by its transforms; balance edits
+              and ARE the official map; level edits write public/levels/campaign.json — the one
+              wave script every map plays, re-cast per deploy into the families the die rolls; balance edits
               write public/balance.json and override the authored tuning coefficients.
             </p>
           </div>
@@ -222,7 +222,7 @@ function AdminInner() {
             <button
               key={id}
               onClick={() => router.push(id === "content" ? "/admin" : `/admin?tab=${id}`)}
-              className={`-mb-px border-b-2 px-4 py-2 text-[13px] font-bold transition-colors ${
+              className={`-mb-px border-b-2 px-4 py-2 text-[15px] font-bold transition-colors ${
                 tab === id
                   ? "border-[#EDEDEF] text-[#EDEDEF]"
                   : "border-transparent text-[#71717C] hover:text-[#A6A6AF]"
@@ -249,7 +249,7 @@ function AdminInner() {
 
         {tab === "content" && (
           <>
-        <h2 className="mb-3 text-[12px] font-bold uppercase tracking-widest text-[#71717C]">
+        <h2 className="mb-3 text-[14px] font-bold uppercase tracking-widest text-[#71717C]">
           Maps — terrain, spawn pads and wave composition
         </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -282,7 +282,7 @@ export default function AdminPage() {
   if (!ADMIN_ENABLED)
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#101013] px-6 text-center">
-        <p className="text-[13px] uppercase tracking-widest text-[#71717C]">
+        <p className="text-[15px] uppercase tracking-widest text-[#71717C]">
           The editors are a development tool —{" "}
           <a href="/" className="text-[#FFD37F] underline">
             back to the game

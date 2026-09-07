@@ -168,13 +168,13 @@ function Panel({
           <circle cx="8" cy="2" r="1" />
           <circle cx="14" cy="2" r="1" />
         </svg>
-        <span className="flex-1 truncate text-[12px] uppercase tracking-widest">{title}</span>
+        <span className="flex-1 truncate text-[14px] uppercase tracking-widest">{title}</span>
         <button
           onPointerDown={(e) => e.stopPropagation()}
           onClick={toggle}
           title={open ? "Minimise" : "Expand"}
           aria-expanded={open}
-          className="shrink-0 rounded px-1 text-[13px] leading-none text-[#71717C] hover:bg-[#222227] hover:text-[#EDEDEF]"
+          className="shrink-0 rounded px-1 text-[15px] leading-none text-[#71717C] hover:bg-[#222227] hover:text-[#EDEDEF]"
         >
           {open ? "–" : "+"}
         </button>
@@ -346,7 +346,7 @@ export default function MapEditorView({
         <Panel id="header" title="Map" className={`absolute left-4 top-4 px-3 pb-2 pt-1 ${panel}`}>
           <div className="flex items-center gap-3">
           <div>
-            <div className="text-[13px] uppercase tracking-widest text-[#71717C]">Map editor</div>
+            <div className="text-[15px] uppercase tracking-widest text-[#71717C]">Map editor</div>
             <div className="text-base font-bold text-[#EDEDEF]">
               {map.name}
               {dirty && <span className="ml-1 text-[#F0B457]">●</span>}
@@ -363,7 +363,7 @@ export default function MapEditorView({
               author errors (a layer the route won't take, a map id with no
               file) that are unfixable while they stay invisible */}
           {saveError && (
-            <p role="alert" className="max-w-md text-[13px] leading-snug text-[#F08A8A]">
+            <p role="alert" className="max-w-md text-[15px] leading-snug text-[#F08A8A]">
               {saveError}
             </p>
           )}
@@ -380,7 +380,7 @@ export default function MapEditorView({
         <Panel id="controls" title="Tools" className={`absolute right-4 top-4 px-3 pb-2 pt-1 ${panel}`}>
           <div className="flex flex-col gap-2">
           <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span className="text-[13px] uppercase tracking-widest text-[#71717C]">Randomize</span>
+            <span className="text-[15px] uppercase tracking-widest text-[#71717C]">Randomize</span>
             <button
               role="switch"
               aria-checked={randomize}
@@ -397,7 +397,7 @@ export default function MapEditorView({
             </button>
           </label>
           <label className="flex items-center justify-between gap-3">
-            <span className="text-[13px] uppercase tracking-widest text-[#71717C]">Brush</span>
+            <span className="text-[15px] uppercase tracking-widest text-[#71717C]">Brush</span>
             <span className="flex gap-1">
               {[1, 2, 3].map((b) => (
                 <button
@@ -435,7 +435,7 @@ export default function MapEditorView({
             </span>
           </label>
           <label className="flex items-center justify-between gap-3">
-            <span className="text-[13px] uppercase tracking-widest text-[#71717C]">Shape</span>
+            <span className="text-[15px] uppercase tracking-widest text-[#71717C]">Shape</span>
             <span className="flex gap-1">
               {(["square", "round"] as const).map((sh) => (
                 <button
@@ -469,7 +469,7 @@ export default function MapEditorView({
               is drawn, where the void starts, how far the camera goes, what
               a brush may touch, and what gets written. */}
           <label className="flex items-center justify-between gap-3 border-t border-[#2E2E36] pt-2">
-            <span className="text-[13px] uppercase tracking-widest text-[#71717C]">Height</span>
+            <span className="text-[15px] uppercase tracking-widest text-[#71717C]">Height</span>
             <span className="flex items-center gap-1">
               {[-10, -1].map((d) => (
                 <button
@@ -501,10 +501,10 @@ export default function MapEditorView({
             </span>
           </label>
           <div className="flex flex-col gap-1 border-t border-[#2E2E36] pt-2">
-            <span className="text-[13px] uppercase tracking-widest text-[#71717C]">Layers</span>
+            <span className="text-[15px] uppercase tracking-widest text-[#71717C]">Layers</span>
             {LAYER_ROWS.map(([key, label]) => (
               <label key={key} className="flex cursor-pointer items-center justify-between gap-3">
-                <span className={`text-[13px] ${layers[key] ? "text-[#A6A6AF]" : "text-[#4A4A55] line-through"}`}>
+                <span className={`text-[15px] ${layers[key] ? "text-[#A6A6AF]" : "text-[#4A4A55] line-through"}`}>
                   {label}
                 </span>
                 <button
@@ -524,13 +524,13 @@ export default function MapEditorView({
                 </button>
               </label>
             ))}
-            <div className="text-[12px] leading-tight text-[#71717C]">
+            <div className="text-[14px] leading-tight text-[#71717C]">
               A hidden layer is locked: paint straight over the ground beneath it
             </div>
           </div>
           {isSpawn && (
             <label className="flex items-center justify-between gap-3">
-              <span className="text-[13px] uppercase tracking-widest text-[#71717C]">Radius</span>
+              <span className="text-[15px] uppercase tracking-widest text-[#71717C]">Radius</span>
               <span className="flex gap-1">
                 {SPAWN_RADII.map((r) => (
                   <button
@@ -567,7 +567,7 @@ export default function MapEditorView({
           )}
           {isPath && (
             <label className="flex items-center justify-between gap-3">
-              <span className="text-[13px] uppercase tracking-widest text-[#71717C]">Path</span>
+              <span className="text-[15px] uppercase tracking-widest text-[#71717C]">Path</span>
               <span className="flex gap-1">
                 {PATH_WIDTHS.map((w, i) => (
                   <button
@@ -586,7 +586,7 @@ export default function MapEditorView({
               </span>
             </label>
           )}
-          <div className="text-[12px] text-[#71717C]">
+          <div className="text-[14px] text-[#71717C]">
             {isPath
               ? "Drag to carve an enemy road · edges wobble on their own"
               : isSpawn
@@ -620,7 +620,7 @@ export default function MapEditorView({
           <div className="flex flex-col gap-1.5">
             {paletteSections().map((section) => (
               <div key={section.label}>
-                <div className="mb-0.5 text-[11px] uppercase tracking-widest text-[#71717C]">
+                <div className="mb-0.5 text-[13px] uppercase tracking-widest text-[#71717C]">
                   {section.label}
                 </div>
                 <div className="flex flex-wrap gap-1">
@@ -661,7 +661,7 @@ export default function MapEditorView({
                               />
                             )}
                             {randomize && !set.noRandom && set.icons.length > 1 && (
-                              <span className="absolute -right-1 -top-1 rounded bg-[#222227] px-1 text-[11px] text-[#FFD37F]">
+                              <span className="absolute -right-1 -top-1 rounded bg-[#222227] px-1 text-[13px] text-[#FFD37F]">
                                 ×{set.icons.length}
                               </span>
                             )}
@@ -678,7 +678,7 @@ export default function MapEditorView({
               lost their names with the column, and for the zone and exit
               rows that matters most: four identical dark panels differing
               only by a colour bar. */}
-          <div className="mt-1.5 border-t border-[#2E2E36] pt-1 text-[11px] text-[#A6A6AF]">
+          <div className="mt-1.5 border-t border-[#2E2E36] pt-1 text-[13px] text-[#A6A6AF]">
             {(() => {
               const set = PALETTE.find((p) => p.id === setId) ?? PALETTE[0];
               if (set.kind === "spawn")

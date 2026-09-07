@@ -421,7 +421,9 @@ export function build(spec) {
     });
   };
   const rooms = spec.rooms.map((r) => ({ ...r }));
-  for (const r of rooms) clearRoom(r.x, r.y, r.r, r.wobble ?? 0.32, r.water ?? false);
+  // a `dry` room is an island: its water is turned to ground, where a
+  // plain room only turns its deep water shallow
+  for (const r of rooms) clearRoom(r.x, r.y, r.r, r.wobble ?? 0.32, r.water ?? false, r.dry ?? false);
   const core = { x: spec.core.x, y: spec.core.y };
   const coreR = spec.core.r ?? 11;
   // the core's clearing is DRY: the water nearest the core is the hulls'
@@ -448,8 +450,11 @@ export function build(spec) {
     const cost = layer === "ground"
       ? (i) => (kind[i] === OPEN ? 1 : kind[i] === SHALLOW ? 1.5 : kind[i] === WALL ? 9 : 40)
           + (edgeDist(i % W, (i / W) | 0) < 12 ? 30 : 0) + wanderN((i % W) / 9, ((i / W) | 0) / 9) * 4
+      // A RIVER MEANDERS. Land costs the same everywhere to a channel, so
+      // a small wander term gave a ruled canal; a heavy one makes the
+      // channel hunt the noise's low ground the way water does
       : (i) => (kind[i] === DEEP ? 1 : kind[i] === SHALLOW ? 1.2 : 25)
-          + (edgeDist(i % W, (i / W) | 0) < 10 ? 30 : 0) + wanderN((i % W) / 9, ((i / W) | 0) / 9) * 4;
+          + (edgeDist(i % W, (i / W) | 0) < 10 ? 30 : 0) + wanderN((i % W) / 14, ((i / W) | 0) / 14) * 70;
     const path = astar(Math.round(a.x), Math.round(a.y), Math.round(b.x), Math.round(b.y), cost);
     if (!path) throw new Error(`no route from (${a.x},${a.y}) to (${b.x},${b.y})`);
     const [w0, w1] = width;
@@ -483,12 +488,25 @@ export function build(spec) {
 
   // 4b. the named chokes: within `reach` of the point, only the cells
   //     within w/2 of a brushed centreline stay open
+  //     THE FUNNEL'S CHOKE IS STRAIGHT: it pinches to the ruled line from
+  //     the core through the funnel point, which is the strip the citadel
+  //     gate (5c) keeps open, so the two agree. A choke laid along the
+  //     wandering centreline under a straight gate left only their overlap
+  const f = spec.funnel;
+  const gateAng = f ? Math.atan2(f.y - core.y, f.x - core.x) : 0;
+  const offLine = (x, y) => Math.abs(-(x + 0.5 - core.x) * Math.sin(gateAng) + (y + 0.5 - core.y) * Math.cos(gateAng));
   for (const c of spec.chokes ?? []) {
+    const straight = f && Math.hypot(c.x - f.x, c.y - f.y) < 4;
     const near = centres.filter(([x, y]) => Math.hypot(x - c.x, y - c.y) <= c.reach + 4);
     disc(W, H, c.x, c.y, c.reach, (i, x, y) => {
+      // the straight strip is CARVED as well as kept: the road under it
+      // wandered, and a strip only kept where the road already was is a
+      // strip as wide as their overlap
+      if (straight && kind[i] === WALL && offLine(x, y) <= c.w / 2) { kind[i] = OPEN; return; }
       if (kind[i] !== OPEN && kind[i] !== SHALLOW) return;
       let d = Infinity;
-      for (const [px, py] of near) d = Math.min(d, Math.hypot(px - x, py - y));
+      if (straight) d = offLine(x, y);
+      else for (const [px, py] of near) d = Math.min(d, Math.hypot(px - x, py - y));
       if (d > c.w / 2) kind[i] = WALL;
     });
   }
@@ -568,19 +586,17 @@ export function build(spec) {
   //     to come true by luck; the ring makes it true by construction, and
   //     it is how Mindustry's own cores sit — in a pocket with a mouth.
   //     Water in the ring deepens rather than walls, so a bay may lap it
-  if (spec.funnel) {
-    const f = spec.funnel;
-    const ang = Math.atan2(f.y - core.y, f.x - core.x);
+  if (f) {
     const gateW = (spec.chokes?.find((c) => Math.hypot(c.x - f.x, c.y - f.y) < 4)?.w ?? 8) / 2;
     const R = coreR + 7;
     disc(W, H, core.x, core.y, R, (i, x, y) => {
       const dx = x + 0.5 - core.x, dy = y + 0.5 - core.y;
       const d = Math.hypot(dx, dy);
       if (d <= coreR - 1) return;
-      // along-gate and across-gate distances
-      const along = dx * Math.cos(ang) + dy * Math.sin(ang);
-      const across = Math.abs(-dx * Math.sin(ang) + dy * Math.cos(ang));
-      if (along > 0 && across <= gateW) return;
+      // the gate: the strip along the ruled line from the core through the
+      // funnel point, the funnel choke's own width
+      const along = dx * Math.cos(gateAng) + dy * Math.sin(gateAng);
+      if (along > 0 && offLine(x, y) <= gateW) { if (kind[i] === WALL) kind[i] = OPEN; return; }
       if (kind[i] === OPEN) kind[i] = WALL;
       else if (kind[i] === SHALLOW) kind[i] = DEEP;
     });
@@ -631,7 +647,10 @@ export function build(spec) {
     const { lab } = label(wetM);
     const seaLabels = new Set();
     for (const z of waterZones) disc(W, H, z.x, z.y, z.r, (i) => { if (lab[i]) seaLabels.add(lab[i]); });
-    if (seaLabels.size !== 1) throw new Error(`the water zones sit in ${seaLabels.size} separate waters — they must share one sea`);
+    if (seaLabels.size !== 1) {
+      const per = waterZones.map((z) => { const ls = new Set(); disc(W, H, z.x, z.y, z.r, (i) => { if (lab[i]) ls.add(lab[i]); }); return `(${z.x},${z.y}) in water ${[...ls].join("+") || "none"}`; });
+      throw new Error(`the water zones sit in ${seaLabels.size} separate waters — they must share one sea: ${per.join(", ")}`);
+    }
     const sea = [...seaLabels][0];
     const dCore = (i) => Math.hypot((i % W) + 0.5 - core.x, ((i / W) | 0) + 0.5 - core.y);
     let seaD = Infinity;
@@ -977,7 +996,7 @@ export function preview(spec, m, SC = 3) {
       return propAt.has(i) ? shade(c, 0.7) : c;
     }
     if (wall[i] === WALL_PINE) return shade(PINE_TONE[m.pines.find((p) => Math.floor(p.x / CELL) === x && Math.floor(p.y / CELL) === y)?.kind ?? 0], (x + y) % 2 ? 0.55 : 0.85);
-    const c = WALL_TONE[wall[i] - (wall[i] % 2)] ?? [0xff, 0, 0xff];
+    const c = WALL_TONE[wall[i] === WALL_DARK || wall[i] === WALL_DARK + 1 ? WALL_DARK : wall[i] - (wall[i] % 2)] ?? [0xff, 0, 0xff];
     // rock is drawn darker than its floor and its edge darker still, the
     // way the wall shading and shadow read in the game
     const edge = [i - 1, i + 1, i - W, i + W].some((j) => j >= 0 && j < N && (!blocked[j] || wall[j] === WALL_DEEP));

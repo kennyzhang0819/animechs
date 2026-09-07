@@ -200,20 +200,25 @@ The zoom floor is the whole map in frame with a little padding
 
 **There is one run in the game and ten difficulties to play it at.** Every
 rung sends the whole authored script — all fifty waves, wave 1 to wave 50,
-the same fifty every time, **and every body at the same health**. A rung is
-what its mutator roll may spend, how many rules it returns, and how much
-the run's XP is multiplied by. It is shown to the player as *Level 1*
-through *Level 10* and nothing else; there are no named difficulties.
+the same fifty every time, **and every body at the same health**. What a
+rung changes is **how many** come and **what rules** they come under. The
+four named difficulties — **Incursion, Onslaught, Scourge, Nemesis** —
+send every wave at a quarter, a half, three quarters and the whole of its
+count, with no mutators. The six above them, shown as *Nemesis +1*
+through *+6*, send Nemesis's full swarm under a mutator roll that
+spends more and returns more with every step. "Level" is never the word
+for a difficulty: a level is the player's.
 
-| rung | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+| rung | Incursion | Onslaught | Scourge | Nemesis | +1 | +2 | +3 | +4 | +5 | +6 |
 |---|---|---|---|---|---|---|---|---|---|---|
 | waves | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 |
+| count | 25% | 50% | 75% | 100% | 100% | 100% | 100% | 100% | 100% | 100% |
 | enemy health | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 |
-| rules rolled | 0 | 3 | 3 | 3 | 3 | 4 | 4 | 4 | 4 | 5 |
-| mutator points | 0 | 8 | 10 | 11 | 13 | 15 | 17 | 19 | 20 | 22 |
+| rules rolled | 0 | 0 | 0 | 0 | 3 | 3 | 3 | 3 | 4 | 4 |
+| mutator points | 0 | 0 | 0 | 0 | 8 | 10 | 11 | 13 | 15 | 17 |
 | XP bonus | ×1.0 | ×1.5 | ×2.0 | ×2.5 | ×3.0 | ×3.5 | ×4.0 | ×4.5 | ×5.0 | ×5.5 |
 
-**A rung scales the mutator roll and the XP, and nothing else.** Enemy
+**A rung scales the count, the mutator roll and the XP, and nothing else.** Enemy
 level — Mindustry's ×1.06-a-level health curve — is still a mechanism
 (`HP_PER_LEVEL`, `LevelSpec.enemyLevel`, the balance dashboard's dial) and
 the ladder no longer turns it: every rung is authored at level 0.
@@ -296,6 +301,31 @@ lists the whole track; the results screen names what a climb handed out. A
 first Confluence clear lands around level 6; the top of the track is about
 2.3 million XP.
 
+### One script, three families a deploy
+
+**Every map plays the same fifty waves** — `public/levels/campaign.json`,
+edited in the admin level editor from any world's card. The script is
+authored in three unit families (ground, ground support, air), and those
+are its three **slots**. When a run deploys, **the die rolls three
+families** from the ones the map's drop zones allow — a map with no water
+door cannot send hulls — and deals them into the slots, tier for tier
+(`rollFamilies`, `transformScript` in levels.ts). Forty daggers in the
+script are forty of whichever family took the first slot. The boss
+(Disrupt) is in no family and is never swapped.
+
+| family | bodies | needs a door for |
+|---|---|---|
+| Ground | dagger, mace, fortress, scepter, reign | ground |
+| Crawlers | crawler, atrax, spiroct, arkyid, toxopid | ground |
+| Ground support | nova, pulsar, quasar, vela, corvus | ground |
+| Air | flare, horizon, zenith, antumbra, eclipse | air |
+| Naval | risso, minke, bryde, sei, omura | water |
+| Naval support | retusa, oxynoe, cyerce, aegires, navanax | water |
+
+The deal is shown on the field in the bottom-right corner, StarCraft-style:
+a column of squares growing upward, the bottom one always the three
+families dealt, every square above it one mutator in force.
+
 ### Missions
 
 **Every map is its own assignment** (`LevelSpec.mission`): *hold* — clear
@@ -312,7 +342,11 @@ waiting for a map that wants it.
 **Structures stand anywhere unoccupied, open ground included, and the
 swarm attacks them.** Every unit attack-moves, Mindustry's GroundAI: it
 walks the field toward the base and every weapon it carries fires at the
-nearest structure within reach on the way (`game/weapons.ts` is the
+nearest structure within reach **and in sight** on the way — a walker or a
+hull cannot shoot through a hill (`Sim.hasSight`, a raycast over the same
+mask the flyers route by), so a turret behind a ridge is one the swarm has
+to come round before it can answer; a flyer is looking down and sees its
+whole radius (`game/weapons.ts` is the
 arsenal — each unit's mounts, reloads, bullets and splash after
 `UnitTypes.java`. Every weapon's LOOK — sprite, size, colours, beam
 palette, what lands where it hits — is read off that file and the bullet
@@ -354,7 +388,13 @@ Mindustry's core nucleus health scaled like every other structure
 paths to it, presses against it and fires (`Sim.coreGoal`, the same
 structure grid the turrets sit in), flyers hover over its edge and shoot,
 hulls park on the nearest water and shoot from the shore
-(`Sim.waterGoal`). Nothing leaks and nothing is counted in lives — a
+(`Sim.waterGoal`). **Each of the three layers has its own field.** The
+walkers' is over rock and structures, the hulls' over everything that is
+not water, and the flyers' (`Sim.airField`) over the HILLS alone — deep
+water and forest are open sky. A flyer routes round a mountain like the
+rest of the swarm, but nothing collides it with one: shoved inside a peak
+it simply flies the straight line back out. Nothing leaks and nothing is
+counted in lives — a
 body that reaches the core stays there, chewing on it, until one of them
 is gone. **When the core falls the run is lost** (`Sim.lost`), whatever
 else is standing.
@@ -365,7 +405,7 @@ the end of the lane the drop zones feed.
 
 ### Mutators
 
-Every deploy from Level 2 up is played under **mutators** — rules that
+Every deploy above Nemesis is played under **mutators** — rules that
 change what happens to a wave after it lands. **Nobody picks them.** The
 **difficulty decides the budget and the count**, and that many rules are
 rolled to fit it when you deploy. It is the StarCraft II model, and the
@@ -384,80 +424,20 @@ with no reward attached — and the game had to be balanced as though
 everybody did. So it became the opposite thing: mandatory, unchosen, and
 attached to the maps that want it.
 
-**Where it is mandatory:** **every deploy from Level 2 up, on every map.**
-The gate is the ladder, not the world — a tier carries how many rules it
-rolls and what they may cost (`RungKnobs.mutationCount` and
-`.mutationPoints`, both dials on the balance tab), and Level 1 carries zero
-of each. That is the whole of what "Level 1 is the campaign as authored"
-means. The per-world `LevelSpec.mutators` switch is gone; it was never
+**Where it is mandatory:** **every deploy above Nemesis, on every
+map.** The gate is the ladder, not the world — a tier carries how many
+rules it rolls and what they may cost (`RungKnobs.mutationCount` and
+`.mutationPoints`, both dials on the balance tab), and the four named
+difficulties carry zero of each. That is the whole of what "Incursion
+through Nemesis are the campaign as authored, at a size" means. The per-world `LevelSpec.mutators` switch is gone; it was never
 turned on, and it could only ever say yes or no where the ladder can say
 how much.
 
-**A level may carry rules of its own, by design.**
-`LevelSpec.intrinsicMutation` is a list of mutators a world is *always*
-played under — **Maelstrom** carries **Overshields**, which is what makes
-the naval front the shielded front. Three things follow, and they are the
-whole contract: it applies at **Level 1** too (for a world authored with
-rules on it, that *is* the campaign as authored); it is **never rolled**
-(the roller is handed it as an exclusion, so a deploy cannot spend points
-on a rule the run already has); and it is **never charged** (the tier's
-budget buys the roll on top of it). The start screen lists it beside the
-roll, tagged *always*, and `mutationsInForce` is the one place the two are
-joined. This is not the old switch coming back: that said "this map is
-allowed to mutate, at whatever strength the difficulty says", which put a
-level in charge of a difficulty curve. This says "this map is the shielded
-one", which is authorship.
-
-**The costs are the only balance dial.** A mutator is worth points
-(`MutationDef.cost`, 1–6 — light, heavy, brutal), a difficulty affords
-them or does not, and which rules a difficulty sees falls out of the
-arithmetic rather than a per-difficulty list. The count climbs far more
-slowly than the budget: points buy **weight** (the same slots, filled with
-worse things) and the count buys **breadth**, which is the scarcer of the
-two. Both rows are the authored defaults, and both are knobs:
-
-| rung | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| rules | 0 | 3 | 3 | 3 | 3 | 4 | 4 | 4 | 4 | 5 |
-| points | 0 | 8 | 10 | 11 | 13 | 15 | 17 | 19 | 20 | 22 |
-
-The roller shuffles the catalog, walks it taking whatever the remaining
-budget covers, and keeps the fullest of two dozen such walks — **most
-rules first, then most points spent**, because spending the budget *is*
-the difficulty curve. The whole catalog is public: the upgrade screen
-is two tabs, and the second is a **codex board** — the same pan-and-zoom
-map the tech tree is drawn on, holding one thumbnail per rule. The border
-colour is how bad it is (light / heavy / brutal) and the hover card is the
-rule in a sentence; no cost, no tier, no arithmetic, because none of that
-is a player's question. The one number on the screen is the points each
-difficulty spends. The surprise is which rules turn up, never what exists. For a picked map the start
-screen spells out the roll in full before Start is pressed, and the run
-plays under exactly what it showed; a **random map** rolls on Start,
-because the exclusion is the map's and the map is not known until then —
-that surprise is what the random-map bonus pays for, and the rules in
-force are on the HUD from the first wave.
-
-**A mutator changes a wave after it spawns and never what the script
-sends**, so every number in `ladder.ts` — wave counts, enemy totals, the
-drop-ratio audit — stays true whatever was rolled. A rule that wants to
-change the script is a wave transform, not a mutator.
-
-**Volatile — 3 points.** Every enemy detonates when it dies, and the blast
-damages the towers it reaches — about two cells, plus the body's own
-hitbox, with the damage set by the body's **tier** (a dagger is a scratch,
-a fortress a real dent) and never by its level, because tower health does
-not climb the ladder and neither may the thing that spends it. This is the
-rule that makes tower health a mechanic at all: **nothing in the base game
-hurts a tower.** Every tower has a pool (`towerMaxHp`, footprint-scaled),
-a hurt one wears the units' own red hp tint, and one at zero goes **down,
-never away** — dark, silent, smoking, and back at full health ten seconds
-later (`TOWER_DOWN_TIME`). What a swarm of detonating daggers costs is
-windows of silence in the kill zone, the same audit-invisible currency
-Speedy taxes — and it taxes **point-blank play specifically**: scorch,
-fuse, arc and the duo wall on the choke feel it in proportion to how many
-bodies die at their feet, while a long-range board barely pays. Selling
-and replacing a downed tower is allowed; a rebuild is slower than the
-timer for anything bigger than a duo.
+**No map carries rules of its own.** Every mutator is in every roll on
+every map — all maps are equal. Hydrophobic and Amphibious used to be
+map-bound "special" rules only Maelstrom and Quagmire could play; they are
+ordinary catalog entries now, and a terrain rule simply reads whatever
+terrain it lands on.
 
 **Overshields — 3 points.** Every force field on the field comes up **five
 times the pool** it was — the bubble a quasar walks in with, and the shield tower

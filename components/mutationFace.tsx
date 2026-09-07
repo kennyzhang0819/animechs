@@ -107,24 +107,6 @@ const BANDS: readonly { label: string; color: string; max: number }[] = [
   { label: "Brutal", color: "#FF6B6B", max: MUT_COST_MAX },
 ];
 
-/**
- * THE FOURTH BAND, OFF THE SCALE: an SPECIAL rule (MutationDef.special)
- * — one that belongs to a single map and is never rolled anywhere.
- *
- * IT IS NOT A WEIGHT, WHICH IS WHY IT IS NOT IN THE LIST ABOVE. The three
- * bands answer "how bad is this", read off a cost the roller actually
- * spends. A special rule is never rolled and never charged, so its cost
- * is a label rather than a price (see MutationDef.special) and colouring
- * it amber would tell the player it competes for a slot in a roll it can
- * never appear in. The blue says the true thing instead: this one is not
- * in the draw — it is where you are standing.
- *
- * Periwinkle rather than the green/amber/red ramp for exactly that reason.
- * It reads as a different KIND of card at a glance, and it is far enough
- * from the codex tab's pink (MUT_LIT) not to be mistaken for selection.
- */
-const SPECIAL_BAND = { label: "Special", color: "#8AA2FF" } as const;
-
 if (BANDS[BANDS.length - 1].max < MUT_COST_MAX)
   throw new Error(
     `the weights stop at ${BANDS[BANDS.length - 1].max} but a mutator may cost ${MUT_COST_MAX}`,
@@ -142,4 +124,4 @@ export const bandOf = (cost: number): { label: string; color: string } =>
  * same way an undrawn rule falls through to the codex chevrons.
  */
 export const bandFor = (def: MutationDef | null): { label: string; color: string } =>
-  def?.special ? SPECIAL_BAND : bandOf(def ? mutationCostOf(def.id) : 0);
+  bandOf(def ? mutationCostOf(def.id) : 0);

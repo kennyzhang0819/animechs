@@ -1,25 +1,23 @@
 import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
-import { UNIT_KINDS, worldById, type LevelDoc, type LevelStep } from "@/game/levels";
+import { CAMPAIGN_DOC_ID, UNIT_KINDS, type LevelDoc, type LevelStep } from "@/game/levels";
 
 /**
- * Dev-only level persistence: the admin level editor POSTs one world's
- * document and this writes it to public/levels/<id>.json, which the
- * campaign loads onto that world at startup (see loadLevelDocs in
- * levels.ts).
+ * Dev-only level persistence: the admin level editor POSTs the campaign's
+ * document and this writes it to public/levels/campaign.json, which
+ * every world loads at startup (see loadLevelDocs in levels.ts).
  *
- * Only a world the campaign table holds can be written — the id goes
- * straight into a path, so anything else is refused rather than
- * sanitized. Production builds refuse outright, exactly like /api/maps.
+ * Only the campaign's id can be written — the id goes straight into a
+ * path, so anything else is refused rather than sanitized. Production builds refuse outright, exactly like /api/maps.
  */
 export async function POST(req: Request): Promise<NextResponse> {
   if (process.env.NODE_ENV === "production")
     return NextResponse.json({ error: "level editing is a dev tool" }, { status: 403 });
 
   const doc = (await req.json()) as Partial<LevelDoc>;
-  if (typeof doc.id !== "string" || !worldById(doc.id))
-    return NextResponse.json({ error: "not a world the campaign holds" }, { status: 400 });
+  if (doc.id !== CAMPAIGN_DOC_ID)
+    return NextResponse.json({ error: "not the campaign's document" }, { status: 400 });
   if (typeof doc.waveGap !== "number" || !(doc.waveGap >= 0) || doc.waveGap > 3600)
     return NextResponse.json({ error: "bad wave gap" }, { status: 400 });
   if (!Array.isArray(doc.script) || !doc.script.every(isStep))

@@ -79,7 +79,7 @@ const PAN_KEYS: Readonly<Record<string, readonly [number, number]>> = {
  * controls is shared rather than copied.
  */
 export const CHROME_BTN =
-  "pointer-events-auto ms-btn px-3 py-1.5 text-[13px] text-[#a2a2a2] hover:text-white";
+  "pointer-events-auto ms-btn px-3 py-1.5 text-[15px] text-[#a2a2a2] hover:text-white";
 
 /** the standardized back: icon only, big, top-left — the same button every
  *  screen in the game pins in the same corner */
@@ -130,7 +130,7 @@ export function BoardTabs<T extends string>({
             role="tab"
             aria-selected={on}
             onClick={() => onPick(t.id)}
-            className={`ms-btn h-9 gap-2 px-3 text-[13px] ${
+            className={`ms-btn h-9 gap-2 px-3 text-[15px] ${
               on ? "ms-btn-tint ms-on" : "ms-btn-ghost text-[#a2a2a2]"
             }`}
             style={{ "--ms-tint": t.color } as CSSProperties}
@@ -430,14 +430,14 @@ export default function Board({
           <button
             aria-label="zoom in"
             onClick={() => zoomCenter(1.25)}
-            className={`${CHROME_BTN} flex h-10 w-10 items-center justify-center p-0 text-[17px] font-bold`}
+            className={`${CHROME_BTN} flex h-10 w-10 items-center justify-center p-0 text-[19px] font-bold`}
           >
             +
           </button>
           <button
             aria-label="zoom out"
             onClick={() => zoomCenter(0.8)}
-            className={`${CHROME_BTN} flex h-10 w-10 items-center justify-center p-0 text-[17px] font-bold`}
+            className={`${CHROME_BTN} flex h-10 w-10 items-center justify-center p-0 text-[19px] font-bold`}
           >
             −
           </button>

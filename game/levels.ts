@@ -1,9 +1,9 @@
-import { CELL, HP0, UNIT_SPEED, UR } from "./constants";
+import { CELL, HP0, UNIT_SPEED, UR, type MoveLayer } from "./constants";
 import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 import { explain, type SaveResult } from "./types";
 // type only — mutation.ts must never depend on the campaign, and this
 // import must never become a value one or the two files form a cycle
-import { MUTATIONS, type MutationId } from "./mutation";
+import type { MutationId } from "./mutation";
 
 export const UNIT_KINDS = ["dagger", "mace", "fortress", "scepter", "reign", "crawler", "atrax", "spiroct", "arkyid", "toxopid", "flare", "nova", "pulsar", "quasar", "vela", "corvus", "horizon", "zenith", "antumbra", "eclipse", "disrupt", "risso", "minke", "bryde", "sei", "omura", "retusa", "oxynoe", "cyerce", "aegires", "navanax"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
@@ -1040,6 +1040,138 @@ export type RegionWave = WaveUnits & { region: number };
  */
 export type LevelStep = { wave: WaveUnits | readonly RegionWave[] };
 
+// ---------- families ----------
+
+/**
+ * THE UNIT FAMILIES — Mindustry's trees, five tiers each, in tier order.
+ * A family is what a wave is authored in and what the deploy's die roll
+ * swaps: a wave that sends "forty of the first ground body" sends forty
+ * of the first body of whichever family took that slot (transformScript).
+ *
+ * `layer` is the movement layer the family travels on, which is what
+ * decides where it may play: a map with no water door cannot roll a naval
+ * family (rollFamilies). Disrupt — the one boss — is in no family and
+ * is never swapped: a boss is an event, not a volume.
+ */
+export const FAMILIES = [
+  { key: "ground", name: "Ground", layer: "ground", icon: "dagger",
+    kinds: ["dagger", "mace", "fortress", "scepter", "reign"] },
+  { key: "crawler", name: "Crawlers", layer: "ground", icon: "crawler",
+    kinds: ["crawler", "atrax", "spiroct", "arkyid", "toxopid"] },
+  { key: "groundSupport", name: "Ground support", layer: "ground", icon: "nova",
+    kinds: ["nova", "pulsar", "quasar", "vela", "corvus"] },
+  { key: "air", name: "Air", layer: "air", icon: "flare",
+    kinds: ["flare", "horizon", "zenith", "antumbra", "eclipse"] },
+  { key: "naval", name: "Naval", layer: "water", icon: "risso",
+    kinds: ["risso", "minke", "bryde", "sei", "omura"] },
+  { key: "navalSupport", name: "Naval support", layer: "water", icon: "retusa",
+    kinds: ["retusa", "oxynoe", "cyerce", "aegires", "navanax"] },
+] as const satisfies readonly {
+  key: string;
+  name: string;
+  layer: MoveLayer;
+  icon: UnitKind;
+  kinds: readonly UnitKind[];
+}[];
+
+export type FamilyKey = (typeof FAMILIES)[number]["key"];
+
+/** how many families a deploy sends — the die picks this many */
+export const FAMILIES_PER_RUN = 3;
+
+/** the family a kind belongs to, or null for the boss */
+const FAMILY_OF: Partial<Record<UnitKind, FamilyKey>> = {};
+for (const f of FAMILIES) for (const k of f.kinds) FAMILY_OF[k] = f.key;
+export const familyOf = (kind: UnitKind): FamilyKey | null => FAMILY_OF[kind] ?? null;
+
+/** a family's entry by key — every key in FamilyKey is in the table */
+export const familyByKey = (key: FamilyKey) => FAMILIES.find((f) => f.key === key)!;
+
+/** a kind's tier index within its family, 0-4 */
+const tierIndexOf = (kind: UnitKind): number => {
+  const f = familyOf(kind);
+  return f ? (familyByKey(f).kinds as readonly UnitKind[]).indexOf(kind) : -1;
+};
+
+/**
+ * The families a script is authored in, in order of first appearance —
+ * the SLOTS the roll fills. The campaign's script is written in three
+ * (ground, ground support, air), and that order is what the deploy's
+ * three families are dealt into.
+ */
+export function scriptFamilies(script: readonly LevelStep[]): FamilyKey[] {
+  const out: FamilyKey[] = [];
+  for (const step of script)
+    for (const g of waveGroups(step.wave))
+      g.counts.forEach((c, i) => {
+        if (c <= 0) return;
+        const f = familyOf(UNIT_KINDS[i]);
+        if (f && !out.includes(f)) out.push(f);
+      });
+  return out;
+}
+
+/** the families a map with these doors may send */
+export const eligibleFamilies = (layers: ReadonlySet<MoveLayer>): FamilyKey[] =>
+  FAMILIES.filter((f) => layers.has(f.layer)).map((f) => f.key);
+
+/**
+ * THE DIE ROLL: FAMILIES_PER_RUN families from those the map's doors
+ * allow, in a random order — the order is the deal, since slot i of the
+ * script plays as families[i]. A map with fewer doors than that sends
+ * every family it can, so a two-family map is a two-family map rather
+ * than a run with a silent empty slot.
+ */
+export function rollFamilies(
+  layers: ReadonlySet<MoveLayer>,
+  rand: () => number = Math.random,
+): FamilyKey[] {
+  const pool = eligibleFamilies(layers);
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, FAMILIES_PER_RUN);
+}
+
+/**
+ * THE WAVE TRANSFORMATION: the script re-cast into the rolled families,
+ * tier for tier. The script's families (scriptFamilies, in order) are
+ * its slots; slot i becomes families[i]. A script with more slots than
+ * the deal has families wraps — its fourth family plays as the first
+ * again — so nothing authored is dropped, and one with fewer leaves the
+ * spare families unsent. The boss is never touched. Two slots landing on
+ * one family add their counts.
+ */
+export function transformScript(
+  script: readonly LevelStep[],
+  families: readonly FamilyKey[],
+): LevelStep[] {
+  if (families.length === 0) return [...script];
+  const slots = scriptFamilies(script);
+  const cast = new Map<FamilyKey, FamilyKey>();
+  slots.forEach((f, i) => cast.set(f, families[i % families.length]));
+  const recast = <T extends WaveUnits>(w: T): T => {
+    const out: WaveUnits = {};
+    if ("region" in w) (out as RegionWave).region = (w as RegionWave).region;
+    for (const k of UNIT_KINDS) {
+      const c = w[k] ?? 0;
+      if (c <= 0) continue;
+      const from = familyOf(k);
+      const to = from ? cast.get(from) : null;
+      const kind = to ? familyByKey(to).kinds[tierIndexOf(k)] : k;
+      out[kind] = (out[kind] ?? 0) + c;
+    }
+    return out as T;
+  };
+  return script.map((step) => ({
+    ...step,
+    wave: Array.isArray(step.wave)
+      ? (step.wave as readonly RegionWave[]).map(recast)
+      : recast(step.wave as WaveUnits),
+  }));
+}
+
 /**
  * Normalize a wave into groups of counts indexed like UNIT_KINDS. Groups
  * with nothing in them are dropped.
@@ -1129,36 +1261,13 @@ export interface LevelSpec {
   /** which tier of the ladder this spec was expanded for; unset = baseline */
   tier?: number;
   /**
-   * THE RULES THIS LEVEL IS ALWAYS PLAYED UNDER, by design — part of what
-   * the world IS rather than part of how hard it is being played.
-   *
-   * IT IS NOT THE OLD `mutators` SWITCH. That was a per-world boolean —
-   * "does this map roll rules" — which handed a level control of a
-   * difficulty curve and was never set on anything. This is a LIST OF
-   * NAMED RULES: an author says "the naval front is the shielded front"
-   * and every deploy on it, at every tier, plays under exactly that.
-   *
-   * THREE THINGS FALL OUT OF "BY DESIGN" and they are the whole contract:
-   *
-   *   IT APPLIES AT LEVEL 1. The bottom tier is the campaign as authored,
-   *   and for a world authored with rules on it, this IS the campaign as
-   *   authored. The tier decides what is ROLLED, not what is true.
-   *
-   *   IT IS NEVER ROLLED. The roll is handed these as an exclusion
-   *   (rollMutations), so a deploy cannot come back with a rule the level
-   *   already has and spend the tier's points changing nothing.
-   *
-   *   IT IS NEVER CHARGED. The tier's budget buys the roll on top of this,
-   *   so an intrinsic rule makes a world harder at every tier rather than
-   *   crowding out the rules that make one deploy different from the next.
-   *
-   * A rule here is subject to the same hard law as a rolled one: it
-   * changes what happens to a wave AFTER it spawns, never what the script
-   * sends, so every number in ladder.ts stays true on a world that carries
-   * three of them. Anything that wants to change the script edits the
-   * script.
+   * THE FAMILIES THIS RUN SENDS — the die roll (rollFamilies) the deploy
+   * made against the map's doors, in slot order: the script's first
+   * family plays as families[0], its second as families[1], its third as
+   * families[2] (transformScript). Unset is the script as authored, which
+   * is what the editor and the audit arithmetic price.
    */
-  intrinsicMutation?: readonly MutationId[];
+  families?: readonly FamilyKey[];
   /**
    * The MUTATORS this run is played under (see mutation.ts) — what the
    * roll came back with when the run was deployed, not anything the ladder
@@ -1231,18 +1340,28 @@ export interface LevelDoc {
  */
 const docs = new Map<string, LevelDoc>();
 
-/** the current document for a world — what the level editor opens */
-export function levelDocOf(worldId: string): LevelDoc {
-  return docs.get(worldId) ?? { id: worldId, waveGap: 15, script: [] };
+/**
+ * THE ONE SCRIPT. Every map plays the same fifty waves — the document
+ * under this id in public/levels — and what makes one map different
+ * from the next is its ground, its doors and the family roll those doors
+ * allow (rollFamilies). A world id passed to levelDocOf is accepted and
+ * ignored, so an editor opened on any world edits the campaign.
+ */
+export const CAMPAIGN_DOC_ID = "campaign";
+
+/** the current document — the campaign's, whichever world asks */
+export function levelDocOf(_worldId?: string): LevelDoc {
+  return docs.get(CAMPAIGN_DOC_ID) ?? { id: CAMPAIGN_DOC_ID, waveGap: 15, script: [] };
 }
 
 /**
- * THE MAPS. Every map is its own mission with its own waves — the co-op
- * model: a map is an assignment, and what makes one map different from
- * the next is what it asks and what it sends, not a re-casting of a
- * shared script. Each world's waves live in public/levels/<id>.json and
- * are loaded onto its entry here by loadLevelDocs(); the identity (name,
- * map, badge, mission, intrinsic rules) is this table's.
+ * THE MAPS. Every map plays the same fifty waves (CAMPAIGN_DOC_ID), and
+ * what makes one map different from the next is its ground and its
+ * doors: which movement layers it opens decides which unit families the
+ * deploy may roll (rollFamilies), and the shared script is re-cast into
+ * the three it rolled (transformScript). The identity (name, map,
+ * mission) is this table's; no map carries rules of its own — all maps
+ * are equal, and every mutator is in every roll.
  *
  * Every map is played at TEN RUNGS of difficulty (RUNGS in ladder.ts): a
  * rung changes the rules rolled and the XP paid, never the script — so
@@ -1269,13 +1388,15 @@ export const WORLDS: LevelSpec[] = [
     waveGap: 15,
     // ================= HOW TO AUTHOR A WAVE ========================
     //
-    // THE SCRIPT IS public/levels/1.json — this world's own waves. There
-    // is no copy in this file to keep in step with it — see the note above
-    // `script` at the bottom of this block. Everything below documents HOW
-    // to author a wave; WHAT the waves are lives in the document, and the
-    // admin level editor writes it. The other worlds' scripts began as
-    // re-castings of this one and are authored on their own now, so the
-    // guidance here is Confluence's; the pattern travels, the counts do not.
+    // THE SCRIPT IS public/levels/campaign.json — the waves EVERY map
+    // plays. There is no copy in this file to keep in step with it — see
+    // the note above `script` at the bottom of this block. Everything
+    // below documents HOW to author a wave; WHAT the waves are lives in
+    // the document, and the admin level editor writes it. It is authored
+    // in three families (ground, ground support, air) and those are its
+    // three SLOTS: a deploy rolls three families the map's doors allow
+    // and deals them into the slots (transformScript), so the counts
+    // travel to every map and the bodies are whatever the die said.
     //
     // EVERY RUNG PLAYS THIS WHOLE LIST. There is one run per map and ten
     // difficulties to play it at, so the STAGE TABLE (stageAudit in
@@ -1374,13 +1495,10 @@ export const WORLDS: LevelSpec[] = [
     // WORLD 2 — the SECOND FRONT, opened by climbing Confluence rather
     // than by buying anything (see WORLD_REQUIRES in ladder.ts).
     //
-    // ITS MAP IS ITS OWN AND ITS WAVES ARE THE BLUEPRINT'S, RE-CAST. It
-    // plays the same fifty waves as every world; the transforms below are
-    // what make it the naval front. Maelstrom is a coast — the sea along
-    // its north and east edges, a bay under the core — so both of the
-    // blueprint's flying and marching lines arrive out of the water the
-    // map is made of, and what walks is the dagger class rather than the
-    // crawler class.
+    // ITS MAP IS ITS OWN AND ITS WAVES ARE THE CAMPAIGN'S. Maelstrom is
+    // a coast — the sea along its north and east edges, a bay under the
+    // core — so its water doors put the naval families in the roll, and
+    // a deploy here may sail what marches elsewhere.
     id: "2",
     name: "Maelstrom",
     map: "maelstrom",
@@ -1389,7 +1507,6 @@ export const WORLDS: LevelSpec[] = [
     // late waves are bound by their own release, not the gap — so the
     // short gap is what keeps the run near twenty-five minutes
     mission: { kind: "hold" },
-    intrinsicMutation: ["overshields", "hydrophobic"],
     waveGap: 15,
     script: [],
   },
@@ -1399,32 +1516,67 @@ export const WORLDS: LevelSpec[] = [
     map: "quagmire",
     // THE SWAMP: forty waves, held with the full hundred, because its core
     // stands on the west edge behind one causeway and its bodies wade in
-    // heavier than they spawned (Amphibious). The script is Confluence's first forty,
-    // marched by the dagger line instead of the crawlers and sailed by
-    // the naval line, at seven tenths of the bodies in the first stage
-    // and nine in the last; its first twenty waves send no tier-3 body,
-    // so the heavies arrive with the turrets that can hurt them. Forty
-    // rather than fifty because the last ten were the tier-5 hulls, and
-    // the base did not survive them on this front
+    // heavier than they spawned. It plays the campaign's fifty like every
+    // map; its doors decide which families the die may deal it.
     mission: { kind: "hold" },
-    intrinsicMutation: ["amphibious"],
+    waveGap: 15,
+    script: [],
+  },
+  {
+    id: "4",
+    name: "Greenwood",
+    map: "greenwood",
+    // THE EARTHY ONE: dirt roads under dirt cliffs, grass and pine stands, two lakes; four gates on the west, south and north, the core in the north-east corner behind one antechamber
+    mission: { kind: "hold" },
+    waveGap: 15,
+    script: [],
+  },
+  {
+    id: "5",
+    name: "Tundra",
+    map: "tundra",
+    // THE SNOWY ONE: snow under snow walls, ice round two frozen lakes, shale outcrops, snow pines; four gates on the south corners and the east and west edges, the core on the north edge
+    mission: { kind: "hold" },
+    waveGap: 15,
+    script: [],
+  },
+  {
+    id: "6",
+    name: "Crater",
+    map: "crater",
+    // THE CORE IN THE MIDDLE, in a basalt crater with six mouths, and six gates round the edge coming at it from every side. No funnel: the crater's rim is the defence
+    mission: { kind: "hold" },
+    waveGap: 15,
+    script: [],
+  },
+  {
+    id: "7",
+    name: "Shoals",
+    map: "shoals",
+    // THE ARCHIPELAGO: two thirds of the board is sea, every road between the sand islands is a bar of shallow the swarm wades, the hulls come from the north and south seas, the core on the west island behind one causeway
+    mission: { kind: "hold" },
+    waveGap: 15,
+    script: [],
+  },
+  {
+    id: "8",
+    name: "Riverlands",
+    map: "riverlands",
+    // THE CORE IN THE MIDDLE WITH RIVERS RUNNING TO IT: the hulls sail in from the west, east and south edges to the pool beside the core, and five ground gates come from the north and the corners, fording the rivers on the way
+    mission: { kind: "hold" },
+    waveGap: 15,
+    script: [],
+  },
+  {
+    id: "9",
+    name: "Estuary",
+    map: "estuary",
+    // THE ESTUARY: the sea fills the south of the board, a river comes down from the north-east to meet it, and the core stands on the north shore where the river opens out; four ground gates inland, the hulls from the sea and down the river
+    mission: { kind: "hold" },
     waveGap: 15,
     script: [],
   },
 ];
-
-// A SPECIAL mutator is out of every roll (MutationDef.special), so a
-// world naming it in `intrinsicMutation` is the ONLY way one is ever
-// played. One that no world names is therefore dead code that still shows
-// up on the codex shelf, promising the player a rule they cannot meet —
-// caught here, at module load, rather than by nobody.
-for (const m of MUTATIONS) {
-  if (!m.special) continue;
-  if (!WORLDS.some((w) => (w.intrinsicMutation ?? []).includes(m.id)))
-    throw new Error(
-      `special mutator "${m.id}" is on no world's intrinsicMutation — nothing can ever play it`,
-    );
-}
 
 /**
  * The campaign's FIRST world — the default everywhere a single spec is
@@ -1558,44 +1710,41 @@ function commonest(values: readonly number[]): number {
  * hold is kept but changes nothing.
  */
 export function applyLevelDoc(doc: LevelDoc): void {
-  docs.set(doc.id, doc);
-  const world = worldById(doc.id);
-  if (!world) return;
-  world.waveGap = doc.waveGap;
-  world.script = [...doc.script];
+  const clean = { ...doc, id: CAMPAIGN_DOC_ID };
+  docs.set(CAMPAIGN_DOC_ID, clean);
+  // one script, every world: the map is what differs, never the waves
+  for (const world of WORLDS) {
+    world.waveGap = clean.waveGap;
+    world.script = [...clean.script];
+  }
 }
 
 /**
- * Pull every saved document over the shipped campaign. Safe to call more
- * than once and safe to call late; a world with no document keeps its
+ * Pull the saved campaign over the shipped worlds. Safe to call more than
+ * once and safe to call late; with no document every world keeps its
  * empty script and the console says so.
  *
- * The index names the worlds with a document (see fetchLevelIndex). A
- * checkout from before per-world documents lists "blueprint" instead:
- * that file was every world's script, so it loads onto every world that
- * has none of its own rather than stranding an edited campaign.
+ * The index names the documents there are (see fetchLevelIndex). The
+ * campaign's is CAMPAIGN_DOC_ID; a checkout from before one shared script
+ * lists the first world's id (or, older still, "blueprint"), and either
+ * of those was the campaign, so it loads rather than stranding an edited
+ * one.
  */
 export async function loadLevelDocs(): Promise<void> {
   const ids = await fetchLevelIndex();
-  const legacy = ids.includes("blueprint") ? await fetchLevelDoc("blueprint") : null;
-  await Promise.all(
-    WORLDS.map(async (w) => {
-      const doc = ids.includes(w.id) ? await fetchLevelDoc(w.id) : null;
-      if (doc) applyLevelDoc(doc);
-      else if (legacy) applyLevelDoc({ ...legacy, id: w.id });
-    }),
-  );
-  for (const w of WORLDS)
-    if (w.script.length === 0)
-      console.error(
-        `${w.name} has no waves: public/levels/${w.id}.json failed to load or is missing from public/levels/index.json`,
-      );
+  const id = [CAMPAIGN_DOC_ID, WORLD.id, "blueprint"].find((k) => ids.includes(k));
+  const doc = id ? await fetchLevelDoc(id) : null;
+  if (doc) applyLevelDoc(doc);
+  else
+    console.error(
+      `the campaign has no waves: public/levels/${CAMPAIGN_DOC_ID}.json failed to load or is missing from public/levels/index.json`,
+    );
 }
 
 /**
- * Write one world's document back to public/levels/<id>.json through the
- * dev-only API, and overlay it immediately so the running tab reflects
- * the save without a reload. A failed write changes nothing on disk and
+ * Write the campaign's document back to public/levels/campaign.json
+ * through the dev-only API, and overlay it immediately so the running
+ * tab reflects the save without a reload. A failed write changes nothing on disk and
  * the editor keeps its dirty flag.
  */
 export async function saveLevel(doc: LevelDoc): Promise<SaveResult> {

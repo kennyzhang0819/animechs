@@ -2,6 +2,7 @@
 
 @theme {
   --font-display: var(--font-display), "IBM Plex Mono", sans-serif;
+  --font-body: var(--font-body), "Barlow", system-ui, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 

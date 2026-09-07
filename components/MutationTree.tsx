@@ -169,7 +169,7 @@ function MutationTile({
       >
         <MutationFace id={def.id} size="h-14 w-14" />
       </button>
-      <div className="text-center text-[12px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+      <div className="text-center text-[14px] font-bold uppercase tracking-widest text-[#EDEDEF]">
         {def.name}
       </div>
       <HoverCard tip={tip} title={def.name} tag={band.label} color={band.color} align="center">

@@ -115,6 +115,16 @@ export const OFFICIAL_MAP_IDS: readonly string[] = [
   "maelstrom",
   // the spore archipelago — world 3, the front with no air line over it
   "quagmire",
+  // the second batch, worlds 4 to 9 — every one a spec over
+  // scripts/maps/mindustry.mjs: the earthy one, the snowy one, the two
+  // with the core in the middle of the board (Riverlands with rivers
+  // running to it), and the two that are mostly water
+  "greenwood",
+  "tundra",
+  "crater",
+  "shoals",
+  "riverlands",
+  "estuary",
   // NOT A CAMPAIGN MAP. The last survivor of the generated set the game
   // started from, kept as the reference for what the generator produces —
   // no world names it, so it appears in the editor and nowhere else.
@@ -778,6 +788,25 @@ export function terrainFromMap(m: MapData): Terrain {
 
 export function loadMap(id: string): MapData | null {
   return OFFICIAL_MAPS.find((m) => m.id === id) ?? null;
+}
+
+/**
+ * THE MOVEMENT LAYERS A MAP OPENS A DOOR FOR — the ground, air and water
+ * of its drop zones (the boss door is not a layer). This is what the
+ * deploy's family roll is drawn against (rollFamilies in levels.ts): a
+ * map with no water door cannot send a hull. A map that cannot be found
+ * or has no zones at all opens every layer rather than none, so a broken
+ * document deploys a run rather than an empty field.
+ */
+export function mapLayers(id: string | undefined): Set<MoveLayer> {
+  const doc = id ? loadMap(id) : null;
+  const out = new Set<MoveLayer>();
+  if (doc)
+    for (const z of zoneKindsOf(doc, Uint8Array.from(doc.blocked))) {
+      const layer = zoneLayer(z);
+      if (layer) out.add(layer);
+    }
+  return out.size > 0 ? out : new Set<MoveLayer>(["ground", "air", "water"]);
 }
 
 /**

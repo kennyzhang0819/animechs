@@ -1,8 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
-  BASE_SPEEDS,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import {
   firstLoadStep,
   Game,
   LOAD_STEP_LABEL,
@@ -13,12 +20,16 @@ import {
 } from "@/game/game";
 import { loadBalanceDoc } from "@/game/balance";
 import {
+  familyByKey,
   loadLevelDocs,
   missionText,
+  rollFamilies,
+  transformScript,
   waveGroups,
   WORLD,
   worldById,
   WORLDS,
+  type FamilyKey,
   type LevelSpec,
   type TowerKind,
 } from "@/game/levels";
@@ -34,12 +45,14 @@ import {
   stageTable,
   waveCost,
   waveGuide,
+  tierCountScale,
   tierLevel,
   tierMutationCount,
   tierMutationPoints,
+  tierMutationStep,
   tierXpBonus,
 } from "@/game/ladder";
-import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
+import { drawThumb, loadMap, loadOfficialMaps, mapLayers, OFFICIAL_MAP_IDS } from "@/game/maps";
 import {
   bestClearOn,
   grantRunReward,
@@ -65,6 +78,7 @@ import {
   mutationById,
   mutationsInForce,
   rollMutations,
+  type MutationDef,
   type MutationId,
 } from "@/game/mutation";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
@@ -73,6 +87,7 @@ import { levelProgress, POINT_COLOR, RANDOM_MAP_XP_BONUS, XP_COLOR } from "@/gam
 import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
 import ProgressView from "./Progress";
 import { bandFor, MutationFace } from "./mutationFace";
+import { HoverCard, useHoverCard } from "./HoverCard";
 import MenuBackground from "./MenuBackground";
 
 /** the level card's map preview — the admin editor's thumbnail look */
@@ -146,7 +161,7 @@ function LoadingScreen({ step, out }: { step: LoadStep; out: boolean }) {
               style={{ width: `${(done / LOAD_STEPS.length) * 100}%` }}
             />
           </div>
-          <p className="text-center text-[13px] uppercase tracking-widest text-[#71717C]">
+          <p className="text-center text-[15px] uppercase tracking-widest text-[#71717C]">
             {LOAD_STEP_LABEL[step]}
           </p>
         </div>
@@ -175,7 +190,7 @@ const clock = (seconds: number): string => {
 function RandomMapLine({ result }: { result: RunReward }) {
   if (!result.randomMap) return null;
   return (
-    <div className="pt-1 text-[12px] uppercase tracking-widest text-[#A6A6AF]">
+    <div className="pt-1 text-[14px] uppercase tracking-widest text-[#A6A6AF]">
       Random map{" "}
       <span className="font-bold" style={{ color: XP_COLOR }}>
         {xpBonusText(1 + RANDOM_MAP_XP_BONUS)}
@@ -194,7 +209,7 @@ function LevelUpLine({ result }: { result: RunReward }) {
   for (let l = result.levelBefore + 1; l <= result.levelAfter; l++)
     for (const r of rewardsAt(l)) earned.push(rewardText(r));
   return (
-    <div className="pt-1 text-[12px] uppercase tracking-widest text-[#A6A6AF]">
+    <div className="pt-1 text-[14px] uppercase tracking-widest text-[#A6A6AF]">
       {climbed ? (
         <>
           <div>
@@ -239,33 +254,36 @@ const levelSummary = (lv: LevelSpec): { waves: number; enemies: number } => {
 
 /**
  * THE SPEC A RUN IS ACTUALLY PLAYED ON: the ladder's expansion of the
- * picked rung, plus the mutators rolled for it (mutation.ts).
+ * picked rung, re-cast into the families the deploy rolled
+ * (transformScript), plus the mutators rolled for it (mutation.ts).
  *
- * ONLY THE ROLL GOES IN `mutation`. A world's own rules
- * (LevelSpec.intrinsicMutation) are already on the spec this spreads, and
- * the sim unions the two itself (mutationsInForce) — copying them in here
- * as well would make "what was rolled" unanswerable.
- *
- * The two are joined HERE and not in specForTier, because they answer
- * different questions and the audit arithmetic only wants one of them: a
- * rung is what the campaign sends, a mutator is what happens to it on the
- * way in. Everything ladder.ts counts stays true either way — a mutator
- * changes a wave after it spawns, never what spawns.
+ * The three are joined HERE and not in specForTier, because they answer
+ * different questions and the audit arithmetic only wants the first: a
+ * rung is how much the campaign sends, the families are who it sends,
+ * and a mutator is what happens to them on the way in. The rung's count
+ * is scaled before the re-cast, so the body count the picker promised is
+ * the body count that walks in whichever families took the slots.
  */
 const runSpec = (
   world: LevelSpec,
   tier: number,
+  families: readonly FamilyKey[],
   mutation: readonly MutationId[],
-): LevelSpec => ({
-  ...specForTier(world, tier),
-  ...(mutation.length > 0 ? { mutation } : null),
-});
+): LevelSpec => {
+  const spec = specForTier(world, tier);
+  return {
+    ...spec,
+    script: transformScript(spec.script, families),
+    families,
+    ...(mutation.length > 0 ? { mutation } : null),
+  };
+};
 
 /**
  * A MACRO — one of the two dials on the start screen, printed as a row:
  * what it is on the left, what it is set to on the right, and the whole
  * row a button that opens the list to change it. The value is what a
- * player reads at a glance ("Random · +25% XP", "Level 4 · +90% XP"), so
+ * player reads at a glance ("Random · +25% XP", "Scourge · +90% XP"), so
  * it gets the ink and the label sits small beside it.
  */
 function MacroButton({
@@ -286,8 +304,8 @@ function MacroButton({
       aria-label={`${label}: ${value}. Change`}
       className="ms-btn w-full justify-between gap-3 px-4 py-3 text-left"
     >
-      <span className="text-[11px] tracking-[0.3em] text-[#a2a2a2]">{label}</span>
-      <span className="flex items-center gap-2 text-[14px] tracking-[0.12em]">
+      <span className="text-[13px] tracking-[0.3em] text-[#a2a2a2]">{label}</span>
+      <span className="flex items-center gap-2 whitespace-nowrap text-[16px] tracking-[0.12em]">
         {children}
         <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current text-[#71717C]" aria-hidden="true">
           <path d="M9.3 5.1 16.2 12l-6.9 6.9-1.7-1.7L12.8 12 7.6 6.8z" />
@@ -298,11 +316,14 @@ function MacroButton({
 }
 
 /**
- * THE LIST BEHIND A MACRO: a panel over the start screen holding the
- * choices, one row each, the current one marked. It closes on a pick, on
+ * THE LIST BEHIND A MACRO: a panel over the start screen in TWO PANES —
+ * a narrow list of choices on the left, one line each, the one under the
+ * cursor marked; and on the right what that choice is, in words and (for
+ * a map) a picture, with the one button that takes it. A row click only
+ * moves the cursor, so a player can read every choice before committing;
+ * the Select button on the right is the pick. It closes on Select, on
  * Escape and on a click outside — every way a dialog anyone has met
- * closes — and it never carries a second control: the only question it
- * asks is "which".
+ * closes.
  *
  * It sits OUTSIDE the menu's zoom wrapper on purpose: `ui-zoom` is a CSS
  * `zoom`, and a fixed backdrop inside one covers the scaled box rather
@@ -312,11 +333,15 @@ function MacroButton({
 function PickerDialog({
   title,
   onClose,
-  children,
+  list,
+  detail,
 }: {
   title: string;
   onClose: () => void;
-  children: ReactNode;
+  /** the rows, left */
+  list: ReactNode;
+  /** what the cursor is on, right */
+  detail: ReactNode;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -336,43 +361,76 @@ function PickerDialog({
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        className="ui-zoom ms-pane-solid flex max-h-[calc(100vh-2rem)] w-full max-w-[26rem] flex-col p-4 shadow-2xl"
+        className="ui-zoom ms-pane-solid flex max-h-[calc(100vh-2rem)] w-full max-w-[38rem] flex-col p-4 shadow-2xl"
       >
-        <h2 className="ms-heading mb-3 text-[13px] tracking-[0.35em]">{title}</h2>
-        <div role="listbox" className="flex min-h-0 flex-col gap-1.5 overflow-y-auto">
-          {children}
+        <h2 className="ms-heading mb-3 text-[15px] tracking-[0.35em]">{title}</h2>
+        <div className="flex min-h-0 gap-3">
+          <div role="listbox" className="flex w-[12rem] shrink-0 flex-col gap-1.5 overflow-y-auto">
+            {list}
+          </div>
+          <div className="ms-pane-solid flex min-h-[16rem] min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+            {detail}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-/** one choice in a picker: a bordered row, gold when it is the current one */
+/** the one button on a detail pane: take what the cursor is on */
+function SelectButton({ onClick, disabled = false }: { onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="ms-btn ms-btn-accent mt-auto w-full py-2.5 text-[15px] tracking-[0.3em]"
+    >
+      Select
+    </button>
+  );
+}
+
+/** a label and its value on a detail pane, one line */
+function DetailLine({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 text-[14px]">
+      <span className="shrink-0 uppercase tracking-widest text-[#71717C]">{label}</span>
+      <span className="text-right text-[#EDEDEF]">{children}</span>
+    </div>
+  );
+}
+
+/**
+ * One choice in a picker: a bordered row, one line. `focused` is the row
+ * the detail pane is showing (a solid gold border); `selected` is what the
+ * run is actually set to (a gold dot at the left), which may be a
+ * different row while the player is reading.
+ */
 function PickRow({
   selected,
-  disabled = false,
+  focused,
   onPick,
   children,
 }: {
   selected: boolean;
-  disabled?: boolean;
+  focused: boolean;
   onPick: () => void;
   children: ReactNode;
 }) {
   return (
     <button
       role="option"
-      aria-selected={selected}
+      aria-selected={focused}
+      aria-current={selected ? "true" : undefined}
       onClick={onPick}
-      disabled={disabled}
-      className={`ms-pane-solid flex w-full items-center gap-3 px-3 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FFD37F] ${
-        disabled
-          ? "cursor-not-allowed opacity-50"
-          : selected
-            ? "border-[#FFD37F]"
-            : "hover:border-[#A6A6AF]"
+      className={`ms-pane-solid flex w-full items-center gap-2 px-3 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FFD37F] ${
+        focused ? "border-[#FFD37F]" : "hover:border-[#A6A6AF]"
       }`}
     >
+      <span
+        aria-hidden="true"
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${selected ? "bg-[#FFD37F]" : "bg-transparent"}`}
+      />
       {children}
     </button>
   );
@@ -387,10 +445,12 @@ const xpBonusText = (mult: number): string => {
 /**
  * THE MAP LIST. Random leads and is the default: the game picks any open
  * map on Start, and pays RANDOM_MAP_XP_BONUS for the trust. Under it,
- * every world — a locked one is on the list saying what opens it, never
- * hidden, and a played one says the best level beaten on it. No map is
- * ranked against another: every map is as hard as the level it is played
- * at, and the level is the other macro.
+ * every world by name, one line each — a locked one is on the list, never
+ * hidden, greyed. THE PICTURE IS ON THE RIGHT AND ONLY AFTER A CLICK: the
+ * list is names, the cursor starts on Random, and a row click puts that
+ * map's thumbnail, mission and standing (what opens it, or the best
+ * difficulty beaten on it) beside it. No map is ranked against another: every map is as hard as the
+ * difficulty it is played at, and the difficulty is the other macro.
  */
 function MapPicker({
   progress,
@@ -406,11 +466,50 @@ function MapPicker({
   onPick: (worldId: string | null) => void;
   onClose: () => void;
 }) {
-  return (
-    <PickerDialog title="Map" onClose={onClose}>
-      <PickRow selected={pick == null} onPick={() => onPick(null)}>
-        <div className="flex aspect-square w-20 shrink-0 items-center justify-center bg-[#0b0b0d] text-[#FFD37F]">
-          <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden="true">
+  // the row under the cursor: null is Random, which is where it starts —
+  // so the right pane is on screen from the first frame (a map's picture
+  // only appears once its row is clicked)
+  const [focus, setFocus] = useState<string | null | undefined>(null);
+  const world = focus == null ? null : worldById(focus);
+  const lock = world ? worldLock(progress, world.id) : null;
+  const best = world ? bestClearOn(progress, world.id) : 0;
+
+  const rowText = "truncate font-display text-[15px] font-bold uppercase tracking-widest";
+  const list = (
+    <>
+      <PickRow selected={pick == null} focused={focus === null} onPick={() => setFocus(null)}>
+        <span className={`${rowText} text-[#EDEDEF]`}>Random</span>
+      </PickRow>
+      {WORLDS.map((w) => {
+        const locked = worldLock(progress, w.id) != null;
+        return (
+          <PickRow
+            key={w.id}
+            selected={pick === w.id}
+            focused={focus === w.id}
+            onPick={() => setFocus(w.id)}
+          >
+            <span className={`${rowText} ${locked ? "text-[#71717C]" : "text-[#EDEDEF]"}`}>
+              {w.name}
+            </span>
+          </PickRow>
+        );
+      })}
+    </>
+  );
+
+  let detail: ReactNode;
+  if (focus === undefined) {
+    detail = (
+      <p className="m-auto text-center text-[14px] uppercase tracking-widest text-[#71717C]">
+        Pick a map to see it
+      </p>
+    );
+  } else if (world == null) {
+    detail = (
+      <>
+        <div className="flex aspect-square w-full items-center justify-center bg-[#0b0b0d] text-[#FFD37F]">
+          <svg viewBox="0 0 24 24" className="h-12 w-12" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
             <circle cx="8" cy="8" r="1.7" fill="currentColor" />
             <circle cx="16" cy="8" r="1.7" fill="currentColor" />
@@ -419,99 +518,186 @@ function MapPicker({
             <circle cx="16" cy="16" r="1.7" fill="currentColor" />
           </svg>
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="font-display text-[14px] font-bold uppercase tracking-widest text-[#EDEDEF]">
-            Random
-          </div>
-          <div className="text-[11px] text-[#71717C]">Any open map, picked on start</div>
+        <div className="font-display text-[17px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+          Random
         </div>
-        <span
-          className="shrink-0 text-[12px] font-bold uppercase tracking-widest"
-          style={{ color: XP_COLOR }}
-        >
-          {xpBonusText(1 + RANDOM_MAP_XP_BONUS)}
-        </span>
-      </PickRow>
-      {WORLDS.map((w) => {
-        const lock = worldLock(progress, w.id);
-        const best = bestClearOn(progress, w.id);
-        return (
-          <PickRow
-            key={w.id}
-            selected={pick === w.id}
-            disabled={lock != null}
-            onPick={() => onPick(w.id)}
-          >
-            <div className={`w-20 shrink-0 ${lock ? "grayscale" : ""}`}>
-              {mapsReady ? (
-                <LevelThumb mapId={w.map ?? OFFICIAL_MAP_IDS[0]} bare />
-              ) : (
-                <div className="aspect-square bg-[#0b0b0d]" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-display text-[14px] font-bold uppercase tracking-widest text-[#EDEDEF]">
-                {w.name}
-              </div>
-              <div className="truncate text-[11px] text-[#71717C]">{missionText(w).title}</div>
-            </div>
-            <span className="shrink-0 text-[11px] font-bold uppercase tracking-widest text-[#71717C]">
-              {lock ? (
-                <>
-                  Opens at <span style={{ color: POINT_COLOR }}>level {lock.level}</span>
-                </>
-              ) : best > 0 ? (
-                <>
-                  Best <span style={{ color: rungColor(best - 1) }}>{rungLabel(best - 1)}</span>
-                </>
-              ) : (
-                "New"
-              )}
-            </span>
-          </PickRow>
-        );
-      })}
-    </PickerDialog>
-  );
+        <p className="text-[14px] text-[#A6A6AF]">Any open map, picked on start.</p>
+        <DetailLine label="Pays">
+          <span style={{ color: XP_COLOR }}>{xpBonusText(1 + RANDOM_MAP_XP_BONUS)}</span>
+        </DetailLine>
+        <SelectButton onClick={() => onPick(null)} />
+      </>
+    );
+  } else {
+    const mission = missionText(world);
+    detail = (
+      <>
+        <div className={`w-full ${lock ? "grayscale" : ""}`}>
+          {mapsReady ? (
+            <LevelThumb mapId={world.map ?? OFFICIAL_MAP_IDS[0]} bare />
+          ) : (
+            <div className="aspect-square bg-[#0b0b0d]" />
+          )}
+        </div>
+        <div className="font-display text-[17px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+          {world.name}
+        </div>
+        <DetailLine label="Mission">{mission.title}</DetailLine>
+        <p className="text-[14px] text-[#A6A6AF]">{mission.detail}</p>
+        <DetailLine label={lock ? "Opens at" : "Best"}>
+          {lock ? (
+            <span style={{ color: POINT_COLOR }}>level {lock.level}</span>
+          ) : best > 0 ? (
+            <span style={{ color: rungColor(best - 1) }}>{rungLabel(best - 1)}</span>
+          ) : (
+            "New"
+          )}
+        </DetailLine>
+        <SelectButton onClick={() => onPick(world.id)} disabled={lock != null} />
+      </>
+    );
+  }
+
+  return <PickerDialog title="Map" onClose={onClose} list={list} detail={detail} />;
 }
 
 /**
- * THE DIFFICULTY LIST: the ten levels, every one open, each saying what
- * it pays over Level 1 and nothing else. THE ROW DOES NOT SPELL OUT WHAT A
- * LEVEL DOES — no health multiplier, no count of the rules it rolls. A
- * player finds out by playing it; the only promise on the row is the XP.
+ * THE DIFFICULTY LIST: the ten rungs by name on the left, every one open;
+ * on the right what the one under the cursor IS — how much of the swarm
+ * it sends (and how many bodies that is on the picked map), how many
+ * rules it rolls, and what it pays. There is always a cursor: it starts
+ * on the difficulty the run is set to, so both panes are on screen from
+ * the first frame. The rules themselves are still not spelled out — a
+ * player finds those out by playing; only their number is promised.
  */
+/** how big the swarm is, in words, one per named difficulty (COUNT_SCALE) */
+const SWARM_SIZE: readonly string[] = [
+  "Small amounts of enemies",
+  "A medium amount of enemies",
+  "Lots of enemies",
+  "An insane amount of enemies",
+];
+
 function DifficultyPicker({
   tier,
+  world,
   onPick,
   onClose,
 }: {
   tier: number;
+  /** the picked map, for a body count — null when the run is on Random */
+  world: LevelSpec | null;
   onPick: (tier: number) => void;
   onClose: () => void;
 }) {
+  const [focus, setFocus] = useState(tier);
+  const scale = tierCountScale(focus);
+  const rules = tierMutationCount(focus);
+  const step = tierMutationStep(focus);
+  const swarm = world ? budget(world, focus) : null;
+
+  const list = Array.from({ length: RUNG_COUNT }, (_, t) => (
+    <PickRow key={t} selected={t === tier} focused={t === focus} onPick={() => setFocus(t)}>
+      <span
+        className="truncate font-display text-[15px] font-bold uppercase tracking-widest"
+        style={{ color: rungColor(t) }}
+      >
+        {rungLabel(t)}
+      </span>
+    </PickRow>
+  ));
+
+  const detail = (
+    <>
+      <div
+        className="font-display text-[19px] font-bold uppercase tracking-widest"
+        style={{ color: rungColor(focus) }}
+      >
+        {rungLabel(focus)}
+      </div>
+      <p className="text-[14px] text-[#A6A6AF]">
+        {step > 0
+          ? `${SWARM_SIZE[SWARM_SIZE.length - 1]}, under ${rules} mutator${rules === 1 ? "" : "s"} rolled when the run starts.`
+          : `${SWARM_SIZE[Math.min(focus, SWARM_SIZE.length - 1)]}. No mutators.`}
+      </p>
+      <DetailLine label="Swarm">
+        {Math.round(scale * 100)}%
+        {swarm ? ` · ${swarm.units.toLocaleString()} units over ${swarm.waves} waves` : ""}
+      </DetailLine>
+      <DetailLine label="Mutators">{rules === 0 ? "None" : `${rules} rules`}</DetailLine>
+      <DetailLine label="Pays">
+        <span style={{ color: XP_COLOR }}>{xpBonusText(tierXpBonus(focus))}</span>
+      </DetailLine>
+      <SelectButton onClick={() => onPick(focus)} />
+    </>
+  );
+
+  return <PickerDialog title="Difficulty" onClose={onClose} list={list} detail={detail} />;
+}
+
+/**
+ * THE DEAL STACK'S CELLS — one square each in the field's bottom-right
+ * corner, and the tooltip that says what one is.
+ *
+ * THE CARD IS THE SHARED HoverCard (HoverCard.tsx), the same one the
+ * codex tiles and the track's reward chips open, rather than a `title`
+ * attribute. A native tooltip waits a second, wears the operating
+ * system's own styling and cannot hold a list — and these squares are
+ * exactly the things a player glances at mid-wave and needs a straight
+ * answer from. It hangs off the anchor's RIGHT edge and opens UPWARD,
+ * because the stack is in the right margin at the bottom of the screen.
+ */
+const DEAL_COLOR = "#FFD37F";
+
+/** the bottom square: which families the die dealt this map */
+function DealFamiliesCell({ families }: { families: readonly FamilyKey[] }) {
+  const tip = useHoverCard("up");
+  const names = families.map((f) => familyByKey(f).name);
   return (
-    <PickerDialog title="Difficulty" onClose={onClose}>
-      {Array.from({ length: RUNG_COUNT }, (_, t) => {
-        return (
-          <PickRow key={t} selected={t === tier} onPick={() => onPick(t)}>
-            <span
-              className="w-24 shrink-0 font-display text-[15px] font-bold uppercase tracking-widest"
-              style={{ color: rungColor(t) }}
-            >
-              {rungLabel(t)}
-            </span>
-            <span className="min-w-0 flex-1" />
-            <span
-              className="shrink-0 text-[12px] font-bold uppercase tracking-widest"
-              style={{ color: XP_COLOR }}
-            >
-              {xpBonusText(tierXpBonus(t))}
-            </span>
-          </PickRow>
-        );
-      })}
-    </PickerDialog>
+    <div
+      ref={tip.ref as RefObject<HTMLDivElement | null>}
+      {...tip.anchorProps}
+      role="listitem"
+      tabIndex={0}
+      aria-label={`Swarm families: ${names.join(", ")}`}
+      className="ms-pane-solid pointer-events-auto flex h-12 w-12 flex-wrap items-center justify-center gap-0.5 p-1 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+    >
+      {families.map((f) => (
+        <img
+          key={f}
+          src={`/mindustry/sprites/units/${familyByKey(f).icon}.png`}
+          alt=""
+          className="h-4 w-4 object-contain [image-rendering:pixelated]"
+        />
+      ))}
+      <HoverCard tip={tip} title="Swarm families" tag="Deal" color={DEAL_COLOR} align="right">
+        The families this map&apos;s drop zones dealt the run. Every wave sends these
+        three, tier for tier, whatever the script was authored in.
+        <span className="mt-1.5 block text-[#EDEDEF]">{names.join(" · ")}</span>
+      </HoverCard>
+    </div>
+  );
+}
+
+/** one square above it: a rule the run is played under */
+function DealRuleCell({ def }: { def: MutationDef }) {
+  const tip = useHoverCard("up");
+  const band = bandFor(def);
+  return (
+    <div
+      ref={tip.ref as RefObject<HTMLDivElement | null>}
+      {...tip.anchorProps}
+      role="listitem"
+      tabIndex={0}
+      aria-label={`${def.name}: ${band.label} mutator. ${def.blurb}`}
+      className="pointer-events-auto flex h-12 w-12 items-center justify-center border bg-[#0b0b0d] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+      style={{ borderColor: band.color }}
+    >
+      <MutationFace id={def.id} size="h-7 w-7" />
+      <HoverCard tip={tip} title={def.name} tag={band.label} color={band.color} align="right">
+        {def.blurb}
+      </HoverCard>
+    </div>
   );
 }
 
@@ -649,6 +835,48 @@ const ORDERED_MENU: ReadonlyArray<(typeof TOWER_MENU)[number]> = BY_MINDUSTRY_VA
 /** every button in the bottom bar: the turrets and the demolish tool */
 const TOOL_BTN = "ms-btn h-[4.5rem] w-14 shrink-0 flex-col gap-0.5 p-0";
 
+/**
+ * THE BUILD BAR'S HOTKEYS: 1 to 9 and then 0, one per slot from the left,
+ * exactly the row a hand already rests on in every RTS ever shipped.
+ *
+ * A KEY IS THE SAME PRESS AS A CLICK, not a second way of doing something
+ * slightly different: it TOGGLES (the same digit twice cancels the pick,
+ * like clicking the lit button twice), it does not care whether the run
+ * can afford the turret (the button does not either — the price badge
+ * reddens and the build is refused at the board), and it works while the
+ * game is paused, because planning a lane is most of what pausing is for.
+ *
+ * TEN IS THE CEILING, WHICH IS NOT A LIMIT ANYONE MEETS IN CAMPAIGN. The
+ * bar holds BAR_SLOTS (eight) there, so the digits cover the whole of it
+ * with two to spare. Sandbox shows the entire roster and runs past ten;
+ * the eleventh turret on is click-only, which is the honest thing to do
+ * with a keyboard that has ten digits on it.
+ */
+const SLOT_DIGIT = (slot: number): string | null =>
+  slot < 9 ? String(slot + 1) : slot === 9 ? "0" : null;
+
+/**
+ * The slot a press names, or -1 for a press that names none.
+ *
+ * `code` FIRST, BECAUSE IT IS THE PHYSICAL DIGIT ROW. A layout that puts
+ * a symbol where a digit is printed still picks the slot under the
+ * finger, and the numpad's twin of every digit comes along for free.
+ *
+ * `key` AS THE FALLBACK, AND ONLY WHEN THERE IS NO CODE. A press with no
+ * `code` at all is not a physical keyboard — an on-screen or virtual
+ * keyboard, and some remote-input and assistive software, send the
+ * character and nothing else. Reading `key` there is the difference
+ * between the shortcut existing for those players and not; reading it
+ * FIRST would break the layouts `code` is there to serve, so the order
+ * matters more than either branch does.
+ */
+function slotForKey(e: KeyboardEvent): number {
+  const m = /^(?:Digit|Numpad)([0-9])$/.exec(e.code) ?? (e.code === "" ? /^([0-9])$/.exec(e.key) : null);
+  if (!m) return -1;
+  const d = Number(m[1]);
+  return d === 0 ? 9 : d - 1;
+}
+
 
 export default function MechSwarm() {
   const glRef = useRef<HTMLCanvasElement>(null);
@@ -686,7 +914,7 @@ export default function MechSwarm() {
   /**
    * The difficulty macro: the rung the next run is played at. Every rung
    * is open from the first run; this is the save's remembered pick
-   * (Progress.difficulty), Level 1 on a fresh save.
+   * (Progress.difficulty), Incursion on a fresh save.
    */
   const [tier, setTier] = useState(0);
   /**
@@ -740,7 +968,7 @@ export default function MechSwarm() {
   const hudRules = useMemo(
     () =>
       level
-        ? mutationsInForce(level.intrinsicMutation, level.mutation)
+        ? mutationsInForce(level.mutation)
             .map(mutationById)
             .filter((m): m is NonNullable<typeof m> => m !== null)
         : [],
@@ -890,7 +1118,7 @@ export default function MechSwarm() {
     setTier(t);
     setRunRandom(false); // asked for by id: nothing random about it
     setAdmin(true); // a sandbox run: whole tree, no caps, every pace
-    setLevel(runSpec(w, t, mutation));
+    setLevel(runSpec(w, t, rollFamilies(mapLayers(w.map)), mutation));
     setScreen("game");
     setLoadUi({ step: firstLoadStep(), out: false });
   }, [mapsReady]);
@@ -1028,8 +1256,9 @@ export default function MechSwarm() {
   /**
    * The turrets in the bar, ALWAYS in the canonical order (ORDERED_MENU) —
    * picking foreshadow late does not put it before ripple; it slots in
-   * where the roster ranks it, last. Sandbox (barSlots null) shows the
-   * whole roster. A curated save shows its picks — those still unlocked,
+   * where the roster ranks it, last. The bar is eight slots wide on every
+   * save, sandbox and admin included.
+   * A curated save shows its picks — those still unlocked,
    * trimmed to the slot count — and an uncurated one auto-fills its slots
    * from the unlocked list. Auto-fill only runs while the save has never
    * curated: once picks are saved, a removed turret STAYS removed instead
@@ -1055,8 +1284,7 @@ export default function MechSwarm() {
     const owned = ORDERED_MENU.filter((t) => !hud.unlocked || hud.unlocked.includes(t.kind)).map(
       (t) => t.kind,
     );
-    if (hud.barSlots === null) return owned;
-    // an uncurated save rides the STARTING ROSTER — the four guns and the
+        // an uncurated save rides the STARTING ROSTER — the four guns and the
     // copper wall a first board is made of — rather than the cheapest
     // eight, which the walls would fill on their own
     const start = owned.filter((k) => STARTING_ROSTER.includes(k));
@@ -1074,7 +1302,7 @@ export default function MechSwarm() {
    * panel's count badge says why.
    */
   const toggleLoadout = (kind: TowerKind): void => {
-    if (!hud || hud.barSlots === null) return;
+    if (!hud) return;
     const cur = barKinds();
     let next: TowerKind[];
     if (cur.includes(kind)) {
@@ -1101,6 +1329,56 @@ export default function MechSwarm() {
     g.setBuildKind(next);
     setHud(g.ui());
   };
+
+  /**
+   * THE BAR AS THE KEY HANDLER SEES IT. Kept in a ref, refreshed after
+   * every render, so the listener below can be registered ONCE for the
+   * whole run instead of being torn down and rebuilt ten times a second
+   * — `hud` is repolled at 100ms (see the poll above), and a dependency
+   * on it would make this the most re-registered listener in the app.
+   */
+  const barRef = useRef<TowerKind[]>([]);
+  useEffect(() => {
+    barRef.current = barKinds();
+  });
+
+  /**
+   * NUMBER KEYS PICK A BAR SLOT (see SLOT_DIGIT). Lives here rather than
+   * in Game.onKeyDown because the BAR is React's: which turrets ride it
+   * and in what order is barKinds(), off the save's loadout, and the game
+   * engine knows nothing about any of that. It asks the engine for the
+   * current pick rather than reading `hud`, so a press is answered
+   * against the live state and not against a snapshot up to 100ms stale.
+   *
+   * IT DECLINES THE SAME PRESSES THE BAR WOULD. Nothing happens with a
+   * modifier held (ctrl+1 and cmd+1 are the browser's tab switches, and
+   * stealing those would be a bug in the game rather than a feature),
+   * with a text field focused, or once the run has ended or the pause
+   * menu is up — the bar is gone in all three cases.
+   */
+  useEffect(() => {
+    if (screen !== "game") return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      if (
+        e.target instanceof HTMLElement &&
+        e.target.closest("input, textarea, [contenteditable]")
+      )
+        return;
+      const slot = slotForKey(e);
+      if (slot < 0 || slot >= barRef.current.length) return;
+      const g = gameRef.current;
+      if (!g) return;
+      const ui = g.ui();
+      if (ui.lost || ui.won || ui.menuOpen) return;
+      e.preventDefault();
+      const kind = barRef.current[slot];
+      g.setBuildKind(ui.buildKind === kind ? null : kind);
+      setHud(g.ui());
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [screen]);
 
   const togglePause = (): void => {
     const g = gameRef.current;
@@ -1168,10 +1446,9 @@ export default function MechSwarm() {
    *
    * THE MUTATORS ARE ROLLED HERE, ON THE PRESS, and this is the only
    * place they are rolled. As many rules as the difficulty asks for,
-   * costing no more than the points it carries (both dials on the rung),
-   * with the world's own rules handed to the roller as an exclusion so it
-   * cannot spend the tier's points on a rule the run already plays under.
-   * Level 1 carries zero of each and so rolls nothing.
+   * costing no more than the points it carries (both dials on the rung).
+   * A named difficulty carries zero of each and so rolls nothing. The
+   * families are rolled here too, against the map's doors.
    *
    * IT USED TO ROLL ON THE DEPLOY SCREEN, once per (map, difficulty), so
    * that the panel could show the roll before the press. Nothing shows it
@@ -1187,14 +1464,13 @@ export default function MechSwarm() {
     const picked = pickedWorld && worldLock(p, pickedWorld.id) == null ? pickedWorld : null;
     const random = picked == null;
     const w = picked ?? open[Math.floor(Math.random() * open.length)] ?? WORLD;
-    const roll = rollMutations(
-      tierMutationPoints(tier),
-      tierMutationCount(tier),
-      w.intrinsicMutation ?? [],
-    );
+    const roll = rollMutations(tierMutationPoints(tier), tierMutationCount(tier));
+    // THE FAMILY DIE: three of the families this map's doors allow, in
+    // the order the script's slots are dealt to them (rollFamilies)
+    const families = rollFamilies(mapLayers(w.map));
     saveRunPick(tier, picked?.id ?? null);
     setRunRandom(random);
-    setLevel(runSpec(w, tier, roll));
+    setLevel(runSpec(w, tier, families, roll));
     setScreen("game");
     // raised in the same batch as the screen switch, so the game screen's
     // FIRST paint is already covered - an effect would run after that
@@ -1244,7 +1520,7 @@ export default function MechSwarm() {
             role="tab"
             aria-selected={settingsTab === tab}
             onClick={() => setSettingsTab(tab)}
-            className="ms-btn px-5 py-2 text-[13px]"
+            className="ms-btn px-5 py-2 text-[15px]"
           >
             {label}
           </button>
@@ -1253,7 +1529,7 @@ export default function MechSwarm() {
 
       {settingsTab === "interface" && (
         <div className="ms-pane flex w-full max-w-[30rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
-          <div className="text-[13px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+          <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
             UI size
           </div>
           <div
@@ -1276,7 +1552,7 @@ export default function MechSwarm() {
                   setUiScale(scale);
                   saveUiScale(scale); // remembered across sessions
                 }}
-                className="ms-btn px-2.5 py-1.5 text-[13px]"
+                className="ms-btn px-2.5 py-1.5 text-[15px]"
               >
                 {Math.round(scale * 100)}%
               </button>
@@ -1291,10 +1567,10 @@ export default function MechSwarm() {
               Sim.setEffects) — what goes is the dressing around it */}
           <div className="ms-pane flex w-full max-w-[30rem] items-center justify-between gap-4 px-4 py-3">
             <div className="min-w-0">
-              <div className="text-[13px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+              <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
                 Effects
               </div>
-              <div className="text-[12px] text-[#71717C]">Turn off to improve framerate</div>
+              <div className="text-[14px] text-[#71717C]">Turn off to improve framerate</div>
             </div>
             <button
               aria-pressed={effects}
@@ -1305,7 +1581,7 @@ export default function MechSwarm() {
                 // live: a run under way takes it on the next frame
                 gameRef.current?.setEffects(next);
               }}
-              className="ms-btn w-16 shrink-0 px-3 py-1.5 text-[13px]"
+              className="ms-btn w-16 shrink-0 px-3 py-1.5 text-[15px]"
             >
               {effects ? "On" : "Off"}
             </button>
@@ -1315,10 +1591,10 @@ export default function MechSwarm() {
           {!inGame && (
             <div className="ms-pane flex w-full max-w-[30rem] items-center justify-between gap-4 px-4 py-3">
               <div className="min-w-0">
-                <div className="text-[13px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+                <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
                   Reset save
                 </div>
-                <div className="text-[12px] text-[#71717C]">Wipes all progress — no undo</div>
+                <div className="text-[14px] text-[#71717C]">Wipes all progress — no undo</div>
               </div>
               <button
                 onClick={() => {
@@ -1334,7 +1610,7 @@ export default function MechSwarm() {
                     setLoadout(null);
                   }
                 }}
-                className="ms-btn ms-btn-red shrink-0 px-3 py-1.5 text-[13px]"
+                className="ms-btn ms-btn-red shrink-0 px-3 py-1.5 text-[15px]"
               >
                 Wipe
               </button>
@@ -1374,14 +1650,14 @@ export default function MechSwarm() {
      * run it is about to be spent on.
      */
     const bank = progress && (
-      <div className="ui-zoom fixed right-[1rem] top-[1rem] z-20 flex h-11 items-center gap-3 text-[13px]">
+      <div className="ui-zoom fixed right-[1rem] top-[1rem] z-20 flex h-11 items-center gap-3 text-[15px]">
         <LevelStrip xp={progress.xp} />
         <button
           onClick={() => {
             setTechFrom("menu");
             setScreen("tech");
           }}
-          className="ms-btn ms-btn-accent px-4 py-2 text-[13px]"
+          className="ms-btn ms-btn-accent px-4 py-2 text-[15px]"
         >
           Progress
         </button>
@@ -1453,20 +1729,20 @@ export default function MechSwarm() {
               <div className="flex w-full max-w-[20rem] flex-col gap-3">
                 <button
                   onClick={() => setMenuView("deploy")}
-                  className="ms-btn ms-btn-accent w-full py-3.5 text-[15px] tracking-[0.3em]"
+                  className="ms-btn ms-btn-accent w-full py-3.5 text-[17px] tracking-[0.3em]"
                 >
                   Start
                 </button>
                 <button
                   onClick={() => setMenuView("settings")}
-                  className="ms-btn w-full py-3.5 text-[15px] tracking-[0.3em]"
+                  className="ms-btn w-full py-3.5 text-[17px] tracking-[0.3em]"
                 >
                   Settings
                 </button>
               </div>
               {/* the inspiration credit moved to Settings — the hero screen
                   carries the game's own name and nothing else's */}
-              <p className="text-center text-[13px] uppercase tracking-widest text-[#a2a2a2] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
+              <p className="text-center text-[15px] uppercase tracking-widest text-[#a2a2a2] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
                 A game by Zerkka
               </p>
             </>
@@ -1475,11 +1751,11 @@ export default function MechSwarm() {
           {/* THE DEPLOY SCREEN. The two macros a run is chosen by, and
               Start under them. There is no map grid and no deploy dialog
               any more: a run is two picks, each one press away, and the
-              defaults (Random, Level 1) are a run in themselves */}
+              defaults (Random, Incursion) are a run in themselves */}
           {menuView === "deploy" && (
             <>
-              <h2 className="ms-heading text-[15px] tracking-[0.35em]">Deploy</h2>
-              <div className="flex w-full max-w-[24rem] flex-col gap-3">
+              <h2 className="ms-heading text-[17px] tracking-[0.35em]">Deploy</h2>
+              <div className="flex w-full max-w-[28rem] flex-col gap-3">
                 {/* THE MACROS: what the next run is, as two rows that read
                     as a sentence — this map, at this level — and what
                     each pays, in the XP colour, so the trade is on the
@@ -1495,7 +1771,7 @@ export default function MechSwarm() {
                     ) : (
                       <>
                         <span className="text-[#EDEDEF]">Random</span>
-                        <span className="text-[12px]" style={{ color: XP_COLOR }}>
+                        <span className="text-[14px]" style={{ color: XP_COLOR }}>
                           {randomLabel}
                         </span>
                       </>
@@ -1507,7 +1783,7 @@ export default function MechSwarm() {
                     onClick={() => setPicker("difficulty")}
                   >
                     <span style={{ color: rungColor(tier) }}>{rungLabel(tier)}</span>
-                    <span className="text-[12px]" style={{ color: XP_COLOR }}>
+                    <span className="text-[14px]" style={{ color: XP_COLOR }}>
                       {xpBonusText(tierXpBonus(tier))}
                     </span>
                   </MacroButton>
@@ -1524,7 +1800,7 @@ export default function MechSwarm() {
                 {/* ONE ACTION, at the bottom: this map, at this level, go */}
                 <button
                   onClick={startRun}
-                  className="ms-btn ms-btn-accent mt-2 w-full py-3.5 text-[15px] tracking-[0.3em]"
+                  className="ms-btn ms-btn-accent mt-2 w-full py-3.5 text-[17px] tracking-[0.3em]"
                 >
                   Start
                 </button>
@@ -1537,12 +1813,12 @@ export default function MechSwarm() {
               beside the deploy button where a mis-tap would be costly */}
           {menuView === "settings" && (
             <>
-              <h2 className="ms-heading text-[15px] tracking-[0.35em]">Settings</h2>
+              <h2 className="ms-heading text-[17px] tracking-[0.35em]">Settings</h2>
 
               {settingsPanel(false)}
               {/* the inspiration credit lives here rather than on the title
                   card — the hero screen carries the game's own name only */}
-              <p className="text-[12px] uppercase tracking-widest text-[#71717C]">
+              <p className="text-[14px] uppercase tracking-widest text-[#71717C]">
                 Inspired by{" "}
                 <a
                   href="https://mindustrygame.github.io/"
@@ -1586,6 +1862,7 @@ export default function MechSwarm() {
         {picker === "difficulty" && (
           <DifficultyPicker
             tier={tier}
+            world={pickedWorld}
             onClose={() => setPicker(null)}
             onPick={(t) => {
               setTier(t);
@@ -1637,7 +1914,7 @@ export default function MechSwarm() {
           <div className="ui-zoom pointer-events-none absolute left-1/2 top-[0.75rem] z-10 flex w-[min(40vw,22rem)] -translate-x-1/2 flex-col gap-1.5">
             {hud.bosses.map((b) => (
               <div key={b.id}>
-                <div className="mb-0.5 text-center text-[10px] font-bold uppercase tracking-widest text-[#F25555] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
+                <div className="mb-0.5 text-center text-[12px] font-bold uppercase tracking-widest text-[#F25555] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
                   {b.kind}
                 </div>
                 <div className="ms-bar w-full">
@@ -1663,7 +1940,7 @@ export default function MechSwarm() {
                   IS the panel: neither the next-wave countdown nor the
                   lives pool survives */}
               <div className="flex items-start justify-between gap-2">
-                <div className="text-[13px] uppercase tracking-widest text-[#EDEDEF] break-words">
+                <div className="text-[15px] uppercase tracking-widest text-[#EDEDEF] break-words">
                   <div>
                     <span className="font-bold" style={{ color: rungColor(hud.tier) }}>
                       {rungLabel(hud.tier)}
@@ -1730,7 +2007,7 @@ export default function MechSwarm() {
                     setHudMin(next);
                     saveHudMinimized(next); // a preference, kept across runs
                   }}
-                  className="ms-btn ms-btn-ghost shrink-0 px-1 py-0 text-[13px] leading-5"
+                  className="ms-btn ms-btn-ghost shrink-0 px-1 py-0 text-[15px] leading-5"
                 >
                   <svg viewBox="0 0 12 12" className="h-3.5 w-3.5 fill-current" aria-hidden="true">
                     {hudMin ? <path d="M6 3l4.5 5h-9z" /> : <path d="M6 9L1.5 4h9z" />}
@@ -1739,33 +2016,6 @@ export default function MechSwarm() {
               </div>
               {!hudMin && (
                 <>
-                  {/* THE RULES IN FORCE, as the deploy dialog's chips at a
-                      third the size — face and band border, name and rule on
-                      hover. No hover card machinery: this corner is glanced
-                      at, not studied, and the codex is a tap away */}
-                  {hudRules.length > 0 && (
-                    <div
-                      className="mb-1.5 flex flex-wrap items-center gap-1"
-                      role="list"
-                      aria-label="rules in force"
-                    >
-                      {hudRules.map((def) => {
-                        const band = bandFor(def);
-                        return (
-                          <span
-                            key={def.id}
-                            role="listitem"
-                            title={`${def.name} — ${def.blurb}`}
-                            aria-label={`${def.name}: ${def.blurb}`}
-                            className="flex h-5 w-5 items-center justify-center border bg-[#0b0b0d]"
-                            style={{ borderColor: band.color }}
-                          >
-                            <MutationFace id={def.id} size="h-3.5 w-3.5" />
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
                   {/* THE RUN'S MONEY, in the biggest type on the panel: it
                       is the number every build decision is made against.
                       Sandbox and the editors build free, so they show
@@ -1776,21 +2026,17 @@ export default function MechSwarm() {
                       <ScrapAmount amount={hud.scrap} size="md" className="text-xl" />
                     </div>
                   )}
-                  {/* the countdown, conditional on there being a wave still
-                      pending — with the script drained there is nothing left
-                      to announce. The gap is not skippable: the pace strip
-                      below is how a player fast-forwards through it, so the
-                      wait is always paid in real ticks and the drops economy
-                      cannot be cheated by releasing waves early */}
-                  <div className="flex flex-wrap items-center gap-2 text-[13px] uppercase tracking-widest text-[#EDEDEF]">
-                    {hud.nextWaveIn > 0 && (
-                      <span>
-                        Next wave{" "}
-                        <span className="font-bold text-[#EDEDEF]">
-                          {Math.ceil(hud.nextWaveIn)}
-                        </span>
-                      </span>
-                    )}
+                  {/* HOW LONG THIS RUN HAS BEEN GOING, not how long until
+                      the next wave. The countdown told a player to wait;
+                      the clock tells them how they are doing, and the gap
+                      is never skippable either way — the wait is always
+                      paid in real ticks so the drops economy cannot be
+                      cheated by releasing waves early */}
+                  <div className="flex flex-wrap items-center gap-2 text-[15px] uppercase tracking-widest text-[#EDEDEF]">
+                    <span>
+                      Elapsed{" "}
+                      <span className="font-bold text-[#EDEDEF]">{clock(hud.elapsed)}</span>
+                    </span>
                   </div>
                 </>
               )}
@@ -1831,9 +2077,11 @@ export default function MechSwarm() {
                     )}
                   </svg>
                 </button>
-                {/* what a save may run at is bought on the utilities path
-                    (tech.ts); sandbox ignores the tree and offers all of them */}
-                {(admin ? SPEEDS : progress ? techOf(progress).speeds : BASE_SPEEDS).map((mult) => (
+                {/* THE MULTIPLIERS ARE ADMIN-ONLY. A campaign run plays at
+                    1x, so a strip whose only button says "1x" is a control
+                    that does nothing — pause alone is what a run gets, and
+                    sandbox gets the whole set */}
+                {(admin ? SPEEDS : []).map((mult) => (
                   <button
                     key={mult}
                     title={`${mult}x speed`}
@@ -1845,7 +2093,7 @@ export default function MechSwarm() {
                       saveSpeed(mult);
                       setHud(g.ui());
                     }}
-                    className="ms-btn px-3 py-1.5 text-[13px]"
+                    className="ms-btn px-3 py-1.5 text-[15px]"
                   >
                     {mult}x
                   </button>
@@ -1860,23 +2108,6 @@ export default function MechSwarm() {
             aria-label="view and menu"
             className="ui-zoom absolute right-[1rem] top-[1rem] flex items-start gap-2"
           >
-            {/* the swarm's entry points, and the lines flyers fly out of
-                them. Walkers read off the terrain — flyers ignore it, so
-                where they come from and what they cross is the question
-                this answers */}
-            <button
-              aria-pressed={hud.showRoutes}
-              title="Show enemy drop zones and the routes flyers take"
-              onClick={() => {
-                const g = gameRef.current;
-                if (!g) return;
-                g.toggleRoutes();
-                setHud(g.ui());
-              }}
-              className="ms-btn px-3 py-1.5 text-[13px]"
-            >
-              Spawns &amp; routes
-            </button>
             {/* the same menu esc raises — a pointer needs a way in too */}
             <button
               aria-label="Game menu"
@@ -1898,6 +2129,28 @@ export default function MechSwarm() {
             whole roster), and a second row would eat the field. The
             scroller itself is click-through so the map keeps the space to
             either side of the buttons. */}
+        {/* THE RUN'S DEAL, StarCraft-style, in the bottom-right corner: a
+            column of squares growing upward. The BOTTOM square is always
+            the family composition — the three families the die dealt this
+            map (LevelSpec.families), as their first bodies — and every
+            square above it is one mutator in force, face and band border.
+            Every cell opens the shared hover card (DealFamiliesCell,
+            DealRuleCell) saying what it is, so the corner answers itself
+            mid-wave rather than sending a player to the codex */}
+        {hud && !hud.lost && !hud.won && !hud.menuOpen && level && (
+          <div
+            role="list"
+            aria-label="families and rules in force"
+            className="ui-zoom pointer-events-none absolute bottom-[1rem] right-[1rem] z-10 flex flex-col-reverse items-end gap-1.5"
+          >
+            {level.families && level.families.length > 0 && (
+              <DealFamiliesCell families={level.families} />
+            )}
+            {hudRules.map((def) => (
+              <DealRuleCell key={def.id} def={def} />
+            ))}
+          </div>
+        )}
         <div className="pointer-events-none absolute inset-x-0 bottom-[1rem] overflow-x-auto pb-1 pl-[1rem] pr-[1rem]">
           <div
             role="group"
@@ -1908,24 +2161,42 @@ export default function MechSwarm() {
                 save PICKED to ride the bar (see barKinds), not everything it
                 owns — owning is the tech tree's business, the bar is a PvZ
                 seed row. A null unlocked list is sandbox mode: the roster */}
-            {barKinds().map((kind) => {
+            {barKinds().map((kind, slot) => {
               const t = MENU_BY_KIND.get(kind)!;
+              // the hotkey, worn in the corner: a shortcut nobody can see
+              // is a shortcut nobody presses (see SLOT_DIGIT)
+              const digit = SLOT_DIGIT(slot);
               // what the badge says is the PRICE, in scrap — the number a
               // build decision is made against — and it reddens the moment
               // the run cannot cover it. Free builds (sandbox, the editors)
               // carry no number at all
               const price = hud?.scrap === null || !hud ? null : hud.prices[t.kind];
               const poor = price !== null && hud !== null && hud.scrap !== null && hud.scrap < price;
-              const label = price === null ? t.name : `${t.name} — ${price} scrap`;
+              const named = price === null ? t.name : `${t.name} — ${price} scrap`;
+              const label = digit ? `${named} (key ${digit})` : named;
               return (
                 <button
                   key={t.kind}
                   title={label}
                   aria-label={label}
+                  aria-keyshortcuts={digit ?? undefined}
                   aria-pressed={hud?.buildKind === t.kind}
                   onClick={() => pickTower(t.kind)}
-                  className={`${TOOL_BTN} ${poor ? "opacity-60" : ""}`}
+                  className={`${TOOL_BTN} relative ${poor ? "opacity-60" : ""}`}
                 >
+                  {/* THE HOTKEY, worn on the icon's top-left corner. It
+                      carries its own dark ground because the sprite fills
+                      all but 8px of the button: over the copper wall — a
+                      solid block of colour — a bare digit is unreadable,
+                      and the 4px of corner the chip covers is nothing */}
+                  {digit && (
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute left-0 top-0 bg-[#0b0b0d]/85 px-1 py-0.5 text-[12px] font-bold leading-none text-[#A6A6AF]"
+                    >
+                      {digit}
+                    </span>
+                  )}
                   {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
                   <img
                     src={icons[t.kind] ?? t.icon}
@@ -1934,7 +2205,7 @@ export default function MechSwarm() {
                   />
                   {price !== null && (
                     <span
-                      className={`text-[13px] font-bold leading-none ${
+                      className={`text-[15px] font-bold leading-none ${
                         poor ? "text-[#FF8A8A]" : "text-white"
                       }`}
                     >
@@ -1944,11 +2215,10 @@ export default function MechSwarm() {
                 </button>
               );
             })}
-            {/* the loadout editor's door. Always on the bar in campaign —
-                eight slots is the base rule (BAR_SLOTS) — and absent in
-                sandbox, where the whole roster shows and there is nothing
-                to curate */}
-            {hud && hud.barSlots !== null && (
+            {/* the loadout editor's door, on every bar: eight slots is the
+                base rule (BAR_SLOTS) and it holds in sandbox and admin
+                too, so there is always a curation to make */}
+            {hud && (
               <button
                 title="Edit loadout — pick which turrets ride the bar"
                 aria-label="Edit loadout"
@@ -1960,7 +2230,7 @@ export default function MechSwarm() {
                 <svg viewBox="0 0 24 24" className="h-8 w-8 fill-current" aria-hidden="true">
                   <path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z" />
                 </svg>
-                <span className="text-[11px] font-bold uppercase leading-none tracking-widest">
+                <span className="text-[13px] font-bold uppercase leading-none tracking-widest">
                   Slots
                 </span>
               </button>
@@ -1971,14 +2241,14 @@ export default function MechSwarm() {
             unlocked turret, lit = riding a slot. With the bar full the
             rest dim out until something is removed — and the count badge
             is the one number that explains both states */}
-        {hud && hud.barSlots !== null && loadoutOpen && (
+        {hud && loadoutOpen && (
           <div className="ui-zoom ms-pane absolute bottom-[6.25rem] left-1/2 z-10 max-w-[calc(100vw-2rem)] -translate-x-1/2 p-3">
             {(() => {
               const bar = barKinds();
-              const full = bar.length >= (hud.barSlots ?? 0);
+              const full = bar.length >= hud.barSlots;
               return (
                 <>
-                  <div className="mb-2 flex items-baseline justify-center gap-2 text-[11px] uppercase tracking-widest">
+                  <div className="mb-2 flex items-baseline justify-center gap-2 text-[13px] uppercase tracking-widest">
                     <span className="text-[#71717C]">Loadout</span>
                     <span className={`font-bold ${full ? "text-[#FFD37F]" : "text-[#EDEDEF]"}`}>
                       {bar.length}/{hud.barSlots}
@@ -2023,7 +2293,7 @@ export default function MechSwarm() {
                   {/* a full bar says how to make room; the slot count is
                       fixed (BAR_SLOTS), so the only way in is a swap */}
                   {full && (
-                    <div className="mt-2 text-center text-[11px] uppercase tracking-widest text-[#71717C]">
+                    <div className="mt-2 text-center text-[13px] uppercase tracking-widest text-[#71717C]">
                       Bar is full — remove a turret to add another
                     </div>
                   )}
@@ -2104,7 +2374,7 @@ export default function MechSwarm() {
               <div className="font-display text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
                 {hud.mission.kind === "survive" ? "Survived" : "Line held"}
               </div>
-              <div className="mt-1 text-[12px] uppercase tracking-widest text-[#71717C]">
+              <div className="mt-1 text-[14px] uppercase tracking-widest text-[#71717C]">
                 <span style={{ color: rungColor(hud.tier) }}>{rungLabel(hud.tier)}</span> ·{" "}
                 {missionText(level).title}
               </div>
@@ -2154,16 +2424,16 @@ export default function MechSwarm() {
               {admin && !pauseSettings && (
                 <div className="ms-pane flex w-full max-w-[20rem] items-center justify-between gap-3 border-[#6b4f8a] px-3 py-2">
                   <div className="min-w-0">
-                    <div className="text-[13px] font-bold uppercase tracking-widest text-[#C9A7FF]">
+                    <div className="text-[15px] font-bold uppercase tracking-widest text-[#C9A7FF]">
                       Sandbox
                     </div>
-                    <div className="text-[12px] text-[#71717C]">
+                    <div className="text-[14px] text-[#71717C]">
                       Every turret and pace — this run only
                     </div>
                   </div>
                   <button
                     onClick={() => setAdmin(false)}
-                    className="ms-btn ms-btn-tint shrink-0 px-3 py-1.5 text-[13px]"
+                    className="ms-btn ms-btn-tint shrink-0 px-3 py-1.5 text-[15px]"
                     style={{ "--ms-tint": "#c9a7ff" } as CSSProperties}
                   >
                     Off

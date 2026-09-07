@@ -20,18 +20,18 @@
  * WHERE IT IS MANDATORY: EVERY DEPLOY FROM LEVEL 2 UP, on every world.
  * The gate is the LADDER, not the map — a run is played under the points
  * and the count its difficulty carries (mutationBudget, mutationPicks,
- * both of them dials on the rung: see RungKnobs in ladder.ts), and Level 1
- * carries zero of each.
+ * both of them dials on the rung: see RungKnobs in ladder.ts), and the four
+ * named difficulties carry zero of each.
  *
  * THE ROLL USED TO BE A PER-WORLD SWITCH (`LevelSpec.mutators`) and that
  * was one gate too many. A map either mutated or it did not, and the
  * difficulty only decided how hard — so the first world could never be
  * made harder and every world after it could never be played straight.
  * Hanging the roll on the tier instead says the same thing with one
- * number: Level 1 is the campaign as authored, which is where the fleet is
- * still being stood up and a roll on top of that is a wall rather than a
- * challenge. Every step above it is the same script under rules nobody
- * chose, which is ENDGAME RESOURCE FARMING with a roguelike shape.
+ * number: Incursion through Nemesis are the campaign as authored, at a
+ * size, which is where the fleet is still being stood up and a roll on top
+ * of that is a wall rather than a challenge. Every step above Nemesis
+ * is the same full script under rules nobody chose, which is ENDGAME RESOURCE FARMING with a roguelike shape.
  *
  * A LEVEL MAY STILL CARRY RULES OF ITS OWN, and that is a different thing
  * from the switch above. `LevelSpec.intrinsicMutation` is a list of rules
@@ -95,34 +95,6 @@ export interface MutationDef {
    * dearest things here.
    */
   cost: number;
-  /**
-   * A RULE THAT BELONGS TO A MAP AND IS NEVER ROLLED ANYWHERE.
-   *
-   * The roller skips these entirely (rollMutations), so the ONLY way one
-   * reaches a run is a world naming it in LevelSpec.intrinsicMutation —
-   * which is checked in levels.ts, because a special rule on no world
-   * is a rule no build of the game can ever play.
-   *
-   * WHY THE FLAG EXISTS. A mutator that reads the TERRAIN is worth
-   * different amounts on different maps, and on some maps it is worth
-   * nothing at all: Hydrophobic slows a turret built near water, and
-   * Confluence has no water, so rolling it there would spend a slot and a
-   * player's attention on a rule that changes not one shot. Overshields
-   * has the opposite shape — it is Maelstrom's by design AND a fair roll
-   * anywhere — which is why this is a flag on the entry rather than
-   * something inferred from the intrinsic lists.
-   *
-   * ITS COST IS A LABEL, NOT A PRICE. A special rule is never rolled
-   * and never charged against a tier's budget (see intrinsicMutation), so
-   * the number only picks the band its card is drawn in — how bad the
-   * codex says it is. It still has to sit on the scale, because the
-   * player reads it off the same shelf as everything else.
-   *
-   * The sandbox still ticks these on deliberately (SandboxView is the one
-   * place a rule is chosen rather than rolled), which is how one gets
-   * tested on a map that does not carry it.
-   */
-  special?: boolean;
 }
 
 /**
@@ -155,14 +127,12 @@ export const MUTATIONS: readonly MutationDef[] = [
     id: "amphibious",
     name: "Amphibious",
     cost: 5,
-    special: true,
     blurb: "Ground enemies that wade come out faster, tougher and healing.",
   },
   {
     id: "hydrophobic",
     name: "Hydrophobic",
     cost: 4,
-    special: true,
     blurb: "Turrets built near water attack slower.",
   },
   {
@@ -315,26 +285,17 @@ export function applyMutationCostOverrides(doc: Record<string, unknown>): void {
 }
 
 /**
- * EVERY RULE A RUN IS PLAYED UNDER: the ones the LEVEL carries by design
- * (LevelSpec.intrinsicMutation) and the ones the deploy ROLLED for it
- * (LevelSpec.mutation), as one clean list in catalog order.
- *
- * The two are separate fields and one question. A level's own rules are
- * part of what that world IS — the naval front is a shielded front at
- * every tier, including the bottom one, and it is not spending the tier's
- * points to be — while the roll is what this particular deploy came back
- * with. Nothing downstream of this call needs to know which is which: the
- * sim asks what is in force, and the answer is the union.
+ * EVERY RULE A RUN IS PLAYED UNDER: what the deploy ROLLED for it
+ * (LevelSpec.mutation), as one clean list in catalog order. No level
+ * carries rules of its own any more — all maps are equal — so the roll
+ * is the whole answer.
  *
  * IT IS THE ONLY WAY TO ASK. Every entry point that can start a run — the
  * campaign deploy, the sandbox, the editor's preview, `__ladder.spec` —
- * goes through here or through the sim, so a level cannot be played
- * without the rules it was authored with.
+ * goes through here or through the sim.
  */
-export const mutationsInForce = (
-  intrinsic: readonly MutationId[] | undefined,
-  rolled: readonly MutationId[] | undefined,
-): MutationId[] => cleanMutations([...(intrinsic ?? []), ...(rolled ?? [])]);
+export const mutationsInForce = (rolled: readonly MutationId[] | undefined): MutationId[] =>
+  cleanMutations([...(rolled ?? [])]);
 
 /** is this rule in force for the run? — the sim's one question */
 export const hasMutation = (
@@ -381,11 +342,11 @@ const sortByCatalog = (ids: readonly MutationId[]): MutationId[] =>
  * alongside the rules themselves. It is a DIAL ON THE TIER now
  * (RungKnobs.mutationCount in ladder.ts), because the count is the one
  * part of a mutating run that is a difficulty curve rather than a
- * surprise — a player stepping from Level 5 to Level 6 is entitled to see
+ * surprise — a player stepping one difficulty up is entitled to see
  * what they are taking on, and "three or four, we shall see" is not
  * something a ladder can be tuned against.
  *
- * ZERO IS A LEGAL SETTING and it is what Level 1 carries: a tier with no
+ * ZERO IS A LEGAL SETTING and it is what the named difficulties carry: a tier with no
  * rules is the campaign as authored. Five is the ceiling for the same
  * reason MUT_COST_MAX is six — a run under six simultaneous rules is not a
  * harder run, it is a different game, and nothing in the catalog is
@@ -399,11 +360,18 @@ export const MUT_COUNT_MAX = 5;
  *
  * It is arithmetic on the tier index for the same reason RUNGS is (see
  * ladder.ts): a ladder that extends must not need this table re-authored.
- * Level 1 spends nothing at all; Level 2 affords three light rules, and
+ * The named difficulties spend nothing at all; the first mutating tier
+ * affords three light rules, and
  * the top affords four heavy ones, or three brutal ones and change.
  *
  *   tier    1    2    3    4    5    6    7    8    9   10
- *   points  0    8   10   11   13   15   17   19   20   22
+ *   points  0    0    0    0    8   10   11   13   15   17
+ *
+ * THE FIRST FOUR TIERS SPEND NOTHING. Incursion through Nemesis are
+ * the same script at a quarter, a half, three quarters and the whole of
+ * its count (ladder.ts, COUNT_SCALE) — a size ramp, not a rules ramp. The
+ * roll starts on the tier above Nemesis (MUT_FIRST_TIER) and every
+ * tier from there is Nemesis's full swarm under more rules.
  *
  * IT IS ONLY WHERE THE DIAL STARTS. Every one of these numbers is a knob
  * on the rung (RungKnobs.mutationPoints), bendable from the admin balance
@@ -422,23 +390,38 @@ export const MUT_BUDGET_PER_RUNG = 1.8;
 /**
  * The points a tier (0-based, as the ladder counts them) may spend.
  *
- * THE BOTTOM TIER IS ZERO AND THAT IS NOT THE ARITHMETIC — it is the rule
- * that Level 1 is the campaign as authored, applied here so that every
- * reader of the curve gets it rather than each one having to remember.
- * The arithmetic starts at Level 2, which is what the table prints.
+ * THE FIRST FOUR TIERS ARE ZERO AND THAT IS NOT THE ARITHMETIC — it is the
+ * rule that the named difficulties are the campaign as authored, at a
+ * size, applied here so that every reader of the curve gets it rather
+ * than each one having to remember. The arithmetic starts at
+ * MUT_FIRST_TIER and counts from one there, which is what the table
+ * prints.
  */
-export const mutationBudget = (tier: number): number =>
-  tier <= 0 ? 0 : Math.round(MUT_BUDGET_BASE + MUT_BUDGET_PER_RUNG * tier);
+export const mutationBudget = (tier: number): number => {
+  const step = mutationStep(tier);
+  return step <= 0 ? 0 : Math.round(MUT_BUDGET_BASE + MUT_BUDGET_PER_RUNG * step);
+};
+
+/**
+ * THE FIRST TIER THAT ROLLS, 0-based: index 4, the fifth difficulty, the
+ * one above Nemesis. Everything below it is a named difficulty that
+ * sends the authored script at a size and nothing else.
+ */
+export const MUT_FIRST_TIER = 4;
+
+/** how many tiers into the mutating band a tier is — 1 on the first one,
+ *  0 or less on every named difficulty */
+export const mutationStep = (tier: number): number => tier - MUT_FIRST_TIER + 1;
 
 /**
  * HOW MANY RULES A TIER ROLLS, as authored — the other half of the pair,
  * and the ladder's real difficulty curve.
  *
- * Three from Level 2, one more every MUT_PICKS_EVERY tiers, capped at
- * MUT_COUNT_MAX:
+ * Three on the first mutating tier, one more every MUT_PICKS_EVERY tiers,
+ * capped at MUT_COUNT_MAX:
  *
  *   tier    1    2    3    4    5    6    7    8    9   10
- *   rules   0    3    3    3    3    4    4    4    4    5
+ *   rules   0    0    0    0    3    3    3    3    4    4
  *
  * A DEARER RULE AND AN EXTRA RULE ARE DIFFERENT KINDS OF HARDER, which is
  * why this climbs so much more slowly than the budget does. Points buy
@@ -451,23 +434,22 @@ export const mutationBudget = (tier: number): number =>
 export const MUT_PICKS_BASE = 3;
 export const MUT_PICKS_EVERY = 4;
 
-export const mutationPicks = (tier: number): number =>
-  tier <= 0
+export const mutationPicks = (tier: number): number => {
+  const step = mutationStep(tier);
+  return step <= 0
     ? 0
-    : Math.min(
-        MUT_COUNT_MAX,
-        MUT_PICKS_BASE + Math.floor((tier - 1) / MUT_PICKS_EVERY),
-      );
+    : Math.min(MUT_COUNT_MAX, MUT_PICKS_BASE + Math.floor((step - 1) / MUT_PICKS_EVERY));
+};
 
 // The floor, as an invariant rather than a paragraph: the FIRST mutating
 // tier must be able to pay for its own full roll at the lightest cost the
 // scale allows, or the easiest mutating difficulty would quietly be the
-// one with the fewest rules. Checking tier 1 checks all of them — the
-// budget climbs by MUT_BUDGET_PER_RUNG a tier and the count by a quarter
-// of a rule, so the purse only ever gets roomier per slot.
-if (mutationBudget(1) < mutationPicks(1) * MUT_COST_MIN)
+// one with the fewest rules. Checking the first mutating tier checks all
+// of them — the budget climbs by MUT_BUDGET_PER_RUNG a tier and the count
+// by a quarter of a rule, so the purse only ever gets roomier per slot.
+if (mutationBudget(MUT_FIRST_TIER) < mutationPicks(MUT_FIRST_TIER) * MUT_COST_MIN)
   throw new Error(
-    `Level 2's ${mutationBudget(1)} points cannot pay for ${mutationPicks(1)} mutators`,
+    `the first mutating tier's ${mutationBudget(MUT_FIRST_TIER)} points cannot pay for ${mutationPicks(MUT_FIRST_TIER)} mutators`,
   );
 
 /** how many shuffles the roller tries before keeping its best (see below) */
@@ -503,7 +485,7 @@ const ROLL_TRIES = 24;
  * rules than were asked for, but only when the catalog cannot honestly do
  * better: a two-entry catalog at a low tier is one rule, because a second
  * one would be a rule the budget has not paid for. A `want` of zero — what
- * Level 1 carries — returns nothing without touching the catalog at all.
+ * a named difficulty carries — returns nothing without touching the catalog at all.
  */
 export function rollMutations(
   budget: number,
@@ -511,14 +493,13 @@ export function rollMutations(
   exclude: readonly MutationId[] = [],
   rand: () => number = Math.random,
 ): MutationId[] {
-  // the rules a level already plays under by design are not in the draw and
-  // are not paid for out of this budget (see mutationsInForce): rolling one
-  // of them would spend points to change nothing.
-  //
-  // A SPECIAL rule is out of the draw on every map, not just the one
-  // that carries it (MutationDef.special) — it belongs to a world, and a
-  // world that wants it names it.
-  const pool = MUTATIONS.filter((m) => !m.special && !exclude.includes(m.id));
+  // EVERY RULE IS IN EVERY DRAW ON EVERY MAP. The catalog used to hold
+  // map-bound rules (Hydrophobic, Amphibious) that only a world naming
+  // them could play; all maps are equal now, so a rule that reads the
+  // terrain simply reads whatever terrain it lands on — Hydrophobic on a
+  // dry map is a cheap slot, and that is the roll's business. `exclude`
+  // stays for a caller that wants a rule out of one draw.
+  const pool = MUTATIONS.filter((m) => !exclude.includes(m.id));
   want = Math.min(pool.length, Math.max(0, Math.floor(want)));
   if (want === 0 || budget <= 0) return [];
   let best: MutationDef[] = [];
@@ -897,7 +878,7 @@ export const OVERSHIELD_SCALE = 5;
 // THE DAMAGE SCALES WITH THE BODY'S TIER, NOT ITS LEVEL. Tier is the
 // currency ladder (UNIT_STATS.tier, 1-5): a dagger's pop is a scratch and
 // a fortress's is a real dent, at every difficulty alike. Scaling with
-// level would make the rule unpayable at Level 10 for the same reason
+// level would make the rule unpayable at the top difficulty for the same reason
 // armour is never level-scaled — tower health does not climb the ladder,
 // so neither may the thing that spends it.
 

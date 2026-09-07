@@ -207,13 +207,18 @@ function routeCells(field) {
   return [...cells].map((i) => [i % COLS, (i / COLS) | 0]);
 }
 
-/** the straight lines flyers take, sampled every other cell */
+/** the roads flyers take round the hills, sampled every other cell */
 function airCells(sim) {
   const out = [];
   for (const r of sim.airRoutes()) {
-    const x1 = r.x1 / CELL, y1 = r.y1 / CELL, x2 = r.x2 / CELL, y2 = r.y2 / CELL;
-    const n = Math.max(1, Math.round(Math.hypot(x2 - x1, y2 - y1) / 2));
-    for (let i = 0; i <= n; i++) out.push([x1 + ((x2 - x1) * i) / n, y1 + ((y2 - y1) * i) / n]);
+    const p = r.pts;
+    // a leg at a time: the route is a polyline now, so the sampling that
+    // used to run down one segment runs down each of them
+    for (let k = 2; k < p.length; k += 2) {
+      const x1 = p[k - 2] / CELL, y1 = p[k - 1] / CELL, x2 = p[k] / CELL, y2 = p[k + 1] / CELL;
+      const n = Math.max(1, Math.round(Math.hypot(x2 - x1, y2 - y1) / 2));
+      for (let i = 0; i <= n; i++) out.push([x1 + ((x2 - x1) * i) / n, y1 + ((y2 - y1) * i) / n]);
+    }
   }
   return out;
 }

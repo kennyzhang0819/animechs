@@ -63,13 +63,19 @@ export type Reward =
 
 /** the rewards placed by hand — the structure of the campaign */
 const PLACED: readonly { level: number; reward: Reward }[] = [
+  // A MAP ALMOST EVERY LEVEL: nine worlds over the fifteen, the second
+  // batch (worlds 4 to 9) filling the levels between the first three
+  { level: 2, reward: { kind: "world", worldId: "4" } },
   { level: 3, reward: { kind: "world", worldId: "2" } },
+  { level: 4, reward: { kind: "world", worldId: "5" } },
+  { level: 5, reward: { kind: "world", worldId: "6" } },
+  { level: 6, reward: { kind: "world", worldId: "7" } },
   { level: 7, reward: { kind: "world", worldId: "3" } },
-  // 2x is the only pace the track hands out, and it rides the LAST level
-  // of it: a run at full pace is the game as designed, and fast-forward is
-  // the reward for having climbed the whole track. 4x and up are sandbox
-  // tools (SPEEDS in game.ts, behind the admin door), never earned
-  { level: MAX_LEVEL, reward: { kind: "speed", mult: 2 } },
+  { level: 8, reward: { kind: "world", worldId: "8" } },
+  { level: 9, reward: { kind: "world", worldId: "9" } },
+  // NO PACE ON THE TRACK. Fast-forward is not a reward any more: every
+  // multiplier is a sandbox tool (SPEEDS in game.ts, behind the admin
+  // door), and a campaign run always plays at 1x
 ];
 
 /**
@@ -108,15 +114,20 @@ export const STARTING_ROSTER: readonly TowerKind[] = [
  *   them, and not free, because a track whose first rungs open nothing is
  *   not a track.
  *
- *   THE WALLS COME LAST. The copper wall is in the opening board and the
- *   rest of the material ladder — titanium, then thorium, each with its
- *   2x2 — rides the back of the phase, where a run is being built to hold
+ *   THE HEAVIER WALLS COME LAST. The copper wall is in the opening board,
+ *   its 2x2 opens at level 2 beside the lancer, and the rest of the
+ *   material ladder — titanium, then thorium, each with its 2x2 — rides
+ *   the back of the phase, where a run is being built to hold
  *   a lane rather than to shoot down a wave. Sorting them by build cost
  *   put titanium at level 2, ahead of every gun, which is backwards: a
  *   wall is what you add once the guns cannot hold on their own.
  */
 const UNLOCKS: readonly (readonly TowerKind[])[] = [
-  /*  2 */ ["lancer"],
+  // the large copper wall rides with the lancer: the first thing a lane
+  // needs after the opening board's guns is more of the wall it already
+  // stands in, and asking a save to climb to level 12 for a 2x2 of what
+  // it started with was the one wait on the track nobody understood
+  /*  2 */ ["lancer", "copper-wall-large"],
   /*  3 */ ["ripple"],
   /*  4 */ ["spectre"],
   /*  5 */ ["scorch"],
@@ -126,7 +137,7 @@ const UNLOCKS: readonly (readonly TowerKind[])[] = [
   /*  9 */ ["parallax"],
   /* 10 */ ["cyclone"],
   /* 11 */ ["fuse"],
-  /* 12 */ ["tsunami", "copper-wall-large"],
+  /* 12 */ ["tsunami"],
   /* 13 */ ["meltdown", "titanium-wall"],
   /* 14 */ ["foreshadow", "titanium-wall-large"],
   /* 15 */ ["thorium-wall", "thorium-wall-large"],

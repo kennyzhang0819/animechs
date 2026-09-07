@@ -62,8 +62,8 @@ export const spec = {
     { spawn: 0, via: [2, 5], width: [8, 16] },
     { spawn: 1, via: [0, 2, 5], width: [8, 16] },
     { spawn: 2, via: [1, 2, 5], width: [8, 16] },
-    { spawn: 3, via: [0], to: 8, layer: "water", width: [12, 22] },
-    { spawn: 4, via: [1], to: 8, layer: "water", width: [12, 22] },
+    { spawn: 3, via: [0], to: 8, layer: "water", width: [16, 22] },
+    { spawn: 4, via: [1], to: 8, layer: "water", width: [16, 22] },
   ],
   links: [
     { rooms: [0, 1], width: [7, 10] },

@@ -122,7 +122,7 @@ function TrackRow({
       }`}
     >
       <div className="w-16 shrink-0">
-        <div className="text-[10px] uppercase tracking-widest text-[#71717C]">Level</div>
+        <div className="text-[12px] uppercase tracking-widest text-[#71717C]">Level</div>
         <div
           className="font-display text-xl font-bold leading-none"
           style={{ color: reached ? POINT_COLOR : "#71717C" }}
@@ -132,7 +132,7 @@ function TrackRow({
       </div>
       <div className="min-w-0 flex-1">
         {rewards.length === 0 ? (
-          <span className="text-[12px] text-[#71717C]">
+          <span className="text-[14px] text-[#71717C]">
             —
           </span>
         ) : (
@@ -143,7 +143,7 @@ function TrackRow({
           </div>
         )}
         {current && !top && (
-          <div className="mt-3 flex items-center gap-3 text-[12px] text-[#A6A6AF]">
+          <div className="mt-3 flex items-center gap-3 text-[14px] text-[#A6A6AF]">
             <span className="ms-bar h-4 w-64 max-w-full">
               <span
                 className="block h-full"
@@ -157,7 +157,7 @@ function TrackRow({
           </div>
         )}
         {current && top && (
-          <div className="mt-1 text-[11px] uppercase tracking-widest text-[#7BE58A]">
+          <div className="mt-1 text-[13px] uppercase tracking-widest text-[#7BE58A]">
             Top of the track
           </div>
         )}
@@ -218,7 +218,7 @@ export default function ProgressView({
         <BackButton label={backLabel} onClick={onBack} />
         {tabStrip}
         {door && (
-          <span className="ml-2 text-[12px] uppercase tracking-widest text-[#7BE58A]">
+          <span className="ml-2 text-[14px] uppercase tracking-widest text-[#7BE58A]">
             Full unlock is on — every row reads as reached
           </span>
         )}
