@@ -8,7 +8,6 @@ import {
   zoneStyle,
 } from "./maps";
 import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
-import { isBuildableWall } from "./terrain";
 import { loadBalanceDoc } from "./balance";
 import {
   dropsForKills,
@@ -43,8 +42,6 @@ export interface UiState {
   nextWaveIn: number;
   /** 1-based wave now on the field, out of how many the level holds */
   currentWave: number;
-  /** the wave the clock says it is — what the stage gate reads (Sim.stageWave) */
-  stageWave: number;
   totalWaves: number;
   /** the tower kind picked in the build bar, or null for the bare cursor */
   buildKind: TowerKind | null;
@@ -863,7 +860,6 @@ export class Game {
       bosses: this.sim.bossBars().map((b) => ({ ...b, kind: UNIT_KINDS[b.kind] })),
       nextWaveIn: this.sim.nextWaveIn(),
       currentWave: this.sim.currentWave(),
-      stageWave: this.sim.stageWave(),
       totalWaves: this.sim.totalWaves,
       buildKind: this.buildKind,
       paused: this.paused,
@@ -1115,10 +1111,11 @@ export class Game {
 
   /**
    * Paint the Hydrophobic mask onto a COLS x ROWS bitmap — ONLY where a
-   * turret could actually stand, which is buildable rock (isBuildableWall,
-   * the same test canPlace makes). The mask itself covers water and road
-   * as well, and lighting those would be telling the player about ground
-   * they can never build on in the first place.
+   * turret could actually stand, which is open ground (the first test
+   * canPlace makes: not blocked — shallows included, deep water not). The
+   * mask itself covers the hills and the deep as well, and lighting those
+   * would be telling the player about ground they can never build on in
+   * the first place.
    *
    * Periwinkle, the same blue the codex draws a special rule in
    * (mutationFace.tsx) — a player who has read the card should recognise
@@ -1133,9 +1130,9 @@ export class Game {
     const cc = cv.getContext("2d");
     if (!cc) return null;
     const img = cc.createImageData(COLS, ROWS);
-    const { blocked, wall } = this.sim.terrain;
+    const { blocked } = this.sim.terrain;
     for (let i = 0; i < mask.length; i++) {
-      if (!mask[i] || !blocked[i] || !isBuildableWall(wall[i])) continue;
+      if (!mask[i] || blocked[i]) continue;
       const p = i * 4;
       img.data[p] = 0x8a;
       img.data[p + 1] = 0xa2;

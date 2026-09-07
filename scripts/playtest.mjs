@@ -75,8 +75,9 @@ const JSON_OUT = flag("json");
 
 if (!flag("no-build") || !existsSync(path.join(DIST, "sim.js"))) {
   mkdirSync(DIST, { recursive: true });
+  // npx is a .cmd shim on Windows, which spawnSync cannot run without a shell
   const r = spawnSync(
-    "npx",
+    process.platform === "win32" ? "npx.cmd" : "npx",
     [
       "tsc",
       "game/sim.ts", "game/ladder.ts", "game/track.ts", "game/mutation.ts",
@@ -84,7 +85,7 @@ if (!flag("no-build") || !existsSync(path.join(DIST, "sim.js"))) {
       "--moduleResolution", "node", "--esModuleInterop", "--skipLibCheck",
       "--noEmitOnError", "false", "--resolveJsonModule",
     ],
-    { cwd: ROOT, stdio: "pipe", encoding: "utf8" },
+    { cwd: ROOT, stdio: "pipe", encoding: "utf8", shell: process.platform === "win32" },
   );
   if (!existsSync(path.join(DIST, "sim.js"))) {
     console.error(r.stdout, r.stderr);
@@ -98,7 +99,6 @@ const C = require(path.join(DIST, "constants.js"));
 const M = require(path.join(DIST, "maps.js"));
 const LA = require(path.join(DIST, "ladder.js"));
 const TR = require(path.join(DIST, "track.js"));
-const TER = require(path.join(DIST, "terrain.js"));
 const MU = require(path.join(DIST, "mutation.js"));
 const WP = require(path.join(DIST, "weapons.js"));
 const TY = require(path.join(DIST, "types.js"));
@@ -138,7 +138,13 @@ const MIX = {
 // hulls the bot brings the beam turrets a person would. Not the arc: its
 // reach is short enough that a shoreline placement is a Hydrophobic one
 const WET = { 1: [], 2: ["lancer"], 3: ["meltdown"] };
-const stageTier = (w) => E.stageOfWave(w).tier;
+// the stage the clock is in (STAGES in economy.ts) — no longer a gate on
+// anything, but still the bot's buying plan: it spends each stage on the
+// band that stage is priced for, as a player minding the bank would
+const stageTier = (w) => {
+  for (const s of E.STAGES) if (w <= s.to) return s.tier;
+  return E.STAGES[E.STAGES.length - 1].tier;
+};
 const tierMix = (t, wet) => (wet ? [...MIX[t], ...WET[t]] : MIX[t]);
 const mixFor = (t, wet = false) =>
   MIX_MODE === "duo"
@@ -222,7 +228,9 @@ function play() {
   if (UNIT_DAMAGE !== null) WP.setUnitDamageScale(+UNIT_DAMAGE);
 
   const sim = new Sim(spec);
-  sim.setTech(TR.techStateFor(LEVEL));
+  const tech = TR.techStateFor(LEVEL);
+  const owned = tech.unlocked;
+  sim.setTech(tech);
 
   // THE ROUTES, one per movement layer, and WHAT EACH IS WORTH: the share
   // of the script's health that walks, flies or sails. A naval map's
@@ -274,13 +282,16 @@ function play() {
   reweigh(1);
 
   // every buildable cell within reach of a route, on a checkerboard so the
-  // scoring loop stays cheap
-  const { blocked, wall } = sim.terrain;
+  // scoring loop stays cheap. Buildable is OPEN GROUND, shallows included —
+  // never a hill, never the deep (Sim.canPlace holds the whole rule; the
+  // drop zones and the base line it also refuses are struck off when a
+  // placement bounces)
+  const { blocked } = sim.terrain;
   const cands = [];
   for (let y = 0; y < ROWS; y++)
     for (let x = 0; x < COLS; x++) {
       const i = y * COLS + x;
-      if (!blocked[i] || !TER.isBuildableWall(wall[i]) || (x + y) % 2) continue;
+      if (blocked[i] || (x + y) % 2) continue;
       let dg = 1e9, da = 1e9;
       for (const [rx, ry] of groundAll) { const d = Math.hypot(rx - x, ry - y); if (d < dg) dg = d; }
       for (const [rx, ry] of air) { const d = Math.hypot(rx - x, ry - y); if (d < da) da = d; }
@@ -370,8 +381,11 @@ function play() {
   while (!sim.lost() && !sim.won() && sim.time < MAX_SECONDS) {
     for (let s = 0; s < 30; s++) sim.update(1 / 60);
     const w = sim.currentWave();
-    // what to buy follows the gate, which follows the clock (Sim.stageWave)
-    const mix = mixFor(stageTier(sim.stageWave()), wet);
+    // what to buy follows the clock (Sim.stageWave), out of what the save
+    // at --level actually owns (the track, track.ts); a plan with nothing
+    // owned in it falls back to the duo every save starts with
+    const plan = mixFor(stageTier(sim.stageWave()), wet).filter((k) => owned.has(k));
+    const mix = plan.length > 0 ? plan : ["duo"];
     let stuck = 0;
     for (let tries = 0; tries < 40; tries++) {
       const kind = mix[rot % mix.length];

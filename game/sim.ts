@@ -132,7 +132,6 @@ import {
   SCRAP_START,
   scrapPriceOf,
   sellValue,
-  tierOpenAt,
   waveBonusScrap,
 } from "./economy";
 import { isBuildableWall, isWaterFloor, waterWalkMask, type Terrain } from "./terrain";
@@ -1637,14 +1636,11 @@ export class Sim {
   }
 
   /**
-   * THE WAVE THE CLOCK SAYS IT IS — what the stage gate reads. A wave is
+   * THE WAVE THE CLOCK SAYS IT IS — what the HUD's wave counter reads. A wave is
    * scheduled every waveGap + WAVE_RELEASE_SECONDS, and on a map whose
    * drop zones cannot pass a big wave that fast the script falls behind
-   * its own schedule (Sim.runScript queues what will not fit). The tiers
-   * open on the schedule rather than on the count, so a congested map
-   * does not hold a player at tier 1 into the fourteenth minute; the
-   * larger of the two is taken, so a run that is AHEAD of schedule is
-   * never held back either.
+   * its own schedule (Sim.runScript queues what will not fit). The larger
+   * of the two is taken, so a run that is AHEAD of schedule reads ahead.
    */
   stageWave(): number {
     const cadence = Math.max(1, this.level.waveGap + WAVE_RELEASE_SECONDS);
@@ -2381,37 +2377,25 @@ export class Sim {
     // everywhere, so the drag-chain and keyboard paths can't sidestep the
     // menu. A sandbox or an editor (tech null) is not charged at all
     if (this.tech) {
+      // what the save owns (the track, track.ts) it may place from wave 1;
+      // there is no stage gate inside a run any more
       if (!this.tech.unlocked.has(kind)) return false;
-      // the stage gate: tier 2 waits for wave 21, tier 3 for wave 36
-      // (STAGES in economy.ts) — a campaign rule, like the price
-      if (!tierOpenAt(kind, this.stageWave())) return false;
       if (this.scrap < scrapPriceOf(kind)) return false;
     }
     const sz = TOWERS[kind].size;
     if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
-    const { blocked, wall, floor } = this.terrain;
+    const { blocked } = this.terrain;
     const { isGoal } = this.field;
-    // does any cell of the footprint stand on OPEN GROUND — in the swarm's
-    // way, where a structure is a wall as well as a gun?
-    let onGround = false;
+    // GROUND LEVEL ONLY. A structure stands on open ground, in the swarm's
+    // way, where it is a wall as well as a gun — never on a hill, a forest
+    // or deep water (every blocked cell), never on the base line the
+    // walkers are aiming at, never on a drop zone (a corked door spawns
+    // nothing). Shallow water is ground, as it is in Mindustry: a naval
+    // map's shallows are most of the floor it has
     for (let y = gy; y < gy + sz; y++)
       for (let x = gx; x < gx + sz; x++) {
         const i = y * COLS + x;
-        if (blocked[i]) {
-          // pine forests and deep water are the un-buildable kinds of
-          // blocked cell (isBuildableWall in terrain.ts holds that rule);
-          // every rock family — stone, dirt, dark carbon, indices above
-          // the sentinels included — is tower real estate
-          if (!isBuildableWall(wall[i])) return false;
-          continue;
-        }
-        // OPEN GROUND IS REAL ESTATE TOO — the RTS turn: a structure can
-        // stand anywhere unoccupied and it blocks the swarm that walks
-        // there. Never on water (no hull-footed turrets), never on the
-        // base line the walkers are aiming at, never on a drop zone (a
-        // corked door spawns nothing)
-        if (isWaterFloor(floor[i]) || isGoal[i] || this.groundPads[i]) return false;
-        onGround = true;
+        if (blocked[i] || isGoal[i] || this.groundPads[i]) return false;
       }
     for (const t of this.towers) {
       const tsz = TOWERS[t.kind].size;
@@ -2429,7 +2413,7 @@ export class Sim {
     // cannot walk around is a wall it walks INTO and shoots (the field
     // routes through structures at a cost — FlowField.soft), so a seal
     // is not a win, it is a fight at the wall
-    if (onGround && !this.areaClearOfUnits(gx, gy, sz)) return false;
+    if (!this.areaClearOfUnits(gx, gy, sz)) return false;
     return true;
   }
 

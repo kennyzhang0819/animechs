@@ -1,6 +1,6 @@
 import { dropsForKills, WORLD, WORLDS } from "./levels";
-import { RUNG_COUNT, tierXpBonus, TOP_TIER } from "./ladder";
-import { FIRST_CLEAR_XP, levelForXp } from "./economy";
+import { tierXpBonus, TOP_TIER } from "./ladder";
+import { levelForXp, RANDOM_MAP_XP_BONUS } from "./economy";
 import { MAX_LEVEL, techStateFor, worldUnlockLevel } from "./track";
 import type { TechState } from "./tech";
 import { clearSave, readSave, writeSave } from "./storage";
@@ -16,7 +16,7 @@ import { TOWER_KINDS, type TowerKind } from "./types";
 export interface Progress {
   /**
    * LIFETIME XP, the save's one number. Every kill pays its tier's XP,
-   * the rung multiplies it, a first clear adds a bonus (grantRunReward),
+   * the rung multiplies it, a random map adds a quarter (grantRunReward),
    * and it only ever goes up. The player's LEVEL is read off it through
    * the curve in economy.ts, and the level is a rung on the track
    * (track.ts) — every map, pace and upgrade the save has is a function
@@ -24,16 +24,16 @@ export interface Progress {
    */
   xp: number;
   /**
-   * HOW FAR UP EACH WORLD'S OWN LADDER THIS SAVE HAS CLIMBED, keyed by
-   * world id. On a world with value `c`, rungs 0..c-1 are beaten and rung
-   * `c` is that world's frontier — the highest it will let you attempt. `c`
-   * reaching RUNG_COUNT means that world's ladder, as authored today, is
-   * finished.
+   * THE BEST THIS SAVE HAS DONE ON EACH WORLD, keyed by world id: the
+   * NUMBER of the highest level beaten there (1..RUNG_COUNT), so a world
+   * whose value is 7 has had Level 7 cleared on it. Every level is open
+   * from the first run — the ladder is not climbed one rung at a time any
+   * more, and nothing is paid for a first clear — so this is a record and
+   * never a gate: the map list prints it, and that is all it does. A world
+   * absent from this record has never been won on and reads 0.
    *
-   * ONE NUMBER PER WORLD, NOT ONE FOR THE SAVE. Clearing rung 6 somewhere
-   * says nothing about anywhere else: every world is climbed from the
-   * bottom. A world absent from this record has never been won on and
-   * reads 0.
+   * ONE NUMBER PER WORLD, NOT ONE FOR THE SAVE: beating Level 7 somewhere
+   * says nothing about anywhere else.
    */
   clearedByMap: Record<string, number>;
   /**
@@ -50,6 +50,14 @@ export interface Progress {
   speed?: number;
   /** the HUD's top-left panel collapsed to its one-line wave counter */
   hudMinimized?: boolean;
+  /**
+   * THE MENU'S LAST PICKS, so the start screen opens on what the player
+   * played last rather than on Level 1 every launch. `difficulty` is the
+   * rung index (0-based, see ladder.ts); `map` is a world id, and ABSENT
+   * means Random — the default, and the pick that pays the bonus.
+   */
+  difficulty?: number;
+  map?: string;
   /**
    * Ambient effects — the particle work, and nothing a weapon is made of
    * (see Sim.setEffects). Absent means ON; only an explicit `false` is off.
@@ -127,25 +135,19 @@ function readSpeed(p: { speed?: unknown }): number | undefined {
   return typeof s === "number" && ALL_SPEEDS.includes(s) ? s : undefined;
 }
 
-export const UI_SCALES = [0.75, 0.85, 1, 1.15] as const;
+/**
+ * The UI sizes on offer, as --ui-scale multipliers. The panels were sized
+ * on a desktop at 1; the steps above it are for a TV across the room or a
+ * high-DPI laptop that renders the default small, and they run to 2x
+ * because the in-game panels anchor to the corners and reflow (globals.css
+ * .ui-zoom), so a big HUD costs field, never overlap.
+ */
+export const UI_SCALES = [0.75, 0.85, 1, 1.15, 1.3, 1.5, 1.75, 2] as const;
 export const UI_SCALE_DEFAULT = 1;
 
 function readUiScale(p: { uiScale?: unknown }): number | undefined {
   const s = p.uiScale;
   return typeof s === "number" && (UI_SCALES as readonly number[]).includes(s) ? s : undefined;
-}
-
-/**
- * What a save from before the track is worth in XP: every first clear it
- * recorded, at the rung's bonus. Its stored XP is kept where it is the
- * larger — a save never loses level on a format change.
- */
-function clearsXp(clearedByMap: Record<string, number>): number {
-  let clears = 0;
-  for (const c of Object.values(clearedByMap))
-    for (let tier = 0; tier < Math.min(c, RUNG_COUNT); tier++)
-      clears += FIRST_CLEAR_XP * tierXpBonus(tier);
-  return Math.round(clears);
 }
 
 export function loadProgress(): Progress {
@@ -156,13 +158,14 @@ export function loadProgress(): Progress {
     const clearedByMap = readClearedByMap(p);
     const version = typeof p.saveVersion === "number" ? p.saveVersion : 0;
     const migrated = version < SAVE_VERSION;
-    const stored = typeof p.xp === "number" && p.xp > 0 ? Math.floor(p.xp) : 0;
-    const xp = migrated ? Math.max(stored, clearsXp(clearedByMap)) : stored;
+    const xp = typeof p.xp === "number" && p.xp > 0 ? Math.floor(p.xp) : 0;
     const loaded: Progress = {
       xp,
       clearedByMap,
       speed: readSpeed(p),
       hudMinimized: p.hudMinimized === true,
+      difficulty: readDifficulty(p),
+      map: readMapPick(p),
       // absent means ON — only an explicit false switches them off
       effects: p.effects !== false,
       uiScale: readUiScale(p),
@@ -176,6 +179,34 @@ export function loadProgress(): Progress {
   } catch {
     return fresh();
   }
+}
+
+/** the remembered rung, clamped into the ladder; absent means Level 1 */
+function readDifficulty(p: { difficulty?: unknown }): number | undefined {
+  const d = p.difficulty;
+  return typeof d === "number" && Number.isFinite(d)
+    ? Math.min(TOP_TIER, Math.max(0, Math.floor(d)))
+    : undefined;
+}
+
+/** the remembered map, if it is still a world; anything else reads Random */
+function readMapPick(p: { map?: unknown }): string | undefined {
+  const m = p.map;
+  return typeof m === "string" && WORLDS.some((w) => w.id === m) ? m : undefined;
+}
+
+/**
+ * Remember the menu's picks. `map` null is Random, and is stored as an
+ * ABSENT field rather than a sentinel string, so a save that has never
+ * picked and one that picked Random read the same way.
+ */
+export function saveRunPick(difficulty: number, map: string | null): void {
+  const p = loadProgress();
+  const tier = Math.min(TOP_TIER, Math.max(0, Math.floor(difficulty)));
+  if ((p.difficulty ?? 0) === tier && (p.map ?? null) === map) return;
+  const { map: _dropped, ...rest } = p;
+  void _dropped;
+  saveProgress({ ...rest, difficulty: tier, ...(map ? { map } : null) });
 }
 
 /** the bar's curation out of a raw save: known turrets only, deduped */
@@ -270,36 +301,11 @@ export function techOf(p: Progress): TechState {
   return techStateFor(effectiveLevel(p));
 }
 
-// ---------- the ladder ----------
+// ---------- the record ----------
 
-/** how many rungs this save has cleared on one world */
-export const clearedOn = (p: Progress, worldId: string): number =>
-  Math.max(0, Math.floor(p.clearedByMap[worldId] ?? 0));
-
-/**
- * The highest rung that can be attempted on a world: every cleared one,
- * plus the frontier. A player may replay any rung below it — a cleared
- * rung pays its kills' XP like any other, only the first-clear bonus is
- * gone — but only the frontier moves the ladder forward.
- */
-export const topTier = (p: Progress, worldId: string): number =>
-  Math.min(TOP_TIER, clearedOn(p, worldId));
-
-/** the best any world has done — the save's own high-water mark */
-export const bestTierCleared = (p: Progress): number =>
-  Object.values(p.clearedByMap).reduce((a, b) => Math.max(a, Math.floor(b)), 0);
-
-/** has this world's whole ladder been beaten? */
-export const isCampaignComplete = (p: Progress, worldId: string): boolean =>
-  clearedOn(p, worldId) >= RUNG_COUNT;
-
-/** has this rung been beaten? (the frontier itself has not) */
-export const isTierCleared = (p: Progress, worldId: string, tier: number): boolean =>
-  tier < clearedOn(p, worldId);
-
-/** may this rung be played at all? */
-export const isTierUnlocked = (p: Progress, worldId: string, tier: number): boolean =>
-  tier >= 0 && tier <= topTier(p, worldId);
+/** the number of the highest level this save has beaten on one world — 0 for none */
+export const bestClearOn = (p: Progress, worldId: string): number =>
+  Math.min(TOP_TIER + 1, Math.max(0, Math.floor(p.clearedByMap[worldId] ?? 0)));
 
 /**
  * WHAT IS STILL STANDING BETWEEN THIS SAVE AND A MAP — the level the
@@ -318,19 +324,17 @@ export const isWorldUnlocked = (p: Progress, worldId: string): boolean =>
 // ---------- settling a run ----------
 
 export interface RunReward {
-  /** XP the kills paid, rung bonus included */
+  /** XP the run banked: the kills, times every bonus below */
   xp: number;
-  /** the first-clear bonus, rung bonus included — 0 on a replay or a loss */
-  firstClearXp: number;
-  /** everything the run banked */
-  total: number;
-  /** the XP multiplier the rung carried */
+  /** the whole multiplier the run carried — rung times map */
   xpBonus: number;
+  /** the XP multiplier the rung carried */
+  tierBonus: number;
+  /** was the map the game's pick? then RANDOM_MAP_XP_BONUS was paid on top */
+  randomMap: boolean;
   /** the rung that was played, 0-based */
   tier: number;
-  /** did this clear push THIS WORLD'S frontier up a rung? */
-  firstClear: boolean;
-  /** the world it was played on — its ladder is the one that moved */
+  /** the world it was played on */
   worldId: string;
   /** the player's level before and after the run banked */
   levelBefore: number;
@@ -341,9 +345,10 @@ export interface RunReward {
  * Settle a FINISHED run into the save.
  *
  * Kills are the income, so a defeat still banks the XP for everything the
- * towers killed on the way down, times the rung's XP bonus. Clearing the
- * frontier rung for the first time pays FIRST_CLEAR_XP on top (times the
- * same bonus) and moves the frontier up one.
+ * towers killed on the way down, times the rung's XP bonus and — on a map
+ * the game picked — the random-map bonus. A win records the level as
+ * beaten on that world (clearedByMap) and pays nothing for it: a clear is
+ * worth exactly what its kills were worth.
  *
  * NOTHING ACCRUES WHILE THE APP IS SHUT. There is no offline income and
  * no idle tick: every point of XP was paid for by a run somebody watched.
@@ -357,33 +362,25 @@ export function grantRunReward(
   killsByKind: ArrayLike<number>,
   won: boolean,
   worldId: string = WORLD.id,
+  randomMap = false,
 ): RunReward {
   const p = loadProgress();
   const n = Math.min(TOP_TIER, Math.max(0, Math.floor(tier)));
-  // the frontier only ever moves forward, and only by one, so "this rung is
-  // the frontier" is exactly "this (world, rung) has never been cleared"
-  const firstClear = won && n >= clearedOn(p, worldId);
-  const bonus = tierXpBonus(n);
+  const tierBonus = tierXpBonus(n);
+  const bonus = tierBonus * (randomMap ? 1 + RANDOM_MAP_XP_BONUS : 1);
   const xp = Math.round(dropsForKills(killsByKind).xp * bonus);
-  const firstClearXp = firstClear ? Math.round(FIRST_CLEAR_XP * bonus) : 0;
   const levelBefore = levelOf(p);
-  p.xp += xp + firstClearXp;
-  if (firstClear) p.clearedByMap[worldId] = n + 1;
+  p.xp += xp;
+  if (won) p.clearedByMap[worldId] = Math.max(bestClearOn(p, worldId), n + 1);
   saveProgress(p);
   return {
     xp,
-    firstClearXp,
-    total: xp + firstClearXp,
     xpBonus: bonus,
+    tierBonus,
+    randomMap,
     tier: n,
-    firstClear,
     worldId,
     levelBefore,
     levelAfter: levelOf(p),
   };
 }
-
-/** every world's clear count, for anything that wants to say how far the
- *  save has come in one line */
-export const worldsCleared = (p: Progress): number =>
-  WORLDS.filter((w) => isCampaignComplete(p, w.id)).length;

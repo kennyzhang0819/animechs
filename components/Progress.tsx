@@ -39,6 +39,7 @@ type TabId = (typeof TABS)[number]["id"];
 const REWARD_COLOR: Record<Reward["kind"], string> = {
   world: "#7BE58A",
   speed: "#7FC4FF",
+  turret: "#FF9A62",
   upgrade: "#FFD37F",
 };
 
@@ -91,7 +92,7 @@ function TrackRow({
       <div className="min-w-0 flex-1">
         {rewards.length === 0 ? (
           <span className="text-[12px] text-[#71717C]">
-            {level === 1 ? "Every turret, every attempt. The rest is earned." : "—"}
+            —
           </span>
         ) : (
           <div className="flex flex-wrap gap-1.5">
@@ -167,8 +168,11 @@ export default function ProgressView({
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#0B0B0D] text-[#EDEDEF]">
       {/* the chrome: back and the tabs, in the corner the codex board pins
-          them to as well (MutationTree), so the switch never moves */}
-      <div className="absolute left-[1rem] top-[1rem] z-10 flex items-center gap-2">
+          them to as well (MutationTree), so the switch never moves. Both
+          the chrome and the track opt into the UI-size knob (ui-zoom):
+          this screen is read, not played, and a HUD set to 150% for a TV
+          wants its progress list at 150% too */}
+      <div className="ui-zoom absolute left-[1rem] top-[1rem] z-10 flex items-center gap-2">
         <BackButton label={backLabel} onClick={onBack} />
         {tabStrip}
         {door && (
@@ -182,7 +186,7 @@ export default function ProgressView({
           the middle of the screen; the rows above stack up from it and
           the rows below stack down, each half clipped and faded at the
           edge of the screen rather than scrolled. */}
-      <div role="list" className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col px-[calc(1rem+var(--safe-l))] pr-[calc(1rem+var(--safe-r))]">
+      <div role="list" className="ui-zoom mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col px-[calc(1rem+var(--safe-l))] pr-[calc(1rem+var(--safe-r))]">
         <div
           className="flex min-h-0 flex-1 flex-col justify-end gap-1.5 overflow-hidden pb-1.5 pt-[calc(4.5rem+var(--safe-t))]"
           style={{ maskImage: "linear-gradient(to bottom, transparent 4rem, black 45%)" }}

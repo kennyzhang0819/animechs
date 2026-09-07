@@ -10,13 +10,14 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * WHAT A RUN IS ALLOWED TO DO, as the sim and the build bar read it.
  *
  * This used to be the shape of a purchased tech tree. There is no tree
- * any more: every turret is on every attempt, and what a save has EARNED
- * is read off its level through the track (track.ts, techStateFor). The
- * shape survives because the sim never cared where it came from — a
- * roster, a set of paces, and every turret's upgrade points.
+ * any more: what a save has EARNED is read off its level through the
+ * track (track.ts, techStateFor). The shape survives because the sim
+ * never cared where it came from — a roster, a set of paces, and every
+ * turret's upgrade points.
  */
 export interface TechState {
-  /** the turrets a run may field — the whole roster, always */
+  /** the turrets a run may field: the starting seven and every one the
+   *  track has handed out (track.ts, turretsAt) */
   unlocked: ReadonlySet<TowerKind>;
   /**
    * The fast-forward multipliers this save may use, ascending. 1x is

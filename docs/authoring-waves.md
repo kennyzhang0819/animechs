@@ -29,13 +29,16 @@ number the editor prints about a script is true at every rung.
   heavier (`Sim.loadStep`). Author the script to run out a little before
   the clock does, so the tide is the finale rather than a surprise.
 
-## The tier gate
+## The price bands
 
-Tier-2 turrets open on wave 21 and tier-3 on wave 36 (`STAGES` in
-`game/economy.ts`), on every map. Waves 1–20 are therefore a tier-1 fight
-wherever they are played: a script whose wave 12 needs a lancer is a
-script that cannot be held. The **Stages** panel in the editor sums what
-each stage pays against its tier's prices.
+There is no tier gate inside a run any more: whatever the save owns it may
+place from wave 1. The three stages (`STAGES` in `game/economy.ts`) —
+waves 1–20, 21–35, 36–50 — survive as the stretches the three price bands
+are authored against, and the **Stages** panel in the editor sums what
+each stage pays against its band's prices. A fresh save fields the seven
+starting turrets (`STARTING_ROSTER` in `game/track.ts`); a script that
+needs a gun past those before the track hands it out is a script a new
+save cannot hold.
 
 ## Checking a script
 

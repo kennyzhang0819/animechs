@@ -412,7 +412,7 @@ export default function LevelEditorView({
                 </div>
                 <p className="mt-1 text-[12px] leading-snug text-[#71717C]">
                   Scrap is fixed per kill and the same on every rung; the rung
-                  multiplies the XP. A first clear pays a bonus on top of it.
+                  multiplies the XP, and a random map pays a quarter more.
                 </p>
               </div>
             </section>

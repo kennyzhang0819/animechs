@@ -39,7 +39,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   the water layer and cannot leave it
 - `game/economy.ts` — **the economy**: scrap (in-run money), XP (meta
   progress), the fixed per-tier drop table, the three turret tiers and
-  their scrap prices, the sell refund, the level curve, the first-clear
+  their scrap prices, the sell refund, the level curve, the random-map
   bonus, and the base's hundred lives
 - `game/ladder.ts` — the **ten-rung ladder** (`RUNGS`: the mutator roll
   and the XP bonus each; the enemy-level dial is wired and authored to
@@ -216,15 +216,15 @@ rung's index, so **an eleventh rung is one constant** (`RUNG_COUNT`).
 every kill drops its tier's scrap, every wave staged pays a small bonus,
 and every turret placed costs scrap. Selling returns nothing
 (`SELL_REFUND` is 0): a placed turret is spent. Nothing carries between runs: a run is solved from its
-opening board to its last wave on what it earns. Tiers are gated by wave
-(`STAGES`): tier 1 only until wave 20, tier 2 from 21, tier 3 from 36 — so
-every run has an early, a mid and a late game, and the opening board is
-never the best turret the save owns. The income is tuned so a sensible
-board clears all fifty first try.
+opening board to its last wave on what it earns. There is no gate inside
+a run: whatever the save owns it may place from wave 1. The income is
+tuned so a sensible board clears all fifty first try.
 
 **XP is the save's progress.** The same kills pay XP, the rung multiplies
-it (the XP bonus above), and the **first clear of any (world, rung)** pays
-`FIRST_CLEAR_XP` on top, multiplied the same way. XP turns into **player
+it (the XP bonus above), and a run on a **random map** — the menu's
+default — pays `RANDOM_MAP_XP_BONUS` (a quarter) more on top. There is no
+first-clear bonus: a clear is worth what its kills were worth, first time
+or fifth, and every level is open from the first run. XP turns into **player
 level** through a power-law curve (`xpToNext`), and **every level is a
 rung on the track** (`game/track.ts`) that hands out a map, a pace or a
 turret upgrade — nothing is chosen and nothing is bought.
@@ -242,12 +242,13 @@ turret upgrade — nothing is chosen and nothing is bought.
 every map. Scrap income is a fact about the script, which is what lets the
 turret prices be authored against it.
 
-### Three stages, three tiers
+### Three stages, three price bands
 
-The roster is cut into three tiers along Mindustry's build-cost order
-(`TOWER_TIER`), and the run into three stages (`STAGES`): waves 1–20,
-21–35 and 36–50. **A tier is priced so its stage is roughly what buys it.**
-Against the shipped script:
+The roster is cut into three price bands along Mindustry's build-cost
+order (`TOWER_TIER`), and the run into three stages (`STAGES`): waves
+1–20, 21–35 and 36–50. **A band is priced so its stage is roughly what
+buys it.** This is a pricing table and nothing else — no band is held shut
+inside a run. Against the shipped script:
 
 | stage | waves | scrap paid | tier | prices | buys about |
 |---|---|---|---|---|---|
@@ -257,19 +258,21 @@ Against the shipped script:
 
 The stage table (`stageAudit`, on the balance dashboard and the level
 editor) is where this is checked; `check()` complains when a stage buys
-too few or too many of its tier (`STAGE_BOARDS`). Selling the opening
-board back in full is how the transition into the next tier is funded;
-what each stage asks is when to make that swap.
+too few or too many of its band (`STAGE_BOARDS`). A placed turret is
+spent (selling returns nothing), so the next band is bought out of the
+next stage's income; what each stage asks is what to stop buying.
 
 ### The level track
 
-**Every turret is available on every attempt.** What a fresh save cannot
-do is field a spectre on wave 1 — the stage gate inside the run does that,
-not the save. The track makes turrets *better*: thirty levels, each one
-handing out fixed rewards (`TRACK` in `game/track.ts`) — 2x speed at
-level 2, Maelstrom at 3, 4x at 5, Quagmire at 7, and the fifty-odd
-upgrade rungs dealt across the rest, cheapest tier first, ultimates from
-level 20. The progress screen lists the whole track; the results screen
+**A fresh save opens with seven turrets** — duo, scatter, hail, lancer,
+salvo, ripple and spectre (`STARTING_ROSTER` in `game/track.ts`) — and
+the other ten are handed out up the track, cheapest first by Mindustry's
+build cost, one every third level from level 2. Thirty levels, each one
+handing out fixed rewards (`TRACK`) — 2x speed at level 2, Maelstrom at
+3, 4x at 5, Quagmire at 7, the turrets, and the fifty-odd upgrade rungs
+dealt across the rest, cheapest tier first, never before their turret,
+ultimates from level 20. A turret the save has not reached rides the build
+bar greyed, with the level that opens it. The progress screen lists the whole track; the results screen
 names what a climb handed out. A first Confluence clear lands around
 level 6; the top of the track is about twelve million XP.
 
@@ -306,8 +309,8 @@ Structures carry **ten times** Mindustry's block health (`TOWER_HP_SCALE`)
 and the swarm's damage is Mindustry's own, unscaled (`setUnitDamageScale`
 at 1) — balance is deliberately not done yet, and those two numbers are
 where it will be done. The playtest takes the dial as `--unit-damage`.
-The headless bot still builds on rock only and never rebuilds what it
-loses.
+The headless bot builds on open ground, as the player must — hills take
+no turret — and never rebuilds what it loses.
 
 **Every map is checked headless.** `npm run playtest -- --world <id>`
 runs the real sim with an ordinary builder bot at the keyboard (route
@@ -368,7 +371,7 @@ whole contract: it applies at **Level 1** too (for a world authored with
 rules on it, that *is* the campaign as authored); it is **never rolled**
 (the roller is handed it as an exclusion, so a deploy cannot spend points
 on a rule the run already has); and it is **never charged** (the tier's
-budget buys the roll on top of it). The deploy panel lists it beside the
+budget buys the roll on top of it). The start screen lists it beside the
 roll, tagged *always*, and `mutationsInForce` is the one place the two are
 joined. This is not the old switch coming back: that said "this map is
 allowed to mutate, at whatever strength the difficulty says", which put a
@@ -397,9 +400,12 @@ map the tech tree is drawn on, holding one thumbnail per rule. The border
 colour is how bad it is (light / heavy / brutal) and the hover card is the
 rule in a sentence; no cost, no tier, no arithmetic, because none of that
 is a player's question. The one number on the screen is the points each
-difficulty spends. The surprise is which rules turn up, never what exists. The deploy panel spells out
-the roll in full before the button is pressed, and the run plays under
-exactly what it showed.
+difficulty spends. The surprise is which rules turn up, never what exists. For a picked map the start
+screen spells out the roll in full before Start is pressed, and the run
+plays under exactly what it showed; a **random map** rolls on Start,
+because the exclusion is the map's and the map is not known until then —
+that surprise is what the random-map bonus pays for, and the rules in
+force are on the HUD from the first wave.
 
 **A mutator changes a wave after it spawns and never what the script
 sends**, so every number in `ladder.ts` — wave counts, enemy totals, the
@@ -596,5 +602,5 @@ __ladder.wave(7, 2)   // what one authored wave weighs and pays
   opening stipend outward, every run.
 - **The level curve** is `XP_LEVEL_BASE × level^XP_LEVEL_POWER` to the
   next level (15,000 × n^1.35). A full rung-1 clear pays about 245,000 XP
-  in kills plus the first-clear bonus and lands around level 5; a wipe at
+  in kills and lands around level 5; a wipe at
   the end of stage 1 lands level 2.

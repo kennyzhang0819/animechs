@@ -532,16 +532,24 @@ const EDGE_ORDER = [4, 2, 0, 10, 14, 12, 13, 11, 9, 7, 8] as const;
 // premultiplied blend of a black quad at this alpha equals its multiply
 export const WALL_SHADOW_A = 0.71;
 /**
- * How far the hill's shadow reaches onto the floor, in cells. Mindustry's
- * buffer is one texel a tile and nothing more, so its rim is the bilinear
- * ramp between a rock cell's centre and the next floor cell's — half a
- * cell of falloff, which on the speckled originals read as a cliff and on
- * the flat pale floors reads as a hairline. So the mask carries its own
- * falloff: a floor cell `d` cells from the nearest rock is shaded by
- * 1 - d / SHADOW_REACH, on top of the filter's ramp, and the hill stands
- * on a shadow two cells wide rather than a line.
+ * THE INSIDE OF A HILL IS DARK — Mindustry's darkness buffer, reproduced
+ * exactly (World.addDarkness for the numbers, BlockRenderer.updateDarkness
+ * for the pixels, darkness.frag for the blend).
+ *
+ * Every wall cell starts at DARK_RADIUS and is eroded DARK_RADIUS times:
+ * on each pass a cell with any 4-neighbour LOWER than itself loses one.
+ * A wall cell one step in from open ground ends at 0, two steps in at 1,
+ * three at 2, four at 3, five or more at 4. The result is one texel a
+ * cell on a LINEAR-filtered texture, drawn as black at alpha
+ * min((dark + 0.5) / 4, 1) — nothing on the rim, 0.375 one cell past it,
+ * then 0.625, 0.875 and solid — so a ridge keeps its lit face and a range
+ * goes black inside, and the bilinear ramp between cells is the gradient.
+ * (Mindustry also marks a cell at 4 whose four neighbours are all at 4
+ * with a 5; that draws identically, so it is not kept.) It is drawn LAST,
+ * over units and shields alike — Layer.darkness sits above everything
+ * that moves, so a flyer crossing a range is swallowed by it.
  */
-const SHADOW_REACH = 2;
+const DARK_RADIUS = 4;
 /** which terrain layers the static batches draw; the editor hides one to
  * work on what sits underneath it */
 export interface TerrainLayers {
@@ -812,10 +820,14 @@ export class Renderer {
   // between floors and walls with a different texture bound
   private readonly walls: Batch;
   private readonly shadow: Batch;
+  /** the map-covering quad that draws darkTex (see DARK_RADIUS) */
+  private readonly dark: Batch;
   // the wall-shadow mask: COLS x ROWS texels, LINEAR-filtered — bilinear
   // magnification is what melts the per-tile mask into a soft rim, so it
   // cannot live in the NEAREST-filtered sprite atlas
   private readonly shadowTex: WebGLTexture;
+  /** the darkness buffer: one texel a cell, linear, see DARK_RADIUS */
+  private readonly darkTex: WebGLTexture;
   private readonly dyn: Batch;
   /**
    * the force-field fills for this frame. They never reach the screen
@@ -903,6 +915,7 @@ export class Renderer {
     // wall tiles + decor/pine props
     this.walls = this.makeBatch(NCELLS * 2 + 2048);
     this.shadow = this.makeBatch(4);
+    this.dark = this.makeBatch(4);
     // a swarm budget, not a worst case: 12 quads is a walking mech with one
     // mirrored gun drawn twice (silhouette rim under, art over), which is
     // what MAX_UNITS of anything is ever actually made of. The heavies cost
@@ -953,6 +966,15 @@ export class Renderer {
     if (!stex) throw new Error("shadow texture alloc failed");
     this.shadowTex = stex;
     gl.bindTexture(gl.TEXTURE_2D, stex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    const dtex = gl.createTexture();
+    if (!dtex) throw new Error("darkness texture alloc failed");
+    this.darkTex = dtex;
+    gl.bindTexture(gl.TEXTURE_2D, dtex);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -1477,12 +1499,16 @@ export class Renderer {
       }
     }
 
-    // pass 2: the wall shadow. Every blocked cell is one opaque texel in a
-    // COLS x ROWS mask on its own LINEAR-filtered texture; one map-covering
-    // quad stretches it 20x, and bilinear magnification melts the texels
-    // into the soft rim on adjacent floors (BlockRenderer's shadow buffer,
-    // 1px per tile). Walls draw after this quad, so the hills themselves
-    // stay clean and only the floor around them darkens
+    // pass 2: the wall shadow — Mindustry's shadow buffer, exactly. Every
+    // static wall is one texel in a COLS x ROWS mask on its own LINEAR-
+    // filtered texture (BlockRenderer.drawShadows: blendShadowColor on a
+    // white buffer, one pixel a tile, sampled with the half-tile offset
+    // that puts a texel's centre on its cell's centre); one map-covering
+    // quad stretches it 20x, and the bilinear ramp between a wall cell's
+    // centre and the next floor cell's — half a cell of falloff, shadowColor's
+    // 0.71 at the wall down to nothing — is the whole rim. Walls draw after
+    // this quad, so the hills themselves stay clean and only the floor
+    // around them darkens; what the hill does INSIDE is pass 2b
     const mask = new Uint8Array(COLS * ROWS * 4);
     const stamp = (i: number): void => {
       mask[i * 4] = mask[i * 4 + 1] = mask[i * 4 + 2] = mask[i * 4 + 3] = 255;
@@ -1499,46 +1525,12 @@ export class Renderer {
         }
     // buildings on the ground stamp their footprint too, like Mindustry's
     // displayShadow blocks — the base sprite covers the middle, so what
-    // shows is the rim hugging its sides. Towers sit on hills (already
-    // fully stamped as blocked cells), so they need nothing extra
+    // shows is the rim hugging its sides. Towers stand on open ground and
+    // come and go mid-run; this mask is built once per terrain, so they
+    // cast nothing here
     if (layers.base && !this.hasGoals)
       for (let y = T.base.y; y < T.base.y + T.base.size; y++)
         for (let x = T.base.x; x < T.base.x + T.base.size; x++) stamp(y * COLS + x);
-    // THE REACH (see SHADOW_REACH): every unstamped cell takes its distance
-    // to the nearest stamped one — a 5-7-11 chamfer, two passes — and a
-    // partial texel from it. Deep water is unstamped and so takes shade
-    // from a hill beside it like any floor, which a cliff over a sea does
-    {
-      const n = COLS * ROWS;
-      const d = new Float32Array(n);
-      for (let i = 0; i < n; i++) d[i] = mask[i * 4 + 3] ? 0 : 1e9;
-      const relax = (i: number, j: number, w: number): void => {
-        if (d[j] + w < d[i]) d[i] = d[j] + w;
-      };
-      for (let y = 0; y < ROWS; y++)
-        for (let x = 0; x < COLS; x++) {
-          const i = y * COLS + x;
-          if (x > 0) relax(i, i - 1, 5);
-          if (y > 0) relax(i, i - COLS, 5);
-          if (x > 0 && y > 0) relax(i, i - COLS - 1, 7);
-          if (x < COLS - 1 && y > 0) relax(i, i - COLS + 1, 7);
-        }
-      for (let y = ROWS - 1; y >= 0; y--)
-        for (let x = COLS - 1; x >= 0; x--) {
-          const i = y * COLS + x;
-          if (x < COLS - 1) relax(i, i + 1, 5);
-          if (y < ROWS - 1) relax(i, i + COLS, 5);
-          if (x < COLS - 1 && y < ROWS - 1) relax(i, i + COLS + 1, 7);
-          if (x > 0 && y < ROWS - 1) relax(i, i + COLS - 1, 7);
-        }
-      for (let i = 0; i < n; i++) {
-        if (mask[i * 4 + 3]) continue;
-        const v = Math.max(0, 1 - d[i] / 5 / SHADOW_REACH);
-        if (v <= 0) continue;
-        const b = Math.round(v * 255);
-        mask[i * 4] = mask[i * 4 + 1] = mask[i * 4 + 2] = mask[i * 4 + 3] = b;
-      }
-    }
     for (let i = 0; i < COLS * ROWS; i++) this.shade[i] = mask[i * 4 + 3] / 255;
     gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, mask);
@@ -1546,6 +1538,51 @@ export class Renderer {
     const sh = this.shadow;
     sh.n = 0;
     this.push(sh, W / 2, H / 2, W, H, 0, [0, 0, 1, 1], 0, 0, 0, WALL_SHADOW_A);
+
+    // pass 2b: the darkness INSIDE the walls (World.addDarkness, see
+    // DARK_RADIUS). Same static walls as the shadow — rock and pine, never
+    // deep water — over the map's own cells; the padding past its edge is
+    // outside the map the way the world's edge is outside Mindustry's, so
+    // a neighbour there is no neighbour at all
+    const n = COLS * ROWS;
+    const dark = new Uint8Array(n);
+    if (layers.wall) {
+      const isDark = (i: number): boolean => T.blocked[i] !== 0 && T.wall[i] !== WALL_DEEP;
+      for (let y = 0; y < mapRows; y++)
+        for (let x = 0; x < mapCols; x++) {
+          const i = y * COLS + x;
+          if (isDark(i)) dark[i] = DARK_RADIUS;
+        }
+      const next = new Uint8Array(n);
+      for (let it = 0; it < DARK_RADIUS; it++) {
+        for (let y = 0; y < mapRows; y++)
+          for (let x = 0; x < mapCols; x++) {
+            const i = y * COLS + x;
+            const v = dark[i];
+            const min =
+              (x > 0 && dark[i - 1] < v) ||
+              (x < mapCols - 1 && dark[i + 1] < v) ||
+              (y > 0 && dark[i - COLS] < v) ||
+              (y < mapRows - 1 && dark[i + COLS] < v);
+            next[i] = Math.max(0, v - (min ? 1 : 0));
+          }
+        dark.set(next);
+      }
+    }
+    const darkMask = new Uint8Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      if (dark[i] === 0) continue;
+      // BlockRenderer.updateDarkness: 1 - min((darkness + 0.5) / 4, 1) on a
+      // white buffer, and darkness.frag draws black at one minus that
+      const a = Math.round(Math.min((dark[i] + 0.5) / 4, 1) * 255);
+      darkMask[i * 4] = darkMask[i * 4 + 1] = darkMask[i * 4 + 2] = darkMask[i * 4 + 3] = a;
+    }
+    gl.bindTexture(gl.TEXTURE_2D, this.darkTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, darkMask);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    const dq = this.dark;
+    dq.n = 0;
+    this.push(dq, W / 2, H / 2, W, H, 0, [0, 0, 1, 1], 0, 0, 0, 1);
 
     // pass 3: wall sprites over their (shadow-darkened) cells, then the
     // editor's spawn overlay and the props
@@ -1600,7 +1637,7 @@ export class Renderer {
       for (const p of T.pines)
         this.push(w, p.x, p.y, p.size, p.size, p.rot, UV_PINES[p.kind] ?? UV_PINE, 1, 1, 1, 1);
     }
-    for (const b of [t, wt, sh, w]) {
+    for (const b of [t, wt, sh, w, dq]) {
       gl.bindVertexArray(b.vao);
       gl.bindBuffer(gl.ARRAY_BUFFER, b.vbo);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, b.data, 0, b.n * FLOATS);
@@ -1702,6 +1739,7 @@ export class Renderer {
     const base = this.base;
     if (!this.layers.base || this.hasGoals) {
       this.draw(dyn, true);
+      this.drawDarkness();
       return;
     }
     const baseSz = base.size * CELL;
@@ -1716,6 +1754,21 @@ export class Renderer {
       1, 1, 1, 1,
     );
     this.draw(dyn, true);
+    this.drawDarkness();
+  }
+
+  /**
+   * The darkness inside the hills (DARK_RADIUS), over the finished frame:
+   * Layer.darkness is above units, effects and shields, so this is the
+   * last thing drawn in world space.
+   */
+  private drawDarkness(): void {
+    const gl = this.gl;
+    if (this.dark.n === 0) return;
+    gl.useProgram(this.prog);
+    gl.bindTexture(gl.TEXTURE_2D, this.darkTex);
+    this.draw(this.dark, false);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
   }
 
   /**
@@ -2221,6 +2274,7 @@ export class Renderer {
     // is its own pass: gather the fills, then blit the buffer over the
     // finished frame
     this.blitShields(zoom, offX, offY, kPx, sim.time, buffered);
+    this.drawDarkness();
   }
 
   /**

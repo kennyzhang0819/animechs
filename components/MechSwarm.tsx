@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   BASE_SPEEDS,
   firstLoadStep,
@@ -41,9 +41,8 @@ import {
 } from "@/game/ladder";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import {
-  clearedOn,
+  bestClearOn,
   grantRunReward,
-  isTierCleared,
   loadProgress,
   resetProgress,
   saveEffects,
@@ -52,10 +51,10 @@ import {
   UI_SCALES,
   saveHudMinimized,
   saveLoadout,
+  saveRunPick,
   saveSpeed,
   startingSpeed,
   techOf,
-  topTier,
   worldLock,
   type Progress,
   type RunReward,
@@ -70,8 +69,8 @@ import {
   type MutationId,
 } from "@/game/mutation";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
-import { rewardsAt, rewardText } from "@/game/track";
-import { FIRST_CLEAR_XP, levelProgress, POINT_COLOR, unlockWaveOf, XP_COLOR } from "@/game/economy";
+import { rewardsAt, rewardText, turretUnlockLevel } from "@/game/track";
+import { levelProgress, POINT_COLOR, RANDOM_MAP_XP_BONUS, XP_COLOR } from "@/game/economy";
 import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
 import ProgressView from "./Progress";
 import { bandFor, MutationFace } from "./mutationFace";
@@ -98,88 +97,6 @@ function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) 
     >
       <canvas ref={ref} className="h-full w-full object-contain [image-rendering:pixelated]" />
     </div>
-  );
-}
-
-/**
- * ONE MAP ON THE MAP SELECT — a preview and a name. No map is ranked
- * against another: every map is as hard as the tier it is played at, and
- * the tier is the same dial on all of them. Everything the map actually
- * costs — the tier, the wave count, the mutators rolled for it — is one
- * tap deeper, on the detail panel, so the grid stays a picture and never a
- * spec sheet.
- */
-function MapCard({
-  world,
-  progress,
-  mapsReady,
-  onPick,
-}: {
-  world: LevelSpec;
-  progress: Progress;
-  mapsReady: boolean;
-  onPick: () => void;
-}) {
-  // how far up this map's OWN ladder the save has come. clearedOn counts
-  // cleared levels, so reaching the count means the map is done
-  const cleared = clearedOn(progress, world.id);
-  const finished = cleared >= RUNG_COUNT;
-  // WHAT IS STILL IN THE WAY, if anything. A locked card is dimmed, refuses
-  // the click, and says the requirement in place of the clear count — a map
-  // you cannot enter and cannot find out how to enter is a dead end
-  const lock = worldLock(progress, world.id);
-
-  return (
-    <button
-      onClick={onPick}
-      disabled={lock != null}
-      aria-disabled={lock != null}
-      className={`group ms-pane-solid flex flex-col overflow-hidden text-left transition-colors ${
-        lock
-          ? "cursor-not-allowed border-[#252525]"
-          : "hover:border-[#FFD37F] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FFD37F]"
-      }`}
-    >
-      <div className={`relative ${lock ? "opacity-40 grayscale" : ""}`}>
-        {mapsReady ? (
-          <LevelThumb mapId={world.map ?? OFFICIAL_MAP_IDS[0]} bare />
-        ) : (
-          <div className="aspect-[16/9] bg-[#0b0b0d]" />
-        )}
-      </div>
-      <div className="ms-rule-t flex items-baseline justify-between gap-3 px-3 py-2.5">
-        <span
-          className={`font-display text-[15px] font-bold uppercase tracking-widest ${
-            lock ? "text-[#71717C]" : "text-[#EDEDEF] group-hover:text-[#FFD37F]"
-          }`}
-        >
-          {world.name}
-        </span>
-        {lock ? (
-          <span className="text-[11px] font-bold uppercase tracking-widest text-[#71717C]">
-            Opens at <span style={{ color: POINT_COLOR }}>level {lock.level}</span>
-          </span>
-        ) : (
-          <span
-            className={`text-[11px] font-bold uppercase tracking-widest ${
-              finished ? "text-[#7BE58A]" : "text-[#71717C]"
-            }`}
-          >
-            {/* HOW FAR, NEVER HOW FAR OF WHAT. The card names the highest
-                level this save has cleared here and nothing else — a
-                denominator would tell a player on their first map exactly
-                how long the climb is, which is a number the game is better
-                for never printing. "Complete" is the only end-state, and by
-                then they have earned knowing */}
-            {finished
-              ? "Complete"
-              : cleared > 0
-                ? `${rungLabel(cleared - 1)} cleared`
-                : "New"}
-          </span>
-        )}
-      </div>
-    </button>
   );
 }
 
@@ -250,6 +167,23 @@ const clock = (seconds: number): string => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
 
+/**
+ * The map bonus, named on the results panel when it was paid: the run's
+ * multiplier already includes it (RunReward.xpBonus), and a player who
+ * left the map on Random should see what that was worth.
+ */
+function RandomMapLine({ result }: { result: RunReward }) {
+  if (!result.randomMap) return null;
+  return (
+    <div className="pt-1 text-[12px] uppercase tracking-widest text-[#A6A6AF]">
+      Random map{" "}
+      <span className="font-bold" style={{ color: XP_COLOR }}>
+        {xpBonusText(1 + RANDOM_MAP_XP_BONUS)}
+      </span>
+    </div>
+  );
+}
+
 function LevelUpLine({ result }: { result: RunReward }) {
   const p = loadProgress();
   const { level, into, need } = levelProgress(p.xp);
@@ -303,16 +237,6 @@ const levelSummary = (lv: LevelSpec): { waves: number; enemies: number } => {
   return { waves, enemies };
 };
 
-/**
- * The campaign menu: one world, and the RUNG of its ladder to play it at.
- *
- * The frontier — the highest rung not yet cleared — is the default and the
- * headline, because it is the hardest run available and the one whose clear
- * opens the next. Stepping down is FARMING, and it is a real choice now
- * rather than a punishment: a lower rung is quicker and pays less, and the
- * whole gradient between them is LOOT_PER_RUNG. Nothing about a rung
- * changes what you may bring to it.
- */
 /**
  * THE SPEC A RUN IS ACTUALLY PLAYED ON: the ladder's expansion of the
  * picked rung, plus the mutators rolled for it (mutation.ts).
@@ -415,91 +339,62 @@ function MutationChip({
 }
 
 /**
- * THE MAP DIALOG — everything a run is chosen by, over the grid it was
- * chosen from.
- *
- * It used to be a fourth menu SCREEN, which cost a page transition each way
- * to say four numbers and pushed the grid out of sight, so comparing two
- * maps meant travelling. A dialog keeps the board behind it and closes back
- * onto the card that opened it.
- *
- * IT MUST NEVER SCROLL. Two columns — the map on the left, what the run is
- * on the right — and a body sized to fit a laptop and a held-sideways phone
- * alike. Anything that would need a scrollbar here belongs in the run or in
- * the tech tree instead: this is the last glance before Deploy, not a
- * briefing.
+ * A MACRO — one of the two dials on the start screen, printed as a row:
+ * what it is on the left, what it is set to on the right, and the whole
+ * row a button that opens the list to change it. The value is what a
+ * player reads at a glance ("Random · +25% XP", "Level 4 · +90% XP"), so
+ * it gets the ink and the label sits small beside it.
  */
-function MapDialog({
-  progress,
-  world,
-  tier,
-  onTier,
-  mapsReady,
-  onStart,
-  onClose,
+function MacroButton({
+  label,
+  value,
+  onClick,
+  children,
 }: {
-  progress: Progress;
-  /** which world's ladder is being picked from. Every world is on the menu
-   * from the first run and each carries its own ladder, so this decides the
-   * whole panel: which levels exist, which are cleared, which is the top */
-  world: LevelSpec;
-  tier: number;
-  onTier: (t: number) => void;
-  mapsReady: boolean;
-  /** deploy, under exactly the mutators this panel has been showing */
-  onStart: (mutation: readonly MutationId[]) => void;
-  onClose: () => void;
+  label: string;
+  /** the setting in words, for the accessible name — the children are its face */
+  value: string;
+  onClick: () => void;
+  children: ReactNode;
 }) {
-  const top = topTier(progress, world.id);
-  const spec = specForTier(world, tier);
-  const { waves } = levelSummary(spec);
-  const mission = missionText(spec);
-  const step = (d: number): void => onTier(Math.min(top, Math.max(0, tier + d)));
-  // THE XP MULTIPLIER AS A MULTIPLE: the whole of what a higher level PAYS.
-  // Scrap is the same on every level — the run is priced against the
-  // script, not the rung — so the trade is rules against XP, and the
-  // first clear's bonus is the other half of it
-  const xpMult = tierXpBonus(tier);
-  const cleared = isTierCleared(progress, world.id, tier);
-  const firstClearXp = Math.round(FIRST_CLEAR_XP * xpMult);
-  /**
-   * THE ROLL FOR THIS DEPLOY — as many rules as the difficulty asks for,
-   * costing no more than the points it carries (tierMutationCount and
-   * tierMutationPoints, both dials on the rung). Level 1 carries zero of
-   * each and so rolls nothing; every step above it mutates.
-   *
-   * THE MAP HAS NO SAY IN THE ROLL, and one say beside it. What the tier
-   * rolls is the tier's business on every world (the old per-world
-   * `mutators` switch is long gone) — but a world may CARRY rules of its
-   * own by design (LevelSpec.intrinsicMutation), and those are handed to
-   * the roller as an exclusion so it cannot spend the tier's points on a
-   * rule the run already plays under.
-   *
-   * IT IS ROLLED ONCE PER DIFFICULTY, HERE. Re-rolling on every render
-   * would spin the list under the player's eyes; rolling at Deploy would
-   * deploy rules that were never shown. Keying it on the tier is the
-   * honest middle: step the difficulty and you are asking a different
-   * question, so you get a different answer, and whatever the panel is
-   * showing when Deploy is pressed is exactly what the run is played
-   * under (onStart carries it).
-   */
-  const rolled = useMemo(
-    () =>
-      rollMutations(
-        tierMutationPoints(tier),
-        tierMutationCount(tier),
-        world.intrinsicMutation ?? [],
-      ),
-    [world, tier],
+  return (
+    <button
+      onClick={onClick}
+      aria-label={`${label}: ${value}. Change`}
+      className="ms-btn w-full justify-between gap-3 px-4 py-3 text-left"
+    >
+      <span className="text-[11px] tracking-[0.3em] text-[#a2a2a2]">{label}</span>
+      <span className="flex items-center gap-2 text-[14px] tracking-[0.12em]">
+        {children}
+        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current text-[#71717C]" aria-hidden="true">
+          <path d="M9.3 5.1 16.2 12l-6.9 6.9-1.7-1.7L12.8 12 7.6 6.8z" />
+        </svg>
+      </span>
+    </button>
   );
-  /** what the run is played under, roll and level alike — the player's
-   *  question is "what is true of this deploy", not "which half is which" */
-  const mutations = mutationsInForce(world.intrinsicMutation, rolled)
-    .map(mutationById)
-    .filter((m): m is NonNullable<typeof m> => m !== null);
-  const intrinsic = new Set(world.intrinsicMutation ?? []);
+}
 
-  // Escape closes it, like every dialog anyone has ever met
+/**
+ * THE LIST BEHIND A MACRO: a panel over the start screen holding the
+ * choices, one row each, the current one marked. It closes on a pick, on
+ * Escape and on a click outside — every way a dialog anyone has met
+ * closes — and it never carries a second control: the only question it
+ * asks is "which".
+ *
+ * It sits OUTSIDE the menu's zoom wrapper on purpose: `ui-zoom` is a CSS
+ * `zoom`, and a fixed backdrop inside one covers the scaled box rather
+ * than the viewport. The panel carries its own ui-zoom, so the UI-size
+ * knob still moves it.
+ */
+function PickerDialog({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") onClose();
@@ -509,8 +404,6 @@ function MapDialog({
   }, [onClose]);
 
   return (
-    // the backdrop closes it too — a click outside a dialog means "not this
-    // one", and on a phone it is a bigger target than any button
     <div
       onClick={onClose}
       className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
@@ -518,174 +411,190 @@ function MapDialog({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={world.name}
+        aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        className="ui-zoom ms-pane-solid w-full max-w-[44rem] p-4 shadow-2xl"
+        className="ui-zoom ms-pane-solid flex max-h-[calc(100vh-2rem)] w-full max-w-[26rem] flex-col p-4 shadow-2xl"
       >
-        <div className="grid gap-4 sm:grid-cols-2">
-          {/* LEFT: the map itself, exactly as its card showed it, so the
-              thing clicked and the thing opened are visibly the same */}
-          <div className="relative self-start">
-            {mapsReady ? (
-              <LevelThumb mapId={spec.map ?? OFFICIAL_MAP_IDS[0]} bare />
-            ) : (
-              <div className="aspect-[16/9] bg-[#0b0b0d]" />
-            )}
-          </div>
-
-          {/* RIGHT: the name, the one dial, and what the dial buys */}
-          <div className="flex flex-col">
-            <div className="flex items-baseline justify-between gap-2">
-              <h2 className="truncate font-display text-lg font-bold uppercase tracking-[0.2em] text-[#EDEDEF]">
-                {world.name}
-              </h2>
-              <span
-                className={`shrink-0 text-[11px] font-bold uppercase tracking-widest ${
-                  cleared ? "text-[#7BE58A]" : "text-[#FFD37F]"
-                }`}
-              >
-                {cleared ? "Cleared" : "New"}
-              </span>
-            </div>
-            {/* THE MISSION — what this map asks, in one line and one clause.
-                Every map is its own assignment (LevelSpec.mission), and it
-                is the first thing a player needs to know about a map after
-                its name */}
-            <div className="mt-1.5 text-[12px] leading-snug">
-              <span className="font-bold uppercase tracking-widest text-[#7FC4FF]">
-                {mission.title}
-              </span>
-              <span className="text-[#A6A6AF]"> — {mission.detail}</span>
-            </div>
-
-            <div
-              role="group"
-              aria-label="difficulty select"
-              className="mt-3 flex items-center justify-between gap-2"
-            >
-              <button
-                aria-label="lower difficulty"
-                disabled={tier <= 0}
-                onClick={() => step(-1)}
-                className="ms-btn h-9 w-9 p-0 text-lg"
-              >
-                −
-              </button>
-              <div className="text-center">
-                {/* the level's NUMBER is the headline and the word above it
-                    is the only label there is — and nothing sits under it,
-                    because how long the ladder runs is not the player's to
-                    know (see MapCard) */}
-                <div className="text-[11px] uppercase tracking-[0.3em] text-[#71717C]">
-                  Difficulty
-                </div>
-                <div
-                  className="text-2xl font-bold uppercase leading-none tracking-[0.15em]"
-                  style={{ color: rungColor(tier) }}
-                >
-                  {rungLabel(tier)}
-                </div>
-              </div>
-              <button
-                aria-label="higher difficulty"
-                disabled={tier >= top}
-                onClick={() => step(1)}
-                className="ms-btn h-9 w-9 p-0 text-lg"
-              >
-                +
-              </button>
-            </div>
-
-            {/* THE WHOLE TRADE, AS THREE NUMBERS. Prose said the same thing
-                in four lines and could not be compared between two levels at
-                a glance; a row can. The wave count is here because it is the
-                thing a player most needs to know is NOT what they are
-                choosing — it is the same on every level; so is every body's
-                health, which is why there is no column for it */}
-            <dl className="ms-rule-t mt-3 grid grid-cols-3 gap-2 pt-3 text-center">
-              <div>
-                <dt className="text-[10px] uppercase tracking-widest text-[#71717C]">
-                  {spec.mission.kind === "survive" ? "Clock" : "Waves"}
-                </dt>
-                <dd className="text-[15px] font-bold text-[#EDEDEF]">
-                  {spec.mission.kind === "survive" ? clock(spec.mission.minutes * 60) : waves}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-[10px] uppercase tracking-widest text-[#71717C]">XP</dt>
-                <dd className="text-[15px] font-bold" style={{ color: XP_COLOR }}>
-                  ×{xpMult.toFixed(2)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-[10px] uppercase tracking-widest text-[#71717C]">
-                  First clear
-                </dt>
-                <dd
-                  className="text-[15px] font-bold"
-                  style={{ color: cleared ? "#71717C" : "#7BE58A" }}
-                >
-                  {cleared ? "Claimed" : `+${itemCount(firstClearXp)}`}
-                </dd>
-              </div>
-            </dl>
-
-            {/* WHAT IS TRUE OF THE RUN rather than of the dial: every rule
-                this deploy is played under — the ones the WORLD carries by
-                design and the ones the difficulty ROLLED, as one row,
-                because the player's question is "what is true of this
-                deploy" and not "which half is which".
-
-                A ROW OF FACES, NOT A PARAGRAPH. It used to spell each rule
-                out in a sentence, which is four lines of prose in a dialog
-                whose one question is yes-or-no, and which pushed Deploy
-                further down the panel every time the stepper rolled
-                another rule. A face is read at a glance and a repeat
-                player already knows what it means; the sentence is one
-                hover (or one tap) away for the player who does not, which
-                is the codex board's own gesture, on purpose. */}
-            {mutations.length > 0 && (
-              <div className="mt-2 text-[12px] leading-snug">
-                <div className="flex items-center gap-2">
-                    <span className="font-bold uppercase tracking-widest text-[#FF8ACB]">
-                      Mutators
-                    </span>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {mutations.map((m, i) => (
-                        <MutationChip
-                          key={m.id}
-                          def={m}
-                          always={intrinsic.has(m.id)}
-                          fromRight={i >= mutations.length / 2}
-                        />
-                      ))}
-                    </div>
-                </div>
-              </div>
-            )}
-
-            {/* ONE ACTION. The dialog asks a single question — this map,
-                at this difficulty, yes or no — and the tech tree is on the
-                grid one Escape behind, next to the wallet that pays for it,
-                which is where a player who is not deploying is heading
-                anyway */}
-            {/* the gap is on the WRAPPER, not the button: padding on the
-                button itself would push its own label off centre. mt-auto
-                pins the row to the bottom of the column when the map beside
-                it is the taller half, and pt-5 keeps daylight between the
-                description and the one irreversible control on the panel */}
-            <div className="mt-auto pt-5">
-              <button
-                onClick={() => onStart(rolled)}
-                className="ms-btn ms-btn-accent w-full py-2.5 text-[13px] tracking-[0.3em]"
-              >
-                Deploy
-              </button>
-            </div>
-          </div>
+        <h2 className="ms-heading mb-3 text-[13px] tracking-[0.35em]">{title}</h2>
+        <div role="listbox" className="flex min-h-0 flex-col gap-1.5 overflow-y-auto">
+          {children}
         </div>
       </div>
     </div>
+  );
+}
+
+/** one choice in a picker: a bordered row, gold when it is the current one */
+function PickRow({
+  selected,
+  disabled = false,
+  onPick,
+  children,
+}: {
+  selected: boolean;
+  disabled?: boolean;
+  onPick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      role="option"
+      aria-selected={selected}
+      onClick={onPick}
+      disabled={disabled}
+      className={`ms-pane-solid flex w-full items-center gap-3 px-3 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FFD37F] ${
+        disabled
+          ? "cursor-not-allowed opacity-50"
+          : selected
+            ? "border-[#FFD37F]"
+            : "hover:border-[#A6A6AF]"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** a multiplier as the extra it pays: x1.30 prints as "+30% XP", x1 as "Base XP" */
+const xpBonusText = (mult: number): string => {
+  const pct = Math.round((mult - 1) * 100);
+  return pct > 0 ? `+${pct}% XP` : "Base XP";
+};
+
+/**
+ * THE MAP LIST. Random leads and is the default: the game picks any open
+ * map on Start, and pays RANDOM_MAP_XP_BONUS for the trust. Under it,
+ * every world — a locked one is on the list saying what opens it, never
+ * hidden, and a played one says the best level beaten on it. No map is
+ * ranked against another: every map is as hard as the level it is played
+ * at, and the level is the other macro.
+ */
+function MapPicker({
+  progress,
+  pick,
+  mapsReady,
+  onPick,
+  onClose,
+}: {
+  progress: Progress;
+  /** the world picked, or null for Random */
+  pick: string | null;
+  mapsReady: boolean;
+  onPick: (worldId: string | null) => void;
+  onClose: () => void;
+}) {
+  return (
+    <PickerDialog title="Map" onClose={onClose}>
+      <PickRow selected={pick == null} onPick={() => onPick(null)}>
+        <div className="flex aspect-[16/9] w-20 shrink-0 items-center justify-center bg-[#0b0b0d] text-[#FFD37F]">
+          <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
+            <circle cx="8" cy="8" r="1.7" fill="currentColor" />
+            <circle cx="16" cy="8" r="1.7" fill="currentColor" />
+            <circle cx="12" cy="12" r="1.7" fill="currentColor" />
+            <circle cx="8" cy="16" r="1.7" fill="currentColor" />
+            <circle cx="16" cy="16" r="1.7" fill="currentColor" />
+          </svg>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-display text-[14px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+            Random
+          </div>
+          <div className="text-[11px] text-[#71717C]">Any open map, picked on start</div>
+        </div>
+        <span
+          className="shrink-0 text-[12px] font-bold uppercase tracking-widest"
+          style={{ color: XP_COLOR }}
+        >
+          {xpBonusText(1 + RANDOM_MAP_XP_BONUS)}
+        </span>
+      </PickRow>
+      {WORLDS.map((w) => {
+        const lock = worldLock(progress, w.id);
+        const best = bestClearOn(progress, w.id);
+        return (
+          <PickRow
+            key={w.id}
+            selected={pick === w.id}
+            disabled={lock != null}
+            onPick={() => onPick(w.id)}
+          >
+            <div className={`w-20 shrink-0 ${lock ? "grayscale" : ""}`}>
+              {mapsReady ? (
+                <LevelThumb mapId={w.map ?? OFFICIAL_MAP_IDS[0]} bare />
+              ) : (
+                <div className="aspect-[16/9] bg-[#0b0b0d]" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-display text-[14px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+                {w.name}
+              </div>
+              <div className="truncate text-[11px] text-[#71717C]">{missionText(w).title}</div>
+            </div>
+            <span className="shrink-0 text-[11px] font-bold uppercase tracking-widest text-[#71717C]">
+              {lock ? (
+                <>
+                  Opens at <span style={{ color: POINT_COLOR }}>level {lock.level}</span>
+                </>
+              ) : best > 0 ? (
+                <>
+                  Best <span style={{ color: rungColor(best - 1) }}>{rungLabel(best - 1)}</span>
+                </>
+              ) : (
+                "New"
+              )}
+            </span>
+          </PickRow>
+        );
+      })}
+    </PickerDialog>
+  );
+}
+
+/**
+ * THE DIFFICULTY LIST: the ten levels, every one open, each saying what
+ * it pays over Level 1 — the whole trade in one column. Scrap is the same
+ * on every level (the run is priced against the script, not the rung),
+ * so the only thing a higher level buys is XP, and the only thing it
+ * costs is the rules it rolls; both are on the row.
+ */
+function DifficultyPicker({
+  tier,
+  onPick,
+  onClose,
+}: {
+  tier: number;
+  onPick: (tier: number) => void;
+  onClose: () => void;
+}) {
+  return (
+    <PickerDialog title="Difficulty" onClose={onClose}>
+      {Array.from({ length: RUNG_COUNT }, (_, t) => {
+        const rules = tierMutationCount(t);
+        return (
+          <PickRow key={t} selected={t === tier} onPick={() => onPick(t)}>
+            <span
+              className="w-24 shrink-0 font-display text-[15px] font-bold uppercase tracking-widest"
+              style={{ color: rungColor(t) }}
+            >
+              {rungLabel(t)}
+            </span>
+            <span className="min-w-0 flex-1 text-[11px] text-[#71717C]">
+              {rules === 0
+                ? "As authored — no mutators"
+                : `${rules} mutator${rules === 1 ? "" : "s"} rolled`}
+            </span>
+            <span
+              className="shrink-0 text-[12px] font-bold uppercase tracking-widest"
+              style={{ color: XP_COLOR }}
+            >
+              {xpBonusText(tierXpBonus(t))}
+            </span>
+          </PickRow>
+        );
+      })}
+    </PickerDialog>
   );
 }
 
@@ -807,38 +716,44 @@ export default function MechSwarm() {
   // picked, and going back to the menu tears the whole game down
   const [screen, setScreen] = useState<"menu" | "tech" | "game">("menu");
   /**
-   * WHERE IN THE FRONT-OF-HOUSE THE PLAYER IS. The menu screen is four
-   * panels, not one: a title card, settings, the map grid, and the picked
-   * map's detail.
+   * WHERE IN THE FRONT-OF-HOUSE THE PLAYER IS. The menu screen is three
+   * panels, not one: a title card, settings, and the DEPLOY screen behind
+   * Start — the two macros a run is chosen by (map and difficulty) and
+   * the button that starts it. Each macro opens its list as a dialog over
+   * the deploy screen (`picker`), so choosing a run never leaves the
+   * screen it is started from.
    *
    * The title card shows a game and two buttons and NOTHING else — no map,
-   * no wallet, no difficulty. Everything that used to crowd it is a
-   * property of a run, and a run has not been chosen yet; a start screen
-   * that already displays a map has quietly made the choice for you. So
-   * the resources and the ladder move behind Start, where they describe
-   * something the player has actually pointed at.
+   * no level, no difficulty. Everything that describes a run lives behind
+   * Start, where it describes something the player is about to do.
    *
    * It is deliberately NOT part of `screen`: leaving a run or the tech tree
    * comes back to "menu" from several places, and this survives all of
-   * them, so a player who deploys, loses, and backs out lands on the map
-   * they were playing rather than at the title.
+   * them, so a player who deploys, loses, and backs out lands on the deploy
+   * screen with their picks rather than at the title.
    */
-  const [menuView, setMenuView] = useState<"home" | "settings" | "maps" | "map">("home");
+  const [menuView, setMenuView] = useState<"home" | "settings" | "deploy">("home");
+  /** which macro's list is open over the deploy screen, if any */
+  const [picker, setPicker] = useState<"maps" | "difficulty" | null>(null);
   const [level, setLevel] = useState<LevelSpec | null>(null);
   /**
-   * The rung the menu is pointed at. It follows the frontier whenever the
-   * save advances — pushing is the default action and the frontier is the
-   * only rung that still pays its first-clear bonus — but the player can
-   * step it back down to farm a rung they already own.
+   * The difficulty macro: the rung the next run is played at. Every rung
+   * is open from the first run; this is the save's remembered pick
+   * (Progress.difficulty), Level 1 on a fresh save.
    */
   const [tier, setTier] = useState(0);
   /**
-   * The world the menu is pointed at. Every world is on the menu from the
-   * first run (a locked one says the level that opens it), and it is
-   * always resolved through worldById so a stale id degrades to world 1.
+   * The map macro: a world id, or null for RANDOM — the default, and the
+   * pick that pays RANDOM_MAP_XP_BONUS. Resolved through worldById so a
+   * stale id reads as Random rather than as a world that is not there.
    */
-  const [worldId, setWorldId] = useState(WORLD.id);
-  const world = worldById(worldId) ?? WORLD;
+  const [mapPick, setMapPick] = useState<string | null>(null);
+  const pickedWorld = mapPick == null ? null : worldById(mapPick);
+  /**
+   * Was the run under way started on a map the game picked? Read when the
+   * run settles (grantRunReward), which is the one moment it pays.
+   */
+  const [runRandom, setRunRandom] = useState(false);
   // the selector draws map previews, so the documents load with the menu —
   // Game.create re-fetches later, keeping in-game state just as fresh
   const [mapsReady, setMapsReady] = useState(false);
@@ -885,6 +800,45 @@ export default function MechSwarm() {
     [level],
   );
   /**
+   * THE ROLL FOR A PICKED MAP — as many rules as the difficulty asks for,
+   * costing no more than the points it carries (both dials on the rung),
+   * with the world's own rules handed to the roller as an exclusion so it
+   * cannot spend the tier's points on a rule the run already plays under.
+   * Level 1 carries zero of each and so rolls nothing.
+   *
+   * IT IS ROLLED ONCE PER (MAP, DIFFICULTY), HERE, and the deploy screen
+   * shows it under the macros, so whatever is on screen when Start is
+   * pressed is exactly what the run is played under (startRun carries it).
+   * Re-rolling on every render would spin the list under the player's
+   * eyes; rolling at Start would deploy rules that were never shown.
+   *
+   * A RANDOM MAP ROLLS AT START, because the exclusion is the map's and
+   * the map is not known until then. That deploy is a surprise by design
+   * — the bonus is paid for exactly that — and the rules in force are on
+   * the HUD from the first wave (hudRules), so nothing is hidden for long.
+   */
+  const previewRoll = useMemo(
+    () =>
+      pickedWorld
+        ? rollMutations(
+            tierMutationPoints(tier),
+            tierMutationCount(tier),
+            pickedWorld.intrinsicMutation ?? [],
+          )
+        : [],
+    [pickedWorld, tier],
+  );
+  /** every rule the previewed deploy is played under — the map's own and the roll */
+  const previewRules = useMemo(
+    () =>
+      pickedWorld
+        ? mutationsInForce(pickedWorld.intrinsicMutation, previewRoll)
+            .map(mutationById)
+            .filter((m): m is NonNullable<typeof m> => m !== null)
+        : [],
+    [pickedWorld, previewRoll],
+  );
+  /**
    * Ambient effects on? A saved preference (Progress.effects) like the
    * pace and the HUD state, because it is a fact about the DEVICE — a
    * phone that could not afford the particles last run cannot this run
@@ -927,7 +881,8 @@ export default function MechSwarm() {
   useEffect(() => {
     const p = loadProgress();
     setProgress(p);
-    setTier(topTier(p, WORLD.id));
+    setTier(p.difficulty ?? 0);
+    setMapPick(p.map ?? null);
     setHudMin(p.hudMinimized ?? false);
     setEffects(p.effects ?? true);
     setLoadout(p.loadout ?? null);
@@ -971,18 +926,7 @@ export default function MechSwarm() {
     if (!admin && !tech.speeds.includes(g.ui().speed))
       g.setSpeed(startingSpeed(loadProgress(), tech.speeds));
     setHud(g.ui());
-  }, [admin, worldId, level?.tier]);
-
-  /**
-   * THE PICKED RUNG BELONGS TO A WORLD, so switching worlds has to
-   * re-clamp it. Each ladder is climbed separately: a save standing on rung
-   * 8 here is standing on rung 1 next door, and leaving the number where it
-   * was would point the menu at a rung that world has not opened. It lands
-   * on the new world's own frontier, which is where a fresh pick belongs.
-   */
-  useEffect(() => {
-    setTier(topTier(loadProgress(), worldId));
-  }, [worldId]);
+  }, [admin, level?.tier]);
 
   useEffect(() => {
     let alive = true;
@@ -1034,8 +978,9 @@ export default function MechSwarm() {
     // run is up. Read here, because the next line takes the query away
     diagRef.current = q.get("diag") === "1";
     window.history.replaceState(null, "", window.location.pathname);
-    setWorldId(w.id);
+    setMapPick(w.id);
     setTier(t);
+    setRunRandom(false); // asked for by id: nothing random about it
     setAdmin(true); // a sandbox run: whole tree, no caps, every pace
     setLevel(runSpec(w, t, mutation));
     setScreen("game");
@@ -1128,13 +1073,14 @@ export default function MechSwarm() {
       setHud(ui);
       if ((ui.lost || ui.won) && !granted.current) {
         granted.current = true;
-        // level.id names the world the run was on — its ladder is the one
-        // a first clear moves
+        // level.id names the world the run was on; runRandom says whether
+        // the game picked it, which is what the map bonus is paid for
         const reward = grantRunReward(
           level.tier ?? 0,
           Array.from(g.sim.killsByKind),
           ui.won,
           level.id,
+          runRandom,
         );
         const after = loadProgress();
         setResult(reward);
@@ -1142,13 +1088,6 @@ export default function MechSwarm() {
         // the run is over, so its sandbox is too — a retry from the results
         // panel starts on what the save actually owns (see `admin`)
         setAdmin(false);
-        // the picker follows the frontier ONLY when the frontier moved. A
-        // player farming rung 2 with a frontier of 7 has chosen that rung
-        // and must not be yanked back up to 7 for clearing it again
-        // (the board that won needs no handing forward any more: it is
-        // already filed under this world, and the next rung stands it back
-        // up as it is)
-        if (reward.firstClear) setTier(topTier(after, reward.worldId));
       }
     }, 100);
     return () => {
@@ -1164,7 +1103,7 @@ export default function MechSwarm() {
       const w = window as unknown as Record<string, unknown>;
       if (w.__mechswarm === game) delete w.__mechswarm;
     };
-  }, [screen, level]);
+  }, [screen, level, runRandom]);
 
   useEffect(() => {
     let alive = true;
@@ -1202,13 +1141,14 @@ export default function MechSwarm() {
    */
   const barKinds = (): TowerKind[] => {
     if (!hud) return [];
-    const unlockedList = ORDERED_MENU.filter(
-      (t) => !hud.unlocked || hud.unlocked.includes(t.kind),
-    ).map((t) => t.kind);
-    if (hud.barSlots === null) return unlockedList;
-    const picks = new Set(loadout ?? unlockedList);
-    const chosen = unlockedList.filter((k) => picks.has(k));
-    return (chosen.length > 0 ? chosen : unlockedList).slice(0, hud.barSlots);
+    // EVERY turret rides the bar. The ones the track has not handed out
+    // yet are greyed with the level that opens them (the badge below), so
+    // the bar is also the answer to "what is there still to earn"
+    const all = ORDERED_MENU.map((t) => t.kind);
+    if (hud.barSlots === null) return all;
+    const picks = new Set(loadout ?? all);
+    const chosen = all.filter((k) => picks.has(k));
+    return (chosen.length > 0 ? chosen : all).slice(0, hud.barSlots);
   };
 
   /**
@@ -1307,6 +1247,33 @@ export default function MechSwarm() {
     setScreen("game");
   };
 
+  /**
+   * START, from the macros as they stand. A picked map deploys under the
+   * roll the screen has been showing; Random resolves to any map the
+   * track has opened and rolls for it here. The picks are remembered
+   * (saveRunPick) so the next launch opens on them.
+   */
+  const startRun = (): void => {
+    const p = progress ?? loadProgress();
+    const open = WORLDS.filter((w) => worldLock(p, w.id) == null);
+    // a remembered pick the track has since closed (a wiped save) plays
+    // as Random rather than as a map the save may not enter
+    const picked = pickedWorld && worldLock(p, pickedWorld.id) == null ? pickedWorld : null;
+    const random = picked == null;
+    const w = picked ?? open[Math.floor(Math.random() * open.length)] ?? WORLD;
+    const roll = random
+      ? rollMutations(tierMutationPoints(tier), tierMutationCount(tier), w.intrinsicMutation ?? [])
+      : previewRoll;
+    saveRunPick(tier, picked?.id ?? null);
+    setRunRandom(random);
+    setLevel(runSpec(w, tier, roll));
+    setScreen("game");
+    // raised in the same batch as the screen switch, so the game screen's
+    // FIRST paint is already covered - an effect would run after that
+    // paint and let a frame of black canvas through
+    setLoadUi({ step: firstLoadStep(), out: false });
+  };
+
   const retry = (): void => {
     const g = gameRef.current;
     if (!g) return;
@@ -1366,24 +1333,24 @@ export default function MechSwarm() {
             aria-label="UI size"
             className="ms-seg"
           >
-            {(
-              [
-                [UI_SCALES[0], "Compact"],
-                [UI_SCALES[1], "Default"],
-                [UI_SCALES[2], "Large"],
-                [UI_SCALES[3], "XL"],
-              ] as const
-            ).map(([scale, label]) => (
+            {/* printed as percentages rather than named sizes: eight
+                steps outrun any set of names, and "Default" on a button
+                that was not the default (UI_SCALE_DEFAULT is 1) was a
+                lie the old labels told */}
+            {UI_SCALES.map((scale) => (
               <button
                 key={scale}
                 aria-pressed={uiScale === scale}
+                aria-label={`UI size ${Math.round(scale * 100)}%${
+                  scale === UI_SCALE_DEFAULT ? " (default)" : ""
+                }`}
                 onClick={() => {
                   setUiScale(scale);
                   saveUiScale(scale); // remembered across sessions
                 }}
-                className="ms-btn px-3 py-1.5 text-[13px]"
+                className="ms-btn px-2.5 py-1.5 text-[13px]"
               >
-                {label}
+                {Math.round(scale * 100)}%
               </button>
             ))}
           </div>
@@ -1431,7 +1398,8 @@ export default function MechSwarm() {
                     resetProgress();
                     const p = loadProgress();
                     setProgress(p);
-                    setTier(topTier(p, worldId));
+                    setTier(0);
+                    setMapPick(null);
                     // the curated bar was part of the progress just
                     // wiped. Left standing it would filter the fresh
                     // save's build bar against turrets it no longer owns
@@ -1473,10 +1441,9 @@ export default function MechSwarm() {
     /**
      * THE LEVEL AND THE WAY TO READ IT: the number, and the Progress button
      * to its right, pinned to the top-RIGHT corner — the opposite corner
-     * from back, so each corner holds one thing. Shown from the map grid
-     * inwards and never on the title card: a level only means anything
-     * next to the track it is a tier of, and the last stop before Deploy
-     * is exactly where a player wants to see what is next.
+     * from back, so each corner holds one thing. On the deploy screen and
+     * never on the title card: a level only means anything next to the
+     * run it is about to be spent on.
      */
     const bank = progress && (
       <div className="ui-zoom fixed right-[1rem] top-[1rem] z-20 flex h-11 items-center gap-3 text-[13px]">
@@ -1498,11 +1465,11 @@ export default function MechSwarm() {
      * back to, so the thumb never hunts for it. The label survives as the
      * accessible name.
      */
-    const back = (label: string, to: "home" | "maps") => (
+    const back = (label: string) => (
       <button
         aria-label={label}
         title={label}
-        onClick={() => setMenuView(to)}
+        onClick={() => setMenuView("home")}
         className="ui-zoom ms-btn fixed left-[1rem] top-[1rem] z-20 h-11 w-11 p-0 text-[#a2a2a2] hover:text-white"
       >
         <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden="true">
@@ -1510,6 +1477,7 @@ export default function MechSwarm() {
         </svg>
       </button>
     );
+    const randomLabel = xpBonusText(1 + RANDOM_MAP_XP_BONUS);
     return (
       // the title card is a SCREEN, not a page — nothing on it overflows,
       // so it must never bounce or scroll under a finger. The deeper menu
@@ -1521,16 +1489,21 @@ export default function MechSwarm() {
       >
         {/* THE GROUND: a rolled world drifting under the whole front of
             house (MenuBackground). It is mounted once here rather than per
-            view so walking Title → Start → a map never re-rolls it; only
+            view so walking Title → Start → a pick never re-rolls it; only
             the wash over it changes — light on the title card, darker
-            under the map grid, which is a thing to read */}
+            under the deploy screen, which is a thing to read */}
         <MenuBackground dim={menuView === "home" ? 0.38 : 0.66} />
         {/* ui-zoom off the title card: the hero screen is composed at one
             size; the working menus scale with the UI-size knob, which is
             also what makes the knob's effect visible where it lives */}
+        {/* the working views clear the corner chrome (back, the level and
+            Progress) with a top pad in their own zoomed units, so a HUD
+            at 200% does not stand the heading under the level strip — and
+            the centring is SAFE: a column taller than the screen starts at
+            the pad and scrolls, instead of spilling out of both ends */}
         <div
-          className={`relative mx-auto flex min-h-full max-w-5xl flex-col items-center justify-center gap-8 py-12 pl-[1.5rem] pr-[1.5rem] sm:py-16 ${
-            menuView === "home" ? "" : "ui-zoom"
+          className={`relative mx-auto flex min-h-full max-w-5xl flex-col items-center gap-8 py-12 pl-[1.5rem] pr-[1.5rem] [justify-content:safe_center] sm:py-16 ${
+            menuView === "home" ? "" : "ui-zoom pt-20 sm:pt-20"
           }`}
         >
           {/* THE TITLE CARD. A name and two doors - nothing here describes a
@@ -1543,22 +1516,16 @@ export default function MechSwarm() {
                     text, and a title set in it read as more of the same.
                     The name is one word: it is the COLOUR that splits MECH
                     from SWARM, not a space or a line break. */}
-                <p className="mb-2 text-[11px] uppercase tracking-[0.6em] text-[#a2a2a2] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
-                  Swarm defense
-                </p>
                 <h1 className="font-display text-5xl font-bold uppercase tracking-[0.08em] [text-shadow:0_3px_0_rgba(0,0,0,0.85),0_0_32px_rgba(0,0,0,0.9)] sm:text-6xl">
                   <span className="text-[#EDEDEF]">Mech</span>
                   <span className="text-[#FFD37F] [text-shadow:0_3px_0_rgba(0,0,0,0.85),0_0_28px_rgba(255,211,127,0.45)]">
                     Swarm
                   </span>
                 </h1>
-                {/* the rule under the name: Mindustry's dialog title
-                    underline, an accent bar with the bevel's black under it */}
-                <div className="mx-auto mt-3 h-[3px] w-40 bg-[#FFD37F] shadow-[0_3px_0_rgba(0,0,0,0.8)] sm:w-56" />
               </div>
               <div className="flex w-full max-w-[20rem] flex-col gap-3">
                 <button
-                  onClick={() => setMenuView("maps")}
+                  onClick={() => setMenuView("deploy")}
                   className="ms-btn ms-btn-accent w-full py-3.5 text-[15px] tracking-[0.3em]"
                 >
                   Start
@@ -1578,9 +1545,82 @@ export default function MechSwarm() {
             </>
           )}
 
+          {/* THE DEPLOY SCREEN. The two macros a run is chosen by, and
+              Start under them. There is no map grid and no deploy dialog
+              any more: a run is two picks, each one press away, and the
+              defaults (Random, Level 1) are a run in themselves */}
+          {menuView === "deploy" && (
+            <>
+              <h2 className="ms-heading text-[15px] tracking-[0.35em]">Deploy</h2>
+              <div className="flex w-full max-w-[24rem] flex-col gap-3">
+                {/* THE MACROS: what the next run is, as two rows that read
+                    as a sentence — this map, at this level — and what
+                    each pays, in the XP colour, so the trade is on the
+                    screen before either list is opened */}
+                <div className="flex flex-col gap-2">
+                  <MacroButton
+                    label="Map"
+                    value={pickedWorld ? pickedWorld.name : `Random, ${randomLabel}`}
+                    onClick={() => setPicker("maps")}
+                  >
+                    {pickedWorld ? (
+                      <span className="text-[#EDEDEF]">{pickedWorld.name}</span>
+                    ) : (
+                      <>
+                        <span className="text-[#EDEDEF]">Random</span>
+                        <span className="text-[12px]" style={{ color: XP_COLOR }}>
+                          {randomLabel}
+                        </span>
+                      </>
+                    )}
+                  </MacroButton>
+                  <MacroButton
+                    label="Difficulty"
+                    value={`${rungLabel(tier)}, ${xpBonusText(tierXpBonus(tier))}`}
+                    onClick={() => setPicker("difficulty")}
+                  >
+                    <span style={{ color: rungColor(tier) }}>{rungLabel(tier)}</span>
+                    <span className="text-[12px]" style={{ color: XP_COLOR }}>
+                      {xpBonusText(tierXpBonus(tier))}
+                    </span>
+                  </MacroButton>
+                </div>
+                {/* WHAT A PICKED MAP WILL BE PLAYED UNDER — the map's own
+                    rules and the roll for this level, as a row of faces
+                    (see MutationChip). A random map shows nothing here: its
+                    roll waits for the map, and that surprise is what the
+                    bonus pays for */}
+                {previewRules.length > 0 && (
+                  <div className="flex items-center gap-2 px-1 text-[12px]">
+                    <span className="font-bold uppercase tracking-widest text-[#FF8ACB] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
+                      Mutators
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {previewRules.map((m, i) => (
+                        <MutationChip
+                          key={m.id}
+                          def={m}
+                          always={(pickedWorld?.intrinsicMutation ?? []).includes(m.id)}
+                          fromRight={i >= previewRules.length / 2}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* ONE ACTION, at the bottom: this map, at this level, go */}
+                <button
+                  onClick={startRun}
+                  className="ms-btn ms-btn-accent mt-2 w-full py-3.5 text-[15px] tracking-[0.3em]"
+                >
+                  Start
+                </button>
+              </div>
+            </>
+          )}
+
           {/* SETTINGS - everything that changes the save rather than the run.
               Wiping is the only one so far, and it lives here rather than
-              beside the Deploy button where a mis-tap would be costly */}
+              beside the deploy button where a mis-tap would be costly */}
           {menuView === "settings" && (
             <>
               <h2 className="ms-heading text-[15px] tracking-[0.35em]">Settings</h2>
@@ -1599,60 +1639,44 @@ export default function MechSwarm() {
                   Mindustry
                 </a>
               </p>
-              {back("Back", "home")}
             </>
           )}
-
-          {/* THE MAP GRID. Every map is SHOWN, always — a locked one is on
-              the board saying what opens it, never hidden. Nothing is bought
-              to reach a map and nothing carries between them; each keeps its
-              own ladder, and the track (track.ts) says when a map opens */}
-          {(menuView === "maps" || menuView === "map") && progress && (
-            <>
-              <h2 className="ms-heading text-[15px] tracking-[0.35em]">
-                Select map
-              </h2>
-              {bank}
-              <div className="grid w-full max-w-[46rem] gap-4 sm:grid-cols-2">
-                {WORLDS.map((w) => (
-                  <MapCard
-                    key={w.id}
-                    world={w}
-                    progress={progress}
-                    mapsReady={mapsReady}
-                    onPick={() => {
-                      setWorldId(w.id);
-                      setMenuView("map");
-                    }}
-                  />
-                ))}
-              </div>
-              {back("Title", "home")}
-            </>
-          )}
-
         </div>
 
-        {/* THE PICKED MAP, as a dialog over the grid it was picked from. It
-            sits OUTSIDE the zoom wrapper on purpose: `ui-zoom` is a CSS
-            `zoom`, and a fixed backdrop inside one covers the scaled box
-            rather than the viewport. The panel carries its own ui-zoom, so
-            the UI-size knob still moves it */}
-        {menuView === "map" && progress && (
-          <MapDialog
+        {/* THE CORNER CHROME — back on the left, the level and Progress on
+            the right — lives OUTSIDE the zoom wrapper, like the dialogs
+            below: each carries its own ui-zoom, and a zoomed element inside
+            a zoomed ancestor is zoomed twice (CSS zoom compounds), which
+            at 200% drew a back button four times its size */}
+        {menuView === "deploy" && bank}
+        {menuView === "deploy" && back("Title")}
+        {menuView === "settings" && back("Back")}
+
+        {/* THE LISTS, as dialogs over the deploy screen (see PickerDialog
+            for why they sit outside the zoom wrapper). A pick closes the
+            list and is remembered at once, so a player who picks and then
+            quits comes back to what they picked */}
+        {picker === "maps" && progress && (
+          <MapPicker
             progress={progress}
-            world={world}
-            tier={tier}
-            onTier={setTier}
+            pick={mapPick}
             mapsReady={mapsReady}
-            onClose={() => setMenuView("maps")}
-            onStart={(mutation) => {
-              setLevel(runSpec(world, tier, mutation));
-              setScreen("game");
-              // raised in the same batch as the screen switch, so the game
-              // screen's FIRST paint is already covered - an effect would
-              // run after that paint and let a frame of black canvas through
-              setLoadUi({ step: firstLoadStep(), out: false });
+            onClose={() => setPicker(null)}
+            onPick={(id) => {
+              setMapPick(id);
+              saveRunPick(tier, id);
+              setPicker(null);
+            }}
+          />
+        )}
+        {picker === "difficulty" && (
+          <DifficultyPicker
+            tier={tier}
+            onClose={() => setPicker(null)}
+            onPick={(t) => {
+              setTier(t);
+              saveRunPick(t, pickedWorld?.id ?? null);
+              setPicker(null);
             }}
           />
         )}
@@ -1981,16 +2005,16 @@ export default function MechSwarm() {
               // carry no number at all
               const price = hud?.scrap === null || !hud ? null : hud.prices[t.kind];
               const poor = price !== null && hud !== null && hud.scrap !== null && hud.scrap < price;
-              // the stage gate (STAGES in economy.ts): a tier-2 or tier-3
-              // turret rides the bar from wave 1 but stays shut until its
-              // stage opens, and the badge says which wave that is
-              const opens = unlockWaveOf(t.kind);
-              const locked = price !== null && hud !== null && hud.stageWave < opens;
+              // the track (track.ts): a turret the save has not reached yet
+              // rides the bar shut, and the badge says which level opens it.
+              // A null roster is sandbox mode, where nothing is shut
+              const opens = turretUnlockLevel(t.kind);
+              const locked = hud !== null && hud.unlocked !== null && !hud.unlocked.includes(t.kind);
               const label =
-                price === null
-                  ? t.name
-                  : locked
-                    ? `${t.name} — unlocks on wave ${opens}`
+                locked
+                  ? `${t.name} — unlocks at level ${opens}`
+                  : price === null
+                    ? t.name
                     : `${t.name} — ${price} scrap`;
               return (
                 <button
@@ -2014,7 +2038,7 @@ export default function MechSwarm() {
                         locked ? "text-[#a2a2a2]" : poor ? "text-[#FF8A8A]" : "text-white"
                       }`}
                     >
-                      {locked ? `W${opens}` : price}
+                      {locked ? `L${opens}` : price}
                     </span>
                   )}
                 </button>
@@ -2130,13 +2154,14 @@ export default function MechSwarm() {
                 <div>
                   Kills <span className="font-bold text-[#EDEDEF]">{hud.kills}</span>
                 </div>
-                {result && result.total > 0 && (
+                {result && result.xp > 0 && (
                   <div className="space-y-1 pt-1">
                     {/* kills are the income, so a loss still pays for
                         everything the towers killed on the way down —
                         which is what makes a failed push into progress */}
                     <div>Earned (×{result.xpBonus.toFixed(2)})</div>
-                    <XpAmount amount={result.total} className="justify-center" />
+                    <XpAmount amount={result.xp} className="justify-center" />
+                    <RandomMapLine result={result} />
                     <LevelUpLine result={result} />
                   </div>
                 )}
@@ -2165,7 +2190,7 @@ export default function MechSwarm() {
                   onClick={backToMenu}
                   className="ms-btn px-5 py-2 text-base"
                 >
-                  Levels
+                  Menu
                 </button>
                 </div>
               </div>
@@ -2197,32 +2222,8 @@ export default function MechSwarm() {
                       </span>
                       <XpAmount amount={result.xp} />
                     </div>
-                    {result.firstClearXp > 0 && (
-                      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                        <span className="font-bold text-[#7BE58A]">First clear</span>
-                        <XpAmount amount={result.firstClearXp} />
-                      </div>
-                    )}
+                    <RandomMapLine result={result} />
                     <LevelUpLine result={result} />
-                    {/* the ladder runs out at RUNG_COUNT, so the last
-                        first-clear has nothing above it to announce. What
-                        counts as "last" is THIS WORLD'S top (topTier on the
-                        world just played), so a clear never announces a rung
-                        this world's menu will not show */}
-                    {result.firstClear && (
-                      <div className="pt-1 text-[12px] uppercase tracking-widest text-[#FFD37F]">
-                        {progress && topTier(progress, result.worldId) > result.tier ? (
-                          <>
-                            <span style={{ color: rungColor(result.tier + 1) }}>
-                              {rungLabel(result.tier + 1)}
-                            </span>{" "}
-                            unlocked
-                          </>
-                        ) : (
-                          "Top of the ladder — every wave cleared"
-                        )}
-                      </div>
-                    )}
                   </>
                 )}
               </div>

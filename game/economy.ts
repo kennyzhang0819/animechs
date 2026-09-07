@@ -13,7 +13,7 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  *
  *   XP     is META progress. The same kills pay XP (DROP_BY_TIER again),
  *          the rung played multiplies it (tierXpBonus in ladder.ts), and
- *          the first clear of any (world, rung) pays FIRST_CLEAR_XP on top.
+ *          a random map pays RANDOM_MAP_XP_BONUS more on top.
  *          XP turns into PLAYER LEVEL through the curve below, and every
  *          level is a rung on the track (track.ts): maps, paces, upgrades.
  *
@@ -88,8 +88,9 @@ export const DROP_BY_TIER: readonly Drop[] = [
  * A boss is one body a run and it pays like an event: a lump of scrap for
  * the board that fells it, and a lump of XP for the save. It is on the
  * table rather than off it because there is no once-only trophy currency
- * any more (surge alloy, gone with the bank) — the first-clear bonus
- * (FIRST_CLEAR_XP) is what pays for the run being NEW.
+ * any more (surge alloy, gone with the bank), and nothing pays for a run
+ * being NEW: a clear is worth what its kills were worth, first time or
+ * fifth.
  */
 export const BOSS_DROP: Drop = { scrap: 5000, xp: 1000 };
 
@@ -140,13 +141,15 @@ export const sellValue = (kind: TowerKind): number =>
   Math.floor(scrapPriceOf(kind) * SELL_REFUND);
 
 /**
- * THE THREE TURRET TIERS, and the stage of a run each one is priced for.
+ * THE THREE PRICE BANDS, and the stage of a run each one is priced for.
  *
- * The split follows Mindustry's own build-cost ranking (MINDUSTRY_VALUE in
- * tech.ts): the six cheapest are tier 1, the next six tier 2, the five
- * dearest tier 3. A tier's turrets are priced so the STAGE they belong to
- * is roughly what buys them — see TOWER_PRICE — and the stage audit in
- * ladder.ts is where that is checked against the script.
+ * A PRICING TABLE, NOT A GATE. The split follows Mindustry's own build-cost
+ * ranking (MINDUSTRY_VALUE in tech.ts): the six cheapest are band 1, the
+ * next six band 2, the five dearest band 3, and a band's turrets are
+ * priced so the STAGE it belongs to is roughly what buys them — see
+ * TOWER_PRICE — which the stage audit in ladder.ts checks against the
+ * script. Nothing in a run reads it: a turret the save owns (the track,
+ * track.ts) may be placed from wave 1, spectre included.
  */
 export type TowerTier = 1 | 2 | 3;
 
@@ -176,38 +179,18 @@ export const towersOfTier = (tier: TowerTier): TowerKind[] =>
 
 /**
  * THE STAGES OF A RUN, as 1-based inclusive wave ranges — the three
- * stretches the three turret tiers are priced for, AND THE GATE ON THEM:
- * a tier's turrets cannot be placed before its stage opens (unlockWaveOf,
- * read by Sim.canPlace against the wave the CLOCK says it is —
- * Sim.stageWave — so a map whose waves queue behind its drop zones still
- * opens its tiers on time). Waves 1-20 are solved with tier 1, tier 2 joins
- * at 21, tier 3 at 36 — so every run is an early game, a mid game and a
- * late game, and no run opens on the best turret the save owns. The
- * audit (ladder.ts) sums what each stage pays and holds it against its
- * tier's prices.
+ * stretches the three price bands are priced for. Waves 1-20 pay for band
+ * 1, 21-35 for band 2, 36-50 for band 3, and the audit (ladder.ts) sums
+ * what each stage pays and holds it against its band's prices. THAT IS ALL
+ * THEY DO. The stage gate that once held a band shut until its stage
+ * opened is gone: what may be placed is what the save owns (track.ts),
+ * and it may be placed from the first wave.
  */
 export const STAGES: readonly { tier: TowerTier; from: number; to: number }[] = [
   { tier: 1, from: 1, to: 20 },
   { tier: 2, from: 21, to: 35 },
   { tier: 3, from: 36, to: 50 },
 ];
-
-/** the stage a 1-based wave number falls in; past the last stage it is the last */
-export function stageOfWave(wave: number): (typeof STAGES)[number] {
-  for (const s of STAGES) if (wave <= s.to) return s;
-  return STAGES[STAGES.length - 1];
-}
-
-/** the first wave a turret may be placed on — its tier's stage opening */
-export function unlockWaveOf(kind: TowerKind): number {
-  const tier = TOWER_TIER[kind];
-  for (const s of STAGES) if (s.tier === tier) return s.from;
-  return 1;
-}
-
-/** may this turret be placed while `wave` (1-based) is the current one? */
-export const tierOpenAt = (kind: TowerKind, wave: number): boolean =>
-  wave >= unlockWaveOf(kind);
 
 /**
  * WHAT EVERY TURRET COSTS, in scrap, AUTHORED.
@@ -300,9 +283,8 @@ export const pricePerTile = (kind: TowerKind): number =>
  *   total    10k    35k    80k    145k   233k   346k   485k   ~843k  ~12.1m
  *
  * WHAT THAT MEANS AGAINST A MAP. A full rung-1 clear of Confluence pays
- * about 245,000 XP in kills plus the first-clear bonus, so the first run
- * lands around level 6 — the second pace and the second map fall out of
- * the opening night; a wipe at the end of stage 1 pays about 40,000 and
+ * about 245,000 XP in kills, so the first run lands around level 6 — the
+ * second pace and the second map fall out of the opening night; a wipe at the end of stage 1 pays about 40,000 and
  * lands level 3. Ten rungs on one world, with the rung bonus, are about
  * 7,000,000 XP — level 25 or so; the top of the track (MAX_LEVEL in
  * track.ts) takes a second map's ladder or a lot of Brutal.
@@ -346,13 +328,14 @@ export function levelProgress(xp: number): { level: number; into: number; need: 
 
 
 /**
- * THE FIRST-CLEAR BONUS: paid once for beating any (world, rung) the save
- * has not beaten before, and multiplied by that rung's XP bonus like every
- * other XP the run pays. About a quarter of what a full clear's kills pay,
- * so a new clear is always visibly better than a replay without the replay
- * being pointless.
+ * THE RANDOM-MAP BONUS: what a run pays on top for letting the game pick
+ * the map. The menu's map macro defaults to Random, and a player who
+ * leaves it there banks a quarter more XP than one who chose — a nudge
+ * towards playing every front rather than farming the one they know.
+ * Multiplies the run's kill XP the same way the rung's bonus does
+ * (grantRunReward), so it stacks: Level 10 on a random map is x3.70 x1.25.
  */
-export const FIRST_CLEAR_XP = 60000;
+export const RANDOM_MAP_XP_BONUS = 0.25;
 
 // ---------------------------------------------------------------------------
 // LIVES

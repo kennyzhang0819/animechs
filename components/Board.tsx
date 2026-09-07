@@ -418,8 +418,10 @@ export default function Board({
         {children}
       </div>
 
-      {/* floating chrome: the board pans underneath it */}
-      <div className="pointer-events-none absolute inset-0">
+      {/* floating chrome: the board pans underneath it. It takes the
+          UI-size knob (ui-zoom) while the board does not — the board has
+          its own zoom, and the knob is about how big the BUTTONS are */}
+      <div className="ui-zoom pointer-events-none absolute inset-0">
         {chrome}
         <div
           className="absolute bottom-[1rem] right-[1rem] flex flex-col gap-2"

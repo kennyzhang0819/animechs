@@ -14,7 +14,6 @@ import { TOWERS } from "./constants";
 import {
   addDrop,
   emptyDrop,
-  FIRST_CLEAR_XP,
   SCRAP_START,
   scrapPriceOf,
   STAGES,
@@ -49,8 +48,9 @@ import { MUT_COUNT_MAX, mutationBudget, mutationPicks } from "./mutation";
  * a rung's run banks the same scrap as any other, because scrap is what
  * the turret prices are authored against and a rung that paid more scrap
  * would be an easier fight, not a harder one. XP scales — see
- * XP_STEP_PER_RUNG — and the first clear of any (world, rung) pays
- * FIRST_CLEAR_XP on top. That gradient is the whole reason to climb.
+ * XP_STEP_PER_RUNG — and that gradient is the whole reason to climb. A
+ * clear pays the same the first time and the fifth: there is no
+ * first-clear bonus, so a rung is worth exactly what its kills are.
  *
  * THE LADDER SCALES BY ONE CONSTANT. RUNG_COUNT is ten today because ten is
  * where the tuning has been checked, not because anything is finite: every
@@ -651,8 +651,6 @@ export interface AuditRow {
   scrap: number;
   /** XP a full clear's kills pay at this rung, bonus included */
   xp: number;
-  /** what the first clear of this rung pays on top, bonus included */
-  firstClearXp: number;
 }
 
 /**
@@ -684,7 +682,6 @@ export function audit(spec: LevelSpec = WORLD): AuditRow[] {
       xpBonus: +bonus.toFixed(2),
       scrap: Math.round(scrap),
       xp: Math.round(xp * bonus),
-      firstClearXp: Math.round(FIRST_CLEAR_XP * bonus),
     });
   }
   return rows;
@@ -736,12 +733,12 @@ export function stageTable(spec: LevelSpec = WORLD): string {
         s.dearest,
       ).padStart(7)}  ${String(s.mean).padStart(5)}  ${String(s.boards).padStart(6)}`,
   );
-  const xpHead = "rung   xp bonus   xp a clear   first clear";
+  const xpHead = "rung   xp bonus   xp a clear";
   const xpRows = audit(spec).map(
     (r) =>
       `${String(r.rung).padStart(4)}  ${("x" + r.xpBonus.toFixed(2)).padStart(9)}  ${String(
         r.xp,
-      ).padStart(11)}  ${String(r.firstClearXp).padStart(12)}`,
+      ).padStart(11)}`,
   );
   return [head, ...rows, "", xpHead, ...xpRows].join("\n");
 }
