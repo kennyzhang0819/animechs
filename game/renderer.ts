@@ -259,6 +259,12 @@ const WET_TINT: ReadonlyArray<RGB> = HP_TINT.map(
  *  "dark" — a badly hurt tower is grey too, and the two have to read
  *  apart at a glance without the smoke's help */
 const TOWER_DARK: RGB = [0.3, 0.3, 0.4];
+/** a structure STILL GOING UP (Sim.updateBuilds): the scaffold blue the
+ *  build ghost is drawn in, so a half-raised turret reads as the ghost it
+ *  just was rather than as a turret that is nearly dead. It is also drawn
+ *  translucent (BUILD_ALPHA) — the shell is not solid yet */
+const TOWER_BUILDING: RGB = [0.54, 0.64, 1];
+const BUILD_ALPHA = 0.55;
 /**
  * The same trick for the HUNGRY status (the Hungry mutator): the hue
  * multiplied into whatever the unit was already drawn in, one table per
@@ -2001,18 +2007,23 @@ export class Renderer {
       // fight — and smokes like them too (Sim.fireTowers); an ENTOMBED one
       // goes dark blue instead — a state, not a wound
       let tint: readonly [number, number, number];
-      if (t.tombShieldTower >= 0) tint = TOWER_DARK;
+      // a SHELL first (buildT): the hp ramp would read it as a wreck —
+      // it is on 1 hp — when what it actually is is unfinished
+      const raising = t.buildT > 0;
+      if (raising) tint = TOWER_BUILDING;
+      else if (t.tombShieldTower >= 0) tint = TOWER_DARK;
       else {
         const t3 = (t.hp * 3) / towerMaxHp(t.kind);
         tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
       }
+      const a = raising ? BUILD_ALPHA : 1;
       // a wall is its art and nothing else: no base under it, no turning
       if (TOWERS[t.kind].wall) {
-        this.push(dyn, t.x, t.y, px, px, 0, UV_TURRETS[t.kind], tint[0], tint[1], tint[2], 1);
+        this.push(dyn, t.x, t.y, px, px, 0, UV_TURRETS[t.kind], tint[0], tint[1], tint[2], a);
         continue;
       }
-      this.push(dyn, t.x, t.y, px, px, 0, base, tint[0], tint[1], tint[2], 1);
-      this.push(dyn, t.x, t.y, px, px, t.angle, UV_TURRETS[t.kind], tint[0], tint[1], tint[2], 1);
+      this.push(dyn, t.x, t.y, px, px, 0, base, tint[0], tint[1], tint[2], a);
+      this.push(dyn, t.x, t.y, px, px, t.angle, UV_TURRETS[t.kind], tint[0], tint[1], tint[2], a);
     }
     // the shieldTowers, AFTER the towers: a shield tower that entombed a turret is
     // drawn over it, which is the whole picture — the turret is under the
