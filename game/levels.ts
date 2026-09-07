@@ -1,5 +1,5 @@
 import { CELL, HP0, UNIT_SPEED, UR } from "./constants";
-import { addDrop, dropForTier, emptyDrop, LIVES_START, type Drop } from "./economy";
+import { addDrop, dropForTier, emptyDrop, type Drop } from "./economy";
 import { explain, type SaveResult } from "./types";
 // type only — mutation.ts must never depend on the campaign, and this
 // import must never become a value one or the two files form a cycle
@@ -1067,33 +1067,25 @@ export function waveGroups(
  *              is sent again and again, each repeat a level tougher
  *              (Sim.loadStep) — a tide that does not stop until time does.
  *
- * `lives` is the base's health for the mission (LIVES_START when unset).
- * A "no leaks" map is a hold with lives: 1 — the same script, played
- * without a safety net.
+ * Either way THE CORE IS THE STAKE: the swarm walks at it and shoots it
+ * (CORE_HP in constants.ts), and the run is lost the moment it falls.
+ * Nothing leaks and nothing is counted in lives — a body that reaches the
+ * core is a body at the core, chewing on it.
  */
 export type Mission =
-  | { kind: "hold"; lives?: number }
-  | { kind: "survive"; minutes: number; lives?: number };
-
-/** the base's health a mission grants */
-export const missionLives = (m: Mission): number => Math.max(1, Math.floor(m.lives ?? LIVES_START));
+  | { kind: "hold" }
+  | { kind: "survive"; minutes: number };
 
 /** the mission as the deploy panel and the HUD say it: a headline and a clause */
 export function missionText(spec: LevelSpec): { title: string; detail: string } {
   const m = spec.mission;
-  const lives = missionLives(m);
   const waves = spec.script.length;
   if (m.kind === "survive")
     return {
       title: `Survive ${m.minutes} minutes`,
-      detail:
-        lives === 1
-          ? "The waves do not stop until the clock does. One leak ends it."
-          : `The waves do not stop until the clock does. ${lives} lives.`,
+      detail: "The waves do not stop until the clock does. The core must stand.",
     };
-  return lives === 1
-    ? { title: `No leaks — ${waves} waves`, detail: "Clear every wave. A single leak ends it." }
-    : { title: `Hold the line — ${waves} waves`, detail: `Clear every wave. ${lives} lives.` };
+  return { title: `Hold the line — ${waves} waves`, detail: "Clear every wave. The core must stand." };
 }
 
 export interface LevelSpec {
@@ -1110,7 +1102,7 @@ export interface LevelSpec {
   /**
    * WHAT THIS MAP ASKS OF A RUN — the mission (see Mission). Every map is
    * its own assignment, the way a co-op map is: hold the line for every
-   * wave, or last the clock out, with as many lives as the mission grants.
+   * wave, or last the clock out, with the core standing at the end of it.
    */
   mission: Mission;
   /**
@@ -1266,7 +1258,7 @@ export const WORLDS: LevelSpec[] = [
     id: "1",
     name: "Confluence",
     map: "confluence",
-    // THE OPENING ASSIGNMENT: hold every wave with the full hundred lives
+    // THE OPENING ASSIGNMENT: hold every wave with the core standing
     mission: { kind: "hold" },
     waveGap: 15,
     // ================= HOW TO AUTHOR A WAVE ========================
@@ -1405,9 +1397,8 @@ export const WORLDS: LevelSpec[] = [
     // the naval line, at seven tenths of the bodies in the first stage
     // and nine in the last; its first twenty waves send no tier-3 body,
     // so the heavies arrive with the turrets that can hurt them. Forty
-    // rather than fifty because the last ten were the tier-5 hulls, and a
-    // hundred lives did not survive them on this front — the headless
-    // playtest holds the forty with sixty-odd to spare
+    // rather than fifty because the last ten were the tier-5 hulls, and
+    // the base did not survive them on this front
     mission: { kind: "hold" },
     intrinsicMutation: ["amphibious"],
     waveGap: 15,

@@ -28,15 +28,15 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 - Rivers are deep bank to bank. Shallow only at a ford. No footholds off a road on a bank.
 - Crossings between islands: 21 to 60 cells. A bar (bare shallow) no more than 44.
 
-## Doors and goals
+## Doors and the core
 
-- Every exit is on a border. Exits are a per-cell layer mask: ground 1, air 2, water 4.
+- The map is sealed: every rim cell is rock. There are no exits — the swarm's only destination is the core.
 - Spawns are per layer and independent. Boss zones are terrain-blind.
-- Every non-boss zone reaches an exit on its own layer.
-- No gate is a short cut: runs to the edge within 15% of each other.
-- The choke holds: wall it and no gate still reaches an exit.
+- Every non-boss ground zone reaches the core on foot; every water zone reaches the water nearest it.
+- No gate is a short cut: runs to the core within 15% of each other.
+- The choke holds: wall it and no gate still reaches the core.
 - Open == reachable from the gates.
-- The base stands on road, near the exit edge, and the road runs past it and off.
+- The core stands on open ground at the END of the lane, where the exits used to be, with its 5x5 basin carved open.
 
 ## Room to build
 

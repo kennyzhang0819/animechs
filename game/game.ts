@@ -47,11 +47,11 @@ export interface UiState {
   buildKind: TowerKind | null;
   /** the demolish tool is picked: the next press sells instead of selecting */
   paused: boolean;
-  /** the base is destroyed — the field is frozen behind the score screen */
+  /** the core is destroyed — the field is frozen behind the score screen */
   lost: boolean;
-  /** the base's remaining health out of LIVES_START (economy.ts) */
-  lives: number;
-  livesMax: number;
+  /** the core's health pool (CORE_HP in constants.ts) — the run itself */
+  coreHp: number;
+  coreHpMax: number;
   /** the mission is met (Sim.won) — the success screen takes over */
   won: boolean;
   /** what this map asks (levels.ts): the HUD says it the way the deploy panel did */
@@ -90,7 +90,6 @@ export interface UiState {
 export interface Stats {
   units: number;
   kills: number;
-  leaked: number;
   simMs: number;
   fps: number;
   zoom: number;
@@ -107,9 +106,9 @@ const REFUNDS = (): Record<TowerKind, number> =>
 
 /**
  * The multipliers a save has BEFORE the track hands it any — just the
- * pace the game runs at. 2x and 4x are level rewards (track.ts), so what
- * a player gets is read off their save (TechState.speeds) rather than
- * written here; 8x and 16x are sandbox tools and never earned.
+ * pace the game runs at. 2x is a level reward (track.ts), so what a
+ * player gets is read off their save (TechState.speeds) rather than
+ * written here; 4x, 8x and 16x are sandbox tools and never earned.
  */
 export const BASE_SPEEDS: readonly number[] = [1];
 
@@ -866,8 +865,8 @@ export class Game {
       speed: this.speed,
       showRoutes: this.showRoutes,
       lost: this.sim.lost(),
-      lives: this.sim.lives,
-      livesMax: this.sim.livesMax,
+      coreHp: Math.ceil(this.sim.core.hp),
+      coreHpMax: this.sim.core.hpMax,
       won: this.won(),
       mission: this.sim.level.mission,
       timeLeft: Math.max(0, this.sim.deadline - this.sim.time),
@@ -923,7 +922,6 @@ export class Game {
     return {
       units: this.sim.n,
       kills: this.sim.kills,
-      leaked: this.sim.leaked,
       simMs: this.simEma,
       fps: Math.round(this.fpsEma),
       zoom: this.zoom,

@@ -1,7 +1,7 @@
 import { FxKind, type RGB } from "./types";
 
 export const COLS = 256;
-export const ROWS = 192;
+export const ROWS = 256;
 export const CELL = 20; // one Mindustry ground tile
 export const W = COLS * CELL;
 export const H = ROWS * CELL;
@@ -395,7 +395,51 @@ export interface TowerStats {
   // overkilling it.)
   sort?: "strongest";
   bullet: BulletStats;
+  /**
+   * A WALL: no gun, no rotation, no reload — a pool on a footprint. The
+   * fire loop skips it (Sim.fireTowers), the renderer draws its art flat
+   * with no turret base under it, and its pool is scaled by WALL_HP_SCALE
+   * rather than TOWER_HP_SCALE (towerMaxHp). `bullet` is NO_BULLET so the
+   * record stays exhaustive; nothing ever fires it.
+   */
+  wall?: true;
 }
+
+/** the bullet a wall carries: nothing, and it never leaves */
+const NO_BULLET: BulletStats = {
+  speed: 0,
+  damage: 0,
+  lifetime: 0,
+  splash: 0,
+  splashRadius: 0,
+  collidesAir: false,
+  collidesGround: false,
+};
+
+/**
+ * One wall's stats. Mindustry's own health per tile is 80 for copper, 110
+ * for titanium and 200 for thorium, times 4 for the block (Blocks.java:
+ * copperWall health = 80 * wallHealthMultiplier, wallHealthMultiplier 4),
+ * and the large walls are size 2 at four times that again (health = 80 *
+ * 4 * wallHealthMultiplier), exactly as upstream.
+ */
+const wallStats = (name: string, health: number, size = 1): TowerStats => ({
+  name,
+  size,
+  health,
+  range: 0,
+  reload: 1,
+  shots: 0,
+  shotDelay: 0,
+  spread: 0,
+  inaccuracy: 0,
+  shootCone: 0,
+  rotateSpeed: 0,
+  targetAir: false,
+  targetGround: false,
+  bullet: NO_BULLET,
+  wall: true,
+});
 
 export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // Duo, 1:1 from mindustry/content/Blocks.java with copper ammo
@@ -1245,6 +1289,13 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.bulletYellowBack,
     },
   },
+  // THE WALLS — see wallStats. Health is Mindustry's own per block
+  "copper-wall": wallStats("Copper Wall", 320),
+  "titanium-wall": wallStats("Titanium Wall", 440),
+  "thorium-wall": wallStats("Thorium Wall", 800),
+  "copper-wall-large": wallStats("Large Copper Wall", 1280, 2),
+  "titanium-wall-large": wallStats("Large Titanium Wall", 1760, 2),
+  "thorium-wall-large": wallStats("Large Thorium Wall", 3200, 2),
 };
 
 /**
@@ -1286,6 +1337,12 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   spectre: "A twin-barrel heavy machine gun with the highest sustained damage in the game, alternating between barrels so it never stops firing.",
   meltdown: "Holds a continuous laser on one target, burning through it for as long as it stays in range. Twice the damage to a hull.",
   foreshadow: "An extreme-range railgun firing one enormous shot on a long reload. It picks the highest-health target in range rather than the nearest.",
+  "copper-wall": "A cheap wall. It shoots nothing and stops everything: the swarm has to chew through it to get at what stands behind, and it holds far more than a turret its size.",
+  "titanium-wall": "A sturdier wall. Half again the pool of copper for a lane that takes real fire, and still cheap enough to line a whole crossing with.",
+  "thorium-wall": "The heavy wall. Two and a half copper walls in one tile — what a scepter is meant to break its teeth on while the artillery works.",
+  "copper-wall-large": "Four copper walls as one 2x2 block, with four times the pool. One placement where a lane needs a whole plug.",
+  "titanium-wall-large": "Four titanium walls as one 2x2 block, with four times the pool — a crossing sealed in a single placement.",
+  "thorium-wall-large": "Four thorium walls as one 2x2 block. The heaviest thing on the board: a wave breaks on it while everything behind it fires.",
 };
 
 /**
@@ -1335,15 +1392,28 @@ export const targetingLine = (s: TowerStats): string =>
  * stands behind walls and is not meant to take fire; here the turret IS
  * the wall — it stands on open ground in the swarm's path if the player
  * puts it there, and the swarm shoots it with Mindustry's own guns
- * (weapons.ts) — so every pool is TEN TIMES the upstream block health: a
- * duo takes 2,500, a meltdown 32,000. Balance is not done yet and this
- * is the one number it will be done with, alongside the swarm's dial
- * (setUnitDamageScale).
+ * (weapons.ts) — so every pool is FOUR TIMES the upstream block health: a
+ * duo takes 1,000, a meltdown 12,800. It was ten before the walls came;
+ * now that there is a structure whose job is to be hit (WALL_HP_SCALE),
+ * a turret is back to being a gun that wants something in front of it.
+ * Balance is not done yet and these are the numbers it will be done
+ * with, alongside the swarm's dial (setUnitDamageScale).
  */
-export const TOWER_HP_SCALE = 10;
-/** a tower's full pool — Mindustry's health for the block, times the dial */
+export const TOWER_HP_SCALE = 4;
+/**
+ * THE WALLS' DIAL, and it is higher than the turrets' on purpose. A wall
+ * has one job — standing in the lane being chewed — and the swarm here is
+ * thousands of bodies where Mindustry sends dozens, so a wall at
+ * Mindustry's own numbers would be gone before the second wave arrived.
+ * At twelve, a copper wall (320 upstream) holds 3,840, a titanium wall
+ * 5,280 and a thorium wall 9,600: a thorium wall outlasts a spectre
+ * (2,560 x 4 = 10,240) tile for tile by a wide margin, which is the
+ * whole reason to build one in front of it.
+ */
+export const WALL_HP_SCALE = 12;
+/** a structure's full pool — Mindustry's health for the block, times its dial */
 export const towerMaxHp = (kind: import("./types").TowerKind): number =>
-  TOWERS[kind].health * TOWER_HP_SCALE;
+  TOWERS[kind].health * (TOWERS[kind].wall ? WALL_HP_SCALE : TOWER_HP_SCALE);
 
 /**
  * The stats driving one live projectile. Almost always the firing turret's
@@ -1462,6 +1532,13 @@ export const SHRAPNEL = {
 // the DEFAULT base: a 5x5 block of walkable goal cells. A map document
 // may place its own base anywhere (MapData.base), so nothing but the
 // fallback should read BASE directly — the live position is terrain.base
+/**
+ * THE CORE'S HEALTH: Mindustry's core nucleus (6000), scaled like every
+ * other structure (TOWER_HP_SCALE). It is the run: the swarm exists to
+ * knock it down, and the moment it does the run is over (Sim.lost).
+ */
+export const CORE_HP = 6000 * TOWER_HP_SCALE;
+
 export const BASE = { x: 120, y: 33, size: 5 };
 /** every base is this many cells square */
 export const BASE_SIZE = BASE.size;

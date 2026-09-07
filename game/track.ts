@@ -1,5 +1,6 @@
+import { TOWER_DESC, TOWERS } from "./constants";
 import { WORLDS } from "./levels";
-import { BY_MINDUSTRY_VALUE, type TechState } from "./tech";
+import { BAR_SLOTS, BY_MINDUSTRY_VALUE, type TechState } from "./tech";
 import { TOWER_KINDS, type TowerKind } from "./types";
 import {
   ALL_UPGRADES,
@@ -48,10 +49,13 @@ export type Reward =
 
 /** the rewards placed by hand — the structure of the campaign */
 const PLACED: readonly { level: number; reward: Reward }[] = [
-  { level: 2, reward: { kind: "speed", mult: 2 } },
   { level: 3, reward: { kind: "world", worldId: "2" } },
-  { level: 5, reward: { kind: "speed", mult: 4 } },
   { level: 7, reward: { kind: "world", worldId: "3" } },
+  // 2x is the only pace the track hands out, and it is the LAST thing on
+  // it: a run at full pace is the game as designed, and fast-forward is
+  // the reward for having climbed the whole track. 4x and up are sandbox
+  // tools (SPEEDS in game.ts, behind the admin door), never earned
+  { level: MAX_LEVEL, reward: { kind: "speed", mult: 2 } },
 ];
 
 /**
@@ -61,6 +65,10 @@ const PLACED: readonly { level: number; reward: Reward }[] = [
  * defence rather than a duo wall waiting for the track.
  */
 export const STARTING_ROSTER: readonly TowerKind[] = [
+  // the copper wall opens with the guns: a lane with nothing to stand in
+  // it is the one board the swarm walks straight through. The two heavier
+  // walls are dealt up the track with the rest
+  "copper-wall",
   "duo",
   "scatter",
   "hail",
@@ -207,14 +215,26 @@ export function nextRewardLevel(level: number): number | null {
 export function rewardText(r: Reward): string {
   if (r.kind === "world") return `${WORLDS.find((w) => w.id === r.worldId)?.name ?? "A map"} opens`;
   if (r.kind === "speed") return `${r.mult}x speed`;
-  if (r.kind === "turret") return `Turret: ${TOWER_NAME[r.id]}`;
+  if (r.kind === "turret") return `${TOWERS[r.id].wall ? "Wall" : "Turret"}: ${TOWER_NAME[r.id]}`;
   const u = upgradeDef(r.id);
   return `${TOWER_NAME[u.turret]}: ${u.name}`;
 }
 
+/**
+ * WHAT A REWARD DOES, in a sentence — the hover card on a track chip.
+ * An upgrade rung reads its own blurb (upgrades.ts), a turret its card
+ * description (constants.ts), and the maps and paces say what they open.
+ */
+export function rewardBlurb(r: Reward): string {
+  if (r.kind === "world") return "A new map on the deploy screen, with its own front and its own rules.";
+  if (r.kind === "speed") return `Fast-forward: a run may be played at ${r.mult}x pace from the strip under the wave panel.`;
+  if (r.kind === "turret") return TOWER_DESC[r.id];
+  return upgradeDef(r.id).blurb;
+}
+
 /** the turret's display name, as the bar prints it */
 export const TOWER_NAME: Readonly<Record<TowerKind, string>> = Object.fromEntries(
-  TOWER_KINDS.map((k) => [k, k.charAt(0).toUpperCase() + k.slice(1)]),
+  TOWER_KINDS.map((k) => [k, TOWERS[k].name]),
 ) as Record<TowerKind, string>;
 
 /**
@@ -227,7 +247,7 @@ export function techStateFor(level: number): TechState {
   return {
     unlocked: turretsAt(level),
     speeds: speedsAt(level),
-    barSlots: TOWER_KINDS.length,
+    barSlots: BAR_SLOTS,
     upgrades: upgradesAt(level),
   };
 }

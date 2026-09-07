@@ -1,5 +1,4 @@
 import {
-  ALL_MOVE_BITS,
   BASE,
   COLS,
   LAYER_BIT,
@@ -85,20 +84,6 @@ export interface MapData {
    * exactly one spawn representation at runtime
    */
   spawn?: number[];
-  /**
-   * LEGACY exits, read but never written: NCELLS of 0/1, from before exits
-   * were split per movement layer. Every set cell is read as an exit for
-   * ALL layers, which is what one undifferentiated goal band meant.
-   */
-  goal?: number[];
-  /**
-   * THE EXITS, NCELLS of LAYER_BIT masks — ground 1, air 2, water 4, ORed
-   * where a cell serves several. This is what the editor writes now; the
-   * name is new precisely so it can be told apart from the legacy `goal`
-   * array, which holds 0/1 and would otherwise be indistinguishable from a
-   * document whose author had painted ground exits and nothing else.
-   */
-  exits?: number[];
   pines: Prop[];
   decor: Prop[];
   // carved-valley centerline per column — generator metadata the sim's
@@ -134,6 +119,14 @@ export const OFFICIAL_MAP_IDS: readonly string[] = [
   // started from, kept as the reference for what the generator produces —
   // no world names it, so it appears in the editor and nowhere else.
   "seed-24",
+  // MINDUSTRY'S OWN MAPS, imported for their SHAPE (scripts/maps/import-msav.mjs):
+  // the sizes, the canyons, the way a lane bends. References for authoring,
+  // in the editor and nowhere else — no world plays them and no script is
+  // written for them.
+  "ground-zero",
+  "frozen-forest",
+  "cratered-battleground",
+  "biomass-synthesis-facility",
 ];
 
 /**
@@ -194,7 +187,6 @@ export type PaintKind =
   | "pine"
   | "decor"
   | "spawn"
-  | "goal"
   | "erase"
   | "path"
   | "base"
@@ -462,19 +454,6 @@ export const PALETTE: readonly PaletteSet[] = [
   // clears the ground it lands on, since a walled base is unreachable
   { id: "base", label: "Base", kind: "base", variants: [0], noRandom: true,
     icons: ["/mindustry/sprites/blocks/storage/core-nucleus.png"] },
-  // THE EXITS: where the swarm is trying to GET TO, one variant per
-  // movement layer (the variant indexes MOVE_LAYERS). Like drop zones this
-  // is a data layer the game never draws — the floor underneath shows
-  // through and the editor marks it in the overlay.
-  //
-  // Painting is per layer and additive: a cell can be a ground exit and an
-  // air exit at once, and the eraser takes back only the layer in hand. A
-  // map with any exit at all routes to them instead of to its base, and a
-  // LAYER with none falls back to the union of the rest, so painting only
-  // the ground exits never strands the flyers (see Sim.exitsFor).
-  { id: "goal", label: "Exit", kind: "goal",
-    variants: MOVE_LAYERS.map((_, i) => i), noRandom: true,
-    icons: MOVE_LAYERS.map(() => `${ENV}/dark-panel-3.png`) },
   { id: "erase", label: "Erase", kind: "erase", variants: [0], icons: [`${ENV}/clear-editor.png`] },
 ];
 
@@ -502,7 +481,7 @@ export const PALETTE_SECTIONS: readonly { label: string; ids: readonly string[] 
   { label: "Paths", ids: ["path-dirt", "path-darksand", "path-mud"] },
   { label: "Props", ids: ["boulder", "shrub", "spore-cluster", "pur-bush", "shale-boulder",
     "snow-boulder", "sand-boulder"] },
-  { label: "Zones", ids: ["spawn", "goal", "base"] },
+  { label: "Zones", ids: ["spawn", "base"] },
   { label: "Tools", ids: ["erase"] },
 ];
 
@@ -666,9 +645,6 @@ export function zoneKindsOf(m: MapData, blocked: Uint8Array): Set<ZoneKind> {
 function isPadRow(t: Terrain, y: number): boolean {
   for (let x = 0; x < COLS; x++) {
     const i = y * COLS + x;
-    // a goal cell makes a row real however untouched it otherwise looks —
-    // trimming one away would silently delete the swarm's destination
-    if (t.goal[i] !== 0) return false;
     if (t.blocked[i] !== 1 || t.floor[i] !== 3 || t.wall[i] !== 5 || t.spawn[i] !== 0) return false;
   }
   return !t.pines.some((p) => p.y === y) && !t.decor.some((p) => p.y === y);
@@ -721,7 +697,6 @@ export function mapFromTerrain(
 ): MapData {
   const rows = height ? Math.max(1, Math.min(ROWS, Math.floor(height))) : contentRows(t);
   const n = rows * COLS;
-  const exits = Array.from(t.goal.subarray(0, n));
   return {
     id,
     name,
@@ -733,11 +708,6 @@ export function mapFromTerrain(
     floor: Array.from(t.floor.subarray(0, n)),
     wall: Array.from(t.wall.subarray(0, n)),
     blocked: Array.from(t.blocked.subarray(0, n)),
-    // omitted entirely on a base map, so its document stays as it was.
-    // Written as `exits` rather than `goal`: the values are LAYER MASKS
-    // now, and a reader has to be able to tell a 1 that means "ground
-    // only" from a legacy 1 that meant "everyone"
-    ...(exits.some((g) => g !== 0) ? { exits } : {}),
     // drop zones are authored, not painted: the per-cell layer is derived
     // from them on load, so writing it back out would be writing a cache
     spawns: t.spawns.map((c) => ({ ...c })),
@@ -787,22 +757,12 @@ export function terrainFromMap(m: MapData): Terrain {
   const at = m.base ?? m.core;
   const base = { x: at?.x ?? BASE.x, y: at?.y ?? BASE.y, size: BASE.size };
   const spawns = spawnCirclesOf(m, blocked);
-  // THE EXITS, and the one place a pre-layer document is translated: a
-  // legacy `goal` array holds 0/1 and meant "everything comes here", so
-  // every set cell becomes an exit for all three layers. A document that
-  // carries `exits` already holds the mask and is taken as written.
-  const exits = m.exits
-    ? lift(m.exits, 0, sw)
-    : m.goal
-      ? lift(m.goal, 0, sw).map((v) => (v ? ALL_MOVE_BITS : 0))
-      : new Uint8Array(NCELLS);
   return {
     floor,
     wall: lift(m.wall, 5, sw),
     blocked,
     spawns,
     spawn: rasterizeSpawns(spawns, { blocked, floor }),
-    goal: exits,
     pines: m.pines.map((p) => ({ ...p })),
     decor: m.decor.map((p) => ({ ...p })),
     valleyY: m.valleyY

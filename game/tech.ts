@@ -25,13 +25,21 @@ export interface TechState {
    * track's paces (speedsAt).
    */
   speeds: readonly number[];
-  /** how many turrets the build bar holds — the whole roster now */
+  /** how many turrets the build bar holds — BAR_SLOTS, on every save */
   barSlots: number;
   /** each turret's upgrade rungs, as the sim folds them (upgradedTower) */
   upgrades: Record<TowerKind, UpgradePoints>;
 }
 
 export { upgradedTower, NO_UPGRADES, type UpgradeContext, type UpgradePoints };
+
+/**
+ * THE BUILD BAR'S WIDTH: eight seed slots, PvZ-style, on every save. The
+ * roster is seventeen turrets and grows with the level (track.ts), so past
+ * eight the player curates — the loadout picker beside the bar is where a
+ * turret is swapped in — and the bar never has to scroll on a laptop.
+ */
+export const BAR_SLOTS = 8;
 
 /**
  * MINDUSTRY'S OWN PRICE FOR EACH TURRET, in a single number: the build
@@ -57,6 +65,14 @@ export const MINDUSTRY_VALUE: Record<TowerKind, number> = {
   spectre: 1552.5,
   meltdown: 1795,
   foreshadow: 2500,
+  // six of an item each (Blocks.java) at the item values the turrets use
+  "copper-wall": 3,
+  "titanium-wall": 9,
+  "thorium-wall": 15,
+  // twenty-four of an item each, so each large wall sorts after its small
+  "copper-wall-large": 12,
+  "titanium-wall-large": 36,
+  "thorium-wall-large": 60,
 };
 
 /** the roster, cheapest first — the one order every list of turrets uses */

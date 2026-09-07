@@ -21,7 +21,6 @@
  *   --tier <n>       rung, 0-based (default 0 — no rolled mutators)
  *   --mutators a,b   mutators to play under (default none; intrinsic ones always apply)
  *   --level <n>      player level for the track's upgrades (default 1 — stock turrets)
- *   --lives <n>      override the mission's lives
  *   --scale <x>      multiply every turret price (default 1)
  *   --unit-damage <x>  the swarm's damage to structures, as a multiple of Mindustry's (default: the shipped dial, weapons.ts)
  *   --start <n>      opening scrap (default SCRAP_START)
@@ -60,7 +59,6 @@ const WORLD_ID = String(opt("world", "1"));
 const TIER = +opt("tier", 0);
 const MUTATORS = String(opt("mutators", "")).split(",").filter(Boolean);
 const LEVEL = +opt("level", 1);
-const LIVES = opt("lives", null);
 const SCALE = +opt("scale", 1);
 const UNIT_DAMAGE = opt("unit-damage", null);
 const START = opt("start", null);
@@ -123,7 +121,6 @@ if (!world) {
   process.exit(1);
 }
 const spec = { ...LA.specForTier(world, TIER), mutation: MUTATORS };
-if (LIVES !== null) spec.mission = { ...spec.mission, lives: +LIVES };
 
 // ---------- the bot ----------
 
@@ -368,11 +365,6 @@ function play() {
     for (const [k, n] of Object.entries(sim.towerCounts())) if (n > 0) out[k] = n;
     return out;
   };
-  const leaks = () => {
-    const out = {};
-    L.UNIT_KINDS.forEach((k, i) => { if (sim.leakedByKind[i] > 0) out[k] = sim.leakedByKind[i]; });
-    return out;
-  };
 
   let rot = 0;
   const log = [];
@@ -398,7 +390,7 @@ function play() {
       reweigh(w);
       if (w % LOG_EVERY === 0 || w === 1)
         log.push({
-          wave: w, time: Math.round(sim.time), lives: sim.lives, leaked: sim.leaked,
+          wave: w, time: Math.round(sim.time), core: Math.round((100 * sim.core.hp) / sim.core.hpMax),
           scrap: Math.round(sim.scrap), towers: sim.towers.length, counts: counts(),
         });
     }
@@ -409,8 +401,8 @@ function play() {
     mutators: [...(world.intrinsicMutation ?? []), ...MUTATORS], level: LEVEL,
     scale: SCALE, start: E.SCRAP_START, unitDamage: WP.unitDamageScale(),
     outcome: won ? "WON" : sim.lost() ? "LOST" : "TIMEOUT",
-    wave: sim.currentWave(), time: Math.round(sim.time), lives: sim.lives, livesMax: sim.livesMax,
-    kills: sim.kills, leaked: sim.leaked, leaks: leaks(), loopLevel: sim.loopLevel,
+    wave: sim.currentWave(), time: Math.round(sim.time), core: Math.round((100 * sim.core.hp) / sim.core.hpMax),
+    kills: sim.kills, loopLevel: sim.loopLevel,
     towers: sim.towers.length, counts: counts(),
     scrapEarned: Math.round(sim.scrapEarned), scrapLeft: Math.round(sim.scrap),
     wall: Math.round((Date.now() - t0) / 1000), log,
@@ -427,14 +419,13 @@ if (JSON_OUT) {
       `${r.scale !== 1 ? ` — prices x${r.scale}` : ""} — unit damage x${r.unitDamage}`,
   );
   console.log(
-    `${r.outcome} at wave ${r.wave}, ${mmss(r.time)} in — lives ${r.lives}/${r.livesMax}, kills ${r.kills}, leaked ${r.leaked}` +
+    `${r.outcome} at wave ${r.wave}, ${mmss(r.time)} in — core ${r.core}%, kills ${r.kills}` +
       `${r.loopLevel ? `, tide +${r.loopLevel} levels` : ""} — ${r.towers} turrets, scrap earned ${r.scrapEarned} (${r.scrapLeft} unspent) — ${r.wall}s wall`,
   );
-  if (r.leaked > 0) console.log(`leaks: ${Object.entries(r.leaks).map(([k, n]) => `${k} ${n}`).join(", ")}`);
   console.log(`board: ${Object.entries(r.counts).map(([k, n]) => `${k} ${n}`).join(", ")}`);
   for (const l of r.log)
     console.log(
-      `  w${String(l.wave).padStart(2)} ${mmss(l.time).padStart(5)}  lives ${String(l.lives).padStart(3)}  leaked ${String(l.leaked).padStart(3)}  scrap ${String(l.scrap).padStart(6)}  turrets ${String(l.towers).padStart(4)}  ${Object.entries(l.counts).map(([k, n]) => `${k} ${n}`).join(", ")}`,
+      `  w${String(l.wave).padStart(2)} ${mmss(l.time).padStart(5)}  core ${String(l.core).padStart(3)}%  scrap ${String(l.scrap).padStart(6)}  turrets ${String(l.towers).padStart(4)}  ${Object.entries(l.counts).map(([k, n]) => `${k} ${n}`).join(", ")}`,
     );
 }
 process.exit(r.outcome === "WON" ? 0 : 2);

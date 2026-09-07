@@ -50,9 +50,9 @@ export async function POST(req: Request): Promise<NextResponse> {
       );
   }
 
-  // `goal` and the legacy per-cell `spawn` layer are optional; when present
-  // they are indexed the same way, so they get the same length rule
-  for (const [name, layer] of [["spawn", map.spawn], ["goal", map.goal]] as const) {
+  // the legacy per-cell `spawn` layer is optional; when present it is
+  // indexed the same way, so it gets the same length rule
+  for (const [name, layer] of [["spawn", map.spawn]] as const) {
     if (layer === undefined) continue;
     if (!Array.isArray(layer) || layer.length !== len)
       return NextResponse.json(

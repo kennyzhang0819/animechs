@@ -25,4 +25,10 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   spectre: `${T}/spectre.png`,
   meltdown: `${T}/meltdown.png`,
   foreshadow: `${T}/foreshadow.png`,
+  "copper-wall": "/mindustry/sprites/blocks/walls/copper-wall.png",
+  "titanium-wall": "/mindustry/sprites/blocks/walls/titanium-wall.png",
+  "thorium-wall": "/mindustry/sprites/blocks/walls/thorium-wall.png",
+  "copper-wall-large": "/mindustry/sprites/blocks/walls/copper-wall-large.png",
+  "titanium-wall-large": "/mindustry/sprites/blocks/walls/titanium-wall-large.png",
+  "thorium-wall-large": "/mindustry/sprites/blocks/walls/thorium-wall-large.png",
 };

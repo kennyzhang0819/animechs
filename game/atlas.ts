@@ -819,6 +819,21 @@ export const UV_TOWER_BASE4 = uv(1152, 2976, 128, 128);
  */
 export const UV_SHIELD_TOWER = uv(1312, 2976, 96, 96);
 
+/**
+ * THE WALLS: 32px block art upscaled 2x into 64px cells like duo's, on
+ * the free row under the vela/arkyid block. They never rotate and have no
+ * turret base — the renderer draws the cell flat over the footprint and
+ * nothing else — and they are outlined like every block so a wall reads
+ * as built rather than as floor.
+ */
+export const UV_COPPER_WALL = uv(1024, 3200, 64, 64);
+export const UV_TITANIUM_WALL = uv(1088, 3200, 64, 64);
+export const UV_THORIUM_WALL = uv(1152, 3200, 64, 64);
+/** the large walls: 64px block art upscaled 2x into 128px cells, like lancer's */
+export const UV_COPPER_WALL_LARGE = uv(1024, 3296, 128, 128);
+export const UV_TITANIUM_WALL_LARGE = uv(1184, 3296, 128, 128);
+export const UV_THORIUM_WALL_LARGE = uv(1344, 3296, 128, 128);
+
 export const UV_CRAWLER_LEG = uv(448, 288, 64, 64);
 export const UV_CRAWLER_BASE = uv(512, 288, 64, 64);
 export const UV_CRAWLER_BODY = uv(576, 288, 64, 64);
@@ -1503,6 +1518,14 @@ const SPRITES = {
   spectre: "/mindustry/sprites/blocks/turrets/spectre.png",
   meltdown: "/mindustry/sprites/blocks/turrets/meltdown.png",
   foreshadow: "/mindustry/sprites/blocks/turrets/foreshadow.png",
+  // the walls, 1x1 block art at Mindustry's 32px
+  copperWall: "/mindustry/sprites/blocks/walls/copper-wall.png",
+  titaniumWall: "/mindustry/sprites/blocks/walls/titanium-wall.png",
+  thoriumWall: "/mindustry/sprites/blocks/walls/thorium-wall.png",
+  // ...and the 2x2 large walls, 64px block art
+  copperWallLarge: "/mindustry/sprites/blocks/walls/copper-wall-large.png",
+  titaniumWallLarge: "/mindustry/sprites/blocks/walls/titanium-wall-large.png",
+  thoriumWallLarge: "/mindustry/sprites/blocks/walls/thorium-wall-large.png",
   missile: "/mindustry/sprites/effects/missile.png",
   missileBack: "/mindustry/sprites/effects/missile-back.png",
   parallaxLaser: "/mindustry/sprites/effects/parallax-laser.png",
@@ -2330,6 +2353,14 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // NOT drawFacingRight: the structure never rotates, so its art stays
   // exactly as authored
   c.drawImage(antialiased(outlined(img.shieldTower, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1312, 2976, 96, 96);
+  // the walls, flat like the shield tower (they never rotate), 32px
+  // sources upscaled 2x into their 64px cells (see UV_COPPER_WALL)
+  c.drawImage(antialiased(outlined(img.copperWall, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1024, 3200, 64, 64);
+  c.drawImage(antialiased(outlined(img.titaniumWall, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1088, 3200, 64, 64);
+  c.drawImage(antialiased(outlined(img.thoriumWall, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1152, 3200, 64, 64);
+  c.drawImage(antialiased(outlined(img.copperWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1024, 3296, 128, 128);
+  c.drawImage(antialiased(outlined(img.titaniumWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1184, 3296, 128, 128);
+  c.drawImage(antialiased(outlined(img.thoriumWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1344, 3296, 128, 128);
 
   // duo top and 1x1 base: 32px sources upscaled 2x into 64px cells
   drawFacingRight(c, antialiased(outlined(img.duoPreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 160, 480, 64);

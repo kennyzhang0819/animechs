@@ -171,11 +171,21 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
   spectre: 3,
   meltdown: 3,
   foreshadow: 3,
+  // walls are band-1 goods: bought by the dozen from the first wave's income
+  "copper-wall": 1,
+  "titanium-wall": 1,
+  "thorium-wall": 1,
+  "copper-wall-large": 1,
+  "titanium-wall-large": 1,
+  "thorium-wall-large": 1,
 };
 
 /** every turret of one tier, in roster order */
+/** the GUNS of a band — the walls are priced in band 1 but are not what
+ *  a stage is audited against: a lane of walls is bought beside the guns,
+ *  not instead of them, and would drag the band's mean price down */
 export const towersOfTier = (tier: TowerTier): TowerKind[] =>
-  TOWER_KINDS.filter((k) => TOWER_TIER[k] === tier);
+  TOWER_KINDS.filter((k) => TOWER_TIER[k] === tier && !TOWERS[k].wall);
 
 /**
  * THE STAGES OF A RUN, as 1-based inclusive wave ranges — the three
@@ -234,6 +244,17 @@ export const TOWER_PRICE: Record<TowerKind, number> = {
   spectre: 7500,
   meltdown: 9000,
   foreshadow: 12000,
+  // WALLS: a third of a duo for copper, so a lane is lined for the price
+  // of a few guns, and the heavier two priced at what their pool is worth
+  // against it (see WALL_HP_SCALE in constants.ts)
+  "copper-wall": 20,
+  "titanium-wall": 50,
+  "thorium-wall": 120,
+  // the large walls are four of the small at the small's price a tile —
+  // the same deal Mindustry makes (six items a tile either way)
+  "copper-wall-large": 80,
+  "titanium-wall-large": 200,
+  "thorium-wall-large": 480,
 };
 
 const priceOverrides = new Map<TowerKind, number>();
@@ -336,33 +357,6 @@ export function levelProgress(xp: number): { level: number; into: number; need: 
  * (grantRunReward), so it stacks: Level 10 on a random map is x3.70 x1.25.
  */
 export const RANDOM_MAP_XP_BONUS = 0.25;
-
-// ---------------------------------------------------------------------------
-// LIVES
-// ---------------------------------------------------------------------------
-
-/**
- * THE BASE'S HEALTH. A hundred, flat, on every save and every rung —
- * plating is not sold any more (the Extra Lives node is gone). A run is
- * won for as long as any is left.
- */
-export const LIVES_START = 100;
-
-/**
- * WHAT A LEAK COSTS, by the tier of the body that walked off the board.
- * Indexed by tier like DROP_BY_TIER (index 0 unused). A dagger is a
- * scratch, a scepter is a wound, and a hundred lives is twelve tier-4
- * leaks or a hundred daggers — which is what makes the number a resource
- * to spend rather than a countdown of bodies.
- */
-export const LEAK_LIVES_BY_TIER: readonly number[] = [0, 1, 2, 4, 8, 16];
-
-/** lives one leaked body of this tier takes; a boss takes them all */
-export function leakCost(tier: number, boss = false): number {
-  if (boss) return LIVES_START;
-  const i = Math.max(1, Math.floor(tier));
-  return LEAK_LIVES_BY_TIER[Math.min(i, LEAK_LIVES_BY_TIER.length - 1)];
-}
 
 // ---------------------------------------------------------------------------
 // display

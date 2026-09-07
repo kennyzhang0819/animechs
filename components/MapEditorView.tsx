@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MapEditor, PATH_WIDTHS, type BrushShape } from "@/game/editor";
 import { SPAWN_RADII, SPAWN_RADIUS_DEFAULT } from "@/game/maps";
-import { MOVE_LAYERS, ZONE_KINDS } from "@/game/constants";
+import { ZONE_KINDS } from "@/game/constants";
 import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
 import {
   PALETTE,
@@ -19,7 +19,6 @@ const LAYER_ROWS: ReadonlyArray<[keyof TerrainLayers, string]> = [
   ["wall", "Hills"],
   ["props", "Props"],
   ["spawn", "Spawn pads"],
-  ["goal", "Exits"],
   ["base", "Base"],
 ];
 
@@ -275,7 +274,6 @@ export default function MapEditorView({
       ed.layers.wall !== layers.wall ||
       ed.layers.props !== layers.props ||
       ed.layers.spawn !== layers.spawn ||
-      ed.layers.goal !== layers.goal ||
       ed.layers.base !== layers.base
     ) {
       ed.layers = { ...layers };
@@ -632,10 +630,8 @@ export default function MapEditorView({
                         const active =
                           setId === set.id && ((randomize && !set.noRandom) || variant === v);
                         const zone = set.kind === "spawn" ? ZONE_KINDS[v] : null;
-                        const layer = set.kind === "goal" ? MOVE_LAYERS[v] : null;
-                        const swatch = zone ?? layer;
-                        const name = swatch
-                          ? `${ZONE_LABELS[swatch]} ${set.kind === "spawn" ? "drop zone" : "exit"}`
+                        const name = zone
+                          ? `${ZONE_LABELS[zone]} drop zone`
                           : randomize && set.icons.length > 1
                             ? `${set.label} (random of ${set.icons.length})`
                             : `${set.label}${set.icons.length > 1 ? ` ${v + 1}` : ""}`;
@@ -658,10 +654,10 @@ export default function MapEditorView({
                               alt=""
                               className="h-8 w-8 [image-rendering:pixelated]"
                             />
-                            {swatch && (
+                            {zone && (
                               <span
                                 className="absolute inset-x-1 bottom-0.5 h-1 rounded-sm"
-                                style={{ background: zoneStyle(swatch).css }}
+                                style={{ background: zoneStyle(zone).css }}
                               />
                             )}
                             {randomize && !set.noRandom && set.icons.length > 1 && (
@@ -687,8 +683,6 @@ export default function MapEditorView({
               const set = PALETTE.find((p) => p.id === setId) ?? PALETTE[0];
               if (set.kind === "spawn")
                 return `${ZONE_LABELS[ZONE_KINDS[Math.min(variant, ZONE_KINDS.length - 1)]]} drop zone`;
-              if (set.kind === "goal")
-                return `${ZONE_LABELS[MOVE_LAYERS[Math.min(variant, MOVE_LAYERS.length - 1)]]} exit`;
               return set.label;
             })()}
           </div>

@@ -974,6 +974,14 @@ export const TURRET_UPGRADES: Record<TowerKind, readonly TurretUpgradeDef[]> = {
   spectre: SPECTRE,
   meltdown: MELTDOWN,
   foreshadow: FORESHADOW,
+  // a wall has nothing to upgrade: its one stat is its pool, and that is
+  // the dial in constants.ts (WALL_HP_SCALE), not a rung on the track
+  "copper-wall": [],
+  "titanium-wall": [],
+  "thorium-wall": [],
+  "copper-wall-large": [],
+  "titanium-wall-large": [],
+  "thorium-wall-large": [],
 };
 
 /** every upgrade def, flat — what tech.ts turns into nodes */

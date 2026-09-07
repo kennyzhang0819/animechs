@@ -8,8 +8,6 @@ import {
   W as W_IMPORT,
   H as H_IMPORT,
 } from "./constants";
-import type { Tower } from "./types";
-import { TOWERS } from "./constants";
 import { STRUCTURE_COST } from "./weapons";
 
 // Module-local bindings for the constants blockedPx/hitsWall/sample read:
@@ -69,6 +67,13 @@ export interface Vec2 {
  * spawn list is simply "the cells of my mask a unit of my layer can enter
  * from and actually reach a goal from".
  */
+/** a structure's cells on the field: top-left and edge, in cells */
+export interface Footprint {
+  gx: number;
+  gy: number;
+  size: number;
+}
+
 export class FlowField {
   readonly walk = new Uint8Array(NCELLS); // 1 = impassable to THIS layer
   /**
@@ -170,7 +175,7 @@ export class FlowField {
    * gets here, so the fallback lives in one place instead of two.
    */
   rebuildWalk(
-    towers: readonly Tower[],
+    footprints: readonly Footprint[],
     blockedBase: Uint8Array,
     spawnMask: Uint8Array,
     goalMask: Uint8Array,
@@ -179,8 +184,8 @@ export class FlowField {
     this.walk.set(blockedBase);
     this.soft.fill(0);
     this.isGoal.fill(0);
-    for (const t of towers) {
-      const sz = TOWERS[t.kind].size;
+    for (const t of footprints) {
+      const sz = t.size;
       for (let y = t.gy; y < t.gy + sz; y++)
         for (let x = t.gx; x < t.gx + sz; x++) {
           const i = y * COLS + x;
@@ -189,10 +194,13 @@ export class FlowField {
         }
     }
     // compute() seeds its Dijkstra from EVERY isGoal cell at distance 0,
-    // which is a multi-source shortest path — so painting a band instead of
-    // a block costs nothing and hands every cell the heading to its nearest
-    // exit. A goal cell under a tower is not a goal.
-    for (let i = 0; i < NCELLS; i++) if (goalMask[i] && !this.walk[i]) this.isGoal[i] = 1;
+    // which is a multi-source shortest path. THE CORE IS THE GOAL: its
+    // cells are a structure's — solid to the body, soft to the path — and
+    // a soft goal is still a goal, so every heading leans into the core
+    // and the swarm presses against it and fires. A goal under rock is
+    // not a goal.
+    for (let i = 0; i < NCELLS; i++)
+      if (goalMask[i] && (!this.walk[i] || this.soft[i])) this.isGoal[i] = 1;
   }
 
   private hPush(k: number, v: number): void {
@@ -356,8 +364,11 @@ export class FlowField {
     }
     dist.fill(INF);
     this.hN = 0;
+    // every goal seeds at zero, the core's soft cells included (see
+    // rebuildWalk): the walk from them into the open ground around the core
+    // is what gives every lane its heading
     for (let i = 0; i < NCELLS; i++)
-      if (isGoal[i] && !walk[i]) {
+      if (isGoal[i]) {
         dist[i] = 0;
         this.hPush(0, i);
       }

@@ -393,7 +393,6 @@ async function buildWorld(
     wall: lift(grid.wall, 0),
     spawns: [],
     spawn: new Uint8Array(NCELLS),
-    goal: new Uint8Array(NCELLS),
     pines: [],
     decor,
     valleyY: new Float32Array(COLS),
@@ -409,7 +408,7 @@ async function buildWorld(
   const gw = Math.round(cols * tile * dpr), gh = Math.round(rows * tile * dpr);
   gpu.canvas.width = gw;
   gpu.canvas.height = gh;
-  gpu.renderer.rebuildTerrain({ terrain }, { wall: true, props: true, spawn: false, goal: false, base: false });
+  gpu.renderer.rebuildTerrain({ terrain }, { wall: true, props: true, spawn: false, base: false });
   gpu.renderer.renderTerrain(1, 0, 0, gw / (cols * CELL));
   const ground = document.createElement("canvas");
   ground.width = gw;

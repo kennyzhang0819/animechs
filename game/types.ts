@@ -40,8 +40,46 @@ export const TOWER_KINDS = [
   "spectre",
   "meltdown",
   "foreshadow",
+  // THE WALLS. Not turrets: a structure with no gun and a big pool, built
+  // to stand in the lane and be chewed on while the guns behind it work.
+  // They ride the same roster because the sim, the bar, the prices and the
+  // track all key on TowerKind; `wall` on their stats (constants.ts) is
+  // what tells the fire loop and the renderer to leave them alone
+  "copper-wall",
+  "titanium-wall",
+  "thorium-wall",
+  // ...and their 2x2 variants, Mindustry's own large walls: four tiles of
+  // the same material with four times the pool, for the price of four
+  "copper-wall-large",
+  "titanium-wall-large",
+  "thorium-wall-large",
 ] as const;
 export type TowerKind = (typeof TOWER_KINDS)[number];
+
+/**
+ * THE CORE — the one structure the swarm is on the map to destroy, and the
+ * one it cannot be without. It stands where a map's base does (terrain.base),
+ * it is in the structure grid like a turret (Sim.cellTower) so every unit's
+ * weapons find it the way they find a wall across the lane, and its health
+ * pool (CORE_HP) is the run: at zero the run is lost. Nothing sells it,
+ * nothing buries it, and it fires nothing.
+ */
+export interface Core {
+  core: true;
+  gx: number;
+  gy: number;
+  size: number;
+  x: number;
+  y: number;
+  hp: number;
+  hpMax: number;
+  /** never entombed — kept so the structure helpers read one shape */
+  tombShieldTower: -1;
+}
+
+/** anything the swarm can shoot: a turret, or the core */
+export type Structure = Tower | Core;
+export const isCore = (s: Structure): s is Core => "core" in s;
 
 export interface Tower {
   kind: TowerKind;

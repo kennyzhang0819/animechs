@@ -106,26 +106,6 @@ export interface Terrain {
    * whichever circle was painted last.
    */
   spawn: Uint8Array;
-  /**
-   * WHERE THE SWARM IS TRYING TO GET TO, as a per-cell LAYER MASK: the
-   * LAYER_BIT bits (ground 1, air 2, water 4) of the movement layers that
-   * count this cell as an exit. Zero means the cell is not an exit at all.
-   *
-   * EACH LAYER PATHS TO ITS OWN EXITS AND ONLY ITS OWN. The ground field
-   * seeds its Dijkstra from the ground-bit cells, the water field from the
-   * water-bit cells, and flyers pick the nearest air-bit cell — so a map
-   * can land its air waves on the far side of a ridge its walkers have to
-   * go round, which is the whole reason this stopped being one shared 0/1
-   * layer. A layer with no exits anywhere falls back to the union of every
-   * exit, and a map with none at all falls back to its base (see
-   * Sim.exitsFor), so nothing is ever left without a destination.
-   *
-   * Empty on a map authored before exits existed; documents written before
-   * the layer split carry a plain 0/1 `goal` array, which terrainFromMap
-   * reads as ALL_MOVE_BITS — every layer, which is exactly what one
-   * undifferentiated exit meant.
-   */
-  goal: Uint8Array;
   pines: Prop[]; // blocking tree cells, drawn as overhanging props
   decor: Prop[]; // non-blocking props: boulders, shrubs
   valleyY: Float32Array; // carved main-valley centerline per column
@@ -431,9 +411,6 @@ export function generateTerrain(seed: number): Terrain {
 
   return {
     blocked, floor, wall, spawns, spawn, pines, decor, valleyY,
-    // the procedural terrain has no authored exits, so it plays off its
-    // base exactly as it always has (see Terrain.goal)
-    goal: new Uint8Array(NCELLS),
     base: { ...BASE }, rows: ROWS, cols: COLS,
   };
 }

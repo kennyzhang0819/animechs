@@ -39,8 +39,8 @@ stale tab or a cached bundle looks exactly like a fix not working.
   the water layer and cannot leave it
 - `game/economy.ts` — **the economy**: scrap (in-run money), XP (meta
   progress), the fixed per-tier drop table, the three turret tiers and
-  their scrap prices, the sell refund, the level curve, the random-map
-  bonus, and the base's hundred lives
+  their scrap prices, the sell refund, the level curve and the random-map
+  bonus
 - `game/ladder.ts` — the **ten-rung ladder** (`RUNGS`: the mutator roll
   and the XP bonus each; the enemy-level dial is wired and authored to
   zero), and the audit/check arithmetic over the authored script — the
@@ -68,9 +68,9 @@ stale tab or a cached bundle looks exactly like a fix not working.
   three calls, localStorage in a browser and a file on disk under the
   desktop shell (through the bridge `desktop/src/preload.ts` puts on
   `window`). The only place the game knows it might be on a desktop
-- `game/maps.ts` — map documents: terrain layers, spawn circles, per-layer
-  exit masks — see [docs/authoring-maps.md](docs/authoring-maps.md) for how
-  to draw one and how to check it
+- `game/maps.ts` — map documents: terrain layers, spawn circles, the
+  core's cell — see [docs/authoring-maps.md](docs/authoring-maps.md) for
+  how to draw one and how to check it
 - `game/editor.ts` — the level/map editor model behind the admin views
 - `game/terrain.ts` — terrain from a map document when one exists, else
   seeded value-noise worldgen: mountain ranges, a carved meandering valley
@@ -115,7 +115,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   Water is a batch and a program of its own — Mindustry's `water.frag`,
   ported, so the sea swells and its bright bands drift across the map
 - `game/game.ts` — rAF loop, input, 2d overlay (placement ghost), stats
-- `components/MechSwarm.tsx` — React shell: HUD (scrap, lives, XP), rung
+- `components/MechSwarm.tsx` — React shell: HUD (scrap, core health, XP), rung
   picker, six-slot build bar with prices and its loadout picker, game-speed
   switcher, results screens, canvases
 - `components/MenuBackground.tsx` — the title screen's ground: the game
@@ -268,8 +268,8 @@ next stage's income; what each stage asks is what to stop buying.
 salvo, ripple and spectre (`STARTING_ROSTER` in `game/track.ts`) — and
 the other ten are handed out up the track, cheapest first by Mindustry's
 build cost, one every third level from level 2. Thirty levels, each one
-handing out fixed rewards (`TRACK`) — 2x speed at level 2, Maelstrom at
-3, 4x at 5, Quagmire at 7, the turrets, and the fifty-odd upgrade rungs
+handing out fixed rewards (`TRACK`) — Maelstrom at 3, Quagmire at 7, the
+turrets, 2x speed at the very top, and the fifty-odd upgrade rungs
 dealt across the rest, cheapest tier first, never before their turret,
 ultimates from level 20. A turret the save has not reached rides the build
 bar greyed, with the level that opens it. The progress screen lists the whole track; the results screen
@@ -279,15 +279,15 @@ level 6; the top of the track is about twelve million XP.
 ### Missions
 
 **Every map is its own assignment** (`LevelSpec.mission`): *hold* — clear
-every wave the script sends, with the mission's lives — or *survive* —
+every wave the script sends with the core standing — or *survive* —
 last the clock out; a spent script sends its last wave again, a few enemy
 levels heavier each repeat, until time ends the run. Each map carries
 its own wave script (`public/levels/<id>.json`, edited in the admin level
 editor) — there is no shared blueprint and no family re-casting any more.
 Every shipped map is a hold: Confluence's fifty waves, Maelstrom's fifty
 on the naval front at a six-second gap, Quagmire's forty in the swamp
-against a lighter, tier-2-capped opening — a hundred lives each. The
-survive shape is wired and waiting for a map that wants it.
+against a lighter, tier-2-capped opening. The survive shape is wired and
+waiting for a map that wants it.
 
 **Structures stand anywhere unoccupied, open ground included, and the
 swarm attacks them.** Every unit attack-moves, Mindustry's GroundAI: it
@@ -321,17 +321,22 @@ Mindustry's health, expect the bot to lose every map early. Run it after
 any wave, price, weapon, mutator or unit edit — a map the bot loses is a
 map with a wall in it.
 
-### The base
+### The core
 
-**The base has a hundred lives (`LIVES_START`) and a leak bites by tier**
-(`LEAK_LIVES_BY_TIER`: 1, 2, 4, 8, 16). A run is won for as long as any is
-left. **A boss that reaches the base ends the run** whatever is left — a
-script that builds towards one enemy must not have that enemy become
-something you shrug off.
+**The core is the run.** It stands where the map's base does, it carries
+Mindustry's core nucleus health scaled like every other structure
+(`CORE_HP`, 60,000), and the swarm exists to knock it down: every unit
+paths to it, presses against it and fires (`Sim.coreGoal`, the same
+structure grid the turrets sit in), flyers hover over its edge and shoot,
+hulls park on the nearest water and shoot from the shore
+(`Sim.waterGoal`). Nothing leaks and nothing is counted in lives — a
+body that reaches the core stays there, chewing on it, until one of them
+is gone. **When the core falls the run is lost** (`Sim.lost`), whatever
+else is standing.
 
-**A leak pays nothing.** `killsByKind` is the whole drop ledger and a body
-that walked off the board was never killed, so the scrap and the XP a leak
-costs are what the player would have had for stopping it.
+**A map is sealed.** There are no exit cells and no open edge: the rim is
+rock, the swarm's only way out is through the core, and the core stands at
+the end of the lane the drop zones feed.
 
 ### Mutators
 

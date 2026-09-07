@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
 import { effectiveLevel, levelOf, type Progress } from "@/game/progress";
-import { MAX_LEVEL, rewardText, TRACK, type Reward } from "@/game/track";
+import { MAX_LEVEL, rewardBlurb, rewardText, TRACK, type Reward } from "@/game/track";
 import { BackButton, BoardTabs, type Cam } from "./Board";
 import { itemCount } from "./Items";
 import MutationTree from "./MutationTree";
@@ -43,13 +43,54 @@ const REWARD_COLOR: Record<Reward["kind"], string> = {
   upgrade: "#FFD37F",
 };
 
-function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
+/**
+ * One reward on a track row, with WHAT IT DOES a hover away: the chip
+ * names the thing ("Duo: Rate of Fire") and the card that opens on it
+ * says the effect in a sentence (rewardBlurb). Focusable, so the keyboard
+ * gets the same card the mouse does.
+ *
+ * WHICH WAY IT OPENS IS THE ROW'S CALL. The track's two halves are masked
+ * boxes (see ProgressView), and a card is invisible outside the box its
+ * row lives in — so a climbed row opens its card UP into the rows above
+ * it, a row ahead opens DOWN into the rows below, and the row order's
+ * z-index (TrackRow) keeps a card over the row it hangs across.
+ */
+function RewardChip({
+  reward,
+  reached,
+  dir,
+}: {
+  reward: Reward;
+  reached: boolean;
+  /** which way the card opens — see TrackRow for why it is not always up */
+  dir: "up" | "down";
+}) {
+  const color = REWARD_COLOR[reward.kind];
+  const text = rewardText(reward);
   return (
-    <span
-      className={`ms-badge inline-flex items-center gap-1 ${reached ? "" : "opacity-50"}`}
-      style={{ color: REWARD_COLOR[reward.kind] }}
-    >
-      {rewardText(reward)}
+    <span className="group relative inline-flex">
+      <span
+        tabIndex={0}
+        aria-label={`${text}. ${rewardBlurb(reward)}`}
+        className={`ms-badge inline-flex cursor-default items-center gap-1 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
+          reached ? "" : "opacity-50"
+        }`}
+        style={{ color }}
+      >
+        {text}
+      </span>
+      <span
+        role="tooltip"
+        className={`pointer-events-none absolute left-0 z-10 hidden w-64 border-[3px] p-2.5 text-left normal-case tracking-normal shadow-lg group-hover:block group-focus-within:block ${
+          dir === "up" ? "bottom-full mb-2" : "top-full mt-2"
+        }`}
+        style={{ borderColor: color, background: "#0b0b0d" }}
+      >
+        <span className="block text-[13px] font-bold text-[#EDEDEF]">{text}</span>
+        <span className="mt-1 block text-[12.5px] leading-snug text-[#A6A6AF]">
+          {rewardBlurb(reward)}
+        </span>
+      </span>
     </span>
   );
 }
@@ -63,6 +104,7 @@ function TrackRow({
   current,
   into,
   need,
+  dir,
 }: {
   level: number;
   rewards: readonly Reward[];
@@ -70,14 +112,26 @@ function TrackRow({
   current: boolean;
   into: number;
   need: number;
+  /** is this row above the save's level (a climbed one) or at or below it? */
+  dir: "up" | "down";
 }) {
   const top = level === MAX_LEVEL;
   return (
     <div
       role="listitem"
       aria-current={current ? "step" : undefined}
-      className={`ms-pane flex items-start gap-4 px-4 py-2.5 ${
-        current ? "border-[#FFD37F]" : reached ? "" : "opacity-70"
+      // relative + a z-index that FALLS down the track: a card opening
+      // downward from a row has to paint over the row under it, which is
+      // later in the DOM and would otherwise win. The current row sits
+      // above the climbed box beside it for the same reason (its card
+      // opens up, over that box)
+      style={{ zIndex: current ? 10 : MAX_LEVEL + 1 - level }}
+      // an unreached row is dimmed through its CONTENT (the grey number,
+      // the half-faded chips), never through the row's own opacity: a
+      // hover card is a child of the row, and a translucent row made the
+      // card translucent with it
+      className={`ms-pane relative flex items-start gap-4 px-4 py-2.5 ${
+        current ? "border-[#FFD37F]" : reached ? "" : "border-[#252525]"
       }`}
     >
       <div className="w-16 shrink-0">
@@ -97,7 +151,7 @@ function TrackRow({
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {rewards.map((r, i) => (
-              <RewardChip key={i} reward={r} reached={reached} />
+              <RewardChip key={i} reward={r} reached={reached} dir={dir} />
             ))}
           </div>
         )}
@@ -159,6 +213,7 @@ export default function ProgressView({
         current={l === level && !door}
         into={into}
         need={need}
+        dir={l <= level ? "up" : "down"}
       />
     );
   };

@@ -20,9 +20,8 @@ number the editor prints about a script is true at every rung.
 
 ## Missions
 
-- **hold** — clear every wave. The base has the mission's lives
-  (`LIVES_START` unless the mission says otherwise; a "no leaks" map is a
-  hold with `lives: 1`).
+- **hold** — clear every wave with the core standing. There are no
+  lives: the core carries `CORE_HP` and the run is lost when it falls.
 - **survive** — last `minutes` on the clock. The script plays through and,
   if the clock is still running when it ends, its **last wave is sent
   again** every gap, each repeat `SURVIVE_LOOP_LEVELS` enemy levels

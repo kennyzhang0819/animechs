@@ -69,7 +69,7 @@ import {
   type MutationId,
 } from "@/game/mutation";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
-import { rewardsAt, rewardText, turretUnlockLevel } from "@/game/track";
+import { rewardsAt, rewardText, STARTING_ROSTER } from "@/game/track";
 import { levelProgress, POINT_COLOR, RANDOM_MAP_XP_BONUS, XP_COLOR } from "@/game/economy";
 import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
 import ProgressView from "./Progress";
@@ -684,6 +684,36 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
     name: "Foreshadow",
     icon: "/mindustry/sprites/blocks/turrets/foreshadow.png",
   },
+  {
+    kind: "copper-wall",
+    name: "Copper Wall",
+    icon: "/mindustry/sprites/blocks/walls/copper-wall.png",
+  },
+  {
+    kind: "titanium-wall",
+    name: "Titanium Wall",
+    icon: "/mindustry/sprites/blocks/walls/titanium-wall.png",
+  },
+  {
+    kind: "thorium-wall",
+    name: "Thorium Wall",
+    icon: "/mindustry/sprites/blocks/walls/thorium-wall.png",
+  },
+  {
+    kind: "copper-wall-large",
+    name: "Large Copper Wall",
+    icon: "/mindustry/sprites/blocks/walls/copper-wall-large.png",
+  },
+  {
+    kind: "titanium-wall-large",
+    name: "Large Titanium Wall",
+    icon: "/mindustry/sprites/blocks/walls/titanium-wall-large.png",
+  },
+  {
+    kind: "thorium-wall-large",
+    name: "Large Thorium Wall",
+    icon: "/mindustry/sprites/blocks/walls/thorium-wall-large.png",
+  },
 ];
 
 /** menu entry by kind, for rendering the bar from a list of kinds */
@@ -1141,14 +1171,20 @@ export default function MechSwarm() {
    */
   const barKinds = (): TowerKind[] => {
     if (!hud) return [];
-    // EVERY turret rides the bar. The ones the track has not handed out
-    // yet are greyed with the level that opens them (the badge below), so
-    // the bar is also the answer to "what is there still to earn"
-    const all = ORDERED_MENU.map((t) => t.kind);
-    if (hud.barSlots === null) return all;
-    const picks = new Set(loadout ?? all);
-    const chosen = all.filter((k) => picks.has(k));
-    return (chosen.length > 0 ? chosen : all).slice(0, hud.barSlots);
+    // ONLY turrets the save OWNS ride the bar. What the track has not
+    // handed out yet is not shown at all — not greyed, not badged — the
+    // progress screen is where "what is still to earn" is answered
+    const owned = ORDERED_MENU.filter((t) => !hud.unlocked || hud.unlocked.includes(t.kind)).map(
+      (t) => t.kind,
+    );
+    if (hud.barSlots === null) return owned;
+    // an uncurated save rides the STARTING ROSTER — the seven guns and the
+    // copper wall, one of every job and exactly a bar's worth — rather
+    // than the cheapest eight, which the walls would fill on their own
+    const start = owned.filter((k) => STARTING_ROSTER.includes(k));
+    const picks = new Set(loadout ?? (start.length > 0 ? start : owned));
+    const chosen = owned.filter((k) => picks.has(k));
+    return (chosen.length > 0 ? chosen : owned).slice(0, hud.barSlots);
   };
 
   /**
@@ -1768,16 +1804,10 @@ export default function MechSwarm() {
                       <> / {hud.totalWaves}</>
                     )}
                   </div>
-                  {/* THE BASE'S HEALTH, on its OWN line and only where
-                      there is any to report.
-                      A stock base has one point: the first leak is the loss,
-                      and a "1 / 1" that never moves until the run is over is
-                      a number nobody needs. A plated base is a pool the
-                      player is SPENDING — but minimizing is a request for
-                      the BOARD, and a panel that shrinks to two lines
-                      instead of one has not honoured it. So lives fold away
-                      with the rest and the minimized panel is the wave line
-                      alone. */}
+                  {/* THE CORE'S HEALTH, on its own line: the one pool the run
+                      is played for. It folds away with the rest when the
+                      panel is minimized — that is a request for the BOARD,
+                      and the wave line alone is what honours it. */}
                   {/* ...and the enemy count shares that line, in the same
                       voice. ONE NUMBER, NOT A ROSTER: the per-kind icon row
                       said what was on the field down to the last crawler,
@@ -1785,23 +1815,26 @@ export default function MechSwarm() {
                       wants off this corner is "how much is still coming at
                       me", so that is all it says */}
                   {!hudMin && (
-                    <div className="text-[#71717C]">
-                      Lives{" "}
-                      <span
-                        className="font-bold"
-                        style={{
-                          color:
-                            hud.lives > hud.livesMax / 2
-                              ? "#7BE58A"
-                              : hud.lives > hud.livesMax / 5
-                                ? "#FFD37F"
-                                : "#FF5A5A",
-                        }}
-                      >
-                        {hud.lives}
-                      </span>{" "}
-                      / {hud.livesMax}
-                      {alive > 0 && <span className="mx-2">·</span>}
+                    <div className="flex items-center gap-2 text-[#71717C]">
+                      Core{" "}
+                      <span className="ms-bar h-2.5 w-24" title={`${hud.coreHp} / ${hud.coreHpMax}`}>
+                        <span
+                          className="block h-full"
+                          style={{
+                            width: `${Math.max(0, Math.min(100, (100 * hud.coreHp) / Math.max(1, hud.coreHpMax)))}%`,
+                            background:
+                              hud.coreHp > hud.coreHpMax / 2
+                                ? "#7BE58A"
+                                : hud.coreHp > hud.coreHpMax / 5
+                                  ? "#FFD37F"
+                                  : "#FF5A5A",
+                          }}
+                        />
+                      </span>
+                      <span className="font-bold text-[#EDEDEF]">
+                        {Math.round((100 * hud.coreHp) / Math.max(1, hud.coreHpMax))}%
+                      </span>
+                      {alive > 0 && <span className="mx-1">·</span>}
                       {alive > 0 && (
                         <>
                           <span className="font-bold text-[#EDEDEF]">{alive}</span> enemies
@@ -2005,26 +2038,15 @@ export default function MechSwarm() {
               // carry no number at all
               const price = hud?.scrap === null || !hud ? null : hud.prices[t.kind];
               const poor = price !== null && hud !== null && hud.scrap !== null && hud.scrap < price;
-              // the track (track.ts): a turret the save has not reached yet
-              // rides the bar shut, and the badge says which level opens it.
-              // A null roster is sandbox mode, where nothing is shut
-              const opens = turretUnlockLevel(t.kind);
-              const locked = hud !== null && hud.unlocked !== null && !hud.unlocked.includes(t.kind);
-              const label =
-                locked
-                  ? `${t.name} — unlocks at level ${opens}`
-                  : price === null
-                    ? t.name
-                    : `${t.name} — ${price} scrap`;
+              const label = price === null ? t.name : `${t.name} — ${price} scrap`;
               return (
                 <button
                   key={t.kind}
                   title={label}
                   aria-label={label}
                   aria-pressed={hud?.buildKind === t.kind}
-                  aria-disabled={locked}
                   onClick={() => pickTower(t.kind)}
-                  className={`${TOOL_BTN} ${locked ? "opacity-40" : poor ? "opacity-60" : ""}`}
+                  className={`${TOOL_BTN} ${poor ? "opacity-60" : ""}`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
                   <img
@@ -2035,19 +2057,19 @@ export default function MechSwarm() {
                   {price !== null && (
                     <span
                       className={`text-[13px] font-bold leading-none ${
-                        locked ? "text-[#a2a2a2]" : poor ? "text-[#FF8A8A]" : "text-white"
+                        poor ? "text-[#FF8A8A]" : "text-white"
                       }`}
                     >
-                      {locked ? `L${opens}` : price}
+                      {price}
                     </span>
                   )}
                 </button>
               );
             })}
             {/* the loadout editor's door. Always on the bar in campaign —
-                the SLOTS are the base rule, only their count is sold on the
-                tech tree — and absent in sandbox, where the whole roster
-                shows and there is nothing to curate */}
+                eight slots is the base rule (BAR_SLOTS) — and absent in
+                sandbox, where the whole roster shows and there is nothing
+                to curate */}
             {hud && hud.barSlots !== null && (
               <button
                 title="Edit loadout — pick which turrets ride the bar"
@@ -2120,10 +2142,11 @@ export default function MechSwarm() {
                       );
                     })}
                   </div>
-                  {/* a full bar that could still grow points at the fix */}
-                  {full && (hud.barSlots ?? 0) < 8 && (
+                  {/* a full bar says how to make room; the slot count is
+                      fixed (BAR_SLOTS), so the only way in is a swap */}
+                  {full && (
                     <div className="mt-2 text-center text-[11px] uppercase tracking-widest text-[#71717C]">
-                      More slots are sold on the tech tree
+                      Bar is full — remove a turret to add another
                     </div>
                   )}
                 </>
@@ -2135,7 +2158,7 @@ export default function MechSwarm() {
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="ui-zoom ms-pane-solid w-80 max-w-[calc(100vw-2rem)] border-[#6b2a2a] p-6 text-center">
               <div className="font-display text-xl font-bold uppercase tracking-widest text-[#e55454]">
-                Out of lives
+                Core destroyed
               </div>
               <div className="mt-4 space-y-1 text-base text-[#EDEDEF]">
                 <div>

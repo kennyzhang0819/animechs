@@ -20,20 +20,20 @@ changing the height means resizing the arrays, not setting a field.
 | `wall` | `UV_WALLS` index; `WALL_PINE` (4) and `WALL_DEEP` (7) are blocked but still show their floor |
 | `floor` | `UV_FLOORS` index; `FLOOR_SHALLOW_WATER` 15, `FLOOR_DEEP_WATER` 18, the spore pair 45 and 48 |
 | `spawns` | circles `{x, y, r, zone}`, zone one of `ground` / `air` / `water` / `boss` |
-| `exits` | per-cell **layer mask** — ground 1, air 2, water 4, ORed |
-| `base` | `{x, y}`, top-left cell |
+| `base` | `{x, y}`, the core's top-left cell |
 
-**AN EXIT BELONGS ON A BORDER.** The swarm is walking off the edge of the
-world, past whatever stands in the road; a goal cell in open field is a
-unit marching into the middle of the map and vanishing. confluence's exits
-are the `x=255` column and maelstrom's are the bottom band — put the base
-near that edge, run the lane through it and out, and mark the rim.
+**THE CORE IS THE DESTINATION, AND THE MAP IS SEALED.** There are no exit
+cells any more and no open rim: every border cell is rock, and the swarm
+walks at the core (`Sim.coreGoal`), presses against it and shoots. Put the
+core on open ground at the END of the lane — where the old exit band was —
+with its 5x5 footprint clear (the loader warns about a walled core), and
+run the lane to it. Hulls sail to the water nearest the core and fire
+from the shore (`Sim.waterGoal`), so a naval map wants its core within
+gun reach of the water. `scripts/maps/seal.mjs` does the sealing and the
+core placement for an existing document.
 
-Spawns and exits are per layer and independent: a ground zone only feeds
-ground units, and they only path to cells whose exit mask has bit 1. A
-layer with no exits of its own falls back to the union, then to the base
-(`exitsFor` in `game/sim.ts`), so a missing band degrades rather than
-strands. Boss zones are **terrain-blind** — the boss flies, so it needs no
+Spawns are per layer and independent: a ground zone only feeds ground
+units. Boss zones are **terrain-blind** — the boss flies, so it needs no
 road and no reachable ground under it.
 
 ## Drawing paths
@@ -101,7 +101,7 @@ through.
 The geometry is the map; the floors, the rock families and the clutter
 are its paint, and the paint comes from rules, not from a brush.
 `scripts/maps/dress.mjs` repaints an authored document from a palette and
-writes `blocked`, `exits`, `spawns` and `base` back untouched:
+writes `blocked`, `spawns` and `base` back untouched:
 
 ```
 node scripts/maps/dress.mjs confluence [preview.png]
@@ -165,11 +165,11 @@ you mean a ford.
 A generator that does not verify itself is a generator that quietly ships a
 broken map. Every one of these has caught a real bug:
 
-- **Every spawn zone reaches an exit.** Count the pads inside each circle
+- **Every spawn zone reaches the core.** Count the pads inside each circle
   using the zone's own radius, then flood from them. `0 pads` means the zone
   is off the roads. Exclude boss zones.
 - **The choke holds.** Wall the intended choke point and re-flood: if any
-  gate still reaches an exit, there is a second route you did not draw.
+  gate still reaches the core, there is a second route you did not draw.
 - **Open == reachable.** Any open cell the flood misses is an orphan pocket.
 - **No footholds off a lane.** Walk the river banks and count walkable
   cells that are not on the ground lane. Anything but zero is a shortcut.
@@ -187,14 +187,14 @@ broken map. Every one of these has caught a real bug:
   is connected, passable, and no use at all to something 21 across. Measure
   it — clearance is the distance to the nearest cell a unit cannot occupy,
   so twice it is the width there — and report the WIDEST corridor that
-  still joins each drop zone to an exit. It holds for the fleet as much as
+  still joins each drop zone to the core. It holds for the fleet as much as
   the swarm: water is a lane too. The cheapest way to make it true rather
   than to keep chasing it is a morphological OPENING of the sea by a
   lane-wide disc, exactly as the rock gets: erode, dilate back, and every
   channel too narrow to sail silts up into coast.
-- **Every exit is on the rim.** One line, and it is the difference between
-  an exit and a hole in the ground.
-- **No gate is a short cut.** Measure each gate's run TO THE EDGE — a
+- **The rim is sealed.** Every border cell is rock; an open rim cell is a
+  hole in the world.
+- **No gate is a short cut.** Measure each gate's run TO THE CORE — a
   tributary's own length plus what is left of the trunk from where it
   joins — and compare them. A gate half the length of its neighbours is
   the one every wave will pour down.

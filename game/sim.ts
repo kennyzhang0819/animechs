@@ -1,5 +1,6 @@
 import {
   BASE,
+  CORE_HP,
   LAYER_BIT,
   MOVE_LAYERS,
   NCELLS,
@@ -53,7 +54,7 @@ const ROWS = ROWS_IMPORT;
 const TOWERS = TOWERS_IMPORT;
 const W = W_IMPORT;
 const WALL_R = WALL_R_IMPORT;
-import { FlowField, type Vec2 } from "./flowfield";
+import { FlowField, type Footprint, type Vec2 } from "./flowfield";
 import {
   WORLDS,
   UNIT_ID,
@@ -62,7 +63,6 @@ import {
   UNIT_RMAX_AIR,
   UNIT_RMAX_GROUND,
   UNIT_STATS,
-  missionLives,
   unitDrop,
   waveGroups,
   WAVE_RELEASE_SECONDS,
@@ -127,8 +127,6 @@ import {
 import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap } from "./maps";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
 import {
-  leakCost,
-  LIVES_START,
   SCRAP_START,
   scrapPriceOf,
   sellValue,
@@ -141,6 +139,9 @@ import {
   TOWER_KINDS,
   type Projectile,
   type RGB,
+  type Core,
+  isCore,
+  type Structure,
   type Tower,
   type TowerKind,
   type EnemyShot,
@@ -585,8 +586,7 @@ export interface ShieldTower {
 export class Sim {
   readonly field = new FlowField();
   terrain!: Terrain; // assigned by reset() in the constructor
-  // the live base's centre in world px (terrain.base) — the goal-point
-  // fallback on maps with no goal layer, and a fresh flyer's first heading
+  // the core's centre in world px — where every flyer is heading
   private goalX = 0;
   private goalY = 0;
 
@@ -747,7 +747,7 @@ export class Sim {
   private readonly ucd = new Float32Array(MAX_UNITS * MAX_WEAPONS);
   private readonly utT = new Float32Array(MAX_UNITS);
   private readonly ubeamT = new Float32Array(MAX_UNITS);
-  private readonly utgt: (Tower | null)[] = new Array<Tower | null>(MAX_UNITS).fill(null);
+  private readonly utgt: (Structure | null)[] = new Array<Structure | null>(MAX_UNITS).fill(null);
   /**
    * WHICH STRUCTURE STANDS ON EACH CELL — every footprint cell of every
    * live tower, rock or ground, kept by claimGround. It is how a unit
@@ -755,7 +755,7 @@ export class Sim {
    * knows it has arrived (updateEnemyShots): one read per cell, never a
    * walk of the tower list.
    */
-  private readonly cellTower: (Tower | null)[] = new Array<Tower | null>(NCELLS).fill(null);
+  private readonly cellTower: (Structure | null)[] = new Array<Structure | null>(NCELLS).fill(null);
   /** the swarm's bullets, missiles and shells in flight (see EnemyShot) */
   readonly shots: EnemyShot[] = [];
   /** crawlers that went off on a structure: gone, and paid for by no one */
@@ -825,7 +825,6 @@ export class Sim {
   level: LevelSpec = WORLDS[0];
   totalEnemies = 0;
   kills = 0;
-  leaked = 0;
   /**
    * Bodies EATEN by hungry units (the Hungry mutator) — removed from the
    * field without ever having been killed or leaked.
@@ -844,16 +843,14 @@ export class Sim {
   devoured = 0;
   /** kills per unit kind this run, indexed like UNIT_KINDS — the drop payout */
   readonly killsByKind = new Int32Array(UNIT_KINDS.length);
-  /** leaks per unit kind this run, indexed like UNIT_KINDS — what got through */
-  readonly leakedByKind = new Int32Array(UNIT_KINDS.length);
   /**
-   * THE BASE'S HEALTH: a hundred on every run (LIVES_START), and every
-   * body that reaches it takes its tier's bite (leakCost) — a dagger one,
-   * a scepter eight, a boss the lot. The run is won for as long as any is
-   * left. Nothing sells more: plating is not a purchase any more.
+   * THE CORE (types.ts): the building the swarm is on the map to knock
+   * down. Built by reset() where the map's base stands, with CORE_HP to
+   * lose; it sits in cellTower like a turret so every unit's guns find it,
+   * and the run ends the moment it is gone (lost). Nothing leaks any more:
+   * a body that reaches the core stays there and chews on it.
    */
-  livesMax = LIVES_START;
-  lives = this.livesMax;
+  core!: Core;
   /**
    * THE MISSION'S CLOCK, in seconds of run time: a survive mission is won
    * the moment `time` reaches it. 0 on a hold mission, which has no clock
@@ -1106,10 +1103,6 @@ export class Sim {
    */
   readonly waterField = new FlowField();
   private hasWater = false;
-  /** the resolved exit mask per layer, after exitsFor's fallbacks */
-  private exitGround: Uint8Array = new Uint8Array(NCELLS);
-  private exitAir: Uint8Array = new Uint8Array(NCELLS);
-  private exitWater: Uint8Array = new Uint8Array(NCELLS);
   /**
    * The air layer's doors: every cell an air zone covers, rock included.
    * Flyers keep their pads here rather than in a FlowField because they
@@ -1149,10 +1142,8 @@ export class Sim {
     this.n = 0;
     this.time = 0;
     this.kills = 0;
-    this.leaked = 0;
     this.devoured = 0;
     this.killsByKind.fill(0);
-    this.leakedByKind.fill(0);
     this.scrap = SCRAP_START;
     this.scrapEarned = 0;
     // the run's rules, read once: the feed pass runs over every unit on the
@@ -1176,10 +1167,8 @@ export class Sim {
     this.focusUid = -1;
     this.focusIdx = -1;
     this.focusShieldTower = -1;
-    // the mission sets the base's health and the clock (levels.ts)
+    // the mission sets the clock (levels.ts); the core's pool is CORE_HP on every map
     const mission = this.level.mission;
-    this.livesMax = missionLives(mission);
-    this.lives = this.livesMax;
     this.deadline = mission.kind === "survive" ? mission.minutes * 60 : 0;
     this.loopLevel = 0;
     this.projs.length = 0;
@@ -1204,19 +1193,29 @@ export class Sim {
     this.waterlogged = hasMutation(inForce, "hydrophobic") ? this.buildWaterlogged() : null;
     // ...and the walkers' side of the same question (the Amphibious rule)
     this.wadeable = this.amphibiousOn ? this.buildWadeable() : null;
-    this.goalX = (this.terrain.base.x + this.terrain.base.size / 2) * CELL;
-    this.goalY = (this.terrain.base.y + this.terrain.base.size / 2) * CELL;
-    // THE EXITS EACH LAYER IS AIMING AT, resolved once here so that no
-    // field and no flyer has to know the fallback rules (see exitsFor)
-    this.exitGround = this.exitsFor(LAYER_BIT.ground);
-    this.exitAir = this.exitsFor(LAYER_BIT.air);
-    this.exitWater = this.exitsFor(LAYER_BIT.water);
+    // THE CORE stands where the map's base does, with everything to lose
+    const b = this.terrain.base;
+    this.core = {
+      core: true,
+      gx: b.x,
+      gy: b.y,
+      size: b.size,
+      x: (b.x + b.size / 2) * CELL,
+      y: (b.y + b.size / 2) * CELL,
+      hp: CORE_HP,
+      hpMax: CORE_HP,
+      tombShieldTower: -1,
+    };
+    this.goalX = this.core.x;
+    this.goalY = this.core.y;
+    for (let y = b.y; y < b.y + b.size; y++)
+      for (let x = b.x; x < b.x + b.size; x++) this.cellTower[y * COLS + x] = this.core;
     this.buildPads();
-    // the walkers' field: rock and towers block it, it enters by the ground
-    // zones, and it aims at the ground exits
+    // the walkers' field: rock and structures block it, it enters by the
+    // ground zones, and it aims at the core (coreGoal)
     this.groundPads = this.layerPadMask(LAYER_BIT.ground);
     this.fieldDirty = false;
-    this.field.rebuildWalk(this.towers, this.terrain.blocked, this.groundPads, this.exitGround);
+    this.field.rebuildWalk(this.footprints(), this.terrain.blocked, this.groundPads, this.coreGoal());
     // THE HULLS' FIELD, built only where there is water to sail. It is the
     // mirror image of the walkers' — dry land is its wall — and towers do
     // not block it, because a tower stands on rock and rock is already the
@@ -1233,7 +1232,7 @@ export class Sim {
         [],
         waterWalkMask(this.terrain),
         this.layerPadMask(LAYER_BIT.water),
-        this.exitWater,
+        this.waterGoal(),
       );
     this.buildGoalPts();
     this.field.compute();
@@ -1242,20 +1241,17 @@ export class Sim {
     // a wave script stalls forever, which reads as a scheduler bug
     if (this.airPads.length === 0 && this.field.spawnPts.length === 0)
       throw new Error('map "' + doc.id + '" has no drop zones — paint some in the editor');
-    // a base sitting on rock is always an authoring slip (a map that moved
+    // a core sitting on rock is always an authoring slip (a map that moved
     // its base without carving the basin, say) and it reads as "the waves
     // never finish" rather than as a broken map — so say it out loud
-    // ...on a map that still HAS one. A goal-layer map never seeds from the
-    // base, so its base cells are decoration and may sit under rock
     let walledBase = 0;
-    if (!this.usesGoalLayer())
-      for (let y = this.terrain.base.y; y < this.terrain.base.y + this.terrain.base.size; y++)
+    for (let y = this.terrain.base.y; y < this.terrain.base.y + this.terrain.base.size; y++)
         for (let x = this.terrain.base.x; x < this.terrain.base.x + this.terrain.base.size; x++)
           if (this.terrain.blocked[y * COLS + x]) walledBase++;
     if (walledBase > 0)
       console.warn(
         'map "' + doc.id + '": ' + walledBase +
-          " of the base's cells are walled — carve its basin open at " +
+          " of the core's cells are walled — carve its basin open at " +
           this.terrain.base.x + "," + this.terrain.base.y,
       );
     // A SCRIPT SENDING A LAYER THE MAP HAS NO DOOR FOR is the only
@@ -1282,47 +1278,48 @@ export class Sim {
     this.reset();
   }
 
-  /** does this map route the swarm to painted goal cells rather than a base? */
-  usesGoalLayer(): boolean {
-    const g = this.terrain.goal;
-    for (let i = 0; i < g.length; i++) if (g[i]) return true;
-    return false;
+  /** every structure's cells as the field takes them: the turrets and the core */
+  private footprints(): Footprint[] {
+    const out: Footprint[] = this.towers.map((t) => ({ gx: t.gx, gy: t.gy, size: TOWERS[t.kind].size }));
+    out.push(this.core);
+    return out;
   }
 
+  /** the walkers' destination: the core's own cells — a soft goal, see FlowField.rebuildWalk */
+  private coreGoal(): Uint8Array {
+    const out = new Uint8Array(NCELLS);
+    const c = this.core;
+    for (let y = c.gy; y < c.gy + c.size; y++)
+      for (let x = c.gx; x < c.gx + c.size; x++) out[y * COLS + x] = 1;
+    return out;
+  }
 
   /**
-   * THE EXITS ONE MOVEMENT LAYER IS AIMING AT, with the fallbacks that stop
-   * a half-painted map from stranding anything.
-   *
-   * Three rules, in order. A layer with exits of its own uses exactly
-   * those — that is the whole point of splitting them, and it is what lets
-   * a map land its air waves somewhere its walkers can never reach. A layer
-   * with none borrows the UNION of every other layer's, because an author
-   * who painted one exit band and stopped meant it for everything rather
-   * than meaning "the flyers have nowhere to go". A map with no exits at
-   * all falls back to its base block, which is what every pre-exit map is.
+   * THE HULLS' DESTINATION. A boat cannot reach a building on land, so it
+   * sails to the water nearest the core and fires from there — Mindustry's
+   * naval AI does the same, parking at the closest tile its field reaches.
+   * Every water cell within a cell and a half of the nearest one's distance
+   * is a goal, so a shoreline fills rather than one tile queueing.
    */
-  private exitsFor(bit: number): Uint8Array {
-    const src = this.terrain.goal;
+  private waterGoal(): Uint8Array {
     const out = new Uint8Array(NCELLS);
-    let mine = 0;
-    let any = 0;
-    for (let i = 0; i < NCELLS; i++) {
-      if (!src[i]) continue;
-      any++;
-      if (src[i] & bit) {
-        out[i] = 1;
-        mine++;
+    const { floor, rows, cols } = this.terrain;
+    const cx = this.core.x / CELL, cy = this.core.y / CELL;
+    let best = Infinity;
+    for (let y = 0; y < rows; y++)
+      for (let x = 0; x < cols; x++) {
+        const i = y * COLS + x;
+        if (!isWaterFloor(floor[i])) continue;
+        const dd = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
+        if (dd < best) best = dd;
       }
-    }
-    if (mine > 0) return out;
-    if (any > 0) {
-      for (let i = 0; i < NCELLS; i++) if (src[i]) out[i] = 1;
-      return out;
-    }
-    const { base } = this.terrain;
-    for (let y = base.y; y < base.y + base.size; y++)
-      for (let x = base.x; x < base.x + base.size; x++) out[y * COLS + x] = 1;
+    if (best === Infinity) return out;
+    for (let y = 0; y < rows; y++)
+      for (let x = 0; x < cols; x++) {
+        const i = y * COLS + x;
+        if (!isWaterFloor(floor[i])) continue;
+        if (Math.hypot(x + 0.5 - cx, y + 0.5 - cy) <= best + 1.5) out[i] = 1;
+      }
     return out;
   }
 
@@ -1377,22 +1374,9 @@ export class Sim {
     return false;
   }
 
-  /**
-   * Collect every AIR exit's centre, for a flyer to choose from when it
-   * spawns. Air is the one layer with no flow field — a flyer steers
-   * straight at a point — so its exits become a list of points here.
-   */
+  /** where a flyer is sent: the core, and nothing else on the map */
   private buildGoalPts(): void {
-    // THE AIR LAYER'S OWN EXITS, not every exit on the map. exitsFor has
-    // already applied the fallbacks, so this reads a mask that is never
-    // empty — the base's block at worst — and a flyer aims at the nearest
-    // cell of it. That is the whole of "each layer paths to its own exit"
-    // for the one layer with no field to path on.
-    const pts: number[] = [];
-    const air = this.exitAir;
-    for (let i = 0; i < air.length; i++)
-      if (air[i]) pts.push((i % COLS) * CELL + CELL / 2, (((i / COLS) | 0) + 0.5) * CELL);
-    this.goalPts = Float32Array.from(pts.length > 0 ? pts : [this.goalX, this.goalY]);
+    this.goalPts = Float32Array.from([this.goalX, this.goalY]);
   }
 
   /**
@@ -1454,9 +1438,9 @@ export class Sim {
     return { x: bx, y: by };
   }
 
-  /** the base is down — the game freezes and the score screen takes over */
+  /** the core is down — the game freezes and the score screen takes over */
   lost(): boolean {
-    return this.lives <= 0;
+    return this.core.hp <= 0;
   }
 
   /**
@@ -1580,7 +1564,7 @@ export class Sim {
 
   /** enemies left to kill: still unspawned + still walking the field */
   remaining(): number {
-    return this.totalEnemies - this.kills - this.leaked - this.devoured - this.exploded;
+    return this.totalEnemies - this.kills - this.devoured - this.exploded;
   }
 
   /** per-kind head count currently on the field, indexed like UNIT_KINDS */
@@ -1916,17 +1900,22 @@ export class Sim {
    * ends the search. A unit asks this every few tenths of a second
    * (utT), never every tick.
    */
-  private nearestStructure(x: number, y: number, reach: number): Tower | null {
+  /** a structure's edge, in cells: the turret's footprint or the core's */
+  private sizeOf(s: Structure): number {
+    return isCore(s) ? s.size : TOWERS[s.kind].size;
+  }
+
+  private nearestStructure(x: number, y: number, reach: number): Structure | null {
     const cx = clamp((x / CELL) | 0, 0, COLS - 1);
     const cy = clamp((y / CELL) | 0, 0, ROWS - 1);
     const R = Math.min(COLS, Math.ceil(reach / CELL) + 2);
     const grid = this.cellTower;
-    let best: Tower | null = null;
+    let best: Structure | null = null;
     let bd = Infinity;
     const consider = (i: number): void => {
       const t = grid[i];
       if (!t) return;
-      const half = (TOWERS[t.kind].size * CELL) / 2;
+      const half = (this.sizeOf(t) * CELL) / 2;
       const dx = t.x - x, dy = t.y - y;
       const d = Math.sqrt(dx * dx + dy * dy) - half;
       if (d <= reach && d < bd) {
@@ -1955,7 +1944,7 @@ export class Sim {
   }
 
   /** every live structure whose footprint comes within r of a point, once each */
-  private structuresWithin(x: number, y: number, r: number, out: Tower[]): Tower[] {
+  private structuresWithin(x: number, y: number, r: number, out: Structure[]): Structure[] {
     out.length = 0;
     const R = Math.ceil(r / CELL) + 1;
     const cx = (x / CELL) | 0, cy = (y / CELL) | 0;
@@ -1963,17 +1952,17 @@ export class Sim {
       for (let xx = Math.max(0, cx - R); xx <= Math.min(COLS - 1, cx + R); xx++) {
         const t = this.cellTower[yy * COLS + xx];
         if (!t || out.includes(t)) continue;
-        const half = (TOWERS[t.kind].size * CELL) / 2;
+        const half = (this.sizeOf(t) * CELL) / 2;
         const dx = t.x - x, dy = t.y - y;
         if (Math.sqrt(dx * dx + dy * dy) - half <= r) out.push(t);
       }
     return out;
   }
 
-  private readonly splashOut: Tower[] = [];
+  private readonly splashOut: Structure[] = [];
 
   /** a unit's hit on a structure, through the one dial (unitDamageScale) */
-  private hitStructure(t: Tower, dmg: number): void {
+  private hitStructure(t: Structure, dmg: number): void {
     if (dmg <= 0) return;
     this.damageTower(t, dmg * unitDamageScale());
   }
@@ -1985,9 +1974,9 @@ export class Sim {
   }
 
   /** is the structure still standing — and within this reach of the point? */
-  private inReach(t: Tower, x: number, y: number, reach: number): boolean {
+  private inReach(t: Structure, x: number, y: number, reach: number): boolean {
     if (this.cellTower[t.gy * COLS + t.gx] !== t) return false;
-    const half = (TOWERS[t.kind].size * CELL) / 2;
+    const half = (this.sizeOf(t) * CELL) / 2;
     const dx = t.x - x, dy = t.y - y;
     return Math.sqrt(dx * dx + dy * dy) - half <= reach;
   }
@@ -2115,8 +2104,8 @@ export class Sim {
   }
 
   /** a bullet, missile or shell leaves the unit for the structure */
-  private fireUnitShot(x: number, y: number, tgt: Tower, wp: import("./weapons").UnitWeapon, k: number): void {
-    const half = (TOWERS[tgt.kind].size * CELL) / 2;
+  private fireUnitShot(x: number, y: number, tgt: Structure, wp: import("./weapons").UnitWeapon, k: number): void {
+    const half = (this.sizeOf(tgt) * CELL) / 2;
     // aim at the footprint, with a little spread so a burst is a burst
     const ax = tgt.x + (Math.random() * 2 - 1) * half * 0.6;
     const ay = tgt.y + (Math.random() * 2 - 1) * half * 0.6;
@@ -2140,13 +2129,13 @@ export class Sim {
   }
 
   /** the beam from a unit to the structure it is burning */
-  private beamFx(x: number, y: number, tgt: Tower, ttl: number): void {
+  private beamFx(x: number, y: number, tgt: Structure, ttl: number): void {
     const dx = tgt.x - x, dy = tgt.y - y;
     this.pushFx(x, y, ttl, FxKind.Laser, Math.atan2(dy, dx), Math.sqrt(dx * dx + dy * dy));
   }
 
   /** a bolt from a unit to the structure, jagged once in the middle */
-  private boltFx(x: number, y: number, tgt: Tower): void {
+  private boltFx(x: number, y: number, tgt: Structure): void {
     const mx = (x + tgt.x) / 2 + (Math.random() - 0.5) * 12;
     const my = (y + tgt.y) / 2 + (Math.random() - 0.5) * 12;
     this.pushBolt(x, y, 0.2, [x, y, mx, my, tgt.x, tgt.y]);
@@ -2388,20 +2377,15 @@ export class Sim {
     const { isGoal } = this.field;
     // GROUND LEVEL ONLY. A structure stands on open ground, in the swarm's
     // way, where it is a wall as well as a gun — never on a hill, a forest
-    // or deep water (every blocked cell), never on the base line the
-    // walkers are aiming at, never on a drop zone (a corked door spawns
-    // nothing). Shallow water is ground, as it is in Mindustry: a naval
-    // map's shallows are most of the floor it has
+    // or deep water (every blocked cell), never on another structure — the
+    // core included — never on a drop zone (a corked door spawns nothing).
+    // Shallow water is ground, as it is in Mindustry: a naval map's
+    // shallows are most of the floor it has
     for (let y = gy; y < gy + sz; y++)
       for (let x = gx; x < gx + sz; x++) {
         const i = y * COLS + x;
-        if (blocked[i] || isGoal[i] || this.groundPads[i]) return false;
+        if (blocked[i] || isGoal[i] || this.groundPads[i] || this.cellTower[i]) return false;
       }
-    for (const t of this.towers) {
-      const tsz = TOWERS[t.kind].size;
-      if (gx < t.gx + tsz && t.gx < gx + sz && gy < t.gy + tsz && t.gy < gy + sz)
-        return false;
-    }
     // a LIVE shield tower owns its ground: selling a buried turret is allowed,
     // but nothing builds back under the dome until the shield tower is dead
     for (const s of this.shieldTowers) {
@@ -2462,10 +2446,10 @@ export class Sim {
    * down. The field itself is re-solved once, at the next tick
    * (fieldDirty), and the seal check's cache is stale either way.
    */
-  private claimGround(t: Tower, on: boolean): void {
+  private claimGround(t: Structure, on: boolean): void {
     const { blocked } = this.terrain;
     const { walk, soft } = this.field;
-    const sz = TOWERS[t.kind].size;
+    const sz = this.sizeOf(t);
     let changed = false;
     for (let y = t.gy; y < t.gy + sz; y++)
       for (let x = t.gx; x < t.gx + sz; x++) {
@@ -3618,48 +3602,26 @@ export class Sim {
       // they only ever use it for `isGoal`, and a flyer's own destination
       // was picked at spawn (see below), so the cell test is a formality.
       const mf = nav ? this.waterField : field;
-      const { isGoal, walk } = mf;
+      const { walk } = mf;
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
       const cy = clamp((upy[i] / CELL) | 0, 0, ROWS - 1);
       const ci = cy * COLS + cx;
-      // ARRIVING IS TESTED ON THE UNIT'S OWN LAYER. A walker and a hull
-      // read their own field's isGoal, which was seeded from that layer's
-      // exit mask, so both are already asking the right question.
-      //
-      // A FLYER HAS NO FIELD, and reading the ground field's isGoal here
-      // asked whether it had arrived at a GROUND exit. On a map whose air
-      // exits are the same cells as its ground exits that is accidentally
-      // right, which is why it survived; the moment a map paints air exits
-      // of its own — the whole point of per-layer exits — every flyer flew
-      // to the door it was given, found the test false, and sat on it.
-      // They pile up, nothing leaks, the wave never empties and the run
-      // cannot end. So ask the air mask, which is where the flyer was sent.
-      if (fly ? this.exitAir[ci] : isGoal[ci]) {
-        // A LEAK PAYS NOTHING. killsByKind is the whole drop ledger (see
-        // dropsForKills) and a body that walked off the board was never
-        // killed, so it is not in it — the scrap and the XP a leak costs
-        // are what the player would have had for stopping it.
-        //
-        // AND IT BITES BY TIER (leakCost): a dagger takes one life, a
-        // scepter eight. A BOSS THAT REACHES THE BASE ENDS THE RUN — a
-        // script that builds to one enemy must not have that enemy become
-        // a body you shrug off, so it takes the whole pool.
-        const stats = UNIT_STATS[UNIT_KINDS[this.ukind[i]]];
-        this.pushFx(upx[i], upy[i], 0.4, FxKind.Breach);
-        this.leakedByKind[this.ukind[i]]++;
-        this.removeUnit(i);
-        this.leaked++;
-        this.lives = Math.max(0, this.lives - leakCost(stats.tier, stats.boss === true));
-        continue;
-      }
+      // NOTHING ARRIVES AND NOTHING LEAKS. The core is the goal (coreGoal)
+      // and it is solid: a walker that reaches it is pressed against it by
+      // the field and stays there, firing (updateUnitWeapons), until one of
+      // them is gone. A hull parks on the nearest water (waterGoal) and
+      // does the same from the shore.
 
       if (fly) {
-        // flyers ignore the maze: aim straight at the exit they picked when
-        // they spawned (the base's centre on a map with no goal layer)
+        // flyers ignore the maze: they fly the straight line to the core
+        // and HOLD over its edge once there — Mindustry's FlyingAI circles
+        // what it attacks; this one hovers, and its guns do the rest
+        // (updateUnitWeapons)
         const gdx = this.ugx[i] - upx[i], gdy = this.ugy[i] - upy[i];
         const gl = Math.sqrt(gdx * gdx + gdy * gdy) || 1;
-        flowTmp.x = gdx / gl;
-        flowTmp.y = gdy / gl;
+        const hold = gl <= (this.core.size * CELL) / 2 + CELL * 1.5;
+        flowTmp.x = hold ? 0 : gdx / gl;
+        flowTmp.y = hold ? 0 : gdy / gl;
       } else {
         mf.sample(upx[i], upy[i], flowTmp);
       }
@@ -4176,13 +4138,17 @@ export class Sim {
    * hits whatever stands in the way, and a wall across its route is a
    * wall it chews through.
    */
-  private damageTower(t: Tower, dmg: number): void {
+  private damageTower(t: Structure, dmg: number): void {
     if (t.tombShieldTower >= 0) return;
     t.hp -= dmg;
     if (t.hp > 0) return;
     t.hp = 0;
-    this.pushFx(t.x, t.y, 0.5, FxKind.Breach);
-    this.pushFx(t.x, t.y, 0.35, FxKind.Death);
+    // THE CORE FALLING IS THE RUN ENDING (lost): it stays on the board,
+    // dark, under the crowd that took it down
+    const big = isCore(t) ? 1.6 : 1;
+    this.pushFx(t.x, t.y, 0.5 * big, FxKind.Breach);
+    this.pushFx(t.x, t.y, 0.35 * big, FxKind.Death);
+    if (isCore(t)) return;
     this.removeTower(t);
   }
 
@@ -4198,9 +4164,10 @@ export class Sim {
     const tier = Math.min(KIND_TIER[kind], VOLATILE_DMG.length - 1);
     const reach = VOLATILE_RADIUS[tier] + urad;
     const dmg = VOLATILE_DMG[tier];
-    // over a copy: a wrecked tower leaves the list under the loop
-    for (const t of [...this.towers]) {
-      const half = (TOWERS[t.kind].size * CELL) / 2;
+    // over a copy: a wrecked tower leaves the list under the loop. The
+    // core is a structure like any other to a blast
+    for (const t of [...this.towers, this.core]) {
+      const half = (this.sizeOf(t) * CELL) / 2;
       const r = reach + half;
       const dx = t.x - x, dy = t.y - y;
       if (dx * dx + dy * dy < r * r) this.damageTower(t, dmg);
@@ -4292,6 +4259,21 @@ export class Sim {
    */
   private fireTowers(dt: number): void {
     const { upx, upy, uvx, uvy } = this;
+    // the core sheds soot under half its pool exactly as a turret does below
+    {
+      const c = this.core;
+      if (c.hp < c.hpMax * DAMAGE_SMOKE_BELOW) {
+        const hurt = 1 - c.hp / (c.hpMax * DAMAGE_SMOKE_BELOW);
+        if (Math.random() < DAMAGE_SMOKE_RATE * hurt * c.size * dt) {
+          const sz = c.size * CELL;
+          this.pushFx(
+            c.x + (Math.random() - 0.5) * sz * 0.6,
+            c.y + (Math.random() - 0.5) * sz * 0.6,
+            DAMAGE_SMOKE_LIFE, FxKind.DamageSmoke, 0, sz / 2, (Math.random() * 1e9) | 0,
+          );
+        }
+      }
+    }
     for (const t of this.towers) {
       // an ENTOMBED tower (a shield tower rose over it — see trySpawnShieldTower)
       // does nothing at all until the shield tower dies and hands it back
@@ -4314,6 +4296,9 @@ export class Sim {
         }
       }
       const st = this.statsFor(t.kind);
+      // a wall has no gun at all: it smokes when hurt (above) and that is
+      // the whole of what it does each tick
+      if (st.wall) continue;
       // a tractor turret has no reload and no volley — it holds a beam
       if (st.bullet.tractor) {
         this.updateTractor(t, st, dt);

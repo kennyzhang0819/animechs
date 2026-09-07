@@ -31,6 +31,12 @@ import {
   UV_TOWER_BASE3,
   UV_TOWER_BASE4,
   UV_SHIELD_TOWER,
+  UV_COPPER_WALL,
+  UV_TITANIUM_WALL,
+  UV_THORIUM_WALL,
+  UV_COPPER_WALL_LARGE,
+  UV_TITANIUM_WALL_LARGE,
+  UV_THORIUM_WALL_LARGE,
   UV_DISC_BIG,
   UV_SCORCH,
   UV_ARC,
@@ -126,6 +132,12 @@ const UV_TURRETS: Record<TowerKind, UVRect> = {
   spectre: UV_SPECTRE,
   meltdown: UV_MELTDOWN,
   foreshadow: UV_FORESHADOW,
+  "copper-wall": UV_COPPER_WALL,
+  "titanium-wall": UV_TITANIUM_WALL,
+  "thorium-wall": UV_THORIUM_WALL,
+  "copper-wall-large": UV_COPPER_WALL_LARGE,
+  "titanium-wall-large": UV_TITANIUM_WALL_LARGE,
+  "thorium-wall-large": UV_THORIUM_WALL_LARGE,
 };
 /**
  * The two regions BasicBulletType.draw lays on one rect: the longer `-back`
@@ -556,14 +568,12 @@ export interface TerrainLayers {
   wall: boolean;
   props: boolean;
   spawn: boolean;
-  goal: boolean;
   base: boolean;
 }
 export const ALL_LAYERS: TerrainLayers = {
   wall: true,
   props: true,
   spawn: true,
-  goal: true,
   base: true,
 };
 
@@ -861,10 +871,6 @@ export class Renderer {
   // the base of the terrain currently in the static batches; renderTerrain
   // (the editor) has no sim to ask, so rebuildTerrain leaves it here
   private base = { ...BASE };
-  // a goal-layer map routes the swarm to painted exit cells and has no base
-  // to defend, so it draws none — the sprite would otherwise sit in the
-  // middle of the exit band promising something the map does not have
-  private hasGoals = false;
   /**
    * The hill shadow as the CPU sees it: the mask's shade per cell, 0..1,
    * kept from rebuildTerrain so whatever STANDS on the ground — a walker,
@@ -1440,7 +1446,6 @@ export class Renderer {
     const wt = this.water;
     const T = src.terrain;
     this.base = T.base;
-    this.hasGoals = T.goal.some((g) => g !== 0);
     this.layers = layers;
     t.n = 0;
     wt.n = 0;
@@ -1528,7 +1533,7 @@ export class Renderer {
     // shows is the rim hugging its sides. Towers stand on open ground and
     // come and go mid-run; this mask is built once per terrain, so they
     // cast nothing here
-    if (layers.base && !this.hasGoals)
+    if (layers.base)
       for (let y = T.base.y; y < T.base.y + T.base.size; y++)
         for (let x = T.base.x; x < T.base.x + T.base.size; x++) stamp(y * COLS + x);
     for (let i = 0; i < COLS * ROWS; i++) this.shade[i] = mask[i * 4 + 3] / 255;
@@ -1737,7 +1742,7 @@ export class Renderer {
     // the base of the map last built into the terrain batch (see
     // rebuildTerrain) — a map may put it anywhere, not just at BASE
     const base = this.base;
-    if (!this.layers.base || this.hasGoals) {
+    if (!this.layers.base) {
       this.draw(dyn, true);
       this.drawDarkness();
       return;
@@ -1843,6 +1848,11 @@ export class Renderer {
       else {
         const t3 = (t.hp * 3) / towerMaxHp(t.kind);
         tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
+      }
+      // a wall is its art and nothing else: no base under it, no turning
+      if (TOWERS[t.kind].wall) {
+        this.push(dyn, t.x, t.y, px, px, 0, UV_TURRETS[t.kind], tint[0], tint[1], tint[2], 1);
+        continue;
       }
       this.push(dyn, t.x, t.y, px, px, 0, base, tint[0], tint[1], tint[2], 1);
       this.push(dyn, t.x, t.y, px, px, t.angle, UV_TURRETS[t.kind], tint[0], tint[1], tint[2], 1);
@@ -2252,22 +2262,15 @@ export class Renderer {
         this.push(dyn, e.x, e.y, s, s, 0, UV_RING, 0.34, 0.89, 0.54, (1 - t) * 0.9);
       }
     }
-    // base last, above units and breach fx — arrivals disappear beneath it.
-    // A goal-layer map draws none: its exits are the map edge, and there is
-    // no building there to swallow anything
-    if (!this.hasGoals) {
-      const base = sim.terrain.base;
-      const baseSz = base.size * CELL;
-      this.push(
-        dyn,
-        (base.x + base.size / 2) * CELL,
-        (base.y + base.size / 2) * CELL,
-        baseSz,
-        baseSz,
-        0,
-        UV_BASE,
-        1, 1, 1, 1,
-      );
+    // the core last, above units and the fx at its feet — it is the one
+    // building the whole swarm is walking at, and it stands over the crowd
+    // pressing on it. Wounded, it greys the way a turret does (HP_TINT)
+    {
+      const core = sim.core;
+      const baseSz = core.size * CELL;
+      const hurt = Math.max(0, Math.min(1, core.hp / core.hpMax));
+      const tint = 1 - (1 - hurt) * 0.55;
+      this.push(dyn, core.x, core.y, baseSz, baseSz, 0, UV_BASE, tint, tint, tint, 1);
     }
     this.draw(dyn, true);
     // Layer.shields is above every one of those, the base included, and it

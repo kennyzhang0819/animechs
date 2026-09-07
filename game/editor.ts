@@ -6,12 +6,9 @@ import {
   COLS,
   BASE_SIZE,
   H,
-  LAYER_BIT,
-  MOVE_LAYERS,
   ROWS,
   W,
   ZONE_KINDS,
-  type MoveLayer,
   type ZoneKind,
 } from "./constants";
 import {
@@ -372,15 +369,6 @@ export class MapEditor {
         rot,
         kind: pick,
       });
-    } else if (set.kind === "goal") {
-      // A GOAL ON ROCK IS INERT, NOT AN ERROR. rebuildWalk seeds only the
-      // goal cells that are walkable, so marking a hillside costs nothing
-      // and carving it open later turns those cells live — same rule the
-      // drop zones follow
-      // exits are per layer and additive: painting the air exits over a
-      // ground exit leaves a cell both layers aim at, and the eraser below
-      // takes back only the layer in hand
-      T.goal[i] |= LAYER_BIT[this.exitLayer()];
     } else {
       // erase: strip the VISIBLE layers, keep the floor. Hiding a layer
       // therefore also shields it from the eraser
@@ -397,20 +385,6 @@ export class MapEditor {
         T.blocked[i] = 0;
         T.wall[i] = 0;
       }
-      // THE ERASER CLEARS EVERY EXIT LAYER ON THE CELL, not the one the
-      // palette happens to be pointing at.
-      //
-      // It used to lift a single layer — `& ~LAYER_BIT[exitLayer()]` — and
-      // that was unusable: picking the Erase tool IS picking a palette
-      // entry, and doing so resets the shared variant index to 0, so the
-      // "layer in hand" was always ground by the time the eraser ran. Air
-      // and water exits could be painted and never removed.
-      //
-      // Clearing all of them is also what the eraser does everywhere else:
-      // it strips the visible layers wholesale rather than one wall family
-      // or one prop kind. To take a single layer back off a cell, erase it
-      // and repaint the layers that should stay.
-      if (L.goal) T.goal[i] = 0;
       if (L.props) this.removePropsAt(gx, gy);
     }
     this.dirty = true;
@@ -501,11 +475,6 @@ export class MapEditor {
   /** the zone kind the drop-zone tool is painting — the picker's slot */
   private spawnZone(): ZoneKind {
     return ZONE_KINDS[Math.min(this.variant, ZONE_KINDS.length - 1)];
-  }
-
-  /** the movement layer the exit tool is painting */
-  private exitLayer(): MoveLayer {
-    return MOVE_LAYERS[Math.min(this.variant, MOVE_LAYERS.length - 1)];
   }
 
   /** eraser over a drop zone: drop every circle covering this cell */
@@ -876,55 +845,9 @@ export class MapEditor {
     c.setTransform(s, 0, 0, s, -this.tlx * s, -this.tly * s);
 
     // the map's rim, faded into the void exactly as the game fades it —
-    // drawn FIRST so exits, zones and the brush cursor stay readable over
+    // drawn FIRST so zones and the brush cursor stay readable over
     // ground that is on its way out
     drawHaze(c, this.mapW(), this.mapH());
-
-    // THE EXITS, one pass per movement layer, each in that layer's own
-    // colour — the same green/amber/blue the drop zones use, so a door and
-    // the exit it feeds read as the same thing at both ends of the map.
-    //
-    // Drawn as filled regions rather than cell by cell: an exit band is
-    // hundreds of cells and stroking each would bury the terrain under a
-    // grid. Only the OUTER edges get a line, by drawing a border on each
-    // side whose neighbour is not also an exit of that layer.
-    //
-    // Layers stack where they overlap, which is the point: a cell every
-    // layer aims at shows all three fills blended, and one painted for the
-    // flyers alone stays plainly amber next to it.
-    if (this.layers.goal) {
-      const G = this.terrain.goal;
-      const rows = this.rows, cols = this.terrain.cols;
-      c.lineWidth = 2 / s;
-      for (const layer of MOVE_LAYERS) {
-        const bit = LAYER_BIT[layer];
-        const col = zoneStyle(layer).css;
-        let any = false;
-        c.beginPath();
-        for (let y = 0; y < rows; y++)
-          for (let x = 0; x < cols; x++) {
-            if (!(G[y * COLS + x] & bit)) continue;
-            any = true;
-            c.rect(x * CELL, y * CELL, CELL, CELL);
-          }
-        if (!any) continue;
-        c.fillStyle = col + "33";
-        c.fill();
-        c.beginPath();
-        for (let y = 0; y < rows; y++)
-          for (let x = 0; x < cols; x++) {
-            const i = y * COLS + x;
-            if (!(G[i] & bit)) continue;
-            const px = x * CELL, py = y * CELL;
-            if (y === 0 || !(G[i - COLS] & bit)) { c.moveTo(px, py); c.lineTo(px + CELL, py); }
-            if (y === rows - 1 || !(G[i + COLS] & bit)) { c.moveTo(px, py + CELL); c.lineTo(px + CELL, py + CELL); }
-            if (x === 0 || !(G[i - 1] & bit)) { c.moveTo(px, py); c.lineTo(px, py + CELL); }
-            if (x === cols - 1 || !(G[i + 1] & bit)) { c.moveTo(px + CELL, py); c.lineTo(px + CELL, py + CELL); }
-          }
-        c.strokeStyle = col;
-        c.stroke();
-      }
-    }
 
     // Every placed drop zone. This ring is the ONLY thing marking a zone —
     // the floor inside it is drawn as plain ground — so it is drawn before
