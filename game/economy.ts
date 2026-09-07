@@ -380,39 +380,37 @@ export function missionXp(cleared: number, waves: number): number {
  *
  *   THE CLIMB, levels 1 to XP_LEVEL_PLATEAU (100). Going from level n to
  *   n+1 costs XP_LEVEL_BASE x n to the power XP_LEVEL_POWER — a little
- *   more than the last one every time, never a wall. The power is UNDER
- *   one on purpose: the step still grows every level, but slower than
- *   the level number does, so a hundred levels of climbing top out at a
- *   few hundred thousand a level rather than the millions a steeper
- *   power reaches by level 30.
+ *   more than the last one every time, never a wall. The power is set so
+ *   the hundredth step is just under a million: 5,000 at level 1,
+ *   ~61,000 at 10, ~422,000 at 50, ~942,000 at 99.
  *
  *   THE PLATEAU, levels 100 to LEVEL_CAP (1000). Every level costs the
- *   same XP_LEVEL_FLAT (500,000): the long tail a save keeps earning
+ *   same XP_LEVEL_FLAT (1,000,000): the long tail a save keeps earning
  *   after it owns everything, with the tick of a level at a fixed, known
- *   price — five base clears, or one at the top rung.
+ *   price — ten base clears, or two at the top rung.
  *
  *   level    2      3      5      10     24     50     100     1000
- *   to next  5k     9.5k   22k    42k    92k    183k   500k    500k
- *   total    5k     14k    46k    186k   1.1m   3.9m   17.8m   468m
+ *   to next  5k     11k    24k    61k    178k   422k   1m      1m
+ *   total    5k     16k    58k    288k   2.0m   9.9m   44m     944m
  *
  * WHAT THAT MEANS AGAINST A MAP. A full clear at the base rung pays
- * MISSION_XP (100,000), so the first run lands around level 7; a wipe
- * after twenty waves banks ~27,800 and lands level 3. The rung bonus
+ * MISSION_XP (100,000), so the first run lands level 6; a wipe after
+ * twenty waves banks ~27,800 and lands level 3. The rung bonus
  * (tierXpBonus, up to x5.5) is the multiplier on all of it, and that is
  * how the track is climbed: the end of the ROSTER phase (ROSTER_TOP in
- * track.ts, where the last wall opens) stands at about 441,000 XP —
- * four or five base clears, or one at the top rung — and the MUTATOR
- * phase behind it runs to about 1,120,000 at MAX_LEVEL (24). Everything
- * above that is the long tail: level 100 is 17.8 million, and the cap
- * is 468 million. Nothing on the track is handed out up there
- * (track.ts); the number is the number.
+ * track.ts, where the last wall opens) stands at about 714,000 XP —
+ * seven base clears, or one or two at the top rung — and the MUTATOR
+ * phase behind it runs to about 2,000,000 at MAX_LEVEL (24). Everything
+ * above that is the long tail: level 100 is 44 million, and the cap is
+ * 944 million. Nothing on the track is handed out up there (track.ts);
+ * the number is the number.
  */
 export const XP_LEVEL_BASE = 5000;
-export const XP_LEVEL_POWER = 0.92;
+export const XP_LEVEL_POWER = 1.14;
 /** the level the climb stops at and the plateau begins */
 export const XP_LEVEL_PLATEAU = 100;
 /** what every level on the plateau costs */
-export const XP_LEVEL_FLAT = 500_000;
+export const XP_LEVEL_FLAT = 1_000_000;
 /** the highest level a save can stand at; XP past it banks and does nothing */
 export const LEVEL_CAP = 1000;
 

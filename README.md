@@ -329,8 +329,8 @@ switched off for now (`UPGRADES_ON_TRACK`), so a turret plays at its stock
 stats whatever the save's level. A turret the save has not reached rides
 the build bar greyed, with the level that opens it. The progress screen
 lists the whole track; the results screen names what a climb handed out. A
-first Confluence clear lands around level 7; the top of the track is about
-1.1 million XP.
+first Confluence clear lands level 6; the top of the track is about
+2 million XP.
 
 ### One script, three families a deploy
 
@@ -642,8 +642,8 @@ __ladder.wave(7, 2)   // what one authored wave weighs and pays
   charged. There is no saved board any more — a board is bought from the
   opening stipend outward, every run.
 - **The level curve** is `XP_LEVEL_BASE × level^XP_LEVEL_POWER` to the
-  next level (5,000 × n^0.92) for the first hundred levels — 5,000 at
-  level 1, ~343,000 at level 99 — and a flat `XP_LEVEL_FLAT` (500,000) a
-  level from 100 to the cap at 1,000 (`LEVEL_CAP`). A full rung-1 clear
-  pays the 100,000 XP pot and lands level 7; a wipe at the end of stage 1
+  next level (5,000 × n^1.14) for the first hundred levels — 5,000 at
+  level 1, ~942,000 at level 99 — and a flat `XP_LEVEL_FLAT` (1,000,000)
+  a level from 100 to the cap at 1,000 (`LEVEL_CAP`). A full rung-1 clear
+  pays the 100,000 XP pot and lands level 6; a wipe at the end of stage 1
   (twenty waves cleared, ~27,800 XP) lands level 3.
