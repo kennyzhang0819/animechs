@@ -826,13 +826,17 @@ export const UV_SHIELD_TOWER = uv(1312, 2976, 96, 96);
  * nothing else — and they are outlined like every block so a wall reads
  * as built rather than as floor.
  */
-export const UV_COPPER_WALL = uv(1024, 3200, 64, 64);
-export const UV_TITANIUM_WALL = uv(1088, 3200, 64, 64);
-export const UV_THORIUM_WALL = uv(1152, 3200, 64, 64);
+// THE PLAYER'S WALLS sit in row 0's free tail at y 3008 (the small three)
+// and in the gaps left of the vela at y 3072 (the 2x2 large three) — NOT at
+// the second environment band's origin (1024, 3200), which is the moss
+// floor: drawn there they painted wall art over half the band's floors
+export const UV_COPPER_WALL = uv(0, 3008, 64, 64);
+export const UV_TITANIUM_WALL = uv(64, 3008, 64, 64);
+export const UV_THORIUM_WALL = uv(128, 3008, 64, 64);
 /** the large walls: 64px block art upscaled 2x into 128px cells, like lancer's */
-export const UV_COPPER_WALL_LARGE = uv(1024, 3296, 128, 128);
-export const UV_TITANIUM_WALL_LARGE = uv(1184, 3296, 128, 128);
-export const UV_THORIUM_WALL_LARGE = uv(1344, 3296, 128, 128);
+export const UV_COPPER_WALL_LARGE = uv(1280, 3072, 128, 128);
+export const UV_TITANIUM_WALL_LARGE = uv(1728, 3072, 128, 128);
+export const UV_THORIUM_WALL_LARGE = uv(1856, 3072, 128, 128);
 
 export const UV_CRAWLER_LEG = uv(448, 288, 64, 64);
 export const UV_CRAWLER_BASE = uv(512, 288, 64, 64);
@@ -2355,12 +2359,12 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(outlined(img.shieldTower, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1312, 2976, 96, 96);
   // the walls, flat like the shield tower (they never rotate), 32px
   // sources upscaled 2x into their 64px cells (see UV_COPPER_WALL)
-  c.drawImage(antialiased(outlined(img.copperWall, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1024, 3200, 64, 64);
-  c.drawImage(antialiased(outlined(img.titaniumWall, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1088, 3200, 64, 64);
-  c.drawImage(antialiased(outlined(img.thoriumWall, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1152, 3200, 64, 64);
-  c.drawImage(antialiased(outlined(img.copperWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1024, 3296, 128, 128);
-  c.drawImage(antialiased(outlined(img.titaniumWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1184, 3296, 128, 128);
-  c.drawImage(antialiased(outlined(img.thoriumWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1344, 3296, 128, 128);
+  c.drawImage(antialiased(outlined(img.copperWall, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 0, 3008, 64, 64);
+  c.drawImage(antialiased(outlined(img.titaniumWall, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 64, 3008, 64, 64);
+  c.drawImage(antialiased(outlined(img.thoriumWall, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 128, 3008, 64, 64);
+  c.drawImage(antialiased(outlined(img.copperWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1280, 3072, 128, 128);
+  c.drawImage(antialiased(outlined(img.titaniumWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1728, 3072, 128, 128);
+  c.drawImage(antialiased(outlined(img.thoriumWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1856, 3072, 128, 128);
 
   // duo top and 1x1 base: 32px sources upscaled 2x into 64px cells
   drawFacingRight(c, antialiased(outlined(img.duoPreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 160, 480, 64);
