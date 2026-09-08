@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useConfirm } from "./ConfirmDialog";
 import {
   UNIT_KINDS,
   UNIT_STATS,
@@ -257,8 +258,21 @@ export default function LevelEditorView({
     [level, waveGap, script],
   );
 
-  const back = (): void => {
-    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+  const { confirm, dialog: confirmDialog } = useConfirm();
+
+  const back = async (): Promise<void> => {
+    // the game's own dialog, never the browser's (ConfirmDialog)
+    if (
+      dirty &&
+      !(await confirm({
+        title: "Discard unsaved changes?",
+        body: "This level has edits that have not been saved. Leaving throws them away.",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep editing",
+      }))
+    ) {
+      return;
+    }
     onClose();
   };
 
@@ -437,6 +451,7 @@ export default function LevelEditorView({
           </main>
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 }

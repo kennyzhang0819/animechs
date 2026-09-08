@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useConfirm } from "./ConfirmDialog";
 import { MapEditor, PATH_WIDTHS, type BrushShape } from "@/game/editor";
 import { LEGACY_COLS, SPAWN_RADII, SPAWN_RADIUS_DEFAULT } from "@/game/maps";
 import { TOWERS, ZONE_KINDS } from "@/game/constants";
@@ -285,14 +286,28 @@ export default function MapEditorView({
     }
   });
 
-  const close = useCallback(() => {
-    if (editorRef.current?.dirty && !window.confirm("Discard unsaved changes?")) return;
+  const { confirm, dialog: confirmDialog } = useConfirm();
+
+  const close = useCallback(async () => {
+    // the game's own dialog, never the browser's (ConfirmDialog)
+    if (
+      editorRef.current?.dirty &&
+      !(await confirm({
+        title: "Discard unsaved changes?",
+        body: "This map has edits that have not been saved. Leaving throws them away.",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep editing",
+      }))
+    ) {
+      return;
+    }
     onClose();
-  }, [onClose]);
+  }, [confirm, onClose]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.code === "Escape") close();
+      // the dialog owns Escape while it is up, and answers it itself
+      if (e.code === "Escape" && !e.defaultPrevented) void close();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -693,6 +708,7 @@ export default function MapEditorView({
           </div>
         </Panel>
       </div>
+      {confirmDialog}
     </div>
   );
 }

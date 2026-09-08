@@ -91,7 +91,13 @@ import {
   type MutationDef,
   type MutationId,
 } from "@/game/mutation";
-import { displayControls, type DisplayMode, type DisplayState } from "@/game/storage";
+import {
+  canQuit,
+  displayControls,
+  quitGame,
+  type DisplayMode,
+  type DisplayState,
+} from "@/game/storage";
 import { useCursorLock } from "./cursorLock";
 import { BUILD } from "@/game/version";
 import { BUILD_TABS, buildTabOf, BY_MINDUSTRY_VALUE, type BuildTab } from "@/game/tech";
@@ -105,6 +111,7 @@ import { bandFor, MutationFace } from "./mutationFace";
 import { HoverCard, useHoverCard } from "./HoverCard";
 import MenuBackground from "./MenuBackground";
 import { useEscapeBack } from "./Board";
+import { useConfirm } from "./ConfirmDialog";
 
 /** the level card's map preview — the admin editor's thumbnail look */
 function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) {
@@ -1305,13 +1312,51 @@ export default function MechSwarm() {
   }, []);
   /**
    * ESCAPE LEAVES A MENU VIEW, the same as the arrow top-left (the `back`
-   * button below). Only from an inner view: on the title card there is no
-   * arrow and nothing behind it, and in a run Escape is the game's own key
-   * (game.ts backs out of a build, then opens the pause menu). The tech
-   * screen and the boards bind their own through BackButton.
+   * button below) — and on the title card, where there is nothing behind
+   * to go back to, it asks whether to quit instead, which is the door the
+   * Exit button opens. In a run Escape is the game's own key (game.ts
+   * backs out of a build, then opens the pause menu). The tech screen and
+   * the boards bind their own through BackButton.
    */
   const escapeToMenuHome = useCallback(() => setMenuView("home"), []);
-  useEscapeBack(screen === "menu" && menuView !== "home" ? escapeToMenuHome : null);
+  /**
+   * THE GAME'S OWN QUESTIONS — the wipe, the quit — as one dialog rendered
+   * at the bottom of this component, outside every ui-zoom wrapper.
+   * Nothing here calls window.confirm.
+   */
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  /**
+   * IS THERE A WINDOW OF OURS TO CLOSE? Only in the desktop shell: a
+   * browser tab is the player's own and script cannot close it, so the
+   * web build has no Exit button and Escape on the title card does
+   * nothing. Read in an effect rather than at render, because the bridge
+   * is not there when the markup is prerendered.
+   */
+  const [quitAble, setQuitAble] = useState(false);
+  useEffect(() => setQuitAble(canQuit()), []);
+  const askQuit = useCallback(async () => {
+    if (
+      await confirm({
+        title: "Quit MechSwarm?",
+        body: "Progress is saved as it is earned — anything you have unlocked will be here when you come back.",
+        confirmLabel: "Quit",
+        cancelLabel: "Stay",
+      })
+    ) {
+      quitGame();
+    }
+  }, [confirm]);
+  /** the same door, as the plain callback useEscapeBack takes */
+  const escapeToQuit = useCallback(() => void askQuit(), [askQuit]);
+  useEscapeBack(
+    screen === "menu"
+      ? menuView !== "home"
+        ? escapeToMenuHome
+        : quitAble
+          ? escapeToQuit
+          : null
+      : null,
+  );
   /**
    * IS THE PAUSE OVERLAY SHOWING SETTINGS? The overlay is a MENU first —
    * Resume, Settings, Abandon — and the knobs live one press behind it.
@@ -1902,8 +1947,13 @@ export default function MechSwarm() {
           <SettingsBox>
             <SettingRow label="Reset save">
               <button
-                onClick={() => {
-                  if (window.confirm("Wipe all progress - resources, tech, and cleared rungs?")) {
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: "Wipe all progress?",
+                    body: "Resources, tech and every cleared rung go back to nothing. This cannot be undone.",
+                    confirmLabel: "Wipe",
+                  });
+                  if (ok) {
                     resetProgress();
                     const p = loadProgress();
                     setProgress(p);
@@ -2212,6 +2262,19 @@ export default function MechSwarm() {
                   >
                     Settings
                   </button>
+                  {/* THE LAST DOOR, and the only one that leads out of the
+                      game: it asks before it takes anyone through
+                      (askQuit), and Escape on this screen presses it. Only
+                      the desktop shell has a window of ours to close — a
+                      browser tab is the player's own */}
+                  {quitAble && (
+                    <button
+                      onClick={() => void askQuit()}
+                      className="ms-btn w-full py-3.5 text-[17px] tracking-[0.3em]"
+                    >
+                      Exit
+                    </button>
+                  )}
                 </div>
                 {/* no credit line under the buttons: the hero screen carries
                     the game's name and the two things to do with it. Who made
@@ -2392,6 +2455,10 @@ export default function MechSwarm() {
             cover="fixed z-50"
           />
         )}
+        {/* THE GAME'S OWN "ARE YOU SURE" (ConfirmDialog) — the wipe, the
+            quit. Last, outside the zoom wrapper and over everything: a
+            question stands in front of whatever asked it */}
+        {confirmDialog}
       </div>
     );
   }
@@ -2961,9 +3028,19 @@ export default function MechSwarm() {
                     Settings
                   </button>
                   {/* the one thing here that cannot be undone sits last and
-                      alone, in the colour nothing else on the panel wears */}
+                      alone, in the colour nothing else on the panel wears —
+                      and asks, in the game's own dialog, before it throws
+                      the run away */}
                   <button
-                    onClick={backToMenu}
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: "Abandon this run?",
+                        body: "The board is lost and the waves it cleared pay nothing. The rung and the map stay picked.",
+                        confirmLabel: "Abandon",
+                        cancelLabel: "Keep playing",
+                      });
+                      if (ok) backToMenu();
+                    }}
                     className="ms-btn ms-btn-red w-full px-5 py-2 text-base"
                   >
                     Abandon run
@@ -2973,6 +3050,8 @@ export default function MechSwarm() {
             </div>
           </div>
         )}
+        {/* the same one dialog the front of house uses, over the field */}
+        {confirmDialog}
       </div>
     </div>
   );

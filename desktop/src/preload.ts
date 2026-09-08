@@ -34,6 +34,14 @@ const bridge = {
       return () => ipcRenderer.removeListener("display:changed", listener);
     },
   },
+  /**
+   * QUIT. The menu's Exit button, after the game's own confirmation — the
+   * shell closes itself rather than the page trying to close a window it
+   * does not own.
+   */
+  app: {
+    quit: (): void => ipcRenderer.send("app:quit"),
+  },
   steam: {
     available: ipcRenderer.sendSync("steam:available") === true,
     unlockAchievement: (id: string): void => ipcRenderer.send("steam:achievement", String(id)),

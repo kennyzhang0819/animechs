@@ -1,4 +1,12 @@
-import { app, BaseWindow, dialog, Menu, type MenuItemConstructorOptions, shell } from "electron";
+import {
+  app,
+  BaseWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  type MenuItemConstructorOptions,
+  shell,
+} from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { APP_ORIGIN, registerAppScheme, serveBundle } from "./serve";
@@ -59,6 +67,16 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => game?.focus());
+}
+
+/**
+ * THE GAME'S OWN EXIT. The menu's Exit button asks its question inside the
+ * game (ConfirmDialog) and then says this — so the shell never puts up an
+ * OS confirmation of its own, and quitting is one press and one answer
+ * rather than a system sheet over a fullscreen window.
+ */
+function installQuitHandler(): void {
+  ipcMain.on("app:quit", () => app.quit());
 }
 
 function buildMenu(): void {
@@ -138,6 +156,7 @@ void app.whenReady().then(() => {
   if (!DEV_URL) serveBundle(root);
   installSaveHandlers(savesDir(userData));
   installSteamHandlers(steam);
+  installQuitHandler();
   buildMenu();
   installDisplayHandlers(() => game);
   game = createShell();

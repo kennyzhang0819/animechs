@@ -71,6 +71,8 @@ export interface DesktopBridge {
   };
   /** optional: a shell packaged before the Video tab existed has no display controls */
   display?: DisplayBridge;
+  /** optional: a shell packaged before the menu had an Exit button cannot be told to quit */
+  app?: { quit(): void };
   steam: {
     /** true when the shell is running under a Steam client */
     available: boolean;
@@ -96,6 +98,21 @@ export function desktop(): DesktopBridge | undefined {
  */
 export function displayControls(): DisplayBridge | undefined {
   return desktop()?.display;
+}
+
+/**
+ * Whether there is a window of ours to close — the menu's Exit button is
+ * only drawn when there is. In a browser tab the tab is the player's own
+ * (and script cannot close one it did not open), so the game does not
+ * offer to quit something it cannot quit.
+ */
+export function canQuit(): boolean {
+  return desktop()?.app !== undefined;
+}
+
+/** close the game, after the game's own confirmation has been answered */
+export function quitGame(): void {
+  desktop()?.app?.quit();
 }
 
 export function readSave(): string | null {
