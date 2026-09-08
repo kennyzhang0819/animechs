@@ -641,6 +641,23 @@ export class FlowField {
   }
 
   /**
+   * Forget the published field: no distances, no headings, no doors.
+   *
+   * A field being re-solved normally keeps serving its last answer, which
+   * is the point of the work buffers — but a field being re-AIMED (a move
+   * order sent somewhere else, Sim.orderMove) would then spend the whole
+   * solve steering bodies at the place they were told to leave. Blanking
+   * it makes the readers fall through to whatever they do with no field,
+   * which for an order is the straight line at the point.
+   */
+  blank(): void {
+    this.dist.fill(INF);
+    this.dirX.fill(0);
+    this.dirY.fill(0);
+    this.spawnPts = [];
+  }
+
+  /**
    * SOLVE IN SLICES, `budgetMs` of work a call, and publish the result the
    * moment it is whole.
    *

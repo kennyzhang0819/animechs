@@ -390,10 +390,13 @@ const HN = HCOLS * HROWS;
 
 export type PlaceResult = "ok" | "invalid" | "would-seal";
 
-/** the cells a body of the player's sees round itself (fog.ts) */
-export const UNIT_VISION_CELLS = 6;
-/** seconds between re-casts of the fog while the player has bodies out */
-const UNIT_VISION_EVERY = 0.5;
+/**
+ * The cells a body of the player's sees round itself (fog.ts) — a unit's
+ * own eye, and the only moving one on the board. Wide enough that walking
+ * a unit into the dark actually opens ground ahead of it rather than
+ * lifting the fog off the cell it is standing on.
+ */
+export const UNIT_VISION_CELLS = 9;
 /**
  * HOW LONG THE BOARD MUST HOLD STILL before a dirtied flow field is
  * re-solved, in seconds. A solve is ~100ms of main thread on a 512x512
@@ -422,6 +425,13 @@ const FIELD_MIN_SLICE = 0.25;
 const nowMs = () => performance.now();
 /** how far out from a factory's edge its make is set down */
 const FACTORY_SPAWN_REACH = CELL * 2.5;
+/**
+ * HOW CLOSE IS ARRIVED, for a body under a move order (Sim.orderMove).
+ * Generous on purpose: a group sent at one cell cannot all stand on it,
+ * and a body still shoving for the exact point long after the group has
+ * settled reads as twitching rather than as arriving.
+ */
+const ORDER_ARRIVE = CELL * 2;
 /** the player's fields enter by no door: an all-zero pad mask */
 const NO_PADS = new Uint8Array(NCELLS);
 /** a shot's own hit radius against a body, on top of the body's */
@@ -863,6 +873,24 @@ export class Sim {
   readonly uteam = new Uint8Array(MAX_UNITS);
   /** how many of the player's bodies stand on the field (PLAYER_UNIT_CAP) */
   nPlayer = 0;
+  /**
+   * 1 = THE PLAYER HAS THIS BODY SELECTED (selectAt, selectInRect,
+   * selectLike). Only ever set on a body of the player's — the swarm's are
+   * marked for focus fire instead, which is a different idea with a
+   * different mark (focusUid).
+   */
+  readonly usel = new Uint8Array(MAX_UNITS);
+  /**
+   * THE MOVE ORDER THIS BODY IS UNDER: 0 for none, else 1 plus the index
+   * of the order field it is steering by (orderFields). A body with no
+   * order falls back to what it has always done — walk the player's field
+   * at the swarm's buildings — so an order is a detour from the standing
+   * one rather than a mode.
+   */
+  readonly uord = new Uint8Array(MAX_UNITS);
+  /** where that order sent it, in world px: what arrival is measured against */
+  readonly uordx = new Float32Array(MAX_UNITS);
+  readonly uordy = new Float32Array(MAX_UNITS);
   /** the swarm's census — aliveByKind less the player's bodies — for the HUD */
   readonly enemyByKind = new Int32Array(UNIT_KINDS.length);
   /** 1 = this unit is a NAVAL TANK: it steers by navalField, so the deep
@@ -1318,9 +1346,26 @@ export class Sim {
   readonly pNavalField = new FlowField();
   readonly pAirField = new FlowField();
   private playerFieldsOn = false;
-  /** the fog is re-cast on this clock while the player has bodies out —
-   *  a moving eye is a thing the structure-driven fog never had */
-  private unitVisionT = 0;
+  /**
+   * THE MOVE ORDERS' FIELDS (orderMove). A right-click is a destination,
+   * and a destination is a flow field like any other: the same rock, the
+   * player's own buildings hard and the swarm's soft, seeded from the one
+   * cell the player pointed at. Every body in the order reads the same
+   * field, so a group ordered across the map keeps its shape going round
+   * a headland instead of each body solving its own way there.
+   *
+   * THERE ARE TWO, and a third order retires the older of them: a field
+   * is six megabytes and a solve, and two covers what the hands actually
+   * do — send a group, send another, come back to the first. The bodies
+   * on a retired order simply lose it and go back to the standing one.
+   *
+   * ONE MASK FOR EVERYONE. It is the walkers' — a naval tank under orders
+   * routes as a walker (it can drive anywhere they can, only slower) and a
+   * flyer ignores it entirely and flies the straight line to the point.
+   */
+  private readonly orderFields = [new FlowField(), new FlowField()];
+  /** which slot the next order takes, round-robin over orderFields */
+  private orderSlot = 0;
   /**
    * WHERE THE HILLS ARE (airWalkMask), kept because two different questions
    * ask it: what a flyer routes around, and what a shot cannot be taken
@@ -1485,6 +1530,10 @@ export class Sim {
     // an older board) is dropped, not forced
     for (const e of this.terrain.enemies) this.placeEnemyStructure(e.gx, e.gy, e.kind);
     this.abortSolves();
+    // a new map is a new board: no order stands on it, and the fields the
+    // last one's orders were being solved into are thrown away
+    for (const f of this.orderFields) f.abort();
+    this.orderSlot = 0;
     this.fieldDirty = false;
     this.navalDirty = false;
     this.pFieldDirty = false;
@@ -1524,7 +1573,6 @@ export class Sim {
     this.nPlayer = 0;
     this.enemyByKind.fill(0);
     this.playerFieldsOn = false;
-    this.unitVisionT = 0;
     // fail LOUDLY on a broken map: with zero doors nothing ever spawns and
     // a wave script stalls forever, which reads as a scheduler bug
     if (this.airPads.length === 0 && this.field.spawnPts.length === 0)
@@ -2389,17 +2437,16 @@ export class Sim {
     }
     this.solveDirtyFields(dt);
     this.updateProduction(dt);
-    // THE PLAYER'S BODIES SEE: while any is out, the fog is re-cast twice a
-    // second from every eye (visionSources) so the ground they walk onto
-    // clears in front of them and closes behind
-    if (this.nPlayer > 0 && this.fog.enabled) {
-      this.unitVisionT -= dt;
-      if (this.unitVisionT <= 0) {
-        this.unitVisionT = UNIT_VISION_EVERY;
-        this.fog.invalidate();
-        this.fog.ensure(this.visionSources);
-      }
-    }
+    // THE PLAYER'S BODIES SEE, and they see EVERY TICK: the fog is recast
+    // from every eye (visionSources) each frame a body is out, so the
+    // ground opens in front of a walking unit and closes behind it as
+    // smoothly as the unit moves. It used to be twice a second, which is
+    // a circle that jumps three cells at a time and reads as the fog
+    // stepping rather than the unit walking. The recast puts back only
+    // what it lit last time and the renderer uploads only the rectangle
+    // that moved (Fog.refresh, takeDirty), so the whole thing is a
+    // fraction of a millisecond.
+    if (this.nPlayer > 0 && this.fog.enabled) this.fog.refresh(this.visionSources);
 
     this.updateAliveBounds();
     this.buildHash();
@@ -3974,6 +4021,9 @@ export class Sim {
       this.uability[i] = 0;
       this.upullx[i] = 0;
       this.upully[i] = 0;
+      // a body arrives with nothing on it: not selected, under no order
+      this.usel[i] = 0;
+      this.uord[i] = 0;
       // THE ARRIVAL CLOCK IS A DOOR RULE, so a brood does not get one: the
       // invincibility is there to stop a drop zone being camped, and a body
       // that broke out of another body in the middle of the kill zone is
@@ -4535,6 +4585,12 @@ export class Sim {
     this.ubrood[i] = this.ubrood[n];
     this.uwave[i] = this.uwave[n];
     this.uteam[i] = this.uteam[n];
+    // the selection and the order are the player's hold on a particular
+    // body, so they follow it down into its new slot exactly as its feet do
+    this.usel[i] = this.usel[n];
+    this.uord[i] = this.uord[n];
+    this.uordx[i] = this.uordx[n];
+    this.uordy[i] = this.uordy[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
     this.ufly[i] = this.ufly[n];
@@ -4992,6 +5048,31 @@ export class Sim {
         } else this.airHeading(upx[i], upy[i], gdx / gl, gdy / gl, flowTmp, mine ? this.pAirField : this.airField);
       } else {
         mf.sample(upx[i], upy[i], flowTmp);
+      }
+      // A BODY UNDER ORDERS goes where it was sent instead (orderMove).
+      // Only the HEADING is the order's: every terrain question below is
+      // still asked of the unit's own layer (mf), so an ordered tank still
+      // knows the water is open to it and an ordered walker still slides
+      // along the walls it meets.
+      const ord = mine ? this.uord[i] : 0;
+      if (ord > 0) {
+        const odx = this.uordx[i] - upx[i], ody = this.uordy[i] - upy[i];
+        const od = Math.sqrt(odx * odx + ody * ody);
+        if (od <= ORDER_ARRIVE) {
+          // arrived: the standing order takes over again, which is to walk
+          // at the swarm's buildings
+          this.uord[i] = 0;
+        } else {
+          if (!fly) this.orderFields[ord - 1].sample(upx[i], upy[i], flowTmp);
+          // a flyer has no use for the field, and a body whose field has
+          // not published yet (the first half-second of an order) has
+          // nothing to read: both walk the straight line at the point,
+          // which is a heading the moment the order is given
+          if (fly || (flowTmp.x === 0 && flowTmp.y === 0)) {
+            flowTmp.x = odx / od;
+            flowTmp.y = ody / od;
+          }
+        }
       }
       // StatusEffects.unmoving is a speedMultiplier of 0, not a freeze: a
       // unit still materialising cannot drive itself anywhere, but the
@@ -5650,6 +5731,163 @@ export class Sim {
 
   /** the unit under a tap, if any — a hit-test against live hitboxes with
    *  a little slop so a fingertip can pick a dagger out of a lane */
+  /**
+   * THE PLAYER'S BODY UNDER A POINT, or -1. The mirror of unitAt, which
+   * finds the SWARM's: a tap picks one side or the other, never both, and
+   * the two sides mean opposite things by it — the swarm's body is a mark
+   * to shoot, the player's is a body to command.
+   */
+  myUnitAt(px: number, py: number): number {
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < this.n; i++) {
+      if (this.uteam[i] === 0) continue;
+      const dx = this.upx[i] - px, dy = this.upy[i] - py;
+      const d2 = dx * dx + dy * dy;
+      const r = Math.max(this.urad[i] * 1.6, 10);
+      if (d2 < r * r && d2 < bd) {
+        bd = d2;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /** how many of the player's bodies are selected right now */
+  get selectedN(): number {
+    let k = 0;
+    for (let i = 0; i < this.n; i++) if (this.usel[i]) k++;
+    return k;
+  }
+
+  /** nothing selected any more */
+  clearSelection(): void {
+    for (let i = 0; i < this.n; i++) this.usel[i] = 0;
+  }
+
+  /**
+   * Select the body under a point. `add` keeps what was already selected
+   * (shift-click); without it the click replaces the selection. Returns
+   * whether anything was hit — a miss on bare ground clears the selection
+   * and says so, which is what lets the caller fall through to its other
+   * meanings for a click on nothing.
+   */
+  selectAt(px: number, py: number, add = false): boolean {
+    const i = this.myUnitAt(px, py);
+    if (!add) this.clearSelection();
+    if (i < 0) return false;
+    this.usel[i] = 1;
+    return true;
+  }
+
+  /** every body of the player's inside a world rectangle */
+  selectInRect(x0: number, y0: number, x1: number, y1: number, add = false): number {
+    const ax = Math.min(x0, x1), bx = Math.max(x0, x1);
+    const ay = Math.min(y0, y1), by = Math.max(y0, y1);
+    if (!add) this.clearSelection();
+    let k = 0;
+    for (let i = 0; i < this.n; i++) {
+      if (this.uteam[i] === 0) continue;
+      if (this.upx[i] < ax || this.upx[i] > bx || this.upy[i] < ay || this.upy[i] > by) continue;
+      this.usel[i] = 1;
+      k++;
+    }
+    return k;
+  }
+
+  /**
+   * EVERY BODY LIKE THIS ONE NEARBY — the double-click, and ctrl-click.
+   * "Like" is the KIND, which in this game already carries the tier (a
+   * dagger is tier 1 and nothing else is a dagger), and "nearby" is a
+   * radius round the one clicked rather than the whole map: a double-click
+   * gathers the group in front of you, not every dagger in the run.
+   */
+  selectLike(px: number, py: number, radius: number, add = false): number {
+    const at = this.myUnitAt(px, py);
+    if (at < 0) return 0;
+    const kind = this.ukind[at];
+    const ox = this.upx[at], oy = this.upy[at];
+    if (!add) this.clearSelection();
+    let k = 0;
+    for (let i = 0; i < this.n; i++) {
+      if (this.uteam[i] === 0 || this.ukind[i] !== kind) continue;
+      const dx = this.upx[i] - ox, dy = this.upy[i] - oy;
+      if (dx * dx + dy * dy > radius * radius) continue;
+      this.usel[i] = 1;
+      k++;
+    }
+    return k;
+  }
+
+  /**
+   * SEND THE SELECTION SOMEWHERE — the right-click.
+   *
+   * The destination is snapped to open ground the walkers can stand on
+   * (nearestOpenCell), because a point inside rock has no field around it
+   * and would read as "nowhere" to everything downstream. One of the two
+   * order fields is seeded from it and queued at the HEAD of the solve
+   * queue: the player is waiting on this one, unlike a re-route the board
+   * asked for. Until it publishes the bodies walk the straight line at the
+   * point (updateUnits), so an order moves the group on the frame it is
+   * given rather than half a second later.
+   *
+   * Returns how many bodies took the order.
+   */
+  orderMove(px: number, py: number): number {
+    let k = 0;
+    for (let i = 0; i < this.n; i++) if (this.usel[i]) k++;
+    if (k === 0) return 0;
+    const cell = this.nearestOpenCell(px, py);
+    if (cell < 0) return 0;
+    const gx = cell % COLS, gy = (cell / COLS) | 0;
+    const x = (gx + 0.5) * CELL, y = (gy + 0.5) * CELL;
+    const slot = this.orderSlot;
+    this.orderSlot = (this.orderSlot + 1) % this.orderFields.length;
+    // whatever was walking the field in this slot loses its order: the
+    // field is about to be re-seeded under it
+    for (let i = 0; i < this.n; i++) if (this.uord[i] === slot + 1) this.uord[i] = 0;
+    const field = this.orderFields[slot];
+    const goal = new Uint8Array(NCELLS);
+    goal[cell] = 1;
+    field.abort();
+    // ...and forget where it used to point, or the bodies taking this
+    // order would walk the LAST order's headings until the new solve lands
+    field.blank();
+    field.rebuildWalk(this.hardFootprints(), this.terrain.blocked, NO_PADS, goal, this.footprints());
+    // ahead of the board's own re-routes: this one has a hand waiting on it
+    const at = this.solveQueue.indexOf(field);
+    if (at >= 0) this.solveQueue.splice(at, 1);
+    this.solveQueue.unshift(field);
+    for (let i = 0; i < this.n; i++) {
+      if (!this.usel[i]) continue;
+      this.uord[i] = slot + 1;
+      this.uordx[i] = x;
+      this.uordy[i] = y;
+    }
+    return k;
+  }
+
+  /**
+   * The nearest cell to a world point that a walker could stand on, as an
+   * index — the point itself when it is already open, else a ring search
+   * out to a few cells. -1 when there is nothing standable anywhere near,
+   * which is a click deep inside a massif.
+   */
+  private nearestOpenCell(px: number, py: number): number {
+    const gx = clamp((px / CELL) | 0, 0, COLS - 1);
+    const gy = clamp((py / CELL) | 0, 0, ROWS - 1);
+    const open = (x: number, y: number): boolean =>
+      x >= 0 && y >= 0 && x < COLS && y < ROWS && !this.field.walk[y * COLS + x];
+    if (open(gx, gy)) return gy * COLS + gx;
+    for (let r = 1; r <= 8; r++) {
+      for (let dy = -r; dy <= r; dy++)
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          if (open(gx + dx, gy + dy)) return (gy + dy) * COLS + gx + dx;
+        }
+    }
+    return -1;
+  }
+
   unitAt(px: number, py: number): number {
     let best = -1, bd = Infinity;
     for (let i = 0; i < this.n; i++) {

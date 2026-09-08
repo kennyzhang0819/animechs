@@ -1000,6 +1000,9 @@ export class Renderer {
   private readonly fogTex: WebGLTexture;
   private fogSrc: Fog | null = null;
   private fogVersion = -1;
+  /** has the whole texture been sent once? until it has, a sub-upload
+   *  would be writing into a texture that does not exist yet */
+  private fogUploaded = false;
   private readonly fogMask = new Uint8Array(COLS * ROWS * 4);
   private readonly dyn: Batch;
   /**
@@ -2089,6 +2092,7 @@ export class Renderer {
   setFog(fog: Fog | null): void {
     this.fogSrc = fog;
     this.fogVersion = -1;
+    this.fogUploaded = false;
   }
 
   /**
@@ -2136,14 +2140,44 @@ export class Renderer {
       this.fogVersion = f.version;
       const st = f.state, m = this.fogMask;
       const seen = Math.round(FOG_SEEN_ALPHA * 255);
-      for (let i = 0; i < COLS * ROWS; i++) {
-        const v = st[i];
-        const a = v === FOG_VISIBLE ? 0 : v === FOG_SEEN ? seen : v === FOG_NEVER ? 255 : 0;
-        const o = i * 4;
-        m[o] = m[o + 1] = m[o + 2] = m[o + 3] = a;
-      }
       gl.bindTexture(gl.TEXTURE_2D, this.fogTex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, m);
+      // ONLY WHAT MOVED. The fog is recast every tick while the player has
+      // bodies out, and a full rebuild-and-upload of a 512x512 texture is
+      // most of a frame's budget; the fog hands over the rectangle that
+      // actually changed (Fog.takeDirty) and the rows of it are the only
+      // ones repacked and sent. A first frame, or a fog that lost a
+      // source, hands over the whole map and this is the old path exactly.
+      const dirty = f.takeDirty();
+      const r = this.fogUploaded ? dirty : { x0: 0, y0: 0, x1: COLS - 1, y1: ROWS - 1 };
+      if (r) {
+        for (let y = r.y0; y <= r.y1; y++) {
+          const row = y * COLS;
+          for (let x = r.x0; x <= r.x1; x++) {
+            const v = st[row + x];
+            const a = v === FOG_VISIBLE ? 0 : v === FOG_SEEN ? seen : 255;
+            const o = (row + x) * 4;
+            m[o] = m[o + 1] = m[o + 2] = m[o + 3] = a;
+          }
+        }
+        if (!this.fogUploaded) {
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, m);
+          this.fogUploaded = true;
+        } else {
+          // the sub-rectangle is read straight out of the full-map buffer:
+          // ROW_LENGTH says how wide a row of the source is, SKIP_* where
+          // the window starts in it (WebGL2's own unpack state)
+          gl.pixelStorei(gl.UNPACK_ROW_LENGTH, COLS);
+          gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, r.x0);
+          gl.pixelStorei(gl.UNPACK_SKIP_ROWS, r.y0);
+          gl.texSubImage2D(
+            gl.TEXTURE_2D, 0, r.x0, r.y0, r.x1 - r.x0 + 1, r.y1 - r.y0 + 1,
+            gl.RGBA, gl.UNSIGNED_BYTE, m,
+          );
+          gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+          gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+          gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+        }
+      }
     }
     gl.useProgram(this.prog);
     gl.bindTexture(gl.TEXTURE_2D, this.fogTex);

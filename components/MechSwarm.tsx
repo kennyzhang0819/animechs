@@ -2308,7 +2308,6 @@ export default function MechSwarm() {
   // how much is on the field right now, as one number — the HUD's enemy
   // count. byKind is the per-kind census the sim keeps anyway; the panel
   // only ever wants the total (see the count in the wave panel below).
-  const alive = hud ? hud.byKind.reduce((a, b) => a + b, 0) : 0;
 
   return (
     // select-none keeps a press-and-drag across the field from turning into
@@ -2364,69 +2363,36 @@ export default function MechSwarm() {
         {hud && (
           <div className="ui-zoom absolute left-[1rem] top-[1rem] flex w-80 max-w-[calc(100vw-8rem)] flex-col items-stretch gap-2">
             <div className="ms-pane w-full px-3 py-1.5">
-              {/* the wave counter is what a run is read off, so the line
-                  carries that and the rung and nothing else — the level
-                  name is on the card that launched it. Minimized, this line
-                  IS the panel: neither the next-wave countdown nor the
-                  lives pool survives */}
+              {/* WHAT THE CORNER SAYS IS THE CORE AND THE BANK, and nothing
+                  else. The wave counter and the rung used to head this
+                  panel; both were a scoreboard rather than a decision — the
+                  swarm arriving is its own announcement, and the rung was
+                  picked on the card that launched the run. What is left is
+                  the two numbers a player acts on: how much core is still
+                  standing, and what there is to spend. Minimized, the core
+                  line IS the panel. */}
               <div className="flex items-start justify-between gap-2">
                 <div className="text-[15px] uppercase tracking-widest text-[#EDEDEF] break-words">
-                  <div>
-                    <span className="font-bold" style={{ color: rungColor(hud.tier) }}>
-                      {rungLabel(hud.tier)}
-                    </span>{" "}
-                    — Wave <span className="font-bold text-[#EDEDEF]">{hud.currentWave}</span>
-                    {hud.mission.kind === "survive" ? (
-                      // THE CLOCK IS THE MISSION on a survive map: the wave
-                      // count keeps climbing past the script, so the
-                      // denominator is time, not waves
-                      <>
-                        {" "}
-                        · <span className="font-bold text-[#7FC4FF]">{clock(hud.timeLeft)}</span>{" "}
-                        left
-                      </>
-                    ) : (
-                      <> / {hud.totalWaves}</>
-                    )}
+                  <div className="flex items-center gap-2 text-[#71717C]">
+                    Core{" "}
+                    <span className="ms-bar h-2.5 w-24" title={`${hud.coreHp} / ${hud.coreHpMax}`}>
+                      <span
+                        className="block h-full"
+                        style={{
+                          width: `${Math.max(0, Math.min(100, (100 * hud.coreHp) / Math.max(1, hud.coreHpMax)))}%`,
+                          background:
+                            hud.coreHp > hud.coreHpMax / 2
+                              ? "#7BE58A"
+                              : hud.coreHp > hud.coreHpMax / 5
+                                ? "#FFD37F"
+                                : "#FF5A5A",
+                        }}
+                      />
+                    </span>
+                    <span className="font-bold text-[#EDEDEF]">
+                      {Math.round((100 * hud.coreHp) / Math.max(1, hud.coreHpMax))}%
+                    </span>
                   </div>
-                  {/* THE CORE'S HEALTH, on its own line: the one pool the run
-                      is played for. It folds away with the rest when the
-                      panel is minimized — that is a request for the BOARD,
-                      and the wave line alone is what honours it. */}
-                  {/* ...and the enemy count shares that line, in the same
-                      voice. ONE NUMBER, NOT A ROSTER: the per-kind icon row
-                      said what was on the field down to the last crawler,
-                      which is a census nobody reads mid-wave. What a player
-                      wants off this corner is "how much is still coming at
-                      me", so that is all it says */}
-                  {!hudMin && (
-                    <div className="flex items-center gap-2 text-[#71717C]">
-                      Core{" "}
-                      <span className="ms-bar h-2.5 w-24" title={`${hud.coreHp} / ${hud.coreHpMax}`}>
-                        <span
-                          className="block h-full"
-                          style={{
-                            width: `${Math.max(0, Math.min(100, (100 * hud.coreHp) / Math.max(1, hud.coreHpMax)))}%`,
-                            background:
-                              hud.coreHp > hud.coreHpMax / 2
-                                ? "#7BE58A"
-                                : hud.coreHp > hud.coreHpMax / 5
-                                  ? "#FFD37F"
-                                  : "#FF5A5A",
-                          }}
-                        />
-                      </span>
-                      <span className="font-bold text-[#EDEDEF]">
-                        {Math.round((100 * hud.coreHp) / Math.max(1, hud.coreHpMax))}%
-                      </span>
-                      {alive > 0 && <span className="mx-1">·</span>}
-                      {alive > 0 && (
-                        <>
-                          <span className="font-bold text-[#EDEDEF]">{alive}</span> enemies
-                        </>
-                      )}
-                    </div>
-                  )}
                 </div>
                 <button
                   title={hudMin ? "Show run details" : "Hide run details"}
@@ -2463,18 +2429,6 @@ export default function MechSwarm() {
                       )}
                     </div>
                   )}
-                  {/* HOW LONG THIS RUN HAS BEEN GOING, not how long until
-                      the next wave. The countdown told a player to wait;
-                      the clock tells them how they are doing, and the gap
-                      is never skippable either way — the wait is always
-                      paid in real ticks so the drops economy cannot be
-                      cheated by releasing waves early */}
-                  <div className="flex flex-wrap items-center gap-2 text-[15px] uppercase tracking-widest text-[#EDEDEF]">
-                    <span>
-                      Elapsed{" "}
-                      <span className="font-bold text-[#EDEDEF]">{clock(hud.elapsed)}</span>
-                    </span>
-                  </div>
                 </>
               )}
             </div>

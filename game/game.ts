@@ -10,7 +10,7 @@ import {
 } from "./maps";
 import { FOG_NEVER, FOG_SEEN, FOG_SEEN_ALPHA, FOG_VISIBLE } from "./fog";
 import { SHIELD_TOWER_SIZE } from "./mutation";
-import { CELL, clamp, COLS, H, ROWS, structStats, TOWERS, W } from "./constants";
+import { CELL, clamp, COLS, H, ROWS, structStats, TOWERS, towerMaxHp, W } from "./constants";
 import { loadBalanceDoc } from "./balance";
 import {
   loadLevelDocs,
@@ -20,7 +20,7 @@ import {
   type TowerKind,
   type UnitKind,
 } from "./levels";
-import { missionXp, scrapPriceOf, sellValue } from "./economy";
+import { missionXp, scrapPriceOf, sellValue, UNIT_BUILD_SECONDS } from "./economy";
 import type { TowerPlacement } from "./progress";
 import { TOWER_KINDS } from "./types";
 import { Renderer } from "./renderer";
@@ -252,6 +252,33 @@ const EDGE_PAN_PX = 12;
  *  dot is a 2x2 square and the viewport's rectangle has a crisp 1-cell stroke */
 // one backing pixel a cell: 512 for the grid, sized down by CSS to its corner
 const MM_SCALE = 1;
+
+/**
+ * THE BAR STACK over a thing on the board (Game.drawBars), in world px.
+ * One height for every bar in the game so a row of buildings reads as a
+ * row rather than a ragged fence.
+ */
+/** how far the hand must travel for a press to be a marquee, in screen px */
+const SEL_DRAG_PX = 5;
+/** how far a ctrl/double click reaches for bodies like the one clicked */
+const SEL_LIKE_R = CELL * 14;
+/** how long the ping over a move order lasts, in ms */
+const ORDER_MARK_MS = 450;
+/** the green a selected body wears, ring and marquee alike */
+const SELECT_RING = "rgba(123,229,138,0.9)";
+
+const BAR_H = 3.5;
+const BAR_GAP = 1.5;
+/** ...and a floor on the width, so a 1x1 turret's bar is still a bar */
+const BAR_MIN_W = 14;
+const BAR_BACK = "rgba(10,14,26,0.72)";
+const BAR_EDGE = "rgba(0,0,0,0.55)";
+/** what is going up (Tower.buildT) — the accent gold */
+const BAR_BUILD = "#FFD37F";
+/** what is being made (Tower.prodT) — the player's blue */
+const BAR_MAKE = "#7FC4FF";
+/** a health bar's colour at a fraction of full, the HUD's own three */
+const hpColor = (f: number): string => (f > 0.5 ? "#7BE58A" : f > 0.2 ? "#FFD37F" : "#FF5A5A");
 const PAN_KEYS: Record<string, readonly [number, number]> = {
   KeyW: [0, -1],
   KeyS: [0, 1],
@@ -342,6 +369,25 @@ export class Game {
   // MIDDLE drag and on WASD/arrows (see PAN_KEYS), not here
   private selling = false;
   private sellFrom = { x: 0, y: 0 };
+  /**
+   * THE MARQUEE. A left press on bare ground with no turret in hand starts
+   * one: held and dragged it is a region select, released on the spot it is
+   * a click. Which of the two it was is only known on release, so the press
+   * itself commits to nothing.
+   */
+  private selecting = false;
+  private selFrom = { x: 0, y: 0 };
+  private selTo = { x: 0, y: 0 };
+  /** where the press was in SCREEN px — a drag is a drag by what the hand
+   *  did, not by how much world the zoom put under it */
+  private selFromScreen = { x: 0, y: 0 };
+  private selDragPx = 0;
+  /** modifiers taken at the press: shift adds to the selection, ctrl (or a
+   *  double click) takes everything like the body under the cursor */
+  private selAdd = false;
+  private selLike = false;
+  /** where the last move order landed, and when — the ping drawn over it */
+  private orderMark: { x: number; y: number; t: number } | null = null;
   private lastMouse = { x: 0, y: 0 };
   private readonly keysDown = new Set<string>();
   private paused = false;
@@ -479,8 +525,15 @@ export class Game {
         this.buildFrom = p;
         this.buildTo(p, false);
       } else {
-        // normal cursor: the shared inspect/focus tap (see inspectAt)
-        this.inspectAt(p);
+        // normal cursor: a press starts a marquee and decides nothing.
+        // What it meant is settled on release (onMouseUp)
+        this.selecting = true;
+        this.selFrom = p;
+        this.selTo = p;
+        this.selFromScreen = { x: e.clientX, y: e.clientY };
+        this.selDragPx = 0;
+        this.selAdd = e.shiftKey;
+        this.selLike = e.ctrlKey || e.metaKey || e.detail >= 2;
       }
     } else if (e.button === 2) {
       e.preventDefault();
@@ -491,9 +544,19 @@ export class Game {
         this.buildKind = null;
         return;
       }
+      const p = this.mouseWorld(e);
+      // WITH BODIES SELECTED THE RIGHT BUTTON IS AN ORDER, not a demolish:
+      // the army is what the hand is on, and a player who wants to sell
+      // clicks off the selection first (which is one left click on bare
+      // ground). Nothing is demolished under a selection, so an order
+      // misclicked onto a turret costs nothing
+      if (this.sim.selectedN > 0) {
+        if (this.sim.orderMove(p.x, p.y) > 0)
+          this.orderMark = { x: p.x, y: p.y, t: performance.now() };
+        return;
+      }
       // otherwise it demolishes on press and chains from here, exactly like
       // the left button builds on press and chains from there
-      const p = this.mouseWorld(e);
       this.selling = true;
       this.sellFrom = p;
       this.sim.sellTowerAt(p.x, p.y);
@@ -506,10 +569,27 @@ export class Game {
       this.lastMouse = { x: e.clientX, y: e.clientY };
     }
   };
-  private readonly onMouseUp = (): void => {
+  private readonly onMouseUp = (e: MouseEvent): void => {
     this.selling = false;
     this.panning = false;
     this.building = false;
+    if (!this.selecting) return;
+    this.selecting = false;
+    const p = this.mouseWorld(e);
+    // A DRAG IS A REGION, a click is a point. The threshold is in screen
+    // px so it means the same thing at every zoom
+    if (this.selDragPx > SEL_DRAG_PX) {
+      this.sim.selectInRect(this.selFrom.x, this.selFrom.y, p.x, p.y, this.selAdd);
+      return;
+    }
+    // ctrl, or the second click of a double: everything like the body under
+    // the cursor, within reach of it
+    if (this.selLike && this.sim.selectLike(p.x, p.y, SEL_LIKE_R, this.selAdd) > 0) return;
+    // a body of the player's: select it. Anything else: the old tap — a
+    // mark on the swarm, a range ring on a turret of ours, or a clearing
+    // click on bare ground (inspectAt), which the miss has already emptied
+    // the selection for
+    if (!this.sim.selectAt(p.x, p.y, this.selAdd)) this.inspectAt(p);
   };
   private readonly onMove = (e: MouseEvent): void => {
     if (this.panning) {
@@ -523,6 +603,10 @@ export class Game {
       this.clampCamera();
     }
     const p = this.mouseWorld(e);
+    if (this.selecting) {
+      this.selTo = p;
+      this.selDragPx = Math.hypot(e.clientX - this.selFromScreen.x, e.clientY - this.selFromScreen.y);
+    }
     if (this.building && !this.panning) this.buildTo(p, true);
     if (this.selling && !this.panning) {
       this.sim.sellLine(this.sellFrom.x, this.sellFrom.y, p.x, p.y);
@@ -536,6 +620,9 @@ export class Game {
     this.panning = false;
     this.building = false;
     this.selling = false;
+    // a marquee whose release happened off the canvas is abandoned rather
+    // than applied to wherever the cursor left
+    this.selecting = false;
   };
   /**
    * The range ring reads `selected`, which holds a Tower by reference — a
@@ -1438,6 +1525,147 @@ export class Game {
     c.strokeRect(fx0, fy0, fx1 - fx0, fy1 - fy0);
   }
 
+  /**
+   * THE ARMY'S OWN MARKS: a ring under every selected body with its health
+   * over it, the marquee while one is being dragged, and a ping where the
+   * last order landed.
+   *
+   * Rings go UNDER the bodies in reading order — they are drawn first —
+   * and the health bar rides above the body like a structure's does
+   * (drawBars), so one vocabulary covers the whole board.
+   */
+  private drawSelection(c: CanvasRenderingContext2D): void {
+    const sim = this.sim;
+    const { upx, upy, urad, usel, uhp, uhpmax, n } = sim;
+    const bars: { v: number; col: string }[] = [];
+    c.lineWidth = 1.5;
+    c.strokeStyle = SELECT_RING;
+    for (let i = 0; i < n; i++) {
+      if (!usel[i]) continue;
+      const r = Math.max(urad[i] * 1.25, 7);
+      c.beginPath();
+      // an ellipse, not a circle: the board is drawn from above but read
+      // as a floor, and a flat ring sits ON the ground the way a shadow does
+      c.ellipse(upx[i], upy[i] + r * 0.25, r, r * 0.55, 0, 0, Math.PI * 2);
+      c.stroke();
+      bars.length = 0;
+      const f = uhp[i] / Math.max(1, uhpmax[i]);
+      if (f < 1) bars.push({ v: f, col: hpColor(f) });
+      this.drawBars(c, upx[i], upy[i] - r, Math.max(r * 2, BAR_MIN_W), bars);
+    }
+    c.lineWidth = 1;
+
+    // THE PING over the last order: a ring that opens and fades, so a click
+    // on empty ground is visibly a click on empty ground
+    if (this.orderMark) {
+      const age = (performance.now() - this.orderMark.t) / ORDER_MARK_MS;
+      if (age >= 1) this.orderMark = null;
+      else {
+        c.beginPath();
+        c.ellipse(this.orderMark.x, this.orderMark.y, 6 + age * 16, (6 + age * 16) * 0.55, 0, 0, Math.PI * 2);
+        c.strokeStyle = `rgba(127,196,255,${(1 - age) * 0.9})`;
+        c.lineWidth = 2;
+        c.stroke();
+        c.lineWidth = 1;
+      }
+    }
+
+    // THE MARQUEE, while the hand is still down on one
+    if (this.selecting && this.selDragPx > SEL_DRAG_PX) {
+      const x = Math.min(this.selFrom.x, this.selTo.x), y = Math.min(this.selFrom.y, this.selTo.y);
+      const w = Math.abs(this.selTo.x - this.selFrom.x), h = Math.abs(this.selTo.y - this.selFrom.y);
+      c.fillStyle = "rgba(123,229,138,0.10)";
+      c.fillRect(x, y, w, h);
+      c.strokeStyle = SELECT_RING;
+      c.lineWidth = 1;
+      c.strokeRect(x, y, w, h);
+    }
+  }
+
+  /**
+   * A STACK OF BARS OVER ONE THING ON THE BOARD — the game's only readout
+   * for "how far along is this", drawn on the overlay in world space so it
+   * scales with the zoom like everything else on the field.
+   *
+   * A bar is a fraction and a colour. They stack UPWARDS from `topY` in
+   * the order given, so the caller's order is the reading order from the
+   * body up: hp first (nearest the thing it belongs to, where a player
+   * looks for it), then whatever work it is doing above that. Nothing is
+   * drawn for an empty list, so a building with nothing to say wears
+   * nothing.
+   *
+   * These replaced the radial ring the shells used to wear. A ring says
+   * "something is happening here" and nothing more: it cannot be stacked,
+   * two of them cannot be told apart at a glance, and a quarter-full ring
+   * and a three-quarter-full one look alike at the zoom this game is
+   * played at. A bar is read left to right at any size.
+   */
+  private drawBars(
+    c: CanvasRenderingContext2D,
+    cx: number,
+    topY: number,
+    width: number,
+    bars: ReadonlyArray<{ v: number; col: string }>,
+  ): void {
+    if (bars.length === 0) return;
+    const w = Math.max(width, BAR_MIN_W);
+    const x = cx - w / 2;
+    let y = topY - BAR_GAP;
+    for (const b of bars) {
+      y -= BAR_H;
+      c.fillStyle = BAR_BACK;
+      c.fillRect(x, y, w, BAR_H);
+      const f = clamp(b.v, 0, 1);
+      if (f > 0) {
+        c.fillStyle = b.col;
+        c.fillRect(x, y, w * f, BAR_H);
+      }
+      c.strokeStyle = BAR_EDGE;
+      c.lineWidth = 0.5;
+      c.strokeRect(x, y, w, BAR_H);
+      y -= BAR_GAP;
+    }
+    c.lineWidth = 1;
+  }
+
+  /**
+   * Every structure's bars: what it is making, what is still going up, and
+   * what is left of it.
+   *
+   *   PRODUCTION   a factory's unit clock (Tower.prodT), top of the stack
+   *   CONSTRUCTION the shell's own timer (Tower.buildT)
+   *   HP           only once something has actually hurt it — a bar over
+   *                every untouched building would be a wall of green
+   *
+   * The swarm's buildings get the same treatment on ground the player has
+   * seen, because "how much is left of that bunker" is the same question
+   * from either side of it.
+   */
+  private drawStructureBars(c: CanvasRenderingContext2D): void {
+    const bars: { v: number; col: string }[] = [];
+    for (const t of this.sim.towers) {
+      const st = structStats(t.kind);
+      const sz = st.size * CELL;
+      if (t.team === "enemy" && this.sim.fog.enabled && !this.sim.fog.seenAt(t.x, t.y)) continue;
+      bars.length = 0;
+      const hpMax = towerMaxHp(t.kind);
+      // a shell is on 1 hp by design (Tower.buildT) — that is a state, not
+      // a wound, and the construction bar below is already saying it
+      if (t.buildT <= 0 && t.hp < hpMax)
+        bars.push({ v: t.hp / hpMax, col: hpColor(t.hp / hpMax) });
+      if (t.buildT > 0 && t.buildTotal > 0)
+        bars.push({ v: 1 - t.buildT / t.buildTotal, col: BAR_BUILD });
+      const tier = st.produces;
+      // -1 is a factory with nothing on the bench: it is waiting on scrap
+      // or on the unit cap, and an empty bar says that better than no bar
+      if (tier && t.buildT <= 0 && t.team === "player") {
+        const total = UNIT_BUILD_SECONDS[tier] || 1;
+        bars.push({ v: t.prodT < 0 ? 0 : 1 - t.prodT / total, col: BAR_MAKE });
+      }
+      this.drawBars(c, t.x, t.y - sz / 2, sz - 2, bars);
+    }
+  }
+
   private drawOverlay(): void {
     const c = this.uictx;
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -1543,38 +1771,11 @@ export class Game {
       c.fill();
     }
 
-    // WHAT IS STILL GOING UP (Sim.updateBuilds): a ring over every
-    // unfinished building, filling clockwise from the top as its timer
-    // runs down. The shell underneath is drawn translucent and blue
-    // already; this is the part that says HOW LONG — and it is drawn on
-    // the overlay rather than in the batch because an arc is a shape the
-    // 2D context has and the sprite atlas does not.
-    for (const t of this.sim.towers) {
-      if (t.buildT <= 0 || t.buildTotal <= 0) continue;
-      const sz = structStats(t.kind).size * CELL;
-      // sized to the footprint, but never smaller than a ring a player can
-      // read at the zoom they actually play at — a 1x1 is 20 world px wide
-      // and a ring drawn strictly inside one is a dot
-      const r = Math.max(sz * 0.36, 9);
-      const done = clamp(1 - t.buildT / t.buildTotal, 0, 1);
-      // HEAVY, AND IN THE ACCENT. A hairline ring in the shell's own blue
-      // was two things a player had to squint at: a thin arc on a dark
-      // board, drawn in the colour of the thing it sits on. It is Pal.accent
-      // now — the gold every other "this is filling up" bar in the game
-      // wears — and thick enough to read while the swarm is on top of it
-      c.lineWidth = Math.max(4.5, sz * 0.15);
-      c.lineCap = "butt";
-      // the unfilled track first, so the filled sweep reads against it
-      c.beginPath();
-      c.arc(t.x, t.y, r, 0, Math.PI * 2);
-      c.strokeStyle = "rgba(10,14,26,0.55)";
-      c.stroke();
-      c.beginPath();
-      c.arc(t.x, t.y, r, -Math.PI / 2, -Math.PI / 2 + done * Math.PI * 2);
-      c.strokeStyle = "rgba(255,211,127,0.95)";
-      c.stroke();
-    }
-    c.lineWidth = 1;
+    // WHAT EVERY STRUCTURE IS DOING, as a stack of bars over it (drawBars)
+    this.drawStructureBars(c);
+    // ...and the army: who is selected, what they were told, and the
+    // rectangle being dragged over them right now
+    this.drawSelection(c);
 
     if (this.buildKind && this.hoverGx >= 0 && !this.panning) {
       // red marks anything that blocks the spot: walls, the base, units

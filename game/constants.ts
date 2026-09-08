@@ -1556,8 +1556,8 @@ export const MOVE_LAYERS = ["ground", "air", "water"] as const;
 export type MoveLayer = (typeof MOVE_LAYERS)[number];
 
 /**
- * WHAT A NAVAL TANK LOSES ASHORE: half its speed, applied to the drive and
- * to nothing else.
+ * WHAT A NAVAL TANK LOSES ASHORE: thirty per cent of its speed, applied to
+ * the drive and to nothing else.
  *
  * It is deliberately NOT a pathfinding input. The naval field is a plain
  * shortest-path solve over "rock, and nothing else" (navalWalkMask), so a
@@ -1572,7 +1572,7 @@ export type MoveLayer = (typeof MOVE_LAYERS)[number];
  * penalty would be a pathfinding input. Here it is not one — the field
  * never reads it.
  */
-export const NAVAL_LAND_SPEED = 0.5;
+export const NAVAL_LAND_SPEED = 0.7;
 
 /**
  * What a drop zone feeds: one of the movement layers, or the BOSS door.

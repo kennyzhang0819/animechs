@@ -1062,7 +1062,7 @@ export const FAMILIES = [
   { key: "air", name: "Sky gunships", layer: "air", icon: "flare",
     kinds: ["flare", "horizon", "zenith", "antumbra", "eclipse"] },
   // the whales: risso, minke, bryde, sei, omura. Amphibious armour, quick
-  // in the water and half as quick out of it (NAVAL_LAND_SPEED)
+  // in the water and a third down on it ashore (NAVAL_LAND_SPEED)
   { key: "naval", name: "Naval tanks", layer: "water", icon: "risso",
     kinds: ["risso", "minke", "bryde", "sei", "omura"] },
   // the sea slugs, and the aegis is one of them by name: retusa, oxynoe,
