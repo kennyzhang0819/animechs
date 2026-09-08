@@ -702,8 +702,8 @@ const KIND_ROT = Float32Array.from(UNIT_KINDS, (k) => {
  * A shield tower EMERGES mid-run (updateShieldTowers rolls the spot) and a destroyed
  * one is gone for good — hp 0 is its tombstone. The ENTRY, though, is
  * never removed from Sim.shieldTowers and the array is never reordered, so an
- * index into it (a tower's aimShieldTower, the player's focus, an entombed
- * tower's tombShieldTower, a pierce ledger sentinel) is stable for the run.
+ * index into it (a tower's aimShieldTower, the player's focus, a pierce
+ * ledger sentinel) is stable for the run.
  */
 export interface ShieldTower {
   gx: number; // top-left cell of the 3x3 footprint
@@ -1190,8 +1190,8 @@ export class Sim {
    * empty unless the rule was rolled. Entries are appended as shieldTowers
    * emerge and NEVER removed or reordered (a dead shield tower keeps its slot at
    * hp 0), so an index into this array is stable for the whole run and
-   * everything — tower aim, the player's focus, entombment, a pierce
-   * shot's been-there list — holds indices freely.
+   * everything — tower aim, the player's focus, a pierce shot's
+   * been-there list — holds indices freely.
    */
   readonly shieldTowers: ShieldTower[] = [];
   /** is any shield tower's dome standing this tick? — the projectile pass's
@@ -1586,7 +1586,6 @@ export class Sim {
       y: (b.y + b.size / 2) * CELL,
       hp: CORE_HP,
       hpMax: CORE_HP,
-      tombShieldTower: -1,
     };
     this.goalX = this.core.x;
     this.goalY = this.core.y;
@@ -2149,8 +2148,8 @@ export class Sim {
 
   /**
    * EVERY EYE ON THE FIELD — the core and each of the PLAYER's structures,
-   * entombed or not, plus every body of the player's; the swarm's
-   * formation looks for nobody.
+   * plus every body of the player's; the swarm's formation looks for
+   * nobody.
    *
    * Public because two things read it: the fog's own per-cell state, which
    * is what the rules are made of (what may be built, what may be shot),
@@ -2404,7 +2403,6 @@ export class Sim {
       prodT: -1,
       aimShieldTower: -1,
       aimTower: null,
-      tombShieldTower: -1,
       cd: Math.random() * 0.1,
       // Hydrophobic (mutation.ts): read the ground once, here, and carry it
       fireRate: this.isWaterlogged(gx, gy, kind) ? HYDROPHOBIC_RATE : 1,
@@ -3692,8 +3690,8 @@ export class Sim {
         // Build.validPlace under rules.fog
         if (fogState && fogState[i] === 0) return false;
       }
-    // a LIVE shield tower owns its ground: selling a buried turret is allowed,
-    // but nothing builds back under the dome until the shield tower is dead
+    // a LIVE shield tower owns its ground: it rose on free rock and holds
+    // it, so nothing builds inside its footprint until it is dead
     for (const s of this.shieldTowers) {
       if (s.hp <= 0) continue;
       if (gx < s.gx + SHIELD_TOWER_SIZE && s.gx < gx + sz && gy < s.gy + SHIELD_TOWER_SIZE && s.gy < gy + sz)
@@ -5559,13 +5557,17 @@ export class Sim {
   }
 
   /**
-   * Roll a spot and raise a shield tower on it. A candidate 3x3 must lie inside
-   * the map, off the base, off every drop zone and exit, off water — and
-   * it must not seal the swarm's last route (the same BFS probe a ground
-   * structure would use). It also has to MATTER: a footprint that neither
-   * touches walkable ground nor buries a tower is a shield tower in a corner
-   * nobody visits, so the roll refuses it. Two dozen tries, then give up
-   * until the next period — a crowded map simply mutates less.
+   * Roll a spot and raise a shield tower on it. A candidate 3x3 has to be
+   * EMPTY BUILDABLE ROCK: every cell of it rock a turret could itself have
+   * stood on, and nothing already standing on any of them — no other
+   * shield tower, no turret or wall of either side, not the core.
+   *
+   * Two dozen tries, then GIVE UP until the next period. That is the whole
+   * failure mode and it is deliberate: a board whose free rock the player
+   * has built out raises nothing at all, rather than the rule reaching for
+   * a square that is taken. Nothing the player owns is ever displaced,
+   * buried or disabled by a shield tower — it competes for empty ground
+   * and loses when there is none.
    */
   private trySpawnShieldTower(): void {
     const { blocked, wall } = this.terrain;
@@ -5606,17 +5608,19 @@ export class Sim {
         }
       }
       if (!ok) continue;
-      // ...and never on a turret. A shield tower takes FREE rock only: the
-      // board the player built is theirs, and a mutator that buried it
-      // would be a mutator that undid their choices. A map with no free
-      // rock left simply raises nothing this period
-      for (const t of this.towers) {
-        const tsz = structStats(t.kind).size;
-        if (gx < t.gx + tsz && t.gx < gx + SHIELD_TOWER_SIZE && gy < t.gy + tsz && t.gy < gy + SHIELD_TOWER_SIZE) {
-          ok = false;
-          break;
-        }
-      }
+      // ...and never on anything already standing. cellTower is the board's
+      // own occupancy index — the core, the player's turrets and walls and
+      // the swarm's formation alike — so one sweep of the footprint answers
+      // it for all of them. The board the player built is theirs: a mutator
+      // that buried it would be a mutator that undid their choices, so a
+      // roll that lands on one is thrown away and a map with no free rock
+      // left raises nothing this period
+      for (let y = gy; y < gy + SHIELD_TOWER_SIZE && ok; y++)
+        for (let x = gx; x < gx + SHIELD_TOWER_SIZE; x++)
+          if (this.cellTower[y * COLS + x]) {
+            ok = false;
+            break;
+          }
       if (!ok) continue;
 
       // the spot holds — raise it. BOTH POOLS ARE SET BY THE WAVE IT RISES
@@ -5663,9 +5667,8 @@ export class Sim {
    * A hit that leaves the dome short of whole STARTS the reform clock if
    * it is not already running, and a hit never restarts a clock that is:
    * the dome is coming back SHIELD_TOWER_SHIELD_DELAY after it went, and
-   * no amount of fire postpones that. A body at zero DIES FOR GOOD: the
-   * lane it blocked reopens, every turret it entombed stands back up, and
-   * its slot in the array becomes a tombstone.
+   * no amount of fire postpones that. A body at zero DIES FOR GOOD: its
+   * ground is open again and its slot in the array becomes a tombstone.
    */
   private damageShieldTower(s: ShieldTower, dmg: number): void {
     if (s.hp <= 0) return;
@@ -5695,11 +5698,9 @@ export class Sim {
     s.scale = 0;
     s.shield = 0;
     const idx = this.shieldTowers.indexOf(s);
-    // free the hostages — an entombed turret comes back the moment the
-    // shield tower dies, at whatever health it went under with
-    for (const t of this.towers) if (t.tombShieldTower === idx) t.tombShieldTower = -1;
-    // no lane to reopen: the footprint was rock (see trySpawnShieldTower), so
-    // the swarm's routes never knew this shield tower existed
+    // nothing to hand back and no lane to reopen: a shield tower stands on
+    // FREE ROCK and only free rock (see trySpawnShieldTower), so it never
+    // held a turret and the swarm's routes never knew it existed
     // a dead shield tower is no longer anyone's mark
     if (this.focusShieldTower === idx) this.focusShieldTower = -1;
     this.pushFx(s.x, s.y, 0.6, FxKind.Breach);
@@ -5753,7 +5754,6 @@ export class Sim {
    * wall it chews through.
    */
   private damageTower(t: Structure, dmg: number): void {
-    if (t.tombShieldTower >= 0) return;
     // A BUILDING STILL GOING UP IS PAPER: one hit point, and ANY damage
     // takes it — a scratch a finished turret would shrug off pops the
     // scaffold. Building in front of the swarm is the risk being priced
@@ -6199,13 +6199,11 @@ export class Sim {
   /**
    * CONSTRUCTION, tick by tick. A structure raised in a run stands as a
    * 1 hp shell (addTower) until its timer runs out; here is where it runs
-   * out. Finishing hands it its real pool and lets it shoot — an ENTOMBED
-   * shell is frozen mid-raise like everything else a shield tower buries,
-   * so a dome that goes up over a half-built turret holds it there.
+   * out. Finishing hands it its real pool and lets it shoot.
    */
   private updateBuilds(dt: number): void {
     for (const t of this.towers) {
-      if (t.buildT <= 0 || t.tombShieldTower >= 0) continue;
+      if (t.buildT <= 0) continue;
       t.buildT -= dt;
       if (t.buildT > 0) continue;
       t.buildT = 0;
@@ -6244,9 +6242,6 @@ export class Sim {
       }
     }
     for (const t of this.towers) {
-      // an ENTOMBED tower (a shield tower rose over it — see trySpawnShieldTower)
-      // does nothing at all until the shield tower dies and hands it back
-      if (t.tombShieldTower >= 0) continue;
       // A SHELL STILL GOING UP (updateBuilds) has no gun and does not
       // smoke: its 1 hp is a construction state, not a wound
       if (t.buildT > 0) continue;

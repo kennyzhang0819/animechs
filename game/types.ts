@@ -96,8 +96,6 @@ export interface Core {
   y: number;
   hp: number;
   hpMax: number;
-  /** never entombed — kept so the structure helpers read one shape */
-  tombShieldTower: -1;
 }
 
 /** anything the swarm can shoot: a turret, or the core */
@@ -162,13 +160,6 @@ export interface Tower {
    */
   buildT: number;
   buildTotal: number;
-  /**
-   * The shield tower ENTOMBING this tower, as an index into Sim.shieldTowers — or -1,
-   * the usual case. The Shield Towers mutator may raise a shield tower over a
-   * tower's rock: the buried turret is disabled and untouchable, never
-   * destroyed, and stands back up the moment its shield tower dies.
-   */
-  tombShieldTower: number;
   /**
    * Which shield tower this tower's current volley is aimed at, as an index into
    * Sim.shieldTowers — or -1, the usual case, when it is aimed at a unit. The

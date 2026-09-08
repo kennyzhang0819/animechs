@@ -289,12 +289,6 @@ const FLAME_GRAY = [0.5, 0.5, 0.5] as const;
 const WET_TINT: ReadonlyArray<RGB> = HP_TINT.map(
   (t): RGB => [t[0] * 0.62, t[1] * 0.75, t[2]],
 );
-/** a tower that is DOWN or ENTOMBED: darker than any step of the hp ramp
- *  and pulled toward blue, so it is a STATE rather than the last wound.
- *  The ramp went grey (HP_TINT), which is why this is no longer merely
- *  "dark" — a badly hurt tower is grey too, and the two have to read
- *  apart at a glance without the smoke's help */
-const TOWER_DARK: RGB = [0.3, 0.3, 0.4];
 /** a structure STILL GOING UP (Sim.updateBuilds): the scaffold blue the
  *  build ghost is drawn in, so a half-raised turret reads as the ghost it
  *  just was rather than as a turret that is nearly dead. It is also drawn
@@ -2083,9 +2077,9 @@ export class Renderer {
       if (x1 > dx1) dx1 = x1;
       if (y1 > dy1) dy1 = y1;
     };
-    // every old stamp comes off before any new one goes on: a shield tower
-    // entombing a turret has the two footprints overlapping, and clearing
-    // one after stamping the other would punch a hole in it
+    // every old stamp comes off before any new one goes on: two footprints
+    // that touch would otherwise have the clear of one punch a hole in the
+    // stamp of the other
     for (const id of cur) paint(id, false);
     for (const id of next) paint(id, true);
     cur.length = 0;
@@ -2665,14 +2659,12 @@ export class Renderer {
         : UV_TOWER_BASE1;
       // a hurt tower wears the units' own hp-thirds grey (HP_TINT), so
       // "this is taking damage" reads identically on both sides of the
-      // fight — and smokes like them too (Sim.fireTowers); an ENTOMBED one
-      // goes dark blue instead — a state, not a wound
+      // fight — and smokes like them too (Sim.fireTowers)
       let tint: readonly [number, number, number];
       // a SHELL first (buildT): the hp ramp would read it as a wreck —
       // it is on 1 hp — when what it actually is is unfinished
       const raising = t.buildT > 0;
       if (raising) tint = TOWER_BUILDING;
-      else if (t.tombShieldTower >= 0) tint = TOWER_DARK;
       else {
         const t3 = (t.hp * 3) / towerMaxHp(t.kind);
         tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
@@ -2687,9 +2679,10 @@ export class Renderer {
       }
       if (t.team === "enemy") this.drawEnemyFlag(dyn, t.x - px / 2, t.y - px / 2, a);
     }
-    // the shieldTowers, AFTER the towers: a shield tower that entombed a turret is
-    // drawn over it, which is the whole picture — the turret is under the
-    // building. Dead shieldTowers draw nothing; their ground is open again
+    // the shieldTowers, AFTER the towers: they stand on free rock of their
+    // own (Sim.trySpawnShieldTower) and never overlap one, so the order is
+    // only about the domes drawing over the board.
+    // Dead shieldTowers draw nothing; their ground is open again
     for (const s of sim.shieldTowers) {
       if (s.hp <= 0) continue;
       const spx = SHIELD_TOWER_SIZE * CELL;

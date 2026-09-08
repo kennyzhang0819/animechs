@@ -1043,17 +1043,21 @@ for (let t = 1; t < MITOSIS_BROOD.length; t++)
 // they damage shield first, then body, which quietly makes the beam
 // roster the shield tower-breaking roster.
 //
-// IT RISES ON TURRET GROUND, AND THAT IS THE WHOLE COST. A shield tower only
-// ever lands on BUILDABLE ROCK — the same highground a turret needs, and
-// never on the lanes — so it takes no pathing decision away from the
-// swarm and every emplacement away from the player. The dome still hangs
-// over the road beside it, which is where the sheltering happens; what
-// the footprint costs is somewhere to shoot from.
+// IT RISES ON EMPTY TURRET GROUND, AND THAT IS THE WHOLE COST. A shield
+// tower only ever lands on BUILDABLE ROCK that is FREE — the same
+// highground a turret needs, never on the lanes, and never on a square
+// anything already stands on — so it takes no pathing decision away from
+// the swarm and one unbuilt emplacement away from the player. The dome
+// still hangs over the road beside it, which is where the sheltering
+// happens; what the footprint costs is somewhere to shoot from.
 //
-// AND A SHIELD TOWER THAT LANDS OVER TOWERS ENTOMBS THEM: a buried turret is
-// disabled, not destroyed, untouchable, and stands back up the moment the
-// shield tower dies. "My scorch is hostage under that dome" is an objective,
-// not a loss; nothing the player owns is ever taken permanently.
+// IT NEVER TOUCHES WHAT THE PLAYER BUILT. A roll that would land over a
+// turret is thrown away and re-rolled, and a board with no free rock left
+// simply raises NOTHING that period (Sim.trySpawnShieldTower) — the rule
+// competes with the player for empty ground, it does not take ground back
+// off them. The mutator used to ENTOMB a turret it landed on, disabling it
+// until the shield tower died; that is gone, and with it the one way this
+// rule could undo a decision the player had already paid for.
 //
 // TURRETS CHEW SHIELD TOWERS ONLY WHEN IDLE — a turret with nothing else in
 // range spends its reload on one, so clearing a shield tower costs time between

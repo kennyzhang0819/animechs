@@ -686,12 +686,18 @@ Instant weapons — lancer, arc, fuse, foreshadow, meltdown's beam — are not
 absorbed (exactly as unit force fields never absorb them), which quietly
 makes the beam roster the shield tower-breaking roster.
 
-Where it lands is part of the rule. A shield tower's footprint blocks open lane
-(the swarm routes around it; the spot roller refuses anything that would
-seal the last route, cork a drop zone, or sit on water) — and one that
-lands over towers **entombs** them: a buried turret is disabled and
-untouchable, never destroyed, and stands back up the moment the shield tower
-dies. Turrets chew shieldTowers **only when idle** — a turret with nothing else
+Where it lands is part of the rule. A shield tower rises on **empty
+buildable rock and nothing else** — the same highground a turret needs,
+never a lane, never water, and never a square anything already stands on
+(`Sim.trySpawnShieldTower` sweeps the footprint against `cellTower`, the
+board's occupancy index, so the core, the player's board and the swarm's
+own formation are all covered by one test). Two dozen rolls, then it gives
+up until the next period: a board whose free rock the player has built out
+simply raises nothing. **It never touches what the player built.** An
+earlier version *entombed* a turret it landed on — disabled and
+untouchable until the shield tower died — and that is gone; the rule
+competes with the player for empty ground rather than taking ground back
+off them. Turrets chew shieldTowers **only when idle** — a turret with nothing else
 in range spends its reload on one, so clearing a shield tower costs time between
 waves, never mid-wave DPS. The player can **tap** a shield tower — or any enemy
 — to focus it: every turret in range drops what it was doing for the
