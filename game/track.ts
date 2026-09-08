@@ -177,13 +177,14 @@ export const STARTING_ROSTER: readonly TowerKind[] = [
  *   them, and not free, because a track whose first rungs open nothing is
  *   not a track.
  *
- *   THE HEAVIER WALLS COME LAST. The copper wall is in the opening board,
- *   its 2x2 opens at level 2 beside the lancer, and the rest of the
- *   material ladder — titanium, then thorium, each with its 2x2 — rides
- *   the back of the phase, where a run is being built to hold
- *   a lane rather than to shoot down a wave. Sorting them by build cost
- *   put titanium at level 2, ahead of every gun, which is backwards: a
- *   wall is what you add once the guns cannot hold on their own.
+ *   THE MATERIAL LADDER IS SPREAD OUT. The copper wall is in the opening
+ *   board and its 2x2 opens at level 2 beside the lancer; titanium and
+ *   its 2x2 follow early, on 6 and 7, because a lane that cannot hold is
+ *   the wall a save wants long before it wants another gun; thorium and
+ *   its 2x2 stay at the back, on 14 and 15, as the last thing the phase
+ *   hands out. Sorting them by build cost put titanium at level 2, ahead
+ *   of every gun, which is backwards — but so was making a save climb to
+ *   thirteen for the second wall on the ladder.
  */
 const UNLOCKS: readonly (readonly TowerKind[])[] = [
   // the large copper wall rides with the lancer: the first thing a lane
@@ -194,16 +195,16 @@ const UNLOCKS: readonly (readonly TowerKind[])[] = [
   /*  3 */ ["ripple"],
   /*  4 */ ["spectre"],
   /*  5 */ ["scorch"],
-  /*  6 */ ["arc"],
-  /*  7 */ ["wave"],
+  /*  6 */ ["arc", "titanium-wall"],
+  /*  7 */ ["wave", "titanium-wall-large"],
   /*  8 */ ["swarmer"],
   /*  9 */ ["parallax"],
   /* 10 */ ["cyclone"],
   /* 11 */ ["fuse"],
   /* 12 */ ["tsunami"],
-  /* 13 */ ["meltdown", "titanium-wall"],
-  /* 14 */ ["foreshadow", "titanium-wall-large"],
-  /* 15 */ ["thorium-wall", "thorium-wall-large"],
+  /* 13 */ ["meltdown"],
+  /* 14 */ ["foreshadow", "thorium-wall"],
+  /* 15 */ ["thorium-wall-large"],
 ];
 
 /** the roster by the level it opens on: the starting five on 1, UNLOCKS after */
@@ -402,7 +403,7 @@ export function rewardText(r: Reward): string {
  * description (constants.ts), and the maps and paces say what they open.
  */
 export function rewardBlurb(r: Reward): string {
-  if (r.kind === "world") return "A new map on the deploy screen, with its own front and its own rules.";
+  if (r.kind === "world") return "Unlocks a new map ";
   if (r.kind === "speed") return `Fast-forward: a run may be played at ${r.mult}x pace from the strip under the wave panel.`;
   if (r.kind === "turret") return TOWER_DESC[r.id];
   if (r.kind === "mutator")

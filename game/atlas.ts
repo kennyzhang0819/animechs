@@ -551,23 +551,6 @@ export const UV_QUASAR_BASE_SIL = uv(640, 1664, 128, 128);
 export const UV_QUASAR_BODY_SIL = uv(768, 1664, 128, 128);
 export const UV_BEAM_WEAPON_SIL = uv(896, 1664, 128, 128);
 /**
- * A solid white hexagon filling its cell's width, for the one shape a
- * force field is ever drawn as. It is filled into the shield buffer
- * OPAQUE and the shader reads that buffer's alpha to find the outline, so
- * this has to be one unbroken quad: fanning it out of UV_TRI leaves
- * hairline joins where neighbouring triangles meet, and the edge detect
- * would faithfully draw a rim down every one of them.
- *
- * The cell is 256px for the edge's sake, not the shape's — the atlas
- * magnifies NEAREST, and a coarser cell stairsteps the diagonals the
- * shader then outlines.
- *
- * The hexagon is inscribed in the cell across the flats of its vertex
- * pair, so a quad of 2 x radius on BOTH axes draws it at exactly `radius`
- * — its shorter axis is the sprite's own transparent margin.
- */
-export const UV_HEX = uv(0, 1792, 256, 256, 2);
-/**
  * The T4 line rides the fresh 1024-tall band at y=2048, on 256px cells:
  * scepter's hull alone is a 170x140 source, half again as wide as the
  * 128px cells the T3s sit in. Every part shares the one cell size because
@@ -2552,30 +2535,15 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // the renderer stretches and tints it into Drawf.tri shapes.
   //
   // Drawn to the cell's 2px UV inset EXACTLY, corner to corner, rather than
-  // sitting a pixel inside it. Fanning a filled polygon out of these
-  // (Renderer.fillPoly) lays neighbouring triangles slope against slope,
-  // and a slope even a texel short leaves a radial seam down every one of
-  // those joins; a texel proud leaves a doubled-alpha one instead.
+  // sitting a pixel inside it. Laying these edge to edge puts neighbouring
+  // triangles slope against slope, and a slope even a texel short leaves a
+  // seam down every one of those joins; a texel proud leaves a
+  // doubled-alpha one instead.
   c.fillStyle = "#ffffff";
   c.beginPath();
   c.moveTo(322, 386);
   c.lineTo(322, 446);
   c.lineTo(382, 416);
-  c.closePath();
-  c.fill();
-
-  // force field hexagon (0,1792): white, vertices on the cell's 2px inset
-  // left and right edges, the flats clearing top and bottom (see the UV
-  // note). Drawn as a path like the shrapnel triangle — it is geometry,
-  // not art, so it takes neither the outline nor the antialias pass
-  c.fillStyle = "#ffffff";
-  c.beginPath();
-  for (let k = 0; k < 6; k++) {
-    const a = (k / 6) * TAU;
-    const hx = 128 + Math.cos(a) * 126, hy = 1792 + 128 + Math.sin(a) * 126;
-    if (k === 0) c.moveTo(hx, hy);
-    else c.lineTo(hx, hy);
-  }
   c.closePath();
   c.fill();
 

@@ -150,10 +150,6 @@ export interface ForceFieldSpec {
    * same regen that refills the field is what times its outage
    */
   cooldown: number;
-  /** sides of the shield polygon — 6, a hexagon, for every stock unit */
-  sides: number;
-  /** the polygon's roll, rad: fixed to the WORLD, never to the carrier */
-  rotation: number;
 }
 
 /**
@@ -555,8 +551,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // quasar: support T3 — 640 hp, armor 9 (a fortress's plating), a
   // 1.625x1.625-block hitbox, 0.5 px/tick = 3.75 tiles/s: after the
   // pulsar's sprint the line drops back to the dagger's marching pace
-  // ForceFieldAbility(60, 0.4, 500, 60*6): a 7.5-tile hexagon holding 500
-  // points, refilling at 24/s and dark for 6 s once it breaks. Where nova
+  // ForceFieldAbility(60, 0.4, 500, 60*6): a 7.5-tile bubble holding 500
+  // points, refilling at 24/s and dark for 6 s once it breaks (Mindustry
+  // draws it as a hexagon; here every force field is a circle). Where nova
   // and pulsar hand out health and shields unit by unit, this one covers
   // GROUND — every absorbable shot crossing the outline dies there, so a
   // quasar walking point turns the crowd behind it into a blind spot
@@ -571,8 +568,6 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
       regen: 0.4 * 60,
       max: 500,
       cooldown: 6,
-      sides: 6,
-      rotation: 0,
     },
   },
   // vela: the support line's T4 — 8200 hp, armor 9, a 3x3-block hitbox,

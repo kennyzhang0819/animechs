@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -90,6 +91,7 @@ import ProgressView from "./Progress";
 import { bandFor, MutationFace } from "./mutationFace";
 import { HoverCard, useHoverCard } from "./HoverCard";
 import MenuBackground from "./MenuBackground";
+import { useEscapeBack } from "./Board";
 
 /** the level card's map preview — the admin editor's thumbnail look */
 function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) {
@@ -1003,6 +1005,15 @@ export default function MechSwarm() {
    */
   const [uiScale, setUiScale] = useState(UI_SCALE_DEFAULT);
   const [settingsTab, setSettingsTab] = useState<"general" | "interface">("general");
+  /**
+   * ESCAPE LEAVES A MENU VIEW, the same as the arrow top-left (the `back`
+   * button below). Only from an inner view: on the title card there is no
+   * arrow and nothing behind it, and in a run Escape is the game's own key
+   * (game.ts backs out of a build, then opens the pause menu). The tech
+   * screen and the boards bind their own through BackButton.
+   */
+  const escapeToMenuHome = useCallback(() => setMenuView("home"), []);
+  useEscapeBack(screen === "menu" && menuView !== "home" ? escapeToMenuHome : null);
   /**
    * IS THE PAUSE OVERLAY SHOWING SETTINGS? The overlay is a MENU first —
    * Resume, Settings, Abandon — and the knobs live one press behind it.

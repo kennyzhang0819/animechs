@@ -14,7 +14,6 @@ import {
   UV_PINES,
   UV_RING,
   UV_FUSE,
-  UV_HEX,
   UV_SCATTER,
   UV_FLOOR_EDGES,
   UV_BULLET,
@@ -444,7 +443,13 @@ void main() {
   if (color.a < 0.9 && maxed.a > 0.9) {
     // maxed.a * 100 saturates: the rim is drawn at full opacity
     o = vec4(maxed.rgb, 1.0);
-  } else if (color.a > 0.0) {
+  } else if (color.a > 0.5) {
+    // Mindustry tests "> 0" here, over fills that are hard-edged
+    // polygons. These fills are one disc sprite, antialiased in the sheet
+    // and blurred further by every mip level, so its edge is a ramp of
+    // partial alpha a few pixels wide when zoomed out — and every one of
+    // those pixels used to take the wash, which drew a dark ring hugging
+    // the rim. Half is the contour of the disc's actual edge
     // the interior is the SAME flat wash for both kinds — a plain shield
     // is a carrier's bubble with the diagonals switched off, nothing else
     vec3 rgb = color.rgb;
@@ -734,6 +739,7 @@ uniform vec2 uRes;
 uniform float uZoom;
 uniform vec2 uOff;
 out vec2 vUV;
+flat out vec4 vRect;
 out vec4 vTint;
 void main() {
   float s = sin(aRot), c = cos(aRot);
@@ -745,6 +751,7 @@ void main() {
   vec2 clip = view / uRes * 2.0 - 1.0;
   gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
   vUV = mix(aUV.xy, aUV.zw, aCorner + 0.5);
+  vRect = vec4(min(aUV.xy, aUV.zw), max(aUV.xy, aUV.zw));
   vTint = aTint;
 }`;
 
@@ -757,14 +764,50 @@ void main() {
 // lands past its edge in a line, which on the ground is a hairline round
 // every cell. A driver that ignores mediump never shows it, which is why
 // it renders clean on one machine and lined on the next
+//
+// THE SAMPLE NEVER LEAVES ITS OWN CELL. A quad's outermost fragments ask
+// for a texture coordinate right on the cell's border, and the sampler
+// answers with a blend of the texels either side of it: the cell's own
+// edge texel and whatever is packed next door — half and half at the
+// border at mip 0, and at mip 3 a texel is eight sheet pixels wide, so
+// the blend reaches eight pixels into the neighbour. On a rotating
+// sprite that reads as a hairline along one edge of its quad, moving
+// with it: the crawler's leg cell sits under the last opaque rows of the
+// core sprite, so its legs dragged a dark line as they strode; a turret's
+// base plate is opaque to its cell's edge, so at any zoom that minifies,
+// its rim mixed with the transparent black beside it and darkened. The
+// sheet cannot fix this — it is flush-packed, and every free gutter was
+// spent long ago — so the sampler does: each fragment clamps its
+// coordinate inside the cell (handed down from the instance, `vRect`) by
+// the filter's footprint at the mip level it is about to read: half a
+// texel at level 0, doubling a level. Doubled again for slack, because
+// the driver picks its own level and rounds its own weights — at exactly
+// the footprint, the shield discs still read a few 255ths of the opaque
+// hull packed beside them, and the shield shader turns any alpha at all
+// into a line. Never more than six sheet pixels, since TEXTURE_MAX_LEVEL
+// is 3 and a level-3 texel is eight wide; six keeps the sample on the
+// inner three quarters of the cell's own border texel. Zoomed in, the
+// inset is a texel and costs nothing anyone can see; zoomed out, the band
+// it crops is under a device pixel wide. textureGrad keeps the level the
+// driver would have chosen for the unclamped coordinate — the clamped one
+// has no gradient in the band, which would otherwise fall back to mip 0
+// there.
 const FS = `#version 300 es
 precision highp float;
 uniform sampler2D uTex;
+uniform vec2 uTexel;  // one sheet pixel as a UV step
 in vec2 vUV;
+flat in vec4 vRect;
 in vec4 vTint;
 out vec4 o;
 void main() {
-  o = texture(uTex, vUV) * vec4(vTint.rgb * vTint.a, vTint.a);
+  vec2 dx = dFdx(vUV), dy = dFdy(vUV);
+  float rho = max(length(dx / uTexel), length(dy / uTexel));
+  float lod = clamp(log2(max(rho, 1.0)), 0.0, 3.0);
+  vec2 inset = min(exp2(lod), 6.0) * uTexel;
+  vec2 mid = (vRect.xy + vRect.zw) * 0.5;
+  vec2 lo = min(vRect.xy + inset, mid), hi = max(vRect.zw - inset, mid);
+  o = textureGrad(uTex, clamp(vUV, lo, hi), dx, dy) * vec4(vTint.rgb * vTint.a, vTint.a);
 }`;
 
 /**
@@ -969,6 +1012,10 @@ export class Renderer {
     this.uRes = need("uRes");
     this.uZoom = need("uZoom");
     this.uOff = need("uOff");
+    // the sheet's pixel pitch, for the fragment clamp (see the FS note);
+    // set once, since the sheet never changes size
+    gl.useProgram(this.prog);
+    gl.uniform2f(need("uTexel"), 1 / atlas.width, 1 / atlas.height);
 
     const quad = gl.createBuffer();
     if (!quad) throw new Error("buffer alloc failed");
@@ -2395,10 +2442,12 @@ export class Renderer {
         this.strokeCircle(dyn, e.x, e.y, 5 * MU * (1 - t), (1 - t) * 2 * MU,
           SHIELD_COL[0], SHIELD_COL[1], SHIELD_COL[2], RING_ALPHA);
       } else if (e.kind === FxKind.ShieldBreak) {
-        // Fx.shieldBreak: stroke(fout*3), poly(sides, radius + fin) — the
-        // outline snapping outward as the bubble pops
-        this.strokePoly(dyn, e.x, e.y, e.sides ?? 6, (e.len ?? 0) + FIN_POW(t) * MU,
-          e.rot ?? 0, (1 - t) * 3 * MU, e.col ?? SHIELD_COL, RING_ALPHA);
+        // Fx.shieldBreak: stroke(fout*3), circle(radius + fin) — the
+        // outline snapping outward as the bubble pops. Every field here
+        // is round, so the pop is too
+        const bc = e.col ?? SHIELD_COL;
+        this.strokeCircle(dyn, e.x, e.y, (e.len ?? 0) + FIN_POW(t) * MU,
+          (1 - t) * 3 * MU, bc[0], bc[1], bc[2], RING_ALPHA);
       } else if (e.kind === FxKind.Sap) {
         this.drawSap(dyn, e, t);
       } else if (e.kind === FxKind.ChainLightning) {
@@ -2545,20 +2594,20 @@ export class Renderer {
         UNIT_SHIELD_COL[2] + (1 - UNIT_SHIELD_COL[2]) * w,
       ];
       if (buffered) {
-        // SHIELD_PLAIN, not 1: the rim and the flat interior wash, and none
-        // of the travelling diagonals — the same treatment the shield
-        // towers' domes get below, and for the same reason. The hatch
-        // moved over whatever walked under it, which over a lane read as
-        // damage on the bodies rather than as a field around them
-        this.fillPoly(b, upx[i], upy[i], spec.sides, rad, spec.rotation, col, SHIELD_PLAIN);
+        // A CIRCLE, one quad off the big disc, exactly as the shield
+        // towers' domes below: Mindustry's hexagon is gone from every
+        // force field. SHIELD_PLAIN, not 1: the rim and the flat interior
+        // wash, and none of the travelling diagonals — the hatch moved
+        // over whatever walked under it, which over a lane read as damage
+        // on the bodies rather than as a field around them
+        this.fillDisc(b, upx[i], upy[i], rad, col, SHIELD_PLAIN);
       } else {
-        this.fillPoly(b, upx[i], upy[i], spec.sides, rad, spec.rotation, col, 0.09 + 0.08 * w);
-        this.strokePoly(b, upx[i], upy[i], spec.sides, rad, spec.rotation, 1.5 * MU, col, 1);
+        this.fillDisc(b, upx[i], upy[i], rad, col, 0.09 + 0.08 * w);
+        this.strokeCircle(b, upx[i], upy[i], rad, 1.5 * MU, col[0], col[1], col[2], 1);
       }
     }
     // THE SHIELD TOWERS' DOMES (the Shield Towers mutator): same pass, same
-    // shader, their own RED — many-sided so they read as circles against
-    // the carriers' hexagons, exactly as their colour reads against amber
+    // shader, same circle, their own RED
     for (const s of sim.shieldTowers) {
       if (s.hp <= 0 || s.shield <= 0) continue;
       const rad = s.domeR * s.scale;
@@ -2572,12 +2621,11 @@ export class Renderer {
         SHIELD_TOWER_COL[2] + (1 - SHIELD_TOWER_COL[2]) * w,
       ];
       if (buffered) {
-        // ONE QUAD, NEVER A FAN. fillPoly builds anything but a hexagon
-        // out of `sides` textured triangles, and at any alpha below 1 the
-        // slopes they share double-blend into a spoke — twenty-four
-        // radial creases converging on the middle of the dome. The disc
-        // is a single sprite, so its interior is perfectly flat and the
-        // edge detect gets a clean circle to find a rim around.
+        // ONE QUAD, NEVER A FAN. A fan of `sides` textured triangles
+        // double-blends along every shared slope at any alpha below 1 —
+        // twenty-four radial creases converging on the middle of the
+        // dome. The disc is a single sprite, so its interior is perfectly
+        // flat and the edge detect gets a clean circle to find a rim around.
         //
         // SHIELD_PLAIN, not 1, is what drops the HATCH and nothing else
         // (see SHIELD_FS): the dome keeps the rim and the flat interior
@@ -2699,48 +2747,6 @@ export class Renderer {
     gl.bindVertexArray(this.blitVao);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
-  }
-
-  /**
-   * Arc Fill.poly: a solid regular polygon.
-   *
-   * A hexagon — every force field on the roster — is one quad off the
-   * UV_HEX cell, which is the whole point of that cell (see the UV_HEX
-   * note: joins in the fill become joins in the outline). Anything else
-   * falls back to a fan, each side one Drawf.tri with its base on the edge
-   * and its apex at the middle, since that is the only decomposition this
-   * batch can draw — every quad it takes is a rotated rectangle.
-   */
-  private fillPoly(
-    dyn: Batch,
-    cx: number,
-    cy: number,
-    sides: number,
-    radius: number,
-    rotation: number,
-    col: RGB,
-    a: number,
-  ): void {
-    if (radius <= 0.01 || a <= 0.004) return;
-    if (sides === 6) {
-      this.push(dyn, cx, cy, radius * 2, radius * 2, rotation, UV_HEX,
-        col[0], col[1], col[2], a);
-      return;
-    }
-    const step = (Math.PI * 2) / sides;
-    const apothem = radius * Math.cos(step / 2);
-    const chord = 2 * radius * Math.sin(step / 2);
-    for (let k = 0; k < sides; k++) {
-      // the bearing of this edge's midpoint — the tri points back down it
-      const ang = rotation + (k + 0.5) * step;
-      this.push(
-        dyn,
-        cx + Math.cos(ang) * (apothem / 2),
-        cy + Math.sin(ang) * (apothem / 2),
-        apothem, chord, ang + Math.PI, UV_TRI,
-        col[0], col[1], col[2], a,
-      );
-    }
   }
 
   /**

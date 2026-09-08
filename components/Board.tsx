@@ -81,9 +81,38 @@ const PAN_KEYS: Readonly<Record<string, readonly [number, number]>> = {
 export const CHROME_BTN =
   "pointer-events-auto ms-btn px-3 py-1.5 text-[15px] text-[#a2a2a2] hover:text-white";
 
+/**
+ * ESCAPE IS THE BACK ARROW. Any screen that pins the arrow top-left — the
+ * progress boards, the codex, the menu's inner views — leaves the same way
+ * on Escape, because a player who has met one back button has met the key
+ * that presses it. The screens call this beside the button rather than
+ * each rolling their own listener, so the two can never disagree about
+ * where back goes.
+ *
+ * TWO PRESSES ARE NOT OURS. A dialog over the screen owns Escape — it
+ * closes and the screen underneath stays put — and Escape inside a field
+ * belongs to the field, not to the page it happens to sit on.
+ */
+export function useEscapeBack(onBack: (() => void) | null): void {
+  useEffect(() => {
+    if (!onBack) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      onBack();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onBack]);
+}
+
 /** the standardized back: icon only, big, top-left — the same button every
- *  screen in the game pins in the same corner */
+ *  screen in the game pins in the same corner, and Escape presses it */
 export function BackButton({ label, onClick }: { label: string; onClick: () => void }) {
+  useEscapeBack(onClick);
   return (
     <button
       aria-label={label}

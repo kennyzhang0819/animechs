@@ -1241,7 +1241,12 @@ export class Game {
       // and a ring drawn strictly inside one is a dot
       const r = Math.max(sz * 0.36, 9);
       const done = clamp(1 - t.buildT / t.buildTotal, 0, 1);
-      c.lineWidth = Math.max(2.5, sz * 0.08);
+      // HEAVY, AND IN THE ACCENT. A hairline ring in the shell's own blue
+      // was two things a player had to squint at: a thin arc on a dark
+      // board, drawn in the colour of the thing it sits on. It is Pal.accent
+      // now — the gold every other "this is filling up" bar in the game
+      // wears — and thick enough to read while the swarm is on top of it
+      c.lineWidth = Math.max(4.5, sz * 0.15);
       c.lineCap = "butt";
       // the unfilled track first, so the filled sweep reads against it
       c.beginPath();
@@ -1250,7 +1255,7 @@ export class Game {
       c.stroke();
       c.beginPath();
       c.arc(t.x, t.y, r, -Math.PI / 2, -Math.PI / 2 + done * Math.PI * 2);
-      c.strokeStyle = "rgba(138,162,255,0.95)";
+      c.strokeStyle = "rgba(255,211,127,0.95)";
       c.stroke();
     }
     c.lineWidth = 1;

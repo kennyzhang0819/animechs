@@ -3350,7 +3350,7 @@ export class Sim {
           // the unit's shieldColor — its team's red
           this.pushFxCol(
             upx[i], upy[i], 40 / 60, FxKind.ShieldBreak,
-            force.rotation, force.radius * uforceScale[i], TEAM_CRUX_RGB, force.sides,
+            0, force.radius * uforceScale[i], TEAM_CRUX_RGB,
           );
         }
         uforceDown[i] = ushield[i] <= 0 ? 1 : 0;
@@ -4666,7 +4666,7 @@ export class Sim {
         // the dome pops the way a carrier's does — same effect, its own red
         this.pushFx(
           s.x, s.y, 0.5, FxKind.ShieldBreak,
-          Math.random() * Math.PI, s.domeR * s.scale, 0, 24,
+          0, s.domeR * s.scale,
         );
       }
       return;
@@ -5974,32 +5974,6 @@ export class Sim {
   }
 
   /**
-   * Arc Intersector.isInRegularPolygon, in closed form: fold the bearing
-   * into one sector and compare the point's reach along that edge's normal
-   * against the apothem. Arc walks the vertex ring instead, but a regular
-   * polygon needs no ring — every edge is the same edge, rotated.
-   */
-  private static inRegularPolygon(
-    sides: number,
-    cx: number,
-    cy: number,
-    radius: number,
-    rotation: number,
-    x: number,
-    y: number,
-  ): boolean {
-    const dx = x - cx, dy = y - cy;
-    const dst = Math.sqrt(dx * dx + dy * dy);
-    if (dst > radius) return false;
-    const step = TAU / sides;
-    // vertices sit at multiples of `step` from `rotation`, so the edge
-    // facing a point is the one whose normal is half a step further round
-    let a = (Math.atan2(dy, dx) - rotation) % step;
-    if (a < 0) a += step;
-    return dst * Math.cos(a - step / 2) <= radius * Math.cos(step / 2);
-  }
-
-  /**
    * Gather the force fields standing this tick. Skipped outright unless a
    * carrier kind is actually alive, so the scan only costs anything in the
    * waves that field one.
@@ -6044,8 +6018,9 @@ export class Sim {
       const spec = KIND_FORCE[ukind[i]]!;
       const rad = spec.radius * this.uforceScale[i];
       const dx = px - upx[i], dy = py - upy[i];
-      if (dx * dx + dy * dy > rad * rad) continue; // cheap circumcircle reject
-      if (!Sim.inRegularPolygon(spec.sides, upx[i], upy[i], rad, spec.rotation, px, py)) continue;
+      // the field is a circle, drawn and tested alike (Renderer draws it
+      // off the same disc the shield towers' domes use)
+      if (dx * dx + dy * dy > rad * rad) continue;
       // Bullet.type.shieldDamage: the shot's damage, shieldDamageMultiplier 1
       ushield[i] -= damage;
       ushieldAlpha[i] = 1;
