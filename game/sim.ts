@@ -471,6 +471,27 @@ const NO_PADS = new Uint8Array(NCELLS);
 const SHOT_HIT_R = 4;
 
 /**
+ * HOW BIG A BODY IS TO THE CURSOR — the hit circle a click tests against,
+ * which is deliberately larger than the sprite. A unit is small, moving,
+ * and usually in a crowd; asking the hand to land inside twelve pixels of
+ * walking metal is a tax on every order the player gives.
+ *
+ * Two sizes, because leniency must never cost precision: the TIGHT circle
+ * is what a click means when it lands on a body, and it is tried first so
+ * a turret clicked on purpose still wins over a walker standing beside it.
+ * The LENIENT circle is the second pass, taken only once nothing at all
+ * was hit dead on — a near miss on empty ground is a miss the player did
+ * not mean, so it is read as the nearest body rather than as "deselect".
+ */
+const PICK_MULT = 2.0;
+/** ...with a floor in world px, so the smallest bodies are a cell across */
+const PICK_MIN = CELL;
+/** the reach of the first pass: the body as the click sees it */
+export const PICK_TIGHT = 1;
+/** ...and of the second, once the board has said nothing was under the point */
+export const PICK_LENIENT = 1.6;
+
+/**
  * WHAT A UNIT'S WEAPON IS AIMED AT: one of the other side's structures,
  * or one of its bodies — the nearer of the two within reach. x, y and
  * half are the target's centre and half-width for every reader that
@@ -5872,21 +5893,30 @@ export class Sim {
     return null;
   }
 
-  /** the unit under a tap, if any — a hit-test against live hitboxes with
-   *  a little slop so a fingertip can pick a dagger out of a lane */
+  /**
+   * HOW BIG BODY `i` IS TO A CLICK, in world px — the sprite's radius
+   * grown by PICK_MULT and floored at PICK_MIN, then scaled by the pass's
+   * reach. Every hit-test the cursor makes goes through here, so the
+   * player's bodies and the swarm's are equally easy to hit and the two
+   * passes stay in step by construction.
+   */
+  private pickR(i: number, reach: number): number {
+    return Math.max(this.urad[i] * PICK_MULT, PICK_MIN) * reach;
+  }
+
   /**
    * THE PLAYER'S BODY UNDER A POINT, or -1. The mirror of unitAt, which
    * finds the SWARM's: a tap picks one side or the other, never both, and
    * the two sides mean opposite things by it — the swarm's body is a mark
    * to shoot, the player's is a body to command.
    */
-  myUnitAt(px: number, py: number): number {
+  myUnitAt(px: number, py: number, reach = PICK_TIGHT): number {
     let best = -1, bd = Infinity;
     for (let i = 0; i < this.n; i++) {
       if (this.uteam[i] === 0) continue;
       const dx = this.upx[i] - px, dy = this.upy[i] - py;
       const d2 = dx * dx + dy * dy;
-      const r = Math.max(this.urad[i] * 1.6, 10);
+      const r = this.pickR(i, reach);
       if (d2 < r * r && d2 < bd) {
         bd = d2;
         best = i;
@@ -5914,15 +5944,20 @@ export class Sim {
    * and says so, which is what lets the caller fall through to its other
    * meanings for a click on nothing.
    */
-  selectAt(px: number, py: number, add = false): boolean {
-    const i = this.myUnitAt(px, py);
+  selectAt(px: number, py: number, add = false, reach = PICK_TIGHT): boolean {
+    const i = this.myUnitAt(px, py, reach);
     if (!add) this.clearSelection();
     if (i < 0) return false;
     this.usel[i] = 1;
     return true;
   }
 
-  /** every body of the player's inside a world rectangle */
+  /**
+   * EVERY BODY OF THE PLAYER'S THE RECTANGLE TOUCHES. The test is the
+   * body's hit circle against the box, not its centre point inside it: a
+   * box drawn round a group takes the whole group, including the one on
+   * the edge the drag stopped half a pixel short of.
+   */
   selectInRect(x0: number, y0: number, x1: number, y1: number, add = false): number {
     const ax = Math.min(x0, x1), bx = Math.max(x0, x1);
     const ay = Math.min(y0, y1), by = Math.max(y0, y1);
@@ -5930,7 +5965,9 @@ export class Sim {
     let k = 0;
     for (let i = 0; i < this.n; i++) {
       if (this.uteam[i] === 0) continue;
-      if (this.upx[i] < ax || this.upx[i] > bx || this.upy[i] < ay || this.upy[i] > by) continue;
+      const r = this.pickR(i, PICK_TIGHT);
+      if (this.upx[i] < ax - r || this.upx[i] > bx + r) continue;
+      if (this.upy[i] < ay - r || this.upy[i] > by + r) continue;
       this.usel[i] = 1;
       k++;
     }
@@ -5944,8 +5981,8 @@ export class Sim {
    * radius round the one clicked rather than the whole map: a double-click
    * gathers the group in front of you, not every dagger in the run.
    */
-  selectLike(px: number, py: number, radius: number, add = false): number {
-    const at = this.myUnitAt(px, py);
+  selectLike(px: number, py: number, radius: number, add = false, reach = PICK_TIGHT): number {
+    const at = this.myUnitAt(px, py, reach);
     if (at < 0) return 0;
     const kind = this.ukind[at];
     const ox = this.upx[at], oy = this.upy[at];
@@ -6166,7 +6203,7 @@ export class Sim {
     return -1;
   }
 
-  unitAt(px: number, py: number): number {
+  unitAt(px: number, py: number, reach = PICK_TIGHT): number {
     let best = -1, bd = Infinity;
     for (let i = 0; i < this.n; i++) {
       // a body in the fog cannot be tapped any more than it can be seen,
@@ -6174,7 +6211,7 @@ export class Sim {
       if (this.uteam[i] !== 0 || !this.unitVisible(i)) continue;
       const dx = this.upx[i] - px, dy = this.upy[i] - py;
       const d2 = dx * dx + dy * dy;
-      const r = Math.max(this.urad[i] * 1.6, 10);
+      const r = this.pickR(i, reach);
       if (d2 < r * r && d2 < bd) {
         bd = d2;
         best = i;

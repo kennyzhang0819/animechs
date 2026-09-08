@@ -33,7 +33,7 @@ import type { TowerPlacement } from "./progress";
 import { TOWER_KINDS } from "./types";
 import { Renderer } from "./renderer";
 import { fitZoom } from "./fit";
-import { Sim } from "./sim";
+import { PICK_LENIENT, Sim } from "./sim";
 import { type TechState } from "./tech";
 import type { Tower } from "./types";
 
@@ -615,8 +615,13 @@ export class Game {
       return;
     }
     // ctrl, or the second click of a double: everything like the body under
-    // the cursor, within reach of it
-    if (this.selLike && this.sim.selectLike(p.x, p.y, SEL_LIKE_R, this.selAdd) > 0) return;
+    // the cursor, within reach of it. The near miss is forgiven here too —
+    // a gathering click that lands a hair off the walker it meant should
+    // gather the group, not empty the selection
+    if (this.selLike) {
+      if (this.sim.selectLike(p.x, p.y, SEL_LIKE_R, this.selAdd) > 0) return;
+      if (this.sim.selectLike(p.x, p.y, SEL_LIKE_R, this.selAdd, PICK_LENIENT) > 0) return;
+    }
     // a body of the player's: select it. Anything else: the old tap — a
     // mark on the swarm, a range ring on a turret of ours, or a clearing
     // click on bare ground (inspectAt), which the miss has already emptied
@@ -705,8 +710,24 @@ export class Game {
       return;
     }
     const t = this.sim.towerAt(p.x, p.y);
-    this.selected = t;
-    if (!t) this.sim.clearFocus();
+    if (t) {
+      this.selected = t;
+      return;
+    }
+    this.selected = null;
+    // NOTHING WAS UNDER THE POINT — so before the click means "clear
+    // everything", it gets one more, wider look for a body near it. A
+    // click that lands a few pixels off a walker in a moving crowd is a
+    // miss the hand made, not one the player meant, and this pass runs
+    // only once the tight one has found no unit, no shield tower and no
+    // turret, so nothing precise is ever taken from it
+    if (this.sim.selectAt(p.x, p.y, this.selAdd, PICK_LENIENT)) return;
+    const lui = this.sim.unitAt(p.x, p.y, PICK_LENIENT);
+    if (lui >= 0) {
+      this.sim.setFocusUnit(lui);
+      return;
+    }
+    this.sim.clearFocus();
   }
 
   /** is this world point on the map at all, or out in the void past it? */
