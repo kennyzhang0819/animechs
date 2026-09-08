@@ -394,6 +394,21 @@ export type PlaceResult = "ok" | "invalid" | "would-seal";
 export const UNIT_VISION_CELLS = 6;
 /** seconds between re-casts of the fog while the player has bodies out */
 const UNIT_VISION_EVERY = 0.5;
+/**
+ * HOW LONG THE BOARD MUST HOLD STILL before a dirtied flow field is
+ * re-solved, in seconds. A solve is ~100ms of main thread on a 512x512
+ * map, and a build drag lays a turret EVERY FRAME: solving per frame is
+ * one solve per placement and the frame rate falls to the solve rate.
+ * Waiting out a short quiet spell instead collapses a whole drag — and a
+ * whole saved layout, and the deploy screen's prewarm — into one solve.
+ */
+const FIELD_SETTLE = 0.15;
+/**
+ * ...and the longest a pending re-solve may be put off however busy the
+ * board stays, so a drag held down for ten seconds still re-routes the
+ * swarm about once a second rather than only when the finger comes up.
+ */
+const FIELD_MAX_STALE = 1;
 /** how far out from a factory's edge its make is set down */
 const FACTORY_SPAWN_REACH = CELL * 2.5;
 /** the player's fields enter by no door: an all-zero pad mask */
@@ -1322,13 +1337,35 @@ export class Sim {
   // seal-test cache: hover asks canPlace every frame, and the test costs two
   // flow-field recomputes — remember the verdict for the last cell asked
   /**
-   * THE WALKERS' FIELD NEEDS RECOMPUTING: a structure was placed on, or
-   * wrecked off, open ground since the last tick. Placement marks the
-   * cells at once (so the next canPlace and the seal check see them) and
-   * the ten-millisecond Dijkstra runs ONCE, at the top of the next
-   * update, however many towers a drag-chain laid in one frame.
+   * THE FIELDS NEED RE-SOLVING: a structure was placed on, or wrecked off,
+   * open ground. Placement marks the CELLS at once (so the next canPlace,
+   * every wall test and the seal check see them) and the solve — the
+   * expensive part, a Dijkstra and a sweep over the whole grid — is put
+   * off: until the board has held still for FIELD_SETTLE, or
+   * FIELD_MAX_STALE has run out, whichever comes first.
+   *
+   * A DRAG IS THEREFORE ONE SOLVE, not one per turret. That is the whole
+   * of why this is deferred: the fields' cost used to be paid per
+   * placement, so laying a chain of turrets cost a full solve every frame
+   * and the frame rate fell to the solve rate.
    */
   private fieldDirty = false;
+  /** ...the naval tanks' twin of it, flagged apart so a map with no tank
+   *  out never pays for the second solve */
+  private navalDirty = false;
+  /** ...and the player's three, dirtied by the same structure changes */
+  private pFieldDirty = false;
+  /** seconds since the last structure change — the settle clock */
+  private fieldQuiet = 0;
+  /** seconds a pending solve has been waiting — the staleness cap */
+  private fieldStale = 0;
+  /**
+   * A WALL MOVED and the bodies standing there have not been pushed off it
+   * yet. Separate from the solve because it is cheap and must not wait: a
+   * unit inside a turret's footprint is shoved out on the very next tick,
+   * however long the route behind it takes to catch up.
+   */
+  private unstickPending = false;
   /** the ground drop zones, as a mask — nothing may be built on one */
   private groundPads: Uint8Array = new Uint8Array(NCELLS);
 
@@ -1426,6 +1463,11 @@ export class Sim {
     // an older board) is dropped, not forced
     for (const e of this.terrain.enemies) this.placeEnemyStructure(e.gx, e.gy, e.kind);
     this.fieldDirty = false;
+    this.navalDirty = false;
+    this.pFieldDirty = false;
+    this.unstickPending = false;
+    this.fieldQuiet = 0;
+    this.fieldStale = 0;
     this.field.rebuildWalk(this.footprints(), this.terrain.blocked, this.groundPads, this.coreGoal(),
       this.hardFootprints());
     // THE NAVAL TANKS' FIELD. It used to be the mirror image of the
@@ -1566,6 +1608,7 @@ export class Sim {
    */
   private rebuildPlayerFields(): void {
     this.playerFieldsOn = true;
+    this.pFieldDirty = false;
     const goal = this.enemyGoal();
     this.pField.rebuildWalk(this.hardFootprints(), this.terrain.blocked, NO_PADS, goal, this.footprints());
     this.pField.compute();
@@ -1574,6 +1617,60 @@ export class Sim {
     this.pNavalField.compute();
     this.pAirField.rebuildWalk([], this.hills, NO_PADS, goal);
     this.pAirField.compute();
+  }
+
+  /**
+   * THE DEFERRED HALF OF A STRUCTURE CHANGE: re-solve the fields the board
+   * has dirtied — but only once it has held still for FIELD_SETTLE (or
+   * waited out FIELD_MAX_STALE), and only the fields something alive is
+   * actually steering by.
+   *
+   * The wait is what makes a build drag cheap: a chain of turrets laid a
+   * frame apart dirties the fields a dozen times and pays for one solve
+   * at the end of it, instead of one solve per turret.
+   *
+   * THE GATE IS WHAT MAKES BUILDING BETWEEN WAVES FREE. With nothing on
+   * the field, no body reads a heading, so no heading is worth computing
+   * and the flag simply stands until one does — a whole grace period of
+   * building, a restored layout, the title screen's opening line, all at
+   * no cost at all. Only a solve clears the flag, so the first body of a
+   * layer to appear finds its field fresh: spawning runs above this, in
+   * runScript.
+   */
+  private solveDirtyFields(dt: number): void {
+    this.fieldQuiet += dt;
+    if (!this.fieldDirty && !this.navalDirty && !this.pFieldDirty) return;
+    this.fieldStale += dt;
+    if (this.fieldQuiet < FIELD_SETTLE && this.fieldStale < FIELD_MAX_STALE) return;
+    // who is out, and so which of the fields is being read. A flyer is
+    // never counted on the swarm's side: its field is over the hills alone
+    // and no building ever changes it (airField)
+    let ground = false, naval = false, player = false;
+    for (let i = 0; i < this.n; i++) {
+      if (this.uteam[i]) player = true;
+      else if (this.ufly[i]) continue;
+      else if (this.unav[i]) naval = true;
+      else ground = true;
+    }
+    // ...and the two ground-bound fields carry a flag each. A structure
+    // dirties both, but a wave of walkers on a map with no tank out reads
+    // one of them, and solving the other would double the bill for nothing
+    if (this.fieldDirty && ground) {
+      this.fieldDirty = false;
+      this.field.compute();
+    }
+    if (this.navalDirty && naval) {
+      this.navalDirty = false;
+      this.navalField.compute();
+    }
+    if (this.pFieldDirty && player) {
+      this.pFieldDirty = false;
+      this.rebuildPlayerFields();
+    }
+    // the cap is spent whether or not a solve came of it: a flag left
+    // standing is one nothing reads, and it is re-offered every tick from
+    // here on — the scan above is a walk over the units and nothing more
+    this.fieldStale = 0;
   }
 
   /** the nearest of the swarm's structures to a point, anywhere on the map
@@ -2217,15 +2314,14 @@ export class Sim {
     // the whole frame's worth of demolition (Fog.ensure)
     this.fog.ensure(this.visionSources);
 
-    // a structure went up on, or came down off, open ground: re-solve the
-    // two ground-bound fields once for the whole frame's worth of changes
-    if (this.fieldDirty) {
-      this.fieldDirty = false;
-      this.field.compute();
-      this.navalField.compute();
-      if (this.playerFieldsOn) this.rebuildPlayerFields();
+    // a structure went up on, or came down off, open ground: shove anything
+    // standing in its cells clear now, and re-solve the routes when the
+    // board settles (solveDirtyFields)
+    if (this.unstickPending) {
+      this.unstickPending = false;
       this.unstickUnits();
     }
+    this.solveDirtyFields(dt);
     this.updateProduction(dt);
     // THE PLAYER'S BODIES SEE: while any is out, the fog is re-cast twice a
     // second from every eye (visionSources) so the ground they walk onto
@@ -3564,9 +3660,11 @@ export class Sim {
    * and the naval tanks', which stand on the same rock and are stopped by
    * the same buildings. Rock is already a wall and stays one whichever way
    * this goes; OPEN GROUND under a structure becomes a wall while it stands
-   * (`on`) and opens again when it comes down. The fields themselves are
-   * re-solved once, at the next tick (fieldDirty), and the seal check's
-   * cache is stale either way.
+   * (`on`) and opens again when it comes down. THE MASK CHANGES NOW —
+   * every wall test, canPlace and the shove out of a new footprint read it
+   * this instant — while the ROUTES over it are re-solved when the board
+   * settles (fieldDirty, solveDirtyFields), which is what keeps a build
+   * drag to one solve instead of one a turret.
    *
    * A structure never stands on deep water (canPlace), so writing the same
    * cells into both fields cannot disagree with either mask.
@@ -3593,7 +3691,17 @@ export class Sim {
         nSoft[i] = soft[i];
         changed = true;
       }
-    if (changed) this.fieldDirty = true;
+    if (changed) {
+      this.fieldDirty = true;
+      this.navalDirty = true;
+      // the player's three only while they are being solved at all: a flag
+      // raised before the first factory would never come down
+      if (this.playerFieldsOn) this.pFieldDirty = true;
+      this.unstickPending = true;
+      // the board moved, so the settle clock starts over — a drag holds it
+      // at zero and pays for one solve when it ends (solveDirtyFields)
+      this.fieldQuiet = 0;
+    }
   }
 
   /** take a structure off the board — sold or wrecked, the ground is the swarm's again */
