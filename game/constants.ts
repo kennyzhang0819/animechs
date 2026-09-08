@@ -1406,7 +1406,7 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   "thorium-wall": "The heavy wall. Two and a half copper walls in one tile — what a scepter is meant to break its teeth on while the artillery works.",
   "copper-wall-large": "Four copper walls as one 2x2 block, with four times the pool. One placement where a lane needs a whole plug.",
   "titanium-wall-large": "Four titanium walls as one 2x2 block, with four times the pool — a crossing sealed in a single placement.",
-  drill: "Stands on an ore vein and mines it: scrap by the second for every ore cell under it. The core pays the run's base income; drills are how it grows. Only on ore.",
+  drill: "Stands on an ore vein and mines it, delivering a load of scrap every time its bar fills — four times as often on a full vein as on a single ore cell. The core ships the run's base income on the same clock; drills are how it grows. Only on ore.",
   "factory-t1": "Builds your faction's tier-1 unit, one after another, for the unit's price. Units walk out and attack-move at the enemy's nearest building.",
   "factory-t2": "Builds your faction's tier-2 unit, one after another, for the unit's price.",
   "factory-t3": "Builds your faction's tier-3 unit — the heavy of the line — one after another, for the unit's price.",

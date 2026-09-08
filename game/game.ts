@@ -20,7 +20,15 @@ import {
   type TowerKind,
   type UnitKind,
 } from "./levels";
-import { missionXp, scrapPriceOf, sellValue, UNIT_BUILD_SECONDS } from "./economy";
+import {
+  CORE_LOAD_SECONDS,
+  drillLoadSeconds,
+  missionXp,
+  SCRAP_COLOR,
+  scrapPriceOf,
+  sellValue,
+  UNIT_BUILD_SECONDS,
+} from "./economy";
 import type { TowerPlacement } from "./progress";
 import { TOWER_KINDS } from "./types";
 import { Renderer } from "./renderer";
@@ -77,8 +85,6 @@ export interface UiState {
   scrap: number | null;
   /** everything the run has taken in so far — the core's pay and the drills' */
   scrapEarned: number;
-  /** what the run is earning right now, scrap a second (Sim.income) */
-  income: number;
   /** the player's bodies on the field, and how many the run has lost */
   army: number;
   unitsLost: number;
@@ -313,6 +319,9 @@ const BAR_EDGE = "rgba(0,0,0,0.55)";
 const BAR_BUILD = "#FFD37F";
 /** what is being made (Tower.prodT) — the player's blue */
 const BAR_MAKE = "#7FC4FF";
+/** the load a drill or the core is filling (Tower.mineT, Sim.coreMineT) —
+ *  scrap's own grey, because scrap is what comes out of it */
+const BAR_MINE = SCRAP_COLOR;
 /** a health bar's colour at a fraction of full, the HUD's own three */
 const hpColor = (f: number): string => (f > 0.5 ? "#7BE58A" : f > 0.2 ? "#FFD37F" : "#FF5A5A");
 const PAN_KEYS: Record<string, readonly [number, number]> = {
@@ -1168,7 +1177,6 @@ export class Game {
       menuOpen: this.menuOpen,
       scrap: this.sim.charging ? Math.floor(this.sim.scrap) : null,
       scrapEarned: Math.floor(this.sim.scrapEarned),
-      income: this.sim.income(),
       army: this.sim.nPlayer,
       unitsLost: this.sim.unitsLost,
       wavesCleared: this.sim.wavesCleared(),
@@ -1700,7 +1708,10 @@ export class Game {
    * Every structure's bars: what it is making, what is still going up, and
    * what is left of it.
    *
-   *   PRODUCTION   a factory's unit clock (Tower.prodT), top of the stack
+   *   MINING       the load a drill is filling (Tower.mineT), top of the
+   *                stack — the one bar that is running on a building
+   *                nothing is happening to otherwise
+   *   PRODUCTION   a factory's unit clock (Tower.prodT)
    *   CONSTRUCTION the shell's own timer (Tower.buildT)
    *   HP           only once something has actually hurt it — a bar over
    *                every untouched building would be a wall of green
@@ -1708,9 +1719,22 @@ export class Game {
    * The swarm's buildings get the same treatment on ground the player has
    * seen, because "how much is left of that bunker" is the same question
    * from either side of it.
+   *
+   * THE CORE gets the mining bar too, since it ships on the same clock
+   * (Sim.coreMineT) — it is the run's first and largest earner, and a bar
+   * only on the drills would read as though it had stopped paying.
    */
   private drawStructureBars(c: CanvasRenderingContext2D): void {
     const bars: { v: number; col: string }[] = [];
+    const mining = this.sim.charging && !this.sim.lost();
+    // the core's shipment, on a run that is actually earning
+    if (mining) {
+      const core = this.sim.core;
+      const sz = core.size * CELL;
+      this.drawBars(c, core.x, core.y - sz / 2, sz - 2, [
+        { v: 1 - this.sim.coreMineT / CORE_LOAD_SECONDS, col: BAR_MINE },
+      ]);
+    }
     for (const t of this.sim.towers) {
       const st = structStats(t.kind);
       const sz = st.size * CELL;
@@ -1730,6 +1754,12 @@ export class Game {
         const total = UNIT_BUILD_SECONDS[tier] || 1;
         bars.push({ v: t.prodT < 0 ? 0 : 1 - t.prodT / total, col: BAR_MAKE });
       }
+      // A DRILL'S LOAD (Sim.updateMining). Only where it is actually being
+      // filled: a drill on bare ore-less ground, a shell still going up and
+      // a board that is not charging (the editors, the sandbox) all mine
+      // nothing, and an empty bar sitting still on them would be a lie
+      if (mining && t.ore > 0 && t.buildT <= 0 && t.team === "player")
+        bars.push({ v: 1 - t.mineT / drillLoadSeconds(t.ore), col: BAR_MINE });
       this.drawBars(c, t.x, t.y - sz / 2, sz - 2, bars);
     }
   }

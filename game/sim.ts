@@ -144,8 +144,12 @@ import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
 import { factionUnit } from "./factions";
 import type { FamilyKey } from "./levels";
 import {
+  CORE_BATCH,
   CORE_INCOME,
+  CORE_LOAD_SECONDS,
+  DRILL_BATCH,
   DRILL_INCOME_PER_ORE,
+  drillLoadSeconds,
   PLAYER_UNIT_CAP,
   SCRAP_START,
   scrapPriceOf,
@@ -1088,6 +1092,9 @@ export class Sim {
   /** scrap the run has taken in, kills and wave bonuses alike — the tally
    *  the results screen reads */
   scrapEarned = 0;
+  /** THE CORE'S SHIPPING CLOCK: seconds left on the CORE_BATCH it is
+   *  filling (updateMining), the same cycle every drill runs on */
+  coreMineT = CORE_LOAD_SECONDS;
   // which towers may be built and how many of each — null (the default, and
   // the map editor's mode) places no restrictions; the campaign sets it from
   // the save's level through the track before play (see Game.setTech)
@@ -1516,6 +1523,7 @@ export class Sim {
     this.killsByKind.fill(0);
     this.scrap = SCRAP_START;
     this.scrapEarned = 0;
+    this.coreMineT = CORE_LOAD_SECONDS;
     // the run's rules, read once: the feed pass runs over every unit on the
     // field, and a spec lookup per unit per tick to answer a question that
     // cannot change mid-run would be pure waste
@@ -2376,6 +2384,7 @@ export class Sim {
     // asks for a build time or a waterlogging check)
     const build = instant ? 0 : buildTimeOf(kind);
     const x = (gx + sz / 2) * CELL, y = (gy + sz / 2) * CELL;
+    const ore = structStats(kind).drill ? this.oreUnder(gx, gy, sz) : 0;
     const tower: Tower = {
       kind,
       team,
@@ -2387,7 +2396,11 @@ export class Sim {
       buildT: build,
       buildTotal: build,
       // a drill's pay is the ore under it, read once here (Terrain.ore)
-      ore: structStats(kind).drill ? this.oreUnder(gx, gy, sz) : 0,
+      ore,
+      // ...and its first load starts full-length: a shell mines nothing
+      // while it is going up (updateMining skips it), so this is the clock
+      // it stands up with
+      mineT: ore > 0 ? drillLoadSeconds(ore) : 0,
       prodT: -1,
       aimShieldTower: -1,
       aimTower: null,
@@ -2482,13 +2495,9 @@ export class Sim {
     // while the sim is paused
     this.time += dt;
     this.runScript(dt);
-    // THE ECONOMY TICKS: the core and the drills pay by the second
-    // (income), into the bank and onto the run's ledger
-    {
-      const pay = this.income() * dt;
-      this.scrap += pay;
-      this.scrapEarned += pay;
-    }
+    // THE ECONOMY TICKS: the core and the drills fill their loads, and a
+    // full load lands in the bank and on the run's ledger
+    this.updateMining(dt);
     // a structure went up on, or came down off, open ground: shove anything
     // standing in its cells clear now, and re-solve the routes when the
     // board settles (solveDirtyFields)
@@ -3764,6 +3773,11 @@ export class Sim {
    * is in here — see economy.ts. Zero on a sim that is not charging (the
    * editors, the sandbox, the title screen), where a bank would be a
    * number that means nothing.
+   *
+   * THE RATE, NOT THE PAYMENTS. Nothing is actually paid a second at a
+   * time any more — updateMining hands the money over in loads — so this
+   * is what those loads AVERAGE to, which is the number the prices and
+   * the stage audit (ladder.ts) are written against.
    */
   income(): number {
     if (!this.charging || this.lost()) return 0;
@@ -3771,6 +3785,50 @@ export class Sim {
     for (const t of this.towers)
       if (t.team === "player" && t.buildT <= 0 && t.ore > 0) rate += t.ore * DRILL_INCOME_PER_ORE;
     return rate;
+  }
+
+  /**
+   * MINING, tick by tick: the core and every finished drill of the
+   * player's run down the clock on the load they are filling, and a load
+   * that fills is handed over WHOLE — CORE_BATCH from the core,
+   * DRILL_BATCH from the drill — into the bank and onto the run's ledger.
+   *
+   * A drill's clock is its ore's (drillLoadSeconds), so a drill squarely
+   * on a vein delivers four times as often as one hanging off it: exactly
+   * the pay the per-second rate gave, arriving as something the player can
+   * watch happen. The remainder is CARRIED (mineT += load rather than
+   * mineT = load) so a long frame or a fast game speed never rounds a
+   * fraction of a load away, and the while loop covers a tick long enough
+   * to fill more than one.
+   *
+   * Nothing mines on a sim that is not charging or on a run that is
+   * already lost — same rule as income().
+   */
+  private updateMining(dt: number): void {
+    if (!this.charging || this.lost()) return;
+    this.coreMineT -= dt;
+    while (this.coreMineT <= 0) {
+      this.coreMineT += CORE_LOAD_SECONDS;
+      this.payScrap(CORE_BATCH);
+    }
+    for (const t of this.towers) {
+      // a shell still going up mines nothing, and neither does a drill the
+      // player dropped on bare ground (ore 0) or one the swarm owns
+      if (t.team !== "player" || t.buildT > 0 || t.ore <= 0) continue;
+      const load = drillLoadSeconds(t.ore);
+      t.mineT -= dt;
+      while (t.mineT <= 0) {
+        t.mineT += load;
+        this.payScrap(DRILL_BATCH);
+      }
+    }
+  }
+
+  /** a load of scrap into the bank, and onto the tally the results screen
+   *  reads */
+  private payScrap(amount: number): void {
+    this.scrap += amount;
+    this.scrapEarned += amount;
   }
 
   placeTower(gx: number, gy: number, kind: TowerKind, instant = !this.charging): PlaceResult {

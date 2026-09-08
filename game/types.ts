@@ -130,6 +130,11 @@ export interface Tower {
   /** a DRILL's ore: how many of its footprint's cells sit on a vein, which
    *  is what it pays by (Sim.income). 0 on anything else */
   ore: number;
+  /** a DRILL's mining clock: seconds left on the DRILL_BATCH load it is
+   *  filling (Sim.updateMining), which is what the bar over it shows. The
+   *  load lands in the bank whole when this reaches 0 and the next one
+   *  starts. Meaningless on anything that is not a drill on ore */
+  mineT: number;
   /** a FACTORY's build clock: seconds left on the unit it is making, or
    *  -1 while it is idle and waiting to afford the next (Sim.updateProduction) */
   prodT: number;

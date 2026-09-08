@@ -5,9 +5,14 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * THE ECONOMY, in two currencies that never touch.
  *
  *   SCRAP  is IN-RUN money, and THE PLAYER MAKES ALL OF IT. Every run
- *          starts with SCRAP_START, the core pays CORE_INCOME a second
- *          for as long as it stands, and every drill on an ore vein pays
- *          DRILL_INCOME_PER_ORE a second per ore cell under it. Nothing
+ *          starts with SCRAP_START, the core ships CORE_BATCH at a time
+ *          for as long as it stands, and every drill on an ore vein hands
+ *          over a DRILL_BATCH load as often as the ore under it fills one.
+ *          The RATES behind those loads are CORE_INCOME and
+ *          DRILL_INCOME_PER_ORE a second, so what a run earns over a
+ *          minute is what it always was — it simply arrives in loads with
+ *          a bar filling toward each one, rather than as a trickle no
+ *          single frame can show. Nothing
  *          the enemy does or dies of pays anything: a kill drops nothing,
  *          a wave lands with no bonus, a wrecked enemy building pays no
  *          bounty. Every turret, wall, drill and factory placed costs
@@ -57,7 +62,8 @@ export const SCRAP_START = 3000;
  * THE CORE'S PAY: scrap a second, for as long as the core stands. This is
  * the run's base income — over a 25-minute run it is about 37,000, which
  * buys a faction's whole line once, so the run's second line and its
- * heavy tier come out of the drills. Sim.income.
+ * heavy tier come out of the drills. Sim.income is the rate; the core
+ * actually pays it CORE_BATCH at a time (Sim.updateMining).
  */
 export const CORE_INCOME = 25;
 
@@ -69,8 +75,47 @@ export const CORE_INCOME = 25;
  * drill: a drill pays itself back (TOWER_PRICE) inside a minute, and four
  * of them match the core, which is what makes the veins worth walking
  * out to and worth holding.
+ *
+ * THIS IS A RATE, NOT A DRIP. What the drill actually does with it is
+ * fill a DRILL_BATCH load and hand the whole load over at once — see
+ * drillLoadSeconds below.
  */
 export const DRILL_INCOME_PER_ORE = 1.5;
+
+/**
+ * THE LOADS THE SCRAP ARRIVES IN, and why it arrives in loads at all.
+ *
+ * A drill that paid 6 scrap a second paid 0.1 a frame: a number that
+ * could not be seen happening, on a building that looked identical
+ * whether it was on four ore cells or one. Mining is now a CYCLE — the
+ * drill fills a DRILL_BATCH load at its ore's rate, a bar over its
+ * footprint fills with it (Game.drawStructureBars), and the load lands
+ * in the bank whole. The core ships the same way, CORE_BATCH at a time.
+ *
+ * THE BATCH SIZES ARE CHOSEN BY THEIR CLOCKS, not by their round numbers.
+ * A drill on a full vein delivers every DRILL_BATCH / (4 x 1.5) = 5
+ * seconds — often enough to feel like an engine running, slow enough that
+ * the bar is worth looking at — and one hanging off a vein by a single
+ * cell takes 20, which is the same "is this spot worth it" question the
+ * ore count always asked, now visible on the building. The core's 100
+ * lands every 4 seconds, so the opening still ticks along while nothing
+ * is built yet.
+ *
+ * NOTHING ABOUT THE ECONOMY'S SIZE MOVED. Averaged over any stretch
+ * longer than a load, income is exactly CORE_INCOME plus the drills'
+ * rates — the stage audit (ladder.ts) and every price above are priced
+ * against the same numbers they always were.
+ */
+export const DRILL_BATCH = 30;
+export const CORE_BATCH = 100;
+
+/** how long a drill on `ore` cells takes to fill one DRILL_BATCH load —
+ *  Infinity for a drill on no ore, which never fills one */
+export const drillLoadSeconds = (ore: number): number =>
+  ore > 0 ? DRILL_BATCH / (ore * DRILL_INCOME_PER_ORE) : Infinity;
+
+/** how long the core takes to fill one CORE_BATCH shipment */
+export const CORE_LOAD_SECONDS = CORE_BATCH / CORE_INCOME;
 
 /**
  * WHAT A FACTORY CHARGES FOR A UNIT, by the unit's tier (index 0 unused),

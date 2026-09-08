@@ -2517,10 +2517,13 @@ export default function MechSwarm() {
                   {hud.scrap !== null && (
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
                       <ScrapAmount amount={hud.scrap} size="md" className="text-xl" />
-                      {/* THE RATE beside the bank: the core's pay and the
-                          drills' (Sim.income) — the number an expansion is
-                          judged by */}
-                      <span className="text-[14px] text-[#A6A6AF]">+{Math.round(hud.income)}/s</span>
+                      {/* THE BANK AND NOTHING ELSE. The rate that used to
+                          sit beside it (+n/s) is gone with the trickle it
+                          described: the core and the drills now deliver in
+                          loads, and each one's bar on the field says what
+                          it is earning and when the next payment lands —
+                          a number in the corner said neither, and said it
+                          about the whole board at once */}
                       {hud.army > 0 && (
                         <span className="text-[14px] text-[#FFD37F]">{hud.army} units</span>
                       )}

@@ -47,7 +47,9 @@ stale tab or a cached bundle looks exactly like a fix not working.
   the water layer and cannot leave it
 - `game/economy.ts` — **the economy**: scrap (in-run money, and THE
   PLAYER MAKES ALL OF IT — `CORE_INCOME` a second from the core,
-  `DRILL_INCOME_PER_ORE` a second per ore cell under each drill; kills,
+  `DRILL_INCOME_PER_ORE` a second per ore cell under each drill, both
+  paid out in loads rather than as a trickle (`CORE_BATCH`,
+  `DRILL_BATCH`, `drillLoadSeconds`); kills,
   waves and wrecks pay nothing), XP (meta progress), the fixed mission
   pot and how it is dealt out per wave cleared (`MISSION_XP`,
   `waveXpShare`), the three turret tiers and their scrap prices, the
@@ -339,6 +341,20 @@ opens with `SCRAP_START` (3,000); the core pays `CORE_INCOME` (25) a
 second for as long as it stands; and every **drill** (2x2, on an ore
 vein and nowhere else — `Sim.canPlace`) pays `DRILL_INCOME_PER_ORE`
 (1.5) a second per ore cell under it, six for one squarely on a vein.
+
+**It arrives in loads, not as a trickle** (`Sim.updateMining`). A drill
+fills a `DRILL_BATCH` (30) load at its ore's rate and hands the whole
+load over at once — every 5 seconds on a full vein, every 20 on a single
+ore cell — and the core ships `CORE_BATCH` (100) every 4 seconds the same
+way. A bar over each building fills toward its next delivery
+(`Game.drawStructureBars`), which is what makes the difference between a
+drill on four ore cells and one on a corner something the board shows
+rather than something only the bank knows. Averaged over anything longer
+than a load the rates above are unchanged, so every price and the stage
+audit are written against the same numbers as before. The HUD carries the
+bank alone: the old `+n/s` rate beside it described a trickle that no
+longer exists, and the bars say it per building instead.
+
 Nothing the swarm does or dies of pays anything: a kill drops nothing, a
 wave lands with no bonus, a wrecked enemy building pays no bounty. The
 economy is not tied to the enemy count at all, which is what lets the
