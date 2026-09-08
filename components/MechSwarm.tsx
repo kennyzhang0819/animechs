@@ -11,11 +11,14 @@ import {
   type RefObject,
 } from "react";
 import {
+  BOOT_STEP_LABEL,
+  BOOT_STEPS,
   firstLoadStep,
   Game,
   LOAD_STEP_LABEL,
   LOAD_STEPS,
   SPEEDS,
+  type BootStep,
   type LoadStep,
   type UiState,
 } from "@/game/game";
@@ -80,7 +83,7 @@ import {
   type Progress,
   type RunReward,
 } from "@/game/progress";
-import { turretIcon } from "@/game/atlas";
+import { atlasReady, buildAtlas, turretIcon } from "@/game/atlas";
 import {
   cleanMutations,
   mutationById,
@@ -139,14 +142,48 @@ function LevelThumb({ mapId, bare = false }: { mapId: string; bare?: boolean }) 
 const MIN_LOAD_MS = 420;
 const FADE_MS = 260;
 
+/**
+ * The longest the boot screen will wait on the menu's battlefield before
+ * showing the menu anyway. Nothing should ever reach it — a cold page is a
+ * second or two of packing and carving — but a screen that says LOADING
+ * forever is the worst thing this can do, and there are ways to get one
+ * that are nobody's fault: a driver that will not give up a WebGL2 context,
+ * a frame callback a browser declines to run. Past this the player gets the
+ * title card with the ground still arriving under it, which is exactly what
+ * they used to get every launch.
+ */
+const BOOT_MAX_MS = 30000;
+
 /** the loading screen's own state: which step, and whether it is dissolving */
 interface LoadUi {
   step: LoadStep;
   out: boolean;
 }
 
-/** the screen shown while a level is being prepared */
-function LoadingScreen({ step, out }: { step: LoadStep; out: boolean }) {
+/**
+ * THE LOADING SCREEN, worn by both the waits worth showing: the page's own
+ * boot (`boot`, the sheet and the documents and the menu's battlefield) and
+ * a level start (`loadUi`). One screen for both, because they are the same
+ * promise to the player — something is being prepared, this is how far it
+ * has got — and two would only differ in the wrong ways.
+ *
+ * `cover` is the only thing that changes between them: the boot is over the
+ * whole page and everything on it, a level start is over the game screen's
+ * canvases inside their own stacking context.
+ */
+function LoadingScreen({
+  label,
+  fill,
+  out,
+  cover = "absolute z-20",
+}: {
+  /** what is happening, in words */
+  label: string;
+  /** how far along, 0–1 */
+  fill: number;
+  out: boolean;
+  cover?: string;
+}) {
   // NOTHING ABOUT THE RUN. No map, no tier, no wave count: what is coming is
   // the run's own answer to give, wave by wave, and a preview printed before
   // the first enemy lands is something the player can do nothing with. The
@@ -154,13 +191,12 @@ function LoadingScreen({ step, out }: { step: LoadStep; out: boolean }) {
 
   // steps, not bytes: nothing here streams, so the bar fills a stage at a
   // time rather than pretending to a percentage it cannot know
-  const done = LOAD_STEPS.indexOf(step) + 1;
   return (
     <div
       role="status"
       aria-live="polite"
       aria-label="Loading"
-      className={`absolute inset-0 z-20 flex items-center justify-center bg-[#0b0b0d] transition-opacity duration-[260ms] ${
+      className={`${cover} inset-0 flex items-center justify-center bg-[#0b0b0d] transition-opacity duration-[260ms] ${
         out ? "pointer-events-none opacity-0" : "opacity-100"
       }`}
     >
@@ -172,11 +208,11 @@ function LoadingScreen({ step, out }: { step: LoadStep; out: boolean }) {
           <div className="ms-bar w-full">
             <div
               className="transition-[width] duration-200 ease-out"
-              style={{ width: `${(done / LOAD_STEPS.length) * 100}%` }}
+              style={{ width: `${Math.round(Math.max(0, Math.min(1, fill)) * 100)}%` }}
             />
           </div>
           <p className="text-center text-[15px] uppercase tracking-widest text-[#71717C]">
-            {LOAD_STEP_LABEL[step]}
+            {label}
           </p>
         </div>
       </div>
@@ -1162,6 +1198,22 @@ export default function MechSwarm() {
   const [result, setResult] = useState<RunReward | null>(null);
   // non-null exactly while the loading screen is up, including its fade
   const [loadUi, setLoadUi] = useState<LoadUi | null>(null);
+  /**
+   * THE BOOT SCREEN: non-null from the very first render of the page until
+   * the front of house is worth looking at, including its own fade. It is
+   * the first thing painted rather than something switched on by an effect
+   * — a title card that appears and is then covered is a flash, and the
+   * whole point of this is that nobody sees the menu half-built.
+   */
+  const [boot, setBoot] = useState<{ step: BootStep; out: boolean } | null>({
+    step: "sprites",
+    out: false,
+  });
+  /** the boot lifts once and stays lifted, whichever way it was earned */
+  const booted = useRef(false);
+  const reveal = useRef<((force: boolean) => void) | null>(null);
+  /** the two halves of the warm-up, each set by whoever finishes it */
+  const ready = useRef({ icons: false, ground: false });
   const granted = useRef(false);
   /**
    * Where the progress screen was opened FROM. A loss is the moment it is
@@ -1340,23 +1392,89 @@ export default function MechSwarm() {
     setHud(g.ui());
   }, [admin, level?.tier]);
 
+  /**
+   * THE BOOT, in the order the boot screen names it (BOOT_STEPS).
+   *
+   * It USED to be one fire-and-forget Promise.all under a menu that was
+   * already on screen, which is exactly what the player saw: a title card
+   * over black, and the battlefield behind it arriving several seconds
+   * later once the sheet had packed, the documents had landed and the
+   * menu's own sim had carved its map. The work has not changed; what has
+   * changed is that the page is covered until it is done.
+   *
+   * The sheet goes first because everything else is cut out of it and it is
+   * the one genuinely long step (~200ms of packing, once per page). Then
+   * the documents — level documents overlay WORLDS in place (see levels.ts),
+   * so a script edited in the admin level editor is what the menu counts and
+   * the run plays; a level with no document keeps the campaign as shipped.
+   *
+   * The last step is the warm-up, and it is TWO things finishing rather than
+   * one: the turret pictures cut from the sheet here, and the renderer that
+   * MenuBackground stands up to draw the ground — its GL context, its shader
+   * programs and the sheet uploaded as a texture, none of which exist until
+   * something asks for a frame. The ground reports itself (onReady →
+   * `revealMenu`); the boot lifts when both have landed.
+   *
+   * NOTHING HERE IS FATAL. A fetch that fails leaves the cards on text and
+   * the game to retry at level start, exactly as before — it must not leave
+   * the player looking at a loading bar that will never move.
+   */
   useEffect(() => {
     let alive = true;
-    // level documents overlay WORLDS in place (see levels.ts), so a script
-    // edited in the admin level editor is what the menu counts and the run
-    // plays. A level with no document keeps the campaign as shipped
-    Promise.all([
-      loadOfficialMaps(),
-      loadLevelDocs(),
-      loadBalanceDoc(),
-    ])
-      .then(() => {
-        if (alive) setMapsReady(true);
-      })
-      .catch(() => {}); // cards fall back to text-only; the game will retry
+    void (async () => {
+      if (!atlasReady()) await buildAtlas().catch(() => {});
+      if (!alive) return;
+      setBoot((b) => (b ? { ...b, step: "maps" } : b));
+      await Promise.all([loadOfficialMaps(), loadLevelDocs(), loadBalanceDoc()]).catch(() => {});
+      if (!alive) return;
+      setMapsReady(true);
+      setBoot((b) => (b ? { ...b, step: "warmup" } : b));
+      // the bar's and the deploy screen's turret pictures, each one a
+      // region of the sheet drawn out to its own canvas: cheap, but a
+      // screenful of them popping in after the menu is up is exactly the
+      // half-built front of house this screen exists to hide
+      const entries = await Promise.all(
+        TOWER_MENU.map(async (t) => [t.kind, await turretIcon(t.icon)] as const),
+      ).catch(() => []);
+      if (!alive) return;
+      setIcons(Object.fromEntries(entries));
+      ready.current.icons = true;
+      reveal.current?.(false);
+    })();
+    // the belt to the warm-up's braces, and never the thing that lifts a
+    // healthy boot: a cold page is a second or two of packing and a few of
+    // carving, and this is half a minute (see BOOT_MAX_MS)
+    const cap = setTimeout(() => reveal.current?.(true), BOOT_MAX_MS);
     return () => {
       alive = false;
+      clearTimeout(cap);
     };
+  }, []);
+
+  /**
+   * Take the boot screen down: mark it leaving, and drop it once the fade
+   * it is leaving through has finished.
+   *
+   * It is a one-shot, and it is patient: every part of the warm-up calls it
+   * when it lands and it does nothing until they all have (`ready`), so no
+   * caller has to know what the others are waiting on. `force` is the cap's
+   * door out — a boot that has waited long enough is shown whatever is
+   * still missing.
+   */
+  const revealMenu = useCallback((force: boolean) => {
+    if (booted.current) return;
+    if (!force && !(ready.current.icons && ready.current.ground)) return;
+    booted.current = true;
+    setBoot((b) => (b ? { ...b, out: true } : b));
+    setTimeout(() => setBoot(null), FADE_MS);
+  }, []);
+  // the boot effect runs before this is declared and holds it by reference,
+  // so its cap can fire the same one-shot the warm-up does
+  reveal.current = revealMenu;
+  /** MenuBackground's end of the warm-up: its renderer exists and has drawn */
+  const groundReady = useCallback(() => {
+    ready.current.ground = true;
+    reveal.current?.(false);
   }, []);
 
   /**
@@ -1397,6 +1515,10 @@ export default function MechSwarm() {
     setLevel(runSpec(w, t, rollFamilies(), mutation));
     setScreen("game");
     setLoadUi({ step: firstLoadStep(), out: false });
+    // straight past the front of house: the level's own loading screen takes
+    // over from here, and the menu's ground is never built to wait on
+    booted.current = true;
+    setBoot(null);
   }, [mapsReady]);
 
   useEffect(() => {
@@ -1524,18 +1646,6 @@ export default function MechSwarm() {
       if (w.__mechswarm === game) delete w.__mechswarm;
     };
   }, [screen, level, runRandom]);
-
-  useEffect(() => {
-    let alive = true;
-    Promise.all(
-      TOWER_MENU.map(async (t) => [t.kind, await turretIcon(t.icon)] as const),
-    ).then((entries) => {
-      if (alive) setIcons(Object.fromEntries(entries));
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   /**
    * The turrets in the bar, ALWAYS in the canonical order (ORDERED_MENU) —
@@ -2030,19 +2140,26 @@ export default function MechSwarm() {
     );
   }
 
-  if (screen === "tech" && progress) {
-    return (
-      <ProgressView
-        progress={progress}
-        // after a battle the exit is the menu; from the menu it is the menu
-        // too, one step back
-        onBack={techFrom === "game" ? backToMenu : leaveTech}
-        backLabel={techFrom === "game" ? "Back to menu" : "Back"}
-      />
-    );
-  }
-
   if (screen !== "game" || !level) {
+    /**
+     * THE PROGRESS BOARD is a VIEW OF THE FRONT OF HOUSE, not a screen of
+     * its own — it used to return before the menu did, which unmounted the
+     * menu's ground with it: walking to the track and back threw away the
+     * carved map and the batches on the GPU and built another, and the page
+     * hitched for as long as that took. Now it stands in the menu's place
+     * inside the same shell, the ground behind it is the same ground, and
+     * it is only told to stop drawing while the board covers it.
+     */
+    const board =
+      screen === "tech" && progress ?
+        <ProgressView
+          progress={progress}
+          // after a battle the exit is the menu; from the menu it is the
+          // menu too, one step back
+          onBack={techFrom === "game" ? backToMenu : leaveTech}
+          backLabel={techFrom === "game" ? "Back to menu" : "Back"}
+        />
+      : null;
     /**
      * THE LEVEL AND THE WAY TO READ IT: the number, and the Progress button
      * to its right, pinned to the top-RIGHT corner — the opposite corner
@@ -2090,215 +2207,245 @@ export default function MechSwarm() {
       // whose Settings button is clipped off the bottom. A finger cannot
       // bounce it: html and body refuse overscroll (globals.css)
       <div className="fixed inset-0 overflow-y-auto bg-[#0b0b0d]">
-        {/* THE GROUND: the game itself, playing behind the menu
-            (MenuBackground) — a campaign map with the swarm walking it and
-            a line of turrets fighting it, on the real sim. It is mounted
-            once here rather than per view so walking Title → Start → a
-            pick never restarts the fight; only the wash over it changes —
-            light on the title card, darker under the deploy screen, which
-            is a thing to read. The effects switch reaches it too: a device
-            that cannot afford the particles cannot afford them here */}
-        <MenuBackground dim={menuView === "home" ? 0.38 : 0.66} effects={effects} />
-        {/* EVERY VIEW TAKES THE UI-SIZE KNOB, the title card included: it
-            used to sit out at one composed size, and a knob that scaled
-            every screen but the first one read as the first one being
-            broken. The working views also clear the corner chrome (back,
-            the level and Progress) with a top pad in their own zoomed
-            units, so a HUD at 200% does not stand the heading under the
-            level strip — and the centring is SAFE: a column taller than
-            the screen starts at the pad and scrolls, instead of spilling
-            out of both ends */}
-        <div
-          className={`ui-zoom relative mx-auto flex min-h-full max-w-5xl flex-col items-center gap-8 py-12 pl-[1.5rem] pr-[1.5rem] [justify-content:safe_center] sm:py-16 ${
-            menuView === "home" ? "" : "pt-20 sm:pt-20"
-          }`}
-        >
-          {/* THE TITLE CARD. A name and two doors - nothing here describes a
-              run, because no run has been chosen yet */}
-          {menuView === "home" && (
-            <>
-              <div className="text-center">
-                {/* the display face (Chakra Petch) is the techy one — the
-                    body face is what makes the working UI read as terminal
-                    text, and a title set in it read as more of the same.
-                    The name is one word: it is the COLOUR that splits MECH
-                    from SWARM, not a space or a line break. */}
-                <h1 className="font-display text-5xl font-bold uppercase tracking-[0.08em] [text-shadow:0_3px_0_rgba(0,0,0,0.85),0_0_32px_rgba(0,0,0,0.9)] sm:text-6xl">
-                  <span className="text-[#EDEDEF]">Mech</span>
-                  <span className="text-[#FFD37F] [text-shadow:0_3px_0_rgba(0,0,0,0.85),0_0_28px_rgba(255,211,127,0.45)]">
-                    Swarm
-                  </span>
-                </h1>
-              </div>
-              <div className="flex w-full max-w-[20rem] flex-col gap-3">
-                <button
-                  onClick={() => setMenuView("deploy")}
-                  className="ms-btn ms-btn-accent w-full py-3.5 text-[17px] tracking-[0.3em]"
-                >
-                  Start
-                </button>
-                <button
-                  onClick={() => setMenuView("settings")}
-                  className="ms-btn w-full py-3.5 text-[17px] tracking-[0.3em]"
-                >
-                  Settings
-                </button>
-              </div>
-              {/* no credit line under the buttons: the hero screen carries
-                  the game's name and the two things to do with it. Who made
-                  it and what it came from are on the Info tab of Settings */}
-            </>
-          )}
-
-          {/* THE DEPLOY SCREEN. The two macros a run is chosen by, and
-              Start under them. There is no map grid and no deploy dialog
-              any more: a run is two picks, each one press away, and the
-              defaults (Random, Incursion) are a run in themselves */}
-          {menuView === "deploy" && (
-            <>
-              <h2 className="ms-heading text-[17px] tracking-[0.35em]">Deploy</h2>
-              <div className="flex w-full max-w-[28rem] flex-col gap-3">
-                {/* THE MACROS: what the next run is, as two rows that read
-                    as a sentence — this map, at this level — and what
-                    each pays, in the XP colour, so the trade is on the
-                    screen before either list is opened */}
-                <div className="flex flex-col gap-2">
-                  <MacroButton
-                    label="Map"
-                    value={pickedWorld ? pickedWorld.name : `Random, ${randomLabel}`}
-                    onClick={() => setPicker("maps")}
-                  >
-                    {pickedWorld ? (
-                      <span className="text-[#EDEDEF]">{pickedWorld.name}</span>
-                    ) : (
-                      <>
-                        <span className="text-[#EDEDEF]">Random</span>
-                        <span className="text-[14px]" style={{ color: XP_COLOR }}>
-                          {randomLabel}
-                        </span>
-                      </>
-                    )}
-                  </MacroButton>
-                  <MacroButton
-                    label="Difficulty"
-                    value={`${rungLabel(tier)}, ${xpShareText(tierXpBonus(tier))}`}
-                    onClick={() => setPicker("difficulty")}
-                  >
-                    <span style={{ color: rungColor(tier) }}>{rungLabel(tier)}</span>
-                    <span className="text-[14px]" style={{ color: XP_COLOR }}>
-                      {xpShareText(tierXpBonus(tier))}
+        {/* THE GROUND: a campaign map's own country behind the menu
+            (MenuBackground) — the real terrain, drawn by the game's own
+            renderer, holding one framing at a time and cutting to the next
+            through black. It is mounted once HERE, above every view and
+            the progress board alike, so nothing a player presses on the
+            front of house ever rebuilds it; only the wash over it changes
+            — light on the title card, darker under the deploy screen,
+            which is a thing to read, and the drawing stops outright while
+            the board is standing over it */}
+        <MenuBackground
+          dim={menuView === "home" ? 0.38 : 0.66}
+          hidden={board !== null}
+          onReady={groundReady}
+        />
+        {board}
+        {!board && (
+          <>
+          {/* EVERY VIEW TAKES THE UI-SIZE KNOB, the title card included: it
+              used to sit out at one composed size, and a knob that scaled
+              every screen but the first one read as the first one being
+              broken. The working views also clear the corner chrome (back,
+              the level and Progress) with a top pad in their own zoomed
+              units, so a HUD at 200% does not stand the heading under the
+              level strip — and the centring is SAFE: a column taller than
+              the screen starts at the pad and scrolls, instead of spilling
+              out of both ends */}
+          <div
+            className={`ui-zoom relative mx-auto flex min-h-full max-w-5xl flex-col items-center gap-8 py-12 pl-[1.5rem] pr-[1.5rem] [justify-content:safe_center] sm:py-16 ${
+              menuView === "home" ? "" : "pt-20 sm:pt-20"
+            }`}
+          >
+            {/* THE TITLE CARD. A name and two doors - nothing here describes a
+                run, because no run has been chosen yet */}
+            {menuView === "home" && (
+              <>
+                <div className="text-center">
+                  {/* the display face (Chakra Petch) is the techy one — the
+                      body face is what makes the working UI read as terminal
+                      text, and a title set in it read as more of the same.
+                      The name is one word: it is the COLOUR that splits MECH
+                      from SWARM, not a space or a line break. */}
+                  <h1 className="font-display text-5xl font-bold uppercase tracking-[0.08em] [text-shadow:0_3px_0_rgba(0,0,0,0.85),0_0_32px_rgba(0,0,0,0.9)] sm:text-6xl">
+                    <span className="text-[#EDEDEF]">Mech</span>
+                    <span className="text-[#FFD37F] [text-shadow:0_3px_0_rgba(0,0,0,0.85),0_0_28px_rgba(255,211,127,0.45)]">
+                      Swarm
                     </span>
-                  </MacroButton>
-                  {/* THE FACTION: the line this run is played as — what the
-                      factories build and which three turrets the bar
-                      carries (factions.ts). One of the ones the track has
-                      opened — every faction plays every map */}
-                  {progress && (() => {
-                    const f = factionFor(progress, factionPick);
-                    return (
-                      <MacroButton
-                        label="Faction"
-                        value={f ? familyByKey(f).name : "None"}
-                        onClick={() => setPicker("faction")}
-                      >
-                        <span className="text-[#EDEDEF]">{f ? familyByKey(f).name : "None"}</span>
-                        {f && (
-                          <span className="flex items-center gap-1">
-                            {factionUnits(f).map((u) => (
-                              // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite
-                              <img
-                                key={u}
-                                src={`/mindustry/sprites/units/${u}.png`}
-                                alt=""
-                                className="h-5 w-5 object-contain [image-rendering:pixelated]"
-                              />
-                            ))}
-                          </span>
-                        )}
-                      </MacroButton>
-                    );
-                  })()}
+                  </h1>
                 </div>
-                {/* NOTHING HERE SAYS WHAT THE RUN WILL BE PLAYED UNDER.
-                    The roll used to sit under the macros as a row of
-                    faces, which meant the deploy screen answered the
-                    question the first wave is supposed to: a player read
-                    the rules, weighed them and re-picked the map to
-                    re-roll them. The rules are a thing the run tells you,
-                    not a thing the menu offers — they are on the HUD
-                    (hudRules) from the first frame of the field, and the
-                    codex on the progress screen says what each one does */}
-                {/* ONE ACTION, at the bottom: this map, at this level, go */}
-                <button
-                  onClick={startRun}
-                  className="ms-btn ms-btn-accent mt-2 w-full py-3.5 text-[17px] tracking-[0.3em]"
-                >
-                  Start
-                </button>
-              </div>
-            </>
+                <div className="flex w-full max-w-[20rem] flex-col gap-3">
+                  <button
+                    onClick={() => setMenuView("deploy")}
+                    className="ms-btn ms-btn-accent w-full py-3.5 text-[17px] tracking-[0.3em]"
+                  >
+                    Start
+                  </button>
+                  <button
+                    onClick={() => setMenuView("settings")}
+                    className="ms-btn w-full py-3.5 text-[17px] tracking-[0.3em]"
+                  >
+                    Settings
+                  </button>
+                </div>
+                {/* no credit line under the buttons: the hero screen carries
+                    the game's name and the two things to do with it. Who made
+                    it and what it came from are on the Info tab of Settings */}
+              </>
+            )}
+
+            {/* THE DEPLOY SCREEN. The two macros a run is chosen by, and
+                Start under them. There is no map grid and no deploy dialog
+                any more: a run is two picks, each one press away, and the
+                defaults (Random, Incursion) are a run in themselves */}
+            {menuView === "deploy" && (
+              <>
+                <div className="flex w-full max-w-[28rem] flex-col gap-3">
+                  {/* THE MACROS: what the next run is, as two rows that read
+                      as a sentence — this map, at this level — and what
+                      each pays, in the XP colour, so the trade is on the
+                      screen before either list is opened */}
+                  <div className="flex flex-col gap-2">
+                    <MacroButton
+                      label="Map"
+                      value={pickedWorld ? pickedWorld.name : `Random, ${randomLabel}`}
+                      onClick={() => setPicker("maps")}
+                    >
+                      {pickedWorld ? (
+                        <span className="text-[#EDEDEF]">{pickedWorld.name}</span>
+                      ) : (
+                        <>
+                          <span className="text-[#EDEDEF]">Random</span>
+                          <span className="text-[14px]" style={{ color: XP_COLOR }}>
+                            {randomLabel}
+                          </span>
+                        </>
+                      )}
+                    </MacroButton>
+                    <MacroButton
+                      label="Difficulty"
+                      value={`${rungLabel(tier)}, ${xpShareText(tierXpBonus(tier))}`}
+                      onClick={() => setPicker("difficulty")}
+                    >
+                      <span style={{ color: rungColor(tier) }}>{rungLabel(tier)}</span>
+                      <span className="text-[14px]" style={{ color: XP_COLOR }}>
+                        {xpShareText(tierXpBonus(tier))}
+                      </span>
+                    </MacroButton>
+                    {/* THE FACTION: the line this run is played as — what the
+                        factories build and which three turrets the bar
+                        carries (factions.ts). One of the ones the track has
+                        opened — every faction plays every map */}
+                    {progress && (() => {
+                      const f = factionFor(progress, factionPick);
+                      return (
+                        <MacroButton
+                          label="Faction"
+                          value={f ? familyByKey(f).name : "None"}
+                          onClick={() => setPicker("faction")}
+                        >
+                          <span className="text-[#EDEDEF]">{f ? familyByKey(f).name : "None"}</span>
+                          {f && (
+                            <span className="flex items-center gap-1">
+                              {factionUnits(f).map((u) => (
+                                // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite
+                                <img
+                                  key={u}
+                                  src={`/mindustry/sprites/units/${u}.png`}
+                                  alt=""
+                                  className="h-5 w-5 object-contain [image-rendering:pixelated]"
+                                />
+                              ))}
+                            </span>
+                          )}
+                        </MacroButton>
+                      );
+                    })()}
+                  </div>
+                  {/* NOTHING HERE SAYS WHAT THE RUN WILL BE PLAYED UNDER.
+                      The roll used to sit under the macros as a row of
+                      faces, which meant the deploy screen answered the
+                      question the first wave is supposed to: a player read
+                      the rules, weighed them and re-picked the map to
+                      re-roll them. The rules are a thing the run tells you,
+                      not a thing the menu offers — they are on the HUD
+                      (hudRules) from the first frame of the field, and the
+                      codex on the progress screen says what each one does */}
+                  {/* ONE ACTION, at the bottom: this map, at this level, go */}
+                  <button
+                    onClick={startRun}
+                    className="ms-btn ms-btn-accent mt-2 w-full py-3.5 text-[17px] tracking-[0.3em]"
+                  >
+                    Start
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* SETTINGS - everything that changes the save rather than the run.
+                Wiping is the only one so far, and it lives here rather than
+                beside the deploy button where a mis-tap would be costly */}
+            {menuView === "settings" && (
+              <>
+                <h2 className="ms-heading text-[17px] tracking-[0.35em]">Settings</h2>
+
+                {settingsPanel(false)}
+              </>
+            )}
+          </div>
+
+          {/* THE CORNER CHROME — back on the left, the level and Progress on
+              the right — lives OUTSIDE the zoom wrapper, like the dialogs
+              below: each carries its own ui-zoom, and a zoomed element inside
+              a zoomed ancestor is zoomed twice (CSS zoom compounds), which
+              at 200% drew a back button four times its size */}
+          {menuView === "deploy" && bank}
+          {menuView === "deploy" && back("Title")}
+          {menuView === "settings" && back("Back")}
+
+          {/* THE LISTS, as dialogs over the deploy screen (see PickerDialog
+              for why they sit outside the zoom wrapper). A pick closes the
+              list and is remembered at once, so a player who picks and then
+              quits comes back to what they picked */}
+          {picker === "maps" && progress && (
+            <MapPicker
+              progress={progress}
+              pick={mapPick}
+              mapsReady={mapsReady}
+              onClose={() => setPicker(null)}
+              onPick={(id) => {
+                setMapPick(id);
+                saveRunPick(tier, id);
+                setPicker(null);
+              }}
+            />
+          )}
+          {picker === "faction" && progress && (
+            <FactionPicker
+              progress={progress}
+              pick={factionFor(progress, factionPick)}
+              onClose={() => setPicker(null)}
+              onPick={(f) => {
+                setFactionPick(f);
+                saveFaction(f);
+                setPicker(null);
+              }}
+            />
+          )}
+          {picker === "difficulty" && (
+            <DifficultyPicker
+              tier={tier}
+              world={pickedWorld}
+              onClose={() => setPicker(null)}
+              onPick={(t) => {
+                setTier(t);
+                saveRunPick(t, pickedWorld?.id ?? null);
+                setPicker(null);
+              }}
+            />
           )}
 
-          {/* SETTINGS - everything that changes the save rather than the run.
-              Wiping is the only one so far, and it lives here rather than
-              beside the deploy button where a mis-tap would be costly */}
-          {menuView === "settings" && (
-            <>
-              <h2 className="ms-heading text-[17px] tracking-[0.35em]">Settings</h2>
-
-              {settingsPanel(false)}
-            </>
-          )}
-        </div>
-
-        {/* THE CORNER CHROME — back on the left, the level and Progress on
-            the right — lives OUTSIDE the zoom wrapper, like the dialogs
-            below: each carries its own ui-zoom, and a zoomed element inside
-            a zoomed ancestor is zoomed twice (CSS zoom compounds), which
-            at 200% drew a back button four times its size */}
-        {menuView === "deploy" && bank}
-        {menuView === "deploy" && back("Title")}
-        {menuView === "settings" && back("Back")}
-
-        {/* THE LISTS, as dialogs over the deploy screen (see PickerDialog
-            for why they sit outside the zoom wrapper). A pick closes the
-            list and is remembered at once, so a player who picks and then
-            quits comes back to what they picked */}
-        {picker === "maps" && progress && (
-          <MapPicker
-            progress={progress}
-            pick={mapPick}
-            mapsReady={mapsReady}
-            onClose={() => setPicker(null)}
-            onPick={(id) => {
-              setMapPick(id);
-              saveRunPick(tier, id);
-              setPicker(null);
-            }}
-          />
+          </>
         )}
-        {picker === "faction" && progress && (
-          <FactionPicker
-            progress={progress}
-            pick={factionFor(progress, factionPick)}
-            onClose={() => setPicker(null)}
-            onPick={(f) => {
-              setFactionPick(f);
-              saveFaction(f);
-              setPicker(null);
-            }}
-          />
-        )}
-        {picker === "difficulty" && (
-          <DifficultyPicker
-            tier={tier}
-            world={pickedWorld}
-            onClose={() => setPicker(null)}
-            onPick={(t) => {
-              setTier(t);
-              saveRunPick(t, pickedWorld?.id ?? null);
-              setPicker(null);
-            }}
+
+        {/* THE BOOT SCREEN, over the whole front of house and everything in
+            it. It is painted on the first render and stays up until the
+            ground behind the menu is a battle rather than a black rectangle
+            (MenuBackground's onReady), so what the player uncovers is the
+            finished thing: the name, the two buttons, and a field with the
+            swarm walking it already */}
+        {boot && (
+          <LoadingScreen
+            label={BOOT_STEP_LABEL[boot.step]}
+            // HALF A STEP, not a whole one: the last boot stage is the long
+            // one, and a bar sitting at 100% for the three seconds a map is
+            // carved in reads as a hang. Each stage stands in the middle of
+            // its own share of the bar — never empty, never full while
+            // something is still being waited on
+            fill={(BOOT_STEPS.indexOf(boot.step) + 0.5) / BOOT_STEPS.length}
+            out={boot.out}
+            cover="fixed z-50"
           />
         )}
       </div>
@@ -2328,7 +2475,13 @@ export default function MechSwarm() {
             hud?.buildKind ? "cursor-crosshair" : "cursor-default"
           }`}
         />
-        {loadUi && <LoadingScreen step={loadUi.step} out={loadUi.out} />}
+        {loadUi && (
+          <LoadingScreen
+            label={LOAD_STEP_LABEL[loadUi.step]}
+            fill={(LOAD_STEPS.indexOf(loadUi.step) + 1) / LOAD_STEPS.length}
+            out={loadUi.out}
+          />
+        )}
         {hud?.paused && (
           // on a phone the wave panel already fills the top of the screen, so
           // the badge drops onto the map rather than landing on top of it

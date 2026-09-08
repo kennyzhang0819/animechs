@@ -8,7 +8,7 @@ import {
   refreshMap,
   zoneStyle,
 } from "./maps";
-import { FOG_NEVER, FOG_SEEN, FOG_SEEN_ALPHA, FOG_VISIBLE } from "./fog";
+import { FOG_DYNAMIC_ALPHA } from "./fog";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { CELL, clamp, COLS, H, ROWS, structStats, TOWERS, towerMaxHp, W } from "./constants";
 import { loadBalanceDoc } from "./balance";
@@ -136,6 +136,41 @@ export const LOAD_STEP_LABEL: Record<LoadStep, string> = {
   sprites: "Packing sprites",
   map: "Reading the map",
   world: "Carving terrain",
+  warmup: "Warming up",
+};
+
+/**
+ * THE STAGES OF STARTING THE GAME ITSELF, as the boot screen reports them.
+ *
+ * A level's steps (LOAD_STEPS) are about one map; these are about the page,
+ * and everything on this list is paid ONCE for the whole session. They are
+ * the work that has to be finished before the front of house is worth
+ * showing at all:
+ *
+ *   sprites  the atlas — every sprite in the game cut, packed and drawn
+ *            onto one sheet (atlas.ts). The one genuinely long step, and
+ *            the thing every other step and every screen after it needs.
+ *   maps     the documents that live outside the module graph and are
+ *            fetched rather than imported: the official maps, the level
+ *            scripts and the balance coefficients.
+ *   warmup   the work that has to COMPILE or be CUT before a frame can be
+ *            drawn — the turret pictures sliced out of the sheet for the
+ *            build bar and the deploy screen, and the WebGL renderer
+ *            itself: its context, its shader programs and the sheet
+ *            uploaded as a texture, all of which happen the first time the
+ *            menu's ground is drawn (MenuBackground). A run started from
+ *            the menu therefore steps straight to reading its map.
+ *
+ * It exists because the title card used to come up over black and the
+ * ground arrive under it seconds later, with the first press of Start
+ * paying for the shaders all over again.
+ */
+export const BOOT_STEPS = ["sprites", "maps", "warmup"] as const;
+export type BootStep = (typeof BOOT_STEPS)[number];
+
+export const BOOT_STEP_LABEL: Record<BootStep, string> = {
+  sprites: "Packing sprites",
+  maps: "Reading the maps",
   warmup: "Warming up",
 };
 
@@ -1407,9 +1442,10 @@ export class Game {
    * THE MINIMAP: the whole map, never zoomed, with everything the field
    * knows drawn over the ground at a cell a dot —
    *
-   *   the FOG (fog.ts) as the same three tones the field wears: black
-   *   where nothing has looked, half-black where something once did,
-   *   clear where something is looking now;
+   *   the FOG (fog.ts) as the same two washes the field wears: flat
+   *   black where nothing has ever looked (the static set), a half-black
+   *   over that where something once did and nothing does now (the
+   *   dynamic set), clear where something is looking right now;
    *   the PLAYER'S structures white — the core, every turret and wall,
    *   a shell still going up in a dimmer white;
    *   the ENEMY red — every body in sight (and none out of it: the
@@ -1451,16 +1487,22 @@ export class Game {
     const d = img.data;
     const { fog } = this.sim;
     const fogOn = fog.enabled;
-    const st = fog.state;
-    const seenA = Math.round(FOG_SEEN_ALPHA * 255);
-    // the wash first, so a dot painted after it is painted OVER it
+    const st = fog.visible;
+    const disc = fog.discovered;
+    const seenA = Math.round(FOG_DYNAMIC_ALPHA * 255);
+    // the wash first, so a dot painted after it is painted OVER it. The
+    // two sets are independent (fog.ts), so this asks them in the order
+    // the renderer's two washes land in: the dynamic one lifts the half
+    // black, the static one lifts the rest
     if (fogOn)
       for (let y = 0; y < rows; y++)
         for (let x = 0; x < cols; x++) {
-          const v = st[y * COLS + x];
-          if (v === FOG_VISIBLE) continue;
-          const o = (y * cols + x) * 4;
-          d[o + 3] = v === FOG_NEVER ? 255 : v === FOG_SEEN ? seenA : 0;
+          const i = y * COLS + x;
+          if (disc[i] === 0) {
+            d[(y * cols + x) * 4 + 3] = 255;
+          } else if (st[i] === 0) {
+            d[(y * cols + x) * 4 + 3] = seenA;
+          }
         }
     const dot = (x: number, y: number, r: number, g: number, b: number): void => {
       if (x < 0 || y < 0 || x >= cols || y >= rows) return;
@@ -1482,7 +1524,7 @@ export class Game {
         dot(gx, gy, 0xff, 0xd3, 0x7f);
         continue;
       }
-      if (fogOn && st[gy * COLS + gx] !== FOG_VISIBLE) continue;
+      if (fogOn && st[gy * COLS + gx] === 0) continue;
       dot(gx, gy, 0xf2, 0x55, 0x55);
     }
     // the map's shield towers, wherever they have been seen
@@ -1585,10 +1627,9 @@ export class Game {
           c.lineTo(this.orderMark.x + cx * (r + 8), this.orderMark.y + cy * (r + 8));
           c.stroke();
         }
-        c.beginPath();
-        c.arc(this.orderMark.x, this.orderMark.y, 2, 0, Math.PI * 2);
-        c.fillStyle = `rgba(255,211,127,${fade})`;
-        c.fill();
+        // and NOTHING in the middle: the ring and its ticks already say
+        // where, and a dot at the centre only hides the ground the order
+        // was given on
         c.lineWidth = 1;
       }
     }

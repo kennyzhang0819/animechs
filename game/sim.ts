@@ -66,8 +66,8 @@ import { FlowField, type Footprint, type Vec2 } from "./flowfield";
 import {
   CORE_VISION_CELLS,
   Fog,
-  FOG_VISIBLE,
-  VISION_MIN_CELLS,
+  VISION_BUILT_CELLS,
+  VISION_BUILDING_CELLS,
   VISION_OF_RANGE,
   type VisionSource,
 } from "./fog";
@@ -384,6 +384,14 @@ const LAT_ROOM_K = 1 / 1.1;
 //    spread from smearing, not enough to undo it
 const CENTER_CLEAR = 3.2;
 const CENTER_GAIN = 8;
+
+// TRAVEL THAT COUNTS AS TRAVEL, as a fraction of the stride a unit's own
+// speed makes in a tick: below this, a frame's movement is not a heading
+// (a drive bleeding off, a neighbour leaning on someone) and neither the
+// body, the chassis nor the legs take a bearing from it. Without it a
+// standing unit re-aims every frame at whatever fraction of a pixel it
+// last drifted, which reads as a shiver
+const TURN_DEAD = 0.03;
 const HCOLS = (W / HC) | 0;
 const HROWS = (H / HC) | 0;
 const HN = HCOLS * HROWS;
@@ -856,6 +864,16 @@ export class Sim {
    * hold this instead
    */
   readonly uid = new Int32Array(MAX_UNITS);
+  /**
+   * Unit.lastFogPos (FogControl.update): the tile this slot's body last
+   * stamped the discovered set from, and the id it belonged to. A body
+   * that has not changed TILE since the last tick costs the fog nothing;
+   * one that has stamps once, where it now stands. The id beside the
+   * position is what tells a recycled slot from the body that used to
+   * hold it — upstream gets that for free, the field dying with the unit.
+   */
+  private readonly ulastFogPos = new Int32Array(MAX_UNITS).fill(-1);
+  private readonly ulastFogId = new Int32Array(MAX_UNITS).fill(-1);
   readonly ukind = new Uint8Array(MAX_UNITS); // UNIT_ID of the kind
   /**
    * KIND_FLYING[ukind[i]], denormalised to one read: the broad-phase loops
@@ -1340,18 +1358,59 @@ export class Sim {
    * field, so a group ordered across the map keeps its shape going round
    * a headland instead of each body solving its own way there.
    *
-   * THERE ARE TWO, and a third order retires the older of them: a field
-   * is six megabytes and a solve, and two covers what the hands actually
-   * do — send a group, send another, come back to the first. The bodies
-   * on a retired order simply lose it and go back to the standing one.
+   * THERE ARE FOUR, AND AN IDLE ONE IS ALWAYS TAKEN FIRST. There used to
+   * be two, taken strictly round-robin, on the reasoning that a field is
+   * twenty-odd megabytes and a solve and two covers what a hand does —
+   * send a group, send another, come back to the first. It does not. Two
+   * orders standing means the NEXT click, wherever it points and whoever
+   * it is for, re-aims a field somebody else is walking, and that body
+   * loses its order: send one unit across the map, then move a second one
+   * twice, and the first stops dead in open ground for no reason the
+   * player can see. That was survivable when losing an order dropped a
+   * body back onto the standing one and it kept walking at the swarm;
+   * since the player's army stopped having a standing order (updateUnits)
+   * losing one means STOPPING, which is the worst thing a click somewhere
+   * else could do.
+   *
+   * The fix is mostly not the count. It is that a slot NOTHING IS WALKING
+   * is taken first (orderSlotFor), so ordinary play — where a group
+   * arrives before the hand comes back round — never retires anybody's
+   * order at all. The count then only has to cover orders live AT ONCE,
+   * and four hands' worth is enough of those to be a choice the player
+   * made rather than a click they never connected to the body that
+   * stopped. A steal takes the OLDEST live order, for the same reason.
    *
    * ONE MASK FOR EVERYONE. It is the walkers' — a naval tank under orders
    * routes as a walker (it can drive anywhere they can, only slower) and a
    * flyer ignores it entirely and flies the straight line to the point.
    */
-  private readonly orderFields = [new FlowField(), new FlowField()];
-  /** which slot the next order takes, round-robin over orderFields */
-  private orderSlot = 0;
+  private readonly orderFields = [
+    new FlowField(), new FlowField(), new FlowField(), new FlowField(),
+  ];
+  /** when each slot was last aimed (orderClock), so a steal can take the
+   *  order given longest ago rather than whichever slot came up next */
+  private readonly orderAt = [0, 0, 0, 0];
+  private orderClock = 0;
+  /**
+   * WHERE EACH SLOT IS AIMED, as a cell — -1 for one nothing is walking.
+   *
+   * An order is the one solve on the board with a hand waiting on it, and
+   * it is also the one that can be thrown away without anybody asking for
+   * it again: a structure landing anywhere aborts every solve in flight
+   * (claimGround), and an order aborted before it published would never be
+   * solved at all. Its bodies would walk the straight-line fallback into
+   * the first wall in the way and stand there — which is the whole of "it
+   * walks a little and then stops". Keeping the destination means the
+   * order can simply be re-seeded (reseedOrders), which is also the right
+   * answer on its own terms: the board moved, so the route should be
+   * worked out again over the board as it now is.
+   */
+  private readonly orderGoal = [-1, -1, -1, -1];
+  /** scratch for the reachability flood (reachableGoal): a queue, and a
+   *  stamp per cell so the visited set never has to be cleared */
+  private readonly floodQ = new Int32Array(NCELLS);
+  private readonly floodSeen = new Int32Array(NCELLS);
+  private floodStamp = 0;
   /**
    * WHERE THE HILLS ARE (airWalkMask), kept because two different questions
    * ask it: what a flyer routes around, and what a shot cannot be taken
@@ -1517,7 +1576,9 @@ export class Sim {
     // a new map is a new board: no order stands on it, and the fields the
     // last one's orders were being solved into are thrown away
     for (const f of this.orderFields) f.abort();
-    this.orderSlot = 0;
+    this.orderGoal.fill(-1);
+    this.orderAt.fill(0);
+    this.orderClock = 0;
     this.fieldDirty = false;
     this.navalDirty = false;
     this.unstickPending = false;
@@ -1542,7 +1603,7 @@ export class Sim {
     this.hills = airWalkMask(this.terrain);
     // a new map is unseen ground, and the core is the first thing looking at it
     this.fog.reset(this.fogEnabled);
-    this.fog.add(this.coreVision());
+    this.seedFog();
     this.airField.rebuildWalk([], this.hills, this.padMaskFor("air"), this.coreGoal());
     this.buildGoalPts();
     this.field.compute();
@@ -1981,28 +2042,80 @@ export class Sim {
   setFog(on: boolean): void {
     this.fogEnabled = on;
     this.fog.reset(on);
-    this.fog.invalidate();
-    this.fog.ensure(this.visionSources);
+    this.seedFog();
+    this.updateFog();
+  }
+
+  /**
+   * FogControl.pushStaticBlocks, on WorldLoadEvent: every building with an
+   * eye stamps the discovered set where it stands, before a frame is
+   * drawn. Upstream walks Groups.build for this; here it is the core and
+   * whatever of the player's is already on the board.
+   */
+  private seedFog(): void {
+    this.fog.add(this.coreVision());
+    for (const t of this.towers) if (t.team === "player") this.fog.add(this.towerVision(t));
+    this.ulastFogPos.fill(-1);
+    this.ulastFogId.fill(-1);
+  }
+
+  /**
+   * FogControl.update, for the one team that owns a fog.
+   *
+   * A BUILDING'S EYE IS NOT WALKED HERE. Upstream hangs those off
+   * TileChangeEvent and TilePreChangeEvent, and so does this sim —
+   * addTower and updateBuilds call Fog.add, removeTower calls
+   * Fog.invalidate — so the only eyes worth asking every tick are the
+   * moving ones, and only the ones that actually changed TILE cost
+   * anything: one static stamp where the body now stands, and a rebuild
+   * owed. The fog itself decides whether enough time has passed to do the
+   * rebuild (Fog.update, twenty-five times a second).
+   */
+  private updateFog(): void {
+    const fog = this.fog;
+    if (!fog.enabled) return;
+    const tiles = Math.trunc(UNIT_VISION_CELLS);
+    const { upx, upy, uteam, uid, ulastFogPos, ulastFogId } = this;
+    for (let i = 0; i < this.n; i++) {
+      if (uteam[i] === 0) continue;
+      const gx = clamp(Math.floor(upx[i] / CELL), 0, COLS - 1);
+      const gy = clamp(Math.floor(upy[i] / CELL), 0, ROWS - 1);
+      const pos = gy * COLS + gx;
+      if (ulastFogPos[i] === pos && ulastFogId[i] === uid[i]) continue;
+      ulastFogPos[i] = pos;
+      ulastFogId[i] = uid[i];
+      fog.moved(gx, gy, tiles);
+    }
+    fog.update(this.visionSources, this.time);
   }
 
   /** what the core sees (CORE_VISION_CELLS) */
   private coreVision(): VisionSource {
-    return { x: this.core.x, y: this.core.y, r: CORE_VISION_CELLS * CELL };
+    return {
+      x: this.core.x,
+      y: this.core.y,
+      r: CORE_VISION_CELLS * CELL,
+      tiles: CORE_VISION_CELLS,
+    };
   }
 
   /**
-   * What one structure sees: a share of its LIVE range (VISION_OF_RANGE,
-   * see fog.ts), a few cells for a wall, a rangeless turret or a shell
-   * still going up (VISION_MIN_CELLS)
+   * What one structure sees (fog.ts): the whole of its LIVE range
+   * (VISION_OF_RANGE) if it has one, else the plain radius a finished
+   * building carries (VISION_BUILT_CELLS) — and while it is still going
+   * up, only the little that a shell sees (VISION_BUILDING_CELLS).
    */
   private towerVision(t: Tower): VisionSource {
-    const min = VISION_MIN_CELLS * CELL;
-    let r = min;
-    if (t.buildT <= 0) {
-      const st = this.statsFor(t.kind);
-      if (!st.wall && st.range > 0) r = Math.max(min, st.range * VISION_OF_RANGE);
+    if (t.buildT > 0) {
+      const r = VISION_BUILDING_CELLS * CELL;
+      return { x: t.x, y: t.y, r, tiles: VISION_BUILDING_CELLS };
     }
-    return { x: t.x, y: t.y, r };
+    const st = this.statsFor(t.kind);
+    const built = VISION_BUILT_CELLS * CELL;
+    const r = !st.wall && st.range > 0 ? Math.max(built, st.range * VISION_OF_RANGE) : built;
+    // a BUILDING's radius is rounded to the nearest tile for the raster —
+    // Mathf.round(build.fogRadius()), FogControl.pushStaticBlocks
+    return { x: t.x, y: t.y, r, tiles: Math.round(r / CELL) };
   }
 
   /**
@@ -2020,8 +2133,10 @@ export class Sim {
     for (const t of this.towers) if (t.team === "player") out.push(this.towerVision(t));
     // ...and every body of the player's, a few cells round itself
     const r = UNIT_VISION_CELLS * CELL;
+    // ...and a UNIT's is truncated, not rounded — (int)unit.type.fogRadius
+    const tiles = Math.trunc(UNIT_VISION_CELLS);
     for (let i = 0; i < this.n; i++)
-      if (this.uteam[i]) out.push({ x: this.upx[i], y: this.upy[i], r });
+      if (this.uteam[i]) out.push({ x: this.upx[i], y: this.upy[i], r, tiles });
     return out;
   };
 
@@ -2353,10 +2468,6 @@ export class Sim {
       this.scrap += pay;
       this.scrapEarned += pay;
     }
-    // a structure came down since the last tick: re-cast the fog once for
-    // the whole frame's worth of demolition (Fog.ensure)
-    this.fog.ensure(this.visionSources);
-
     // a structure went up on, or came down off, open ground: shove anything
     // standing in its cells clear now, and re-solve the routes when the
     // board settles (solveDirtyFields)
@@ -2366,16 +2477,13 @@ export class Sim {
     }
     this.solveDirtyFields(dt);
     this.updateProduction(dt);
-    // THE PLAYER'S BODIES SEE, and they see EVERY TICK: the fog is recast
-    // from every eye (visionSources) each frame a body is out, so the
-    // ground opens in front of a walking unit and closes behind it as
-    // smoothly as the unit moves. It used to be twice a second, which is
-    // a circle that jumps three cells at a time and reads as the fog
-    // stepping rather than the unit walking. The recast puts back only
-    // what it lit last time and the renderer uploads only the rectangle
-    // that moved (Fog.refresh, takeDirty), so the whole thing is a
-    // fraction of a millisecond.
-    if (this.nPlayer > 0 && this.fog.enabled) this.fog.refresh(this.visionSources);
+    // THE FOG, ONCE A TICK — FogControl.update, called out of Logic.update
+    // exactly here. What it actually costs depends entirely on whether
+    // anything moved: a board where nothing has changed tile since the
+    // last tick raises no event and rebuilds nothing at all, and a board
+    // full of walking units rebuilds twenty-five times a second however
+    // fast the frames come.
+    this.updateFog();
 
     this.updateAliveBounds();
     this.buildHash();
@@ -3538,7 +3646,7 @@ export class Sim {
     // so a drill half on a vein is a drill half as good, exactly as in
     // Mindustry
     if (TOWERS[kind].drill && this.oreUnder(gx, gy, sz) === 0) return false;
-    const fogState = this.fog.enabled ? this.fog.state : null;
+    const fogState = this.fog.enabled ? this.fog.visible : null;
     // GROUND LEVEL ONLY. A structure stands on open ground, in the swarm's
     // way, where it is a wall as well as a gun — never on a hill, a forest
     // or deep water (every blocked cell), never on another structure — the
@@ -3552,7 +3660,7 @@ export class Sim {
         // ...and never in the fog: a structure stands on ground something
         // of the player's can see right now (fog.ts) — Mindustry's rule,
         // Build.validPlace under rules.fog
-        if (fogState && fogState[i] !== FOG_VISIBLE) return false;
+        if (fogState && fogState[i] === 0) return false;
       }
     // a LIVE shield tower owns its ground: selling a buried turret is allowed,
     // but nothing builds back under the dome until the shield tower is dead
@@ -3729,7 +3837,10 @@ export class Sim {
     if (changed) {
       // a solve in flight is solving the board as it was a moment ago:
       // drop it and let the flags below buy a fresh one once things settle
+      // — and put the standing ORDERS straight back in the queue, since
+      // nothing else ever asks for those (reseedOrders)
       if (this.solveQueue.length > 0) this.abortSolves();
+      this.reseedOrders();
       this.fieldDirty = true;
       this.navalDirty = true;
       // the player's three only while they are being solved at all: a flag
@@ -5035,6 +5146,17 @@ export class Sim {
       const shx = phx[i] - upx[i], shy = phy[i] - upy[i];
       let fx = 0, fy = 0;
 
+      // HAS THIS BODY ANYWHERE TO BE? A zero heading is a unit with no
+      // route at all — the player's army standing where it was left, a
+      // flyer holding over the core, anyone the field cannot reach the goal
+      // from. The crowd forces below that are spent ACROSS the flow
+      // (lateral drift, lane centering) already come out zero for such a
+      // body; the jitter is the one that does not, and a random shove on
+      // something with nowhere to go is a unit twitching on the spot. The
+      // wall probes and the narrow-slot centering stay unconditional: those
+      // are a body's quarrel with rock, and it has that standing still.
+      const driving = flowTmp.x !== 0 || flowTmp.y !== 0;
+
       // every steering force below is ground-only: flyers never probe,
       // jitter, center, or drift. Their field bends them round a mountain
       // but nothing up there stops them — no corridor to spread across and
@@ -5074,9 +5196,14 @@ export class Sim {
         // symmetry-breaking jitter: units contesting a doorway can settle into
         // a perfectly balanced standoff (flow vs separation, a fraction of a
         // pixel outside the opening, forever) — a small random push dissolves
-        // such equilibria and disappears under the flow force in open field
-        fx += (Math.random() - 0.5) * 14;
-        fy += (Math.random() - 0.5) * 14;
+        // such equilibria and disappears under the flow force in open field.
+        // Only for a body that is GOING somewhere: there is no standoff to
+        // dissolve where there is no flow to be balanced against, and the
+        // push is the whole of what a standing unit's shiver was
+        if (driving) {
+          fx += (Math.random() - 0.5) * 14;
+          fy += (Math.random() - 0.5) * 14;
+        }
 
         // lane centering: lean up the clearance gradient so the band the
         // drift and the re-aim spread stays centred on the route instead of
@@ -5181,15 +5308,23 @@ export class Sim {
       // with distance covered; the body turns toward travel at its steady
       // rate while the chassis (Mindustry baseRotation) only turns as fast
       // as the unit is really moving — shoved units swivel feet-last
+      // ...and a step too small to be a step does not steer anything. What
+      // is left under a standing body — a decaying drive, a neighbour's
+      // shove — is a direction that flips frame to frame, and a body that
+      // re-aims at it swivels on the spot however still it actually is. The
+      // deadzone is a fraction of the stride this unit's own pace would
+      // make, so it scales with a slowed or a hurried unit rather than
+      // being a pixel count that means different things to different kinds
       const mdx = upx[i] - x0, mdy = upy[i] - y0;
       const len = Math.sqrt(mdx * mdx + mdy * mdy);
-      if (len > 1e-4) {
+      const stride = uspd[i] * dt;
+      if (len > Math.max(1e-4, stride * TURN_DEAD)) {
         const ang = Math.atan2(mdy, mdx);
         const trot = KIND_ROT[ukind[i]] * dt;
         urot[i] += clamp(Sim.angleDiff(urot[i], ang), -trot, trot);
         if (!fly) {
           uwalk[i] += len;
-          const cap = ROT_SPD * Math.min(1, len / (uspd[i] * dt)) * dt;
+          const cap = ROT_SPD * Math.min(1, len / stride) * dt;
           ubrot[i] += clamp(Sim.angleDiff(ubrot[i], ang), -cap, cap);
         }
       }
@@ -5765,27 +5900,29 @@ export class Sim {
     let k = 0;
     for (let i = 0; i < this.n; i++) if (this.usel[i]) k++;
     if (k === 0) return 0;
-    const cell = this.nearestOpenCell(px, py);
+    const open = this.nearestOpenCell(px, py);
+    if (open < 0) return 0;
+    // ...and then AS CLOSE TO IT AS THE SELECTION CAN ACTUALLY WALK. A
+    // click in the black is a click on ground the player has never seen,
+    // and there is no reason the ground under it should be connected to
+    // the ground the army is standing on — a lake between them, a massif,
+    // a lane the swarm's own walls have closed. Sent at a cell it cannot
+    // reach, a body used to walk the straight line at it (the fallback
+    // below, for the half second before a field publishes) until a wall
+    // stopped it, and then stand there against the rock for good. So the
+    // destination is moved to the reachable cell nearest the click before
+    // any of it: the order is one the army can carry out, and a click
+    // across the map is a long walk rather than a wall.
+    const cell = this.reachableGoal(open);
     if (cell < 0) return 0;
     const gx = cell % COLS, gy = (cell / COLS) | 0;
     const x = (gx + 0.5) * CELL, y = (gy + 0.5) * CELL;
-    const slot = this.orderSlot;
-    this.orderSlot = (this.orderSlot + 1) % this.orderFields.length;
+    const slot = this.orderSlotFor();
     // whatever was walking the field in this slot loses its order: the
-    // field is about to be re-seeded under it
+    // field is about to be re-seeded under it. With a free slot taken
+    // first this is normally nobody
     for (let i = 0; i < this.n; i++) if (this.uord[i] === slot + 1) this.uord[i] = 0;
-    const field = this.orderFields[slot];
-    const goal = new Uint8Array(NCELLS);
-    goal[cell] = 1;
-    field.abort();
-    // ...and forget where it used to point, or the bodies taking this
-    // order would walk the LAST order's headings until the new solve lands
-    field.blank();
-    field.rebuildWalk(this.hardFootprints(), this.terrain.blocked, NO_PADS, goal, this.footprints());
-    // ahead of the board's own re-routes: this one has a hand waiting on it
-    const at = this.solveQueue.indexOf(field);
-    if (at >= 0) this.solveQueue.splice(at, 1);
-    this.solveQueue.unshift(field);
+    this.seedOrderField(slot, cell);
     for (let i = 0; i < this.n; i++) {
       if (!this.usel[i]) continue;
       this.uord[i] = slot + 1;
@@ -5793,6 +5930,139 @@ export class Sim {
       this.uordy[i] = y;
     }
     return k;
+  }
+
+  /**
+   * WHICH FIELD THIS ORDER GETS: one nothing is walking, wherever there is
+   * one, so an order never stops a body that has nothing to do with it.
+   * Only when all four are live does it steal, and then the OLDEST — the
+   * order given longest ago, which is the one a hand is least likely to
+   * still be watching.
+   */
+  private orderSlotFor(): number {
+    const live = new Uint8Array(this.orderFields.length);
+    for (let i = 0; i < this.n; i++) {
+      const o = this.uord[i];
+      if (o > 0) live[o - 1] = 1;
+    }
+    for (let s = 0; s < live.length; s++)
+      if (!live[s]) {
+        // a slot with nobody on it is free whatever it was last aimed at
+        this.orderGoal[s] = -1;
+        return s;
+      }
+    let oldest = 0;
+    for (let s = 1; s < live.length; s++) if (this.orderAt[s] < this.orderAt[oldest]) oldest = s;
+    return oldest;
+  }
+
+  /**
+   * Aim one order field at a cell and put it at the HEAD of the solve
+   * queue — ahead of the board's own re-routes, because this is the one
+   * solve with a hand waiting on it.
+   */
+  private seedOrderField(slot: number, cell: number): void {
+    const field = this.orderFields[slot];
+    this.orderGoal[slot] = cell;
+    this.orderAt[slot] = ++this.orderClock;
+    const goal = new Uint8Array(NCELLS);
+    goal[cell] = 1;
+    field.abort();
+    // ...and forget where it used to point, or the bodies taking this
+    // order would walk the LAST order's headings until the new solve lands
+    field.blank();
+    field.rebuildWalk(this.hardFootprints(), this.terrain.blocked, NO_PADS, goal, this.footprints());
+    const at = this.solveQueue.indexOf(field);
+    if (at >= 0) this.solveQueue.splice(at, 1);
+    this.solveQueue.unshift(field);
+  }
+
+  /**
+   * PUT THE ORDERS BACK IN THE QUEUE. Every solve in flight is dropped
+   * when a structure lands (claimGround) — the board they were solving has
+   * moved — and the dirty flags buy the board's own fields a fresh solve
+   * once it settles. Nothing bought the orders one, so an order given in
+   * the moment before a turret went down was simply never worked out. Here
+   * each slot that still has a body walking it is seeded again, at the
+   * same destination over the board as it now stands.
+   */
+  private reseedOrders(): void {
+    for (let s = 0; s < this.orderFields.length; s++) {
+      if (this.orderGoal[s] < 0) continue;
+      let walking = false;
+      for (let i = 0; i < this.n && !walking; i++) if (this.uord[i] === s + 1) walking = true;
+      if (walking) this.seedOrderField(s, this.orderGoal[s]);
+      else this.orderGoal[s] = -1;
+    }
+  }
+
+  /**
+   * THE CELL AN ORDER CAN ACTUALLY BE GIVEN AT: the wanted one when the
+   * selection can walk to it, else the nearest cell to it that they can.
+   *
+   * A flood out from the bodies under the hand over the walkers' own mask
+   * — every structure rock, the player's included, because its own walls
+   * are the one thing an army will never shoot its way through — and then
+   * the reached cell closest to where the click landed. Sending a body
+   * somewhere it cannot go is not an order, it is a body walking into a
+   * wall, so the destination is trimmed to something reachable here rather
+   * than discovered against the rock a minute later.
+   *
+   * A flyer is not consulted: nothing on the ground is in its way, it
+   * walks the straight line at the point whatever the field says, and one
+   * gunship in the selection must not drag the walkers' destination out
+   * over a lake.
+   */
+  private reachableGoal(want: number): number {
+    const walk = this.field.walk;
+    const q = this.floodQ, seen = this.floodSeen;
+    const stamp = ++this.floodStamp;
+    let head = 0, tail = 0;
+    const push = (ci: number): void => {
+      if (walk[ci] || seen[ci] === stamp) return;
+      seen[ci] = stamp;
+      q[tail++] = ci;
+    };
+    for (let i = 0; i < this.n; i++) {
+      if (!this.usel[i] || this.ufly[i]) continue;
+      const ci =
+        clamp((this.upy[i] / CELL) | 0, 0, ROWS - 1) * COLS +
+        clamp((this.upx[i] / CELL) | 0, 0, COLS - 1);
+      // A BODY ON A CELL THE MASK CALLS ROCK still seeds: a naval tank
+      // afloat, or anyone a crowd shoved half inside a wall, floods from
+      // the open ground around it instead. Skipping such a body outright
+      // left the commonest wedge — one unit, standing against its own
+      // turret — seeding nothing at all, and a flood with no seed falls
+      // through to the wanted cell, which is the case this exists to catch
+      if (!walk[ci]) {
+        push(ci);
+        continue;
+      }
+      const x = ci % COLS, y = (ci / COLS) | 0;
+      if (x > 0) push(ci - 1);
+      if (x < COLS - 1) push(ci + 1);
+      if (y > 0) push(ci - COLS);
+      if (y < ROWS - 1) push(ci + COLS);
+    }
+    if (tail === 0) return want;
+    const wx = want % COLS, wy = (want / COLS) | 0;
+    let best = -1, bd = Infinity;
+    while (head < tail) {
+      const ci = q[head++];
+      const x = ci % COLS, y = (ci / COLS) | 0;
+      const dx = x - wx, dy = y - wy;
+      const d = dx * dx + dy * dy;
+      if (d < bd) {
+        bd = d;
+        best = ci;
+        if (d === 0) return want; // the click itself is reachable
+      }
+      if (x > 0) push(ci - 1);
+      if (x < COLS - 1) push(ci + 1);
+      if (y > 0) push(ci - COLS);
+      if (y < ROWS - 1) push(ci + COLS);
+    }
+    return best;
   }
 
   /**
@@ -6190,17 +6460,22 @@ export class Sim {
    * once since buildHash), so the bucket sweep is padded by a few px; the
    * distance test itself always reads live positions.
    */
-  /** is unit i standing on a cell in sight? (fog.ts; `fogState` is Fog.state) */
+  /**
+   * Is unit i standing on a tile in sight? (`fogState` is Fog.visible.)
+   * FogControl.isVisibleTile CLAMPS a query off the map rather than
+   * answering no, and so does this: a body half a tile past the border is
+   * not suddenly unshootable.
+   */
   private unitInSight(fogState: Uint8Array, i: number): boolean {
-    const gx = (this.upx[i] / CELL) | 0, gy = (this.upy[i] / CELL) | 0;
-    if (gx < 0 || gy < 0 || gx >= COLS || gy >= ROWS) return false;
-    return fogState[gy * COLS + gx] === FOG_VISIBLE;
+    const gx = clamp(Math.floor(this.upx[i] / CELL), 0, COLS - 1);
+    const gy = clamp(Math.floor(this.upy[i] / CELL), 0, ROWS - 1);
+    return fogState[gy * COLS + gx] !== 0;
   }
 
   /** is unit i in sight, or is the fog off? The one-line form for a caller
    *  outside the hot loops */
   unitVisible(i: number): boolean {
-    return this.uteam[i] !== 0 || !this.fog.enabled || this.unitInSight(this.fog.state, i);
+    return this.uteam[i] !== 0 || !this.fog.enabled || this.unitInSight(this.fog.visible, i);
   }
 
   private bestTarget(
@@ -6223,7 +6498,7 @@ export class Sim {
     // A BODY IN THE FOG IS NOT A TARGET (fog.ts): a turret shoots only what
     // something of the player's can see, which is three quarters of its
     // own reach on its own and the whole of it in a line
-    const fogState = this.fog.enabled && team === 0 ? this.fog.state : null;
+    const fogState = this.fog.enabled && team === 0 ? this.fog.visible : null;
     // a short field is cheaper to walk directly than through the buckets
     if (n <= 128) {
       for (let i = 0; i < n; i++) {
@@ -6989,7 +7264,7 @@ export class Sim {
       t.beamStr += (0 - t.beamStr) * (1 - Math.pow(1 - 0.1, dt * 60));
       return;
     }
-    const fogState = this.fog.enabled ? this.fog.state : null;
+    const fogState = this.fog.enabled ? this.fog.visible : null;
     const pad = st.range + this.rmaxAliveFor(st.targetAir, st.targetGround) + 8;
     const hx0 = clamp(((t.x - pad) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((t.y - pad) / HC) | 0, 0, HROWS - 1);

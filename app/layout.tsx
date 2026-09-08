@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Barlow, Chakra_Petch, IBM_Plex_Mono } from "next/font/google";
 import AdminShortcut from "@/components/AdminShortcut";
+import CrashGuard from "@/components/CrashGuard";
 import { BUILD } from "@/game/version";
 import "./globals.css";
 
@@ -41,6 +42,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className={`${display.variable} ${body.variable} ${mono.variable} font-body font-medium bg-[#0B0B0D] text-[18px] leading-snug text-[#C9C9D4] antialiased`}>
         <AdminShortcut />
+        {/* a throw out of the game's own loop or a dropped promise never
+            reaches a React boundary — this catches both and puts the fault
+            screen over the whole app (components/CrashGuard.tsx) */}
+        <CrashGuard />
         {children}
         {/* the build stamp: the only proof of WHICH build this browser is
             running — see game/version.ts, and bump it every change */}

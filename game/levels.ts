@@ -1460,15 +1460,16 @@ export const WORLDS: LevelSpec[] = [
     // travel to every map and the bodies are whatever the die said.
     //
     // EVERY RUNG PLAYS THIS WHOLE LIST. There is one run per map and ten
-    // difficulties to play it at, so the STAGE TABLE (stageAudit in
-    // ladder.ts) is one table per map — what waves 1-3, 4-6 and 7-8
-    // pay — and an edit anywhere in the list moves the economy of every
-    // rung at once. THE SCRIPT IS EIGHT WAVES, three minutes apart after
-    // a four-minute grace, each stronger than the last: a squad on wave 1,
-    // the first heavies by wave 5, everything and the disrupt on wave 8.
-    // Counts are dozens, not thousands — the game plays Mindustry's own
-    // unit and turret numbers, so a wave is a fight a line of a dozen
-    // turrets can win, and the run is 18 to 26 minutes.
+    // difficulties to play it at, and a rung only scales the counts
+    // (COUNT_SCALE in ladder.ts) — no wave is ever cut. THE SCRIPT IS
+    // EIGHT WAVES, three minutes apart after a four-minute grace, each
+    // stronger than the last: a squad on wave 1, the first heavies by
+    // wave 5, every line at full strength on wave 8. NO BOSS ENDS IT —
+    // the disrupt is still a kind the game can field (the boss row in
+    // UNIT_TREES), it is simply not in this script. Counts are dozens to
+    // low hundreds a wave — the game plays Mindustry's own unit and
+    // turret numbers, so a wave is a fight a line of turrets can win, and
+    // the run is 18 to 26 minutes.
     //
     //   line       T1        T2       T3         T4         T5
     //   dagger     dagger    mace     fortress   scepter    reign
@@ -1481,11 +1482,13 @@ export const WORLDS: LevelSpec[] = [
     // T4 weighs as much as sixty daggers. Spend the budget on T3/T4/T5
     // counts; that is the only thing that really moves a wave's weight.
     //
-    // TIER 5 STARTS ON WAVE 7 AND THAT IS AN ECONOMY DECISION. A T5 pays
-    // 1,500 scrap a head, and the tier-3 turrets (fuse up to foreshadow)
-    // are priced for what waves 7-8 pay — so where the heavy bodies land
-    // is where the heavy turrets become affordable. Move them earlier and
-    // stage 2 buys a spectre; check() notices through the stage table.
+    // TIER 5 STARTS ON WAVE 7, AND THE CLOCK IS WHY. A body pays nothing
+    // when it dies — the run's scrap is the core's pay and the drills
+    // (economy.ts) — so what decides where the heavy kinds land is what
+    // the player can have AFFORDED by then: the tier-3 turrets (fuse up
+    // to foreshadow) want most of a run's income behind them, which is
+    // about where wave 7 falls. Move the heavies earlier and they arrive
+    // against a line that could not yet be built.
     //
     // THE PATTERN, past wave 20. One cycle is four waves:
     //

@@ -53,13 +53,33 @@ export function resolveFile(root: string, urlPath: string): string | null {
   return null;
 }
 
+/**
+ * What a path with nothing behind it gets: the export's own 404 document
+ * (app/not-found.tsx — the game's fault screen), so a bad path inside the
+ * shell reads as the game and not as a browser's plain-text miss. If the
+ * export has no such page the miss stays a bare 404.
+ */
+function missing(root: string): Response | Promise<Response> {
+  const page = path.join(root, "404.html");
+  try {
+    if (fs.statSync(page).isFile()) {
+      return net
+        .fetch(pathToFileURL(page).href)
+        .then((r) => new Response(r.body, { status: 404, headers: r.headers }));
+    }
+  } catch {
+    // no 404 document in this export
+  }
+  return new Response("not found", { status: 404 });
+}
+
 /** serve the export at app://game/ — after app.whenReady */
 export function serveBundle(root: string): void {
   protocol.handle(APP_SCHEME, (request) => {
     const url = new URL(request.url);
-    if (url.host !== APP_HOST) return new Response("not found", { status: 404 });
+    if (url.host !== APP_HOST) return missing(root);
     const file = resolveFile(root, url.pathname);
-    if (!file) return new Response("not found", { status: 404 });
+    if (!file) return missing(root);
     return net.fetch(pathToFileURL(file).href);
   });
 }

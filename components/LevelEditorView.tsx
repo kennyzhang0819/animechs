@@ -15,15 +15,7 @@ import {
   type UnitKind,
   type WaveUnits,
 } from "@/game/levels";
-import {
-  audit,
-  rungColor,
-  rungLabel,
-  stageAudit,
-  TOP_TIER,
-  waveGuide,
-  type WaveRow,
-} from "@/game/ladder";
+import { waveGuide, type WaveRow } from "@/game/ladder";
 import {
   drawThumb,
   loadMap,
@@ -33,8 +25,6 @@ import {
   ZONE_LABELS,
 } from "@/game/maps";
 import type { ZoneKind } from "@/game/constants";
-import { MISSION_XP } from "@/game/economy";
-import { ScrapAmount, XpAmount } from "./Items";
 
 /* eslint-disable @next/next/no-img-element -- raw pixel sprites, no optimization wanted */
 
@@ -111,16 +101,6 @@ function trimCounts(counts: Partial<Record<UnitKind, number>>): Partial<Record<U
 
 const stepTotal = (step: EditStep): number =>
   UNIT_KINDS.reduce((s, k) => s + (step.counts[k] ?? 0), 0);
-
-/** kill counts indexed like UNIT_KINDS, for the payout preview */
-function killVector(steps: readonly EditStep[]): number[] {
-  const counts = UNIT_KINDS.map(() => 0);
-  for (const s of steps)
-    UNIT_KINDS.forEach((k, i) => {
-      counts[i] += s.counts[k] ?? 0;
-    });
-  return counts;
-}
 
 // ---------- small controls ----------
 
@@ -272,10 +252,10 @@ export default function LevelEditorView({
    * every edit, which meant the numbers were only ever visible next to waves
    * that had not been touched since.
    */
-  const report = useMemo(() => {
-    const spec = { ...level, waveGap, script };
-    return { rows: audit(spec), waves: waveGuide(spec) };
-  }, [level, waveGap, script]);
+  const waves = useMemo(
+    () => waveGuide({ ...level, waveGap, script }),
+    [level, waveGap, script],
+  );
 
   const back = (): void => {
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
@@ -284,15 +264,13 @@ export default function LevelEditorView({
 
   // whole-level rollup, recomputed from the live buffer so the header tracks
   // edits rather than the level as it was opened
-  const summary = useMemo(() => {
-    const waves = steps.filter((s) => stepTotal(s) > 0).length;
-    const kills = killVector(steps);
-    return {
-      waves,
-      enemies: kills.reduce((a, b) => a + b, 0),
-      bodies: kills.reduce((a, b) => a + b, 0),
-    };
-  }, [steps]);
+  const summary = useMemo(
+    () => ({
+      waves: steps.filter((s) => stepTotal(s) > 0).length,
+      enemies: steps.reduce((n, s) => n + stepTotal(s), 0),
+    }),
+    [steps],
+  );
 
   return (
     <div className="h-screen overflow-hidden bg-[#0B0B0D] text-[#EDEDEF]">
@@ -336,7 +314,7 @@ export default function LevelEditorView({
         <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-[260px_1fr]">
           {/* ---- left rail: level settings, map doors, rollup ---- */}
           <aside className="space-y-4 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <RampChart waves={report.waves} />
+            <RampChart waves={waves} />
             <ZoneKey mapId={mapId} zones={mapZones} />
 
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
@@ -378,67 +356,18 @@ export default function LevelEditorView({
               </p>
             </section>
 
-            {/* ECONOMY. THE THREE STAGES against the three turret tiers:
-                what the waves in each pay, and how many of the tier's
-                turrets that buys at the mean price. This is the table the
-                turret prices are authored against (TOWER_PRICE in
-                economy.ts) — a stage that buys too few of its tier is a
-                tier the run never fields, one that buys hundreds was the
-                previous stage's turret with a bigger number on it. */}
-            <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
-              <h2 className="mb-2 text-[14px] font-bold uppercase tracking-widest text-[#71717C]">
-                Stages
-              </h2>
-              <div className="space-y-2">
-                {stageAudit({ ...level, waveGap, script }).map((s) => (
-                  <div key={s.tier}>
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-[15px] font-bold text-[#EDEDEF]">
-                        Tier {s.tier} · waves {s.from}–{s.to}
-                      </span>
-                      <span className="text-[14px] text-[#71717C]">
-                        {s.units.toLocaleString()} enemies
-                      </span>
-                    </div>
-                    <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <ScrapAmount amount={s.scrap} />
-                      <XpAmount amount={s.xp} />
-                    </span>
-                    <div className="text-[14px] text-[#71717C]">
-                      buys{" "}
-                      <span className="font-bold text-[#A6A6AF]">{s.boards}</span> tier-{s.tier}{" "}
-                      turrets at {s.mean} (from {s.cheapest} to {s.dearest})
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {/* THE XP LADDER, once: every rung sends the same waves, so
-                  the only column that moves is the bonus */}
-              <div className="mt-2 border-t border-[#2E2E36] pt-2">
-                <div className="mb-1 text-[14px] uppercase tracking-widest text-[#71717C]">
-                  XP per rung
-                </div>
-                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[14px]">
-                  {report.rows.map((r) => (
-                    <div key={r.tier} className="flex items-baseline justify-between">
-                      <span className="font-bold" style={{ color: rungColor(r.tier) }}>
-                        {r.label}
-                      </span>
-                      <span className="text-[#A6A6AF]">
-                        ×{r.xpBonus.toFixed(2)} · <XpAmount amount={r.xp} />
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <p className="mt-1 text-[14px] leading-snug text-[#71717C]">
-                  Scrap is fixed per kill and the same on every rung. XP is paid per
-                  wave cleared — a fixed pot a clear, ramping from the first wave to
-                  the last — and the rung multiplies it; a random map pays a quarter
-                  more.
-                </p>
-              </div>
-            </section>
-
+            {/* NO ECONOMY TABLE. This rail used to carry the three stages
+                priced against their turret tiers — what each stage's waves
+                paid in scrap and XP, and how many of the tier's turrets
+                that bought — plus the XP a clear banks at every rung.
+                NONE OF IT ANSWERED TO AN EDIT MADE HERE: the run's scrap
+                is the player's own (the core's pay and the drills, never a
+                kill), and a mission pays the same fixed pot however many
+                bodies its waves hold. Numbers that do not move when the
+                script moves belong next to the knobs that do move them —
+                the balance editor — not next to the counts. What is left
+                is what the counts actually change: the ramp, the health
+                and the clock. */}
             <section className="rounded-lg border border-[#2E2E36] bg-[#151518]/70 p-3">
               <h2 className="mb-2 text-[14px] font-bold uppercase tracking-widest text-[#71717C]">
                 Totals
@@ -455,14 +384,6 @@ export default function LevelEditorView({
                   value={`${Math.ceil(summary.waves * WAVE_RELEASE_SECONDS)}s`}
                 />
               </dl>
-              <div className="mt-2 border-t border-[#2E2E36] pt-2">
-                <div className="mb-1 text-[14px] uppercase tracking-widest text-[#71717C]">
-                  Full-clear payout
-                </div>
-                <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-                  {summary.waves > 0 && <XpAmount amount={MISSION_XP} />}
-                </span>
-              </div>
             </section>
           </aside>
 
@@ -475,7 +396,7 @@ export default function LevelEditorView({
                   <StepCard
                     step={step}
                     waveNo={i + 1}
-                    guide={report.waves[i]}
+                    guide={waves[i]}
                     index={i}
                     last={i === all.length - 1}
                     onChange={(next) =>
@@ -771,10 +692,9 @@ function StepCard({
         {guide && (
           <span className="text-[15px] font-bold text-[#A6A6AF]">{compactHp(guide.hp)} hp</span>
         )}
-        {/* what CLEARING the wave banks — its share of the mission's pot,
-            off its position in the script. Its bodies pay nothing: the
-            run's scrap is the player's own (economy.ts) */}
-        {guide && <XpAmount amount={guide.xp} />}
+        {/* NO PAYOUT. A wave used to print what clearing it banks; the
+            pot is fixed per mission and dealt out by wave position, so
+            that number said nothing about the wave being edited */}
         <div className="ml-auto">{controls}</div>
       </div>
 

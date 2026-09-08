@@ -355,18 +355,6 @@ export default function ProgressView({
       >
         {TRACK.map((t) => (
           <div key={t.level} className="contents">
-            {/* WHERE THE TRACK TURNS: everything above this line is a
-                thing to build, everything below it is a rule that can be
-                rolled at you. Two words, once, on the one row where the
-                colour of the chips changes meaning */}
-            {t.level === ROSTER_TOP + 1 && (
-              <div className="flex items-center gap-3 px-1 pt-2 pb-0.5">
-                <span className="text-[12px] uppercase tracking-widest" style={{ color: MUT_LIT }}>
-                  Mutators
-                </span>
-                <span className="h-px flex-1" style={{ background: `${MUT_LIT}44` }} />
-              </div>
-            )}
             {row(t.level)}
           </div>
         ))}
