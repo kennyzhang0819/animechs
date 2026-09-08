@@ -1728,24 +1728,32 @@ export default function MechSwarm() {
   }, [menuOpen]);
 
   /**
-   * WHEN THE CURSOR IS HELD IN: a run under way, in a window with no frame
-   * to stop it at, with the preference on. The pause menu lets it out
-   * again — a paused player is as likely to be reaching for another screen
-   * as for Resume — and so do alt-tab and the Windows key, which the
-   * browser answers by dropping the lock itself.
+   * WHEN THE CURSOR IS HELD IN: the player is in a run, in a window with
+   * no frame to stop the mouse at, with the preference on. THE PAUSE MENU
+   * IS STILL THE RUN — the lock is held over it too, and the arrow the
+   * game draws is what clicks Resume. Letting the real cursor back out
+   * there would put it wherever the lock had parked it rather than where
+   * the player is pointing, which is a cursor jumping across the screen
+   * every time the menu opens; the way out to another monitor is the way
+   * out of any fullscreen game, alt-tab or the Windows key, which take the
+   * focus and the lock with it.
    *
-   * ESCAPE DOES NOT, by itself: the browser drops the lock on it whatever
-   * we do, but in a run Escape is the game's own key and it backs out one
-   * layer at a time (Game.onKeyDown) — the press that cancels a build or
-   * drops a selection has the lock back before the player notices
-   * (components/cursorLock.ts), and only the press that brings up the menu
-   * gets here, where `menuOpen` is what actually lets the cursor go.
+   * ESCAPE NEVER REACHES THE GAME under lock: Chromium releases the
+   * pointer on that key and eats it. So the release is read as the press
+   * (components/cursorLock.ts) and handed straight to the menu here —
+   * which is what makes one press one menu, open or closed.
    */
+  const escapeKey = (): void => {
+    const g = gameRef.current;
+    if (!g) return;
+    g.toggleMenu();
+    setHud(g.ui());
+  };
   useCursorLock(
     cursorLock &&
       screen === "game" &&
-      !menuOpen &&
       (video?.mode === "fullscreen" || video?.mode === "borderless"),
+    escapeKey,
   );
 
   const openMenu = (): void => {

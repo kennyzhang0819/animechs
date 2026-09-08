@@ -455,20 +455,7 @@ export class Game {
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.code === "Escape") {
-      // esc backs out one layer at a time: an open menu closes, an active
-      // build/selection cancels, and only a bare esc brings up the game
-      // menu. The end screens own the UI — no menu underneath them
-      if (this.menuOpen) {
-        this.menuOpen = false;
-        return;
-      }
-      if (this.buildKind || this.selected || this.building) {
-        this.buildKind = null;
-        this.selected = null;
-        this.building = false;
-        return;
-      }
-      if (!this.sim.lost() && !this.won()) this.menuOpen = true;
+      this.toggleMenu();
       return;
     }
     if (e.code === "Space" && !e.repeat) {
@@ -1028,6 +1015,28 @@ export class Game {
     if (this.sim.lost() || this.won()) return;
     this.buildKind = null;
     this.menuOpen = true;
+  }
+
+  /**
+   * ESC, WHEREVER IT COMES FROM, AND IT MEANS ONE THING: the menu. It used
+   * to back out a layer at a time — an active build or selection first,
+   * the menu only on a bare press — which cost a player two or three
+   * presses to reach Resume and (under the cursor lock, where the browser
+   * eats the press that releases the pointer) sometimes more. A ghost is
+   * put away with the right button, which has always cancelled build mode
+   * before it demolishes anything, and a selection is dropped by clicking
+   * bare ground; neither wants the key that pauses the game.
+   *
+   * The other caller is the cursor lock (components/cursorLock.ts): under
+   * pointer lock the key never reaches this handler at all, and the
+   * browser's release of the lock is what stands in for it.
+   */
+  toggleMenu(): void {
+    if (this.menuOpen) {
+      this.menuOpen = false;
+      return;
+    }
+    this.openMenu();
   }
 
   /** the on-screen pause button — space, for a screen with no keyboard */

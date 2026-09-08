@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 /**
  * KEEP THE CURSOR INSIDE THE GAME.
@@ -18,29 +18,45 @@ import { useEffect } from "react";
  * - the deltas move a cursor of our own, clamped to the window, drawn as
  *   an arrow over everything (the div below)
  * - every real mouse event is caught in the capture phase at `window` and
- *   STOPPED THERE — under lock its coordinates are frozen garbage — and
- *   re-dispatched at our cursor's place, on whatever element is under it
- *   (`retarget`). The game's canvas listeners and every React handler in
- *   the HUD see an ordinary mouse event where the player is pointing, and
- *   neither knows the difference.
- * - and the page is given a SECOND hover state that follows the arrow
- *   (`mirrorHover` below), because the real `:hover` follows the real
- *   cursor and the real cursor is parked.
+ *   STOPPED THERE, then re-dispatched at our cursor's place, on whatever
+ *   element is under it (`retarget`). The game's canvas listeners and
+ *   every React handler in the HUD see an ordinary mouse event where the
+ *   player is pointing, and neither knows the difference.
+ * - and the page is given a second hover state that follows the arrow
+ *   (`mirrorHover`), because the real `:hover` follows the real cursor and
+ *   the real cursor is parked.
  *
- * ESCAPE IS NOT AN UNLOCK. The browser drops the lock on Escape and there
- * is no call that refuses it — but Escape in a run is the game's own key,
- * and it means one thing at a time (cancel the build, drop the selection,
- * and only then bring up the menu: Game.onKeyDown). Only the last of those
- * lets the cursor out, and it lets it out by turning this hook OFF, the
- * same as the pause button does. Every other press has the lock BACK
- * before the player notices: `regrab` retries until it is held again,
- * around Chromium's cooldown after an Escape and its demand for a fresh
- * gesture, and the arrow stays on screen and on the real cursor for the
- * moment in between, so a press that lands in the gap still lands where
- * the player is pointing. The cursor gets out at the pause menu, at the
- * end of a run, on the way back to the title, and on alt-tab or the
- * Windows key — anything that takes the focus takes the lock with it, and
- * the focus coming back takes it again.
+ * THREE RULES, and everything below is one of them:
+ *
+ * 1. THE ARROW NEVER JUMPS. It moves by MOVEMENT, never by place — the
+ *    deltas of every mouse event, lock or no lock — so it cannot be teleported
+ *    by an event carrying the frozen coordinates the lock hands out, or by
+ *    the real cursor sitting somewhere else while the lock is off. It is
+ *    put down once, where the real cursor was when the game took over
+ *    (`lastReal`), and from there it is only ever nudged.
+ *
+ * 2. THERE IS ONLY EVER ONE CURSOR. A dropped lock puts the system cursor
+ *    back on the screen — and the page is full of elements with a `cursor`
+ *    of their own, which a `cursor:none` on the root does not cover — so
+ *    the arrow used to have the system cursor beside it for as long as the
+ *    lock took to come back. `hideCursor` is `* { cursor: none !important }`
+ *    for as long as this hook is on, whatever the lock is doing.
+ *
+ * 3. ONE ESCAPE IS ONE ESCAPE. Chromium releases the pointer on Escape
+ *    ITSELF and EATS THE KEY: the page is never told, which is why the
+ *    pause menu used to want two presses (the first was spent on the lock,
+ *    the second reached the game). So the RELEASE is what we listen to —
+ *    an unexpected unlock, with the window still focused, IS the Escape
+ *    press, and it is handed to `onEscape` on the spot. A real Escape that
+ *    does arrive right after is swallowed, so the menu never toggles twice
+ *    for one press.
+ *
+ * The lock is therefore held for as long as the player is in the game, the
+ * pause menu included: releasing it there would put the system cursor back
+ * wherever the lock had parked it, which is the jump rule 1 exists to
+ * stop. The way out to another screen is the way out of any fullscreen
+ * game — alt-tab, or the Windows key — which takes the focus, and the
+ * focus coming back takes the lock again with the arrow where it was left.
  */
 
 /** our own events, so the gate below lets them through instead of eating them */
@@ -48,6 +64,18 @@ const MINE = "__mechswarmCursor";
 
 /** the arrow's own hover state, standing in for `:hover` (see mirrorHover) */
 const HOVER = "data-ms-hover";
+
+/**
+ * How long a real Escape is swallowed after the lock's release has already
+ * stood in for it. Long enough to catch the echo of the SAME press (a
+ * browser that both releases the lock and delivers the key), short enough
+ * that a player hammering Escape to open and close the menu is never
+ * pressing into a dead window.
+ */
+const ESC_ECHO_MS = 250;
+
+/** how often a lock the browser took away is asked for again */
+const REGRAB_MS = 500;
 
 /** the events under lock: a place we have to correct, or a wheel to pass on */
 const GATED = [
@@ -67,6 +95,27 @@ type Flagged = Event & { [MINE]?: true };
 
 const clamp = (v: number, hi: number): number => (v < 0 ? 0 : v > hi ? hi : v);
 
+/**
+ * WHERE THE REAL CURSOR WAS LAST SEEN, kept from the moment this module
+ * loads rather than from the moment the lock turns on: the arrow is put
+ * down here, and a player who starts a run by clicking Resume in the
+ * corner gets an arrow in that corner instead of one in the middle of the
+ * screen. Frozen coordinates under lock, and our own re-dispatched events,
+ * are not the real cursor and are not recorded.
+ */
+const lastReal = { x: -1, y: -1 };
+if (typeof window !== "undefined") {
+  window.addEventListener(
+    "mousemove",
+    (e: MouseEvent) => {
+      if (document.pointerLockElement || (e as Flagged)[MINE]) return;
+      lastReal.x = e.clientX;
+      lastReal.y = e.clientY;
+    },
+    { capture: true, passive: true },
+  );
+}
+
 /** the arrow, drawn over everything and never in the way of a press */
 function makeCursor(): HTMLElement {
   const el = document.createElement("div");
@@ -77,6 +126,22 @@ function makeCursor(): HTMLElement {
     '<svg width="18" height="26" viewBox="0 0 18 26" fill="none">' +
     '<path d="M1.5 1.2 L1.5 18.6 L5.9 14.6 L9 21.6 L12.2 20.2 L9.2 13.5 L14.6 13.2 Z" ' +
     'fill="#EDEDEF" stroke="#000" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+  return el;
+}
+
+/**
+ * RULE 2. The system cursor is hidden by the lock itself — but the lock is
+ * not always on (Escape drops it, and Chromium will not hand it back for
+ * about a second and a quarter), and `cursor:none` on the root loses to
+ * every `cursor` an element sets for itself: a button's pointer, the
+ * canvas's crosshair. One `!important` rule over the whole document is
+ * what actually leaves the arrow alone on the screen.
+ */
+function hideCursor(): HTMLStyleElement {
+  const el = document.createElement("style");
+  el.dataset.msCursorHide = "";
+  el.textContent = "*{cursor:none!important}";
+  document.head.appendChild(el);
   return el;
 }
 
@@ -183,26 +248,42 @@ function mirrorHover(): HTMLStyleElement | null {
   return el;
 }
 
-export function useCursorLock(active: boolean): void {
+/**
+ * @param active whether the game is holding the cursor at all
+ * @param onEscape what an Escape press means — called when the BROWSER's
+ * own release of the lock is the only sign of one (rule 3). The latest one
+ * given is always the one called; changing it does not re-take the lock.
+ */
+export function useCursorLock(active: boolean, onEscape?: () => void): void {
+  const esc = useRef(onEscape);
+  esc.current = onEscape;
+
   useEffect(() => {
     if (!active || typeof document === "undefined") return;
 
     const target = document.body;
     let locked = false;
-    let x = window.innerWidth / 2;
-    let y = window.innerHeight / 2;
+    let x = lastReal.x >= 0 ? lastReal.x : window.innerWidth / 2;
+    let y = lastReal.y >= 0 ? lastReal.y : window.innerHeight / 2;
     /** what the arrow was last over, so enter/leave can be told to React */
     let over: Element | null = null;
     /** that element and its ancestors: the set `:hover` would have matched */
     let hovered: Element[] = [];
     /** movement is counted from pointermove; mousemove only if there is no pointermove */
     let sawPointer = false;
-    let cursor: HTMLElement | null = null;
-    let sheet: HTMLStyleElement | null = null;
+    /** we are the ones dropping the lock: it is not an Escape (rule 3) */
+    let releasing = false;
+    /** when the release stood in for an Escape, so the real key is swallowed */
+    let escAt = 0;
     let retry = 0;
 
+    const cursor = makeCursor();
+    document.body.appendChild(cursor);
+    const hide = hideCursor();
+    const mirror = mirrorHover();
+
     const draw = (): void => {
-      if (cursor) cursor.style.transform = `translate(${x}px, ${y}px)`;
+      cursor.style.transform = `translate(${x}px, ${y}px)`;
     };
 
     /** the arrow's hover: the element under it, and everything around it */
@@ -218,7 +299,9 @@ export function useCursorLock(active: boolean): void {
      * Re-dispatch one real event where the arrow is. Whatever the element
      * under it makes of it — a preventDefault on a wheel, say — is carried
      * back to the real event, which is still the one the browser is
-     * waiting on.
+     * waiting on. This happens WHETHER OR NOT THE LOCK IS HELD: in the
+     * moment after an Escape the real cursor is somewhere else entirely,
+     * and a click has to land where the player can see they are pointing.
      */
     const retarget = (e: MouseEvent): void => {
       const el = document.elementFromPoint(x, y);
@@ -291,15 +374,15 @@ export function useCursorLock(active: boolean): void {
 
     /**
      * THE GATE. Every mouse event in the page passes here first (capture,
-     * at the window, before anything the game or React has bound). A real
-     * one under lock is stopped dead and re-issued in the right place; our
-     * own re-issued event is waved through, and so is every event in the
-     * gap between a lock dropped and the lock taken back, where a real
-     * event already carries the place the arrow is drawn at.
+     * at the window, before anything the game or React has bound), is
+     * stopped dead, and is re-issued where the arrow is; our own re-issued
+     * events are waved through. A move is taken for its MOVEMENT ONLY
+     * (rule 1) — `movementX` is what the lock hands out, and it is what an
+     * unlocked mouse hands out too, so the arrow travels the same way
+     * whether the lock is held this instant or not.
      */
     const gate = (e: Event): void => {
       if ((e as Flagged)[MINE]) return;
-      if (!locked) return;
       e.stopImmediatePropagation();
       const m = e as MouseEvent;
       if (e.type === "pointermove" || e.type === "mousemove") {
@@ -318,46 +401,45 @@ export function useCursorLock(active: boolean): void {
     };
 
     /**
-     * Where the real cursor is while the lock is NOT held — before the
-     * first one is granted, and in the moment after an Escape. The arrow
-     * is drawn there, so it is never anywhere but under the player's hand
-     * when the lock comes back.
+     * RULE 3, second half. Chromium eats the Escape that releases the lock
+     * — but if a build ever gets one through (another engine, a lock that
+     * was already off), the game must not act on it twice: the release has
+     * already spoken for it.
      */
-    const trackReal = (e: MouseEvent): void => {
-      if (locked) return;
-      x = clamp(e.clientX, window.innerWidth - 1);
-      y = clamp(e.clientY, window.innerHeight - 1);
-      draw();
-      const el = document.elementFromPoint(x, y);
-      over = el;
-      setHover(el);
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.code === "Escape" && performance.now() - escAt < ESC_ECHO_MS) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        return;
+      }
+      grab(); // any key is a gesture, and a gesture is what a re-lock wants
     };
 
     const grab = (): void => {
       if (locked || document.pointerLockElement) return;
       // a window that is not the one being typed into cannot hold the
-      // pointer, and asking every second while the player is in another
-      // app is asking for nothing: the focus coming back asks again
+      // pointer, and asking every half second while the player is in
+      // another app is asking for nothing: the focus coming back asks
       if (!document.hasFocus()) return;
-      // a refusal (no user gesture yet, or Chromium's cooldown after an
-      // Escape) is not an error worth reporting: we ask again
+      // a refusal (no gesture yet, or Chromium's cooldown after an Escape)
+      // is not an error worth reporting: we ask again
       void Promise.resolve(target.requestPointerLock()).catch(() => regrab());
     };
 
     /**
-     * THE LOCK COMES BACK BY ITSELF. Escape drops it in the browser before
-     * any of our code runs, and after that Chromium wants both a cooldown
-     * (about a second and a quarter) and a fresh user gesture before it
-     * will grant another. So we ask on a timer AND on the next press or
-     * key — whichever comes first — until it is held again or this hook is
-     * turned off, which is what the pause menu and the end of a run do.
+     * THE LOCK COMES BACK BY ITSELF. Chromium wants both a cooldown (about
+     * a second and a quarter after an Escape) and a fresh user gesture
+     * before it grants another, so we ask on a short timer and on the next
+     * press or key, whichever comes first. The arrow is on screen and
+     * driving every event throughout, so the gap costs the player nothing
+     * but the freedom of a cursor they cannot see leaving the window.
      */
     const regrab = (): void => {
       if (retry || locked) return;
       retry = window.setTimeout(() => {
         retry = 0;
         grab();
-      }, 1400);
+      }, REGRAB_MS);
     };
 
     const onChange = (): void => {
@@ -367,52 +449,48 @@ export function useCursorLock(active: boolean): void {
           clearTimeout(retry);
           retry = 0;
         }
-        draw();
-      } else {
-        // the arrow stays: it is the only cursor the player has now, and
-        // it follows the real one (trackReal) until the lock is back
-        sawPointer = false;
-        regrab();
+        return;
       }
+      sawPointer = false;
+      if (releasing) return; // our own exit, on the way out of the game
+      // RULE 3: the browser took the lock away while the game still had
+      // the focus. Nothing but Escape does that — alt-tab and the Windows
+      // key take the focus with it — so this IS the player's Escape, and
+      // it is the only sign of it we are ever going to get
+      if (document.hasFocus()) {
+        escAt = performance.now();
+        esc.current?.();
+      }
+      regrab();
     };
 
-    /* the arrow and the mirrored hover rules belong to the hook being on,
-       not to the lock being held this instant — the lock comes and goes
-       (an Escape, an alt-tab) and the cursor may not blink out with it */
-    cursor = makeCursor();
-    document.body.appendChild(cursor);
-    document.documentElement.style.cursor = "none";
-    sheet = mirrorHover();
     draw();
-
     for (const type of GATED) {
       window.addEventListener(type, gate, { capture: true, passive: false });
     }
-    window.addEventListener("mousemove", trackReal, true);
     // the press or the key that re-takes a lock the browser let go of, and
     // the first one when the lock was refused for want of a gesture
     window.addEventListener("pointerdown", grab, true);
-    window.addEventListener("keydown", grab, true);
+    window.addEventListener("keydown", onKeyDown, true);
     document.addEventListener("pointerlockchange", onChange);
     window.addEventListener("focus", grab);
     grab();
 
     return () => {
       for (const type of GATED) window.removeEventListener(type, gate, true);
-      window.removeEventListener("mousemove", trackReal, true);
       window.removeEventListener("pointerdown", grab, true);
-      window.removeEventListener("keydown", grab, true);
-      document.removeEventListener("pointerlockchange", onChange);
+      window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("focus", grab);
       if (retry) clearTimeout(retry);
       retry = 0;
       setHover(null);
-      cursor?.remove();
-      cursor = null;
-      sheet?.remove();
-      sheet = null;
-      document.documentElement.style.cursor = "";
+      cursor.remove();
+      mirror?.remove();
+      hide.remove();
+      releasing = true;
       if (document.pointerLockElement) document.exitPointerLock();
+      // last, so the exit above is not read as an Escape
+      document.removeEventListener("pointerlockchange", onChange);
     };
   }, [active]);
 }
