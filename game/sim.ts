@@ -60,6 +60,14 @@ const W = W_IMPORT;
 const WALL_R = WALL_R_IMPORT;
 import { FlowField, type Footprint, type Vec2 } from "./flowfield";
 import {
+  CORE_VISION_CELLS,
+  Fog,
+  FOG_VISIBLE,
+  VISION_MIN_CELLS,
+  VISION_OF_RANGE,
+  type VisionSource,
+} from "./fog";
+import {
   WORLDS,
   UNIT_ID,
   UNIT_KINDS as UNIT_KINDS_IMPORT,
@@ -1208,6 +1216,16 @@ export class Sim {
    */
   private hills: Uint8Array = new Uint8Array(NCELLS);
   /**
+   * FOG OF WAR (fog.ts): what the player's structures can see. The sim
+   * owns it because the sim is what it gates — a turret targets only what
+   * is in sight, a structure stands only on ground in sight — and the
+   * renderer and the minimap read the same bytes. Off (setFog) for the
+   * title screen's field and the headless bot, where there is no player
+   * to hide anything from.
+   */
+  readonly fog = new Fog();
+  private fogEnabled = true;
+  /**
    * The boss door's cells, split by the layer that may use them: a boss
    * zone is terrain-blind like an air zone, but a WALKING boss still has to
    * land on ground it can stand on, so the filtering happens per layer here
@@ -1336,6 +1354,9 @@ export class Sim {
     // on purpose — see airField — so it is solved once here and never
     // again, however much is built or sold during the run.
     this.hills = airWalkMask(this.terrain);
+    // a new map is unseen ground, and the core is the first thing looking at it
+    this.fog.reset(this.hills, this.fogEnabled);
+    this.fog.add(this.coreVision());
     this.airField.rebuildWalk([], this.hills, this.layerPadMask(LAYER_BIT.air), this.coreGoal());
     this.buildGoalPts();
     this.field.compute();
@@ -1655,6 +1676,45 @@ export class Sim {
     return this.totalEnemies > 0 && this.remaining() <= 0;
   }
 
+  /**
+   * FOG ON OR OFF for this sim, live: off lights the whole map and keeps it
+   * lit (the title screen, the balance bot); on rebuilds what is in sight
+   * from every structure standing.
+   */
+  setFog(on: boolean): void {
+    this.fogEnabled = on;
+    this.fog.reset(this.hills, on);
+    this.fog.invalidate();
+    this.fog.ensure(this.visionSources);
+  }
+
+  /** what the core sees (CORE_VISION_CELLS) */
+  private coreVision(): VisionSource {
+    return { x: this.core.x, y: this.core.y, r: CORE_VISION_CELLS * CELL };
+  }
+
+  /**
+   * What one structure sees: a share of its LIVE range (VISION_OF_RANGE,
+   * see fog.ts), a few cells for a wall, a rangeless turret or a shell
+   * still going up (VISION_MIN_CELLS)
+   */
+  private towerVision(t: Tower): VisionSource {
+    const min = VISION_MIN_CELLS * CELL;
+    let r = min;
+    if (t.buildT <= 0) {
+      const st = this.statsFor(t.kind);
+      if (!st.wall && st.range > 0) r = Math.max(min, st.range * VISION_OF_RANGE);
+    }
+    return { x: t.x, y: t.y, r };
+  }
+
+  /** every eye on the field — the core and each structure, entombed or not */
+  private readonly visionSources = (): VisionSource[] => {
+    const out: VisionSource[] = [this.coreVision()];
+    for (const t of this.towers) out.push(this.towerVision(t));
+    return out;
+  };
+
   /** campaign restrictions on building; null lifts them (editor, dev) —
    *  and null is also what makes building FREE (see canPlace) */
   setTech(tech: TechState | null): void {
@@ -1900,6 +1960,9 @@ export class Sim {
     };
     this.towers.push(tower);
     this.claimGround(tower, true);
+    // it looks around the moment it is placed — a shell sees a few cells,
+    // and the turret it becomes sees its share of its range (updateBuilds)
+    this.fog.add(this.towerVision(tower));
     // a count-dependent rung (duo power) reads the board, so the board
     // changing is what moves it
     this.refreshSpecs();
@@ -1911,6 +1974,9 @@ export class Sim {
     // while the sim is paused
     this.time += dt;
     this.runScript(dt);
+    // a structure came down since the last tick: re-cast the fog once for
+    // the whole frame's worth of demolition (Fog.ensure)
+    this.fog.ensure(this.visionSources);
 
     // a structure went up on, or came down off, open ground: re-solve the
     // walkers' field once for the whole frame's worth of changes
@@ -2951,6 +3017,7 @@ export class Sim {
     if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
     const { blocked } = this.terrain;
     const { isGoal } = this.field;
+    const fogState = this.fog.enabled ? this.fog.state : null;
     // GROUND LEVEL ONLY. A structure stands on open ground, in the swarm's
     // way, where it is a wall as well as a gun — never on a hill, a forest
     // or deep water (every blocked cell), never on another structure — the
@@ -2961,6 +3028,10 @@ export class Sim {
       for (let x = gx; x < gx + sz; x++) {
         const i = y * COLS + x;
         if (blocked[i] || isGoal[i] || this.groundPads[i] || this.cellTower[i]) return false;
+        // ...and never in the fog: a structure stands on ground something
+        // of the player's can see right now (fog.ts) — Mindustry's rule,
+        // Build.validPlace under rules.fog
+        if (fogState && fogState[i] !== FOG_VISIBLE) return false;
       }
     // a LIVE shield tower owns its ground: selling a buried turret is allowed,
     // but nothing builds back under the dome until the shield tower is dead
@@ -3047,6 +3118,8 @@ export class Sim {
     if (at < 0) return;
     this.towers.splice(at, 1);
     this.claimGround(t, false);
+    // an eye is gone: what only it saw goes grey at the next tick
+    this.fog.invalidate();
     this.refreshSpecs();
   }
 
@@ -4819,6 +4892,9 @@ export class Sim {
     }
     if (this.focusIdx >= 0 && this.focusIdx < this.n && this.uid[this.focusIdx] === this.focusUid) {
       const i = this.focusIdx;
+      // the mark follows its body into the fog, but it is not drawn there
+      // — an arrow over black would be the one thing giving the body away
+      if (!this.unitVisible(i)) return null;
       return { x: this.upx[i], y: this.upy[i], top: this.upy[i] - this.urad[i] * 2.4 - 6 };
     }
     return null;
@@ -4829,6 +4905,8 @@ export class Sim {
   unitAt(px: number, py: number): number {
     let best = -1, bd = Infinity;
     for (let i = 0; i < this.n; i++) {
+      // a body in the fog cannot be tapped any more than it can be seen
+      if (!this.unitVisible(i)) continue;
       const dx = this.upx[i] - px, dy = this.upy[i] - py;
       const d2 = dx * dx + dy * dy;
       const r = Math.max(this.urad[i] * 1.6, 10);
@@ -4845,6 +4923,8 @@ export class Sim {
     for (let i = 0; i < this.shieldTowers.length; i++) {
       const s = this.shieldTowers[i];
       if (s.hp <= 0) continue;
+      // one standing in the fog cannot be marked — it is not on screen
+      if (this.fog.enabled && !this.fog.visibleAt(s.x, s.y)) continue;
       const gx = (px / CELL) | 0, gy = (py / CELL) | 0;
       if (gx >= s.gx && gx < s.gx + SHIELD_TOWER_SIZE && gy >= s.gy && gy < s.gy + SHIELD_TOWER_SIZE) return i;
     }
@@ -4865,6 +4945,8 @@ export class Sim {
       if (t.buildT > 0) continue;
       t.buildT = 0;
       t.hp = towerMaxHp(t.kind);
+      // a finished turret sees its share of its range, not a shell's few cells
+      this.fog.add(this.towerVision(t));
       // the ring a finished building throws as its scaffold comes off,
       // sized to the footprint that just stood up (the Shockwave branch in
       // the renderer reads e.len as the reach)
@@ -4980,7 +5062,7 @@ export class Sim {
       // turret that can reach it. At most one of the two kinds is ever set
       if (this.focusIdx >= 0 && this.uid[this.focusIdx] === this.focusUid) {
         const fi = this.focusIdx;
-        if (this.ufly[fi] !== 0 ? st.targetAir : st.targetGround) {
+        if ((this.ufly[fi] !== 0 ? st.targetAir : st.targetGround) && this.unitVisible(fi)) {
           const dx = upx[fi] - t.x, dy = upy[fi] - t.y;
           if (dx * dx + dy * dy < r2t) best = fi;
         }
@@ -4996,7 +5078,9 @@ export class Sim {
           t.target >= 0 &&
           t.targetIdx >= 0 &&
           t.targetIdx < this.n &&
-          this.uid[t.targetIdx] === t.target
+          this.uid[t.targetIdx] === t.target &&
+          // ...and still in sight: a body that walks into the fog is let go
+          this.unitVisible(t.targetIdx)
         ) {
           const dx = upx[t.targetIdx] - t.x, dy = upy[t.targetIdx] - t.y;
           if (dx * dx + dy * dy < r2t) best = t.targetIdx;
@@ -5144,6 +5228,19 @@ export class Sim {
    * once since buildHash), so the bucket sweep is padded by a few px; the
    * distance test itself always reads live positions.
    */
+  /** is unit i standing on a cell in sight? (fog.ts; `fogState` is Fog.state) */
+  private unitInSight(fogState: Uint8Array, i: number): boolean {
+    const gx = (this.upx[i] / CELL) | 0, gy = (this.upy[i] / CELL) | 0;
+    if (gx < 0 || gy < 0 || gx >= COLS || gy >= ROWS) return false;
+    return fogState[gy * COLS + gx] === FOG_VISIBLE;
+  }
+
+  /** is unit i in sight, or is the fog off? The one-line form for a caller
+   *  outside the hot loops */
+  unitVisible(i: number): boolean {
+    return !this.fog.enabled || this.unitInSight(this.fog.state, i);
+  }
+
   private bestTarget(
     x: number,
     y: number,
@@ -5158,10 +5255,15 @@ export class Sim {
     const score = (i: number, d2: number): number =>
       strongest ? -uhp[i] + d2 * 1e-9 : d2;
     let best = -1, bs = Infinity;
+    // A BODY IN THE FOG IS NOT A TARGET (fog.ts): a turret shoots only what
+    // something of the player's can see, which is three quarters of its
+    // own reach on its own and the whole of it in a line
+    const fogState = this.fog.enabled ? this.fog.state : null;
     // a short field is cheaper to walk directly than through the buckets
     if (n <= 128) {
       for (let i = 0; i < n; i++) {
         if (ufly[i] !== 0 ? !air : !ground) continue;
+        if (fogState && !this.unitInSight(fogState, i)) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
         const d2 = dx * dx + dy * dy;
         if (d2 >= r2) continue;
@@ -5186,6 +5288,7 @@ export class Sim {
         const i = bUnits[k];
         if (i >= n) continue;
         if (ufly[i] !== 0 ? !air : !ground) continue;
+        if (fogState && !this.unitInSight(fogState, i)) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
         const d2 = dx * dx + dy * dy;
         if (d2 >= r2) continue;
@@ -5835,6 +5938,7 @@ export class Sim {
       t.beamStr += (0 - t.beamStr) * (1 - Math.pow(1 - 0.1, dt * 60));
       return;
     }
+    const fogState = this.fog.enabled ? this.fog.state : null;
     const pad = st.range + this.rmaxAliveFor(st.targetAir, st.targetGround) + 8;
     const hx0 = clamp(((t.x - pad) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((t.y - pad) / HC) | 0, 0, HROWS - 1);
@@ -5847,6 +5951,7 @@ export class Sim {
         const i = bUnits[k];
         if (i >= this.n) continue;
         if (ufly[i] !== 0 ? !st.targetAir : !st.targetGround) continue;
+        if (fogState && !this.unitInSight(fogState, i)) continue;
         const dx = upx[i] - t.x, dy = upy[i] - t.y;
         const d = Math.sqrt(dx * dx + dy * dy);
         // within(range + hitSize/2): a wide target counts from its edge

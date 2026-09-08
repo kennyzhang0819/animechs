@@ -97,6 +97,23 @@ stale tab or a cached bundle looks exactly like a fix not working.
   roomier way round rather than scrape a corner
 - `game/sim.ts` — units in struct-of-arrays typed arrays, counting-sort spatial
   hash (separation + projectile hits), towers, projectiles, effects
+- `game/fog.ts` — **the fog of war**: one byte a cell, three layers —
+  never seen (black), seen once (a half-black wash), in sight (clear) —
+  and the swarm is hidden on the first two alike. Only the player's
+  structures see: the core `CORE_VISION_CELLS`, a turret
+  `VISION_OF_RANGE` (three quarters) of its range — Mindustry gives a
+  turret the whole of its range and StarCraft's static defence sees
+  further than it shoots; this game wants the gap the other way, so a
+  lone turret shoots at three quarters of its reach and a line shoots at
+  the whole of it — a wall or a shell going up a few cells
+  (`VISION_MIN_CELLS`). Sight is cast as rays that stop at the first
+  rock they enter, so a ridge shows its face and hides what is behind
+  it, and the inside of a range is never revealed: while fog is on it IS
+  the hill darkness, and the renderer's `DARK_RADIUS` pass stands down.
+  A turret targets only what is in sight and a structure stands only on
+  ground in sight (`Sim.canPlace`). Vision is recast only when a
+  structure appears, finishes or goes — never per frame. The title
+  screen's field and the balance bot play with it off (`Sim.setFog`)
 - `game/tiles.ts` — **the ground tiles and the hill blocks**, the game's
   own terrain art, painted at load on a 16-pixel grid. A floor is a base
   colour with ONE soft rounded mark on it (a light patch, a shaded stone
@@ -126,7 +143,12 @@ stale tab or a cached bundle looks exactly like a fix not working.
   wall batches, one dynamic batch in painter's order, and a shield pass.
   Water is a batch and a program of its own — Mindustry's `water.frag`,
   ported, so the sea swells and its bright bands drift across the map
-- `game/game.ts` — rAF loop, input, 2d overlay (placement ghost), stats
+- `game/game.ts` — rAF loop, input, 2d overlay (placement ghost), stats,
+  edge panning (`EDGE_PAN_PX`) and the **minimap** (`drawMinimap`): the
+  whole map at a cell a dot, never zoomed, the fog's three tones over
+  the ground, the player's structures white, the enemy red where it is
+  in sight, the viewport framed; a press looks there, a drag keeps
+  steering
 - `components/MechSwarm.tsx` — React shell: HUD (scrap, core health, XP), rung
   picker, six-slot build bar with prices and its loadout picker, game-speed
   switcher, results screens, canvases
@@ -200,13 +222,17 @@ is no touch input.
 | build | left press, drag to chain |
 | demolish | right press, drag to chain |
 | inspect a turret's range | left click, with no tool picked |
-| pan | middle drag, WASD/arrows, two-finger trackpad scroll |
+| pan | middle drag, WASD/arrows, two-finger trackpad scroll, the cursor at the screen's edge |
+| minimap | click to look there, drag to keep steering — bottom-left, never zoomed |
 | zoom | wheel, trackpad pinch |
 | pause / menu | space / esc, or the two buttons in the top-right corner |
 | fullscreen | F11 (Ctrl+Cmd+F on macOS), in the desktop shell |
 
 The zoom floor is the whole map in frame with a little padding
-(`ZOOM_FIT_PAD`); the ceiling is 12.
+(`ZOOM_FIT_PAD`); the ceiling is 12. **Pan speed** — one knob for the
+keys and the screen's edges, `PAN_RATE` times the setting — and the
+edge-panning switch live on the Controls tab of Settings, saved with
+the rest of the preferences (`Progress.panSpeed`, `Progress.edgePan`).
 
 ## Progression
 

@@ -4,9 +4,12 @@ import {
   loadOfficialMaps,
   OFFICIAL_MAP_IDS,
   OFFICIAL_MAPS,
+  paintThumb,
   refreshMap,
   zoneStyle,
 } from "./maps";
+import { FOG_NEVER, FOG_SEEN, FOG_SEEN_ALPHA, FOG_VISIBLE } from "./fog";
+import { SHIELD_TOWER_SIZE } from "./mutation";
 import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
 import { loadBalanceDoc } from "./balance";
 import {
@@ -217,6 +220,23 @@ const SIM_DT = 1 / 60;
 // the spiral where slow frames beget more sim work which begets slower
 // frames has to break somewhere, and losing banked time is the cheap end
 const SIM_STEPS_MAX = 3;
+/**
+ * THE PAN RATE: how much of the viewport the camera crosses per second
+ * under a held key or a cursor at the screen's edge, at the default
+ * setting. The Controls tab multiplies it (setPanSpeed), and the same
+ * number drives both, so one knob is one feel.
+ */
+const PAN_RATE = 0.5;
+/**
+ * EDGE PANNING: the cursor within this many CSS px of the viewport's edge
+ * pushes the view that way, StarCraft's rule. Narrow on purpose — the HUD
+ * sits a rem in from every edge, so a cursor on a button never pans, and
+ * only a cursor pressed to the very rim does.
+ */
+const EDGE_PAN_PX = 12;
+/** the minimap's backing store, in device px per cell — 2 so a unit's
+ *  dot is a 2x2 square and the viewport's rectangle has a crisp 1-cell stroke */
+const MM_SCALE = 2;
 const PAN_KEYS: Record<string, readonly [number, number]> = {
   KeyW: [0, -1],
   KeyS: [0, 1],
@@ -276,6 +296,25 @@ export class Game {
   private tly = 0;
   private panning = false;
   private panMoved = 0;
+  /** the Controls tab's multiplier on PAN_RATE, keys and edges alike */
+  private panSpeed = 1;
+  /** does a cursor at the screen's edge pan? (EDGE_PAN_PX) */
+  private edgePan = true;
+  /**
+   * where the cursor is, window-wide, in client px — or null once it has
+   * left the window or the window has lost focus, so a cursor parked on
+   * another monitor never drags the view to a corner
+   */
+  private pointer: { x: number; y: number } | null = null;
+  // THE MINIMAP (attachMinimap, drawMinimap): the whole map at a glance,
+  // the fog over it, the field on it and the viewport's frame; a press or
+  // a drag on it puts that place in view
+  private mmCanvas: HTMLCanvasElement | null = null;
+  /** the ground at 1px a cell (paintThumb), painted once per map */
+  private mmBase: HTMLCanvasElement | null = null;
+  /** the per-frame layer over the ground: fog wash, bodies, structures */
+  private mmLayer: HTMLCanvasElement | null = null;
+  private mmDrag = false;
   // cursor mode: null is the normal cursor (click a tower to inspect its
   // range); a kind from the tower menu turns on the ghost + paint placement
   private buildKind: TowerKind | null = null;
@@ -355,6 +394,31 @@ export class Game {
   // missed keyups (cmd+tab away mid-pan) would leave the camera drifting
   private readonly onBlur = (): void => {
     this.keysDown.clear();
+    this.pointer = null; // ...and so would a cursor last seen at the edge
+  };
+  /** the cursor, wherever it is over the window (edge panning reads it) */
+  private readonly onWinMove = (e: PointerEvent): void => {
+    this.pointer = { x: e.clientX, y: e.clientY };
+  };
+  /** the cursor left the window: mouseout with nothing to go to */
+  private readonly onWinOut = (e: MouseEvent): void => {
+    if (!e.relatedTarget) this.pointer = null;
+  };
+  // THE MINIMAP'S POINTER: a press puts the place under it in view, and
+  // the press held is a drag of the view — captured, so a drag that runs
+  // off the minimap keeps steering until the button is let go
+  private readonly onMmDown = (e: PointerEvent): void => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    this.mmDrag = true;
+    this.mmCanvas?.setPointerCapture(e.pointerId);
+    this.lookAtMinimap(e);
+  };
+  private readonly onMmMove = (e: PointerEvent): void => {
+    if (this.mmDrag) this.lookAtMinimap(e);
+  };
+  private readonly onMmUp = (): void => {
+    this.mmDrag = false;
   };
   private readonly onWheel = (e: WheelEvent): void => {
     e.preventDefault();
@@ -632,11 +696,15 @@ export class Game {
 
     this.fitToMap();
     this.renderer.rebuildTerrain(this.sim);
+    // the renderer draws and culls by the sim's own fog (fog.ts)
+    this.renderer.setFog(this.sim.fog);
 
     window.addEventListener("resize", this.onResize);
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("blur", this.onBlur);
+    window.addEventListener("pointermove", this.onWinMove);
+    window.addEventListener("mouseout", this.onWinOut);
     window.addEventListener("pointerup", this.onMouseUp);
     window.addEventListener("pointercancel", this.onMouseUp);
     window.addEventListener("wheel", this.onWinWheel, { passive: false });
@@ -681,6 +749,8 @@ export class Game {
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
     window.removeEventListener("blur", this.onBlur);
+    window.removeEventListener("pointermove", this.onWinMove);
+    window.removeEventListener("mouseout", this.onWinOut);
     window.removeEventListener("pointerup", this.onMouseUp);
     window.removeEventListener("pointercancel", this.onMouseUp);
     window.removeEventListener("wheel", this.onWinWheel);
@@ -689,6 +759,7 @@ export class Game {
     this.uiCanvas.removeEventListener("pointermove", this.onMove);
     this.uiCanvas.removeEventListener("pointerleave", this.onLeave);
     this.uiCanvas.removeEventListener("contextmenu", this.onContext);
+    this.attachMinimap(null);
   }
 
   setBuildKind(kind: TowerKind | null): void {
@@ -852,6 +923,64 @@ export class Game {
     this.speed = SPEEDS.includes(mult) ? mult : 1;
   }
 
+  /** the Controls tab's pan speed: a multiplier on PAN_RATE, keys and edges alike */
+  setPanSpeed(mult: number): void {
+    this.panSpeed = Number.isFinite(mult) && mult > 0 ? mult : 1;
+  }
+
+  /** the Controls tab's edge-panning switch (EDGE_PAN_PX) */
+  setEdgePan(on: boolean): void {
+    this.edgePan = on;
+    if (!on) this.pointer = null;
+  }
+
+  /**
+   * THE MINIMAP'S CANVAS, or null to let go of it. React owns the element
+   * and hands it over when the game screen mounts; the game paints it
+   * every frame (drawMinimap) and listens on it for the press and the
+   * drag that steer the view (onMmDown). Detaching removes the listeners
+   * and drops the painted layers, so a canvas that comes back — the same
+   * element or a fresh one — is painted from scratch.
+   */
+  attachMinimap(canvas: HTMLCanvasElement | null): void {
+    const old = this.mmCanvas;
+    if (old === canvas) return;
+    if (old) {
+      old.removeEventListener("pointerdown", this.onMmDown);
+      old.removeEventListener("pointermove", this.onMmMove);
+      old.removeEventListener("pointerup", this.onMmUp);
+      old.removeEventListener("pointercancel", this.onMmUp);
+      old.removeEventListener("contextmenu", this.onContext);
+    }
+    this.mmCanvas = canvas;
+    this.mmDrag = false;
+    if (canvas) {
+      canvas.addEventListener("pointerdown", this.onMmDown);
+      canvas.addEventListener("pointermove", this.onMmMove);
+      canvas.addEventListener("pointerup", this.onMmUp);
+      canvas.addEventListener("pointercancel", this.onMmUp);
+      canvas.addEventListener("contextmenu", this.onContext);
+    }
+  }
+
+  /** put the world point at the centre of the view (the minimap's press) */
+  private lookAt(wx: number, wy: number): void {
+    this.tlx = wx - this.visW() / 2;
+    this.tly = wy - this.visH() / 2;
+    this.clampCamera();
+  }
+
+  /** a minimap pointer event -> the world point under it -> the view centred there */
+  private lookAtMinimap(e: PointerEvent): void {
+    const mm = this.mmCanvas;
+    if (!mm) return;
+    const r = mm.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return;
+    const fx = clamp((e.clientX - r.left) / r.width, 0, 1);
+    const fy = clamp((e.clientY - r.top) / r.height, 0, 1);
+    this.lookAt(fx * this.worldW, fy * this.worldH);
+  }
+
   /** everything the React overlay renders, polled a few times a second */
   ui(): UiState {
     return {
@@ -920,6 +1049,7 @@ export class Game {
   reset(): void {
     this.sim.reset();
     this.soakLayer = null; // a new level is a new coastline
+    this.mmBase = null; // ...and a new ground under the minimap
     this.menuOpen = false;
     this.fitToMap();
     this.renderer.rebuildTerrain(this.sim);
@@ -1034,13 +1164,36 @@ export class Game {
     const dt = clamp((now - this.last) / 1000, 0, 0.05) || 0.016;
     this.last = now;
 
-    // keyboard pan: half a viewport per second
+    // keyboard pan: PAN_RATE of a viewport per second, times the setting
+    const panStep = PAN_RATE * this.panSpeed * dt;
+    let panX = 0, panY = 0;
     for (const code of this.keysDown) {
       const dir = PAN_KEYS[code];
-      this.tlx += dir[0] * this.visW() * 0.5 * dt;
-      this.tly += dir[1] * this.visH() * 0.5 * dt;
+      panX += dir[0];
+      panY += dir[1];
     }
-    if (this.keysDown.size > 0) this.clampCamera();
+    // EDGE PAN: the cursor pressed to the viewport's rim pushes the view
+    // that way at the same rate. Not while the menu holds the run, and
+    // not while a middle-drag or the minimap is already steering — two
+    // hands on the camera pull it apart
+    if (
+      this.edgePan && this.pointer && !this.menuOpen && !this.panning && !this.mmDrag &&
+      !this.sim.lost() && !this.won()
+    ) {
+      const r = this.uiCanvas.getBoundingClientRect();
+      const px = this.pointer.x - r.left, py = this.pointer.y - r.top;
+      if (px >= 0 && py >= 0 && px <= r.width && py <= r.height) {
+        if (px <= EDGE_PAN_PX) panX -= 1;
+        else if (px >= r.width - EDGE_PAN_PX) panX += 1;
+        if (py <= EDGE_PAN_PX) panY -= 1;
+        else if (py >= r.height - EDGE_PAN_PX) panY += 1;
+      }
+    }
+    if (panX !== 0 || panY !== 0) {
+      this.tlx += Math.sign(panX) * this.visW() * panStep;
+      this.tly += Math.sign(panY) * this.visH() * panStep;
+      this.clampCamera();
+    }
 
     const t0 = performance.now();
     // a lost game freezes mid-carnage: the score screen sits over the
@@ -1082,6 +1235,7 @@ export class Game {
     );
     if (this.diagZooms.length) this.diagScan();
     this.drawOverlay();
+    this.drawMinimap();
 
     this.fpsEma += (1 / Math.max(dt, 1e-4) - this.fpsEma) * 0.05;
     this.simEma += (simMs - this.simEma) * 0.1;
@@ -1120,6 +1274,108 @@ export class Game {
     }
     cc.putImageData(img, 0, 0);
     return cv;
+  }
+
+  /**
+   * THE MINIMAP: the whole map, never zoomed, with everything the field
+   * knows drawn over the ground at a cell a dot —
+   *
+   *   the FOG (fog.ts) as the same three tones the field wears: black
+   *   where nothing has looked, half-black where something once did,
+   *   clear where something is looking now;
+   *   the PLAYER'S structures white — the core, every turret and wall,
+   *   a shell still going up in a dimmer white;
+   *   the ENEMY red — every body in sight (and none out of it: the
+   *   minimap keeps the fog's promise), and the map's shield towers
+   *   wherever they have once been seen, a building being a thing that
+   *   stays put;
+   *   the VIEWPORT as a white frame, which a press or a drag on the map
+   *   moves (onMmDown).
+   *
+   * Two layers: the ground, painted once per map (paintThumb), and one
+   * image rebuilt every frame with the rest, both blown up to MM_SCALE
+   * with no smoothing so a dot stays a square. Skipped entirely while
+   * React has not handed a canvas over (attachMinimap).
+   */
+  private drawMinimap(): void {
+    const mm = this.mmCanvas;
+    if (!mm) return;
+    const T = this.sim.terrain;
+    const cols = T.cols, rows = T.rows;
+    const w = cols * MM_SCALE, h = rows * MM_SCALE;
+    if (mm.width !== w || mm.height !== h) {
+      mm.width = w;
+      mm.height = h;
+    }
+    const c = mm.getContext("2d");
+    if (!c) return;
+    if (!this.mmBase) {
+      this.mmBase = document.createElement("canvas");
+      paintThumb(T, rows, this.mmBase);
+    }
+    if (!this.mmLayer) {
+      this.mmLayer = document.createElement("canvas");
+      this.mmLayer.width = cols;
+      this.mmLayer.height = rows;
+    }
+    const lc = this.mmLayer.getContext("2d");
+    if (!lc) return;
+    const img = lc.createImageData(cols, rows);
+    const d = img.data;
+    const { fog } = this.sim;
+    const fogOn = fog.enabled;
+    const st = fog.state;
+    const seenA = Math.round(FOG_SEEN_ALPHA * 255);
+    // the wash first, so a dot painted after it is painted OVER it
+    if (fogOn)
+      for (let y = 0; y < rows; y++)
+        for (let x = 0; x < cols; x++) {
+          const v = st[y * COLS + x];
+          if (v === FOG_VISIBLE) continue;
+          const o = (y * cols + x) * 4;
+          d[o + 3] = v === FOG_NEVER ? 255 : v === FOG_SEEN ? seenA : 0;
+        }
+    const dot = (x: number, y: number, r: number, g: number, b: number): void => {
+      if (x < 0 || y < 0 || x >= cols || y >= rows) return;
+      const o = (y * cols + x) * 4;
+      d[o] = r;
+      d[o + 1] = g;
+      d[o + 2] = b;
+      d[o + 3] = 255;
+    };
+    const box = (gx: number, gy: number, sz: number, r: number, g: number, b: number): void => {
+      for (let y = gy; y < gy + sz; y++) for (let x = gx; x < gx + sz; x++) dot(x, y, r, g, b);
+    };
+    // the enemy, in sight only
+    const { upx, upy, n } = this.sim;
+    for (let i = 0; i < n; i++) {
+      const gx = (upx[i] / CELL) | 0, gy = (upy[i] / CELL) | 0;
+      if (fogOn && st[gy * COLS + gx] !== FOG_VISIBLE) continue;
+      dot(gx, gy, 0xf2, 0x55, 0x55);
+    }
+    // the map's shield towers, wherever they have been seen
+    for (const s of this.sim.shieldTowers) {
+      if (s.hp <= 0) continue;
+      if (fogOn && !fog.seenAt(s.x, s.y)) continue;
+      box(s.gx, s.gy, SHIELD_TOWER_SIZE, 0xf2, 0x55, 0x55);
+    }
+    // the player's, over everything: the line is what the map is read for
+    for (const t of this.sim.towers) {
+      const v = t.buildT > 0 ? 0x9a : 0xff;
+      box(t.gx, t.gy, TOWERS[t.kind].size, v, v, v);
+    }
+    box(T.base.x, T.base.y, T.base.size, 0xff, 0xff, 0xff);
+    lc.putImageData(img, 0, 0);
+
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.imageSmoothingEnabled = false;
+    c.drawImage(this.mmBase, 0, 0, cols, rows, 0, 0, w, h);
+    c.drawImage(this.mmLayer, 0, 0, cols, rows, 0, 0, w, h);
+    // the viewport's frame, in cells: what the screen is looking at
+    const k = MM_SCALE / CELL;
+    c.strokeStyle = "rgba(255,255,255,0.9)";
+    c.lineWidth = 1.5;
+    c.strokeRect(this.tlx * k, this.tly * k, this.visW() * k, this.visH() * k);
   }
 
   private drawOverlay(): void {

@@ -632,6 +632,10 @@ export default function MenuBackground({
           if (sim) sim.loadLevel(spec);
           else sim = new Sim(spec);
           sim.setEffects(fxRef.current);
+          // no fog behind the menu: there is nobody it would be hiding
+          // the field from, and a title screen that is mostly black is a
+          // title screen showing nothing (fog.ts)
+          sim.setFog(false);
         },
         () => {
           renderer?.rebuildTerrain(sim!);

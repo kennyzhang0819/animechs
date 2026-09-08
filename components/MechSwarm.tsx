@@ -62,6 +62,10 @@ import {
   resetProgress,
   saveEffects,
   saveUiScale,
+  savePanSpeed,
+  saveEdgePan,
+  PAN_SPEED_DEFAULT,
+  PAN_SPEEDS,
   UI_SCALE_DEFAULT,
   UI_SCALES,
   saveHudMinimized,
@@ -1004,7 +1008,27 @@ export default function MechSwarm() {
    * first tab the way every other screen opens at its top.
    */
   const [uiScale, setUiScale] = useState(UI_SCALE_DEFAULT);
-  const [settingsTab, setSettingsTab] = useState<"general" | "interface">("general");
+  /**
+   * THE CONTROLS — saved preferences like `uiScale` (Progress.panSpeed,
+   * Progress.edgePan): how fast the keys and the screen's edges pan the
+   * view, and whether the edges pan it at all. Both reach a run under way
+   * the moment they are touched (Game.setPanSpeed, Game.setEdgePan).
+   */
+  const [panSpeed, setPanSpeed] = useState<number>(PAN_SPEED_DEFAULT);
+  const [edgePan, setEdgePan] = useState(true);
+  const [settingsTab, setSettingsTab] = useState<"general" | "interface" | "controls">("general");
+  /**
+   * THE MINIMAP'S CANVAS. React mounts it with the game screen and hands
+   * it to the game (Game.attachMinimap), which paints it every frame and
+   * takes the presses on it. A callback ref rather than a plain one
+   * because the element comes and goes with the run's state, and the game
+   * must be told each time so it never paints a canvas nobody can see.
+   */
+  const mmRef = useRef<HTMLCanvasElement | null>(null);
+  const attachMinimap = useCallback((el: HTMLCanvasElement | null) => {
+    mmRef.current = el;
+    gameRef.current?.attachMinimap(el);
+  }, []);
   /**
    * ESCAPE LEAVES A MENU VIEW, the same as the arrow top-left (the `back`
    * button below). Only from an inner view: on the title card there is no
@@ -1040,6 +1064,8 @@ export default function MechSwarm() {
     setEffects(p.effects ?? true);
     setLoadout(p.loadout ?? null);
     setUiScale(p.uiScale ?? UI_SCALE_DEFAULT);
+    setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
+    setEdgePan(p.edgePan ?? true);
   }, []);
 
   /**
@@ -1167,6 +1193,11 @@ export default function MechSwarm() {
         // the pace carries across runs and across sessions — a player who
         // plays at 4x wants 4x again after a loss, not 1x and a click
         g.setSpeed(startingSpeed(save, admin ? SPEEDS : techOf(save).speeds));
+        // the controls, off the save for the same reason as the effects
+        g.setPanSpeed(save.panSpeed ?? PAN_SPEED_DEFAULT);
+        g.setEdgePan(save.edgePan ?? true);
+        // the minimap's canvas is already mounted under the loading screen
+        g.attachMinimap(mmRef.current);
         // NO SAVED BOARD STANDS BACK UP. A board is bought in scrap now,
         // from the opening stipend outward, so every run starts on bare
         // rock — restoring last run's turrets would be handing them over
@@ -1541,6 +1572,7 @@ export default function MechSwarm() {
           [
             ["general", "General"],
             ["interface", "Interface"],
+            ["controls", "Controls"],
           ] as const
         ).map(([tab, label]) => (
           <button
@@ -1587,6 +1619,63 @@ export default function MechSwarm() {
             ))}
           </div>
         </div>
+      )}
+
+      {settingsTab === "controls" && (
+        <>
+          {/* one knob for both ways of panning without the mouse button
+              — the keys and the screen's edges share PAN_RATE in game.ts,
+              so what feels right for one feels right for the other */}
+          <div className="ms-pane flex w-full max-w-[30rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+            <div className="min-w-0">
+              <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+                Pan speed
+              </div>
+              <div className="text-[14px] text-[#71717C]">Keys and screen edges</div>
+            </div>
+            <div role="group" aria-label="Pan speed" className="ms-seg">
+              {PAN_SPEEDS.map((mult) => (
+                <button
+                  key={mult}
+                  aria-pressed={panSpeed === mult}
+                  aria-label={`Pan speed ${Math.round(mult * 100)}%${
+                    mult === PAN_SPEED_DEFAULT ? " (default)" : ""
+                  }`}
+                  onClick={() => {
+                    setPanSpeed(mult);
+                    savePanSpeed(mult); // remembered across sessions
+                    gameRef.current?.setPanSpeed(mult); // live, mid-run
+                  }}
+                  className="ms-btn px-2.5 py-1.5 text-[15px]"
+                >
+                  {Math.round(mult * 100)}%
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="ms-pane flex w-full max-w-[30rem] items-center justify-between gap-4 px-4 py-3">
+            <div className="min-w-0">
+              <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+                Edge panning
+              </div>
+              <div className="text-[14px] text-[#71717C]">
+                The cursor at the screen&apos;s edge pans the view
+              </div>
+            </div>
+            <button
+              aria-pressed={edgePan}
+              onClick={() => {
+                const next = !edgePan;
+                setEdgePan(next);
+                saveEdgePan(next);
+                gameRef.current?.setEdgePan(next);
+              }}
+              className="ms-btn w-16 shrink-0 px-3 py-1.5 text-[15px]"
+            >
+              {edgePan ? "On" : "Off"}
+            </button>
+          </div>
+        </>
       )}
 
       {settingsTab === "general" && (
@@ -2160,6 +2249,20 @@ export default function MechSwarm() {
             whole roster), and a second row would eat the field. The
             scroller itself is click-through so the map keeps the space to
             either side of the buttons. */}
+        {/* THE MINIMAP, StarCraft-style, in the bottom-left corner: the
+            whole map, never zoomed, the fog and the field on it and the
+            viewport framed (Game.drawMinimap). A press puts that place in
+            view and a drag keeps steering. It stands until the run ends —
+            the end screens own the frame, and a map under them is noise */}
+        {hud && !hud.lost && !hud.won && (
+          <div className="ui-zoom ms-pane absolute bottom-[1rem] left-[1rem] z-10 p-1">
+            <canvas
+              ref={attachMinimap}
+              aria-label="minimap"
+              className="block h-auto w-[13rem] cursor-pointer [image-rendering:pixelated]"
+            />
+          </div>
+        )}
         {/* THE RUN'S DEAL, StarCraft-style, in the bottom-right corner: a
             column of squares growing upward. The BOTTOM square is always
             the family composition — the three families the die dealt this

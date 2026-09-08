@@ -66,6 +66,18 @@ export interface Progress {
   /** the in-game HUD's size, as the --ui-scale multiplier — one of UI_SCALES */
   uiScale?: number;
   /**
+   * HOW FAST THE CAMERA PANS — one of PAN_SPEEDS, a multiplier on the
+   * rate the keys and the screen's edges move the view at (Game.setPanSpeed).
+   * Absent means PAN_SPEED_DEFAULT.
+   */
+  panSpeed?: number;
+  /**
+   * Does the cursor at the screen's edge pan the view? Absent means ON;
+   * only an explicit `false` is off — a windowed player whose cursor keeps
+   * leaving for another screen is the one who turns it off.
+   */
+  edgePan?: boolean;
+  /**
    * The build bar's loadout: which turrets ride in it. A SET in effect —
    * the bar always renders in the roster's canonical order
    * (BY_MINDUSTRY_VALUE in tech.ts), whatever order this holds. Absent on
@@ -144,6 +156,14 @@ function readSpeed(p: { speed?: unknown }): number | undefined {
  */
 export const UI_SCALES = [0.75, 0.85, 1, 1.15, 1.3, 1.5, 1.75, 2] as const;
 export const UI_SCALE_DEFAULT = 1;
+/** the pan-speed steps the Controls tab offers, as multipliers on the base rate */
+export const PAN_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
+export const PAN_SPEED_DEFAULT = 1;
+
+function readPanSpeed(p: { panSpeed?: unknown }): number | undefined {
+  const s = p.panSpeed;
+  return typeof s === "number" && (PAN_SPEEDS as readonly number[]).includes(s) ? s : undefined;
+}
 
 function readUiScale(p: { uiScale?: unknown }): number | undefined {
   const s = p.uiScale;
@@ -169,6 +189,9 @@ export function loadProgress(): Progress {
       // absent means ON — only an explicit false switches them off
       effects: p.effects !== false,
       uiScale: readUiScale(p),
+      panSpeed: readPanSpeed(p),
+      // absent means ON — only an explicit false switches it off
+      edgePan: p.edgePan !== false,
       loadout: readLoadout(p),
       ...(p.devGrantOff === true ? { devGrantOff: true } : null),
     };
@@ -245,6 +268,18 @@ export function saveUiScale(scale: number): void {
   const p = loadProgress();
   if ((p.uiScale ?? UI_SCALE_DEFAULT) === scale) return;
   saveProgress({ ...p, uiScale: scale });
+}
+
+export function savePanSpeed(mult: number): void {
+  const p = loadProgress();
+  if ((p.panSpeed ?? PAN_SPEED_DEFAULT) === mult) return;
+  saveProgress({ ...p, panSpeed: mult });
+}
+
+export function saveEdgePan(on: boolean): void {
+  const p = loadProgress();
+  if ((p.edgePan ?? true) === on) return;
+  saveProgress({ ...p, edgePan: on });
 }
 
 /**

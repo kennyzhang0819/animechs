@@ -160,6 +160,7 @@ const mixFor = (t, wet = false) =>
 function heatRoutes(seconds) {
   const probe = new Sim(spec);
   probe.setTech(null);
+  probe.setFog(false);
   const hits = [new Float32Array(COLS * ROWS), new Float32Array(COLS * ROWS)]; // ground, water
   let next = 0;
   while (probe.time < seconds) {
@@ -233,6 +234,12 @@ function play() {
   const tech = TR.techStateFor(LEVEL);
   const owned = tech.unlocked;
   sim.setTech(tech);
+  // the bot is not a player: it lays its line along the whole route at
+  // once, which the fog's build rule (Sim.canPlace) would refuse, and a
+  // price probe that could only build near the core would be probing
+  // something else. The turrets' sight rule goes with it — the numbers
+  // here are the roster's stock reach
+  sim.setFog(false);
 
   // THE ROUTES, one per movement layer, and WHAT EACH IS WORTH: the share
   // of the script's health that walks, flies or sails. A naval map's

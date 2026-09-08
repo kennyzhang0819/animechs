@@ -119,6 +119,7 @@ import {
   SHIELD_TOWER_COL,
   SHIELD_TOWER_SIZE,
 } from "./mutation";
+import { FOG_NEVER, FOG_SEEN, FOG_SEEN_ALPHA, FOG_VISIBLE, type Fog } from "./fog";
 import { MAX_LEGS, WAKE_PTS, type Sim } from "./sim";
 import {
   BEAM_STYLES,
@@ -947,6 +948,21 @@ export class Renderer {
   private readonly shadowTex: WebGLTexture;
   /** the darkness buffer: one texel a cell, linear, see DARK_RADIUS */
   private readonly darkTex: WebGLTexture;
+  /**
+   * THE FOG OF WAR (fog.ts), drawn the way the darkness is: one texel a
+   * cell on a linear-filtered texture, black at the cell's alpha — solid
+   * where nothing has ever looked, FOG_SEEN_ALPHA where something once
+   * did, clear where something is looking now — over the WHOLE frame,
+   * flyers included: a flyer in the fog is as unseen as a walker. The
+   * texture is re-uploaded only when Fog.version moves. While a fog is
+   * set and on, the hill darkness stands down: rock a ray never enters is
+   * never revealed, so the fog is the inside of every hill already.
+   */
+  private readonly fog: Batch;
+  private readonly fogTex: WebGLTexture;
+  private fogSrc: Fog | null = null;
+  private fogVersion = -1;
+  private readonly fogMask = new Uint8Array(COLS * ROWS * 4);
   private readonly dyn: Batch;
   /**
    * the force-field fills for this frame. They never reach the screen
@@ -1035,6 +1051,7 @@ export class Renderer {
     this.walls = this.makeBatch(NCELLS * 2 + 2048);
     this.shadow = this.makeBatch(4);
     this.dark = this.makeBatch(4);
+    this.fog = this.makeBatch(4);
     // a swarm budget, not a worst case: 12 quads is a walking mech with one
     // mirrored gun drawn twice (silhouette rim under, art over), which is
     // what MAX_UNITS of anything is ever actually made of. The heavies cost
@@ -1098,6 +1115,25 @@ export class Renderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    // the fog's texture: the darkness buffer's twin, same filter, same
+    // edge rule, its own texels (see drawFog)
+    const ftex = gl.createTexture();
+    if (!ftex) throw new Error("fog texture alloc failed");
+    this.fogTex = ftex;
+    gl.bindTexture(gl.TEXTURE_2D, ftex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    // the map-covering quad it is drawn with never changes: pushed once
+    const fq = this.fog;
+    fq.n = 0;
+    this.push(fq, W / 2, H / 2, W, H, 0, [0, 0, 1, 1], 0, 0, 0, 1);
+    gl.bindVertexArray(fq.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, fq.vbo);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, fq.data, 0, fq.n * FLOATS);
+    gl.bindVertexArray(null);
 
     const tex = gl.createTexture();
     if (!tex) throw new Error("texture alloc failed");
@@ -1909,6 +1945,7 @@ export class Renderer {
       const cm = grow === 1 ? KIND_CULL[k] : KIND_CULL[k] * grow;
       if (upx[i] < vx0 - cm || upx[i] > vx1 + cm || upy[i] < vy0 - cm || upy[i] > vy1 + cm)
         continue;
+      if (!this.vis(upx[i], upy[i])) continue; // in the fog: not there
       const usz = KIND_SPRITE[k];
       if (grow !== 1) this.beginScale(upx[i], upy[i], grow);
       if (pass === 1) {
@@ -1980,9 +2017,65 @@ export class Renderer {
   private drawDarkness(): void {
     const gl = this.gl;
     if (this.dark.n === 0) return;
+    // the fog is the inside of every hill while it is on (see `fog`)
+    if (this.fogSrc && this.fogSrc.enabled) return;
     gl.useProgram(this.prog);
     gl.bindTexture(gl.TEXTURE_2D, this.darkTex);
     this.draw(this.dark, false);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+  }
+
+  /**
+   * The fog this renderer draws and culls by — the sim's own (Sim.fog),
+   * or null for a frame with none: the title screen's field, the editor.
+   */
+  setFog(fog: Fog | null): void {
+    this.fogSrc = fog;
+    this.fogVersion = -1;
+  }
+
+  /**
+   * Is a world point in sight? What is not is not drawn — not the body,
+   * not its shadow, not its shot, not the puff where it was hit. The fog
+   * wash alone would leave a body half-visible in the grey, and a body in
+   * the grey is a body the player was promised they cannot see.
+   */
+  private vis(x: number, y: number): boolean {
+    const f = this.fogSrc;
+    return !f || !f.enabled || f.visibleAt(x, y);
+  }
+
+  /** ...and has it ever been in sight? A structure once seen stays drawn */
+  private seen(x: number, y: number): boolean {
+    const f = this.fogSrc;
+    return !f || !f.enabled || f.seenAt(x, y);
+  }
+
+  /**
+   * The fog wash over the finished frame, everything included. The
+   * texture is rebuilt from Fog.state only when its version moves, which
+   * is when a structure went up, finished or came down — never per frame.
+   */
+  private drawFog(): void {
+    const f = this.fogSrc;
+    if (!f || !f.enabled) return;
+    const gl = this.gl;
+    if (f.version !== this.fogVersion) {
+      this.fogVersion = f.version;
+      const st = f.state, m = this.fogMask;
+      const seen = Math.round(FOG_SEEN_ALPHA * 255);
+      for (let i = 0; i < COLS * ROWS; i++) {
+        const v = st[i];
+        const a = v === FOG_VISIBLE ? 0 : v === FOG_SEEN ? seen : v === FOG_NEVER ? 255 : 0;
+        const o = i * 4;
+        m[o] = m[o + 1] = m[o + 2] = m[o + 3] = a;
+      }
+      gl.bindTexture(gl.TEXTURE_2D, this.fogTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, m);
+    }
+    gl.useProgram(this.prog);
+    gl.bindTexture(gl.TEXTURE_2D, this.fogTex);
+    this.draw(this.fog, false);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
   }
 
@@ -2079,6 +2172,9 @@ export class Renderer {
       if (s.hp <= 0) continue;
       const spx = SHIELD_TOWER_SIZE * CELL;
       if (s.x < vx0 - spx || s.x > vx1 + spx || s.y < vy0 - spx || s.y > vy1 + spx) continue;
+      // a building: once seen it stays on the map under the grey, the way
+      // a remembered structure does in StarCraft — never seen, not drawn
+      if (!this.seen(s.x, s.y)) continue;
       const t3 = (s.hp * 3) / s.hpMax;
       const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
       this.push(dyn, s.x, s.y, spx, spx, 0, UV_SHIELD_TOWER, tint[0], tint[1], tint[2], 1);
@@ -2103,6 +2199,7 @@ export class Renderer {
         const cm = KIND_CULL[ukind[i]];
         if (upx[i] < vx0 - cm || upx[i] > vx1 + cm || upy[i] < vy0 - cm || upy[i] > vy1 + cm)
           continue;
+        if (!this.vis(upx[i], upy[i])) continue;
         this.pushWake(dyn, sim, i, w);
       }
     // painter's order in three passes: ground units, then flyer shadows on
@@ -2126,6 +2223,7 @@ export class Renderer {
         const reach = Math.max(held?.range ?? 0, field?.range ?? 0) + 40;
         if (upx[i] < vx0 - reach || upx[i] > vx1 + reach || upy[i] < vy0 - reach || upy[i] > vy1 + reach)
           continue;
+        if (!this.vis(upx[i], upy[i])) continue;
         if (field) this.drawEnergyField(dyn, upx[i], upy[i], urot[i], field.range, field.color, sim.time, !!utgt[i]);
         if (!held) continue;
         if (ubeamT[i] > 0 && held.beam && held.beamStyle) {
@@ -2154,6 +2252,7 @@ export class Renderer {
       const ex = fxX[f], ey = fxY[f];
       const tm = len + 8;
       if (ex < vx0 - tm || ex > vx1 + tm || ey < vy0 - tm || ey > vy1 + tm) continue;
+      if (!this.vis(ex, ey)) continue;
       let col: RGB = PAL.white;
       if (fxHasCol[f]) {
         FX_VIEW_COL[0] = fxColR[f];
@@ -2224,6 +2323,7 @@ export class Renderer {
     // over it, or a liquid orb's plain disc
     for (const sh of sim.shots) {
       if (sh.x < vx0 - 48 || sh.x > vx1 + 48 || sh.y < vy0 - 48 || sh.y > vy1 + 48) continue;
+      if (!this.vis(sh.x, sh.y)) continue; // a shot out of the fog appears where the fog ends
       const look = sh.look;
       // a bomb has no velocity: it keeps the heading it was dropped on, 0
       const rot = sh.vx === 0 && sh.vy === 0 ? 0 : Math.atan2(sh.vy, sh.vx);
@@ -2251,6 +2351,8 @@ export class Renderer {
     for (let f = 0; f < fxN; f++) {
       const kind = fxKind[f] as FxKind;
       const ex = fxX[f], ey = fxY[f];
+      // nothing plays in the fog — a burst there would say where a body is
+      if (!this.vis(ex, ey)) continue;
       // cull: an anchor further out than the effect's reach draws nothing.
       // The line-shaped kinds carry their reach as data — a beam's length
       // in its len lane, a bolt's whole path in fxPts — so they widen
@@ -2542,6 +2644,8 @@ export class Renderer {
     dyn.n = 0;
     this.pushUnitPass(dyn, sim, 2);
     this.draw(dyn, true);
+    // THE FOG, over all of it — the flyers too (see `fog`)
+    this.drawFog();
   }
 
   /**
@@ -2583,6 +2687,7 @@ export class Renderer {
       const bm = rad + 16;
       if (upx[i] < vx0 - bm || upx[i] > vx1 + bm || upy[i] < vy0 - bm || upy[i] > vy1 + bm)
         continue;
+      if (!this.vis(upx[i], upy[i])) continue;
       // Draw.color(shieldColor, Color.white, clamp(alpha)): a shot landing
       // on the field whitens the whole bubble for a few ticks. The colour
       // rides into the buffer with the fill, so the shader's rim and hatch
@@ -2614,6 +2719,7 @@ export class Renderer {
       if (rad < 1) continue;
       const bm = rad + 16;
       if (s.x < vx0 - bm || s.x > vx1 + bm || s.y < vy0 - bm || s.y > vy1 + bm) continue;
+      if (!this.vis(s.x, s.y)) continue;
       const w = Math.min(1, s.shieldAlpha);
       const col: RGB = [
         SHIELD_TOWER_COL[0] + (1 - SHIELD_TOWER_COL[0]) * w,

@@ -875,26 +875,55 @@ const WALL_TONES = [
 ];
 const PINE_TONE = "#2e6e35";
 
+/**
+ * The thumbnail's painter, over any set of cell layers on the COLS-wide
+ * grid — a map document's, or the live terrain's (the minimap draws the
+ * ground it sits on with this, then the fog and the field over it).
+ * Writes `rows` rows at 1px per cell into a canvas resized to fit.
+ */
+export function paintThumb(
+  cells: { floor: ArrayLike<number>; blocked: ArrayLike<number>; wall: ArrayLike<number> },
+  rows: number,
+  canvas: HTMLCanvasElement,
+): void {
+  canvas.width = COLS;
+  canvas.height = rows;
+  const c = canvas.getContext("2d");
+  if (!c) return;
+  const img = c.createImageData(COLS, rows);
+  const d = img.data;
+  const rgb = (css: string): [number, number, number] => [
+    parseInt(css.slice(1, 3), 16),
+    parseInt(css.slice(3, 5), 16),
+    parseInt(css.slice(5, 7), 16),
+  ];
+  const floorRgb = FLOOR_TONES.map(rgb);
+  const wallRgb = WALL_TONES.map(rgb);
+  const pineRgb = rgb(PINE_TONE);
+  for (let y = 0; y < rows; y++)
+    for (let x = 0; x < COLS; x++) {
+      const i = y * COLS + x;
+      const col =
+        cells.blocked[i] && cells.wall[i] !== WALL_DEEP
+          ? cells.wall[i] === WALL_PINE
+            ? pineRgb
+            : wallRgb[cells.wall[i]] ?? wallRgb[0]
+          : floorRgb[cells.floor[i]] ?? floorRgb[0];
+      const o = i * 4;
+      d[o] = col[0];
+      d[o + 1] = col[1];
+      d[o + 2] = col[2];
+      d[o + 3] = 255;
+    }
+  c.putImageData(img, 0, 0);
+}
+
 /** paint a MapData into a canvas at 1px per cell (scale it up with CSS) */
 export function drawThumb(map: MapData, canvas: HTMLCanvasElement): void {
   // a document saved on a shorter grid draws at ITS height, so the card
   // preview keeps the map's real proportions instead of a padded band
   const rows = Math.max(1, Math.min(ROWS, Math.floor(map.floor.length / COLS)));
-  canvas.width = COLS;
-  canvas.height = rows;
-  const c = canvas.getContext("2d");
-  if (!c) return;
-  for (let y = 0; y < rows; y++)
-    for (let x = 0; x < COLS; x++) {
-      const i = y * COLS + x;
-      c.fillStyle =
-        map.blocked[i] && map.wall[i] !== WALL_DEEP
-          ? map.wall[i] === WALL_PINE
-            ? PINE_TONE
-            : WALL_TONES[map.wall[i]] ?? WALL_TONES[0]
-          : FLOOR_TONES[map.floor[i]] ?? FLOOR_TONES[0];
-      c.fillRect(x, y, 1, 1);
-    }
+  paintThumb(map, rows, canvas);
   // NOTHING BUT THE GROUND. Neither the base nor the spawn zones are drawn:
   // a thumbnail is a picture of the place, and at 1px per cell a marker is a
   // coloured square sitting on the terrain that reads as an artefact rather
