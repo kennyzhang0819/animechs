@@ -1,4 +1,4 @@
-import { TEAM_CRUX, UNIT_SPRITE } from "./constants";
+import { UNIT_SPRITE } from "./constants";
 import {
   floorCanvas,
   FLOOR_VARIANTS,
@@ -1058,6 +1058,69 @@ export const UV_SPIROCT_FOOT_SIL = uv(128, 1536, 64, 64);
 export const UV_SPIROCT_LEG = uv(272, 1552, 48, 34);
 export const UV_SPIROCT_LEG_BASE = uv(352, 1552, 48, 34);
 
+/**
+ * THE TEAM CELLS' THREE BLOCKS — the one part of the sheet that is not
+ * hand-laid.
+ *
+ * Every body on the roster carries a `-cell`, the window on its hull that
+ * is painted in its owner's colour (constants.ts TEAM_CRUX_RGB /
+ * TEAM_SHARDED_RGB), and the cell is DRAWN over the body rather than baked
+ * into it, because both teams walk the same sprites. That means a cell of
+ * its own on the sheet for each of the thirty-odd bodies — and a cell that
+ * is nearly all transparency, since the art is a few hundred pixels
+ * rattling around a canvas the size of the hull.
+ *
+ * Hand-laying thirty rects that are only known once the art has been
+ * cropped is how a layout stops being a layout, so the three rectangles
+ * below are declared here and packTeamCells shelf-packs the CROPPED cells
+ * into them at pack time, tallest first. The blocks are registered with
+ * uv() like any other cell, so the sheet's disjointness check holds them
+ * to the same rule as everything else; what happens INSIDE them is the
+ * packer's business and cannot land on anyone.
+ *
+ * THEY WERE PICKED OFF THE PAINTED SHEET, NOT OFF THE REGISTRY. A few
+ * things here are drawn wider than the cell they are addressed through —
+ * the second environment band's large walls are the worst of them — so a
+ * rectangle that no declared cell touches can still be full of art. These
+ * three are the largest that are empty by BOTH tests, and the fit is
+ * close: the packer throws rather than overlap anything if the art grows.
+ */
+const TEAM_CELL_BLOCKS: readonly { x: number; y: number; w: number; h: number }[] = [
+  // the six giants — the T4 and T5 flyers and the big hulls — two rows deep
+  { x: 1408, y: 1376, w: 640, h: 416 },
+  // the tall middle: omura, toxopid, corvus and reign
+  { x: 1536, y: 1864, w: 512, h: 184 },
+  // and one long shelf for everything shorter than a T4, which is the
+  // other twenty-one bodies in a single row
+  { x: 744, y: 2688, w: 1304, h: 128 },
+];
+TEAM_CELL_BLOCKS.forEach((b) => uv(b.x, b.y, b.w, b.h));
+/** transparent margin round every packed cell — the sheet's mip-3 texel is
+ *  4px, so this keeps a shrunken read well inside its own cell */
+const TEAM_CELL_PAD = 8;
+
+/**
+ * WHERE A BODY'S TEAM CELL RIDES ON ITS BODY QUAD, filled in at pack time
+ * (packTeamCells) and read by the renderer.
+ *
+ * Everything is a FRACTION of the body's own quad rather than a pixel
+ * count, because the quad is the same rect the body's atlas cell is drawn
+ * onto: the renderer multiplies by whatever size it is drawing the body at
+ * and gets the cell exactly where the sheet says it sits, at every scale
+ * and on the hull's own heading. `dx`/`dy` are the offset from the body's
+ * centre in the SPRITE's frame (x along its facing), so they rotate with it.
+ */
+export interface CellArt {
+  uv: UVRect;
+  w: number;
+  h: number;
+  dx: number;
+  dy: number;
+}
+
+/** every body's team cell, by kind — empty until the sheet is packed */
+export const UNIT_CELL: Partial<Record<UnitKind, CellArt>> = {};
+
 // per-kind unit art: atlas cell + world quad size. Both ride at true
 // Mindustry scale — dagger 48px art = 1.5 tiles, mace 64px art = 2 tiles
 export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
@@ -1858,20 +1921,24 @@ function outlined(src: HTMLImageElement | HTMLCanvasElement, color: string, radi
 }
 
 /**
- * UnitType.drawCell, baked at pack time: the unit's `-cell` region laid over
- * its body, tinted the OWNING TEAM's colour — `Draw.color(cellColor(unit));
- * Draw.rect(cellRegion, unit.x, unit.y, ...)`. Both regions are centred on
- * the unit, so the cell sits centred on the body whatever their sizes (a
- * risso's cell is packed on a 96px square around a 70x78 hull). The tint
- * is the base's team-overlay recipe — multiply, then destination-in to
- * keep the cell's own alpha — which is what Draw.color does to a sprite.
+ * UnitType.drawCell's art, ALONE on a canvas the size of the body it rides:
+ * the unit's `-cell` region, untinted, centred on the hull exactly as
+ * Mindustry centres it — `Draw.rect(cellRegion, unit.x, unit.y)`, both
+ * regions on the same point, whatever their sizes (a risso's cell is
+ * packed on a 96px square around a 70x78 hull, and a dagger's is 56px of
+ * power-cell over a 48px body, clipped by it).
  *
- * The swarm is the crux team, so every cell is crux red. Mindustry darkens
- * the cell toward black as the unit's health falls (cellColor lerps from
- * black by healthf); here the whole body greys on the same signal
- * (HP_TINT), so a baked full-health cell darkens with it.
+ * IT USED TO BE BAKED INTO THE HULL in the swarm's red, which was the
+ * whole team read and cost nothing — right up until the player got bodies
+ * of their own out of the factories. The two sides draw from ONE set of
+ * sprites, so a baked cell made every dagger on the field the swarm's.
+ * The cell is therefore packed on its own (see the team-cell blocks) and
+ * drawn over the hull in the owning team's colour, which is what
+ * UnitType.drawCell does in the first place. The source art is white, so
+ * the renderer's multiply IS Draw.color; the same tint carries the health
+ * greying (HP_TINT) the baked cell used to get from the body under it.
  */
-function withCell(body: HTMLImageElement, cell: HTMLImageElement): HTMLCanvasElement {
+function cellArt(body: HTMLImageElement, cell: HTMLImageElement): HTMLCanvasElement {
   const w = body.naturalWidth, h = body.naturalHeight;
   const cv = document.createElement("canvas");
   cv.width = w;
@@ -1879,22 +1946,27 @@ function withCell(body: HTMLImageElement, cell: HTMLImageElement): HTMLCanvasEle
   const cc = cv.getContext("2d");
   if (!cc) throw new Error("2d context unavailable for team cell");
   cc.imageSmoothingEnabled = false;
-  cc.drawImage(body, 0, 0);
-  const cw = cell.naturalWidth, ch = cell.naturalHeight;
-  const tinted = document.createElement("canvas");
-  tinted.width = cw;
-  tinted.height = ch;
-  const tc = tinted.getContext("2d");
-  if (!tc) throw new Error("2d context unavailable for team cell tint");
-  tc.imageSmoothingEnabled = false;
-  tc.drawImage(cell, 0, 0);
-  tc.globalCompositeOperation = "multiply";
-  tc.fillStyle = TEAM_CRUX;
-  tc.fillRect(0, 0, cw, ch);
-  tc.globalCompositeOperation = "destination-in";
-  tc.drawImage(cell, 0, 0);
-  cc.drawImage(tinted, Math.round((w - cw) / 2), Math.round((h - ch) / 2));
+  cc.drawImage(cell, Math.round((w - cell.naturalWidth) / 2), Math.round((h - cell.naturalHeight) / 2));
   return cv;
+}
+
+/** the smallest rect holding every pixel of `src` that is not transparent,
+ *  or null for a canvas with none */
+function opaqueBounds(src: HTMLCanvasElement): { x: number; y: number; w: number; h: number } | null {
+  const cc = src.getContext("2d", { willReadFrequently: true });
+  if (!cc) throw new Error("2d context unavailable for cell bounds");
+  const d = cc.getImageData(0, 0, src.width, src.height).data;
+  let x0 = src.width, y0 = src.height, x1 = -1, y1 = -1;
+  for (let y = 0; y < src.height; y++) {
+    for (let x = 0; x < src.width; x++) {
+      if (d[(y * src.width + x) * 4 + 3] === 0) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  return x1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
 }
 
 /**
@@ -2093,6 +2165,112 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   if (!c) throw new Error("2d context unavailable for atlas build");
   c.imageSmoothingEnabled = false; // integer upscales keep the pixel art crisp
 
+  /**
+   * A BODY'S TEAM CELL, taken off the same pair of sprites the hull is
+   * drawn from and queued for the blocks above (TEAM_CELL_BLOCKS).
+   *
+   * `bodyUV` is the cell the hull itself is packed into and `w`/`h` the
+   * size it is drawn at inside it — the same two numbers handed to
+   * drawFacingRight one line above every call — because the cell has to
+   * come out on the hull's own scale and be reported as a fraction of the
+   * hull's quad. Nothing is drawn here: the art is cropped to what it
+   * actually covers and the placement left to packTeamCells, which packs
+   * the tallest first and would waste half a block taking them in the
+   * order the sheet happens to draw its units in.
+   */
+  const cellJobs: {
+    kind: UnitKind;
+    art: HTMLCanvasElement;
+    crop: { x: number; y: number; w: number; h: number };
+    srcW: number;
+    srcH: number;
+    sx: number;
+    sy: number;
+    cellW: number;
+    cellH: number;
+  }[] = [];
+  const teamCell = (
+    kind: UnitKind,
+    body: HTMLImageElement,
+    cell: HTMLImageElement,
+    bodyUV: UVRect,
+    w: number,
+    h = w,
+  ): void => {
+    const art = antialiased(cellArt(body, cell));
+    const crop = opaqueBounds(art);
+    if (!crop) throw new Error(`the ${kind} team cell has no pixels in it`);
+    cellJobs.push({
+      kind,
+      art,
+      crop,
+      srcW: body.naturalWidth,
+      srcH: body.naturalHeight,
+      sx: w / body.naturalWidth,
+      sy: h / body.naturalHeight,
+      cellW: Math.round((bodyUV[2] - bodyUV[0]) * ATLAS_W),
+      cellH: Math.round((bodyUV[3] - bodyUV[1]) * ATLAS_H),
+    });
+  };
+
+  /**
+   * The queued cells into the two blocks, and UNIT_CELL filled in.
+   *
+   * Every cell is drawn through drawFacingRight's own turn, like the hull
+   * it belongs to, so the two sit in the sheet on the same axes and the
+   * renderer can put one over the other with the body's rotation and
+   * nothing else. A crop's offset from the hull's centre goes round the
+   * same quarter turn (the sprite's +x is the sheet's +x, its +y the
+   * sheet's +y), which is what `dx`/`dy` are.
+   *
+   * A shelf packer, tallest first: rows across a block, a new row when the
+   * next cell will not fit, the next block when the rows run out. Thirty
+   * cells is not worth a better one, and running out of room is a build
+   * error rather than a silently overlapped sheet.
+   */
+  const packTeamCells = (): void => {
+    let bi = 0;
+    let bx = TEAM_CELL_BLOCKS[0].x, by = TEAM_CELL_BLOCKS[0].y, rowH = 0;
+    for (const j of [...cellJobs].sort((a, b) => b.crop.w * b.sx - a.crop.w * a.sx)) {
+      // the crop at the scale the hull is drawn at, in the sprite's frame
+      const lw = j.crop.w * j.sx, lh = j.crop.h * j.sy;
+      // ...and on the sheet, where the quarter turn swaps the two axes
+      const pw = Math.ceil(lh) + TEAM_CELL_PAD * 2, ph = Math.ceil(lw) + TEAM_CELL_PAD * 2;
+      let block = TEAM_CELL_BLOCKS[bi];
+      if (bx + pw > block.x + block.w) {
+        bx = block.x;
+        by += rowH;
+        rowH = 0;
+      }
+      if (by + ph > block.y + block.h) {
+        if (++bi >= TEAM_CELL_BLOCKS.length)
+          throw new Error("the team cells outgrew their blocks (game/atlas.ts)");
+        block = TEAM_CELL_BLOCKS[bi];
+        bx = block.x;
+        by = block.y;
+        rowH = 0;
+      }
+      c.save();
+      c.translate(bx + pw / 2, by + ph / 2);
+      c.rotate(Math.PI / 2);
+      c.drawImage(j.art, j.crop.x, j.crop.y, j.crop.w, j.crop.h, -lw / 2, -lh / 2, lw, lh);
+      c.restore();
+      // the crop's centre off the hull's, in the sprite's frame and then
+      // on the sheet's axes — the same turn the art just went through
+      const ox = (j.crop.x + j.crop.w / 2 - j.srcW / 2) * j.sx;
+      const oy = (j.crop.y + j.crop.h / 2 - j.srcH / 2) * j.sy;
+      UNIT_CELL[j.kind] = {
+        uv: [bx / ATLAS_W, by / ATLAS_H, (bx + pw) / ATLAS_W, (by + ph) / ATLAS_H],
+        w: pw / j.cellW,
+        h: ph / j.cellH,
+        dx: -oy / j.cellW,
+        dy: ox / j.cellH,
+      };
+      bx += pw;
+      rowH = Math.max(rowH, ph);
+    }
+  };
+
   // THE LAND FLOORS: painted, not loaded (game/tiles.ts). Each floor has
   // two paintings — one with a single mark on it, one plain — and three
   // slots, because every table downstream is three wide. The plain one
@@ -2270,11 +2448,13 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // is pre-offset to one side — the renderer mirrors it for the other leg
   drawFacingRight(c, antialiased(img.daggerLeg), 64, 608, 48);
   drawFacingRight(c, antialiased(img.daggerBase), 192, 608, 48);
-  drawFacingRight(c, antialiased(withCell(img.dagger, img.powerCell)), 320, 608, 48);
+  drawFacingRight(c, antialiased(img.dagger), 320, 608, 48);
+  teamCell("dagger", img.dagger, img.powerCell, UV_DAGGER_BODY, 48);
   drawFacingRight(c, antialiased(img.largeWeapon), 448, 608, 48);
   drawFacingRight(c, antialiased(img.maceLeg), 576, 608, 64);
   drawFacingRight(c, antialiased(img.maceBase), 704, 608, 64);
-  drawFacingRight(c, antialiased(withCell(img.mace, img.maceCell)), 832, 608, 64);
+  drawFacingRight(c, antialiased(img.mace), 832, 608, 64);
+  teamCell("mace", img.mace, img.maceCell, UV_MACE_BODY, 64);
   // flamethrower is 48x56 — rotate it to face +x by hand
   c.save();
   c.translate(960, 608);
@@ -2285,14 +2465,16 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // fortress parts at native size in their 128px cells (see the UV note)
   drawFacingRight(c, antialiased(img.fortressLeg), 576, 448, 80, 60);
   drawFacingRight(c, antialiased(img.fortressBase), 704, 448, 64);
-  drawFacingRight(c, antialiased(withCell(img.fortress, img.fortressCell)), 832, 448, 100, 80);
+  drawFacingRight(c, antialiased(img.fortress), 832, 448, 100, 80);
+  teamCell("fortress", img.fortress, img.fortressCell, UV_FORTRESS_BODY, 100, 80);
   drawFacingRight(c, antialiased(img.artillery), 960, 448, 48, 56);
 
   // support line: each part at native size in its own cell, art left of the
   // silhouettes on the same row (see the UV note)
   drawFacingRight(c, antialiased(img.novaLeg), 64, 544, 48);
   drawFacingRight(c, antialiased(img.novaBase), 192, 544, 48);
-  drawFacingRight(c, antialiased(withCell(img.nova, img.novaCell)), 320, 544, 56);
+  drawFacingRight(c, antialiased(img.nova), 320, 544, 56);
+  teamCell("nova", img.nova, img.novaCell, UV_NOVA_BODY, 56);
   drawFacingRight(c, antialiased(img.healWeapon), 448, 544, 48);
   drawFacingRight(c, silhouetted(img.novaLeg), 576, 544, 48);
   drawFacingRight(c, silhouetted(img.novaBase), 704, 544, 48);
@@ -2300,7 +2482,8 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   drawFacingRight(c, silhouetted(img.healWeapon), 960, 544, 48);
   drawFacingRight(c, antialiased(img.pulsarLeg), 64, 672, 64);
   drawFacingRight(c, antialiased(img.pulsarBase), 192, 672, 48);
-  drawFacingRight(c, antialiased(withCell(img.pulsar, img.pulsarCell)), 320, 672, 68, 58);
+  drawFacingRight(c, antialiased(img.pulsar), 320, 672, 68, 58);
+  teamCell("pulsar", img.pulsar, img.pulsarCell, UV_PULSAR_BODY, 68, 58);
   drawFacingRight(c, antialiased(img.healShotgun), 448, 672, 50);
   drawFacingRight(c, silhouetted(img.pulsarLeg), 576, 672, 64);
   drawFacingRight(c, silhouetted(img.pulsarBase), 704, 672, 48);
@@ -2311,7 +2494,8 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // every other unit draws at
   drawFacingRight(c, antialiased(img.quasarLeg), 64, 1728, 80);
   drawFacingRight(c, antialiased(img.quasarBase), 192, 1728, 80);
-  drawFacingRight(c, antialiased(withCell(img.quasar, img.quasarCell)), 320, 1728, 80);
+  drawFacingRight(c, antialiased(img.quasar), 320, 1728, 80);
+  teamCell("quasar", img.quasar, img.quasarCell, UV_QUASAR_BODY, 80);
   drawFacingRight(c, antialiased(img.beamWeapon), 448, 1728, 80);
   drawFacingRight(c, silhouetted(img.quasarLeg), 576, 1728, 80);
   drawFacingRight(c, silhouetted(img.quasarBase), 704, 1728, 80);
@@ -2321,7 +2505,8 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // scepter parts on the T4 band's 256px cells (see the UV note): each
   // source at native size, so it keeps the 0.625 world px per native px
   // every other unit draws at
-  drawFacingRight(c, antialiased(withCell(img.scepter, img.scepterCell)), 128, 2176, 170, 140);
+  drawFacingRight(c, antialiased(img.scepter), 128, 2176, 170, 140);
+  teamCell("scepter", img.scepter, img.scepterCell, UV_SCEPTER_BODY, 170, 140);
   drawFacingRight(c, silhouetted(img.scepter), 384, 2176, 170, 140);
   drawFacingRight(c, antialiased(img.scepterLeg), 640, 2176, 128);
   drawFacingRight(c, silhouetted(img.scepterLeg), 896, 2176, 128);
@@ -2335,7 +2520,8 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // vela's parts on the second T4 band, same 256px cells and same native
   // scale. Its main gun has no sprite (see the MECH_ART note) — the pair
   // of repair-beam pods is all there is to bolt on
-  drawFacingRight(c, antialiased(withCell(img.vela, img.velaCell)), 128, 3200, 170, 140);
+  drawFacingRight(c, antialiased(img.vela), 128, 3200, 170, 140);
+  teamCell("vela", img.vela, img.velaCell, UV_VELA_BODY, 170, 140);
   drawFacingRight(c, silhouetted(img.vela), 384, 3200, 170, 140);
   drawFacingRight(c, antialiased(img.velaLeg), 640, 3200, 128);
   drawFacingRight(c, silhouetted(img.velaLeg), 896, 3200, 128);
@@ -2347,7 +2533,8 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // arkyid: hull and guns on 256px cells, the sap gun being the spiroct's
   // own weapon sprite again — packed a second time here because a legged
   // unit draws every gun at its own LegArt.sprite, and arkyid's is 256
-  drawFacingRight(c, antialiased(withCell(img.arkyid, img.arkyidCell)), 128, 3712, 128);
+  drawFacingRight(c, antialiased(img.arkyid), 128, 3712, 128);
+  teamCell("arkyid", img.arkyid, img.arkyidCell, UV_ARKYID_BODY, 128);
   drawFacingRight(c, silhouetted(img.arkyid), 384, 3712, 128);
   drawFacingRight(c, antialiased(img.spiroctWeapon), 640, 3712, 48, 56);
   drawFacingRight(c, silhouetted(img.spiroctWeapon), 896, 3712, 48, 56);
@@ -2368,22 +2555,25 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // native size in a 256px cell — at 216x240 only eclipse is bigger, and
   // it leaves only an 8px margin across its own cell
   drawFacingRight(
-    c, antialiased(outlined(withCell(img.antumbra, img.antumbraCell), UNIT_OUTLINE, UNIT_OUTLINE_R)),
+    c, antialiased(outlined(img.antumbra, UNIT_OUTLINE, UNIT_OUTLINE_R)),
     640, 3968, 216, 240,
   );
+  teamCell("antumbra", img.antumbra, img.antumbraCell, UV_ANTUMBRA, 216, 240);
 
   // disrupt: the boss, same single-quad flyer treatment as antumbra, at
   // native 243x243 in the cell beside it
   drawFacingRight(
-    c, antialiased(outlined(withCell(img.disrupt, img.disruptCell), UNIT_OUTLINE, UNIT_OUTLINE_R)),
+    c, antialiased(outlined(img.disrupt, UNIT_OUTLINE, UNIT_OUTLINE_R)),
     896, 3968, 243, 243,
   );
+  teamCell("disrupt", img.disrupt, img.disruptCell, UV_DISRUPT, 243, 243);
 
   // ---- the T5 column (x=1024) ----
   // reign: a mech like the scepter, so the same four parts on 256px cells.
   // reign-weapon is Weapon(x=21.5, y=1, top=false) — a gun slung under
   // each side of a chassis wide enough to carry it
-  drawFacingRight(c, antialiased(withCell(img.reign, img.reignCell)), T5 + 128, 128, 214, 140);
+  drawFacingRight(c, antialiased(img.reign), T5 + 128, 128, 214, 140);
+  teamCell("reign", img.reign, img.reignCell, UV_REIGN_BODY, 214, 140);
   drawFacingRight(c, silhouetted(img.reign), T5 + 384, 128, 214, 140);
   drawFacingRight(c, antialiased(img.reignBase), T5 + 640, 128, 152, 124);
   drawFacingRight(c, silhouetted(img.reignBase), T5 + 896, 128, 152, 124);
@@ -2397,7 +2587,8 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // exist in the sprite set (only a -heat overlay does), and Weapon.draw
   // skips a region it cannot find, so the charged laser you see in game is
   // painted into the hull itself. Same as the vela one tier below it
-  drawFacingRight(c, antialiased(withCell(img.corvus, img.corvusCell)), T5 + 128, 640, 214, 140);
+  drawFacingRight(c, antialiased(img.corvus), T5 + 128, 640, 214, 140);
+  teamCell("corvus", img.corvus, img.corvusCell, UV_CORVUS_BODY, 214, 140);
   drawFacingRight(c, silhouetted(img.corvus), T5 + 384, 640, 214, 140);
   drawFacingRight(c, antialiased(img.corvusBase), T5 + 640, 640, 152, 124);
   drawFacingRight(c, silhouetted(img.corvusBase), T5 + 896, 640, 152, 124);
@@ -2406,7 +2597,8 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // Its other weapon is the large purple mount the arkyid already carries,
   // packed once at UV_ARKYID_MOUNT and shared — both units draw their guns
   // at the same 256px cell scale, so the cell is reusable as it stands
-  drawFacingRight(c, antialiased(withCell(img.toxopid, img.toxopidCell)), T5 + 128, 896, 160, 190);
+  drawFacingRight(c, antialiased(img.toxopid), T5 + 128, 896, 160, 190);
+  teamCell("toxopid", img.toxopid, img.toxopidCell, UV_TOXOPID_BODY, 160, 190);
   drawFacingRight(c, silhouetted(img.toxopid), T5 + 384, 896, 160, 190);
   drawFacingRight(c, antialiased(img.toxopidCannon), T5 + 640, 896, 206, 220);
   drawFacingRight(c, silhouetted(img.toxopidCannon), T5 + 896, 896, 206, 220);
@@ -2437,31 +2629,36 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // eclipse: one outlined quad like every flyer, at native size in the
   // sheet's only 384px cell
   drawFacingRight(
-    c, antialiased(outlined(withCell(img.eclipse, img.eclipseCell), UNIT_OUTLINE, UNIT_OUTLINE_R)),
+    c, antialiased(outlined(img.eclipse, UNIT_OUTLINE, UNIT_OUTLINE_R)),
     T5 + 192, 1600, 320, 321,
   );
+  teamCell("eclipse", img.eclipse, img.eclipseCell, UV_ECLIPSE, 320, 321);
 
   // the naval band: every hull outlined and antialiased like a flyer, at
   // native size in the cell its UV names (see the UV_RISSO note)
   const hull = (
-    src: HTMLImageElement, cell: HTMLImageElement, cx: number, cy: number, w: number, h: number,
-  ): void =>
-    drawFacingRight(c, antialiased(outlined(withCell(src, cell), UNIT_OUTLINE, UNIT_OUTLINE_R)), cx, cy, w, h);
-  hull(img.risso, img.rissoCell, T5 + 64, 1984, 70, 78);
-  hull(img.minke, img.minkeCell, T5 + 192, 1984, 88, 101);
-  hull(img.retusa, img.retusaCell, T5 + 320, 1984, 70, 78);
-  hull(img.oxynoe, img.oxynoeCell, T5 + 448, 1984, 88, 101);
-  hull(img.bryde, img.brydeCell, T5 + 128, 2176, 140, 140);
-  hull(img.cyerce, img.cyerceCell, T5 + 384, 2176, 140, 140);
-  hull(img.sei, img.seiCell, T5 + 640, 2176, 198, 228);
-  hull(img.aegires, img.aegiresCell, T5 + 896, 2176, 218, 241);
-  hull(img.omura, img.omuraCell, T5 + 192, 2496, 264, 351);
-  hull(img.navanax, img.navanaxCell, T5 + 576, 2496, 258, 366);
+    kind: UnitKind, src: HTMLImageElement, cell: HTMLImageElement, bodyUV: UVRect,
+    cx: number, cy: number, w: number, h: number,
+  ): void => {
+    drawFacingRight(c, antialiased(outlined(src, UNIT_OUTLINE, UNIT_OUTLINE_R)), cx, cy, w, h);
+    teamCell(kind, src, cell, bodyUV, w, h);
+  };
+  hull("risso", img.risso, img.rissoCell, UV_RISSO, T5 + 64, 1984, 70, 78);
+  hull("minke", img.minke, img.minkeCell, UV_MINKE, T5 + 192, 1984, 88, 101);
+  hull("retusa", img.retusa, img.retusaCell, UV_RETUSA, T5 + 320, 1984, 70, 78);
+  hull("oxynoe", img.oxynoe, img.oxynoeCell, UV_OXYNOE, T5 + 448, 1984, 88, 101);
+  hull("bryde", img.bryde, img.brydeCell, UV_BRYDE, T5 + 128, 2176, 140, 140);
+  hull("cyerce", img.cyerce, img.cyerceCell, UV_CYERCE, T5 + 384, 2176, 140, 140);
+  hull("sei", img.sei, img.seiCell, UV_SEI, T5 + 640, 2176, 198, 228);
+  hull("aegires", img.aegires, img.aegiresCell, UV_AEGIRES, T5 + 896, 2176, 218, 241);
+  hull("omura", img.omura, img.omuraCell, UV_OMURA, T5 + 192, 2496, 264, 351);
+  hull("navanax", img.navanax, img.navanaxCell, UV_NAVANAX, T5 + 576, 2496, 258, 366);
 
   // crawler parts: art then silhouettes, one flush 64px run (see UV note)
   drawFacingRight(c, antialiased(img.crawlerLeg), 480, 320, 48);
   drawFacingRight(c, antialiased(img.crawlerBase), 544, 320, 48);
-  drawFacingRight(c, antialiased(withCell(img.crawler, img.crawlerCell)), 608, 320, 48);
+  drawFacingRight(c, antialiased(img.crawler), 608, 320, 48);
+  teamCell("crawler", img.crawler, img.crawlerCell, UV_CRAWLER_BODY, 48);
   drawFacingRight(c, silhouetted(img.crawlerLeg), 672, 320, 48);
   drawFacingRight(c, silhouetted(img.crawlerBase), 736, 320, 48);
   drawFacingRight(c, silhouetted(img.crawler), 800, 320, 48);
@@ -2469,7 +2666,8 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // the legged crawler line (see the UV note): body, mount plate and guns
   // face +x on 128px cells, feet the same on 64px ones. A JOINT is drawn
   // with no rotation at all in Mindustry, so its cell is packed upright.
-  drawFacingRight(c, antialiased(withCell(img.atrax, img.atraxCell)), 64, 1216, 88, 64);
+  drawFacingRight(c, antialiased(img.atrax), 64, 1216, 88, 64);
+  teamCell("atrax", img.atrax, img.atraxCell, UV_ATRAX_BODY, 88, 64);
   drawFacingRight(c, antialiased(img.atraxBase), 192, 1216, 64);
   drawFacingRight(c, antialiased(img.atraxWeapon), 320, 1216, 48, 56);
   drawFacingRight(c, silhouetted(img.atrax), 448, 1216, 88, 64);
@@ -2484,7 +2682,8 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(img.atraxLeg), 272, 1296, 36, 26);
   c.drawImage(antialiased(img.atraxLegBase), 336, 1296, 36, 26);
 
-  drawFacingRight(c, antialiased(withCell(img.spiroct, img.spiroctCell)), 64, 1472, 94, 75);
+  drawFacingRight(c, antialiased(img.spiroct), 64, 1472, 94, 75);
+  teamCell("spiroct", img.spiroct, img.spiroctCell, UV_SPIROCT_BODY, 94, 75);
   drawFacingRight(c, antialiased(img.spiroctWeapon), 192, 1472, 48, 56);
   drawFacingRight(c, antialiased(img.spiroctMount), 320, 1472, 48);
   drawFacingRight(c, silhouetted(img.spiroct), 448, 1472, 94, 75);
@@ -2522,17 +2721,22 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   const fc = flare.getContext("2d");
   if (!fc) throw new Error("2d context unavailable");
   fc.imageSmoothingEnabled = false;
-  fc.drawImage(antialiased(outlined(withCell(img.flare, img.powerCell), UNIT_OUTLINE, UNIT_OUTLINE_R)), 8, 8, 48, 48);
+  fc.drawImage(antialiased(outlined(img.flare, UNIT_OUTLINE, UNIT_OUTLINE_R)), 8, 8, 48, 48);
   drawFacingRight(c, flare, 64, 736, 64);
+  // the hull is inset in its cell rather than filling it, and the cell
+  // rides the hull: 48px of art on the 64px quad, centred like the rest
+  teamCell("flare", img.flare, img.powerCell, UV_FLARE, 48);
 
   // horizon and zenith: same single-sprite treatment as flare, at native
   // size in their own 128px cells
   drawFacingRight(
-    c, antialiased(outlined(withCell(img.horizon, img.horizonCell), UNIT_OUTLINE, UNIT_OUTLINE_R)), 64, 1088, 72,
+    c, antialiased(outlined(img.horizon, UNIT_OUTLINE, UNIT_OUTLINE_R)), 64, 1088, 72,
   );
+  teamCell("horizon", img.horizon, img.horizonCell, UV_HORIZON, 72);
   drawFacingRight(
-    c, antialiased(outlined(withCell(img.zenith, img.zenithCell), UNIT_OUTLINE, UNIT_OUTLINE_R)), 192, 1088, 112,
+    c, antialiased(outlined(img.zenith, UNIT_OUTLINE, UNIT_OUTLINE_R)), 192, 1088, 112,
   );
+  teamCell("zenith", img.zenith, img.zenithCell, UV_ZENITH, 112);
 
   // the six bullet regions, white and at source size, facing +x. See the
   // UV_BULLET note: the renderer lays the -back region under the inner one on
@@ -2693,6 +2897,11 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   tc.globalCompositeOperation = "destination-in";
   tc.drawImage(baseTeam, 0, 0, 160, 160);
   c.drawImage(team, 320, 128);
+
+  // last, because it is the only thing on the sheet whose rects are
+  // decided rather than typed: every body's team cell, cropped and
+  // shelf-packed into the two blocks kept for them
+  packTeamCells();
 
   return a;
 }
