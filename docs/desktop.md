@@ -69,7 +69,8 @@ browser tab, where there is no window of ours to set.
 ## Display modes and monitors
 
 The **Video tab** of Settings (menu and pause overlay both) offers three
-modes and the list of monitors:
+modes, the list of monitors the system reports, and the cursor switch
+below:
 
 | mode | what it is |
 |---|---|
@@ -96,6 +97,43 @@ F11 (Ctrl+Cmd+F on macOS) toggles fullscreen and **comes back to the mode
 it left** — borderless stays borderless. The platform's own fullscreen —
 macOS's green button, a window manager's shortcut — is followed the same
 way, so the tab never claims something the window is not doing.
+
+Nothing here makes the window unresizable, tempting as that is for a
+borderless window with no edges to grab: on Windows a window that is not
+resizable is pinned to the size it has, and `setBounds` onto a monitor of
+another size — which is what changing monitor is — then does nothing at
+all. That was the whole of why the monitor picker did not move the game.
+
+## Confining the cursor
+
+A frameless window has no edge to stop a mouse: push the cursor at the
+left edge to pan the view with a second monitor over there and it lands on
+the other screen, and the next click is on whatever was behind the game.
+**There is no call in Electron or Chromium that pins the system cursor
+inside a window** — `ClipCursor` has no web equivalent, and `screen`
+offers `getCursorScreenPoint` and nothing that sets it. The one primitive
+that exists on every platform is **pointer lock**, and that is what
+`components/cursorLock.ts` uses:
+
+- the pointer is locked, so the system cursor is parked and hidden and
+  every mouse event becomes a movement delta
+- the deltas move an arrow of the page's own, clamped to the window
+- every real mouse event is caught in the capture phase at `window`,
+  stopped there (under lock its coordinates are frozen garbage) and
+  **re-dispatched at the arrow's place** on the element under it, so the
+  canvas and every React handler in the HUD see an ordinary mouse event
+  where the player is pointing
+
+It costs `:hover`: the real cursor is parked, so a CSS hover highlight
+does not light up while the lock is on. React's `onMouseEnter`/
+`onMouseLeave` still fire — they are built from the `mouseover`/`mouseout`
+that get re-dispatched — so hover cards and tooltips work.
+
+The lock is only ever on **during a run, in fullscreen or borderless, with
+the pause menu closed** and `Progress.cursorLock` not turned off. Escape
+(which is also the pause key), alt-tab and the Windows key all release it,
+because anything that takes the focus takes the lock with it; the next
+press inside the game takes it back.
 
 ## Where the data lives
 

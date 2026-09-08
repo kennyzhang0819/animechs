@@ -231,6 +231,88 @@
     outline-offset: -3px;
   }
 
+  /* THE SLIDER, for a setting with a handful of stops on it (UI size, pan
+     speed): slider.png's trough with a squared knob riding in it. The
+     stops are the input's own `step`, so the knob can only ever land on
+     one and the keyboard walks them one at a time. Never rounded. */
+  .ms-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 18px;
+    background: transparent;
+    cursor: pointer;
+  }
+  .ms-slider::-webkit-slider-runnable-track {
+    height: 8px;
+    border: 2px solid var(--ms-gray);
+    background: rgba(0, 0, 0, 0.75);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+  }
+  .ms-slider::-moz-range-track {
+    height: 8px;
+    border: 2px solid var(--ms-gray);
+    background: rgba(0, 0, 0, 0.75);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+  }
+  .ms-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 18px;
+    margin-top: -7px;
+    border: 2px solid var(--ms-accent);
+    background: var(--ms-accent-dim);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+  }
+  .ms-slider::-moz-range-thumb {
+    width: 12px;
+    height: 18px;
+    border: 2px solid var(--ms-accent);
+    background: var(--ms-accent-dim);
+    border-radius: 0;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+  }
+  .ms-slider:hover::-webkit-slider-thumb,
+  .ms-slider:focus-visible::-webkit-slider-thumb {
+    background: var(--ms-accent);
+  }
+  .ms-slider:hover::-moz-range-thumb,
+  .ms-slider:focus-visible::-moz-range-thumb {
+    background: var(--ms-accent);
+  }
+  .ms-slider:focus-visible {
+    outline: 2px solid var(--ms-accent);
+    outline-offset: 2px;
+  }
+
+  /* A LIST TO PICK ONE OF — the monitors, and nothing else so far. A
+     button's bevel around the platform's own select, since a list of
+     screen names is not a row of buttons. */
+  .ms-select {
+    appearance: none;
+    border: var(--ms-bevel) solid var(--ms-gray);
+    background: rgba(0, 0, 0, 0.72);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+    color: var(--ms-ink);
+    font-weight: 700;
+    /* a monitor's name is a proper noun and often a long one: this is the
+       one control in the panel that is not upper-cased and letter-spaced */
+    letter-spacing: 0.02em;
+    text-overflow: ellipsis;
+    cursor: pointer;
+  }
+  .ms-select:hover {
+    border-color: var(--ms-accent);
+  }
+  .ms-select:focus-visible {
+    outline: 2px solid var(--ms-accent);
+    outline-offset: 2px;
+  }
+  .ms-select > option {
+    background: #0b0b0d;
+    color: var(--ms-ink);
+  }
+
   /* THE BAR: bar.9.png — a squared trough with the fill flush inside it.
      Used for loading and for boss health; never rounded */
   .ms-bar {

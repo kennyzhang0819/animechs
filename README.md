@@ -257,15 +257,25 @@ is no touch input.
 
 The zoom floor is the whole map in frame with a little padding
 (`ZOOM_FIT_PAD`); the ceiling is 12. **Pan speed** — one knob for the
-keys and the screen's edges, `PAN_RATE` times the setting — and the
-edge-panning switch live on the Controls tab of Settings, saved with
-the rest of the preferences (`Progress.panSpeed`, `Progress.edgePan`).
+keys and the screen's edges, `PAN_RATE` times the setting, **defaulting to
+150%** — and the edge-panning switch live on the Controls tab of Settings,
+saved with the rest of the preferences (`Progress.panSpeed`,
+`Progress.edgePan`). Pan speed and UI size are **sliders that stop on the
+steps** the game has (`PAN_SPEEDS`, `UI_SCALES`), not rows of percentage
+buttons; every settings row is a name and its knob, and nothing else.
 
 **The Video tab** — desktop only, because a browser tab has no window to
 set — picks the display mode (windowed, borderless, fullscreen) and the
-monitor to play on. That pair is the shell's, not the save's: it lives in
-`window.json` beside the save file and is applied before the game boots
-(`desktop/src/display.ts`, [docs/desktop.md](docs/desktop.md)).
+monitor to play on, from the list the system reports. That pair is the
+shell's, not the save's: it lives in `window.json` beside the save file and
+is applied before the game boots (`desktop/src/display.ts`,
+[docs/desktop.md](docs/desktop.md)). Its third switch is the game's own:
+**Confine cursor** (`Progress.cursorLock`, on by default) keeps the mouse
+inside a frameless window while a run is on — pointer lock, a cursor drawn
+by the page and every mouse event re-issued where that cursor is
+(`components/cursorLock.ts`), because a window with no frame has no edge to
+stop a mouse and the second monitor is one push away. Escape, alt-tab or
+the Windows key hands it back.
 
 ## Progression
 

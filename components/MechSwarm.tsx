@@ -64,6 +64,7 @@ import {
   saveUiScale,
   savePanSpeed,
   saveEdgePan,
+  saveCursorLock,
   PAN_SPEED_DEFAULT,
   PAN_SPEEDS,
   UI_SCALE_DEFAULT,
@@ -89,6 +90,7 @@ import {
   type MutationId,
 } from "@/game/mutation";
 import { displayControls, type DisplayMode, type DisplayState } from "@/game/storage";
+import { useCursorLock } from "./cursorLock";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
 import { factionsAt, lockedMutators, rewardsAt, rewardText } from "@/game/track";
 import { defaultLoadout, FACTION_BLURB, FACTION_TURRETS, factionUnits } from "@/game/factions";
@@ -982,6 +984,68 @@ function slotForKey(e: KeyboardEvent): number {
 
 
 /**
+ * ONE SETTING, ONE ROW: the name on the left, the knob on the right, and
+ * NOTHING ELSE. The rows used to carry a line of explanation each ("turn
+ * off to improve framerate", "wipes all progress — no undo") and a panel
+ * of them read as a page to study rather than a panel to use. A setting
+ * whose name does not say what it is wants a better name.
+ */
+function SettingRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="ms-pane flex w-full max-w-[30rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+      <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">{label}</div>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * A SETTING ON A SLIDER WITH STOPS. The steps are the ones the game
+ * actually has (UI_SCALES, PAN_SPEEDS) and the slider can only land on
+ * them — its `step` is one index — so the knob is a row of buttons that
+ * happens to slide: dragging walks the stops, the arrow keys walk them one
+ * at a time, and the value the knob is on is printed beside it.
+ *
+ * It replaces a row of seven or eight percentage buttons, which ran off
+ * the panel's width and made picking "a bit faster" a hunt for the right
+ * little box.
+ */
+function StepSlider({
+  label,
+  steps,
+  value,
+  onPick,
+}: {
+  label: string;
+  steps: readonly number[];
+  value: number;
+  onPick: (v: number) => void;
+}) {
+  const at = Math.max(0, steps.indexOf(value));
+  const text = (v: number): string => `${Math.round(v * 100)}%`;
+  return (
+    <SettingRow label={label}>
+      <div className="flex shrink-0 items-center gap-3">
+        <input
+          type="range"
+          className="ms-slider w-40"
+          min={0}
+          max={steps.length - 1}
+          step={1}
+          value={at}
+          aria-label={label}
+          aria-valuetext={text(steps[at])}
+          onChange={(e) => onPick(steps[Number(e.target.value)])}
+        />
+        <div className="w-12 text-right text-[15px] font-bold tabular-nums text-[#EDEDEF]">
+          {text(steps[at])}
+        </div>
+      </div>
+    </SettingRow>
+  );
+}
+
+/**
  * THE SETTINGS SECTIONS. Video is the desktop shell's tab and is dropped
  * in a browser tab, where the window belongs to the browser and there is
  * nothing to set (see `video` below).
@@ -990,18 +1054,12 @@ type SettingsTab = "general" | "video" | "interface" | "controls";
 
 /**
  * THE DISPLAY MODES, in the order the Video tab prints them: least to most
- * of the screen taken. Each carries the line that says what it actually
- * does — "borderless" means nothing to a player who has not met it, and
- * the difference from fullscreen is the whole reason to offer both.
+ * of the screen taken.
  */
-const DISPLAY_MODES: ReadonlyArray<{ mode: DisplayMode; label: string; note: string }> = [
-  { mode: "windowed", label: "Windowed", note: "A window with a frame, at the size you leave it" },
-  {
-    mode: "borderless",
-    label: "Borderless",
-    note: "Fills the monitor, still a window — instant alt-tab, cursor free to leave",
-  },
-  { mode: "fullscreen", label: "Fullscreen", note: "The whole monitor, the way the desktop does it" },
+const DISPLAY_MODES: ReadonlyArray<{ mode: DisplayMode; label: string }> = [
+  { mode: "windowed", label: "Windowed" },
+  { mode: "borderless", label: "Borderless" },
+  { mode: "fullscreen", label: "Fullscreen" },
 ];
 
 export default function MechSwarm() {
@@ -1133,6 +1191,14 @@ export default function MechSwarm() {
    */
   const [panSpeed, setPanSpeed] = useState<number>(PAN_SPEED_DEFAULT);
   const [edgePan, setEdgePan] = useState(true);
+  /**
+   * KEEP THE CURSOR IN THE GAME while a run is on and the window has no
+   * frame to stop it at — a saved preference (Progress.cursorLock) like
+   * the pan speed, because a desk with a second monitor beside the one
+   * being played on is a fact about the desk. See components/cursorLock.ts
+   * for what it costs and how the cursor gets back out.
+   */
+  const [cursorLock, setCursorLock] = useState(true);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
   /**
    * THE DISPLAY, as the desktop shell has it: the mode the window is in,
@@ -1204,6 +1270,7 @@ export default function MechSwarm() {
     setUiScale(p.uiScale ?? UI_SCALE_DEFAULT);
     setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
     setEdgePan(p.edgePan ?? true);
+    setCursorLock(p.cursorLock ?? true);
   }, []);
 
   /**
@@ -1589,6 +1656,20 @@ export default function MechSwarm() {
     if (!menuOpen) setPauseSettings(false);
   }, [menuOpen]);
 
+  /**
+   * WHEN THE CURSOR IS HELD IN: a run under way, in a window with no frame
+   * to stop it at, with the preference on. The pause menu lets it out
+   * again — a paused player is as likely to be reaching for another screen
+   * as for Resume — and so does Escape, alt-tab or the Windows key, which
+   * the browser answers by dropping the lock itself.
+   */
+  useCursorLock(
+    cursorLock &&
+      screen === "game" &&
+      !menuOpen &&
+      (video?.mode === "fullscreen" || video?.mode === "borderless"),
+  );
+
   const openMenu = (): void => {
     const g = gameRef.current;
     if (!g) return;
@@ -1738,19 +1819,8 @@ export default function MechSwarm() {
           shell, and neither is its tab. */}
       {settingsTab === "video" && video && (
         <>
-          <div className="ms-pane flex w-full max-w-[30rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
-            <div className="min-w-0">
-              <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
-                Display mode
-              </div>
-              {/* the note is the SELECTED mode's, so the row teaches what
-                  each one is as the player lands on it — "borderless" says
-                  nothing on its own */}
-              <div className="text-[14px] text-[#71717C]">
-                {DISPLAY_MODES.find((m) => m.mode === video.mode)?.note}
-              </div>
-            </div>
-            <div role="group" aria-label="Display mode" className="ms-seg">
+          <SettingRow label="Display mode">
+            <div role="group" aria-label="Display mode" className="ms-seg shrink-0">
               {DISPLAY_MODES.map(({ mode, label }) => (
                 <button
                   key={mode}
@@ -1762,76 +1832,55 @@ export default function MechSwarm() {
                 </button>
               ))}
             </div>
-          </div>
+          </SettingRow>
 
-          {/* WHICH SCREEN TO PLAY ON. Numbered the way every OS numbers
-              them, with the chosen one named underneath — a desk with two
-              identical monitors has nothing else to tell them apart. One
-              monitor still gets the row: it says where the game is. */}
-          <div className="ms-pane flex w-full max-w-[30rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
-            <div className="min-w-0">
-              <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
-                Monitor
-              </div>
-              <div className="text-[14px] text-[#71717C]">
-                {(() => {
-                  const on = video.displays.find((d) => d.id === video.displayId);
-                  if (!on) return "Wherever the window is";
-                  return `${on.label} — ${on.width}×${on.height}${on.primary ? " (primary)" : ""}`;
-                })()}
-              </div>
-            </div>
-            <div role="group" aria-label="Monitor" className="ms-seg">
+          {/* WHICH SCREEN TO PLAY ON, as the list of screens the system
+              reports — named the way the system names them, because a desk
+              with two identical monitors has nothing else to tell them
+              apart, and a numbered button says nothing at all. */}
+          <SettingRow label="Monitor">
+            <select
+              aria-label="Monitor"
+              className="ms-select max-w-[19rem] shrink-0 px-3 py-1.5 text-[15px]"
+              value={video.displayId}
+              onChange={(e) => displayControls()?.setMonitor(Number(e.target.value))}
+            >
               {video.displays.map((d, i) => (
-                <button
-                  key={d.id}
-                  aria-pressed={d.id === video.displayId}
-                  aria-label={`Monitor ${i + 1}: ${d.label}, ${d.width} by ${d.height}${
-                    d.primary ? ", primary" : ""
-                  }`}
-                  onClick={() => displayControls()?.setMonitor(d.id)}
-                  className="ms-btn px-2.5 py-1.5 text-[15px]"
-                >
-                  {i + 1}
-                </button>
+                <option key={d.id} value={d.id}>
+                  {`${i + 1}. ${d.label} · ${d.width}×${d.height}${d.primary ? " · primary" : ""}`}
+                </option>
               ))}
-            </div>
-          </div>
+            </select>
+          </SettingRow>
+
+          {/* the whole of what a frameless window cannot do for itself —
+              see components/cursorLock.ts */}
+          <SettingRow label="Confine cursor">
+            <button
+              aria-pressed={cursorLock}
+              onClick={() => {
+                const next = !cursorLock;
+                setCursorLock(next);
+                saveCursorLock(next);
+              }}
+              className="ms-btn w-16 shrink-0 px-3 py-1.5 text-[15px]"
+            >
+              {cursorLock ? "On" : "Off"}
+            </button>
+          </SettingRow>
         </>
       )}
 
       {settingsTab === "interface" && (
-        <div className="ms-pane flex w-full max-w-[30rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
-          <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
-            UI size
-          </div>
-          <div
-            role="group"
-            aria-label="UI size"
-            className="ms-seg"
-          >
-            {/* printed as percentages rather than named sizes: eight
-                steps outrun any set of names, and "Default" on a button
-                that was not the default (UI_SCALE_DEFAULT is 1) was a
-                lie the old labels told */}
-            {UI_SCALES.map((scale) => (
-              <button
-                key={scale}
-                aria-pressed={uiScale === scale}
-                aria-label={`UI size ${Math.round(scale * 100)}%${
-                  scale === UI_SCALE_DEFAULT ? " (default)" : ""
-                }`}
-                onClick={() => {
-                  setUiScale(scale);
-                  saveUiScale(scale); // remembered across sessions
-                }}
-                className="ms-btn px-2.5 py-1.5 text-[15px]"
-              >
-                {Math.round(scale * 100)}%
-              </button>
-            ))}
-          </div>
-        </div>
+        <StepSlider
+          label="UI size"
+          steps={UI_SCALES}
+          value={uiScale}
+          onPick={(scale) => {
+            setUiScale(scale);
+            saveUiScale(scale); // remembered across sessions
+          }}
+        />
       )}
 
       {settingsTab === "controls" && (
@@ -1839,42 +1888,17 @@ export default function MechSwarm() {
           {/* one knob for both ways of panning without the mouse button
               — the keys and the screen's edges share PAN_RATE in game.ts,
               so what feels right for one feels right for the other */}
-          <div className="ms-pane flex w-full max-w-[30rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
-            <div className="min-w-0">
-              <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
-                Pan speed
-              </div>
-              <div className="text-[14px] text-[#71717C]">Keys and screen edges</div>
-            </div>
-            <div role="group" aria-label="Pan speed" className="ms-seg">
-              {PAN_SPEEDS.map((mult) => (
-                <button
-                  key={mult}
-                  aria-pressed={panSpeed === mult}
-                  aria-label={`Pan speed ${Math.round(mult * 100)}%${
-                    mult === PAN_SPEED_DEFAULT ? " (default)" : ""
-                  }`}
-                  onClick={() => {
-                    setPanSpeed(mult);
-                    savePanSpeed(mult); // remembered across sessions
-                    gameRef.current?.setPanSpeed(mult); // live, mid-run
-                  }}
-                  className="ms-btn px-2.5 py-1.5 text-[15px]"
-                >
-                  {Math.round(mult * 100)}%
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="ms-pane flex w-full max-w-[30rem] items-center justify-between gap-4 px-4 py-3">
-            <div className="min-w-0">
-              <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
-                Edge panning
-              </div>
-              <div className="text-[14px] text-[#71717C]">
-                The cursor at the screen&apos;s edge pans the view
-              </div>
-            </div>
+          <StepSlider
+            label="Pan speed"
+            steps={PAN_SPEEDS}
+            value={panSpeed}
+            onPick={(mult) => {
+              setPanSpeed(mult);
+              savePanSpeed(mult); // remembered across sessions
+              gameRef.current?.setPanSpeed(mult); // live, mid-run
+            }}
+          />
+          <SettingRow label="Edge panning">
             <button
               aria-pressed={edgePan}
               onClick={() => {
@@ -1887,7 +1911,7 @@ export default function MechSwarm() {
             >
               {edgePan ? "On" : "Off"}
             </button>
-          </div>
+          </SettingRow>
         </>
       )}
 
@@ -1895,13 +1919,7 @@ export default function MechSwarm() {
         <>
           {/* every turret still shows its shot with effects off (see
               Sim.setEffects) — what goes is the dressing around it */}
-          <div className="ms-pane flex w-full max-w-[30rem] items-center justify-between gap-4 px-4 py-3">
-            <div className="min-w-0">
-              <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
-                Effects
-              </div>
-              <div className="text-[14px] text-[#71717C]">Turn off to improve framerate</div>
-            </div>
+          <SettingRow label="Effects">
             <button
               aria-pressed={effects}
               onClick={() => {
@@ -1915,17 +1933,10 @@ export default function MechSwarm() {
             >
               {effects ? "On" : "Off"}
             </button>
-          </div>
-
+          </SettingRow>
 
           {!inGame && (
-            <div className="ms-pane flex w-full max-w-[30rem] items-center justify-between gap-4 px-4 py-3">
-              <div className="min-w-0">
-                <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
-                  Reset save
-                </div>
-                <div className="text-[14px] text-[#71717C]">Wipes all progress — no undo</div>
-              </div>
+            <SettingRow label="Reset save">
               <button
                 onClick={() => {
                   if (window.confirm("Wipe all progress - resources, tech, and cleared rungs?")) {
@@ -1944,7 +1955,7 @@ export default function MechSwarm() {
               >
                 Wipe
               </button>
-            </div>
+            </SettingRow>
           )}
         </>
       )}

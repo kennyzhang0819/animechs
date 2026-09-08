@@ -426,7 +426,13 @@ export class Game {
     if (e.button !== 0) return;
     e.preventDefault();
     this.mmDrag = true;
-    this.mmCanvas?.setPointerCapture(e.pointerId);
+    try {
+      this.mmCanvas?.setPointerCapture(e.pointerId);
+    } catch {
+      // the press was re-dispatched by the cursor lock
+      // (components/cursorLock.ts) and carries no capturable pointer; the
+      // drag still steers, since onMmUp listens on the window
+    }
     this.lookAtMinimap(e);
   };
   private readonly onMmMove = (e: PointerEvent): void => {

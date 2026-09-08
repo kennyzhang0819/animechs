@@ -84,6 +84,15 @@ export interface Progress {
    */
   edgePan?: boolean;
   /**
+   * KEEP THE CURSOR INSIDE THE GAME while a run is on and the window has
+   * no frame to stop it at (fullscreen and borderless — see
+   * components/cursorLock.ts). Absent means ON; only an explicit `false`
+   * is off. A second monitor beside the one being played on is what this
+   * is for: without it the cursor pushed at the edge to pan the view sails
+   * straight onto the other screen.
+   */
+  cursorLock?: boolean;
+  /**
    * The build bar's loadout: which turrets ride in it. A SET in effect —
    * the bar always renders in the roster's canonical order
    * (BY_MINDUSTRY_VALUE in tech.ts), whatever order this holds. Absent on
@@ -162,9 +171,15 @@ function readSpeed(p: { speed?: unknown }): number | undefined {
  */
 export const UI_SCALES = [0.75, 0.85, 1, 1.15, 1.3, 1.5, 1.75, 2] as const;
 export const UI_SCALE_DEFAULT = 1;
-/** the pan-speed steps the Controls tab offers, as multipliers on the base rate */
+/**
+ * The pan-speed steps the Controls tab's slider stops at, as multipliers
+ * on the base rate. THE DEFAULT IS 150%, not 100%: the old default was
+ * measured on a 256-cell map and reads sluggish on the 512-cell one, and
+ * every playtest reached for a faster camera first. 100% is still there,
+ * one stop down, for anyone who liked it.
+ */
 export const PAN_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
-export const PAN_SPEED_DEFAULT = 1;
+export const PAN_SPEED_DEFAULT = 1.5;
 
 function readPanSpeed(p: { panSpeed?: unknown }): number | undefined {
   const s = p.panSpeed;
@@ -199,6 +214,7 @@ export function loadProgress(): Progress {
       panSpeed: readPanSpeed(p),
       // absent means ON — only an explicit false switches it off
       edgePan: p.edgePan !== false,
+      cursorLock: p.cursorLock !== false,
       loadout: readLoadout(p),
       ...(p.devGrantOff === true ? { devGrantOff: true } : null),
     };
@@ -299,6 +315,12 @@ export function saveEdgePan(on: boolean): void {
   const p = loadProgress();
   if ((p.edgePan ?? true) === on) return;
   saveProgress({ ...p, edgePan: on });
+}
+
+export function saveCursorLock(on: boolean): void {
+  const p = loadProgress();
+  if ((p.cursorLock ?? true) === on) return;
+  saveProgress({ ...p, cursorLock: on });
 }
 
 /**

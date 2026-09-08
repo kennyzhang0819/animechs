@@ -39,6 +39,8 @@ import { DISPLAY_MODES, type DisplayMode, type WindowState } from "./window-stat
 
 /** how long to wait for macOS to finish animating its way out of fullscreen */
 const LEAVE_FULLSCREEN_MS = 1500;
+/** how long to let a borderless move settle before checking it landed (landOn) */
+const RELAND_MS = 120;
 
 /** one monitor, as the Video tab prints it */
 export interface DisplayInfo {
@@ -229,8 +231,6 @@ export class Shell {
     const win = this.win;
     const target = this.target();
     if (this.mode === "windowed") {
-      win.setResizable(true);
-      win.setMovable(true);
       // the placement is remembered as it is applied: a window sent to
       // another monitor is where the next launch should open, and not
       // every platform reports a programmatic move back to us
@@ -244,14 +244,37 @@ export class Shell {
       win.setBounds(this.windowed);
     } else {
       // borderless and fullscreen both start by covering one whole
-      // monitor; fullscreen then hands that window to the platform
-      win.setResizable(this.mode === "fullscreen");
-      win.setMovable(this.mode === "fullscreen");
+      // monitor; fullscreen then hands that window to the platform.
+      //
+      // NOTHING IS MADE UNRESIZABLE HERE, tempting as it is for a
+      // borderless window with no edges to grab: on Windows a window that
+      // is not resizable is pinned to the size it had, and setBounds onto
+      // a monitor of another size — which is exactly what changing monitor
+      // is — then does nothing at all.
       win.setBounds(target.bounds);
       if (this.mode === "fullscreen") win.setFullScreen(true);
+      else this.landOn(target);
     }
     this.fit();
     this.applying = false;
+  }
+
+  /**
+   * DID THE WINDOW ACTUALLY GO? A borderless move across monitors can be
+   * adjusted under us — a display of another scale factor, a window
+   * manager with its own opinion — and lands the window back where it
+   * was. One re-try on the next tick is enough for every case seen; a
+   * second would be a fight with the platform, which the platform wins.
+   */
+  private landOn(target: Display): void {
+    setTimeout(() => {
+      if (this.mode === "windowed" || this.win.isFullScreen()) return;
+      const now = this.win.getBounds();
+      const on = screen.getDisplayMatching(now);
+      const fits = now.width === target.bounds.width && now.height === target.bounds.height;
+      if (on.id !== target.id || !fits) this.win.setBounds(target.bounds);
+      this.fit();
+    }, RELAND_MS);
   }
 
   /**
