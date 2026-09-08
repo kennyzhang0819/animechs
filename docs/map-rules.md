@@ -26,7 +26,7 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 - **More than one way through**: links between rooms, holes in thin walls. Never a short cut: a hole may not shorten any walk to the core by more than 15%.
 - **One mouth to the core**, unless the map is one of the two with the core in the middle (Crater, Riverlands). Everywhere else the core's clearing sits in a ring of rock with a gate of the choke's width, the gate and the funnel choke are the same straight strip, and the funnel check walls it.
 - **The wall is the floor's wall.** Two to four floor families, the first dominant (55% to 80%); rock over a family wears that family's wall. Nothing outlines a road.
-- **Water has a shore.** Deep in the heart, shallow at the edge; a road across water is a ford. A naval map's sea is along an edge and the core is within `coreWaterReach` of it.
+- **Water has a shore.** Deep in the heart, shallow at the edge; a road across water is a ford. A naval map's sea is along an edge and the core is within `coreWaterReach` of it. Water is where the naval line is FAST, not the only place it can go: a naval tank crosses deep water and land alike, at half pace ashore.
 - **Forests, clutter, ruins.** Pines only on rock beside their floors; boulders and bushes by family, thick along the rock, never in a drop zone or round the core; ruins only where a route's width of open ground surrounds them.
 - **One landmark** per map.
 
@@ -46,7 +46,7 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 
 - The map is sealed: every rim cell is rock. The swarm's only destination is the core.
 - Spawns are per layer and independent. Boss zones are terrain-blind.
-- Every ground zone reaches the core on foot; every water zone reaches the water nearest the core, and no pond lies nearer the core than the sea.
+- Every ground zone reaches the core on foot; every water zone reaches the core over the naval mask (rock only), and no pond lies nearer the core than the sea.
 - No gate is a short cut: walks to the core within 50% of each other.
 - The funnel holds: wall it and no ground zone reaches the core.
 - Open == reachable from the core.

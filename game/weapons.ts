@@ -368,12 +368,24 @@ const SPIROCT_SAP = sapStyle({ color: PAL.sapBullet, width: 0.54, lifetime: t(35
 const SPIROCT_MOUNT_SAP = sapStyle({ color: PAL.sapBullet, width: 0.4, lifetime: t(25) });
 const ARKYID_SAP = sapStyle({ color: PAL.sapBullet, width: 0.55, lifetime: t(30) });
 
-/** ContinuousLaserBulletType.colors — meltdown's, style 0 */
+/**
+ * ContinuousLaserBulletType.colors — meltdown's, style 0, REPAINTED BLUE.
+ * The class's shape is untouched: a deep wash twice over at rising alpha,
+ * a light one at full, and a white filament down the middle. Only the two
+ * hues move — Mindustry's ec7458/ff9c5a for the blue a meltdown's own line
+ * already fires in, since arc and lancer stand below it (factions.ts) and
+ * its hull is repainted to match (scripts/reskin-turrets.mjs).
+ *
+ * 6974c4 is lancer.png's own plating shade, so the beam's base is the
+ * colour of the turret throwing it; Pal.lancerLaser is what arc's bolt and
+ * lancer's beam are already drawn in, and it takes the third wash.
+ */
+const LANCER_HULL: RGB = [0x69 / 255, 0x74 / 255, 0xc4 / 255];
 export const MELTDOWN_BEAM = beamStyle({
   colors: [
-    [[0xec / 255, 0x74 / 255, 0x58 / 255], 0x55 / 255],
-    [[0xec / 255, 0x74 / 255, 0x58 / 255], 0xaa / 255],
-    [[1, 0x9c / 255, 0x5a / 255], 1],
+    [LANCER_HULL, 0x55 / 255],
+    [LANCER_HULL, 0xaa / 255],
+    [PAL.lancerLaser, 1],
     [WHITE, 1],
   ],
   width: 9,

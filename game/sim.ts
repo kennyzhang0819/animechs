@@ -1,9 +1,11 @@
 import {
+  ALL_MOVE_BITS,
   BASE,
   CORE_HP,
   INF,
   LAYER_BIT,
   MOVE_LAYERS,
+  NAVAL_LAND_SPEED,
   NCELLS,
   type MoveLayer,
   type ZoneKind,
@@ -151,7 +153,7 @@ import {
   UNIT_BUILD_SECONDS,
   UNIT_PRICE,
 } from "./economy";
-import { airWalkMask, isBuildableWall, isWaterFloor, waterWalkMask, type Terrain } from "./terrain";
+import { airWalkMask, isBuildableWall, isWaterFloor, navalWalkMask, WALL_DEEP, type Terrain } from "./terrain";
 import {
   MAX_WEAPONS,
   unitDamageScale,
@@ -837,10 +839,11 @@ export class Sim {
   nPlayer = 0;
   /** the swarm's census — aliveByKind less the player's bodies — for the HUD */
   readonly enemyByKind = new Int32Array(UNIT_KINDS.length);
-  /** 1 = this unit travels on the WATER layer and steers by waterField.
-   *  Kept beside ufly rather than folded into it because the two answer
-   *  different questions: ufly decides what may SHOOT at a unit, and this
-   *  decides which field it walks. */
+  /** 1 = this unit is a NAVAL TANK: it steers by navalField, so the deep
+   *  water is open to it, and it drives at NAVAL_LAND_SPEED whenever it is
+   *  not on a water floor. Kept beside ufly rather than folded into it
+   *  because the two answer different questions: ufly decides what may
+   *  SHOOT at a unit, and this decides which field it walks. */
   readonly unav = new Uint8Array(MAX_UNITS);
   /**
    * THE SWARM'S GUNS (weapons.ts). Per unit: a reload clock per weapon
@@ -1132,17 +1135,22 @@ export class Sim {
   private waterlogged: Uint8Array | null = null;
 
   /**
-   * WHICH CELLS COUNT AS WATER TO A WALKER, for the Amphibious rule — 1 on
-   * any water floor, shallow or deep. Null on a run the rule is not in
-   * force for, which is also the cheap test.
+   * WHICH CELLS ARE WATER — 1 on any water floor, shallow or deep. Two
+   * rules read it, and they read the same array on purpose: the Amphibious
+   * mutator's stacks (a walker stepping into the wet) and the naval tanks'
+   * pace (NAVAL_LAND_SPEED, charged on every cell that is not in here).
    *
    * Deep water is in the mask even though no walker can ever stand on it:
    * leaving it out would be a second, subtly different definition of
    * "water" from the one the map, the renderer and Hydrophobic all use,
    * and the cells it would drop are ones the ground layer cannot reach
    * anyway (they are blocked). One meaning of water, in one place.
+   *
+   * Unlike the Hydrophobic mask beside it this is built on EVERY run, not
+   * only the ones a mutator asks for it: the naval pace is a rule of the
+   * game rather than a roll of the dice.
    */
-  private wadeable: Uint8Array | null = null;
+  private waterCells: Uint8Array = new Uint8Array(NCELLS);
 
   // --- effects, in struct-of-arrays like the units ---
   // These used to be an array of small objects, allocated on every push —
@@ -1223,12 +1231,13 @@ export class Sim {
   // one-goal case of the new one rather than a separate path
   private goalPts = new Float32Array(2);
   /**
-   * The hulls' flow field — the water layer's twin of `field`. Built only
-   * on maps that actually have water (`hasWater`); on any other map it is
-   * an empty field nothing ever samples.
+   * The naval tanks' flow field — the amphibious layer's twin of `field`.
+   * Same rock, the same structures soft, the same core to aim at; the one
+   * difference is the mask (navalWalkMask), which hands the deep water
+   * back. Built on every map, because there is no map a naval tank has
+   * nowhere to drive on.
    */
-  readonly waterField = new FlowField();
-  private hasWater = false;
+  readonly navalField = new FlowField();
   /**
    * The air layer's doors: every cell an air zone covers, rock included.
    * Flyers keep their pads here rather than in `airField.spawnPts` because
@@ -1280,7 +1289,7 @@ export class Sim {
    * and re-solved with the swarm's whenever a structure changes.
    */
   readonly pField = new FlowField();
-  readonly pWaterField = new FlowField();
+  readonly pNavalField = new FlowField();
   readonly pAirField = new FlowField();
   private playerFieldsOn = false;
   /** the fog is re-cast on this clock while the player has bodies out —
@@ -1387,8 +1396,9 @@ export class Sim {
     // the Hydrophobic mask needs the terrain, so it is built here rather
     // than up with the other rules — and only where the rule is in force
     this.waterlogged = hasMutation(inForce, "hydrophobic") ? this.buildWaterlogged() : null;
-    // ...and the walkers' side of the same question (the Amphibious rule)
-    this.wadeable = this.amphibiousOn ? this.buildWadeable() : null;
+    // ...and the water itself, which the naval tanks' pace and the
+    // Amphibious rule both read (waterCells)
+    this.waterCells = this.buildWaterCells();
     // THE CORE stands where the map's base does, with everything to lose
     const b = this.terrain.base;
     this.core = {
@@ -1409,7 +1419,7 @@ export class Sim {
     this.buildPads();
     // the walkers' field: rock and structures block it, it enters by the
     // ground zones, and it aims at the core (coreGoal)
-    this.groundPads = this.layerPadMask(LAYER_BIT.ground);
+    this.groundPads = this.padMaskFor("ground");
     // THE SWARM'S OWN FORMATION, stood up before the field is solved so
     // its walls are rock to the walkers from the first tick. One that
     // will not fit the ground (a drop zone moved over it, a document from
@@ -1418,24 +1428,16 @@ export class Sim {
     this.fieldDirty = false;
     this.field.rebuildWalk(this.footprints(), this.terrain.blocked, this.groundPads, this.coreGoal(),
       this.hardFootprints());
-    // THE HULLS' FIELD, built only where there is water to sail. It is the
-    // mirror image of the walkers' — dry land is its wall — and towers do
-    // not block it, because a tower stands on rock and rock is already the
-    // whole of its impassable set. Skipped on a map with no water, where it
-    // would be a Dijkstra over a grid with nothing in it.
-    this.hasWater = false;
-    for (let i = 0; i < this.terrain.floor.length; i++)
-      if (isWaterFloor(this.terrain.floor[i])) {
-        this.hasWater = true;
-        break;
-      }
-    if (this.hasWater)
-      this.waterField.rebuildWalk(
-        [],
-        waterWalkMask(this.terrain),
-        this.layerPadMask(LAYER_BIT.water),
-        this.waterGoal(),
-      );
+    // THE NAVAL TANKS' FIELD. It used to be the mirror image of the
+    // walkers' — dry land its wall, the water nearest the core its goal,
+    // and no field at all on a map with no sea. It is a SUPERSET of the
+    // walkers' now: the same rock, the same structures soft, the same core
+    // to press against, over a mask that hands the deep water back
+    // (navalWalkMask). So a tank takes the walkers' own shortest path and
+    // simply cuts the water when the water is on the way — and every map
+    // has one of these fields, because every map has ground.
+    this.navalField.rebuildWalk(this.footprints(), navalWalkMask(this.terrain),
+      this.padMaskFor("water"), this.coreGoal(), this.hardFootprints());
     // THE FLYERS' FIELD, and the mask sight is traced through (hasSight):
     // one array, because "a hill" is one idea. Towers are left out of it
     // on purpose — see airField — so it is solved once here and never
@@ -1444,10 +1446,10 @@ export class Sim {
     // a new map is unseen ground, and the core is the first thing looking at it
     this.fog.reset(this.fogEnabled);
     this.fog.add(this.coreVision());
-    this.airField.rebuildWalk([], this.hills, this.layerPadMask(LAYER_BIT.air), this.coreGoal());
+    this.airField.rebuildWalk([], this.hills, this.padMaskFor("air"), this.coreGoal());
     this.buildGoalPts();
     this.field.compute();
-    if (this.hasWater) this.waterField.compute();
+    this.navalField.compute();
     this.airField.compute();
     // ...which is what the open-sky pad lists need, so they are picked here
     // rather than in buildPads: a pad is open sky only once there is a
@@ -1482,7 +1484,7 @@ export class Sim {
     const doors: ReadonlyArray<readonly [MoveLayer, number]> = [
       ["ground", this.field.spawnPts.length],
       ["air", this.airPads.length],
-      ["water", this.hasWater ? this.waterField.spawnPts.length : 0],
+      ["water", this.navalField.spawnPts.length],
     ];
     // ...and an AIR door with no open sky in it. Not broken — a flyer
     // entering inside a peak still gets out, it just flies the fallback
@@ -1549,44 +1551,28 @@ export class Sim {
     return out;
   }
 
-  /** the player's hulls' destination: the water within a few cells of any
-   *  of the swarm's structures, else the swarm's own water doors */
-  private enemyWaterGoal(): Uint8Array {
-    const out = new Uint8Array(NCELLS);
-    const { floor } = this.terrain;
-    const reach = 6;
-    let any = false;
-    for (const t of this.towers) {
-      if (t.team !== "enemy") continue;
-      const sz = structStats(t.kind).size;
-      for (let y = Math.max(0, t.gy - reach); y < Math.min(ROWS, t.gy + sz + reach); y++)
-        for (let x = Math.max(0, t.gx - reach); x < Math.min(COLS, t.gx + sz + reach); x++) {
-          const i = y * COLS + x;
-          if (isWaterFloor(floor[i])) { out[i] = 1; any = true; }
-        }
-    }
-    if (!any) {
-      const pads = this.layerPadMask(LAYER_BIT.water);
-      for (let i = 0; i < NCELLS; i++) if (pads[i]) out[i] = 1;
-    }
-    return out;
-  }
-
   /**
    * Solve the player's fields from the board as it stands: the swarm's
    * structures soft, the player's own (and the core) hard, no doors, and
-   * the swarm's buildings as the goal (enemyGoal). The air and water ones
-   * only where the map has sky to fly and water to sail.
+   * the swarm's buildings as the goal (enemyGoal).
+   *
+   * THE NAVAL ONE IS THE GROUND ONE WITH THE WATER OPEN, exactly as on the
+   * swarm's side: the player's tanks aim at the same buildings the walkers
+   * do rather than at the shoreline nearest them, and they cross whatever
+   * channel lies between. It used to be a field over the water alone, whose
+   * goal was "the wet cells within six of an enemy building" and whose
+   * fallback was the swarm's water doors — a shore to park on, because
+   * parking on a shore was the whole of what a hull could do.
    */
   private rebuildPlayerFields(): void {
     this.playerFieldsOn = true;
-    this.pField.rebuildWalk(this.hardFootprints(), this.terrain.blocked, NO_PADS, this.enemyGoal(), this.footprints());
+    const goal = this.enemyGoal();
+    this.pField.rebuildWalk(this.hardFootprints(), this.terrain.blocked, NO_PADS, goal, this.footprints());
     this.pField.compute();
-    if (this.hasWater) {
-      this.pWaterField.rebuildWalk([], waterWalkMask(this.terrain), NO_PADS, this.enemyWaterGoal());
-      this.pWaterField.compute();
-    }
-    this.pAirField.rebuildWalk([], this.hills, NO_PADS, this.enemyGoal());
+    this.pNavalField.rebuildWalk(this.hardFootprints(), navalWalkMask(this.terrain), NO_PADS, goal,
+      this.footprints());
+    this.pNavalField.compute();
+    this.pAirField.rebuildWalk([], this.hills, NO_PADS, goal);
     this.pAirField.compute();
   }
 
@@ -1613,39 +1599,34 @@ export class Sim {
   }
 
   /**
-   * THE HULLS' DESTINATION. A boat cannot reach a building on land, so it
-   * sails to the water nearest the core and fires from there — Mindustry's
-   * naval AI does the same, parking at the closest tile its field reaches.
-   * Every water cell within a cell and a half of the nearest one's distance
-   * is a goal, so a shoreline fills rather than one tile queueing.
+   * THE DOORS ONE LAYER MAY ENTER BY, as a mask a FlowField can take.
+   *
+   * A layer's own zones — and THE NAVAL LAYER ALSO TAKES THE GROUND'S: an
+   * amphibious tank drives out of a ground door as readily as it swims out
+   * of a water one, so a map with its sea in one corner and its doors on
+   * the road still sends its tanks up the road.
+   *
+   * Every layer then falls back to every non-boss zone the map paints when
+   * its own come to nothing. THAT IS WHAT MAKES EVERY FACTION PLAYABLE ON
+   * EVERY MAP: a map with no water zone still lands naval tanks, one with
+   * no air zone still lands flyers. The field filters the mask against its
+   * own passability and its own reachability afterwards
+   * (FlowField.spawnPts), so a fallback pad the layer cannot actually use
+   * is dropped rather than stranding whatever enters on it. The boss door
+   * stays out of the fallback — it is a door held back from the ordinary
+   * swarm, and a fallback that swallowed it would hand it to everything.
    */
-  private waterGoal(): Uint8Array {
-    const out = new Uint8Array(NCELLS);
-    const { floor, rows, cols } = this.terrain;
-    const cx = this.core.x / CELL, cy = this.core.y / CELL;
-    let best = Infinity;
-    for (let y = 0; y < rows; y++)
-      for (let x = 0; x < cols; x++) {
-        const i = y * COLS + x;
-        if (!isWaterFloor(floor[i])) continue;
-        const dd = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
-        if (dd < best) best = dd;
-      }
-    if (best === Infinity) return out;
-    for (let y = 0; y < rows; y++)
-      for (let x = 0; x < cols; x++) {
-        const i = y * COLS + x;
-        if (!isWaterFloor(floor[i])) continue;
-        if (Math.hypot(x + 0.5 - cx, y + 0.5 - cy) <= best + 1.5) out[i] = 1;
-      }
-    return out;
-  }
-
-  /** the cells one layer's zones cover, as a mask a FlowField can take */
-  private layerPadMask(bit: number): Uint8Array {
+  private padMaskFor(layer: MoveLayer): Uint8Array {
     const src = this.terrain.spawn;
+    const bits = layer === "water" ? LAYER_BIT.water | LAYER_BIT.ground : LAYER_BIT[layer];
     const out = new Uint8Array(NCELLS);
-    for (let i = 0; i < NCELLS; i++) if (src[i] & bit) out[i] = 1;
+    let any = false;
+    for (let i = 0; i < NCELLS; i++)
+      if (src[i] & bits) {
+        out[i] = 1;
+        any = true;
+      }
+    if (!any) for (let i = 0; i < NCELLS; i++) if (src[i] & ALL_MOVE_BITS) out[i] = 1;
     return out;
   }
 
@@ -1653,24 +1634,30 @@ export class Sim {
    * The pad lists the two field-less cases need: the flyers' doors, and the
    * boss's door split by layer.
    *
+   * The air doors come through padMaskFor, so they take the same fallback
+   * every layer does — a map with no air zone lands its flyers on whatever
+   * doors it does paint rather than sending nothing at all.
+   *
    * A boss zone is rasterized terrain-blind, so a walking boss's pads are
    * filtered here against the ground it would have to stand on, and a naval
-   * one's against water. Doing it per layer rather than in the rasterizer is
-   * what lets ONE boss zone serve whatever kind of boss a map fields.
+   * one's against the ground plus the deep water: the same set its field is
+   * solved over (navalWalkMask), which is what stops a naval boss being the
+   * one body on the map that still needs a sea. Doing it per layer rather
+   * than in the rasterizer is what lets ONE boss zone serve whatever kind
+   * of boss a map fields.
    */
   private buildPads(): void {
     const spawn = this.terrain.spawn;
-    const { blocked, floor } = this.terrain;
+    const { blocked, wall } = this.terrain;
+    const air = this.padMaskFor("air");
     this.airPads = [];
     this.bossPads = { ground: [], air: [], water: [] };
     for (let i = 0; i < NCELLS; i++) {
-      const m = spawn[i];
-      if (!m) continue;
-      if (m & LAYER_BIT.air) this.airPads.push(i);
-      if (m & LAYER_BIT.boss) {
+      if (air[i]) this.airPads.push(i);
+      if (spawn[i] & LAYER_BIT.boss) {
         this.bossPads.air.push(i);
         if (!blocked[i]) this.bossPads.ground.push(i);
-        if (isWaterFloor(floor[i])) this.bossPads.water.push(i);
+        if (!blocked[i] || wall[i] === WALL_DEEP) this.bossPads.water.push(i);
       }
     }
   }
@@ -2231,10 +2218,11 @@ export class Sim {
     this.fog.ensure(this.visionSources);
 
     // a structure went up on, or came down off, open ground: re-solve the
-    // walkers' field once for the whole frame's worth of changes
+    // two ground-bound fields once for the whole frame's worth of changes
     if (this.fieldDirty) {
       this.fieldDirty = false;
       this.field.compute();
+      this.navalField.compute();
       if (this.playerFieldsOn) this.rebuildPlayerFields();
       this.unstickUnits();
     }
@@ -3249,7 +3237,7 @@ export class Sim {
    * THE HYDROPHOBIC MASK: every cell within HYDROPHOBIC_RANGE of water.
    *
    * "Water" is any water FLOOR, shallow or deep (isWaterFloor) — a ford a
-   * unit wades and a channel a hull sails are the same wet ground to a
+   * unit wades and a channel a tank swims are the same wet ground to a
    * turret standing beside them, and a rule the player has to squint at to
    * predict is a rule they cannot plan around.
    *
@@ -3301,8 +3289,8 @@ export class Sim {
     return out;
   }
 
-  /** every water cell, shallow or deep — the Amphibious rule's ground */
-  private buildWadeable(): Uint8Array {
+  /** every water cell, shallow or deep — see waterCells */
+  private buildWaterCells(): Uint8Array {
     const { floor } = this.terrain;
     const out = new Uint8Array(COLS * ROWS);
     for (let i = 0; i < out.length; i++) if (isWaterFloor(floor[i])) out[i] = 1;
@@ -3312,8 +3300,7 @@ export class Sim {
   /** is this world point standing in water? 0/1 rather than a boolean so it
    *  drops straight into the Uint8Array that remembers it */
   private inWater(x: number, y: number): 0 | 1 {
-    const mask = this.wadeable;
-    if (!mask) return 0;
+    const mask = this.waterCells;
     const gx = (x / CELL) | 0;
     const gy = (y / CELL) | 0;
     if (gx < 0 || gy < 0 || gx >= COLS || gy >= ROWS) return 0;
@@ -3457,8 +3444,11 @@ export class Sim {
    * the body is set down beside the building when the clock runs out. A
    * factory that cannot afford its next unit, or finds the field full
    * (PLAYER_UNIT_CAP), waits with nothing owed. A make that finds no
-   * ground beside the factory (a hull from a factory with no water by
-   * it) keeps trying, tick by tick, at no further cost.
+   * ground beside the factory — every cell round it walled or occupied —
+   * keeps trying, tick by tick, at no further cost. A NAVAL TANK NEEDS NO
+   * WATER TO BE SET DOWN IN: it stands wherever a walker would, which is
+   * what stopped a factory on a dry map building the faction it was told
+   * to build and then never delivering it.
    */
   private updateProduction(dt: number): void {
     const faction = this.faction();
@@ -3570,15 +3560,21 @@ export class Sim {
   }
 
   /**
-   * A structure's footprint on the walkers' field. Rock is already a wall
-   * and stays one whichever way this goes; OPEN GROUND under a structure
-   * becomes a wall while it stands (`on`) and opens again when it comes
-   * down. The field itself is re-solved once, at the next tick
-   * (fieldDirty), and the seal check's cache is stale either way.
+   * A structure's footprint on the two GROUND-BOUND fields — the walkers'
+   * and the naval tanks', which stand on the same rock and are stopped by
+   * the same buildings. Rock is already a wall and stays one whichever way
+   * this goes; OPEN GROUND under a structure becomes a wall while it stands
+   * (`on`) and opens again when it comes down. The fields themselves are
+   * re-solved once, at the next tick (fieldDirty), and the seal check's
+   * cache is stale either way.
+   *
+   * A structure never stands on deep water (canPlace), so writing the same
+   * cells into both fields cannot disagree with either mask.
    */
   private claimGround(t: Structure, on: boolean): void {
     const { blocked } = this.terrain;
     const { walk, soft } = this.field;
+    const nWalk = this.navalField.walk, nSoft = this.navalField.soft;
     const sz = this.sizeOf(t);
     // the swarm's OWN building is rock to its walkers: solid, and never
     // soft — it routes around its own wall rather than chewing through it
@@ -3593,6 +3589,8 @@ export class Sim {
         // through it, and shoots it when it gets there
         walk[i] = on ? 1 : 0;
         soft[i] = on && routable ? 1 : 0;
+        nWalk[i] = walk[i];
+        nSoft[i] = soft[i];
         changed = true;
       }
     if (changed) this.fieldDirty = true;
@@ -3687,7 +3685,7 @@ export class Sim {
     if (boss && this.bossPads[layer].length > 0)
       return layer === "air" && this.bossAirOpen.length > 0 ? this.bossAirOpen : this.bossPads[layer];
     if (layer === "air") return this.airOpen.length > 0 ? this.airOpen : this.airPads;
-    if (layer === "water") return this.hasWater ? this.waterField.spawnPts : [];
+    if (layer === "water") return this.navalField.spawnPts;
     return this.field.spawnPts;
   }
 
@@ -3742,10 +3740,11 @@ export class Sim {
         x = ((ci % COLS) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
         y = (((ci / COLS) | 0) + 0.5) * CELL + (Math.random() * 2 - 1) * j;
       }
-      // a big hitbox can overhang the pad into ragged rock beside it — and
-      // for a hull, into the SHORE: the water field's mask is the mirror
-      // one, so the same test asks "is any of this boat aground?"
-      const wallField = layer === "water" ? this.waterField : this.field;
+      // a big hitbox can overhang the pad into ragged rock beside it, so
+      // the arrival is tested against the mover's OWN field: for a naval
+      // tank that is the one with the deep water open, which is what lets
+      // it land half in a channel and half on its bank
+      const wallField = layer === "water" ? this.navalField : this.field;
       if ((!fly && wallField.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly, span))
         continue;
       const i = this.n++;
@@ -4639,11 +4638,11 @@ export class Sim {
   private updatePhysics(): void {
     const { upx, upy, urad, ufly, unav, uvx, uvy, uhx, uhy, uid, phx, phy, bStart, bUnits } = this;
     const { clear } = this.field;
-    // the hulls' clearance map, so the sideways re-aim below asks how much
-    // WATER a boat has beside it rather than how much open ground — deep
-    // water scores zero on the ground map, which would have switched the
-    // re-aim off for the whole fleet
-    const wclear = this.waterField.clear;
+    // the naval tanks' clearance map, so the sideways re-aim below asks
+    // how much room a tank has beside it on its OWN mask — deep water
+    // scores zero on the ground map, which would have switched the
+    // re-aim off for the whole naval line
+    const wclear = this.navalField.clear;
     const n = this.n;
     for (let i = 0; i < n; i++) {
       phx[i] = upx[i];
@@ -4756,6 +4755,8 @@ export class Sim {
     const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, ulat, phx, phy, field, flowTmp, uteam } =
       this;
     const { upullx, upully, uspawn, uwet, uwetSlow } = this;
+    // the water mask, for the naval tanks' pace ashore (NAVAL_LAND_SPEED)
+    const water = this.waterCells;
     const steer = Math.min(1, dt * 8);
     // one step of the lateral bias's mean-reverting walk, precomputed: pull
     // LAT_A of the way back to straight-ahead, then add noise scaled so the
@@ -4773,10 +4774,9 @@ export class Sim {
       // THE MOVER'S OWN FIELD. Everything below that asks the terrain a
       // question — where the exits are, where the walls are, how much room
       // there is to spread — asks it of the layer the unit travels on, and
-      // for a hull that is the water field: its mask is the mirror of the
-      // ground's, so dry land answers `blocked` and deep water does not.
-      // Reading the ground field for a boat would have walled it out of
-      // every deep cell on the map and left it circling the shallows.
+      // for a naval tank that is the naval field: the walkers' rock with
+      // the deep water opened up (navalWalkMask). Reading the ground field
+      // for a tank would have walled it out of every deep cell on the map.
       // A FLYER NEVER READS THIS ONE. Its own field (airField) gives it a
       // heading and nothing else: every reader of `mf` below is a body
       // meeting terrain — clearance to spread into, walls to push off, a
@@ -4787,16 +4787,17 @@ export class Sim {
       // rock, the other side's structures soft, the other side's buildings
       // as the goal (rebuildPlayerFields)
       const mine = uteam[i] !== 0;
-      const mf = nav ? (mine ? this.pWaterField : this.waterField) : mine ? this.pField : field;
+      const mf = nav ? (mine ? this.pNavalField : this.navalField) : mine ? this.pField : field;
       const { walk } = mf;
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
       const cy = clamp((upy[i] / CELL) | 0, 0, ROWS - 1);
       const ci = cy * COLS + cx;
       // NOTHING ARRIVES AND NOTHING LEAKS. The core is the goal (coreGoal)
-      // and it is solid: a walker that reaches it is pressed against it by
+      // and it is solid: a body that reaches it is pressed against it by
       // the field and stays there, firing (updateUnitWeapons), until one of
-      // them is gone. A hull parks on the nearest water (waterGoal) and
-      // does the same from the shore.
+      // them is gone. A naval tank aims at the same core the walkers do —
+      // it used to park on the water nearest it and fire from the shore,
+      // which was the whole of what a hull could reach.
 
       if (fly) {
         // flyers take the air field's route round the hills and HOLD over
@@ -4823,12 +4824,18 @@ export class Sim {
       // or beam-dragged at full force. `spd` is those multipliers applied
       // — the STAT speed stays in uspd, which the chassis turn rate
       // further down reads as the pace to measure travel against
+      // ...and a NAVAL TANK ASHORE drives at NAVAL_LAND_SPEED of its stat.
+      // It is a third multiplier on the drive and nothing more: the field
+      // it is reading knows nothing about it, so the route stays the plain
+      // shortest path and the water is a place a tank is quicker rather
+      // than a place it is drawn to.
+      const land = nav && !water[ci] ? NAVAL_LAND_SPEED : 1;
       const spd =
         uspawn[i] > SPAWN_INVINCIBLE - SPAWN_UNMOVING
           ? 0
           : uwet[i] > 0
-            ? uspd[i] * uwetSlow[i]
-            : uspd[i];
+            ? uspd[i] * uwetSlow[i] * land
+            : uspd[i] * land;
       uvx[i] += (flowTmp.x * spd - uvx[i]) * steer;
       uvy[i] += (flowTmp.y * spd - uvy[i]) * steer;
 
@@ -5003,7 +5010,7 @@ export class Sim {
       // unit still runs the pass — its feet ease back under it
       const gait = KIND_LEGS[ukind[i]];
       if (gait) this.updateLegs(i, gait, mdx, mdy, len, dt);
-      if (nav) this.updateWake(i, dt);
+      if (nav) this.updateWake(i, dt, water[ci] !== 0);
     }
   }
 
@@ -5013,11 +5020,22 @@ export class Sim {
    * Mindustry pushes a point every tick and drops the oldest once the
    * buffer is full; this pushes one every KIND_WAKE_DT seconds and does
    * the same, so the ring holds the same SPAN of history at a fraction of
-   * the points. The timer runs whether the boat moved or not — a hull held
+   * the points. The timer runs whether the tank moved or not — one held
    * still by a crowd stops laying new water down and its wake shortens to
    * a puddle under it, which is exactly what a stalled Trail does.
+   *
+   * ASHORE THERE IS NO WAKE. The trail is dropped whole the moment a tank
+   * leaves the water rather than drained point by point, because the strip
+   * the renderer draws joins the live hull to the oldest sample it holds
+   * (pushWake): a trail that emptied slowly would drag foam across the
+   * beach behind a tank that had already climbed it. It lays a fresh one
+   * from nothing when it swims again.
    */
-  private updateWake(i: number, dt: number): void {
+  private updateWake(i: number, dt: number, afloat: boolean): void {
+    if (!afloat) {
+      this.uwakeN[i] = 0;
+      return;
+    }
     this.uwakeT[i] -= dt;
     if (this.uwakeT[i] > 0) return;
     const step = KIND_WAKE_DT[this.ukind[i]];
@@ -5045,19 +5063,24 @@ export class Sim {
     this.uwakeY[off + WAKE_PTS - 1] = this.upy[i];
   }
 
-  /** push units out of freshly blocked cells (after tower placement) */
+  /**
+   * Push units out of freshly blocked cells (after tower placement).
+   *
+   * A NAVAL TANK IS IN THIS PASS NOW, read against its own field. It used
+   * to be skipped: a structure never stands on water, so a hull reading as
+   * blocked could only be one on the shore of its own mirror-image field,
+   * and shoving it to the nearest open GROUND cell would have beached it
+   * for good. A tank shares the walkers' ground, so a building can land on
+   * top of one exactly as it can on a dagger — and the cell it is moved to
+   * is one its own mask calls open, which is ground or water either way.
+   * Flyers stay out: they are allowed over walls, and nothing should
+   * teleport one off a mountain.
+   */
   private unstickUnits(): void {
-    const { upx, upy, ukind, unav, field } = this;
+    const { upx, upy, ukind, unav } = this;
     for (let i = 0; i < this.n; i++) {
-      // flyers are allowed over walls — never teleport them off a mountain.
-      // Hulls are skipped for a different reason: this pass exists to clear
-      // walkers out of cells a STRUCTURE just took (canPlace refuses a
-      // footprint with a unit under it, but a unit can drift into one
-      // between the check and the tick), no structure stands on water —
-      // so a boat reading as blocked here is a boat on the shore of its
-      // own field, and shoving it to the nearest open GROUND cell would
-      // beach it for good
-      if (KIND_FLYING[ukind[i]] || unav[i] !== 0) continue;
+      if (KIND_FLYING[ukind[i]]) continue;
+      const field = unav[i] !== 0 ? this.navalField : this.field;
       if (!field.hitsWall(upx[i], upy[i], WALL_R)) continue;
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
       const cy = clamp((upy[i] / CELL) | 0, 0, ROWS - 1);
@@ -5962,7 +5985,6 @@ export class Sim {
       const pts = this.lightningBolt(
         x, y, a,
         st.bullet.damage,
-        st.bullet.navalMultiplier ?? 1,
         st.bullet.lightning.length,
         st.bullet.hitRadius ?? 2.5,
         st.bullet.collidesAir,
@@ -5983,7 +6005,6 @@ export class Sim {
             st.bullet.damage,
             st.bullet.laser.pierceCap,
             st.bullet.armorMultiplier ?? 1,
-            st.bullet.navalMultiplier ?? 1,
             st.bullet.collidesAir,
             st.bullet.collidesGround,
             st.bullet.hitFx,
@@ -6363,7 +6384,6 @@ export class Sim {
     y: number,
     angle: number,
     damage: number,
-    navalMult: number,
     length: number,
     brad: number,
     air: boolean,
@@ -6386,7 +6406,7 @@ export class Sim {
       // is actually dealt
       const victim = this.nearestUnit(x, y, brad, air, ground);
       if (victim >= 0) {
-        this.damageUnit(victim, damage, false, 1, navalMult);
+        this.damageUnit(victim, damage);
         if (uhp[victim] > 0) this.bulletFx(hitFx, x, y, rot, fxColor);
         else if (!hits.includes(victim)) hits.push(victim);
       }
@@ -6453,7 +6473,6 @@ export class Sim {
     damage: number,
     pierceCap: number,
     armorMult: number,
-    navalMult: number,
     air: boolean,
     ground: boolean,
     hitFx: BulletFx | undefined,
@@ -6474,7 +6493,7 @@ export class Sim {
     const dead: number[] = [];
     for (let k = 0; k < order.length && (pierceCap <= 0 || k < pierceCap); k++) {
       const i = hits[order[k]];
-      this.damageUnit(i, damage, false, armorMult, navalMult);
+      this.damageUnit(i, damage, false, armorMult);
       if (uhp[i] > 0) this.bulletFx(hitFx, upx[i], upy[i], angle, fxColor);
       else dead.push(i);
     }
@@ -6575,7 +6594,7 @@ export class Sim {
         const dead: number[] = [];
         // pierceCap -1: the beam stops for nothing
         for (const i of hits) {
-          this.damageUnit(i, b.damage, b.pierceArmor ?? false, b.armorMultiplier ?? 1, b.navalMultiplier ?? 1);
+          this.damageUnit(i, b.damage, b.pierceArmor ?? false, b.armorMultiplier ?? 1);
           if (uhp[i] > 0) this.bulletFx(b.hitFx, upx[i], upy[i], t.beamRot, b.fxColor);
           else dead.push(i);
         }
@@ -6747,15 +6766,11 @@ export class Sim {
     raw: number,
     pierceArmor = false,
     armorMult = 1,
-    navalMult = 1,
   ): void {
     // StatusEffects.invincible, healthMultiplier infinity: every hit lands
     // on a unit still arriving for exactly nothing. It runs a full second,
     // half of it after the unit has started walking
     if (this.uspawn[i] > 0) return;
-    // water conducts (BulletStats.navalMultiplier): a hull takes the
-    // electric and beam weapons' hit scaled up, before armour sees it
-    if (navalMult !== 1 && this.unav[i] !== 0) raw *= navalMult;
     let amount = pierceArmor ? raw : Sim.applyArmor(raw, this.uarmor[i] * armorMult);
     if (this.ushield[i] > 0.0001) {
       this.ushieldAlpha[i] = 1;

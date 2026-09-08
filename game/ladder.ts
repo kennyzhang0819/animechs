@@ -438,7 +438,7 @@ export interface Budget {
   t3Share: number;
   /** seconds the run lasts if it is killed as fast as it arrives */
   duration: number;
-  /** health per second the fleet has to keep up with */
+  /** health per second the board has to keep up with */
   hpPerSecond: number;
 }
 
@@ -741,7 +741,7 @@ export interface AuditRow {
   level: number;
   /** printed health of the whole run — THE strength number */
   hp: number;
-  /** health per second the fleet has to keep up with */
+  /** health per second the board has to keep up with */
   hpPerSecond: number;
   /** seconds the run lasts */
   duration: number;

@@ -134,9 +134,10 @@ const MIX = {
   2: ["swarmer", "salvo", "ripple", "cyclone"],
   3: ["spectre", "fuse", "foreshadow"],
 };
-// water conducts (NAVAL_BONUS in constants.ts): on a front that is mostly
-// hulls the bot brings the beam turrets a person would. Not the arc: its
-// reach is short enough that a shoreline placement is a Hydrophobic one
+// a water lane is a FILE — hulls come down it one behind another — and the
+// beam turrets are the two that pierce, so on a front that is mostly hulls
+// the bot brings them the way a person would. Not the arc: its reach is
+// short enough that a shoreline placement is a Hydrophobic one
 const WET = { 1: [], 2: ["lancer"], 3: ["meltdown"] };
 // the stage the clock is in (STAGES in economy.ts) — no longer a gate on
 // anything, but still the bot's buying plan: it spends each stage on the
@@ -245,15 +246,15 @@ function play() {
   sim.setFog(false);
 
   // THE ROUTES, one per movement layer, and WHAT EACH IS WORTH: the share
-  // of the script's health that walks, flies or sails. A naval map's
-  // rissos on wave 1 are the water route's business, and a bot that
+  // of the script's health that walks, flies or drives amphibious. A
+  // naval wave-1 of rissos is the water route's business, and a bot that
   // spread its opening board along an empty crawler corridor would lose
   // the map before learning that
   // the routes as walked (heatRoutes), falling back to the traced gradient
   // where the probe saw nothing on a layer the script sends later
   const heat = heatRoutes(PROBE_SECONDS);
   const ground = heat.ground.length ? heat.ground : routeCells(sim.field).map(([x, y]) => [x, y, 1]);
-  const water = heat.water.length ? heat.water : routeCells(sim.waterField).map(([x, y]) => [x, y, 1]);
+  const water = heat.water.length ? heat.water : routeCells(sim.navalField).map(([x, y]) => [x, y, 1]);
   const air = airCells(sim);
   // ...weighed over a WINDOW of the script — this wave and the next few —
   // because what matters to a placement is what is about to arrive, not

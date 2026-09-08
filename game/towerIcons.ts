@@ -24,8 +24,10 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   parallax: `/mindustry/sprites/blocks/defense/parallax.png`,
   swarmer: `${T}/swarmer.png`,
   cyclone: `${T}/cyclone/cyclone-preview.png`,
-  spectre: `${T}/spectre.png`,
-  meltdown: `${T}/meltdown.png`,
+  // the two repainted heads (see atlas.ts SRC): the menu has to show the
+  // gun the board will show, so it reads the same derived art
+  spectre: "/sprites/turrets/spectre.png",
+  meltdown: "/sprites/turrets/meltdown.png",
   foreshadow: `${T}/foreshadow.png`,
   "copper-wall": "/mindustry/sprites/blocks/walls/copper-wall.png",
   "titanium-wall": "/mindustry/sprites/blocks/walls/titanium-wall.png",

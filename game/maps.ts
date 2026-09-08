@@ -832,25 +832,6 @@ export function loadMap(id: string): MapData | null {
 }
 
 /**
- * THE MOVEMENT LAYERS A MAP OPENS A DOOR FOR — the ground, air and water
- * of its drop zones (the boss door is not a layer). This is what the
- * deploy's family roll is drawn against (rollFamilies in levels.ts): a
- * map with no water door cannot send a hull. A map that cannot be found
- * or has no zones at all opens every layer rather than none, so a broken
- * document deploys a run rather than an empty field.
- */
-export function mapLayers(id: string | undefined): Set<MoveLayer> {
-  const doc = id ? loadMap(id) : null;
-  const out = new Set<MoveLayer>();
-  if (doc)
-    for (const z of zoneKindsOf(doc, Uint8Array.from(doc.blocked))) {
-      const layer = zoneLayer(z);
-      if (layer) out.add(layer);
-    }
-  return out.size > 0 ? out : new Set<MoveLayer>(["ground", "air", "water"]);
-}
-
-/**
  * Persist an official map: the dev server writes the JSON document back to
  * public/maps/<id>.json. The game plays the new world on its next page
  * load (Game.create re-fetches the documents). A refusal carries the

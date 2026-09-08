@@ -44,13 +44,15 @@ export const UNIT_ID: Record<UnitKind, number> = {
 };
 
 /**
- * THE HULLS SAIL SLOWER THAN MINDUSTRY'S. A risso's stock 1.1 units a tick
- * is 8.25 tiles a second — more than twice a dagger — and on a water
- * route a third the length of Confluence's march that is a boat a
+ * THE NAVAL TANKS RUN SLOWER THAN MINDUSTRY'S HULLS. A risso's stock 1.1
+ * units a tick is 8.25 tiles a second — more than twice a dagger — and on
+ * a water route a third the length of Confluence's march that is a body a
  * wave-1 board sees for five seconds. Every naval speed below carries
  * this factor: a risso at 4.5 tiles a second is still the fastest tier-1
- * body in the game, and a fleet is still a fleet, but the front can be
- * held by the turrets a fresh run has. Change it here, not per hull.
+ * body in the game, and the line is still the fast line, but the front can
+ * be held by the turrets a fresh run has. Change it here, not per hull —
+ * and note the number is the speed AFLOAT, halved ashore by
+ * NAVAL_LAND_SPEED.
  */
 const NAVAL_PACE = 0.55;
 
@@ -259,19 +261,26 @@ export interface UnitStats {
    * towers with targetAir (and bullets with collidesAir) touch them */
   flying?: boolean;
   /**
-   * NAVAL: this kind travels on the WATER layer — it moves over water and
-   * cannot cross dry land, the exact mirror of a walker. The movement
-   * layers (MOVE_LAYERS in constants.ts) are what decide a unit's flow
-   * field, its drop zones and its exits, so a naval kind is a STATS EDIT
-   * like every other unit — the same way a tier-4 unit was once a stats
-   * edit that started paying a new currency.
+   * NAVAL: this kind travels on the WATER layer, which is the AMPHIBIOUS
+   * one. A naval tank crosses deep water AND dry land — the walkers'
+   * ground plus the one thing the walkers cannot enter — so the movement
+   * layers (MOVE_LAYERS in constants.ts) still decide its flow field, its
+   * drop zones and its exits, and a naval kind is a STATS EDIT like every
+   * other unit.
+   *
+   * IT IS SLOWER ASHORE, and only slower: NAVAL_LAND_SPEED scales the
+   * drive on any cell that is not a water floor. The field never reads
+   * that number, so the route is a plain shortest path over "rock, and
+   * nothing else" — a tank swims the channel when the channel is on the
+   * way to the core and drives round it when it is not.
    *
    * Upstream never writes this either: UnitType.init sets `naval = true`
    * for anything built on WaterMovec, which is exactly the ten hulls of
-   * the two naval trees. BOTH depths carry them — shallow water is the
-   * one floor both layers share, so a dagger wades where a risso sails —
-   * and no hull may leave the water at all, which is what makes deep
-   * water a wall to the swarm and a road to the fleet at the same time.
+   * the two naval trees. Where we depart from Mindustry is the coming
+   * ashore — a WaterMovec hull there may never leave the water, and deep
+   * water is a wall to the walkers and a road to the hulls. Here it is a
+   * wall to the walkers and a road to the tanks, and the land is a road
+   * to both.
    */
   naval?: boolean;
   /**
@@ -711,7 +720,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // boss is a deadline the player watches coming, not a sprinter. Its
   // suppression field and missile racks stay behind on Erekir — enemies
   // here do not shoot — so what crosses the map is the hull, the looming
-  // pace, and 144000 health the fleet has to answer before it reaches the
+  // pace, and 144000 health the board has to answer before it reaches the
   // base. It also DRAWS half again its native scale (see UNIT_ART), and
   // the hitbox follows the art: Mindustry's hitSize 46 grows to an
   // effective 56 (UR * 7, just under eclipse's 7.25) so shots land where
@@ -729,7 +738,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     boss: true,
   },
 
-  // ---- THE FLEET ----
+  // ---- THE NAVAL TANKS ----
   //
   // Ten hulls in two trees, and the roster's third movement layer. Every
   // one of them is `naval` (UnitType.init's water preset, see UnitStats)
@@ -737,14 +746,18 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // are otherwise read off mindustry/content/UnitTypes.java like every
   // walker's — hitSize/8 tiles of hitbox, speed x 7.5 tiles a second.
   //
-  // A ship's speed is the thing to read twice. The naval line tops out at
+  // THESE ARE THE SPEEDS AFLOAT. A naval tank ashore drives at
+  // NAVAL_LAND_SPEED of the number below, which is the only thing the
+  // land costs it — the route it takes there is the walkers' own.
+  //
+  // A tank's speed is the thing to read twice. The naval line tops out at
   // 8.25 tiles/s (risso) and BOTTOMS OUT at 4.65 (omura) — so the fastest
   // boat in the game is barely quicker than a crawler, and the slowest is
   // still quicker than a scepter. The whole fleet moves inside a band the
   // ground roster spreads three times as wide, which is what makes a water
   // lane read as one advancing formation rather than a strung-out column.
 
-  // risso: the fleet's T1 — 280 hp, armor 2, a 1.25x1.25-block hitbox,
+  // risso: the naval line's T1 — 280 hp, armor 2, a 1.25x1.25-block hitbox,
   // 1.1 units/tick = 8.25 tiles/s, the fastest hull there is. Note it
   // opens at nearly TWICE the dagger's health with armour the dagger does
   // not have: the naval T1 is not chaff, and a duo's 9-damage bolt is
@@ -941,17 +954,17 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
  * a unit's position in a row is its tier.
  */
 export const UNIT_TREES = [
-  { key: "ground", name: "Ground", kinds: ["dagger", "mace", "fortress", "scepter", "reign"] },
-  { key: "support", name: "Support", kinds: ["nova", "pulsar", "quasar", "vela", "corvus"] },
-  { key: "crawler", name: "Crawler", kinds: ["crawler", "atrax", "spiroct", "arkyid", "toxopid"] },
-  { key: "air", name: "Air", kinds: ["flare", "horizon", "zenith", "antumbra", "eclipse"] },
-  // the two water trees. They are upgrade paths like the four above, and
-  // they are also the only rows whose units need a MAP to field them: a
-  // wave asking for rissos on a map with no water sends nothing at all
-  // (Sim.spawnPads returns an empty pad list), exactly as an air wave
-  // would on a map with no air zone
-  { key: "naval", name: "Naval", kinds: ["risso", "minke", "bryde", "sei", "omura"] },
-  { key: "navalSupport", name: "Naval support", kinds: ["retusa", "oxynoe", "cyerce", "aegires", "navanax"] },
+  { key: "ground", name: "Ground mechs", kinds: ["dagger", "mace", "fortress", "scepter", "reign"] },
+  { key: "support", name: "Starlight mechs", kinds: ["nova", "pulsar", "quasar", "vela", "corvus"] },
+  { key: "crawler", name: "Venom crawlers", kinds: ["crawler", "atrax", "spiroct", "arkyid", "toxopid"] },
+  { key: "air", name: "Sky gunships", kinds: ["flare", "horizon", "zenith", "antumbra", "eclipse"] },
+  // the two naval tank trees: upgrade paths like the four above, on the
+  // amphibious layer. They used to be the only rows whose units needed a
+  // MAP to field them — a wave asking for rissos on a map with no water
+  // sent nothing at all — and they no longer are: a naval tank comes in
+  // by a ground door and drives to the core when there is no sea
+  { key: "naval", name: "Naval tanks", kinds: ["risso", "minke", "bryde", "sei", "omura"] },
+  { key: "navalSupport", name: "Aegis tanks", kinds: ["retusa", "oxynoe", "cyerce", "aegires", "navanax"] },
   // not an upgrade path: the boss row holds the kinds that arrive as an
   // event rather than a stream, so its slots do not read as tiers
   { key: "boss", name: "Boss", kinds: ["disrupt"] },
@@ -1023,23 +1036,38 @@ export type LevelStep = { wave: WaveUnits | readonly RegionWave[] };
  * swaps: a wave that sends "forty of the first ground body" sends forty
  * of the first body of whichever family took that slot (transformScript).
  *
- * `layer` is the movement layer the family travels on, which is what
- * decides where it may play: a map with no water door cannot roll a naval
- * family (rollFamilies). Disrupt — the one boss — is in no family and
+ * `layer` is the movement layer the family travels on: which field it
+ * steers by and which doors it comes in through. It no longer decides
+ * WHERE a family may play — every layer can cross every map now that the
+ * naval one is amphibious (navalWalkMask) and every layer falls back to
+ * the map's other doors (Sim.padMaskFor), so every faction rolls
+ * everywhere (rollFamilies). Disrupt — the one boss — is in no family and
  * is never swapped: a boss is an event, not a volume.
  */
 export const FAMILIES = [
-  { key: "ground", name: "Ground", layer: "ground", icon: "dagger",
+  // the mechs of the line: a blade, a mace, a bunker, a sceptre and a
+  // crown — Mindustry named this tree after the regalia of a war
+  { key: "ground", name: "Ground mechs", layer: "ground", icon: "dagger",
     kinds: ["dagger", "mace", "fortress", "scepter", "reign"] },
-  { key: "crawler", name: "Crawlers", layer: "ground", icon: "crawler",
+  // the spiders, and every one of them a poison: the crawler's blast, the
+  // atrax's acid, the spiroct's sap, the toxopid's name itself
+  { key: "crawler", name: "Venom crawlers", layer: "ground", icon: "crawler",
     kinds: ["crawler", "atrax", "spiroct", "arkyid", "toxopid"] },
-  { key: "groundSupport", name: "Ground support", layer: "ground", icon: "nova",
+  // named for stars, armed with light: nova, pulsar, quasar, vela, corvus,
+  // and not one ballistic gun between them
+  { key: "groundSupport", name: "Starlight mechs", layer: "ground", icon: "nova",
     kinds: ["nova", "pulsar", "quasar", "vela", "corvus"] },
-  { key: "air", name: "Air", layer: "air", icon: "flare",
+  // the sky's own words — a flare, a horizon, a zenith, a shadow and an
+  // eclipse — hung on five gunships
+  { key: "air", name: "Sky gunships", layer: "air", icon: "flare",
     kinds: ["flare", "horizon", "zenith", "antumbra", "eclipse"] },
-  { key: "naval", name: "Naval", layer: "water", icon: "risso",
+  // the whales: risso, minke, bryde, sei, omura. Amphibious armour, quick
+  // in the water and half as quick out of it (NAVAL_LAND_SPEED)
+  { key: "naval", name: "Naval tanks", layer: "water", icon: "risso",
     kinds: ["risso", "minke", "bryde", "sei", "omura"] },
-  { key: "navalSupport", name: "Naval support", layer: "water", icon: "retusa",
+  // the sea slugs, and the aegis is one of them by name: retusa, oxynoe,
+  // cyerce, AEGIRES, navanax — hulls that carry a shield rather than a gun
+  { key: "navalSupport", name: "Aegis tanks", layer: "water", icon: "retusa",
     kinds: ["retusa", "oxynoe", "cyerce", "aegires", "navanax"] },
 ] as const satisfies readonly {
   key: string;
@@ -1050,6 +1078,27 @@ export const FAMILIES = [
 }[];
 
 export type FamilyKey = (typeof FAMILIES)[number]["key"];
+
+/**
+ * THE FAMILIES OFF THE BOARD, and the whole of how one gets there: name it
+ * here. A shelved family keeps its bodies, its stats, its sprites and its
+ * three turrets (FACTION_TURRETS) — every line of it is live code — it is
+ * simply never rolled into a wave (rollFamilies) and never handed to a
+ * save (track.ts dealFactions), so it cannot be met and cannot be played.
+ * Take the name back out and it is on the board again, at the level the
+ * track always meant to open it on.
+ *
+ * The Aegis tanks are shelved while the support lines are re-cut: a
+ * support family is meant to hold a front on its own rather than to prop
+ * up whatever it was dealt beside, and until its bodies are worth that
+ * it is a slot the die can spend on nothing.
+ */
+export const SHELVED_FAMILIES: readonly FamilyKey[] = ["navalSupport"];
+
+/** the families in play: the table, less the shelf */
+export const ACTIVE_FAMILIES: readonly FamilyKey[] = FAMILIES.map((f) => f.key).filter(
+  (k) => !SHELVED_FAMILIES.includes(k),
+);
 
 /** how many families a deploy sends — the die picks this many */
 export const FAMILIES_PER_RUN = 3;
@@ -1086,22 +1135,20 @@ export function scriptFamilies(script: readonly LevelStep[]): FamilyKey[] {
   return out;
 }
 
-/** the families a map with these doors may send */
-export const eligibleFamilies = (layers: ReadonlySet<MoveLayer>): FamilyKey[] =>
-  FAMILIES.filter((f) => layers.has(f.layer)).map((f) => f.key);
-
 /**
- * THE DIE ROLL: FAMILIES_PER_RUN families from those the map's doors
- * allow, in a random order — the order is the deal, since slot i of the
- * script plays as families[i]. A map with fewer doors than that sends
- * every family it can, so a two-family map is a two-family map rather
- * than a run with a silent empty slot.
+ * THE DIE ROLL: FAMILIES_PER_RUN families, in a random order — the order
+ * is the deal, since slot i of the script plays as families[i].
+ *
+ * EVERY FAMILY IN PLAY IS ELIGIBLE ON EVERY MAP. This used to be drawn
+ * against the map's doors, and a map with no water door could not roll a
+ * naval family at all; the naval layer is amphibious now (navalWalkMask)
+ * and every layer falls back to whatever doors the map does paint
+ * (Sim.padMaskFor), so there is no longer such a thing as a map a family
+ * cannot play. The only thing that keeps a family out of the draw is the
+ * shelf (SHELVED_FAMILIES).
  */
-export function rollFamilies(
-  layers: ReadonlySet<MoveLayer>,
-  rand: () => number = Math.random,
-): FamilyKey[] {
-  const pool = eligibleFamilies(layers);
+export function rollFamilies(rand: () => number = Math.random): FamilyKey[] {
+  const pool: FamilyKey[] = [...ACTIVE_FAMILIES];
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -1254,7 +1301,7 @@ export interface LevelSpec {
   faction?: FamilyKey;
   /**
    * THE FAMILIES THIS RUN SENDS — the die roll (rollFamilies) the deploy
-   * made against the map's doors, in slot order: the script's first
+   * made, in slot order: the script's first
    * family plays as families[0], its second as families[1], its third as
    * families[2] (transformScript). Unset is the script as authored, which
    * is what the editor and the audit arithmetic price.
@@ -1347,8 +1394,8 @@ const docs = new Map<string, LevelDoc>();
 /**
  * THE ONE SCRIPT. Every map plays the same eight waves — the document
  * under this id in public/levels — and what makes one map different
- * from the next is its ground, its doors and the family roll those doors
- * allow (rollFamilies). A world id passed to levelDocOf is accepted and
+ * from the next is its ground, its doors and the family roll the deploy
+ * makes (rollFamilies). A world id passed to levelDocOf is accepted and
  * ignored, so an editor opened on any world edits the campaign.
  */
 export const CAMPAIGN_DOC_ID = "campaign";
@@ -1368,9 +1415,10 @@ export function levelDocOf(_worldId?: string): LevelDoc {
 /**
  * THE MAPS. Every map plays the same eight waves (CAMPAIGN_DOC_ID), and
  * what makes one map different from the next is its ground and its
- * doors: which movement layers it opens decides which unit families the
- * deploy may roll (rollFamilies), and the shared script is re-cast into
- * the three it rolled (transformScript). The identity (name, map,
+ * doors. Every family may be rolled on every map (rollFamilies) — every
+ * movement layer crosses every ground now, and comes in by whatever door
+ * the map does paint — and the shared script is re-cast into the three
+ * the deploy rolled (transformScript). The identity (name, map,
  * mission) is this table's; no map carries rules of its own — all maps
  * are equal, and every mutator is in every roll.
  *
@@ -1407,8 +1455,8 @@ export const WORLDS: LevelSpec[] = [
     // below documents HOW to author a wave; WHAT the waves are lives in
     // the document, and the admin level editor writes it. It is authored
     // in three families (ground, ground support, air) and those are its
-    // three SLOTS: a deploy rolls three families the map's doors allow
-    // and deals them into the slots (transformScript), so the counts
+    // three SLOTS: a deploy rolls three of the six families and deals
+    // them into the slots (transformScript), so the counts
     // travel to every map and the bodies are whatever the die said.
     //
     // EVERY RUNG PLAYS THIS WHOLE LIST. There is one run per map and ten
@@ -1511,12 +1559,12 @@ export const WORLDS: LevelSpec[] = [
     //
     // ITS MAP IS ITS OWN AND ITS WAVES ARE THE CAMPAIGN'S. Maelstrom is
     // a coast — the sea along its north and east edges, a bay under the
-    // core — so its water doors put the naval families in the roll, and
-    // a deploy here may sail what marches elsewhere.
+    // core — so a naval roll here comes in off the water and takes a
+    // route no other map can offer it.
     id: "2",
     name: "Maelstrom",
     map: "maelstrom",
-    // THE NAVAL FRONT: hold the eight, hulls where the die deals them
+    // THE NAVAL FRONT: hold the eight, tanks off the sea where the die deals them
     mission: { kind: "hold" },
     waveGap: WAVE_GAP_DEFAULT,
     grace: GRACE_DEFAULT,

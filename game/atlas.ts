@@ -32,12 +32,68 @@ const TAU = Math.PI * 2;
 
 export type UVRect = readonly [number, number, number, number];
 
-const uv = (x: number, y: number, w: number, h: number, inset = 0): UVRect => [
-  (x + inset) / ATLAS_W,
-  (y + inset) / ATLAS_H,
-  (x + w - inset) / ATLAS_W,
-  (y + h - inset) / ATLAS_H,
-];
+/**
+ * EVERY CELL uv() HAS EVER HANDED OUT, in pixels, in the order the file
+ * declares them. It exists for one check — assertCellsDisjoint below —
+ * and the reason it is collected HERE rather than by a script that reads
+ * the file is that this is the only place a cell can come from: there is
+ * no other way to name a rectangle on the sheet, so a registry filled by
+ * uv() itself cannot fall behind the layout.
+ *
+ * The rect recorded is the FULL cell, inset and all. An inset is a
+ * sampling margin taken INSIDE the cell (see UV_ORE, the water tiles): it
+ * says where the renderer may read, not how much room the cell owns, and
+ * treating an inset as free space is exactly how a neighbour ends up half
+ * a pixel inside it.
+ */
+const CELLS: { x: number; y: number; w: number; h: number }[] = [];
+
+const uv = (x: number, y: number, w: number, h: number, inset = 0): UVRect => {
+  CELLS.push({ x, y, w, h });
+  return [
+    (x + inset) / ATLAS_W,
+    (y + inset) / ATLAS_H,
+    (x + w - inset) / ATLAS_W,
+    (y + h - inset) / ATLAS_H,
+  ];
+};
+
+/**
+ * THE ONE INVARIANT A HAND-PACKED SHEET HAS: no two cells may overlap.
+ *
+ * The layout is authored — every cell is a pair of pixel coordinates typed
+ * into this file — so nothing stops a new sprite being parked on top of an
+ * old one. Nothing announces it either: the two draws simply land on the
+ * same texels, and what the player sees is a sliver of the wrong sprite
+ * down the edge of the right one, on whichever of the two happens to be
+ * drawn second. That is a bug you find by squinting at the game, which is
+ * to say one you do not find.
+ *
+ * So it is asserted instead, over the registry above, at the top of the
+ * pack. Two hundred-odd cells is a few thousand comparisons on a sheet
+ * that takes hundreds of milliseconds to draw — the cost is not worth
+ * measuring, and it runs in every build rather than in dev only, because
+ * a sheet that packs wrong is broken art either way and the message is
+ * the only thing that tells anyone WHICH two cells did it.
+ *
+ * IDENTICAL rects are allowed: two names for one cell is aliasing, not a
+ * clash (the water tiles are addressed under several floor kinds). Only a
+ * PARTIAL overlap is the mistake.
+ */
+function assertCellsDisjoint(): void {
+  const hit: string[] = [];
+  for (let i = 0; i < CELLS.length; i++) {
+    const a = CELLS[i];
+    for (let j = i + 1; j < CELLS.length; j++) {
+      const b = CELLS[j];
+      if (a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h) continue;
+      if (a.x + a.w <= b.x || b.x + b.w <= a.x) continue;
+      if (a.y + a.h <= b.y || b.y + b.h <= a.y) continue;
+      hit.push(`${a.x},${a.y} ${a.w}x${a.h} overlaps ${b.x},${b.y} ${b.w}x${b.h}`);
+    }
+  }
+  if (hit.length) throw new Error(`atlas cells overlap (game/atlas.ts):\n  ${hit.join("\n  ")}`);
+}
 
 /**
  * THE SECOND ENVIRONMENT BAND — 1024x896 in the atlas's bottom-right
@@ -91,8 +147,24 @@ const WATER_DEEP_XY = [T5 + 800, 2496] as const;
 // packing and the same reason for it
 const WATER_TAINTED_XY = [ENV2_X + 576, ENV2_Y + 640] as const;
 const WATER_DEEP_TAINTED_XY = [ENV2_X + 768, ENV2_Y + 640] as const;
-const waterCentre = (xy: readonly [number, number]): UVRect =>
-  uv(xy[0] + 64, xy[1] + 64, 64, 64);
+/**
+ * The centre tile of a water block, as the UV — and the WHOLE 3x3 block as
+ * the cell the layout owns. Those are two different rectangles, and only
+ * one of them is what a neighbour has to keep clear of: the renderer reads
+ * 64px out of the middle, but all 192 are painted, and the eight tiles
+ * round the middle are the headroom the swell samples into. A drill parked
+ * on the outer ring is a drill in the sea whether or not any UV names it,
+ * so the registry is told about the block.
+ */
+const waterCentre = (xy: readonly [number, number]): UVRect => {
+  const rect = uv(xy[0] + 64, xy[1] + 64, 64, 64);
+  const own = CELLS[CELLS.length - 1];
+  own.x = xy[0];
+  own.y = xy[1];
+  own.w = WATER_TILE;
+  own.h = WATER_TILE;
+  return rect;
+};
 const WATER_SHALLOW_UV = waterCentre(WATER_SHALLOW_XY);
 const WATER_DEEP_UV = waterCentre(WATER_DEEP_XY);
 const WATER_TAINTED_UV = waterCentre(WATER_TAINTED_XY);
@@ -213,9 +285,9 @@ export const FLOOR_TAINTED_WATER = 45;
 export const FLOOR_DEEP_TAINTED_WATER = 48;
 
 /**
- * WHICH FLOOR GROUPS ARE WATER — the whole definition of where a hull may
- * sail and where a walker drowns, and the reason it is a list rather than
- * a comparison.
+ * WHICH FLOOR GROUPS ARE WATER — the whole definition of where a walker
+ * drowns and where a naval tank runs at full pace, and the reason it is a
+ * list rather than a comparison.
  *
  * It used to be `floor >= FLOOR_SHALLOW_WATER`, which was exact while the
  * two waters were the last two groups in the table. They cannot stay last:
@@ -732,7 +804,7 @@ export const UV_LASER = uv(T5 + 896, 1814, 4, 48);
  * trees, on the free stretch of the T5 column between the bullet regions
  * and the turret tops.
  *
- * A ship is drawn exactly like a flyer: ONE quad, outlined at pack time,
+ * A naval tank is drawn exactly like a flyer: ONE quad, outlined at pack time,
  * turned to the heading the sim gave it. It has no legs to plant and no
  * chassis to slide, so there is nothing to assemble and nothing to
  * silhouette under — which is why this band is half the size the legged
@@ -842,19 +914,31 @@ export const UV_SHIELD_TOWER = uv(1312, 2976, 96, 96);
 // floor: drawn there they painted wall art over half the band's floors
 export const UV_COPPER_WALL = uv(0, 3008, 64, 64);
 /**
- * THE ECONOMY AND THE ARMY, on the free row above the heavy turrets
- * (y 2560..2816, x from 1024 — the scepter's mounts end at 512). The
- * tetrative reconstructor's 288px art is fitted to a 256 cell; the rest
- * are native, and the 64px drill is upscaled 2x into 128 like lancer's.
- * The ore's three 32px faces sit 2x in 64 cells beside the swarmer.
+ * THE ECONOMY AND THE ARMY: the five factories, the drill and the ore, in
+ * the 1024x256 band at (0, 1792) — the tail of the crawler-and-flyer band
+ * (y 1024..2048), which the roster never grew far enough to reach, and the
+ * last empty rectangle the ORIGINAL 1024-wide column has. Verified empty
+ * on the packed sheet, not merely unclaimed: nothing is drawn there.
+ *
+ * The tetrative reconstructor's 288px art is fitted to a 256 cell; the
+ * rest are native, and the 64px drill is upscaled 2x into 128 like
+ * lancer's. The ore's three 32px faces sit 2x in 64 cells in the band's
+ * last column.
+ *
+ * THEY USED TO BE AT y 2560 AND y 2816, AND THAT WAS WRONG. That row is
+ * only free below x 1024; from 1024 rightward it is the T5 column, where
+ * omura and navanax take 384px cells down to y 2688 and the deep-water
+ * block runs to 2016 — so every factory sat on a ship and the ore sat on
+ * the tsunami, which drew a slice of turret through the copper veins on
+ * the map. assertCellsDisjoint is what now says so out loud.
  */
-export const UV_FACTORY5 = uv(1024, 2560, 256, 256);
-export const UV_FACTORY4 = uv(1280, 2560, 224, 224);
-export const UV_FACTORY3 = uv(1504, 2560, 160, 160);
-export const UV_FACTORY1 = uv(1664, 2560, 96, 96);
-export const UV_FACTORY2 = uv(1760, 2560, 96, 96);
-export const UV_DRILL = uv(1856, 2560, 128, 128);
-export const UV_ORE: readonly UVRect[] = [uv(1024, 2816, 64, 64, 2), uv(1088, 2816, 64, 64, 2), uv(1024, 2880, 64, 64, 2)];
+export const UV_FACTORY5 = uv(0, 1792, 256, 256);
+export const UV_FACTORY4 = uv(256, 1792, 224, 224);
+export const UV_FACTORY3 = uv(480, 1792, 160, 160);
+export const UV_FACTORY1 = uv(640, 1792, 96, 96);
+export const UV_FACTORY2 = uv(736, 1792, 96, 96);
+export const UV_DRILL = uv(832, 1792, 128, 128);
+export const UV_ORE: readonly UVRect[] = [uv(960, 1792, 64, 64, 2), uv(960, 1856, 64, 64, 2), uv(960, 1920, 64, 64, 2)];
 // (the strip between the copper walls and the 4x4 base at y=2944 held the
 // swarm's own roster — Erekir's guns and scrap walls — and is free again:
 // the swarm builds from the player's roster now, see types.ts StructKind)
@@ -1009,7 +1093,7 @@ export const UNIT_ART: Record<UnitKind, { uv: UVRect; sprite: number }> = {
   // the only 384px cell on it — hence the odd multiplier, which is just
   // 384/64 like every other one here
   eclipse: { uv: UV_ECLIPSE, sprite: UNIT_SPRITE * 6 },
-  // the fleet: one quad apiece, like the flyers, on the naval band's three
+  // the naval tanks: one quad apiece, like the flyers, on the band's three
   // cell sizes (see the UV note there)
   risso: { uv: UV_RISSO, sprite: UNIT_SPRITE * 2 },
   minke: { uv: UV_MINKE, sprite: UNIT_SPRITE * 2 },
@@ -1542,7 +1626,7 @@ const SPRITES = {
   toxopidFoot: "/mindustry/sprites/units/toxopid-foot.png",
   toxopidCannon: "/mindustry/sprites/units/weapons/toxopid-cannon.png",
   eclipse: "/mindustry/sprites/units/eclipse.png",
-  // the fleet. Each ship is a single hull sprite — the naval types' own
+  // the naval tanks. Each is a single hull sprite — the naval types' own
   // weapons all sit on turret mounts Mindustry draws from the weapon
   // sheets, and a hull with no assembled parts needs none of them here
   risso: "/mindustry/sprites/units/risso.png",
@@ -1600,8 +1684,13 @@ const SPRITES = {
   // cyclone's own art is the bare head; its three barrels are separate
   // sprites the preview already has assembled underneath
   cyclonePreview: "/mindustry/sprites/blocks/turrets/cyclone/cyclone-preview.png",
-  spectre: "/mindustry/sprites/blocks/turrets/spectre.png",
-  meltdown: "/mindustry/sprites/blocks/turrets/meltdown.png",
+  // spectre and meltdown are the ONLY two blocks here not drawn from the
+  // upstream tree: each ends a line whose other two guns wear a different
+  // palette, so their four flat colours are swapped for that line's four
+  // (scripts/reskin-turrets.mjs). Same art, same shading, other hues —
+  // foreshadow keeps Mindustry's gunmetal, its line being the surge one
+  spectre: "/sprites/turrets/spectre.png",
+  meltdown: "/sprites/turrets/meltdown.png",
   foreshadow: "/mindustry/sprites/blocks/turrets/foreshadow.png",
   // the walls, 1x1 block art at Mindustry's 32px
   copperWall: "/mindustry/sprites/blocks/walls/copper-wall.png",
@@ -1994,6 +2083,8 @@ function drawFacingRight(
  * source set — for custom art without touching the render pipeline.
  */
 async function packAtlas(): Promise<HTMLCanvasElement> {
+  // before a single texel is drawn: the layout has to be a layout
+  assertCellsDisjoint();
   const img = await loadImages();
   const a = document.createElement("canvas");
   a.width = ATLAS_W;
@@ -2554,16 +2645,16 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(outlined(img.thoriumWall, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 128, 3008, 64, 64);
   c.drawImage(antialiased(outlined(img.copperWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1280, 3072, 128, 128);
   // the drill and the factories, flat like the walls (see UV_FACTORY5)
-  c.drawImage(antialiased(outlined(img.factory5, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1024, 2560, 256, 256);
-  c.drawImage(antialiased(outlined(img.factory4, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1280, 2560, 224, 224);
-  c.drawImage(antialiased(outlined(img.factory3, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1504, 2560, 160, 160);
-  c.drawImage(antialiased(outlined(img.factory1, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1664, 2560, 96, 96);
-  c.drawImage(antialiased(outlined(img.factory2, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1760, 2560, 96, 96);
-  c.drawImage(antialiased(outlined(img.drill, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1856, 2560, 128, 128);
+  c.drawImage(antialiased(outlined(img.factory5, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 0, 1792, 256, 256);
+  c.drawImage(antialiased(outlined(img.factory4, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 256, 1792, 224, 224);
+  c.drawImage(antialiased(outlined(img.factory3, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 480, 1792, 160, 160);
+  c.drawImage(antialiased(outlined(img.factory1, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 640, 1792, 96, 96);
+  c.drawImage(antialiased(outlined(img.factory2, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 736, 1792, 96, 96);
+  c.drawImage(antialiased(outlined(img.drill, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 832, 1792, 128, 128);
   // the ore, an overlay on the floor: no outline, the floor's own edges
-  c.drawImage(antialiased(img.ore1), 1024, 2816, 64, 64);
-  c.drawImage(antialiased(img.ore2), 1088, 2816, 64, 64);
-  c.drawImage(antialiased(img.ore3), 1024, 2880, 64, 64);
+  c.drawImage(antialiased(img.ore1), 960, 1792, 64, 64);
+  c.drawImage(antialiased(img.ore2), 960, 1856, 64, 64);
+  c.drawImage(antialiased(img.ore3), 960, 1920, 64, 64);
   c.drawImage(antialiased(outlined(img.titaniumWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1728, 3072, 128, 128);
   c.drawImage(antialiased(outlined(img.thoriumWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1856, 3072, 128, 128);
 

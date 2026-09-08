@@ -46,7 +46,8 @@ function levelStats(level: LevelSpec) {
   // that no wave names a spawn region. The old line listed the region ids a
   // script pinned its groups to; a unit's layer picks its door on its own,
   // so what is worth knowing at a glance is which kinds of door the level
-  // is going to need the map to have.
+  // will be using. No layer NEEDS its own door any more — every one falls
+  // back to whatever the map paints (Sim.padMaskFor).
   const layers = new Set<MoveLayer>();
   for (const step of level.script) {
     if (!("wave" in step)) continue;

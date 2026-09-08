@@ -139,15 +139,6 @@ export interface BulletSprite {
   front: RGB; // BasicBulletType.frontColor
 }
 
-/**
- * WHAT ELECTRICITY AND A HELD BEAM DO TO A HULL: twice the damage. A boat
- * is a big, fast, armoured body on a route the ballistic turrets reach
- * late, and the naval front needed a counter that is a CHOICE rather than
- * more of everything — arc, lancer and meltdown are that choice (see
- * BulletStats.navalMultiplier).
- */
-export const NAVAL_BONUS = 2;
-
 export interface BulletStats {
   speed: number; // px/s
   damage: number; // direct-hit damage
@@ -210,11 +201,6 @@ export interface BulletStats {
   // Mindustry damagePierce / damageContinuousPierce: skip armour entirely.
   // A shield still soaks it (see Sim.damageUnit)
   pierceArmor?: boolean;
-  // WATER CONDUCTS. Damage is multiplied by this against a naval hull —
-  // the electric and beam weapons (arc, lancer, meltdown) carry NAVAL_BONUS
-  // so a fleet has an answer the ballistic line is not, and nothing else
-  // sets it. Unset is 1
-  navalMultiplier?: number;
   // Mindustry lifeScaleRandMin/Max: the shell's lifetime is multiplied by a
   // roll in this range at spawn, which is what scatters a volley of
   // artillery along its firing line instead of stacking it on one point
@@ -788,7 +774,6 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     bullet: {
       speed: 0,
       damage: 12, // LightningBulletType damage upstream (master)
-      navalMultiplier: NAVAL_BONUS,
       // Fx.lightning's own 10 ticks: the bolt is instant, and this is only
       // how long the drawn arc lingers
       lifetime: 10 / TICK,
@@ -834,7 +819,6 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     bullet: {
       speed: 0,
       damage: 140,
-      navalMultiplier: NAVAL_BONUS,
       lifetime: 16 / TICK, // the beam's fade — the damage is instant
       splash: 0,
       splashRadius: 0,
@@ -1229,20 +1213,24 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       pierce: true,
       pierceCap: 2,
       knockback: 0.7,
+      // THE SHELL IS DRAWN IN COPPER, not in thorium's pink. Every number
+      // above is still thorium ammo's; this is the line's look, not its
+      // stats — a spectre ends duo's line (factions.ts) and now wears
+      // duo's plating, so it throws duo's round at four times the size
       sprite: {
         region: "bullet",
         across: 16 * MU,
         along: 23 * MU, // the biggest round on the field by half again
         shrinkX: 0,
         shrinkY: 0.5,
-        back: PAL.thoriumAmmoBack,
-        front: PAL.thoriumAmmoFront,
+        back: PAL.copperAmmoBack,
+        front: PAL.copperAmmoFront,
       },
       shootFx: FxKind.ShootBig,
       smokeFx: FxKind.SmokeSmall,
       hitFx: FxKind.BulletHit,
       despawnFx: FxKind.BulletHit,
-      fxColor: PAL.thoriumAmmoBack,
+      fxColor: PAL.copperAmmoBack,
     },
   },
   // Meltdown, from mindustry/content/Blocks.java: a LaserTurret, which
@@ -1274,7 +1262,6 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     bullet: {
       speed: 0,
       damage: 78, // per damageInterval, NOT per second
-      navalMultiplier: NAVAL_BONUS,
       lifetime: 0, // the beam is turret state, not a projectile
       splash: 0,
       splashRadius: 0,
@@ -1288,11 +1275,21 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
         fade: 16 / TICK, // ContinuousLaserBulletType.fadeTime
         moveFract: 0.5, // LaserTurret.firingMoveFract
       },
-      // the TURRET names Fx.shootBigSmoke2 and the bullet none, so the
-      // block's effect is the one that plays
-      shootFx: FxKind.SmokeBig2,
+      // Upstream the TURRET names Fx.shootBigSmoke2 and the bullet none,
+      // so the block's orange powder cloud is what plays. A laser throws
+      // no powder, and this one ends lancer's line, so it lights up the
+      // way a lancer fires instead: the two blue wings off the muzzle,
+      // square to the beam. No other TURRET fired the cloud; the swarm's
+      // artillery and its spark guns still do (weapons.ts)
+      shootFx: FxKind.LancerShoot,
       hitFx: FxKind.HitMeltdown,
-      fxColor: PAL.meltdownHit,
+      // THE BEAM IS LANCER'S BLUE, not Mindustry's orange — a meltdown
+      // ends arc's and lancer's line (factions.ts) and now wears its
+      // plating, so it burns in its colour too. This entry carries the
+      // muzzle cloud and the bars flicking off whatever the beam rests on;
+      // the four washes of the beam itself are MELTDOWN_BEAM (weapons.ts),
+      // which is repainted to match
+      fxColor: PAL.lancerLaser,
     },
   },
   // Foreshadow, from mindustry/content/Blocks.java with surge ammo (a
@@ -1389,12 +1386,12 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
 export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   duo: "A cheap single-barrel gun. One small bullet at a time at the nearest body — the turret every board starts with, and the one that stays worth having in numbers.",
   scatter: "A flak gun. Its shells burst near a flyer rather than hitting it, damaging everything caught in the blast.",
-  arc: "Fires a lightning bolt that walks from body to body down a file, so it is worth most aimed along a lane rather than across one. Water conducts: twice the damage to a hull.",
+  arc: "Fires a lightning bolt that walks from body to body down a file, so it is worth most aimed along a lane rather than across one.",
   hail: "Artillery. Arcs a shell over the ground and explodes where it lands, hitting a cluster instead of a body. It never fires at a flyer.",
   scorch: "A flamethrower with barely any reach. Enormous close-range damage and it sets what it touches alight — burning ignores armour.",
   salvo: "Fires a four-shell volley in quick succession, then spends a while reloading. Steady damage against single hard targets.",
   wave: "Sprays water. It does almost no damage; what it does is soak enemies so they move slower, for the turrets behind it.",
-  lancer: "Charges, then fires a beam that cuts through a whole line of bodies at once. Armour counts quadruple against it, so it struggles on heavily armoured waves until Charged Optics. Twice the damage to a hull.",
+  lancer: "Charges, then fires a beam that cuts through a whole line of bodies at once. Armour counts quadruple against it, so it struggles on heavily armoured waves until Charged Optics.",
   ripple: "Long-range artillery. Lobs four shells an arc onto a wide patch of ground — the longest reach short of a foreshadow, and it never fires at a flyer.",
   parallax: "A tractor beam. It drags flyers backwards down the lane and does small armour-piercing damage while it holds them; the pull is the point, not the damage.",
   fuse: "A close-range shotgun. Three heavy rays at once in a tight cone, with almost no reach — it wants to stand where the lane bends.",
@@ -1402,7 +1399,7 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   cyclone: "A high-rate flak cannon. A constant stream of shells that burst into fragments near whatever they hit.",
   tsunami: "A heavy water sprayer covering a wide area. Like the wave it barely damages anything — it soaks a whole lane at once so everything in it slows.",
   spectre: "A twin-barrel heavy machine gun with the highest sustained damage in the game, alternating between barrels so it never stops firing.",
-  meltdown: "Holds a continuous laser on one target, burning through it for as long as it stays in range. Twice the damage to a hull.",
+  meltdown: "Holds a continuous laser on one target, burning through it for as long as it stays in range.",
   foreshadow: "An extreme-range railgun firing one enormous shot on a long reload. It picks the highest-health target in range rather than the nearest.",
   "copper-wall": "A cheap wall. It shoots nothing and stops everything: the swarm has to chew through it to get at what stands behind, and it holds far more than a turret its size.",
   "titanium-wall": "A sturdier wall. Half again the pool of copper for a lane that takes real fire, and still cheap enough to line a whole crossing with.",
@@ -1535,10 +1532,17 @@ export const SPAWN_UNMOVING = 30 / TICK;
  * THE MOVEMENT LAYERS, and the axis the whole spawn/exit model turns on.
  *
  * A unit belongs to exactly one of these for its whole life, decided by its
- * kind: a flyer is air, a naval hull is water, everything else walks. The
+ * kind: a flyer is air, a naval tank is water, everything else walks. The
  * layer picks which flow field it steers by, which drop zones it may enter
  * from, and which exits it is trying to reach — three questions that used
  * to share one answer plus a hand-authored region id on top.
+ *
+ * "WATER" IS THE AMPHIBIOUS LAYER, not a wetter kind of ground. A naval
+ * tank crosses deep water AND dry land, so its field is the walkers' with
+ * the deep cells opened up (navalWalkMask) and its doors are the water
+ * zones AND the ground ones. What the layer still costs it is pace: ashore
+ * it drives at NAVAL_LAND_SPEED of its stat. That is why every faction now
+ * plays on every map — there is no terrain a layer cannot cross.
  *
  * REGIONS ARE GONE AND THIS REPLACED THEM. A drop zone used to carry a
  * NUMBER, and a wave group had to name the same number to use it — two
@@ -1550,6 +1554,25 @@ export const SPAWN_UNMOVING = 30 / TICK;
  */
 export const MOVE_LAYERS = ["ground", "air", "water"] as const;
 export type MoveLayer = (typeof MOVE_LAYERS)[number];
+
+/**
+ * WHAT A NAVAL TANK LOSES ASHORE: half its speed, applied to the drive and
+ * to nothing else.
+ *
+ * It is deliberately NOT a pathfinding input. The naval field is a plain
+ * shortest-path solve over "rock, and nothing else" (navalWalkMask), so a
+ * tank takes the same route a walker would and simply crosses the water on
+ * the way when the water is on the way — it does not detour for a channel,
+ * and it does not refuse a shortcut over land. The penalty is what makes
+ * the sea worth being in when the sea happens to point at the core, and
+ * what a player standing turrets over a beach is buying.
+ *
+ * Mindustry's own shallow-water speedMultiplier is 0.5 for the same reason
+ * we skip it for walkers (see terrain.ts WALL_DEEP): there, a speed
+ * penalty would be a pathfinding input. Here it is not one — the field
+ * never reads it.
+ */
+export const NAVAL_LAND_SPEED = 0.5;
 
 /**
  * What a drop zone feeds: one of the movement layers, or the BOSS door.

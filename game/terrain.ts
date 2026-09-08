@@ -59,8 +59,8 @@ export const showsFloorCell = (blocked: number, wall: number): boolean =>
 
 /**
  * Is this floor index water of any kind? It is the whole definition of
- * where a naval hull may go, the way `blocked` is the whole definition of
- * where a walker may not.
+ * where a naval tank runs at full pace (NAVAL_LAND_SPEED), the way
+ * `blocked` is the whole definition of where a walker may not go.
  *
  * It reads the floor's GROUP against WATER_FLOOR_GROUPS rather than
  * comparing the index against FLOOR_SHALLOW_WATER, which is what it used
@@ -73,15 +73,25 @@ export const isWaterFloor = (floor: number): boolean =>
   WATER_FLOOR_GROUPS.includes((floor / 3) | 0);
 
 /**
- * The passability mask for the WATER layer: 1 where a hull cannot go, which
- * is every cell that is not water. It is the mirror of `blocked` — dry land
- * is a wall to a boat exactly as deep water is a wall to a walker — and it
- * is built here so the flow field can stay a general "field over a mask"
- * rather than learning what water is.
+ * The passability mask for the NAVAL layer: 1 where a naval tank cannot go.
+ *
+ * A naval tank is AMPHIBIOUS. This mask is the walkers' `blocked` with the
+ * deep water taken back out of it — rock stops a tank exactly as it stops a
+ * walker, and nothing else does. Shallow water was never in `blocked` at
+ * all, so the whole difference between the two layers is the WALL_DEEP
+ * sentinel: the one cell type the swarm must walk round and the fleet
+ * drives straight through.
+ *
+ * It used to be the mirror image of `blocked` — every dry cell a wall —
+ * which is what made a fleet a thing that could only ever play on a map
+ * with a sea. Now the field is a superset of the walkers' and the water is
+ * a shortcut rather than a moat, so a naval faction deploys on any map at
+ * all; what water still buys is SPEED (NAVAL_LAND_SPEED), which is a fact
+ * about the drive and not about the route.
  */
-export function waterWalkMask(t: Terrain): Uint8Array {
-  const m = new Uint8Array(t.floor.length);
-  for (let i = 0; i < m.length; i++) m[i] = isWaterFloor(t.floor[i]) ? 0 : 1;
+export function navalWalkMask(t: Terrain): Uint8Array {
+  const m = new Uint8Array(t.blocked.length);
+  for (let i = 0; i < m.length; i++) m[i] = t.blocked[i] && t.wall[i] !== WALL_DEEP ? 1 : 0;
   return m;
 }
 

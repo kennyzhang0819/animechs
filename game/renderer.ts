@@ -2599,11 +2599,14 @@ export class Renderer {
         this.drawDamageSmoke(dyn, e, t);
       } else if (e.kind === FxKind.HitMeltdown) {
         // Fx.hitMeltdown: six bars flicking off whatever the beam is
-        // resting on, in the beam's own hot orange
+        // resting on. Mindustry hardcodes Pal.meltdownHit here; the beam
+        // wears its line's colour now (constants.ts meltdown), so the bars
+        // take the one they arrive with and keep the orange as the fallback
         const bar = ((1 - t) * 4 + 1) * MU;
+        const mcol = e.col ?? PAL.meltdownHit;
         this.scatter(e.seed ?? 1, 6, FIN_POW(t) * 18 * MU, 0, Math.PI, (x, y, bearing) => {
           this.strokeLine(dyn, e.x + x, e.y + y, bearing, bar, (1 - t) * 2 * MU,
-            PAL.meltdownHit, 1);
+            mcol, 1);
         });
       } else if (e.kind === FxKind.UnitSpawn) {
         this.drawUnitSpawn(dyn, e, t);
@@ -2614,7 +2617,9 @@ export class Renderer {
           2 * (1 - t) * MU, PAL.accent, RING_ALPHA);
       } else if (e.kind === FxKind.SmokeBig2) {
         // Fx.shootBigSmoke2: shootBigSmoke's cloud, but nine motes over
-        // 23 units instead of eight over 19 — meltdown lights up wide
+        // 23 units instead of eight over 19. Meltdown used to be the only
+        // block firing it and is not any more (constants.ts); the swarm's
+        // artillery and its spark guns still do
         const col = ramp(PAL.lightOrange, PAL.lightGray, PAL.gray, t);
         const rad = ((1 - t) * 2.4 + 0.2) * MU;
         this.scatter(e.seed ?? 1, 9, FIN_POW(t) * 23 * MU, e.rot ?? 0, SPREAD_20, (x, y) => {

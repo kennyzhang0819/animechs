@@ -74,7 +74,10 @@ common, and what the generator is built to reproduce:
   heart, shallow at the edge, and shallow is walkable ground — a road
   across a lake is a ford. A naval map is a coast: the sea along one or
   two edges, up to 60% of the board, with the core within gun reach of
-  the water.
+  the water. Water is a shortcut for the naval line rather than the only
+  ground it has — a naval tank crosses deep water AND land — so a map with
+  no sea in it plays the naval factions perfectly well, at the pace of an
+  army that has to drive.
 - **Forests, clutter and ruins.** Pines in noise-shaped stands beside the
   floors they grow on (up to 40% of a forest map), boulders of the
   floor's own stone scattered thickest along the rock, bushes and spore
@@ -135,8 +138,10 @@ on this game's document shape:
    become the bridge the opening just removed. Then open ground the core
    cannot be walked to from is filled (Mindustry's `inverseFloodFill`),
    the rim is sealed, and on a map with water zones any pond nearer the
-   core than the sea is drained, because the sim sends every hull to the
-   water nearest the core whichever puddle that is.
+   core than the sea is drained. That rule was written when the sim sent
+   every hull to the water nearest the core, whichever puddle that was; it
+   is kept because a pond beside the core is still a place the naval line
+   can be dropped into and cannot drive far out of.
 8. **Holes.** Thin walls between two open places are punched where the
    hole shortens nobody's walk to the core by more than 15% and the
    funnel still holds. A hole is texture and a second way in, never a
@@ -211,9 +216,12 @@ A generator that does not verify itself is a generator that quietly ships a
 broken map. Every one of these is printed on every run:
 
 - **The core** is 5x5 open dry ground, off every drop zone.
-- **Every ground zone reaches the core; every water zone reaches the
-  hulls' goal**, the water nearest the core as the sim finds it. `0 pads`
-  means the zone is off the open ground.
+- **Every ground zone reaches the core; every water zone reaches the sea
+  it is in and the water nearest the core.** The generator still measures
+  the water zones over the water alone, which is stricter than the sim now
+  needs — a naval tank drives ashore — and it is what keeps a water door
+  in real water rather than in a puddle. `0 pads` means the zone is off the
+  open ground.
 - **Every way through is wide enough.** Clearance is the distance to the
   nearest cell a unit cannot occupy, so twice it is the corridor's width
   there; the check reports the WIDEST route that still joins each zone to
@@ -241,7 +249,8 @@ is baked into every document already on disk. Add a family, add its group
 to that list if it is wet, and `isWaterFloor` keeps meaning what it says.
 
 Shallow water is walkable by ground units and costs nothing to path
-through; deep water (`WALL_DEEP`) blocks them. Both are sailable. A
+through; deep water (`WALL_DEEP`) blocks them. The naval line crosses
+both, and dry land besides, at half pace ashore (`NAVAL_LAND_SPEED`). A
 shallow fringe round a lake is a corridor for walkers, and on these maps
 that is meant: a ford is where a road crosses water, and the route checks
 measure what is actually walkable, fringes included.
@@ -260,11 +269,16 @@ document was saved at; **height falls out of `floor.length / w`**.
 | `base` | `{x, y}`, the core's top-left cell |
 
 **THE CORE IS THE DESTINATION, AND THE MAP IS SEALED.** Every border cell
-is rock, and the swarm walks at the core (`Sim.coreGoal`), presses against
-it and shoots. Hulls sail to the water nearest the core and fire from the
-shore (`Sim.waterGoal`), so a naval map wants its core within gun reach of
-the water — `coreWaterReach` in the spec is that number. Spawns are per
-layer and independent; boss zones are terrain-blind.
+is rock, and every layer walks at the core (`Sim.coreGoal`), presses
+against it and shoots — the naval line included, over a mask that is the
+walkers' rock with the deep water opened up (`navalWalkMask`). It used to
+sail to the water nearest the core and fire from the shore, which is what
+`coreWaterReach` in a generator spec is still keeping honest: a core in
+gun reach of the sea is a core a naval wave can hurt without leaving the
+water it is quick in. Spawns are per layer and independent — a naval tank
+uses the ground zones as well as the water ones, and every layer falls
+back to whatever zones the map does paint, so no map locks a faction out
+(`Sim.padMaskFor`). Boss zones are terrain-blind.
 
 The atlas indices a generator paints with are COPIED into
 `mindustry.mjs` rather than imported, because the generator is plain node

@@ -1,6 +1,6 @@
 import { TOWER_DESC, TOWERS } from "./constants";
 import { COMMON_KINDS, FACTION_KEYS, FACTION_TURRETS, factionsOf, kindsFor } from "./factions";
-import { familyByKey, WORLDS, type FamilyKey } from "./levels";
+import { familyByKey, SHELVED_FAMILIES, WORLDS, type FamilyKey } from "./levels";
 import { MUTATIONS, mutationById, type MutationId } from "./mutation";
 import { BAR_SLOTS, BY_MINDUSTRY_VALUE, type TechState } from "./tech";
 import { TOWER_KINDS, type TowerKind } from "./types";
@@ -153,12 +153,19 @@ const PLACED: readonly { level: number; reward: Reward }[] = [
 export const STARTING_FACTIONS: readonly FamilyKey[] = ["ground", "groundSupport"];
 
 /**
- * WHAT THE TRACK OPENS, BY LEVEL. One faction every three levels: the
- * air line first (a save wants to fly early), the crawlers, then the two
- * fleets last — they play only on the maps with water, which the track
- * has opened by then. The levels between carry the maps (PLACED); a level
+ * WHAT THE TRACK OPENS, BY LEVEL. One faction every three levels: the sky
+ * gunships first (a save wants to fly early), the venom crawlers, then the
+ * two amphibious lines last — armour that swims is the strangest thing to
+ * be handed, and the maps with real water on them are open by then for it
+ * to be handed on. The levels between carry the maps (PLACED); a level
  * with nothing in it at all is allowed, and the top of the phase (15) is
  * one.
+ *
+ * THE SHELF IS HONOURED HERE AND THE LIST IS NOT EDITED FOR IT. A shelved
+ * faction (levels.ts SHELVED_FAMILIES) keeps the level it was always
+ * meant to open on and is simply not dealt, so its level hands out
+ * whatever else is placed there and taking it off the shelf puts it back
+ * exactly where it belongs.
  */
 const FACTION_UNLOCKS: readonly { level: number; faction: FamilyKey }[] = [
   { level: 3, faction: "air" },
@@ -167,26 +174,32 @@ const FACTION_UNLOCKS: readonly { level: number; faction: FamilyKey }[] = [
   { level: 12, faction: "navalSupport" },
 ];
 
-/** the factions by the level they open on: the starting two on 1 */
+/** the factions by the level they open on: the starting two on 1, the
+ *  shelved ones on none */
 function dealFactions(): Map<number, FamilyKey[]> {
   const out = new Map<number, FamilyKey[]>();
-  out.set(1, [...STARTING_FACTIONS]);
-  for (const u of FACTION_UNLOCKS) out.set(u.level, [...(out.get(u.level) ?? []), u.faction]);
+  const inPlay = (f: FamilyKey): boolean => !SHELVED_FAMILIES.includes(f);
+  out.set(1, STARTING_FACTIONS.filter(inPlay));
+  for (const u of FACTION_UNLOCKS)
+    if (inPlay(u.faction)) out.set(u.level, [...(out.get(u.level) ?? []), u.faction]);
   return out;
 }
 
 const FACTIONS_DEALT = dealFactions();
 
 /**
- * THE TRACK OPENS EVERY FACTION, ONCE EACH, INSIDE THE PHASE. A faction on
- * no level could never be played, one on two would be handed out twice,
- * and one past ROSTER_TOP would land in the mutator phase — all three are
- * import-time failures here rather than a deploy screen quietly short a
- * line.
+ * THE TRACK OPENS EVERY FACTION IN PLAY, ONCE EACH, INSIDE THE PHASE. A
+ * faction on no level could never be played, one on two would be handed
+ * out twice, and one past ROSTER_TOP would land in the mutator phase —
+ * all three are import-time failures here rather than a deploy screen
+ * quietly short a line. A SHELVED faction is exempt from the first of
+ * those and not from the others: it is allowed to be dealt nowhere, and
+ * its entry in FACTION_UNLOCKS is still checked for a double deal and for
+ * a level inside the phase, so the shelf cannot hide a broken track.
  */
 (() => {
   const seen = new Map<FamilyKey, number>();
-  for (const [level, fs] of FACTIONS_DEALT)
+  for (const [level, fs] of dealFactionsUnshelved())
     for (const f of fs) {
       const had = seen.get(f);
       if (had !== undefined)
@@ -197,6 +210,15 @@ const FACTIONS_DEALT = dealFactions();
   for (const f of FACTION_KEYS)
     if (!seen.has(f)) throw new Error(`the track never opens the faction "${f}" — no level hands it out`);
 })();
+
+/** the deal as it would be with nothing shelved — what the check above
+ *  holds the whole table to */
+function dealFactionsUnshelved(): Map<number, FamilyKey[]> {
+  const out = new Map<number, FamilyKey[]>();
+  out.set(1, [...STARTING_FACTIONS]);
+  for (const u of FACTION_UNLOCKS) out.set(u.level, [...(out.get(u.level) ?? []), u.faction]);
+  return out;
+}
 
 /** the level a faction opens on — 1 for the starting two */
 export function factionUnlockLevel(f: FamilyKey): number {
@@ -212,12 +234,18 @@ export function factionsAt(level: number): Set<FamilyKey> {
   return out;
 }
 
-/** the level a turret joins the roster: the first level any faction that
- *  owns it opens on — 1 for a common kind (the walls, the drill, the factories) */
+/**
+ * The level a turret joins the roster: the first level any faction that
+ * owns it opens on — 1 for a common kind (the walls, the drill, the
+ * factories), and never for one whose every owner is shelved. A turret
+ * off the roster answers MAX_LEVEL + 1 rather than 1: it is not common,
+ * and calling it a level-1 gun would put a rung for it at the very front
+ * of a track that never hands the gun out.
+ */
 export function turretUnlockLevel(kind: TowerKind): number {
   const owners = factionsOf(kind);
-  if (owners.length === 0) return 1;
-  return Math.min(...owners.map(factionUnlockLevel));
+  if (owners.length > 0) return Math.min(...owners.map(factionUnlockLevel));
+  return COMMON_KINDS.includes(kind) ? 1 : MAX_LEVEL + 1;
 }
 
 /**

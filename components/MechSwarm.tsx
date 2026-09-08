@@ -53,7 +53,7 @@ import {
   tierMutationStep,
   tierXpBonus,
 } from "@/game/ladder";
-import { drawThumb, loadMap, loadOfficialMaps, mapLayers, OFFICIAL_MAP_IDS } from "@/game/maps";
+import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import {
   bestClearOn,
   effectiveLevel,
@@ -90,7 +90,7 @@ import {
 } from "@/game/mutation";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
 import { factionsAt, lockedMutators, rewardsAt, rewardText } from "@/game/track";
-import { defaultLoadout, FACTION_TURRETS, factionUnits } from "@/game/factions";
+import { defaultLoadout, FACTION_BLURB, FACTION_TURRETS, factionUnits } from "@/game/factions";
 import { TOWER_ICONS } from "@/game/towerIcons";
 import { levelProgress, POINT_COLOR, RANDOM_MAP_XP_BONUS, XP_COLOR } from "@/game/economy";
 import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
@@ -293,17 +293,18 @@ const runSpec = (
 
 /**
  * THE FACTION A RUN DEPLOYS AS, out of what the save owns (track.ts
- * factionsAt): the remembered pick where the map can play it — a fleet
- * needs a map with water — else the first owned faction the map supports,
- * else the first owned. Null only on a save that owns nothing, which the
- * track makes impossible.
+ * factionsAt): the remembered pick, else the first owned. Null only on a
+ * save that owns nothing, which the track makes impossible.
+ *
+ * IT USED TO WEIGH THE MAP'S DOORS — a fleet needed a map with water, and
+ * a naval pick on a dry map was quietly swapped for one that walked. Every
+ * faction plays every map now (the naval line is amphibious, and every
+ * layer falls back to whatever doors the map does paint), so the pick is
+ * simply the pick.
  */
-const factionFor = (p: Progress, pick: FamilyKey | null, world: LevelSpec | null): FamilyKey | null => {
+const factionFor = (p: Progress, pick: FamilyKey | null): FamilyKey | null => {
   const owned = [...factionsAt(effectiveLevel(p))];
-  const layers = world ? mapLayers(world.map) : null;
-  const plays = (f: FamilyKey): boolean => !layers || layers.has(familyByKey(f).layer);
-  if (pick && owned.includes(pick) && plays(pick)) return pick;
-  return owned.find(plays) ?? owned[0] ?? null;
+  return pick && owned.includes(pick) ? pick : (owned[0] ?? null);
 };
 
 /**
@@ -670,27 +671,23 @@ function DifficultyPicker({
 /**
  * THE FACTION PICKER: one row per faction the save owns (track.ts
  * factionsAt), the detail pane showing the line — its five bodies, tier 1
- * to 5, and its three turrets — and which movement layer it fights on. A
- * faction the picked map cannot play (a fleet on a dry map) is listed
- * and named as such, and cannot be taken.
+ * to 5, and its three turrets — and which movement layer it fights on.
+ * Every owned faction can be taken on every map, so there is nothing here
+ * to grey out.
  */
 function FactionPicker({
   progress,
   pick,
-  world,
   onPick,
   onClose,
 }: {
   progress: Progress;
   pick: FamilyKey | null;
-  world: LevelSpec | null;
   onPick: (f: FamilyKey) => void;
   onClose: () => void;
 }) {
   const owned = [...factionsAt(effectiveLevel(progress))];
   const [focus, setFocus] = useState<FamilyKey | null>(pick ?? owned[0] ?? null);
-  const layers = world ? mapLayers(world.map) : null;
-  const plays = (f: FamilyKey): boolean => !layers || layers.has(familyByKey(f).layer);
   const sprite = (src: string, key: string, big = false) => (
     // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite
     <img
@@ -702,11 +699,7 @@ function FactionPicker({
   );
   const list = owned.map((f) => (
     <PickRow key={f} selected={f === pick} focused={f === focus} onPick={() => setFocus(f)}>
-      <span
-        className={`truncate font-display text-[15px] font-bold uppercase tracking-widest ${
-          plays(f) ? "text-[#EDEDEF]" : "text-[#71717C]"
-        }`}
-      >
+      <span className="truncate font-display text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
         {familyByKey(f).name}
       </span>
     </PickRow>
@@ -717,13 +710,7 @@ function FactionPicker({
       <div className="font-display text-[19px] font-bold uppercase tracking-widest text-[#FFD37F]">
         {fam.name}
       </div>
-      <p className="text-[14px] text-[#A6A6AF]">
-        {fam.layer === "air"
-          ? "A line that flies: nothing on the ground stops it, and only the turrets that shoot up can."
-          : fam.layer === "water"
-            ? "A fleet: it sails the water and only the water, so it plays on the maps that have a sea."
-            : "A line that walks: it takes the lanes the map gives it and fights at the walls."}
-      </p>
+      <p className="text-[14px] text-[#A6A6AF]">{FACTION_BLURB[focus]}</p>
       <DetailLine label="Units">
         <span className="flex flex-wrap items-center gap-1.5">
           {fam.kinds.map((u) => sprite(`/mindustry/sprites/units/${u}.png`, u, true))}
@@ -734,10 +721,7 @@ function FactionPicker({
           {FACTION_TURRETS[focus].map((k) => sprite(TOWER_ICONS[k], k, true))}
         </span>
       </DetailLine>
-      <DetailLine label="Plays here">
-        {plays(focus) ? "Yes" : world ? `No — ${world.name} has no ${fam.layer} door` : "Yes"}
-      </DetailLine>
-      <SelectButton onClick={() => onPick(focus)} disabled={!plays(focus)} />
+      <SelectButton onClick={() => onPick(focus)} />
     </>
   ) : (
     <p className="text-[14px] text-[#A6A6AF]">This save owns no faction yet.</p>
@@ -781,7 +765,7 @@ function DealFamiliesCell({ families }: { families: readonly FamilyKey[] }) {
         />
       ))}
       <HoverCard tip={tip} title="Swarm families" tag="Deal" color={DEAL_COLOR} align="right">
-        The families this map&apos;s drop zones dealt the run. Every wave sends these
+        The three families the deploy dealt this run. Every wave sends these
         three, tier for tier, whatever the script was authored in.
         <span className="mt-1.5 block text-[#EDEDEF]">{names.join(" · ")}</span>
       </HoverCard>
@@ -1271,7 +1255,7 @@ export default function MechSwarm() {
     setTier(t);
     setRunRandom(false); // asked for by id: nothing random about it
     setAdmin(true); // a sandbox run: whole tree, no caps, every pace
-    setLevel(runSpec(w, t, rollFamilies(mapLayers(w.map)), mutation));
+    setLevel(runSpec(w, t, rollFamilies(), mutation));
     setScreen("game");
     setLoadUi({ step: firstLoadStep(), out: false });
   }, [mapsReady]);
@@ -1635,13 +1619,11 @@ export default function MechSwarm() {
       tierMutationCount(tier),
       lockedMutators(effectiveLevel(p)),
     );
-    // THE FAMILY DIE: three of the families this map's doors allow, in
-    // the order the script's slots are dealt to them (rollFamilies)
-    const families = rollFamilies(mapLayers(w.map));
-    // THE PLAYER'S OWN LINE: the faction picked on this screen, where the
-    // map can play it (factionFor) — a naval faction on a dry map falls
-    // back to one that walks
-    const faction = factionFor(p, factionPick, w);
+    // THE FAMILY DIE: three of the six families, in the order the
+    // script's slots are dealt to them (rollFamilies)
+    const families = rollFamilies();
+    // THE PLAYER'S OWN LINE: the faction picked on this screen (factionFor)
+    const faction = factionFor(p, factionPick);
     if (faction) saveFaction(faction);
     saveRunPick(tier, picked?.id ?? null);
     setRunRandom(random);
@@ -2026,9 +2008,9 @@ export default function MechSwarm() {
                   {/* THE FACTION: the line this run is played as — what the
                       factories build and which three turrets the bar
                       carries (factions.ts). One of the ones the track has
-                      opened; a fleet greys out on a map with no water */}
+                      opened — every faction plays every map */}
                   {progress && (() => {
-                    const f = factionFor(progress, factionPick, pickedWorld);
+                    const f = factionFor(progress, factionPick);
                     return (
                       <MacroButton
                         label="Faction"
@@ -2127,8 +2109,7 @@ export default function MechSwarm() {
         {picker === "faction" && progress && (
           <FactionPicker
             progress={progress}
-            pick={factionFor(progress, factionPick, pickedWorld)}
-            world={pickedWorld}
+            pick={factionFor(progress, factionPick)}
             onClose={() => setPicker(null)}
             onPick={(f) => {
               setFactionPick(f);
