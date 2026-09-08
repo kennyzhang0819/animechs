@@ -70,6 +70,9 @@ export interface MapData {
   floor: number[]; // NCELLS, UV_FLOORS index
   wall: number[]; // NCELLS, UV_WALLS index or WALL_PINE where blocked
   blocked: number[]; // NCELLS, 0/1
+  /** the ore veins, 0/1 a cell (Terrain.ore). Absent on a document drawn
+   *  before the economy came out of the ground, which means none */
+  ore?: number[];
   /**
    * Enemy drop zones, Mindustry-style: a spawn area is a CIRCLE, and every
    * tile inside it that the zone's own layer can stand on is somewhere the
@@ -215,7 +218,10 @@ export type PaintKind =
   /** one of the roster's turrets or walls on the SWARM's side
    *  (MapData.enemies): the variant is an index into TOWER_KINDS, and a
    *  click stamps its footprint on open ground */
-  | "enemy";
+  | "enemy"
+  /** an ore vein (Terrain.ore): paints ore onto open dry ground, where a
+   *  drill may stand; the eraser and the floor brushes take it off */
+  | "ore";
 
 /**
  * One enemy drop zone: Mindustry marks a spawn with a tile and draws
@@ -483,6 +489,10 @@ export const PALETTE: readonly PaletteSet[] = [
   { id: "enemy", label: "Enemy structure", kind: "enemy",
     variants: TOWER_KINDS.map((_, i) => i), noRandom: true,
     icons: TOWER_KINDS.map((k) => TOWER_ICONS[k]) },
+  // the ore veins: a drill stands on one and nowhere else, so where the
+  // ore is laid is where the run's income is (economy.ts)
+  { id: "ore", label: "Ore vein", kind: "ore", variants: [0], noRandom: true,
+    icons: ["/mindustry/sprites/blocks/environment/ore-copper1.png"] },
   { id: "erase", label: "Erase", kind: "erase", variants: [0], icons: [`${ENV}/clear-editor.png`] },
 ];
 
@@ -738,6 +748,7 @@ export function mapFromTerrain(
     floor: Array.from(t.floor.subarray(0, n)),
     wall: Array.from(t.wall.subarray(0, n)),
     blocked: Array.from(t.blocked.subarray(0, n)),
+    ore: Array.from(t.ore.subarray(0, n)),
     // drop zones are authored, not painted: the per-cell layer is derived
     // from them on load, so writing it back out would be writing a cache
     spawns: t.spawns.map((c) => ({ ...c })),
@@ -792,6 +803,8 @@ export function terrainFromMap(m: MapData): Terrain {
     floor,
     wall: lift(m.wall, 5, sw),
     blocked,
+    // no ore on a document that never had any: the map plays on the core's pay
+    ore: m.ore ? lift(m.ore, 0, sw) : new Uint8Array(NCELLS),
     spawns,
     spawn: rasterizeSpawns(spawns, { blocked, floor }),
     pines: m.pines.map((p) => ({ ...p })),

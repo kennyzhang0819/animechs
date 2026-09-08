@@ -113,6 +113,15 @@ export interface Terrain {
   floor: Uint8Array; // UV_FLOORS index per cell (pine cells: the grass underneath)
   wall: Uint8Array; // per blocked cell: UV_WALLS index, or WALL_PINE
   /**
+   * THE ORE VEINS, one byte a cell, 1 where the floor carries ore. A vein
+   * is the one place a drill may stand (Sim.canPlace) and what it pays by
+   * (economy.ts DRILL_INCOME_PER_ORE): the run's income past the core is
+   * the veins it walks out to and holds. Painted by the generator
+   * (scripts/maps/mindustry.mjs) and the editor's ore brush; drawn as an
+   * overlay on the floor
+   */
+  ore: Uint8Array;
+  /**
    * the authored drop zones. This is the SOURCE: `spawn` below is burned
    * from it (and from `blocked`) by rasterizeSpawns, so anything that moves
    * a circle or paints over one must re-derive the layer, never patch it
@@ -441,7 +450,7 @@ export function generateTerrain(seed: number): Terrain {
   const spawn = rasterizeSpawns(spawns, { blocked, floor });
 
   return {
-    blocked, floor, wall, spawns, spawn, pines, decor, enemies: [], valleyY,
+    blocked, floor, wall, ore: new Uint8Array(NCELLS), spawns, spawn, pines, decor, enemies: [], valleyY,
     base: { ...BASE }, rows: ROWS, cols: COLS,
   };
 }

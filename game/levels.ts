@@ -1,5 +1,4 @@
 import { CELL, HP0, UNIT_SPEED, UR, type MoveLayer } from "./constants";
-import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 import { explain, type SaveResult } from "./types";
 // type only — mutation.ts must never depend on the campaign, and this
 // import must never become a value one or the two files form a cycle
@@ -234,7 +233,7 @@ export interface UnitStats {
   radius: number;
   /**
    * Unit tier, 1-5. The tier decides the SCRAP a kill pays into the run
-   * (SCRAP_BY_TIER in economy.ts) — the only thing a kill pays. A level's
+   * — what the unit weighs on the audit (ladder.ts); a kill pays nothing. A level's
    * enemy mix therefore decides the run's income and nothing about the
    * save's XP, which is a fact about the waves cleared (MISSION_XP).
    */
@@ -967,25 +966,6 @@ type UntreedKind = Exclude<UnitKind, (typeof UNIT_TREES)[number]["kinds"][number
 const _everyKindHasATree: UntreedKind extends never ? true : never = true;
 void _everyKindHasATree;
 
-export function unitDrop(kind: UnitKind): Drop {
-  const s = UNIT_STATS[kind];
-  return dropForUnit(s.tier, s.boss === true);
-}
-
-/**
- * What a run's kills are worth IN SCRAP: each kind's drop times how many
- * of it died. The shape of the total is the shape of the LINES that died
- * — a pure dagger push pays a trickle, a spiroct column pays real scrap.
- * No XP is in here: the save is paid per wave cleared (missionXp in
- * economy.ts), never per body.
- */
-export function dropsForKills(killsByKind: ArrayLike<number>): Drop {
-  const total = emptyDrop();
-  for (let i = 0; i < UNIT_KINDS.length; i++)
-    addDrop(total, unitDrop(UNIT_KINDS[i]), killsByKind[i] ?? 0);
-  return total;
-}
-
 /**
  * Largest unit radius PER LAYER, and over both. Broad-phase bounds have to
  * cover the widest thing a query could actually find, and ground and air
@@ -1265,6 +1245,13 @@ export interface LevelSpec {
   enemyLevel?: number;
   /** which tier of the ladder this spec was expanded for; unset = baseline */
   tier?: number;
+  /**
+   * THE FACTION THE PLAYER PLAYS THIS RUN (factions.ts), picked on the
+   * deploy screen: what its factories build and which turrets the bar
+   * carries. Unset means whatever the tech state allows — the sandbox
+   * and the editors, which build everything and produce the first family.
+   */
+  faction?: FamilyKey;
   /**
    * THE FAMILIES THIS RUN SENDS — the die roll (rollFamilies) the deploy
    * made against the map's doors, in slot order: the script's first

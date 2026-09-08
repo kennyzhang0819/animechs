@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
-import { WORLDS } from "@/game/levels";
+import { familyByKey, WORLDS } from "@/game/levels";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import { mutationById } from "@/game/mutation";
 import { effectiveLevel, levelOf, type Progress } from "@/game/progress";
@@ -45,6 +45,9 @@ type TabId = (typeof TABS)[number]["id"];
 const REWARD_COLOR: Record<Reward["kind"], string> = {
   world: "#7BE58A",
   speed: "#7FC4FF",
+  // a faction wears the team's own amber: it is the biggest thing the
+  // track hands out, and the colour the player's units wear on the field
+  faction: "#FFD37F",
   turret: "#FF9A62",
   // a mutator wears the codex's pink on the track, not its own weight
   // band: the band lives on the codex board where a shelf of rules is
@@ -96,6 +99,16 @@ function RewardFace({ reward }: { reward: Reward }) {
   if (reward.kind === "speed")
     return <span className="font-display text-[13px] font-bold leading-none">{reward.mult}x</span>;
   if (reward.kind === "mutator") return <MutationFace id={reward.id} size="h-6 w-6" />;
+  // a faction's face is its first body — the unit the player will see
+  // walk out of the first factory
+  if (reward.kind === "faction")
+    return (
+      <img
+        src={`/mindustry/sprites/units/${familyByKey(reward.id).icon}.png`}
+        alt=""
+        className="h-[26px] w-[26px] object-contain [image-rendering:pixelated]"
+      />
+    );
   const kind = reward.kind === "turret" ? reward.id : upgradeDef(reward.id).turret;
   return (
     <img

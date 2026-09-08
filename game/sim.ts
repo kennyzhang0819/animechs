@@ -77,7 +77,6 @@ import {
   UNIT_RMAX_AIR,
   UNIT_RMAX_GROUND,
   UNIT_STATS,
-  unitDrop,
   waveGroups,
   WAVE_RELEASE_SECONDS,
   type LegSpec,
@@ -140,12 +139,17 @@ import {
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap, type SpawnCircle } from "./maps";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
+import { factionUnit } from "./factions";
+import type { FamilyKey } from "./levels";
 import {
-  bountyOf,
+  CORE_INCOME,
+  DRILL_INCOME_PER_ORE,
+  PLAYER_UNIT_CAP,
   SCRAP_START,
   scrapPriceOf,
   sellValue,
-  waveBonusScrap,
+  UNIT_BUILD_SECONDS,
+  UNIT_PRICE,
 } from "./economy";
 import { airWalkMask, isBuildableWall, isWaterFloor, waterWalkMask, type Terrain } from "./terrain";
 import {
@@ -383,6 +387,34 @@ const HROWS = (H / HC) | 0;
 const HN = HCOLS * HROWS;
 
 export type PlaceResult = "ok" | "invalid" | "would-seal";
+
+/** the cells a body of the player's sees round itself (fog.ts) */
+export const UNIT_VISION_CELLS = 6;
+/** seconds between re-casts of the fog while the player has bodies out */
+const UNIT_VISION_EVERY = 0.5;
+/** how far out from a factory's edge its make is set down */
+const FACTORY_SPAWN_REACH = CELL * 2.5;
+/** the player's fields enter by no door: an all-zero pad mask */
+const NO_PADS = new Uint8Array(NCELLS);
+/** a shot's own hit radius against a body, on top of the body's */
+const SHOT_HIT_R = 4;
+
+/**
+ * WHAT A UNIT'S WEAPON IS AIMED AT: one of the other side's structures,
+ * or one of its bodies — the nearer of the two within reach. x, y and
+ * half are the target's centre and half-width for every reader that
+ * only wants a point to shoot at; `s` and `u` (a unit's never-reused id,
+ * with `ui` the last known index) say which it is, and are what the
+ * damage lands on (Sim.aimHit).
+ */
+export interface Aim {
+  x: number;
+  y: number;
+  half: number;
+  s: Structure | null;
+  u: number;
+  ui: number;
+}
 
 // is a unit kind (by numeric id) airborne? towers and bullets check this
 // against their targetAir/targetGround and collidesAir/collidesGround flags
@@ -793,6 +825,18 @@ export class Sim {
    * arrays is measurably slower than reading one
    */
   readonly ufly = new Uint8Array(MAX_UNITS);
+  /**
+   * WHOSE A BODY IS: 0 the swarm's, 1 the player's (a factory's make —
+   * updateProduction). The two sides fight only each other: every
+   * targeting scan, sweep and splash in this file carries the team it is
+   * looking for, and a body of the player's is never a wave's, never a
+   * kill, never a meal, and never in the fog.
+   */
+  readonly uteam = new Uint8Array(MAX_UNITS);
+  /** how many of the player's bodies stand on the field (PLAYER_UNIT_CAP) */
+  nPlayer = 0;
+  /** the swarm's census — aliveByKind less the player's bodies — for the HUD */
+  readonly enemyByKind = new Int32Array(UNIT_KINDS.length);
   /** 1 = this unit travels on the WATER layer and steers by waterField.
    *  Kept beside ufly rather than folded into it because the two answer
    *  different questions: ufly decides what may SHOOT at a unit, and this
@@ -819,7 +863,7 @@ export class Sim {
   readonly ubeamT = new Float32Array(MAX_UNITS);
   readonly ucharge = new Float32Array(MAX_UNITS);
   readonly uheldRot = new Float32Array(MAX_UNITS);
-  readonly utgt: (Structure | null)[] = new Array<Structure | null>(MAX_UNITS).fill(null);
+  readonly utgt: (Aim | null)[] = new Array<Aim | null>(MAX_UNITS).fill(null);
   /**
    * WHICH STRUCTURE STANDS ON EACH CELL — every footprint cell of every
    * live tower, rock or ground, kept by claimGround. It is how a unit
@@ -1034,6 +1078,8 @@ export class Sim {
   private enemyStructures = 0;
   /** swarm structures the player's guns have wrecked this run */
   enemyStructuresDown = 0;
+  /** the player's own bodies lost this run */
+  unitsLost = 0;
   projs: Projectile[] = [];
 
   /**
@@ -1224,6 +1270,23 @@ export class Sim {
    */
   readonly airField = new FlowField();
   /**
+   * THE PLAYER'S FIELDS — the mirror of the swarm's three. A body the
+   * player makes attack-moves at the SWARM's buildings: its ground field
+   * routes over the same rock with the swarm's structures soft (pathed
+   * through at a cost and shot at) and the player's own hard, its goal
+   * every enemy structure standing, or the swarm's own drop zones when
+   * none is; the water and air ones the same over their masks. Solved
+   * on demand (playerFieldsOn) — the first factory switches them on —
+   * and re-solved with the swarm's whenever a structure changes.
+   */
+  readonly pField = new FlowField();
+  readonly pWaterField = new FlowField();
+  readonly pAirField = new FlowField();
+  private playerFieldsOn = false;
+  /** the fog is re-cast on this clock while the player has bodies out —
+   *  a moving eye is a thing the structure-driven fog never had */
+  private unitVisionT = 0;
+  /**
    * WHERE THE HILLS ARE (airWalkMask), kept because two different questions
    * ask it: what a flyer routes around, and what a shot cannot be taken
    * through (hasSight). Rebuilt with the terrain and never after.
@@ -1271,6 +1334,7 @@ export class Sim {
     this.n = 0;
     this.time = 0;
     this.kills = 0;
+    this.unitsLost = 0;
     this.devoured = 0;
     this.killsByKind.fill(0);
     this.scrap = SCRAP_START;
@@ -1390,6 +1454,10 @@ export class Sim {
     // field to ask
     this.airOpen = this.openSky(this.airPads);
     this.bossAirOpen = this.openSky(this.bossPads.air);
+    this.nPlayer = 0;
+    this.enemyByKind.fill(0);
+    this.playerFieldsOn = false;
+    this.unitVisionT = 0;
     // fail LOUDLY on a broken map: with zero doors nothing ever spawns and
     // a wave script stalls forever, which reads as a scheduler bug
     if (this.airPads.length === 0 && this.field.spawnPts.length === 0)
@@ -1459,6 +1527,80 @@ export class Sim {
     for (const t of this.towers)
       if (t.team === "enemy") out.push({ gx: t.gx, gy: t.gy, size: structStats(t.kind).size });
     return out;
+  }
+
+  /**
+   * THE PLAYER'S ARMY'S DESTINATION: every cell of every one of the
+   * swarm's structures — soft on its field, so a body presses in and
+   * fires — and, while the swarm has none standing, its ground drop zones:
+   * the doors the waves come through are where the fight is
+   */
+  private enemyGoal(): Uint8Array {
+    const out = new Uint8Array(NCELLS);
+    let any = false;
+    for (const t of this.towers) {
+      if (t.team !== "enemy") continue;
+      any = true;
+      const sz = structStats(t.kind).size;
+      for (let y = t.gy; y < t.gy + sz; y++)
+        for (let x = t.gx; x < t.gx + sz; x++) out[y * COLS + x] = 1;
+    }
+    if (!any) for (let i = 0; i < NCELLS; i++) if (this.groundPads[i]) out[i] = 1;
+    return out;
+  }
+
+  /** the player's hulls' destination: the water within a few cells of any
+   *  of the swarm's structures, else the swarm's own water doors */
+  private enemyWaterGoal(): Uint8Array {
+    const out = new Uint8Array(NCELLS);
+    const { floor } = this.terrain;
+    const reach = 6;
+    let any = false;
+    for (const t of this.towers) {
+      if (t.team !== "enemy") continue;
+      const sz = structStats(t.kind).size;
+      for (let y = Math.max(0, t.gy - reach); y < Math.min(ROWS, t.gy + sz + reach); y++)
+        for (let x = Math.max(0, t.gx - reach); x < Math.min(COLS, t.gx + sz + reach); x++) {
+          const i = y * COLS + x;
+          if (isWaterFloor(floor[i])) { out[i] = 1; any = true; }
+        }
+    }
+    if (!any) {
+      const pads = this.layerPadMask(LAYER_BIT.water);
+      for (let i = 0; i < NCELLS; i++) if (pads[i]) out[i] = 1;
+    }
+    return out;
+  }
+
+  /**
+   * Solve the player's fields from the board as it stands: the swarm's
+   * structures soft, the player's own (and the core) hard, no doors, and
+   * the swarm's buildings as the goal (enemyGoal). The air and water ones
+   * only where the map has sky to fly and water to sail.
+   */
+  private rebuildPlayerFields(): void {
+    this.playerFieldsOn = true;
+    this.pField.rebuildWalk(this.hardFootprints(), this.terrain.blocked, NO_PADS, this.enemyGoal(), this.footprints());
+    this.pField.compute();
+    if (this.hasWater) {
+      this.pWaterField.rebuildWalk([], waterWalkMask(this.terrain), NO_PADS, this.enemyWaterGoal());
+      this.pWaterField.compute();
+    }
+    this.pAirField.rebuildWalk([], this.hills, NO_PADS, this.enemyGoal());
+    this.pAirField.compute();
+  }
+
+  /** the nearest of the swarm's structures to a point, anywhere on the map
+   *  — a flyer's goal, and where a body with no field to read walks */
+  private nearestEnemyStructure(x: number, y: number): Structure | null {
+    let best: Structure | null = null, bd = Infinity;
+    for (const t of this.towers) {
+      if (t.team !== "enemy") continue;
+      const dx = t.x - x, dy = t.y - y;
+      const d = dx * dx + dy * dy;
+      if (d < bd) { bd = d; best = t; }
+    }
+    return best;
   }
 
   /** the walkers' destination: the core's own cells — a soft goal, see FlowField.rebuildWalk */
@@ -1687,8 +1829,8 @@ export class Sim {
    * `gx, gy` is the already-normalized direction to the unit's goal, which
    * updateUnits has in hand anyway.
    */
-  private airHeading(x: number, y: number, gx: number, gy: number, out: Vec2): void {
-    this.airField.sample(x, y, out);
+  private airHeading(x: number, y: number, gx: number, gy: number, out: Vec2, field = this.airField): void {
+    field.sample(x, y, out);
     if (out.x * out.x + out.y * out.y < 0.25) {
       out.x = gx;
       out.y = gy;
@@ -1748,6 +1890,10 @@ export class Sim {
   private readonly visionSources = (): VisionSource[] => {
     const out: VisionSource[] = [this.coreVision()];
     for (const t of this.towers) if (t.team === "player") out.push(this.towerVision(t));
+    // ...and every body of the player's, a few cells round itself
+    const r = UNIT_VISION_CELLS * CELL;
+    for (let i = 0; i < this.n; i++)
+      if (this.uteam[i]) out.push({ x: this.upx[i], y: this.upy[i], r });
     return out;
   };
 
@@ -1868,7 +2014,7 @@ export class Sim {
 
   /** per-kind head count currently on the field, indexed like UNIT_KINDS */
   aliveByKindList(): number[] {
-    return Array.from(this.aliveByKind);
+    return Array.from(this.enemyByKind);
   }
 
   /**
@@ -1976,6 +2122,9 @@ export class Sim {
       hp: build > 0 ? 1 : towerMaxHp(kind),
       buildT: build,
       buildTotal: build,
+      // a drill's pay is the ore under it, read once here (Terrain.ore)
+      ore: structStats(kind).drill ? this.oreUnder(gx, gy, sz) : 0,
+      prodT: -1,
       aimShieldTower: -1,
       aimTower: null,
       tombShieldTower: -1,
@@ -2007,6 +2156,7 @@ export class Sim {
     };
     this.towers.push(tower);
     if (team === "enemy") this.enemyStructures++;
+    else if (structStats(kind).produces && !this.playerFieldsOn) this.rebuildPlayerFields();
     this.claimGround(tower, true);
     // it looks around the moment it is placed — a shell sees a few cells,
     // and the turret it becomes sees its share of its range (updateBuilds).
@@ -2069,6 +2219,13 @@ export class Sim {
     // while the sim is paused
     this.time += dt;
     this.runScript(dt);
+    // THE ECONOMY TICKS: the core and the drills pay by the second
+    // (income), into the bank and onto the run's ledger
+    {
+      const pay = this.income() * dt;
+      this.scrap += pay;
+      this.scrapEarned += pay;
+    }
     // a structure came down since the last tick: re-cast the fog once for
     // the whole frame's worth of demolition (Fog.ensure)
     this.fog.ensure(this.visionSources);
@@ -2078,7 +2235,20 @@ export class Sim {
     if (this.fieldDirty) {
       this.fieldDirty = false;
       this.field.compute();
+      if (this.playerFieldsOn) this.rebuildPlayerFields();
       this.unstickUnits();
+    }
+    this.updateProduction(dt);
+    // THE PLAYER'S BODIES SEE: while any is out, the fog is re-cast twice a
+    // second from every eye (visionSources) so the ground they walk onto
+    // clears in front of them and closes behind
+    if (this.nPlayer > 0 && this.fog.enabled) {
+      this.unitVisionT -= dt;
+      if (this.unitVisionT <= 0) {
+        this.unitVisionT = UNIT_VISION_EVERY;
+        this.fog.invalidate();
+        this.fog.ensure(this.visionSources);
+      }
     }
 
     this.updateAliveBounds();
@@ -2178,11 +2348,6 @@ export class Sim {
         for (const e of this.waveEntries) total += e.total;
         this.waveRate = waveSpawnRate(total);
         this.wavesStarted++;
-        // THE WAVE BONUS, paid as the wave is staged — at the top of its
-        // gap, which is exactly when a board wants scrap to spend
-        const bonus = waveBonusScrap(this.wavesStarted);
-        this.scrap += bonus;
-        this.scrapEarned += bonus;
         // hold the gap — the grace before the first wave — then let this
         // wave drain; waitLeft gates runScript
         const opening = this.wavesStarted === 1;
@@ -2466,6 +2631,95 @@ export class Sim {
   }
 
   /**
+   * WHAT A BODY AIMS AT: the nearer of the other side's nearest structure
+   * and its nearest body within reach — a target either way (Aim). A
+   * ground body only takes what it can see; a flyer sees its radius.
+   */
+  private pickAim(x: number, y: number, reach: number, sighted: boolean, foes: Team, foeTeam: number): Aim | null {
+    const s = this.nearestStructure(x, y, reach, sighted, foes);
+    const u = this.nearestInRange(x, y, reach + this.rmaxAliveFor(true, true), true, true, foeTeam, true);
+    let ds = Infinity, du = Infinity;
+    if (s) ds = Math.hypot(s.x - x, s.y - y) - (this.sizeOf(s) * CELL) / 2;
+    if (u >= 0) {
+      du = Math.hypot(this.upx[u] - x, this.upy[u] - y) - this.urad[u];
+      if (du > reach || (sighted && !this.hasSight(x, y, this.upx[u], this.upy[u]))) du = Infinity;
+    }
+    if (ds === Infinity && du === Infinity) return null;
+    if (du < ds)
+      return { x: this.upx[u], y: this.upy[u], half: this.urad[u], s: null, u: this.uid[u], ui: u };
+    return { x: s!.x, y: s!.y, half: (this.sizeOf(s!) * CELL) / 2, s, u: -1, ui: -1 };
+  }
+
+  /** the aimed unit's live index, or -1 once it is gone — and the aim's
+   *  point moved along with it */
+  private aimIndex(a: Aim): number {
+    if (a.u < 0) return -1;
+    let i = a.ui;
+    if (i < 0 || i >= this.n || this.uid[i] !== a.u) {
+      i = -1;
+      for (let k = 0; k < this.n; k++) if (this.uid[k] === a.u) { i = k; break; }
+      a.ui = i;
+    }
+    if (i >= 0) { a.x = this.upx[i]; a.y = this.upy[i]; }
+    return i;
+  }
+
+  /** is the aim still standing, and within this reach of the point? */
+  private aimReach(a: Aim, x: number, y: number, reach: number): boolean {
+    if (a.s) return this.inReach(a.s, x, y, reach);
+    const i = this.aimIndex(a);
+    if (i < 0 || this.uhp[i] <= 0) return false;
+    return Math.hypot(this.upx[i] - x, this.upy[i] - y) - this.urad[i] <= reach;
+  }
+
+  /** can a ground body at the point see its aim? */
+  private aimSeen(a: Aim, x: number, y: number): boolean {
+    if (a.s) return this.canSee(a.s, x, y);
+    return this.hasSight(x, y, a.x, a.y);
+  }
+
+  /** one hit on the aim, from a body of `team` */
+  private aimHit(a: Aim, dmg: number, team: number): void {
+    if (a.s) {
+      this.structHit(a.s, dmg, team);
+      return;
+    }
+    const i = this.aimIndex(a);
+    if (i < 0 || this.uhp[i] <= 0 || this.uteam[i] === team) return;
+    this.damageUnit(i, dmg);
+    if (this.uhp[i] <= 0) this.killUnit(i);
+  }
+
+  /** a body's hit on a structure: the swarm's through its own dial
+   *  (hitStructure), the player's as it is */
+  private structHit(t: Structure, dmg: number, team: number): void {
+    if (team) this.damageTower(t, dmg);
+    else this.hitStructure(t, dmg);
+  }
+
+  /** a burst from a body of `team`: the other side's structures and bodies in the radius */
+  private aimSplash(x: number, y: number, splash: number, radius: number, team: number): void {
+    if (splash <= 0 || radius <= 0) return;
+    for (const t of this.structuresWithin(x, y, radius, this.splashOut, team ? "enemy" : "player"))
+      this.structHit(t, splash, team);
+    this.splash(x, y, radius, splash, true, true, undefined, undefined, team ? 0 : 1);
+  }
+
+  /**
+   * THE BODY A SHOT LANDS ON: the nearest of `team`'s within a shot's
+   * radius of the point, or -1. A shot in flight asks this every tick
+   * (updateEnemyShots, stepHostileProjectile).
+   */
+  private unitAtShot(x: number, y: number, team: number): number {
+    const pad = this.rmaxAliveFor(true, true) + SHOT_HIT_R;
+    const i = this.nearestInRange(x, y, pad, true, true, team, true);
+    if (i < 0) return -1;
+    const r = this.urad[i] + SHOT_HIT_R;
+    const dx = this.upx[i] - x, dy = this.upy[i] - y;
+    return dx * dx + dy * dy < r * r ? i : -1;
+  }
+
+  /**
    * EVERY UNIT ATTACK-MOVES. It walks the field as it always has, and
    * meanwhile every weapon it carries (UNIT_WEAPONS) fires at the nearest
    * structure within its reach — Mindustry's GroundAI: pathfind to the
@@ -2478,13 +2732,17 @@ export class Sim {
    * A crawler's weapon is itself: it goes off on the structure and is gone.
    */
   private updateUnitWeapons(dt: number): void {
-    const { upx, upy, urot, ukind, uspawn, ucd, utT, ubeamT, ucharge, uheldRot, utgt } = this;
+    const { upx, upy, urot, ukind, uspawn, ucd, utT, ubeamT, ucharge, uheldRot, utgt, uteam } = this;
     for (let i = this.n - 1; i >= 0; i--) {
       if (uspawn[i] > 0) continue; // still arriving, untouchable and unarmed
       const kind = UNIT_KINDS[ukind[i]];
       const ws = UNIT_WEAPONS[kind];
       if (ws.length === 0) continue;
       const x = upx[i], y = upy[i];
+      // whose side this body is on decides everything it shoots at: the
+      // other side's structures and the other side's bodies
+      const team = uteam[i];
+      const foes: Team = team ? "enemy" : "player";
       // A GROUND OR NAVAL BODY SHOOTS WHAT IT CAN SEE. Reach is not sight:
       // a hill between the two is a hill, and the swarm has to come round
       // it before it can open up on what is behind. A FLYER is looking down
@@ -2498,7 +2756,7 @@ export class Sim {
       utT[i] -= dt;
       let tgt = utgt[i];
       const had = tgt !== null;
-      if (tgt && (!this.inReach(tgt, x, y, UNIT_REACH[kind]) || (sighted && !this.canSee(tgt, x, y))))
+      if (tgt && (!this.aimReach(tgt, x, y, UNIT_REACH[kind]) || (sighted && !this.aimSeen(tgt, x, y))))
         tgt = null;
       // ...on the clock, or the moment the one it had is gone. A body that
       // has NOTHING waits for the clock like everyone else rather than
@@ -2508,8 +2766,14 @@ export class Sim {
       // open ground is running. `had` is what tells the two apart
       if (utT[i] <= 0 || (had && !tgt)) {
         utT[i] = 0.3 + Math.random() * 0.2;
-        tgt = this.nearestStructure(x, y, UNIT_REACH[kind], sighted);
+        tgt = this.pickAim(x, y, UNIT_REACH[kind], sighted, foes, team === 0 ? 1 : 0);
         utgt[i] = tgt;
+        // the player's flyer re-aims its hover at the nearest enemy
+        // building on the same clock, so a wrecked target sends it on
+        if (team && this.ufly[i]) {
+          const g = this.nearestEnemyStructure(x, y);
+          if (g) { this.ugx[i] = g.x; this.ugy[i] = g.y; }
+        }
       }
       let exploded = false;
       for (let w = 0; w < ws.length && !exploded; w++) {
@@ -2535,8 +2799,8 @@ export class Sim {
             }
             if (ucd[slot] <= 0) {
               ucd[slot] += wp.beam.interval;
-              if (tgt && this.inReach(tgt, x, y, wp.range)) {
-                this.hitStructure(tgt, wp.damage);
+              if (tgt && this.aimReach(tgt, x, y, wp.range)) {
+                this.aimHit(tgt, wp.damage, team);
                 this.pushFxCol(tgt.x, tgt.y, 12 / 60, FxKind.HitMeltHeal, 0, 0, PAL.heal);
               }
             }
@@ -2554,7 +2818,7 @@ export class Sim {
             continue;
           }
           ucd[slot] -= dt;
-          if (ucd[slot] <= 0 && tgt && this.inReach(tgt, x, y, wp.range)) {
+          if (ucd[slot] <= 0 && tgt && this.aimReach(tgt, x, y, wp.range)) {
             uheldRot[i] = Math.atan2(tgt.y - y, tgt.x - x);
             if (wp.charge) ucharge[i] = wp.charge;
             else {
@@ -2570,13 +2834,13 @@ export class Sim {
           if (ucharge[i] > 0) {
             ucharge[i] -= dt;
             if (ucharge[i] <= 0) {
-              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp);
+              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp, team);
               ucd[slot] = wp.reload - wp.charge;
             }
             continue;
           }
           ucd[slot] -= dt;
-          if (ucd[slot] <= 0 && tgt && this.inReach(tgt, x, y, wp.range)) {
+          if (ucd[slot] <= 0 && tgt && this.aimReach(tgt, x, y, wp.range)) {
             uheldRot[i] = Math.atan2(tgt.y - y, tgt.x - x);
             ucharge[i] = wp.charge;
           }
@@ -2584,7 +2848,7 @@ export class Sim {
         }
         ucd[slot] -= dt;
         if (ucd[slot] > 0) continue;
-        if (!tgt || !this.inReach(tgt, x, y, wp.range)) {
+        if (!tgt || !this.aimReach(tgt, x, y, wp.range)) {
           ucd[slot] = 0; // ready, waiting for something in reach
           continue;
         }
@@ -2597,7 +2861,7 @@ export class Sim {
           case "bullet":
           case "missile":
           case "shell": {
-            for (let k = 0; k < shots; k++) this.fireUnitShot(x, y, tgt, wp, k);
+            for (let k = 0; k < shots; k++) this.fireUnitShot(x, y, tgt, wp, k, team);
             break;
           }
           case "gun": {
@@ -2608,20 +2872,20 @@ export class Sim {
             // torpedo). Splash, where a row carries it, bursts on the
             // target the way the round would have
             for (let k = 0; k < shots; k++) {
-              this.hitStructure(tgt, wp.damage);
-              if (wp.splash) this.splashStructures(tgt.x, tgt.y, wp.splash, wp.splashRadius ?? 0);
+              this.aimHit(tgt, wp.damage, team);
+              if (wp.splash) this.aimSplash(tgt.x, tgt.y, wp.splash, wp.splashRadius ?? 0, team);
               this.fireUnitGun(x, y, aim + (k - (shots - 1) / 2) * 0.06, wp);
             }
             break;
           }
           case "laser": {
-            this.fireUnitLaser(x, y, aim, tgt, wp);
+            this.fireUnitLaser(x, y, aim, tgt, wp, team);
             break;
           }
           case "sap": {
             // SapBulletType: the line lands on the target and retracts onto
             // the mount as it fades (the draw lerps its far end back over fin)
-            for (let k = 0; k < shots; k++) this.hitStructure(tgt, wp.damage);
+            for (let k = 0; k < shots; k++) this.aimHit(tgt, wp.damage, team);
             const st = wp.sap;
             if (st) {
               const dx = tgt.x - x, dy = tgt.y - y;
@@ -2635,7 +2899,7 @@ export class Sim {
             // one per shot, fanned by ShootSpread; Fx.sparkShoot at the muzzle
             const st = wp.shrapnel;
             for (let k = 0; k < shots; k++) {
-              this.hitStructure(tgt, wp.damage);
+              this.aimHit(tgt, wp.damage, team);
               const a = aim + (k - (shots - 1) / 2) * (wp.spread ?? 0);
               if (st) this.pushFx(x, y, 10 / 60, FxKind.Shrapnel, a, wp.range, 0, st.id, true);
             }
@@ -2647,7 +2911,7 @@ export class Sim {
             // of the muzzle, in the bullet's colour, `inaccuracy` off the aim
             const bt = wp.bolt;
             for (let k = 0; k < shots; k++) {
-              this.hitStructure(tgt, wp.damage);
+              this.aimHit(tgt, wp.damage, team);
               if (bt) {
                 const a = aim + (Math.random() * 2 - 1) * bt.inaccuracy;
                 this.unitBolt(x, y, a, bt.length + Math.floor(Math.random() * (bt.lengthRand + 1)), bt.color);
@@ -2659,7 +2923,7 @@ export class Sim {
           case "flame": {
             // Fx.shootSmallFlame out of the barrel and Fx.hitFlameSmall on
             // the wall — or their plasma pair, white through heal to grey
-            for (let k = 0; k < shots; k++) this.hitStructure(tgt, wp.damage);
+            for (let k = 0; k < shots; k++) this.aimHit(tgt, wp.damage, team);
             const seed = (Math.random() * 0x7fffffff) | 0;
             if (wp.plasma) {
               this.pushFxCol(x, y, 32 / 60, FxKind.Flame, aim, 0, PAL.heal, 1, false, seed);
@@ -2674,12 +2938,14 @@ export class Sim {
             if (wp.suicide) {
               // the crawler IS the bullet: Fx.pulverize where it went off,
               // and the body's own death blast, centred on itself
-              this.hitStructure(tgt, wp.damage);
-              this.splashStructures(x, y, wp.splash ?? 0, wp.splashRadius ?? 0);
+              this.aimHit(tgt, wp.damage, team);
+              this.aimSplash(x, y, wp.splash ?? 0, wp.splashRadius ?? 0, team);
               this.pushFx(x, y, 40 / 60, FxKind.Pulverize, 0, 0, (Math.random() * 0x7fffffff) | 0);
               this.pushDeathFx(x, y);
+              const mineToo = this.uteam[i] !== 0;
               this.removeUnit(i);
-              this.exploded++;
+              if (mineToo) this.unitsLost++;
+              else this.exploded++;
               exploded = true;
             } else if (wp.look) {
               // BombBulletType: dropped where the unit is on its heading, a
@@ -2691,7 +2957,7 @@ export class Sim {
                 x, y, vx: Math.cos(urot[i]) * bs, vy: Math.sin(urot[i]) * bs,
                 life: wp.look.lifetime ?? 0.5, age: 0,
                 damage: wp.damage, splash: wp.splash ?? 0, splashRadius: wp.splashRadius ?? 0,
-                look: wp.look, collide: wp.look.collide !== false, trailT: 0,
+                look: wp.look, collide: wp.look.collide !== false, trailT: 0, team,
               });
             }
             break;
@@ -2700,7 +2966,7 @@ export class Sim {
             // RailBulletType: Fx.railShoot at the muzzle, Fx.railTrail every
             // 60 units down the line (pointEffectSpace), Fx.railHit on what
             // it punched through, Fx.shootBig2 smoke — all its 500 units
-            this.hitStructure(tgt, wp.damage);
+            this.aimHit(tgt, wp.damage, team);
             this.pushFx(x, y, 24 / 60, FxKind.RailShoot, aim, 0, 0, 0, true);
             this.pushFx(x, y, 10 / 60, FxKind.ShootBig2, aim);
             const ca = Math.cos(aim), sa = Math.sin(aim);
@@ -2713,11 +2979,11 @@ export class Sim {
             // EnergyFieldAbility: one pulse to every structure in reach, a
             // Fx.chainLightning to each and Fx.hitLaserBlast off the unit
             // toward it, in the ability's colour
-            const hit = this.structuresWithin(x, y, wp.range, this.splashOut);
+            const hit = this.structuresWithin(x, y, wp.range, this.splashOut, foes);
             const max = wp.maxTargets ?? hit.length;
             const col = wp.fieldColor ?? PAL.heal;
             for (let k = 0; k < hit.length && k < max; k++) {
-              this.hitStructure(hit[k], wp.damage);
+              this.structHit(hit[k], wp.damage, team);
               this.chainFx(x, y, hit[k], col);
               this.pushFxCol(x, y, 12 / 60, FxKind.HitLaserBlast, Math.atan2(hit[k].y - y, hit[k].x - x), 0, col);
             }
@@ -2744,10 +3010,10 @@ export class Sim {
   }
 
   /** a bullet, missile or shell leaves the unit for the structure */
-  private fireUnitShot(x: number, y: number, tgt: Structure, wp: UnitWeapon, k: number): void {
+  private fireUnitShot(x: number, y: number, tgt: Aim, wp: UnitWeapon, k: number, team: number): void {
     const look = wp.look;
     if (!look) return;
-    const half = (this.sizeOf(tgt) * CELL) / 2;
+    const half = tgt.half;
     // aim at the footprint, with a little spread so a burst is a burst
     const ax = tgt.x + (Math.random() * 2 - 1) * half * 0.6;
     const ay = tgt.y + (Math.random() * 2 - 1) * half * 0.6;
@@ -2768,6 +3034,7 @@ export class Sim {
       look,
       collide: look.collide !== false,
       trailT: 0,
+      team,
     });
     // the bullet's own shootEffect and smokeEffect, in its hitColor (what
     // Effect.at is handed for a shootEffect) — sparkShoot ramps into it
@@ -2784,8 +3051,8 @@ export class Sim {
    * the damage; the shootEffect (Fx.hitLancer, or eclipse's shockwave)
    * goes off at the muzzle
    */
-  private fireUnitLaser(x: number, y: number, aim: number, tgt: Structure | null, wp: UnitWeapon): void {
-    if (tgt && this.inReach(tgt, x, y, wp.range)) this.hitStructure(tgt, wp.damage);
+  private fireUnitLaser(x: number, y: number, aim: number, tgt: Aim | null, wp: UnitWeapon, team: number): void {
+    if (tgt && this.aimReach(tgt, x, y, wp.range)) this.aimHit(tgt, wp.damage, team);
     const st = wp.laser;
     if (!st) return;
     this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, wp.range, 0, st.id, true);
@@ -2883,22 +3150,30 @@ export class Sim {
         this.pushTrail(sh.x, sh.y, look.puff.size, look.puff.color);
       }
       const off = sh.x < 0 || sh.y < 0 || sh.x >= W || sh.y >= H;
-      // the PLAYER's structures only: a swarm shot flies over the swarm's
-      // own wall as it flies over open ground
-      const t = off || !sh.collide ? null : this.structureAt(sh.x, sh.y, "player");
+      // the OTHER side's structures and bodies only: a shot flies over
+      // its own side's wall as it flies over open ground
+      const foes: Team = sh.team ? "enemy" : "player";
+      const foeTeam = sh.team ? 0 : 1;
+      const t = off || !sh.collide ? null : this.structureAt(sh.x, sh.y, foes);
+      const u = off || !sh.collide || t ? -1 : this.unitAtShot(sh.x, sh.y, foeTeam);
       if (t) {
-        this.hitStructure(t, sh.damage);
-        if (sh.splash > 0) this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius);
+        this.structHit(t, sh.damage, sh.team);
+        if (sh.splash > 0) this.aimSplash(sh.x, sh.y, sh.splash, sh.splashRadius, sh.team);
+        this.shotHitFx(sh);
+      } else if (u >= 0) {
+        this.damageUnit(u, sh.damage);
+        if (this.uhp[u] <= 0) this.killUnit(u);
+        if (sh.splash > 0) this.aimSplash(sh.x, sh.y, sh.splash, sh.splashRadius, sh.team);
         this.shotHitFx(sh);
       } else if (sh.life <= 0 && !off) {
         // a shell, a missile or a bomb bursts where it ran out (that is
         // where it was aimed); a bullet dies quietly, despawnEffect aside
         if (sh.splash > 0) {
-          this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius);
+          this.aimSplash(sh.x, sh.y, sh.splash, sh.splashRadius, sh.team);
           this.shotHitFx(sh);
         } else if (look.hit === FxKind.HitLaser) this.shotHitFx(sh);
       }
-      if (t || off || sh.life <= 0) {
+      if (t || u >= 0 || off || sh.life <= 0) {
         shots[p] = shots[shots.length - 1];
         shots.pop();
       }
@@ -3139,6 +3414,11 @@ export class Sim {
     if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
     const { blocked } = this.terrain;
     const { isGoal } = this.field;
+    // A DRILL STANDS ON ORE AND NOWHERE ELSE: at least one cell of its
+    // footprint on a vein (Terrain.ore) — it pays by the cell (Tower.ore),
+    // so a drill half on a vein is a drill half as good, exactly as in
+    // Mindustry
+    if (TOWERS[kind].drill && this.oreUnder(gx, gy, sz) === 0) return false;
     const fogState = this.fog.enabled ? this.fog.state : null;
     // GROUND LEVEL ONLY. A structure stands on open ground, in the swarm's
     // way, where it is a wall as well as a gun — never on a hill, a forest
@@ -3168,6 +3448,79 @@ export class Sim {
     // is not a win, it is a fight at the wall
     if (!this.areaClearOfUnits(gx, gy, sz)) return false;
     return true;
+  }
+
+  /**
+   * THE FACTORIES BUILD (economy.ts UNIT_PRICE, UNIT_BUILD_SECONDS): every
+   * finished factory of the player's makes the run's faction's unit of
+   * its tier, one after another — the price is paid as a build starts and
+   * the body is set down beside the building when the clock runs out. A
+   * factory that cannot afford its next unit, or finds the field full
+   * (PLAYER_UNIT_CAP), waits with nothing owed. A make that finds no
+   * ground beside the factory (a hull from a factory with no water by
+   * it) keeps trying, tick by tick, at no further cost.
+   */
+  private updateProduction(dt: number): void {
+    const faction = this.faction();
+    for (const t of this.towers) {
+      if (t.team !== "player" || t.buildT > 0) continue;
+      const tier = structStats(t.kind).produces;
+      if (!tier) continue;
+      if (t.prodT < 0) {
+        if (this.nPlayer >= PLAYER_UNIT_CAP) continue;
+        const price = UNIT_PRICE[tier];
+        if (this.charging) {
+          if (this.scrap < price) continue;
+          this.scrap -= price;
+        }
+        t.prodT = UNIT_BUILD_SECONDS[tier];
+        if (!this.playerFieldsOn) this.rebuildPlayerFields();
+        continue;
+      }
+      if (t.prodT > 0) {
+        t.prodT = Math.max(0, t.prodT - dt);
+        continue;
+      }
+      // the clock has run out: the body is set down beside the building,
+      // on ground its layer can stand on (spawnUnit's own tests)
+      const kind = factionUnit(faction, tier);
+      const reach = (structStats(t.kind).size * CELL) / 2 + FACTORY_SPAWN_REACH;
+      if (this.spawnUnit(kind, { x: t.x, y: t.y, spread: reach }, 0, 1)) {
+        t.prodT = -1;
+        this.pushFx(t.x, t.y, 0.4, FxKind.Death);
+      }
+    }
+  }
+
+  /** the faction whose units the factories build: the run's (tech.ts), or
+   *  the first family for a sim that is not charging (the sandbox, the editors) */
+  private faction(): FamilyKey {
+    return this.tech?.faction ?? "ground";
+  }
+
+  /** how many of a footprint's cells lie on an ore vein (Terrain.ore) */
+  private oreUnder(gx: number, gy: number, sz: number): number {
+    const { ore } = this.terrain;
+    let n = 0;
+    for (let y = gy; y < gy + sz; y++)
+      for (let x = gx; x < gx + sz; x++) if (ore[y * COLS + x]) n++;
+    return n;
+  }
+
+  /**
+   * THE RUN'S INCOME, in scrap a second: the core's pay (CORE_INCOME) for
+   * as long as it stands, plus every finished drill of the player's by the
+   * ore under it (DRILL_INCOME_PER_ORE). Nothing the swarm does or dies of
+   * is in here — see economy.ts. Zero on a sim that is not charging (the
+   * editors, the sandbox, the title screen), where a bank would be a
+   * number that means nothing.
+   */
+  income(): number {
+    if (!this.charging || this.lost()) return 0;
+    let rate = CORE_INCOME;
+    for (const t of this.towers)
+      if (t.team === "player" && t.buildT <= 0 && t.ore > 0) rate += t.ore * DRILL_INCOME_PER_ORE;
+    return rate;
   }
 
   placeTower(gx: number, gy: number, kind: TowerKind, instant = !this.charging): PlaceResult {
@@ -3354,7 +3707,12 @@ export class Sim {
    * second construction path here is how those two rules would quietly
    * stop composing.
    */
-  private spawnUnit(kind: UnitKind, brood?: { x: number; y: number }, wave = this.wavesStarted): boolean {
+  private spawnUnit(
+    kind: UnitKind,
+    brood?: { x: number; y: number; spread?: number },
+    wave = this.wavesStarted,
+    team = 0,
+  ): boolean {
     const stats = UNIT_STATS[kind];
     const fly = !!stats.flying;
     const layer = this.layerOf(kind);
@@ -3373,7 +3731,7 @@ export class Sim {
         // crowding tests below are the same ones a door spot has to pass,
         // so a brood never lands in rock or aground on a shoreline
         const ang = Math.random() * Math.PI * 2;
-        const d = Math.sqrt(Math.random()) * MITOSIS_SPREAD;
+        const d = Math.sqrt(Math.random()) * (brood.spread ?? MITOSIS_SPREAD);
         x = clamp(brood.x + Math.cos(ang) * d, r, W - r);
         y = clamp(brood.y + Math.sin(ang) * d, r, H - r);
       } else {
@@ -3407,13 +3765,15 @@ export class Sim {
       // here, once, so every reader of uspd — the drive, the chassis turn
       // rate, the leg cycle — is already looking at the speed this unit
       // actually travels at
-      this.uspd[i] = stats.speed * (this.speedyOn ? SPEEDY_SPEED : 1);
+      this.uspd[i] = stats.speed * (this.speedyOn && team === 0 ? SPEEDY_SPEED : 1);
       this.urad[i] = r;
       // the core, resolved once here rather than per tick: it is where the
       // air field aims (coreGoal) and where a flyer with no field under it
       // steers by hand (airHeading)
       if (fly) {
-        const g = this.nearestGoal(x, y);
+        // the swarm's flyer aims at the core; the player's at the swarm's
+        // nearest building (re-picked with its target, updateUnitWeapons)
+        const g = team ? (this.nearestEnemyStructure(x, y) ?? this.nearestGoal(x, y)) : this.nearestGoal(x, y);
         this.ugx[i] = g.x;
         this.ugy[i] = g.y;
       }
@@ -3422,7 +3782,7 @@ export class Sim {
       // read downstream — the lancer's x4 included — sees it
       this.uarmor[i] =
         stats.armor +
-        (this.armoredOn && stats.tier <= ARMORED_MAX_TIER ? ARMORED_ARMOR : 0);
+        (this.armoredOn && team === 0 && stats.tier <= ARMORED_MAX_TIER ? ARMORED_ARMOR : 0);
       // ForceFieldAbility.created: a carrier walks in with the bubble
       // already full, so the first tower to see one meets a whole pool of
       // shield rather than a field still charging up. The pool carries the
@@ -3462,7 +3822,7 @@ export class Sim {
       // second wave script nobody can read. Its clock starts full, so the
       // first meal is a second after it lands rather than the instant it
       // does
-      this.uhungry[i] = this.hungryOn && Math.random() < HUNGRY_CHANCE ? 1 : 0;
+      this.uhungry[i] = this.hungryOn && team === 0 && Math.random() < HUNGRY_CHANCE ? 1 : 0;
       // ...and the one thing a brood body carries that a door body does
       // not: the mark that says it may not brood in its turn (see ubrood)
       this.ubrood[i] = brood ? 1 : 0;
@@ -3511,8 +3871,15 @@ export class Sim {
       this.aliveByKind[UNIT_ID[kind]]++;
       // the wave this body answers for (see uwave): the one being drained,
       // or the parent's for brood
-      this.uwave[i] = wave;
-      this.waveSpawned[wave] = (this.waveSpawned[wave] ?? 0) + 1;
+      // a body of the player's answers for no wave: it is not the
+      // swarm's, and a wave is cleared without it
+      this.uteam[i] = team;
+      this.uwave[i] = team ? 0 : wave;
+      if (team) this.nPlayer++;
+      else {
+        this.enemyByKind[UNIT_ID[kind]]++;
+        this.waveSpawned[wave] = (this.waveSpawned[wave] ?? 0) + 1;
+      }
       return true;
     }
     return false;
@@ -3604,7 +3971,7 @@ export class Sim {
         const e = this.bStart[row + hx1 + 1];
         for (let b = this.bStart[row + hx0]; b < e; b++) {
           const j = this.bUnits[b];
-          if (j >= this.n || uhp[j] <= 0) continue;
+          if (j >= this.n || uhp[j] <= 0 || this.uteam[j] !== this.uteam[i]) continue;
           const dx = upx[j] - upx[i], dy = upy[j] - upy[i];
           const rr = range + urad[j];
           if (dx * dx + dy * dy > rr * rr) continue;
@@ -3829,7 +4196,7 @@ export class Sim {
         const j = bUnits[k];
         if (j === i || j >= this.n || uhp[j] <= 0) continue;
         if (uhungry[j] || uspawn[j] > 0 || KIND_BOSS[ukind[j]]) continue;
-        if (ufly[j] !== fly || unav[j] !== nav) continue;
+        if (ufly[j] !== fly || unav[j] !== nav || this.uteam[j] !== this.uteam[i]) continue;
         const dx = upx[j] - x, dy = upy[j] - y;
         const rr = HUNGRY_REACH + urad[j];
         if (dx * dx + dy * dy > rr * rr) continue;
@@ -3849,11 +4216,18 @@ export class Sim {
     // does not brood in its turn (see ubrood)
     const wasBrood = this.ubrood[i];
     const wave = this.uwave[i];
+    const team = this.uteam[i];
+    // A BODY OF THE PLAYER'S DYING IS A LOSS, NOT A KILL: it is off the
+    // field and that is all — no ledger, no blast, no brood
+    if (team) {
+      this.pushDeathFx(x, y);
+      this.removeUnit(i);
+      this.unitsLost++;
+      return;
+    }
     this.killsByKind[kind]++;
-    // the kill's scrap, into the run — fixed per tier (economy.ts)
-    const drop = unitDrop(UNIT_KINDS[kind]).scrap;
-    this.scrap += drop;
-    this.scrapEarned += drop;
+    // a kill pays nothing: the run's scrap is the core's and the drills'
+    // (economy.ts), never the swarm's
     this.pushDeathFx(x, y);
     // VOLATILE (mutation.ts): the body's parting blast, before the arrays
     // reshuffle under it
@@ -3919,8 +4293,12 @@ export class Sim {
 
   private removeUnit(i: number): void {
     this.aliveByKind[this.ukind[i]]--;
-    // one fewer body between the wave and being cleared (wavesCleared)
-    this.waveDown[this.uwave[i]] = (this.waveDown[this.uwave[i]] ?? 0) + 1;
+    if (this.uteam[i]) this.nPlayer--;
+    else {
+      this.enemyByKind[this.ukind[i]]--;
+      // one fewer body between the wave and being cleared (wavesCleared)
+      this.waveDown[this.uwave[i]] = (this.waveDown[this.uwave[i]] ?? 0) + 1;
+    }
     const n = --this.n;
     // the projectile pass holds its force-field carriers by index, and a
     // shot that kills what it hits reshuffles them mid-pass: the dead
@@ -3980,6 +4358,7 @@ export class Sim {
     this.uhungerT[i] = this.uhungerT[n];
     this.ubrood[i] = this.ubrood[n];
     this.uwave[i] = this.uwave[n];
+    this.uteam[i] = this.uteam[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
     this.ufly[i] = this.ufly[n];
@@ -4374,7 +4753,7 @@ export class Sim {
   }
 
   private updateUnits(dt: number): void {
-    const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, ulat, phx, phy, field, flowTmp } =
+    const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, ulat, phx, phy, field, flowTmp, uteam } =
       this;
     const { upullx, upully, uspawn, uwet, uwetSlow } = this;
     const steer = Math.min(1, dt * 8);
@@ -4404,7 +4783,11 @@ export class Sim {
       // wall to slide along — and terrain is not something a flyer meets.
       // It is left pointing at the ground field so the guards below can
       // stay plain `!fly` tests rather than a third branch that never runs.
-      const mf = nav ? this.waterField : field;
+      // ...and a body of the PLAYER's reads the player's fields — the same
+      // rock, the other side's structures soft, the other side's buildings
+      // as the goal (rebuildPlayerFields)
+      const mine = uteam[i] !== 0;
+      const mf = nav ? (mine ? this.pWaterField : this.waterField) : mine ? this.pField : field;
       const { walk } = mf;
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
       const cy = clamp((upy[i] / CELL) | 0, 0, ROWS - 1);
@@ -4422,10 +4805,13 @@ export class Sim {
         // (updateUnitWeapons)
         const gdx = this.ugx[i] - upx[i], gdy = this.ugy[i] - upy[i];
         const gl = Math.sqrt(gdx * gdx + gdy * gdy) || 1;
-        if (gl <= (this.core.size * CELL) / 2 + CELL * 1.5) {
+        // the player's flyer holds over the enemy building it was sent at
+        // (its goal is re-picked with its target, updateUnitWeapons)
+        const hold = mine ? CELL * 2.5 : (this.core.size * CELL) / 2 + CELL * 1.5;
+        if (gl <= hold) {
           flowTmp.x = 0;
           flowTmp.y = 0;
-        } else this.airHeading(upx[i], upy[i], gdx / gl, gdy / gl, flowTmp);
+        } else this.airHeading(upx[i], upy[i], gdx / gl, gdy / gl, flowTmp, mine ? this.pAirField : this.airField);
       } else {
         mf.sample(upx[i], upy[i], flowTmp);
       }
@@ -4957,17 +5343,10 @@ export class Sim {
     this.pushFx(t.x, t.y, 0.5 * big, FxKind.Breach);
     this.pushFx(t.x, t.y, 0.35 * big, FxKind.Death);
     if (isCore(t)) return;
-    // one of the SWARM's buildings wrecked pays its bounty (bountyOf, a
-    // share of the same building's price) into the bank — a formation is
-    // worth shooting through, not only around
-    if (t.team === "enemy") {
-      this.enemyStructuresDown++;
-      if (this.charging) {
-        const bounty = bountyOf(t.kind);
-        this.scrap += bounty;
-        this.scrapEarned += bounty;
-      }
-    }
+    // one of the SWARM's buildings wrecked pays nothing — the economy is
+    // the player's own (economy.ts) — but it is counted, and the ground it
+    // held is open to claim
+    if (t.team === "enemy") this.enemyStructuresDown++;
     this.removeTower(t);
   }
 
@@ -5074,8 +5453,9 @@ export class Sim {
   unitAt(px: number, py: number): number {
     let best = -1, bd = Infinity;
     for (let i = 0; i < this.n; i++) {
-      // a body in the fog cannot be tapped any more than it can be seen
-      if (!this.unitVisible(i)) continue;
+      // a body in the fog cannot be tapped any more than it can be seen,
+      // and the player's own are not marks
+      if (this.uteam[i] !== 0 || !this.unitVisible(i)) continue;
       const dx = this.upx[i] - px, dy = this.upy[i] - py;
       const d2 = dx * dx + dy * dy;
       const r = Math.max(this.urad[i] * 1.6, 10);
@@ -5232,17 +5612,34 @@ export class Sim {
       let shr: ShieldTower | null = null;
       let aimT: Structure | null = null;
       if (hostile) {
-        // THE SWARM'S TURRET sees no unit at all: it holds on the nearest
-        // of the player's structures within its range — the core
-        // included — for as long as that stands and stays in reach, and
-        // re-picks on the same clock the player's guns do
+        // THE SWARM'S TURRET: the nearest of the player's BODIES in range
+        // first (it sees the whole map — the fog is the player's), else it
+        // holds on the nearest of the player's structures within its range
+        // — the core included — for as long as that stands and stays in
+        // reach, re-picking on the same clock the player's guns do
+        if (
+          t.target >= 0 &&
+          t.targetIdx >= 0 &&
+          t.targetIdx < this.n &&
+          this.uid[t.targetIdx] === t.target
+        ) {
+          const dx = upx[t.targetIdx] - t.x, dy = upy[t.targetIdx] - t.y;
+          if (dx * dx + dy * dy < r2t) best = t.targetIdx;
+        }
         const held = t.aimTower;
         if (held && teamOf(held) === "player" && this.inReach(held, t.x, t.y, st.range)) aimT = held;
         t.targetT -= dt;
-        if (!aimT || t.targetT <= 0) {
-          aimT = this.nearestStructure(t.x, t.y, st.range, false, "player");
+        if (best < 0 || t.targetT <= 0) {
+          best =
+            this.nPlayer > 0
+              ? this.bestTarget(t.x, t.y, st.range, st.targetAir, st.targetGround, st.sort === "strongest", 1)
+              : -1;
+          t.target = best >= 0 ? this.uid[best] : -1;
+          if (best < 0 && (!aimT || t.targetT <= 0))
+            aimT = this.nearestStructure(t.x, t.y, st.range, false, "player");
           t.targetT = TARGET_INTERVAL;
         }
+        if (best >= 0) aimT = null;
       } else if (this.focusIdx >= 0 && this.uid[this.focusIdx] === this.focusUid) {
         // THE PLAYER'S MARK FIRST (setFocusUnit / setFocusShieldTower /
         // setFocusTower): a tapped target overrides both the held target
@@ -5436,7 +5833,7 @@ export class Sim {
   /** is unit i in sight, or is the fog off? The one-line form for a caller
    *  outside the hot loops */
   unitVisible(i: number): boolean {
-    return !this.fog.enabled || this.unitInSight(this.fog.state, i);
+    return this.uteam[i] !== 0 || !this.fog.enabled || this.unitInSight(this.fog.state, i);
   }
 
   private bestTarget(
@@ -5446,8 +5843,11 @@ export class Sim {
     air: boolean,
     ground: boolean,
     strongest: boolean,
+    /** whose bodies: the swarm's (0) for the player's guns, the player's
+     *  (1) for the swarm's — which see the whole map, fog or no fog */
+    team = 0,
   ): number {
-    const { upx, upy, uhp, ufly } = this;
+    const { upx, upy, uhp, ufly, uteam } = this;
     const n = this.n;
     const r2 = range * range;
     const score = (i: number, d2: number): number =>
@@ -5456,10 +5856,11 @@ export class Sim {
     // A BODY IN THE FOG IS NOT A TARGET (fog.ts): a turret shoots only what
     // something of the player's can see, which is three quarters of its
     // own reach on its own and the whole of it in a line
-    const fogState = this.fog.enabled ? this.fog.state : null;
+    const fogState = this.fog.enabled && team === 0 ? this.fog.state : null;
     // a short field is cheaper to walk directly than through the buckets
     if (n <= 128) {
       for (let i = 0; i < n; i++) {
+        if (uteam[i] !== team) continue;
         if (ufly[i] !== 0 ? !air : !ground) continue;
         if (fogState && !this.unitInSight(fogState, i)) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
@@ -5484,7 +5885,7 @@ export class Sim {
       const e = bStart[row + hx1 + 1];
       for (let k = bStart[row + hx0]; k < e; k++) {
         const i = bUnits[k];
-        if (i >= n) continue;
+        if (i >= n || uteam[i] !== team) continue;
         if (ufly[i] !== 0 ? !air : !ground) continue;
         if (fogState && !this.unitInSight(fogState, i)) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
@@ -5537,6 +5938,15 @@ export class Sim {
     const hitAimed = (): void => {
       if (shrT) this.shieldTowerHit(shrT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
       if (aimT) this.structureHit(aimT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
+      // ...and the swarm's instant gun on the player's body it holds on:
+      // the sweeps below know only the swarm's bodies, so the hit is
+      // handed straight to the mark, through the swarm's own dial
+      if (t.team === "enemy" && t.targetIdx >= 0 && t.targetIdx < this.n && this.uid[t.targetIdx] === t.target) {
+        const ti = t.targetIdx;
+        this.damageUnit(ti, st.bullet.damage * unitDamageScale());
+        this.bulletFx(st.bullet.hitFx, this.upx[ti], this.upy[ti], a, st.bullet.fxColor);
+        if (this.uhp[ti] <= 0) this.killUnit(ti);
+      }
     };
     // THE SWARM'S OWN INSTANT WEAPONS sweep nothing: every sweep below
     // walks the swarm's bodies. Its shot is the target it was aimed at,
@@ -5669,6 +6079,15 @@ export class Sim {
         this.hitStructure(s, b.damage);
         if (b.splash <= 0) this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor);
         dead = true;
+      } else if (this.nPlayer > 0) {
+        // ...or one of the player's bodies under it, through the swarm's dial
+        const u = this.unitAtShot(pr.x, pr.y, 1);
+        if (u >= 0 && (this.ufly[u] !== 0 ? b.collidesAir : b.collidesGround)) {
+          this.damageUnit(u, b.damage * unitDamageScale());
+          if (this.uhp[u] <= 0) this.killUnit(u);
+          if (b.splash <= 0) this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor);
+          dead = true;
+        }
       }
     }
     if (!dead) return false;
@@ -5677,6 +6096,8 @@ export class Sim {
         this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor);
         this.bulletFx(b.hitFx2, pr.x, pr.y, rot, b.fxColor);
         this.splashStructures(pr.x, pr.y, b.splash, b.splashRadius);
+        // ...and the player's bodies in the blast, through the dial
+        this.splash(pr.x, pr.y, b.splashRadius, b.splash * unitDamageScale(), b.collidesAir, b.collidesGround, undefined, undefined, 1);
       }
       if (pr.life <= 0) this.bulletFx(b.despawnFx, pr.x, pr.y, rot, b.fxColor);
       if (b.frag) this.createFrags(pr, b.frag);
@@ -5867,8 +6288,10 @@ export class Sim {
     range: number,
     air: boolean,
     ground: boolean,
+    team = 0,
+    armedOnly = false,
   ): number {
-    const { upx, upy, uhp, ukind, bStart, bUnits } = this;
+    const { upx, upy, uhp, ukind, bStart, bUnits, uteam, uspawn } = this;
     const hx0 = clamp(((x - range) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((y - range) / HC) | 0, 0, HROWS - 1);
     const hx1 = clamp(((x + range) / HC) | 0, 0, HCOLS - 1);
@@ -5879,7 +6302,8 @@ export class Sim {
       const e = bStart[row + hx1 + 1];
       for (let k = bStart[row + hx0]; k < e; k++) {
         const i = bUnits[k];
-        if (i >= this.n || uhp[i] <= 0) continue;
+        if (i >= this.n || uhp[i] <= 0 || uteam[i] !== team) continue;
+        if (armedOnly && uspawn[i] > 0) continue;
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
         const d2 = dx * dx + dy * dy;
@@ -6076,8 +6500,9 @@ export class Sim {
     ground: boolean,
     hits: number[],
     dists: number[],
+    team = 0,
   ): void {
-    const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
+    const { upx, upy, uhp, urad, ukind, bStart, bUnits, uteam } = this;
     const EXPAND = 7.5; // collideLine's expand = 3 world units
     hits.length = 0;
     dists.length = 0;
@@ -6092,7 +6517,7 @@ export class Sim {
       const e = bStart[row + hx1 + 1];
       for (let k = bStart[row + hx0]; k < e; k++) {
         const i = bUnits[k];
-        if (i >= this.n || uhp[i] <= 0) continue;
+        if (i >= this.n || uhp[i] <= 0 || uteam[i] !== team) continue;
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
         const tt = clamp((upx[i] - x) * dirx + (upy[i] - y) * diry, 0, length);
         const dx = upx[i] - (x + dirx * tt), dy = upy[i] - (y + diry * tt);
@@ -6359,6 +6784,8 @@ export class Sim {
     for (let i = 0; i < this.n && left > 0; i++) {
       if (!KIND_IS_FORCE[ukind[i]]) continue;
       left--;
+      // the player's own carrier shelters nothing from the player's guns
+      if (this.uteam[i] !== 0) continue;
       // ForceFieldAbility.update guards its bullet sweep on shield > 0, so
       // a pool still climbing back through zero deflects nothing
       if (ushield[i] <= 0 || uforceScale[i] <= 0.01) continue;
@@ -6526,7 +6953,8 @@ export class Sim {
           const e = bStart[row + cx1 + 1];
           for (let k = bStart[row + cx0]; k < e; k++) {
             const i = bUnits[k];
-            if (i >= this.n || uhp[i] <= 0) continue;
+            // the player's shot flies over the player's own bodies
+            if (i >= this.n || uhp[i] <= 0 || this.uteam[i] !== 0) continue;
             if (this.ufly[i] !== 0 ? !b.collidesAir : !b.collidesGround) continue;
             // Bullet.collides: a pierce shot skips whoever it already hit
             if (pr.pierced && pr.pierced.includes(this.uid[i])) continue;
@@ -6656,8 +7084,8 @@ export class Sim {
   }
 
   /** is any live targetable unit's hitbox within r of (x, y)? */
-  private anyUnitWithin(x: number, y: number, r: number, air: boolean, ground: boolean): boolean {
-    const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
+  private anyUnitWithin(x: number, y: number, r: number, air: boolean, ground: boolean, team = 0): boolean {
+    const { upx, upy, uhp, urad, ukind, bStart, bUnits, uteam } = this;
     const pad = r + this.rmaxAliveFor(air, ground);
     const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
@@ -6668,7 +7096,7 @@ export class Sim {
       const e = bStart[row + hx1 + 1];
       for (let k = bStart[row + hx0]; k < e; k++) {
         const i = bUnits[k];
-        if (i >= this.n || uhp[i] <= 0) continue;
+        if (i >= this.n || uhp[i] <= 0 || uteam[i] !== team) continue;
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
         const rr = r + urad[i];
@@ -6706,8 +7134,10 @@ export class Sim {
     ground: boolean,
     burn?: number,
     wet?: BulletStats["wet"],
+    /** whose bodies the blast lands on: the swarm's (0) unless said otherwise */
+    team = 0,
   ): void {
-    const { upx, upy, uhp, uarmor, urad, ukind, bStart, bUnits, splashHits } = this;
+    const { upx, upy, uhp, uarmor, urad, ukind, bStart, bUnits, splashHits, uteam } = this;
     splashHits.length = 0;
     const reach = radius + this.rmaxAliveFor(air, ground);
     const hx0 = clamp(((x - reach) / HC) | 0, 0, HCOLS - 1);
@@ -6719,7 +7149,7 @@ export class Sim {
       const e = bStart[row + hx1 + 1];
       for (let k = bStart[row + hx0]; k < e; k++) {
         const i = bUnits[k];
-        if (i >= this.n || uhp[i] <= 0) continue;
+        if (i >= this.n || uhp[i] <= 0 || uteam[i] !== team) continue;
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
         const rr = radius + urad[i];
@@ -6728,8 +7158,10 @@ export class Sim {
     }
     // shieldTowers stand in blasts too: the body is a fat circle, so a shell
     // landing beside one chips it exactly as it chips a unit — this is the
-    // only way artillery (whose shells never collide) hurts one at all
-    if (ground) {
+    // only way artillery (whose shells never collide) hurts one at all.
+    // (A blast on the PLAYER's side — a swarm shell — chips neither the
+    // map's shield towers nor the swarm's own walls)
+    if (ground && team === 0) {
       for (const s of this.shieldTowers) {
         if (s.hp <= 0) continue;
         const sdx = s.x - x, sdy = s.y - y;

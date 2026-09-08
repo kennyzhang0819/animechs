@@ -1,8 +1,8 @@
 import {
-  dropsForKills,
+  GRACE_DEFAULT,
   UNIT_KINDS,
   UNIT_STATS,
-  unitDrop,
+  WAVE_GAP_DEFAULT,
   waveGroups,
   WORLD,
   type LevelSpec,
@@ -14,16 +14,13 @@ import {
 } from "./levels";
 import { TOWERS } from "./constants";
 import {
-  addDrop,
-  emptyDrop,
+  CORE_INCOME,
   MISSION_XP,
   SCRAP_START,
   scrapPriceOf,
   STAGES,
   towersOfTier,
-  waveBonusScrap,
   waveXp,
-  type Drop,
   type TowerTier,
 } from "./economy";
 import { MUT_COUNT_MAX, MUT_FIRST_TIER, mutationBudget, mutationPicks } from "./mutation";
@@ -557,10 +554,6 @@ export interface WaveCost {
   armourShare: number;
   /** how much of it flies — hail and scorch cannot touch these at all */
   airShare: number;
-  /** what the wave's KILLS pay — scrap into the run. The wave bonus is
-   *  not in here (see waveBonusScrap), and neither is XP: a wave's XP is
-   *  its share of the mission pot (waveXp), not a fact about its bodies */
-  drops: Drop;
 }
 
 export function waveCost(step: LevelStep, level = 0): WaveCost {
@@ -570,7 +563,6 @@ export function waveCost(step: LevelStep, level = 0): WaveCost {
     t3Share: 0,
     armourShare: 0,
     airShare: 0,
-    drops: emptyDrop(),
   };
   let t3 = 0;
   let armour = 0;
@@ -586,10 +578,6 @@ export function waveCost(step: LevelStep, level = 0): WaveCost {
       if (stats.tier >= 3) t3 += h;
       if (stats.armor >= 3) armour += h;
       if (stats.flying) air += h;
-      // the drop table is unitDrop in levels.ts — reading it rather than a
-      // local triple is what lets a unit be a stats edit instead of an
-      // economy edit: the audit must count the same drops the run banks
-      addDrop(out.drops, unitDrop(kind), count);
     });
   }
   const share = (x: number): number => (out.hp > 0 ? x / out.hp : 0);
@@ -620,12 +608,27 @@ export interface WaveRow {
   armourShare: number;
   airShare: number;
   t3Share: number;
-  /** what the wave pays: its kills plus its wave bonus */
+  /** what the run EARNS across this wave's window — the core's pay over
+   *  the gap that precedes it (waveWindow), before any drill. Nothing the
+   *  wave's bodies do pays anything */
   scrap: number;
   /** what CLEARING the wave banks — its share of MISSION_XP, before the
    *  rung bonus. It reads off the wave's position and the script's
    *  length, never off what the wave holds */
   xp: number;
+}
+
+/**
+ * THE SECONDS A WAVE OWNS ON THE CLOCK: from the moment the wave before
+ * it finished entering to the moment this one does — the grace for wave
+ * 1, the gap plus the release for every wave after. It is what the core
+ * pays across (waveGuide.scrap) and what a stage's income is summed from
+ * (stageAudit), now that the income is the clock's and not the bodies'.
+ */
+export function waveWindow(spec: LevelSpec, wave: number): number {
+  const gap = spec.waveGap ?? WAVE_GAP_DEFAULT;
+  const grace = spec.grace ?? GRACE_DEFAULT;
+  return wave <= 1 ? grace + WAVE_RELEASE_SECONDS : gap + WAVE_RELEASE_SECONDS;
 }
 
 /** the per-wave guide, at the authored baseline — one row a wave */
@@ -644,7 +647,7 @@ export function waveGuide(spec: LevelSpec = WORLD): WaveRow[] {
       armourShare: c.armourShare,
       airShare: c.airShare,
       t3Share: c.t3Share,
-      scrap: c.drops.scrap + waveBonusScrap(i + 1),
+      scrap: Math.round(CORE_INCOME * waveWindow(spec, i + 1)),
       xp: waveXp(i + 1, waves),
     };
     prev = c.hp;
@@ -664,7 +667,8 @@ export interface StageRow {
   from: number;
   to: number;
   units: number;
-  /** scrap the stage's kills and wave bonuses pay */
+  /** scrap the core pays across the stage's waves' windows (waveWindow) —
+   *  the run's floor; drills come on top and are the player's to add */
   scrap: number;
   /** XP clearing the stage's waves banks, before the rung bonus */
   xp: number;
@@ -844,5 +848,3 @@ export function stageTable(spec: LevelSpec = WORLD): string {
   return [head, ...rows, "", xpHead, ...xpRows].join("\n");
 }
 
-/** what one run's kills are worth in scrap — the XP is missionXp, off the waves cleared */
-export const runDrops = (killsByKind: ArrayLike<number>): Drop => dropsForKills(killsByKind);

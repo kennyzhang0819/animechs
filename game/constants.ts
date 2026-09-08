@@ -447,6 +447,19 @@ export interface TowerStats {
    * record stays exhaustive; nothing ever fires it.
    */
   wall?: true;
+  /**
+   * A BUILDING: no gun and no base, drawn flat like a wall, standing in the
+   * lane like one — the drill and the factories. What it DOES is in the
+   * two fields below; the fire loop and the renderer's turret base skip
+   * it the way they skip a wall.
+   */
+  building?: true;
+  /** a drill: stands only on an ore vein (Sim.canPlace) and pays scrap by
+   *  the second per ore cell under it (economy.ts DRILL_INCOME_PER_ORE) */
+  drill?: true;
+  /** a factory: builds the run's faction's unit of this tier, one after
+   *  another, for the unit's price (economy.ts UNIT_PRICE) */
+  produces?: 1 | 2 | 3 | 4 | 5;
 }
 
 /** the bullet a wall carries: nothing, and it never leaves */
@@ -1337,6 +1350,19 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   "copper-wall-large": wallStats("Large Copper Wall", 1280, 2),
   "titanium-wall-large": wallStats("Large Titanium Wall", 1760, 2),
   "thorium-wall-large": wallStats("Large Thorium Wall", 3200, 2),
+  // THE DRILL: Mindustry's pneumatic drill, 2x2 at Block's default health
+  // (40 a tile). It stands on ore and nothing else, and it is the whole of
+  // the run's income past what the core pays — see economy.ts
+  drill: { ...wallStats("Pneumatic Drill", 160, 2), building: true, drill: true },
+  // THE FACTORIES: the ground factory and the four reconstructors, each
+  // at Mindustry's own footprint and Block's default health for it. One
+  // building a tier: the T1 factory makes the faction's first body, the
+  // additive reconstructor its second, up to the tetrative's fifth
+  "factory-t1": { ...wallStats("Unit Factory", 360, 3), building: true, produces: 1 },
+  "factory-t2": { ...wallStats("Additive Reconstructor", 360, 3), building: true, produces: 2 },
+  "factory-t3": { ...wallStats("Multiplicative Reconstructor", 1000, 5), building: true, produces: 3 },
+  "factory-t4": { ...wallStats("Exponential Reconstructor", 1960, 7), building: true, produces: 4 },
+  "factory-t5": { ...wallStats("Tetrative Reconstructor", 3240, 9), building: true, produces: 5 },
 };
 
 /**
@@ -1383,6 +1409,12 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   "thorium-wall": "The heavy wall. Two and a half copper walls in one tile — what a scepter is meant to break its teeth on while the artillery works.",
   "copper-wall-large": "Four copper walls as one 2x2 block, with four times the pool. One placement where a lane needs a whole plug.",
   "titanium-wall-large": "Four titanium walls as one 2x2 block, with four times the pool — a crossing sealed in a single placement.",
+  drill: "Stands on an ore vein and mines it: scrap by the second for every ore cell under it. The core pays the run's base income; drills are how it grows. Only on ore.",
+  "factory-t1": "Builds your faction's tier-1 unit, one after another, for the unit's price. Units walk out and attack-move at the enemy's nearest building.",
+  "factory-t2": "Builds your faction's tier-2 unit, one after another, for the unit's price.",
+  "factory-t3": "Builds your faction's tier-3 unit — the heavy of the line — one after another, for the unit's price.",
+  "factory-t4": "Builds your faction's tier-4 unit, one after another. A siege body: it costs a stage's income and takes minutes to make.",
+  "factory-t5": "Builds your faction's tier-5 unit, one after another. The top of the line, and the last thing a run affords.",
   "thorium-wall-large": "Four thorium walls as one 2x2 block. The heaviest thing on the board: a wave breaks on it while everything behind it fires.",
 };
 
@@ -1466,7 +1498,7 @@ export const towerMaxHp = (kind: import("./types").StructKind): number => {
  * Indexed by size (1..4); index 0 is unused padding so the lookup is the
  * footprint itself.
  */
-export const BUILD_TIME_BY_SIZE = [0, 2, 4, 6.5, 10] as const;
+export const BUILD_TIME_BY_SIZE = [0, 2, 4, 6.5, 10, 14, 18, 22, 26, 30] as const;
 /** how long this structure spends as a 1 hp shell before it works */
 export const buildTimeOf = (kind: import("./types").TowerKind): number =>
   BUILD_TIME_BY_SIZE[TOWERS[kind].size] ?? BUILD_TIME_BY_SIZE[BUILD_TIME_BY_SIZE.length - 1];

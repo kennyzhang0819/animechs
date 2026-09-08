@@ -53,6 +53,18 @@ export const TOWER_KINDS = [
   "copper-wall-large",
   "titanium-wall-large",
   "thorium-wall-large",
+  // THE ECONOMY AND THE ARMY. A drill stands on an ore vein and pays scrap
+  // by the second (economy.ts DRILL_INCOME_PER_ORE); a factory turns
+  // scrap into the run's faction's units, one tier a building (factions.ts,
+  // Sim.updateProduction). They ride the roster because the sim, the bar,
+  // the prices and the track key on TowerKind; `building` on their stats
+  // is what keeps the fire loop and the renderer's turret base off them
+  "drill",
+  "factory-t1",
+  "factory-t2",
+  "factory-t3",
+  "factory-t4",
+  "factory-t5",
 ] as const;
 export type TowerKind = (typeof TOWER_KINDS)[number];
 
@@ -115,6 +127,12 @@ export interface StructurePlacement {
 export interface Tower {
   /** one of the roster, on whichever side `team` says */
   kind: StructKind;
+  /** a DRILL's ore: how many of its footprint's cells sit on a vein, which
+   *  is what it pays by (Sim.income). 0 on anything else */
+  ore: number;
+  /** a FACTORY's build clock: seconds left on the unit it is making, or
+   *  -1 while it is idle and waiting to afford the next (Sim.updateProduction) */
+  prodT: number;
   team: Team;
   gx: number; // top-left cell of the size x size footprint (TOWERS[kind].size)
   gy: number;
@@ -240,6 +258,9 @@ export interface EnemyShot {
   /** ArtilleryBulletType.update's trail clock, and the missiles' chance
    *  roll — see Sim.updateEnemyShots */
   trailT: number;
+  /** whose body fired it (Sim.uteam): what it flies over is its own
+   *  side's, what it lands on is the other's */
+  team: number;
 }
 
 export interface Projectile {

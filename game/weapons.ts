@@ -584,7 +584,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // Fx.shootSmallFlame out of the barrel, Fx.hitFlameSmall on the wall.
   // upstream: reload 22, damage 37 x 2 (hitSize 7)
   mace: [
-    { name: "flamethrower", reload: t(11), mounts: 2, damage: 37, range: rng(4.2, 13), speed: 0, fx: "flame" },
+    { name: "flamethrower", reload: t(11), mounts: 2, damage: 74, range: rng(4.2, 13), speed: 0, fx: "flame" },
   ],
   // artillery: reload 60, ArtilleryBulletType(2, 20, "shell") 14x14 in
   // bulletYellowBack / bulletYellow, Fx.blastExplosion, splash 80 in 35.
@@ -603,11 +603,11 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // damage 70, lifetime 27; mounts reload 12 and 15, BasicBulletType(12, 20)
   scepter: [
     {
-      name: "scepter-weapon", reload: t(60), mounts: 2, damage: 50, range: rng(7, 25), speed: spd(7), fx: "bullet",
+      name: "scepter-weapon", reload: t(60), mounts: 2, damage: 70, range: rng(7, 25), speed: spd(7), fx: "bullet",
       look: basic(11, 20, { shrinkX: 0.4, shrinkY: 0, shoot: FxKind.ShootBig, hit: FxKind.BlastExplosion }),
     },
     {
-      name: "scepter-mount", reload: t(13), mounts: 4, damage: 10, range: rng(3, 50), speed: spd(3), fx: "bullet",
+      name: "scepter-mount", reload: t(13), mounts: 4, damage: 20, range: rng(3, 50), speed: spd(3), fx: "bullet",
       look: basic(4.5, 35, { shrinkX: 0.6, shrinkY: 0, slope: true, hitColor: PAL.bulletYellowBack }),
     },
   ],
@@ -627,7 +627,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // upstream: splash 80 x 0.68 in 44, rangeOverride 25
   crawler: [
     {
-      name: "crawler", reload: t(24), mounts: 1, damage: 0, splash: 90, splashRadius: u(55),
+      name: "crawler", reload: t(24), mounts: 1, damage: 0, splash: 80, splashRadius: u(55),
       range: u(30), speed: 0, fx: "bomb", suicide: true,
     },
   ],
@@ -657,7 +657,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // upstream: saps at reload 9 / 14 / 22, damage 40, length 55; the
   // artillery reload 45, lifetime 70, splash 65 in 70
   arkyid: [
-    { name: "spiroct-weapon", reload: t(14), mounts: 4, damage: 20, range: u(90), speed: 0, fx: "sap", sap: ARKYID_SAP },
+    { name: "spiroct-weapon", reload: t(14), mounts: 4, damage: 40, range: u(90), speed: 0, fx: "sap", sap: ARKYID_SAP },
     {
       name: "large-purple-mount", reload: t(60), mounts: 1, damage: 12, splash: 70, splashRadius: u(60),
       range: rng(2, 100), speed: spd(2), fx: "shell",
@@ -674,7 +674,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
       speed: 0, fx: "shrapnel", shrapnel: TOXOPID_SHRAPNEL,
     },
     {
-      name: "toxopid-cannon", reload: t(65), mounts: 1, damage: 50, splash: 90, splashRadius: u(55),
+      name: "toxopid-cannon", reload: t(65), mounts: 1, damage: 50, splash: 75, splashRadius: u(55),
       range: rng(3, 90), speed: spd(3), fx: "shell",
       look: artillery(25, PAL.sapBulletBack, PAL.sapBullet, FxKind.SapExplosion, { smoke: FxKind.SmokeBig2 }),
     },
@@ -694,7 +694,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // 0.25 — damage 14 (upstream 15), maxRange 40
   pulsar: [
     {
-      name: "heal-shotgun-weapon", reload: t(36), mounts: 2, shots: 3, damage: 14 * 0.25, range: u(40), speed: 0,
+      name: "heal-shotgun-weapon", reload: t(36), mounts: 2, shots: 3, damage: 15 * 0.25, range: u(40), speed: 0,
       fx: "lightning", bolt: { color: PAL.heal, length: 8, lengthRand: 7, inaccuracy: 35 * DEG },
     },
   ],
@@ -735,7 +735,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // its 30-tick fuse, Fx.flakExplosion when it bursts. collides = false
   horizon: [
     {
-      name: "horizon-bomb", reload: t(12), mounts: 2, damage: 0, splash: 27, splashRadius: u(25),
+      name: "horizon-bomb", reload: t(12), mounts: 2, damage: 0, splash: 25, splashRadius: u(25),
       range: u(30), speed: 0, fx: "bomb",
       look: {
         region: "shell", width: u(10), height: u(14), shrinkX: 0, shrinkY: 0.7,
@@ -760,7 +760,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // the cannon reload 12
   antumbra: [
     {
-      name: "missiles-mount", reload: t(20), mounts: 2, damage: 12, splash: 30, splashRadius: u(20),
+      name: "missiles-mount", reload: t(20), mounts: 2, damage: 18, splash: 37, splashRadius: u(20),
       range: rng(2.7, 50), speed: spd(2.7), fx: "missile",
       look: missile(PAL.missileYellowBack, PAL.missileYellow, PAL.missileYellowBack),
     },
@@ -831,7 +831,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // splash 70 in 40
   bryde: [
     {
-      name: "large-artillery", reload: t(65), mounts: 1, damage: 20, splash: 85, splashRadius: u(25 * 0.75),
+      name: "large-artillery", reload: t(65), mounts: 1, damage: 20, splash: 70, splashRadius: u(25 * 0.75),
       range: rng(3, 80), speed: spd(3), fx: "shell",
       look: artillery(15, PAL.missileYellowBack, PAL.missileYellow, FxKind.MassiveExplosion, {
         height: u(15.5), shoot: FxKind.ShootBig2, trail: { size: u(6), mult: 0.8, color: PAL.missileYellowBack },
@@ -905,7 +905,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // 180, every 65 ticks — a Fx.chainLightning to each in Pal.heal
   aegires: [
     {
-      name: "energy-field", reload: t(65), mounts: 1, damage: 35, range: u(180), speed: 0, fx: "field",
+      name: "energy-field", reload: t(65), mounts: 1, damage: 40, range: u(180), speed: 0, fx: "field",
       maxTargets: 25, fieldColor: PAL.heal,
     },
   ],

@@ -982,6 +982,13 @@ export const TURRET_UPGRADES: Record<TowerKind, readonly TurretUpgradeDef[]> = {
   "copper-wall-large": [],
   "titanium-wall-large": [],
   "thorium-wall-large": [],
+  // the economy and the army have nothing to upgrade either
+  drill: [],
+  "factory-t1": [],
+  "factory-t2": [],
+  "factory-t3": [],
+  "factory-t4": [],
+  "factory-t5": [],
 };
 
 /** every upgrade def, flat — what tech.ts turns into nodes */

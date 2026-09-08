@@ -1,10 +1,13 @@
 # MechSwarm
 
 A real-time strategy prototype in Mindustry's clothes: a 512x512 map the
-run expands out over in 18 to 26 minutes, waves of a few dozen bodies at
-Mindustry's own numbers every three minutes, flow-field pathfinding,
-WebGL2 instanced rendering, and turrets (1×1 up to 4×4) on both sides —
-the swarm's formations are built from the player's roster and fly a red
+run expands out over in 18 to 26 minutes, an economy that comes out of
+the ground (the core's pay and the drills on the ore veins), a faction
+picked on deploy whose factories build its five units and whose three
+turrets ride the bar, waves of a few dozen bodies at Mindustry's own
+numbers every three minutes, flow-field pathfinding for both sides,
+WebGL2 instanced rendering, and structures (1×1 up to 9×9) on both sides
+— the swarm's formations are built from the same roster and fly a red
 flag — that block movement and reroute the field in real time.
 
 ## Run
@@ -42,22 +45,35 @@ stale tab or a cached bundle looks exactly like a fix not working.
   `public/levels/campaign.json`, loaded by `loadLevelDocs()`. Six upgrade trees: ground, support, crawler, air and
   the two **naval** lines (risso→omura, retusa→navanax), which travel on
   the water layer and cannot leave it
-- `game/economy.ts` — **the economy**: scrap (in-run money), XP (meta
-  progress), the per-tier scrap table, the fixed mission pot and how it
-  is dealt out per wave cleared (`MISSION_XP`, `waveXpShare`), the three
-  turret tiers and their scrap prices, the sell refund, the level curve
-  and the random-map bonus
+- `game/economy.ts` — **the economy**: scrap (in-run money, and THE
+  PLAYER MAKES ALL OF IT — `CORE_INCOME` a second from the core,
+  `DRILL_INCOME_PER_ORE` a second per ore cell under each drill; kills,
+  waves and wrecks pay nothing), XP (meta progress), the fixed mission
+  pot and how it is dealt out per wave cleared (`MISSION_XP`,
+  `waveXpShare`), the three turret tiers and their scrap prices, the
+  units' prices and build times (`UNIT_PRICE`, `UNIT_BUILD_SECONDS`),
+  the sell refund, the level curve and the random-map bonus
+- `game/factions.ts` — **the factions**: each of the six unit families
+  with THREE TURRETS OF ITS OWN (`FACTION_TURRETS`, tier 1 to 3), the
+  common roster every faction shares (`COMMON_KINDS`: the walls, the
+  drill, the factories) and the bar a fresh run opens with
+  (`defaultLoadout`). A run is played as one faction, picked on the
+  deploy screen
 - `game/ladder.ts` — the **ten-rung ladder** (`RUNGS`: the mutator roll
   and the XP bonus each; the enemy-level dial is wired and authored to
   zero), and the audit/check arithmetic over the authored script — the
   **stage table** (`stageAudit`) that the turret prices are tuned against
-- `game/track.ts` — the **level track**: the fifteen-level unlocking
-  phase, every level of it opening a turret or a wall (`UNLOCKS`), plus a
-  short hand-placed list (the maps, 2x speed), and `techStateFor(level)`
-  — what a save at that level may do. The turret upgrade rungs are off
-  the track for now (`UPGRADES_ON_TRACK`)
+- `game/track.ts` — the **level track**: the fifteen-level faction phase
+  — a fresh save owns two factions (`STARTING_FACTIONS`) and the track
+  hands out the other four (`FACTION_UNLOCKS`, one every three levels),
+  never a turret on its own; the levels between carry the maps and a
+  few carry nothing — and `techStateFor(level)`, what a save at that
+  level may do. The turret upgrade rungs are off the track for now
+  (`UPGRADES_ON_TRACK`)
 - `game/tech.ts` — `TechState`, the shape the sim and the bar read a
-  save's allowances in, and the roster's canonical order
+  save's allowances in (the factions it owns, the one the run plays,
+  the kinds that allows — `withFaction` narrows a save to a run), and
+  the roster's canonical order
 - `game/upgrades.ts` — the **turret upgrade branches**: a chain of rungs
   under every turret, folded into its live `TowerStats` — two stat
   steps, a one-shot ammunition swap, and an **ultimate** that changes what
@@ -281,7 +297,9 @@ push out for the first expansion — and then a wave lands **every three
 minutes** (`waveGap`, `WAVE_GAP_DEFAULT`), each stronger than the last:
 a squad of daggers under a pair of flares on wave 1, the scepters and the
 first reign by waves 5 to 7, everything and the disrupt on wave 8. Eight
-waves, 475 bodies in all — not a swarm. **Every number on both sides is
+waves, 220 bodies in all — not a swarm, and only a third of what stands
+between the player and the map: the rest is the swarm's own turrets and
+walls, placed on it. **Every number on both sides is
 Mindustry's own**: a turret's health, damage and reload, a wall's pool
 and a unit's health, armour and speed are read out of `Blocks.java` and
 `UnitTypes.java` and played unscaled (`TOWER_HP_SCALE`, `WALL_HP_SCALE`
@@ -291,15 +309,22 @@ carried over stock is gone). The gap and the grace are the document's
 
 ### Two currencies that never touch
 
-**Scrap is the run's money.** Every run opens with `SCRAP_START` (7,500),
-every kill drops its tier's scrap, every wave staged pays a small bonus,
-and every turret placed costs scrap. Selling returns nothing
-(`SELL_REFUND` is 0): a placed turret is spent. Nothing carries between runs: a run is solved from its
-opening board to its last wave on what it earns. There is no gate inside
-a run: whatever the save owns it may place from wave 1. The income is
-tuned so a sensible board clears all eight first try — and **the map is
-income too**: every one of the swarm's buildings wrecked pays a bounty
-(`bountyOf`, half of what the same building costs the player).
+**Scrap is the run's money, and the player makes all of it.** Every run
+opens with `SCRAP_START` (3,000); the core pays `CORE_INCOME` (25) a
+second for as long as it stands; and every **drill** (2x2, on an ore
+vein and nowhere else — `Sim.canPlace`) pays `DRILL_INCOME_PER_ORE`
+(1.5) a second per ore cell under it, six for one squarely on a vein.
+Nothing the swarm does or dies of pays anything: a kill drops nothing, a
+wave lands with no bonus, a wrecked enemy building pays no bounty. The
+economy is not tied to the enemy count at all, which is what lets the
+waves be authored to the mission rather than to the bank. Every turret,
+wall, drill and factory placed costs scrap, and every unit a factory
+builds costs its tier's `UNIT_PRICE`. Selling returns nothing
+(`SELL_REFUND` is 0): a placement is spent. Nothing carries between
+runs. There is no gate inside a run: whatever the save owns it may place
+from wave 1. **The map is where the income is**: the veins near the
+core are the opening drills, the rest are out on the board behind the
+swarm's formations, and expanding to them is what the run is.
 
 **XP is the save's progress, and it is paid for objectives, not kills.**
 Every mission is worth the same fixed pot — `MISSION_XP`, 100,000 for a
@@ -357,14 +382,22 @@ The roster is cut into three price bands along Mindustry's build-cost
 order (`TOWER_TIER`), and the run into three stages (`STAGES`): waves
 1–3, 4–6 and 7–8. **A band is priced so its stage is roughly what
 buys it.** This is a pricing table and nothing else — no band is held shut
-inside a run. Against the shipped script (the opening scrap counted in
-stage 1, the map's bounties in none of them):
+inside a run. The income is the clock's now (`waveWindow` in ladder.ts:
+the core's pay across each wave's window, the opening scrap counted in
+stage 1, the drills on top of all of it):
 
-| stage | waves | scrap paid | tier | prices | buys about |
+| stage | waves | core pays | tier | prices | buys about |
 |---|---|---|---|---|---|
-| 1 | 1–3 | ~11,400 | duo, scorch, hail, arc, scatter, wave | 60–300 | 70 turrets |
-| 2 | 4–6 | ~20,000 | swarmer, lancer, salvo, ripple, parallax, cyclone | 900–1,800 | 16 turrets |
-| 3 | 7–8 | ~43,000 | fuse, tsunami, spectre, meltdown, foreshadow | 4,000–12,000 | 6 turrets |
+| 1 | 1–3 | ~22,000 | duo, scorch, hail, arc, scatter, wave | 60–300 | 140 turrets |
+| 2 | 4–6 | ~14,000 | swarmer, lancer, salvo, ripple, parallax, cyclone | 900–1,800 | 11 turrets |
+| 3 | 7–8 | ~9,000 | fuse, tsunami, spectre, meltdown, foreshadow | 4,000–12,000 | 1 turret |
+
+...which is why the run's second line and its heavy tier come out of
+the drills, and why the factories are priced as the run's clock: the T1
+factory (500) and its next two (1,200 and 3,000) inside the first seven
+minutes, the exponential reconstructor (6,000) by fourteen, the
+tetrative (12,000) after — tier-1-to-3 units and tier-1 turrets first,
+tier-4 units and tier-2 turrets in the middle, the last tiers at the end.
 
 The stage table (`stageAudit`, on the balance dashboard and the level
 editor) is where this is checked; `check()` complains when a stage buys
@@ -374,20 +407,21 @@ next stage's income; what each stage asks is what to stop buying.
 
 ### The level track
 
-**The track is the unlocking phase, and nothing else.** A fresh save
-opens with five structures — the copper wall, duo, hail, scatter and
-salvo (`STARTING_ROSTER` in `game/track.ts`) — and **every one of levels
-2 to 15 opens at least one new turret or wall** (`UNLOCKS`), the lancer,
-ripple and spectre first, the titanium and thorium walls last. At level
-15 the save owns the whole roster of 23 and the track is done: nothing is
-handed out above it. Maelstrom rides level 3 and Quagmire level 7, and 2x
-speed is the last thing on the track at 15. The turret upgrade rungs are
-switched off for now (`UPGRADES_ON_TRACK`), so a turret plays at its stock
-stats whatever the save's level. A turret the save has not reached rides
-the build bar greyed, with the level that opens it. The progress screen
-lists the whole track; the results screen names what a climb handed out. A
-first Confluence clear lands level 6 at Nemesis, level 4 at Incursion;
-the top of the track is about 1.9 million XP.
+**The track hands out factions, and nothing else.** A fresh save owns
+two — the mechs and the support mechs (`STARTING_FACTIONS` in
+`game/track.ts`) — and the track opens the other four one every three
+levels (`FACTION_UNLOCKS`: air at 3, the crawlers at 6, the fleet at 9,
+the support fleet at 12). A faction is a family of five units, tier 1
+to 5, AND the three turrets that belong to it (`FACTION_TURRETS` in
+`game/factions.ts`; the meltdown is shared by the two support lines,
+since seventeen guns do not go into six threes) — plus the walls, the
+drill and the factories every faction shares. The levels between carry
+the maps, and a few carry nothing at all, which is fine. The deploy
+screen asks for ONE faction to play the run as: its factories build its
+units, its three turrets ride the bar, and a fleet is greyed out on a
+map with no water. The turret upgrade rungs are switched off for now
+(`UPGRADES_ON_TRACK`). The progress screen lists the whole track; the
+results screen names what a climb handed out.
 
 ### One script, three families a deploy
 
@@ -457,19 +491,48 @@ two and never row by row. The playtest takes the swarm's dial as
 `--unit-damage`. The headless bot builds on open ground, as the player
 must — hills take no turret — and never rebuilds what it loses.
 
-**The swarm builds too.** A map may start with a formation of the
-swarm's own structures (`MapData.enemies`, stamped in the map editor's
-*Enemy structure* palette) — and **they are the player's roster**: a duo
-is a duo, a lancer a lancer, a copper wall a copper wall, whichever side
-stands it, at the same stats and the same art. What says whose it is is
-**a small crux-red flag at the top-left corner of the base**
-(`Renderer.drawEnemyFlag`) and nothing else. The swarm's turret holds on
-the nearest of the player's structures in its range, the core included,
-and fires the stock table; the player's shoot it back; wrecking one pays
-`bountyOf` (half its price) into the bank; the swarm walks around its own
-walls. There is no enemy-only roster any more — Erekir's breach, diffuse
-and titan and the scrap walls are gone, one set of buildings, two teams.
-Placing formations is authoring, not code: stamp them in the editor.
+**The swarm builds too, and it is most of what stops the player.** A
+map starts with a formation of the swarm's structures (`MapData.enemies`,
+stamped in the map editor's *Enemy structure* palette) — turrets and
+walls across the lanes, on the veins, in front of the doors — and **they
+are the same roster**: a duo is a duo, a lancer a lancer, a copper wall a
+copper wall, whichever side stands it, at the same stats and the same
+art. What says whose it is is **a small crux-red flag at the top-left
+corner of the base** (`Renderer.drawEnemyFlag`) and nothing else. The
+swarm's turret takes the nearest of the player's BODIES in range first
+and holds on the nearest of the player's structures otherwise, the core
+included, and fires the stock table; the player's shoot it back; the
+swarm walks around its own walls. The waves are the other third of the
+pressure (`public/levels/campaign.json`): eight of them, 6 to 53 bodies,
+tiered to the clock — tier 1 and 2 through the first seven minutes, tier
+3 and the first tier 4 by fourteen, the reign and the boss at the end.
+There is no enemy-only roster — Erekir's breach, diffuse and titan and
+the scrap walls are gone, one set of buildings, two teams. Placing
+formations is authoring, not code: stamp them in the editor.
+
+**The player builds an army.** Five factories, one a unit tier
+(`factory-t1` to `factory-t5`: Mindustry's ground factory and its four
+reconstructors, at Mindustry's own footprints — 3x3 up to 9x9), each
+building the run's faction's unit of its tier one after another for the
+unit's price (`Sim.updateProduction`), the body set down beside the
+building when its clock runs out; a factory that cannot afford the next
+one, or finds the field at `PLAYER_UNIT_CAP`, waits with nothing owed.
+**A unit of the player's attack-moves at the swarm's buildings**: it
+walks the player's own flow field (`Sim.pField`, and the air and water
+ones — the same rock, the swarm's structures soft and the player's own
+hard, the goal every enemy structure standing or the swarm's drop zones
+when none is) and every weapon it carries fires at the nearer of the
+other side's nearest structure and nearest body (`Sim.pickAim`), with
+Mindustry's weapons. The swarm's bodies do the same to it. **The two
+sides never touch their own**: every scan, sweep, splash, beam and
+shot in the sim carries the team it is looking for (`Sim.uteam`), a
+support unit heals its own side only, a hungry unit eats its own side
+only, and a body of the player's is no wave's, no kill's and no
+mutator's. It wears a ring in the team's amber under it (both sides
+wear the same art), it is never in the fog and it SEES — six cells round
+itself, re-cast twice a second while any is out — and it is amber on
+the minimap. The HUD counts the army beside the bank, and the results
+count what was lost.
 
 **Every map is checked headless.** `npm run playtest -- --world <id>`
 runs the real sim with an ordinary builder bot at the keyboard (route

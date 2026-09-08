@@ -6,7 +6,6 @@ import {
   SCRAP_COLOR,
   SCRAP_ICON,
   XP_COLOR,
-  type Drop,
 } from "@/game/economy";
 
 /* eslint-disable @next/next/no-img-element -- raw pixel sprites, no optimization wanted */
@@ -90,29 +89,6 @@ export function XpAmount({
     >
       <XpStar className={SIZES[size]} />
       {itemCount(amount)} XP
-    </span>
-  );
-}
-
-/**
- * A drop — what a wave's, a stage's or a run's KILLS pay — as its scrap
- * stack. It hides when it is zero, so a row never prints "0 scrap". There
- * is no XP half: kills pay none (economy.ts, MISSION_XP), and a row that
- * shows what clearing a wave banks prints an XpAmount beside this.
- */
-export function DropRow({
-  drop,
-  size = "sm",
-  className = "",
-}: {
-  drop: Drop;
-  size?: Size;
-  className?: string;
-}) {
-  if (drop.scrap <= 0) return null;
-  return (
-    <span className={`inline-flex flex-wrap items-center gap-x-3 gap-y-1 ${className}`}>
-      <ScrapAmount amount={drop.scrap} size={size} />
     </span>
   );
 }

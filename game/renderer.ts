@@ -43,6 +43,13 @@ import {
   UV_SHIELD_TOWER,
   UV_COPPER_WALL,
   UV_TITANIUM_WALL,
+  UV_DRILL,
+  UV_FACTORY1,
+  UV_FACTORY2,
+  UV_FACTORY3,
+  UV_FACTORY4,
+  UV_FACTORY5,
+  UV_ORE,
   UV_THORIUM_WALL,
   UV_COPPER_WALL_LARGE,
   UV_TITANIUM_WALL_LARGE,
@@ -184,6 +191,12 @@ const UV_TURRETS: Record<TowerKind, UVRect> = {
   "copper-wall-large": UV_COPPER_WALL_LARGE,
   "titanium-wall-large": UV_TITANIUM_WALL_LARGE,
   "thorium-wall-large": UV_THORIUM_WALL_LARGE,
+  drill: UV_DRILL,
+  "factory-t1": UV_FACTORY1,
+  "factory-t2": UV_FACTORY2,
+  "factory-t3": UV_FACTORY3,
+  "factory-t4": UV_FACTORY4,
+  "factory-t5": UV_FACTORY5,
 };
 /**
  * The two regions BasicBulletType.draw lays on one rect: the longer `-back`
@@ -378,6 +391,8 @@ const SHIELD_COL = [0xff / 255, 0xd3 / 255, 0x7f / 255] as const;
  * is free to say "enemy" the way it does in the original.
  */
 const UNIT_SHIELD_COL: RGB = TEAM_CRUX_RGB;
+/** the player's own team colour on the field: Pal.accent, the core's amber */
+const TEAM_MINE: RGB = PAL_IMPORT.accent;
 /**
  * UnitEngine.draw: the flame behind a flyer, a disc in the team's colour
  * breathing on Mathf.absin(Time.time, 2, radius / 4) with a white disc
@@ -1658,6 +1673,11 @@ export class Renderer {
         // water cell, stays here and draws over it
         const wet = isWaterFloor(T.floor[i]);
         this.push(wet ? wt : t, cx, cy, CELL, CELL, 0, UV_FLOORS[T.floor[i]], 1, 1, 1, 1);
+        // THE ORE, over the floor and under its edges: a vein is what a
+        // drill stands on (Sim.canPlace), and it shows as Mindustry's own
+        // copper ore, one of three faces picked by the cell
+        if (T.ore[i] && !wet)
+          this.push(t, cx, cy, CELL, CELL, 0, UV_ORE[(x * 7 + y * 13) % 3], 1, 1, 1, 1);
         const pri = GROUP_PRI[(T.floor[i] / 3) | 0];
         for (const og of EDGE_ORDER) {
           if (GROUP_PRI[og] <= pri) continue;
@@ -1943,7 +1963,7 @@ export class Renderer {
    */
   private pushUnitPass(dyn: Batch, sim: Sim, pass: number): void {
     const { vx0, vy0, vx1, vy1 } = this;
-    const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
+    const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n, uteam } = sim;
     const { ushield, ushieldAlpha, urad, uwet, uhungry, ufly, ueaten, uwade } = sim;
     // pass 1 is nothing but the flyers' drop shadows — a whole second
     // quad per flyer, and the first decoration to go with the effects
@@ -1968,9 +1988,18 @@ export class Renderer {
       const cm = grow === 1 ? KIND_CULL[k] : KIND_CULL[k] * grow;
       if (upx[i] < vx0 - cm || upx[i] > vx1 + cm || upy[i] < vy0 - cm || upy[i] > vy1 + cm)
         continue;
-      if (!this.vis(upx[i], upy[i])) continue; // in the fog: not there
+      // in the fog: not there — the player's own bodies are never in it
+      const mine = uteam[i] !== 0;
+      if (!mine && !this.vis(upx[i], upy[i])) continue;
       const usz = KIND_SPRITE[k];
       if (grow !== 1) this.beginScale(upx[i], upy[i], grow);
+      // THE PLAYER'S MARK: a ring in the team's amber under each of the
+      // player's bodies, an RTS's selection circle — the one thing that
+      // says whose a dagger is, since both sides wear the same art
+      if (mine && pass !== 1) {
+        const rr = urad[i] * 2 * 1.5;
+        this.push(dyn, upx[i], upy[i], rr, rr, 0, UV_RING, TEAM_MINE[0], TEAM_MINE[1], TEAM_MINE[2], 0.75);
+      }
       if (pass === 1) {
         this.push(dyn, upx[i] + SHADOW_OFF, upy[i] + SHADOW_OFF, usz, usz, urot[i], KIND_UV[k], 0, 0, 0, SHADOW_ALPHA);
         this.endScale();

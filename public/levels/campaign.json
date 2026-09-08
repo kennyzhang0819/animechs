@@ -5,105 +5,105 @@
  "script": [
   {
    "wave": {
-    "dagger": 6,
+    "dagger": 4,
     "flare": 2
    }
   },
   {
    "wave": {
-    "dagger": 10,
-    "mace": 3,
-    "nova": 4,
-    "flare": 4
+    "dagger": 5,
+    "mace": 2,
+    "nova": 3,
+    "flare": 3
    }
   },
   {
    "wave": {
-    "dagger": 12,
-    "mace": 5,
+    "dagger": 5,
+    "mace": 3,
     "fortress": 1,
-    "nova": 6,
+    "nova": 3,
     "pulsar": 2,
-    "flare": 6,
+    "flare": 3,
     "horizon": 2
    }
   },
   {
    "wave": {
-    "dagger": 14,
-    "mace": 7,
-    "fortress": 3,
-    "nova": 8,
-    "pulsar": 4,
+    "dagger": 5,
+    "mace": 3,
+    "fortress": 2,
+    "nova": 3,
+    "pulsar": 2,
     "quasar": 1,
-    "flare": 8,
-    "horizon": 4,
+    "flare": 3,
+    "horizon": 3,
     "zenith": 1
    }
   },
   {
    "wave": {
-    "dagger": 16,
-    "mace": 9,
-    "fortress": 5,
+    "dagger": 5,
+    "mace": 4,
+    "fortress": 3,
     "scepter": 1,
-    "nova": 8,
-    "pulsar": 6,
+    "nova": 3,
+    "pulsar": 3,
     "quasar": 2,
-    "flare": 8,
-    "horizon": 5,
-    "zenith": 3
+    "flare": 3,
+    "horizon": 3,
+    "zenith": 2
    }
   },
   {
    "wave": {
-    "dagger": 18,
-    "mace": 10,
-    "fortress": 7,
-    "scepter": 2,
-    "nova": 10,
-    "pulsar": 7,
-    "quasar": 4,
+    "dagger": 6,
+    "mace": 4,
+    "fortress": 3,
+    "scepter": 1,
+    "nova": 4,
+    "pulsar": 3,
+    "quasar": 2,
     "vela": 1,
-    "flare": 10,
-    "horizon": 6,
-    "zenith": 5,
+    "flare": 4,
+    "horizon": 3,
+    "zenith": 3,
     "antumbra": 1
    }
   },
   {
    "wave": {
-    "dagger": 20,
-    "mace": 12,
-    "fortress": 9,
-    "scepter": 3,
+    "dagger": 6,
+    "mace": 5,
+    "fortress": 4,
+    "scepter": 2,
     "reign": 1,
-    "nova": 12,
-    "pulsar": 8,
-    "quasar": 5,
-    "vela": 2,
-    "flare": 10,
-    "horizon": 7,
-    "zenith": 6,
-    "antumbra": 2
+    "nova": 4,
+    "pulsar": 4,
+    "quasar": 3,
+    "vela": 1,
+    "flare": 4,
+    "horizon": 4,
+    "zenith": 3,
+    "antumbra": 1
    }
   },
   {
    "wave": {
-    "dagger": 24,
-    "mace": 14,
-    "fortress": 11,
-    "scepter": 4,
-    "reign": 2,
-    "nova": 14,
-    "pulsar": 9,
-    "quasar": 6,
-    "vela": 3,
+    "dagger": 8,
+    "mace": 5,
+    "fortress": 5,
+    "scepter": 2,
+    "reign": 1,
+    "nova": 5,
+    "pulsar": 4,
+    "quasar": 3,
+    "vela": 2,
     "corvus": 1,
-    "flare": 12,
-    "horizon": 8,
-    "zenith": 8,
-    "antumbra": 3,
+    "flare": 5,
+    "horizon": 4,
+    "zenith": 4,
+    "antumbra": 2,
     "eclipse": 1,
     "disrupt": 1
    }

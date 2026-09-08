@@ -4,12 +4,16 @@ import { TOWER_KINDS, type TowerKind } from "./types";
 /**
  * THE ECONOMY, in two currencies that never touch.
  *
- *   SCRAP  is IN-RUN money. Every run starts with SCRAP_START, every kill
- *          drops its tier's scrap (SCRAP_BY_TIER), every wave that lands
- *          pays a small bonus (waveBonusScrap), and every turret placed
- *          costs scrap (TOWER_PRICE). Selling refunds SELL_REFUND of the
- *          price. Nothing carries between runs — a run is solved from
- *          its opening board to its last wave on what it earns.
+ *   SCRAP  is IN-RUN money, and THE PLAYER MAKES ALL OF IT. Every run
+ *          starts with SCRAP_START, the core pays CORE_INCOME a second
+ *          for as long as it stands, and every drill on an ore vein pays
+ *          DRILL_INCOME_PER_ORE a second per ore cell under it. Nothing
+ *          the enemy does or dies of pays anything: a kill drops nothing,
+ *          a wave lands with no bonus, a wrecked enemy building pays no
+ *          bounty. Every turret, wall, drill and factory placed costs
+ *          scrap (TOWER_PRICE), and every unit a factory builds costs its
+ *          tier's UNIT_PRICE. Selling refunds SELL_REFUND of the price.
+ *          Nothing carries between runs.
  *
  *   XP     is META progress, and IT IS PAID FOR OBJECTIVES, NOT KILLS.
  *          Every mission is worth the same fixed MISSION_XP for a full
@@ -21,87 +25,19 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  *          played multiplies it (tierXpBonus in ladder.ts) and a random
  *          map pays RANDOM_MAP_XP_BONUS more on top.
  *          XP turns into PLAYER LEVEL through the curve below, and every
- *          level is a rung on the track (track.ts): maps, paces, upgrades.
+ *          level is a rung on the track (track.ts): the factions, the maps.
  *
- * THIS REPLACED FIVE CURRENCIES AND A COUNT MODEL. The bank used to hold
- * copper, titanium, thorium, plastanium and phase fabric, one per enemy
- * tier, and a tech-tree point WAS a placement — a save that owned 300 duos
- * could stand 300 duos on wave 1 for free. The run had no economy and so
- * no decisions: the whole board went down before the first wave, and the
- * correct opening on every map was the best turret the save owned, up to
- * its count. Scrap is what puts an early, a middle and a late game back
- * inside one run, and the level ladder is what the tree is paid in now.
- *
- * KILLS DROP SCRAP AND NOTHING ELSE. A dagger always pays the same scrap,
- * on every rung, on every map — scrap income is a fact about the SCRIPT,
- * which is what lets the turret prices below be authored against it. XP
- * used to come off the same kills (one point per 110 hp of the body), and
- * that put most of a run's XP behind the tier-5 wall: the last fifteen
- * waves paid two thirds of a clear and the first twenty under a tenth, so
- * a run that died on wave 25 banked almost nothing for the twenty-four
- * waves it held. Paying for the WAVE rather than the BODY is what fixes
- * that — see MISSION_XP.
+ * WHY THE INCOME IS THE PLAYER'S AND NOT THE SWARM'S. Kills used to drop
+ * scrap by tier, which tied the economy to the wave script: the waves had
+ * to be authored so that their bodies paid for the turrets that killed
+ * them, and a wave the designer wanted small was a wave the player could
+ * not afford to answer. An RTS economy comes out of the ground instead —
+ * the core's steady pay, and the veins the run expands out to claim — so
+ * the waves are free to be exactly as heavy as the mission wants, and
+ * expansion is worth something on its own. This also replaced five
+ * currencies and a count model before it, where a tech-tree point WAS a
+ * placement and the whole board went down before the first wave.
  */
-
-// ---------------------------------------------------------------------------
-// DROPS
-// ---------------------------------------------------------------------------
-
-/**
- * what one kill pays: scrap into the run. It is a record and not a bare
- * number because it used to carry XP too, and every ledger that sums
- * drops (a wave's, a stage's, a run's) reads it by name
- */
-export interface Drop {
-  scrap: number;
-}
-
-export const emptyDrop = (): Drop => ({ scrap: 0 });
-
-/** n copies of a drop folded into an accumulator */
-export function addDrop(into: Drop, d: Drop, n = 1): void {
-  if (n <= 0) return;
-  into.scrap += d.scrap * n;
-}
-
-export const isEmptyDrop = (d: Drop): boolean => d.scrap === 0;
-
-/**
- * WHAT EACH UNIT TIER PAYS IN SCRAP, indexed by tier (index 0 is unused).
- * A T1 always drops exactly this; a T5 always drops exactly that. XP is
- * NOT on this table — a kill pays no XP at all, see MISSION_XP.
- *
- * The shape is the point. The script sends tier-1 bodies by the dozen
- * and tier-5 bodies one or two at a time, so the low rows are cheap per
- * body and the high rows are dear, and the three stages of a run come out
- * paying what the three turret tiers cost — see TOWER_PRICE and the stage
- * audit in ladder.ts. Against the eight-wave campaign
- * (public/levels/campaign.json) the kills and wave bonuses pay about:
- *
- *   waves 1-3    ~3,900 scrap (plus the opening SCRAP_START)
- *   waves 4-6   ~20,000 scrap
- *   waves 7-8   ~43,000 scrap
- *
- * Three times what a body paid when the swarm was thousands strong: a
- * wave is a few dozen now, and a run still has to buy a real board out
- * of it. The rest of a run's income is the map — every one of the
- * swarm's buildings wrecked pays bountyOf.
- */
-export const SCRAP_BY_TIER: readonly number[] = [0, 30, 90, 240, 600, 1500];
-
-/**
- * A boss is one body a run and its SCRAP is an event: a lump for the
- * board that fells it, whatever tier it is.
- */
-export const BOSS_SCRAP = 5000;
-
-/** the drop for one unit: scrap off its tier, a boss its lump */
-export function dropForUnit(tier: number, boss = false): Drop {
-  const i = Math.max(1, Math.floor(tier));
-  return {
-    scrap: boss ? BOSS_SCRAP : SCRAP_BY_TIER[Math.min(i, SCRAP_BY_TIER.length - 1)],
-  };
-}
 
 // ---------------------------------------------------------------------------
 // SCRAP — the run's money
@@ -109,34 +45,48 @@ export function dropForUnit(tier: number, boss = false): Drop {
 
 /**
  * What a run opens with, and what the four-minute grace is spent on: a
- * few dozen tier-1 turrets' worth, or a first line and a wall in front of
- * it. Wave 1 is a squad, not a tide; the opening buys the board that
- * meets waves 1 to 3, and their kills pay for the next band.
+ * first line of a dozen guns and a wall, a drill or two on the nearest
+ * vein, and the first factory. Deliberately a fraction of what the core
+ * pays over the grace (CORE_INCOME x GRACE_DEFAULT is twice this): the
+ * opening is a decision about what to build first, not a board bought
+ * whole.
  */
-export const SCRAP_START = 7500;
+export const SCRAP_START = 3000;
 
 /**
- * THE WAVE BONUS, paid the moment a wave starts entering: a small stipend
- * so a board that leaked its way through one wave can still afford to fix
- * itself for the next. Bloons pays end-of-round cash the same way. It is
- * deliberately a rounding error against the kill drops (about 5% of a
- * full run's scrap) — the swarm is the income, this is the floor under it.
+ * THE CORE'S PAY: scrap a second, for as long as the core stands. This is
+ * the run's base income — over a 25-minute run it is about 37,000, which
+ * buys a faction's whole line once, so the run's second line and its
+ * heavy tier come out of the drills. Sim.income.
  */
-export const WAVE_BONUS_BASE = 250;
-export const WAVE_BONUS_PER_WAVE = 50;
-export const waveBonusScrap = (wave: number): number =>
-  WAVE_BONUS_BASE + WAVE_BONUS_PER_WAVE * Math.max(0, Math.floor(wave));
+export const CORE_INCOME = 25;
 
 /**
- * WHAT WRECKING ONE OF THE SWARM'S BUILDINGS PAYS, as a fraction of what
- * the same building costs the player (Sim.damageTower). The swarm builds
- * from the player's roster, so its lancer is worth exactly what a lancer
- * is worth, halved: a formation is worth shooting through, not only
- * around, and never worth more than building the thing yourself.
+ * A DRILL'S PAY: scrap a second per ORE CELL under its 2x2 footprint
+ * (Tower.ore), so a drill squarely on a vein pays four times this and one
+ * hanging off its edge pays for the cell that is on it — Mindustry's own
+ * rule, where a drill's speed is its ore count. Six a second for a full
+ * drill: a drill pays itself back (TOWER_PRICE) inside a minute, and four
+ * of them match the core, which is what makes the veins worth walking
+ * out to and worth holding.
  */
-export const ENEMY_BOUNTY = 0.5;
-export const bountyOf = (kind: TowerKind): number =>
-  Math.round(scrapPriceOf(kind) * ENEMY_BOUNTY);
+export const DRILL_INCOME_PER_ORE = 1.5;
+
+/**
+ * WHAT A FACTORY CHARGES FOR A UNIT, by the unit's tier (index 0 unused),
+ * and how long it takes to make one. The prices follow the turret bands:
+ * a tier-1 body is a turret and a half, a tier-3 body is a tier-2 turret,
+ * a tier-5 body is a tier-3 turret — and the clocks are Mindustry's
+ * factory and reconstructor times, near enough, so a T5 is minutes of a
+ * building's life. A factory that cannot afford its next unit waits
+ * (Sim.updateProduction); nothing is queued and nothing is owed.
+ */
+export const UNIT_PRICE: readonly number[] = [0, 100, 300, 900, 3000, 8000];
+export const UNIT_BUILD_SECONDS: readonly number[] = [0, 15, 25, 45, 90, 150];
+
+/** the most bodies the player's factories keep on the field at once —
+ *  Mindustry's unit cap, near enough; a factory with the field full waits */
+export const PLAYER_UNIT_CAP = 80;
 
 /**
  * What a sold turret hands back, as a fraction of its price. NOTHING: a
@@ -190,6 +140,14 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
   "copper-wall-large": 1,
   "titanium-wall-large": 1,
   "thorium-wall-large": 1,
+  // the economy and the army: the drill and the first factory are opening
+  // buys, the heavy reconstructors are the middle and the end of the run
+  drill: 1,
+  "factory-t1": 1,
+  "factory-t2": 1,
+  "factory-t3": 2,
+  "factory-t4": 2,
+  "factory-t5": 3,
 };
 
 /** every turret of one tier, in roster order */
@@ -268,6 +226,18 @@ export const TOWER_PRICE: Record<TowerKind, number> = {
   "copper-wall-large": 80,
   "titanium-wall-large": 200,
   "thorium-wall-large": 480,
+  // THE DRILL pays itself back in under a minute on a full vein (see
+  // DRILL_INCOME_PER_ORE): cheap enough to be the first thing bought,
+  // dear enough that a vein under fire is a loss
+  drill: 300,
+  // THE FACTORIES are the run's clock (levels.ts: T1-3 units by seven
+  // minutes, T4 by fourteen, T5 after): each is priced at roughly what the
+  // core has paid by the time its tier is due
+  "factory-t1": 500,
+  "factory-t2": 1200,
+  "factory-t3": 3000,
+  "factory-t4": 6000,
+  "factory-t5": 12000,
 };
 
 const priceOverrides = new Map<TowerKind, number>();
@@ -322,8 +292,8 @@ export const pricePerTile = (kind: TowerKind): number =>
  * devoured or blown up) banks that wave's share the moment its last body
  * drops, and a run that dies on wave 25 keeps what waves 1 to 24 paid. A
  * win is every objective met and pays the whole pot, however the last
- * wave ended. Kills pay nothing: they drop scrap (SCRAP_BY_TIER) and that
- * is the whole of what a body is worth.
+ * wave ended. Kills pay nothing at all — not XP, and not scrap either
+ * (the income is the player's: CORE_INCOME and the drills).
  *
  * WHY. Under the kill rule the pot was ~246,000 XP on the reference
  * script and it sat where the health sat: waves 1-20 paid 23,000 of it

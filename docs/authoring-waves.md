@@ -36,7 +36,11 @@ number the editor prints about a script is true at every rung.
 ## The price bands
 
 There is no tier gate inside a run any more: whatever the save owns it may
-place from wave 1. The three stages (`STAGES` in `game/economy.ts`) —
+place from wave 1. The waves are a third of what stops the player — the
+map's formations of enemy turrets and walls are the rest — so a wave is
+a few dozen bodies tiered to the clock, never a tide: the economy is the
+player's own (the core and the drills, `game/economy.ts`) and owes the
+script nothing. The three stages (`STAGES` in `game/economy.ts`) —
 waves 1–3, 4–6, 7–8 — survive as the stretches the three price bands
 are authored against, and the **Stages** panel in the editor sums what
 each stage pays against its band's prices. A fresh save fields the seven

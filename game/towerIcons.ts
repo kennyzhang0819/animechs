@@ -33,4 +33,10 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   "copper-wall-large": "/mindustry/sprites/blocks/walls/copper-wall-large.png",
   "titanium-wall-large": "/mindustry/sprites/blocks/walls/titanium-wall-large.png",
   "thorium-wall-large": "/mindustry/sprites/blocks/walls/thorium-wall-large.png",
+  drill: "/mindustry/sprites/blocks/drills/pneumatic-drill.png",
+  "factory-t1": "/mindustry/sprites/blocks/units/ground-factory.png",
+  "factory-t2": "/mindustry/sprites/blocks/units/additive-reconstructor.png",
+  "factory-t3": "/mindustry/sprites/blocks/units/multiplicative-reconstructor.png",
+  "factory-t4": "/mindustry/sprites/blocks/units/exponential-reconstructor.png",
+  "factory-t5": "/mindustry/sprites/blocks/units/tetrative-reconstructor.png",
 };

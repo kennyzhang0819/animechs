@@ -1,8 +1,8 @@
-import { WORLD, WORLDS } from "./levels";
+import { FAMILIES, WORLD, WORLDS, type FamilyKey } from "./levels";
 import { tierXpBonus, TOP_TIER } from "./ladder";
 import { levelForXp, missionXp, RANDOM_MAP_XP_BONUS } from "./economy";
 import { MAX_LEVEL, techStateFor, worldUnlockLevel } from "./track";
-import type { TechState } from "./tech";
+import { withFaction, type TechState } from "./tech";
 import { clearSave, readSave, writeSave } from "./storage";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
@@ -58,6 +58,12 @@ export interface Progress {
    */
   difficulty?: number;
   map?: string;
+  /**
+   * THE FACTION THE PLAYER LAST DEPLOYED AS (factions.ts), remembered so
+   * the deploy screen opens on it. Absent means the first faction the
+   * save owns; one the save does not own (a wiped save) reads as absent.
+   */
+  faction?: FamilyKey;
   /**
    * Ambient effects — the particle work, and nothing a weapon is made of
    * (see Sim.setEffects). Absent means ON; only an explicit `false` is off.
@@ -186,6 +192,7 @@ export function loadProgress(): Progress {
       hudMinimized: p.hudMinimized === true,
       difficulty: readDifficulty(p),
       map: readMapPick(p),
+      ...(readFaction(p) ? { faction: readFaction(p) } : null),
       // absent means ON — only an explicit false switches them off
       effects: p.effects !== false,
       uiScale: readUiScale(p),
@@ -230,6 +237,18 @@ export function saveRunPick(difficulty: number, map: string | null): void {
   const { map: _dropped, ...rest } = p;
   void _dropped;
   saveProgress({ ...rest, difficulty: tier, ...(map ? { map } : null) });
+}
+
+/** the remembered faction, if it names one the game has */
+function readFaction(p: { faction?: unknown }): FamilyKey | undefined {
+  const raw = p.faction;
+  return typeof raw === "string" && FAMILIES.some((f) => f.key === raw) ? (raw as FamilyKey) : undefined;
+}
+
+export function saveFaction(faction: FamilyKey): void {
+  const p = loadProgress();
+  if (p.faction === faction) return;
+  saveProgress({ ...p, faction });
 }
 
 /** the bar's curation out of a raw save: known turrets only, deduped */
@@ -332,8 +351,8 @@ export const effectiveLevel = (p: Progress): number =>
   devUnlocking(p) ? MAX_LEVEL : levelOf(p);
 
 /** what the run may do, as the sim and the bar want it — the track at the save's level */
-export function techOf(p: Progress): TechState {
-  return techStateFor(effectiveLevel(p));
+export function techOf(p: Progress, faction: FamilyKey | null = null): TechState {
+  return withFaction(techStateFor(effectiveLevel(p)), faction);
 }
 
 // ---------- the record ----------

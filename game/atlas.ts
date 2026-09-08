@@ -841,6 +841,20 @@ export const UV_SHIELD_TOWER = uv(1312, 2976, 96, 96);
 // the second environment band's origin (1024, 3200), which is the moss
 // floor: drawn there they painted wall art over half the band's floors
 export const UV_COPPER_WALL = uv(0, 3008, 64, 64);
+/**
+ * THE ECONOMY AND THE ARMY, on the free row above the heavy turrets
+ * (y 2560..2816, x from 1024 — the scepter's mounts end at 512). The
+ * tetrative reconstructor's 288px art is fitted to a 256 cell; the rest
+ * are native, and the 64px drill is upscaled 2x into 128 like lancer's.
+ * The ore's three 32px faces sit 2x in 64 cells beside the swarmer.
+ */
+export const UV_FACTORY5 = uv(1024, 2560, 256, 256);
+export const UV_FACTORY4 = uv(1280, 2560, 224, 224);
+export const UV_FACTORY3 = uv(1504, 2560, 160, 160);
+export const UV_FACTORY1 = uv(1664, 2560, 96, 96);
+export const UV_FACTORY2 = uv(1760, 2560, 96, 96);
+export const UV_DRILL = uv(1856, 2560, 128, 128);
+export const UV_ORE: readonly UVRect[] = [uv(1024, 2816, 64, 64, 2), uv(1088, 2816, 64, 64, 2), uv(1024, 2880, 64, 64, 2)];
 // (the strip between the copper walls and the 4x4 base at y=2944 held the
 // swarm's own roster — Erekir's guns and scrap walls — and is free again:
 // the swarm builds from the player's roster now, see types.ts StructKind)
@@ -1569,6 +1583,18 @@ const SPRITES = {
   // the shield tower wears the force projector's art — the one Mindustry
   // block whose whole job is standing a dome, which is this structure's too
   shieldTower: "/mindustry/sprites/blocks/defense/force-projector.png",
+  // THE ECONOMY AND THE ARMY (types.ts): the pneumatic drill, the ground
+  // factory and the four reconstructors — every one drawn flat, at
+  // Mindustry's own footprint — and the copper ore's three faces
+  drill: "/mindustry/sprites/blocks/drills/pneumatic-drill.png",
+  factory1: "/mindustry/sprites/blocks/units/ground-factory.png",
+  factory2: "/mindustry/sprites/blocks/units/additive-reconstructor.png",
+  factory3: "/mindustry/sprites/blocks/units/multiplicative-reconstructor.png",
+  factory4: "/mindustry/sprites/blocks/units/exponential-reconstructor.png",
+  factory5: "/mindustry/sprites/blocks/units/tetrative-reconstructor.png",
+  ore1: "/mindustry/sprites/blocks/environment/ore-copper1.png",
+  ore2: "/mindustry/sprites/blocks/environment/ore-copper2.png",
+  ore3: "/mindustry/sprites/blocks/environment/ore-copper3.png",
   towerBase4: "/mindustry/sprites/blocks/turrets/bases/block-4.png",
   swarmer: "/mindustry/sprites/blocks/turrets/swarmer.png",
   // cyclone's own art is the bare head; its three barrels are separate
@@ -2527,6 +2553,17 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(outlined(img.titaniumWall, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 64, 3008, 64, 64);
   c.drawImage(antialiased(outlined(img.thoriumWall, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 128, 3008, 64, 64);
   c.drawImage(antialiased(outlined(img.copperWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1280, 3072, 128, 128);
+  // the drill and the factories, flat like the walls (see UV_FACTORY5)
+  c.drawImage(antialiased(outlined(img.factory5, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1024, 2560, 256, 256);
+  c.drawImage(antialiased(outlined(img.factory4, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1280, 2560, 224, 224);
+  c.drawImage(antialiased(outlined(img.factory3, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1504, 2560, 160, 160);
+  c.drawImage(antialiased(outlined(img.factory1, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1664, 2560, 96, 96);
+  c.drawImage(antialiased(outlined(img.factory2, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1760, 2560, 96, 96);
+  c.drawImage(antialiased(outlined(img.drill, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1856, 2560, 128, 128);
+  // the ore, an overlay on the floor: no outline, the floor's own edges
+  c.drawImage(antialiased(img.ore1), 1024, 2816, 64, 64);
+  c.drawImage(antialiased(img.ore2), 1088, 2816, 64, 64);
+  c.drawImage(antialiased(img.ore3), 1024, 2880, 64, 64);
   c.drawImage(antialiased(outlined(img.titaniumWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1728, 3072, 128, 128);
   c.drawImage(antialiased(outlined(img.thoriumWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1856, 3072, 128, 128);
 

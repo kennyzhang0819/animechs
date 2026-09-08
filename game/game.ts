@@ -75,8 +75,13 @@ export interface UiState {
    * be a number that means nothing
    */
   scrap: number | null;
-  /** everything the run has taken in so far, kills and wave bonuses */
+  /** everything the run has taken in so far — the core's pay and the drills' */
   scrapEarned: number;
+  /** what the run is earning right now, scrap a second (Sim.income) */
+  income: number;
+  /** the player's bodies on the field, and how many the run has lost */
+  army: number;
+  unitsLost: number;
   /** how many of the mission's waves are cleared — every body they sent is down */
   wavesCleared: number;
   /** the XP those cleared waves have banked so far, before the rung bonus */
@@ -1025,6 +1030,9 @@ export class Game {
       menuOpen: this.menuOpen,
       scrap: this.sim.charging ? Math.floor(this.sim.scrap) : null,
       scrapEarned: Math.floor(this.sim.scrapEarned),
+      income: this.sim.income(),
+      army: this.sim.nPlayer,
+      unitsLost: this.sim.unitsLost,
       wavesCleared: this.sim.wavesCleared(),
       xp: missionXp(this.sim.wavesCleared(), this.sim.totalWaves),
       prices: PRICES(),
@@ -1369,10 +1377,15 @@ export class Game {
     const box = (gx: number, gy: number, sz: number, r: number, g: number, b: number): void => {
       for (let y = gy; y < gy + sz; y++) for (let x = gx; x < gx + sz; x++) dot(x, y, r, g, b);
     };
-    // the enemy, in sight only
-    const { upx, upy, n } = this.sim;
+    // the enemy, in sight only — and the player's own bodies in the
+    // team's amber, wherever they are: they are what is looking
+    const { upx, upy, n, uteam } = this.sim;
     for (let i = 0; i < n; i++) {
       const gx = (upx[i] / CELL) | 0, gy = (upy[i] / CELL) | 0;
+      if (uteam[i]) {
+        dot(gx, gy, 0xff, 0xd3, 0x7f);
+        continue;
+      }
       if (fogOn && st[gy * COLS + gx] !== FOG_VISIBLE) continue;
       dot(gx, gy, 0xf2, 0x55, 0x55);
     }

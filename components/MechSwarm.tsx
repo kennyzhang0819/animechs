@@ -70,6 +70,7 @@ import {
   UI_SCALES,
   saveHudMinimized,
   saveLoadout,
+  saveFaction,
   saveRunPick,
   saveSpeed,
   startingSpeed,
@@ -88,7 +89,9 @@ import {
   type MutationId,
 } from "@/game/mutation";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
-import { lockedMutators, rewardsAt, rewardText, STARTING_ROSTER } from "@/game/track";
+import { factionsAt, lockedMutators, rewardsAt, rewardText } from "@/game/track";
+import { defaultLoadout, FACTION_TURRETS, factionUnits } from "@/game/factions";
+import { TOWER_ICONS } from "@/game/towerIcons";
 import { levelProgress, POINT_COLOR, RANDOM_MAP_XP_BONUS, XP_COLOR } from "@/game/economy";
 import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
 import ProgressView from "./Progress";
@@ -276,14 +279,31 @@ const runSpec = (
   tier: number,
   families: readonly FamilyKey[],
   mutation: readonly MutationId[],
+  faction: FamilyKey | null = null,
 ): LevelSpec => {
   const spec = specForTier(world, tier);
   return {
     ...spec,
     script: transformScript(spec.script, families),
     families,
+    ...(faction ? { faction } : null),
     ...(mutation.length > 0 ? { mutation } : null),
   };
+};
+
+/**
+ * THE FACTION A RUN DEPLOYS AS, out of what the save owns (track.ts
+ * factionsAt): the remembered pick where the map can play it — a fleet
+ * needs a map with water — else the first owned faction the map supports,
+ * else the first owned. Null only on a save that owns nothing, which the
+ * track makes impossible.
+ */
+const factionFor = (p: Progress, pick: FamilyKey | null, world: LevelSpec | null): FamilyKey | null => {
+  const owned = [...factionsAt(effectiveLevel(p))];
+  const layers = world ? mapLayers(world.map) : null;
+  const plays = (f: FamilyKey): boolean => !layers || layers.has(familyByKey(f).layer);
+  if (pick && owned.includes(pick) && plays(pick)) return pick;
+  return owned.find(plays) ?? owned[0] ?? null;
 };
 
 /**
@@ -648,6 +668,84 @@ function DifficultyPicker({
 }
 
 /**
+ * THE FACTION PICKER: one row per faction the save owns (track.ts
+ * factionsAt), the detail pane showing the line — its five bodies, tier 1
+ * to 5, and its three turrets — and which movement layer it fights on. A
+ * faction the picked map cannot play (a fleet on a dry map) is listed
+ * and named as such, and cannot be taken.
+ */
+function FactionPicker({
+  progress,
+  pick,
+  world,
+  onPick,
+  onClose,
+}: {
+  progress: Progress;
+  pick: FamilyKey | null;
+  world: LevelSpec | null;
+  onPick: (f: FamilyKey) => void;
+  onClose: () => void;
+}) {
+  const owned = [...factionsAt(effectiveLevel(progress))];
+  const [focus, setFocus] = useState<FamilyKey | null>(pick ?? owned[0] ?? null);
+  const layers = world ? mapLayers(world.map) : null;
+  const plays = (f: FamilyKey): boolean => !layers || layers.has(familyByKey(f).layer);
+  const sprite = (src: string, key: string, big = false) => (
+    // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite
+    <img
+      key={key}
+      src={src}
+      alt=""
+      className={`${big ? "h-10 w-10" : "h-7 w-7"} object-contain [image-rendering:pixelated]`}
+    />
+  );
+  const list = owned.map((f) => (
+    <PickRow key={f} selected={f === pick} focused={f === focus} onPick={() => setFocus(f)}>
+      <span
+        className={`truncate font-display text-[15px] font-bold uppercase tracking-widest ${
+          plays(f) ? "text-[#EDEDEF]" : "text-[#71717C]"
+        }`}
+      >
+        {familyByKey(f).name}
+      </span>
+    </PickRow>
+  ));
+  const fam = focus ? familyByKey(focus) : null;
+  const detail = fam && focus ? (
+    <>
+      <div className="font-display text-[19px] font-bold uppercase tracking-widest text-[#FFD37F]">
+        {fam.name}
+      </div>
+      <p className="text-[14px] text-[#A6A6AF]">
+        {fam.layer === "air"
+          ? "A line that flies: nothing on the ground stops it, and only the turrets that shoot up can."
+          : fam.layer === "water"
+            ? "A fleet: it sails the water and only the water, so it plays on the maps that have a sea."
+            : "A line that walks: it takes the lanes the map gives it and fights at the walls."}
+      </p>
+      <DetailLine label="Units">
+        <span className="flex flex-wrap items-center gap-1.5">
+          {fam.kinds.map((u) => sprite(`/mindustry/sprites/units/${u}.png`, u, true))}
+        </span>
+      </DetailLine>
+      <DetailLine label="Turrets">
+        <span className="flex flex-wrap items-center gap-1.5">
+          {FACTION_TURRETS[focus].map((k) => sprite(TOWER_ICONS[k], k, true))}
+        </span>
+      </DetailLine>
+      <DetailLine label="Plays here">
+        {plays(focus) ? "Yes" : world ? `No — ${world.name} has no ${fam.layer} door` : "Yes"}
+      </DetailLine>
+      <SelectButton onClick={() => onPick(focus)} disabled={!plays(focus)} />
+    </>
+  ) : (
+    <p className="text-[14px] text-[#A6A6AF]">This save owns no faction yet.</p>
+  );
+  return <PickerDialog title="Faction" onClose={onClose} list={list} detail={detail} />;
+}
+
+/**
  * THE DEAL STACK'S CELLS — one square each in the field's bottom-right
  * corner, and the tooltip that says what one is.
  *
@@ -829,6 +927,14 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
     name: "Large Thorium Wall",
     icon: "/mindustry/sprites/blocks/walls/thorium-wall-large.png",
   },
+  // the economy and the army (factions.ts COMMON_KINDS): the drill and
+  // the five factories, one a unit tier
+  { kind: "drill", name: "Drill", icon: TOWER_ICONS.drill },
+  { kind: "factory-t1", name: "Factory", icon: TOWER_ICONS["factory-t1"] },
+  { kind: "factory-t2", name: "Additive", icon: TOWER_ICONS["factory-t2"] },
+  { kind: "factory-t3", name: "Multiplicative", icon: TOWER_ICONS["factory-t3"] },
+  { kind: "factory-t4", name: "Exponential", icon: TOWER_ICONS["factory-t4"] },
+  { kind: "factory-t5", name: "Tetrative", icon: TOWER_ICONS["factory-t5"] },
 ];
 
 /** menu entry by kind, for rendering the bar from a list of kinds */
@@ -921,7 +1027,7 @@ export default function MechSwarm() {
    */
   const [menuView, setMenuView] = useState<"home" | "settings" | "deploy">("home");
   /** which macro's list is open over the deploy screen, if any */
-  const [picker, setPicker] = useState<"maps" | "difficulty" | null>(null);
+  const [picker, setPicker] = useState<"maps" | "difficulty" | "faction" | null>(null);
   const [level, setLevel] = useState<LevelSpec | null>(null);
   /**
    * The difficulty macro: the rung the next run is played at. Every rung
@@ -935,6 +1041,9 @@ export default function MechSwarm() {
    * stale id reads as Random rather than as a world that is not there.
    */
   const [mapPick, setMapPick] = useState<string | null>(null);
+  /** the faction the next run deploys as (factions.ts) — the save's
+   *  remembered pick, or null for the first the save owns */
+  const [factionPick, setFactionPick] = useState<FamilyKey | null>(null);
   const pickedWorld = mapPick == null ? null : worldById(mapPick);
   /**
    * Was the run under way started on a map the game picked? Read when the
@@ -1063,6 +1172,7 @@ export default function MechSwarm() {
     setHudMin(p.hudMinimized ?? false);
     setEffects(p.effects ?? true);
     setLoadout(p.loadout ?? null);
+    setFactionPick(p.faction ?? null);
     setUiScale(p.uiScale ?? UI_SCALE_DEFAULT);
     setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
     setEdgePan(p.edgePan ?? true);
@@ -1095,7 +1205,7 @@ export default function MechSwarm() {
   useEffect(() => {
     const g = gameRef.current;
     if (!g) return;
-    const tech = techOf(loadProgress());
+    const tech = techOf(loadProgress(), level?.faction ?? null);
     g.setTech(admin ? null : tech);
     // dropping out of sandbox drops a sandbox-only pace with it, or the run
     // keeps running at a speed whose button is no longer on screen. What the
@@ -1185,7 +1295,7 @@ export default function MechSwarm() {
           return;
         }
         const save = loadProgress();
-        g.setTech(admin ? null : techOf(save));
+        g.setTech(admin ? null : techOf(save, level.faction ?? null));
         // the device's own preference, read from the save rather than
         // from state: this runs once at create, and a run started right
         // after a toggle must not come up with last render's value
@@ -1335,10 +1445,11 @@ export default function MechSwarm() {
     const owned = ORDERED_MENU.filter((t) => !hud.unlocked || hud.unlocked.includes(t.kind)).map(
       (t) => t.kind,
     );
-        // an uncurated save rides the STARTING ROSTER — the four guns and the
-    // copper wall a first board is made of — rather than the cheapest
-    // eight, which the walls would fill on their own
-    const start = owned.filter((k) => STARTING_ROSTER.includes(k));
+        // an uncurated save rides the faction's default bar — its three guns,
+    // the copper wall, the drill and the first factories (factions.ts
+    // defaultLoadout) — rather than the cheapest eight, which the walls
+    // would fill on their own
+    const start = defaultLoadout(owned);
     const picks = new Set(loadout ?? (start.length > 0 ? start : owned));
     const chosen = owned.filter((k) => picks.has(k));
     return (chosen.length > 0 ? chosen : owned).slice(0, hud.barSlots);
@@ -1527,9 +1638,14 @@ export default function MechSwarm() {
     // THE FAMILY DIE: three of the families this map's doors allow, in
     // the order the script's slots are dealt to them (rollFamilies)
     const families = rollFamilies(mapLayers(w.map));
+    // THE PLAYER'S OWN LINE: the faction picked on this screen, where the
+    // map can play it (factionFor) — a naval faction on a dry map falls
+    // back to one that walks
+    const faction = factionFor(p, factionPick, w);
+    if (faction) saveFaction(faction);
     saveRunPick(tier, picked?.id ?? null);
     setRunRandom(random);
-    setLevel(runSpec(w, tier, families, roll));
+    setLevel(runSpec(w, tier, families, roll, faction));
     setScreen("game");
     // raised in the same batch as the screen switch, so the game screen's
     // FIRST paint is already covered - an effect would run after that
@@ -1544,7 +1660,7 @@ export default function MechSwarm() {
     setResult(null);
     // the run just banked its drops — a node bought mid-overlay would not apply
     // without this re-read (tech is per-run anyway, but keep it honest)
-    g.setTech(admin ? null : techOf(loadProgress()));
+    g.setTech(admin ? null : techOf(loadProgress(), level?.faction ?? null));
     // reset() clears the field and the scrap: a retry is a fresh run on
     // bare rock, exactly like the first attempt
     g.reset();
@@ -1907,6 +2023,35 @@ export default function MechSwarm() {
                       {xpShareText(tierXpBonus(tier))}
                     </span>
                   </MacroButton>
+                  {/* THE FACTION: the line this run is played as — what the
+                      factories build and which three turrets the bar
+                      carries (factions.ts). One of the ones the track has
+                      opened; a fleet greys out on a map with no water */}
+                  {progress && (() => {
+                    const f = factionFor(progress, factionPick, pickedWorld);
+                    return (
+                      <MacroButton
+                        label="Faction"
+                        value={f ? familyByKey(f).name : "None"}
+                        onClick={() => setPicker("faction")}
+                      >
+                        <span className="text-[#EDEDEF]">{f ? familyByKey(f).name : "None"}</span>
+                        {f && (
+                          <span className="flex items-center gap-1">
+                            {factionUnits(f).map((u) => (
+                              // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite
+                              <img
+                                key={u}
+                                src={`/mindustry/sprites/units/${u}.png`}
+                                alt=""
+                                className="h-5 w-5 object-contain [image-rendering:pixelated]"
+                              />
+                            ))}
+                          </span>
+                        )}
+                      </MacroButton>
+                    );
+                  })()}
                 </div>
                 {/* NOTHING HERE SAYS WHAT THE RUN WILL BE PLAYED UNDER.
                     The roll used to sit under the macros as a row of
@@ -1975,6 +2120,19 @@ export default function MechSwarm() {
             onPick={(id) => {
               setMapPick(id);
               saveRunPick(tier, id);
+              setPicker(null);
+            }}
+          />
+        )}
+        {picker === "faction" && progress && (
+          <FactionPicker
+            progress={progress}
+            pick={factionFor(progress, factionPick, pickedWorld)}
+            world={pickedWorld}
+            onClose={() => setPicker(null)}
+            onPick={(f) => {
+              setFactionPick(f);
+              saveFaction(f);
               setPicker(null);
             }}
           />
@@ -2144,6 +2302,13 @@ export default function MechSwarm() {
                   {hud.scrap !== null && (
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
                       <ScrapAmount amount={hud.scrap} size="md" className="text-xl" />
+                      {/* THE RATE beside the bank: the core's pay and the
+                          drills' (Sim.income) — the number an expansion is
+                          judged by */}
+                      <span className="text-[14px] text-[#A6A6AF]">+{Math.round(hud.income)}/s</span>
+                      {hud.army > 0 && (
+                        <span className="text-[14px] text-[#FFD37F]">{hud.army} units</span>
+                      )}
                     </div>
                   )}
                   {/* HOW LONG THIS RUN HAS BEEN GOING, not how long until

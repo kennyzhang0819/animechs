@@ -12,8 +12,7 @@ import {
   setScrapPrice,
   STAGES,
   TOWER_TIER,
-  WAVE_BONUS_BASE,
-  WAVE_BONUS_PER_WAVE,
+  CORE_INCOME,
 } from "@/game/economy";
 import {
   allRungOverrides,
@@ -196,9 +195,10 @@ export default function BalanceView() {
           The run is three stages and the roster is three tiers, and a tier is priced so its
           stage is roughly what buys it. <span className="text-[#A6A6AF]">Boards</span> is
           how many of the tier&apos;s turrets the stage&apos;s scrap buys at the tier&apos;s mean
-          price; the healthy band is printed beside it. Stage 1 includes the opening{" "}
-          {SCRAP_START} scrap; every stage includes its wave bonuses ({WAVE_BONUS_BASE} +{" "}
-          {WAVE_BONUS_PER_WAVE} a wave).
+          price; the healthy band is printed beside it. The income is the player&apos;s own:
+          the core pays {CORE_INCOME} scrap a second across every stage&apos;s clock, stage 1
+          includes the opening {SCRAP_START}, and the drills a run claims come on top of all
+          of it.
         </p>
         <div className="grid gap-4 md:grid-cols-3">
           {stages.map((s) => {

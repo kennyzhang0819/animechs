@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  dropsForKills,
   UNIT_KINDS,
   UNIT_STATS,
   UNIT_TREES,
@@ -35,7 +34,7 @@ import {
 } from "@/game/maps";
 import type { ZoneKind } from "@/game/constants";
 import { MISSION_XP } from "@/game/economy";
-import { DropRow, ScrapAmount, XpAmount } from "./Items";
+import { ScrapAmount, XpAmount } from "./Items";
 
 /* eslint-disable @next/next/no-img-element -- raw pixel sprites, no optimization wanted */
 
@@ -291,7 +290,7 @@ export default function LevelEditorView({
     return {
       waves,
       enemies: kills.reduce((a, b) => a + b, 0),
-      payout: dropsForKills(kills),
+      bodies: kills.reduce((a, b) => a + b, 0),
     };
   }, [steps]);
 
@@ -461,7 +460,6 @@ export default function LevelEditorView({
                   Full-clear payout
                 </div>
                 <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <DropRow drop={summary.payout} />
                   {summary.waves > 0 && <XpAmount amount={MISSION_XP} />}
                 </span>
               </div>
@@ -753,7 +751,6 @@ function StepCard({
   );
 
   const total = stepTotal(step);
-  const payout = dropsForKills(killVector([step]));
 
 
   return (
@@ -774,9 +771,9 @@ function StepCard({
         {guide && (
           <span className="text-[15px] font-bold text-[#A6A6AF]">{compactHp(guide.hp)} hp</span>
         )}
-        {/* the kills' scrap, and beside it what CLEARING the wave banks —
-            its share of the mission's pot, off its position in the script */}
-        <DropRow drop={payout} />
+        {/* what CLEARING the wave banks — its share of the mission's pot,
+            off its position in the script. Its bodies pay nothing: the
+            run's scrap is the player's own (economy.ts) */}
         {guide && <XpAmount amount={guide.xp} />}
         <div className="ml-auto">{controls}</div>
       </div>

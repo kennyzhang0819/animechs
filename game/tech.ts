@@ -4,6 +4,8 @@ import {
   type UpgradeContext,
   type UpgradePoints,
 } from "./upgrades";
+import { kindsFor } from "./factions";
+import type { FamilyKey } from "./levels";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
 /**
@@ -16,8 +18,16 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * turret's upgrade points.
  */
 export interface TechState {
-  /** the turrets a run may field: the starting seven and every one the
-   *  track has handed out (track.ts, turretsAt) */
+  /**
+   * THE FACTIONS THE SAVE OWNS (track.ts factionsAt) — what the deploy
+   * screen offers — and THE ONE THIS RUN PLAYS (`faction`), picked there.
+   * Null is every owned faction at once: the sandbox, the editors, and
+   * the progress screen's census of what the save may build.
+   */
+  factions: ReadonlySet<FamilyKey>;
+  faction: FamilyKey | null;
+  /** the kinds a run may field: the common roster and the turrets of the
+   *  faction it plays — of every owned faction when `faction` is null */
   unlocked: ReadonlySet<TowerKind>;
   /**
    * The fast-forward multipliers this save may use, ascending. 1x is
@@ -32,6 +42,17 @@ export interface TechState {
 }
 
 export { upgradedTower, NO_UPGRADES, type UpgradeContext, type UpgradePoints };
+
+/**
+ * THE SAME SAVE, PLAYING ONE FACTION: the tech state narrowed to the
+ * common roster plus that faction's turrets. A faction the save does not
+ * own is refused — the deploy screen never offers one, so this is the
+ * belt to its braces — and null widens back to every owned faction.
+ */
+export function withFaction(tech: TechState, faction: FamilyKey | null): TechState {
+  const f = faction && tech.factions.has(faction) ? faction : null;
+  return { ...tech, faction: f, unlocked: kindsFor(f ? [f] : tech.factions) };
+}
 
 /**
  * THE BUILD BAR'S WIDTH: eight seed slots, PvZ-style, on every save. The
@@ -73,6 +94,15 @@ export const MINDUSTRY_VALUE: Record<TowerKind, number> = {
   "copper-wall-large": 12,
   "titanium-wall-large": 36,
   "thorium-wall-large": 60,
+  // the drill and the factories, at their Mindustry build costs' item
+  // values — the drill sorts with the walls, the factories climb the bar
+  // with their tier
+  drill: 27,
+  "factory-t1": 110,
+  "factory-t2": 320,
+  "factory-t3": 640,
+  "factory-t4": 1300,
+  "factory-t5": 2700,
 };
 
 /** the roster, cheapest first — the one order every list of turrets uses */

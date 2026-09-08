@@ -27,6 +27,7 @@ import {
   type SpawnCircle,
 } from "./maps";
 import { ALL_LAYERS, Renderer, type TerrainLayers } from "./renderer";
+import { isWaterFloor } from "./terrain";
 import { WALL_DEEP, WALL_PINE, type Prop, type Terrain } from "./terrain";
 
 // THE ZOOM FLOOR IS NO LONGER COVER. It used to be 1 — "the world fills
@@ -348,16 +349,23 @@ export class MapEditor {
     // a hidden layer is not just invisible, it is out of reach: these
     // guards are what make "hide it and edit underneath" work
     const L = this.layers;
-    if (set.kind === "floor") {
+    if (set.kind === "ore") {
+      // ORE goes on open dry ground only — a drill has to be able to stand
+      // on it — and never under a hill or in the water
+      if (!T.blocked[i] && !isWaterFloor(T.floor[i])) T.ore[i] = 1;
+    } else if (set.kind === "floor") {
       T.floor[i] = pick;
       if (L.wall) {
         T.blocked[i] = 0;
         T.wall[i] = 0;
       }
       if (L.props) this.removePropsAt(gx, gy);
+      // a water floor drowns the vein; a land floor keeps it
+      if (isWaterFloor(pick)) T.ore[i] = 0;
     } else if (set.kind === "wall") {
       T.blocked[i] = 1;
       T.wall[i] = pick;
+      T.ore[i] = 0;
       if (L.props) this.removePropsAt(gx, gy);
     } else if (set.kind === "deep") {
       // deep water writes BOTH layers: the floor is the water surface the
@@ -389,7 +397,8 @@ export class MapEditor {
       });
     } else {
       // erase: strip the VISIBLE layers, keep the floor. Hiding a layer
-      // therefore also shields it from the eraser
+      // therefore also shields it from the eraser. The ore goes with them
+      T.ore[i] = 0;
       if (L.wall) {
         // DEEP WATER DRAINS TO SHALLOW RATHER THAN TO NOTHING. Every other
         // blocked cell has a floor underneath it that erasing reveals; deep
