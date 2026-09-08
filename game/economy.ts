@@ -71,25 +71,23 @@ export const isEmptyDrop = (d: Drop): boolean => d.scrap === 0;
  * A T1 always drops exactly this; a T5 always drops exactly that. XP is
  * NOT on this table — a kill pays no XP at all, see MISSION_XP.
  *
- * The shape is the point. Confluence sends tier-1 bodies by the
- * thousand and tier-5 bodies by the dozen, so the low rows are cheap per
+ * The shape is the point. The script sends tier-1 bodies by the dozen
+ * and tier-5 bodies one or two at a time, so the low rows are cheap per
  * body and the high rows are dear, and the three stages of a run come out
  * paying what the three turret tiers cost — see TOWER_PRICE and the stage
- * audit in ladder.ts. Against Confluence's script (public/levels/1.json)
- * the kills alone pay about:
+ * audit in ladder.ts. Against the eight-wave campaign
+ * (public/levels/campaign.json) the kills and wave bonuses pay about:
  *
- *   waves  1-20   ~217,000 scrap
- *   waves 21-35   ~486,000 scrap
- *   waves 36-50   ~791,000 scrap
+ *   waves 1-3    ~3,900 scrap (plus the opening SCRAP_START)
+ *   waves 4-6   ~20,000 scrap
+ *   waves 7-8   ~43,000 scrap
  *
- * THE SCRAP IS GENEROUS ON PURPOSE. A run is meant to be cleared FIRST
- * TRY by a player who builds sensibly, the way a Bloons map is — the
- * fifty waves are the fixed thing and the money is tuned to them, not the
- * other way round. Headless runs of the shipped script with a plain
- * round-robin builder clear all fifty at this income and die on wave 11
- * at half of it, so this is the floor, not a ceiling.
+ * Three times what a body paid when the swarm was thousands strong: a
+ * wave is a few dozen now, and a run still has to buy a real board out
+ * of it. The rest of a run's income is the map — every one of the
+ * swarm's buildings wrecked pays bountyOf.
  */
-export const SCRAP_BY_TIER: readonly number[] = [0, 10, 30, 80, 200, 500];
+export const SCRAP_BY_TIER: readonly number[] = [0, 30, 90, 240, 600, 1500];
 
 /**
  * A boss is one body a run and its SCRAP is an event: a lump for the
@@ -110,11 +108,10 @@ export function dropForUnit(tier: number, boss = false): Drop {
 // ---------------------------------------------------------------------------
 
 /**
- * What a run opens with. A hundred-odd tier-1 turrets' worth — wave 1 is
- * forty daggers but wave 9 is five hundred crawlers and wave 10 six
- * hundred daggers, and the opening has to buy the board that meets them
- * before their own kills have paid for it. Past wave 10 the run pays for
- * itself.
+ * What a run opens with, and what the four-minute grace is spent on: a
+ * few dozen tier-1 turrets' worth, or a first line and a wall in front of
+ * it. Wave 1 is a squad, not a tide; the opening buys the board that
+ * meets waves 1 to 3, and their kills pay for the next band.
  */
 export const SCRAP_START = 7500;
 
@@ -129,6 +126,17 @@ export const WAVE_BONUS_BASE = 250;
 export const WAVE_BONUS_PER_WAVE = 50;
 export const waveBonusScrap = (wave: number): number =>
   WAVE_BONUS_BASE + WAVE_BONUS_PER_WAVE * Math.max(0, Math.floor(wave));
+
+/**
+ * WHAT WRECKING ONE OF THE SWARM'S BUILDINGS PAYS, as a fraction of what
+ * the same building costs the player (Sim.damageTower). The swarm builds
+ * from the player's roster, so its lancer is worth exactly what a lancer
+ * is worth, halved: a formation is worth shooting through, not only
+ * around, and never worth more than building the thing yourself.
+ */
+export const ENEMY_BOUNTY = 0.5;
+export const bountyOf = (kind: TowerKind): number =>
+  Math.round(scrapPriceOf(kind) * ENEMY_BOUNTY);
 
 /**
  * What a sold turret hands back, as a fraction of its price. NOTHING: a
@@ -193,17 +201,17 @@ export const towersOfTier = (tier: TowerTier): TowerKind[] =>
 
 /**
  * THE STAGES OF A RUN, as 1-based inclusive wave ranges — the three
- * stretches the three price bands are priced for. Waves 1-20 pay for band
- * 1, 21-35 for band 2, 36-50 for band 3, and the audit (ladder.ts) sums
+ * stretches the three price bands are priced for. Waves 1-3 pay for band
+ * 1, 4-6 for band 2, 7-8 for band 3, and the audit (ladder.ts) sums
  * what each stage pays and holds it against its band's prices. THAT IS ALL
  * THEY DO. The stage gate that once held a band shut until its stage
  * opened is gone: what may be placed is what the save owns (track.ts),
  * and it may be placed from the first wave.
  */
 export const STAGES: readonly { tier: TowerTier; from: number; to: number }[] = [
-  { tier: 1, from: 1, to: 20 },
-  { tier: 2, from: 21, to: 35 },
-  { tier: 3, from: 36, to: 50 },
+  { tier: 1, from: 1, to: 3 },
+  { tier: 2, from: 4, to: 6 },
+  { tier: 3, from: 7, to: 8 },
 ];
 
 /**
@@ -211,20 +219,21 @@ export const STAGES: readonly { tier: TowerTier; from: number; to: number }[] = 
  *
  * Priced against the stage income above, tier by tier:
  *
- *   TIER 1 (waves 1-20, ~21,700 scrap). About 150 a turret, so the whole
- *   stage buys a board of roughly 140 tier-1 emplacements — a duo wall
- *   with the specialists mixed in. Duo is the volume turret and stays
- *   cheap; wave is the dearest because it multiplies everything beside it.
+ *   TIER 1 (waves 1-3, ~11,400 scrap with the opening). About 150 a
+ *   turret, so the stage buys a line of roughly 70 tier-1 emplacements —
+ *   a duo line with the specialists mixed in. Duo is the volume turret
+ *   and stays cheap; wave is the dearest because it multiplies everything
+ *   beside it.
  *
- *   TIER 2 (waves 21-35, ~48,600 scrap). A thousand and up — six to fifteen
+ *   TIER 2 (waves 4-6, ~20,000 scrap). A thousand and up — six to fifteen
  *   duos each, so one is a real save in stage 1 and a wave's income in
  *   stage 2. The opening board is sunk (SELL_REFUND is 0), so the
  *   transition is funded from stage-2 income alone — which is exactly the
  *   decision the stage asks: what to stop buying before the gate opens.
  *
- *   TIER 3 (waves 36-50, ~79,100 scrap). Four thousand and up — a wave or
- *   two of stage-3 income apiece, so a run fields a handful of them and
- *   places each one on purpose.
+ *   TIER 3 (waves 7-8, ~43,000 scrap). Four thousand and up — a wave of
+ *   stage-3 income apiece, so a run fields a handful of them and places
+ *   each one on purpose.
  *
  * The ORDER within a tier follows Mindustry's build costs; the SIZE is
  * what the stage pays. Tune from the balance dashboard (scrapPriceOf
@@ -330,7 +339,7 @@ export const MISSION_XP = 100_000;
 /**
  * HOW THE POT RAMPS ACROSS THE WAVES: the last wave's share is this many
  * times the first wave's, and the shares between climb linearly. At 3 on
- * a fifty-wave script wave 1 pays 1% of the pot and wave 50 pays 3% —
+ * the eight-wave script wave 1 pays 6% of the pot and wave 8 pays 19% —
  * every wave is worth something, and the deep ones are worth the most
  * because they are the hardest to reach. Shares always sum to exactly 1
  * whatever the wave count, so a shorter script pays the same pot in

@@ -357,7 +357,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 3,
     rotateSpeed: 3,
   },
-  // scepter: the ground line's T4 — 9000 hp, armor 10, a 2.75x2.75-block
+  // scepter: the ground line's T4 — 9000 hp, armor 20, a 2.75x2.75-block
   // hitbox, 0.36 px/tick = 2.7 tiles/s. Ten fortresses' health on something
   // that walks slower than anything else on the roster, and rotateSpeed 2.1
   // (under half the stock 5) means it cannot even turn quickly
@@ -368,7 +368,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   scepter: {
     hp: 9000,
     speed: 2.7 * CELL,
-    armor: 10,
+    armor: 20,
     radius: UR * 2.75,
     tier: 4,
     rotateSpeed: 2.1,
@@ -379,7 +379,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // walks FASTER than the scepter it replaces (2.7), the second time the
   // roster hands a tier an upgrade that is not also a slowdown
   //
-  // armor 18 is the number that matters. Armour is a flat shave floored at
+  // armor 30 is the number that matters. Armour is a flat shave floored at
   // a tenth of the raw shot (see Sim.applyArmor), so anything firing under
   // 20 a hit is reduced to paying the floor: a duo's 9-damage bolt lands 0.9
   // instead of 9, and a full duo wall does a tenth of its paper DPS. The
@@ -388,7 +388,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   reign: {
     hp: 24000,
     speed: 3 * CELL,
-    armor: 18,
+    armor: 30,
     radius: UR * 3.75,
     tier: 5,
     rotateSpeed: 1.65,
@@ -416,13 +416,13 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     immunities: ["burning"],
     legs: legs({ count: 4, length: 9 * MU, forwardScl: 0.6, moveSpace: 1.4, elevation: 0.2 }),
   },
-  // spiroct: the line's T3 — 1000 hp, armor 5, a 1.875x1.875-block hitbox,
+  // spiroct: the line's T3 — 1000 hp, armor 9, a 1.875x1.875-block hitbox,
   // 0.54 px/tick = 4.05 tiles/s, the slowest thing on the field. Six legs
   // on longer mounts (legBaseOffset 2) stepping three at a time
   spiroct: {
     hp: 1000,
     speed: 4.05 * CELL,
-    armor: 5,
+    armor: 9,
     radius: UR * 1.875,
     tier: 3,
     drag: 0.4,
@@ -436,7 +436,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
       elevation: 0.3,
     }),
   },
-  // arkyid: the crawler line's T4 — 8000 hp, armor 6, a 2.875x2.875-block
+  // arkyid: the crawler line's T4 — 8000 hp, armor 14, a 2.875x2.875-block
   // hitbox, 0.62 px/tick = 4.65 tiles/s. Eight times the spiroct's health
   // on something that walks faster than it, which makes it the only T4 on
   // the roster that is quicker than the T3 it replaces
@@ -457,7 +457,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   arkyid: {
     hp: 8000,
     speed: 4.65 * CELL,
-    armor: 6,
+    armor: 14,
     radius: UR * 2.875,
     tier: 4,
     drag: 0.1,
@@ -474,7 +474,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
       ripple: 2,
     }),
   },
-  // toxopid: the crawler line's T5 — 22000 hp, armor 13, a 3.25x3.25-block
+  // toxopid: the crawler line's T5 — 22000 hp, armor 22, a 3.25x3.25-block
   // hitbox, and 0.5 px/tick = 3.75 tiles/s, which is exactly the dagger's
   // marching pace: the largest spider on the field keeps up with the line
   // it walks in front of
@@ -495,7 +495,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   toxopid: {
     hp: 22000,
     speed: UNIT_SPEED,
-    armor: 13,
+    armor: 22,
     radius: UR * 3.25,
     tier: 5,
     drag: 0.1,
@@ -523,12 +523,12 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.04,
     flying: true,
   },
-  // nova: the T1 of the support line — 120 hp, armor 1, 1x1-block hitbox,
+  // nova: the T1 of the support line — 200 hp, armor 1, 1x1-block hitbox,
   // 0.55 px/tick = 4.125 tiles/s. Frailer than a dagger but a step quicker
   // RepairFieldAbility(10, 60*4, 60): 10 hp to everything within 7.5 tiles,
   // every 4 s — a nova escort keeps a dagger line topped up between volleys
   nova: {
-    hp: 120,
+    hp: 200,
     speed: 4.125 * CELL,
     armor: 1,
     radius: UR,
@@ -570,7 +570,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
       cooldown: 6,
     },
   },
-  // vela: the support line's T4 — 8200 hp, armor 9, a 3x3-block hitbox,
+  // vela: the support line's T4 — 8200 hp, armor 16, a 3x3-block hitbox,
   // 0.44 px/tick = 3.3 tiles/s, and rotateSpeed 1.8, the slowest turn on
   // the roster. Thirteen quasars' health with none of the quasar's reach:
   // where its predecessor covers the ground around it, this one is simply
@@ -589,13 +589,13 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   vela: {
     hp: 8200,
     speed: 3.3 * CELL,
-    armor: 9,
+    armor: 16,
     radius: UR * 3,
     tier: 4,
     rotateSpeed: 1.8,
     immunities: ["burning"],
   },
-  // corvus: the support line's T5 — 18000 hp, armor 9, a 3.625x3.625-block
+  // corvus: the support line's T5 — 18000 hp, armor 14, a 3.625x3.625-block
   // hitbox, and 0.3 px/tick = 2.25 tiles/s, the slowest thing in the game.
   // rotateSpeed 1.5 is likewise the slowest turn on the roster, under a
   // third of stock: it arrives late and cannot answer a flank
@@ -614,7 +614,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   corvus: {
     hp: 18000,
     speed: 2.25 * CELL,
-    armor: 9,
+    armor: 14,
     radius: UR * 3.625,
     tier: 5,
     rotateSpeed: 1.5,
@@ -652,7 +652,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.016,
     flying: true,
   },
-  // antumbra: the air line's T4 — 7200 hp, armor 9, and a 5.75x5.75-block
+  // antumbra: the air line's T4 — 7200 hp, armor 17, and a 5.75x5.75-block
   // hitbox, more than twice the zenith across; only the eclipse's 7.25
   // outspans it. At 0.8 px/tick = 6 tiles/s it also gives up
   // more speed than any other upgrade takes: the zenith flies at 12.75, so
@@ -667,14 +667,14 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   antumbra: {
     hp: 7200,
     speed: 6 * CELL,
-    armor: 9,
+    armor: 17,
     radius: UR * 5.75,
     tier: 4,
     drag: 0.04,
     rotateSpeed: 1.9,
     flying: true,
   },
-  // eclipse: the air line's T5 — 22000 hp, armor 13, and a 7.25x7.25-block
+  // eclipse: the air line's T5 — 22000 hp, armor 22, and a 7.25x7.25-block
   // hitbox. That is the widest thing in the game by a clear margin (the
   // antumbra, itself twice a zenith, is 5.75), and it is what the unit is
   // for: nothing on the roster is harder to miss, and nothing soaks a
@@ -690,7 +690,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   eclipse: {
     hp: 22000,
     speed: 4.05 * CELL,
-    armor: 13,
+    armor: 22,
     radius: UR * 7.25,
     tier: 5,
     drag: 0.04,
@@ -701,8 +701,8 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // on the roster from the other planet. Base shape from
   // mindustry/content/UnitTypes.java (hitSize 46; rotateSpeed 2;
   // drag 0.07), boss-tuned in FOUR places. Health is Mindustry's 12000 x8
-  // (x4 at first; doubled again when the up-gunned phase turrets melted it
-  // before it loomed, then x12 when x8 still fell too fast). Armour is 30
+  // (x4 at first; doubled again when the phase turrets melted it before it
+  // loomed, then x12 when x8 still fell too fast). Armour is 30
   // over the official 9 — far past the reign's 18, so anything hitting
   // under ~33 pays the 10% floor: pellet AA, duos and salvos all read as
   // sparks off the hull, and the answer is calibre, which is what the
@@ -915,7 +915,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     },
     wake: wake({ x: 18 * MU, y: -17 * MU, length: 50, scl: 3.2 * MU }),
   },
-  // navanax: the support fleet's T5 — 20000 hp, armor 16, and the omura's
+  // navanax: the support fleet's T5 — 20000 hp, armor 20, and the omura's
   // 7.25x7.25-block hitbox, at 0.65 units/tick = 4.875 tiles/s. Its EMP
   // cannon heals through its shots (healPercent 20 on the bullet), which
   // is a weapon again, so the top of this tree is a bare hull like the
@@ -924,7 +924,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   navanax: {
     hp: 20000,
     speed: 4.875 * CELL * NAVAL_PACE,
-    armor: 16,
+    armor: 20,
     radius: UR * 7.25,
     tier: 5,
     drag: 0.17,
@@ -1239,12 +1239,22 @@ export interface LevelSpec {
    */
   mission: Mission;
   /**
-   * seconds held between waves, and before the first one. The clock starts
-   * when the previous wave has finished ENTERING the field — the last unit
-   * spawning, not the last unit dying — so a level whose waves outlive the
-   * gap will have several on the field at once.
+   * seconds held between waves. The clock starts when the previous wave
+   * has finished ENTERING the field — the last unit spawning, not the last
+   * unit dying — so a level whose waves outlive the gap will have several
+   * on the field at once. Three minutes as authored (WAVE_GAP_DEFAULT):
+   * the run is a real-time strategy run now, and a wave is a beat in it,
+   * not a tide.
    */
   waveGap: number;
+  /**
+   * THE GRACE: seconds before the FIRST wave, longer than the gap. A run
+   * opens with the core alone on a map it has not seen, and four minutes
+   * (GRACE_DEFAULT) is what it takes to scout the ground, lay the opening
+   * line and push out for the first expansion before anything arrives.
+   * Unset means the wave gap.
+   */
+  grace?: number;
   /** what the level throws at you, run start to finish in order */
   script: LevelStep[];
   /**
@@ -1324,8 +1334,20 @@ export const waveSpawnRate = (count: number): number =>
 export interface LevelDoc {
   id: string;
   waveGap: number;
+  /** seconds before the first wave (LevelSpec.grace); unset is the gap */
+  grace?: number;
   script: LevelStep[];
 }
+
+/**
+ * THE RUN'S CLOCK, as authored: a four-minute grace, then a wave every
+ * three minutes, each stronger than the last. Eight waves make a run of
+ * about 25 minutes — the 18-to-26 the campaign is sized for — and the
+ * document (public/levels/campaign.json) may set both numbers; these are
+ * what a missing document or a missing field plays.
+ */
+export const GRACE_DEFAULT = 240;
+export const WAVE_GAP_DEFAULT = 180;
 
 /**
  * The documents as last loaded or saved, by world id — the raw counts the
@@ -1336,7 +1358,7 @@ export interface LevelDoc {
 const docs = new Map<string, LevelDoc>();
 
 /**
- * THE ONE SCRIPT. Every map plays the same fifty waves — the document
+ * THE ONE SCRIPT. Every map plays the same eight waves — the document
  * under this id in public/levels — and what makes one map different
  * from the next is its ground, its doors and the family roll those doors
  * allow (rollFamilies). A world id passed to levelDocOf is accepted and
@@ -1346,11 +1368,18 @@ export const CAMPAIGN_DOC_ID = "campaign";
 
 /** the current document — the campaign's, whichever world asks */
 export function levelDocOf(_worldId?: string): LevelDoc {
-  return docs.get(CAMPAIGN_DOC_ID) ?? { id: CAMPAIGN_DOC_ID, waveGap: 15, script: [] };
+  return (
+    docs.get(CAMPAIGN_DOC_ID) ?? {
+      id: CAMPAIGN_DOC_ID,
+      waveGap: WAVE_GAP_DEFAULT,
+      grace: GRACE_DEFAULT,
+      script: [],
+    }
+  );
 }
 
 /**
- * THE MAPS. Every map plays the same fifty waves (CAMPAIGN_DOC_ID), and
+ * THE MAPS. Every map plays the same eight waves (CAMPAIGN_DOC_ID), and
  * what makes one map different from the next is its ground and its
  * doors: which movement layers it opens decides which unit families the
  * deploy may roll (rollFamilies), and the shared script is re-cast into
@@ -1381,7 +1410,8 @@ export const WORLDS: LevelSpec[] = [
     map: "confluence",
     // THE OPENING ASSIGNMENT: hold every wave with the core standing
     mission: { kind: "hold" },
-    waveGap: 15,
+    waveGap: WAVE_GAP_DEFAULT,
+    grace: GRACE_DEFAULT,
     // ================= HOW TO AUTHOR A WAVE ========================
     //
     // THE SCRIPT IS public/levels/campaign.json — the waves EVERY map
@@ -1396,9 +1426,14 @@ export const WORLDS: LevelSpec[] = [
     //
     // EVERY RUNG PLAYS THIS WHOLE LIST. There is one run per map and ten
     // difficulties to play it at, so the STAGE TABLE (stageAudit in
-    // ladder.ts) is one table per map — what waves 1-20, 21-35 and 36-50
+    // ladder.ts) is one table per map — what waves 1-3, 4-6 and 7-8
     // pay — and an edit anywhere in the list moves the economy of every
-    // rung at once.
+    // rung at once. THE SCRIPT IS EIGHT WAVES, three minutes apart after
+    // a four-minute grace, each stronger than the last: a squad on wave 1,
+    // the first heavies by wave 5, everything and the disrupt on wave 8.
+    // Counts are dozens, not thousands — the game plays Mindustry's own
+    // unit and turret numbers, so a wave is a fight a line of a dozen
+    // turrets can win, and the run is 18 to 26 minutes.
     //
     //   line       T1        T2       T3         T4         T5
     //   dagger     dagger    mace     fortress   scepter    reign
@@ -1406,20 +1441,16 @@ export const WORLDS: LevelSpec[] = [
     //   support    nova      pulsar   quasar     vela       corvus
     //   air        flare     horizon  zenith     antumbra   eclipse
     //
-    // KEEP SENDING TIER-1 UNITS. They are the swarm and the game is named
-    // after them. They are also nearly free in the health budget — 150 hp
-    // against a scepter's 9,000, so one T4 weighs as much as sixty
-    // daggers, and the twelve thousand extra daggers the middle rungs add
-    // cost less than their two hundred scepters. Spend the budget on
-    // T3/T4/T5 counts; that is the only thing that really moves a rung's
-    // weight.
+    // KEEP SENDING TIER-1 UNITS. They are the line's body, and nearly
+    // free in the health budget — 150 hp against a scepter's 9,000, so one
+    // T4 weighs as much as sixty daggers. Spend the budget on T3/T4/T5
+    // counts; that is the only thing that really moves a wave's weight.
     //
-    // TIER 5 STARTS IN THE FORTIES AND THAT IS AN ECONOMY DECISION. A T5
-    // pays fifty scrap a head, and the tier-3 turrets (fuse up to
-    // foreshadow) are priced for what waves 36-50 pay — so where the heavy
-    // bodies land is where the heavy turrets become affordable. Move them
-    // earlier and stage 2 buys a spectre; check() notices through the
-    // stage table.
+    // TIER 5 STARTS ON WAVE 7 AND THAT IS AN ECONOMY DECISION. A T5 pays
+    // 1,500 scrap a head, and the tier-3 turrets (fuse up to foreshadow)
+    // are priced for what waves 7-8 pay — so where the heavy bodies land
+    // is where the heavy turrets become affordable. Move them earlier and
+    // stage 2 buys a spectre; check() notices through the stage table.
     //
     // THE PATTERN, past wave 20. One cycle is four waves:
     //
@@ -1498,24 +1529,23 @@ export const WORLDS: LevelSpec[] = [
     id: "2",
     name: "Maelstrom",
     map: "maelstrom",
-    // THE NAVAL FRONT: hold the fifty. Six-second gaps, because hulls are
-    // big and the water doors pass a wave slower than the schedule — the
-    // late waves are bound by their own release, not the gap — so the
-    // short gap is what keeps the run near twenty-five minutes
+    // THE NAVAL FRONT: hold the eight, hulls where the die deals them
     mission: { kind: "hold" },
-    waveGap: 15,
+    waveGap: WAVE_GAP_DEFAULT,
+    grace: GRACE_DEFAULT,
     script: [],
   },
   {
     id: "3",
     name: "Quagmire",
     map: "quagmire",
-    // THE SWAMP: forty waves, held with the full hundred, because its core
-    // stands on the west edge behind one causeway and its bodies wade in
-    // heavier than they spawned. It plays the campaign's fifty like every
-    // map; its doors decide which families the die may deal it.
+    // THE SWAMP: its core stands on the west edge behind one causeway and
+    // its bodies wade in heavier than they spawned. It plays the campaign's
+    // eight like every map; its doors decide which families the die may
+    // deal it.
     mission: { kind: "hold" },
-    waveGap: 15,
+    waveGap: WAVE_GAP_DEFAULT,
+    grace: GRACE_DEFAULT,
     script: [],
   },
   {
@@ -1524,7 +1554,8 @@ export const WORLDS: LevelSpec[] = [
     map: "greenwood",
     // THE EARTHY ONE: dirt roads under dirt cliffs, grass and pine stands, two lakes; four gates on the west, south and north, the core in the north-east corner behind one antechamber
     mission: { kind: "hold" },
-    waveGap: 15,
+    waveGap: WAVE_GAP_DEFAULT,
+    grace: GRACE_DEFAULT,
     script: [],
   },
   {
@@ -1533,7 +1564,8 @@ export const WORLDS: LevelSpec[] = [
     map: "tundra",
     // THE SNOWY ONE: snow under snow walls, ice round two frozen lakes, shale outcrops, snow pines; four gates on the south corners and the east and west edges, the core on the north edge
     mission: { kind: "hold" },
-    waveGap: 15,
+    waveGap: WAVE_GAP_DEFAULT,
+    grace: GRACE_DEFAULT,
     script: [],
   },
   {
@@ -1542,7 +1574,8 @@ export const WORLDS: LevelSpec[] = [
     map: "crater",
     // THE CORE IN THE MIDDLE, in a basalt crater with six mouths, and six gates round the edge coming at it from every side. No funnel: the crater's rim is the defence
     mission: { kind: "hold" },
-    waveGap: 15,
+    waveGap: WAVE_GAP_DEFAULT,
+    grace: GRACE_DEFAULT,
     script: [],
   },
   {
@@ -1551,7 +1584,8 @@ export const WORLDS: LevelSpec[] = [
     map: "shoals",
     // THE ARCHIPELAGO: two thirds of the board is sea, every road between the sand islands is a bar of shallow the swarm wades, the hulls come from the north and south seas, the core on the west island behind one causeway
     mission: { kind: "hold" },
-    waveGap: 15,
+    waveGap: WAVE_GAP_DEFAULT,
+    grace: GRACE_DEFAULT,
     script: [],
   },
   {
@@ -1560,7 +1594,8 @@ export const WORLDS: LevelSpec[] = [
     map: "riverlands",
     // THE CORE IN THE MIDDLE WITH RIVERS RUNNING TO IT: the hulls sail in from the west, east and south edges to the pool beside the core, and five ground gates come from the north and the corners, fording the rivers on the way
     mission: { kind: "hold" },
-    waveGap: 15,
+    waveGap: WAVE_GAP_DEFAULT,
+    grace: GRACE_DEFAULT,
     script: [],
   },
   {
@@ -1569,7 +1604,8 @@ export const WORLDS: LevelSpec[] = [
     map: "estuary",
     // THE ESTUARY: the sea fills the south of the board, a river comes down from the north-east to meet it, and the core stands on the north shore where the river opens out; four ground gates inland, the hulls from the sea and down the river
     mission: { kind: "hold" },
-    waveGap: 15,
+    waveGap: WAVE_GAP_DEFAULT,
+    grace: GRACE_DEFAULT,
     script: [],
   },
 ];
@@ -1687,7 +1723,10 @@ function readLevelDoc(id: string, raw: unknown): LevelDoc | null {
 
   const waveGap =
     typeof d.waveGap === "number" && d.waveGap >= 0 ? d.waveGap : commonest(waits);
-  return { id, waveGap, script };
+  // the grace is newer than the gap: a document without one opens on the
+  // gap, exactly as it did when there was no such thing
+  const grace = typeof d.grace === "number" && d.grace >= 0 ? d.grace : undefined;
+  return grace === undefined ? { id, waveGap, script } : { id, waveGap, grace, script };
 }
 
 /** the most frequent value, ties going to the smaller; 10s if there are none */
@@ -1711,6 +1750,7 @@ export function applyLevelDoc(doc: LevelDoc): void {
   // one script, every world: the map is what differs, never the waves
   for (const world of WORLDS) {
     world.waveGap = clean.waveGap;
+    world.grace = clean.grace;
     world.script = [...clean.script];
   }
 }

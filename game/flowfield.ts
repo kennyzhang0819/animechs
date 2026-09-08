@@ -102,10 +102,13 @@ export class FlowField {
   spawnPts: number[] = [];
   private spawnMask: Uint8Array | null = null;
 
-  // binary min-heap with lazy deletion (131,072 slots, ~2.7 per cell —
-  // sized for 8 per cell back when the board was 128x128)
-  private readonly hKey = new Float64Array(1 << 17);
-  private readonly hVal = new Int32Array(1 << 17);
+  // binary min-heap with lazy deletion, sized BY THE GRID: with lazy
+  // deletion a cell can sit in the heap more than once, so it is four
+  // slots a cell. (It was a fixed 131,072 — 8 a cell on the 128x128
+  // board, 2 a cell on the 256 one — and hPush never checks the bound: on
+  // the 512x512 grid a fixed size would silently overflow the arrays)
+  private readonly hKey = new Float64Array(NCELLS * 4);
+  private readonly hVal = new Int32Array(NCELLS * 4);
   private hN = 0;
   private popKey = 0;
 

@@ -57,26 +57,15 @@ export const TOWER_KINDS = [
 export type TowerKind = (typeof TOWER_KINDS)[number];
 
 /**
- * THE SWARM'S OWN BUILDINGS — a different roster from the player's, not
- * the player's turrets in another colour: Erekir's guns on their
- * reinforced plates, and the scrap walls Mindustry's enemy bases are
- * built from. Stats in ENEMY_STRUCTS (constants.ts), art in the atlas's
- * enemy strip. A map's formation (MapData.enemies) is drawn from these
- * and nothing else; the player never builds one and never pays for one.
+ * Anything a Tower record may be. THE SWARM BUILDS FROM THE PLAYER'S
+ * ROSTER: a map's formation (MapData.enemies) is duos, lancers, ripples
+ * and copper walls on the swarm's side (Tower.team), drawn with the same
+ * art and a small crux-red flag at the corner of the base. There used to
+ * be a separate enemy roster — Erekir's breach, diffuse and titan on
+ * reinforced plates, and scrap walls — and it is gone: one set of
+ * buildings, two teams.
  */
-export const ENEMY_KINDS = [
-  "breach",
-  "diffuse",
-  "titan",
-  "scrap-wall",
-  "scrap-wall-large",
-  "scrap-wall-huge",
-] as const;
-export type EnemyKind = (typeof ENEMY_KINDS)[number];
-/** anything a Tower record may be: the player's roster or the swarm's */
-export type StructKind = TowerKind | EnemyKind;
-export const isPlayerKind = (k: StructKind): k is TowerKind =>
-  (TOWER_KINDS as readonly string[]).includes(k);
+export type StructKind = TowerKind;
 
 /**
  * THE CORE — the one structure the swarm is on the map to destroy, and the
@@ -115,15 +104,16 @@ export const isCore = (s: Structure): s is Core => "core" in s;
 export type Team = "player" | "enemy";
 export const teamOf = (s: Structure): Team => (isCore(s) ? "player" : s.team);
 
-/** a structure a map starts with: what, whose, and its top-left cell */
+/** a structure a map starts with — one of the roster, on the swarm's
+ *  side — and its footprint's top-left cell */
 export interface StructurePlacement {
-  kind: EnemyKind;
+  kind: TowerKind;
   gx: number;
   gy: number;
 }
 
 export interface Tower {
-  /** the player's roster on the player's side; the swarm's on the swarm's */
+  /** one of the roster, on whichever side `team` says */
   kind: StructKind;
   team: Team;
   gx: number; // top-left cell of the size x size footprint (TOWERS[kind].size)

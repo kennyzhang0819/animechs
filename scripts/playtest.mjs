@@ -10,8 +10,8 @@
  * The bot is deliberately ordinary: it walks the map's routes (ground,
  * water and air), scores every buildable cell by how much route it can
  * reach that nothing else covers yet, and spends its scrap round-robin
- * on the stage's tier of turret — tier 1 until wave 20, tier 2 from 21,
- * tier 3 from 36, exactly as the gate allows. It never sells, never
+ * on the stage's tier of turret — tier 1 until wave 3, tier 2 from 4,
+ * tier 3 from 7 (STAGES in economy.ts). It never sells, never
  * upgrades a placement, and never reads the wave ahead. A script it
  * clears is a script a person who builds sensibly clears; a script it
  * dies on at wave 11 is a script with a wall.
@@ -28,7 +28,7 @@
  *   --mix stage|all|duo   what it buys: the stage's tier, every open tier, or duos only
  *   --log <n>        print a line every n waves (default 5)
  *   --seconds <n>    give up after this much sim time (default 2400)
- *   --probe <n>      seconds of turret-less dry run the bot learns the routes from (default 180)
+ *   --probe <n>      seconds of turret-less dry run the bot learns the routes from (default: the script's grace + 180, so the probe sees the first wave walk)
  *   --json           print the report as JSON
  *   --no-build       skip the TypeScript transpile (use the last one)
  *
@@ -66,7 +66,7 @@ const CAP = +opt("cap", Infinity);
 const MIX_MODE = String(opt("mix", "stage"));
 const LOG_EVERY = +opt("log", 5);
 const MAX_SECONDS = +opt("seconds", 2400);
-const PROBE_SECONDS = +opt("probe", 180);
+const PROBE_OPT = opt("probe", null);
 const JSON_OUT = flag("json");
 
 // ---------- transpile ----------
@@ -121,6 +121,9 @@ if (!world) {
   process.exit(1);
 }
 const spec = { ...LA.specForTier(world, TIER), mutation: MUTATORS };
+// the probe has to outlast the grace (LevelSpec.grace) or it sees an empty
+// field and the bot lays its line off the traced gradient alone
+const PROBE_SECONDS = PROBE_OPT === null ? (spec.grace ?? spec.waveGap) + 180 : +PROBE_OPT;
 
 // ---------- the bot ----------
 

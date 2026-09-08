@@ -22,14 +22,21 @@ run, so a change to a campaign map is a change to its spec.
 
 ## The size
 
-**Every campaign map is 256x256, which is Mindustry's size.** Mindustry
-has no single map size — its editor opens a new map at 200x200 and its
-Serpulo campaign runs from Desolate Rift's 110x400 to the Planetary
-Terminal's 512x512 — but the two references this repository imports whole,
-Ground Zero and Cratered Battleground, are 256x256, and that is also every
-column and row the grid has (`COLS`, `ROWS`). The old 256x182 widescreen
-board is gone; a map is square, as every Mindustry map is. `SIZE` in
-`mindustry.mjs` is the one number.
+**Every campaign map is 512x512 — twice Mindustry's Ground Zero.**
+Mindustry has no single map size — its editor opens a new map at 200x200
+and its Serpulo campaign runs from Desolate Rift's 110x400 to the
+Planetary Terminal's 512x512 — and the two references this repository
+imports whole, Ground Zero and Cratered Battleground, are 256x256, which
+is the board every spec in `scripts/maps/` is **authored** on. The game
+became a real-time strategy game played by expanding outward over
+twenty-odd minutes, and a 256 board ran out of ground to expand into, so
+the grid (`COLS`, `ROWS`) and `SIZE` in `mindustry.mjs` are 512 and
+`scaleSpec` carries a spec across: positions and radii doubled
+(`SCALE`), the ground lanes, links and chokes opened half as wide again
+(`WIDEN`) and the clearings a quarter wider (`ROOM_WIDEN`), the noise
+scales doubled so a rock lump keeps its proportion, the bias closures
+called at authored coordinates. Author at 256; read the checks at 512.
+A map is square, as every Mindustry map is.
 
 ## What makes a Mindustry map look right
 

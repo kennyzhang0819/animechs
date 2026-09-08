@@ -37,7 +37,6 @@ import {
   type TowerStats,
   bulletOf,
   structStats,
-  ENEMY_STRUCTS,
 } from "./constants";
 
 // Module-local bindings for everything the per-unit and per-bullet loops
@@ -142,6 +141,7 @@ import {
 import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap, type SpawnCircle } from "./maps";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
 import {
+  bountyOf,
   SCRAP_START,
   scrapPriceOf,
   sellValue,
@@ -165,8 +165,6 @@ import {
   isCore,
   type Structure,
   type StructKind,
-  type EnemyKind,
-  isPlayerKind,
   type Team,
   teamOf,
   type Tower,
@@ -1738,7 +1736,7 @@ export class Sim {
   private towerVision(t: Tower): VisionSource {
     const min = VISION_MIN_CELLS * CELL;
     let r = min;
-    if (t.buildT <= 0 && isPlayerKind(t.kind)) {
+    if (t.buildT <= 0) {
       const st = this.statsFor(t.kind);
       if (!st.wall && st.range > 0) r = Math.max(min, st.range * VISION_OF_RANGE);
     }
@@ -1859,7 +1857,7 @@ export class Sim {
     const counts = Object.fromEntries(TOWER_KINDS.map((k) => [k, 0])) as Record<TowerKind, number>;
     // the player's own: the swarm's formation is not on the bar and does
     // not move a count-scaled rung
-    for (const t of this.towers) if (t.team === "player" && isPlayerKind(t.kind)) counts[t.kind]++;
+    for (const t of this.towers) if (t.team === "player") counts[t.kind]++;
     return counts;
   }
 
@@ -1921,15 +1919,18 @@ export class Sim {
   }
 
   /**
-   * THE WAVE THE CLOCK SAYS IT IS — what the HUD's wave counter reads. A wave is
-   * scheduled every waveGap + WAVE_RELEASE_SECONDS, and on a map whose
-   * drop zones cannot pass a big wave that fast the script falls behind
-   * its own schedule (Sim.runScript queues what will not fit). The larger
-   * of the two is taken, so a run that is AHEAD of schedule reads ahead.
+   * THE WAVE THE CLOCK SAYS IT IS. The first wave enters at the grace,
+   * and every one after it waveGap + WAVE_RELEASE_SECONDS later; on a map
+   * whose drop zones cannot pass a big wave that fast the script falls
+   * behind its own schedule (Sim.runScript queues what will not fit). The
+   * larger of the two is taken, so a run that is AHEAD of schedule reads
+   * ahead.
    */
   stageWave(): number {
     const cadence = Math.max(1, this.level.waveGap + WAVE_RELEASE_SECONDS);
-    return Math.max(this.currentWave(), Math.floor(this.time / cadence) + 1);
+    const grace = Math.max(0, this.level.grace ?? this.level.waveGap);
+    const byClock = this.time < grace ? 1 : Math.floor((this.time - grace) / cadence) + 1;
+    return Math.max(this.currentWave(), byClock);
   }
 
   /** seconds until the next wave starts entering, or 0 when one is already
@@ -1963,7 +1964,7 @@ export class Sim {
     // watching walls raise is a menu showing nothing
     // (the swarm's formation is stood up finished, so its roster never
     // asks for a build time or a waterlogging check)
-    const build = instant || !isPlayerKind(kind) ? 0 : buildTimeOf(kind);
+    const build = instant ? 0 : buildTimeOf(kind);
     const x = (gx + sz / 2) * CELL, y = (gy + sz / 2) * CELL;
     const tower: Tower = {
       kind,
@@ -1980,7 +1981,7 @@ export class Sim {
       tombShieldTower: -1,
       cd: Math.random() * 0.1,
       // Hydrophobic (mutation.ts): read the ground once, here, and carry it
-      fireRate: isPlayerKind(kind) && this.isWaterlogged(gx, gy, kind) ? HYDROPHOBIC_RATE : 1,
+      fireRate: this.isWaterlogged(gx, gy, kind) ? HYDROPHOBIC_RATE : 1,
       // the swarm's guns stand facing the core they were built against
       angle: team === "enemy" ? Math.atan2(this.core.y - y, this.core.x - x) : 0,
       target: -1,
@@ -2018,15 +2019,16 @@ export class Sim {
 
   /**
    * ONE OF THE SWARM'S OWN BUILDINGS, stood up finished. A map starts with
-   * these (MapData.enemies, applied in reset): a formation of turrets and
-   * walls the player has to shoot through, exactly as the swarm has to
-   * shoot through the player's. No tech gate and no price — nobody is
-   * buying — but the ground rules hold: open ground only, never a drop
-   * zone, never over another structure or the core. False when the cell
-   * will not take it, and the map simply goes without.
+   * these (MapData.enemies, applied in reset): a formation of the ROSTER's
+   * turrets and walls — a lancer is a lancer whichever side stands it —
+   * the player has to shoot through, exactly as the swarm has to shoot
+   * through the player's. No tech gate and no price — nobody is buying —
+   * but the ground rules hold: open ground only, never a drop zone, never
+   * over another structure or the core. False when the cell will not take
+   * it, and the map simply goes without.
    */
-  placeEnemyStructure(gx: number, gy: number, kind: EnemyKind): boolean {
-    const sz = ENEMY_STRUCTS[kind].size;
+  placeEnemyStructure(gx: number, gy: number, kind: TowerKind): boolean {
+    const sz = structStats(kind).size;
     if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
     const { blocked } = this.terrain;
     for (let y = gy; y < gy + sz; y++)
@@ -2155,9 +2157,10 @@ export class Sim {
    * everything zeroed once the script runs out, which is what ends the level.
    *
    * Pacing is no longer written into the script: the level carries one
-   * `waveGap` and the sim puts it BEFORE every wave, the opening one
-   * included, which is the breather the old leading `{ wait: 10 }` gave.
-   * A step therefore always describes enemies and never time.
+   * `waveGap` and the sim puts it BEFORE every wave — and before the
+   * opening one it puts the GRACE instead (LevelSpec.grace, four minutes
+   * as authored), the breather a run builds its first line in. A step
+   * therefore always describes enemies and never time.
    */
   private loadStep(): void {
     this.waveEntries.length = 0;
@@ -2180,8 +2183,10 @@ export class Sim {
         const bonus = waveBonusScrap(this.wavesStarted);
         this.scrap += bonus;
         this.scrapEarned += bonus;
-        // hold the gap, then let this wave drain — waitLeft gates runScript
-        this.waitLeft = Math.max(0, this.level.waveGap);
+        // hold the gap — the grace before the first wave — then let this
+        // wave drain; waitLeft gates runScript
+        const opening = this.wavesStarted === 1;
+        this.waitLeft = Math.max(0, opening ? this.level.grace ?? this.level.waveGap : this.level.waveGap);
         return;
       }
     }
@@ -2266,7 +2271,12 @@ export class Sim {
     if (left === 0) return;
 
     const rate = this.waveRate;
-    this.spawnAcc = Math.min(this.spawnAcc + rate * dt, rate);
+    // the credit is capped at a second's worth of release — but never
+    // under ONE body: a wave smaller than WAVE_RELEASE_SECONDS bodies has
+    // a rate under 1/s, and a cap at that rate would never let the credit
+    // reach the whole unit the loop below spends (a squad of three at
+    // Incursion sat in the door forever)
+    this.spawnAcc = Math.min(this.spawnAcc + rate * dt, Math.max(1, rate));
     // one region's crowded pads must not stall the other regions' share of
     // the wave — a failed entry sits out the rest of this frame while the
     // remaining entries keep draining
@@ -3273,7 +3283,7 @@ export class Sim {
     // nothing back (SELL_REFUND is 0, economy.ts): a placed turret is
     // spent, and demolishing it only clears the ground. The dial stays
     // wired so a refund can be tried again from one number
-    if (this.charging && isPlayerKind(t.kind)) this.scrap += sellValue(t.kind);
+    if (this.charging) this.scrap += sellValue(t.kind);
     this.pushFx(t.x, t.y, 0.35, FxKind.Death); // demolish puff
     return true;
   }
@@ -4947,12 +4957,13 @@ export class Sim {
     this.pushFx(t.x, t.y, 0.5 * big, FxKind.Breach);
     this.pushFx(t.x, t.y, 0.35 * big, FxKind.Death);
     if (isCore(t)) return;
-    // one of the SWARM's buildings wrecked pays its bounty (ENEMY_STRUCTS)
-    // into the bank — a formation is worth shooting through, not only around
+    // one of the SWARM's buildings wrecked pays its bounty (bountyOf, a
+    // share of the same building's price) into the bank — a formation is
+    // worth shooting through, not only around
     if (t.team === "enemy") {
       this.enemyStructuresDown++;
       if (this.charging) {
-        const bounty = structStats(t.kind).bounty ?? 0;
+        const bounty = bountyOf(t.kind);
         this.scrap += bounty;
         this.scrapEarned += bounty;
       }
@@ -5163,7 +5174,7 @@ export class Sim {
       // the SWARM's turrets fire the stock table: the player's upgrade
       // branches are the player's
       const hostile = t.team === "enemy";
-      const st = isPlayerKind(t.kind) && !hostile ? this.statsFor(t.kind) : structStats(t.kind);
+      const st = hostile ? structStats(t.kind) : this.statsFor(t.kind);
       // a wall has no gun at all: it smokes when hurt (above) and that is
       // the whole of what it does each tick
       if (st.wall) continue;
@@ -6407,7 +6418,7 @@ export class Sim {
     for (let p = projs.length - 1; p >= 0; p--) {
       const pr = projs[p];
       // the swarm's turrets fire the stock table (see fireTowers)
-      const b = pr.enemy || !isPlayerKind(pr.kind) ? bulletOf(pr.kind, pr.frag) : this.bulletFor(pr.kind, pr.frag);
+      const b = pr.enemy ? bulletOf(pr.kind, pr.frag) : this.bulletFor(pr.kind, pr.frag);
       // BulletType.updateHoming, BEFORE the step: the shot picks the
       // nearest target within homingRange OF ITSELF and swings toward it,
       // re-picking every tick — so a missile whose mark dies latches onto

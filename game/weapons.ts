@@ -266,11 +266,11 @@ export interface UnitWeapon {
 
 /**
  * ONE DIAL OVER EVERY UNIT WEAPON, at 1: the rows below are Mindustry's
- * and the swarm bites exactly as they say. Balance is not done yet; when
- * it is, it is done here (setUnitDamageScale) and on TOWER_HP_SCALE, not
- * row by row — the rows are meant to stay Mindustry's. For the record:
- * with the turrets at twice upstream health, x1 lost every map by wave
- * six and x0.015 cleared Confluence; the turrets are at ten times now.
+ * and the swarm bites exactly as they say. The turrets are at Mindustry's
+ * own health too (TOWER_HP_SCALE, 1): a wave is dozens of bodies now, not
+ * thousands, so both sides play the stock numbers. If a balance pass is
+ * ever needed it is done here (setUnitDamageScale) and on that dial, not
+ * row by row — the rows are meant to stay Mindustry's.
  */
 let damageScale = 1;
 export const unitDamageScale = (): number => damageScale;

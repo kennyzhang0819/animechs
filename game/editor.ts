@@ -7,16 +7,15 @@ import {
   BASE_SIZE,
   H,
   ROWS,
-  ENEMY_STRUCTS,
+  TOWERS,
   W,
   ZONE_KINDS,
   type ZoneKind,
 } from "./constants";
-import { ENEMY_ICONS } from "@/components/towerIcons";
-import type { EnemyKind, StructurePlacement } from "./types";
+import { TOWER_ICONS } from "./towerIcons";
+import { TOWER_KINDS, type StructurePlacement, type TowerKind } from "./types";
 import {
   contentRows,
-  ENEMY_KINDS,
   PALETTE,
   rasterizeSpawns,
   zoneStyle,
@@ -194,14 +193,14 @@ export class MapEditor {
    */
   private grabbedSpawn = -1;
   private lastCell = { x: -1, y: -1 };
-  /** the swarm's structures' sprites, one image a kind, loaded on first
-   *  use for the overlay — null until it has arrived */
-  private readonly icons = new Map<EnemyKind, HTMLImageElement>();
-  private icon(kind: EnemyKind): HTMLImageElement | null {
+  /** the roster's sprites, one image a kind, loaded on first use for the
+   *  overlay of the swarm's formation — null until it has arrived */
+  private readonly icons = new Map<TowerKind, HTMLImageElement>();
+  private icon(kind: TowerKind): HTMLImageElement | null {
     let img = this.icons.get(kind);
     if (!img) {
       img = new Image();
-      img.src = ENEMY_ICONS[kind];
+      img.src = TOWER_ICONS[kind];
       this.icons.set(kind, img);
     }
     return img.complete && img.naturalWidth > 0 ? img : null;
@@ -578,15 +577,15 @@ export class MapEditor {
     this.dirty = true;
   }
 
-  /** the swarm's structure kind the enemy tool is stamping — the picker's slot */
-  private enemyKind(): EnemyKind {
-    return ENEMY_KINDS[Math.min(this.variant, ENEMY_KINDS.length - 1)];
+  /** the roster kind the enemy tool is stamping — the picker's slot */
+  private enemyKind(): TowerKind {
+    return TOWER_KINDS[Math.min(this.variant, TOWER_KINDS.length - 1)];
   }
 
   /** the enemy structure whose footprint covers a cell, as an index, or -1 */
   private enemyAt(gx: number, gy: number): number {
     return this.terrain.enemies.findIndex((e) => {
-      const sz = ENEMY_STRUCTS[e.kind].size;
+      const sz = TOWERS[e.kind].size;
       return gx >= e.gx && gx < e.gx + sz && gy >= e.gy && gy < e.gy + sz;
     });
   }
@@ -602,7 +601,7 @@ export class MapEditor {
   private enemyStampAt(gx: number, gy: number): void {
     const T = this.terrain;
     const kind = this.enemyKind();
-    const sz = ENEMY_STRUCTS[kind].size;
+    const sz = TOWERS[kind].size;
     const half = (sz / 2) | 0;
     const x0 = clamp(gx - half, 0, COLS - sz);
     const y0 = clamp(gy - half, 0, this.rows - sz);
@@ -936,7 +935,7 @@ export class MapEditor {
     // terrain batches know nothing about structures — and before the hover
     // bail-out, since a stamp must not vanish when the pointer leaves
     for (const e of this.terrain.enemies) {
-      const side = ENEMY_STRUCTS[e.kind].size * CELL;
+      const side = TOWERS[e.kind].size * CELL;
       const x0 = e.gx * CELL, y0 = e.gy * CELL;
       c.fillStyle = "rgba(242,85,85,0.28)";
       c.fillRect(x0, y0, side, side);
@@ -955,7 +954,7 @@ export class MapEditor {
 
     if (this.set.kind === "enemy") {
       const kind = this.enemyKind();
-      const sz = ENEMY_STRUCTS[kind].size;
+      const sz = TOWERS[kind].size;
       const half = (sz / 2) | 0;
       const x0 = clamp(this.hoverGx - half, 0, COLS - sz) * CELL;
       const y0 = clamp(this.hoverGy - half, 0, this.rows - sz) * CELL;

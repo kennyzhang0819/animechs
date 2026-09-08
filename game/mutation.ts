@@ -1209,7 +1209,7 @@ export const shieldTowerWaveScale = (wave: number): number =>
 // are simply what the wave says they are.
 
 /** the wave from which every new shield tower rises as a mega shield tower */
-export const SHIELD_TOWER_MEGA_WAVE = 35;
+export const SHIELD_TOWER_MEGA_WAVE = 6;
 /** its dome, in px (16 cells) — four times the ordinary dome's area */
 export const SHIELD_TOWER_MEGA_DOME_R = 320;
 /** the dome's colour — RED, deliberately not the amber of friendly

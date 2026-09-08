@@ -1,8 +1,11 @@
 # MechSwarm
 
-Tower-defense swarm prototype: flow-field pathfinding for up to 22,000 units,
-WebGL2 instanced rendering, and towers (1×1 up to 4×4) that block movement and
-reroute the horde in real time.
+A real-time strategy prototype in Mindustry's clothes: a 512x512 map the
+run expands out over in 18 to 26 minutes, waves of a few dozen bodies at
+Mindustry's own numbers every three minutes, flow-field pathfinding,
+WebGL2 instanced rendering, and turrets (1×1 up to 4×4) on both sides —
+the swarm's formations are built from the player's roster and fly a red
+flag — that block movement and reroute the field in real time.
 
 ## Run
 
@@ -34,8 +37,9 @@ stale tab or a cached bundle looks exactly like a fix not working.
 
 - `game/constants.ts` — grid, base placement, tower/unit tuning
 - `game/levels.ts` — unit stats and wave-script plumbing; the authored
-  script itself (50 waves) lives in `public/levels/1.json`, loaded by
-  `loadLevelDocs()`. Six upgrade trees: ground, support, crawler, air and
+  script itself (8 waves, a 4-minute grace and 3-minute gaps —
+  `GRACE_DEFAULT`, `WAVE_GAP_DEFAULT`) lives in
+  `public/levels/campaign.json`, loaded by `loadLevelDocs()`. Six upgrade trees: ground, support, crawler, air and
   the two **naval** lines (risso→omura, retusa→navanax), which travel on
   the water layer and cannot leave it
 - `game/economy.ts` — **the economy**: scrap (in-run money), XP (meta
@@ -74,12 +78,17 @@ stale tab or a cached bundle looks exactly like a fix not working.
   desktop shell (through the bridge `desktop/src/preload.ts` puts on
   `window`). The only place the game knows it might be on a desktop
 - `game/maps.ts` — map documents: terrain layers, spawn circles, the
-  core's cell. **Every campaign map is 256x256 — Mindustry's size — and
-  is generated, never drawn**: `scripts/maps/<id>.mjs` is a few dozen
-  numbers handed to `scripts/maps/mindustry.mjs`, which builds the map
-  the way Mindustry's own generator does (noise rock, rooms, brushed
-  routes, chokes, holes, the floor's own wall, forests, ruins, clutter)
-  and refuses to write it while a check fails — see
+  core's cell, the swarm's formation. **Every campaign map is 512x512 —
+  twice Mindustry's Ground Zero — and is generated, never drawn**:
+  `scripts/maps/<id>.mjs` is a few dozen numbers authored on the 256
+  board and handed to `scripts/maps/mindustry.mjs`, which scales them
+  onto the big one (`SCALE`, with the lanes, chokes and clearings opened
+  wider again — `WIDEN`, `ROOM_WIDEN`) and builds the map the way
+  Mindustry's own generator does (noise rock, rooms, brushed routes,
+  chokes, holes, the floor's own wall, forests, ruins, clutter),
+  refusing to write it while a check fails; `scripts/maps/upscale.mjs`
+  brings a document with no spec (the reference imports) up to the same
+  board — see
   [docs/authoring-maps.md](docs/authoring-maps.md) for what makes a
   Mindustry map read as one and [docs/map-rules.md](docs/map-rules.md)
   for the checklist
@@ -237,8 +246,8 @@ the rest of the preferences (`Progress.panSpeed`, `Progress.edgePan`).
 ## Progression
 
 **There is one run in the game and ten difficulties to play it at.** Every
-rung sends the whole authored script — all fifty waves, wave 1 to wave 50,
-the same fifty every time, **and every body at the same health**. What a
+rung sends the whole authored script — all eight waves, wave 1 to wave 8,
+the same eight every time, **and every body at the same health**. What a
 rung changes is **how many** come and **what rules** they come under. The
 four named difficulties — **Incursion, Onslaught, Scourge, Nemesis** —
 send every wave at a quarter, a half, three quarters and the whole of its
@@ -249,7 +258,7 @@ for a difficulty: a level is the player's.
 
 | rung | Incursion | Onslaught | Scourge | Nemesis | +1 | +2 | +3 | +4 | +5 | +6 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| waves | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 |
+| waves | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 |
 | count | 25% | 50% | 75% | 100% | 100% | 100% | 100% | 100% | 100% | 100% |
 | enemy health | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 | ×1 |
 | rules rolled | 0 | 0 | 0 | 0 | 3 | 3 | 3 | 3 | 4 | 4 |
@@ -263,6 +272,23 @@ the ladder no longer turns it: every rung is authored at level 0.
 Difficulty is rules, not hit points. Every column is arithmetic on the
 rung's index, so **an eleventh rung is one constant** (`RUNG_COUNT`).
 
+### The clock
+
+**A run is 18 to 26 minutes, and it is an RTS run.** It opens with a
+**four-minute grace** (`LevelSpec.grace`, `GRACE_DEFAULT`) — the core
+alone on a map it has not seen, time to scout, lay the first line and
+push out for the first expansion — and then a wave lands **every three
+minutes** (`waveGap`, `WAVE_GAP_DEFAULT`), each stronger than the last:
+a squad of daggers under a pair of flares on wave 1, the scepters and the
+first reign by waves 5 to 7, everything and the disrupt on wave 8. Eight
+waves, 475 bodies in all — not a swarm. **Every number on both sides is
+Mindustry's own**: a turret's health, damage and reload, a wall's pool
+and a unit's health, armour and speed are read out of `Blocks.java` and
+`UnitTypes.java` and played unscaled (`TOWER_HP_SCALE`, `WALL_HP_SCALE`
+and `setUnitDamageScale` all stand at 1; the 30% the phase turrets once
+carried over stock is gone). The gap and the grace are the document's
+(`public/levels/campaign.json`) and the level editor edits both.
+
 ### Two currencies that never touch
 
 **Scrap is the run's money.** Every run opens with `SCRAP_START` (7,500),
@@ -271,7 +297,9 @@ and every turret placed costs scrap. Selling returns nothing
 (`SELL_REFUND` is 0): a placed turret is spent. Nothing carries between runs: a run is solved from its
 opening board to its last wave on what it earns. There is no gate inside
 a run: whatever the save owns it may place from wave 1. The income is
-tuned so a sensible board clears all fifty first try.
+tuned so a sensible board clears all eight first try — and **the map is
+income too**: every one of the swarm's buildings wrecked pays a bounty
+(`bountyOf`, half of what the same building costs the player).
 
 **XP is the save's progress, and it is paid for objectives, not kills.**
 Every mission is worth the same fixed pot — `MISSION_XP`, 100,000 for a
@@ -283,7 +311,7 @@ met. A wave is cleared when every body it sent is down (killed,
 devoured or blown up; `Sim.wavesCleared`), and it banks its share that
 moment. The shares ramp linearly from wave 1 to the last (`WAVE_XP_RAMP`:
 the last wave pays three times the first) and sum to exactly the pot, so
-on the fifty-wave script wave 1 is worth 1% and wave 50 is worth 3%. A
+on the eight-wave script wave 1 is worth 6% and wave 8 is worth 19%. A
 run that dies keeps what it cleared; a win pays the whole pot however
 the last wave ended. The rung multiplies it (the XP bonus above), and a
 run on a **random map** — the menu's default — pays `RANDOM_MAP_XP_BONUS`
@@ -294,9 +322,9 @@ and **every level is a rung on the track** (`game/track.ts`) that hands
 out a map, a pace or a turret upgrade — nothing is chosen and nothing is
 bought.
 
-| waves cleared | 1 | 10 | 20 | 30 | 40 | 50 |
+| waves cleared | 1 | 2 | 4 | 6 | 7 | 8 |
 |---|---|---|---|---|---|---|
-| XP banked (Nemesis) | 1,000 | 11,837 | 27,756 | 47,756 | 71,837 | 100,000 |
+| XP banked (Nemesis) | 6,250 | 14,286 | 35,714 | 64,286 | 81,250 | 100,000 |
 
 **Why.** XP used to come off the same kills, one point per 110 hp of the
 body, and that put the pot where the health was: waves 1–20 paid under a
@@ -310,11 +338,11 @@ tier's scrap (`SCRAP_BY_TIER`, a boss `BOSS_SCRAP`) and no XP at all.
 
 | tier | scrap |
 |---|---|
-| T1 | 10 |
-| T2 | 30 |
-| T3 | 80 |
-| T4 | 200 |
-| T5 | 500 |
+| T1 | 30 |
+| T2 | 90 |
+| T3 | 240 |
+| T4 | 600 |
+| T5 | 1,500 |
 | boss | 5,000 |
 
 **Drops are fixed.** A dagger always pays this, on every rung, on every
@@ -327,15 +355,16 @@ worth killing.
 
 The roster is cut into three price bands along Mindustry's build-cost
 order (`TOWER_TIER`), and the run into three stages (`STAGES`): waves
-1–20, 21–35 and 36–50. **A band is priced so its stage is roughly what
+1–3, 4–6 and 7–8. **A band is priced so its stage is roughly what
 buys it.** This is a pricing table and nothing else — no band is held shut
-inside a run. Against the shipped script:
+inside a run. Against the shipped script (the opening scrap counted in
+stage 1, the map's bounties in none of them):
 
 | stage | waves | scrap paid | tier | prices | buys about |
 |---|---|---|---|---|---|
-| 1 | 1–20 | ~24,000 | duo, scorch, hail, arc, scatter, wave | 60–300 | 150 turrets |
-| 2 | 21–35 | ~51,000 | swarmer, lancer, salvo, ripple, parallax, cyclone | 900–1,800 | 40 turrets |
-| 3 | 36–50 | ~83,000 | fuse, tsunami, spectre, meltdown, foreshadow | 4,000–12,000 | 11 turrets |
+| 1 | 1–3 | ~11,400 | duo, scorch, hail, arc, scatter, wave | 60–300 | 70 turrets |
+| 2 | 4–6 | ~20,000 | swarmer, lancer, salvo, ripple, parallax, cyclone | 900–1,800 | 16 turrets |
+| 3 | 7–8 | ~43,000 | fuse, tsunami, spectre, meltdown, foreshadow | 4,000–12,000 | 6 turrets |
 
 The stage table (`stageAudit`, on the balance dashboard and the level
 editor) is where this is checked; `check()` complains when a stage buys
@@ -362,7 +391,7 @@ the top of the track is about 1.9 million XP.
 
 ### One script, three families a deploy
 
-**Every map plays the same fifty waves** — `public/levels/campaign.json`,
+**Every map plays the same eight waves** — `public/levels/campaign.json`,
 edited in the admin level editor from any world's card. The script is
 authored in three unit families (ground, ground support, air), and those
 are its three **slots**. When a run deploys, **the die rolls three
@@ -393,10 +422,8 @@ last the clock out; a spent script sends its last wave again, a few enemy
 levels heavier each repeat, until time ends the run. Each map carries
 its own wave script (`public/levels/<id>.json`, edited in the admin level
 editor) — there is no shared blueprint and no family re-casting any more.
-Every shipped map is a hold: Confluence's fifty waves, Maelstrom's fifty
-on the naval front at a six-second gap, Quagmire's forty in the swamp
-against a lighter, tier-2-capped opening. The survive shape is wired and
-waiting for a map that wants it.
+Every shipped map is a hold of the campaign's eight waves. The survive
+shape is wired and waiting for a map that wants it.
 
 **Structures stand anywhere unoccupied, open ground included, and the
 swarm attacks them.** Every unit attack-moves, Mindustry's GroundAI: it
@@ -418,26 +445,38 @@ ground is solid to the body but **passable to the path at a cost**
 (`STRUCTURE_COST`, Mindustry's own 70): the field routes around a wall
 when the way round is cheaper and into it when it is not, and the bodies
 pressed into it shoot it. So a wall across the lane is not a seal, it is
-a fight at the wall. Structures have Mindustry's block health times
-`TOWER_HP_SCALE`; hurt, they grey and smoke like units; at zero they are
-wrecked and gone, their ground open again. Bullets, missiles and shells
-fly (`Sim.shots`) and hit the structure under them; beams, bolts, flames,
-saps, fields and bombs land at once; a crawler is its own bomb.
-Structures carry **ten times** Mindustry's block health (`TOWER_HP_SCALE`)
-and the swarm's damage is Mindustry's own, unscaled (`setUnitDamageScale`
-at 1) — balance is deliberately not done yet, and those two numbers are
-where it will be done. The playtest takes the dial as `--unit-damage`.
-The headless bot builds on open ground, as the player must — hills take
-no turret — and never rebuilds what it loses.
+a fight at the wall. Structures have Mindustry's block health
+(`TOWER_HP_SCALE`, 1); hurt, they grey and smoke like units; at zero they
+are wrecked and gone, their ground open again. Bullets, missiles and
+shells fly (`Sim.shots`) and hit the structure under them; beams, bolts,
+flames, saps, fields and bombs land at once; a crawler is its own bomb.
+Both dials stand at 1 — the turrets' pool (`TOWER_HP_SCALE`) and the
+swarm's bite (`setUnitDamageScale`) — because both sides play Mindustry's
+own numbers now; a balance pass, if one is ever wanted, is done on those
+two and never row by row. The playtest takes the swarm's dial as
+`--unit-damage`. The headless bot builds on open ground, as the player
+must — hills take no turret — and never rebuilds what it loses.
+
+**The swarm builds too.** A map may start with a formation of the
+swarm's own structures (`MapData.enemies`, stamped in the map editor's
+*Enemy structure* palette) — and **they are the player's roster**: a duo
+is a duo, a lancer a lancer, a copper wall a copper wall, whichever side
+stands it, at the same stats and the same art. What says whose it is is
+**a small crux-red flag at the top-left corner of the base**
+(`Renderer.drawEnemyFlag`) and nothing else. The swarm's turret holds on
+the nearest of the player's structures in its range, the core included,
+and fires the stock table; the player's shoot it back; wrecking one pays
+`bountyOf` (half its price) into the bank; the swarm walks around its own
+walls. There is no enemy-only roster any more — Erekir's breach, diffuse
+and titan and the scrap walls are gone, one set of buildings, two teams.
+Placing formations is authoring, not code: stamp them in the editor.
 
 **Every map is checked headless.** `npm run playtest -- --world <id>`
 runs the real sim with an ordinary builder bot at the keyboard (route
 coverage from a dry run, the stage's tier bought round-robin, never a
-sale, never a rebuild) and reports where it gets to. Balance is not
-done: with the swarm at Mindustry's damage and the turrets at ten times
-Mindustry's health, expect the bot to lose every map early. Run it after
-any wave, price, weapon, mutator or unit edit — a map the bot loses is a
-map with a wall in it.
+sale, never a rebuild) and reports where it gets to. Run it after any
+wave, price, weapon, mutator or unit edit — a map the bot loses is a map
+with a wall in it.
 
 ### The core
 
@@ -468,7 +507,7 @@ Every deploy above Nemesis is played under **mutators** — rules that
 change what happens to a wave after it lands. **Nobody picks them.** The
 **difficulty decides the budget and the count**, and that many rules are
 rolled to fit it when you deploy. It is the StarCraft II model, and the
-mode it exists for is endgame resource farming: the same fifty waves, a
+mode it exists for is endgame resource farming: the same eight waves, a
 different set of rules every time.
 
 |  | the tech tree | a mutator |
@@ -524,7 +563,7 @@ one more volley. Any hit restarts that clock, so sustained fire holds a
 shield tower open and looking away for four seconds means paying for the dome
 again.
 Only with the dome down can the body be hurt, and a destroyed shield tower is
-**gone for good**; the timer raises the next elsewhere. From **wave 35** every new shield tower rises as a **mega shield tower**: five times
+**gone for good**; the timer raises the next elsewhere. From **wave 6** every new shield tower rises as a **mega shield tower**: five times
 both pools and a dome sixteen tiles across, wider than most turrets reach
 from one emplacement, so a whole section of the board has to be pointed at
 it rather than whatever happened to be idle. Both pools ride the run's

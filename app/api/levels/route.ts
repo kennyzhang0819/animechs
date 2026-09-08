@@ -20,13 +20,19 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "not the campaign's document" }, { status: 400 });
   if (typeof doc.waveGap !== "number" || !(doc.waveGap >= 0) || doc.waveGap > 3600)
     return NextResponse.json({ error: "bad wave gap" }, { status: 400 });
+  if (doc.grace !== undefined && (typeof doc.grace !== "number" || !(doc.grace >= 0) || doc.grace > 3600))
+    return NextResponse.json({ error: "bad grace" }, { status: 400 });
   if (!Array.isArray(doc.script) || !doc.script.every(isStep))
     return NextResponse.json({ error: "bad script" }, { status: 400 });
   const dir = path.join(process.cwd(), "public", "levels");
   await mkdir(dir, { recursive: true }); // first save creates the folder
   await writeFile(
     path.join(dir, `${doc.id}.json`),
-    JSON.stringify({ id: doc.id, waveGap: doc.waveGap, script: doc.script }, null, 1),
+    JSON.stringify(
+      { id: doc.id, waveGap: doc.waveGap, ...(doc.grace === undefined ? {} : { grace: doc.grace }), script: doc.script },
+      null,
+      1,
+    ),
   );
   await addToIndex(dir, doc.id);
   return NextResponse.json({ ok: true });

@@ -47,14 +47,81 @@ import { writeFileSync } from "node:fs";
 import { clearance, disc, discOffsets, flood, png, rng, widestRoute } from "./geom.mjs";
 
 /**
- * MINDUSTRY'S SIZE. Its editor opens a new map at 200x200 and its Serpulo
- * campaign runs from 110x400 to 512x512; the two references imported here
- * whole, Ground Zero and Cratered Battleground, are 256x256, and that is
- * also every column and row the grid has (COLS, ROWS in constants.ts).
- * Every campaign map is drawn at it.
+ * TWICE MINDUSTRY'S SIZE. Mindustry's editor opens a new map at 200x200
+ * and its Serpulo campaign runs from 110x400 to 512x512; the references
+ * imported here whole, Ground Zero and Cratered Battleground, are 256x256,
+ * and that is the board every spec in this folder was AUTHORED on. The
+ * game is an RTS now, played by expanding outward over twenty-odd
+ * minutes, and a board that size ran out of ground to expand into — so
+ * every map is drawn at twice the width and twice the height (SIZE, which
+ * is also COLS and ROWS in constants.ts), and every spec is scaled onto
+ * it on the way in (scaleSpec): coordinates and radii doubled, and the
+ * routes, links, chokes and rooms opened wider again on top of that
+ * (WIDEN, ROOM_WIDEN), because a corridor a reign can thread is not yet a
+ * corridor two armies can fight in.
  */
-export const SIZE = 256;
+export const SIZE = 512;
+/** how many grid cells one authored cell is — the specs stay at 256 */
+export const SCALE = 2;
+/** the routes, links and chokes, wider again than the doubling gives */
+export const WIDEN = 1.5;
+/** the clearings' radii, a quarter wider again */
+export const ROOM_WIDEN = 1.25;
 const W = SIZE, H = SIZE, N = W * H;
+
+/**
+ * A SPEC ON THE BIG BOARD. Every number that is a place or a length on
+ * the authored 256 board becomes one on the 512 board: positions and
+ * radii by SCALE, brush widths and chokes by SCALE x WIDEN, room radii by
+ * SCALE x ROOM_WIDEN, the noise scales by SCALE so a rock lump is as many
+ * cells across as it was in proportion, and the bias closures — a lake's
+ * well, a sea along an edge — are called at the authored coordinates.
+ * Counts (holes, lumps, ruins) grow with the area they are dropped into.
+ * Idempotent on a spec that carries `scaled`, so run() may hand a scaled
+ * spec to build(), check() and preview() alike.
+ */
+export function scaleSpec(spec) {
+  if (spec.scaled) return spec;
+  const k = SCALE;
+  const pt = (o) => ({ ...o, x: o.x * k, y: o.y * k, ...(o.r != null ? { r: o.r * k } : {}) });
+  const fn = (f) => (f ? (x, y) => f(x / k, y / k) : f);
+  // a ground brush is widened; a WATER brush only doubles — a river is a
+  // road to the hulls and a wall to everyone else, and one half as wide
+  // again sends the A* for the ford the long way round it
+  const width = (w, layer) => {
+    const f = (layer ?? "ground") === "ground" ? k * WIDEN : k;
+    return Array.isArray(w) ? w.map((v) => v * f) : w * f;
+  };
+  const out = {
+    ...spec,
+    scaled: true,
+    rock: { ...spec.rock, scale: spec.rock.scale * k, warp: spec.rock.warp * k, bias: fn(spec.rock.bias) },
+    water: spec.water && {
+      ...spec.water,
+      scale: spec.water.scale * k,
+      ...(spec.water.warp != null ? { warp: spec.water.warp * k } : {}),
+      bias: fn(spec.water.bias),
+    },
+    floors: { ...spec.floors, scale: (spec.floors.scale ?? 48) * k, warp: (spec.floors.warp ?? 12) * k },
+    beach: spec.beach && { ...spec.beach, depth: spec.beach.depth * k },
+    flats: spec.flats && { ...spec.flats, clear: spec.flats.clear * k },
+    forest: spec.forest && { ...spec.forest, depth: spec.forest.depth * k },
+    rooms: spec.rooms.map((r) => ({ ...pt(r), r: r.r * k * ROOM_WIDEN })),
+    core: { ...pt(spec.core), r: (spec.core.r ?? 11) * k },
+    spawns: spec.spawns.map(pt),
+    routes: spec.routes.map((r) => ({ ...r, width: width(r.width, r.layer) })),
+    links: (spec.links ?? []).map((l) => ({ ...l, width: width(l.width, l.layer) })),
+    chokes: (spec.chokes ?? []).map((c) => ({ ...pt(c), w: c.w * k * WIDEN, reach: c.reach * k })),
+    // the funnel disc has to wall a gate that is WIDEN wider, so its
+    // radius grows by the same factor as the choke it sits on
+    funnel: spec.funnel && { ...pt(spec.funnel), r: spec.funnel.r * k * WIDEN },
+    holes: spec.holes == null ? spec.holes : Math.round(spec.holes * k),
+    lumps: spec.lumps == null ? spec.lumps : Math.round(spec.lumps * k * k * 0.75),
+    ruins: spec.ruins == null ? spec.ruins : Math.round(spec.ruins * k),
+    coreWaterReach: spec.coreWaterReach == null ? spec.coreWaterReach : spec.coreWaterReach * k,
+  };
+  return out;
+}
 
 // The atlas indices this paints with — COPIED from game/atlas.ts, as every
 // generator does: the generator is plain node and the atlas reaches for a
@@ -133,9 +200,15 @@ const CORE = 5; // the core's edge, in cells (BASE.size)
  */
 export const GAP_GROUND = 5;
 export const GAP_WATER = 11;
-/** the narrowest a route from a drop zone may be, checked as the widest way through */
-const ROUTE_MIN_GROUND = 7;
-const ROUTE_MIN_WATER = 11;
+/**
+ * The narrowest a route from a drop zone may be, checked as the widest
+ * way through. On the 256 board a ground brush of 8 became 7 after the
+ * smoothing shaved one; the brushes are three times that now (SCALE x
+ * WIDEN), so the floor is a real opening — a lane a formation fights in
+ * — and a water route wide enough for two hulls abreast.
+ */
+const ROUTE_MIN_GROUND = 12;
+const ROUTE_MIN_WATER = 16;
 
 // ---------- noise ----------
 
@@ -389,7 +462,8 @@ export function build(spec) {
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
       const e = edgeDist(x, y);
-      const rim = e < 14 ? ((14 - e) / 14) ** 2 * 0.6 : 0;
+      const rimW = 14 * SCALE;
+      const rim = e < rimW ? ((rimW - e) / rimW) ** 2 * 0.6 : 0;
       kind[y * W + x] = rockN(x, y) + rim + rockBias(x, y) > spec.rock.threshold ? WALL : OPEN;
     }
 
@@ -449,17 +523,17 @@ export function build(spec) {
   const carve = (a, b, width, layer = "ground") => {
     const cost = layer === "ground"
       ? (i) => (kind[i] === OPEN ? 1 : kind[i] === SHALLOW ? 1.5 : kind[i] === WALL ? 9 : 40)
-          + (edgeDist(i % W, (i / W) | 0) < 12 ? 30 : 0) + wanderN((i % W) / 9, ((i / W) | 0) / 9) * 4
+          + (edgeDist(i % W, (i / W) | 0) < 12 * SCALE ? 30 : 0) + wanderN((i % W) / (9 * SCALE), ((i / W) | 0) / (9 * SCALE)) * 4
       // A RIVER MEANDERS. Land costs the same everywhere to a channel, so
       // a small wander term gave a ruled canal; a heavy one makes the
       // channel hunt the noise's low ground the way water does
       : (i) => (kind[i] === DEEP ? 1 : kind[i] === SHALLOW ? 1.2 : 25)
-          + (edgeDist(i % W, (i / W) | 0) < 10 ? 30 : 0) + wanderN((i % W) / 14, ((i / W) | 0) / 14) * 70;
+          + (edgeDist(i % W, (i / W) | 0) < 10 * SCALE ? 30 : 0) + wanderN((i % W) / (14 * SCALE), ((i / W) | 0) / (14 * SCALE)) * 70;
     const path = astar(Math.round(a.x), Math.round(a.y), Math.round(b.x), Math.round(b.y), cost);
     if (!path) throw new Error(`no route from (${a.x},${a.y}) to (${b.x},${b.y})`);
     const [w0, w1] = width;
     path.forEach(([x, y], k) => {
-      const t = brushN(k / 22, layer === "ground" ? 0.5 : 7.5);
+      const t = brushN(k / (22 * SCALE), layer === "ground" ? 0.5 : 7.5);
       const r = (w0 + (w1 - w0) * Math.min(1, Math.max(0, (t - 0.3) / 0.4))) / 2;
       centres.push([x, y]);
       disc(W, H, x + 0.5, y + 0.5, r, (i) => {
@@ -496,7 +570,7 @@ export function build(spec) {
   const gateAng = f ? Math.atan2(f.y - core.y, f.x - core.x) : 0;
   const offLine = (x, y) => Math.abs(-(x + 0.5 - core.x) * Math.sin(gateAng) + (y + 0.5 - core.y) * Math.cos(gateAng));
   for (const c of spec.chokes ?? []) {
-    const straight = f && Math.hypot(c.x - f.x, c.y - f.y) < 4;
+    const straight = f && Math.hypot(c.x - f.x, c.y - f.y) < 4 * SCALE;
     const near = centres.filter(([x, y]) => Math.hypot(x - c.x, y - c.y) <= c.reach + 4);
     disc(W, H, c.x, c.y, c.reach, (i, x, y) => {
       // the straight strip is CARVED as well as kept: the road under it
@@ -532,12 +606,12 @@ export function build(spec) {
   const bayN = makeNoise(rnd, 2);
   const bayT = spec.bays ?? 0.56;
   {
-    const near = dilate(walkMaskOf(kind), 3.5);
+    const near = dilate(walkMaskOf(kind), 3.5 * SCALE);
     for (let y = 2; y < H - 2; y++)
       for (let x = 2; x < W - 2; x++) {
         const i = y * W + x;
         if (kind[i] !== WALL || !near[i] || edgeDist(x, y) < 6) continue;
-        if (bayN(x / 6.5, y / 6.5) > bayT) kind[i] = OPEN;
+        if (bayN(x / (6.5 * SCALE), y / (6.5 * SCALE)) > bayT) kind[i] = OPEN;
       }
   }
   for (let pass = 0; pass < 2; pass++) {
@@ -564,13 +638,16 @@ export function build(spec) {
     const clear = clearance(W, H, isWalk);
     for (let tries = 0; lumps < spec.lumps && tries < spec.lumps * 60; tries++) {
       const x = (rnd() * W) | 0, y = (rnd() * H) | 0, i = y * W + x;
-      // a lump leaves a GAP_GROUND + 3 gap on every side of itself: the
-      // clearance is the distance to the nearest rock, so the lump's
-      // radius is what is left of it after that gap
-      if (!isWalk(i) || clear[i] < GAP_GROUND + 3 + 1.5) continue;
-      if (Math.hypot(x - core.x, y - core.y) < 20) continue;
+      // a lump leaves a route's width (ROUTE_MIN_GROUND) and a little on
+      // every side of itself, so a lump in a lane never pinches the lane
+      // under the width the checks ask for: the clearance is the distance
+      // to the nearest rock, so the lump's radius is what is left of it
+      // after that gap
+      const lumpGap = ROUTE_MIN_GROUND + 2;
+      if (!isWalk(i) || clear[i] < lumpGap + 1.5) continue;
+      if (Math.hypot(x - core.x, y - core.y) < 20 * SCALE) continue;
       if (spec.spawns.some((z) => Math.hypot(x - z.x, y - z.y) < z.r + 8)) continue;
-      const r = Math.min(4, clear[i] - GAP_GROUND - 3), rx = r * (0.7 + rnd() * 0.6), ry = r * (0.7 + rnd() * 0.6);
+      const r = Math.min(4 * SCALE, clear[i] - lumpGap), rx = r * (0.7 + rnd() * 0.6), ry = r * (0.7 + rnd() * 0.6);
       disc(W, H, x + 0.5, y + 0.5, Math.max(rx, ry) + 1, (j, px, py) => {
         const u = (px + 0.5 - x - 0.5) / rx, v = (py + 0.5 - y - 0.5) / ry;
         if (u * u + v * v <= 1 + (rnd() - 0.5) * 0.5 && kind[j] === OPEN) kind[j] = WALL;
@@ -587,8 +664,8 @@ export function build(spec) {
   //     it is how Mindustry's own cores sit — in a pocket with a mouth.
   //     Water in the ring deepens rather than walls, so a bay may lap it
   if (f) {
-    const gateW = (spec.chokes?.find((c) => Math.hypot(c.x - f.x, c.y - f.y) < 4)?.w ?? 8) / 2;
-    const R = coreR + 7;
+    const gateW = (spec.chokes?.find((c) => Math.hypot(c.x - f.x, c.y - f.y) < 4 * SCALE)?.w ?? 8 * SCALE * WIDEN) / 2;
+    const R = coreR + 7 * SCALE;
     disc(W, H, core.x, core.y, R, (i, x, y) => {
       const dx = x + 0.5 - core.x, dy = y + 0.5 - core.y;
       const d = Math.hypot(dx, dy);
@@ -708,8 +785,8 @@ export function build(spec) {
     const done = [];
     for (const [x, y] of cand) {
       if (holes >= spec.holes) break;
-      if (done.some(([px, py]) => Math.hypot(px - x, py - y) < 24)) continue;
-      if (Math.hypot(x - core.x, y - core.y) < 24) continue;
+      if (done.some(([px, py]) => Math.hypot(px - x, py - y) < 24 * SCALE)) continue;
+      if (Math.hypot(x - core.x, y - core.y) < 24 * SCALE) continue;
       const saved = Uint8Array.from(kind);
       disc(W, H, x + 0.5, y + 0.5, GAP_GROUND / 2 + 0.6, (i) => { if (kind[i] === WALL) kind[i] = OPEN; });
       const after = walkFrom();
@@ -773,7 +850,7 @@ export function build(spec) {
   //     noise-shaped stands, never on a cell a walker uses
   const pines = [];
   if (spec.forest) {
-    const fN = makeWarped(rnd, 26, 8, 2);
+    const fN = makeWarped(rnd, 26 * SCALE, 8 * SCALE, 2);
     const on = new Set(spec.forest.on);
     for (let y = 1; y < H - 1; y++)
       for (let x = 1; x < W - 1; x++) {
@@ -793,15 +870,15 @@ export function build(spec) {
   if (spec.ruins) {
     const clear = clearance(W, H, (i) => !isRock(i) && !isWater(i));
     for (let tries = 0; ruins.length < spec.ruins && tries < 400; tries++) {
-      const rw = 5 + ((rnd() * 6) | 0), rh = 5 + ((rnd() * 6) | 0);
+      const rw = 5 * SCALE + ((rnd() * 6 * SCALE) | 0), rh = 5 * SCALE + ((rnd() * 6 * SCALE) | 0);
       const x0 = 12 + ((rnd() * (W - 24 - rw)) | 0), y0 = 12 + ((rnd() * (H - 24 - rh)) | 0);
       const cx = x0 + rw / 2, cy = y0 + rh / 2;
       // a ruin is painted after the opening, so it keeps its own gap: a
       // route's width of open ground round the whole rectangle
       if (clear[Math.round(cy) * W + Math.round(cx)] < Math.hypot(rw, rh) / 2 + ROUTE_MIN_GROUND) continue;
-      if (Math.hypot(cx - core.x, cy - core.y) < 24) continue;
+      if (Math.hypot(cx - core.x, cy - core.y) < 24 * SCALE) continue;
       if (spec.spawns.some((z) => Math.hypot(cx - z.x, cy - z.y) < z.r + 14)) continue;
-      if (ruins.some((r) => Math.abs(r.cx - cx) < 30 && Math.abs(r.cy - cy) < 30)) continue;
+      if (ruins.some((r) => Math.abs(r.cx - cx) < 30 * SCALE && Math.abs(r.cy - cy) < 30 * SCALE)) continue;
       for (let y = y0; y < y0 + rh; y++)
         for (let x = x0; x < x0 + rw; x++) {
           const i = y * W + x;
@@ -822,7 +899,7 @@ export function build(spec) {
     for (let x = 1; x < W - 1; x++) {
       const i = y * W + x;
       if (blocked[i] || isWater(i) || nearZone(x, y)) continue;
-      if (Math.abs(x - core.x) < 7 && Math.abs(y - core.y) < 7) continue;
+      if (Math.abs(x - core.x) < 7 * SCALE && Math.abs(y - core.y) < 7 * SCALE) continue;
       const set = CLUTTER[floor[i] - (floor[i] % 3)];
       if (!set) continue;
       const p = (dRock[i] <= 3 ? 0.028 : 0.005) * (spec.clutter ?? 1);
@@ -943,8 +1020,8 @@ export function check(spec, m) {
   const famCount = new Map();
   for (let i = 0; i < N; i++) { const g = floor[i] - (floor[i] % 3); famCount.set(g, (famCount.get(g) ?? 0) + 1); }
   console.log(`  -- floors: ${[...famCount].sort((a, b) => b[1] - a[1]).map(([g, c]) => `${g} ${pct(c)}`).join(", ")}`);
-  say(open / N >= 0.15 && open / N <= 0.45, `open ground between 15% and 45%: ${pct(open)}`);
-  say(rock > 8000, `rock for towers: ${rock}`);
+  say(open / N >= 0.15 && open / N <= 0.5, `open ground between 15% and 50%: ${pct(open)}`);
+  say(rock > 8000 * SCALE * SCALE, `rock for towers: ${rock}`);
   let big = 0;
   for (let y = 0; y < H - 3; y++)
     for (let x = 0; x < W - 3; x++) {
@@ -953,7 +1030,7 @@ export function check(spec, m) {
         for (let dx = 0; dx < 4; dx++) { const i = (y + dy) * W + x + dx; if (!blocked[i] || wall[i] === WALL_DEEP || wall[i] === WALL_PINE) { ok = false; break; } }
       if (ok) big++;
     }
-  say(big > 200, `4x4 turret footprints: ${big}`);
+  say(big > 200 * SCALE * SCALE, `4x4 turret footprints: ${big}`);
   return fails;
 }
 
@@ -976,7 +1053,7 @@ const WALL_TONE = {
 };
 const PINE_TONE = { 0: [0x5a, 0x9c, 0x4c], 1: [0x8f, 0x5a, 0xa8], 2: [0xe4, 0xeb, 0xf2] };
 
-export function preview(spec, m, SC = 3) {
+export function preview(spec, m, SC = 2) {
   const { floor, wall, blocked, base } = m;
   const propAt = new Map();
   for (const p of m.decor) propAt.set(Math.floor(p.y / CELL) * W + Math.floor(p.x / CELL), 1);
@@ -1006,9 +1083,10 @@ export function preview(spec, m, SC = 3) {
 
 // ---------- run ----------
 
-export function run(spec, argv = process.argv.slice(2)) {
+export function run(authored, argv = process.argv.slice(2)) {
+  const spec = scaleSpec(authored);
   const out = argv[0] ?? new URL(`../../public/maps/${spec.id}.json`, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
-  console.log(`${spec.name} (${spec.id}), seed ${spec.seed.toString(16)}`);
+  console.log(`${spec.name} (${spec.id}), seed ${spec.seed.toString(16)}, ${W}x${H} (authored at ${W / SCALE}, x${SCALE}, openings x${WIDEN})`);
   const m = build(spec);
   const fails = check(spec, m);
   if (argv[1]) { writeFileSync(argv[1], preview(spec, m)); console.log(`  preview -> ${argv[1]}`); }

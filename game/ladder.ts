@@ -31,8 +31,8 @@ import { MUT_COUNT_MAX, MUT_FIRST_TIER, mutationBudget, mutationPicks } from "./
 /**
  * THE LADDER — ONE CLIMB PER WORLD, TEN RUNGS, FOUR NAMES, ONE SCRIPT.
  *
- * EVERY RUNG PLAYS THE WHOLE AUTHORED SCRIPT — all fifty waves, wave 1 to
- * wave 50, the same fifty every time, and EVERY BODY AT THE SAME HEALTH.
+ * EVERY RUNG PLAYS THE WHOLE AUTHORED SCRIPT — all eight waves, wave 1 to
+ * wave 8, the same eight every time, and EVERY BODY AT THE SAME HEALTH.
  * What changes is HOW MANY come and WHAT RULES they come under:
  *
  *   Incursion     a quarter of every wave's count       no rules
@@ -715,12 +715,14 @@ export function stageAudit(spec: LevelSpec = WORLD): StageRow[] {
  * HOW MANY OF ITS TIER'S TURRETS A STAGE SHOULD BUY, at the mean price:
  * below the floor the tier is priced out of its own stage, above the
  * ceiling it is so cheap the stage before could have bought it. Tier 1
- * is a board, tier 2 a line, tier 3 a handful.
+ * is a line of dozens, tier 2 a dozen, tier 3 a handful — RTS numbers: a
+ * wave is a few dozen bodies and a turret stands at Mindustry's health,
+ * so a board is tens of emplacements, not hundreds.
  */
 export const STAGE_BOARDS: Readonly<Record<TowerTier, { min: number; max: number }>> = {
-  1: { min: 800, max: 2500 },
-  2: { min: 200, max: 800 },
-  3: { min: 50, max: 250 },
+  1: { min: 40, max: 200 },
+  2: { min: 8, max: 40 },
+  3: { min: 3, max: 15 },
 };
 
 /** one rung, weighed — the row the editor's ladder check renders */
@@ -752,7 +754,7 @@ export interface AuditRow {
 
 /**
  * WALK THE LADDER AND REPORT WHAT EACH RUNG ASKS FOR AND PAYS. Every row
- * sends the same fifty waves at the same health, so the only columns that
+ * sends the same eight waves at the same health, so the only columns that
  * move are the XP ones — which is the ladder saying what it is.
  */
 export function audit(spec: LevelSpec = WORLD): AuditRow[] {

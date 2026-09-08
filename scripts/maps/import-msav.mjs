@@ -26,8 +26,8 @@ import { seal, placeCore } from "./seal.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const RAW = "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets/maps/serpulo";
-const COLS = 256;
-const ROWS = 256;
+const COLS = 512;
+const ROWS = 512;
 const CELL = 20;
 const WALL_PINE = 4;
 const WALL_DEEP = 7;

@@ -55,7 +55,7 @@ export const VISION_MIN_CELLS = 3;
  * What the core sees, in cells — far more than any turret. The core is
  * the eye of the position: a run opens with the ground the player will
  * build on already lit, out to about the width of the starting view,
- * and the rest of the map (256 cells across) still dark.
+ * and the rest of the map (512 cells across) still dark.
  */
 export const CORE_VISION_CELLS = 34;
 /** how dark seen-but-unwatched ground is drawn: black at this alpha */

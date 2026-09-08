@@ -1,14 +1,30 @@
 import { FxKind, type RGB } from "./types";
 
-export const COLS = 256;
-export const ROWS = 256;
+/**
+ * THE GRID: 512 cells square. It was 256 — Mindustry's Ground Zero — while
+ * the game was a tower defence played on one lane; an RTS run expands
+ * outward over 18 to 26 minutes and wants ground to expand INTO, so every
+ * map is drawn at twice the width and twice the height (scripts/maps/
+ * mindustry.mjs SCALE), and the openings are wider again on top of that.
+ * A document narrower than this lands in the top-left of the grid with
+ * rock around it (maps.ts terrainFromMap) and the camera stops at its edge.
+ */
+export const COLS = 512;
+export const ROWS = 512;
 export const CELL = 20; // one Mindustry ground tile
 export const W = COLS * CELL;
 export const H = ROWS * CELL;
 export const NCELLS = COLS * ROWS;
 export const INF = 1e9;
 
-export const MAX_UNITS = 22000;
+/**
+ * THE MOST BODIES THE FIELD HOLDS AT ONCE. It was 22,000 for the swarm;
+ * a wave is a few dozen now and eight of them together are a few hundred,
+ * so this is headroom for a mutator that multiplies the field (Mitosis)
+ * and nothing more — and every per-unit array and the renderer's dynamic
+ * batch are sized by it, so it is memory the doubled map wants back.
+ */
+export const MAX_UNITS = 6000;
 // Dagger at true Mindustry scale: 1-tile hitbox, art overhanging 1.5x
 // (48px art on a 32px tile)
 export const UR = 10;
@@ -431,9 +447,6 @@ export interface TowerStats {
    * record stays exhaustive; nothing ever fires it.
    */
   wall?: true;
-  /** what wrecking one of the SWARM's buildings pays the player, in scrap
-   *  (ENEMY_STRUCTS only; Sim.damageTower) */
-  bounty?: number;
 }
 
 /** the bullet a wall carries: nothing, and it never leaves */
@@ -761,7 +774,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     targetGround: true,
     bullet: {
       speed: 0,
-      damage: 20,
+      damage: 12, // LightningBulletType damage upstream (master)
       navalMultiplier: NAVAL_BONUS,
       // Fx.lightning's own 10 ticks: the bolt is instant, and this is only
       // how long the drawn arc lingers
@@ -1036,7 +1049,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     inaccuracy: (10 * Math.PI) / 180,
     // turret defaults: 8-degree shoot cone, 5 deg/tick turn rate
     shootCone: (8 * Math.PI) / 180,
-    rotateSpeed: ((5 * Math.PI) / 180) * TICK,
+    rotateSpeed: ((4 * Math.PI) / 180) * TICK,
     targetAir: true,
     targetGround: true,
     shootY: 4.5 * MU,
@@ -1096,7 +1109,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     spread: 0,
     inaccuracy: (10 * Math.PI) / 180,
     shootCone: (30 * Math.PI) / 180,
-    rotateSpeed: ((10 * Math.PI) / 180) * TICK,
+    rotateSpeed: ((7 * Math.PI) / 180) * TICK,
     targetAir: true,
     targetGround: true,
     shootY: 10 * MU,
@@ -1161,13 +1174,12 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.white,
     },
   },
-  // Spectre, from mindustry/content/Blocks.java with thorium ammo
-  // (BasicBulletType(8, 80)) — with the shell up-gunned 30% over stock,
-  // 80 -> 104, alongside meltdown and foreshadow: the phase tier is priced
-  // as the endgame and playtested under it. A shell every seven ticks,
-  // alternating twin barrels 8 units apart (ShootAlternate) — 891 damage a
-  // second, the highest sustained figure in the game and the whole reason
-  // it exists.
+  // Spectre, 1:1 from mindustry/content/Blocks.java with thorium ammo
+  // (BasicBulletType(8, 80)). A shell every seven ticks, alternating twin
+  // barrels 8 units apart (ShootAlternate) — 686 damage a second, the
+  // highest sustained figure in the game and the whole reason it exists.
+  // (The phase tier used to be up-gunned 30% over stock — 104, 101 and
+  // 1755 — for the swarm; the RTS plays the stock numbers.)
   //
   // pierceCap 2 makes every shell worth two bodies rather than one, and
   // knockback 0.7 shoves what survives back down the lane. Nothing about
@@ -1183,7 +1195,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     spread: 0,
     inaccuracy: (3 * Math.PI) / 180,
     shootCone: (24 * Math.PI) / 180,
-    rotateSpeed: ((5 * Math.PI) / 180) * TICK, // BaseTurret default
+    rotateSpeed: ((4 * Math.PI) / 180) * TICK,
     targetAir: true,
     targetGround: true,
     // Turret's own shootY default, size * tilesize / 2 in world units. The
@@ -1193,7 +1205,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     barrels: { count: 2, spread: 8 * MU },
     bullet: {
       speed: 8 * TICK * MU,
-      damage: 104, // Mindustry's 80, +30% (see the note above)
+      damage: 80,
       lifetime: (260 + 9 + 10) / 8 / TICK, // limitRange() default margin 9
       splash: 0,
       splashRadius: 0,
@@ -1222,11 +1234,10 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   },
   // Meltdown, from mindustry/content/Blocks.java: a LaserTurret, which
   // is a turret that does not fire shots at all. It lights a
-  // ContinuousLaserBulletType and HOLDS it — Mindustry's 78 raised 30% to
-  // 101 (the phase-tier up-gun, see spectre) to everything under the beam
-  // every five ticks, for 230 ticks, and only then does the 90-tick reload
-  // start running. 1,212 damage a second while it burns, against nothing
-  // at all while it cools: a 72% duty cycle.
+  // ContinuousLaserBulletType and HOLDS it — Mindustry's 78 to everything
+  // under the beam every five ticks, for 230 ticks, and only then does the
+  // 90-tick reload start running. 936 damage a second while it burns,
+  // against nothing at all while it cools: a 72% duty cycle.
   //
   // firingMoveFract halves the turret's turn rate for as long as the beam
   // is lit, so meltdown tracks a crossing target badly and a queue walking
@@ -1243,13 +1254,13 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     spread: 0,
     inaccuracy: 0,
     shootCone: (40 * Math.PI) / 180,
-    rotateSpeed: ((5 * Math.PI) / 180) * TICK, // BaseTurret default
+    rotateSpeed: ((1.5 * Math.PI) / 180) * TICK,
     targetAir: true,
     targetGround: true,
     shootY: 4 * 4 * MU, // Turret's own default, as spectre's
     bullet: {
       speed: 0,
-      damage: 101, // per damageInterval, NOT per second — stock 78, +30%
+      damage: 78, // per damageInterval, NOT per second
       navalMultiplier: NAVAL_BONUS,
       lifetime: 0, // the beam is turret state, not a projectile
       splash: 0,
@@ -1273,14 +1284,13 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   },
   // Foreshadow, from mindustry/content/Blocks.java with surge ammo (a
   // RailBulletType): 500 units of range — the only turret that outreaches
-  // the map's own lanes — and one 1755-damage shot every 200 ticks
-  // (Mindustry's 1350, +30%: the phase-tier up-gun, see spectre).
+  // the map's own lanes — and one 1350-damage shot every 200 ticks.
   //
   // THE DAMAGE IS A BUDGET, NOT A NUMBER. The rail is an instant line, and
-  // every body it punches through takes whatever is LEFT of the 1755 and
+  // every body it punches through takes whatever is LEFT of the 1350 and
   // then subtracts its own full health from it (pierceDamageFactor 1). So
-  // one shot deletes a queue until 1755 health has gone by and stops dead
-  // there — eleven daggers, or nearly two fortresses. It kills a health
+  // one shot deletes a queue until 1350 health has gone by and stops dead
+  // there — nine daggers, or a fortress and a half. It kills a health
   // POOL, which is why it targets the STRONGEST thing in range rather than
   // the nearest: spending the reload on a stray crawler is the one way to
   // waste it.
@@ -1294,15 +1304,15 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     shotDelay: 0,
     spread: 0,
     inaccuracy: 0,
-    shootCone: (2 * Math.PI) / 180, // it commits: two degrees, and 2 deg/tick
-    rotateSpeed: ((2 * Math.PI) / 180) * TICK,
+    shootCone: (2 * Math.PI) / 180, // it commits: two degrees, and 1.5 deg/tick
+    rotateSpeed: ((1.5 * Math.PI) / 180) * TICK,
     targetAir: true,
     targetGround: true,
     shootY: 4 * 4 * MU, // Turret's own default, as spectre's
     sort: "strongest",
     bullet: {
       speed: 0,
-      damage: 1755, // Mindustry's 1350, +30% (see the note above)
+      damage: 1350,
       lifetime: 1 / TICK, // RailBulletType's own: the damage is instant
       splash: 0,
       splashRadius: 0,
@@ -1400,13 +1410,10 @@ export const targetingLine = (s: TowerStats): string =>
 /**
  * TOWER HEALTH — every structure has a pool, and A STRUCTURE AT ZERO IS
  * WRECKED: gone from the board, its ground open to the swarm again
- * (Sim.damageTower). Today only a rule that says so hurts one (the
- * Volatile mutator's blast). ENEMY ATTACKS ARE COMING: every unit will
- * attack-move — walk at the base and hit whatever stands in the way — and
- * this pool is the thing they will be hitting, so the numbers below are
- * about to matter on every run rather than on one roll.
+ * (Sim.damageTower). Every unit attack-moves — walks at the core and hits
+ * whatever stands in the way — and this pool is what they hit.
  *
- * THE POOL IS MINDUSTRY'S OWN BLOCK HEALTH, TIMES ONE DIAL. Each turret's
+ * THE POOL IS MINDUSTRY'S OWN BLOCK HEALTH, UNSCALED. Each turret's
  * `health` in TOWERS is the upstream number, read out of Blocks.java and
  * Block.init: four of them are authored outright (duo 250, hail 260, arc
  * 260, scorch 400) and the rest are `scaledHealth * size^2` — the
@@ -1419,169 +1426,24 @@ export const targetingLine = (s: TowerStats): string =>
  *   ripple 1170   cyclone 1305   fuse 1980   tsunami 2250
  *   foreshadow 2400   spectre 2560   meltdown 3200
  *
- * THE DIAL IS WHY THEY ARE HIGHER THAN UPSTREAM. In Mindustry a turret
- * stands behind walls and is not meant to take fire; here the turret IS
- * the wall — it stands on open ground in the swarm's path if the player
- * puts it there, and the swarm shoots it with Mindustry's own guns
- * (weapons.ts) — so every pool is FOUR TIMES the upstream block health: a
- * duo takes 1,000, a meltdown 12,800. It was ten before the walls came;
- * now that there is a structure whose job is to be hit (WALL_HP_SCALE),
- * a turret is back to being a gun that wants something in front of it.
- * Balance is not done yet and these are the numbers it will be done
- * with, alongside the swarm's dial (setUnitDamageScale).
+ * THE DIAL IS 1. The game is an RTS of balanced numbers now — a wave is
+ * dozens of bodies, not thousands — so a turret takes exactly the fire
+ * Mindustry's does and stands exactly as long. The dial stays as the one
+ * knob a balance pass would turn (it was 10, then 4, while the swarm was
+ * a swarm), alongside the units' (setUnitDamageScale in weapons.ts).
  */
-export const TOWER_HP_SCALE = 4;
+export const TOWER_HP_SCALE = 1;
 /**
- * THE WALLS' DIAL, and it is higher than the turrets' on purpose. A wall
- * has one job — standing in the lane being chewed — and the swarm here is
- * thousands of bodies where Mindustry sends dozens, so a wall at
- * Mindustry's own numbers would be gone before the second wave arrived.
- * At twelve, a copper wall (320 upstream) holds 3,840, a titanium wall
- * 5,280 and a thorium wall 9,600: a thorium wall outlasts a spectre
- * (2,560 x 4 = 10,240) tile for tile by a wide margin, which is the
- * whole reason to build one in front of it.
+ * THE WALLS' DIAL, also 1: a copper wall holds Mindustry's 320, a
+ * titanium wall 440, a thorium wall 800, and the large walls four times
+ * each. A wall's job is still standing in the lane being chewed; with the
+ * swarm at Mindustry's size it does that at Mindustry's numbers.
  */
-export const WALL_HP_SCALE = 12;
+export const WALL_HP_SCALE = 1;
 /** a structure's full pool — Mindustry's health for the block, times its dial */
-/**
- * THE SWARM'S ROSTER (types.ts ENEMY_KINDS): Erekir's guns and the scrap
- * walls of Mindustry's enemy bases, stood up by a map's formation and
- * never by the player. Numbers are Mindustry's where a turret has them
- * (Blocks.java, Erekir), scaled onto this game's tables the way the
- * player's are; a wall is a wall (wallStats).
- */
-export const ENEMY_STRUCTS: Record<import("./types").EnemyKind, TowerStats> = {
-  // Breach: the opening Erekir gun — one heavy round every 40 ticks
-  breach: {
-    name: "Breach",
-    size: 2,
-    health: 1300,
-    range: 190 * MU,
-    reload: 40 / TICK,
-    shots: 1,
-    shotDelay: 0,
-    spread: 0,
-    inaccuracy: (2 * Math.PI) / 180,
-    shootCone: (15 * Math.PI) / 180,
-    rotateSpeed: ((8 * Math.PI) / 180) * TICK,
-    targetAir: true,
-    targetGround: true,
-    bounty: 60,
-    bullet: {
-      speed: 5 * TICK * MU,
-      damage: 26,
-      lifetime: (190 + 10) / 5 / TICK,
-      splash: 0,
-      splashRadius: 0,
-      collidesAir: true,
-      collidesGround: true,
-      sprite: {
-        region: "bullet",
-        across: 8 * MU,
-        along: 12 * MU,
-        shrinkX: 0,
-        shrinkY: 0.5,
-        back: PAL.bulletYellowBack,
-        front: PAL.bulletYellow,
-      },
-      shootFx: FxKind.ShootBig,
-      smokeFx: FxKind.SmokeSmall,
-      hitFx: FxKind.BulletHit,
-      despawnFx: FxKind.BulletHit,
-      fxColor: PAL.bulletYellowBack,
-    },
-  },
-  // Diffuse: Erekir's shotgun — a five-round fan every half second
-  diffuse: {
-    name: "Diffuse",
-    size: 3,
-    health: 2100,
-    range: 150 * MU,
-    reload: 30 / TICK,
-    shots: 5,
-    shotDelay: 0,
-    spread: (5 * Math.PI) / 180,
-    inaccuracy: (4 * Math.PI) / 180,
-    shootCone: (20 * Math.PI) / 180,
-    rotateSpeed: ((6 * Math.PI) / 180) * TICK,
-    targetAir: true,
-    targetGround: true,
-    bounty: 120,
-    bullet: {
-      speed: 4 * TICK * MU,
-      damage: 12,
-      lifetime: (150 + 10) / 4 / TICK,
-      splash: 0,
-      splashRadius: 0,
-      collidesAir: true,
-      collidesGround: true,
-      sprite: {
-        region: "bullet",
-        across: 6 * MU,
-        along: 9 * MU,
-        shrinkX: 0,
-        shrinkY: 0.5,
-        back: PAL.bulletYellowBack,
-        front: PAL.bulletYellow,
-      },
-      shootFx: FxKind.ShootBig,
-      smokeFx: FxKind.SmokeSmall,
-      hitFx: FxKind.BulletHit,
-      despawnFx: FxKind.BulletHit,
-      fxColor: PAL.bulletYellowBack,
-    },
-  },
-  // Titan: Erekir's artillery — a slow heavy shell that bursts on the ground
-  titan: {
-    name: "Titan",
-    size: 4,
-    health: 3400,
-    range: 300 * MU,
-    reload: 90 / TICK,
-    shots: 1,
-    shotDelay: 0,
-    spread: 0,
-    inaccuracy: (1 * Math.PI) / 180,
-    shootCone: (10 * Math.PI) / 180,
-    rotateSpeed: ((4 * Math.PI) / 180) * TICK,
-    targetAir: false,
-    targetGround: true,
-    bounty: 220,
-    bullet: {
-      speed: 3 * TICK * MU,
-      damage: 30,
-      lifetime: (300 + 10) / 3 / TICK,
-      splash: 110,
-      splashRadius: 34 * MU,
-      collidesAir: false,
-      collidesGround: true,
-      artillery: true,
-      sprite: {
-        region: "shell",
-        across: 14 * MU,
-        along: 14 * MU,
-        shrinkX: 0.15,
-        shrinkY: 0.5,
-        slopeShrink: true,
-        back: PAL.graphiteAmmoBack,
-        front: PAL.graphiteAmmoFront,
-      },
-      trail: { size: 5 * MU, mult: 1 },
-      shootFx: FxKind.ShootBig,
-      smokeFx: FxKind.SmokeSmall,
-      hitFx: FxKind.Flak,
-      despawnFx: FxKind.BulletHit,
-      fxColor: PAL.graphiteAmmoBack,
-    },
-  },
-  "scrap-wall": { ...wallStats("Scrap Wall", 240), bounty: 10 },
-  "scrap-wall-large": { ...wallStats("Large Scrap Wall", 960, 2), bounty: 40 },
-  "scrap-wall-huge": { ...wallStats("Huge Scrap Wall", 2160, 3), bounty: 90 },
-};
 
-/** the stats of any structure kind, the player's roster or the swarm's */
-export const structStats = (kind: import("./types").StructKind): TowerStats =>
-  kind in TOWERS ? TOWERS[kind as import("./types").TowerKind] : ENEMY_STRUCTS[kind as import("./types").EnemyKind];
+/** the stats of any structure kind — one roster, whichever side stands it */
+export const structStats = (kind: import("./types").StructKind): TowerStats => TOWERS[kind];
 
 export const towerMaxHp = (kind: import("./types").StructKind): number => {
   const st = structStats(kind);
@@ -1727,9 +1589,10 @@ export const SHRAPNEL = {
 // may place its own base anywhere (MapData.base), so nothing but the
 // fallback should read BASE directly — the live position is terrain.base
 /**
- * THE CORE'S HEALTH: Mindustry's core nucleus (6000), scaled like every
- * other structure (TOWER_HP_SCALE). It is the run: the swarm exists to
- * knock it down, and the moment it does the run is over (Sim.lost).
+ * THE CORE'S HEALTH: Mindustry's core nucleus (6000, Blocks.java), scaled
+ * like every other structure (TOWER_HP_SCALE, 1). It is the run: the swarm
+ * exists to knock it down, and the moment it does the run is over
+ * (Sim.lost).
  */
 export const CORE_HP = 6000 * TOWER_HP_SCALE;
 

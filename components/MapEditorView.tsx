@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MapEditor, PATH_WIDTHS, type BrushShape } from "@/game/editor";
-import { SPAWN_RADII, SPAWN_RADIUS_DEFAULT } from "@/game/maps";
-import { ZONE_KINDS } from "@/game/constants";
+import { LEGACY_COLS, SPAWN_RADII, SPAWN_RADIUS_DEFAULT } from "@/game/maps";
+import { TOWERS, ZONE_KINDS } from "@/game/constants";
+import { TOWER_KINDS } from "@/game/types";
 import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
 import {
-  ENEMY_KINDS,
   PALETTE,
   paletteSections,
   saveMap,
@@ -212,7 +212,7 @@ export default function MapEditorView({
    * which is the only place a map's real size has ever lived.
    */
   const [mapRows, setMapRowsState] = useState(() =>
-    Math.max(1, Math.floor(map.floor.length / (map.w ?? 256))),
+    Math.max(1, Math.floor(map.floor.length / (map.w ?? LEGACY_COLS))),
   );
   const setMapRows = (n: number): void => {
     const ed = editorRef.current;
@@ -634,7 +634,7 @@ export default function MapEditorView({
                         const name = zone
                           ? `${ZONE_LABELS[zone]} drop zone`
                           : set.kind === "enemy"
-                            ? `Enemy ${ENEMY_KINDS[v]}`
+                            ? `Enemy ${TOWERS[TOWER_KINDS[v]].name}`
                             : randomize && set.icons.length > 1
                             ? `${set.label} (random of ${set.icons.length})`
                             : `${set.label}${set.icons.length > 1 ? ` ${v + 1}` : ""}`;
@@ -687,7 +687,7 @@ export default function MapEditorView({
               if (set.kind === "spawn")
                 return `${ZONE_LABELS[ZONE_KINDS[Math.min(variant, ZONE_KINDS.length - 1)]]} drop zone`;
               if (set.kind === "enemy")
-                return `Enemy ${ENEMY_KINDS[Math.min(variant, ENEMY_KINDS.length - 1)]}`;
+                return `Enemy ${TOWERS[TOWER_KINDS[Math.min(variant, TOWER_KINDS.length - 1)]].name}`;
               return set.label;
             })()}
           </div>

@@ -41,8 +41,11 @@ export const spec = {
   spawns: [
     { x: 24, y: 232, r: 12, zone: "ground" }, // 0
     { x: 232, y: 232, r: 12, zone: "ground" }, // 1
-    { x: 16, y: 128, r: 12, zone: "ground" }, // 2
-    { x: 240, y: 128, r: 12, zone: "ground" }, // 3
+    // the side gates sit a little below the basin's latitude, so their
+    // walks to the core keep within half of the corner gates' (the
+    // no-short-cut rule) on the doubled board
+    { x: 16, y: 140, r: 12, zone: "ground" }, // 2
+    { x: 240, y: 140, r: 12, zone: "ground" }, // 3
     { x: 12, y: 244, r: 8, zone: "air" },
     { x: 244, y: 244, r: 8, zone: "air" },
     { x: 128, y: 250, r: 4, zone: "boss" },

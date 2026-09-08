@@ -64,15 +64,6 @@ import {
   UV_PARALLAX_LASER_END,
   UV_TRI,
   UV_TURRET,
-  UV_BREACH,
-  UV_DIFFUSE,
-  UV_TITAN,
-  UV_RBLOCK2,
-  UV_RBLOCK3,
-  UV_RBLOCK4,
-  UV_SCRAP_WALL,
-  UV_SCRAP_WALL_LARGE,
-  UV_SCRAP_WALL_HUGE,
   UV_WALLS,
   UV_WALL_LARGE,
   WALL_GROUP,
@@ -146,30 +137,27 @@ import {
 import { isWaterFloor, showsFloorCell, WALL_DEEP, type Terrain } from "./terrain";
 import {
   FxKind,
-  isPlayerKind,
   type Effect,
-  type EnemyKind,
   type RGB,
   type Tower,
   type TowerKind,
 } from "./types";
 
-// THE SWARM'S ROSTER (types.ts ENEMY_KINDS): its turret tops and walls,
-// and the reinforced plate under each turret — a different set of
-// buildings from the player's, not the player's in another colour
-const UV_ENEMY: Record<EnemyKind, UVRect> = {
-  breach: UV_BREACH,
-  diffuse: UV_DIFFUSE,
-  titan: UV_TITAN,
-  "scrap-wall": UV_SCRAP_WALL,
-  "scrap-wall-large": UV_SCRAP_WALL_LARGE,
-  "scrap-wall-huge": UV_SCRAP_WALL_HUGE,
-};
-const UV_ENEMY_BASE: Partial<Record<EnemyKind, UVRect>> = {
-  breach: UV_RBLOCK2,
-  diffuse: UV_RBLOCK3,
-  titan: UV_RBLOCK4,
-};
+/**
+ * THE ENEMY'S FLAG: the one mark that says a structure is the swarm's. The
+ * swarm builds from the player's roster (types.ts StructKind), so its
+ * lancer is drawn with the lancer's own sprite on the lancer's own base —
+ * and a small crux-red pennant stands at the top-left corner of the base,
+ * a dark pole with a triangle flying off it (UV_TRI, base on the pole),
+ * the same size on a duo and a spectre. Nothing else about the drawing
+ * differs, which is the point: the flag is the whole of the team read.
+ */
+const FLAG_POLE_H = CELL_IMPORT * 0.55;
+const FLAG_POLE_W = 2;
+const FLAG_W = CELL_IMPORT * 0.42;
+const FLAG_H = CELL_IMPORT * 0.28;
+const FLAG_INSET = 3;
+const FLAG_POLE_COL: RGB = [0.12, 0.12, 0.13];
 
 // per-kind turret tops and bullet sprites
 const UV_TURRETS: Record<TowerKind, UVRect> = {
@@ -2086,6 +2074,21 @@ export class Renderer {
   }
 
   /** ...and has it ever been in sight? A structure once seen stays drawn */
+  /**
+   * The swarm's pennant at a structure's top-left corner (x0, y0 is the
+   * footprint's corner in world px): the pole first, then the triangle
+   * flying to the right off the top of it. UV_TRI's base is its left
+   * edge and its apex points +x, so unrotated it is already a pennant
+   */
+  private drawEnemyFlag(dyn: Batch, x0: number, y0: number, a: number): void {
+    const px = x0 + FLAG_INSET + FLAG_POLE_W / 2;
+    const top = y0 + FLAG_INSET;
+    const [pr, pg, pb] = FLAG_POLE_COL;
+    this.push(dyn, px, top + FLAG_POLE_H / 2, FLAG_POLE_W, FLAG_POLE_H, 0, UV_SOLID, pr, pg, pb, a);
+    const [r, g, b] = TEAM_CRUX_RGB;
+    this.push(dyn, px + FLAG_POLE_W / 2 + FLAG_W / 2, top + FLAG_H / 2, FLAG_W, FLAG_H, 0, UV_TRI, r, g, b, a);
+  }
+
   private seen(x: number, y: number): boolean {
     const f = this.fogSrc;
     return !f || !f.enabled || f.seenAt(x, y);
@@ -2181,12 +2184,11 @@ export class Renderer {
       // the swarm's building is drawn once it has been in sight, like the
       // map's shield towers; the player's own are always seen
       if (t.team === "enemy" && !this.seen(t.x, t.y)) continue;
-      // the swarm's roster is its own art: an Erekir gun on its reinforced
-      // plate, a scrap wall — never the player's sprite recoloured
-      const top = isPlayerKind(t.kind) ? UV_TURRETS[t.kind] : UV_ENEMY[t.kind];
+      // one roster, two teams: the swarm's lancer is the lancer's own
+      // sprite on the lancer's own base, and the flag below says whose
+      const top = UV_TURRETS[t.kind];
       const base =
-        !isPlayerKind(t.kind) ? (UV_ENEMY_BASE[t.kind] ?? UV_SOLID)
-        : sz >= 4 ? UV_TOWER_BASE4
+        sz >= 4 ? UV_TOWER_BASE4
         : sz === 3 ? UV_TOWER_BASE3
         : sz === 2 ? UV_TOWER_BASE
         : UV_TOWER_BASE1;
@@ -2208,10 +2210,11 @@ export class Renderer {
       // a wall is its art and nothing else: no base under it, no turning
       if (st.wall) {
         this.push(dyn, t.x, t.y, px, px, 0, top, tint[0], tint[1], tint[2], a);
-        continue;
+      } else {
+        this.push(dyn, t.x, t.y, px, px, 0, base, tint[0], tint[1], tint[2], a);
+        this.push(dyn, t.x, t.y, px, px, t.angle, top, tint[0], tint[1], tint[2], a);
       }
-      this.push(dyn, t.x, t.y, px, px, 0, base, tint[0], tint[1], tint[2], a);
-      this.push(dyn, t.x, t.y, px, px, t.angle, top, tint[0], tint[1], tint[2], a);
+      if (t.team === "enemy") this.drawEnemyFlag(dyn, t.x - px / 2, t.y - px / 2, a);
     }
     // the shieldTowers, AFTER the towers: a shield tower that entombed a turret is
     // drawn over it, which is the whole picture — the turret is under the
@@ -2234,8 +2237,10 @@ export class Renderer {
       // the beam's LIVE stats, not the table's: a meltdown whose upgrade
       // branch lengthened its beam has to be drawn at the length it is
       // actually burning at (see Sim.statsFor)
-      if (t.beamT >= 0 && isPlayerKind(t.kind))
-        this.drawContinuousBeam(dyn, t, sim.statsFor(t.kind).bullet.continuous);
+      if (t.beamT >= 0)
+        this.drawContinuousBeam(
+          dyn, t, (t.team === "enemy" ? structStats(t.kind) : sim.statsFor(t.kind)).bullet.continuous,
+        );
     }
     const { upx, upy, ukind, n } = sim;
     // the fleet's wakes, at Mindustry's Layer.debris: UNDER every unit,
@@ -2316,8 +2321,8 @@ export class Renderer {
       // the SIM's resolution, not the static table: a duo the tree has
       // upgraded fires a different bullet, and drawing the stock one made
       // the graphite round invisible as a graphite round
-      // ...and the swarm's roster fires the stock table, its own
-      const b = p.enemy || !isPlayerKind(p.kind) ? bulletOf(p.kind, p.frag) : sim.bulletFor(p.kind, p.frag);
+      // ...and the swarm's turrets fire the stock table
+      const b = p.enemy ? bulletOf(p.kind, p.frag) : sim.bulletFor(p.kind, p.frag);
       // LiquidBulletType.draw: a water orb is not a sprite pair but a
       // filled disc of the liquid's own colour — Fill.circle(x, y,
       // orbSize). (The fout()/100 lerp toward white is a 1% shade and is

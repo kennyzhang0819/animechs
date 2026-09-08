@@ -245,7 +245,8 @@ const PAN_RATE = 0.5;
 const EDGE_PAN_PX = 12;
 /** the minimap's backing store, in device px per cell — 2 so a unit's
  *  dot is a 2x2 square and the viewport's rectangle has a crisp 1-cell stroke */
-const MM_SCALE = 2;
+// one backing pixel a cell: 512 for the grid, sized down by CSS to its corner
+const MM_SCALE = 1;
 const PAN_KEYS: Record<string, readonly [number, number]> = {
   KeyW: [0, -1],
   KeyS: [0, 1],

@@ -40,8 +40,8 @@ import {
   WALL_SPORE,
 } from "./atlas";
 import { FLOOR_STYLE, propIcon, tileIcon, wallIcon, WALL_STYLE } from "./tiles";
-import { ENEMY_ICONS } from "@/components/towerIcons";
-import { ENEMY_KINDS, explain, type SaveResult, type StructurePlacement } from "./types";
+import { TOWER_ICONS } from "./towerIcons";
+import { explain, TOWER_KINDS, type SaveResult, type StructurePlacement } from "./types";
 
 /**
  * Serializable map document — the game's OFFICIAL maps, one JSON file per
@@ -88,10 +88,11 @@ export interface MapData {
   pines: Prop[];
   decor: Prop[];
   /**
-   * THE SWARM'S OWN FORMATION: turrets and walls the map starts with, on
-   * the swarm's side (Tower.team). Each is a kind and its footprint's
-   * top-left cell, the shape the player's layout is saved in. Absent on
-   * every document drawn before the swarm could build, which means none
+   * THE SWARM'S FORMATION: turrets and walls the map starts with, on the
+   * swarm's side (Tower.team), drawn from the player's own roster. Each is
+   * a kind and its footprint's top-left cell, the shape the player's layout
+   * is saved in. Absent on every document drawn before the swarm could
+   * build, which means none
    */
   enemies?: StructurePlacement[];
   // carved-valley centerline per column — generator metadata the sim's
@@ -211,14 +212,10 @@ export type PaintKind =
   /** deep water: blocks the swarm like a wall, takes no tower like a pine
    *  — a floor index plus the WALL_DEEP sentinel (see terrain.ts) */
   | "deep"
-  /** one of the SWARM's own turrets or walls (MapData.enemies): the
-   *  variant is an index into ENEMY_KINDS, and a click stamps its
-   *  footprint on open ground */
+  /** one of the roster's turrets or walls on the SWARM's side
+   *  (MapData.enemies): the variant is an index into TOWER_KINDS, and a
+   *  click stamps its footprint on open ground */
   | "enemy";
-
-/** what the swarm builds with, in the editor's order — its own roster
- *  (types.ts), never the player's */
-export { ENEMY_KINDS };
 
 /**
  * One enemy drop zone: Mindustry marks a spawn with a tile and draws
@@ -480,11 +477,12 @@ export const PALETTE: readonly PaletteSet[] = [
   // clears the ground it lands on, since a walled base is unreachable
   { id: "base", label: "Base", kind: "base", variants: [0], noRandom: true,
     icons: ["/mindustry/sprites/blocks/storage/core-nucleus.png"] },
-  // the swarm's own buildings, one swatch a kind: a click stamps one on
-  // open ground and the eraser takes it back off (MapData.enemies)
+  // the swarm's buildings — the player's roster, on the swarm's side —
+  // one swatch a kind: a click stamps one on open ground and the eraser
+  // takes it back off (MapData.enemies)
   { id: "enemy", label: "Enemy structure", kind: "enemy",
-    variants: ENEMY_KINDS.map((_, i) => i), noRandom: true,
-    icons: ENEMY_KINDS.map((k) => ENEMY_ICONS[k]) },
+    variants: TOWER_KINDS.map((_, i) => i), noRandom: true,
+    icons: TOWER_KINDS.map((k) => TOWER_ICONS[k]) },
   { id: "erase", label: "Erase", kind: "erase", variants: [0], icons: [`${ENV}/clear-editor.png`] },
 ];
 
@@ -799,9 +797,10 @@ export function terrainFromMap(m: MapData): Terrain {
     pines: m.pines.map((p) => ({ ...p })),
     decor: m.decor.map((p) => ({ ...p })),
     // only a kind the roster knows, on a whole cell: a hand-edited
-    // document's stray entry is dropped here rather than crashing a run
+    // document's stray entry — or one from the old enemy-only roster,
+    // breach and the scrap walls — is dropped here rather than crashing a run
     enemies: (m.enemies ?? [])
-      .filter((e) => (ENEMY_KINDS as readonly string[]).includes(e.kind)
+      .filter((e) => (TOWER_KINDS as readonly string[]).includes(e.kind)
         && Number.isInteger(e.gx) && Number.isInteger(e.gy))
       .map((e) => ({ kind: e.kind, gx: e.gx, gy: e.gy })),
     valleyY: m.valleyY

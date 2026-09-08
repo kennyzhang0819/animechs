@@ -7,8 +7,13 @@ campaign different from another's is what it asks (`LevelSpec.mission` in
 
 ## The documents
 
-`public/levels/<worldId>.json` is a world's script — a `LevelDoc`,
-`{ id, waveGap, script }`, of raw per-kind counts per wave. `index.json`
+`public/levels/campaign.json` is the script every map plays — a
+`LevelDoc`, `{ id, waveGap, grace, script }`, of raw per-kind counts per
+wave. `waveGap` is the seconds between waves (180 as authored) and
+`grace` the seconds before the first (240): a run is an RTS run of 18 to
+26 minutes, opening with four minutes to scout and build and then a wave
+every three, each stronger than the last. Eight waves, a few dozen bodies
+each, at Mindustry's own unit and turret numbers. `index.json`
 beside them lists the worlds that have a document. Edit a script in the
 admin level editor (**Edit level** on the map's card in `/admin`) or by
 hand in the JSON; the dev save API (`/api/levels`) writes any world the
@@ -32,7 +37,7 @@ number the editor prints about a script is true at every rung.
 
 There is no tier gate inside a run any more: whatever the save owns it may
 place from wave 1. The three stages (`STAGES` in `game/economy.ts`) —
-waves 1–20, 21–35, 36–50 — survive as the stretches the three price bands
+waves 1–3, 4–6, 7–8 — survive as the stretches the three price bands
 are authored against, and the **Stages** panel in the editor sums what
 each stage pays against its band's prices. A fresh save fields the seven
 starting turrets (`STARTING_ROSTER` in `game/track.ts`); a script that
