@@ -206,6 +206,15 @@ function paint(): Promise<void> {
 // about nothing but the fingertip. The floor depends on the map and the
 // viewport together, so it is computed from both (see minZoom).
 const ZOOM_MAX = 12;
+/**
+ * WHERE A RUN OPENS: this far in from cover (zoom 1 fills the viewport
+ * with the map), centred on the core — the thing the run is about, and
+ * the one place in sight when the fog is still whole. On a 1600px-wide
+ * viewport it puts about 85 cells across the screen: the core's basin
+ * and the mouths of the lanes into it, with a cell 19px wide, which is a
+ * cell that can be aimed at.
+ */
+const START_ZOOM = 3;
 
 // ---- the frame budget (see frame and resize) --------------------------
 //
@@ -1094,11 +1103,14 @@ export class Game {
     );
   }
 
-  /** re-read the loaded map's height and refit the camera to it */
+  /** re-read the loaded map's size, refit the camera to it, and open on
+   *  the core (START_ZOOM) */
   private fitToMap(): void {
     this.worldH = this.sim.terrain.rows * CELL;
     this.worldW = this.sim.terrain.cols * CELL;
     this.resize();
+    this.zoom = clamp(START_ZOOM, this.minZoom(), ZOOM_MAX);
+    this.lookAt(this.sim.core.x, this.sim.core.y);
   }
 
   private clampCamera(): void {
@@ -1371,11 +1383,22 @@ export class Game {
     c.imageSmoothingEnabled = false;
     c.drawImage(this.mmBase, 0, 0, cols, rows, 0, 0, w, h);
     c.drawImage(this.mmLayer, 0, 0, cols, rows, 0, 0, w, h);
-    // the viewport's frame, in cells: what the screen is looking at
+    // THE VIEWPORT'S FRAME: where on the whole map the screen is looking.
+    // Kept inside the minimap (a view run out into the void past the map
+    // would otherwise carry its frame off the edge and lose a side), and
+    // drawn white over a dark outline so it reads on the pale ground, the
+    // black fog and the white line alike
     const k = MM_SCALE / CELL;
-    c.strokeStyle = "rgba(255,255,255,0.9)";
-    c.lineWidth = 1.5;
-    c.strokeRect(this.tlx * k, this.tly * k, this.visW() * k, this.visH() * k);
+    const fx0 = clamp(this.tlx * k, 1, w - 1), fy0 = clamp(this.tly * k, 1, h - 1);
+    const fx1 = clamp((this.tlx + this.visW()) * k, 1, w - 1);
+    const fy1 = clamp((this.tly + this.visH()) * k, 1, h - 1);
+    c.lineJoin = "miter";
+    c.strokeStyle = "rgba(0,0,0,0.8)";
+    c.lineWidth = 4;
+    c.strokeRect(fx0, fy0, fx1 - fx0, fy1 - fy0);
+    c.strokeStyle = "#ffffff";
+    c.lineWidth = 2;
+    c.strokeRect(fx0, fy0, fx1 - fx0, fy1 - fy0);
   }
 
   private drawOverlay(): void {
