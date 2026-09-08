@@ -2,7 +2,7 @@ import { TOWER_DESC, TOWERS } from "./constants";
 import { COMMON_KINDS, FACTION_KEYS, FACTION_TURRETS, factionsOf, kindsFor } from "./factions";
 import { familyByKey, SHELVED_FAMILIES, WORLDS, type FamilyKey } from "./levels";
 import { MUTATIONS, mutationById, type MutationId } from "./mutation";
-import { BAR_SLOTS, BY_MINDUSTRY_VALUE, type TechState } from "./tech";
+import { BY_MINDUSTRY_VALUE, type TechState } from "./tech";
 import { TOWER_KINDS, type TowerKind } from "./types";
 void COMMON_KINDS;
 import {
@@ -432,7 +432,6 @@ export function techStateFor(level: number): TechState {
     faction: null,
     unlocked: kindsFor(factions),
     speeds: speedsAt(level),
-    barSlots: BAR_SLOTS,
     upgrades: upgradesAt(level),
   };
 }

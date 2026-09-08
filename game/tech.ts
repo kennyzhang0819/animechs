@@ -4,6 +4,7 @@ import {
   type UpgradeContext,
   type UpgradePoints,
 } from "./upgrades";
+import { TOWERS } from "./constants";
 import { kindsFor } from "./factions";
 import type { FamilyKey } from "./levels";
 import { TOWER_KINDS, type TowerKind } from "./types";
@@ -35,8 +36,6 @@ export interface TechState {
    * track's paces (speedsAt).
    */
   speeds: readonly number[];
-  /** how many turrets the build bar holds — BAR_SLOTS, on every save */
-  barSlots: number;
   /** each turret's upgrade rungs, as the sim folds them (upgradedTower) */
   upgrades: Record<TowerKind, UpgradePoints>;
 }
@@ -55,12 +54,56 @@ export function withFaction(tech: TechState, faction: FamilyKey | null): TechSta
 }
 
 /**
- * THE BUILD BAR'S WIDTH: eight seed slots, PvZ-style, on every save. The
- * roster is seventeen turrets and grows with the level (track.ts), so past
- * eight the player curates — the loadout picker beside the bar is where a
- * turret is swapped in — and the bar never has to scroll on a laptop.
+ * THE BUILD BAR IS THREE TABS, one per JOB a building does, and it shows
+ * the WHOLE of the tab it is on. This replaces the eight curated seed
+ * slots: a bar that held eight of a roster of twenty-nine made the player
+ * decide, before the run, which two thirds of the game they were not
+ * going to play — and it decided it once, in a picker, for every map.
+ *
+ * The split is by what the thing is FOR, which is also the order a run
+ * touches them in: the drills that pay for everything (SCRAP), the
+ * factories that turn that into bodies (UNITS), and the guns and walls
+ * that keep both standing (TOWER). Each is named in ONE SHORT WORD
+ * because the name is worn on the slot itself, a button fourteen
+ * characters wide — "scrap" says what the drill is for at least as well
+ * as "economy" did, and it fits.
+ *
+ * Nothing is curated and nothing is
+ * hidden — a tab is one keypress away, and what a save has not earned
+ * simply is not on it.
+ *
+ * The keys are E, R and T: the three left-hand keys ABOVE the digit row,
+ * because the digits are the control groups' (1 to 0, one per group) and
+ * a build shortcut that costs the player a control group is not a
+ * shortcut. Left to right on the keyboard is left to right on the bar.
  */
-export const BAR_SLOTS = 8;
+export type BuildTab = "scrap" | "units" | "tower";
+
+export const BUILD_TABS: readonly {
+  id: BuildTab;
+  label: string;
+  /** the printed key, worn on the tab; `code` is the physical one */
+  key: string;
+  code: string;
+}[] = [
+  { id: "scrap", label: "Scrap", key: "E", code: "KeyE" },
+  { id: "units", label: "Units", key: "R", code: "KeyR" },
+  { id: "tower", label: "Tower", key: "T", code: "KeyT" },
+];
+
+/**
+ * WHICH TAB A KIND RIDES, read off what the building DOES (constants.ts
+ * TowerStats) rather than a second table beside it: a drill pays scrap,
+ * a factory `produces` a unit tier, and everything else — every gun and
+ * every wall — is what holds the line. A new building lands on the right
+ * tab by being what it is, with nothing here to keep in step.
+ */
+export function buildTabOf(kind: TowerKind): BuildTab {
+  const t = TOWERS[kind];
+  if (t.drill) return "scrap";
+  if (t.produces) return "units";
+  return "tower";
+}
 
 /**
  * MINDUSTRY'S OWN PRICE FOR EACH TURRET, in a single number: the build

@@ -27,9 +27,8 @@ import { WORLDS } from "@/game/levels";
  *
  * IT IS NOT A DIFFICULTY PICKER AND MUST NEVER BECOME ONE. The run it
  * starts is a SANDBOX run — the whole tech tree unlocked, every placement
- * cap lifted, every game speed offered (MechSwarm's `admin` mode; the
- * build bar's eight slots still hold, so a sandbox run picks a loadout
- * like any other) — so
+ * cap lifted, every game speed offered (MechSwarm's `admin` mode, with
+ * the whole roster behind the build bar's three slots) — so
  * nothing it banks is a claim about the campaign's balance, and the panel
  * says so rather than leaving it to be inferred.
  *
@@ -75,8 +74,8 @@ export default function SandboxView() {
         below — the only place in the game where a mutator is chosen rather than rolled. The
         run starts in <span className="text-[#A6A6AF]">sandbox mode</span>: the whole tech
         tree unlocked, placement caps lifted and every game speed available (the build bar
-        still holds eight slots, so pick a loadout), so nothing it banks says anything about
-        campaign balance.
+        carries the whole roster across its three slots), so nothing it banks says anything
+        about campaign balance.
       </p>
 
       {/* WORLD */}

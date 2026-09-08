@@ -26,7 +26,7 @@ import { TOWER_KINDS } from "./types";
 import { Renderer } from "./renderer";
 import { fitZoom } from "./fit";
 import { Sim } from "./sim";
-import { BAR_SLOTS, type TechState } from "./tech";
+import { type TechState } from "./tech";
 import type { Tower } from "./types";
 
 export interface UiState {
@@ -94,8 +94,6 @@ export interface UiState {
   counts: Record<TowerKind, number>;
   /** the turrets the save may field; null = unrestricted (editor, sandbox) */
   unlocked: readonly TowerKind[] | null;
-  /** loadout slots the build bar holds — BAR_SLOTS everywhere, sandbox included */
-  barSlots: number;
 }
 
 export interface Stats {
@@ -1170,10 +1168,6 @@ export class Game {
       refunds: REFUNDS(),
       counts: this.sim.towerCounts(),
       unlocked: this.tech ? Array.from(this.tech.unlocked) : null,
-      // the bar is eight slots wide EVERYWHERE, sandbox and admin
-      // included: the whole roster laid out at once is a wall of buttons,
-      // and picking eight of it is the loadout decision either way
-      barSlots: BAR_SLOTS,
     };
   }
 
