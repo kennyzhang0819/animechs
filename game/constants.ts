@@ -1444,6 +1444,27 @@ export const towerMaxHp = (kind: import("./types").TowerKind): number =>
   TOWERS[kind].health * (TOWERS[kind].wall ? WALL_HP_SCALE : TOWER_HP_SCALE);
 
 /**
+ * CONSTRUCTION TIME, BY FOOTPRINT — a placed structure is not a finished
+ * one. It goes up as a shell first: one hit point, no gun, and the swarm
+ * takes it apart with a single shot (Sim.damageTower). Only when the
+ * timer runs out does it stand up with its real pool and start shooting.
+ *
+ * THE TIME IS THE FOOTPRINT'S, NOT THE TURRET'S. Every 1x1 raises in the
+ * same beat, every 2x2 in the same longer one, and so on — what a player
+ * is paying for in seconds is the ground they are covering, not which gun
+ * they picked, so the choice between two turrets of a size stays a choice
+ * about the gun. Bigger costs more because a bigger shell is a bigger
+ * window in which the swarm can walk up and pop it.
+ *
+ * Indexed by size (1..4); index 0 is unused padding so the lookup is the
+ * footprint itself.
+ */
+export const BUILD_TIME_BY_SIZE = [0, 2, 4, 6.5, 10] as const;
+/** how long this structure spends as a 1 hp shell before it works */
+export const buildTimeOf = (kind: import("./types").TowerKind): number =>
+  BUILD_TIME_BY_SIZE[TOWERS[kind].size] ?? BUILD_TIME_BY_SIZE[BUILD_TIME_BY_SIZE.length - 1];
+
+/**
  * The stats driving one live projectile. Almost always the firing turret's
  * own ammo — the exception is a shot thrown by BulletType.createFrags,
  * which is the PARENT ammo's child and has its own speed, damage, life and

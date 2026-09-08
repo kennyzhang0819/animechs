@@ -1225,10 +1225,35 @@ export class Game {
       c.closePath();
       c.fillStyle = "#FF5A5A";
       c.fill();
-      c.strokeStyle = "rgba(24,10,10,0.9)";
-      c.lineWidth = 1.5;
+    }
+
+    // WHAT IS STILL GOING UP (Sim.updateBuilds): a ring over every
+    // unfinished building, filling clockwise from the top as its timer
+    // runs down. The shell underneath is drawn translucent and blue
+    // already; this is the part that says HOW LONG — and it is drawn on
+    // the overlay rather than in the batch because an arc is a shape the
+    // 2D context has and the sprite atlas does not.
+    for (const t of this.sim.towers) {
+      if (t.buildT <= 0 || t.buildTotal <= 0) continue;
+      const sz = TOWERS[t.kind].size * CELL;
+      // sized to the footprint, but never smaller than a ring a player can
+      // read at the zoom they actually play at — a 1x1 is 20 world px wide
+      // and a ring drawn strictly inside one is a dot
+      const r = Math.max(sz * 0.36, 9);
+      const done = clamp(1 - t.buildT / t.buildTotal, 0, 1);
+      c.lineWidth = Math.max(2.5, sz * 0.08);
+      c.lineCap = "butt";
+      // the unfilled track first, so the filled sweep reads against it
+      c.beginPath();
+      c.arc(t.x, t.y, r, 0, Math.PI * 2);
+      c.strokeStyle = "rgba(10,14,26,0.55)";
+      c.stroke();
+      c.beginPath();
+      c.arc(t.x, t.y, r, -Math.PI / 2, -Math.PI / 2 + done * Math.PI * 2);
+      c.strokeStyle = "rgba(138,162,255,0.95)";
       c.stroke();
     }
+    c.lineWidth = 1;
 
     if (this.buildKind && this.hoverGx >= 0 && !this.panning) {
       // red marks anything that blocks the spot: walls, the base, units

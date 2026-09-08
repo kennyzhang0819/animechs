@@ -97,6 +97,16 @@ export interface Tower {
    */
   hp: number;
   /**
+   * CONSTRUCTION: seconds still left before this structure is FINISHED, or
+   * 0 for one that is standing. While it counts down the building is a
+   * shell — `hp` is 1, it fires nothing, and any damage at all wrecks it
+   * (Sim.damageTower) — and when it reaches 0 the structure stands up with
+   * its full pool. `buildTotal` is what it started at, kept only so the
+   * ring drawn over it (Game.drawOverlay) knows how far along it is.
+   */
+  buildT: number;
+  buildTotal: number;
+  /**
    * The shield tower ENTOMBING this tower, as an index into Sim.shieldTowers — or -1,
    * the usual case. The Shield Towers mutator may raise a shield tower over a
    * tower's rock: the buried turret is disabled and untouchable, never
