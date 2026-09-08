@@ -1169,6 +1169,24 @@ export class Renderer {
    */
   private shade = new Float32Array(NCELLS);
   private readonly shadeTint: [number, number, number] = [1, 1, 1];
+  /**
+   * THE SHADOW MASK, in two halves.
+   *
+   * `shadowMask` is the texture's own bytes, kept rather than made fresh
+   * so a tower going up costs one upload and no allocation; `shadowStatic`
+   * is the half rebuildTerrain stamped — the hills and the core — which
+   * the buildings' half is laid over each time the field changes
+   * (syncBuildShadow), so lifting a wrecked turret's stamp puts the ground
+   * under it back exactly as the terrain left it.
+   */
+  private readonly shadowMask = new Uint8Array(NCELLS * 4);
+  private readonly shadowStatic = new Uint8Array(NCELLS);
+  /** the footprints in the mask right now, packed cell-and-size, in field
+   *  order, and the same list gathered this frame: comparing the two is
+   *  the cheap "has anything been built or wrecked?" every frame asks,
+   *  and both are kept so neither allocates once the line has its length */
+  private readonly shadowBuilds: number[] = [];
+  private readonly shadowNext: number[] = [];
   // layer visibility of whatever is currently in the static batches, so the
   // editor's base sprite (drawn per frame) matches the terrain it sits on
   private layers: TerrainLayers = ALL_LAYERS;
@@ -1848,7 +1866,8 @@ export class Renderer {
     // 0.71 at the wall down to nothing — is the whole rim. Walls draw after
     // this quad, so the hills themselves stay clean and only the floor
     // around them darkens; what the hill does INSIDE is pass 2b
-    const mask = new Uint8Array(COLS * ROWS * 4);
+    const mask = this.shadowMask;
+    mask.fill(0);
     const stamp = (i: number): void => {
       mask[i * 4] = mask[i * 4 + 1] = mask[i * 4 + 2] = mask[i * 4 + 3] = 255;
     };
@@ -1864,16 +1883,19 @@ export class Renderer {
         }
     // buildings on the ground stamp their footprint too, like Mindustry's
     // displayShadow blocks — the base sprite covers the middle, so what
-    // shows is the rim hugging its sides. Towers stand on open ground and
-    // come and go mid-run; this mask is built once per terrain, so they
-    // cast nothing here
+    // shows is the rim hugging its sides. The core is the one building the
+    // terrain knows about; the towers go up and come down mid-run, so they
+    // are stamped over this mask instead of into it (syncBuildShadow)
     if (layers.base)
       for (let y = T.base.y; y < T.base.y + T.base.size; y++)
         for (let x = T.base.x; x < T.base.x + T.base.size; x++) stamp(y * COLS + x);
-    for (let i = 0; i < COLS * ROWS; i++) this.shade[i] = mask[i * 4 + 3] / 255;
-    gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, mask);
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    // what the terrain alone casts, kept so a tower's stamp can be laid
+    // over it and lifted off again when the tower is wrecked
+    for (let i = 0; i < NCELLS; i++) this.shadowStatic[i] = mask[i * 4 + 3];
+    // the towers in the mask are a mask ago's — a new terrain forces the
+    // next frame to stamp them fresh
+    this.shadowBuilds.length = 0;
+    this.uploadShadow();
     const sh = this.shadow;
     sh.n = 0;
     this.push(sh, W / 2, H / 2, W, H, 0, [0, 0, 1, 1], 0, 0, 0, WALL_SHADOW_A);
@@ -1981,6 +2003,109 @@ export class Renderer {
       gl.bindBuffer(gl.ARRAY_BUFFER, b.vbo);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, b.data, 0, b.n * FLOATS);
     }
+  }
+
+  /** the shadow mask as it stands, to the GPU as the rim and to the CPU as
+   *  the shade whatever is standing on the ground is darkened by (litAt) */
+  private uploadShadow(): void {
+    const gl = this.gl;
+    const mask = this.shadowMask;
+    for (let i = 0; i < NCELLS; i++) this.shade[i] = mask[i * 4 + 3] / 255;
+    gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, mask);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+  }
+
+  /**
+   * THE BUILDINGS CAST TOO.
+   *
+   * The core has always sat ON the ground rather than on top of it: its
+   * footprint is stamped into the shadow mask along with the hills (pass 2
+   * above), and the half-cell bilinear rim that melts out of those texels
+   * is the dark hugging its sides. Everything else that gets put down —
+   * turrets, walls, drills and factories, the swarm's own buildings, the
+   * shield towers — was drawn flat, a sprite laid on the floor instead of a
+   * thing standing on it.
+   *
+   * They stamp the same mask now, and read identically, because it IS the
+   * same mask: the terrain's half is stamped once per map (shadowStatic)
+   * and the buildings' half is laid over it here, whenever the line
+   * changes. A footprint is at most five cells square, so the work is
+   * per-building rather than per-map — the old stamps are wiped back to
+   * whatever the terrain had under them, the new ones are stamped, and
+   * only the rectangle that moved is sent to the texture (the fog's own
+   * unpack trick, see drawFog). Nothing at all happens on a frame where
+   * nothing was built or wrecked, which is nearly all of them.
+   *
+   * A SHELL CASTS ITS SHADOW WHOLE, as Mindustry's ConstructBlock does:
+   * the foundation is on the ground from the moment it is laid, however
+   * faint the sprite over it still is. A DEAD SHIELD TOWER CASTS NOTHING —
+   * its ground is open again, which is what the rest of the drawing says.
+   */
+  private syncBuildShadow(sim: Sim): void {
+    // the line as it stands, packed cell-and-size in field order, so a
+    // footprint appearing, moving, resizing or being replaced by another
+    // in the same frame all read as a change. Three bits for the size: the
+    // biggest thing on the board is the core's five
+    const next = this.shadowNext;
+    next.length = 0;
+    for (const t of sim.towers) next.push((t.gy * COLS + t.gx) * 8 + structStats(t.kind).size);
+    for (const s of sim.shieldTowers)
+      if (s.hp > 0) next.push((s.gy * COLS + s.gx) * 8 + SHIELD_TOWER_SIZE);
+    const cur = this.shadowBuilds;
+    if (next.length === cur.length) {
+      let same = true;
+      for (let i = 0; i < next.length; i++)
+        if (next[i] !== cur[i]) {
+          same = false;
+          break;
+        }
+      if (same) return;
+    }
+    const mask = this.shadowMask;
+    let dx0 = COLS, dy0 = ROWS, dx1 = -1, dy1 = -1;
+    // `on` stamps the building; off puts the cell back to what the terrain
+    // alone casts there, which is how a wrecked turret's ground reopens
+    const paint = (id: number, on: boolean): void => {
+      const sz = id & 7;
+      const cell = (id - sz) / 8;
+      const gx = cell % COLS, gy = (cell - gx) / COLS;
+      const x1 = Math.min(COLS - 1, gx + sz - 1), y1 = Math.min(ROWS - 1, gy + sz - 1);
+      for (let y = gy; y <= y1; y++)
+        for (let x = gx; x <= x1; x++) {
+          const i = y * COLS + x;
+          const a = on ? 255 : this.shadowStatic[i];
+          mask[i * 4] = mask[i * 4 + 1] = mask[i * 4 + 2] = mask[i * 4 + 3] = a;
+          this.shade[i] = a / 255;
+        }
+      if (gx < dx0) dx0 = gx;
+      if (gy < dy0) dy0 = gy;
+      if (x1 > dx1) dx1 = x1;
+      if (y1 > dy1) dy1 = y1;
+    };
+    // every old stamp comes off before any new one goes on: a shield tower
+    // entombing a turret has the two footprints overlapping, and clearing
+    // one after stamping the other would punch a hole in it
+    for (const id of cur) paint(id, false);
+    for (const id of next) paint(id, true);
+    cur.length = 0;
+    for (const id of next) cur.push(id);
+    if (dx1 < dx0) return;
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
+    // the window is read straight out of the full-map buffer: ROW_LENGTH
+    // is how wide a source row is, SKIP_* where the window starts in it
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, COLS);
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, dx0);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, dy0);
+    gl.texSubImage2D(
+      gl.TEXTURE_2D, 0, dx0, dy0, dx1 - dx0 + 1, dy1 - dy0 + 1,
+      gl.RGBA, gl.UNSIGNED_BYTE, mask,
+    );
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
   }
 
   /** the sea, then the land floors and their shore fades over it, then
@@ -2494,6 +2619,9 @@ export class Renderer {
     // the sea rides SIM time, so pausing the game stills it and the speed
     // switcher moves it, exactly like everything else on the field
     this.waterTime = sim.time;
+    // before anything is drawn: whatever has been built or wrecked since
+    // the last frame goes into the shadow mask the ground is drawn with
+    this.syncBuildShadow(sim);
     this.begin(zoom, offX, offY, kPx);
     this.drawWorld();
 
