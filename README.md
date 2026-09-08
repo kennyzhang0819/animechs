@@ -254,7 +254,7 @@ is no touch input.
 | pan | middle drag, WASD/arrows, two-finger trackpad scroll, the cursor at the screen's edge |
 | minimap | click to look there, drag to keep steering — bottom-left, never zoomed |
 | zoom | wheel, trackpad pinch |
-| pause / menu | space / esc, or the two buttons in the top-right corner |
+| pause / menu | space / esc, or the gear in the top-right corner |
 | fullscreen | F11 (Ctrl+Cmd+F on macOS), in the desktop shell — or the Video tab of Settings |
 
 The zoom floor is the whole map in frame with a little padding
@@ -266,11 +266,35 @@ saved with the rest of the preferences (`Progress.panSpeed`,
 steps** the game has (`PAN_SPEEDS`, `UI_SCALES`), not rows of percentage
 buttons; every settings row is a name and its knob, and nothing else.
 
+There is **no pace strip on a campaign run**. The multipliers have always
+been the sandbox's (`admin`), and the pause button that sat beside them was
+the whole strip for everyone else — one button, over the field for a whole
+run, for a thing space does and the gear does (opening the menu holds the
+sim, and the gear is on screen for a pointer that will not reach for a
+key). The strip comes back whole in the sandbox.
+
 Settings is five tabs — **Game** (the save), **Video**, **Interface**,
 **Controls**, **Info** — and each one is a single pane of rows rather than
 a stack of boxes. **Info** carries the build number, who made the game and
 what it came from: the title card shows the game's name and its two
-buttons, and nothing else.
+buttons, and nothing else. Mid-run it is the **same screen**, raised over
+the held run from the pause sheet — the same column, the same width, the
+same corner back button (`MENU_COLUMN`) — minus the Game tab, since the
+save cannot be wiped from under a running game.
+
+**The Interface tab** holds the UI-size slider and **who wears a health
+bar on the field**, one knob a side: *always*, *damaged* (the default —
+only once something has taken a hit), *hover* (only the body under the
+cursor) or *never*. It governs units and buildings alike, the core
+included, because a wall and a walker are both things with health standing
+on the board, and a body in the fog wears nothing on either side. **The
+player's bars run the HUD's green-amber-red ramp and the swarm's are red
+throughout** (`ENEMY_HP`): the colour says whose a bar is at a glance in a
+melee, and the length says how much is left. A hurt body in the current
+selection wears its bar under every mode but *never*. Both knobs are saved
+(`Progress.allyBars`, `Progress.enemyBars`) and both reach a run under way
+the moment they are touched (`Game.setHealthBars`), which is most of what
+the in-run copy of the panel is for.
 
 **The Video tab** also holds the ambient-effects switch, and on the desktop
 build — a browser tab has no window of ours to set — picks the display mode

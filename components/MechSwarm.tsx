@@ -68,6 +68,11 @@ import {
   savePanSpeed,
   saveEdgePan,
   saveCursorLock,
+  saveAllyBars,
+  saveEnemyBars,
+  HEALTH_BAR_MODES,
+  HEALTH_BARS_DEFAULT,
+  type HealthBarMode,
   PAN_SPEED_DEFAULT,
   PAN_SPEEDS,
   UI_SCALE_DEFAULT,
@@ -1020,6 +1025,52 @@ const TOOL_BTN = "ms-btn h-[4.5rem] w-14 shrink-0 flex-col gap-0.5 p-0";
 
 
 /**
+ * THE WORKING COLUMN every full screen of the game is laid out in: one
+ * centred stack, capped at a readable width, that SCROLLS when it is
+ * taller than the viewport rather than spilling out of both ends
+ * ([justify-content:safe_center]).
+ *
+ * It is a constant rather than a copied class list because the front of
+ * house and the pause overlay both raise the SAME settings screen, and a
+ * settings panel is a different panel at 27rem than it is at 30 — the
+ * in-game copy used to be squeezed into the pause sheet's own 30rem card,
+ * where a row's knob wrapped under its label and the tab strip ran to two
+ * lines. One column, one width, one screen (settingsBody below).
+ *
+ * `ui-zoom` is on it, so it must never be nested inside another zoomed
+ * element: CSS zoom compounds.
+ */
+const MENU_COLUMN =
+  "ui-zoom relative mx-auto flex min-h-full max-w-5xl flex-col items-center gap-8 py-12 pl-[1.5rem] pr-[1.5rem] [justify-content:safe_center] sm:py-16";
+/** ...and the top pad the views that are NOT the title card clear the
+ *  corner chrome (back, the level strip) with, in the same zoomed units */
+const MENU_COLUMN_PAD = "pt-20 sm:pt-20";
+
+/**
+ * THE ONE BACK BUTTON: icon only, big, pinned to the top-left of the
+ * viewport — the same spot on every screen that has somewhere to go back
+ * to, so the thumb never hunts for it. The label survives as the
+ * accessible name.
+ *
+ * It carries its own `ui-zoom` and is therefore always mounted OUTSIDE
+ * the zoomed column, like the dialogs are.
+ */
+function CornerBack({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className="ui-zoom ms-btn fixed left-[1rem] top-[1rem] z-20 h-11 w-11 p-0 text-[#a2a2a2] hover:text-white"
+    >
+      <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden="true">
+        <path d="M14.7 5.1 7.8 12l6.9 6.9 1.7-1.7L11.2 12l5.2-5.2z" />
+      </svg>
+    </button>
+  );
+}
+
+/**
  * A SECTION OF SETTINGS IS ONE BOX. Every row of a tab lives in this one
  * pane, divided by hairlines (globals.css .ms-rows) — five bevelled boxes
  * stacked up read as five things to deal with, where one box with five
@@ -1042,6 +1093,42 @@ function SettingRow({ label, children }: { label: string; children: ReactNode })
       <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">{label}</div>
       {children}
     </div>
+  );
+}
+
+/**
+ * A SETTING WITH A HANDFUL OF NAMED CHOICES, as one segmented control —
+ * the same knob the Video tab's display mode wears. Every choice is on
+ * screen at once, so picking one is a press rather than a press and a
+ * read: a menu that has to be opened to say what it is currently on is
+ * the wrong control for four words.
+ */
+function ChoiceRow<T extends string>({
+  label,
+  choices,
+  value,
+  onPick,
+}: {
+  label: string;
+  choices: ReadonlyArray<{ mode: T; label: string }>;
+  value: T;
+  onPick: (mode: T) => void;
+}) {
+  return (
+    <SettingRow label={label}>
+      <div role="group" aria-label={label} className="ms-seg shrink-0">
+        {choices.map((c) => (
+          <button
+            key={c.mode}
+            aria-pressed={value === c.mode}
+            onClick={() => onPick(c.mode)}
+            className="ms-btn px-2.5 py-1.5 text-[15px]"
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+    </SettingRow>
   );
 }
 
@@ -1262,6 +1349,15 @@ export default function MechSwarm() {
    */
   const [uiScale, setUiScale] = useState(UI_SCALE_DEFAULT);
   /**
+   * WHO WEARS A HEALTH BAR on the field, one knob a side (Progress.allyBars,
+   * Progress.enemyBars). Saved preferences like `uiScale`, and live: both
+   * reach a run under way the moment they are touched
+   * (Game.setHealthBars), which is what makes the pause overlay's copy of
+   * the panel worth having — the field is right there behind it.
+   */
+  const [allyBars, setAllyBars] = useState<HealthBarMode>(HEALTH_BARS_DEFAULT);
+  const [enemyBars, setEnemyBars] = useState<HealthBarMode>(HEALTH_BARS_DEFAULT);
+  /**
    * THE CONTROLS — saved preferences like `uiScale` (Progress.panSpeed,
    * Progress.edgePan): how fast the keys and the screen's edges pan the
    * view, and whether the edges pan it at all. Both reach a run under way
@@ -1386,6 +1482,8 @@ export default function MechSwarm() {
     setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
     setEdgePan(p.edgePan ?? true);
     setCursorLock(p.cursorLock ?? true);
+    setAllyBars(p.allyBars ?? HEALTH_BARS_DEFAULT);
+    setEnemyBars(p.enemyBars ?? HEALTH_BARS_DEFAULT);
   }, []);
 
   /**
@@ -1586,6 +1684,7 @@ export default function MechSwarm() {
         // the controls, off the save for the same reason as the effects
         g.setPanSpeed(save.panSpeed ?? PAN_SPEED_DEFAULT);
         g.setEdgePan(save.edgePan ?? true);
+        g.setHealthBars(save.allyBars ?? HEALTH_BARS_DEFAULT, save.enemyBars ?? HEALTH_BARS_DEFAULT);
         // the minimap's canvas is already mounted under the loading screen
         g.attachMinimap(mmRef.current);
         // NO SAVED BOARD STANDS BACK UP. A board is bought in scrap now,
@@ -2065,6 +2164,34 @@ export default function MechSwarm() {
                 saveUiScale(scale); // remembered across sessions
               }}
             />
+            {/* WHEN A BODY WEARS ITS HEALTH, one knob a side — the player's
+                own bars run the HUD's green-amber-red ramp, the swarm's are
+                red throughout, and that is the whole of how a bar says
+                whose it is (Game.drawUnitBars). Two knobs rather than one
+                because the two questions are not the same question: a
+                player who wants every wound they are landing on the swarm
+                in front of them usually does not want their own board
+                under a hedge of green at the same time. */}
+            <ChoiceRow
+              label="Ally health bars"
+              choices={HEALTH_BAR_MODES}
+              value={allyBars}
+              onPick={(mode) => {
+                setAllyBars(mode);
+                saveAllyBars(mode); // remembered across sessions
+                gameRef.current?.setHealthBars(mode, enemyBars); // live, mid-run
+              }}
+            />
+            <ChoiceRow
+              label="Enemy health bars"
+              choices={HEALTH_BAR_MODES}
+              value={enemyBars}
+              onPick={(mode) => {
+                setEnemyBars(mode);
+                saveEnemyBars(mode);
+                gameRef.current?.setHealthBars(allyBars, mode);
+              }}
+            />
           </SettingsBox>
         )}
 
@@ -2126,6 +2253,19 @@ export default function MechSwarm() {
     );
   };
 
+  /**
+   * THE SETTINGS SCREEN'S CONTENTS — a heading and the panel, and nothing
+   * about WHERE it is standing. Both callers drop it into the same
+   * MENU_COLUMN, so the screen the pause overlay raises is the screen the
+   * front of house raises: same width, same tab strip, same rows.
+   */
+  const settingsBody = (inGame: boolean) => (
+    <>
+      <h2 className="ms-heading text-[17px] tracking-[0.35em]">Settings</h2>
+      {settingsPanel(inGame)}
+    </>
+  );
+
   if (webglError) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-[#0b0b0d]">
@@ -2175,23 +2315,8 @@ export default function MechSwarm() {
         </button>
       </div>
     );
-    /**
-     * THE ONE BACK BUTTON: icon only, big, pinned to the top-left of the
-     * viewport — the same spot on every screen that has somewhere to go
-     * back to, so the thumb never hunts for it. The label survives as the
-     * accessible name.
-     */
     const back = (label: string) => (
-      <button
-        aria-label={label}
-        title={label}
-        onClick={() => setMenuView("home")}
-        className="ui-zoom ms-btn fixed left-[1rem] top-[1rem] z-20 h-11 w-11 p-0 text-[#a2a2a2] hover:text-white"
-      >
-        <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden="true">
-          <path d="M14.7 5.1 7.8 12l6.9 6.9 1.7-1.7L11.2 12l5.2-5.2z" />
-        </svg>
-      </button>
+      <CornerBack label={label} onClick={() => setMenuView("home")} />
     );
     const randomLabel = xpBonusText(1 + RANDOM_MAP_XP_BONUS);
     return (
@@ -2227,11 +2352,7 @@ export default function MechSwarm() {
               level strip — and the centring is SAFE: a column taller than
               the screen starts at the pad and scrolls, instead of spilling
               out of both ends */}
-          <div
-            className={`ui-zoom relative mx-auto flex min-h-full max-w-5xl flex-col items-center gap-8 py-12 pl-[1.5rem] pr-[1.5rem] [justify-content:safe_center] sm:py-16 ${
-              menuView === "home" ? "" : "pt-20 sm:pt-20"
-            }`}
-          >
+          <div className={`${MENU_COLUMN} ${menuView === "home" ? "" : MENU_COLUMN_PAD}`}>
             {/* THE TITLE CARD. A name and two doors - nothing here describes a
                 run, because no run has been chosen yet */}
             {menuView === "home" && (
@@ -2373,13 +2494,7 @@ export default function MechSwarm() {
             {/* SETTINGS - everything that changes the save rather than the run.
                 Wiping is the only one so far, and it lives here rather than
                 beside the deploy button where a mis-tap would be costly */}
-            {menuView === "settings" && (
-              <>
-                <h2 className="ms-heading text-[17px] tracking-[0.35em]">Settings</h2>
-
-                {settingsPanel(false)}
-              </>
-            )}
+            {menuView === "settings" && settingsBody(false)}
           </div>
 
           {/* THE CORNER CHROME — back on the left, the level and Progress on
@@ -2599,17 +2714,19 @@ export default function MechSwarm() {
                 </>
               )}
             </div>
-            {!hud.lost && !hud.won && !hud.menuOpen && (
-              /* pace controls, for everyone: an idle game where the only way
-                 to sit out a wave gap is to watch it is a game that wastes
-                 the player's time. Pause leads, since it is the one that
-                 stops the clock; the multipliers run out from it. They live
-                 directly under the wave panel so the whole run reads off one
-                 corner — and self-start keeps the strip its own width
-                 rather than the stack's.
-                 Pause and the game menu are also the two controls a
-                 touchscreen has no key for, so having them on screen is what
-                 makes space and esc optional rather than required */
+            {admin && !hud.lost && !hud.won && !hud.menuOpen && (
+              /* THE PACE STRIP IS SANDBOX'S, and nothing else on the field
+                 is. A campaign run plays at 1x — the multipliers have
+                 always been admin-only — and the pause button beside them
+                 was the whole strip for everyone else: one button, sitting
+                 over the field for a whole run, for a thing SPACE does and
+                 the gear in the other corner does (the menu holds the sim
+                 the moment it opens, and it is on screen for a touch that
+                 has no space bar). A control that duplicates two others
+                 earns its corner from nobody.
+                 They live directly under the wave panel so the whole run
+                 reads off one corner — and self-start keeps the strip its
+                 own width rather than the stack's. */
               <div
                 role="group"
                 aria-label="speed controls"
@@ -2635,11 +2752,7 @@ export default function MechSwarm() {
                     )}
                   </svg>
                 </button>
-                {/* THE MULTIPLIERS ARE ADMIN-ONLY. A campaign run plays at
-                    1x, so a strip whose only button says "1x" is a control
-                    that does nothing — pause alone is what a run gets, and
-                    sandbox gets the whole set */}
-                {(admin ? SPEEDS : []).map((mult) => (
+                {SPEEDS.map((mult) => (
                   <button
                     key={mult}
                     title={`${mult}x speed`}
@@ -2965,11 +3078,29 @@ export default function MechSwarm() {
             </div>
           </div>
         )}
+        {/* SETTINGS, MID-RUN — the front of house's own screen, raised over
+            the field. It is a SCREEN and not a card inside the pause sheet,
+            which is what it used to be: the sheet is 30rem wide because a
+            column of three buttons wants to be, and the settings panel
+            squeezed into what was left of it after the sheet's own padding
+            came off had its knobs wrapping under their labels and its tab
+            strip on two lines. Same column as the menu (MENU_COLUMN), same
+            corner back button, same panel — the only difference is the
+            ground behind it, which is the run, held where it was.
+
+            The whole panel is here rather than the two knobs a run needs,
+            because the moment a phone needs the effects switch is mid-run,
+            when the framerate dips — and the same goes for the health bars
+            the fight in front of the player is or is not wearing. */}
+        {hud?.menuOpen && !hud.lost && !hud.won && pauseSettings && (
+          <div className="absolute inset-0 z-30 overflow-y-auto bg-[#0b0b0d]/95 backdrop-blur-sm">
+            <div className={`${MENU_COLUMN} ${MENU_COLUMN_PAD}`}>{settingsBody(true)}</div>
+            <CornerBack label="Back" onClick={() => setPauseSettings(false)} />
+          </div>
+        )}
         {/* THE PAUSE SHEET. Opening it holds the sim (Game.openMenu), so
-            its heading says what the run is doing — and it carries the
-            same settings panel the menu shows, because the moment a phone
-            needs the effects switch is mid-run, when the framerate dips */}
-        {hud?.menuOpen && !hud.lost && !hud.won && (
+            its heading says what the run is doing */}
+        {hud?.menuOpen && !hud.lost && !hud.won && !pauseSettings && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
             <div className="ui-zoom ms-pane flex max-h-[calc(100vh-2rem)] w-[30rem] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 overflow-y-auto p-6">
               {/* the sandbox door is Ctrl+Shift+S; the row below says when
@@ -2977,7 +3108,7 @@ export default function MechSwarm() {
               <h2 className="font-display text-xl font-bold uppercase tracking-[0.3em] text-[#FFD37F]">
                 Paused
               </h2>
-              {admin && !pauseSettings && (
+              {admin && (
                 <div className="ms-pane flex w-full max-w-[20rem] items-center justify-between gap-3 border-[#6b4f8a] px-3 py-2">
                   <div className="min-w-0">
                     <div className="text-[15px] font-bold uppercase tracking-widest text-[#C9A7FF]">
@@ -2996,57 +3127,46 @@ export default function MechSwarm() {
                   </button>
                 </div>
               )}
-              {/* THE MENU, or the settings it hides. One press deep, and the
-                  press back out is the same button in the same place */}
-              {pauseSettings ? (
-                <>
-                  {settingsPanel(true)}
-                  <button
-                    onClick={() => setPauseSettings(false)}
-                    className="ms-btn w-full max-w-[20rem] px-5 py-2 text-base"
-                  >
-                    Back
-                  </button>
-                </>
-              ) : (
-                <div className="flex w-full max-w-[20rem] flex-col gap-2">
-                  <button
-                    onClick={() => {
-                      const g = gameRef.current;
-                      if (!g) return;
-                      g.closeMenu();
-                      setHud(g.ui());
-                    }}
-                    className="ms-btn ms-btn-accent w-full px-5 py-2 text-base"
-                  >
-                    Resume
-                  </button>
-                  <button
-                    onClick={() => setPauseSettings(true)}
-                    className="ms-btn w-full px-5 py-2 text-base"
-                  >
-                    Settings
-                  </button>
-                  {/* the one thing here that cannot be undone sits last and
-                      alone, in the colour nothing else on the panel wears —
-                      and asks, in the game's own dialog, before it throws
-                      the run away */}
-                  <button
-                    onClick={async () => {
-                      const ok = await confirm({
-                        title: "Abandon this run?",
-                        body: "The board is lost and the waves it cleared pay nothing. The rung and the map stay picked.",
-                        confirmLabel: "Abandon",
-                        cancelLabel: "Keep playing",
-                      });
-                      if (ok) backToMenu();
-                    }}
-                    className="ms-btn ms-btn-red w-full px-5 py-2 text-base"
-                  >
-                    Abandon run
-                  </button>
-                </div>
-              )}
+              {/* THE MENU. Settings is one press deep and opens as its own
+                  screen over the field (above); the press back out is the
+                  corner back button, where every other screen keeps it */}
+              <div className="flex w-full max-w-[20rem] flex-col gap-2">
+                <button
+                  onClick={() => {
+                    const g = gameRef.current;
+                    if (!g) return;
+                    g.closeMenu();
+                    setHud(g.ui());
+                  }}
+                  className="ms-btn ms-btn-accent w-full px-5 py-2 text-base"
+                >
+                  Resume
+                </button>
+                <button
+                  onClick={() => setPauseSettings(true)}
+                  className="ms-btn w-full px-5 py-2 text-base"
+                >
+                  Settings
+                </button>
+                {/* the one thing here that cannot be undone sits last and
+                    alone, in the colour nothing else on the panel wears —
+                    and asks, in the game's own dialog, before it throws
+                    the run away */}
+                <button
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: "Abandon this run?",
+                      body: "The board is lost and the waves it cleared pay nothing. The rung and the map stay picked.",
+                      confirmLabel: "Abandon",
+                      cancelLabel: "Keep playing",
+                    });
+                    if (ok) backToMenu();
+                  }}
+                  className="ms-btn ms-btn-red w-full px-5 py-2 text-base"
+                >
+                  Abandon run
+                </button>
+              </div>
             </div>
           </div>
         )}

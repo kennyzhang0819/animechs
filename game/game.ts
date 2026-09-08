@@ -29,7 +29,7 @@ import {
   sellValue,
   UNIT_BUILD_SECONDS,
 } from "./economy";
-import type { TowerPlacement } from "./progress";
+import { HEALTH_BARS_DEFAULT, type HealthBarMode, type TowerPlacement } from "./progress";
 import { TOWER_KINDS } from "./types";
 import { Renderer } from "./renderer";
 import { fitZoom } from "./fit";
@@ -333,6 +333,17 @@ const BAR_MAKE = "#7FC4FF";
 const BAR_MINE = SCRAP_COLOR;
 /** a health bar's colour at a fraction of full, the HUD's own three */
 const hpColor = (f: number): string => (f > 0.5 ? "#7BE58A" : f > 0.2 ? "#FFD37F" : "#FF5A5A");
+/**
+ * THE SWARM'S HEALTH IS RED AND STAYS RED. The player's own bar runs the
+ * three-colour ramp because its colour is a WARNING — green to amber to
+ * red is the run going wrong. Nothing is going wrong when a swarm body is
+ * down to a fifth, so its bar carries no ramp at all: red says whose it is
+ * (the one thing worth reading at a glance on a field of two armies) and
+ * the LENGTH says how much is left, which is what a bar is for.
+ */
+const ENEMY_HP = "#FF5A5A";
+/** how far from the cursor a body still counts as the one under it, in world px */
+const HOVER_MIN_R = 10;
 const PAN_KEYS: Record<string, readonly [number, number]> = {
   KeyW: [0, -1],
   KeyS: [0, 1],
@@ -396,6 +407,13 @@ export class Game {
   private panSpeed = 1;
   /** does a cursor at the screen's edge pan? (EDGE_PAN_PX) */
   private edgePan = true;
+  /**
+   * WHO WEARS A HEALTH BAR ON THE FIELD — the Interface tab's two knobs,
+   * one a side (setHealthBars). They govern units and buildings alike:
+   * a wall and a walker are both things with health standing on the board.
+   */
+  private allyBars: HealthBarMode = HEALTH_BARS_DEFAULT;
+  private enemyBars: HealthBarMode = HEALTH_BARS_DEFAULT;
   /**
    * where the cursor is, window-wide, in client px — or null once it has
    * left the window or the window has lost focus, so a cursor parked on
@@ -1212,6 +1230,17 @@ export class Game {
   }
 
   /**
+   * The Interface tab's health-bar knobs, both sides at once — they are
+   * read straight off the fields every frame (barsOn), so a knob turned
+   * from the pause overlay is showing on the field behind it before the
+   * panel is even closed.
+   */
+  setHealthBars(ally: HealthBarMode, enemy: HealthBarMode): void {
+    this.allyBars = ally;
+    this.enemyBars = enemy;
+  }
+
+  /**
    * THE MINIMAP'S CANVAS, or null to let go of it. React owns the element
    * and hands it over when the game screen mounts; the game paints it
    * every frame (drawMinimap) and listens on it for the press and the
@@ -1690,33 +1719,19 @@ export class Game {
   }
 
   /**
-   * THE ARMY'S OWN MARKS: a ring under every selected body with its health
-   * over it, the route a chained order drew for the selection, the marquee
-   * while one is being dragged, and a ping where the last order landed.
+   * THE ARMY'S OWN MARKS: the route a chained order drew for the
+   * selection, the marquee while one is being dragged, and a ping where
+   * the last order landed.
    *
-   * Rings go UNDER the bodies in reading order — they are drawn first —
-   * and the health bar rides above the body like a structure's does
-   * (drawBars), so one vocabulary covers the whole board.
+   * The RING under a selected body is the renderer's, not this canvas's
+   * (Renderer.pushUnitPass) — it is the team's own amber at full strength,
+   * so a selection is a mark the board already speaks in — and the health
+   * over a body is drawUnitBars', wherever that body came from. What is
+   * left here belongs to the HAND rather than to the board.
    */
   private drawSelection(c: CanvasRenderingContext2D): void {
     const sim = this.sim;
-    const { upx, upy, urad, usel, uhp, uhpmax, n } = sim;
-    // the RING under a selected body is the renderer's, not this canvas's
-    // (Renderer.pushUnitPass): it is the team's own amber ring at full
-    // strength, so a selection is the mark the board already speaks in.
-    // What is left here is the health over the body, and the two marks
-    // that belong to the hand rather than to the board
-    const bars: { v: number; col: string }[] = [];
-    for (let i = 0; i < n; i++) {
-      if (!usel[i]) continue;
-      const f = uhp[i] / Math.max(1, uhpmax[i]);
-      if (f >= 1) continue;
-      bars.length = 0;
-      bars.push({ v: f, col: hpColor(f) });
-      const r = Math.max(urad[i] * 1.25, 7);
-      this.drawBars(c, upx[i], upy[i] - r, Math.max(r * 2, BAR_MIN_W), bars);
-    }
-
+    const { upx, upy, usel, n } = sim;
     // WHERE THE ORDER LANDED: a heavy ring that closes on the point and a
     // dot at the middle of it, in the team's amber. It CONTRACTS rather
     // than expanding — an opening ring reads as something happening AT the
@@ -1887,6 +1902,88 @@ export class Game {
   }
 
   /**
+   * DOES A BODY ON THIS SIDE WEAR ITS HEALTH RIGHT NOW? The one place the
+   * Interface tab's two knobs are read, so a unit, a turret, a wall and
+   * the core all answer the question the same way.
+   *
+   * `hovered` is only ever true for the one body under the cursor, and
+   * `selected` is the standing exception to every mode but `never`: a
+   * player who has picked a squad or a building out of a board is asking
+   * about those, and a hurt one in the picked set says so whatever the
+   * field at large is set to. A full-health selection still wears nothing
+   * — the amber ring or outline on it is the mark that says it is picked.
+   */
+  private barsOn(ally: boolean, f: number, hovered: boolean, selected: boolean): boolean {
+    const mode = ally ? this.allyBars : this.enemyBars;
+    if (mode === "never") return false;
+    if (mode === "always") return true;
+    if (selected && f < 1) return true;
+    return mode === "hover" ? hovered : f < 1;
+  }
+
+  /** is either side's knob on `hover`? — the only case that costs a hit test */
+  private hoverBars(): boolean {
+    return this.allyBars === "hover" || this.enemyBars === "hover";
+  }
+
+  /**
+   * THE BODY UNDER THE CURSOR, or -1 — what the `hover` mode reads. Both
+   * sides, unlike Sim.unitAt, which answers the narrower question of what
+   * a press would MARK; a bar is not an order, and a player pointing at a
+   * dagger to see how hurt it is means the dagger.
+   */
+  private hoverUnit(): number {
+    if (this.hoverX < 0) return -1;
+    const { upx, upy, urad, uhp, n } = this.sim;
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < n; i++) {
+      if (uhp[i] <= 0 || !this.sim.unitVisible(i)) continue;
+      const dx = upx[i] - this.hoverX, dy = upy[i] - this.hoverY;
+      const d2 = dx * dx + dy * dy;
+      const r = Math.max(urad[i] * 1.6, HOVER_MIN_R);
+      if (d2 < r * r && d2 < bd) {
+        bd = d2;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /** is the cursor inside this footprint? — the buildings' half of `hover` */
+  private hoverOver(x: number, y: number, size: number): boolean {
+    if (this.hoverX < 0) return false;
+    const half = size / 2;
+    return Math.abs(this.hoverX - x) <= half && Math.abs(this.hoverY - y) <= half;
+  }
+
+  /**
+   * EVERY BODY'S HEALTH, one bar over each, on whatever terms the
+   * Interface tab is set to (barsOn). The player's own run the HUD's
+   * green-amber-red ramp; the swarm's are red throughout (ENEMY_HP), so
+   * a glance at a melee says which bars belong to which army without
+   * reading a single length.
+   *
+   * A body in the fog wears nothing, on either side — it is not on screen.
+   */
+  private drawUnitBars(c: CanvasRenderingContext2D): void {
+    if (this.allyBars === "never" && this.enemyBars === "never") return;
+    const { upx, upy, urad, usel, uhp, uhpmax, uteam, n } = this.sim;
+    const hoverI = this.hoverBars() ? this.hoverUnit() : -1;
+    const bars: { v: number; col: string }[] = [];
+    for (let i = 0; i < n; i++) {
+      if (uhp[i] <= 0 || !this.sim.unitVisible(i)) continue;
+      // team 0 is the swarm; anything else is the player's own (Sim.uteam)
+      const ally = uteam[i] !== 0;
+      const f = clamp(uhp[i] / Math.max(1, uhpmax[i]), 0, 1);
+      if (!this.barsOn(ally, f, i === hoverI, usel[i] !== 0)) continue;
+      bars.length = 0;
+      bars.push({ v: f, col: ally ? hpColor(f) : ENEMY_HP });
+      const r = Math.max(urad[i] * 1.25, 7);
+      this.drawBars(c, upx[i], upy[i] - r, Math.max(r * 2, BAR_MIN_W), bars);
+    }
+  }
+
+  /**
    * Every structure's bars: what it is making, what is still going up, and
    * what is left of it.
    *
@@ -1895,12 +1992,13 @@ export class Game {
    *                nothing is happening to otherwise
    *   PRODUCTION   a factory's unit clock (Tower.prodT)
    *   CONSTRUCTION the shell's own timer (Tower.buildT)
-   *   HP           only once something has actually hurt it — a bar over
-   *                every untouched building would be a wall of green
+   *   HP           on the Interface tab's terms (barsOn), the same terms
+   *                a unit's health is on — a wall and a walker are both
+   *                things with health standing on the board
    *
    * The swarm's buildings get the same treatment on ground the player has
    * seen, because "how much is left of that bunker" is the same question
-   * from either side of it.
+   * from either side of it — asked in red, like its units' (ENEMY_HP).
    *
    * THE CORE gets the mining bar too, since it ships on the same clock
    * (Sim.coreMineT) — it is the run's first and largest earner, and a bar
@@ -1909,24 +2007,32 @@ export class Game {
   private drawStructureBars(c: CanvasRenderingContext2D): void {
     const bars: { v: number; col: string }[] = [];
     const mining = this.sim.charging && !this.sim.lost();
-    // the core's shipment, on a run that is actually earning
-    if (mining) {
-      const core = this.sim.core;
-      const sz = core.size * CELL;
-      this.drawBars(c, core.x, core.y - sz / 2, sz - 2, [
-        { v: 1 - this.sim.coreMineT / CORE_LOAD_SECONDS, col: BAR_MINE },
-      ]);
-    }
+    // A BUILDING IN THE SELECTION COUNTS AS PICKED, exactly as a body in it
+    // does (barsOn): asked for only when there is a selection to ask about,
+    // since selectedStructs copies the set to answer
+    const picked = this.sim.selectedStructN > 0 ? new Set(this.sim.selectedStructs) : null;
+    // the core's shipment, and what is left of the thing the whole run is
+    // spent defending — one body, both bars, on the player's own terms
+    const core = this.sim.core;
+    const csz = core.size * CELL;
+    bars.length = 0;
+    const cf = clamp(core.hp / Math.max(1, core.hpMax), 0, 1);
+    if (this.barsOn(true, cf, this.hoverOver(core.x, core.y, csz), picked?.has(core) === true))
+      bars.push({ v: cf, col: hpColor(cf) });
+    if (mining) bars.push({ v: 1 - this.sim.coreMineT / CORE_LOAD_SECONDS, col: BAR_MINE });
+    this.drawBars(c, core.x, core.y - csz / 2, csz - 2, bars);
     for (const t of this.sim.towers) {
       const st = structStats(t.kind);
       const sz = st.size * CELL;
-      if (t.team === "enemy" && this.sim.fog.enabled && !this.sim.fog.seenAt(t.x, t.y)) continue;
+      const ally = t.team !== "enemy";
+      if (!ally && this.sim.fog.enabled && !this.sim.fog.seenAt(t.x, t.y)) continue;
       bars.length = 0;
       const hpMax = towerMaxHp(t.kind);
+      const f = clamp(t.hp / Math.max(1, hpMax), 0, 1);
       // a shell is on 1 hp by design (Tower.buildT) — that is a state, not
       // a wound, and the construction bar below is already saying it
-      if (t.buildT <= 0 && t.hp < hpMax)
-        bars.push({ v: t.hp / hpMax, col: hpColor(t.hp / hpMax) });
+      if (t.buildT <= 0 && this.barsOn(ally, f, this.hoverOver(t.x, t.y, sz), picked?.has(t) === true))
+        bars.push({ v: f, col: ally ? hpColor(f) : ENEMY_HP });
       if (t.buildT > 0 && t.buildTotal > 0)
         bars.push({ v: 1 - t.buildT / t.buildTotal, col: BAR_BUILD });
       const tier = st.produces;
@@ -1943,6 +2049,18 @@ export class Game {
       if (mining && t.ore > 0 && t.buildT <= 0 && t.team === "player")
         bars.push({ v: 1 - t.mineT / drillLoadSeconds(t.ore), col: BAR_MINE });
       this.drawBars(c, t.x, t.y - sz / 2, sz - 2, bars);
+    }
+    // THE SWARM'S SHIELD TOWERS (mutation.ts) stand outside the tower list
+    // and are buildings all the same. The BODY's health is what a bar can
+    // say; the dome over it is the renderer's business and is drawn as
+    // what it is, a dome
+    const ssz = SHIELD_TOWER_SIZE * CELL;
+    for (const s of this.sim.shieldTowers) {
+      if (s.hp <= 0) continue;
+      if (this.sim.fog.enabled && !this.sim.fog.seenAt(s.x, s.y)) continue;
+      const f = clamp(s.hp / Math.max(1, s.hpMax), 0, 1);
+      if (!this.barsOn(false, f, this.hoverOver(s.x, s.y, ssz), false)) continue;
+      this.drawBars(c, s.x, s.y - ssz / 2, ssz - 2, [{ v: f, col: ENEMY_HP }]);
     }
   }
 
@@ -2064,6 +2182,8 @@ export class Game {
 
     // WHAT EVERY STRUCTURE IS DOING, as a stack of bars over it (drawBars)
     this.drawStructureBars(c);
+    // ...and what every BODY has left, on the Interface tab's terms
+    this.drawUnitBars(c);
     // ...and the army: who is selected, what they were told, and the
     // rectangle being dragged over them right now
     this.drawSelection(c);

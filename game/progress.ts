@@ -7,6 +7,33 @@ import { clearSave, readSave, writeSave } from "./storage";
 import { type TowerKind } from "./types";
 
 /**
+ * WHEN A BODY WEARS ITS HEALTH — the Interface tab's two knobs, one for
+ * the player's own and one for the swarm's (Game.setHealthBars). The same
+ * four choices cover units and buildings alike, because "how much is left
+ * of that" is one question whether the thing walks or stands:
+ *
+ * - `damaged` — only once something has taken a hit. The default, and the
+ *   quiet one: a board at full health wears nothing
+ * - `always`  — every body, all the time, full bars included
+ * - `hover`   — only the one under the cursor, for a player who wants the
+ *   field bare and asks a body at a time
+ * - `never`   — nothing on the field; the panel still says what the core
+ *   and the bosses are on
+ */
+export type HealthBarMode = "damaged" | "always" | "hover" | "never";
+
+/** the four, in the order the Interface tab prints them: most bars to none */
+export const HEALTH_BAR_MODES: ReadonlyArray<{ mode: HealthBarMode; label: string }> = [
+  { mode: "always", label: "Always" },
+  { mode: "damaged", label: "Damaged" },
+  { mode: "hover", label: "Hover" },
+  { mode: "never", label: "Never" },
+];
+
+/** absent from the save means this — the behaviour the game had before the knob */
+export const HEALTH_BARS_DEFAULT: HealthBarMode = "damaged";
+
+/**
  * The player's persistent campaign state: lifetime XP, and how far up
  * each world's ladder they have climbed. Lives in ONE SAVE SLOT
  * (storage.ts: localStorage in a browser, a file under the desktop shell)
@@ -92,6 +119,16 @@ export interface Progress {
    * straight onto the other screen.
    */
   cursorLock?: boolean;
+  /**
+   * WHEN A HEALTH BAR RIDES OVER A BODY ON THE FIELD, the player's own
+   * (`allyBars`) and the swarm's (`enemyBars`) set apart — a player who
+   * wants to see every wound coming in usually does not want their own
+   * board covered in green, and the other way round. Absent means
+   * HEALTH_BARS_DEFAULT; anything the game does not recognise reads the
+   * same way.
+   */
+  allyBars?: HealthBarMode;
+  enemyBars?: HealthBarMode;
   /**
    * THIS SAVE HAS DECLINED THE DEV GRANT — the wipe's half of the back
    * door (see resetProgress and DEV_UNLOCK_ALL). A wiped save on a dev
@@ -184,6 +221,13 @@ function readUiScale(p: { uiScale?: unknown }): number | undefined {
   return typeof s === "number" && (UI_SCALES as readonly number[]).includes(s) ? s : undefined;
 }
 
+/** the stored health-bar mode, or undefined for anything the game has since dropped */
+function readBars(v: unknown): HealthBarMode | undefined {
+  return typeof v === "string" && HEALTH_BAR_MODES.some((m) => m.mode === v)
+    ? (v as HealthBarMode)
+    : undefined;
+}
+
 export function loadProgress(): Progress {
   try {
     const raw = readSave();
@@ -208,6 +252,8 @@ export function loadProgress(): Progress {
       // absent means ON — only an explicit false switches it off
       edgePan: p.edgePan !== false,
       cursorLock: p.cursorLock !== false,
+      allyBars: readBars(p.allyBars),
+      enemyBars: readBars(p.enemyBars),
       ...(p.devGrantOff === true ? { devGrantOff: true } : null),
     };
     // a migrated save is rewritten here rather than re-converted on every
@@ -281,6 +327,23 @@ export function saveUiScale(scale: number): void {
   const p = loadProgress();
   if ((p.uiScale ?? UI_SCALE_DEFAULT) === scale) return;
   saveProgress({ ...p, uiScale: scale });
+}
+
+/**
+ * The Interface tab's health-bar knobs. One writer a side, because the two
+ * are set one at a time and a single call taking both would have every
+ * caller pass the value it is not changing.
+ */
+export function saveAllyBars(mode: HealthBarMode): void {
+  const p = loadProgress();
+  if ((p.allyBars ?? HEALTH_BARS_DEFAULT) === mode) return;
+  saveProgress({ ...p, allyBars: mode });
+}
+
+export function saveEnemyBars(mode: HealthBarMode): void {
+  const p = loadProgress();
+  if ((p.enemyBars ?? HEALTH_BARS_DEFAULT) === mode) return;
+  saveProgress({ ...p, enemyBars: mode });
 }
 
 export function savePanSpeed(mult: number): void {
