@@ -73,7 +73,6 @@ import {
   UI_SCALE_DEFAULT,
   UI_SCALES,
   saveHudMinimized,
-  saveLoadout,
   saveFaction,
   saveRunPick,
   saveSpeed,
@@ -95,9 +94,9 @@ import {
 import { displayControls, type DisplayMode, type DisplayState } from "@/game/storage";
 import { useCursorLock } from "./cursorLock";
 import { BUILD } from "@/game/version";
-import { BY_MINDUSTRY_VALUE } from "@/game/tech";
+import { BUILD_TABS, buildTabOf, BY_MINDUSTRY_VALUE, type BuildTab } from "@/game/tech";
 import { factionsAt, lockedMutators, rewardsAt, rewardText } from "@/game/track";
-import { defaultLoadout, FACTION_BLURB, FACTION_TURRETS, factionUnits } from "@/game/factions";
+import { FACTION_BLURB, FACTION_TURRETS, factionUnits } from "@/game/factions";
 import { TOWER_ICONS } from "@/game/towerIcons";
 import { levelProgress, POINT_COLOR, RANDOM_MAP_XP_BONUS, XP_COLOR } from "@/game/economy";
 import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
@@ -966,58 +965,51 @@ const MENU_BY_KIND = new Map(TOWER_MENU.map((t) => [t.kind, t]));
 
 /**
  * The menu in the game's ONE canonical order — the admin balance panel's
- * cheapest-first Mindustry ranking (BY_MINDUSTRY_VALUE). The bar and the
- * loadout picker both read in it, so a turret keeps its place wherever it
- * shows up: enable foreshadow and it is always last, whenever it was picked.
+ * cheapest-first Mindustry ranking (BY_MINDUSTRY_VALUE). Every tab of the
+ * bar reads in it, so a building keeps its place wherever it shows up:
+ * cheapest on the left, and a turret earned late lands where the roster
+ * ranks it rather than at the end.
  */
 const ORDERED_MENU: ReadonlyArray<(typeof TOWER_MENU)[number]> = BY_MINDUSTRY_VALUE.map(
   (k) => MENU_BY_KIND.get(k)!,
 );
 
+/**
+ * THE FACE OF A SHUT SLOT: one building standing for the whole category —
+ * the drill for the economy, the first factory for the units, the duo for
+ * the turrets. The first thing a run of that job builds, in every case,
+ * which is why it reads as the category rather than as itself. A slot
+ * carrying a PICK wears the pick instead (see the bar).
+ */
+const TAB_EMBLEM: Readonly<Record<BuildTab, TowerKind>> = {
+  scrap: "drill",
+  units: "factory-t1",
+  tower: "duo",
+};
+
 /** every button in the bottom bar: the turrets and the demolish tool */
 const TOOL_BTN = "ms-btn h-[4.5rem] w-14 shrink-0 flex-col gap-0.5 p-0";
 
 /**
- * THE BUILD BAR'S HOTKEYS: 1 to 9 and then 0, one per slot from the left,
- * exactly the row a hand already rests on in every RTS ever shipped.
+ * THE BUILD BAR'S HOTKEYS ARE THE THREE SLOT KEYS, and nothing else: E, R
+ * and T open the scrap, unit and tower slots (tech.ts BUILD_TABS), and the
+ * buildings inside are clicked.
  *
- * A KEY IS THE SAME PRESS AS A CLICK, not a second way of doing something
- * slightly different: it TOGGLES (the same digit twice cancels the pick,
- * like clicking the lit button twice), it does not care whether the run
- * can afford the turret (the button does not either — the price badge
- * reddens and the build is refused at the board), and it works while the
- * game is paused, because planning a lane is most of what pausing is for.
+ * THE DIGIT ROW IS NOT THE BAR'S ANY MORE. 1 to 0 used to name a slot
+ * each, which is the RTS convention for the wrong row of buttons: in
+ * every game that has both, the digits are the CONTROL GROUPS — the ten
+ * bands a player splits their army into — and this game has an army to
+ * split now. The digits are held for that; the bar took the keys above
+ * them instead.
  *
- * TEN IS THE CEILING, WHICH IS NOT A LIMIT ANYONE MEETS IN CAMPAIGN. The
- * bar holds BAR_SLOTS (eight) there, so the digits cover the whole of it
- * with two to spare. Sandbox shows the entire roster and runs past ten;
- * the eleventh turret on is click-only, which is the honest thing to do
- * with a keyboard that has ten digits on it.
+ * A KEY IS THE SAME PRESS AS A CLICK on the slot, not a second way of
+ * doing something slightly different: it TOGGLES the menu open and shut
+ * (the same letter twice closes it, like clicking the lit slot twice), it
+ * works while the game is paused (planning a lane is most of what pausing
+ * is for), and it declines exactly what a click would — a modifier held
+ * (ctrl+E and cmd+E belong to the browser), a text field focused, or a
+ * run that has ended.
  */
-const SLOT_DIGIT = (slot: number): string | null =>
-  slot < 9 ? String(slot + 1) : slot === 9 ? "0" : null;
-
-/**
- * The slot a press names, or -1 for a press that names none.
- *
- * `code` FIRST, BECAUSE IT IS THE PHYSICAL DIGIT ROW. A layout that puts
- * a symbol where a digit is printed still picks the slot under the
- * finger, and the numpad's twin of every digit comes along for free.
- *
- * `key` AS THE FALLBACK, AND ONLY WHEN THERE IS NO CODE. A press with no
- * `code` at all is not a physical keyboard — an on-screen or virtual
- * keyboard, and some remote-input and assistive software, send the
- * character and nothing else. Reading `key` there is the difference
- * between the shortcut existing for those players and not; reading it
- * FIRST would break the layouts `code` is there to serve, so the order
- * matters more than either branch does.
- */
-function slotForKey(e: KeyboardEvent): number {
-  const m = /^(?:Digit|Numpad)([0-9])$/.exec(e.code) ?? (e.code === "" ? /^([0-9])$/.exec(e.key) : null);
-  if (!m) return -1;
-  const d = Number(m[1]);
-  return d === 0 ? 9 : d - 1;
-}
 
 
 /**
@@ -1249,14 +1241,13 @@ export default function MechSwarm() {
    */
   const [effects, setEffects] = useState(true);
   /**
-   * The build bar's loadout, PvZ-style: which turrets ride in its slots —
-   * a set, not a sequence, since the bar always renders in the canonical
-   * order (ORDERED_MENU). Mirrors the save (Progress.loadout) — null means
-   * the save has never curated, and the bar auto-fills its slots from
-   * whatever is unlocked. `loadoutOpen` is the picker floated above the bar.
+   * WHICH OF THE THREE BUILD SLOTS IS OPEN (tech.ts BUILD_TABS), or null
+   * for a closed bar. Not a saved preference: it is where the player's
+   * hand is this second, not a fact about them — and a run opens with
+   * every slot shut, the field clear, which is what the bar was before
+   * anything was clicked.
    */
-  const [loadout, setLoadout] = useState<readonly TowerKind[] | null>(null);
-  const [loadoutOpen, setLoadoutOpen] = useState(false);
+  const [openTab, setOpenTab] = useState<BuildTab | null>(null);
   /**
    * The HUD size — a saved preference (Progress.uiScale) like `effects`.
    * Which settings panel is up is NOT saved: settings always opens on the
@@ -1345,7 +1336,6 @@ export default function MechSwarm() {
     setMapPick(p.map ?? null);
     setHudMin(p.hudMinimized ?? false);
     setEffects(p.effects ?? true);
-    setLoadout(p.loadout ?? null);
     setFactionPick(p.faction ?? null);
     setUiScale(p.uiScale ?? UI_SCALE_DEFAULT);
     setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
@@ -1648,73 +1638,25 @@ export default function MechSwarm() {
   }, [screen, level, runRandom]);
 
   /**
-   * The turrets in the bar, ALWAYS in the canonical order (ORDERED_MENU) —
-   * picking foreshadow late does not put it before ripple; it slots in
-   * where the roster ranks it, last. The bar is eight slots wide on every
-   * save, sandbox and admin included.
-   * A curated save shows its picks — those still unlocked,
-   * trimmed to the slot count — and an uncurated one auto-fills its slots
-   * from the unlocked list. Auto-fill only runs while the save has never
-   * curated: once picks are saved, a removed turret STAYS removed instead
-   * of being quietly refilled.
+   * WHAT A SLOT'S MENU HOLDS: every building of one category (tech.ts
+   * buildTabOf)
+   * the save OWNS, in the canonical order (ORDERED_MENU) — cheapest on
+   * the left, so a menu does not reshuffle as the track hands things out.
    *
-   * WITH ONE OVERRIDE: A BAR WITH NOTHING ON IT IS NOT A CURATION, IT IS A
-   * BROKEN SCREEN. It cannot happen from the rung any more — every turret
-   * the save owns is legal at every rung now that the per-difficulty roster
-   * ceiling is gone — but a curation naming only turrets a LOCKED save no
-   * longer stands up still can (switching the full unlock back off is the
-   * live case). When the picks leave the bar EMPTY the save is treated as
-   * uncurated here and the slots auto-fill, exactly as on a fresh save.
+   * What the save has not earned is not in the menu at all — not greyed,
+   * not badged. The progress screen is where "what is still to earn" is
+   * answered; the bar answers "what can I put down right now". A null
+   * unlocked list is sandbox and the editors: the whole roster.
    *
-   * ONLY the empty case. A curation that still offers something is honoured
-   * as it stands, short bar and all — those are turrets the player asked
-   * for, and a half-full bar is still usable.
+   * NOTHING IS CURATED. The bar used to hold eight seeds out of the
+   * roster and a picker chose them (see BUILD_TABS); a menu holds all of
+   * its category, however many that is.
    */
-  const barKinds = (): TowerKind[] => {
+  const tabKinds = (tab: BuildTab): TowerKind[] => {
     if (!hud) return [];
-    // ONLY turrets the save OWNS ride the bar. What the track has not
-    // handed out yet is not shown at all — not greyed, not badged — the
-    // progress screen is where "what is still to earn" is answered
-    const owned = ORDERED_MENU.filter((t) => !hud.unlocked || hud.unlocked.includes(t.kind)).map(
-      (t) => t.kind,
-    );
-        // an uncurated save rides the faction's default bar — its three guns,
-    // the copper wall, the drill and the first factories (factions.ts
-    // defaultLoadout) — rather than the cheapest eight, which the walls
-    // would fill on their own
-    const start = defaultLoadout(owned);
-    const picks = new Set(loadout ?? (start.length > 0 ? start : owned));
-    const chosen = owned.filter((k) => picks.has(k));
-    return (chosen.length > 0 ? chosen : owned).slice(0, hud.barSlots);
-  };
-
-  /**
-   * Add or remove one turret from the loadout. The first edit persists the
-   * auto-filled set it started from, so what the player sees is what they
-   * are editing. Removing the kind currently picked for building also drops
-   * the pick — otherwise the ghost preview would keep following a button
-   * that is no longer on screen. Adding past the slot count is refused; the
-   * panel's count badge says why.
-   */
-  const toggleLoadout = (kind: TowerKind): void => {
-    if (!hud) return;
-    const cur = barKinds();
-    let next: TowerKind[];
-    if (cur.includes(kind)) {
-      next = cur.filter((k) => k !== kind);
-      const g = gameRef.current;
-      if (g && hud.buildKind === kind) {
-        g.setBuildKind(null);
-        setHud(g.ui());
-      }
-    } else {
-      if (cur.length >= hud.barSlots) return;
-      next = [...cur, kind];
-    }
-    // stored in canonical order too, so the save reads exactly like the bar
-    const ordered = BY_MINDUSTRY_VALUE.filter((k) => next.includes(k));
-    setLoadout(ordered);
-    saveLoadout(ordered);
+    return ORDERED_MENU.filter(
+      (t) => buildTabOf(t.kind) === tab && (!hud.unlocked || hud.unlocked.includes(t.kind)),
+    ).map((t) => t.kind);
   };
 
   const pickTower = (kind: TowerKind): void => {
@@ -1726,30 +1668,23 @@ export default function MechSwarm() {
   };
 
   /**
-   * THE BAR AS THE KEY HANDLER SEES IT. Kept in a ref, refreshed after
-   * every render, so the listener below can be registered ONCE for the
-   * whole run instead of being torn down and rebuilt ten times a second
-   * — `hud` is repolled at 100ms (see the poll above), and a dependency
-   * on it would make this the most re-registered listener in the app.
-   */
-  const barRef = useRef<TowerKind[]>([]);
-  useEffect(() => {
-    barRef.current = barKinds();
-  });
-
-  /**
-   * NUMBER KEYS PICK A BAR SLOT (see SLOT_DIGIT). Lives here rather than
-   * in Game.onKeyDown because the BAR is React's: which turrets ride it
-   * and in what order is barKinds(), off the save's loadout, and the game
-   * engine knows nothing about any of that. It asks the engine for the
-   * current pick rather than reading `hud`, so a press is answered
-   * against the live state and not against a snapshot up to 100ms stale.
+   * E, R AND T PICK A BAR TAB (see BUILD_TABS). Lives here rather than in
+   * Game.onKeyDown because the BAR is React's: which buildings ride which
+   * tab is the roster and the save's unlocks, and the game engine knows
+   * nothing about either. It asks the engine for the live run state
+   * rather than reading `hud`, so a press is answered against what is
+   * true now and not against a snapshot up to 100ms stale.
    *
    * IT DECLINES THE SAME PRESSES THE BAR WOULD. Nothing happens with a
-   * modifier held (ctrl+1 and cmd+1 are the browser's tab switches, and
-   * stealing those would be a bug in the game rather than a feature),
-   * with a text field focused, or once the run has ended or the pause
-   * menu is up — the bar is gone in all three cases.
+   * modifier held (ctrl+E and cmd+E belong to the browser, and stealing
+   * those would be a bug in the game rather than a feature), with a text
+   * field focused, or once the run has ended or the pause menu is up —
+   * the bar is gone in all three cases.
+   *
+   * `code` RATHER THAN `key`, because it is the physical key: a layout
+   * that puts something else where E is printed still switches the tab
+   * under the finger, which is the whole point of a home-row shortcut.
+   * Registered ONCE for the run — it depends on nothing that changes.
    */
   useEffect(() => {
     if (screen !== "game") return;
@@ -1760,16 +1695,14 @@ export default function MechSwarm() {
         e.target.closest("input, textarea, [contenteditable]")
       )
         return;
-      const slot = slotForKey(e);
-      if (slot < 0 || slot >= barRef.current.length) return;
+      const tab = BUILD_TABS.find((t) => t.code === e.code);
+      if (!tab) return;
       const g = gameRef.current;
       if (!g) return;
       const ui = g.ui();
       if (ui.lost || ui.won || ui.menuOpen) return;
       e.preventDefault();
-      const kind = barRef.current[slot];
-      g.setBuildKind(ui.buildKind === kind ? null : kind);
-      setHud(g.ui());
+      setOpenTab((cur) => (cur === tab.id ? null : tab.id));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1961,10 +1894,6 @@ export default function MechSwarm() {
                     setProgress(p);
                     setTier(0);
                     setMapPick(null);
-                    // the curated bar was part of the progress just
-                    // wiped. Left standing it would filter the fresh
-                    // save's build bar against turrets it no longer owns
-                    setLoadout(null);
                   }
                 }}
                 className="ms-btn ms-btn-red shrink-0 px-3 py-1.5 text-[15px]"
@@ -2668,11 +2597,6 @@ export default function MechSwarm() {
             </button>
           </div>
         )}
-        {/* The bar scrolls sideways instead of wrapping: a full loadout
-            plus the tools does not fit across a phone (sandbox shows the
-            whole roster), and a second row would eat the field. The
-            scroller itself is click-through so the map keeps the space to
-            either side of the buttons. */}
         {/* THE MINIMAP, StarCraft-style, in the bottom-left corner: the
             whole map, never zoomed, the fog and the field on it and the
             viewport framed (Game.drawMinimap). A press puts that place in
@@ -2709,157 +2633,139 @@ export default function MechSwarm() {
             ))}
           </div>
         )}
-        <div className="pointer-events-none absolute inset-x-0 bottom-[1rem] overflow-x-auto pb-1 pl-[1rem] pr-[1rem]">
-          <div
-            role="group"
-            aria-label="tower menu"
-            className="ui-zoom pointer-events-auto mx-auto flex w-max gap-2"
-          >
-            {/* the loadout, in the canonical roster order: the turrets this
-                save PICKED to ride the bar (see barKinds), not everything it
-                owns — owning is the tech tree's business, the bar is a PvZ
-                seed row. A null unlocked list is sandbox mode: the roster */}
-            {barKinds().map((kind, slot) => {
-              const t = MENU_BY_KIND.get(kind)!;
-              // the hotkey, worn in the corner: a shortcut nobody can see
-              // is a shortcut nobody presses (see SLOT_DIGIT)
-              const digit = SLOT_DIGIT(slot);
-              // what the badge says is the PRICE, in scrap — the number a
-              // build decision is made against — and it reddens the moment
-              // the run cannot cover it. Free builds (sandbox, the editors)
-              // carry no number at all
-              const price = hud?.scrap === null || !hud ? null : hud.prices[t.kind];
-              const poor = price !== null && hud !== null && hud.scrap !== null && hud.scrap < price;
-              const named = price === null ? t.name : `${t.name} — ${price} scrap`;
-              const label = digit ? `${named} (key ${digit})` : named;
-              return (
-                <button
-                  key={t.kind}
-                  title={label}
-                  aria-label={label}
-                  aria-keyshortcuts={digit ?? undefined}
-                  aria-pressed={hud?.buildKind === t.kind}
-                  onClick={() => pickTower(t.kind)}
-                  className={`${TOOL_BTN} relative ${poor ? "opacity-60" : ""}`}
-                >
-                  {/* THE HOTKEY, worn on the icon's top-left corner. It
-                      carries its own dark ground because the sprite fills
-                      all but 8px of the button: over the copper wall — a
-                      solid block of colour — a bare digit is unreadable,
-                      and the 4px of corner the chip covers is nothing */}
-                  {digit && (
+        {/* THE BUILD BAR IS THREE SLOTS (tech.ts BUILD_TABS) — scrap,
+            units, tower — each the same button a turret used to ride
+            (TOOL_BTN), each worn with its key, and each a DOOR: it opens a
+            menu of everything of that job the save owns, floated over the
+            bar the way the loadout picker used to be. Left to right on the
+            bar is E, R, T left to right on the keyboard, and the digit row
+            is left alone for the control groups. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-[1rem] z-10 flex flex-col items-center gap-2 px-[1rem]">
+          {/* THE OPEN SLOT'S MENU, above the slot that opened it: every
+              building of that category, wrapped rather than scrolled —
+              turrets is seventeen guns and six walls, and a row that ran
+              off the edge would hide half of them behind nothing at all.
+              Picking one shuts the menu: the next thing the hand does is
+              put the building down, and a panel over the field is in the
+              way of exactly that */}
+          {hud && openTab && !hud.lost && !hud.won && !hud.menuOpen && (
+            <div className="ui-zoom ms-pane pointer-events-auto max-w-[calc(100vw-2rem)] p-3">
+              <div className="mb-2 text-center text-[13px] uppercase tracking-widest text-[#71717C]">
+                {BUILD_TABS.find((t) => t.id === openTab)!.label}
+              </div>
+              <div
+                role="group"
+                aria-label={`${BUILD_TABS.find((t) => t.id === openTab)!.label} buildings`}
+                className="flex max-w-[34rem] flex-wrap justify-center gap-2"
+              >
+                {tabKinds(openTab).map((kind) => {
+                  const t = MENU_BY_KIND.get(kind)!;
+                  // what the badge says is the PRICE, in scrap — the number
+                  // a build decision is made against — and it reddens the
+                  // moment the run cannot cover it. Free builds (sandbox,
+                  // the editors) carry no number at all
+                  const price = hud.scrap === null ? null : hud.prices[t.kind];
+                  const poor = price !== null && hud.scrap !== null && hud.scrap < price;
+                  const label = price === null ? t.name : `${t.name} — ${price} scrap`;
+                  return (
+                    <button
+                      key={t.kind}
+                      title={label}
+                      aria-label={label}
+                      aria-pressed={hud.buildKind === t.kind}
+                      onClick={() => {
+                        pickTower(t.kind);
+                        setOpenTab(null);
+                      }}
+                      className={`${TOOL_BTN} relative ${poor ? "opacity-60" : ""}`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
+                      <img
+                        src={icons[t.kind] ?? t.icon}
+                        alt=""
+                        className="h-10 w-10 [image-rendering:pixelated]"
+                      />
+                      {price !== null && (
+                        <span
+                          className={`text-[15px] font-bold leading-none ${
+                            poor ? "text-[#FF8A8A]" : "text-white"
+                          }`}
+                        >
+                          {price}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+                {/* A CATEGORY THE SAVE HAS NOTHING FOR SAYS SO. The menu
+                    would otherwise open onto an empty box, which reads as a
+                    broken panel rather than as an empty shelf */}
+                {tabKinds(openTab).length === 0 && (
+                  <div className="flex h-[4.5rem] items-center px-3 text-[13px] uppercase tracking-widest text-[#71717C]">
+                    Nothing here yet
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {/* THE THREE SLOTS. A slot stays lit while its menu is open, and
+              wears the building it has PICKED where the others wear the
+              category's emblem — so a SHUT bar still says what the cursor
+              is carrying, which is the one thing the old bar said by
+              having the button itself lit */}
+          {hud && (
+            <div
+              role="group"
+              aria-label="build bar"
+              className="ui-zoom pointer-events-auto flex w-max gap-2"
+            >
+              {BUILD_TABS.map((t) => {
+                const open = openTab === t.id;
+                const kinds = tabKinds(t.id);
+                const picked =
+                  hud.buildKind && buildTabOf(hud.buildKind) === t.id ? hud.buildKind : null;
+                const face = picked ?? TAB_EMBLEM[t.id];
+                return (
+                  <button
+                    key={t.id}
+                    title={`${t.label} (key ${t.key})`}
+                    aria-label={t.label}
+                    aria-keyshortcuts={t.key}
+                    aria-expanded={open}
+                    aria-pressed={open || picked !== null}
+                    onClick={() => setOpenTab((cur) => (cur === t.id ? null : t.id))}
+                    className={`${TOOL_BTN} relative ${
+                      open || picked ? "" : kinds.length === 0 ? "text-[#5A5A63]" : "text-[#a2a2a2]"
+                    }`}
+                  >
+                    {/* THE KEY, worn on the icon's top-left corner, on its
+                        own dark ground: the sprite fills all but 8px of the
+                        button, and a bare letter over it is unreadable */}
                     <span
                       aria-hidden="true"
                       className="pointer-events-none absolute left-0 top-0 bg-[#0b0b0d]/85 px-1 py-0.5 text-[12px] font-bold leading-none text-[#A6A6AF]"
                     >
-                      {digit}
+                      {t.key}
                     </span>
-                  )}
-                  {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
-                  <img
-                    src={icons[t.kind] ?? t.icon}
-                    alt=""
-                    className="h-10 w-10 [image-rendering:pixelated]"
-                  />
-                  {price !== null && (
-                    <span
-                      className={`text-[15px] font-bold leading-none ${
-                        poor ? "text-[#FF8A8A]" : "text-white"
+                    {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
+                    <img
+                      src={icons[face] ?? MENU_BY_KIND.get(face)!.icon}
+                      alt=""
+                      className={`h-9 w-9 [image-rendering:pixelated] ${
+                        picked || kinds.length > 0 ? "" : "opacity-40"
                       }`}
-                    >
-                      {price}
+                    />
+                    {/* the name, at the size that fits the slot: "scrap"
+                        is five characters across fifty-six pixels */}
+                    <span className="text-[10px] font-bold uppercase leading-none tracking-tight">
+                      {t.label}
                     </span>
-                  )}
-                </button>
-              );
-            })}
-            {/* the loadout editor's door, on every bar: eight slots is the
-                base rule (BAR_SLOTS) and it holds in sandbox and admin
-                too, so there is always a curation to make */}
-            {hud && (
-              <button
-                title="Edit loadout — pick which turrets ride the bar"
-                aria-label="Edit loadout"
-                aria-pressed={loadoutOpen}
-                aria-expanded={loadoutOpen}
-                onClick={() => setLoadoutOpen((v) => !v)}
-                className={`${TOOL_BTN} ${loadoutOpen ? "" : "text-[#a2a2a2]"}`}
-              >
-                <svg viewBox="0 0 24 24" className="h-8 w-8 fill-current" aria-hidden="true">
-                  <path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z" />
-                </svg>
-                <span className="text-[13px] font-bold uppercase leading-none tracking-widest">
-                  Slots
-                </span>
-              </button>
-            )}
-          </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
-        {/* the loadout picker, floated above the bar it fills: every
-            unlocked turret, lit = riding a slot. With the bar full the
-            rest dim out until something is removed — and the count badge
-            is the one number that explains both states */}
-        {hud && loadoutOpen && (
-          <div className="ui-zoom ms-pane absolute bottom-[6.25rem] left-1/2 z-10 max-w-[calc(100vw-2rem)] -translate-x-1/2 p-3">
-            {(() => {
-              const bar = barKinds();
-              const full = bar.length >= hud.barSlots;
-              return (
-                <>
-                  <div className="mb-2 flex items-baseline justify-center gap-2 text-[13px] uppercase tracking-widest">
-                    <span className="text-[#71717C]">Loadout</span>
-                    <span className={`font-bold ${full ? "text-[#FFD37F]" : "text-[#EDEDEF]"}`}>
-                      {bar.length}/{hud.barSlots}
-                    </span>
-                  </div>
-                  <div
-                    role="group"
-                    aria-label="loadout picker"
-                    className="flex max-w-[26rem] flex-wrap justify-center gap-2"
-                  >
-                    {ORDERED_MENU.filter(
-                      (t) => !hud.unlocked || hud.unlocked.includes(t.kind),
-                    ).map((t) => {
-                      const inBar = bar.includes(t.kind);
-                      return (
-                        <button
-                          key={t.kind}
-                          title={
-                            inBar
-                              ? `Remove ${t.name} from the bar`
-                              : full
-                                ? "Bar is full — remove a turret first"
-                                : `Add ${t.name} to the bar`
-                          }
-                          aria-pressed={inBar}
-                          aria-disabled={!inBar && full}
-                          onClick={() => toggleLoadout(t.kind)}
-                          className={`ms-btn h-12 w-12 p-0 ${
-                            inBar ? "" : full ? "opacity-30" : "opacity-50 hover:opacity-90"
-                          }`}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite */}
-                          <img
-                            src={icons[t.kind] ?? t.icon}
-                            alt={t.name}
-                            className="h-9 w-9 [image-rendering:pixelated]"
-                          />
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {/* a full bar says how to make room; the slot count is
-                      fixed (BAR_SLOTS), so the only way in is a swap */}
-                  {full && (
-                    <div className="mt-2 text-center text-[13px] uppercase tracking-widest text-[#71717C]">
-                      Bar is full — remove a turret to add another
-                    </div>
-                  )}
-                </>
-              );
-            })()}
-          </div>
-        )}
         {hud?.lost && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="ui-zoom ms-pane-solid w-80 max-w-[calc(100vw-2rem)] border-[#6b2a2a] p-6 text-center">

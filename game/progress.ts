@@ -4,7 +4,7 @@ import { levelForXp, missionXp, RANDOM_MAP_XP_BONUS } from "./economy";
 import { MAX_LEVEL, techStateFor, worldUnlockLevel } from "./track";
 import { withFaction, type TechState } from "./tech";
 import { clearSave, readSave, writeSave } from "./storage";
-import { TOWER_KINDS, type TowerKind } from "./types";
+import { type TowerKind } from "./types";
 
 /**
  * The player's persistent campaign state: lifetime XP, and how far up
@@ -92,13 +92,6 @@ export interface Progress {
    * straight onto the other screen.
    */
   cursorLock?: boolean;
-  /**
-   * The build bar's loadout: which turrets ride in it. A SET in effect —
-   * the bar always renders in the roster's canonical order
-   * (BY_MINDUSTRY_VALUE in tech.ts), whatever order this holds. Absent on
-   * a save that has never curated, which reads as "the whole roster".
-   */
-  loadout?: TowerKind[];
   /**
    * THIS SAVE HAS DECLINED THE DEV GRANT — the wipe's half of the back
    * door (see resetProgress and DEV_UNLOCK_ALL). A wiped save on a dev
@@ -215,7 +208,6 @@ export function loadProgress(): Progress {
       // absent means ON — only an explicit false switches it off
       edgePan: p.edgePan !== false,
       cursorLock: p.cursorLock !== false,
-      loadout: readLoadout(p),
       ...(p.devGrantOff === true ? { devGrantOff: true } : null),
     };
     // a migrated save is rewritten here rather than re-converted on every
@@ -265,20 +257,6 @@ export function saveFaction(faction: FamilyKey): void {
   const p = loadProgress();
   if (p.faction === faction) return;
   saveProgress({ ...p, faction });
-}
-
-/** the bar's curation out of a raw save: known turrets only, deduped */
-function readLoadout(p: { loadout?: unknown }): TowerKind[] | undefined {
-  const raw = p.loadout;
-  if (!Array.isArray(raw)) return undefined;
-  const known = new Set<string>(TOWER_KINDS);
-  const out = [...new Set(raw.filter((k): k is TowerKind => typeof k === "string" && known.has(k)))];
-  return out;
-}
-
-export function saveLoadout(kinds: readonly TowerKind[]): void {
-  const p = loadProgress();
-  saveProgress({ ...p, loadout: [...kinds] });
 }
 
 export function saveSpeed(mult: number): void {

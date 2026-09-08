@@ -56,8 +56,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `game/factions.ts` — **the factions**: each of the six unit families
   with THREE TURRETS OF ITS OWN (`FACTION_TURRETS`, tier 1 to 3), the
   common roster every faction shares (`COMMON_KINDS`: the walls, the
-  drill, the factories) and the bar a fresh run opens with
-  (`defaultLoadout`). A run is played as one faction, picked on the
+  drill, the factories). A run is played as one faction, picked on the
   deploy screen
 - `game/ladder.ts` — the **ten-rung ladder** (`RUNGS`: the mutator roll
   and the XP bonus each; the enemy-level dial is wired and authored to
@@ -87,7 +86,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   played under, what each is worth in points, and the roller that draws
   three or four of them to fit a difficulty's budget
 - `game/progress.ts` — the save: lifetime XP, rungs cleared per world,
-  game speed, build-bar loadout. The level, and everything the track
+  game speed, HUD and control preferences. The level, and everything the track
   hands out at it, is derived from XP and never stored
 - `game/storage.ts` — **where the save file lives**: one slot behind
   three calls, localStorage in a browser and a file on disk under the
@@ -177,8 +176,9 @@ stale tab or a cached bundle looks exactly like a fix not working.
   in sight, the viewport framed; a press looks there, a drag keeps
   steering
 - `components/MechSwarm.tsx` — React shell: HUD (scrap, core health, XP), rung
-  picker, six-slot build bar with prices and its loadout picker, game-speed
-  switcher, results screens, canvases
+  picker, the three-slot build bar — scrap, units and tower, on E, R and T,
+  each opening a menu of that category's buildings with their prices —
+  game-speed switcher, results screens, canvases
 - `components/MenuBackground.tsx` — the title screen's ground: **the game
   itself, playing behind the menu**. Not a picture of it — a `Sim` on one
   of the campaign's own maps, stepped at the same fixed 1/60 a run is and

@@ -93,19 +93,6 @@ export function kindsFor(factions: Iterable<FamilyKey>): Set<TowerKind> {
   return out;
 }
 
-/**
- * THE BAR AS A FRESH RUN OPENS IT, out of what the run owns: the
- * faction's three guns, the copper wall, the drill and the first three
- * factories — the eight things a run's first ten minutes are built with.
- * A save that has curated its loadout (Progress.loadout) overrides it.
- */
-export function defaultLoadout(owned: Iterable<TowerKind>): TowerKind[] {
-  const have = new Set(owned);
-  const want: TowerKind[] = ["copper-wall", "drill", "factory-t1", "factory-t2", "factory-t3"];
-  const guns = [...have].filter((k) => !TOWERS[k].wall);
-  return [...guns, ...want.filter((k) => have.has(k))];
-}
-
 /** the check: every faction has three turrets, every turret is on the
  *  roster. Over the WHOLE table, shelf included — a shelved faction is
  *  meant to be one edit away from playing again, so its turrets are held
