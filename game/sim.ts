@@ -471,6 +471,46 @@ const NO_PADS = new Uint8Array(NCELLS);
 const SHOT_HIT_R = 4;
 
 /**
+ * HOW BIG A BODY IS TO THE CURSOR — the hit circle a click tests against,
+ * which is deliberately larger than the sprite. A unit is small, moving,
+ * and usually in a crowd; asking the hand to land inside twelve pixels of
+ * walking metal is a tax on every order the player gives.
+ *
+ * Two sizes, because leniency must never cost precision: the TIGHT circle
+ * is what a click means when it lands on a body, and it is tried first so
+ * a turret clicked on purpose still wins over a walker standing beside it.
+ * The LENIENT circle is the second pass, taken only once nothing at all
+ * was hit dead on — a near miss on empty ground is a miss the player did
+ * not mean, so it is read as the nearest body rather than as "deselect".
+ */
+const PICK_MULT = 2.0;
+/** ...with a floor in world px, so the smallest bodies are a cell across */
+const PICK_MIN = CELL;
+/** the reach of the first pass: the body as the click sees it */
+export const PICK_TIGHT = 1;
+/** ...and of the second, once the board has said nothing was under the point */
+export const PICK_LENIENT = 1.6;
+/**
+ * ...and how far past a building's own footprint a click still counts as
+ * that building, in world px. The same idea as the circle above and a
+ * smaller number, because a footprint is already a big target: this is
+ * only the pixel or two of slop that keeps a click on the very edge of a
+ * wall from reading as the ground behind it.
+ */
+export const PICK_STRUCT_PAD = CELL * 0.5;
+
+/**
+ * HOW MANY POINTS A SHIFT-CHAINED ORDER MAY HOLD (orderMove's `queue`),
+ * the current leg not counted. A chain is a route the player drew by
+ * hand, and twenty legs is more than a hand draws; the cap is here so a
+ * held shift and a twitching finger cannot grow one without end.
+ */
+const MAX_WAYPOINTS = 20;
+
+/** how many buildings one ruler line may lay down (rulerCells) */
+const RULER_MAX = 64;
+
+/**
  * WHAT A UNIT'S WEAPON IS AIMED AT: one of the other side's structures,
  * or one of its bodies — the nearer of the two within reach. x, y and
  * half are the target's centre and half-width for every reader that
@@ -1434,6 +1474,35 @@ export class Sim {
    * worked out again over the board as it now is.
    */
   private readonly orderGoal = [-1, -1, -1, -1];
+  /**
+   * THE SELECTED BUILDINGS — the other half of a selection. A structure is
+   * held by REFERENCE rather than by a flag on the record, because that is
+   * the only handle the rest of the game has on one (the core is not even
+   * a Tower), and because a set cannot outlive what it holds: removeTower
+   * drops its entry as the building leaves the board.
+   *
+   * Buildings and bodies are selected TOGETHER and cleared together — five
+   * daggers, the core and a factory is one selection — and the right-click
+   * then means whatever each half of it can be told: the bodies walk, the
+   * factories re-aim their rally, and the core, which can be told nothing,
+   * quietly takes no part.
+   */
+  private readonly selStructs = new Set<Structure>();
+  /**
+   * THE REST OF A CHAINED ORDER, per body: the cells a shift-queued
+   * right-click lined up behind the one it is walking now, oldest first
+   * (orderMove's `queue`, MAX_WAYPOINTS long). Keyed by the body's
+   * never-reused id rather than its index, so the swap-remove that
+   * reshuffles every other per-unit array cannot hand one body's route to
+   * another; removeUnit drops the entry with the body.
+   *
+   * A leg is taken the moment the body arrives (updateUnits), and the
+   * whole group normally arrives within a tick or two of itself — which
+   * is why takeNextWaypoint hands out a field slot ALREADY AIMED at the
+   * cell wherever it finds one: a group of twenty walking a chain costs
+   * one solve a leg, not twenty.
+   */
+  private readonly wpts = new Map<number, number[]>();
   /** scratch for the reachability flood (reachableGoal): a queue, and a
    *  stamp per cell so the visited set never has to be cleared */
   private readonly floodQ = new Int32Array(NCELLS);
@@ -1555,6 +1624,10 @@ export class Sim {
     this.fxPts.fill(null, 0, this.fxN);
     this.fxN = 0;
     this.towers.length = 0;
+    // a new board holds none of the last one's hand: no building picked,
+    // and no route drawn behind anybody
+    this.selStructs.clear();
+    this.wpts.clear();
     this.enemyStructures = 0;
     this.enemyStructuresDown = 0;
     this.focusTower = null;
@@ -2401,6 +2474,8 @@ export class Sim {
       // it stands up with
       mineT: ore > 0 ? drillLoadSeconds(ore) : 0,
       prodT: -1,
+      // nothing has told it where to send what it makes yet (setRally)
+      rallyCell: -1,
       aimShieldTower: -1,
       aimTower: null,
       cd: Math.random() * 0.1,
@@ -3744,6 +3819,12 @@ export class Sim {
       const reach = (structStats(t.kind).size * CELL) / 2 + FACTORY_SPAWN_REACH;
       if (this.spawnUnit(kind, { x: t.x, y: t.y, spread: reach }, 0, 1)) {
         t.prodT = -1;
+        // ...AND WALKS OFF, if the building has been told where to send
+        // what it makes (setRally). The body is the one spawnUnit just set
+        // down, and it takes the field slot already aimed at the rally
+        // wherever there is one — so a factory on a rally costs one solve,
+        // not one a body
+        if (t.rallyCell >= 0) this.sendUnitTo(this.n - 1, t.rallyCell);
         this.pushFx(t.x, t.y, 0.4, FxKind.Death);
       }
     }
@@ -3857,6 +3938,62 @@ export class Sim {
     return placed;
   }
 
+  /**
+   * THE RULER (Game's shift-drag while a building is in hand): the line of
+   * footprints from where the drag began to where the cursor is, PACKED —
+   * each one exactly its own width along from the last, so a run of walls
+   * comes out as a wall rather than as a dotted line with the gaps a
+   * free-hand drag leaves.
+   *
+   * THE DIRECTION IS SNAPPED to one of the eight compass headings, in
+   * even 45-degree sectors. That is the whole reason a ruler exists: a
+   * hand cannot hold a straight line across forty cells, and a wall one
+   * cell out of true is a wall with a door in it. The step is taken in
+   * CELLS (`sz` of them per building, on each axis the heading uses), so
+   * a diagonal run comes out corner to corner rather than overlapping.
+   *
+   * Returns the cells the line would fill, in order, whether or not
+   * anything can be built on them — the ghost draws all of them and colours
+   * each by its own canPlace, so the player sees the line they are drawing
+   * and where it is refused, not a line with holes already cut out of it.
+   */
+  rulerCells(x0: number, y0: number, x1: number, y1: number, kind: TowerKind): { gx: number; gy: number }[] {
+    const sz = TOWERS[kind].size;
+    const gx0 = clamp(Math.round(x0 / CELL - sz / 2), 0, COLS - sz);
+    const gy0 = clamp(Math.round(y0 / CELL - sz / 2), 0, ROWS - sz);
+    const dx = x1 - x0, dy = y1 - y0;
+    const ax = Math.abs(dx), ay = Math.abs(dy);
+    // tan(67.5 degrees): the cut that makes the eight sectors even
+    const OCT = 2.4142;
+    let sx = 0, sy = 0;
+    if (ax > ay * OCT) sx = Math.sign(dx);
+    else if (ay > ax * OCT) sy = Math.sign(dy);
+    else {
+      sx = Math.sign(dx);
+      sy = Math.sign(dy);
+    }
+    const out = [{ gx: gx0, gy: gy0 }];
+    if (!sx && !sy) return out;
+    // how far along that heading the cursor actually is, in buildings
+    const step = CELL * sz;
+    const reach = (ax * Math.abs(sx) + ay * Math.abs(sy)) / (Math.abs(sx) + Math.abs(sy));
+    const n = Math.min(RULER_MAX, Math.floor(reach / step));
+    for (let k = 1; k <= n; k++) {
+      const gx = gx0 + sx * sz * k, gy = gy0 + sy * sz * k;
+      if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) break;
+      out.push({ gx, gy });
+    }
+    return out;
+  }
+
+  /** ...and build it: every cell of the ruler's line that will take one */
+  placeRuler(x0: number, y0: number, x1: number, y1: number, kind: TowerKind): number {
+    let placed = 0;
+    for (const c of this.rulerCells(x0, y0, x1, y1, kind))
+      if (this.placeTower(c.gx, c.gy, kind) === "ok") placed++;
+    return placed;
+  }
+
   /** the PLAYER's tower whose footprint covers the world point, if any —
    *  what a tap selects and a right-click sells. The swarm's buildings are
    *  not the player's to sell: see enemyTowerAt */
@@ -3934,6 +4071,9 @@ export class Sim {
     const at = this.towers.indexOf(t);
     if (at < 0) return;
     this.towers.splice(at, 1);
+    // the selection holds buildings by reference: a demolished one has to
+    // leave it here, or its ring would keep being drawn over bare ground
+    this.selStructs.delete(t);
     if (t.team === "enemy") this.enemyStructures--;
     if (this.focusTower === t) this.focusTower = null;
     this.claimGround(t, false);
@@ -4627,6 +4767,10 @@ export class Sim {
   }
 
   private removeUnit(i: number): void {
+    // the route this body was walking dies with it. Keyed by uid, so this
+    // is the one place it has to happen — the swap-remove below moves
+    // every OTHER per-unit row and cannot disturb the map
+    this.wpts.delete(this.uid[i]);
     this.aliveByKind[this.ukind[i]]--;
     if (this.uteam[i]) this.nPlayer--;
     else {
@@ -5176,9 +5320,11 @@ export class Sim {
         const odx = this.uordx[i] - upx[i], ody = this.uordy[i] - upy[i];
         const od = Math.sqrt(odx * odx + ody * ody);
         if (od <= ORDER_ARRIVE) {
-          // arrived: the standing order takes over again, which is to walk
-          // at the swarm's buildings
+          // arrived. A CHAINED ORDER TAKES ITS NEXT LEG HERE, on the tick
+          // the body reaches the point (takeNextWaypoint); with nothing
+          // queued the body simply stands where it was sent
           this.uord[i] = 0;
+          this.takeNextWaypoint(i);
         } else {
           if (!fly) this.orderFields[ord - 1].sample(upx[i], upy[i], flowTmp);
           // a flyer has no use for the field, and a body whose field has
@@ -5872,21 +6018,30 @@ export class Sim {
     return null;
   }
 
-  /** the unit under a tap, if any — a hit-test against live hitboxes with
-   *  a little slop so a fingertip can pick a dagger out of a lane */
+  /**
+   * HOW BIG BODY `i` IS TO A CLICK, in world px — the sprite's radius
+   * grown by PICK_MULT and floored at PICK_MIN, then scaled by the pass's
+   * reach. Every hit-test the cursor makes goes through here, so the
+   * player's bodies and the swarm's are equally easy to hit and the two
+   * passes stay in step by construction.
+   */
+  private pickR(i: number, reach: number): number {
+    return Math.max(this.urad[i] * PICK_MULT, PICK_MIN) * reach;
+  }
+
   /**
    * THE PLAYER'S BODY UNDER A POINT, or -1. The mirror of unitAt, which
    * finds the SWARM's: a tap picks one side or the other, never both, and
    * the two sides mean opposite things by it — the swarm's body is a mark
    * to shoot, the player's is a body to command.
    */
-  myUnitAt(px: number, py: number): number {
+  myUnitAt(px: number, py: number, reach = PICK_TIGHT): number {
     let best = -1, bd = Infinity;
     for (let i = 0; i < this.n; i++) {
       if (this.uteam[i] === 0) continue;
       const dx = this.upx[i] - px, dy = this.upy[i] - py;
       const d2 = dx * dx + dy * dy;
-      const r = Math.max(this.urad[i] * 1.6, 10);
+      const r = this.pickR(i, reach);
       if (d2 < r * r && d2 < bd) {
         bd = d2;
         best = i;
@@ -5908,21 +6063,121 @@ export class Sim {
   }
 
   /**
-   * Select the body under a point. `add` keeps what was already selected
-   * (shift-click); without it the click replaces the selection. Returns
-   * whether anything was hit — a miss on bare ground clears the selection
-   * and says so, which is what lets the caller fall through to its other
-   * meanings for a click on nothing.
+   * Select the body under a point. Returns whether anything was hit — a
+   * miss on bare ground clears the selection and says so, which is what
+   * lets the caller fall through to its other meanings for a click on
+   * nothing.
+   *
+   * `add` is the SHIFT-CLICK, and it TOGGLES: it keeps what was already
+   * selected and flips the body under the cursor in or out of it. Adding
+   * one body at a time and taking one back out are the same gesture in
+   * every game that has it, and a shift-click that could only add would
+   * make a slip of the hand cost the whole selection to undo.
    */
-  selectAt(px: number, py: number, add = false): boolean {
-    const i = this.myUnitAt(px, py);
+  selectAt(px: number, py: number, add = false, reach = PICK_TIGHT): boolean {
+    const i = this.myUnitAt(px, py, reach);
     if (!add) this.clearSelection();
     if (i < 0) return false;
-    this.usel[i] = 1;
+    this.usel[i] = add && this.usel[i] ? 0 : 1;
     return true;
   }
 
-  /** every body of the player's inside a world rectangle */
+  /**
+   * THE PLAYER'S BUILDING UNDER A POINT — the mirror of myUnitAt, and the
+   * core counts. `pad` grows the footprint outwards for the second, more
+   * forgiving pass (PICK_STRUCT_PAD); at 0 it is the exact footprint, one
+   * grid lookup and nothing more.
+   */
+  myStructAt(px: number, py: number, pad = 0): Structure | null {
+    const exact = this.structureAt(px, py, "player");
+    if (exact || pad <= 0) return exact;
+    let best: Structure | null = null, bd = Infinity;
+    const near = (t: Structure): void => {
+      const half = (this.sizeOf(t) * CELL) / 2 + pad;
+      const dx = Math.abs(px - t.x), dy = Math.abs(py - t.y);
+      if (dx > half || dy > half) return;
+      const d = dx * dx + dy * dy;
+      if (d < bd) {
+        bd = d;
+        best = t;
+      }
+    };
+    for (const t of this.towers) if (t.team === "player") near(t);
+    near(this.core);
+    return best;
+  }
+
+  /** nothing of the player's BUILDINGS is selected any more */
+  clearStructSelection(): void {
+    this.selStructs.clear();
+  }
+
+  /** the selection, both halves of it: bodies and buildings */
+  clearAllSelection(): void {
+    this.clearSelection();
+    this.clearStructSelection();
+  }
+
+  /** how many of the player's buildings are selected right now */
+  get selectedStructN(): number {
+    return this.selStructs.size;
+  }
+
+  /** ...and which, for the rings and rally lines drawn over them */
+  get selectedStructs(): readonly Structure[] {
+    return [...this.selStructs];
+  }
+
+  /**
+   * How many selected buildings can be TOLD something by a right-click —
+   * which today means how many of them make bodies (setRally). It is what
+   * decides whether the right button is an order at all: a selection of
+   * walls and turrets has nothing to be told, so the button stays the
+   * demolish it has always been.
+   */
+  get selectedProducerN(): number {
+    let k = 0;
+    for (const st of this.selStructs)
+      if (!isCore(st) && st.team === "player" && structStats(st.kind).produces) k++;
+    return k;
+  }
+
+  /**
+   * Select the building under a point, `add` toggling exactly as it does
+   * for a body. Returns the one it hit, or null.
+   */
+  selectStructAt(px: number, py: number, add = false, pad = 0): Structure | null {
+    const s = this.myStructAt(px, py, pad);
+    if (!add) this.clearStructSelection();
+    if (!s) return null;
+    if (add && this.selStructs.has(s)) this.selStructs.delete(s);
+    else this.selStructs.add(s);
+    return s;
+  }
+
+  /** every building of the player's a world rectangle touches */
+  structsInRect(x0: number, y0: number, x1: number, y1: number, add = false): number {
+    const ax = Math.min(x0, x1), bx = Math.max(x0, x1);
+    const ay = Math.min(y0, y1), by = Math.max(y0, y1);
+    if (!add) this.clearStructSelection();
+    let k = 0;
+    const take = (t: Structure): void => {
+      const half = (this.sizeOf(t) * CELL) / 2;
+      if (t.x + half < ax || t.x - half > bx || t.y + half < ay || t.y - half > by) return;
+      this.selStructs.add(t);
+      k++;
+    };
+    for (const t of this.towers) if (t.team === "player") take(t);
+    take(this.core);
+    return k;
+  }
+
+  /**
+   * EVERY BODY OF THE PLAYER'S THE RECTANGLE TOUCHES. The test is the
+   * body's hit circle against the box, not its centre point inside it: a
+   * box drawn round a group takes the whole group, including the one on
+   * the edge the drag stopped half a pixel short of.
+   */
   selectInRect(x0: number, y0: number, x1: number, y1: number, add = false): number {
     const ax = Math.min(x0, x1), bx = Math.max(x0, x1);
     const ay = Math.min(y0, y1), by = Math.max(y0, y1);
@@ -5930,7 +6185,9 @@ export class Sim {
     let k = 0;
     for (let i = 0; i < this.n; i++) {
       if (this.uteam[i] === 0) continue;
-      if (this.upx[i] < ax || this.upx[i] > bx || this.upy[i] < ay || this.upy[i] > by) continue;
+      const r = this.pickR(i, PICK_TIGHT);
+      if (this.upx[i] < ax - r || this.upx[i] > bx + r) continue;
+      if (this.upy[i] < ay - r || this.upy[i] > by + r) continue;
       this.usel[i] = 1;
       k++;
     }
@@ -5944,8 +6201,8 @@ export class Sim {
    * radius round the one clicked rather than the whole map: a double-click
    * gathers the group in front of you, not every dagger in the run.
    */
-  selectLike(px: number, py: number, radius: number, add = false): number {
-    const at = this.myUnitAt(px, py);
+  selectLike(px: number, py: number, radius: number, add = false, reach = PICK_TIGHT): number {
+    const at = this.myUnitAt(px, py, reach);
     if (at < 0) return 0;
     const kind = this.ukind[at];
     const ox = this.upx[at], oy = this.upy[at];
@@ -5975,7 +6232,7 @@ export class Sim {
    *
    * Returns how many bodies took the order.
    */
-  orderMove(px: number, py: number): number {
+  orderMove(px: number, py: number, queue = false): number {
     let k = 0;
     for (let i = 0; i < this.n; i++) if (this.usel[i]) k++;
     if (k === 0) return 0;
@@ -5994,6 +6251,28 @@ export class Sim {
     // across the map is a long walk rather than a wall.
     const cell = this.reachableGoal(open);
     if (cell < 0) return 0;
+    // A SHIFT-QUEUED ORDER IS A LEG, not a destination: it goes on the end
+    // of what each selected body is already walking and changes nothing
+    // about where it is headed this second. A body standing idle takes the
+    // point as its order outright — the queue behind an order that does
+    // not exist is just the order.
+    if (queue) {
+      let queued = 0;
+      for (let i = 0; i < this.n; i++) {
+        if (!this.usel[i]) continue;
+        if (this.uord[i] === 0) {
+          this.sendUnitTo(i, cell);
+          queued++;
+          continue;
+        }
+        const q = this.wpts.get(this.uid[i]);
+        if (!q) this.wpts.set(this.uid[i], [cell]);
+        else if (q.length < MAX_WAYPOINTS) q.push(cell);
+        else continue; // the chain is full: the click is not a leg it can take
+        queued++;
+      }
+      return queued;
+    }
     const gx = cell % COLS, gy = (cell / COLS) | 0;
     const x = (gx + 0.5) * CELL, y = (gy + 0.5) * CELL;
     const slot = this.orderSlotFor();
@@ -6004,9 +6283,103 @@ export class Sim {
     this.seedOrderField(slot, cell);
     for (let i = 0; i < this.n; i++) {
       if (!this.usel[i]) continue;
+      // a plain order REPLACES the route, chain and all: the player has
+      // said where the body goes now, and a queue drawn before that is a
+      // plan they have just overruled
+      this.wpts.delete(this.uid[i]);
       this.uord[i] = slot + 1;
       this.uordx[i] = x;
       this.uordy[i] = y;
+    }
+    return k;
+  }
+
+  /**
+   * SEND ONE BODY AT A CELL, on whichever field slot is going that way.
+   * The reuse is the point: a group walking a chain arrives at a leg
+   * within a tick or two of itself and every one of them asks for the next
+   * cell, and a factory on a rally sends body after body at the same
+   * point. A slot already aimed there is already the answer — one solve
+   * covers all of them — and only a cell nothing is walking to costs a
+   * fresh field (and, when all four are live, somebody else's order).
+   */
+  private sendUnitTo(i: number, cell: number): void {
+    let slot = -1;
+    for (let sIdx = 0; sIdx < this.orderFields.length; sIdx++)
+      if (this.orderGoal[sIdx] === cell) {
+        slot = sIdx;
+        break;
+      }
+    if (slot < 0) {
+      slot = this.orderSlotFor();
+      for (let u = 0; u < this.n; u++) if (this.uord[u] === slot + 1) this.uord[u] = 0;
+      this.seedOrderField(slot, cell);
+    }
+    this.uord[i] = slot + 1;
+    this.uordx[i] = ((cell % COLS) + 0.5) * CELL;
+    this.uordy[i] = (((cell / COLS) | 0) + 0.5) * CELL;
+  }
+
+  /**
+   * A BODY HAS ARRIVED AND ITS ROUTE HAS MORE OF IT: take the next leg.
+   * Called out of the arrival test in updateUnits, so a chain advances on
+   * the same tick the body reaches the point rather than a frame later.
+   * Returns false when there is nothing queued, which is the ordinary case
+   * and leaves the body standing where it was sent.
+   */
+  private takeNextWaypoint(i: number): boolean {
+    const id = this.uid[i];
+    const q = this.wpts.get(id);
+    if (!q || q.length === 0) {
+      if (q) this.wpts.delete(id);
+      return false;
+    }
+    const cell = q.shift() as number;
+    if (q.length === 0) this.wpts.delete(id);
+    this.sendUnitTo(i, cell);
+    return true;
+  }
+
+  /**
+   * WHAT THIS BODY STILL HAS TO WALK, in cells — the legs queued behind
+   * the one it is on, for the line drawn over a selected group. Empty for
+   * the overwhelming majority of bodies, which is why it is a map lookup
+   * rather than a row on every unit.
+   */
+  waypointsOf(i: number): readonly number[] | undefined {
+    return this.wpts.get(this.uid[i]);
+  }
+
+  /** a cell's centre in world px — what a queued leg is drawn at */
+  cellCenter(cell: number): { x: number; y: number } {
+    return { x: ((cell % COLS) + 0.5) * CELL, y: (((cell / COLS) | 0) + 0.5) * CELL };
+  }
+
+  /**
+   * THE RIGHT-CLICK OF A SELECTED BUILDING: every one of them that MAKES
+   * BODIES (TowerStats.produces) points what it builds at this spot from
+   * now on. A building that makes nothing — a wall, a turret, the core —
+   * has nothing to say to a point on the ground and is passed over, which
+   * is what lets one right-click carry a mixed selection: the bodies walk,
+   * the factories re-aim, and the core takes no part.
+   *
+   * The point is resolved to walkable, reachable ground ONCE, here, from
+   * the factory's own doorstep rather than from whatever happens to be
+   * selected — the bodies that will walk it have not been built yet.
+   * Returns how many buildings took it.
+   */
+  setRally(px: number, py: number): number {
+    const open = this.nearestOpenCell(px, py);
+    if (open < 0) return 0;
+    let k = 0;
+    for (const st of this.selStructs) {
+      if (isCore(st) || st.team !== "player") continue;
+      if (!structStats(st.kind).produces) continue;
+      const from = clamp((st.y / CELL) | 0, 0, ROWS - 1) * COLS + clamp((st.x / CELL) | 0, 0, COLS - 1);
+      const cell = this.reachableGoal(open, from);
+      if (cell < 0) continue;
+      st.rallyCell = cell;
+      k++;
     }
     return k;
   }
@@ -6092,7 +6465,7 @@ export class Sim {
    * gunship in the selection must not drag the walkers' destination out
    * over a lake.
    */
-  private reachableGoal(want: number): number {
+  private reachableGoal(want: number, seed = -1): number {
     const walk = this.field.walk;
     const q = this.floodQ, seen = this.floodSeen;
     const stamp = ++this.floodStamp;
@@ -6102,17 +6475,28 @@ export class Sim {
       seen[ci] = stamp;
       q[tail++] = ci;
     };
-    for (let i = 0; i < this.n; i++) {
-      if (!this.usel[i] || this.ufly[i]) continue;
-      const ci =
-        clamp((this.upy[i] / CELL) | 0, 0, ROWS - 1) * COLS +
-        clamp((this.upx[i] / CELL) | 0, 0, COLS - 1);
-      // A BODY ON A CELL THE MASK CALLS ROCK still seeds: a naval tank
-      // afloat, or anyone a crowd shoved half inside a wall, floods from
-      // the open ground around it instead. Skipping such a body outright
-      // left the commonest wedge — one unit, standing against its own
-      // turret — seeding nothing at all, and a flood with no seed falls
-      // through to the wanted cell, which is the case this exists to catch
+    // ONE CELL, OR THE SELECTION. A rally is aimed from the FACTORY's own
+    // doorstep (setRally): the bodies that will walk it do not exist yet,
+    // so the selection — whatever it happens to hold — has nothing to say
+    // about which ground is connected to which
+    const seeds: number[] = [];
+    if (seed >= 0) seeds.push(seed);
+    else
+      for (let i = 0; i < this.n; i++) {
+        if (!this.usel[i] || this.ufly[i]) continue;
+        seeds.push(
+          clamp((this.upy[i] / CELL) | 0, 0, ROWS - 1) * COLS +
+            clamp((this.upx[i] / CELL) | 0, 0, COLS - 1),
+        );
+      }
+    for (const ci of seeds) {
+      // A SEED ON A CELL THE MASK CALLS ROCK still seeds: a naval tank
+      // afloat, a factory (whose own footprint is a wall), or anyone a
+      // crowd shoved half inside a wall floods from the open ground around
+      // it instead. Skipping such a seed outright left the commonest wedge
+      // — one unit, standing against its own turret — seeding nothing at
+      // all, and a flood with no seed falls through to the wanted cell,
+      // which is the case this exists to catch
       if (!walk[ci]) {
         push(ci);
         continue;
@@ -6166,7 +6550,7 @@ export class Sim {
     return -1;
   }
 
-  unitAt(px: number, py: number): number {
+  unitAt(px: number, py: number, reach = PICK_TIGHT): number {
     let best = -1, bd = Infinity;
     for (let i = 0; i < this.n; i++) {
       // a body in the fog cannot be tapped any more than it can be seen,
@@ -6174,7 +6558,7 @@ export class Sim {
       if (this.uteam[i] !== 0 || !this.unitVisible(i)) continue;
       const dx = this.upx[i] - px, dy = this.upy[i] - py;
       const d2 = dx * dx + dy * dy;
-      const r = Math.max(this.urad[i] * 1.6, 10);
+      const r = this.pickR(i, reach);
       if (d2 < r * r && d2 < bd) {
         bd = d2;
         best = i;

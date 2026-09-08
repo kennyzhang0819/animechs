@@ -136,6 +136,18 @@ export interface Tower {
   /** a FACTORY's build clock: seconds left on the unit it is making, or
    *  -1 while it is idle and waiting to afford the next (Sim.updateProduction) */
   prodT: number;
+  /**
+   * A FACTORY'S RALLY POINT as a cell index, or -1 for none — where the
+   * bodies it makes are sent the moment they are set down
+   * (Sim.updateProduction). It is the right-click of a selected building,
+   * the exact mirror of the right-click that sends a selected body
+   * somewhere (Sim.setRally), and it is a CELL rather than a point
+   * because that is what an order field is seeded from: the click is
+   * resolved to walkable, reachable ground once, when it is given, rather
+   * than per unit built. A building that makes nothing keeps -1 and the
+   * right-click passes it by.
+   */
+  rallyCell: number;
   team: Team;
   gx: number; // top-left cell of the size x size footprint (TOWERS[kind].size)
   gy: number;

@@ -33,9 +33,9 @@ import type { TowerPlacement } from "./progress";
 import { TOWER_KINDS } from "./types";
 import { Renderer } from "./renderer";
 import { fitZoom } from "./fit";
-import { Sim } from "./sim";
+import { PICK_LENIENT, PICK_STRUCT_PAD, Sim } from "./sim";
 import { type TechState } from "./tech";
-import type { Tower } from "./types";
+import { isCore, type Tower } from "./types";
 
 export interface UiState {
   levelId: string;
@@ -301,6 +301,15 @@ const MM_SCALE = 1;
 const SEL_DRAG_PX = 5;
 /** how far a ctrl/double click reaches for bodies like the one clicked */
 const SEL_LIKE_R = CELL * 14;
+/**
+ * WHAT COUNTS AS A DOUBLE CLICK, in ms and in screen px between the two
+ * presses. The browser's own count (MouseEvent.detail) cannot be used: the
+ * board listens on POINTER events, whose detail is 0 by specification, so
+ * the second click of a double arrived indistinguishable from the first
+ * and the gesture simply did not work. This is that count, kept by hand.
+ */
+const DBL_MS = 380;
+const DBL_PX = 6;
 /** how long the mark over a move order lasts, in ms */
 const ORDER_MARK_MS = 520;
 /** ...and the radius it closes from and to, in world px */
@@ -405,9 +414,18 @@ export class Game {
   // cursor mode: null is the normal cursor (click a tower to inspect its
   // range); a kind from the tower menu turns on the ghost + paint placement
   private buildKind: TowerKind | null = null;
-  private selected: Tower | null = null;
   private building = false;
   private buildFrom = { x: 0, y: 0 };
+  /**
+   * THE RULER (Sim.rulerCells): shift held while a building is in hand
+   * turns the drag from a paint into a straight, packed line of them from
+   * where the press landed to where the cursor is. It PLACES NOTHING until
+   * the hand comes up — the line is a ghost the player can swing round and
+   * lengthen first, which is the whole difference between a ruler and a
+   * brush that happens to go straight.
+   */
+  private ruler = false;
+  private rulerFrom = { x: 0, y: 0 };
   // right button = demolish, the exact mirror of the left button's build
   // chain: the press pulls down whatever is under it and the drag keeps
   // pulling down everything it crosses. Panning therefore lives on the
@@ -431,6 +449,10 @@ export class Game {
    *  double click) takes everything like the body under the cursor */
   private selAdd = false;
   private selLike = false;
+  /** the last left press, for the double click the pointer events cannot count */
+  private lastClickAt = 0;
+  private lastClickX = 0;
+  private lastClickY = 0;
   /** where the last move order landed, and when — the ping drawn over it */
   private orderMark: { x: number; y: number; t: number } | null = null;
   private lastMouse = { x: 0, y: 0 };
@@ -552,10 +574,14 @@ export class Game {
       const p = this.mouseWorld(e);
       if (this.buildKind) {
         // left press places right away, and dragging chains from here;
-        // the ghost already shows red where placement fails
+        // the ghost already shows red where placement fails.
+        // ...unless SHIFT is down, which makes the drag a ruler: it lays
+        // its line down on release and nothing before then
         this.building = true;
         this.buildFrom = p;
-        this.buildTo(p, false);
+        this.rulerFrom = p;
+        this.ruler = e.shiftKey;
+        if (!this.ruler) this.buildTo(p, false);
       } else {
         // normal cursor: a press starts a marquee and decides nothing.
         // What it meant is settled on release (onMouseUp)
@@ -565,7 +591,14 @@ export class Game {
         this.selFromScreen = { x: e.clientX, y: e.clientY };
         this.selDragPx = 0;
         this.selAdd = e.shiftKey;
-        this.selLike = e.ctrlKey || e.metaKey || e.detail >= 2;
+        const now = performance.now();
+        const dbl =
+          now - this.lastClickAt < DBL_MS &&
+          Math.hypot(e.clientX - this.lastClickX, e.clientY - this.lastClickY) < DBL_PX;
+        this.lastClickAt = now;
+        this.lastClickX = e.clientX;
+        this.lastClickY = e.clientY;
+        this.selLike = e.ctrlKey || e.metaKey || dbl;
       }
     } else if (e.button === 2) {
       e.preventDefault();
@@ -577,14 +610,28 @@ export class Game {
         return;
       }
       const p = this.mouseWorld(e);
-      // WITH BODIES SELECTED THE RIGHT BUTTON IS AN ORDER, not a demolish:
-      // the army is what the hand is on, and a player who wants to sell
-      // clicks off the selection first (which is one left click on bare
-      // ground). Nothing is demolished under a selection, so an order
-      // misclicked onto a turret costs nothing
-      if (this.sim.selectedN > 0) {
-        if (this.sim.orderMove(p.x, p.y) > 0)
-          this.orderMark = { x: p.x, y: p.y, t: performance.now() };
+      // WITH ANYTHING SELECTED THAT CAN BE TOLD SOMETHING, THE RIGHT
+      // BUTTON IS AN ORDER, not a demolish: the army is what the hand is
+      // on, and a player who wants to sell clicks off the selection first
+      // (which is one left click on bare ground). Nothing is demolished
+      // under a selection, so an order misclicked onto a turret costs
+      // nothing.
+      //
+      // ONE CLICK CARRIES A MIXED SELECTION. Five daggers, a factory and
+      // the core is one selection and one right-click: the daggers walk
+      // there, the factory sends what it builds there from now on
+      // (setRally), and the core — which can be told nothing — takes no
+      // part rather than blocking the other two. A selection of walls and
+      // turrets, where NOTHING can be told anything, leaves the button the
+      // demolish it has always been
+      const units = this.sim.selectedN, makers = this.sim.selectedProducerN;
+      if (units > 0 || makers > 0) {
+        let told = false;
+        // shift chains: the point goes on the END of what the selection is
+        // already walking rather than replacing it (Sim.orderMove)
+        if (units > 0 && this.sim.orderMove(p.x, p.y, e.shiftKey) > 0) told = true;
+        if (makers > 0 && this.sim.setRally(p.x, p.y) > 0) told = true;
+        if (told) this.orderMark = { x: p.x, y: p.y, t: performance.now() };
         return;
       }
       // otherwise it demolishes on press and chains from here, exactly like
@@ -592,7 +639,6 @@ export class Game {
       this.selling = true;
       this.sellFrom = p;
       this.sim.sellTowerAt(p.x, p.y);
-      this.dropSelectionIfGone();
     } else if (e.button === 1) {
       e.preventDefault();
       this.building = false;
@@ -602,26 +648,49 @@ export class Game {
     }
   };
   private readonly onMouseUp = (e: MouseEvent): void => {
+    const wasBuilding = this.building;
     this.selling = false;
     this.panning = false;
     this.building = false;
+    // THE RULER LAYS ITS LINE DOWN HERE, on the release: everything before
+    // this was a ghost the hand was still aiming
+    if (wasBuilding && this.ruler && this.buildKind) {
+      const q = this.mouseWorld(e);
+      this.sim.placeRuler(this.rulerFrom.x, this.rulerFrom.y, q.x, q.y, this.buildKind);
+    }
+    this.ruler = false;
     if (!this.selecting) return;
     this.selecting = false;
     const p = this.mouseWorld(e);
     // A DRAG IS A REGION, a click is a point. The threshold is in screen
     // px so it means the same thing at every zoom
     if (this.selDragPx > SEL_DRAG_PX) {
-      this.sim.selectInRect(this.selFrom.x, this.selFrom.y, p.x, p.y, this.selAdd);
+      // A MARQUEE IS FOR THE ARMY FIRST. A box over the base would
+      // otherwise take every wall it crossed along with the units standing
+      // among them, which is never what a box dragged across a fight
+      // meant; buildings come only when the box caught no bodies at all,
+      // which is the one case where a box round some turrets can only have
+      // meant the turrets. Anything else is what shift-clicking them is for
+      if (this.sim.selectInRect(this.selFrom.x, this.selFrom.y, p.x, p.y, this.selAdd) > 0) {
+        if (!this.selAdd) this.sim.clearStructSelection();
+      } else this.sim.structsInRect(this.selFrom.x, this.selFrom.y, p.x, p.y, this.selAdd);
       return;
     }
     // ctrl, or the second click of a double: everything like the body under
-    // the cursor, within reach of it
-    if (this.selLike && this.sim.selectLike(p.x, p.y, SEL_LIKE_R, this.selAdd) > 0) return;
-    // a body of the player's: select it. Anything else: the old tap — a
-    // mark on the swarm, a range ring on a turret of ours, or a clearing
-    // click on bare ground (inspectAt), which the miss has already emptied
-    // the selection for
-    if (!this.sim.selectAt(p.x, p.y, this.selAdd)) this.inspectAt(p);
+    // the cursor, within reach of it. The near miss is forgiven here too —
+    // a gathering click that lands a hair off the walker it meant should
+    // gather the group, not empty the selection
+    if (this.selLike) {
+      if (this.sim.selectLike(p.x, p.y, SEL_LIKE_R, this.selAdd) > 0) {
+        if (!this.selAdd) this.sim.clearStructSelection();
+        return;
+      }
+      if (this.sim.selectLike(p.x, p.y, SEL_LIKE_R, this.selAdd, PICK_LENIENT) > 0) {
+        if (!this.selAdd) this.sim.clearStructSelection();
+        return;
+      }
+    }
+    this.pickAt(p);
   };
   private readonly onMove = (e: MouseEvent): void => {
     if (this.panning) {
@@ -639,11 +708,21 @@ export class Game {
       this.selTo = p;
       this.selDragPx = Math.hypot(e.clientX - this.selFromScreen.x, e.clientY - this.selFromScreen.y);
     }
-    if (this.building && !this.panning) this.buildTo(p, true);
+    if (this.building && !this.panning) {
+      // SHIFT IS READ LIVE, not latched at the press: a drag that started
+      // free-hand becomes a ruler the moment the key goes down and a brush
+      // again the moment it comes up — and letting go picks the chain back
+      // up from HERE, so the stretch the ruler was previewing is not
+      // painted over in one stripe
+      const ruler = e.shiftKey;
+      if (ruler && !this.ruler) this.rulerFrom = p;
+      if (!ruler && this.ruler) this.buildFrom = p;
+      this.ruler = ruler;
+      if (!ruler) this.buildTo(p, true);
+    }
     if (this.selling && !this.panning) {
       this.sim.sellLine(this.sellFrom.x, this.sellFrom.y, p.x, p.y);
       this.sellFrom = p;
-      this.dropSelectionIfGone();
     }
     this.setHover(p);
   };
@@ -656,57 +735,84 @@ export class Game {
     // than applied to wherever the cursor left
     this.selecting = false;
   };
-  /**
-   * The range ring reads `selected`, which holds a Tower by reference — a
-   * demolished tower would keep drawing its ring over bare rock. Drop the
-   * selection the moment it leaves the sim.
-   */
-  private dropSelectionIfGone(): void {
-    if (this.selected && !this.sim.towers.includes(this.selected)) this.selected = null;
-  }
   private readonly onContext = (e: Event): void => e.preventDefault();
 
   /**
-   * THE BARE-CURSOR TAP. What it does
-   * depends on what is under the point, checked in the order a player
-   * means them:
+   * THE BARE-CURSOR CLICK — everything one left click on the board can
+   * mean, in the order a player means them:
    *
+   *   a BODY OF OURS   — select it, and drop whatever was selected before
+   *                      unless shift says to add (Sim.selectAt)
    *   an ENEMY   — mark it for FOCUS FIRE: every turret in range drops
    *                what it was doing for it (Sim.setFocusUnit), and the
    *                mark wears a bobbing arrow so there is never a question
    *                of what the board is angry at
    *   a SHIELD TOWER   — the same mark, on the mutator's structure
-   *   a TOWER    — inspect it (the range ring), as it always has
+   *   an ENEMY BUILDING — the same mark again
+   *   a BUILDING OF OURS — SELECT IT, which is what draws its range ring
+   *                and what a right-click afterwards is aimed by
+   *                (setRally). Shift adds it to whatever is already held,
+   *                bodies included: five daggers, a factory and the core
+   *                is a selection a hand can build one click at a time
    *   nothing    — clear everything: selection and mark alike
    *
-   * Units first because they are small, moving, and the thing a panicking
-   * player is jabbing at; a tower is big, still, and easy to hit on
-   * purpose. Tapping a tower deliberately KEEPS the mark — inspecting your
-   * own range while the board burns something down is not a change of mind.
+   * Bodies first because they are small, moving, and the thing a panicking
+   * player is jabbing at; a building is big, still, and easy to hit on
+   * purpose. Everything above is asked TIGHT first and then, only once all
+   * of it has come back empty, asked again with the forgiving reach
+   * (PICK_LENIENT) — so a near miss lands on what it nearly hit instead of
+   * clearing the board, and nothing precise is ever taken from a click
+   * that did hit something.
+   *
+   * A SHIFT-CLICK ON NOTHING KEEPS THE SELECTION. Adding one body at a
+   * time means missing one now and then, and a miss that emptied the hand
+   * would make the gesture unusable.
    */
-  private inspectAt(p: { x: number; y: number }): void {
-    const ui = this.sim.unitAt(p.x, p.y);
+  private pickAt(p: { x: number; y: number }): void {
+    const sim = this.sim;
+    const add = this.selAdd;
+    // a plain click replaces the whole selection, both halves of it: the
+    // unit half is cleared by selectAt's own miss, the building half here
+    const replaced = (): void => {
+      if (!add) sim.clearStructSelection();
+    };
+    if (sim.selectAt(p.x, p.y, add)) return replaced();
+    const ui = sim.unitAt(p.x, p.y);
     if (ui >= 0) {
-      this.sim.setFocusUnit(ui);
-      this.selected = null;
+      replaced();
+      sim.setFocusUnit(ui);
       return;
     }
-    const si = this.sim.shieldTowerAt(p.x, p.y);
+    const si = sim.shieldTowerAt(p.x, p.y);
     if (si >= 0) {
-      this.sim.setFocusShieldTower(si);
-      this.selected = null;
+      replaced();
+      sim.setFocusShieldTower(si);
       return;
     }
     // one of the swarm's buildings is a target, not a selection
-    const et = this.sim.enemyTowerAt(p.x, p.y);
+    const et = sim.enemyTowerAt(p.x, p.y);
     if (et) {
-      this.sim.setFocusTower(et);
-      this.selected = null;
+      replaced();
+      sim.setFocusTower(et);
       return;
     }
-    const t = this.sim.towerAt(p.x, p.y);
-    this.selected = t;
-    if (!t) this.sim.clearFocus();
+    if (sim.selectStructAt(p.x, p.y, add)) return;
+    // NOTHING WAS UNDER THE POINT — so before the click means "clear
+    // everything", every question above worth asking again is asked with
+    // the forgiving reach. A click that lands a few pixels off a walker in
+    // a moving crowd, or a hair outside the wall it meant, is a miss the
+    // hand made rather than one the player meant
+    if (sim.selectAt(p.x, p.y, add, PICK_LENIENT)) return replaced();
+    if (sim.selectStructAt(p.x, p.y, add, PICK_STRUCT_PAD)) return;
+    const lui = sim.unitAt(p.x, p.y, PICK_LENIENT);
+    if (lui >= 0) {
+      replaced();
+      sim.setFocusUnit(lui);
+      return;
+    }
+    if (add) return; // a shift-click on bare ground is not a change of mind
+    sim.clearAllSelection();
+    sim.clearFocus();
   }
 
   /** is this world point on the map at all, or out in the void past it? */
@@ -912,7 +1018,9 @@ export class Game {
   setBuildKind(kind: TowerKind | null): void {
     if (kind && this.tech && !this.tech.unlocked.has(kind)) return;
     this.buildKind = kind;
-    if (kind) this.selected = null;
+    // a building picked up puts the inspected one down: the ring the hand
+    // was reading belongs to a decision it has moved on from
+    if (kind) this.sim.clearStructSelection();
   }
 
   /**
@@ -1583,8 +1691,8 @@ export class Game {
 
   /**
    * THE ARMY'S OWN MARKS: a ring under every selected body with its health
-   * over it, the marquee while one is being dragged, and a ping where the
-   * last order landed.
+   * over it, the route a chained order drew for the selection, the marquee
+   * while one is being dragged, and a ping where the last order landed.
    *
    * Rings go UNDER the bodies in reading order — they are drawn first —
    * and the health bar rides above the body like a structure's does
@@ -1645,6 +1753,53 @@ export class Game {
       }
     }
 
+    // THE ROUTE A CHAIN DREW (Sim.orderMove's queue): the legs a selected
+    // body still has to walk, drawn from where it is now through the point
+    // it is walking to and on through the rest. ONE LINE PER ROUTE, not
+    // one per body — a group of twenty sharing a chain shares its drawing,
+    // gathered by the cells it holds, or the board would wear the same
+    // line twenty times over. Only a body with legs QUEUED draws one: an
+    // ordinary order already says where it went with its ping
+    const routes = new Map<string, { cells: readonly number[]; ox: number; oy: number; cx: number; cy: number; k: number }>();
+    for (let i = 0; i < n; i++) {
+      if (!usel[i]) continue;
+      const q = sim.waypointsOf(i);
+      if (!q || q.length === 0) continue;
+      const ox = sim.uord[i] > 0 ? sim.uordx[i] : upx[i];
+      const oy = sim.uord[i] > 0 ? sim.uordy[i] : upy[i];
+      const key = `${Math.round(ox)},${Math.round(oy)}|${q.join(",")}`;
+      const at = routes.get(key);
+      if (at) {
+        at.cx += upx[i];
+        at.cy += upy[i];
+        at.k++;
+      } else routes.set(key, { cells: q, ox, oy, cx: upx[i], cy: upy[i], k: 1 });
+    }
+    for (const r of routes.values()) {
+      c.strokeStyle = "rgba(255,211,127,0.55)";
+      c.lineWidth = 1.5;
+      c.setLineDash([7, 6]);
+      c.beginPath();
+      c.moveTo(r.cx / r.k, r.cy / r.k); // where the group actually is
+      c.lineTo(r.ox, r.oy);
+      const pts = r.cells.map((cell) => sim.cellCenter(cell));
+      for (const pt of pts) c.lineTo(pt.x, pt.y);
+      c.stroke();
+      c.setLineDash([]);
+      // a node on every leg, and a heavier ring on the last one: the chain
+      // reads as a list of places rather than as a scribble
+      c.fillStyle = "rgba(255,211,127,0.8)";
+      for (let k = 0; k < pts.length; k++) {
+        c.beginPath();
+        c.arc(pts[k].x, pts[k].y, k === pts.length - 1 ? 5 : 3.5, 0, Math.PI * 2);
+        if (k === pts.length - 1) {
+          c.strokeStyle = "rgba(255,211,127,0.9)";
+          c.lineWidth = 2;
+          c.stroke();
+        } else c.fill();
+      }
+    }
+
     // THE MARQUEE, while the hand is still down on one — the team's amber
     // again, a hairline over a wash so what is inside it stays readable
     if (this.selecting && this.selDragPx > SEL_DRAG_PX) {
@@ -1656,6 +1811,33 @@ export class Game {
       c.lineWidth = 1;
       c.strokeRect(x, y, w, h);
     }
+  }
+
+  /**
+   * WHERE A BUILDING SENDS WHAT IT MAKES (Sim.setRally): a dashed line
+   * from the building to the point, with a ring on the end of it. Drawn
+   * only while the building is selected — a board where every factory
+   * trailed a line all game would be a board nobody could read — and in
+   * the same amber as an order, because it is one: the difference is only
+   * that the bodies it is given to have not been built yet.
+   */
+  private drawRally(c: CanvasRenderingContext2D, t: Tower): void {
+    const at = this.sim.cellCenter(t.rallyCell);
+    c.strokeStyle = "rgba(255,211,127,0.5)";
+    c.lineWidth = 1.5;
+    c.setLineDash([5, 5]);
+    c.beginPath();
+    c.moveTo(t.x, t.y);
+    c.lineTo(at.x, at.y);
+    c.stroke();
+    c.setLineDash([]);
+    c.beginPath();
+    c.arc(at.x, at.y, 6, 0, Math.PI * 2);
+    c.stroke();
+    c.beginPath();
+    c.arc(at.x, at.y, 2, 0, Math.PI * 2);
+    c.fillStyle = "rgba(255,211,127,0.9)";
+    c.fill();
   }
 
   /**
@@ -1830,22 +2012,33 @@ export class Game {
       c.globalAlpha = 1;
     }
 
-    // selection: range ring + footprint outline (drops when the tower is sold)
-    if (this.selected && !this.sim.towers.includes(this.selected)) this.selected = null;
-    if (this.selected) {
-      const t = this.selected;
-      c.beginPath();
-      // the LIVE range, not the table's: an upgrade branch that lengthened
-      // this turret's reach has to move the ring it is drawn with, or the
-      // ring becomes a lie about what the turret can shoot (Sim.statsFor)
-      c.arc(t.x, t.y, this.sim.statsFor(t.kind as TowerKind).range, 0, Math.PI * 2);
-      c.fillStyle = "rgba(255,211,127,0.06)";
-      c.fill();
+    // THE SELECTED BUILDINGS: a footprint outline on every one of them, a
+    // range ring on the ones that have a range, and a line to the rally
+    // point on the ones that make bodies. The sim drops a building from
+    // the selection as it leaves the board (removeTower), so nothing here
+    // can be drawn over bare ground
+    for (const st of this.sim.selectedStructs) {
+      const size = isCore(st) ? st.size : structStats(st.kind).size;
+      if (!isCore(st)) {
+        // the LIVE range, not the table's: an upgrade branch that lengthened
+        // this turret's reach has to move the ring it is drawn with, or the
+        // ring becomes a lie about what the turret can shoot (Sim.statsFor)
+        const range = this.sim.statsFor(st.kind as TowerKind).range;
+        if (range > 0) {
+          c.beginPath();
+          c.arc(st.x, st.y, range, 0, Math.PI * 2);
+          c.fillStyle = "rgba(255,211,127,0.06)";
+          c.fill();
+          c.strokeStyle = "rgba(255,211,127,0.7)";
+          c.lineWidth = 1.5;
+          c.stroke();
+        }
+      }
       c.strokeStyle = "rgba(255,211,127,0.7)";
       c.lineWidth = 1.5;
-      c.stroke();
-      const selPx = structStats(t.kind).size * CELL;
-      c.strokeRect(t.gx * CELL + 1, t.gy * CELL + 1, selPx - 2, selPx - 2);
+      const selPx = size * CELL;
+      c.strokeRect(st.gx * CELL + 1, st.gy * CELL + 1, selPx - 2, selPx - 2);
+      if (!isCore(st) && st.rallyCell >= 0) this.drawRally(c, st);
     }
 
     // THE FOCUS MARK (Sim.setFocusUnit / setFocusShieldTower): a bobbing red
@@ -1876,39 +2069,52 @@ export class Game {
     this.drawSelection(c);
 
     if (this.buildKind && this.hoverGx >= 0 && !this.panning) {
-      // red marks anything that blocks the spot: walls, the base, units
-      // underneath, or a placement that would seal the swarm's last route
-      const sz = TOWERS[this.buildKind].size;
-      const px = sz * CELL;
-      const ok = this.sim.canPlace(this.hoverGx, this.hoverGy, this.buildKind);
-      const x = this.hoverGx * CELL, y = this.hoverGy * CELL;
-      // a legal spot that the Hydrophobic rule TAXES is drawn in the
-      // special rule's own blue rather than the ordinary amber: the
-      // placement is allowed, so it must not read as refused, but most of
-      // a turret's damage is worth a colour of its own
-      const soaked = ok && this.sim.isWaterlogged(this.hoverGx, this.hoverGy, this.buildKind);
-      const tint = !ok
-        ? ["rgba(255,90,90,0.3)", "rgba(255,90,90,0.9)"]
-        : soaked
-          ? ["rgba(138,162,255,0.22)", "rgba(138,162,255,0.95)"]
-          : ["rgba(255,211,127,0.14)", "rgba(255,211,127,0.85)"];
-      c.fillStyle = tint[0];
-      c.fillRect(x, y, px, px);
-      c.strokeStyle = tint[1];
-      c.lineWidth = 1.5;
-      c.strokeRect(x + 1, y + 1, px - 2, px - 2);
-      // interior lines so the ghost reads as the cells it occupies
-      c.lineWidth = 1;
-      c.globalAlpha = 0.45;
-      c.beginPath();
-      for (let i = 1; i < sz; i++) {
-        c.moveTo(x + CELL * i, y + 1);
-        c.lineTo(x + CELL * i, y + px - 1);
-        c.moveTo(x + 1, y + CELL * i);
-        c.lineTo(x + px - 1, y + CELL * i);
-      }
-      c.stroke();
-      c.globalAlpha = 1;
+      // ONE GHOST, OR THE WHOLE RULER LINE. A shift-drag is aiming a run of
+      // buildings that will land all at once on release, so all of it is
+      // drawn — each one asking canPlace for itself, so the line shows
+      // exactly which of them the ground will take
+      const cells =
+        this.ruler && this.building
+          ? this.sim.rulerCells(this.rulerFrom.x, this.rulerFrom.y, this.hoverX, this.hoverY, this.buildKind)
+          : [{ gx: this.hoverGx, gy: this.hoverGy }];
+      for (const cell of cells) this.drawGhost(c, cell.gx, cell.gy, this.buildKind);
     }
+  }
+
+  /** one placement ghost: the footprint, tinted by what the ground says */
+  private drawGhost(c: CanvasRenderingContext2D, gx: number, gy: number, kind: TowerKind): void {
+    // red marks anything that blocks the spot: walls, the base, units
+    // underneath, or a placement that would seal the swarm's last route
+    const sz = TOWERS[kind].size;
+    const px = sz * CELL;
+    const ok = this.sim.canPlace(gx, gy, kind);
+    const x = gx * CELL, y = gy * CELL;
+    // a legal spot that the Hydrophobic rule TAXES is drawn in the
+    // special rule's own blue rather than the ordinary amber: the
+    // placement is allowed, so it must not read as refused, but most of
+    // a turret's damage is worth a colour of its own
+    const soaked = ok && this.sim.isWaterlogged(gx, gy, kind);
+    const tint = !ok
+      ? ["rgba(255,90,90,0.3)", "rgba(255,90,90,0.9)"]
+      : soaked
+        ? ["rgba(138,162,255,0.22)", "rgba(138,162,255,0.95)"]
+        : ["rgba(255,211,127,0.14)", "rgba(255,211,127,0.85)"];
+    c.fillStyle = tint[0];
+    c.fillRect(x, y, px, px);
+    c.strokeStyle = tint[1];
+    c.lineWidth = 1.5;
+    c.strokeRect(x + 1, y + 1, px - 2, px - 2);
+    // interior lines so the ghost reads as the cells it occupies
+    c.lineWidth = 1;
+    c.globalAlpha = 0.45;
+    c.beginPath();
+    for (let i = 1; i < sz; i++) {
+      c.moveTo(x + CELL * i, y + 1);
+      c.lineTo(x + CELL * i, y + px - 1);
+      c.moveTo(x + 1, y + CELL * i);
+      c.lineTo(x + px - 1, y + CELL * i);
+    }
+    c.stroke();
+    c.globalAlpha = 1;
   }
 }
