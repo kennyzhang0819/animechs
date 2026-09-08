@@ -1333,20 +1333,6 @@ export class Sim {
    */
   readonly airField = new FlowField();
   /**
-   * THE PLAYER'S FIELDS — the mirror of the swarm's three. A body the
-   * player makes attack-moves at the SWARM's buildings: its ground field
-   * routes over the same rock with the swarm's structures soft (pathed
-   * through at a cost and shot at) and the player's own hard, its goal
-   * every enemy structure standing, or the swarm's own drop zones when
-   * none is; the water and air ones the same over their masks. Solved
-   * on demand (playerFieldsOn) — the first factory switches them on —
-   * and re-solved with the swarm's whenever a structure changes.
-   */
-  readonly pField = new FlowField();
-  readonly pNavalField = new FlowField();
-  readonly pAirField = new FlowField();
-  private playerFieldsOn = false;
-  /**
    * THE MOVE ORDERS' FIELDS (orderMove). A right-click is a destination,
    * and a destination is a flow field like any other: the same rock, the
    * player's own buildings hard and the swarm's soft, seeded from the one
@@ -1415,8 +1401,6 @@ export class Sim {
   /** ...the naval tanks' twin of it, flagged apart so a map with no tank
    *  out never pays for the second solve */
   private navalDirty = false;
-  /** ...and the player's three, dirtied by the same structure changes */
-  private pFieldDirty = false;
   /** seconds since the last structure change — the settle clock */
   private fieldQuiet = 0;
   /** seconds a pending solve has been waiting — the staleness cap */
@@ -1536,7 +1520,6 @@ export class Sim {
     this.orderSlot = 0;
     this.fieldDirty = false;
     this.navalDirty = false;
-    this.pFieldDirty = false;
     this.unstickPending = false;
     this.fieldQuiet = 0;
     this.fieldStale = 0;
@@ -1572,7 +1555,6 @@ export class Sim {
     this.bossAirOpen = this.openSky(this.bossPads.air);
     this.nPlayer = 0;
     this.enemyByKind.fill(0);
-    this.playerFieldsOn = false;
     // fail LOUDLY on a broken map: with zero doors nothing ever spawns and
     // a wave script stalls forever, which reads as a scheduler bug
     if (this.airPads.length === 0 && this.field.spawnPts.length === 0)
@@ -1645,62 +1627,6 @@ export class Sim {
   }
 
   /**
-   * THE PLAYER'S ARMY'S DESTINATION: every cell of every one of the
-   * swarm's structures — soft on its field, so a body presses in and
-   * fires — and, while the swarm has none standing, its ground drop zones:
-   * the doors the waves come through are where the fight is
-   */
-  private enemyGoal(): Uint8Array {
-    const out = new Uint8Array(NCELLS);
-    let any = false;
-    for (const t of this.towers) {
-      if (t.team !== "enemy") continue;
-      any = true;
-      const sz = structStats(t.kind).size;
-      for (let y = t.gy; y < t.gy + sz; y++)
-        for (let x = t.gx; x < t.gx + sz; x++) out[y * COLS + x] = 1;
-    }
-    if (!any) for (let i = 0; i < NCELLS; i++) if (this.groundPads[i]) out[i] = 1;
-    return out;
-  }
-
-  /**
-   * Hand the player's three fields the board as it stands — the masks and
-   * the goal, not the solve. Split out because a re-solve is sliced across
-   * frames (solveDirtyFields) while this part is one pass over the grid
-   * and has to happen up front, before the first slice runs.
-   */
-  private seedPlayerFields(): void {
-    this.playerFieldsOn = true;
-    this.pFieldDirty = false;
-    const goal = this.enemyGoal();
-    this.pField.rebuildWalk(this.hardFootprints(), this.terrain.blocked, NO_PADS, goal, this.footprints());
-    this.pNavalField.rebuildWalk(this.hardFootprints(), navalWalkMask(this.terrain), NO_PADS, goal,
-      this.footprints());
-    this.pAirField.rebuildWalk([], this.hills, NO_PADS, goal);
-  }
-
-  /**
-   * Solve the player's fields from the board as it stands: the swarm's
-   * structures soft, the player's own (and the core) hard, no doors, and
-   * the swarm's buildings as the goal (enemyGoal).
-   *
-   * THE NAVAL ONE IS THE GROUND ONE WITH THE WATER OPEN, exactly as on the
-   * swarm's side: the player's tanks aim at the same buildings the walkers
-   * do rather than at the shoreline nearest them, and they cross whatever
-   * channel lies between. It used to be a field over the water alone, whose
-   * goal was "the wet cells within six of an enemy building" and whose
-   * fallback was the swarm's water doors — a shore to park on, because
-   * parking on a shore was the whole of what a hull could do.
-   */
-  private rebuildPlayerFields(): void {
-    this.seedPlayerFields();
-    this.pField.compute();
-    this.pNavalField.compute();
-    this.pAirField.compute();
-  }
-
-  /**
    * THE DEFERRED HALF OF A STRUCTURE CHANGE: re-solve the fields the board
    * has dirtied — but only once it has held still for FIELD_SETTLE (or
    * waited out FIELD_MAX_STALE), and only the fields something alive is
@@ -1724,16 +1650,17 @@ export class Sim {
     // started until the queue is clear, so the cost per frame is one slice
     // however much is waiting
     if (this.solveQueue.length > 0) return this.runSolveQueue();
-    if (!this.fieldDirty && !this.navalDirty && !this.pFieldDirty) return;
+    if (!this.fieldDirty && !this.navalDirty) return;
     this.fieldStale += dt;
     if (this.fieldQuiet < FIELD_SETTLE && this.fieldStale < FIELD_MAX_STALE) return;
-    // who is out, and so which of the fields is being read. A flyer is
-    // never counted on the swarm's side: its field is over the hills alone
-    // and no building ever changes it (airField)
-    let ground = false, naval = false, player = false;
+    // who is out, and so which of the fields is being read. Only the
+    // SWARM's bodies count: a flyer is not one of them (its field is over
+    // the hills alone and no building ever changes it), and the player's
+    // own read no field but the order they are under, which is solved when
+    // the order is given rather than when the board moves
+    let ground = false, naval = false;
     for (let i = 0; i < this.n; i++) {
-      if (this.uteam[i]) player = true;
-      else if (this.ufly[i]) continue;
+      if (this.uteam[i] || this.ufly[i]) continue;
       else if (this.unav[i]) naval = true;
       else ground = true;
     }
@@ -1747,11 +1674,6 @@ export class Sim {
     if (this.navalDirty && naval) {
       this.navalDirty = false;
       this.solveQueue.push(this.navalField);
-    }
-    if (this.pFieldDirty && player) {
-      // the masks and the goal now (seedPlayerFields), the solve in slices
-      this.seedPlayerFields();
-      this.solveQueue.push(this.pField, this.pNavalField, this.pAirField);
     }
     // the cap is spent whether or not a solve came of it: a flag left
     // standing is one nothing reads, and it is re-offered every tick from
@@ -2083,9 +2005,17 @@ export class Sim {
     return { x: t.x, y: t.y, r };
   }
 
-  /** every eye on the field — the core and each of the PLAYER's structures,
-   *  entombed or not; the swarm's formation looks for nobody */
-  private readonly visionSources = (): VisionSource[] => {
+  /**
+   * EVERY EYE ON THE FIELD — the core and each of the PLAYER's structures,
+   * entombed or not, plus every body of the player's; the swarm's
+   * formation looks for nobody.
+   *
+   * Public because two things read it: the fog's own per-cell state, which
+   * is what the rules are made of (what may be built, what may be shot),
+   * and the renderer, which draws the same circles as soft light into its
+   * fog buffers and never touches the cells at all.
+   */
+  readonly visionSources = (): VisionSource[] => {
     const out: VisionSource[] = [this.coreVision()];
     for (const t of this.towers) if (t.team === "player") out.push(this.towerVision(t));
     // ...and every body of the player's, a few cells round itself
@@ -2354,7 +2284,6 @@ export class Sim {
     };
     this.towers.push(tower);
     if (team === "enemy") this.enemyStructures++;
-    else if (structStats(kind).produces && !this.playerFieldsOn) this.rebuildPlayerFields();
     this.claimGround(tower, true);
     // it looks around the moment it is placed — a shell sees a few cells,
     // and the turret it becomes sees its share of its range (updateBuilds).
@@ -2965,12 +2894,6 @@ export class Sim {
         utT[i] = 0.3 + Math.random() * 0.2;
         tgt = this.pickAim(x, y, UNIT_REACH[kind], sighted, foes, team === 0 ? 1 : 0);
         utgt[i] = tgt;
-        // the player's flyer re-aims its hover at the nearest enemy
-        // building on the same clock, so a wrecked target sends it on
-        if (team && this.ufly[i]) {
-          const g = this.nearestEnemyStructure(x, y);
-          if (g) { this.ugx[i] = g.x; this.ugy[i] = g.y; }
-        }
       }
       let exploded = false;
       for (let w = 0; w < ws.length && !exploded; w++) {
@@ -3673,7 +3596,6 @@ export class Sim {
           this.scrap -= price;
         }
         t.prodT = UNIT_BUILD_SECONDS[tier];
-        if (!this.playerFieldsOn) this.rebuildPlayerFields();
         continue;
       }
       if (t.prodT > 0) {
@@ -3812,7 +3734,6 @@ export class Sim {
       this.navalDirty = true;
       // the player's three only while they are being solved at all: a flag
       // raised before the first factory would never come down
-      if (this.playerFieldsOn) this.pFieldDirty = true;
       this.unstickPending = true;
       // the board moved, so the settle clock starts over — a drag holds it
       // at zero and pays for one solve when it ends (solveDirtyFields)
@@ -3994,9 +3915,9 @@ export class Sim {
       // air field aims (coreGoal) and where a flyer with no field under it
       // steers by hand (airHeading)
       if (fly) {
-        // the swarm's flyer aims at the core; the player's at the swarm's
-        // nearest building (re-picked with its target, updateUnitWeapons)
-        const g = team ? (this.nearestEnemyStructure(x, y) ?? this.nearestGoal(x, y)) : this.nearestGoal(x, y);
+        // the swarm's flyer aims at the core; the player's aims at nothing
+        // — it hovers where it was made until it is sent somewhere
+        const g = this.nearestGoal(x, y);
         this.ugx[i] = g.x;
         this.ugy[i] = g.y;
       }
@@ -5016,11 +4937,11 @@ export class Sim {
       // wall to slide along — and terrain is not something a flyer meets.
       // It is left pointing at the ground field so the guards below can
       // stay plain `!fly` tests rather than a third branch that never runs.
-      // ...and a body of the PLAYER's reads the player's fields — the same
-      // rock, the other side's structures soft, the other side's buildings
-      // as the goal (rebuildPlayerFields)
+      // ...and a body of the PLAYER's reads the SWARM's field for terrain
+      // and nothing else. It has no route of its own: it goes where it is
+      // sent and stands where it is left (see below).
       const mine = uteam[i] !== 0;
-      const mf = nav ? (mine ? this.pNavalField : this.navalField) : mine ? this.pField : field;
+      const mf = nav ? this.navalField : field;
       const { walk } = mf;
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
       const cy = clamp((upy[i] / CELL) | 0, 0, ROWS - 1);
@@ -5032,20 +4953,28 @@ export class Sim {
       // it used to park on the water nearest it and fire from the shore,
       // which was the whole of what a hull could reach.
 
-      if (fly) {
+      // THE PLAYER'S ARMY HAS NO STANDING ORDER. It stands where it was
+      // left and moves only where it is sent (orderMove) — its guns still
+      // take whatever comes into range on their own (updateUnitWeapons),
+      // which is what makes a held position a position rather than a
+      // parade. This is why the player's own flow fields are gone: three
+      // more field solves existed to answer "walk at the swarm's nearest
+      // building", a question nobody asks any more.
+      if (mine) {
+        flowTmp.x = 0;
+        flowTmp.y = 0;
+      } else if (fly) {
         // flyers take the air field's route round the hills and HOLD over
         // the core's edge once there — Mindustry's FlyingAI circles what it
         // attacks; this one hovers, and its guns do the rest
         // (updateUnitWeapons)
         const gdx = this.ugx[i] - upx[i], gdy = this.ugy[i] - upy[i];
         const gl = Math.sqrt(gdx * gdx + gdy * gdy) || 1;
-        // the player's flyer holds over the enemy building it was sent at
-        // (its goal is re-picked with its target, updateUnitWeapons)
-        const hold = mine ? CELL * 2.5 : (this.core.size * CELL) / 2 + CELL * 1.5;
+        const hold = (this.core.size * CELL) / 2 + CELL * 1.5;
         if (gl <= hold) {
           flowTmp.x = 0;
           flowTmp.y = 0;
-        } else this.airHeading(upx[i], upy[i], gdx / gl, gdy / gl, flowTmp, mine ? this.pAirField : this.airField);
+        } else this.airHeading(upx[i], upy[i], gdx / gl, gdy / gl, flowTmp, this.airField);
       } else {
         mf.sample(upx[i], upy[i], flowTmp);
       }

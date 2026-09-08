@@ -393,6 +393,10 @@ const SHIELD_COL = [0xff / 255, 0xd3 / 255, 0x7f / 255] as const;
 const UNIT_SHIELD_COL: RGB = TEAM_CRUX_RGB;
 /** the player's own team colour on the field: Pal.accent, the core's amber */
 const TEAM_MINE: RGB = PAL_IMPORT.accent;
+/** how faint the team ring is on a body that is NOT selected */
+const TEAM_RING_ALPHA = 0.25;
+/** ...and how much wider than the body a SELECTED one's ring sits */
+const SELECT_RING_SCALE = 1.9;
 /**
  * UnitEngine.draw: the flame behind a flyer, a disc in the team's colour
  * breathing on Mathf.absin(Time.time, 2, radius / 4) with a white disc
@@ -767,6 +771,30 @@ const WAKE_PY = new Float64Array(WAKE_PTS + 1);
 const WAKE_DX = new Float64Array(WAKE_PTS + 1);
 const WAKE_DY = new Float64Array(WAKE_PTS + 1);
 
+/**
+ * THE FOG BUFFERS' RESOLUTION, in texels a cell (drawFog). Two is enough:
+ * the discs carved into them are soft to begin with and the buffers are
+ * sampled bilinearly, so the grid under them stops being visible well
+ * before this — what it buys over one is a rim that stays smooth when the
+ * camera is right down on the ground.
+ */
+const FOG_SS = 2;
+const FOG_W = COLS * FOG_SS;
+const FOG_H = ROWS * FOG_SS;
+/** how far out an eye's disc stays fully lit, as a share of its radius */
+const SIGHT_CORE = 0.7;
+/**
+ * ...and how far the quad reaches past the vision radius, so the feather
+ * has somewhere to fall off. The RULES' circle is still exactly the
+ * radius (fog.ts); this only decides where the picture of it fades out.
+ */
+const SIGHT_SPREAD = 1.14;
+/** a whole texture, and a whole texture upside down: the fog buffers are
+ *  rendered through the same y-flipping vertex stage everything else is,
+ *  so the map quad that samples them reads their rows bottom to top */
+const UV_FULL: UVRect = [0, 0, 1, 1];
+const UV_FOG_QUAD: UVRect = [0, 1, 1, 0];
+
 const VS = `#version 300 es
 layout(location=0) in vec2 aCorner;
 layout(location=1) in vec2 aPos;
@@ -1004,6 +1032,23 @@ export class Renderer {
    *  would be writing into a texture that does not exist yet */
   private fogUploaded = false;
   private readonly fogMask = new Uint8Array(COLS * ROWS * 4);
+  /**
+   * THE TWO FOG BUFFERS (drawFog): what is in sight now, and what has ever
+   * been. Alpha masks over the whole map at FOG_SS texels a cell, carved
+   * by the eyes' discs rather than filled cell by cell.
+   */
+  private fogDynTex: WebGLTexture | null = null;
+  private fogDynFbo: WebGLFramebuffer | null = null;
+  private fogStaticTex: WebGLTexture | null = null;
+  private fogStaticFbo: WebGLFramebuffer | null = null;
+  /** false once a driver has refused them — the cell fallback takes over */
+  private fogFboReady = true;
+  /** the map generation the discovered buffer holds (Fog.epoch) */
+  private fogEpochSeen = -1;
+  /** one eye's disc of light: white, with a soft rim (makeSightTexture) */
+  private sightTex: WebGLTexture | null = null;
+  /** the eyes' quads, gathered once a frame and drawn into both buffers */
+  private readonly fogSight: Batch;
   private readonly dyn: Batch;
   /**
    * the force-field fills for this frame. They never reach the screen
@@ -1093,6 +1138,9 @@ export class Renderer {
     this.shadow = this.makeBatch(4);
     this.dark = this.makeBatch(4);
     this.fog = this.makeBatch(4);
+    // one quad an eye: the core, every structure of the player's, every
+    // body of theirs
+    this.fogSight = this.makeBatch(4096);
     // a swarm budget, not a worst case: 12 quads is a walking mech with one
     // mirrored gun drawn twice (silhouette rim under, art over), which is
     // what MAX_UNITS of anything is ever actually made of. The heavies cost
@@ -1167,14 +1215,8 @@ export class Renderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    // the map-covering quad it is drawn with never changes: pushed once
-    const fq = this.fog;
-    fq.n = 0;
-    this.push(fq, W / 2, H / 2, W, H, 0, [0, 0, 1, 1], 0, 0, 0, 1);
-    gl.bindVertexArray(fq.vao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, fq.vbo);
-    gl.bufferSubData(gl.ARRAY_BUFFER, 0, fq.data, 0, fq.n * FLOATS);
-    gl.bindVertexArray(null);
+    // the map-covering quad it is drawn with is pushed per draw: the two
+    // washes differ in strength and in which buffer they read (drawFog)
 
     const tex = gl.createTexture();
     if (!tex) throw new Error("texture alloc failed");
@@ -1966,7 +2008,7 @@ export class Renderer {
    */
   private pushUnitPass(dyn: Batch, sim: Sim, pass: number): void {
     const { vx0, vy0, vx1, vy1 } = this;
-    const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n, uteam } = sim;
+    const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n, uteam, usel } = sim;
     const { ushield, ushieldAlpha, urad, uwet, uhungry, ufly, ueaten, uwade } = sim;
     // pass 1 is nothing but the flyers' drop shadows — a whole second
     // quad per flyer, and the first decoration to go with the effects
@@ -1996,12 +2038,21 @@ export class Renderer {
       if (!mine && !this.vis(upx[i], upy[i])) continue;
       const usz = KIND_SPRITE[k];
       if (grow !== 1) this.beginScale(upx[i], upy[i], grow);
-      // THE PLAYER'S MARK: a ring in the team's amber under each of the
-      // player's bodies, an RTS's selection circle — the one thing that
-      // says whose a dagger is, since both sides wear the same art
+      // THE PLAYER'S MARK, and the SELECTION with it: a ring in the team's
+      // amber under each of the player's bodies. Two weights of the same
+      // ring rather than two different marks — faint on a body that is
+      // simply yours (which is all the ring ever used to say, and still
+      // the only thing that tells your dagger from the swarm's, since both
+      // sides wear the same art), and full-strength and wider on one you
+      // have selected. A selection is then the loudest thing on the board
+      // without introducing a second vocabulary for it.
       if (mine && pass !== 1) {
-        const rr = urad[i] * 2 * 1.5;
-        this.push(dyn, upx[i], upy[i], rr, rr, 0, UV_RING, TEAM_MINE[0], TEAM_MINE[1], TEAM_MINE[2], 0.75);
+        const on = usel[i] !== 0;
+        const rr = urad[i] * 2 * (on ? SELECT_RING_SCALE : 1.5);
+        this.push(
+          dyn, upx[i], upy[i], rr, rr, 0, UV_RING,
+          TEAM_MINE[0], TEAM_MINE[1], TEAM_MINE[2], on ? 1 : TEAM_RING_ALPHA,
+        );
       }
       if (pass === 1) {
         this.push(dyn, upx[i] + SHADOW_OFF, upy[i] + SHADOW_OFF, usz, usz, urot[i], KIND_UV[k], 0, 0, 0, SHADOW_ALPHA);
@@ -2093,6 +2144,9 @@ export class Renderer {
     this.fogSrc = fog;
     this.fogVersion = -1;
     this.fogUploaded = false;
+    // a different fog is a different map's memory: the discovered buffer
+    // is re-lit from nothing on the next frame (drawFog)
+    this.fogEpochSeen = -1;
   }
 
   /**
@@ -2132,7 +2186,90 @@ export class Renderer {
    * texture is rebuilt from Fog.state only when its version moves, which
    * is when a structure went up, finished or came down — never per frame.
    */
-  private drawFog(): void {
+  /**
+   * THE FOG, AS LIGHT RATHER THAN AS CELLS — Mindustry's own shape.
+   *
+   * The rules' fog is a byte a cell (fog.ts) and always will be: what may
+   * be built, what may be shot, what is drawn at all. But a grid of bytes
+   * DRAWN is a grid of bytes seen — a staircase edge that steps a whole
+   * cell at a time as a unit walks, however smoothly the cell under it
+   * changes. So the picture is made a different way: every eye on the
+   * field draws a soft disc of light, at its true world position, into two
+   * buffers over the map —
+   *
+   *   DYNAMIC  cleared and re-lit every frame: what is in sight NOW
+   *   STATIC   never cleared until a new map: what has EVER been in sight
+   *
+   * — and the frame takes a half-black wash through the first and full
+   * black through the second. Both are alpha buffers that start opaque and
+   * have holes CARVED in them (blend ZERO, ONE_MINUS_SRC_ALPHA), which is
+   * why a disc's soft rim reads as a soft edge to the fog rather than as a
+   * bright ring: light removes darkness in proportion to its own alpha.
+   *
+   * Nothing here is snapped to the grid. The discs sit at floating world
+   * positions and the buffers are sampled bilinearly, so an eye moving a
+   * tenth of a cell moves the fog's edge by a tenth of a cell.
+   */
+  private drawFog(sim: Sim, zoom: number, offX: number, offY: number, kPx: number): void {
+    const f = this.fogSrc;
+    if (!f || !f.enabled) return;
+    const gl = this.gl;
+    if (!this.ensureFogTargets()) return this.drawFogCells();
+    // the eyes, gathered once and drawn into both buffers
+    const b = this.fogSight;
+    b.n = 0;
+    for (const src of sim.visionSources()) {
+      const d = src.r * 2 * SIGHT_SPREAD;
+      this.push(b, src.x, src.y, d, d, 0, UV_FULL, 1, 1, 1, 1);
+    }
+    gl.useProgram(this.prog);
+    // the buffers cover the MAP, not the view: world px straight through
+    gl.uniform2f(this.uRes, W, H);
+    gl.uniform1f(this.uZoom, 1);
+    gl.uniform2f(this.uOff, 0, 0);
+    gl.bindTexture(gl.TEXTURE_2D, this.sightTex);
+    gl.viewport(0, 0, FOG_W, FOG_H);
+    // light does not paint, it CARVES: dst.a *= 1 - src.a
+    gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
+    gl.clearColor(0, 0, 0, 1);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fogDynFbo);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    this.draw(b, true);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fogStaticFbo);
+    // ...and the discovered buffer is wiped only by a new map (Fog.epoch)
+    if (f.epoch !== this.fogEpochSeen) {
+      this.fogEpochSeen = f.epoch;
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+    this.draw(b, false);
+
+    // back to the frame, and the two washes over it
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniform2f(this.uRes, this.canvas.width / kPx, this.canvas.height / kPx);
+    gl.uniform1f(this.uZoom, zoom);
+    gl.uniform2f(this.uOff, offX, offY);
+    const q = this.fog;
+    q.n = 0;
+    this.push(q, W / 2, H / 2, W, H, 0, UV_FOG_QUAD, 0, 0, 0, FOG_SEEN_ALPHA);
+    gl.bindTexture(gl.TEXTURE_2D, this.fogDynTex);
+    this.draw(q, true);
+    q.n = 0;
+    this.push(q, W / 2, H / 2, W, H, 0, UV_FOG_QUAD, 0, 0, 0, 1);
+    gl.bindTexture(gl.TEXTURE_2D, this.fogStaticTex);
+    this.draw(q, true);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+  }
+
+  /**
+   * The fallback fog: one texel a cell, straight off Fog.state. Only ever
+   * used where the buffers above cannot be made (a driver that refuses the
+   * framebuffer), because a frame with NO fog on it is not a cosmetic
+   * failure — it shows the player the whole map.
+   */
+  private drawFogCells(): void {
     const f = this.fogSrc;
     if (!f || !f.enabled) return;
     const gl = this.gl;
@@ -2181,7 +2318,10 @@ export class Renderer {
     }
     gl.useProgram(this.prog);
     gl.bindTexture(gl.TEXTURE_2D, this.fogTex);
-    this.draw(this.fog, false);
+    const q = this.fog;
+    q.n = 0;
+    this.push(q, W / 2, H / 2, W, H, 0, UV_FULL, 0, 0, 0, 1);
+    this.draw(q, true);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
   }
 
@@ -2768,7 +2908,7 @@ export class Renderer {
     this.pushUnitPass(dyn, sim, 2);
     this.draw(dyn, true);
     // THE FOG, over all of it — the flyers too (see `fog`)
-    this.drawFog();
+    this.drawFog(sim, zoom, offX, offY, kPx);
   }
 
   /**
@@ -2875,6 +3015,93 @@ export class Renderer {
    * the canvas changes. Returns false if the driver will not give us a
    * complete framebuffer, which puts the fields on the no-shader path.
    */
+  /**
+   * The disc one eye lights: white, opaque out to SIGHT_CORE of its radius
+   * and feathering to nothing at the rim. THE FEATHER IS THE WHOLE POINT —
+   * a hard-edged disc carved into the fog gives back the same stepped
+   * circle the cell grid did, only rounder; a soft one gives the fog an
+   * edge that fades over a couple of cells, which is what makes it read as
+   * light falling off rather than as a stencil.
+   */
+  private makeSightTexture(): WebGLTexture | null {
+    const gl = this.gl;
+    const t = gl.createTexture();
+    if (!t) return null;
+    const N = 128;
+    const px = new Uint8Array(N * N * 4);
+    const c = (N - 1) / 2;
+    for (let y = 0; y < N; y++)
+      for (let x = 0; x < N; x++) {
+        const d = Math.hypot(x - c, y - c) / c;
+        // smoothstep from the rim inwards, so the ramp has no corner at
+        // either end — a linear one leaves a visible crease where it meets
+        // the opaque middle
+        let a = 0;
+        if (d < 1) {
+          const u = Math.min(1, Math.max(0, (1 - d) / (1 - SIGHT_CORE)));
+          a = u * u * (3 - 2 * u);
+        }
+        const o = (y * N + x) * 4;
+        const v = Math.round(a * 255);
+        // premultiplied, like the atlas (UNPACK_PREMULTIPLY_ALPHA_WEBGL)
+        px[o] = px[o + 1] = px[o + 2] = v;
+        px[o + 3] = v;
+      }
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, N, N, 0, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 0);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    return t;
+  }
+
+  /** the fog buffers and the disc, made once and kept for the session */
+  private ensureFogTargets(): boolean {
+    if (!this.fogFboReady) return false;
+    if (this.fogDynFbo && this.fogStaticFbo && this.sightTex) return true;
+    const gl = this.gl;
+    this.sightTex ??= this.makeSightTexture();
+    if (!this.sightTex) return (this.fogFboReady = false);
+    const make = (): [WebGLTexture, WebGLFramebuffer] | null => {
+      const tex = gl.createTexture();
+      const fbo = gl.createFramebuffer();
+      if (!tex || !fbo) return null;
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, FOG_W, FOG_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      // LINEAR is what turns two texels a cell into a smooth gradient on
+      // screen; the discs are already soft, so nothing here is a stencil
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 0);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+      // a fresh buffer is all fog until something lights it
+      if (ok) {
+        gl.viewport(0, 0, FOG_W, FOG_H);
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      return ok ? [tex, fbo] : null;
+    };
+    const dyn = make(), stat = make();
+    gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    if (!dyn || !stat) return (this.fogFboReady = false);
+    [this.fogDynTex, this.fogDynFbo] = dyn;
+    [this.fogStaticTex, this.fogStaticFbo] = stat;
+    this.fogEpochSeen = -1;
+    return true;
+  }
+
   private ensureShieldTarget(w: number, h: number): boolean {
     if (!this.shieldReady) return false;
     if (this.shieldFbo && this.shieldW === w && this.shieldH === h) return true;

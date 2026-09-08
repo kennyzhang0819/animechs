@@ -84,6 +84,12 @@ export class Fog {
    */
   version = 1;
   /**
+   * bumps when the fog starts over on a new map — the renderer's own
+   * discovered-ground buffer (Renderer.drawFog) is a texture it accumulates
+   * frame by frame, and this is the only thing that tells it to wipe.
+   */
+  epoch = 1;
+  /**
    * THE CELLS LIT RIGHT NOW, as indices — what a rebuild has to put back
    * to FOG_SEEN before it recasts. Kept because a rebuild that runs every
    * tick cannot afford to walk the whole grid to find them: the lit set is
@@ -118,6 +124,7 @@ export class Fog {
   /** a new map: nothing seen */
   reset(enabled: boolean): void {
     this.enabled = enabled;
+    this.epoch++;
     this.state.fill(enabled ? FOG_NEVER : FOG_VISIBLE);
     this.dirty = false;
     this.litN = 0;

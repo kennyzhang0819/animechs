@@ -262,10 +262,13 @@ const MM_SCALE = 1;
 const SEL_DRAG_PX = 5;
 /** how far a ctrl/double click reaches for bodies like the one clicked */
 const SEL_LIKE_R = CELL * 14;
-/** how long the ping over a move order lasts, in ms */
-const ORDER_MARK_MS = 450;
-/** the green a selected body wears, ring and marquee alike */
-const SELECT_RING = "rgba(123,229,138,0.9)";
+/** how long the mark over a move order lasts, in ms */
+const ORDER_MARK_MS = 520;
+/** ...and the radius it closes from and to, in world px */
+const ORDER_MARK_R0 = 26;
+const ORDER_MARK_R1 = 11;
+/** the marquee's amber — the team's own colour, as the unit rings wear it */
+const SELECT_RING = "rgba(255,211,127,0.9)";
 
 const BAR_H = 3.5;
 const BAR_GAP = 1.5;
@@ -1537,44 +1540,65 @@ export class Game {
   private drawSelection(c: CanvasRenderingContext2D): void {
     const sim = this.sim;
     const { upx, upy, urad, usel, uhp, uhpmax, n } = sim;
+    // the RING under a selected body is the renderer's, not this canvas's
+    // (Renderer.pushUnitPass): it is the team's own amber ring at full
+    // strength, so a selection is the mark the board already speaks in.
+    // What is left here is the health over the body, and the two marks
+    // that belong to the hand rather than to the board
     const bars: { v: number; col: string }[] = [];
-    c.lineWidth = 1.5;
-    c.strokeStyle = SELECT_RING;
     for (let i = 0; i < n; i++) {
       if (!usel[i]) continue;
-      const r = Math.max(urad[i] * 1.25, 7);
-      c.beginPath();
-      // an ellipse, not a circle: the board is drawn from above but read
-      // as a floor, and a flat ring sits ON the ground the way a shadow does
-      c.ellipse(upx[i], upy[i] + r * 0.25, r, r * 0.55, 0, 0, Math.PI * 2);
-      c.stroke();
-      bars.length = 0;
       const f = uhp[i] / Math.max(1, uhpmax[i]);
-      if (f < 1) bars.push({ v: f, col: hpColor(f) });
+      if (f >= 1) continue;
+      bars.length = 0;
+      bars.push({ v: f, col: hpColor(f) });
+      const r = Math.max(urad[i] * 1.25, 7);
       this.drawBars(c, upx[i], upy[i] - r, Math.max(r * 2, BAR_MIN_W), bars);
     }
-    c.lineWidth = 1;
 
-    // THE PING over the last order: a ring that opens and fades, so a click
-    // on empty ground is visibly a click on empty ground
+    // WHERE THE ORDER LANDED: a heavy ring that closes on the point and a
+    // dot at the middle of it, in the team's amber. It CONTRACTS rather
+    // than expanding — an opening ring reads as something happening AT the
+    // point (a blast, a ping), a closing one as an arrow landing on it —
+    // and it is round, drawn at the weight of the ring under a unit, so
+    // the two read as the same hand's marks
     if (this.orderMark) {
       const age = (performance.now() - this.orderMark.t) / ORDER_MARK_MS;
       if (age >= 1) this.orderMark = null;
       else {
+        const e = 1 - (1 - age) * (1 - age); // ease out: fast in, settling
+        const r = ORDER_MARK_R0 + (ORDER_MARK_R1 - ORDER_MARK_R0) * e;
+        const fade = age > 0.7 ? 1 - (age - 0.7) / 0.3 : 1;
+        c.lineWidth = 2.5;
+        c.strokeStyle = `rgba(255,211,127,${0.95 * fade})`;
         c.beginPath();
-        c.ellipse(this.orderMark.x, this.orderMark.y, 6 + age * 16, (6 + age * 16) * 0.55, 0, 0, Math.PI * 2);
-        c.strokeStyle = `rgba(127,196,255,${(1 - age) * 0.9})`;
-        c.lineWidth = 2;
+        c.arc(this.orderMark.x, this.orderMark.y, r, 0, Math.PI * 2);
         c.stroke();
+        // four ticks outside it, at the diagonals, closing with the ring:
+        // the part that reads as "here", not as "something exploded here"
+        c.lineWidth = 2;
+        for (let k = 0; k < 4; k++) {
+          const a = Math.PI / 4 + (k * Math.PI) / 2;
+          const cx = Math.cos(a), cy = Math.sin(a);
+          c.beginPath();
+          c.moveTo(this.orderMark.x + cx * (r + 3), this.orderMark.y + cy * (r + 3));
+          c.lineTo(this.orderMark.x + cx * (r + 8), this.orderMark.y + cy * (r + 8));
+          c.stroke();
+        }
+        c.beginPath();
+        c.arc(this.orderMark.x, this.orderMark.y, 2, 0, Math.PI * 2);
+        c.fillStyle = `rgba(255,211,127,${fade})`;
+        c.fill();
         c.lineWidth = 1;
       }
     }
 
-    // THE MARQUEE, while the hand is still down on one
+    // THE MARQUEE, while the hand is still down on one — the team's amber
+    // again, a hairline over a wash so what is inside it stays readable
     if (this.selecting && this.selDragPx > SEL_DRAG_PX) {
       const x = Math.min(this.selFrom.x, this.selTo.x), y = Math.min(this.selFrom.y, this.selTo.y);
       const w = Math.abs(this.selTo.x - this.selFrom.x), h = Math.abs(this.selTo.y - this.selFrom.y);
-      c.fillStyle = "rgba(123,229,138,0.10)";
+      c.fillStyle = "rgba(255,211,127,0.09)";
       c.fillRect(x, y, w, h);
       c.strokeStyle = SELECT_RING;
       c.lineWidth = 1;
