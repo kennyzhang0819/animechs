@@ -91,6 +91,7 @@ import {
 } from "@/game/mutation";
 import { displayControls, type DisplayMode, type DisplayState } from "@/game/storage";
 import { useCursorLock } from "./cursorLock";
+import { BUILD } from "@/game/version";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
 import { factionsAt, lockedMutators, rewardsAt, rewardText } from "@/game/track";
 import { defaultLoadout, FACTION_BLURB, FACTION_TURRETS, factionUnits } from "@/game/factions";
@@ -984,6 +985,16 @@ function slotForKey(e: KeyboardEvent): number {
 
 
 /**
+ * A SECTION OF SETTINGS IS ONE BOX. Every row of a tab lives in this one
+ * pane, divided by hairlines (globals.css .ms-rows) — five bevelled boxes
+ * stacked up read as five things to deal with, where one box with five
+ * rows reads as one section, which is what a tab is.
+ */
+function SettingsBox({ children }: { children: ReactNode }) {
+  return <div className="ms-pane ms-rows w-full max-w-[30rem] px-4">{children}</div>;
+}
+
+/**
  * ONE SETTING, ONE ROW: the name on the left, the knob on the right, and
  * NOTHING ELSE. The rows used to carry a line of explanation each ("turn
  * off to improve framerate", "wipes all progress — no undo") and a panel
@@ -992,10 +1003,19 @@ function slotForKey(e: KeyboardEvent): number {
  */
 function SettingRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="ms-pane flex w-full max-w-[30rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
       <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">{label}</div>
       {children}
     </div>
+  );
+}
+
+/** a row that states something rather than setting it — the Info tab */
+function FactRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <SettingRow label={label}>
+      <div className="text-[15px] text-[#A6A6AF]">{children}</div>
+    </SettingRow>
   );
 }
 
@@ -1046,11 +1066,19 @@ function StepSlider({
 }
 
 /**
- * THE SETTINGS SECTIONS. Video is the desktop shell's tab and is dropped
- * in a browser tab, where the window belongs to the browser and there is
- * nothing to set (see `video` below).
+ * THE SETTINGS SECTIONS, in the order they are printed:
+ *
+ * - `game` — the save, and nothing else so far. Not offered mid-run,
+ *   where wiping the save under a running game is the one thing it holds
+ * - `video` — what the game looks like and what window it looks like it
+ *   in. The three window rows need the desktop shell and are dropped in a
+ *   browser tab (`video` below); Effects is there either way
+ * - `interface` — the size of the UI over the field
+ * - `controls` — the mouse and the keys
+ * - `info` — what this is, who made it, what it came from. Last, because
+ *   it is the only tab that sets nothing
  */
-type SettingsTab = "general" | "video" | "interface" | "controls";
+type SettingsTab = "game" | "video" | "interface" | "controls" | "info";
 
 /**
  * THE DISPLAY MODES, in the order the Video tab prints them: least to most
@@ -1199,7 +1227,7 @@ export default function MechSwarm() {
    * for what it costs and how the cursor gets back out.
    */
   const [cursorLock, setCursorLock] = useState(true);
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("game");
   /**
    * THE DISPLAY, as the desktop shell has it: the mode the window is in,
    * the monitors there are, and which one the game is on. NOT a saved
@@ -1784,158 +1812,36 @@ export default function MechSwarm() {
    * `inGame` drops the two save-surgery rows (full unlock, reset): both
    * rebuild progress state under a run that is still holding the old one.
    */
-  const settingsPanel = (inGame: boolean) => (
-    <>
-      <div
-        role="tablist"
-        aria-label="settings sections"
-        className="ms-seg"
-      >
-        {(
-          [
-            ["general", "General"],
-            // only where there is a window to set: see `video` above
-            ...(video ? ([["video", "Video"]] as [SettingsTab, string][]) : []),
-            ["interface", "Interface"],
-            ["controls", "Controls"],
-          ] as ReadonlyArray<[SettingsTab, string]>
-        ).map(([tab, label]) => (
-          <button
-            key={tab}
-            role="tab"
-            aria-selected={settingsTab === tab}
-            onClick={() => setSettingsTab(tab)}
-            className="ms-btn px-5 py-2 text-[15px]"
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* VIDEO — the window itself, which is the shell's to change and not
-          the save's to remember: every press here goes straight out over
-          the bridge, and what comes back is what the window is now doing
-          (see `video` above). The panel is not rendered at all without a
-          shell, and neither is its tab. */}
-      {settingsTab === "video" && video && (
-        <>
-          <SettingRow label="Display mode">
-            <div role="group" aria-label="Display mode" className="ms-seg shrink-0">
-              {DISPLAY_MODES.map(({ mode, label }) => (
-                <button
-                  key={mode}
-                  aria-pressed={video.mode === mode}
-                  onClick={() => displayControls()?.setMode(mode)}
-                  className="ms-btn px-2.5 py-1.5 text-[15px]"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </SettingRow>
-
-          {/* WHICH SCREEN TO PLAY ON, as the list of screens the system
-              reports — named the way the system names them, because a desk
-              with two identical monitors has nothing else to tell them
-              apart, and a numbered button says nothing at all. */}
-          <SettingRow label="Monitor">
-            <select
-              aria-label="Monitor"
-              className="ms-select max-w-[19rem] shrink-0 px-3 py-1.5 text-[15px]"
-              value={video.displayId}
-              onChange={(e) => displayControls()?.setMonitor(Number(e.target.value))}
-            >
-              {video.displays.map((d, i) => (
-                <option key={d.id} value={d.id}>
-                  {`${i + 1}. ${d.label} · ${d.width}×${d.height}${d.primary ? " · primary" : ""}`}
-                </option>
-              ))}
-            </select>
-          </SettingRow>
-
-          {/* the whole of what a frameless window cannot do for itself —
-              see components/cursorLock.ts */}
-          <SettingRow label="Confine cursor">
+  const settingsPanel = (inGame: boolean) => {
+    // the sections there are HERE: the save cannot be wiped from under a
+    // running game, so mid-run there is no Game tab to show at all — and
+    // a tab that is not there cannot be the one that is open
+    const tabs: ReadonlyArray<[SettingsTab, string]> = [
+      ...(inGame ? [] : ([["game", "Game"]] as [SettingsTab, string][])),
+      ["video", "Video"],
+      ["interface", "Interface"],
+      ["controls", "Controls"],
+      ["info", "Info"],
+    ];
+    const tab = tabs.some(([t]) => t === settingsTab) ? settingsTab : tabs[0][0];
+    return (
+      <>
+        <div role="tablist" aria-label="settings sections" className="ms-seg">
+          {tabs.map(([t, label]) => (
             <button
-              aria-pressed={cursorLock}
-              onClick={() => {
-                const next = !cursorLock;
-                setCursorLock(next);
-                saveCursorLock(next);
-              }}
-              className="ms-btn w-16 shrink-0 px-3 py-1.5 text-[15px]"
+              key={t}
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => setSettingsTab(t)}
+              className="ms-btn px-5 py-2 text-[15px]"
             >
-              {cursorLock ? "On" : "Off"}
+              {label}
             </button>
-          </SettingRow>
-        </>
-      )}
+          ))}
+        </div>
 
-      {settingsTab === "interface" && (
-        <StepSlider
-          label="UI size"
-          steps={UI_SCALES}
-          value={uiScale}
-          onPick={(scale) => {
-            setUiScale(scale);
-            saveUiScale(scale); // remembered across sessions
-          }}
-        />
-      )}
-
-      {settingsTab === "controls" && (
-        <>
-          {/* one knob for both ways of panning without the mouse button
-              — the keys and the screen's edges share PAN_RATE in game.ts,
-              so what feels right for one feels right for the other */}
-          <StepSlider
-            label="Pan speed"
-            steps={PAN_SPEEDS}
-            value={panSpeed}
-            onPick={(mult) => {
-              setPanSpeed(mult);
-              savePanSpeed(mult); // remembered across sessions
-              gameRef.current?.setPanSpeed(mult); // live, mid-run
-            }}
-          />
-          <SettingRow label="Edge panning">
-            <button
-              aria-pressed={edgePan}
-              onClick={() => {
-                const next = !edgePan;
-                setEdgePan(next);
-                saveEdgePan(next);
-                gameRef.current?.setEdgePan(next);
-              }}
-              className="ms-btn w-16 shrink-0 px-3 py-1.5 text-[15px]"
-            >
-              {edgePan ? "On" : "Off"}
-            </button>
-          </SettingRow>
-        </>
-      )}
-
-      {settingsTab === "general" && (
-        <>
-          {/* every turret still shows its shot with effects off (see
-              Sim.setEffects) — what goes is the dressing around it */}
-          <SettingRow label="Effects">
-            <button
-              aria-pressed={effects}
-              onClick={() => {
-                const next = !effects;
-                setEffects(next);
-                saveEffects(next); // a preference about the device
-                // live: a run under way takes it on the next frame
-                gameRef.current?.setEffects(next);
-              }}
-              className="ms-btn w-16 shrink-0 px-3 py-1.5 text-[15px]"
-            >
-              {effects ? "On" : "Off"}
-            </button>
-          </SettingRow>
-
-          {!inGame && (
+        {tab === "game" && (
+          <SettingsBox>
             <SettingRow label="Reset save">
               <button
                 onClick={() => {
@@ -1956,11 +1862,165 @@ export default function MechSwarm() {
                 Wipe
               </button>
             </SettingRow>
-          )}
-        </>
-      )}
-    </>
-  );
+          </SettingsBox>
+        )}
+
+        {/* VIDEO — what the game looks like, and what window it looks like
+            it in. The window rows are the shell's to change and not the
+            save's to remember: every press goes straight out over the
+            bridge, and what comes back is what the window is now doing
+            (see `video` above). In a browser tab there is no window of
+            ours to set and the rows are not rendered; Effects is a fact
+            about the device and is there either way. */}
+        {tab === "video" && (
+          <SettingsBox>
+            {video && (
+              <SettingRow label="Display mode">
+                <div role="group" aria-label="Display mode" className="ms-seg shrink-0">
+                  {DISPLAY_MODES.map(({ mode, label }) => (
+                    <button
+                      key={mode}
+                      aria-pressed={video.mode === mode}
+                      onClick={() => displayControls()?.setMode(mode)}
+                      className="ms-btn px-2.5 py-1.5 text-[15px]"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </SettingRow>
+            )}
+
+            {/* WHICH SCREEN TO PLAY ON, as the list of screens the system
+                reports — named the way the system names them, because a
+                desk with two identical monitors has nothing else to tell
+                them apart, and a numbered button says nothing at all. */}
+            {video && (
+              <SettingRow label="Monitor">
+                <select
+                  aria-label="Monitor"
+                  className="ms-select max-w-[19rem] shrink-0 px-3 py-1.5 text-[15px]"
+                  value={video.displayId}
+                  onChange={(e) => displayControls()?.setMonitor(Number(e.target.value))}
+                >
+                  {video.displays.map((d, i) => (
+                    <option key={d.id} value={d.id}>
+                      {`${i + 1}. ${d.label} · ${d.width}×${d.height}${d.primary ? " · primary" : ""}`}
+                    </option>
+                  ))}
+                </select>
+              </SettingRow>
+            )}
+
+            {/* the whole of what a frameless window cannot do for itself —
+                see components/cursorLock.ts */}
+            {video && (
+              <SettingRow label="Confine cursor">
+                <button
+                  aria-pressed={cursorLock}
+                  onClick={() => {
+                    const next = !cursorLock;
+                    setCursorLock(next);
+                    saveCursorLock(next);
+                  }}
+                  className="ms-btn w-16 shrink-0 px-3 py-1.5 text-[15px]"
+                >
+                  {cursorLock ? "On" : "Off"}
+                </button>
+              </SettingRow>
+            )}
+
+            {/* every turret still shows its shot with effects off (see
+                Sim.setEffects) — what goes is the dressing around it */}
+            <SettingRow label="Effects">
+              <button
+                aria-pressed={effects}
+                onClick={() => {
+                  const next = !effects;
+                  setEffects(next);
+                  saveEffects(next); // a preference about the device
+                  // live: a run under way takes it on the next frame
+                  gameRef.current?.setEffects(next);
+                }}
+                className="ms-btn w-16 shrink-0 px-3 py-1.5 text-[15px]"
+              >
+                {effects ? "On" : "Off"}
+              </button>
+            </SettingRow>
+          </SettingsBox>
+        )}
+
+        {tab === "interface" && (
+          <SettingsBox>
+            <StepSlider
+              label="UI size"
+              steps={UI_SCALES}
+              value={uiScale}
+              onPick={(scale) => {
+                setUiScale(scale);
+                saveUiScale(scale); // remembered across sessions
+              }}
+            />
+          </SettingsBox>
+        )}
+
+        {tab === "controls" && (
+          <SettingsBox>
+            {/* one knob for both ways of panning without the mouse button
+                — the keys and the screen's edges share PAN_RATE in
+                game.ts, so what feels right for one feels right for the
+                other */}
+            <StepSlider
+              label="Pan speed"
+              steps={PAN_SPEEDS}
+              value={panSpeed}
+              onPick={(mult) => {
+                setPanSpeed(mult);
+                savePanSpeed(mult); // remembered across sessions
+                gameRef.current?.setPanSpeed(mult); // live, mid-run
+              }}
+            />
+            <SettingRow label="Edge panning">
+              <button
+                aria-pressed={edgePan}
+                onClick={() => {
+                  const next = !edgePan;
+                  setEdgePan(next);
+                  saveEdgePan(next);
+                  gameRef.current?.setEdgePan(next);
+                }}
+                className="ms-btn w-16 shrink-0 px-3 py-1.5 text-[15px]"
+              >
+                {edgePan ? "On" : "Off"}
+              </button>
+            </SettingRow>
+          </SettingsBox>
+        )}
+
+        {/* INFO — the three lines that used to be scattered over the
+            front of house: the build number the corner prints, whose game
+            this is (it was under the title card) and what it came from (it
+            was under this very panel). One place to look them up, and a
+            title screen that carries the game's name and nothing else. */}
+        {tab === "info" && (
+          <SettingsBox>
+            <FactRow label="Version">{`v${BUILD}`}</FactRow>
+            <FactRow label="Created by">Zerkka</FactRow>
+            <FactRow label="Inspired by">
+              <a
+                href="https://mindustrygame.github.io/"
+                target="_blank"
+                rel="noreferrer"
+                className="underline decoration-[#4A4A55] underline-offset-2 hover:text-[#EDEDEF]"
+              >
+                Mindustry
+              </a>
+            </FactRow>
+          </SettingsBox>
+        )}
+      </>
+    );
+  };
 
   if (webglError) {
     return (
@@ -2084,11 +2144,9 @@ export default function MechSwarm() {
                   Settings
                 </button>
               </div>
-              {/* the inspiration credit moved to Settings — the hero screen
-                  carries the game's own name and nothing else's */}
-              <p className="text-center text-[15px] uppercase tracking-widest text-[#a2a2a2] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
-                A game by Zerkka
-              </p>
+              {/* no credit line under the buttons: the hero screen carries
+                  the game's name and the two things to do with it. Who made
+                  it and what it came from are on the Info tab of Settings */}
             </>
           )}
 
@@ -2189,19 +2247,6 @@ export default function MechSwarm() {
               <h2 className="ms-heading text-[17px] tracking-[0.35em]">Settings</h2>
 
               {settingsPanel(false)}
-              {/* the inspiration credit lives here rather than on the title
-                  card — the hero screen carries the game's own name only */}
-              <p className="text-[14px] uppercase tracking-widest text-[#71717C]">
-                Inspired by{" "}
-                <a
-                  href="https://mindustrygame.github.io/"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[#A6A6AF] underline decoration-[#4A4A55] underline-offset-2 hover:text-[#EDEDEF]"
-                >
-                  Mindustry
-                </a>
-              </p>
             </>
           )}
         </div>

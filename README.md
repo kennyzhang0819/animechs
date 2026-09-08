@@ -264,9 +264,16 @@ saved with the rest of the preferences (`Progress.panSpeed`,
 steps** the game has (`PAN_SPEEDS`, `UI_SCALES`), not rows of percentage
 buttons; every settings row is a name and its knob, and nothing else.
 
-**The Video tab** — desktop only, because a browser tab has no window to
-set — picks the display mode (windowed, borderless, fullscreen) and the
-monitor to play on, from the list the system reports. That pair is the
+Settings is five tabs — **Game** (the save), **Video**, **Interface**,
+**Controls**, **Info** — and each one is a single pane of rows rather than
+a stack of boxes. **Info** carries the build number, who made the game and
+what it came from: the title card shows the game's name and its two
+buttons, and nothing else.
+
+**The Video tab** also holds the ambient-effects switch, and on the desktop
+build — a browser tab has no window of ours to set — picks the display mode
+(windowed, borderless, fullscreen) and the monitor to play on, from the list
+the system reports. That pair is the
 shell's, not the save's: it lives in `window.json` beside the save file and
 is applied before the game boots (`desktop/src/display.ts`,
 [docs/desktop.md](docs/desktop.md)). Its third switch is the game's own:

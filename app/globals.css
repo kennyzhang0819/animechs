@@ -231,6 +231,15 @@
     outline-offset: -3px;
   }
 
+  /* A SECTION OF SETTINGS IS ONE BOX, its rows divided by a hairline
+     rather than each row a box of its own: five bevelled panes stacked up
+     read as five things to deal with, one pane with five rows reads as one
+     section. The divider is dimmer than the pane's own border, which is
+     what keeps the rows from looking like panes again. */
+  .ms-rows > * + * {
+    border-top: 1px solid rgba(255, 255, 255, 0.09);
+  }
+
   /* THE SLIDER, for a setting with a handful of stops on it (UI size, pan
      speed): slider.png's trough with a squared knob riding in it. The
      stops are the input's own `step`, so the knob can only ever land on

@@ -63,14 +63,15 @@ by design; the admin page is compiled out of a production bundle too.
 `game/storage.ts` is the game's side of the bridge: one save slot, read
 once at boot, and localStorage when there is no bridge (the web build).
 `game/progress.ts` is its only caller — and `displayControls()`, which is
-what the Video tab of Settings is drawn from and what hides that tab in a
-browser tab, where there is no window of ours to set.
+what the Video tab of Settings draws its window rows from — and what drops
+them in a browser tab, where there is no window of ours to set.
 
 ## Display modes and monitors
 
 The **Video tab** of Settings (menu and pause overlay both) offers three
-modes, the list of monitors the system reports, and the cursor switch
-below:
+modes, the list of monitors the system reports, and the cursor switch below
+— the three of them alongside the ambient-effects switch, which is the
+game's own and is there in a browser too:
 
 | mode | what it is |
 |---|---|
