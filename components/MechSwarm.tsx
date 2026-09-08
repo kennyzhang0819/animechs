@@ -88,6 +88,7 @@ import {
   type MutationDef,
   type MutationId,
 } from "@/game/mutation";
+import { displayControls, type DisplayMode, type DisplayState } from "@/game/storage";
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
 import { factionsAt, lockedMutators, rewardsAt, rewardText } from "@/game/track";
 import { defaultLoadout, FACTION_BLURB, FACTION_TURRETS, factionUnits } from "@/game/factions";
@@ -980,6 +981,29 @@ function slotForKey(e: KeyboardEvent): number {
 }
 
 
+/**
+ * THE SETTINGS SECTIONS. Video is the desktop shell's tab and is dropped
+ * in a browser tab, where the window belongs to the browser and there is
+ * nothing to set (see `video` below).
+ */
+type SettingsTab = "general" | "video" | "interface" | "controls";
+
+/**
+ * THE DISPLAY MODES, in the order the Video tab prints them: least to most
+ * of the screen taken. Each carries the line that says what it actually
+ * does — "borderless" means nothing to a player who has not met it, and
+ * the difference from fullscreen is the whole reason to offer both.
+ */
+const DISPLAY_MODES: ReadonlyArray<{ mode: DisplayMode; label: string; note: string }> = [
+  { mode: "windowed", label: "Windowed", note: "A window with a frame, at the size you leave it" },
+  {
+    mode: "borderless",
+    label: "Borderless",
+    note: "Fills the monitor, still a window — instant alt-tab, cursor free to leave",
+  },
+  { mode: "fullscreen", label: "Fullscreen", note: "The whole monitor, the way the desktop does it" },
+];
+
 export default function MechSwarm() {
   const glRef = useRef<HTMLCanvasElement>(null);
   const uiRef = useRef<HTMLCanvasElement>(null);
@@ -1109,7 +1133,27 @@ export default function MechSwarm() {
    */
   const [panSpeed, setPanSpeed] = useState<number>(PAN_SPEED_DEFAULT);
   const [edgePan, setEdgePan] = useState(true);
-  const [settingsTab, setSettingsTab] = useState<"general" | "interface" | "controls">("general");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+  /**
+   * THE DISPLAY, as the desktop shell has it: the mode the window is in,
+   * the monitors there are, and which one the game is on. NOT a saved
+   * preference like the rest of the panel — the shell owns it, because it
+   * has to know before the game boots, and it keeps it in window.json
+   * beside the save (desktop/src/display.ts).
+   *
+   * Null in a browser tab, where there is no shell to ask, and that is
+   * what drops the Video tab from a web build: nothing there is the
+   * game's to set. The shell pushes every change back — a mode set here,
+   * F11, the window dragged to another screen, a monitor unplugged — so
+   * the tab is never showing something the window is not doing.
+   */
+  const [video, setVideo] = useState<DisplayState | null>(null);
+  useEffect(() => {
+    const d = displayControls();
+    if (!d) return;
+    setVideo(d.get());
+    return d.onChange(setVideo);
+  }, []);
   /**
    * THE MINIMAP'S CANVAS. React mounts it with the game screen and hands
    * it to the game (Game.attachMinimap), which paints it every frame and
@@ -1669,9 +1713,11 @@ export default function MechSwarm() {
         {(
           [
             ["general", "General"],
+            // only where there is a window to set: see `video` above
+            ...(video ? ([["video", "Video"]] as [SettingsTab, string][]) : []),
             ["interface", "Interface"],
             ["controls", "Controls"],
-          ] as const
+          ] as ReadonlyArray<[SettingsTab, string]>
         ).map(([tab, label]) => (
           <button
             key={tab}
@@ -1684,6 +1730,75 @@ export default function MechSwarm() {
           </button>
         ))}
       </div>
+
+      {/* VIDEO — the window itself, which is the shell's to change and not
+          the save's to remember: every press here goes straight out over
+          the bridge, and what comes back is what the window is now doing
+          (see `video` above). The panel is not rendered at all without a
+          shell, and neither is its tab. */}
+      {settingsTab === "video" && video && (
+        <>
+          <div className="ms-pane flex w-full max-w-[30rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+            <div className="min-w-0">
+              <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+                Display mode
+              </div>
+              {/* the note is the SELECTED mode's, so the row teaches what
+                  each one is as the player lands on it — "borderless" says
+                  nothing on its own */}
+              <div className="text-[14px] text-[#71717C]">
+                {DISPLAY_MODES.find((m) => m.mode === video.mode)?.note}
+              </div>
+            </div>
+            <div role="group" aria-label="Display mode" className="ms-seg">
+              {DISPLAY_MODES.map(({ mode, label }) => (
+                <button
+                  key={mode}
+                  aria-pressed={video.mode === mode}
+                  onClick={() => displayControls()?.setMode(mode)}
+                  className="ms-btn px-2.5 py-1.5 text-[15px]"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* WHICH SCREEN TO PLAY ON. Numbered the way every OS numbers
+              them, with the chosen one named underneath — a desk with two
+              identical monitors has nothing else to tell them apart. One
+              monitor still gets the row: it says where the game is. */}
+          <div className="ms-pane flex w-full max-w-[30rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+            <div className="min-w-0">
+              <div className="text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+                Monitor
+              </div>
+              <div className="text-[14px] text-[#71717C]">
+                {(() => {
+                  const on = video.displays.find((d) => d.id === video.displayId);
+                  if (!on) return "Wherever the window is";
+                  return `${on.label} — ${on.width}×${on.height}${on.primary ? " (primary)" : ""}`;
+                })()}
+              </div>
+            </div>
+            <div role="group" aria-label="Monitor" className="ms-seg">
+              {video.displays.map((d, i) => (
+                <button
+                  key={d.id}
+                  aria-pressed={d.id === video.displayId}
+                  aria-label={`Monitor ${i + 1}: ${d.label}, ${d.width} by ${d.height}${
+                    d.primary ? ", primary" : ""
+                  }`}
+                  onClick={() => displayControls()?.setMonitor(d.id)}
+                  className="ms-btn px-2.5 py-1.5 text-[15px]"
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
 
       {settingsTab === "interface" && (
         <div className="ms-pane flex w-full max-w-[30rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">

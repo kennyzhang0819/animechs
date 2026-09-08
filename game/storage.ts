@@ -1,6 +1,10 @@
 /**
- * WHERE THE SAVE FILE LIVES. One slot, one string — the JSON that
- * progress.ts writes — and two backends behind the same three calls:
+ * WHERE THE SAVE FILE LIVES — and, on a desktop, the one other thing the
+ * shell lets the game touch: the window it is running in (displayControls
+ * at the bottom, which the Video tab of Settings is drawn from).
+ *
+ * The save is one slot, one string — the JSON that progress.ts writes —
+ * and two backends behind the same three calls:
  *
  * - THE DESKTOP SHELL, which is the game: a file on disk, through the
  *   bridge the Electron preload puts on `window` (desktop/src/preload.ts).
@@ -18,6 +22,45 @@
 
 const KEY = "mechswarm.progress.v1";
 
+/**
+ * HOW THE WINDOW FILLS A SCREEN — the Video tab's three choices, applied
+ * by the shell (desktop/src/display.ts). `borderless` is a frameless
+ * window the size of the monitor: it looks like fullscreen but stays a
+ * window, so alt-tab is instant and the cursor is free to leave for
+ * another screen.
+ */
+export type DisplayMode = "windowed" | "borderless" | "fullscreen";
+
+/** one monitor, as the Video tab prints it */
+export interface DisplayInfo {
+  id: number;
+  label: string;
+  width: number;
+  height: number;
+  primary: boolean;
+}
+
+/** what the shell says about the display right now */
+export interface DisplayState {
+  mode: DisplayMode;
+  /** the monitor the game is on — always one of `displays` */
+  displayId: number;
+  displays: DisplayInfo[];
+}
+
+/**
+ * THE DISPLAY CONTROLS. Read once when the tab opens, then subscribe:
+ * every later state arrives on `onChange`, whether the tab asked for it,
+ * F11 did, or a monitor was unplugged. `onChange` returns its own
+ * unsubscribe.
+ */
+export interface DisplayBridge {
+  get(): DisplayState | null;
+  setMode(mode: DisplayMode): void;
+  setMonitor(id: number): void;
+  onChange(fn: (state: DisplayState) => void): () => void;
+}
+
 /** the shape the desktop preload exposes — keep in step with desktop/src/preload.ts */
 export interface DesktopBridge {
   platform: "win32" | "darwin" | "linux";
@@ -26,6 +69,8 @@ export interface DesktopBridge {
     write(json: string): void;
     clear(): void;
   };
+  /** optional: a shell packaged before the Video tab existed has no display controls */
+  display?: DisplayBridge;
   steam: {
     /** true when the shell is running under a Steam client */
     available: boolean;
@@ -42,6 +87,15 @@ declare global {
 /** the desktop bridge, when this is the desktop build */
 export function desktop(): DesktopBridge | undefined {
   return typeof window === "undefined" ? undefined : window.mechswarmDesktop;
+}
+
+/**
+ * The display controls, when there is a shell to control. Undefined in a
+ * browser tab, where the window is the browser's business — which is what
+ * hides the Video tab of Settings on the web build.
+ */
+export function displayControls(): DisplayBridge | undefined {
+  return desktop()?.display;
 }
 
 export function readSave(): string | null {

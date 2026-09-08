@@ -50,17 +50,52 @@ by design; the admin page is compiled out of a production bundle too.
 
 | file | does |
 |---|---|
-| `desktop/src/main.ts` | the window (size and fullscreen remembered in `window.json`), the menu accelerators (F11 fullscreen, Ctrl+Cmd+F on macOS), single instance, no navigation off the game, the `--dev-url` mode |
+| `desktop/src/main.ts` | the app: the menu accelerators (F11 fullscreen, Ctrl+Cmd+F on macOS), single instance, no navigation off the game, the `--dev-url` mode |
+| `desktop/src/display.ts` | **the window**, and the three ways it fills a screen — windowed, borderless, fullscreen — on the monitor of your choice. See below |
+| `desktop/src/window-state.ts` | where the window was: the windowed size and place, the display mode, the monitor — `window.json` beside the save |
 | `desktop/src/serve.ts` | serves `out/` on **`app://game/`**. The game fetches by absolute path — `/levels/…`, `/maps/…`, `/_next/static/…` — which `file://` cannot resolve, so the export gets a scheme with a root. `/admin` → `admin.html`, Next-style; nothing outside `out/` is ever served |
 | `desktop/src/saves.ts` | the save file: `progress.json` under the data directory, written atomically with a `.bak` of the previous save |
 | `desktop/src/steam.ts` | Steamworks, off until there is an app id |
-| `desktop/src/preload.ts` | **the bridge**: `window.mechswarmDesktop` — `saves.read/write/clear`, `steam.available`, `steam.unlockAchievement`, `platform`. Sandboxed and context-isolated; the page never sees Node |
+| `desktop/src/preload.ts` | **the bridge**: `window.mechswarmDesktop` — `saves.read/write/clear`, `display.get/setMode/setMonitor/onChange`, `steam.available`, `steam.unlockAchievement`, `platform`. Sandboxed and context-isolated; the page never sees Node |
 | `desktop/electron-builder.yml` | the pack: `dist/` in the asar, `out/` as `resources/game`, steamworks.js unpacked beside its redistributable |
 | `desktop/test/smoke.mjs` | the smoke test |
 
 `game/storage.ts` is the game's side of the bridge: one save slot, read
 once at boot, and localStorage when there is no bridge (the web build).
-`game/progress.ts` is its only caller.
+`game/progress.ts` is its only caller — and `displayControls()`, which is
+what the Video tab of Settings is drawn from and what hides that tab in a
+browser tab, where there is no window of ours to set.
+
+## Display modes and monitors
+
+The **Video tab** of Settings (menu and pause overlay both) offers three
+modes and the list of monitors:
+
+| mode | what it is |
+|---|---|
+| windowed | a framed window at the remembered size. Drag it to another monitor and that monitor becomes the choice |
+| borderless | a frameless window covering the whole monitor: it looks like fullscreen but stays a window, so alt-tab is instant and the cursor leaves for another screen freely |
+| fullscreen | the platform's own — a Space on macOS, the window manager's fullscreen on Windows and Linux. Chromium has no exclusive/mode-setting fullscreen to offer, so no resolution is ever changed |
+
+**The game is a `WebContentsView` inside a `BaseWindow`, not a
+`BrowserWindow`.** Electron fixes a window's frame at construction — there
+is no `setFrame` — so borderless has to be a different window from the
+framed one. A view can be moved from one window to another with the page
+still running, which is what `Shell.rebuild` does: the mode changes and
+**the run survives**, where reloading the page into a new window would
+throw it away. The smoke test checks exactly that.
+
+The mode, the monitor and the windowed size are the shell's state, not the
+save's — the shell has to know them before the game boots — so they live in
+`window.json` and never go to Steam Cloud: which screen a machine has is a
+fact about that machine. A monitor that is no longer plugged in is dropped
+and the game opens on the primary; unplugging one mid-session pulls the
+window back onto a screen that exists.
+
+F11 (Ctrl+Cmd+F on macOS) toggles fullscreen and **comes back to the mode
+it left** — borderless stays borderless. The platform's own fullscreen —
+macOS's green button, a window manager's shortcut — is followed the same
+way, so the tab never claims something the window is not doing.
 
 ## Where the data lives
 
@@ -76,7 +111,8 @@ whatever the package is called:
 **Steam Cloud needs no code.** On the partner site, set Auto-Cloud roots
 on those three paths (`WinAppDataRoaming`, `MacAppSupport`, `LinuxHome`
 + `.config`, each with subdirectory `MechSwarm/saves`) and Steam syncs
-the file. `window.json` beside it is deliberately not synced.
+the file. `window.json` beside it — the window's size, its display mode
+and its monitor — is deliberately not synced.
 
 ## Steam
 
@@ -136,9 +172,9 @@ SMOKE_DEV_URL=http://localhost:3000 npm test                  # through --dev-ur
 
 It launches the shell under Playwright's Electron driver and checks that
 the page is served on `app://game/`, the game gets a WebGL2 canvas, an
-absolute fetch resolves, the bridge is on `window`, a save round-trips
-through the file on disk and `clear` removes it, and `/../` cannot escape
-`out/`. It leaves `desktop/test/smoke.png` behind. On a headless box run
+absolute fetch resolves, the bridge is on `window`, the display modes all
+switch **without reloading the running game**, a save round-trips through
+the file on disk and `clear` removes it, and `/../` cannot escape `out/`. It leaves `desktop/test/smoke.png` behind. On a headless box run
 it under `xvfb-run`; the test passes `--no-sandbox` and software-GL flags
 that a real desktop does not need.
 

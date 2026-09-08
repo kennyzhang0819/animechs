@@ -1,21 +1,26 @@
-import { app, BrowserWindow, dialog, Menu, type MenuItemConstructorOptions, shell } from "electron";
+import { app, BaseWindow, dialog, Menu, type MenuItemConstructorOptions, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { APP_ORIGIN, registerAppScheme, serveBundle } from "./serve";
 import { installSaveHandlers, savesDir } from "./saves";
+import { installDisplayHandlers, Shell } from "./display";
 import { initSteam, installSteamHandlers } from "./steam";
 import { loadWindowState, saveWindowState } from "./window-state";
 
 /**
  * THE DESKTOP SHELL. One window, the static export served on app://game/
  * (serve.ts), the save on disk (saves.ts), Steam when there is an app id
- * (steam.ts). Nothing in game/ or components/ is desktop-specific; the
- * game finds the shell through the bridge preload.ts puts on window.
+ * (steam.ts). The window itself — its size, which of the three display
+ * modes it is in and which monitor it is on — is display.ts. Nothing in
+ * game/ or components/ is desktop-specific; the game finds the shell
+ * through the bridge preload.ts puts on window.
  */
 
 const BACKGROUND = "#0B0B0D"; // the game paints its own; no white flash at launch
 const MIN_WIDTH = 960;
 const MIN_HEIGHT = 600;
+/** show the window even if the page never finishes loading, rather than nothing at all */
+const SHOW_ANYWAY_MS = 10_000;
 
 /** the export: beside the shell in development, in resources/ when packaged */
 function bundleDir(): string {
@@ -47,20 +52,25 @@ const userData = app.getPath("userData");
 registerAppScheme();
 const steam = initSteam();
 
+/** the one shell there is, from launch to quit */
+let game: Shell | null = null;
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    const win = BrowserWindow.getAllWindows()[0];
-    if (!win) return;
-    if (win.isMinimized()) win.restore();
-    win.focus();
-  });
+  app.on("second-instance", () => game?.focus());
 }
 
 function buildMenu(): void {
   const view: MenuItemConstructorOptions[] = [
-    { role: "togglefullscreen", accelerator: process.platform === "darwin" ? "Ctrl+Cmd+F" : "F11" },
+    {
+      // not the `togglefullscreen` role: fullscreen is one of the three
+      // display modes now (display.ts), and the key has to move the
+      // setting the Video tab shows, not just the window
+      label: "Toggle Full Screen",
+      accelerator: process.platform === "darwin" ? "Ctrl+Cmd+F" : "F11",
+      click: () => game?.toggleFullScreen(),
+    },
   ];
   if (!app.isPackaged) view.push({ role: "toggleDevTools" }, { role: "reload" });
   const template: MenuItemConstructorOptions[] = [
@@ -75,30 +85,16 @@ function buildMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-function createWindow(): BrowserWindow {
-  const state = loadWindowState(userData);
-  const win = new BrowserWindow({
-    width: state.width,
-    height: state.height,
-    x: state.x,
-    y: state.y,
+function createShell(): Shell {
+  const win = new Shell({
+    preload: path.join(__dirname, "preload.js"),
+    background: BACKGROUND,
+    title: "MechSwarm",
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
-    fullscreen: state.fullscreen,
-    backgroundColor: BACKGROUND,
-    title: "MechSwarm",
-    show: false,
-    autoHideMenuBar: true,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      sandbox: true,
-      nodeIntegration: false,
-    },
+    state: loadWindowState(userData),
+    onClose: (state) => saveWindowState(userData, state),
   });
-
-  win.once("ready-to-show", () => win.show());
-  win.on("close", () => saveWindowState(userData, win));
 
   // the page is the game and nothing else: no navigating off its origin,
   // and a link that wants a browser gets the system one
@@ -110,15 +106,21 @@ function createWindow(): BrowserWindow {
     return { action: "deny" };
   });
 
+  // nothing is shown until the game has painted something — and shown
+  // regardless after SHOW_ANYWAY_MS, so a page that never loads is still
+  // a window the player can close
+  win.webContents.once("did-finish-load", () => win.show());
+  setTimeout(() => win.show(), SHOW_ANYWAY_MS);
+
   if (DEV_URL) {
     // the dev server may still be compiling when the window opens: keep
     // knocking until it answers, instead of showing Chromium's error page
     const load = (): void => {
-      win.loadURL(DEV_URL).catch(() => setTimeout(load, 1000));
+      win.webContents.loadURL(DEV_URL).catch(() => setTimeout(load, 1000));
     };
     load();
   } else {
-    void win.loadURL(`${APP_ORIGIN}/`);
+    void win.webContents.loadURL(`${APP_ORIGIN}/`);
   }
   return win;
 }
@@ -137,10 +139,11 @@ void app.whenReady().then(() => {
   installSaveHandlers(savesDir(userData));
   installSteamHandlers(steam);
   buildMenu();
-  createWindow();
+  installDisplayHandlers(() => game);
+  game = createShell();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BaseWindow.getAllWindows().length === 0) game = createShell();
   });
 });
 

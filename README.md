@@ -92,7 +92,9 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `game/storage.ts` — **where the save file lives**: one slot behind
   three calls, localStorage in a browser and a file on disk under the
   desktop shell (through the bridge `desktop/src/preload.ts` puts on
-  `window`). The only place the game knows it might be on a desktop
+  `window`), and the display controls the Video tab of Settings drives
+  over the same bridge. The only place the game knows it might be on a
+  desktop
 - `game/maps.ts` — map documents: terrain layers, spawn circles, the
   core's cell, the swarm's formation. **Every campaign map is 512x512 —
   twice Mindustry's Ground Zero — and is generated, never drawn**:
@@ -251,13 +253,19 @@ is no touch input.
 | minimap | click to look there, drag to keep steering — bottom-left, never zoomed |
 | zoom | wheel, trackpad pinch |
 | pause / menu | space / esc, or the two buttons in the top-right corner |
-| fullscreen | F11 (Ctrl+Cmd+F on macOS), in the desktop shell |
+| fullscreen | F11 (Ctrl+Cmd+F on macOS), in the desktop shell — or the Video tab of Settings |
 
 The zoom floor is the whole map in frame with a little padding
 (`ZOOM_FIT_PAD`); the ceiling is 12. **Pan speed** — one knob for the
 keys and the screen's edges, `PAN_RATE` times the setting — and the
 edge-panning switch live on the Controls tab of Settings, saved with
 the rest of the preferences (`Progress.panSpeed`, `Progress.edgePan`).
+
+**The Video tab** — desktop only, because a browser tab has no window to
+set — picks the display mode (windowed, borderless, fullscreen) and the
+monitor to play on. That pair is the shell's, not the save's: it lives in
+`window.json` beside the save file and is applied before the game boots
+(`desktop/src/display.ts`, [docs/desktop.md](docs/desktop.md)).
 
 ## Progression
 

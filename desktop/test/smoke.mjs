@@ -73,6 +73,50 @@ try {
   check("absolute fetch resolves", probe.levelsFetch === 200, `status ${probe.levelsFetch}`);
   check("bridge on window", probe.bridge === "object", `platform=${probe.platform} steam=${probe.steam}`);
 
+  // THE DISPLAY: the modes the Video tab offers, and the promise that
+  // switching between them keeps the running game — the whole reason the
+  // page is a view moved between windows rather than a window reloaded
+  // (desktop/src/display.ts)
+  const before = await page.evaluate(() => {
+    window.__smokeAlive = true; // a reload would lose this
+    return window.mechswarmDesktop.display?.get() ?? null;
+  });
+  check("display state on the bridge", !!before && Array.isArray(before.displays), JSON.stringify(before));
+  check("opens windowed", before?.mode === "windowed", String(before?.mode));
+  check("a monitor is listed", (before?.displays.length ?? 0) > 0 && before.displays.some((d) => d.id === before.displayId));
+
+  const swap = async (mode) =>
+    page.evaluate(
+      (m) =>
+        new Promise((resolve) => {
+          const d = window.mechswarmDesktop.display;
+          const off = d.onChange((s) => {
+            if (s.mode !== m) return;
+            off();
+            resolve(s);
+          });
+          d.setMode(m);
+          setTimeout(() => {
+            off();
+            resolve(null);
+          }, 5000);
+        }),
+      mode,
+    );
+
+  const borderless = await swap("borderless");
+  check("switches to borderless", borderless?.mode === "borderless", String(borderless?.mode));
+  check("the game is not reloaded by it", (await page.evaluate(() => window.__smokeAlive)) === true);
+  const full = await swap("fullscreen");
+  check("switches to fullscreen", full?.mode === "fullscreen", String(full?.mode));
+  // and back the other way: leaving fullscreen for a frameless window is
+  // the move that has both a window swap and a fullscreen exit in it
+  const again = await swap("borderless");
+  check("fullscreen back to borderless", again?.mode === "borderless", String(again?.mode));
+  const windowed = await swap("windowed");
+  check("switches back to windowed", windowed?.mode === "windowed", String(windowed?.mode));
+  check("still the same page", (await page.evaluate(() => window.__smokeAlive)) === true);
+
   const roundTrip = await page.evaluate(() => {
     const s = window.mechswarmDesktop.saves;
     s.write('{"smoke":1}');
