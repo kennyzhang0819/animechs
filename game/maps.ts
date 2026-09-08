@@ -520,6 +520,10 @@ export const PALETTE_SECTIONS: readonly { label: string; ids: readonly string[] 
   { label: "Paths", ids: ["path-dirt", "path-darksand", "path-mud"] },
   { label: "Props", ids: ["boulder", "shrub", "spore-cluster", "pur-bush", "shale-boulder",
     "snow-boulder", "sand-boulder"] },
+  // the veins are their own group rather than a stray swatch among the
+  // floors: ore is not a floor tile at all but a layer over one (T.ore),
+  // and it is the only brush that decides what a run EARNS
+  { label: "Resources", ids: ["ore"] },
   { label: "Zones", ids: ["spawn", "base"] },
   { label: "Enemy", ids: ["enemy"] },
   { label: "Tools", ids: ["erase"] },

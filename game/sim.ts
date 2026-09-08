@@ -399,12 +399,33 @@ const HN = HCOLS * HROWS;
 export type PlaceResult = "ok" | "invalid" | "would-seal";
 
 /**
- * The cells a body of the player's sees round itself (fog.ts) — a unit's
+ * THE LEAST a body of the player's sees round itself (fog.ts) — a unit's
  * own eye, and the only moving one on the board. Wide enough that walking
  * a unit into the dark actually opens ground ahead of it rather than
- * lifting the fog off the cell it is standing on.
+ * lifting the fog off the cell it is standing on, and wider than the
+ * radius a finished building carries (VISION_BUILT_CELLS): a body that
+ * walks out to look is worth more as a scout than a wall that sits.
  */
-export const UNIT_VISION_CELLS = 9;
+export const UNIT_VISION_CELLS = 14;
+
+/**
+ * WHAT A BODY ACTUALLY SEES, in tiles: the whole of its own reach, or the
+ * floor above — whichever is more.
+ *
+ * Every body used to see the same nine tiles whatever it was, which is
+ * the rule a turret was given up on for the same reason (VISION_OF_RANGE
+ * is 1 — a gun sees the whole of its range). A flat eye reads on the
+ * board as the heavy tiers being blind: an omura's guns reach sixty-two
+ * tiles and it could see nine of them, so the top of the line could not
+ * pick its own targets and stood there waiting for a turret behind it to
+ * do the looking. What a body can shoot, it can now see.
+ *
+ * Truncated rather than rounded, as upstream takes a unit's radius —
+ * (int)unit.type.fogRadius.
+ */
+export function unitVisionTiles(kind: UnitKind): number {
+  return Math.max(UNIT_VISION_CELLS, Math.trunc(UNIT_REACH[kind] / CELL));
+}
 /**
  * HOW LONG THE BOARD MUST HOLD STILL before a dirtied flow field is
  * re-solved, in seconds. A solve is ~100ms of main thread on a 512x512
@@ -2074,10 +2095,10 @@ export class Sim {
   private updateFog(): void {
     const fog = this.fog;
     if (!fog.enabled) return;
-    const tiles = Math.trunc(UNIT_VISION_CELLS);
-    const { upx, upy, uteam, uid, ulastFogPos, ulastFogId } = this;
+    const { upx, upy, uteam, uid, ukind, ulastFogPos, ulastFogId } = this;
     for (let i = 0; i < this.n; i++) {
       if (uteam[i] === 0) continue;
+      const tiles = unitVisionTiles(UNIT_KINDS[ukind[i]]);
       const gx = clamp(Math.floor(upx[i] / CELL), 0, COLS - 1);
       const gy = clamp(Math.floor(upy[i] / CELL), 0, ROWS - 1);
       const pos = gy * COLS + gx;
@@ -2131,12 +2152,12 @@ export class Sim {
   readonly visionSources = (): VisionSource[] => {
     const out: VisionSource[] = [this.coreVision()];
     for (const t of this.towers) if (t.team === "player") out.push(this.towerVision(t));
-    // ...and every body of the player's, a few cells round itself
-    const r = UNIT_VISION_CELLS * CELL;
-    // ...and a UNIT's is truncated, not rounded — (int)unit.type.fogRadius
-    const tiles = Math.trunc(UNIT_VISION_CELLS);
-    for (let i = 0; i < this.n; i++)
-      if (this.uteam[i]) out.push({ x: this.upx[i], y: this.upy[i], r, tiles });
+    // ...and every body of the player's, out to the whole of its own reach
+    for (let i = 0; i < this.n; i++) {
+      if (!this.uteam[i]) continue;
+      const tiles = unitVisionTiles(UNIT_KINDS[this.ukind[i]]);
+      out.push({ x: this.upx[i], y: this.upy[i], r: tiles * CELL, tiles });
+    }
     return out;
   };
 
