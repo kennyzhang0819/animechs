@@ -409,6 +409,17 @@ const FIELD_SETTLE = 0.15;
  * swarm about once a second rather than only when the finger comes up.
  */
 const FIELD_MAX_STALE = 1;
+/**
+ * WHAT A RE-ROUTE COSTS A FRAME, in milliseconds. The solve itself is
+ * sliced (FlowField.advance) and this is the size of the slice: the whole
+ * of what building a turret takes out of a frame, whatever is queued
+ * behind it. Three milliseconds leaves a 60fps frame the other thirteen.
+ */
+const FIELD_BUDGET_MS = 3;
+/** ...and the smallest slice worth entering the solver for */
+const FIELD_MIN_SLICE = 0.25;
+/** the clock the slices are measured by */
+const nowMs = () => performance.now();
 /** how far out from a factory's edge its make is set down */
 const FACTORY_SPAWN_REACH = CELL * 2.5;
 /** the player's fields enter by no door: an all-zero pad mask */
@@ -1348,6 +1359,12 @@ export class Sim {
    * of why this is deferred: the fields' cost used to be paid per
    * placement, so laying a chain of turrets cost a full solve every frame
    * and the frame rate fell to the solve rate.
+   *
+   * ...and that one solve is itself taken a slice a frame (solveQueue,
+   * FlowField.advance), because a single turret laid on its own still owes
+   * a whole solve and a whole solve is a dropped frame. Deferring alone
+   * moved the stutter from every placement to the last one; slicing is
+   * what takes it off the frame altogether.
    */
   private fieldDirty = false;
   /** ...the naval tanks' twin of it, flagged apart so a map with no tank
@@ -1359,6 +1376,11 @@ export class Sim {
   private fieldQuiet = 0;
   /** seconds a pending solve has been waiting — the staleness cap */
   private fieldStale = 0;
+  /**
+   * THE SOLVES IN FLIGHT, head first: fields whose masks have moved and
+   * whose new routes are being worked out a slice a frame (runSolveQueue).
+   */
+  private solveQueue: FlowField[] = [];
   /**
    * A WALL MOVED and the bodies standing there have not been pushed off it
    * yet. Separate from the solve because it is cheap and must not wait: a
@@ -1462,6 +1484,7 @@ export class Sim {
     // will not fit the ground (a drop zone moved over it, a document from
     // an older board) is dropped, not forced
     for (const e of this.terrain.enemies) this.placeEnemyStructure(e.gx, e.gy, e.kind);
+    this.abortSolves();
     this.fieldDirty = false;
     this.navalDirty = false;
     this.pFieldDirty = false;
@@ -1594,6 +1617,22 @@ export class Sim {
   }
 
   /**
+   * Hand the player's three fields the board as it stands — the masks and
+   * the goal, not the solve. Split out because a re-solve is sliced across
+   * frames (solveDirtyFields) while this part is one pass over the grid
+   * and has to happen up front, before the first slice runs.
+   */
+  private seedPlayerFields(): void {
+    this.playerFieldsOn = true;
+    this.pFieldDirty = false;
+    const goal = this.enemyGoal();
+    this.pField.rebuildWalk(this.hardFootprints(), this.terrain.blocked, NO_PADS, goal, this.footprints());
+    this.pNavalField.rebuildWalk(this.hardFootprints(), navalWalkMask(this.terrain), NO_PADS, goal,
+      this.footprints());
+    this.pAirField.rebuildWalk([], this.hills, NO_PADS, goal);
+  }
+
+  /**
    * Solve the player's fields from the board as it stands: the swarm's
    * structures soft, the player's own (and the core) hard, no doors, and
    * the swarm's buildings as the goal (enemyGoal).
@@ -1607,15 +1646,9 @@ export class Sim {
    * parking on a shore was the whole of what a hull could do.
    */
   private rebuildPlayerFields(): void {
-    this.playerFieldsOn = true;
-    this.pFieldDirty = false;
-    const goal = this.enemyGoal();
-    this.pField.rebuildWalk(this.hardFootprints(), this.terrain.blocked, NO_PADS, goal, this.footprints());
+    this.seedPlayerFields();
     this.pField.compute();
-    this.pNavalField.rebuildWalk(this.hardFootprints(), navalWalkMask(this.terrain), NO_PADS, goal,
-      this.footprints());
     this.pNavalField.compute();
-    this.pAirField.rebuildWalk([], this.hills, NO_PADS, goal);
     this.pAirField.compute();
   }
 
@@ -1639,6 +1672,10 @@ export class Sim {
    */
   private solveDirtyFields(dt: number): void {
     this.fieldQuiet += dt;
+    // a solve already under way takes this frame's slice; nothing new is
+    // started until the queue is clear, so the cost per frame is one slice
+    // however much is waiting
+    if (this.solveQueue.length > 0) return this.runSolveQueue();
     if (!this.fieldDirty && !this.navalDirty && !this.pFieldDirty) return;
     this.fieldStale += dt;
     if (this.fieldQuiet < FIELD_SETTLE && this.fieldStale < FIELD_MAX_STALE) return;
@@ -1657,20 +1694,49 @@ export class Sim {
     // one of them, and solving the other would double the bill for nothing
     if (this.fieldDirty && ground) {
       this.fieldDirty = false;
-      this.field.compute();
+      this.solveQueue.push(this.field);
     }
     if (this.navalDirty && naval) {
       this.navalDirty = false;
-      this.navalField.compute();
+      this.solveQueue.push(this.navalField);
     }
     if (this.pFieldDirty && player) {
-      this.pFieldDirty = false;
-      this.rebuildPlayerFields();
+      // the masks and the goal now (seedPlayerFields), the solve in slices
+      this.seedPlayerFields();
+      this.solveQueue.push(this.pField, this.pNavalField, this.pAirField);
     }
     // the cap is spent whether or not a solve came of it: a flag left
     // standing is one nothing reads, and it is re-offered every tick from
     // here on — the scan above is a walk over the units and nothing more
     this.fieldStale = 0;
+    this.runSolveQueue();
+  }
+
+  /**
+   * Spend this frame's slice on the solve at the head of the queue, and
+   * take the next one up if it finishes with time to spare.
+   *
+   * FIELD_BUDGET_MS is the whole of what a re-route costs a frame now. A
+   * solve is ~100ms of Dijkstra and sweeping, and five fields can be
+   * queued at once; paid at three milliseconds a frame that is a second
+   * of imperceptible work rather than half a second of dropped frames,
+   * and the swarm steers by the last finished field until the new one is
+   * whole (FlowField.advance).
+   */
+  private runSolveQueue(): void {
+    const until = nowMs() + FIELD_BUDGET_MS;
+    while (this.solveQueue.length > 0) {
+      const left = until - nowMs();
+      if (!this.solveQueue[0].advance(Math.max(left, FIELD_MIN_SLICE))) return;
+      this.solveQueue.shift();
+      if (nowMs() >= until) return;
+    }
+  }
+
+  /** drop the solves in flight: the board they were solving has moved on */
+  private abortSolves(): void {
+    for (const f of this.solveQueue) f.abort();
+    this.solveQueue.length = 0;
   }
 
   /** the nearest of the swarm's structures to a point, anywhere on the map
@@ -3692,6 +3758,9 @@ export class Sim {
         changed = true;
       }
     if (changed) {
+      // a solve in flight is solving the board as it was a moment ago:
+      // drop it and let the flags below buy a fresh one once things settle
+      if (this.solveQueue.length > 0) this.abortSolves();
       this.fieldDirty = true;
       this.navalDirty = true;
       // the player's three only while they are being solved at all: a flag

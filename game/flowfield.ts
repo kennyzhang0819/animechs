@@ -23,6 +23,9 @@ const H = H_IMPORT;
 
 const SQRT2 = Math.SQRT2;
 
+/** the clock a sliced solve keeps its budget by (advance) */
+const now = () => performance.now();
+
 const D8: ReadonlyArray<readonly [number, number, number]> = [
   [1, 0, 1],
   [-1, 0, 1],
@@ -44,6 +47,24 @@ const D4: ReadonlyArray<readonly [number, number]> = [
 export interface Vec2 {
   x: number;
   y: number;
+}
+
+/**
+ * The passes a solve is made of, in order — see FlowField.advance. They
+ * are numbered so `step` can be compared and stepped on; Done is where an
+ * idle field sits, and Idle is what starts one.
+ */
+const enum Step {
+  Idle = 0,
+  ClearFwd,
+  ClearBack,
+  Cost,
+  Seed,
+  Dijkstra,
+  Sweep,
+  Grad,
+  Spawn,
+  Done,
 }
 
 /**
@@ -90,9 +111,18 @@ export class FlowField {
   /** walk and not soft — what the path solver treats as rock */
   private readonly solid = new Uint8Array(NCELLS);
   readonly isGoal = new Uint8Array(NCELLS);
-  readonly dist = new Float32Array(NCELLS);
-  readonly dirX = new Float32Array(NCELLS);
-  readonly dirY = new Float32Array(NCELLS);
+  /**
+   * THE PUBLISHED FIELD — the distance, the heading and the room, as
+   * everything outside this class reads them. Not readonly, because a
+   * sliced solve (advance) swaps a finished field in wholesale: the
+   * solver never writes these, it fills the `w`-buffers below and trades
+   * the two over at the end. A field being re-solved therefore keeps
+   * serving the LAST one, whole and self-consistent, for as long as the
+   * new one takes — nothing ever reads a half-solved heading.
+   */
+  dist = new Float32Array(NCELLS);
+  dirX = new Float32Array(NCELLS);
+  dirY = new Float32Array(NCELLS);
   /**
    * Cells of this layer's spawn mask that are passable AND connected to one
    * of its goals — where a unit of this layer may actually be dropped. A
@@ -166,7 +196,29 @@ export class FlowField {
    * reads it to decide how much room a crowd has to fan out into — no room
    * means a 1-wide slot, where spreading is not on offer
    */
-  readonly clear = new Float32Array(NCELLS);
+  clear = new Float32Array(NCELLS);
+
+  // THE WORK BUFFERS: where a solve builds the next field. Swapped with
+  // the published ones the instant it finishes (publish), never read from
+  // outside
+  private wDist = new Float32Array(NCELLS);
+  private wDirX = new Float32Array(NCELLS);
+  private wDirY = new Float32Array(NCELLS);
+  private wClear = new Float32Array(NCELLS);
+  private wSpawn: number[] = [];
+  /**
+   * WHERE THE SOLVE HAS GOT TO. A solve is a run of raster passes, a
+   * Dijkstra and a sweep — a tenth of a second of work on a 512x512 map,
+   * which is a dropped frame if it is taken in one bite. `advance` takes
+   * it a few milliseconds at a time instead and this says where to pick
+   * up: which pass, and how far into it.
+   */
+  private step: Step = Step.Idle;
+  /** the row, cell or pop the current pass stopped at */
+  private cursor = 0;
+  /** the eikonal sweep's place in its two rounds of four orders */
+  private sweepRound = 0;
+  private sweepOrder = 0;
 
   /**
    * Re-seed the field: what blocks this layer, where it may enter, and what
@@ -259,11 +311,13 @@ export class FlowField {
    * neighbourhood with 1 / sqrt(2) weights. Rock reads 0, and everything
    * off the edge of the map counts as rock so a border cell never looks
    * like open field.
+   *
+   * A ROW AT A TIME, like every other pass here, so the solve can be put
+   * down mid-map and picked up next frame (advance).
    */
-  private computeClearance(): void {
-    const { walk, clear } = this;
-    for (let i = 0; i < NCELLS; i++) clear[i] = walk[i] ? 0 : INF;
-    for (let y = 0; y < ROWS; y++) {
+  private stepClearFwd(until: number): void {
+    const clear = this.wClear;
+    for (let y = this.cursor; y < ROWS; y++) {
       for (let x = 0; x < COLS; x++) {
         const i = y * COLS + x;
         if (clear[i] === 0) continue;
@@ -274,8 +328,18 @@ export class FlowField {
         if (x < COLS - 1 && y > 0) v = Math.min(v, clear[i - COLS + 1] + SQRT2);
         clear[i] = v;
       }
+      if (now() >= until) {
+        this.cursor = y + 1;
+        return;
+      }
     }
-    for (let y = ROWS - 1; y >= 0; y--) {
+    this.cursor = ROWS - 1;
+    this.step = Step.ClearBack;
+  }
+
+  private stepClearBack(until: number): void {
+    const clear = this.wClear;
+    for (let y = this.cursor; y >= 0; y--) {
       for (let x = COLS - 1; x >= 0; x--) {
         const i = y * COLS + x;
         if (clear[i] === 0) continue;
@@ -286,7 +350,118 @@ export class FlowField {
         if (x > 0 && y < ROWS - 1) v = Math.min(v, clear[i + COLS - 1] + SQRT2);
         clear[i] = v;
       }
+      if (now() >= until) {
+        this.cursor = y - 1;
+        return;
+      }
     }
+    this.cursor = 0;
+    this.step = Step.Cost;
+  }
+
+  /**
+   * What every cell charges to enter: 1, plus the narrow penalty for a
+   * single-file slot, plus the verge charge for sitting near rock — and a
+   * structure's cell at STRUCTURE_COST flat, which is what the swarm pays
+   * to chew through a wall instead of walking round it.
+   */
+  private stepCost(until: number): void {
+    const { walk, soft, narrow, cost, wClear } = this;
+    for (let y = this.cursor; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        const i = y * COLS + x;
+        narrow[i] = 0;
+        cost[i] = 1;
+        // a structure's cell is on the path at a price, and nothing else
+        // about the lane (narrowness, the verge) is asked of it
+        if (soft[i]) {
+          cost[i] = 1 + STRUCTURE_COST;
+          continue;
+        }
+        if (walk[i]) continue;
+        const bL = x <= 0 || walk[i - 1] === 1;
+        const bR = x >= COLS - 1 || walk[i + 1] === 1;
+        const bU = y <= 0 || walk[i - COLS] === 1;
+        const bD = y >= ROWS - 1 || walk[i + COLS] === 1;
+        if ((bL && bR) || (bU && bD) || ((bL || bR) && (bU || bD))) {
+          narrow[i] = 1;
+          cost[i] = 1 + FlowField.NARROW_COST;
+        }
+        // ...and the verge charge on top, for every cell within EDGE_REACH of
+        // rock (see EDGE_COST). SQUARED, not linear: a linear ramp has the
+        // same slope everywhere it acts, which is a steady pull toward the
+        // exact middle of any lane narrower than 2 x EDGE_REACH and would
+        // trade one queue along the wall for another down the centre line.
+        // Squared puts the whole gradient in the last cell or so before the
+        // rock, where the point is, and leaves the rest of the lane nearly
+        // flat, where the crowd is meant to be able to sit anywhere.
+        const t = (FlowField.EDGE_REACH - wClear[i]) / (FlowField.EDGE_REACH - 1);
+        if (t > 0) cost[i] += FlowField.EDGE_COST * Math.min(1, t) * Math.min(1, t);
+      }
+      if (now() >= until) {
+        this.cursor = y + 1;
+        return;
+      }
+    }
+    this.cursor = 0;
+    this.step = Step.Seed;
+  }
+
+  /**
+   * Every goal seeds the Dijkstra at zero, the core's soft cells included
+   * (see rebuildWalk): the walk out of them into the open ground around
+   * the core is what gives every lane its heading.
+   */
+  private stepSeed(until: number): void {
+    const { isGoal, wDist } = this;
+    for (let y = this.cursor; y < ROWS; y++) {
+      const row = y * COLS;
+      for (let x = 0; x < COLS; x++) {
+        const i = row + x;
+        if (!isGoal[i]) continue;
+        wDist[i] = 0;
+        this.hPush(0, i);
+      }
+      if (now() >= until) {
+        this.cursor = y + 1;
+        return;
+      }
+    }
+    this.cursor = 0;
+    this.step = Step.Dijkstra;
+  }
+
+  /** the multi-source shortest path itself, in bites of POPS_PER_CHECK */
+  private stepDijkstra(until: number): void {
+    const { solid, wDist, cost } = this;
+    let n = 0;
+    while (this.hN > 0) {
+      const i = this.hPop();
+      if (this.popKey > wDist[i] + 1e-6) continue;
+      const x = i % COLS, y = (i / COLS) | 0;
+      for (const [dx, dy, c] of D8) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+        const ni = ny * COLS + nx;
+        if (solid[ni]) continue;
+        // no cutting corners diagonally through a blocked cell
+        if (dx !== 0 && dy !== 0 && (solid[y * COLS + nx] || solid[ny * COLS + x])) continue;
+        const nd = wDist[i] + c + cost[ni] - 1;
+        if (nd < wDist[ni] - 1e-6) {
+          wDist[ni] = nd;
+          // push the value AS STORED, not nd. dist is a Float32Array while
+          // the heap key is a float64, so pushing nd leaves the key holding
+          // more precision than the array kept — and once distances grow
+          // past ~130 that rounding gap outruns the 1e-6 slack in the
+          // stale-pop guard below, which then throws away LIVE frontier
+          // entries. The heap empties early and the walk stops dead at a
+          // flat distance contour, stranding every spawn pad beyond it
+          this.hPush(wDist[ni], ni);
+        }
+      }
+      if ((++n & 0x3ff) === 0 && now() >= until) return;
+    }
+    this.step = Step.Sweep;
   }
 
   /**
@@ -305,133 +480,76 @@ export class FlowField {
    * apart get two slightly different headings, both aimed straight at the
    * base, so a wide crowd stays wide.
    */
-  private sweepEikonal(): void {
-    const { solid, isGoal, dist, cost } = this;
-    for (let round = 0; round < 2; round++) {
-      for (let s = 0; s < 4; s++) {
-        const rx = (s & 1) !== 0, ry = (s & 2) !== 0;
-        for (let yy = 0; yy < ROWS; yy++) {
-          const y = ry ? ROWS - 1 - yy : yy;
-          const row = y * COLS;
-          for (let xx = 0; xx < COLS; xx++) {
-            const x = rx ? COLS - 1 - xx : xx;
-            const i = row + x;
-            if (solid[i] || isGoal[i]) continue;
-            const a = Math.min(
-              x > 0 && !solid[i - 1] ? dist[i - 1] : INF,
-              x < COLS - 1 && !solid[i + 1] ? dist[i + 1] : INF,
-            );
-            const b = Math.min(
-              y > 0 && !solid[i - COLS] ? dist[i - COLS] : INF,
-              y < ROWS - 1 && !solid[i + COLS] ? dist[i + COLS] : INF,
-            );
-            if (a >= INF && b >= INF) continue;
-            const f = cost[i];
-            const d = a - b;
-            // one axis carries the whole front when the two disagree by more
-            // than a cell of cost; otherwise both do, via the two-axis root
-            const t =
-              Math.abs(d) >= f
-                ? Math.min(a, b) + f
-                : (a + b + Math.sqrt(2 * f * f - d * d)) * 0.5;
-            if (t < dist[i]) dist[i] = t;
-          }
+  private stepSweep(until: number): void {
+    const { solid, isGoal, wDist, cost } = this;
+    while (this.sweepRound < 2) {
+      const rx = (this.sweepOrder & 1) !== 0, ry = (this.sweepOrder & 2) !== 0;
+      for (let yy = this.cursor; yy < ROWS; yy++) {
+        const y = ry ? ROWS - 1 - yy : yy;
+        const row = y * COLS;
+        for (let xx = 0; xx < COLS; xx++) {
+          const x = rx ? COLS - 1 - xx : xx;
+          const i = row + x;
+          if (solid[i] || isGoal[i]) continue;
+          const a = Math.min(
+            x > 0 && !solid[i - 1] ? wDist[i - 1] : INF,
+            x < COLS - 1 && !solid[i + 1] ? wDist[i + 1] : INF,
+          );
+          const b = Math.min(
+            y > 0 && !solid[i - COLS] ? wDist[i - COLS] : INF,
+            y < ROWS - 1 && !solid[i + COLS] ? wDist[i + COLS] : INF,
+          );
+          if (a >= INF && b >= INF) continue;
+          const f = cost[i];
+          const d = a - b;
+          // one axis carries the whole front when the two disagree by more
+          // than a cell of cost; otherwise both do, via the two-axis root
+          const t =
+            Math.abs(d) >= f
+              ? Math.min(a, b) + f
+              : (a + b + Math.sqrt(2 * f * f - d * d)) * 0.5;
+          if (t < wDist[i]) wDist[i] = t;
+        }
+        if (now() >= until) {
+          this.cursor = yy + 1;
+          return;
         }
       }
+      this.cursor = 0;
+      if (++this.sweepOrder >= 4) {
+        this.sweepOrder = 0;
+        this.sweepRound++;
+      }
     }
+    this.step = Step.Grad;
   }
 
-  compute(): void {
-    const { walk, soft, solid, isGoal, dist, dirX, dirY, narrow, cost } = this;
-    this.computeClearance();
-    for (let i = 0; i < NCELLS; i++) solid[i] = walk[i] && !soft[i] ? 1 : 0;
-    for (let i = 0; i < NCELLS; i++) {
-      narrow[i] = 0;
-      cost[i] = 1;
-      // a structure's cell is on the path at a price, and nothing else
-      // about the lane (narrowness, the verge) is asked of it
-      if (soft[i]) {
-        cost[i] = 1 + STRUCTURE_COST;
-        continue;
+  /**
+   * The heading itself: every open cell's upwind gradient, read off the
+   * field the two passes above settled.
+   */
+  private stepGrad(until: number): void {
+    const { walk, solid, isGoal, wDist, wDirX, wDirY } = this;
+    for (let i = this.cursor; i < NCELLS; i++) {
+      wDirX[i] = 0;
+      wDirY[i] = 0;
+      if ((i & 0x7ff) === 0 && i !== this.cursor && now() >= until) {
+        this.cursor = i;
+        return;
       }
-      if (walk[i]) continue;
+      if (walk[i] || isGoal[i] || wDist[i] >= INF) continue;
       const x = i % COLS, y = (i / COLS) | 0;
-      const bL = x <= 0 || walk[i - 1] === 1;
-      const bR = x >= COLS - 1 || walk[i + 1] === 1;
-      const bU = y <= 0 || walk[i - COLS] === 1;
-      const bD = y >= ROWS - 1 || walk[i + COLS] === 1;
-      if ((bL && bR) || (bU && bD) || ((bL || bR) && (bU || bD))) {
-        narrow[i] = 1;
-        cost[i] = 1 + FlowField.NARROW_COST;
-      }
-      // ...and the verge charge on top, for every cell within EDGE_REACH of
-      // rock (see EDGE_COST). SQUARED, not linear: a linear ramp has the
-      // same slope everywhere it acts, which is a steady pull toward the
-      // exact middle of any lane narrower than 2 x EDGE_REACH and would
-      // trade one queue along the wall for another down the centre line.
-      // Squared puts the whole gradient in the last cell or so before the
-      // rock, where the point is, and leaves the rest of the lane nearly
-      // flat, where the crowd is meant to be able to sit anywhere.
-      const t = (FlowField.EDGE_REACH - this.clear[i]) / (FlowField.EDGE_REACH - 1);
-      if (t > 0) cost[i] += FlowField.EDGE_COST * Math.min(1, t) * Math.min(1, t);
-    }
-    dist.fill(INF);
-    this.hN = 0;
-    // every goal seeds at zero, the core's soft cells included (see
-    // rebuildWalk): the walk from them into the open ground around the core
-    // is what gives every lane its heading
-    for (let i = 0; i < NCELLS; i++)
-      if (isGoal[i]) {
-        dist[i] = 0;
-        this.hPush(0, i);
-      }
-
-    while (this.hN > 0) {
-      const i = this.hPop();
-      if (this.popKey > dist[i] + 1e-6) continue;
-      const x = i % COLS, y = (i / COLS) | 0;
-      for (const [dx, dy, c] of D8) {
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
-        const ni = ny * COLS + nx;
-        if (solid[ni]) continue;
-        // no cutting corners diagonally through a blocked cell
-        if (dx !== 0 && dy !== 0 && (solid[y * COLS + nx] || solid[ny * COLS + x])) continue;
-        const nd = dist[i] + c + cost[ni] - 1;
-        if (nd < dist[ni] - 1e-6) {
-          dist[ni] = nd;
-          // push the value AS STORED, not nd. dist is a Float32Array while
-          // the heap key is a float64, so pushing nd leaves the key holding
-          // more precision than the array kept — and once distances grow
-          // past ~130 that rounding gap outruns the 1e-6 slack in the
-          // stale-pop guard below, which then throws away LIVE frontier
-          // entries. The heap empties early and the walk stops dead at a
-          // flat distance contour, stranding every spawn pad beyond it
-          this.hPush(dist[ni], ni);
-        }
-      }
-    }
-
-    // Dijkstra settled reachability and an upper bound; the sweep turns that
-    // bound into a smooth field whose gradient is a usable heading
-    this.sweepEikonal();
-
-    for (let i = 0; i < NCELLS; i++) {
-      dirX[i] = 0;
-      dirY[i] = 0;
-      if (walk[i] || isGoal[i] || dist[i] >= INF) continue;
-      const x = i % COLS, y = (i / COLS) | 0;
-      const d = dist[i];
+      const d = wDist[i];
       // upwind gradient: on each axis, lean toward the cheaper side by
       // exactly how much cheaper it is. Both magnitudes vary continuously
       // with the field, so the heading turns smoothly across open ground
       // rather than snapping between eight compass points. A SOFT
       // neighbour counts: the heading leans INTO a structure the path
       // runs through, which is what presses the body against it
-      const xm = x > 0 && !solid[i - 1] ? dist[i - 1] : INF;
-      const xp = x < COLS - 1 && !solid[i + 1] ? dist[i + 1] : INF;
-      const ym = y > 0 && !solid[i - COLS] ? dist[i - COLS] : INF;
-      const yp = y < ROWS - 1 && !solid[i + COLS] ? dist[i + COLS] : INF;
+      const xm = x > 0 && !solid[i - 1] ? wDist[i - 1] : INF;
+      const xp = x < COLS - 1 && !solid[i + 1] ? wDist[i + 1] : INF;
+      const ym = y > 0 && !solid[i - COLS] ? wDist[i - COLS] : INF;
+      const yp = y < ROWS - 1 && !solid[i + COLS] ? wDist[i + COLS] : INF;
       let bx = 0, by = 0;
       if (xm < xp) { if (xm < d) bx = xm - d; } else if (xp < d) bx = d - xp;
       if (ym < yp) { if (ym < d) by = ym - d; } else if (yp < d) by = d - yp;
@@ -447,8 +565,8 @@ export class FlowField {
           const ni = ny * COLS + nx;
           if (walk[ni]) continue;
           if (dx !== 0 && dy !== 0 && (walk[y * COLS + nx] || walk[ny * COLS + x])) continue;
-          if (dist[ni] < best) {
-            best = dist[ni];
+          if (wDist[ni] < best) {
+            best = wDist[ni];
             bx = dx;
             by = dy;
           }
@@ -456,22 +574,114 @@ export class FlowField {
         len = Math.hypot(bx, by);
       }
       if (len > 0) {
-        dirX[i] = bx / len;
-        dirY[i] = by / len;
+        wDirX[i] = bx / len;
+        wDirY[i] = by / len;
       }
     }
+    this.cursor = 0;
+    this.step = Step.Spawn;
+  }
 
-    this.spawnPts = [];
+  /** the doors that survive: a pad this layer can enter by AND reach a goal from */
+  private stepSpawn(until: number): void {
     const mask = this.spawnMask;
-    if (mask) {
-      for (let i = 0; i < NCELLS; i++) {
-        // passable to this layer, covered by one of its zones, and able to
-        // reach a goal — a pad failing the last test would strand whatever
-        // entered on it, so it is not a door at all
-        if (!mask[i] || walk[i] || this.dist[i] >= INF) continue;
-        this.spawnPts.push(i);
+    if (!mask) {
+      this.wSpawn.length = 0;
+      this.step = Step.Done;
+      return;
+    }
+    const { walk, wDist, wSpawn } = this;
+    for (let i = this.cursor; i < NCELLS; i++) {
+      // passable to this layer, covered by one of its zones, and able to
+      // reach a goal — a pad failing the last test would strand whatever
+      // entered on it, so it is not a door at all
+      if (mask[i] && !walk[i] && wDist[i] < INF) wSpawn.push(i);
+      if ((i & 0x1fff) === 0 && i !== this.cursor && now() >= until) {
+        this.cursor = i + 1;
+        return;
       }
     }
+    this.cursor = 0;
+    this.step = Step.Done;
+  }
+
+  /** the finished field takes the place of the one everything is reading */
+  private publish(): void {
+    let f = this.dist; this.dist = this.wDist; this.wDist = f;
+    f = this.dirX; this.dirX = this.wDirX; this.wDirX = f;
+    f = this.dirY; this.dirY = this.wDirY; this.wDirY = f;
+    f = this.clear; this.clear = this.wClear; this.wClear = f;
+    const s = this.spawnPts; this.spawnPts = this.wSpawn; this.wSpawn = s;
+  }
+
+  /** start a solve over: the masks as they stand now, nothing carried across */
+  private begin(): void {
+    const { walk, soft, solid, wClear, wDist } = this;
+    for (let i = 0; i < NCELLS; i++) {
+      solid[i] = walk[i] && !soft[i] ? 1 : 0;
+      wClear[i] = walk[i] ? 0 : INF;
+    }
+    wDist.fill(INF);
+    this.wSpawn.length = 0;
+    this.hN = 0;
+    this.cursor = 0;
+    this.sweepRound = 0;
+    this.sweepOrder = 0;
+    this.step = Step.ClearFwd;
+  }
+
+  /** a solve is under way and has not published yet */
+  get solving(): boolean {
+    return this.step !== Step.Idle;
+  }
+
+  /** throw away a solve in flight — the board it was solving has moved on */
+  abort(): void {
+    this.step = Step.Idle;
+  }
+
+  /**
+   * SOLVE IN SLICES, `budgetMs` of work a call, and publish the result the
+   * moment it is whole.
+   *
+   * A solve is about a tenth of a second on a 512x512 map, and a tenth of
+   * a second taken in one bite is a visibly dropped frame every time a
+   * turret goes down — which is exactly what a player feels when the same
+   * click both builds and re-routes. Taken two or three milliseconds at a
+   * time it is a dozen frames nobody can see, and because the passes fill
+   * the work buffers and only trade them in at the end (publish), the
+   * swarm steers by the LAST finished field throughout rather than by a
+   * half-solved one.
+   *
+   * Returns true on the call that publishes.
+   */
+  advance(budgetMs: number): boolean {
+    if (this.step === Step.Idle) this.begin();
+    const until = budgetMs >= Infinity ? Infinity : now() + budgetMs;
+    while (this.step !== Step.Done) {
+      switch (this.step) {
+        case Step.ClearFwd: this.stepClearFwd(until); break;
+        case Step.ClearBack: this.stepClearBack(until); break;
+        case Step.Cost: this.stepCost(until); break;
+        case Step.Seed: this.stepSeed(until); break;
+        case Step.Dijkstra: this.stepDijkstra(until); break;
+        case Step.Sweep: this.stepSweep(until); break;
+        case Step.Grad: this.stepGrad(until); break;
+        default: this.stepSpawn(until); break;
+      }
+      // the pass above moved `step` on; TypeScript cannot see through the
+      // call, so the read is widened back to what it actually is
+      if ((this.step as Step) !== Step.Done && now() >= until) return false;
+    }
+    this.publish();
+    this.step = Step.Idle;
+    return true;
+  }
+
+  /** the whole solve in one bite — a new map, and the headless tools */
+  compute(): void {
+    this.abort();
+    this.advance(Infinity);
   }
 
   
