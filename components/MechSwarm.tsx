@@ -1731,8 +1731,15 @@ export default function MechSwarm() {
    * WHEN THE CURSOR IS HELD IN: a run under way, in a window with no frame
    * to stop it at, with the preference on. The pause menu lets it out
    * again — a paused player is as likely to be reaching for another screen
-   * as for Resume — and so does Escape, alt-tab or the Windows key, which
-   * the browser answers by dropping the lock itself.
+   * as for Resume — and so do alt-tab and the Windows key, which the
+   * browser answers by dropping the lock itself.
+   *
+   * ESCAPE DOES NOT, by itself: the browser drops the lock on it whatever
+   * we do, but in a run Escape is the game's own key and it backs out one
+   * layer at a time (Game.onKeyDown) — the press that cancels a build or
+   * drops a selection has the lock back before the player notices
+   * (components/cursorLock.ts), and only the press that brings up the menu
+   * gets here, where `menuOpen` is what actually lets the cursor go.
    */
   useCursorLock(
     cursorLock &&
