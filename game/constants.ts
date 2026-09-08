@@ -431,6 +431,9 @@ export interface TowerStats {
    * record stays exhaustive; nothing ever fires it.
    */
   wall?: true;
+  /** what wrecking one of the SWARM's buildings pays the player, in scrap
+   *  (ENEMY_STRUCTS only; Sim.damageTower) */
+  bounty?: number;
 }
 
 /** the bullet a wall carries: nothing, and it never leaves */
@@ -1440,8 +1443,150 @@ export const TOWER_HP_SCALE = 4;
  */
 export const WALL_HP_SCALE = 12;
 /** a structure's full pool — Mindustry's health for the block, times its dial */
-export const towerMaxHp = (kind: import("./types").TowerKind): number =>
-  TOWERS[kind].health * (TOWERS[kind].wall ? WALL_HP_SCALE : TOWER_HP_SCALE);
+/**
+ * THE SWARM'S ROSTER (types.ts ENEMY_KINDS): Erekir's guns and the scrap
+ * walls of Mindustry's enemy bases, stood up by a map's formation and
+ * never by the player. Numbers are Mindustry's where a turret has them
+ * (Blocks.java, Erekir), scaled onto this game's tables the way the
+ * player's are; a wall is a wall (wallStats).
+ */
+export const ENEMY_STRUCTS: Record<import("./types").EnemyKind, TowerStats> = {
+  // Breach: the opening Erekir gun — one heavy round every 40 ticks
+  breach: {
+    name: "Breach",
+    size: 2,
+    health: 1300,
+    range: 190 * MU,
+    reload: 40 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: (2 * Math.PI) / 180,
+    shootCone: (15 * Math.PI) / 180,
+    rotateSpeed: ((8 * Math.PI) / 180) * TICK,
+    targetAir: true,
+    targetGround: true,
+    bounty: 60,
+    bullet: {
+      speed: 5 * TICK * MU,
+      damage: 26,
+      lifetime: (190 + 10) / 5 / TICK,
+      splash: 0,
+      splashRadius: 0,
+      collidesAir: true,
+      collidesGround: true,
+      sprite: {
+        region: "bullet",
+        across: 8 * MU,
+        along: 12 * MU,
+        shrinkX: 0,
+        shrinkY: 0.5,
+        back: PAL.bulletYellowBack,
+        front: PAL.bulletYellow,
+      },
+      shootFx: FxKind.ShootBig,
+      smokeFx: FxKind.SmokeSmall,
+      hitFx: FxKind.BulletHit,
+      despawnFx: FxKind.BulletHit,
+      fxColor: PAL.bulletYellowBack,
+    },
+  },
+  // Diffuse: Erekir's shotgun — a five-round fan every half second
+  diffuse: {
+    name: "Diffuse",
+    size: 3,
+    health: 2100,
+    range: 150 * MU,
+    reload: 30 / TICK,
+    shots: 5,
+    shotDelay: 0,
+    spread: (5 * Math.PI) / 180,
+    inaccuracy: (4 * Math.PI) / 180,
+    shootCone: (20 * Math.PI) / 180,
+    rotateSpeed: ((6 * Math.PI) / 180) * TICK,
+    targetAir: true,
+    targetGround: true,
+    bounty: 120,
+    bullet: {
+      speed: 4 * TICK * MU,
+      damage: 12,
+      lifetime: (150 + 10) / 4 / TICK,
+      splash: 0,
+      splashRadius: 0,
+      collidesAir: true,
+      collidesGround: true,
+      sprite: {
+        region: "bullet",
+        across: 6 * MU,
+        along: 9 * MU,
+        shrinkX: 0,
+        shrinkY: 0.5,
+        back: PAL.bulletYellowBack,
+        front: PAL.bulletYellow,
+      },
+      shootFx: FxKind.ShootBig,
+      smokeFx: FxKind.SmokeSmall,
+      hitFx: FxKind.BulletHit,
+      despawnFx: FxKind.BulletHit,
+      fxColor: PAL.bulletYellowBack,
+    },
+  },
+  // Titan: Erekir's artillery — a slow heavy shell that bursts on the ground
+  titan: {
+    name: "Titan",
+    size: 4,
+    health: 3400,
+    range: 300 * MU,
+    reload: 90 / TICK,
+    shots: 1,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: (1 * Math.PI) / 180,
+    shootCone: (10 * Math.PI) / 180,
+    rotateSpeed: ((4 * Math.PI) / 180) * TICK,
+    targetAir: false,
+    targetGround: true,
+    bounty: 220,
+    bullet: {
+      speed: 3 * TICK * MU,
+      damage: 30,
+      lifetime: (300 + 10) / 3 / TICK,
+      splash: 110,
+      splashRadius: 34 * MU,
+      collidesAir: false,
+      collidesGround: true,
+      artillery: true,
+      sprite: {
+        region: "shell",
+        across: 14 * MU,
+        along: 14 * MU,
+        shrinkX: 0.15,
+        shrinkY: 0.5,
+        slopeShrink: true,
+        back: PAL.graphiteAmmoBack,
+        front: PAL.graphiteAmmoFront,
+      },
+      trail: { size: 5 * MU, mult: 1 },
+      shootFx: FxKind.ShootBig,
+      smokeFx: FxKind.SmokeSmall,
+      hitFx: FxKind.Flak,
+      despawnFx: FxKind.BulletHit,
+      fxColor: PAL.graphiteAmmoBack,
+    },
+  },
+  "scrap-wall": { ...wallStats("Scrap Wall", 240), bounty: 10 },
+  "scrap-wall-large": { ...wallStats("Large Scrap Wall", 960, 2), bounty: 40 },
+  "scrap-wall-huge": { ...wallStats("Huge Scrap Wall", 2160, 3), bounty: 90 },
+};
+
+/** the stats of any structure kind, the player's roster or the swarm's */
+export const structStats = (kind: import("./types").StructKind): TowerStats =>
+  kind in TOWERS ? TOWERS[kind as import("./types").TowerKind] : ENEMY_STRUCTS[kind as import("./types").EnemyKind];
+
+export const towerMaxHp = (kind: import("./types").StructKind): number => {
+  const st = structStats(kind);
+  return st.health * (st.wall ? WALL_HP_SCALE : TOWER_HP_SCALE);
+};
 
 /**
  * CONSTRUCTION TIME, BY FOOTPRINT — a placed structure is not a finished
@@ -1471,8 +1616,8 @@ export const buildTimeOf = (kind: import("./types").TowerKind): number =>
  * sprite. One boolean rather than a stats pointer on every projectile
  * keeps Projectile a flat record, which is what the sim's hot loop wants.
  */
-export function bulletOf(kind: import("./types").TowerKind, frag: boolean): BulletStats {
-  const b = TOWERS[kind].bullet;
+export function bulletOf(kind: import("./types").StructKind, frag: boolean): BulletStats {
+  const b = structStats(kind).bullet;
   return frag && b.frag ? b.frag.bullet : b;
 }
 

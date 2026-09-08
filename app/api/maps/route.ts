@@ -64,6 +64,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "bad spawn regions" }, { status: 400 });
   if (!Array.isArray(map.pines) || !Array.isArray(map.decor))
     return NextResponse.json({ error: "bad props" }, { status: 400 });
+  if (map.enemies !== undefined && !Array.isArray(map.enemies))
+    return NextResponse.json({ error: "bad enemy structures" }, { status: 400 });
 
   const file = path.join(process.cwd(), "public", "maps", `${map.id}.json`);
   try {

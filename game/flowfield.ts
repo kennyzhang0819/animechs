@@ -181,6 +181,9 @@ export class FlowField {
     blockedBase: Uint8Array,
     spawnMask: Uint8Array,
     goalMask: Uint8Array,
+    /** the SWARM's own structures: rock to its walkers — solid and never
+     *  soft, so the path goes round them and nothing shoots them */
+    hard: readonly Footprint[] = [],
   ): void {
     this.spawnMask = spawnMask;
     this.walk.set(blockedBase);
@@ -194,6 +197,11 @@ export class FlowField {
           if (!blockedBase[i]) this.soft[i] = 1;
           this.walk[i] = 1;
         }
+    }
+    for (const t of hard) {
+      const sz = t.size;
+      for (let y = t.gy; y < t.gy + sz; y++)
+        for (let x = t.gx; x < t.gx + sz; x++) this.walk[y * COLS + x] = 1;
     }
     // compute() seeds its Dijkstra from EVERY isGoal cell at distance 0,
     // which is a multi-source shortest path. THE CORE IS THE GOAL: its

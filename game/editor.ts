@@ -7,12 +7,16 @@ import {
   BASE_SIZE,
   H,
   ROWS,
+  ENEMY_STRUCTS,
   W,
   ZONE_KINDS,
   type ZoneKind,
 } from "./constants";
+import { ENEMY_ICONS } from "@/components/towerIcons";
+import type { EnemyKind, StructurePlacement } from "./types";
 import {
   contentRows,
+  ENEMY_KINDS,
   PALETTE,
   rasterizeSpawns,
   zoneStyle,
@@ -53,6 +57,7 @@ interface Snapshot {
   spawns: SpawnCircle[];
   pines: Prop[];
   decor: Prop[];
+  enemies: StructurePlacement[];
   base: { x: number; y: number; size: number };
 }
 
@@ -189,6 +194,18 @@ export class MapEditor {
    */
   private grabbedSpawn = -1;
   private lastCell = { x: -1, y: -1 };
+  /** the swarm's structures' sprites, one image a kind, loaded on first
+   *  use for the overlay — null until it has arrived */
+  private readonly icons = new Map<EnemyKind, HTMLImageElement>();
+  private icon(kind: EnemyKind): HTMLImageElement | null {
+    let img = this.icons.get(kind);
+    if (!img) {
+      img = new Image();
+      img.src = ENEMY_ICONS[kind];
+      this.icons.set(kind, img);
+    }
+    return img.complete && img.naturalWidth > 0 ? img : null;
+  }
   private hoverGx = -1;
   private hoverGy = -1;
   private lastMouse = { x: 0, y: 0 };
@@ -279,6 +296,7 @@ export class MapEditor {
     this.terrain.spawns = s.spawns;
     this.terrain.pines = s.pines;
     this.terrain.decor = s.decor;
+    this.terrain.enemies = s.enemies;
     this.terrain.base = s.base;
     this.resyncSpawn();
     this.dirty = true;
@@ -304,6 +322,7 @@ export class MapEditor {
       spawns: this.terrain.spawns.map((c) => ({ ...c })),
       pines: this.terrain.pines.map((p) => ({ ...p })),
       decor: this.terrain.decor.map((p) => ({ ...p })),
+      enemies: this.terrain.enemies.map((e) => ({ ...e })),
       base: { ...this.terrain.base },
     });
     if (this.undoStack.length > UNDO_CAP) this.undoStack.shift();
@@ -559,11 +578,65 @@ export class MapEditor {
     this.dirty = true;
   }
 
+  /** the swarm's structure kind the enemy tool is stamping — the picker's slot */
+  private enemyKind(): EnemyKind {
+    return ENEMY_KINDS[Math.min(this.variant, ENEMY_KINDS.length - 1)];
+  }
+
+  /** the enemy structure whose footprint covers a cell, as an index, or -1 */
+  private enemyAt(gx: number, gy: number): number {
+    return this.terrain.enemies.findIndex((e) => {
+      const sz = ENEMY_STRUCTS[e.kind].size;
+      return gx >= e.gx && gx < e.gx + sz && gy >= e.gy && gy < e.gy + sz;
+    });
+  }
+
+  /**
+   * ONE OF THE SWARM'S BUILDINGS, stamped with the cursor at its middle.
+   * It wants what a placed turret wants in a run (Sim.placeEnemyStructure):
+   * open ground, clear of the base and of every other stamp — a stamp on
+   * rock or over another simply does nothing, so a drag never piles them.
+   * The drop zones are not checked here: they move, and the sim drops a
+   * stamp a zone has since covered when the map loads.
+   */
+  private enemyStampAt(gx: number, gy: number): void {
+    const T = this.terrain;
+    const kind = this.enemyKind();
+    const sz = ENEMY_STRUCTS[kind].size;
+    const half = (sz / 2) | 0;
+    const x0 = clamp(gx - half, 0, COLS - sz);
+    const y0 = clamp(gy - half, 0, this.rows - sz);
+    const b = T.base;
+    for (let y = y0; y < y0 + sz; y++)
+      for (let x = x0; x < x0 + sz; x++) {
+        if (T.blocked[y * COLS + x]) return;
+        if (x >= b.x && x < b.x + b.size && y >= b.y && y < b.y + b.size) return;
+        if (this.enemyAt(x, y) >= 0) return;
+      }
+    T.enemies.push({ kind, gx: x0, gy: y0 });
+    this.dirty = true;
+  }
+
+  /** eraser over one of the swarm's buildings: take the whole stamp off */
+  private eraseEnemyAt(gx: number, gy: number): boolean {
+    const i = this.enemyAt(gx, gy);
+    if (i < 0) return false;
+    this.terrain.enemies.splice(i, 1);
+    this.dirty = true;
+    return true;
+  }
+
   private paintAt(gx: number, gy: number): void {
     if (this.set.kind === "base") {
       this.placeBase(gx, gy);
       return;
     }
+    if (this.set.kind === "enemy") {
+      this.enemyStampAt(gx, gy);
+      return;
+    }
+    // the eraser takes a whole enemy stamp when it starts on one
+    if (this.set.kind === "erase" && this.eraseEnemyAt(gx, gy)) return;
     if (this.set.kind === "path") {
       this.pathAt(gx, gy);
       return;
@@ -858,9 +931,42 @@ export class MapEditor {
       }
     }
 
+    // THE SWARM'S FORMATION, every stamp: a crux-red plate with the
+    // building's own sprite on it. Drawn here, in the overlay, because the
+    // terrain batches know nothing about structures — and before the hover
+    // bail-out, since a stamp must not vanish when the pointer leaves
+    for (const e of this.terrain.enemies) {
+      const side = ENEMY_STRUCTS[e.kind].size * CELL;
+      const x0 = e.gx * CELL, y0 = e.gy * CELL;
+      c.fillStyle = "rgba(242,85,85,0.28)";
+      c.fillRect(x0, y0, side, side);
+      c.strokeStyle = "rgba(242,85,85,0.9)";
+      c.lineWidth = 1.5 / s;
+      c.strokeRect(x0, y0, side, side);
+      const img = this.icon(e.kind);
+      if (img) {
+        c.imageSmoothingEnabled = false;
+        c.drawImage(img, x0 + side * 0.1, y0 + side * 0.1, side * 0.8, side * 0.8);
+      }
+    }
+
     // everything below previews the tool under the cursor, so it needs one
     if (this.hoverGx < 0) return;
 
+    if (this.set.kind === "enemy") {
+      const kind = this.enemyKind();
+      const sz = ENEMY_STRUCTS[kind].size;
+      const half = (sz / 2) | 0;
+      const x0 = clamp(this.hoverGx - half, 0, COLS - sz) * CELL;
+      const y0 = clamp(this.hoverGy - half, 0, this.rows - sz) * CELL;
+      const side = sz * CELL;
+      c.fillStyle = "rgba(242,85,85,0.18)";
+      c.fillRect(x0, y0, side, side);
+      c.strokeStyle = "rgba(242,85,85,0.9)";
+      c.lineWidth = 2 / s;
+      c.strokeRect(x0, y0, side, side);
+      return;
+    }
     // the path tool is round and much wider than a brush — preview it as
     // the circle it actually carves
     if (this.set.kind === "base") {

@@ -71,6 +71,18 @@
         "3517"
       ],
       "port": 3517
+    },
+    {
+      "name": "mechswarm-3644",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:web",
+        "--",
+        "-p",
+        "3644"
+      ],
+      "port": 3644
     }
   ]
 }

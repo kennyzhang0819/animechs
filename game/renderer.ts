@@ -64,6 +64,15 @@ import {
   UV_PARALLAX_LASER_END,
   UV_TRI,
   UV_TURRET,
+  UV_BREACH,
+  UV_DIFFUSE,
+  UV_TITAN,
+  UV_RBLOCK2,
+  UV_RBLOCK3,
+  UV_RBLOCK4,
+  UV_SCRAP_WALL,
+  UV_SCRAP_WALL_LARGE,
+  UV_SCRAP_WALL_HUGE,
   UV_WALLS,
   UV_WALL_LARGE,
   WALL_GROUP,
@@ -75,6 +84,7 @@ import {
   bulletOf as bulletOf_IMPORT,
   CELL as CELL_IMPORT,
   towerMaxHp,
+  structStats,
   clamp as clamp_IMPORT,
   COLS as COLS_IMPORT,
   FX_LIFE,
@@ -134,7 +144,32 @@ import {
   type ShotRegion,
 } from "./weapons";
 import { isWaterFloor, showsFloorCell, WALL_DEEP, type Terrain } from "./terrain";
-import { FxKind, type Effect, type RGB, type Tower, type TowerKind } from "./types";
+import {
+  FxKind,
+  isPlayerKind,
+  type Effect,
+  type EnemyKind,
+  type RGB,
+  type Tower,
+  type TowerKind,
+} from "./types";
+
+// THE SWARM'S ROSTER (types.ts ENEMY_KINDS): its turret tops and walls,
+// and the reinforced plate under each turret — a different set of
+// buildings from the player's, not the player's in another colour
+const UV_ENEMY: Record<EnemyKind, UVRect> = {
+  breach: UV_BREACH,
+  diffuse: UV_DIFFUSE,
+  titan: UV_TITAN,
+  "scrap-wall": UV_SCRAP_WALL,
+  "scrap-wall-large": UV_SCRAP_WALL_LARGE,
+  "scrap-wall-huge": UV_SCRAP_WALL_HUGE,
+};
+const UV_ENEMY_BASE: Partial<Record<EnemyKind, UVRect>> = {
+  breach: UV_RBLOCK2,
+  diffuse: UV_RBLOCK3,
+  titan: UV_RBLOCK4,
+};
 
 // per-kind turret tops and bullet sprites
 const UV_TURRETS: Record<TowerKind, UVRect> = {
@@ -954,9 +989,9 @@ export class Renderer {
    * where nothing has ever looked, FOG_SEEN_ALPHA where something once
    * did, clear where something is looking now — over the WHOLE frame,
    * flyers included: a flyer in the fog is as unseen as a walker. The
-   * texture is re-uploaded only when Fog.version moves. While a fog is
-   * set and on, the hill darkness stands down: rock a ray never enters is
-   * never revealed, so the fog is the inside of every hill already.
+   * texture is re-uploaded only when Fog.version moves. It is the only
+   * black a fogged frame wears: the hill darkness stands down while a fog
+   * is set and on (drawDarkness), so a revealed range is lit through.
    */
   private readonly fog: Batch;
   private readonly fogTex: WebGLTexture;
@@ -2013,11 +2048,16 @@ export class Renderer {
    * Layer.darkness is above the ground units, the effects and the shields.
    * Only the flyers come after it (drawFrame) — they are above the
    * terrain, so a range never darkens them.
+   *
+   * A FOGGED FRAME HAS NONE OF IT. The fog is the only black a run wants:
+   * once a hill is revealed it is revealed whole, middle included, and a
+   * black core inside a lit range reads as fog that was never lifted.
+   * The darkness is left to the frames with no fog on them — the title
+   * screen's field and the editor.
    */
   private drawDarkness(): void {
     const gl = this.gl;
     if (this.dark.n === 0) return;
-    // the fog is the inside of every hill while it is on (see `fog`)
     if (this.fogSrc && this.fogSrc.enabled) return;
     gl.useProgram(this.prog);
     gl.bindTexture(gl.TEXTURE_2D, this.darkTex);
@@ -2134,11 +2174,19 @@ export class Renderer {
     const buffered = this.ensureShieldTarget(this.canvas.width, this.canvas.height);
     this.drawForceFields(sim, buffered);
     for (const t of sim.towers) {
-      const sz = TOWERS[t.kind].size;
+      const st = structStats(t.kind);
+      const sz = st.size;
       const px = sz * CELL;
       if (t.x < vx0 - px || t.x > vx1 + px || t.y < vy0 - px || t.y > vy1 + px) continue;
+      // the swarm's building is drawn once it has been in sight, like the
+      // map's shield towers; the player's own are always seen
+      if (t.team === "enemy" && !this.seen(t.x, t.y)) continue;
+      // the swarm's roster is its own art: an Erekir gun on its reinforced
+      // plate, a scrap wall — never the player's sprite recoloured
+      const top = isPlayerKind(t.kind) ? UV_TURRETS[t.kind] : UV_ENEMY[t.kind];
       const base =
-        sz >= 4 ? UV_TOWER_BASE4
+        !isPlayerKind(t.kind) ? (UV_ENEMY_BASE[t.kind] ?? UV_SOLID)
+        : sz >= 4 ? UV_TOWER_BASE4
         : sz === 3 ? UV_TOWER_BASE3
         : sz === 2 ? UV_TOWER_BASE
         : UV_TOWER_BASE1;
@@ -2158,12 +2206,12 @@ export class Renderer {
       }
       const a = raising ? BUILD_ALPHA : 1;
       // a wall is its art and nothing else: no base under it, no turning
-      if (TOWERS[t.kind].wall) {
-        this.push(dyn, t.x, t.y, px, px, 0, UV_TURRETS[t.kind], tint[0], tint[1], tint[2], a);
+      if (st.wall) {
+        this.push(dyn, t.x, t.y, px, px, 0, top, tint[0], tint[1], tint[2], a);
         continue;
       }
       this.push(dyn, t.x, t.y, px, px, 0, base, tint[0], tint[1], tint[2], a);
-      this.push(dyn, t.x, t.y, px, px, t.angle, UV_TURRETS[t.kind], tint[0], tint[1], tint[2], a);
+      this.push(dyn, t.x, t.y, px, px, t.angle, top, tint[0], tint[1], tint[2], a);
     }
     // the shieldTowers, AFTER the towers: a shield tower that entombed a turret is
     // drawn over it, which is the whole picture — the turret is under the
@@ -2186,7 +2234,8 @@ export class Renderer {
       // the beam's LIVE stats, not the table's: a meltdown whose upgrade
       // branch lengthened its beam has to be drawn at the length it is
       // actually burning at (see Sim.statsFor)
-      if (t.beamT >= 0) this.drawContinuousBeam(dyn, t, sim.statsFor(t.kind).bullet.continuous);
+      if (t.beamT >= 0 && isPlayerKind(t.kind))
+        this.drawContinuousBeam(dyn, t, sim.statsFor(t.kind).bullet.continuous);
     }
     const { upx, upy, ukind, n } = sim;
     // the fleet's wakes, at Mindustry's Layer.debris: UNDER every unit,
@@ -2267,7 +2316,8 @@ export class Renderer {
       // the SIM's resolution, not the static table: a duo the tree has
       // upgraded fires a different bullet, and drawing the stock one made
       // the graphite round invisible as a graphite round
-      const b = sim.bulletFor(p.kind, p.frag);
+      // ...and the swarm's roster fires the stock table, its own
+      const b = p.enemy || !isPlayerKind(p.kind) ? bulletOf(p.kind, p.frag) : sim.bulletFor(p.kind, p.frag);
       // LiquidBulletType.draw: a water orb is not a sprite pair but a
       // filled disc of the liquid's own colour — Fill.circle(x, y,
       // orbSize). (The fout()/100 lerp toward white is a 1% shade and is

@@ -6,6 +6,7 @@ import { SPAWN_RADII, SPAWN_RADIUS_DEFAULT } from "@/game/maps";
 import { ZONE_KINDS } from "@/game/constants";
 import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
 import {
+  ENEMY_KINDS,
   PALETTE,
   paletteSections,
   saveMap,
@@ -632,7 +633,9 @@ export default function MapEditorView({
                         const zone = set.kind === "spawn" ? ZONE_KINDS[v] : null;
                         const name = zone
                           ? `${ZONE_LABELS[zone]} drop zone`
-                          : randomize && set.icons.length > 1
+                          : set.kind === "enemy"
+                            ? `Enemy ${ENEMY_KINDS[v]}`
+                            : randomize && set.icons.length > 1
                             ? `${set.label} (random of ${set.icons.length})`
                             : `${set.label}${set.icons.length > 1 ? ` ${v + 1}` : ""}`;
                         return (
@@ -683,6 +686,8 @@ export default function MapEditorView({
               const set = PALETTE.find((p) => p.id === setId) ?? PALETTE[0];
               if (set.kind === "spawn")
                 return `${ZONE_LABELS[ZONE_KINDS[Math.min(variant, ZONE_KINDS.length - 1)]]} drop zone`;
+              if (set.kind === "enemy")
+                return `Enemy ${ENEMY_KINDS[Math.min(variant, ENEMY_KINDS.length - 1)]}`;
               return set.label;
             })()}
           </div>

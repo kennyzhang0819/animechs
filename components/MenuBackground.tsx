@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { buildAtlas } from "@/game/atlas";
-import { CELL, clamp, COLS, ROWS, TOWERS, type ZoneKind } from "@/game/constants";
+import { CELL, clamp, COLS, ROWS, structStats, TOWERS, type ZoneKind } from "@/game/constants";
 import type { LevelSpec, UnitKind } from "@/game/levels";
 import { loadMap, spawnCirclesOf } from "@/game/maps";
 import { Renderer } from "@/game/renderer";
@@ -558,7 +558,7 @@ export default function MenuBackground({
       for (const t of s.towers) {
         // a wall is not a gun: a bucket holding nothing but a screen is a
         // bucket where nothing is being shot
-        if (TOWERS[t.kind].wall) continue;
+        if (structStats(t.kind).wall) continue;
         const bx = clamp((t.gx / BUCKET) | 0, 0, BUCKETS_X - 1);
         const by = clamp((t.gy / BUCKET) | 0, 0, BUCKETS_Y - 1);
         guns[by * BUCKETS_X + bx] += 1;

@@ -841,6 +841,21 @@ export const UV_SHIELD_TOWER = uv(1312, 2976, 96, 96);
 // the second environment band's origin (1024, 3200), which is the moss
 // floor: drawn there they painted wall art over half the band's floors
 export const UV_COPPER_WALL = uv(0, 3008, 64, 64);
+// THE SWARM'S ROSTER: the strip between the copper walls and the 4x4 base
+// at y=2944, empty until now. 128px cells for breach (2x2 at the player's
+// 2x scale, its 96px art fitted) and titan (4x4, native), the reinforced
+// plates under them, then 96px cells for diffuse (3x3, native), its plate
+// and the huge scrap wall, and the two smaller scrap walls stacked in one
+// 64px column. Every origin is a multiple of 8 for the sampler's sake
+export const UV_BREACH = uv(256, 2944, 128, 128);
+export const UV_TITAN = uv(384, 2944, 128, 128);
+export const UV_RBLOCK2 = uv(512, 2944, 128, 128);
+export const UV_RBLOCK4 = uv(640, 2944, 128, 128);
+export const UV_DIFFUSE = uv(768, 2944, 96, 96);
+export const UV_RBLOCK3 = uv(864, 2944, 96, 96);
+export const UV_SCRAP_WALL_HUGE = uv(960, 2944, 96, 96);
+export const UV_SCRAP_WALL_LARGE = uv(1056, 2944, 64, 64);
+export const UV_SCRAP_WALL = uv(1056, 3008, 64, 64);
 export const UV_TITANIUM_WALL = uv(64, 3008, 64, 64);
 export const UV_THORIUM_WALL = uv(128, 3008, 64, 64);
 /** the large walls: 64px block art upscaled 2x into 128px cells, like lancer's */
@@ -1567,6 +1582,17 @@ const SPRITES = {
   // block whose whole job is standing a dome, which is this structure's too
   shieldTower: "/mindustry/sprites/blocks/defense/force-projector.png",
   towerBase4: "/mindustry/sprites/blocks/turrets/bases/block-4.png",
+  // THE SWARM'S ROSTER (types.ts ENEMY_KINDS): Erekir's turrets on their
+  // reinforced plates, and the scrap walls of Mindustry's enemy bases
+  breach: "/mindustry/sprites/blocks/turrets/breach.png",
+  diffusePreview: "/mindustry/sprites/blocks/turrets/diffuse/diffuse-preview.png",
+  titanPreview: "/mindustry/sprites/blocks/turrets/titan/titan-preview.png",
+  rblock2: "/mindustry/sprites/blocks/turrets/bases/reinforced-block-2.png",
+  rblock3: "/mindustry/sprites/blocks/turrets/bases/reinforced-block-3.png",
+  rblock4: "/mindustry/sprites/blocks/turrets/bases/reinforced-block-4.png",
+  scrapWall: "/mindustry/sprites/blocks/walls/scrap-wall1.png",
+  scrapWallLarge: "/mindustry/sprites/blocks/walls/scrap-wall-large1.png",
+  scrapWallHuge: "/mindustry/sprites/blocks/walls/scrap-wall-huge1.png",
   swarmer: "/mindustry/sprites/blocks/turrets/swarmer.png",
   // cyclone's own art is the bare head; its three barrels are separate
   // sprites the preview already has assembled underneath
@@ -2526,6 +2552,20 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(outlined(img.copperWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1280, 3072, 128, 128);
   c.drawImage(antialiased(outlined(img.titaniumWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1728, 3072, 128, 128);
   c.drawImage(antialiased(outlined(img.thoriumWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1856, 3072, 128, 128);
+
+  // THE SWARM'S ROSTER, on the free strip left of the 4x4 base at y=2944
+  // (see UV_BREACH). Turrets face +x like the player's; the plates and
+  // the walls lie flat. Breach's 96px art (it overhangs its 2x2 block in
+  // Mindustry) is fitted to its 128px cell; diffuse and titan are native
+  drawFacingRight(c, antialiased(outlined(img.breach, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 320, 3008, 128);
+  drawFacingRight(c, antialiased(outlined(img.titanPreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 448, 3008, 128);
+  c.drawImage(antialiased(img.rblock2), 512, 2944, 128, 128);
+  c.drawImage(antialiased(img.rblock4), 640, 2944, 128, 128);
+  drawFacingRight(c, antialiased(outlined(img.diffusePreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 816, 2992, 96);
+  c.drawImage(antialiased(img.rblock3), 864, 2944, 96, 96);
+  c.drawImage(antialiased(outlined(img.scrapWallHuge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 960, 2944, 96, 96);
+  c.drawImage(antialiased(outlined(img.scrapWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1056, 2944, 64, 64);
+  c.drawImage(antialiased(outlined(img.scrapWall, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1056, 3008, 64, 64);
 
   // duo top and 1x1 base: 32px sources upscaled 2x into 64px cells
   drawFacingRight(c, antialiased(outlined(img.duoPreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 160, 480, 64);

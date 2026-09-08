@@ -35,6 +35,9 @@ import {
   type BulletFx,
   type BulletStats,
   type TowerStats,
+  bulletOf,
+  structStats,
+  ENEMY_STRUCTS,
 } from "./constants";
 
 // Module-local bindings for everything the per-unit and per-bullet loops
@@ -161,6 +164,11 @@ import {
   type Core,
   isCore,
   type Structure,
+  type StructKind,
+  type EnemyKind,
+  isPlayerKind,
+  type Team,
+  teamOf,
   type Tower,
   type TowerKind,
   type EnemyShot,
@@ -1021,7 +1029,13 @@ export class Sim {
   /** seconds of simulated time since the level was reset (Time.time) */
   time = 0;
 
+  /** every standing turret and wall, the SWARM's included — see Tower.team */
   towers: Tower[] = [];
+  /** how many of `towers` are the swarm's: the cheap skip for the
+   *  structure sweeps a player's shot makes (updateProjectiles, splash) */
+  private enemyStructures = 0;
+  /** swarm structures the player's guns have wrecked this run */
+  enemyStructuresDown = 0;
   projs: Projectile[] = [];
 
   /**
@@ -1050,6 +1064,8 @@ export class Sim {
   private focusUid = -1;
   private focusIdx = -1;
   private focusShieldTower = -1;
+  /** the swarm's structure the player tapped for focus fire, or null */
+  private focusTower: Tower | null = null;
 
   /** is the Volatile mutator in force this run? (see reset) */
   private volatileOn = false;
@@ -1292,6 +1308,9 @@ export class Sim {
     this.fxPts.fill(null, 0, this.fxN);
     this.fxN = 0;
     this.towers.length = 0;
+    this.enemyStructures = 0;
+    this.enemyStructuresDown = 0;
+    this.focusTower = null;
     this.cellTower.fill(null);
     this.shots.length = 0;
     this.exploded = 0;
@@ -1329,8 +1348,14 @@ export class Sim {
     // the walkers' field: rock and structures block it, it enters by the
     // ground zones, and it aims at the core (coreGoal)
     this.groundPads = this.layerPadMask(LAYER_BIT.ground);
+    // THE SWARM'S OWN FORMATION, stood up before the field is solved so
+    // its walls are rock to the walkers from the first tick. One that
+    // will not fit the ground (a drop zone moved over it, a document from
+    // an older board) is dropped, not forced
+    for (const e of this.terrain.enemies) this.placeEnemyStructure(e.gx, e.gy, e.kind);
     this.fieldDirty = false;
-    this.field.rebuildWalk(this.footprints(), this.terrain.blocked, this.groundPads, this.coreGoal());
+    this.field.rebuildWalk(this.footprints(), this.terrain.blocked, this.groundPads, this.coreGoal(),
+      this.hardFootprints());
     // THE HULLS' FIELD, built only where there is water to sail. It is the
     // mirror image of the walkers' — dry land is its wall — and towers do
     // not block it, because a tower stands on rock and rock is already the
@@ -1355,7 +1380,7 @@ export class Sim {
     // again, however much is built or sold during the run.
     this.hills = airWalkMask(this.terrain);
     // a new map is unseen ground, and the core is the first thing looking at it
-    this.fog.reset(this.hills, this.fogEnabled);
+    this.fog.reset(this.fogEnabled);
     this.fog.add(this.coreVision());
     this.airField.rebuildWalk([], this.hills, this.layerPadMask(LAYER_BIT.air), this.coreGoal());
     this.buildGoalPts();
@@ -1419,10 +1444,22 @@ export class Sim {
     this.reset();
   }
 
-  /** every structure's cells as the field takes them: the turrets and the core */
+  /** every PLAYER structure's cells as the field takes them — soft, routed
+   *  through at a cost and shot at: the player's turrets and walls, and the core */
   private footprints(): Footprint[] {
-    const out: Footprint[] = this.towers.map((t) => ({ gx: t.gx, gy: t.gy, size: TOWERS[t.kind].size }));
+    const out: Footprint[] = [];
+    for (const t of this.towers)
+      if (t.team === "player") out.push({ gx: t.gx, gy: t.gy, size: structStats(t.kind).size });
     out.push(this.core);
+    return out;
+  }
+
+  /** the SWARM's own structures' cells: rock to its walkers, never a target
+   *  (FlowField.rebuildWalk's `hard`) */
+  private hardFootprints(): Footprint[] {
+    const out: Footprint[] = [];
+    for (const t of this.towers)
+      if (t.team === "enemy") out.push({ gx: t.gx, gy: t.gy, size: structStats(t.kind).size });
     return out;
   }
 
@@ -1683,7 +1720,7 @@ export class Sim {
    */
   setFog(on: boolean): void {
     this.fogEnabled = on;
-    this.fog.reset(this.hills, on);
+    this.fog.reset(on);
     this.fog.invalidate();
     this.fog.ensure(this.visionSources);
   }
@@ -1701,17 +1738,18 @@ export class Sim {
   private towerVision(t: Tower): VisionSource {
     const min = VISION_MIN_CELLS * CELL;
     let r = min;
-    if (t.buildT <= 0) {
+    if (t.buildT <= 0 && isPlayerKind(t.kind)) {
       const st = this.statsFor(t.kind);
       if (!st.wall && st.range > 0) r = Math.max(min, st.range * VISION_OF_RANGE);
     }
     return { x: t.x, y: t.y, r };
   }
 
-  /** every eye on the field — the core and each structure, entombed or not */
+  /** every eye on the field — the core and each of the PLAYER's structures,
+   *  entombed or not; the swarm's formation looks for nobody */
   private readonly visionSources = (): VisionSource[] => {
     const out: VisionSource[] = [this.coreVision()];
-    for (const t of this.towers) out.push(this.towerVision(t));
+    for (const t of this.towers) if (t.team === "player") out.push(this.towerVision(t));
     return out;
   };
 
@@ -1819,7 +1857,9 @@ export class Sim {
   /** live towers per kind — the bar's remaining-count badges, and the cap check */
   towerCounts(): Record<TowerKind, number> {
     const counts = Object.fromEntries(TOWER_KINDS.map((k) => [k, 0])) as Record<TowerKind, number>;
-    for (const t of this.towers) counts[t.kind]++;
+    // the player's own: the swarm's formation is not on the bar and does
+    // not move a count-scaled rung
+    for (const t of this.towers) if (t.team === "player" && isPlayerKind(t.kind)) counts[t.kind]++;
     return counts;
   }
 
@@ -1914,29 +1954,35 @@ export class Sim {
     return n;
   }
 
-  private addTower(gx: number, gy: number, kind: TowerKind, instant: boolean): void {
-    const sz = TOWERS[kind].size;
+  private addTower(gx: number, gy: number, kind: StructKind, instant: boolean, team: Team = "player"): void {
+    const sz = structStats(kind).size;
     // CONSTRUCTION (buildTimeOf): a placed structure goes up as a 1 hp
     // shell and only stands up for real when its timer runs out. Editors,
     // the sandbox and the menu field build finished structures — there is
     // no swarm to race there, and a menu that spends its first seconds
     // watching walls raise is a menu showing nothing
-    const build = instant ? 0 : buildTimeOf(kind);
+    // (the swarm's formation is stood up finished, so its roster never
+    // asks for a build time or a waterlogging check)
+    const build = instant || !isPlayerKind(kind) ? 0 : buildTimeOf(kind);
+    const x = (gx + sz / 2) * CELL, y = (gy + sz / 2) * CELL;
     const tower: Tower = {
       kind,
+      team,
       gx,
       gy,
-      x: (gx + sz / 2) * CELL,
-      y: (gy + sz / 2) * CELL,
+      x,
+      y,
       hp: build > 0 ? 1 : towerMaxHp(kind),
       buildT: build,
       buildTotal: build,
       aimShieldTower: -1,
+      aimTower: null,
       tombShieldTower: -1,
       cd: Math.random() * 0.1,
       // Hydrophobic (mutation.ts): read the ground once, here, and carry it
-      fireRate: this.isWaterlogged(gx, gy, kind) ? HYDROPHOBIC_RATE : 1,
-      angle: 0,
+      fireRate: isPlayerKind(kind) && this.isWaterlogged(gx, gy, kind) ? HYDROPHOBIC_RATE : 1,
+      // the swarm's guns stand facing the core they were built against
+      angle: team === "enemy" ? Math.atan2(this.core.y - y, this.core.x - x) : 0,
       target: -1,
       targetIdx: -1,
       // start the re-pick clock at a random phase so a wall of turrets
@@ -1959,13 +2005,60 @@ export class Sim {
       beamDmgT: 0,
     };
     this.towers.push(tower);
+    if (team === "enemy") this.enemyStructures++;
     this.claimGround(tower, true);
     // it looks around the moment it is placed — a shell sees a few cells,
-    // and the turret it becomes sees its share of its range (updateBuilds)
-    this.fog.add(this.towerVision(tower));
+    // and the turret it becomes sees its share of its range (updateBuilds).
+    // The swarm's own guns see nothing FOR the player
+    if (team === "player") this.fog.add(this.towerVision(tower));
     // a count-dependent rung (duo power) reads the board, so the board
     // changing is what moves it
     this.refreshSpecs();
+  }
+
+  /**
+   * ONE OF THE SWARM'S OWN BUILDINGS, stood up finished. A map starts with
+   * these (MapData.enemies, applied in reset): a formation of turrets and
+   * walls the player has to shoot through, exactly as the swarm has to
+   * shoot through the player's. No tech gate and no price — nobody is
+   * buying — but the ground rules hold: open ground only, never a drop
+   * zone, never over another structure or the core. False when the cell
+   * will not take it, and the map simply goes without.
+   */
+  placeEnemyStructure(gx: number, gy: number, kind: EnemyKind): boolean {
+    const sz = ENEMY_STRUCTS[kind].size;
+    if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
+    const { blocked } = this.terrain;
+    for (let y = gy; y < gy + sz; y++)
+      for (let x = gx; x < gx + sz; x++) {
+        const i = y * COLS + x;
+        if (blocked[i] || this.groundPads[i] || this.cellTower[i]) return false;
+      }
+    this.addTower(gx, gy, kind, true, "enemy");
+    return true;
+  }
+
+  /** the structure standing on a world point, if it is `team`'s */
+  private structureAt(px: number, py: number, team: Team): Structure | null {
+    if (px < 0 || py < 0 || px >= W || py >= H) return null;
+    const t = this.cellTower[((py / CELL) | 0) * COLS + ((px / CELL) | 0)];
+    return t && teamOf(t) === team ? t : null;
+  }
+
+  /**
+   * A TURRET'S HIT ON A STRUCTURE — the player's shot on one of the
+   * swarm's buildings, or an enemy turret's on one of the player's. The
+   * damage lands directly (there is no unit index to sweep for), and the
+   * hit effect goes off on the near face of the footprint, where the shot
+   * arrived. An enemy turret's damage rides the swarm's own dial
+   * (unitDamageScale), so its guns hit exactly as hard as its bodies'.
+   */
+  private structureHit(s: Structure, dmg: number, fx: BulletFx | undefined, angle: number, col?: RGB): void {
+    if (this.cellTower[s.gy * COLS + s.gx] !== s) return; // already down
+    if (teamOf(s) === "player") this.hitStructure(s, dmg);
+    else this.damageTower(s, dmg);
+    const half = (this.sizeOf(s) * CELL) / 2;
+    this.bulletFx(fx, s.x - Math.cos(angle) * half, s.y - Math.sin(angle) * half, angle, col);
   }
 
   update(dt: number): void {
@@ -2202,7 +2295,7 @@ export class Sim {
    */
   /** a structure's edge, in cells: the turret's footprint or the core's */
   private sizeOf(s: Structure): number {
-    return isCore(s) ? s.size : TOWERS[s.kind].size;
+    return isCore(s) ? s.size : structStats(s.kind).size;
   }
 
   /**
@@ -2267,7 +2360,13 @@ export class Sim {
     return this.hasSight(x, y, clamp(x, t.x - half, t.x + half), clamp(y, t.y - half, t.y + half));
   }
 
-  private nearestStructure(x: number, y: number, reach: number, sighted: boolean): Structure | null {
+  private nearestStructure(
+    x: number,
+    y: number,
+    reach: number,
+    sighted: boolean,
+    team: Team = "player",
+  ): Structure | null {
     const cx = clamp((x / CELL) | 0, 0, COLS - 1);
     const cy = clamp((y / CELL) | 0, 0, ROWS - 1);
     const R = Math.min(COLS, Math.ceil(reach / CELL) + 2);
@@ -2276,7 +2375,12 @@ export class Sim {
     let bd = Infinity;
     const consider = (i: number): void => {
       const t = grid[i];
-      if (!t) return;
+      // only the OTHER side's buildings are targets: a unit walks past the
+      // swarm's own wall, and an enemy turret never fires on it
+      if (!t || teamOf(t) !== team) return;
+      // ...and the player's guns take none they cannot see (fog.ts), the
+      // rule a body in the fog is under; the swarm sees the whole map
+      if (team === "enemy" && this.fog.enabled && !this.fog.visibleAt(t.x, t.y)) return;
       const half = (this.sizeOf(t) * CELL) / 2;
       const dx = t.x - x, dy = t.y - y;
       const d = Math.sqrt(dx * dx + dy * dy) - half;
@@ -2308,14 +2412,20 @@ export class Sim {
   }
 
   /** every live structure whose footprint comes within r of a point, once each */
-  private structuresWithin(x: number, y: number, r: number, out: Structure[]): Structure[] {
+  private structuresWithin(
+    x: number,
+    y: number,
+    r: number,
+    out: Structure[],
+    team: Team = "player",
+  ): Structure[] {
     out.length = 0;
     const R = Math.ceil(r / CELL) + 1;
     const cx = (x / CELL) | 0, cy = (y / CELL) | 0;
     for (let yy = Math.max(0, cy - R); yy <= Math.min(ROWS - 1, cy + R); yy++)
       for (let xx = Math.max(0, cx - R); xx <= Math.min(COLS - 1, cx + R); xx++) {
         const t = this.cellTower[yy * COLS + xx];
-        if (!t || out.includes(t)) continue;
+        if (!t || teamOf(t) !== team || out.includes(t)) continue;
         const half = (this.sizeOf(t) * CELL) / 2;
         const dx = t.x - x, dy = t.y - y;
         if (Math.sqrt(dx * dx + dy * dy) - half <= r) out.push(t);
@@ -2763,7 +2873,9 @@ export class Sim {
         this.pushTrail(sh.x, sh.y, look.puff.size, look.puff.color);
       }
       const off = sh.x < 0 || sh.y < 0 || sh.x >= W || sh.y >= H;
-      const t = off || !sh.collide ? null : this.cellTower[((sh.y / CELL) | 0) * COLS + ((sh.x / CELL) | 0)];
+      // the PLAYER's structures only: a swarm shot flies over the swarm's
+      // own wall as it flies over open ground
+      const t = off || !sh.collide ? null : this.structureAt(sh.x, sh.y, "player");
       if (t) {
         this.hitStructure(t, sh.damage);
         if (sh.splash > 0) this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius);
@@ -3076,14 +3188,22 @@ export class Sim {
     return placed;
   }
 
-  /** the tower whose footprint covers the world point, if any */
+  /** the PLAYER's tower whose footprint covers the world point, if any —
+   *  what a tap selects and a right-click sells. The swarm's buildings are
+   *  not the player's to sell: see enemyTowerAt */
   towerAt(px: number, py: number): Tower | null {
-    const gx = (px / CELL) | 0, gy = (py / CELL) | 0;
-    for (const t of this.towers) {
-      const sz = TOWERS[t.kind].size;
-      if (gx >= t.gx && gx < t.gx + sz && gy >= t.gy && gy < t.gy + sz) return t;
-    }
-    return null;
+    const t = this.structureAt(px, py, "player");
+    return t && !isCore(t) ? t : null;
+  }
+
+  /** the SWARM's turret or wall under the world point, if any — a tap on
+   *  one marks it for focus fire (setFocusTower) */
+  enemyTowerAt(px: number, py: number): Tower | null {
+    const t = this.structureAt(px, py, "enemy");
+    if (!t || isCore(t)) return null;
+    // one standing in the fog cannot be marked — it is not on screen
+    if (this.fog.enabled && !this.fog.visibleAt(t.x, t.y)) return null;
+    return t;
   }
 
   /**
@@ -3097,6 +3217,9 @@ export class Sim {
     const { blocked } = this.terrain;
     const { walk, soft } = this.field;
     const sz = this.sizeOf(t);
+    // the swarm's OWN building is rock to its walkers: solid, and never
+    // soft — it routes around its own wall rather than chewing through it
+    const routable = teamOf(t) === "player";
     let changed = false;
     for (let y = t.gy; y < t.gy + sz; y++)
       for (let x = t.gx; x < t.gx + sz; x++) {
@@ -3106,7 +3229,7 @@ export class Sim {
         // solid to the body, soft to the path: the swarm may route
         // through it, and shoots it when it gets there
         walk[i] = on ? 1 : 0;
-        soft[i] = on ? 1 : 0;
+        soft[i] = on && routable ? 1 : 0;
         changed = true;
       }
     if (changed) this.fieldDirty = true;
@@ -3117,6 +3240,8 @@ export class Sim {
     const at = this.towers.indexOf(t);
     if (at < 0) return;
     this.towers.splice(at, 1);
+    if (t.team === "enemy") this.enemyStructures--;
+    if (this.focusTower === t) this.focusTower = null;
     this.claimGround(t, false);
     // an eye is gone: what only it saw goes grey at the next tick
     this.fog.invalidate();
@@ -3148,7 +3273,7 @@ export class Sim {
     // nothing back (SELL_REFUND is 0, economy.ts): a placed turret is
     // spent, and demolishing it only clears the ground. The dial stays
     // wired so a refund can be tried again from one number
-    if (this.charging) this.scrap += sellValue(t.kind);
+    if (this.charging && isPlayerKind(t.kind)) this.scrap += sellValue(t.kind);
     this.pushFx(t.x, t.y, 0.35, FxKind.Death); // demolish puff
     return true;
   }
@@ -4666,7 +4791,7 @@ export class Sim {
       // would be a mutator that undid their choices. A map with no free
       // rock left simply raises nothing this period
       for (const t of this.towers) {
-        const tsz = TOWERS[t.kind].size;
+        const tsz = structStats(t.kind).size;
         if (gx < t.gx + tsz && t.gx < gx + SHIELD_TOWER_SIZE && gy < t.gy + tsz && t.gy < gy + SHIELD_TOWER_SIZE) {
           ok = false;
           break;
@@ -4822,6 +4947,16 @@ export class Sim {
     this.pushFx(t.x, t.y, 0.5 * big, FxKind.Breach);
     this.pushFx(t.x, t.y, 0.35 * big, FxKind.Death);
     if (isCore(t)) return;
+    // one of the SWARM's buildings wrecked pays its bounty (ENEMY_STRUCTS)
+    // into the bank — a formation is worth shooting through, not only around
+    if (t.team === "enemy") {
+      this.enemyStructuresDown++;
+      if (this.charging) {
+        const bounty = structStats(t.kind).bounty ?? 0;
+        this.scrap += bounty;
+        this.scrapEarned += bounty;
+      }
+    }
     this.removeTower(t);
   }
 
@@ -4840,6 +4975,7 @@ export class Sim {
     // over a copy: a wrecked tower leaves the list under the loop. The
     // core is a structure like any other to a blast
     for (const t of [...this.towers, this.core]) {
+      if (teamOf(t) !== "player") continue; // the swarm never hurts its own
       const half = (this.sizeOf(t) * CELL) / 2;
       const r = reach + half;
       const dx = t.x - x, dy = t.y - y;
@@ -4863,6 +4999,7 @@ export class Sim {
     this.focusUid = this.uid[idx];
     this.focusIdx = idx;
     this.focusShieldTower = -1;
+    this.focusTower = null;
   }
 
   /** mark one shield tower for focus fire — same contract, the other kind */
@@ -4871,12 +5008,25 @@ export class Sim {
     this.focusShieldTower = idx;
     this.focusUid = -1;
     this.focusIdx = -1;
+    this.focusTower = null;
+  }
+
+  /** mark one of the SWARM's structures for focus fire — the third kind.
+   *  The mark dies with the building: a wrecked one leaves cellTower, and
+   *  the fire loop checks it is still standing before aiming at it */
+  setFocusTower(t: Tower): void {
+    if (t.team !== "enemy" || this.cellTower[t.gy * COLS + t.gx] !== t) return;
+    this.focusTower = t;
+    this.focusShieldTower = -1;
+    this.focusUid = -1;
+    this.focusIdx = -1;
   }
 
   clearFocus(): void {
     this.focusUid = -1;
     this.focusIdx = -1;
     this.focusShieldTower = -1;
+    this.focusTower = null;
   }
 
   /**
@@ -4885,6 +5035,14 @@ export class Sim {
    * (or the marked unit has died since, which clears the mark for good).
    */
   focusMark(): { x: number; y: number; top: number } | null {
+    if (this.focusTower) {
+      const t = this.focusTower;
+      if (this.cellTower[t.gy * COLS + t.gx] !== t) {
+        this.focusTower = null;
+        return null;
+      }
+      return { x: t.x, y: t.y, top: t.y - structStats(t.kind).size * CELL * 0.75 };
+    }
     if (this.focusShieldTower >= 0) {
       const s = this.shieldTowers[this.focusShieldTower];
       if (!s || s.hp <= 0) return null;
@@ -4950,7 +5108,7 @@ export class Sim {
       // the ring a finished building throws as its scaffold comes off,
       // sized to the footprint that just stood up (the Shockwave branch in
       // the renderer reads e.len as the reach)
-      const sz = TOWERS[t.kind].size * CELL;
+      const sz = structStats(t.kind).size * CELL;
       this.pushFx(t.x, t.y, 0.35, FxKind.Shockwave, 0, sz * 0.7);
     }
   }
@@ -4992,7 +5150,7 @@ export class Sim {
       const maxHp = towerMaxHp(t.kind);
       if (t.hp < maxHp * DAMAGE_SMOKE_BELOW) {
         const hurt = 1 - t.hp / (maxHp * DAMAGE_SMOKE_BELOW);
-        const cells = TOWERS[t.kind].size;
+        const cells = structStats(t.kind).size;
         if (Math.random() < DAMAGE_SMOKE_RATE * hurt * cells * dt) {
           const sz = cells * CELL;
           this.pushFx(
@@ -5002,13 +5160,17 @@ export class Sim {
           );
         }
       }
-      const st = this.statsFor(t.kind);
+      // the SWARM's turrets fire the stock table: the player's upgrade
+      // branches are the player's
+      const hostile = t.team === "enemy";
+      const st = isPlayerKind(t.kind) && !hostile ? this.statsFor(t.kind) : structStats(t.kind);
       // a wall has no gun at all: it smokes when hurt (above) and that is
       // the whole of what it does each tick
       if (st.wall) continue;
-      // a tractor turret has no reload and no volley — it holds a beam
+      // a tractor turret has no reload and no volley — it holds a beam.
+      // The swarm's drags nothing: its beam only ever caught units
       if (st.bullet.tractor) {
-        this.updateTractor(t, st, dt);
+        if (!hostile) this.updateTractor(t, st, dt);
         continue;
       }
       // LaserTurret: while the beam is lit the reload does NOT run, so a
@@ -5057,10 +5219,24 @@ export class Sim {
       const r2t = st.range * st.range;
       let best = -1;
       let shr: ShieldTower | null = null;
-      // THE PLAYER'S MARK FIRST (setFocusUnit / setFocusShieldTower): a tapped
-      // target overrides both the held target and the scan for every
-      // turret that can reach it. At most one of the two kinds is ever set
-      if (this.focusIdx >= 0 && this.uid[this.focusIdx] === this.focusUid) {
+      let aimT: Structure | null = null;
+      if (hostile) {
+        // THE SWARM'S TURRET sees no unit at all: it holds on the nearest
+        // of the player's structures within its range — the core
+        // included — for as long as that stands and stays in reach, and
+        // re-picks on the same clock the player's guns do
+        const held = t.aimTower;
+        if (held && teamOf(held) === "player" && this.inReach(held, t.x, t.y, st.range)) aimT = held;
+        t.targetT -= dt;
+        if (!aimT || t.targetT <= 0) {
+          aimT = this.nearestStructure(t.x, t.y, st.range, false, "player");
+          t.targetT = TARGET_INTERVAL;
+        }
+      } else if (this.focusIdx >= 0 && this.uid[this.focusIdx] === this.focusUid) {
+        // THE PLAYER'S MARK FIRST (setFocusUnit / setFocusShieldTower /
+        // setFocusTower): a tapped target overrides both the held target
+        // and the scan for every turret that can reach it. At most one of
+        // the three kinds is ever set
         const fi = this.focusIdx;
         if ((this.ufly[fi] !== 0 ? st.targetAir : st.targetGround) && this.unitVisible(fi)) {
           const dx = upx[fi] - t.x, dy = upy[fi] - t.y;
@@ -5072,8 +5248,11 @@ export class Sim {
           const dx = s.x - t.x, dy = s.y - t.y;
           if (dx * dx + dy * dy < r2t) shr = s;
         }
+      } else if (this.focusTower && st.targetGround) {
+        const ft = this.focusTower;
+        if (this.cellTower[ft.gy * COLS + ft.gx] === ft && this.inReach(ft, t.x, t.y, st.range)) aimT = ft;
       }
-      if (best < 0 && !shr) {
+      if (!hostile && best < 0 && !shr && !aimT) {
         if (
           t.target >= 0 &&
           t.targetIdx >= 0 &&
@@ -5103,10 +5282,15 @@ export class Sim {
           const si = this.idleShieldTowerFor(t, r2t);
           if (si >= 0) shr = this.shieldTowers[si];
         }
+        // ...and the swarm's own formation, the same way: a turret with
+        // no body in range takes the nearest enemy building it can reach
+        if (best < 0 && !shr && st.targetGround && this.enemyStructures > 0)
+          aimT = this.nearestStructure(t.x, t.y, st.range, false, "enemy");
       }
       t.targetIdx = best;
       t.aimShieldTower = shr ? this.shieldTowers.indexOf(shr) : -1;
-      if (best < 0 && !shr) {
+      t.aimTower = aimT;
+      if (best < 0 && !shr && !aimT) {
         // nothing in range: a beam already lit keeps burning down its
         // duration where it is, exactly as Mindustry's held bullet does
         continue;
@@ -5116,9 +5300,12 @@ export class Sim {
       // bullets (speed ~0) aim straight at the target, like Mindustry's
       // predictTarget guard (bullet.speed >= 0.01 or no lead at all).
       // A shield tower is a building: no velocity, no lead, aim at the centre
-      const dx = (shr ? shr.x : upx[best]) - t.x, dy = (shr ? shr.y : upy[best]) - t.y;
+      // A structure is a building: no velocity, no lead, aim at the centre
+      const bx = shr ? shr.x : aimT ? aimT.x : upx[best];
+      const by = shr ? shr.y : aimT ? aimT.y : upy[best];
+      const dx = bx - t.x, dy = by - t.y;
       let aimX = dx, aimY = dy;
-      if (!shr && st.bullet.speed >= 1) {
+      if (!shr && !aimT && st.bullet.speed >= 1) {
         const tvx = uvx[best], tvy = uvy[best];
         const s2 = st.bullet.speed * st.bullet.speed;
         const qa = tvx * tvx + tvy * tvy - s2;
@@ -5334,7 +5521,23 @@ export class Sim {
     // arrays. Projectile weapons need nothing here: their shots really fly,
     // and the shield tower's dome and body collide them like anything else
     const shrT = t.aimShieldTower >= 0 ? this.shieldTowers[t.aimShieldTower] : null;
+    // ...and the same for a building either side is aiming at
+    const aimT = t.aimTower;
+    const hitAimed = (): void => {
+      if (shrT) this.shieldTowerHit(shrT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
+      if (aimT) this.structureHit(aimT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
+    };
+    // THE SWARM'S OWN INSTANT WEAPONS sweep nothing: every sweep below
+    // walks the swarm's bodies. Its shot is the target it was aimed at,
+    // plus the same shape on screen — the bolt, the beam, the rail's
+    // trail, the ray — at the weapon's own length
+    const hostile = t.team === "enemy";
     if (st.bullet.lightning) {
+      if (hostile) {
+        this.unitBolt(x, y, a, st.bullet.lightning.length, st.bullet.fxColor ?? PAL.lancerLaser);
+        hitAimed();
+        return;
+      }
       const pts = this.lightningBolt(
         x, y, a,
         st.bullet.damage,
@@ -5347,47 +5550,56 @@ export class Sim {
         st.bullet.fxColor,
       );
       this.pushBolt(x, y, st.bullet.lifetime, pts, true); // the bolt IS arc's shot
-      if (shrT) this.shieldTowerHit(shrT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
+      hitAimed();
       return;
     }
     if (st.bullet.laser) {
-      const reached = this.laserBeam(
-        x, y, a,
-        st.bullet.laser.length,
-        st.bullet.damage,
-        st.bullet.laser.pierceCap,
-        st.bullet.armorMultiplier ?? 1,
-        st.bullet.navalMultiplier ?? 1,
-        st.bullet.collidesAir,
-        st.bullet.collidesGround,
-        st.bullet.hitFx,
-        st.bullet.fxColor,
-      );
+      const reached = hostile
+        ? st.bullet.laser.length
+        : this.laserBeam(
+            x, y, a,
+            st.bullet.laser.length,
+            st.bullet.damage,
+            st.bullet.laser.pierceCap,
+            st.bullet.armorMultiplier ?? 1,
+            st.bullet.navalMultiplier ?? 1,
+            st.bullet.collidesAir,
+            st.bullet.collidesGround,
+            st.bullet.hitFx,
+            st.bullet.fxColor,
+          );
       // forced: the beam is lancer's entire visible shot (damage is instant)
       this.pushFx(x, y, st.bullet.lifetime, FxKind.Laser, a, reached, 0, 0, true);
-      if (shrT) this.shieldTowerHit(shrT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
+      hitAimed();
       return;
     }
     if (st.bullet.rail) {
-      this.railShot(x, y, a, st.bullet);
-      if (shrT) this.shieldTowerHit(shrT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
+      if (hostile) {
+        const spec = st.bullet.rail;
+        if (st.bullet.pointFx !== undefined)
+          for (let d = 0; d <= spec.length; d += spec.pointSpacing)
+            this.bulletFx(st.bullet.pointFx, x + cos * d, y + sin * d, a, st.bullet.fxColor, true);
+        this.bulletFx(st.bullet.despawnFx, x, y, a, st.bullet.fxColor, true);
+      } else this.railShot(x, y, a, st.bullet);
+      hitAimed();
       return;
     }
     if (st.bullet.ray) {
-      this.hitscanRay(
-        x,
-        y,
-        a,
-        st.bullet.ray.length,
-        st.bullet.damage,
-        st.bullet.collidesAir,
-        st.bullet.collidesGround,
-        st.bullet.hitFx,
-        st.bullet.fxColor,
-      );
+      if (!hostile)
+        this.hitscanRay(
+          x,
+          y,
+          a,
+          st.bullet.ray.length,
+          st.bullet.damage,
+          st.bullet.collidesAir,
+          st.bullet.collidesGround,
+          st.bullet.hitFx,
+          st.bullet.fxColor,
+        );
       // forced: the ray is fuse's entire visible shot (damage is instant)
       this.pushFx(x, y, st.bullet.lifetime, FxKind.Shrapnel, a, st.bullet.ray.length, 0, 0, true);
-      if (shrT) this.shieldTowerHit(shrT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
+      hitAimed();
       return;
     }
     // Mindustry scaleLife (Turret.java): an artillery shell's lifetime
@@ -5425,7 +5637,40 @@ export class Sim {
       pierced: st.bullet.pierce ? [] : null,
       trailT: 0,
       frag: false,
+      enemy: hostile,
     });
+  }
+
+  /**
+   * ONE STEP OF THE SWARM'S OWN TURRET SHOT, already moved: it flies past
+   * every unit and lands on the first of the PLAYER's structures it is
+   * over — the enemy shots' rule (updateEnemyShots), on a turret bullet.
+   * An artillery shell only ever bursts where its life ran out. Returns
+   * true once the shot is spent, with its hit, blast and fragments done.
+   */
+  private stepHostileProjectile(pr: Projectile, b: BulletStats): boolean {
+    const off = pr.x < 0 || pr.y < 0 || pr.x >= W || pr.y >= H;
+    let dead = pr.life <= 0 || off;
+    const rot = Math.atan2(pr.vy, pr.vx);
+    if (!dead && !b.artillery) {
+      const s = this.structureAt(pr.x, pr.y, "player");
+      if (s) {
+        this.hitStructure(s, b.damage);
+        if (b.splash <= 0) this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor);
+        dead = true;
+      }
+    }
+    if (!dead) return false;
+    if (!off) {
+      if (b.splash > 0) {
+        this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor);
+        this.bulletFx(b.hitFx2, pr.x, pr.y, rot, b.fxColor);
+        this.splashStructures(pr.x, pr.y, b.splash, b.splashRadius);
+      }
+      if (pr.life <= 0) this.bulletFx(b.despawnFx, pr.x, pr.y, rot, b.fxColor);
+      if (b.frag) this.createFrags(pr, b.frag);
+    }
+    return true;
   }
 
   /**
@@ -5457,6 +5702,7 @@ export class Sim {
         pierced: child.pierce ? [] : null,
         trailT: 0,
         frag: true,
+        enemy: pr.enemy, // a fragment is its parent's side's
       });
     }
   }
@@ -5881,27 +6127,33 @@ export class Sim {
     t.beamDmgT -= dt;
     if (t.beamDmgT <= 0) {
       t.beamDmgT += cont.damageInterval;
-      const { upx, upy, uhp } = this;
-      const hits = this.boltHits, dists = this.boltDists;
-      this.collideLine(
-        t.beamOX, t.beamOY, Math.cos(t.beamRot), Math.sin(t.beamRot),
-        reach, b.collidesAir, b.collidesGround, hits, dists,
-      );
-      const dead: number[] = [];
-      // pierceCap -1: the beam stops for nothing
-      for (const i of hits) {
-        this.damageUnit(i, b.damage, b.pierceArmor ?? false, b.armorMultiplier ?? 1, b.navalMultiplier ?? 1);
-        if (uhp[i] > 0) this.bulletFx(b.hitFx, upx[i], upy[i], t.beamRot, b.fxColor);
-        else dead.push(i);
+      // the SWARM's beam knows no unit: it burns the structure it is held
+      // on and nothing else (the sweep below is over the swarm's own bodies)
+      if (t.team === "player") {
+        const { upx, upy, uhp } = this;
+        const hits = this.boltHits, dists = this.boltDists;
+        this.collideLine(
+          t.beamOX, t.beamOY, Math.cos(t.beamRot), Math.sin(t.beamRot),
+          reach, b.collidesAir, b.collidesGround, hits, dists,
+        );
+        const dead: number[] = [];
+        // pierceCap -1: the beam stops for nothing
+        for (const i of hits) {
+          this.damageUnit(i, b.damage, b.pierceArmor ?? false, b.armorMultiplier ?? 1, b.navalMultiplier ?? 1);
+          if (uhp[i] > 0) this.bulletFx(b.hitFx, upx[i], upy[i], t.beamRot, b.fxColor);
+          else dead.push(i);
+        }
+        dead.sort((p, q) => q - p);
+        for (const i of dead) if (uhp[i] <= 0) this.killUnit(i);
       }
-      dead.sort((p, q) => q - p);
-      for (const i of dead) if (uhp[i] <= 0) this.killUnit(i);
       // a beam held on a shield tower burns it exactly as it burns a unit — the
       // collide line above knows only the unit arrays (see fireShot)
       if (t.aimShieldTower >= 0) {
         const s = this.shieldTowers[t.aimShieldTower];
         if (s && s.hp > 0) this.shieldTowerHit(s, b.damage, b.hitFx, t.beamRot, b.fxColor);
       }
+      // ...and one held on a building, either side's, burns that
+      if (t.aimTower) this.structureHit(t.aimTower, b.damage, b.hitFx, t.beamRot, b.fxColor);
     }
     t.beamT -= dt;
     if (t.beamT <= 0) {
@@ -6154,12 +6406,14 @@ export class Sim {
     this.collectForceFields();
     for (let p = projs.length - 1; p >= 0; p--) {
       const pr = projs[p];
-      const b = this.bulletFor(pr.kind, pr.frag);
+      // the swarm's turrets fire the stock table (see fireTowers)
+      const b = pr.enemy || !isPlayerKind(pr.kind) ? bulletOf(pr.kind, pr.frag) : this.bulletFor(pr.kind, pr.frag);
       // BulletType.updateHoming, BEFORE the step: the shot picks the
       // nearest target within homingRange OF ITSELF and swings toward it,
       // re-picking every tick — so a missile whose mark dies latches onto
-      // whatever it passes next instead of flying on into the ground
-      if (b.homing) {
+      // whatever it passes next instead of flying on into the ground.
+      // The swarm's missile homes on nothing: its marks are buildings
+      if (b.homing && !pr.enemy) {
         const tgt = this.nearestInRange(pr.x, pr.y, b.homing.range, b.collidesAir, b.collidesGround);
         if (tgt >= 0) {
           const want = Math.atan2(upy[tgt] - pr.y, upx[tgt] - pr.x);
@@ -6177,6 +6431,14 @@ export class Sim {
       pr.y += pr.vy * dt;
       pr.life -= dt;
       pr.age += dt;
+      // the swarm's own turret shot: none of the sweeps below are its
+      if (pr.enemy) {
+        if (this.stepHostileProjectile(pr, b)) {
+          projs[p] = projs[projs.length - 1];
+          projs.pop();
+        }
+        continue;
+      }
 
       // BulletType.updateTrailEffects: a puff on a per-tick CHANCE, at a
       // constant radius — Fx.missileTrail, which is Fx.artilleryTrail's
@@ -6329,6 +6591,25 @@ export class Sim {
             }
           }
         }
+        // THE SWARM'S BUILDINGS stand in the shot's way too: one grid read
+        // at the shot, the enemy shots' own rule turned round. A piercing
+        // shot goes through a building once, on a sentinel below any
+        // shield tower's
+        if (!dead && this.enemyStructures > 0) {
+          const s = this.structureAt(pr.x, pr.y, "enemy");
+          if (s) {
+            const sid = -1000000 - (s.gy * COLS + s.gx);
+            if (!pr.pierced || !pr.pierced.includes(sid)) {
+              this.damageTower(s, b.damage);
+              if (b.splash <= 0) this.bulletFx(b.hitFx, pr.x, pr.y, Math.atan2(pr.vy, pr.vx), b.fxColor);
+              if (!pr.pierced) dead = true;
+              else {
+                pr.pierced.push(sid);
+                if (b.pierceCap !== undefined && pr.pierced.length >= b.pierceCap) dead = true;
+              }
+            }
+          }
+        }
       }
       if (dead) {
         const rot = Math.atan2(pr.vy, pr.vx);
@@ -6445,6 +6726,15 @@ export class Sim {
         if (sdx * sdx + sdy * sdy >= rr * rr) continue;
         const d = Math.sqrt(sdx * sdx + sdy * sdy);
         this.damageShieldTower(s, dmg * Math.max(0, 0.4 + 0.6 * (1 - d / radius)));
+      }
+      // ...and so do the SWARM's buildings, by their footprint's edge, at
+      // the same falloff — a shell landing beside its wall chips the wall
+      if (this.enemyStructures > 0) {
+        for (const s of this.structuresWithin(x, y, radius, this.splashOut, "enemy")) {
+          const half = (this.sizeOf(s) * CELL) / 2;
+          const d = Math.max(0, Math.hypot(s.x - x, s.y - y) - half);
+          this.damageTower(s, dmg * Math.max(0, 0.4 + 0.6 * (1 - d / radius)));
+        }
       }
     }
     // damage first (indices stay stable), then remove the dead from the

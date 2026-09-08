@@ -23,19 +23,21 @@ import { CELL, clamp, COLS, NCELLS, ROWS } from "./constants";
  * looking for it); a wall, or a shell still going up, sees a few cells
  * round itself (VISION_MIN_CELLS) — enough to watch what is chewing it.
  *
- * SIGHT STOPS AT A HILL. Vision is cast as rays from the source to every
- * cell on the rim of its circle, walked one grid step at a time (the same
- * walk Sim.hasSight makes), and a ray that enters rock reveals the rock's
- * FACE and goes no further. A ridge is seen and what is behind it is
- * not; the inside of a range is never revealed at all, which is why the
- * fog is the hill darkness too (the renderer's DARK_RADIUS pass steps
- * aside while fog is on).
+ * NOTHING STOPS SIGHT. A source reveals its whole circle — rock, the
+ * ground behind rock, everything inside the radius — so a turret watches
+ * over a ridge as readily as across open floor and a hill is never a
+ * black bite out of what the player has lit. The fog says how far the
+ * line reaches, not what stands in the way of it; whether a turret can
+ * SHOOT what it sees is a separate question and still Sim.hasSight's,
+ * which does stop at rock. A revealed hill is lit right through, middle
+ * and all: the renderer's DARK_RADIUS darkness stands down while a fog
+ * is on, so the fog's own black is the only black on the map.
  *
  * WHEN IT IS RECOMPUTED. Vision only ever changes when a structure
  * appears, finishes or goes — the enemy sees nothing for the player.
- * Adding a source is ADDITIVE, so a placed turret casts its rays at once
- * (a chain of walls dragged out into the fog reveals as it goes, each
- * wall lighting the ground the next one needs). Losing a source is the
+ * Adding a source is ADDITIVE, so a placed turret lights its circle at
+ * once (a chain of walls dragged out into the fog reveals as it goes,
+ * each wall lighting the ground the next one needs). Losing a source is the
  * one case that cannot be undone locally, so it marks the fog dirty and
  * the next `ensure` recomputes the whole thing from every source still
  * standing — a few milliseconds, paid once per demolition, never per
@@ -49,8 +51,13 @@ export const FOG_VISIBLE = 2;
 export const VISION_OF_RANGE = 0.75;
 /** what a wall, a shell under construction, or a rangeless turret sees, in cells */
 export const VISION_MIN_CELLS = 3;
-/** what the core sees, in cells */
-export const CORE_VISION_CELLS = 14;
+/**
+ * What the core sees, in cells — far more than any turret. The core is
+ * the eye of the position: a run opens with the ground the player will
+ * build on already lit, out to about the width of the starting view,
+ * and the rest of the map (256 cells across) still dark.
+ */
+export const CORE_VISION_CELLS = 34;
 /** how dark seen-but-unwatched ground is drawn: black at this alpha */
 export const FOG_SEEN_ALPHA = 0.5;
 
@@ -76,12 +83,10 @@ export class Fog {
    * same way the game does — it is simply all FOG_VISIBLE there.
    */
   enabled = true;
-  private hills: Uint8Array = new Uint8Array(NCELLS);
   private dirty = false;
 
-  /** a new map: nothing seen, and the rock sight stops at */
-  reset(hills: Uint8Array, enabled: boolean): void {
-    this.hills = hills;
+  /** a new map: nothing seen */
+  reset(enabled: boolean): void {
     this.enabled = enabled;
     this.state.fill(enabled ? FOG_NEVER : FOG_VISIBLE);
     this.dirty = false;
@@ -112,8 +117,8 @@ export class Fog {
   }
 
   /**
-   * A source that just appeared, or just grew (a shell finishing): cast
-   * its rays now. Additive, so nothing else needs redoing.
+   * A source that just appeared, or just grew (a shell finishing): light
+   * its circle now. Additive, so nothing else needs redoing.
    */
   add(src: VisionSource): void {
     if (!this.enabled) return;
@@ -135,10 +140,9 @@ export class Fog {
   }
 
   /**
-   * One source's sight: a ray to every cell on the rim of the square that
-   * holds its circle, each walked cell by cell from the source outward and
-   * stopped at the circle's edge or at the first rock it enters. The rock
-   * is marked before the stop, so a ridge shows its face.
+   * One source's sight: every cell whose centre falls inside the circle,
+   * whatever stands between. See the note above — the fog is a radius,
+   * not a line of sight.
    */
   private cast(src: VisionSource): void {
     const s = this.state;
@@ -147,49 +151,14 @@ export class Fog {
     const rc = Math.max(1, Math.ceil(src.r / CELL));
     const r2 = src.r * src.r;
     s[cy * COLS + cx] = FOG_VISIBLE;
-    const x0 = cx - rc, x1 = cx + rc, y0 = cy - rc, y1 = cy + rc;
-    for (let x = x0; x <= x1; x++) {
-      this.ray(src, cx, cy, x, y0, r2);
-      this.ray(src, cx, cy, x, y1, r2);
-    }
-    for (let y = y0 + 1; y < y1; y++) {
-      this.ray(src, cx, cy, x0, y, r2);
-      this.ray(src, cx, cy, x1, y, r2);
-    }
-  }
-
-  /**
-   * The grid walk of Sim.hasSight: from (cx, cy) toward (ex, ey), one axis
-   * step at a time in the order the line crosses cell boundaries, so the
-   * cells marked are exactly the cells the line passes through and a
-   * diagonal never slips between two rocks.
-   */
-  private ray(src: VisionSource, cx: number, cy: number, ex: number, ey: number, r2: number): void {
-    const s = this.state, hills = this.hills;
-    const x0 = src.x, y0 = src.y;
-    const x1 = (ex + 0.5) * CELL, y1 = (ey + 0.5) * CELL;
-    const dx = x1 - x0, dy = y1 - y0;
-    const sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1;
-    let tx = dx === 0 ? Infinity : ((dx > 0 ? cx + 1 : cx) * CELL - x0) / dx;
-    let ty = dy === 0 ? Infinity : ((dy > 0 ? cy + 1 : cy) * CELL - y0) / dy;
-    const gx = dx === 0 ? Infinity : Math.abs(CELL / dx);
-    const gy = dy === 0 ? Infinity : Math.abs(CELL / dy);
-    for (let n = COLS + ROWS + 2; n > 0; n--) {
-      if (tx < ty) {
-        cx += sx;
-        tx += gx;
-      } else {
-        cy += sy;
-        ty += gy;
+    const y0 = Math.max(0, cy - rc), y1 = Math.min(ROWS - 1, cy + rc);
+    const x0 = Math.max(0, cx - rc), x1 = Math.min(COLS - 1, cx + rc);
+    for (let y = y0; y <= y1; y++) {
+      const dy = (y + 0.5) * CELL - src.y, dy2 = dy * dy;
+      for (let x = x0; x <= x1; x++) {
+        const dx = (x + 0.5) * CELL - src.x;
+        if (dx * dx + dy2 <= r2) s[y * COLS + x] = FOG_VISIBLE;
       }
-      if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) return;
-      // the circle's edge, measured to the cell's centre
-      const ddx = (cx + 0.5) * CELL - x0, ddy = (cy + 0.5) * CELL - y0;
-      if (ddx * ddx + ddy * ddy > r2) return;
-      const i = cy * COLS + cx;
-      s[i] = FOG_VISIBLE;
-      if (hills[i]) return; // the face is seen; what is behind it is not
-      if (cx === ex && cy === ey) return;
     }
   }
 }

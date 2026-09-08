@@ -1,4 +1,4 @@
-import type { TowerKind } from "@/game/types";
+import type { EnemyKind, TowerKind } from "@/game/types";
 
 const T = "/mindustry/sprites/blocks/turrets";
 
@@ -31,4 +31,15 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   "copper-wall-large": "/mindustry/sprites/blocks/walls/copper-wall-large.png",
   "titanium-wall-large": "/mindustry/sprites/blocks/walls/titanium-wall-large.png",
   "thorium-wall-large": "/mindustry/sprites/blocks/walls/thorium-wall-large.png",
+};
+
+/** the swarm's own buildings' sprites (types.ts ENEMY_KINDS), for the map
+ *  editor's palette and its overlay */
+export const ENEMY_ICONS: Record<EnemyKind, string> = {
+  breach: `${T}/breach.png`,
+  diffuse: `${T}/diffuse/diffuse-preview.png`,
+  titan: `${T}/titan/titan-preview.png`,
+  "scrap-wall": "/mindustry/sprites/blocks/walls/scrap-wall1.png",
+  "scrap-wall-large": "/mindustry/sprites/blocks/walls/scrap-wall-large1.png",
+  "scrap-wall-huge": "/mindustry/sprites/blocks/walls/scrap-wall-huge1.png",
 };

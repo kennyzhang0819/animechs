@@ -10,7 +10,7 @@ import {
 } from "./maps";
 import { FOG_NEVER, FOG_SEEN, FOG_SEEN_ALPHA, FOG_VISIBLE } from "./fog";
 import { SHIELD_TOWER_SIZE } from "./mutation";
-import { CELL, clamp, COLS, H, ROWS, TOWERS, W } from "./constants";
+import { CELL, clamp, COLS, H, ROWS, structStats, TOWERS, W } from "./constants";
 import { loadBalanceDoc } from "./balance";
 import {
   loadLevelDocs,
@@ -566,6 +566,13 @@ export class Game {
       this.selected = null;
       return;
     }
+    // one of the swarm's buildings is a target, not a selection
+    const et = this.sim.enemyTowerAt(p.x, p.y);
+    if (et) {
+      this.sim.setFocusTower(et);
+      this.selected = null;
+      return;
+    }
     const t = this.sim.towerAt(p.x, p.y);
     this.selected = t;
     if (!t) this.sim.clearFocus();
@@ -1032,7 +1039,10 @@ export class Game {
 
   /** what is standing right now, in save shape */
   layout(): TowerPlacement[] {
-    return this.sim.towers.map((t) => ({ kind: t.kind, gx: t.gx, gy: t.gy }));
+    // the player's own: the swarm's formation is the map's, not the save's
+    return this.sim.towers
+      .filter((t) => t.team === "player")
+      .map((t) => ({ kind: t.kind as TowerKind, gx: t.gx, gy: t.gy }));
   }
 
   /**
@@ -1371,10 +1381,17 @@ export class Game {
       if (fogOn && !fog.seenAt(s.x, s.y)) continue;
       box(s.gx, s.gy, SHIELD_TOWER_SIZE, 0xf2, 0x55, 0x55);
     }
-    // the player's, over everything: the line is what the map is read for
+    // the swarm's formation, in its red, wherever it has been seen...
     for (const t of this.sim.towers) {
+      if (t.team !== "enemy") continue;
+      if (fogOn && !fog.seenAt(t.x, t.y)) continue;
+      box(t.gx, t.gy, structStats(t.kind).size, 0xf2, 0x55, 0x55);
+    }
+    // ...and the player's, over everything: the line is what the map is read for
+    for (const t of this.sim.towers) {
+      if (t.team !== "player") continue;
       const v = t.buildT > 0 ? 0x9a : 0xff;
-      box(t.gx, t.gy, TOWERS[t.kind].size, v, v, v);
+      box(t.gx, t.gy, structStats(t.kind).size, v, v, v);
     }
     box(T.base.x, T.base.y, T.base.size, 0xff, 0xff, 0xff);
     lc.putImageData(img, 0, 0);
@@ -1475,13 +1492,13 @@ export class Game {
       // the LIVE range, not the table's: an upgrade branch that lengthened
       // this turret's reach has to move the ring it is drawn with, or the
       // ring becomes a lie about what the turret can shoot (Sim.statsFor)
-      c.arc(t.x, t.y, this.sim.statsFor(t.kind).range, 0, Math.PI * 2);
+      c.arc(t.x, t.y, this.sim.statsFor(t.kind as TowerKind).range, 0, Math.PI * 2);
       c.fillStyle = "rgba(255,211,127,0.06)";
       c.fill();
       c.strokeStyle = "rgba(255,211,127,0.7)";
       c.lineWidth = 1.5;
       c.stroke();
-      const selPx = TOWERS[t.kind].size * CELL;
+      const selPx = structStats(t.kind).size * CELL;
       c.strokeRect(t.gx * CELL + 1, t.gy * CELL + 1, selPx - 2, selPx - 2);
     }
 
@@ -1514,7 +1531,7 @@ export class Game {
     // 2D context has and the sprite atlas does not.
     for (const t of this.sim.towers) {
       if (t.buildT <= 0 || t.buildTotal <= 0) continue;
-      const sz = TOWERS[t.kind].size * CELL;
+      const sz = structStats(t.kind).size * CELL;
       // sized to the footprint, but never smaller than a ring a player can
       // read at the zoom they actually play at — a 1x1 is 20 world px wide
       // and a ring drawn strictly inside one is a dot

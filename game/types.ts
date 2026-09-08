@@ -57,6 +57,28 @@ export const TOWER_KINDS = [
 export type TowerKind = (typeof TOWER_KINDS)[number];
 
 /**
+ * THE SWARM'S OWN BUILDINGS — a different roster from the player's, not
+ * the player's turrets in another colour: Erekir's guns on their
+ * reinforced plates, and the scrap walls Mindustry's enemy bases are
+ * built from. Stats in ENEMY_STRUCTS (constants.ts), art in the atlas's
+ * enemy strip. A map's formation (MapData.enemies) is drawn from these
+ * and nothing else; the player never builds one and never pays for one.
+ */
+export const ENEMY_KINDS = [
+  "breach",
+  "diffuse",
+  "titan",
+  "scrap-wall",
+  "scrap-wall-large",
+  "scrap-wall-huge",
+] as const;
+export type EnemyKind = (typeof ENEMY_KINDS)[number];
+/** anything a Tower record may be: the player's roster or the swarm's */
+export type StructKind = TowerKind | EnemyKind;
+export const isPlayerKind = (k: StructKind): k is TowerKind =>
+  (TOWER_KINDS as readonly string[]).includes(k);
+
+/**
  * THE CORE — the one structure the swarm is on the map to destroy, and the
  * one it cannot be without. It stands where a map's base does (terrain.base),
  * it is in the structure grid like a turret (Sim.cellTower) so every unit's
@@ -81,8 +103,29 @@ export interface Core {
 export type Structure = Tower | Core;
 export const isCore = (s: Structure): s is Core => "core" in s;
 
+/**
+ * WHOSE A STRUCTURE IS. The player's turrets and walls are "player", and
+ * so is the core; a map may also start with a formation of the SWARM's
+ * own turrets and walls ("enemy" — MapData.enemies). The two sides fight
+ * only each other: the player's guns shoot the swarm and its buildings,
+ * the swarm and its guns shoot the player's. Nothing sells, buys or
+ * upgrades an enemy structure, and the swarm walks around its own walls
+ * rather than through them.
+ */
+export type Team = "player" | "enemy";
+export const teamOf = (s: Structure): Team => (isCore(s) ? "player" : s.team);
+
+/** a structure a map starts with: what, whose, and its top-left cell */
+export interface StructurePlacement {
+  kind: EnemyKind;
+  gx: number;
+  gy: number;
+}
+
 export interface Tower {
-  kind: TowerKind;
+  /** the player's roster on the player's side; the swarm's on the swarm's */
+  kind: StructKind;
+  team: Team;
   gx: number; // top-left cell of the size x size footprint (TOWERS[kind].size)
   gy: number;
   x: number; // world-space center
@@ -121,6 +164,14 @@ export interface Tower {
    * know when "the target" is a shield tower and not a unit index.
    */
   aimShieldTower: number;
+  /**
+   * The STRUCTURE this tower's current volley is aimed at — a player
+   * turret's shot at one of the swarm's buildings, or an enemy turret's
+   * shot at one of the player's (the core included) — or null, the usual
+   * case. Instant weapons hand their damage straight to it (fireShot),
+   * exactly as they do for aimShieldTower.
+   */
+  aimTower: Structure | null;
   cd: number; // reload: seconds until the next volley is ready
   /**
    * How fast this tower's reload runs: 1 everywhere, HYDROPHOBIC_RATE on
@@ -202,7 +253,7 @@ export interface EnemyShot {
 }
 
 export interface Projectile {
-  kind: TowerKind; // which tower's bullet stats drive it
+  kind: StructKind; // which tower's bullet stats drive it (either roster)
   x: number;
   y: number;
   vx: number;
@@ -226,6 +277,10 @@ export interface Projectile {
   // flag rather than a stats pointer keeps a projectile a flat record —
   // see bulletOf() in constants.ts
   frag: boolean;
+  // fired by one of the SWARM's turrets (Tower.team): it flies past every
+  // unit and lands on the player's structures, by the cell it is over —
+  // the enemy shots' rule (updateEnemyShots) on the turrets' own bullets
+  enemy: boolean;
 }
 
 export const enum FxKind {

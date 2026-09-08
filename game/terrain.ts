@@ -1,6 +1,7 @@
 import { ALL_MOVE_BITS, BASE, CELL, clamp, COLS, LAYER_BIT, NCELLS, ROWS } from "./constants";
 import { DECOR_TILES, WATER_FLOOR_GROUPS } from "./atlas";
 import { fitSpawnCircles, rasterizeSpawns, type SpawnCircle } from "./maps";
+import type { StructurePlacement } from "./types";
 
 export interface Prop {
   x: number; // world px, sprite center
@@ -131,6 +132,13 @@ export interface Terrain {
   spawn: Uint8Array;
   pines: Prop[]; // blocking tree cells, drawn as overhanging props
   decor: Prop[]; // non-blocking props: boulders, shrubs
+  /**
+   * THE SWARM'S OWN FORMATION: turrets and walls the map starts with,
+   * stood up on the swarm's side when the sim resets (Sim.reset, via
+   * placeEnemyStructure). Authored in the map editor; `gx, gy` is the
+   * footprint's top-left cell, the same shape the player's layout uses
+   */
+  enemies: StructurePlacement[];
   valleyY: Float32Array; // carved main-valley centerline per column
   /** this map's base: top-left cell + edge length, in cells */
   base: { x: number; y: number; size: number };
@@ -433,7 +441,7 @@ export function generateTerrain(seed: number): Terrain {
   const spawn = rasterizeSpawns(spawns, { blocked, floor });
 
   return {
-    blocked, floor, wall, spawns, spawn, pines, decor, valleyY,
+    blocked, floor, wall, spawns, spawn, pines, decor, enemies: [], valleyY,
     base: { ...BASE }, rows: ROWS, cols: COLS,
   };
 }
