@@ -454,6 +454,11 @@ export class Game {
   private mmBase: HTMLCanvasElement | null = null;
   /** the per-frame layer over the ground: fog wash, bodies, structures */
   private mmLayer: HTMLCanvasElement | null = null;
+  /** ...and the pixels it is painted into, kept between frames. A 512-cell
+   *  map is a megabyte of RGBA, and asking the context for a new one every
+   *  frame is sixty megabytes a second of garbage for a buffer that is
+   *  wiped and refilled anyway. Re-made only when the map's size changes */
+  private mmPixels: ImageData | null = null;
   private mmDrag = false;
   // cursor mode: null is the normal cursor (click a tower to inspect its
   // range); a kind from the tower menu turns on the ghost + paint placement
@@ -1671,8 +1676,13 @@ export class Game {
     }
     const lc = this.mmLayer.getContext("2d");
     if (!lc) return;
-    const img = lc.createImageData(cols, rows);
+    // the layer is repainted whole every frame, so the buffer is reused
+    // and cleared rather than re-allocated (see mmPixels)
+    let img = this.mmPixels;
+    if (!img || img.width !== cols || img.height !== rows)
+      img = this.mmPixels = lc.createImageData(cols, rows);
     const d = img.data;
+    d.fill(0);
     const { fog } = this.sim;
     const fogOn = fog.enabled;
     const st = fog.visible;

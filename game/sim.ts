@@ -1277,6 +1277,11 @@ export class Sim {
   private enemyStructures = 0;
   /** swarm structures the player's guns have wrecked this run */
   enemyStructuresDown = 0;
+  /** the box each side's buildings stand in, and whether the board has
+   *  moved under it — see structBox() */
+  private readonly playerBox = { x0: 0, y0: 0, x1: 0, y1: 0, n: 0 };
+  private readonly enemyBox = { x0: 0, y0: 0, x1: 0, y1: 0, n: 0 };
+  private structBoxDirty = true;
   /** the player's own bodies lost this run */
   unitsLost = 0;
   projs: Projectile[] = [];
@@ -1694,6 +1699,8 @@ export class Sim {
     this.wpts.clear();
     this.enemyStructures = 0;
     this.enemyStructuresDown = 0;
+    // ...and a new core is about to be stood up under it (see below)
+    this.structBoxDirty = true;
     this.focusTower = null;
     this.cellTower.fill(null);
     this.shots.length = 0;
@@ -3146,6 +3153,49 @@ export class Sim {
     return this.hasSight(x, y, clamp(x, t.x - half, t.x + half), clamp(y, t.y - half, t.y + half));
   }
 
+  /**
+   * THE BOX ONE SIDE'S BUILDINGS STAND IN, in world px and grown by each
+   * footprint's own half-width, rebuilt only when a structure appears or
+   * leaves (claimGround raises the flag).
+   *
+   * WHY IT EXISTS. The ring walk below is bounded by the RANGE and not by
+   * where anything actually is: its early break needs a candidate to
+   * break on, so a gun with nothing in reach walks every cell of its
+   * circle before it can say "nothing". A map like Confluence stands up
+   * about eighteen hundred of the swarm's guns against a line of two
+   * dozen buildings in one corner of a 512-cell board, and nearly every
+   * one of those scans is a couple of thousand cells spent proving the
+   * obvious. The test here is four comparisons and it is EXACT — a
+   * structure within `reach` of the point is within the box by
+   * construction, so nothing that would have been found is refused.
+   */
+  private structBox(team: Team): { x0: number; y0: number; x1: number; y1: number; n: number } {
+    if (this.structBoxDirty) {
+      this.structBoxDirty = false;
+      for (const b of [this.playerBox, this.enemyBox]) {
+        b.x0 = Infinity;
+        b.y0 = Infinity;
+        b.x1 = -Infinity;
+        b.y1 = -Infinity;
+        b.n = 0;
+      }
+      const add = (s: Structure): void => {
+        const b = teamOf(s) === "player" ? this.playerBox : this.enemyBox;
+        const half = (this.sizeOf(s) * CELL) / 2;
+        if (s.x - half < b.x0) b.x0 = s.x - half;
+        if (s.y - half < b.y0) b.y0 = s.y - half;
+        if (s.x + half > b.x1) b.x1 = s.x + half;
+        if (s.y + half > b.y1) b.y1 = s.y + half;
+        b.n++;
+      };
+      // the core is on the board and in cellTower without being one of the
+      // towers (see the reset), and it is a target for as long as it stands
+      add(this.core);
+      for (const t of this.towers) add(t);
+    }
+    return team === "player" ? this.playerBox : this.enemyBox;
+  }
+
   private nearestStructure(
     x: number,
     y: number,
@@ -3153,6 +3203,12 @@ export class Sim {
     sighted: boolean,
     team: Team = "player",
   ): Structure | null {
+    // NOTHING OF THAT TEAM ANYWHERE NEAR: refuse before the walk, not
+    // after it (structBox)
+    const box = this.structBox(team);
+    if (box.n === 0) return null;
+    if (x + reach < box.x0 || x - reach > box.x1 || y + reach < box.y0 || y - reach > box.y1)
+      return null;
     const cx = clamp((x / CELL) | 0, 0, COLS - 1);
     const cy = clamp((y / CELL) | 0, 0, ROWS - 1);
     const R = Math.min(COLS, Math.ceil(reach / CELL) + 2);
@@ -4301,6 +4357,12 @@ export class Sim {
    * cells into both fields cannot disagree with either mask.
    */
   private claimGround(t: Structure, on: boolean): void {
+    // EVERY structure that appears or leaves comes through here, which is
+    // what makes this the one place the aim boxes have to be told
+    // (structBox). Raised whatever the masks below decide: a footprint
+    // laid entirely on cells the terrain already called rock changes no
+    // mask and is still a thing that can be shot at.
+    this.structBoxDirty = true;
     const { blocked } = this.terrain;
     const { walk, soft } = this.field;
     const nWalk = this.navalField.walk, nSoft = this.navalField.soft;
@@ -7087,14 +7149,26 @@ export class Sim {
         const held = t.aimTower;
         if (held && teamOf(held) === "player" && this.inReach(held, t.x, t.y, st.range)) aimT = held;
         t.targetT -= dt;
-        if (best < 0 || t.targetT <= 0) {
+        // THE SCAN RUNS ON THE CLOCK AND NOWHERE ELSE — Turret.java's
+        // `if(timer(timerTarget, targetInterval)) findTarget()`. A turret
+        // with nothing in reach is the ORDINARY state of a board this
+        // size, and gating the scan on "no target" instead of on the
+        // timer meant every idle gun re-scanned every single tick: on
+        // Confluence, whose formations stand up about eighteen hundred
+        // guns, that was eighteen hundred ring walks a tick and ~23ms of
+        // the frame. The clock is phased per turret (addTower's targetT),
+        // so what is left is spread across the interval rather than
+        // landing on one tick.
+        if (t.targetT <= 0) {
           best =
             this.nPlayer > 0
               ? this.bestTarget(t.x, t.y, st.range, st.targetAir, st.targetGround, st.sort === "strongest", 1)
               : -1;
           t.target = best >= 0 ? this.uid[best] : -1;
-          if (best < 0 && (!aimT || t.targetT <= 0))
-            aimT = this.nearestStructure(t.x, t.y, st.range, false, "player");
+          // (the old guard here was `!aimT || t.targetT <= 0`, and the
+          // clock this is now under makes its second half always true:
+          // a held building is re-picked on the clock exactly as before)
+          if (best < 0) aimT = this.nearestStructure(t.x, t.y, st.range, false, "player");
           t.targetT = TARGET_INTERVAL;
         }
         if (best >= 0) aimT = null;
@@ -7119,6 +7193,18 @@ export class Sim {
         if (this.cellTower[ft.gy * COLS + ft.gx] === ft && this.inReach(ft, t.x, t.y, st.range)) aimT = ft;
       }
       if (!hostile && best < 0 && !shr && !aimT) {
+        // THE HELD BUILDING, kept between scans exactly as the swarm's
+        // guns keep theirs above. Finding one is a ring walk over the
+        // board, so it is paid on the target clock rather than on every
+        // tick a gun happens to have no body in front of it
+        const heldT = t.aimTower;
+        if (
+          st.targetGround &&
+          heldT &&
+          teamOf(heldT) === "enemy" &&
+          this.inReach(heldT, t.x, t.y, st.range)
+        )
+          aimT = heldT;
         if (
           t.target >= 0 &&
           t.targetIdx >= 0 &&
@@ -7131,7 +7217,10 @@ export class Sim {
           if (dx * dx + dy * dy < r2t) best = t.targetIdx;
         }
         t.targetT -= dt;
-        if (best < 0 || t.targetT <= 0) {
+        // the scan runs on the clock and nowhere else — see the note on
+        // the swarm's branch above
+        const scan = t.targetT <= 0;
+        if (scan) {
           const hasTargets =
             (st.targetAir && this.nAliveAir > 0) ||
             (st.targetGround && this.nAliveGround > 0);
@@ -7150,8 +7239,10 @@ export class Sim {
         }
         // ...and the swarm's own formation, the same way: a turret with
         // no body in range takes the nearest enemy building it can reach
-        if (best < 0 && !shr && st.targetGround && this.enemyStructures > 0)
+        if (scan && best < 0 && !shr && st.targetGround && this.enemyStructures > 0)
           aimT = this.nearestStructure(t.x, t.y, st.range, false, "enemy");
+        // whatever was held loses to a body or a dome found this tick
+        if (best >= 0 || shr) aimT = null;
       }
       t.targetIdx = best;
       t.aimShieldTower = shr ? this.shieldTowers.indexOf(shr) : -1;
