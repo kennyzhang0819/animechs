@@ -1,3 +1,4 @@
+import type { FamilyKey } from "./levels";
 /**
  * Every Serpulo turret the campaign will ever field, in tech-tree order.
  *
@@ -49,13 +50,21 @@ export const TOWER_KINDS = [
   // park in a doorway is not the fight this game is about. What they were
   // FOR is now in the buildings themselves, which hold twice what they did
   // (TOWER_HP_SCALE).
-  // THE ECONOMY AND THE ARMY. A drill stands on an ore vein and pays scrap
-  // by the second (economy.ts DRILL_INCOME_PER_ORE); a factory turns
-  // scrap into the run's faction's units, one tier a building (factions.ts,
-  // Sim.updateProduction). They ride the roster because the sim, the bar,
-  // the prices and the track key on TowerKind; `building` on their stats
-  // is what keeps the fire loop and the renderer's turret base off them
+  // THE ECONOMY. A drill does not stand on ore and does not mine: there is
+  // none on any map. It DEEPENS THE CORE'S EXCAVATION — every finished
+  // drill adds DRILL_CORE_INCOME to what the core ships a second
+  // (economy.ts, Sim.income) — so it is a building that makes the run's
+  // one income faster rather than a second income beside it.
   "drill",
+  // THE ARMY, and the rest of what a run puts down. A factory turns
+  // scrap into bodies, one TIER a building — and which LINE'S body it
+  // makes is the factory's own (Tower.faction), so a run playing two
+  // factions has ten distinct factories to build and each one makes
+  // exactly one unit. They ride the roster because the sim, the bar, the
+  // prices and the track key on TowerKind; `building` on their stats is
+  // what keeps the fire loop and the renderer's turret base off them.
+  // The DRILL was here too and is gone: there is no ore on any map, and
+  // the core's shipping is the whole economy (economy.ts).
   "factory-t1",
   "factory-t2",
   "factory-t3",
@@ -196,29 +205,18 @@ export interface MissionPlacement {
 export interface Tower {
   /** one of the roster, on whichever side `team` says */
   kind: StructKind;
-  /** a DRILL's ore: how many of its footprint's cells sit on a vein, which
-   *  is what it pays by (Sim.income). 0 on anything else */
-  ore: number;
-  /** a DRILL's mining clock: seconds left on the DRILL_BATCH load it is
-   *  filling (Sim.updateMining), which is what the bar over it shows. The
-   *  load lands in the bank whole when this reaches 0 and the next one
-   *  starts. Meaningless on anything that is not a drill on ore */
-  mineT: number;
-  /** a FACTORY's build clock: seconds left on the unit it is making, or
-   *  -1 while it is idle and waiting to afford the next (Sim.updateProduction) */
-  prodT: number;
   /**
-   * A FACTORY'S RALLY POINT as a cell index, or -1 for none — where the
-   * bodies it makes are sent the moment they are set down
-   * (Sim.updateProduction). It is the right-click of a selected building,
-   * the exact mirror of the right-click that sends a selected body
-   * somewhere (Sim.setRally), and it is a CELL rather than a point
-   * because that is what an order field is seeded from: the click is
-   * resolved to walkable, reachable ground once, when it is given, rather
-   * than per unit built. A building that makes nothing keeps -1 and the
-   * right-click passes it by.
+   * WHICH LINE THIS FACTORY BUILDS (factions.ts), or null on anything that
+   * builds nothing.
+   *
+   * A factory's KIND is its tier — the block, its art, its size, its price
+   * — and this is the other half of what it is. A run picks two factions
+   * (tech.ts factionPicks) and gets ten factories out of them, one per
+   * body: two tier-1s that make different tier-1s. Without this a tier
+   * would be one building and the run's second line would have nothing to
+   * build its bodies out of.
    */
-  rallyCell: number;
+  faction: FamilyKey | null;
   team: Team;
   gx: number; // top-left cell of the size x size footprint (TOWERS[kind].size)
   gy: number;

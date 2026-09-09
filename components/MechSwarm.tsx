@@ -67,7 +67,6 @@ import {
   saveEffects,
   saveUiScale,
   savePanSpeed,
-  saveEdgePan,
   saveAllyBars,
   saveEnemyBars,
   HEALTH_BAR_MODES,
@@ -77,7 +76,7 @@ import {
   PAN_SPEEDS,
   UI_SCALE_DEFAULT,
   UI_SCALES,
-  saveFaction,
+  saveFactions,
   saveRunPick,
   saveSpeed,
   startingSpeed,
@@ -103,12 +102,17 @@ import {
   type DisplayState,
 } from "@/game/storage";
 import { BUILD } from "@/game/version";
-import { BUILD_COLS, BUILD_SLOTS, slotForCode, type BuildSlot } from "@/game/tech";
+import { BUILD_COLS, buildSlotsFor, slotForCode, type BuildSlot } from "@/game/tech";
 import { factionsAt, lockedMutators, rewardsAt, rewardText } from "@/game/track";
-import { FACTION_BLURB, factionUnits } from "@/game/factions";
+import { FACTION_BLURB, factionUnit, factionUnits, RUN_FACTIONS } from "@/game/factions";
 import { TOWER_DESC } from "@/game/constants";
 import { TOWER_ICONS } from "@/game/towerIcons";
-import { levelProgress, POINT_COLOR, RANDOM_MAP_XP_BONUS, XP_COLOR } from "@/game/economy";
+import {
+  levelProgress,
+  POINT_COLOR,
+  RANDOM_MAP_XP_BONUS,
+  XP_COLOR,
+} from "@/game/economy";
 import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
 import ProgressView from "./Progress";
 import { bandFor, MutationFace } from "./mutationFace";
@@ -396,14 +400,14 @@ const runSpec = (
   tier: number,
   families: readonly FamilyKey[],
   mutation: readonly MutationId[],
-  faction: FamilyKey | null = null,
+  picks: readonly FamilyKey[] = [],
 ): LevelSpec => {
   const spec = specForTier(world, tier);
   return {
     ...spec,
     script: transformScript(spec.script, families),
     families,
-    ...(faction ? { faction } : null),
+    ...(picks.length > 0 ? { picks } : null),
     ...(mutation.length > 0 ? { mutation } : null),
   };
 };
@@ -419,9 +423,19 @@ const runSpec = (
  * layer falls back to whatever doors the map does paint), so the pick is
  * simply the pick.
  */
-const factionFor = (p: Progress, pick: FamilyKey | null): FamilyKey | null => {
+const factionsFor = (p: Progress, picks: readonly FamilyKey[]): FamilyKey[] => {
   const owned = [...factionsAt(effectiveLevel(p))];
-  return pick && owned.includes(pick) ? pick : (owned[0] ?? null);
+  // THE RUN PLAYS EXACTLY TWO (factions.ts RUN_FACTIONS). What the save
+  // remembered comes first, in order; anything it does not own is dropped,
+  // and the gap is filled from the top of what it does — so a save that
+  // has just unlocked a line, or one whose remembered pair is half stale,
+  // still deploys with a full pair rather than half a build menu
+  const out = picks.filter((f) => owned.includes(f)).slice(0, RUN_FACTIONS);
+  for (const f of owned) {
+    if (out.length >= RUN_FACTIONS) break;
+    if (!out.includes(f)) out.push(f);
+  }
+  return out;
 };
 
 /**
@@ -794,17 +808,33 @@ function DifficultyPicker({
  */
 function FactionPicker({
   progress,
-  pick,
+  picks,
   onPick,
   onClose,
 }: {
   progress: Progress;
-  pick: FamilyKey | null;
-  onPick: (f: FamilyKey) => void;
+  picks: readonly FamilyKey[];
+  onPick: (f: readonly FamilyKey[]) => void;
   onClose: () => void;
 }) {
   const owned = [...factionsAt(effectiveLevel(progress))];
-  const [focus, setFocus] = useState<FamilyKey | null>(pick ?? owned[0] ?? null);
+  // THE PAIR BEING BUILT, in the order it was clicked. A run plays exactly
+  // RUN_FACTIONS of them, so a third click pushes the OLDEST out rather
+  // than being refused — a picker that goes dead once it is full makes a
+  // player hunt for the deselect, and the order they clicked in is the
+  // order they were thinking in
+  const [held, setHeld] = useState<readonly FamilyKey[]>(
+    picks.filter((f) => owned.includes(f)).slice(0, RUN_FACTIONS),
+  );
+  const [focus, setFocus] = useState<FamilyKey | null>(held[0] ?? owned[0] ?? null);
+  const toggle = (f: FamilyKey): void => {
+    setFocus(f);
+    setHeld((was) =>
+      was.includes(f)
+        ? was.filter((x) => x !== f)
+        : [...was, f].slice(Math.max(0, was.length + 1 - RUN_FACTIONS)),
+    );
+  };
   const sprite = (src: string, key: string, big = false) => (
     // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite
     <img
@@ -815,10 +845,15 @@ function FactionPicker({
     />
   );
   const list = owned.map((f) => (
-    <PickRow key={f} selected={f === pick} focused={f === focus} onPick={() => setFocus(f)}>
+    <PickRow key={f} selected={held.includes(f)} focused={f === focus} onPick={() => toggle(f)}>
       <span className="truncate font-display text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
         {familyByKey(f).name}
       </span>
+      {held.includes(f) && (
+        <span className="ml-auto shrink-0 text-[12px] font-bold uppercase tracking-widest text-[#FFD37F]">
+          {held.indexOf(f) + 1}
+        </span>
+      )}
     </PickRow>
   ));
   const fam = focus ? familyByKey(focus) : null;
@@ -833,7 +868,23 @@ function FactionPicker({
           {fam.kinds.map((u) => sprite(`/mindustry/sprites/units/${u}.png`, u, true))}
         </span>
       </DetailLine>
-      <SelectButton onClick={() => onPick(focus)} />
+      {/* A RUN TAKES TWO LINES AND WILL NOT START ON ONE (factions.ts
+          RUN_FACTIONS): the button says how many are still to pick, and
+          only deploys the pair once it is a pair */}
+      <DetailLine label="Deploying">
+        <span className="text-[#EDEDEF]">
+          {held.length === 0
+            ? "nothing yet"
+            : held.map((f) => familyByKey(f).name).join(" + ")}
+        </span>
+      </DetailLine>
+      {held.length === RUN_FACTIONS ? (
+        <SelectButton onClick={() => onPick(held)} />
+      ) : (
+        <div className="text-[13px] uppercase tracking-widest text-[#71717C]">
+          Pick {RUN_FACTIONS - held.length} more
+        </div>
+      )}
     </>
   ) : (
     <p className="text-[14px] text-[#A6A6AF]">This save owns no faction yet.</p>
@@ -993,9 +1044,10 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
     name: "Foreshadow",
     icon: "/mindustry/sprites/blocks/turrets/foreshadow.png",
   },
-  // the economy and the army (factions.ts COMMON_KINDS): the drill and
-  // the five factories, one a unit tier
+  // the economy (factions.ts COMMON_BUILD_KINDS): the drill, which
+  // deepens the core's excavation and belongs to no line
   { kind: "drill", name: "Drill", icon: TOWER_ICONS.drill },
+  // the army: the five factories, one a tier
   { kind: "factory-t1", name: "Factory", icon: TOWER_ICONS["factory-t1"] },
   { kind: "factory-t2", name: "Additive", icon: TOWER_ICONS["factory-t2"] },
   { kind: "factory-t3", name: "Multiplicative", icon: TOWER_ICONS["factory-t3"] },
@@ -1004,6 +1056,17 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
 ];
 
 /** menu entry by kind, for rendering the bar from a list of kinds */
+/** which unit tier each factory block builds — the menu reads it to show
+ *  the BODY a cell makes rather than the block, which is the same picture
+ *  in both of a run's two rows */
+const TIER_OF: Record<string, number> = {
+  "factory-t1": 1,
+  "factory-t2": 2,
+  "factory-t3": 3,
+  "factory-t4": 4,
+  "factory-t5": 5,
+};
+
 const MENU_BY_KIND = new Map(TOWER_MENU.map((t) => [t.kind, t]));
 
 /**
@@ -1318,9 +1381,9 @@ export default function MechSwarm() {
    * stale id reads as Random rather than as a world that is not there.
    */
   const [mapPick, setMapPick] = useState<string | null>(null);
-  /** the faction the next run deploys as (factions.ts) — the save's
-   *  remembered pick, or null for the first the save owns */
-  const [factionPick, setFactionPick] = useState<FamilyKey | null>(null);
+  /** THE TWO LINES the next run deploys with (factions.ts RUN_FACTIONS) —
+   *  the save's remembered pair, filled out from what it owns */
+  const [factionPick, setFactionPick] = useState<readonly FamilyKey[]>([]);
   const pickedWorld = mapPick == null ? null : worldById(mapPick);
   /**
    * Was the run under way started on a map the game picked? Read when the
@@ -1414,7 +1477,6 @@ export default function MechSwarm() {
    * the moment they are touched (Game.setPanSpeed, Game.setEdgePan).
    */
   const [panSpeed, setPanSpeed] = useState<number>(PAN_SPEED_DEFAULT);
-  const [edgePan, setEdgePan] = useState(true);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("game");
   /**
    * THE DISPLAY, as the desktop shell has it: the mode the window is in,
@@ -1518,10 +1580,9 @@ export default function MechSwarm() {
     setTier(p.difficulty ?? 0);
     setMapPick(p.map ?? null);
     setEffects(p.effects ?? true);
-    setFactionPick(p.faction ?? null);
+    setFactionPick(p.factions ?? []);
     setUiScale(p.uiScale ?? UI_SCALE_DEFAULT);
     setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
-    setEdgePan(p.edgePan ?? true);
     setAllyBars(p.allyBars ?? HEALTH_BARS_DEFAULT);
     setEnemyBars(p.enemyBars ?? HEALTH_BARS_DEFAULT);
   }, []);
@@ -1553,7 +1614,7 @@ export default function MechSwarm() {
   useEffect(() => {
     const g = gameRef.current;
     if (!g) return;
-    const tech = techOf(loadProgress(), level?.faction ?? null);
+    const tech = techOf(loadProgress(), level?.picks ?? []);
     g.setTech(admin ? null : tech);
     // AND THE WHOLE BOARD IS LIT. Sandbox is for staging and debugging a
     // run, and half of what is being looked at is off screen under the fog
@@ -1729,7 +1790,7 @@ export default function MechSwarm() {
           return;
         }
         const save = loadProgress();
-        g.setTech(admin ? null : techOf(save, level.faction ?? null));
+        g.setTech(admin ? null : techOf(save, level.picks ?? []));
         // a sandbox run comes up lit, the same as one toggled into it
         g.setFog(!admin);
         // the device's own preference, read from the save rather than
@@ -1741,7 +1802,6 @@ export default function MechSwarm() {
         g.setSpeed(startingSpeed(save, admin ? SPEEDS : techOf(save).speeds));
         // the controls, off the save for the same reason as the effects
         g.setPanSpeed(save.panSpeed ?? PAN_SPEED_DEFAULT);
-        g.setEdgePan(save.edgePan ?? true);
         g.setHealthBars(save.allyBars ?? HEALTH_BARS_DEFAULT, save.enemyBars ?? HEALTH_BARS_DEFAULT);
         // the minimap's canvas is already mounted under the loading screen
         g.attachMinimap(mmRef.current);
@@ -1839,11 +1899,22 @@ export default function MechSwarm() {
     };
   }, [screen, level, runRandom]);
 
-  const pickTower = (kind: TowerKind): void => {
+  const pickTower = (kind: TowerKind, faction: FamilyKey | null = null): void => {
     const g = gameRef.current;
     if (!g) return;
-    const next = hud?.buildKind === kind ? null : kind;
-    g.setBuildKind(next);
+    // the same cell pressed twice puts the building back down: a pick is
+    // the block AND the line, so two tier-1 cells are two different picks.
+    // Asked of the ENGINE rather than of `hud`, exactly as the keyboard
+    // asks it: the snapshot is up to 100ms old, so a cell clicked straight
+    // after a keyed pick would otherwise be answered against a hand that
+    // was already holding something
+    const ui = g.ui();
+    const on = ui.buildKind === kind && ui.buildFaction === faction;
+    // THE LINE TRAVELS WITH THE BLOCK. A pick is the factory AND the
+    // family it builds (Tech's BuildSlot), and dropping the second half
+    // here left the sim to fall back to the run's FIRST pick (factionOf)
+    // — so every cell in the second row planted the first line's body
+    g.setBuildKind(on ? null : kind, on ? null : faction);
     setHud(g.ui());
   };
 
@@ -1881,15 +1952,16 @@ export default function MechSwarm() {
         e.target.closest("input, textarea, [contenteditable]")
       )
         return;
-      const slot = slotForCode(e.code);
-      if (!slot) return;
       const g = gameRef.current;
       if (!g) return;
       const ui = g.ui();
+      const slot = slotForCode(e.code, ui.picks);
+      if (!slot) return;
       if (ui.lost || ui.won || ui.menuOpen) return;
       if (ui.unlocked && !ui.unlocked.includes(slot.kind)) return;
       e.preventDefault();
-      g.setBuildKind(ui.buildKind === slot.kind ? null : slot.kind);
+      const on = ui.buildKind === slot.kind && ui.buildFaction === slot.faction;
+      g.setBuildKind(on ? null : slot.kind, on ? null : slot.faction);
       setHud(g.ui());
     };
     window.addEventListener("keydown", onKey);
@@ -1993,11 +2065,11 @@ export default function MechSwarm() {
     // script's slots are dealt to them (rollFamilies)
     const families = rollFamilies();
     // THE PLAYER'S OWN LINE: the faction picked on this screen (factionFor)
-    const faction = factionFor(p, factionPick);
-    if (faction) saveFaction(faction);
+    const picks = factionsFor(p, factionPick);
+    saveFactions(picks);
     saveRunPick(tier, picked?.id ?? null);
     setRunRandom(random);
-    setLevel(runSpec(w, tier, families, roll, faction));
+    setLevel(runSpec(w, tier, families, roll, picks));
     setScreen("game");
     // raised in the same batch as the screen switch, so the game screen's
     // FIRST paint is already covered - an effect would run after that
@@ -2194,20 +2266,6 @@ export default function MechSwarm() {
                 gameRef.current?.setPanSpeed(mult); // live, mid-run
               }}
             />
-            <SettingRow label="Edge panning">
-              <button
-                aria-pressed={edgePan}
-                onClick={() => {
-                  const next = !edgePan;
-                  setEdgePan(next);
-                  saveEdgePan(next);
-                  gameRef.current?.setEdgePan(next);
-                }}
-                className="ms-btn w-16 shrink-0 px-3 py-1.5 text-[15px]"
-              >
-                {edgePan ? "On" : "Off"}
-              </button>
-            </SettingRow>
           </SettingsBox>
         )}
 
@@ -2424,33 +2482,34 @@ export default function MechSwarm() {
                         {xpShareText(tierXpBonus(tier))}
                       </span>
                     </MacroButton>
-                    {/* THE FACTION: the line this run is played as — which
-                        bodies the factories build (factions.ts), and that
-                        alone: the build menu is the same for every line.
-                        One of the ones the track has opened — every faction
-                        plays every map */}
+                    {/* THE LINES: the TWO factions this run is played as
+                        (factions.ts RUN_FACTIONS) — which bodies its ten
+                        factories build, and that alone. Both are opened by
+                        the track, and every faction plays every map */}
                     {progress && (() => {
-                      const f = factionFor(progress, factionPick);
+                      const fs = factionsFor(progress, factionPick);
                       return (
                         <MacroButton
-                          label="Faction"
-                          value={f ? familyByKey(f).name : "None"}
+                          label="Lines"
+                          value={fs.map((f) => familyByKey(f).name).join(" + ") || "None"}
                           onClick={() => setPicker("faction")}
                         >
-                          <span className="text-[#EDEDEF]">{f ? familyByKey(f).name : "None"}</span>
-                          {f && (
-                            <span className="flex items-center gap-1">
-                              {factionUnits(f).map((u) => (
+                          <span className="truncate text-[#EDEDEF]">
+                            {fs.map((f) => familyByKey(f).name).join(" + ") || "None"}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            {fs.flatMap((f) =>
+                              factionUnits(f).map((u) => (
                                 // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite
                                 <img
-                                  key={u}
+                                  key={`${f}-${u}`}
                                   src={`/mindustry/sprites/units/${u}.png`}
                                   alt=""
-                                  className="h-5 w-5 object-contain [image-rendering:pixelated]"
+                                  className="h-4 w-4 object-contain [image-rendering:pixelated]"
                                 />
-                              ))}
-                            </span>
-                          )}
+                              )),
+                            )}
+                          </span>
                         </MacroButton>
                       );
                     })()}
@@ -2510,11 +2569,11 @@ export default function MechSwarm() {
           {picker === "faction" && progress && (
             <FactionPicker
               progress={progress}
-              pick={factionFor(progress, factionPick)}
+              picks={factionsFor(progress, factionPick)}
               onClose={() => setPicker(null)}
-              onPick={(f) => {
-                setFactionPick(f);
-                saveFaction(f);
+              onPick={(fs) => {
+                setFactionPick(fs);
+                saveFactions(fs);
                 setPicker(null);
               }}
             />
@@ -2741,8 +2800,19 @@ export default function MechSwarm() {
                 to that question has a time in it. Simulated seconds
                 (UiState.elapsed), so a run at 2x reads the clock the wave
                 script is actually keeping rather than the wall's */}
-            <div className="ms-pane mb-1 px-2 py-0.5 text-center text-[13px] font-bold uppercase tracking-widest tabular-nums text-[#A1A1AA]">
-              {clock(hud.elapsed)}
+            {/* THE SPAWN BAR used to share this row (economy.ts
+                CYCLE_SECONDS) and is drawn over the CORE now
+                (Game.drawStructureBars): the moment it fills, every
+                factory sets a body down at the core, so the bar belongs
+                over the ground those bodies appear on rather than in the
+                opposite corner of the screen. What is left is the clock,
+                and it is sized like a clock — a small tab at the left end
+                of the row rather than a banner the width of the map,
+                which is a width the elapsed time never needed. */}
+            <div className="ms-pane mb-1 self-start px-1.5 py-px">
+              <div className="text-[11px] font-bold uppercase tracking-wider tabular-nums text-[#A1A1AA]">
+                {clock(hud.elapsed)}
+              </div>
             </div>
             <div className="ms-pane p-1">
               <canvas
@@ -2793,10 +2863,13 @@ export default function MechSwarm() {
             <div
               role="group"
               aria-label="build menu"
-              className="grid w-[13rem] gap-1"
+              // five columns a row now (tech.ts BUILD_COLS: one per unit
+              // tier) and a row per line, so the card is wider than the
+              // 4x4 it replaced and the cells stay a thumb's width
+              className="grid w-[16.5rem] gap-1"
               style={{ gridTemplateColumns: `repeat(${BUILD_COLS}, minmax(0, 1fr))` }}
             >
-              {BUILD_SLOTS.map((slot, i) => {
+              {buildSlotsFor(hud.picks).map((slot, i) => {
                 // A SLOT THE SAVE CANNOT USE IS AN EMPTY SLOT, not a
                 // greyed one: the progress screen answers "what is still
                 // to earn", and the grid answers "what can I put down
@@ -2812,6 +2885,13 @@ export default function MechSwarm() {
                       className="aspect-square w-full border border-[#26262b] bg-[#101013]"
                     />
                   );
+                // A CELL IS A FACTORY AND THE BODY IT MAKES. The block's
+                // own art is the same across the run's two lines — a
+                // tier-1 factory is a tier-1 factory — so what the cell
+                // SHOWS is the unit: that is the thing a player is
+                // choosing between, and the only thing that differs down
+                // a column
+                const unit = slot.faction ? factionUnit(slot.faction, TIER_OF[kind]) : null;
                 const entry = MENU_BY_KIND.get(kind)!;
                 // what the badge says is the PRICE, in scrap — the number
                 // a build decision is made against — and it reddens the
@@ -2822,12 +2902,12 @@ export default function MechSwarm() {
                   <BuildCell
                     key={i}
                     slot={slot}
-                    icon={icons[kind] ?? entry.icon}
-                    name={entry.name}
+                    icon={unit ? `/mindustry/sprites/units/${unit}.png` : icons[kind] ?? entry.icon}
+                    name={unit ? unit[0].toUpperCase() + unit.slice(1) : entry.name}
                     price={price}
                     poor={price !== null && hud.scrap !== null && hud.scrap < price}
-                    picked={hud.buildKind === kind}
-                    onPick={() => pickTower(kind)}
+                    picked={hud.buildKind === kind && hud.buildFaction === slot.faction}
+                    onPick={() => pickTower(kind, slot.faction)}
                   />
                 );
               })}

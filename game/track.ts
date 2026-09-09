@@ -422,14 +422,14 @@ export const TOWER_NAME: Readonly<Record<TowerKind, string>> = Object.fromEntrie
  * WHAT A SAVE AT THIS LEVEL MAY DO, as the sim and the bar read it: the
  * factions the track has handed out and every kind they and the common
  * roster allow, the paces it has switched on, and every upgrade rung
- * dealt so far. The one place a level becomes a TechState; a run narrows
- * it to one faction with withFaction (tech.ts).
+ * dealt so far. The one place a level becomes a TechState; a run names
+ * the two lines it plays with withFactions (tech.ts).
  */
 export function techStateFor(level: number): TechState {
   const factions = factionsAt(level);
   return {
     factions,
-    faction: null,
+    picks: [],
     unlocked: kindsFor(factions),
     speeds: speedsAt(level),
     upgrades: upgradesAt(level),

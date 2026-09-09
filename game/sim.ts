@@ -79,7 +79,6 @@ import {
   WORLDS,
   UNIT_ID,
   UNIT_KINDS as UNIT_KINDS_IMPORT,
-  UNIT_RMAX,
   UNIT_RMAX_AIR,
   UNIT_RMAX_GROUND,
   UNIT_STATS,
@@ -150,16 +149,14 @@ import type { FamilyKey } from "./levels";
 import {
   CORE_BATCH,
   CORE_INCOME,
+  DRILL_CORE_INCOME,
+  CYCLE_SECONDS,
+  FACTORY_CYCLE_UNITS,
   CORE_LOAD_SECONDS,
-  DRILL_BATCH,
-  DRILL_INCOME_PER_ORE,
-  drillLoadSeconds,
   PLAYER_UNIT_CAP,
   SCRAP_START,
   scrapPriceOf,
   sellValue,
-  UNIT_BUILD_SECONDS,
-  UNIT_PRICE,
 } from "./economy";
 import { airWalkMask, isBuildableWall, isWaterFloor, navalWalkMask, WALL_DEEP, type Terrain } from "./terrain";
 import {
@@ -478,6 +475,29 @@ const FACTORY_SPAWN_REACH = CELL * 2.5;
  * building the walk actually starts from.
  */
 const RALLY_SPAWN_ARC = (50 * Math.PI) / 180;
+/**
+ * HOW OFTEN ONE BODY OF THE PLAYER'S LOOKS FOR SOMETHING TO HUNT
+ * (Sim.updateHunt), in seconds. Per body and staggered from its spawn, so
+ * the cost is spread flat across frames rather than landing on the frame
+ * that made the army.
+ */
+const HUNT_SCAN_SECONDS = 1;
+/**
+ * HOW FAR A BODY LOOKS FOR AN ENEMY **BODY** to walk at. Deliberately not
+ * the whole map: a swarm body is a moving target, and a walker sent at one
+ * forty tiles away is walking at where it used to be. Inside this reach a
+ * straight line is a good enough answer for the second it stands; outside
+ * it, what the army walks at is the swarm's BUILDINGS, which do not move
+ * and are worth a routed corridor.
+ */
+const HUNT_SIGHT = CELL * 40;
+/**
+ * HOW CLOSE A HUNT COUNTS AS ARRIVED at the building it was walking at. A
+ * body standing on top of its target has nothing left to walk and its guns
+ * are already firing (updateUnitWeapons) — without this it would re-route
+ * onto the cell it is standing on once a second, for good.
+ */
+const HUNT_ARRIVE = CELL * 6;
 /**
  * HOW CLOSE IS ARRIVED, for a body under a move order (Sim.orderMove).
  * Generous on purpose: a group sent at one cell cannot all stand on it,
@@ -1022,6 +1042,22 @@ export class Sim {
   /** where that order sent it, in world px: what arrival is measured against */
   readonly uordx = new Float32Array(MAX_UNITS);
   readonly uordy = new Float32Array(MAX_UNITS);
+  /**
+   * THE HUNT (updateHunt) — what a body of the player's does when nobody
+   * is telling it anything, which is most of a run.
+   *
+   * 1 = uhuntx/uhunty holds a live enemy this body is walking STRAIGHT at.
+   * A hunt that found a BUILDING instead takes a routed order like the
+   * arrow's (uord, sendUnitTo) and leaves this at 0: a building is far and
+   * fixed and worth a corridor, a body is near and moving and would
+   * out-walk one before it was solved.
+   */
+  readonly uhunt = new Uint8Array(MAX_UNITS);
+  readonly uhuntx = new Float32Array(MAX_UNITS);
+  readonly uhunty = new Float32Array(MAX_UNITS);
+  /** seconds until this body looks for something to hunt again. Staggered
+   *  at spawn so an army made on one cycle does not scan on one frame */
+  readonly uhuntT = new Float32Array(MAX_UNITS);
   /** the swarm's census — aliveByKind less the player's bodies — for the HUD */
   readonly enemyByKind = new Int32Array(UNIT_KINDS.length);
   /** 1 = this unit is a NAVAL TANK: it steers by navalField, so the deep
@@ -1199,6 +1235,25 @@ export class Sim {
   /** THE CORE'S SHIPPING CLOCK: seconds left on the CORE_BATCH it is
    *  filling (updateMining), the same cycle every drill runs on */
   coreMineT = CORE_LOAD_SECONDS;
+  /**
+   * SECONDS UNTIL THE BASE FIRES (updateCycle, economy.ts CYCLE_SECONDS).
+   * Counts down in SIMULATED time, so the beat keeps the game's clock: at
+   * 4x it comes round four times as often, exactly as the waves arrive
+   * four times as fast.
+   */
+  private cycleT = CYCLE_SECONDS;
+  /**
+   * THE ARROW — the one order the army takes, and a STANDING one.
+   *
+   * A right-click anywhere on the map sends the WHOLE army at that point
+   * (orderMove) and leaves this cell behind as the army's destination:
+   * every body the base makes afterwards is sent at it too
+   * (deliverAtCore), so the arrow is a place the army goes rather than an
+   * instruction the bodies alive at the time happened to hear. -1 is no
+   * arrow, which is every run's opening — the army hunts on its own until
+   * a player says otherwise (updateHunt).
+   */
+  rallyCell = -1;
   // which towers may be built and how many of each — null (the default, and
   // the map editor's mode) places no restrictions; the campaign sets it from
   // the save's level through the track before play (see Game.setTech)
@@ -1851,6 +1906,10 @@ export class Sim {
     this.airOpen = this.openSky(this.airPads);
     this.bossAirOpen = this.openSky(this.bossPads.air);
     this.nPlayer = 0;
+    // a new map is a new base: the cycle starts a whole beat from now and
+    // the army has no arrow to walk at
+    this.cycleT = CYCLE_SECONDS;
+    this.rallyCell = -1;
     this.enemyByKind.fill(0);
     // fail LOUDLY on a broken map: with zero doors nothing ever spawns and
     // a wave script stalls forever, which reads as a scheduler bug
@@ -2715,7 +2774,15 @@ export class Sim {
     return n;
   }
 
-  private addTower(gx: number, gy: number, kind: StructKind, instant: boolean, team: Team = "player"): void {
+  private addTower(
+    gx: number,
+    gy: number,
+    kind: StructKind,
+    instant: boolean,
+    team: Team = "player",
+    /** which line a FACTORY builds (Tower.faction) — null on anything else */
+    faction: FamilyKey | null = null,
+  ): void {
     const sz = structStats(kind).size;
     // CONSTRUCTION (buildTimeOf): a placed structure goes up as a 1 hp
     // shell and only stands up for real when its timer runs out. Editors,
@@ -2726,9 +2793,11 @@ export class Sim {
     // asks for a build time or a waterlogging check)
     const build = instant ? 0 : buildTimeOf(kind);
     const x = (gx + sz / 2) * CELL, y = (gy + sz / 2) * CELL;
-    const ore = structStats(kind).drill ? this.oreUnder(gx, gy, sz) : 0;
     const tower: Tower = {
       kind,
+      // a factory is a tier AND a line; everything else builds nothing and
+      // has no line to be (factions.ts)
+      faction: structStats(kind).produces ? faction : null,
       team,
       gx,
       gy,
@@ -2737,15 +2806,6 @@ export class Sim {
       hp: build > 0 ? 1 : towerMaxHp(kind),
       buildT: build,
       buildTotal: build,
-      // a drill's pay is the ore under it, read once here (Terrain.ore)
-      ore,
-      // ...and its first load starts full-length: a shell mines nothing
-      // while it is going up (updateMining skips it), so this is the clock
-      // it stands up with
-      mineT: ore > 0 ? drillLoadSeconds(ore) : 0,
-      prodT: -1,
-      // nothing has told it where to send what it makes yet (setRally)
-      rallyCell: -1,
       aimShieldTower: -1,
       aimTower: null,
       cd: Math.random() * 0.1,
@@ -2868,7 +2928,9 @@ export class Sim {
       this.unstickUnits();
     }
     this.solveDirtyFields(dt);
-    this.updateProduction(dt);
+    // THE BASE FIRES (economy.ts CYCLE_SECONDS): the player's whole
+    // economy and their whole army, on one clock
+    this.updateCycle(dt);
     // THE FOG, ONCE A TICK — FogControl.update, called out of Logic.update
     // exactly here. What it actually costs depends entirely on whether
     // anything moved: a board where nothing has changed tile since the
@@ -2880,6 +2942,9 @@ export class Sim {
     this.updateAliveBounds();
     this.buildHash();
     this.updatePhysics();
+    // THE ARMY PICKS ITS FIGHTS — after buildHash, whose buckets the scan
+    // reads, and before the bodies move on what it decided
+    this.updateHunt(dt);
     this.updateUnits(dt);
     this.updateAbilities(dt);
     this.updateStatus(dt);
@@ -3177,6 +3242,28 @@ export class Sim {
    * structure within `reach` of the point is within the box by
    * construction, so nothing that would have been found is refused.
    */
+  /**
+   * IS THIS BUILDING SOMETHING THE OTHER SIDE CAN EVEN SEE? — the rule
+   * that puts the player's base OUT OF THE WAR.
+   *
+   * Everything of the player's except the core stands on the highground
+   * (canPlace): rock nothing walks on, above a fight it is not in. It is
+   * not a wall, not a gun and not a target — no scan finds it, no shot
+   * lands on it, no splash reaches it and no blast dents it. The four
+   * places that could disagree all read this one line instead: the
+   * broad-phase box (which then shrinks to the core alone, so every scan
+   * refuses before it walks), the nearest-structure scan, the splash
+   * sweep, and damageTower itself as the backstop.
+   *
+   * THE CORE IS THE EXCEPTION AND THE WHOLE POINT. It stands on the floor
+   * where it always did, it is the only thing of the player's the swarm
+   * can reach, and losing it is still losing the run. Take the base out of
+   * the war and the core is the war.
+   */
+  private untouchable(s: Structure): boolean {
+    return teamOf(s) === "player" && !isCore(s);
+  }
+
   private structBox(team: Team): { x0: number; y0: number; x1: number; y1: number; n: number } {
     if (this.structBoxDirty) {
       this.structBoxDirty = false;
@@ -3188,6 +3275,9 @@ export class Sim {
         b.n = 0;
       }
       const add = (s: Structure): void => {
+        // the player's base is not in the box at all (untouchable), which
+        // is what makes every scan for it refuse in four comparisons
+        if (this.untouchable(s)) return;
         const b = teamOf(s) === "player" ? this.playerBox : this.enemyBox;
         const half = (this.sizeOf(s) * CELL) / 2;
         if (s.x - half < b.x0) b.x0 = s.x - half;
@@ -3228,6 +3318,8 @@ export class Sim {
       // only the OTHER side's buildings are targets: a unit walks past the
       // swarm's own wall, and an enemy turret never fires on it
       if (!t || teamOf(t) !== team) return;
+      // ...and the player's base is nobody's target (untouchable)
+      if (this.untouchable(t)) return;
       // ...and the player's guns take none they cannot see (fog.ts), the
       // rule a body in the fog is under; the swarm sees the whole map
       if (team === "enemy" && this.fog.enabled && !this.fog.visibleAt(t.x, t.y)) return;
@@ -3276,6 +3368,7 @@ export class Sim {
       for (let xx = Math.max(0, cx - R); xx <= Math.min(COLS - 1, cx + R); xx++) {
         const t = this.cellTower[yy * COLS + xx];
         if (!t || teamOf(t) !== team || out.includes(t)) continue;
+        if (this.untouchable(t)) continue; // the player's base takes no splash
         const half = (this.sizeOf(t) * CELL) / 2;
         const dx = t.x - x, dy = t.y - y;
         if (Math.sqrt(dx * dx + dy * dy) - half <= r) out.push(t);
@@ -3883,37 +3976,6 @@ export class Sim {
 
   // ---------- placement ----------
 
-  /** no unit may be standing on (or overhanging into) the footprint */
-  private areaClearOfUnits(gx: number, gy: number, sz: number): boolean {
-    const x0 = gx * CELL, y0 = gy * CELL;
-    const x1 = x0 + CELL * sz, y1 = y0 + CELL * sz;
-    const hx0 = clamp(((x0 - UNIT_RMAX) / HC) | 0, 0, HCOLS - 1);
-    const hy0 = clamp(((y0 - UNIT_RMAX) / HC) | 0, 0, HROWS - 1);
-    const hx1 = clamp(((x1 + UNIT_RMAX) / HC) | 0, 0, HCOLS - 1);
-    const hy1 = clamp(((y1 + UNIT_RMAX) / HC) | 0, 0, HROWS - 1);
-    for (let hy = hy0; hy <= hy1; hy++) {
-      for (let hx = hx0; hx <= hx1; hx++) {
-        const c = hy * HCOLS + hx, e = this.bStart[c + 1];
-        for (let k = this.bStart[c]; k < e; k++) {
-          const i = this.bUnits[k];
-          if (i >= this.n) continue;
-          const dx = this.upx[i] - clamp(this.upx[i], x0, x1);
-          const dy = this.upy[i] - clamp(this.upy[i], y0, y1);
-          if (dx * dx + dy * dy < this.urad[i] * this.urad[i]) return false;
-        }
-      }
-    }
-    return true;
-  }
-
-  /** would this footprint cut the swarm's last route to the base? */
-
-
-  /**
-   * Towers build on HIGHGROUND only: mountain/rock wall cells (not forest,
-   * not floor), free of other towers. They overlook the lanes and never
-   * touch the flow field — the rock was already unwalkable.
-   */
   /**
    * THE HYDROPHOBIC MASK: every cell within HYDROPHOBIC_RANGE of water.
    *
@@ -4080,25 +4142,37 @@ export class Sim {
     }
     const sz = TOWERS[kind].size;
     if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
-    const { blocked } = this.terrain;
-    const { isGoal } = this.field;
-    // A DRILL STANDS ON ORE AND NOWHERE ELSE: at least one cell of its
-    // footprint on a vein (Terrain.ore) — it pays by the cell (Tower.ore),
-    // so a drill half on a vein is a drill half as good, exactly as in
-    // Mindustry
-    if (TOWERS[kind].drill && this.oreUnder(gx, gy, sz) === 0) return false;
+    const { blocked, wall } = this.terrain;
     const fogState = this.fog.enabled ? this.fog.visible : null;
-    // GROUND LEVEL ONLY. A structure stands on open ground, in the swarm's
-    // way, where it is a wall as well as a gun — never on a hill, a forest
-    // or deep water (every blocked cell), never on another structure — the
-    // core included — never on a drop zone (a corked door spawns nothing).
-    // Shallow water is ground, as it is in Mindustry: a naval map's
-    // shallows are most of the floor it has
+    /**
+     * THE HIGHGROUND, AND NOWHERE ELSE.
+     *
+     * A structure used to stand on the floor, in the swarm's way, where it
+     * was a wall as much as a building. It stands on the HILLS now — every
+     * cell of its footprint on rock standing above the floor
+     * (terrain.isBuildableWall, the same predicate that decides what a
+     * flyer flies around and what sight stops at). The two sentinels are
+     * not highground and never were: a pine canopy is a prop over a floor,
+     * and deep water is a hole.
+     *
+     * That one line is the whole shape of the game now. The player's base
+     * sits somewhere nothing can walk, so it is not in the fight and
+     * cannot be in it — no wall to chew through, no gun line to trade
+     * with, nothing to defend but the core itself. What the hills cost is
+     * ROOM: a map hands out however much highground it happens to have,
+     * and where it is decides nothing except how much base can be built.
+     * The fight is the army's (updateHunt), and the base is what makes it.
+     *
+     * A drill no longer asks about ore — there is none on any map
+     * (maps.ts terrainOf) and it pays a flat rate a cycle (economy.ts
+     * DRILL_CYCLE_PAY), so every hill is as good a hill as every other.
+     */
     for (let y = gy; y < gy + sz; y++)
       for (let x = gx; x < gx + sz; x++) {
         const i = y * COLS + x;
-        if (blocked[i] || isGoal[i] || this.groundPads[i] || this.cellTower[i]) return false;
-        // ...and never in the fog: a structure stands on ground something
+        if (!blocked[i] || !isBuildableWall(wall[i])) return false;
+        if (this.cellTower[i]) return false;
+        // ...and never in the fog: a structure goes up on ground something
         // of the player's can see right now (fog.ts) — Mindustry's rule,
         // Build.validPlace under rules.fog
         if (fogState && fogState[i] === 0) return false;
@@ -4110,147 +4184,236 @@ export class Sim {
       if (gx < s.gx + SHIELD_TOWER_SIZE && s.gx < gx + sz && gy < s.gy + SHIELD_TOWER_SIZE && s.gy < gy + sz)
         return false;
     }
-    // nothing underfoot. Sealing the swarm's route is allowed: a wall it
-    // cannot walk around is a wall it walks INTO and shoots (the field
-    // routes through structures at a cost — FlowField.soft), so a seal
-    // is not a win, it is a fight at the wall
-    if (!this.areaClearOfUnits(gx, gy, sz)) return false;
+    // NOTHING IS UNDERFOOT ON A HILL, so there is no crowd to shove clear
+    // and no route to seal: the cells were already closed to everything
+    // that walks before the building landed on them
     return true;
   }
 
   /**
-   * THE FACTORIES BUILD (economy.ts UNIT_PRICE, UNIT_BUILD_SECONDS): every
-   * finished factory of the player's makes the run's faction's unit of
-   * its tier, one after another — the price is paid as a build starts and
-   * the body is set down beside the building when the clock runs out. A
-   * factory that cannot afford its next unit, or finds the field full
-   * (PLAYER_UNIT_CAP), waits with nothing owed. A make that finds no
-   * ground beside the factory — every cell round it walled or occupied —
-   * keeps trying, tick by tick, at no further cost. A NAVAL TANK NEEDS NO
-   * WATER TO BE SET DOWN IN: it stands wherever a walker would, which is
-   * what stopped a factory on a dry map building the faction it was told
-   * to build and then never delivering it.
+   * THE BASE FIRES (economy.ts CYCLE_SECONDS): one clock for the whole of
+   * it, and when it runs out EVERY finished building of the player's
+   * resolves at once — a drill pays DRILL_CYCLE_PAY, a factory sets one
+   * body of its tier down beside the core. Then the clock is wound again.
+   *
+   * NOTHING IS QUEUED, OWED OR CARRIED. A very long tick — a huge speed
+   * multiplier, a frame the browser sat on — fires the base ONCE and
+   * rewinds from zero: a base that owed three cycles would pay them all
+   * into one frame, which is a burst of scrap and a wall of bodies nobody
+   * watched arrive. A cycle that finds the field full (PLAYER_UNIT_CAP)
+   * makes fewer bodies and the next one tries again.
+   *
+   * EVERY BODY IS SET DOWN AT THE CORE, whichever factory made it and
+   * wherever that factory stands. The factories stand on the HIGHGROUND
+   * (canPlace) — ground nothing can walk off — so a body delivered at its
+   * maker's doorstep would be a body stranded on a hill. The core is the
+   * one place on the map that is unambiguously the player's and
+   * unambiguously connected to the fight.
    */
-  private updateProduction(dt: number): void {
-    const faction = this.faction();
+  private updateCycle(dt: number): void {
+    if (this.lost()) return;
+    this.cycleT -= dt;
+    if (this.cycleT > 0) return;
+    this.cycleT = CYCLE_SECONDS;
     for (const t of this.towers) {
       if (t.team !== "player" || t.buildT > 0) continue;
       const tier = structStats(t.kind).produces;
       if (!tier) continue;
-      if (t.prodT < 0) {
-        if (this.nPlayer >= PLAYER_UNIT_CAP) continue;
-        const price = UNIT_PRICE[tier];
-        if (this.charging) {
-          if (this.scrap < price) continue;
-          this.scrap -= price;
-        }
-        t.prodT = UNIT_BUILD_SECONDS[tier];
-        continue;
-      }
-      if (t.prodT > 0) {
-        t.prodT = Math.max(0, t.prodT - dt);
-        continue;
-      }
-      // the clock has run out: the body is set down beside the building,
-      // on ground its layer can stand on (spawnUnit's own tests) — and on
-      // the SIDE the meetup point is on where one is set (RALLY_SPAWN_ARC),
-      // so the make comes out of the building already facing its walk
-      const kind = factionUnit(faction, tier);
-      const half = (structStats(t.kind).size * CELL) / 2;
-      const reach = half + FACTORY_SPAWN_REACH;
-      let toward: number | undefined;
-      if (t.rallyCell >= 0) {
-        const rx = ((t.rallyCell % COLS) + 0.5) * CELL;
-        const ry = (((t.rallyCell / COLS) | 0) + 0.5) * CELL;
-        // a rally point ON the factory has no side to it — the bearing
-        // would be noise, so the ring stays whole
-        if (Math.abs(rx - t.x) > 1e-3 || Math.abs(ry - t.y) > 1e-3)
-          toward = Math.atan2(ry - t.y, rx - t.x);
-      }
-      if (this.spawnUnit(kind, { x: t.x, y: t.y, spread: reach, near: half, toward }, 0, 1)) {
-        t.prodT = -1;
-        // ...AND WALKS OFF, if the building has been told where to send
-        // what it makes (setRally). The body is the one spawnUnit just set
-        // down, and it takes the field slot already aimed at the rally
-        // wherever there is one — so a factory on a rally costs one solve,
-        // not one a body
-        if (t.rallyCell >= 0) this.sendUnitTo(this.n - 1, t.rallyCell);
-        this.pushFx(t.x, t.y, 0.4, FxKind.Death);
-      }
+      // EACH FACTORY MAKES ITS OWN UNIT: the tier is the block and the
+      // line is the building's (factionOf), so two tier-1 factories from
+      // the run's two picks stand side by side making different bodies
+      const kind = factionUnit(this.factionOf(t), tier);
+      for (let u = 0; u < FACTORY_CYCLE_UNITS; u++) this.deliverAtCore(kind);
     }
   }
 
-  /** the faction whose units the factories build: the run's (tech.ts), or
-   *  the first family for a sim that is not charging (the sandbox, the editors) */
-  private faction(): FamilyKey {
-    return this.tech?.faction ?? "ground";
+  /**
+   * ONE BODY OUT OF THE BASE, set down beside the core and pointed at
+   * whatever the army is pointed at.
+   *
+   * The ring it lands in is the core's own footprint plus a couple of
+   * cells (spawnUnit's `near`/`spread`), narrowed to the side the arrow is
+   * on where one is set — so a base firing under a standing order puts its
+   * bodies down already facing the walk instead of half of them rounding
+   * the core first. A NAVAL TANK NEEDS NO WATER TO BE SET DOWN IN: it
+   * stands wherever a walker would.
+   */
+  private deliverAtCore(kind: UnitKind): boolean {
+    if (this.nPlayer >= PLAYER_UNIT_CAP) return false;
+    const c = this.core;
+    const half = (c.size * CELL) / 2;
+    const reach = half + FACTORY_SPAWN_REACH;
+    let toward: number | undefined;
+    if (this.rallyCell >= 0) {
+      const rx = ((this.rallyCell % COLS) + 0.5) * CELL;
+      const ry = (((this.rallyCell / COLS) | 0) + 0.5) * CELL;
+      // an arrow ON the core has no side to it — the bearing would be
+      // noise, so the ring stays whole
+      if (Math.abs(rx - c.x) > 1e-3 || Math.abs(ry - c.y) > 1e-3)
+        toward = Math.atan2(ry - c.y, rx - c.x);
+    }
+    if (!this.spawnUnit(kind, { x: c.x, y: c.y, spread: reach, near: half, toward }, 0, 1))
+      return false;
+    // ...AND WALKS OFF UNDER THE STANDING ORDER, if one has been given
+    // (orderMove). The body is the one spawnUnit just set down, and it
+    // takes the field slot already aimed at the arrow — so a whole cycle's
+    // worth of bodies costs one solve, not one a body
+    if (this.rallyCell >= 0) this.sendUnitTo(this.n - 1, this.rallyCell);
+    this.pushFx(c.x, c.y, 0.4, FxKind.Death);
+    return true;
   }
 
-  /** how many of a footprint's cells lie on an ore vein (Terrain.ore) */
-  private oreUnder(gx: number, gy: number, sz: number): number {
-    const { ore } = this.terrain;
-    let n = 0;
-    for (let y = gy; y < gy + sz; y++)
-      for (let x = gx; x < gx + sz; x++) if (ore[y * COLS + x]) n++;
-    return n;
+  /** seconds until the base fires again — the bar over the minimap */
+  get cycleIn(): number {
+    return Math.max(0, this.cycleT);
+  }
+
+  /**
+   * THE ARMY HUNTS. Every body of the player's that is under no order —
+   * which is every one of them until a player draws an arrow, and every
+   * one of them again the moment they arrive at where it pointed — looks
+   * for the nearest enemy and walks at it. This is the whole of the
+   * player's army AI, and it is deliberately the whole of it: the base is
+   * where the thinking goes, and an army that had to be micro-managed to
+   * find a fight would put it back on the field.
+   *
+   * NEAREST BODY FIRST, then nearest building. A swarm body inside
+   * HUNT_SIGHT is walked at STRAIGHT — it will have moved before any route
+   * to it finished solving, and at that reach the straight line is what a
+   * route would have said anyway. Nothing in reach means the swarm's
+   * BUILDINGS are the war: those get a real routed order (sendUnitTo), the
+   * same machinery the arrow uses, so an army crossing the map walks round
+   * the massif rather than into it and every body aimed at the same
+   * building shares one corridor.
+   *
+   * ONLY IDLE BODIES ARE TOUCHED. A body already walking somewhere — under
+   * the arrow, or under a hunt it took earlier — is left alone until it
+   * gets there, so the hunt can never argue with the player mid-walk and
+   * can never re-solve a corridor a hundred bodies are already on.
+   */
+  private updateHunt(dt: number): void {
+    for (let i = 0; i < this.n; i++) {
+      if (!this.uteam[i] || this.uhp[i] <= 0) continue;
+      this.uhuntT[i] -= dt;
+      if (this.uhuntT[i] > 0) continue;
+      this.uhuntT[i] = HUNT_SCAN_SECONDS;
+      // a body on its way somewhere keeps going. Its guns are hunting on
+      // their own clock the whole time (updateUnitWeapons) — this is about
+      // its FEET
+      if (this.uord[i] > 0) continue;
+      const x = this.upx[i], y = this.upy[i];
+      // the nearest of the swarm's bodies, air and ground alike, through
+      // the same broad phase the guns use. team 0 is the swarm's
+      const j = this.bestTarget(x, y, HUNT_SIGHT, true, true, false, 0);
+      if (j >= 0) {
+        this.uhunt[i] = 1;
+        this.uhuntx[i] = this.upx[j];
+        this.uhunty[i] = this.upy[j];
+        continue;
+      }
+      this.uhunt[i] = 0;
+      const t = this.nearestEnemyStructure(x, y);
+      if (!t) continue; // nothing left to fight: the body holds where it is
+      // already there. Standing on it and re-routing onto the cell
+      // underfoot once a second is not hunting, it is a solve leak
+      if (Math.hypot(t.x - x, t.y - y) <= HUNT_ARRIVE + (this.sizeOf(t) * CELL) / 2) continue;
+      const from =
+        clamp((y / CELL) | 0, 0, ROWS - 1) * COLS + clamp((x / CELL) | 0, 0, COLS - 1);
+      const goal = this.reachableGoal(this.nearestOpenCell(t.x, t.y), from);
+      if (goal >= 0) this.sendUnitTo(i, goal);
+    }
+  }
+
+  /**
+   * WHICH LINE A FACTORY BUILDS: its own (Tower.faction), which the player
+   * chose when they placed it. A building put down by something with no
+   * pick behind it — the sandbox, the editors, a map's own formation —
+   * falls back to the first family, so a factory always makes SOMETHING.
+   */
+  /**
+   * WHAT THIS BUILDING MAKES, or null if it makes nothing — the tier is
+   * the block's and the line is the building's own (factionOf), so this is
+   * the one place the two halves are put together. The overlay draws the
+   * answer on the factory (Game.drawFactoryUnits) so a hillside of ten
+   * different factories says what each of them is for without being
+   * clicked.
+   */
+  unitOf(t: Tower): UnitKind | null {
+    const tier = structStats(t.kind).produces;
+    return tier ? factionUnit(this.factionOf(t), tier) : null;
+  }
+
+  private factionOf(t: Tower): FamilyKey {
+    return t.faction ?? this.tech?.picks[0] ?? "ground";
   }
 
   /**
    * THE RUN'S INCOME, in scrap a second: the core's pay (CORE_INCOME) for
-   * as long as it stands, plus every finished drill of the player's by the
-   * ore under it (DRILL_INCOME_PER_ORE). Nothing the swarm does or dies of
-   * is in here — see economy.ts. Zero on a sim that is not charging (the
-   * editors, the sandbox, the title screen), where a bank would be a
-   * number that means nothing.
+   * as long as it stands, plus DRILL_CORE_INCOME for every finished drill
+   * of the player's. THERE IS STILL ONLY ONE INCOME: a drill mines
+   * nothing, it deepens the core's excavation, so this is a single rate
+   * that building drills raises rather than a second engine beside it.
+   * Nothing the swarm does or dies of pays anything (see economy.ts).
    *
-   * THE RATE, NOT THE PAYMENTS. Nothing is actually paid a second at a
-   * time any more — updateMining hands the money over in loads — so this
-   * is what those loads AVERAGE to, which is the number the prices and
-   * the stage audit (ladder.ts) are written against.
+   * A DRILL STILL GOING UP PAYS NOTHING — the shaft is not sunk yet —
+   * which is what makes building one in front of a wave a real risk even
+   * now that a finished one cannot be shot (untouchable).
+   *
+   * Zero on a sim that is not charging (the editors, the sandbox, the
+   * title screen), where a bank would be a number that means nothing.
+   *
+   * THE RATE, NOT THE PAYMENTS: the core ships in loads (updateMining), so
+   * this is what those loads AVERAGE to, which is the number the prices
+   * and the stage audit (ladder.ts) are written against.
    */
   income(): number {
     if (!this.charging || this.lost()) return 0;
     let rate = CORE_INCOME;
     for (const t of this.towers)
-      if (t.team === "player" && t.buildT <= 0 && t.ore > 0) rate += t.ore * DRILL_INCOME_PER_ORE;
+      if (t.team === "player" && t.buildT <= 0 && structStats(t.kind).drill)
+        rate += DRILL_CORE_INCOME;
     return rate;
   }
 
   /**
-   * MINING, tick by tick: the core and every finished drill of the
-   * player's run down the clock on the load they are filling, and a load
-   * that fills is handed over WHOLE — CORE_BATCH from the core,
-   * DRILL_BATCH from the drill — into the bank and onto the run's ledger.
+   * HOW LONG THE CORE'S CURRENT LOAD TAKES, at the rate in force. A drill
+   * finishing SHORTENS THE LOAD BEING FILLED, so the bar over the core
+   * speeds up the moment the shaft is sunk rather than at the next
+   * shipment — which is the whole of what a drill looks like from outside.
+   */
+  coreLoadSeconds(): number {
+    const rate = this.income();
+    return rate > 0 ? CORE_BATCH / rate : CORE_LOAD_SECONDS;
+  }
+
+  /**
+   * THE CORE SHIPS, tick by tick: it runs down the clock on the load it is
+   * filling and hands each full CORE_BATCH over whole, into the bank and
+   * onto the run's ledger. It is the run's entire income now that the
+   * drills are gone.
    *
-   * A drill's clock is its ore's (drillLoadSeconds), so a drill squarely
-   * on a vein delivers four times as often as one hanging off it: exactly
-   * the pay the per-second rate gave, arriving as something the player can
-   * watch happen. The remainder is CARRIED (mineT += load rather than
-   * mineT = load) so a long frame or a fast game speed never rounds a
-   * fraction of a load away, and the while loop covers a tick long enough
-   * to fill more than one.
+   * The remainder is CARRIED (coreMineT += load rather than = load) so a
+   * long frame or a fast game speed never rounds a fraction of a load
+   * away, and the while loop covers a tick long enough to fill more than
+   * one.
    *
-   * Nothing mines on a sim that is not charging or on a run that is
+   * Nothing ships on a sim that is not charging or on a run that is
    * already lost — same rule as income().
    */
   private updateMining(dt: number): void {
     if (!this.charging || this.lost()) return;
+    // the load's length is read fresh every tick (coreLoadSeconds), so a
+    // drill that finished this tick shortens the load already in progress
+    const load = this.coreLoadSeconds();
     this.coreMineT -= dt;
     while (this.coreMineT <= 0) {
-      this.coreMineT += CORE_LOAD_SECONDS;
+      this.coreMineT += load;
       this.payScrap(CORE_BATCH);
     }
-    for (const t of this.towers) {
-      // a shell still going up mines nothing, and neither does a drill the
-      // player dropped on bare ground (ore 0) or one the swarm owns
-      if (t.team !== "player" || t.buildT > 0 || t.ore <= 0) continue;
-      const load = drillLoadSeconds(t.ore);
-      t.mineT -= dt;
-      while (t.mineT <= 0) {
-        t.mineT += load;
-        this.payScrap(DRILL_BATCH);
-      }
-    }
+    // ...and a load left over from a slower rate is clamped down to the
+    // new one, or the first shipment after a drill goes up would still be
+    // paced by the rate before it
+    if (this.coreMineT > load) this.coreMineT = load;
   }
 
   /** a load of scrap into the bank, and onto the tally the results screen
@@ -4260,9 +4423,17 @@ export class Sim {
     this.scrapEarned += amount;
   }
 
-  placeTower(gx: number, gy: number, kind: TowerKind, instant = !this.charging): PlaceResult {
+  placeTower(
+    gx: number,
+    gy: number,
+    kind: TowerKind,
+    /** which line this factory builds (Tower.faction) — null lets the sim
+     *  fall back to the run's first pick (factionOf) */
+    faction: FamilyKey | null = null,
+    instant = !this.charging,
+  ): PlaceResult {
     if (!this.canPlace(gx, gy, kind)) return "invalid";
-    this.addTower(gx, gy, kind, instant);
+    this.addTower(gx, gy, kind, instant, "player", faction);
     if (this.charging) this.scrap -= scrapPriceOf(kind);
     return "ok";
   }
@@ -4272,7 +4443,14 @@ export class Sim {
    * wherever one fits (overlap with the one just placed fails canPlace,
    * which is what spaces the chain). Returns how many towers landed.
    */
-  placeLine(x0: number, y0: number, x1: number, y1: number, kind: TowerKind): number {
+  placeLine(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    kind: TowerKind,
+    faction: FamilyKey | null = null,
+  ): number {
     const sz = TOWERS[kind].size;
     const dx = x1 - x0, dy = y1 - y0;
     const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / CELL));
@@ -4283,7 +4461,7 @@ export class Sim {
       if (gx === pgx && gy === pgy) continue;
       pgx = gx;
       pgy = gy;
-      if (this.placeTower(gx, gy, kind) === "ok") placed++;
+      if (this.placeTower(gx, gy, kind, faction) === "ok") placed++;
     }
     return placed;
   }
@@ -4337,7 +4515,14 @@ export class Sim {
   }
 
   /** ...and build it: every cell of the ruler's line that will take one */
-  placeRuler(x0: number, y0: number, x1: number, y1: number, kind: TowerKind): number {
+  placeRuler(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    kind: TowerKind,
+    faction: FamilyKey | null = null,
+  ): number {
     let placed = 0;
     for (const c of this.rulerCells(x0, y0, x1, y1, kind))
       if (this.placeTower(c.gx, c.gy, kind) === "ok") placed++;
@@ -4606,7 +4791,13 @@ export class Sim {
       // tank that is the one with the deep water open, which is what lets
       // it land half in a channel and half on its bank
       const wallField = layer === "water" ? this.navalField : this.field;
-      if ((!fly && wallField.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly, span))
+      // ...and a FLYER is tested against the hills (airField): the rock is
+      // solid to it in flight now, so a body dropped inside one would be a
+      // body that had to shove its way back out of a mountain
+      if (
+        (fly ? this.airField : wallField).hitsWall(x, y, WALL_R) ||
+        !this.spawnSpotFree(x, y, r, fly, span)
+      )
         continue;
       const i = this.n++;
       // LEVEL SCALING: health rides the level curve, and the rung adds a
@@ -4661,6 +4852,12 @@ export class Sim {
       // a body arrives with nothing on it: not selected, under no order
       this.usel[i] = 0;
       this.uord[i] = 0;
+      // ...and looks for something to hunt on its own clock, from a random
+      // point in the cycle: a whole cycle's worth of bodies is set down on
+      // one frame (updateCycle), and without the stagger every one of them
+      // would scan on the same frame for the rest of the run
+      this.uhunt[i] = 0;
+      this.uhuntT[i] = Math.random() * HUNT_SCAN_SECONDS;
       // THE ARRIVAL CLOCK IS A DOOR RULE, so a brood does not get one: the
       // invincibility is there to stop a drop zone being camped, and a body
       // that broke out of another body in the middle of the kill zone is
@@ -5232,6 +5429,13 @@ export class Sim {
     this.uord[i] = this.uord[n];
     this.uordx[i] = this.uordx[n];
     this.uordy[i] = this.uordy[n];
+    // ...and so does the hunt: a body swapped down into a dead one's slot
+    // that inherited its target would walk at whatever that body was
+    // walking at, which on a quiet flank is the far side of the map
+    this.uhunt[i] = this.uhunt[n];
+    this.uhuntx[i] = this.uhuntx[n];
+    this.uhunty[i] = this.uhunty[n];
+    this.uhuntT[i] = this.uhuntT[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
     this.ufly[i] = this.ufly[n];
@@ -5673,16 +5877,33 @@ export class Sim {
       // it used to park on the water nearest it and fire from the shore,
       // which was the whole of what a hull could reach.
 
-      // THE PLAYER'S ARMY HAS NO STANDING ORDER. It stands where it was
-      // left and moves only where it is sent (orderMove) — its guns still
-      // take whatever comes into range on their own (updateUnitWeapons),
-      // which is what makes a held position a position rather than a
-      // parade. This is why the player's own flow fields are gone: three
-      // more field solves existed to answer "walk at the swarm's nearest
-      // building", a question nobody asks any more.
+      // THE PLAYER'S ARMY FIGHTS ON ITS OWN. It walks at whatever
+      // updateHunt last pointed it at — the nearest swarm body, or a
+      // routed order at the swarm's nearest building — and the arrow
+      // (orderMove) overrules that whenever a player draws one. There are
+      // still no player flow fields: a hunt is a straight line or one of
+      // the arrow's own corridors, never a fourth map-sized solve.
       if (mine) {
-        flowTmp.x = 0;
-        flowTmp.y = 0;
+        if (this.uhunt[i]) {
+          const hdx = this.uhuntx[i] - upx[i], hdy = this.uhunty[i] - upy[i];
+          const hd = Math.sqrt(hdx * hdx + hdy * hdy);
+          if (hd <= ORDER_ARRIVE) {
+            // on top of it: the guns take it from here
+            flowTmp.x = 0;
+            flowTmp.y = 0;
+          } else if (fly) {
+            // a flyer of the player's steers round the hills exactly as
+            // the swarm's does — the straight line at a body on the far
+            // side of a massif is a line into rock
+            this.airHeading(upx[i], upy[i], hdx / hd, hdy / hd, flowTmp, this.airField);
+          } else {
+            flowTmp.x = hdx / hd;
+            flowTmp.y = hdy / hd;
+          }
+        } else {
+          flowTmp.x = 0;
+          flowTmp.y = 0;
+        }
       } else if (fly) {
         // flyers take the air field's route round the hills and HOLD over
         // the core's edge once there — Mindustry's FlyingAI circles what it
@@ -5708,9 +5929,11 @@ export class Sim {
         const odx = this.uordx[i] - upx[i], ody = this.uordy[i] - upy[i];
         const od = Math.sqrt(odx * odx + ody * ody);
         if (od <= ORDER_ARRIVE) {
-          // arrived. A CHAINED ORDER TAKES ITS NEXT LEG HERE, on the tick
+          // ARRIVED. A CHAINED ORDER TAKES ITS NEXT LEG HERE, on the tick
           // the body reaches the point (takeNextWaypoint); with nothing
-          // queued the body simply stands where it was sent
+          // queued the body goes back on the hunt from where it was sent
+          // (updateHunt), which is what makes the arrow an attack-move
+          // rather than a parking space
           this.uord[i] = 0;
           this.takeNextWaypoint(i);
         } else {
@@ -5883,17 +6106,29 @@ export class Sim {
       // window edge, so 1-wide corridors and their L-bends stay threadable.
       // Only a zero-progress axis redirects its speed into the free one, and
       // a unit already overlapping a wall (crowd shoves) skips the veto
-      // entirely so it can always walk back out. Flyers skip walls wholesale
+      // entirely so it can always walk back out.
+      //
+      // A FLYER IS STOPPED BY THE HILLS. It used to skip walls wholesale —
+      // terrain bent its ROUTE and nothing more, so a crowd could shove one
+      // inside a mountain and it would come out the far side. The hills are
+      // SOLID to it now: it collides with the air field's own mask
+      // (terrain.airWalkMask — the same rock a building stands on and
+      // sight stops at) and slides along it exactly as a walker slides
+      // along rock. The two sentinels stay open sky: a pine canopy is
+      // something to fly over, and deep water is half the reason air
+      // exists. A body that somehow starts inside a hill still walks out,
+      // by the same `wedged` escape a walker gets.
       const x0 = upx[i], y0 = upy[i];
-      const wedged = fly || mf.hitsWall(upx[i], upy[i], WALL_R);
+      const cf = fly ? this.airField : mf;
+      const wedged = cf.hitsWall(upx[i], upy[i], WALL_R);
       let nx = upx[i] + dxT;
-      if (!wedged && mf.hitsWall(nx, upy[i], WALL_R)) {
+      if (!wedged && cf.hitsWall(nx, upy[i], WALL_R)) {
         const cX =
           dxT > 0
             ? Math.floor((nx + WALL_R) / CELL) * CELL - WALL_R
             : Math.ceil((nx - WALL_R) / CELL) * CELL + WALL_R;
         const fwd = dxT > 0 ? cX > upx[i] : cX < upx[i];
-        if (fwd && !mf.hitsWall(cX, upy[i], WALL_R)) nx = cX;
+        if (fwd && !cf.hitsWall(cX, upy[i], WALL_R)) nx = cX;
         else {
           nx = upx[i];
           uvy[i] += Math.sign(uvy[i] || flowTmp.y || 1) * Math.abs(uvx[i]) * 0.6;
@@ -5901,13 +6136,13 @@ export class Sim {
         }
       }
       let ny = upy[i] + dyT;
-      if (!wedged && mf.hitsWall(nx, ny, WALL_R)) {
+      if (!wedged && cf.hitsWall(nx, ny, WALL_R)) {
         const cY =
           dyT > 0
             ? Math.floor((ny + WALL_R) / CELL) * CELL - WALL_R
             : Math.ceil((ny - WALL_R) / CELL) * CELL + WALL_R;
         const fwd = dyT > 0 ? cY > upy[i] : cY < upy[i];
-        if (fwd && !mf.hitsWall(nx, cY, WALL_R)) ny = cY;
+        if (fwd && !cf.hitsWall(nx, cY, WALL_R)) ny = cY;
         else {
           ny = upy[i];
           uvx[i] += Math.sign(uvx[i] || flowTmp.x || 1) * Math.abs(uvy[i]) * 0.6;
@@ -6290,6 +6525,12 @@ export class Sim {
    * wall it chews through.
    */
   private damageTower(t: Structure, dmg: number): void {
+    // THE PLAYER'S BASE TAKES NOTHING (untouchable). Every scan already
+    // refuses to find it, so nothing should reach here — this is the
+    // backstop that makes the rule true rather than merely usual, and it
+    // catches the paths that hit a structure by CELL rather than by scan
+    // (stepHostileProjectile, structureHit)
+    if (this.untouchable(t)) return;
     // A BUILDING STILL GOING UP IS PAPER: one hit point, and ANY damage
     // takes it — a scratch a finished turret would shrug off pops the
     // scaffold. Building in front of the swarm is the risk being priced
@@ -6513,23 +6754,9 @@ export class Sim {
     return this.selStructs.size;
   }
 
-  /** ...and which, for the rings and rally lines drawn over them */
+  /** ...and which, for the rings drawn over them */
   get selectedStructs(): readonly Structure[] {
     return [...this.selStructs];
-  }
-
-  /**
-   * How many selected buildings can be TOLD something by a right-click —
-   * which today means how many of them make bodies (setRally). It is what
-   * decides whether the right button is an order at all: a selection of
-   * walls and turrets has nothing to be told, so the button stays the
-   * demolish it has always been.
-   */
-  get selectedProducerN(): number {
-    let k = 0;
-    for (const st of this.selStructs)
-      if (!isCore(st) && st.team === "player" && structStats(st.kind).produces) k++;
-    return k;
   }
 
   /**
@@ -6543,6 +6770,23 @@ export class Sim {
     if (add && this.selStructs.has(s)) this.selStructs.delete(s);
     else this.selStructs.add(s);
     return s;
+  }
+
+  /**
+   * DEMOLISH WHAT IS PICKED (Game's Delete key). The core is never one of
+   * them however it got into the selection — a base is a thing a player
+   * rearranges, and the run is not. Returns how many came down.
+   */
+  sellSelected(): number {
+    let k = 0;
+    for (const st of [...this.selStructs]) {
+      if (isCore(st) || st.team !== "player") continue;
+      this.scrap += sellValue(st.kind as TowerKind);
+      this.removeTower(st as Tower);
+      this.selStructs.delete(st);
+      k++;
+    }
+    return k;
   }
 
   /** every building of the player's a world rectangle touches */
@@ -6658,9 +6902,6 @@ export class Sim {
    * Returns how many bodies took the order.
    */
   orderMove(px: number, py: number, queue = false): number {
-    let k = 0;
-    for (let i = 0; i < this.n; i++) if (this.usel[i]) k++;
-    if (k === 0) return 0;
     const open = this.nearestOpenCell(px, py);
     if (open < 0) return 0;
     // ...and then AS CLOSE TO IT AS THE SELECTION CAN ACTUALLY WALK. A
@@ -6676,6 +6917,14 @@ export class Sim {
     // across the map is a long walk rather than a wall.
     const cell = this.reachableGoal(open);
     if (cell < 0) return 0;
+    // THE ARROW STANDS until the next one is drawn: every body the base
+    // makes from now on is sent at this same cell (deliverAtCore), so the
+    // player is aiming the ARMY and not the bodies that happen to be on
+    // the field at the moment they click. A queued leg is a leg of the
+    // walk and not a new destination, so it leaves the arrow where it is.
+    if (!queue) this.rallyCell = cell;
+    let k = 0;
+    for (let i = 0; i < this.n; i++) if (this.uteam[i]) k++;
     // A SHIFT-QUEUED ORDER IS A LEG, not a destination: it goes on the end
     // of what each selected body is already walking and changes nothing
     // about where it is headed this second. A body standing idle takes the
@@ -6684,7 +6933,7 @@ export class Sim {
     if (queue) {
       let queued = 0;
       for (let i = 0; i < this.n; i++) {
-        if (!this.usel[i]) continue;
+        if (!this.uteam[i]) continue;
         if (this.uord[i] === 0) {
           this.sendUnitTo(i, cell);
           queued++;
@@ -6706,10 +6955,14 @@ export class Sim {
     // first this is normally nobody
     for (let i = 0; i < this.n; i++) if (this.uord[i] === slot + 1) this.uord[i] = 0;
     for (let i = 0; i < this.n; i++) {
-      if (!this.usel[i]) continue;
-      // a plain order REPLACES the route, chain and all: the player has
-      // said where the body goes now, and a queue drawn before that is a
-      // plan they have just overruled
+      // EVERY BODY OF THE PLAYER'S, with no selection to narrow it: the
+      // arrow is the army's, and the army is not something a player picks
+      // out of a crowd any more
+      if (!this.uteam[i]) continue;
+      // a plain order REPLACES what the body was doing, hunt and chain
+      // alike: the player has said where it goes now, and a queue drawn
+      // before that is a plan they have just overruled
+      this.uhunt[i] = 0;
       this.wpts.delete(this.uid[i]);
       this.uord[i] = slot + 1;
       this.uordx[i] = x;
@@ -6793,35 +7046,6 @@ export class Sim {
   /** a cell's centre in world px — what a queued leg is drawn at */
   cellCenter(cell: number): { x: number; y: number } {
     return { x: ((cell % COLS) + 0.5) * CELL, y: (((cell / COLS) | 0) + 0.5) * CELL };
-  }
-
-  /**
-   * THE RIGHT-CLICK OF A SELECTED BUILDING: every one of them that MAKES
-   * BODIES (TowerStats.produces) points what it builds at this spot from
-   * now on. A building that makes nothing — a wall, a turret, the core —
-   * has nothing to say to a point on the ground and is passed over, which
-   * is what lets one right-click carry a mixed selection: the bodies walk,
-   * the factories re-aim, and the core takes no part.
-   *
-   * The point is resolved to walkable, reachable ground ONCE, here, from
-   * the factory's own doorstep rather than from whatever happens to be
-   * selected — the bodies that will walk it have not been built yet.
-   * Returns how many buildings took it.
-   */
-  setRally(px: number, py: number): number {
-    const open = this.nearestOpenCell(px, py);
-    if (open < 0) return 0;
-    let k = 0;
-    for (const st of this.selStructs) {
-      if (isCore(st) || st.team !== "player") continue;
-      if (!structStats(st.kind).produces) continue;
-      const from = clamp((st.y / CELL) | 0, 0, ROWS - 1) * COLS + clamp((st.x / CELL) | 0, 0, COLS - 1);
-      const cell = this.reachableGoal(open, from);
-      if (cell < 0) continue;
-      st.rallyCell = cell;
-      k++;
-    }
-    return k;
   }
 
   /**
@@ -6976,10 +7200,10 @@ export class Sim {
       seen[ci] = stamp;
       q[tail++] = ci;
     };
-    // ONE CELL, OR THE SELECTION. A rally is aimed from the FACTORY's own
-    // doorstep (setRally): the bodies that will walk it do not exist yet,
-    // so the selection — whatever it happens to hold — has nothing to say
-    // about which ground is connected to which
+    // ONE CELL, OR THE SELECTION. A hunt is aimed from the HUNTING BODY's
+    // own cell (updateHunt) and the arrow from the whole army's, so both
+    // hand a seed in; the seedless form is left for a caller that has only
+    // a destination to offer
     const seeds: number[] = [];
     if (seed >= 0) seeds.push(seed);
     else
@@ -7701,7 +7925,11 @@ export class Sim {
     let dead = pr.life <= 0 || off;
     const rot = Math.atan2(pr.vy, pr.vx);
     if (!dead && !b.artillery) {
-      const s = this.structureAt(pr.x, pr.y, "player");
+      const hit = this.structureAt(pr.x, pr.y, "player");
+      // a shot flies OVER the player's base rather than into it: it stands
+      // on the highground, out of the war (untouchable), and a bullet that
+      // died on it would be a bullet the base had blocked
+      const s = hit && !this.untouchable(hit) ? hit : null;
       if (s) {
         this.hitStructure(s, b.damage);
         if (b.splash <= 0) this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor);

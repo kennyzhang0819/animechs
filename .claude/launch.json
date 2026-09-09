@@ -131,6 +131,18 @@
         "3961"
       ],
       "port": 3961
+    },
+    {
+      "name": "mechswarm-4021",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:web",
+        "--",
+        "-p",
+        "4021"
+      ],
+      "port": 4021
     }
   ]
 }

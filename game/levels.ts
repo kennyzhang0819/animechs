@@ -1366,7 +1366,7 @@ export interface LevelSpec {
    * carries. Unset means whatever the tech state allows — the sandbox
    * and the editors, which build everything and produce the first family.
    */
-  faction?: FamilyKey;
+  picks?: readonly FamilyKey[];
   /**
    * THE FAMILIES THIS RUN SENDS — the die roll (rollFamilies) the deploy
    * made, in slot order: the script's first

@@ -270,10 +270,7 @@ export type PaintKind =
    * blueprint is made from buildings already standing, and how an edited
    * one is saved back over itself — the box IS the blueprint's footprint
    */
-  | "marquee"
-  /** an ore vein (Terrain.ore): paints ore onto open dry ground, where a
-   *  drill may stand; the eraser and the floor brushes take it off */
-  | "ore";
+  | "marquee";
 
 /**
  * One enemy drop zone: Mindustry marks a spawn with a tile and draws
@@ -548,16 +545,12 @@ export const PALETTE: readonly PaletteSet[] = [
   { id: "mission", label: "Mission structure", kind: "mission",
     variants: MISSION_STRUCT_KINDS.map((_, i) => i), noRandom: true,
     icons: MISSION_STRUCT_KINDS.map((k) => MISSION_STRUCT_ICONS[k]) },
-  // the ore veins: a drill stands on one and nowhere else, so where the
-  // ore is laid is where the run's income is (economy.ts)
   // THE MARQUEE, and the formations stamped with what it captures. The
   // formation set's variants are filled in from the LOADED LIBRARY rather
   // than written here (formationPalette), because the library is a
   // document an author edits at run time and this file is not
   { id: "marquee", label: "Select formation", kind: "marquee", variants: [0], noRandom: true,
     icons: [`${ENV}/clear-editor.png`] },
-  { id: "ore", label: "Ore vein", kind: "ore", variants: [0], noRandom: true,
-    icons: ["/mindustry/sprites/blocks/environment/ore-copper1.png"] },
   { id: "erase", label: "Erase", kind: "erase", variants: [0], icons: [`${ENV}/clear-editor.png`] },
 ];
 
@@ -585,10 +578,6 @@ export const PALETTE_SECTIONS: readonly { label: string; ids: readonly string[] 
   { label: "Paths", ids: ["path-dirt", "path-darksand", "path-mud"] },
   { label: "Props", ids: ["boulder", "shrub", "spore-cluster", "pur-bush", "shale-boulder",
     "snow-boulder", "sand-boulder"] },
-  // the veins are their own group rather than a stray swatch among the
-  // floors: ore is not a floor tile at all but a layer over one (T.ore),
-  // and it is the only brush that decides what a run EARNS
-  { label: "Resources", ids: ["ore"] },
   { label: "Zones", ids: ["spawn", "base"] },
   { label: "Enemy", ids: ["enemy", "mission"] },
   // the marquee lives with the formations it makes; the formation set
@@ -938,8 +927,14 @@ export function terrainFromMap(m: MapData): Terrain {
     floor,
     wall: lift(m.wall, 5, sw),
     blocked,
-    // no ore on a document that never had any: the map plays on the core's pay
-    ore: m.ore ? lift(m.ore, 0, sw) : new Uint8Array(NCELLS),
+    // NO ORE, ON ANY MAP. A drill does not stand on the ground any more —
+    // it stands in a slot on the player's board and pays a flat rate for
+    // being there (board.ts DRILL_TICK_PAY) — so a vein is a patch of
+    // colour that answers no question a player can ask. The FIELD is what
+    // the array is for, so it is emptied here, at the one door every map
+    // comes through: documents keep whatever they were authored with and
+    // nothing downstream ever sees it.
+    ore: new Uint8Array(NCELLS),
     spawns,
     spawn: rasterizeSpawns(spawns, { blocked, floor }),
     pines: m.pines.map((p) => ({ ...p })),

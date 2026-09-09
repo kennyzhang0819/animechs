@@ -16,19 +16,18 @@ import { loadBalanceDoc } from "./balance";
 import {
   loadLevelDocs,
   UNIT_KINDS,
+  type FamilyKey,
   type LevelSpec,
   type Mission,
   type TowerKind,
   type UnitKind,
 } from "./levels";
 import {
-  CORE_LOAD_SECONDS,
-  drillLoadSeconds,
+  CYCLE_SECONDS,
   missionXp,
   SCRAP_COLOR,
   scrapPriceOf,
   sellValue,
-  UNIT_BUILD_SECONDS,
 } from "./economy";
 import { HEALTH_BARS_DEFAULT, type HealthBarMode, type TowerPlacement } from "./progress";
 import { TOWER_KINDS } from "./types";
@@ -36,7 +35,7 @@ import { Renderer } from "./renderer";
 import { fitZoom } from "./fit";
 import { PICK_LENIENT, PICK_STRUCT_PAD, PICK_TIGHT, Sim } from "./sim";
 import { type TechState } from "./tech";
-import { isCore, type Tower } from "./types";
+import { isCore } from "./types";
 
 export interface UiState {
   levelId: string;
@@ -58,6 +57,15 @@ export interface UiState {
   totalWaves: number;
   /** the tower kind picked in the build bar, or null for the bare cursor */
   buildKind: TowerKind | null;
+  /** ...and which line it would build (Tower.faction) — the build menu is
+   *  the run's two factions crossed with the five tiers */
+  buildFaction: FamilyKey | null;
+  /** THE TWO LINES THIS RUN PLAYS (tech.ts picks) — a row of the build
+   *  menu each, and empty in a sandbox or an editor */
+  picks: readonly FamilyKey[];
+  /** seconds until the base fires again (economy.ts CYCLE_SECONDS) — the
+   *  bar over the core */
+  cycleIn: number;
   /** the demolish tool is picked: the next press sells instead of selecting */
   paused: boolean;
   /** the core is destroyed — the field is frozen behind the score screen */
@@ -306,13 +314,6 @@ const SIM_STEPS_MAX = 3;
  * number drives both, so one knob is one feel.
  */
 const PAN_RATE = 0.5;
-/**
- * EDGE PANNING: the cursor within this many CSS px of the viewport's edge
- * pushes the view that way, StarCraft's rule. Narrow on purpose — the HUD
- * sits a rem in from every edge, so a cursor on a button never pans, and
- * only a cursor pressed to the very rim does.
- */
-const EDGE_PAN_PX = 12;
 /** the minimap's backing store, in device px per cell — 2 so a unit's
  *  dot is a 2x2 square and the viewport's rectangle has a crisp 1-cell stroke */
 // one backing pixel a cell: 512 for the grid, sized down by CSS to its corner
@@ -345,6 +346,11 @@ const SEL_LIKE_STRUCT_R = CELL * 40;
  */
 const DBL_MS = 380;
 const DBL_PX = 6;
+/** the disc a factory's unit is drawn on, and the unit itself — both as
+ *  a share of the building's footprint (drawFactoryUnits) */
+const FACTORY_UNIT_DISC = 0.3;
+const FACTORY_UNIT_ART = 0.46;
+
 /** how long the mark over a move order lasts, in ms */
 const ORDER_MARK_MS = 520;
 /** ...and the radius it closes from and to, in world px */
@@ -361,8 +367,6 @@ const BAR_BACK = "rgba(10,14,26,0.72)";
 const BAR_EDGE = "rgba(0,0,0,0.55)";
 /** what is going up (Tower.buildT) — the accent gold */
 const BAR_BUILD = "#FFD37F";
-/** what is being made (Tower.prodT) — the player's blue */
-const BAR_MAKE = "#7FC4FF";
 /** the load a drill or the core is filling (Tower.mineT, Sim.coreMineT) —
  *  scrap's own grey, because scrap is what comes out of it */
 const BAR_MINE = SCRAP_COLOR;
@@ -440,8 +444,6 @@ export class Game {
   private panMoved = 0;
   /** the Controls tab's multiplier on PAN_RATE, keys and edges alike */
   private panSpeed = 1;
-  /** does a cursor at the screen's edge pan? (EDGE_PAN_PX) */
-  private edgePan = true;
   /**
    * WHO WEARS A HEALTH BAR ON THE FIELD — the Interface tab's two knobs,
    * one a side (setHealthBars). They govern units and buildings alike:
@@ -449,12 +451,6 @@ export class Game {
    */
   private allyBars: HealthBarMode = HEALTH_BARS_DEFAULT;
   private enemyBars: HealthBarMode = HEALTH_BARS_DEFAULT;
-  /**
-   * where the cursor is, window-wide, in client px — or null once it has
-   * left the window or the window has lost focus, so a cursor parked on
-   * another monitor never drags the view to a corner
-   */
-  private pointer: { x: number; y: number } | null = null;
   // THE MINIMAP (attachMinimap, drawMinimap): the whole map at a glance,
   // the fog over it, the field on it and the viewport's frame; a press or
   // a drag on it puts that place in view
@@ -472,6 +468,22 @@ export class Game {
   // cursor mode: null is the normal cursor (click a tower to inspect its
   // range); a kind from the tower menu turns on the ghost + paint placement
   private buildKind: TowerKind | null = null;
+  /**
+   * ...AND WHICH LINE IT BUILDS (Tower.faction). A run plays two factions
+   * (factions.ts RUN_FACTIONS) and the build menu is those two crossed
+   * with the five tiers, so what is in hand is a factory AND the body it
+   * will make. Null on a sim with no picks behind it — the sandbox and the
+   * editors, where the sim falls back to the first family.
+   */
+  private buildFaction: FamilyKey | null = null;
+  /**
+   * THE UNIT SPRITES DRAWN ON THE FACTORIES (drawFactoryUnits). The
+   * field's art lives in the WebGL atlas and this is the 2D overlay, so
+   * the raw sprite is loaded once per unit kind, lazily — a run only ever
+   * asks for the ten its two lines can build, and a kind that has not
+   * arrived yet simply is not drawn.
+   */
+  private readonly unitArt = new Map<UnitKind, HTMLImageElement>();
   private building = false;
   private buildFrom = { x: 0, y: 0 };
   /**
@@ -548,6 +560,16 @@ export class Game {
       this.toggleMenu();
       return;
     }
+    // DEMOLISH, now that the right button is the arrow: whatever
+    // buildings are picked come down, and nothing else does. It is the one
+    // destructive key in the game, so it acts ONLY on an explicit
+    // selection — there is no "under the cursor" fallback to fire by
+    // accident
+    if ((e.code === "Delete" || e.code === "Backspace") && !e.repeat) {
+      e.preventDefault();
+      this.sim.sellSelected();
+      return;
+    }
     if (e.code === "Space" && !e.repeat) {
       if (this.menuOpen) return; // the menu already holds the sim
       // space ALWAYS pauses — even with a UI button focused after a click,
@@ -568,15 +590,6 @@ export class Game {
   // missed keyups (cmd+tab away mid-pan) would leave the camera drifting
   private readonly onBlur = (): void => {
     this.keysDown.clear();
-    this.pointer = null; // ...and so would a cursor last seen at the edge
-  };
-  /** the cursor, wherever it is over the window (edge panning reads it) */
-  private readonly onWinMove = (e: PointerEvent): void => {
-    this.pointer = { x: e.clientX, y: e.clientY };
-  };
-  /** the cursor left the window: mouseout with nothing to go to */
-  private readonly onWinOut = (e: MouseEvent): void => {
-    if (!e.relatedTarget) this.pointer = null;
   };
   // THE MINIMAP'S POINTER: a press puts the place under it in view, and
   // the press held is a drag of the view — captured, so a drag that runs
@@ -660,38 +673,30 @@ export class Game {
       // the ghost away, and that press must never also demolish something
       if (this.buildKind) {
         this.buildKind = null;
+    this.buildFaction = null;
         return;
       }
-      const p = this.mouseWorld(e);
-      // WITH ANYTHING SELECTED THAT CAN BE TOLD SOMETHING, THE RIGHT
-      // BUTTON IS AN ORDER, not a demolish: the army is what the hand is
-      // on, and a player who wants to sell clicks off the selection first
-      // (which is one left click on bare ground). Nothing is demolished
-      // under a selection, so an order misclicked onto a turret costs
-      // nothing.
+      // THE RIGHT BUTTON IS THE ARROW, and the arrow is the only order in
+      // the game (Sim.orderMove). It can be put ANYWHERE — open ground,
+      // rock, the black, a swarm turret, the far corner of a map nobody
+      // has seen — and it sends the WHOLE army, whatever is selected and
+      // whatever is not. It also STANDS: every body the base makes
+      // afterwards walks to it too, until the next one is drawn.
       //
-      // ONE CLICK CARRIES A MIXED SELECTION. Five daggers, a factory and
-      // the core is one selection and one right-click: the daggers walk
-      // there, the factory sends what it builds there from now on
-      // (setRally), and the core — which can be told nothing — takes no
-      // part rather than blocking the other two. A selection of walls and
-      // turrets, where NOTHING can be told anything, leaves the button the
-      // demolish it has always been
-      const units = this.sim.selectedN, makers = this.sim.selectedProducerN;
-      if (units > 0 || makers > 0) {
-        let told = false;
-        // shift chains: the point goes on the END of what the selection is
-        // already walking rather than replacing it (Sim.orderMove)
-        if (units > 0 && this.sim.orderMove(p.x, p.y, e.shiftKey) > 0) told = true;
-        if (makers > 0 && this.sim.setRally(p.x, p.y) > 0) told = true;
-        if (told) this.orderMark = { x: p.x, y: p.y, t: performance.now() };
-        return;
-      }
-      // otherwise it demolishes on press and chains from here, exactly like
-      // the left button builds on press and chains from there
-      this.selling = true;
-      this.sellFrom = p;
-      this.sim.sellTowerAt(p.x, p.y);
+      // It used to be an order to the selection and a demolish otherwise.
+      // Neither survives: the army is not a thing a player picks out of a
+      // crowd any more, and DEMOLISHING MOVED TO THE DELETE KEY (onKeyDown)
+      // — with the right button meaning one thing everywhere, an order
+      // misclicked onto your own base cannot cost you the base.
+      const p = this.mouseWorld(e);
+      // shift chains: the point goes on the END of what the army is
+      // already walking rather than replacing it (Sim.orderMove)
+      this.sim.orderMove(p.x, p.y, e.shiftKey);
+      // THE MARK IS DRAWN WHERE IT WAS AIMED, not at the walkable cell the
+      // order snapped to: the player pointed at a spot and the ping is the
+      // answer to "did that click land", which it did even if the nearest
+      // ground the army can stand on is a few tiles off it
+      this.orderMark = { x: p.x, y: p.y, t: performance.now() };
     } else if (e.button === 1) {
       e.preventDefault();
       this.building = false;
@@ -709,7 +714,9 @@ export class Game {
     // this was a ghost the hand was still aiming
     if (wasBuilding && this.ruler && this.buildKind) {
       const q = this.mouseWorld(e);
-      this.sim.placeRuler(this.rulerFrom.x, this.rulerFrom.y, q.x, q.y, this.buildKind);
+      this.sim.placeRuler(
+        this.rulerFrom.x, this.rulerFrom.y, q.x, q.y, this.buildKind, this.buildFaction,
+      );
     }
     this.ruler = false;
     if (!this.selecting) return;
@@ -922,13 +929,14 @@ export class Game {
     // it restarts here, so a drag that leaves the map and comes back does
     // not paint a stripe across everything it skipped
     if (chain && this.inWorld(this.buildFrom)) {
-      this.sim.placeLine(this.buildFrom.x, this.buildFrom.y, p.x, p.y, kind);
+      this.sim.placeLine(this.buildFrom.x, this.buildFrom.y, p.x, p.y, kind, this.buildFaction);
     } else {
       const sz = TOWERS[kind].size;
       this.sim.placeTower(
         clamp(Math.round(p.x / CELL - sz / 2), 0, COLS - sz),
         clamp(Math.round(p.y / CELL - sz / 2), 0, ROWS - sz),
         kind,
+        this.buildFaction,
       );
     }
     this.buildFrom = p;
@@ -1046,8 +1054,6 @@ export class Game {
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("blur", this.onBlur);
-    window.addEventListener("pointermove", this.onWinMove);
-    window.addEventListener("mouseout", this.onWinOut);
     window.addEventListener("pointerup", this.onMouseUp);
     window.addEventListener("pointercancel", this.onMouseUp);
     window.addEventListener("wheel", this.onWinWheel, { passive: false });
@@ -1092,8 +1098,6 @@ export class Game {
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
     window.removeEventListener("blur", this.onBlur);
-    window.removeEventListener("pointermove", this.onWinMove);
-    window.removeEventListener("mouseout", this.onWinOut);
     window.removeEventListener("pointerup", this.onMouseUp);
     window.removeEventListener("pointercancel", this.onMouseUp);
     window.removeEventListener("wheel", this.onWinWheel);
@@ -1105,9 +1109,10 @@ export class Game {
     this.attachMinimap(null);
   }
 
-  setBuildKind(kind: TowerKind | null): void {
+  setBuildKind(kind: TowerKind | null, faction: FamilyKey | null = null): void {
     if (kind && this.tech && !this.tech.unlocked.has(kind)) return;
     this.buildKind = kind;
+    this.buildFaction = kind ? faction : null;
     // a building picked up puts the inspected one down: the ring the hand
     // was reading belongs to a decision it has moved on from
     if (kind) this.sim.clearStructSelection();
@@ -1301,11 +1306,6 @@ export class Game {
     this.panSpeed = Number.isFinite(mult) && mult > 0 ? mult : 1;
   }
 
-  /** the Controls tab's edge-panning switch (EDGE_PAN_PX) */
-  setEdgePan(on: boolean): void {
-    this.edgePan = on;
-    if (!on) this.pointer = null;
-  }
 
   /**
    * The Interface tab's health-bar knobs, both sides at once — they are
@@ -1379,6 +1379,9 @@ export class Game {
       currentWave: this.sim.currentWave(),
       totalWaves: this.sim.totalWaves,
       buildKind: this.buildKind,
+      buildFaction: this.buildFaction,
+      picks: this.tech?.picks ?? [],
+      cycleIn: this.sim.cycleIn,
       paused: this.paused,
       speed: this.speed,
       showRoutes: this.showRoutes,
@@ -1431,7 +1434,8 @@ export class Game {
    */
   applyLayout(towers: readonly TowerPlacement[]): number {
     let placed = 0;
-    for (const t of towers) if (this.sim.placeTower(t.gx, t.gy, t.kind) === "ok") placed++;
+    for (const t of towers)
+      if (this.sim.placeTower(t.gx, t.gy, t.kind, this.tech?.picks[0] ?? null) === "ok") placed++;
     return placed;
   }
 
@@ -1569,23 +1573,13 @@ export class Game {
       panX += dir[0];
       panY += dir[1];
     }
-    // EDGE PAN: the cursor pressed to the viewport's rim pushes the view
-    // that way at the same rate. Not while the menu holds the run, and
-    // not while a middle-drag or the minimap is already steering — two
-    // hands on the camera pull it apart
-    if (
-      this.edgePan && this.pointer && !this.menuOpen && !this.panning && !this.mmDrag &&
-      !this.sim.lost() && !this.won()
-    ) {
-      const r = this.uiCanvas.getBoundingClientRect();
-      const px = this.pointer.x - r.left, py = this.pointer.y - r.top;
-      if (px >= 0 && py >= 0 && px <= r.width && py <= r.height) {
-        if (px <= EDGE_PAN_PX) panX -= 1;
-        else if (px >= r.width - EDGE_PAN_PX) panX += 1;
-        if (py <= EDGE_PAN_PX) panY -= 1;
-        else if (py >= r.height - EDGE_PAN_PX) panY += 1;
-      }
-    }
+    // THE SCREEN'S EDGE DOES NOTHING. Edge panning was written for a
+    // cursor the game held captive: under pointer lock the pointer could
+    // not leave, so the rim was the only way to say "further that way".
+    // The lock is gone, the cursor is the desktop's again, and a camera
+    // that lurches whenever a hand crosses the rim on its way to the build
+    // menu is a camera fighting the player. WASD, the arrows, a
+    // middle-drag and the minimap are the ways to move it.
     if (panX !== 0 || panY !== 0) {
       this.tlx += Math.sign(panX) * this.visW() * panStep;
       this.tly += Math.sign(panY) * this.visH() * panStep;
@@ -1838,13 +1832,41 @@ export class Game {
    */
   private drawSelection(c: CanvasRenderingContext2D): void {
     const sim = this.sim;
-    const { upx, upy, usel, n } = sim;
+    const { upx, upy, n } = sim;
     // WHERE THE ORDER LANDED: a heavy ring that closes on the point and a
     // dot at the middle of it, in the team's amber. It CONTRACTS rather
     // than expanding — an opening ring reads as something happening AT the
     // point (a blast, a ping), a closing one as an arrow landing on it —
     // and it is round, drawn at the weight of the ring under a unit, so
     // the two read as the same hand's marks
+    // THE STANDING ARROW (Sim.rallyCell): where the army is walking, and
+    // where every body the base makes next will walk. It OUTLIVES the ping
+    // — an order that stands is a thing a player should be able to look up
+    // and find two minutes later — and it breathes slowly so it reads as a
+    // live order rather than as a scorch on the ground. Same vocabulary as
+    // the ping, a ring and four ticks, so the two read as one mark settling
+    if (sim.rallyCell >= 0) {
+      const at = sim.cellCenter(sim.rallyCell);
+      const pulse = 0.82 + 0.18 * Math.sin(performance.now() / 620);
+      c.strokeStyle = `rgba(255,211,127,${0.5 * pulse})`;
+      c.lineWidth = 2;
+      c.beginPath();
+      c.arc(at.x, at.y, ORDER_MARK_R1, 0, Math.PI * 2);
+      c.stroke();
+      for (let k = 0; k < 4; k++) {
+        const a = Math.PI / 4 + (k * Math.PI) / 2;
+        const cx = Math.cos(a), cy = Math.sin(a);
+        c.beginPath();
+        c.moveTo(at.x + cx * (ORDER_MARK_R1 + 9), at.y + cy * (ORDER_MARK_R1 + 9));
+        c.lineTo(at.x + cx * (ORDER_MARK_R1 + 3), at.y + cy * (ORDER_MARK_R1 + 3));
+        c.stroke();
+      }
+      c.fillStyle = `rgba(255,211,127,${0.75 * pulse})`;
+      c.beginPath();
+      c.arc(at.x, at.y, 2.5, 0, Math.PI * 2);
+      c.fill();
+    }
+
     if (this.orderMark) {
       const age = (performance.now() - this.orderMark.t) / ORDER_MARK_MS;
       if (age >= 1) this.orderMark = null;
@@ -1884,7 +1906,9 @@ export class Game {
     // ordinary order already says where it went with its ping
     const routes = new Map<string, { cells: readonly number[]; ox: number; oy: number; cx: number; cy: number; k: number }>();
     for (let i = 0; i < n; i++) {
-      if (!usel[i]) continue;
+      // the army's, not a selection's: a chained arrow is given to every
+      // body at once, so every body's legs are the same legs
+      if (!sim.uteam[i]) continue;
       const q = sim.waypointsOf(i);
       if (!q || q.length === 0) continue;
       const ox = sim.uord[i] > 0 ? sim.uordx[i] : upx[i];
@@ -1936,30 +1960,48 @@ export class Game {
   }
 
   /**
-   * WHERE A BUILDING SENDS WHAT IT MAKES (Sim.setRally): a dashed line
-   * from the building to the point, with a ring on the end of it. Drawn
-   * only while the building is selected — a board where every factory
-   * trailed a line all game would be a board nobody could read — and in
-   * the same amber as an order, because it is one: the difference is only
-   * that the bodies it is given to have not been built yet.
+   * WHAT EACH FACTORY MAKES, drawn ON the factory: the unit's own sprite,
+   * over a dark disc, in the middle of the footprint.
+   *
+   * A run plays two lines and builds ten different factories out of them
+   * (factions.ts), and a tier's BLOCK is the same picture in both — a
+   * tier-1 factory is a tier-1 factory. So a hillside of them was ten
+   * buildings a player could not tell apart, and the only way to ask what
+   * one was for was to remember where they put it. The body is the answer
+   * to that question and it is the same picture the build menu offered,
+   * so what was chosen and what is standing read as the same thing.
+   *
+   * The disc under it is what keeps a dark unit legible on a bright block;
+   * the sprite is drawn at a share of the footprint, so a tetrative
+   * reconstructor wears a big one and a ground factory a small one, and
+   * both stay inside the building at every zoom.
    */
-  private drawRally(c: CanvasRenderingContext2D, t: Tower): void {
-    const at = this.sim.cellCenter(t.rallyCell);
-    c.strokeStyle = "rgba(255,211,127,0.5)";
-    c.lineWidth = 1.5;
-    c.setLineDash([5, 5]);
-    c.beginPath();
-    c.moveTo(t.x, t.y);
-    c.lineTo(at.x, at.y);
-    c.stroke();
-    c.setLineDash([]);
-    c.beginPath();
-    c.arc(at.x, at.y, 6, 0, Math.PI * 2);
-    c.stroke();
-    c.beginPath();
-    c.arc(at.x, at.y, 2, 0, Math.PI * 2);
-    c.fillStyle = "rgba(255,211,127,0.9)";
-    c.fill();
+  private drawFactoryUnits(c: CanvasRenderingContext2D): void {
+    for (const t of this.sim.towers) {
+      if (t.team !== "player") continue;
+      const unit = this.sim.unitOf(t);
+      if (!unit) continue;
+      let img = this.unitArt.get(unit);
+      if (!img) {
+        img = new Image();
+        img.src = `/mindustry/sprites/units/${unit}.png`;
+        this.unitArt.set(unit, img);
+      }
+      if (!img.complete || img.naturalWidth === 0) continue;
+      const px = structStats(t.kind).size * CELL;
+      const r = px * FACTORY_UNIT_DISC;
+      c.beginPath();
+      c.arc(t.x, t.y, r, 0, Math.PI * 2);
+      c.fillStyle = "rgba(8,8,10,0.62)";
+      c.fill();
+      c.strokeStyle = "rgba(255,211,127,0.45)";
+      c.lineWidth = 1;
+      c.stroke();
+      const sz = px * FACTORY_UNIT_ART;
+      c.imageSmoothingEnabled = false;
+      c.drawImage(img, t.x - sz / 2, t.y - sz / 2, sz, sz);
+      c.imageSmoothingEnabled = true;
+    }
   }
 
   /**
@@ -2126,7 +2168,19 @@ export class Game {
     const cf = clamp(core.hp / Math.max(1, core.hpMax), 0, 1);
     if (this.barsOn(true, cf, this.hoverOver(core.x, core.y, csz), picked?.has(core) === true))
       bars.push({ v: cf, col: hpColor(cf) });
-    if (mining) bars.push({ v: 1 - this.sim.coreMineT / CORE_LOAD_SECONDS, col: BAR_MINE });
+    // the CORE'S SHIPMENT, measured against the load's LIVE length: every
+    // drill standing deepens the excavation (Sim.coreLoadSeconds), so the
+    // bar visibly fills faster as they go up — which is the only thing a
+    // drill looks like from outside
+    if (mining)
+      bars.push({ v: 1 - this.sim.coreMineT / this.sim.coreLoadSeconds(), col: BAR_MINE });
+    // THE BASE'S CLOCK (economy.ts CYCLE_SECONDS), on top of the stack.
+    // It used to head the minimap, which is the far corner of the screen
+    // from the thing it is about: the moment it fills, every factory sets
+    // a body down AT THE CORE, so the bar belongs over the ground the
+    // bodies appear on and the eye is already on when they do.
+    if (mining)
+      bars.push({ v: 1 - this.sim.cycleIn / CYCLE_SECONDS, col: BAR_BUILD });
     this.drawBars(c, core.x, core.y - csz / 2, csz - 2, bars);
     for (const t of this.sim.towers) {
       const st = structStats(t.kind);
@@ -2136,25 +2190,23 @@ export class Game {
       bars.length = 0;
       const hpMax = towerMaxHp(t.kind);
       const f = clamp(t.hp / Math.max(1, hpMax), 0, 1);
-      // a shell is on 1 hp by design (Tower.buildT) — that is a state, not
-      // a wound, and the construction bar below is already saying it
-      if (t.buildT <= 0 && this.barsOn(ally, f, this.hoverOver(t.x, t.y, sz), picked?.has(t) === true))
-        bars.push({ v: f, col: ally ? hpColor(f) : ENEMY_HP });
+      // ONLY THE SWARM'S BUILDINGS WEAR HEALTH. Nothing of the player's
+      // can be shot at all any more — it stands on the highground, out of
+      // the war (Sim.untouchable) — and a full green bar over a building
+      // that cannot be hurt is a bar reporting on a fight that will never
+      // happen. The CORE still wears one, above: it is the one thing of
+      // theirs the swarm can reach, and the run ends when it falls.
+      // A shell is on 1 hp by design (Tower.buildT) — a state, not a
+      // wound, and the construction bar below is already saying it
+      if (!ally && t.buildT <= 0 && this.barsOn(ally, f, this.hoverOver(t.x, t.y, sz), picked?.has(t) === true))
+        bars.push({ v: f, col: ENEMY_HP });
       if (t.buildT > 0 && t.buildTotal > 0)
         bars.push({ v: 1 - t.buildT / t.buildTotal, col: BAR_BUILD });
-      const tier = st.produces;
-      // -1 is a factory with nothing on the bench: it is waiting on scrap
-      // or on the unit cap, and an empty bar says that better than no bar
-      if (tier && t.buildT <= 0 && t.team === "player") {
-        const total = UNIT_BUILD_SECONDS[tier] || 1;
-        bars.push({ v: t.prodT < 0 ? 0 : 1 - t.prodT / total, col: BAR_MAKE });
-      }
-      // A DRILL'S LOAD (Sim.updateMining). Only where it is actually being
-      // filled: a drill on bare ore-less ground, a shell still going up and
-      // a board that is not charging (the editors, the sandbox) all mine
-      // nothing, and an empty bar sitting still on them would be a lie
-      if (mining && t.ore > 0 && t.buildT <= 0 && t.team === "player")
-        bars.push({ v: 1 - t.mineT / drillLoadSeconds(t.ore), col: BAR_MINE });
+      // NO CLOCK OF ITS OWN. A factory used to wear a bar for the body it
+      // was building and a drill one for the load it was filling; both are
+      // the CYCLE now (economy.ts CYCLE_SECONDS), one clock for the whole
+      // base, and it is drawn once over the CORE rather than a hundred
+      // times over a hillside in lockstep with itself
       this.drawBars(c, t.x, t.y - sz / 2, sz - 2, bars);
     }
     // THE SWARM'S SHIELD TOWERS (mutation.ts) stand outside the tower list
@@ -2263,7 +2315,6 @@ export class Game {
       c.lineWidth = 1.5;
       const selPx = size * CELL;
       c.strokeRect(st.gx * CELL + 1, st.gy * CELL + 1, selPx - 2, selPx - 2);
-      if (!isCore(st) && st.rallyCell >= 0) this.drawRally(c, st);
     }
 
     // THE FOCUS MARK (Sim.setFocusUnit / setFocusShieldTower): a bobbing red
@@ -2287,6 +2338,8 @@ export class Game {
       c.fill();
     }
 
+    // WHAT EVERY FACTORY IS FOR, as the body it makes drawn on it
+    this.drawFactoryUnits(c);
     // WHAT EVERY STRUCTURE IS DOING, as a stack of bars over it (drawBars)
     this.drawStructureBars(c);
     // ...and what every BODY has left, on the Interface tab's terms

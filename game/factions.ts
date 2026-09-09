@@ -20,24 +20,57 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * one of the seventeen.
  */
 
-/** every kind that is nobody's: the drill and the five factories */
+/** every kind that is nobody's: the five factories */
 export const COMMON_KINDS: readonly TowerKind[] = TOWER_KINDS.filter((k) => TOWERS[k].building);
 
 /**
- * WHAT A RUN MAY BUILD, in the order the build menu lays it out
- * (tech.ts BUILD_SLOTS reads this): the drill that pays for everything
- * and the five factories that turn the scrap into the army. No turrets —
- * see the note above — and no walls, since there are none left in the
- * game (types.ts).
+ * WHAT A RUN MAY BUILD, tier order — the five factories that turn scrap
+ * into the army, and nothing else at all. No turrets (see the note above),
+ * no walls (there are none left in the game) and no drill: there is no ore
+ * on any map and the core's shipping is the whole economy, so every
+ * building a run puts down is a cost that makes bodies.
+ *
+ * THIS IS FIVE BLOCKS AND TEN BUILDINGS. A run plays TWO factions
+ * (RUN_FACTIONS), and a factory is a tier AND a line (Tower.faction), so
+ * the build menu is these five crossed with the two picks — one factory
+ * per unit, ten of them, laid out a row per faction (tech.ts
+ * buildSlotsFor).
  */
-export const BUILDABLE_KINDS: readonly TowerKind[] = [
-  "drill",
+export const FACTORY_KINDS: readonly TowerKind[] = [
   "factory-t1",
   "factory-t2",
   "factory-t3",
   "factory-t4",
   "factory-t5",
 ];
+
+/**
+ * WHAT A RUN BUILDS THAT BELONGS TO NO LINE: the drill, and only the
+ * drill. It makes no bodies, so it has no faction to be — every run gets
+ * the same one however it is deployed, and it sits on a row of its own
+ * under the factories (tech.ts buildSlotsFor). It is the only building in
+ * the game that pays for the others (economy.ts DRILL_CORE_INCOME).
+ */
+export const COMMON_BUILD_KINDS: readonly TowerKind[] = ["drill"];
+
+/** everything a run may put down, for the tech gate and the track */
+export const BUILDABLE_KINDS: readonly TowerKind[] = [
+  ...COMMON_BUILD_KINDS,
+  ...FACTORY_KINDS,
+];
+
+/**
+ * HOW MANY FACTIONS A RUN PLAYS AT ONCE.
+ *
+ * Two, and exactly two — the deploy screen will not start a run with any
+ * other number. One line was a run that answered every board the same way:
+ * the five bodies were a ladder and the only question was how far up it the
+ * bank had got. Two lines make the board a CHOICE — a cheap swarm out of
+ * one and a heavy out of the other, or both cheap and twice as many — and
+ * they are chosen before the map is seen, so the pair is a commitment
+ * rather than a reaction.
+ */
+export const RUN_FACTIONS = 2;
 
 /**
  * THE FACTIONS IN PLAY, in the family table's order — the shelf

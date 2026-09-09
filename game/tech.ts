@@ -4,7 +4,7 @@ import {
   type UpgradeContext,
   type UpgradePoints,
 } from "./upgrades";
-import { BUILDABLE_KINDS, kindsFor } from "./factions";
+import { COMMON_BUILD_KINDS, FACTORY_KINDS, kindsFor, RUN_FACTIONS } from "./factions";
 import type { FamilyKey } from "./levels";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
@@ -20,15 +20,17 @@ import { TOWER_KINDS, type TowerKind } from "./types";
 export interface TechState {
   /**
    * THE FACTIONS THE SAVE OWNS (track.ts factionsAt) — what the deploy
-   * screen offers — and THE ONE THIS RUN PLAYS (`faction`), picked there.
-   * Null is every owned faction at once: the sandbox, the editors, and
-   * the progress screen's census of what the save may build.
+   * screen offers — and THE TWO THIS RUN PLAYS (`picks`, factions.ts
+   * RUN_FACTIONS), chosen there before the map is seen.
+   *
+   * An empty `picks` is every owned faction at once: the sandbox, the
+   * editors, and the progress screen's census of what the save may build.
    */
   factions: ReadonlySet<FamilyKey>;
-  faction: FamilyKey | null;
-  /** the kinds a run may PUT DOWN (factions.ts BUILDABLE_KINDS) — the
-   *  drill and the five factories. The same set whichever
-   *  faction is playing, since a faction is bodies and nothing else */
+  picks: readonly FamilyKey[];
+  /** the kinds a run may PUT DOWN (factions.ts BUILDABLE_KINDS) — the five
+   *  factories. The same five whichever lines are playing: a faction is
+   *  bodies, and which body a factory makes is the FACTORY's (Tower.faction) */
   unlocked: ReadonlySet<TowerKind>;
   /**
    * The fast-forward multipliers this save may use, ascending. 1x is
@@ -43,15 +45,16 @@ export interface TechState {
 export { upgradedTower, NO_UPGRADES, type UpgradeContext, type UpgradePoints };
 
 /**
- * THE SAME SAVE, PLAYING ONE FACTION: which line the factories build.
- * A faction the save does not own is refused — the deploy screen never
- * offers one, so this is the belt to its braces — and null is every
- * owned faction at once (the sandbox, the editors). The buildable roster
- * does not move with the pick any more; a faction owns no buildings.
+ * THE SAME SAVE, PLAYING THESE LINES: which bodies its factories can be
+ * built to make. A faction the save does not own is dropped — the deploy
+ * screen never offers one, so this is the belt to its braces — and an
+ * empty list is every owned faction at once (the sandbox, the editors).
+ * The buildable roster does not move with the picks; a faction owns no
+ * buildings, only bodies.
  */
-export function withFaction(tech: TechState, faction: FamilyKey | null): TechState {
-  const f = faction && tech.factions.has(faction) ? faction : null;
-  return { ...tech, faction: f, unlocked: kindsFor(f ? [f] : tech.factions) };
+export function withFactions(tech: TechState, picks: readonly FamilyKey[]): TechState {
+  const ok = picks.filter((f) => tech.factions.has(f)).slice(0, RUN_FACTIONS);
+  return { ...tech, picks: ok, unlocked: kindsFor(ok.length > 0 ? ok : tech.factions) };
 }
 
 /**
@@ -88,32 +91,67 @@ export function withFaction(tech: TechState, faction: FamilyKey | null): TechSta
  */
 export interface BuildSlot {
   kind: TowerKind;
+  /** which line this slot's factory builds (Tower.faction) */
+  faction: FamilyKey | null;
   /** the printed key, worn on the slot; `code` is the physical one */
   key: string;
   code: string;
 }
 
-/** how wide the grid is — the rows are this long and there are this many */
-export const BUILD_COLS = 4;
+/** how wide the grid is: one column per unit TIER (factions.ts) */
+export const BUILD_COLS = 5;
 
-/** the sixteen keys, in the grid's reading order (see the note above) */
+/**
+ * THE TEN KEYS, in the grid's reading order — one row per faction.
+ *
+ * NONE OF THEM IS W, A, S OR D. Those four pan the camera (Game's
+ * PAN_KEYS) and always have; a build shortcut sharing one would either
+ * shove the view sideways every time a player reached for a factory or
+ * silently stop the camera working. So the rows are the two that sit
+ * clear of the pan cluster: the top row from Q rightwards, and the bottom
+ * row from Z rightwards, which are also two straight lines under the same
+ * hand.
+ */
 const GRID_KEYS: readonly string[] = [
-  "Q", "E", "R", "T",
-  "F", "G", "H", "J",
-  "Z", "X", "C", "V",
-  "Y", "U", "I", "O",
+  "Q", "E", "R", "T", "Y",
+  "Z", "X", "C", "V", "B",
+  "F", "G", "H", "J", "K",
 ];
 
-/** the grid: one slot per buildable kind, in the roster's own order,
- *  padded out to the full sixteen with empties */
-export const BUILD_SLOTS: readonly (BuildSlot | null)[] = GRID_KEYS.map((key, i) => {
-  const kind = BUILDABLE_KINDS[i];
-  return kind ? { kind, key, code: `Key${key}` } : null;
-});
+/**
+ * THE GRID FOR THESE PICKS: one ROW PER FACTION, one column per tier, and
+ * then a LAST ROW that belongs to no line — the drill (factions.ts
+ * COMMON_BUILD_KINDS). A run playing two lines therefore reads as ten
+ * factories over the one building that pays for them, which is the shape
+ * of the decision: the tiers run across, the lines run down, and the
+ * economy sits underneath both.
+ *
+ * The empty cells in the last row stand empty rather than the filled ones
+ * spreading out, for the same reason the whole grid is fixed: the same
+ * thing is in the same place every run, so the hand learns it.
+ *
+ * With no picks at all (the sandbox, the editors) the first row is the
+ * five factories with no line attached: they build the default family,
+ * which is what a board with nobody deployed on it is for.
+ */
+export function buildSlotsFor(picks: readonly FamilyKey[]): readonly (BuildSlot | null)[] {
+  const rows = picks.length > 0 ? picks : [null];
+  return GRID_KEYS.map((key, i) => {
+    const row = (i / BUILD_COLS) | 0, col = i % BUILD_COLS;
+    const kind =
+      row < rows.length ? FACTORY_KINDS[col]
+      : row === rows.length ? COMMON_BUILD_KINDS[col]
+      : undefined;
+    return kind
+      ? { kind, faction: row < rows.length ? rows[row] ?? null : null, key, code: `Key${key}` }
+      : null;
+  });
+}
 
-/** the slot a physical key opens, or null — what the keyboard handler reads */
-export function slotForCode(code: string): BuildSlot | null {
-  return BUILD_SLOTS.find((s) => s !== null && s.code === code) ?? null;
+/** the slot a physical key opens for these picks, or null — what the
+ *  keyboard handler reads */
+export function slotForCode(code: string, picks: readonly FamilyKey[]): BuildSlot | null {
+  return buildSlotsFor(picks).find((s) => s !== null && s.code === code) ?? null;
 }
 
 /**

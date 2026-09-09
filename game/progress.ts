@@ -2,7 +2,7 @@ import { FAMILIES, WORLD, WORLDS, type FamilyKey } from "./levels";
 import { tierXpBonus, TOP_TIER } from "./ladder";
 import { levelForXp, missionXp, RANDOM_MAP_XP_BONUS } from "./economy";
 import { MAX_LEVEL, techStateFor, worldUnlockLevel } from "./track";
-import { withFaction, type TechState } from "./tech";
+import { withFactions, type TechState } from "./tech";
 import { clearSave, readSave, writeSave } from "./storage";
 import { type TowerKind } from "./types";
 
@@ -90,7 +90,7 @@ export interface Progress {
    * the deploy screen opens on it. Absent means the first faction the
    * save owns; one the save does not own (a wiped save) reads as absent.
    */
-  faction?: FamilyKey;
+  factions?: readonly FamilyKey[];
   /**
    * Ambient effects — the particle work, and nothing a weapon is made of
    * (see Sim.setEffects). Absent means ON; only an explicit `false` is off.
@@ -109,7 +109,6 @@ export interface Progress {
    * only an explicit `false` is off — a windowed player whose cursor keeps
    * leaving for another screen is the one who turns it off.
    */
-  edgePan?: boolean;
   /**
    * WHEN A HEALTH BAR RIDES OVER A BODY ON THE FIELD, the player's own
    * (`allyBars`) and the swarm's (`enemyBars`) set apart — a player who
@@ -235,13 +234,12 @@ export function loadProgress(): Progress {
       hudMinimized: p.hudMinimized === true,
       difficulty: readDifficulty(p),
       map: readMapPick(p),
-      ...(readFaction(p) ? { faction: readFaction(p) } : null),
+      ...(readFactions(p).length > 0 ? { factions: readFactions(p) } : null),
       // absent means ON — only an explicit false switches them off
       effects: p.effects !== false,
       uiScale: readUiScale(p),
       panSpeed: readPanSpeed(p),
       // absent means ON — only an explicit false switches it off
-      edgePan: p.edgePan !== false,
       allyBars: readBars(p.allyBars),
       enemyBars: readBars(p.enemyBars),
       ...(p.devGrantOff === true ? { devGrantOff: true } : null),
@@ -283,16 +281,21 @@ export function saveRunPick(difficulty: number, map: string | null): void {
   saveProgress({ ...rest, difficulty: tier, ...(map ? { map } : null) });
 }
 
-/** the remembered faction, if it names one the game has */
-function readFaction(p: { faction?: unknown }): FamilyKey | undefined {
-  const raw = p.faction;
-  return typeof raw === "string" && FAMILIES.some((f) => f.key === raw) ? (raw as FamilyKey) : undefined;
+/** the remembered PAIR (factions.ts RUN_FACTIONS), keeping only the names
+ *  the game still has — a save written before a family was shelved, or
+ *  hand-edited, is filtered rather than refused */
+function readFactions(p: { factions?: unknown }): FamilyKey[] {
+  const raw = p.factions;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (f): f is FamilyKey => typeof f === "string" && FAMILIES.some((x) => x.key === f),
+  );
 }
 
-export function saveFaction(faction: FamilyKey): void {
+export function saveFactions(factions: readonly FamilyKey[]): void {
   const p = loadProgress();
-  if (p.faction === faction) return;
-  saveProgress({ ...p, faction });
+  if ((p.factions ?? []).join(",") === factions.join(",")) return;
+  saveProgress({ ...p, factions: [...factions] });
 }
 
 export function saveSpeed(mult: number): void {
@@ -342,11 +345,6 @@ export function savePanSpeed(mult: number): void {
   saveProgress({ ...p, panSpeed: mult });
 }
 
-export function saveEdgePan(on: boolean): void {
-  const p = loadProgress();
-  if ((p.edgePan ?? true) === on) return;
-  saveProgress({ ...p, edgePan: on });
-}
 
 /**
  * The pace a run should open at: the save's remembered choice, if the
@@ -398,8 +396,8 @@ export const effectiveLevel = (p: Progress): number =>
   devUnlocking(p) ? MAX_LEVEL : levelOf(p);
 
 /** what the run may do, as the sim and the bar want it — the track at the save's level */
-export function techOf(p: Progress, faction: FamilyKey | null = null): TechState {
-  return withFaction(techStateFor(effectiveLevel(p)), faction);
+export function techOf(p: Progress, picks: readonly FamilyKey[] = []): TechState {
+  return withFactions(techStateFor(effectiveLevel(p)), picks);
 }
 
 // ---------- the record ----------

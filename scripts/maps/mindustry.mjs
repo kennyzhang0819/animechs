@@ -908,50 +908,14 @@ export function build(spec) {
       decor.push({ x: (x + 0.5) * CELL, y: (y + 0.5) * CELL, size: CELL * d.tiles, rot: ((rnd() * 4) | 0) * (Math.PI / 2), kind: d.kinds[(rnd() * d.kinds.length) | 0] });
     }
 
-  // 7e. THE ORE VEINS — where the run's income is (game/economy.ts: a
-  //     drill stands on ore and nowhere else). Mindustry lays ore as noise
-  //     blobs on the floor; here they are blobs of ORE_PATCH cells on open
-  //     dry ground: two within reach of the core's clearing (the opening
-  //     drills), the rest spread over the board and biased AWAY from the
-  //     core, so expanding is what pays. Never in a drop zone, never under
-  //     a hill, never in the water; a blob's edge is noise-ragged
+  // 7e. NO ORE. A drill does not stand on the ground any more — it stands
+  //     in a slot on the player's board and pays a flat rate for being
+  //     there (game/board.ts) — so a vein is a patch of colour answering a
+  //     question nobody asks. The array stays in the document's shape and
+  //     stays empty; the game empties it again at load (maps.ts terrainOf),
+  //     so maps drawn before this play the same way.
   const ore = new Uint8Array(N);
-  const oreN = makeNoise(rnd, 2);
-  const isDry = (i) => !blocked[i] && !isWater(i) && !isRock(i);
-  let veins = 0;
-  const lay = (cx, cy, r) => {
-    let cells = 0;
-    disc(W, H, cx + 0.5, cy + 0.5, r + 1, (i, x, y) => {
-      if (!isDry(i) || nearZone(x, y)) return;
-      const d = Math.hypot(x + 0.5 - cx - 0.5, y + 0.5 - cy - 0.5) / r;
-      if (d + (oreN(x / 3, y / 3) - 0.5) * 0.9 > 1) return;
-      ore[i] = 1;
-      cells++;
-    });
-    return cells;
-  };
-  const oreR = spec.ore?.r ?? 3 * SCALE;
-  const want = spec.ore?.count ?? Math.round(10 * SCALE);
-  // two veins in the core's clearing: the first drills go up before the
-  // first wave, on ground the core already sees
-  for (let k = 0, tries = 0; k < 2 && tries < 400; tries++) {
-    const a = rnd() * Math.PI * 2, d = coreR * 0.45 + rnd() * coreR * 0.4;
-    const x = Math.round(core.x + Math.cos(a) * d), y = Math.round(core.y + Math.sin(a) * d);
-    if (!inb(x, y) || !isDry(y * W + x) || Math.abs(x - core.x) < 5 || Math.abs(y - core.y) < 5) continue;
-    if (lay(x, y, Math.max(2, oreR - 1)) >= 4) { k++; veins++; }
-  }
-  // the rest over the board, spaced out, at least a clearing away from the core
-  const laid = [];
-  for (let tries = 0; veins < want && tries < want * 80; tries++) {
-    const x = 8 + ((rnd() * (W - 16)) | 0), y = 8 + ((rnd() * (H - 16)) | 0), i = y * W + x;
-    if (!isDry(i) || nearZone(x, y)) continue;
-    if (Math.hypot(x - core.x, y - core.y) < coreR * 2.5) continue;
-    if (laid.some(([px, py]) => Math.hypot(px - x, py - y) < 22 * SCALE)) continue;
-    if (lay(x, y, oreR) >= 6) { laid.push([x, y]); veins++; }
-  }
-  let oreCells = 0;
-  for (let i = 0; i < N; i++) if (ore[i]) oreCells++;
-  say(`laid ${veins} ore veins, ${oreCells} cells`);
+  const veins = 0;
 
   const base = { x: core.x - 2, y: core.y - 2 };
   return { floor, wall, blocked, ore, kind, pines, decor, spawns: spec.spawns.map((z) => ({ x: z.x, y: z.y, r: z.r, zone: z.zone })), base, core, routes, ruins: ruins.length, holes, lumps, veins, log };
@@ -1076,7 +1040,6 @@ export function check(spec, m) {
       if (ok) big++;
     }
   say(big > 200 * SCALE * SCALE, `4x4 turret footprints: ${big}`);
-  say(m.veins >= 6, `ore veins: ${m.veins}`);
   return fails;
 }
 

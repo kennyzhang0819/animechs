@@ -446,8 +446,9 @@ export interface TowerStats {
    * `wall` also carried `building`, so two names for one idea became one.
    */
   building?: true;
-  /** a drill: stands only on an ore vein (Sim.canPlace) and pays scrap by
-   *  the second per ore cell under it (economy.ts DRILL_INCOME_PER_ORE) */
+  /** a DRILL: deepens the core's excavation rather than mining anything of
+   *  its own — every one standing adds DRILL_CORE_INCOME to what the core
+   *  ships a second (economy.ts, Sim.income) */
   drill?: true;
   /** a factory: builds the run's faction's unit of this tier, one after
    *  another, for the unit's price (economy.ts UNIT_PRICE) */
@@ -1346,9 +1347,10 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.bulletYellowBack,
     },
   },
-  // THE DRILL: Mindustry's pneumatic drill, 2x2 at Block's default health
-  // (40 a tile). It stands on ore and nothing else, and it is the whole of
-  // the run's income past what the core pays — see economy.ts
+  // THE DRILL: Mindustry's pneumatic drill, 2x2 at Block's default health.
+  // It sinks a shaft on the highground like everything else the player
+  // builds and deepens the CORE's excavation (economy.ts) — the run's one
+  // income, made faster
   drill: { ...buildingStats("Pneumatic Drill", 160, 2), building: true, drill: true },
   // THE FACTORIES: the ground factory and the four reconstructors, each
   // at Mindustry's own footprint and Block's default health for it. One
@@ -1450,7 +1452,7 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   spectre: "A twin-barrel heavy machine gun with the highest sustained damage in the game, alternating between barrels so it never stops firing.",
   meltdown: "Holds a continuous laser on one target, burning through it for as long as it stays in range.",
   foreshadow: "An extreme-range railgun firing one enormous shot on a long reload. It picks the highest-health target in range rather than the nearest.",
-  drill: "Stands on an ore vein and mines it, delivering a load of scrap every time its bar fills — four times as often on a full vein as on a single ore cell. The core ships the run's base income on the same clock; drills are how it grows. Only on ore.",
+  drill: "Deepens the core's excavation: every drill standing adds to what the core ships a second, for as long as it stands. It mines nothing of its own — there is no ore on any map — and it makes no bodies. It is the only building in the game that pays for the others.",
   "factory-t1": "Builds your faction's tier-1 unit, one after another, for the unit's price. Units walk out and attack-move at the enemy's nearest building.",
   "factory-t2": "Builds your faction's tier-2 unit, one after another, for the unit's price.",
   "factory-t3": "Builds your faction's tier-3 unit — the heavy of the line — one after another, for the unit's price.",

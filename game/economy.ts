@@ -4,20 +4,18 @@ import { TOWER_KINDS, type TowerKind } from "./types";
 /**
  * THE ECONOMY, in two currencies that never touch.
  *
- *   SCRAP  is IN-RUN money, and THE PLAYER MAKES ALL OF IT. Every run
- *          starts with SCRAP_START, the core ships CORE_BATCH at a time
- *          for as long as it stands, and every drill on an ore vein hands
- *          over a DRILL_BATCH load as often as the ore under it fills one.
- *          The RATES behind those loads are CORE_INCOME and
- *          DRILL_INCOME_PER_ORE a second, so what a run earns over a
- *          minute is what it always was — it simply arrives in loads with
- *          a bar filling toward each one, rather than as a trickle no
- *          single frame can show. Nothing
- *          the enemy does or dies of pays anything: a kill drops nothing,
- *          a wave lands with no bonus, a wrecked enemy building pays no
- *          bounty. Every turret, wall, drill and factory placed costs
- *          scrap (TOWER_PRICE), and every unit a factory builds costs its
- *          tier's UNIT_PRICE. Selling refunds SELL_REFUND of the price.
+ *   SCRAP  is IN-RUN money, and THE CORE MAKES ALL OF IT. Every run
+ *          starts with SCRAP_START and the core ships CORE_BATCH at a
+ *          time for as long as it stands, at CORE_INCOME a second PLUS
+ *          DRILL_CORE_INCOME for every drill the run has standing — a
+ *          drill mines nothing of its own, it DEEPENS THE CORE'S
+ *          EXCAVATION, so there is still exactly one income and building
+ *          drills is how it grows. Nothing the enemy does or dies of pays
+ *          anything: a kill drops nothing, a wave lands with no bonus, a
+ *          wrecked enemy building pays no bounty.
+ *          So a run's whole budget is a CLOCK, and what it buys is
+ *          factories (TOWER_PRICE); the bodies they make are free
+ *          (CYCLE_SECONDS). Selling refunds SELL_REFUND of the price.
  *          Nothing carries between runs.
  *
  *   XP     is META progress, and IT IS PAID FOR OBJECTIVES, NOT KILLS.
@@ -36,12 +34,12 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * scrap by tier, which tied the economy to the wave script: the waves had
  * to be authored so that their bodies paid for the turrets that killed
  * them, and a wave the designer wanted small was a wave the player could
- * not afford to answer. An RTS economy comes out of the ground instead —
- * the core's steady pay, and the veins the run expands out to claim — so
- * the waves are free to be exactly as heavy as the mission wants, and
- * expansion is worth something on its own. This also replaced five
- * currencies and a count model before it, where a tech-tree point WAS a
- * placement and the whole board went down before the first wave.
+ * not afford to answer. The core's pay is a clock nothing on the board can
+ * change, so the waves are free to be exactly as heavy as the mission
+ * wants. It used to be a clock PLUS the ore veins a run expanded out to
+ * claim; the veins went when the base moved onto the highground, out of
+ * the war (Sim.untouchable) — a vein is a thing you hold against someone,
+ * and there is nobody to hold it against any more.
  */
 
 // ---------------------------------------------------------------------------
@@ -49,73 +47,96 @@ import { TOWER_KINDS, type TowerKind } from "./types";
 // ---------------------------------------------------------------------------
 
 /**
- * What a run opens with, and what the four-minute grace is spent on: a
- * first line of a dozen guns and a wall, a drill or two on the nearest
- * vein, and the first factory. Deliberately a fraction of what the core
- * pays over the grace (CORE_INCOME x GRACE_DEFAULT is twice this): the
- * opening is a decision about what to build first, not a board bought
- * whole.
+ * What a run opens with, and what the four-minute grace is spent on: the
+ * first factories, and which lines they belong to. At the tier-1 price
+ * (TOWER_PRICE) it is twenty of them, or a handful of tier-3s, or a
+ * spread — deliberately a fraction of what the core pays over the grace
+ * (CORE_INCOME x GRACE_DEFAULT is twice this), so the opening is a
+ * decision about what to build first, not a board bought whole.
  */
 export const SCRAP_START = 3000;
 
 /**
- * THE CORE'S PAY: scrap a second, for as long as the core stands. This is
- * the run's base income — over a 25-minute run it is about 37,000, which
- * buys a faction's whole line once, so the run's second line and its
- * heavy tier come out of the drills. Sim.income is the rate; the core
- * actually pays it CORE_BATCH at a time (Sim.updateMining).
+ * THE CORE'S PAY: scrap a second, for as long as the core stands and
+ * before any drill deepens it. Over a 25-minute run the bare rate is about
+ * 37,000, and every price in this file is written against that one number.
+ * Sim.income is the live rate; the core actually pays it CORE_BATCH at a
+ * time (Sim.updateMining).
  */
 export const CORE_INCOME = 25;
 
 /**
- * A DRILL'S PAY: scrap a second per ORE CELL under its 2x2 footprint
- * (Tower.ore), so a drill squarely on a vein pays four times this and one
- * hanging off its edge pays for the cell that is on it — Mindustry's own
- * rule, where a drill's speed is its ore count. Six a second for a full
- * drill: a drill pays itself back (TOWER_PRICE) inside a minute, and four
- * of them match the core, which is what makes the veins worth walking
- * out to and worth holding.
+ * THE LOAD THE SCRAP ARRIVES IN, and why it arrives in loads at all.
  *
- * THIS IS A RATE, NOT A DRIP. What the drill actually does with it is
- * fill a DRILL_BATCH load and hand the whole load over at once — see
- * drillLoadSeconds below.
+ * A core paying 25 a second pays 0.4 a frame: a number that cannot be seen
+ * happening. Shipping is a CYCLE instead — the core fills a CORE_BATCH
+ * load, a bar over its footprint fills with it (Game.drawStructureBars),
+ * and the load lands in the bank whole every four seconds. Averaged over
+ * any stretch longer than a load the income is exactly CORE_INCOME, which
+ * is the number the prices and the stage audit (ladder.ts) are written
+ * against.
  */
-export const DRILL_INCOME_PER_ORE = 1.5;
-
-/**
- * THE LOADS THE SCRAP ARRIVES IN, and why it arrives in loads at all.
- *
- * A drill that paid 6 scrap a second paid 0.1 a frame: a number that
- * could not be seen happening, on a building that looked identical
- * whether it was on four ore cells or one. Mining is now a CYCLE — the
- * drill fills a DRILL_BATCH load at its ore's rate, a bar over its
- * footprint fills with it (Game.drawStructureBars), and the load lands
- * in the bank whole. The core ships the same way, CORE_BATCH at a time.
- *
- * THE BATCH SIZES ARE CHOSEN BY THEIR CLOCKS, not by their round numbers.
- * A drill on a full vein delivers every DRILL_BATCH / (4 x 1.5) = 5
- * seconds — often enough to feel like an engine running, slow enough that
- * the bar is worth looking at — and one hanging off a vein by a single
- * cell takes 20, which is the same "is this spot worth it" question the
- * ore count always asked, now visible on the building. The core's 100
- * lands every 4 seconds, so the opening still ticks along while nothing
- * is built yet.
- *
- * NOTHING ABOUT THE ECONOMY'S SIZE MOVED. Averaged over any stretch
- * longer than a load, income is exactly CORE_INCOME plus the drills'
- * rates — the stage audit (ladder.ts) and every price above are priced
- * against the same numbers they always were.
- */
-export const DRILL_BATCH = 30;
 export const CORE_BATCH = 100;
 
-/** how long a drill on `ore` cells takes to fill one DRILL_BATCH load —
- *  Infinity for a drill on no ore, which never fills one */
-export const drillLoadSeconds = (ore: number): number =>
-  ore > 0 ? DRILL_BATCH / (ore * DRILL_INCOME_PER_ORE) : Infinity;
+/**
+ * WHAT ONE DRILL ADDS to the core's excavation, in scrap a second.
+ *
+ * A drill does not mine. It sinks a shaft beside the core's and the core
+ * ships faster for it — one income, made quicker — which is why the bar
+ * over the core visibly fills faster as drills go up, and why a drill lost
+ * is income lost rather than a second engine stopping.
+ *
+ * At 5 a second against a price of 400 a drill pays for itself in eighty
+ * seconds, under three cycles (CYCLE_SECONDS), and is pure profit after.
+ * That is deliberately a strong return: the drill is the only building in
+ * the game that pays for the others, so the whole of a run's opening is
+ * the question of how many to sink before the first bodies — and every
+ * one of them is a factory not built while the first wave is walking in.
+ *
+ * NOTHING CAPS IT. Drills fund drills, so a run left alone compounds; what
+ * stops it is the highground a map hands out (Sim.canPlace) and the clock
+ * the swarm is keeping.
+ */
+export const DRILL_CORE_INCOME = 5;
 
-/** how long the core takes to fill one CORE_BATCH shipment */
+/** how long the core takes to fill one CORE_BATCH shipment at the bare
+ *  rate — the length a load actually takes is the LIVE rate's
+ *  (Sim.coreLoadSeconds), which every drill shortens */
 export const CORE_LOAD_SECONDS = CORE_BATCH / CORE_INCOME;
+
+/**
+ * THE CYCLE — one clock for the whole base, and the beat the run is played
+ * to.
+ *
+ * Every CYCLE_SECONDS every finished building of the player's fires at
+ * once: a drill pays DRILL_CYCLE_PAY, a factory sets FACTORY_CYCLE_UNITS
+ * bodies of its tier down beside the core. Nothing runs a clock of its
+ * own, nothing is queued and nothing is owed — a cycle that finds the
+ * field full (PLAYER_UNIT_CAP) simply makes fewer bodies and the next one
+ * tries again.
+ *
+ * WHY ONE CLOCK AND NOT ONE PER BUILDING. A factory used to run its own
+ * timer and charge UNIT_PRICE per body, which made a base a set of
+ * subscriptions the drills were paying off at different rates: what the
+ * player watched was a dozen bars filling out of step, and what they
+ * decided was nothing. One beat makes the whole base a single readable
+ * event — the bar fills, the base fires, the army grows by exactly what is
+ * standing — and it moves every decision back onto WHAT IS BUILT.
+ *
+ * A FACTORY'S BODY IS FREE. The building was the purchase; what it buys is
+ * one body of that tier every cycle for the rest of the run. That is what
+ * lets a player spend a whole cycle's income on the next building rather
+ * than holding a float back to pay for bodies they have already bought.
+ *
+ * A DRILL'S PAY IS FLAT, with no ore under it to ask about — there is no
+ * ore on any map any more (maps.ts terrainOf). The rate is what a drill
+ * squarely on a full vein used to earn over the same thirty seconds
+ * (DRILL_INCOME_PER_ORE x 4 x 30), so the shape of the opening — a drill
+ * pays for itself inside two cycles — is the shape it always had.
+ */
+export const CYCLE_SECONDS = 30;
+export const DRILL_CYCLE_PAY = 180;
+export const FACTORY_CYCLE_UNITS = 1;
 
 /**
  * WHAT A FACTORY CHARGES FOR A UNIT, by the unit's tier (index 0 unused),
@@ -268,18 +289,42 @@ export const TOWER_PRICE: Record<TowerKind, number> = {
   spectre: 7500,
   meltdown: 9000,
   foreshadow: 12000,
-  // THE DRILL pays itself back in under a minute on a full vein (see
-  // DRILL_INCOME_PER_ORE): cheap enough to be the first thing bought,
-  // dear enough that a vein under fire is a loss
-  drill: 300,
-  // THE FACTORIES are the run's clock (levels.ts: T1-3 units by seven
-  // minutes, T4 by fourteen, T5 after): each is priced at roughly what the
-  // core has paid by the time its tier is due
-  "factory-t1": 500,
-  "factory-t2": 1200,
-  "factory-t3": 3000,
-  "factory-t4": 6000,
-  "factory-t5": 12000,
+  /**
+   * THE FACTORIES — the only thing a run buys, and the whole of what it
+   * decides. Priced against ONE CLOCK: the core pays CORE_INCOME a second,
+   * which is 750 scrap a cycle (CYCLE_SECONDS), and every price below is
+   * read as "how many cycles of the core's pay is this".
+   *
+   *   T1  150   a fifth of a cycle. SPAM. Five of them off one cycle's
+   *   T2  400   income, twenty out of the opening stipend — a tier-1 line
+   *             is something a player lays down by the row and keeps
+   *             laying down, and a tier-2 is the same gesture at half the
+   *             rate. These two are the floor of every board.
+   *   T3  1500  two cycles: the first purchase a player actually saves
+   *             for, and the one that ends the opening.
+   *   T4  8000  eleven cycles, five and a half minutes of everything.
+   *   T5  20000 twenty-seven cycles. A T5 factory is most of a run's
+   *             income spent on one building — it is the thing a long
+   *             game is FOR, and a board that has one had to give up
+   *             fifty tier-1s to get it.
+   *
+   * The curve is steeper than it was on purpose. The old spread (500 to
+   * 12000) made every tier affordable within a few cycles of each other,
+   * so the board converged on "whatever is highest" and the low tiers were
+   * a phase a run passed through. At these prices the cheap lines never
+   * stop being worth buying — a hundred daggers a cycle is a real answer
+   * to a wave — and the dear ones are a commitment rather than a step.
+   */
+  // THE DRILL pays for itself in under three cycles and then keeps
+  // paying: it is the only building that makes the others affordable, so
+  // it is priced where an opening has to CHOOSE between the first drills
+  // and the first bodies rather than taking both
+  drill: 400,
+  "factory-t1": 150,
+  "factory-t2": 400,
+  "factory-t3": 1500,
+  "factory-t4": 8000,
+  "factory-t5": 20000,
 };
 
 const priceOverrides = new Map<TowerKind, number>();

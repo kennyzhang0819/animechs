@@ -1727,10 +1727,10 @@ const SPRITES = {
   // THE ECONOMY AND THE ARMY (types.ts): the pneumatic drill, the ground
   // factory and the four reconstructors — every one drawn flat, at
   // Mindustry's own footprint — and the copper ore's three faces
-  drill: "/mindustry/sprites/blocks/drills/pneumatic-drill.png",
   // THE MISSION BUILDINGS: the launch pad and its glow overlay (UV_LAUNCH_PAD)
   launchPad: "/mindustry/sprites/blocks/campaign/launch-pad.png",
   launchPadLight: "/mindustry/sprites/blocks/campaign/launch-pad-light.png",
+  drill: "/mindustry/sprites/blocks/drills/pneumatic-drill.png",
   factory1: "/mindustry/sprites/blocks/units/ground-factory.png",
   factory2: "/mindustry/sprites/blocks/units/additive-reconstructor.png",
   factory3: "/mindustry/sprites/blocks/units/multiplicative-reconstructor.png",
