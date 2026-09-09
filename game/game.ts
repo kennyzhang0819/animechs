@@ -1176,6 +1176,17 @@ export class Game {
   }
 
   /**
+   * FOG ON OR OFF for the run in progress (Sim.setFog). Off lights the
+   * whole board and keeps it lit: the renderer and the minimap both draw
+   * by the sim's own fog, so one call clears the wash, the culling and the
+   * minimap together. Sandbox is where it is thrown from — a board being
+   * staged or debugged is one the whole of which has to be visible.
+   */
+  setFog(on: boolean): void {
+    this.sim.setFog(on);
+  }
+
+  /**
    * The ambient-effects switch, both halves at once — the sim stops
    * pushing dressing into the effect pool (Sim.setEffects, which keeps
    * every effect that IS a weapon) and the renderer drops the decoration

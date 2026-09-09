@@ -1517,6 +1517,14 @@ export default function MechSwarm() {
     if (!g) return;
     const tech = techOf(loadProgress(), level?.faction ?? null);
     g.setTech(admin ? null : tech);
+    // AND THE WHOLE BOARD IS LIT. Sandbox is for staging and debugging a
+    // run, and half of what is being looked at is off screen under the fog
+    // — the swarm's approach, a lane on the far side, the map's own shape.
+    // Leaving sandbox draws the fog back WHOLE (Fog.reset): the discovered
+    // set is rebuilt from what is in sight of what stands, so the board
+    // goes dark again everywhere else — the run does not keep a map it was
+    // shown rather than walked
+    g.setFog(!admin);
     // dropping out of sandbox drops a sandbox-only pace with it, or the run
     // keeps running at a speed whose button is no longer on screen. What the
     // save allows is the utilities path rather than a constant, so it falls
@@ -1676,6 +1684,8 @@ export default function MechSwarm() {
         }
         const save = loadProgress();
         g.setTech(admin ? null : techOf(save, level.faction ?? null));
+        // a sandbox run comes up lit, the same as one toggled into it
+        g.setFog(!admin);
         // the device's own preference, read from the save rather than
         // from state: this runs once at create, and a run started right
         // after a toggle must not come up with last render's value
@@ -1763,8 +1773,8 @@ export default function MechSwarm() {
         const after = loadProgress();
         setResult(reward);
         setProgress(after);
-        // the run is over, so its sandbox is too — a retry from the results
-        // panel starts on what the save actually owns (see `admin`)
+        // the run is over, so its sandbox is too — the next one deployed
+        // from the menu starts on what the save actually owns (see `admin`)
         setAdmin(false);
       }
     }, 100);
@@ -1947,20 +1957,6 @@ export default function MechSwarm() {
     // FIRST paint is already covered - an effect would run after that
     // paint and let a frame of black canvas through
     setLoadUi({ step: firstLoadStep(), out: false });
-  };
-
-  const retry = (): void => {
-    const g = gameRef.current;
-    if (!g) return;
-    granted.current = false;
-    setResult(null);
-    // the run just banked its drops — a node bought mid-overlay would not apply
-    // without this re-read (tech is per-run anyway, but keep it honest)
-    g.setTech(admin ? null : techOf(loadProgress(), level?.faction ?? null));
-    // reset() clears the field and the scrap: a retry is a fresh run on
-    // bare rock, exactly like the first attempt
-    g.reset();
-    setHud(g.ui());
   };
 
   /**
@@ -2828,7 +2824,12 @@ export default function MechSwarm() {
               <div className="mt-6 space-y-3">
                 {/* the salvage above is spendable RIGHT NOW, and spending it
                     is the only thing that changes the next attempt — so the
-                    tree leads, and a plain retry sits under it */}
+                    tree leads, and the way out sits under it.
+                    THERE IS NO RETRY. A lost run is not stood back up on the
+                    spot: the next attempt is deployed from the menu like any
+                    other, with the map, the difficulty and the families all
+                    asked for again — which is the choice a loss is supposed
+                    to send the player back to make */}
                 <button
                   onClick={() => {
                     setTechFrom("game");
@@ -2838,20 +2839,12 @@ export default function MechSwarm() {
                 >
                   Progress
                 </button>
-                <div className="flex justify-center gap-3">
-                <button
-                  onClick={retry}
-                  className="ms-btn px-5 py-2 text-base"
-                >
-                  Retry
-                </button>
                 <button
                   onClick={backToMenu}
-                  className="ms-btn px-5 py-2 text-base"
+                  className="ms-btn w-full px-5 py-2 text-base"
                 >
                   Menu
                 </button>
-                </div>
               </div>
             </div>
           </div>
