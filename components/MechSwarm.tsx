@@ -77,7 +77,6 @@ import {
   PAN_SPEEDS,
   UI_SCALE_DEFAULT,
   UI_SCALES,
-  saveHudMinimized,
   saveFaction,
   saveRunPick,
   saveSpeed,
@@ -1308,15 +1307,12 @@ export default function MechSwarm() {
    * to come back to the run rather than dump the player on the level list.
    */
   const [techFrom, setTechFrom] = useState<"menu" | "game">("menu");
-  /** the top-left panel collapsed to its wave line — a saved preference
-   * (Progress.hudMinimized), initialized on mount with the rest of the save */
-  const [hudMin, setHudMin] = useState(false);
   /**
    * THE RULES THIS RUN IS PLAYED UNDER, for the corner panel — the level's
    * own and the roll alike, as the deploy dialog listed them. A player who
    * skimmed the dialog and is now three waves in wants to know why the
    * swarm is doing what it is doing; this is where that answer lives on
-   * the field. It folds away with the rest of the details (hudMin).
+   * the field.
    */
   const hudRules = useMemo(
     () =>
@@ -1475,7 +1471,6 @@ export default function MechSwarm() {
     setProgress(p);
     setTier(p.difficulty ?? 0);
     setMapPick(p.map ?? null);
-    setHudMin(p.hudMinimized ?? false);
     setEffects(p.effects ?? true);
     setFactionPick(p.faction ?? null);
     setUiScale(p.uiScale ?? UI_SCALE_DEFAULT);
@@ -2635,85 +2630,23 @@ export default function MechSwarm() {
             ))}
           </div>
         )}
-        {/* one fixed width for the whole top-left stack, so the panel does
-            not breathe in and out as counters change and the pace strip
-            lines up under it. Everything inside wraps rather than widening
-            it */}
+        {/* THE CORNER IS ONE NUMBER ON BARE SCREEN.
+            It was a panel: a bevelled box with the core's health bar
+            across the top of it and the bank underneath, and a caret to
+            fold the second away. Both of the things that box held are said
+            better somewhere else — the core wears its own health bar on
+            the board like every other building does (drawStructureBars),
+            and a bar in the corner asked the player to look away from the
+            thing being hit to find out how it was doing. What is left is
+            the ONE number that is nowhere else on the field and that every
+            build decision is made against, drawn straight onto the screen
+            with no chrome under it at all: no pane, no border, no
+            background, just the scrap. The stack keeps its width and its
+            place so the sandbox pace strip still hangs off the same
+            corner. */}
         {hud && (
-          <div className="ui-zoom absolute left-[1rem] top-[1rem] flex w-80 max-w-[calc(100vw-8rem)] flex-col items-stretch gap-2">
-            <div className="ms-pane w-full px-3 py-1.5">
-              {/* WHAT THE CORNER SAYS IS THE CORE AND THE BANK, and nothing
-                  else. The wave counter and the rung used to head this
-                  panel; both were a scoreboard rather than a decision — the
-                  swarm arriving is its own announcement, and the rung was
-                  picked on the card that launched the run. What is left is
-                  the two numbers a player acts on: how much core is still
-                  standing, and what there is to spend. Minimized, the core
-                  line IS the panel. */}
-              <div className="flex items-start justify-between gap-2">
-                <div className="text-[15px] uppercase tracking-widest text-[#EDEDEF] break-words">
-                  <div className="flex items-center gap-2 text-[#71717C]">
-                    Core{" "}
-                    <span className="ms-bar h-2.5 w-24" title={`${hud.coreHp} / ${hud.coreHpMax}`}>
-                      <span
-                        className="block h-full"
-                        style={{
-                          width: `${Math.max(0, Math.min(100, (100 * hud.coreHp) / Math.max(1, hud.coreHpMax)))}%`,
-                          background:
-                            hud.coreHp > hud.coreHpMax / 2
-                              ? "#7BE58A"
-                              : hud.coreHp > hud.coreHpMax / 5
-                                ? "#FFD37F"
-                                : "#FF5A5A",
-                        }}
-                      />
-                    </span>
-                    <span className="font-bold text-[#EDEDEF]">
-                      {Math.round((100 * hud.coreHp) / Math.max(1, hud.coreHpMax))}%
-                    </span>
-                  </div>
-                </div>
-                <button
-                  title={hudMin ? "Show run details" : "Hide run details"}
-                  aria-label={hudMin ? "Show run details" : "Hide run details"}
-                  aria-expanded={!hudMin}
-                  onClick={() => {
-                    const next = !hudMin;
-                    setHudMin(next);
-                    saveHudMinimized(next); // a preference, kept across runs
-                  }}
-                  className="ms-btn ms-btn-ghost shrink-0 px-1 py-0 text-[15px] leading-5"
-                >
-                  <svg viewBox="0 0 12 12" className="h-3.5 w-3.5 fill-current" aria-hidden="true">
-                    {hudMin ? <path d="M6 3l4.5 5h-9z" /> : <path d="M6 9L1.5 4h9z" />}
-                  </svg>
-                </button>
-              </div>
-              {!hudMin && (
-                <>
-                  {/* THE RUN'S MONEY, in the biggest type on the panel: it
-                      is the number every build decision is made against.
-                      Sandbox and the editors build free, so they show
-                      nothing here. The XP the run is earning is NOT here —
-                      it is the results screen's news, not the field's */}
-                  {hud.scrap !== null && (
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
-                      <ScrapAmount amount={hud.scrap} size="md" className="text-xl" />
-                      {/* THE BANK AND NOTHING ELSE. The rate that used to
-                          sit beside it (+n/s) is gone with the trickle it
-                          described: the core and the drills now deliver in
-                          loads, and each one's bar on the field says what
-                          it is earning and when the next payment lands —
-                          a number in the corner said neither, and said it
-                          about the whole board at once */}
-                      {hud.army > 0 && (
-                        <span className="text-[14px] text-[#FFD37F]">{hud.army} units</span>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+          <div className="ui-zoom absolute left-[1rem] top-[1rem] flex w-80 max-w-[calc(100vw-8rem)] flex-col items-start gap-2">
+            {hud.scrap !== null && <ScrapAmount amount={hud.scrap} size="md" className="text-xl" />}
             {admin && !hud.lost && !hud.won && !hud.menuOpen && (
               /* THE PACE STRIP IS SANDBOX'S, and nothing else on the field
                  is. A campaign run plays at 1x — the multipliers have
@@ -2801,12 +2734,25 @@ export default function MechSwarm() {
             view and a drag keeps steering. It stands until the run ends —
             the end screens own the frame, and a map under them is noise */}
         {hud && !hud.lost && !hud.won && (
-          <div className="ui-zoom ms-pane absolute bottom-[1rem] left-[1rem] z-10 p-1">
-            <canvas
-              ref={attachMinimap}
-              aria-label="minimap"
-              className="block h-auto w-[13rem] cursor-pointer [image-rendering:pixelated]"
-            />
+          <div className="ui-zoom absolute bottom-[1rem] left-[1rem] z-10 flex flex-col items-stretch">
+            {/* HOW LONG THIS RUN HAS BEEN GOING, on a thin row over the
+                map. The clock used to head the top-left panel and went
+                with it; it belongs here instead, because the minimap is
+                the one part of the HUD a player looks at to ask "where has
+                this got to" rather than to make a decision, and the answer
+                to that question has a time in it. Simulated seconds
+                (UiState.elapsed), so a run at 2x reads the clock the wave
+                script is actually keeping rather than the wall's */}
+            <div className="ms-pane mb-1 px-2 py-0.5 text-center text-[13px] font-bold uppercase tracking-widest tabular-nums text-[#A1A1AA]">
+              {clock(hud.elapsed)}
+            </div>
+            <div className="ms-pane p-1">
+              <canvas
+                ref={attachMinimap}
+                aria-label="minimap"
+                className="block h-auto w-[13rem] cursor-pointer [image-rendering:pixelated]"
+              />
+            </div>
           </div>
         )}
         {/* THE RUN'S DEAL, StarCraft-style, in the bottom-right corner: a
