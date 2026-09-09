@@ -1390,22 +1390,17 @@ export const MISSION_STRUCTS: Record<import("./types").MissionStructKind, TowerS
    * when a raid plays long or short — not the schedule, which is what the
    * mission promises the player and what the objective text says.
    *
-   * THE NUMBER HERE IS PRE-SCALE: 6,000 authored is 12,000 on the board
-   * (TOWER_HP_SCALE), and 12,000 is the figure the mission was tuned
-   * against. A unit weapon does Mindustry's damage at the shipped dial
-   * (unitDamageScale, weapons.ts), so a stock dagger alone is about 83 a
-   * second and a squad of five that has walked all the way out there needs
-   * half a minute standing on the pad to finish it. Mindustry's own launch
-   * pad (250 a tile, 2,250 for the block) — and anything near it — is a
-   * building an army that arrives simply evaporates, which would make the
-   * whole assignment the WALK and nothing else.
-   *
-   * It was written as 12,000 when the scale was 1, and halved when the
-   * scale went to 2 SO THAT THE BOARD NUMBER WOULD NOT MOVE. The dial
-   * exists to put the walls' old pool into the buildings that used to
-   * hide behind them; a mission objective tuned against what an army can
-   * chew through is not one of those, and letting it ride the dial would
-   * have doubled the difficulty of a map nobody asked to make harder.
+   * THE NUMBER HERE IS WHAT STANDS ON THE BOARD. A mission building does
+   * not ride TOWER_HP_SCALE (towerMaxHp): the dial is for the roster,
+   * whose numbers are Mindustry's block stats, and this one is a figure
+   * the mission was balanced against. A unit weapon does Mindustry's
+   * damage at the shipped dial (unitDamageScale, weapons.ts), so a stock
+   * dagger alone is about 83 a second and a squad of five that has walked
+   * all the way out there needs half a minute standing on the pad to
+   * finish it. Mindustry's own launch pad (250 a tile, 2,250 for the
+   * block) — and anything near it — is a building an army that arrives
+   * simply evaporates, which would make the whole assignment the WALK and
+   * nothing else.
    *
    * It is deliberately not larger than that. What is meant to cost the
    * player the other twenty minutes is the ground between the pads and
@@ -1413,7 +1408,7 @@ export const MISSION_STRUCTS: Record<import("./types").MissionStructKind, TowerS
    * to be the difficulty on its own would price the defences out of their
    * own map.
    */
-  "launch-pad": { ...buildingStats("Launch Pad", 6000, 3), building: true },
+  "launch-pad": { ...buildingStats("Launch Pad", 12000, 3), building: true },
 };
 
 /**
@@ -1485,18 +1480,27 @@ export const targetingLine = (s: TowerStats): string =>
 
 
 /**
- * EVERY STRUCTURE'S POOL, TIMES THIS — the one dial over what a building
- * on the board can take, the swarm's guns and the player's factories
- * alike (towerMaxHp).
+ * THE ROSTER'S POOL, TIMES THIS — the one dial over what a building off
+ * TOWER_KINDS can take, the swarm's guns and the player's factories alike
+ * (towerMaxHp).
  *
  * IT IS 2, AND IT IS DOING THE WALLS' OLD JOB. The board used to have six
  * walls on it whose entire purpose was to hold a pool in front of
  * something that could not (types.ts); with them gone, a structure that
  * stood at Mindustry's own number stood alone and folded, and the answer
  * is to put the pool where the thing being defended is rather than in a
- * separate block bought to stand in front of it. So every building holds
- * twice what its block does upstream: a drill is 320 rather than 160, a
- * ground factory 720, a duo 500.
+ * separate block bought to stand in front of it. So every roster building
+ * holds twice what its block does upstream: a drill is 320 rather than
+ * 160, a ground factory 720, a duo 500.
+ *
+ * IT GOVERNS THE ROSTER AND NOTHING ELSE, and that boundary is the point.
+ * The core (CORE_HP) and the mission buildings (MISSION_STRUCTS) carry
+ * ABSOLUTE numbers — what they are worth is not "a Mindustry block, and
+ * then some", it is a figure a map was balanced against, and a dial that
+ * silently doubled them would retune every mission written before it was
+ * turned. So the two kinds of number are kept apart: turn this to make
+ * the ordinary board tougher, and edit those where they are written to
+ * change what a run is actually racing.
  *
  * ONE DIAL RATHER THAN TWO. There was a WALL_HP_SCALE beside this, so
  * that walls could be tuned apart from turrets; with no walls it governed
@@ -1506,7 +1510,6 @@ export const targetingLine = (s: TowerStats): string =>
  * than as a leftover.
  */
 export const TOWER_HP_SCALE = 2;
-/** a structure's full pool — Mindustry's health for the block, times its dial */
 
 /**
  * THE STATS OF ANY STRUCTURE KIND, and THE ONE FUNNEL EVERY READER GOES
@@ -1521,8 +1524,16 @@ export const TOWER_HP_SCALE = 2;
 export const structStats = (kind: import("./types").StructKind): TowerStats =>
   isMissionKind(kind) ? MISSION_STRUCTS[kind] : TOWERS[kind];
 
+/**
+ * A STRUCTURE'S FULL POOL. A roster kind is its Mindustry block health
+ * times the dial (TOWER_HP_SCALE); a MISSION building is the number
+ * written on it and nothing else, because that number is a mission's
+ * balance rather than a block's stat — see the note on the dial.
+ */
 export const towerMaxHp = (kind: import("./types").StructKind): number =>
-  structStats(kind).health * TOWER_HP_SCALE;
+  isMissionKind(kind) ?
+    MISSION_STRUCTS[kind].health
+  : TOWERS[kind].health * TOWER_HP_SCALE;
 
 /**
  * CONSTRUCTION TIME, BY FOOTPRINT — a placed structure is not a finished
@@ -1691,12 +1702,19 @@ export const SHRAPNEL = {
 // may place its own base anywhere (MapData.base), so nothing but the
 // fallback should read BASE directly — the live position is terrain.base
 /**
- * THE CORE'S HEALTH: Mindustry's core nucleus (6000, Blocks.java), scaled
- * like every other structure (TOWER_HP_SCALE, 2 — so 12,000 on the board).
- * It is the run: the swarm exists to knock it down, and the moment it does
- * the run is over (Sim.lost).
+ * THE CORE'S HEALTH: Mindustry's core nucleus, 6,000 (Blocks.java), and
+ * that is the whole number — it does NOT ride TOWER_HP_SCALE. It is the
+ * run: the swarm exists to knock it down, and the moment it does the run
+ * is over (Sim.lost).
+ *
+ * The dial exists to put the removed walls' pool into the roster
+ * buildings that used to hide behind them, and the core was never one of
+ * those — every map's pacing, every wave's weight and every mission's
+ * clock is set against this figure, so doubling it as a side effect of a
+ * roster change would have quietly made every map on the shelf easier.
+ * What the core is worth is a decision taken here, on its own.
  */
-export const CORE_HP = 6000 * TOWER_HP_SCALE;
+export const CORE_HP = 6000;
 
 export const BASE = { x: 120, y: 33, size: 5 };
 /** every base is this many cells square */

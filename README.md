@@ -348,13 +348,13 @@ minutes** (`waveGap`, `WAVE_GAP_DEFAULT`), each stronger than the last:
 a squad of daggers under a pair of flares on wave 1, the scepters and the
 first reign by waves 5 to 7, everything and the disrupt on wave 8. Eight
 waves, 220 bodies in all — not a swarm, and only a third of what stands
-between the player and the map: the rest is the swarm's own turrets and
-placed on it. **Every number on both sides is
-Mindustry's own**: a turret's damage and reload, a unit's health
-and a unit's health, armour and speed are read out of `Blocks.java` and
-`UnitTypes.java` and played unscaled (`TOWER_HP_SCALE`, `WALL_HP_SCALE`
-and `setUnitDamageScale` all stand at 1; the 30% the phase turrets once
-carried over stock is gone). The gap and the grace are the document's
+between the player and the map: the rest is the swarm's own turrets,
+placed on it. **Every number on both sides is Mindustry's own**: a
+turret's damage and reload, and a unit's health, armour and speed, are
+read out of `Blocks.java` and `UnitTypes.java` and played as written (the
+30% the phase turrets once carried over stock is gone). The two dials
+over them are `TOWER_HP_SCALE`, at 2 since the walls came out, and
+`setUnitDamageScale`, at 1. The gap and the grace are the document's
 (`public/levels/campaign.json`) and the level editor edits both.
 
 ### Two currencies that never touch
@@ -608,11 +608,14 @@ player builds no turrets for a wall to protect, so a wall was a pool
 parked in front of a factory, and a fight decided by how much copper you
 can afford to leave in a doorway is not the fight this game is about.
 What they held is in the buildings now — **`TOWER_HP_SCALE` is 2**, so
-every structure on the board carries twice its Mindustry block health (a
-duo 500, a drill 320, a ground factory 720, the core 12,000). It is one
-dial over every structure both sides field; the swarm's bite
-(`setUnitDamageScale`) stays at 1, so a balance pass is done on those two
-and never row by row. The playtest takes the swarm's dial as
+every structure off the roster carries twice its Mindustry block health (a
+duo 500, a drill 320, a ground factory 720). It governs the roster and
+nothing else: the core (6,000) and the mission buildings (a launch pad's
+12,000) carry absolute numbers, because what they are worth is a figure a
+map was balanced against rather than "a Mindustry block, and then some",
+and a dial that silently doubled them would retune every mission written
+before it was turned. The swarm's bite (`setUnitDamageScale`) stays at 1,
+so a balance pass is done on those and never row by row. The playtest takes the swarm's dial as
 `--unit-damage`. The headless bot builds on open ground, as the player
 must — hills take no turret — and never rebuilds what it loses.
 

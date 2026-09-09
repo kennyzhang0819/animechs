@@ -266,9 +266,11 @@ export interface UnitWeapon {
 
 /**
  * ONE DIAL OVER EVERY UNIT WEAPON, at 1: the rows below are Mindustry's
- * and the swarm bites exactly as they say. THE STRUCTURES ARE NOT — they
- * hold twice Mindustry's health (TOWER_HP_SCALE, 2), which is the walls'
- * old job moved into the things that used to hide behind them (types.ts).
+ * and the swarm bites exactly as they say. THE ROSTER'S STRUCTURES ARE
+ * NOT — they hold twice Mindustry's health (TOWER_HP_SCALE, 2), which is
+ * the walls' old job moved into the things that used to hide behind them
+ * (types.ts). The core and the mission buildings ride neither dial: their
+ * numbers are absolute, and set where they are written.
  * If a balance pass is ever needed it is done here (setUnitDamageScale)
  * and on that dial, not row by row — the rows are meant to stay
  * Mindustry's.
