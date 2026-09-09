@@ -392,8 +392,8 @@ by existing.
 
 ## Defence formations (blueprints)
 
-**An outpost is not one building, and you want fifty of them.** A duo ring
-with a wall skirt is a dozen stamps that have to land in exactly the right
+**An outpost is not one building, and you want fifty of them.** A ring of
+duos round a salvo is a dozen stamps that have to land in exactly the right
 relationship; nine maps want a lot of those. Placing that by hand is an
 afternoon, and *changing* it — a wall moved a cell, a duo swapped for a
 hail — is that afternoon again on every copy, with no way to tell which

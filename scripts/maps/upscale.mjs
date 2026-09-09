@@ -38,8 +38,7 @@ const WALL_DEEP = 7;
 const ROSTER = new Set([
   "duo", "hail", "salvo", "scatter", "fuse", "scorch", "arc", "lancer", "ripple", "wave", "parallax",
   "tsunami", "swarmer", "cyclone", "spectre", "meltdown", "foreshadow",
-  "copper-wall", "titanium-wall", "thorium-wall",
-  "copper-wall-large", "titanium-wall-large", "thorium-wall-large",
+  "drill", "factory-t1", "factory-t2", "factory-t3", "factory-t4", "factory-t5",
 ]);
 
 const args = process.argv.slice(2);

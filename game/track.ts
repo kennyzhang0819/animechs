@@ -235,7 +235,7 @@ export function factionsAt(level: number): Set<FamilyKey> {
 
 /**
  * The level a building joins the roster: 1 for anything a run may put
- * down (factions.ts BUILDABLE_KINDS — the drill, the copper walls, the
+ * down (factions.ts BUILDABLE_KINDS — the drill and the
  * factories), and never for the rest. A TURRET IS NEVER ON IT: the guns
  * belong to the swarm now and the player builds none, so every one of
  * them answers MAX_LEVEL + 1 rather than 1 — calling a gun a level-1
@@ -385,7 +385,10 @@ export function rewardText(r: Reward): string {
   if (r.kind === "world") return `${WORLDS.find((w) => w.id === r.worldId)?.name ?? "A map"} opens`;
   if (r.kind === "speed") return `${r.mult}x speed`;
   if (r.kind === "faction") return `Faction: ${familyByKey(r.id).name}`;
-  if (r.kind === "turret") return `${TOWERS[r.id].wall ? "Wall" : "Turret"}: ${TOWER_NAME[r.id]}`;
+  // every rewardable kind is a gun or a building now — the walls that made
+  // this a choice are gone (types.ts)
+  if (r.kind === "turret")
+    return `${TOWERS[r.id].building ? "Building" : "Turret"}: ${TOWER_NAME[r.id]}`;
   if (r.kind === "mutator") return `Mutator: ${mutationById(r.id)?.name ?? r.id}`;
   const u = upgradeDef(r.id);
   return `${TOWER_NAME[u.turret]}: ${u.name}`;
@@ -402,7 +405,7 @@ export function rewardBlurb(r: Reward): string {
   if (r.kind === "faction") {
     const fam = familyByKey(r.id);
     const units = fam.kinds.map((k) => k[0].toUpperCase() + k.slice(1)).join(", ");
-    return `A line to play a run as: its factories build ${units}. Every faction shares the same build menu — the drill, the copper walls and the factories — so what a line changes is the army it puts on the field. Pick it on the deploy screen.`;
+    return `A line to play a run as: its factories build ${units}. Every faction shares the same build menu — the drill and the factories — so what a line changes is the army it puts on the field. Pick it on the deploy screen.`;
   }
   if (r.kind === "turret") return TOWER_DESC[r.id];
   if (r.kind === "mutator")

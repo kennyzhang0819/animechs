@@ -2452,7 +2452,7 @@ export class Sim {
     }
     const st = this.statsFor(t.kind);
     const built = VISION_BUILT_CELLS * CELL;
-    const r = !st.wall && st.range > 0 ? Math.max(built, st.range * VISION_OF_RANGE) : built;
+    const r = !st.building && st.range > 0 ? Math.max(built, st.range * VISION_OF_RANGE) : built;
     // a BUILDING's radius is rounded to the nearest tile for the raster —
     // Mathf.round(build.fogRadius()), FogControl.pushStaticBlocks
     return { x: t.x, y: t.y, r, tiles: Math.round(r / CELL) };
@@ -7005,7 +7005,7 @@ export class Sim {
       const st = hostile ? structStats(t.kind) : this.statsFor(t.kind);
       // a wall has no gun at all: it smokes when hurt (above) and that is
       // the whole of what it does each tick
-      if (st.wall) continue;
+      if (st.building) continue;
       // a tractor turret has no reload and no volley — it holds a beam.
       // The swarm's drags nothing: its beam only ever caught units
       if (st.bullet.tractor) {

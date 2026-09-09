@@ -178,13 +178,7 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
   spectre: 3,
   meltdown: 3,
   foreshadow: 3,
-  // walls are band-1 goods: bought by the dozen from the first wave's income
-  "copper-wall": 1,
-  "titanium-wall": 1,
-  "thorium-wall": 1,
-  "copper-wall-large": 1,
-  "titanium-wall-large": 1,
-  "thorium-wall-large": 1,
+  // the drill and the factories are band-1 goods: bought from the first wave's income
   // the economy and the army: the drill and the first factory are opening
   // buys, the heavy reconstructors are the middle and the end of the run
   drill: 1,
@@ -195,12 +189,16 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
   "factory-t5": 3,
 };
 
-/** every turret of one tier, in roster order */
-/** the GUNS of a band — the walls are priced in band 1 but are not what
- *  a stage is audited against: a lane of walls is bought beside the guns,
- *  not instead of them, and would drag the band's mean price down */
+/**
+ * The GUNS of a band, in roster order — what a stage is audited against.
+ * The buildings are priced in band 1 and left out of this: a drill or a
+ * factory is bought BESIDE the guns rather than instead of them, and
+ * counting them would drag the band's mean price down. (It read "walls"
+ * until the walls were removed; the rule was always about anything with
+ * no gun on it.)
+ */
 export const towersOfTier = (tier: TowerTier): TowerKind[] =>
-  TOWER_KINDS.filter((k) => TOWER_TIER[k] === tier && !TOWERS[k].wall);
+  TOWER_KINDS.filter((k) => TOWER_TIER[k] === tier && !TOWERS[k].building);
 
 /**
  * THE STAGES OF A RUN, as 1-based inclusive wave ranges — the three
@@ -260,17 +258,6 @@ export const TOWER_PRICE: Record<TowerKind, number> = {
   spectre: 7500,
   meltdown: 9000,
   foreshadow: 12000,
-  // WALLS: a third of a duo for copper, so a lane is lined for the price
-  // of a few guns, and the heavier two priced at what their pool is worth
-  // against it (see WALL_HP_SCALE in constants.ts)
-  "copper-wall": 20,
-  "titanium-wall": 50,
-  "thorium-wall": 120,
-  // the large walls are four of the small at the small's price a tile —
-  // the same deal Mindustry makes (six items a tile either way)
-  "copper-wall-large": 80,
-  "titanium-wall-large": 200,
-  "thorium-wall-large": 480,
   // THE DRILL pays itself back in under a minute on a full vein (see
   // DRILL_INCOME_PER_ORE): cheap enough to be the first thing bought,
   // dear enough that a vein under fire is a loss

@@ -993,36 +993,6 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
     name: "Foreshadow",
     icon: "/mindustry/sprites/blocks/turrets/foreshadow.png",
   },
-  {
-    kind: "copper-wall",
-    name: "Copper Wall",
-    icon: "/mindustry/sprites/blocks/walls/copper-wall.png",
-  },
-  {
-    kind: "titanium-wall",
-    name: "Titanium Wall",
-    icon: "/mindustry/sprites/blocks/walls/titanium-wall.png",
-  },
-  {
-    kind: "thorium-wall",
-    name: "Thorium Wall",
-    icon: "/mindustry/sprites/blocks/walls/thorium-wall.png",
-  },
-  {
-    kind: "copper-wall-large",
-    name: "Large Copper Wall",
-    icon: "/mindustry/sprites/blocks/walls/copper-wall-large.png",
-  },
-  {
-    kind: "titanium-wall-large",
-    name: "Large Titanium Wall",
-    icon: "/mindustry/sprites/blocks/walls/titanium-wall-large.png",
-  },
-  {
-    kind: "thorium-wall-large",
-    name: "Large Thorium Wall",
-    icon: "/mindustry/sprites/blocks/walls/thorium-wall-large.png",
-  },
   // the economy and the army (factions.ts COMMON_KINDS): the drill and
   // the five factories, one a unit tier
   { kind: "drill", name: "Drill", icon: TOWER_ICONS.drill },

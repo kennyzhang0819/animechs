@@ -27,7 +27,7 @@ export interface TechState {
   factions: ReadonlySet<FamilyKey>;
   faction: FamilyKey | null;
   /** the kinds a run may PUT DOWN (factions.ts BUILDABLE_KINDS) — the
-   *  drill, the copper walls and the factories. The same set whichever
+   *  drill and the five factories. The same set whichever
    *  faction is playing, since a faction is bodies and nothing else */
   unlocked: ReadonlySet<TowerKind>;
   /**
@@ -67,13 +67,15 @@ export function withFaction(tech: TechState, faction: FamilyKey | null): TechSta
  * get to a building — and it cost the player the one thing a fixed grid
  * gives them for nothing: knowing where a thing is without looking.
  *
- * WHAT IS IN IT, in order: the drill that pays for everything, the two
- * copper walls, and the five factories that turn the scrap into an army
- * (factions.ts BUILDABLE_KINDS). NO TURRETS — the player builds none at
- * all now; the guns are the swarm's, and a run is won with the bodies
- * the factories make. Eight of the sixteen slots are filled and the rest
- * stand empty, which is the grid saying honestly that there is more to
- * come rather than reflowing under the hand every time there is.
+ * WHAT IS IN IT, in order: the drill that pays for everything and the
+ * five factories that turn the scrap into an army (factions.ts
+ * BUILDABLE_KINDS). NO TURRETS — the player builds none at all now; the
+ * guns are the swarm's, and a run is won with the bodies the factories
+ * make. NO WALLS EITHER, since there are none left in the game (types.ts)
+ * — what they held is in the buildings' own pools now (TOWER_HP_SCALE).
+ * Six of the sixteen slots are filled and the rest stand empty, which is
+ * the grid saying honestly that there is more to come rather than
+ * reflowing under the hand every time there is.
  *
  * THE KEYS ARE THE GRID'S OWN SHAPE, and they dodge two rows on purpose:
  * the digits are the CONTROL GROUPS (1 to 0, one a band) and WASD pans
@@ -139,13 +141,7 @@ export const MINDUSTRY_VALUE: Record<TowerKind, number> = {
   meltdown: 1795,
   foreshadow: 2500,
   // six of an item each (Blocks.java) at the item values the turrets use
-  "copper-wall": 3,
-  "titanium-wall": 9,
-  "thorium-wall": 15,
   // twenty-four of an item each, so each large wall sorts after its small
-  "copper-wall-large": 12,
-  "titanium-wall-large": 36,
-  "thorium-wall-large": 60,
   // the drill and the factories, at their Mindustry build costs' item
   // values — the drill sorts with the walls, the factories climb the bar
   // with their tier

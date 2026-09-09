@@ -436,18 +436,14 @@ export interface TowerStats {
   sort?: "strongest";
   bullet: BulletStats;
   /**
-   * A WALL: no gun, no rotation, no reload — a pool on a footprint. The
-   * fire loop skips it (Sim.fireTowers), the renderer draws its art flat
-   * with no turret base under it, and its pool is scaled by WALL_HP_SCALE
-   * rather than TOWER_HP_SCALE (towerMaxHp). `bullet` is NO_BULLET so the
-   * record stays exhaustive; nothing ever fires it.
-   */
-  wall?: true;
-  /**
-   * A BUILDING: no gun and no base, drawn flat like a wall, standing in the
-   * lane like one — the drill and the factories. What it DOES is in the
-   * two fields below; the fire loop and the renderer's turret base skip
-   * it the way they skip a wall.
+   * A BUILDING: no gun, no rotation, no reload — a pool on a footprint,
+   * drawn flat with no turret base under it and skipped by the fire loop
+   * (Sim.fireTowers). The drill and the five factories. `bullet` is
+   * NO_BULLET so the record stays exhaustive; nothing ever fires it.
+   *
+   * There used to be a second flag, `wall`, meaning exactly this on the
+   * six walls. The walls are gone (types.ts) and every kind that carried
+   * `wall` also carried `building`, so two names for one idea became one.
    */
   building?: true;
   /** a drill: stands only on an ore vein (Sim.canPlace) and pays scrap by
@@ -470,13 +466,13 @@ const NO_BULLET: BulletStats = {
 };
 
 /**
- * One wall's stats. Mindustry's own health per tile is 80 for copper, 110
- * for titanium and 200 for thorium, times 4 for the block (Blocks.java:
- * copperWall health = 80 * wallHealthMultiplier, wallHealthMultiplier 4),
- * and the large walls are size 2 at four times that again (health = 80 *
- * 4 * wallHealthMultiplier), exactly as upstream.
+ * ONE BUILDING'S STATS — a structure with no gun: a footprint, a pool and
+ * a name. It was `wallStats` and built the six walls as well as the drill
+ * and the factories; the walls are gone (types.ts) and every caller left
+ * is a building, so it says `building` now rather than `wall` and the two
+ * flags that had become synonyms are one.
  */
-const wallStats = (name: string, health: number, size = 1): TowerStats => ({
+const buildingStats = (name: string, health: number, size = 1): TowerStats => ({
   name,
   size,
   health,
@@ -491,7 +487,7 @@ const wallStats = (name: string, health: number, size = 1): TowerStats => ({
   targetAir: false,
   targetGround: false,
   bullet: NO_BULLET,
-  wall: true,
+  building: true,
 });
 
 export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
@@ -1350,26 +1346,19 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.bulletYellowBack,
     },
   },
-  // THE WALLS — see wallStats. Health is Mindustry's own per block
-  "copper-wall": wallStats("Copper Wall", 320),
-  "titanium-wall": wallStats("Titanium Wall", 440),
-  "thorium-wall": wallStats("Thorium Wall", 800),
-  "copper-wall-large": wallStats("Large Copper Wall", 1280, 2),
-  "titanium-wall-large": wallStats("Large Titanium Wall", 1760, 2),
-  "thorium-wall-large": wallStats("Large Thorium Wall", 3200, 2),
   // THE DRILL: Mindustry's pneumatic drill, 2x2 at Block's default health
   // (40 a tile). It stands on ore and nothing else, and it is the whole of
   // the run's income past what the core pays — see economy.ts
-  drill: { ...wallStats("Pneumatic Drill", 160, 2), building: true, drill: true },
+  drill: { ...buildingStats("Pneumatic Drill", 160, 2), building: true, drill: true },
   // THE FACTORIES: the ground factory and the four reconstructors, each
   // at Mindustry's own footprint and Block's default health for it. One
   // building a tier: the T1 factory makes the faction's first body, the
   // additive reconstructor its second, up to the tetrative's fifth
-  "factory-t1": { ...wallStats("Unit Factory", 360, 3), building: true, produces: 1 },
-  "factory-t2": { ...wallStats("Additive Reconstructor", 360, 3), building: true, produces: 2 },
-  "factory-t3": { ...wallStats("Multiplicative Reconstructor", 1000, 5), building: true, produces: 3 },
-  "factory-t4": { ...wallStats("Exponential Reconstructor", 1960, 7), building: true, produces: 4 },
-  "factory-t5": { ...wallStats("Tetrative Reconstructor", 3240, 9), building: true, produces: 5 },
+  "factory-t1": { ...buildingStats("Unit Factory", 360, 3), building: true, produces: 1 },
+  "factory-t2": { ...buildingStats("Additive Reconstructor", 360, 3), building: true, produces: 2 },
+  "factory-t3": { ...buildingStats("Multiplicative Reconstructor", 1000, 5), building: true, produces: 3 },
+  "factory-t4": { ...buildingStats("Exponential Reconstructor", 1960, 7), building: true, produces: 4 },
+  "factory-t5": { ...buildingStats("Tetrative Reconstructor", 3240, 9), building: true, produces: 5 },
 };
 
 /**
@@ -1401,8 +1390,9 @@ export const MISSION_STRUCTS: Record<import("./types").MissionStructKind, TowerS
    * when a raid plays long or short — not the schedule, which is what the
    * mission promises the player and what the objective text says.
    *
-   * 12,000 is twice the core's own (CORE_HP), and the arithmetic is why: a
-   * unit weapon does Mindustry's damage at the shipped dial
+   * THE NUMBER HERE IS PRE-SCALE: 6,000 authored is 12,000 on the board
+   * (TOWER_HP_SCALE), and 12,000 is the figure the mission was tuned
+   * against. A unit weapon does Mindustry's damage at the shipped dial
    * (unitDamageScale, weapons.ts), so a stock dagger alone is about 83 a
    * second and a squad of five that has walked all the way out there needs
    * half a minute standing on the pad to finish it. Mindustry's own launch
@@ -1410,13 +1400,20 @@ export const MISSION_STRUCTS: Record<import("./types").MissionStructKind, TowerS
    * building an army that arrives simply evaporates, which would make the
    * whole assignment the WALK and nothing else.
    *
+   * It was written as 12,000 when the scale was 1, and halved when the
+   * scale went to 2 SO THAT THE BOARD NUMBER WOULD NOT MOVE. The dial
+   * exists to put the walls' old pool into the buildings that used to
+   * hide behind them; a mission objective tuned against what an army can
+   * chew through is not one of those, and letting it ride the dial would
+   * have doubled the difficulty of a map nobody asked to make harder.
+   *
    * It is deliberately not larger than that. What is meant to cost the
    * player the other twenty minutes is the ground between the pads and
    * whatever is standing guard on it, not a health bar; a pool big enough
    * to be the difficulty on its own would price the defences out of their
    * own map.
    */
-  "launch-pad": { ...wallStats("Launch Pad", 12000, 3), building: true },
+  "launch-pad": { ...buildingStats("Launch Pad", 6000, 3), building: true },
 };
 
 /**
@@ -1458,18 +1455,12 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   spectre: "A twin-barrel heavy machine gun with the highest sustained damage in the game, alternating between barrels so it never stops firing.",
   meltdown: "Holds a continuous laser on one target, burning through it for as long as it stays in range.",
   foreshadow: "An extreme-range railgun firing one enormous shot on a long reload. It picks the highest-health target in range rather than the nearest.",
-  "copper-wall": "A cheap wall. It shoots nothing and stops everything: the swarm has to chew through it to get at what stands behind, and it holds far more than a turret its size.",
-  "titanium-wall": "A sturdier wall. Half again the pool of copper for a lane that takes real fire, and still cheap enough to line a whole crossing with.",
-  "thorium-wall": "The heavy wall. Two and a half copper walls in one tile — what a scepter is meant to break its teeth on while the artillery works.",
-  "copper-wall-large": "Four copper walls as one 2x2 block, with four times the pool. One placement where a lane needs a whole plug.",
-  "titanium-wall-large": "Four titanium walls as one 2x2 block, with four times the pool — a crossing sealed in a single placement.",
   drill: "Stands on an ore vein and mines it, delivering a load of scrap every time its bar fills — four times as often on a full vein as on a single ore cell. The core ships the run's base income on the same clock; drills are how it grows. Only on ore.",
   "factory-t1": "Builds your faction's tier-1 unit, one after another, for the unit's price. Units walk out and attack-move at the enemy's nearest building.",
   "factory-t2": "Builds your faction's tier-2 unit, one after another, for the unit's price.",
   "factory-t3": "Builds your faction's tier-3 unit — the heavy of the line — one after another, for the unit's price.",
   "factory-t4": "Builds your faction's tier-4 unit, one after another. A siege body: it costs a stage's income and takes minutes to make.",
   "factory-t5": "Builds your faction's tier-5 unit, one after another. The top of the line, and the last thing a run affords.",
-  "thorium-wall-large": "Four thorium walls as one 2x2 block. The heaviest thing on the board: a wave breaks on it while everything behind it fires.",
 };
 
 /**
@@ -1494,38 +1485,27 @@ export const targetingLine = (s: TowerStats): string =>
 
 
 /**
- * TOWER HEALTH — every structure has a pool, and A STRUCTURE AT ZERO IS
- * WRECKED: gone from the board, its ground open to the swarm again
- * (Sim.damageTower). Every unit attack-moves — walks at the core and hits
- * whatever stands in the way — and this pool is what they hit.
+ * EVERY STRUCTURE'S POOL, TIMES THIS — the one dial over what a building
+ * on the board can take, the swarm's guns and the player's factories
+ * alike (towerMaxHp).
  *
- * THE POOL IS MINDUSTRY'S OWN BLOCK HEALTH, UNSCALED. Each turret's
- * `health` in TOWERS is the upstream number, read out of Blocks.java and
- * Block.init: four of them are authored outright (duo 250, hail 260, arc
- * 260, scorch 400) and the rest are `scaledHealth * size^2` — the
- * per-turret scaledHealth where one is set, else Block's default of 40
- * grown by the healthScaling of every item in the build cost (thorium
- * +0.2, plastanium +0.1, surge and phase +0.25), rounded to five.
+ * IT IS 2, AND IT IS DOING THE WALLS' OLD JOB. The board used to have six
+ * walls on it whose entire purpose was to hold a pool in front of
+ * something that could not (types.ts); with them gone, a structure that
+ * stood at Mindustry's own number stood alone and folded, and the answer
+ * is to put the pool where the thing being defended is rather than in a
+ * separate block bought to stand in front of it. So every building holds
+ * twice what its block does upstream: a drill is 320 rather than 160, a
+ * ground factory 720, a duo 500.
  *
- *   duo 250   hail 260   arc 260   scorch 400
- *   scatter 800   parallax 640   salvo 960   wave 1000   lancer 1120   swarmer 1200
- *   ripple 1170   cyclone 1305   fuse 1980   tsunami 2250
- *   foreshadow 2400   spectre 2560   meltdown 3200
- *
- * THE DIAL IS 1. The game is an RTS of balanced numbers now — a wave is
- * dozens of bodies, not thousands — so a turret takes exactly the fire
- * Mindustry's does and stands exactly as long. The dial stays as the one
- * knob a balance pass would turn (it was 10, then 4, while the swarm was
- * a swarm), alongside the units' (setUnitDamageScale in weapons.ts).
+ * ONE DIAL RATHER THAN TWO. There was a WALL_HP_SCALE beside this, so
+ * that walls could be tuned apart from turrets; with no walls it governed
+ * nothing but the drill and the factories, which is not a distinction
+ * worth a second number. If turrets and buildings ever need to move
+ * apart again, that is the split to reintroduce — deliberately, rather
+ * than as a leftover.
  */
-export const TOWER_HP_SCALE = 1;
-/**
- * THE WALLS' DIAL, also 1: a copper wall holds Mindustry's 320, a
- * titanium wall 440, a thorium wall 800, and the large walls four times
- * each. A wall's job is still standing in the lane being chewed; with the
- * swarm at Mindustry's size it does that at Mindustry's numbers.
- */
-export const WALL_HP_SCALE = 1;
+export const TOWER_HP_SCALE = 2;
 /** a structure's full pool — Mindustry's health for the block, times its dial */
 
 /**
@@ -1541,10 +1521,8 @@ export const WALL_HP_SCALE = 1;
 export const structStats = (kind: import("./types").StructKind): TowerStats =>
   isMissionKind(kind) ? MISSION_STRUCTS[kind] : TOWERS[kind];
 
-export const towerMaxHp = (kind: import("./types").StructKind): number => {
-  const st = structStats(kind);
-  return st.health * (st.wall ? WALL_HP_SCALE : TOWER_HP_SCALE);
-};
+export const towerMaxHp = (kind: import("./types").StructKind): number =>
+  structStats(kind).health * TOWER_HP_SCALE;
 
 /**
  * CONSTRUCTION TIME, BY FOOTPRINT — a placed structure is not a finished
@@ -1714,9 +1692,9 @@ export const SHRAPNEL = {
 // fallback should read BASE directly — the live position is terrain.base
 /**
  * THE CORE'S HEALTH: Mindustry's core nucleus (6000, Blocks.java), scaled
- * like every other structure (TOWER_HP_SCALE, 1). It is the run: the swarm
- * exists to knock it down, and the moment it does the run is over
- * (Sim.lost).
+ * like every other structure (TOWER_HP_SCALE, 2 — so 12,000 on the board).
+ * It is the run: the swarm exists to knock it down, and the moment it does
+ * the run is over (Sim.lost).
  */
 export const CORE_HP = 6000 * TOWER_HP_SCALE;
 

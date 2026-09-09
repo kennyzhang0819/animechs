@@ -653,7 +653,7 @@ export function formationPalette(): PaletteSet {
     variants: BLUEPRINTS.map((_, i) => i),
     noRandom: true,
     icons: BLUEPRINTS.map((b) =>
-      b.parts.length > 0 ? structIcon(b.parts[0].kind) : TOWER_ICONS["copper-wall"],
+      b.parts.length > 0 ? structIcon(b.parts[0].kind) : TOWER_ICONS.duo,
     ),
   };
 }

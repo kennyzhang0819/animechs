@@ -902,18 +902,6 @@ export const UV_TOWER_BASE4 = uv(1152, 2976, 128, 128);
 export const UV_SHIELD_TOWER = uv(1312, 2976, 96, 96);
 
 /**
- * THE WALLS: 32px block art upscaled 2x into 64px cells like duo's, on
- * the free row under the vela/arkyid block. They never rotate and have no
- * turret base — the renderer draws the cell flat over the footprint and
- * nothing else — and they are outlined like every block so a wall reads
- * as built rather than as floor.
- */
-// THE PLAYER'S WALLS sit in row 0's free tail at y 3008 (the small three)
-// and in the gaps left of the vela at y 3072 (the 2x2 large three) — NOT at
-// the second environment band's origin (1024, 3200), which is the moss
-// floor: drawn there they painted wall art over half the band's floors
-export const UV_COPPER_WALL = uv(0, 3008, 64, 64);
-/**
  * THE ECONOMY AND THE ARMY: the five factories, the drill and the ore, in
  * the 1024x256 band at (0, 1792) — the tail of the crawler-and-flyer band
  * (y 1024..2048), which the roster never grew far enough to reach, and the
@@ -940,9 +928,11 @@ export const UV_FACTORY2 = uv(736, 1792, 96, 96);
 export const UV_DRILL = uv(832, 1792, 128, 128);
 /**
  * THE MISSION BUILDINGS (types.ts MISSION_STRUCT_KINDS). One cell each, on
- * the free strip at y=2944 between the 4x4 tower base and the copper walls
- * — the strip the swarm's old Erekir roster used to hold, and the nearest
- * free ground to the other flat blocks.
+ * the free strip at y=2944 under the 4x4 tower base — the strip the
+ * swarm's old Erekir roster used to hold, and the nearest free ground to
+ * the other flat blocks. (The rows below it at y 3008 and y 3072 held the
+ * player's six walls until those were removed from the game; they are
+ * free again.)
  *
  * The launch pad is Mindustry's own 96px block art at native size in a
  * 96px cell, exactly like the 3x3 unit factory beside it, with its
@@ -952,15 +942,6 @@ export const UV_DRILL = uv(832, 1792, 128, 128);
  */
 export const UV_LAUNCH_PAD = uv(192, 2944, 96, 96);
 export const UV_ORE: readonly UVRect[] = [uv(960, 1792, 64, 64, 2), uv(960, 1856, 64, 64, 2), uv(960, 1920, 64, 64, 2)];
-// (the strip between the copper walls and the 4x4 base at y=2944 held the
-// swarm's own roster — Erekir's guns and scrap walls — and is free again:
-// the swarm builds from the player's roster now, see types.ts StructKind)
-export const UV_TITANIUM_WALL = uv(64, 3008, 64, 64);
-export const UV_THORIUM_WALL = uv(128, 3008, 64, 64);
-/** the large walls: 64px block art upscaled 2x into 128px cells, like lancer's */
-export const UV_COPPER_WALL_LARGE = uv(1280, 3072, 128, 128);
-export const UV_TITANIUM_WALL_LARGE = uv(1728, 3072, 128, 128);
-export const UV_THORIUM_WALL_LARGE = uv(1856, 3072, 128, 128);
 
 export const UV_CRAWLER_LEG = uv(448, 288, 64, 64);
 export const UV_CRAWLER_BASE = uv(512, 288, 64, 64);
@@ -1772,13 +1753,7 @@ const SPRITES = {
   meltdown: "/sprites/turrets/meltdown.png",
   foreshadow: "/mindustry/sprites/blocks/turrets/foreshadow.png",
   // the walls, 1x1 block art at Mindustry's 32px
-  copperWall: "/mindustry/sprites/blocks/walls/copper-wall.png",
-  titaniumWall: "/mindustry/sprites/blocks/walls/titanium-wall.png",
-  thoriumWall: "/mindustry/sprites/blocks/walls/thorium-wall.png",
   // ...and the 2x2 large walls, 64px block art
-  copperWallLarge: "/mindustry/sprites/blocks/walls/copper-wall-large.png",
-  titaniumWallLarge: "/mindustry/sprites/blocks/walls/titanium-wall-large.png",
-  thoriumWallLarge: "/mindustry/sprites/blocks/walls/thorium-wall-large.png",
   missile: "/mindustry/sprites/effects/missile.png",
   missileBack: "/mindustry/sprites/effects/missile-back.png",
   parallaxLaser: "/mindustry/sprites/effects/parallax-laser.png",
@@ -2858,12 +2833,6 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // NOT drawFacingRight: the structure never rotates, so its art stays
   // exactly as authored
   c.drawImage(antialiased(outlined(img.shieldTower, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1312, 2976, 96, 96);
-  // the walls, flat like the shield tower (they never rotate), 32px
-  // sources upscaled 2x into their 64px cells (see UV_COPPER_WALL)
-  c.drawImage(antialiased(outlined(img.copperWall, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 0, 3008, 64, 64);
-  c.drawImage(antialiased(outlined(img.titaniumWall, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 64, 3008, 64, 64);
-  c.drawImage(antialiased(outlined(img.thoriumWall, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 128, 3008, 64, 64);
-  c.drawImage(antialiased(outlined(img.copperWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1280, 3072, 128, 128);
   // the drill and the factories, flat like the walls (see UV_FACTORY5)
   c.drawImage(antialiased(outlined(img.factory5, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 0, 1792, 256, 256);
   c.drawImage(antialiased(outlined(img.factory4, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 256, 1792, 224, 224);
@@ -2886,8 +2855,6 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(img.ore1), 960, 1792, 64, 64);
   c.drawImage(antialiased(img.ore2), 960, 1856, 64, 64);
   c.drawImage(antialiased(img.ore3), 960, 1920, 64, 64);
-  c.drawImage(antialiased(outlined(img.titaniumWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1728, 3072, 128, 128);
-  c.drawImage(antialiased(outlined(img.thoriumWallLarge, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1856, 3072, 128, 128);
 
   // duo top and 1x1 base: 32px sources upscaled 2x into 64px cells
   drawFacingRight(c, antialiased(outlined(img.duoPreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 160, 480, 64);
