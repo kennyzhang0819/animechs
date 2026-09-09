@@ -103,14 +103,24 @@ export const PAL = {
 } as const;
 
 /**
- * Team.crux.color — the enemy faction's red. Mindustry tints every unit's
- * `-cell` region with its team colour (UnitType.drawCell), colours its
- * shield halo in it (UnitType.shieldColor) and burns its engines in it
- * (UnitEngine.draw); the swarm here is the crux team, so all three wear
- * this. The player's sharded amber (Pal.accent) stays on the core.
+ * THE TWO TEAM COLOURS. Mindustry paints the same three things in the
+ * colour of whichever team owns the body — the `-cell` region on its hull
+ * (UnitType.drawCell), the halo and bubble of its shield
+ * (UnitType.shieldColor, null on every type, which means "the team's") and
+ * the flame behind its engines (UnitEngine.draw) — and a player reads
+ * whose a body is off those long before they find a ring under it.
+ *
+ * THE SWARM IS CRUX AND THE PLAYER IS SHARDED, exactly as upstream: the
+ * red is the enemy's and nothing of the player's wears it. A run builds
+ * bodies of its own out of the factories, drawn from the SAME art the
+ * swarm walks in (the roster is one set of sprites), so the colour is the
+ * whole of the team read on a field where a dagger of yours can be
+ * standing next to a dagger of theirs — which is why the cell is drawn
+ * rather than baked into the sheet (atlas.ts UNIT_CELL).
  */
-export const TEAM_CRUX = "#f25555";
 export const TEAM_CRUX_RGB: RGB = pal(0xf25555);
+/** Team.sharded.color, the player's amber — the core's own (Pal.accent) */
+export const TEAM_SHARDED_RGB: RGB = pal(0xffd37f);
 
 /**
  * BasicBulletType.draw, 1:1. Mindustry lays a `-back` region and a shorter

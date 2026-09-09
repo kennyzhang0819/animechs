@@ -27,6 +27,7 @@ import {
   MAX_UNITS,
   PAL,
   TEAM_CRUX_RGB,
+  TEAM_SHARDED_RGB,
   ROWS as ROWS_IMPORT,
   TOWERS as TOWERS_IMPORT,
   towerMaxHp,
@@ -340,6 +341,13 @@ const CENTER_K = 25;
 //    front-to-back shove that stays front-to-back; PUSH_SIDE is how hard
 //    the remainder is re-aimed across the direction of travel. The shove's
 //    magnitude never changes — only the axis it is spent on
+/**
+ * A body's own colour, by the team that owns it (uteam: 0 the swarm, 1 the
+ * player) — the same table the renderer draws cells, shields and engines
+ * from, here for the two effects a unit's shield throws off itself
+ */
+const TEAM_COL: readonly RGB[] = [TEAM_CRUX_RGB, TEAM_SHARDED_RGB];
+
 const PUSH_LONG = 0.45;
 const PUSH_SIDE = 1.1;
 // ...but only where a unit has somewhere to step aside: this much
@@ -4342,7 +4350,7 @@ export class Sim {
       // sprite and on the heading it will be drawn at. Fx.spawn is NOT
       // fired here — Mindustry runs it 30 ticks behind, which updateStatus
       // does when the unmoving half of the clock runs out
-      this.pushSpawnFx(x, y, a0, UNIT_ID[kind]);
+      this.pushSpawnFx(x, y, a0, UNIT_ID[kind], team);
       this.aliveByKind[UNIT_ID[kind]]++;
       // the wave this body answers for (see uwave): the one being drained,
       // or the parent's for brood
@@ -4397,10 +4405,10 @@ export class Sim {
         if (ushield[i] <= 0 && !uforceDown[i]) {
           ushield[i] -= force.cooldown * force.regen * ss;
           // Fx.shieldBreak: the outline snapping outward as it pops, in
-          // the unit's shieldColor — its team's red
+          // the unit's shieldColor — the colour of whichever team owns it
           this.pushFxCol(
             upx[i], upy[i], 40 / 60, FxKind.ShieldBreak,
-            0, force.radius * uforceScale[i], TEAM_CRUX_RGB,
+            0, force.radius * uforceScale[i], TEAM_COL[this.uteam[i]],
           );
         }
         uforceDown[i] = ushield[i] <= 0 ? 1 : 0;
@@ -4479,12 +4487,12 @@ export class Sim {
         }
       }
       // healWaveDynamic / shieldWave: a 22-tick ring out to the field edge
-      // — the shield one in the unit's shieldColor, its team's red
+      // — the shield one in the unit's shieldColor, its own team's colour
       if (did)
         this.pushFxCol(
           upx[i], upy[i], 22 / 60,
           repair || energy ? FxKind.HealWave : FxKind.ShieldWave,
-          0, range, repair || energy ? PAL.heal : TEAM_CRUX_RGB,
+          0, range, repair || energy ? PAL.heal : TEAM_COL[this.uteam[i]],
         );
     }
   }
@@ -8449,9 +8457,18 @@ export class Sim {
    * is drawn in the arriving unit's own sprite, so the renderer has to be
    * told which one landed.
    */
-  private pushSpawnFx(x: number, y: number, rot: number, unit: number): void {
+  private pushSpawnFx(x: number, y: number, rot: number, unit: number, team: number): void {
     const i = this.pushSlot(x, y, FX_UNIT_SPAWN, FxKind.UnitSpawn, rot, 0, 0, 0, false);
-    if (i >= 0) this.fxUnit[i] = unit;
+    if (i < 0) return;
+    this.fxUnit[i] = unit;
+    // the arriving body is drawn in its own sprite, so it arrives wearing
+    // its own team's cell too — the colour rides the effect because the
+    // unit it belongs to may be dead by the time the husk fades
+    this.fxHasCol[i] = 1;
+    const col = TEAM_COL[team];
+    this.fxColR[i] = col[0];
+    this.fxColG[i] = col[1];
+    this.fxColB[i] = col[2];
   }
 
   /**

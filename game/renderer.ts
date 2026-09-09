@@ -2,10 +2,12 @@ import { FLOOR_STYLE, type FloorKind } from "./tiles";
 import {
   LEG_ART,
   MECH_ART,
+  type CellArt,
   type LegArt,
   type LegGun,
   type MechArt,
   UNIT_ART,
+  UNIT_CELL,
   UV_SOLID,
   UV_BASE,
   UV_DECOR,
@@ -94,6 +96,7 @@ import {
   PAL as PAL_IMPORT,
   ROWS as ROWS_IMPORT,
   TEAM_CRUX_RGB,
+  TEAM_SHARDED_RGB,
   TOWERS as TOWERS_IMPORT,
   W as W_IMPORT,
   type BulletStats,
@@ -375,18 +378,26 @@ const rng = (): number => {
  */
 const SHIELD_COL = [0xff / 255, 0xd3 / 255, 0x7f / 255] as const;
 /**
- * UnitType.shieldColor: null on every unit, so a unit's shield is drawn in
- * the OWNING TEAM's colour — the halo under it (drawShield), the force
- * field it stands inside (ForceFieldAbility.draw), the wave its regen
- * field throws and the outline that snaps when the field pops. The swarm
- * is the crux team, so all four are crux red. It used to be the amber
- * above, to keep clear of a red low-health tint that has since gone grey
- * (HP_TINT); nothing else on the swarm is red now, so the faction colour
- * is free to say "enemy" the way it does in the original.
+ * A BODY'S OWN COLOUR, INDEXED BY THE TEAM THAT OWNS IT (Sim.uteam: 0 is
+ * the swarm, 1 the player). Everything Mindustry draws in a unit's team
+ * colour reads off this and nothing else — the cell on its hull
+ * (UnitType.drawCell), the halo under its shield and the bubble a force
+ * field carrier stands in (UnitType.shieldColor is null on every type,
+ * which means "the team's"), the wave a regen field throws, the outline
+ * that snaps when a field pops, and the flame behind an engine.
+ *
+ * THE RED IS THE SWARM'S AND NOTHING ELSE'S. Both sides field the same
+ * roster off the same sprites, so red on a body of the player's would say
+ * "enemy" about a body that is theirs — the one thing on a board full of
+ * identical daggers that the colour is there to answer. The player's
+ * amber is the ring under their bodies, the mark on the minimap and the
+ * core's own, so a body of theirs is now the same colour as everything
+ * else of theirs.
  */
-const UNIT_SHIELD_COL: RGB = TEAM_CRUX_RGB;
-/** the player's own team colour on the field: Pal.accent, the core's amber */
-const TEAM_MINE: RGB = PAL_IMPORT.accent;
+const TEAM_COL: readonly RGB[] = [TEAM_CRUX_RGB, TEAM_SHARDED_RGB];
+/** the ring under the player's own bodies: their team's colour, which is
+ *  the core's amber (Pal.accent) and the mark the minimap uses */
+const TEAM_MINE: RGB = TEAM_COL[1];
 /** how faint the team ring is on a body that is NOT selected */
 const TEAM_RING_ALPHA = 0.25;
 /** ...and how much wider than the body a SELECTED one's ring sits */
@@ -1164,6 +1175,15 @@ export class Renderer {
   private shade = new Float32Array(NCELLS);
   private readonly shadeTint: [number, number, number] = [1, 1, 1];
   /**
+   * The team cell each kind wears and the colour one is drawn in, both
+   * scratch: the table is read off the SHEET (atlas.ts UNIT_CELL), which
+   * is only filled once the sprites are packed — after this module is
+   * imported and before a renderer exists — so it is taken here rather
+   * than beside the other per-kind tables at the top of the file.
+   */
+  private readonly kindCell: readonly (CellArt | null)[] = UNIT_KINDS.map((k) => UNIT_CELL[k] ?? null);
+  private readonly cellTint: [number, number, number] = [1, 1, 1];
+  /**
    * THE SHADOW MASK, in two halves.
    *
    * `shadowMask` is the texture's own bytes, kept rather than made fresh
@@ -1412,6 +1432,8 @@ export class Renderer {
     brot: number,
     walk: number,
     tint: readonly [number, number, number],
+    cell: CellArt | null,
+    cellCol: RGB,
   ): void {
     const s = m.sprite;
     // Mindustry walkExtend: a 4-stride cycle — triangle wave for the leg
@@ -1475,6 +1497,7 @@ export class Renderer {
       }
     };
     gunParts(false);
+    const bodyPart = np;
     part(m.body, m.sil.body, x + ox, y + oy, s, s, rot, 1);
     gunParts(true);
     // silhouette pass: every part as a solid dilated shape, drawn first so
@@ -1487,6 +1510,10 @@ export class Renderer {
     for (let k = 0; k < np; k++) {
       const p = MECH_PARTS[k];
       this.push(b, p.x, p.y, p.w, p.h, p.r, p.uv, tint[0] * p.dk, tint[1] * p.dk, tint[2] * p.dk, 1);
+      // the cell rides the chassis it is painted on, so it goes down with
+      // that part rather than after the assembly: a mount that sits ON the
+      // body (Weapon.top) covers it here exactly as it covers the hull
+      if (k === bodyPart && cell) this.pushCell(b, cell, p.x, p.y, p.w, p.r, cellCol);
     }
   }
 
@@ -1509,6 +1536,8 @@ export class Renderer {
     sim: Sim,
     i: number,
     tint: readonly [number, number, number],
+    cell: CellArt | null,
+    cellCol: RGB,
   ): void {
     const { ulegFX, ulegFY, ulegJX, ulegJY, ulegStage, ulegMove } = sim;
     const x = sim.upx[i], y = sim.upy[i];
@@ -1600,6 +1629,9 @@ export class Renderer {
       if (base) this.push(b, x, y, sz, sz, brot, base, tr, tg, tb, 1);
       for (const g of art.guns) if (!g.top) gun(g);
       this.push(b, x, y, sz, sz, rot, painted ? art.body : art.sil.body, tr, tg, tb, 1);
+      // the cell is art, not silhouette: it goes on the painted pass only,
+      // over the hull and under the guns that ride on top of it
+      if (painted && cell) this.pushCell(b, cell, x, y, sz, rot, cellCol);
       for (const g of art.guns) if (g.top) gun(g);
     }
   }
@@ -2284,11 +2316,12 @@ export class Renderer {
         // UnitType.drawShield: Fill.light at hitSize * 1.3 — a disc that is
         // clear at the centre and carries the colour at its rim
         const sr = urad[i] * 2 * 1.3 * 2;
+        const sc = TEAM_COL[uteam[i]];
         this.push(dyn, upx[i], upy[i], sr, sr, 0, UV_RING,
           // shieldColor lerped to white by the hit flash, at 0.7 x alpha
-          UNIT_SHIELD_COL[0] + (1 - UNIT_SHIELD_COL[0]) * Math.min(1, ushieldAlpha[i]),
-          UNIT_SHIELD_COL[1] + (1 - UNIT_SHIELD_COL[1]) * Math.min(1, ushieldAlpha[i]),
-          UNIT_SHIELD_COL[2] + (1 - UNIT_SHIELD_COL[2]) * Math.min(1, ushieldAlpha[i]),
+          sc[0] + (1 - sc[0]) * Math.min(1, ushieldAlpha[i]),
+          sc[1] + (1 - sc[1]) * Math.min(1, ushieldAlpha[i]),
+          sc[2] + (1 - sc[2]) * Math.min(1, ushieldAlpha[i]),
           0.7 * (0.3 + 0.7 * ushieldAlpha[i]));
       }
       // hp thirds of the unit's own max, so every kind tints alike —
@@ -2309,22 +2342,32 @@ export class Renderer {
           tint = this.shadeTint;
         }
       }
+      // the cell over the hull, and the engines behind it, are the two
+      // things a body wears in its OWN team's colour (TEAM_COL) — carried
+      // through the body's tint, so both grey with its health and darken
+      // in a hill's shade with the sprite they sit on
+      const team = TEAM_COL[uteam[i]];
+      this.cellTint[0] = team[0] * tint[0];
+      this.cellTint[1] = team[1] * tint[1];
+      this.cellTint[2] = team[2] * tint[2];
+      const cell = this.kindCell[k];
       const legArt = KIND_LEG[k], gait = KIND_GAIT[k];
       const mech = KIND_MECH[k];
       if (legArt && gait) {
-        this.pushLegs(dyn, legArt, gait, sim, i, tint);
+        this.pushLegs(dyn, legArt, gait, sim, i, tint, cell, this.cellTint);
       } else if (mech) {
-        this.pushMech(dyn, mech, upx[i], upy[i], urot[i], ubrot[i], uwalk[i], tint);
+        this.pushMech(dyn, mech, upx[i], upy[i], urot[i], ubrot[i], uwalk[i], tint, cell, this.cellTint);
       } else {
-        // the engine flames first, under the hull, in the team's red
+        // the engine flames first, under the hull, in the team's colour
         const eng = KIND_ENGINES[k];
-        if (eng) this.pushEngines(dyn, upx[i], upy[i], urot[i], eng, sim.time);
+        if (eng) this.pushEngines(dyn, upx[i], upy[i], urot[i], eng, sim.time, team);
         // a flyer is one flat quad on the heading the sim turned it to.
         // That is its own UnitType.rotateSpeed, not its velocity: the
         // stock 5 deg/tick is close enough to instant that the light
         // flyers read as banking with their drift, while antumbra's 1.9
         // visibly swings the hull round after the course change
         this.push(dyn, upx[i], upy[i], usz, usz, urot[i], KIND_UV[k], tint[0], tint[1], tint[2], 1);
+        if (cell) this.pushCell(dyn, cell, upx[i], upy[i], usz, urot[i], this.cellTint);
       }
       this.endScale();
     }
@@ -3189,7 +3232,7 @@ export class Renderer {
    * outlines rather than merging.
    */
   private drawForceFields(sim: Sim, buffered: boolean): void {
-    const { upx, upy, ushield, ushieldAlpha, uforceScale, ukind, n } = sim;
+    const { upx, upy, ushield, ushieldAlpha, uforceScale, ukind, uteam, n } = sim;
     const { vx0, vy0, vx1, vy1 } = this;
     const b = this.shields;
     // the census answers "is any carrier even alive" without touching the
@@ -3217,10 +3260,11 @@ export class Renderer {
       // rides into the buffer with the fill, so the shader's rim and hatch
       // pick it up without knowing anything about the carrier
       const w = Math.min(1, ushieldAlpha[i]);
+      const sc = TEAM_COL[uteam[i]];
       const col: RGB = [
-        UNIT_SHIELD_COL[0] + (1 - UNIT_SHIELD_COL[0]) * w,
-        UNIT_SHIELD_COL[1] + (1 - UNIT_SHIELD_COL[1]) * w,
-        UNIT_SHIELD_COL[2] + (1 - UNIT_SHIELD_COL[2]) * w,
+        sc[0] + (1 - sc[0]) * w,
+        sc[1] + (1 - sc[1]) * w,
+        sc[2] + (1 - sc[2]) * w,
       ];
       if (buffered) {
         // A CIRCLE, one quad off the big disc, exactly as the shield
@@ -4231,6 +4275,13 @@ export class Renderer {
     // and the unit itself, closing from 3x onto its own size
     const s = size * (1 + fout * 2);
     this.push(dyn, e.x, e.y, s, s, e.rot ?? 0, uv, 1, 1, 1, t);
+    // both copies wear the cell of the team the body is arriving for (the
+    // push carries the colour), so an entrance says whose it is from the
+    // first frame of it rather than from the ring under the finished unit
+    const cell = this.kindCell[k];
+    if (!cell || !e.col) return;
+    this.pushCellAlpha(dyn, cell, e.x, e.y, size, Math.PI, e.col, fout);
+    this.pushCellAlpha(dyn, cell, e.x, e.y, s, e.rot ?? 0, e.col, t);
   }
 
   /**
@@ -4321,6 +4372,49 @@ export class Renderer {
    * inner disc half its size thrown a quarter-radius the engine's own way
    * (rotation -90 on an axial engine: forward, into the hull).
    */
+  /**
+   * UnitType.drawCell: the window on a hull, in the colour of the team that
+   * owns it — one quad over the body, on the body's own heading.
+   *
+   * The sheet reports where the cell sits as a FRACTION of the body's quad
+   * (atlas.ts CellArt), so this is the same arithmetic at every size a body
+   * is ever drawn at: scale the offset, turn it with the hull, scale the
+   * quad. `col` arrives already multiplied by whatever the body itself is
+   * tinted with, so a cell greys with its unit's health and darkens in a
+   * hill's shade exactly as it did when it was baked into the sprite.
+   */
+  private pushCell(
+    b: Batch,
+    cell: CellArt,
+    x: number,
+    y: number,
+    size: number,
+    rot: number,
+    col: RGB,
+  ): void {
+    this.pushCellAlpha(b, cell, x, y, size, rot, col, 1);
+  }
+
+  /** ...and the same cell at an alpha of its own, for the two fading
+   *  copies of a body the spawn effect draws (drawUnitSpawn) */
+  private pushCellAlpha(
+    b: Batch,
+    cell: CellArt,
+    x: number,
+    y: number,
+    size: number,
+    rot: number,
+    col: RGB,
+    alpha: number,
+  ): void {
+    const c = Math.cos(rot), s = Math.sin(rot);
+    const dx = cell.dx * size, dy = cell.dy * size;
+    this.push(
+      b, x + c * dx - s * dy, y + s * dx + c * dy,
+      cell.w * size, cell.h * size, rot, cell.uv, col[0], col[1], col[2], alpha,
+    );
+  }
+
   private pushEngines(
     dyn: Batch,
     ux: number,
@@ -4328,6 +4422,7 @@ export class Renderer {
     rot: number,
     engines: readonly UnitEngine[],
     time: number,
+    col: RGB,
   ): void {
     const cos = Math.cos(rot), sin = Math.sin(rot);
     const ticks = time * 60;
@@ -4335,7 +4430,7 @@ export class Renderer {
       // the unit's frame: y runs along the heading, x across it
       const ex = ux + cos * en.y - sin * en.x, ey = uy + sin * en.y + cos * en.x;
       const rad = en.radius + ABSIN(ticks, 2, en.radius / 4);
-      this.fillCircle(dyn, ex, ey, rad, UNIT_SHIELD_COL, 1);
+      this.fillCircle(dyn, ex, ey, rad, col, 1);
       // Angles.trns(rot + rotation, rad / 4), subtracted, with rot the
       // unit's heading less 90: an axial engine's -90 puts the disc
       // FORWARD of the flame, into the hull
