@@ -345,19 +345,25 @@ mission: {
 `target` names the KIND; every one of them on the map is a target, in the
 document's order. Two rules make that order matter:
 
-* At each moment in `launchAt` the **first target still standing** fires.
-  Killing one does not skip a launch — the next along takes the job — so
-  the schedule is a pace the swarm keeps rather than a per-building timer
-  the player can stall by picking a favourite.
-* Clearing the **last** target stops the schedule dead, and that is the
-  win. Getting through the whole schedule is the loss, so **the last entry
-  in `launchAt` is the map's hard ceiling** — Confluence cannot run past
-  twenty-five minutes.
+* **`launchAt` pairs off with the targets by index, and is fixed.**
+  Target 0 fires at `launchAt[0]`, target 1 at `launchAt[1]`, whatever the
+  player has done in between. Nothing moves a moment: wrecking a target
+  does not push the next one back, it means that moment arrives with
+  nothing left to fire. **The last entry is the map's hard ceiling** —
+  Confluence cannot run past 25:00.
+* **One launch loses the run.** Not the last of five — the first. Reach a
+  moment with that target still standing and it fires, and that is the end
+  of it.
 
-So stamp them nearest-first: the schedule buys the player an early pad
-they can reach and asks for the last one deep in the swarm's ground. The
-schedule may be longer or shorter than the number of pads — it is a pace,
-not a pad-per-entry list.
+So stamp targets nearest-first: the early moments buy the player a target
+they can reach, and the late ones ask for the last deep in the swarm's
+ground. A target past the end of `launchAt` has no moment at all and can
+only be finished, never failed.
+
+The reward for being early is the clock itself — the HUD counts to the
+soonest moment still owned by something standing, so clearing a target two
+minutes early makes the countdown jump to the next target's moment,
+further off by exactly the two minutes that were spare.
 
 A run opens with the ground round every target already **discovered**
 (`MISSION_INTEL_CELLS`, `game/fog.ts`) — stamped into the static fog set
@@ -371,6 +377,10 @@ the schedule. Turn that when a raid plays long or short; the schedule is
 what the mission promises the player and moving it moves the objective
 text with it.
 
+A raid's length is bounded by its own schedule: the last entry in
+`launchAt` is the latest the run can possibly end, because that target
+either dies before its moment (the win) or fires (the loss).
+
 ### Adding another one
 
 A name in `MISSION_STRUCT_KINDS`, a stats row in `MISSION_STRUCTS`, a
@@ -382,8 +392,8 @@ by existing.
 
 ## Defence formations (blueprints)
 
-**An outpost is not one building, and you want fifty of them.** A duo ring
-with a wall skirt is a dozen stamps that have to land in exactly the right
+**An outpost is not one building, and you want fifty of them.** A ring of
+duos round a salvo is a dozen stamps that have to land in exactly the right
 relationship; nine maps want a lot of those. Placing that by hand is an
 afternoon, and *changing* it — a wall moved a cell, a duo swapped for a
 hail — is that afternoon again on every copy, with no way to tell which

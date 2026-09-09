@@ -43,8 +43,6 @@ import {
   UV_TOWER_BASE3,
   UV_TOWER_BASE4,
   UV_SHIELD_TOWER,
-  UV_COPPER_WALL,
-  UV_TITANIUM_WALL,
   UV_DRILL,
   UV_FACTORY1,
   UV_LAUNCH_PAD,
@@ -53,10 +51,6 @@ import {
   UV_FACTORY4,
   UV_FACTORY5,
   UV_ORE,
-  UV_THORIUM_WALL,
-  UV_COPPER_WALL_LARGE,
-  UV_TITANIUM_WALL_LARGE,
-  UV_THORIUM_WALL_LARGE,
   UV_DISC_BIG,
   UV_SCORCH,
   UV_ARC,
@@ -195,12 +189,6 @@ const UV_TURRETS: Record<StructKind, UVRect> = {
   spectre: UV_SPECTRE,
   meltdown: UV_MELTDOWN,
   foreshadow: UV_FORESHADOW,
-  "copper-wall": UV_COPPER_WALL,
-  "titanium-wall": UV_TITANIUM_WALL,
-  "thorium-wall": UV_THORIUM_WALL,
-  "copper-wall-large": UV_COPPER_WALL_LARGE,
-  "titanium-wall-large": UV_TITANIUM_WALL_LARGE,
-  "thorium-wall-large": UV_THORIUM_WALL_LARGE,
   drill: UV_DRILL,
   "factory-t1": UV_FACTORY1,
   "factory-t2": UV_FACTORY2,
@@ -2723,7 +2711,7 @@ export class Renderer {
       }
       const a = raising ? BUILD_ALPHA : 1;
       // a wall is its art and nothing else: no base under it, no turning
-      if (st.wall) {
+      if (st.building) {
         this.push(dyn, t.x, t.y, px, px, 0, top, tint[0], tint[1], tint[2], a);
       } else {
         this.push(dyn, t.x, t.y, px, px, 0, base, tint[0], tint[1], tint[2], a);

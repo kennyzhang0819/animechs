@@ -59,7 +59,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   units are ALL a faction is. Nobody owns a turret any more — the
   player builds none at all, and what a run may put down is the same
   short roster whichever line it plays (`BUILDABLE_KINDS`: the drill,
-  the two copper walls, the five factories). A run is played as one
+  the five factories). A run is played as one
   faction, picked on the deploy screen; what the pick decides is which
   bodies the factories make
 - `game/ladder.ts` — the **ten-rung ladder** (`RUNGS`: the mutator roll
@@ -349,8 +349,8 @@ a squad of daggers under a pair of flares on wave 1, the scepters and the
 first reign by waves 5 to 7, everything and the disrupt on wave 8. Eight
 waves, 220 bodies in all — not a swarm, and only a third of what stands
 between the player and the map: the rest is the swarm's own turrets and
-walls, placed on it. **Every number on both sides is
-Mindustry's own**: a turret's health, damage and reload, a wall's pool
+placed on it. **Every number on both sides is
+Mindustry's own**: a turret's damage and reload, a unit's health
 and a unit's health, armour and speed are read out of `Blocks.java` and
 `UnitTypes.java` and played unscaled (`TOWER_HP_SCALE`, `WALL_HP_SCALE`
 and `setUnitDamageScale` all stand at 1; the 30% the phase turrets once
@@ -382,7 +382,7 @@ Nothing the swarm does or dies of pays anything: a kill drops nothing, a
 wave lands with no bonus, a wrecked enemy building pays no bounty. The
 economy is not tied to the enemy count at all, which is what lets the
 waves be authored to the mission rather than to the bank. Every turret,
-wall, drill and factory placed costs scrap, and every unit a factory
+drill and factory placed costs scrap, and every unit a factory
 builds costs its tier's `UNIT_PRICE`. Selling returns nothing
 (`SELL_REFUND` is 0): a placement is spent. Nothing carries between
 runs. There is no gate inside a run: whatever the save owns it may place
@@ -478,7 +478,7 @@ levels (`FACTION_UNLOCKS`: air at 3, the crawlers at 6, the fleet at 9,
 the support fleet at 12). A faction is a family of five units, tier 1
 to 5, and that is the whole of it: **the factions own no turrets.** The
 player builds no turrets either — the build menu is the drill, the two
-copper walls and the five factories (`BUILDABLE_KINDS` in
+the five factories (`BUILDABLE_KINDS` in
 `game/factions.ts`), the same menu for every line, and a run is won
 with the army the factories make. The seventeen guns are still
 implemented and still on the field: they are the SWARM's, standing in
@@ -528,15 +528,23 @@ mission changes is what ENDS the run.
 
 **Confluence is the raid** (`RaidMission`), and it is the first map with
 an objective that is not the core. Five of the swarm's **launch pads**
-stand on it, and a rocket goes up off one of them at 6:00, 11:00, 16:00,
-21:00 and 25:00. Every rocket away is a thing the player failed to stop;
-the **last one is the run lost**, so the schedule's final entry is the
-map's hard ceiling and Confluence cannot run past twenty-five minutes. It
-is won the moment all five pads are wrecked — and a pad that goes down
-does not skip a launch, because the next pad along takes the job, so the
-schedule is a pace the swarm keeps and not a timer to stall. The
-assignment is a line held with one hand and a push made with the other,
-and it plays out around twenty to twenty-four minutes.
+stand on it, each with a deadline — 6:00, 11:00, 16:00, 21:00, 25:00 as
+authored — and **one rocket off any pad loses the run**. Not the last of
+five: the first. The objective is "don't let them launch", and a mission
+that let the player carry on after a launch was contradicting its own
+headline. It is won the moment all five pads are wrecked.
+
+**The schedule is hard-coded and nothing moves it.** Pad *i* fires at
+`launchAt[i]`, always; wrecking a pad does not push the next one back, it
+means that pad's moment arrives with nothing left to fire. So **25:00 is
+the map's hard ceiling** — pad 5 is either wrecked before its moment,
+which wins, or it fires, which loses — and the run cannot outlast it.
+What being early buys is the clock itself: the HUD counts to the soonest
+moment still owned by something standing, so clearing a pad two minutes
+early makes the countdown jump to the next pad's moment, further off by
+exactly the two minutes that were spare. The assignment is a line held
+with one hand and a push made with the other, against a clock, and it
+plays out around twenty to twenty-four minutes.
 
 A run opens with the ground round each pad already **discovered**
 (`MISSION_INTEL_CELLS`): each one and its patch are drawn in the grey of
@@ -587,31 +595,38 @@ are that red, and a flyer's engines burn in it. A structure on open
 ground is solid to the body but **passable to the path at a cost**
 (`STRUCTURE_COST`, Mindustry's own 70): the field routes around a wall
 when the way round is cheaper and into it when it is not, and the bodies
-pressed into it shoot it. So a wall across the lane is not a seal, it is
-a fight at the wall. Structures have Mindustry's block health
-(`TOWER_HP_SCALE`, 1); hurt, they grey and smoke like units; at zero they
-are wrecked and gone, their ground open again. Bullets, missiles and
+pressed into it shoot it. So a turret across the lane is not a seal, it
+is a fight at the turret. Structures hold **twice** Mindustry's block health
+(`TOWER_HP_SCALE`, 2 — see below); hurt, they grey and smoke like units;
+at zero they are wrecked and gone, their ground open again. Bullets, missiles and
 shells fly (`Sim.shots`) and hit the structure under them; beams, bolts,
 flames, saps, fields and bombs land at once; a crawler is its own bomb.
-Both dials stand at 1 — the turrets' pool (`TOWER_HP_SCALE`) and the
-swarm's bite (`setUnitDamageScale`) — because both sides play Mindustry's
-own numbers now; a balance pass, if one is ever wanted, is done on those
-two and never row by row. The playtest takes the swarm's dial as
+**There are no walls.** There were six — copper, titanium and thorium and
+their 2x2 variants — and the whole of what they did was hold a pool in
+front of something that could not. That job has no one to give it: the
+player builds no turrets for a wall to protect, so a wall was a pool
+parked in front of a factory, and a fight decided by how much copper you
+can afford to leave in a doorway is not the fight this game is about.
+What they held is in the buildings now — **`TOWER_HP_SCALE` is 2**, so
+every structure on the board carries twice its Mindustry block health (a
+duo 500, a drill 320, a ground factory 720, the core 12,000). It is one
+dial over every structure both sides field; the swarm's bite
+(`setUnitDamageScale`) stays at 1, so a balance pass is done on those two
+and never row by row. The playtest takes the swarm's dial as
 `--unit-damage`. The headless bot builds on open ground, as the player
 must — hills take no turret — and never rebuilds what it loses.
 
 **The swarm builds too, and it is most of what stops the player.** A
 map starts with a formation of the swarm's structures (`MapData.enemies`,
 stamped in the map editor's *Enemy structure* palette) — turrets and
-walls across the lanes, on the veins, in front of the doors — and **they
-are the same roster**: a duo is a duo, a lancer a lancer, a copper wall a
-copper wall, whichever side stands it, at the same stats and the same
-art. What says whose it is is **a small crux-red flag at the top-left
+turrets across the lanes, on the veins, in front of the doors — and
+**they are the same roster**: a duo is a duo and a lancer a lancer,
+whichever side stands it, at the same stats and the same art. What says whose it is is **a small crux-red flag at the top-left
 corner of the base** (`Renderer.drawEnemyFlag`) and nothing else. The
 swarm's turret takes the nearest of the player's BODIES in range first
 and holds on the nearest of the player's structures otherwise, the core
 included, and fires the stock table; the player's shoot it back; the
-swarm walks around its own walls. The waves are the other third of the
+swarm walks around its own buildings. The waves are the other third of the
 pressure (`public/levels/campaign.json`): eight of them, 6 to 53 bodies,
 tiered to the clock — tier 1 and 2 through the first seven minutes, tier
 3 and the first tier 4 by fourteen, the reign and the boss at the end.
@@ -620,7 +635,7 @@ the scrap walls are gone, one set of buildings, two teams. Placing
 formations is authoring, not code: stamp them in the editor.
 
 **And a formation can be a BLUEPRINT rather than a pile of stamps.** An
-outpost — a duo ring with a wall skirt, say — is authored once in the
+outpost — a ring of duos round a salvo, say — is authored once in the
 shared library (`game/blueprints.ts`, `public/blueprints.json`) and maps
 hold REFERENCES to it (`MapData.formations`: which blueprint, where its
 box sits, how many quarter-turns it is turned). Every instance on every

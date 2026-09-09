@@ -12,31 +12,26 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * A FACTION USED TO OWN THREE TURRETS (FACTION_TURRETS: the duo, the
  * salvo and the spectre were the ground mechs', the arc, the lancer and
  * the meltdown the starlight line's) and it owns none now. THE PLAYER
- * BUILDS NO TURRETS AT ALL — the walls, the drill and the factories are
- * the whole of the build menu, and a fight is won with the army the
- * factories make rather than with a gun line behind it. The turrets are
+ * BUILDS NO TURRETS AT ALL — the drill and the factories are the whole of
+ * the build menu, and a fight is won with the army the factories make
+ * rather than with a gun line behind it. The turrets are
  * still in the game, still implemented and still fielded: a map's own
  * formation is the SWARM's (MapData.enemies), and every one of them is
  * one of the seventeen.
  */
 
-/** every kind that is nobody's: the walls, the drill and the factories */
-export const COMMON_KINDS: readonly TowerKind[] = TOWER_KINDS.filter((k) => TOWERS[k].wall);
+/** every kind that is nobody's: the drill and the five factories */
+export const COMMON_KINDS: readonly TowerKind[] = TOWER_KINDS.filter((k) => TOWERS[k].building);
 
 /**
  * WHAT A RUN MAY BUILD, in the order the build menu lays it out
- * (tech.ts BUILD_SLOTS reads this): the drill that pays for everything,
- * the copper walls that stand in the lane, and the five factories that
- * turn the scrap into the army. No turrets — see the note above.
- *
- * It is deliberately SHORT of the common roster: the titanium and
- * thorium walls are implemented and priced and simply are not offered
- * yet. Adding one back is a line here and a slot in the grid.
+ * (tech.ts BUILD_SLOTS reads this): the drill that pays for everything
+ * and the five factories that turn the scrap into the army. No turrets —
+ * see the note above — and no walls, since there are none left in the
+ * game (types.ts).
  */
 export const BUILDABLE_KINDS: readonly TowerKind[] = [
   "drill",
-  "copper-wall",
-  "copper-wall-large",
   "factory-t1",
   "factory-t2",
   "factory-t3",

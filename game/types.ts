@@ -40,19 +40,15 @@ export const TOWER_KINDS = [
   "spectre",
   "meltdown",
   "foreshadow",
-  // THE WALLS. Not turrets: a structure with no gun and a big pool, built
-  // to stand in the lane and be chewed on while the guns behind it work.
-  // They ride the same roster because the sim, the bar, the prices and the
-  // track all key on TowerKind; `wall` on their stats (constants.ts) is
-  // what tells the fire loop and the renderer to leave them alone
-  "copper-wall",
-  "titanium-wall",
-  "thorium-wall",
-  // ...and their 2x2 variants, Mindustry's own large walls: four tiles of
-  // the same material with four times the pool, for the price of four
-  "copper-wall-large",
-  "titanium-wall-large",
-  "thorium-wall-large",
+  // THE WALLS ARE GONE. There were six — copper, titanium and thorium, and
+  // their 2x2 variants — and the whole of what they did was stand in the
+  // lane holding a pool while something else did the work. That is a job
+  // the game no longer has anyone to give: the player builds no turrets
+  // for a wall to protect (factions.ts), so a wall was a pool in front of
+  // a factory, and a fight decided by how much copper you could afford to
+  // park in a doorway is not the fight this game is about. What they were
+  // FOR is now in the buildings themselves, which hold twice what they did
+  // (TOWER_HP_SCALE).
   // THE ECONOMY AND THE ARMY. A drill stands on an ore vein and pays scrap
   // by the second (economy.ts DRILL_INCOME_PER_ORE); a factory turns
   // scrap into the run's faction's units, one tier a building (factions.ts,

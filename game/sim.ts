@@ -1164,11 +1164,9 @@ export class Sim {
    */
   readonly missionStructs: Tower[] = [];
   /**
-   * HOW MANY ROCKETS ARE AWAY — how far into a raid's `launchAt` schedule
-   * the swarm has actually got. It only advances when a pad was standing
-   * to fire, so a run that clears the board stops the count dead; when it
-   * reaches the length of the schedule the swarm has done what it came
-   * for and the run is lost.
+   * HAS A ROCKET GONE UP — 0 or 1, and never more, because the first one
+   * ends the run (lost). It is a count rather than a flag only so that the
+   * end screen can say the plain thing that happened.
    */
   rocketsAway = 0;
   /**
@@ -2242,16 +2240,21 @@ export class Sim {
    * the score screen takes over.
    *
    * The core falling is the usual way, and on a RAID (levels.ts
-   * RaidMission) there is a second: the swarm getting through its whole
-   * launch schedule. Every rocket away is a thing the player failed to
-   * stop and could still come back from; the last one is the swarm having
-   * done what it came to the map to do, and there is nothing left to
-   * prevent.
+   * RaidMission) there is a second: ONE ROCKET LEAVING THE GROUND. Not the
+   * last of a schedule — the first and only. The objective is "don't let
+   * them launch", and a mission that then let the player carry on after a
+   * launch was contradicting its own headline: it printed 1/5 away and
+   * asked for four more failures before it would admit the sentence had
+   * been broken. A thing you must not let happen is lost the moment it
+   * happens.
+   *
+   * What the rest of the schedule is FOR, now, is the deadlines before it
+   * — see updateRaid.
    */
   lost(): boolean {
     if (this.core.hp <= 0) return true;
     const m = this.level.mission;
-    return m.kind === "raid" && this.rocketsAway >= m.launchAt.length;
+    return m.kind === "raid" && this.rocketsAway > 0;
   }
 
   /**
@@ -2278,51 +2281,84 @@ export class Sim {
   }
 
   /**
-   * SECONDS UNTIL THE NEXT ROCKET GOES UP, or -1 when the schedule is
-   * spent — which on a live run means the raid is already lost, and on a
-   * finished one that there is nothing left to count.
+   * EVERY TARGET HAS ITS OWN FIXED MOMENT: target i launches at
+   * launchAt[i], always, whatever else has happened. The schedule is
+   * hard-coded and nothing the player does moves it — wrecking a target
+   * does not push the next one back, it simply means that target's moment
+   * passes with nothing to fire.
+   *
+   * A target past the end of the schedule has no deadline at all, which is
+   * how a board with more targets than moments behaves: the last few can
+   * only be finished, never failed.
    */
-  nextLaunchIn(): number {
+  private dueFor(i: number): number {
     const m = this.level.mission;
-    if (m.kind !== "raid" || this.rocketsAway >= m.launchAt.length) return -1;
-    return Math.max(0, m.launchAt[this.rocketsAway] - this.time);
+    if (m.kind !== "raid" || i >= m.launchAt.length) return Infinity;
+    return m.launchAt[i];
   }
 
   /**
-   * THE RAID'S SCHEDULE (levels.ts RaidMission.launchAt), once a tick.
+   * SECONDS UNTIL THE NEXT ROCKET GOES UP — the soonest deadline still
+   * owned by a target that is standing — or -1 when no rocket can go up
+   * again.
    *
-   * At each moment on the list the FIRST TARGET STILL STANDING, in the
-   * mission's own order, ships its rocket. Two things fall out of that and
-   * both are wanted: killing a pad does not skip a launch — the next pad
-   * along takes the job, so the schedule is a pace the swarm keeps rather
-   * than a per-building timer the player can stall by picking the right
-   * one — and clearing the LAST pad stops the schedule dead, because there
-   * is nothing left to launch from. The clock is the stake; the buildings
-   * are the way to stop it.
+   * THIS IS THE WHOLE OF THE "TIME BANKED" READOUT, and it needs nothing
+   * to make it so. Wreck target 1 two minutes before its moment and this
+   * stops counting to that moment and starts counting to target 2's, which
+   * is further off: the countdown jumps by exactly the time that was left
+   * over, because that time IS what was left over. A separate banked total
+   * would have been the same number said twice.
+   */
+  nextLaunchIn(): number {
+    let soonest = Infinity;
+    for (let i = 0; i < this.missionStructs.length; i++) {
+      if (this.missionStructs[i].hp <= 0) continue;
+      const due = this.dueFor(i);
+      if (due < soonest) soonest = due;
+    }
+    return soonest === Infinity ? -1 : Math.max(0, soonest - this.time);
+  }
+
+  /**
+   * THE RAID'S CLOCK (levels.ts RaidMission.launchAt), once a tick.
    *
-   * The loop rather than one test is for the fast-forward paces: a 16x
-   * tick can step over a whole schedule entry, and a rocket that was due
-   * must still go up.
+   * ONE MOMENT PER TARGET, HARD-CODED. Target i fires at launchAt[i] if it
+   * is still standing when that moment comes, and one rocket loses the run
+   * (lost). Nothing moves a moment: the schedule a player is racing is the
+   * one printed in the level, so the last entry is the map's hard ceiling
+   * and the run cannot outlast it — either the last target is wrecked
+   * before its moment, which is the win, or it fires, which is not.
+   *
+   * Wrecking a target early is therefore not "buying time" in any
+   * mechanism; it is simply removing the thing that would have fired, and
+   * the countdown moves on to the next moment on its own. That is the
+   * whole feature and it is why there is no bookkeeping here.
+   *
+   * The loop is for the fast-forward paces: a 16x tick can step over a
+   * moment, and one that was due must still be answered on the tick it
+   * comes due.
    */
   private updateRaid(): void {
     const m = this.level.mission;
-    if (m.kind !== "raid") return;
-    while (this.rocketsAway < m.launchAt.length && this.time >= m.launchAt[this.rocketsAway]) {
-      const pad = this.missionStructs.find((t) => t.hp > 0);
-      if (!pad) return; // every pad is down: the schedule has nothing to fire
+    if (m.kind !== "raid" || this.rocketsAway > 0) return;
+    for (let i = 0; i < this.missionStructs.length; i++) {
+      const pad = this.missionStructs[i];
+      if (pad.hp <= 0) continue;
+      if (this.time < this.dueFor(i)) continue;
       this.rocketsAway++;
       this.launchRocket(pad);
+      return;
     }
   }
 
+
   /**
-   * A ROCKET LEAVES A PAD. Nothing is spawned and nothing is shot — what a
-   * launch costs the player is the entry it burns off the schedule
-   * (rocketsAway), which is the whole of the mission's stake. What is left
-   * is telling them it happened: the pad throws a smoke cloud, a shockwave
-   * and a blast, so a launch is a thing seen on the board when the camera
-   * is anywhere near it and a number that moved in the corner when it is
-   * not.
+   * A ROCKET LEAVES A PAD, AND THE RUN IS OVER (lost). Nothing is spawned
+   * and nothing is shot — the launch IS the failure — so what is left is
+   * telling the player it happened where it happened: the pad throws a
+   * smoke cloud, a shockwave and a blast, which is a thing seen on the
+   * board when the camera is anywhere near it and, when it is not, the
+   * reason the score screen just came up.
    */
   private launchRocket(pad: Tower): void {
     this.pushFx(pad.x, pad.y, 1.2, FxKind.SmokeCloud);
@@ -2416,7 +2452,7 @@ export class Sim {
     }
     const st = this.statsFor(t.kind);
     const built = VISION_BUILT_CELLS * CELL;
-    const r = !st.wall && st.range > 0 ? Math.max(built, st.range * VISION_OF_RANGE) : built;
+    const r = !st.building && st.range > 0 ? Math.max(built, st.range * VISION_OF_RANGE) : built;
     // a BUILDING's radius is rounded to the nearest tile for the raster —
     // Mathf.round(build.fogRadius()), FogControl.pushStaticBlocks
     return { x: t.x, y: t.y, r, tiles: Math.round(r / CELL) };
@@ -6969,7 +7005,7 @@ export class Sim {
       const st = hostile ? structStats(t.kind) : this.statsFor(t.kind);
       // a wall has no gun at all: it smokes when hurt (above) and that is
       // the whole of what it does each tick
-      if (st.wall) continue;
+      if (st.building) continue;
       // a tractor turret has no reload and no volley — it holds a beam.
       // The swarm's drags nothing: its beam only ever caught units
       if (st.bullet.tractor) {

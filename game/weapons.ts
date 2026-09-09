@@ -266,11 +266,12 @@ export interface UnitWeapon {
 
 /**
  * ONE DIAL OVER EVERY UNIT WEAPON, at 1: the rows below are Mindustry's
- * and the swarm bites exactly as they say. The turrets are at Mindustry's
- * own health too (TOWER_HP_SCALE, 1): a wave is dozens of bodies now, not
- * thousands, so both sides play the stock numbers. If a balance pass is
- * ever needed it is done here (setUnitDamageScale) and on that dial, not
- * row by row — the rows are meant to stay Mindustry's.
+ * and the swarm bites exactly as they say. THE STRUCTURES ARE NOT — they
+ * hold twice Mindustry's health (TOWER_HP_SCALE, 2), which is the walls'
+ * old job moved into the things that used to hide behind them (types.ts).
+ * If a balance pass is ever needed it is done here (setUnitDamageScale)
+ * and on that dial, not row by row — the rows are meant to stay
+ * Mindustry's.
  */
 let damageScale = 1;
 export const unitDamageScale = (): number => damageScale;

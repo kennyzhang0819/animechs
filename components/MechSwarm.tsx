@@ -263,16 +263,22 @@ const clock = (seconds: number): string => {
  * vanishing — a line that disappeared when it was met would take the
  * record of what was achieved with it. The first line is a thing to
  * PREVENT, and prevention is never done while the run is on: it stays
- * quiet and goes red as it is spent, one rocket at a time, with the
- * countdown red inside its last minute — the only moment on this map
- * where a single minute matters.
+ * quiet, and its countdown goes red inside its last minute, which on this
+ * map is the last minute of the run — one rocket ends it.
+ *
+ * THE COUNTDOWN IS ALSO THE TIME LEFT OVER. Every pad has its own fixed
+ * moment (Sim.updateRaid), so wrecking one early makes this stop counting
+ * to that moment and start counting to the next pad's — which is further
+ * off by exactly the time that was spare. The jump IS the reward, and a
+ * separate "banked" total beside it would have been the same number said
+ * twice.
  */
 function Objectives({
   raid,
 }: {
   raid: NonNullable<UiState["raid"]>;
 }) {
-  const { padsDown, padsTotal, launched, launchTotal, nextLaunchIn } = raid;
+  const { padsDown, padsTotal, nextLaunchIn } = raid;
   const clear = padsTotal > 0 && padsDown >= padsTotal;
   const urgent = nextLaunchIn >= 0 && nextLaunchIn < 60;
   return (
@@ -291,14 +297,7 @@ function Objectives({
             </span>
           </>
         ) : null}
-        {launched > 0 && (
-          <>
-            {" "}
-            <span className="text-[#F25555]">
-              ({launched}/{launchTotal} away)
-            </span>
-          </>
-        )}
+
       </div>
       <div className={clear ? "text-[#7BE58A]" : undefined}>
         Destroy all enemy launch pads{" "}
@@ -993,36 +992,6 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
     kind: "foreshadow",
     name: "Foreshadow",
     icon: "/mindustry/sprites/blocks/turrets/foreshadow.png",
-  },
-  {
-    kind: "copper-wall",
-    name: "Copper Wall",
-    icon: "/mindustry/sprites/blocks/walls/copper-wall.png",
-  },
-  {
-    kind: "titanium-wall",
-    name: "Titanium Wall",
-    icon: "/mindustry/sprites/blocks/walls/titanium-wall.png",
-  },
-  {
-    kind: "thorium-wall",
-    name: "Thorium Wall",
-    icon: "/mindustry/sprites/blocks/walls/thorium-wall.png",
-  },
-  {
-    kind: "copper-wall-large",
-    name: "Large Copper Wall",
-    icon: "/mindustry/sprites/blocks/walls/copper-wall-large.png",
-  },
-  {
-    kind: "titanium-wall-large",
-    name: "Large Titanium Wall",
-    icon: "/mindustry/sprites/blocks/walls/titanium-wall-large.png",
-  },
-  {
-    kind: "thorium-wall-large",
-    name: "Large Thorium Wall",
-    icon: "/mindustry/sprites/blocks/walls/thorium-wall-large.png",
   },
   // the economy and the army (factions.ts COMMON_KINDS): the drill and
   // the five factories, one a unit tier
@@ -2874,11 +2843,11 @@ export default function MechSwarm() {
                   a core still standing would be telling the player the
                   wrong thing about their own board */}
               <div className="font-display text-xl font-bold uppercase tracking-widest text-[#e55454]">
-                {hud.coreHp <= 0 ? "Core destroyed" : "Rockets away"}
+                {hud.coreHp <= 0 ? "Core destroyed" : "Rocket away"}
               </div>
               {hud.raid && hud.coreHp > 0 && (
                 <div className="mt-1 text-[13px] uppercase tracking-widest text-[#71717C]">
-                  Every pad launched — {hud.raid.padsDown}/{hud.raid.padsTotal} destroyed
+                  A launch pad fired — {hud.raid.padsDown}/{hud.raid.padsTotal} destroyed
                 </div>
               )}
               <div className="mt-4 space-y-1 text-base text-[#EDEDEF]">

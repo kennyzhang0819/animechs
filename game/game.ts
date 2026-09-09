@@ -83,10 +83,17 @@ export interface UiState {
     /** targets wrecked, out of how many are on the board */
     padsDown: number;
     padsTotal: number;
-    /** rockets the swarm has got away, out of the whole schedule */
+    /** has a rocket gone up? 0 or 1 — the first one ends the run, so this
+     *  is only ever read by the end screen */
     launched: number;
-    launchTotal: number;
-    /** seconds until the next one goes up, or -1 when none is left to go */
+    /**
+     * Seconds until the next rocket goes up, or -1 when none can any more.
+     *
+     * This is also the whole of the "time left over" readout: the schedule
+     * is fixed per pad, so wrecking one early makes this jump to the next
+     * pad's moment, which is further off by exactly the time that was left
+     * over (Sim.nextLaunchIn).
+     */
     nextLaunchIn: number;
   } | null;
   kills: number;
@@ -1340,7 +1347,6 @@ export class Game {
             padsDown: this.sim.padsDown(),
             padsTotal: this.sim.missionStructs.length,
             launched: this.sim.rocketsAway,
-            launchTotal: this.sim.level.mission.launchAt.length,
             nextLaunchIn: this.sim.nextLaunchIn(),
           }
         : null,
