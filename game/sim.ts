@@ -471,6 +471,14 @@ const nowMs = () => performance.now();
 /** how far out from a factory's edge its make is set down */
 const FACTORY_SPAWN_REACH = CELL * 2.5;
 /**
+ * HALF THE ARC a factory with a meetup point set drops its make into,
+ * measured off the bearing to that point (Sim.updateProduction). 50° to
+ * either side: wide enough that a row of bodies is a crowd rather than a
+ * single file, narrow enough that every one of them is on the side of the
+ * building the walk actually starts from.
+ */
+const RALLY_SPAWN_ARC = (50 * Math.PI) / 180;
+/**
  * HOW CLOSE IS ARRIVED, for a body under a move order (Sim.orderMove).
  * Generous on purpose: a group sent at one cell cannot all stand on it,
  * and a body still shoving for the exact point long after the group has
@@ -4144,10 +4152,22 @@ export class Sim {
         continue;
       }
       // the clock has run out: the body is set down beside the building,
-      // on ground its layer can stand on (spawnUnit's own tests)
+      // on ground its layer can stand on (spawnUnit's own tests) — and on
+      // the SIDE the meetup point is on where one is set (RALLY_SPAWN_ARC),
+      // so the make comes out of the building already facing its walk
       const kind = factionUnit(faction, tier);
-      const reach = (structStats(t.kind).size * CELL) / 2 + FACTORY_SPAWN_REACH;
-      if (this.spawnUnit(kind, { x: t.x, y: t.y, spread: reach }, 0, 1)) {
+      const half = (structStats(t.kind).size * CELL) / 2;
+      const reach = half + FACTORY_SPAWN_REACH;
+      let toward: number | undefined;
+      if (t.rallyCell >= 0) {
+        const rx = ((t.rallyCell % COLS) + 0.5) * CELL;
+        const ry = (((t.rallyCell / COLS) | 0) + 0.5) * CELL;
+        // a rally point ON the factory has no side to it — the bearing
+        // would be noise, so the ring stays whole
+        if (Math.abs(rx - t.x) > 1e-3 || Math.abs(ry - t.y) > 1e-3)
+          toward = Math.atan2(ry - t.y, rx - t.x);
+      }
+      if (this.spawnUnit(kind, { x: t.x, y: t.y, spread: reach, near: half, toward }, 0, 1)) {
         t.prodT = -1;
         // ...AND WALKS OFF, if the building has been told where to send
         // what it makes (setRally). The body is the one spawnUnit just set
@@ -4527,7 +4547,7 @@ export class Sim {
    */
   private spawnUnit(
     kind: UnitKind,
-    brood?: { x: number; y: number; spread?: number },
+    brood?: { x: number; y: number; spread?: number; near?: number; toward?: number },
     wave = this.wavesStarted,
     team = 0,
   ): boolean {
@@ -4548,8 +4568,29 @@ export class Sim {
         // a ring around the body, clamped inside the world — the wall and
         // crowding tests below are the same ones a door spot has to pass,
         // so a brood never lands in rock or aground on a shoreline
-        const ang = Math.random() * Math.PI * 2;
-        const d = Math.sqrt(Math.random()) * (brood.spread ?? MITOSIS_SPREAD);
+        //
+        // `toward` NARROWS THAT RING TO AN ARC: a factory with a meetup
+        // point set (rallyCell) hands the bearing to it, and the body is
+        // set down on THAT side of the building rather than anywhere
+        // around it — so a line coming off a factory leaves by the door it
+        // is walking out of instead of half of it rounding the building
+        // first. The arc widens attempt by attempt, back to the full ring
+        // on the last, because the rally side can be the walled side and a
+        // body that cannot be placed is a factory that never delivers.
+        const ang =
+          brood.toward === undefined
+            ? Math.random() * Math.PI * 2
+            : brood.toward +
+              (Math.random() * 2 - 1) *
+                (RALLY_SPAWN_ARC + (a / Math.max(1, tries - 1)) * (Math.PI - RALLY_SPAWN_ARC));
+        // ...and `near` keeps the draw OUT of the middle of the ring: a
+        // factory's own footprint is the middle of its ring, and every
+        // spot drawn inside it is an attempt spent on ground the building
+        // is standing on — which is how a coned draw ran out of attempts
+        // and fell back to the far side after all
+        const near = brood.near ?? 0;
+        const far = brood.spread ?? MITOSIS_SPREAD;
+        const d = Math.sqrt(near * near + Math.random() * (far * far - near * near));
         x = clamp(brood.x + Math.cos(ang) * d, r, W - r);
         y = clamp(brood.y + Math.sin(ang) * d, r, H - r);
       } else {

@@ -129,9 +129,19 @@ export const CORE_LOAD_SECONDS = CORE_BATCH / CORE_INCOME;
 export const UNIT_PRICE: readonly number[] = [0, 100, 300, 900, 3000, 8000];
 export const UNIT_BUILD_SECONDS: readonly number[] = [0, 15, 25, 45, 90, 150];
 
-/** the most bodies the player's factories keep on the field at once —
- *  Mindustry's unit cap, near enough; a factory with the field full waits */
-export const PLAYER_UNIT_CAP = 80;
+/**
+ * THE MOST BODIES THE PLAYER'S FACTORIES KEEP ON THE FIELD AT ONCE, all
+ * tiers together — there is no per-tier allowance, and never was: a T1
+ * swarm and a T5 line draw on the same one number. A factory that finds
+ * the field full waits, having paid nothing.
+ *
+ * 800, up from Mindustry's own 80. The old figure was the reason a board
+ * full of factories went quiet after a few minutes and looked broken: the
+ * bar sat empty, the scrap piled up, and nothing said why. 800 is a cap
+ * the SIM still holds (MAX_UNITS is 6000, and the swarm shares it) but
+ * one an ordinary run does not spend its whole length pressed against.
+ */
+export const PLAYER_UNIT_CAP = 800;
 
 /**
  * What a sold turret hands back, as a fraction of its price. NOTHING: a
