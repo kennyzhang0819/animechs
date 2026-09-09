@@ -64,6 +64,7 @@ const TOWERS = TOWERS_IMPORT;
 const W = W_IMPORT;
 const WALL_R = WALL_R_IMPORT;
 import { FlowField, type Footprint, type Vec2 } from "./flowfield";
+import { Corridor, SectorGraph, sectorOf } from "./corridor";
 import {
   CORE_VISION_CELLS,
   Fog,
@@ -473,8 +474,35 @@ const FACTORY_SPAWN_REACH = CELL * 2.5;
  * settled reads as twitching rather than as arriving.
  */
 const ORDER_ARRIVE = CELL * 2;
-/** the player's fields enter by no door: an all-zero pad mask */
-const NO_PADS = new Uint8Array(NCELLS);
+/**
+ * HOW MANY ORDERS MAY STAND AT ONCE (see Sim.orders). A corridor is tens
+ * of kilobytes, so this is a question about hands rather than about
+ * memory: twenty-four is more separate standing orders than a player has
+ * groups, which is the point — the twenty-fifth steals the oldest, and by
+ * then that is a thing the player did rather than a body stopping for no
+ * reason they can see.
+ */
+const ORDER_SLOTS = 24;
+/**
+ * ...and how many places one order may be routed FROM. A corridor is the
+ * union of the routes from every sector its bodies are standing in, so a
+ * group split either side of a headland gets both ways round. The cap is
+ * what stops a hundred-body selection scattered over the map paying for a
+ * hundred searches: past this many separate places, the rest of the group
+ * walks the straight line until it reaches ground the corridor covers.
+ */
+const ORDER_STARTS = 8;
+/**
+ * ...and the budget a tick for rebuilding the ones the board has moved
+ * under (reseedOrders) — the same three milliseconds the field solves are
+ * sliced to, and for the same reason. A corridor is two or three
+ * milliseconds, so two dozen of them arriving on one tick is a dropped
+ * frame, which is the one thing all of this was meant to stop. At this
+ * budget a whole board of orders is re-routed inside half a second, and
+ * every body keeps walking the route it already has until its own turn
+ * comes round.
+ */
+const ORDER_BUDGET_MS = 3;
 /** a shot's own hit radius against a body, on top of the body's */
 const SHOT_HIT_R = 4;
 
@@ -972,11 +1000,12 @@ export class Sim {
    */
   readonly usel = new Uint8Array(MAX_UNITS);
   /**
-   * THE MOVE ORDER THIS BODY IS UNDER: 0 for none, else 1 plus the index
-   * of the order field it is steering by (orderFields). A body with no
-   * order falls back to what it has always done — walk the player's field
-   * at the swarm's buildings — so an order is a detour from the standing
-   * one rather than a mode.
+   * THE MOVE ORDER THIS BODY IS UNDER: 0 for none, else 1 plus the slot of
+   * the corridor it is steering by (Sim.orders). A body with no order
+   * stands where it was left — the player's army has no standing order to
+   * fall back to — so this is the whole of what makes one of them walk.
+   * Uint8, which is a ceiling of 255 slots against the ORDER_SLOTS the
+   * game actually keeps.
    */
   readonly uord = new Uint8Array(MAX_UNITS);
   /** where that order sent it, in world px: what arrival is measured against */
@@ -1434,54 +1463,54 @@ export class Sim {
    * field, so a group ordered across the map keeps its shape going round
    * a headland instead of each body solving its own way there.
    *
-   * THERE ARE FOUR, AND AN IDLE ONE IS ALWAYS TAKEN FIRST. There used to
-   * be two, taken strictly round-robin, on the reasoning that a field is
-   * twenty-odd megabytes and a solve and two covers what a hand does —
-   * send a group, send another, come back to the first. It does not. Two
-   * orders standing means the NEXT click, wherever it points and whoever
-   * it is for, re-aims a field somebody else is walking, and that body
-   * loses its order: send one unit across the map, then move a second one
-   * twice, and the first stops dead in open ground for no reason the
-   * player can see. That was survivable when losing an order dropped a
-   * body back onto the standing one and it kept walking at the swarm;
-   * since the player's army stopped having a standing order (updateUnits)
-   * losing one means STOPPING, which is the worst thing a click somewhere
-   * else could do.
+   * THERE ARE TWENTY-FOUR, AND AN IDLE ONE IS ALWAYS TAKEN FIRST — and
+   * the count is now a matter of taste rather than a budget, because an
+   * order is no longer a field over the map. It is a CORRIDOR
+   * (corridor.ts): the route is found first over a graph of the board's
+   * doorways, and the field is then built only over the sectors that route
+   * crosses. Tens of kilobytes and a couple of milliseconds, against 22MB
+   * and a tenth of a second.
    *
-   * The fix is mostly not the count. It is that a slot NOTHING IS WALKING
-   * is taken first (orderSlotFor), so ordinary play — where a group
-   * arrives before the hand comes back round — never retires anybody's
-   * order at all. The count then only has to cover orders live AT ONCE,
-   * and four hands' worth is enough of those to be a choice the player
-   * made rather than a click they never connected to the body that
-   * stopped. A steal takes the OLDEST live order, for the same reason.
+   * That is what took the ceiling off. There used to be two of these,
+   * taken strictly round-robin, on the reasoning that a field is
+   * twenty-odd megabytes and two covers what a hand does — send a group,
+   * send another, come back to the first. It does not: two orders standing
+   * meant the NEXT click, wherever it pointed and whoever it was for,
+   * re-aimed a field somebody else was walking, and that body lost its
+   * order. Since the player's army stopped having a standing order
+   * (updateUnits) losing one means STOPPING, so a click on one side of the
+   * map halted a unit on the other. Four made it rare. Twenty-four, plus
+   * taking a slot NOTHING IS WALKING first (orderSlotFor), makes it
+   * something a player has to work at — and a steal, when it finally
+   * happens, takes the OLDEST live order.
    *
    * ONE MASK FOR EVERYONE. It is the walkers' — a naval tank under orders
    * routes as a walker (it can drive anywhere they can, only slower) and a
    * flyer ignores it entirely and flies the straight line to the point.
    */
-  private readonly orderFields = [
-    new FlowField(), new FlowField(), new FlowField(), new FlowField(),
-  ];
+  private readonly orders = Array.from({ length: ORDER_SLOTS }, () => new Corridor());
+  /**
+   * THE BOARD AS DOORWAYS (corridor.ts), shared by every order on it and
+   * rebuilt only when the ground moves. This is the structure that makes
+   * an order cheap: the expensive, map-sized part of pathfinding is paid
+   * once for the whole board instead of once per click.
+   */
+  private readonly sectors = new SectorGraph();
   /** when each slot was last aimed (orderClock), so a steal can take the
    *  order given longest ago rather than whichever slot came up next */
-  private readonly orderAt = [0, 0, 0, 0];
+  private readonly orderAt = new Int32Array(ORDER_SLOTS);
   private orderClock = 0;
   /**
    * WHERE EACH SLOT IS AIMED, as a cell — -1 for one nothing is walking.
    *
-   * An order is the one solve on the board with a hand waiting on it, and
-   * it is also the one that can be thrown away without anybody asking for
-   * it again: a structure landing anywhere aborts every solve in flight
-   * (claimGround), and an order aborted before it published would never be
-   * solved at all. Its bodies would walk the straight-line fallback into
-   * the first wall in the way and stand there — which is the whole of "it
-   * walks a little and then stops". Keeping the destination means the
-   * order can simply be re-seeded (reseedOrders), which is also the right
-   * answer on its own terms: the board moved, so the route should be
-   * worked out again over the board as it now is.
+   * Kept so an order can be REBUILT: the ground moving invalidates a
+   * corridor (a wall across it is a route that no longer exists), and a
+   * body whose corridor has gone stale would walk it into the new wall and
+   * stand there. A structure landing rebuilds every live corridor over the
+   * board as it now is (reseedOrders), which it can afford to do because a
+   * corridor is milliseconds.
    */
-  private readonly orderGoal = [-1, -1, -1, -1];
+  private readonly orderGoal = new Int32Array(ORDER_SLOTS).fill(-1);
   /**
    * THE SELECTED BUILDINGS — the other half of a selection. A structure is
    * held by REFERENCE rather than by a flag on the record, because that is
@@ -1510,8 +1539,7 @@ export class Sim {
    * cell wherever it finds one: a group of twenty walking a chain costs
    * one solve a leg, not twenty.
    */
-  private readonly wpts = new Map<number, number[]>();
-  /** scratch for the reachability flood (reachableGoal): a queue, and a
+  private readonly wpts = new Map<number, number[]>();  /** scratch for the reachability flood (reachableGoal): a queue, and a
    *  stamp per cell so the visited set never has to be cleared */
   private readonly floodQ = new Int32Array(NCELLS);
   private readonly floodSeen = new Int32Array(NCELLS);
@@ -1569,6 +1597,11 @@ export class Sim {
   private fieldQuiet = 0;
   /** seconds a pending solve has been waiting — the staleness cap */
   private fieldStale = 0;
+  /** which standing orders are about ground that has moved: their
+   *  corridors want rebuilding once the board settles (reseedOrders).
+   *  A slot at a time, because they are rebuilt a few a tick */
+  private readonly orderStale = new Uint8Array(ORDER_SLOTS);
+  private ordersStale = false;
   /**
    * THE SOLVES IN FLIGHT, head first: fields whose masks have moved and
    * whose new routes are being worked out a slice a frame (runSolveQueue).
@@ -1682,9 +1715,12 @@ export class Sim {
     // an older board) is dropped, not forced
     for (const e of this.terrain.enemies) this.placeEnemyStructure(e.gx, e.gy, e.kind);
     this.abortSolves();
-    // a new map is a new board: no order stands on it, and the fields the
-    // last one's orders were being solved into are thrown away
-    for (const f of this.orderFields) f.abort();
+    // a new map is a new board: no order stands on it, no corridor across
+    // it means anything, and the doorway graph is the old map's
+    for (const c of this.orders) c.reset();
+    this.sectors.markDirty();
+    this.ordersStale = false;
+    this.orderStale.fill(0);
     this.orderGoal.fill(-1);
     this.orderAt.fill(0);
     this.orderClock = 0;
@@ -1718,6 +1754,20 @@ export class Sim {
     this.field.compute();
     this.navalField.compute();
     this.airField.compute();
+    // THE DOORWAY GRAPH IS BUILT NOW, with the fields, rather than left for
+    // the first order to pay for. It is the one map-sized piece of the
+    // corridor machinery (corridor.ts) — twenty milliseconds — and a
+    // player's first right-click of a run is the worst possible moment to
+    // spend it. Every rebuild after this one is per-sector and measured in
+    // microseconds (SectorGraph.markDirty)
+    this.sectors.ensure(this.field.walk, this.field.soft);
+    // ...and one throwaway corridor is built and dropped, from the core to
+    // the far side of the board, purely so the solve is COMPILED before a
+    // player ever wants one. Cold, the first order on a map costs three
+    // times what the same order costs once the engine has seen the loop —
+    // and the first order of a run is exactly when a hitch is noticed.
+    // This is the loading screen's business, not the player's
+    this.warmCorridor();
     // ...which is what the open-sky pad lists need, so they are picked here
     // rather than in buildPads: a pad is open sky only once there is a
     // field to ask
@@ -1816,6 +1866,12 @@ export class Sim {
    */
   private solveDirtyFields(dt: number): void {
     this.fieldQuiet += dt;
+    // THE ORDERS FIRST, and on the same settle clock: a corridor is
+    // milliseconds where a field is a tenth of a second, so the group the
+    // player is watching gets its new route before the swarm gets its new
+    // one, and a build drag pays for one rebuild at the end rather than
+    // one per turret
+    if (this.ordersStale && this.fieldQuiet >= FIELD_SETTLE) this.reseedOrders();
     // a solve already under way takes this frame's slice; nothing new is
     // started until the queue is clear, so the cost per frame is one slice
     // however much is waiting
@@ -4059,10 +4115,19 @@ export class Sim {
     if (changed) {
       // a solve in flight is solving the board as it was a moment ago:
       // drop it and let the flags below buy a fresh one once things settle
-      // — and put the standing ORDERS straight back in the queue, since
-      // nothing else ever asks for those (reseedOrders)
       if (this.solveQueue.length > 0) this.abortSolves();
-      this.reseedOrders();
+      // ...and the doorway graph and every standing order are now about a
+      // board that has moved. The graph is told WHICH sectors moved — a
+      // structure covers one or two, and rebuilding those and the
+      // boundaries they touch is microseconds against twenty milliseconds
+      // for the board. The orders are only FLAGGED: a build drag lands a
+      // structure a frame and would otherwise pay for every live corridor
+      // on each of them, so they are worked out once the board holds
+      // still, on the settle clock the fields wait out (solveDirtyFields)
+      for (let y = t.gy; y < t.gy + sz; y++)
+        for (let x = t.gx; x < t.gx + sz; x++) this.sectors.markDirty(sectorOf(y * COLS + x));
+      this.ordersStale = true;
+      this.orderStale.fill(1);
       this.fieldDirty = true;
       this.navalDirty = true;
       // the player's three only while they are being solved at all: a flag
@@ -5334,12 +5399,14 @@ export class Sim {
           this.uord[i] = 0;
           this.takeNextWaypoint(i);
         } else {
-          if (!fly) this.orderFields[ord - 1].sample(upx[i], upy[i], flowTmp);
-          // a flyer has no use for the field, and a body whose field has
-          // not published yet (the first half-second of an order) has
-          // nothing to read: both walk the straight line at the point,
-          // which is a heading the moment the order is given
-          if (fly || (flowTmp.x === 0 && flowTmp.y === 0)) {
+          // the corridor has a heading everywhere along the route it was
+          // built for (corridor.ts) and nowhere else
+          const led = !fly && this.orders[ord - 1].sample(upx[i], upy[i], flowTmp);
+          // a flyer has no use for the ground's route at all, and a body
+          // OUTSIDE its own corridor — shoved clear of it, or ordered from
+          // ground the route never touched — has nothing to read: both walk
+          // the straight line at the point
+          if (!led) {
             flowTmp.x = odx / od;
             flowTmp.y = ody / od;
           }
@@ -6231,12 +6298,13 @@ export class Sim {
    *
    * The destination is snapped to open ground the walkers can stand on
    * (nearestOpenCell), because a point inside rock has no field around it
-   * and would read as "nowhere" to everything downstream. One of the two
-   * order fields is seeded from it and queued at the HEAD of the solve
-   * queue: the player is waiting on this one, unlike a re-route the board
-   * asked for. Until it publishes the bodies walk the straight line at the
-   * point (updateUnits), so an order moves the group on the frame it is
-   * given rather than half a second later.
+   * and would read as "nowhere" to everything downstream, and then to
+   * ground the selection can actually REACH (reachableGoal).
+   *
+   * The route is then worked out and the corridor built on this very frame
+   * (buildOrder): a corridor is a search over the board's doorways and a
+   * solve over a few thousand cells, so there is nothing to defer. The
+   * group has its headings before the click has finished being a click.
    *
    * Returns how many bodies took the order.
    */
@@ -6288,7 +6356,6 @@ export class Sim {
     // field is about to be re-seeded under it. With a free slot taken
     // first this is normally nobody
     for (let i = 0; i < this.n; i++) if (this.uord[i] === slot + 1) this.uord[i] = 0;
-    this.seedOrderField(slot, cell);
     for (let i = 0; i < this.n; i++) {
       if (!this.usel[i]) continue;
       // a plain order REPLACES the route, chain and all: the player has
@@ -6299,6 +6366,9 @@ export class Sim {
       this.uordx[i] = x;
       this.uordy[i] = y;
     }
+    // the bodies are on the order before the corridor is built, because
+    // WHERE THEY ARE is what it is a route from (orderStarts)
+    this.buildOrder(slot, cell, this.orderStarts(slot));
     return k;
   }
 
@@ -6307,21 +6377,34 @@ export class Sim {
    * The reuse is the point: a group walking a chain arrives at a leg
    * within a tick or two of itself and every one of them asks for the next
    * cell, and a factory on a rally sends body after body at the same
-   * point. A slot already aimed there is already the answer — one solve
-   * covers all of them — and only a cell nothing is walking to costs a
-   * fresh field (and, when all four are live, somebody else's order).
+   * point. A slot already aimed there is already the answer — one
+   * corridor covers all of them — and only a cell nothing is walking to
+   * costs a fresh route (and, when every slot is live, somebody else's
+   * order). The corridor it builds is routed from THIS body's own cell,
+   * which is the one it will be walked from.
    */
   private sendUnitTo(i: number, cell: number): void {
     let slot = -1;
-    for (let sIdx = 0; sIdx < this.orderFields.length; sIdx++)
+    for (let sIdx = 0; sIdx < ORDER_SLOTS; sIdx++)
       if (this.orderGoal[sIdx] === cell) {
         slot = sIdx;
         break;
       }
+    const from =
+      clamp((this.upy[i] / CELL) | 0, 0, ROWS - 1) * COLS +
+      clamp((this.upx[i] / CELL) | 0, 0, COLS - 1);
     if (slot < 0) {
       slot = this.orderSlotFor();
       for (let u = 0; u < this.n; u++) if (this.uord[u] === slot + 1) this.uord[u] = 0;
-      this.seedOrderField(slot, cell);
+      this.buildOrder(slot, cell, [from]);
+    } else if (!this.orders[slot].covers(from)) {
+      // the slot is aimed at the right cell but its route was worked out
+      // from somewhere else, and a corridor only leads where it goes: a
+      // body standing off it would read no heading at all. Re-route it as
+      // the union of where everybody on the order now stands, this one
+      // included (orderStarts), which is one more A* and no more memory
+      this.uord[i] = slot + 1;
+      this.buildOrder(slot, cell, this.orderStarts(slot));
     }
     this.uord[i] = slot + 1;
     this.uordx[i] = ((cell % COLS) + 0.5) * CELL;
@@ -6393,14 +6476,13 @@ export class Sim {
   }
 
   /**
-   * WHICH FIELD THIS ORDER GETS: one nothing is walking, wherever there is
-   * one, so an order never stops a body that has nothing to do with it.
-   * Only when all four are live does it steal, and then the OLDEST — the
-   * order given longest ago, which is the one a hand is least likely to
-   * still be watching.
+   * WHICH FIELD THIS ORDER GETS: one nothing is walking, wherever there is   * one, so an order never stops a body that has nothing to do with it.
+   * Only when all of them are live does it steal, and then the OLDEST —
+   * the order given longest ago, which is the one a hand is least likely
+   * to still be watching.
    */
   private orderSlotFor(): number {
-    const live = new Uint8Array(this.orderFields.length);
+    const live = new Uint8Array(ORDER_SLOTS);
     for (let i = 0; i < this.n; i++) {
       const o = this.uord[i];
       if (o > 0) live[o - 1] = 1;
@@ -6417,43 +6499,101 @@ export class Sim {
   }
 
   /**
-   * Aim one order field at a cell and put it at the HEAD of the solve
-   * queue — ahead of the board's own re-routes, because this is the one
-   * solve with a hand waiting on it.
+   * BUILD ONE ORDER'S CORRIDOR: the route from wherever its bodies are
+   * standing to the cell it points at, and the field over the sectors that
+   * route crosses (corridor.ts).
+   *
+   * It is solved HERE, on the frame the order is given, rather than queued
+   * and sliced like the board's own fields. A corridor is a search over a
+   * few thousand doorways and a solve over a few thousand cells; there is
+   * nothing left worth spreading across frames, and a field that lands on
+   * the click is a field the group never has to walk blind through.
+   *
+   * The starts are one cell per SECTOR the group occupies, capped: a
+   * selection spread over the map is several routes, and a selection
+   * standing together is one.
    */
-  private seedOrderField(slot: number, cell: number): void {
-    const field = this.orderFields[slot];
+  private buildOrder(slot: number, cell: number, starts: readonly number[]): boolean {
     this.orderGoal[slot] = cell;
     this.orderAt[slot] = ++this.orderClock;
-    const goal = new Uint8Array(NCELLS);
-    goal[cell] = 1;
-    field.abort();
-    // ...and forget where it used to point, or the bodies taking this
-    // order would walk the LAST order's headings until the new solve lands
-    field.blank();
-    field.rebuildWalk(this.hardFootprints(), this.terrain.blocked, NO_PADS, goal, this.footprints());
-    const at = this.solveQueue.indexOf(field);
-    if (at >= 0) this.solveQueue.splice(at, 1);
-    this.solveQueue.unshift(field);
+    this.sectors.ensure(this.field.walk, this.field.soft);
+    return this.orders[slot].build(this.sectors, this.field.walk, this.field.soft, cell, starts);
   }
 
   /**
-   * PUT THE ORDERS BACK IN THE QUEUE. Every solve in flight is dropped
-   * when a structure lands (claimGround) — the board they were solving has
-   * moved — and the dirty flags buy the board's own fields a fresh solve
-   * once it settles. Nothing bought the orders one, so an order given in
-   * the moment before a turret went down was simply never worked out. Here
-   * each slot that still has a body walking it is seeded again, at the
-   * same destination over the board as it now stands.
+   * Build one corridor across the board and throw it away: the loading
+   * screen paying the engine's compilation cost so the player's first
+   * right-click does not. See the call in the map reset.
+   */
+  private warmCorridor(): void {
+    const from = this.core.gy * COLS + this.core.gx;
+    let best = -1, bd = -1;
+    for (let i = 0; i < NCELLS; i += 97) {
+      if (this.sectors.componentAt(i) < 0) continue;
+      const dx = (i % COLS) - this.core.gx, dy = ((i / COLS) | 0) - this.core.gy;
+      const d = dx * dx + dy * dy;
+      if (d > bd) { bd = d; best = i; }
+    }
+    if (best < 0 || this.sectors.componentAt(from) < 0) return;
+    this.orders[0].build(this.sectors, this.field.walk, this.field.soft, best, [from]);
+    this.orders[0].reset();
+  }
+
+  /** where the bodies under an order are standing, one cell per sector and
+   *  no more than ORDER_STARTS of them — the routes a corridor is the union
+   *  of. Sorted by nothing: a group in one place gives one start, and a
+   *  group split across the map gives one per place it is split into */
+  private orderStarts(slot: number): number[] {
+    const seen = new Set<number>();
+    const out: number[] = [];
+    for (let i = 0; i < this.n && out.length < ORDER_STARTS; i++) {
+      if (this.uord[i] !== slot + 1 || this.ufly[i]) continue;
+      const ci =
+        clamp((this.upy[i] / CELL) | 0, 0, ROWS - 1) * COLS +
+        clamp((this.upx[i] / CELL) | 0, 0, COLS - 1);
+      const sec = sectorOf(ci);
+      if (seen.has(sec)) continue;
+      seen.add(sec);
+      out.push(ci);
+    }
+    return out;
+  }
+
+  /**
+   * REBUILD THE CORRIDORS THE BOARD HAS MOVED UNDER. A wall going up
+   * across a route is a route that no longer exists, and a body walking a
+   * stale corridor walks it into the new wall and stands there. So a
+   * structure landing or leaving marks the doorway graph dirty and every
+   * order still being walked is worked out again over the board as it now
+   * stands — affordable now that an order is a corridor and not a
+   * full-map solve, where the same honesty would have cost a tenth of a
+   * second per order per placement.
    */
   private reseedOrders(): void {
-    for (let s = 0; s < this.orderFields.length; s++) {
+    const until = nowMs() + ORDER_BUDGET_MS;
+    let first = true;
+    let anyLeft = false;
+    for (let s = 0; s < ORDER_SLOTS; s++) {
+      if (this.orderStale[s] === 0) continue;
+      // always one, then as many more as the budget covers
+      if (!first && nowMs() >= until) {
+        anyLeft = true;
+        break;
+      }
+      first = false;
+      this.orderStale[s] = 0;
       if (this.orderGoal[s] < 0) continue;
-      let walking = false;
-      for (let i = 0; i < this.n && !walking; i++) if (this.uord[i] === s + 1) walking = true;
-      if (walking) this.seedOrderField(s, this.orderGoal[s]);
-      else this.orderGoal[s] = -1;
+      const starts = this.orderStarts(s);
+      if (starts.length === 0) {
+        // nobody is walking it any more: the slot is free, and the next
+        // order to want one will take it (orderSlotFor)
+        this.orderGoal[s] = -1;
+        this.orders[s].reset();
+        continue;
+      }
+      this.buildOrder(s, this.orderGoal[s], starts);
     }
+    this.ordersStale = anyLeft;
   }
 
   /**
@@ -6474,12 +6614,16 @@ export class Sim {
    * over a lake.
    */
   private reachableGoal(want: number, seed = -1): number {
-    const walk = this.field.walk;
-    const q = this.floodQ, seen = this.floodSeen;
+    // THE ORDER'S OWN MASK, which is the corridor's: rock and the player's
+    // own buildings stop a body of theirs, the swarm's buildings do not —
+    // an army routes THROUGH those and shoots them on the way. Flooding
+    // the walkers' plain `walk` instead would call ground behind a swarm
+    // wall unreachable and trim the destination short of it
+    const walk = this.field.walk, soft = this.field.soft;    const q = this.floodQ, seen = this.floodSeen;
     const stamp = ++this.floodStamp;
     let head = 0, tail = 0;
     const push = (ci: number): void => {
-      if (walk[ci] || seen[ci] === stamp) return;
+      if ((walk[ci] === 1 && soft[ci] === 0) || seen[ci] === stamp) return;
       seen[ci] = stamp;
       q[tail++] = ci;
     };
@@ -6505,8 +6649,7 @@ export class Sim {
       // — one unit, standing against its own turret — seeding nothing at
       // all, and a flood with no seed falls through to the wanted cell,
       // which is the case this exists to catch
-      if (!walk[ci]) {
-        push(ci);
+      if (!(walk[ci] === 1 && soft[ci] === 0)) {        push(ci);
         continue;
       }
       const x = ci % COLS, y = (ci / COLS) | 0;
