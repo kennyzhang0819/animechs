@@ -55,11 +55,13 @@ stale tab or a cached bundle looks exactly like a fix not working.
   `waveXpShare`), the three turret tiers and their scrap prices, the
   units' prices and build times (`UNIT_PRICE`, `UNIT_BUILD_SECONDS`),
   the sell refund, the level curve and the random-map bonus
-- `game/factions.ts` — **the factions**: each of the six unit families
-  with THREE TURRETS OF ITS OWN (`FACTION_TURRETS`, tier 1 to 3), the
-  common roster every faction shares (`COMMON_KINDS`: the walls, the
-  drill, the factories). A run is played as one faction, picked on the
-  deploy screen
+- `game/factions.ts` — **the factions**: the six unit families, and
+  units are ALL a faction is. Nobody owns a turret any more — the
+  player builds none at all, and what a run may put down is the same
+  short roster whichever line it plays (`BUILDABLE_KINDS`: the drill,
+  the two copper walls, the five factories). A run is played as one
+  faction, picked on the deploy screen; what the pick decides is which
+  bodies the factories make
 - `game/ladder.ts` — the **ten-rung ladder** (`RUNGS`: the mutator roll
   and the XP bonus each; the enemy-level dial is wired and authored to
   zero), and the audit/check arithmetic over the authored script — the
@@ -178,9 +180,12 @@ stale tab or a cached bundle looks exactly like a fix not working.
   in sight, the viewport framed; a press looks there, a drag keeps
   steering
 - `components/MechSwarm.tsx` — React shell: HUD (scrap, core health, XP), rung
-  picker, the three-slot build bar — scrap, units and tower, on E, R and T,
-  each opening a menu of that category's buildings with their prices —
-  game-speed switcher, results screens, canvases
+  picker, the **build menu** — StarCraft's command card, a fixed 4x4
+  grid in the bottom-right corner the size of the minimap
+  (`BUILD_SLOTS` in `game/tech.ts`), one building a slot with its price
+  and its key on it and a hover card saying what it does; the keys read
+  row by row, Q E R T then F G H J, dodging the digits (control groups)
+  and WASD (the camera) — game-speed switcher, results screens, canvases
 - `components/MenuBackground.tsx` — the title screen's ground: **the game
   itself, playing behind the menu**. Not a picture of it — a `Sim` on one
   of the campaign's own maps, stepped at the same fixed 1/60 a run is and
@@ -471,14 +476,16 @@ two — the mechs and the support mechs (`STARTING_FACTIONS` in
 `game/track.ts`) — and the track opens the other four one every three
 levels (`FACTION_UNLOCKS`: air at 3, the crawlers at 6, the fleet at 9,
 the support fleet at 12). A faction is a family of five units, tier 1
-to 5, AND the three turrets that belong to it (`FACTION_TURRETS` in
-`game/factions.ts`; the meltdown is shared by the two support lines,
-since seventeen guns do not go into six threes) — plus the walls, the
-drill and the factories every faction shares. The levels between carry
+to 5, and that is the whole of it: **the factions own no turrets.** The
+player builds no turrets either — the build menu is the drill, the two
+copper walls and the five factories (`BUILDABLE_KINDS` in
+`game/factions.ts`), the same menu for every line, and a run is won
+with the army the factories make. The seventeen guns are still
+implemented and still on the field: they are the SWARM's, standing in
+a map's own formation (`MapData.enemies`). The levels between carry
 the maps, and a few carry nothing at all, which is fine. The deploy
 screen asks for ONE faction to play the run as: its factories build its
-units, its three turrets ride the bar, and a fleet is greyed out on a
-map with no water. The turret upgrade rungs are switched off for now
+units, and a fleet is greyed out on a map with no water. The turret upgrade rungs are switched off for now
 (`UPGRADES_ON_TRACK`). The progress screen lists the whole track; the
 results screen names what a climb handed out.
 

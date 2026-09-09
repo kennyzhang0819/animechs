@@ -1,10 +1,9 @@
 import { TOWER_DESC, TOWERS } from "./constants";
-import { COMMON_KINDS, FACTION_KEYS, FACTION_TURRETS, factionsOf, kindsFor } from "./factions";
+import { BUILDABLE_KINDS, FACTION_KEYS, kindsFor } from "./factions";
 import { familyByKey, SHELVED_FAMILIES, WORLDS, type FamilyKey } from "./levels";
 import { MUTATIONS, mutationById, type MutationId } from "./mutation";
 import { BY_MINDUSTRY_VALUE, type TechState } from "./tech";
 import { TOWER_KINDS, type TowerKind } from "./types";
-void COMMON_KINDS;
 import {
   ALL_UPGRADES,
   NO_UPGRADES,
@@ -235,17 +234,16 @@ export function factionsAt(level: number): Set<FamilyKey> {
 }
 
 /**
- * The level a turret joins the roster: the first level any faction that
- * owns it opens on — 1 for a common kind (the walls, the drill, the
- * factories), and never for one whose every owner is shelved. A turret
- * off the roster answers MAX_LEVEL + 1 rather than 1: it is not common,
- * and calling it a level-1 gun would put a rung for it at the very front
- * of a track that never hands the gun out.
+ * The level a building joins the roster: 1 for anything a run may put
+ * down (factions.ts BUILDABLE_KINDS — the drill, the copper walls, the
+ * factories), and never for the rest. A TURRET IS NEVER ON IT: the guns
+ * belong to the swarm now and the player builds none, so every one of
+ * them answers MAX_LEVEL + 1 rather than 1 — calling a gun a level-1
+ * building would put a rung for it at the very front of a track that
+ * never hands the gun out.
  */
 export function turretUnlockLevel(kind: TowerKind): number {
-  const owners = factionsOf(kind);
-  if (owners.length > 0) return Math.min(...owners.map(factionUnlockLevel));
-  return COMMON_KINDS.includes(kind) ? 1 : MAX_LEVEL + 1;
+  return BUILDABLE_KINDS.includes(kind) ? 1 : MAX_LEVEL + 1;
 }
 
 /**
@@ -355,8 +353,8 @@ export function speedsAt(level: number): number[] {
   return out.sort((a, b) => a - b);
 }
 
-/** every kind a level may build, across all the factions it has opened:
- *  the common roster and each faction's three (factions.ts kindsFor) */
+/** every kind a level may build (factions.ts kindsFor) — the same roster
+ *  for every faction, since a faction owns bodies and no buildings */
 export function turretsAt(level: number): Set<TowerKind> {
   return kindsFor(factionsAt(level));
 }
@@ -404,8 +402,7 @@ export function rewardBlurb(r: Reward): string {
   if (r.kind === "faction") {
     const fam = familyByKey(r.id);
     const units = fam.kinds.map((k) => k[0].toUpperCase() + k.slice(1)).join(", ");
-    const guns = FACTION_TURRETS[r.id].map((k) => TOWER_NAME[k]).join(", ");
-    return `A line to play a run as: its factories build ${units}, and its turrets are ${guns} — plus the walls, the drill and the factories every faction shares. Pick it on the deploy screen.`;
+    return `A line to play a run as: its factories build ${units}. Every faction shares the same build menu — the drill, the copper walls and the factories — so what a line changes is the army it puts on the field. Pick it on the deploy screen.`;
   }
   if (r.kind === "turret") return TOWER_DESC[r.id];
   if (r.kind === "mutator")

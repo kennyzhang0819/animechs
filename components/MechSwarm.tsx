@@ -102,9 +102,10 @@ import {
   type DisplayState,
 } from "@/game/storage";
 import { BUILD } from "@/game/version";
-import { BUILD_TABS, buildTabOf, BY_MINDUSTRY_VALUE, type BuildTab } from "@/game/tech";
+import { BUILD_COLS, BUILD_SLOTS, slotForCode, type BuildSlot } from "@/game/tech";
 import { factionsAt, lockedMutators, rewardsAt, rewardText } from "@/game/track";
-import { FACTION_BLURB, FACTION_TURRETS, factionUnits } from "@/game/factions";
+import { FACTION_BLURB, factionUnits } from "@/game/factions";
+import { TOWER_DESC } from "@/game/constants";
 import { TOWER_ICONS } from "@/game/towerIcons";
 import { levelProgress, POINT_COLOR, RANDOM_MAP_XP_BONUS, XP_COLOR } from "@/game/economy";
 import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
@@ -764,11 +765,6 @@ function FactionPicker({
           {fam.kinds.map((u) => sprite(`/mindustry/sprites/units/${u}.png`, u, true))}
         </span>
       </DetailLine>
-      <DetailLine label="Turrets">
-        <span className="flex flex-wrap items-center gap-1.5">
-          {FACTION_TURRETS[focus].map((k) => sprite(TOWER_ICONS[k], k, true))}
-        </span>
-      </DetailLine>
       <SelectButton onClick={() => onPick(focus)} />
     </>
   ) : (
@@ -973,53 +969,83 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
 const MENU_BY_KIND = new Map(TOWER_MENU.map((t) => [t.kind, t]));
 
 /**
- * The menu in the game's ONE canonical order — the admin balance panel's
- * cheapest-first Mindustry ranking (BY_MINDUSTRY_VALUE). Every tab of the
- * bar reads in it, so a building keeps its place wherever it shows up:
- * cheapest on the left, and a turret earned late lands where the roster
- * ranks it rather than at the end.
- */
-const ORDERED_MENU: ReadonlyArray<(typeof TOWER_MENU)[number]> = BY_MINDUSTRY_VALUE.map(
-  (k) => MENU_BY_KIND.get(k)!,
-);
-
-/**
- * THE FACE OF A SHUT SLOT: one building standing for the whole category —
- * the drill for the economy, the first factory for the units, the duo for
- * the turrets. The first thing a run of that job builds, in every case,
- * which is why it reads as the category rather than as itself. A slot
- * carrying a PICK wears the pick instead (see the bar).
- */
-const TAB_EMBLEM: Readonly<Record<BuildTab, TowerKind>> = {
-  scrap: "drill",
-  units: "factory-t1",
-  tower: "duo",
-};
-
-/** every button in the bottom bar: the turrets and the demolish tool */
-const TOOL_BTN = "ms-btn h-[4.5rem] w-14 shrink-0 flex-col gap-0.5 p-0";
-
-/**
- * THE BUILD BAR'S HOTKEYS ARE THE THREE SLOT KEYS, and nothing else: E, R
- * and T open the scrap, unit and tower slots (tech.ts BUILD_TABS), and the
- * buildings inside are clicked.
+ * ONE SLOT OF THE BUILD GRID (tech.ts BUILD_SLOTS): a square wearing the
+ * building's sprite, its key in the top-left corner and its price in
+ * scrap along the bottom, and the shared hover card (HoverCard.tsx)
+ * saying what the thing IS.
  *
- * THE DIGIT ROW IS NOT THE BAR'S ANY MORE. 1 to 0 used to name a slot
- * each, which is the RTS convention for the wrong row of buttons: in
- * every game that has both, the digits are the CONTROL GROUPS — the ten
- * bands a player splits their army into — and this game has an army to
- * split now. The digits are held for that; the bar took the keys above
- * them instead.
+ * THE CARD IS THE POINT OF THE GRID. A command card is a wall of small
+ * pictures, and a picture only teaches a player what a building does if
+ * something says so — a `title` attribute waits a second, wears the
+ * operating system's styling and cannot hold a price, so this opens the
+ * same card the codex tiles and the track's chips do, upward and off the
+ * slot's right edge because the grid sits in the bottom-right corner.
  *
- * A KEY IS THE SAME PRESS AS A CLICK on the slot, not a second way of
- * doing something slightly different: it TOGGLES the menu open and shut
- * (the same letter twice closes it, like clicking the lit slot twice), it
- * works while the game is paused (planning a lane is most of what pausing
- * is for), and it declines exactly what a click would — a modifier held
- * (ctrl+E and cmd+E belong to the browser), a text field focused, or a
- * run that has ended.
+ * The price READS AS THE DECISION: it reddens the moment the run cannot
+ * cover it, which is what a player is scanning the grid for mid-wave. A
+ * free board (the sandbox, the editors) carries no number at all.
  */
+function BuildCell({
+  slot,
+  icon,
+  name,
+  price,
+  poor,
+  picked,
+  onPick,
+}: {
+  slot: BuildSlot;
+  icon: string;
+  name: string;
+  price: number | null;
+  poor: boolean;
+  picked: boolean;
+  onPick: () => void;
+}) {
+  const tip = useHoverCard("up");
+  const label = price === null ? name : `${name} — ${price} scrap`;
+  return (
+    <button
+      ref={tip.ref as RefObject<HTMLButtonElement | null>}
+      {...tip.anchorProps}
+      aria-label={label}
+      aria-keyshortcuts={slot.key}
+      aria-pressed={picked}
+      onClick={onPick}
+      className={`ms-btn relative aspect-square w-full flex-col justify-center gap-0 p-0 ${
+        picked ? "" : "text-[#a2a2a2]"
+      } ${poor ? "opacity-60" : ""}`}
+    >
+      {/* THE KEY, on its own dark ground in the corner: the sprite fills
+          almost the whole square, and a bare letter over it is unreadable */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute left-0 top-0 bg-[#0b0b0d]/85 px-[3px] py-[1px] text-[11px] font-bold leading-none text-[#A6A6AF]"
+      >
+        {slot.key}
+      </span>
+      {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
+      <img src={icon} alt="" className="h-8 w-8 [image-rendering:pixelated]" />
+      {price !== null && (
+        <span
+          className={`text-[12px] font-bold leading-none ${poor ? "text-[#FF8A8A]" : "text-white"}`}
+        >
+          {price}
+        </span>
+      )}
+      <HoverCard tip={tip} title={name} tag={slot.key} color={BUILD_COLOR} align="right">
+        {TOWER_DESC[slot.kind]}
+        {price !== null && (
+          <span className="mt-1.5 block text-[#EDEDEF]">{price} scrap</span>
+        )}
+      </HoverCard>
+    </button>
+  );
+}
 
+/** the grid's own colour — the amber the deal stack's cards wear, so the
+ *  two corners of the field answer in one voice */
+const BUILD_COLOR = "#FFD37F";
 
 /**
  * THE WORKING COLUMN every full screen of the game is laid out in: one
@@ -1328,14 +1354,6 @@ export default function MechSwarm() {
    * either. Defaults to on; only an explicit false in the save is off.
    */
   const [effects, setEffects] = useState(true);
-  /**
-   * WHICH OF THE THREE BUILD SLOTS IS OPEN (tech.ts BUILD_TABS), or null
-   * for a closed bar. Not a saved preference: it is where the player's
-   * hand is this second, not a fact about them — and a run opens with
-   * every slot shut, the field clear, which is what the bar was before
-   * anything was clicked.
-   */
-  const [openTab, setOpenTab] = useState<BuildTab | null>(null);
   /**
    * The HUD size — a saved preference (Progress.uiScale) like `effects`.
    * Which settings panel is up is NOT saved: settings always opens on the
@@ -1765,28 +1783,6 @@ export default function MechSwarm() {
     };
   }, [screen, level, runRandom]);
 
-  /**
-   * WHAT A SLOT'S MENU HOLDS: every building of one category (tech.ts
-   * buildTabOf)
-   * the save OWNS, in the canonical order (ORDERED_MENU) — cheapest on
-   * the left, so a menu does not reshuffle as the track hands things out.
-   *
-   * What the save has not earned is not in the menu at all — not greyed,
-   * not badged. The progress screen is where "what is still to earn" is
-   * answered; the bar answers "what can I put down right now". A null
-   * unlocked list is sandbox and the editors: the whole roster.
-   *
-   * NOTHING IS CURATED. The bar used to hold eight seeds out of the
-   * roster and a picker chose them (see BUILD_TABS); a menu holds all of
-   * its category, however many that is.
-   */
-  const tabKinds = (tab: BuildTab): TowerKind[] => {
-    if (!hud) return [];
-    return ORDERED_MENU.filter(
-      (t) => buildTabOf(t.kind) === tab && (!hud.unlocked || hud.unlocked.includes(t.kind)),
-    ).map((t) => t.kind);
-  };
-
   const pickTower = (kind: TowerKind): void => {
     const g = gameRef.current;
     if (!g) return;
@@ -1796,22 +1792,28 @@ export default function MechSwarm() {
   };
 
   /**
-   * E, R AND T PICK A BAR TAB (see BUILD_TABS). Lives here rather than in
-   * Game.onKeyDown because the BAR is React's: which buildings ride which
-   * tab is the roster and the save's unlocks, and the game engine knows
-   * nothing about either. It asks the engine for the live run state
-   * rather than reading `hud`, so a press is answered against what is
-   * true now and not against a snapshot up to 100ms stale.
+   * THE GRID'S KEYS PICK A BUILDING (tech.ts BUILD_SLOTS): one key a
+   * slot, and the press is the same press as a click on that slot — it
+   * TOGGLES, so the same letter twice puts the building back down again
+   * empty-handed, exactly as clicking the lit slot twice does.
    *
-   * IT DECLINES THE SAME PRESSES THE BAR WOULD. Nothing happens with a
-   * modifier held (ctrl+E and cmd+E belong to the browser, and stealing
-   * those would be a bug in the game rather than a feature), with a text
-   * field focused, or once the run has ended or the pause menu is up —
-   * the bar is gone in all three cases.
+   * It lives here rather than in Game.onKeyDown because the GRID is
+   * React's: which buildings ride which slot is the roster and the
+   * save's unlocks, and the game engine knows nothing about either. It
+   * asks the engine for the live run state rather than reading `hud`, so
+   * a press is answered against what is true now and not against a
+   * snapshot up to 100ms stale — and it works while the game is paused,
+   * since planning a lane is most of what pausing is for.
+   *
+   * IT DECLINES THE SAME PRESSES THE GRID WOULD. Nothing happens with a
+   * modifier held (ctrl+Q and cmd+Q belong to the browser and the
+   * system, and stealing those would be a bug rather than a feature),
+   * with a text field focused, or once the run has ended or the pause
+   * menu is up — the grid is gone in all three cases.
    *
    * `code` RATHER THAN `key`, because it is the physical key: a layout
-   * that puts something else where E is printed still switches the tab
-   * under the finger, which is the whole point of a home-row shortcut.
+   * that puts something else where Q is printed still picks the building
+   * under the finger, which is the whole point of a grid shortcut.
    * Registered ONCE for the run — it depends on nothing that changes.
    */
   useEffect(() => {
@@ -1823,14 +1825,16 @@ export default function MechSwarm() {
         e.target.closest("input, textarea, [contenteditable]")
       )
         return;
-      const tab = BUILD_TABS.find((t) => t.code === e.code);
-      if (!tab) return;
+      const slot = slotForCode(e.code);
+      if (!slot) return;
       const g = gameRef.current;
       if (!g) return;
       const ui = g.ui();
       if (ui.lost || ui.won || ui.menuOpen) return;
+      if (ui.unlocked && !ui.unlocked.includes(slot.kind)) return;
       e.preventDefault();
-      setOpenTab((cur) => (cur === tab.id ? null : tab.id));
+      g.setBuildKind(ui.buildKind === slot.kind ? null : slot.kind);
+      setHud(g.ui());
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -2378,10 +2382,11 @@ export default function MechSwarm() {
                         {xpShareText(tierXpBonus(tier))}
                       </span>
                     </MacroButton>
-                    {/* THE FACTION: the line this run is played as — what the
-                        factories build and which three turrets the bar
-                        carries (factions.ts). One of the ones the track has
-                        opened — every faction plays every map */}
+                    {/* THE FACTION: the line this run is played as — which
+                        bodies the factories build (factions.ts), and that
+                        alone: the build menu is the same for every line.
+                        One of the ones the track has opened — every faction
+                        plays every map */}
                     {progress && (() => {
                       const f = factionFor(progress, factionPick);
                       return (
@@ -2697,8 +2702,8 @@ export default function MechSwarm() {
             </div>
           </div>
         )}
-        {/* THE RUN'S DEAL, StarCraft-style, in the bottom-right corner: a
-            column of squares growing upward. The BOTTOM square is always
+        {/* THE RUN'S DEAL, StarCraft-style, up the right margin: a
+            column of squares growing upward from over the build menu. The BOTTOM square is always
             the family composition — the three families the die dealt this
             map (LevelSpec.families), as their first bodies — and every
             square above it is one mutator in force, face and band border.
@@ -2709,7 +2714,7 @@ export default function MechSwarm() {
           <div
             role="list"
             aria-label="families and rules in force"
-            className="ui-zoom pointer-events-none absolute bottom-[1rem] right-[1rem] z-10 flex flex-col-reverse items-end gap-1.5"
+            className="ui-zoom pointer-events-none absolute bottom-[15rem] right-[1rem] z-10 flex flex-col-reverse items-end gap-1.5"
           >
             {level.families && level.families.length > 0 && (
               <DealFamiliesCell families={level.families} />
@@ -2719,139 +2724,65 @@ export default function MechSwarm() {
             ))}
           </div>
         )}
-        {/* THE BUILD BAR IS THREE SLOTS (tech.ts BUILD_TABS) — scrap,
-            units, tower — each the same button a turret used to ride
-            (TOOL_BTN), each worn with its key, and each a DOOR: it opens a
-            menu of everything of that job the save owns, floated over the
-            bar the way the loadout picker used to be. Left to right on the
-            bar is E, R, T left to right on the keyboard, and the digit row
-            is left alone for the control groups. */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-[1rem] z-10 flex flex-col items-center gap-2 px-[1rem]">
-          {/* THE OPEN SLOT'S MENU, above the slot that opened it: every
-              building of that category, wrapped rather than scrolled —
-              turrets is seventeen guns and six walls, and a row that ran
-              off the edge would hide half of them behind nothing at all.
-              Picking one shuts the menu: the next thing the hand does is
-              put the building down, and a panel over the field is in the
-              way of exactly that */}
-          {hud && openTab && !hud.lost && !hud.won && !hud.menuOpen && (
-            <div className="ui-zoom ms-pane pointer-events-auto max-w-[calc(100vw-2rem)] p-3">
-              <div className="mb-2 text-center text-[13px] uppercase tracking-widest text-[#71717C]">
-                {BUILD_TABS.find((t) => t.id === openTab)!.label}
-              </div>
-              <div
-                role="group"
-                aria-label={`${BUILD_TABS.find((t) => t.id === openTab)!.label} buildings`}
-                className="flex max-w-[34rem] flex-wrap justify-center gap-2"
-              >
-                {tabKinds(openTab).map((kind) => {
-                  const t = MENU_BY_KIND.get(kind)!;
-                  // what the badge says is the PRICE, in scrap — the number
-                  // a build decision is made against — and it reddens the
-                  // moment the run cannot cover it. Free builds (sandbox,
-                  // the editors) carry no number at all
-                  const price = hud.scrap === null ? null : hud.prices[t.kind];
-                  const poor = price !== null && hud.scrap !== null && hud.scrap < price;
-                  const label = price === null ? t.name : `${t.name} — ${price} scrap`;
-                  return (
-                    <button
-                      key={t.kind}
-                      title={label}
-                      aria-label={label}
-                      aria-pressed={hud.buildKind === t.kind}
-                      onClick={() => {
-                        pickTower(t.kind);
-                        setOpenTab(null);
-                      }}
-                      className={`${TOOL_BTN} relative ${poor ? "opacity-60" : ""}`}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
-                      <img
-                        src={icons[t.kind] ?? t.icon}
-                        alt=""
-                        className="h-10 w-10 [image-rendering:pixelated]"
-                      />
-                      {price !== null && (
-                        <span
-                          className={`text-[15px] font-bold leading-none ${
-                            poor ? "text-[#FF8A8A]" : "text-white"
-                          }`}
-                        >
-                          {price}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-                {/* A CATEGORY THE SAVE HAS NOTHING FOR SAYS SO. The menu
-                    would otherwise open onto an empty box, which reads as a
-                    broken panel rather than as an empty shelf */}
-                {tabKinds(openTab).length === 0 && (
-                  <div className="flex h-[4.5rem] items-center px-3 text-[13px] uppercase tracking-widest text-[#71717C]">
-                    Nothing here yet
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          {/* THE THREE SLOTS. A slot stays lit while its menu is open, and
-              wears the building it has PICKED where the others wear the
-              category's emblem — so a SHUT bar still says what the cursor
-              is carrying, which is the one thing the old bar said by
-              having the button itself lit */}
-          {hud && (
+        {/* THE BUILD MENU, StarCraft's command card, in the bottom-right
+            corner: the minimap's twin at the other end of the screen and
+            the same size square, a fixed 4x4 grid (tech.ts BUILD_SLOTS)
+            with one building a slot and its key printed on it. The same
+            thing is in the same place every run, so the hand learns the
+            grid; the slots past the roster stand EMPTY rather than the
+            filled ones spreading out to hide that there is more coming.
+
+            It replaces three tabs that each opened a floating menu over
+            the field — a door in front of a door, and the panel was in
+            the way of exactly the ground the player was about to build
+            on. Like the minimap it stands until the run ends: the end
+            screens own the frame. */}
+        {hud && !hud.lost && !hud.won && !hud.menuOpen && (
+          <div className="ui-zoom absolute bottom-[1rem] right-[1rem] z-10 ms-pane p-1">
             <div
               role="group"
-              aria-label="build bar"
-              className="ui-zoom pointer-events-auto flex w-max gap-2"
+              aria-label="build menu"
+              className="grid w-[13rem] gap-1"
+              style={{ gridTemplateColumns: `repeat(${BUILD_COLS}, minmax(0, 1fr))` }}
             >
-              {BUILD_TABS.map((t) => {
-                const open = openTab === t.id;
-                const kinds = tabKinds(t.id);
-                const picked =
-                  hud.buildKind && buildTabOf(hud.buildKind) === t.id ? hud.buildKind : null;
-                const face = picked ?? TAB_EMBLEM[t.id];
-                return (
-                  <button
-                    key={t.id}
-                    title={`${t.label} (key ${t.key})`}
-                    aria-label={t.label}
-                    aria-keyshortcuts={t.key}
-                    aria-expanded={open}
-                    aria-pressed={open || picked !== null}
-                    onClick={() => setOpenTab((cur) => (cur === t.id ? null : t.id))}
-                    className={`${TOOL_BTN} relative ${
-                      open || picked ? "" : kinds.length === 0 ? "text-[#5A5A63]" : "text-[#a2a2a2]"
-                    }`}
-                  >
-                    {/* THE KEY, worn on the icon's top-left corner, on its
-                        own dark ground: the sprite fills all but 8px of the
-                        button, and a bare letter over it is unreadable */}
-                    <span
+              {BUILD_SLOTS.map((slot, i) => {
+                // A SLOT THE SAVE CANNOT USE IS AN EMPTY SLOT, not a
+                // greyed one: the progress screen answers "what is still
+                // to earn", and the grid answers "what can I put down
+                // right now". A null unlocked list is the sandbox and the
+                // editors — everything in the grid is theirs
+                const kind =
+                  slot && (!hud.unlocked || hud.unlocked.includes(slot.kind)) ? slot.kind : null;
+                if (!slot || !kind)
+                  return (
+                    <div
+                      key={i}
                       aria-hidden="true"
-                      className="pointer-events-none absolute left-0 top-0 bg-[#0b0b0d]/85 px-1 py-0.5 text-[12px] font-bold leading-none text-[#A6A6AF]"
-                    >
-                      {t.key}
-                    </span>
-                    {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
-                    <img
-                      src={icons[face] ?? MENU_BY_KIND.get(face)!.icon}
-                      alt=""
-                      className={`h-9 w-9 [image-rendering:pixelated] ${
-                        picked || kinds.length > 0 ? "" : "opacity-40"
-                      }`}
+                      className="aspect-square w-full border border-[#26262b] bg-[#101013]"
                     />
-                    {/* the name, at the size that fits the slot: "scrap"
-                        is five characters across fifty-six pixels */}
-                    <span className="text-[10px] font-bold uppercase leading-none tracking-tight">
-                      {t.label}
-                    </span>
-                  </button>
+                  );
+                const entry = MENU_BY_KIND.get(kind)!;
+                // what the badge says is the PRICE, in scrap — the number
+                // a build decision is made against — and it reddens the
+                // moment the run cannot cover it. Free builds (sandbox,
+                // the editors) carry no number at all
+                const price = hud.scrap === null ? null : hud.prices[kind];
+                return (
+                  <BuildCell
+                    key={i}
+                    slot={slot}
+                    icon={icons[kind] ?? entry.icon}
+                    name={entry.name}
+                    price={price}
+                    poor={price !== null && hud.scrap !== null && hud.scrap < price}
+                    picked={hud.buildKind === kind}
+                    onPick={() => pickTower(kind)}
+                  />
                 );
               })}
             </div>
-          )}
-        </div>
+          </div>
+        )}
         {hud?.lost && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="ui-zoom ms-pane-solid w-80 max-w-[calc(100vw-2rem)] border-[#6b2a2a] p-6 text-center">

@@ -235,7 +235,14 @@ function play() {
   if (UNIT_DAMAGE !== null) WP.setUnitDamageScale(+UNIT_DAMAGE);
 
   const sim = new Sim(spec);
-  const tech = TR.techStateFor(LEVEL);
+  // THE BOT IS A TURRET PROBE AND THE PLAYER NO LONGER BUILDS TURRETS.
+  // A run's build menu is the drill, the copper walls and the factories
+  // (factions.ts BUILDABLE_KINDS) — the guns are the swarm's now — so the
+  // save's own roster would leave this bot with nothing to lay a line
+  // with and every map lost at wave 1. It is handed the WHOLE roster
+  // instead: what it measures is what a turret is worth against a script,
+  // which is still a live question wherever the guns stand
+  const tech = { ...TR.techStateFor(LEVEL), unlocked: new Set(TY.TOWER_KINDS) };
   const owned = tech.unlocked;
   sim.setTech(tech);
   // the bot is not a player: it lays its line along the whole route at

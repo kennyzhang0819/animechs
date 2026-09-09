@@ -4,8 +4,7 @@ import {
   type UpgradeContext,
   type UpgradePoints,
 } from "./upgrades";
-import { TOWERS } from "./constants";
-import { kindsFor } from "./factions";
+import { BUILDABLE_KINDS, kindsFor } from "./factions";
 import type { FamilyKey } from "./levels";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
@@ -27,8 +26,9 @@ export interface TechState {
    */
   factions: ReadonlySet<FamilyKey>;
   faction: FamilyKey | null;
-  /** the kinds a run may field: the common roster and the turrets of the
-   *  faction it plays — of every owned faction when `faction` is null */
+  /** the kinds a run may PUT DOWN (factions.ts BUILDABLE_KINDS) — the
+   *  drill, the copper walls and the factories. The same set whichever
+   *  faction is playing, since a faction is bodies and nothing else */
   unlocked: ReadonlySet<TowerKind>;
   /**
    * The fast-forward multipliers this save may use, ascending. 1x is
@@ -43,10 +43,11 @@ export interface TechState {
 export { upgradedTower, NO_UPGRADES, type UpgradeContext, type UpgradePoints };
 
 /**
- * THE SAME SAVE, PLAYING ONE FACTION: the tech state narrowed to the
- * common roster plus that faction's turrets. A faction the save does not
- * own is refused — the deploy screen never offers one, so this is the
- * belt to its braces — and null widens back to every owned faction.
+ * THE SAME SAVE, PLAYING ONE FACTION: which line the factories build.
+ * A faction the save does not own is refused — the deploy screen never
+ * offers one, so this is the belt to its braces — and null is every
+ * owned faction at once (the sandbox, the editors). The buildable roster
+ * does not move with the pick any more; a faction owns no buildings.
  */
 export function withFaction(tech: TechState, faction: FamilyKey | null): TechState {
   const f = faction && tech.factions.has(faction) ? faction : null;
@@ -54,55 +55,63 @@ export function withFaction(tech: TechState, faction: FamilyKey | null): TechSta
 }
 
 /**
- * THE BUILD BAR IS THREE TABS, one per JOB a building does, and it shows
- * the WHOLE of the tab it is on. This replaces the eight curated seed
- * slots: a bar that held eight of a roster of twenty-nine made the player
- * decide, before the run, which two thirds of the game they were not
- * going to play — and it decided it once, in a picker, for every map.
+ * THE BUILD MENU IS A 4x4 GRID in the field's bottom-right corner, the
+ * minimap's twin at the other end of the screen — StarCraft's command
+ * card, and read the same way: a fixed square of slots, each one thing
+ * you can put down, each with a key printed on it, and the SAME thing in
+ * the SAME slot every run, so the hand learns the grid rather than
+ * reading it.
  *
- * The split is by what the thing is FOR, which is also the order a run
- * touches them in: the drills that pay for everything (SCRAP), the
- * factories that turn that into bodies (UNITS), and the guns and walls
- * that keep both standing (TOWER). Each is named in ONE SHORT WORD
- * because the name is worn on the slot itself, a button fourteen
- * characters wide — "scrap" says what the drill is for at least as well
- * as "economy" did, and it fits.
+ * It replaces three tabs that each opened a floating menu. A tab was a
+ * door in front of a door — two presses and a panel over the field to
+ * get to a building — and it cost the player the one thing a fixed grid
+ * gives them for nothing: knowing where a thing is without looking.
  *
- * Nothing is curated and nothing is
- * hidden — a tab is one keypress away, and what a save has not earned
- * simply is not on it.
+ * WHAT IS IN IT, in order: the drill that pays for everything, the two
+ * copper walls, and the five factories that turn the scrap into an army
+ * (factions.ts BUILDABLE_KINDS). NO TURRETS — the player builds none at
+ * all now; the guns are the swarm's, and a run is won with the bodies
+ * the factories make. Eight of the sixteen slots are filled and the rest
+ * stand empty, which is the grid saying honestly that there is more to
+ * come rather than reflowing under the hand every time there is.
  *
- * The keys are E, R and T: the three left-hand keys ABOVE the digit row,
- * because the digits are the control groups' (1 to 0, one per group) and
- * a build shortcut that costs the player a control group is not a
- * shortcut. Left to right on the keyboard is left to right on the bar.
+ * THE KEYS ARE THE GRID'S OWN SHAPE, and they dodge two rows on purpose:
+ * the digits are the CONTROL GROUPS (1 to 0, one a band) and WASD pans
+ * the camera, so neither may be spent on a building. What is left is
+ * read row by row — Q E R T across the top (Q, then W skipped), F G H J
+ * along the home row (A, S and D skipped), Z X C V across the bottom,
+ * and Y U I O for the fourth row, which the keyboard's three letter rows
+ * cannot otherwise pay for. The eight LIVE slots today are therefore the
+ * top two rows: Q E R T, then F G H J.
  */
-export type BuildTab = "scrap" | "units" | "tower";
-
-export const BUILD_TABS: readonly {
-  id: BuildTab;
-  label: string;
-  /** the printed key, worn on the tab; `code` is the physical one */
+export interface BuildSlot {
+  kind: TowerKind;
+  /** the printed key, worn on the slot; `code` is the physical one */
   key: string;
   code: string;
-}[] = [
-  { id: "scrap", label: "Scrap", key: "E", code: "KeyE" },
-  { id: "units", label: "Units", key: "R", code: "KeyR" },
-  { id: "tower", label: "Tower", key: "T", code: "KeyT" },
+}
+
+/** how wide the grid is — the rows are this long and there are this many */
+export const BUILD_COLS = 4;
+
+/** the sixteen keys, in the grid's reading order (see the note above) */
+const GRID_KEYS: readonly string[] = [
+  "Q", "E", "R", "T",
+  "F", "G", "H", "J",
+  "Z", "X", "C", "V",
+  "Y", "U", "I", "O",
 ];
 
-/**
- * WHICH TAB A KIND RIDES, read off what the building DOES (constants.ts
- * TowerStats) rather than a second table beside it: a drill pays scrap,
- * a factory `produces` a unit tier, and everything else — every gun and
- * every wall — is what holds the line. A new building lands on the right
- * tab by being what it is, with nothing here to keep in step.
- */
-export function buildTabOf(kind: TowerKind): BuildTab {
-  const t = TOWERS[kind];
-  if (t.drill) return "scrap";
-  if (t.produces) return "units";
-  return "tower";
+/** the grid: one slot per buildable kind, in the roster's own order,
+ *  padded out to the full sixteen with empties */
+export const BUILD_SLOTS: readonly (BuildSlot | null)[] = GRID_KEYS.map((key, i) => {
+  const kind = BUILDABLE_KINDS[i];
+  return kind ? { kind, key, code: `Key${key}` } : null;
+});
+
+/** the slot a physical key opens, or null — what the keyboard handler reads */
+export function slotForCode(code: string): BuildSlot | null {
+  return BUILD_SLOTS.find((s) => s !== null && s.code === code) ?? null;
 }
 
 /**

@@ -1,49 +1,54 @@
 import { TOWERS } from "./constants";
-import { ACTIVE_FAMILIES, FAMILIES, familyByKey, type FamilyKey, type UnitKind } from "./levels";
+import { ACTIVE_FAMILIES, familyByKey, type FamilyKey, type UnitKind } from "./levels";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
 /**
- * THE FACTIONS — a family (levels.ts FAMILIES: five units, tier 1 to 5)
- * with THREE TURRETS OF ITS OWN, tier 1 to 3. A run is played as ONE
- * faction, picked on the deploy screen: the player's factories build
- * that faction's units and the build bar carries that faction's turrets,
- * plus the common roster every faction shares (COMMON_KINDS — the walls,
- * the drill, the factories). The track hands out factions, never
- * individual turrets (track.ts).
+ * THE FACTIONS — a family (levels.ts FAMILIES: five units, tier 1 to 5),
+ * and nothing else. A run is played as ONE faction, picked on the deploy
+ * screen, and what that choice decides is WHICH BODIES THE FACTORIES
+ * BUILD. Everything a run may PUT DOWN is the same whichever line it
+ * plays (BUILDABLE_KINDS below).
  *
- * THE TURRETS ARE DEALT, NOT DERIVED. The roster is seventeen guns and
- * six factions want eighteen, so one is shared (the meltdown, on both
- * support lines) — a faction's three are a design call about what the
- * line feels like to defend with, not a sort of the price list.
+ * A FACTION USED TO OWN THREE TURRETS (FACTION_TURRETS: the duo, the
+ * salvo and the spectre were the ground mechs', the arc, the lancer and
+ * the meltdown the starlight line's) and it owns none now. THE PLAYER
+ * BUILDS NO TURRETS AT ALL — the walls, the drill and the factories are
+ * the whole of the build menu, and a fight is won with the army the
+ * factories make rather than with a gun line behind it. The turrets are
+ * still in the game, still implemented and still fielded: a map's own
+ * formation is the SWARM's (MapData.enemies), and every one of them is
+ * one of the seventeen.
  */
-export const FACTION_TURRETS: Readonly<Record<FamilyKey, readonly [TowerKind, TowerKind, TowerKind]>> = {
-  // the ground mechs: the volume gun, the burst, the wall of heavy shells
-  ground: ["duo", "salvo", "spectre"],
-  // the venom crawlers: fire, homing missiles, the close-range shotgun
-  crawler: ["scorch", "swarmer", "fuse"],
-  // the starlight mechs, all beams, like the bodies: the bolt, the lancer,
-  // the held laser
-  groundSupport: ["arc", "lancer", "meltdown"],
-  // the sky gunships: flak, the flak cannon, the railgun
-  air: ["scatter", "cyclone", "foreshadow"],
-  // the naval tanks: water, artillery, the heavy sprayer
-  naval: ["wave", "ripple", "tsunami"],
-  // the aegis tanks: light artillery, the tractor beam, the held laser.
-  // SHELVED with its faction (levels.ts SHELVED_FAMILIES) — the table
-  // stays whole so putting the line back is one edit and not six
-  navalSupport: ["hail", "parallax", "meltdown"],
-};
 
 /** every kind that is nobody's: the walls, the drill and the factories */
 export const COMMON_KINDS: readonly TowerKind[] = TOWER_KINDS.filter((k) => TOWERS[k].wall);
 
 /**
+ * WHAT A RUN MAY BUILD, in the order the build menu lays it out
+ * (tech.ts BUILD_SLOTS reads this): the drill that pays for everything,
+ * the copper walls that stand in the lane, and the five factories that
+ * turn the scrap into the army. No turrets — see the note above.
+ *
+ * It is deliberately SHORT of the common roster: the titanium and
+ * thorium walls are implemented and priced and simply are not offered
+ * yet. Adding one back is a line here and a slot in the grid.
+ */
+export const BUILDABLE_KINDS: readonly TowerKind[] = [
+  "drill",
+  "copper-wall",
+  "copper-wall-large",
+  "factory-t1",
+  "factory-t2",
+  "factory-t3",
+  "factory-t4",
+  "factory-t5",
+];
+
+/**
  * THE FACTIONS IN PLAY, in the family table's order — the shelf
  * (levels.ts SHELVED_FAMILIES) taken out. Everything downstream reads
- * this rather than FAMILIES: what a turret belongs to (factionsOf), what
- * the track hands out, what the deploy screen lists. A shelved faction's
- * turrets therefore belong to nobody, which is what takes them off the
- * roster with it.
+ * this rather than FAMILIES: what the track hands out, what the deploy
+ * screen lists.
  */
 export const FACTION_KEYS: readonly FamilyKey[] = ACTIVE_FAMILIES;
 
@@ -76,31 +81,20 @@ export const factionUnits = (f: FamilyKey): readonly UnitKind[] => familyByKey(f
 export const factionUnit = (f: FamilyKey, tier: number): UnitKind =>
   familyByKey(f).kinds[Math.max(0, Math.min(4, tier - 1))];
 
-/** the factions that own a turret — none for a common kind, and none for
- *  one whose only faction is shelved */
-export function factionsOf(kind: TowerKind): FamilyKey[] {
-  return FACTION_KEYS.filter((f) => (FACTION_TURRETS[f] as readonly TowerKind[]).includes(kind));
-}
-
 /**
- * WHAT A RUN MAY BUILD: the common roster, plus the turrets of the
- * factions given — one faction on a campaign run, every owned faction on
- * the sandbox and the progress screen's census.
+ * WHAT A RUN MAY BUILD, as a set — the same roster whichever faction is
+ * playing, since a faction owns bodies and nothing else. It still takes
+ * the factions so every caller reads the same way if a line ever brings
+ * its own building back.
  */
-export function kindsFor(factions: Iterable<FamilyKey>): Set<TowerKind> {
-  const out = new Set<TowerKind>(COMMON_KINDS);
-  for (const f of factions) for (const k of FACTION_TURRETS[f]) out.add(k);
-  return out;
+export function kindsFor(_factions: Iterable<FamilyKey>): Set<TowerKind> {
+  void _factions;
+  return new Set<TowerKind>(BUILDABLE_KINDS);
 }
 
-/** the check: every faction has three turrets, every turret is on the
- *  roster. Over the WHOLE table, shelf included — a shelved faction is
- *  meant to be one edit away from playing again, so its turrets are held
- *  to the same rule as everyone else's while it waits. */
+/** the check: nothing with a gun on it can reach the player's build menu
+ *  by being listed above — a turret is the swarm's alone now */
 (() => {
-  for (const f of FAMILIES.map((x) => x.key)) {
-    const t = FACTION_TURRETS[f];
-    if (!t || t.length !== 3) throw new Error(`the faction "${f}" needs exactly three turrets`);
-    for (const k of t) if (TOWERS[k].wall) throw new Error(`"${k}" is common and cannot be a faction's turret`);
-  }
+  for (const k of BUILDABLE_KINDS)
+    if (!COMMON_KINDS.includes(k)) throw new Error(`"${k}" is a turret and cannot be built`);
 })();
