@@ -242,6 +242,74 @@ const clock = (seconds: number): string => {
 };
 
 /**
+ * THE MISSION'S OBJECTIVES, in the top-left corner of the screen — a
+ * RAID's (levels.ts RaidMission), which is the only mission that has any
+ * to track yet.
+ *
+ * ON BARE SCREEN, deliberately. Everything else in this HUD that carries
+ * state the player acts on wears a pane; the two things that are TRUE FOR
+ * THE WHOLE RUN — the bank, and what the run is for — do not, because a
+ * box round them would make them look like another readout to check
+ * instead of the standing terms of the map. Text, a shadow heavy enough
+ * to read over sand or water, and nothing else.
+ *
+ * Each line is a clause and its live number. The number is what changes,
+ * so it is the bright half; the clause is what it means, so it is the
+ * quiet half.
+ *
+ * ONLY THE SECOND LINE CAN GO GREEN. Destroying the pads is a thing that
+ * gets DONE, and a done objective keeps its place in green rather than
+ * vanishing — a line that disappeared when it was met would take the
+ * record of what was achieved with it. The first line is a thing to
+ * PREVENT, and prevention is never done while the run is on: it stays
+ * quiet and goes red as it is spent, one rocket at a time, with the
+ * countdown red inside its last minute — the only moment on this map
+ * where a single minute matters.
+ */
+function Objectives({
+  raid,
+}: {
+  raid: NonNullable<UiState["raid"]>;
+}) {
+  const { padsDown, padsTotal, launched, launchTotal, nextLaunchIn } = raid;
+  const clear = padsTotal > 0 && padsDown >= padsTotal;
+  const urgent = nextLaunchIn >= 0 && nextLaunchIn < 60;
+  return (
+    <div
+      role="group"
+      aria-label="mission objectives"
+      className="pointer-events-none flex w-max max-w-full flex-col gap-0.5 whitespace-nowrap text-[13px] font-bold uppercase tracking-wide text-[#A1A1AA] [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]"
+    >
+      <div>
+        Don&apos;t let the enemy launch any rockets
+        {nextLaunchIn >= 0 ? (
+          <>
+            {" "}
+            <span className={urgent ? "text-[#F25555]" : "text-[#EDEDEF]"}>
+              (next in {clock(nextLaunchIn)})
+            </span>
+          </>
+        ) : null}
+        {launched > 0 && (
+          <>
+            {" "}
+            <span className="text-[#F25555]">
+              ({launched}/{launchTotal} away)
+            </span>
+          </>
+        )}
+      </div>
+      <div className={clear ? "text-[#7BE58A]" : undefined}>
+        Destroy all enemy launch pads{" "}
+        <span className={clear ? "text-[#7BE58A]" : "text-[#EDEDEF]"}>
+          ({padsDown}/{padsTotal})
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
  * The map bonus, named on the results panel when it was paid: the run's
  * multiplier already includes it (RunReward.xpBonus), and a player who
  * left the map on Random should see what that was worth.
@@ -2584,12 +2652,21 @@ export default function MechSwarm() {
             the ONE number that is nowhere else on the field and that every
             build decision is made against, drawn straight onto the screen
             with no chrome under it at all: no pane, no border, no
-            background, just the scrap. The stack keeps its width and its
-            place so the sandbox pace strip still hangs off the same
-            corner. */}
+            background, just the scrap. The stack keeps its place so the
+            sandbox pace strip still hangs off the same corner, and it is
+            as wide as the widest thing in it — the mission's objective
+            lines, which read as sentences and must not wrap. */}
         {hud && (
-          <div className="ui-zoom absolute left-[1rem] top-[1rem] flex w-80 max-w-[calc(100vw-8rem)] flex-col items-start gap-2">
+          <div className="ui-zoom absolute left-[1rem] top-[1rem] flex w-[34rem] max-w-[calc(100vw-8rem)] flex-col items-start gap-2">
             {hud.scrap !== null && <ScrapAmount amount={hud.scrap} size="md" className="text-xl" />}
+            {/* THE ASSIGNMENT, in the corner and on bare screen: no pane,
+                no border, no ground under it — the same rule the scrap
+                above it follows. A mission with objectives to track puts
+                them here and nowhere else; a hold or a survive has none
+                and this is simply absent (UiState.raid) */}
+            {hud.raid && !hud.lost && !hud.won && !hud.menuOpen && (
+              <Objectives raid={hud.raid} />
+            )}
             {admin && !hud.lost && !hud.won && !hud.menuOpen && (
               /* THE PACE STRIP IS SANDBOX'S, and nothing else on the field
                  is. A campaign run plays at 1x — the multipliers have
@@ -2782,9 +2859,19 @@ export default function MechSwarm() {
         {hud?.lost && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="ui-zoom ms-pane-solid w-80 max-w-[calc(100vw-2rem)] border-[#6b2a2a] p-6 text-center">
+              {/* A RUN CAN NOW BE LOST WITHOUT THE CORE FALLING: a raid
+                  ends the moment the swarm gets its last rocket away
+                  (Sim.lost), and a screen that said "core destroyed" over
+                  a core still standing would be telling the player the
+                  wrong thing about their own board */}
               <div className="font-display text-xl font-bold uppercase tracking-widest text-[#e55454]">
-                Core destroyed
+                {hud.coreHp <= 0 ? "Core destroyed" : "Rockets away"}
               </div>
+              {hud.raid && hud.coreHp > 0 && (
+                <div className="mt-1 text-[13px] uppercase tracking-widest text-[#71717C]">
+                  Every pad launched — {hud.raid.padsDown}/{hud.raid.padsTotal} destroyed
+                </div>
+              )}
               <div className="mt-4 space-y-1 text-base text-[#EDEDEF]">
                 <div>
                   Reached wave{" "}
@@ -2799,6 +2886,14 @@ export default function MechSwarm() {
                     <> of {hud.totalWaves}</>
                   )}
                 </div>
+                {hud.raid && (
+                  <div>
+                    Pads destroyed{" "}
+                    <span className="font-bold text-[#EDEDEF]">
+                      {hud.raid.padsDown} of {hud.raid.padsTotal}
+                    </span>
+                  </div>
+                )}
                 <div>
                   Kills <span className="font-bold text-[#EDEDEF]">{hud.kills}</span>
                 </div>
@@ -2853,7 +2948,9 @@ export default function MechSwarm() {
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="ui-zoom ms-pane-solid w-80 max-w-[calc(100vw-2rem)] border-[#2f5a3a] p-6 text-center">
               <div className="font-display text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
-                {hud.mission.kind === "survive" ? "Survived" : "Line held"}
+                {hud.mission.kind === "survive" ? "Survived"
+                : hud.mission.kind === "raid" ? "Pads destroyed"
+                : "Line held"}
               </div>
               <div className="mt-1 text-[14px] uppercase tracking-widest text-[#71717C]">
                 <span style={{ color: rungColor(hud.tier) }}>{rungLabel(hud.tier)}</span> ·{" "}

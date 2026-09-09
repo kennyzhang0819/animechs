@@ -91,6 +91,21 @@ export const VISION_BUILDING_CELLS = 3;
  * the rest of the map (512 tiles across) still dark.
  */
 export const CORE_VISION_CELLS = 34;
+/**
+ * WHAT THE BRIEFING HAS ALREADY SEEN, in tiles: the patch of ground round
+ * each of a mission's targets (levels.ts MissionTarget) that a run opens
+ * with already DISCOVERED — stamped into the static set and nowhere near
+ * the dynamic one, so the pad and the ground it stands on are drawn in the
+ * grey of remembered ground, from the first frame, with nothing live on
+ * them. A player knows where the pads are the way an intelligence briefing
+ * knows: the building is on the map, and what is standing guard around it
+ * is not.
+ *
+ * Fourteen tiles is a little over the pad's own footprint either side —
+ * enough that the pad reads as a place rather than as a sprite floating in
+ * the black, and nowhere near enough to scout the approach with.
+ */
+export const MISSION_INTEL_CELLS = 14;
 
 /**
  * FogControl.dynamicUpdateInterval, 1000/25 ms — in SECONDS of simulated

@@ -517,13 +517,47 @@ families dealt, every square above it one mutator in force.
 ### Missions
 
 **Every map is its own assignment** (`LevelSpec.mission`): *hold* — clear
-every wave the script sends with the core standing — or *survive* —
-last the clock out; a spent script sends its last wave again, a few enemy
-levels heavier each repeat, until time ends the run. Each map carries
-its own wave script (`public/levels/<id>.json`, edited in the admin level
-editor) — there is no shared blueprint and no family re-casting any more.
-Every shipped map is a hold of the campaign's eight waves. The survive
-shape is wired and waiting for a map that wants it.
+every wave the script sends with the core standing — *survive* — last the
+clock out; a spent script sends its last wave again, a few enemy levels
+heavier each repeat, until time ends the run — or *raid* — take the
+swarm's own buildings off the board before it has finished using them.
+Each map carries its own wave script (`public/levels/<id>.json`, edited in
+the admin level editor) — there is no shared blueprint and no family
+re-casting any more. The waves come whatever the assignment is; what the
+mission changes is what ENDS the run.
+
+**Confluence is the raid** (`RaidMission`), and it is the first map with
+an objective that is not the core. Five of the swarm's **launch pads**
+stand on it, and a rocket goes up off one of them at 6:00, 11:00, 16:00,
+21:00 and 25:00. Every rocket away is a thing the player failed to stop;
+the **last one is the run lost**, so the schedule's final entry is the
+map's hard ceiling and Confluence cannot run past twenty-five minutes. It
+is won the moment all five pads are wrecked — and a pad that goes down
+does not skip a launch, because the next pad along takes the job, so the
+schedule is a pace the swarm keeps and not a timer to stall. The
+assignment is a line held with one hand and a push made with the other,
+and it plays out around twenty to twenty-four minutes.
+
+A run opens with the ground round each pad already **discovered**
+(`MISSION_INTEL_CELLS`): each one and its patch are drawn in the grey of
+remembered ground from the first frame, and whatever is standing guard on
+it is not drawn at all. That is the briefing — the player knows where,
+not what — and the objectives themselves sit in the top-left corner of
+the screen on bare screen, no pane and no ground under them, beside the
+bank: the two things that are true for the whole run.
+
+**A launch pad is a MISSION BUILDING** (`MISSION_STRUCT_KINDS` in
+`game/types.ts`, stats in `MISSION_STRUCTS`), the first of a second
+roster that is the swarm's alone. Nothing prices one, nothing unlocks
+one, no tab of the build bar carries one and no map document may place
+one — it belongs to an assignment rather than to a map, so it is authored
+in `WORLDS[].mission` and **moving one is editing its two coordinates**.
+It rides the ordinary structure machinery all the same: `structStats()`
+answers for both rosters, so a pad is placed, blocked around, shot at,
+splashed, health-barred and drawn exactly like one of the swarm's walls,
+with no special case anywhere in the sim or the renderer. Its **health is
+the mission's pacing dial**; the schedule is what the objective text
+promises and is not a balance knob. See `docs/authoring-maps.md`.
 
 **Structures stand anywhere unoccupied, open ground included, and the
 swarm attacks them.** Every unit attack-moves, Mindustry's GroundAI: it

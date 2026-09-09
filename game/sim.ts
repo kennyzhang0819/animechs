@@ -67,6 +67,7 @@ import { FlowField, type Footprint, type Vec2 } from "./flowfield";
 import { Corridor, SectorGraph, sectorOf } from "./corridor";
 import {
   CORE_VISION_CELLS,
+  MISSION_INTEL_CELLS,
   Fog,
   VISION_BUILT_CELLS,
   VISION_BUILDING_CELLS,
@@ -176,6 +177,7 @@ import {
   type Core,
   isCore,
   type Structure,
+  type MissionStructKind,
   type StructKind,
   type Team,
   teamOf,
@@ -1151,6 +1153,24 @@ export class Sim {
    */
   deadline = 0;
   /**
+   * THE RAID'S TARGETS (levels.ts RaidMission), in the mission's own
+   * order, or empty on any other mission. Stood up at reset like the
+   * swarm's formation and held by reference for the rest of the run: a
+   * wrecked one is pulled out of `towers` but its record survives on
+   * hp 0, which is how `padsDown` counts without a second ledger to keep
+   * in step. A target the ground refused is simply absent, so this is
+   * shorter than the spec's list when a coordinate is bad.
+   */
+  readonly missionStructs: Tower[] = [];
+  /**
+   * HOW MANY ROCKETS ARE AWAY — how far into a raid's `launchAt` schedule
+   * the swarm has actually got. It only advances when a pad was standing
+   * to fire, so a run that clears the board stops the count dead; when it
+   * reaches the length of the schedule the swarm has done what it came
+   * for and the run is lost.
+   */
+  rocketsAway = 0;
+  /**
    * HOW MANY LEVELS THE TIDE HAS RISEN. A survive mission whose script
    * runs out before its clock sends its LAST wave again, and every repeat
    * adds SURVIVE_LOOP_LEVELS to the enemy level every body spawns at
@@ -1658,6 +1678,10 @@ export class Sim {
     // the mission sets the clock (levels.ts); the core's pool is CORE_HP on every map
     const mission = this.level.mission;
     this.deadline = mission.kind === "survive" ? mission.minutes * 60 : 0;
+    // the raid's own state; its buildings are stood up further down, with
+    // the swarm's formation, because the fields have to be solved around them
+    this.missionStructs.length = 0;
+    this.rocketsAway = 0;
     this.loopLevel = 0;
     this.projs.length = 0;
     // drop the fx pool: the count is the pool, but the bolt-path refs must
@@ -1714,6 +1738,22 @@ export class Sim {
     // will not fit the ground (a drop zone moved over it, a document from
     // an older board) is dropped, not forced
     for (const e of this.terrain.enemies) this.placeEnemyStructure(e.gx, e.gy, e.kind);
+    // ...and THE MISSION'S OWN BUILDINGS on top of it (levels.ts
+    // RaidMission): the swarm's alone, placed from the level rather than
+    // from the map document, because they belong to the assignment and
+    // not to the ground. Same rule as the formation — one the board will
+    // not take is dropped, and here it also says so, because a missing
+    // pad is a mission that cannot be finished
+    if (mission.kind === "raid") {
+      for (const t of mission.targets) {
+        const pad = this.placeMissionStructure(t.gx, t.gy, t.kind);
+        if (pad) this.missionStructs.push(pad);
+        else
+          console.warn(
+            `mission target ${t.kind} at ${t.gx},${t.gy} does not fit the board — dropped`,
+          );
+      }
+    }
     this.abortSolves();
     // a new map is a new board: no order stands on it, no corridor across
     // it means anything, and the doorway graph is the old map's
@@ -2183,20 +2223,97 @@ export class Sim {
     }
   }
 
-  /** the core is down — the game freezes and the score screen takes over */
+  /**
+   * THE RUN IS OVER AND THE PLAYER DID NOT MAKE IT — the game freezes and
+   * the score screen takes over.
+   *
+   * The core falling is the usual way, and on a RAID (levels.ts
+   * RaidMission) there is a second: the swarm getting through its whole
+   * launch schedule. Every rocket away is a thing the player failed to
+   * stop and could still come back from; the last one is the swarm having
+   * done what it came to the map to do, and there is nothing left to
+   * prevent.
+   */
   lost(): boolean {
-    return this.core.hp <= 0;
+    if (this.core.hp <= 0) return true;
+    const m = this.level.mission;
+    return m.kind === "raid" && this.rocketsAway >= m.launchAt.length;
   }
 
   /**
    * IS THE MISSION MET? A hold is won when every body the script sends is
-   * down (and it sent some); a survive when the clock has run out. Never
-   * while the base is dead — a clock that ran out on a lost base is a loss.
+   * down (and it sent some); a survive when the clock has run out; a raid
+   * when every one of its targets is wrecked, whatever the clock says.
+   * Never while the base is dead — a clock that ran out on a lost base is
+   * a loss.
    */
   won(): boolean {
     if (this.lost()) return false;
+    const m = this.level.mission;
+    if (m.kind === "raid")
+      return this.missionStructs.length > 0 && this.padsDown() === this.missionStructs.length;
     if (this.deadline > 0) return this.time >= this.deadline;
     return this.totalEnemies > 0 && this.remaining() <= 0;
+  }
+
+  /** how many of a raid's targets are wrecked (levels.ts RaidMission) */
+  padsDown(): number {
+    let n = 0;
+    for (const t of this.missionStructs) if (t.hp <= 0) n++;
+    return n;
+  }
+
+  /**
+   * SECONDS UNTIL THE NEXT ROCKET GOES UP, or -1 when the schedule is
+   * spent — which on a live run means the raid is already lost, and on a
+   * finished one that there is nothing left to count.
+   */
+  nextLaunchIn(): number {
+    const m = this.level.mission;
+    if (m.kind !== "raid" || this.rocketsAway >= m.launchAt.length) return -1;
+    return Math.max(0, m.launchAt[this.rocketsAway] - this.time);
+  }
+
+  /**
+   * THE RAID'S SCHEDULE (levels.ts RaidMission.launchAt), once a tick.
+   *
+   * At each moment on the list the FIRST TARGET STILL STANDING, in the
+   * mission's own order, ships its rocket. Two things fall out of that and
+   * both are wanted: killing a pad does not skip a launch — the next pad
+   * along takes the job, so the schedule is a pace the swarm keeps rather
+   * than a per-building timer the player can stall by picking the right
+   * one — and clearing the LAST pad stops the schedule dead, because there
+   * is nothing left to launch from. The clock is the stake; the buildings
+   * are the way to stop it.
+   *
+   * The loop rather than one test is for the fast-forward paces: a 16x
+   * tick can step over a whole schedule entry, and a rocket that was due
+   * must still go up.
+   */
+  private updateRaid(): void {
+    const m = this.level.mission;
+    if (m.kind !== "raid") return;
+    while (this.rocketsAway < m.launchAt.length && this.time >= m.launchAt[this.rocketsAway]) {
+      const pad = this.missionStructs.find((t) => t.hp > 0);
+      if (!pad) return; // every pad is down: the schedule has nothing to fire
+      this.rocketsAway++;
+      this.launchRocket(pad);
+    }
+  }
+
+  /**
+   * A ROCKET LEAVES A PAD. Nothing is spawned and nothing is shot — what a
+   * launch costs the player is the entry it burns off the schedule
+   * (rocketsAway), which is the whole of the mission's stake. What is left
+   * is telling them it happened: the pad throws a smoke cloud, a shockwave
+   * and a blast, so a launch is a thing seen on the board when the camera
+   * is anywhere near it and a number that moved in the corner when it is
+   * not.
+   */
+  private launchRocket(pad: Tower): void {
+    this.pushFx(pad.x, pad.y, 1.2, FxKind.SmokeCloud);
+    this.pushFx(pad.x, pad.y, 0.5, FxKind.Shockwave);
+    this.pushFx(pad.x, pad.y, 0.7, FxKind.BlastExplosion);
   }
 
   /**
@@ -2220,6 +2337,14 @@ export class Sim {
   private seedFog(): void {
     this.fog.add(this.coreVision());
     for (const t of this.towers) if (t.team === "player") this.fog.add(this.towerVision(t));
+    // THE BRIEFING (MISSION_INTEL_CELLS): a mission's targets are on the
+    // map before the run starts. Stamping the STATIC set and nothing else
+    // is what makes that read as intelligence rather than as sight — the
+    // pad and its ground are drawn in the grey of remembered ground, and
+    // whatever is guarding it is not drawn at all until something of the
+    // player's actually looks
+    for (const t of this.missionStructs)
+      this.fog.add({ x: t.x, y: t.y, r: MISSION_INTEL_CELLS * CELL, tiles: MISSION_INTEL_CELLS });
     this.ulastFogPos.fill(-1);
     this.ulastFogId.fill(-1);
   }
@@ -2388,8 +2513,12 @@ export class Sim {
    * one, and a selected turret showed a range ring its shots outran — the
    * two halves asking different tables the same question.
    */
-  statsFor(kind: TowerKind): TowerStats {
-    return this.specs.get(kind) ?? TOWERS[kind];
+  statsFor(kind: StructKind): TowerStats {
+    // A MISSION BUILDING HAS NO UPGRADE BRANCH and never will: the
+    // upgrades are what a SAVE has bought (upgrades.ts), and nobody owns
+    // a launch pad. structStats is its whole answer, which is what the
+    // fall-through below gives it — `specs` only ever holds roster kinds
+    return this.specs.get(kind as TowerKind) ?? structStats(kind);
   }
 
   /**
@@ -2401,7 +2530,7 @@ export class Sim {
    * pellet, because the two halves were asking different tables the same
    * question. Anything that wants a live bullet's stats comes through here.
    */
-  bulletFor(kind: TowerKind, frag: boolean): BulletStats {
+  bulletFor(kind: StructKind, frag: boolean): BulletStats {
     const b = this.statsFor(kind).bullet;
     return frag && b.frag ? b.frag.bullet : b;
   }
@@ -2411,7 +2540,9 @@ export class Sim {
     const counts = Object.fromEntries(TOWER_KINDS.map((k) => [k, 0])) as Record<TowerKind, number>;
     // the player's own: the swarm's formation is not on the bar and does
     // not move a count-scaled rung
-    for (const t of this.towers) if (t.team === "player") counts[t.kind]++;
+    // (the cast is safe by that same rule: a mission building is the
+    // swarm's alone, so nothing on the player's side is ever one)
+    for (const t of this.towers) if (t.team === "player") counts[t.kind as TowerKind]++;
     return counts;
   }
 
@@ -2590,7 +2721,7 @@ export class Sim {
    * over another structure or the core. False when the cell will not take
    * it, and the map simply goes without.
    */
-  placeEnemyStructure(gx: number, gy: number, kind: TowerKind): boolean {
+  placeEnemyStructure(gx: number, gy: number, kind: StructKind): boolean {
     const sz = structStats(kind).size;
     if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
     const { blocked } = this.terrain;
@@ -2601,6 +2732,22 @@ export class Sim {
       }
     this.addTower(gx, gy, kind, true, "enemy");
     return true;
+  }
+
+  /**
+   * ONE OF A MISSION'S OWN BUILDINGS, stood up finished on the swarm's
+   * side — placeEnemyStructure with the record handed back, because the
+   * mission has to hold on to what it placed (missionStructs).
+   *
+   * It goes through the SAME fit test: on the board, off rock, off the
+   * drop zones, and clear of anything already standing. A target that
+   * fails it is refused rather than forced — a launch pad half inside a
+   * cliff is a footprint the walkers route through and the player cannot
+   * reach — and the caller is what decides how loudly to complain.
+   */
+  placeMissionStructure(gx: number, gy: number, kind: MissionStructKind): Tower | null {
+    if (!this.placeEnemyStructure(gx, gy, kind)) return null;
+    return this.towers[this.towers.length - 1];
   }
 
   /** the structure standing on a world point, if it is `team`'s */
@@ -2632,6 +2779,9 @@ export class Sim {
     // while the sim is paused
     this.time += dt;
     this.runScript(dt);
+    // THE RAID'S CLOCK, before anything else moves: a rocket that was due
+    // this tick goes up on the tick it was due
+    this.updateRaid();
     // THE ECONOMY TICKS: the core and the drills fill their loads, and a
     // full load lands in the bank and on the run's ledger
     this.updateMining(dt);
@@ -3784,10 +3934,10 @@ export class Sim {
    * building, so one wet corner soaks the whole thing rather than the
    * penalty depending on which cell the game happens to measure from.
    */
-  isWaterlogged(gx: number, gy: number, kind: TowerKind): boolean {
+  isWaterlogged(gx: number, gy: number, kind: StructKind): boolean {
     const mask = this.waterlogged;
     if (!mask) return false;
-    const sz = TOWERS[kind].size;
+    const sz = structStats(kind).size;
     for (let y = gy; y < gy + sz; y++)
       for (let x = gx; x < gx + sz; x++)
         if (x >= 0 && y >= 0 && x < COLS && y < ROWS && mask[y * COLS + x]) return true;
@@ -4180,7 +4330,9 @@ export class Sim {
     // nothing back (SELL_REFUND is 0, economy.ts): a placed turret is
     // spent, and demolishing it only clears the ground. The dial stays
     // wired so a refund can be tried again from one number
-    if (this.charging) this.scrap += sellValue(t.kind);
+    // a mission building is never the player's and never sold (towerAt
+    // answers on the player's side only), so the refund is the roster's
+    if (this.charging) this.scrap += sellValue(t.kind as TowerKind);
     this.pushFx(t.x, t.y, 0.35, FxKind.Death); // demolish puff
     return true;
   }

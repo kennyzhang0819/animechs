@@ -69,6 +69,45 @@ export const TOWER_KINDS = [
 export type TowerKind = (typeof TOWER_KINDS)[number];
 
 /**
+ * THE MISSION BUILDINGS — the swarm's own, and the player's NEVER.
+ *
+ * A mission building is not on the roster and cannot be: nothing prices
+ * it, nothing unlocks it, no tab of the build bar carries it, and no map
+ * document may place one (MapData.enemies is the roster's formation and
+ * stays that). It exists because ONE MISSION asks for it, it stands on
+ * the board only while that mission is being played, and the mission's
+ * own rules — what it does, what it costs the player to leave standing,
+ * what destroying it means — live with the mission (levels.ts Mission)
+ * rather than in this roster.
+ *
+ * They ride the STRUCTURE machinery all the same, and that is the whole
+ * reason they are a kind rather than a fourth `Structure` variant: a
+ * launch pad sits in Sim.cellTower like any building, wears its health
+ * bar like any building, blocks the walkers like any building, and every
+ * gun and every body the player owns finds it exactly as it finds one of
+ * the swarm's walls. The one thing that is different about it is what the
+ * MISSION does with it.
+ *
+ * ADDING ONE is: a name here, its stats in MISSION_STRUCTS (constants.ts),
+ * a cell for its sprite in atlas.ts, a row in UV_TURRETS (renderer.ts),
+ * and whatever the mission that fields it wants done with it. Nothing else in the game has to
+ * learn the name — structStats() is the one funnel every reader goes
+ * through, and it answers for both rosters.
+ *
+ *   launch-pad  Confluence's five. The swarm ships a rocket off one every
+ *               few minutes (Mission "raid"); the run is to take all five
+ *               down before the last one goes up.
+ */
+export const MISSION_STRUCT_KINDS = ["launch-pad"] as const;
+export type MissionStructKind = (typeof MISSION_STRUCT_KINDS)[number];
+
+const MISSION_KIND_SET: ReadonlySet<string> = new Set<string>(MISSION_STRUCT_KINDS);
+
+/** is this kind a mission building rather than one of the roster? */
+export const isMissionKind = (k: StructKind): k is MissionStructKind =>
+  MISSION_KIND_SET.has(k);
+
+/**
  * Anything a Tower record may be. THE SWARM BUILDS FROM THE PLAYER'S
  * ROSTER: a map's formation (MapData.enemies) is duos, lancers, ripples
  * and copper walls on the swarm's side (Tower.team), drawn with the same
@@ -76,8 +115,11 @@ export type TowerKind = (typeof TOWER_KINDS)[number];
  * be a separate enemy roster — Erekir's breach, diffuse and titan on
  * reinforced plates, and scrap walls — and it is gone: one set of
  * buildings, two teams.
+ *
+ * ...plus the MISSION BUILDINGS above, which are the swarm's alone and
+ * belong to one assignment rather than to the game.
  */
-export type StructKind = TowerKind;
+export type StructKind = TowerKind | MissionStructKind;
 
 /**
  * THE CORE — the one structure the swarm is on the map to destroy, and the

@@ -1,4 +1,4 @@
-import { FxKind, type RGB } from "./types";
+import { FxKind, isMissionKind, type RGB } from "./types";
 
 /**
  * THE GRID: 512 cells square. It was 256 — Mindustry's Ground Zero — while
@@ -1373,6 +1373,53 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
 };
 
 /**
+ * THE MISSION BUILDINGS' STATS (types.ts MISSION_STRUCT_KINDS) — the
+ * swarm's own, fielded by one assignment and never on the roster.
+ *
+ * A SECOND TABLE RATHER THAN MORE ROWS IN TOWERS, and the split is the
+ * point: everything keyed on TowerKind is a thing the player can be sold,
+ * shown, unlocked, upgraded or priced — the build bar, the progress
+ * track, the balance page, the upgrade points, MINDUSTRY_VALUE — and a
+ * launch pad is none of those. Putting it in TOWERS would mean answering
+ * for it in every one of those records, forever, so that the answer could
+ * be "never" every time. Here it answers for nothing and structStats()
+ * still finds it, which is the only thing the sim and the renderer ever
+ * wanted.
+ *
+ * They are `building` stats: no gun, no turret base, drawn flat over the
+ * footprint. Whatever a mission building DOES it does through its
+ * mission, never through a bullet.
+ */
+export const MISSION_STRUCTS: Record<import("./types").MissionStructKind, TowerStats> = {
+  /**
+   * THE LAUNCH PAD — Mindustry's own block, 3x3, and the whole of
+   * Confluence's assignment (levels.ts, Mission "raid"). Five of them
+   * stand on the map, the swarm ships a rocket off one every few minutes,
+   * and the run is to have them all down before the last rocket goes up.
+   *
+   * ITS POOL IS THE MISSION'S PACING DIAL, and it is THE number to turn
+   * when a raid plays long or short — not the schedule, which is what the
+   * mission promises the player and what the objective text says.
+   *
+   * 12,000 is twice the core's own (CORE_HP), and the arithmetic is why: a
+   * unit weapon does Mindustry's damage at the shipped dial
+   * (unitDamageScale, weapons.ts), so a stock dagger alone is about 83 a
+   * second and a squad of five that has walked all the way out there needs
+   * half a minute standing on the pad to finish it. Mindustry's own launch
+   * pad (250 a tile, 2,250 for the block) — and anything near it — is a
+   * building an army that arrives simply evaporates, which would make the
+   * whole assignment the WALK and nothing else.
+   *
+   * It is deliberately not larger than that. What is meant to cost the
+   * player the other twenty minutes is the ground between the pads and
+   * whatever is standing guard on it, not a health bar; a pool big enough
+   * to be the difficulty on its own would price the defences out of their
+   * own map.
+   */
+  "launch-pad": { ...wallStats("Launch Pad", 12000, 3), building: true },
+};
+
+/**
  * WHAT A TURRET IS, in one sentence, for the card the tech tree opens over
  * its node.
  *
@@ -1481,8 +1528,18 @@ export const TOWER_HP_SCALE = 1;
 export const WALL_HP_SCALE = 1;
 /** a structure's full pool — Mindustry's health for the block, times its dial */
 
-/** the stats of any structure kind — one roster, whichever side stands it */
-export const structStats = (kind: import("./types").StructKind): TowerStats => TOWERS[kind];
+/**
+ * THE STATS OF ANY STRUCTURE KIND, and THE ONE FUNNEL EVERY READER GOES
+ * THROUGH: the roster (TOWERS), whichever side stands it, plus the
+ * mission buildings (MISSION_STRUCTS), which are the swarm's alone.
+ *
+ * Because the size, the pool and the `building` flag all come from here,
+ * a mission building needs no special case anywhere in the sim or the
+ * renderer — it is placed, blocked around, shot at, chipped by splash and
+ * drawn exactly like one of the swarm's walls.
+ */
+export const structStats = (kind: import("./types").StructKind): TowerStats =>
+  isMissionKind(kind) ? MISSION_STRUCTS[kind] : TOWERS[kind];
 
 export const towerMaxHp = (kind: import("./types").StructKind): number => {
   const st = structStats(kind);
@@ -1506,9 +1563,11 @@ export const towerMaxHp = (kind: import("./types").StructKind): number => {
  * footprint itself.
  */
 export const BUILD_TIME_BY_SIZE = [0, 2, 4, 6.5, 10, 14, 18, 22, 26, 30] as const;
-/** how long this structure spends as a 1 hp shell before it works */
-export const buildTimeOf = (kind: import("./types").TowerKind): number =>
-  BUILD_TIME_BY_SIZE[TOWERS[kind].size] ?? BUILD_TIME_BY_SIZE[BUILD_TIME_BY_SIZE.length - 1];
+/** how long this structure spends as a 1 hp shell before it works — a
+ *  mission building is always stood up finished, so this never answers
+ *  for one, but it is the footprint's number and answers for it anyway */
+export const buildTimeOf = (kind: import("./types").StructKind): number =>
+  BUILD_TIME_BY_SIZE[structStats(kind).size] ?? BUILD_TIME_BY_SIZE[BUILD_TIME_BY_SIZE.length - 1];
 
 /**
  * The stats driving one live projectile. Almost always the firing turret's

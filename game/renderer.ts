@@ -47,6 +47,7 @@ import {
   UV_TITANIUM_WALL,
   UV_DRILL,
   UV_FACTORY1,
+  UV_LAUNCH_PAD,
   UV_FACTORY2,
   UV_FACTORY3,
   UV_FACTORY4,
@@ -149,6 +150,7 @@ import {
   FxKind,
   type Effect,
   type RGB,
+  type StructKind,
   type Tower,
   type TowerKind,
 } from "./types";
@@ -169,8 +171,13 @@ const FLAG_H = CELL_IMPORT * 0.28;
 const FLAG_INSET = 3;
 const FLAG_POLE_COL: RGB = [0.12, 0.12, 0.13];
 
-// per-kind turret tops and bullet sprites
-const UV_TURRETS: Record<TowerKind, UVRect> = {
+/**
+ * Per-kind turret tops and bullet sprites — the ROSTER's, and the MISSION
+ * buildings' too (types.ts MISSION_STRUCT_KINDS). Keyed on StructKind
+ * because Tower.kind is: a launch pad is drawn by this loop exactly as one
+ * of the swarm's walls is, and its art belongs in the same table.
+ */
+const UV_TURRETS: Record<StructKind, UVRect> = {
   duo: UV_DUO,
   hail: UV_HAIL,
   salvo: UV_TURRET,
@@ -200,6 +207,8 @@ const UV_TURRETS: Record<TowerKind, UVRect> = {
   "factory-t3": UV_FACTORY3,
   "factory-t4": UV_FACTORY4,
   "factory-t5": UV_FACTORY5,
+  // the mission buildings — the swarm's alone, and never on the bar
+  "launch-pad": UV_LAUNCH_PAD,
 };
 /**
  * The two regions BasicBulletType.draw lays on one rect: the longer `-back`

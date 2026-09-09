@@ -938,6 +938,19 @@ export const UV_FACTORY3 = uv(480, 1792, 160, 160);
 export const UV_FACTORY1 = uv(640, 1792, 96, 96);
 export const UV_FACTORY2 = uv(736, 1792, 96, 96);
 export const UV_DRILL = uv(832, 1792, 128, 128);
+/**
+ * THE MISSION BUILDINGS (types.ts MISSION_STRUCT_KINDS). One cell each, on
+ * the free strip at y=2944 between the 4x4 tower base and the copper walls
+ * — the strip the swarm's old Erekir roster used to hold, and the nearest
+ * free ground to the other flat blocks.
+ *
+ * The launch pad is Mindustry's own 96px block art at native size in a
+ * 96px cell, exactly like the 3x3 unit factory beside it, with its
+ * `-light` overlay composited in at pack time: upstream pulses that
+ * overlay every frame, and a mission target that is legible at a glance
+ * on a minimap is worth more here than the pulse.
+ */
+export const UV_LAUNCH_PAD = uv(192, 2944, 96, 96);
 export const UV_ORE: readonly UVRect[] = [uv(960, 1792, 64, 64, 2), uv(960, 1856, 64, 64, 2), uv(960, 1920, 64, 64, 2)];
 // (the strip between the copper walls and the 4x4 base at y=2944 held the
 // swarm's own roster — Erekir's guns and scrap walls — and is free again:
@@ -1734,6 +1747,9 @@ const SPRITES = {
   // factory and the four reconstructors — every one drawn flat, at
   // Mindustry's own footprint — and the copper ore's three faces
   drill: "/mindustry/sprites/blocks/drills/pneumatic-drill.png",
+  // THE MISSION BUILDINGS: the launch pad and its glow overlay (UV_LAUNCH_PAD)
+  launchPad: "/mindustry/sprites/blocks/campaign/launch-pad.png",
+  launchPadLight: "/mindustry/sprites/blocks/campaign/launch-pad-light.png",
   factory1: "/mindustry/sprites/blocks/units/ground-factory.png",
   factory2: "/mindustry/sprites/blocks/units/additive-reconstructor.png",
   factory3: "/mindustry/sprites/blocks/units/multiplicative-reconstructor.png",
@@ -2855,6 +2871,17 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   c.drawImage(antialiased(outlined(img.factory1, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 640, 1792, 96, 96);
   c.drawImage(antialiased(outlined(img.factory2, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 736, 1792, 96, 96);
   c.drawImage(antialiased(outlined(img.drill, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 832, 1792, 128, 128);
+  // THE LAUNCH PAD (UV_LAUNCH_PAD): the block with its `-light` overlay
+  // laid over it, flat like the factories — it never rotates
+  {
+    const lit = document.createElement("canvas");
+    lit.width = lit.height = 96;
+    const lc = lit.getContext("2d");
+    if (!lc) throw new Error("2d context unavailable");
+    lc.drawImage(img.launchPad, 0, 0, 96, 96);
+    lc.drawImage(img.launchPadLight, 0, 0, 96, 96);
+    c.drawImage(antialiased(outlined(lit, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 192, 2944, 96, 96);
+  }
   // the ore, an overlay on the floor: no outline, the floor's own edges
   c.drawImage(antialiased(img.ore1), 960, 1792, 64, 64);
   c.drawImage(antialiased(img.ore2), 960, 1856, 64, 64);

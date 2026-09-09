@@ -70,6 +70,24 @@ export interface UiState {
   mission: Mission;
   /** seconds left on a survive mission's clock; 0 where there is no clock */
   timeLeft: number;
+  /**
+   * A RAID'S LIVE OBJECTIVES (levels.ts RaidMission), or null on every
+   * other mission — what the corner of the screen says the run is FOR.
+   *
+   * It is the sim's numbers rather than finished strings on purpose: the
+   * HUD owns how a clock reads and how a tally is worded, and a second
+   * mission of this shape should not have to be added to a sentence here.
+   */
+  raid: {
+    /** targets wrecked, out of how many are on the board */
+    padsDown: number;
+    padsTotal: number;
+    /** rockets the swarm has got away, out of the whole schedule */
+    launched: number;
+    launchTotal: number;
+    /** seconds until the next one goes up, or -1 when none is left to go */
+    nextLaunchIn: number;
+  } | null;
   kills: number;
   /** the esc game menu is up: sim held, resume or abandon from the overlay */
   menuOpen: boolean;
@@ -1310,6 +1328,16 @@ export class Game {
       won: this.won(),
       mission: this.sim.level.mission,
       timeLeft: Math.max(0, this.sim.deadline - this.sim.time),
+      raid:
+        this.sim.level.mission.kind === "raid" ?
+          {
+            padsDown: this.sim.padsDown(),
+            padsTotal: this.sim.missionStructs.length,
+            launched: this.sim.rocketsAway,
+            launchTotal: this.sim.level.mission.launchAt.length,
+            nextLaunchIn: this.sim.nextLaunchIn(),
+          }
+        : null,
       kills: this.sim.kills,
       menuOpen: this.menuOpen,
       scrap: this.sim.charging ? Math.floor(this.sim.scrap) : null,
@@ -1686,6 +1714,17 @@ export class Game {
       if (t.team !== "enemy") continue;
       if (fogOn && !fog.seenAt(t.x, t.y)) continue;
       box(t.gx, t.gy, structStats(t.kind).size, 0xf2, 0x55, 0x55);
+    }
+    // THE MISSION'S OWN TARGETS over the formation, in a colour of their
+    // own (levels.ts RaidMission): they are the map's objective and the
+    // one thing on it worth crossing the board for, so they must not read
+    // as another of the swarm's walls. A run opens with the ground round
+    // each of them already discovered (Sim.seedFog), so these are on the
+    // minimap from the first frame — which is the briefing
+    for (const t of this.sim.missionStructs) {
+      if (t.hp <= 0) continue;
+      if (fogOn && !fog.seenAt(t.x, t.y)) continue;
+      box(t.gx, t.gy, structStats(t.kind).size, 0xff, 0x9a, 0x3d);
     }
     // ...and the player's, over everything: the line is what the map is read for
     for (const t of this.sim.towers) {

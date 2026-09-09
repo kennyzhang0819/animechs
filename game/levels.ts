@@ -7,6 +7,7 @@ import type { MutationId } from "./mutation";
 export const UNIT_KINDS = ["dagger", "mace", "fortress", "scepter", "reign", "crawler", "atrax", "spiroct", "arkyid", "toxopid", "flare", "nova", "pulsar", "quasar", "vela", "corvus", "horizon", "zenith", "antumbra", "eclipse", "disrupt", "risso", "minke", "bryde", "sei", "omura", "retusa", "oxynoe", "cyerce", "aegires", "navanax"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
+import type { MissionStructKind } from "./types";
 
 /** numeric unit id — index into UNIT_KINDS, stored in the sim's ukind array */
 export const UNIT_ID: Record<UnitKind, number> = {
@@ -1234,7 +1235,56 @@ export function waveGroups(
  */
 export type Mission =
   | { kind: "hold" }
-  | { kind: "survive"; minutes: number };
+  | { kind: "survive"; minutes: number }
+  | RaidMission;
+
+/**
+ * ONE OF THE SWARM'S MISSION BUILDINGS AND WHERE IT STANDS — a kind off
+ * the mission roster (types.ts MISSION_STRUCT_KINDS) and its footprint's
+ * TOP-LEFT cell, which is the shape every other placement in the game is
+ * written in (MapData.enemies, the editor's saves).
+ *
+ * MOVING ONE IS EDITING THESE TWO NUMBERS and nothing else. The building
+ * is stood up at reset (Sim.placeMissionStructure) and dropped with a
+ * console warning if the ground will not take it — a footprint over rock,
+ * off the board, on a drop zone or on top of something already there —
+ * so a bad coordinate is a visible complaint and an obviously missing
+ * pad, never a silent half-mission.
+ */
+export interface MissionTarget {
+  kind: MissionStructKind;
+  gx: number;
+  gy: number;
+}
+
+/**
+ * THE RAID — the swarm has something on this map that it is USING, and
+ * the run is to take it off the board before it has been used up.
+ *
+ * The stake is a CLOCK RATHER THAN A WAVE COUNT. `launchAt` is the whole
+ * schedule, in seconds of run time: at each of those moments the first
+ * of `targets` still standing does its thing (a launch pad ships a
+ * rocket), and when the list is spent the swarm has done what it came to
+ * do and the run is lost. So the last entry is the mission's hard ceiling
+ * — this map cannot run a second past it — and every entry before it is a
+ * thing the player failed to prevent but can still recover from.
+ *
+ * The run is WON the moment every target is wrecked, whatever the clock
+ * says, and lost the usual way if the core falls first.
+ *
+ * The waves keep coming throughout (LevelSpec.script): the assignment is
+ * to hold a line AND push out with what is left, which is what makes the
+ * ordering of `targets` matter — they are authored nearest-first, so the
+ * schedule buys the player a first pad early and asks for the last one
+ * deep in the swarm's ground.
+ */
+export interface RaidMission {
+  kind: "raid";
+  /** the buildings to destroy, authored in the order the swarm uses them */
+  targets: readonly MissionTarget[];
+  /** seconds of run time at which each rocket goes up, ascending */
+  launchAt: readonly number[];
+}
 
 /** the mission as the deploy panel and the HUD say it: a headline and a clause */
 export function missionText(spec: LevelSpec): { title: string; detail: string } {
@@ -1244,6 +1294,12 @@ export function missionText(spec: LevelSpec): { title: string; detail: string } 
     return {
       title: `Survive ${m.minutes} minutes`,
       detail: "The waves do not stop until the clock does. The core must stand.",
+    };
+  if (m.kind === "raid")
+    return {
+      title: `Destroy ${m.targets.length} launch pads`,
+      detail:
+        "The swarm ships a rocket off a pad every few minutes. Take all of them down before the last one goes up — and keep the core standing.",
     };
   return { title: `Hold the line — ${waves} waves`, detail: "Clear every wave. The core must stand." };
 }
@@ -1443,8 +1499,44 @@ export const WORLDS: LevelSpec[] = [
     id: "1",
     name: "Confluence",
     map: "confluence",
-    // THE OPENING ASSIGNMENT: hold every wave with the core standing
-    mission: { kind: "hold" },
+    /**
+     * THE OPENING ASSIGNMENT IS A RAID, not a siege: five of the swarm's
+     * launch pads stand on the map, one rocket goes up off one of them
+     * every few minutes, and the run is to have all five wrecked before
+     * the last rocket does. The waves still come — that half is unchanged
+     * — so the map is a line held with one hand and a push made with the
+     * other.
+     *
+     * THE CLOCK. 6:00, then every five minutes to 21:00, then 25:00. The
+     * first is the grace plus a wave (GRACE_DEFAULT is 4:00), which is
+     * about when a first push can be on the ground at all — the nearest
+     * pad is reachable in that window and no other is. The last is the
+     * map's hard ceiling: five rockets away is the run lost, so Confluence
+     * cannot run past twenty-five minutes, and a run that clears it plays
+     * out around twenty to twenty-four.
+     *
+     * THE FIVE PADS, in the order the swarm uses them and so the order
+     * they should be taken: nearest first, deepest last. The core stands
+     * at (462, 254) on the east edge, the doors are all west of it, and
+     * these walk out from about 170 tiles of ground away to about 610 —
+     * pad 1 is a push a first army can make, pad 5 is the far north-west
+     * corner past every drop zone on the map.
+     *
+     * MOVING THEM is editing the pairs below and nothing else (see
+     * MissionTarget); a pad whose footprint the ground will not take is
+     * dropped with a console warning rather than forced.
+     */
+    mission: {
+      kind: "raid",
+      targets: [
+        { kind: "launch-pad", gx: 323, gy: 223 }, // west of the core, over the near ridge
+        { kind: "launch-pad", gx: 239, gy: 271 }, // the southern basin
+        { kind: "launch-pad", gx: 307, gy: 79 },  // up the north lane
+        { kind: "launch-pad", gx: 73, gy: 293 },  // the far south-west flats
+        { kind: "launch-pad", gx: 19, gy: 87 },   // the north-west corner, behind the doors
+      ],
+      launchAt: [6 * 60, 11 * 60, 16 * 60, 21 * 60, 25 * 60],
+    },
     waveGap: WAVE_GAP_DEFAULT,
     grace: GRACE_DEFAULT,
     // ================= HOW TO AUTHOR A WAVE ========================

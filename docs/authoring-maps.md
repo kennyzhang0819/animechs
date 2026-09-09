@@ -285,3 +285,64 @@ The atlas indices a generator paints with are COPIED into
 and the atlas reaches for a canvas at load. Keep the names identical and
 grep both when a family moves. `scripts/maps/seal.mjs` still brings an
 older or imported document up to the sealed-rim rule in place.
+
+## Mission buildings
+
+**A mission building belongs to an assignment, not to a map.** It is the
+swarm's, the player can never build one, and it stands on the board only
+while the mission that fields it is being played — so it is authored in
+`WORLDS[].mission` (`game/levels.ts`), never in the map document.
+`MapData.enemies` is the roster's formation and stays that.
+
+The kinds live in `MISSION_STRUCT_KINDS` (`game/types.ts`) with their
+stats in `MISSION_STRUCTS` (`game/constants.ts`) their cell on the
+sprite sheet in `game/atlas.ts` and their art wired up in `UV_TURRETS`
+(`game/renderer.ts`). Everything else in
+the sim and the renderer reaches them through `structStats()`, which
+answers for both rosters — so a mission building is placed, blocked
+around, shot at, splashed, drawn and health-barred exactly like one of the
+swarm's walls, with no special case anywhere.
+
+Confluence's mission is the first: a **raid** (`RaidMission`).
+
+```ts
+mission: {
+  kind: "raid",
+  targets: [{ kind: "launch-pad", gx: 323, gy: 223 }, ...],
+  launchAt: [6 * 60, 11 * 60, 16 * 60, 21 * 60, 25 * 60],
+},
+```
+
+**MOVING A TARGET IS EDITING ITS TWO NUMBERS.** `gx, gy` is the
+footprint's top-left cell, the same shape every other placement in the
+game is written in. A target the board will not take — off the grid, over
+rock, on a drop zone, on top of something already standing — is **dropped
+with a console warning** rather than forced, so a bad coordinate is a
+visible complaint and an obviously missing building.
+
+Two rules make the ordering of `targets` matter:
+
+* At each moment in `launchAt` the **first target still standing**, in the
+  mission's own order, launches. Killing one does not skip a launch — the
+  next along takes the job — so the schedule is a pace the swarm keeps
+  rather than a per-building timer the player can stall by picking a
+  favourite.
+* Clearing the **last** target stops the schedule dead, and that is the
+  win. Getting through the whole schedule is the loss, so **the last entry
+  in `launchAt` is the map's hard ceiling** — Confluence cannot run past
+  twenty-five minutes.
+
+So author `targets` nearest-first: the schedule buys the player an early
+pad they can reach and asks for the last one deep in the swarm's ground.
+
+A run opens with the ground round every target already **discovered**
+(`MISSION_INTEL_CELLS`, `game/fog.ts`) — stamped into the static fog set
+and not the dynamic one, so each target and its patch are drawn in the
+grey of remembered ground from the first frame, and whatever is guarding
+it is not drawn at all. That is the briefing: the player knows where, not
+what.
+
+**The pacing dial is the building's `health`** (`MISSION_STRUCTS`), not
+the schedule. Turn that when a raid plays long or short; the schedule is
+what the mission promises the player and moving it moves the objective
+text with it.
