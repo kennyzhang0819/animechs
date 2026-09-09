@@ -2,7 +2,9 @@
  * Tundra — the snowy map. Snow under snow walls, ice round two frozen
  * lakes, shale where the rock breaks through, snow pines. Four gates on
  * the south corners and the east and west edges, the core on the north
- * edge behind one antechamber.
+ * edge behind one antechamber. The meltwater runs down the west edge and
+ * up from the south into the tarn at the antechamber's shoulder, which is
+ * where the hulls end up.
  *
  *   node scripts/maps/tundra.mjs [public/maps/tundra.json] [preview.png]
  */
@@ -36,6 +38,7 @@ export const spec = {
     { x: 56, y: 96, r: 12 }, // 3 west
     { x: 200, y: 96, r: 12 }, // 4 east
     { x: 128, y: 58, r: 11 }, // 5 the antechamber
+    { x: 92, y: 52, r: 9, water: true }, // 6 the meltwater tarn beside the antechamber
   ],
   core: { x: 128, y: 24, r: 9 },
   spawns: [
@@ -48,9 +51,14 @@ export const spec = {
     { x: 240, y: 140, r: 12, zone: "ground" }, // 3
     { x: 12, y: 244, r: 8, zone: "air" },
     { x: 244, y: 244, r: 8, zone: "air" },
-    { x: 128, y: 250, r: 4, zone: "boss" },
+    // the meltwater: one river down the west edge and one up from the
+    // south, both ending in the tarn under the antechamber's shoulder
+    { x: 14, y: 64, r: 9, zone: "water" }, // 6
+    { x: 64, y: 246, r: 9, zone: "water" }, // 7
   ],
   routes: [
+    { spawn: 6, to: 6, layer: "water", width: [16, 22] },
+    { spawn: 7, to: 6, layer: "water", width: [16, 22] },
     { spawn: 0, via: [0, 2, 5], width: [8, 16] },
     { spawn: 1, via: [1, 2, 5], width: [8, 16] },
     { spawn: 2, via: [3, 2, 5], width: [8, 14] },
@@ -67,7 +75,7 @@ export const spec = {
   holes: 6,
   lumps: 12,
   ruins: 2,
-  coreWaterReach: 999,
+  coreWaterReach: 50,
 };
 
 run(spec);

@@ -46,7 +46,6 @@ export const spec = {
     { x: 128, y: 236, r: 10, zone: "water" }, // 4
     { x: 244, y: 20, r: 8, zone: "air" },
     { x: 244, y: 236, r: 8, zone: "air" },
-    { x: 248, y: 128, r: 4, zone: "boss" },
   ],
   routes: [
     { spawn: 3, to: 6, layer: "water", width: [16, 22] },

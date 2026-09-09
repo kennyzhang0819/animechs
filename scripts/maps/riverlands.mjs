@@ -51,7 +51,10 @@ export const spec = {
     { x: 242, y: 152, r: 9, zone: "water" }, // 6 the east river
     { x: 128, y: 242, r: 9, zone: "water" }, // 7 the south river
     { x: 12, y: 128, r: 8, zone: "air" },
-    { x: 244, y: 128, r: 8, zone: "air" },
+    // the east door is up at the north-east shoulder: the east rim at the
+    // rivers' latitude is solid rock, and a door buried in it drops its
+    // flyers inside the massif
+    { x: 236, y: 56, r: 8, zone: "air" },
   ],
   routes: [
     { spawn: 5, to: 5, layer: "water", width: [16, 22] },

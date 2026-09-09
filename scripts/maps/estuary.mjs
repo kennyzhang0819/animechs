@@ -51,7 +51,9 @@ export const spec = {
     { x: 30, y: 232, r: 12, zone: "water" }, // 4 the south-west sea
     { x: 226, y: 232, r: 12, zone: "water" }, // 5 the south-east sea
     { x: 200, y: 14, r: 8, zone: "water" }, // 6 the river's head
-    { x: 128, y: 8, r: 8, zone: "air" },
+    // beside the river's head, where the north rim is open: over the
+    // middle of that rim the circle was buried in rock
+    { x: 224, y: 20, r: 8, zone: "air" },
     { x: 244, y: 244, r: 8, zone: "air" },
   ],
   routes: [

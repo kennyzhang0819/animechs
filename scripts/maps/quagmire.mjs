@@ -54,9 +54,11 @@ export const spec = {
     { x: 200, y: 232, r: 12, zone: "ground" }, // 2
     { x: 236, y: 60, r: 10, zone: "water" }, // 3
     { x: 236, y: 196, r: 10, zone: "water" }, // 4
-    { x: 246, y: 20, r: 8, zone: "air" },
-    { x: 246, y: 236, r: 8, zone: "air" },
-    { x: 248, y: 128, r: 4, zone: "boss" },
+    // both air doors stand on the north and south rims where the sky is
+    // open — on the east rim, where they used to sit, the circles were
+    // buried in the massif and dropped their flyers inside it
+    { x: 160, y: 20, r: 8, zone: "air" },
+    { x: 136, y: 244, r: 8, zone: "air" },
   ],
   routes: [
     { spawn: 0, via: [2, 5], width: [8, 16] },

@@ -2,7 +2,9 @@
  * Confluence — world 1, the desert. Four ground gates on the north, west
  * and south edges flow together through a salt basin in the middle of the
  * board and reach the core on the east edge through one antechamber
- * whose mouth is the map's choke.
+ * whose mouth is the map's choke. Two channels come in off the south and
+ * east edges to the pool below that antechamber, which is the water the
+ * map is named for and as near the core as a hull may bring its guns.
  *
  *   node scripts/maps/confluence.mjs [public/maps/confluence.json] [preview.png]
  *
@@ -43,6 +45,7 @@ export const spec = {
     { x: 158, y: 66, r: 13 }, // 3 north
     { x: 172, y: 192, r: 14 }, // 4 south-east
     { x: 198, y: 128, r: 11 }, // 5 the antechamber before the core
+    { x: 204, y: 166, r: 12, water: true }, // 6 the pool the two channels meet in
   ],
   core: { x: 232, y: 128, r: 9 },
   spawns: [
@@ -52,9 +55,14 @@ export const spec = {
     { x: 66, y: 238, r: 12, zone: "ground" }, // 3
     { x: 12, y: 12, r: 8, zone: "air" },
     { x: 108, y: 8, r: 8, zone: "air" },
-    { x: 10, y: 128, r: 4, zone: "boss" },
+    // the water the map is named for: two channels in off the south and
+    // east edges, meeting in the pool beside the antechamber
+    { x: 150, y: 244, r: 9, zone: "water" }, // 6
+    { x: 244, y: 200, r: 9, zone: "water" }, // 7
   ],
   routes: [
+    { spawn: 6, to: 6, layer: "water", width: [18, 24] },
+    { spawn: 7, to: 6, layer: "water", width: [18, 24] },
     { spawn: 0, via: [0, 2, 5], width: [8, 16] },
     { spawn: 1, via: [3, 2, 5], width: [8, 14] },
     { spawn: 2, via: [1, 2, 5], width: [8, 18] },
@@ -71,7 +79,7 @@ export const spec = {
   holes: 6,
   lumps: 14,
   ruins: 3,
-  coreWaterReach: 999,
+  coreWaterReach: 55,
 };
 
 run(spec);

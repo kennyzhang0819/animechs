@@ -2,6 +2,8 @@
  * Crater — the core in the middle of the board, in a basalt crater, and
  * six gates round the edge coming at it from every side. No funnel: the
  * crater's rim has a mouth toward every road, and each mouth is a choke.
+ * Two channels come in off the east and west edges and flood the pit
+ * under the southern rim, which is the hulls' way in.
  *
  *   node scripts/maps/crater.mjs [public/maps/crater.json] [preview.png]
  */
@@ -37,6 +39,7 @@ export const spec = {
     { x: 192, y: 128, r: 11 }, // 4 east
     { x: 76, y: 76, r: 11 }, // 5 north-west
     { x: 180, y: 180, r: 11 }, // 6 south-east
+    { x: 128, y: 176, r: 10, water: true }, // 7 the flooded pit under the rim
   ],
   core: { x: 128, y: 128, r: 10 },
   spawns: [
@@ -46,11 +49,20 @@ export const spec = {
     { x: 240, y: 128, r: 12, zone: "ground" }, // 3
     { x: 40, y: 40, r: 12, zone: "ground" }, // 4
     { x: 216, y: 216, r: 12, zone: "ground" }, // 5
-    { x: 244, y: 12, r: 8, zone: "air" },
-    { x: 12, y: 244, r: 8, zone: "air" },
-    { x: 248, y: 128, r: 4, zone: "boss" },
+    // THE SKY OVER THIS BOARD IS ROCK EVERYWHERE BUT THE GATES: the rim's
+    // north-east and south-west corners, where the air doors used to sit,
+    // are solid, and a flyer entering inside a peak flies the fallback
+    // straight line out instead of the route the map implies. Both doors
+    // stand over the diagonal gates' own corners, which are open sky
+    { x: 24, y: 24, r: 8, zone: "air" },
+    { x: 224, y: 224, r: 8, zone: "air" },
+    // the two channels that flooded the pit, in off the east and west edges
+    { x: 244, y: 180, r: 9, zone: "water" }, // 8
+    { x: 12, y: 180, r: 9, zone: "water" }, // 9
   ],
   routes: [
+    { spawn: 8, to: 7, layer: "water", width: [16, 22] },
+    { spawn: 9, to: 7, layer: "water", width: [16, 22] },
     { spawn: 0, via: [1], width: [8, 14] },
     { spawn: 1, via: [2], width: [8, 14] },
     { spawn: 2, via: [3], width: [8, 14] },
@@ -78,7 +90,7 @@ export const spec = {
   holes: 6,
   lumps: 16,
   ruins: 2,
-  coreWaterReach: 999,
+  coreWaterReach: 55,
 };
 
 run(spec);

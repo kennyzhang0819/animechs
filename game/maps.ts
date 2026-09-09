@@ -114,12 +114,12 @@ export interface MapData {
 /**
  * Every playable map — add a JSON under public/maps/ and list its id here.
  *
- * AN ID IS THE MAP'S OWN NAME, slugged: Confluence is "confluence", Seed 24
- * is "seed-24". They used to describe the terrain instead (grass-open,
- * tidewater), which meant the id and the name a player reads were two
- * different vocabularies and every lookup was a translation. A map that is
- * renamed is renamed in both places, and LEGACY_MAP_IDS in progress.ts is
- * where the old spellings are answered for.
+ * AN ID IS THE MAP'S OWN NAME, slugged: Confluence is "confluence",
+ * Riverlands is "riverlands". They used to describe the terrain instead
+ * (grass-open, tidewater), which meant the id and the name a player reads
+ * were two different vocabularies and every lookup was a translation. A map
+ * that is renamed is renamed in both places, and LEGACY_MAP_IDS in
+ * progress.ts is where the old spellings are answered for.
  */
 export const OFFICIAL_MAP_IDS: readonly string[] = [
   // the campaign maps, in world order
@@ -137,18 +137,6 @@ export const OFFICIAL_MAP_IDS: readonly string[] = [
   "shoals",
   "riverlands",
   "estuary",
-  // NOT A CAMPAIGN MAP. The last survivor of the generated set the game
-  // started from, kept as the reference for what the generator produces —
-  // no world names it, so it appears in the editor and nowhere else.
-  "seed-24",
-  // MINDUSTRY'S OWN MAPS, imported for their SHAPE (scripts/maps/import-msav.mjs):
-  // the sizes, the canyons, the way a lane bends. References for authoring,
-  // in the editor and nowhere else — no world plays them and no script is
-  // written for them.
-  "ground-zero",
-  "frozen-forest",
-  "cratered-battleground",
-  "biomass-synthesis-facility",
 ];
 
 /**

@@ -2,7 +2,9 @@
  * Greenwood — the earthy map. Dirt roads under dirt cliffs, grass with
  * stone outcrops, pine stands along every edge, two lakes. Four gates on
  * the west, south and north edges, the core in the north-east corner
- * behind one antechamber.
+ * behind one antechamber. Two rivers reach the mere below that
+ * antechamber: one in off the east edge, one up from the south through
+ * the lower lake.
  *
  *   node scripts/maps/greenwood.mjs [public/maps/greenwood.json] [preview.png]
  */
@@ -36,6 +38,7 @@ export const spec = {
     { x: 172, y: 172, r: 13 }, // 3 south-east
     { x: 150, y: 60, r: 12 }, // 4 north
     { x: 200, y: 74, r: 11 }, // 5 the antechamber
+    { x: 206, y: 100, r: 9, water: true }, // 6 the mere below the antechamber
   ],
   core: { x: 232, y: 56, r: 9 },
   spawns: [
@@ -45,9 +48,14 @@ export const spec = {
     { x: 60, y: 16, r: 12, zone: "ground" }, // 3
     { x: 12, y: 244, r: 8, zone: "air" },
     { x: 128, y: 250, r: 8, zone: "air" },
-    { x: 8, y: 60, r: 4, zone: "boss" },
+    // two rivers to the mere: one in off the east edge, one up from the
+    // south through the lower lake
+    { x: 242, y: 158, r: 9, zone: "water" }, // 6
+    { x: 150, y: 242, r: 9, zone: "water" }, // 7
   ],
   routes: [
+    { spawn: 6, to: 6, layer: "water", width: [16, 22] },
+    { spawn: 7, to: 6, layer: "water", width: [16, 22] },
     { spawn: 0, via: [1, 2, 5], width: [8, 16] },
     { spawn: 1, via: [0, 2, 5], width: [8, 18] },
     { spawn: 2, via: [3, 2, 5], width: [8, 14] },
@@ -65,7 +73,7 @@ export const spec = {
   holes: 6,
   lumps: 12,
   ruins: 2,
-  coreWaterReach: 999,
+  coreWaterReach: 55,
 };
 
 run(spec);
