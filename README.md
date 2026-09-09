@@ -302,13 +302,7 @@ build — a browser tab has no window of ours to set — picks the display mode
 the system reports. That pair is the
 shell's, not the save's: it lives in `window.json` beside the save file and
 is applied before the game boots (`desktop/src/display.ts`,
-[docs/desktop.md](docs/desktop.md)). Its third switch is the game's own:
-**Confine cursor** (`Progress.cursorLock`, on by default) keeps the mouse
-inside a frameless window while a run is on — pointer lock, a cursor drawn
-by the page and every mouse event re-issued where that cursor is
-(`components/cursorLock.ts`), because a window with no frame has no edge to
-stop a mouse and the second monitor is one push away. Escape, alt-tab or
-the Windows key hands it back.
+[docs/desktop.md](docs/desktop.md)).
 
 ## Progression
 

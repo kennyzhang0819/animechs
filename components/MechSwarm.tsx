@@ -67,7 +67,6 @@ import {
   saveUiScale,
   savePanSpeed,
   saveEdgePan,
-  saveCursorLock,
   saveAllyBars,
   saveEnemyBars,
   HEALTH_BAR_MODES,
@@ -102,7 +101,6 @@ import {
   type DisplayMode,
   type DisplayState,
 } from "@/game/storage";
-import { useCursorLock } from "./cursorLock";
 import { BUILD } from "@/game/version";
 import { BUILD_TABS, buildTabOf, BY_MINDUSTRY_VALUE, type BuildTab } from "@/game/tech";
 import { factionsAt, lockedMutators, rewardsAt, rewardText } from "@/game/track";
@@ -1361,14 +1359,6 @@ export default function MechSwarm() {
    */
   const [panSpeed, setPanSpeed] = useState<number>(PAN_SPEED_DEFAULT);
   const [edgePan, setEdgePan] = useState(true);
-  /**
-   * KEEP THE CURSOR IN THE GAME while a run is on and the window has no
-   * frame to stop it at — a saved preference (Progress.cursorLock) like
-   * the pan speed, because a desk with a second monitor beside the one
-   * being played on is a fact about the desk. See components/cursorLock.ts
-   * for what it costs and how the cursor gets back out.
-   */
-  const [cursorLock, setCursorLock] = useState(true);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("game");
   /**
    * THE DISPLAY, as the desktop shell has it: the mode the window is in,
@@ -1476,7 +1466,6 @@ export default function MechSwarm() {
     setUiScale(p.uiScale ?? UI_SCALE_DEFAULT);
     setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
     setEdgePan(p.edgePan ?? true);
-    setCursorLock(p.cursorLock ?? true);
     setAllyBars(p.allyBars ?? HEALTH_BARS_DEFAULT);
     setEnemyBars(p.enemyBars ?? HEALTH_BARS_DEFAULT);
   }, []);
@@ -1866,35 +1855,6 @@ export default function MechSwarm() {
     if (!menuOpen) setPauseSettings(false);
   }, [menuOpen]);
 
-  /**
-   * WHEN THE CURSOR IS HELD IN: the player is in a run, in a window with
-   * no frame to stop the mouse at, with the preference on. THE PAUSE MENU
-   * IS STILL THE RUN — the lock is held over it too, and the arrow the
-   * game draws is what clicks Resume. Letting the real cursor back out
-   * there would put it wherever the lock had parked it rather than where
-   * the player is pointing, which is a cursor jumping across the screen
-   * every time the menu opens; the way out to another monitor is the way
-   * out of any fullscreen game, alt-tab or the Windows key, which take the
-   * focus and the lock with it.
-   *
-   * ESCAPE NEVER REACHES THE GAME under lock: Chromium releases the
-   * pointer on that key and eats it. So the release is read as the press
-   * (components/cursorLock.ts) and handed straight to the menu here —
-   * which is what makes one press one menu, open or closed.
-   */
-  const escapeKey = (): void => {
-    const g = gameRef.current;
-    if (!g) return;
-    g.toggleMenu();
-    setHud(g.ui());
-  };
-  useCursorLock(
-    cursorLock &&
-      screen === "game" &&
-      (video?.mode === "fullscreen" || video?.mode === "borderless"),
-    escapeKey,
-  );
-
   const openMenu = (): void => {
     const g = gameRef.current;
     if (!g) return;
@@ -2107,24 +2067,6 @@ export default function MechSwarm() {
                     </option>
                   ))}
                 </select>
-              </SettingRow>
-            )}
-
-            {/* the whole of what a frameless window cannot do for itself —
-                see components/cursorLock.ts */}
-            {video && (
-              <SettingRow label="Confine cursor">
-                <button
-                  aria-pressed={cursorLock}
-                  onClick={() => {
-                    const next = !cursorLock;
-                    setCursorLock(next);
-                    saveCursorLock(next);
-                  }}
-                  className="ms-btn w-16 shrink-0 px-3 py-1.5 text-[15px]"
-                >
-                  {cursorLock ? "On" : "Off"}
-                </button>
               </SettingRow>
             )}
 

@@ -111,15 +111,6 @@ export interface Progress {
    */
   edgePan?: boolean;
   /**
-   * KEEP THE CURSOR INSIDE THE GAME while a run is on and the window has
-   * no frame to stop it at (fullscreen and borderless — see
-   * components/cursorLock.ts). Absent means ON; only an explicit `false`
-   * is off. A second monitor beside the one being played on is what this
-   * is for: without it the cursor pushed at the edge to pan the view sails
-   * straight onto the other screen.
-   */
-  cursorLock?: boolean;
-  /**
    * WHEN A HEALTH BAR RIDES OVER A BODY ON THE FIELD, the player's own
    * (`allyBars`) and the swarm's (`enemyBars`) set apart — a player who
    * wants to see every wound coming in usually does not want their own
@@ -251,7 +242,6 @@ export function loadProgress(): Progress {
       panSpeed: readPanSpeed(p),
       // absent means ON — only an explicit false switches it off
       edgePan: p.edgePan !== false,
-      cursorLock: p.cursorLock !== false,
       allyBars: readBars(p.allyBars),
       enemyBars: readBars(p.enemyBars),
       ...(p.devGrantOff === true ? { devGrantOff: true } : null),
@@ -356,12 +346,6 @@ export function saveEdgePan(on: boolean): void {
   const p = loadProgress();
   if ((p.edgePan ?? true) === on) return;
   saveProgress({ ...p, edgePan: on });
-}
-
-export function saveCursorLock(on: boolean): void {
-  const p = loadProgress();
-  if ((p.cursorLock ?? true) === on) return;
-  saveProgress({ ...p, cursorLock: on });
 }
 
 /**

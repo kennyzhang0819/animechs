@@ -544,13 +544,7 @@ export class Game {
     if (e.button !== 0) return;
     e.preventDefault();
     this.mmDrag = true;
-    try {
-      this.mmCanvas?.setPointerCapture(e.pointerId);
-    } catch {
-      // the press was re-dispatched by the cursor lock
-      // (components/cursorLock.ts) and carries no capturable pointer; the
-      // drag still steers, since onMmUp listens on the window
-    }
+    this.mmCanvas?.setPointerCapture(e.pointerId);
     this.lookAtMinimap(e);
   };
   private readonly onMmMove = (e: PointerEvent): void => {
@@ -1153,18 +1147,13 @@ export class Game {
   }
 
   /**
-   * ESC, WHEREVER IT COMES FROM, AND IT MEANS ONE THING: the menu. It used
-   * to back out a layer at a time — an active build or selection first,
-   * the menu only on a bare press — which cost a player two or three
-   * presses to reach Resume and (under the cursor lock, where the browser
-   * eats the press that releases the pointer) sometimes more. A ghost is
-   * put away with the right button, which has always cancelled build mode
-   * before it demolishes anything, and a selection is dropped by clicking
-   * bare ground; neither wants the key that pauses the game.
-   *
-   * The other caller is the cursor lock (components/cursorLock.ts): under
-   * pointer lock the key never reaches this handler at all, and the
-   * browser's release of the lock is what stands in for it.
+   * ESC MEANS ONE THING: the menu, open or closed. It used to back out a
+   * layer at a time — an active build or selection first, the menu only on
+   * a bare press — which cost a player two or three presses to reach
+   * Resume. A ghost is put away with the right button, which has always
+   * cancelled build mode before it demolishes anything, and a selection is
+   * dropped by clicking bare ground; neither wants the key that pauses the
+   * game.
    */
   toggleMenu(): void {
     if (this.menuOpen) {
