@@ -4,8 +4,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useConfirm } from "./ConfirmDialog";
 import { MapEditor, PATH_WIDTHS, type BrushShape } from "@/game/editor";
 import { LEGACY_COLS, SPAWN_RADII, SPAWN_RADIUS_DEFAULT } from "@/game/maps";
-import { TOWERS, ZONE_KINDS } from "@/game/constants";
-import { TOWER_KINDS } from "@/game/types";
+import { MISSION_STRUCTS, TOWERS, ZONE_KINDS } from "@/game/constants";
+import { MISSION_STRUCT_KINDS, TOWER_KINDS } from "@/game/types";
 import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
 import {
   PALETTE,
@@ -650,6 +650,8 @@ export default function MapEditorView({
                           ? `${ZONE_LABELS[zone]} drop zone`
                           : set.kind === "enemy"
                             ? `Enemy ${TOWERS[TOWER_KINDS[v]].name}`
+                            : set.kind === "mission"
+                            ? `Mission ${MISSION_STRUCTS[MISSION_STRUCT_KINDS[v]].name}`
                             : randomize && set.icons.length > 1
                             ? `${set.label} (random of ${set.icons.length})`
                             : `${set.label}${set.icons.length > 1 ? ` ${v + 1}` : ""}`;
@@ -703,6 +705,14 @@ export default function MapEditorView({
                 return `${ZONE_LABELS[ZONE_KINDS[Math.min(variant, ZONE_KINDS.length - 1)]]} drop zone`;
               if (set.kind === "enemy")
                 return `Enemy ${TOWERS[TOWER_KINDS[Math.min(variant, TOWER_KINDS.length - 1)]].name}`;
+              if (set.kind === "mission") {
+                const k = MISSION_STRUCT_KINDS[Math.min(variant, MISSION_STRUCT_KINDS.length - 1)];
+                // the stamps are NUMBERED on the board and the number is
+                // the list's order, which is the order the mission uses
+                // them in — so the one thing worth saying here is that
+                // stamping order is authoring, not decoration
+                return `Mission ${MISSION_STRUCTS[k].name} — numbered in the order the mission uses them`;
+              }
               return set.label;
             })()}
           </div>

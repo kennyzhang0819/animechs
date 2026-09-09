@@ -1239,25 +1239,6 @@ export type Mission =
   | RaidMission;
 
 /**
- * ONE OF THE SWARM'S MISSION BUILDINGS AND WHERE IT STANDS — a kind off
- * the mission roster (types.ts MISSION_STRUCT_KINDS) and its footprint's
- * TOP-LEFT cell, which is the shape every other placement in the game is
- * written in (MapData.enemies, the editor's saves).
- *
- * MOVING ONE IS EDITING THESE TWO NUMBERS and nothing else. The building
- * is stood up at reset (Sim.placeMissionStructure) and dropped with a
- * console warning if the ground will not take it — a footprint over rock,
- * off the board, on a drop zone or on top of something already there —
- * so a bad coordinate is a visible complaint and an obviously missing
- * pad, never a silent half-mission.
- */
-export interface MissionTarget {
-  kind: MissionStructKind;
-  gx: number;
-  gy: number;
-}
-
-/**
  * THE RAID — the swarm has something on this map that it is USING, and
  * the run is to take it off the board before it has been used up.
  *
@@ -1280,8 +1261,21 @@ export interface MissionTarget {
  */
 export interface RaidMission {
   kind: "raid";
-  /** the buildings to destroy, authored in the order the swarm uses them */
-  targets: readonly MissionTarget[];
+  /**
+   * WHICH MISSION BUILDING THIS RAID IS ABOUT — a kind, not a list of
+   * places. EVERY ONE OF THEM ON THE MAP IS A TARGET
+   * (MapData.missionStructs), in the document's own order, which is the
+   * order the map editor stamped them in and so the order they launch in.
+   *
+   * The positions are the MAP'S because a coordinate wants to be clicked
+   * on the board it belongs to rather than typed against a grid you
+   * cannot see; the kind is the MISSION'S because it is what the
+   * assignment is about. That split is also what lets one board carry
+   * several missions' objectives at once — a raid stands up only the kind
+   * it names, so a map with launch pads and some later mission building
+   * on it wears whichever the level being played asks for.
+   */
+  target: MissionStructKind;
   /** seconds of run time at which each rocket goes up, ascending */
   launchAt: readonly number[];
 }
@@ -1297,7 +1291,7 @@ export function missionText(spec: LevelSpec): { title: string; detail: string } 
     };
   if (m.kind === "raid")
     return {
-      title: `Destroy ${m.targets.length} launch pads`,
+      title: "Destroy the launch pads",
       detail:
         "The swarm ships a rocket off a pad every few minutes. Take all of them down before the last one goes up — and keep the core standing.",
     };
@@ -1500,41 +1494,36 @@ export const WORLDS: LevelSpec[] = [
     name: "Confluence",
     map: "confluence",
     /**
-     * THE OPENING ASSIGNMENT IS A RAID, not a siege: five of the swarm's
-     * launch pads stand on the map, one rocket goes up off one of them
-     * every few minutes, and the run is to have all five wrecked before
-     * the last rocket does. The waves still come — that half is unchanged
-     * — so the map is a line held with one hand and a push made with the
-     * other.
+     * THE OPENING ASSIGNMENT IS A RAID, not a siege: the swarm's launch
+     * pads stand on the map, one rocket goes up off one of them every few
+     * minutes, and the run is to have every pad wrecked before the last
+     * rocket does. The waves still come — that half is unchanged — so the
+     * map is a line held with one hand and a push made with the other.
+     *
+     * WHERE THE PADS ARE IS THE MAP'S, NOT THIS FILE'S
+     * (MapData.missionStructs, stamped in the map editor's *Mission
+     * structure* palette). What is here is what they MEAN. Confluence
+     * ships with five, out from about 170 tiles of ground away to about
+     * 610 — the first a push a young army can make, the last in the
+     * north-west corner past every door on the map — and the document's
+     * order is the launch order, which the editor numbers on the board.
      *
      * THE CLOCK. 6:00, then every five minutes to 21:00, then 25:00. The
      * first is the grace plus a wave (GRACE_DEFAULT is 4:00), which is
-     * about when a first push can be on the ground at all — the nearest
-     * pad is reachable in that window and no other is. The last is the
-     * map's hard ceiling: five rockets away is the run lost, so Confluence
-     * cannot run past twenty-five minutes, and a run that clears it plays
-     * out around twenty to twenty-four.
+     * about when a first push can be on the ground at all. The last is
+     * the map's hard ceiling: the whole schedule spent is the run lost,
+     * so Confluence cannot run past twenty-five minutes, and a run that
+     * clears it plays out around twenty to twenty-four.
      *
-     * THE FIVE PADS, in the order the swarm uses them and so the order
-     * they should be taken: nearest first, deepest last. The core stands
-     * at (462, 254) on the east edge, the doors are all west of it, and
-     * these walk out from about 170 tiles of ground away to about 610 —
-     * pad 1 is a push a first army can make, pad 5 is the far north-west
-     * corner past every drop zone on the map.
-     *
-     * MOVING THEM is editing the pairs below and nothing else (see
-     * MissionTarget); a pad whose footprint the ground will not take is
-     * dropped with a console warning rather than forced.
+     * The schedule is longer or shorter than the number of pads as the
+     * author pleases — it is a pace, not a pad-per-entry list. More
+     * entries than pads simply means the last pads can each be asked for
+     * twice; fewer means clearing the board is not the only way to run
+     * the swarm out of rockets.
      */
     mission: {
       kind: "raid",
-      targets: [
-        { kind: "launch-pad", gx: 323, gy: 223 }, // west of the core, over the near ridge
-        { kind: "launch-pad", gx: 239, gy: 271 }, // the southern basin
-        { kind: "launch-pad", gx: 307, gy: 79 },  // up the north lane
-        { kind: "launch-pad", gx: 73, gy: 293 },  // the far south-west flats
-        { kind: "launch-pad", gx: 19, gy: 87 },   // the north-west corner, behind the doors
-      ],
+      target: "launch-pad",
       launchAt: [6 * 60, 11 * 60, 16 * 60, 21 * 60, 25 * 60],
     },
     waveGap: WAVE_GAP_DEFAULT,

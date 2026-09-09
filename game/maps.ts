@@ -40,8 +40,15 @@ import {
   WALL_SPORE,
 } from "./atlas";
 import { FLOOR_STYLE, propIcon, tileIcon, wallIcon, WALL_STYLE } from "./tiles";
-import { TOWER_ICONS } from "./towerIcons";
-import { explain, TOWER_KINDS, type SaveResult, type StructurePlacement } from "./types";
+import { MISSION_STRUCT_ICONS, TOWER_ICONS } from "./towerIcons";
+import {
+  explain,
+  MISSION_STRUCT_KINDS,
+  TOWER_KINDS,
+  type MissionPlacement,
+  type SaveResult,
+  type StructurePlacement,
+} from "./types";
 
 /**
  * Serializable map document — the game's OFFICIAL maps, one JSON file per
@@ -98,6 +105,25 @@ export interface MapData {
    * build, which means none
    */
   enemies?: StructurePlacement[];
+  /**
+   * THE MISSION BUILDINGS ON THIS BOARD — the swarm's second roster
+   * (types.ts MISSION_STRUCT_KINDS), stamped in the map editor's
+   * *Mission structure* palette exactly as the formation above is.
+   *
+   * THEY ARE HERE RATHER THAN IN THE LEVEL because where a building
+   * stands is the ground's business: a coordinate wants to be clicked on
+   * the map it is on, not typed into a source file against a grid you
+   * cannot see. What the buildings MEAN stays in the level (levels.ts
+   * Mission) — the sim stands up only the kinds the assignment being
+   * played consumes, so a board may carry several missions' objectives at
+   * once and wear only the current one's.
+   *
+   * The ORDER is the order the mission uses them in, which for a raid is
+   * the launch order — so the editor numbers them where they stand.
+   * Absent means none, which is every map that no mission has been
+   * authored for.
+   */
+  missionStructs?: MissionPlacement[];
   // carved-valley centerline per column — generator metadata the sim's
   // seed-tower search reads; older documents fall back to a flat line
   valleyY?: number[];
@@ -207,6 +233,15 @@ export type PaintKind =
    *  (MapData.enemies): the variant is an index into TOWER_KINDS, and a
    *  click stamps its footprint on open ground */
   | "enemy"
+  /**
+   * one of the SWARM'S MISSION BUILDINGS (MapData.missionStructs): the
+   * variant is an index into MISSION_STRUCT_KINDS, and a click stamps its
+   * footprint on open ground. The same tool as `enemy` over the other
+   * roster — what makes it its own kind is that these are an ASSIGNMENT'S
+   * objectives rather than the board's furniture, so they are drawn apart
+   * from the formation, numbered in the order the mission uses them
+   */
+  | "mission"
   /** an ore vein (Terrain.ore): paints ore onto open dry ground, where a
    *  drill may stand; the eraser and the floor brushes take it off */
   | "ore";
@@ -477,6 +512,13 @@ export const PALETTE: readonly PaletteSet[] = [
   { id: "enemy", label: "Enemy structure", kind: "enemy",
     variants: TOWER_KINDS.map((_, i) => i), noRandom: true,
     icons: TOWER_KINDS.map((k) => TOWER_ICONS[k]) },
+  // ...and the swarm's MISSION buildings, one swatch a kind, off the
+  // second roster (types.ts MISSION_STRUCT_KINDS). A new mission building
+  // appears here by existing — the swatches are the roster itself, so
+  // there is no second list to keep in step (MapData.missionStructs)
+  { id: "mission", label: "Mission structure", kind: "mission",
+    variants: MISSION_STRUCT_KINDS.map((_, i) => i), noRandom: true,
+    icons: MISSION_STRUCT_KINDS.map((k) => MISSION_STRUCT_ICONS[k]) },
   // the ore veins: a drill stands on one and nowhere else, so where the
   // ore is laid is where the run's income is (economy.ts)
   { id: "ore", label: "Ore vein", kind: "ore", variants: [0], noRandom: true,
@@ -513,7 +555,7 @@ export const PALETTE_SECTIONS: readonly { label: string; ids: readonly string[] 
   // and it is the only brush that decides what a run EARNS
   { label: "Resources", ids: ["ore"] },
   { label: "Zones", ids: ["spawn", "base"] },
-  { label: "Enemy", ids: ["enemy"] },
+  { label: "Enemy", ids: ["enemy", "mission"] },
   { label: "Tools", ids: ["erase"] },
 ];
 
@@ -747,6 +789,7 @@ export function mapFromTerrain(
     pines: t.pines.map((p) => ({ ...p })),
     decor: t.decor.map((p) => ({ ...p })),
     enemies: t.enemies.map((e) => ({ ...e })),
+    missionStructs: t.missionStructs.map((e) => ({ ...e })),
     valleyY: Array.from(t.valleyY).map((v) => Math.round(v * 100) / 100),
   };
 }
@@ -806,6 +849,13 @@ export function terrainFromMap(m: MapData): Terrain {
     // breach and the scrap walls — is dropped here rather than crashing a run
     enemies: (m.enemies ?? [])
       .filter((e) => (TOWER_KINDS as readonly string[]).includes(e.kind)
+        && Number.isInteger(e.gx) && Number.isInteger(e.gy))
+      .map((e) => ({ kind: e.kind, gx: e.gx, gy: e.gy })),
+    // the same rule over the mission roster: a kind this build has never
+    // heard of — a document written against a mission since renamed or
+    // removed — is dropped rather than crashing a run or an editor
+    missionStructs: (m.missionStructs ?? [])
+      .filter((e) => (MISSION_STRUCT_KINDS as readonly string[]).includes(e.kind)
         && Number.isInteger(e.gx) && Number.isInteger(e.gy))
       .map((e) => ({ kind: e.kind, gx: e.gx, gy: e.gy })),
     valleyY: m.valleyY

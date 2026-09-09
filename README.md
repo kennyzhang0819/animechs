@@ -548,16 +548,25 @@ bank: the two things that are true for the whole run.
 
 **A launch pad is a MISSION BUILDING** (`MISSION_STRUCT_KINDS` in
 `game/types.ts`, stats in `MISSION_STRUCTS`), the first of a second
-roster that is the swarm's alone. Nothing prices one, nothing unlocks
-one, no tab of the build bar carries one and no map document may place
-one — it belongs to an assignment rather than to a map, so it is authored
-in `WORLDS[].mission` and **moving one is editing its two coordinates**.
-It rides the ordinary structure machinery all the same: `structStats()`
-answers for both rosters, so a pad is placed, blocked around, shot at,
-splashed, health-barred and drawn exactly like one of the swarm's walls,
-with no special case anywhere in the sim or the renderer. Its **health is
-the mission's pacing dial**; the schedule is what the objective text
-promises and is not a balance knob. See `docs/authoring-maps.md`.
+roster that is the swarm's alone. Nothing prices one, nothing unlocks one
+and no build slot carries one. It rides the ordinary structure machinery
+all the same: `structStats()` answers for both rosters, so a pad is
+placed, blocked around, shot at, splashed, health-barred and drawn
+exactly like one of the swarm's walls, with no special case anywhere in
+the sim or the renderer. Its **health is the mission's pacing dial**; the
+schedule is what the objective text promises and is not a balance knob.
+
+**Where one stands is the map's; what standing there costs is the
+mission's.** Pads are stamped in the map editor's *Mission structure*
+palette and saved into the map document (`MapData.missionStructs`) —
+amber rather than the formation's red, and **numbered**, because the
+document's order is the order the mission uses them in. The level names
+only the KIND it is about (`RaidMission.target`), and the sim stands up
+only the kinds the assignment being played consumes, so one board can
+carry several missions' objectives and wear whichever is being played.
+Both hand-stamped layers — the formation and the objectives — now survive
+a generator re-run rather than being overwritten with the ground. See
+`docs/authoring-maps.md`.
 
 **Structures stand anywhere unoccupied, open ground included, and the
 swarm attacks them.** Every unit attack-moves, Mindustry's GroundAI: it

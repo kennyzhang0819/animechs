@@ -43,7 +43,7 @@
  *
  * Usage, from a spec:   node scripts/maps/<id>.mjs [out.json] [preview.png]
  */
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { clearance, disc, discOffsets, flood, png, rng, widestRoute } from "./geom.mjs";
 
 /**
@@ -1130,6 +1130,29 @@ export function preview(spec, m, SC = 2) {
 
 // ---------- run ----------
 
+/**
+ * The hand-authored layers of the document about to be overwritten — the
+ * ones the map editor writes and no generator does. Absent or empty ones
+ * are left out entirely, so a map that has never been stamped keeps the
+ * same document shape it always had.
+ */
+const CARRIED_LAYERS = ["enemies", "missionStructs"];
+
+function carried(out) {
+  if (!existsSync(out)) return {};
+  let doc;
+  try {
+    doc = JSON.parse(readFileSync(out, "utf8"));
+  } catch {
+    // an unreadable document is one we are about to replace wholesale
+    return {};
+  }
+  const kept = {};
+  for (const k of CARRIED_LAYERS)
+    if (Array.isArray(doc[k]) && doc[k].length) kept[k] = doc[k];
+  return kept;
+}
+
 export function run(authored, argv = process.argv.slice(2)) {
   const spec = scaleSpec(authored);
   const out = argv[0] ?? new URL(`../../public/maps/${spec.id}.json`, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
@@ -1141,13 +1164,32 @@ export function run(authored, argv = process.argv.slice(2)) {
     console.log(`\nREFUSING TO WRITE: ${fails.length} check(s) failed (FORCE=1 to write anyway)`);
     process.exit(1);
   }
+  // THE HAND-STAMPED LAYERS SURVIVE A REGEN. A generator authors the
+  // GROUND — floors, rock, ore, doors, the base — and nothing else; the
+  // swarm's formation (`enemies`) and a mission's objectives
+  // (`missionStructs`) are stamped by hand in the map editor and the
+  // generator has no opinion about either. Dropping them on every run
+  // meant re-placing every pad and every turret after any change to a
+  // spec, however small, which is a tax steep enough that the ground
+  // stops being edited. So they are read back off the document being
+  // overwritten and carried across.
+  //
+  // A stamp the NEW terrain has buried is not fixed up here: the loader
+  // already filters what it cannot use and the sim drops what will not
+  // fit, both with a warning, so a carried stamp is at worst a visible
+  // complaint the next time the map is opened — and at best exactly where
+  // it was put.
+  const kept = carried(out);
   const doc = {
     id: spec.id, name: spec.name, w: W, base: m.base,
     floor: Array.from(m.floor), wall: Array.from(m.wall), blocked: Array.from(m.blocked),
     ore: Array.from(m.ore),
     spawns: m.spawns, pines: m.pines, decor: m.decor,
+    ...kept,
   };
   writeFileSync(out, JSON.stringify(doc));
   console.log(`  wrote ${out}`);
+  for (const [k, v] of Object.entries(kept))
+    console.log(`  kept ${v.length} ${k} from the document it replaced`);
   return m;
 }

@@ -72,13 +72,19 @@ export type TowerKind = (typeof TOWER_KINDS)[number];
  * THE MISSION BUILDINGS — the swarm's own, and the player's NEVER.
  *
  * A mission building is not on the roster and cannot be: nothing prices
- * it, nothing unlocks it, no tab of the build bar carries it, and no map
- * document may place one (MapData.enemies is the roster's formation and
- * stays that). It exists because ONE MISSION asks for it, it stands on
- * the board only while that mission is being played, and the mission's
- * own rules — what it does, what it costs the player to leave standing,
- * what destroying it means — live with the mission (levels.ts Mission)
- * rather than in this roster.
+ * it, nothing unlocks it and no build slot carries it. It exists because
+ * a MISSION asks for it, it stands on the board only while an assignment
+ * that consumes it is being played, and its rules — what it does, what it
+ * costs the player to leave standing, what destroying it means — live
+ * with the mission (levels.ts Mission) rather than in this roster.
+ *
+ * WHERE ONE STANDS IS THE MAP'S, THOUGH (MapData.missionStructs, stamped
+ * in the map editor's *Mission structure* palette, kept apart from
+ * MapData.enemies which stays the player-roster formation). A coordinate
+ * wants to be clicked on the board it belongs to rather than typed into a
+ * source file against a grid you cannot see — and because the mission
+ * names only the KIND it is about, one board can carry several
+ * assignments' objectives and wear only the one being played.
  *
  * They ride the STRUCTURE machinery all the same, and that is the whole
  * reason they are a kind rather than a fourth `Structure` variant: a
@@ -89,8 +95,12 @@ export type TowerKind = (typeof TOWER_KINDS)[number];
  * MISSION does with it.
  *
  * ADDING ONE is: a name here, its stats in MISSION_STRUCTS (constants.ts),
- * a cell for its sprite in atlas.ts, a row in UV_TURRETS (renderer.ts),
- * and whatever the mission that fields it wants done with it. Nothing else in the game has to
+ * a palette sprite in MISSION_STRUCT_ICONS (towerIcons.ts), a cell for it
+ * in atlas.ts, a row in UV_TURRETS (renderer.ts), and whatever the
+ * mission that fields it wants done with it. The editor's palette, stamp
+ * tool, eraser, overlap rules, numbering and document round-trip are all
+ * written over this roster rather than over one name, so a new kind gets
+ * every one of them by existing. Nothing else in the game has to
  * learn the name — structStats() is the one funnel every reader goes
  * through, and it answers for both rosters.
  *
@@ -160,6 +170,29 @@ export const teamOf = (s: Structure): Team => (isCore(s) ? "player" : s.team);
  *  side — and its footprint's top-left cell */
 export interface StructurePlacement {
   kind: TowerKind;
+  gx: number;
+  gy: number;
+}
+
+/**
+ * ONE OF THE SWARM'S MISSION BUILDINGS AND WHERE IT STANDS
+ * (MapData.missionStructs) — the same shape as a StructurePlacement, off
+ * the mission roster instead of the player's.
+ *
+ * IT IS ON THE MAP, NOT IN THE MISSION, and the split is worth stating
+ * because it moved: where a building STANDS is the ground's business and
+ * belongs in the map document, where the map editor can stamp and drag it;
+ * what standing there COSTS is the mission's, and stays in the level
+ * (levels.ts Mission). A map may therefore carry mission buildings that
+ * the assignment being played wants nothing to do with — the sim stands up
+ * only the kinds the mission actually consumes — so one board can serve
+ * several assignments without one of them wearing another's objectives.
+ *
+ * The ORDER of the list is the order the mission uses them in (a raid's
+ * launch order), which is why the editor numbers them on the board.
+ */
+export interface MissionPlacement {
+  kind: MissionStructKind;
   gx: number;
   gy: number;
 }

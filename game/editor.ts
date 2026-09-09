@@ -7,13 +7,22 @@ import {
   BASE_SIZE,
   H,
   ROWS,
+  structStats,
   TOWERS,
   W,
   ZONE_KINDS,
   type ZoneKind,
 } from "./constants";
-import { TOWER_ICONS } from "./towerIcons";
-import { TOWER_KINDS, type StructurePlacement, type TowerKind } from "./types";
+import { structIcon } from "./towerIcons";
+import {
+  MISSION_STRUCT_KINDS,
+  TOWER_KINDS,
+  type MissionPlacement,
+  type MissionStructKind,
+  type StructKind,
+  type StructurePlacement,
+  type TowerKind,
+} from "./types";
 import {
   contentRows,
   PALETTE,
@@ -23,6 +32,7 @@ import {
   terrainFromMap,
   mapFromTerrain,
   type MapData,
+  type PaintKind,
   type PaletteSet,
   type SpawnCircle,
 } from "./maps";
@@ -58,10 +68,38 @@ interface Snapshot {
   pines: Prop[];
   decor: Prop[];
   enemies: StructurePlacement[];
+  missionStructs: MissionPlacement[];
   base: { x: number; y: number; size: number };
 }
 
 const quarterTurn = (): number => ((Math.random() * 4) | 0) * (Math.PI / 2);
+
+/**
+ * HOW A STAMP IS DRAWN ON THE EDITOR'S BOARD: a translucent plate with the
+ * building's own sprite on it. One palette per roster — the swarm's
+ * formation in the crux red it wears in a run, the MISSION buildings in
+ * the amber they wear on the minimap — because the one question the editor
+ * has to answer at a glance on a 512-tile board is which of the two you
+ * are looking at.
+ */
+interface StampPlate {
+  /** the plate under a placed stamp */
+  fill: string;
+  /** ...and under the one following the cursor */
+  ghost: string;
+  /** the outline, and what a label over it is written in */
+  line: string;
+}
+const ENEMY_PLATE: StampPlate = {
+  fill: "rgba(242,85,85,0.28)",
+  ghost: "rgba(242,85,85,0.18)",
+  line: "rgba(242,85,85,0.9)",
+};
+const MISSION_PLATE: StampPlate = {
+  fill: "rgba(255,154,61,0.30)",
+  ghost: "rgba(255,154,61,0.20)",
+  line: "rgba(255,154,61,0.95)",
+};
 
 /** how wide the path tool carves, in tiles across (see PATH_WOBBLE) */
 export const PATH_WIDTHS: readonly number[] = [9, 12, 15];
@@ -196,15 +234,37 @@ export class MapEditor {
   private lastCell = { x: -1, y: -1 };
   /** the roster's sprites, one image a kind, loaded on first use for the
    *  overlay of the swarm's formation — null until it has arrived */
-  private readonly icons = new Map<TowerKind, HTMLImageElement>();
-  private icon(kind: TowerKind): HTMLImageElement | null {
+  private readonly icons = new Map<StructKind, HTMLImageElement>();
+  private icon(kind: StructKind): HTMLImageElement | null {
     let img = this.icons.get(kind);
     if (!img) {
       img = new Image();
-      img.src = TOWER_ICONS[kind];
+      img.src = structIcon(kind);
       this.icons.set(kind, img);
     }
     return img.complete && img.naturalWidth > 0 ? img : null;
+  }
+
+  /** one placed stamp: its plate, its outline and its own sprite — the
+   *  drawing both rosters share (see StampPlate) */
+  private drawStamp(
+    c: CanvasRenderingContext2D,
+    s: number,
+    e: StructurePlacement | MissionPlacement,
+    plate: StampPlate,
+  ): void {
+    const side = structStats(e.kind).size * CELL;
+    const x0 = e.gx * CELL, y0 = e.gy * CELL;
+    c.fillStyle = plate.fill;
+    c.fillRect(x0, y0, side, side);
+    c.strokeStyle = plate.line;
+    c.lineWidth = 1.5 / s;
+    c.strokeRect(x0, y0, side, side);
+    const img = this.icon(e.kind);
+    if (img) {
+      c.imageSmoothingEnabled = false;
+      c.drawImage(img, x0 + side * 0.1, y0 + side * 0.1, side * 0.8, side * 0.8);
+    }
   }
   private hoverGx = -1;
   private hoverGy = -1;
@@ -297,6 +357,7 @@ export class MapEditor {
     this.terrain.pines = s.pines;
     this.terrain.decor = s.decor;
     this.terrain.enemies = s.enemies;
+    this.terrain.missionStructs = s.missionStructs;
     this.terrain.base = s.base;
     this.resyncSpawn();
     this.dirty = true;
@@ -323,6 +384,7 @@ export class MapEditor {
       pines: this.terrain.pines.map((p) => ({ ...p })),
       decor: this.terrain.decor.map((p) => ({ ...p })),
       enemies: this.terrain.enemies.map((e) => ({ ...e })),
+      missionStructs: this.terrain.missionStructs.map((e) => ({ ...e })),
       base: { ...this.terrain.base },
     });
     if (this.undoStack.length > UNDO_CAP) this.undoStack.shift();
@@ -591,45 +653,91 @@ export class MapEditor {
     return TOWER_KINDS[Math.min(this.variant, TOWER_KINDS.length - 1)];
   }
 
-  /** the enemy structure whose footprint covers a cell, as an index, or -1 */
-  private enemyAt(gx: number, gy: number): number {
-    return this.terrain.enemies.findIndex((e) => {
-      const sz = TOWERS[e.kind].size;
-      return gx >= e.gx && gx < e.gx + sz && gy >= e.gy && gy < e.gy + sz;
-    });
+  /** ...and the MISSION tool's, off the second roster (types.ts) */
+  private missionKind(): MissionStructKind {
+    return MISSION_STRUCT_KINDS[Math.min(this.variant, MISSION_STRUCT_KINDS.length - 1)];
   }
 
   /**
-   * ONE OF THE SWARM'S BUILDINGS, stamped with the cursor at its middle.
-   * It wants what a placed turret wants in a run (Sim.placeEnemyStructure):
-   * open ground, clear of the base and of every other stamp — a stamp on
+   * THE KIND THE STAMP TOOLS ARE HOLDING, whichever of the two is picked —
+   * everything below this point is written over StructKind rather than
+   * over one roster, so a new mission building (or a new roster entirely)
+   * is stamped, previewed, erased and drawn by the code that already
+   * exists.
+   */
+  private stampKind(): StructKind {
+    return this.set.kind === "mission" ? this.missionKind() : this.enemyKind();
+  }
+
+  /** the stamp list a paint kind writes into — the swarm's formation, or
+   *  the mission's objectives */
+  private stampList(kind: PaintKind): (StructurePlacement | MissionPlacement)[] {
+    return kind === "mission" ? this.terrain.missionStructs : this.terrain.enemies;
+  }
+
+  /** the structure of EITHER roster whose footprint covers a cell, as its
+   *  list and index — the overlap test every stamp has to pass, because a
+   *  launch pad and a copper wall cannot both stand on the same ground */
+  private stampAt(gx: number, gy: number): { list: (StructurePlacement | MissionPlacement)[]; i: number } | null {
+    for (const list of [this.terrain.enemies, this.terrain.missionStructs]) {
+      const i = list.findIndex((e) => {
+        const sz = structStats(e.kind).size;
+        return gx >= e.gx && gx < e.gx + sz && gy >= e.gy && gy < e.gy + sz;
+      });
+      if (i >= 0) return { list, i };
+    }
+    return null;
+  }
+
+  /** where a stamp of this size lands with the cursor at its middle, clamped
+   *  to the board — the one place the cursor-to-footprint rule is written,
+   *  so the preview and the stamp can never disagree */
+  private stampOrigin(kind: StructKind, gx: number, gy: number): { x0: number; y0: number; sz: number } {
+    const sz = structStats(kind).size;
+    const half = (sz / 2) | 0;
+    return {
+      x0: clamp(gx - half, 0, COLS - sz),
+      y0: clamp(gy - half, 0, this.rows - sz),
+      sz,
+    };
+  }
+
+  /**
+   * ONE OF THE SWARM'S BUILDINGS — of either roster — stamped with the
+   * cursor at its middle. It wants what a placed turret wants in a run
+   * (Sim.placeEnemyStructure): open ground, clear of the base and of every
+   * other stamp on the board, the OTHER roster's included — a stamp on
    * rock or over another simply does nothing, so a drag never piles them.
    * The drop zones are not checked here: they move, and the sim drops a
    * stamp a zone has since covered when the map loads.
    */
-  private enemyStampAt(gx: number, gy: number): void {
+  private structStampAt(gx: number, gy: number): void {
     const T = this.terrain;
-    const kind = this.enemyKind();
-    const sz = TOWERS[kind].size;
-    const half = (sz / 2) | 0;
-    const x0 = clamp(gx - half, 0, COLS - sz);
-    const y0 = clamp(gy - half, 0, this.rows - sz);
+    const kind = this.stampKind();
+    const { x0, y0, sz } = this.stampOrigin(kind, gx, gy);
     const b = T.base;
     for (let y = y0; y < y0 + sz; y++)
       for (let x = x0; x < x0 + sz; x++) {
         if (T.blocked[y * COLS + x]) return;
         if (x >= b.x && x < b.x + b.size && y >= b.y && y < b.y + b.size) return;
-        if (this.enemyAt(x, y) >= 0) return;
+        if (this.stampAt(x, y)) return;
       }
-    T.enemies.push({ kind, gx: x0, gy: y0 });
+    // pushed onto the tool's OWN list: the order of the mission list is the
+    // order the mission uses them in, so a pad stamped last launches last
+    (this.stampList(this.set.kind) as MissionPlacement[]).push({
+      kind: kind as MissionStructKind,
+      gx: x0,
+      gy: y0,
+    });
     this.dirty = true;
   }
 
-  /** eraser over one of the swarm's buildings: take the whole stamp off */
-  private eraseEnemyAt(gx: number, gy: number): boolean {
-    const i = this.enemyAt(gx, gy);
-    if (i < 0) return false;
-    this.terrain.enemies.splice(i, 1);
+  /** eraser over one of the swarm's buildings, either roster: take the
+   *  whole stamp off */
+  private eraseStampAt(gx: number, gy: number): boolean {
+    const hit = this.stampAt(gx, gy);
+    if (!hit) return false;
+    hit.list.splice(hit.i, 1);
     this.dirty = true;
     return true;
   }
@@ -639,12 +747,12 @@ export class MapEditor {
       this.placeBase(gx, gy);
       return;
     }
-    if (this.set.kind === "enemy") {
-      this.enemyStampAt(gx, gy);
+    if (this.set.kind === "enemy" || this.set.kind === "mission") {
+      this.structStampAt(gx, gy);
       return;
     }
-    // the eraser takes a whole enemy stamp when it starts on one
-    if (this.set.kind === "erase" && this.eraseEnemyAt(gx, gy)) return;
+    // the eraser takes a whole stamp of either roster when it starts on one
+    if (this.set.kind === "erase" && this.eraseStampAt(gx, gy)) return;
     if (this.set.kind === "path") {
       this.pathAt(gx, gy);
       return;
@@ -943,36 +1051,50 @@ export class MapEditor {
     // building's own sprite on it. Drawn here, in the overlay, because the
     // terrain batches know nothing about structures — and before the hover
     // bail-out, since a stamp must not vanish when the pointer leaves
-    for (const e of this.terrain.enemies) {
-      const side = TOWERS[e.kind].size * CELL;
-      const x0 = e.gx * CELL, y0 = e.gy * CELL;
-      c.fillStyle = "rgba(242,85,85,0.28)";
-      c.fillRect(x0, y0, side, side);
-      c.strokeStyle = "rgba(242,85,85,0.9)";
-      c.lineWidth = 1.5 / s;
-      c.strokeRect(x0, y0, side, side);
-      const img = this.icon(e.kind);
-      if (img) {
-        c.imageSmoothingEnabled = false;
-        c.drawImage(img, x0 + side * 0.1, y0 + side * 0.1, side * 0.8, side * 0.8);
-      }
-    }
+    for (const e of this.terrain.enemies) this.drawStamp(c, s, e, ENEMY_PLATE);
+
+    // THE MISSION'S OBJECTIVES, in their own colour and NUMBERED. They are
+    // drawn apart from the formation above because they are not the same
+    // kind of thing: the formation is the board's furniture and a mission
+    // building is what an assignment is ABOUT, so it must be findable at a
+    // glance on a 512-tile board rather than read as one more red plate.
+    // The number is the list's own order, which is the order the mission
+    // uses them in (a raid's launch order) — stamping is how that order is
+    // authored, so it has to be visible while you stamp.
+    this.terrain.missionStructs.forEach((e, i) => {
+      this.drawStamp(c, s, e, MISSION_PLATE);
+      const side = structStats(e.kind).size * CELL;
+      const cx = e.gx * CELL + side / 2, cy = e.gy * CELL + side / 2;
+      c.save();
+      // the label is drawn at a FIXED SCREEN SIZE (1/s): a number that
+      // shrank with the map would be unreadable at the zoom the whole
+      // board is laid out at, which is exactly the zoom you place at
+      c.translate(cx, cy);
+      c.scale(1 / s, 1 / s);
+      c.font = "bold 13px ui-sans-serif, system-ui, sans-serif";
+      c.textAlign = "center";
+      c.textBaseline = "middle";
+      c.lineWidth = 3;
+      c.strokeStyle = "rgba(0,0,0,0.85)";
+      c.strokeText(String(i + 1), 0, 0);
+      c.fillStyle = MISSION_PLATE.line;
+      c.fillText(String(i + 1), 0, 0);
+      c.restore();
+    });
 
     // everything below previews the tool under the cursor, so it needs one
     if (this.hoverGx < 0) return;
 
-    if (this.set.kind === "enemy") {
-      const kind = this.enemyKind();
-      const sz = TOWERS[kind].size;
-      const half = (sz / 2) | 0;
-      const x0 = clamp(this.hoverGx - half, 0, COLS - sz) * CELL;
-      const y0 = clamp(this.hoverGy - half, 0, this.rows - sz) * CELL;
-      const side = sz * CELL;
-      c.fillStyle = "rgba(242,85,85,0.18)";
-      c.fillRect(x0, y0, side, side);
-      c.strokeStyle = "rgba(242,85,85,0.9)";
+    if (this.set.kind === "enemy" || this.set.kind === "mission") {
+      const plate = this.set.kind === "mission" ? MISSION_PLATE : ENEMY_PLATE;
+      const kind = this.stampKind();
+      const o = this.stampOrigin(kind, this.hoverGx, this.hoverGy);
+      const side = o.sz * CELL;
+      c.fillStyle = plate.ghost;
+      c.fillRect(o.x0 * CELL, o.y0 * CELL, side, side);
+      c.strokeStyle = plate.line;
       c.lineWidth = 2 / s;
-      c.strokeRect(x0, y0, side, side);
+      c.strokeRect(o.x0 * CELL, o.y0 * CELL, side, side);
       return;
     }
     // the path tool is round and much wider than a brush — preview it as

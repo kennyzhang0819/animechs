@@ -288,52 +288,76 @@ older or imported document up to the sealed-rim rule in place.
 
 ## Mission buildings
 
-**A mission building belongs to an assignment, not to a map.** It is the
-swarm's, the player can never build one, and it stands on the board only
-while the mission that fields it is being played — so it is authored in
-`WORLDS[].mission` (`game/levels.ts`), never in the map document.
-`MapData.enemies` is the roster's formation and stays that.
-
-The kinds live in `MISSION_STRUCT_KINDS` (`game/types.ts`) with their
-stats in `MISSION_STRUCTS` (`game/constants.ts`) their cell on the
+**A mission building is the swarm's, the player can never build one, and
+it stands on the board only while the mission that fields it is being
+played.** The kinds live in `MISSION_STRUCT_KINDS` (`game/types.ts`) with
+their stats in `MISSION_STRUCTS` (`game/constants.ts`), their palette
+sprite in `MISSION_STRUCT_ICONS` (`game/towerIcons.ts`), their cell on the
 sprite sheet in `game/atlas.ts` and their art wired up in `UV_TURRETS`
-(`game/renderer.ts`). Everything else in
-the sim and the renderer reaches them through `structStats()`, which
-answers for both rosters — so a mission building is placed, blocked
-around, shot at, splashed, drawn and health-barred exactly like one of the
-swarm's walls, with no special case anywhere.
+(`game/renderer.ts`). Everything else in the sim and the renderer reaches
+them through `structStats()`, which answers for both rosters — so a
+mission building is placed, blocked around, shot at, splashed, drawn and
+health-barred exactly like one of the swarm's walls, with no special case
+anywhere.
+
+### Stamping them
+
+**In the map editor: the *Mission structure* palette, under *Enemy*.**
+Same tool as *Enemy structure* over the other roster — click to stamp on
+open ground, the eraser takes a whole stamp off, and a stamp will not land
+on rock, on the base, or on top of another (either roster's). They are
+drawn in **amber** rather than the formation's red, and **numbered**,
+because the list's order is the order the mission uses them in — a raid's
+launch order. Stamping order is therefore authoring: re-stamp to reorder.
+
+They save into the map document as `missionStructs`, alongside `enemies`:
+
+```json
+"missionStructs": [{ "kind": "launch-pad", "gx": 323, "gy": 223 }]
+```
+
+**Both hand-stamped layers now survive a generator re-run.** `enemies` and
+`missionStructs` are read off the document being overwritten and carried
+across (`carried()` in `mindustry.mjs`, which prints what it kept), so a
+change to a spec no longer costs you every stamp on the map. A stamp the
+new terrain has buried is not fixed up — the loader filters what it cannot
+use and the sim drops what will not fit, both with a console warning.
+
+### What they mean
+
+**Where a building stands is the map's; what standing there costs is the
+mission's.** Positions go in the map document, where you can click them;
+the assignment goes in `WORLDS[].mission` (`game/levels.ts`). The sim
+stands up only the kinds the mission being played actually consumes, so
+one board can carry several assignments' objectives and wear only the
+current one's.
 
 Confluence's mission is the first: a **raid** (`RaidMission`).
 
 ```ts
 mission: {
   kind: "raid",
-  targets: [{ kind: "launch-pad", gx: 323, gy: 223 }, ...],
+  target: "launch-pad",
   launchAt: [6 * 60, 11 * 60, 16 * 60, 21 * 60, 25 * 60],
 },
 ```
 
-**MOVING A TARGET IS EDITING ITS TWO NUMBERS.** `gx, gy` is the
-footprint's top-left cell, the same shape every other placement in the
-game is written in. A target the board will not take — off the grid, over
-rock, on a drop zone, on top of something already standing — is **dropped
-with a console warning** rather than forced, so a bad coordinate is a
-visible complaint and an obviously missing building.
+`target` names the KIND; every one of them on the map is a target, in the
+document's order. Two rules make that order matter:
 
-Two rules make the ordering of `targets` matter:
-
-* At each moment in `launchAt` the **first target still standing**, in the
-  mission's own order, launches. Killing one does not skip a launch — the
-  next along takes the job — so the schedule is a pace the swarm keeps
-  rather than a per-building timer the player can stall by picking a
-  favourite.
+* At each moment in `launchAt` the **first target still standing** fires.
+  Killing one does not skip a launch — the next along takes the job — so
+  the schedule is a pace the swarm keeps rather than a per-building timer
+  the player can stall by picking a favourite.
 * Clearing the **last** target stops the schedule dead, and that is the
   win. Getting through the whole schedule is the loss, so **the last entry
   in `launchAt` is the map's hard ceiling** — Confluence cannot run past
   twenty-five minutes.
 
-So author `targets` nearest-first: the schedule buys the player an early
-pad they can reach and asks for the last one deep in the swarm's ground.
+So stamp them nearest-first: the schedule buys the player an early pad
+they can reach and asks for the last one deep in the swarm's ground. The
+schedule may be longer or shorter than the number of pads — it is a pace,
+not a pad-per-entry list.
 
 A run opens with the ground round every target already **discovered**
 (`MISSION_INTEL_CELLS`, `game/fog.ts`) — stamped into the static fog set
@@ -346,3 +370,12 @@ what.
 the schedule. Turn that when a raid plays long or short; the schedule is
 what the mission promises the player and moving it moves the objective
 text with it.
+
+### Adding another one
+
+A name in `MISSION_STRUCT_KINDS`, a stats row in `MISSION_STRUCTS`, a
+sprite in `MISSION_STRUCT_ICONS`, a cell in `atlas.ts` and a row in
+`UV_TURRETS`. The editor palette, the stamp tool, the eraser, the
+overlap rules, the document round-trip and the numbering are written over
+the roster rather than over `launch-pad`, so a new kind gets all of them
+by existing.

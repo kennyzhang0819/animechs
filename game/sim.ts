@@ -1745,7 +1745,13 @@ export class Sim {
     // not take is dropped, and here it also says so, because a missing
     // pad is a mission that cannot be finished
     if (mission.kind === "raid") {
-      for (const t of mission.targets) {
+      // THE TARGETS ARE THE MAP'S (Terrain.missionStructs, stamped in the
+      // map editor) and the MISSION says which KIND of them it is about,
+      // so a board may carry more than one assignment's objectives and
+      // stand up only the one being played. Document order is the order
+      // the mission uses them in, which the editor numbers on the board
+      for (const t of this.terrain.missionStructs) {
+        if (t.kind !== mission.target) continue;
         const pad = this.placeMissionStructure(t.gx, t.gy, t.kind);
         if (pad) this.missionStructs.push(pad);
         else
@@ -1753,6 +1759,13 @@ export class Sim {
             `mission target ${t.kind} at ${t.gx},${t.gy} does not fit the board — dropped`,
           );
       }
+      // a raid on a board with none of its building is a run that can only
+      // be lost, and that is always an authoring slip rather than a design
+      if (this.missionStructs.length === 0)
+        console.warn(
+          `raid on ${this.level.map ?? "the default map"} found no ${mission.target} — ` +
+            "stamp them in the map editor's Mission structure palette",
+        );
     }
     this.abortSolves();
     // a new map is a new board: no order stands on it, no corridor across

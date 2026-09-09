@@ -1,7 +1,7 @@
 import { ALL_MOVE_BITS, BASE, CELL, clamp, COLS, LAYER_BIT, NCELLS, ROWS } from "./constants";
 import { DECOR_TILES, WATER_FLOOR_GROUPS } from "./atlas";
 import { fitSpawnCircles, rasterizeSpawns, type SpawnCircle } from "./maps";
-import type { StructurePlacement } from "./types";
+import type { MissionPlacement, StructurePlacement } from "./types";
 
 export interface Prop {
   x: number; // world px, sprite center
@@ -158,6 +158,14 @@ export interface Terrain {
    * footprint's top-left cell, the same shape the player's layout uses
    */
   enemies: StructurePlacement[];
+  /**
+   * THE MISSION BUILDINGS ON THIS BOARD (MapData.missionStructs) — the
+   * swarm's second roster, stamped in the map editor like the formation
+   * above it. The sim stands up only the ones the ASSIGNMENT being played
+   * asks for (levels.ts Mission), so a board may carry the objectives of
+   * more than one mission and wear only the current one's.
+   */
+  missionStructs: MissionPlacement[];
   valleyY: Float32Array; // carved main-valley centerline per column
   /** this map's base: top-left cell + edge length, in cells */
   base: { x: number; y: number; size: number };
@@ -460,7 +468,8 @@ export function generateTerrain(seed: number): Terrain {
   const spawn = rasterizeSpawns(spawns, { blocked, floor });
 
   return {
-    blocked, floor, wall, ore: new Uint8Array(NCELLS), spawns, spawn, pines, decor, enemies: [], valleyY,
+    blocked, floor, wall, ore: new Uint8Array(NCELLS), spawns, spawn, pines, decor, enemies: [],
+    missionStructs: [], valleyY,
     base: { ...BASE }, rows: ROWS, cols: COLS,
   };
 }

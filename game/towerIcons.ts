@@ -1,4 +1,4 @@
-import type { TowerKind } from "./types";
+import { MISSION_STRUCT_KINDS, type MissionStructKind, type StructKind, type TowerKind } from "./types";
 
 const T = "/mindustry/sprites/blocks/turrets";
 
@@ -42,3 +42,21 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   "factory-t4": "/mindustry/sprites/blocks/units/exponential-reconstructor.png",
   "factory-t5": "/mindustry/sprites/blocks/units/tetrative-reconstructor.png",
 };
+
+/**
+ * ...and one per MISSION BUILDING (types.ts MISSION_STRUCT_KINDS), the
+ * swarm's own second roster. Same job as the table above — the map
+ * editor's palette swatch and the plate it draws on the board — kept
+ * apart for the same reason the stats are: nothing about a mission
+ * building belongs in a record the build menu and the tech tree read.
+ */
+export const MISSION_STRUCT_ICONS: Record<MissionStructKind, string> = {
+  "launch-pad": "/mindustry/sprites/blocks/campaign/launch-pad.png",
+};
+
+/** the menu sprite for any structure kind, off whichever roster owns it —
+ *  the one lookup the editor and anything else that draws a kind can use */
+export const structIcon = (kind: StructKind): string =>
+  (MISSION_STRUCT_KINDS as readonly string[]).includes(kind) ?
+    MISSION_STRUCT_ICONS[kind as MissionStructKind]
+  : TOWER_ICONS[kind as TowerKind];
