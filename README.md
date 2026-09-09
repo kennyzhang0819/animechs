@@ -534,21 +534,17 @@ five: the first. The objective is "don't let them launch", and a mission
 that let the player carry on after a launch was contradicting its own
 headline. It is won the moment all five pads are wrecked.
 
-**Beating a deadline banks the difference.** A deadline is only ever the
-due date for the pad at the FRONT of the queue; wreck it early and every
-second left over is added to every deadline after it, so killing pad 1 two
-minutes early makes pad 2 due two minutes later. Without that the schedule
-is a metronome — an early kill buys nothing, so the only rational play is
-to arrive at each pad exactly on time and the minutes a hard push saved
-are thrown away. With it, time is the currency the map trades in and a run
-that starts well compounds. Killing a pad further down the queue banks
-nothing (it was not the one about to fire) but still counts toward the win.
-So the authored times are the **worst case**, not the schedule a run
-plays: a player who never beats a deadline loses at 25:00 at the latest,
-one who takes each pad a couple of minutes early finishes with time in
-hand they earned. The assignment is a line held with one hand and a push
-made with the other, against a clock, and it plays out around twenty to
-twenty-four minutes.
+**The schedule is hard-coded and nothing moves it.** Pad *i* fires at
+`launchAt[i]`, always; wrecking a pad does not push the next one back, it
+means that pad's moment arrives with nothing left to fire. So **25:00 is
+the map's hard ceiling** — pad 5 is either wrecked before its moment,
+which wins, or it fires, which loses — and the run cannot outlast it.
+What being early buys is the clock itself: the HUD counts to the soonest
+moment still owned by something standing, so clearing a pad two minutes
+early makes the countdown jump to the next pad's moment, further off by
+exactly the two minutes that were spare. The assignment is a line held
+with one hand and a push made with the other, against a clock, and it
+plays out around twenty to twenty-four minutes.
 
 A run opens with the ground round each pad already **discovered**
 (`MISSION_INTEL_CELLS`): each one and its patch are drawn in the grey of

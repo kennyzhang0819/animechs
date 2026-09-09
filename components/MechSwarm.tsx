@@ -266,19 +266,19 @@ const clock = (seconds: number): string => {
  * quiet, and its countdown goes red inside its last minute, which on this
  * map is the last minute of the run — one rocket ends it.
  *
- * THE BANKED TIME IS ON THAT FIRST LINE because it is the answer to the
- * question the countdown provokes. Wrecking a pad ahead of its deadline
- * pushes every later deadline back by what was left over (Sim.updateRaid),
- * and without a number saying so the only evidence is a countdown that
- * jumped while the player was looking somewhere else. It is green because
- * it is the one thing on this HUD that is purely earned.
+ * THE COUNTDOWN IS ALSO THE TIME LEFT OVER. Every pad has its own fixed
+ * moment (Sim.updateRaid), so wrecking one early makes this stop counting
+ * to that moment and start counting to the next pad's — which is further
+ * off by exactly the time that was spare. The jump IS the reward, and a
+ * separate "banked" total beside it would have been the same number said
+ * twice.
  */
 function Objectives({
   raid,
 }: {
   raid: NonNullable<UiState["raid"]>;
 }) {
-  const { padsDown, padsTotal, nextLaunchIn, banked } = raid;
+  const { padsDown, padsTotal, nextLaunchIn } = raid;
   const clear = padsTotal > 0 && padsDown >= padsTotal;
   const urgent = nextLaunchIn >= 0 && nextLaunchIn < 60;
   return (
@@ -297,12 +297,7 @@ function Objectives({
             </span>
           </>
         ) : null}
-        {banked >= 1 && (
-          <>
-            {" "}
-            <span className="text-[#7BE58A]">(+{clock(banked)} bought)</span>
-          </>
-        )}
+
       </div>
       <div className={clear ? "text-[#7BE58A]" : undefined}>
         Destroy all enemy launch pads{" "}

@@ -86,12 +86,15 @@ export interface UiState {
     /** has a rocket gone up? 0 or 1 — the first one ends the run, so this
      *  is only ever read by the end screen */
     launched: number;
-    /** seconds until the next one goes up, or -1 when none can any more */
+    /**
+     * Seconds until the next rocket goes up, or -1 when none can any more.
+     *
+     * This is also the whole of the "time left over" readout: the schedule
+     * is fixed per pad, so wrecking one early makes this jump to the next
+     * pad's moment, which is further off by exactly the time that was left
+     * over (Sim.nextLaunchIn).
+     */
     nextLaunchIn: number;
-    /** seconds the player has BANKED by wrecking front pads before their
-     *  deadlines, added to every deadline still to come. Shown so that
-     *  pushing hard visibly pays rather than silently paying */
-    banked: number;
   } | null;
   kills: number;
   /** the esc game menu is up: sim held, resume or abandon from the overlay */
@@ -1345,7 +1348,6 @@ export class Game {
             padsTotal: this.sim.missionStructs.length,
             launched: this.sim.rocketsAway,
             nextLaunchIn: this.sim.nextLaunchIn(),
-            banked: this.sim.bankedSeconds(),
           }
         : null,
       kills: this.sim.kills,

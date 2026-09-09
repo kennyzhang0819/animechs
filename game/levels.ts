@@ -1242,23 +1242,23 @@ export type Mission =
  * THE RAID — the swarm has something on this map that it is USING, and
  * the run is to take it off the board before it has been used up.
  *
- * The stake is a CLOCK RATHER THAN A WAVE COUNT, and it runs ONE DEADLINE
- * AT A TIME. `launchAt` is a list of moments in seconds of run time, but
- * each is only ever the due date for the target at the FRONT of the queue:
- * reach it with that one still standing and it does its thing (a launch
- * pad ships a rocket) and the run is LOST — one is the whole failure, not
- * the last of five.
+ * The stake is a CLOCK RATHER THAN A WAVE COUNT, and it is HARD-CODED.
+ * `launchAt` pairs off with `targets` by index: target i does its thing (a
+ * launch pad ships a rocket) at launchAt[i], always, and ONE rocket loses
+ * the run — the first, not the last of five.
  *
- * WRECK IT FIRST AND THE TIME YOU HAD LEFT IS BANKED onto every deadline
- * after it. Kill the front target two minutes early and the next is due
- * two minutes later than it was authored for. That is what makes the map
- * a race worth running: without it the schedule is a metronome, an early
- * kill buys nothing, and the four minutes a hard push saved are four
- * minutes thrown away.
+ * NOTHING THE PLAYER DOES MOVES A MOMENT. Wrecking a target does not push
+ * the next one back; it means that target's moment arrives with nothing
+ * left to fire. So the schedule a run races is the schedule printed in the
+ * level, the last entry is the map's HARD CEILING, and the run cannot
+ * outlast it: either the last target is wrecked before its moment, which
+ * is the win, or it fires, which is not.
  *
- * A target further down the queue banks nothing when it dies — it was not
- * the one about to fire, so there was no launch to be early for — but it
- * still counts toward the win and still shortens the queue.
+ * The reward for being early is therefore just the clock: the HUD counts
+ * to the soonest moment still owned by something standing, so clearing a
+ * target two minutes early makes the countdown jump to the next target's
+ * moment — further off by exactly the two minutes that were spare. That
+ * is the whole of it, and it needs no bookkeeping to be true.
  *
  * The run is WON the moment every target is wrecked, whatever the clock
  * says, and lost the usual way if the core falls first.
@@ -1287,15 +1287,13 @@ export interface RaidMission {
    */
   target: MissionStructKind;
   /**
-   * THE DEADLINES AS AUTHORED, in seconds of run time, ascending — the
-   * baseline, not the truth. What the player actually plays against is
-   * each of these PLUS everything banked by wrecking earlier targets ahead
-   * of time (Sim.updateRaid), so a run that pushes well is playing a
-   * schedule of its own making and this list is the worst case.
+   * THE MOMENTS, in seconds of run time, ascending — ONE PER TARGET, by
+   * index, and fixed. Target 0 fires at launchAt[0], target 1 at
+   * launchAt[1], whatever the player has done in between.
    *
-   * More entries than targets simply means the schedule outlasts the
-   * board; fewer means the swarm runs out of rockets before the player
-   * runs out of buildings, and the last targets have no deadline at all.
+   * A target past the end of this list has no moment at all and can only
+   * be finished, never failed; a moment past the end of the target list
+   * simply never comes due. The LAST entry is the map's hard ceiling.
    */
   launchAt: readonly number[];
 }
@@ -1313,7 +1311,7 @@ export function missionText(spec: LevelSpec): { title: string; detail: string } 
     return {
       title: "Destroy the launch pads",
       detail:
-        "One rocket off one pad loses the run. Wreck each pad before its deadline — every second you beat it by is added to the next — and keep the core standing.",
+        "One rocket off one pad loses the run. Every pad has its own fixed moment — wreck it before then — and keep the core standing.",
     };
   return { title: `Hold the line — ${waves} waves`, detail: "Clear every wave. The core must stand." };
 }
@@ -1528,18 +1526,18 @@ export const WORLDS: LevelSpec[] = [
      * north-west corner past every door on the map — and the document's
      * order is the launch order, which the editor numbers on the board.
      *
-     * THE CLOCK, AS AUTHORED. 6:00, then every five minutes to 21:00, then
-     * 25:00. The first is the grace plus a wave (GRACE_DEFAULT is 4:00),
-     * which is about when a first push can be on the ground at all.
+     * THE CLOCK, AND IT IS FIXED. Pad 1 fires at 6:00, pad 2 at 11:00, and
+     * so on by five minutes to pad 5 at 25:00 — whatever the player does,
+     * those are the moments. The first is the grace plus a wave
+     * (GRACE_DEFAULT is 4:00), which is about when a first push can be on
+     * the ground at all.
      *
-     * THOSE ARE THE WORST CASE, though, not the schedule the run plays:
-     * every second a pad is wrecked ahead of its deadline is added to
-     * every deadline after it. A player who never beats a deadline is on
-     * exactly this list and loses at 25:00 at the latest; one who takes
-     * each pad a couple of minutes early finishes the five with time in
-     * hand they earned. Twenty to twenty-four minutes is the expected
-     * clear, and it is now a range the player moves rather than a
-     * constant.
+     * 25:00 IS THE MAP'S HARD CEILING. Confluence cannot run a second past
+     * it: pad 5 is either wrecked before its moment, which wins, or it
+     * fires, which loses. A run that clears it plays out around twenty to
+     * twenty-four minutes, and clearing a pad early is worth exactly the
+     * ground it buys for the next push — the countdown moves on to the
+     * next pad's moment, which is further off by the time that was spare.
      */
     mission: {
       kind: "raid",

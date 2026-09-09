@@ -1681,9 +1681,6 @@ export class Sim {
     // the swarm's formation, because the fields have to be solved around them
     this.missionStructs.length = 0;
     this.rocketsAway = 0;
-    this.launchBank = 0;
-    this.launchSlot = 0;
-    this.padsCleared = 0;
     this.loopLevel = 0;
     this.projs.length = 0;
     // drop the fx pool: the count is the pool, but the bolt-path refs must
@@ -2276,12 +2273,6 @@ export class Sim {
     return this.totalEnemies > 0 && this.remaining() <= 0;
   }
 
-  /** seconds the player has bought by wrecking front pads ahead of their
-   *  deadlines — what the HUD shows to prove that pushing hard paid */
-  bankedSeconds(): number {
-    return this.launchBank;
-  }
-
   /** how many of a raid's targets are wrecked (levels.ts RaidMission) */
   padsDown(): number {
     let n = 0;
@@ -2290,87 +2281,76 @@ export class Sim {
   }
 
   /**
-   * WHEN THE NEXT ROCKET IS DUE, in seconds of run time — the slot's
-   * authored moment plus everything the player has banked (launchBank).
-   * Infinity when the schedule is spent, which means no rocket can ever
-   * go up again and the only thing left is to finish the pads.
+   * EVERY TARGET HAS ITS OWN FIXED MOMENT: target i launches at
+   * launchAt[i], always, whatever else has happened. The schedule is
+   * hard-coded and nothing the player does moves it — wrecking a target
+   * does not push the next one back, it simply means that target's moment
+   * passes with nothing to fire.
+   *
+   * A target past the end of the schedule has no deadline at all, which is
+   * how a board with more targets than moments behaves: the last few can
+   * only be finished, never failed.
    */
-  private launchDue(): number {
+  private dueFor(i: number): number {
     const m = this.level.mission;
-    if (m.kind !== "raid" || this.launchSlot >= m.launchAt.length) return Infinity;
-    return m.launchAt[this.launchSlot] + this.launchBank;
+    if (m.kind !== "raid" || i >= m.launchAt.length) return Infinity;
+    return m.launchAt[i];
   }
 
-  /** seconds until the next rocket goes up, or -1 when none can */
+  /**
+   * SECONDS UNTIL THE NEXT ROCKET GOES UP — the soonest deadline still
+   * owned by a target that is standing — or -1 when no rocket can go up
+   * again.
+   *
+   * THIS IS THE WHOLE OF THE "TIME BANKED" READOUT, and it needs nothing
+   * to make it so. Wreck target 1 two minutes before its moment and this
+   * stops counting to that moment and starts counting to target 2's, which
+   * is further off: the countdown jumps by exactly the time that was left
+   * over, because that time IS what was left over. A separate banked total
+   * would have been the same number said twice.
+   */
   nextLaunchIn(): number {
-    const due = this.launchDue();
-    return due === Infinity ? -1 : Math.max(0, due - this.time);
+    let soonest = Infinity;
+    for (let i = 0; i < this.missionStructs.length; i++) {
+      if (this.missionStructs[i].hp <= 0) continue;
+      const due = this.dueFor(i);
+      if (due < soonest) soonest = due;
+    }
+    return soonest === Infinity ? -1 : Math.max(0, soonest - this.time);
   }
 
   /**
    * THE RAID'S CLOCK (levels.ts RaidMission.launchAt), once a tick.
    *
-   * ONE DEADLINE AT A TIME, AND KILLING THE PAD EARLY BANKS THE
-   * DIFFERENCE. The schedule is a list of moments, but a moment is only
-   * ever a DUE DATE for the pad at the front of the queue: reach it with
-   * that pad still standing and it launches, which loses the run. Wreck it
-   * first and every second you had left over is added to every deadline
-   * after it (launchBank) — kill pad 1 two minutes early and pad 2 is due
-   * two minutes later than it was.
+   * ONE MOMENT PER TARGET, HARD-CODED. Target i fires at launchAt[i] if it
+   * is still standing when that moment comes, and one rocket loses the run
+   * (lost). Nothing moves a moment: the schedule a player is racing is the
+   * one printed in the level, so the last entry is the map's hard ceiling
+   * and the run cannot outlast it — either the last target is wrecked
+   * before its moment, which is the win, or it fires, which is not.
    *
-   * That is the whole shape of the mission and it is worth being plain
-   * about why. Without the bank the schedule was a metronome: pushing hard
-   * for an early kill bought nothing at all, so the only rational play was
-   * to arrive at each pad exactly on time, and the four minutes a good
-   * push saved were four minutes thrown away. With it, time is the
-   * currency the map trades in — every second taken off a pad is a second
-   * spent on the next one, and a run that starts well compounds.
+   * Wrecking a target early is therefore not "buying time" in any
+   * mechanism; it is simply removing the thing that would have fired, and
+   * the countdown moves on to the next moment on its own. That is the
+   * whole feature and it is why there is no bookkeeping here.
    *
-   * THE FRONT PAD IS THE ONLY ONE WITH A DEADLINE. Killing one further
-   * down the queue banks nothing and consumes no slot: it was not the one
-   * about to fire, so there was no launch to be early for. It still counts
-   * toward the win, and it still makes the queue shorter for later.
-   *
-   * The two loops rather than two tests are for the fast-forward paces: a
-   * 16x tick can step over a whole deadline, or see two pads die at once
-   * to the same shell, and each has to be answered on the tick it happens.
+   * The loop is for the fast-forward paces: a 16x tick can step over a
+   * moment, and one that was due must still be answered on the tick it
+   * comes due.
    */
   private updateRaid(): void {
     const m = this.level.mission;
     if (m.kind !== "raid" || this.rocketsAway > 0) return;
-    // THE BANK FIRST, so a pad wrecked on the very tick its deadline falls
-    // is a pad wrecked in time. The prefix of dead pads is the queue that
-    // has been worked through, and every step it has taken since the last
-    // tick is one front pad beaten to its own deadline.
-    let front = this.frontPad();
-    while (this.padsCleared < front) {
-      const due = this.launchDue();
-      if (due === Infinity) break; // no deadline was standing over that one
-      this.launchBank += Math.max(0, due - this.time);
-      this.padsCleared++;
-      this.launchSlot++;
-    }
-    // ...then the deadline itself. Reaching one with a pad still standing
-    // is the run over — one rocket is the whole failure (see lost)
-    while (this.time >= this.launchDue()) {
-      front = this.frontPad();
-      const pad = this.missionStructs[front];
-      if (!pad) return; // every pad is down: nothing is left to launch
+    for (let i = 0; i < this.missionStructs.length; i++) {
+      const pad = this.missionStructs[i];
+      if (pad.hp <= 0) continue;
+      if (this.time < this.dueFor(i)) continue;
       this.rocketsAway++;
-      this.launchSlot++;
       this.launchRocket(pad);
       return;
     }
   }
 
-  /** how many pads have been wrecked off the FRONT of the queue — the
-   *  index of the first one still standing, and so the count of the dead
-   *  prefix the deadlines have already been spent on */
-  private frontPad(): number {
-    let i = 0;
-    while (i < this.missionStructs.length && this.missionStructs[i].hp <= 0) i++;
-    return i;
-  }
 
   /**
    * A ROCKET LEAVES A PAD, AND THE RUN IS OVER (lost). Nothing is spawned
@@ -2380,14 +2360,6 @@ export class Sim {
    * board when the camera is anywhere near it and, when it is not, the
    * reason the score screen just came up.
    */
-  /** seconds the player has banked by wrecking front pads early — added
-   *  to every deadline still to come (see updateRaid) */
-  private launchBank = 0;
-  /** which entry of the schedule is the live deadline */
-  private launchSlot = 0;
-  /** how many front-of-queue pads the bank has already been paid for */
-  private padsCleared = 0;
-
   private launchRocket(pad: Tower): void {
     this.pushFx(pad.x, pad.y, 1.2, FxKind.SmokeCloud);
     this.pushFx(pad.x, pad.y, 0.5, FxKind.Shockwave);
