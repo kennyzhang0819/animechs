@@ -150,22 +150,6 @@ import {
 } from "./types";
 
 /**
- * THE ENEMY'S FLAG: the one mark that says a structure is the swarm's. The
- * swarm builds from the player's roster (types.ts StructKind), so its
- * lancer is drawn with the lancer's own sprite on the lancer's own base —
- * and a small crux-red pennant stands at the top-left corner of the base,
- * a dark pole with a triangle flying off it (UV_TRI, base on the pole),
- * the same size on a duo and a spectre. Nothing else about the drawing
- * differs, which is the point: the flag is the whole of the team read.
- */
-const FLAG_POLE_H = CELL_IMPORT * 0.55;
-const FLAG_POLE_W = 2;
-const FLAG_W = CELL_IMPORT * 0.42;
-const FLAG_H = CELL_IMPORT * 0.28;
-const FLAG_INSET = 3;
-const FLAG_POLE_COL: RGB = [0.12, 0.12, 0.13];
-
-/**
  * Per-kind turret tops and bullet sprites — the ROSTER's, and the MISSION
  * buildings' too (types.ts MISSION_STRUCT_KINDS). Keyed on StructKind
  * because Tower.kind is: a launch pad is drawn by this loop exactly as one
@@ -2417,20 +2401,6 @@ export class Renderer {
   }
 
   /** ...and has it ever been in sight? A structure once seen stays drawn */
-  /**
-   * The swarm's pennant at a structure's top-left corner (x0, y0 is the
-   * footprint's corner in world px): the pole first, then the triangle
-   * flying to the right off the top of it. UV_TRI's base is its left
-   * edge and its apex points +x, so unrotated it is already a pennant
-   */
-  private drawEnemyFlag(dyn: Batch, x0: number, y0: number, a: number): void {
-    const px = x0 + FLAG_INSET + FLAG_POLE_W / 2;
-    const top = y0 + FLAG_INSET;
-    const [pr, pg, pb] = FLAG_POLE_COL;
-    this.push(dyn, px, top + FLAG_POLE_H / 2, FLAG_POLE_W, FLAG_POLE_H, 0, UV_SOLID, pr, pg, pb, a);
-    const [r, g, b] = TEAM_CRUX_RGB;
-    this.push(dyn, px + FLAG_POLE_W / 2 + FLAG_W / 2, top + FLAG_H / 2, FLAG_W, FLAG_H, 0, UV_TRI, r, g, b, a);
-  }
 
   private seen(x: number, y: number): boolean {
     const f = this.fogSrc;
@@ -2689,8 +2659,10 @@ export class Renderer {
       // the swarm's building is drawn once it has been in sight, like the
       // map's shield towers; the player's own are always seen
       if (t.team === "enemy" && !this.seen(t.x, t.y)) continue;
-      // one roster, two teams: the swarm's lancer is the lancer's own
-      // sprite on the lancer's own base, and the flag below says whose
+      // ONE ROSTER, ONE DRAWING: the swarm's lancer is the lancer's own
+      // sprite on the lancer's own base, with no team mark at all. There
+      // is nothing to tell it apart FROM — the player builds no turrets
+      // (factions.ts), so every turret on the board is the swarm's
       const top = UV_TURRETS[t.kind];
       const base =
         sz >= 4 ? UV_TOWER_BASE4
@@ -2717,7 +2689,6 @@ export class Renderer {
         this.push(dyn, t.x, t.y, px, px, 0, base, tint[0], tint[1], tint[2], a);
         this.push(dyn, t.x, t.y, px, px, t.angle, top, tint[0], tint[1], tint[2], a);
       }
-      if (t.team === "enemy") this.drawEnemyFlag(dyn, t.x - px / 2, t.y - px / 2, a);
     }
     // the shieldTowers, AFTER the towers: they stand on free rock of their
     // own (Sim.trySpawnShieldTower) and never overlap one, so the order is

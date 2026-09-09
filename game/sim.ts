@@ -1735,8 +1735,18 @@ export class Sim {
     // THE SWARM'S OWN FORMATION, stood up before the field is solved so
     // its walls are rock to the walkers from the first tick. One that
     // will not fit the ground (a drop zone moved over it, a document from
-    // an older board) is dropped, not forced
+    // an older board) is dropped, not forced.
+    //
+    // TWO SOURCES, ONE DEFENCE: a board carries its swarm structures
+    // BOTH as loose stamps (Terrain.enemies) and as stamped blueprint
+    // instances (Terrain.formations, resolved through the library by
+    // expandFormations — see blueprints.ts). The editor draws both and
+    // the run has to fight both, so both are stood up here. Confluence
+    // is 15 loose stamps and 335 instances: placing only the loose ones
+    // left the map with its handful of tier-4 guns and nothing else.
     for (const e of this.terrain.enemies) this.placeEnemyStructure(e.gx, e.gy, e.kind);
+    for (const e of expandFormations(this.terrain.formations))
+      this.placeEnemyStructure(e.gx, e.gy, e.kind);
     // ...and THE MISSION'S OWN BUILDINGS on top of it (levels.ts
     // RaidMission): the swarm's alone, placed from the level rather than
     // from the map document, because they belong to the assignment and
