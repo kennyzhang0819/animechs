@@ -40,7 +40,8 @@ import {
   WALL_SPORE,
 } from "./atlas";
 import { FLOOR_STYLE, propIcon, tileIcon, wallIcon, WALL_STYLE } from "./tiles";
-import { MISSION_STRUCT_ICONS, TOWER_ICONS } from "./towerIcons";
+import { MISSION_STRUCT_ICONS, TOWER_ICONS, structIcon } from "./towerIcons";
+import { BLUEPRINTS, blueprintById, type FormationPlacement } from "./blueprints";
 import {
   explain,
   MISSION_STRUCT_KINDS,
@@ -124,6 +125,19 @@ export interface MapData {
    * authored for.
    */
   missionStructs?: MissionPlacement[];
+  /**
+   * DEFENCE FORMATIONS: references to the shared blueprint library
+   * (blueprints.ts), not buildings. Each entry names a blueprint, where
+   * its box sits and how it is turned, and the buildings are resolved from
+   * the library when the map is read — which is what makes editing a
+   * blueprint edit every instance on every map at once.
+   *
+   * An instance whose blueprint has been deleted resolves to nothing and
+   * is dropped here on load, so a stale document is self-healing; the
+   * blueprint route also sweeps them out of the files themselves.
+   * Absent means none.
+   */
+  formations?: FormationPlacement[];
   // carved-valley centerline per column — generator metadata the sim's
   // seed-tower search reads; older documents fall back to a flat line
   valleyY?: number[];
@@ -242,6 +256,21 @@ export type PaintKind =
    * from the formation, numbered in the order the mission uses them
    */
   | "mission"
+  /**
+   * A DEFENCE FORMATION (MapData.formations): the variant is an index into
+   * the loaded blueprint library, and a click stamps one instance of it —
+   * a whole outpost at once, turned by whatever the rotate key has it at.
+   * Nothing about the buildings is written into the map; the instance is a
+   * reference, and the library is where the layout lives
+   */
+  | "formation"
+  /**
+   * THE MARQUEE: not a brush at all, the one tool that draws a BOX rather
+   * than painting cells. Dragging one out over the board is how a
+   * blueprint is made from buildings already standing, and how an edited
+   * one is saved back over itself — the box IS the blueprint's footprint
+   */
+  | "marquee"
   /** an ore vein (Terrain.ore): paints ore onto open dry ground, where a
    *  drill may stand; the eraser and the floor brushes take it off */
   | "ore";
@@ -521,6 +550,12 @@ export const PALETTE: readonly PaletteSet[] = [
     icons: MISSION_STRUCT_KINDS.map((k) => MISSION_STRUCT_ICONS[k]) },
   // the ore veins: a drill stands on one and nowhere else, so where the
   // ore is laid is where the run's income is (economy.ts)
+  // THE MARQUEE, and the formations stamped with what it captures. The
+  // formation set's variants are filled in from the LOADED LIBRARY rather
+  // than written here (formationPalette), because the library is a
+  // document an author edits at run time and this file is not
+  { id: "marquee", label: "Select formation", kind: "marquee", variants: [0], noRandom: true,
+    icons: [`${ENV}/clear-editor.png`] },
   { id: "ore", label: "Ore vein", kind: "ore", variants: [0], noRandom: true,
     icons: ["/mindustry/sprites/blocks/environment/ore-copper1.png"] },
   { id: "erase", label: "Erase", kind: "erase", variants: [0], icons: [`${ENV}/clear-editor.png`] },
@@ -556,6 +591,9 @@ export const PALETTE_SECTIONS: readonly { label: string; ids: readonly string[] 
   { label: "Resources", ids: ["ore"] },
   { label: "Zones", ids: ["spawn", "base"] },
   { label: "Enemy", ids: ["enemy", "mission"] },
+  // the marquee lives with the formations it makes; the formation set
+  // itself is appended by paletteSections() from the loaded library
+  { label: "Formations", ids: ["marquee"] },
   { label: "Tools", ids: ["erase"] },
 ];
 
@@ -565,6 +603,61 @@ export const PALETTE_SECTIONS: readonly { label: string; ids: readonly string[] 
  * both are edits that would otherwise show up as a brush quietly missing
  * from the editor.
  */
+/**
+ * A DOCUMENT'S FORMATION INSTANCES, filtered to the ones this library can
+ * actually resolve.
+ *
+ * DROPPING AN UNRESOLVABLE INSTANCE HERE IS HOW DELETING A BLUEPRINT
+ * DELETES ITS INSTANCES EVERYWHERE. The API route sweeps the documents
+ * too, but the documents are not the authority — the library is — so a map
+ * read from a stale file, an older checkout or a copy the sweep could not
+ * write still comes up with no ghost outposts on it. There is no third
+ * state where a formation half-exists.
+ *
+ * It is also the load-order contract: a map read before loadBlueprints()
+ * has resolved has NO formations, which is why every entry point awaits
+ * both. A silently empty board is the one failure mode worth warning
+ * about, so it does.
+ */
+export function formationsOf(list: FormationPlacement[] | undefined): FormationPlacement[] {
+  const out: FormationPlacement[] = [];
+  let dropped = 0;
+  for (const f of list ?? []) {
+    if (!Number.isInteger(f?.gx) || !Number.isInteger(f?.gy)) continue;
+    if (!blueprintById(f.id)) {
+      dropped++;
+      continue;
+    }
+    out.push({ id: f.id, gx: f.gx, gy: f.gy, rot: ((f.rot ?? 0) | 0) & 3 });
+  }
+  if (dropped > 0)
+    console.warn(
+      `dropped ${dropped} formation instance(s) whose blueprint is not in the library` +
+        (BLUEPRINTS.length === 0 ? " (the library is empty — was loadBlueprints() awaited?)" : ""),
+    );
+  return out;
+}
+
+/**
+ * THE FORMATION PALETTE, built from the LOADED LIBRARY rather than written
+ * into PALETTE — one swatch per blueprint, in library order, showing the
+ * first building in it as its face. It is a function because the library
+ * is a document the author edits while the editor is open: a set frozen at
+ * module load would be a picker that never grew a blueprint you just made.
+ */
+export function formationPalette(): PaletteSet {
+  return {
+    id: "formation",
+    label: "Formation",
+    kind: "formation",
+    variants: BLUEPRINTS.map((_, i) => i),
+    noRandom: true,
+    icons: BLUEPRINTS.map((b) =>
+      b.parts.length > 0 ? structIcon(b.parts[0].kind) : TOWER_ICONS["copper-wall"],
+    ),
+  };
+}
+
 export function paletteSections(): { label: string; sets: PaletteSet[] }[] {
   const byId = new Map(PALETTE.map((s) => [s.id, s]));
   const seen = new Set<string>();
@@ -579,6 +672,12 @@ export function paletteSections(): { label: string; sets: PaletteSet[] }[] {
   }));
   const orphan = PALETTE.find((s) => !seen.has(s.id));
   if (orphan) throw new Error(`palette set "${orphan.id}" is in no section — add it to PALETTE_SECTIONS`);
+  // ...and the library's own swatches, appended to the Formations section
+  // rather than declared in PALETTE: they come and go with the documents
+  if (BLUEPRINTS.length > 0) {
+    const section = out.find((s) => s.label === "Formations");
+    if (section) section.sets.push(formationPalette());
+  }
   return out;
 }
 
@@ -790,6 +889,7 @@ export function mapFromTerrain(
     decor: t.decor.map((p) => ({ ...p })),
     enemies: t.enemies.map((e) => ({ ...e })),
     missionStructs: t.missionStructs.map((e) => ({ ...e })),
+    formations: t.formations.map((f) => ({ ...f })),
     valleyY: Array.from(t.valleyY).map((v) => Math.round(v * 100) / 100),
   };
 }
@@ -858,6 +958,7 @@ export function terrainFromMap(m: MapData): Terrain {
       .filter((e) => (MISSION_STRUCT_KINDS as readonly string[]).includes(e.kind)
         && Number.isInteger(e.gx) && Number.isInteger(e.gy))
       .map((e) => ({ kind: e.kind, gx: e.gx, gy: e.gy })),
+    formations: formationsOf(m.formations),
     valleyY: m.valleyY
       ? Float32Array.from(m.valleyY)
       : new Float32Array(COLS).fill(base.y + base.size / 2),

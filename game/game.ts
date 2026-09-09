@@ -1,5 +1,6 @@
 import { BUILD } from "./version";
 import { atlasReady, buildAtlas } from "./atlas";
+import { loadBlueprints } from "./blueprints";
 import {
   loadOfficialMaps,
   OFFICIAL_MAP_IDS,
@@ -942,6 +943,11 @@ export class Game {
     await begin("map");
     const mapId = spec.map ?? OFFICIAL_MAP_IDS[0];
     await Promise.all([
+      // THE BLUEPRINT LIBRARY BEFORE THE MAP IS READ, every time: an
+      // author who just edited an outpost expects the run they start next
+      // to fight the new one, and a map resolves its formations against
+      // whatever the library holds at terrainFromMap time
+      loadBlueprints(),
       OFFICIAL_MAPS.length === 0 ? loadOfficialMaps() : refreshMap(mapId),
       loadLevelDocs(),
       // tech prices are read the moment the tech screen opens, so the

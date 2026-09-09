@@ -379,3 +379,83 @@ sprite in `MISSION_STRUCT_ICONS`, a cell in `atlas.ts` and a row in
 overlap rules, the document round-trip and the numbering are written over
 the roster rather than over `launch-pad`, so a new kind gets all of them
 by existing.
+
+## Defence formations (blueprints)
+
+**An outpost is not one building, and you want fifty of them.** A duo ring
+with a wall skirt is a dozen stamps that have to land in exactly the right
+relationship; nine maps want a lot of those. Placing that by hand is an
+afternoon, and *changing* it — a wall moved a cell, a duo swapped for a
+hail — is that afternoon again on every copy, with no way to tell which
+copies you missed.
+
+So a formation is a **library entry** (`game/blueprints.ts`,
+`public/blueprints.json`) and a map holds **references** to it
+(`MapData.formations`). Every instance on every map is resolved from the
+one library when the map is read, which is the whole trick: **editing a
+blueprint IS editing every instance, everywhere, at once.** Nothing is
+copied into a map, so nothing can fall out of step.
+
+### Making one
+
+1. Lay an outpost out with the **Enemy structure** tools as usual.
+2. Pick **Select formation** (the marquee, under *Formations*) and drag a
+   box round it. The Formations panel says what is in the box.
+3. Name it and **Save as new formation**. The loose buildings are lifted
+   and one instance drops in their place.
+
+The **box you drag is the footprint**, and it is fixed forever — see
+below. Only buildings lying *wholly* inside it are taken; one half in and
+half out belongs to neither and is left alone.
+
+### Stamping and turning
+
+The blueprint appears as a swatch in the palette's *Formations* section.
+Click the map to stamp an instance; **R turns it** (shift+R turns back),
+and the ghost under the cursor shows the turn, so what you see is what
+lands. An instance is stamped all-or-nothing: if any building would hit
+rock, the base or another building, nothing is placed.
+
+Turning is a **layout** rotation. Turrets have no authored facing in this
+game — a placed one aims at the core it was built against — so a turned
+blueprint is a turned arrangement and every gun still points wherever it
+would have.
+
+### Editing one
+
+Click an instance with **Select formation**, then **Break apart to edit**.
+Its buildings become loose stamps where they stood, the panel shows an
+*Editing "…"* banner, and the marquee is already set to the box they came
+out of. Change what you like and press **Save formation** — every instance
+on every map changes with it.
+
+Editing a *turned* instance is safe: the editor remembers the turn and
+un-rotates the parts before storing them, so the library keeps one
+canonical unturned copy.
+
+### Deleting one
+
+The **×** beside a blueprint deletes it **and every instance of it on every
+map**. The API route sweeps the map documents on disk in one pass; the
+board you have open is cleared in memory. Even if the sweep misses a file,
+an instance whose blueprint is gone resolves to nothing when the map is
+read (`formationsOf`), so there is no state where a formation
+half-exists.
+
+### The one rule
+
+**A blueprint's footprint never changes after it is created.** Every map
+that stamped it was authored around that box, and a resize would move
+every instance's far edge on nine maps at once with nothing to check it
+against. `putBlueprint` refuses a replacement of a different size and says
+so — draw the box the same size, or save it as a new formation. There is
+no resize path to get right because there is no resize.
+
+### Load order
+
+A map resolves its formations against **whatever the library holds at
+`terrainFromMap` time**, so every entry point awaits `loadBlueprints()`
+alongside `loadOfficialMaps()` — the game boot, `Game.create` (every run,
+so an outpost edited a minute ago is the one you fight), and the map
+editor. A map read before the library has loaded comes up with no
+formations at all and warns about it.

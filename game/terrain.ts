@@ -2,6 +2,7 @@ import { ALL_MOVE_BITS, BASE, CELL, clamp, COLS, LAYER_BIT, NCELLS, ROWS } from 
 import { DECOR_TILES, WATER_FLOOR_GROUPS } from "./atlas";
 import { fitSpawnCircles, rasterizeSpawns, type SpawnCircle } from "./maps";
 import type { MissionPlacement, StructurePlacement } from "./types";
+import type { FormationPlacement } from "./blueprints";
 
 export interface Prop {
   x: number; // world px, sprite center
@@ -166,6 +167,14 @@ export interface Terrain {
    * more than one mission and wear only the current one's.
    */
   missionStructs: MissionPlacement[];
+  /**
+   * THE DEFENCE FORMATIONS STAMPED ON THIS BOARD (MapData.formations) —
+   * references into the shared blueprint library (blueprints.ts), not
+   * buildings. What they expand to is resolved from the library on demand
+   * (expandFormations), never stored here, so a blueprint edited once is
+   * edited on every instance on every map.
+   */
+  formations: FormationPlacement[];
   valleyY: Float32Array; // carved main-valley centerline per column
   /** this map's base: top-left cell + edge length, in cells */
   base: { x: number; y: number; size: number };
@@ -469,7 +478,7 @@ export function generateTerrain(seed: number): Terrain {
 
   return {
     blocked, floor, wall, ore: new Uint8Array(NCELLS), spawns, spawn, pines, decor, enemies: [],
-    missionStructs: [], valleyY,
+    missionStructs: [], formations: [], valleyY,
     base: { ...BASE }, rows: ROWS, cols: COLS,
   };
 }

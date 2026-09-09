@@ -66,6 +66,14 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "bad props" }, { status: 400 });
   if (map.enemies !== undefined && !Array.isArray(map.enemies))
     return NextResponse.json({ error: "bad enemy structures" }, { status: 400 });
+  if (map.missionStructs !== undefined && !Array.isArray(map.missionStructs))
+    return NextResponse.json({ error: "bad mission structures" }, { status: 400 });
+  // formations are REFERENCES into the blueprint library, so the ids are
+  // not checked here: a map may legitimately be saved while a blueprint it
+  // names is being reworked, and an instance nothing resolves is dropped
+  // when the map is read (formationsOf) rather than refused on the way in
+  if (map.formations !== undefined && !Array.isArray(map.formations))
+    return NextResponse.json({ error: "bad formations" }, { status: 400 });
 
   const file = path.join(process.cwd(), "public", "maps", `${map.id}.json`);
   try {

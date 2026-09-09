@@ -4,11 +4,22 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useConfirm } from "./ConfirmDialog";
 import { MapEditor, PATH_WIDTHS, type BrushShape } from "@/game/editor";
 import { LEGACY_COLS, SPAWN_RADII, SPAWN_RADIUS_DEFAULT } from "@/game/maps";
+import {
+  blueprintById,
+  BLUEPRINTS,
+  loadBlueprints,
+  putBlueprint,
+  removeBlueprint,
+  saveBlueprints,
+  slug,
+  type Blueprint,
+} from "@/game/blueprints";
 import { MISSION_STRUCTS, TOWERS, ZONE_KINDS } from "@/game/constants";
 import { MISSION_STRUCT_KINDS, TOWER_KINDS } from "@/game/types";
 import { ALL_LAYERS, type TerrainLayers } from "@/game/renderer";
 import {
   PALETTE,
+  formationPalette,
   paletteSections,
   saveMap,
   zoneStyle,
@@ -190,6 +201,20 @@ function Panel({
  * Full-screen map editor: the WebGL canvas pair underneath (same layout as
  * the game) with the palette, randomize toggle, and brush as overlays.
  */
+/**
+ * What the Formations panel needs off the engine each tick: the box the
+ * marquee is holding and what is inside it, the blueprint currently broken
+ * open for editing, and the instance last clicked. All of it is pointer
+ * state that belongs to the canvas, so the panel mirrors rather than owns
+ * it (see the poll in the mount effect).
+ */
+interface FormationUi {
+  box: { w: number; h: number } | null;
+  count: number;
+  editing: string | null;
+  picked: { name: string; id: string; rot: number } | null;
+}
+
 export default function MapEditorView({
   map,
   onClose,
@@ -228,13 +253,42 @@ export default function MapEditorView({
   // why the last save was refused — null when the last attempt succeeded
   const [saveError, setSaveError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * THE FORMATION PANEL'S MIRROR OF THE ENGINE. The marquee, the
+   * selection and the open edit all live on the MapEditor — they are
+   * pointer state, and the pointer is the canvas's — so the panel reads
+   * them off the same 250ms poll that watches `dirty` rather than trying
+   * to own them. `libN` is bumped whenever the library changes so the
+   * palette re-renders with a swatch the author has just made.
+   */
+  const [form, setForm] = useState<FormationUi>({ box: null, count: 0, editing: null, picked: null });
+  const [libN, setLibN] = useState(0);
+  const [formName, setFormName] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+  const [replaceId, setReplaceId] = useState("");
 
   useEffect(() => {
     if (!glRef.current || !uiRef.current) return;
     let alive = true;
     let editor: MapEditor | null = null;
-    MapEditor.create(glRef.current, uiRef.current, map)
+    // THE LIBRARY BEFORE THE MAP: a document read before the blueprints
+    // have loaded resolves no formations at all (formationsOf), so the two
+    // are one await rather than a race. A library that will not load is
+    // warned about and survived — the map still has its loose stamps.
+    loadBlueprints()
+      .then(() => {
+        if (alive) setLibN((n) => n + 1);
+      })
+      .catch(() => {})
+      .then(() => {
+        // unmounted while the library was in flight: there is nothing left
+        // to build an editor onto, and the canvases may already be gone
+        const gl = glRef.current, ui = uiRef.current;
+        if (!alive || !gl || !ui) return null;
+        return MapEditor.create(gl, ui, map);
+      })
       .then((ed) => {
+        if (!ed) return;
         if (!alive) {
           ed.destroy();
           return;
@@ -249,7 +303,17 @@ export default function MapEditorView({
         if (alive) setError(err instanceof Error ? err.message : String(err));
       });
     const poll = setInterval(() => {
-      if (editorRef.current) setDirty(editorRef.current.dirty);
+      const ed = editorRef.current;
+      if (!ed) return;
+      setDirty(ed.dirty);
+      const box = ed.marqueeBox();
+      const sel = ed.selectedFormation();
+      setForm({
+        box: box ? { w: box.w, h: box.h } : null,
+        count: box ? ed.marqueeCount() : 0,
+        editing: ed.editing ? (blueprintById(ed.editing.id)?.name ?? ed.editing.id) : null,
+        picked: sel ? { name: sel.bp.name, id: sel.bp.id, rot: sel.inst.rot } : null,
+      });
     }, 250);
     return () => {
       alive = false;
@@ -265,7 +329,11 @@ export default function MapEditorView({
   useEffect(() => {
     const ed = editorRef.current;
     if (!ed) return;
-    const set = PALETTE.find((p) => p.id === setId) ?? PALETTE[0];
+    // the formation set is built from the LOADED LIBRARY and so is not in
+    // PALETTE — see formationPalette()
+    const set =
+      setId === "formation" ? formationPalette()
+      : (PALETTE.find((p) => p.id === setId) ?? PALETTE[0]);
     ed.setTool(set, variant);
     ed.randomize = randomize;
     ed.brush = brush;
@@ -332,6 +400,69 @@ export default function MapEditorView({
   const pick = (set: PaletteSet, v: number): void => {
     setSetId(set.id);
     setVariant(v);
+  };
+
+  /**
+   * SAVE THE MARQUEE AS A BLUEPRINT — a new one, or over an existing one.
+   *
+   * Saving over is the whole point of the library: every instance on every
+   * map is a reference, so the moment the library accepts this, every copy
+   * of that outpost everywhere is the outpost you just drew. Nothing else
+   * has to be visited and nothing can be missed.
+   *
+   * The library is written to disk immediately rather than on the map's
+   * own Save, because it is not part of this map: an author who makes a
+   * blueprint here and opens another map to stamp it must find it there.
+   */
+  const saveFormation = async (over: string | null): Promise<void> => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    setFormError(null);
+    const existing = over ? blueprintById(over) : null;
+    const id = existing ? existing.id : slug(formName);
+    const name = existing ? existing.name : formName.trim();
+    if (!existing) {
+      if (!name) return setFormError("give the formation a name");
+      if (!id) return setFormError("that name has no letters or digits in it");
+      if (blueprintById(id))
+        return setFormError(`there is already a formation called "${name}" — save over it instead`);
+    }
+    const made = ed.makeFormation(id, name, putBlueprint);
+    if (!made.ok) return setFormError(made.error ?? "could not save that formation");
+    const res = await saveBlueprints();
+    setLibN((n) => n + 1);
+    setFormName("");
+    setReplaceId("");
+    if (!res.ok) setFormError(res.error);
+  };
+
+  /**
+   * DELETE A BLUEPRINT, AND WITH IT EVERY INSTANCE OF IT ON EVERY MAP.
+   * The route sweeps the map documents on disk; this drops them off the
+   * board being edited, which is the one document the route cannot reach
+   * because its unsaved state lives here.
+   */
+  const deleteFormation = async (bp: Blueprint): Promise<void> => {
+    const ed = editorRef.current;
+    const gone = ed ? ed.terrain.formations.filter((f) => f.id === bp.id).length : 0;
+    if (
+      !(await confirm({
+        title: `Delete "${bp.name}"?`,
+        body:
+          "This deletes the formation and every instance of it on every map — " +
+          (gone > 0 ? `${gone} on this one, and any on the others. ` : "") +
+          "It cannot be undone.",
+        confirmLabel: "Delete everywhere",
+        cancelLabel: "Keep it",
+      }))
+    )
+      return;
+    ed?.dropFormations(bp.id);
+    removeBlueprint(bp.id);
+    if (setId === "formation") setVariant(0);
+    const res = await saveBlueprints([bp.id]);
+    setLibN((n) => n + 1);
+    setFormError(res.ok ? null : res.error);
   };
 
   if (error) {
@@ -624,6 +755,139 @@ export default function MapEditorView({
             is grouped with its own kind, and the one thing a sprite cannot
             say — which layer a zone or exit swatch belongs to — is said by
             its colour bar and spelled out in the footer. */}
+        {/* THE FORMATIONS PANEL. A blueprint is the one thing in this
+            editor that is not about THIS map — it is a design shared by
+            every map — so it gets its own box rather than a row in the
+            palette, and the box says plainly which of its buttons reach
+            beyond the document you have open. */}
+        <Panel
+          id="formations"
+          title="Formations"
+          className={`absolute bottom-4 right-4 w-[19rem] max-w-[calc(100vw-2rem)] p-2 ${panel}`}
+          bodyClassName="max-h-[46vh] overflow-y-auto"
+        >
+          <div className="flex flex-col gap-2 text-[13px] text-[#A6A6AF]">
+            {/* what the marquee is holding, and what can be done with it */}
+            {form.editing ? (
+              <div className="rounded border border-[#7C5CCB] bg-[#1B1730] p-2">
+                <div className="font-bold text-[#C4B5FD]">Editing “{form.editing}”</div>
+                <p className="mt-1 leading-snug">
+                  Its buildings are loose on the board. Change them, then save — every
+                  instance on every map changes with it.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    onClick={() => void saveFormation(form.editing ? replaceId || null : null)}
+                    className="rounded border border-[#2E6E4E] bg-[#12281E]/80 px-2 py-1 text-[#7BE0A8] hover:border-[#3E9E6E]"
+                  >
+                    Save formation
+                  </button>
+                  <button
+                    onClick={() => {
+                      editorRef.current?.cancelEdit();
+                      setFormError(null);
+                    }}
+                    className="rounded border border-[#2E2E36] px-2 py-1 hover:border-[#4A4A55]"
+                  >
+                    Stop editing
+                  </button>
+                </div>
+              </div>
+            ) : form.box ? (
+              <div className="rounded border border-[#2E2E36] p-2">
+                <div className="text-[#EDEDEF]">
+                  {form.box.w}×{form.box.h} — {form.count} building{form.count === 1 ? "" : "s"}
+                </div>
+                <input
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  placeholder="Name this formation"
+                  className="mt-1.5 w-full rounded border border-[#2E2E36] bg-[#101013] px-2 py-1 text-[#EDEDEF] placeholder:text-[#4A4A55]"
+                />
+                <button
+                  disabled={form.count === 0}
+                  onClick={() => void saveFormation(null)}
+                  className="mt-1.5 w-full rounded border border-[#2E6E4E] bg-[#12281E]/80 px-2 py-1 text-[#7BE0A8] hover:border-[#3E9E6E] disabled:opacity-40"
+                >
+                  Save as new formation
+                </button>
+                {BLUEPRINTS.length > 0 && (
+                  <div className="mt-1.5 flex gap-1">
+                    <select
+                      value={replaceId}
+                      onChange={(e) => setReplaceId(e.target.value)}
+                      className="min-w-0 flex-1 rounded border border-[#2E2E36] bg-[#101013] px-1 py-1 text-[#EDEDEF]"
+                    >
+                      <option value="">save over…</option>
+                      {BLUEPRINTS.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name} ({b.w}×{b.h})
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      disabled={!replaceId || form.count === 0}
+                      onClick={() => void saveFormation(replaceId)}
+                      className="rounded border border-[#2E2E36] px-2 py-1 hover:border-[#4A4A55] disabled:opacity-40"
+                    >
+                      Replace
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : form.picked ? (
+              <div className="rounded border border-[#FFD37F] bg-[#221B10] p-2">
+                <div className="font-bold text-[#FFD37F]">
+                  {form.picked.name}
+                  {form.picked.rot ? ` · ${form.picked.rot * 90}°` : ""}
+                </div>
+                <button
+                  onClick={() => {
+                    const ed = editorRef.current;
+                    if (!ed) return;
+                    const sel = ed.selectedFormation();
+                    if (sel) ed.breakFormationAt(sel.inst.gx, sel.inst.gy);
+                    setReplaceId(sel ? sel.bp.id : "");
+                    setFormError(null);
+                  }}
+                  className="mt-1.5 w-full rounded border border-[#2E2E36] px-2 py-1 hover:border-[#4A4A55]"
+                >
+                  Break apart to edit
+                </button>
+              </div>
+            ) : (
+              <p className="leading-snug">
+                Lay out an outpost with the enemy tools, then drag a box round it with{" "}
+                <span className="text-[#EDEDEF]">Select formation</span> and save it. Stamp it
+                anywhere from the palette; <span className="text-[#EDEDEF]">R</span> turns it.
+                Click one to pick it.
+              </p>
+            )}
+            {formError && <div className="text-[#F25555]">{formError}</div>}
+            {/* the library itself: what exists, and the one button that
+                reaches every map at once */}
+            {BLUEPRINTS.length > 0 && (
+              <div key={libN} className="border-t border-[#2E2E36] pt-1.5">
+                {BLUEPRINTS.map((b) => (
+                  <div key={b.id} className="flex items-center gap-2 py-0.5">
+                    <span className="min-w-0 flex-1 truncate text-[#EDEDEF]">{b.name}</span>
+                    <span className="text-[#4A4A55]">
+                      {b.w}×{b.h} · {b.parts.length}
+                    </span>
+                    <button
+                      title={`Delete "${b.name}" and every instance on every map`}
+                      aria-label={`Delete ${b.name}`}
+                      onClick={() => void deleteFormation(b)}
+                      className="rounded px-1 leading-none text-[#71717C] hover:bg-[#3A1F1F] hover:text-[#F25555]"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Panel>
         <Panel
           id="palette"
           title="Palette"
@@ -652,6 +916,8 @@ export default function MapEditorView({
                             ? `Enemy ${TOWERS[TOWER_KINDS[v]].name}`
                             : set.kind === "mission"
                             ? `Mission ${MISSION_STRUCTS[MISSION_STRUCT_KINDS[v]].name}`
+                            : set.kind === "formation"
+                            ? `${BLUEPRINTS[v]?.name ?? "Formation"} (${BLUEPRINTS[v]?.w}×${BLUEPRINTS[v]?.h}) — R turns it`
                             : randomize && set.icons.length > 1
                             ? `${set.label} (random of ${set.icons.length})`
                             : `${set.label}${set.icons.length > 1 ? ` ${v + 1}` : ""}`;
@@ -700,11 +966,18 @@ export default function MapEditorView({
               only by a colour bar. */}
           <div className="mt-1.5 border-t border-[#2E2E36] pt-1 text-[13px] text-[#A6A6AF]">
             {(() => {
-              const set = PALETTE.find((p) => p.id === setId) ?? PALETTE[0];
+              const set =
+                setId === "formation" ? formationPalette()
+                : (PALETTE.find((p) => p.id === setId) ?? PALETTE[0]);
               if (set.kind === "spawn")
                 return `${ZONE_LABELS[ZONE_KINDS[Math.min(variant, ZONE_KINDS.length - 1)]]} drop zone`;
               if (set.kind === "enemy")
                 return `Enemy ${TOWERS[TOWER_KINDS[Math.min(variant, TOWER_KINDS.length - 1)]].name}`;
+              if (set.kind === "formation") {
+                const b = BLUEPRINTS[Math.min(variant, BLUEPRINTS.length - 1)];
+                return b ? `${b.name} — ${b.w}×${b.h}, ${b.parts.length} buildings · R turns it`
+                  : "no formations yet";
+              }
               if (set.kind === "mission") {
                 const k = MISSION_STRUCT_KINDS[Math.min(variant, MISSION_STRUCT_KINDS.length - 1)];
                 // the stamps are NUMBERED on the board and the number is

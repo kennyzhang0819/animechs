@@ -619,6 +619,21 @@ There is no enemy-only roster — Erekir's breach, diffuse and titan and
 the scrap walls are gone, one set of buildings, two teams. Placing
 formations is authoring, not code: stamp them in the editor.
 
+**And a formation can be a BLUEPRINT rather than a pile of stamps.** An
+outpost — a duo ring with a wall skirt, say — is authored once in the
+shared library (`game/blueprints.ts`, `public/blueprints.json`) and maps
+hold REFERENCES to it (`MapData.formations`: which blueprint, where its
+box sits, how many quarter-turns it is turned). Every instance on every
+map is resolved from that one library when the map is read, so **editing a
+blueprint edits every instance everywhere at once**, and deleting one
+deletes every instance everywhere — nothing is copied into a map, so
+nothing can fall out of step. In the editor: lay an outpost out, drag a
+box round it with *Select formation*, name it; then stamp it anywhere from
+the palette, **R** to turn it. Click an instance and *Break apart to edit*
+to open the design up again. A blueprint's footprint is fixed at creation,
+which is what keeps re-resolving an instance from ever having to push a
+neighbour out of the way. See `docs/authoring-maps.md`.
+
 **The player builds an army.** Five factories, one a unit tier
 (`factory-t1` to `factory-t5`: Mindustry's ground factory and its four
 reconstructors, at Mindustry's own footprints — 3x3 up to 9x9), each

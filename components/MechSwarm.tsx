@@ -57,6 +57,7 @@ import {
   tierXpBonus,
 } from "@/game/ladder";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
+import { loadBlueprints } from "@/game/blueprints";
 import {
   bestClearOn,
   effectiveLevel,
@@ -1636,7 +1637,15 @@ export default function MechSwarm() {
       if (!atlasReady()) await buildAtlas().catch(() => {});
       if (!alive) return;
       setBoot((b) => (b ? { ...b, step: "maps" } : b));
-      await Promise.all([loadOfficialMaps(), loadLevelDocs(), loadBalanceDoc()]).catch(() => {});
+      // the blueprint library rides with the maps: a map read before it has
+      // loaded resolves none of its formations (formationsOf), so an
+      // outpost would simply not be on the board
+      await Promise.all([
+        loadBlueprints(),
+        loadOfficialMaps(),
+        loadLevelDocs(),
+        loadBalanceDoc(),
+      ]).catch(() => {});
       if (!alive) return;
       setMapsReady(true);
       setBoot((b) => (b ? { ...b, step: "warmup" } : b));
