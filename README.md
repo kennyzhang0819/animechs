@@ -528,15 +528,27 @@ mission changes is what ENDS the run.
 
 **Confluence is the raid** (`RaidMission`), and it is the first map with
 an objective that is not the core. Five of the swarm's **launch pads**
-stand on it, and a rocket goes up off one of them at 6:00, 11:00, 16:00,
-21:00 and 25:00. Every rocket away is a thing the player failed to stop;
-the **last one is the run lost**, so the schedule's final entry is the
-map's hard ceiling and Confluence cannot run past twenty-five minutes. It
-is won the moment all five pads are wrecked — and a pad that goes down
-does not skip a launch, because the next pad along takes the job, so the
-schedule is a pace the swarm keeps and not a timer to stall. The
-assignment is a line held with one hand and a push made with the other,
-and it plays out around twenty to twenty-four minutes.
+stand on it, each with a deadline — 6:00, 11:00, 16:00, 21:00, 25:00 as
+authored — and **one rocket off any pad loses the run**. Not the last of
+five: the first. The objective is "don't let them launch", and a mission
+that let the player carry on after a launch was contradicting its own
+headline. It is won the moment all five pads are wrecked.
+
+**Beating a deadline banks the difference.** A deadline is only ever the
+due date for the pad at the FRONT of the queue; wreck it early and every
+second left over is added to every deadline after it, so killing pad 1 two
+minutes early makes pad 2 due two minutes later. Without that the schedule
+is a metronome — an early kill buys nothing, so the only rational play is
+to arrive at each pad exactly on time and the minutes a hard push saved
+are thrown away. With it, time is the currency the map trades in and a run
+that starts well compounds. Killing a pad further down the queue banks
+nothing (it was not the one about to fire) but still counts toward the win.
+So the authored times are the **worst case**, not the schedule a run
+plays: a player who never beats a deadline loses at 25:00 at the latest,
+one who takes each pad a couple of minutes early finishes with time in
+hand they earned. The assignment is a line held with one hand and a push
+made with the other, against a clock, and it plays out around twenty to
+twenty-four minutes.
 
 A run opens with the ground round each pad already **discovered**
 (`MISSION_INTEL_CELLS`): each one and its patch are drawn in the grey of

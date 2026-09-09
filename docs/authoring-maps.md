@@ -343,21 +343,27 @@ mission: {
 ```
 
 `target` names the KIND; every one of them on the map is a target, in the
-document's order. Two rules make that order matter:
+document's order. Three rules make that order matter:
 
-* At each moment in `launchAt` the **first target still standing** fires.
-  Killing one does not skip a launch — the next along takes the job — so
-  the schedule is a pace the swarm keeps rather than a per-building timer
-  the player can stall by picking a favourite.
-* Clearing the **last** target stops the schedule dead, and that is the
-  win. Getting through the whole schedule is the loss, so **the last entry
-  in `launchAt` is the map's hard ceiling** — Confluence cannot run past
-  twenty-five minutes.
+* **One launch loses the run.** Not the last of five — the first. Reach a
+  deadline with the front target still standing and it fires, and that is
+  the end of it.
+* **A deadline belongs to the front of the queue.** `launchAt` is a list
+  of moments, but each is only ever the due date for the first target
+  still standing.
+* **Beating a deadline banks the difference**, onto every deadline after
+  it. Wreck the front target two minutes early and the next is due two
+  minutes later than it was authored for; the bank accumulates, so a run
+  that starts well compounds. A target further down the queue banks
+  nothing when it dies — it was not the one about to fire — but it still
+  counts toward the win and still shortens the queue.
 
-So stamp them nearest-first: the schedule buys the player an early pad
-they can reach and asks for the last one deep in the swarm's ground. The
-schedule may be longer or shorter than the number of pads — it is a pace,
-not a pad-per-entry list.
+So the authored times are the **worst case**, not the schedule a run
+plays. Stamp targets nearest-first: the schedule buys the player an early
+one they can reach and asks for the last deep in the swarm's ground. The
+list may be longer or shorter than the number of targets — more entries
+means the schedule outlasts the board, fewer means the last targets have
+no deadline at all.
 
 A run opens with the ground round every target already **discovered**
 (`MISSION_INTEL_CELLS`, `game/fog.ts`) — stamped into the static fog set
@@ -370,6 +376,12 @@ what.
 the schedule. Turn that when a raid plays long or short; the schedule is
 what the mission promises the player and moving it moves the objective
 text with it.
+
+Note that banking makes the run's length something the player moves: a
+raid has no hard ceiling any more, because every deadline beaten pushes
+the rest back. The floor is the first deadline and the expected clear is
+the authored last one; a very good run goes past it with the board already
+nearly clear.
 
 ### Adding another one
 

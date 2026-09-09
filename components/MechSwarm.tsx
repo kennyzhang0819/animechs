@@ -263,16 +263,22 @@ const clock = (seconds: number): string => {
  * vanishing — a line that disappeared when it was met would take the
  * record of what was achieved with it. The first line is a thing to
  * PREVENT, and prevention is never done while the run is on: it stays
- * quiet and goes red as it is spent, one rocket at a time, with the
- * countdown red inside its last minute — the only moment on this map
- * where a single minute matters.
+ * quiet, and its countdown goes red inside its last minute, which on this
+ * map is the last minute of the run — one rocket ends it.
+ *
+ * THE BANKED TIME IS ON THAT FIRST LINE because it is the answer to the
+ * question the countdown provokes. Wrecking a pad ahead of its deadline
+ * pushes every later deadline back by what was left over (Sim.updateRaid),
+ * and without a number saying so the only evidence is a countdown that
+ * jumped while the player was looking somewhere else. It is green because
+ * it is the one thing on this HUD that is purely earned.
  */
 function Objectives({
   raid,
 }: {
   raid: NonNullable<UiState["raid"]>;
 }) {
-  const { padsDown, padsTotal, launched, launchTotal, nextLaunchIn } = raid;
+  const { padsDown, padsTotal, nextLaunchIn, banked } = raid;
   const clear = padsTotal > 0 && padsDown >= padsTotal;
   const urgent = nextLaunchIn >= 0 && nextLaunchIn < 60;
   return (
@@ -291,12 +297,10 @@ function Objectives({
             </span>
           </>
         ) : null}
-        {launched > 0 && (
+        {banked >= 1 && (
           <>
             {" "}
-            <span className="text-[#F25555]">
-              ({launched}/{launchTotal} away)
-            </span>
+            <span className="text-[#7BE58A]">(+{clock(banked)} bought)</span>
           </>
         )}
       </div>
@@ -2874,11 +2878,11 @@ export default function MechSwarm() {
                   a core still standing would be telling the player the
                   wrong thing about their own board */}
               <div className="font-display text-xl font-bold uppercase tracking-widest text-[#e55454]">
-                {hud.coreHp <= 0 ? "Core destroyed" : "Rockets away"}
+                {hud.coreHp <= 0 ? "Core destroyed" : "Rocket away"}
               </div>
               {hud.raid && hud.coreHp > 0 && (
                 <div className="mt-1 text-[13px] uppercase tracking-widest text-[#71717C]">
-                  Every pad launched — {hud.raid.padsDown}/{hud.raid.padsTotal} destroyed
+                  A launch pad fired — {hud.raid.padsDown}/{hud.raid.padsTotal} destroyed
                 </div>
               )}
               <div className="mt-4 space-y-1 text-base text-[#EDEDEF]">
