@@ -176,9 +176,9 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `game/game.ts` — rAF loop, input, 2d overlay (placement ghost), stats,
   edge panning (`EDGE_PAN_PX`) and the **minimap** (`drawMinimap`): the
   whole map at a cell a dot, never zoomed, the fog's three tones over
-  the ground, the player's structures white, the enemy red where it is
-  in sight, the viewport framed; a press looks there, a drag keeps
-  steering
+  the ground, everything of the player's white (structures and bodies
+  alike), the enemy red where it is in sight, the viewport framed; a
+  press looks there, a drag keeps steering
 - `components/MechSwarm.tsx` — React shell: HUD (scrap, core health, XP), rung
   picker, the **build menu** — StarCraft's command card, a fixed 4x4
   grid in the bottom-right corner the size of the minimap
@@ -255,7 +255,8 @@ is no touch input.
 |---|---|
 | build | left press, drag to chain |
 | demolish | right press, drag to chain |
-| inspect a turret's range | left click, with no tool picked |
+| select | left click, with no tool picked — a body or a building of yours; drag a box for a region; shift adds |
+| select every like it nearby | ctrl-click or double-click — units or buildings, whichever was under the cursor (`SEL_LIKE_R`, `SEL_LIKE_STRUCT_R`) |
 | pan | middle drag, WASD/arrows, two-finger trackpad scroll, the cursor at the screen's edge |
 | minimap | click to look there, drag to keep steering — bottom-left, never zoomed |
 | zoom | wheel, trackpad pinch |

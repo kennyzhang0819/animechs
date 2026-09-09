@@ -34,7 +34,7 @@ import { HEALTH_BARS_DEFAULT, type HealthBarMode, type TowerPlacement } from "./
 import { TOWER_KINDS } from "./types";
 import { Renderer } from "./renderer";
 import { fitZoom } from "./fit";
-import { PICK_LENIENT, PICK_STRUCT_PAD, Sim } from "./sim";
+import { PICK_LENIENT, PICK_STRUCT_PAD, PICK_TIGHT, Sim } from "./sim";
 import { type TechState } from "./tech";
 import { isCore, type Tower } from "./types";
 
@@ -325,8 +325,17 @@ const MM_SCALE = 1;
  */
 /** how far the hand must travel for a press to be a marquee, in screen px */
 const SEL_DRAG_PX = 5;
-/** how far a ctrl/double click reaches for bodies like the one clicked */
-const SEL_LIKE_R = CELL * 14;
+/**
+ * HOW FAR A CTRL/DOUBLE CLICK REACHES for things like the one clicked, in
+ * world px. "Nearby" is deliberately generous — most of a screen at the
+ * usual zoom — because the gesture is used to gather THE GROUP IN FRONT OF
+ * YOU, and a group spread over a fight or a wall line laid across a
+ * chokepoint is wider than the handful of cells a tight radius would take.
+ * Buildings reach further still: they never close ranks the way a squad
+ * does, so a defence line is a longer, thinner thing than a crowd.
+ */
+const SEL_LIKE_R = CELL * 30;
+const SEL_LIKE_STRUCT_R = CELL * 40;
 /**
  * WHAT COUNTS AS A DOUBLE CLICK, in ms and in screen px between the two
  * presses. The browser's own count (MouseEvent.detail) cannot be used: the
@@ -495,7 +504,8 @@ export class Game {
   private selFromScreen = { x: 0, y: 0 };
   private selDragPx = 0;
   /** modifiers taken at the press: shift adds to the selection, ctrl (or a
-   *  double click) takes everything like the body under the cursor */
+   *  double click) takes everything like the thing under the cursor —
+   *  bodies or buildings, whichever it landed on (gatherLike) */
   private selAdd = false;
   private selLike = false;
   /** the last left press, for the double click the pointer events cannot count */
@@ -719,20 +729,14 @@ export class Game {
       } else this.sim.structsInRect(this.selFrom.x, this.selFrom.y, p.x, p.y, this.selAdd);
       return;
     }
-    // ctrl, or the second click of a double: everything like the body under
-    // the cursor, within reach of it. The near miss is forgiven here too —
-    // a gathering click that lands a hair off the walker it meant should
-    // gather the group, not empty the selection
-    if (this.selLike) {
-      if (this.sim.selectLike(p.x, p.y, SEL_LIKE_R, this.selAdd) > 0) {
-        if (!this.selAdd) this.sim.clearStructSelection();
-        return;
-      }
-      if (this.sim.selectLike(p.x, p.y, SEL_LIKE_R, this.selAdd, PICK_LENIENT) > 0) {
-        if (!this.selAdd) this.sim.clearStructSelection();
-        return;
-      }
-    }
+    // ctrl, or the second click of a double: everything like the thing under
+    // the cursor, within reach of it — BODIES FIRST and then BUILDINGS, in
+    // the same order and for the same reason a plain click asks (pickAt).
+    // The near miss is forgiven here too — a gathering click that lands a
+    // hair off the walker it meant should gather the group, not empty the
+    // selection — so each half is asked tight first, and only once both have
+    // come back empty is either asked again with the forgiving reach.
+    if (this.selLike && this.gatherLike(p)) return;
     this.pickAt(p);
   };
   private readonly onMove = (e: MouseEvent): void => {
@@ -779,6 +783,44 @@ export class Game {
     this.selecting = false;
   };
   private readonly onContext = (e: Event): void => e.preventDefault();
+
+  /**
+   * THE GATHERING CLICK — ctrl, or the second click of a double: take
+   * everything LIKE the thing under the cursor and near it, bodies or
+   * buildings alike (Sim.selectLike, Sim.selectStructsLike). A line of
+   * turrets is selected the way a squad is: click one of them.
+   *
+   * Bodies are asked before buildings for the same reason pickAt asks them
+   * first: a body is small and moving and a building is big and still, so a
+   * click that could be either was aimed at the body. Whichever half
+   * answers replaces the OTHER half of the selection, exactly as a plain
+   * click does — shift keeps both.
+   *
+   * Returns false when nothing of ours was under the point at all, which
+   * leaves the click to be an ordinary one (pickAt) rather than nothing:
+   * ctrl held over an enemy still marks it, and over bare ground still
+   * clears.
+   */
+  private gatherLike(p: { x: number; y: number }): boolean {
+    const sim = this.sim;
+    const add = this.selAdd;
+    // the same two passes, in the same order, that pickAt makes: tight
+    // first, and the forgiving reach only once both halves came back empty
+    for (const [unitReach, structPad] of [
+      [PICK_TIGHT, 0],
+      [PICK_LENIENT, PICK_STRUCT_PAD],
+    ] as const) {
+      if (sim.selectLike(p.x, p.y, SEL_LIKE_R, add, unitReach) > 0) {
+        if (!add) sim.clearStructSelection();
+        return true;
+      }
+      if (sim.selectStructsLike(p.x, p.y, SEL_LIKE_STRUCT_R, add, structPad) > 0) {
+        if (!add) sim.clearSelection();
+        return true;
+      }
+    }
+    return false;
+  }
 
   /**
    * THE BARE-CURSOR CLICK — everything one left click on the board can
@@ -1639,8 +1681,9 @@ export class Game {
    *   black where nothing has ever looked (the static set), a half-black
    *   over that where something once did and nothing does now (the
    *   dynamic set), clear where something is looking right now;
-   *   the PLAYER'S structures white — the core, every turret and wall,
-   *   a shell still going up in a dimmer white;
+   *   the PLAYER'S EVERYTHING white — the core, every turret and wall
+   *   (a shell still going up in a dimmer white) and every body of
+   *   theirs, wherever it is;
    *   the ENEMY red — every body in sight (and none out of it: the
    *   minimap keeps the fog's promise), and the map's shield towers
    *   wherever they have once been seen, a building being a thing that
@@ -1713,13 +1756,16 @@ export class Game {
     const box = (gx: number, gy: number, sz: number, r: number, g: number, b: number): void => {
       for (let y = gy; y < gy + sz; y++) for (let x = gx; x < gx + sz; x++) dot(x, y, r, g, b);
     };
-    // the enemy, in sight only — and the player's own bodies in the
-    // team's amber, wherever they are: they are what is looking
+    // the enemy, in sight only — and the player's own bodies WHITE,
+    // wherever they are: they are what is looking. One colour for
+    // everything of ours, bodies and buildings alike, and one for
+    // everything of theirs, so the map answers "us or them" at a glance
+    // instead of asking for three colours to be told apart at a pixel each
     const { upx, upy, n, uteam } = this.sim;
     for (let i = 0; i < n; i++) {
       const gx = (upx[i] / CELL) | 0, gy = (upy[i] / CELL) | 0;
       if (uteam[i]) {
-        dot(gx, gy, 0xff, 0xd3, 0x7f);
+        dot(gx, gy, 0xff, 0xff, 0xff);
         continue;
       }
       if (fogOn && st[gy * COLS + gx] === 0) continue;

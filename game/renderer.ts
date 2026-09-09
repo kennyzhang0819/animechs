@@ -371,13 +371,14 @@ const SHIELD_COL = [0xff / 255, 0xd3 / 255, 0x7f / 255] as const;
  * roster off the same sprites, so red on a body of the player's would say
  * "enemy" about a body that is theirs — the one thing on a board full of
  * identical daggers that the colour is there to answer. The player's
- * amber is the ring under their bodies, the mark on the minimap and the
- * core's own, so a body of theirs is now the same colour as everything
- * else of theirs.
+ * amber is the ring under their bodies and the core's own, so a body of
+ * theirs is now the same colour as everything else of theirs on the field.
+ * (The MINIMAP answers a narrower question — us or them, at a pixel a body
+ * — and paints everything of ours white there; see Game.drawMinimap.)
  */
 const TEAM_COL: readonly RGB[] = [TEAM_CRUX_RGB, TEAM_SHARDED_RGB];
 /** the ring under the player's own bodies: their team's colour, which is
- *  the core's amber (Pal.accent) and the mark the minimap uses */
+ *  the core's amber (Pal.accent) */
 const TEAM_MINE: RGB = TEAM_COL[1];
 /** how faint the team ring is on a body that is NOT selected */
 const TEAM_RING_ALPHA = 0.25;

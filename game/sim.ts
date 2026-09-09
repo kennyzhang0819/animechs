@@ -6568,6 +6568,40 @@ export class Sim {
   }
 
   /**
+   * EVERY BUILDING LIKE THIS ONE NEARBY — the same gesture as selectLike,
+   * on the other half of the selection. A ctrl- or double-click on a duo
+   * takes every duo within reach of it, which is how a line of turrets is
+   * upgraded or sold without clicking each one.
+   *
+   * "Like" is the KIND, so a wall gathers walls and a factory factories;
+   * a shell still going up counts, because a row half-built is still the
+   * row you meant. The CORE is the one thing that gathers nothing: there
+   * is only ever one, and a click on it means it.
+   *
+   * Returns how many were taken.
+   */
+  selectStructsLike(px: number, py: number, radius: number, add = false, pad = 0): number {
+    const at = this.myStructAt(px, py, pad);
+    if (!at) return 0;
+    if (!add) this.clearStructSelection();
+    if (isCore(at)) {
+      this.selStructs.add(at);
+      return 1;
+    }
+    const kind = at.kind;
+    const ox = at.x, oy = at.y;
+    let k = 0;
+    for (const t of this.towers) {
+      if (t.team !== "player" || t.kind !== kind) continue;
+      const dx = t.x - ox, dy = t.y - oy;
+      if (dx * dx + dy * dy > radius * radius) continue;
+      this.selStructs.add(t);
+      k++;
+    }
+    return k;
+  }
+
+  /**
    * SEND THE SELECTION SOMEWHERE — the right-click.
    *
    * The destination is snapped to open ground the walkers can stand on
