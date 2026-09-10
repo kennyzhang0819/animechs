@@ -267,10 +267,9 @@ export interface UnitWeapon {
 /**
  * ONE DIAL OVER EVERY UNIT WEAPON, at 1: the rows below are Mindustry's
  * and the swarm bites exactly as they say. THE ROSTER'S STRUCTURES ARE
- * NOT — they hold twice Mindustry's health (TOWER_HP_SCALE, 2), which is
- * the walls' old job moved into the things that used to hide behind them
- * (types.ts). The core and the mission buildings ride neither dial: their
- * numbers are absolute, and set where they are written.
+ * NOT — they hold four times Mindustry's health (TOWER_HP_SCALE), which is
+ * the walls' old job moved into the guns that used to hide behind them
+ * (types.ts); the core rides the same dial (CORE_HP).
  * If a balance pass is ever needed it is done here (setUnitDamageScale)
  * and on that dial, not row by row — the rows are meant to stay
  * Mindustry's.
@@ -376,7 +375,7 @@ const ARKYID_SAP = sapStyle({ color: PAL.sapBullet, width: 0.55, lifetime: t(30)
  * The class's shape is untouched: a deep wash twice over at rising alpha,
  * a light one at full, and a white filament down the middle. Only the two
  * hues move — Mindustry's ec7458/ff9c5a for the blue a meltdown's own line
- * already fires in, since arc and lancer stand below it (factions.ts) and
+ * already fires in, since arc and lancer stand below it and
  * its hull is repainted to match (scripts/reskin-turrets.mjs).
  *
  * 6974c4 is lancer.png's own plating shade, so the beam's base is the

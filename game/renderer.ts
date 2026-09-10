@@ -43,14 +43,6 @@ import {
   UV_TOWER_BASE3,
   UV_TOWER_BASE4,
   UV_SHIELD_TOWER,
-  UV_DRILL,
-  UV_FACTORY1,
-  UV_LAUNCH_PAD,
-  UV_FACTORY2,
-  UV_FACTORY3,
-  UV_FACTORY4,
-  UV_FACTORY5,
-  UV_ORE,
   UV_DISC_BIG,
   UV_SCORCH,
   UV_ARC,
@@ -76,7 +68,6 @@ import {
 } from "./atlas";
 import {
   BASE,
-  bulletOf as bulletOf_IMPORT,
   CELL as CELL_IMPORT,
   towerMaxHp,
   structStats,
@@ -91,7 +82,6 @@ import {
   PAL as PAL_IMPORT,
   ROWS as ROWS_IMPORT,
   TEAM_CRUX_RGB,
-  TEAM_SHARDED_RGB,
   TOWERS as TOWERS_IMPORT,
   W as W_IMPORT,
   type BulletStats,
@@ -101,7 +91,6 @@ import {
 // projectile and effect: an imported binding is a getter call under
 // CommonJS interop (dev server), and this file reads these thousands of
 // times a frame. A module-local const is a plain read.
-const bulletOf = bulletOf_IMPORT;
 const CELL = CELL_IMPORT;
 const clamp = clamp_IMPORT;
 const COLS = COLS_IMPORT;
@@ -125,7 +114,6 @@ import {
   SHIELD_TOWER_COL,
   SHIELD_TOWER_SIZE,
 } from "./mutation";
-import { FOG_DYNAMIC_ALPHA, FOG_STATIC_ALPHA, type Fog } from "./fog";
 import { MAX_LEGS, WAKE_PTS, type Sim } from "./sim";
 import {
   BEAM_STYLES,
@@ -144,18 +132,15 @@ import {
   FxKind,
   type Effect,
   type RGB,
-  type StructKind,
   type Tower,
   type TowerKind,
 } from "./types";
 
 /**
- * Per-kind turret tops and bullet sprites — the ROSTER's, and the MISSION
- * buildings' too (types.ts MISSION_STRUCT_KINDS). Keyed on StructKind
- * because Tower.kind is: a launch pad is drawn by this loop exactly as one
- * of the swarm's walls is, and its art belongs in the same table.
+ * Per-kind turret tops and bullet sprites, keyed on TowerKind because
+ * Tower.kind is.
  */
-const UV_TURRETS: Record<StructKind, UVRect> = {
+const UV_TURRETS: Record<TowerKind, UVRect> = {
   duo: UV_DUO,
   hail: UV_HAIL,
   salvo: UV_TURRET,
@@ -173,14 +158,6 @@ const UV_TURRETS: Record<StructKind, UVRect> = {
   spectre: UV_SPECTRE,
   meltdown: UV_MELTDOWN,
   foreshadow: UV_FORESHADOW,
-  drill: UV_DRILL,
-  "factory-t1": UV_FACTORY1,
-  "factory-t2": UV_FACTORY2,
-  "factory-t3": UV_FACTORY3,
-  "factory-t4": UV_FACTORY4,
-  "factory-t5": UV_FACTORY5,
-  // the mission buildings — the swarm's alone, and never on the bar
-  "launch-pad": UV_LAUNCH_PAD,
 };
 /**
  * The two regions BasicBulletType.draw lays on one rect: the longer `-back`
@@ -359,32 +336,6 @@ const rng = (): number => {
  */
 const SHIELD_COL = [0xff / 255, 0xd3 / 255, 0x7f / 255] as const;
 /**
- * A BODY'S OWN COLOUR, INDEXED BY THE TEAM THAT OWNS IT (Sim.uteam: 0 is
- * the swarm, 1 the player). Everything Mindustry draws in a unit's team
- * colour reads off this and nothing else — the cell on its hull
- * (UnitType.drawCell), the halo under its shield and the bubble a force
- * field carrier stands in (UnitType.shieldColor is null on every type,
- * which means "the team's"), the wave a regen field throws, the outline
- * that snaps when a field pops, and the flame behind an engine.
- *
- * THE RED IS THE SWARM'S AND NOTHING ELSE'S. Both sides field the same
- * roster off the same sprites, so red on a body of the player's would say
- * "enemy" about a body that is theirs — the one thing on a board full of
- * identical daggers that the colour is there to answer. The player's
- * amber is the ring under their bodies and the core's own, so a body of
- * theirs is now the same colour as everything else of theirs on the field.
- * (The MINIMAP answers a narrower question — us or them, at a pixel a body
- * — and paints everything of ours white there; see Game.drawMinimap.)
- */
-const TEAM_COL: readonly RGB[] = [TEAM_CRUX_RGB, TEAM_SHARDED_RGB];
-/** the ring under the player's own bodies: their team's colour, which is
- *  the core's amber (Pal.accent) */
-const TEAM_MINE: RGB = TEAM_COL[1];
-/** how faint the team ring is on a body that is NOT selected */
-const TEAM_RING_ALPHA = 0.25;
-/** ...and how much wider than the body a SELECTED one's ring sits */
-const SELECT_RING_SCALE = 1.9;
-/**
  * UnitEngine.draw: the flame behind a flyer, a disc in the team's colour
  * breathing on Mathf.absin(Time.time, 2, radius / 4) with a white disc
  * half its size thrown a quarter-radius toward the hull. Drawn under the
@@ -494,69 +445,7 @@ void main() {
   }
 }`;
 
-/**
- * ONE EYE'S CIRCLE, into a fog buffer: Fill.poly(x, y, 20, rad).
- *
- * Upstream sends real geometry — a twenty-sided fan per eye — and this
- * draws the same polygon procedurally on the quad that bounds it, which
- * costs one instance instead of eighteen triangles and is the same shape
- * to the texel. The edge is HARD on purpose. Softening it here would be
- * softening the wrong thing: the fog's rim is meant to come out of the
- * buffer's own coarseness (a texel a tile, FOG_SS) read through the
- * quantized wash (FOG_FS), and a feather in the source only smears that
- * into mush.
- *
- * White, opaque, on a black buffer — coverage lives in the RED channel,
- * which is the channel fog.frag reads.
- */
-const FOG_SIGHT_FS = `#version 300 es
-precision highp float;
-in vec2 vUV;
-flat in vec4 vRect;
-in vec4 vTint;
-out vec4 o;
-const float SIDES = 20.0;
-void main() {
-  // the quad spans the circle, so this runs -1..1 with the eye at 0
-  vec2 p = (vUV - 0.5) * 2.0;
-  float seg = 6.28318530718 / SIDES;
-  // Fill.poly's first vertex sits at angle 0 (rotation 0f), so the wedge
-  // this fragment falls in is measured from there
-  float wedge = mod(atan(p.y, p.x), seg) - seg * 0.5;
-  // ...and the polygon's edge along this bearing is the apothem over the
-  // cosine of how far round the wedge we are
-  if (length(p) > cos(seg * 0.5) / cos(wedge)) discard;
-  o = vec4(1.0);
-}`;
 
-/**
- * shaders/fog.frag, ported whole.
- *
- * The buffer holds coverage in red: 1 where an eye's polygon landed, 0
- * where none did, and — because the buffer is a texel a tile and sampled
- * bilinearly — a ramp between the two over one tile at the rim. The wash
- * this turns into is NOT that ramp: it is the ramp cut into steps of
- * QUANT, which is why Mindustry's fog edge reads as a few concentric
- * bands rather than a gradient. Above 0.99 coverage the wash is dropped
- * entirely (the `step`), so the inside of a circle is clear rather than
- * very slightly grey.
- *
- * Upstream's output is straight alpha over Arc's normal blend; this
- * renderer is premultiplied, so the colour is multiplied through.
- */
-const FOG_FS = `#version 300 es
-precision highp float;
-uniform sampler2D uTex;
-in vec2 vUV;
-flat in vec4 vRect;
-in vec4 vTint;
-out vec4 o;
-const float QUANT = 0.3;
-void main() {
-  vec4 color = texture(uTex, vUV);
-  float a = (1.0 - floor(color.r / QUANT) * QUANT) * step(color.r, 0.99) * vTint.a;
-  o = vec4(vTint.rgb * a, a);
-}`;
 
 /** Shaders.ShieldShader's u_dp, Scl.scl(1) — the UI scale, 1 at 1x */
 const SHIELD_DP = 1;
@@ -822,33 +711,6 @@ const WAKE_PY = new Float64Array(WAKE_PTS + 1);
 const WAKE_DX = new Float64Array(WAKE_PTS + 1);
 const WAKE_DY = new Float64Array(WAKE_PTS + 1);
 
-/**
- * THE FOG BUFFERS' RESOLUTION: ONE TEXEL A TILE, which is what
- * FogRenderer allocates (`staticFog.resizeCheck(world.width(),
- * world.height())`). It is not a detail — the soft, banded edge the fog
- * wears is a hard-edged polygon rasterized at a texel a tile, magnified
- * bilinearly and then QUANTIZED by the shader (FOG_FS). Give it more
- * texels and the bands narrow into a hard circle; give the shader no
- * quantization and the bilinear ramp reads as a blur. The look is the
- * two together, at this resolution.
- */
-const FOG_SS = 1;
-const FOG_W = COLS * FOG_SS;
-const FOG_H = ROWS * FOG_SS;
-/** FogRenderer.renderEvent's `radius + 0.3f` — the static circle is drawn
- *  a third of a tile wider than it is computed, so the picture never
- *  falls short of the bits the rules are made of */
-const FOG_STATIC_PAD = 0.3;
-/**
- * FogRenderer's ScissorStack: a one-texel border round both buffers that
- * no eye may light, "so the borders are never fully revealed".
- */
-const FOG_EDGE = 1;
-/** a whole texture, and a whole texture upside down: the fog buffers are
- *  rendered through the same y-flipping vertex stage everything else is,
- *  so the map quad that samples them reads their rows bottom to top */
-const UV_FULL: UVRect = [0, 0, 1, 1];
-const UV_FOG_QUAD: UVRect = [0, 1, 1, 0];
 
 const VS = `#version 300 es
 layout(location=0) in vec2 aCorner;
@@ -1069,51 +931,6 @@ export class Renderer {
   private readonly shadowTex: WebGLTexture;
   /** the darkness buffer: one texel a cell, linear, see DARK_RADIUS */
   private readonly darkTex: WebGLTexture;
-  /**
-   * THE FOG OF WAR (fog.ts), drawn the way the darkness is: one texel a
-   * cell on a linear-filtered texture, black at the cell's alpha — solid
-   * where nothing has ever looked, FOG_SEEN_ALPHA where something once
-   * did, clear where something is looking now — over the WHOLE frame,
-   * flyers included: a flyer in the fog is as unseen as a walker. The
-   * texture is re-uploaded only when Fog.version moves. It is the only
-   * black a fogged frame wears: the hill darkness stands down while a fog
-   * is set and on (drawDarkness), so a revealed range is lit through.
-   */
-  private readonly fog: Batch;
-  private readonly fogTex: WebGLTexture;
-  private fogSrc: Fog | null = null;
-  private fogVersion = -1;
-  /** has the whole texture been sent once? until it has, a sub-upload
-   *  would be writing into a texture that does not exist yet */
-  private fogUploaded = false;
-  private readonly fogMask = new Uint8Array(COLS * ROWS * 4);
-  /**
-   * THE TWO FOG BUFFERS (drawFog): what is in sight now, and what has ever
-   * been. Alpha masks over the whole map at FOG_SS texels a cell, carved
-   * by the eyes' discs rather than filled cell by cell.
-   */
-  private fogDynTex: WebGLTexture | null = null;
-  private fogDynFbo: WebGLFramebuffer | null = null;
-  private fogStaticTex: WebGLTexture | null = null;
-  private fogStaticFbo: WebGLFramebuffer | null = null;
-  /** false once a driver has refused them — the cell fallback takes over */
-  private fogFboReady = true;
-  /** the map generation the discovered buffer holds (Fog.epoch) */
-  private fogEpochSeen = -1;
-  /** the eyes' quads: the dynamic set's, gathered fresh every frame */
-  private readonly fogSight: Batch;
-  /** ...and the static set's, which is only ever the events the fog has
-   *  handed over since the last frame (FogRenderer.events) */
-  private readonly fogStatic: Batch;
-  /** the polygon stamp (FOG_SIGHT_FS) and the wash (FOG_FS) */
-  private readonly fogSightProg: WebGLProgram;
-  private readonly uSightRes: WebGLUniformLocation;
-  private readonly uSightZoom: WebGLUniformLocation;
-  private readonly uSightOff: WebGLUniformLocation;
-  private readonly fogProg: WebGLProgram;
-  private readonly uFogRes: WebGLUniformLocation;
-  private readonly uFogZoom: WebGLUniformLocation;
-  private readonly uFogOff: WebGLUniformLocation;
   private readonly dyn: Batch;
   /**
    * the force-field fills for this frame. They never reach the screen
@@ -1229,11 +1046,6 @@ export class Renderer {
     this.walls = this.makeBatch(NCELLS * 2 + 2048);
     this.shadow = this.makeBatch(4);
     this.dark = this.makeBatch(4);
-    this.fog = this.makeBatch(4);
-    // one quad an eye: the core, every structure of the player's, every
-    // body of theirs
-    this.fogSight = this.makeBatch(4096);
-    this.fogStatic = this.makeBatch(4096);
     // a swarm budget, not a worst case: 12 quads is a walking mech with one
     // mirrored gun drawn twice (silhouette rim under, art over), which is
     // what MAX_UNITS of anything is ever actually made of. The heavies cost
@@ -1258,18 +1070,6 @@ export class Renderer {
     this.uWaterOff = needWater("uOff");
     this.uWaterTime = needWater("uTime");
     this.uWaterUnit = needWater("uUnit");
-
-    // the fog's two stages ride the same instanced vertex stage everything
-    // else does, so an eye's circle and the wash over the map are both
-    // just quads — only the fragment differs
-    this.fogSightProg = this.link(VS, FOG_SIGHT_FS);
-    this.uSightRes = this.needUniform(this.fogSightProg, "uRes");
-    this.uSightZoom = this.needUniform(this.fogSightProg, "uZoom");
-    this.uSightOff = this.needUniform(this.fogSightProg, "uOff");
-    this.fogProg = this.link(VS, FOG_FS);
-    this.uFogRes = this.needUniform(this.fogProg, "uRes");
-    this.uFogZoom = this.needUniform(this.fogProg, "uZoom");
-    this.uFogOff = this.needUniform(this.fogProg, "uOff");
 
     this.shieldProg = this.link(SHIELD_VS, SHIELD_FS);
     const needIn = (name: string): WebGLUniformLocation => {
@@ -1310,19 +1110,6 @@ export class Renderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-    // the fog's texture: the darkness buffer's twin, same filter, same
-    // edge rule, its own texels (see drawFog)
-    const ftex = gl.createTexture();
-    if (!ftex) throw new Error("fog texture alloc failed");
-    this.fogTex = ftex;
-    gl.bindTexture(gl.TEXTURE_2D, ftex);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    // the map-covering quad it is drawn with is pushed per draw: the two
-    // washes differ in strength and in which buffer they read (drawFog)
-
     const tex = gl.createTexture();
     if (!tex) throw new Error("texture alloc failed");
     this.tex = tex;
@@ -1343,11 +1130,7 @@ export class Renderer {
     gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1); // the map ends in this too
   }
 
-  private needUniform(prog: WebGLProgram, name: string): WebGLUniformLocation {
-    const loc = this.gl.getUniformLocation(prog, name);
-    if (!loc) throw new Error(`${name} uniform missing`);
-    return loc;
-  }
+
 
   private link(vs: string, fs: string): WebGLProgram {
     const gl = this.gl;
@@ -1841,11 +1624,6 @@ export class Renderer {
         // water cell, stays here and draws over it
         const wet = isWaterFloor(T.floor[i]);
         this.push(wet ? wt : t, cx, cy, CELL, CELL, 0, UV_FLOORS[T.floor[i]], 1, 1, 1, 1);
-        // THE ORE, over the floor and under its edges: a vein is what a
-        // drill stands on (Sim.canPlace), and it shows as Mindustry's own
-        // copper ore, one of three faces picked by the cell
-        if (T.ore[i] && !wet)
-          this.push(t, cx, cy, CELL, CELL, 0, UV_ORE[(x * 7 + y * 13) % 3], 1, 1, 1, 1);
         const pri = GROUP_PRI[(T.floor[i] / 3) | 0];
         for (const og of EDGE_ORDER) {
           if (GROUP_PRI[og] <= pri) continue;
@@ -2031,8 +1809,7 @@ export class Renderer {
    * footprint is stamped into the shadow mask along with the hills (pass 2
    * above), and the half-cell bilinear rim that melts out of those texels
    * is the dark hugging its sides. Everything else that gets put down —
-   * turrets, walls, drills and factories, the swarm's own buildings, the
-   * shield towers — was drawn flat, a sprite laid on the floor instead of a
+   * turrets and the shield towers — was drawn flat, a sprite laid on the floor instead of a
    * thing standing on it.
    *
    * They stamp the same mask now, and read identically, because it IS the
@@ -2238,7 +2015,7 @@ export class Renderer {
    */
   private pushUnitPass(dyn: Batch, sim: Sim, pass: number): void {
     const { vx0, vy0, vx1, vy1 } = this;
-    const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n, uteam, usel } = sim;
+    const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
     const { ushield, ushieldAlpha, urad, uwet, uhungry, ufly, ueaten, uwade } = sim;
     // pass 1 is nothing but the flyers' drop shadows — a whole second
     // quad per flyer, and the first decoration to go with the effects
@@ -2263,27 +2040,8 @@ export class Renderer {
       const cm = grow === 1 ? KIND_CULL[k] : KIND_CULL[k] * grow;
       if (upx[i] < vx0 - cm || upx[i] > vx1 + cm || upy[i] < vy0 - cm || upy[i] > vy1 + cm)
         continue;
-      // in the fog: not there — the player's own bodies are never in it
-      const mine = uteam[i] !== 0;
-      if (!mine && !this.vis(upx[i], upy[i])) continue;
       const usz = KIND_SPRITE[k];
       if (grow !== 1) this.beginScale(upx[i], upy[i], grow);
-      // THE PLAYER'S MARK, and the SELECTION with it: a ring in the team's
-      // amber under each of the player's bodies. Two weights of the same
-      // ring rather than two different marks — faint on a body that is
-      // simply yours (which is all the ring ever used to say, and still
-      // the only thing that tells your dagger from the swarm's, since both
-      // sides wear the same art), and full-strength and wider on one you
-      // have selected. A selection is then the loudest thing on the board
-      // without introducing a second vocabulary for it.
-      if (mine && pass !== 1) {
-        const on = usel[i] !== 0;
-        const rr = urad[i] * 2 * (on ? SELECT_RING_SCALE : 1.5);
-        this.push(
-          dyn, upx[i], upy[i], rr, rr, 0, UV_RING,
-          TEAM_MINE[0], TEAM_MINE[1], TEAM_MINE[2], on ? 1 : TEAM_RING_ALPHA,
-        );
-      }
       if (pass === 1) {
         this.push(dyn, upx[i] + SHADOW_OFF, upy[i] + SHADOW_OFF, usz, usz, urot[i], KIND_UV[k], 0, 0, 0, SHADOW_ALPHA);
         this.endScale();
@@ -2298,7 +2056,7 @@ export class Renderer {
         // UnitType.drawShield: Fill.light at hitSize * 1.3 — a disc that is
         // clear at the centre and carries the colour at its rim
         const sr = urad[i] * 2 * 1.3 * 2;
-        const sc = TEAM_COL[uteam[i]];
+        const sc = TEAM_CRUX_RGB;
         this.push(dyn, upx[i], upy[i], sr, sr, 0, UV_RING,
           // shieldColor lerped to white by the hit flash, at 0.7 x alpha
           sc[0] + (1 - sc[0]) * Math.min(1, ushieldAlpha[i]),
@@ -2328,7 +2086,7 @@ export class Renderer {
       // things a body wears in its OWN team's colour (TEAM_COL) — carried
       // through the body's tint, so both grey with its health and darken
       // in a hill's shade with the sprite they sit on
-      const team = TEAM_COL[uteam[i]];
+      const team = TEAM_CRUX_RGB;
       this.cellTint[0] = team[0] * tint[0];
       this.cellTint[1] = team[1] * tint[1];
       this.cellTint[2] = team[2] * tint[2];
@@ -2361,239 +2119,16 @@ export class Renderer {
    * Only the flyers come after it (drawFrame) — they are above the
    * terrain, so a range never darkens them.
    *
-   * A FOGGED FRAME HAS NONE OF IT. The fog is the only black a run wants:
-   * once a hill is revealed it is revealed whole, middle included, and a
-   * black core inside a lit range reads as fog that was never lifted.
-   * The darkness is left to the frames with no fog on them — the title
-   * screen's field and the editor.
    */
   private drawDarkness(): void {
     const gl = this.gl;
     if (this.dark.n === 0) return;
-    if (this.fogSrc && this.fogSrc.enabled) return;
     gl.useProgram(this.prog);
     gl.bindTexture(gl.TEXTURE_2D, this.darkTex);
     this.draw(this.dark, false);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
   }
 
-  /**
-   * The fog this renderer draws and culls by — the sim's own (Sim.fog),
-   * or null for a frame with none: the title screen's field, the editor.
-   */
-  setFog(fog: Fog | null): void {
-    this.fogSrc = fog;
-    this.fogVersion = -1;
-    this.fogUploaded = false;
-    // a different fog is a different map's memory: the discovered buffer
-    // is re-lit from nothing on the next frame (drawFog)
-    this.fogEpochSeen = -1;
-  }
-
-  /**
-   * Is a world point in sight? What is not is not drawn — not the body,
-   * not its shadow, not its shot, not the puff where it was hit. The fog
-   * wash alone would leave a body half-visible in the grey, and a body in
-   * the grey is a body the player was promised they cannot see.
-   */
-  private vis(x: number, y: number): boolean {
-    const f = this.fogSrc;
-    return !f || !f.enabled || f.visibleAt(x, y);
-  }
-
-  /** ...and has it ever been in sight? A structure once seen stays drawn */
-
-  private seen(x: number, y: number): boolean {
-    const f = this.fogSrc;
-    return !f || !f.enabled || f.seenAt(x, y);
-  }
-
-  /**
-   * THE FOG, DRAWN — mindustry.graphics.FogRenderer.drawFog, ported whole.
-   *
-   * TWO BUFFERS OVER THE MAP, a texel a tile, black where the fog is:
-   *
-   *   dynamic  cleared to black and re-drawn EVERY FRAME from every eye
-   *            on the field, at its true floating position. This is the
-   *            picture of what is in sight now, and it moves as smoothly
-   *            as the units do — the rules underneath it only resettle
-   *            twenty-five times a second (fog.ts), but nobody sees the
-   *            rules.
-   *   static   never cleared until a new map, and never re-drawn from
-   *            scratch: it takes only the EVENTS the fog has handed over
-   *            since the last frame (Fog.takeStaticEvents), each one a
-   *            circle stamped where an eye appeared or stepped. It is the
-   *            memory of the map, and it is the reason this is cheap —
-   *            a board where nothing moved costs it nothing at all.
-   *
-   * Both are white-on-black COVERAGE, not carved alpha: an eye's polygon
-   * writes white, and the wash reads the red channel back through
-   * fog.frag (FOG_FS), which quantizes it into steps of 0.3 and drops it
-   * entirely above 0.99. The frame then takes the dynamic buffer at
-   * Rules.dynamicColor's half alpha and the static one at full black,
-   * in that order.
-   *
-   * A ONE-TEXEL BORDER is scissored off both, upstream's
-   * `ScissorStack.push(rect.set(1, 1, w - 2, h - 2))`: the very edge of
-   * the map is never fully revealed, whatever is standing on it.
-   *
-   * UPSTREAM'S HALF-TILE OFFSET IS NOT HERE, and deliberately. Draw.fbo
-   * takes one for the static buffer alone ("TODO why does this require a
-   * half-tile offset while dynamic does not"), because upstream rasterizes
-   * its two buffers in DIFFERENT projections — the static one in tile
-   * space, the dynamic one in world pixels. Both of these are drawn in
-   * world pixels, into buffers of the same size, and sampled by the same
-   * quad, so there is nothing to correct: adding the offset would put the
-   * two half a tile out of register rather than into it.
-   */
-  private drawFog(sim: Sim, zoom: number, offX: number, offY: number, kPx: number): void {
-    const f = this.fogSrc;
-    if (!f || !f.enabled) return;
-    const gl = this.gl;
-    if (!this.ensureFogTargets()) {
-      // no buffers on this driver: the cell fallback reads the fog's bits
-      // straight, and nothing will ever take the stamps
-      f.wantsDrawEvents = false;
-      return this.drawFogCells();
-    }
-
-    // the eyes, as they stand right now — the dynamic buffer's whole content
-    const b = this.fogSight;
-    b.n = 0;
-    for (const src of sim.visionSources()) {
-      if (src.r <= 0) continue;
-      this.push(b, src.x, src.y, src.r * 2, src.r * 2, 0, UV_FULL, 1, 1, 1, 1);
-    }
-    // ...and the events the static buffer still owes, each at the centre
-    // of the tile it was stamped on. Upstream nudges this by half a tile
-    // for an even-sized block (renderEvent's `o`) to put the drawn circle
-    // back over the block's true middle; the fog here stamps the tile
-    // under the eye's own centre, so the drawn circle and the computed
-    // one already sit on the same tile, and a nudge would part them.
-    const st = this.fogStatic;
-    st.n = 0;
-    const ev = f.takeStaticEvents();
-    for (let k = 0; k < ev.length; k += 3) {
-      const d = (ev[k + 2] + FOG_STATIC_PAD) * 2 * CELL;
-      this.push(st, (ev[k] + 0.5) * CELL, (ev[k + 1] + 0.5) * CELL, d, d, 0, UV_FULL, 1, 1, 1, 1);
-    }
-
-    // both buffers cover the MAP, not the view: world px straight through
-    gl.useProgram(this.fogSightProg);
-    gl.uniform2f(this.uSightRes, W, H);
-    gl.uniform1f(this.uSightZoom, 1);
-    gl.uniform2f(this.uSightOff, 0, 0);
-    gl.viewport(0, 0, FOG_W, FOG_H);
-    // white on black, straight over: the buffers hold COVERAGE, and an
-    // eye's circle laid over another's is still just covered
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(FOG_EDGE, FOG_EDGE, FOG_W - FOG_EDGE * 2, FOG_H - FOG_EDGE * 2);
-    gl.clearColor(0, 0, 0, 1);
-
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fogDynFbo);
-    // the clear is the whole buffer, border included — the scissor is what
-    // keeps the border from being LIT, not from being wiped
-    gl.disable(gl.SCISSOR_TEST);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.enable(gl.SCISSOR_TEST);
-    this.draw(b, true);
-
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fogStaticFbo);
-    // ...and the memory is wiped only by a new map (Fog.epoch), which is
-    // FogRenderer's clearStatic
-    if (f.epoch !== this.fogEpochSeen) {
-      this.fogEpochSeen = f.epoch;
-      gl.disable(gl.SCISSOR_TEST);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-      gl.enable(gl.SCISSOR_TEST);
-    }
-    this.draw(st, true);
-    gl.disable(gl.SCISSOR_TEST);
-
-    // back to the frame, and the two washes over it
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1);
-    gl.useProgram(this.fogProg);
-    gl.uniform2f(this.uFogRes, this.canvas.width / kPx, this.canvas.height / kPx);
-    gl.uniform1f(this.uFogZoom, zoom);
-    gl.uniform2f(this.uFogOff, offX, offY);
-    const q = this.fog;
-    q.n = 0;
-    this.push(q, W / 2, H / 2, W, H, 0, UV_FOG_QUAD, 0, 0, 0, FOG_DYNAMIC_ALPHA);
-    gl.bindTexture(gl.TEXTURE_2D, this.fogDynTex);
-    this.draw(q, true);
-    q.n = 0;
-    this.push(q, W / 2, H / 2, W, H, 0, UV_FOG_QUAD, 0, 0, 0, FOG_STATIC_ALPHA);
-    gl.bindTexture(gl.TEXTURE_2D, this.fogStaticTex);
-    this.draw(q, true);
-    gl.useProgram(this.prog);
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
-  }
-
-  /**
-   * The fallback fog: one texel a tile, straight off the fog's own bits.
-   * Only ever
-   * used where the buffers above cannot be made (a driver that refuses the
-   * framebuffer), because a frame with NO fog on it is not a cosmetic
-   * failure — it shows the player the whole map.
-   */
-  private drawFogCells(): void {
-    const f = this.fogSrc;
-    if (!f || !f.enabled) return;
-    const gl = this.gl;
-    if (f.version !== this.fogVersion) {
-      this.fogVersion = f.version;
-      const st = f.visible, disc = f.discovered, m = this.fogMask;
-      const seen = Math.round(FOG_DYNAMIC_ALPHA * 255);
-      gl.bindTexture(gl.TEXTURE_2D, this.fogTex);
-      // ONLY WHAT MOVED. The fog is recast every tick while the player has
-      // bodies out, and a full rebuild-and-upload of a 512x512 texture is
-      // most of a frame's budget; the fog hands over the rectangle that
-      // actually changed (Fog.takeDirty) and the rows of it are the only
-      // ones repacked and sent. A first frame, or a fog that lost a
-      // source, hands over the whole map and this is the old path exactly.
-      const dirty = f.takeDirty();
-      const r = this.fogUploaded ? dirty : { x0: 0, y0: 0, x1: COLS - 1, y1: ROWS - 1 };
-      if (r) {
-        for (let y = r.y0; y <= r.y1; y++) {
-          const row = y * COLS;
-          for (let x = r.x0; x <= r.x1; x++) {
-            const i = row + x;
-            const a = disc[i] === 0 ? 255 : st[i] === 0 ? seen : 0;
-            const o = i * 4;
-            m[o] = m[o + 1] = m[o + 2] = m[o + 3] = a;
-          }
-        }
-        if (!this.fogUploaded) {
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, m);
-          this.fogUploaded = true;
-        } else {
-          // the sub-rectangle is read straight out of the full-map buffer:
-          // ROW_LENGTH says how wide a row of the source is, SKIP_* where
-          // the window starts in it (WebGL2's own unpack state)
-          gl.pixelStorei(gl.UNPACK_ROW_LENGTH, COLS);
-          gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, r.x0);
-          gl.pixelStorei(gl.UNPACK_SKIP_ROWS, r.y0);
-          gl.texSubImage2D(
-            gl.TEXTURE_2D, 0, r.x0, r.y0, r.x1 - r.x0 + 1, r.y1 - r.y0 + 1,
-            gl.RGBA, gl.UNSIGNED_BYTE, m,
-          );
-          gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
-          gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
-          gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
-        }
-      }
-    }
-    gl.useProgram(this.prog);
-    gl.bindTexture(gl.TEXTURE_2D, this.fogTex);
-    const q = this.fog;
-    q.n = 0;
-    this.push(q, W / 2, H / 2, W, H, 0, UV_FULL, 0, 0, 0, 1);
-    this.draw(q, true);
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
-  }
 
   /**
    * zoom is world→view scale; (offX, offY) = -cameraTopLeft * zoom; kPx is
@@ -2657,13 +2192,8 @@ export class Renderer {
       const sz = st.size;
       const px = sz * CELL;
       if (t.x < vx0 - px || t.x > vx1 + px || t.y < vy0 - px || t.y > vy1 + px) continue;
-      // the swarm's building is drawn once it has been in sight, like the
-      // map's shield towers; the player's own are always seen
-      if (t.team === "enemy" && !this.seen(t.x, t.y)) continue;
       // ONE ROSTER, ONE DRAWING: the swarm's lancer is the lancer's own
-      // sprite on the lancer's own base, with no team mark at all. There
-      // is nothing to tell it apart FROM — the player builds no turrets
-      // (factions.ts), so every turret on the board is the swarm's
+      // sprite on the lancer's own base
       const top = UV_TURRETS[t.kind];
       const base =
         sz >= 4 ? UV_TOWER_BASE4
@@ -2683,13 +2213,8 @@ export class Renderer {
         tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
       }
       const a = raising ? BUILD_ALPHA : 1;
-      // a wall is its art and nothing else: no base under it, no turning
-      if (st.building) {
-        this.push(dyn, t.x, t.y, px, px, 0, top, tint[0], tint[1], tint[2], a);
-      } else {
-        this.push(dyn, t.x, t.y, px, px, 0, base, tint[0], tint[1], tint[2], a);
-        this.push(dyn, t.x, t.y, px, px, t.angle, top, tint[0], tint[1], tint[2], a);
-      }
+      this.push(dyn, t.x, t.y, px, px, 0, base, tint[0], tint[1], tint[2], a);
+      this.push(dyn, t.x, t.y, px, px, t.angle, top, tint[0], tint[1], tint[2], a);
     }
     // the shieldTowers, AFTER the towers: they stand on free rock of their
     // own (Sim.trySpawnShieldTower) and never overlap one, so the order is
@@ -2699,9 +2224,6 @@ export class Renderer {
       if (s.hp <= 0) continue;
       const spx = SHIELD_TOWER_SIZE * CELL;
       if (s.x < vx0 - spx || s.x > vx1 + spx || s.y < vy0 - spx || s.y > vy1 + spx) continue;
-      // a building: once seen it stays on the map under the grey, the way
-      // a remembered structure does in StarCraft — never seen, not drawn
-      if (!this.seen(s.x, s.y)) continue;
       const t3 = (s.hp * 3) / s.hpMax;
       const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
       this.push(dyn, s.x, s.y, spx, spx, 0, UV_SHIELD_TOWER, tint[0], tint[1], tint[2], 1);
@@ -2715,7 +2237,7 @@ export class Renderer {
       // actually burning at (see Sim.statsFor)
       if (t.beamT >= 0)
         this.drawContinuousBeam(
-          dyn, t, (t.team === "enemy" ? structStats(t.kind) : sim.statsFor(t.kind)).bullet.continuous,
+          dyn, t, sim.statsFor(t.kind).bullet.continuous,
         );
     }
     const { upx, upy, ukind, n } = sim;
@@ -2729,8 +2251,7 @@ export class Renderer {
         const cm = KIND_CULL[ukind[i]];
         if (upx[i] < vx0 - cm || upx[i] > vx1 + cm || upy[i] < vy0 - cm || upy[i] > vy1 + cm)
           continue;
-        if (!this.vis(upx[i], upy[i])) continue;
-        this.pushWake(dyn, sim, i, w);
+          this.pushWake(dyn, sim, i, w);
       }
     // painter's order in three passes: ground units, then flyer shadows on
     // top of the crowd, then the flyers themselves above everything — the
@@ -2753,8 +2274,7 @@ export class Renderer {
         const reach = Math.max(held?.range ?? 0, field?.range ?? 0) + 40;
         if (upx[i] < vx0 - reach || upx[i] > vx1 + reach || upy[i] < vy0 - reach || upy[i] > vy1 + reach)
           continue;
-        if (!this.vis(upx[i], upy[i])) continue;
-        if (field) this.drawEnergyField(dyn, upx[i], upy[i], urot[i], field.range, field.color, sim.time, !!utgt[i]);
+          if (field) this.drawEnergyField(dyn, upx[i], upy[i], urot[i], field.range, field.color, sim.time, !!utgt[i]);
         if (!held) continue;
         if (ubeamT[i] > 0 && held.beam && held.beamStyle) {
           // ContinuousLaserBulletType: held at full, then out over fadeTime (16 ticks)
@@ -2782,7 +2302,6 @@ export class Renderer {
       const ex = fxX[f], ey = fxY[f];
       const tm = len + 8;
       if (ex < vx0 - tm || ex > vx1 + tm || ey < vy0 - tm || ey > vy1 + tm) continue;
-      if (!this.vis(ex, ey)) continue;
       let col: RGB = PAL.white;
       if (fxHasCol[f]) {
         FX_VIEW_COL[0] = fxColR[f];
@@ -2797,8 +2316,7 @@ export class Renderer {
       // the SIM's resolution, not the static table: a duo the tree has
       // upgraded fires a different bullet, and drawing the stock one made
       // the graphite round invisible as a graphite round
-      // ...and the swarm's turrets fire the stock table
-      const b = p.enemy ? bulletOf(p.kind, p.frag) : sim.bulletFor(p.kind, p.frag);
+      const b = sim.bulletFor(p.kind, p.frag);
       // LiquidBulletType.draw: a water orb is not a sprite pair but a
       // filled disc of the liquid's own colour — Fill.circle(x, y,
       // orbSize). (The fout()/100 lerp toward white is a 1% shade and is
@@ -2854,7 +2372,6 @@ export class Renderer {
     // over it, or a liquid orb's plain disc
     for (const sh of sim.shots) {
       if (sh.x < vx0 - 48 || sh.x > vx1 + 48 || sh.y < vy0 - 48 || sh.y > vy1 + 48) continue;
-      if (!this.vis(sh.x, sh.y)) continue; // a shot out of the fog appears where the fog ends
       const look = sh.look;
       // a bomb has no velocity: it keeps the heading it was dropped on, 0
       const rot = sh.vx === 0 && sh.vy === 0 ? 0 : Math.atan2(sh.vy, sh.vx);
@@ -2882,8 +2399,6 @@ export class Renderer {
     for (let f = 0; f < fxN; f++) {
       const kind = fxKind[f] as FxKind;
       const ex = fxX[f], ey = fxY[f];
-      // nothing plays in the fog — a burst there would say where a body is
-      if (!this.vis(ex, ey)) continue;
       // cull: an anchor further out than the effect's reach draws nothing.
       // The line-shaped kinds carry their reach as data — a beam's length
       // in its len lane, a bolt's whole path in fxPts — so they widen
@@ -3180,8 +2695,6 @@ export class Renderer {
     dyn.n = 0;
     this.pushUnitPass(dyn, sim, 2);
     this.draw(dyn, true);
-    // THE FOG, over all of it — the flyers too (see `fog`)
-    this.drawFog(sim, zoom, offX, offY, kPx);
   }
 
   /**
@@ -3201,7 +2714,7 @@ export class Renderer {
    * outlines rather than merging.
    */
   private drawForceFields(sim: Sim, buffered: boolean): void {
-    const { upx, upy, ushield, ushieldAlpha, uforceScale, ukind, uteam, n } = sim;
+    const { upx, upy, ushield, ushieldAlpha, uforceScale, ukind, n } = sim;
     const { vx0, vy0, vx1, vy1 } = this;
     const b = this.shields;
     // the census answers "is any carrier even alive" without touching the
@@ -3223,13 +2736,12 @@ export class Renderer {
       const bm = rad + 16;
       if (upx[i] < vx0 - bm || upx[i] > vx1 + bm || upy[i] < vy0 - bm || upy[i] > vy1 + bm)
         continue;
-      if (!this.vis(upx[i], upy[i])) continue;
       // Draw.color(shieldColor, Color.white, clamp(alpha)): a shot landing
       // on the field whitens the whole bubble for a few ticks. The colour
       // rides into the buffer with the fill, so the shader's rim and hatch
       // pick it up without knowing anything about the carrier
       const w = Math.min(1, ushieldAlpha[i]);
-      const sc = TEAM_COL[uteam[i]];
+      const sc = TEAM_CRUX_RGB;
       const col: RGB = [
         sc[0] + (1 - sc[0]) * w,
         sc[1] + (1 - sc[1]) * w,
@@ -3256,7 +2768,6 @@ export class Renderer {
       if (rad < 1) continue;
       const bm = rad + 16;
       if (s.x < vx0 - bm || s.x > vx1 + bm || s.y < vy0 - bm || s.y > vy1 + bm) continue;
-      if (!this.vis(s.x, s.y)) continue;
       const w = Math.min(1, s.shieldAlpha);
       const col: RGB = [
         SHIELD_TOWER_COL[0] + (1 - SHIELD_TOWER_COL[0]) * w,
@@ -3284,53 +2795,6 @@ export class Renderer {
     }
   }
 
-  /**
-   * Size the shield buffer to the drawing buffer, rebuilding it whenever
-   * the canvas changes. Returns false if the driver will not give us a
-   * complete framebuffer, which puts the fields on the no-shader path.
-   */
-  /** the two fog buffers, made once and kept for the session */
-  private ensureFogTargets(): boolean {
-    if (!this.fogFboReady) return false;
-    if (this.fogDynFbo && this.fogStaticFbo) return true;
-    const gl = this.gl;
-    const make = (): [WebGLTexture, WebGLFramebuffer] | null => {
-      const tex = gl.createTexture();
-      const fbo = gl.createFramebuffer();
-      if (!tex || !fbo) return null;
-      gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, FOG_W, FOG_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-      // FogRenderer sets TextureFilter.linear on both buffers, and it is
-      // load-bearing: a texel a tile magnified with NEAREST would give the
-      // fog back the stepped cell edge this whole path exists to lose. The
-      // bilinear ramp is what the wash then cuts into bands (FOG_FS)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 0);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-      const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
-      // a fresh buffer is all fog until something lights it
-      if (ok) {
-        gl.viewport(0, 0, FOG_W, FOG_H);
-        gl.clearColor(0, 0, 0, 1);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-      }
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      return ok ? [tex, fbo] : null;
-    };
-    const dyn = make(), stat = make();
-    gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1);
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
-    if (!dyn || !stat) return (this.fogFboReady = false);
-    [this.fogDynTex, this.fogDynFbo] = dyn;
-    [this.fogStaticTex, this.fogStaticFbo] = stat;
-    this.fogEpochSeen = -1;
-    return true;
-  }
 
   private ensureShieldTarget(w: number, h: number): boolean {
     if (!this.shieldReady) return false;

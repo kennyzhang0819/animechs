@@ -1,7 +1,5 @@
-import { expandFormations } from "./blueprints";
 import {
   ALL_MOVE_BITS,
-  BASE,
   CORE_HP,
   INF,
   LAYER_BIT,
@@ -28,7 +26,6 @@ import {
   MAX_UNITS,
   PAL,
   TEAM_CRUX_RGB,
-  TEAM_SHARDED_RGB,
   ROWS as ROWS_IMPORT,
   TOWERS as TOWERS_IMPORT,
   towerMaxHp,
@@ -39,7 +36,6 @@ import {
   type BulletFx,
   type BulletStats,
   type TowerStats,
-  bulletOf,
   structStats,
 } from "./constants";
 
@@ -65,23 +61,15 @@ const TOWERS = TOWERS_IMPORT;
 const W = W_IMPORT;
 const WALL_R = WALL_R_IMPORT;
 import { FlowField, type Footprint, type Vec2 } from "./flowfield";
-import { Corridor, SectorGraph, sectorOf } from "./corridor";
-import {
-  CORE_VISION_CELLS,
-  MISSION_INTEL_CELLS,
-  Fog,
-  VISION_BUILT_CELLS,
-  VISION_BUILDING_CELLS,
-  VISION_OF_RANGE,
-  type VisionSource,
-} from "./fog";
 import {
   WORLDS,
   UNIT_ID,
   UNIT_KINDS as UNIT_KINDS_IMPORT,
+  UNIT_RMAX,
   UNIT_RMAX_AIR,
   UNIT_RMAX_GROUND,
   UNIT_STATS,
+  unitDrop,
   waveGroups,
   WAVE_RELEASE_SECONDS,
   type LegSpec,
@@ -144,20 +132,7 @@ import {
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap, type SpawnCircle } from "./maps";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
-import { factionUnit } from "./factions";
-import type { FamilyKey } from "./levels";
-import {
-  CORE_BATCH,
-  CORE_INCOME,
-  DRILL_CORE_INCOME,
-  CYCLE_SECONDS,
-  FACTORY_CYCLE_UNITS,
-  CORE_LOAD_SECONDS,
-  PLAYER_UNIT_CAP,
-  SCRAP_START,
-  scrapPriceOf,
-  sellValue,
-} from "./economy";
+import { SCRAP_START, scrapPriceOf, sellValue, waveBonusScrap } from "./economy";
 import { airWalkMask, isBuildableWall, isWaterFloor, navalWalkMask, WALL_DEEP, type Terrain } from "./terrain";
 import {
   MAX_WEAPONS,
@@ -175,10 +150,6 @@ import {
   type Core,
   isCore,
   type Structure,
-  type MissionStructKind,
-  type StructKind,
-  type Team,
-  teamOf,
   type Tower,
   type TowerKind,
   type EnemyShot,
@@ -316,38 +287,6 @@ const TARGET_INTERVAL = 20 / 60;
 // slim (CELL - 2*WALL_R)px window instead of scraping the jambs
 const CENTER_K = 25;
 
-// --- crowd spreading ---
-// A flow field hands every unit in a place the same heading, so a crowd
-// left to itself collapses into one thread: whoever is behind shoves the
-// one in front further along the very line it already walks. The eikonal
-// field (see FlowField.sweepEikonal) removes the funnelling the 8-way grid
-// used to add; these three forces do the rest, turning a column into a
-// front that AoE has to work through instead of a queue it enfilades.
-//
-// WHERE that front sits is not their job any more. It used to be, badly:
-// a distance field's cheapest line clips the inside of every corner, so
-// the crowd these forces spread was a crowd spread along the ROCK, and
-// force 3 below existed largely to drag it back off. The field now charges
-// the verge itself (FlowField.EDGE_COST), which puts the cheap route down
-// the middle of a lane before any of this runs — so these three are back
-// to their real job, which is width, and two of them were re-tuned for it
-// once they stopped fighting the field for position.
-//
-// All three are GROUND-only. A flyer routes round the hills (airField) but
-// is never STOPPED by one, so it has no corridor wall to funnel on in the
-// first place; leaving flyers on the untouched Mindustry physics keeps a
-// swarm reading as a swarm rather than a wobbling cloud.
-//
-// 1. Overlaps resolve sideways first. PUSH_LONG is the fraction of a
-//    front-to-back shove that stays front-to-back; PUSH_SIDE is how hard
-//    the remainder is re-aimed across the direction of travel. The shove's
-//    magnitude never changes — only the axis it is spent on
-/**
- * A body's own colour, by the team that owns it (uteam: 0 the swarm, 1 the
- * player) — the same table the renderer draws cells, shields and engines
- * from, here for the two effects a unit's shield throws off itself
- */
-const TEAM_COL: readonly RGB[] = [TEAM_CRUX_RGB, TEAM_SHARDED_RGB];
 
 const PUSH_LONG = 0.45;
 const PUSH_SIDE = 1.1;
@@ -412,34 +351,6 @@ const HN = HCOLS * HROWS;
 export type PlaceResult = "ok" | "invalid" | "would-seal";
 
 /**
- * THE LEAST a body of the player's sees round itself (fog.ts) — a unit's
- * own eye, and the only moving one on the board. Wide enough that walking
- * a unit into the dark actually opens ground ahead of it rather than
- * lifting the fog off the cell it is standing on, and wider than the
- * radius a finished building carries (VISION_BUILT_CELLS): a body that
- * walks out to look is worth more as a scout than a wall that sits.
- */
-export const UNIT_VISION_CELLS = 14;
-
-/**
- * WHAT A BODY ACTUALLY SEES, in tiles: the whole of its own reach, or the
- * floor above — whichever is more.
- *
- * Every body used to see the same nine tiles whatever it was, which is
- * the rule a turret was given up on for the same reason (VISION_OF_RANGE
- * is 1 — a gun sees the whole of its range). A flat eye reads on the
- * board as the heavy tiers being blind: an omura's guns reach sixty-two
- * tiles and it could see nine of them, so the top of the line could not
- * pick its own targets and stood there waiting for a turret behind it to
- * do the looking. What a body can shoot, it can now see.
- *
- * Truncated rather than rounded, as upstream takes a unit's radius —
- * (int)unit.type.fogRadius.
- */
-export function unitVisionTiles(kind: UnitKind): number {
-  return Math.max(UNIT_VISION_CELLS, Math.trunc(UNIT_REACH[kind] / CELL));
-}
-/**
  * HOW LONG THE BOARD MUST HOLD STILL before a dirtied flow field is
  * re-solved, in seconds. A solve is ~100ms of main thread on a 512x512
  * map, and a build drag lays a turret EVERY FRAME: solving per frame is
@@ -465,77 +376,6 @@ const FIELD_BUDGET_MS = 3;
 const FIELD_MIN_SLICE = 0.25;
 /** the clock the slices are measured by */
 const nowMs = () => performance.now();
-/** how far out from a factory's edge its make is set down */
-const FACTORY_SPAWN_REACH = CELL * 2.5;
-/**
- * HALF THE ARC a factory with a meetup point set drops its make into,
- * measured off the bearing to that point (Sim.updateProduction). 50° to
- * either side: wide enough that a row of bodies is a crowd rather than a
- * single file, narrow enough that every one of them is on the side of the
- * building the walk actually starts from.
- */
-const RALLY_SPAWN_ARC = (50 * Math.PI) / 180;
-/**
- * HOW OFTEN ONE BODY OF THE PLAYER'S LOOKS FOR SOMETHING TO HUNT
- * (Sim.updateHunt), in seconds. Per body and staggered from its spawn, so
- * the cost is spread flat across frames rather than landing on the frame
- * that made the army.
- */
-const HUNT_SCAN_SECONDS = 1;
-/**
- * HOW FAR A BODY LOOKS FOR AN ENEMY **BODY** to walk at. Deliberately not
- * the whole map: a swarm body is a moving target, and a walker sent at one
- * forty tiles away is walking at where it used to be. Inside this reach a
- * straight line is a good enough answer for the second it stands; outside
- * it, what the army walks at is the swarm's BUILDINGS, which do not move
- * and are worth a routed corridor.
- */
-const HUNT_SIGHT = CELL * 40;
-/**
- * HOW CLOSE A HUNT COUNTS AS ARRIVED at the building it was walking at. A
- * body standing on top of its target has nothing left to walk and its guns
- * are already firing (updateUnitWeapons) — without this it would re-route
- * onto the cell it is standing on once a second, for good.
- */
-const HUNT_ARRIVE = CELL * 6;
-/**
- * HOW CLOSE IS ARRIVED, for a body under a move order (Sim.orderMove).
- * Generous on purpose: a group sent at one cell cannot all stand on it,
- * and a body still shoving for the exact point long after the group has
- * settled reads as twitching rather than as arriving.
- */
-const ORDER_ARRIVE = CELL * 2;
-/**
- * HOW MANY ORDERS MAY STAND AT ONCE (see Sim.orders). A corridor is tens
- * of kilobytes, so this is a question about hands rather than about
- * memory: twenty-four is more separate standing orders than a player has
- * groups, which is the point — the twenty-fifth steals the oldest, and by
- * then that is a thing the player did rather than a body stopping for no
- * reason they can see.
- */
-const ORDER_SLOTS = 24;
-/**
- * ...and how many places one order may be routed FROM. A corridor is the
- * union of the routes from every sector its bodies are standing in, so a
- * group split either side of a headland gets both ways round. The cap is
- * what stops a hundred-body selection scattered over the map paying for a
- * hundred searches: past this many separate places, the rest of the group
- * walks the straight line until it reaches ground the corridor covers.
- */
-const ORDER_STARTS = 8;
-/**
- * ...and the budget a tick for rebuilding the ones the board has moved
- * under (reseedOrders) — the same three milliseconds the field solves are
- * sliced to, and for the same reason. A corridor is two or three
- * milliseconds, so two dozen of them arriving on one tick is a dropped
- * frame, which is the one thing all of this was meant to stop. At this
- * budget a whole board of orders is re-routed inside half a second, and
- * every body keeps walking the route it already has until its own turn
- * comes round.
- */
-const ORDER_BUDGET_MS = 3;
-/** a shot's own hit radius against a body, on top of the body's */
-const SHOT_HIT_R = 4;
 
 /**
  * HOW BIG A BODY IS TO THE CURSOR — the hit circle a click tests against,
@@ -566,13 +406,6 @@ export const PICK_LENIENT = 1.6;
  */
 export const PICK_STRUCT_PAD = CELL * 0.5;
 
-/**
- * HOW MANY POINTS A SHIFT-CHAINED ORDER MAY HOLD (orderMove's `queue`),
- * the current leg not counted. A chain is a route the player drew by
- * hand, and twenty legs is more than a hand draws; the cap is here so a
- * held shift and a twitching finger cannot grow one without end.
- */
-const MAX_WAYPOINTS = 20;
 
 /** how many buildings one ruler line may lay down (rulerCells) */
 const RULER_MAX = 64;
@@ -589,9 +422,7 @@ export interface Aim {
   x: number;
   y: number;
   half: number;
-  s: Structure | null;
-  u: number;
-  ui: number;
+  s: Structure;
 }
 
 // is a unit kind (by numeric id) airborne? towers and bullets check this
@@ -996,16 +827,6 @@ export class Sim {
    * hold this instead
    */
   readonly uid = new Int32Array(MAX_UNITS);
-  /**
-   * Unit.lastFogPos (FogControl.update): the tile this slot's body last
-   * stamped the discovered set from, and the id it belonged to. A body
-   * that has not changed TILE since the last tick costs the fog nothing;
-   * one that has stamps once, where it now stands. The id beside the
-   * position is what tells a recycled slot from the body that used to
-   * hold it — upstream gets that for free, the field dying with the unit.
-   */
-  private readonly ulastFogPos = new Int32Array(MAX_UNITS).fill(-1);
-  private readonly ulastFogId = new Int32Array(MAX_UNITS).fill(-1);
   readonly ukind = new Uint8Array(MAX_UNITS); // UNIT_ID of the kind
   /**
    * KIND_FLYING[ukind[i]], denormalised to one read: the broad-phase loops
@@ -1013,53 +834,6 @@ export class Sim {
    * arrays is measurably slower than reading one
    */
   readonly ufly = new Uint8Array(MAX_UNITS);
-  /**
-   * WHOSE A BODY IS: 0 the swarm's, 1 the player's (a factory's make —
-   * updateProduction). The two sides fight only each other: every
-   * targeting scan, sweep and splash in this file carries the team it is
-   * looking for, and a body of the player's is never a wave's, never a
-   * kill, never a meal, and never in the fog.
-   */
-  readonly uteam = new Uint8Array(MAX_UNITS);
-  /** how many of the player's bodies stand on the field (PLAYER_UNIT_CAP) */
-  nPlayer = 0;
-  /**
-   * 1 = THE PLAYER HAS THIS BODY SELECTED (selectAt, selectInRect,
-   * selectLike). Only ever set on a body of the player's — the swarm's are
-   * marked for focus fire instead, which is a different idea with a
-   * different mark (focusUid).
-   */
-  readonly usel = new Uint8Array(MAX_UNITS);
-  /**
-   * THE MOVE ORDER THIS BODY IS UNDER: 0 for none, else 1 plus the slot of
-   * the corridor it is steering by (Sim.orders). A body with no order
-   * stands where it was left — the player's army has no standing order to
-   * fall back to — so this is the whole of what makes one of them walk.
-   * Uint8, which is a ceiling of 255 slots against the ORDER_SLOTS the
-   * game actually keeps.
-   */
-  readonly uord = new Uint8Array(MAX_UNITS);
-  /** where that order sent it, in world px: what arrival is measured against */
-  readonly uordx = new Float32Array(MAX_UNITS);
-  readonly uordy = new Float32Array(MAX_UNITS);
-  /**
-   * THE HUNT (updateHunt) — what a body of the player's does when nobody
-   * is telling it anything, which is most of a run.
-   *
-   * 1 = uhuntx/uhunty holds a live enemy this body is walking STRAIGHT at.
-   * A hunt that found a BUILDING instead takes a routed order like the
-   * arrow's (uord, sendUnitTo) and leaves this at 0: a building is far and
-   * fixed and worth a corridor, a body is near and moving and would
-   * out-walk one before it was solved.
-   */
-  readonly uhunt = new Uint8Array(MAX_UNITS);
-  readonly uhuntx = new Float32Array(MAX_UNITS);
-  readonly uhunty = new Float32Array(MAX_UNITS);
-  /** seconds until this body looks for something to hunt again. Staggered
-   *  at spawn so an army made on one cycle does not scan on one frame */
-  readonly uhuntT = new Float32Array(MAX_UNITS);
-  /** the swarm's census — aliveByKind less the player's bodies — for the HUD */
-  readonly enemyByKind = new Int32Array(UNIT_KINDS.length);
   /** 1 = this unit is a NAVAL TANK: it steers by navalField, so the deep
    *  water is open to it, and it drives at NAVAL_LAND_SPEED whenever it is
    *  not on a water floor. Kept beside ufly rather than folded into it
@@ -1198,22 +972,6 @@ export class Sim {
    */
   deadline = 0;
   /**
-   * THE RAID'S TARGETS (levels.ts RaidMission), in the mission's own
-   * order, or empty on any other mission. Stood up at reset like the
-   * swarm's formation and held by reference for the rest of the run: a
-   * wrecked one is pulled out of `towers` but its record survives on
-   * hp 0, which is how `padsDown` counts without a second ledger to keep
-   * in step. A target the ground refused is simply absent, so this is
-   * shorter than the spec's list when a coordinate is bad.
-   */
-  readonly missionStructs: Tower[] = [];
-  /**
-   * HAS A ROCKET GONE UP — 0 or 1, and never more, because the first one
-   * ends the run (lost). It is a count rather than a flag only so that the
-   * end screen can say the plain thing that happened.
-   */
-  rocketsAway = 0;
-  /**
    * HOW MANY LEVELS THE TIDE HAS RISEN. A survive mission whose script
    * runs out before its clock sends its LAST wave again, and every repeat
    * adds SURVIVE_LOOP_LEVELS to the enemy level every body spawns at
@@ -1232,28 +990,6 @@ export class Sim {
   /** scrap the run has taken in, kills and wave bonuses alike — the tally
    *  the results screen reads */
   scrapEarned = 0;
-  /** THE CORE'S SHIPPING CLOCK: seconds left on the CORE_BATCH it is
-   *  filling (updateMining), the same cycle every drill runs on */
-  coreMineT = CORE_LOAD_SECONDS;
-  /**
-   * SECONDS UNTIL THE BASE FIRES (updateCycle, economy.ts CYCLE_SECONDS).
-   * Counts down in SIMULATED time, so the beat keeps the game's clock: at
-   * 4x it comes round four times as often, exactly as the waves arrive
-   * four times as fast.
-   */
-  private cycleT = CYCLE_SECONDS;
-  /**
-   * THE ARROW — the one order the army takes, and a STANDING one.
-   *
-   * A right-click anywhere on the map sends the WHOLE army at that point
-   * (orderMove) and leaves this cell behind as the army's destination:
-   * every body the base makes afterwards is sent at it too
-   * (deliverAtCore), so the arrow is a place the army goes rather than an
-   * instruction the bodies alive at the time happened to hear. -1 is no
-   * arrow, which is every run's opening — the army hunts on its own until
-   * a player says otherwise (updateHunt).
-   */
-  rallyCell = -1;
   // which towers may be built and how many of each — null (the default, and
   // the map editor's mode) places no restrictions; the campaign sets it from
   // the save's level through the track before play (see Game.setTech)
@@ -1335,18 +1071,10 @@ export class Sim {
 
   /** every standing turret and wall, the SWARM's included — see Tower.team */
   towers: Tower[] = [];
-  /** how many of `towers` are the swarm's: the cheap skip for the
-   *  structure sweeps a player's shot makes (updateProjectiles, splash) */
-  private enemyStructures = 0;
-  /** swarm structures the player's guns have wrecked this run */
-  enemyStructuresDown = 0;
   /** the box each side's buildings stand in, and whether the board has
    *  moved under it — see structBox() */
-  private readonly playerBox = { x0: 0, y0: 0, x1: 0, y1: 0, n: 0 };
-  private readonly enemyBox = { x0: 0, y0: 0, x1: 0, y1: 0, n: 0 };
+  private readonly structBoxCache = { x0: 0, y0: 0, x1: 0, y1: 0, n: 0 };
   private structBoxDirty = true;
-  /** the player's own bodies lost this run */
-  unitsLost = 0;
   projs: Projectile[] = [];
 
   /**
@@ -1375,8 +1103,6 @@ export class Sim {
   private focusUid = -1;
   private focusIdx = -1;
   private focusShieldTower = -1;
-  /** the swarm's structure the player tapped for focus fire, or null */
-  private focusTower: Tower | null = null;
 
   /** is the Volatile mutator in force this run? (see reset) */
   private volatileOn = false;
@@ -1543,110 +1269,13 @@ export class Sim {
    */
   readonly airField = new FlowField();
   /**
-   * THE MOVE ORDERS' FIELDS (orderMove). A right-click is a destination,
-   * and a destination is a flow field like any other: the same rock, the
-   * player's own buildings hard and the swarm's soft, seeded from the one
-   * cell the player pointed at. Every body in the order reads the same
-   * field, so a group ordered across the map keeps its shape going round
-   * a headland instead of each body solving its own way there.
-   *
-   * THERE ARE TWENTY-FOUR, AND AN IDLE ONE IS ALWAYS TAKEN FIRST — and
-   * the count is now a matter of taste rather than a budget, because an
-   * order is no longer a field over the map. It is a CORRIDOR
-   * (corridor.ts): the route is found first over a graph of the board's
-   * doorways, and the field is then built only over the sectors that route
-   * crosses. Tens of kilobytes and a couple of milliseconds, against 22MB
-   * and a tenth of a second.
-   *
-   * That is what took the ceiling off. There used to be two of these,
-   * taken strictly round-robin, on the reasoning that a field is
-   * twenty-odd megabytes and two covers what a hand does — send a group,
-   * send another, come back to the first. It does not: two orders standing
-   * meant the NEXT click, wherever it pointed and whoever it was for,
-   * re-aimed a field somebody else was walking, and that body lost its
-   * order. Since the player's army stopped having a standing order
-   * (updateUnits) losing one means STOPPING, so a click on one side of the
-   * map halted a unit on the other. Four made it rare. Twenty-four, plus
-   * taking a slot NOTHING IS WALKING first (orderSlotFor), makes it
-   * something a player has to work at — and a steal, when it finally
-   * happens, takes the OLDEST live order.
-   *
-   * ONE MASK FOR EVERYONE. It is the walkers' — a naval tank under orders
-   * routes as a walker (it can drive anywhere they can, only slower) and a
-   * flyer ignores it entirely and flies the straight line to the point.
-   */
-  private readonly orders = Array.from({ length: ORDER_SLOTS }, () => new Corridor());
-  /**
-   * THE BOARD AS DOORWAYS (corridor.ts), shared by every order on it and
-   * rebuilt only when the ground moves. This is the structure that makes
-   * an order cheap: the expensive, map-sized part of pathfinding is paid
-   * once for the whole board instead of once per click.
-   */
-  private readonly sectors = new SectorGraph();
-  /** when each slot was last aimed (orderClock), so a steal can take the
-   *  order given longest ago rather than whichever slot came up next */
-  private readonly orderAt = new Int32Array(ORDER_SLOTS);
-  private orderClock = 0;
-  /**
-   * WHERE EACH SLOT IS AIMED, as a cell — -1 for one nothing is walking.
-   *
-   * Kept so an order can be REBUILT: the ground moving invalidates a
-   * corridor (a wall across it is a route that no longer exists), and a
-   * body whose corridor has gone stale would walk it into the new wall and
-   * stand there. A structure landing rebuilds every live corridor over the
-   * board as it now is (reseedOrders), which it can afford to do because a
-   * corridor is milliseconds.
-   */
-  private readonly orderGoal = new Int32Array(ORDER_SLOTS).fill(-1);
-  /**
-   * THE SELECTED BUILDINGS — the other half of a selection. A structure is
-   * held by REFERENCE rather than by a flag on the record, because that is
-   * the only handle the rest of the game has on one (the core is not even
-   * a Tower), and because a set cannot outlive what it holds: removeTower
-   * drops its entry as the building leaves the board.
-   *
-   * Buildings and bodies are selected TOGETHER and cleared together — five
-   * daggers, the core and a factory is one selection — and the right-click
-   * then means whatever each half of it can be told: the bodies walk, the
-   * factories re-aim their rally, and the core, which can be told nothing,
-   * quietly takes no part.
-   */
-  private readonly selStructs = new Set<Structure>();
-  /**
-   * THE REST OF A CHAINED ORDER, per body: the cells a shift-queued
-   * right-click lined up behind the one it is walking now, oldest first
-   * (orderMove's `queue`, MAX_WAYPOINTS long). Keyed by the body's
-   * never-reused id rather than its index, so the swap-remove that
-   * reshuffles every other per-unit array cannot hand one body's route to
-   * another; removeUnit drops the entry with the body.
-   *
-   * A leg is taken the moment the body arrives (updateUnits), and the
-   * whole group normally arrives within a tick or two of itself — which
-   * is why takeNextWaypoint hands out a field slot ALREADY AIMED at the
-   * cell wherever it finds one: a group of twenty walking a chain costs
-   * one solve a leg, not twenty.
-   */
-  private readonly wpts = new Map<number, number[]>();  /** scratch for the reachability flood (reachableGoal): a queue, and a
-   *  stamp per cell so the visited set never has to be cleared */
-  private readonly floodQ = new Int32Array(NCELLS);
-  private readonly floodSeen = new Int32Array(NCELLS);
-  private floodStamp = 0;
-  /**
    * WHERE THE HILLS ARE (airWalkMask), kept because two different questions
    * ask it: what a flyer routes around, and what a shot cannot be taken
    * through (hasSight). Rebuilt with the terrain and never after.
    */
   private hills: Uint8Array = new Uint8Array(NCELLS);
-  /**
-   * FOG OF WAR (fog.ts): what the player's structures can see. The sim
-   * owns it because the sim is what it gates — a turret targets only what
-   * is in sight, a structure stands only on ground in sight — and the
-   * renderer and the minimap read the same bytes. Off (setFog) for the
-   * title screen's field and the headless bot, where there is no player
-   * to hide anything from.
-   */
-  readonly fog = new Fog();
-  private fogEnabled = true;
+  /** the player's BUILDINGS currently selected — a gathered row to sell or inspect */
+  private readonly selStructs = new Set<Structure>();
   /**
    * The boss door's cells, split by the layer that may use them: a boss
    * zone is terrain-blind like an air zone, but a WALKING boss still has to
@@ -1684,11 +1313,6 @@ export class Sim {
   private fieldQuiet = 0;
   /** seconds a pending solve has been waiting — the staleness cap */
   private fieldStale = 0;
-  /** which standing orders are about ground that has moved: their
-   *  corridors want rebuilding once the board settles (reseedOrders).
-   *  A slot at a time, because they are rebuilt a few a tick */
-  private readonly orderStale = new Uint8Array(ORDER_SLOTS);
-  private ordersStale = false;
   /**
    * THE SOLVES IN FLIGHT, head first: fields whose masks have moved and
    * whose new routes are being worked out a slice a frame (runSolveQueue).
@@ -1715,12 +1339,10 @@ export class Sim {
     this.n = 0;
     this.time = 0;
     this.kills = 0;
-    this.unitsLost = 0;
     this.devoured = 0;
     this.killsByKind.fill(0);
     this.scrap = SCRAP_START;
     this.scrapEarned = 0;
-    this.coreMineT = CORE_LOAD_SECONDS;
     // the run's rules, read once: the feed pass runs over every unit on the
     // field, and a spec lookup per unit per tick to answer a question that
     // cannot change mid-run would be pure waste
@@ -1745,10 +1367,6 @@ export class Sim {
     // the mission sets the clock (levels.ts); the core's pool is CORE_HP on every map
     const mission = this.level.mission;
     this.deadline = mission.kind === "survive" ? mission.minutes * 60 : 0;
-    // the raid's own state; its buildings are stood up further down, with
-    // the swarm's formation, because the fields have to be solved around them
-    this.missionStructs.length = 0;
-    this.rocketsAway = 0;
     this.loopLevel = 0;
     this.projs.length = 0;
     // drop the fx pool: the count is the pool, but the bolt-path refs must
@@ -1759,12 +1377,8 @@ export class Sim {
     // a new board holds none of the last one's hand: no building picked,
     // and no route drawn behind anybody
     this.selStructs.clear();
-    this.wpts.clear();
-    this.enemyStructures = 0;
-    this.enemyStructuresDown = 0;
     // ...and a new core is about to be stood up under it (see below)
     this.structBoxDirty = true;
-    this.focusTower = null;
     this.cellTower.fill(null);
     this.shots.length = 0;
     this.exploded = 0;
@@ -1802,67 +1416,13 @@ export class Sim {
     // the walkers' field: rock and structures block it, it enters by the
     // ground zones, and it aims at the core (coreGoal)
     this.groundPads = this.padMaskFor("ground");
-    // THE SWARM'S OWN FORMATION, stood up before the field is solved so
-    // its walls are rock to the walkers from the first tick. One that
-    // will not fit the ground (a drop zone moved over it, a document from
-    // an older board) is dropped, not forced.
-    //
-    // TWO SOURCES, ONE DEFENCE: a board carries its swarm structures
-    // BOTH as loose stamps (Terrain.enemies) and as stamped blueprint
-    // instances (Terrain.formations, resolved through the library by
-    // expandFormations — see blueprints.ts). The editor draws both and
-    // the run has to fight both, so both are stood up here. Confluence
-    // is 15 loose stamps and 335 instances: placing only the loose ones
-    // left the map with its handful of tier-4 guns and nothing else.
-    for (const e of this.terrain.enemies) this.placeEnemyStructure(e.gx, e.gy, e.kind);
-    for (const e of expandFormations(this.terrain.formations))
-      this.placeEnemyStructure(e.gx, e.gy, e.kind);
-    // ...and THE MISSION'S OWN BUILDINGS on top of it (levels.ts
-    // RaidMission): the swarm's alone, placed from the level rather than
-    // from the map document, because they belong to the assignment and
-    // not to the ground. Same rule as the formation — one the board will
-    // not take is dropped, and here it also says so, because a missing
-    // pad is a mission that cannot be finished
-    if (mission.kind === "raid") {
-      // THE TARGETS ARE THE MAP'S (Terrain.missionStructs, stamped in the
-      // map editor) and the MISSION says which KIND of them it is about,
-      // so a board may carry more than one assignment's objectives and
-      // stand up only the one being played. Document order is the order
-      // the mission uses them in, which the editor numbers on the board
-      for (const t of this.terrain.missionStructs) {
-        if (t.kind !== mission.target) continue;
-        const pad = this.placeMissionStructure(t.gx, t.gy, t.kind);
-        if (pad) this.missionStructs.push(pad);
-        else
-          console.warn(
-            `mission target ${t.kind} at ${t.gx},${t.gy} does not fit the board — dropped`,
-          );
-      }
-      // a raid on a board with none of its building is a run that can only
-      // be lost, and that is always an authoring slip rather than a design
-      if (this.missionStructs.length === 0)
-        console.warn(
-          `raid on ${this.level.map ?? "the default map"} found no ${mission.target} — ` +
-            "stamp them in the map editor's Mission structure palette",
-        );
-    }
-    this.abortSolves();
-    // a new map is a new board: no order stands on it, no corridor across
-    // it means anything, and the doorway graph is the old map's
-    for (const c of this.orders) c.reset();
-    this.sectors.markDirty();
-    this.ordersStale = false;
-    this.orderStale.fill(0);
-    this.orderGoal.fill(-1);
-    this.orderAt.fill(0);
-    this.orderClock = 0;
+    // a new map is a new board: nothing is pending on it
     this.fieldDirty = false;
     this.navalDirty = false;
     this.unstickPending = false;
     this.fieldQuiet = 0;
     this.fieldStale = 0;
-    this.field.rebuildWalk(this.footprints(), this.terrain.blocked, this.groundPads, this.coreGoal(),
-      this.hardFootprints());
+    this.field.rebuildWalk(this.footprints(), this.terrain.blocked, this.groundPads, this.coreGoal());
     // THE NAVAL TANKS' FIELD. It used to be the mirror image of the
     // walkers' — dry land its wall, the water nearest the core its goal,
     // and no field at all on a map with no sea. It is a SUPERSET of the
@@ -1872,45 +1432,22 @@ export class Sim {
     // simply cuts the water when the water is on the way — and every map
     // has one of these fields, because every map has ground.
     this.navalField.rebuildWalk(this.footprints(), navalWalkMask(this.terrain),
-      this.padMaskFor("water"), this.coreGoal(), this.hardFootprints());
+      this.padMaskFor("water"), this.coreGoal());
     // THE FLYERS' FIELD, and the mask sight is traced through (hasSight):
     // one array, because "a hill" is one idea. Towers are left out of it
     // on purpose — see airField — so it is solved once here and never
     // again, however much is built or sold during the run.
     this.hills = airWalkMask(this.terrain);
-    // a new map is unseen ground, and the core is the first thing looking at it
-    this.fog.reset(this.fogEnabled);
-    this.seedFog();
     this.airField.rebuildWalk([], this.hills, this.padMaskFor("air"), this.coreGoal());
     this.buildGoalPts();
     this.field.compute();
     this.navalField.compute();
     this.airField.compute();
-    // THE DOORWAY GRAPH IS BUILT NOW, with the fields, rather than left for
-    // the first order to pay for. It is the one map-sized piece of the
-    // corridor machinery (corridor.ts) — twenty milliseconds — and a
-    // player's first right-click of a run is the worst possible moment to
-    // spend it. Every rebuild after this one is per-sector and measured in
-    // microseconds (SectorGraph.markDirty)
-    this.sectors.ensure(this.field.walk, this.field.soft);
-    // ...and one throwaway corridor is built and dropped, from the core to
-    // the far side of the board, purely so the solve is COMPILED before a
-    // player ever wants one. Cold, the first order on a map costs three
-    // times what the same order costs once the engine has seen the loop —
-    // and the first order of a run is exactly when a hitch is noticed.
-    // This is the loading screen's business, not the player's
-    this.warmCorridor();
     // ...which is what the open-sky pad lists need, so they are picked here
     // rather than in buildPads: a pad is open sky only once there is a
     // field to ask
     this.airOpen = this.openSky(this.airPads);
     this.bossAirOpen = this.openSky(this.bossPads.air);
-    this.nPlayer = 0;
-    // a new map is a new base: the cycle starts a whole beat from now and
-    // the army has no arrow to walk at
-    this.cycleT = CYCLE_SECONDS;
-    this.rallyCell = -1;
-    this.enemyByKind.fill(0);
     // fail LOUDLY on a broken map: with zero doors nothing ever spawns and
     // a wave script stalls forever, which reads as a scheduler bug
     if (this.airPads.length === 0 && this.field.spawnPts.length === 0)
@@ -1967,20 +1504,11 @@ export class Sim {
    *  through at a cost and shot at: the player's turrets and walls, and the core */
   private footprints(): Footprint[] {
     const out: Footprint[] = [];
-    for (const t of this.towers)
-      if (t.team === "player") out.push({ gx: t.gx, gy: t.gy, size: structStats(t.kind).size });
+    for (const t of this.towers) out.push({ gx: t.gx, gy: t.gy, size: structStats(t.kind).size });
     out.push(this.core);
     return out;
   }
 
-  /** the SWARM's own structures' cells: rock to its walkers, never a target
-   *  (FlowField.rebuildWalk's `hard`) */
-  private hardFootprints(): Footprint[] {
-    const out: Footprint[] = [];
-    for (const t of this.towers)
-      if (t.team === "enemy") out.push({ gx: t.gx, gy: t.gy, size: structStats(t.kind).size });
-    return out;
-  }
 
   /**
    * THE DEFERRED HALF OF A STRUCTURE CHANGE: re-solve the fields the board
@@ -1994,20 +1522,15 @@ export class Sim {
    *
    * THE GATE IS WHAT MAKES BUILDING BETWEEN WAVES FREE. With nothing on
    * the field, no body reads a heading, so no heading is worth computing
-   * and the flag simply stands until one does — a whole grace period of
-   * building, a restored layout, the title screen's opening line, all at
+   * and the flag simply stands until one does — a restored layout, the
+   * title screen's opening line, all at
    * no cost at all. Only a solve clears the flag, so the first body of a
    * layer to appear finds its field fresh: spawning runs above this, in
    * runScript.
    */
   private solveDirtyFields(dt: number): void {
     this.fieldQuiet += dt;
-    // THE ORDERS FIRST, and on the same settle clock: a corridor is
-    // milliseconds where a field is a tenth of a second, so the group the
-    // player is watching gets its new route before the swarm gets its new
-    // one, and a build drag pays for one rebuild at the end rather than
     // one per turret
-    if (this.ordersStale && this.fieldQuiet >= FIELD_SETTLE) this.reseedOrders();
     // a solve already under way takes this frame's slice; nothing new is
     // started until the queue is clear, so the cost per frame is one slice
     // however much is waiting
@@ -2022,7 +1545,7 @@ export class Sim {
     // the order is given rather than when the board moves
     let ground = false, naval = false;
     for (let i = 0; i < this.n; i++) {
-      if (this.uteam[i] || this.ufly[i]) continue;
+      if (this.ufly[i]) continue;
       else if (this.unav[i]) naval = true;
       else ground = true;
     }
@@ -2071,18 +1594,6 @@ export class Sim {
     this.solveQueue.length = 0;
   }
 
-  /** the nearest of the swarm's structures to a point, anywhere on the map
-   *  — a flyer's goal, and where a body with no field to read walks */
-  private nearestEnemyStructure(x: number, y: number): Structure | null {
-    let best: Structure | null = null, bd = Infinity;
-    for (const t of this.towers) {
-      if (t.team !== "enemy") continue;
-      const dx = t.x - x, dy = t.y - y;
-      const d = dx * dx + dy * dy;
-      if (d < bd) { bd = d; best = t; }
-    }
-    return best;
-  }
 
   /** the walkers' destination: the core's own cells — a soft goal, see FlowField.rebuildWalk */
   private coreGoal(): Uint8Array {
@@ -2102,7 +1613,7 @@ export class Sim {
    * the road still sends its tanks up the road.
    *
    * Every layer then falls back to every non-boss zone the map paints when
-   * its own come to nothing. THAT IS WHAT MAKES EVERY FACTION PLAYABLE ON
+   * its own come to nothing. THAT IS WHAT MAKES EVERY FAMILY LANDABLE ON
    * EVERY MAP: a map with no water zone still lands naval tanks, one with
    * no air zone still lands flyers. The field filters the mask against its
    * own passability and its own reachability afterwards
@@ -2323,246 +1834,35 @@ export class Sim {
    * THE RUN IS OVER AND THE PLAYER DID NOT MAKE IT — the game freezes and
    * the score screen takes over.
    *
-   * The core falling is the usual way, and on a RAID (levels.ts
-   * RaidMission) there is a second: ONE ROCKET LEAVING THE GROUND. Not the
-   * last of a schedule — the first and only. The objective is "don't let
-   * them launch", and a mission that then let the player carry on after a
-   * launch was contradicting its own headline: it printed 1/5 away and
-   * asked for four more failures before it would admit the sentence had
-   * been broken. A thing you must not let happen is lost the moment it
-   * happens.
-   *
-   * What the rest of the schedule is FOR, now, is the deadlines before it
-   * — see updateRaid.
+   * The core falling is the only way: the swarm exists to knock it down.
    */
   lost(): boolean {
-    if (this.core.hp <= 0) return true;
-    const m = this.level.mission;
-    return m.kind === "raid" && this.rocketsAway > 0;
+    return this.core.hp <= 0;
   }
 
   /**
    * IS THE MISSION MET? A hold is won when every body the script sends is
-   * down (and it sent some); a survive when the clock has run out; a raid
-   * when every one of its targets is wrecked, whatever the clock says.
+   * down (and it sent some); a survive when the clock has run out.
    * Never while the base is dead — a clock that ran out on a lost base is
    * a loss.
    */
   won(): boolean {
     if (this.lost()) return false;
-    const m = this.level.mission;
-    if (m.kind === "raid")
-      return this.missionStructs.length > 0 && this.padsDown() === this.missionStructs.length;
     if (this.deadline > 0) return this.time >= this.deadline;
     return this.totalEnemies > 0 && this.remaining() <= 0;
   }
 
-  /** how many of a raid's targets are wrecked (levels.ts RaidMission) */
-  padsDown(): number {
-    let n = 0;
-    for (const t of this.missionStructs) if (t.hp <= 0) n++;
-    return n;
-  }
-
-  /**
-   * EVERY TARGET HAS ITS OWN FIXED MOMENT: target i launches at
-   * launchAt[i], always, whatever else has happened. The schedule is
-   * hard-coded and nothing the player does moves it — wrecking a target
-   * does not push the next one back, it simply means that target's moment
-   * passes with nothing to fire.
-   *
-   * A target past the end of the schedule has no deadline at all, which is
-   * how a board with more targets than moments behaves: the last few can
-   * only be finished, never failed.
-   */
-  private dueFor(i: number): number {
-    const m = this.level.mission;
-    if (m.kind !== "raid" || i >= m.launchAt.length) return Infinity;
-    return m.launchAt[i];
-  }
-
-  /**
-   * SECONDS UNTIL THE NEXT ROCKET GOES UP — the soonest deadline still
-   * owned by a target that is standing — or -1 when no rocket can go up
-   * again.
-   *
-   * THIS IS THE WHOLE OF THE "TIME BANKED" READOUT, and it needs nothing
-   * to make it so. Wreck target 1 two minutes before its moment and this
-   * stops counting to that moment and starts counting to target 2's, which
-   * is further off: the countdown jumps by exactly the time that was left
-   * over, because that time IS what was left over. A separate banked total
-   * would have been the same number said twice.
-   */
-  nextLaunchIn(): number {
-    let soonest = Infinity;
-    for (let i = 0; i < this.missionStructs.length; i++) {
-      if (this.missionStructs[i].hp <= 0) continue;
-      const due = this.dueFor(i);
-      if (due < soonest) soonest = due;
-    }
-    return soonest === Infinity ? -1 : Math.max(0, soonest - this.time);
-  }
-
-  /**
-   * THE RAID'S CLOCK (levels.ts RaidMission.launchAt), once a tick.
-   *
-   * ONE MOMENT PER TARGET, HARD-CODED. Target i fires at launchAt[i] if it
-   * is still standing when that moment comes, and one rocket loses the run
-   * (lost). Nothing moves a moment: the schedule a player is racing is the
-   * one printed in the level, so the last entry is the map's hard ceiling
-   * and the run cannot outlast it — either the last target is wrecked
-   * before its moment, which is the win, or it fires, which is not.
-   *
-   * Wrecking a target early is therefore not "buying time" in any
-   * mechanism; it is simply removing the thing that would have fired, and
-   * the countdown moves on to the next moment on its own. That is the
-   * whole feature and it is why there is no bookkeeping here.
-   *
-   * The loop is for the fast-forward paces: a 16x tick can step over a
-   * moment, and one that was due must still be answered on the tick it
-   * comes due.
-   */
-  private updateRaid(): void {
-    const m = this.level.mission;
-    if (m.kind !== "raid" || this.rocketsAway > 0) return;
-    for (let i = 0; i < this.missionStructs.length; i++) {
-      const pad = this.missionStructs[i];
-      if (pad.hp <= 0) continue;
-      if (this.time < this.dueFor(i)) continue;
-      this.rocketsAway++;
-      this.launchRocket(pad);
-      return;
-    }
-  }
 
 
-  /**
-   * A ROCKET LEAVES A PAD, AND THE RUN IS OVER (lost). Nothing is spawned
-   * and nothing is shot — the launch IS the failure — so what is left is
-   * telling the player it happened where it happened: the pad throws a
-   * smoke cloud, a shockwave and a blast, which is a thing seen on the
-   * board when the camera is anywhere near it and, when it is not, the
-   * reason the score screen just came up.
-   */
-  private launchRocket(pad: Tower): void {
-    this.pushFx(pad.x, pad.y, 1.2, FxKind.SmokeCloud);
-    this.pushFx(pad.x, pad.y, 0.5, FxKind.Shockwave);
-    this.pushFx(pad.x, pad.y, 0.7, FxKind.BlastExplosion);
-  }
 
-  /**
-   * FOG ON OR OFF for this sim, live: off lights the whole map and keeps it
-   * lit (the title screen, the balance bot); on rebuilds what is in sight
-   * from every structure standing.
-   */
-  setFog(on: boolean): void {
-    this.fogEnabled = on;
-    this.fog.reset(on);
-    this.seedFog();
-    this.updateFog();
-  }
 
-  /**
-   * FogControl.pushStaticBlocks, on WorldLoadEvent: every building with an
-   * eye stamps the discovered set where it stands, before a frame is
-   * drawn. Upstream walks Groups.build for this; here it is the core and
-   * whatever of the player's is already on the board.
-   */
-  private seedFog(): void {
-    this.fog.add(this.coreVision());
-    for (const t of this.towers) if (t.team === "player") this.fog.add(this.towerVision(t));
-    // THE BRIEFING (MISSION_INTEL_CELLS): a mission's targets are on the
-    // map before the run starts. Stamping the STATIC set and nothing else
-    // is what makes that read as intelligence rather than as sight — the
-    // pad and its ground are drawn in the grey of remembered ground, and
-    // whatever is guarding it is not drawn at all until something of the
-    // player's actually looks
-    for (const t of this.missionStructs)
-      this.fog.add({ x: t.x, y: t.y, r: MISSION_INTEL_CELLS * CELL, tiles: MISSION_INTEL_CELLS });
-    this.ulastFogPos.fill(-1);
-    this.ulastFogId.fill(-1);
-  }
 
-  /**
-   * FogControl.update, for the one team that owns a fog.
-   *
-   * A BUILDING'S EYE IS NOT WALKED HERE. Upstream hangs those off
-   * TileChangeEvent and TilePreChangeEvent, and so does this sim —
-   * addTower and updateBuilds call Fog.add, removeTower calls
-   * Fog.invalidate — so the only eyes worth asking every tick are the
-   * moving ones, and only the ones that actually changed TILE cost
-   * anything: one static stamp where the body now stands, and a rebuild
-   * owed. The fog itself decides whether enough time has passed to do the
-   * rebuild (Fog.update, twenty-five times a second).
-   */
-  private updateFog(): void {
-    const fog = this.fog;
-    if (!fog.enabled) return;
-    const { upx, upy, uteam, uid, ukind, ulastFogPos, ulastFogId } = this;
-    for (let i = 0; i < this.n; i++) {
-      if (uteam[i] === 0) continue;
-      const tiles = unitVisionTiles(UNIT_KINDS[ukind[i]]);
-      const gx = clamp(Math.floor(upx[i] / CELL), 0, COLS - 1);
-      const gy = clamp(Math.floor(upy[i] / CELL), 0, ROWS - 1);
-      const pos = gy * COLS + gx;
-      if (ulastFogPos[i] === pos && ulastFogId[i] === uid[i]) continue;
-      ulastFogPos[i] = pos;
-      ulastFogId[i] = uid[i];
-      fog.moved(gx, gy, tiles);
-    }
-    fog.update(this.visionSources, this.time);
-  }
 
-  /** what the core sees (CORE_VISION_CELLS) */
-  private coreVision(): VisionSource {
-    return {
-      x: this.core.x,
-      y: this.core.y,
-      r: CORE_VISION_CELLS * CELL,
-      tiles: CORE_VISION_CELLS,
-    };
-  }
 
-  /**
-   * What one structure sees (fog.ts): the whole of its LIVE range
-   * (VISION_OF_RANGE) if it has one, else the plain radius a finished
-   * building carries (VISION_BUILT_CELLS) — and while it is still going
-   * up, only the little that a shell sees (VISION_BUILDING_CELLS).
-   */
-  private towerVision(t: Tower): VisionSource {
-    if (t.buildT > 0) {
-      const r = VISION_BUILDING_CELLS * CELL;
-      return { x: t.x, y: t.y, r, tiles: VISION_BUILDING_CELLS };
-    }
-    const st = this.statsFor(t.kind);
-    const built = VISION_BUILT_CELLS * CELL;
-    const r = !st.building && st.range > 0 ? Math.max(built, st.range * VISION_OF_RANGE) : built;
-    // a BUILDING's radius is rounded to the nearest tile for the raster —
-    // Mathf.round(build.fogRadius()), FogControl.pushStaticBlocks
-    return { x: t.x, y: t.y, r, tiles: Math.round(r / CELL) };
-  }
 
-  /**
-   * EVERY EYE ON THE FIELD — the core and each of the PLAYER's structures,
-   * plus every body of the player's; the swarm's formation looks for
-   * nobody.
-   *
-   * Public because two things read it: the fog's own per-cell state, which
-   * is what the rules are made of (what may be built, what may be shot),
-   * and the renderer, which draws the same circles as soft light into its
-   * fog buffers and never touches the cells at all.
-   */
-  readonly visionSources = (): VisionSource[] => {
-    const out: VisionSource[] = [this.coreVision()];
-    for (const t of this.towers) if (t.team === "player") out.push(this.towerVision(t));
-    // ...and every body of the player's, out to the whole of its own reach
-    for (let i = 0; i < this.n; i++) {
-      if (!this.uteam[i]) continue;
-      const tiles = unitVisionTiles(UNIT_KINDS[this.ukind[i]]);
-      out.push({ x: this.upx[i], y: this.upy[i], r: tiles * CELL, tiles });
-    }
-    return out;
-  };
+
+
+
 
   /** campaign restrictions on building; null lifts them (editor, dev) —
    *  and null is also what makes building FREE (see canPlace) */
@@ -2647,11 +1947,7 @@ export class Sim {
    * one, and a selected turret showed a range ring its shots outran — the
    * two halves asking different tables the same question.
    */
-  statsFor(kind: StructKind): TowerStats {
-    // A MISSION BUILDING HAS NO UPGRADE BRANCH and never will: the
-    // upgrades are what a SAVE has bought (upgrades.ts), and nobody owns
-    // a launch pad. structStats is its whole answer, which is what the
-    // fall-through below gives it — `specs` only ever holds roster kinds
+  statsFor(kind: TowerKind): TowerStats {
     return this.specs.get(kind as TowerKind) ?? structStats(kind);
   }
 
@@ -2664,7 +1960,7 @@ export class Sim {
    * pellet, because the two halves were asking different tables the same
    * question. Anything that wants a live bullet's stats comes through here.
    */
-  bulletFor(kind: StructKind, frag: boolean): BulletStats {
+  bulletFor(kind: TowerKind, frag: boolean): BulletStats {
     const b = this.statsFor(kind).bullet;
     return frag && b.frag ? b.frag.bullet : b;
   }
@@ -2672,11 +1968,7 @@ export class Sim {
   /** live towers per kind — the bar's remaining-count badges, and the cap check */
   towerCounts(): Record<TowerKind, number> {
     const counts = Object.fromEntries(TOWER_KINDS.map((k) => [k, 0])) as Record<TowerKind, number>;
-    // the player's own: the swarm's formation is not on the bar and does
-    // not move a count-scaled rung
-    // (the cast is safe by that same rule: a mission building is the
-    // swarm's alone, so nothing on the player's side is ever one)
-    for (const t of this.towers) if (t.team === "player") counts[t.kind as TowerKind]++;
+    for (const t of this.towers) counts[t.kind]++;
     return counts;
   }
 
@@ -2687,7 +1979,7 @@ export class Sim {
 
   /** per-kind head count currently on the field, indexed like UNIT_KINDS */
   aliveByKindList(): number[] {
-    return Array.from(this.enemyByKind);
+    return Array.from(this.aliveByKind);
   }
 
   /**
@@ -2738,8 +2030,8 @@ export class Sim {
   }
 
   /**
-   * THE WAVE THE CLOCK SAYS IT IS. The first wave enters at the grace,
-   * and every one after it waveGap + WAVE_RELEASE_SECONDS later; on a map
+   * THE WAVE THE CLOCK SAYS IT IS. The first wave enters at once, and
+   * every one after it waveGap + WAVE_RELEASE_SECONDS later; on a map
    * whose drop zones cannot pass a big wave that fast the script falls
    * behind its own schedule (Sim.runScript queues what will not fit). The
    * larger of the two is taken, so a run that is AHEAD of schedule reads
@@ -2747,8 +2039,7 @@ export class Sim {
    */
   stageWave(): number {
     const cadence = Math.max(1, this.level.waveGap + WAVE_RELEASE_SECONDS);
-    const grace = Math.max(0, this.level.grace ?? this.level.waveGap);
-    const byClock = this.time < grace ? 1 : Math.floor((this.time - grace) / cadence) + 1;
+    const byClock = Math.floor(this.time / cadence) + 1;
     return Math.max(this.currentWave(), byClock);
   }
 
@@ -2774,31 +2065,17 @@ export class Sim {
     return n;
   }
 
-  private addTower(
-    gx: number,
-    gy: number,
-    kind: StructKind,
-    instant: boolean,
-    team: Team = "player",
-    /** which line a FACTORY builds (Tower.faction) — null on anything else */
-    faction: FamilyKey | null = null,
-  ): void {
+  private addTower(gx: number, gy: number, kind: TowerKind, instant: boolean): void {
     const sz = structStats(kind).size;
     // CONSTRUCTION (buildTimeOf): a placed structure goes up as a 1 hp
     // shell and only stands up for real when its timer runs out. Editors,
     // the sandbox and the menu field build finished structures — there is
     // no swarm to race there, and a menu that spends its first seconds
     // watching walls raise is a menu showing nothing
-    // (the swarm's formation is stood up finished, so its roster never
-    // asks for a build time or a waterlogging check)
     const build = instant ? 0 : buildTimeOf(kind);
     const x = (gx + sz / 2) * CELL, y = (gy + sz / 2) * CELL;
     const tower: Tower = {
       kind,
-      // a factory is a tier AND a line; everything else builds nothing and
-      // has no line to be (factions.ts)
-      faction: structStats(kind).produces ? faction : null,
-      team,
       gx,
       gy,
       x,
@@ -2807,12 +2084,10 @@ export class Sim {
       buildT: build,
       buildTotal: build,
       aimShieldTower: -1,
-      aimTower: null,
       cd: Math.random() * 0.1,
       // Hydrophobic (mutation.ts): read the ground once, here, and carry it
       fireRate: this.isWaterlogged(gx, gy, kind) ? HYDROPHOBIC_RATE : 1,
-      // the swarm's guns stand facing the core they were built against
-      angle: team === "enemy" ? Math.atan2(this.core.y - y, this.core.x - x) : 0,
+      angle: 0,
       target: -1,
       targetIdx: -1,
       // start the re-pick clock at a random phase so a wall of turrets
@@ -2835,78 +2110,20 @@ export class Sim {
       beamDmgT: 0,
     };
     this.towers.push(tower);
-    if (team === "enemy") this.enemyStructures++;
     this.claimGround(tower, true);
-    // it looks around the moment it is placed — a shell sees a few cells,
-    // and the turret it becomes sees its share of its range (updateBuilds).
-    // The swarm's own guns see nothing FOR the player
-    if (team === "player") this.fog.add(this.towerVision(tower));
     // a count-dependent rung (duo power) reads the board, so the board
     // changing is what moves it
     this.refreshSpecs();
   }
 
-  /**
-   * ONE OF THE SWARM'S OWN BUILDINGS, stood up finished. A map starts with
-   * these (MapData.enemies, applied in reset): a formation of the ROSTER's
-   * turrets and walls — a lancer is a lancer whichever side stands it —
-   * the player has to shoot through, exactly as the swarm has to shoot
-   * through the player's. No tech gate and no price — nobody is buying —
-   * but the ground rules hold: open ground only, never a drop zone, never
-   * over another structure or the core. False when the cell will not take
-   * it, and the map simply goes without.
-   */
-  placeEnemyStructure(gx: number, gy: number, kind: StructKind): boolean {
-    const sz = structStats(kind).size;
-    if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
-    const { blocked } = this.terrain;
-    for (let y = gy; y < gy + sz; y++)
-      for (let x = gx; x < gx + sz; x++) {
-        const i = y * COLS + x;
-        if (blocked[i] || this.groundPads[i] || this.cellTower[i]) return false;
-      }
-    this.addTower(gx, gy, kind, true, "enemy");
-    return true;
-  }
 
-  /**
-   * ONE OF A MISSION'S OWN BUILDINGS, stood up finished on the swarm's
-   * side — placeEnemyStructure with the record handed back, because the
-   * mission has to hold on to what it placed (missionStructs).
-   *
-   * It goes through the SAME fit test: on the board, off rock, off the
-   * drop zones, and clear of anything already standing. A target that
-   * fails it is refused rather than forced — a launch pad half inside a
-   * cliff is a footprint the walkers route through and the player cannot
-   * reach — and the caller is what decides how loudly to complain.
-   */
-  placeMissionStructure(gx: number, gy: number, kind: MissionStructKind): Tower | null {
-    if (!this.placeEnemyStructure(gx, gy, kind)) return null;
-    return this.towers[this.towers.length - 1];
-  }
 
   /** the structure standing on a world point, if it is `team`'s */
-  private structureAt(px: number, py: number, team: Team): Structure | null {
+  private structureAt(px: number, py: number): Structure | null {
     if (px < 0 || py < 0 || px >= W || py >= H) return null;
-    const t = this.cellTower[((py / CELL) | 0) * COLS + ((px / CELL) | 0)];
-    return t && teamOf(t) === team ? t : null;
+    return this.cellTower[((py / CELL) | 0) * COLS + ((px / CELL) | 0)];
   }
 
-  /**
-   * A TURRET'S HIT ON A STRUCTURE — the player's shot on one of the
-   * swarm's buildings, or an enemy turret's on one of the player's. The
-   * damage lands directly (there is no unit index to sweep for), and the
-   * hit effect goes off on the near face of the footprint, where the shot
-   * arrived. An enemy turret's damage rides the swarm's own dial
-   * (unitDamageScale), so its guns hit exactly as hard as its bodies'.
-   */
-  private structureHit(s: Structure, dmg: number, fx: BulletFx | undefined, angle: number, col?: RGB): void {
-    if (this.cellTower[s.gy * COLS + s.gx] !== s) return; // already down
-    if (teamOf(s) === "player") this.hitStructure(s, dmg);
-    else this.damageTower(s, dmg);
-    const half = (this.sizeOf(s) * CELL) / 2;
-    this.bulletFx(fx, s.x - Math.cos(angle) * half, s.y - Math.sin(angle) * half, angle, col);
-  }
 
   update(dt: number): void {
     // Mindustry Time.time: seconds of SIMULATED time, so animations driven
@@ -2914,12 +2131,6 @@ export class Sim {
     // while the sim is paused
     this.time += dt;
     this.runScript(dt);
-    // THE RAID'S CLOCK, before anything else moves: a rocket that was due
-    // this tick goes up on the tick it was due
-    this.updateRaid();
-    // THE ECONOMY TICKS: the core and the drills fill their loads, and a
-    // full load lands in the bank and on the run's ledger
-    this.updateMining(dt);
     // a structure went up on, or came down off, open ground: shove anything
     // standing in its cells clear now, and re-solve the routes when the
     // board settles (solveDirtyFields)
@@ -2928,23 +2139,10 @@ export class Sim {
       this.unstickUnits();
     }
     this.solveDirtyFields(dt);
-    // THE BASE FIRES (economy.ts CYCLE_SECONDS): the player's whole
-    // economy and their whole army, on one clock
-    this.updateCycle(dt);
-    // THE FOG, ONCE A TICK — FogControl.update, called out of Logic.update
-    // exactly here. What it actually costs depends entirely on whether
-    // anything moved: a board where nothing has changed tile since the
-    // last tick raises no event and rebuilds nothing at all, and a board
-    // full of walking units rebuilds twenty-five times a second however
-    // fast the frames come.
-    this.updateFog();
 
     this.updateAliveBounds();
     this.buildHash();
     this.updatePhysics();
-    // THE ARMY PICKS ITS FIGHTS — after buildHash, whose buckets the scan
-    // reads, and before the bodies move on what it decided
-    this.updateHunt(dt);
     this.updateUnits(dt);
     this.updateAbilities(dt);
     this.updateStatus(dt);
@@ -3018,10 +2216,9 @@ export class Sim {
    * everything zeroed once the script runs out, which is what ends the level.
    *
    * Pacing is no longer written into the script: the level carries one
-   * `waveGap` and the sim puts it BEFORE every wave — and before the
-   * opening one it puts the GRACE instead (LevelSpec.grace, four minutes
-   * as authored), the breather a run builds its first line in. A step
-   * therefore always describes enemies and never time.
+   * `waveGap` and the sim puts it BEFORE every wave, the opening one
+   * included: the first wave is the breather a run builds its first line
+   * in. A step therefore always describes enemies and never time.
    */
   private loadStep(): void {
     this.waveEntries.length = 0;
@@ -3039,10 +2236,13 @@ export class Sim {
         for (const e of this.waveEntries) total += e.total;
         this.waveRate = waveSpawnRate(total);
         this.wavesStarted++;
-        // hold the gap — the grace before the first wave — then let this
-        // wave drain; waitLeft gates runScript
-        const opening = this.wavesStarted === 1;
-        this.waitLeft = Math.max(0, opening ? this.level.grace ?? this.level.waveGap : this.level.waveGap);
+        // THE WAVE BONUS, paid as the wave is staged — at the top of its
+        // gap, which is exactly when a board wants scrap to spend
+        const bonus = waveBonusScrap(this.wavesStarted);
+        this.scrap += bonus;
+        this.scrapEarned += bonus;
+        // hold the gap, then let this wave drain — waitLeft gates runScript
+        this.waitLeft = Math.max(0, this.level.waveGap);
         return;
       }
     }
@@ -3151,7 +2351,7 @@ export class Sim {
     if (left === 0) this.nextStep();
   }
 
-  // ---------- the swarm's guns ----------
+  // ---------- the swarm's weapons ----------
 
   /**
    * THE NEAREST STRUCTURE WITHIN REACH of a point, by centre — read off
@@ -3234,51 +2434,23 @@ export class Sim {
    * WHY IT EXISTS. The ring walk below is bounded by the RANGE and not by
    * where anything actually is: its early break needs a candidate to
    * break on, so a gun with nothing in reach walks every cell of its
-   * circle before it can say "nothing". A map like Confluence stands up
-   * about eighteen hundred of the swarm's guns against a line of two
-   * dozen buildings in one corner of a 512-cell board, and nearly every
-   * one of those scans is a couple of thousand cells spent proving the
+   * circle before it can say "nothing". A wave of a thousand bodies
+   * against a line of two dozen buildings in one corner of a 512-cell
+   * board is nearly a thousand of those scans a tick spent proving the
    * obvious. The test here is four comparisons and it is EXACT — a
    * structure within `reach` of the point is within the box by
    * construction, so nothing that would have been found is refused.
    */
-  /**
-   * IS THIS BUILDING SOMETHING THE OTHER SIDE CAN EVEN SEE? — the rule
-   * that puts the player's base OUT OF THE WAR.
-   *
-   * Everything of the player's except the core stands on the highground
-   * (canPlace): rock nothing walks on, above a fight it is not in. It is
-   * not a wall, not a gun and not a target — no scan finds it, no shot
-   * lands on it, no splash reaches it and no blast dents it. The four
-   * places that could disagree all read this one line instead: the
-   * broad-phase box (which then shrinks to the core alone, so every scan
-   * refuses before it walks), the nearest-structure scan, the splash
-   * sweep, and damageTower itself as the backstop.
-   *
-   * THE CORE IS THE EXCEPTION AND THE WHOLE POINT. It stands on the floor
-   * where it always did, it is the only thing of the player's the swarm
-   * can reach, and losing it is still losing the run. Take the base out of
-   * the war and the core is the war.
-   */
-  private untouchable(s: Structure): boolean {
-    return teamOf(s) === "player" && !isCore(s);
-  }
-
-  private structBox(team: Team): { x0: number; y0: number; x1: number; y1: number; n: number } {
+  private structBox(): { x0: number; y0: number; x1: number; y1: number; n: number } {
     if (this.structBoxDirty) {
       this.structBoxDirty = false;
-      for (const b of [this.playerBox, this.enemyBox]) {
-        b.x0 = Infinity;
-        b.y0 = Infinity;
-        b.x1 = -Infinity;
-        b.y1 = -Infinity;
-        b.n = 0;
-      }
+      const b = this.structBoxCache;
+      b.x0 = Infinity;
+      b.y0 = Infinity;
+      b.x1 = -Infinity;
+      b.y1 = -Infinity;
+      b.n = 0;
       const add = (s: Structure): void => {
-        // the player's base is not in the box at all (untouchable), which
-        // is what makes every scan for it refuse in four comparisons
-        if (this.untouchable(s)) return;
-        const b = teamOf(s) === "player" ? this.playerBox : this.enemyBox;
         const half = (this.sizeOf(s) * CELL) / 2;
         if (s.x - half < b.x0) b.x0 = s.x - half;
         if (s.y - half < b.y0) b.y0 = s.y - half;
@@ -3291,7 +2463,7 @@ export class Sim {
       add(this.core);
       for (const t of this.towers) add(t);
     }
-    return team === "player" ? this.playerBox : this.enemyBox;
+    return this.structBoxCache;
   }
 
   private nearestStructure(
@@ -3299,11 +2471,8 @@ export class Sim {
     y: number,
     reach: number,
     sighted: boolean,
-    team: Team = "player",
   ): Structure | null {
-    // NOTHING OF THAT TEAM ANYWHERE NEAR: refuse before the walk, not
-    // after it (structBox)
-    const box = this.structBox(team);
+    const box = this.structBox();
     if (box.n === 0) return null;
     if (x + reach < box.x0 || x - reach > box.x1 || y + reach < box.y0 || y - reach > box.y1)
       return null;
@@ -3315,14 +2484,7 @@ export class Sim {
     let bd = Infinity;
     const consider = (i: number): void => {
       const t = grid[i];
-      // only the OTHER side's buildings are targets: a unit walks past the
-      // swarm's own wall, and an enemy turret never fires on it
-      if (!t || teamOf(t) !== team) return;
-      // ...and the player's base is nobody's target (untouchable)
-      if (this.untouchable(t)) return;
-      // ...and the player's guns take none they cannot see (fog.ts), the
-      // rule a body in the fog is under; the swarm sees the whole map
-      if (team === "enemy" && this.fog.enabled && !this.fog.visibleAt(t.x, t.y)) return;
+      if (!t) return;
       const half = (this.sizeOf(t) * CELL) / 2;
       const dx = t.x - x, dy = t.y - y;
       const d = Math.sqrt(dx * dx + dy * dy) - half;
@@ -3359,7 +2521,6 @@ export class Sim {
     y: number,
     r: number,
     out: Structure[],
-    team: Team = "player",
   ): Structure[] {
     out.length = 0;
     const R = Math.ceil(r / CELL) + 1;
@@ -3367,8 +2528,7 @@ export class Sim {
     for (let yy = Math.max(0, cy - R); yy <= Math.min(ROWS - 1, cy + R); yy++)
       for (let xx = Math.max(0, cx - R); xx <= Math.min(COLS - 1, cx + R); xx++) {
         const t = this.cellTower[yy * COLS + xx];
-        if (!t || teamOf(t) !== team || out.includes(t)) continue;
-        if (this.untouchable(t)) continue; // the player's base takes no splash
+        if (!t || out.includes(t)) continue;
         const half = (this.sizeOf(t) * CELL) / 2;
         const dx = t.x - x, dy = t.y - y;
         if (Math.sqrt(dx * dx + dy * dy) - half <= r) out.push(t);
@@ -3403,89 +2563,30 @@ export class Sim {
    * and its nearest body within reach — a target either way (Aim). A
    * ground body only takes what it can see; a flyer sees its radius.
    */
-  private pickAim(x: number, y: number, reach: number, sighted: boolean, foes: Team, foeTeam: number): Aim | null {
-    const s = this.nearestStructure(x, y, reach, sighted, foes);
-    const u = this.nearestInRange(x, y, reach + this.rmaxAliveFor(true, true), true, true, foeTeam, true);
-    let ds = Infinity, du = Infinity;
-    if (s) ds = Math.hypot(s.x - x, s.y - y) - (this.sizeOf(s) * CELL) / 2;
-    if (u >= 0) {
-      du = Math.hypot(this.upx[u] - x, this.upy[u] - y) - this.urad[u];
-      if (du > reach || (sighted && !this.hasSight(x, y, this.upx[u], this.upy[u]))) du = Infinity;
-    }
-    if (ds === Infinity && du === Infinity) return null;
-    if (du < ds)
-      return { x: this.upx[u], y: this.upy[u], half: this.urad[u], s: null, u: this.uid[u], ui: u };
-    return { x: s!.x, y: s!.y, half: (this.sizeOf(s!) * CELL) / 2, s, u: -1, ui: -1 };
+  private pickAim(x: number, y: number, reach: number, sighted: boolean): Aim | null {
+    const s = this.nearestStructure(x, y, reach, sighted);
+    if (!s) return null;
+    return { x: s.x, y: s.y, half: (this.sizeOf(s) * CELL) / 2, s };
   }
 
-  /** the aimed unit's live index, or -1 once it is gone — and the aim's
-   *  point moved along with it */
-  private aimIndex(a: Aim): number {
-    if (a.u < 0) return -1;
-    let i = a.ui;
-    if (i < 0 || i >= this.n || this.uid[i] !== a.u) {
-      i = -1;
-      for (let k = 0; k < this.n; k++) if (this.uid[k] === a.u) { i = k; break; }
-      a.ui = i;
-    }
-    if (i >= 0) { a.x = this.upx[i]; a.y = this.upy[i]; }
-    return i;
-  }
 
   /** is the aim still standing, and within this reach of the point? */
   private aimReach(a: Aim, x: number, y: number, reach: number): boolean {
-    if (a.s) return this.inReach(a.s, x, y, reach);
-    const i = this.aimIndex(a);
-    if (i < 0 || this.uhp[i] <= 0) return false;
-    return Math.hypot(this.upx[i] - x, this.upy[i] - y) - this.urad[i] <= reach;
+    return this.inReach(a.s, x, y, reach);
   }
 
   /** can a ground body at the point see its aim? */
   private aimSeen(a: Aim, x: number, y: number): boolean {
-    if (a.s) return this.canSee(a.s, x, y);
-    return this.hasSight(x, y, a.x, a.y);
+    return this.canSee(a.s, x, y);
   }
 
   /** one hit on the aim, from a body of `team` */
-  private aimHit(a: Aim, dmg: number, team: number): void {
-    if (a.s) {
-      this.structHit(a.s, dmg, team);
-      return;
-    }
-    const i = this.aimIndex(a);
-    if (i < 0 || this.uhp[i] <= 0 || this.uteam[i] === team) return;
-    this.damageUnit(i, dmg);
-    if (this.uhp[i] <= 0) this.killUnit(i);
+  private aimHit(a: Aim, dmg: number): void {
+    this.hitStructure(a.s, dmg);
   }
 
-  /** a body's hit on a structure: the swarm's through its own dial
-   *  (hitStructure), the player's as it is */
-  private structHit(t: Structure, dmg: number, team: number): void {
-    if (team) this.damageTower(t, dmg);
-    else this.hitStructure(t, dmg);
-  }
 
-  /** a burst from a body of `team`: the other side's structures and bodies in the radius */
-  private aimSplash(x: number, y: number, splash: number, radius: number, team: number): void {
-    if (splash <= 0 || radius <= 0) return;
-    for (const t of this.structuresWithin(x, y, radius, this.splashOut, team ? "enemy" : "player"))
-      this.structHit(t, splash, team);
-    this.splash(x, y, radius, splash, true, true, undefined, undefined, team ? 0 : 1);
-  }
 
-  /**
-   * THE BODY A SHOT LANDS ON: the nearest of `team`'s within a shot's
-   * radius of the point, or -1. A shot in flight asks this every tick
-   * (updateEnemyShots, stepHostileProjectile).
-   */
-  private unitAtShot(x: number, y: number, team: number): number {
-    const pad = this.rmaxAliveFor(true, true) + SHOT_HIT_R;
-    const i = this.nearestInRange(x, y, pad, true, true, team, true);
-    if (i < 0) return -1;
-    const r = this.urad[i] + SHOT_HIT_R;
-    const dx = this.upx[i] - x, dy = this.upy[i] - y;
-    return dx * dx + dy * dy < r * r ? i : -1;
-  }
 
   /**
    * EVERY UNIT ATTACK-MOVES. It walks the field as it always has, and
@@ -3500,17 +2601,13 @@ export class Sim {
    * A crawler's weapon is itself: it goes off on the structure and is gone.
    */
   private updateUnitWeapons(dt: number): void {
-    const { upx, upy, urot, ukind, uspawn, ucd, utT, ubeamT, ucharge, uheldRot, utgt, uteam } = this;
+    const { upx, upy, urot, ukind, uspawn, ucd, utT, ubeamT, ucharge, uheldRot, utgt } = this;
     for (let i = this.n - 1; i >= 0; i--) {
       if (uspawn[i] > 0) continue; // still arriving, untouchable and unarmed
       const kind = UNIT_KINDS[ukind[i]];
       const ws = UNIT_WEAPONS[kind];
       if (ws.length === 0) continue;
       const x = upx[i], y = upy[i];
-      // whose side this body is on decides everything it shoots at: the
-      // other side's structures and the other side's bodies
-      const team = uteam[i];
-      const foes: Team = team ? "enemy" : "player";
       // A GROUND OR NAVAL BODY SHOOTS WHAT IT CAN SEE. Reach is not sight:
       // a hill between the two is a hill, and the swarm has to come round
       // it before it can open up on what is behind. A FLYER is looking down
@@ -3534,7 +2631,7 @@ export class Sim {
       // open ground is running. `had` is what tells the two apart
       if (utT[i] <= 0 || (had && !tgt)) {
         utT[i] = 0.3 + Math.random() * 0.2;
-        tgt = this.pickAim(x, y, UNIT_REACH[kind], sighted, foes, team === 0 ? 1 : 0);
+        tgt = this.pickAim(x, y, UNIT_REACH[kind], sighted);
         utgt[i] = tgt;
       }
       let exploded = false;
@@ -3562,7 +2659,7 @@ export class Sim {
             if (ucd[slot] <= 0) {
               ucd[slot] += wp.beam.interval;
               if (tgt && this.aimReach(tgt, x, y, wp.range)) {
-                this.aimHit(tgt, wp.damage, team);
+                this.aimHit(tgt, wp.damage);
                 this.pushFxCol(tgt.x, tgt.y, 12 / 60, FxKind.HitMeltHeal, 0, 0, PAL.heal);
               }
             }
@@ -3596,7 +2693,7 @@ export class Sim {
           if (ucharge[i] > 0) {
             ucharge[i] -= dt;
             if (ucharge[i] <= 0) {
-              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp, team);
+              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp);
               ucd[slot] = wp.reload - wp.charge;
             }
             continue;
@@ -3623,7 +2720,7 @@ export class Sim {
           case "bullet":
           case "missile":
           case "shell": {
-            for (let k = 0; k < shots; k++) this.fireUnitShot(x, y, tgt, wp, k, team);
+            for (let k = 0; k < shots; k++) this.fireUnitShot(x, y, tgt, wp, k);
             break;
           }
           case "gun": {
@@ -3634,20 +2731,20 @@ export class Sim {
             // torpedo). Splash, where a row carries it, bursts on the
             // target the way the round would have
             for (let k = 0; k < shots; k++) {
-              this.aimHit(tgt, wp.damage, team);
-              if (wp.splash) this.aimSplash(tgt.x, tgt.y, wp.splash, wp.splashRadius ?? 0, team);
+              this.aimHit(tgt, wp.damage);
+              if (wp.splash) this.splashStructures(tgt.x, tgt.y, wp.splash, wp.splashRadius ?? 0);
               this.fireUnitGun(x, y, aim + (k - (shots - 1) / 2) * 0.06, wp);
             }
             break;
           }
           case "laser": {
-            this.fireUnitLaser(x, y, aim, tgt, wp, team);
+            this.fireUnitLaser(x, y, aim, tgt, wp);
             break;
           }
           case "sap": {
             // SapBulletType: the line lands on the target and retracts onto
             // the mount as it fades (the draw lerps its far end back over fin)
-            for (let k = 0; k < shots; k++) this.aimHit(tgt, wp.damage, team);
+            for (let k = 0; k < shots; k++) this.aimHit(tgt, wp.damage);
             const st = wp.sap;
             if (st) {
               const dx = tgt.x - x, dy = tgt.y - y;
@@ -3661,7 +2758,7 @@ export class Sim {
             // one per shot, fanned by ShootSpread; Fx.sparkShoot at the muzzle
             const st = wp.shrapnel;
             for (let k = 0; k < shots; k++) {
-              this.aimHit(tgt, wp.damage, team);
+              this.aimHit(tgt, wp.damage);
               const a = aim + (k - (shots - 1) / 2) * (wp.spread ?? 0);
               if (st) this.pushFx(x, y, 10 / 60, FxKind.Shrapnel, a, wp.range, 0, st.id, true);
             }
@@ -3673,7 +2770,7 @@ export class Sim {
             // of the muzzle, in the bullet's colour, `inaccuracy` off the aim
             const bt = wp.bolt;
             for (let k = 0; k < shots; k++) {
-              this.aimHit(tgt, wp.damage, team);
+              this.aimHit(tgt, wp.damage);
               if (bt) {
                 const a = aim + (Math.random() * 2 - 1) * bt.inaccuracy;
                 this.unitBolt(x, y, a, bt.length + Math.floor(Math.random() * (bt.lengthRand + 1)), bt.color);
@@ -3685,7 +2782,7 @@ export class Sim {
           case "flame": {
             // Fx.shootSmallFlame out of the barrel and Fx.hitFlameSmall on
             // the wall — or their plasma pair, white through heal to grey
-            for (let k = 0; k < shots; k++) this.aimHit(tgt, wp.damage, team);
+            for (let k = 0; k < shots; k++) this.aimHit(tgt, wp.damage);
             const seed = (Math.random() * 0x7fffffff) | 0;
             if (wp.plasma) {
               this.pushFxCol(x, y, 32 / 60, FxKind.Flame, aim, 0, PAL.heal, 1, false, seed);
@@ -3700,14 +2797,12 @@ export class Sim {
             if (wp.suicide) {
               // the crawler IS the bullet: Fx.pulverize where it went off,
               // and the body's own death blast, centred on itself
-              this.aimHit(tgt, wp.damage, team);
-              this.aimSplash(x, y, wp.splash ?? 0, wp.splashRadius ?? 0, team);
+              this.aimHit(tgt, wp.damage);
+              this.splashStructures(x, y, wp.splash ?? 0, wp.splashRadius ?? 0);
               this.pushFx(x, y, 40 / 60, FxKind.Pulverize, 0, 0, (Math.random() * 0x7fffffff) | 0);
               this.pushDeathFx(x, y);
-              const mineToo = this.uteam[i] !== 0;
               this.removeUnit(i);
-              if (mineToo) this.unitsLost++;
-              else this.exploded++;
+              this.exploded++;
               exploded = true;
             } else if (wp.look) {
               // BombBulletType: dropped where the unit is on its heading, a
@@ -3719,7 +2814,7 @@ export class Sim {
                 x, y, vx: Math.cos(urot[i]) * bs, vy: Math.sin(urot[i]) * bs,
                 life: wp.look.lifetime ?? 0.5, age: 0,
                 damage: wp.damage, splash: wp.splash ?? 0, splashRadius: wp.splashRadius ?? 0,
-                look: wp.look, collide: wp.look.collide !== false, trailT: 0, team,
+                look: wp.look, collide: wp.look.collide !== false, trailT: 0,
               });
             }
             break;
@@ -3728,7 +2823,7 @@ export class Sim {
             // RailBulletType: Fx.railShoot at the muzzle, Fx.railTrail every
             // 60 units down the line (pointEffectSpace), Fx.railHit on what
             // it punched through, Fx.shootBig2 smoke — all its 500 units
-            this.aimHit(tgt, wp.damage, team);
+            this.aimHit(tgt, wp.damage);
             this.pushFx(x, y, 24 / 60, FxKind.RailShoot, aim, 0, 0, 0, true);
             this.pushFx(x, y, 10 / 60, FxKind.ShootBig2, aim);
             const ca = Math.cos(aim), sa = Math.sin(aim);
@@ -3741,11 +2836,11 @@ export class Sim {
             // EnergyFieldAbility: one pulse to every structure in reach, a
             // Fx.chainLightning to each and Fx.hitLaserBlast off the unit
             // toward it, in the ability's colour
-            const hit = this.structuresWithin(x, y, wp.range, this.splashOut, foes);
+            const hit = this.structuresWithin(x, y, wp.range, this.splashOut);
             const max = wp.maxTargets ?? hit.length;
             const col = wp.fieldColor ?? PAL.heal;
             for (let k = 0; k < hit.length && k < max; k++) {
-              this.structHit(hit[k], wp.damage, team);
+              this.hitStructure(hit[k], wp.damage);
               this.chainFx(x, y, hit[k], col);
               this.pushFxCol(x, y, 12 / 60, FxKind.HitLaserBlast, Math.atan2(hit[k].y - y, hit[k].x - x), 0, col);
             }
@@ -3772,7 +2867,7 @@ export class Sim {
   }
 
   /** a bullet, missile or shell leaves the unit for the structure */
-  private fireUnitShot(x: number, y: number, tgt: Aim, wp: UnitWeapon, k: number, team: number): void {
+  private fireUnitShot(x: number, y: number, tgt: Aim, wp: UnitWeapon, k: number): void {
     const look = wp.look;
     if (!look) return;
     const half = tgt.half;
@@ -3796,7 +2891,6 @@ export class Sim {
       look,
       collide: look.collide !== false,
       trailT: 0,
-      team,
     });
     // the bullet's own shootEffect and smokeEffect, in its hitColor (what
     // Effect.at is handed for a shootEffect) — sparkShoot ramps into it
@@ -3813,8 +2907,8 @@ export class Sim {
    * the damage; the shootEffect (Fx.hitLancer, or eclipse's shockwave)
    * goes off at the muzzle
    */
-  private fireUnitLaser(x: number, y: number, aim: number, tgt: Aim | null, wp: UnitWeapon, team: number): void {
-    if (tgt && this.aimReach(tgt, x, y, wp.range)) this.aimHit(tgt, wp.damage, team);
+  private fireUnitLaser(x: number, y: number, aim: number, tgt: Aim | null, wp: UnitWeapon): void {
+    if (tgt && this.aimReach(tgt, x, y, wp.range)) this.aimHit(tgt, wp.damage);
     const st = wp.laser;
     if (!st) return;
     this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, wp.range, 0, st.id, true);
@@ -3912,30 +3006,19 @@ export class Sim {
         this.pushTrail(sh.x, sh.y, look.puff.size, look.puff.color);
       }
       const off = sh.x < 0 || sh.y < 0 || sh.x >= W || sh.y >= H;
-      // the OTHER side's structures and bodies only: a shot flies over
-      // its own side's wall as it flies over open ground
-      const foes: Team = sh.team ? "enemy" : "player";
-      const foeTeam = sh.team ? 0 : 1;
-      const t = off || !sh.collide ? null : this.structureAt(sh.x, sh.y, foes);
-      const u = off || !sh.collide || t ? -1 : this.unitAtShot(sh.x, sh.y, foeTeam);
+      const t = off || !sh.collide ? null : this.structureAt(sh.x, sh.y);
       if (t) {
-        this.structHit(t, sh.damage, sh.team);
-        if (sh.splash > 0) this.aimSplash(sh.x, sh.y, sh.splash, sh.splashRadius, sh.team);
-        this.shotHitFx(sh);
-      } else if (u >= 0) {
-        this.damageUnit(u, sh.damage);
-        if (this.uhp[u] <= 0) this.killUnit(u);
-        if (sh.splash > 0) this.aimSplash(sh.x, sh.y, sh.splash, sh.splashRadius, sh.team);
+        this.hitStructure(t, sh.damage);
+        if (sh.splash > 0) this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius);
         this.shotHitFx(sh);
       } else if (sh.life <= 0 && !off) {
-        // a shell, a missile or a bomb bursts where it ran out (that is
-        // where it was aimed); a bullet dies quietly, despawnEffect aside
+        // a shell that runs out of flight lands where it is
         if (sh.splash > 0) {
-          this.aimSplash(sh.x, sh.y, sh.splash, sh.splashRadius, sh.team);
+          this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius);
           this.shotHitFx(sh);
         } else if (look.hit === FxKind.HitLaser) this.shotHitFx(sh);
       }
-      if (t || u >= 0 || off || sh.life <= 0) {
+      if (t || off || sh.life <= 0) {
         shots[p] = shots[shots.length - 1];
         shots.pop();
       }
@@ -3976,6 +3059,37 @@ export class Sim {
 
   // ---------- placement ----------
 
+  /** no unit may be standing on (or overhanging into) the footprint */
+  private areaClearOfUnits(gx: number, gy: number, sz: number): boolean {
+    const x0 = gx * CELL, y0 = gy * CELL;
+    const x1 = x0 + CELL * sz, y1 = y0 + CELL * sz;
+    const hx0 = clamp(((x0 - UNIT_RMAX) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((y0 - UNIT_RMAX) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((x1 + UNIT_RMAX) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((y1 + UNIT_RMAX) / HC) | 0, 0, HROWS - 1);
+    for (let hy = hy0; hy <= hy1; hy++) {
+      for (let hx = hx0; hx <= hx1; hx++) {
+        const c = hy * HCOLS + hx, e = this.bStart[c + 1];
+        for (let k = this.bStart[c]; k < e; k++) {
+          const i = this.bUnits[k];
+          if (i >= this.n) continue;
+          const dx = this.upx[i] - clamp(this.upx[i], x0, x1);
+          const dy = this.upy[i] - clamp(this.upy[i], y0, y1);
+          if (dx * dx + dy * dy < this.urad[i] * this.urad[i]) return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  /** would this footprint cut the swarm's last route to the base? */
+
+
+  /**
+   * Towers build on HIGHGROUND only: mountain/rock wall cells (not forest,
+   * not floor), free of other towers. They overlook the lanes and never
+   * touch the flow field — the rock was already unwalkable.
+   */
   /**
    * THE HYDROPHOBIC MASK: every cell within HYDROPHOBIC_RANGE of water.
    *
@@ -4120,7 +3234,7 @@ export class Sim {
    * building, so one wet corner soaks the whole thing rather than the
    * penalty depending on which cell the game happens to measure from.
    */
-  isWaterlogged(gx: number, gy: number, kind: StructKind): boolean {
+  isWaterlogged(gx: number, gy: number, kind: TowerKind): boolean {
     const mask = this.waterlogged;
     if (!mask) return false;
     const sz = structStats(kind).size;
@@ -4142,40 +3256,18 @@ export class Sim {
     }
     const sz = TOWERS[kind].size;
     if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
-    const { blocked, wall } = this.terrain;
-    const fogState = this.fog.enabled ? this.fog.visible : null;
-    /**
-     * THE HIGHGROUND, AND NOWHERE ELSE.
-     *
-     * A structure used to stand on the floor, in the swarm's way, where it
-     * was a wall as much as a building. It stands on the HILLS now — every
-     * cell of its footprint on rock standing above the floor
-     * (terrain.isBuildableWall, the same predicate that decides what a
-     * flyer flies around and what sight stops at). The two sentinels are
-     * not highground and never were: a pine canopy is a prop over a floor,
-     * and deep water is a hole.
-     *
-     * That one line is the whole shape of the game now. The player's base
-     * sits somewhere nothing can walk, so it is not in the fight and
-     * cannot be in it — no wall to chew through, no gun line to trade
-     * with, nothing to defend but the core itself. What the hills cost is
-     * ROOM: a map hands out however much highground it happens to have,
-     * and where it is decides nothing except how much base can be built.
-     * The fight is the army's (updateHunt), and the base is what makes it.
-     *
-     * A drill no longer asks about ore — there is none on any map
-     * (maps.ts terrainOf) and it pays a flat rate a cycle (economy.ts
-     * DRILL_CYCLE_PAY), so every hill is as good a hill as every other.
-     */
+    const { blocked } = this.terrain;
+    const { isGoal } = this.field;
+    // GROUND LEVEL ONLY. A structure stands on open ground, in the swarm's
+    // way, where it is a wall as well as a gun — never on a hill, a forest
+    // or deep water (every blocked cell), never on another structure — the
+    // core included — never on a drop zone (a corked door spawns nothing).
+    // Shallow water is ground, as it is in Mindustry: a naval map's
+    // shallows are most of the floor it has
     for (let y = gy; y < gy + sz; y++)
       for (let x = gx; x < gx + sz; x++) {
         const i = y * COLS + x;
-        if (!blocked[i] || !isBuildableWall(wall[i])) return false;
-        if (this.cellTower[i]) return false;
-        // ...and never in the fog: a structure goes up on ground something
-        // of the player's can see right now (fog.ts) — Mindustry's rule,
-        // Build.validPlace under rules.fog
-        if (fogState && fogState[i] === 0) return false;
+        if (blocked[i] || isGoal[i] || this.groundPads[i] || this.cellTower[i]) return false;
       }
     // a LIVE shield tower owns its ground: it rose on free rock and holds
     // it, so nothing builds inside its footprint until it is dead
@@ -4184,256 +3276,19 @@ export class Sim {
       if (gx < s.gx + SHIELD_TOWER_SIZE && s.gx < gx + sz && gy < s.gy + SHIELD_TOWER_SIZE && s.gy < gy + sz)
         return false;
     }
-    // NOTHING IS UNDERFOOT ON A HILL, so there is no crowd to shove clear
-    // and no route to seal: the cells were already closed to everything
-    // that walks before the building landed on them
+    // nothing underfoot. Sealing the swarm's route is allowed: a wall it
+    // cannot walk around is a wall it walks INTO and shoots (the field
+    // routes through structures at a cost — FlowField.soft), so a seal
+    // is not a win, it is a fight at the wall
+    if (!this.areaClearOfUnits(gx, gy, sz)) return false;
     return true;
   }
 
-  /**
-   * THE BASE FIRES (economy.ts CYCLE_SECONDS): one clock for the whole of
-   * it, and when it runs out EVERY finished building of the player's
-   * resolves at once — a drill pays DRILL_CYCLE_PAY, a factory sets one
-   * body of its tier down beside the core. Then the clock is wound again.
-   *
-   * NOTHING IS QUEUED, OWED OR CARRIED. A very long tick — a huge speed
-   * multiplier, a frame the browser sat on — fires the base ONCE and
-   * rewinds from zero: a base that owed three cycles would pay them all
-   * into one frame, which is a burst of scrap and a wall of bodies nobody
-   * watched arrive. A cycle that finds the field full (PLAYER_UNIT_CAP)
-   * makes fewer bodies and the next one tries again.
-   *
-   * EVERY BODY IS SET DOWN AT THE CORE, whichever factory made it and
-   * wherever that factory stands. The factories stand on the HIGHGROUND
-   * (canPlace) — ground nothing can walk off — so a body delivered at its
-   * maker's doorstep would be a body stranded on a hill. The core is the
-   * one place on the map that is unambiguously the player's and
-   * unambiguously connected to the fight.
-   */
-  private updateCycle(dt: number): void {
-    if (this.lost()) return;
-    this.cycleT -= dt;
-    if (this.cycleT > 0) return;
-    this.cycleT = CYCLE_SECONDS;
-    for (const t of this.towers) {
-      if (t.team !== "player" || t.buildT > 0) continue;
-      const tier = structStats(t.kind).produces;
-      if (!tier) continue;
-      // EACH FACTORY MAKES ITS OWN UNIT: the tier is the block and the
-      // line is the building's (factionOf), so two tier-1 factories from
-      // the run's two picks stand side by side making different bodies
-      const kind = factionUnit(this.factionOf(t), tier);
-      for (let u = 0; u < FACTORY_CYCLE_UNITS; u++) this.deliverAtCore(kind);
-    }
-  }
 
-  /**
-   * ONE BODY OUT OF THE BASE, set down beside the core and pointed at
-   * whatever the army is pointed at.
-   *
-   * The ring it lands in is the core's own footprint plus a couple of
-   * cells (spawnUnit's `near`/`spread`), narrowed to the side the arrow is
-   * on where one is set — so a base firing under a standing order puts its
-   * bodies down already facing the walk instead of half of them rounding
-   * the core first. A NAVAL TANK NEEDS NO WATER TO BE SET DOWN IN: it
-   * stands wherever a walker would.
-   */
-  private deliverAtCore(kind: UnitKind): boolean {
-    if (this.nPlayer >= PLAYER_UNIT_CAP) return false;
-    const c = this.core;
-    const half = (c.size * CELL) / 2;
-    const reach = half + FACTORY_SPAWN_REACH;
-    let toward: number | undefined;
-    if (this.rallyCell >= 0) {
-      const rx = ((this.rallyCell % COLS) + 0.5) * CELL;
-      const ry = (((this.rallyCell / COLS) | 0) + 0.5) * CELL;
-      // an arrow ON the core has no side to it — the bearing would be
-      // noise, so the ring stays whole
-      if (Math.abs(rx - c.x) > 1e-3 || Math.abs(ry - c.y) > 1e-3)
-        toward = Math.atan2(ry - c.y, rx - c.x);
-    }
-    if (!this.spawnUnit(kind, { x: c.x, y: c.y, spread: reach, near: half, toward }, 0, 1))
-      return false;
-    // ...AND WALKS OFF UNDER THE STANDING ORDER, if one has been given
-    // (orderMove). The body is the one spawnUnit just set down, and it
-    // takes the field slot already aimed at the arrow — so a whole cycle's
-    // worth of bodies costs one solve, not one a body
-    if (this.rallyCell >= 0) this.sendUnitTo(this.n - 1, this.rallyCell);
-    this.pushFx(c.x, c.y, 0.4, FxKind.Death);
-    return true;
-  }
 
-  /** seconds until the base fires again — the bar over the minimap */
-  get cycleIn(): number {
-    return Math.max(0, this.cycleT);
-  }
-
-  /**
-   * THE ARMY HUNTS. Every body of the player's that is under no order —
-   * which is every one of them until a player draws an arrow, and every
-   * one of them again the moment they arrive at where it pointed — looks
-   * for the nearest enemy and walks at it. This is the whole of the
-   * player's army AI, and it is deliberately the whole of it: the base is
-   * where the thinking goes, and an army that had to be micro-managed to
-   * find a fight would put it back on the field.
-   *
-   * NEAREST BODY FIRST, then nearest building. A swarm body inside
-   * HUNT_SIGHT is walked at STRAIGHT — it will have moved before any route
-   * to it finished solving, and at that reach the straight line is what a
-   * route would have said anyway. Nothing in reach means the swarm's
-   * BUILDINGS are the war: those get a real routed order (sendUnitTo), the
-   * same machinery the arrow uses, so an army crossing the map walks round
-   * the massif rather than into it and every body aimed at the same
-   * building shares one corridor.
-   *
-   * ONLY IDLE BODIES ARE TOUCHED. A body already walking somewhere — under
-   * the arrow, or under a hunt it took earlier — is left alone until it
-   * gets there, so the hunt can never argue with the player mid-walk and
-   * can never re-solve a corridor a hundred bodies are already on.
-   */
-  private updateHunt(dt: number): void {
-    for (let i = 0; i < this.n; i++) {
-      if (!this.uteam[i] || this.uhp[i] <= 0) continue;
-      this.uhuntT[i] -= dt;
-      if (this.uhuntT[i] > 0) continue;
-      this.uhuntT[i] = HUNT_SCAN_SECONDS;
-      // a body on its way somewhere keeps going. Its guns are hunting on
-      // their own clock the whole time (updateUnitWeapons) — this is about
-      // its FEET
-      if (this.uord[i] > 0) continue;
-      const x = this.upx[i], y = this.upy[i];
-      // the nearest of the swarm's bodies, air and ground alike, through
-      // the same broad phase the guns use. team 0 is the swarm's
-      const j = this.bestTarget(x, y, HUNT_SIGHT, true, true, false, 0);
-      if (j >= 0) {
-        this.uhunt[i] = 1;
-        this.uhuntx[i] = this.upx[j];
-        this.uhunty[i] = this.upy[j];
-        continue;
-      }
-      this.uhunt[i] = 0;
-      const t = this.nearestEnemyStructure(x, y);
-      if (!t) continue; // nothing left to fight: the body holds where it is
-      // already there. Standing on it and re-routing onto the cell
-      // underfoot once a second is not hunting, it is a solve leak
-      if (Math.hypot(t.x - x, t.y - y) <= HUNT_ARRIVE + (this.sizeOf(t) * CELL) / 2) continue;
-      const from =
-        clamp((y / CELL) | 0, 0, ROWS - 1) * COLS + clamp((x / CELL) | 0, 0, COLS - 1);
-      const goal = this.reachableGoal(this.nearestOpenCell(t.x, t.y), from);
-      if (goal >= 0) this.sendUnitTo(i, goal);
-    }
-  }
-
-  /**
-   * WHICH LINE A FACTORY BUILDS: its own (Tower.faction), which the player
-   * chose when they placed it. A building put down by something with no
-   * pick behind it — the sandbox, the editors, a map's own formation —
-   * falls back to the first family, so a factory always makes SOMETHING.
-   */
-  /**
-   * WHAT THIS BUILDING MAKES, or null if it makes nothing — the tier is
-   * the block's and the line is the building's own (factionOf), so this is
-   * the one place the two halves are put together. The overlay draws the
-   * answer on the factory (Game.drawFactoryUnits) so a hillside of ten
-   * different factories says what each of them is for without being
-   * clicked.
-   */
-  unitOf(t: Tower): UnitKind | null {
-    const tier = structStats(t.kind).produces;
-    return tier ? factionUnit(this.factionOf(t), tier) : null;
-  }
-
-  private factionOf(t: Tower): FamilyKey {
-    return t.faction ?? this.tech?.picks[0] ?? "ground";
-  }
-
-  /**
-   * THE RUN'S INCOME, in scrap a second: the core's pay (CORE_INCOME) for
-   * as long as it stands, plus DRILL_CORE_INCOME for every finished drill
-   * of the player's. THERE IS STILL ONLY ONE INCOME: a drill mines
-   * nothing, it deepens the core's excavation, so this is a single rate
-   * that building drills raises rather than a second engine beside it.
-   * Nothing the swarm does or dies of pays anything (see economy.ts).
-   *
-   * A DRILL STILL GOING UP PAYS NOTHING — the shaft is not sunk yet —
-   * which is what makes building one in front of a wave a real risk even
-   * now that a finished one cannot be shot (untouchable).
-   *
-   * Zero on a sim that is not charging (the editors, the sandbox, the
-   * title screen), where a bank would be a number that means nothing.
-   *
-   * THE RATE, NOT THE PAYMENTS: the core ships in loads (updateMining), so
-   * this is what those loads AVERAGE to, which is the number the prices
-   * and the stage audit (ladder.ts) are written against.
-   */
-  income(): number {
-    if (!this.charging || this.lost()) return 0;
-    let rate = CORE_INCOME;
-    for (const t of this.towers)
-      if (t.team === "player" && t.buildT <= 0 && structStats(t.kind).drill)
-        rate += DRILL_CORE_INCOME;
-    return rate;
-  }
-
-  /**
-   * HOW LONG THE CORE'S CURRENT LOAD TAKES, at the rate in force. A drill
-   * finishing SHORTENS THE LOAD BEING FILLED, so the bar over the core
-   * speeds up the moment the shaft is sunk rather than at the next
-   * shipment — which is the whole of what a drill looks like from outside.
-   */
-  coreLoadSeconds(): number {
-    const rate = this.income();
-    return rate > 0 ? CORE_BATCH / rate : CORE_LOAD_SECONDS;
-  }
-
-  /**
-   * THE CORE SHIPS, tick by tick: it runs down the clock on the load it is
-   * filling and hands each full CORE_BATCH over whole, into the bank and
-   * onto the run's ledger. It is the run's entire income now that the
-   * drills are gone.
-   *
-   * The remainder is CARRIED (coreMineT += load rather than = load) so a
-   * long frame or a fast game speed never rounds a fraction of a load
-   * away, and the while loop covers a tick long enough to fill more than
-   * one.
-   *
-   * Nothing ships on a sim that is not charging or on a run that is
-   * already lost — same rule as income().
-   */
-  private updateMining(dt: number): void {
-    if (!this.charging || this.lost()) return;
-    // the load's length is read fresh every tick (coreLoadSeconds), so a
-    // drill that finished this tick shortens the load already in progress
-    const load = this.coreLoadSeconds();
-    this.coreMineT -= dt;
-    while (this.coreMineT <= 0) {
-      this.coreMineT += load;
-      this.payScrap(CORE_BATCH);
-    }
-    // ...and a load left over from a slower rate is clamped down to the
-    // new one, or the first shipment after a drill goes up would still be
-    // paced by the rate before it
-    if (this.coreMineT > load) this.coreMineT = load;
-  }
-
-  /** a load of scrap into the bank, and onto the tally the results screen
-   *  reads */
-  private payScrap(amount: number): void {
-    this.scrap += amount;
-    this.scrapEarned += amount;
-  }
-
-  placeTower(
-    gx: number,
-    gy: number,
-    kind: TowerKind,
-    /** which line this factory builds (Tower.faction) — null lets the sim
-     *  fall back to the run's first pick (factionOf) */
-    faction: FamilyKey | null = null,
-    instant = !this.charging,
-  ): PlaceResult {
+  placeTower(gx: number, gy: number, kind: TowerKind, instant = !this.charging): PlaceResult {
     if (!this.canPlace(gx, gy, kind)) return "invalid";
-    this.addTower(gx, gy, kind, instant, "player", faction);
+    this.addTower(gx, gy, kind, instant);
     if (this.charging) this.scrap -= scrapPriceOf(kind);
     return "ok";
   }
@@ -4443,14 +3298,7 @@ export class Sim {
    * wherever one fits (overlap with the one just placed fails canPlace,
    * which is what spaces the chain). Returns how many towers landed.
    */
-  placeLine(
-    x0: number,
-    y0: number,
-    x1: number,
-    y1: number,
-    kind: TowerKind,
-    faction: FamilyKey | null = null,
-  ): number {
+  placeLine(x0: number, y0: number, x1: number, y1: number, kind: TowerKind): number {
     const sz = TOWERS[kind].size;
     const dx = x1 - x0, dy = y1 - y0;
     const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / CELL));
@@ -4461,7 +3309,7 @@ export class Sim {
       if (gx === pgx && gy === pgy) continue;
       pgx = gx;
       pgy = gy;
-      if (this.placeTower(gx, gy, kind, faction) === "ok") placed++;
+      if (this.placeTower(gx, gy, kind) === "ok") placed++;
     }
     return placed;
   }
@@ -4515,14 +3363,7 @@ export class Sim {
   }
 
   /** ...and build it: every cell of the ruler's line that will take one */
-  placeRuler(
-    x0: number,
-    y0: number,
-    x1: number,
-    y1: number,
-    kind: TowerKind,
-    faction: FamilyKey | null = null,
-  ): number {
+  placeRuler(x0: number, y0: number, x1: number, y1: number, kind: TowerKind): number {
     let placed = 0;
     for (const c of this.rulerCells(x0, y0, x1, y1, kind))
       if (this.placeTower(c.gx, c.gy, kind) === "ok") placed++;
@@ -4533,19 +3374,10 @@ export class Sim {
    *  what a tap selects and a right-click sells. The swarm's buildings are
    *  not the player's to sell: see enemyTowerAt */
   towerAt(px: number, py: number): Tower | null {
-    const t = this.structureAt(px, py, "player");
+    const t = this.structureAt(px, py);
     return t && !isCore(t) ? t : null;
   }
 
-  /** the SWARM's turret or wall under the world point, if any — a tap on
-   *  one marks it for focus fire (setFocusTower) */
-  enemyTowerAt(px: number, py: number): Tower | null {
-    const t = this.structureAt(px, py, "enemy");
-    if (!t || isCore(t)) return null;
-    // one standing in the fog cannot be marked — it is not on screen
-    if (this.fog.enabled && !this.fog.visibleAt(t.x, t.y)) return null;
-    return t;
-  }
 
   /**
    * A structure's footprint on the two GROUND-BOUND fields — the walkers'
@@ -4572,9 +3404,6 @@ export class Sim {
     const { walk, soft } = this.field;
     const nWalk = this.navalField.walk, nSoft = this.navalField.soft;
     const sz = this.sizeOf(t);
-    // the swarm's OWN building is rock to its walkers: solid, and never
-    // soft — it routes around its own wall rather than chewing through it
-    const routable = teamOf(t) === "player";
     let changed = false;
     for (let y = t.gy; y < t.gy + sz; y++)
       for (let x = t.gx; x < t.gx + sz; x++) {
@@ -4584,7 +3413,7 @@ export class Sim {
         // solid to the body, soft to the path: the swarm may route
         // through it, and shoots it when it gets there
         walk[i] = on ? 1 : 0;
-        soft[i] = on && routable ? 1 : 0;
+        soft[i] = on ? 1 : 0;
         nWalk[i] = walk[i];
         nSoft[i] = soft[i];
         changed = true;
@@ -4593,22 +3422,8 @@ export class Sim {
       // a solve in flight is solving the board as it was a moment ago:
       // drop it and let the flags below buy a fresh one once things settle
       if (this.solveQueue.length > 0) this.abortSolves();
-      // ...and the doorway graph and every standing order are now about a
-      // board that has moved. The graph is told WHICH sectors moved — a
-      // structure covers one or two, and rebuilding those and the
-      // boundaries they touch is microseconds against twenty milliseconds
-      // for the board. The orders are only FLAGGED: a build drag lands a
-      // structure a frame and would otherwise pay for every live corridor
-      // on each of them, so they are worked out once the board holds
-      // still, on the settle clock the fields wait out (solveDirtyFields)
-      for (let y = t.gy; y < t.gy + sz; y++)
-        for (let x = t.gx; x < t.gx + sz; x++) this.sectors.markDirty(sectorOf(y * COLS + x));
-      this.ordersStale = true;
-      this.orderStale.fill(1);
       this.fieldDirty = true;
       this.navalDirty = true;
-      // the player's three only while they are being solved at all: a flag
-      // raised before the first factory would never come down
       this.unstickPending = true;
       // the board moved, so the settle clock starts over — a drag holds it
       // at zero and pays for one solve when it ends (solveDirtyFields)
@@ -4624,11 +3439,7 @@ export class Sim {
     // the selection holds buildings by reference: a demolished one has to
     // leave it here, or its ring would keep being drawn over bare ground
     this.selStructs.delete(t);
-    if (t.team === "enemy") this.enemyStructures--;
-    if (this.focusTower === t) this.focusTower = null;
     this.claimGround(t, false);
-    // an eye is gone: what only it saw goes grey at the next tick
-    this.fog.invalidate();
     this.refreshSpecs();
   }
 
@@ -4657,11 +3468,22 @@ export class Sim {
     // nothing back (SELL_REFUND is 0, economy.ts): a placed turret is
     // spent, and demolishing it only clears the ground. The dial stays
     // wired so a refund can be tried again from one number
-    // a mission building is never the player's and never sold (towerAt
-    // answers on the player's side only), so the refund is the roster's
-    if (this.charging) this.scrap += sellValue(t.kind as TowerKind);
+    if (this.charging) this.scrap += sellValue(t.kind);
     this.pushFx(t.x, t.y, 0.35, FxKind.Death); // demolish puff
     return true;
+  }
+
+  /** sell every selected building — the delete key over a gathered row */
+  sellSelected(): number {
+    let k = 0;
+    for (const st of [...this.selStructs]) {
+      if (isCore(st)) continue;
+      if (this.charging) this.scrap += sellValue(st.kind);
+      this.pushFx(st.x, st.y, 0.35, FxKind.Death);
+      this.removeTower(st);
+      k++;
+    }
+    return k;
   }
 
   // ---------- spawning ----------
@@ -4732,9 +3554,8 @@ export class Sim {
    */
   private spawnUnit(
     kind: UnitKind,
-    brood?: { x: number; y: number; spread?: number; near?: number; toward?: number },
+    brood?: { x: number; y: number },
     wave = this.wavesStarted,
-    team = 0,
   ): boolean {
     const stats = UNIT_STATS[kind];
     const fly = !!stats.flying;
@@ -4753,29 +3574,8 @@ export class Sim {
         // a ring around the body, clamped inside the world — the wall and
         // crowding tests below are the same ones a door spot has to pass,
         // so a brood never lands in rock or aground on a shoreline
-        //
-        // `toward` NARROWS THAT RING TO AN ARC: a factory with a meetup
-        // point set (rallyCell) hands the bearing to it, and the body is
-        // set down on THAT side of the building rather than anywhere
-        // around it — so a line coming off a factory leaves by the door it
-        // is walking out of instead of half of it rounding the building
-        // first. The arc widens attempt by attempt, back to the full ring
-        // on the last, because the rally side can be the walled side and a
-        // body that cannot be placed is a factory that never delivers.
-        const ang =
-          brood.toward === undefined
-            ? Math.random() * Math.PI * 2
-            : brood.toward +
-              (Math.random() * 2 - 1) *
-                (RALLY_SPAWN_ARC + (a / Math.max(1, tries - 1)) * (Math.PI - RALLY_SPAWN_ARC));
-        // ...and `near` keeps the draw OUT of the middle of the ring: a
-        // factory's own footprint is the middle of its ring, and every
-        // spot drawn inside it is an attempt spent on ground the building
-        // is standing on — which is how a coned draw ran out of attempts
-        // and fell back to the far side after all
-        const near = brood.near ?? 0;
-        const far = brood.spread ?? MITOSIS_SPREAD;
-        const d = Math.sqrt(near * near + Math.random() * (far * far - near * near));
+        const ang = Math.random() * Math.PI * 2;
+        const d = Math.random() * MITOSIS_SPREAD;
         x = clamp(brood.x + Math.cos(ang) * d, r, W - r);
         y = clamp(brood.y + Math.sin(ang) * d, r, H - r);
       } else {
@@ -4791,13 +3591,7 @@ export class Sim {
       // tank that is the one with the deep water open, which is what lets
       // it land half in a channel and half on its bank
       const wallField = layer === "water" ? this.navalField : this.field;
-      // ...and a FLYER is tested against the hills (airField): the rock is
-      // solid to it in flight now, so a body dropped inside one would be a
-      // body that had to shove its way back out of a mountain
-      if (
-        (fly ? this.airField : wallField).hitsWall(x, y, WALL_R) ||
-        !this.spawnSpotFree(x, y, r, fly, span)
-      )
+      if ((!fly && wallField.hitsWall(x, y, WALL_R)) || !this.spawnSpotFree(x, y, r, fly, span))
         continue;
       const i = this.n++;
       // LEVEL SCALING: health rides the level curve, and the rung adds a
@@ -4816,7 +3610,7 @@ export class Sim {
       // here, once, so every reader of uspd — the drive, the chassis turn
       // rate, the leg cycle — is already looking at the speed this unit
       // actually travels at
-      this.uspd[i] = stats.speed * (this.speedyOn && team === 0 ? SPEEDY_SPEED : 1);
+      this.uspd[i] = stats.speed * (this.speedyOn ? SPEEDY_SPEED : 1);
       this.urad[i] = r;
       // the core, resolved once here rather than per tick: it is where the
       // air field aims (coreGoal) and where a flyer with no field under it
@@ -4833,7 +3627,7 @@ export class Sim {
       // read downstream — the lancer's x4 included — sees it
       this.uarmor[i] =
         stats.armor +
-        (this.armoredOn && team === 0 && stats.tier <= ARMORED_MAX_TIER ? ARMORED_ARMOR : 0);
+        (this.armoredOn && stats.tier <= ARMORED_MAX_TIER ? ARMORED_ARMOR : 0);
       // ForceFieldAbility.created: a carrier walks in with the bubble
       // already full, so the first tower to see one meets a whole pool of
       // shield rather than a field still charging up. The pool carries the
@@ -4849,15 +3643,6 @@ export class Sim {
       this.uability[i] = 0;
       this.upullx[i] = 0;
       this.upully[i] = 0;
-      // a body arrives with nothing on it: not selected, under no order
-      this.usel[i] = 0;
-      this.uord[i] = 0;
-      // ...and looks for something to hunt on its own clock, from a random
-      // point in the cycle: a whole cycle's worth of bodies is set down on
-      // one frame (updateCycle), and without the stagger every one of them
-      // would scan on the same frame for the rest of the run
-      this.uhunt[i] = 0;
-      this.uhuntT[i] = Math.random() * HUNT_SCAN_SECONDS;
       // THE ARRIVAL CLOCK IS A DOOR RULE, so a brood does not get one: the
       // invincibility is there to stop a drop zone being camped, and a body
       // that broke out of another body in the middle of the kill zone is
@@ -4882,7 +3667,7 @@ export class Sim {
       // second wave script nobody can read. Its clock starts full, so the
       // first meal is a second after it lands rather than the instant it
       // does
-      this.uhungry[i] = this.hungryOn && team === 0 && Math.random() < HUNGRY_CHANCE ? 1 : 0;
+      this.uhungry[i] = this.hungryOn && Math.random() < HUNGRY_CHANCE ? 1 : 0;
       // ...and the one thing a brood body carries that a door body does
       // not: the mark that says it may not brood in its turn (see ubrood)
       this.ubrood[i] = brood ? 1 : 0;
@@ -4927,19 +3712,10 @@ export class Sim {
       // sprite and on the heading it will be drawn at. Fx.spawn is NOT
       // fired here — Mindustry runs it 30 ticks behind, which updateStatus
       // does when the unmoving half of the clock runs out
-      this.pushSpawnFx(x, y, a0, UNIT_ID[kind], team);
+      this.pushSpawnFx(x, y, a0, UNIT_ID[kind]);
       this.aliveByKind[UNIT_ID[kind]]++;
-      // the wave this body answers for (see uwave): the one being drained,
-      // or the parent's for brood
-      // a body of the player's answers for no wave: it is not the
-      // swarm's, and a wave is cleared without it
-      this.uteam[i] = team;
-      this.uwave[i] = team ? 0 : wave;
-      if (team) this.nPlayer++;
-      else {
-        this.enemyByKind[UNIT_ID[kind]]++;
-        this.waveSpawned[wave] = (this.waveSpawned[wave] ?? 0) + 1;
-      }
+      this.uwave[i] = wave;
+      this.waveSpawned[wave] = (this.waveSpawned[wave] ?? 0) + 1;
       return true;
     }
     return false;
@@ -4985,7 +3761,7 @@ export class Sim {
           // the unit's shieldColor — the colour of whichever team owns it
           this.pushFxCol(
             upx[i], upy[i], 40 / 60, FxKind.ShieldBreak,
-            0, force.radius * uforceScale[i], TEAM_COL[this.uteam[i]],
+            0, force.radius * uforceScale[i], TEAM_CRUX_RGB,
           );
         }
         uforceDown[i] = ushield[i] <= 0 ? 1 : 0;
@@ -5031,7 +3807,7 @@ export class Sim {
         const e = this.bStart[row + hx1 + 1];
         for (let b = this.bStart[row + hx0]; b < e; b++) {
           const j = this.bUnits[b];
-          if (j >= this.n || uhp[j] <= 0 || this.uteam[j] !== this.uteam[i]) continue;
+          if (j >= this.n || uhp[j] <= 0) continue;
           const dx = upx[j] - upx[i], dy = upy[j] - upy[i];
           const rr = range + urad[j];
           if (dx * dx + dy * dy > rr * rr) continue;
@@ -5069,7 +3845,7 @@ export class Sim {
         this.pushFxCol(
           upx[i], upy[i], 22 / 60,
           repair || energy ? FxKind.HealWave : FxKind.ShieldWave,
-          0, range, repair || energy ? PAL.heal : TEAM_COL[this.uteam[i]],
+          0, range, repair || energy ? PAL.heal : TEAM_CRUX_RGB,
         );
     }
   }
@@ -5256,7 +4032,7 @@ export class Sim {
         const j = bUnits[k];
         if (j === i || j >= this.n || uhp[j] <= 0) continue;
         if (uhungry[j] || uspawn[j] > 0 || KIND_BOSS[ukind[j]]) continue;
-        if (ufly[j] !== fly || unav[j] !== nav || this.uteam[j] !== this.uteam[i]) continue;
+        if (ufly[j] !== fly || unav[j] !== nav) continue;
         const dx = upx[j] - x, dy = upy[j] - y;
         const rr = HUNGRY_REACH + urad[j];
         if (dx * dx + dy * dy > rr * rr) continue;
@@ -5276,18 +4052,11 @@ export class Sim {
     // does not brood in its turn (see ubrood)
     const wasBrood = this.ubrood[i];
     const wave = this.uwave[i];
-    const team = this.uteam[i];
-    // A BODY OF THE PLAYER'S DYING IS A LOSS, NOT A KILL: it is off the
-    // field and that is all — no ledger, no blast, no brood
-    if (team) {
-      this.pushDeathFx(x, y);
-      this.removeUnit(i);
-      this.unitsLost++;
-      return;
-    }
     this.killsByKind[kind]++;
-    // a kill pays nothing: the run's scrap is the core's and the drills'
-    // (economy.ts), never the swarm's
+    // the kill's scrap, into the run — fixed per tier (economy.ts)
+    const drop = unitDrop(UNIT_KINDS[kind]).scrap;
+    this.scrap += drop;
+    this.scrapEarned += drop;
     this.pushDeathFx(x, y);
     // VOLATILE (mutation.ts): the body's parting blast, before the arrays
     // reshuffle under it
@@ -5352,17 +4121,8 @@ export class Sim {
   }
 
   private removeUnit(i: number): void {
-    // the route this body was walking dies with it. Keyed by uid, so this
-    // is the one place it has to happen — the swap-remove below moves
-    // every OTHER per-unit row and cannot disturb the map
-    this.wpts.delete(this.uid[i]);
     this.aliveByKind[this.ukind[i]]--;
-    if (this.uteam[i]) this.nPlayer--;
-    else {
-      this.enemyByKind[this.ukind[i]]--;
-      // one fewer body between the wave and being cleared (wavesCleared)
-      this.waveDown[this.uwave[i]] = (this.waveDown[this.uwave[i]] ?? 0) + 1;
-    }
+    this.waveDown[this.uwave[i]] = (this.waveDown[this.uwave[i]] ?? 0) + 1;
     const n = --this.n;
     // the projectile pass holds its force-field carriers by index, and a
     // shot that kills what it hits reshuffles them mid-pass: the dead
@@ -5422,20 +4182,6 @@ export class Sim {
     this.uhungerT[i] = this.uhungerT[n];
     this.ubrood[i] = this.ubrood[n];
     this.uwave[i] = this.uwave[n];
-    this.uteam[i] = this.uteam[n];
-    // the selection and the order are the player's hold on a particular
-    // body, so they follow it down into its new slot exactly as its feet do
-    this.usel[i] = this.usel[n];
-    this.uord[i] = this.uord[n];
-    this.uordx[i] = this.uordx[n];
-    this.uordy[i] = this.uordy[n];
-    // ...and so does the hunt: a body swapped down into a dead one's slot
-    // that inherited its target would walk at whatever that body was
-    // walking at, which on a quiet flank is the far side of the map
-    this.uhunt[i] = this.uhunt[n];
-    this.uhuntx[i] = this.uhuntx[n];
-    this.uhunty[i] = this.uhunty[n];
-    this.uhuntT[i] = this.uhuntT[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
     this.ufly[i] = this.ufly[n];
@@ -5830,8 +4576,7 @@ export class Sim {
   }
 
   private updateUnits(dt: number): void {
-    const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, ulat, phx, phy, field, flowTmp, uteam } =
-      this;
+    const { upx, upy, uvx, uvy, uspd, ukind, uwalk, ubrot, urot, ulat, phx, phy, field, flowTmp } = this;
     const { upullx, upully, uspawn, uwet, uwetSlow } = this;
     // the water mask, for the naval tanks' pace ashore (NAVAL_LAND_SPEED)
     const water = this.waterCells;
@@ -5849,22 +4594,6 @@ export class Sim {
     for (let i = this.n - 1; i >= 0; i--) {
       const fly = this.ufly[i] !== 0;
       const nav = this.unav[i] !== 0;
-      // THE MOVER'S OWN FIELD. Everything below that asks the terrain a
-      // question — where the exits are, where the walls are, how much room
-      // there is to spread — asks it of the layer the unit travels on, and
-      // for a naval tank that is the naval field: the walkers' rock with
-      // the deep water opened up (navalWalkMask). Reading the ground field
-      // for a tank would have walled it out of every deep cell on the map.
-      // A FLYER NEVER READS THIS ONE. Its own field (airField) gives it a
-      // heading and nothing else: every reader of `mf` below is a body
-      // meeting terrain — clearance to spread into, walls to push off, a
-      // wall to slide along — and terrain is not something a flyer meets.
-      // It is left pointing at the ground field so the guards below can
-      // stay plain `!fly` tests rather than a third branch that never runs.
-      // ...and a body of the PLAYER's reads the SWARM's field for terrain
-      // and nothing else. It has no route of its own: it goes where it is
-      // sent and stands where it is left (see below).
-      const mine = uteam[i] !== 0;
       const mf = nav ? this.navalField : field;
       const { walk } = mf;
       const cx = clamp((upx[i] / CELL) | 0, 0, COLS - 1);
@@ -5877,34 +4606,7 @@ export class Sim {
       // it used to park on the water nearest it and fire from the shore,
       // which was the whole of what a hull could reach.
 
-      // THE PLAYER'S ARMY FIGHTS ON ITS OWN. It walks at whatever
-      // updateHunt last pointed it at — the nearest swarm body, or a
-      // routed order at the swarm's nearest building — and the arrow
-      // (orderMove) overrules that whenever a player draws one. There are
-      // still no player flow fields: a hunt is a straight line or one of
-      // the arrow's own corridors, never a fourth map-sized solve.
-      if (mine) {
-        if (this.uhunt[i]) {
-          const hdx = this.uhuntx[i] - upx[i], hdy = this.uhunty[i] - upy[i];
-          const hd = Math.sqrt(hdx * hdx + hdy * hdy);
-          if (hd <= ORDER_ARRIVE) {
-            // on top of it: the guns take it from here
-            flowTmp.x = 0;
-            flowTmp.y = 0;
-          } else if (fly) {
-            // a flyer of the player's steers round the hills exactly as
-            // the swarm's does — the straight line at a body on the far
-            // side of a massif is a line into rock
-            this.airHeading(upx[i], upy[i], hdx / hd, hdy / hd, flowTmp, this.airField);
-          } else {
-            flowTmp.x = hdx / hd;
-            flowTmp.y = hdy / hd;
-          }
-        } else {
-          flowTmp.x = 0;
-          flowTmp.y = 0;
-        }
-      } else if (fly) {
+      if (fly) {
         // flyers take the air field's route round the hills and HOLD over
         // the core's edge once there — Mindustry's FlyingAI circles what it
         // attacks; this one hovers, and its guns do the rest
@@ -5918,37 +4620,6 @@ export class Sim {
         } else this.airHeading(upx[i], upy[i], gdx / gl, gdy / gl, flowTmp, this.airField);
       } else {
         mf.sample(upx[i], upy[i], flowTmp);
-      }
-      // A BODY UNDER ORDERS goes where it was sent instead (orderMove).
-      // Only the HEADING is the order's: every terrain question below is
-      // still asked of the unit's own layer (mf), so an ordered tank still
-      // knows the water is open to it and an ordered walker still slides
-      // along the walls it meets.
-      const ord = mine ? this.uord[i] : 0;
-      if (ord > 0) {
-        const odx = this.uordx[i] - upx[i], ody = this.uordy[i] - upy[i];
-        const od = Math.sqrt(odx * odx + ody * ody);
-        if (od <= ORDER_ARRIVE) {
-          // ARRIVED. A CHAINED ORDER TAKES ITS NEXT LEG HERE, on the tick
-          // the body reaches the point (takeNextWaypoint); with nothing
-          // queued the body goes back on the hunt from where it was sent
-          // (updateHunt), which is what makes the arrow an attack-move
-          // rather than a parking space
-          this.uord[i] = 0;
-          this.takeNextWaypoint(i);
-        } else {
-          // the corridor has a heading everywhere along the route it was
-          // built for (corridor.ts) and nowhere else
-          const led = !fly && this.orders[ord - 1].sample(upx[i], upy[i], flowTmp);
-          // a flyer has no use for the ground's route at all, and a body
-          // OUTSIDE its own corridor — shoved clear of it, or ordered from
-          // ground the route never touched — has nothing to read: both walk
-          // the straight line at the point
-          if (!led) {
-            flowTmp.x = odx / od;
-            flowTmp.y = ody / od;
-          }
-        }
       }
       // StatusEffects.unmoving is a speedMultiplier of 0, not a freeze: a
       // unit still materialising cannot drive itself anywhere, but the
@@ -6106,29 +4777,17 @@ export class Sim {
       // window edge, so 1-wide corridors and their L-bends stay threadable.
       // Only a zero-progress axis redirects its speed into the free one, and
       // a unit already overlapping a wall (crowd shoves) skips the veto
-      // entirely so it can always walk back out.
-      //
-      // A FLYER IS STOPPED BY THE HILLS. It used to skip walls wholesale —
-      // terrain bent its ROUTE and nothing more, so a crowd could shove one
-      // inside a mountain and it would come out the far side. The hills are
-      // SOLID to it now: it collides with the air field's own mask
-      // (terrain.airWalkMask — the same rock a building stands on and
-      // sight stops at) and slides along it exactly as a walker slides
-      // along rock. The two sentinels stay open sky: a pine canopy is
-      // something to fly over, and deep water is half the reason air
-      // exists. A body that somehow starts inside a hill still walks out,
-      // by the same `wedged` escape a walker gets.
+      // entirely so it can always walk back out. Flyers skip walls wholesale
       const x0 = upx[i], y0 = upy[i];
-      const cf = fly ? this.airField : mf;
-      const wedged = cf.hitsWall(upx[i], upy[i], WALL_R);
+      const wedged = fly || mf.hitsWall(upx[i], upy[i], WALL_R);
       let nx = upx[i] + dxT;
-      if (!wedged && cf.hitsWall(nx, upy[i], WALL_R)) {
+      if (!wedged && mf.hitsWall(nx, upy[i], WALL_R)) {
         const cX =
           dxT > 0
             ? Math.floor((nx + WALL_R) / CELL) * CELL - WALL_R
             : Math.ceil((nx - WALL_R) / CELL) * CELL + WALL_R;
         const fwd = dxT > 0 ? cX > upx[i] : cX < upx[i];
-        if (fwd && !cf.hitsWall(cX, upy[i], WALL_R)) nx = cX;
+        if (fwd && !mf.hitsWall(cX, upy[i], WALL_R)) nx = cX;
         else {
           nx = upx[i];
           uvy[i] += Math.sign(uvy[i] || flowTmp.y || 1) * Math.abs(uvx[i]) * 0.6;
@@ -6136,13 +4795,13 @@ export class Sim {
         }
       }
       let ny = upy[i] + dyT;
-      if (!wedged && cf.hitsWall(nx, ny, WALL_R)) {
+      if (!wedged && mf.hitsWall(nx, ny, WALL_R)) {
         const cY =
           dyT > 0
             ? Math.floor((ny + WALL_R) / CELL) * CELL - WALL_R
             : Math.ceil((ny - WALL_R) / CELL) * CELL + WALL_R;
         const fwd = dyT > 0 ? cY > upy[i] : cY < upy[i];
-        if (fwd && !cf.hitsWall(nx, cY, WALL_R)) ny = cY;
+        if (fwd && !mf.hitsWall(nx, cY, WALL_R)) ny = cY;
         else {
           ny = upy[i];
           uvx[i] += Math.sign(uvx[i] || flowTmp.x || 1) * Math.abs(uvy[i]) * 0.6;
@@ -6331,7 +4990,7 @@ export class Sim {
    * Roll a spot and raise a shield tower on it. A candidate 3x3 has to be
    * EMPTY BUILDABLE ROCK: every cell of it rock a turret could itself have
    * stood on, and nothing already standing on any of them — no other
-   * shield tower, no turret or wall of either side, not the core.
+   * shield tower, no turret, not the core.
    *
    * Two dozen tries, then GIVE UP until the next period. That is the whole
    * failure mode and it is deliberate: a board whose free rock the player
@@ -6380,8 +5039,8 @@ export class Sim {
       }
       if (!ok) continue;
       // ...and never on anything already standing. cellTower is the board's
-      // own occupancy index — the core, the player's turrets and walls and
-      // the swarm's formation alike — so one sweep of the footprint answers
+      // own occupancy index — the core and the player's turrets alike — so
+      // one sweep of the footprint answers
       // it for all of them. The board the player built is theirs: a mutator
       // that buried it would be a mutator that undid their choices, so a
       // roll that lands on one is thrown away and a map with no free rock
@@ -6525,12 +5184,6 @@ export class Sim {
    * wall it chews through.
    */
   private damageTower(t: Structure, dmg: number): void {
-    // THE PLAYER'S BASE TAKES NOTHING (untouchable). Every scan already
-    // refuses to find it, so nothing should reach here — this is the
-    // backstop that makes the rule true rather than merely usual, and it
-    // catches the paths that hit a structure by CELL rather than by scan
-    // (stepHostileProjectile, structureHit)
-    if (this.untouchable(t)) return;
     // A BUILDING STILL GOING UP IS PAPER: one hit point, and ANY damage
     // takes it — a scratch a finished turret would shrug off pops the
     // scaffold. Building in front of the swarm is the risk being priced
@@ -6544,10 +5197,6 @@ export class Sim {
     this.pushFx(t.x, t.y, 0.5 * big, FxKind.Breach);
     this.pushFx(t.x, t.y, 0.35 * big, FxKind.Death);
     if (isCore(t)) return;
-    // one of the SWARM's buildings wrecked pays nothing — the economy is
-    // the player's own (economy.ts) — but it is counted, and the ground it
-    // held is open to claim
-    if (t.team === "enemy") this.enemyStructuresDown++;
     this.removeTower(t);
   }
 
@@ -6566,7 +5215,6 @@ export class Sim {
     // over a copy: a wrecked tower leaves the list under the loop. The
     // core is a structure like any other to a blast
     for (const t of [...this.towers, this.core]) {
-      if (teamOf(t) !== "player") continue; // the swarm never hurts its own
       const half = (this.sizeOf(t) * CELL) / 2;
       const r = reach + half;
       const dx = t.x - x, dy = t.y - y;
@@ -6590,7 +5238,6 @@ export class Sim {
     this.focusUid = this.uid[idx];
     this.focusIdx = idx;
     this.focusShieldTower = -1;
-    this.focusTower = null;
   }
 
   /** mark one shield tower for focus fire — same contract, the other kind */
@@ -6599,25 +5246,13 @@ export class Sim {
     this.focusShieldTower = idx;
     this.focusUid = -1;
     this.focusIdx = -1;
-    this.focusTower = null;
   }
 
-  /** mark one of the SWARM's structures for focus fire — the third kind.
-   *  The mark dies with the building: a wrecked one leaves cellTower, and
-   *  the fire loop checks it is still standing before aiming at it */
-  setFocusTower(t: Tower): void {
-    if (t.team !== "enemy" || this.cellTower[t.gy * COLS + t.gx] !== t) return;
-    this.focusTower = t;
-    this.focusShieldTower = -1;
-    this.focusUid = -1;
-    this.focusIdx = -1;
-  }
 
   clearFocus(): void {
     this.focusUid = -1;
     this.focusIdx = -1;
     this.focusShieldTower = -1;
-    this.focusTower = null;
   }
 
   /**
@@ -6626,14 +5261,6 @@ export class Sim {
    * (or the marked unit has died since, which clears the mark for good).
    */
   focusMark(): { x: number; y: number; top: number } | null {
-    if (this.focusTower) {
-      const t = this.focusTower;
-      if (this.cellTower[t.gy * COLS + t.gx] !== t) {
-        this.focusTower = null;
-        return null;
-      }
-      return { x: t.x, y: t.y, top: t.y - structStats(t.kind).size * CELL * 0.75 };
-    }
     if (this.focusShieldTower >= 0) {
       const s = this.shieldTowers[this.focusShieldTower];
       if (!s || s.hp <= 0) return null;
@@ -6641,9 +5268,6 @@ export class Sim {
     }
     if (this.focusIdx >= 0 && this.focusIdx < this.n && this.uid[this.focusIdx] === this.focusUid) {
       const i = this.focusIdx;
-      // the mark follows its body into the fog, but it is not drawn there
-      // — an arrow over black would be the one thing giving the body away
-      if (!this.unitVisible(i)) return null;
       return { x: this.upx[i], y: this.upy[i], top: this.upy[i] - this.urad[i] * 2.4 - 6 };
     }
     return null;
@@ -6652,66 +5276,13 @@ export class Sim {
   /**
    * HOW BIG BODY `i` IS TO A CLICK, in world px — the sprite's radius
    * grown by PICK_MULT and floored at PICK_MIN, then scaled by the pass's
-   * reach. Every hit-test the cursor makes goes through here, so the
-   * player's bodies and the swarm's are equally easy to hit and the two
+   * reach. Every hit-test the cursor makes goes through here, so the two
    * passes stay in step by construction.
    */
   private pickR(i: number, reach: number): number {
     return Math.max(this.urad[i] * PICK_MULT, PICK_MIN) * reach;
   }
 
-  /**
-   * THE PLAYER'S BODY UNDER A POINT, or -1. The mirror of unitAt, which
-   * finds the SWARM's: a tap picks one side or the other, never both, and
-   * the two sides mean opposite things by it — the swarm's body is a mark
-   * to shoot, the player's is a body to command.
-   */
-  myUnitAt(px: number, py: number, reach = PICK_TIGHT): number {
-    let best = -1, bd = Infinity;
-    for (let i = 0; i < this.n; i++) {
-      if (this.uteam[i] === 0) continue;
-      const dx = this.upx[i] - px, dy = this.upy[i] - py;
-      const d2 = dx * dx + dy * dy;
-      const r = this.pickR(i, reach);
-      if (d2 < r * r && d2 < bd) {
-        bd = d2;
-        best = i;
-      }
-    }
-    return best;
-  }
-
-  /** how many of the player's bodies are selected right now */
-  get selectedN(): number {
-    let k = 0;
-    for (let i = 0; i < this.n; i++) if (this.usel[i]) k++;
-    return k;
-  }
-
-  /** nothing selected any more */
-  clearSelection(): void {
-    for (let i = 0; i < this.n; i++) this.usel[i] = 0;
-  }
-
-  /**
-   * Select the body under a point. Returns whether anything was hit — a
-   * miss on bare ground clears the selection and says so, which is what
-   * lets the caller fall through to its other meanings for a click on
-   * nothing.
-   *
-   * `add` is the SHIFT-CLICK, and it TOGGLES: it keeps what was already
-   * selected and flips the body under the cursor in or out of it. Adding
-   * one body at a time and taking one back out are the same gesture in
-   * every game that has it, and a shift-click that could only add would
-   * make a slip of the hand cost the whole selection to undo.
-   */
-  selectAt(px: number, py: number, add = false, reach = PICK_TIGHT): boolean {
-    const i = this.myUnitAt(px, py, reach);
-    if (!add) this.clearSelection();
-    if (i < 0) return false;
-    this.usel[i] = add && this.usel[i] ? 0 : 1;
-    return true;
-  }
 
   /**
    * THE PLAYER'S BUILDING UNDER A POINT — the mirror of myUnitAt, and the
@@ -6720,7 +5291,7 @@ export class Sim {
    * grid lookup and nothing more.
    */
   myStructAt(px: number, py: number, pad = 0): Structure | null {
-    const exact = this.structureAt(px, py, "player");
+    const exact = this.structureAt(px, py);
     if (exact || pad <= 0) return exact;
     let best: Structure | null = null, bd = Infinity;
     const near = (t: Structure): void => {
@@ -6733,7 +5304,7 @@ export class Sim {
         best = t;
       }
     };
-    for (const t of this.towers) if (t.team === "player") near(t);
+    for (const t of this.towers) near(t);
     near(this.core);
     return best;
   }
@@ -6745,7 +5316,6 @@ export class Sim {
 
   /** the selection, both halves of it: bodies and buildings */
   clearAllSelection(): void {
-    this.clearSelection();
     this.clearStructSelection();
   }
 
@@ -6754,10 +5324,11 @@ export class Sim {
     return this.selStructs.size;
   }
 
-  /** ...and which, for the rings drawn over them */
+  /** ...and which, for the range rings drawn over them */
   get selectedStructs(): readonly Structure[] {
     return [...this.selStructs];
   }
+
 
   /**
    * Select the building under a point, `add` toggling exactly as it does
@@ -6772,23 +5343,6 @@ export class Sim {
     return s;
   }
 
-  /**
-   * DEMOLISH WHAT IS PICKED (Game's Delete key). The core is never one of
-   * them however it got into the selection — a base is a thing a player
-   * rearranges, and the run is not. Returns how many came down.
-   */
-  sellSelected(): number {
-    let k = 0;
-    for (const st of [...this.selStructs]) {
-      if (isCore(st) || st.team !== "player") continue;
-      this.scrap += sellValue(st.kind as TowerKind);
-      this.removeTower(st as Tower);
-      this.selStructs.delete(st);
-      k++;
-    }
-    return k;
-  }
-
   /** every building of the player's a world rectangle touches */
   structsInRect(x0: number, y0: number, x1: number, y1: number, add = false): number {
     const ax = Math.min(x0, x1), bx = Math.max(x0, x1);
@@ -6801,56 +5355,12 @@ export class Sim {
       this.selStructs.add(t);
       k++;
     };
-    for (const t of this.towers) if (t.team === "player") take(t);
+    for (const t of this.towers) take(t);
     take(this.core);
     return k;
   }
 
-  /**
-   * EVERY BODY OF THE PLAYER'S THE RECTANGLE TOUCHES. The test is the
-   * body's hit circle against the box, not its centre point inside it: a
-   * box drawn round a group takes the whole group, including the one on
-   * the edge the drag stopped half a pixel short of.
-   */
-  selectInRect(x0: number, y0: number, x1: number, y1: number, add = false): number {
-    const ax = Math.min(x0, x1), bx = Math.max(x0, x1);
-    const ay = Math.min(y0, y1), by = Math.max(y0, y1);
-    if (!add) this.clearSelection();
-    let k = 0;
-    for (let i = 0; i < this.n; i++) {
-      if (this.uteam[i] === 0) continue;
-      const r = this.pickR(i, PICK_TIGHT);
-      if (this.upx[i] < ax - r || this.upx[i] > bx + r) continue;
-      if (this.upy[i] < ay - r || this.upy[i] > by + r) continue;
-      this.usel[i] = 1;
-      k++;
-    }
-    return k;
-  }
 
-  /**
-   * EVERY BODY LIKE THIS ONE NEARBY — the double-click, and ctrl-click.
-   * "Like" is the KIND, which in this game already carries the tier (a
-   * dagger is tier 1 and nothing else is a dagger), and "nearby" is a
-   * radius round the one clicked rather than the whole map: a double-click
-   * gathers the group in front of you, not every dagger in the run.
-   */
-  selectLike(px: number, py: number, radius: number, add = false, reach = PICK_TIGHT): number {
-    const at = this.myUnitAt(px, py, reach);
-    if (at < 0) return 0;
-    const kind = this.ukind[at];
-    const ox = this.upx[at], oy = this.upy[at];
-    if (!add) this.clearSelection();
-    let k = 0;
-    for (let i = 0; i < this.n; i++) {
-      if (this.uteam[i] === 0 || this.ukind[i] !== kind) continue;
-      const dx = this.upx[i] - ox, dy = this.upy[i] - oy;
-      if (dx * dx + dy * dy > radius * radius) continue;
-      this.usel[i] = 1;
-      k++;
-    }
-    return k;
-  }
 
   /**
    * EVERY BUILDING LIKE THIS ONE NEARBY — the same gesture as selectLike,
@@ -6858,7 +5368,7 @@ export class Sim {
    * takes every duo within reach of it, which is how a line of turrets is
    * upgraded or sold without clicking each one.
    *
-   * "Like" is the KIND, so a wall gathers walls and a factory factories;
+   * "Like" is the KIND, so a duo gathers duos and a ripple ripples;
    * a shell still going up counts, because a row half-built is still the
    * row you meant. The CORE is the one thing that gathers nothing: there
    * is only ever one, and a click on it means it.
@@ -6877,7 +5387,7 @@ export class Sim {
     const ox = at.x, oy = at.y;
     let k = 0;
     for (const t of this.towers) {
-      if (t.team !== "player" || t.kind !== kind) continue;
+      if (t.kind !== kind) continue;
       const dx = t.x - ox, dy = t.y - oy;
       if (dx * dx + dy * dy > radius * radius) continue;
       this.selStructs.add(t);
@@ -6886,400 +5396,10 @@ export class Sim {
     return k;
   }
 
-  /**
-   * SEND THE SELECTION SOMEWHERE — the right-click.
-   *
-   * The destination is snapped to open ground the walkers can stand on
-   * (nearestOpenCell), because a point inside rock has no field around it
-   * and would read as "nowhere" to everything downstream, and then to
-   * ground the selection can actually REACH (reachableGoal).
-   *
-   * The route is then worked out and the corridor built on this very frame
-   * (buildOrder): a corridor is a search over the board's doorways and a
-   * solve over a few thousand cells, so there is nothing to defer. The
-   * group has its headings before the click has finished being a click.
-   *
-   * Returns how many bodies took the order.
-   */
-  orderMove(px: number, py: number, queue = false): number {
-    const open = this.nearestOpenCell(px, py);
-    if (open < 0) return 0;
-    // ...and then AS CLOSE TO IT AS THE SELECTION CAN ACTUALLY WALK. A
-    // click in the black is a click on ground the player has never seen,
-    // and there is no reason the ground under it should be connected to
-    // the ground the army is standing on — a lake between them, a massif,
-    // a lane the swarm's own walls have closed. Sent at a cell it cannot
-    // reach, a body used to walk the straight line at it (the fallback
-    // below, for the half second before a field publishes) until a wall
-    // stopped it, and then stand there against the rock for good. So the
-    // destination is moved to the reachable cell nearest the click before
-    // any of it: the order is one the army can carry out, and a click
-    // across the map is a long walk rather than a wall.
-    const cell = this.reachableGoal(open);
-    if (cell < 0) return 0;
-    // THE ARROW STANDS until the next one is drawn: every body the base
-    // makes from now on is sent at this same cell (deliverAtCore), so the
-    // player is aiming the ARMY and not the bodies that happen to be on
-    // the field at the moment they click. A queued leg is a leg of the
-    // walk and not a new destination, so it leaves the arrow where it is.
-    if (!queue) this.rallyCell = cell;
-    let k = 0;
-    for (let i = 0; i < this.n; i++) if (this.uteam[i]) k++;
-    // A SHIFT-QUEUED ORDER IS A LEG, not a destination: it goes on the end
-    // of what each selected body is already walking and changes nothing
-    // about where it is headed this second. A body standing idle takes the
-    // point as its order outright — the queue behind an order that does
-    // not exist is just the order.
-    if (queue) {
-      let queued = 0;
-      for (let i = 0; i < this.n; i++) {
-        if (!this.uteam[i]) continue;
-        if (this.uord[i] === 0) {
-          this.sendUnitTo(i, cell);
-          queued++;
-          continue;
-        }
-        const q = this.wpts.get(this.uid[i]);
-        if (!q) this.wpts.set(this.uid[i], [cell]);
-        else if (q.length < MAX_WAYPOINTS) q.push(cell);
-        else continue; // the chain is full: the click is not a leg it can take
-        queued++;
-      }
-      return queued;
-    }
-    const gx = cell % COLS, gy = (cell / COLS) | 0;
-    const x = (gx + 0.5) * CELL, y = (gy + 0.5) * CELL;
-    const slot = this.orderSlotFor();
-    // whatever was walking the field in this slot loses its order: the
-    // field is about to be re-seeded under it. With a free slot taken
-    // first this is normally nobody
-    for (let i = 0; i < this.n; i++) if (this.uord[i] === slot + 1) this.uord[i] = 0;
-    for (let i = 0; i < this.n; i++) {
-      // EVERY BODY OF THE PLAYER'S, with no selection to narrow it: the
-      // arrow is the army's, and the army is not something a player picks
-      // out of a crowd any more
-      if (!this.uteam[i]) continue;
-      // a plain order REPLACES what the body was doing, hunt and chain
-      // alike: the player has said where it goes now, and a queue drawn
-      // before that is a plan they have just overruled
-      this.uhunt[i] = 0;
-      this.wpts.delete(this.uid[i]);
-      this.uord[i] = slot + 1;
-      this.uordx[i] = x;
-      this.uordy[i] = y;
-    }
-    // the bodies are on the order before the corridor is built, because
-    // WHERE THEY ARE is what it is a route from (orderStarts)
-    this.buildOrder(slot, cell, this.orderStarts(slot));
-    return k;
-  }
-
-  /**
-   * SEND ONE BODY AT A CELL, on whichever field slot is going that way.
-   * The reuse is the point: a group walking a chain arrives at a leg
-   * within a tick or two of itself and every one of them asks for the next
-   * cell, and a factory on a rally sends body after body at the same
-   * point. A slot already aimed there is already the answer — one
-   * corridor covers all of them — and only a cell nothing is walking to
-   * costs a fresh route (and, when every slot is live, somebody else's
-   * order). The corridor it builds is routed from THIS body's own cell,
-   * which is the one it will be walked from.
-   */
-  private sendUnitTo(i: number, cell: number): void {
-    let slot = -1;
-    for (let sIdx = 0; sIdx < ORDER_SLOTS; sIdx++)
-      if (this.orderGoal[sIdx] === cell) {
-        slot = sIdx;
-        break;
-      }
-    const from =
-      clamp((this.upy[i] / CELL) | 0, 0, ROWS - 1) * COLS +
-      clamp((this.upx[i] / CELL) | 0, 0, COLS - 1);
-    if (slot < 0) {
-      slot = this.orderSlotFor();
-      for (let u = 0; u < this.n; u++) if (this.uord[u] === slot + 1) this.uord[u] = 0;
-      this.buildOrder(slot, cell, [from]);
-    } else if (!this.orders[slot].covers(from)) {
-      // the slot is aimed at the right cell but its route was worked out
-      // from somewhere else, and a corridor only leads where it goes: a
-      // body standing off it would read no heading at all. Re-route it as
-      // the union of where everybody on the order now stands, this one
-      // included (orderStarts), which is one more A* and no more memory
-      this.uord[i] = slot + 1;
-      this.buildOrder(slot, cell, this.orderStarts(slot));
-    }
-    this.uord[i] = slot + 1;
-    this.uordx[i] = ((cell % COLS) + 0.5) * CELL;
-    this.uordy[i] = (((cell / COLS) | 0) + 0.5) * CELL;
-  }
-
-  /**
-   * A BODY HAS ARRIVED AND ITS ROUTE HAS MORE OF IT: take the next leg.
-   * Called out of the arrival test in updateUnits, so a chain advances on
-   * the same tick the body reaches the point rather than a frame later.
-   * Returns false when there is nothing queued, which is the ordinary case
-   * and leaves the body standing where it was sent.
-   */
-  private takeNextWaypoint(i: number): boolean {
-    const id = this.uid[i];
-    const q = this.wpts.get(id);
-    if (!q || q.length === 0) {
-      if (q) this.wpts.delete(id);
-      return false;
-    }
-    const cell = q.shift() as number;
-    if (q.length === 0) this.wpts.delete(id);
-    this.sendUnitTo(i, cell);
-    return true;
-  }
-
-  /**
-   * WHAT THIS BODY STILL HAS TO WALK, in cells — the legs queued behind
-   * the one it is on, for the line drawn over a selected group. Empty for
-   * the overwhelming majority of bodies, which is why it is a map lookup
-   * rather than a row on every unit.
-   */
-  waypointsOf(i: number): readonly number[] | undefined {
-    return this.wpts.get(this.uid[i]);
-  }
-
-  /** a cell's centre in world px — what a queued leg is drawn at */
-  cellCenter(cell: number): { x: number; y: number } {
-    return { x: ((cell % COLS) + 0.5) * CELL, y: (((cell / COLS) | 0) + 0.5) * CELL };
-  }
-
-  /**
-   * WHICH FIELD THIS ORDER GETS: one nothing is walking, wherever there is   * one, so an order never stops a body that has nothing to do with it.
-   * Only when all of them are live does it steal, and then the OLDEST —
-   * the order given longest ago, which is the one a hand is least likely
-   * to still be watching.
-   */
-  private orderSlotFor(): number {
-    const live = new Uint8Array(ORDER_SLOTS);
-    for (let i = 0; i < this.n; i++) {
-      const o = this.uord[i];
-      if (o > 0) live[o - 1] = 1;
-    }
-    for (let s = 0; s < live.length; s++)
-      if (!live[s]) {
-        // a slot with nobody on it is free whatever it was last aimed at
-        this.orderGoal[s] = -1;
-        return s;
-      }
-    let oldest = 0;
-    for (let s = 1; s < live.length; s++) if (this.orderAt[s] < this.orderAt[oldest]) oldest = s;
-    return oldest;
-  }
-
-  /**
-   * BUILD ONE ORDER'S CORRIDOR: the route from wherever its bodies are
-   * standing to the cell it points at, and the field over the sectors that
-   * route crosses (corridor.ts).
-   *
-   * It is solved HERE, on the frame the order is given, rather than queued
-   * and sliced like the board's own fields. A corridor is a search over a
-   * few thousand doorways and a solve over a few thousand cells; there is
-   * nothing left worth spreading across frames, and a field that lands on
-   * the click is a field the group never has to walk blind through.
-   *
-   * The starts are one cell per SECTOR the group occupies, capped: a
-   * selection spread over the map is several routes, and a selection
-   * standing together is one.
-   */
-  private buildOrder(slot: number, cell: number, starts: readonly number[]): boolean {
-    this.orderGoal[slot] = cell;
-    this.orderAt[slot] = ++this.orderClock;
-    this.sectors.ensure(this.field.walk, this.field.soft);
-    return this.orders[slot].build(this.sectors, this.field.walk, this.field.soft, cell, starts);
-  }
-
-  /**
-   * Build one corridor across the board and throw it away: the loading
-   * screen paying the engine's compilation cost so the player's first
-   * right-click does not. See the call in the map reset.
-   */
-  private warmCorridor(): void {
-    const from = this.core.gy * COLS + this.core.gx;
-    let best = -1, bd = -1;
-    for (let i = 0; i < NCELLS; i += 97) {
-      if (this.sectors.componentAt(i) < 0) continue;
-      const dx = (i % COLS) - this.core.gx, dy = ((i / COLS) | 0) - this.core.gy;
-      const d = dx * dx + dy * dy;
-      if (d > bd) { bd = d; best = i; }
-    }
-    if (best < 0 || this.sectors.componentAt(from) < 0) return;
-    this.orders[0].build(this.sectors, this.field.walk, this.field.soft, best, [from]);
-    this.orders[0].reset();
-  }
-
-  /** where the bodies under an order are standing, one cell per sector and
-   *  no more than ORDER_STARTS of them — the routes a corridor is the union
-   *  of. Sorted by nothing: a group in one place gives one start, and a
-   *  group split across the map gives one per place it is split into */
-  private orderStarts(slot: number): number[] {
-    const seen = new Set<number>();
-    const out: number[] = [];
-    for (let i = 0; i < this.n && out.length < ORDER_STARTS; i++) {
-      if (this.uord[i] !== slot + 1 || this.ufly[i]) continue;
-      const ci =
-        clamp((this.upy[i] / CELL) | 0, 0, ROWS - 1) * COLS +
-        clamp((this.upx[i] / CELL) | 0, 0, COLS - 1);
-      const sec = sectorOf(ci);
-      if (seen.has(sec)) continue;
-      seen.add(sec);
-      out.push(ci);
-    }
-    return out;
-  }
-
-  /**
-   * REBUILD THE CORRIDORS THE BOARD HAS MOVED UNDER. A wall going up
-   * across a route is a route that no longer exists, and a body walking a
-   * stale corridor walks it into the new wall and stands there. So a
-   * structure landing or leaving marks the doorway graph dirty and every
-   * order still being walked is worked out again over the board as it now
-   * stands — affordable now that an order is a corridor and not a
-   * full-map solve, where the same honesty would have cost a tenth of a
-   * second per order per placement.
-   */
-  private reseedOrders(): void {
-    const until = nowMs() + ORDER_BUDGET_MS;
-    let first = true;
-    let anyLeft = false;
-    for (let s = 0; s < ORDER_SLOTS; s++) {
-      if (this.orderStale[s] === 0) continue;
-      // always one, then as many more as the budget covers
-      if (!first && nowMs() >= until) {
-        anyLeft = true;
-        break;
-      }
-      first = false;
-      this.orderStale[s] = 0;
-      if (this.orderGoal[s] < 0) continue;
-      const starts = this.orderStarts(s);
-      if (starts.length === 0) {
-        // nobody is walking it any more: the slot is free, and the next
-        // order to want one will take it (orderSlotFor)
-        this.orderGoal[s] = -1;
-        this.orders[s].reset();
-        continue;
-      }
-      this.buildOrder(s, this.orderGoal[s], starts);
-    }
-    this.ordersStale = anyLeft;
-  }
-
-  /**
-   * THE CELL AN ORDER CAN ACTUALLY BE GIVEN AT: the wanted one when the
-   * selection can walk to it, else the nearest cell to it that they can.
-   *
-   * A flood out from the bodies under the hand over the walkers' own mask
-   * — every structure rock, the player's included, because its own walls
-   * are the one thing an army will never shoot its way through — and then
-   * the reached cell closest to where the click landed. Sending a body
-   * somewhere it cannot go is not an order, it is a body walking into a
-   * wall, so the destination is trimmed to something reachable here rather
-   * than discovered against the rock a minute later.
-   *
-   * A flyer is not consulted: nothing on the ground is in its way, it
-   * walks the straight line at the point whatever the field says, and one
-   * gunship in the selection must not drag the walkers' destination out
-   * over a lake.
-   */
-  private reachableGoal(want: number, seed = -1): number {
-    // THE ORDER'S OWN MASK, which is the corridor's: rock and the player's
-    // own buildings stop a body of theirs, the swarm's buildings do not —
-    // an army routes THROUGH those and shoots them on the way. Flooding
-    // the walkers' plain `walk` instead would call ground behind a swarm
-    // wall unreachable and trim the destination short of it
-    const walk = this.field.walk, soft = this.field.soft;    const q = this.floodQ, seen = this.floodSeen;
-    const stamp = ++this.floodStamp;
-    let head = 0, tail = 0;
-    const push = (ci: number): void => {
-      if ((walk[ci] === 1 && soft[ci] === 0) || seen[ci] === stamp) return;
-      seen[ci] = stamp;
-      q[tail++] = ci;
-    };
-    // ONE CELL, OR THE SELECTION. A hunt is aimed from the HUNTING BODY's
-    // own cell (updateHunt) and the arrow from the whole army's, so both
-    // hand a seed in; the seedless form is left for a caller that has only
-    // a destination to offer
-    const seeds: number[] = [];
-    if (seed >= 0) seeds.push(seed);
-    else
-      for (let i = 0; i < this.n; i++) {
-        if (!this.usel[i] || this.ufly[i]) continue;
-        seeds.push(
-          clamp((this.upy[i] / CELL) | 0, 0, ROWS - 1) * COLS +
-            clamp((this.upx[i] / CELL) | 0, 0, COLS - 1),
-        );
-      }
-    for (const ci of seeds) {
-      // A SEED ON A CELL THE MASK CALLS ROCK still seeds: a naval tank
-      // afloat, a factory (whose own footprint is a wall), or anyone a
-      // crowd shoved half inside a wall floods from the open ground around
-      // it instead. Skipping such a seed outright left the commonest wedge
-      // — one unit, standing against its own turret — seeding nothing at
-      // all, and a flood with no seed falls through to the wanted cell,
-      // which is the case this exists to catch
-      if (!(walk[ci] === 1 && soft[ci] === 0)) {        push(ci);
-        continue;
-      }
-      const x = ci % COLS, y = (ci / COLS) | 0;
-      if (x > 0) push(ci - 1);
-      if (x < COLS - 1) push(ci + 1);
-      if (y > 0) push(ci - COLS);
-      if (y < ROWS - 1) push(ci + COLS);
-    }
-    if (tail === 0) return want;
-    const wx = want % COLS, wy = (want / COLS) | 0;
-    let best = -1, bd = Infinity;
-    while (head < tail) {
-      const ci = q[head++];
-      const x = ci % COLS, y = (ci / COLS) | 0;
-      const dx = x - wx, dy = y - wy;
-      const d = dx * dx + dy * dy;
-      if (d < bd) {
-        bd = d;
-        best = ci;
-        if (d === 0) return want; // the click itself is reachable
-      }
-      if (x > 0) push(ci - 1);
-      if (x < COLS - 1) push(ci + 1);
-      if (y > 0) push(ci - COLS);
-      if (y < ROWS - 1) push(ci + COLS);
-    }
-    return best;
-  }
-
-  /**
-   * The nearest cell to a world point that a walker could stand on, as an
-   * index — the point itself when it is already open, else a ring search
-   * out to a few cells. -1 when there is nothing standable anywhere near,
-   * which is a click deep inside a massif.
-   */
-  private nearestOpenCell(px: number, py: number): number {
-    const gx = clamp((px / CELL) | 0, 0, COLS - 1);
-    const gy = clamp((py / CELL) | 0, 0, ROWS - 1);
-    const open = (x: number, y: number): boolean =>
-      x >= 0 && y >= 0 && x < COLS && y < ROWS && !this.field.walk[y * COLS + x];
-    if (open(gx, gy)) return gy * COLS + gx;
-    for (let r = 1; r <= 8; r++) {
-      for (let dy = -r; dy <= r; dy++)
-        for (let dx = -r; dx <= r; dx++) {
-          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-          if (open(gx + dx, gy + dy)) return (gy + dy) * COLS + gx + dx;
-        }
-    }
-    return -1;
-  }
 
   unitAt(px: number, py: number, reach = PICK_TIGHT): number {
     let best = -1, bd = Infinity;
     for (let i = 0; i < this.n; i++) {
-      // a body in the fog cannot be tapped any more than it can be seen,
-      // and the player's own are not marks
-      if (this.uteam[i] !== 0 || !this.unitVisible(i)) continue;
       const dx = this.upx[i] - px, dy = this.upy[i] - py;
       const d2 = dx * dx + dy * dy;
       const r = this.pickR(i, reach);
@@ -7296,8 +5416,6 @@ export class Sim {
     for (let i = 0; i < this.shieldTowers.length; i++) {
       const s = this.shieldTowers[i];
       if (s.hp <= 0) continue;
-      // one standing in the fog cannot be marked — it is not on screen
-      if (this.fog.enabled && !this.fog.visibleAt(s.x, s.y)) continue;
       const gx = (px / CELL) | 0, gy = (py / CELL) | 0;
       if (gx >= s.gx && gx < s.gx + SHIELD_TOWER_SIZE && gy >= s.gy && gy < s.gy + SHIELD_TOWER_SIZE) return i;
     }
@@ -7316,8 +5434,6 @@ export class Sim {
       if (t.buildT > 0) continue;
       t.buildT = 0;
       t.hp = towerMaxHp(t.kind);
-      // a finished turret sees its share of its range, not a shell's few cells
-      this.fog.add(this.towerVision(t));
       // the ring a finished building throws as its scaffold comes off,
       // sized to the footprint that just stood up (the Shockwave branch in
       // the renderer reads e.len as the reach)
@@ -7370,17 +5486,11 @@ export class Sim {
           );
         }
       }
-      // the SWARM's turrets fire the stock table: the player's upgrade
-      // branches are the player's
-      const hostile = t.team === "enemy";
-      const st = hostile ? structStats(t.kind) : this.statsFor(t.kind);
-      // a wall has no gun at all: it smokes when hurt (above) and that is
-      // the whole of what it does each tick
-      if (st.building) continue;
+      const st = this.statsFor(t.kind);
       // a tractor turret has no reload and no volley — it holds a beam.
       // The swarm's drags nothing: its beam only ever caught units
       if (st.bullet.tractor) {
-        if (!hostile) this.updateTractor(t, st, dt);
+        this.updateTractor(t, st, dt);
         continue;
       }
       // LaserTurret: while the beam is lit the reload does NOT run, so a
@@ -7429,55 +5539,13 @@ export class Sim {
       const r2t = st.range * st.range;
       let best = -1;
       let shr: ShieldTower | null = null;
-      let aimT: Structure | null = null;
-      if (hostile) {
-        // THE SWARM'S TURRET: the nearest of the player's BODIES in range
-        // first (it sees the whole map — the fog is the player's), else it
-        // holds on the nearest of the player's structures within its range
-        // — the core included — for as long as that stands and stays in
-        // reach, re-picking on the same clock the player's guns do
-        if (
-          t.target >= 0 &&
-          t.targetIdx >= 0 &&
-          t.targetIdx < this.n &&
-          this.uid[t.targetIdx] === t.target
-        ) {
-          const dx = upx[t.targetIdx] - t.x, dy = upy[t.targetIdx] - t.y;
-          if (dx * dx + dy * dy < r2t) best = t.targetIdx;
-        }
-        const held = t.aimTower;
-        if (held && teamOf(held) === "player" && this.inReach(held, t.x, t.y, st.range)) aimT = held;
-        t.targetT -= dt;
-        // THE SCAN RUNS ON THE CLOCK AND NOWHERE ELSE — Turret.java's
-        // `if(timer(timerTarget, targetInterval)) findTarget()`. A turret
-        // with nothing in reach is the ORDINARY state of a board this
-        // size, and gating the scan on "no target" instead of on the
-        // timer meant every idle gun re-scanned every single tick: on
-        // Confluence, whose formations stand up about eighteen hundred
-        // guns, that was eighteen hundred ring walks a tick and ~23ms of
-        // the frame. The clock is phased per turret (addTower's targetT),
-        // so what is left is spread across the interval rather than
-        // landing on one tick.
-        if (t.targetT <= 0) {
-          best =
-            this.nPlayer > 0
-              ? this.bestTarget(t.x, t.y, st.range, st.targetAir, st.targetGround, st.sort === "strongest", 1)
-              : -1;
-          t.target = best >= 0 ? this.uid[best] : -1;
-          // (the old guard here was `!aimT || t.targetT <= 0`, and the
-          // clock this is now under makes its second half always true:
-          // a held building is re-picked on the clock exactly as before)
-          if (best < 0) aimT = this.nearestStructure(t.x, t.y, st.range, false, "player");
-          t.targetT = TARGET_INTERVAL;
-        }
-        if (best >= 0) aimT = null;
-      } else if (this.focusIdx >= 0 && this.uid[this.focusIdx] === this.focusUid) {
+      if (this.focusIdx >= 0 && this.uid[this.focusIdx] === this.focusUid) {
         // THE PLAYER'S MARK FIRST (setFocusUnit / setFocusShieldTower /
         // setFocusTower): a tapped target overrides both the held target
         // and the scan for every turret that can reach it. At most one of
         // the three kinds is ever set
         const fi = this.focusIdx;
-        if ((this.ufly[fi] !== 0 ? st.targetAir : st.targetGround) && this.unitVisible(fi)) {
+        if (this.ufly[fi] !== 0 ? st.targetAir : st.targetGround) {
           const dx = upx[fi] - t.x, dy = upy[fi] - t.y;
           if (dx * dx + dy * dy < r2t) best = fi;
         }
@@ -7487,30 +5555,13 @@ export class Sim {
           const dx = s.x - t.x, dy = s.y - t.y;
           if (dx * dx + dy * dy < r2t) shr = s;
         }
-      } else if (this.focusTower && st.targetGround) {
-        const ft = this.focusTower;
-        if (this.cellTower[ft.gy * COLS + ft.gx] === ft && this.inReach(ft, t.x, t.y, st.range)) aimT = ft;
       }
-      if (!hostile && best < 0 && !shr && !aimT) {
-        // THE HELD BUILDING, kept between scans exactly as the swarm's
-        // guns keep theirs above. Finding one is a ring walk over the
-        // board, so it is paid on the target clock rather than on every
-        // tick a gun happens to have no body in front of it
-        const heldT = t.aimTower;
-        if (
-          st.targetGround &&
-          heldT &&
-          teamOf(heldT) === "enemy" &&
-          this.inReach(heldT, t.x, t.y, st.range)
-        )
-          aimT = heldT;
+      if (best < 0 && !shr) {
         if (
           t.target >= 0 &&
           t.targetIdx >= 0 &&
           t.targetIdx < this.n &&
-          this.uid[t.targetIdx] === t.target &&
-          // ...and still in sight: a body that walks into the fog is let go
-          this.unitVisible(t.targetIdx)
+          this.uid[t.targetIdx] === t.target
         ) {
           const dx = upx[t.targetIdx] - t.x, dy = upy[t.targetIdx] - t.y;
           if (dx * dx + dy * dy < r2t) best = t.targetIdx;
@@ -7536,17 +5587,10 @@ export class Sim {
           const si = this.idleShieldTowerFor(t, r2t);
           if (si >= 0) shr = this.shieldTowers[si];
         }
-        // ...and the swarm's own formation, the same way: a turret with
-        // no body in range takes the nearest enemy building it can reach
-        if (scan && best < 0 && !shr && st.targetGround && this.enemyStructures > 0)
-          aimT = this.nearestStructure(t.x, t.y, st.range, false, "enemy");
-        // whatever was held loses to a body or a dome found this tick
-        if (best >= 0 || shr) aimT = null;
       }
       t.targetIdx = best;
       t.aimShieldTower = shr ? this.shieldTowers.indexOf(shr) : -1;
-      t.aimTower = aimT;
-      if (best < 0 && !shr && !aimT) {
+      if (best < 0 && !shr) {
         // nothing in range: a beam already lit keeps burning down its
         // duration where it is, exactly as Mindustry's held bullet does
         continue;
@@ -7557,11 +5601,11 @@ export class Sim {
       // predictTarget guard (bullet.speed >= 0.01 or no lead at all).
       // A shield tower is a building: no velocity, no lead, aim at the centre
       // A structure is a building: no velocity, no lead, aim at the centre
-      const bx = shr ? shr.x : aimT ? aimT.x : upx[best];
-      const by = shr ? shr.y : aimT ? aimT.y : upy[best];
+      const bx = shr ? shr.x : upx[best];
+      const by = shr ? shr.y : upy[best];
       const dx = bx - t.x, dy = by - t.y;
       let aimX = dx, aimY = dy;
-      if (!shr && !aimT && st.bullet.speed >= 1) {
+      if (!shr && st.bullet.speed >= 1) {
         const tvx = uvx[best], tvy = uvy[best];
         const s2 = st.bullet.speed * st.bullet.speed;
         const qa = tvx * tvx + tvy * tvy - s2;
@@ -7654,40 +5698,7 @@ export class Sim {
     }
   }
 
-  /**
-   * Units.bestTarget: the best-scoring live targetable unit whose CENTRE
-   * is within `range`, with ties broken by the lowest index so neither
-   * bucket order nor the linear fallback can ever choose differently. Read
-   * off the spatial hash, so a turret pays for the units under its range
-   * circle rather than for the whole field.
-   *
-   * Two sorts (see TowerStats.sort). The default is closest — plain
-   * squared distance. `strongest` is the HIGHEST CURRENT HEALTH, distance
-   * strictly the tiebreak (the d2 term is scaled far below any health
-   * difference): foreshadow finishes nothing another turret has all but
-   * killed.
-   *
-   * The hash is a tick old by the time towers fire (units have stepped
-   * once since buildHash), so the bucket sweep is padded by a few px; the
-   * distance test itself always reads live positions.
-   */
-  /**
-   * Is unit i standing on a tile in sight? (`fogState` is Fog.visible.)
-   * FogControl.isVisibleTile CLAMPS a query off the map rather than
-   * answering no, and so does this: a body half a tile past the border is
-   * not suddenly unshootable.
-   */
-  private unitInSight(fogState: Uint8Array, i: number): boolean {
-    const gx = clamp(Math.floor(this.upx[i] / CELL), 0, COLS - 1);
-    const gy = clamp(Math.floor(this.upy[i] / CELL), 0, ROWS - 1);
-    return fogState[gy * COLS + gx] !== 0;
-  }
 
-  /** is unit i in sight, or is the fog off? The one-line form for a caller
-   *  outside the hot loops */
-  unitVisible(i: number): boolean {
-    return this.uteam[i] !== 0 || !this.fog.enabled || this.unitInSight(this.fog.visible, i);
-  }
 
   private bestTarget(
     x: number,
@@ -7696,26 +5707,17 @@ export class Sim {
     air: boolean,
     ground: boolean,
     strongest: boolean,
-    /** whose bodies: the swarm's (0) for the player's guns, the player's
-     *  (1) for the swarm's — which see the whole map, fog or no fog */
-    team = 0,
   ): number {
-    const { upx, upy, uhp, ufly, uteam } = this;
+    const { upx, upy, uhp, ufly } = this;
     const n = this.n;
     const r2 = range * range;
     const score = (i: number, d2: number): number =>
       strongest ? -uhp[i] + d2 * 1e-9 : d2;
     let best = -1, bs = Infinity;
-    // A BODY IN THE FOG IS NOT A TARGET (fog.ts): a turret shoots only what
-    // something of the player's can see, which is three quarters of its
-    // own reach on its own and the whole of it in a line
-    const fogState = this.fog.enabled && team === 0 ? this.fog.visible : null;
     // a short field is cheaper to walk directly than through the buckets
     if (n <= 128) {
       for (let i = 0; i < n; i++) {
-        if (uteam[i] !== team) continue;
         if (ufly[i] !== 0 ? !air : !ground) continue;
-        if (fogState && !this.unitInSight(fogState, i)) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
         const d2 = dx * dx + dy * dy;
         if (d2 >= r2) continue;
@@ -7738,9 +5740,8 @@ export class Sim {
       const e = bStart[row + hx1 + 1];
       for (let k = bStart[row + hx0]; k < e; k++) {
         const i = bUnits[k];
-        if (i >= n || uteam[i] !== team) continue;
+        if (i >= n) continue;
         if (ufly[i] !== 0 ? !air : !ground) continue;
-        if (fogState && !this.unitInSight(fogState, i)) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
         const d2 = dx * dx + dy * dy;
         if (d2 >= r2) continue;
@@ -7786,32 +5787,10 @@ export class Sim {
     // arrays. Projectile weapons need nothing here: their shots really fly,
     // and the shield tower's dome and body collide them like anything else
     const shrT = t.aimShieldTower >= 0 ? this.shieldTowers[t.aimShieldTower] : null;
-    // ...and the same for a building either side is aiming at
-    const aimT = t.aimTower;
     const hitAimed = (): void => {
       if (shrT) this.shieldTowerHit(shrT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
-      if (aimT) this.structureHit(aimT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
-      // ...and the swarm's instant gun on the player's body it holds on:
-      // the sweeps below know only the swarm's bodies, so the hit is
-      // handed straight to the mark, through the swarm's own dial
-      if (t.team === "enemy" && t.targetIdx >= 0 && t.targetIdx < this.n && this.uid[t.targetIdx] === t.target) {
-        const ti = t.targetIdx;
-        this.damageUnit(ti, st.bullet.damage * unitDamageScale());
-        this.bulletFx(st.bullet.hitFx, this.upx[ti], this.upy[ti], a, st.bullet.fxColor);
-        if (this.uhp[ti] <= 0) this.killUnit(ti);
-      }
     };
-    // THE SWARM'S OWN INSTANT WEAPONS sweep nothing: every sweep below
-    // walks the swarm's bodies. Its shot is the target it was aimed at,
-    // plus the same shape on screen — the bolt, the beam, the rail's
-    // trail, the ray — at the weapon's own length
-    const hostile = t.team === "enemy";
     if (st.bullet.lightning) {
-      if (hostile) {
-        this.unitBolt(x, y, a, st.bullet.lightning.length, st.bullet.fxColor ?? PAL.lancerLaser);
-        hitAimed();
-        return;
-      }
       const pts = this.lightningBolt(
         x, y, a,
         st.bullet.damage,
@@ -7827,38 +5806,29 @@ export class Sim {
       return;
     }
     if (st.bullet.laser) {
-      const reached = hostile
-        ? st.bullet.laser.length
-        : this.laserBeam(
-            x, y, a,
-            st.bullet.laser.length,
-            st.bullet.damage,
-            st.bullet.laser.pierceCap,
-            st.bullet.armorMultiplier ?? 1,
-            st.bullet.collidesAir,
-            st.bullet.collidesGround,
-            st.bullet.hitFx,
-            st.bullet.fxColor,
-          );
+      const reached = this.laserBeam(
+        x, y, a,
+        st.bullet.laser.length,
+        st.bullet.damage,
+        st.bullet.laser.pierceCap,
+        st.bullet.armorMultiplier ?? 1,
+        st.bullet.collidesAir,
+        st.bullet.collidesGround,
+        st.bullet.hitFx,
+        st.bullet.fxColor,
+      );
       // forced: the beam is lancer's entire visible shot (damage is instant)
       this.pushFx(x, y, st.bullet.lifetime, FxKind.Laser, a, reached, 0, 0, true);
       hitAimed();
       return;
     }
     if (st.bullet.rail) {
-      if (hostile) {
-        const spec = st.bullet.rail;
-        if (st.bullet.pointFx !== undefined)
-          for (let d = 0; d <= spec.length; d += spec.pointSpacing)
-            this.bulletFx(st.bullet.pointFx, x + cos * d, y + sin * d, a, st.bullet.fxColor, true);
-        this.bulletFx(st.bullet.despawnFx, x, y, a, st.bullet.fxColor, true);
-      } else this.railShot(x, y, a, st.bullet);
+      this.railShot(x, y, a, st.bullet);
       hitAimed();
       return;
     }
     if (st.bullet.ray) {
-      if (!hostile)
-        this.hitscanRay(
+      this.hitscanRay(
           x,
           y,
           a,
@@ -7909,56 +5879,9 @@ export class Sim {
       pierced: st.bullet.pierce ? [] : null,
       trailT: 0,
       frag: false,
-      enemy: hostile,
     });
   }
 
-  /**
-   * ONE STEP OF THE SWARM'S OWN TURRET SHOT, already moved: it flies past
-   * every unit and lands on the first of the PLAYER's structures it is
-   * over — the enemy shots' rule (updateEnemyShots), on a turret bullet.
-   * An artillery shell only ever bursts where its life ran out. Returns
-   * true once the shot is spent, with its hit, blast and fragments done.
-   */
-  private stepHostileProjectile(pr: Projectile, b: BulletStats): boolean {
-    const off = pr.x < 0 || pr.y < 0 || pr.x >= W || pr.y >= H;
-    let dead = pr.life <= 0 || off;
-    const rot = Math.atan2(pr.vy, pr.vx);
-    if (!dead && !b.artillery) {
-      const hit = this.structureAt(pr.x, pr.y, "player");
-      // a shot flies OVER the player's base rather than into it: it stands
-      // on the highground, out of the war (untouchable), and a bullet that
-      // died on it would be a bullet the base had blocked
-      const s = hit && !this.untouchable(hit) ? hit : null;
-      if (s) {
-        this.hitStructure(s, b.damage);
-        if (b.splash <= 0) this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor);
-        dead = true;
-      } else if (this.nPlayer > 0) {
-        // ...or one of the player's bodies under it, through the swarm's dial
-        const u = this.unitAtShot(pr.x, pr.y, 1);
-        if (u >= 0 && (this.ufly[u] !== 0 ? b.collidesAir : b.collidesGround)) {
-          this.damageUnit(u, b.damage * unitDamageScale());
-          if (this.uhp[u] <= 0) this.killUnit(u);
-          if (b.splash <= 0) this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor);
-          dead = true;
-        }
-      }
-    }
-    if (!dead) return false;
-    if (!off) {
-      if (b.splash > 0) {
-        this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor);
-        this.bulletFx(b.hitFx2, pr.x, pr.y, rot, b.fxColor);
-        this.splashStructures(pr.x, pr.y, b.splash, b.splashRadius);
-        // ...and the player's bodies in the blast, through the dial
-        this.splash(pr.x, pr.y, b.splashRadius, b.splash * unitDamageScale(), b.collidesAir, b.collidesGround, undefined, undefined, 1);
-      }
-      if (pr.life <= 0) this.bulletFx(b.despawnFx, pr.x, pr.y, rot, b.fxColor);
-      if (b.frag) this.createFrags(pr, b.frag);
-    }
-    return true;
-  }
 
   /**
    * Mindustry BulletType.createFrags: where a fragmenting shot dies it
@@ -7989,7 +5912,6 @@ export class Sim {
         pierced: child.pierce ? [] : null,
         trailT: 0,
         frag: true,
-        enemy: pr.enemy, // a fragment is its parent's side's
       });
     }
   }
@@ -8143,10 +6065,8 @@ export class Sim {
     range: number,
     air: boolean,
     ground: boolean,
-    team = 0,
-    armedOnly = false,
   ): number {
-    const { upx, upy, uhp, ukind, bStart, bUnits, uteam, uspawn } = this;
+    const { upx, upy, uhp, ukind, bStart, bUnits } = this;
     const hx0 = clamp(((x - range) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((y - range) / HC) | 0, 0, HROWS - 1);
     const hx1 = clamp(((x + range) / HC) | 0, 0, HCOLS - 1);
@@ -8157,8 +6077,7 @@ export class Sim {
       const e = bStart[row + hx1 + 1];
       for (let k = bStart[row + hx0]; k < e; k++) {
         const i = bUnits[k];
-        if (i >= this.n || uhp[i] <= 0 || uteam[i] !== team) continue;
-        if (armedOnly && uspawn[i] > 0) continue;
+        if (i >= this.n || uhp[i] <= 0) continue;
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
         const d2 = dx * dx + dy * dy;
@@ -8353,9 +6272,8 @@ export class Sim {
     ground: boolean,
     hits: number[],
     dists: number[],
-    team = 0,
   ): void {
-    const { upx, upy, uhp, urad, ukind, bStart, bUnits, uteam } = this;
+    const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
     const EXPAND = 7.5; // collideLine's expand = 3 world units
     hits.length = 0;
     dists.length = 0;
@@ -8370,7 +6288,7 @@ export class Sim {
       const e = bStart[row + hx1 + 1];
       for (let k = bStart[row + hx0]; k < e; k++) {
         const i = bUnits[k];
-        if (i >= this.n || uhp[i] <= 0 || uteam[i] !== team) continue;
+        if (i >= this.n || uhp[i] <= 0) continue;
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
         const tt = clamp((upx[i] - x) * dirx + (upy[i] - y) * diry, 0, length);
         const dx = upx[i] - (x + dirx * tt), dy = upy[i] - (y + diry * tt);
@@ -8416,33 +6334,29 @@ export class Sim {
     t.beamDmgT -= dt;
     if (t.beamDmgT <= 0) {
       t.beamDmgT += cont.damageInterval;
-      // the SWARM's beam knows no unit: it burns the structure it is held
-      // on and nothing else (the sweep below is over the swarm's own bodies)
-      if (t.team === "player") {
-        const { upx, upy, uhp } = this;
-        const hits = this.boltHits, dists = this.boltDists;
-        this.collideLine(
-          t.beamOX, t.beamOY, Math.cos(t.beamRot), Math.sin(t.beamRot),
-          reach, b.collidesAir, b.collidesGround, hits, dists,
-        );
-        const dead: number[] = [];
-        // pierceCap -1: the beam stops for nothing
-        for (const i of hits) {
-          this.damageUnit(i, b.damage, b.pierceArmor ?? false, b.armorMultiplier ?? 1);
-          if (uhp[i] > 0) this.bulletFx(b.hitFx, upx[i], upy[i], t.beamRot, b.fxColor);
-          else dead.push(i);
-        }
-        dead.sort((p, q) => q - p);
-        for (const i of dead) if (uhp[i] <= 0) this.killUnit(i);
+      const { upx, upy, uhp } = this;
+      const hits = this.boltHits, dists = this.boltDists;
+      this.collideLine(
+        t.beamOX, t.beamOY, Math.cos(t.beamRot), Math.sin(t.beamRot),
+        reach, b.collidesAir, b.collidesGround, hits, dists,
+      );
+      const dead: number[] = [];
+      // every body under the beam takes the tick's damage; the dead are
+      // removed highest index first so the swap-remove never moves a
+      // body that is still waiting its turn
+      for (const i of hits) {
+        this.damageUnit(i, b.damage, b.pierceArmor ?? false, b.armorMultiplier ?? 1);
+        if (uhp[i] > 0) this.bulletFx(b.hitFx, upx[i], upy[i], t.beamRot, b.fxColor);
+        else dead.push(i);
       }
+      dead.sort((p, q) => q - p);
+      for (const i of dead) if (uhp[i] <= 0) this.killUnit(i);
       // a beam held on a shield tower burns it exactly as it burns a unit — the
       // collide line above knows only the unit arrays (see fireShot)
       if (t.aimShieldTower >= 0) {
         const s = this.shieldTowers[t.aimShieldTower];
         if (s && s.hp > 0) this.shieldTowerHit(s, b.damage, b.hitFx, t.beamRot, b.fxColor);
       }
-      // ...and one held on a building, either side's, burns that
-      if (t.aimTower) this.structureHit(t.aimTower, b.damage, b.hitFx, t.beamRot, b.fxColor);
     }
     t.beamT -= dt;
     if (t.beamT <= 0) {
@@ -8479,7 +6393,6 @@ export class Sim {
       t.beamStr += (0 - t.beamStr) * (1 - Math.pow(1 - 0.1, dt * 60));
       return;
     }
-    const fogState = this.fog.enabled ? this.fog.visible : null;
     const pad = st.range + this.rmaxAliveFor(st.targetAir, st.targetGround) + 8;
     const hx0 = clamp(((t.x - pad) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((t.y - pad) / HC) | 0, 0, HROWS - 1);
@@ -8492,7 +6405,6 @@ export class Sim {
         const i = bUnits[k];
         if (i >= this.n) continue;
         if (ufly[i] !== 0 ? !st.targetAir : !st.targetGround) continue;
-        if (fogState && !this.unitInSight(fogState, i)) continue;
         const dx = upx[i] - t.x, dy = upy[i] - t.y;
         const d = Math.sqrt(dx * dx + dy * dy);
         // within(range + hitSize/2): a wide target counts from its edge
@@ -8633,8 +6545,6 @@ export class Sim {
     for (let i = 0; i < this.n && left > 0; i++) {
       if (!KIND_IS_FORCE[ukind[i]]) continue;
       left--;
-      // the player's own carrier shelters nothing from the player's guns
-      if (this.uteam[i] !== 0) continue;
       // ForceFieldAbility.update guards its bullet sweep on shield > 0, so
       // a pool still climbing back through zero deflects nothing
       if (ushield[i] <= 0 || uforceScale[i] <= 0.01) continue;
@@ -8693,14 +6603,13 @@ export class Sim {
     this.collectForceFields();
     for (let p = projs.length - 1; p >= 0; p--) {
       const pr = projs[p];
-      // the swarm's turrets fire the stock table (see fireTowers)
-      const b = pr.enemy ? bulletOf(pr.kind, pr.frag) : this.bulletFor(pr.kind, pr.frag);
+      const b = this.bulletFor(pr.kind, pr.frag);
       // BulletType.updateHoming, BEFORE the step: the shot picks the
       // nearest target within homingRange OF ITSELF and swings toward it,
       // re-picking every tick — so a missile whose mark dies latches onto
       // whatever it passes next instead of flying on into the ground.
       // The swarm's missile homes on nothing: its marks are buildings
-      if (b.homing && !pr.enemy) {
+      if (b.homing) {
         const tgt = this.nearestInRange(pr.x, pr.y, b.homing.range, b.collidesAir, b.collidesGround);
         if (tgt >= 0) {
           const want = Math.atan2(upy[tgt] - pr.y, upx[tgt] - pr.x);
@@ -8718,14 +6627,6 @@ export class Sim {
       pr.y += pr.vy * dt;
       pr.life -= dt;
       pr.age += dt;
-      // the swarm's own turret shot: none of the sweeps below are its
-      if (pr.enemy) {
-        if (this.stepHostileProjectile(pr, b)) {
-          projs[p] = projs[projs.length - 1];
-          projs.pop();
-        }
-        continue;
-      }
 
       // BulletType.updateTrailEffects: a puff on a per-tick CHANCE, at a
       // constant radius — Fx.missileTrail, which is Fx.artilleryTrail's
@@ -8802,8 +6703,7 @@ export class Sim {
           const e = bStart[row + cx1 + 1];
           for (let k = bStart[row + cx0]; k < e; k++) {
             const i = bUnits[k];
-            // the player's shot flies over the player's own bodies
-            if (i >= this.n || uhp[i] <= 0 || this.uteam[i] !== 0) continue;
+            if (i >= this.n || uhp[i] <= 0) continue;
             if (this.ufly[i] !== 0 ? !b.collidesAir : !b.collidesGround) continue;
             // Bullet.collides: a pierce shot skips whoever it already hit
             if (pr.pierced && pr.pierced.includes(this.uid[i])) continue;
@@ -8879,25 +6779,6 @@ export class Sim {
             }
           }
         }
-        // THE SWARM'S BUILDINGS stand in the shot's way too: one grid read
-        // at the shot, the enemy shots' own rule turned round. A piercing
-        // shot goes through a building once, on a sentinel below any
-        // shield tower's
-        if (!dead && this.enemyStructures > 0) {
-          const s = this.structureAt(pr.x, pr.y, "enemy");
-          if (s) {
-            const sid = -1000000 - (s.gy * COLS + s.gx);
-            if (!pr.pierced || !pr.pierced.includes(sid)) {
-              this.damageTower(s, b.damage);
-              if (b.splash <= 0) this.bulletFx(b.hitFx, pr.x, pr.y, Math.atan2(pr.vy, pr.vx), b.fxColor);
-              if (!pr.pierced) dead = true;
-              else {
-                pr.pierced.push(sid);
-                if (b.pierceCap !== undefined && pr.pierced.length >= b.pierceCap) dead = true;
-              }
-            }
-          }
-        }
       }
       if (dead) {
         const rot = Math.atan2(pr.vy, pr.vx);
@@ -8933,8 +6814,8 @@ export class Sim {
   }
 
   /** is any live targetable unit's hitbox within r of (x, y)? */
-  private anyUnitWithin(x: number, y: number, r: number, air: boolean, ground: boolean, team = 0): boolean {
-    const { upx, upy, uhp, urad, ukind, bStart, bUnits, uteam } = this;
+  private anyUnitWithin(x: number, y: number, r: number, air: boolean, ground: boolean): boolean {
+    const { upx, upy, uhp, urad, ukind, bStart, bUnits } = this;
     const pad = r + this.rmaxAliveFor(air, ground);
     const hx0 = clamp(((x - pad) / HC) | 0, 0, HCOLS - 1);
     const hy0 = clamp(((y - pad) / HC) | 0, 0, HROWS - 1);
@@ -8945,7 +6826,7 @@ export class Sim {
       const e = bStart[row + hx1 + 1];
       for (let k = bStart[row + hx0]; k < e; k++) {
         const i = bUnits[k];
-        if (i >= this.n || uhp[i] <= 0 || uteam[i] !== team) continue;
+        if (i >= this.n || uhp[i] <= 0) continue;
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
         const rr = r + urad[i];
@@ -8983,10 +6864,8 @@ export class Sim {
     ground: boolean,
     burn?: number,
     wet?: BulletStats["wet"],
-    /** whose bodies the blast lands on: the swarm's (0) unless said otherwise */
-    team = 0,
   ): void {
-    const { upx, upy, uhp, uarmor, urad, ukind, bStart, bUnits, splashHits, uteam } = this;
+    const { upx, upy, uhp, uarmor, urad, ukind, bStart, bUnits, splashHits } = this;
     splashHits.length = 0;
     const reach = radius + this.rmaxAliveFor(air, ground);
     const hx0 = clamp(((x - reach) / HC) | 0, 0, HCOLS - 1);
@@ -8998,7 +6877,7 @@ export class Sim {
       const e = bStart[row + hx1 + 1];
       for (let k = bStart[row + hx0]; k < e; k++) {
         const i = bUnits[k];
-        if (i >= this.n || uhp[i] <= 0 || uteam[i] !== team) continue;
+        if (i >= this.n || uhp[i] <= 0) continue;
         if (KIND_FLYING[ukind[i]] ? !air : !ground) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
         const rr = radius + urad[i];
@@ -9010,7 +6889,7 @@ export class Sim {
     // only way artillery (whose shells never collide) hurts one at all.
     // (A blast on the PLAYER's side — a swarm shell — chips neither the
     // map's shield towers nor the swarm's own walls)
-    if (ground && team === 0) {
+    if (ground) {
       for (const s of this.shieldTowers) {
         if (s.hp <= 0) continue;
         const sdx = s.x - x, sdy = s.y - y;
@@ -9018,15 +6897,6 @@ export class Sim {
         if (sdx * sdx + sdy * sdy >= rr * rr) continue;
         const d = Math.sqrt(sdx * sdx + sdy * sdy);
         this.damageShieldTower(s, dmg * Math.max(0, 0.4 + 0.6 * (1 - d / radius)));
-      }
-      // ...and so do the SWARM's buildings, by their footprint's edge, at
-      // the same falloff — a shell landing beside its wall chips the wall
-      if (this.enemyStructures > 0) {
-        for (const s of this.structuresWithin(x, y, radius, this.splashOut, "enemy")) {
-          const half = (this.sizeOf(s) * CELL) / 2;
-          const d = Math.max(0, Math.hypot(s.x - x, s.y - y) - half);
-          this.damageTower(s, dmg * Math.max(0, 0.4 + 0.6 * (1 - d / radius)));
-        }
       }
     }
     // damage first (indices stay stable), then remove the dead from the
@@ -9206,7 +7076,7 @@ export class Sim {
    * is drawn in the arriving unit's own sprite, so the renderer has to be
    * told which one landed.
    */
-  private pushSpawnFx(x: number, y: number, rot: number, unit: number, team: number): void {
+  private pushSpawnFx(x: number, y: number, rot: number, unit: number): void {
     const i = this.pushSlot(x, y, FX_UNIT_SPAWN, FxKind.UnitSpawn, rot, 0, 0, 0, false);
     if (i < 0) return;
     this.fxUnit[i] = unit;
@@ -9214,7 +7084,7 @@ export class Sim {
     // its own team's cell too — the colour rides the effect because the
     // unit it belongs to may be dead by the time the husk fades
     this.fxHasCol[i] = 1;
-    const col = TEAM_COL[team];
+    const col = TEAM_CRUX_RGB;
     this.fxColR[i] = col[0];
     this.fxColG[i] = col[1];
     this.fxColB[i] = col[2];

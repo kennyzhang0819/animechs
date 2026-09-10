@@ -1,8 +1,8 @@
 import {
-  GRACE_DEFAULT,
+  dropsForKills,
   UNIT_KINDS,
   UNIT_STATS,
-  WAVE_GAP_DEFAULT,
+  unitDrop,
   waveGroups,
   WORLD,
   type LevelSpec,
@@ -14,13 +14,16 @@ import {
 } from "./levels";
 import { TOWERS } from "./constants";
 import {
-  CORE_INCOME,
+  addDrop,
+  emptyDrop,
   MISSION_XP,
   SCRAP_START,
   scrapPriceOf,
   STAGES,
   towersOfTier,
+  waveBonusScrap,
   waveXp,
+  type Drop,
   type TowerTier,
 } from "./economy";
 import { MUT_COUNT_MAX, MUT_FIRST_TIER, mutationBudget, mutationPicks } from "./mutation";
@@ -554,6 +557,10 @@ export interface WaveCost {
   armourShare: number;
   /** how much of it flies — hail and scorch cannot touch these at all */
   airShare: number;
+  /** what killing the whole wave drops — the bonus for staging it is
+   *  not in here (see waveBonusScrap), and neither is XP: a wave's XP is
+   *  its share of the mission pot (waveXp), not a property of its bodies */
+  drops: Drop;
 }
 
 export function waveCost(step: LevelStep, level = 0): WaveCost {
@@ -563,6 +570,7 @@ export function waveCost(step: LevelStep, level = 0): WaveCost {
     t3Share: 0,
     armourShare: 0,
     airShare: 0,
+    drops: emptyDrop(),
   };
   let t3 = 0;
   let armour = 0;
@@ -578,6 +586,10 @@ export function waveCost(step: LevelStep, level = 0): WaveCost {
       if (stats.tier >= 3) t3 += h;
       if (stats.armor >= 3) armour += h;
       if (stats.flying) air += h;
+      // the drop table is unitDrop in levels.ts — reading it rather than a
+      // copy is what keeps this audit honest through a balance edit: it
+      // must count the same drops the run banks
+      addDrop(out.drops, unitDrop(kind), count);
     });
   }
   const share = (x: number): number => (out.hp > 0 ? x / out.hp : 0);
@@ -608,27 +620,13 @@ export interface WaveRow {
   armourShare: number;
   airShare: number;
   t3Share: number;
-  /** what the run EARNS across this wave's window — the core's pay over
-   *  the gap that precedes it (waveWindow), before any drill. Nothing the
-   *  wave's bodies do pays anything */
+  /** what the wave PAYS: its bodies' drops plus the bonus for staging it
+   *  (waveBonusScrap) — the run's whole income for the wave */
   scrap: number;
   /** what CLEARING the wave banks — its share of MISSION_XP, before the
    *  rung bonus. It reads off the wave's position and the script's
    *  length, never off what the wave holds */
   xp: number;
-}
-
-/**
- * THE SECONDS A WAVE OWNS ON THE CLOCK: from the moment the wave before
- * it finished entering to the moment this one does — the grace for wave
- * 1, the gap plus the release for every wave after. It is what the core
- * pays across (waveGuide.scrap) and what a stage's income is summed from
- * (stageAudit), now that the income is the clock's and not the bodies'.
- */
-export function waveWindow(spec: LevelSpec, wave: number): number {
-  const gap = spec.waveGap ?? WAVE_GAP_DEFAULT;
-  const grace = spec.grace ?? GRACE_DEFAULT;
-  return wave <= 1 ? grace + WAVE_RELEASE_SECONDS : gap + WAVE_RELEASE_SECONDS;
 }
 
 /** the per-wave guide, at the authored baseline — one row a wave */
@@ -647,7 +645,7 @@ export function waveGuide(spec: LevelSpec = WORLD): WaveRow[] {
       armourShare: c.armourShare,
       airShare: c.airShare,
       t3Share: c.t3Share,
-      scrap: Math.round(CORE_INCOME * waveWindow(spec, i + 1)),
+      scrap: c.drops.scrap + waveBonusScrap(i + 1),
       xp: waveXp(i + 1, waves),
     };
     prev = c.hp;
@@ -667,8 +665,8 @@ export interface StageRow {
   from: number;
   to: number;
   units: number;
-  /** scrap the core pays across the stage's waves' windows (waveWindow) —
-   *  the run's floor; drills come on top and are the player's to add */
+  /** scrap the stage's waves pay, drops and bonuses, plus the opening
+   *  bank in stage 1 — what the stage buys its tier with */
   scrap: number;
   /** XP clearing the stage's waves banks, before the rung bonus */
   xp: number;
@@ -724,9 +722,9 @@ export function stageAudit(spec: LevelSpec = WORLD): StageRow[] {
  * so a board is tens of emplacements, not hundreds.
  */
 export const STAGE_BOARDS: Readonly<Record<TowerTier, { min: number; max: number }>> = {
-  1: { min: 40, max: 200 },
-  2: { min: 8, max: 40 },
-  3: { min: 3, max: 15 },
+  1: { min: 800, max: 2500 },
+  2: { min: 200, max: 800 },
+  3: { min: 50, max: 250 },
 };
 
 /** one rung, weighed — the row the editor's ladder check renders */
@@ -848,3 +846,5 @@ export function stageTable(spec: LevelSpec = WORLD): string {
   return [head, ...rows, "", xpHead, ...xpRows].join("\n");
 }
 
+/** what a run's kills dropped, by the per-kind ledger (Sim.killsByKind) */
+export const runDrops = (killsByKind: ArrayLike<number>): Drop => dropsForKills(killsByKind);

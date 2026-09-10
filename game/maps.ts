@@ -40,16 +40,7 @@ import {
   WALL_SPORE,
 } from "./atlas";
 import { FLOOR_STYLE, propIcon, tileIcon, wallIcon, WALL_STYLE } from "./tiles";
-import { MISSION_STRUCT_ICONS, TOWER_ICONS, structIcon } from "./towerIcons";
-import { BLUEPRINTS, blueprintById, type FormationPlacement } from "./blueprints";
-import {
-  explain,
-  MISSION_STRUCT_KINDS,
-  TOWER_KINDS,
-  type MissionPlacement,
-  type SaveResult,
-  type StructurePlacement,
-} from "./types";
+import { explain, type SaveResult } from "./types";
 
 /**
  * Serializable map document — the game's OFFICIAL maps, one JSON file per
@@ -78,9 +69,6 @@ export interface MapData {
   floor: number[]; // NCELLS, UV_FLOORS index
   wall: number[]; // NCELLS, UV_WALLS index or WALL_PINE where blocked
   blocked: number[]; // NCELLS, 0/1
-  /** the ore veins, 0/1 a cell (Terrain.ore). Absent on a document drawn
-   *  before the economy came out of the ground, which means none */
-  ore?: number[];
   /**
    * Enemy drop zones, Mindustry-style: a spawn area is a CIRCLE, and every
    * tile inside it that the zone's own layer can stand on is somewhere the
@@ -98,46 +86,6 @@ export interface MapData {
   spawn?: number[];
   pines: Prop[];
   decor: Prop[];
-  /**
-   * THE SWARM'S FORMATION: turrets and walls the map starts with, on the
-   * swarm's side (Tower.team), drawn from the player's own roster. Each is
-   * a kind and its footprint's top-left cell, the shape the player's layout
-   * is saved in. Absent on every document drawn before the swarm could
-   * build, which means none
-   */
-  enemies?: StructurePlacement[];
-  /**
-   * THE MISSION BUILDINGS ON THIS BOARD — the swarm's second roster
-   * (types.ts MISSION_STRUCT_KINDS), stamped in the map editor's
-   * *Mission structure* palette exactly as the formation above is.
-   *
-   * THEY ARE HERE RATHER THAN IN THE LEVEL because where a building
-   * stands is the ground's business: a coordinate wants to be clicked on
-   * the map it is on, not typed into a source file against a grid you
-   * cannot see. What the buildings MEAN stays in the level (levels.ts
-   * Mission) — the sim stands up only the kinds the assignment being
-   * played consumes, so a board may carry several missions' objectives at
-   * once and wear only the current one's.
-   *
-   * The ORDER is the order the mission uses them in, which for a raid is
-   * the launch order — so the editor numbers them where they stand.
-   * Absent means none, which is every map that no mission has been
-   * authored for.
-   */
-  missionStructs?: MissionPlacement[];
-  /**
-   * DEFENCE FORMATIONS: references to the shared blueprint library
-   * (blueprints.ts), not buildings. Each entry names a blueprint, where
-   * its box sits and how it is turned, and the buildings are resolved from
-   * the library when the map is read — which is what makes editing a
-   * blueprint edit every instance on every map at once.
-   *
-   * An instance whose blueprint has been deleted resolves to nothing and
-   * is dropped here on load, so a stale document is self-healing; the
-   * blueprint route also sweeps them out of the files themselves.
-   * Absent means none.
-   */
-  formations?: FormationPlacement[];
   // carved-valley centerline per column — generator metadata the sim's
   // seed-tower search reads; older documents fall back to a flat line
   valleyY?: number[];
@@ -243,34 +191,7 @@ export type PaintKind =
   /** deep water: blocks the swarm like a wall, takes no tower like a pine
    *  — a floor index plus the WALL_DEEP sentinel (see terrain.ts) */
   | "deep"
-  /** one of the roster's turrets or walls on the SWARM's side
-   *  (MapData.enemies): the variant is an index into TOWER_KINDS, and a
-   *  click stamps its footprint on open ground */
-  | "enemy"
-  /**
-   * one of the SWARM'S MISSION BUILDINGS (MapData.missionStructs): the
-   * variant is an index into MISSION_STRUCT_KINDS, and a click stamps its
-   * footprint on open ground. The same tool as `enemy` over the other
-   * roster — what makes it its own kind is that these are an ASSIGNMENT'S
-   * objectives rather than the board's furniture, so they are drawn apart
-   * from the formation, numbered in the order the mission uses them
-   */
-  | "mission"
-  /**
-   * A DEFENCE FORMATION (MapData.formations): the variant is an index into
-   * the loaded blueprint library, and a click stamps one instance of it —
-   * a whole outpost at once, turned by whatever the rotate key has it at.
-   * Nothing about the buildings is written into the map; the instance is a
-   * reference, and the library is where the layout lives
-   */
-  | "formation"
-  /**
-   * THE MARQUEE: not a brush at all, the one tool that draws a BOX rather
-   * than painting cells. Dragging one out over the board is how a
-   * blueprint is made from buildings already standing, and how an edited
-   * one is saved back over itself — the box IS the blueprint's footprint
-   */
-  | "marquee";
+  | "erase";
 
 /**
  * One enemy drop zone: Mindustry marks a spawn with a tile and draws
@@ -535,22 +456,6 @@ export const PALETTE: readonly PaletteSet[] = [
   // the swarm's buildings — the player's roster, on the swarm's side —
   // one swatch a kind: a click stamps one on open ground and the eraser
   // takes it back off (MapData.enemies)
-  { id: "enemy", label: "Enemy structure", kind: "enemy",
-    variants: TOWER_KINDS.map((_, i) => i), noRandom: true,
-    icons: TOWER_KINDS.map((k) => TOWER_ICONS[k]) },
-  // ...and the swarm's MISSION buildings, one swatch a kind, off the
-  // second roster (types.ts MISSION_STRUCT_KINDS). A new mission building
-  // appears here by existing — the swatches are the roster itself, so
-  // there is no second list to keep in step (MapData.missionStructs)
-  { id: "mission", label: "Mission structure", kind: "mission",
-    variants: MISSION_STRUCT_KINDS.map((_, i) => i), noRandom: true,
-    icons: MISSION_STRUCT_KINDS.map((k) => MISSION_STRUCT_ICONS[k]) },
-  // THE MARQUEE, and the formations stamped with what it captures. The
-  // formation set's variants are filled in from the LOADED LIBRARY rather
-  // than written here (formationPalette), because the library is a
-  // document an author edits at run time and this file is not
-  { id: "marquee", label: "Select formation", kind: "marquee", variants: [0], noRandom: true,
-    icons: [`${ENV}/clear-editor.png`] },
   { id: "erase", label: "Erase", kind: "erase", variants: [0], icons: [`${ENV}/clear-editor.png`] },
 ];
 
@@ -578,11 +483,10 @@ export const PALETTE_SECTIONS: readonly { label: string; ids: readonly string[] 
   { label: "Paths", ids: ["path-dirt", "path-darksand", "path-mud"] },
   { label: "Props", ids: ["boulder", "shrub", "spore-cluster", "pur-bush", "shale-boulder",
     "snow-boulder", "sand-boulder"] },
+  // the veins are their own group rather than a stray swatch among the
+  // floors: ore is not a floor tile at all but a layer over one (T.ore),
+  // and it is the only brush that decides what a run EARNS
   { label: "Zones", ids: ["spawn", "base"] },
-  { label: "Enemy", ids: ["enemy", "mission"] },
-  // the marquee lives with the formations it makes; the formation set
-  // itself is appended by paletteSections() from the loaded library
-  { label: "Formations", ids: ["marquee"] },
   { label: "Tools", ids: ["erase"] },
 ];
 
@@ -592,61 +496,6 @@ export const PALETTE_SECTIONS: readonly { label: string; ids: readonly string[] 
  * both are edits that would otherwise show up as a brush quietly missing
  * from the editor.
  */
-/**
- * A DOCUMENT'S FORMATION INSTANCES, filtered to the ones this library can
- * actually resolve.
- *
- * DROPPING AN UNRESOLVABLE INSTANCE HERE IS HOW DELETING A BLUEPRINT
- * DELETES ITS INSTANCES EVERYWHERE. The API route sweeps the documents
- * too, but the documents are not the authority — the library is — so a map
- * read from a stale file, an older checkout or a copy the sweep could not
- * write still comes up with no ghost outposts on it. There is no third
- * state where a formation half-exists.
- *
- * It is also the load-order contract: a map read before loadBlueprints()
- * has resolved has NO formations, which is why every entry point awaits
- * both. A silently empty board is the one failure mode worth warning
- * about, so it does.
- */
-export function formationsOf(list: FormationPlacement[] | undefined): FormationPlacement[] {
-  const out: FormationPlacement[] = [];
-  let dropped = 0;
-  for (const f of list ?? []) {
-    if (!Number.isInteger(f?.gx) || !Number.isInteger(f?.gy)) continue;
-    if (!blueprintById(f.id)) {
-      dropped++;
-      continue;
-    }
-    out.push({ id: f.id, gx: f.gx, gy: f.gy, rot: ((f.rot ?? 0) | 0) & 3 });
-  }
-  if (dropped > 0)
-    console.warn(
-      `dropped ${dropped} formation instance(s) whose blueprint is not in the library` +
-        (BLUEPRINTS.length === 0 ? " (the library is empty — was loadBlueprints() awaited?)" : ""),
-    );
-  return out;
-}
-
-/**
- * THE FORMATION PALETTE, built from the LOADED LIBRARY rather than written
- * into PALETTE — one swatch per blueprint, in library order, showing the
- * first building in it as its face. It is a function because the library
- * is a document the author edits while the editor is open: a set frozen at
- * module load would be a picker that never grew a blueprint you just made.
- */
-export function formationPalette(): PaletteSet {
-  return {
-    id: "formation",
-    label: "Formation",
-    kind: "formation",
-    variants: BLUEPRINTS.map((_, i) => i),
-    noRandom: true,
-    icons: BLUEPRINTS.map((b) =>
-      b.parts.length > 0 ? structIcon(b.parts[0].kind) : TOWER_ICONS.duo,
-    ),
-  };
-}
-
 export function paletteSections(): { label: string; sets: PaletteSet[] }[] {
   const byId = new Map(PALETTE.map((s) => [s.id, s]));
   const seen = new Set<string>();
@@ -663,10 +512,6 @@ export function paletteSections(): { label: string; sets: PaletteSet[] }[] {
   if (orphan) throw new Error(`palette set "${orphan.id}" is in no section — add it to PALETTE_SECTIONS`);
   // ...and the library's own swatches, appended to the Formations section
   // rather than declared in PALETTE: they come and go with the documents
-  if (BLUEPRINTS.length > 0) {
-    const section = out.find((s) => s.label === "Formations");
-    if (section) section.sets.push(formationPalette());
-  }
   return out;
 }
 
@@ -870,15 +715,11 @@ export function mapFromTerrain(
     floor: Array.from(t.floor.subarray(0, n)),
     wall: Array.from(t.wall.subarray(0, n)),
     blocked: Array.from(t.blocked.subarray(0, n)),
-    ore: Array.from(t.ore.subarray(0, n)),
     // drop zones are authored, not painted: the per-cell layer is derived
     // from them on load, so writing it back out would be writing a cache
     spawns: t.spawns.map((c) => ({ ...c })),
     pines: t.pines.map((p) => ({ ...p })),
     decor: t.decor.map((p) => ({ ...p })),
-    enemies: t.enemies.map((e) => ({ ...e })),
-    missionStructs: t.missionStructs.map((e) => ({ ...e })),
-    formations: t.formations.map((f) => ({ ...f })),
     valleyY: Array.from(t.valleyY).map((v) => Math.round(v * 100) / 100),
   };
 }
@@ -927,14 +768,7 @@ export function terrainFromMap(m: MapData): Terrain {
     floor,
     wall: lift(m.wall, 5, sw),
     blocked,
-    // NO ORE, ON ANY MAP. A drill does not stand on the ground any more —
-    // it stands in a slot on the player's board and pays a flat rate for
-    // being there (board.ts DRILL_TICK_PAY) — so a vein is a patch of
-    // colour that answers no question a player can ask. The FIELD is what
-    // the array is for, so it is emptied here, at the one door every map
-    // comes through: documents keep whatever they were authored with and
-    // nothing downstream ever sees it.
-    ore: new Uint8Array(NCELLS),
+    // no ore on a document that never had any: the map plays on the core's pay
     spawns,
     spawn: rasterizeSpawns(spawns, { blocked, floor }),
     pines: m.pines.map((p) => ({ ...p })),
@@ -942,18 +776,6 @@ export function terrainFromMap(m: MapData): Terrain {
     // only a kind the roster knows, on a whole cell: a hand-edited
     // document's stray entry — or one from the old enemy-only roster,
     // breach and the scrap walls — is dropped here rather than crashing a run
-    enemies: (m.enemies ?? [])
-      .filter((e) => (TOWER_KINDS as readonly string[]).includes(e.kind)
-        && Number.isInteger(e.gx) && Number.isInteger(e.gy))
-      .map((e) => ({ kind: e.kind, gx: e.gx, gy: e.gy })),
-    // the same rule over the mission roster: a kind this build has never
-    // heard of — a document written against a mission since renamed or
-    // removed — is dropped rather than crashing a run or an editor
-    missionStructs: (m.missionStructs ?? [])
-      .filter((e) => (MISSION_STRUCT_KINDS as readonly string[]).includes(e.kind)
-        && Number.isInteger(e.gx) && Number.isInteger(e.gy))
-      .map((e) => ({ kind: e.kind, gx: e.gx, gy: e.gy })),
-    formations: formationsOf(m.formations),
     valleyY: m.valleyY
       ? Float32Array.from(m.valleyY)
       : new Float32Array(COLS).fill(base.y + base.size / 2),
@@ -1038,7 +860,7 @@ const PINE_TONE = "#2e6e35";
 /**
  * The thumbnail's painter, over any set of cell layers on the COLS-wide
  * grid — a map document's, or the live terrain's (the minimap draws the
- * ground it sits on with this, then the fog and the field over it).
+ * ground it sits on with this, then the field over it).
  * Writes `rows` rows at 1px per cell into a canvas resized to fit.
  */
 export function paintThumb(

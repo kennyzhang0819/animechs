@@ -57,7 +57,6 @@ import {
   tierXpBonus,
 } from "@/game/ladder";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
-import { loadBlueprints } from "@/game/blueprints";
 import {
   bestClearOn,
   effectiveLevel,
@@ -76,7 +75,6 @@ import {
   PAN_SPEEDS,
   UI_SCALE_DEFAULT,
   UI_SCALES,
-  saveFactions,
   saveRunPick,
   saveSpeed,
   startingSpeed,
@@ -102,17 +100,10 @@ import {
   type DisplayState,
 } from "@/game/storage";
 import { BUILD } from "@/game/version";
-import { BUILD_COLS, buildSlotsFor, slotForCode, type BuildSlot } from "@/game/tech";
-import { factionsAt, lockedMutators, rewardsAt, rewardText } from "@/game/track";
-import { FACTION_BLURB, factionUnit, factionUnits, RUN_FACTIONS } from "@/game/factions";
+import { BUILD_COLS, BUILD_SLOTS, slotForCode, type BuildSlot } from "@/game/tech";
+import { lockedMutators, rewardsAt, rewardText } from "@/game/track";
 import { TOWER_DESC } from "@/game/constants";
-import { TOWER_ICONS } from "@/game/towerIcons";
-import {
-  levelProgress,
-  POINT_COLOR,
-  RANDOM_MAP_XP_BONUS,
-  XP_COLOR,
-} from "@/game/economy";
+import { levelProgress, POINT_COLOR, RANDOM_MAP_XP_BONUS, XP_COLOR } from "@/game/economy";
 import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
 import ProgressView from "./Progress";
 import { bandFor, MutationFace } from "./mutationFace";
@@ -246,72 +237,6 @@ const clock = (seconds: number): string => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
 
-/**
- * THE MISSION'S OBJECTIVES, in the top-left corner of the screen — a
- * RAID's (levels.ts RaidMission), which is the only mission that has any
- * to track yet.
- *
- * ON BARE SCREEN, deliberately. Everything else in this HUD that carries
- * state the player acts on wears a pane; the two things that are TRUE FOR
- * THE WHOLE RUN — the bank, and what the run is for — do not, because a
- * box round them would make them look like another readout to check
- * instead of the standing terms of the map. Text, a shadow heavy enough
- * to read over sand or water, and nothing else.
- *
- * Each line is a clause and its live number. The number is what changes,
- * so it is the bright half; the clause is what it means, so it is the
- * quiet half.
- *
- * ONLY THE SECOND LINE CAN GO GREEN. Destroying the pads is a thing that
- * gets DONE, and a done objective keeps its place in green rather than
- * vanishing — a line that disappeared when it was met would take the
- * record of what was achieved with it. The first line is a thing to
- * PREVENT, and prevention is never done while the run is on: it stays
- * quiet, and its countdown goes red inside its last minute, which on this
- * map is the last minute of the run — one rocket ends it.
- *
- * THE COUNTDOWN IS ALSO THE TIME LEFT OVER. Every pad has its own fixed
- * moment (Sim.updateRaid), so wrecking one early makes this stop counting
- * to that moment and start counting to the next pad's — which is further
- * off by exactly the time that was spare. The jump IS the reward, and a
- * separate "banked" total beside it would have been the same number said
- * twice.
- */
-function Objectives({
-  raid,
-}: {
-  raid: NonNullable<UiState["raid"]>;
-}) {
-  const { padsDown, padsTotal, nextLaunchIn } = raid;
-  const clear = padsTotal > 0 && padsDown >= padsTotal;
-  const urgent = nextLaunchIn >= 0 && nextLaunchIn < 60;
-  return (
-    <div
-      role="group"
-      aria-label="mission objectives"
-      className="pointer-events-none flex w-max max-w-full flex-col gap-0.5 whitespace-nowrap text-[13px] font-bold uppercase tracking-wide text-[#A1A1AA] [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]"
-    >
-      <div>
-        Don&apos;t let the enemy launch any rockets
-        {nextLaunchIn >= 0 ? (
-          <>
-            {" "}
-            <span className={urgent ? "text-[#F25555]" : "text-[#EDEDEF]"}>
-              (next in {clock(nextLaunchIn)})
-            </span>
-          </>
-        ) : null}
-
-      </div>
-      <div className={clear ? "text-[#7BE58A]" : undefined}>
-        Destroy all enemy launch pads{" "}
-        <span className={clear ? "text-[#7BE58A]" : "text-[#EDEDEF]"}>
-          ({padsDown}/{padsTotal})
-        </span>
-      </div>
-    </div>
-  );
-}
 
 /**
  * The map bonus, named on the results panel when it was paid: the run's
@@ -400,43 +325,16 @@ const runSpec = (
   tier: number,
   families: readonly FamilyKey[],
   mutation: readonly MutationId[],
-  picks: readonly FamilyKey[] = [],
 ): LevelSpec => {
   const spec = specForTier(world, tier);
   return {
     ...spec,
     script: transformScript(spec.script, families),
     families,
-    ...(picks.length > 0 ? { picks } : null),
     ...(mutation.length > 0 ? { mutation } : null),
   };
 };
 
-/**
- * THE FACTION A RUN DEPLOYS AS, out of what the save owns (track.ts
- * factionsAt): the remembered pick, else the first owned. Null only on a
- * save that owns nothing, which the track makes impossible.
- *
- * IT USED TO WEIGH THE MAP'S DOORS — a fleet needed a map with water, and
- * a naval pick on a dry map was quietly swapped for one that walked. Every
- * faction plays every map now (the naval line is amphibious, and every
- * layer falls back to whatever doors the map does paint), so the pick is
- * simply the pick.
- */
-const factionsFor = (p: Progress, picks: readonly FamilyKey[]): FamilyKey[] => {
-  const owned = [...factionsAt(effectiveLevel(p))];
-  // THE RUN PLAYS EXACTLY TWO (factions.ts RUN_FACTIONS). What the save
-  // remembered comes first, in order; anything it does not own is dropped,
-  // and the gap is filled from the top of what it does — so a save that
-  // has just unlocked a line, or one whose remembered pair is half stale,
-  // still deploys with a full pair rather than half a build menu
-  const out = picks.filter((f) => owned.includes(f)).slice(0, RUN_FACTIONS);
-  for (const f of owned) {
-    if (out.length >= RUN_FACTIONS) break;
-    if (!out.includes(f)) out.push(f);
-  }
-  return out;
-};
 
 /**
  * A MACRO — one of the two dials on the start screen, printed as a row:
@@ -799,98 +697,6 @@ function DifficultyPicker({
   return <PickerDialog title="Difficulty" onClose={onClose} list={list} detail={detail} />;
 }
 
-/**
- * THE FACTION PICKER: one row per faction the save owns (track.ts
- * factionsAt), the detail pane showing the line — its five bodies, tier 1
- * to 5, and its three turrets — and which movement layer it fights on.
- * Every owned faction can be taken on every map, so there is nothing here
- * to grey out.
- */
-function FactionPicker({
-  progress,
-  picks,
-  onPick,
-  onClose,
-}: {
-  progress: Progress;
-  picks: readonly FamilyKey[];
-  onPick: (f: readonly FamilyKey[]) => void;
-  onClose: () => void;
-}) {
-  const owned = [...factionsAt(effectiveLevel(progress))];
-  // THE PAIR BEING BUILT, in the order it was clicked. A run plays exactly
-  // RUN_FACTIONS of them, so a third click pushes the OLDEST out rather
-  // than being refused — a picker that goes dead once it is full makes a
-  // player hunt for the deselect, and the order they clicked in is the
-  // order they were thinking in
-  const [held, setHeld] = useState<readonly FamilyKey[]>(
-    picks.filter((f) => owned.includes(f)).slice(0, RUN_FACTIONS),
-  );
-  const [focus, setFocus] = useState<FamilyKey | null>(held[0] ?? owned[0] ?? null);
-  const toggle = (f: FamilyKey): void => {
-    setFocus(f);
-    setHeld((was) =>
-      was.includes(f)
-        ? was.filter((x) => x !== f)
-        : [...was, f].slice(Math.max(0, was.length + 1 - RUN_FACTIONS)),
-    );
-  };
-  const sprite = (src: string, key: string, big = false) => (
-    // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite
-    <img
-      key={key}
-      src={src}
-      alt=""
-      className={`${big ? "h-10 w-10" : "h-7 w-7"} object-contain [image-rendering:pixelated]`}
-    />
-  );
-  const list = owned.map((f) => (
-    <PickRow key={f} selected={held.includes(f)} focused={f === focus} onPick={() => toggle(f)}>
-      <span className="truncate font-display text-[15px] font-bold uppercase tracking-widest text-[#EDEDEF]">
-        {familyByKey(f).name}
-      </span>
-      {held.includes(f) && (
-        <span className="ml-auto shrink-0 text-[12px] font-bold uppercase tracking-widest text-[#FFD37F]">
-          {held.indexOf(f) + 1}
-        </span>
-      )}
-    </PickRow>
-  ));
-  const fam = focus ? familyByKey(focus) : null;
-  const detail = fam && focus ? (
-    <>
-      <div className="font-display text-[19px] font-bold uppercase tracking-widest text-[#FFD37F]">
-        {fam.name}
-      </div>
-      <p className="text-[14px] text-[#A6A6AF]">{FACTION_BLURB[focus]}</p>
-      <DetailLine label="Units">
-        <span className="flex flex-wrap items-center gap-1.5">
-          {fam.kinds.map((u) => sprite(`/mindustry/sprites/units/${u}.png`, u, true))}
-        </span>
-      </DetailLine>
-      {/* A RUN TAKES TWO LINES AND WILL NOT START ON ONE (factions.ts
-          RUN_FACTIONS): the button says how many are still to pick, and
-          only deploys the pair once it is a pair */}
-      <DetailLine label="Deploying">
-        <span className="text-[#EDEDEF]">
-          {held.length === 0
-            ? "nothing yet"
-            : held.map((f) => familyByKey(f).name).join(" + ")}
-        </span>
-      </DetailLine>
-      {held.length === RUN_FACTIONS ? (
-        <SelectButton onClick={() => onPick(held)} />
-      ) : (
-        <div className="text-[13px] uppercase tracking-widest text-[#71717C]">
-          Pick {RUN_FACTIONS - held.length} more
-        </div>
-      )}
-    </>
-  ) : (
-    <p className="text-[14px] text-[#A6A6AF]">This save owns no faction yet.</p>
-  );
-  return <PickerDialog title="Faction" onClose={onClose} list={list} detail={detail} />;
-}
 
 /**
  * THE DEAL STACK'S CELLS — one square each in the field's bottom-right
@@ -1044,29 +850,9 @@ const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }>
     name: "Foreshadow",
     icon: "/mindustry/sprites/blocks/turrets/foreshadow.png",
   },
-  // the economy (factions.ts COMMON_BUILD_KINDS): the drill, which
-  // deepens the core's excavation and belongs to no line
-  { kind: "drill", name: "Drill", icon: TOWER_ICONS.drill },
-  // the army: the five factories, one a tier
-  { kind: "factory-t1", name: "Factory", icon: TOWER_ICONS["factory-t1"] },
-  { kind: "factory-t2", name: "Additive", icon: TOWER_ICONS["factory-t2"] },
-  { kind: "factory-t3", name: "Multiplicative", icon: TOWER_ICONS["factory-t3"] },
-  { kind: "factory-t4", name: "Exponential", icon: TOWER_ICONS["factory-t4"] },
-  { kind: "factory-t5", name: "Tetrative", icon: TOWER_ICONS["factory-t5"] },
 ];
 
 /** menu entry by kind, for rendering the bar from a list of kinds */
-/** which unit tier each factory block builds — the menu reads it to show
- *  the BODY a cell makes rather than the block, which is the same picture
- *  in both of a run's two rows */
-const TIER_OF: Record<string, number> = {
-  "factory-t1": 1,
-  "factory-t2": 2,
-  "factory-t3": 3,
-  "factory-t4": 4,
-  "factory-t5": 5,
-};
-
 const MENU_BY_KIND = new Map(TOWER_MENU.map((t) => [t.kind, t]));
 
 /**
@@ -1367,7 +1153,7 @@ export default function MechSwarm() {
    */
   const [menuView, setMenuView] = useState<"home" | "settings" | "deploy">("home");
   /** which macro's list is open over the deploy screen, if any */
-  const [picker, setPicker] = useState<"maps" | "difficulty" | "faction" | null>(null);
+  const [picker, setPicker] = useState<"maps" | "difficulty" | null>(null);
   const [level, setLevel] = useState<LevelSpec | null>(null);
   /**
    * The difficulty macro: the rung the next run is played at. Every rung
@@ -1381,9 +1167,6 @@ export default function MechSwarm() {
    * stale id reads as Random rather than as a world that is not there.
    */
   const [mapPick, setMapPick] = useState<string | null>(null);
-  /** THE TWO LINES the next run deploys with (factions.ts RUN_FACTIONS) —
-   *  the save's remembered pair, filled out from what it owns */
-  const [factionPick, setFactionPick] = useState<readonly FamilyKey[]>([]);
   const pickedWorld = mapPick == null ? null : worldById(mapPick);
   /**
    * Was the run under way started on a map the game picked? Read when the
@@ -1580,7 +1363,6 @@ export default function MechSwarm() {
     setTier(p.difficulty ?? 0);
     setMapPick(p.map ?? null);
     setEffects(p.effects ?? true);
-    setFactionPick(p.factions ?? []);
     setUiScale(p.uiScale ?? UI_SCALE_DEFAULT);
     setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
     setAllyBars(p.allyBars ?? HEALTH_BARS_DEFAULT);
@@ -1614,16 +1396,8 @@ export default function MechSwarm() {
   useEffect(() => {
     const g = gameRef.current;
     if (!g) return;
-    const tech = techOf(loadProgress(), level?.picks ?? []);
+    const tech = techOf(loadProgress());
     g.setTech(admin ? null : tech);
-    // AND THE WHOLE BOARD IS LIT. Sandbox is for staging and debugging a
-    // run, and half of what is being looked at is off screen under the fog
-    // — the swarm's approach, a lane on the far side, the map's own shape.
-    // Leaving sandbox draws the fog back WHOLE (Fog.reset): the discovered
-    // set is rebuilt from what is in sight of what stands, so the board
-    // goes dark again everywhere else — the run does not keep a map it was
-    // shown rather than walked
-    g.setFog(!admin);
     // dropping out of sandbox drops a sandbox-only pace with it, or the run
     // keeps running at a speed whose button is no longer on screen. What the
     // save allows is the utilities path rather than a constant, so it falls
@@ -1667,11 +1441,7 @@ export default function MechSwarm() {
       if (!atlasReady()) await buildAtlas().catch(() => {});
       if (!alive) return;
       setBoot((b) => (b ? { ...b, step: "maps" } : b));
-      // the blueprint library rides with the maps: a map read before it has
-      // loaded resolves none of its formations (formationsOf), so an
-      // outpost would simply not be on the board
       await Promise.all([
-        loadBlueprints(),
         loadOfficialMaps(),
         loadLevelDocs(),
         loadBalanceDoc(),
@@ -1790,10 +1560,9 @@ export default function MechSwarm() {
           return;
         }
         const save = loadProgress();
-        g.setTech(admin ? null : techOf(save, level.picks ?? []));
+        g.setTech(admin ? null : techOf(save));
         // a sandbox run comes up lit, the same as one toggled into it
-        g.setFog(!admin);
-        // the device's own preference, read from the save rather than
+            // the device's own preference, read from the save rather than
         // from state: this runs once at create, and a run started right
         // after a toggle must not come up with last render's value
         g.setEffects(save.effects ?? true);
@@ -1899,22 +1668,11 @@ export default function MechSwarm() {
     };
   }, [screen, level, runRandom]);
 
-  const pickTower = (kind: TowerKind, faction: FamilyKey | null = null): void => {
+  const pickTower = (kind: TowerKind): void => {
     const g = gameRef.current;
     if (!g) return;
-    // the same cell pressed twice puts the building back down: a pick is
-    // the block AND the line, so two tier-1 cells are two different picks.
-    // Asked of the ENGINE rather than of `hud`, exactly as the keyboard
-    // asks it: the snapshot is up to 100ms old, so a cell clicked straight
-    // after a keyed pick would otherwise be answered against a hand that
-    // was already holding something
-    const ui = g.ui();
-    const on = ui.buildKind === kind && ui.buildFaction === faction;
-    // THE LINE TRAVELS WITH THE BLOCK. A pick is the factory AND the
-    // family it builds (Tech's BuildSlot), and dropping the second half
-    // here left the sim to fall back to the run's FIRST pick (factionOf)
-    // — so every cell in the second row planted the first line's body
-    g.setBuildKind(on ? null : kind, on ? null : faction);
+    const next = hud?.buildKind === kind ? null : kind;
+    g.setBuildKind(next);
     setHud(g.ui());
   };
 
@@ -1952,16 +1710,15 @@ export default function MechSwarm() {
         e.target.closest("input, textarea, [contenteditable]")
       )
         return;
+      const slot = slotForCode(e.code);
+      if (!slot) return;
       const g = gameRef.current;
       if (!g) return;
       const ui = g.ui();
-      const slot = slotForCode(e.code, ui.picks);
-      if (!slot) return;
       if (ui.lost || ui.won || ui.menuOpen) return;
       if (ui.unlocked && !ui.unlocked.includes(slot.kind)) return;
       e.preventDefault();
-      const on = ui.buildKind === slot.kind && ui.buildFaction === slot.faction;
-      g.setBuildKind(on ? null : slot.kind, on ? null : slot.faction);
+      g.setBuildKind(ui.buildKind === slot.kind ? null : slot.kind);
       setHud(g.ui());
     };
     window.addEventListener("keydown", onKey);
@@ -2064,12 +1821,9 @@ export default function MechSwarm() {
     // THE FAMILY DIE: three of the six families, in the order the
     // script's slots are dealt to them (rollFamilies)
     const families = rollFamilies();
-    // THE PLAYER'S OWN LINE: the faction picked on this screen (factionFor)
-    const picks = factionsFor(p, factionPick);
-    saveFactions(picks);
     saveRunPick(tier, picked?.id ?? null);
     setRunRandom(random);
-    setLevel(runSpec(w, tier, families, roll, picks));
+    setLevel(runSpec(w, tier, families, roll));
     setScreen("game");
     // raised in the same batch as the screen switch, so the game screen's
     // FIRST paint is already covered - an effect would run after that
@@ -2482,37 +2236,6 @@ export default function MechSwarm() {
                         {xpShareText(tierXpBonus(tier))}
                       </span>
                     </MacroButton>
-                    {/* THE LINES: the TWO factions this run is played as
-                        (factions.ts RUN_FACTIONS) — which bodies its ten
-                        factories build, and that alone. Both are opened by
-                        the track, and every faction plays every map */}
-                    {progress && (() => {
-                      const fs = factionsFor(progress, factionPick);
-                      return (
-                        <MacroButton
-                          label="Lines"
-                          value={fs.map((f) => familyByKey(f).name).join(" + ") || "None"}
-                          onClick={() => setPicker("faction")}
-                        >
-                          <span className="truncate text-[#EDEDEF]">
-                            {fs.map((f) => familyByKey(f).name).join(" + ") || "None"}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            {fs.flatMap((f) =>
-                              factionUnits(f).map((u) => (
-                                // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite
-                                <img
-                                  key={`${f}-${u}`}
-                                  src={`/mindustry/sprites/units/${u}.png`}
-                                  alt=""
-                                  className="h-4 w-4 object-contain [image-rendering:pixelated]"
-                                />
-                              )),
-                            )}
-                          </span>
-                        </MacroButton>
-                      );
-                    })()}
                   </div>
                   {/* NOTHING HERE SAYS WHAT THE RUN WILL BE PLAYED UNDER.
                       The roll used to sit under the macros as a row of
@@ -2562,18 +2285,6 @@ export default function MechSwarm() {
               onPick={(id) => {
                 setMapPick(id);
                 saveRunPick(tier, id);
-                setPicker(null);
-              }}
-            />
-          )}
-          {picker === "faction" && progress && (
-            <FactionPicker
-              progress={progress}
-              picks={factionsFor(progress, factionPick)}
-              onClose={() => setPicker(null)}
-              onPick={(fs) => {
-                setFactionPick(fs);
-                saveFactions(fs);
                 setPicker(null);
               }}
             />
@@ -2696,14 +2407,6 @@ export default function MechSwarm() {
         {hud && (
           <div className="ui-zoom absolute left-[1rem] top-[1rem] flex w-[34rem] max-w-[calc(100vw-8rem)] flex-col items-start gap-2">
             {hud.scrap !== null && <ScrapAmount amount={hud.scrap} size="md" className="text-xl" />}
-            {/* THE ASSIGNMENT, in the corner and on bare screen: no pane,
-                no border, no ground under it — the same rule the scrap
-                above it follows. A mission with objectives to track puts
-                them here and nowhere else; a hold or a survive has none
-                and this is simply absent (UiState.raid) */}
-            {hud.raid && !hud.lost && !hud.won && !hud.menuOpen && (
-              <Objectives raid={hud.raid} />
-            )}
             {admin && !hud.lost && !hud.won && !hud.menuOpen && (
               /* THE PACE STRIP IS SANDBOX'S, and nothing else on the field
                  is. A campaign run plays at 1x — the multipliers have
@@ -2786,7 +2489,7 @@ export default function MechSwarm() {
           </div>
         )}
         {/* THE MINIMAP, StarCraft-style, in the bottom-left corner: the
-            whole map, never zoomed, the fog and the field on it and the
+            whole map, never zoomed, the field on it and the
             viewport framed (Game.drawMinimap). A press puts that place in
             view and a drag keeps steering. It stands until the run ends —
             the end screens own the frame, and a map under them is noise */}
@@ -2800,19 +2503,8 @@ export default function MechSwarm() {
                 to that question has a time in it. Simulated seconds
                 (UiState.elapsed), so a run at 2x reads the clock the wave
                 script is actually keeping rather than the wall's */}
-            {/* THE SPAWN BAR used to share this row (economy.ts
-                CYCLE_SECONDS) and is drawn over the CORE now
-                (Game.drawStructureBars): the moment it fills, every
-                factory sets a body down at the core, so the bar belongs
-                over the ground those bodies appear on rather than in the
-                opposite corner of the screen. What is left is the clock,
-                and it is sized like a clock — a small tab at the left end
-                of the row rather than a banner the width of the map,
-                which is a width the elapsed time never needed. */}
-            <div className="ms-pane mb-1 self-start px-1.5 py-px">
-              <div className="text-[11px] font-bold uppercase tracking-wider tabular-nums text-[#A1A1AA]">
-                {clock(hud.elapsed)}
-              </div>
+            <div className="ms-pane mb-1 px-2 py-0.5 text-center text-[13px] font-bold uppercase tracking-widest tabular-nums text-[#A1A1AA]">
+              {clock(hud.elapsed)}
             </div>
             <div className="ms-pane p-1">
               <canvas
@@ -2863,13 +2555,10 @@ export default function MechSwarm() {
             <div
               role="group"
               aria-label="build menu"
-              // five columns a row now (tech.ts BUILD_COLS: one per unit
-              // tier) and a row per line, so the card is wider than the
-              // 4x4 it replaced and the cells stay a thumb's width
-              className="grid w-[16.5rem] gap-1"
+              className="grid w-[13rem] gap-1"
               style={{ gridTemplateColumns: `repeat(${BUILD_COLS}, minmax(0, 1fr))` }}
             >
-              {buildSlotsFor(hud.picks).map((slot, i) => {
+              {BUILD_SLOTS.map((slot, i) => {
                 // A SLOT THE SAVE CANNOT USE IS AN EMPTY SLOT, not a
                 // greyed one: the progress screen answers "what is still
                 // to earn", and the grid answers "what can I put down
@@ -2885,13 +2574,6 @@ export default function MechSwarm() {
                       className="aspect-square w-full border border-[#26262b] bg-[#101013]"
                     />
                   );
-                // A CELL IS A FACTORY AND THE BODY IT MAKES. The block's
-                // own art is the same across the run's two lines — a
-                // tier-1 factory is a tier-1 factory — so what the cell
-                // SHOWS is the unit: that is the thing a player is
-                // choosing between, and the only thing that differs down
-                // a column
-                const unit = slot.faction ? factionUnit(slot.faction, TIER_OF[kind]) : null;
                 const entry = MENU_BY_KIND.get(kind)!;
                 // what the badge says is the PRICE, in scrap — the number
                 // a build decision is made against — and it reddens the
@@ -2902,12 +2584,12 @@ export default function MechSwarm() {
                   <BuildCell
                     key={i}
                     slot={slot}
-                    icon={unit ? `/mindustry/sprites/units/${unit}.png` : icons[kind] ?? entry.icon}
-                    name={unit ? unit[0].toUpperCase() + unit.slice(1) : entry.name}
+                    icon={icons[kind] ?? entry.icon}
+                    name={entry.name}
                     price={price}
                     poor={price !== null && hud.scrap !== null && hud.scrap < price}
-                    picked={hud.buildKind === kind && hud.buildFaction === slot.faction}
-                    onPick={() => pickTower(kind, slot.faction)}
+                    picked={hud.buildKind === kind}
+                    onPick={() => pickTower(kind)}
                   />
                 );
               })}
@@ -2917,19 +2599,9 @@ export default function MechSwarm() {
         {hud?.lost && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="ui-zoom ms-pane-solid w-80 max-w-[calc(100vw-2rem)] border-[#6b2a2a] p-6 text-center">
-              {/* A RUN CAN NOW BE LOST WITHOUT THE CORE FALLING: a raid
-                  ends the moment the swarm gets its last rocket away
-                  (Sim.lost), and a screen that said "core destroyed" over
-                  a core still standing would be telling the player the
-                  wrong thing about their own board */}
               <div className="font-display text-xl font-bold uppercase tracking-widest text-[#e55454]">
-                {hud.coreHp <= 0 ? "Core destroyed" : "Rocket away"}
+                Core destroyed
               </div>
-              {hud.raid && hud.coreHp > 0 && (
-                <div className="mt-1 text-[13px] uppercase tracking-widest text-[#71717C]">
-                  A launch pad fired — {hud.raid.padsDown}/{hud.raid.padsTotal} destroyed
-                </div>
-              )}
               <div className="mt-4 space-y-1 text-base text-[#EDEDEF]">
                 <div>
                   Reached wave{" "}
@@ -2944,14 +2616,6 @@ export default function MechSwarm() {
                     <> of {hud.totalWaves}</>
                   )}
                 </div>
-                {hud.raid && (
-                  <div>
-                    Pads destroyed{" "}
-                    <span className="font-bold text-[#EDEDEF]">
-                      {hud.raid.padsDown} of {hud.raid.padsTotal}
-                    </span>
-                  </div>
-                )}
                 <div>
                   Kills <span className="font-bold text-[#EDEDEF]">{hud.kills}</span>
                 </div>
@@ -3006,9 +2670,7 @@ export default function MechSwarm() {
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="ui-zoom ms-pane-solid w-80 max-w-[calc(100vw-2rem)] border-[#2f5a3a] p-6 text-center">
               <div className="font-display text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
-                {hud.mission.kind === "survive" ? "Survived"
-                : hud.mission.kind === "raid" ? "Pads destroyed"
-                : "Line held"}
+                {hud.mission.kind === "survive" ? "Survived" : "Line held"}
               </div>
               <div className="mt-1 text-[14px] uppercase tracking-widest text-[#71717C]">
                 <span style={{ color: rungColor(hud.tier) }}>{rungLabel(hud.tier)}</span> ·{" "}

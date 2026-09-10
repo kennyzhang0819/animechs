@@ -41,7 +41,7 @@ export type UVRect = readonly [number, number, number, number];
  * uv() itself cannot fall behind the layout.
  *
  * The rect recorded is the FULL cell, inset and all. An inset is a
- * sampling margin taken INSIDE the cell (see UV_ORE, the water tiles): it
+ * sampling margin taken INSIDE the cell (see the water tiles): it
  * says where the renderer may read, not how much room the cell owns, and
  * treating an inset as free space is exactly how a neighbour ends up half
  * a pixel inside it.
@@ -901,47 +901,6 @@ export const UV_TOWER_BASE4 = uv(1152, 2976, 128, 128);
  */
 export const UV_SHIELD_TOWER = uv(1312, 2976, 96, 96);
 
-/**
- * THE ECONOMY AND THE ARMY: the five factories, the drill and the ore, in
- * the 1024x256 band at (0, 1792) — the tail of the crawler-and-flyer band
- * (y 1024..2048), which the roster never grew far enough to reach, and the
- * last empty rectangle the ORIGINAL 1024-wide column has. Verified empty
- * on the packed sheet, not merely unclaimed: nothing is drawn there.
- *
- * The tetrative reconstructor's 288px art is fitted to a 256 cell; the
- * rest are native, and the 64px drill is upscaled 2x into 128 like
- * lancer's. The ore's three 32px faces sit 2x in 64 cells in the band's
- * last column.
- *
- * THEY USED TO BE AT y 2560 AND y 2816, AND THAT WAS WRONG. That row is
- * only free below x 1024; from 1024 rightward it is the T5 column, where
- * omura and navanax take 384px cells down to y 2688 and the deep-water
- * block runs to 2016 — so every factory sat on a ship and the ore sat on
- * the tsunami, which drew a slice of turret through the copper veins on
- * the map. assertCellsDisjoint is what now says so out loud.
- */
-export const UV_FACTORY5 = uv(0, 1792, 256, 256);
-export const UV_FACTORY4 = uv(256, 1792, 224, 224);
-export const UV_FACTORY3 = uv(480, 1792, 160, 160);
-export const UV_FACTORY1 = uv(640, 1792, 96, 96);
-export const UV_FACTORY2 = uv(736, 1792, 96, 96);
-export const UV_DRILL = uv(832, 1792, 128, 128);
-/**
- * THE MISSION BUILDINGS (types.ts MISSION_STRUCT_KINDS). One cell each, on
- * the free strip at y=2944 under the 4x4 tower base — the strip the
- * swarm's old Erekir roster used to hold, and the nearest free ground to
- * the other flat blocks. (The rows below it at y 3008 and y 3072 held the
- * player's six walls until those were removed from the game; they are
- * free again.)
- *
- * The launch pad is Mindustry's own 96px block art at native size in a
- * 96px cell, exactly like the 3x3 unit factory beside it, with its
- * `-light` overlay composited in at pack time: upstream pulses that
- * overlay every frame, and a mission target that is legible at a glance
- * on a minimap is worth more here than the pulse.
- */
-export const UV_LAUNCH_PAD = uv(192, 2944, 96, 96);
-export const UV_ORE: readonly UVRect[] = [uv(960, 1792, 64, 64, 2), uv(960, 1856, 64, 64, 2), uv(960, 1920, 64, 64, 2)];
 
 export const UV_CRAWLER_LEG = uv(448, 288, 64, 64);
 export const UV_CRAWLER_BASE = uv(512, 288, 64, 64);
@@ -1724,21 +1683,6 @@ const SPRITES = {
   // the shield tower wears the force projector's art — the one Mindustry
   // block whose whole job is standing a dome, which is this structure's too
   shieldTower: "/mindustry/sprites/blocks/defense/force-projector.png",
-  // THE ECONOMY AND THE ARMY (types.ts): the pneumatic drill, the ground
-  // factory and the four reconstructors — every one drawn flat, at
-  // Mindustry's own footprint — and the copper ore's three faces
-  // THE MISSION BUILDINGS: the launch pad and its glow overlay (UV_LAUNCH_PAD)
-  launchPad: "/mindustry/sprites/blocks/campaign/launch-pad.png",
-  launchPadLight: "/mindustry/sprites/blocks/campaign/launch-pad-light.png",
-  drill: "/mindustry/sprites/blocks/drills/pneumatic-drill.png",
-  factory1: "/mindustry/sprites/blocks/units/ground-factory.png",
-  factory2: "/mindustry/sprites/blocks/units/additive-reconstructor.png",
-  factory3: "/mindustry/sprites/blocks/units/multiplicative-reconstructor.png",
-  factory4: "/mindustry/sprites/blocks/units/exponential-reconstructor.png",
-  factory5: "/mindustry/sprites/blocks/units/tetrative-reconstructor.png",
-  ore1: "/mindustry/sprites/blocks/environment/ore-copper1.png",
-  ore2: "/mindustry/sprites/blocks/environment/ore-copper2.png",
-  ore3: "/mindustry/sprites/blocks/environment/ore-copper3.png",
   towerBase4: "/mindustry/sprites/blocks/turrets/bases/block-4.png",
   swarmer: "/mindustry/sprites/blocks/turrets/swarmer.png",
   // cyclone's own art is the bare head; its three barrels are separate
@@ -2833,28 +2777,6 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // NOT drawFacingRight: the structure never rotates, so its art stays
   // exactly as authored
   c.drawImage(antialiased(outlined(img.shieldTower, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1312, 2976, 96, 96);
-  // the drill and the factories, flat like the walls (see UV_FACTORY5)
-  c.drawImage(antialiased(outlined(img.factory5, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 0, 1792, 256, 256);
-  c.drawImage(antialiased(outlined(img.factory4, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 256, 1792, 224, 224);
-  c.drawImage(antialiased(outlined(img.factory3, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 480, 1792, 160, 160);
-  c.drawImage(antialiased(outlined(img.factory1, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 640, 1792, 96, 96);
-  c.drawImage(antialiased(outlined(img.factory2, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 736, 1792, 96, 96);
-  c.drawImage(antialiased(outlined(img.drill, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 832, 1792, 128, 128);
-  // THE LAUNCH PAD (UV_LAUNCH_PAD): the block with its `-light` overlay
-  // laid over it, flat like the factories — it never rotates
-  {
-    const lit = document.createElement("canvas");
-    lit.width = lit.height = 96;
-    const lc = lit.getContext("2d");
-    if (!lc) throw new Error("2d context unavailable");
-    lc.drawImage(img.launchPad, 0, 0, 96, 96);
-    lc.drawImage(img.launchPadLight, 0, 0, 96, 96);
-    c.drawImage(antialiased(outlined(lit, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 192, 2944, 96, 96);
-  }
-  // the ore, an overlay on the floor: no outline, the floor's own edges
-  c.drawImage(antialiased(img.ore1), 960, 1792, 64, 64);
-  c.drawImage(antialiased(img.ore2), 960, 1856, 64, 64);
-  c.drawImage(antialiased(img.ore3), 960, 1920, 64, 64);
 
   // duo top and 1x1 base: 32px sources upscaled 2x into 64px cells
   drawFacingRight(c, antialiased(outlined(img.duoPreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 160, 480, 64);

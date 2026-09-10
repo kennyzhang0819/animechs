@@ -974,15 +974,6 @@ export const TURRET_UPGRADES: Record<TowerKind, readonly TurretUpgradeDef[]> = {
   spectre: SPECTRE,
   meltdown: MELTDOWN,
   foreshadow: FORESHADOW,
-  // the economy and the army have nothing to upgrade: a building's one
-  // stat is its pool, and that is the dial in constants.ts
-  // (TOWER_HP_SCALE), not a rung on the track
-  drill: [],
-  "factory-t1": [],
-  "factory-t2": [],
-  "factory-t3": [],
-  "factory-t4": [],
-  "factory-t5": [],
 };
 
 /** every upgrade def, flat — what tech.ts turns into nodes */

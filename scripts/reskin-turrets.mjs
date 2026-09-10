@@ -1,7 +1,7 @@
 /**
  * THE TWO TIER-3 HEADS, REPAINTED ONTO THEIR OWN LINE'S PALETTE.
  *
- * A faction's three turrets are a line (factions.ts FACTION_TURRETS), and
+ * Every turret in the roster is a line of its own art, and
  * two of those lines ended on a gun that looked like it came from
  * somewhere else. Mindustry's spectre and meltdown share one palette —
  * dark gunmetal plating with hot-orange channels down the barrels — while

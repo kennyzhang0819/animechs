@@ -10,8 +10,8 @@
  * The bot is deliberately ordinary: it walks the map's routes (ground,
  * water and air), scores every buildable cell by how much route it can
  * reach that nothing else covers yet, and spends its scrap round-robin
- * on the stage's tier of turret — tier 1 until wave 3, tier 2 from 4,
- * tier 3 from 7 (STAGES in economy.ts). It never sells, never
+ * on the stage's tier of turret — tier 1 until wave 20, tier 2 from 21,
+ * tier 3 from 36 (STAGES in economy.ts). It never sells, never
  * upgrades a placement, and never reads the wave ahead. A script it
  * clears is a script a person who builds sensibly clears; a script it
  * dies on at wave 11 is a script with a wall.
@@ -20,7 +20,7 @@
  *   --world <id>     WORLDS id (default 1)
  *   --tier <n>       rung, 0-based (default 0 — no rolled mutators)
  *   --mutators a,b   mutators to play under (default none; intrinsic ones always apply)
- *   --level <n>      player level for the track's upgrades (default 1 — stock turrets)
+ *   --level <n>      player level: which turrets the track has opened (default 15 — the whole roster)
  *   --scale <x>      multiply every turret price (default 1)
  *   --unit-damage <x>  the swarm's damage to structures, as a multiple of Mindustry's (default: the shipped dial, weapons.ts)
  *   --start <n>      opening scrap (default SCRAP_START)
@@ -28,7 +28,7 @@
  *   --mix stage|all|duo   what it buys: the stage's tier, every open tier, or duos only
  *   --log <n>        print a line every n waves (default 5)
  *   --seconds <n>    give up after this much sim time (default 2400)
- *   --probe <n>      seconds of turret-less dry run the bot learns the routes from (default: the script's grace + 180, so the probe sees the first wave walk)
+ *   --probe <n>      seconds of turret-less dry run the bot learns the routes from (default 90, a few waves' worth)
  *   --json           print the report as JSON
  *   --no-build       skip the TypeScript transpile (use the last one)
  *
@@ -58,7 +58,7 @@ const flag = (name) => args.includes(`--${name}`);
 const WORLD_ID = String(opt("world", "1"));
 const TIER = +opt("tier", 0);
 const MUTATORS = String(opt("mutators", "")).split(",").filter(Boolean);
-const LEVEL = +opt("level", 1);
+const LEVEL = +opt("level", 15);
 const SCALE = +opt("scale", 1);
 const UNIT_DAMAGE = opt("unit-damage", null);
 const START = opt("start", null);
@@ -121,9 +121,9 @@ if (!world) {
   process.exit(1);
 }
 const spec = { ...LA.specForTier(world, TIER), mutation: MUTATORS };
-// the probe has to outlast the grace (LevelSpec.grace) or it sees an empty
-// field and the bot lays its line off the traced gradient alone
-const PROBE_SECONDS = PROBE_OPT === null ? (spec.grace ?? spec.waveGap) + 180 : +PROBE_OPT;
+// the probe has to see a few waves walk or the bot lays its line off the
+// traced gradient alone
+const PROBE_SECONDS = PROBE_OPT === null ? 90 : +PROBE_OPT;
 
 // ---------- the bot ----------
 
@@ -164,7 +164,6 @@ const mixFor = (t, wet = false) =>
 function heatRoutes(seconds) {
   const probe = new Sim(spec);
   probe.setTech(null);
-  probe.setFog(false);
   const hits = [new Float32Array(COLS * ROWS), new Float32Array(COLS * ROWS)]; // ground, water
   let next = 0;
   while (probe.time < seconds) {
@@ -235,22 +234,11 @@ function play() {
   if (UNIT_DAMAGE !== null) WP.setUnitDamageScale(+UNIT_DAMAGE);
 
   const sim = new Sim(spec);
-  // THE BOT IS A TURRET PROBE AND THE PLAYER NO LONGER BUILDS TURRETS.
-  // A run's build menu is the drill, the copper walls and the factories
-  // (factions.ts BUILDABLE_KINDS) — the guns are the swarm's now — so the
-  // save's own roster would leave this bot with nothing to lay a line
-  // with and every map lost at wave 1. It is handed the WHOLE roster
-  // instead: what it measures is what a turret is worth against a script,
-  // which is still a live question wherever the guns stand
-  const tech = { ...TR.techStateFor(LEVEL), unlocked: new Set(TY.TOWER_KINDS) };
+  // what the save at --level owns (the track, track.ts); the default is
+  // the whole roster, which is what a map is balanced against
+  const tech = TR.techStateFor(LEVEL);
   const owned = tech.unlocked;
   sim.setTech(tech);
-  // the bot is not a player: it lays its line along the whole route at
-  // once, which the fog's build rule (Sim.canPlace) would refuse, and a
-  // price probe that could only build near the core would be probing
-  // something else. The turrets' sight rule goes with it — the numbers
-  // here are the roster's stock reach
-  sim.setFog(false);
 
   // THE ROUTES, one per movement layer, and WHAT EACH IS WORTH: the share
   // of the script's health that walks, flies or drives amphibious. A

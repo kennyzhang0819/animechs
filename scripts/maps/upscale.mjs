@@ -34,12 +34,6 @@ const LEGACY_COLS = 128;
 const K = 2;
 const WALL_PINE = 4;
 const WALL_DEEP = 7;
-/** the roster (game/types.ts TOWER_KINDS) — a formation may only hold these */
-const ROSTER = new Set([
-  "duo", "hail", "salvo", "scatter", "fuse", "scorch", "arc", "lancer", "ripple", "wave", "parallax",
-  "tsunami", "swarmer", "cyclone", "spectre", "meltdown", "foreshadow",
-  "drill", "factory-t1", "factory-t2", "factory-t3", "factory-t4", "factory-t5",
-]);
 
 const args = process.argv.slice(2);
 let widen = 2;
@@ -108,11 +102,6 @@ for (const id of ids) {
     const v = [];
     for (let x = 0; x < W; x++) v.push(Math.round(m.valleyY[Math.min(m.valleyY.length - 1, (x / K) | 0)] * K * 100) / 100);
     out.valleyY = v;
-  }
-  if (m.enemies) {
-    const kept = m.enemies.filter((e) => ROSTER.has(e.kind));
-    out.enemies = kept.map((e) => ({ ...e, gx: e.gx * K, gy: e.gy * K }));
-    if (kept.length !== m.enemies.length) console.log(`${id}: dropped ${m.enemies.length - kept.length} formation entries off the old enemy roster`);
   }
   fs.writeFileSync(file, JSON.stringify(out));
   console.log(`${id}: ${w}x${rows} -> ${W}x${H}, ${opened} rock cells opened (${widen} deep)`);

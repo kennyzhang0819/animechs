@@ -1,5 +1,6 @@
 import { CELL, HP0, UNIT_SPEED, UR, type MoveLayer } from "./constants";
 import { explain, type SaveResult } from "./types";
+import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // type only — mutation.ts must never depend on the campaign, and this
 // import must never become a value one or the two files form a cycle
 import type { MutationId } from "./mutation";
@@ -7,7 +8,6 @@ import type { MutationId } from "./mutation";
 export const UNIT_KINDS = ["dagger", "mace", "fortress", "scepter", "reign", "crawler", "atrax", "spiroct", "arkyid", "toxopid", "flare", "nova", "pulsar", "quasar", "vela", "corvus", "horizon", "zenith", "antumbra", "eclipse", "disrupt", "risso", "minke", "bryde", "sei", "omura", "retusa", "oxynoe", "cyerce", "aegires", "navanax"] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 export type { TowerKind } from "./types";
-import type { MissionStructKind } from "./types";
 
 /** numeric unit id — index into UNIT_KINDS, stored in the sim's ukind array */
 export const UNIT_ID: Record<UnitKind, number> = {
@@ -980,6 +980,23 @@ type UntreedKind = Exclude<UnitKind, (typeof UNIT_TREES)[number]["kinds"][number
 const _everyKindHasATree: UntreedKind extends never ? true : never = true;
 void _everyKindHasATree;
 
+/** the drop for one unit kind: scrap off its tier, a boss its lump (economy.ts) */
+export function unitDrop(kind: UnitKind): Drop {
+  const s = UNIT_STATS[kind];
+  return dropForUnit(s.tier, s.boss === true);
+}
+
+/**
+ * What a run's kills are worth IN SCRAP: each kind's drop times how many
+ * of it went down. The drop is fixed per tier (economy.ts), never per body.
+ */
+export function dropsForKills(killsByKind: ArrayLike<number>): Drop {
+  const total = emptyDrop();
+  for (let i = 0; i < UNIT_KINDS.length; i++)
+    addDrop(total, unitDrop(UNIT_KINDS[i]), killsByKind[i] ?? 0);
+  return total;
+}
+
 /**
  * Largest unit radius PER LAYER, and over both. Broad-phase bounds have to
  * cover the widest thing a query could actually find, and ground and air
@@ -1041,7 +1058,7 @@ export type LevelStep = { wave: WaveUnits | readonly RegionWave[] };
  * steers by and which doors it comes in through. It no longer decides
  * WHERE a family may play — every layer can cross every map now that the
  * naval one is amphibious (navalWalkMask) and every layer falls back to
- * the map's other doors (Sim.padMaskFor), so every faction rolls
+ * the map's other doors (Sim.padMaskFor), so every family rolls
  * everywhere (rollFamilies). Disrupt — the one boss — is in no family and
  * is never swapped: a boss is an event, not a volume.
  */
@@ -1082,10 +1099,9 @@ export type FamilyKey = (typeof FAMILIES)[number]["key"];
 
 /**
  * THE FAMILIES OFF THE BOARD, and the whole of how one gets there: name it
- * here. A shelved family keeps its bodies, its stats, its sprites and its
- * three turrets (FACTION_TURRETS) — every line of it is live code — it is
- * simply never rolled into a wave (rollFamilies) and never handed to a
- * save (track.ts dealFactions), so it cannot be met and cannot be played.
+ * here. A shelved family keeps its bodies, its stats and its sprites —
+ * every line of it is live code — it is simply never rolled into a wave
+ * (rollFamilies), so it cannot be met.
  * Take the name back out and it is on the board again, at the level the
  * track always meant to open it on.
  *
@@ -1235,68 +1251,7 @@ export function waveGroups(
  */
 export type Mission =
   | { kind: "hold" }
-  | { kind: "survive"; minutes: number }
-  | RaidMission;
-
-/**
- * THE RAID — the swarm has something on this map that it is USING, and
- * the run is to take it off the board before it has been used up.
- *
- * The stake is a CLOCK RATHER THAN A WAVE COUNT, and it is HARD-CODED.
- * `launchAt` pairs off with `targets` by index: target i does its thing (a
- * launch pad ships a rocket) at launchAt[i], always, and ONE rocket loses
- * the run — the first, not the last of five.
- *
- * NOTHING THE PLAYER DOES MOVES A MOMENT. Wrecking a target does not push
- * the next one back; it means that target's moment arrives with nothing
- * left to fire. So the schedule a run races is the schedule printed in the
- * level, the last entry is the map's HARD CEILING, and the run cannot
- * outlast it: either the last target is wrecked before its moment, which
- * is the win, or it fires, which is not.
- *
- * The reward for being early is therefore just the clock: the HUD counts
- * to the soonest moment still owned by something standing, so clearing a
- * target two minutes early makes the countdown jump to the next target's
- * moment — further off by exactly the two minutes that were spare. That
- * is the whole of it, and it needs no bookkeeping to be true.
- *
- * The run is WON the moment every target is wrecked, whatever the clock
- * says, and lost the usual way if the core falls first.
- *
- * The waves keep coming throughout (LevelSpec.script): the assignment is
- * to hold a line AND push out with what is left, which is what makes the
- * ordering of `targets` matter — they are authored nearest-first, so the
- * schedule buys the player a first pad early and asks for the last one
- * deep in the swarm's ground.
- */
-export interface RaidMission {
-  kind: "raid";
-  /**
-   * WHICH MISSION BUILDING THIS RAID IS ABOUT — a kind, not a list of
-   * places. EVERY ONE OF THEM ON THE MAP IS A TARGET
-   * (MapData.missionStructs), in the document's own order, which is the
-   * order the map editor stamped them in and so the order they launch in.
-   *
-   * The positions are the MAP'S because a coordinate wants to be clicked
-   * on the board it belongs to rather than typed against a grid you
-   * cannot see; the kind is the MISSION'S because it is what the
-   * assignment is about. That split is also what lets one board carry
-   * several missions' objectives at once — a raid stands up only the kind
-   * it names, so a map with launch pads and some later mission building
-   * on it wears whichever the level being played asks for.
-   */
-  target: MissionStructKind;
-  /**
-   * THE MOMENTS, in seconds of run time, ascending — ONE PER TARGET, by
-   * index, and fixed. Target 0 fires at launchAt[0], target 1 at
-   * launchAt[1], whatever the player has done in between.
-   *
-   * A target past the end of this list has no moment at all and can only
-   * be finished, never failed; a moment past the end of the target list
-   * simply never comes due. The LAST entry is the map's hard ceiling.
-   */
-  launchAt: readonly number[];
-}
+  | { kind: "survive"; minutes: number };
 
 /** the mission as the deploy panel and the HUD say it: a headline and a clause */
 export function missionText(spec: LevelSpec): { title: string; detail: string } {
@@ -1306,12 +1261,6 @@ export function missionText(spec: LevelSpec): { title: string; detail: string } 
     return {
       title: `Survive ${m.minutes} minutes`,
       detail: "The waves do not stop until the clock does. The core must stand.",
-    };
-  if (m.kind === "raid")
-    return {
-      title: "Destroy the launch pads",
-      detail:
-        "One rocket off one pad loses the run. Every pad has its own fixed moment — wreck it before then — and keep the core standing.",
     };
   return { title: `Hold the line — ${waves} waves`, detail: "Clear every wave. The core must stand." };
 }
@@ -1337,19 +1286,10 @@ export interface LevelSpec {
    * seconds held between waves. The clock starts when the previous wave
    * has finished ENTERING the field — the last unit spawning, not the last
    * unit dying — so a level whose waves outlive the gap will have several
-   * on the field at once. Three minutes as authored (WAVE_GAP_DEFAULT):
-   * the run is a real-time strategy run now, and a wave is a beat in it,
-   * not a tide.
+   * on the field at once. Fifteen seconds as authored (WAVE_GAP_DEFAULT):
+   * the run is a tide, and the waves overlap.
    */
   waveGap: number;
-  /**
-   * THE GRACE: seconds before the FIRST wave, longer than the gap. A run
-   * opens with the core alone on a map it has not seen, and four minutes
-   * (GRACE_DEFAULT) is what it takes to scout the ground, lay the opening
-   * line and push out for the first expansion before anything arrives.
-   * Unset means the wave gap.
-   */
-  grace?: number;
   /** what the level throws at you, run start to finish in order */
   script: LevelStep[];
   /**
@@ -1360,13 +1300,6 @@ export interface LevelSpec {
   enemyLevel?: number;
   /** which tier of the ladder this spec was expanded for; unset = baseline */
   tier?: number;
-  /**
-   * THE FACTION THE PLAYER PLAYS THIS RUN (factions.ts), picked on the
-   * deploy screen: what its factories build and which turrets the bar
-   * carries. Unset means whatever the tech state allows — the sandbox
-   * and the editors, which build everything and produce the first family.
-   */
-  picks?: readonly FamilyKey[];
   /**
    * THE FAMILIES THIS RUN SENDS — the die roll (rollFamilies) the deploy
    * made, in slot order: the script's first
@@ -1436,20 +1369,17 @@ export const waveSpawnRate = (count: number): number =>
 export interface LevelDoc {
   id: string;
   waveGap: number;
-  /** seconds before the first wave (LevelSpec.grace); unset is the gap */
-  grace?: number;
   script: LevelStep[];
 }
 
+
 /**
- * THE RUN'S CLOCK, as authored: a four-minute grace, then a wave every
- * three minutes, each stronger than the last. Eight waves make a run of
- * about 25 minutes — the 18-to-26 the campaign is sized for — and the
- * document (public/levels/campaign.json) may set both numbers; these are
- * what a missing document or a missing field plays.
+ * THE RUN'S CLOCK, as authored: a wave every fifteen seconds, fifty of
+ * them, each stronger than the last. The document
+ * (public/levels/campaign.json) sets the gap; this is what a missing
+ * document or a missing field plays.
  */
-export const GRACE_DEFAULT = 240;
-export const WAVE_GAP_DEFAULT = 180;
+export const WAVE_GAP_DEFAULT = 15;
 
 /**
  * The documents as last loaded or saved, by world id — the raw counts the
@@ -1460,7 +1390,7 @@ export const WAVE_GAP_DEFAULT = 180;
 const docs = new Map<string, LevelDoc>();
 
 /**
- * THE ONE SCRIPT. Every map plays the same eight waves — the document
+ * THE ONE SCRIPT. Every map plays the same fifty waves — the document
  * under this id in public/levels — and what makes one map different
  * from the next is its ground, its doors and the family roll the deploy
  * makes (rollFamilies). A world id passed to levelDocOf is accepted and
@@ -1474,7 +1404,6 @@ export function levelDocOf(_worldId?: string): LevelDoc {
     docs.get(CAMPAIGN_DOC_ID) ?? {
       id: CAMPAIGN_DOC_ID,
       waveGap: WAVE_GAP_DEFAULT,
-      grace: GRACE_DEFAULT,
       script: [],
     }
   );
@@ -1511,41 +1440,8 @@ export const WORLDS: LevelSpec[] = [
     id: "1",
     name: "Confluence",
     map: "confluence",
-    /**
-     * THE OPENING ASSIGNMENT IS A RAID, not a siege: the swarm's launch
-     * pads stand on the map, each with a deadline, and ONE rocket off any
-     * of them loses the run. The waves still come — that half is unchanged
-     * — so the map is a line held with one hand and a push made with the
-     * other, against a clock.
-     *
-     * WHERE THE PADS ARE IS THE MAP'S, NOT THIS FILE'S
-     * (MapData.missionStructs, stamped in the map editor's *Mission
-     * structure* palette). What is here is what they MEAN. Confluence
-     * ships with five, out from about 170 tiles of ground away to about
-     * 610 — the first a push a young army can make, the last in the
-     * north-west corner past every door on the map — and the document's
-     * order is the launch order, which the editor numbers on the board.
-     *
-     * THE CLOCK, AND IT IS FIXED. Pad 1 fires at 6:00, pad 2 at 11:00, and
-     * so on by five minutes to pad 5 at 25:00 — whatever the player does,
-     * those are the moments. The first is the grace plus a wave
-     * (GRACE_DEFAULT is 4:00), which is about when a first push can be on
-     * the ground at all.
-     *
-     * 25:00 IS THE MAP'S HARD CEILING. Confluence cannot run a second past
-     * it: pad 5 is either wrecked before its moment, which wins, or it
-     * fires, which loses. A run that clears it plays out around twenty to
-     * twenty-four minutes, and clearing a pad early is worth exactly the
-     * ground it buys for the next push — the countdown moves on to the
-     * next pad's moment, which is further off by the time that was spare.
-     */
-    mission: {
-      kind: "raid",
-      target: "launch-pad",
-      launchAt: [6 * 60, 11 * 60, 16 * 60, 21 * 60, 25 * 60],
-    },
+    mission: { kind: "hold" },
     waveGap: WAVE_GAP_DEFAULT,
-    grace: GRACE_DEFAULT,
     // ================= HOW TO AUTHOR A WAVE ========================
     //
     // THE SCRIPT IS public/levels/campaign.json — the waves EVERY map
@@ -1561,14 +1457,11 @@ export const WORLDS: LevelSpec[] = [
     // EVERY RUNG PLAYS THIS WHOLE LIST. There is one run per map and ten
     // difficulties to play it at, and a rung only scales the counts
     // (COUNT_SCALE in ladder.ts) — no wave is ever cut. THE SCRIPT IS
-    // EIGHT WAVES, three minutes apart after a four-minute grace, each
-    // stronger than the last: a squad on wave 1, the first heavies by
-    // wave 5, every line at full strength on wave 8. NO BOSS ENDS IT —
-    // the disrupt is still a kind the game can field (the boss row in
-    // UNIT_TREES), it is simply not in this script. Counts are dozens to
-    // low hundreds a wave — the game plays Mindustry's own unit and
-    // turret numbers, so a wave is a fight a line of turrets can win, and
-    // the run is 18 to 26 minutes.
+    // FIFTY WAVES, fifteen seconds apart, each stronger than the last: a
+    // few dozen daggers on wave 1, the first heavies by wave 10, waves in
+    // the thousands by the end, and the disrupt as the boss that closes
+    // it. The waves overlap — the gap is shorter than a wave takes to
+    // walk the lane — so the field is a tide, not a series of fights.
     //
     //   line       T1        T2       T3         T4         T5
     //   dagger     dagger    mace     fortress   scepter    reign
@@ -1581,78 +1474,11 @@ export const WORLDS: LevelSpec[] = [
     // T4 weighs as much as sixty daggers. Spend the budget on T3/T4/T5
     // counts; that is the only thing that really moves a wave's weight.
     //
-    // TIER 5 STARTS ON WAVE 7, AND THE CLOCK IS WHY. A body pays nothing
-    // when it dies — the run's scrap is the core's pay and the drills
-    // (economy.ts) — so what decides where the heavy kinds land is what
-    // the player can have AFFORDED by then: the tier-3 turrets (fuse up
-    // to foreshadow) want most of a run's income behind them, which is
-    // about where wave 7 falls. Move the heavies earlier and they arrive
-    // against a line that could not yet be built.
-    //
-    // THE PATTERN, past wave 20. One cycle is four waves:
-    //
-    //   1  DAGGER CLASS  + partial support, and optionally a SMALL amount
-    //                      of air — small is the point, not a hedge
-    //   2  CRAWLER CLASS + partial support, same optional small air
-    //   3  AIR ONLY      — air is strong right now, so this wave is allowed
-    //                      to be a DIP in the ramp chart. It should be.
-    //   4  MIXED         — a bit of everything
-    //
-    // Every TWO cycles, insert one wave of PURE SUPPORT. So the repeating
-    // unit is nine waves: D C A M  D C A M  S.
-    //
-    // THE WAVES AROUND THE OLD CUTS ARE HAND-WRITTEN, and they stay where
-    // they are: waves 34-35 are a lull-then-finale PAIR — wave 34 (674
-    // bodies, 0.23M health) drops the floor out so wave 35 (3,505 bodies,
-    // 2.17M health) lands as a 9.7x event in one wave gap. A ramp that
-    // simply climbed to its biggest wave would arrive at the same number
-    // having spent it. The lull is quieter than the AIR wave before it,
-    // which is the quietest thing the pattern otherwise produces.
-    //
-    // THE SCRIPT'S LAST TWO ARE A DOUBLE FINALE INSTEAD: waves 49 and 50 split
-    // what was once a single 6.93M finale into two peers, then eased twice
-    // when the ending playtested too hot — first 48-50 by a quarter, then
-    // 46-50 by a further fifth (49: 1,454 bodies, 2.41M health; 50: 1,176
-    // bodies + the disrupt, 2.31M). 50's fleet is the lighter of the two
-    // on purpose — the headroom is the boss's budget, and the boss rides
-    // on top. Both waves field every line at full strength. About 8% of
-    // the tail's T5 bodies were later dealt back into waves 39-45 — only
-    // into waves already fielding the kind, so every debut stays put and
-    // the totals (and so the drop ratio) do not move — to thicken the
-    // ramp instead of the spike.
-    //
-    // Wave 35 fields scepters and arkyids but NO tier 5 (see above).
-    //
-    // ALL FOUR TAKE THEIR BODIES OUT OF THE GENERATED SEGMENT rather than
-    // adding on top, so the cumulative ratios stay exactly on target. Resize
-    // any of them and the difference moves back into waves 21-33 or 36-48.
-    //
-    // WITHIN a segment, ramp two things at once: total bodies, and the tier
-    // mix. Early waves lean T2; late waves lean T4 and T5. Wave 21's dagger
-    // wave is mace 177 / fortress 46 / scepter 1; wave 45's is mace 160 /
-    // fortress 275 / scepter 64 / reign 14. Same wave type, different game.
-    //
-    // CHECK THE TOTALS, NOT THE FEEL. Each stage's cumulative tier counts
-    // have to pay for its tier's turrets (STAGE_BOARDS in ladder.ts),
-    // because one kill is one fixed drop and those sums ARE the economy —
-    // miss it and a tier is priced out of its own stage, or bought by the
-    // stage before. `window.__ladder.check()` reports it.
-    //
-    // DO NOT SIZE A RUNG AGAINST THE MAP'S AREA. A run's total bodies
-    // are not its bodies on the field: units stream in over
-    // WAVE_RELEASE_SECONDS and die continuously, so a rung that sends
-    // 52,000 of them never holds a fraction of that at once. If a wave
-    // outruns the drop zones they simply queue (Sim.runScript). Size against
-    // the stage table, which is the limit that binds.
-    // ==============================================================
-    // THE SCRIPT LIVES IN public/levels/1.json AND NOWHERE ELSE. It is
-    // deliberately empty here: a second copy in code is a second campaign,
-    // and the two had already diverged across all 52 waves (the code copy
-    // ran about half the bodies) before this was emptied. Whatever fails
-    // to load is visible as a level with no waves, which is the point — a
-    // silent fall back to a different, staler campaign is the bug this
-    // removes. loadLevelDocs() warns on the console when the document is
-    // missing. Edit the waves in the admin level editor, or the JSON.
+    // THE HEAVY KINDS LAND WHERE THE DROPS CAN HAVE PAID FOR THEIR
+    // ANSWER: a body pays its tier's scrap when it dies (economy.ts), so
+    // the tier-3 turrets (fuse up to foreshadow) arrive on the bank the
+    // middle script has filled, which is why the tier-5 bodies start
+    // deep in the second half.
     script: [],
   },
   {
@@ -1669,7 +1495,6 @@ export const WORLDS: LevelSpec[] = [
     // THE NAVAL FRONT: hold the eight, tanks off the sea where the die deals them
     mission: { kind: "hold" },
     waveGap: WAVE_GAP_DEFAULT,
-    grace: GRACE_DEFAULT,
     script: [],
   },
   {
@@ -1682,7 +1507,6 @@ export const WORLDS: LevelSpec[] = [
     // deal it.
     mission: { kind: "hold" },
     waveGap: WAVE_GAP_DEFAULT,
-    grace: GRACE_DEFAULT,
     script: [],
   },
   {
@@ -1692,7 +1516,6 @@ export const WORLDS: LevelSpec[] = [
     // THE EARTHY ONE: dirt roads under dirt cliffs, grass and pine stands, two lakes; four gates on the west, south and north, the core in the north-east corner behind one antechamber
     mission: { kind: "hold" },
     waveGap: WAVE_GAP_DEFAULT,
-    grace: GRACE_DEFAULT,
     script: [],
   },
   {
@@ -1702,7 +1525,6 @@ export const WORLDS: LevelSpec[] = [
     // THE SNOWY ONE: snow under snow walls, ice round two frozen lakes, shale outcrops, snow pines; four gates on the south corners and the east and west edges, the core on the north edge
     mission: { kind: "hold" },
     waveGap: WAVE_GAP_DEFAULT,
-    grace: GRACE_DEFAULT,
     script: [],
   },
   {
@@ -1712,7 +1534,6 @@ export const WORLDS: LevelSpec[] = [
     // THE CORE IN THE MIDDLE, in a basalt crater with six mouths, and six gates round the edge coming at it from every side. No funnel: the crater's rim is the defence
     mission: { kind: "hold" },
     waveGap: WAVE_GAP_DEFAULT,
-    grace: GRACE_DEFAULT,
     script: [],
   },
   {
@@ -1722,7 +1543,6 @@ export const WORLDS: LevelSpec[] = [
     // THE ARCHIPELAGO: two thirds of the board is sea, every road between the sand islands is a bar of shallow the swarm wades, the hulls come from the north and south seas, the core on the west island behind one causeway
     mission: { kind: "hold" },
     waveGap: WAVE_GAP_DEFAULT,
-    grace: GRACE_DEFAULT,
     script: [],
   },
   {
@@ -1732,7 +1552,6 @@ export const WORLDS: LevelSpec[] = [
     // THE CORE IN THE MIDDLE WITH RIVERS RUNNING TO IT: the hulls sail in from the west, east and south edges to the pool beside the core, and five ground gates come from the north and the corners, fording the rivers on the way
     mission: { kind: "hold" },
     waveGap: WAVE_GAP_DEFAULT,
-    grace: GRACE_DEFAULT,
     script: [],
   },
   {
@@ -1742,7 +1561,6 @@ export const WORLDS: LevelSpec[] = [
     // THE ESTUARY: the sea fills the south of the board, a river comes down from the north-east to meet it, and the core stands on the north shore where the river opens out; four ground gates inland, the hulls from the sea and down the river
     mission: { kind: "hold" },
     waveGap: WAVE_GAP_DEFAULT,
-    grace: GRACE_DEFAULT,
     script: [],
   },
 ];
@@ -1860,10 +1678,7 @@ function readLevelDoc(id: string, raw: unknown): LevelDoc | null {
 
   const waveGap =
     typeof d.waveGap === "number" && d.waveGap >= 0 ? d.waveGap : commonest(waits);
-  // the grace is newer than the gap: a document without one opens on the
-  // gap, exactly as it did when there was no such thing
-  const grace = typeof d.grace === "number" && d.grace >= 0 ? d.grace : undefined;
-  return grace === undefined ? { id, waveGap, script } : { id, waveGap, grace, script };
+  return { id, waveGap, script };
 }
 
 /** the most frequent value, ties going to the smaller; 10s if there are none */
@@ -1887,7 +1702,6 @@ export function applyLevelDoc(doc: LevelDoc): void {
   // one script, every world: the map is what differs, never the waves
   for (const world of WORLDS) {
     world.waveGap = clean.waveGap;
-    world.grace = clean.grace;
     world.script = [...clean.script];
   }
 }

@@ -102,7 +102,7 @@ function MapCard({
         {stats ? (
           <>
             <div className="uppercase tracking-widest">
-              {stats.waves} waves · {stats.enemies} enemies · {level!.grace ?? level!.waveGap}s grace ·{" "}
+              {stats.waves} waves · {stats.enemies} enemies ·{" "}
               {level!.waveGap}s gap
             </div>
             <div>

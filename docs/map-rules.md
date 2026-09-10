@@ -36,12 +36,6 @@ The checklist. `authoring-maps.md` has the reasoning; this has the rules.
 - Every route from a drop zone to its goal is at least 12 wide on land and 16 at sea (`ROUTE_MIN_GROUND`, `ROUTE_MIN_WATER`), measured as the widest way through — a lane two formations fight in, not one a reign threads. An authored ground brush of 8 is 24 on the grid; an authored water brush of 16 is 32.
 - Chokes are 9 wide as authored, 27 on the grid; the citadel's gate is the choke's width, and the funnel disc grows with it.
 
-## Ore
-
-- The economy comes out of the ground: a drill (2x2) stands on an ore vein and nowhere else (`Terrain.ore`, `Sim.canPlace`) and pays by the ore cell under it. Lay the veins where the run should expand to.
-- The generator lays `spec.ore.count` veins (default 20 at 512) of radius `spec.ore.r` (default 6): two in the core's clearing for the opening drills, the rest spread over the board at least two clearings from the core, never in a drop zone, never under a hill or in the water. The editor's *Ore vein* brush paints more; the floor, wall and erase brushes take it off.
-- A vein should be worth fighting for: put the swarm's turrets on it.
-
 ## Doors and the core
 
 - The map is sealed: every rim cell is rock. The swarm's only destination is the core.

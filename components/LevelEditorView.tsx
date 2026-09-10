@@ -188,7 +188,6 @@ export default function LevelEditorView({
   // save from any world's editor is a save of the campaign.
   const [steps, setSteps] = useState<EditStep[]>(() => toEditSteps(levelDocOf(level.id).script));
   const [waveGap, setWaveGap] = useState(levelDocOf(level.id).waveGap);
-  const [grace, setGrace] = useState(levelDocOf(level.id).grace ?? levelDocOf(level.id).waveGap);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   // why the last save was refused — null when the last attempt succeeded
@@ -200,7 +199,6 @@ export default function LevelEditorView({
   useEffect(() => {
     setSteps(toEditSteps(levelDocOf(level.id).script));
     setWaveGap(levelDocOf(level.id).waveGap);
-    setGrace(levelDocOf(level.id).grace ?? levelDocOf(level.id).waveGap);
     setDirty(false);
   }, [level]);
 
@@ -231,7 +229,7 @@ export default function LevelEditorView({
   const save = async (): Promise<void> => {
     setSaving(true);
     setSaveError(null);
-    const res = await saveLevel({ id: level.id, waveGap, grace, script });
+    const res = await saveLevel({ id: level.id, waveGap, script });
     setSaving(false);
     if (res.ok) setDirty(false);
     else setSaveError(res.error);
@@ -354,30 +352,15 @@ export default function LevelEditorView({
                 Seconds held before each wave. The clock starts when the previous wave has
                 finished entering, not when it dies.
               </p>
-              <label className="mt-3 flex items-center justify-between gap-2 text-[16px] text-[#A6A6AF]">
-                Grace before the first wave
-                <NumberInput
-                  value={grace}
-                  onChange={(n) => {
-                    setGrace(n);
-                    setDirty(true);
-                  }}
-                />
-              </label>
-              <p className="mt-1 text-[15px] leading-snug text-[#71717C]">
-                Seconds the run opens with before anything arrives — time to scout, lay the
-                first line and expand.
-              </p>
             </section>
 
             {/* NO ECONOMY TABLE. This rail used to carry the three stages
                 priced against their turret tiers — what each stage's waves
                 paid in scrap and XP, and how many of the tier's turrets
                 that bought — plus the XP a clear banks at every rung.
-                NONE OF IT ANSWERED TO AN EDIT MADE HERE: the run's scrap
-                is the player's own (the core's pay and the drills, never a
-                kill), and a mission pays the same fixed pot however many
-                bodies its waves hold. Numbers that do not move when the
+                The balance editor carries it now, next to the prices
+                that move it; a mission pays the same fixed pot however
+                many bodies its waves hold. Numbers that do not move when the
                 script moves belong next to the knobs that do move them —
                 the balance editor — not next to the counts. What is left
                 is what the counts actually change: the ramp, the health
@@ -391,7 +374,7 @@ export default function LevelEditorView({
                 <Row label="Enemies" value={String(summary.enemies)} />
                 <Row
                   label="Gap time"
-                  value={`${summary.waves > 0 ? grace + (summary.waves - 1) * waveGap : 0}s`}
+                  value={`${summary.waves > 0 ? summary.waves * waveGap : 0}s`}
                 />
                 <Row
                   label="Release time"

@@ -1,4 +1,3 @@
-import type { FamilyKey } from "./levels";
 /**
  * Every Serpulo turret the campaign will ever field, in tech-tree order.
  *
@@ -41,100 +40,9 @@ export const TOWER_KINDS = [
   "spectre",
   "meltdown",
   "foreshadow",
-  // THE WALLS ARE GONE. There were six — copper, titanium and thorium, and
-  // their 2x2 variants — and the whole of what they did was stand in the
-  // lane holding a pool while something else did the work. That is a job
-  // the game no longer has anyone to give: the player builds no turrets
-  // for a wall to protect (factions.ts), so a wall was a pool in front of
-  // a factory, and a fight decided by how much copper you could afford to
-  // park in a doorway is not the fight this game is about. What they were
-  // FOR is now in the buildings themselves, which hold twice what they did
-  // (TOWER_HP_SCALE).
-  // THE ECONOMY. A drill does not stand on ore and does not mine: there is
-  // none on any map. It DEEPENS THE CORE'S EXCAVATION — every finished
-  // drill adds DRILL_CORE_INCOME to what the core ships a second
-  // (economy.ts, Sim.income) — so it is a building that makes the run's
-  // one income faster rather than a second income beside it.
-  "drill",
-  // THE ARMY, and the rest of what a run puts down. A factory turns
-  // scrap into bodies, one TIER a building — and which LINE'S body it
-  // makes is the factory's own (Tower.faction), so a run playing two
-  // factions has ten distinct factories to build and each one makes
-  // exactly one unit. They ride the roster because the sim, the bar, the
-  // prices and the track key on TowerKind; `building` on their stats is
-  // what keeps the fire loop and the renderer's turret base off them.
-  // The DRILL was here too and is gone: there is no ore on any map, and
-  // the core's shipping is the whole economy (economy.ts).
-  "factory-t1",
-  "factory-t2",
-  "factory-t3",
-  "factory-t4",
-  "factory-t5",
 ] as const;
 export type TowerKind = (typeof TOWER_KINDS)[number];
 
-/**
- * THE MISSION BUILDINGS — the swarm's own, and the player's NEVER.
- *
- * A mission building is not on the roster and cannot be: nothing prices
- * it, nothing unlocks it and no build slot carries it. It exists because
- * a MISSION asks for it, it stands on the board only while an assignment
- * that consumes it is being played, and its rules — what it does, what it
- * costs the player to leave standing, what destroying it means — live
- * with the mission (levels.ts Mission) rather than in this roster.
- *
- * WHERE ONE STANDS IS THE MAP'S, THOUGH (MapData.missionStructs, stamped
- * in the map editor's *Mission structure* palette, kept apart from
- * MapData.enemies which stays the player-roster formation). A coordinate
- * wants to be clicked on the board it belongs to rather than typed into a
- * source file against a grid you cannot see — and because the mission
- * names only the KIND it is about, one board can carry several
- * assignments' objectives and wear only the one being played.
- *
- * They ride the STRUCTURE machinery all the same, and that is the whole
- * reason they are a kind rather than a fourth `Structure` variant: a
- * launch pad sits in Sim.cellTower like any building, wears its health
- * bar like any building, blocks the walkers like any building, and every
- * gun and every body the player owns finds it exactly as it finds one of
- * the swarm's walls. The one thing that is different about it is what the
- * MISSION does with it.
- *
- * ADDING ONE is: a name here, its stats in MISSION_STRUCTS (constants.ts),
- * a palette sprite in MISSION_STRUCT_ICONS (towerIcons.ts), a cell for it
- * in atlas.ts, a row in UV_TURRETS (renderer.ts), and whatever the
- * mission that fields it wants done with it. The editor's palette, stamp
- * tool, eraser, overlap rules, numbering and document round-trip are all
- * written over this roster rather than over one name, so a new kind gets
- * every one of them by existing. Nothing else in the game has to
- * learn the name — structStats() is the one funnel every reader goes
- * through, and it answers for both rosters.
- *
- *   launch-pad  Confluence's five. The swarm ships a rocket off one every
- *               few minutes (Mission "raid"); the run is to take all five
- *               down before the last one goes up.
- */
-export const MISSION_STRUCT_KINDS = ["launch-pad"] as const;
-export type MissionStructKind = (typeof MISSION_STRUCT_KINDS)[number];
-
-const MISSION_KIND_SET: ReadonlySet<string> = new Set<string>(MISSION_STRUCT_KINDS);
-
-/** is this kind a mission building rather than one of the roster? */
-export const isMissionKind = (k: StructKind): k is MissionStructKind =>
-  MISSION_KIND_SET.has(k);
-
-/**
- * Anything a Tower record may be. THE SWARM BUILDS FROM THE PLAYER'S
- * ROSTER: a map's formation (MapData.enemies) is duos, lancers, ripples
- * and copper walls on the swarm's side (Tower.team), drawn with the same
- * art and a small crux-red flag at the corner of the base. There used to
- * be a separate enemy roster — Erekir's breach, diffuse and titan on
- * reinforced plates, and scrap walls — and it is gone: one set of
- * buildings, two teams.
- *
- * ...plus the MISSION BUILDINGS above, which are the swarm's alone and
- * belong to one assignment rather than to the game.
- */
-export type StructKind = TowerKind | MissionStructKind;
 
 /**
  * THE CORE — the one structure the swarm is on the map to destroy, and the
@@ -159,65 +67,10 @@ export interface Core {
 export type Structure = Tower | Core;
 export const isCore = (s: Structure): s is Core => "core" in s;
 
-/**
- * WHOSE A STRUCTURE IS. The player's turrets and walls are "player", and
- * so is the core; a map may also start with a formation of the SWARM's
- * own turrets and walls ("enemy" — MapData.enemies). The two sides fight
- * only each other: the player's guns shoot the swarm and its buildings,
- * the swarm and its guns shoot the player's. Nothing sells, buys or
- * upgrades an enemy structure, and the swarm walks around its own walls
- * rather than through them.
- */
-export type Team = "player" | "enemy";
-export const teamOf = (s: Structure): Team => (isCore(s) ? "player" : s.team);
 
-/** a structure a map starts with — one of the roster, on the swarm's
- *  side — and its footprint's top-left cell */
-export interface StructurePlacement {
-  kind: TowerKind;
-  gx: number;
-  gy: number;
-}
-
-/**
- * ONE OF THE SWARM'S MISSION BUILDINGS AND WHERE IT STANDS
- * (MapData.missionStructs) — the same shape as a StructurePlacement, off
- * the mission roster instead of the player's.
- *
- * IT IS ON THE MAP, NOT IN THE MISSION, and the split is worth stating
- * because it moved: where a building STANDS is the ground's business and
- * belongs in the map document, where the map editor can stamp and drag it;
- * what standing there COSTS is the mission's, and stays in the level
- * (levels.ts Mission). A map may therefore carry mission buildings that
- * the assignment being played wants nothing to do with — the sim stands up
- * only the kinds the mission actually consumes — so one board can serve
- * several assignments without one of them wearing another's objectives.
- *
- * The ORDER of the list is the order the mission uses them in (a raid's
- * launch order), which is why the editor numbers them on the board.
- */
-export interface MissionPlacement {
-  kind: MissionStructKind;
-  gx: number;
-  gy: number;
-}
 
 export interface Tower {
-  /** one of the roster, on whichever side `team` says */
-  kind: StructKind;
-  /**
-   * WHICH LINE THIS FACTORY BUILDS (factions.ts), or null on anything that
-   * builds nothing.
-   *
-   * A factory's KIND is its tier — the block, its art, its size, its price
-   * — and this is the other half of what it is. A run picks two factions
-   * (tech.ts factionPicks) and gets ten factories out of them, one per
-   * body: two tier-1s that make different tier-1s. Without this a tier
-   * would be one building and the run's second line would have nothing to
-   * build its bodies out of.
-   */
-  faction: FamilyKey | null;
-  team: Team;
+  kind: TowerKind;
   gx: number; // top-left cell of the size x size footprint (TOWERS[kind].size)
   gy: number;
   x: number; // world-space center
@@ -225,10 +78,9 @@ export interface Tower {
   /**
    * The tower's health pool (towerMaxHp in constants.ts). A STRUCTURE
    * DIES: at zero it is wrecked and gone (Sim.damageTower), its ground
-   * open again. Today only the Volatile mutator's blast reaches it;
-   * ENEMY ATTACKS ARE COMING — every unit will attack-move at the
-   * player's structures (see the note on Sim.damageTower) — and this pool
-   * is what they will be chewing on.
+   * open again. Every unit attack-moves at the player's structures
+   * (Sim.updateUnitWeapons) and this pool is what they chew on; the
+   * Volatile mutator's blast reaches it too (Sim.volatileBlast).
    */
   hp: number;
   /**
@@ -249,14 +101,6 @@ export interface Tower {
    * know when "the target" is a shield tower and not a unit index.
    */
   aimShieldTower: number;
-  /**
-   * The STRUCTURE this tower's current volley is aimed at — a player
-   * turret's shot at one of the swarm's buildings, or an enemy turret's
-   * shot at one of the player's (the core included) — or null, the usual
-   * case. Instant weapons hand their damage straight to it (fireShot),
-   * exactly as they do for aimShieldTower.
-   */
-  aimTower: Structure | null;
   cd: number; // reload: seconds until the next volley is ready
   /**
    * How fast this tower's reload runs: 1 everywhere, HYDROPHOBIC_RATE on
@@ -335,13 +179,10 @@ export interface EnemyShot {
   /** ArtilleryBulletType.update's trail clock, and the missiles' chance
    *  roll — see Sim.updateEnemyShots */
   trailT: number;
-  /** whose body fired it (Sim.uteam): what it flies over is its own
-   *  side's, what it lands on is the other's */
-  team: number;
 }
 
 export interface Projectile {
-  kind: StructKind; // which tower's bullet stats drive it (either roster)
+  kind: TowerKind; // which tower's bullet stats drive it
   x: number;
   y: number;
   vx: number;
@@ -368,7 +209,6 @@ export interface Projectile {
   // fired by one of the SWARM's turrets (Tower.team): it flies past every
   // unit and lands on the player's structures, by the cell it is over —
   // the enemy shots' rule (updateEnemyShots) on the turrets' own bullets
-  enemy: boolean;
 }
 
 export const enum FxKind {

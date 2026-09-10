@@ -1,6 +1,5 @@
 import { TOWER_DESC, TOWERS } from "./constants";
-import { BUILDABLE_KINDS, FACTION_KEYS, kindsFor } from "./factions";
-import { familyByKey, SHELVED_FAMILIES, WORLDS, type FamilyKey } from "./levels";
+import { WORLDS } from "./levels";
 import { MUTATIONS, mutationById, type MutationId } from "./mutation";
 import { BY_MINDUSTRY_VALUE, type TechState } from "./tech";
 import { TOWER_KINDS, type TowerKind } from "./types";
@@ -19,72 +18,32 @@ import {
  * A save has one number, its lifetime XP (progress.ts), and the level read
  * off it (economy.ts) is a tier on this track. Every tier hands out fixed
  * rewards: a map opens, a fast-forward pace switches on, a turret joins
- * the roster, a turret gains a rung of its upgrade branch. Nothing is
- * chosen and nothing is bought — the player levels, the game hands them
- * things, exactly as a commander levels in co-op. A list the player can
- * read top to bottom is the whole progression, which is what a tree of
- * purchases never managed to be.
+ * the roster. Nothing is chosen and nothing is bought — the player levels,
+ * the game hands them things, exactly as a commander levels in co-op.
  *
  * THE TRACK HAS TWO PHASES, AND THEY PULL OPPOSITE WAYS.
  *
- *   THE FACTION PHASE, levels 1 to ROSTER_TOP. The track hands out
- *   FACTIONS (factions.ts) — a family of five units and the three turrets
- *   that belong to it — never a turret on its own. A fresh save opens
- *   with STARTING_FACTIONS, two of the six, and the other four arrive up
- *   the track (FACTION_UNLOCKS); the levels between carry the maps, and a
- *   few carry nothing at all, which is fine — a faction is a big thing to
- *   hand out and the phase is not padded to fill every rung. There is no
- *   gate inside a run: what the save owns it may place from wave 1, and
- *   the deploy screen is where one of its factions is picked to play.
+ *   THE ROSTER PHASE, levels 1 to ROSTER_TOP. Every level opens a new
+ *   turret, and at the top of it the save owns the whole card. A fresh
+ *   save opens with STARTING_ROSTER, the three that make a first board;
+ *   the other fourteen are handed out one a level by UNLOCKS below. There
+ *   is no gate inside a run: what the save owns it may place from wave 1.
  *
  *   THE MUTATOR PHASE, ROSTER_TOP + 1 to MAX_LEVEL. There is nothing left
  *   to build, so what a level hands out is a RULE: one mutator a level,
  *   lightest first, added to the deck the deploy roll draws from
  *   (MUTATOR_UNLOCKS). The reward for climbing is that the game is allowed
  *   to be harder — which is the reward a tower defence player is actually
- *   climbing for, and it means the track no longer dies at fifteen.
+ *   climbing for.
  *
- * Levelling past MAX_LEVEL still happens (up to LEVEL_CAP in economy.ts,
- * a thousand) and pays nothing, which is the honest shape for a game
- * whose roster and whose catalog are both finite.
- *
- * THE FACTIONS ARE WRITTEN, THE REST IS PLACED. FACTION_UNLOCKS is a
- * hand-authored order — which line a new save learns the game with is a
- * design decision. The list is checked at import (every faction exactly
- * once), so adding a family to levels.ts without placing it here fails
- * loudly rather than quietly opening nothing.
- *
- * THE UPGRADE RUNGS ARE OFF THE TRACK. Every turret buff the track used
- * to hand out is switched off at UPGRADES_ON_TRACK — the rungs, their
- * blurbs and the dealing arithmetic are all still here and still
- * typecheck, waiting to be put back somewhere that is not the unlocking
- * phase.
+ * THE UPGRADE RUNGS ARE OFF THE TRACK (UPGRADES_ON_TRACK): the branches in
+ * upgrades.ts are intact and waiting to be put back somewhere.
  */
 
-/**
- * THE END OF THE FACTION PHASE — the level at which the last faction
- * opens. Everything under it is the game being handed to the player;
- * everything over it is the game being taken back (the mutators, below).
- */
+/** the level at which the last turret opens and the card is complete */
 export const ROSTER_TOP = 15;
 
-/**
- * THE MUTATOR PHASE — one rule a level, LIGHTEST FIRST, from ROSTER_TOP + 1.
- *
- * A rule that is not on this list yet is not in the deck: the deploy roll
- * draws only from what the save has opened (mutatorsAt, and the exclude
- * it feeds rollMutations), so a fresh save plays clean runs and every
- * level past fifteen puts one more thing that can go wrong into the bag.
- * That is the honest second half for a game whose first half is "here is
- * another gun": once there are no guns left to hand out, the only thing
- * left to hand out is trouble.
- *
- * THE ORDER IS BY WEIGHT, ASCENDING — the reverse of the codex, which
- * reads hardest first. Armored costs one point and is noticed; Amphibious
- * costs five and decides runs. The player meets them in that order, so
- * each level past the roster is a slightly worse deck rather than a cliff
- * at sixteen.
- */
+/** one rule a level, LIGHTEST FIRST, from ROSTER_TOP + 1 */
 const MUTATOR_UNLOCKS: readonly MutationId[] = [
   /* 16 */ "armored",
   /* 17 */ "mitosis",
@@ -97,16 +56,9 @@ const MUTATOR_UNLOCKS: readonly MutationId[] = [
   /* 24 */ "amphibious",
 ];
 
-/**
- * The top of the track — the level at which every reward is out: the
- * roster phase and the mutator phase behind it. Levelling past it still
- * happens and pays nothing.
- */
 export const MAX_LEVEL = ROSTER_TOP + MUTATOR_UNLOCKS.length;
 
-/** THE CATALOG IS DEALT WHOLE, ONCE EACH. A rule on no level could never
- *  be rolled, and a rule on two would open twice — both are import-time
- *  failures here rather than a deck that quietly plays short */
+/** THE CATALOG IS DEALT WHOLE, ONCE EACH — checked at import */
 (() => {
   const seen = new Set<MutationId>();
   for (const id of MUTATOR_UNLOCKS) {
@@ -121,15 +73,12 @@ export const MAX_LEVEL = ROSTER_TOP + MUTATOR_UNLOCKS.length;
 export type Reward =
   | { kind: "world"; worldId: string }
   | { kind: "speed"; mult: number }
-  | { kind: "faction"; id: FamilyKey }
   | { kind: "turret"; id: TowerKind }
   | { kind: "mutator"; id: MutationId }
   | { kind: "upgrade"; id: UpgradeKind };
 
 /** the rewards placed by hand — the structure of the campaign */
 const PLACED: readonly { level: number; reward: Reward }[] = [
-  // A MAP ALMOST EVERY LEVEL: nine worlds over the fifteen, the second
-  // batch (worlds 4 to 9) filling the levels between the first three
   { level: 2, reward: { kind: "world", worldId: "4" } },
   { level: 3, reward: { kind: "world", worldId: "2" } },
   { level: 4, reward: { kind: "world", worldId: "5" } },
@@ -138,130 +87,75 @@ const PLACED: readonly { level: number; reward: Reward }[] = [
   { level: 7, reward: { kind: "world", worldId: "3" } },
   { level: 8, reward: { kind: "world", worldId: "8" } },
   { level: 9, reward: { kind: "world", worldId: "9" } },
-  // NO PACE ON THE TRACK. Fast-forward is not a reward any more: every
-  // multiplier is a sandbox tool (SPEEDS in game.ts, behind the admin
-  // door), and a campaign run always plays at 1x
 ];
 
 /**
- * WHAT A FRESH SAVE PLAYS: two factions, so the deploy screen's first
- * pick is a pick. The mechs — the volume line every RTS teaches with —
- * and the support mechs beside them, whose beams answer the armour the
- * first line's duos cannot.
+ * THE FIRST BOARD: a gun for the ground, a gun for the air, and artillery
+ * for the crowd. Everything else is dealt one a level.
  */
-export const STARTING_FACTIONS: readonly FamilyKey[] = ["ground", "groundSupport"];
+export const STARTING_ROSTER: readonly TowerKind[] = ["duo", "hail", "scatter"];
 
 /**
- * WHAT THE TRACK OPENS, BY LEVEL. One faction every three levels: the sky
- * gunships first (a save wants to fly early), the venom crawlers, then the
- * two amphibious lines last — armour that swims is the strangest thing to
- * be handed, and the maps with real water on them are open by then for it
- * to be handed on. The levels between carry the maps (PLACED); a level
- * with nothing in it at all is allowed, and the top of the phase (15) is
- * one.
- *
- * THE SHELF IS HONOURED HERE AND THE LIST IS NOT EDITED FOR IT. A shelved
- * faction (levels.ts SHELVED_FAMILIES) keeps the level it was always
- * meant to open on and is simply not dealt, so its level hands out
- * whatever else is placed there and taking it off the shelf puts it back
- * exactly where it belongs.
+ * THE ROSTER IS WRITTEN, THE REST IS PLACED. A hand-authored order because
+ * the shape of the opening — which gun answers which wave — is a design
+ * decision and not an arithmetic on build cost. Index 0 is level 2.
  */
-const FACTION_UNLOCKS: readonly { level: number; faction: FamilyKey }[] = [
-  { level: 3, faction: "air" },
-  { level: 6, faction: "crawler" },
-  { level: 9, faction: "naval" },
-  { level: 12, faction: "navalSupport" },
+const UNLOCKS: readonly (readonly TowerKind[])[] = [
+  /*  2 */ ["salvo"],
+  /*  3 */ ["lancer"],
+  /*  4 */ ["ripple"],
+  /*  5 */ ["spectre"],
+  /*  6 */ ["scorch"],
+  /*  7 */ ["arc"],
+  /*  8 */ ["wave"],
+  /*  9 */ ["swarmer"],
+  /* 10 */ ["parallax"],
+  /* 11 */ ["cyclone"],
+  /* 12 */ ["fuse"],
+  /* 13 */ ["tsunami"],
+  /* 14 */ ["meltdown"],
+  /* 15 */ ["foreshadow"],
 ];
 
-/** the factions by the level they open on: the starting two on 1, the
- *  shelved ones on none */
-function dealFactions(): Map<number, FamilyKey[]> {
-  const out = new Map<number, FamilyKey[]>();
-  const inPlay = (f: FamilyKey): boolean => !SHELVED_FAMILIES.includes(f);
-  out.set(1, STARTING_FACTIONS.filter(inPlay));
-  for (const u of FACTION_UNLOCKS)
-    if (inPlay(u.faction)) out.set(u.level, [...(out.get(u.level) ?? []), u.faction]);
+/** the roster by the level it opens on: the starting three on 1, UNLOCKS after */
+function dealTurrets(): Map<number, TowerKind[]> {
+  const out = new Map<number, TowerKind[]>();
+  out.set(1, [...STARTING_ROSTER]);
+  UNLOCKS.forEach((kinds, i) => out.set(i + 2, [...kinds]));
   return out;
 }
 
-const FACTIONS_DEALT = dealFactions();
+const TURRETS_DEALT = dealTurrets();
 
-/**
- * THE TRACK OPENS EVERY FACTION IN PLAY, ONCE EACH, INSIDE THE PHASE. A
- * faction on no level could never be played, one on two would be handed
- * out twice, and one past ROSTER_TOP would land in the mutator phase —
- * all three are import-time failures here rather than a deploy screen
- * quietly short a line. A SHELVED faction is exempt from the first of
- * those and not from the others: it is allowed to be dealt nowhere, and
- * its entry in FACTION_UNLOCKS is still checked for a double deal and for
- * a level inside the phase, so the shelf cannot hide a broken track.
- */
+/** every kind exactly once, every level carrying something — checked at import */
 (() => {
-  const seen = new Map<FamilyKey, number>();
-  for (const [level, fs] of dealFactionsUnshelved())
-    for (const f of fs) {
-      const had = seen.get(f);
+  const seen = new Map<TowerKind, number>();
+  for (const [level, kinds] of TURRETS_DEALT)
+    for (const k of kinds) {
+      const had = seen.get(k);
       if (had !== undefined)
-        throw new Error(`the track opens the faction "${f}" twice, on levels ${had} and ${level}`);
-      if (level > ROSTER_TOP) throw new Error(`the faction "${f}" opens at ${level}, past the phase's top ${ROSTER_TOP}`);
-      seen.set(f, level);
+        throw new Error(`the track opens "${k}" twice, on levels ${had} and ${level}`);
+      seen.set(k, level);
     }
-  for (const f of FACTION_KEYS)
-    if (!seen.has(f)) throw new Error(`the track never opens the faction "${f}" — no level hands it out`);
+  for (const k of TOWER_KINDS)
+    if (!seen.has(k)) throw new Error(`the track never opens "${k}" — no level hands it out`);
+  if (UNLOCKS.length !== ROSTER_TOP - 1)
+    throw new Error(
+      `UNLOCKS covers levels 2-${UNLOCKS.length + 1}; the roster phase runs to ${ROSTER_TOP}`,
+    );
+  UNLOCKS.forEach((kinds, i) => {
+    if (kinds.length === 0) throw new Error(`level ${i + 2} opens nothing`);
+  });
 })();
 
-/** the deal as it would be with nothing shelved — what the check above
- *  holds the whole table to */
-function dealFactionsUnshelved(): Map<number, FamilyKey[]> {
-  const out = new Map<number, FamilyKey[]>();
-  out.set(1, [...STARTING_FACTIONS]);
-  for (const u of FACTION_UNLOCKS) out.set(u.level, [...(out.get(u.level) ?? []), u.faction]);
-  return out;
-}
-
-/** the level a faction opens on — 1 for the starting two */
-export function factionUnlockLevel(f: FamilyKey): number {
-  for (const [level, fs] of FACTIONS_DEALT) if (fs.includes(f)) return level;
+/** the level a turret joins the roster — 1 for the starting three */
+export function turretUnlockLevel(kind: TowerKind): number {
+  for (const [level, kinds] of TURRETS_DEALT) if (kinds.includes(kind)) return level;
   return 1;
 }
 
-/** the factions a level has opened: the starting two and every one dealt so far */
-export function factionsAt(level: number): Set<FamilyKey> {
-  const out = new Set<FamilyKey>();
-  for (let l = 1; l <= Math.min(level, MAX_LEVEL); l++)
-    for (const f of FACTIONS_DEALT.get(l) ?? []) out.add(f);
-  return out;
-}
-
-/**
- * The level a building joins the roster: 1 for anything a run may put
- * down (factions.ts BUILDABLE_KINDS — the drill and the
- * factories), and never for the rest. A TURRET IS NEVER ON IT: the guns
- * belong to the swarm now and the player builds none, so every one of
- * them answers MAX_LEVEL + 1 rather than 1 — calling a gun a level-1
- * building would put a rung for it at the very front of a track that
- * never hands the gun out.
- */
-export function turretUnlockLevel(kind: TowerKind): number {
-  return BUILDABLE_KINDS.includes(kind) ? 1 : MAX_LEVEL + 1;
-}
-
-/**
- * The first level an upgrade of each rung tier may land on: the rate-of-
- * fire style rungs from the second level, the reworks from the eighth,
- * the ammo swaps from the fourteenth and the ultimates from the twentieth
- * — so the track's back half is where the big changes live.
- */
 const TIER_FROM: Readonly<Record<number, number>> = { 1: 2, 2: 8, 3: 14, 4: 20 };
 
-/**
- * Deal the upgrade rungs across levels 2..MAX_LEVEL. Sorted by rung tier,
- * then the turret's own unlock level, then roster order; each rung lands
- * on the first level with room that is no earlier than its tier's
- * TIER_FROM and no earlier than the level its turret joins on — an
- * upgrade for a gun the save cannot place yet would be a chip that says
- * nothing.
- */
 function dealUpgrades(): Map<number, UpgradeKind[]> {
   const order = new Map<TowerKind, number>(BY_MINDUSTRY_VALUE.map((k, i) => [k, i]));
   const rungs = [...ALL_UPGRADES].sort(
@@ -283,18 +177,7 @@ function dealUpgrades(): Map<number, UpgradeKind[]> {
   return out;
 }
 
-/**
- * THE TURRET BUFFS ARE OFF THE TRACK. Flip this to true and the rungs
- * deal up it exactly as they did; dealUpgrades, upgradesAt and the rung
- * blurbs in upgrades.ts are live code either way. With it false every
- * turret plays at its stock stats at every level, and the track is the
- * roster and nothing else.
- *
- * ONE THING TO FIX BEFORE FLIPPING IT BACK: TIER_FROM holds the old
- * thirty-level track's floors (ultimates from 20), which is past the end
- * of a fifteen-level one. Wherever the buffs land next, those floors are
- * a fraction of the track's length rather than the numbers below.
- */
+/** the upgrade rungs are switched off the track for now (see the header) */
 const UPGRADES_ON_TRACK = false;
 
 const DEALT: Map<number, UpgradeKind[]> = UPGRADES_ON_TRACK ? dealUpgrades() : new Map();
@@ -302,7 +185,7 @@ const DEALT: Map<number, UpgradeKind[]> = UPGRADES_ON_TRACK ? dealUpgrades() : n
 /** every reward a level hands out: maps and paces first, then the turrets, then the rungs */
 export function rewardsAt(level: number): Reward[] {
   const out: Reward[] = PLACED.filter((p) => p.level === level).map((p) => p.reward);
-  for (const id of FACTIONS_DEALT.get(level) ?? []) out.push({ kind: "faction", id });
+  for (const id of TURRETS_DEALT.get(level) ?? []) out.push({ kind: "turret", id });
   const mut = MUTATOR_UNLOCKS[level - ROSTER_TOP - 1];
   if (mut) out.push({ kind: "mutator", id: mut });
   for (const id of DEALT.get(level) ?? []) out.push({ kind: "upgrade", id });
@@ -315,24 +198,18 @@ export const TRACK: readonly { level: number; rewards: Reward[] }[] = Array.from
   (_, i) => ({ level: i + 1, rewards: rewardsAt(i + 1) }),
 );
 
-/** the mutators a level has put in the deck — empty through the whole
- *  roster phase, the lot of them at the top of the track */
+/** the mutators a level has put in the deck — empty through the whole roster phase */
 export function mutatorsAt(level: number): Set<MutationId> {
   return new Set(MUTATOR_UNLOCKS.slice(0, Math.max(0, Math.min(level, MAX_LEVEL) - ROSTER_TOP)));
 }
 
-/**
- * THE RULES THIS SAVE CANNOT MEET YET — what the deploy roll is told to
- * keep out of the draw (rollMutations' `exclude`). A save inside the
- * roster phase excludes the whole catalog and plays clean runs.
- */
+/** ...and the ones it has not: what the deploy roll must leave in the bag */
 export function lockedMutators(level: number): MutationId[] {
   const open = mutatorsAt(level);
   return MUTATIONS.filter((m) => !open.has(m.id)).map((m) => m.id);
 }
 
-/** the level a mutator joins the deck — MAX_LEVEL + 1 for one the track
- *  somehow never opens, which the import check above makes impossible */
+/** the level a mutator joins the deck — MAX_LEVEL + 1 for one the track never opens */
 export function mutatorUnlockLevel(id: MutationId): number {
   const i = MUTATOR_UNLOCKS.indexOf(id);
   return i < 0 ? MAX_LEVEL + 1 : ROSTER_TOP + 1 + i;
@@ -353,10 +230,12 @@ export function speedsAt(level: number): number[] {
   return out.sort((a, b) => a - b);
 }
 
-/** every kind a level may build (factions.ts kindsFor) — the same roster
- *  for every faction, since a faction owns bodies and no buildings */
+/** the turrets a level has on the roster: the starting three and every one dealt so far */
 export function turretsAt(level: number): Set<TowerKind> {
-  return kindsFor(factionsAt(level));
+  const out = new Set<TowerKind>();
+  for (let l = 1; l <= Math.min(level, MAX_LEVEL); l++)
+    for (const k of TURRETS_DEALT.get(l) ?? []) out.add(k);
+  return out;
 }
 
 /** every turret's upgrade points at a level — the rungs the track has dealt so far */
@@ -384,53 +263,31 @@ export function nextRewardLevel(level: number): number | null {
 export function rewardText(r: Reward): string {
   if (r.kind === "world") return `${WORLDS.find((w) => w.id === r.worldId)?.name ?? "A map"} opens`;
   if (r.kind === "speed") return `${r.mult}x speed`;
-  if (r.kind === "faction") return `Faction: ${familyByKey(r.id).name}`;
-  // every rewardable kind is a gun or a building now — the walls that made
-  // this a choice are gone (types.ts)
-  if (r.kind === "turret")
-    return `${TOWERS[r.id].building ? "Building" : "Turret"}: ${TOWER_NAME[r.id]}`;
+  if (r.kind === "turret") return `Turret: ${TOWER_NAME[r.id]}`;
   if (r.kind === "mutator") return `Mutator: ${mutationById(r.id)?.name ?? r.id}`;
   const u = upgradeDef(r.id);
   return `${TOWER_NAME[u.turret]}: ${u.name}`;
 }
 
-/**
- * WHAT A REWARD DOES, in a sentence — the hover card on a track chip.
- * An upgrade rung reads its own blurb (upgrades.ts), a turret its card
- * description (constants.ts), and the maps and paces say what they open.
- */
+/** ...and what it does, for the hover card */
 export function rewardBlurb(r: Reward): string {
   if (r.kind === "world") return "Unlocks a new map ";
   if (r.kind === "speed") return `Fast-forward: a run may be played at ${r.mult}x pace from the strip under the wave panel.`;
-  if (r.kind === "faction") {
-    const fam = familyByKey(r.id);
-    const units = fam.kinds.map((k) => k[0].toUpperCase() + k.slice(1)).join(", ");
-    return `A line to play a run as: its factories build ${units}. Every faction shares the same build menu — the drill and the factories — so what a line changes is the army it puts on the field. Pick it on the deploy screen.`;
-  }
   if (r.kind === "turret") return TOWER_DESC[r.id];
   if (r.kind === "mutator")
     return `${mutationById(r.id)?.blurb ?? ""} From here on a run may roll it.`;
   return upgradeDef(r.id).blurb;
 }
 
-/** the turret's display name, as the bar prints it */
+/** the turret's display name, as the card prints it */
 export const TOWER_NAME: Readonly<Record<TowerKind, string>> = Object.fromEntries(
   TOWER_KINDS.map((k) => [k, TOWERS[k].name]),
 ) as Record<TowerKind, string>;
 
-/**
- * WHAT A SAVE AT THIS LEVEL MAY DO, as the sim and the bar read it: the
- * factions the track has handed out and every kind they and the common
- * roster allow, the paces it has switched on, and every upgrade rung
- * dealt so far. The one place a level becomes a TechState; a run names
- * the two lines it plays with withFactions (tech.ts).
- */
+/** what a save at this level may do — the sim's and the build menu's allowance */
 export function techStateFor(level: number): TechState {
-  const factions = factionsAt(level);
   return {
-    factions,
-    picks: [],
-    unlocked: kindsFor(factions),
+    unlocked: turretsAt(level),
     speeds: speedsAt(level),
     upgrades: upgradesAt(level),
   };

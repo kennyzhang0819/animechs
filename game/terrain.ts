@@ -1,8 +1,6 @@
 import { ALL_MOVE_BITS, BASE, CELL, clamp, COLS, LAYER_BIT, NCELLS, ROWS } from "./constants";
 import { DECOR_TILES, WATER_FLOOR_GROUPS } from "./atlas";
 import { fitSpawnCircles, rasterizeSpawns, type SpawnCircle } from "./maps";
-import type { MissionPlacement, StructurePlacement } from "./types";
-import type { FormationPlacement } from "./blueprints";
 
 export interface Prop {
   x: number; // world px, sprite center
@@ -124,15 +122,6 @@ export interface Terrain {
   floor: Uint8Array; // UV_FLOORS index per cell (pine cells: the grass underneath)
   wall: Uint8Array; // per blocked cell: UV_WALLS index, or WALL_PINE
   /**
-   * THE ORE VEINS, one byte a cell, 1 where the floor carries ore. A vein
-   * is the one place a drill may stand (Sim.canPlace) and what it pays by
-   * (economy.ts DRILL_INCOME_PER_ORE): the run's income past the core is
-   * the veins it walks out to and holds. Painted by the generator
-   * (scripts/maps/mindustry.mjs) and the editor's ore brush; drawn as an
-   * overlay on the floor
-   */
-  ore: Uint8Array;
-  /**
    * the authored drop zones. This is the SOURCE: `spawn` below is burned
    * from it (and from `blocked`) by rasterizeSpawns, so anything that moves
    * a circle or paints over one must re-derive the layer, never patch it
@@ -152,29 +141,6 @@ export interface Terrain {
   spawn: Uint8Array;
   pines: Prop[]; // blocking tree cells, drawn as overhanging props
   decor: Prop[]; // non-blocking props: boulders, shrubs
-  /**
-   * THE SWARM'S OWN FORMATION: turrets and walls the map starts with,
-   * stood up on the swarm's side when the sim resets (Sim.reset, via
-   * placeEnemyStructure). Authored in the map editor; `gx, gy` is the
-   * footprint's top-left cell, the same shape the player's layout uses
-   */
-  enemies: StructurePlacement[];
-  /**
-   * THE MISSION BUILDINGS ON THIS BOARD (MapData.missionStructs) — the
-   * swarm's second roster, stamped in the map editor like the formation
-   * above it. The sim stands up only the ones the ASSIGNMENT being played
-   * asks for (levels.ts Mission), so a board may carry the objectives of
-   * more than one mission and wear only the current one's.
-   */
-  missionStructs: MissionPlacement[];
-  /**
-   * THE DEFENCE FORMATIONS STAMPED ON THIS BOARD (MapData.formations) —
-   * references into the shared blueprint library (blueprints.ts), not
-   * buildings. What they expand to is resolved from the library on demand
-   * (expandFormations), never stored here, so a blueprint edited once is
-   * edited on every instance on every map.
-   */
-  formations: FormationPlacement[];
   valleyY: Float32Array; // carved main-valley centerline per column
   /** this map's base: top-left cell + edge length, in cells */
   base: { x: number; y: number; size: number };
@@ -477,8 +443,7 @@ export function generateTerrain(seed: number): Terrain {
   const spawn = rasterizeSpawns(spawns, { blocked, floor });
 
   return {
-    blocked, floor, wall, ore: new Uint8Array(NCELLS), spawns, spawn, pines, decor, enemies: [],
-    missionStructs: [], formations: [], valleyY,
+    blocked, floor, wall, spawns, spawn, pines, decor, valleyY,
     base: { ...BASE }, rows: ROWS, cols: COLS,
   };
 }

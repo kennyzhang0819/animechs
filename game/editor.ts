@@ -7,31 +7,11 @@ import {
   BASE_SIZE,
   H,
   ROWS,
-  structStats,
   TOWERS,
   W,
   ZONE_KINDS,
   type ZoneKind,
 } from "./constants";
-import { structIcon } from "./towerIcons";
-import {
-  BLUEPRINTS,
-  blueprintById,
-  expandFormation,
-  placedSize,
-  unrotatePart,
-  type Blueprint,
-  type FormationPlacement,
-} from "./blueprints";
-import {
-  MISSION_STRUCT_KINDS,
-  TOWER_KINDS,
-  type MissionPlacement,
-  type MissionStructKind,
-  type StructKind,
-  type StructurePlacement,
-  type TowerKind,
-} from "./types";
 import {
   contentRows,
   PALETTE,
@@ -41,7 +21,6 @@ import {
   terrainFromMap,
   mapFromTerrain,
   type MapData,
-  type PaintKind,
   type PaletteSet,
   type SpawnCircle,
 } from "./maps";
@@ -76,55 +55,11 @@ interface Snapshot {
   spawns: SpawnCircle[];
   pines: Prop[];
   decor: Prop[];
-  enemies: StructurePlacement[];
-  missionStructs: MissionPlacement[];
-  formations: FormationPlacement[];
   base: { x: number; y: number; size: number };
 }
 
 const quarterTurn = (): number => ((Math.random() * 4) | 0) * (Math.PI / 2);
 
-/**
- * HOW A STAMP IS DRAWN ON THE EDITOR'S BOARD: a translucent plate with the
- * building's own sprite on it. One palette per roster — the swarm's
- * formation in the crux red it wears in a run, the MISSION buildings in
- * the amber they wear on the minimap — because the one question the editor
- * has to answer at a glance on a 512-tile board is which of the two you
- * are looking at.
- */
-interface StampPlate {
-  /** the plate under a placed stamp */
-  fill: string;
-  /** ...and under the one following the cursor */
-  ghost: string;
-  /** the outline, and what a label over it is written in */
-  line: string;
-}
-const ENEMY_PLATE: StampPlate = {
-  fill: "rgba(242,85,85,0.28)",
-  ghost: "rgba(242,85,85,0.18)",
-  line: "rgba(242,85,85,0.9)",
-};
-const MISSION_PLATE: StampPlate = {
-  fill: "rgba(255,154,61,0.30)",
-  ghost: "rgba(255,154,61,0.20)",
-  line: "rgba(255,154,61,0.95)",
-};
-/**
- * A FORMATION'S PARTS are drawn in the formation's own violet rather than
- * the red a loose stamp wears, because the difference matters to the hand:
- * a red duo is a building you can erase, and a violet one is part of an
- * outpost that will move, turn and change as a unit. The box around the
- * whole instance is what you actually grab.
- */
-const FORMATION_PLATE: StampPlate = {
-  fill: "rgba(167,139,250,0.26)",
-  ghost: "rgba(167,139,250,0.18)",
-  line: "rgba(167,139,250,0.95)",
-};
-/** the marquee, and the box drawn round a placed instance */
-const MARQUEE_LINE = "rgba(167,139,250,0.95)";
-const MARQUEE_FILL = "rgba(167,139,250,0.10)";
 
 /** how wide the path tool carves, in tiles across (see PATH_WOBBLE) */
 export const PATH_WIDTHS: readonly number[] = [9, 12, 15];
@@ -257,68 +192,7 @@ export class MapEditor {
    */
   private grabbedSpawn = -1;
   private lastCell = { x: -1, y: -1 };
-  /** the roster's sprites, one image a kind, loaded on first use for the
-   *  overlay of the swarm's formation — null until it has arrived */
-  private readonly icons = new Map<StructKind, HTMLImageElement>();
-  private icon(kind: StructKind): HTMLImageElement | null {
-    let img = this.icons.get(kind);
-    if (!img) {
-      img = new Image();
-      img.src = structIcon(kind);
-      this.icons.set(kind, img);
-    }
-    return img.complete && img.naturalWidth > 0 ? img : null;
-  }
 
-  /**
-   * A SHORT LABEL PINNED TO A WORLD POSITION, drawn at a FIXED SCREEN SIZE
-   * (1/s) with a dark stroke behind it. A label that shrank with the map
-   * would be unreadable at the zoom the whole board is laid out at, which
-   * is exactly the zoom things are placed at.
-   */
-  private label(
-    c: CanvasRenderingContext2D,
-    s: number,
-    text: string,
-    wx: number,
-    wy: number,
-    col: string,
-  ): void {
-    c.save();
-    c.translate(wx, wy);
-    c.scale(1 / s, 1 / s);
-    c.font = "bold 12px ui-sans-serif, system-ui, sans-serif";
-    c.textAlign = "left";
-    c.textBaseline = "bottom";
-    c.lineWidth = 3;
-    c.strokeStyle = "rgba(0,0,0,0.85)";
-    c.strokeText(text, 2, -3);
-    c.fillStyle = col;
-    c.fillText(text, 2, -3);
-    c.restore();
-  }
-
-  /** one placed stamp: its plate, its outline and its own sprite — the
-   *  drawing both rosters share (see StampPlate) */
-  private drawStamp(
-    c: CanvasRenderingContext2D,
-    s: number,
-    e: StructurePlacement | MissionPlacement,
-    plate: StampPlate,
-  ): void {
-    const side = structStats(e.kind).size * CELL;
-    const x0 = e.gx * CELL, y0 = e.gy * CELL;
-    c.fillStyle = plate.fill;
-    c.fillRect(x0, y0, side, side);
-    c.strokeStyle = plate.line;
-    c.lineWidth = 1.5 / s;
-    c.strokeRect(x0, y0, side, side);
-    const img = this.icon(e.kind);
-    if (img) {
-      c.imageSmoothingEnabled = false;
-      c.drawImage(img, x0 + side * 0.1, y0 + side * 0.1, side * 0.8, side * 0.8);
-    }
-  }
   private hoverGx = -1;
   private hoverGy = -1;
   private lastMouse = { x: 0, y: 0 };
@@ -409,9 +283,6 @@ export class MapEditor {
     this.terrain.spawns = s.spawns;
     this.terrain.pines = s.pines;
     this.terrain.decor = s.decor;
-    this.terrain.enemies = s.enemies;
-    this.terrain.missionStructs = s.missionStructs;
-    this.terrain.formations = s.formations;
     this.terrain.base = s.base;
     this.resyncSpawn();
     this.dirty = true;
@@ -437,9 +308,6 @@ export class MapEditor {
       spawns: this.terrain.spawns.map((c) => ({ ...c })),
       pines: this.terrain.pines.map((p) => ({ ...p })),
       decor: this.terrain.decor.map((p) => ({ ...p })),
-      enemies: this.terrain.enemies.map((e) => ({ ...e })),
-      missionStructs: this.terrain.missionStructs.map((e) => ({ ...e })),
-      formations: this.terrain.formations.map((f) => ({ ...f })),
       base: { ...this.terrain.base },
     });
     if (this.undoStack.length > UNDO_CAP) this.undoStack.shift();
@@ -473,6 +341,7 @@ export class MapEditor {
         T.wall[i] = 0;
       }
       if (L.props) this.removePropsAt(gx, gy);
+      // a water floor drowns the vein; a land floor keeps it
     } else if (set.kind === "wall") {
       T.blocked[i] = 1;
       T.wall[i] = pick;
@@ -507,7 +376,7 @@ export class MapEditor {
       });
     } else {
       // erase: strip the VISIBLE layers, keep the floor. Hiding a layer
-      // therefore also shields it from the eraser.
+      // therefore also shields it from the eraser. The ore goes with them
       if (L.wall) {
         // DEEP WATER DRAINS TO SHALLOW RATHER THAN TO NOTHING. Every other
         // blocked cell has a floor underneath it that erasing reveals; deep
@@ -695,391 +564,13 @@ export class MapEditor {
     this.dirty = true;
   }
 
-  /**
-   * THE FORMATION TOOLS' STATE.
-   *
-   * `formRot` is the turn the next stamp lands at, which the rotate key
-   * cycles — one number for the tool rather than one per swatch, because
-   * turning is something you do to what is in your hand.
-   *
-   * `marquee` is the box being dragged out, in cells, or null. It is the
-   * only tool that is a DRAG rather than a stroke: nothing is painted
-   * while it moves and the box is only worth anything when the button
-   * comes up, so it is held here and read by the view.
-   *
-   * `editing` is what a broken-apart instance left behind: the blueprint
-   * it came from and THE TURN IT WAS STANDING AT. Both are needed at save
-   * time — the author has been editing a layout that may be sideways, and
-   * the library keeps one canonical unturned copy, so the parts have to be
-   * turned back by exactly the amount they were turned by (unrotatePart).
-   * Null means the next capture makes something new.
-   */
-  formRot = 0;
-  marquee: { x0: number; y0: number; x1: number; y1: number } | null = null;
-  editing: { id: string; rot: number } | null = null;
-  /**
-   * THE FORMATION INSTANCE UNDER THE LAST CLICK, or -1.
-   *
-   * The marquee tool is also the SELECT tool, and which of the two a
-   * gesture was is decided by whether it moved: drag out a box and you
-   * have captured a region, click without dragging and you have picked the
-   * outpost you clicked on. One tool, because they are the same intent —
-   * "this bit, here" — and a separate select tool would be a second slot
-   * in the tray that did nine tenths of the same thing.
-   */
-  selected = -1;
 
-  /** the blueprint the formation tool is holding — the picker's slot */
-  private formationBlueprint(): Blueprint | null {
-    return BLUEPRINTS[Math.min(this.variant, BLUEPRINTS.length - 1)] ?? null;
-  }
-
-  /** the roster kind the enemy tool is stamping — the picker's slot */
-  private enemyKind(): TowerKind {
-    return TOWER_KINDS[Math.min(this.variant, TOWER_KINDS.length - 1)];
-  }
-
-  /** ...and the MISSION tool's, off the second roster (types.ts) */
-  private missionKind(): MissionStructKind {
-    return MISSION_STRUCT_KINDS[Math.min(this.variant, MISSION_STRUCT_KINDS.length - 1)];
-  }
-
-  /**
-   * THE KIND THE STAMP TOOLS ARE HOLDING, whichever of the two is picked —
-   * everything below this point is written over StructKind rather than
-   * over one roster, so a new mission building (or a new roster entirely)
-   * is stamped, previewed, erased and drawn by the code that already
-   * exists.
-   */
-  private stampKind(): StructKind {
-    return this.set.kind === "mission" ? this.missionKind() : this.enemyKind();
-  }
-
-  /** the stamp list a paint kind writes into — the swarm's formation, or
-   *  the mission's objectives */
-  private stampList(kind: PaintKind): (StructurePlacement | MissionPlacement)[] {
-    return kind === "mission" ? this.terrain.missionStructs : this.terrain.enemies;
-  }
-
-  /** the structure of EITHER roster whose footprint covers a cell, as its
-   *  list and index — the overlap test every stamp has to pass, because a
-   *  launch pad and a copper wall cannot both stand on the same ground */
-  private stampAt(gx: number, gy: number): { list: (StructurePlacement | MissionPlacement)[]; i: number } | null {
-    for (const list of [this.terrain.enemies, this.terrain.missionStructs]) {
-      const i = list.findIndex((e) => {
-        const sz = structStats(e.kind).size;
-        return gx >= e.gx && gx < e.gx + sz && gy >= e.gy && gy < e.gy + sz;
-      });
-      if (i >= 0) return { list, i };
-    }
-    return null;
-  }
-
-  /**
-   * The formation instance whose BOX covers a cell, as an index, or -1.
-   *
-   * The box, not the buildings: an outpost is a rectangle you grab and
-   * move as one thing, and its empty margin belongs to it as much as its
-   * duos do (that margin is what stops two instances being stamped closer
-   * together than they were designed to stand).
-   */
-  private formationAt(gx: number, gy: number): number {
-    return this.terrain.formations.findIndex((f) => {
-      const bp = blueprintById(f.id);
-      if (!bp) return false;
-      const box = placedSize(bp, f.rot);
-      return gx >= f.gx && gx < f.gx + box.w && gy >= f.gy && gy < f.gy + box.h;
-    });
-  }
-
-  /** is any part of any formation standing on this cell? — the other half
-   *  of the overlap rule a loose stamp has to pass */
-  private formationPartAt(gx: number, gy: number): boolean {
-    for (const f of this.terrain.formations)
-      for (const p of expandFormation(f)) {
-        const sz = structStats(p.kind).size;
-        if (gx >= p.gx && gx < p.gx + sz && gy >= p.gy && gy < p.gy + sz) return true;
-      }
-    return false;
-  }
-
-  /** where a stamp of this size lands with the cursor at its middle, clamped
-   *  to the board — the one place the cursor-to-footprint rule is written,
-   *  so the preview and the stamp can never disagree */
-  private stampOrigin(kind: StructKind, gx: number, gy: number): { x0: number; y0: number; sz: number } {
-    const sz = structStats(kind).size;
-    const half = (sz / 2) | 0;
-    return {
-      x0: clamp(gx - half, 0, COLS - sz),
-      y0: clamp(gy - half, 0, this.rows - sz),
-      sz,
-    };
-  }
-
-  /**
-   * ONE OF THE SWARM'S BUILDINGS — of either roster — stamped with the
-   * cursor at its middle. It wants what a placed turret wants in a run
-   * (Sim.placeEnemyStructure): open ground, clear of the base and of every
-   * other stamp on the board, the OTHER roster's included — a stamp on
-   * rock or over another simply does nothing, so a drag never piles them.
-   * The drop zones are not checked here: they move, and the sim drops a
-   * stamp a zone has since covered when the map loads.
-   */
-  private structStampAt(gx: number, gy: number): void {
-    const T = this.terrain;
-    const kind = this.stampKind();
-    const { x0, y0, sz } = this.stampOrigin(kind, gx, gy);
-    const b = T.base;
-    for (let y = y0; y < y0 + sz; y++)
-      for (let x = x0; x < x0 + sz; x++) {
-        if (T.blocked[y * COLS + x]) return;
-        if (x >= b.x && x < b.x + b.size && y >= b.y && y < b.y + b.size) return;
-        if (this.stampAt(x, y)) return;
-        if (this.formationPartAt(x, y)) return;
-      }
-    // pushed onto the tool's OWN list: the order of the mission list is the
-    // order the mission uses them in, so a pad stamped last launches last
-    (this.stampList(this.set.kind) as MissionPlacement[]).push({
-      kind: kind as MissionStructKind,
-      gx: x0,
-      gy: y0,
-    });
-    this.dirty = true;
-  }
-
-  /** eraser over one of the swarm's buildings, either roster: take the
-   *  whole stamp off */
-  private eraseStampAt(gx: number, gy: number): boolean {
-    const hit = this.stampAt(gx, gy);
-    if (!hit) return false;
-    hit.list.splice(hit.i, 1);
-    this.dirty = true;
-    return true;
-  }
-
-  /** eraser over a formation: the WHOLE instance goes, buildings and box.
-   *  The blueprint is untouched — this is one copy, not the design */
-  private eraseFormationAt(gx: number, gy: number): boolean {
-    const i = this.formationAt(gx, gy);
-    if (i < 0) return false;
-    this.terrain.formations.splice(i, 1);
-    this.selected = -1;
-    this.dirty = true;
-    return true;
-  }
-
-  /**
-   * ONE INSTANCE OF THE HELD BLUEPRINT, stamped with the cursor at the
-   * box's middle — the same cursor rule every other stamp follows.
-   *
-   * WHAT IS CHECKED IS THE GROUND UNDER THE PARTS, NOT UNDER THE BOX. A
-   * blueprint's empty margin is spacing, not structure, so an outpost may
-   * hang its blank corner over a cliff or over another instance's margin;
-   * what may not happen is a building landing on rock, on the base, or on
-   * top of another building. That is the same test a loose stamp passes,
-   * applied to every part at once — all or nothing, so a formation is
-   * never stamped half-on.
-   */
-  private formationStampAt(gx: number, gy: number): void {
-    const bp = this.formationBlueprint();
-    if (!bp) return;
-    const T = this.terrain;
-    const box = placedSize(bp, this.formRot);
-    const x0 = clamp(gx - ((box.w / 2) | 0), 0, Math.max(0, COLS - box.w));
-    const y0 = clamp(gy - ((box.h / 2) | 0), 0, Math.max(0, this.rows - box.h));
-    const inst: FormationPlacement = { id: bp.id, gx: x0, gy: y0, rot: this.formRot };
-    const b = T.base;
-    for (const p of expandFormation(inst)) {
-      const sz = structStats(p.kind).size;
-      if (p.gx < 0 || p.gy < 0 || p.gx + sz > COLS || p.gy + sz > this.rows) return;
-      for (let y = p.gy; y < p.gy + sz; y++)
-        for (let x = p.gx; x < p.gx + sz; x++) {
-          if (T.blocked[y * COLS + x]) return;
-          if (x >= b.x && x < b.x + b.size && y >= b.y && y < b.y + b.size) return;
-          if (this.stampAt(x, y)) return;
-          if (this.formationPartAt(x, y)) return;
-        }
-    }
-    T.formations.push(inst);
-    this.dirty = true;
-  }
-
-  /** turn what the formation tool is holding — the ghost turns with it, so
-   *  the box you see is the box you get */
-  rotateFormation(by = 1): void {
-    this.formRot = (this.formRot + by) & 3;
-  }
-
-  /**
-   * EVERYTHING INSIDE THE MARQUEE, AS A BLUEPRINT'S PARTS — the capture
-   * that makes a formation out of buildings already standing.
-   *
-   * Only LOOSE stamps are taken, and only ones lying WHOLLY inside the
-   * box: a building half in and half out belongs to neither, and guessing
-   * which would silently change a map. Parts come back in the box's own
-   * frame (relative to its top-left) so they are a layout rather than a
-   * place.
-   *
-   * The buildings are NOT removed here — see makeFormation, which removes
-   * them only once the library has accepted the blueprint, so a refused
-   * save leaves the board exactly as it was.
-   */
-  private captureParts(box: { x0: number; y0: number; x1: number; y1: number }): StructurePlacement[] {
-    const out: StructurePlacement[] = [];
-    for (const e of this.terrain.enemies) {
-      const sz = structStats(e.kind).size;
-      if (e.gx < box.x0 || e.gy < box.y0 || e.gx + sz > box.x1 + 1 || e.gy + sz > box.y1 + 1) continue;
-      out.push({ kind: e.kind, gx: e.gx - box.x0, gy: e.gy - box.y0 });
-    }
-    return out;
-  }
-
-  /** the marquee as a box of whole cells, lowest corner first, or null */
-  marqueeBox(): { x0: number; y0: number; x1: number; y1: number; w: number; h: number } | null {
-    const m = this.marquee;
-    if (!m) return null;
-    const x0 = Math.min(m.x0, m.x1), x1 = Math.max(m.x0, m.x1);
-    const y0 = Math.min(m.y0, m.y1), y1 = Math.max(m.y0, m.y1);
-    return { x0, y0, x1, y1, w: x1 - x0 + 1, h: y1 - y0 + 1 };
-  }
-
-  /** how many loose buildings the current marquee would take */
-  marqueeCount(): number {
-    const box = this.marqueeBox();
-    return box ? this.captureParts(box).length : 0;
-  }
-
-  /**
-   * TURN THE MARQUEE INTO A BLUEPRINT — new, or over an existing one.
-   *
-   * The board is only changed once the library says yes: the captured
-   * buildings are lifted out and one instance dropped in their place, so
-   * what you drew is now what everybody else's copy will be. Saving over
-   * an existing blueprint is how an edit reaches every other map — those
-   * maps hold a reference, so they are already updated by the time this
-   * returns.
-   *
-   * `editing` (see the field) is what makes editing a TURNED instance
-   * safe: the parts are turned back into the blueprint's own frame before
-   * they are stored, so a formation edited sideways does not put every
-   * other instance of it on its side.
-   */
-  makeFormation(id: string, name: string, put: (bp: Blueprint) => { ok: boolean; error?: string }): { ok: boolean; error?: string } {
-    const box = this.marqueeBox();
-    if (!box) return { ok: false, error: "drag a box round the formation first" };
-    const parts = this.captureParts(box);
-    if (parts.length === 0)
-      return { ok: false, error: "there are no loose enemy buildings inside that box" };
-    // a blueprint being SAVED BACK is stored in its own frame, whatever
-    // frame it was edited in
-    const edit = this.editing;
-    const back = edit && edit.rot !== 0 ? blueprintById(edit.id) : null;
-    const stored =
-      back ?
-        parts.map((p) => {
-          const sz = structStats(p.kind).size;
-          const u = unrotatePart(back, edit!.rot, p.gx, p.gy, sz);
-          return { kind: p.kind, gx: u.x, gy: u.y };
-        })
-      : parts;
-    const size = back ? { w: back.w, h: back.h } : { w: box.w, h: box.h };
-    const res = put({ id, name, w: size.w, h: size.h, parts: stored });
-    if (!res.ok) return res;
-    this.snapshot();
-    // lift the loose buildings the blueprint now owns...
-    const taken = new Set(
-      this.terrain.enemies.filter((e) => {
-        const sz = structStats(e.kind).size;
-        return e.gx >= box.x0 && e.gy >= box.y0 && e.gx + sz <= box.x1 + 1 && e.gy + sz <= box.y1 + 1;
-      }),
-    );
-    this.terrain.enemies = this.terrain.enemies.filter((e) => !taken.has(e));
-    // ...and put the instance where they were standing
-    this.terrain.formations.push({
-      id,
-      gx: box.x0,
-      gy: box.y0,
-      rot: edit ? edit.rot : 0,
-    });
-    this.editing = null;
-    this.marquee = null;
-    this.dirty = true;
-    return { ok: true };
-  }
-
-  /**
-   * BREAK AN INSTANCE APART — the way in to editing a blueprint. The
-   * instance is replaced by its buildings as LOOSE stamps, exactly where
-   * they were standing, and the editor remembers which blueprint they came
-   * from and which way round it was (see `editing`). Every other instance
-   * on every map is untouched: this is one copy opened up for work.
-   *
-   * The marquee is set to the box it came out of, so the ordinary Save
-   * path re-captures precisely what was broken open — the author can drag
-   * it out again if they want, but they never have to.
-   *
-   * Returns the blueprint it opened, for the view to name in its banner.
-   */
-  breakFormationAt(gx: number, gy: number): Blueprint | null {
-    const i = this.formationAt(gx, gy);
-    if (i < 0) return null;
-    const inst = this.terrain.formations[i];
-    const bp = blueprintById(inst.id);
-    if (!bp) return null;
-    this.snapshot();
-    const box = placedSize(bp, inst.rot);
-    for (const p of expandFormation(inst)) this.terrain.enemies.push({ ...p });
-    this.terrain.formations.splice(i, 1);
-    this.editing = { id: inst.id, rot: inst.rot };
-    this.selected = -1;
-    this.marquee = { x0: inst.gx, y0: inst.gy, x1: inst.gx + box.w - 1, y1: inst.gy + box.h - 1 };
-    this.dirty = true;
-    return bp;
-  }
-
-  /** put an opened-up blueprint back the way it was, unedited — the undo
-   *  for breakFormationAt that does not need the undo stack */
-  cancelEdit(): void {
-    this.editing = null;
-    this.marquee = null;
-  }
-
-  /** every instance of a blueprint that has just left the library: take
-   *  them off THIS board too, since the document in memory is the one the
-   *  author is looking at */
-  dropFormations(id: string): number {
-    const before = this.terrain.formations.length;
-    this.terrain.formations = this.terrain.formations.filter((f) => f.id !== id);
-    const gone = before - this.terrain.formations.length;
-    if (gone > 0) this.dirty = true;
-    return gone;
-  }
 
   private paintAt(gx: number, gy: number): void {
     if (this.set.kind === "base") {
       this.placeBase(gx, gy);
       return;
     }
-    if (this.set.kind === "enemy" || this.set.kind === "mission") {
-      this.structStampAt(gx, gy);
-      return;
-    }
-    if (this.set.kind === "formation") {
-      this.formationStampAt(gx, gy);
-      return;
-    }
-    // THE MARQUEE PAINTS NOTHING. It is a box being dragged out, kept on
-    // the editor for the view to read when the button comes up — a stroke
-    // that changed the board would make selecting a formation an edit
-    if (this.set.kind === "marquee") {
-      if (this.marquee) this.marquee = { ...this.marquee, x1: gx, y1: gy };
-      return;
-    }
-    // the eraser takes a whole FORMATION when it starts on one — the box
-    // is the thing, so erasing inside one takes the outpost and not a duo
-    if (this.set.kind === "erase" && this.eraseFormationAt(gx, gy)) return;
-    // ...then a whole stamp of either roster
-    if (this.set.kind === "erase" && this.eraseStampAt(gx, gy)) return;
     if (this.set.kind === "path") {
       this.pathAt(gx, gy);
       return;
@@ -1133,15 +624,6 @@ export class MapEditor {
       return;
     }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    // R TURNS WHAT THE FORMATION TOOL IS HOLDING, and only then: the key
-    // does nothing under any other tool, so it costs the editor nothing to
-    // have taken it. Shift+R turns back, for an outpost that went one
-    // quarter too far
-    if (e.code === "KeyR" && this.set.kind === "formation") {
-      e.preventDefault();
-      this.rotateFormation(e.shiftKey ? -1 : 1);
-      return;
-    }
     if (!PAN_KEYS[e.code]) return;
     e.preventDefault();
     this.keysDown.add(e.code);
@@ -1180,16 +662,6 @@ export class MapEditor {
   private readonly onMouseDown = (e: MouseEvent): void => {
     if (e.button === 0 && !this.panning) {
       const p = this.mouseWorld(e);
-      const gx0 = clamp((p.x / CELL) | 0, 0, COLS - 1), gy0 = clamp((p.y / CELL) | 0, 0, ROWS - 1);
-      // the marquee starts a fresh box and takes NO snapshot: it changes
-      // nothing, so an undo after selecting must reach past it to the last
-      // real edit
-      if (this.set.kind === "marquee") {
-        this.marquee = { x0: gx0, y0: gy0, x1: gx0, y1: gy0 };
-        this.painting = true;
-        this.lastCell = { x: -1, y: -1 };
-        return;
-      }
       this.snapshot();
       this.painting = true;
       this.grabbedSpawn = -1; // this stroke grabs its own zone, if any
@@ -1204,31 +676,11 @@ export class MapEditor {
   };
 
   private readonly onMouseUp = (): void => {
-    // A CLICK IS NOT A DRAG. The marquee tool selects the formation under
-    // a click that never moved, and captures the region of one that did —
-    // so the box left behind by a click is discarded rather than becoming
-    // a one-cell selection nobody asked for.
-    if (this.painting && this.set.kind === "marquee") {
-      const box = this.marqueeBox();
-      if (box && box.w <= 1 && box.h <= 1) {
-        this.selected = this.formationAt(box.x0, box.y0);
-        this.marquee = null;
-      } else if (box) {
-        this.selected = -1;
-      }
-    }
     this.panning = false;
     this.painting = false;
     this.grabbedSpawn = -1;
   };
 
-  /** the instance the marquee last clicked, if it is still there */
-  selectedFormation(): { inst: FormationPlacement; bp: Blueprint } | null {
-    const inst = this.terrain.formations[this.selected];
-    if (!inst) return null;
-    const bp = blueprintById(inst.id);
-    return bp ? { inst, bp } : null;
-  }
 
   private readonly onMove = (e: MouseEvent): void => {
     if (this.panning) {
@@ -1414,115 +866,10 @@ export class MapEditor {
       }
     }
 
-    // THE SWARM'S FORMATION, every stamp: a crux-red plate with the
-    // building's own sprite on it. Drawn here, in the overlay, because the
-    // terrain batches know nothing about structures — and before the hover
-    // bail-out, since a stamp must not vanish when the pointer leaves
-    for (const e of this.terrain.enemies) this.drawStamp(c, s, e, ENEMY_PLATE);
-
-    // THE MISSION'S OBJECTIVES, in their own colour and NUMBERED. They are
-    // drawn apart from the formation above because they are not the same
-    // kind of thing: the formation is the board's furniture and a mission
-    // building is what an assignment is ABOUT, so it must be findable at a
-    // glance on a 512-tile board rather than read as one more red plate.
-    // The number is the list's own order, which is the order the mission
-    // uses them in (a raid's launch order) — stamping is how that order is
-    // authored, so it has to be visible while you stamp.
-    this.terrain.missionStructs.forEach((e, i) => {
-      this.drawStamp(c, s, e, MISSION_PLATE);
-      const side = structStats(e.kind).size * CELL;
-      const cx = e.gx * CELL + side / 2, cy = e.gy * CELL + side / 2;
-      c.save();
-      // the label is drawn at a FIXED SCREEN SIZE (1/s): a number that
-      // shrank with the map would be unreadable at the zoom the whole
-      // board is laid out at, which is exactly the zoom you place at
-      c.translate(cx, cy);
-      c.scale(1 / s, 1 / s);
-      c.font = "bold 13px ui-sans-serif, system-ui, sans-serif";
-      c.textAlign = "center";
-      c.textBaseline = "middle";
-      c.lineWidth = 3;
-      c.strokeStyle = "rgba(0,0,0,0.85)";
-      c.strokeText(String(i + 1), 0, 0);
-      c.fillStyle = MISSION_PLATE.line;
-      c.fillText(String(i + 1), 0, 0);
-      c.restore();
-    });
-
-    // THE FORMATIONS (blueprints.ts): every instance's parts in the
-    // formation violet, with the instance's BOX drawn round them and its
-    // blueprint named on it. The box is the thing the author grabs — a
-    // formation moves, turns and is erased as one — and the name is what
-    // tells you which of six outposts you are looking at without opening
-    // the picker.
-    for (const f of this.terrain.formations) {
-      const bp = blueprintById(f.id);
-      if (!bp) continue;
-      for (const p of expandFormation(f)) this.drawStamp(c, s, p, FORMATION_PLATE);
-      const box = placedSize(bp, f.rot);
-      const picked = this.terrain.formations[this.selected] === f;
-      c.strokeStyle = picked ? "#FFD37F" : FORMATION_PLATE.line;
-      c.lineWidth = (picked ? 3 : 2) / s;
-      c.strokeRect(f.gx * CELL, f.gy * CELL, box.w * CELL, box.h * CELL);
-      this.label(c, s, bp.name + (f.rot ? ` ${f.rot * 90}\u00b0` : ""),
-        f.gx * CELL, f.gy * CELL, picked ? "#FFD37F" : FORMATION_PLATE.line);
-    }
-
-    // THE MARQUEE, whether or not the pointer is on the board: a box that
-    // vanished when the cursor left the canvas could not be reported on by
-    // a panel the cursor has to travel to
-    const mq = this.marqueeBox();
-    if (mq) {
-      c.fillStyle = MARQUEE_FILL;
-      c.fillRect(mq.x0 * CELL, mq.y0 * CELL, mq.w * CELL, mq.h * CELL);
-      c.setLineDash([6 / s, 4 / s]);
-      c.strokeStyle = MARQUEE_LINE;
-      c.lineWidth = 2 / s;
-      c.strokeRect(mq.x0 * CELL, mq.y0 * CELL, mq.w * CELL, mq.h * CELL);
-      c.setLineDash([]);
-      this.label(c, s, `${mq.w}x${mq.h}`, mq.x0 * CELL, mq.y0 * CELL, MARQUEE_LINE);
-    }
-
-    // everything below previews the tool under the cursor, so it needs one
     if (this.hoverGx < 0) return;
 
     // THE FORMATION GHOST: the whole outpost under the cursor, turned the
     // way the rotate key has it, so what you see is what lands
-    if (this.set.kind === "formation") {
-      const bp = this.formationBlueprint();
-      if (!bp) return;
-      const box = placedSize(bp, this.formRot);
-      const x0 = clamp(this.hoverGx - ((box.w / 2) | 0), 0, Math.max(0, COLS - box.w));
-      const y0 = clamp(this.hoverGy - ((box.h / 2) | 0), 0, Math.max(0, this.rows - box.h));
-      const ghost: FormationPlacement = { id: bp.id, gx: x0, gy: y0, rot: this.formRot };
-      c.fillStyle = FORMATION_PLATE.ghost;
-      c.fillRect(x0 * CELL, y0 * CELL, box.w * CELL, box.h * CELL);
-      for (const p of expandFormation(ghost)) {
-        const side = structStats(p.kind).size * CELL;
-        c.fillStyle = FORMATION_PLATE.ghost;
-        c.fillRect(p.gx * CELL, p.gy * CELL, side, side);
-      }
-      c.strokeStyle = FORMATION_PLATE.line;
-      c.lineWidth = 2 / s;
-      c.strokeRect(x0 * CELL, y0 * CELL, box.w * CELL, box.h * CELL);
-      return;
-    }
-    if (this.set.kind === "marquee") return;
-
-    if (this.set.kind === "enemy" || this.set.kind === "mission") {
-      const plate = this.set.kind === "mission" ? MISSION_PLATE : ENEMY_PLATE;
-      const kind = this.stampKind();
-      const o = this.stampOrigin(kind, this.hoverGx, this.hoverGy);
-      const side = o.sz * CELL;
-      c.fillStyle = plate.ghost;
-      c.fillRect(o.x0 * CELL, o.y0 * CELL, side, side);
-      c.strokeStyle = plate.line;
-      c.lineWidth = 2 / s;
-      c.strokeRect(o.x0 * CELL, o.y0 * CELL, side, side);
-      return;
-    }
-    // the path tool is round and much wider than a brush — preview it as
-    // the circle it actually carves
     if (this.set.kind === "base") {
       const half = (BASE_SIZE / 2) | 0;
       const x0 = clamp(this.hoverGx - half, 0, COLS - BASE_SIZE) * CELL;

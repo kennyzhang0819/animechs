@@ -1,6 +1,5 @@
 import { BUILD } from "./version";
 import { atlasReady, buildAtlas } from "./atlas";
-import { loadBlueprints } from "./blueprints";
 import {
   loadOfficialMaps,
   OFFICIAL_MAP_IDS,
@@ -9,31 +8,23 @@ import {
   refreshMap,
   zoneStyle,
 } from "./maps";
-import { FOG_DYNAMIC_ALPHA } from "./fog";
 import { SHIELD_TOWER_SIZE } from "./mutation";
 import { CELL, clamp, COLS, H, ROWS, structStats, TOWERS, towerMaxHp, W } from "./constants";
 import { loadBalanceDoc } from "./balance";
 import {
   loadLevelDocs,
   UNIT_KINDS,
-  type FamilyKey,
   type LevelSpec,
   type Mission,
   type TowerKind,
   type UnitKind,
 } from "./levels";
-import {
-  CYCLE_SECONDS,
-  missionXp,
-  SCRAP_COLOR,
-  scrapPriceOf,
-  sellValue,
-} from "./economy";
+import { missionXp, scrapPriceOf, sellValue } from "./economy";
 import { HEALTH_BARS_DEFAULT, type HealthBarMode, type TowerPlacement } from "./progress";
 import { TOWER_KINDS } from "./types";
 import { Renderer } from "./renderer";
 import { fitZoom } from "./fit";
-import { PICK_LENIENT, PICK_STRUCT_PAD, PICK_TIGHT, Sim } from "./sim";
+import { PICK_LENIENT, PICK_STRUCT_PAD, Sim } from "./sim";
 import { type TechState } from "./tech";
 import { isCore } from "./types";
 
@@ -57,15 +48,6 @@ export interface UiState {
   totalWaves: number;
   /** the tower kind picked in the build bar, or null for the bare cursor */
   buildKind: TowerKind | null;
-  /** ...and which line it would build (Tower.faction) — the build menu is
-   *  the run's two factions crossed with the five tiers */
-  buildFaction: FamilyKey | null;
-  /** THE TWO LINES THIS RUN PLAYS (tech.ts picks) — a row of the build
-   *  menu each, and empty in a sandbox or an editor */
-  picks: readonly FamilyKey[];
-  /** seconds until the base fires again (economy.ts CYCLE_SECONDS) — the
-   *  bar over the core */
-  cycleIn: number;
   /** the demolish tool is picked: the next press sells instead of selecting */
   paused: boolean;
   /** the core is destroyed — the field is frozen behind the score screen */
@@ -79,31 +61,6 @@ export interface UiState {
   mission: Mission;
   /** seconds left on a survive mission's clock; 0 where there is no clock */
   timeLeft: number;
-  /**
-   * A RAID'S LIVE OBJECTIVES (levels.ts RaidMission), or null on every
-   * other mission — what the corner of the screen says the run is FOR.
-   *
-   * It is the sim's numbers rather than finished strings on purpose: the
-   * HUD owns how a clock reads and how a tally is worded, and a second
-   * mission of this shape should not have to be added to a sentence here.
-   */
-  raid: {
-    /** targets wrecked, out of how many are on the board */
-    padsDown: number;
-    padsTotal: number;
-    /** has a rocket gone up? 0 or 1 — the first one ends the run, so this
-     *  is only ever read by the end screen */
-    launched: number;
-    /**
-     * Seconds until the next rocket goes up, or -1 when none can any more.
-     *
-     * This is also the whole of the "time left over" readout: the schedule
-     * is fixed per pad, so wrecking one early makes this jump to the next
-     * pad's moment, which is further off by exactly the time that was left
-     * over (Sim.nextLaunchIn).
-     */
-    nextLaunchIn: number;
-  } | null;
   kills: number;
   /** the esc game menu is up: sim held, resume or abandon from the overlay */
   menuOpen: boolean;
@@ -117,11 +74,8 @@ export interface UiState {
    * be a number that means nothing
    */
   scrap: number | null;
-  /** everything the run has taken in so far — the core's pay and the drills' */
+  /** everything the run has taken in so far — drops and wave bonuses */
   scrapEarned: number;
-  /** the player's bodies on the field, and how many the run has lost */
-  army: number;
-  unitsLost: number;
   /** how many of the mission's waves are cleared — every body they sent is down */
   wavesCleared: number;
   /** the XP those cleared waves have banked so far, before the rung bonus */
@@ -287,7 +241,7 @@ const ZOOM_MAX = 12;
 /**
  * WHERE A RUN OPENS: this far in from cover (zoom 1 fills the viewport
  * with the map), centred on the core — the thing the run is about, and
- * the one place in sight when the fog is still whole. On a 1600px-wide
+ * the place a first line is laid round. On a 1600px-wide
  * viewport it puts about 85 cells across the screen: the core's basin
  * and the mouths of the lanes into it, with a cell 19px wide, which is a
  * cell that can be aimed at.
@@ -326,16 +280,6 @@ const MM_SCALE = 1;
  */
 /** how far the hand must travel for a press to be a marquee, in screen px */
 const SEL_DRAG_PX = 5;
-/**
- * HOW FAR A CTRL/DOUBLE CLICK REACHES for things like the one clicked, in
- * world px. "Nearby" is deliberately generous — most of a screen at the
- * usual zoom — because the gesture is used to gather THE GROUP IN FRONT OF
- * YOU, and a group spread over a fight or a wall line laid across a
- * chokepoint is wider than the handful of cells a tight radius would take.
- * Buildings reach further still: they never close ranks the way a squad
- * does, so a defence line is a longer, thinner thing than a crowd.
- */
-const SEL_LIKE_R = CELL * 30;
 const SEL_LIKE_STRUCT_R = CELL * 40;
 /**
  * WHAT COUNTS AS A DOUBLE CLICK, in ms and in screen px between the two
@@ -346,16 +290,6 @@ const SEL_LIKE_STRUCT_R = CELL * 40;
  */
 const DBL_MS = 380;
 const DBL_PX = 6;
-/** the disc a factory's unit is drawn on, and the unit itself — both as
- *  a share of the building's footprint (drawFactoryUnits) */
-const FACTORY_UNIT_DISC = 0.3;
-const FACTORY_UNIT_ART = 0.46;
-
-/** how long the mark over a move order lasts, in ms */
-const ORDER_MARK_MS = 520;
-/** ...and the radius it closes from and to, in world px */
-const ORDER_MARK_R0 = 26;
-const ORDER_MARK_R1 = 11;
 /** the marquee's amber — the team's own colour, as the unit rings wear it */
 const SELECT_RING = "rgba(255,211,127,0.9)";
 
@@ -367,9 +301,6 @@ const BAR_BACK = "rgba(10,14,26,0.72)";
 const BAR_EDGE = "rgba(0,0,0,0.55)";
 /** what is going up (Tower.buildT) — the accent gold */
 const BAR_BUILD = "#FFD37F";
-/** the load a drill or the core is filling (Tower.mineT, Sim.coreMineT) —
- *  scrap's own grey, because scrap is what comes out of it */
-const BAR_MINE = SCRAP_COLOR;
 /** a health bar's colour at a fraction of full, the HUD's own three */
 const hpColor = (f: number): string => (f > 0.5 ? "#7BE58A" : f > 0.2 ? "#FFD37F" : "#FF5A5A");
 /**
@@ -452,12 +383,12 @@ export class Game {
   private allyBars: HealthBarMode = HEALTH_BARS_DEFAULT;
   private enemyBars: HealthBarMode = HEALTH_BARS_DEFAULT;
   // THE MINIMAP (attachMinimap, drawMinimap): the whole map at a glance,
-  // the fog over it, the field on it and the viewport's frame; a press or
+  // the field on it and the viewport's frame; a press or
   // a drag on it puts that place in view
   private mmCanvas: HTMLCanvasElement | null = null;
   /** the ground at 1px a cell (paintThumb), painted once per map */
   private mmBase: HTMLCanvasElement | null = null;
-  /** the per-frame layer over the ground: fog wash, bodies, structures */
+  /** the per-frame layer over the ground: bodies and structures */
   private mmLayer: HTMLCanvasElement | null = null;
   /** ...and the pixels it is painted into, kept between frames. A 512-cell
    *  map is a megabyte of RGBA, and asking the context for a new one every
@@ -468,22 +399,6 @@ export class Game {
   // cursor mode: null is the normal cursor (click a tower to inspect its
   // range); a kind from the tower menu turns on the ghost + paint placement
   private buildKind: TowerKind | null = null;
-  /**
-   * ...AND WHICH LINE IT BUILDS (Tower.faction). A run plays two factions
-   * (factions.ts RUN_FACTIONS) and the build menu is those two crossed
-   * with the five tiers, so what is in hand is a factory AND the body it
-   * will make. Null on a sim with no picks behind it — the sandbox and the
-   * editors, where the sim falls back to the first family.
-   */
-  private buildFaction: FamilyKey | null = null;
-  /**
-   * THE UNIT SPRITES DRAWN ON THE FACTORIES (drawFactoryUnits). The
-   * field's art lives in the WebGL atlas and this is the 2D overlay, so
-   * the raw sprite is loaded once per unit kind, lazily — a run only ever
-   * asks for the ten its two lines can build, and a kind that has not
-   * arrived yet simply is not drawn.
-   */
-  private readonly unitArt = new Map<UnitKind, HTMLImageElement>();
   private building = false;
   private buildFrom = { x: 0, y: 0 };
   /**
@@ -524,8 +439,6 @@ export class Game {
   private lastClickAt = 0;
   private lastClickX = 0;
   private lastClickY = 0;
-  /** where the last move order landed, and when — the ping drawn over it */
-  private orderMark: { x: number; y: number; t: number } | null = null;
   private lastMouse = { x: 0, y: 0 };
   private readonly keysDown = new Set<string>();
   private paused = false;
@@ -560,12 +473,11 @@ export class Game {
       this.toggleMenu();
       return;
     }
-    // DEMOLISH, now that the right button is the arrow: whatever
-    // buildings are picked come down, and nothing else does. It is the one
-    // destructive key in the game, so it acts ONLY on an explicit
-    // selection — there is no "under the cursor" fallback to fire by
-    // accident
+    // DELETE (or backspace) sells every selected building — a gathered
+    // row goes in one keypress rather than a right-drag along it
     if ((e.code === "Delete" || e.code === "Backspace") && !e.repeat) {
+      if (this.menuOpen || this.sim.lost() || this.won()) return;
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea, [contenteditable]")) return;
       e.preventDefault();
       this.sim.sellSelected();
       return;
@@ -673,30 +585,14 @@ export class Game {
       // the ghost away, and that press must never also demolish something
       if (this.buildKind) {
         this.buildKind = null;
-    this.buildFaction = null;
         return;
       }
-      // THE RIGHT BUTTON IS THE ARROW, and the arrow is the only order in
-      // the game (Sim.orderMove). It can be put ANYWHERE — open ground,
-      // rock, the black, a swarm turret, the far corner of a map nobody
-      // has seen — and it sends the WHOLE army, whatever is selected and
-      // whatever is not. It also STANDS: every body the base makes
-      // afterwards walks to it too, until the next one is drawn.
-      //
-      // It used to be an order to the selection and a demolish otherwise.
-      // Neither survives: the army is not a thing a player picks out of a
-      // crowd any more, and DEMOLISHING MOVED TO THE DELETE KEY (onKeyDown)
-      // — with the right button meaning one thing everywhere, an order
-      // misclicked onto your own base cannot cost you the base.
       const p = this.mouseWorld(e);
-      // shift chains: the point goes on the END of what the army is
-      // already walking rather than replacing it (Sim.orderMove)
-      this.sim.orderMove(p.x, p.y, e.shiftKey);
-      // THE MARK IS DRAWN WHERE IT WAS AIMED, not at the walkable cell the
-      // order snapped to: the player pointed at a spot and the ping is the
-      // answer to "did that click land", which it did even if the nearest
-      // ground the army can stand on is a few tiles off it
-      this.orderMark = { x: p.x, y: p.y, t: performance.now() };
+      // otherwise it demolishes on press and chains from here, exactly like
+      // the left button builds on press and chains from there
+      this.selling = true;
+      this.sellFrom = p;
+      this.sim.sellTowerAt(p.x, p.y);
     } else if (e.button === 1) {
       e.preventDefault();
       this.building = false;
@@ -714,9 +610,7 @@ export class Game {
     // this was a ghost the hand was still aiming
     if (wasBuilding && this.ruler && this.buildKind) {
       const q = this.mouseWorld(e);
-      this.sim.placeRuler(
-        this.rulerFrom.x, this.rulerFrom.y, q.x, q.y, this.buildKind, this.buildFaction,
-      );
+      this.sim.placeRuler(this.rulerFrom.x, this.rulerFrom.y, q.x, q.y, this.buildKind);
     }
     this.ruler = false;
     if (!this.selecting) return;
@@ -725,15 +619,7 @@ export class Game {
     // A DRAG IS A REGION, a click is a point. The threshold is in screen
     // px so it means the same thing at every zoom
     if (this.selDragPx > SEL_DRAG_PX) {
-      // A MARQUEE IS FOR THE ARMY FIRST. A box over the base would
-      // otherwise take every wall it crossed along with the units standing
-      // among them, which is never what a box dragged across a fight
-      // meant; buildings come only when the box caught no bodies at all,
-      // which is the one case where a box round some turrets can only have
-      // meant the turrets. Anything else is what shift-clicking them is for
-      if (this.sim.selectInRect(this.selFrom.x, this.selFrom.y, p.x, p.y, this.selAdd) > 0) {
-        if (!this.selAdd) this.sim.clearStructSelection();
-      } else this.sim.structsInRect(this.selFrom.x, this.selFrom.y, p.x, p.y, this.selAdd);
+      this.sim.structsInRect(this.selFrom.x, this.selFrom.y, p.x, p.y, this.selAdd);
       return;
     }
     // ctrl, or the second click of a double: everything like the thing under
@@ -810,22 +696,9 @@ export class Game {
    */
   private gatherLike(p: { x: number; y: number }): boolean {
     const sim = this.sim;
-    const add = this.selAdd;
-    // the same two passes, in the same order, that pickAt makes: tight
-    // first, and the forgiving reach only once both halves came back empty
-    for (const [unitReach, structPad] of [
-      [PICK_TIGHT, 0],
-      [PICK_LENIENT, PICK_STRUCT_PAD],
-    ] as const) {
-      if (sim.selectLike(p.x, p.y, SEL_LIKE_R, add, unitReach) > 0) {
-        if (!add) sim.clearStructSelection();
-        return true;
-      }
-      if (sim.selectStructsLike(p.x, p.y, SEL_LIKE_STRUCT_R, add, structPad) > 0) {
-        if (!add) sim.clearSelection();
-        return true;
-      }
-    }
+    // tight first, and the forgiving reach only once that came back empty
+    for (const structPad of [0, PICK_STRUCT_PAD] as const)
+      if (sim.selectStructsLike(p.x, p.y, SEL_LIKE_STRUCT_R, this.selAdd, structPad) > 0) return true;
     return false;
   }
 
@@ -833,19 +706,15 @@ export class Game {
    * THE BARE-CURSOR CLICK — everything one left click on the board can
    * mean, in the order a player means them:
    *
-   *   a BODY OF OURS   — select it, and drop whatever was selected before
-   *                      unless shift says to add (Sim.selectAt)
    *   an ENEMY   — mark it for FOCUS FIRE: every turret in range drops
    *                what it was doing for it (Sim.setFocusUnit), and the
    *                mark wears a bobbing arrow so there is never a question
    *                of what the board is angry at
    *   a SHIELD TOWER   — the same mark, on the mutator's structure
-   *   an ENEMY BUILDING — the same mark again
    *   a BUILDING OF OURS — SELECT IT, which is what draws its range ring
-   *                and what a right-click afterwards is aimed by
-   *                (setRally). Shift adds it to whatever is already held,
-   *                bodies included: five daggers, a factory and the core
-   *                is a selection a hand can build one click at a time
+   *                and what the delete key sells. Shift adds it to whatever
+   *                is already held: a row of duos and the core is a
+   *                selection a hand can build one click at a time
    *   nothing    — clear everything: selection and mark alike
    *
    * Bodies first because they are small, moving, and the thing a panicking
@@ -856,19 +725,17 @@ export class Game {
    * clearing the board, and nothing precise is ever taken from a click
    * that did hit something.
    *
-   * A SHIFT-CLICK ON NOTHING KEEPS THE SELECTION. Adding one body at a
-   * time means missing one now and then, and a miss that emptied the hand
-   * would make the gesture unusable.
+   * A SHIFT-CLICK ON NOTHING KEEPS THE SELECTION. Adding one building at
+   * a time means missing one now and then, and a miss that emptied the
+   * hand would make the gesture unusable.
    */
   private pickAt(p: { x: number; y: number }): void {
     const sim = this.sim;
     const add = this.selAdd;
-    // a plain click replaces the whole selection, both halves of it: the
-    // unit half is cleared by selectAt's own miss, the building half here
+    // a plain click replaces the selection; a mark on an enemy clears it too
     const replaced = (): void => {
       if (!add) sim.clearStructSelection();
     };
-    if (sim.selectAt(p.x, p.y, add)) return replaced();
     const ui = sim.unitAt(p.x, p.y);
     if (ui >= 0) {
       replaced();
@@ -881,20 +748,12 @@ export class Game {
       sim.setFocusShieldTower(si);
       return;
     }
-    // one of the swarm's buildings is a target, not a selection
-    const et = sim.enemyTowerAt(p.x, p.y);
-    if (et) {
-      replaced();
-      sim.setFocusTower(et);
-      return;
-    }
     if (sim.selectStructAt(p.x, p.y, add)) return;
     // NOTHING WAS UNDER THE POINT — so before the click means "clear
     // everything", every question above worth asking again is asked with
     // the forgiving reach. A click that lands a few pixels off a walker in
-    // a moving crowd, or a hair outside the wall it meant, is a miss the
+    // a moving crowd, or a hair outside the turret it meant, is a miss the
     // hand made rather than one the player meant
-    if (sim.selectAt(p.x, p.y, add, PICK_LENIENT)) return replaced();
     if (sim.selectStructAt(p.x, p.y, add, PICK_STRUCT_PAD)) return;
     const lui = sim.unitAt(p.x, p.y, PICK_LENIENT);
     if (lui >= 0) {
@@ -929,14 +788,13 @@ export class Game {
     // it restarts here, so a drag that leaves the map and comes back does
     // not paint a stripe across everything it skipped
     if (chain && this.inWorld(this.buildFrom)) {
-      this.sim.placeLine(this.buildFrom.x, this.buildFrom.y, p.x, p.y, kind, this.buildFaction);
+      this.sim.placeLine(this.buildFrom.x, this.buildFrom.y, p.x, p.y, kind);
     } else {
       const sz = TOWERS[kind].size;
       this.sim.placeTower(
         clamp(Math.round(p.x / CELL - sz / 2), 0, COLS - sz),
         clamp(Math.round(p.y / CELL - sz / 2), 0, ROWS - sz),
         kind,
-        this.buildFaction,
       );
     }
     this.buildFrom = p;
@@ -999,17 +857,12 @@ export class Game {
     // the stale copy in memory — but that is true of ONE map, not all of them
     // The level SCRIPT is re-read here too, for the same reason. Both
     // editors return through a client-side route, so an edited wave script
-    // is as capable of being stale as an edited map — and applyBlueprint
+    // is as capable of being stale as an edited map — and applyLevelDoc
     // derives every WORLDS entry's script in place, including the object
     // this spec already points at, so the sim built below picks it up
     await begin("map");
     const mapId = spec.map ?? OFFICIAL_MAP_IDS[0];
     await Promise.all([
-      // THE BLUEPRINT LIBRARY BEFORE THE MAP IS READ, every time: an
-      // author who just edited an outpost expects the run they start next
-      // to fight the new one, and a map resolves its formations against
-      // whatever the library holds at terrainFromMap time
-      loadBlueprints(),
       OFFICIAL_MAPS.length === 0 ? loadOfficialMaps() : refreshMap(mapId),
       loadLevelDocs(),
       // tech prices are read the moment the tech screen opens, so the
@@ -1047,8 +900,6 @@ export class Game {
 
     this.fitToMap();
     this.renderer.rebuildTerrain(this.sim);
-    // the renderer draws and culls by the sim's own fog (fog.ts)
-    this.renderer.setFog(this.sim.fog);
 
     window.addEventListener("resize", this.onResize);
     window.addEventListener("keydown", this.onKeyDown);
@@ -1109,10 +960,9 @@ export class Game {
     this.attachMinimap(null);
   }
 
-  setBuildKind(kind: TowerKind | null, faction: FamilyKey | null = null): void {
+  setBuildKind(kind: TowerKind | null): void {
     if (kind && this.tech && !this.tech.unlocked.has(kind)) return;
     this.buildKind = kind;
-    this.buildFaction = kind ? faction : null;
     // a building picked up puts the inspected one down: the ring the hand
     // was reading belongs to a decision it has moved on from
     if (kind) this.sim.clearStructSelection();
@@ -1258,16 +1108,6 @@ export class Game {
     this.sim.setTech(tech);
   }
 
-  /**
-   * FOG ON OR OFF for the run in progress (Sim.setFog). Off lights the
-   * whole board and keeps it lit: the renderer and the minimap both draw
-   * by the sim's own fog, so one call clears the wash, the culling and the
-   * minimap together. Sandbox is where it is thrown from — a board being
-   * staged or debugged is one the whole of which has to be visible.
-   */
-  setFog(on: boolean): void {
-    this.sim.setFog(on);
-  }
 
   /**
    * The ambient-effects switch, both halves at once — the sim stops
@@ -1379,9 +1219,6 @@ export class Game {
       currentWave: this.sim.currentWave(),
       totalWaves: this.sim.totalWaves,
       buildKind: this.buildKind,
-      buildFaction: this.buildFaction,
-      picks: this.tech?.picks ?? [],
-      cycleIn: this.sim.cycleIn,
       paused: this.paused,
       speed: this.speed,
       showRoutes: this.showRoutes,
@@ -1391,21 +1228,10 @@ export class Game {
       won: this.won(),
       mission: this.sim.level.mission,
       timeLeft: Math.max(0, this.sim.deadline - this.sim.time),
-      raid:
-        this.sim.level.mission.kind === "raid" ?
-          {
-            padsDown: this.sim.padsDown(),
-            padsTotal: this.sim.missionStructs.length,
-            launched: this.sim.rocketsAway,
-            nextLaunchIn: this.sim.nextLaunchIn(),
-          }
-        : null,
       kills: this.sim.kills,
       menuOpen: this.menuOpen,
       scrap: this.sim.charging ? Math.floor(this.sim.scrap) : null,
       scrapEarned: Math.floor(this.sim.scrapEarned),
-      army: this.sim.nPlayer,
-      unitsLost: this.sim.unitsLost,
       wavesCleared: this.sim.wavesCleared(),
       xp: missionXp(this.sim.wavesCleared(), this.sim.totalWaves),
       prices: PRICES(),
@@ -1417,10 +1243,7 @@ export class Game {
 
   /** what is standing right now, in save shape */
   layout(): TowerPlacement[] {
-    // the player's own: the swarm's formation is the map's, not the save's
-    return this.sim.towers
-      .filter((t) => t.team === "player")
-      .map((t) => ({ kind: t.kind as TowerKind, gx: t.gx, gy: t.gy }));
+    return this.sim.towers.map((t) => ({ kind: t.kind, gx: t.gx, gy: t.gy }));
   }
 
   /**
@@ -1434,8 +1257,7 @@ export class Game {
    */
   applyLayout(towers: readonly TowerPlacement[]): number {
     let placed = 0;
-    for (const t of towers)
-      if (this.sim.placeTower(t.gx, t.gy, t.kind, this.tech?.picks[0] ?? null) === "ok") placed++;
+    for (const t of towers) if (this.sim.placeTower(t.gx, t.gy, t.kind) === "ok") placed++;
     return placed;
   }
 
@@ -1573,13 +1395,6 @@ export class Game {
       panX += dir[0];
       panY += dir[1];
     }
-    // THE SCREEN'S EDGE DOES NOTHING. Edge panning was written for a
-    // cursor the game held captive: under pointer lock the pointer could
-    // not leave, so the rim was the only way to say "further that way".
-    // The lock is gone, the cursor is the desktop's again, and a camera
-    // that lurches whenever a hand crosses the rim on its way to the build
-    // menu is a camera fighting the player. WASD, the arrows, a
-    // middle-drag and the minimap are the ways to move it.
     if (panX !== 0 || panY !== 0) {
       this.tlx += Math.sign(panX) * this.visW() * panStep;
       this.tly += Math.sign(panY) * this.visH() * panStep;
@@ -1671,10 +1486,6 @@ export class Game {
    * THE MINIMAP: the whole map, never zoomed, with everything the field
    * knows drawn over the ground at a cell a dot —
    *
-   *   the FOG (fog.ts) as the same two washes the field wears: flat
-   *   black where nothing has ever looked (the static set), a half-black
-   *   over that where something once did and nothing does now (the
-   *   dynamic set), clear where something is looking right now;
    *   the PLAYER'S EVERYTHING white — the core, every turret and wall
    *   (a shell still going up in a dimmer white) and every body of
    *   theirs, wherever it is;
@@ -1720,25 +1531,6 @@ export class Game {
       img = this.mmPixels = lc.createImageData(cols, rows);
     const d = img.data;
     d.fill(0);
-    const { fog } = this.sim;
-    const fogOn = fog.enabled;
-    const st = fog.visible;
-    const disc = fog.discovered;
-    const seenA = Math.round(FOG_DYNAMIC_ALPHA * 255);
-    // the wash first, so a dot painted after it is painted OVER it. The
-    // two sets are independent (fog.ts), so this asks them in the order
-    // the renderer's two washes land in: the dynamic one lifts the half
-    // black, the static one lifts the rest
-    if (fogOn)
-      for (let y = 0; y < rows; y++)
-        for (let x = 0; x < cols; x++) {
-          const i = y * COLS + x;
-          if (disc[i] === 0) {
-            d[(y * cols + x) * 4 + 3] = 255;
-          } else if (st[i] === 0) {
-            d[(y * cols + x) * 4 + 3] = seenA;
-          }
-        }
     const dot = (x: number, y: number, r: number, g: number, b: number): void => {
       if (x < 0 || y < 0 || x >= cols || y >= rows) return;
       const o = (y * cols + x) * 4;
@@ -1750,47 +1542,21 @@ export class Game {
     const box = (gx: number, gy: number, sz: number, r: number, g: number, b: number): void => {
       for (let y = gy; y < gy + sz; y++) for (let x = gx; x < gx + sz; x++) dot(x, y, r, g, b);
     };
-    // the enemy, in sight only — and the player's own bodies WHITE,
-    // wherever they are: they are what is looking. One colour for
-    // everything of ours, bodies and buildings alike, and one for
-    // everything of theirs, so the map answers "us or them" at a glance
+    // the swarm red, and everything of ours white, so the map answers
+    // "us or them" at a glance
     // instead of asking for three colours to be told apart at a pixel each
-    const { upx, upy, n, uteam } = this.sim;
+    const { upx, upy, n } = this.sim;
     for (let i = 0; i < n; i++) {
       const gx = (upx[i] / CELL) | 0, gy = (upy[i] / CELL) | 0;
-      if (uteam[i]) {
-        dot(gx, gy, 0xff, 0xff, 0xff);
-        continue;
-      }
-      if (fogOn && st[gy * COLS + gx] === 0) continue;
       dot(gx, gy, 0xf2, 0x55, 0x55);
     }
     // the map's shield towers, wherever they have been seen
     for (const s of this.sim.shieldTowers) {
       if (s.hp <= 0) continue;
-      if (fogOn && !fog.seenAt(s.x, s.y)) continue;
       box(s.gx, s.gy, SHIELD_TOWER_SIZE, 0xf2, 0x55, 0x55);
-    }
-    // the swarm's formation, in its red, wherever it has been seen...
-    for (const t of this.sim.towers) {
-      if (t.team !== "enemy") continue;
-      if (fogOn && !fog.seenAt(t.x, t.y)) continue;
-      box(t.gx, t.gy, structStats(t.kind).size, 0xf2, 0x55, 0x55);
-    }
-    // THE MISSION'S OWN TARGETS over the formation, in a colour of their
-    // own (levels.ts RaidMission): they are the map's objective and the
-    // one thing on it worth crossing the board for, so they must not read
-    // as another of the swarm's walls. A run opens with the ground round
-    // each of them already discovered (Sim.seedFog), so these are on the
-    // minimap from the first frame — which is the briefing
-    for (const t of this.sim.missionStructs) {
-      if (t.hp <= 0) continue;
-      if (fogOn && !fog.seenAt(t.x, t.y)) continue;
-      box(t.gx, t.gy, structStats(t.kind).size, 0xff, 0x9a, 0x3d);
     }
     // ...and the player's, over everything: the line is what the map is read for
     for (const t of this.sim.towers) {
-      if (t.team !== "player") continue;
       const v = t.buildT > 0 ? 0x9a : 0xff;
       box(t.gx, t.gy, structStats(t.kind).size, v, v, v);
     }
@@ -1805,7 +1571,7 @@ export class Game {
     // Kept inside the minimap (a view run out into the void past the map
     // would otherwise carry its frame off the edge and lose a side), and
     // drawn white over a dark outline so it reads on the pale ground, the
-    // black fog and the white line alike
+    // dark rock and the white line alike
     const k = MM_SCALE / CELL;
     const fx0 = clamp(this.tlx * k, 1, w - 1), fy0 = clamp(this.tly * k, 1, h - 1);
     const fx1 = clamp((this.tlx + this.visW()) * k, 1, w - 1);
@@ -1820,9 +1586,7 @@ export class Game {
   }
 
   /**
-   * THE ARMY'S OWN MARKS: the route a chained order drew for the
-   * selection, the marquee while one is being dragged, and a ping where
-   * the last order landed.
+   * THE SELECTION MARQUEE while one is being dragged over the board.
    *
    * The RING under a selected body is the renderer's, not this canvas's
    * (Renderer.pushUnitPass) — it is the team's own amber at full strength,
@@ -1831,123 +1595,6 @@ export class Game {
    * left here belongs to the HAND rather than to the board.
    */
   private drawSelection(c: CanvasRenderingContext2D): void {
-    const sim = this.sim;
-    const { upx, upy, n } = sim;
-    // WHERE THE ORDER LANDED: a heavy ring that closes on the point and a
-    // dot at the middle of it, in the team's amber. It CONTRACTS rather
-    // than expanding — an opening ring reads as something happening AT the
-    // point (a blast, a ping), a closing one as an arrow landing on it —
-    // and it is round, drawn at the weight of the ring under a unit, so
-    // the two read as the same hand's marks
-    // THE STANDING ARROW (Sim.rallyCell): where the army is walking, and
-    // where every body the base makes next will walk. It OUTLIVES the ping
-    // — an order that stands is a thing a player should be able to look up
-    // and find two minutes later — and it breathes slowly so it reads as a
-    // live order rather than as a scorch on the ground. Same vocabulary as
-    // the ping, a ring and four ticks, so the two read as one mark settling
-    if (sim.rallyCell >= 0) {
-      const at = sim.cellCenter(sim.rallyCell);
-      const pulse = 0.82 + 0.18 * Math.sin(performance.now() / 620);
-      c.strokeStyle = `rgba(255,211,127,${0.5 * pulse})`;
-      c.lineWidth = 2;
-      c.beginPath();
-      c.arc(at.x, at.y, ORDER_MARK_R1, 0, Math.PI * 2);
-      c.stroke();
-      for (let k = 0; k < 4; k++) {
-        const a = Math.PI / 4 + (k * Math.PI) / 2;
-        const cx = Math.cos(a), cy = Math.sin(a);
-        c.beginPath();
-        c.moveTo(at.x + cx * (ORDER_MARK_R1 + 9), at.y + cy * (ORDER_MARK_R1 + 9));
-        c.lineTo(at.x + cx * (ORDER_MARK_R1 + 3), at.y + cy * (ORDER_MARK_R1 + 3));
-        c.stroke();
-      }
-      c.fillStyle = `rgba(255,211,127,${0.75 * pulse})`;
-      c.beginPath();
-      c.arc(at.x, at.y, 2.5, 0, Math.PI * 2);
-      c.fill();
-    }
-
-    if (this.orderMark) {
-      const age = (performance.now() - this.orderMark.t) / ORDER_MARK_MS;
-      if (age >= 1) this.orderMark = null;
-      else {
-        const e = 1 - (1 - age) * (1 - age); // ease out: fast in, settling
-        const r = ORDER_MARK_R0 + (ORDER_MARK_R1 - ORDER_MARK_R0) * e;
-        const fade = age > 0.7 ? 1 - (age - 0.7) / 0.3 : 1;
-        c.lineWidth = 2.5;
-        c.strokeStyle = `rgba(255,211,127,${0.95 * fade})`;
-        c.beginPath();
-        c.arc(this.orderMark.x, this.orderMark.y, r, 0, Math.PI * 2);
-        c.stroke();
-        // four ticks outside it, at the diagonals, closing with the ring:
-        // the part that reads as "here", not as "something exploded here"
-        c.lineWidth = 2;
-        for (let k = 0; k < 4; k++) {
-          const a = Math.PI / 4 + (k * Math.PI) / 2;
-          const cx = Math.cos(a), cy = Math.sin(a);
-          c.beginPath();
-          c.moveTo(this.orderMark.x + cx * (r + 3), this.orderMark.y + cy * (r + 3));
-          c.lineTo(this.orderMark.x + cx * (r + 8), this.orderMark.y + cy * (r + 8));
-          c.stroke();
-        }
-        // and NOTHING in the middle: the ring and its ticks already say
-        // where, and a dot at the centre only hides the ground the order
-        // was given on
-        c.lineWidth = 1;
-      }
-    }
-
-    // THE ROUTE A CHAIN DREW (Sim.orderMove's queue): the legs a selected
-    // body still has to walk, drawn from where it is now through the point
-    // it is walking to and on through the rest. ONE LINE PER ROUTE, not
-    // one per body — a group of twenty sharing a chain shares its drawing,
-    // gathered by the cells it holds, or the board would wear the same
-    // line twenty times over. Only a body with legs QUEUED draws one: an
-    // ordinary order already says where it went with its ping
-    const routes = new Map<string, { cells: readonly number[]; ox: number; oy: number; cx: number; cy: number; k: number }>();
-    for (let i = 0; i < n; i++) {
-      // the army's, not a selection's: a chained arrow is given to every
-      // body at once, so every body's legs are the same legs
-      if (!sim.uteam[i]) continue;
-      const q = sim.waypointsOf(i);
-      if (!q || q.length === 0) continue;
-      const ox = sim.uord[i] > 0 ? sim.uordx[i] : upx[i];
-      const oy = sim.uord[i] > 0 ? sim.uordy[i] : upy[i];
-      const key = `${Math.round(ox)},${Math.round(oy)}|${q.join(",")}`;
-      const at = routes.get(key);
-      if (at) {
-        at.cx += upx[i];
-        at.cy += upy[i];
-        at.k++;
-      } else routes.set(key, { cells: q, ox, oy, cx: upx[i], cy: upy[i], k: 1 });
-    }
-    for (const r of routes.values()) {
-      c.strokeStyle = "rgba(255,211,127,0.55)";
-      c.lineWidth = 1.5;
-      c.setLineDash([7, 6]);
-      c.beginPath();
-      c.moveTo(r.cx / r.k, r.cy / r.k); // where the group actually is
-      c.lineTo(r.ox, r.oy);
-      const pts = r.cells.map((cell) => sim.cellCenter(cell));
-      for (const pt of pts) c.lineTo(pt.x, pt.y);
-      c.stroke();
-      c.setLineDash([]);
-      // a node on every leg, and a heavier ring on the last one: the chain
-      // reads as a list of places rather than as a scribble
-      c.fillStyle = "rgba(255,211,127,0.8)";
-      for (let k = 0; k < pts.length; k++) {
-        c.beginPath();
-        c.arc(pts[k].x, pts[k].y, k === pts.length - 1 ? 5 : 3.5, 0, Math.PI * 2);
-        if (k === pts.length - 1) {
-          c.strokeStyle = "rgba(255,211,127,0.9)";
-          c.lineWidth = 2;
-          c.stroke();
-        } else c.fill();
-      }
-    }
-
-    // THE MARQUEE, while the hand is still down on one — the team's amber
-    // again, a hairline over a wash so what is inside it stays readable
     if (this.selecting && this.selDragPx > SEL_DRAG_PX) {
       const x = Math.min(this.selFrom.x, this.selTo.x), y = Math.min(this.selFrom.y, this.selTo.y);
       const w = Math.abs(this.selTo.x - this.selFrom.x), h = Math.abs(this.selTo.y - this.selFrom.y);
@@ -1959,50 +1606,6 @@ export class Game {
     }
   }
 
-  /**
-   * WHAT EACH FACTORY MAKES, drawn ON the factory: the unit's own sprite,
-   * over a dark disc, in the middle of the footprint.
-   *
-   * A run plays two lines and builds ten different factories out of them
-   * (factions.ts), and a tier's BLOCK is the same picture in both — a
-   * tier-1 factory is a tier-1 factory. So a hillside of them was ten
-   * buildings a player could not tell apart, and the only way to ask what
-   * one was for was to remember where they put it. The body is the answer
-   * to that question and it is the same picture the build menu offered,
-   * so what was chosen and what is standing read as the same thing.
-   *
-   * The disc under it is what keeps a dark unit legible on a bright block;
-   * the sprite is drawn at a share of the footprint, so a tetrative
-   * reconstructor wears a big one and a ground factory a small one, and
-   * both stay inside the building at every zoom.
-   */
-  private drawFactoryUnits(c: CanvasRenderingContext2D): void {
-    for (const t of this.sim.towers) {
-      if (t.team !== "player") continue;
-      const unit = this.sim.unitOf(t);
-      if (!unit) continue;
-      let img = this.unitArt.get(unit);
-      if (!img) {
-        img = new Image();
-        img.src = `/mindustry/sprites/units/${unit}.png`;
-        this.unitArt.set(unit, img);
-      }
-      if (!img.complete || img.naturalWidth === 0) continue;
-      const px = structStats(t.kind).size * CELL;
-      const r = px * FACTORY_UNIT_DISC;
-      c.beginPath();
-      c.arc(t.x, t.y, r, 0, Math.PI * 2);
-      c.fillStyle = "rgba(8,8,10,0.62)";
-      c.fill();
-      c.strokeStyle = "rgba(255,211,127,0.45)";
-      c.lineWidth = 1;
-      c.stroke();
-      const sz = px * FACTORY_UNIT_ART;
-      c.imageSmoothingEnabled = false;
-      c.drawImage(img, t.x - sz / 2, t.y - sz / 2, sz, sz);
-      c.imageSmoothingEnabled = true;
-    }
-  }
 
   /**
    * A STACK OF BARS OVER ONE THING ON THE BOARD — the game's only readout
@@ -2086,7 +1689,7 @@ export class Game {
     const { upx, upy, urad, uhp, n } = this.sim;
     let best = -1, bd = Infinity;
     for (let i = 0; i < n; i++) {
-      if (uhp[i] <= 0 || !this.sim.unitVisible(i)) continue;
+      if (uhp[i] <= 0) continue;
       const dx = upx[i] - this.hoverX, dy = upy[i] - this.hoverY;
       const d2 = dx * dx + dy * dy;
       const r = Math.max(urad[i] * 1.6, HOVER_MIN_R);
@@ -2112,21 +1715,18 @@ export class Game {
    * a glance at a melee says which bars belong to which army without
    * reading a single length.
    *
-   * A body in the fog wears nothing, on either side — it is not on screen.
    */
   private drawUnitBars(c: CanvasRenderingContext2D): void {
     if (this.allyBars === "never" && this.enemyBars === "never") return;
-    const { upx, upy, urad, usel, uhp, uhpmax, uteam, n } = this.sim;
+    const { upx, upy, urad, uhp, uhpmax, n } = this.sim;
     const hoverI = this.hoverBars() ? this.hoverUnit() : -1;
     const bars: { v: number; col: string }[] = [];
     for (let i = 0; i < n; i++) {
-      if (uhp[i] <= 0 || !this.sim.unitVisible(i)) continue;
-      // team 0 is the swarm; anything else is the player's own (Sim.uteam)
-      const ally = uteam[i] !== 0;
+      if (uhp[i] <= 0) continue;
       const f = clamp(uhp[i] / Math.max(1, uhpmax[i]), 0, 1);
-      if (!this.barsOn(ally, f, i === hoverI, usel[i] !== 0)) continue;
+      if (!this.barsOn(false, f, i === hoverI, false)) continue;
       bars.length = 0;
-      bars.push({ v: f, col: ally ? hpColor(f) : ENEMY_HP });
+      bars.push({ v: f, col: ENEMY_HP });
       const r = Math.max(urad[i] * 1.25, 7);
       this.drawBars(c, upx[i], upy[i] - r, Math.max(r * 2, BAR_MIN_W), bars);
     }
@@ -2136,10 +1736,6 @@ export class Game {
    * Every structure's bars: what it is making, what is still going up, and
    * what is left of it.
    *
-   *   MINING       the load a drill is filling (Tower.mineT), top of the
-   *                stack — the one bar that is running on a building
-   *                nothing is happening to otherwise
-   *   PRODUCTION   a factory's unit clock (Tower.prodT)
    *   CONSTRUCTION the shell's own timer (Tower.buildT)
    *   HP           on the Interface tab's terms (barsOn), the same terms
    *                a unit's health is on — a wall and a walker are both
@@ -2151,11 +1747,9 @@ export class Game {
    *
    * THE CORE gets the mining bar too, since it ships on the same clock
    * (Sim.coreMineT) — it is the run's first and largest earner, and a bar
-   * only on the drills would read as though it had stopped paying.
    */
   private drawStructureBars(c: CanvasRenderingContext2D): void {
     const bars: { v: number; col: string }[] = [];
-    const mining = this.sim.charging && !this.sim.lost();
     // A BUILDING IN THE SELECTION COUNTS AS PICKED, exactly as a body in it
     // does (barsOn): asked for only when there is a selection to ask about,
     // since selectedStructs copies the set to answer
@@ -2168,45 +1762,19 @@ export class Game {
     const cf = clamp(core.hp / Math.max(1, core.hpMax), 0, 1);
     if (this.barsOn(true, cf, this.hoverOver(core.x, core.y, csz), picked?.has(core) === true))
       bars.push({ v: cf, col: hpColor(cf) });
-    // the CORE'S SHIPMENT, measured against the load's LIVE length: every
-    // drill standing deepens the excavation (Sim.coreLoadSeconds), so the
-    // bar visibly fills faster as they go up — which is the only thing a
-    // drill looks like from outside
-    if (mining)
-      bars.push({ v: 1 - this.sim.coreMineT / this.sim.coreLoadSeconds(), col: BAR_MINE });
-    // THE BASE'S CLOCK (economy.ts CYCLE_SECONDS), on top of the stack.
-    // It used to head the minimap, which is the far corner of the screen
-    // from the thing it is about: the moment it fills, every factory sets
-    // a body down AT THE CORE, so the bar belongs over the ground the
-    // bodies appear on and the eye is already on when they do.
-    if (mining)
-      bars.push({ v: 1 - this.sim.cycleIn / CYCLE_SECONDS, col: BAR_BUILD });
     this.drawBars(c, core.x, core.y - csz / 2, csz - 2, bars);
     for (const t of this.sim.towers) {
       const st = structStats(t.kind);
       const sz = st.size * CELL;
-      const ally = t.team !== "enemy";
-      if (!ally && this.sim.fog.enabled && !this.sim.fog.seenAt(t.x, t.y)) continue;
       bars.length = 0;
       const hpMax = towerMaxHp(t.kind);
       const f = clamp(t.hp / Math.max(1, hpMax), 0, 1);
-      // ONLY THE SWARM'S BUILDINGS WEAR HEALTH. Nothing of the player's
-      // can be shot at all any more — it stands on the highground, out of
-      // the war (Sim.untouchable) — and a full green bar over a building
-      // that cannot be hurt is a bar reporting on a fight that will never
-      // happen. The CORE still wears one, above: it is the one thing of
-      // theirs the swarm can reach, and the run ends when it falls.
-      // A shell is on 1 hp by design (Tower.buildT) — a state, not a
-      // wound, and the construction bar below is already saying it
-      if (!ally && t.buildT <= 0 && this.barsOn(ally, f, this.hoverOver(t.x, t.y, sz), picked?.has(t) === true))
-        bars.push({ v: f, col: ENEMY_HP });
+      // a shell is on 1 hp by design (Tower.buildT) — that is a state, not
+      // a wound, and the construction bar below is already saying it
+      if (t.buildT <= 0 && this.barsOn(true, f, this.hoverOver(t.x, t.y, sz), picked?.has(t) === true))
+        bars.push({ v: f, col: hpColor(f) });
       if (t.buildT > 0 && t.buildTotal > 0)
         bars.push({ v: 1 - t.buildT / t.buildTotal, col: BAR_BUILD });
-      // NO CLOCK OF ITS OWN. A factory used to wear a bar for the body it
-      // was building and a drill one for the load it was filling; both are
-      // the CYCLE now (economy.ts CYCLE_SECONDS), one clock for the whole
-      // base, and it is drawn once over the CORE rather than a hundred
-      // times over a hillside in lockstep with itself
       this.drawBars(c, t.x, t.y - sz / 2, sz - 2, bars);
     }
     // THE SWARM'S SHIELD TOWERS (mutation.ts) stand outside the tower list
@@ -2216,7 +1784,6 @@ export class Game {
     const ssz = SHIELD_TOWER_SIZE * CELL;
     for (const s of this.sim.shieldTowers) {
       if (s.hp <= 0) continue;
-      if (this.sim.fog.enabled && !this.sim.fog.seenAt(s.x, s.y)) continue;
       const f = clamp(s.hp / Math.max(1, s.hpMax), 0, 1);
       if (!this.barsOn(false, f, this.hoverOver(s.x, s.y, ssz), false)) continue;
       this.drawBars(c, s.x, s.y - ssz / 2, ssz - 2, [{ v: f, col: ENEMY_HP }]);
@@ -2290,8 +1857,7 @@ export class Game {
     }
 
     // THE SELECTED BUILDINGS: a footprint outline on every one of them, a
-    // range ring on the ones that have a range, and a line to the rally
-    // point on the ones that make bodies. The sim drops a building from
+    // range ring on the ones that have a range. The sim drops a building from
     // the selection as it leaves the board (removeTower), so nothing here
     // can be drawn over bare ground
     for (const st of this.sim.selectedStructs) {
@@ -2338,14 +1904,11 @@ export class Game {
       c.fill();
     }
 
-    // WHAT EVERY FACTORY IS FOR, as the body it makes drawn on it
-    this.drawFactoryUnits(c);
     // WHAT EVERY STRUCTURE IS DOING, as a stack of bars over it (drawBars)
     this.drawStructureBars(c);
     // ...and what every BODY has left, on the Interface tab's terms
     this.drawUnitBars(c);
-    // ...and the army: who is selected, what they were told, and the
-    // rectangle being dragged over them right now
+    // ...and the rectangle being dragged over the board right now
     this.drawSelection(c);
 
     if (this.buildKind && this.hoverGx >= 0 && !this.panning) {

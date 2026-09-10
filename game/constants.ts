@@ -1,4 +1,4 @@
-import { FxKind, isMissionKind, type RGB } from "./types";
+import { FxKind, type RGB } from "./types";
 
 /**
  * THE GRID: 512 cells square. It was 256 — Mindustry's Ground Zero — while
@@ -18,13 +18,12 @@ export const NCELLS = COLS * ROWS;
 export const INF = 1e9;
 
 /**
- * THE MOST BODIES THE FIELD HOLDS AT ONCE. It was 22,000 for the swarm;
- * a wave is a few dozen now and eight of them together are a few hundred,
- * so this is headroom for a mutator that multiplies the field (Mitosis)
- * and nothing more — and every per-unit array and the renderer's dynamic
- * batch are sized by it, so it is memory the doubled map wants back.
+ * THE MOST BODIES THE FIELD HOLDS AT ONCE. The late script sends waves in
+ * the thousands and a swarm mutator (Mitosis) multiplies them, so the
+ * ceiling is where the fifty-wave campaign wants it: every per-unit array
+ * and the renderer's dynamic batch are sized by it.
  */
-export const MAX_UNITS = 6000;
+export const MAX_UNITS = 22000;
 // Dagger at true Mindustry scale: 1-tile hitbox, art overhanging 1.5x
 // (48px art on a 32px tile)
 export const UR = 10;
@@ -111,11 +110,8 @@ export const PAL = {
  * whose a body is off those long before they find a ring under it.
  *
  * THE SWARM IS CRUX AND THE PLAYER IS SHARDED, exactly as upstream: the
- * red is the enemy's and nothing of the player's wears it. A run builds
- * bodies of its own out of the factories, drawn from the SAME art the
- * swarm walks in (the roster is one set of sprites), so the colour is the
- * whole of the team read on a field where a dagger of yours can be
- * standing next to a dagger of theirs — which is why the cell is drawn
+ * red is the enemy's and nothing of the player's wears it. Every unit
+ * wears its team's cell colour — which is why the cell is drawn
  * rather than baked into the sheet (atlas.ts UNIT_CELL).
  */
 export const TEAM_CRUX_RGB: RGB = pal(0xf25555);
@@ -435,61 +431,8 @@ export interface TowerStats {
   // overkilling it.)
   sort?: "strongest";
   bullet: BulletStats;
-  /**
-   * A BUILDING: no gun, no rotation, no reload — a pool on a footprint,
-   * drawn flat with no turret base under it and skipped by the fire loop
-   * (Sim.fireTowers). The drill and the five factories. `bullet` is
-   * NO_BULLET so the record stays exhaustive; nothing ever fires it.
-   *
-   * There used to be a second flag, `wall`, meaning exactly this on the
-   * six walls. The walls are gone (types.ts) and every kind that carried
-   * `wall` also carried `building`, so two names for one idea became one.
-   */
-  building?: true;
-  /** a DRILL: deepens the core's excavation rather than mining anything of
-   *  its own — every one standing adds DRILL_CORE_INCOME to what the core
-   *  ships a second (economy.ts, Sim.income) */
-  drill?: true;
-  /** a factory: builds the run's faction's unit of this tier, one after
-   *  another, for the unit's price (economy.ts UNIT_PRICE) */
-  produces?: 1 | 2 | 3 | 4 | 5;
 }
 
-/** the bullet a wall carries: nothing, and it never leaves */
-const NO_BULLET: BulletStats = {
-  speed: 0,
-  damage: 0,
-  lifetime: 0,
-  splash: 0,
-  splashRadius: 0,
-  collidesAir: false,
-  collidesGround: false,
-};
-
-/**
- * ONE BUILDING'S STATS — a structure with no gun: a footprint, a pool and
- * a name. It was `wallStats` and built the six walls as well as the drill
- * and the factories; the walls are gone (types.ts) and every caller left
- * is a building, so it says `building` now rather than `wall` and the two
- * flags that had become synonyms are one.
- */
-const buildingStats = (name: string, health: number, size = 1): TowerStats => ({
-  name,
-  size,
-  health,
-  range: 0,
-  reload: 1,
-  shots: 0,
-  shotDelay: 0,
-  spread: 0,
-  inaccuracy: 0,
-  shootCone: 0,
-  rotateSpeed: 0,
-  targetAir: false,
-  targetGround: false,
-  bullet: NO_BULLET,
-  building: true,
-});
 
 export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // Duo, 1:1 from mindustry/content/Blocks.java with copper ammo
@@ -1180,10 +1123,11 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   },
   // Spectre, 1:1 from mindustry/content/Blocks.java with thorium ammo
   // (BasicBulletType(8, 80)). A shell every seven ticks, alternating twin
-  // barrels 8 units apart (ShootAlternate) — 686 damage a second, the
-  // highest sustained figure in the game and the whole reason it exists.
-  // (The phase tier used to be up-gunned 30% over stock — 104, 101 and
-  // 1755 — for the swarm; the RTS plays the stock numbers.)
+  // barrels 8 units apart (ShootAlternate) — with the shell up-gunned 30%
+  // over stock, 80 -> 104, alongside meltdown and foreshadow: the phase
+  // tier is priced as the run's last purchase and plays like it. 891
+  // damage a second, the highest sustained figure in the game and the
+  // whole reason it exists.
   //
   // pierceCap 2 makes every shell worth two bodies rather than one, and
   // knockback 0.7 shoves what survives back down the lane. Nothing about
@@ -1209,7 +1153,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     barrels: { count: 2, spread: 8 * MU },
     bullet: {
       speed: 8 * TICK * MU,
-      damage: 80,
+      damage: 104, // Mindustry's 80, +30% (see the note above)
       lifetime: (260 + 9 + 10) / 8 / TICK, // limitRange() default margin 9
       splash: 0,
       splashRadius: 0,
@@ -1222,7 +1166,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       knockback: 0.7,
       // THE SHELL IS DRAWN IN COPPER, not in thorium's pink. Every number
       // above is still thorium ammo's; this is the line's look, not its
-      // stats — a spectre ends duo's line (factions.ts) and now wears
+      // stats — a spectre ends duo's line and now wears
       // duo's plating, so it throws duo's round at four times the size
       sprite: {
         region: "bullet",
@@ -1242,9 +1186,10 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   },
   // Meltdown, from mindustry/content/Blocks.java: a LaserTurret, which
   // is a turret that does not fire shots at all. It lights a
-  // ContinuousLaserBulletType and HOLDS it — Mindustry's 78 to everything
-  // under the beam every five ticks, for 230 ticks, and only then does the
-  // 90-tick reload start running. 936 damage a second while it burns,
+  // ContinuousLaserBulletType and HOLDS it — Mindustry's 78 raised 30% to
+  // 101 (the phase-tier up-gun, see spectre) to everything under the beam
+  // every five ticks, for 230 ticks, and only then does the 90-tick reload
+  // start running. 1,212 damage a second while it burns,
   // against nothing at all while it cools: a 72% duty cycle.
   //
   // firingMoveFract halves the turret's turn rate for as long as the beam
@@ -1268,7 +1213,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     shootY: 4 * 4 * MU, // Turret's own default, as spectre's
     bullet: {
       speed: 0,
-      damage: 78, // per damageInterval, NOT per second
+      damage: 101, // per damageInterval, NOT per second — stock 78, +30%
       lifetime: 0, // the beam is turret state, not a projectile
       splash: 0,
       splashRadius: 0,
@@ -1291,7 +1236,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       shootFx: FxKind.LancerShoot,
       hitFx: FxKind.HitMeltdown,
       // THE BEAM IS LANCER'S BLUE, not Mindustry's orange — a meltdown
-      // ends arc's and lancer's line (factions.ts) and now wears its
+      // ends arc's and lancer's line and now wears its
       // plating, so it burns in its colour too. This entry carries the
       // muzzle cloud and the bars flicking off whatever the beam rests on;
       // the four washes of the beam itself are MELTDOWN_BEAM (weapons.ts),
@@ -1301,7 +1246,8 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   },
   // Foreshadow, from mindustry/content/Blocks.java with surge ammo (a
   // RailBulletType): 500 units of range — the only turret that outreaches
-  // the map's own lanes — and one 1350-damage shot every 200 ticks.
+  // the map's own lanes — and one 1755-damage shot every 200 ticks
+  // (Mindustry's 1350, +30%: the phase-tier up-gun, see spectre).
   //
   // THE DAMAGE IS A BUDGET, NOT A NUMBER. The rail is an instant line, and
   // every body it punches through takes whatever is LEFT of the 1350 and
@@ -1329,7 +1275,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     sort: "strongest",
     bullet: {
       speed: 0,
-      damage: 1350,
+      damage: 1755, // Mindustry's 1350, +30% (see the note above)
       lifetime: 1 / TICK, // RailBulletType's own: the damage is instant
       splash: 0,
       splashRadius: 0,
@@ -1347,70 +1293,6 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.bulletYellowBack,
     },
   },
-  // THE DRILL: Mindustry's pneumatic drill, 2x2 at Block's default health.
-  // It sinks a shaft on the highground like everything else the player
-  // builds and deepens the CORE's excavation (economy.ts) — the run's one
-  // income, made faster
-  drill: { ...buildingStats("Pneumatic Drill", 160, 2), building: true, drill: true },
-  // THE FACTORIES: the ground factory and the four reconstructors, each
-  // at Mindustry's own footprint and Block's default health for it. One
-  // building a tier: the T1 factory makes the faction's first body, the
-  // additive reconstructor its second, up to the tetrative's fifth
-  "factory-t1": { ...buildingStats("Unit Factory", 360, 3), building: true, produces: 1 },
-  "factory-t2": { ...buildingStats("Additive Reconstructor", 360, 3), building: true, produces: 2 },
-  "factory-t3": { ...buildingStats("Multiplicative Reconstructor", 1000, 5), building: true, produces: 3 },
-  "factory-t4": { ...buildingStats("Exponential Reconstructor", 1960, 7), building: true, produces: 4 },
-  "factory-t5": { ...buildingStats("Tetrative Reconstructor", 3240, 9), building: true, produces: 5 },
-};
-
-/**
- * THE MISSION BUILDINGS' STATS (types.ts MISSION_STRUCT_KINDS) — the
- * swarm's own, fielded by one assignment and never on the roster.
- *
- * A SECOND TABLE RATHER THAN MORE ROWS IN TOWERS, and the split is the
- * point: everything keyed on TowerKind is a thing the player can be sold,
- * shown, unlocked, upgraded or priced — the build bar, the progress
- * track, the balance page, the upgrade points, MINDUSTRY_VALUE — and a
- * launch pad is none of those. Putting it in TOWERS would mean answering
- * for it in every one of those records, forever, so that the answer could
- * be "never" every time. Here it answers for nothing and structStats()
- * still finds it, which is the only thing the sim and the renderer ever
- * wanted.
- *
- * They are `building` stats: no gun, no turret base, drawn flat over the
- * footprint. Whatever a mission building DOES it does through its
- * mission, never through a bullet.
- */
-export const MISSION_STRUCTS: Record<import("./types").MissionStructKind, TowerStats> = {
-  /**
-   * THE LAUNCH PAD — Mindustry's own block, 3x3, and the whole of
-   * Confluence's assignment (levels.ts, Mission "raid"). Five of them
-   * stand on the map, the swarm ships a rocket off one every few minutes,
-   * and the run is to have them all down before the last rocket goes up.
-   *
-   * ITS POOL IS THE MISSION'S PACING DIAL, and it is THE number to turn
-   * when a raid plays long or short — not the schedule, which is what the
-   * mission promises the player and what the objective text says.
-   *
-   * THE NUMBER HERE IS WHAT STANDS ON THE BOARD. A mission building does
-   * not ride TOWER_HP_SCALE (towerMaxHp): the dial is for the roster,
-   * whose numbers are Mindustry's block stats, and this one is a figure
-   * the mission was balanced against. A unit weapon does Mindustry's
-   * damage at the shipped dial (unitDamageScale, weapons.ts), so a stock
-   * dagger alone is about 83 a second and a squad of five that has walked
-   * all the way out there needs half a minute standing on the pad to
-   * finish it. Mindustry's own launch pad (250 a tile, 2,250 for the
-   * block) — and anything near it — is a building an army that arrives
-   * simply evaporates, which would make the whole assignment the WALK and
-   * nothing else.
-   *
-   * It is deliberately not larger than that. What is meant to cost the
-   * player the other twenty minutes is the ground between the pads and
-   * whatever is standing guard on it, not a health bar; a pool big enough
-   * to be the difficulty on its own would price the defences out of their
-   * own map.
-   */
-  "launch-pad": { ...buildingStats("Launch Pad", 12000, 3), building: true },
 };
 
 /**
@@ -1452,12 +1334,6 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   spectre: "A twin-barrel heavy machine gun with the highest sustained damage in the game, alternating between barrels so it never stops firing.",
   meltdown: "Holds a continuous laser on one target, burning through it for as long as it stays in range.",
   foreshadow: "An extreme-range railgun firing one enormous shot on a long reload. It picks the highest-health target in range rather than the nearest.",
-  drill: "Deepens the core's excavation: every drill standing adds to what the core ships a second, for as long as it stands. It mines nothing of its own — there is no ore on any map — and it makes no bodies. It is the only building in the game that pays for the others.",
-  "factory-t1": "Builds your faction's tier-1 unit, one after another, for the unit's price. Units walk out and attack-move at the enemy's nearest building.",
-  "factory-t2": "Builds your faction's tier-2 unit, one after another, for the unit's price.",
-  "factory-t3": "Builds your faction's tier-3 unit — the heavy of the line — one after another, for the unit's price.",
-  "factory-t4": "Builds your faction's tier-4 unit, one after another. A siege body: it costs a stage's income and takes minutes to make.",
-  "factory-t5": "Builds your faction's tier-5 unit, one after another. The top of the line, and the last thing a run affords.",
 };
 
 /**
@@ -1481,61 +1357,24 @@ export const targetingLine = (s: TowerStats): string =>
         : "Targets nothing";
 
 
-/**
- * THE ROSTER'S POOL, TIMES THIS — the one dial over what a building off
- * TOWER_KINDS can take, the swarm's guns and the player's factories alike
- * (towerMaxHp).
- *
- * IT IS 2, AND IT IS DOING THE WALLS' OLD JOB. The board used to have six
- * walls on it whose entire purpose was to hold a pool in front of
- * something that could not (types.ts); with them gone, a structure that
- * stood at Mindustry's own number stood alone and folded, and the answer
- * is to put the pool where the thing being defended is rather than in a
- * separate block bought to stand in front of it. So every roster building
- * holds twice what its block does upstream: a drill is 320 rather than
- * 160, a ground factory 720, a duo 500.
- *
- * IT GOVERNS THE ROSTER AND NOTHING ELSE, and that boundary is the point.
- * The core (CORE_HP) and the mission buildings (MISSION_STRUCTS) carry
- * ABSOLUTE numbers — what they are worth is not "a Mindustry block, and
- * then some", it is a figure a map was balanced against, and a dial that
- * silently doubled them would retune every mission written before it was
- * turned. So the two kinds of number are kept apart: turn this to make
- * the ordinary board tougher, and edit those where they are written to
- * change what a run is actually racing.
- *
- * ONE DIAL RATHER THAN TWO. There was a WALL_HP_SCALE beside this, so
- * that walls could be tuned apart from turrets; with no walls it governed
- * nothing but the drill and the factories, which is not a distinction
- * worth a second number. If turrets and buildings ever need to move
- * apart again, that is the split to reintroduce — deliberately, rather
- * than as a leftover.
- */
-export const TOWER_HP_SCALE = 2;
+
 
 /**
- * THE STATS OF ANY STRUCTURE KIND, and THE ONE FUNNEL EVERY READER GOES
- * THROUGH: the roster (TOWERS), whichever side stands it, plus the
- * mission buildings (MISSION_STRUCTS), which are the swarm's alone.
- *
- * Because the size, the pool and the `building` flag all come from here,
- * a mission building needs no special case anywhere in the sim or the
- * renderer — it is placed, blocked around, shot at, chipped by splash and
- * drawn exactly like one of the swarm's walls.
+ * A TURRET'S POOL, TIMES THIS — the one dial over what a structure can
+ * take (towerMaxHp). Four: there are no walls to stand in front of a gun
+ * (types.ts), so the gun itself holds the pool a line needs to be chewed
+ * on for a while, and the swarm's bite (weapons.ts unitDamageScale) stays
+ * at Mindustry's own number so a balance pass is done here and never row
+ * by row. The core (CORE_HP) is written on its own.
  */
-export const structStats = (kind: import("./types").StructKind): TowerStats =>
-  isMissionKind(kind) ? MISSION_STRUCTS[kind] : TOWERS[kind];
+export const TOWER_HP_SCALE = 4;
 
-/**
- * A STRUCTURE'S FULL POOL. A roster kind is its Mindustry block health
- * times the dial (TOWER_HP_SCALE); a MISSION building is the number
- * written on it and nothing else, because that number is a mission's
- * balance rather than a block's stat — see the note on the dial.
- */
-export const towerMaxHp = (kind: import("./types").StructKind): number =>
-  isMissionKind(kind) ?
-    MISSION_STRUCTS[kind].health
-  : TOWERS[kind].health * TOWER_HP_SCALE;
+/** the stats of a structure kind — one funnel, so a caller never reads TOWERS by hand */
+export const structStats = (kind: import("./types").TowerKind): TowerStats => TOWERS[kind];
+
+/** a structure's full pool: its Mindustry block health times the dial */
+export const towerMaxHp = (kind: import("./types").TowerKind): number =>
+  TOWERS[kind].health * TOWER_HP_SCALE;
 
 /**
  * CONSTRUCTION TIME, BY FOOTPRINT — a placed structure is not a finished
@@ -1554,10 +1393,8 @@ export const towerMaxHp = (kind: import("./types").StructKind): number =>
  * footprint itself.
  */
 export const BUILD_TIME_BY_SIZE = [0, 2, 4, 6.5, 10, 14, 18, 22, 26, 30] as const;
-/** how long this structure spends as a 1 hp shell before it works — a
- *  mission building is always stood up finished, so this never answers
- *  for one, but it is the footprint's number and answers for it anyway */
-export const buildTimeOf = (kind: import("./types").StructKind): number =>
+/** how long this structure spends as a 1 hp shell before it works */
+export const buildTimeOf = (kind: import("./types").TowerKind): number =>
   BUILD_TIME_BY_SIZE[structStats(kind).size] ?? BUILD_TIME_BY_SIZE[BUILD_TIME_BY_SIZE.length - 1];
 
 /**
@@ -1567,7 +1404,7 @@ export const buildTimeOf = (kind: import("./types").StructKind): number =>
  * sprite. One boolean rather than a stats pointer on every projectile
  * keeps Projectile a flat record, which is what the sim's hot loop wants.
  */
-export function bulletOf(kind: import("./types").StructKind, frag: boolean): BulletStats {
+export function bulletOf(kind: import("./types").TowerKind, frag: boolean): BulletStats {
   const b = structStats(kind).bullet;
   return frag && b.frag ? b.frag.bullet : b;
 }
@@ -1601,8 +1438,8 @@ export const SPAWN_UNMOVING = 30 / TICK;
  * tank crosses deep water AND dry land, so its field is the walkers' with
  * the deep cells opened up (navalWalkMask) and its doors are the water
  * zones AND the ground ones. What the layer still costs it is pace: ashore
- * it drives at NAVAL_LAND_SPEED of its stat. That is why every faction now
- * plays on every map — there is no terrain a layer cannot cross.
+ * it drives at NAVAL_LAND_SPEED of its stat. That is why every family now
+ * lands on every map — there is no terrain a layer cannot cross.
  *
  * REGIONS ARE GONE AND THIS REPLACED THEM. A drop zone used to carry a
  * NUMBER, and a wave group had to name the same number to use it — two
@@ -1703,20 +1540,14 @@ export const SHRAPNEL = {
 // the DEFAULT base: a 5x5 block of walkable goal cells. A map document
 // may place its own base anywhere (MapData.base), so nothing but the
 // fallback should read BASE directly — the live position is terrain.base
+
 /**
- * THE CORE'S HEALTH: Mindustry's core nucleus, 6,000 (Blocks.java), and
- * that is the whole number — it does NOT ride TOWER_HP_SCALE. It is the
- * run: the swarm exists to knock it down, and the moment it does the run
- * is over (Sim.lost).
- *
- * The dial exists to put the removed walls' pool into the roster
- * buildings that used to hide behind them, and the core was never one of
- * those — every map's pacing, every wave's weight and every mission's
- * clock is set against this figure, so doubling it as a side effect of a
- * roster change would have quietly made every map on the shelf easier.
- * What the core is worth is a decision taken here, on its own.
+ * THE CORE'S HEALTH: Mindustry's core nucleus, 6,000 (Blocks.java), times
+ * the same dial every turret carries — the number the fifty-wave script
+ * was tuned against. It is the run: the swarm exists to knock it down,
+ * and the moment it does the run is over (Sim.lost).
  */
-export const CORE_HP = 6000;
+export const CORE_HP = 6000 * TOWER_HP_SCALE;
 
 export const BASE = { x: 120, y: 33, size: 5 };
 /** every base is this many cells square */
