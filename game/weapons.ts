@@ -265,24 +265,16 @@ export interface UnitWeapon {
 }
 
 /**
- * ONE DIAL OVER EVERY UNIT WEAPON — what a swarm shot does to a STRUCTURE,
- * as a multiple of Mindustry's own number. The rows below are Mindustry's
- * and are meant to stay so; a balance pass is done here
- * (setUnitDamageScale) and on TOWER_HP_SCALE, never row by row.
- *
- * IT IS 0.02, AND THE NUMBER IS THE TIDE'S. A tower-defence wave here is
- * hundreds to thousands of bodies pressed into a line of turrets at once,
- * and every one of them that has a structure in reach fires at it: at
- * Mindustry's damage (x1) the headless bot's line on Confluence is chewed
- * flat by wave 11 at the lowest rung, at x0.1 by wave 17, at x0.05 by
- * wave 22, at x0.02 by wave 28, and with the dial at 0 it holds all
- * fifty (`npm run playtest -- --world 1 --unit-damage <x>`). Two hundredths
- * keeps the bite real — a line the swarm sits on for a wave is a line
- * that dies — without every pressed body being a wrecking crew. The
- * playtest takes the dial as --unit-damage; a map that plays long or
- * short is tuned on this and on the turrets' pool, not on the rows.
+ * ONE DIAL OVER EVERY UNIT WEAPON, at 1: the rows below are Mindustry's
+ * and the swarm bites a structure exactly as they say. The rows are meant
+ * to stay Mindustry's — the balance pass is done on the player's side
+ * (TOWER_HP_SCALE, the prices and the drops in economy.ts), and the
+ * playtest takes this dial as --unit-damage for a sweep. For the record,
+ * the headless bot on Confluence at the lowest rung, whole roster: at x1
+ * its line is chewed flat by wave 11, at x0.05 by wave 22, at x0.005 by
+ * wave 41, and with the dial at 0 it holds all fifty.
  */
-let damageScale = 0.02;
+let damageScale = 1;
 export const unitDamageScale = (): number => damageScale;
 export function setUnitDamageScale(x: number): void {
   damageScale = Math.max(0, x);
