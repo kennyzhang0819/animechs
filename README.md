@@ -344,12 +344,17 @@ the turret. **There are no walls**, and the pool they used to hold is in
 the guns: every turret carries four times its Mindustry block health
 (`TOWER_HP_SCALE`), and the phase tier fires 30% over stock; hurt, a
 turret greys and smokes like a unit; at zero it is wrecked and gone, its
-ground open again. **A placed turret goes up as a shell first** — one hit
+ground open again. **The swarm's bite against a structure is one dial**
+(`setUnitDamageScale` in `game/weapons.ts`, at 0.02 — two hundredths of
+Mindustry's damage), because a fifty-wave tide is thousands of bodies
+pressed into a line at once: at Mindustry's own number the headless bot's
+line on Confluence is chewed flat by wave 11 at the lowest rung, and at
+zero it holds all fifty. Two hundredths keeps the bite real without every
+pressed body being a wrecking crew; the playtest takes it as
+`--unit-damage`. **A placed turret goes up as a shell first** — one hit
 point, no gun, a construction bar over it, `BUILD_TIME_BY_SIZE` seconds by
 footprint — and stands up with its full pool when the timer runs out. The
-swarm's bite is one dial (`setUnitDamageScale`, at 1), so a balance pass
-is done on the two dials and never row by row; the playtest takes it as
-`--unit-damage`.
+balance pass is done on the two dials and never row by row.
 
 **Every map is checked headless.** `npm run playtest -- --world <id>`
 runs the real sim with an ordinary builder bot at the keyboard (route

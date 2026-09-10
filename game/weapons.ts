@@ -265,16 +265,24 @@ export interface UnitWeapon {
 }
 
 /**
- * ONE DIAL OVER EVERY UNIT WEAPON, at 1: the rows below are Mindustry's
- * and the swarm bites exactly as they say. THE ROSTER'S STRUCTURES ARE
- * NOT — they hold four times Mindustry's health (TOWER_HP_SCALE), which is
- * the walls' old job moved into the guns that used to hide behind them
- * (types.ts); the core rides the same dial (CORE_HP).
- * If a balance pass is ever needed it is done here (setUnitDamageScale)
- * and on that dial, not row by row — the rows are meant to stay
- * Mindustry's.
+ * ONE DIAL OVER EVERY UNIT WEAPON — what a swarm shot does to a STRUCTURE,
+ * as a multiple of Mindustry's own number. The rows below are Mindustry's
+ * and are meant to stay so; a balance pass is done here
+ * (setUnitDamageScale) and on TOWER_HP_SCALE, never row by row.
+ *
+ * IT IS 0.02, AND THE NUMBER IS THE TIDE'S. A tower-defence wave here is
+ * hundreds to thousands of bodies pressed into a line of turrets at once,
+ * and every one of them that has a structure in reach fires at it: at
+ * Mindustry's damage (x1) the headless bot's line on Confluence is chewed
+ * flat by wave 11 at the lowest rung, at x0.1 by wave 17, at x0.05 by
+ * wave 22, at x0.02 by wave 28, and with the dial at 0 it holds all
+ * fifty (`npm run playtest -- --world 1 --unit-damage <x>`). Two hundredths
+ * keeps the bite real — a line the swarm sits on for a wave is a line
+ * that dies — without every pressed body being a wrecking crew. The
+ * playtest takes the dial as --unit-damage; a map that plays long or
+ * short is tuned on this and on the turrets' pool, not on the rows.
  */
-let damageScale = 1;
+let damageScale = 0.02;
 export const unitDamageScale = (): number => damageScale;
 export function setUnitDamageScale(x: number): void {
   damageScale = Math.max(0, x);
