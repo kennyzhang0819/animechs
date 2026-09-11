@@ -1026,9 +1026,14 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // Tsunami — wave's weapon at the endgame's scale, and the same departure
   // from upstream for the same reason (see wave above). Mindustry's
   // tsunami is a bigger hose; this one is a bigger SHELL. Upstream's
-  // knockback 1.7 is still traded for the deeper slow, which is the entire
-  // reason to pay a size-3, endgame-priced bill for a turret that barely
-  // scratches anything.
+  // knockback 1.7 is still traded for the deeper slow.
+  //
+  // AND IT HITS, WHICH WAVE DOES NOT. This used to be wave's splash of 2
+  // at three times the price and a size-3 footprint: a rare that could
+  // not kill the thing it had spent four seconds slowing, so a board
+  // fielding one was paying five thousand scrap for a debuff and nothing
+  // else. The slow is still WHAT IT IS FOR — the 45% for 4 s is the reason
+  // it goes down, and it is untouched — but the shot is a shot now.
   //
   // Everything about it is wave's shot, louder:
   //  - twin barrels 4 units apart throwing together (ShootAlternate,
@@ -1040,7 +1045,16 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   //    puddles. The scatter is deliberately wider than wave's: at 190
   //    units of range a tight pair would soak one spot, and a burst this
   //    size can afford to miss by tiles and still catch the whole group.
-  //  - splash 2, which is still nothing. This kills as little as wave does.
+  //  - splash 20 a ball, so eight balls a second is 160 a second laid
+  //    over everything in the burst, air and ground alike. Against
+  //    ripple's 140 that reads as more, and it is not: a ball is ARMOUR
+  //    SHAVED LIKE ANY OTHER HIT (applyArmor), and twenty points shaved
+  //    flat eight times a second is what a hail does to a heavy, while
+  //    ripple's seventy lands whole. What tsunami has over the artillery
+  //    is the area — four times ripple's — and the four seconds of wet
+  //    under it. Wave is still the one that kills nothing (splash 1): it
+  //    is a size-2 common, and the two must not read as the same turret
+  //    at two prices.
   // The shot itself is upstream's heavy round — speed 4, lifetime 49 ticks
   // over 190 range — and the soak is upstream's duration (statusDuration
   // 60*4): wet units drive at 45% speed for 4 s, so anything crossing its
@@ -1066,7 +1080,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       speed: 4 * TICK * MU,
       damage: 0, // as wave: every point this shot deals is splash
       lifetime: 49 / TICK, // 196 units of flight over a 190 range
-      splash: 2,
+      splash: 20,
       splashRadius: 46 * MU,
       collidesAir: true,
       collidesGround: true,
@@ -1499,7 +1513,7 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   fuse: "Shoots three heavy rays at very close range.",
   swarmer: "Shoots homing missiles that explode on contact.",
   cyclone: "Shoots a fast stream of shells that burst into fragments.",
-  tsunami: "Throws heavy water balls that burst into a huge soaking flood.",
+  tsunami: "Throws heavy water balls that burst into a huge flood, soaking and shredding everything caught in it.",
   mender: "Repairs nearby buildings every few seconds.",
   mendProjector: "Repairs nearby buildings faster and over a wider area.",
   spectre: "Shoots heavy bullets from two barrels without stopping.",
