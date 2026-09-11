@@ -3,11 +3,11 @@
 /**
  * WHAT A MUTATOR LOOKS LIKE — its face, and the colour of how bad it is.
  *
- * IT LIVES HERE BECAUSE THREE SCREENS DRAW THE SAME RULE. The codex board
- * draws a shelf of them, the deploy dialog draws the handful this run is
- * played under, and the tab strip over both of them wears the codex's own
- * glyph. A rule that reads as Brutal red on one screen and amber on
- * another is a bug a player cannot report, so the band lives here and
+ * IT LIVES HERE BECAUSE THREE SCREENS DRAW THE SAME RULE. The unlocks
+ * board shelves every one of them, the progress track hands them out a
+ * row at a time, and the deploy dialog draws the handful this run is
+ * played under. A rule that reads as Brutal red on one screen and amber
+ * on another is a bug a player cannot report, so the band lives here and
  * every screen asks it rather than keeping its own copy. The face is the
  * other half of the same question and comes from mutationArt.ts, which
  * draws it; this module is where a screen goes to get both.
@@ -23,41 +23,31 @@ import { FACE_GRID, mutatorFace } from "./mutationArt";
 
 /** the codex's colour, kept from the old column — deliberately NOT the
  *  tree's gold, because gold on the other board means "bought, owned,
- *  yours", and there is nothing here to own. The tab strip wears it, and
- *  so does the mutator chip's ring on the progress track. */
+ *  yours", and there is nothing here to own. The unlocks tab wears it,
+ *  and so does a mutator chip's ring on both boards. */
 export const MUT_LIT = "#FF8ACB";
-
-/**
- * THE CODEX TAB'S FACE — a path, and deliberately still a path.
- *
- * This is UI chrome, not art: it hangs in the tab strip beside
- * TRACK_GLYPH (Progress.tsx), which is a 24x24 vector of the same weight,
- * and a tab whose two glyphs were drawn on different grids at different
- * weights would read as a mistake. The card fallback for a rule with no
- * picture of its own is NOT this — it is the pixel chevrons in
- * mutationArt.ts, which belong with the other faces.
- */
-export const MUT_GLYPH = "M12 2 4 9h5v2H4l8 7 8-7h-5V9h5z";
 
 /**
  * The card's face: the rule's picture, drawn on a 32-square pixel grid in
  * the game's own palette (mutationArt.ts). A rule nobody has drawn yet
  * falls back to the codex's chevrons, the way it always has.
  *
- * THE FACE NO LONGER CARRIES THE BAND, AND DOES NOT NEED TO. It used to
- * be a single path tinted by how dear the rule was, because the tint was
- * the only thing answering "how bad is this". Both shelves put the band on
- * the FRAME around the face instead — a 3px band-coloured border on the
- * codex tile (MutationTree) and a 1px one on the deploy chip (MechSwarm) —
- * so the weight is answered either way, and the picture inside is free to
- * say what the RULE IS. Green heals, blue is a field, ember is damage,
- * gunmetal is a structure: the vocabulary the rest of the art speaks.
+ * THE FACE NO LONGER CARRIES THE BAND, AND NOTHING NEEDS IT TO. It used
+ * to be a single path tinted by how dear the rule was, because the tint
+ * was one of the things answering "how bad is this". Every screen that
+ * draws a face already answers it another way: the deploy chip borders
+ * itself in the band (DealRuleCell, MechSwarm), and the track and the
+ * unlocks board both hand the band to the hover card as its corner word
+ * (rewardLook, Progress) — which is the only place either of them ever
+ * showed it, since a mutator chip wears the codex's pink on both.
  *
- * The one screen that loses a signal is the progress track, where a
- * mutator chip wears the codex's pink ring and the face WAS the band (see
- * Progress.tsx). It is a fair trade there — the chip beside it holds a
- * full-colour turret sprite, so a full-colour mutator face is more at home
- * on that row, not less.
+ * So the weight is read as a word or as a border, and the picture inside
+ * is free to say what the RULE IS instead. Green heals, blue is a field,
+ * ember is damage, gunmetal is a structure: the vocabulary the rest of
+ * the art already speaks. On a track row that is the more consistent
+ * thing as well as the prettier one — the chip under it holds a
+ * full-colour turret sprite, and a flat-tinted glyph was the odd one
+ * out.
  *
  * crispEdges is not decoration: without it the browser antialiases the
  * seams between two abutting runs and a 20px chip goes soft.
