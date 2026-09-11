@@ -12,13 +12,19 @@ import {
   type Facing,
   type FormationId,
 } from "@/game/formation";
-import type { Game, UiState } from "@/game/game";
+import type { DealHalf, Game, UiState } from "@/game/game";
 import { RARITY, rarityDef } from "@/game/rarity";
 import type { ModId } from "@/game/mods";
 import type { TowerKind } from "@/game/types";
 import { TOWER_ICONS } from "./towerIcons";
 import { Glyph, ModReveal } from "./Relics";
 import { HoverCard, useHoverCard } from "./HoverCard";
+
+/** what a shut half of the catalog says under its label (game.ts DealHalf) */
+const HALF_SUB: Record<Exclude<DealHalf, "open">, string> = {
+  owned: "all owned",
+  locked: "locked",
+};
 
 /**
  * THE DEAL — the roguelike door a charged run buys through, and
@@ -564,41 +570,64 @@ export function DealCorner({
             aria={`${card ? "Re-roll" : "Buy"} turret at ${n} times the shape for ${turretCost} scrap, shortcut T`}
           />
           {/* THE TWO HALVES OF THE CATALOG (mods.ts). Each goes dark on
-              its OWN half being owned out, which is the one case a press
-              would take the money for nothing — so a run that has taken
-              every relic keeps buying mods */}
+              its OWN half being shut, which is the one case a press would
+              take the money for nothing — so a run that has taken every
+              relic keeps buying mods.
+              A DARK BUTTON SAYS WHICH KIND OF DARK IT IS (game.ts
+              DealHalf): "all owned" is a run that has taken everything
+              there is, and "locked" is a save the track has not dealt
+              this half to yet — relics open at a level (track.ts
+              RELICS_FROM), so the G button starts shut and a player owed
+              an explanation gets one rather than being told they own
+              relics they have never seen */}
           <BuyButton
             keyCap="M"
             label="Mods"
-            sub={!hud.modsLeft ? "all owned" : n > 1 ? `${n} draws` : "on new turrets"}
-            price={hud.modsLeft && !free ? modCost : null}
+            sub={
+              hud.modDeal !== "open"
+                ? HALF_SUB[hud.modDeal]
+                : n > 1
+                  ? `${n} draws`
+                  : "on new turrets"
+            }
+            price={hud.modDeal === "open" && !free ? modCost : null}
             poor={short(modCost)}
-            disabled={!hud.modsLeft}
+            disabled={hud.modDeal !== "open"}
             amount={n}
             tint="#7BDFF2"
             glyph={<Glyph glyph="barrel" className="h-[22px] w-[22px]" />}
             onPress={deal.buyMods}
             aria={
-              hud.modsLeft
+              hud.modDeal === "open"
                 ? `Buy ${n} turret mod${n > 1 ? "s" : ""} for ${modCost} scrap, shortcut M`
-                : "Buy mods — every turret mod is owned"
+                : hud.modDeal === "owned"
+                  ? "Buy mods — every turret mod is owned"
+                  : "Buy mods — locked until the track opens one"
             }
           />
           <BuyButton
             keyCap="G"
             label="Relics"
-            sub={!hud.relicsLeft ? "all owned" : n > 1 ? `${n} draws` : "in force now"}
-            price={hud.relicsLeft && !free ? relicCost : null}
+            sub={
+              hud.relicDeal !== "open"
+                ? HALF_SUB[hud.relicDeal]
+                : n > 1
+                  ? `${n} draws`
+                  : "in force now"
+            }
+            price={hud.relicDeal === "open" && !free ? relicCost : null}
             poor={short(relicCost)}
-            disabled={!hud.relicsLeft}
+            disabled={hud.relicDeal !== "open"}
             amount={n}
             tint="#C08BFF"
             glyph={<Glyph glyph="star" className="h-[22px] w-[22px]" />}
             onPress={deal.buyRelics}
             aria={
-              hud.relicsLeft
+              hud.relicDeal === "open"
                 ? `Buy ${n} relic${n > 1 ? "s" : ""} for ${relicCost} scrap, shortcut G`
-                : "Buy relics — every relic is owned"
+                : hud.relicDeal === "owned"
+                  ? "Buy relics — every relic is owned"
+                  : "Buy relics — locked until the track opens one"
             }
           />
           {/* THE AMOUNT COMES LAST, in the far corner of the square,

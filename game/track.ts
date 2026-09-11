@@ -7,6 +7,7 @@ import {
   type FormationId,
 } from "./formation";
 import { WORLDS } from "./levels";
+import { MODS, modDef, modName, modsOfScope, oddsLine, type ModId } from "./mods";
 import { MUTATIONS, mutationById, type MutationId } from "./mutation";
 import { BY_MINDUSTRY_VALUE, type TechState } from "./tech";
 import {
@@ -54,6 +55,12 @@ import {
  *   22, and the rules land on the levels between them. Every level still
  *   carries something — the shapes are placed last, into whatever the guns
  *   and the maps left empty.
+ *
+ *   THE MODULES RUN THE WHOLE LENGTH OF IT (MOD_UNLOCKS). A mod or a
+ *   relic is dealt on nearly every level from 2 up, because the deal's
+ *   two other buttons are what a run actually spends its scrap on and a
+ *   catalog that is whole from wave one has nothing left to give. A fresh
+ *   save opens on four ticks and no relics at all.
  *
  * THE UPGRADE RUNGS ARE OFF THE TRACK (UPGRADES_ON_TRACK): the branches in
  * upgrades.ts are intact and waiting to be put back somewhere.
@@ -122,6 +129,7 @@ export type Reward =
   | { kind: "speed"; mult: number }
   | { kind: "turret"; id: TowerKind }
   | { kind: "shape"; id: FormationId }
+  | { kind: "module"; id: ModId }
   | { kind: "mutator"; id: MutationId }
   | { kind: "upgrade"; id: UpgradeKind };
 
@@ -256,6 +264,106 @@ export function shapeUnlockLevel(id: FormationId): number {
   return MAX_LEVEL + 1;
 }
 
+/**
+ * THE MODULES (mods.ts) — the third thing the track deals, and the one a
+ * player calls "upgrades".
+ *
+ * A FRESH SAVE OPENS THE M BUTTON ON FOUR TICKS AND THE G BUTTON ON
+ * NOTHING. The whole catalog used to be on offer from level one: twenty-
+ * seven modules in the bag, so a first run's M press was as likely to turn
+ * over an ALL ROUND as a save that had earned its way to the top of the
+ * track, and the shelf of relics a player is climbing towards was already
+ * theirs on the first wave. The modules are dealt now, exactly as the
+ * turrets and the shapes are, and the opening four are the four commons —
+ * one per stat, so the first mod a run buys teaches what a mod IS (a
+ * chance riding every turret placed) without also asking what a sabot is.
+ *
+ * RELICS OPEN AT RELICS_FROM, and they are the one half of a corner
+ * button that starts SHUT. That is deliberate and it is said out loud: a
+ * relic changes the game and costs thirty thousand (economy.ts), and a
+ * save that has not yet seen its second map has no business being offered
+ * one. The G button prints "locked" until the level lands.
+ *
+ * THE ORDER IS CHEAPEST BAND FIRST, the two halves interleaved, so a save
+ * climbing the middle of the track is alternately widening what its
+ * turrets can be born with and what the whole board plays under. The
+ * ultras are last and spread, for the reason the purples are (UNLOCKS):
+ * the thing a run hopes to turn over must not be in the bag from the
+ * beginning.
+ */
+export const STARTING_MODS: readonly ModId[] = ["dmg1", "rate1", "hp1", "range1"];
+
+/** the level the relic half of the catalog opens — the first `global`
+ *  module on the track, and what the G button prints until then */
+export const RELICS_FROM = 3;
+
+const MOD_UNLOCKS: Readonly<Record<number, readonly ModId[]>> = {
+  2: ["dmg2"],
+  3: ["overclock"],
+  4: ["rate2"],
+  5: ["scavenger"],
+  6: ["hp2"],
+  7: ["coolant"],
+  8: ["range2"],
+  9: ["insurance"],
+  10: ["pierce1"],
+  11: ["phosphor"],
+  12: ["regen1"],
+  13: ["prototype"],
+  14: ["lastVolley"],
+  // 15 is the mutator phase opening three rules at once — it deals no
+  // module, because a level that hands over four things hands over none
+  16: ["bulwark"],
+  17: ["phoenix"],
+  18: ["sabot"],
+  19: ["twinfire"],
+  21: ["splitter"],
+  23: ["giant"],
+  24: ["undying"],
+  25: ["sniper"],
+  26: ["ascendancy"],
+  27: ["allround"],
+};
+
+/** every module exactly once, and the relic gate where it says — checked at import */
+(() => {
+  const seen = new Set<ModId>(STARTING_MODS);
+  if (seen.size !== STARTING_MODS.length) throw new Error("a starting module is dealt twice");
+  for (const id of STARTING_MODS)
+    if (modDef(id).scope !== "turret")
+      throw new Error(`the save opens with the relic "${id}" — relics are earned (RELICS_FROM)`);
+  let firstRelic = MAX_LEVEL + 1;
+  for (const [level, row] of Object.entries(MOD_UNLOCKS)) {
+    if (row.length === 0) throw new Error(`level ${level} opens no module`);
+    if (+level < 2 || +level > MAX_LEVEL)
+      throw new Error(`the track opens a module on level ${level}, off the track`);
+    for (const id of row) {
+      if (seen.has(id)) throw new Error(`the track opens the module "${id}" twice`);
+      seen.add(id);
+      if (modDef(id).scope === "global") firstRelic = Math.min(firstRelic, +level);
+    }
+  }
+  for (const m of MODS)
+    if (!seen.has(m.id)) throw new Error(`the track never opens the module "${m.id}"`);
+  if (firstRelic !== RELICS_FROM)
+    throw new Error(`the first relic opens on level ${firstRelic}, and RELICS_FROM says ${RELICS_FROM}`);
+})();
+
+/** the modules a level has dealt: the opening four and every one since */
+export function modsAt(level: number): Set<ModId> {
+  const out = new Set<ModId>(STARTING_MODS);
+  for (const [l, row] of Object.entries(MOD_UNLOCKS))
+    if (+l <= level) for (const id of row) out.add(id);
+  return out;
+}
+
+/** the level a module joins the deal — 1 for the opening four */
+export function modUnlockLevel(id: ModId): number {
+  if (STARTING_MODS.includes(id)) return 1;
+  for (const [l, row] of Object.entries(MOD_UNLOCKS)) if (row.includes(id)) return +l;
+  return MAX_LEVEL + 1;
+}
+
 /** the roster by the level it opens on: the starting four on 1, UNLOCKS after */
 function dealTurrets(): Map<number, TowerKind[]> {
   const out = new Map<number, TowerKind[]>();
@@ -341,6 +449,7 @@ const DEALT: Map<number, UpgradeKind[]> = UPGRADES_ON_TRACK ? dealUpgrades() : n
 const REWARD_ORDER: readonly Reward["kind"][] = [
   "turret",
   "shape",
+  "module",
   "upgrade",
   "mutator",
   "speed",
@@ -355,6 +464,7 @@ export function rewardsAt(level: number): Reward[] {
   for (const id of TURRETS_DEALT.get(level) ?? []) out.push({ kind: "turret", id });
   const shape = SHAPE_UNLOCKS[level];
   if (shape) out.push({ kind: "shape", id: shape });
+  for (const id of MOD_UNLOCKS[level] ?? []) out.push({ kind: "module", id });
   for (const id of DEALT.get(level) ?? []) out.push({ kind: "upgrade", id });
   for (const id of MUTATOR_UNLOCKS[level] ?? []) out.push({ kind: "mutator", id });
   for (const p of PLACED) if (p.level === level) out.push(p.reward);
@@ -454,6 +564,10 @@ export function rewardText(r: Reward): string {
   if (r.kind === "speed") return `${r.mult}x speed`;
   if (r.kind === "turret") return `Turret: ${TOWER_NAME[r.id]}`;
   if (r.kind === "shape") return `Shape: ${formationDef(r.id).name}`;
+  if (r.kind === "module") {
+    const d = modDef(r.id);
+    return `${d.scope === "global" ? "Relic" : "Mod"}: ${modName(d)}`;
+  }
   if (r.kind === "mutator") return `Mutator: ${mutationById(r.id)?.name ?? r.id}`;
   const u = upgradeDef(r.id);
   return `${TOWER_NAME[u.turret]}: ${u.name}`;
@@ -468,20 +582,33 @@ export function rewardBlurb(r: Reward): string {
     const f = formationDef(r.id);
     return `A formation of ${formationCount(r.id)} turrets on a ${f.w}x${f.h} grid.`;
   }
+  if (r.kind === "module") return modDef(r.id).blurb;
   if (r.kind === "mutator")
     return mutationById(r.id)?.blurb ?? "";
   return upgradeDef(r.id).blurb;
 }
 
 /**
- * WHO A TURRET REWARD SHOOTS AT — the line the progress card prints under
- * the blurb, and null for every reward that is not a turret. It reads the
- * STOCK stats on purpose: this screen is about earning the gun, and nothing
- * on the track has been upgraded yet. The in-run build card asks the sim
- * instead (Hud.targeting), which is what makes its line follow an upgrade.
+ * THE LINE UNDER A REWARD'S BLURB, and null for the rewards that have
+ * nothing to add to their own sentence.
+ *
+ * A TURRET'S IS WHO IT SHOOTS AT, off the STOCK stats on purpose: this
+ * screen is about earning the gun, and nothing on the track has been
+ * upgraded yet. The in-run build card asks the sim instead (Hud.targeting),
+ * which is what makes its line follow an upgrade.
+ *
+ * A MODULE'S IS ITS ODDS (mods.ts oddsLine) — a mod is a CHANCE on every
+ * turret placed and a relic is in force the moment it is bought, and that
+ * difference is the one thing about a module a player has to know before
+ * paying for one. A named mod says what it does in numbers first, because
+ * its name is a name and the stats are nowhere else on the card.
  */
-export function rewardTargeting(r: Reward): string | null {
-  return r.kind === "turret" ? targetingLine(TOWERS[r.id]) : null;
+export function rewardNote(r: Reward): string | null {
+  if (r.kind === "turret") return targetingLine(TOWERS[r.id]);
+  if (r.kind !== "module") return null;
+  const d = modDef(r.id);
+  const odds = oddsLine(d) + (d.scope === "turret" ? ", per copy owned" : "");
+  return d.name && d.tweak ? `${d.tweak}. ${odds}` : odds;
 }
 
 /** the turret's display name, as the card prints it */
@@ -524,13 +651,18 @@ export function unlocksOf(kind: UnlockKind): UnlockEntry[] {
   if (kind === "shape")
     for (const f of FORMATION_IDS)
       out.push({ reward: { kind: "shape", id: f }, level: shapeUnlockLevel(f) });
+  // MODS BEFORE RELICS, the order the corner's two buttons read in — the
+  // sort below is stable, so inside a level that order survives
+  if (kind === "upgrade")
+    for (const scope of ["turret", "global"] as const)
+      for (const m of modsOfScope(scope))
+        out.push({ reward: { kind: "module", id: m.id }, level: modUnlockLevel(m.id) });
   if (kind === "mutator")
     for (const m of MUTATIONS)
       out.push({ reward: { kind: "mutator", id: m.id }, level: mutatorUnlockLevel(m.id) });
-  // THE UPGRADE BRANCHES ARE OFF THE TRACK (UPGRADES_ON_TRACK): they are
-  // written, folded and waiting, and nothing deals one — so the category
-  // is deliberately EMPTY rather than a shelf of rungs a player can never
-  // reach. The board says so in words where the tiles would be.
+  // THE TECH-TREE BRANCHES ARE OFF THE TRACK (UPGRADES_ON_TRACK): they
+  // are written, folded and waiting, and nothing deals one — so they add
+  // nothing to the category, which the modules above fill on their own.
   if (kind === "upgrade" && UPGRADES_ON_TRACK)
     for (const u of ALL_UPGRADES) {
       let level = MAX_LEVEL + 1;
@@ -551,6 +683,7 @@ export function techStateFor(level: number): TechState {
     unlocked: turretsAt(level),
     shapes: shapesAt(level),
     speeds: speedsAt(level),
+    mods: modsAt(level),
     upgrades: upgradesAt(level),
   };
 }

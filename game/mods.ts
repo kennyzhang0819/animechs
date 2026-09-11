@@ -986,16 +986,23 @@ export function applyChanceOverrides(doc: Record<string, unknown>): void {
  * late run draws from what is left rather than paying to be told it
  * already has the thing. Null when that half is owned out, which is the
  * one case the button must refuse.
+ *
+ * NEITHER IS ONE THE SAVE HAS NOT EARNED. `open` is what the track has
+ * dealt (track.ts modsAt, carried in on TechState.mods); null is every
+ * module there is, which is what a free board draws from — the sandbox
+ * and the editors are not a campaign and have nothing to unlock.
  */
 export function rollMod(
   owned: Readonly<Partial<Record<ModId, number>>> = {},
   scope: ModScope | null = null,
   weights: RarityWeights = MODULE_ODDS.live(),
   rng: () => number = Math.random,
+  open: ReadonlySet<ModId> | null = null,
 ): ModId | null {
   const byRarity = new Map<Rarity, ModId[]>();
   for (const m of MODS) {
     if (scope && m.scope !== scope) continue;
+    if (open && !open.has(m.id)) continue;
     if ((owned[m.id] ?? 0) >= m.max) continue;
     const list = byRarity.get(m.rarity);
     if (list) list.push(m.id);
@@ -1036,12 +1043,24 @@ export function oddsLine(d: ModDef, copies = 1): string {
 }
 
 /** is there anything left in this half of the catalog to draw? — what
- *  greys one of the two buttons out on a run that has bought it out */
+ *  greys one of the two buttons out on a run that has bought it out.
+ *  `open` is the save's earned catalog, as rollMod takes it */
 export const anyModLeft = (
   owned: Readonly<Partial<Record<ModId, number>>>,
   scope: ModScope | null = null,
+  open: ReadonlySet<ModId> | null = null,
 ): boolean =>
-  MODS.some((m) => (!scope || m.scope === scope) && (owned[m.id] ?? 0) < m.max);
+  MODS.some(
+    (m) =>
+      (!scope || m.scope === scope) &&
+      (!open || open.has(m.id)) &&
+      (owned[m.id] ?? 0) < m.max,
+  );
+
+/** has the track opened this half of the catalog AT ALL? — the difference
+ *  between a button that has been bought out and one not yet earned */
+export const anyModOpen = (scope: ModScope, open: ReadonlySet<ModId> | null): boolean =>
+  !open || MODS.some((m) => m.scope === scope && open.has(m.id));
 
 /** the turret deal's odds as the run's relics leave them (ascendancy) */
 export function shiftedWeights(

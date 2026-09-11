@@ -5,6 +5,7 @@ import {
   type UpgradePoints,
 } from "./upgrades";
 import type { FormationId } from "./formation";
+import type { ModId } from "./mods";
 import { FIELDED_KINDS, type TowerKind } from "./types";
 
 /**
@@ -21,6 +22,11 @@ export interface TechState {
   shapes: ReadonlySet<FormationId>;
   /** the fast-forward paces switched on, ascending, 1x included */
   speeds: readonly number[];
+  /** the MODULES the save owns the right to be offered (mods.ts) — the
+   *  mods the M button may roll and the relics the G button may, dealt by
+   *  the track exactly as the turrets and the shapes are. A half of the
+   *  catalog with nothing in it yet is a button that says so */
+  mods: ReadonlySet<ModId>;
   /** each turret's upgrade rungs, as the sim folds them (upgradedTower) */
   upgrades: Record<TowerKind, UpgradePoints>;
 }

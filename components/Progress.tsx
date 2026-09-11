@@ -11,12 +11,13 @@ import {
 import { levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
 import { WORLDS } from "@/game/levels";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
+import { modDef } from "@/game/mods";
 import { mutationById } from "@/game/mutation";
 import { effectiveLevel, levelOf, type Progress } from "@/game/progress";
 import {
   MAX_LEVEL,
   rewardBlurb,
-  rewardTargeting,
+  rewardNote,
   rewardText,
   ROSTER_TOP,
   TRACK,
@@ -29,6 +30,7 @@ import { HoverCard, useHoverCard } from "./HoverCard";
 import { itemCount } from "./Items";
 import Unlocks from "./Unlocks";
 import { bandFor, MutationFace, MUT_LIT } from "./mutationFace";
+import { Glyph } from "./Relics";
 import { formationDef, formationRarity, type FormationId } from "@/game/formation";
 import { RARITY, rarityDef } from "@/game/rarity";
 import { TOWER_ICONS } from "./towerIcons";
@@ -85,6 +87,9 @@ const REWARD_COLOR: Record<Reward["kind"], string> = {
   // chip below holds a full-colour turret sprite and a flat-tinted glyph
   // was the odd one out
   mutator: MUT_LIT,
+  // a module wears its own band (rarityDef below), like a turret and a
+  // shape do — this is the fallback nothing reaches
+  module: "#C6C6CE",
   upgrade: "#FFD37F",
 };
 
@@ -148,6 +153,10 @@ function RewardFace({ reward }: { reward: Reward }) {
     return <span className="font-display text-[13px] font-bold leading-none">{reward.mult}x</span>;
   if (reward.kind === "mutator") return <MutationFace id={reward.id} size="h-6 w-6" />;
   if (reward.kind === "shape") return <ShapeFace id={reward.id} />;
+  // a module has no sprite — it is not a building — so it wears the same
+  // small geometry the shelf and the reveal draw it as (Relics.tsx)
+  if (reward.kind === "module")
+    return <Glyph glyph={modDef(reward.id).glyph} className="h-[22px] w-[22px]" />;
   const kind = reward.kind === "turret" ? reward.id : upgradeDef(reward.id).turret;
   return (
     <img
@@ -196,7 +205,9 @@ export function rewardLook(reward: Reward): {
       ? rarityDef(reward.id)
       : reward.kind === "shape"
         ? RARITY[formationRarity(reward.id)]
-        : null;
+        : reward.kind === "module"
+          ? RARITY[modDef(reward.id).rarity]
+          : null;
   return {
     face: <RewardFace reward={reward} />,
     color: rarity ? rarity.color : REWARD_COLOR[reward.kind],
@@ -221,7 +232,7 @@ function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
         ref={tip.ref}
         tabIndex={0}
         aria-label={`${text}${rarity ? `, ${rarity}` : ""}. ${rewardBlurb(reward)}${
-          rewardTargeting(reward) ? `. ${rewardTargeting(reward)}` : ""
+          rewardNote(reward) ? `. ${rewardNote(reward)}` : ""
         }`}
         {...tip.anchorProps}
         className={`relative flex h-9 w-9 shrink-0 cursor-default items-center justify-center overflow-hidden border-2 bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
@@ -242,8 +253,8 @@ function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
         {rewardBlurb(reward)}
         {/* a turret's card carries the same targeting line the build menu
             prints, on its own line under the prose */}
-        {rewardTargeting(reward) && (
-          <span className="mt-1.5 block font-bold text-[#A6A6AF]">{rewardTargeting(reward)}</span>
+        {rewardNote(reward) && (
+          <span className="mt-1.5 block font-bold text-[#A6A6AF]">{rewardNote(reward)}</span>
         )}
       </HoverCard>
     </>

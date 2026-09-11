@@ -43,8 +43,10 @@ import {
 } from "./economy";
 import {
   anyModLeft,
+  anyModOpen,
   maskRarity,
   modsInMask,
+  MODULE_ODDS,
   rollMod,
   shiftedWeights,
   TURRET_MOD_IDS,
@@ -68,6 +70,16 @@ import { fitZoom } from "./fit";
 import { PICK_LENIENT, PICK_STRUCT_PAD, Sim } from "./sim";
 import { type TechState } from "./tech";
 import { isCore, type Tower } from "./types";
+
+/**
+ * WHAT ONE HALF OF THE MODULE CATALOG CAN DO RIGHT NOW (mods.ts): draw,
+ * or the reason it cannot. The two reasons are genuinely different and
+ * the button has to say which — "all owned" is a run that has taken
+ * everything there is, and "locked" is a save the track has not dealt
+ * this half to yet (track.ts MOD_UNLOCKS, RELICS_FROM). A player told
+ * "all owned" on their first run would be told a lie about their save.
+ */
+export type DealHalf = "open" | "owned" | "locked";
 
 export interface UiState {
   levelId: string;
@@ -161,10 +173,12 @@ export interface UiState {
    *  including for a repeat (Game.lastMods) */
   lastMods: ModId[];
   modDraws: number;
-  /** is there anything left in each half of the catalog to draw? — what
-   *  greys out the M button and the R button, separately */
-  modsLeft: boolean;
-  relicsLeft: boolean;
+  /** what each half of the catalog can do for this press — what lights
+   *  the M button and the G button, and what each says when it cannot
+   *  (Deal.tsx). The two halves are asked separately: a run that has taken
+   *  every relic keeps buying mods */
+  modDeal: DealHalf;
+  relicDeal: DealHalf;
   /**
    * WHAT IS SELECTED ON THE BOARD, for the panel at the bottom of the
    * screen — null when nothing is.
@@ -1266,6 +1280,7 @@ export class Game {
    */
   private buyModules(scope: ModScope): ModId[] {
     if (this.sim.lost() || this.won() || this.menuOpen) return [];
+    if (this.dealHalf(scope) !== "open") return [];
     const each = this.modulePrice(scope);
     const n = this.buyAmount;
     // the whole fleet or none of it — checked before a single draw is
@@ -1273,7 +1288,7 @@ export class Game {
     if (this.sim.scrap < each * n && this.sim.charging) return [];
     const got: ModId[] = [];
     for (let i = 0; i < n; i++) {
-      const id = rollMod(this.sim.modLedger, scope);
+      const id = rollMod(this.sim.modLedger, scope, MODULE_ODDS.live(), Math.random, this.modPool());
       if (!id) break; // this half is owned out mid-press: stop, charge for the rest
       if (!this.sim.spend(each)) break;
       this.sim.takeMod(id);
@@ -1374,6 +1389,21 @@ export class Game {
   /** ...and the shapes it may turn over, which the track deals the same way */
   private shapePool(): readonly FormationId[] {
     return this.tech ? [...this.tech.shapes] : FORMATION_IDS;
+  }
+
+  /** ...and the modules the M and G buttons may turn over — dealt by the
+   *  track as well (TechState.mods). Null is the whole catalog, which is
+   *  what a free board draws from */
+  private modPool(): ReadonlySet<ModId> | null {
+    return this.tech ? this.tech.mods : null;
+  }
+
+  /** what one half of the module catalog can do for this press: draw, or
+   *  why not — a half the track has not opened yet reads LOCKED, and one
+   *  the run has bought out reads OWNED */
+  private dealHalf(scope: ModScope): DealHalf {
+    if (!anyModOpen(scope, this.modPool())) return "locked";
+    return anyModLeft(this.sim.modLedger, scope, this.modPool()) ? "open" : "owned";
   }
 
   /** what one draw costs right now — flat (economy.ts), and nothing at
@@ -1853,8 +1883,8 @@ export class Game {
       relics: this.sim.ownedMods(),
       lastMods: this.lastMods,
       modDraws: this.modDraws,
-      modsLeft: anyModLeft(this.sim.modLedger, "turret"),
-      relicsLeft: anyModLeft(this.sim.modLedger, "global"),
+      modDeal: this.dealHalf("turret"),
+      relicDeal: this.dealHalf("global"),
       inspect: this.inspect(),
       built: this.built,
       // off the sim's live stats (statsFor), never the static table: the
