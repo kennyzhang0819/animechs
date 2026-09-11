@@ -862,11 +862,28 @@ const PINE_TONE = "#2e6e35";
  * grid — a map document's, or the live terrain's (the minimap draws the
  * ground it sits on with this, then the field over it).
  * Writes `rows` rows at 1px per cell into a canvas resized to fit.
+ *
+ * `hillShade` multiplies the ROCK tones and nothing else. A wall's face is
+ * painted a shade LIGHTER than the floor of its own family — stone rock is
+ * #84848f over stone ground's #7c7c84, and snow rock and snow ground are
+ * within three points of each other — which is right on the board, where a
+ * hill has an outline, a shadow and a dark interior to say what it is, and
+ * useless in a corner map where it has none of those and a hill reads as
+ * slightly paler dirt. Shading the rock is what puts the relief back: pass
+ * a factor below 1 and every rock family darkens by the same proportion,
+ * so the map keeps its own palette and only its height is restated. The
+ * default is 1, which is the true tone — a map card is a picture of the
+ * place, and that is what it should keep showing.
+ *
+ * Pines are not shaded: a pine is not a hill (it is blocked, but nothing
+ * flies around it — see airWalkMask), and neither is deep water, which is
+ * blocked and is drawn as the water it is.
  */
 export function paintThumb(
   cells: { floor: ArrayLike<number>; blocked: ArrayLike<number>; wall: ArrayLike<number> },
   rows: number,
   canvas: HTMLCanvasElement,
+  hillShade = 1,
 ): void {
   canvas.width = COLS;
   canvas.height = rows;
@@ -880,7 +897,9 @@ export function paintThumb(
     parseInt(css.slice(5, 7), 16),
   ];
   const floorRgb = FLOOR_TONES.map(rgb);
-  const wallRgb = WALL_TONES.map(rgb);
+  const shade = (c: [number, number, number]): [number, number, number] =>
+    hillShade === 1 ? c : [(c[0] * hillShade) | 0, (c[1] * hillShade) | 0, (c[2] * hillShade) | 0];
+  const wallRgb = WALL_TONES.map((t) => shade(rgb(t)));
   const pineRgb = rgb(PINE_TONE);
   for (let y = 0; y < rows; y++)
     for (let x = 0; x < COLS; x++) {

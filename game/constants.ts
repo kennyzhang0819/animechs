@@ -1454,17 +1454,18 @@ export const targetingLine = (s: TowerStats): string =>
  * at Mindustry's own number so a balance pass is done here and never row
  * by row.
  *
- * EIGHT, doubled from four, and the deal is why. A turret is no longer
- * chosen and paid for at its own price — it is dealt (rarity.ts) and
- * placed free, which means a line cannot be repaired by simply buying the
- * same gun again: what goes down is what the roll happened to hand over.
- * A structure therefore has to SURVIVE its mistake rather than be
- * replaced out of it, and twice the pool is the difference between a
- * misplaced turret being a loss and being a lesson.
+ * FIVE. It was four, then eight when the deal came in — a turret is no
+ * longer chosen and paid for at its own price but dealt (rarity.ts) and
+ * placed free, so a line cannot be repaired by buying the same gun again
+ * and a structure has to SURVIVE its mistake rather than be replaced out
+ * of it. Eight bought that, and overshot: a pool that deep took the
+ * pressure off the placement entirely, and a misplaced turret sat there
+ * absorbing a whole tide instead of teaching anything. Five keeps the
+ * lesson and gives the swarm back its teeth.
  *
  * The core is written on its own (CORE_HP) and did NOT move with it.
  */
-export const TOWER_HP_SCALE = 8;
+export const TOWER_HP_SCALE = 5;
 
 /** the stats of a structure kind — one funnel, so a caller never reads TOWERS by hand */
 export const structStats = (kind: import("./types").TowerKind): TowerStats => TOWERS[kind];
