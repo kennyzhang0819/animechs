@@ -22,11 +22,14 @@
  * forces the discipline — there is no room on a 16-grid for anything but
  * one clear object and one accent.
  *
- * RELIC GLYPHS ARE NOT HERE. The global half of the catalog — crosshair,
- * coolant, coin, vault, flame, volley, phoenix, fan, legion, star — is
- * still drawn as line strokes in Relics.tsx. Nothing about that is
- * principled; they simply have not been drawn yet, and Glyph falls
- * through to the old strokes for any glyph this file does not know.
+ * THE RELICS ARE HERE TOO, and they are drawn LOUDER. A turret attribute
+ * is one stat and its picture is one object in gunmetal with one accent;
+ * a relic is the whole board doing something different, and at thirty
+ * thousand scrap it is the most expensive thing on the shelf, so its
+ * picture carries the colour of what it does — heat, coolant blue, scrap
+ * gold, mender green — over the whole drawing rather than as a pip. A
+ * player scanning the shelf should be able to tell the relics from the
+ * attributes before reading a single border.
  */
 
 import { memoDraw, PAL, type Pen } from "./pixelArt";
@@ -197,10 +200,133 @@ const GLYPHS: Record<string, (g: Pen) => void> = {
     g.box(0.32, 0.32, 0.68, 0.68, PAL.steel);          // the core
     g.box(0.38, 0.38, 0.62, 0.62, PAL.flameLite);
   },
+
+  // ── the fuse's own attribute ────────────────────────────────────────
+  /** SPLITTER ARRAY — three spikes fanning out of one breech. The fan IS
+   *  the volley: a fuse's three, and the two more this adds are what the
+   *  rare border is for. */
+  fan: (g) => {
+    g.poly([[0.5, 0.94], [0.36, 0.94], [0.02, 0.14], [0.14, 0.06]], PAL.steelLite);
+    g.poly([[0.44, 0.94], [0.56, 0.94], [0.56, 0.02], [0.44, 0.02]], PAL.steelLite);
+    g.poly([[0.5, 0.94], [0.64, 0.94], [0.98, 0.14], [0.86, 0.06]], PAL.steelLite);
+    g.over((o) => o.box(0, 0.62, 1, 1, PAL.steel));
+    g.box(0.02, 0.06, 0.16, 0.18, PAL.emberLite);      // three hot tips
+    g.box(0.44, 0.0, 0.56, 0.12, PAL.emberLite);
+    g.box(0.84, 0.06, 0.98, 0.18, PAL.emberLite);
+    g.box(0.3, 0.8, 0.7, 1.0, PAL.steelDark);          // the breech
+  },
+
+  // ── the relics ──────────────────────────────────────────────────────
+  /** OVERCLOCK CORE — a reactor core running hot: gunmetal housing, and
+   *  the whole inside of it is heat. Double damage is the board's power
+   *  turned up, and this is the dial. */
+  core: (g) => {
+    g.ring(0.5, 0.5, 0.46, 3, PAL.steel);
+    g.over((o) => o.box(0, 0.5, 1, 1, PAL.steelDark));
+    g.disc(0.5, 0.5, 0.3, PAL.emberDark);
+    g.disc(0.5, 0.5, 0.2, PAL.emberLite);
+    g.disc(0.5, 0.5, 0.1, PAL.flameLite);
+    for (const [x, y] of [[0.44, 0.0], [0.44, 0.88], [0.0, 0.44], [0.88, 0.44]])
+      g.box(x, y, x + 0.12, y + 0.12, PAL.steelDark);  // four vents
+  },
+
+  /** COOLANT LOOP — a loop of pipe with a valve on it, in the water blue
+   *  that everything cold in this game already wears. */
+  coolant: (g) => {
+    g.ring(0.5, 0.54, 0.4, 3, PAL.waterLite);
+    g.over((o) => o.box(0, 0.54, 1, 1, PAL.water));
+    g.box(0.36, 0.0, 0.64, 0.24, PAL.steelLite);       // the valve, on top
+    g.box(0.44, 0.24, 0.56, 0.34, PAL.steelDark);
+    g.box(0.42, 0.06, 0.58, 0.12, PAL.steelDark);      // its handle
+  },
+
+  /** SCAVENGER RIG — two coins, one behind the other, because the point
+   *  is MORE of them. Scrap is grey in the item sprites, but a grey coin
+   *  is a washer; a coin is gold or it is not a coin. */
+  coin: (g) => {
+    g.disc(0.62, 0.42, 0.34, PAL.emberLite);           // the one behind
+    g.disc(0.62, 0.42, 0.22, PAL.ember);
+    g.disc(0.4, 0.58, 0.36, PAL.flame);                // the one in front
+    g.over((o) => o.box(0, 0.62, 0.8, 1, PAL.emberLite));
+    g.ring(0.4, 0.58, 0.22, 2, PAL.flameLite);         // its stamped rim
+  },
+
+  /** SALVAGE INSURANCE — a safe: a steel box, a darker door, a dial. Two
+   *  thousand a wreck is money that was put away in advance. */
+  vault: (g) => {
+    g.box(0.06, 0.08, 0.94, 0.92, PAL.steel);
+    g.box(0.16, 0.18, 0.84, 0.82, PAL.steelDark);      // the door
+    g.box(0.16, 0.18, 0.84, 0.28, PAL.steelDeep);      // its top seam
+    g.disc(0.5, 0.54, 0.16, PAL.flame);                // the dial
+    g.disc(0.5, 0.54, 0.07, PAL.steelDeep);
+    g.box(0.72, 0.42, 0.8, 0.66, PAL.steelLite);       // the handle
+  },
+
+  /** PHOSPHOR ROUNDS — a flame, white at the heart. The one relic that
+   *  is a COLOUR in the game already: this is what every round on the
+   *  board looks like once it is bought. */
+  flame: (g) => {
+    g.poly([[0.5, 0.02], [0.82, 0.4], [0.9, 0.72], [0.72, 0.96], [0.28, 0.96], [0.1, 0.72], [0.18, 0.4]], PAL.emberDark);
+    g.poly([[0.5, 0.26], [0.7, 0.5], [0.74, 0.74], [0.62, 0.92], [0.38, 0.92], [0.26, 0.74], [0.3, 0.5]], PAL.emberLite);
+    g.poly([[0.5, 0.5], [0.6, 0.66], [0.62, 0.84], [0.38, 0.84], [0.4, 0.66]], PAL.flame);
+    g.box(0.44, 0.7, 0.56, 0.84, PAL.steelWhite);      // white-hot
+  },
+
+  /** LAST VOLLEY — a wreck, and the three rounds it is still putting out
+   *  as it goes. The rounds fly RIGHT, so this and the fan above never
+   *  read as each other. */
+  volley: (g) => {
+    g.box(0.04, 0.3, 0.3, 0.9, PAL.steelDark);         // what is left of it
+    g.box(0.04, 0.3, 0.3, 0.42, PAL.steel);
+    for (const y of [0.24, 0.48, 0.72]) {
+      g.box(0.36, y, 0.72, y + 0.12, PAL.emberLite);   // three rounds
+      g.box(0.72, y, 0.9, y + 0.12, PAL.flame);
+      g.box(0.9, y + 0.03, 0.98, y + 0.09, PAL.flameLite);
+    }
+  },
+
+  /** PHOENIX PROTOCOL — the mender's green rising off a wreck. A bird is
+   *  eight pixels of nothing at this size; "up, out of the ash, in the
+   *  healing colour" is the whole story and it fits. */
+  phoenix: (g) => {
+    g.box(0.06, 0.8, 0.94, 0.94, PAL.steelDeep);       // the ash
+    g.box(0.16, 0.7, 0.84, 0.8, PAL.steelDark);
+    g.poly([[0.5, 0.04], [0.9, 0.44], [0.66, 0.44], [0.66, 0.7], [0.34, 0.7], [0.34, 0.44], [0.1, 0.44]], PAL.heal);
+    g.over((o) => o.poly([[0.5, 0.04], [0.9, 0.44], [0.5, 0.44]], PAL.healLite));
+  },
+
+  /** TWIN FIRE — two rounds side by side, leaving together. One more in
+   *  every volley, from every gun: the picture is the extra round. */
+  twin: (g) => {
+    for (const x of [0.2, 0.56]) {
+      g.box(x, 0.3, x + 0.24, 0.96, PAL.emberLite);    // the casing
+      g.poly([[x, 0.3], [x + 0.24, 0.3], [x + 0.12, 0.04]], PAL.flame);  // the nose
+      g.box(x, 0.84, x + 0.24, 0.96, PAL.emberDark);   // the base
+    }
+  },
+
+  /** UNDYING LEGION — a rampart. Every turret is a wall that does not
+   *  come down the first time, so the picture is the wall, with the
+   *  mender's green in the gate. */
+  legion: (g) => {
+    g.box(0.04, 0.34, 0.96, 0.96, PAL.steel);
+    for (const x of [0.04, 0.36, 0.68]) g.box(x, 0.16, x + 0.28, 0.34, PAL.steel);  // the crenels
+    g.over((o) => o.box(0, 0.78, 1, 1, PAL.steelDark));
+    g.box(0.36, 0.56, 0.64, 0.96, PAL.healDark);       // the gate
+    g.box(0.42, 0.62, 0.58, 0.96, PAL.heal);
+  },
+
+  /** ASCENDANCY PROTOCOL — a four-point star, and the brightest thing in
+   *  the file. The deal starts dealing purple; this is what a purple
+   *  card feels like coming up. */
+  star: (g) => {
+    g.poly([[0.5, 0.0], [0.62, 0.38], [1.0, 0.5], [0.62, 0.62], [0.5, 1.0], [0.38, 0.62], [0.0, 0.5], [0.38, 0.38]], PAL.flame);
+    g.poly([[0.5, 0.2], [0.58, 0.42], [0.8, 0.5], [0.58, 0.58], [0.5, 0.8], [0.42, 0.58], [0.2, 0.5], [0.42, 0.42]], PAL.flameLite);
+    g.box(0.44, 0.44, 0.56, 0.56, PAL.steelWhite);
+  },
 };
 
-/** every glyph this file can draw — Relics.tsx falls through to its old
- *  line strokes for anything not in here (the relic half) */
+/** every glyph this file can draw — the whole catalog, both halves */
 export const DRAWN_GLYPHS: ReadonlySet<string> = new Set(Object.keys(GLYPHS));
 
 /** the picture a mod wears, as paths — drawn once per glyph and kept */

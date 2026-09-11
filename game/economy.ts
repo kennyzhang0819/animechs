@@ -126,7 +126,20 @@ export const TURRET_ROLL_PRICE = 1000;
  * hold in their head, and numbers a balance sweep turns.
  */
 export const MOD_ROLL_PRICE = 2000;
-export const RELIC_ROLL_PRICE = 3500;
+
+/**
+ * THIRTY THOUSAND FOR A RELIC, AND IT IS NOT A TYPO. It was three and a
+ * half, which is where a "+10% damage" belongs, and every relic in the
+ * catalog has since been rewritten to change the game rather than nudge
+ * it (mods.ts) — the board fires twice as fast, every kill pays triple,
+ * every turret stands back up. A rule that size at four cards' price
+ * would be the first thing every run bought and the last decision it
+ * ever made; at thirty cards' price it is a run's whole mid-game bet, and
+ * pressing G is a decision again. The amount ladder still multiplies it,
+ * so x9 relics is two hundred and seventy thousand — nine relics is nine
+ * relics.
+ */
+export const RELIC_ROLL_PRICE = 30000;
 
 /**
  * THE AMOUNT LADDER — the corner's fourth button, which cycles through

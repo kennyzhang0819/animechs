@@ -9,6 +9,7 @@ import {
   zoneStyle,
 } from "./maps";
 import { SHIELD_TOWER_SIZE } from "./mutation";
+import { TOWER_ICONS } from "./towerIcons";
 import {
   CELL,
   clamp,
@@ -189,6 +190,11 @@ export interface UiState {
      *  asks of a wall they just dragged a box over */
     hp: number;
     hpMax: number;
+    /** the PLATING the selection wears (TowerStats.armor) — one number
+     *  when every turret picked wears the same, null for the core or for
+     *  a bag that disagrees, where an average would be a lie about all
+     *  of them */
+    armor: number | null;
     /** every attribute anything in the selection carries, catalog order,
      *  with HOW MANY of them carry it — the speckle, counted. One turret
      *  selected reads as a plain row of what that turret is */
@@ -476,15 +482,22 @@ const hpColor = (f: number): string => (f > 0.5 ? "#7BE58A" : f > 0.2 ? "#FFD37F
 const ENEMY_HP = "#FF5A5A";
 
 /**
- * THE PLACEMENT GHOST'S THREE TINTS, fill and edge — refused, taxed by the
- * Hydrophobic rule, and ordinary. Every cell of the shape in hand is sorted
- * into one of them and each is drawn as one path (drawGhosts).
+ * THE PLACEMENT GHOST'S WASHES — refused, and taxed by the Hydrophobic
+ * rule. An ORDINARY cell has no wash and no outline: it is the turret's
+ * own sprite, drawn faint where it is about to stand (drawGhosts), and a
+ * picture of the thing needs no frame around it to say what it is. The
+ * two that are not ordinary get a colour laid over the sprite, because
+ * "you cannot build here" and "this will fire slower here" are the two
+ * things the ghost has to say that the sprite cannot.
  */
-const GHOST_TINTS: readonly (readonly [string, string])[] = [
-  ["rgba(255,90,90,0.3)", "rgba(255,90,90,0.9)"],
-  ["rgba(138,162,255,0.22)", "rgba(138,162,255,0.95)"],
-  ["rgba(255,211,127,0.14)", "rgba(255,211,127,0.85)"],
+const GHOST_WASH: readonly (string | null)[] = [
+  "rgba(255,90,90,0.45)",
+  "rgba(138,162,255,0.35)",
+  null,
 ];
+/** how faint the ghost's sprite is — solid enough to read the gun, faint
+ *  enough that the ground it is over still shows through */
+const GHOST_ALPHA = 0.7;
 const PAN_KEYS: Record<string, readonly [number, number]> = {
   KeyW: [0, -1],
   KeyS: [0, 1],
@@ -1867,6 +1880,8 @@ export class Game {
     let kind: TowerKind | null = null;
     let mixed = false;
     let anyCore = false;
+    let armor: number | null = null;
+    let armorMixed = false;
     const tally = new Map<ModId, number>();
     for (const st of picked) {
       hp += st.hp;
@@ -1878,6 +1893,10 @@ export class Game {
       const t = st as Tower;
       if (kind === null) kind = t.kind;
       else if (kind !== t.kind) mixed = true;
+      // the live spec's plating, attributes folded in — a Bulwarked duo
+      // beside a plain one is two answers, and two answers is null
+      if (armor === null) armor = t.spec.armor;
+      else if (armor !== t.spec.armor) armorMixed = true;
       for (const d of modsInMask(t.mods)) tally.set(d.id, (tally.get(d.id) ?? 0) + 1);
     }
     if (anyCore) mixed = kind !== null; // the core plus anything is a mixed bag
@@ -1892,6 +1911,7 @@ export class Game {
           : "Structures",
       hp: Math.ceil(hp),
       hpMax: Math.ceil(hpMax),
+      armor: anyCore || armorMixed ? null : armor,
       // CATALOG ORDER, never tally order: the shelf at the other corner
       // lists attributes in that order and the two must not disagree about
       // which chip is which
@@ -2609,46 +2629,54 @@ export class Game {
     const px = sz * CELL;
     // red marks anything that blocks the spot: walls, the base, units
     // underneath, or a placement the ground will not take. A legal spot
-    // that the Hydrophobic rule TAXES is drawn in the special rule's own
-    // blue rather than the ordinary amber: the placement is allowed, so
-    // it must not read as refused, but most of a turret's damage is worth
-    // a colour of its own
+    // that the Hydrophobic rule TAXES is washed in the special rule's own
+    // blue: the placement is allowed, so it must not read as refused, but
+    // most of a turret's damage is worth a colour of its own
     const buckets: { gx: number; gy: number }[][] = [[], [], []];
     for (const cell of cells) {
       const ok = this.sim.canPlace(cell.gx, cell.gy, kind);
       const b = !ok ? 0 : this.sim.isWaterlogged(cell.gx, cell.gy, kind) ? 1 : 2;
       buckets[b].push(cell);
     }
+    // THE SPRITE, ONCE PER FOOTPRINT. It is the same PNG the build card
+    // and the unlocks board wear (towerIcons.ts) — the player has been
+    // looking at this exact picture on the card in their hand, so the
+    // ghost being the same picture is the ghost saying "this, here". The
+    // image is a shared cache that fills on first use; until it has
+    // loaded there is a frame or two of wash-only, which is no worse than
+    // the lines this replaced
+    const img = this.ghostSprite(kind);
+    const ready = img.complete && img.naturalWidth > 0;
+    if (ready) {
+      c.imageSmoothingEnabled = false; // pixel art, blown up — no blur
+      c.globalAlpha = GHOST_ALPHA;
+      for (const group of buckets)
+        for (const { gx, gy } of group) c.drawImage(img, gx * CELL, gy * CELL, px, px);
+      c.globalAlpha = 1;
+      c.imageSmoothingEnabled = true;
+    }
+    // ...and the wash over the ones that are not ordinary, one path each
     for (let b = 0; b < buckets.length; b++) {
       const group = buckets[b];
-      if (group.length === 0) continue;
-      const [fill, stroke] = GHOST_TINTS[b];
-      c.fillStyle = fill;
+      const wash = GHOST_WASH[b];
+      if (group.length === 0 || !wash) continue;
+      c.fillStyle = wash;
       c.beginPath();
       for (const { gx, gy } of group) c.rect(gx * CELL, gy * CELL, px, px);
       c.fill();
-      c.strokeStyle = stroke;
-      c.lineWidth = 1.5;
-      c.beginPath();
-      for (const { gx, gy } of group) c.rect(gx * CELL + 1, gy * CELL + 1, px - 2, px - 2);
-      c.stroke();
-      // interior lines so each ghost reads as the cells it occupies
-      if (sz > 1) {
-        c.lineWidth = 1;
-        c.globalAlpha = 0.45;
-        c.beginPath();
-        for (const { gx, gy } of group) {
-          const x = gx * CELL, y = gy * CELL;
-          for (let i = 1; i < sz; i++) {
-            c.moveTo(x + CELL * i, y + 1);
-            c.lineTo(x + CELL * i, y + px - 1);
-            c.moveTo(x + 1, y + CELL * i);
-            c.lineTo(x + px - 1, y + CELL * i);
-          }
-        }
-        c.stroke();
-        c.globalAlpha = 1;
-      }
     }
+  }
+
+  /** the ghost's picture of one kind — the card's own sprite, loaded once
+   *  and kept for the life of the game */
+  private ghostSprites = new Map<TowerKind, HTMLImageElement>();
+  private ghostSprite(kind: TowerKind): HTMLImageElement {
+    let img = this.ghostSprites.get(kind);
+    if (!img) {
+      img = new Image();
+      img.src = TOWER_ICONS[kind];
+      this.ghostSprites.set(kind, img);
+    }
+    return img;
   }
 }

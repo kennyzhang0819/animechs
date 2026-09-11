@@ -253,6 +253,10 @@ const pulling = (s: TowerStats, mul: number): TowerStats =>
       })
     : s;
 
+/** PLATING, added flat — armour is a shave per hit and never a multiplier,
+ *  so "+6 armour" means the same six on a duo as on a spectre */
+export const armored = (s: TowerStats, add: number): TowerStats => ({ ...s, armor: s.armor + add });
+
 /** turn a shot into a piercing one, or raise the cap on one that already is */
 export const piercing = (s: TowerStats, extra: number): TowerStats =>
   withBullet(s, {

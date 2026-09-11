@@ -67,7 +67,7 @@ function ModPip({ id, n, total }: { id: ModId; n: number; total: number }) {
       style={{ borderColor: r.color, background: r.ground }}
       aria-label={many ? `${modName(d)}, on ${n} of them` : modName(d)}
     >
-      <Glyph glyph={d.glyph} color={r.color} className="h-[16px] w-[16px]" />
+      <Glyph glyph={d.glyph} className="h-[16px] w-[16px]" />
       {many && (
         <span
           className="pointer-events-none absolute -bottom-[4px] -right-[3px] bg-[#0b0b0d] px-[2px] text-[9px] font-bold leading-none"
@@ -113,6 +113,33 @@ function HealthBar({ hp, max }: { hp: number; max: number }) {
   );
 }
 
+/**
+ * THE PLATING, beside the bar: a number and the word, in the steel the
+ * armour glyphs are drawn in. It is printed for a ZERO too — a 1x1 wears
+ * none, and "0" is how a player learns that the 2x2 beside it does. What
+ * it means is one hover away, because "a flat shave per hit, floored at a
+ * tenth" is not a thing a label can say.
+ */
+function Plating({ armor }: { armor: number }) {
+  const tip = useHoverCard("up");
+  return (
+    <span
+      ref={tip.ref as RefObject<HTMLSpanElement | null>}
+      {...tip.anchorProps}
+      className="pointer-events-auto flex shrink-0 items-baseline gap-1 border-l border-[#26262b] pl-3"
+      aria-label={`${armor} armor`}
+    >
+      <span className="text-[13px] font-bold tabular-nums text-[#C1C3D4]">{armor}</span>
+      <span className="text-[9px] font-bold uppercase tracking-widest text-[#71717C]">armor</span>
+      <HoverCard tip={tip} title="Plating" tag={`${armor} armor`} color="#C1C3D4" align="center">
+        Every hit this takes is shaved by {armor} first, down to a tenth of the hit at most —
+        small arms bounce, the heavies still bite. Bigger footprints wear more; Bulwark Plating
+        and the Giant add their own.
+      </HoverCard>
+    </span>
+  );
+}
+
 export function Inspector({
   inspect,
   icons,
@@ -120,15 +147,15 @@ export function Inspector({
   inspect: NonNullable<UiState["inspect"]>;
   icons: Partial<Record<TowerKind, string>>;
 }) {
-  const { n, kind, name, hp, hpMax, mods } = inspect;
+  const { n, kind, name, hp, hpMax, armor, mods } = inspect;
   const many = n > 1;
   return (
     <div
       className="ms-pane pointer-events-auto flex max-w-[calc(100vw-30rem)] items-center gap-3 px-3 py-2"
       role="status"
-      aria-label={`Selected: ${many ? `${n} ` : ""}${name}, ${hp} of ${hpMax} health, ${
-        mods.length
-      } attributes`}
+      aria-label={`Selected: ${many ? `${n} ` : ""}${name}, ${hp} of ${hpMax} health${
+        armor !== null ? `, ${armor} armor` : ""
+      }, ${mods.length} attributes`}
     >
       {/* the sprite, and ONLY when the selection is all one kind — a
           picture of a duo over a box that also holds spectres would be the
@@ -146,7 +173,10 @@ export function Inspector({
           {many && <span className="text-[#FFD37F]">{n}× </span>}
           {name}
         </span>
-        <HealthBar hp={hp} max={hpMax} />
+        <div className="flex items-center gap-3">
+          <HealthBar hp={hp} max={hpMax} />
+          {armor !== null && <Plating armor={armor} />}
+        </div>
       </div>
       {mods.length > 0 && (
         <div

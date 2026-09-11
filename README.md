@@ -36,7 +36,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
 
 - `game/constants.ts` — grid, base placement, tower tuning: every turret's
   stats read out of Mindustry's `Blocks.java` (`TOWERS`), the two dials
-  over them (`TOWER_HP_SCALE`, 8; the phase tier's +30% up-gun on
+  over them (`TOWER_HP_SCALE`, 5, and plating by footprint, `TOWER_ARMOR_BY_SIZE`; the phase tier's +30% up-gun on
   spectre, meltdown and foreshadow), `MAX_UNITS` (22,000) and the core's
   pool (`CORE_HP`, on a dial of its own). A placement is INSTANT — there
   is no construction shell any more
@@ -54,7 +54,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   the fixed mission pot and how it is dealt out per wave cleared
   (`MISSION_XP`, `waveXpShare`), **what the corner's three buy buttons
   cost** (`TURRET_ROLL_PRICE` 1,000, `MOD_ROLL_PRICE` 2,000,
-  `RELIC_ROLL_PRICE` 3,500, all flat — the run's only outgoings) and the
+  `RELIC_ROLL_PRICE` 30,000, all flat — the run's only outgoings) and the
   **amount ladder** that multiplies them (`BUY_AMOUNTS`: 1 / 4 / 9, flat,
   no bulk discount), the three price bands and
   what a draw in each is WORTH (`TOWER_PRICE` — no longer what a board
@@ -98,7 +98,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   `upgrades.ts` above is the tech tree's): twenty of them, on the turrets'
   own four rarities. Two scopes, and the corner sells them from **two
   different buttons** (`rollMod`'s `scope`) because they are two
-  purchases — **global** relics (**G**, 3,500) that land the instant they
+  purchases — **global** relics (**G**, 30,000) that land the instant they
   are bought and apply to everything, and **turret attributes** (**M**,
   2,000) that are a standing CHANCE on every turret placed from then on
   (`rollTurretMods`, folded into `Tower.mods` as a bitmask). The stat
@@ -232,7 +232,7 @@ is no touch input.
 | build | **T**, then left press on the ground. The draw comes out already in hand, so the flow is T, click, T, click. One card is one FORMATION, four to thirty-six turrets in a shape — times the amount (**X**). On a free board (sandbox, editors) pick a turret on the command card instead, or its key, and drag to chain; **shift-drag for a straight line** |
 | re-roll | **T** again — it throws the card in hand away and draws another, at full price. Spam it until the shape is the one you want |
 | buy mods | **M**, 2,000 each. Turret attributes: a standing chance on every turret placed from then on. In force the instant they land — nothing to aim, nothing to place, no re-roll |
-| buy relics | **G**, 3,500 each. Global rules, over the whole board the moment they are paid for. Same: nothing to aim, no re-roll |
+| buy relics | **G**, 30,000 each. Global rules that change the game — the board fires twice as fast, every kill pays triple, every turret stands back up — over the whole board the moment they are paid for. Same: nothing to aim, no re-roll |
 | turn the card | **R** while the ghost is up, or the strip under the card — a quarter clockwise, free, and it turns the WHOLE footprint. Ten of the twelve shapes are symmetric under a quarter turn, so only the Wedge visibly moves — and a fleet of wedges turns as one |
 | amount | **X** cycles ×1 / ×4 / ×9 and multiplies the next press, at flat price. On **M** and **R** that is N draws; on **T** it is one card carrying the shape **tiled** N times, square and gapless — so ×9 of a citadel is one ghost of 324 turrets in an 18×18 block to find ground for |
 | discard | right press while holding a card. No refund |
@@ -512,7 +512,7 @@ a dead card; what these buy is never dead, so pressing again is simply
 buying another module.
 
 **They are two buttons because they are two purchases.** **M** (2,000)
-draws only turret attributes and **G** (3,500) only relics (`rollMod`'s
+draws only turret attributes and **G** (30,000) only relics (`rollMod`'s
 `scope`). They used to be one button flipping a coin between the two
 scopes, which meant a player who needed a relic paid relic money for even
 odds of an attribute: **a purchase whose scope is random is a purchase the
@@ -583,10 +583,17 @@ says any of it** — the boards used to print "One a run" and "Up to 2 of
 them" under all twenty tiles, which is housekeeping repeated twenty times
 to say what one rule says once.
 
-**A mod is a stat tweak and nothing else** — damage, fire rate, range,
-pierce, health, repair. Behaviour is the relics' job: a revive, a refund,
-a shift in the odds all happen at a *moment*, and a moment is not a number
-on a turret.
+**A mod is anything that composes onto one turret's table.** It used to
+be narrower — "a stat tweak and nothing else" — and the line was in the
+wrong place: a fuse firing five spikes instead of three is the gun doing a
+different thing, not a number going up, and it is still one turret's
+business. So an attribute may change what a turret *does*, through its
+table — shots, spread, pierce, repair. What it may not do is reach past
+the turret it landed on: "when this dies" is a *moment*, not a table, and
+a moment belongs to the relics.
+
+**A relic changes the game, and is priced like it.** Thirty thousand scrap
+is thirty turret cards; nothing at that price may be a percentage.
 
 | mod | band | chance | what it does |
 |---|---|---|---|
@@ -601,9 +608,10 @@ on a turret.
 | +1 pierce | Uncommon | 18% | pierce is a whole body, never a percentage — one step, at the band where a body is worth about a quarter |
 | repairs 1% a second | Uncommon | 18% | the one stat a plain turret has none of, so the tick is the whole thing |
 | **Prototype Chassis** | Rare | 10% | +50% damage, +50% fire rate |
-| **Bulwark Plating** | Rare | 10% | +100% health, repairs 3% a second |
+| **Bulwark Plating** | Rare | 10% | +100% health, +6 armor, repairs 3% a second |
 | **Sabot Rounds** | Rare | 10% | +2 pierce, +50% damage |
-| **Giant** | **Ultra** | **12% a CARD** | **+1000% health, +200% damage, −90% range, twice the footprint — and it eats the card** |
+| **Splitter Array** | Rare | 30% *per fuse* | +2 spikes a volley — five instead of three. **Fuse only**: rolled on every fuse placed and nothing else |
+| **Giant** | **Ultra** | **12% a CARD** | **+1000% health, +200% damage, +10 armor, −90% range, twice the footprint — and it eats the card** |
 | **Sniper** | **Ultra** | 5% | **+300% range, +200% fire rate, +100% damage, −90% health** |
 | **All Round** | **Ultra** | 5% | **+100% damage, +100% fire rate, +100% health, +50% range, +3 pierce** |
 
@@ -642,14 +650,14 @@ no room for the doubled footprint the shape goes down as it always would.
 
 | relic | band | what it does |
 |---|---|---|
-| Calibration Matrix | Common | +10% damage, every turret |
-| Coolant Loop | Common | +10% fire rate, every turret |
-| Scavenger Rig | Common | +15% scrap per kill |
-| Salvage Insurance | Uncommon | a wrecked turret has a 40% chance to pay 500 scrap |
-| Phosphor Rounds | Uncommon | every shot burns white, and hits 12% harder |
-| Last Volley | Uncommon | a wrecked turret gives every turret within 6 tiles +60% fire rate for 6s |
-| Phoenix Protocol | Rare | a wrecked turret has a 25% chance to stand straight back up. Once each |
-| Splitter Array | Rare | every **fuse** fires two extra spikes — five to the volley |
+| Overclock Core | Common | every turret deals **double** damage |
+| Coolant Loop | Common | every turret fires **twice** as fast |
+| Scavenger Rig | Common | every kill pays **triple** scrap |
+| Salvage Insurance | Uncommon | every wrecked turret pays 2,000 scrap — two cards' worth, every time |
+| Phosphor Rounds | Uncommon | every shot burns white, hits half again as hard, and punches through 2 more bodies |
+| Last Volley | Uncommon | a wrecked turret gives every turret within 8 tiles **triple** fire rate for 15s |
+| Phoenix Protocol | Rare | a wrecked turret has a 50% chance to stand straight back up — **every time**, no limit |
+| Twin Fire | Rare | every turret fires one more round in every volley |
 | **Undying Legion** | **Ultra** | **every turret you own stands back up once, at full health — the ones already down included** |
 | **Ascendancy Protocol** | **Ultra** | **the turret deal hands over rares 5× and ULTRAS 20× as often, for the rest of the run** |
 
@@ -775,10 +783,15 @@ cost** (`STRUCTURE_COST`): the field routes around a line when the way
 round is cheaper and into it when it is not, and the bodies pressed into
 it shoot it. So a turret across the lane is not a seal, it is a fight at
 the turret. **There are no walls**, and the pool they used to hold is in
-the guns: every turret carries **eight** times its Mindustry block health
-(`TOWER_HP_SCALE`, doubled for the deal — what goes down is what the roll
-handed over, so a structure has to survive its mistake rather than be
-replaced out of it), and the phase tier fires 30% over stock; hurt, a
+the guns: every turret carries **five** times its Mindustry block health
+(`TOWER_HP_SCALE` — what goes down is what the roll handed over, so a
+structure has to survive its mistake rather than be replaced out of it),
+**and wears plating by footprint** (`TOWER_ARMOR_BY_SIZE`: a 2x2 shaves 4
+off every hit, a 3x3 9, a 4x4 15, floored at a tenth of the hit — the
+swarm's own armour rule, on the other side; a 1x1 wears none), so small
+arms bounce off the big guns and the heavies still chew through them;
+Bulwark Plating and the Giant add their own. The phase tier fires 30%
+over stock; hurt, a
 turret greys and smokes like a unit; at zero it is wrecked and gone, its
 ground open again. **The swarm's bite against a structure is Mindustry's
 own number** (`setUnitDamageScale` in `game/weapons.ts`, at 1), and the

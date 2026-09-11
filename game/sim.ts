@@ -137,7 +137,6 @@ import {
   applyGlobalMods,
   applyTurretMods,
   dropScale,
-  INSURANCE_CHANCE,
   INSURANCE_SCRAP,
   LAST_VOLLEY_RATE,
   LAST_VOLLEY_SECONDS,
@@ -2243,7 +2242,6 @@ export class Sim {
       // Undying Legion (mods.ts) grants every turret one stand-up, the
       // ones bought after it included
       revives: this.mods.undying ? 1 : 0,
-      rose: false,
       boostT: 0,
       aimShieldTower: -1,
       cd: Math.random() * 0.1,
@@ -3500,7 +3498,7 @@ export class Sim {
   placeTower(gx: number, gy: number, kind: TowerKind): PlaceResult {
     const sz = structStats(kind).size;
     if (!this.canPlace(gx, gy, kind, sz)) return "invalid";
-    this.addTower(gx, gy, kind, sz, this.charging ? rollTurretMods(this.mods) : 0);
+    this.addTower(gx, gy, kind, sz, this.charging ? rollTurretMods(this.mods, kind) : 0);
     return "ok";
   }
 
@@ -3531,7 +3529,7 @@ export class Sim {
   placeSolo(cells: readonly { gx: number; gy: number }[], kind: TowerKind, id: ModId): number {
     if (cells.length === 0) return 0;
     const base = structStats(kind).size;
-    const mask = modBit(id) | (this.charging ? rollTurretMods(this.mods) : 0);
+    const mask = modBit(id) | (this.charging ? rollTurretMods(this.mods, kind) : 0);
     const sz = sizeWithMods(base, mask);
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const c of cells) {
@@ -5475,6 +5473,13 @@ export class Sim {
    * wall it chews through.
    */
   private damageTower(t: Structure, dmg: number): void {
+    // PLATING, the way a body wears it (constants.ts TowerStats.armor): a
+    // flat shave off this hit, floored at a tenth, through the same
+    // applyArmor the swarm's armour goes through. It comes off AFTER the
+    // unit-damage dial has scaled the hit, as Mindustry applies it to the
+    // final amount. The core wears none — its pool is written on its own
+    // (CORE_HP) and its fall is the run ending, not a structure dying
+    if (!isCore(t)) dmg = Sim.applyArmor(dmg, t.spec.armor);
     t.hp -= dmg;
     if (t.hp > 0) return;
     t.hp = 0;
@@ -5503,15 +5508,16 @@ export class Sim {
    *
    * The hard charges go first and the Phoenix roll is only reached when
    * there are none left: a run carrying both should spend the certainty
-   * before it spends the chance.
+   * before it spends the chance. The Phoenix roll has NO once-per-turret
+   * gate any more — it is a coin flip every time the turret falls, which
+   * is the whole of what makes it a relic (mods.ts PHOENIX_CHANCE).
    */
   private reviveTower(t: Tower): boolean {
     let rose = false;
     if (t.revives > 0) {
       t.revives--;
       rose = true;
-    } else if (!t.rose && this.mods.phoenix && Math.random() < PHOENIX_CHANCE) {
-      t.rose = true;
+    } else if (this.mods.phoenix && Math.random() < PHOENIX_CHANCE) {
       rose = true;
     }
     if (!rose) return false;
@@ -5529,7 +5535,10 @@ export class Sim {
    * every revive has been refused and before the ground is released.
    */
   private payOutTower(t: Tower): void {
-    if (this.mods.insurance && Math.random() < INSURANCE_CHANCE) {
+    // insurance pays EVERY wreck, no roll: a certain two thousand is what
+    // makes a line being chewed through into a line funding its own
+    // replacement (mods.ts INSURANCE_SCRAP)
+    if (this.mods.insurance) {
       this.scrap += INSURANCE_SCRAP;
       this.scrapEarned += INSURANCE_SCRAP;
       this.pushFx(t.x, t.y, 0.5, FxKind.Absorb);
