@@ -8,6 +8,8 @@ import {
   MUT_COST_MIN,
   MUT_COUNT_MAX,
 } from "@/game/mutation";
+import { TURRET_MOD_IDS } from "@/game/mods";
+import { RARITIES } from "@/game/rarity";
 import { TOWER_KINDS } from "@/game/types";
 
 /** the two knobs, and the sane range each one may be saved in */
@@ -53,6 +55,22 @@ const RUNG_KEYS: readonly string[] = Array.from({ length: RUNG_COUNT }, (_, i) =
  * silent drop.
  */
 const MUTATION_KEYS: readonly string[] = MUTATIONS.map((m) => m.id);
+
+/**
+ * THE ODDS SECTION. Three band tables plus the per-attribute roll chance,
+ * and each one has a different idea of what a sane number is.
+ *
+ * A BAND WEIGHT IS RELATIVE, NOT A PERCENTAGE (rarity.ts): the roll
+ * normalises whatever it is handed over the bands actually in the pool, so
+ * the only real constraint is "not negative, not absurd". The ceiling is
+ * here to catch a fat finger, not to express a design.
+ *
+ * A CHANCE IS A PROBABILITY and 1 is certainty, so that ceiling IS the
+ * design: past it the number stops meaning anything.
+ */
+const WEIGHT_MAX = 1000;
+const BAND_KEYS: readonly string[] = RARITIES;
+const CHANCE_KEYS: readonly string[] = TURRET_MOD_IDS;
 
 /**
  * Dev-only balance persistence: the admin dashboard POSTs the knobs it has
@@ -126,6 +144,36 @@ export async function POST(req: Request): Promise<NextResponse> {
         section[mid] = v;
       }
       if (Object.keys(section).length > 0) doc.mutations = section;
+      continue;
+    }
+    // the third reserved section: the odds every roll in the game is
+    // weighed against
+    if (id === "rarities") {
+      if (!raw || typeof raw !== "object")
+        return NextResponse.json({ error: "bad rarities section" }, { status: 400 });
+      const section: Record<string, Record<string, number>> = {};
+      for (const [table, entries] of Object.entries(raw as Record<string, unknown>)) {
+        const chances = table === "chances";
+        if (!chances && table !== "turret" && table !== "shape" && table !== "module")
+          return NextResponse.json({ error: `unknown odds table ${table}` }, { status: 400 });
+        if (!entries || typeof entries !== "object")
+          return NextResponse.json({ error: `bad ${table} table` }, { status: 400 });
+        const keys = chances ? CHANCE_KEYS : BAND_KEYS;
+        const limit = chances ? 1 : WEIGHT_MAX;
+        const out: Record<string, number> = {};
+        for (const [key, v] of Object.entries(entries as Record<string, unknown>)) {
+          if (!keys.includes(key))
+            return NextResponse.json({ error: `unknown ${table} key ${key}` }, { status: 400 });
+          if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > limit)
+            return NextResponse.json(
+              { error: `bad ${table} value for ${key}; the range is 0-${limit}` },
+              { status: 400 },
+            );
+          out[key] = v;
+        }
+        if (Object.keys(out).length > 0) section[table] = out;
+      }
+      if (Object.keys(section).length > 0) doc.rarities = section;
       continue;
     }
     if (!(TOWER_KINDS as readonly string[]).includes(id))

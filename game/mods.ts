@@ -1,5 +1,5 @@
 import { PAL, type TowerStats } from "./constants";
-import { RARITIES, type Rarity, type RarityWeights } from "./rarity";
+import { RARITIES, weightDial, type Rarity, type RarityWeights, type WeightDial } from "./rarity";
 import type { TowerKind } from "./types";
 import { faster, piercing, reaching, stronger } from "./upgrades";
 
@@ -60,6 +60,21 @@ import { faster, piercing, reaching, stronger } from "./upgrades";
  * a turret's stats be composed once at the placement and then read flat
  * by the fire loop (Tower.spec) instead of switched on per shot.
  *
+ * A TURRET ATTRIBUTE HAS NO CAP AND A RELIC HAS ONE OF EXACTLY ONE.
+ * There is no third rule and no per-mod number to look up: an attribute is
+ * a standing CHANCE, so a second copy is simply better odds and a
+ * twentieth is better odds again — nothing about the board stops a run
+ * fielding ten sniper turrets, and the only thing making that rare is how
+ * rarely the top band comes up at all. A relic is a rule in force; a rule
+ * does not get more in force, so owning it twice would have to mean
+ * something and there is nothing for it to mean.
+ *
+ * SO NOTHING ON SCREEN SAYS ANY OF THIS. The boards used to print "One a
+ * run" and "Up to 2 of them" and "Stacks without limit" under every
+ * module, which is a line of housekeeping repeated twenty times to say
+ * what two sentences of the rules say once. A relic is self-explanatory;
+ * an attribute's only number is its odds, and the odds are already there.
+ *
  * ONLY THE RARE AND ULTRA ATTRIBUTES HAVE NAMES. A common is not a
  * character, it is a tick: "+10% damage" IS its name, and a made-up one
  * over the top of that ("Honed Barrels") is a word the player has to
@@ -68,11 +83,6 @@ import { faster, piercing, reaching, stronger } from "./upgrades";
  * says WHICH STAT while the band colour says HOW MUCH, so a grey barrel
  * and a blue barrel are the same stat at two sizes and need no caption at
  * all. Relics keep their names, all of them: a relic is never a number.
- *
- * ...AND THE LOW BANDS STACK FOREVER (`max`). A named attribute is a
- * thing a run either has or does not; an unnamed tick is a dial, and a
- * dial with a stop at three is a dial that stops being a decision. So:
- * NAMED IS CAPPED, UNNAMED IS INFINITE, checked at import.
  *
  * THE WHOLE CATALOG BUFFS THE PLAYER, on balance. Nothing here weakens
  * the swarm — debuffing the enemy is the mutators' half of the game
@@ -188,15 +198,16 @@ export interface ModDef {
   /** what owning it does, in the player's own terms — the hover card */
   blurb: string;
   /**
-   * HOW MANY OF IT ONE RUN MAY HOLD. The roll never offers a mod already
-   * at its cap (rollMod), so a late run's draws stay interesting instead
-   * of grinding against a catalog it has finished.
+   * HOW MANY OF IT ONE RUN MAY HOLD, and there are only two answers:
+   * Infinity for a turret attribute, 1 for a relic (checked at import, and
+   * see the header for why). The roll never offers a mod already at its
+   * cap (rollMod), which is what lets the relic half be owned out and the
+   * attribute half never be.
    *
-   * A stack means different things on the two sides of the scope. A
-   * global's stack STRENGTHENS it (`apply` is handed the count). A turret
-   * mod's stack raises the ODDS it is rolled onto a new turret and never
-   * the effect — see chanceAt, and see the header for why the chance is
-   * the whole mechanic there.
+   * A STACK OF AN ATTRIBUTE IS ODDS AND NEVER EFFECT. Every copy is
+   * another independent roll folded into one probability (chanceAt), so a
+   * second Sniper does not make a sniper turret better — it makes sniper
+   * turrets likelier. The effect is fixed at the def.
    */
   max: number;
   /**
@@ -392,7 +403,7 @@ const TURRET_MODS: readonly ModDef[] = [
     rarity: "rare",
     scope: "turret",
     glyph: "chassis",
-    max: 2,
+    max: Infinity,
     chance: 0.1,
     blurb: "New turrets have a chance to be born on a prototype frame: half again the damage and half again the rate of fire.",
     apply: (t) => faster(stronger(t, 1.5), 1.5),
@@ -404,7 +415,7 @@ const TURRET_MODS: readonly ModDef[] = [
     rarity: "rare",
     scope: "turret",
     glyph: "shield",
-    max: 2,
+    max: Infinity,
     chance: 0.1,
     blurb: "New turrets have a chance to be born armoured: double health, and they mend 3% of it a second.",
     apply: (t) => tougher(t, 2),
@@ -417,7 +428,7 @@ const TURRET_MODS: readonly ModDef[] = [
     rarity: "rare",
     scope: "turret",
     glyph: "spike",
-    max: 2,
+    max: Infinity,
     chance: 0.1,
     blurb: "New turrets have a chance to fire sabot: half again the damage, and the round punches through two more bodies.",
     apply: (t) => piercing(stronger(t, 1.5), 2),
@@ -431,7 +442,7 @@ const TURRET_MODS: readonly ModDef[] = [
     rarity: "ultra",
     scope: "turret",
     glyph: "giant",
-    max: 1,
+    max: Infinity,
     // ROLLED ONCE PER CARD (`solo`), not once per turret — so this is the
     // odds that a PLACEMENT comes out giant, whatever the card was
     chance: 0.12,
@@ -448,7 +459,7 @@ const TURRET_MODS: readonly ModDef[] = [
     rarity: "ultra",
     scope: "turret",
     glyph: "scope",
-    max: 1,
+    max: Infinity,
     chance: 0.05,
     blurb:
       "New turrets have a chance to be born SNIPER: four times the reach, triple the rate of fire and double the damage — on a tenth of the health. It kills everything it can see and dies to anything that reaches it.",
@@ -461,7 +472,7 @@ const TURRET_MODS: readonly ModDef[] = [
     rarity: "ultra",
     scope: "turret",
     glyph: "allround",
-    max: 1,
+    max: Infinity,
     chance: 0.05,
     blurb:
       "New turrets have a chance to be born ALL ROUND: double damage, double rate of fire, double health, half again the reach, and the round punches through three more bodies. No cost at all — it is simply a better turret.",
@@ -476,8 +487,8 @@ const GLOBAL_MODS: readonly ModDef[] = [
     rarity: "common",
     scope: "global",
     glyph: "crosshair",
-    max: 3,
-    blurb: "Every turret on the field deals 10% more damage. Stacks.",
+    max: 1,
+    blurb: "Every turret on the field deals 10% more damage.",
     apply: (s, n) => stronger(s, 1 + 0.1 * n),
   },
   {
@@ -486,8 +497,8 @@ const GLOBAL_MODS: readonly ModDef[] = [
     rarity: "common",
     scope: "global",
     glyph: "coolant",
-    max: 3,
-    blurb: "Every turret on the field fires 10% faster. Stacks.",
+    max: 1,
+    blurb: "Every turret on the field fires 10% faster.",
     apply: (s, n) => faster(s, 1 + 0.1 * n),
   },
   {
@@ -496,8 +507,8 @@ const GLOBAL_MODS: readonly ModDef[] = [
     rarity: "common",
     scope: "global",
     glyph: "coin",
-    max: 3,
-    blurb: "Every kill pays 15% more scrap. Stacks.",
+    max: 1,
+    blurb: "Every kill pays 15% more scrap.",
   },
   {
     id: "insurance",
@@ -676,8 +687,11 @@ export function maskRarity(mask: number): Rarity | null {
  */
 export function chanceAt(id: ModId, stacks: number): number {
   const d = modDef(id);
-  if (d.scope !== "turret" || !d.chance || stacks <= 0) return 0;
-  return 1 - (1 - Math.min(1, d.chance)) ** stacks;
+  // chanceOf, not d.chance: the dashboard's dial has to move the odds the
+  // shelf prints and the odds the placement rolls, or the two disagree
+  const c = chanceOf(id);
+  if (d.scope !== "turret" || !c || stacks <= 0) return 0;
+  return 1 - (1 - Math.min(1, c)) ** stacks;
 }
 
 /**
@@ -814,6 +828,48 @@ export const MOD_WEIGHTS: RarityWeights = {
   ultra: 2,
 };
 
+/** ...and the same table as a dial the dashboard can turn (rarity.ts
+ *  weightDial). BOTH BUTTONS READ IT: M and G roll the same bands and
+ *  renormalise inside their own half, so there is one table, not two */
+export const MODULE_ODDS: WeightDial = weightDial(MOD_WEIGHTS);
+
+/**
+ * WHAT ONE ATTRIBUTE'S ROLL COSTS TO TURN, per mod id — the second half of
+ * the rarities dashboard, and the one number that decides how speckled a
+ * patch comes out.
+ *
+ * It is separate from the band weights above because the two answer
+ * different questions: a BAND weight decides how often the deal hands the
+ * attribute over at the shop, and a CHANCE decides how often an attribute
+ * the run already owns lands on a turret. Bending one must not bend the
+ * other.
+ */
+const chanceBent = new Map<ModId, number>();
+
+/** the roll odds in force for one attribute — authored, or whatever the
+ *  dashboard has bent it to */
+export const chanceOf = (id: ModId): number => chanceBent.get(id) ?? modDef(id).chance ?? 0;
+
+/** what a Reset returns to */
+export const authoredChance = (id: ModId): number => modDef(id).chance ?? 0;
+
+/** bend one; undefined restores the authored odds */
+export function setChance(id: ModId, v: number | undefined): void {
+  if (v === undefined || !Number.isFinite(v) || v < 0 || v > 1) chanceBent.delete(id);
+  else chanceBent.set(id, v);
+}
+
+export const allChanceOverrides = (): Record<string, number> =>
+  Object.fromEntries([...chanceBent]);
+
+export function applyChanceOverrides(doc: Record<string, unknown>): void {
+  chanceBent.clear();
+  for (const id of TURRET_MOD_IDS) {
+    const v = doc[id];
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1) chanceBent.set(id, v);
+  }
+}
+
 /**
  * ONE DRAW OFF THE MODULE TABLE: a band against the weights, then a mod
  * uniformly inside it — the deal's own two-step (rarity.ts rollTurret),
@@ -840,7 +896,7 @@ export const MOD_WEIGHTS: RarityWeights = {
 export function rollMod(
   owned: Readonly<Partial<Record<ModId, number>>> = {},
   scope: ModScope | null = null,
-  weights: RarityWeights = MOD_WEIGHTS,
+  weights: RarityWeights = MODULE_ODDS.live(),
   rng: () => number = Math.random,
 ): ModId | null {
   const byRarity = new Map<Rarity, ModId[]>();
@@ -924,20 +980,26 @@ export const dropScale = (owned: Readonly<Partial<Record<ModId, number>>>): numb
     // attribute's clothes and belongs in the relic half
     if (!m.apply && !m.regen)
       throw new Error(`the turret mod "${m.id}" changes no stat — behaviour belongs to the relics`);
-    // NAMED IS CAPPED, UNNAMED IS INFINITE, and the bands decide which
+    // ONLY RARE AND ULTRA ARE NAMED — the low bands print their tweak
     const named = m.rarity === "rare" || m.rarity === "ultra";
     if (named !== (m.name !== undefined))
       throw new Error(
         `the ${m.rarity} turret mod "${m.id}" ${m.name ? "has" : "has no"} name; only rare and ultra are named`,
       );
-    if (named === (m.max === Infinity))
-      throw new Error(`the turret mod "${m.id}" is ${named ? "named" : "unnamed"} and capped at ${m.max}`);
+    // ...AND NO ATTRIBUTE HAS A CAP. A stack is odds, and odds have no
+    // ceiling worth authoring — see the header
+    if (m.max !== Infinity)
+      throw new Error(`the turret mod "${m.id}" is capped at ${m.max}; attributes stack without limit`);
   }
   for (const m of GLOBAL_MODS) {
     if (m.chance) throw new Error(`the global mod "${m.id}" carries a placement chance`);
     // EVERY RELIC IS NAMED. A relic is never a number, so there is
     // nothing for an unnamed one to be called
     if (!m.name) throw new Error(`the relic "${m.id}" has no name`);
+    // ONE IS ENOUGH. A rule in force does not get more in force, so a
+    // second copy would have to mean something and there is nothing for
+    // it to mean
+    if (m.max !== 1) throw new Error(`the relic "${m.id}" may be held ${m.max} times; one is enough`);
     if (m.solo || m.scale) throw new Error(`the relic "${m.id}" is trying to be a turret`);
   }
   // ONE GLYPH MAY BE WORN TWICE, but never inside one band, where the

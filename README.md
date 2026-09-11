@@ -185,6 +185,15 @@ stale tab or a cached bundle looks exactly like a fix not working.
   written as CSS; every screen is built from these
 - `components/Progress.tsx` — the **progress screen**: the track top to
   bottom, one row a level with what it hands out
+- `components/RaritiesView.tsx` — the admin dashboard's **Rarities** tab:
+  every roll in the game and what it is weighed against — the turret, shape
+  and module band tables (`rarity.ts` `weightDial`) and the per-attribute
+  roll chance — each dial printing its own normalised share, because a band
+  weight is relative and means nothing until it is read against its table.
+  Saves into the same `public/balance.json` the prices use, whole-document
+  (`currentBalanceDoc`) so neither admin page can wipe the other's afternoon
+- `components/Knob.tsx` — the dashboard's one slider-plus-field dial, shared
+  by Balance and Rarities
 - `components/Unlocks.tsx` — its **second tab**: every turret, upgrade,
   shape, rule and map in the game on one page with a strip of filters over
   it — **turrets, upgrades, shapes, mutators, maps**, the order a player
@@ -554,34 +563,39 @@ barrel and a blue barrel are the same dial at two steps and need no caption
 at all. *(Relics keep their names, all of them — a relic is never a
 number.)*
 
-**...and the unnamed ones stack forever.** A named attribute is a thing a
-run either has or has not; an unnamed tick is a dial, and a dial with a
-stop at three is a dial that stops being a decision. **Named is capped,
-unnamed is infinite**, checked at import.
+**No attribute has a cap, and every relic has one of exactly one.** There
+is no third rule: an attribute is a standing *chance*, so a second copy is
+simply better odds and a twentieth is better odds again — nothing stops a
+run fielding ten sniper turrets, and the only thing making that rare is how
+rarely the top band comes up at all. A relic is a rule in force; a rule does
+not get more in force. Both are checked at import, and **nothing on screen
+says any of it** — the boards used to print "One a run" and "Up to 2 of
+them" under all twenty tiles, which is housekeeping repeated twenty times
+to say what one rule says once.
 
 **A mod is a stat tweak and nothing else** — damage, fire rate, range,
 pierce, health, repair. Behaviour is the relics' job: a revive, a refund,
 a shift in the odds all happen at a *moment*, and a moment is not a number
 on a turret.
 
-| mod | band | chance | copies | what it does |
-|---|---|---|---|---|
-| +10% damage | Common | 30% | ∞ | |
-| +10% fire rate | Common | 30% | ∞ | |
-| +20% health | Common | 30% | ∞ | |
-| +10% range | Common | 30% | ∞ | |
-| +25% damage | Uncommon | 18% | ∞ | |
-| +25% fire rate | Uncommon | 18% | ∞ | |
-| +50% health | Uncommon | 18% | ∞ | |
-| +25% range | Uncommon | 18% | ∞ | |
-| +1 pierce | Uncommon | 18% | ∞ | pierce is a whole body, never a percentage — one step, at the band where a body is worth about a quarter |
-| repairs 1% a second | Uncommon | 18% | ∞ | the one stat a plain turret has none of, so the tick is the whole thing |
-| **Prototype Chassis** | Rare | 10% | 2 | +50% damage, +50% fire rate |
-| **Bulwark Plating** | Rare | 10% | 2 | +100% health, repairs 3% a second |
-| **Sabot Rounds** | Rare | 10% | 2 | +2 pierce, +50% damage |
-| **Giant** | **Ultra** | **12% a CARD** | 1 | **+1000% health, +200% damage, −90% range, twice the footprint — and it eats the card** |
-| **Sniper** | **Ultra** | 5% | 1 | **+300% range, +200% fire rate, +100% damage, −90% health** |
-| **All Round** | **Ultra** | 5% | 1 | **+100% damage, +100% fire rate, +100% health, +50% range, +3 pierce** |
+| mod | band | chance | what it does |
+|---|---|---|---|
+| +10% damage | Common | 30% | |
+| +10% fire rate | Common | 30% | |
+| +20% health | Common | 30% | |
+| +10% range | Common | 30% | |
+| +25% damage | Uncommon | 18% | |
+| +25% fire rate | Uncommon | 18% | |
+| +50% health | Uncommon | 18% | |
+| +25% range | Uncommon | 18% | |
+| +1 pierce | Uncommon | 18% | pierce is a whole body, never a percentage — one step, at the band where a body is worth about a quarter |
+| repairs 1% a second | Uncommon | 18% | the one stat a plain turret has none of, so the tick is the whole thing |
+| **Prototype Chassis** | Rare | 10% | +50% damage, +50% fire rate |
+| **Bulwark Plating** | Rare | 10% | +100% health, repairs 3% a second |
+| **Sabot Rounds** | Rare | 10% | +2 pierce, +50% damage |
+| **Giant** | **Ultra** | **12% a CARD** | **+1000% health, +200% damage, −90% range, twice the footprint — and it eats the card** |
+| **Sniper** | **Ultra** | 5% | **+300% range, +200% fire rate, +100% damage, −90% health** |
+| **All Round** | **Ultra** | 5% | **+100% damage, +100% fire rate, +100% health, +50% range, +3 pierce** |
 
 **Every attribute is rolled for every turret, independently** — there is
 no "at most one". A placement rolls once per attribute the run owns
@@ -615,9 +629,9 @@ no room for the doubled footprint the shape goes down as it always would.
 
 | relic | band | what it does |
 |---|---|---|
-| Calibration Matrix | Common | +10% damage, every turret. Stacks (3) |
-| Coolant Loop | Common | +10% fire rate, every turret. Stacks (3) |
-| Scavenger Rig | Common | +15% scrap per kill. Stacks (3) |
+| Calibration Matrix | Common | +10% damage, every turret |
+| Coolant Loop | Common | +10% fire rate, every turret |
+| Scavenger Rig | Common | +15% scrap per kill |
 | Salvage Insurance | Uncommon | a wrecked turret has a 40% chance to pay 500 scrap |
 | Phosphor Rounds | Uncommon | every shot burns white, and hits 12% harder |
 | Last Volley | Uncommon | a wrecked turret gives every turret within 6 tiles +60% fire rate for 6s |

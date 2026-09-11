@@ -251,15 +251,18 @@ function UnlockTile({
  * the field mid-run, so the board and the run cannot teach different
  * things about it.
  *
- * THE LINE UNDER THE BLURB IS THE SCOPE, because scope is the one thing
- * about a module that changes what buying it MEANS and it is not visible
- * in the face: a mod is a chance printed at ONE stack (mods.ts oddsLine,
- * the odds a first copy buys — and per CARD rather than per turret for
- * the giant) and a relic is in force the moment it lands. The
- * stack cap goes there too, since "how many of these can I own" is the
- * other question this page exists to answer — and for the unnamed ticks
- * the answer is "as many as you like", which is most of what makes them
- * worth buying late (mods.ts).
+ * THE ONE LINE UNDER THE BLURB IS THE SCOPE, because scope is the one
+ * thing about a module that changes what buying it MEANS and it is not
+ * visible in the face: a mod is a chance printed at ONE stack (mods.ts
+ * oddsLine, the odds a first copy buys — and per CARD rather than per
+ * turret for the giant) and a relic is in force the moment it lands.
+ *
+ * THERE IS NO LINE ABOUT STACKS. It used to say "One a run" or "Up to 2
+ * of them" under all twenty tiles, which is a line of housekeeping
+ * repeated twenty times to say what one rule says once: a relic is owned
+ * once and an attribute has no cap at all (mods.ts). A relic explains
+ * itself; an attribute's only number is its odds, and the odds are the
+ * line above.
  *
  * AN UNNAMED TICK IS TITLED BY ITS TWEAK (modName). Its blurb then says
  * the same thing in a sentence, so the card prints the tweak line only
@@ -271,12 +274,6 @@ function ModuleTile({ id }: { id: ModId }) {
   const r = RARITY[d.rarity];
   const name = modName(d);
   const line = `${oddsLine(d)}${d.scope === "turret" ? ", per copy owned" : ""}`;
-  const stacks =
-    d.max === Infinity
-      ? "Stacks without limit — every copy raises the odds."
-      : d.max > 1
-        ? `Up to ${d.max} of them in a run.`
-        : "One a run.";
   return (
     <Tile
       name={name}
@@ -293,7 +290,6 @@ function ModuleTile({ id }: { id: ModId }) {
       <span className="mt-1.5 block font-bold" style={{ color: r.color }}>
         {line}
       </span>
-      <span className="mt-1 block text-[#A6A6AF]">{stacks}</span>
     </Tile>
   );
 }

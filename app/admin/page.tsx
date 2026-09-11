@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import BalanceView from "@/components/BalanceView";
+import RaritiesView from "@/components/RaritiesView";
 import { loadBalanceDoc } from "@/game/balance";
 import { ADMIN_ENABLED } from "@/game/env";
 import LevelEditorView from "@/components/LevelEditorView";
@@ -143,7 +144,7 @@ function AdminInner() {
   // where you were mid-tune
   const raw = params.get("tab");
   const tab =
-    raw === "balance" || raw === "sandbox" ? raw : "content";
+    raw === "balance" || raw === "rarities" || raw === "sandbox" ? raw : "content";
   const [maps, setMaps] = useState<MapData[]>([]);
   const [open, setOpen] = useState<MapData | null>(null);
   // level documents overlay WORLDS in place, so this is a "have they landed
@@ -203,8 +204,8 @@ function AdminInner() {
             <p className="text-[#71717C]">
               Debug tool. Ctrl+Shift+M toggles this page. Map edits write public/maps/&lt;id&gt;.json
               and ARE the official map; level edits write public/levels/campaign.json — the one
-              wave script every map plays, re-cast per deploy into the families the die rolls; balance edits
-              write public/balance.json and override the authored tuning coefficients.
+              wave script every map plays, re-cast per deploy into the families the die rolls; balance and
+              rarity edits write public/balance.json and override the authored tuning coefficients.
             </p>
           </div>
           <button
@@ -219,6 +220,7 @@ function AdminInner() {
           {([
             ["content", "Levels & maps"],
             ["balance", "Balance"],
+            ["rarities", "Rarities"],
             ["sandbox", "Sandbox"],
           ] as const).map(([id, label]) => (
             <button
@@ -245,6 +247,17 @@ function AdminInner() {
         {tab === "balance" &&
           (balanceReady ? (
             <BalanceView />
+          ) : (
+            <p className="text-[#71717C]">Reading public/balance.json…</p>
+          ))}
+
+        {/* THE ODDS, and it waits on the same document the prices do:
+            every dial on it reads a live override layer, so opening it
+            before balance.json has landed would show the authored tables
+            and then quietly disagree with the file underneath */}
+        {tab === "rarities" &&
+          (balanceReady ? (
+            <RaritiesView />
           ) : (
             <p className="text-[#71717C]">Reading public/balance.json…</p>
           ))}

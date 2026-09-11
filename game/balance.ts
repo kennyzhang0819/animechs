@@ -1,6 +1,9 @@
-import { applyScrapPriceOverrides } from "./economy";
-import { applyRungOverrides, type RungKnobs } from "./ladder";
-import { applyMutationCostOverrides } from "./mutation";
+import { allScrapPriceOverrides, applyScrapPriceOverrides } from "./economy";
+import { SHAPE_ODDS } from "./formation";
+import { allRungOverrides, applyRungOverrides, type RungKnobs } from "./ladder";
+import { allChanceOverrides, applyChanceOverrides, MODULE_ODDS } from "./mods";
+import { allMutationCostOverrides, applyMutationCostOverrides } from "./mutation";
+import { TURRET_ODDS } from "./rarity";
 
 /**
  * The balance document: three sections, each a dial the dashboard turns.
@@ -14,6 +17,13 @@ import { applyMutationCostOverrides } from "./mutation";
  *   `mutations`     what each mutator is WORTH, keyed by its catalog id
  *                   (mutationCostOf in mutation.ts) — the one dial that
  *                   decides which difficulties can afford which rules
+ *   `rarities`      THE ODDS. The three band tables the three rolls are
+ *                   weighed against — `turret` (rarity.ts), `shape`
+ *                   (formation.ts) and `module` (mods.ts) — and
+ *                   `chances`, the per-attribute odds of landing on one
+ *                   new turret (mods.ts ModDef.chance). Four tables in one
+ *                   section because they are one question asked four
+ *                   times: how often does the good thing happen
  *
  * It exists so the dial can be turned WITHOUT a rebuild. The admin dashboard
  * writes it, the game reads it at startup, and a key missing from it simply
@@ -33,6 +43,12 @@ export interface BalanceDoc {
   prices?: Record<string, number>;
   difficulties?: Record<string, Partial<RungKnobs>>;
   mutations?: Record<string, number>;
+  rarities?: {
+    turret?: Record<string, number>;
+    shape?: Record<string, number>;
+    module?: Record<string, number>;
+    chances?: Record<string, number>;
+  };
 }
 
 /** where the document lives, served straight out of public/ */
@@ -53,7 +69,7 @@ export async function loadBalanceDoc(): Promise<void> {
     if (!res.ok) return;
     const parsed = (await res.json()) as unknown;
     if (!parsed || typeof parsed !== "object") return;
-    const { prices, difficulties, mutations } = parsed as BalanceDoc;
+    const { prices, difficulties, mutations, rarities } = parsed as BalanceDoc;
     applyScrapPriceOverrides(prices && typeof prices === "object" ? prices : {});
     applyRungOverrides(
       difficulties && typeof difficulties === "object" ? difficulties : {},
@@ -61,9 +77,51 @@ export async function loadBalanceDoc(): Promise<void> {
     applyMutationCostOverrides(
       mutations && typeof mutations === "object" ? mutations : {},
     );
+    // THE ODDS, all four tables. Each apply CLEARS what it held first, so
+    // a band dropped from the document goes back to the authored weight
+    // rather than lingering from the last load
+    const odds = rarities && typeof rarities === "object" ? rarities : {};
+    TURRET_ODDS.apply(odds.turret ?? {});
+    SHAPE_ODDS.apply(odds.shape ?? {});
+    MODULE_ODDS.apply(odds.module ?? {});
+    applyChanceOverrides(odds.chances ?? {});
   } catch {
     // offline, or a half-written file mid-save: the authored numbers stand
   }
+}
+
+/**
+ * EVERYTHING BENT RIGHT NOW, as a document — gathered from the override
+ * layers themselves rather than from whichever screen is asking.
+ *
+ * THE SAVE IS WHOLESALE. /api/balance writes public/balance.json outright,
+ * so a screen that posted only its own section would delete every other
+ * one: the rarities page would wipe the prices, and the prices page would
+ * wipe the rarities back. Both call this, so whoever presses Save writes
+ * the whole of what is bent and neither can lose the other's afternoon.
+ *
+ * A SECTION WITH NOTHING BENT IS LEFT OUT, so the file stays a list of
+ * deliberate deviations rather than a dump of every authored number.
+ */
+export function currentBalanceDoc(): BalanceDoc {
+  const doc: BalanceDoc = {};
+  const prices = allScrapPriceOverrides();
+  if (Object.keys(prices).length > 0) doc.prices = prices;
+  const diffs = allRungOverrides();
+  if (Object.keys(diffs).length > 0) doc.difficulties = diffs;
+  const muts = allMutationCostOverrides();
+  if (Object.keys(muts).length > 0) doc.mutations = muts;
+  const rarities: NonNullable<BalanceDoc["rarities"]> = {};
+  const turret = TURRET_ODDS.overrides();
+  if (Object.keys(turret).length > 0) rarities.turret = turret as Record<string, number>;
+  const shape = SHAPE_ODDS.overrides();
+  if (Object.keys(shape).length > 0) rarities.shape = shape as Record<string, number>;
+  const mod = MODULE_ODDS.overrides();
+  if (Object.keys(mod).length > 0) rarities.module = mod as Record<string, number>;
+  const chances = allChanceOverrides();
+  if (Object.keys(chances).length > 0) rarities.chances = chances;
+  if (Object.keys(rarities).length > 0) doc.rarities = rarities;
+  return doc;
 }
 
 /**

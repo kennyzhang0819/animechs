@@ -1,4 +1,4 @@
-import { RARITIES, type Rarity, type RarityWeights } from "./rarity";
+import { RARITIES, weightDial, type Rarity, type RarityWeights, type WeightDial } from "./rarity";
 
 /**
  * FORMATION — the SECOND roll on every card, and what makes a draw a
@@ -215,6 +215,10 @@ export const FORMATION_WEIGHTS: RarityWeights = {
   ultra: 10,
 };
 
+/** ...and the same table as a dial the dashboard can turn (rarity.ts
+ *  weightDial). Read this, not the const, anywhere the live answer matters */
+export const SHAPE_ODDS: WeightDial = weightDial(FORMATION_WEIGHTS);
+
 /**
  * ONE DRAW OFF THE SHAPE TABLE: a band against the weights, then a shape
  * uniformly inside it. The same two-step the turret roll uses and for the
@@ -223,7 +227,7 @@ export const FORMATION_WEIGHTS: RarityWeights = {
  */
 export function rollFormation(
   pool: readonly FormationId[] = FORMATION_IDS,
-  weights: RarityWeights = FORMATION_WEIGHTS,
+  weights: RarityWeights = SHAPE_ODDS.live(),
   rng: () => number = Math.random,
 ): FormationId | null {
   const byRarity = new Map<Rarity, FormationId[]>();

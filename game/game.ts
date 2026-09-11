@@ -57,7 +57,7 @@ import {
   type Facing,
   type FormationId,
 } from "./formation";
-import { BASE_WEIGHTS, RARITY, rollTurret, type RarityWeights } from "./rarity";
+import { RARITY, rollTurret, TURRET_ODDS, type RarityWeights } from "./rarity";
 import { HEALTH_BARS_DEFAULT, type HealthBarMode, type TowerPlacement } from "./progress";
 import { FIELDED_KINDS, isRetired, TOWER_KINDS } from "./types";
 import { Renderer } from "./renderer";
@@ -644,7 +644,7 @@ export class Game {
    * because the upgrades that are coming are exactly this: a run that
    * draws purple more often than one in a hundred.
    */
-  private rarityWeights: RarityWeights = BASE_WEIGHTS;
+  private rarityWeights: RarityWeights = TURRET_ODDS.live();
   /**
    * THE LAST PRESS'S WHOLE DRAW, and a counter of how many presses there
    * have been at all.
@@ -1222,7 +1222,7 @@ export class Game {
     if (got.length === 0) return [];
     // ASCENDANCY (mods.ts) bends the TURRET deal's odds, so the weights
     // are re-read off the run's relics here rather than being a constant
-    this.rarityWeights = shiftedWeights(BASE_WEIGHTS, this.sim.modLedger);
+    this.rarityWeights = shiftedWeights(TURRET_ODDS.live(), this.sim.modLedger);
     this.lastMods = got;
     this.modDraws++;
     return got;
@@ -1827,7 +1827,7 @@ export class Game {
     this.sim.reset();
     // the run's upgrades went with the sim's reset (Sim.mods), so the odds
     // they were bending go back to the opening table and the reveal empties
-    this.rarityWeights = BASE_WEIGHTS;
+    this.rarityWeights = TURRET_ODDS.live();
     this.lastMods = [];
     this.modDraws = 0;
     this.soakLayer = null; // a new level is a new coastline

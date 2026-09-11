@@ -114,6 +114,67 @@ export const BASE_WEIGHTS: RarityWeights = {
   ultra: 1,
 };
 
+/**
+ * A WEIGHT TABLE THAT CAN BE TURNED WITHOUT A REBUILD — the shape behind
+ * every "rarities" dial on the admin dashboard (components/RaritiesView).
+ *
+ * THERE ARE THREE OF THESE AND THEY ARE THE SAME MACHINE: the turret
+ * deal's odds (here), the shape deal's (formation.ts) and the module
+ * deal's (mods.ts). Each is a four-number table read at the roll, so each
+ * wants exactly the same four things — read the live table, bend one band,
+ * hand the bent ones to the balance document, take a document back. Three
+ * copies of that is three places for the fourth band to be forgotten.
+ *
+ * THE OVERRIDE LAYER IS NEVER THE SOURCE OF TRUTH, the same rule
+ * economy.ts keeps for prices: the authored table is what ships, this is
+ * the scratch pad for the afternoon of small edits, and a number that
+ * settles belongs back in the const with the reasoning beside it.
+ */
+export interface WeightDial {
+  /** the table as it stands — authored, with whatever is bent on top */
+  live(): RarityWeights;
+  /** what a Reset returns to */
+  readonly authored: RarityWeights;
+  /** bend one band; undefined restores the authored weight */
+  set(r: Rarity, v: number | undefined): void;
+  /** only what is actually bent — what the balance document carries */
+  overrides(): Partial<Record<Rarity, number>>;
+  /** take a saved section, replacing everything bent right now */
+  apply(doc: Record<string, unknown>): void;
+}
+
+export function weightDial(authored: RarityWeights): WeightDial {
+  const bent = new Map<Rarity, number>();
+  return {
+    authored,
+    live: () =>
+      bent.size === 0
+        ? authored
+        : (Object.fromEntries(
+            RARITIES.map((r) => [r, bent.get(r) ?? authored[r]]),
+          ) as unknown as RarityWeights),
+    set(r, v) {
+      if (v === undefined || !Number.isFinite(v) || v < 0) bent.delete(r);
+      else bent.set(r, v);
+    },
+    overrides: () => Object.fromEntries([...bent]) as Partial<Record<Rarity, number>>,
+    apply(doc) {
+      bent.clear();
+      for (const r of RARITIES) {
+        const v = doc[r];
+        if (typeof v === "number" && Number.isFinite(v) && v >= 0) bent.set(r, v);
+      }
+    },
+  };
+}
+
+/**
+ * THE TURRET DEAL'S ODDS, as a dial. Read `TURRET_ODDS.live()` rather than
+ * BASE_WEIGHTS anywhere the answer has to reflect what the dashboard has
+ * bent — which is everywhere except the dashboard's own "authored" column.
+ */
+export const TURRET_ODDS: WeightDial = weightDial(BASE_WEIGHTS);
+
 /** the odds as the HUD prints them: what share of draws each rarity takes */
 export function rarityOdds(weights: RarityWeights): Record<Rarity, number> {
   const total = RARITIES.reduce((n, r) => n + Math.max(0, weights[r]), 0);
@@ -137,7 +198,7 @@ export function rarityOdds(weights: RarityWeights): Record<Rarity, number> {
  */
 export function rollTurret(
   pool: readonly TowerKind[],
-  weights: RarityWeights = BASE_WEIGHTS,
+  weights: RarityWeights = TURRET_ODDS.live(),
   rng: () => number = Math.random,
 ): TowerKind | null {
   const byRarity = new Map<Rarity, TowerKind[]>();

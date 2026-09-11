@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { saveBalanceDoc, type BalanceDoc } from "@/game/balance";
+import { currentBalanceDoc, saveBalanceDoc } from "@/game/balance";
 import { TOWERS } from "@/game/constants";
 import {
   allScrapPriceOverrides,
@@ -44,76 +44,9 @@ import {
 import { BY_MINDUSTRY_VALUE } from "@/game/tech";
 import { type TowerKind } from "@/game/types";
 import { ScrapAmount, XpAmount } from "./Items";
+import { Knob } from "./Knob";
 
 const NUM = "font-mono tabular-nums";
-
-/**
- * One slider plus one number field, because neither alone is enough: the
- * slider is for sweeping until it looks right, the field for typing the value
- * back once you know it.
- */
-function Knob({
-  label,
-  hint,
-  value,
-  min,
-  max,
-  step,
-  decimals,
-  onChange,
-  onReset,
-  bent,
-}: {
-  label: string;
-  hint: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  decimals: number;
-  onChange: (v: number) => void;
-  onReset: () => void;
-  bent: boolean;
-}) {
-  return (
-    <div className="border-t border-[#2E2E36] py-3 first:border-t-0">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[15px] font-bold text-[#EDEDEF]">{label}</span>
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            value={Number(value.toFixed(decimals))}
-            min={min}
-            step={step}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              if (Number.isFinite(v)) onChange(v);
-            }}
-            className={`w-24 rounded border border-[#2E2E36] bg-[#0B0B0D] px-2 py-1 text-right text-[15px] text-[#EDEDEF] ${NUM}`}
-          />
-          <button
-            onClick={onReset}
-            disabled={!bent}
-            className="rounded border border-[#2E2E36] px-2 py-1 text-[13px] text-[#71717C] hover:border-[#4A4A55] disabled:opacity-30"
-          >
-            Reset
-          </button>
-        </div>
-      </div>
-      <input
-        type="range"
-        value={Math.min(max, Math.max(min, value))}
-        min={min}
-        max={max}
-        step={step}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-2 w-full accent-[#3987e5]"
-        aria-label={label}
-      />
-      <p className="mt-1 text-[13.5px] text-[#71717C]">{hint}</p>
-    </div>
-  );
-}
 
 const TIER_COLOR: Record<number, string> = { 1: "#7BE58A", 2: "#FFB65C", 3: "#FF6B6B" };
 
@@ -149,15 +82,11 @@ export default function BalanceView() {
     bump((n) => n + 1);
   }, []);
 
+  // THE WHOLE DOCUMENT, not this screen's share of it: the save is
+  // wholesale (balance.ts currentBalanceDoc), so a Save here that carried
+  // only prices would delete whatever the rarities page had bent
   const save = useCallback(async () => {
-    const doc: BalanceDoc = {};
-    const prices = allScrapPriceOverrides();
-    if (Object.keys(prices).length > 0) doc.prices = prices;
-    const diffs = allRungOverrides();
-    if (Object.keys(diffs).length > 0) doc.difficulties = diffs;
-    const muts = allMutationCostOverrides();
-    if (Object.keys(muts).length > 0) doc.mutations = muts;
-    setStatus((await saveBalanceDoc(doc)) ? "Saved" : "Save failed");
+    setStatus((await saveBalanceDoc(currentBalanceDoc())) ? "Saved" : "Save failed");
   }, []);
 
   // the stage table, recomputed on every bump so a price edit shows at
