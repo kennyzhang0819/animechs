@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
 import { WORLDS } from "@/game/levels";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
@@ -14,13 +21,14 @@ import {
   ROSTER_TOP,
   TRACK,
   type Reward,
+  type UnlockEntry,
 } from "@/game/track";
 import { upgradeDef } from "@/game/upgrades";
-import { BackButton, BoardTabs, type Cam } from "./Board";
+import { BackButton, BoardTabs } from "./Board";
 import { HoverCard, useHoverCard } from "./HoverCard";
 import { itemCount } from "./Items";
-import MutationTree from "./MutationTree";
-import { bandFor, MutationFace, MUT_GLYPH, MUT_LIT } from "./mutationFace";
+import Unlocks from "./Unlocks";
+import { bandFor, MutationFace, MUT_LIT } from "./mutationFace";
 import { formationDef, formationRarity, type FormationId } from "@/game/formation";
 import { RARITY, rarityDef } from "@/game/rarity";
 import { TOWER_ICONS } from "./towerIcons";
@@ -37,17 +45,26 @@ import { TOWER_ICONS } from "./towerIcons";
  * is next", and both are within a glance of the centre. Nothing here is a
  * button: the track is not spent, it is climbed.
  *
- * The mutator codex rides beside it as a second tab, exactly as it did
- * beside the old tree — the answer to "is this worth it" is "what can be
- * done to me", and that lives on the other board. The tab strip sits in
- * the SAME corner on both boards, beside back, so switching never moves
- * the hand.
+ * THE UNLOCKS BOARD rides beside it as a second tab (Unlocks.tsx): every
+ * turret, shape, map and rule the track will ever hand out, filtered by
+ * kind. The two answer the two halves of one question — this one is
+ * "where am I and what is next", that one is "what is there at all" — and
+ * the tab strip sits in the SAME corner on both, beside back, so
+ * switching never moves the hand.
+ *
+ * It replaced the mutator codex, which answered only the rules half and
+ * did it through a pannable, zoomable camera left over from the tech tree
+ * that used to live there. A camera is the wrong instrument for a list
+ * read once and closed.
  */
 
 const TRACK_GLYPH = "M3 19h18v2H3zM3 6l5 4 4-7 4 7 5-4-2 11H5z";
+/** the unlocks board's own mark: a padlock, open */
+const UNLOCK_GLYPH =
+  "M12 2a5 5 0 0 1 5 5h-2a3 3 0 0 0-6 0v3h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5zm1 12h-2v4h2z";
 const TABS = [
   { id: "track", label: "Progress", color: "#FFD37F", glyph: TRACK_GLYPH },
-  { id: "mutators", label: "Mutators", color: MUT_LIT, glyph: MUT_GLYPH },
+  { id: "unlocks", label: "Unlocks", color: MUT_LIT, glyph: UNLOCK_GLYPH },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -154,21 +171,43 @@ function RewardFace({ reward }: { reward: Reward }) {
  * can fade it, and it opens away from whichever edge of the window the
  * chip is nearest ("auto"), which keeps it on screen at any scroll.
  */
-function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
-  /**
-   * A TURRET CHIP IS BORDERED BY ITS RARITY (rarity.ts), not by the fact
-   * that it is a turret. The track is where a player learns what the deal
-   * can hand them, and it teaches the border at the same time it teaches
-   * the gun: the row that opens a spectre is purple here and the card that
-   * turns one over mid-wave is purple there, and nothing has to say so.
-   */
+/**
+ * WHAT ONE REWARD IS DRAWN AND COLOURED BY — the single answer both
+ * boards read.
+ *
+ * A TURRET IS BORDERED BY ITS RARITY (rarity.ts), and a shape by its band
+ * (formationRarity), not by the fact that they are a turret and a shape.
+ * The track is where a player learns what the deal can hand them, and it
+ * teaches the border at the same time it teaches the gun: the row that
+ * opens a spectre is purple here, the tile on the unlocks board is purple
+ * there, and the card that turns one over mid-wave is purple too. Nothing
+ * has to say so.
+ */
+export function rewardLook(reward: Reward): {
+  face: ReactNode;
+  color: string;
+  tag?: string;
+} {
   const rarity =
     reward.kind === "turret"
       ? rarityDef(reward.id)
       : reward.kind === "shape"
         ? RARITY[formationRarity(reward.id)]
         : null;
-  const color = rarity ? rarity.color : REWARD_COLOR[reward.kind];
+  return {
+    face: <RewardFace reward={reward} />,
+    color: rarity ? rarity.color : REWARD_COLOR[reward.kind],
+    tag: rarity
+      ? rarity.name
+      : reward.kind === "mutator"
+        ? bandFor(mutationById(reward.id)).label
+        : undefined,
+  };
+}
+
+function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
+  const { color, tag } = rewardLook(reward);
+  const rarity = tag;
   const text = rewardText(reward);
   // "auto": the list scrolls, so which side of the window a chip is on is
   // not a property of its row — the card picks its side when it opens
@@ -178,7 +217,7 @@ function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
       <span
         ref={tip.ref}
         tabIndex={0}
-        aria-label={`${text}${rarity ? `, ${rarity.name}` : ""}. ${rewardBlurb(reward)}${
+        aria-label={`${text}${rarity ? `, ${rarity}` : ""}. ${rewardBlurb(reward)}${
           rewardTargeting(reward) ? `. ${rewardTargeting(reward)}` : ""
         }`}
         {...tip.anchorProps}
@@ -194,13 +233,7 @@ function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
         title={text}
         // the weight is the one thing a mutator's card says that a
         // turret's cannot: it is the answer to "how bad is this"
-        tag={
-          rarity
-            ? rarity.name
-            : reward.kind === "mutator"
-              ? bandFor(mutationById(reward.id)).label
-              : undefined
-        }
+        tag={tag}
         color={color}
       >
         {rewardBlurb(reward)}
@@ -304,7 +337,6 @@ export default function ProgressView({
   backLabel?: string;
 }) {
   const [tab, setTab] = useState<TabId>("track");
-  const codexCam = useRef<Cam | null>(null);
   const here = useRef<HTMLDivElement | null>(null);
   const tabStrip = <BoardTabs tabs={TABS} active={tab} onPick={setTab} />;
 
@@ -328,16 +360,16 @@ export default function ProgressView({
     if (tab === "track") here.current?.scrollIntoView({ block: "center", behavior: "instant" });
   }, [tab, level]);
 
-  if (tab === "mutators")
+  if (tab === "unlocks")
     return (
-      <MutationTree
+      <Unlocks
         onBack={onBack}
         backLabel={backLabel}
-        // the codex dims what the track has not opened — the level it
+        // the board dims what the track has not opened — the level it
         // reads is the one the save PLAYS at, dev door included
         level={plays}
         tabs={tabStrip}
-        cam={codexCam}
+        renderFace={(e: UnlockEntry) => rewardLook(e.reward)}
       />
     );
 
@@ -360,7 +392,7 @@ export default function ProgressView({
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#0B0B0D] text-[#EDEDEF]">
       {/* the chrome: back and the tabs, in the corner the codex board pins
-          them to as well (MutationTree), so the switch never moves. Both
+          them to as well (Unlocks), so the switch never moves. Both
           the chrome and the track opt into the UI-size knob (ui-zoom):
           this screen is read, not played, and a HUD set to 150% for a TV
           wants its progress list at 150% too */}

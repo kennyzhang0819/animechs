@@ -360,7 +360,7 @@ export function nextRewardLevel(level: number): number | null {
 
 /** a reward in the player's own words */
 export function rewardText(r: Reward): string {
-  if (r.kind === "world") return `${WORLDS.find((w) => w.id === r.worldId)?.name ?? "A map"} opens`;
+  if (r.kind === "world") return `Map: ${WORLDS.find((w) => w.id === r.worldId)?.name ?? "Unknown"}`;
   if (r.kind === "speed") return `${r.mult}x speed`;
   if (r.kind === "turret") return `Turret: ${TOWER_NAME[r.id]}`;
   if (r.kind === "shape") return `Shape: ${formationDef(r.id).name}`;
@@ -371,7 +371,7 @@ export function rewardText(r: Reward): string {
 
 /** ...and what it does, for the hover card */
 export function rewardBlurb(r: Reward): string {
-  if (r.kind === "world") return "Unlocks a new map ";
+  if (r.kind === "world") return "A map the campaign can be deployed on.";
   if (r.kind === "speed") return `Fast-forward: a run may be played at ${r.mult}x pace from the strip under the wave panel.`;
   if (r.kind === "turret") return TOWER_DESC[r.id];
   if (r.kind === "shape") {
@@ -398,6 +398,62 @@ export function rewardTargeting(r: Reward): string | null {
 export const TOWER_NAME: Readonly<Record<TowerKind, string>> = Object.fromEntries(
   TOWER_KINDS_ALL.map((k) => [k, TOWERS[k].name]),
 ) as Record<TowerKind, string>;
+
+/**
+ * EVERY UNLOCK IN THE GAME, FLAT — what the Unlocks board reads.
+ *
+ * The track is authored the other way round (a level, and what it hands
+ * out), and that is the right shape for "where am I and what is next". It
+ * is the wrong shape for the other question a player has, which is "what
+ * is there, and when do I get it": answering that off TRACK means walking
+ * twenty-three rows looking for the turrets. So this inverts it once, at
+ * import, and every category is derived from the same source the track
+ * deals from — a new turret or shape appears on the board by existing.
+ *
+ * A reward the track never hands out (a map nobody's level opens, the
+ * starting roster, the starting shapes) reads as LEVEL 1: it is not
+ * locked, it was simply always there.
+ */
+export type UnlockKind = "world" | "turret" | "shape" | "mutator" | "upgrade";
+
+export interface UnlockEntry {
+  reward: Reward;
+  /** the level it opens at — 1 for everything a fresh save already owns */
+  level: number;
+}
+
+/** every unlock of one category, soonest first, then by name */
+export function unlocksOf(kind: UnlockKind): UnlockEntry[] {
+  const out: UnlockEntry[] = [];
+  if (kind === "world")
+    for (const w of WORLDS)
+      out.push({ reward: { kind: "world", worldId: w.id }, level: worldUnlockLevel(w.id) });
+  if (kind === "turret")
+    for (const k of FIELDED_KINDS)
+      out.push({ reward: { kind: "turret", id: k }, level: turretUnlockLevel(k) });
+  if (kind === "shape")
+    for (const f of FORMATION_IDS)
+      out.push({ reward: { kind: "shape", id: f }, level: shapeUnlockLevel(f) });
+  if (kind === "mutator")
+    for (const m of MUTATIONS)
+      out.push({ reward: { kind: "mutator", id: m.id }, level: mutatorUnlockLevel(m.id) });
+  // THE UPGRADE BRANCHES ARE OFF THE TRACK (UPGRADES_ON_TRACK): they are
+  // written, folded and waiting, and nothing deals one — so the category
+  // is deliberately EMPTY rather than a shelf of rungs a player can never
+  // reach. The board says so in words where the tiles would be.
+  if (kind === "upgrade" && UPGRADES_ON_TRACK)
+    for (const u of ALL_UPGRADES) {
+      let level = MAX_LEVEL + 1;
+      for (const [l, ids] of DEALT) if (ids.includes(u.id)) level = l;
+      out.push({ reward: { kind: "upgrade", id: u.id }, level });
+    }
+  // SOONEST FIRST, and within a level the order the category itself is
+  // written in — FIELDED_KINDS, FORMATION_IDS, WORLDS. Array.sort is
+  // stable, so that order survives untouched, which is what puts the
+  // shapes smallest-first instead of alphabetical (a level-1 shelf
+  // reading Block, Grid, Quad tells a player nothing; 4, 9, 16 does)
+  return out.sort((a, b) => a.level - b.level);
+}
 
 /** what a save at this level may do — the sim's and the build menu's allowance */
 export function techStateFor(level: number): TechState {

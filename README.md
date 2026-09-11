@@ -157,8 +157,13 @@ stale tab or a cached bundle looks exactly like a fix not working.
   `.ms-bar` and their variants are Mindustry's nine-patch UI sprites
   written as CSS; every screen is built from these
 - `components/Progress.tsx` — the **progress screen**: the track top to
-  bottom, one row a level with what it hands out; the mutator codex is
-  its second tab
+  bottom, one row a level with what it hands out
+- `components/Unlocks.tsx` — its **second tab**: every turret, shape, map
+  and rule the track will ever hand out, on one page with a strip of
+  filters over it, locked ones dimmed with the level that opens them. It
+  replaced the mutator codex, which answered only the rules half of that
+  and did it through a pannable camera left over from the old tech tree —
+  the wrong instrument for a list read once and closed
 - `components/LevelEditorView.tsx`, `MapEditorView.tsx`, `BalanceView.tsx` —
   the admin authoring surfaces
 - `components/SandboxView.tsx` — the admin **Sandbox** tab, and the one
@@ -511,5 +516,6 @@ rolled to fit it when you deploy. It is the StarCraft II model, and the
 mode it exists for is endgame resource farming: the same fifty waves, a
 different set of rules every time. The catalog (`game/mutation.ts`):
 Overshields, Shield Towers, Hungry, Speedy, Volatile, Armored Swarms,
-Mitosis, Hydrophobic, Amphibious — the codex on the progress screen says
-what each does, and the sandbox is the one place they are chosen by hand.
+Mitosis, Hydrophobic, Amphibious — the Unlocks board on the progress
+screen says what each does, and the sandbox is the one place they are
+chosen by hand.
