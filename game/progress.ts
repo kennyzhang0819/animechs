@@ -9,24 +9,26 @@ import { type TowerKind } from "./types";
 /**
  * WHEN A BODY WEARS ITS HEALTH — the Interface tab's two knobs, one for
  * the player's own and one for the swarm's (Game.setHealthBars). The same
- * four choices cover units and buildings alike, because "how much is left
- * of that" is one question whether the thing walks or stands:
+ * three choices cover units and buildings alike, because "how much is
+ * left of that" is one question whether the thing walks or stands:
  *
  * - `damaged` — only once something has taken a hit. The default, and the
  *   quiet one: a board at full health wears nothing
  * - `always`  — every body, all the time, full bars included
- * - `hover`   — only the one under the cursor, for a player who wants the
- *   field bare and asks a body at a time
  * - `never`   — nothing on the field; the panel still says what the core
  *   and the bosses are on
+ *
+ * There was a fourth, `hover` — the one body under the cursor and nothing
+ * else. It asked a player mid-wave to point at things one at a time to
+ * learn what a glance is supposed to tell them, and it cost a hit test
+ * against every living body every frame to answer.
  */
-export type HealthBarMode = "damaged" | "always" | "hover" | "never";
+export type HealthBarMode = "damaged" | "always" | "never";
 
-/** the four, in the order the Interface tab prints them: most bars to none */
+/** the three, in the order the Interface tab prints them: most bars to none */
 export const HEALTH_BAR_MODES: ReadonlyArray<{ mode: HealthBarMode; label: string }> = [
   { mode: "always", label: "Always" },
   { mode: "damaged", label: "Damaged" },
-  { mode: "hover", label: "Hover" },
   { mode: "never", label: "Never" },
 ];
 
