@@ -6,11 +6,11 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  *
  * SCRAP is the run's money, and EVERY BIT OF IT COMES OFF THE SWARM. A
  * kill drops SCRAP OFF ITS OWN HEALTH POOL (SCRAP_PER_HP, a boss its lump
- * on top), every wave staged pays a small bonus (waveBonusScrap), and that
- * is the whole income: the core pays nothing, nothing is mined, and a sale
- * returns nothing (SELL_REFUND). Drops are fixed per KIND — a dagger always
- * pays this, on every rung, on every map — so the turret prices can be
- * authored against the script (the stage table in ladder.ts).
+ * on top), and that is the WHOLE income: the core pays nothing, nothing is
+ * mined, no wave pays for being survived, and a sale returns nothing
+ * (SELL_REFUND). Drops are fixed per KIND — a dagger always pays this, on
+ * every rung, on every map — so the roll fee can be authored against the
+ * script (the stage table in ladder.ts).
  *
  * XP is the save's progress, paid for objectives (the waves cleared),
  * never for kills — see MISSION_XP and waveXpShare below.
@@ -66,15 +66,15 @@ export function dropForUnit(hp: number, boss = false): Drop {
 /** every run opens with this much in the bank */
 export const SCRAP_START = 7500;
 
-/**
- * THE WAVE BONUS, paid as a wave is staged — at the top of its gap, which
- * is exactly when a board wants scrap to spend. A flat base and a little
- * more each wave, so the late script's income is not kills alone.
+/*
+ * THERE IS NO WAVE BONUS. Staging a wave used to pay a lump on top of
+ * what its bodies dropped — 250 and 50 more each wave, so 500 by wave 5
+ * and 2,750 by wave 50 — and it was passive income: a board that killed
+ * nothing banked it anyway, just for surviving the gap. EVERY SCRAP NOW
+ * COMES OFF THE SWARM. The bank moves when bodies fall and at no other
+ * time, which is the only version of this economy a player can reason
+ * about: build more, kill more, buy more.
  */
-export const WAVE_BONUS_BASE = 250;
-export const WAVE_BONUS_PER_WAVE = 50;
-export const waveBonusScrap = (wave: number): number =>
-  WAVE_BONUS_BASE + WAVE_BONUS_PER_WAVE * Math.max(0, Math.floor(wave));
 
 /**
  * WHAT ONE TURRET CARD COSTS — the run's only outgoing, and the whole

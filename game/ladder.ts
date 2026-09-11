@@ -21,7 +21,6 @@ import {
   scrapPriceOf,
   STAGES,
   towersOfTier,
-  waveBonusScrap,
   waveXp,
   type Drop,
   type TowerTier,
@@ -557,9 +556,10 @@ export interface WaveCost {
   armourShare: number;
   /** how much of it flies — hail and scorch cannot touch these at all */
   airShare: number;
-  /** what killing the whole wave drops — the bonus for staging it is
-   *  not in here (see waveBonusScrap), and neither is XP: a wave's XP is
-   *  its share of the mission pot (waveXp), not a property of its bodies */
+  /** what killing the whole wave drops — which is the wave's whole income
+   *  now that staging one pays nothing. XP is not in here either: a wave's
+   *  XP is its share of the mission pot (waveXp), not a property of its
+   *  bodies */
   drops: Drop;
 }
 
@@ -620,8 +620,8 @@ export interface WaveRow {
   armourShare: number;
   airShare: number;
   t3Share: number;
-  /** what the wave PAYS: its bodies' drops plus the bonus for staging it
-   *  (waveBonusScrap) — the run's whole income for the wave */
+  /** what the wave PAYS: its bodies' drops, which is the run's whole
+   *  income for the wave — nothing is paid for staging one */
   scrap: number;
   /** what CLEARING the wave banks — its share of MISSION_XP, before the
    *  rung bonus. It reads off the wave's position and the script's
@@ -645,7 +645,7 @@ export function waveGuide(spec: LevelSpec = WORLD): WaveRow[] {
       armourShare: c.armourShare,
       airShare: c.airShare,
       t3Share: c.t3Share,
-      scrap: c.drops.scrap + waveBonusScrap(i + 1),
+      scrap: c.drops.scrap,
       xp: waveXp(i + 1, waves),
     };
     prev = c.hp;
@@ -665,8 +665,8 @@ export interface StageRow {
   from: number;
   to: number;
   units: number;
-  /** scrap the stage's waves pay, drops and bonuses, plus the opening
-   *  bank in stage 1 — what the stage buys its tier with */
+  /** scrap the stage's waves drop, plus the opening bank in stage 1 —
+   *  what the stage buys its tier with */
   scrap: number;
   /** XP clearing the stage's waves banks, before the rung bonus */
   xp: number;

@@ -131,7 +131,7 @@ import {
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap, type SpawnCircle } from "./maps";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
-import { SCRAP_START, sellValue, waveBonusScrap } from "./economy";
+import { SCRAP_START, sellValue } from "./economy";
 import { airWalkMask, isBuildableWall, isWaterFloor, navalWalkMask, WALL_DEEP, type Terrain } from "./terrain";
 import {
   MAX_WEAPONS,
@@ -2226,12 +2226,10 @@ export class Sim {
         for (const e of this.waveEntries) total += e.total;
         this.waveRate = waveSpawnRate(total);
         this.wavesStarted++;
-        // THE WAVE BONUS, paid as the wave is staged — at the top of its
-        // gap, which is exactly when a board wants scrap to spend
-        const bonus = waveBonusScrap(this.wavesStarted);
-        this.scrap += bonus;
-        this.scrapEarned += bonus;
-        // hold the gap, then let this wave drain — waitLeft gates runScript
+        // ...and staging it pays NOTHING. It used to pay a bonus here, at
+        // the top of the gap; every scrap comes off the swarm now
+        // (economy.ts). Hold the gap, then let this wave drain — waitLeft
+        // gates runScript
         this.waitLeft = Math.max(0, this.level.waveGap);
         return;
       }

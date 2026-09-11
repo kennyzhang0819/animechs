@@ -48,8 +48,9 @@ stale tab or a cached bundle looks exactly like a fix not working.
   (`rollFamilies`, `transformScript`) is what makes one run's swarm differ
   from the next's; `unitDrop` is what a kill pays
 - `game/economy.ts` — **the economy**: scrap (in-run money — a kill drops
-  its tier's scrap, `SCRAP_BY_TIER`, a boss `BOSS_SCRAP`; every wave staged
-  pays `waveBonusScrap`; nothing else pays anything), XP (meta progress),
+  a fifteenth of its own health, `SCRAP_PER_HP`, a boss `BOSS_SCRAP` on
+  top; **nothing else pays anything** — no wave bonus, no passive
+  trickle), XP (meta progress),
   the fixed mission pot and how it is dealt out per wave cleared
   (`MISSION_XP`, `waveXpShare`), **what one turret card costs**
   (`TURRET_ROLL_PRICE`, 1,000 flat — the run's one outgoing), the three
@@ -254,25 +255,24 @@ once (`MAX_UNITS`, 22,000). The gap is the document's
 ### Two currencies that never touch
 
 **Scrap is the run's money, and every bit of it comes off the swarm.**
-Every run opens with `SCRAP_START` (7,500); a kill drops its tier's
-scrap (`SCRAP_BY_TIER`, a boss `BOSS_SCRAP`); every wave staged pays a
-bonus (`waveBonusScrap`, 250 plus 50 a wave). The core pays nothing,
-nothing is mined, and selling returns nothing (`SELL_REFUND` is 0): a
-draw is spent. Nothing carries between runs. There is no gate inside a
-run: whatever the save owns may come out of the deal from wave 1.
+Every run opens with `SCRAP_START` (7,500), and after that a kill drops
+scrap **off its own health pool** — `SCRAP_PER_HP`, a fifteenth, which is
+the ten scrap a 150-health dagger has always paid — with `BOSS_SCRAP`
+(5,000) on top of a boss. **That is the whole of it.**
 
-| tier | scrap |
-|---|---|
-| T1 | 10 |
-| T2 | 30 |
-| T3 | 80 |
-| T4 | 200 |
-| T5 | 500 |
-| boss | 5,000 |
+Staging a wave used to pay a bonus as well, 250 and 50 more each wave — so
+500 by wave 5 and 2,750 by wave 50 — and it was passive income: a board
+that killed nothing banked it anyway, for surviving the gap. It is gone.
+**The bank moves when bodies fall and at no other time.** The core pays
+nothing, nothing is mined, and selling returns nothing (`SELL_REFUND` is
+0): a draw is spent. Nothing carries between runs. There is no gate inside
+a run: whatever the save owns may come out of the deal from wave 1.
 
-**Drops are fixed.** A dagger always pays this, on every rung, on every
-map. Scrap income is a fact about the script, which is what lets the
-turret prices be authored against it (the stage table below).
+**Drops are fixed per kind.** A dagger always pays the same, on every
+difficulty, on every map — it reads the AUTHORED health and never the
+difficulty-scaled pool, or a full clear would pay differently on each one.
+Scrap income is therefore a fact about the script, which is what lets the
+roll fee be authored against it (the stage table below).
 
 **XP is the save's progress, and it is paid for objectives, not kills.**
 Every mission is worth the same fixed pot — `MISSION_XP`, 100,000 for a
