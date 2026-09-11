@@ -180,6 +180,47 @@ const FACES: Record<string, (g: Pen) => void> = {
   },
 
   /**
+   * A PENNANT PLANTED ON A GUNMETAL PLINTH — Conquest is the swarm taking
+   * a turret and flying its own colour over it. The thing drawn is the
+   * FLAG rather than the turret: every other face in this catalog that
+   * wanted to say "a building" drew a plinth and they all started to look
+   * like one another, and a flag on a stump is the half-second guess for
+   * "this is theirs now" at any size.
+   *
+   * The pole runs the full height and the plate down its left edge is
+   * what gives it form (rule 5: parts, not a bevel), and the plinth is
+   * WIDER THAN THE POLE AND OFF ITS AXIS so the whole drawing is
+   * asymmetric — nothing here can turn into a face (rule 6).
+   */
+  conquest: (g) => {
+    g.box(0.14, 0.76, 0.86, 0.94, PAL.steel);                // the plinth
+    g.over((o) => {
+      o.box(0.14, 0.88, 0.86, 0.94, PAL.steelDeep);          // its skirt
+      o.box(0.14, 0.76, 0.86, 0.8, PAL.steelLite);           // its cap
+    });
+    g.box(0.42, 0.06, 0.52, 0.8, PAL.steelLite);             // the pole
+    g.over((o) => o.box(0.42, 0.06, 0.46, 0.8, PAL.steel));  // ...and its shaded plate
+    g.poly([[0.52, 0.1], [0.92, 0.26], [0.52, 0.42]], PAL.emberDark);
+    g.over((o) => o.poly([[0.52, 0.14], [0.78, 0.25], [0.52, 0.35]], PAL.ember));
+  },
+
+  /**
+   * A SLAB ON THE FLOOR AND A GREEN ARROW COMING UP OUT OF IT —
+   * Reconstruction is a body that got back up. Green because green is
+   * already what this game says "this did not die" in (the heal ramp, the
+   * wave a revived turret throws), and a FULL arrow rather than the bare
+   * chevron Amphibious wears, so the two green up-marks in the catalog
+   * are different silhouettes rather than the same one twice.
+   */
+  reconstruction: (g) => {
+    g.poly([[0.5, 0.06], [0.84, 0.44], [0.65, 0.44], [0.65, 0.72],
+            [0.35, 0.72], [0.35, 0.44], [0.16, 0.44]], PAL.heal);
+    g.over((o) => o.box(0, 0, 1, 0.26, PAL.healLite));       // the head, catching the light
+    g.box(0.1, 0.8, 0.9, 0.94, PAL.steelDark);               // the ground it left
+    g.over((o) => o.box(0.1, 0.8, 0.9, 0.85, PAL.steel));
+  },
+
+  /**
    * Three chevrons climbing, brightening as they climb — the face a rule
    * nobody has drawn yet falls back to. ONE THICKNESS ALL THE WAY ROUND:
    * the first pass hung a bar under each chevron's elbow, and three of

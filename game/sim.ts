@@ -124,9 +124,13 @@ import {
   AMPHIBIOUS_SPEED,
   HYDROPHOBIC_RANGE,
   HYDROPHOBIC_RATE,
+  CONQUEST_HP,
+  CONQUEST_RATE,
   MITOSIS_BROOD,
   MITOSIS_SPREAD,
   MITOSIS_TRIES,
+  RECONSTRUCT_DELAY,
+  RECONSTRUCT_GRACE,
   SPEEDY_SPEED,
   VOLATILE_DMG,
   VOLATILE_RADIUS,
@@ -170,6 +174,8 @@ import {
   type Structure,
   type Tower,
   type TowerKind,
+  type Team,
+  teamOf,
   type EnemyShot,
 } from "./types";
 
@@ -822,6 +828,13 @@ export class Sim {
    */
   private readonly ubrood = new Uint8Array(MAX_UNITS);
   /**
+   * HAS THIS BODY ALREADY STOOD BACK UP? (Reconstruction, mutation.ts.)
+   * The same shape of guarantee ubrood carries for Mitosis and for the
+   * same reason: the rule is one generation deep as a property of the
+   * BODY, so no clock, count or table can turn a lane into a loop.
+   */
+  private readonly urisen = new Uint8Array(MAX_UNITS);
+  /**
    * THE WAVE EVERY BODY BELONGS TO, 1-based: the number loadStep staged
    * it under, and a brood member's is its parent's. It is what makes a
    * wave an OBJECTIVE (MISSION_XP in economy.ts): a wave is cleared when
@@ -1159,6 +1172,13 @@ export class Sim {
   private focusUid = -1;
   private focusIdx = -1;
   private focusShieldTower = -1;
+  /**
+   * ...and the third kind of mark: one of the SWARM's conquered turrets
+   * (Conquest, mutation.ts), held by reference rather than by index — a
+   * building has no uid, and its cells are what say whether it still
+   * stands. Null in every run without the rule.
+   */
+  private focusTower: Tower | null = null;
 
   /** is the Volatile mutator in force this run? (see reset) */
   private volatileOn = false;
@@ -1168,6 +1188,31 @@ export class Sim {
   /** is the Mitosis mutator in force this run? (see reset, and splitUnit
    *  for what a death then leaves behind) */
   private mitosisOn = false;
+  /**
+   * CONQUEST (mutation.ts): is the swarm taking the wrecks? The one flag
+   * that puts buildings on the swarm's side of the board — in a run
+   * without it `enemyTowers` stays 0 and every team test in this file is
+   * a comparison that has already been decided.
+   */
+  private conquestOn = false;
+  /**
+   * How many of the standing towers are the SWARM's. It is the gate every
+   * enemy-building scan opens on (the shot sweeps, the player's idle
+   * turrets, the splash), so an ordinary run pays one integer test where
+   * it would otherwise pay a grid walk.
+   */
+  private enemyTowers = 0;
+  /** RECONSTRUCTION (mutation.ts): does a body get back up? */
+  private reconstructOn = false;
+  /**
+   * THE CORPSES WAITING TO STAND UP (updateCorpses). A body killed under
+   * Reconstruction leaves the field at once — it is off the physics, off
+   * the crowd and off the drop zones while it waits — and this holds what
+   * is needed to put the same body back: its kind, where it fell, which
+   * wave answers for it, and the two clocks (`t` to the rise,
+   * `grace` to giving up on a spot that never opens).
+   */
+  private corpses: { kind: number; x: number; y: number; wave: number; t: number; grace: number }[] = [];
 
   /**
    * WHICH CELLS THE HYDROPHOBIC RULE TAXES — 1 where a turret's reload
@@ -1416,12 +1461,17 @@ export class Sim {
     this.mitosisOn = hasMutation(inForce, "mitosis");
     this.shieldTowersOn = hasMutation(inForce, "shieldTowers");
     this.amphibiousOn = hasMutation(inForce, "amphibious");
+    this.conquestOn = hasMutation(inForce, "conquest");
+    this.reconstructOn = hasMutation(inForce, "reconstruction");
+    this.enemyTowers = 0;
+    this.corpses.length = 0;
     this.shieldTowers.length = 0;
     this.shieldTowerT = 0;
     this.domesUp = false;
     this.focusUid = -1;
     this.focusIdx = -1;
     this.focusShieldTower = -1;
+    this.focusTower = null;
     // the mission sets the clock (levels.ts); the core's pool is CORE_HP on every map
     const mission = this.level.mission;
     this.deadline = mission.kind === "survive" ? mission.minutes * 60 : 0;
@@ -1560,12 +1610,18 @@ export class Sim {
 
   /** every PLAYER structure's cells as the field takes them — soft, routed
    *  through at a cost and shot at: the player's turrets and walls, and the core */
+  /** the player's buildings: SOFT to the swarm's path — it routes through
+   *  one at a price and shoots it when it gets there */
   private footprints(): Footprint[] {
     const out: Footprint[] = [];
-    for (const t of this.towers) out.push({ gx: t.gx, gy: t.gy, size: t.size });
+    for (const t of this.towers) if (t.team === "player") out.push({ gx: t.gx, gy: t.gy, size: t.size });
     out.push(this.core);
     return out;
   }
+
+  // ...and the swarm's own (Conquest) are in neither list: they hold no
+  // ground at all (see conquerTower), so the path simply does not know
+  // they are there
 
 
   /**
@@ -2021,7 +2077,11 @@ export class Sim {
     // ...and every STANDING turret re-composed on top of that, because its
     // own attributes (Tower.mods) sit above its kind's stats and a relic
     // bought mid-wave has to reach the board that is already down
-    for (const t of this.towers) this.resolveTower(t);
+    // ...the player's own. A CONQUERED TURRET KEEPS THE STATS IT CHANGED
+    // SIDES WITH (Sim.conquerTower): a relic or a tech rung bought after
+    // the loss is the player's purchase, and buffing the swarm's copy with
+    // it would make every upgrade a gift to the thing shooting back
+    for (const t of this.towers) if (t.team === "player") this.resolveTower(t);
   }
 
   /**
@@ -2083,7 +2143,12 @@ export class Sim {
    */
   takeMod(id: ModId): void {
     this.mods[id] = (this.mods[id] ?? 0) + 1;
-    if (id === "undying") for (const t of this.towers) t.revives = Math.max(t.revives, 1);
+    if (id === "undying")
+      for (const t of this.towers) {
+        if (t.team !== "player") continue; // the swarm's copies are not the run's to bless
+        t.revives = Math.max(t.revives, 1);
+        t.revivesMax = Math.max(t.revivesMax, 1);
+      }
     this.refreshSpecs();
   }
 
@@ -2120,7 +2185,9 @@ export class Sim {
   /** live towers per kind — the bar's remaining-count badges, and the cap check */
   towerCounts(): Record<TowerKind, number> {
     const counts = Object.fromEntries(TOWER_KINDS.map((k) => [k, 0])) as Record<TowerKind, number>;
-    for (const t of this.towers) counts[t.kind]++;
+    // the swarm's conquered turrets are not the player's board: they are
+    // not counted, not upgraded, and never move a count-dependent rung
+    for (const t of this.towers) if (t.team === "player") counts[t.kind]++;
     return counts;
   }
 
@@ -2241,13 +2308,18 @@ export class Sim {
       hp: towerMaxHp(kind),
       hpMax: towerMaxHp(kind),
       mods,
+      // the player builds it; only Conquest ever writes the other value
+      team: "player" as Team,
       spec: structStats(kind),
       regen: 0,
       // Undying Legion (mods.ts) grants every turret one stand-up, the
       // ones bought after it included
       revives: this.mods.undying ? 1 : 0,
+      // ...and what Conquest hands the swarm's copy back (Tower.revivesMax)
+      revivesMax: this.mods.undying ? 1 : 0,
       boostT: 0,
       aimShieldTower: -1,
+      aimTower: null,
       cd: Math.random() * 0.1,
       // Hydrophobic (mutation.ts): read the ground once, here, and carry it
       fireRate: this.isWaterlogged(gx, gy, kind, sz) ? HYDROPHOBIC_RATE : 1,
@@ -2288,9 +2360,12 @@ export class Sim {
 
 
   /** the structure standing on a world point, if it is `team`'s */
-  private structureAt(px: number, py: number): Structure | null {
+  private structureAt(px: number, py: number, team: Team = "player"): Structure | null {
     if (px < 0 || py < 0 || px >= W || py >= H) return null;
-    return this.cellTower[((py / CELL) | 0) * COLS + ((px / CELL) | 0)];
+    const t = this.cellTower[((py / CELL) | 0) * COLS + ((px / CELL) | 0)];
+    // the team test costs nothing in a run without Conquest, where every
+    // building on the board is the player's and `enemyTowers` is 0
+    return t && (this.enemyTowers === 0 ? team === "player" : teamOf(t) === team) ? t : null;
   }
 
 
@@ -2334,6 +2409,12 @@ export class Sim {
     this.updateProjectiles(dt);
     this.updateUnitWeapons(dt);
     this.updateEnemyShots(dt);
+    // RECONSTRUCTION (mutation.ts): the corpses standing back up, at the
+    // very end of the tick — a body raised here starts walking on the NEXT
+    // one, with a fresh hash and a fresh set of alive bounds under it,
+    // rather than appearing halfway through passes that have already
+    // decided what is on the field
+    this.updateCorpses(dt);
 
     const { fxAge, fxTtl } = this;
     for (let e = this.fxN - 1; e >= 0; e--) {
@@ -2642,6 +2723,7 @@ export class Sim {
     y: number,
     reach: number,
     sighted: boolean,
+    team: Team = "player",
   ): Structure | null {
     const box = this.structBox();
     if (box.n === 0) return null;
@@ -2655,7 +2737,9 @@ export class Sim {
     let bd = Infinity;
     const consider = (i: number): void => {
       const t = grid[i];
-      if (!t) return;
+      // only the OTHER side's buildings are targets: a body walks past the
+      // swarm's own conquered turret, and that turret never fires on it
+      if (!t || (this.enemyTowers > 0 && teamOf(t) !== team)) return;
       const half = (this.sizeOf(t) * CELL) / 2;
       const dx = t.x - x, dy = t.y - y;
       const d = Math.sqrt(dx * dx + dy * dy) - half;
@@ -2692,6 +2776,7 @@ export class Sim {
     y: number,
     r: number,
     out: Structure[],
+    team: Team = "player",
   ): Structure[] {
     out.length = 0;
     const R = Math.ceil(r / CELL) + 1;
@@ -2700,6 +2785,7 @@ export class Sim {
       for (let xx = Math.max(0, cx - R); xx <= Math.min(COLS - 1, cx + R); xx++) {
         const t = this.cellTower[yy * COLS + xx];
         if (!t || out.includes(t)) continue;
+        if (this.enemyTowers > 0 && teamOf(t) !== team) continue;
         const half = (this.sizeOf(t) * CELL) / 2;
         const dx = t.x - x, dy = t.y - y;
         if (Math.sqrt(dx * dx + dy * dy) - half <= r) out.push(t);
@@ -2719,6 +2805,26 @@ export class Sim {
   private splashStructures(x: number, y: number, splash: number, radius: number): void {
     if (splash <= 0 || radius <= 0) return;
     for (const t of this.structuresWithin(x, y, radius, this.splashOut)) this.hitStructure(t, splash);
+  }
+
+  /**
+   * A TURRET'S HIT ON A BUILDING — the player's shot on one of the swarm's
+   * conquered turrets, or a conquered turret's shot on one of the
+   * player's. The damage lands directly (there is no unit index to sweep
+   * for) and the hit effect goes off on the near face of the footprint,
+   * where the shot arrived.
+   *
+   * WHICH SIDE IS BEING HIT DECIDES THE DIAL. A shot ARRIVING on the
+   * player rides the swarm's own damage scale (hitStructure), exactly as
+   * its bodies' weapons do, so a conquered spectre hits as hard as the
+   * swarm hits; a shot the player fires lands raw.
+   */
+  private structureHit(s: Structure, dmg: number, fx: BulletFx | undefined, angle: number, col?: RGB): void {
+    if (this.cellTower[s.gy * COLS + s.gx] !== s) return; // already down
+    if (teamOf(s) === "player") this.hitStructure(s, dmg);
+    else this.damageTower(s, dmg);
+    const half = (this.sizeOf(s) * CELL) / 2;
+    this.bulletFx(fx, s.x - Math.cos(angle) * half, s.y - Math.sin(angle) * half, angle, col);
   }
 
   /** is the structure still standing — and within this reach of the point? */
@@ -3722,6 +3828,7 @@ export class Sim {
     const at = this.towers.indexOf(t);
     if (at < 0) return;
     this.towers.splice(at, 1);
+    if (t.team === "enemy") this.enemyTowers--;
     // the selection holds buildings by reference: a demolished one has to
     // leave it here, or its ring would keep being drawn over bare ground
     this.selStructs.delete(t);
@@ -3963,6 +4070,9 @@ export class Sim {
       // ...and the one thing a brood body carries that a door body does
       // not: the mark that says it may not brood in its turn (see ubrood)
       this.ubrood[i] = brood ? 1 : 0;
+      // ...and a fresh body has not yet had its one stand-up
+      // (Reconstruction): updateCorpses marks the ones that have
+      this.urisen[i] = 0;
       this.ueaten[i] = 0;
       this.uhungerT[i] = HUNGRY_PERIOD;
       this.uid[i] = this.nextId++;
@@ -4344,6 +4454,28 @@ export class Sim {
     // does not brood in its turn (see ubrood)
     const wasBrood = this.ubrood[i];
     const wave = this.uwave[i];
+    // RECONSTRUCTION (mutation.ts): THE FIRST DEATH IS NOT A DEATH. The
+    // body leaves the field at once — off the physics, off the crowd, off
+    // the drop zones — and a corpse waits where it fell to put the same
+    // body back whole (updateCorpses). Nothing below this line runs for
+    // it: no scrap, no kill on the ledger, no Volatile blast and no
+    // Mitosis brood, because every one of those answers a death and this
+    // is not one yet. A body that has ALREADY risen (urisen) falls
+    // straight through, which is what keeps the rule one generation deep
+    // however long a wave lasts.
+    if (this.reconstructOn && !this.urisen[i]) {
+      this.pushDeathFx(x, y);
+      this.removeUnit(i);
+      // ...and the wave is held open behind it. removeUnit has just booked
+      // the body as down (waveDown); un-booking it here is what stops a
+      // wave from reading as cleared — and paying out its XP — while
+      // something it sent is lying on the floor about to get up
+      this.waveDown[wave] = (this.waveDown[wave] ?? 1) - 1;
+      this.corpses.push({
+        kind, x, y, wave, t: RECONSTRUCT_DELAY, grace: RECONSTRUCT_DELAY + RECONSTRUCT_GRACE,
+      });
+      return;
+    }
     this.killsByKind[kind]++;
     // the kill's scrap, into the run — off the kind's health (economy.ts)
     // ...times what the SCAVENGER RIG relics add (mods.ts), which is the
@@ -4396,6 +4528,58 @@ export class Sim {
     // what its bodies broke into is still walking
     for (let b = 0; b < want; b++)
       this.spawnUnit(UNIT_KINDS[pool[(Math.random() * pool.length) | 0]], { x, y }, wave);
+  }
+
+  /**
+   * RECONSTRUCTION (mutation.ts): the corpses standing back up.
+   *
+   * A corpse is off the board while it waits, so this pass is the whole
+   * of the rule's cost — a handful of records ticking down, and one
+   * spawnUnit each when their clock runs out. The body comes back WHOLE
+   * and where it fell, carrying its parent wave so the wave it belonged
+   * to is still the wave answering for it, and marked risen (urisen) so
+   * its second death is a death like any other.
+   *
+   * A RISE CAN FAIL, and the grace clock is why this cannot wedge a run.
+   * spawnUnit refuses a spot inside rock, off a shoreline or in a crush
+   * of the dead body's own kin, exactly as it refuses one at a door; a
+   * corpse simply tries again next tick while the crowd moves on. Past
+   * RECONSTRUCT_GRACE it is written off and booked as the kill it always
+   * was — scrap, ledger and wave — because a body that can never stand up
+   * must not hold its wave open forever.
+   */
+  private updateCorpses(dt: number): void {
+    if (this.corpses.length === 0) return;
+    for (let c = this.corpses.length - 1; c >= 0; c--) {
+      const body = this.corpses[c];
+      body.t -= dt;
+      body.grace -= dt;
+      if (body.t > 0) continue;
+      // spawnUnit books the arrival against the wave, and the corpse's
+      // removal was un-booked when it fell — so the pair has to net to
+      // nothing or the wave would be owed a body twice over
+      this.waveSpawned[body.wave] = (this.waveSpawned[body.wave] ?? 1) - 1;
+      if (this.spawnUnit(UNIT_KINDS[body.kind], { x: body.x, y: body.y }, body.wave)) {
+        this.urisen[this.n - 1] = 1;
+        // the support line's own green on a BODY: the one thing on the
+        // field that says "this did not stay dead"
+        this.pushFx(body.x, body.y, 0.5, FxKind.HealWave, 0, this.urad[this.n - 1] * 2.2);
+        this.corpses[c] = this.corpses[this.corpses.length - 1];
+        this.corpses.pop();
+        continue;
+      }
+      this.waveSpawned[body.wave] = (this.waveSpawned[body.wave] ?? 0) + 1;
+      if (body.grace > 0) continue;
+      // nowhere to stand, and no more time to wait: it was a kill after all
+      this.killsByKind[body.kind]++;
+      const drop = Math.round(unitDrop(UNIT_KINDS[body.kind]).scrap * dropScale(this.mods));
+      this.scrap += drop;
+      this.scrapEarned += drop;
+      this.kills++;
+      this.waveDown[body.wave] = (this.waveDown[body.wave] ?? 0) + 1;
+      this.corpses[c] = this.corpses[this.corpses.length - 1];
+      this.corpses.pop();
+    }
   }
 
   /**
@@ -4475,6 +4659,7 @@ export class Sim {
     this.ueaten[i] = this.ueaten[n];
     this.uhungerT[i] = this.uhungerT[n];
     this.ubrood[i] = this.ubrood[n];
+    this.urisen[i] = this.urisen[n];
     this.uwave[i] = this.uwave[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
@@ -5495,11 +5680,123 @@ export class Sim {
     this.pushFx(t.x, t.y, 0.5 * big, FxKind.Breach);
     this.pushFx(t.x, t.y, 0.35 * big, FxKind.Death);
     if (isCore(t)) return;
+    // A CONQUERED TURRET IS ALREADY THE SWARM'S and has nothing left to
+    // change into: it stands up on its own charges while it has any
+    // (conquerTower hands it back the ones it was born with, and the
+    // Phoenix roll is the player's alone), and is otherwise wrecked, with its
+    // ground open again. Nothing conquers back.
+    if (t.team === "enemy") {
+      if (this.reviveTower(t)) return;
+      this.removeTower(t);
+      return;
+    }
     // THE RELICS THAT ANSWER A DEATH (mods.ts) get their say BEFORE the
     // ground is given back, because one of them refuses the death outright
     if (this.reviveTower(t)) return;
     this.payOutTower(t);
+    // CONQUEST (mutation.ts): the wreck changes sides instead of leaving.
+    // It is asked AFTER every revive has been refused — a turret that can
+    // still stand up stands up on the player's side, and only the death
+    // nothing answers is a conquest
+    if (this.conquestOn) {
+      this.conquerTower(t);
+      return;
+    }
     this.removeTower(t);
+  }
+
+  /**
+   * CONQUEST (mutation.ts): the turret changes sides where it stands.
+   *
+   * NOTHING IS REMOVED AND NOTHING IS PLACED. The record stays in
+   * `towers`, its cells keep pointing at it, and the routing never learns
+   * that anything happened — which is the point: the swarm walks around
+   * the turret it just took exactly as it walked around the turret it was
+   * shooting, and the lane the player was holding stays held by the thing
+   * that is now holding it against them.
+   *
+   * WHAT IT KEEPS is everything that makes it the turret it was: the
+   * kind, the footprint, the attributes it rolled at its placement
+   * (Tower.mods) and the RESOLVED stats those composed (Tower.spec) — a
+   * giant braced spectre comes back a giant braced spectre. What it is
+   * handed back is the stand-ups it was BORN with (Tower.revivesMax), so
+   * an Undying board arms the swarm with turrets that have to be killed
+   * twice. What it never gets is the player's Phoenix roll (an unlimited
+   * flip the RUN owns, held to the player's side in reviveTower), a share
+   * of the player's later upgrades (refreshSpecs skips it), or its full
+   * pool: it rises on CONQUEST_HP of its ceiling and
+   * fires at CONQUEST_RATE of its rate.
+   */
+  private conquerTower(t: Tower): void {
+    t.team = "enemy";
+    this.enemyTowers++;
+    t.hp = t.hpMax * CONQUEST_HP;
+    // as stubborn as it was for the player, and no luckier: the hard
+    // charges come back (reviveTower keeps the Phoenix roll to the
+    // player's own side)
+    t.revives = t.revivesMax;
+    // ...and as fast as the rule says, on top of whatever the ground did
+    // to it (Hydrophobic's waterlogging is a property of where it stands,
+    // and changing sides does not move it off the water)
+    t.fireRate *= CONQUEST_RATE;
+    // it holds nothing of what it was aiming at: the mark, the volley, the
+    // charge and any beam it was burning all belong to the other side
+    t.target = -1;
+    t.targetIdx = -1;
+    t.targetT = Math.random() * TARGET_INTERVAL;
+    t.aimShieldTower = -1;
+    t.aimTower = null;
+    t.burstLeft = 0;
+    t.chargeT = -1;
+    t.beamT = -1;
+    t.beamStr = 0;
+    t.boostT = 0;
+    t.cd = t.spec.reload;
+    // swung round at what the swarm is here for, so the barrel reads as
+    // having turned the moment it is taken
+    t.angle = Math.atan2(this.core.y - t.y, this.core.x - t.x);
+    // THE SWARM WALKS STRAIGHT PAST ITS OWN. A building of the PLAYER's
+    // stands in the swarm's way — solid to the body, soft to the path, and
+    // a body pressed against one shoots it (canPlace: sealing the map is
+    // allowed precisely because a seal is a fight at the wall). NONE of
+    // that can be true of a building the swarm owns: its bodies will not
+    // shoot it, so a wall they cannot pass and will not break is a wall
+    // they would stand at forever — and the board a player sealed is
+    // exactly the board where the wall changes hands. So a conquered
+    // turret stops holding ground altogether: the lane it was closing
+    // opens, the swarm streams past the gun that used to be shooting it,
+    // and no arrangement of turrets anywhere can strand a wave.
+    //
+    // IT STILL OWNS ITS CELLS IN THE STRUCTURE GRID (cellTower), which is
+    // what shots collide with and what refuses a placement on top of it —
+    // the ground is the swarm's to stand a gun on, not the player's to
+    // build over.
+    if (this.cellTower[t.gy * COLS + t.gx] === t) {
+      const { blocked } = this.terrain;
+      for (let y = t.gy; y < t.gy + t.size; y++)
+        for (let x = t.gx; x < t.gx + t.size; x++) {
+          const i = y * COLS + x;
+          if (blocked[i]) continue; // rock was never this turret's to open
+          this.field.walk[i] = 0;
+          this.field.soft[i] = 0;
+          this.navalField.walk[i] = 0;
+          this.navalField.soft[i] = 0;
+        }
+      // ...and the routes over it are re-solved when the board settles,
+      // the same deferral every other structure change gets
+      if (this.solveQueue.length > 0) this.abortSolves();
+      this.fieldDirty = true;
+      this.navalDirty = true;
+      this.fieldQuiet = 0;
+    }
+    // it is nobody's to select or sell any more, and the count-dependent
+    // rungs have one turret fewer to read
+    this.selStructs.delete(t);
+    this.refreshSpecs();
+    // the swarm's own colours over the taking: the crux ring, and the
+    // shockwave that says a thing on the board just changed hands
+    this.pushFxCol(t.x, t.y, 0.7, FxKind.ShieldWave, 0, (t.size * CELL) / 2, TEAM_CRUX_RGB);
+    this.pushFx(t.x, t.y, 0.4, FxKind.Shockwave, 0, t.size * CELL);
   }
 
   /**
@@ -5523,7 +5820,13 @@ export class Sim {
     if (t.revives > 0) {
       t.revives--;
       rose = true;
-    } else if (this.mods.phoenix && Math.random() < PHOENIX_CHANCE) {
+    } else if (t.team === "player" && this.mods.phoenix && Math.random() < PHOENIX_CHANCE) {
+      // PHOENIX IS THE RUN'S LUCK, NOT THE TURRET'S (mods.ts): an
+      // unlimited coin flip the player bought. A turret the swarm has
+      // taken (Conquest, mutation.ts) keeps the hard charges it was born
+      // with — those are part of the building — and never this: an
+      // endless roll on the swarm's side would make every conquered
+      // turret unkillable for exactly the runs that own the relic
       rose = true;
     }
     if (!rose) return false;
@@ -5555,7 +5858,7 @@ export class Sim {
       const r = LAST_VOLLEY_TILES * CELL;
       const r2 = r * r;
       for (const o of this.towers) {
-        if (o === t) continue;
+        if (o === t || o.team !== "player") continue;
         const dx = o.x - t.x, dy = o.y - t.y;
         if (dx * dx + dy * dy > r2) continue;
         o.boostT = Math.max(o.boostT, LAST_VOLLEY_SECONDS);
@@ -5579,6 +5882,7 @@ export class Sim {
     // over a copy: a wrecked tower leaves the list under the loop. The
     // core is a structure like any other to a blast
     for (const t of [...this.towers, this.core]) {
+      if (!isCore(t) && t.team !== "player") continue; // the swarm never hurts its own
       const half = (this.sizeOf(t) * CELL) / 2;
       const r = reach + half;
       const dx = t.x - x, dy = t.y - y;
@@ -5602,6 +5906,7 @@ export class Sim {
     this.focusUid = this.uid[idx];
     this.focusIdx = idx;
     this.focusShieldTower = -1;
+    this.focusTower = null;
   }
 
   /** mark one shield tower for focus fire — same contract, the other kind */
@@ -5610,6 +5915,29 @@ export class Sim {
     this.focusShieldTower = idx;
     this.focusUid = -1;
     this.focusIdx = -1;
+    this.focusTower = null;
+  }
+
+  /**
+   * ...and on one of the SWARM'S CONQUERED TURRETS (Conquest): the one way
+   * a player can make the line drop a wave and take a lost emplacement
+   * back down, since an unmarked building is only ever shot at by a turret
+   * with nothing else to do (see fireTowers).
+   */
+  setFocusTower(t: Tower | null): void {
+    if (!t || t.team !== "enemy" || this.cellTower[t.gy * COLS + t.gx] !== t) return;
+    this.focusTower = t;
+    this.focusUid = -1;
+    this.focusIdx = -1;
+    this.focusShieldTower = -1;
+  }
+
+  /** the SWARM's building under a world point, if one stands there —
+   *  what a tap marks, and the mirror of towerAt */
+  enemyTowerAt(px: number, py: number): Tower | null {
+    if (this.enemyTowers === 0) return null;
+    const t = this.structureAt(px, py, "enemy");
+    return t && !isCore(t) ? t : null;
   }
 
 
@@ -5617,6 +5945,7 @@ export class Sim {
     this.focusUid = -1;
     this.focusIdx = -1;
     this.focusShieldTower = -1;
+    this.focusTower = null;
   }
 
   /**
@@ -5625,6 +5954,16 @@ export class Sim {
    * (or the marked unit has died since, which clears the mark for good).
    */
   focusMark(): { x: number; y: number; top: number } | null {
+    if (this.focusTower) {
+      const t = this.focusTower;
+      // a building that came down is not a mark any more, and the cells
+      // are what know: nothing else is holding this reference
+      if (this.cellTower[t.gy * COLS + t.gx] !== t) {
+        this.focusTower = null;
+        return null;
+      }
+      return { x: t.x, y: t.y, top: t.y - (t.size * CELL) / 2 - 4 };
+    }
     if (this.focusShieldTower >= 0) {
       const s = this.shieldTowers[this.focusShieldTower];
       if (!s || s.hp <= 0) return null;
@@ -5668,7 +6007,7 @@ export class Sim {
         best = t;
       }
     };
-    for (const t of this.towers) near(t);
+    for (const t of this.towers) if (t.team === "player") near(t);
     near(this.core);
     return best;
   }
@@ -5719,7 +6058,7 @@ export class Sim {
       this.selStructs.add(t);
       k++;
     };
-    for (const t of this.towers) take(t);
+    for (const t of this.towers) if (t.team === "player") take(t);
     take(this.core);
     return k;
   }
@@ -5751,7 +6090,7 @@ export class Sim {
     const ox = at.x, oy = at.y;
     let k = 0;
     for (const t of this.towers) {
-      if (t.kind !== kind) continue;
+      if (t.kind !== kind || t.team !== "player") continue;
       const dx = t.x - ox, dy = t.y - oy;
       if (dx * dx + dy * dy > radius * radius) continue;
       this.selStructs.add(t);
@@ -5835,19 +6174,24 @@ export class Sim {
         }
       }
       // THE TURRET'S OWN STATS, not its kind's (Tower.spec): composed at
-      // the placement and at every refreshSpecs, read raw here
+      // the placement and at every refreshSpecs, read raw here — and a
+      // CONQUERED turret's are the ones it changed sides with, frozen
+      // there (see conquerTower)
       const st = t.spec;
+      const hostile = t.team === "enemy";
       // a support block has no target and no barrel — it pulses (the
       // damage smoke above is still its, because it is still a building
-      // the swarm can chew on)
+      // the swarm can chew on). THE SWARM'S COPY PULSES NOTHING: a mender
+      // mends a line, and the swarm has no line here to mend
       if (st.heal) {
-        this.updateMender(t, st, dt);
+        if (!hostile) this.updateMender(t, st, dt);
         continue;
       }
       // a lock turret has no reload and no volley — it holds a beam on one
-      // body and spools up on it (updateLockBeam)
+      // body and spools up on it (updateLockBeam). THE SWARM'S COPY LOCKS
+      // NOTHING: the beam only ever catches BODIES, and the swarm has none
       if (st.bullet.lock) {
-        this.updateLockBeam(t, st, dt);
+        if (!hostile) this.updateLockBeam(t, st, dt);
         continue;
       }
       // LaserTurret: while the beam is lit the reload does NOT run, so a
@@ -5898,7 +6242,24 @@ export class Sim {
       const r2t = st.range * st.range;
       let best = -1;
       let shr: ShieldTower | null = null;
-      if (this.focusIdx >= 0 && this.uid[this.focusIdx] === this.focusUid) {
+      let aimT: Structure | null = null;
+      if (hostile) {
+        // THE SWARM'S TURRET (Conquest, mutation.ts). It has no bodies to
+        // shoot — the player fields none — so it holds on the nearest of
+        // the PLAYER'S buildings within its range, the core included, for
+        // as long as that stands and stays in reach, re-picking on the
+        // same clock the player's guns do. The scan runs on the clock and
+        // nowhere else: a gun with nothing in reach is the ordinary state
+        // of a board, and re-walking the ring every tick for it is how an
+        // idle line costs a frame
+        const held = t.aimTower;
+        if (held && teamOf(held) === "player" && this.inReach(held, t.x, t.y, st.range)) aimT = held;
+        t.targetT -= dt;
+        if (t.targetT <= 0) {
+          t.targetT = TARGET_INTERVAL;
+          aimT = this.nearestStructure(t.x, t.y, st.range, false, "player");
+        }
+      } else if (this.focusIdx >= 0 && this.uid[this.focusIdx] === this.focusUid) {
         // THE PLAYER'S MARK FIRST (setFocusUnit / setFocusShieldTower /
         // setFocusTower): a tapped target overrides both the held target
         // and the scan for every turret that can reach it. At most one of
@@ -5914,8 +6275,16 @@ export class Sim {
           const dx = s.x - t.x, dy = s.y - t.y;
           if (dx * dx + dy * dy < r2t) shr = s;
         }
+      } else if (this.focusTower && st.targetGround) {
+        // ...and the third kind of mark: a CONQUERED TURRET the player has
+        // tapped (setFocusTower). It overrides the scan exactly as a
+        // tapped body does, which is the one way a line can be made to
+        // drop a wave and take its own turret back down mid-fight
+        const ft = this.focusTower;
+        if (this.cellTower[ft.gy * COLS + ft.gx] === ft && this.inReach(ft, t.x, t.y, st.range))
+          aimT = ft;
       }
-      if (best < 0 && !shr) {
+      if (!hostile && best < 0 && !shr && !aimT) {
         if (
           t.target >= 0 &&
           t.targetIdx >= 0 &&
@@ -5946,10 +6315,26 @@ export class Sim {
           const si = this.idleShieldTowerFor(t, r2t);
           if (si >= 0) shr = this.shieldTowers[si];
         }
+        // ...AND THE SWARM'S CONQUERED TURRETS THE SAME WAY (Conquest):
+        // only a turret with nothing else in range spends its reload on
+        // one unforced, so taking a lost emplacement back down costs time
+        // between waves and never mid-wave DPS — and the player can always
+        // force it with the focus mark above. The held building is kept
+        // between scans for the same reason the swarm's gun keeps its:
+        // finding one is a ring walk over the board
+        if (best < 0 && !shr && st.targetGround && this.enemyTowers > 0) {
+          const heldT = t.aimTower;
+          if (heldT && teamOf(heldT) === "enemy" && this.inReach(heldT, t.x, t.y, st.range))
+            aimT = heldT;
+          else if (scan) aimT = this.nearestStructure(t.x, t.y, st.range, false, "enemy");
+        }
+        // whatever was held loses to a body or a dome found this tick
+        if (best >= 0 || shr) aimT = null;
       }
       t.targetIdx = best;
       t.aimShieldTower = shr ? this.shieldTowers.indexOf(shr) : -1;
-      if (best < 0 && !shr) {
+      t.aimTower = aimT;
+      if (best < 0 && !shr && !aimT) {
         // nothing in range: a beam already lit keeps burning down its
         // duration where it is, exactly as Mindustry's held bullet does
         continue;
@@ -5960,11 +6345,11 @@ export class Sim {
       // predictTarget guard (bullet.speed >= 0.01 or no lead at all).
       // A shield tower is a building: no velocity, no lead, aim at the centre
       // A structure is a building: no velocity, no lead, aim at the centre
-      const bx = shr ? shr.x : upx[best];
-      const by = shr ? shr.y : upy[best];
+      const bx = shr ? shr.x : aimT ? aimT.x : upx[best];
+      const by = shr ? shr.y : aimT ? aimT.y : upy[best];
       const dx = bx - t.x, dy = by - t.y;
       let aimX = dx, aimY = dy;
-      if (!shr && st.bullet.speed >= 1) {
+      if (!shr && !aimT && st.bullet.speed >= 1) {
         const tvx = uvx[best], tvy = uvy[best];
         const s2 = st.bullet.speed * st.bullet.speed;
         const qa = tvx * tvx + tvy * tvy - s2;
@@ -6146,10 +6531,25 @@ export class Sim {
     // arrays. Projectile weapons need nothing here: their shots really fly,
     // and the shield tower's dome and body collide them like anything else
     const shrT = t.aimShieldTower >= 0 ? this.shieldTowers[t.aimShieldTower] : null;
+    // ...and the same for a BUILDING either side is aiming at (Tower.aimTower)
+    const aimT = t.aimTower;
     const hitAimed = (): void => {
       if (shrT) this.shieldTowerHit(shrT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
+      if (aimT) this.structureHit(aimT, st.bullet.damage, st.bullet.hitFx, a, st.bullet.fxColor);
     };
+    // THE SWARM'S OWN INSTANT WEAPONS SWEEP NOTHING (Conquest): every
+    // sweep below walks the swarm's BODIES, and a conquered turret has
+    // none to walk. Its shot is the building it was aimed at, plus the
+    // same shape on screen — the bolt, the beam, the rail's trail, the
+    // ray — at the weapon's own length, so a taken lancer still visibly
+    // fires a lancer's beam
+    const hostile = t.team === "enemy";
     if (st.bullet.lightning) {
+      if (hostile) {
+        this.unitBolt(x, y, a, st.bullet.lightning.length, st.bullet.fxColor ?? PAL.lancerLaser);
+        hitAimed();
+        return;
+      }
       const pts = this.lightningBolt(
         x, y, a,
         st.bullet.damage,
@@ -6165,29 +6565,39 @@ export class Sim {
       return;
     }
     if (st.bullet.laser) {
-      const reached = this.laserBeam(
-        x, y, a,
-        st.bullet.laser.length,
-        st.bullet.damage,
-        st.bullet.laser.pierceCap,
-        st.bullet.armorMultiplier ?? 1,
-        st.bullet.collidesAir,
-        st.bullet.collidesGround,
-        st.bullet.hitFx,
-        st.bullet.fxColor,
-      );
+      const reached = hostile
+        ? st.bullet.laser.length
+        : this.laserBeam(
+            x, y, a,
+            st.bullet.laser.length,
+            st.bullet.damage,
+            st.bullet.laser.pierceCap,
+            st.bullet.armorMultiplier ?? 1,
+            st.bullet.collidesAir,
+            st.bullet.collidesGround,
+            st.bullet.hitFx,
+            st.bullet.fxColor,
+          );
       // forced: the beam is lancer's entire visible shot (damage is instant)
       this.pushFx(x, y, st.bullet.lifetime, FxKind.Laser, a, reached, 0, 0, true);
       hitAimed();
       return;
     }
     if (st.bullet.rail) {
-      this.railShot(x, y, a, st.bullet);
+      if (hostile) {
+        // the line the player's rail draws, without the sweep behind it
+        const spec = st.bullet.rail;
+        if (st.bullet.pointFx !== undefined)
+          for (let d = 0; d <= spec.length; d += spec.pointSpacing)
+            this.bulletFx(st.bullet.pointFx, x + cos * d, y + sin * d, a, st.bullet.fxColor, true);
+        this.bulletFx(st.bullet.despawnFx, x, y, a, st.bullet.fxColor, true);
+      } else this.railShot(x, y, a, st.bullet);
       hitAimed();
       return;
     }
     if (st.bullet.ray) {
-      this.hitscanRay(
+      if (!hostile)
+        this.hitscanRay(
           x,
           y,
           a,
@@ -6238,9 +6648,76 @@ export class Sim {
       pierced: st.bullet.pierce ? [] : null,
       trailT: 0,
       frag: false,
+      // a shot of the swarm's flies past every body and lands on the
+      // player's buildings instead (stepHostileProjectile)
+      enemy: hostile,
     });
   }
 
+
+  /**
+   * ONE STEP OF A SHOT FIRED BY ONE OF THE SWARM'S CONQUERED TURRETS
+   * (Conquest, mutation.ts): it flies past every body and lands on the
+   * first of the PLAYER's structures it is over — the enemy shots' rule
+   * (updateEnemyShots) on a turret's own bullet. An artillery shell
+   * collides with nothing and only ever bursts where its life ran out.
+   *
+   * IT SKIPS THE WHOLE UNIT PASS, and that is the point of it being its
+   * own step rather than a flag inside one: the swarm's shot has no
+   * spatial-hash sweep, no pierce ledger, no homing, no flak fuse and no
+   * force field to be eaten by — its target is a building, and buildings
+   * are a grid read.
+   *
+   * Returns true once the shot is spent, with its hit, blast and
+   * fragments done.
+   */
+  private stepHostileProjectile(pr: Projectile, b: BulletStats, dt: number): boolean {
+    pr.x += pr.vx * dt;
+    pr.y += pr.vy * dt;
+    pr.life -= dt;
+    pr.age += dt;
+    // the trails are the shot's own look and belong to whoever fired it
+    if (b.puff && Math.random() < b.puff.chance * dt)
+      this.pushTrail(pr.x, pr.y, b.puff.size, b.sprite?.back);
+    if (b.trail) {
+      const fin = pr.age / (pr.age + pr.life);
+      const slope = 1 - Math.abs(fin - 0.5) * 2;
+      pr.trailT += dt;
+      const every = ((3 + slope * 2) * b.trail.mult) / 60;
+      if (pr.trailT >= every) {
+        pr.trailT = 0;
+        this.pushTrail(pr.x, pr.y, slope * b.trail.size, b.sprite?.back);
+      }
+    }
+    const off = pr.x < 0 || pr.y < 0 || pr.x >= W || pr.y >= H;
+    let dead = pr.life <= 0 || off;
+    const rot = Math.atan2(pr.vy, pr.vx);
+    if (!dead && !b.artillery) {
+      const s = this.structureAt(pr.x, pr.y, "player");
+      if (s) {
+        // through the swarm's own damage dial, exactly as its bodies' shots
+        this.hitStructure(s, b.damage);
+        if (b.splash <= 0) this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor);
+        dead = true;
+      }
+    }
+    if (!dead) return false;
+    if (!off) {
+      if (b.splash > 0) {
+        this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor, false,
+          b.hitFx === FxKind.WaterBurst ? b.splashRadius : 0);
+        this.bulletFx(b.hitFx2, pr.x, pr.y, rot, b.fxColor, false,
+          b.hitFx2 === FxKind.WaterBurst ? b.splashRadius : 0);
+        // the blast takes the player's buildings and nothing else: the
+        // swarm's shell never chips the swarm's own turret, and it has no
+        // bodies of the player's to catch
+        this.splashStructures(pr.x, pr.y, b.splash, b.splashRadius);
+      }
+      if (pr.life <= 0) this.bulletFx(b.despawnFx, pr.x, pr.y, rot, b.fxColor);
+      if (b.frag) this.createFrags(pr, b.frag);
+    }
+    return true;
+  }
 
   /**
    * Mindustry BulletType.createFrags: where a fragmenting shot dies it
@@ -6271,6 +6748,8 @@ export class Sim {
         pierced: child.pierce ? [] : null,
         trailT: 0,
         frag: true,
+        // fragments belong to whoever threw the parent
+        enemy: pr.enemy,
       });
     }
   }
@@ -6716,6 +7195,10 @@ export class Sim {
         const s = this.shieldTowers[t.aimShieldTower];
         if (s && s.hp > 0) this.shieldTowerHit(s, b.damage, b.hitFx, t.beamRot, b.fxColor);
       }
+      // ...and a beam held on a BUILDING the same way, which is the only
+      // damage a conquered meltdown ever does: the sweep above walks the
+      // swarm's bodies, and the swarm's own gun has none to walk
+      if (t.aimTower) this.structureHit(t.aimTower, b.damage, b.hitFx, t.beamRot, b.fxColor);
     }
     t.beamT -= dt;
     if (t.beamT <= 0) {
@@ -6757,6 +7240,7 @@ export class Sim {
     const r2 = st.range * st.range;
     let did = false;
     for (const o of this.towers) {
+      if (o.team !== "player") continue; // nothing of the player's mends the swarm's
       // the TARGET's own ceiling (Tower.hpMax), not its kind's: a mender
       // topping up a braced turret has to fill the pool that turret has
       const max = o.hpMax;
@@ -7070,6 +7554,17 @@ export class Sim {
     for (let p = projs.length - 1; p >= 0; p--) {
       const pr = projs[p];
       const b = this.bulletFor(pr.kind, pr.frag);
+      // A SHOT OF THE SWARM'S (Conquest) runs its own, much shorter step:
+      // it flies past every body and lands on the player's buildings, by
+      // the cell it is over — the enemy shots' rule (updateEnemyShots) on
+      // a turret's own bullet
+      if (pr.enemy) {
+        if (this.stepHostileProjectile(pr, b, dt)) {
+          projs[p] = projs[projs.length - 1];
+          projs.pop();
+        }
+        continue;
+      }
       // BulletType.updateHoming, BEFORE the step: the shot picks the
       // nearest target within homingRange OF ITSELF and swings toward it,
       // re-picking every tick — so a missile whose mark dies latches onto
@@ -7245,6 +7740,26 @@ export class Sim {
             }
           }
         }
+        // THE SWARM'S CONQUERED TURRETS stand in the shot's way too
+        // (Conquest): one grid read at the shot, the enemy shots' own rule
+        // turned round. A piercing shot goes through a building once, on a
+        // sentinel below any shield tower's
+        if (!dead && this.enemyTowers > 0) {
+          const es = this.structureAt(pr.x, pr.y, "enemy");
+          if (es) {
+            const sid = -1000000 - (es.gy * COLS + es.gx);
+            if (!pr.pierced || !pr.pierced.includes(sid)) {
+              this.damageTower(es, b.damage);
+              if (b.splash <= 0)
+                this.bulletFx(b.hitFx, pr.x, pr.y, Math.atan2(pr.vy, pr.vx), b.fxColor);
+              if (!pr.pierced) dead = true;
+              else {
+                pr.pierced.push(sid);
+                if (b.pierceCap !== undefined && pr.pierced.length >= b.pierceCap) dead = true;
+              }
+            }
+          }
+        }
       }
       if (dead) {
         const rot = Math.atan2(pr.vy, pr.vx);
@@ -7371,6 +7886,15 @@ export class Sim {
         const d = Math.sqrt(sdx * sdx + sdy * sdy);
         this.damageShieldTower(s, dmg * Math.max(0, 0.4 + 0.6 * (1 - d / radius)));
       }
+      // ...and so do the SWARM's conquered turrets (Conquest), by their
+      // footprint's edge and at the same falloff — a shell landing beside
+      // one chips it, which is the only way artillery reaches one at all
+      if (this.enemyTowers > 0)
+        for (const es of this.structuresWithin(x, y, radius, this.splashOut, "enemy")) {
+          const half = (this.sizeOf(es) * CELL) / 2;
+          const d = Math.max(0, Math.hypot(es.x - x, es.y - y) - half);
+          this.damageTower(es, dmg * Math.max(0, 0.4 + 0.6 * (1 - d / radius)));
+        }
     }
     // damage first (indices stay stable), then remove the dead from the
     // highest index down so swap-remove can't disturb pending removals

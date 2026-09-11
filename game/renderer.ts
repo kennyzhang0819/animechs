@@ -2200,8 +2200,17 @@ export class Renderer {
       // unfinished state to draw any more: a placement is the building
       const t3 = (t.hp * 3) / t.hpMax;
       const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
-      this.push(dyn, t.x, t.y, px, px, 0, base, tint[0], tint[1], tint[2], 1);
-      this.push(dyn, t.x, t.y, px, px, t.angle, top, tint[0], tint[1], tint[2], 1);
+      // ONE ROSTER, TWO SIDES: a turret the swarm has taken (Conquest,
+      // mutation.ts) is the same sprite on the same base, wearing the
+      // crux red its BODIES wear — the one colour on this board that
+      // already means "theirs", multiplied into the hp grey so a
+      // conquered turret still visibly takes damage as it is chewed down
+      const own = t.team === "player";
+      const r = own ? tint[0] : tint[0] * TEAM_CRUX_RGB[0];
+      const g = own ? tint[1] : tint[1] * TEAM_CRUX_RGB[1];
+      const b = own ? tint[2] : tint[2] * TEAM_CRUX_RGB[2];
+      this.push(dyn, t.x, t.y, px, px, 0, base, r, g, b, 1);
+      this.push(dyn, t.x, t.y, px, px, t.angle, top, r, g, b, 1);
     }
     // the shieldTowers, AFTER the towers: they stand on free rock of their
     // own (Sim.trySpawnShieldTower) and never overlap one, so the order is

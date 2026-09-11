@@ -1053,6 +1053,16 @@ export class Game {
       sim.setFocusShieldTower(si);
       return;
     }
+    // a turret the swarm has taken (Conquest) is a mark like any other
+    // enemy, and asked BEFORE the selection: it is not the player's to
+    // select, and it is the one target a line will otherwise only shoot
+    // at when it has nothing else to do (Sim.fireTowers)
+    const et = sim.enemyTowerAt(p.x, p.y);
+    if (et) {
+      replaced();
+      sim.setFocusTower(et);
+      return;
+    }
     if (sim.selectStructAt(p.x, p.y, add)) return;
     // NOTHING WAS UNDER THE POINT — so before the click means "clear
     // everything", every question above worth asking again is asked with
@@ -1954,7 +1964,12 @@ export class Game {
 
   /** what is standing right now, in save shape */
   layout(): TowerPlacement[] {
-    return this.sim.towers.map((t) => ({ kind: t.kind, gx: t.gx, gy: t.gy }));
+    // the PLAYER's line, which is the only half of the board that is
+    // theirs to save: a turret the swarm has taken (Conquest) is not a
+    // placement to restore, and restoring one would hand it back
+    return this.sim.towers
+      .filter((t) => t.team === "player")
+      .map((t) => ({ kind: t.kind, gx: t.gx, gy: t.gy }));
   }
 
   /**
@@ -2295,9 +2310,12 @@ export class Game {
       if (s.hp <= 0) continue;
       struct(s.gx, s.gy, SHIELD_TOWER_SIZE, 0xf2, 0x55, 0x55);
     }
-    // ...and the player's, over everything: the line is what the map is read for
+    // ...and the player's, over everything: the line is what the map is read
+    // for — with the swarm's conquered turrets (Conquest) in its own red,
+    // so a lost emplacement is visible on the minimap as a hole in the line
     for (const t of this.sim.towers)
-      struct(t.gx, t.gy, t.size, 0xff, 0xff, 0xff);
+      if (t.team === "player") struct(t.gx, t.gy, t.size, 0xff, 0xff, 0xff);
+      else struct(t.gx, t.gy, t.size, 0xf2, 0x55, 0x55);
     struct(T.base.x, T.base.y, T.base.size, 0xff, 0xff, 0xff);
     lc.putImageData(img, 0, 0);
 
@@ -2468,8 +2486,13 @@ export class Game {
       bars.length = 0;
       const hpMax = t.hpMax;
       const f = clamp(t.hp / Math.max(1, hpMax), 0, 1);
-      if (this.barsOn(true, f, picked?.has(t) === true))
-        bars.push({ v: f, col: hpColor(f) });
+      // a turret the swarm has taken (Conquest) is read as the swarm: its
+      // bar is on the ENEMY setting and in the enemy red, exactly as its
+      // bodies' are, so "how much is left of that" reads the same whether
+      // the thing standing there walks or not
+      const own = t.team === "player";
+      if (this.barsOn(own, f, own && picked?.has(t) === true))
+        bars.push({ v: f, col: own ? hpColor(f) : ENEMY_HP });
       this.drawBars(c, t.x, t.y - sz / 2, sz - 2, bars);
       // THE ATTRIBUTE PIP (mods.ts): a turret that won one of the upgrade
       // rolls at its placement wears a dot in the corner of its footprint,

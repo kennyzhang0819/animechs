@@ -60,6 +60,8 @@
  *  (LevelSpec.mutation) and what the sim asks about — never the name, and
  *  never an index, so the catalog can be reordered freely */
 export type MutationId =
+  | "conquest"
+  | "reconstruction"
   | "volatile"
   | "mitosis"
   | "overshields"
@@ -118,11 +120,24 @@ export const MUT_COST_MAX = 6;
  *
  * THESE COSTS CAME OFF THE DASHBOARD. They rode in public/balance.json's
  * `mutations` section while they were being tuned and are authored here
- * now; that file is empty again. Nothing in the catalog spends into the
- * BRUTAL band today — the scale still allows it (MUT_COST_MAX), no rule
- * currently earns it.
+ * now; that file is empty again. ONE rule spends into the BRUTAL band:
+ * Conquest, at the scale's ceiling (MUT_COST_MAX), because a board that
+ * arms the swarm in proportion to how well it was built is the one rule
+ * here that takes a way of playing away outright.
  */
 export const MUTATIONS: readonly MutationDef[] = [
+  {
+    id: "conquest",
+    name: "Conquest",
+    cost: 6,
+    blurb: "Every turret the swarm wrecks rises again on its side.",
+  },
+  {
+    id: "reconstruction",
+    name: "Reconstruction",
+    cost: 5,
+    blurb: "Every enemy stands back up once, whole, where it fell.",
+  },
   {
     id: "amphibious",
     name: "Amphibious",
@@ -1221,3 +1236,113 @@ export const SHIELD_TOWER_MEGA_DOME_R = 320;
  *  shields: amber means "the swarm is protected by one of its own", red
  *  means "the RULE is protecting them", and the two must never read alike */
 export const SHIELD_TOWER_COL: readonly [number, number, number] = [1.0, 0.36, 0.36];
+
+// ---------- CONQUEST ----------------------------------------------------
+//
+// THE BOARD IS THE PRIZE. A turret the swarm brings down is not wrecked
+// and cleared away — it CHANGES SIDES, standing where it stood, with the
+// health, the footprint, the attributes and the resolved stats it had a
+// tick earlier (Sim.conquerTower), its barrel swung round at the core. The
+// player then has to shoot down the thing they paid for, with the guns
+// standing next to it.
+//
+// IT IS THE ONLY RULE IN THE CATALOG THAT COSTS SIX, and the first to
+// spend into the BRUTAL band at all, because it is the one that
+// invalidates a way of playing outright: every board built on a dense
+// block of turrets is a board that arms the swarm in proportion to how
+// well it was built, and the denser the block the worse the loss. A
+// forward line of spectres is a forward line of spectres pointed at the
+// core the moment it breaks.
+//
+// A TURRET IS ONLY TAKEN WHEN IT TRULY DIES. The relics that refuse a
+// death (mods.ts: Undying Legion's charges and the Phoenix roll) are asked
+// FIRST and every one of them is spent before the swarm gets its hands on
+// anything — a turret that can still stand up stands up on the player's
+// side. Only the death nothing answers is a conquest, which keeps the two
+// mechanics from arguing: a revive is "this did not die", and this rule is
+// about what happens when something does.
+//
+// EVERY TAKEN GUN SHOOTS, whatever it used to shoot at. A turret's air/
+// ground targeting is about BODIES, and the swarm's copy has no bodies to
+// pick between — its only mark is a building — so a conquered scatter
+// shells the line exactly as a conquered spectre does rather than
+// standing there inert because the player fields no aircraft. The two
+// turrets with no gun at all are the exceptions and stay exceptions: a
+// mender mends nothing for the swarm and a tractor beam drags nothing
+// (Sim.fireTowers), so taking one costs the player the block and hands
+// the swarm a wall.
+//
+// ...AND IT COMES BACK AS STUBBORN AS IT WAS. The swarm's copy is handed
+// the charges the turret was BORN with (Tower.revivesMax), so an Undying
+// Legion board does not simply hand the swarm free turrets — it hands them
+// turrets that have to be killed twice, exactly as they had to be killed
+// twice for the swarm. What the copy never gets is the PHOENIX roll: that
+// is an unlimited coin flip the RUN owns rather than a charge the building
+// carries (mods.ts), and handing it over would make a conquered turret
+// unkillable for exactly the runs that bought the relic. A conquered turret destroyed is gone for good — its ground opens
+// again, and nothing ever conquers back.
+
+/** what health a conquered turret rises with, as a share of its own
+ *  ceiling. A full pool would make a broken line an unbroken enemy line;
+ *  three fifths is enough that clearing it is real work and little enough
+ *  that a board answering fast gets the ground back. */
+export const CONQUEST_HP = 0.6;
+
+/** the swarm's copy fires at this share of the rate it did for the player
+ *  — the rule is the turret pointed the other way, not a better turret,
+ *  and a slower barrel is what keeps a conquered spectre from simply
+ *  out-trading the two that killed it */
+export const CONQUEST_RATE = 0.7;
+
+if (CONQUEST_HP <= 0 || CONQUEST_HP > 1)
+  throw new Error(`Conquest raises a turret on ${CONQUEST_HP} of its pool; that is not a share of one`);
+if (CONQUEST_RATE <= 0 || CONQUEST_RATE > 1)
+  throw new Error(`Conquest fires at ${CONQUEST_RATE} of the turret's rate; that is not a share of one`);
+
+// ---------- RECONSTRUCTION ----------------------------------------------
+//
+// EVERY BODY DIES TWICE. A unit the player kills goes down, lies where it
+// fell for RECONSTRUCT_DELAY seconds, and stands back up WHOLE — same
+// kind, same wave, full health — and only the second death is a death.
+// Nothing rises twice: the risen body carries a mark (Sim.urisen) that
+// says it has already had its turn, so the rule is exactly one generation
+// deep the way Mitosis is, and a lane cannot become a loop.
+//
+// IT IS A DOUBLING OF THE WORK, NOT OF THE SWARM. The field never holds
+// more bodies than the script sent — a corpse is off the board while it
+// waits — so nothing about the crowd, the physics or the drop zones
+// changes. What changes is that every kill zone has to kill everything
+// through it twice, and the second pass arrives BEHIND the first: the
+// bodies that rise are the ones that already walked deepest.
+//
+// THE LEDGER ONLY COUNTS THE SECOND DEATH. A first death pays no scrap,
+// counts no kill, and does not clear its wave — the body is coming back,
+// so as far as the run's arithmetic is concerned it never left (see
+// Sim.killUnit, which holds the wave open by un-booking the removal). That
+// keeps ladder.ts's drop-ratio audit honest: the rule adds no income to a
+// run, only work, which is the whole reason it is worth points.
+//
+// ...AND NEITHER DOES ANYTHING ELSE THAT ANSWERS A DEATH. Volatile does
+// not detonate a body that is coming back and Mitosis does not split one:
+// both hang on the true death, at the bottom of killUnit, for the same
+// reason the relics do under Conquest. A rule that says "when this dies"
+// should fire when the thing actually dies.
+
+/** how long a corpse lies there before it stands up, in seconds. Long
+ *  enough to read as a body getting back up rather than as a shot that
+ *  missed, short enough that the second pass is still part of the same
+ *  fight rather than a wave of its own. */
+export const RECONSTRUCT_DELAY = 1.6;
+
+/**
+ * How long the sim keeps trying to stand a corpse up before writing it off
+ * as truly dead, in seconds past its due time. A body that died in a crush
+ * of its own kin, against rock or on a shoreline may have nowhere to
+ * stand (spawnUnit's own wall and crowding tests decide, exactly as they
+ * do at a door); it retries while the crowd moves on, and is then booked
+ * as the kill it always was rather than holding its wave open forever.
+ */
+export const RECONSTRUCT_GRACE = 6;
+
+if (RECONSTRUCT_DELAY <= 0 || RECONSTRUCT_GRACE <= 0)
+  throw new Error("Reconstruction's clocks have to be positive seconds");
