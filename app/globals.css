@@ -556,7 +556,9 @@ svg {
 }
 
 .ms-deal-card {
-  background: rgba(0, 0, 0, 0.82);
+  /* the fallback ground; the rarity's own opaque one (rarity.ts) is set
+     inline over it. NEVER translucent — see the note on RarityDef.ground */
+  background: #0b0b0d;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
   cursor: pointer;
   user-select: none;

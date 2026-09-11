@@ -286,7 +286,7 @@ function FormationMark({ form, color }: { form: FormationId; color: string }) {
 }
 
 /**
- * ONE CARD. The turret's sprite on a wash of its rarity's colour, that
+ * ONE CARD. The turret's sprite on its rarity's own solid ground, that
  * colour's border round it, the slot's key in one corner and the
  * formation's diagram in the other, the name under it, and a hairline of
  * clock along the bottom edge.
@@ -330,7 +330,7 @@ function TurretCard({
       className={`ms-deal-card relative flex h-[4.8rem] w-[3.6rem] shrink-0 flex-col items-center justify-center gap-0.5 border-2 p-0 ${
         blinking ? "ms-deal-blink" : ""
       } ${held ? "ms-deal-held" : ""}`}
-      style={{ borderColor: r.color, background: r.wash, color: r.color }}
+      style={{ borderColor: r.color, background: r.ground, color: r.color }}
     >
       {/* THE SLOT'S KEY, on its own dark ground in the corner: the sprite
           fills most of the square and a bare digit over it is unreadable.
@@ -396,15 +396,23 @@ export function DealCorner({
   const poor = hud.scrap !== null && hud.scrap < hud.rollPrice;
   return (
     <div className="flex flex-col items-end gap-2">
-      {/* THE HAND, growing LEFTWARD off the buttons that threw it, and
-          wrapping upward when it is deep. Slot 1 is NEAREST THE BUTTONS,
-          which is where the eye already is when a card lands and where
-          the finger on the 1 key is aiming */}
+      {/* THE HAND READS LEFT TO RIGHT: slot 1 on the LEFT, 2 beside it, on
+          to 0 — the order the digits are printed on the keyboard and the
+          order every list a person has ever read runs in. It was laid out
+          right-to-left first, so that the newest card landed nearest the
+          button that threw it, and that was the wrong thing to optimise:
+          the hand is READ far more often than it is added to, and a row
+          that counts backwards has to be decoded every single time.
+
+          `flex-wrap-reverse` is what keeps it growing UPWARD off the
+          buttons — the first line stays on the floor of the corner and an
+          eleventh card would stack above it, rather than the row sliding
+          down over the field. */}
       {cards.length > 0 && (
         <div
           role="list"
           aria-label="turret cards"
-          className="pointer-events-auto flex max-w-[26rem] flex-row-reverse flex-wrap-reverse justify-start gap-1.5"
+          className="pointer-events-auto flex max-w-[26rem] flex-wrap-reverse justify-end gap-1.5"
         >
           {cards.map((c, i) => (
             <TurretCard

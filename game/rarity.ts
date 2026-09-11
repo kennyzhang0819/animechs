@@ -26,9 +26,17 @@ export interface RarityDef {
   name: string;
   /** the border, and the colour every word about the rarity is printed in */
   color: string;
-  /** the ground the card sits on — the colour at a twentieth, so a purple
-   *  card reads as purple before the border is even looked at */
-  wash: string;
+  /**
+   * THE GROUND THE CARD SITS ON, and it is OPAQUE. It is the rarity's
+   * colour mixed a tenth or so into the panel black (#0b0b0d) and then
+   * written down as a solid hex — not that colour at a tenth ALPHA, which
+   * is what it used to be and which made every card a window: the board
+   * under it moved, a card over grass read green and a card over deep
+   * water read blue, and the tint that was supposed to say "purple" said
+   * whatever the terrain behind it said. A card is a thing held in front
+   * of the field, so it stops the field.
+   */
+  ground: string;
 }
 
 /**
@@ -38,10 +46,10 @@ export interface RarityDef {
  * to read without a legend.
  */
 export const RARITY: Readonly<Record<Rarity, RarityDef>> = {
-  common: { id: "common", name: "Common", color: "#C6C6CE", wash: "rgba(198,198,206,0.10)" },
-  uncommon: { id: "uncommon", name: "Uncommon", color: "#5A9BF2", wash: "rgba(90,155,242,0.12)" },
-  rare: { id: "rare", name: "Rare", color: "#FFD37F", wash: "rgba(255,211,127,0.12)" },
-  ultra: { id: "ultra", name: "Ultra Rare", color: "#B07BFF", wash: "rgba(176,123,255,0.14)" },
+  common: { id: "common", name: "Common", color: "#C6C6CE", ground: "#1E1E20" },
+  uncommon: { id: "uncommon", name: "Uncommon", color: "#5A9BF2", ground: "#141C28" },
+  rare: { id: "rare", name: "Rare", color: "#FFD37F", ground: "#28231B" },
+  ultra: { id: "ultra", name: "Ultra Rare", color: "#B07BFF", ground: "#221B2F" },
 };
 
 /**
