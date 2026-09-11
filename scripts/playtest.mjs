@@ -9,23 +9,31 @@
  *
  * The bot is deliberately ordinary: it walks the map's routes (ground,
  * water and air), scores every buildable cell by how much route it can
- * reach that nothing else covers yet, and spends its scrap round-robin
- * on the stage's tier of turret — tier 1 until wave 20, tier 2 from 21,
- * tier 3 from 36 (STAGES in economy.ts). It never sells, never
- * upgrades a placement, and never reads the wave ahead. A script it
- * clears is a script a person who builds sensibly clears; a script it
- * dies on at wave 11 is a script with a wall.
+ * reach that nothing else covers yet, and BUYS THE WAY A PLAYER BUYS —
+ * paying the roll fee (economy.ts rollPriceFor) for a draw off the deal
+ * (rarity.ts) and
+ * putting down whatever the roll hands it. It cannot choose a turret any
+ * more than a player can, so `--mix` no longer names what it buys: it
+ * narrows the POOL the draw comes out of, which is the only lever the
+ * game itself has. It never sells, never upgrades a placement, and never
+ * reads the wave ahead. A script it clears is a script a person who
+ * builds sensibly clears; a script it dies on at wave 11 is a script
+ * with a wall.
  *
  * Options:
  *   --world <id>     WORLDS id (default 1)
  *   --tier <n>       rung, 0-based (default 0 — no rolled mutators)
  *   --mutators a,b   mutators to play under (default none; intrinsic ones always apply)
  *   --level <n>      player level: which turrets the track has opened (default 15 — the whole roster)
- *   --scale <x>      multiply every turret price (default 1)
+ *   --scale <x>      multiply the roll fee and every turret price (default 1)
  *   --unit-damage <x>  the swarm's damage to structures, as a multiple of Mindustry's (default: the shipped dial, weapons.ts)
  *   --start <n>      opening scrap (default SCRAP_START)
  *   --cap <n>        most turrets the bot may place (default unlimited)
- *   --mix stage|all|duo   what it buys: the stage's tier, every open tier, or duos only
+ *   --mix roster|stage|all|duo   the pool it DRAWS from: everything the save
+ *                    owns (the default, and the only one the real game has),
+ *                    or a narrowed pool for an experiment — the stage's band,
+ *                    every open band, duos only. The fee follows the pool
+ *                    (rollPriceFor), so a narrowed pool is a cheaper deal
  *   --log <n>        print a line every n waves (default 5)
  *   --seconds <n>    give up after this much sim time (default 2400)
  *   --probe <n>      seconds of turret-less dry run the bot learns the routes from (default 90, a few waves' worth)
@@ -63,7 +71,7 @@ const SCALE = +opt("scale", 1);
 const UNIT_DAMAGE = opt("unit-damage", null);
 const START = opt("start", null);
 const CAP = +opt("cap", Infinity);
-const MIX_MODE = String(opt("mix", "stage"));
+const MIX_MODE = String(opt("mix", "roster"));
 const LOG_EVERY = +opt("log", 5);
 const MAX_SECONDS = +opt("seconds", 2400);
 const PROBE_OPT = opt("probe", null);
@@ -79,6 +87,10 @@ if (!flag("no-build") || !existsSync(path.join(DIST, "sim.js"))) {
     [
       "tsc",
       "game/sim.ts", "game/ladder.ts", "game/track.ts", "game/mutation.ts",
+      // rarity.ts is named on purpose: nothing the sim reaches imports it
+      // (the deal is bought through Game, which is a browser module), and
+      // the bot draws off it
+      "game/rarity.ts",
       "--outDir", DIST, "--module", "commonjs", "--target", "es2022",
       "--moduleResolution", "node", "--esModuleInterop", "--skipLibCheck",
       "--noEmitOnError", "false", "--resolveJsonModule",
@@ -92,6 +104,7 @@ if (!flag("no-build") || !existsSync(path.join(DIST, "sim.js"))) {
 }
 
 const L = require(path.join(DIST, "levels.js"));
+const RA = require(path.join(DIST, "rarity.js"));
 const E = require(path.join(DIST, "economy.js"));
 const C = require(path.join(DIST, "constants.js"));
 const M = require(path.join(DIST, "maps.js"));
@@ -147,12 +160,14 @@ const stageTier = (w) => {
   return E.STAGES[E.STAGES.length - 1].tier;
 };
 const tierMix = (t, wet) => (wet ? [...MIX[t], ...WET[t]] : MIX[t]);
-const mixFor = (t, wet = false) =>
-  MIX_MODE === "duo"
-    ? ["duo"]
-    : MIX_MODE === "all"
-      ? [...tierMix(1, wet), ...(t >= 2 ? tierMix(2, wet) : []), ...(t >= 3 ? tierMix(3, wet) : [])]
-      : tierMix(t, wet);
+const mixFor = (t, wet = false, roster = null) =>
+  MIX_MODE === "roster"
+    ? roster ?? []
+    : MIX_MODE === "duo"
+      ? ["duo"]
+      : MIX_MODE === "all"
+        ? [...tierMix(1, wet), ...(t >= 2 ? tierMix(2, wet) : []), ...(t >= 3 ? tierMix(3, wet) : [])]
+        : tierMix(t, wet);
 
 /**
  * WHERE THE SWARM ACTUALLY GOES: a dry run of the script with no turrets,
@@ -230,6 +245,10 @@ function airCells(sim) {
 function play() {
   for (const k of TY.TOWER_KINDS)
     E.setScrapPrice(k, Math.max(1, Math.round(E.scrapPriceOf(k) * SCALE)));
+  // WHAT A DRAW COSTS — the one price a run actually pays now
+  // (economy.ts rollPriceFor: a fraction of what the pool it comes out of
+  // is worth). --scale has already moved every turret price above, so the
+  // fee moves with them and a sweep still turns one dial
   if (START !== null) E.SCRAP_START = +START;
   if (UNIT_DAMAGE !== null) WP.setUnitDamageScale(+UNIT_DAMAGE);
 
@@ -238,6 +257,8 @@ function play() {
   // the whole roster, which is what a map is balanced against
   const tech = TR.techStateFor(LEVEL);
   const owned = tech.unlocked;
+  /** what the deal may turn over for this save — Game.drawPool's twin */
+  const roster = TY.FIELDED_KINDS.filter((k) => owned.has(k));
   sim.setTech(tech);
 
   // THE ROUTES, one per movement layer, and WHAT EACH IS WORTH: the share
@@ -384,17 +405,27 @@ function play() {
   while (!sim.lost() && !sim.won() && sim.time < MAX_SECONDS) {
     for (let s = 0; s < 30; s++) sim.update(1 / 60);
     const w = sim.currentWave();
-    // what to buy follows the clock (Sim.stageWave), out of what the save
-    // at --level actually owns (the track, track.ts); a plan with nothing
-    // owned in it falls back to the duo every save starts with
-    const plan = mixFor(stageTier(sim.stageWave()), wet).filter((k) => owned.has(k));
-    const mix = plan.length > 0 ? plan : ["duo"];
+    // THE DRAW POOL IS THE SAVE'S ROSTER (the track, track.ts), which is
+    // the only pool the real game ever deals from — the narrowing modes
+    // are experiments, and they make the deal cheaper as well as narrower
+    // because the fee is a fraction of what the pool is worth. A pool with
+    // nothing owned in it falls back to the duo every save starts with
+    const plan = mixFor(stageTier(sim.stageWave()), wet, roster).filter((k) => owned.has(k));
+    const pool = plan.length > 0 ? plan : ["duo"];
     let stuck = 0;
     for (let tries = 0; tries < 40; tries++) {
-      const kind = mix[rot % mix.length];
-      if (sim.scrap < E.scrapPriceOf(kind) || sim.towers.length >= CAP) break;
-      if (place(kind)) rot++;
-      else { rot++; if (++stuck > mix.length) break; }
+      const roll = E.rollPriceFor(pool);
+      if (sim.scrap < roll || sim.towers.length >= CAP) break;
+      // the roll decides, exactly as it does for a player at the button
+      const kind = RA.rollTurret(pool);
+      if (!kind) break;
+      // the fee is charged on the PLACEMENT rather than the draw, which is
+      // the one place the bot is kinder to itself than the game is: a
+      // player who cannot find ground for a card watches it expire, and a
+      // bot that burned its bank failing to place would report a wall that
+      // is the bot's and not the map's
+      if (place(kind)) { sim.spend(roll); rot++; }
+      else { rot++; if (++stuck > pool.length) break; }
     }
     if (w !== lastWave) {
       lastWave = w;

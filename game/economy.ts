@@ -1,4 +1,5 @@
 import { TOWERS } from "./constants";
+import { BASE_WEIGHTS, RARITIES, rarityOf, type Rarity, type RarityWeights } from "./rarity";
 import { TOWER_KINDS, type TowerKind } from "./types";
 
 /**
@@ -75,6 +76,75 @@ export const WAVE_BONUS_BASE = 250;
 export const WAVE_BONUS_PER_WAVE = 50;
 export const waveBonusScrap = (wave: number): number =>
   WAVE_BONUS_BASE + WAVE_BONUS_PER_WAVE * Math.max(0, Math.floor(wave));
+
+/**
+ * WHAT ONE TURRET CARD COSTS — the run's only outgoing, and the whole
+ * shape of the economy now.
+ *
+ * A turret is not bought at its own price any more. The player pays one
+ * fee, the deal rolls a rarity and hands over a card (rarity.ts), and the
+ * card is placed for nothing. So TOWER_PRICE below stopped being what a
+ * board spends and became what a draw is WORTH: the number both the odds
+ * and this fee are composed against.
+ *
+ * THE FEE IS A FRACTION OF WHAT THE DEAL IS WORTH, not a flat number, and
+ * it has to be. A flat fee prices one pool correctly and every other pool
+ * wrongly: six hundred against the whole roster is a fair bet, and six
+ * hundred against a level-2 save — four commons and a salvo, an expected
+ * draw of about three hundred and fifty — is a button that takes two
+ * scrap for every one it gives back. A save's deal is exactly as deep as
+ * the track has made it (rollPriceFor reads the pool), so the price rises
+ * with the roster and the button means the same thing at every level.
+ *
+ * THREE TENTHS is where the fee lands beside the economy it replaced: at
+ * the full roster it comes to about three hundred, which is what the
+ * headless bot needs to field the board it used to field when it was
+ * buying named turrets at their own prices (`npm run playtest`). Under
+ * that the deal is a money printer and a board is a wall of turrets; over
+ * it the early waves are answered by four guns and a prayer. It is the
+ * dial to turn first when a run comes out too rich or too thin.
+ */
+export const ROLL_VALUE_FRACTION = 0.3;
+
+/**
+ * WHAT A DRAW OFF THIS POOL IS WORTH, in scrap: the rarity-weighted mean
+ * of the prices in it. It walks the pool exactly as the roll does — a
+ * rarity first, then a turret uniformly inside it — so the number is the
+ * true expectation of rollTurret and not an average over a list that four
+ * commons and one purple would flatten.
+ */
+export function expectedDrawValue(
+  pool: readonly TowerKind[],
+  weights: RarityWeights = BASE_WEIGHTS,
+): number {
+  const sum = new Map<Rarity, number>();
+  const n = new Map<Rarity, number>();
+  for (const k of pool) {
+    const r = rarityOf(k);
+    sum.set(r, (sum.get(r) ?? 0) + scrapPriceOf(k));
+    n.set(r, (n.get(r) ?? 0) + 1);
+  }
+  let total = 0;
+  let value = 0;
+  for (const r of RARITIES) {
+    const count = n.get(r) ?? 0;
+    if (count === 0) continue;
+    const w = Math.max(0, weights[r]);
+    total += w;
+    value += w * ((sum.get(r) ?? 0) / count);
+  }
+  return total > 0 ? value / total : 0;
+}
+
+/** ...and what the button charges for it, rounded to something a HUD can
+ *  print. Never free on a charged board: a zero-priced deal is not a deal */
+export function rollPriceFor(
+  pool: readonly TowerKind[],
+  weights: RarityWeights = BASE_WEIGHTS,
+): number {
+  const worth = expectedDrawValue(pool, weights) * ROLL_VALUE_FRACTION;
+  return Math.max(10, Math.round(worth / 10) * 10);
+}
 
 /** a placement is spent: selling returns this fraction of the price */
 export const SELL_REFUND = 0;

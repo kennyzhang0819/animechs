@@ -1448,13 +1448,23 @@ export const targetingLine = (s: TowerStats): string =>
 
 /**
  * A TURRET'S POOL, TIMES THIS — the one dial over what a structure can
- * take (towerMaxHp). Four: there are no walls to stand in front of a gun
+ * take (towerMaxHp). There are no walls to stand in front of a gun
  * (types.ts), so the gun itself holds the pool a line needs to be chewed
  * on for a while, and the swarm's bite (weapons.ts unitDamageScale) stays
  * at Mindustry's own number so a balance pass is done here and never row
- * by row. The core (CORE_HP) is written on its own.
+ * by row.
+ *
+ * EIGHT, doubled from four, and the deal is why. A turret is no longer
+ * chosen and paid for at its own price — it is dealt (rarity.ts) and
+ * placed free, which means a line cannot be repaired by simply buying the
+ * same gun again: what goes down is what the roll happened to hand over.
+ * A structure therefore has to SURVIVE its mistake rather than be
+ * replaced out of it, and twice the pool is the difference between a
+ * misplaced turret being a loss and being a lesson.
+ *
+ * The core is written on its own (CORE_HP) and did NOT move with it.
  */
-export const TOWER_HP_SCALE = 4;
+export const TOWER_HP_SCALE = 8;
 
 /** the stats of a structure kind — one funnel, so a caller never reads TOWERS by hand */
 export const structStats = (kind: import("./types").TowerKind): TowerStats => TOWERS[kind];
@@ -1463,26 +1473,13 @@ export const structStats = (kind: import("./types").TowerKind): TowerStats => TO
 export const towerMaxHp = (kind: import("./types").TowerKind): number =>
   TOWERS[kind].health * TOWER_HP_SCALE;
 
-/**
- * CONSTRUCTION TIME, BY FOOTPRINT — a placed structure is not a finished
- * one. It goes up as a shell first: one hit point, no gun, and the swarm
- * takes it apart with a single shot (Sim.damageTower). Only when the
- * timer runs out does it stand up with its real pool and start shooting.
- *
- * THE TIME IS THE FOOTPRINT'S, NOT THE TURRET'S. Every 1x1 raises in the
- * same beat, every 2x2 in the same longer one, and so on — what a player
- * is paying for in seconds is the ground they are covering, not which gun
- * they picked, so the choice between two turrets of a size stays a choice
- * about the gun. Bigger costs more because a bigger shell is a bigger
- * window in which the swarm can walk up and pop it.
- *
- * Indexed by size (1..4); index 0 is unused padding so the lookup is the
- * footprint itself.
+/*
+ * CONSTRUCTION TIME IS GONE (BUILD_TIME_BY_SIZE, buildTimeOf). A placed
+ * structure used to go up as a 1 hp shell, sized by its footprint, and
+ * only stand up for real when a timer ran out. Every placement is
+ * INSTANT now — see the note on Tower in types.ts for why the deal made
+ * that timer untenable.
  */
-export const BUILD_TIME_BY_SIZE = [0, 2, 4, 6.5, 10, 14, 18, 22, 26, 30] as const;
-/** how long this structure spends as a 1 hp shell before it works */
-export const buildTimeOf = (kind: import("./types").TowerKind): number =>
-  BUILD_TIME_BY_SIZE[structStats(kind).size] ?? BUILD_TIME_BY_SIZE[BUILD_TIME_BY_SIZE.length - 1];
 
 /**
  * The stats driving one live projectile. Almost always the firing turret's
@@ -1630,11 +1627,18 @@ export const SHRAPNEL = {
 
 /**
  * THE CORE'S HEALTH: Mindustry's core nucleus, 6,000 (Blocks.java), times
- * the same dial every turret carries — the number the fifty-wave script
- * was tuned against. It is the run: the swarm exists to knock it down,
- * and the moment it does the run is over (Sim.lost).
+ * a dial OF ITS OWN — the number the fifty-wave script was tuned against.
+ * It is the run: the swarm exists to knock it down, and the moment it does
+ * the run is over (Sim.lost).
+ *
+ * It used to read TOWER_HP_SCALE, and it stopped the day that dial was
+ * doubled for the deal. Doubling the turrets is a statement about how long
+ * a LINE holds; doubling the core would be a statement about how long the
+ * whole fifty waves take to lose, which is every map's pacing at once and
+ * is not a change anybody asked for. Four, where it has always been.
  */
-export const CORE_HP = 6000 * TOWER_HP_SCALE;
+export const CORE_HP_SCALE = 4;
+export const CORE_HP = 6000 * CORE_HP_SCALE;
 
 export const BASE = { x: 120, y: 33, size: 5 };
 /** every base is this many cells square */

@@ -21,6 +21,7 @@ import { HoverCard, useHoverCard } from "./HoverCard";
 import { itemCount } from "./Items";
 import MutationTree from "./MutationTree";
 import { bandFor, MutationFace, MUT_GLYPH, MUT_LIT } from "./mutationFace";
+import { rarityDef } from "@/game/rarity";
 import { TOWER_ICONS } from "./towerIcons";
 
 /**
@@ -49,7 +50,8 @@ const TABS = [
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
-/** the colour a reward chip wears, by what it is */
+/** the colour a reward chip wears, by what it is — except a turret, which
+ *  wears its RARITY (rarityOf below) rather than one flat orange */
 const REWARD_COLOR: Record<Reward["kind"], string> = {
   world: "#7BE58A",
   speed: "#7FC4FF",
@@ -131,7 +133,15 @@ function RewardFace({ reward }: { reward: Reward }) {
  * chip is nearest ("auto"), which keeps it on screen at any scroll.
  */
 function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
-  const color = REWARD_COLOR[reward.kind];
+  /**
+   * A TURRET CHIP IS BORDERED BY ITS RARITY (rarity.ts), not by the fact
+   * that it is a turret. The track is where a player learns what the deal
+   * can hand them, and it teaches the border at the same time it teaches
+   * the gun: the row that opens a spectre is purple here and the card that
+   * turns one over mid-wave is purple there, and nothing has to say so.
+   */
+  const rarity = reward.kind === "turret" ? rarityDef(reward.id) : null;
+  const color = rarity ? rarity.color : REWARD_COLOR[reward.kind];
   const text = rewardText(reward);
   // "auto": the list scrolls, so which side of the window a chip is on is
   // not a property of its row — the card picks its side when it opens
@@ -141,7 +151,7 @@ function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
       <span
         ref={tip.ref}
         tabIndex={0}
-        aria-label={`${text}. ${rewardBlurb(reward)}${
+        aria-label={`${text}${rarity ? `, ${rarity.name}` : ""}. ${rewardBlurb(reward)}${
           rewardTargeting(reward) ? `. ${rewardTargeting(reward)}` : ""
         }`}
         {...tip.anchorProps}
@@ -157,7 +167,13 @@ function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
         title={text}
         // the weight is the one thing a mutator's card says that a
         // turret's cannot: it is the answer to "how bad is this"
-        tag={reward.kind === "mutator" ? bandFor(mutationById(reward.id)).label : undefined}
+        tag={
+          rarity
+            ? rarity.name
+            : reward.kind === "mutator"
+              ? bandFor(mutationById(reward.id)).label
+              : undefined
+        }
         color={color}
       >
         {rewardBlurb(reward)}

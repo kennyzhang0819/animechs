@@ -1,8 +1,10 @@
 /**
  * Every Serpulo turret the campaign will ever field, in tech-tree order.
  *
- * ALL SEVENTEEN ARE IMPLEMENTED — real stats, real ammo, drawn on the
- * field, and every one of them in the build menu. The late five were stubs
+ * EVERY ONE OF THEM IS IMPLEMENTED — real stats, real ammo, drawn on the
+ * field. Two of them, the menders, are RETIRED for now and dealt to nobody
+ * (RETIRED_KINDS below); the other seventeen are what the deal draws from
+ * (rarity.ts) and what the track hands out. The late five were stubs
  * carrying a duo's bullet until they were given their own: swarmer's
  * homing missiles, cyclone's fragmenting flak, spectre's piercing twin
  * cannon, meltdown's held beam and foreshadow's rail shot.
@@ -46,6 +48,30 @@ export const TOWER_KINDS = [
 ] as const;
 export type TowerKind = (typeof TOWER_KINDS)[number];
 
+/**
+ * RETIRED FOR NOW — implemented, drawn, priced, and dealt to nobody.
+ *
+ * The two menders are the support pair, and the support pair is off the
+ * field while the deal (rarity.ts) is being built: a block that heals the
+ * line is a different decision from a block that shoots it, and a card
+ * dealt at random is the wrong door to hand one through. Everything about
+ * them stays — Sim.updateMender, their stats, their upgrades, their
+ * sprites — so putting them back is deleting a name from this list.
+ *
+ * Nothing outside this file should special-case a kind: read FIELDED_KINDS
+ * and the retired ones are simply not there.
+ */
+export const RETIRED_KINDS: readonly TowerKind[] = ["mender", "mendProjector"];
+
+const RETIRED = new Set<TowerKind>(RETIRED_KINDS);
+
+/** is this kind off the field for now? */
+export const isRetired = (kind: TowerKind): boolean => RETIRED.has(kind);
+
+/** every turret the game actually fields — the roster the track deals from,
+ *  the deal draws from and the build card is built out of */
+export const FIELDED_KINDS: readonly TowerKind[] = TOWER_KINDS.filter((k) => !RETIRED.has(k));
+
 
 /**
  * THE CORE — the one structure the swarm is on the map to destroy, and the
@@ -72,6 +98,15 @@ export const isCore = (s: Structure): s is Core => "core" in s;
 
 
 
+/**
+ * A STRUCTURE ON THE BOARD. THERE IS NO CONSTRUCTION STATE: one used to go
+ * up as a 1 hp shell and stand up for real only when a timer ran out, and
+ * that timer is gone. A turret is DEALT now (rarity.ts) and a dealt card
+ * is already paid for, so the seconds between the click and the gun were a
+ * second tax on a decision already made — and worse, a card with ten
+ * seconds of life on it could expire while the thing it bought was still
+ * scaffolding. Everything is placed finished, full pool, shooting.
+ */
 export interface Tower {
   kind: TowerKind;
   gx: number; // top-left cell of the size x size footprint (TOWERS[kind].size)
@@ -86,16 +121,6 @@ export interface Tower {
    * Volatile mutator's blast reaches it too (Sim.volatileBlast).
    */
   hp: number;
-  /**
-   * CONSTRUCTION: seconds still left before this structure is FINISHED, or
-   * 0 for one that is standing. While it counts down the building is a
-   * shell — `hp` is 1, it fires nothing, and any damage at all wrecks it
-   * (Sim.damageTower) — and when it reaches 0 the structure stands up with
-   * its full pool. `buildTotal` is what it started at, kept only so the
-   * ring drawn over it (Game.drawOverlay) knows how far along it is.
-   */
-  buildT: number;
-  buildTotal: number;
   /**
    * Which shield tower this tower's current volley is aimed at, as an index into
    * Sim.shieldTowers — or -1, the usual case, when it is aimed at a unit. The

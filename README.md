@@ -36,10 +36,10 @@ stale tab or a cached bundle looks exactly like a fix not working.
 
 - `game/constants.ts` — grid, base placement, tower tuning: every turret's
   stats read out of Mindustry's `Blocks.java` (`TOWERS`), the two dials
-  over them (`TOWER_HP_SCALE`, 4; the phase tier's +30% up-gun on
-  spectre, meltdown and foreshadow), construction time by footprint
-  (`BUILD_TIME_BY_SIZE`), `MAX_UNITS` (22,000) and the core's pool
-  (`CORE_HP`)
+  over them (`TOWER_HP_SCALE`, 8; the phase tier's +30% up-gun on
+  spectre, meltdown and foreshadow), `MAX_UNITS` (22,000) and the core's
+  pool (`CORE_HP`, on a dial of its own). A placement is INSTANT — there
+  is no construction shell any more
 - `game/levels.ts` — unit stats and wave-script plumbing; the authored
   script itself (50 waves, a 15-second gap — `WAVE_GAP_DEFAULT`) lives in
   `public/levels/campaign.json`, loaded by `loadLevelDocs()`. Six unit
@@ -51,8 +51,11 @@ stale tab or a cached bundle looks exactly like a fix not working.
   its tier's scrap, `SCRAP_BY_TIER`, a boss `BOSS_SCRAP`; every wave staged
   pays `waveBonusScrap`; nothing else pays anything), XP (meta progress),
   the fixed mission pot and how it is dealt out per wave cleared
-  (`MISSION_XP`, `waveXpShare`), the three turret tiers and their scrap
-  prices, the sell refund (zero), the level curve and the random-map bonus
+  (`MISSION_XP`, `waveXpShare`), **what one turret card costs**
+  (`rollPriceFor` — the run's one outgoing, three tenths of what a draw off
+  the save's pool is worth), the three price bands and
+  what a draw in each is WORTH (`TOWER_PRICE` — no longer what a board
+  spends), the sell refund (zero), the level curve and the random-map bonus
 - `game/ladder.ts` — the **ten-rung ladder** (`RUNGS`: the count scale,
   the mutator roll and the XP bonus each; the enemy-level dial is wired
   and authored to zero), and the audit/check arithmetic over the authored
@@ -64,9 +67,15 @@ stale tab or a cached bundle looks exactly like a fix not working.
   mutator phase, one rule a level; and `techStateFor(level)`, what a save
   at that level may do. The turret upgrade rungs are off the track for now
   (`UPGRADES_ON_TRACK`)
+- `game/rarity.ts` — **the deal**: every turret's rarity and its border
+  colour (`TURRET_RARITY`, `RARITY` — greyish white, blue, amber, purple),
+  the odds a draw is rolled against (`BASE_WEIGHTS`: 62 / 27 / 10 / **1**)
+  and the roll itself (`rollTurret`, a rarity first and then a turret
+  inside it, so a new turret never changes how often its rarity comes up)
 - `game/tech.ts` — `TechState`, the shape the sim and the build menu read
   a save's allowances in, and the **command card** (`BUILD_SLOTS`, five
-  rows of four, a key on every slot)
+  rows of four, a key on every slot) — which is now the FREE board's door
+  only: the sandbox and the editors keep it, a charged run deals instead
 - `game/upgrades.ts` — the **turret upgrade branches**: a chain of rungs
   under every turret, folded into its live `TowerStats` — two stat steps, a
   one-shot ammunition swap, and an **ultimate** that changes what the
@@ -124,13 +133,18 @@ stale tab or a cached bundle looks exactly like a fix not working.
   (`drawMinimap`): the whole map at a cell a dot, never zoomed, the
   player's structures white, the swarm red, the viewport framed; a press
   looks there, a drag keeps steering
-- `components/MechSwarm.tsx` — React shell: HUD (scrap, XP), rung picker,
-  the **build menu** — StarCraft's command card, a fixed grid in the
-  bottom-right corner the size of the minimap (`BUILD_SLOTS`), one turret
-  a slot with its price and its key on it and a hover card saying what it
-  does; the keys read row by row, Q E R T, F G H J, Z X C V, Y U I O, B N M
-  P, dodging the digits and WASD (the camera) — game-speed switcher,
-  results screens, canvases
+- `components/Deal.tsx` — **the field's bottom-right corner on a charged
+  run**: the two buttons (Buy turret, Buy upgrade — the second not built
+  yet) and the cards the first of them throws. `useDeal` is the whole
+  state machine: a card pops, blinks for its last three seconds and is
+  gone at ten (`CARD_LIFE`, `CARD_BLINK`), unless it is PICKED, which
+  stops its clock for as long as the player is deciding where it goes
+- `components/MechSwarm.tsx` — React shell: HUD (scrap, XP), difficulty
+  picker, the corner (the deal above, or — on a free board — StarCraft's
+  command card, a fixed grid the size of the minimap, `BUILD_SLOTS`, one
+  turret a slot with its key on it; the keys read row by row, Q E R T,
+  F G H J, Z X C V, Y U I O, B N M P, dodging the digits and WASD) —
+  game-speed switcher, results screens, canvases
 - `components/MenuBackground.tsx` — the title screen's ground
 - `app/globals.css` — **the kit**: `.ms-btn` / `.ms-pane` / `.ms-seg` /
   `.ms-bar` and their variants are Mindustry's nine-patch UI sprites
@@ -161,7 +175,7 @@ is no touch input.
 
 | | |
 |---|---|
-| build | pick a turret on the card (or its key), left press, drag to chain; **shift-drag for a straight line** |
+| build | **Buy turret**, then click the card it throws and left press on the ground — one card, one turret. On a free board (sandbox, editors) pick a turret on the command card instead, or its key, and drag to chain; **shift-drag for a straight line** |
 | demolish | right press, drag to chain |
 | select a building | left click with no tool picked — its range ring shows; drag a box for a region; shift adds |
 | select every like it nearby | ctrl-click or double-click (`SEL_LIKE_STRUCT_R`) |
@@ -236,8 +250,8 @@ Every run opens with `SCRAP_START` (7,500); a kill drops its tier's
 scrap (`SCRAP_BY_TIER`, a boss `BOSS_SCRAP`); every wave staged pays a
 bonus (`waveBonusScrap`, 250 plus 50 a wave). The core pays nothing,
 nothing is mined, and selling returns nothing (`SELL_REFUND` is 0): a
-placement is spent. Nothing carries between runs. There is no gate inside
-a run: whatever the save owns it may place from wave 1.
+draw is spent. Nothing carries between runs. There is no gate inside a
+run: whatever the save owns may come out of the deal from wave 1.
 
 | tier | scrap |
 |---|---|
@@ -268,13 +282,57 @@ power-law curve (`xpToNext`), and **every level is a rung on the track**
 (`game/track.ts`) that hands out a map, a turret or a mutator — nothing
 is chosen and nothing is bought.
 
+### The deal
+
+**A turret is not bought, it is drawn.** The field's bottom-right corner
+is two buttons — **Buy turret** and **Buy upgrade**, the second not built
+yet. Buy turret pays the roll fee, rolls the rarity odds and **pops a card
+onto the field**: the turret's sprite, its rarity's border, its name.
+
+**The fee is a fraction of what the deal is worth** — `ROLL_VALUE_FRACTION`
+(three tenths) times the rarity-weighted mean price of the pool
+(`rollPriceFor`), which comes to about 110 scrap for a fresh save and about
+290 for the whole roster. It is derived rather than authored because a flat
+fee prices one pool right and every other pool wrong: 600 is a fair bet
+against seventeen turrets and daylight robbery against four commons and a
+salvo. Deriving it means the button means the same thing at every level,
+and the fraction is the one dial a balance sweep turns. Click the card to pick it up, and the next left press on
+the ground puts that turret down — **free**, finished, shooting. One card
+is one turret; there is no chaining and no ruler on a dealt board.
+
+**A card is on a ten-second clock** (`CARD_LIFE`), blinking for the last
+three (`CARD_BLINK`), and an unclaimed one is gone with the scrap it cost.
+**The clock stops the moment the card is picked up**, though, for as long
+as the player wants to look for the right ground: the question the timer
+is asking is "do you want this", and once that is answered the game would
+rather the second question — *where does this go* — be played well. A
+placement the ground refuses (red ghost) keeps the card in hand; a right
+click puts it back on the field and its clock starts again where it
+stopped.
+
+| rarity | border | turrets | odds |
+|---|---|---|---|
+| Common | greyish white | duo, hail, scatter, scorch, arc, wave | 62% |
+| Uncommon | blue | salvo, lancer, parallax, ripple, fuse | 27% |
+| Rare | amber | swarmer, cyclone, tsunami | 10% |
+| Ultra Rare | purple | spectre, meltdown, foreshadow — every 4x4 | **1%** |
+
+The rarities are authored (`TURRET_RARITY`) and fixed for the whole run;
+the **weights are not** (`Game.setRarityWeights`), because shifting them
+is what the upgrades being built will do. A rarity is rolled first and a
+turret picked uniformly inside it, so adding a fourth purple would make
+*which* purple less predictable and never make purples more likely. The
+draw pool is exactly what the track has handed the save (`turretsAt`),
+minus the retired kinds.
+
 ### Three stages, three price bands
 
 The roster is cut into three price bands along Mindustry's build-cost
 order (`TOWER_TIER`), and the run into three stages (`STAGES`): waves
-1–20, 21–35 and 36–50. **A band is priced so its stage is roughly what
-buys it.** This is a pricing table and nothing else — no band is held shut
-inside a run.
+1–20, 21–35 and 36–50. Since the deal arrived these prices are no longer
+what a board SPENDS — nothing is bought at them — they are **what a draw
+in that band is worth**, which is the number the odds and the roll fee are
+composed against. No band is held shut inside a run.
 
 | stage | waves | tier | prices |
 |---|---|---|---|
@@ -288,15 +346,24 @@ too few or too many of its band (`STAGE_BOARDS`).
 
 ### The level track
 
-**A fresh save owns three turrets** — the duo, the hail and the scatter
-(`STARTING_ROSTER` in `game/track.ts`) — and **every one of levels 2 to
-15 opens one more** (`UNLOCKS`): the salvo at 2, the lancer at 3, the
-ripple at 4, the spectre at 5, and so on to the foreshadow at 15, when the
-card is complete. The levels between also carry the maps. Past 15 there is
-nothing left to build, so a level hands out a **rule** instead: one
-mutator a level, lightest first, into the deck the deploy roll draws from.
-The progress screen lists the whole track; the results screen names what
-a climb handed out.
+**A fresh save owns four turrets** — the duo, the hail, the scatter and
+the salvo (`STARTING_ROSTER` in `game/track.ts`) — and **every one of
+levels 2 to 14 opens one more** (`UNLOCKS`), commons first, then the
+blues, the ambers threaded through them, and the three purples last:
+the spectre at 12, the meltdown at 13, the foreshadow at 14, when the
+roster is complete. **The roster IS the draw pool** — the deal rolls over
+exactly what the track has handed out, which is what makes a level-2 save
+draw commons and a level-14 one draw anything. The levels between also
+carry the maps. Past 14 there is nothing left to build, so a level hands
+out a **rule** instead: one mutator a level, lightest first, into the deck
+the deploy roll draws from. The progress screen lists the whole track,
+every turret chip bordered in its rarity; the results screen names what a
+climb handed out.
+
+**The two menders are retired** (`RETIRED_KINDS` in `game/types.ts`): the
+support pair is off the field while the deal is being built, implemented
+and priced and dealt to nobody. Putting them back is deleting a name from
+that list.
 
 ### One script, three families a deploy
 
@@ -341,16 +408,19 @@ cost** (`STRUCTURE_COST`): the field routes around a line when the way
 round is cheaper and into it when it is not, and the bodies pressed into
 it shoot it. So a turret across the lane is not a seal, it is a fight at
 the turret. **There are no walls**, and the pool they used to hold is in
-the guns: every turret carries four times its Mindustry block health
-(`TOWER_HP_SCALE`), and the phase tier fires 30% over stock; hurt, a
+the guns: every turret carries **eight** times its Mindustry block health
+(`TOWER_HP_SCALE`, doubled for the deal — what goes down is what the roll
+handed over, so a structure has to survive its mistake rather than be
+replaced out of it), and the phase tier fires 30% over stock; hurt, a
 turret greys and smokes like a unit; at zero it is wrecked and gone, its
 ground open again. **The swarm's bite against a structure is Mindustry's
 own number** (`setUnitDamageScale` in `game/weapons.ts`, at 1), and the
 balance is done on the player's side: the turrets' pool, the prices and
-the drops. The playtest takes the dial as `--unit-damage` for a sweep. **A placed turret goes up as a shell first** — one hit
-point, no gun, a construction bar over it, `BUILD_TIME_BY_SIZE` seconds by
-footprint — and stands up with its full pool when the timer runs out. The
-balance pass is done on the two dials and never row by row.
+the drops. The playtest takes the dial as `--unit-damage` for a sweep. **A placement
+is finished the instant it lands** — full pool, gun live, no construction
+shell: the card it came off was already paid for, and a timer between the
+click and the gun was a second tax on a decision already made. The balance
+pass is done on the two dials and never row by row.
 
 **Every map is checked headless.** `npm run playtest -- --world <id>`
 runs the real sim with an ordinary builder bot at the keyboard (route
@@ -361,7 +431,9 @@ wave, price, weapon, mutator or unit edit.
 ### The core
 
 **The core is the run.** It stands where the map's base does, it carries
-`CORE_HP` (Mindustry's nucleus at the same dial as the turrets, 24,000),
+`CORE_HP` (Mindustry's nucleus at a dial of its own, `CORE_HP_SCALE`, for
+24,000 — it did not move when the turrets' dial doubled, because how long
+the core holds is every map's pacing at once),
 and the swarm exists to knock it down: every unit paths to it, presses
 against it and fires (`Sim.coreGoal`), flyers hover over its edge and
 shoot, hulls park on the nearest water and shoot from the shore. **Each of

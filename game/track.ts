@@ -2,7 +2,12 @@ import { targetingLine, TOWER_DESC, TOWERS } from "./constants";
 import { WORLDS } from "./levels";
 import { MUTATIONS, mutationById, type MutationId } from "./mutation";
 import { BY_MINDUSTRY_VALUE, type TechState } from "./tech";
-import { TOWER_KINDS, type TowerKind } from "./types";
+import {
+  FIELDED_KINDS,
+  isRetired,
+  TOWER_KINDS as TOWER_KINDS_ALL,
+  type TowerKind,
+} from "./types";
 import {
   ALL_UPGRADES,
   NO_UPGRADES,
@@ -24,10 +29,11 @@ import {
  * THE TRACK HAS TWO PHASES, AND THEY PULL OPPOSITE WAYS.
  *
  *   THE ROSTER PHASE, levels 1 to ROSTER_TOP. Every level opens a new
- *   turret, and at the top of it the save owns the whole card. A fresh
- *   save opens with STARTING_ROSTER, the three that make a first board;
- *   the other fourteen are handed out one a level by UNLOCKS below. There
- *   is no gate inside a run: what the save owns it may place from wave 1.
+ *   turret, and at the top of it the save owns the whole roster — which
+ *   is also the whole DRAW POOL, since the deal (rarity.ts) rolls over
+ *   exactly what the track has handed out. A fresh save opens with
+ *   STARTING_ROSTER, the four that make a first board; the other thirteen
+ *   come one a level by UNLOCKS below. There is no gate inside a run.
  *
  *   THE MUTATOR PHASE, ROSTER_TOP + 1 to MAX_LEVEL. There is nothing left
  *   to build, so what a level hands out is a RULE: one mutator a level,
@@ -40,20 +46,20 @@ import {
  * upgrades.ts are intact and waiting to be put back somewhere.
  */
 
-/** the level at which the last turret opens and the card is complete */
-export const ROSTER_TOP = 15;
+/** the level at which the last turret opens and the roster is complete */
+export const ROSTER_TOP = 14;
 
 /** one rule a level, LIGHTEST FIRST, from ROSTER_TOP + 1 */
 const MUTATOR_UNLOCKS: readonly MutationId[] = [
-  /* 16 */ "armored",
-  /* 17 */ "mitosis",
-  /* 18 */ "volatile",
-  /* 19 */ "shieldTowers",
-  /* 20 */ "overshields",
-  /* 21 */ "speedy",
-  /* 22 */ "hungry",
-  /* 23 */ "hydrophobic",
-  /* 24 */ "amphibious",
+  /* 15 */ "armored",
+  /* 16 */ "mitosis",
+  /* 17 */ "volatile",
+  /* 18 */ "shieldTowers",
+  /* 19 */ "overshields",
+  /* 20 */ "speedy",
+  /* 21 */ "hungry",
+  /* 22 */ "hydrophobic",
+  /* 23 */ "amphibious",
 ];
 
 export const MAX_LEVEL = ROSTER_TOP + MUTATOR_UNLOCKS.length;
@@ -90,16 +96,21 @@ const PLACED: readonly { level: number; reward: Reward }[] = [
 ];
 
 /**
- * THE FIRST BOARD: a gun for the ground, a gun for the air, and artillery
- * for the crowd — plus the two that decide whether the opening is a board
- * or a shooting gallery. The SALVO is the first gun that answers a single
- * hard body rather than a crowd, and without one in hand the first ten
- * waves are answered by putting down more duos; the SPECTRE is the ceiling
- * the whole run is read against, and a save that has never seen one does
- * not know what its scrap is FOR. Everything else is dealt one a level.
+ * THE FIRST BOARD: a gun for the ground, a gun for the air, artillery for
+ * the crowd, and the SALVO — the first gun that answers a single hard body
+ * rather than a crowd, without which the first ten waves are answered by
+ * putting down more duos. Everything else is dealt one a level.
+ *
+ * THE SPECTRE USED TO BE HERE and has been moved to the top of the track
+ * (UNLOCKS, level 12). It was in the opening hand to show a new save what
+ * its scrap was FOR, back when scrap bought a named turret off a shelf —
+ * and the deal (rarity.ts) answers that question by itself now. Worse, an
+ * ultra-rare turret in the roster from wave one is an ultra-rare turret in
+ * the DRAW POOL from wave one, and the one-in-a-hundred border means
+ * nothing if the board it can come out of is four commons deep.
  */
 export const STARTING_ROSTER: readonly TowerKind[] = [
-  "duo", "hail", "scatter", "salvo", "spectre",
+  "duo", "hail", "scatter", "salvo",
 ];
 
 /**
@@ -108,29 +119,33 @@ export const STARTING_ROSTER: readonly TowerKind[] = [
  * decision and not an arithmetic on build cost. Index 0 is level 2.
  */
 const UNLOCKS: readonly (readonly TowerKind[])[] = [
-  // the mender first, and deliberately: the opening five are all guns, so
-  // the first thing a level teaches is that a line can be KEPT rather than
-  // rebuilt — and it is the one block whose worth a player can read off a
-  // board they already know
-  /*  2 */ ["mender"],
-  /*  3 */ ["lancer"],
-  /*  4 */ ["ripple"],
-  /*  5 */ ["scorch"],
-  /*  6 */ ["arc"],
-  /*  7 */ ["wave"],
+  // THE COMMONS FIRST, because every one of them widens the floor of the
+  // draw rather than its ceiling: the opening levels are where a save
+  // learns what the deal FEELS like, and it should feel like a board being
+  // filled in. The two menders that used to lead this list are retired
+  // (types.ts RETIRED_KINDS) and no level hands one out
+  /*  2 */ ["scorch"],
+  /*  3 */ ["arc"],
+  /*  4 */ ["wave"],
+  // the blues, one a level: each is an answer the commons cannot give
+  /*  5 */ ["lancer"],
+  /*  6 */ ["ripple"],
+  /*  7 */ ["parallax"],
+  // ...and the ambers threaded through them, so the middle of the track is
+  // where a draw stops being predictable
   /*  8 */ ["swarmer"],
-  // ...and its big brother at the halfway mark, where the guns it is
-  // nursing start costing more than the block that keeps them standing
-  /*  9 */ ["mendProjector"],
-  /* 10 */ ["parallax"],
-  /* 11 */ ["cyclone"],
-  /* 12 */ ["fuse"],
-  /* 13 */ ["tsunami"],
-  /* 14 */ ["meltdown"],
-  /* 15 */ ["foreshadow"],
+  /*  9 */ ["cyclone"],
+  /* 10 */ ["fuse"],
+  /* 11 */ ["tsunami"],
+  // THE PURPLES LAST, one a level, and the track ends on them. A 4x4 is
+  // the thing a run is hoping the deal turns over, and a save has to have
+  // earned the right to be hoping for it
+  /* 12 */ ["spectre"],
+  /* 13 */ ["meltdown"],
+  /* 14 */ ["foreshadow"],
 ];
 
-/** the roster by the level it opens on: the starting three on 1, UNLOCKS after */
+/** the roster by the level it opens on: the starting four on 1, UNLOCKS after */
 function dealTurrets(): Map<number, TowerKind[]> {
   const out = new Map<number, TowerKind[]>();
   out.set(1, [...STARTING_ROSTER]);
@@ -150,7 +165,10 @@ const TURRETS_DEALT = dealTurrets();
         throw new Error(`the track opens "${k}" twice, on levels ${had} and ${level}`);
       seen.set(k, level);
     }
-  for (const k of TOWER_KINDS)
+  for (const k of seen.keys())
+    if (isRetired(k))
+      throw new Error(`the track opens "${k}", which is retired from the field (types.ts)`);
+  for (const k of FIELDED_KINDS)
     if (!seen.has(k)) throw new Error(`the track never opens "${k}" — no level hands it out`);
   if (UNLOCKS.length !== ROSTER_TOP - 1)
     throw new Error(
@@ -161,7 +179,7 @@ const TURRETS_DEALT = dealTurrets();
   });
 })();
 
-/** the level a turret joins the roster — 1 for the starting three */
+/** the level a turret joins the roster — 1 for the starting four */
 export function turretUnlockLevel(kind: TowerKind): number {
   for (const [level, kinds] of TURRETS_DEALT) if (kinds.includes(kind)) return level;
   return 1;
@@ -243,7 +261,7 @@ export function speedsAt(level: number): number[] {
   return out.sort((a, b) => a - b);
 }
 
-/** the turrets a level has on the roster: the starting three and every one dealt so far */
+/** the turrets a level has on the roster: the starting four and every one dealt so far */
 export function turretsAt(level: number): Set<TowerKind> {
   const out = new Set<TowerKind>();
   for (let l = 1; l <= Math.min(level, MAX_LEVEL); l++)
@@ -257,7 +275,7 @@ export function upgradesAt(level: number): Record<TowerKind, UpgradePoints> {
   for (let l = 2; l <= Math.min(level, MAX_LEVEL); l++)
     for (const id of DEALT.get(l) ?? []) owned.add(id);
   return Object.fromEntries(
-    TOWER_KINDS.map((k) => [
+    TOWER_KINDS_ALL.map((k) => [
       k,
       owned.size === 0
         ? NO_UPGRADES
@@ -305,7 +323,7 @@ export function rewardTargeting(r: Reward): string | null {
 
 /** the turret's display name, as the card prints it */
 export const TOWER_NAME: Readonly<Record<TowerKind, string>> = Object.fromEntries(
-  TOWER_KINDS.map((k) => [k, TOWERS[k].name]),
+  TOWER_KINDS_ALL.map((k) => [k, TOWERS[k].name]),
 ) as Record<TowerKind, string>;
 
 /** what a save at this level may do — the sim's and the build menu's allowance */

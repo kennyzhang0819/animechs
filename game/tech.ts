@@ -4,7 +4,7 @@ import {
   type UpgradeContext,
   type UpgradePoints,
 } from "./upgrades";
-import { TOWER_KINDS, type TowerKind } from "./types";
+import { FIELDED_KINDS, type TowerKind } from "./types";
 
 /**
  * WHAT A SAVE MAY DO IN A RUN — the shape the sim and the build menu read
@@ -24,8 +24,16 @@ export interface TechState {
 export { upgradedTower, NO_UPGRADES, type UpgradeContext, type UpgradePoints };
 
 /**
- * THE BUILD MENU is a command card: a fixed grid in the bottom-right
- * corner, one turret a slot, and a key on every slot.
+ * THE COMMAND CARD — a fixed grid in the bottom-right corner, one turret a
+ * slot, a key on every slot.
+ *
+ * IT IS THE FREE BOARD'S DOOR ONLY. A charged run does not pick turrets
+ * off a shelf any more: it buys them as cards off the deal (rarity.ts) and
+ * the corner holds two buttons instead (components/MechSwarm.tsx). The
+ * grid stays for the sandbox and the editors, where the whole roster is
+ * open, nothing is charged and a specific turret has to be reachable on
+ * purpose — which is the one thing a random deal cannot do, and exactly
+ * what a board being used to reproduce a bug needs.
  */
 export interface BuildSlot {
   kind: TowerKind;
@@ -52,7 +60,7 @@ const GRID_KEYS: readonly string[] = [
 /**
  * THE CARD'S ORDER: cheapest first, by Mindustry's own build cost — the
  * one order every list of turrets in the game uses (BY_MINDUSTRY_VALUE),
- * so the tier-1 guns fill the top rows and the phase tier the bottom.
+ * so the cheap guns fill the top rows and the 4x4s the bottom.
  */
 export const MINDUSTRY_VALUE: Record<TowerKind, number> = {
   duo: 17.5,
@@ -77,8 +85,10 @@ export const MINDUSTRY_VALUE: Record<TowerKind, number> = {
   foreshadow: 2500,
 };
 
-/** the roster, cheapest first — the one order every list of turrets uses */
-export const BY_MINDUSTRY_VALUE: readonly TowerKind[] = [...TOWER_KINDS].sort(
+/** the roster, cheapest first — the one order every list of turrets uses.
+ *  RETIRED kinds are not in it: nothing lists a turret the game does not
+ *  field, the sandbox's own grid included */
+export const BY_MINDUSTRY_VALUE: readonly TowerKind[] = [...FIELDED_KINDS].sort(
   (a, b) => (MINDUSTRY_VALUE[a] ?? 0) - (MINDUSTRY_VALUE[b] ?? 0),
 );
 
@@ -94,8 +104,8 @@ export function slotForCode(code: string): BuildSlot | null {
 }
 
 (() => {
-  if (GRID_KEYS.length < TOWER_KINDS.length)
+  if (GRID_KEYS.length < BY_MINDUSTRY_VALUE.length)
     throw new Error(
-      `the build card has ${GRID_KEYS.length} slots for ${TOWER_KINDS.length} turrets — add a row of keys`,
+      `the command card has ${GRID_KEYS.length} slots for ${BY_MINDUSTRY_VALUE.length} turrets — add a row of keys`,
     );
 })();

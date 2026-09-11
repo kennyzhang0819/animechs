@@ -30,9 +30,10 @@ import {
   type TowerKind,
   type UnitKind,
 } from "./levels";
-import { missionXp, scrapPriceOf, sellValue } from "./economy";
+import { missionXp, rollPriceFor, scrapPriceOf, sellValue } from "./economy";
+import { BASE_WEIGHTS, rollTurret, type RarityWeights } from "./rarity";
 import { HEALTH_BARS_DEFAULT, type HealthBarMode, type TowerPlacement } from "./progress";
-import { TOWER_KINDS } from "./types";
+import { FIELDED_KINDS, isRetired, TOWER_KINDS } from "./types";
 import { Renderer } from "./renderer";
 import { fitZoom } from "./fit";
 import { PICK_LENIENT, PICK_STRUCT_PAD, Sim } from "./sim";
@@ -99,6 +100,14 @@ export interface UiState {
   counts: Record<TowerKind, number>;
   /** the turrets the save may field; null = unrestricted (editor, sandbox) */
   unlocked: readonly TowerKind[] | null;
+  /** is this board DEALT (a charged run) or PICKED (sandbox, editors)? —
+   *  which of the two corners the overlay puts in the bottom right */
+  dealing: boolean;
+  /** what one draw off the deal costs right now */
+  rollPrice: number;
+  /** structures placed this run, only going up — the card layer watches it
+   *  to know the card in hand has landed (see Game.built) */
+  built: number;
   /** who each turret will shoot at, in the player's words — one line under
    *  the build card's description. It reads the turret's LIVE stats, so an
    *  arc with Ionised Air bought reads "ground and air" the moment it is */
@@ -339,8 +348,6 @@ const BAR_GAP = 1.5;
 const BAR_MIN_W = 14;
 const BAR_BACK = "rgba(10,14,26,0.72)";
 const BAR_EDGE = "rgba(0,0,0,0.55)";
-/** what is going up (Tower.buildT) — the accent gold */
-const BAR_BUILD = "#FFD37F";
 /** a health bar's colour at a fraction of full, the HUD's own three */
 const hpColor = (f: number): string => (f > 0.5 ? "#7BE58A" : f > 0.2 ? "#FFD37F" : "#FF5A5A");
 /**
@@ -499,6 +506,22 @@ export class Game {
   private speed = 1;
   // the campaign's tower unlocks and caps (see setTech); null in the editor
   private tech: TechState | null = null;
+  /**
+   * THE ODDS IN FORCE (rarity.ts). Fixed at the opening weights for the
+   * whole run today, and a field rather than a constant read at the roll
+   * because the upgrades that are coming are exactly this: a run that
+   * draws purple more often than one in a hundred.
+   */
+  private rarityWeights: RarityWeights = BASE_WEIGHTS;
+  /**
+   * HOW MANY STRUCTURES THIS RUN HAS PLACED, only ever going up. The card
+   * layer (MechSwarm) owns the deal, and it has no other way to learn that
+   * the card in hand actually LANDED: it watches this number across the
+   * HUD poll and retires the card when it moves. A counter rather than a
+   * callback because the HUD is already a poll, and a placement that
+   * happened between two polls must not be missed.
+   */
+  private built = 0;
 
   private raf = 0;
   private last = 0;
@@ -594,11 +617,21 @@ export class Game {
   private readonly onMouseDown = (e: MouseEvent): void => {
     if (e.button === 0 && !this.panning) {
       const p = this.mouseWorld(e);
-      if (this.buildKind) {
-        // left press places right away, and dragging chains from here;
-        // the ghost already shows red where placement fails.
-        // ...unless SHIFT is down, which makes the drag a ruler: it lays
-        // its line down on release and nothing before then
+      if (this.buildKind && this.dealing) {
+        // ONE CARD IS ONE TURRET. A dealt card carries a single structure,
+        // so the press puts that structure down and the hand is empty —
+        // no chain, no ruler — and a press on ground that refuses it (the
+        // ghost is already red) keeps the card in hand to try again
+        if (this.placeOne(p)) {
+          this.built++;
+          this.buildKind = null;
+        }
+      } else if (this.buildKind) {
+        // the FREE board (the sandbox, the editors): left press places
+        // right away and dragging chains from here; the ghost already
+        // shows red where placement fails. ...unless SHIFT is down, which
+        // makes the drag a ruler: it lays its line down on release and
+        // nothing before then
         this.building = true;
         this.buildFrom = p;
         this.rulerFrom = p;
@@ -834,14 +867,70 @@ export class Game {
     if (chain && this.inWorld(this.buildFrom)) {
       this.sim.placeLine(this.buildFrom.x, this.buildFrom.y, p.x, p.y, kind);
     } else {
-      const sz = TOWERS[kind].size;
+      this.placeOne(p);
+    }
+    this.buildFrom = p;
+  }
+
+  /** the building in hand, dropped under this point — did the ground take it? */
+  private placeOne(p: { x: number; y: number }): boolean {
+    const kind = this.buildKind;
+    if (!kind || !this.inWorld(p)) return false;
+    const sz = TOWERS[kind].size;
+    return (
       this.sim.placeTower(
         clamp(Math.round(p.x / CELL - sz / 2), 0, COLS - sz),
         clamp(Math.round(p.y / CELL - sz / 2), 0, ROWS - sz),
         kind,
-      );
-    }
-    this.buildFrom = p;
+      ) === "ok"
+    );
+  }
+
+  /**
+   * IS THIS BOARD DEALT? A charged run buys its turrets as cards off the
+   * deal (buyTurretCard) and places them one at a time; a free board — the
+   * sandbox and the editors — keeps the old command card, where a kind is
+   * PICKED and painted in lines. One question, asked in both places that
+   * care: the press handler above and the React overlay's corner.
+   */
+  get dealing(): boolean {
+    return this.sim.charging;
+  }
+
+  /**
+   * ONE DRAW OFF THE DEAL: pay the fee, roll the odds, hand back the
+   * turret the card carries — or null, which means either the bank could
+   * not cover it or the run is over. The pool is what the save has been
+   * dealt on the track, minus the kinds that are off the field for now
+   * (types.ts RETIRED_KINDS); a free board draws from the whole roster for
+   * nothing, so the button works in the sandbox too.
+   *
+   * The scrap is spent HERE, at the draw, and never again: the card that
+   * comes out of it is placed for free (Sim.placeTower).
+   */
+  buyTurretCard(): TowerKind | null {
+    if (this.sim.lost() || this.won() || this.menuOpen) return null;
+    const kind = rollTurret(this.drawPool(), this.rarityWeights);
+    if (!kind) return null;
+    if (!this.sim.spend(this.rollPrice())) return null;
+    return kind;
+  }
+
+  /** what the deal may turn over: the track's roster, minus the retired
+   *  kinds — the whole thing on a free board */
+  private drawPool(): TowerKind[] {
+    return (this.tech ? [...this.tech.unlocked] : FIELDED_KINDS).filter((k) => !isRetired(k));
+  }
+
+  /** what one draw costs right now: a fraction of what this pool is worth
+   *  (economy.ts rollPriceFor), and nothing at all on a free board */
+  private rollPrice(): number {
+    return this.dealing ? rollPriceFor(this.drawPool(), this.rarityWeights) : 0;
+  }
+
+  /** point the deal at different odds — what an upgrade will do */
+  setRarityWeights(w: RarityWeights): void {
+    this.rarityWeights = w;
   }
 
   /** remember the pointer in world px, and as the cell a tool would act on */
@@ -1282,6 +1371,9 @@ export class Game {
       refunds: REFUNDS(),
       counts: this.sim.towerCounts(),
       unlocked: this.tech ? Array.from(this.tech.unlocked) : null,
+      dealing: this.dealing,
+      rollPrice: this.rollPrice(),
+      built: this.built,
       // off the sim's live stats (statsFor), never the static table: the
       // whole point of deriving the line is that an upgrade moves it
       targeting: Object.fromEntries(
@@ -1627,10 +1719,8 @@ export class Game {
       struct(s.gx, s.gy, SHIELD_TOWER_SIZE, 0xf2, 0x55, 0x55);
     }
     // ...and the player's, over everything: the line is what the map is read for
-    for (const t of this.sim.towers) {
-      const v = t.buildT > 0 ? 0x9a : 0xff;
-      struct(t.gx, t.gy, structStats(t.kind).size, v, v, v);
-    }
+    for (const t of this.sim.towers)
+      struct(t.gx, t.gy, structStats(t.kind).size, 0xff, 0xff, 0xff);
     struct(T.base.x, T.base.y, T.base.size, 0xff, 0xff, 0xff);
     lc.putImageData(img, 0, 0);
 
@@ -1804,13 +1894,11 @@ export class Game {
   }
 
   /**
-   * Every structure's bars: what it is making, what is still going up, and
-   * what is left of it.
-   *
-   *   CONSTRUCTION the shell's own timer (Tower.buildT)
-   *   HP           on the Interface tab's terms (barsOn), the same terms
-   *                a unit's health is on — a wall and a walker are both
-   *                things with health standing on the board
+   * Every structure's bar: what is left of it, on the Interface tab's
+   * terms (barsOn) — the same terms a unit's health is on, because a wall
+   * and a walker are both things with health standing on the board. The
+   * construction bar that used to ride above it is gone with the shell
+   * (types.ts): nothing is ever half-built any more.
    *
    * The swarm's buildings get the same treatment on ground the player has
    * seen, because "how much is left of that bunker" is the same question
@@ -1840,12 +1928,8 @@ export class Game {
       bars.length = 0;
       const hpMax = towerMaxHp(t.kind);
       const f = clamp(t.hp / Math.max(1, hpMax), 0, 1);
-      // a shell is on 1 hp by design (Tower.buildT) — that is a state, not
-      // a wound, and the construction bar below is already saying it
-      if (t.buildT <= 0 && this.barsOn(true, f, this.hoverOver(t.x, t.y, sz), picked?.has(t) === true))
+      if (this.barsOn(true, f, this.hoverOver(t.x, t.y, sz), picked?.has(t) === true))
         bars.push({ v: f, col: hpColor(f) });
-      if (t.buildT > 0 && t.buildTotal > 0)
-        bars.push({ v: 1 - t.buildT / t.buildTotal, col: BAR_BUILD });
       this.drawBars(c, t.x, t.y - sz / 2, sz - 2, bars);
     }
     // THE SWARM'S SHIELD TOWERS (mutation.ts) stand outside the tower list

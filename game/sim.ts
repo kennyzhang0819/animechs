@@ -29,7 +29,6 @@ import {
   ROWS as ROWS_IMPORT,
   TOWERS as TOWERS_IMPORT,
   towerMaxHp,
-  buildTimeOf,
   UR,
   W as W_IMPORT,
   WALL_R as WALL_R_IMPORT,
@@ -132,7 +131,7 @@ import {
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap, type SpawnCircle } from "./maps";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
-import { SCRAP_START, scrapPriceOf, sellValue, waveBonusScrap } from "./economy";
+import { SCRAP_START, sellValue, waveBonusScrap } from "./economy";
 import { airWalkMask, isBuildableWall, isWaterFloor, navalWalkMask, WALL_DEEP, type Terrain } from "./terrain";
 import {
   MAX_WEAPONS,
@@ -2065,14 +2064,10 @@ export class Sim {
     return n;
   }
 
-  private addTower(gx: number, gy: number, kind: TowerKind, instant: boolean): void {
+  private addTower(gx: number, gy: number, kind: TowerKind): void {
     const sz = structStats(kind).size;
-    // CONSTRUCTION (buildTimeOf): a placed structure goes up as a 1 hp
-    // shell and only stands up for real when its timer runs out. Editors,
-    // the sandbox and the menu field build finished structures — there is
-    // no swarm to race there, and a menu that spends its first seconds
-    // watching walls raise is a menu showing nothing
-    const build = instant ? 0 : buildTimeOf(kind);
+    // EVERY STRUCTURE IS PLACED FINISHED — full pool, gun live, this tick.
+    // It used to go up as a 1 hp shell on a timer (see Tower in types.ts)
     const x = (gx + sz / 2) * CELL, y = (gy + sz / 2) * CELL;
     const tower: Tower = {
       kind,
@@ -2080,9 +2075,7 @@ export class Sim {
       gy,
       x,
       y,
-      hp: build > 0 ? 1 : towerMaxHp(kind),
-      buildT: build,
-      buildTotal: build,
+      hp: towerMaxHp(kind),
       aimShieldTower: -1,
       cd: Math.random() * 0.1,
       // Hydrophobic (mutation.ts): read the ground once, here, and carry it
@@ -2161,9 +2154,6 @@ export class Sim {
     // shieldTowers run before the towers so a dome that regenerated this tick
     // absorbs the volley fired this tick, never one late
     this.updateShieldTowers(dt);
-    // shells finish BEFORE the guns run, so a turret whose timer ran out
-    // this tick fires this tick rather than idling one frame
-    this.updateBuilds(dt);
     this.fireTowers(dt);
     this.updateProjectiles(dt);
     this.updateUnitWeapons(dt);
@@ -3245,15 +3235,14 @@ export class Sim {
   }
 
   canPlace(gx: number, gy: number, kind: TowerKind): boolean {
-    // tech gate first: a locked tower or an unaffordable one refuses
-    // everywhere, so the drag-chain and keyboard paths can't sidestep the
-    // menu. A sandbox or an editor (tech null) is not charged at all
-    if (this.tech) {
-      // what the save owns (the track, track.ts) it may place from wave 1;
-      // there is no stage gate inside a run any more
-      if (!this.tech.unlocked.has(kind)) return false;
-      if (this.scrap < scrapPriceOf(kind)) return false;
-    }
+    // THE TECH GATE, and no price gate at all. A turret is bought as a
+    // CARD (spend, and rarity.ts for the roll) and the card is placed for
+    // nothing, so by the time a footprint is being tested the scrap is
+    // already gone — asking for the price again here would charge a run
+    // twice and refuse a card it had paid for. What the save owns (the
+    // track, track.ts) it may place from wave 1; there is no stage gate
+    // inside a run. A sandbox or an editor (tech null) owns everything
+    if (this.tech && !this.tech.unlocked.has(kind)) return false;
     const sz = TOWERS[kind].size;
     if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
     const { blocked } = this.terrain;
@@ -3286,11 +3275,26 @@ export class Sim {
 
 
 
-  placeTower(gx: number, gy: number, kind: TowerKind, instant = !this.charging): PlaceResult {
+  placeTower(gx: number, gy: number, kind: TowerKind): PlaceResult {
     if (!this.canPlace(gx, gy, kind)) return "invalid";
-    this.addTower(gx, gy, kind, instant);
-    if (this.charging) this.scrap -= scrapPriceOf(kind);
+    this.addTower(gx, gy, kind);
     return "ok";
+  }
+
+  /**
+   * SPEND, the run's one outgoing. Everything a campaign buys goes through
+   * here — which today is one thing, a turret card off the deal (Game
+   * .buyTurretCard) — and it refuses rather than overdrawing. A board that
+   * is not charged at all (an editor, the sandbox) buys everything for
+   * nothing and always succeeds, which is what makes the same button work
+   * on both sides of the door.
+   */
+  spend(amount: number): boolean {
+    if (!this.charging) return true;
+    const n = Math.max(0, amount);
+    if (this.scrap < n) return false;
+    this.scrap -= n;
+    return true;
   }
 
   /**
@@ -5184,11 +5188,7 @@ export class Sim {
    * wall it chews through.
    */
   private damageTower(t: Structure, dmg: number): void {
-    // A BUILDING STILL GOING UP IS PAPER: one hit point, and ANY damage
-    // takes it — a scratch a finished turret would shrug off pops the
-    // scaffold. Building in front of the swarm is the risk being priced
-    if (!isCore(t) && t.buildT > 0 && dmg > 0) t.hp = 0;
-    else t.hp -= dmg;
+    t.hp -= dmg;
     if (t.hp > 0) return;
     t.hp = 0;
     // THE CORE FALLING IS THE RUN ENDING (lost): it stays on the board,
@@ -5423,26 +5423,6 @@ export class Sim {
   }
 
   /**
-   * CONSTRUCTION, tick by tick. A structure raised in a run stands as a
-   * 1 hp shell (addTower) until its timer runs out; here is where it runs
-   * out. Finishing hands it its real pool and lets it shoot.
-   */
-  private updateBuilds(dt: number): void {
-    for (const t of this.towers) {
-      if (t.buildT <= 0) continue;
-      t.buildT -= dt;
-      if (t.buildT > 0) continue;
-      t.buildT = 0;
-      t.hp = towerMaxHp(t.kind);
-      // the ring a finished building throws as its scaffold comes off,
-      // sized to the footprint that just stood up (the Shockwave branch in
-      // the renderer reads e.len as the reach)
-      const sz = structStats(t.kind).size * CELL;
-      this.pushFx(t.x, t.y, 0.35, FxKind.Shockwave, 0, sz * 0.7);
-    }
-  }
-
-  /**
    * The Turret.java loop: reload runs regardless of targeting, queued volley
    * shots fire on their shotDelay timers at the turret's current rotation,
    * the barrel turns toward the intercept point at rotateSpeed, and a new
@@ -5466,9 +5446,6 @@ export class Sim {
       }
     }
     for (const t of this.towers) {
-      // A SHELL STILL GOING UP (updateBuilds) has no gun and does not
-      // smoke: its 1 hp is a construction state, not a wound
-      if (t.buildT > 0) continue;
       // DAMAGE SMOKE, the units' own rule (updateStatus): under half its
       // pool a structure sheds soot, thicker the lower it gets, scaled by
       // its footprint so a spectre smokes like the building it is. The
@@ -6389,8 +6366,6 @@ export class Sim {
    *   set against (see CORE_HP), and a block that quietly undid the swarm's
    *   work on it would rewrite every level at once rather than help a line
    *   hold;
-   *   a SHELL still going up (buildT), whose 1 hp is a construction state
-   *   and not a wound — topping it up would stand the building early;
    *   and anything already full, which is most of the board most of the
    *   time and the reason the ring is only thrown when something took.
    *
@@ -6407,7 +6382,6 @@ export class Sim {
     const r2 = st.range * st.range;
     let did = false;
     for (const o of this.towers) {
-      if (o.buildT > 0) continue;
       const max = towerMaxHp(o.kind);
       if (o.hp >= max) continue;
       const dx = o.x - t.x, dy = o.y - t.y;

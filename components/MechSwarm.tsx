@@ -112,6 +112,7 @@ import { bandFor, MutationFace } from "./mutationFace";
 import { HoverCard, useHoverCard } from "./HoverCard";
 import MenuBackground from "./MenuBackground";
 import { useEscapeBack } from "./Board";
+import { DealCorner, useDeal } from "./Deal";
 import { useConfirm } from "./ConfirmDialog";
 
 /** the level card's map preview — the admin editor's thumbnail look */
@@ -1609,6 +1610,21 @@ export default function MechSwarm() {
     };
   }, [screen, level, runRandom]);
 
+  /** the run state, re-read now rather than at the next poll — what every
+   *  click that changes something asks for on its way out */
+  const refresh = useCallback((): void => {
+    const g = gameRef.current;
+    if (g) setHud(g.ui());
+  }, []);
+
+  /**
+   * THE DEAL (Deal.tsx): the cards a charged run buys its turrets as. It
+   * is hung off the same HUD poll everything else in the corner is, and it
+   * is inert on a free board — the sandbox and the editors keep the
+   * command card, where a turret is picked by name.
+   */
+  const deal = useDeal(gameRef, hud, refresh);
+
   const pickTower = (kind: TowerKind): void => {
     const g = gameRef.current;
     if (!g) return;
@@ -1657,6 +1673,10 @@ export default function MechSwarm() {
       if (!g) return;
       const ui = g.ui();
       if (ui.lost || ui.won || ui.menuOpen) return;
+      // ...and there is no grid on a DEALT board: a charged run's turrets
+      // come off the deal, so a letter that used to drop a spectre must
+      // not still drop one for free
+      if (ui.dealing) return;
       if (ui.unlocked && !ui.unlocked.includes(slot.kind)) return;
       e.preventDefault();
       g.setBuildKind(ui.buildKind === slot.kind ? null : slot.kind);
@@ -2490,64 +2510,78 @@ export default function MechSwarm() {
                 ))}
               </div>
             )}
-            {/* THE BUILD MENU, StarCraft's command card, in the bottom-right
-                corner: the minimap's twin at the other end of the screen and
-                the same size square, a fixed 4x4 grid (tech.ts BUILD_SLOTS)
-                with one building a slot and its key printed on it. The same
-                thing is in the same place every run, so the hand learns the
-                grid; the slots past the roster stand EMPTY rather than the
-                filled ones spreading out to hide that there is more coming.
+            {/* THE CORNER IS ONE OF TWO THINGS.
 
-                It replaces three tabs that each opened a floating menu over
-                the field — a door in front of a door, and the panel was in
-                the way of exactly the ground the player was about to build
-                on. Like the minimap it stands until the run ends: the end
-                screens own the frame. */}
-            <div className="ms-pane p-1">
-              <div
-                role="group"
-                aria-label="build menu"
-                className="grid w-[13rem] gap-1"
-                style={{ gridTemplateColumns: `repeat(${BUILD_COLS}, minmax(0, 1fr))` }}
-              >
-                {BUILD_SLOTS.map((slot, i) => {
-                  // A SLOT THE SAVE CANNOT USE IS AN EMPTY SLOT, not a
-                  // greyed one: the progress screen answers "what is still
-                  // to earn", and the grid answers "what can I put down
-                  // right now". A null unlocked list is the sandbox and the
-                  // editors — everything in the grid is theirs
-                  const kind =
-                    slot && (!hud.unlocked || hud.unlocked.includes(slot.kind)) ? slot.kind : null;
-                  if (!slot || !kind)
+                ON A CHARGED RUN it is THE DEAL (Deal.tsx): two buttons,
+                Buy turret and Buy upgrade, and the cards the first of them
+                throws. A turret is not picked off a shelf any more, it is
+                drawn — see rarity.ts for the odds and economy.ts for what
+                a draw costs.
+
+                ON A FREE BOARD — the sandbox, the editors — it is still
+                StarCraft's command card: a fixed 4x4 grid (tech.ts
+                BUILD_SLOTS), one building a slot, its key printed on it.
+                Nothing is charged there and the whole roster is open, and
+                a board that exists to reproduce a bug has to be able to
+                reach a NAMED turret, which is the one thing a random deal
+                cannot do. Like the minimap, whichever of the two it is
+                stands until the run ends: the end screens own the frame. */}
+            {hud.dealing ? (
+              <DealCorner
+                hud={hud}
+                icons={icons}
+                cards={deal.cards}
+                picked={deal.picked}
+                onBuy={deal.buy}
+                onPick={deal.pick}
+              />
+            ) : (
+              <div className="ms-pane p-1">
+                <div
+                  role="group"
+                  aria-label="build menu"
+                  className="grid w-[13rem] gap-1"
+                  style={{ gridTemplateColumns: `repeat(${BUILD_COLS}, minmax(0, 1fr))` }}
+                >
+                  {BUILD_SLOTS.map((slot, i) => {
+                    // A SLOT THE SAVE CANNOT USE IS AN EMPTY SLOT, not a
+                    // greyed one: the progress screen answers "what is still
+                    // to earn", and the grid answers "what can I put down
+                    // right now". A null unlocked list is the sandbox and the
+                    // editors — everything in the grid is theirs
+                    const kind =
+                      slot && (!hud.unlocked || hud.unlocked.includes(slot.kind)) ? slot.kind : null;
+                    if (!slot || !kind)
+                      return (
+                        <div
+                          key={i}
+                          aria-hidden="true"
+                          className="aspect-square w-full border border-[#26262b] bg-[#101013]"
+                        />
+                      );
+                    const entry = MENU_BY_KIND.get(kind)!;
+                    // what the badge says is the PRICE, in scrap — the number
+                    // a build decision is made against — and it reddens the
+                    // moment the run cannot cover it. Free builds (sandbox,
+                    // the editors) carry no number at all
+                    const price = hud.scrap === null ? null : hud.prices[kind];
                     return (
-                      <div
+                      <BuildCell
                         key={i}
-                        aria-hidden="true"
-                        className="aspect-square w-full border border-[#26262b] bg-[#101013]"
+                        slot={slot}
+                        icon={icons[kind] ?? entry.icon}
+                        name={entry.name}
+                        price={price}
+                        targeting={hud.targeting[kind]}
+                        poor={price !== null && hud.scrap !== null && hud.scrap < price}
+                        picked={hud.buildKind === kind}
+                        onPick={() => pickTower(kind)}
                       />
                     );
-                  const entry = MENU_BY_KIND.get(kind)!;
-                  // what the badge says is the PRICE, in scrap — the number
-                  // a build decision is made against — and it reddens the
-                  // moment the run cannot cover it. Free builds (sandbox,
-                  // the editors) carry no number at all
-                  const price = hud.scrap === null ? null : hud.prices[kind];
-                  return (
-                    <BuildCell
-                      key={i}
-                      slot={slot}
-                      icon={icons[kind] ?? entry.icon}
-                      name={entry.name}
-                      price={price}
-                      targeting={hud.targeting[kind]}
-                      poor={price !== null && hud.scrap !== null && hud.scrap < price}
-                      picked={hud.buildKind === kind}
-                      onPick={() => pickTower(kind)}
-                    />
-                  );
-                })}
+                  })}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
         {hud?.lost && (
