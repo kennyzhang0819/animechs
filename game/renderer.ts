@@ -832,11 +832,13 @@ void main() {
 }`;
 
 /**
- * shaders/water.frag, ported. Two things move: the whole surface slides
- * sideways by up to a world unit, on a sine of the row and the clock, and
- * a band of brighter water 7 units wide in every 40 drifts across the sea
- * on the sum of five more. Every constant below is the original's — the
- * 40 and 7 of the band, the /5 clock, the (0.9, 0.9, 1) cast.
+ * shaders/water.frag, ported, minus its big swell. ONE thing moves: the
+ * surface slides sideways by up to a world unit, on a sine of the row and
+ * the clock — the fine ripple that runs along the shoreline. Upstream also
+ * drifts a band of brighter water 7 units wide in every 40 across the sea,
+ * a highlight five tiles across that reads at this zoom as a slab of the
+ * lake lighting up rather than as water moving; that band is gone. The
+ * constants left are the original's — the /5 clock, the (0.9, 0.9, 1) cast.
  *
  * Upstream runs this over the whole cached floor texture, so its `coords`
  * are camera-space Mindustry world units and its displacement is measured
@@ -847,9 +849,9 @@ void main() {
  * (see the atlas's WATER_TILE note).
  *
  * One difference that cannot be helped: Mindustry's world y runs UP and
- * this game's runs down, so every sine of `coords.y` is mirrored. The
- * pattern is a sum of sines either way — what changes is which way the
- * swell and the bands travel, not what they look like.
+ * this game's runs down, so the sine of `coords.y` is mirrored. It is a
+ * sine either way — what changes is which way the ripple travels, not
+ * what it looks like.
  */
 const WATER_FS = `#version 300 es
 precision highp float;
@@ -860,22 +862,12 @@ in vec2 vUV;
 in vec2 vWorld;
 in vec4 vTint;
 out vec4 o;
-const float mscl = 40.0;
-const float mth = 7.0;
 const float MU = ${(CELL / 8).toFixed(4)};  // px per Mindustry world unit
 void main() {
   vec2 coords = vWorld / MU;
   float stime = uTime / 5.0;
   vec4 sampled = texture(uTex, vUV + vec2(sin(stime / 3.0 + coords.y / 0.75) * uUnit, 0.0));
   vec3 color = sampled.rgb * vec3(0.9, 0.9, 1.0);
-  float tester = mod(
-    (coords.x + coords.y * 1.1 + sin(stime / 8.0 + coords.x / 5.0 - coords.y / 100.0) * 2.0) +
-    sin(stime / 20.0 + coords.y / 3.0) * 1.0 +
-    sin(stime / 10.0 - coords.y / 2.0) * 2.0 +
-    sin(stime / 7.0 + coords.y / 1.0) * 0.5 +
-    sin(coords.x / 3.0 + coords.y / 2.0) +
-    sin(stime / 20.0 + coords.x / 4.0) * 1.0, mscl);
-  if (tester < mth) color *= 1.2;
   float a = min(sampled.a * 100.0, 1.0);
   o = vec4(color * vTint.rgb * vTint.a, a * vTint.a);
 }`;
