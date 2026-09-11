@@ -5473,6 +5473,13 @@ export class Sim {
    * wall it chews through.
    */
   private damageTower(t: Structure, dmg: number): void {
+    // PLATING, the way a body wears it (constants.ts TowerStats.armor): a
+    // flat shave off this hit, floored at a tenth, through the same
+    // applyArmor the swarm's armour goes through. It comes off AFTER the
+    // unit-damage dial has scaled the hit, as Mindustry applies it to the
+    // final amount. The core wears none — its pool is written on its own
+    // (CORE_HP) and its fall is the run ending, not a structure dying
+    if (!isCore(t)) dmg = Sim.applyArmor(dmg, t.spec.armor);
     t.hp -= dmg;
     if (t.hp > 0) return;
     t.hp = 0;

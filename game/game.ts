@@ -190,6 +190,11 @@ export interface UiState {
      *  asks of a wall they just dragged a box over */
     hp: number;
     hpMax: number;
+    /** the PLATING the selection wears (TowerStats.armor) — one number
+     *  when every turret picked wears the same, null for the core or for
+     *  a bag that disagrees, where an average would be a lie about all
+     *  of them */
+    armor: number | null;
     /** every attribute anything in the selection carries, catalog order,
      *  with HOW MANY of them carry it — the speckle, counted. One turret
      *  selected reads as a plain row of what that turret is */
@@ -1875,6 +1880,8 @@ export class Game {
     let kind: TowerKind | null = null;
     let mixed = false;
     let anyCore = false;
+    let armor: number | null = null;
+    let armorMixed = false;
     const tally = new Map<ModId, number>();
     for (const st of picked) {
       hp += st.hp;
@@ -1886,6 +1893,10 @@ export class Game {
       const t = st as Tower;
       if (kind === null) kind = t.kind;
       else if (kind !== t.kind) mixed = true;
+      // the live spec's plating, attributes folded in — a Bulwarked duo
+      // beside a plain one is two answers, and two answers is null
+      if (armor === null) armor = t.spec.armor;
+      else if (armor !== t.spec.armor) armorMixed = true;
       for (const d of modsInMask(t.mods)) tally.set(d.id, (tally.get(d.id) ?? 0) + 1);
     }
     if (anyCore) mixed = kind !== null; // the core plus anything is a mixed bag
@@ -1900,6 +1911,7 @@ export class Game {
           : "Structures",
       hp: Math.ceil(hp),
       hpMax: Math.ceil(hpMax),
+      armor: anyCore || armorMixed ? null : armor,
       // CATALOG ORDER, never tally order: the shelf at the other corner
       // lists attributes in that order and the two must not disagree about
       // which chip is which

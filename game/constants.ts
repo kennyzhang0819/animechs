@@ -395,6 +395,14 @@ export interface TowerStats {
   /** Mindustry's own block health for this turret, BEFORE TOWER_HP_SCALE
    *  — see towerMaxHp for where each number comes from */
   health: number;
+  /**
+   * PLATING: a flat shave off every hit the structure takes, floored at a
+   * tenth of the raw hit — Mindustry's Building.armor, through the same
+   * Damage.applyArmor the swarm's own bodies use (Sim.applyArmor), so
+   * "armour" means one thing on both sides of the field. See
+   * TOWER_ARMOR_BY_SIZE for where each number comes from.
+   */
+  armor: number;
   range: number; // px
   reload: number; // s per volley
   shots: number; // bullets per volley
@@ -464,6 +472,29 @@ const ZERO_BULLET: BulletStats = {
   collidesGround: false,
 };
 
+/**
+ * WHAT A TURRET'S PLATING IS, BY FOOTPRINT — the one place the armour
+ * numbers in the table below come from.
+ *
+ * SERPULO TURRETS CARRY NO ARMOUR UPSTREAM. Mindustry only started plating
+ * blocks on Erekir, so a 1:1 lift would put a zero on every row and the
+ * system would exist without doing anything. So the numbers are AUTHORED,
+ * on the swarm's own ladder: a 2x2 wears a mace's plate (4), a 3x3 a
+ * fortress's (9), a 4x4 a shade under a scepter's (15), and a 1x1 wears
+ * nothing, the way a dagger wears nothing.
+ *
+ * WHAT THAT DOES, because armour is a flat shave PER HIT and the swarm's
+ * bite is authored per hit too (weapons.ts): a dagger's 9 is halved on a
+ * 2x2 and floored on anything bigger, a fortress shell's 20 is cut to a
+ * quarter on a 4x4, and a reign's 80 loses a fifth. Small arms bounce off
+ * big guns and the heavies still chew through them, which is exactly the
+ * relationship the swarm's own armour already has with the turrets'
+ * bullets. It is deliberately NOT a fraction of the pool: the pool is
+ * five times Mindustry's (TOWER_HP_SCALE) and this is not, so the two
+ * dials are two dials.
+ */
+export const TOWER_ARMOR_BY_SIZE: readonly number[] = [0, 0, 4, 9, 15];
+
 export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // Duo, 1:1 from mindustry/content/Blocks.java with copper ammo
   // (BasicBulletType(2.5, 9)): one shot every 20 ticks, alternating between
@@ -472,6 +503,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Duo",
     size: 1,
     health: 250,
+    armor: 0,
     range: 160 * MU,
     reload: 20 / TICK,
     shots: 1,
@@ -515,6 +547,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Hail",
     size: 1,
     health: 260,
+    armor: 0,
     range: 235 * MU,
     reload: 60 / TICK,
     shots: 1,
@@ -563,6 +596,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Salvo",
     size: 2,
     health: 960,
+    armor: 4,
     range: 190 * MU,
     reload: 29 / TICK,
     shots: 4,
@@ -606,6 +640,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Scatter",
     size: 2,
     health: 800,
+    armor: 4,
     range: 220 * MU,
     reload: 18 / TICK,
     shots: 2,
@@ -655,6 +690,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Fuse",
     size: 3,
     health: 1980,
+    armor: 9,
     range: 90 * MU,
     reload: 35 / TICK,
     shots: 3,
@@ -696,6 +732,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Scorch",
     size: 1,
     health: 400,
+    armor: 0,
     range: 60 * MU,
     reload: 6 / TICK,
     shots: 1,
@@ -741,6 +778,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Arc",
     size: 1,
     health: 260,
+    armor: 0,
     range: 90 * MU,
     reload: 35 / TICK,
     shots: 1,
@@ -784,6 +822,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Lancer",
     size: 2,
     health: 1120,
+    armor: 4,
     range: 165 * MU,
     reload: 80 / TICK,
     chargeTime: 40 / TICK,
@@ -825,6 +864,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Ripple",
     size: 3,
     health: 1170,
+    armor: 9,
     range: 290 * MU,
     minRange: 50 * MU,
     reload: 120 / TICK,
@@ -901,6 +941,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Wave",
     size: 2,
     health: 1000,
+    armor: 4,
     range: 110 * MU,
     reload: 45 / TICK,
     shots: 1,
@@ -958,6 +999,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Parallax",
     size: 2,
     health: 640,
+    armor: 4,
     range: 300 * MU,
     reload: 0, // continuous: no volley clock at all
     shots: 1,
@@ -1007,6 +1049,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Tsunami",
     size: 3,
     health: 2250,
+    armor: 9,
     range: 190 * MU,
     reload: 15 / TICK,
     shots: 2,
@@ -1057,6 +1100,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Mender",
     size: 1,
     health: 200,
+    armor: 0,
     range: 40 * MU,
     reload: 200 / TICK,
     shots: 0,
@@ -1078,6 +1122,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Mend Projector",
     size: 2,
     health: 700,
+    armor: 4,
     range: 85 * MU,
     reload: 250 / TICK,
     shots: 0,
@@ -1105,6 +1150,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Swarmer",
     size: 2,
     health: 1200,
+    armor: 4,
     range: 240 * MU,
     reload: (60 * 4) / 7 / TICK,
     shots: 4,
@@ -1166,6 +1212,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Cyclone",
     size: 3,
     health: 1305,
+    armor: 9,
     range: 200 * MU,
     reload: 10 / TICK,
     shots: 1,
@@ -1253,6 +1300,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Spectre",
     size: 4,
     health: 2560,
+    armor: 15,
     range: 260 * MU,
     reload: 7 / TICK,
     shots: 1,
@@ -1317,6 +1365,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Meltdown",
     size: 4,
     health: 3200,
+    armor: 15,
     range: 195 * MU,
     reload: 90 / TICK,
     shots: 1,
@@ -1378,6 +1427,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     name: "Foreshadow",
     size: 4,
     health: 2400,
+    armor: 15,
     range: 500 * MU,
     reload: 200 / TICK,
     shots: 1,

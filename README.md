@@ -36,7 +36,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
 
 - `game/constants.ts` — grid, base placement, tower tuning: every turret's
   stats read out of Mindustry's `Blocks.java` (`TOWERS`), the two dials
-  over them (`TOWER_HP_SCALE`, 8; the phase tier's +30% up-gun on
+  over them (`TOWER_HP_SCALE`, 5, and plating by footprint, `TOWER_ARMOR_BY_SIZE`; the phase tier's +30% up-gun on
   spectre, meltdown and foreshadow), `MAX_UNITS` (22,000) and the core's
   pool (`CORE_HP`, on a dial of its own). A placement is INSTANT — there
   is no construction shell any more
@@ -608,10 +608,10 @@ is thirty turret cards; nothing at that price may be a percentage.
 | +1 pierce | Uncommon | 18% | pierce is a whole body, never a percentage — one step, at the band where a body is worth about a quarter |
 | repairs 1% a second | Uncommon | 18% | the one stat a plain turret has none of, so the tick is the whole thing |
 | **Prototype Chassis** | Rare | 10% | +50% damage, +50% fire rate |
-| **Bulwark Plating** | Rare | 10% | +100% health, repairs 3% a second |
+| **Bulwark Plating** | Rare | 10% | +100% health, +6 armor, repairs 3% a second |
 | **Sabot Rounds** | Rare | 10% | +2 pierce, +50% damage |
 | **Splitter Array** | Rare | 30% *per fuse* | +2 spikes a volley — five instead of three. **Fuse only**: rolled on every fuse placed and nothing else |
-| **Giant** | **Ultra** | **12% a CARD** | **+1000% health, +200% damage, −90% range, twice the footprint — and it eats the card** |
+| **Giant** | **Ultra** | **12% a CARD** | **+1000% health, +200% damage, +10 armor, −90% range, twice the footprint — and it eats the card** |
 | **Sniper** | **Ultra** | 5% | **+300% range, +200% fire rate, +100% damage, −90% health** |
 | **All Round** | **Ultra** | 5% | **+100% damage, +100% fire rate, +100% health, +50% range, +3 pierce** |
 
@@ -783,10 +783,15 @@ cost** (`STRUCTURE_COST`): the field routes around a line when the way
 round is cheaper and into it when it is not, and the bodies pressed into
 it shoot it. So a turret across the lane is not a seal, it is a fight at
 the turret. **There are no walls**, and the pool they used to hold is in
-the guns: every turret carries **eight** times its Mindustry block health
-(`TOWER_HP_SCALE`, doubled for the deal — what goes down is what the roll
-handed over, so a structure has to survive its mistake rather than be
-replaced out of it), and the phase tier fires 30% over stock; hurt, a
+the guns: every turret carries **five** times its Mindustry block health
+(`TOWER_HP_SCALE` — what goes down is what the roll handed over, so a
+structure has to survive its mistake rather than be replaced out of it),
+**and wears plating by footprint** (`TOWER_ARMOR_BY_SIZE`: a 2x2 shaves 4
+off every hit, a 3x3 9, a 4x4 15, floored at a tenth of the hit — the
+swarm's own armour rule, on the other side; a 1x1 wears none), so small
+arms bounce off the big guns and the heavies still chew through them;
+Bulwark Plating and the Giant add their own. The phase tier fires 30%
+over stock; hurt, a
 turret greys and smokes like a unit; at zero it is wrecked and gone, its
 ground open again. **The swarm's bite against a structure is Mindustry's
 own number** (`setUnitDamageScale` in `game/weapons.ts`, at 1), and the

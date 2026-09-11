@@ -1,7 +1,7 @@
 import { PAL, TOWERS, type TowerStats } from "./constants";
 import { RARITIES, weightDial, type Rarity, type RarityWeights, type WeightDial } from "./rarity";
 import type { TowerKind } from "./types";
-import { faster, piercing, reaching, stronger } from "./upgrades";
+import { armored, faster, piercing, reaching, stronger } from "./upgrades";
 
 /**
  * MODS — the run's UPGRADES, and the second thing the deal sells.
@@ -463,14 +463,16 @@ const TURRET_MODS: readonly ModDef[] = [
   {
     id: "bulwark",
     name: "Bulwark Plating",
-    tweak: "+100% health, repairs 3% a second",
+    tweak: "+100% health, +6 armor, repairs 3% a second",
     rarity: "rare",
     scope: "turret",
     glyph: "shield",
     max: Infinity,
     chance: 0.1,
-    blurb: "New turrets have a chance to be born armoured: double health, and they mend 3% of it a second.",
-    apply: (t) => tougher(t, 2),
+    // the +6 is a mace's plate and a half: on a 1x1 it is the difference
+    // between a dagger biting and a dagger bouncing off
+    blurb: "New turrets have a chance to be born armoured: double health, six points of plating, and they mend 3% of it a second.",
+    apply: (t) => armored(tougher(t, 2), 6),
     regen: 0.03,
   },
   {
@@ -511,7 +513,7 @@ const TURRET_MODS: readonly ModDef[] = [
   {
     id: "giant",
     name: "Giant",
-    tweak: "+1000% health, +200% damage, −90% range, twice the footprint",
+    tweak: "+1000% health, +200% damage, +10 armor, −90% range, twice the footprint",
     rarity: "ultra",
     scope: "turret",
     glyph: "giant",
@@ -521,8 +523,8 @@ const TURRET_MODS: readonly ModDef[] = [
     // the loosest of the three because it costs the whole card to happen
     chance: 0.05,
     blurb:
-      "A card has a chance to come out GIANT instead: one building, twice the size, eleven times the health and triple the damage — but it sees barely a tenth as far, so it has to be put where the swarm is already coming.",
-    apply: (t) => bigger(tougher(reaching(stronger(t, 3), 0.1), 11), GIANT_SCALE),
+      "A card has a chance to come out GIANT instead: one building, twice the size, eleven times the health, ten more plating and triple the damage — but it sees barely a tenth as far, so it has to be put where the swarm is already coming.",
+    apply: (t) => bigger(armored(tougher(reaching(stronger(t, 3), 0.1), 11), 10), GIANT_SCALE),
     scale: GIANT_SCALE,
     solo: true,
   },
