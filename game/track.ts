@@ -1,4 +1,4 @@
-import { TOWER_DESC, TOWERS } from "./constants";
+import { targetingLine, TOWER_DESC, TOWERS } from "./constants";
 import { WORLDS } from "./levels";
 import { MUTATIONS, mutationById, type MutationId } from "./mutation";
 import { BY_MINDUSTRY_VALUE, type TechState } from "./tech";
@@ -91,9 +91,16 @@ const PLACED: readonly { level: number; reward: Reward }[] = [
 
 /**
  * THE FIRST BOARD: a gun for the ground, a gun for the air, and artillery
- * for the crowd. Everything else is dealt one a level.
+ * for the crowd — plus the two that decide whether the opening is a board
+ * or a shooting gallery. The SALVO is the first gun that answers a single
+ * hard body rather than a crowd, and without one in hand the first ten
+ * waves are answered by putting down more duos; the SPECTRE is the ceiling
+ * the whole run is read against, and a save that has never seen one does
+ * not know what its scrap is FOR. Everything else is dealt one a level.
  */
-export const STARTING_ROSTER: readonly TowerKind[] = ["duo", "hail", "scatter"];
+export const STARTING_ROSTER: readonly TowerKind[] = [
+  "duo", "hail", "scatter", "salvo", "spectre",
+];
 
 /**
  * THE ROSTER IS WRITTEN, THE REST IS PLACED. A hand-authored order because
@@ -101,14 +108,20 @@ export const STARTING_ROSTER: readonly TowerKind[] = ["duo", "hail", "scatter"];
  * decision and not an arithmetic on build cost. Index 0 is level 2.
  */
 const UNLOCKS: readonly (readonly TowerKind[])[] = [
-  /*  2 */ ["salvo"],
+  // the mender first, and deliberately: the opening five are all guns, so
+  // the first thing a level teaches is that a line can be KEPT rather than
+  // rebuilt — and it is the one block whose worth a player can read off a
+  // board they already know
+  /*  2 */ ["mender"],
   /*  3 */ ["lancer"],
   /*  4 */ ["ripple"],
-  /*  5 */ ["spectre"],
-  /*  6 */ ["scorch"],
-  /*  7 */ ["arc"],
-  /*  8 */ ["wave"],
-  /*  9 */ ["swarmer"],
+  /*  5 */ ["scorch"],
+  /*  6 */ ["arc"],
+  /*  7 */ ["wave"],
+  /*  8 */ ["swarmer"],
+  // ...and its big brother at the halfway mark, where the guns it is
+  // nursing start costing more than the block that keeps them standing
+  /*  9 */ ["mendProjector"],
   /* 10 */ ["parallax"],
   /* 11 */ ["cyclone"],
   /* 12 */ ["fuse"],
@@ -277,6 +290,17 @@ export function rewardBlurb(r: Reward): string {
   if (r.kind === "mutator")
     return `${mutationById(r.id)?.blurb ?? ""} From here on a run may roll it.`;
   return upgradeDef(r.id).blurb;
+}
+
+/**
+ * WHO A TURRET REWARD SHOOTS AT — the line the progress card prints under
+ * the blurb, and null for every reward that is not a turret. It reads the
+ * STOCK stats on purpose: this screen is about earning the gun, and nothing
+ * on the track has been upgraded yet. The in-run build card asks the sim
+ * instead (Hud.targeting), which is what makes its line follow an upgrade.
+ */
+export function rewardTargeting(r: Reward): string | null {
+  return r.kind === "turret" ? targetingLine(TOWERS[r.id]) : null;
 }
 
 /** the turret's display name, as the card prints it */

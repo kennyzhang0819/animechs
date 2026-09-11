@@ -16,6 +16,9 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   wave: `${T}/wave.png`,
   tsunami: `${T}/tsunami.png`,
   parallax: `/mindustry/sprites/blocks/defense/parallax.png`,
+  // the support pair is filed under defense with parallax, not turrets
+  mender: `/mindustry/sprites/blocks/defense/mender.png`,
+  mendProjector: `/mindustry/sprites/blocks/defense/mend-projector.png`,
   swarmer: `${T}/swarmer.png`,
   cyclone: `${T}/cyclone/cyclone-preview.png`,
   spectre: "/sprites/turrets/spectre.png",

@@ -845,6 +845,15 @@ export const UV_LANCER = uv(128, 2816, 128, 128);
 export const UV_PARALLAX = uv(320, 2816, 128, 128);
 export const UV_RIPPLE = uv(512, 2816, 96, 96);
 /**
+ * The support pair, in the free corner at the right-hand end of the turret
+ * band. Neither block turns, so neither is drawn facing +x (see the pack
+ * pass) — the art sits exactly as Mindustry authored it, the way the shield
+ * tower's does. Mender is a 32px source at 2x like arc's, the projector a
+ * 64px one at 2x like lancer's.
+ */
+export const UV_MEND_PROJECTOR = uv(1888, 2816, 128, 128);
+export const UV_MENDER = uv(1888, 2944, 64, 64);
+/**
  * Parallax's beam, the two regions Drawf.laser stretches between the
  * turret and its target. The line is packed ROTATED — its 4x48 source runs
  * along the beam, and pushSeg maps a region's WIDTH along the line it is
@@ -1680,6 +1689,12 @@ const SPRITES = {
   // parallax is filed under defense, not turrets — it damages almost
   // nothing and Mindustry classes it with the support blocks
   parallax: "/mindustry/sprites/blocks/defense/parallax.png",
+  // the support pair, each in the two layers DrawDefault + DrawRegion lays
+  // down: the block and the `-top` crystal over it (see mendBlock)
+  mender: "/mindustry/sprites/blocks/defense/mender.png",
+  menderTop: "/mindustry/sprites/blocks/defense/mender-top.png",
+  mendProjector: "/mindustry/sprites/blocks/defense/mend-projector.png",
+  mendProjectorTop: "/mindustry/sprites/blocks/defense/mend-projector-top.png",
   // the shield tower wears the force projector's art — the one Mindustry
   // block whose whole job is standing a dome, which is this structure's too
   shieldTower: "/mindustry/sprites/blocks/defense/force-projector.png",
@@ -1962,6 +1977,22 @@ function liquidTurret(
   cc.imageSmoothingEnabled = false;
   cc.drawImage(win, 0, 0);
   cc.drawImage(top, 0, 0, w, h);
+  return cv;
+}
+
+/**
+ * A support block's two layers baked flat: the outlined block art with its
+ * `-top` crystal laid over it, which is all Mindustry's MendProjector draws
+ * beyond the pulse itself. The top is NOT outlined — it sits inside the
+ * block's own silhouette, and outlining it would draw a black ring in the
+ * middle of the sprite.
+ */
+function mendBlock(base: HTMLImageElement, top: HTMLImageElement): HTMLCanvasElement {
+  const cv = outlined(base, BLOCK_OUTLINE, BLOCK_OUTLINE_R);
+  const cc = cv.getContext("2d");
+  if (!cc) throw new Error("2d context unavailable for mend block");
+  cc.imageSmoothingEnabled = false;
+  cc.drawImage(top, 0, 0, cv.width, cv.height);
   return cv;
 }
 
@@ -2777,6 +2808,10 @@ async function packAtlas(): Promise<HTMLCanvasElement> {
   // NOT drawFacingRight: the structure never rotates, so its art stays
   // exactly as authored
   c.drawImage(antialiased(outlined(img.shieldTower, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 1312, 2976, 96, 96);
+  // the support pair, on the shield tower's rule for the same reason: a
+  // block that never turns keeps the heading it was drawn at
+  c.drawImage(antialiased(mendBlock(img.mendProjector, img.mendProjectorTop)), 1888, 2816, 128, 128);
+  c.drawImage(antialiased(mendBlock(img.mender, img.menderTop)), 1888, 2944, 64, 64);
 
   // duo top and 1x1 base: 32px sources upscaled 2x into 64px cells
   drawFacingRight(c, antialiased(outlined(img.duoPreview, BLOCK_OUTLINE, BLOCK_OUTLINE_R)), 160, 480, 64);

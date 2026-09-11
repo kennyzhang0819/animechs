@@ -951,7 +951,7 @@ if (VOLATILE_RADIUS.length !== VOLATILE_DMG.length)
 //
 // A BROOD BODY IS A REAL UNIT AND PAYS A REAL DROP. It is killed like
 // anything else, so it lands in killsByKind and pays its kind's drop —
-// tier-1 scrap (see unitDrop in levels.ts). It also answers for its
+// scrap off that kind's health (see unitDrop in levels.ts). It also answers for its
 // parent's WAVE (Sim.uwave): the wave is not cleared, and its XP not
 // banked, until the brood is down too. That is deliberate: the game's
 // standing rule is that no body is quietly worth more OR LESS than any

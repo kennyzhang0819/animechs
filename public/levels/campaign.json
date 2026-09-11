@@ -9,12 +9,12 @@
   },
   {
    "wave": {
-    "dagger": 86
+    "dagger": 87
    }
   },
   {
    "wave": {
-    "dagger": 72,
+    "dagger": 73,
     "mace": 7,
     "nova": 14
    }
@@ -22,32 +22,32 @@
   {
    "wave": {
     "nova": 17,
-    "dagger": 132,
+    "dagger": 133,
     "mace": 24
    }
   },
   {
    "wave": {
-    "dagger": 168,
+    "dagger": 169,
     "nova": 19
    }
   },
   {
    "wave": {
-    "dagger": 104,
+    "dagger": 105,
     "mace": 51,
     "pulsar": 20
    }
   },
   {
    "wave": {
-    "dagger": 230,
+    "dagger": 232,
     "fortress": 18
    }
   },
   {
    "wave": {
-    "dagger": 101,
+    "dagger": 102,
     "mace": 49,
     "flare": 50
    }
@@ -56,14 +56,14 @@
    "wave": {
     "nova": 82,
     "pulsar": 26,
-    "dagger": 493,
+    "dagger": 497,
     "mace": 27,
     "fortress": 20
    }
   },
   {
    "wave": {
-    "dagger": 591,
+    "dagger": 596,
     "mace": 74,
     "fortress": 22,
     "nova": 89,
@@ -74,7 +74,7 @@
    "wave": {
     "flare": 159,
     "nova": 63,
-    "dagger": 635
+    "dagger": 640
    }
   },
   {
@@ -87,14 +87,14 @@
    "wave": {
     "nova": 72,
     "pulsar": 17,
-    "dagger": 541,
+    "dagger": 545,
     "mace": 104,
     "fortress": 38
    }
   },
   {
    "wave": {
-    "dagger": 765,
+    "dagger": 771,
     "mace": 184,
     "fortress": 27,
     "nova": 76,
@@ -104,7 +104,7 @@
   },
   {
    "wave": {
-    "dagger": 2022
+    "dagger": 2038
    }
   },
   {
@@ -123,7 +123,7 @@
   },
   {
    "wave": {
-    "dagger": 563,
+    "dagger": 567,
     "mace": 225,
     "nova": 235,
     "pulsar": 90
@@ -131,14 +131,14 @@
   },
   {
    "wave": {
-    "dagger": 1474,
+    "dagger": 1485,
     "mace": 235,
     "fortress": 67
    }
   },
   {
    "wave": {
-    "dagger": 2052,
+    "dagger": 2068,
     "fortress": 104,
     "quasar": 35,
     "horizon": 245,
@@ -147,7 +147,7 @@
   },
   {
    "wave": {
-    "dagger": 983,
+    "dagger": 991,
     "mace": 177,
     "fortress": 46,
     "scepter": 1,
@@ -168,7 +168,7 @@
     "vela": 1,
     "horizon": 42,
     "zenith": 12,
-    "dagger": 898,
+    "dagger": 905,
     "mace": 180,
     "fortress": 53,
     "scepter": 1
@@ -184,7 +184,7 @@
   },
   {
    "wave": {
-    "dagger": 708,
+    "dagger": 713,
     "mace": 176,
     "fortress": 65,
     "scepter": 2,
@@ -199,7 +199,7 @@
   },
   {
    "wave": {
-    "dagger": 653,
+    "dagger": 658,
     "mace": 181,
     "fortress": 76,
     "scepter": 2,
@@ -221,7 +221,7 @@
     "vela": 1,
     "horizon": 41,
     "zenith": 19,
-    "dagger": 580,
+    "dagger": 585,
     "mace": 179,
     "fortress": 84,
     "scepter": 3
@@ -237,7 +237,7 @@
   },
   {
    "wave": {
-    "dagger": 439,
+    "dagger": 442,
     "mace": 166,
     "fortress": 100,
     "scepter": 4,
@@ -261,7 +261,7 @@
   },
   {
    "wave": {
-    "dagger": 349,
+    "dagger": 352,
     "mace": 164,
     "fortress": 125,
     "scepter": 7,
@@ -285,7 +285,7 @@
     "horizon": 37,
     "zenith": 32,
     "antumbra": 2,
-    "dagger": 304,
+    "dagger": 306,
     "mace": 159,
     "fortress": 137,
     "scepter": 9
@@ -301,7 +301,7 @@
   },
   {
    "wave": {
-    "dagger": 224,
+    "dagger": 226,
     "mace": 145,
     "fortress": 158,
     "scepter": 14,
@@ -317,7 +317,7 @@
   },
   {
    "wave": {
-    "dagger": 300,
+    "dagger": 302,
     "mace": 100,
     "fortress": 50,
     "scepter": 4,
@@ -331,7 +331,7 @@
   },
   {
    "wave": {
-    "dagger": 1100,
+    "dagger": 1109,
     "mace": 600,
     "fortress": 480,
     "scepter": 70,
@@ -347,7 +347,7 @@
   },
   {
    "wave": {
-    "dagger": 674,
+    "dagger": 679,
     "mace": 173,
     "fortress": 102,
     "scepter": 7,
@@ -372,7 +372,7 @@
     "horizon": 40,
     "zenith": 27,
     "antumbra": 2,
-    "dagger": 615,
+    "dagger": 620,
     "mace": 176,
     "fortress": 116,
     "scepter": 9,
@@ -390,7 +390,7 @@
   },
   {
    "wave": {
-    "dagger": 484,
+    "dagger": 488,
     "mace": 171,
     "fortress": 143,
     "scepter": 15,
@@ -408,7 +408,7 @@
   },
   {
    "wave": {
-    "dagger": 447,
+    "dagger": 450,
     "mace": 176,
     "fortress": 166,
     "scepter": 20,
@@ -436,7 +436,7 @@
     "zenith": 43,
     "antumbra": 6,
     "eclipse": 1,
-    "dagger": 397,
+    "dagger": 400,
     "mace": 174,
     "fortress": 185,
     "scepter": 25,
@@ -454,7 +454,7 @@
   },
   {
    "wave": {
-    "dagger": 301,
+    "dagger": 303,
     "mace": 163,
     "fortress": 220,
     "scepter": 39,
@@ -482,7 +482,7 @@
   },
   {
    "wave": {
-    "dagger": 239,
+    "dagger": 241,
     "mace": 160,
     "fortress": 275,
     "scepter": 64,
@@ -511,7 +511,7 @@
     "zenith": 55,
     "antumbra": 14,
     "eclipse": 3,
-    "dagger": 167,
+    "dagger": 168,
     "mace": 124,
     "fortress": 242,
     "scepter": 63,
@@ -529,7 +529,7 @@
   },
   {
    "wave": {
-    "dagger": 92,
+    "dagger": 93,
     "mace": 84,
     "fortress": 210,
     "scepter": 72,
@@ -548,7 +548,7 @@
   },
   {
    "wave": {
-    "dagger": 396,
+    "dagger": 399,
     "mace": 198,
     "fortress": 240,
     "scepter": 90,
@@ -567,7 +567,7 @@
   },
   {
    "wave": {
-    "dagger": 288,
+    "dagger": 290,
     "mace": 162,
     "fortress": 204,
     "scepter": 74,

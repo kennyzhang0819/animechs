@@ -430,9 +430,34 @@ export interface TowerStats {
   // walks off a target other turrets have nearly finished instead of
   // overkilling it.)
   sort?: "strongest";
+  // A SUPPORT BLOCK'S PULSE instead of a gun (Sim.updateMender): every
+  // `reload` seconds it returns this fraction of their own pool to every
+  // player structure whose centre is inside `range`. A block with this set
+  // has no target, no barrel and no volley — `bullet` is the inert zero
+  // the table's shape demands, and the fire path never reaches it
+  heal?: { percent: number };
   bullet: BulletStats;
 }
 
+
+/**
+ * THE INERT ROUND a block that fires nothing carries. TowerStats.bullet is
+ * required — every other field in the table is read by something, and
+ * making it optional would put a `?.` on every call site that reads a
+ * turret's damage — so the support pair (see `heal`) carries this instead:
+ * no speed, no damage, no lifetime, and nothing it collides with. The fire
+ * path leaves before it is ever looked at; what reads it is the UI, and a
+ * mender honestly does zero damage.
+ */
+const ZERO_BULLET: BulletStats = {
+  speed: 0,
+  damage: 0,
+  lifetime: 0,
+  splash: 0,
+  splashRadius: 0,
+  collidesAir: false,
+  collidesGround: false,
+};
 
 export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   // Duo, 1:1 from mindustry/content/Blocks.java with copper ammo
@@ -974,6 +999,60 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.water,
     },
   },
+  // ---------- THE SUPPORT PAIR ----------------------------------------
+  //
+  // Mender and mend projector, Mindustry's two block healers, and the only
+  // things on the card that never shoot. A gun answers the wave in front of
+  // it; these answer the wave AFTER it, by putting a line back together
+  // between them — which is why they are worth a slot on a board where
+  // nothing repairs and a chewed duo stays chewed until it falls over.
+  //
+  // THE PULSE IS OURS, THE REST IS UPSTREAM'S. Mindustry's mender mends 4%
+  // on a 200-tick clock and its projector 15% on 250, both of them fed
+  // silicon to do it; here there is no silicon and no logistics to carry
+  // it, so a healer that ticks at upstream's rate would be a block that
+  // did nothing a player could see. The clocks and the ranges are
+  // Mindustry's own; the PERCENTAGES are set to what makes the block worth
+  // its price on a fifty-wave hold — a tenth of a pool a pulse, a fifth for
+  // the big one.
+  mender: {
+    name: "Mender",
+    size: 1,
+    health: 200,
+    range: 40 * MU,
+    reload: 200 / TICK,
+    shots: 0,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: 0,
+    shootCone: 0,
+    rotateSpeed: 0,
+    targetAir: false,
+    targetGround: false,
+    heal: { percent: 0.1 },
+    bullet: ZERO_BULLET,
+  },
+  // the projector: double the mender's pulse over better than twice its
+  // reach, on a slightly longer clock — one of these behind a line does
+  // what four menders scattered along it would, which is the whole reason
+  // to pay a 2x2 footprint and a tier-2 price for a block that fires nothing
+  mendProjector: {
+    name: "Mend Projector",
+    size: 2,
+    health: 700,
+    range: 85 * MU,
+    reload: 250 / TICK,
+    shots: 0,
+    shotDelay: 0,
+    spread: 0,
+    inaccuracy: 0,
+    shootCone: 0,
+    rotateSpeed: 0,
+    targetAir: false,
+    targetGround: false,
+    heal: { percent: 0.2 },
+    bullet: ZERO_BULLET,
+  },
   // Swarmer, 1:1 from mindustry/content/Blocks.java with blast-compound
   // ammo (MissileBulletType(3.7, 10)): four missiles a volley, five ticks
   // apart, out of three barrels 4 units abreast (ShootBarrel).
@@ -1305,11 +1384,13 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
  * fired, so the card has to say what the gun DOES: how it delivers damage,
  * and the one quirk that decides where it wants to stand.
  *
- * IT IS PROSE, NOT A STAT BLOCK. The numbers are already on the board and
- * in the balance page, and repeating them here would go stale the first
- * time constants above are touched. What does not go stale is the shape of
- * the thing — an arc chains, a ripple lobs, a foreshadow takes one enormous
- * shot — so that is what is written.
+ * ONE PLAIN SENTENCE, AND NOTHING ELSE. No numbers — they are already on
+ * the board and in the balance page, and they would go stale the first time
+ * the constants above are touched. No tactics either: where a turret wants
+ * to stand is the player's discovery, and a card that hands it over is both
+ * longer and less fun. Just what the gun DOES — an arc jumps, a ripple
+ * lobs, a foreshadow takes one huge shot — because a card nobody finishes
+ * reading mid-wave has told the player nothing.
  *
  * WHO IT SHOOTS AT IS NOT IN HERE. That line is derived from targetAir and
  * targetGround (see targetingLine below) so it can never contradict the
@@ -1317,23 +1398,25 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
  * moves it for free.
  */
 export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
-  duo: "A cheap single-barrel gun. One small bullet at a time at the nearest body — the turret every board starts with, and the one that stays worth having in numbers.",
-  scatter: "A flak gun. Its shells burst near a flyer rather than hitting it, damaging everything caught in the blast.",
-  arc: "Fires a lightning bolt that walks from body to body down a file, so it is worth most aimed along a lane rather than across one.",
-  hail: "Artillery. Arcs a shell over the ground and explodes where it lands, hitting a cluster instead of a body. It never fires at a flyer.",
-  scorch: "A flamethrower with barely any reach. Enormous close-range damage and it sets what it touches alight — burning ignores armour.",
-  salvo: "Fires a four-shell volley in quick succession, then spends a while reloading. Steady damage against single hard targets.",
-  wave: "Sprays water. It does almost no damage; what it does is soak enemies so they move slower, for the turrets behind it.",
-  lancer: "Charges, then fires a beam that cuts through a whole line of bodies at once. Armour counts quadruple against it, so it struggles on heavily armoured waves until Charged Optics.",
-  ripple: "Long-range artillery. Lobs four shells an arc onto a wide patch of ground — the longest reach short of a foreshadow, and it never fires at a flyer.",
-  parallax: "A tractor beam. It drags flyers backwards down the lane and does small armour-piercing damage while it holds them; the pull is the point, not the damage.",
-  fuse: "A close-range shotgun. Three heavy rays at once in a tight cone, with almost no reach — it wants to stand where the lane bends.",
-  swarmer: "Fires homing missiles that chase their target and explode on contact, so very little of a volley is ever wasted.",
-  cyclone: "A high-rate flak cannon. A constant stream of shells that burst into fragments near whatever they hit.",
-  tsunami: "A heavy water sprayer covering a wide area. Like the wave it barely damages anything — it soaks a whole lane at once so everything in it slows.",
-  spectre: "A twin-barrel heavy machine gun with the highest sustained damage in the game, alternating between barrels so it never stops firing.",
-  meltdown: "Holds a continuous laser on one target, burning through it for as long as it stays in range.",
-  foreshadow: "An extreme-range railgun firing one enormous shot on a long reload. It picks the highest-health target in range rather than the nearest.",
+  duo: "Shoots small bullets quickly.",
+  scatter: "Shoots flak shells that burst near enemies.",
+  arc: "Shoots lightning that jumps between enemies.",
+  hail: "Lobs shells that explode where they land.",
+  scorch: "Sprays fire at close range and sets enemies alight.",
+  salvo: "Shoots four shells at once, then reloads slowly.",
+  wave: "Sprays water that soaks enemies and slows them down.",
+  lancer: "Charges up, then fires a beam through a line of enemies.",
+  ripple: "Lobs four shells at once over a long distance.",
+  parallax: "Pulls enemies backwards with a tractor beam.",
+  fuse: "Shoots three heavy rays at very close range.",
+  swarmer: "Shoots homing missiles that explode on contact.",
+  cyclone: "Shoots a fast stream of shells that burst into fragments.",
+  tsunami: "Sprays a lot of water and slows down everything it hits.",
+  mender: "Repairs nearby buildings every few seconds.",
+  mendProjector: "Repairs nearby buildings faster and over a wider area.",
+  spectre: "Shoots heavy bullets from two barrels without stopping.",
+  meltdown: "Burns one enemy with a continuous laser.",
+  foreshadow: "Shoots one huge railgun shot with a long reload.",
 };
 
 /**
@@ -1343,12 +1426,16 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
  * actually has and arc reads "ground and air" the moment Ionised Air is
  * bought.
  *
- * A turret that targets NEITHER cannot exist today, and the fallback says
- * so plainly rather than pretending — a silent empty string would hide the
- * bug that produced it.
+ * A SUPPORT BLOCK (TowerStats.heal) reads "Shoots nothing", which is the
+ * whole truth about it — what it does INSTEAD is the sentence above, and
+ * saying it twice on one card helps nobody. Anything else that targets
+ * neither is a bug, and the last line says so plainly rather than
+ * pretending — a silent empty string would hide it.
  */
 export const targetingLine = (s: TowerStats): string =>
-  s.targetAir && s.targetGround
+  s.heal
+    ? "Shoots nothing"
+    : s.targetAir && s.targetGround
     ? "Targets both ground and air units"
     : s.targetAir
       ? "Targets air units only"

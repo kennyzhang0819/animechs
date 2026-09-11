@@ -791,12 +791,36 @@ export function audit(spec: LevelSpec = WORLD): AuditRow[] {
 }
 
 /**
+ * HOW MANY BODIES ONE RUN SENDS, exactly — the script's whole length in
+ * units, at the authored counts. Fifty thousand over fifty waves: a round
+ * number a player can hold, a thousand a wave on average, and a fixed
+ * quantity of salvage for the turret prices to be authored against.
+ *
+ * It is a rule rather than an observation, which is why check() below
+ * enforces it: a wave edit that quietly moves it has changed the run's
+ * income as well as its fight.
+ */
+export const SCRIPT_BODIES = 50_000;
+
+/**
  * The authoring smell test, as a list of complaints. Empty means the script
  * is in line. Run it after editing waves or prices —
  * `window.__ladder.check()`.
  */
 export function check(spec: LevelSpec = WORLD): LadderIssue[] {
   const out = debutViolations(spec);
+  // THE BODY COUNT IS AN AUTHORED NUMBER, not a number the script happens
+  // to add up to: a run sends exactly SCRIPT_BODIES bodies, so "how far did
+  // the swarm get" is the same question on every map and the drop table
+  // (economy.ts) prices a known quantity of salvage. Pad or trim the
+  // cheapest kind in the waves that already field it — a dagger either way
+  const bodies = waveGuide(spec).reduce((a, r) => a + r.units, 0);
+  if (bodies !== SCRIPT_BODIES)
+    out.push({
+      tier: null,
+      kind: "economy",
+      message: `the script sends ${bodies.toLocaleString()} bodies, not the ${SCRIPT_BODIES.toLocaleString()} it is authored to — ${bodies > SCRIPT_BODIES ? "trim" : "pad"} ${Math.abs(bodies - SCRIPT_BODIES).toLocaleString()}`,
+    });
   // THE STAGE RULE, and the one thing the script and the prices can
   // disagree on: each stage has to be able to buy its own tier. A tier its
   // stage cannot afford is content the run never fields; a tier its stage

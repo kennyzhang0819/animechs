@@ -5,12 +5,12 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  * THE ECONOMY — two currencies that never touch.
  *
  * SCRAP is the run's money, and EVERY BIT OF IT COMES OFF THE SWARM. A
- * kill drops its tier's scrap (SCRAP_BY_TIER, a boss BOSS_SCRAP), every
- * wave staged pays a small bonus (waveBonusScrap), and that is the whole
- * income: the core pays nothing, nothing is mined, and a sale returns
- * nothing (SELL_REFUND). Drops are fixed — a dagger always pays this, on
- * every rung, on every map — so the turret prices can be authored against
- * the script (the stage table in ladder.ts).
+ * kill drops SCRAP OFF ITS OWN HEALTH POOL (SCRAP_PER_HP, a boss its lump
+ * on top), every wave staged pays a small bonus (waveBonusScrap), and that
+ * is the whole income: the core pays nothing, nothing is mined, and a sale
+ * returns nothing (SELL_REFUND). Drops are fixed per KIND — a dagger always
+ * pays this, on every rung, on every map — so the turret prices can be
+ * authored against the script (the stage table in ladder.ts).
  *
  * XP is the save's progress, paid for objectives (the waves cleared),
  * never for kills — see MISSION_XP and waveXpShare below.
@@ -31,17 +31,35 @@ export function addDrop(into: Drop, d: Drop, n = 1): void {
 
 export const isEmptyDrop = (d: Drop): boolean => d.scrap === 0;
 
-/** scrap per kill by unit tier (index 1-5; 0 is unused) */
-export const SCRAP_BY_TIER: readonly number[] = [0, 10, 30, 80, 200, 500];
+/**
+ * WHAT A KILL PAYS, PER POINT OF HEALTH. The drop used to be one number a
+ * tier — ten for a dagger, five hundred for a reign — and a tier is far too
+ * coarse a bucket to price a body by: a scepter carries sixty daggers'
+ * health and paid twenty daggers' scrap, so the late script, where the T4
+ * and T5 hulls are, was the part of the run that paid worst for the work it
+ * asked. Reading the kind's OWN health pool fixes that at the root, and it
+ * fixes it for every kind at once — a stats edit moves the drop with it,
+ * and a new kind is priced the moment its health is written.
+ *
+ * The rate is anchored on the dagger, which is the unit every other number
+ * in this game is anchored on: 150 health at a fifteenth is the ten scrap
+ * it has always paid. So the opening stages bank what they always banked
+ * and the heavy end of the script is what actually moves.
+ *
+ * It reads the AUTHORED health (UnitStats.hp), never the rung-scaled pool
+ * (unitHpAtLevel): a full clear has to pay the same scrap on every rung, or
+ * the turret prices would mean a different thing on each of them.
+ */
+export const SCRAP_PER_HP = 1 / 15;
 
-/** a boss is its own lump, not a tier */
+/** a boss is an event as well as a body: it pays this ON TOP of its health */
 export const BOSS_SCRAP = 5000;
 
-/** the drop for one unit: scrap off its tier, a boss its lump */
-export function dropForUnit(tier: number, boss = false): Drop {
-  const i = Math.max(1, Math.floor(tier));
+/** the drop for one unit: scrap off its health pool, a boss its lump on top */
+export function dropForUnit(hp: number, boss = false): Drop {
+  const pool = Math.max(0, hp);
   return {
-    scrap: boss ? BOSS_SCRAP : SCRAP_BY_TIER[Math.min(i, SCRAP_BY_TIER.length - 1)],
+    scrap: Math.max(1, Math.round(pool * SCRAP_PER_HP)) + (boss ? BOSS_SCRAP : 0),
   };
 }
 
@@ -79,6 +97,11 @@ export const TOWER_TIER: Record<TowerKind, TowerTier> = {
   arc: 1,
   scatter: 1,
   wave: 1,
+  // the support pair sits a band below what it keeps alive: a mender is
+  // an opening purchase, and the projector goes down beside the first
+  // tier-2 gun it is there to nurse
+  mender: 1,
+  mendProjector: 2,
   swarmer: 2,
   lancer: 2,
   salvo: 2,
@@ -110,6 +133,8 @@ export const TOWER_PRICE: Record<TowerKind, number> = {
   arc: 150,
   scatter: 180,
   wave: 300,
+  mender: 250,
+  mendProjector: 1200,
   swarmer: 1000,
   lancer: 900,
   salvo: 900,

@@ -102,7 +102,9 @@ import {
 import { BUILD } from "@/game/version";
 import { BUILD_COLS, BUILD_SLOTS, slotForCode, type BuildSlot } from "@/game/tech";
 import { lockedMutators, rewardsAt, rewardText } from "@/game/track";
-import { TOWER_DESC } from "@/game/constants";
+import { TOWER_DESC, TOWERS } from "@/game/constants";
+import { TOWER_ICONS } from "@/game/towerIcons";
+import { TOWER_KINDS } from "@/game/types";
 import { levelProgress, POINT_COLOR, RANDOM_MAP_XP_BONUS, XP_COLOR } from "@/game/economy";
 import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
 import ProgressView from "./Progress";
@@ -764,93 +766,24 @@ function DealRuleCell({ def }: { def: MutationDef }) {
   );
 }
 
-const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }> = [
-  {
-    kind: "duo",
-    name: "Duo",
-    icon: "/mindustry/sprites/blocks/turrets/duo/duo-preview.png",
-  },
-  {
-    kind: "hail",
-    name: "Hail",
-    icon: "/mindustry/sprites/blocks/turrets/hail.png",
-  },
-  {
-    kind: "scorch",
-    name: "Scorch",
-    icon: "/mindustry/sprites/blocks/turrets/scorch.png",
-  },
-  {
-    kind: "salvo",
-    name: "Salvo",
-    icon: "/mindustry/sprites/blocks/turrets/salvo/salvo-preview.png",
-  },
-  {
-    kind: "scatter",
-    name: "Scatter",
-    icon: "/mindustry/sprites/blocks/turrets/scatter/scatter-preview.png",
-  },
-  {
-    kind: "arc",
-    name: "Arc",
-    icon: "/mindustry/sprites/blocks/turrets/arc.png",
-  },
-  {
-    kind: "lancer",
-    name: "Lancer",
-    icon: "/mindustry/sprites/blocks/turrets/lancer.png",
-  },
-  {
-    kind: "ripple",
-    name: "Ripple",
-    icon: "/mindustry/sprites/blocks/turrets/ripple.png",
-  },
-  {
-    kind: "wave",
-    name: "Wave",
-    icon: "/mindustry/sprites/blocks/turrets/wave.png",
-  },
-  {
-    kind: "parallax",
-    name: "Parallax",
-    icon: "/mindustry/sprites/blocks/defense/parallax.png",
-  },
-  {
-    kind: "tsunami",
-    name: "Tsunami",
-    icon: "/mindustry/sprites/blocks/turrets/tsunami.png",
-  },
-  {
-    kind: "fuse",
-    name: "Fuse",
-    icon: "/mindustry/sprites/blocks/turrets/fuse.png",
-  },
-  {
-    kind: "swarmer",
-    name: "Swarmer",
-    icon: "/mindustry/sprites/blocks/turrets/swarmer.png",
-  },
-  {
-    kind: "cyclone",
-    name: "Cyclone",
-    icon: "/mindustry/sprites/blocks/turrets/cyclone/cyclone-preview.png",
-  },
-  {
-    kind: "spectre",
-    name: "Spectre",
-    icon: "/mindustry/sprites/blocks/turrets/spectre.png",
-  },
-  {
-    kind: "meltdown",
-    name: "Meltdown",
-    icon: "/mindustry/sprites/blocks/turrets/meltdown.png",
-  },
-  {
-    kind: "foreshadow",
-    name: "Foreshadow",
-    icon: "/mindustry/sprites/blocks/turrets/foreshadow.png",
-  },
-];
+/**
+ * THE BAR'S ENTRY FOR EVERY BUILDING: its name and the sprite the menu
+ * wears, DERIVED rather than authored.
+ *
+ * This was a hand-written table of eighteen rows carrying a name and a
+ * sprite path apiece — a third copy of two things the game already knows
+ * (TOWERS[kind].name and TOWER_ICONS), kept in step by hand. It fell
+ * behind the moment the roster grew: a kind missing from the table made
+ * MENU_BY_KIND.get return undefined, and the `!` at the call site turned
+ * that into a crash on the build card rather than a type error. Reading
+ * TOWER_KINDS means the bar cannot miss one again.
+ */
+const TOWER_MENU: ReadonlyArray<{ kind: TowerKind; name: string; icon: string }> =
+  TOWER_KINDS.map((kind) => ({
+    kind,
+    name: TOWERS[kind].name,
+    icon: TOWER_ICONS[kind],
+  }));
 
 /** menu entry by kind, for rendering the bar from a list of kinds */
 const MENU_BY_KIND = new Map(TOWER_MENU.map((t) => [t.kind, t]));
@@ -877,6 +810,7 @@ function BuildCell({
   icon,
   name,
   price,
+  targeting,
   poor,
   picked,
   onPick,
@@ -885,6 +819,8 @@ function BuildCell({
   icon: string;
   name: string;
   price: number | null;
+  /** who this turret shoots at, derived from its live stats (Hud.targeting) */
+  targeting: string;
   poor: boolean;
   picked: boolean;
   onPick: () => void;
@@ -922,6 +858,11 @@ function BuildCell({
       )}
       <HoverCard tip={tip} title={name} tag={slot.key} color={BUILD_COLOR} align="right">
         {TOWER_DESC[slot.kind]}
+        {/* WHO IT SHOOTS AT, on its OWN LINE under the prose. It is the
+            first thing a player checks against the wave coming in, and it
+            was buried mid-sentence in the descriptions until it was pulled
+            out and derived (targetingLine in constants.ts) */}
+        <span className="mt-1.5 block font-bold text-[#A6A6AF]">{targeting}</span>
         {price !== null && (
           <span className="mt-1.5 block text-[#EDEDEF]">{price} scrap</span>
         )}
@@ -2515,84 +2456,97 @@ export default function MechSwarm() {
             </div>
           </div>
         )}
-        {/* THE RUN'S DEAL, StarCraft-style, up the right margin: a
-            column of squares growing upward from over the build menu. The BOTTOM square is always
-            the family composition — the three families the die dealt this
-            map (LevelSpec.families), as their first bodies — and every
-            square above it is one mutator in force, face and band border.
-            Every cell opens the shared hover card (DealFamiliesCell,
-            DealRuleCell) saying what it is, so the corner answers itself
-            mid-wave rather than sending a player to the codex */}
-        {hud && !hud.lost && !hud.won && !hud.menuOpen && level && (
-          <div
-            role="list"
-            aria-label="families and rules in force"
-            className="ui-zoom pointer-events-none absolute bottom-[15rem] right-[1rem] z-10 flex flex-col-reverse items-end gap-1.5"
-          >
-            {level.families && level.families.length > 0 && (
-              <DealFamiliesCell families={level.families} />
-            )}
-            {hudRules.map((def) => (
-              <DealRuleCell key={def.id} def={def} />
-            ))}
-          </div>
-        )}
-        {/* THE BUILD MENU, StarCraft's command card, in the bottom-right
-            corner: the minimap's twin at the other end of the screen and
-            the same size square, a fixed 4x4 grid (tech.ts BUILD_SLOTS)
-            with one building a slot and its key printed on it. The same
-            thing is in the same place every run, so the hand learns the
-            grid; the slots past the roster stand EMPTY rather than the
-            filled ones spreading out to hide that there is more coming.
-
-            It replaces three tabs that each opened a floating menu over
-            the field — a door in front of a door, and the panel was in
-            the way of exactly the ground the player was about to build
-            on. Like the minimap it stands until the run ends: the end
-            screens own the frame. */}
+        {/* THE BOTTOM-RIGHT CORNER, in ONE column: the run's deal on top
+            and the command card under it, both hanging off the same
+            anchor. They used to be two absolutely-positioned boxes, the
+            deal held off the floor by a hand-written 15rem — which was
+            the height of a FOUR-row command card, so the day the card
+            grew its fifth row it simply painted over the deal and the
+            composition square went off the screen. A flex column cannot
+            get that wrong: the card is as tall as it is, and the deal
+            sits on top of whatever that comes to. */}
         {hud && !hud.lost && !hud.won && !hud.menuOpen && (
-          <div className="ui-zoom absolute bottom-[1rem] right-[1rem] z-10 ms-pane p-1">
-            <div
-              role="group"
-              aria-label="build menu"
-              className="grid w-[13rem] gap-1"
-              style={{ gridTemplateColumns: `repeat(${BUILD_COLS}, minmax(0, 1fr))` }}
-            >
-              {BUILD_SLOTS.map((slot, i) => {
-                // A SLOT THE SAVE CANNOT USE IS AN EMPTY SLOT, not a
-                // greyed one: the progress screen answers "what is still
-                // to earn", and the grid answers "what can I put down
-                // right now". A null unlocked list is the sandbox and the
-                // editors — everything in the grid is theirs
-                const kind =
-                  slot && (!hud.unlocked || hud.unlocked.includes(slot.kind)) ? slot.kind : null;
-                if (!slot || !kind)
+          <div className="ui-zoom absolute bottom-[1rem] right-[1rem] z-10 flex flex-col items-end gap-2">
+            {/* THE RUN'S DEAL, StarCraft-style, up the right margin: a
+                column of squares growing upward from over the build menu.
+                The BOTTOM square is always the family composition — the
+                three families the die dealt this map (LevelSpec.families),
+                as their first bodies — and every square above it is one
+                mutator in force, face and band border. Every cell opens
+                the shared hover card (DealFamiliesCell, DealRuleCell)
+                saying what it is, so the corner answers itself mid-wave
+                rather than sending a player to the codex */}
+            {level && (
+              <div
+                role="list"
+                aria-label="families and rules in force"
+                className="pointer-events-none flex flex-col-reverse items-end gap-1.5"
+              >
+                {level.families && level.families.length > 0 && (
+                  <DealFamiliesCell families={level.families} />
+                )}
+                {hudRules.map((def) => (
+                  <DealRuleCell key={def.id} def={def} />
+                ))}
+              </div>
+            )}
+            {/* THE BUILD MENU, StarCraft's command card, in the bottom-right
+                corner: the minimap's twin at the other end of the screen and
+                the same size square, a fixed 4x4 grid (tech.ts BUILD_SLOTS)
+                with one building a slot and its key printed on it. The same
+                thing is in the same place every run, so the hand learns the
+                grid; the slots past the roster stand EMPTY rather than the
+                filled ones spreading out to hide that there is more coming.
+
+                It replaces three tabs that each opened a floating menu over
+                the field — a door in front of a door, and the panel was in
+                the way of exactly the ground the player was about to build
+                on. Like the minimap it stands until the run ends: the end
+                screens own the frame. */}
+            <div className="ms-pane p-1">
+              <div
+                role="group"
+                aria-label="build menu"
+                className="grid w-[13rem] gap-1"
+                style={{ gridTemplateColumns: `repeat(${BUILD_COLS}, minmax(0, 1fr))` }}
+              >
+                {BUILD_SLOTS.map((slot, i) => {
+                  // A SLOT THE SAVE CANNOT USE IS AN EMPTY SLOT, not a
+                  // greyed one: the progress screen answers "what is still
+                  // to earn", and the grid answers "what can I put down
+                  // right now". A null unlocked list is the sandbox and the
+                  // editors — everything in the grid is theirs
+                  const kind =
+                    slot && (!hud.unlocked || hud.unlocked.includes(slot.kind)) ? slot.kind : null;
+                  if (!slot || !kind)
+                    return (
+                      <div
+                        key={i}
+                        aria-hidden="true"
+                        className="aspect-square w-full border border-[#26262b] bg-[#101013]"
+                      />
+                    );
+                  const entry = MENU_BY_KIND.get(kind)!;
+                  // what the badge says is the PRICE, in scrap — the number
+                  // a build decision is made against — and it reddens the
+                  // moment the run cannot cover it. Free builds (sandbox,
+                  // the editors) carry no number at all
+                  const price = hud.scrap === null ? null : hud.prices[kind];
                   return (
-                    <div
+                    <BuildCell
                       key={i}
-                      aria-hidden="true"
-                      className="aspect-square w-full border border-[#26262b] bg-[#101013]"
+                      slot={slot}
+                      icon={icons[kind] ?? entry.icon}
+                      name={entry.name}
+                      price={price}
+                      targeting={hud.targeting[kind]}
+                      poor={price !== null && hud.scrap !== null && hud.scrap < price}
+                      picked={hud.buildKind === kind}
+                      onPick={() => pickTower(kind)}
                     />
                   );
-                const entry = MENU_BY_KIND.get(kind)!;
-                // what the badge says is the PRICE, in scrap — the number
-                // a build decision is made against — and it reddens the
-                // moment the run cannot cover it. Free builds (sandbox,
-                // the editors) carry no number at all
-                const price = hud.scrap === null ? null : hud.prices[kind];
-                return (
-                  <BuildCell
-                    key={i}
-                    slot={slot}
-                    icon={icons[kind] ?? entry.icon}
-                    name={entry.name}
-                    price={price}
-                    poor={price !== null && hud.scrap !== null && hud.scrap < price}
-                    picked={hud.buildKind === kind}
-                    onPick={() => pickTower(kind)}
-                  />
-                );
-              })}
+                })}
+              </div>
             </div>
           </div>
         )}

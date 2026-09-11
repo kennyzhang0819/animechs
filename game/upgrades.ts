@@ -967,6 +967,11 @@ export const TURRET_UPGRADES: Record<TowerKind, readonly TurretUpgradeDef[]> = {
   lancer: LANCER,
   ripple: RIPPLE,
   parallax: PARALLAX,
+  // the support pair has no branch yet: every rung written so far bends a
+  // gun (range, damage, a volley's shape), and a block that fires nothing
+  // has none of those to bend
+  mender: [],
+  mendProjector: [],
   fuse: FUSE,
   swarmer: SWARMER,
   cyclone: CYCLONE,

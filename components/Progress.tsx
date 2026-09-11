@@ -6,7 +6,15 @@ import { WORLDS } from "@/game/levels";
 import { drawThumb, loadMap, loadOfficialMaps, OFFICIAL_MAP_IDS } from "@/game/maps";
 import { mutationById } from "@/game/mutation";
 import { effectiveLevel, levelOf, type Progress } from "@/game/progress";
-import { MAX_LEVEL, rewardBlurb, rewardText, ROSTER_TOP, TRACK, type Reward } from "@/game/track";
+import {
+  MAX_LEVEL,
+  rewardBlurb,
+  rewardTargeting,
+  rewardText,
+  ROSTER_TOP,
+  TRACK,
+  type Reward,
+} from "@/game/track";
 import { upgradeDef } from "@/game/upgrades";
 import { BackButton, BoardTabs, type Cam } from "./Board";
 import { HoverCard, useHoverCard } from "./HoverCard";
@@ -133,7 +141,9 @@ function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
       <span
         ref={tip.ref}
         tabIndex={0}
-        aria-label={`${text}. ${rewardBlurb(reward)}`}
+        aria-label={`${text}. ${rewardBlurb(reward)}${
+          rewardTargeting(reward) ? `. ${rewardTargeting(reward)}` : ""
+        }`}
         {...tip.anchorProps}
         className={`relative flex h-9 w-9 shrink-0 cursor-default items-center justify-center overflow-hidden border-2 bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
           reached ? "" : "opacity-45"
@@ -151,6 +161,11 @@ function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
         color={color}
       >
         {rewardBlurb(reward)}
+        {/* a turret's card carries the same targeting line the build menu
+            prints, on its own line under the prose */}
+        {rewardTargeting(reward) && (
+          <span className="mt-1.5 block font-bold text-[#A6A6AF]">{rewardTargeting(reward)}</span>
+        )}
       </HoverCard>
     </>
   );

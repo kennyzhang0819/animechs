@@ -4053,7 +4053,7 @@ export class Sim {
     const wasBrood = this.ubrood[i];
     const wave = this.uwave[i];
     this.killsByKind[kind]++;
-    // the kill's scrap, into the run — fixed per tier (economy.ts)
+    // the kill's scrap, into the run — off the kind's health (economy.ts)
     const drop = unitDrop(UNIT_KINDS[kind]).scrap;
     this.scrap += drop;
     this.scrapEarned += drop;
@@ -5487,6 +5487,13 @@ export class Sim {
         }
       }
       const st = this.statsFor(t.kind);
+      // a support block has no target and no barrel — it pulses (the
+      // damage smoke above is still its, because it is still a building
+      // the swarm can chew on)
+      if (st.heal) {
+        this.updateMender(t, st, dt);
+        continue;
+      }
       // a tractor turret has no reload and no volley — it holds a beam.
       // The swarm's drags nothing: its beam only ever caught units
       if (st.bullet.tractor) {
@@ -6369,6 +6376,52 @@ export class Sim {
    *  never persisted */
   private readonly boltHits: number[] = [];
   private readonly boltDists: number[] = [];
+
+  /**
+   * THE SUPPORT PAIR'S PULSE (TowerStats.heal): every `reload` seconds a
+   * mender or a mend projector returns `heal.percent` of their OWN pool to
+   * every player structure whose centre is inside its range, itself
+   * included.
+   *
+   * What it will not touch:
+   *
+   *   the CORE, which is the run. Its pool is what every map's pacing is
+   *   set against (see CORE_HP), and a block that quietly undid the swarm's
+   *   work on it would rewrite every level at once rather than help a line
+   *   hold;
+   *   a SHELL still going up (buildT), whose 1 hp is a construction state
+   *   and not a wound — topping it up would stand the building early;
+   *   and anything already full, which is most of the board most of the
+   *   time and the reason the ring is only thrown when something took.
+   *
+   * The reload runs on the tower's own fireRate like a gun's, so the
+   * Hydrophobic rule slows a waterlogged mender exactly as it slows a
+   * waterlogged duo.
+   */
+  private updateMender(t: Tower, st: TowerStats, dt: number): void {
+    if (t.cd > 0) {
+      t.cd -= dt * t.fireRate;
+      return;
+    }
+    t.cd = st.reload;
+    const r2 = st.range * st.range;
+    let did = false;
+    for (const o of this.towers) {
+      if (o.buildT > 0) continue;
+      const max = towerMaxHp(o.kind);
+      if (o.hp >= max) continue;
+      const dx = o.x - t.x, dy = o.y - t.y;
+      if (dx * dx + dy * dy > r2) continue;
+      o.hp = Math.min(max, o.hp + max * st.heal!.percent);
+      did = true;
+      // Fx.heal on each block that took, the same mark a healed body wears
+      this.pushFx(o.x, o.y, 0.4, FxKind.Heal);
+    }
+    // ...and healWaveDynamic over the pulse's whole reach, so a player can
+    // see what a mender actually covers without selecting it. Only when
+    // something took: a mender over an untouched line is quiet
+    if (did) this.pushFxCol(t.x, t.y, 22 / 60, FxKind.HealWave, 0, st.range, PAL.heal);
+  }
 
   /**
    * Mindustry TractorBeamTurret.updateTile: parallax has no reload, no

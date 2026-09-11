@@ -9,7 +9,18 @@ import {
   zoneStyle,
 } from "./maps";
 import { SHIELD_TOWER_SIZE } from "./mutation";
-import { CELL, clamp, COLS, H, ROWS, structStats, TOWERS, towerMaxHp, W } from "./constants";
+import {
+  CELL,
+  clamp,
+  COLS,
+  H,
+  ROWS,
+  structStats,
+  targetingLine,
+  TOWERS,
+  towerMaxHp,
+  W,
+} from "./constants";
 import { loadBalanceDoc } from "./balance";
 import {
   loadLevelDocs,
@@ -88,6 +99,10 @@ export interface UiState {
   counts: Record<TowerKind, number>;
   /** the turrets the save may field; null = unrestricted (editor, sandbox) */
   unlocked: readonly TowerKind[] | null;
+  /** who each turret will shoot at, in the player's words — one line under
+   *  the build card's description. It reads the turret's LIVE stats, so an
+   *  arc with Ionised Air bought reads "ground and air" the moment it is */
+  targeting: Record<TowerKind, string>;
 }
 
 export interface Stats {
@@ -272,6 +287,25 @@ const PAN_RATE = 0.5;
  *  dot is a 2x2 square and the viewport's rectangle has a crisp 1-cell stroke */
 // one backing pixel a cell: 512 for the grid, sized down by CSS to its corner
 const MM_SCALE = 1;
+/**
+ * HOW BIG A THING ON THE MINIMAP HAS TO READ, in CSS px of the corner
+ * canvas. The backing store is a pixel a cell and CSS shrinks it (256
+ * cells into 13rem is about four fifths of a pixel a cell), so anything
+ * drawn at its true size lands on a fraction of a screen pixel: a body
+ * was one such fraction and a turret barely more, and the corner said
+ * nothing about where the swarm was. Marks are therefore DILATED — every
+ * body and every structure is painted as a square at least this many
+ * screen px across, centred where the thing is — so the map answers
+ * "where are they" at a glance and keeps its true scale only for the
+ * ground under it. Bodies read a touch smaller than structures: a line of
+ * turrets is what the map is read for, and it wins the overdraw.
+ */
+const MM_UNIT_PX = 2.5;
+const MM_STRUCT_PX = 3;
+/** how often the minimap's CSS width is measured, in draws. Reading
+ *  clientWidth is a layout read, and one per frame is a reflow per frame;
+ *  the width only moves when the window or the HUD's zoom does */
+const MM_CSS_EVERY = 30;
 
 /**
  * THE BAR STACK over a thing on the board (Game.drawBars), in world px.
@@ -395,6 +429,10 @@ export class Game {
    *  frame is sixty megabytes a second of garbage for a buffer that is
    *  wiped and refilled anyway. Re-made only when the map's size changes */
   private mmPixels: ImageData | null = null;
+  /** the minimap's CSS width in px and the countdown to measuring it
+   *  again (MM_CSS_EVERY) — what a dilated mark's size is worked out from */
+  private mmCssW = 0;
+  private mmCssTick = 0;
   private mmDrag = false;
   // cursor mode: null is the normal cursor (click a tower to inspect its
   // range); a kind from the tower menu turns on the ghost + paint placement
@@ -1238,6 +1276,11 @@ export class Game {
       refunds: REFUNDS(),
       counts: this.sim.towerCounts(),
       unlocked: this.tech ? Array.from(this.tech.unlocked) : null,
+      // off the sim's live stats (statsFor), never the static table: the
+      // whole point of deriving the line is that an upgrade moves it
+      targeting: Object.fromEntries(
+        TOWER_KINDS.map((k) => [k, targetingLine(this.sim.statsFor(k))]),
+      ) as Record<TowerKind, string>,
     };
   }
 
@@ -1498,7 +1541,11 @@ export class Game {
    *
    * Two layers: the ground, painted once per map (paintThumb), and one
    * image rebuilt every frame with the rest, both blown up to MM_SCALE
-   * with no smoothing so a dot stays a square. Skipped entirely while
+   * with no smoothing so a dot stays a square. Only the GROUND is at the
+   * map's true scale: bodies and structures are dilated to a readable
+   * square (MM_UNIT_PX, MM_STRUCT_PX), because at a cell a pixel shrunk
+   * into the corner a body is a fraction of a screen pixel and reads as
+   * nothing at all. Skipped entirely while
    * React has not handed a canvas over (attachMinimap).
    */
   private drawMinimap(): void {
@@ -1542,25 +1589,43 @@ export class Game {
     const box = (gx: number, gy: number, sz: number, r: number, g: number, b: number): void => {
       for (let y = gy; y < gy + sz; y++) for (let x = gx; x < gx + sz; x++) dot(x, y, r, g, b);
     };
+    // HOW MANY CELLS A MARK SPANS so that it reads at MM_*_PX on screen
+    // (see those). The CSS width is measured rarely and kept, and the
+    // fallback while it is unknown is the backing store's own width,
+    // which asks for no dilation at all
+    if (this.mmCssTick-- <= 0) {
+      this.mmCssTick = MM_CSS_EVERY;
+      this.mmCssW = mm.clientWidth || w;
+    }
+    const perCell = (this.mmCssW || w) / cols;
+    const unitSz = Math.max(1, Math.round(MM_UNIT_PX / perCell));
+    const structSz = Math.max(1, Math.round(MM_STRUCT_PX / perCell));
+    /** a structure's mark: its own footprint, grown to structSz if that is
+     *  bigger, and kept centred on the footprint either way */
+    const struct = (gx: number, gy: number, sz: number, r: number, g: number, b: number): void => {
+      const s = Math.max(sz, structSz), off = (s - sz) >> 1;
+      box(gx - off, gy - off, s, r, g, b);
+    };
     // the swarm red, and everything of ours white, so the map answers
     // "us or them" at a glance
     // instead of asking for three colours to be told apart at a pixel each
     const { upx, upy, n } = this.sim;
+    const uoff = (unitSz - 1) >> 1;
     for (let i = 0; i < n; i++) {
       const gx = (upx[i] / CELL) | 0, gy = (upy[i] / CELL) | 0;
-      dot(gx, gy, 0xf2, 0x55, 0x55);
+      box(gx - uoff, gy - uoff, unitSz, 0xf2, 0x55, 0x55);
     }
     // the map's shield towers, wherever they have been seen
     for (const s of this.sim.shieldTowers) {
       if (s.hp <= 0) continue;
-      box(s.gx, s.gy, SHIELD_TOWER_SIZE, 0xf2, 0x55, 0x55);
+      struct(s.gx, s.gy, SHIELD_TOWER_SIZE, 0xf2, 0x55, 0x55);
     }
     // ...and the player's, over everything: the line is what the map is read for
     for (const t of this.sim.towers) {
       const v = t.buildT > 0 ? 0x9a : 0xff;
-      box(t.gx, t.gy, structStats(t.kind).size, v, v, v);
+      struct(t.gx, t.gy, structStats(t.kind).size, v, v, v);
     }
-    box(T.base.x, T.base.y, T.base.size, 0xff, 0xff, 0xff);
+    struct(T.base.x, T.base.y, T.base.size, 0xff, 0xff, 0xff);
     lc.putImageData(img, 0, 0);
 
     c.setTransform(1, 0, 0, 1, 0, 0);

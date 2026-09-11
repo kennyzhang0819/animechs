@@ -61,6 +61,9 @@ export const MINDUSTRY_VALUE: Record<TowerKind, number> = {
   arc: 60,
   scatter: 74,
   wave: 132.5,
+  // lead 30 + silicon 20, and lead 100 + titanium 25 + silicon 40
+  mender: 37,
+  mendProjector: 145.75,
   swarmer: 152.5,
   lancer: 157,
   salvo: 180,

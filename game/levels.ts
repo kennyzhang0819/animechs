@@ -224,9 +224,10 @@ export interface EnergyFieldSpec {
 export type StatusKind = "burning" | "wet";
 
 export interface UnitStats {
-  /** Health. What a kill pays does NOT read it: a kill drops its tier's
-   *  scrap (economy.ts) and no XP at all — XP is paid per wave cleared
-   *  (MISSION_XP), so a heavier body is only a heavier body */
+  /** Health. THIS IS WHAT A KILL PAYS: the drop is the pool times
+   *  SCRAP_PER_HP (economy.ts), so a heavier kind is worth more scrap and a
+   *  stats edit here moves the salvage with it. No XP either way — XP is
+   *  paid per wave cleared (MISSION_XP), never per body */
   hp: number;
   /** world px/s */
   speed: number;
@@ -235,10 +236,11 @@ export interface UnitStats {
   /** collision radius in world px — half the square hitbox edge */
   radius: number;
   /**
-   * Unit tier, 1-5. The tier decides the SCRAP a kill pays into the run
-   * — what the unit weighs on the audit (ladder.ts); a kill pays nothing. A level's
-   * enemy mix therefore decides the run's income and nothing about the
-   * save's XP, which is a fact about the waves cleared (MISSION_XP).
+   * Unit tier, 1-5. A shelf in the unit trees and a weight on the audit
+   * (ladder.ts) — NOT a price: the scrap a kill pays comes off `hp` above,
+   * which is why the T4 and T5 hulls pay what their bodies are worth. A
+   * level's enemy mix therefore decides the run's income and nothing about
+   * the save's XP, which is a fact about the waves cleared (MISSION_XP).
    */
   tier: number;
   /**
@@ -980,15 +982,16 @@ type UntreedKind = Exclude<UnitKind, (typeof UNIT_TREES)[number]["kinds"][number
 const _everyKindHasATree: UntreedKind extends never ? true : never = true;
 void _everyKindHasATree;
 
-/** the drop for one unit kind: scrap off its tier, a boss its lump (economy.ts) */
+/** the drop for one unit kind: scrap off its health, a boss its lump on top (economy.ts) */
 export function unitDrop(kind: UnitKind): Drop {
   const s = UNIT_STATS[kind];
-  return dropForUnit(s.tier, s.boss === true);
+  return dropForUnit(s.hp, s.boss === true);
 }
 
 /**
  * What a run's kills are worth IN SCRAP: each kind's drop times how many
- * of it went down. The drop is fixed per tier (economy.ts), never per body.
+ * of it went down. The drop is fixed per KIND (economy.ts) — it reads the
+ * kind's authored health, never the body's remaining or rung-scaled pool.
  */
 export function dropsForKills(killsByKind: ArrayLike<number>): Drop {
   const total = emptyDrop();
@@ -1423,8 +1426,8 @@ export function levelDocOf(_worldId?: string): LevelDoc {
  * rung changes the rules rolled and the XP paid, never the script — so
  * every number the audit prints about a map is true at every rung.
  *
- * Kills are the run's income: every dead body pays its tier's scrap into
- * the run (economy.ts). The save is paid by the WAVE: every wave cleared
+ * Kills are the run's income: every dead body pays scrap off its own
+ * health pool into the run (economy.ts). The save is paid by the WAVE: every wave cleared
  * banks its share of MISSION_XP, win or lose, and the rung multiplies it
  * (tierXpBonus in ladder.ts).
  *
@@ -1475,7 +1478,8 @@ export const WORLDS: LevelSpec[] = [
     // counts; that is the only thing that really moves a wave's weight.
     //
     // THE HEAVY KINDS LAND WHERE THE DROPS CAN HAVE PAID FOR THEIR
-    // ANSWER: a body pays its tier's scrap when it dies (economy.ts), so
+    // ANSWER: a body pays scrap off its health when it dies (economy.ts),
+    // and the heavies pay the most of it, so
     // the tier-3 turrets (fuse up to foreshadow) arrive on the bank the
     // middle script has filled, which is why the tier-5 bodies start
     // deep in the second half.

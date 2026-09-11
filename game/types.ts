@@ -34,6 +34,9 @@ export const TOWER_KINDS = [
   "wave",
   "parallax",
   "tsunami",
+  // the support pair: they shoot nothing and heal the line instead
+  "mender",
+  "mendProjector",
   // extreme and nemesis
   "swarmer",
   "cyclone",
