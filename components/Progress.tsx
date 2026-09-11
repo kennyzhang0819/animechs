@@ -76,11 +76,14 @@ const REWARD_COLOR: Record<Reward["kind"], string> = {
   turret: "#FF9A62",
   // a shape wears its own band (formationRarity), like a turret does
   shape: "#C6C6CE",
-  // a mutator wears the codex's pink on the track, not its own weight
-  // band: the band lives on the codex board where a shelf of rules is
-  // being compared, and on the track the question is only "what kind of
-  // thing is this row handing me". The FACE inside the chip is still
-  // tinted by the band (MutationFace), so the weight is there to read
+  // a mutator wears the codex's pink here, not its own weight band: the
+  // question a row answers is "what kind of thing is this handing me",
+  // and the weight rides in the hover card's corner instead (the `tag`
+  // rewardLook returns). The FACE does not carry it either — it used to
+  // be tinted by the band and now carries the rule's own colours
+  // (mutationArt.ts) — which is the right way round on a row where the
+  // chip below holds a full-colour turret sprite and a flat-tinted glyph
+  // was the odd one out
   mutator: MUT_LIT,
   upgrade: "#FFD37F",
 };
