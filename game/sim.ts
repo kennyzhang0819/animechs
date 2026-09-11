@@ -28,6 +28,7 @@ import {
   TEAM_CRUX_RGB,
   ROWS as ROWS_IMPORT,
   TOWERS as TOWERS_IMPORT,
+  TOWER_HP_SCALE,
   towerMaxHp,
   UR,
   W as W_IMPORT,
@@ -131,6 +132,21 @@ import {
 } from "./mutation";
 import { loadMap, OFFICIAL_MAPS, rasterizeSpawns, terrainFromMap, type SpawnCircle } from "./maps";
 import { NO_UPGRADES, upgradedTower, type TechState } from "./tech";
+import {
+  applyGlobalMods,
+  applyTurretMods,
+  dropScale,
+  INSURANCE_CHANCE,
+  INSURANCE_SCRAP,
+  LAST_VOLLEY_RATE,
+  LAST_VOLLEY_SECONDS,
+  LAST_VOLLEY_TILES,
+  modRegen,
+  MODS,
+  PHOENIX_CHANCE,
+  rollTurretMods,
+  type ModId,
+} from "./mods";
 import { SCRAP_START, sellValue } from "./economy";
 import { airWalkMask, isBuildableWall, isWaterFloor, navalWalkMask, WALL_DEEP, type Terrain } from "./terrain";
 import {
@@ -1010,6 +1026,23 @@ export class Sim {
    * for these branches existing.
    */
   private specs = new Map<TowerKind, TowerStats>();
+  /**
+   * THE RUN'S UPGRADES (mods.ts), id to how many copies of it are owned —
+   * both scopes in one ledger, because the deal draws them off one table
+   * and the cap that stops a mod being offered twice is one rule.
+   *
+   * IT IS RUN STATE AND NOT SAVE STATE. Nothing here survives a reset:
+   * upgrades are bought in scrap inside one mission and are gone with it,
+   * which is what makes them a different thing from the tech tree's rungs
+   * (upgrades.ts) that the save owns forever.
+   *
+   * The GLOBALS in it are folded into every kind's spec (refreshSpecs) and
+   * read by name at the handful of sites whose effect is not a stat — a
+   * kill's drop, a turret's death. The TURRET ones are never read here at
+   * all past the placement: they are rolled once into Tower.mods and the
+   * attribute lives on the structure from then on.
+   */
+  private mods: Partial<Record<ModId, number>> = {};
   /** is the Hungry mutator in force this run? (see reset) */
   private hungryOn = false;
   /**
@@ -1342,6 +1375,8 @@ export class Sim {
     this.killsByKind.fill(0);
     this.scrap = SCRAP_START;
     this.scrapEarned = 0;
+    // the run's upgrades are the RUN's (see `mods`): a new board owns none
+    this.mods = {};
     // the run's rules, read once: the feed pass runs over every unit on the
     // field, and a spec lookup per unit per tick to answer a question that
     // cannot change mid-run would be pure waste
@@ -1925,13 +1960,79 @@ export class Sim {
   private refreshSpecs(): void {
     this.specs.clear();
     const up = this.tech?.upgrades;
-    if (!up) return;
-    const counts = this.towerCounts();
+    const counts = up ? this.towerCounts() : null;
     for (const kind of TOWER_KINDS) {
-      const points = up[kind] ?? NO_UPGRADES;
-      const spec = upgradedTower(kind, points, { count: counts[kind] });
+      // the tech tree's rungs first (the save's), then the run's relics on
+      // top of them — two different purchases composing onto one table
+      const base = up && counts
+        ? upgradedTower(kind, up[kind] ?? NO_UPGRADES, { count: counts[kind] })
+        : TOWERS[kind];
+      const spec = applyGlobalMods(base, kind, this.mods);
       if (spec !== TOWERS[kind]) this.specs.set(kind, spec);
     }
+    // ...and every STANDING turret re-composed on top of that, because its
+    // own attributes (Tower.mods) sit above its kind's stats and a relic
+    // bought mid-wave has to reach the board that is already down
+    for (const t of this.towers) this.resolveTower(t);
+  }
+
+  /**
+   * ONE TURRET'S LIVE STATS AND POOL, composed: its kind's spec (above)
+   * with this turret's own attributes folded in. The pool is re-derived
+   * with it and the CURRENT health carried across as a FRACTION — a relic
+   * that widens every turret's pool must not leave the board's structures
+   * standing at a sliver of their new ceiling, and one that is somehow
+   * narrowed must not leave them over it.
+   */
+  private resolveTower(t: Tower): void {
+    const kind = this.specs.get(t.kind) ?? structStats(t.kind);
+    t.spec = applyTurretMods(kind, t.mods);
+    const max = t.spec.health * TOWER_HP_SCALE;
+    if (max !== t.hpMax) {
+      const f = t.hpMax > 0 ? t.hp / t.hpMax : 1;
+      t.hpMax = max;
+      t.hp = Math.min(max, Math.max(1, f * max));
+    }
+    t.regen = modRegen(t.mods) * max;
+  }
+
+  // ---------- the run's upgrades (mods.ts) ----------
+
+  /** how many copies of one upgrade the run owns */
+  modStacks(id: ModId): number {
+    return this.mods[id] ?? 0;
+  }
+
+  /** every upgrade the run owns, catalog order, with its stack count — the
+   *  shelf on the top-left of the field reads exactly this */
+  ownedMods(): { id: ModId; n: number }[] {
+    const out: { id: ModId; n: number }[] = [];
+    for (const m of MODS) {
+      const n = this.mods[m.id] ?? 0;
+      if (n > 0) out.push({ id: m.id, n });
+    }
+    return out;
+  }
+
+  /** the whole ledger, for the roll that must not offer a maxed mod */
+  get modLedger(): Readonly<Partial<Record<ModId, number>>> {
+    return this.mods;
+  }
+
+  /**
+   * TAKE AN UPGRADE, and it lands NOW. A global is folded into every
+   * kind's stats on the spot and reaches the turrets already standing; a
+   * turret attribute only joins the pool the next placement rolls
+   * against, and deliberately changes nothing on the board (see mods.ts).
+   *
+   * Undying Legion is the one global that has to reach back: it grants a
+   * revive to EVERY turret, and a player who buys it mid-wave is buying
+   * it for the line that is being chewed on right now.
+   */
+  takeMod(id: ModId): void {
+    this.mods[id] = (this.mods[id] ?? 0) + 1;
+    if (id === "undying") for (const t of this.towers) t.revives = Math.max(t.revives, 1);
+    this.refreshSpecs();
   }
 
   /**
@@ -2076,6 +2177,19 @@ export class Sim {
       x,
       y,
       hp: towerMaxHp(kind),
+      // THE ATTRIBUTE ROLL, and it happens exactly once, here (mods.ts):
+      // one independent roll per turret upgrade the run owns. A card that
+      // puts down thirty-six turrets rolls thirty-six times, which is why
+      // a patch comes out speckled rather than uniform
+      hpMax: towerMaxHp(kind),
+      mods: this.charging ? rollTurretMods(this.mods) : 0,
+      spec: structStats(kind),
+      regen: 0,
+      // Undying Legion (mods.ts) grants every turret one stand-up, the
+      // ones bought after it included
+      revives: this.mods.undying ? 1 : 0,
+      rose: false,
+      boostT: 0,
       aimShieldTower: -1,
       cd: Math.random() * 0.1,
       // Hydrophobic (mutation.ts): read the ground once, here, and carry it
@@ -2103,6 +2217,10 @@ export class Sim {
       beamDmgT: 0,
     };
     this.towers.push(tower);
+    // the attributes it just rolled become its stats and its pool, and it
+    // opens at FULL health on the new ceiling rather than the table's
+    this.resolveTower(tower);
+    tower.hp = tower.hpMax;
     this.claimGround(tower, true);
     // a count-dependent rung (duo power) reads the board, so the board
     // changing is what moves it
@@ -4056,7 +4174,9 @@ export class Sim {
     const wave = this.uwave[i];
     this.killsByKind[kind]++;
     // the kill's scrap, into the run — off the kind's health (economy.ts)
-    const drop = unitDrop(UNIT_KINDS[kind]).scrap;
+    // ...times what the SCAVENGER RIG relics add (mods.ts), which is the
+    // one thing in the run that moves what a body is worth
+    const drop = Math.round(unitDrop(UNIT_KINDS[kind]).scrap * dropScale(this.mods));
     this.scrap += drop;
     this.scrapEarned += drop;
     this.pushDeathFx(x, y);
@@ -5195,7 +5315,69 @@ export class Sim {
     this.pushFx(t.x, t.y, 0.5 * big, FxKind.Breach);
     this.pushFx(t.x, t.y, 0.35 * big, FxKind.Death);
     if (isCore(t)) return;
+    // THE RELICS THAT ANSWER A DEATH (mods.ts) get their say BEFORE the
+    // ground is given back, because one of them refuses the death outright
+    if (this.reviveTower(t)) return;
+    this.payOutTower(t);
     this.removeTower(t);
+  }
+
+  /**
+   * UNDYING LEGION and PHOENIX PROTOCOL (mods.ts): the two relics that
+   * turn a wreck into a turret standing at full health where it was.
+   *
+   * IT IS A REFUSAL, NOT A REBUILD. Nothing is removed and nothing is
+   * placed — the structure never leaves the board, never gives its ground
+   * back, and never drops the target it was tracking, so a line does not
+   * open for the frame it takes to come back. A revive is therefore also
+   * invisible to the routing, which is the whole reason to do it this way.
+   *
+   * The hard charges go first and the Phoenix roll is only reached when
+   * there are none left: a run carrying both should spend the certainty
+   * before it spends the chance.
+   */
+  private reviveTower(t: Tower): boolean {
+    let rose = false;
+    if (t.revives > 0) {
+      t.revives--;
+      rose = true;
+    } else if (!t.rose && this.mods.phoenix && Math.random() < PHOENIX_CHANCE) {
+      t.rose = true;
+      rose = true;
+    }
+    if (!rose) return false;
+    t.hp = t.hpMax;
+    // the support line's own green, on a structure rather than a body —
+    // the one thing on the field that says "this did not die"
+    this.pushFx(t.x, t.y, 0.6, FxKind.HealWave, 0, (structStats(t.kind).size * CELL) / 2);
+    this.pushFx(t.x, t.y, 0.4, FxKind.Heal);
+    return true;
+  }
+
+  /**
+   * SALVAGE INSURANCE and LAST VOLLEY (mods.ts): what a turret that is
+   * really gone leaves behind. Called once, from the death above, after
+   * every revive has been refused and before the ground is released.
+   */
+  private payOutTower(t: Tower): void {
+    if (this.mods.insurance && Math.random() < INSURANCE_CHANCE) {
+      this.scrap += INSURANCE_SCRAP;
+      this.scrapEarned += INSURANCE_SCRAP;
+      this.pushFx(t.x, t.y, 0.5, FxKind.Absorb);
+    }
+    if (this.mods.lastVolley) {
+      // the dying turret dumps its charge into everything nearby, itself
+      // excluded — it is not on the board a tick from now
+      const r = LAST_VOLLEY_TILES * CELL;
+      const r2 = r * r;
+      for (const o of this.towers) {
+        if (o === t) continue;
+        const dx = o.x - t.x, dy = o.y - t.y;
+        if (dx * dx + dy * dy > r2) continue;
+        o.boostT = Math.max(o.boostT, LAST_VOLLEY_SECONDS);
+      }
+      this.pushFx(t.x, t.y, 0.45, FxKind.ShieldWave, 0, r);
+    }
   }
 
   /**
@@ -5448,7 +5630,14 @@ export class Sim {
       // pool a structure sheds soot, thicker the lower it gets, scaled by
       // its footprint so a spectre smokes like the building it is. The
       // tint has gone grey (renderer, HP_TINT); this is the other half
-      const maxHp = towerMaxHp(t.kind);
+      // NANOWEAVE / BULWARK (mods.ts): a turret born with either repairs
+      // itself, and it repairs at ITS OWN ceiling — a braced duo mends
+      // faster than the plain one beside it because its pool is bigger
+      if (t.regen > 0 && t.hp > 0 && t.hp < t.hpMax)
+        t.hp = Math.min(t.hpMax, t.hp + t.regen * dt);
+      // LAST VOLLEY (mods.ts): a dead neighbour's charge, running down
+      if (t.boostT > 0) t.boostT -= dt;
+      const maxHp = t.hpMax;
       if (t.hp < maxHp * DAMAGE_SMOKE_BELOW) {
         const hurt = 1 - t.hp / (maxHp * DAMAGE_SMOKE_BELOW);
         const cells = structStats(t.kind).size;
@@ -5461,7 +5650,9 @@ export class Sim {
           );
         }
       }
-      const st = this.statsFor(t.kind);
+      // THE TURRET'S OWN STATS, not its kind's (Tower.spec): composed at
+      // the placement and at every refreshSpecs, read raw here
+      const st = t.spec;
       // a support block has no target and no barrel — it pulses (the
       // damage smoke above is still its, because it is still a building
       // the swarm can chew on)
@@ -5485,7 +5676,9 @@ export class Sim {
       // shootDuration — so the fade tail cools alongside the turret
       // ...at the TOWER'S rate, which is 1 for everything except a turret
       // the Hydrophobic rule has waterlogged (mutation.ts)
-      if (t.cd > 0 && !(cont && t.beamT > cont.fade)) t.cd -= dt * t.fireRate;
+      // ...times a dying neighbour's parting charge, if one is running
+      const rate = t.fireRate * (t.boostT > 0 ? LAST_VOLLEY_RATE : 1);
+      if (t.cd > 0 && !(cont && t.beamT > cont.fade)) t.cd -= dt * rate;
 
       // a queued volley that is still charging: the shots are already spent
       // from the reload's point of view, they just have not left yet
@@ -6380,7 +6573,9 @@ export class Sim {
     const r2 = st.range * st.range;
     let did = false;
     for (const o of this.towers) {
-      const max = towerMaxHp(o.kind);
+      // the TARGET's own ceiling (Tower.hpMax), not its kind's: a mender
+      // topping up a braced turret has to fill the pool that turret has
+      const max = o.hpMax;
       if (o.hp >= max) continue;
       const dx = o.x - t.x, dy = o.y - t.y;
       if (dx * dx + dy * dy > r2) continue;

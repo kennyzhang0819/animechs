@@ -97,6 +97,22 @@ export const SCRAP_START = 7500;
  */
 export const TURRET_ROLL_PRICE = 1000;
 
+/**
+ * WHAT ONE UPGRADE COSTS — the deal's second button (G), and the run's
+ * only other outgoing.
+ *
+ * TWO AND A HALF TIMES A TURRET, because the two things are not the same
+ * purchase. A turret card is SPENT: it is placed, it is shot at, and one
+ * day it is gone. An upgrade is OWNED for the rest of the run — a relic on
+ * the shelf that keeps applying, or a chance riding every turret the run
+ * will ever place. A player choosing between the two buttons is choosing
+ * between board now and board later, and the prices have to say so.
+ *
+ * Flat, like the roll fee and for the same reason: one number a player can
+ * hold in their head, and one number a balance sweep turns.
+ */
+export const UPGRADE_ROLL_PRICE = 2500;
+
 /** a placement is spent: selling returns this fraction of the price */
 export const SELL_REFUND = 0;
 

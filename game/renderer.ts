@@ -2194,7 +2194,7 @@ export class Renderer {
       // "this is taking damage" reads identically on both sides of the
       // fight — and smokes like them too (Sim.fireTowers). There is no
       // unfinished state to draw any more: a placement is the building
-      const t3 = (t.hp * 3) / towerMaxHp(t.kind);
+      const t3 = (t.hp * 3) / t.hpMax;
       const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
       this.push(dyn, t.x, t.y, px, px, 0, base, tint[0], tint[1], tint[2], 1);
       this.push(dyn, t.x, t.y, px, px, t.angle, top, tint[0], tint[1], tint[2], 1);
@@ -2218,10 +2218,7 @@ export class Renderer {
       // the beam's LIVE stats, not the table's: a meltdown whose upgrade
       // branch lengthened its beam has to be drawn at the length it is
       // actually burning at (see Sim.statsFor)
-      if (t.beamT >= 0)
-        this.drawContinuousBeam(
-          dyn, t, sim.statsFor(t.kind).bullet.continuous,
-        );
+      if (t.beamT >= 0) this.drawContinuousBeam(dyn, t, t.spec.bullet.continuous);
     }
     const { upx, upy, ukind, n } = sim;
     // the fleet's wakes, at Mindustry's Layer.debris: UNDER every unit,

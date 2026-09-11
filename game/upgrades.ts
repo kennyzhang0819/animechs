@@ -193,7 +193,7 @@ const withBullet = (s: TowerStats, b: Partial<BulletStats>): TowerStats => ({
  * wait. Every rate node in the file goes through this, so "+n%" always
  * means the same thing.
  */
-const faster = (s: TowerStats, mul: number): TowerStats => ({ ...s, reload: s.reload / mul });
+export const faster = (s: TowerStats, mul: number): TowerStats => ({ ...s, reload: s.reload / mul });
 
 /**
  * Damage, and the splash that goes with it. A shell's blast and its direct
@@ -201,7 +201,7 @@ const faster = (s: TowerStats, mul: number): TowerStats => ({ ...s, reload: s.re
  * only one of them would read as broken on exactly the turrets — hail,
  * ripple, scatter — whose damage IS the blast.
  */
-const stronger = (s: TowerStats, mul: number): TowerStats =>
+export const stronger = (s: TowerStats, mul: number): TowerStats =>
   withBullet(s, { damage: s.bullet.damage * mul, splash: s.bullet.splash * mul });
 
 /**
@@ -214,7 +214,7 @@ const stronger = (s: TowerStats, mul: number): TowerStats =>
  * mid-air — which is why this touches the lifetime and every hitscan
  * length there is rather than the range alone.
  */
-const reaching = (s: TowerStats, mul: number): TowerStats => {
+export const reaching = (s: TowerStats, mul: number): TowerStats => {
   const b = s.bullet;
   return {
     ...s,
@@ -254,7 +254,7 @@ const pulling = (s: TowerStats, mul: number): TowerStats =>
     : s;
 
 /** turn a shot into a piercing one, or raise the cap on one that already is */
-const piercing = (s: TowerStats, extra: number): TowerStats =>
+export const piercing = (s: TowerStats, extra: number): TowerStats =>
   withBullet(s, {
     pierce: true,
     pierceCap: (s.bullet.pierceCap ?? 1) + extra,

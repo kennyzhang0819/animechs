@@ -119,6 +119,7 @@ import { HoverCard, useHoverCard } from "./HoverCard";
 import MenuBackground from "./MenuBackground";
 import { useEscapeBack } from "./Board";
 import { DealCorner, useDeal } from "./Deal";
+import { RelicShelf } from "./Relics";
 import { useConfirm } from "./ConfirmDialog";
 
 /** the level card's map preview — the admin editor's thumbnail look */
@@ -2406,6 +2407,12 @@ export default function MechSwarm() {
         {hud && (
           <div className="ui-zoom absolute left-[1rem] top-[1rem] flex w-[34rem] max-w-[calc(100vw-8rem)] flex-col items-start gap-2">
             {hud.scrap !== null && <ScrapAmount amount={hud.scrap} size="md" className="text-xl" />}
+            {/* THE RELIC SHELF (components/Relics.tsx), under the bank and
+                over everything else the corner says. An upgrade is a RULE
+                in force for the rest of the run, so it belongs beside the
+                other number that is always true — and this is the corner
+                every build decision is already made against. */}
+            <RelicShelf relics={hud.relics} />
             {admin && !hud.lost && !hud.won && !hud.menuOpen && (
               /* THE PACE STRIP IS SANDBOX'S, and nothing else on the field
                  is. A campaign run plays at 1x — the multipliers have
@@ -2565,7 +2572,13 @@ export default function MechSwarm() {
                 cannot do. Like the minimap, whichever of the two it is
                 stands until the run ends: the end screens own the frame. */}
             {hud.dealing ? (
-              <DealCorner hud={hud} icons={icons} onBuy={deal.buy} onToggle={deal.toggle} />
+              <DealCorner
+                hud={hud}
+                icons={icons}
+                onBuy={deal.buy}
+                onBuyUpgrade={deal.buyUpgrade}
+                onToggle={deal.toggle}
+              />
             ) : (
               <div className="ms-pane p-1">
                 <div

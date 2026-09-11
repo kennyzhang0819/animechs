@@ -122,6 +122,51 @@ export interface Tower {
    */
   hp: number;
   /**
+   * THIS TURRET'S OWN CEILING, and it is per-TURRET rather than per-kind
+   * (constants.ts towerMaxHp) because the upgrade attributes move it: a
+   * duo born with Braced Frame carries half again what the duo beside it
+   * does. Everything that draws or reads a structure's fullness reads
+   * this, never the table.
+   */
+  hpMax: number;
+  /**
+   * THE UPGRADE ATTRIBUTES THIS TURRET WAS BORN WITH, as a bitmask over
+   * mods.ts TURRET_MOD_IDS — 0, the usual case, for a plain turret.
+   *
+   * IT IS FIXED AT THE PLACEMENT AND NEVER MOVES. A turret mod is a
+   * CHANCE rolled once, when the structure goes down (Sim.addTower), and
+   * buying another copy of the attribute afterwards raises the odds for
+   * the NEXT turret and does nothing at all for this one. That is the
+   * whole shape of the mechanic — see the header of mods.ts.
+   */
+  mods: number;
+  /**
+   * The stats this turret actually fires with: its kind's (the tech
+   * tree's rungs and the run's relics folded in, Sim.specs) with this
+   * turret's OWN attributes on top.
+   *
+   * IT IS RESOLVED, NOT LOOKED UP. A per-turret stat table cannot be
+   * shared per kind any more, and re-deriving one inside the fire loop
+   * would allocate a TowerStats per turret per tick — so it is composed
+   * once at the placement and re-composed at the few moments a kind's
+   * stats can move (Sim.refreshSpecs), and the hot loop just reads it.
+   */
+  spec: import("./constants").TowerStats;
+  /** health returned a second by this turret's own attributes (nanoweave,
+   *  bulwark) — 0 on everything else, and the fire loop's cheap gate */
+  regen: number;
+  /**
+   * How many times this turret still gets to stand back up when it is
+   * wrecked (mods.ts: Undying Legion grants one to everything). Spent
+   * before the Phoenix roll is even reached.
+   */
+  revives: number;
+  /** has the Phoenix relic already raised this turret? Once each, ever */
+  rose: boolean;
+  /** seconds left on a neighbour's dying charge (Last Volley): while it
+   *  runs the reload goes at LAST_VOLLEY_RATE on top of `fireRate` */
+  boostT: number;
+  /**
    * Which shield tower this tower's current volley is aimed at, as an index into
    * Sim.shieldTowers — or -1, the usual case, when it is aimed at a unit. The
    * instant weapons (laser, lightning, rail, ray, the held beam) damage

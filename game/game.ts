@@ -30,7 +30,14 @@ import {
   type TowerKind,
   type UnitKind,
 } from "./levels";
-import { missionXp, scrapPriceOf, sellValue, TURRET_ROLL_PRICE } from "./economy";
+import {
+  missionXp,
+  scrapPriceOf,
+  sellValue,
+  TURRET_ROLL_PRICE,
+  UPGRADE_ROLL_PRICE,
+} from "./economy";
+import { anyModLeft, maskRarity, rollMod, shiftedWeights, type ModId } from "./mods";
 import {
   FORMATION_IDS,
   formationCells,
@@ -38,14 +45,14 @@ import {
   rollFormation,
   type FormationId,
 } from "./formation";
-import { BASE_WEIGHTS, rollTurret, type RarityWeights } from "./rarity";
+import { BASE_WEIGHTS, RARITY, rollTurret, type RarityWeights } from "./rarity";
 import { HEALTH_BARS_DEFAULT, type HealthBarMode, type TowerPlacement } from "./progress";
 import { FIELDED_KINDS, isRetired, TOWER_KINDS } from "./types";
 import { Renderer } from "./renderer";
 import { fitZoom } from "./fit";
 import { PICK_LENIENT, PICK_STRUCT_PAD, Sim } from "./sim";
 import { type TechState } from "./tech";
-import { isCore } from "./types";
+import { isCore, type Tower } from "./types";
 
 export interface UiState {
   levelId: string;
@@ -119,6 +126,21 @@ export interface UiState {
   dealing: boolean;
   /** what one draw off the deal costs right now */
   rollPrice: number;
+  /** ...and what one upgrade costs (economy.ts UPGRADE_ROLL_PRICE) */
+  upgradePrice: number;
+  /**
+   * EVERY UPGRADE THE RUN OWNS (mods.ts), catalog order, with its stack
+   * count — the shelf on the top-left of the field draws exactly this,
+   * turret attributes and relics alike. A relic is always in force, so it
+   * is always on screen.
+   */
+  relics: { id: ModId; n: number }[];
+  /** the last upgrade drawn, and a counter that MOVES on every draw — the
+   *  two things a reveal needs to fire, including for a repeat (Game.lastMod) */
+  lastMod: ModId | null;
+  modDraws: number;
+  /** is there anything left in the catalog to draw? */
+  modsLeft: boolean;
   /** structures placed this run, only going up — the card layer watches it
    *  to know the card in hand has landed (see Game.built) */
   built: number;
@@ -578,6 +600,19 @@ export class Game {
    * draws purple more often than one in a hundred.
    */
   private rarityWeights: RarityWeights = BASE_WEIGHTS;
+  /**
+   * THE LAST UPGRADE THE DEAL HANDED OVER, and a counter of how many it
+   * has handed over at all.
+   *
+   * An upgrade is not a card: it lands the moment it is bought and there
+   * is nothing to place (mods.ts). So the ONLY way a player learns what
+   * they just got is a reveal, and the corner needs two things to run one
+   * — what to show, and a number that MOVES so a repeat draw of the same
+   * mod still reads as a second draw. The reveal's timing is the React
+   * layer's business; this is the whole of the sim-side state behind it.
+   */
+  private lastMod: ModId | null = null;
+  private modDraws = 0;
   /**
    * HOW MANY STRUCTURES THIS RUN HAS PLACED, only ever going up. The card
    * layer (MechSwarm) owns the deal, and it has no other way to learn that
@@ -1042,6 +1077,43 @@ export class Game {
     this.buildForm = form;
     this.sim.clearStructSelection();
     return { kind, form };
+  }
+
+  /**
+   * ONE DRAW OFF THE UPGRADE TABLE (G), AND IT IS ALREADY IN FORCE.
+   *
+   * THERE IS NO CARD AND NOTHING TO PLACE. A turret draw hands over a
+   * thing to put somewhere and the decision is WHERE; an upgrade draw is
+   * the opposite kind of purchase — it applies to the whole run the
+   * instant it is paid for, either as a relic on the shelf or as a chance
+   * riding every turret still to be placed. The two buttons sit beside
+   * each other and mean genuinely different things, which is the point.
+   *
+   * SO THERE IS NO RE-ROLL EITHER. What T buys can be thrown away and
+   * drawn again at a thousand a look, because a shape a player cannot use
+   * is a dead card; what G buys is never dead, so spamming it is simply
+   * buying more upgrades, which is allowed and is not a mechanic.
+   *
+   * It refuses when the catalog is owned out — every mod at its cap
+   * (mods.ts rollMod) — rather than taking the money for nothing.
+   */
+  buyUpgrade(): ModId | null {
+    if (this.sim.lost() || this.won() || this.menuOpen) return null;
+    const id = rollMod(this.sim.modLedger);
+    if (!id) return null;
+    if (!this.sim.spend(this.upgradePrice())) return null;
+    this.sim.takeMod(id);
+    // ASCENDANCY (mods.ts) bends the TURRET deal's odds, so the weights
+    // are re-read off the run's relics here rather than being a constant
+    this.rarityWeights = shiftedWeights(BASE_WEIGHTS, this.sim.modLedger);
+    this.lastMod = id;
+    this.modDraws++;
+    return id;
+  }
+
+  /** what one upgrade costs right now — flat, and free on a free board */
+  private upgradePrice(): number {
+    return this.dealing ? UPGRADE_ROLL_PRICE : 0;
   }
 
   /** throw the owned card away — what a second T does to the first one's
@@ -1544,6 +1616,11 @@ export class Game {
       unlocked: this.tech ? Array.from(this.tech.unlocked) : null,
       dealing: this.dealing,
       rollPrice: this.rollPrice(),
+      upgradePrice: this.upgradePrice(),
+      relics: this.sim.ownedMods(),
+      lastMod: this.lastMod,
+      modDraws: this.modDraws,
+      modsLeft: anyModLeft(this.sim.modLedger),
       built: this.built,
       // off the sim's live stats (statsFor), never the static table: the
       // whole point of deriving the line is that an upgrade moves it
@@ -1580,6 +1657,11 @@ export class Game {
 
   reset(): void {
     this.sim.reset();
+    // the run's upgrades went with the sim's reset (Sim.mods), so the odds
+    // they were bending go back to the opening table and the reveal empties
+    this.rarityWeights = BASE_WEIGHTS;
+    this.lastMod = null;
+    this.modDraws = 0;
     this.soakLayer = null; // a new level is a new coastline
     this.mmBase = null; // ...and a new ground under the minimap
     this.menuOpen = false;
@@ -2097,11 +2179,30 @@ export class Game {
       const st = structStats(t.kind);
       const sz = st.size * CELL;
       bars.length = 0;
-      const hpMax = towerMaxHp(t.kind);
+      const hpMax = t.hpMax;
       const f = clamp(t.hp / Math.max(1, hpMax), 0, 1);
       if (this.barsOn(true, f, this.hoverOver(t.x, t.y, sz), picked?.has(t) === true))
         bars.push({ v: f, col: hpColor(f) });
       this.drawBars(c, t.x, t.y - sz / 2, sz - 2, bars);
+      // THE ATTRIBUTE PIP (mods.ts): a turret that won one of the upgrade
+      // rolls at its placement wears a dot in the corner of its footprint,
+      // in the band of the BEST attribute it carries. It is drawn always
+      // and not on hover, because the whole point of a chance-based
+      // attribute is that a player can look at a patch of thirty-six and
+      // see which four of them came out special.
+      if (t.mods !== 0) {
+        const band = maskRarity(t.mods);
+        if (band) {
+          const r = Math.max(1.6, sz * 0.075);
+          c.beginPath();
+          c.arc(t.x + sz / 2 - r - 1.5, t.y - sz / 2 + r + 1.5, r, 0, Math.PI * 2);
+          c.fillStyle = RARITY[band].color;
+          c.fill();
+          c.lineWidth = 0.8;
+          c.strokeStyle = "rgba(0,0,0,0.75)";
+          c.stroke();
+        }
+      }
     }
     // THE SWARM'S SHIELD TOWERS (mutation.ts) stand outside the tower list
     // and are buildings all the same. The BODY's health is what a bar can
@@ -2192,7 +2293,7 @@ export class Game {
         // the LIVE range, not the table's: an upgrade branch that lengthened
         // this turret's reach has to move the ring it is drawn with, or the
         // ring becomes a lie about what the turret can shoot (Sim.statsFor)
-        const range = this.sim.statsFor(st.kind as TowerKind).range;
+        const range = (st as Tower).spec.range;
         if (range > 0) {
           c.beginPath();
           c.arc(st.x, st.y, range, 0, Math.PI * 2);

@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, type RefObject } from "react";
+import { useCallback, useEffect, useState, type RefObject } from "react";
 
 import { TOWER_DESC, TOWERS } from "@/game/constants";
 import { formationDef, formationRarity, type FormationId } from "@/game/formation";
 import type { Game, UiState } from "@/game/game";
 import { RARITY, rarityDef } from "@/game/rarity";
+import type { ModId } from "@/game/mods";
 import type { TowerKind } from "@/game/types";
 import { TOWER_ICONS } from "./towerIcons";
+import { ModReveal } from "./Relics";
 import { HoverCard, useHoverCard } from "./HoverCard";
 
 /**
@@ -23,10 +25,20 @@ import { HoverCard, useHoverCard } from "./HoverCard";
  *   already aimed. The ghost is on the board before the finger has left
  *   the key.
  *
- *   BUY UPGRADE (G) is the second half of the same idea and is not built
- *   yet. It is on screen, dark, saying so — because the corner's LAYOUT
- *   is a promise about what a run is, and a button that appears later
- *   moves everything the hand has already learned.
+ *   BUY UPGRADE (G) is the second half of the same idea, and it is the
+ *   OPPOSITE PURCHASE. It pays its own fee (economy.ts
+ *   UPGRADE_ROLL_PRICE), rolls one table (mods.ts) and the thing that
+ *   comes out is ALREADY IN FORCE — there is no card, nothing to aim and
+ *   nothing to place. A global lands on the shelf at the top-left of the
+ *   field and applies to the whole board at once; a turret attribute
+ *   joins the pool every future placement rolls against. So G is a bet on
+ *   the run and T is a bet on the ground, which is why they are two
+ *   buttons and not one.
+ *
+ *   BECAUSE AN UPGRADE HAS NOWHERE TO LAND, THE DRAW GETS A REVEAL: a
+ *   card over the buttons for a few seconds saying what was bought, and
+ *   then gone. It is the only feedback the purchase has at the moment it
+ *   is made.
  *
  * THE FLOW IS T, CLICK, T, CLICK. There is no hand to manage, no slot to
  * choose and no clock to beat: a card is drawn already aimed, and it
@@ -66,7 +78,7 @@ export function useDeal(
   gameRef: RefObject<Game | null>,
   hud: UiState | null,
   refresh: () => void,
-): { buy: () => void; toggle: () => void } {
+): { buy: () => void; buyUpgrade: () => void; toggle: () => void } {
   const dealing = hud?.dealing ?? false;
   const over = !hud || hud.lost || hud.won;
 
@@ -75,6 +87,15 @@ export function useDeal(
     if (!g) return;
     // it overwrites what is in hand by itself — that is the re-roll
     g.buyTurretCard();
+    refresh();
+  }, [gameRef, refresh]);
+
+  /** ONE UPGRADE, AND IT IS ALREADY APPLIED — there is nothing to pick
+   *  up and nothing to re-roll (see the header) */
+  const buyUpgrade = useCallback(() => {
+    const g = gameRef.current;
+    if (!g) return;
+    g.buyUpgrade();
     refresh();
   }, [gameRef, refresh]);
 
@@ -88,8 +109,8 @@ export function useDeal(
   }, [gameRef, refresh]);
 
   /**
-   * T DEALS, G IS THE UPGRADE BUTTON for the day it works. Two keys, and
-   * the flow is one of them: T, click, T, click.
+   * T DEALS AND G UPGRADES. Two keys, and the flow of a run is both of
+   * them: T, click, T, click, and G whenever the bank can stand it.
    *
    * It declines the same presses the buttons would: a modifier held (ctrl
    * and cmd belong to the browser and the system), a text field focused,
@@ -110,15 +131,39 @@ export function useDeal(
       const g = gameRef.current;
       if (!g || g.ui().menuOpen) return;
       e.preventDefault();
-      // G is swallowed anyway so the key is DEAD rather than wrong the day
-      // it starts working — a player who learns it now learns it once
       if (e.code === "KeyT") buy();
+      else buyUpgrade();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dealing, over, buy, gameRef]);
+  }, [dealing, over, buy, buyUpgrade, gameRef]);
 
-  return { buy, toggle };
+  return { buy, buyUpgrade, toggle };
+}
+
+/** how long the reveal stands before it goes (seconds x 1000) */
+const REVEAL_MS = 5000;
+
+/**
+ * WHAT THE LAST G PRESS BOUGHT, while it is still worth saying.
+ *
+ * It watches `modDraws`, not `lastMod`: the counter moves on EVERY draw
+ * and the id does not, so drawing a third Calibration Matrix re-opens the
+ * reveal instead of silently leaving the second one's card standing.
+ */
+function useReveal(hud: UiState | null): ModId | null {
+  const draws = hud?.modDraws ?? 0;
+  const id = hud?.lastMod ?? null;
+  const [shownAt, setShownAt] = useState(0);
+  const [gone, setGone] = useState(true);
+  useEffect(() => {
+    if (draws === 0) return;
+    setShownAt(draws);
+    setGone(false);
+    const t = window.setTimeout(() => setGone(true), REVEAL_MS);
+    return () => window.clearTimeout(t);
+  }, [draws]);
+  return !gone && shownAt === draws && id ? id : null;
 }
 
 /**
@@ -241,17 +286,22 @@ export function DealCorner({
   hud,
   icons,
   onBuy,
+  onBuyUpgrade,
   onToggle,
 }: {
   hud: UiState;
   icons: Partial<Record<TowerKind, string>>;
   onBuy: () => void;
+  onBuyUpgrade: () => void;
   onToggle: () => void;
 }) {
   const poor = hud.scrap !== null && hud.scrap < hud.rollPrice;
+  const tooPoor = hud.scrap !== null && hud.scrap < hud.upgradePrice;
   const card = cardOf(hud);
+  const revealed = useReveal(hud);
   return (
     <div className="flex flex-col items-end gap-2">
+      {revealed && <ModReveal id={revealed} />}
       {card && (
         <TurretCard
           card={card}
@@ -276,17 +326,36 @@ export function DealCorner({
             <span className={poor ? "text-[#FF8A8A]" : "text-white"}>{hud.rollPrice}</span>
           )}
         </button>
-        {/* not built yet, and on screen anyway — see the header */}
+        {/* THE OTHER HALF OF THE RUN. It never says "re-roll": what it
+            buys is in force the moment it is bought, so a second press is
+            simply a second upgrade (see the header). It goes dark only
+            when the catalog is owned out, which is the one case where the
+            press would take the money for nothing. */}
         <button
-          className="ms-btn h-9 w-full cursor-not-allowed justify-between px-2 text-[13px] font-bold uppercase tracking-wide opacity-45"
-          disabled
+          className={`ms-btn h-9 w-full justify-between px-2 text-[13px] font-bold uppercase tracking-wide ${
+            hud.modsLeft ? (tooPoor ? "opacity-60" : "") : "cursor-not-allowed opacity-45"
+          }`}
+          onClick={onBuyUpgrade}
+          disabled={!hud.modsLeft}
           aria-keyshortcuts="G"
-          aria-label="Buy upgrade — not available yet"
+          aria-label={
+            hud.modsLeft
+              ? `Buy upgrade for ${hud.upgradePrice} scrap, shortcut G`
+              : "Buy upgrade — every upgrade is owned"
+          }
         >
           <span>
             <span className="text-[#A6A6AF]">G</span> Buy upgrade
           </span>
-          <span className="text-[11px] tracking-normal text-[#A6A6AF]">Soon</span>
+          {hud.modsLeft ? (
+            hud.scrap !== null && (
+              <span className={tooPoor ? "text-[#FF8A8A]" : "text-white"}>
+                {hud.upgradePrice}
+              </span>
+            )
+          ) : (
+            <span className="text-[11px] tracking-normal text-[#A6A6AF]">All owned</span>
+          )}
         </button>
       </div>
     </div>

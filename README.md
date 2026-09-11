@@ -92,6 +92,15 @@ stale tab or a cached bundle looks exactly like a fix not working.
   turret is. **The track does not hand any of them out at the moment**, so
   every turret plays at its stock stats; the branches are intact and
   waiting
+- `game/mods.ts` — **the upgrades** (the code calls them *mods*, because
+  `upgrades.ts` above is the tech tree's): twenty of them, on the turrets'
+  own four rarities, bought off the deal's second button. Two scopes —
+  **global** relics that land the instant they are bought and apply to
+  everything, and **turret attributes** that are a standing CHANCE on
+  every turret placed from then on (`rollTurretMods`, folded into
+  `Tower.mods` as a bitmask). The stat surgery (`applyTurretMods`,
+  `applyGlobalMods`), the odds (`MOD_WEIGHTS`: 52 / 30 / 16 / **2**) and
+  every tuning number the behavioural relics need
 - `game/mutation.ts` — the **mutators**: the catalog of rules a run can be
   played under, what each is worth in points, and the roller that draws
   three or four of them to fit a difficulty's budget
@@ -144,10 +153,14 @@ stale tab or a cached bundle looks exactly like a fix not working.
   player's structures white, the swarm red, the viewport framed; a press
   looks there, a drag keeps steering
 - `components/Deal.tsx` — **the field's bottom-right corner on a charged
-  run**: the two buttons (Buy turret **T**, Buy upgrade **G** — the second
-  not built yet) and the ONE card the first of them throws, drawn already
-  in hand. It keeps no state of its own: the card IS what is in hand
+  run**: the two buttons (Buy turret **T**, Buy upgrade **G**), the ONE
+  card the first of them throws, drawn already in hand, and the few-second
+  **reveal** the second one gets because an upgrade has nowhere to land.
+  It keeps no state of its own: the card IS what is in hand
   (`Game.buildKind` + `buildForm`), so the corner reads it off the HUD
+- `components/Relics.tsx` — **the shelf**: every upgrade the run owns, in
+  a row along the top-left of the field, each on its band's ground with a
+  glyph drawn rather than sprited and the live odds on its hover card
 - `components/MechSwarm.tsx` — React shell: HUD (scrap, XP), difficulty
   picker, the corner (the deal above, or — on a free board — StarCraft's
   command card, a fixed grid the size of the minimap, `BUILD_SLOTS`, one
@@ -191,6 +204,7 @@ is no touch input.
 |---|---|
 | build | **T**, then left press on the ground. The draw comes out already in hand, so the flow is T, click, T, click. One card is one FORMATION, four to thirty-six turrets in a shape. On a free board (sandbox, editors) pick a turret on the command card instead, or its key, and drag to chain; **shift-drag for a straight line** |
 | re-roll | **T** again — it throws the card in hand away and draws another, at full price. Spam it until the shape is the one you want |
+| buy an upgrade | **G**. It costs 2,500 and it is in force the instant it lands — nothing to aim, nothing to place, no re-roll. Pressing it again just buys another |
 | discard | right press while holding a card. No refund |
 | demolish | right press, drag to chain |
 | select a building | left click with no tool picked — its range ring shows; drag a box for a region; shift adds |
@@ -303,9 +317,9 @@ and nothing is bought.
 ### The deal
 
 **A turret is not bought, it is drawn.** The field's bottom-right corner
-is two buttons — **Buy turret** (**T**) and **Buy upgrade** (**G**, not
-built yet). Buy turret pays the roll fee, rolls both tables and **puts the
-card straight into the hand**: the turret's sprite, its rarity's border,
+is two buttons — **Buy turret** (**T**) and **Buy upgrade** (**G**, see
+*The upgrades* below). Buy turret pays the roll fee, rolls both tables and
+**puts the card straight into the hand**: the turret's sprite, its rarity's border,
 the shape's diagram in the corner in the shape's own band colour.
 
 **The fee is 1,000 flat** (`TURRET_ROLL_PRICE`), on every pool and at every
@@ -393,6 +407,89 @@ minus the retired kinds.
 draw in ten against an ultra turret's one in a hundred. The turret roll is
 where a run's tension lives, and odds as steep on both would invert what a
 player feels at the button: *which gun* first, *how much of it* second.
+
+### The upgrades
+
+**The corner's second button is G**, it costs 2,500 (`UPGRADE_ROLL_PRICE`)
+and what it hands over is **already in force**. There is no card, nothing
+to aim and nothing to place: T is a bet on the ground and G is a bet on
+the run, which is why they are two buttons and not one. There is no
+re-roll either — what T buys can be thrown away and drawn again, because a
+shape you cannot fit is a dead card; what G buys is never dead, so pressing
+it again is simply buying another upgrade.
+
+**An upgrade is a module like any other** (`game/mods.ts`): it wears one of
+the four bands and the deal rolls a band first and a mod inside it, the
+same two-step the turret and shape tables use. The odds are **52 / 30 / 16
+/ 2** — steeper at the top than the shape table's, because a formation is
+spent the moment it is placed and an upgrade is owned for the rest of the
+run. **A mod already at its cap is never offered**, so a late run draws
+from what is left instead of paying to be told it has the thing.
+
+**Every upgrade buffs the player.** Nothing in the catalog weakens the
+swarm — that is the mutators' half of the game, and they pull the other
+way.
+
+**There are two scopes and they are not the same kind of thing.**
+
+**GLOBAL — a relic.** It applies to *everything*, the turrets already
+standing included, the instant it is bought, and it sits on a shelf at the
+**top-left of the field** for the rest of the run
+(`components/Relics.tsx`) — the relic row out of a deck builder, for the
+reason that genre has one: a rule the player cannot see is a rule they
+forget they bought.
+
+**TURRET — an attribute, and it is a chance rather than a grant.** Owning
+one improves nothing on the board: it adds a roll to every turret *placed
+from now on*, and a turret that wins it carries the attribute for as long
+as it stands (`Tower.mods`, a bitmask; `Tower.spec`, its own resolved
+stats). A card puts down four to thirty-six turrets, so **a patch comes out
+speckled** — thirty-six duos, four of them gleaming. A turret carrying one
+wears a **pip in the corner of its footprint** in the band of the best
+attribute it has, always, not on hover: the whole point of a chance is
+being able to see which ones won it.
+
+**A turret attribute is on the shelf too**, even though it does nothing by
+itself, and its hover card prints the **live odds** with stacks folded in
+— a stack of a turret mod raises the chance and never the effect
+(`chanceAt`: three copies of a 30% attribute is 65.7%, never 90%), while a
+stack of a global strengthens it.
+
+| upgrade | band | scope | what it does |
+|---|---|---|---|
+| Honed Barrels | Common | turret | 30% chance: +25% damage |
+| Overclocked Breech | Common | turret | 30% chance: +25% fire rate |
+| Braced Frame | Common | turret | 30% chance: +50% health |
+| Long Optics | Common | turret | 25% chance: +20% range |
+| Calibration Matrix | Common | global | +10% damage, every turret. Stacks |
+| Coolant Loop | Common | global | +10% fire rate, every turret. Stacks |
+| Scavenger Rig | Common | global | +15% scrap per kill. Stacks |
+| Nanoweave | Uncommon | turret | 20% chance: repairs 2% of its health a second |
+| Sabot Rounds | Uncommon | turret | 18% chance: +1 pierce |
+| Autoloader | Uncommon | turret | 18% chance: +50% fire rate, +15% range |
+| Salvage Insurance | Uncommon | global | a wrecked turret has a 40% chance to pay 500 scrap |
+| Phosphor Rounds | Uncommon | global | every shot burns white, and hits 12% harder |
+| Last Volley | Uncommon | global | a wrecked turret gives every turret within 6 tiles +60% fire rate for 6s |
+| Prototype Chassis | Rare | turret | 12% chance: +40% damage, +30% fire rate, +25% range |
+| Bulwark Plating | Rare | turret | 12% chance: +150% health, repairs 3% a second |
+| Phoenix Protocol | Rare | global | a wrecked turret has a 25% chance to stand straight back up. Once each |
+| Splitter Array | Rare | global | every **fuse** fires two extra spikes — five to the volley |
+| **Singularity Core** | **Ultra** | turret | **5% chance: double damage, double fire rate, +40% range, +1 pierce** |
+| **Undying Legion** | **Ultra** | global | **every turret you own stands back up once, at full health — the ones already down included** |
+| **Ascendancy Protocol** | **Ultra** | global | **the turret deal hands over rares 5× and ULTRAS 20× as often, for the rest of the run** |
+
+**The purple three are the run changing shape**, and that is the whole
+argument for the band: one draw in fifty, three of them in the catalog, so
+when one lands it has to be worth the fifty. Ascendancy turns a 1%
+ultra-turret draw into about **12.6%** — the run stops hoping for a 4×4 and
+starts planning around them. A "+15%" at the top band would be a betrayal
+of the border it wears.
+
+**A revive is a refusal, not a rebuild.** Undying and Phoenix never remove
+the structure and never place a new one: it keeps its ground, its target
+and its place in the list, so a line does not open for the frame it would
+take to come back, and the routing never sees it happen. The hard charges
+go first; the Phoenix roll is only reached when there are none left.
 
 ### Three stages, three price bands
 
