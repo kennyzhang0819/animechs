@@ -343,7 +343,8 @@ export type BulletFx =
   | FxKind.HitMeltdown
   | FxKind.SmokeBig2
   | FxKind.ShootLiquid
-  | FxKind.HitLiquid;
+  | FxKind.HitLiquid
+  | FxKind.WaterBurst;
 
 /**
  * The Mindustry lifetime, in seconds, of each of those. An Effect carries
@@ -380,6 +381,10 @@ export const FX_LIFE: Record<BulletFx, number> = {
   [FxKind.SmokeBig2]: 18 / TICK,
   [FxKind.ShootLiquid]: 15 / TICK,
   [FxKind.HitLiquid]: 16 / TICK,
+  // no Mindustry entry to copy: a shell's worth of water wants longer on
+  // screen than an orb's 16 ticks, because its whole job is to show the
+  // player a radius rather than a point of contact
+  [FxKind.WaterBurst]: 26 / TICK,
 };
 /** Fx.lancerLaserCharge's own 38 ticks, inside LancerCharge's 60 */
 export const LANCER_CHARGE_SPARK = 38 / 60;
@@ -865,53 +870,76 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.graphiteAmmoBack,
     },
   },
-  // Wave, from mindustry/content/Blocks.java with water ammo — 1:1 on
-  // every number EXCEPT the water's effect, which is this game's one
-  // deliberate deviation (see BulletStats.wet): upstream's knockback 0.7
-  // is gone, and the wet status slows instead of garnishing.
+  // Wave — THE FIRST OF THE TWO TURRETS (tsunami is the other) WHOSE WEAPON
+  // IS NOT MINDUSTRY'S. Upstream's wave is a hose: twenty tiny orbs a
+  // second, each soaking the single body it touches. That reads as a stream
+  // of dots and pins exactly one enemy at a time, so the block that is
+  // supposed to be the board's crowd-control answer only ever answered the
+  // unit at the front of the file.
   //
-  // The geometry is the original's: a size-2 turret hosing twenty orbs a
-  // second (reload 3 ticks) over 110 units, at a 50-degree cone and 5
-  // degrees of scatter so the stream sprays rather than draws a line.
-  // LiquidBulletType(water): speed 3.5, lifetime 34 ticks, statusDuration
-  // 60*2 — and 0.2 damage where upstream carries 0, because a turret
-  // whose printed DPS is 4 is honest about being a support piece while
-  // still able to finish what the water wore down. Wet units drive at 65%
-  // speed for 2 s, refreshed on every hit, so anything under the hose is
-  // pinned at 65% and stays slowed for two seconds after walking out.
+  // Here it throws ONE heavy ball of water that bursts on contact and
+  // soaks everything inside the burst. The block, its footprint, its
+  // health, its range and its 50-degree cone are still upstream's; what
+  // changed is the ammunition, and with it the whole shape of what the
+  // turret does — a shot answers a GROUP, not a body.
+  //
+  // The numbers that follow from that:
+  //  - reload 45 ticks. One ball every 0.75 s where the hose threw fifteen
+  //    in that time. The soak lasts 2 s, so a single wave still holds a
+  //    patch of lane wet with uptime to spare.
+  //  - splash 1 over a 30-unit radius — near four tiles of reach, so the
+  //    burst is better than seven tiles across. "Little to no damage" is
+  //    the point: armour floors a hit at a tenth of it, so this never
+  //    kills anything — it slows what the rest of the board is shooting.
+  //  - 18 degrees of inaccuracy, where upstream sprays 5. A ball that
+  //    lands on the aim point every time is a ball that soaks the same
+  //    patch forever; scattering them means consecutive shots cover lane
+  //    rather than repaint one puddle, and the burst radius is what makes
+  //    the scatter forgiving instead of a miss.
+  // Wet units still drive at 65% speed for 2 s, refreshed on every soak.
   wave: {
     name: "Wave",
     size: 2,
     health: 1000,
     range: 110 * MU,
-    reload: 3 / TICK,
+    reload: 45 / TICK,
     shots: 1,
     shotDelay: 0,
     spread: 0,
-    inaccuracy: (5 * Math.PI) / 180,
+    inaccuracy: (18 * Math.PI) / 180,
     shootCone: (50 * Math.PI) / 180,
     rotateSpeed: ((5 * Math.PI) / 180) * TICK, // BaseTurret default
     targetAir: true,
     targetGround: true,
     bullet: {
       speed: 3.5 * TICK * MU,
-      damage: 0.2,
+      // the contact hit is gone entirely: every point this shot deals is
+      // splash, so a ball that bursts short of its target is worth exactly
+      // as much as one that bursts on its face
+      damage: 0,
       // no limitRange call upstream: 3.5 units/tick for 34 ticks is 119
-      // units against a 110 range — the drag we don't model ate the rest
+      // units against a 110 range — the drag we don't model ate the rest.
+      // A ball that runs the clock out bursts anyway (BulletType.despawnHit,
+      // and the splash branch in updateProjectiles), so a shot thrown past
+      // a dodging target still wets the ground it was headed for
       lifetime: 34 / TICK,
-      splash: 0,
-      splashRadius: 0,
+      splash: 1,
+      splashRadius: 30 * MU,
       collidesAir: true,
       collidesGround: true,
-      hitRadius: (4 / 2) * MU, // BulletType's default hitSize 4
+      // the ball is a fat thing, and a fat thing bursts where it touches:
+      // the hit radius is the ball's own size rather than BulletType's
+      // default 4, so the burst centre reads as the ball's centre
+      hitRadius: 5 * MU,
       wet: { duration: 2, slow: 0.65 },
-      orb: 3 * MU, // LiquidBulletType's default orbSize
+      orb: 5 * MU, // one ball, not a droplet — LiquidBulletType.draw's disc
       // LiquidTurret zeroes the block's own effects; the bullet's
-      // shootEffect is Fx.shootLiquid and its hit is Fx.hitLiquid — and
-      // despawned() fires the hit effect too, so an orb that outruns its
-      // lifetime still lands as a splash
+      // shootEffect is still Fx.shootLiquid. The landing is not: hitLiquid
+      // is a handspan of droplets and this burst is seven tiles wide, so
+      // WaterBurst draws it at the radius it actually soaked
       shootFx: FxKind.ShootLiquid,
-      hitFx: FxKind.HitLiquid,
+      hitFx: FxKind.WaterBurst,
+      hitFx2: FxKind.HitLiquid,
       despawnFx: FxKind.HitLiquid,
       fxColor: PAL.water,
     },
@@ -953,29 +981,38 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       tractor: { force: 16, scaledForce: 9 },
     },
   },
-  // Tsunami, from mindustry/content/Blocks.java with water ammo — wave's
-  // rule: 1:1 on every number except the water's effect (BulletStats.wet).
-  // Upstream's knockback 1.7 — two and a half waves' worth of shove — is
-  // traded for the deeper slow, which is the entire reason to pay a
-  // size-3, endgame-priced bill for a 8-DPS turret.
+  // Tsunami — wave's weapon at the endgame's scale, and the same departure
+  // from upstream for the same reason (see wave above). Mindustry's
+  // tsunami is a bigger hose; this one is a bigger SHELL. Upstream's
+  // knockback 1.7 is still traded for the deeper slow, which is the entire
+  // reason to pay a size-3, endgame-priced bill for a turret that barely
+  // scratches anything.
   //
-  // Twin barrels 4 units apart firing together (ShootAlternate, shots 2)
-  // every 3 ticks: forty orbs a second, so it soaks a COLUMN rather than
-  // picking at a file. The heavy shot flies faster and further (speed 4,
-  // lifetime 49 ticks over 190 range), soaks for twice wave's duration
-  // (statusDuration 60*4), and its 0.2 contact damage is upstream's own.
-  // Wet units drive at 45% speed for 4 s — anything crossing its 190-unit
+  // Everything about it is wave's shot, louder:
+  //  - twin barrels 4 units apart throwing together (ShootAlternate,
+  //    shots 2) every 15 ticks — eight balls a second against wave's one
+  //    and a third, which is the "much faster" half of the pair.
+  //  - a 46-unit burst radius: near twelve tiles across, better than half
+  //    again wave's reach per ball, and the reason two balls a volley at
+  //    22 degrees of scatter read as a WALL of water rather than two
+  //    puddles. The scatter is deliberately wider than wave's: at 190
+  //    units of range a tight pair would soak one spot, and a burst this
+  //    size can afford to miss by tiles and still catch the whole group.
+  //  - splash 2, which is still nothing. This kills as little as wave does.
+  // The shot itself is upstream's heavy round — speed 4, lifetime 49 ticks
+  // over 190 range — and the soak is upstream's duration (statusDuration
+  // 60*4): wet units drive at 45% speed for 4 s, so anything crossing its
   // umbrella spends better than twice as long under every other turret.
   tsunami: {
     name: "Tsunami",
     size: 3,
     health: 2250,
     range: 190 * MU,
-    reload: 3 / TICK,
+    reload: 15 / TICK,
     shots: 2,
     shotDelay: 0, // both barrels throw on the same tick
     spread: 0,
-    inaccuracy: (3 * Math.PI) / 180,
+    inaccuracy: (22 * Math.PI) / 180,
     shootCone: (45 * Math.PI) / 180,
     rotateSpeed: ((5 * Math.PI) / 180) * TICK, // BaseTurret default
     targetAir: true,
@@ -984,17 +1021,18 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     barrels: { count: 2, spread: 4 * MU },
     bullet: {
       speed: 4 * TICK * MU,
-      damage: 0.2,
+      damage: 0, // as wave: every point this shot deals is splash
       lifetime: 49 / TICK, // 196 units of flight over a 190 range
-      splash: 0,
-      splashRadius: 0,
+      splash: 2,
+      splashRadius: 46 * MU,
       collidesAir: true,
       collidesGround: true,
-      hitRadius: (4 / 2) * MU, // BulletType's default hitSize 4
+      hitRadius: 6 * MU, // the ball's own size, as wave's
       wet: { duration: 4, slow: 0.45 },
-      orb: 4 * MU, // the heavy shot's own orbSize
+      orb: 6 * MU, // the heavy ball
       shootFx: FxKind.ShootLiquid,
-      hitFx: FxKind.HitLiquid,
+      hitFx: FxKind.WaterBurst,
+      hitFx2: FxKind.HitLiquid,
       despawnFx: FxKind.HitLiquid,
       fxColor: PAL.water,
     },
@@ -1404,14 +1442,14 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   hail: "Lobs shells that explode where they land.",
   scorch: "Sprays fire at close range and sets enemies alight.",
   salvo: "Shoots four shells at once, then reloads slowly.",
-  wave: "Sprays water that soaks enemies and slows them down.",
+  wave: "Lobs a ball of water that bursts and soaks everything nearby.",
   lancer: "Charges up, then fires a beam through a line of enemies.",
   ripple: "Lobs four shells at once over a long distance.",
   parallax: "Pulls enemies backwards with a tractor beam.",
   fuse: "Shoots three heavy rays at very close range.",
   swarmer: "Shoots homing missiles that explode on contact.",
   cyclone: "Shoots a fast stream of shells that burst into fragments.",
-  tsunami: "Sprays a lot of water and slows down everything it hits.",
+  tsunami: "Throws heavy water balls that burst into a huge soaking flood.",
   mender: "Repairs nearby buildings every few seconds.",
   mendProjector: "Repairs nearby buildings faster and over a wider area.",
   spectre: "Shoots heavy bullets from two barrels without stopping.",
