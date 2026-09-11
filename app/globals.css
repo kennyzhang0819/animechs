@@ -553,6 +553,19 @@ svg {
   outline-offset: 2px;
 }
 
+/* A CARD OWNED BUT NOT AIMED — the right button put its ghost away and it
+   is sitting in its slot waiting to be clicked. Dimmed rather than
+   greyed, because it is still the thing the player just paid for and the
+   rarity on its border is still what they need to read; hovering brings
+   it back up to say it is the thing to click. */
+.ms-deal-down {
+  filter: brightness(0.7) saturate(0.9);
+}
+
+.ms-deal-card:hover {
+  filter: brightness(1.15);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ms-deal-card {
     animation: none;

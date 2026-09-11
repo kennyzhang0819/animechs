@@ -19,8 +19,9 @@ import { HoverCard, useHoverCard } from "./HoverCard";
  *
  *   BUY TURRET (T) pays a flat fee (economy.ts TURRET_ROLL_PRICE), rolls
  *   two tables — which turret (rarity.ts) and what shape of it
- *   (formation.ts) — and puts the result STRAIGHT INTO THE HAND. The
- *   ghost is on the board before the finger has left the key.
+ *   (formation.ts) — and drops the result into the corner's one slot,
+ *   already aimed. The ghost is on the board before the finger has left
+ *   the key.
  *
  *   BUY UPGRADE (G) is the second half of the same idea and is not built
  *   yet. It is on screen, dark, saying so — because the corner's LAYOUT
@@ -28,43 +29,44 @@ import { HoverCard, useHoverCard } from "./HoverCard";
  *   moves everything the hand has already learned.
  *
  * THE FLOW IS T, CLICK, T, CLICK. There is no hand to manage, no slot to
- * choose and no clock to beat: a card is drawn already picked, and it
- * stands until the ground takes it. Pressing T again throws it away and
- * draws another, and the right button throws it away for nothing — so a
- * player who wants a bastion and drew a quad presses T until they get
- * one, at a thousand scrap a look. THE SPAM IS THE MECHANIC. It used to
- * be a ten-slot hand on a ten-second fuse, which asked the player to
- * manage an inventory in the middle of a wave; this asks them one
- * question at a time and lets them pay to ask it again.
+ * choose and no clock to beat: a card is drawn already aimed, and it
+ * stands until the ground takes it. A player who wants a bastion and drew
+ * a quad presses T until they get one, at a thousand scrap a look — THE
+ * SPAM IS THE MECHANIC, and a re-roll is not refunded, because a free one
+ * would make the shape roll decorative.
  *
- * A DISCARDED CARD IS NOT REFUNDED. The thousand scrap is the price of
- * another look at the shape table, and a free re-roll would make the
- * shape roll decorative.
+ * OWNING A CARD AND AIMING IT ARE TWO DIFFERENT STATES. The right button
+ * puts the GHOST away and leaves the card in its slot; clicking the slot
+ * picks it back up. Nothing about that gesture spends anything — it is
+ * the same "put that down" every player in this game already reaches for,
+ * and it used to burn a thousand scrap, which made the safest reflex on
+ * the mouse the most expensive one. THE ONLY TWO THINGS THAT SPEND A CARD
+ * ARE PLACING IT AND BUYING ANOTHER.
  */
 
 /** one card, derived WHOLE from the run state — the deal keeps no state
- *  of its own, because the card IS what is in hand (Game.buildKind) */
+ *  of its own, because the card IS what the run owns (Game.heldCard) */
 export interface DealCard {
   kind: TowerKind;
   form: FormationId;
 }
 
-/** what the corner is holding right now, or null for an empty hand */
-export const cardOf = (hud: UiState | null): DealCard | null =>
-  hud && hud.buildKind && hud.buildForm ? { kind: hud.buildKind, form: hud.buildForm } : null;
+/** what the corner is holding right now, or null for an empty slot */
+export const cardOf = (hud: UiState | null): DealCard | null => hud?.held ?? null;
 
 /**
  * THE DEAL'S TWO ACTIONS, and its keyboard.
  *
- * There is no state machine left. The sim knows what is in hand because
- * the hand IS the build state, so buying is one call and discarding is
- * one call, and the card on screen is read straight off the HUD poll.
+ * There is no state machine left here. The Game owns the card
+ * (Game.heldCard) and owns whether it is being aimed, so buying is one
+ * call, picking it up is one call, and the card on screen is read
+ * straight off the HUD poll.
  */
 export function useDeal(
   gameRef: RefObject<Game | null>,
   hud: UiState | null,
   refresh: () => void,
-): { buy: () => void; discard: () => void } {
+): { buy: () => void; toggle: () => void } {
   const dealing = hud?.dealing ?? false;
   const over = !hud || hud.lost || hud.won;
 
@@ -76,10 +78,12 @@ export function useDeal(
     refresh();
   }, [gameRef, refresh]);
 
-  const discard = useCallback(() => {
+  /** pick the owned card back up, or put the ghost down — it spends
+   *  nothing either way */
+  const toggle = useCallback(() => {
     const g = gameRef.current;
     if (!g) return;
-    g.discardCard();
+    g.toggleHeldCard();
     refresh();
   }, [gameRef, refresh]);
 
@@ -114,7 +118,7 @@ export function useDeal(
     return () => window.removeEventListener("keydown", onKey);
   }, [dealing, over, buy, gameRef]);
 
-  return { buy, discard };
+  return { buy, toggle };
 }
 
 /**
@@ -171,12 +175,23 @@ function FormationMark({ form }: { form: FormationId }) {
  * player mid-wave has no time to read a word, and the difference between
  * grey and purple lands before the eye reaches the sprite.
  *
- * It is not a button. There is nothing to click it FOR — a drawn card is
- * already in hand — so it is a status chip that opens a hover card, and
- * the two things that can happen to it (place it, throw it away) both
- * happen on the board.
+ * IT IS A BUTTON, and the click is a toggle: a card whose ghost has been
+ * put away with the right button is picked back up here, and a card being
+ * aimed is put down again. It is the command card's own gesture, kept
+ * where the command card used to be.
  */
-function TurretCard({ card, icon }: { card: DealCard; icon: string }) {
+function TurretCard({
+  card,
+  icon,
+  aimed,
+  onToggle,
+}: {
+  card: DealCard;
+  icon: string;
+  /** is the ghost on the board right now? */
+  aimed: boolean;
+  onToggle: () => void;
+}) {
   const tip = useHoverCard("up");
   const r = rarityDef(card.kind);
   const stats = TOWERS[card.kind];
@@ -184,13 +199,17 @@ function TurretCard({ card, icon }: { card: DealCard; icon: string }) {
   const fr = RARITY[formationRarity(card.form)];
   const n = f.cells.length;
   return (
-    <div
-      ref={tip.ref as RefObject<HTMLDivElement | null>}
+    <button
+      ref={tip.ref as RefObject<HTMLButtonElement | null>}
       {...tip.anchorProps}
-      role="status"
-      tabIndex={0}
-      aria-label={`In hand: ${n} ${stats.name}, ${r.name}, in a ${f.name}, ${fr.name} shape. Click the board to place it, right click to discard.`}
-      className="ms-deal-card pointer-events-auto relative flex h-[5rem] w-[3.8rem] flex-col items-center justify-center gap-0.5 border-2 p-0"
+      onClick={onToggle}
+      aria-pressed={aimed}
+      aria-label={`${n} ${stats.name}, ${r.name}, in a ${f.name}, ${fr.name} shape. ${
+        aimed ? "Aimed — click the board to place it." : "Click to pick it up."
+      }`}
+      className={`ms-deal-card pointer-events-auto relative flex h-[5rem] w-[3.8rem] cursor-pointer flex-col items-center justify-center gap-0.5 border-2 p-0 ${
+        aimed ? "" : "ms-deal-down"
+      }`}
       style={{ borderColor: r.color, background: r.ground, color: r.color }}
     >
       <FormationMark form={card.form} />
@@ -208,10 +227,12 @@ function TurretCard({ card, icon }: { card: DealCard; icon: string }) {
           {f.name} — {n} turrets, {f.w * stats.size}×{f.h * stats.size} tiles, {fr.name} shape
         </span>
         <span className="mt-1.5 block text-[#EDEDEF]">
-          Click the board to place it. Right click, or T again, to throw it away — no refund.
+          {aimed
+            ? "Click the board to place it. Right click puts it back here."
+            : "Click to pick it up again."}
         </span>
       </HoverCard>
-    </div>
+    </button>
   );
 }
 
@@ -220,16 +241,25 @@ export function DealCorner({
   hud,
   icons,
   onBuy,
+  onToggle,
 }: {
   hud: UiState;
   icons: Partial<Record<TowerKind, string>>;
   onBuy: () => void;
+  onToggle: () => void;
 }) {
   const poor = hud.scrap !== null && hud.scrap < hud.rollPrice;
   const card = cardOf(hud);
   return (
     <div className="flex flex-col items-end gap-2">
-      {card && <TurretCard card={card} icon={icons[card.kind] ?? TOWER_ICONS[card.kind]} />}
+      {card && (
+        <TurretCard
+          card={card}
+          icon={icons[card.kind] ?? TOWER_ICONS[card.kind]}
+          aimed={hud.buildKind !== null}
+          onToggle={onToggle}
+        />
+      )}
       <div className="ms-pane pointer-events-auto flex w-[13rem] flex-col gap-1 p-1">
         <button
           className={`ms-btn h-9 w-full justify-between px-2 text-[13px] font-bold uppercase tracking-wide ${

@@ -67,10 +67,13 @@ export interface UiState {
   totalWaves: number;
   /** the tower kind in hand, or null for the bare cursor */
   buildKind: TowerKind | null;
-  /** the SHAPE it will land in (formation.ts) — null on a free board,
-   *  where the command card picks a bare turret. With buildKind it is the
-   *  whole of the card the corner draws: there is no other card state */
+  /** the SHAPE the cursor is aiming (formation.ts) — null on a free
+   *  board, where the command card picks a bare turret */
   buildForm: FormationId | null;
+  /** THE CARD THE RUN OWNS, bought and not yet placed. It outlives the
+   *  aiming: a right click clears buildKind and leaves this standing, so
+   *  the corner keeps drawing it and a click picks it back up */
+  held: { kind: TowerKind; form: FormationId } | null;
   /** the demolish tool is picked: the next press sells instead of selecting */
   paused: boolean;
   /** the core is destroyed — the field is frozen behind the score screen */
@@ -488,13 +491,30 @@ export class Game {
   // range); a kind from the tower menu turns on the ghost + paint placement
   private buildKind: TowerKind | null = null;
   /**
-   * THE FORMATION IN HAND (formation.ts) — the shape the thing being
-   * aimed will land in, and never null while buildKind is set. A free
-   * board (the sandbox, the editors) picks a bare turret off the command
-   * card and gets the smallest formation there is, one cell: a dev door
-   * that dropped four turrets a click would be a worse dev door.
+   * THE FORMATION BEING AIMED (formation.ts) — the shape the thing under
+   * the cursor will land in, and never null while buildKind is set. A
+   * free board (the sandbox, the editors) picks a bare turret off the
+   * command card and gets no formation at all: a dev door that dropped
+   * four turrets a click would be a worse dev door.
    */
   private buildForm: FormationId | null = null;
+  /**
+   * THE CARD THE PLAYER OWNS, which is NOT the same thing as the card
+   * they are aiming.
+   *
+   * It used to be: buildKind was the card, so putting the ghost away
+   * threw a thousand scrap in the bin. A right click is the gesture every
+   * player in this game already uses to mean "put that down" — it has
+   * cancelled build mode since long before the deal existed — and having
+   * it mean "burn what you just bought" made the safest reflex on the
+   * mouse the most expensive one.
+   *
+   * So a bought card LIVES HERE until the ground takes it. Aiming it is a
+   * separate state (buildKind/buildForm), which a right click drops and a
+   * click on the card picks back up. The only two things that spend a
+   * card are placing it and buying another.
+   */
+  private heldCard: { kind: TowerKind; form: FormationId } | null = null;
   private building = false;
   private buildFrom = { x: 0, y: 0 };
   /**
@@ -673,6 +693,7 @@ export class Game {
         const n = this.placeFormation(p);
         if (n > 0) {
           this.built += n;
+          this.heldCard = null;
           this.buildKind = null;
           this.buildForm = null;
         }
@@ -708,8 +729,10 @@ export class Game {
     } else if (e.button === 2) {
       e.preventDefault();
       this.building = false;
-      // right-click still escapes build mode first — you reach for it to put
-      // the ghost away, and that press must never also demolish something
+      // right-click still escapes build mode first — you reach for it to
+      // put the ghost away, and that press must never also demolish
+      // something. IT DOES NOT SPEND THE CARD: a bought card goes back to
+      // its slot in the corner (heldCard) and waits to be clicked again
       if (this.buildKind) {
         this.buildKind = null;
         this.buildForm = null;
@@ -1014,17 +1037,36 @@ export class Game {
     const form = rollFormation(this.shapePool());
     if (!form) return null;
     if (!this.sim.spend(this.rollPrice())) return null;
+    this.heldCard = { kind, form };
     this.buildKind = kind;
     this.buildForm = form;
     this.sim.clearStructSelection();
     return { kind, form };
   }
 
-  /** throw the card in hand away — the right button, and what a second T
-   *  does to the first one's draw. Nothing comes back */
+  /** throw the owned card away — what a second T does to the first one's
+   *  draw. Nothing comes back; a right click does NOT do this */
   discardCard(): void {
+    this.heldCard = null;
     this.buildKind = null;
     this.buildForm = null;
+  }
+
+  /**
+   * PICK THE OWNED CARD BACK UP, or put it down again — the click on the
+   * card in the corner, and the toggle the command card's slots have
+   * always had. It spends nothing either way: the card is already bought.
+   */
+  toggleHeldCard(): void {
+    if (!this.heldCard || this.sim.lost() || this.won()) return;
+    if (this.buildKind) {
+      this.buildKind = null;
+      this.buildForm = null;
+      return;
+    }
+    this.buildKind = this.heldCard.kind;
+    this.buildForm = this.heldCard.form;
+    this.sim.clearStructSelection();
   }
 
   /** what the deal may turn over: the track's roster, minus the retired
@@ -1480,6 +1522,7 @@ export class Game {
       totalWaves: this.sim.totalWaves,
       buildKind: this.buildKind,
       buildForm: this.buildForm,
+      held: this.heldCard,
       paused: this.paused,
       speed: this.speed,
       showRoutes: this.showRoutes,

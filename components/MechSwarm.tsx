@@ -2527,7 +2527,7 @@ export default function MechSwarm() {
                 cannot do. Like the minimap, whichever of the two it is
                 stands until the run ends: the end screens own the frame. */}
             {hud.dealing ? (
-              <DealCorner hud={hud} icons={icons} onBuy={deal.buy} />
+              <DealCorner hud={hud} icons={icons} onBuy={deal.buy} onToggle={deal.toggle} />
             ) : (
               <div className="ms-pane p-1">
                 <div
