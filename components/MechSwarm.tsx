@@ -101,11 +101,17 @@ import {
 } from "@/game/storage";
 import { BUILD } from "@/game/version";
 import { BUILD_COLS, BUILD_SLOTS, slotForCode, type BuildSlot } from "@/game/tech";
-import { lockedMutators, rewardsAt, rewardText } from "@/game/track";
+import {
+  difficultyOpen,
+  lockedMutators,
+  MUTATORS_FROM,
+  rewardsAt,
+  rewardText,
+} from "@/game/track";
 import { TOWER_DESC, TOWERS } from "@/game/constants";
 import { TOWER_ICONS } from "@/game/towerIcons";
 import { TOWER_KINDS } from "@/game/types";
-import { levelProgress, POINT_COLOR, RANDOM_MAP_XP_BONUS, XP_COLOR } from "@/game/economy";
+import { levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
 import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
 import ProgressView from "./Progress";
 import { bandFor, MutationFace } from "./mutationFace";
@@ -241,22 +247,11 @@ const clock = (seconds: number): string => {
 };
 
 
-/**
- * The map bonus, named on the results panel when it was paid: the run's
- * multiplier already includes it (RunReward.xpBonus), and a player who
- * left the map on Random should see what that was worth.
+/*
+ * THE MAP BONUS LINE IS GONE from the results panel, with the bonus it
+ * named (economy.ts). A line saying "Random map x1.00" is a line about
+ * nothing.
  */
-function RandomMapLine({ result }: { result: RunReward }) {
-  if (!result.randomMap) return null;
-  return (
-    <div className="pt-1 text-[14px] uppercase tracking-widest text-[#A6A6AF]">
-      Random map{" "}
-      <span className="font-bold" style={{ color: XP_COLOR }}>
-        {xpBonusText(1 + RANDOM_MAP_XP_BONUS)}
-      </span>
-    </div>
-  );
-}
 
 function LevelUpLine({ result }: { result: RunReward }) {
   const p = loadProgress();
@@ -502,6 +497,18 @@ const xpBonusText = (mult: number): string => {
   return pct > 0 ? `+${pct}% XP` : "Base XP";
 };
 
+/**
+ * THE HARDEST DIFFICULTY THAT ROLLS NO RULES — Nemesis, the whole script
+ * at full count. It is the ceiling for a save below the mutator phase,
+ * and where a stored pick that has become unplayable lands (see the
+ * clamp below): a save whose difficulty was set on the dev door and then
+ * reset must not sit pointing at a run it cannot deploy.
+ */
+const TOP_RULELESS_TIER = Math.max(
+  0,
+  ...Array.from({ length: RUNG_COUNT }, (_, t) => t).filter((t) => tierMutationCount(t) === 0),
+);
+
 /** a rung's multiplier as its share of the mission pot: Incursion prints
  *  "40% XP", Nemesis — the rung the pot is priced for — "100% XP", the
  *  top rung "220% XP" */
@@ -509,9 +516,10 @@ const xpShareText = (mult: number): string => `${Math.round(mult * 100)}% XP`;
 
 /**
  * THE MAP LIST. Random leads and is the default: the game picks any open
- * map on Start, and pays RANDOM_MAP_XP_BONUS for the trust. Under it,
- * every world by name, one line each — a locked one is on the list, never
- * hidden, greyed. THE PICTURE IS ON THE RIGHT AND ONLY AFTER A CLICK: the
+ * map on Start. It used to pay a quarter more XP for the trust and does
+ * not any more — it is the default because it is the best way to play the
+ * campaign, not because it is bribed. Under it, every world by name, one
+ * line each — a locked one is on the list, never hidden, greyed. THE PICTURE IS ON THE RIGHT AND ONLY AFTER A CLICK: the
  * list is names, the cursor starts on Random, and a row click puts that
  * map's thumbnail, mission and standing (what opens it, or the best
  * difficulty beaten on it) beside it. No map is ranked against another: every map is as hard as the
@@ -587,9 +595,6 @@ function MapPicker({
           Random
         </div>
         <p className="text-[14px] text-[#A6A6AF]">Any open map, picked on start.</p>
-        <DetailLine label="Pays">
-          <span style={{ color: XP_COLOR }}>{xpBonusText(1 + RANDOM_MAP_XP_BONUS)}</span>
-        </DetailLine>
         <SelectButton onClick={() => onPick(null)} />
       </>
     );
@@ -627,13 +632,26 @@ function MapPicker({
 }
 
 /**
- * THE DIFFICULTY LIST: the ten rungs by name on the left, every one open;
- * on the right what the one under the cursor IS — how much of the swarm
- * it sends (and how many bodies that is on the picked map), how many
- * rules it rolls, and what it pays. There is always a cursor: it starts
- * on the difficulty the run is set to, so both panes are on screen from
- * the first frame. The rules themselves are still not spelled out — a
- * player finds those out by playing; only their number is promised.
+ * THE DIFFICULTY LIST: the ten difficulties by name on the left; on the
+ * right what the one under the cursor IS — how much of the swarm it sends
+ * (and how many bodies that is on the picked map), how many rules it
+ * rolls, and what it pays. There is always a cursor: it starts on the
+ * difficulty the run is set to, so both panes are on screen from the
+ * first frame. The rules themselves are still not spelled out — a player
+ * finds those out by playing; only their number is promised.
+ *
+ * THE ONES THAT ROLL RULES ARE SHUT UNTIL THE SAVE HAS RULES (track.ts
+ * difficultyOpen): Nemesis +1 and up promise a number of mutators, and a
+ * deck with nothing in it makes that promise a lie. The four named
+ * difficulties carry no rules and are open from level 1, so the whole
+ * script at full count is always playable.
+ *
+ * A SHUT ROW IS GREYED IN THE LIST AND NAMES ITS LEVEL IN THE DETAIL —
+ * the map list's own arrangement (see MapPicker's "Opens at"), and for
+ * the same reason: a row a player cannot click is a question, and the
+ * answer costs one line beside the thing they are already looking at.
+ * The list itself stays wordless, so nine greyed names do not become
+ * nine copies of the same sentence.
  */
 /** how big the swarm is, in words, one per named difficulty (COUNT_SCALE) */
 const SWARM_SIZE: readonly string[] = [
@@ -646,12 +664,15 @@ const SWARM_SIZE: readonly string[] = [
 function DifficultyPicker({
   tier,
   world,
+  level,
   onPick,
   onClose,
 }: {
   tier: number;
   /** the picked map, for a body count — null when the run is on Random */
   world: LevelSpec | null;
+  /** the level the save PLAYS at — what decides which rows are shut */
+  level: number;
   onPick: (tier: number) => void;
   onClose: () => void;
 }) {
@@ -660,17 +681,23 @@ function DifficultyPicker({
   const rules = tierMutationCount(focus);
   const step = tierMutationStep(focus);
   const swarm = world ? budget(world, focus) : null;
+  const open = difficultyOpen(level, rules);
 
-  const list = Array.from({ length: RUNG_COUNT }, (_, t) => (
-    <PickRow key={t} selected={t === tier} focused={t === focus} onPick={() => setFocus(t)}>
-      <span
-        className="truncate font-display text-[15px] font-bold uppercase tracking-widest"
-        style={{ color: rungColor(t) }}
-      >
-        {rungLabel(t)}
-      </span>
-    </PickRow>
-  ));
+  const list = Array.from({ length: RUNG_COUNT }, (_, t) => {
+    const shut = !difficultyOpen(level, tierMutationCount(t));
+    return (
+      <PickRow key={t} selected={t === tier} focused={t === focus} onPick={() => setFocus(t)}>
+        <span
+          className={`truncate font-display text-[15px] font-bold uppercase tracking-widest ${
+            shut ? "opacity-40" : ""
+          }`}
+          style={{ color: shut ? "#71717C" : rungColor(t) }}
+        >
+          {rungLabel(t)}
+        </span>
+      </PickRow>
+    );
+  });
 
   const detail = (
     <>
@@ -690,10 +717,16 @@ function DifficultyPicker({
         {swarm ? ` · ${swarm.units.toLocaleString()} units over ${swarm.waves} waves` : ""}
       </DetailLine>
       <DetailLine label="Mutators">{rules === 0 ? "None" : `${rules} rules`}</DetailLine>
-      <DetailLine label="Pays">
-        <span style={{ color: XP_COLOR }}>{xpShareText(tierXpBonus(focus))}</span>
-      </DetailLine>
-      <SelectButton onClick={() => onPick(focus)} />
+      {open ? (
+        <DetailLine label="Pays">
+          <span style={{ color: XP_COLOR }}>{xpShareText(tierXpBonus(focus))}</span>
+        </DetailLine>
+      ) : (
+        <DetailLine label="Opens at">
+          <span style={{ color: POINT_COLOR }}>level {MUTATORS_FROM}</span>
+        </DetailLine>
+      )}
+      <SelectButton onClick={() => onPick(focus)} disabled={!open} />
     </>
   );
 
@@ -1128,6 +1161,18 @@ export default function MechSwarm() {
   // the campaign save (bank, cleared levels, tech nodes) — localStorage,
   // so it loads in an effect; null only for the first client frame
   const [progress, setProgress] = useState<Progress | null>(null);
+  /** the level the save PLAYS at — the dev door's, so a fully unlocked
+   *  save sees every difficulty open. What gates the ladder's top six */
+  const playLevel = progress ? effectiveLevel(progress) : 1;
+  /** A PICK THAT HAS GONE OUT OF REACH COMES BACK DOWN. The difficulty is
+   *  saved with the run (progress.difficulty) and the save that wrote it
+   *  may since have been reset, or written by the dev door — either way
+   *  the deploy screen must never stand on a difficulty whose Start is
+   *  dead. Silent, and it costs nothing: the four named ones are open at
+   *  every level, so there is always somewhere for it to land */
+  useEffect(() => {
+    if (!difficultyOpen(playLevel, tierMutationCount(tier))) setTier(TOP_RULELESS_TIER);
+  }, [playLevel, tier]);
   // a finished run's settled payout: non-null exactly while the results
   // overlay shows the breakdown, and the guard against granting twice
   const [result, setResult] = useState<RunReward | null>(null);
@@ -2074,7 +2119,6 @@ export default function MechSwarm() {
     const back = (label: string) => (
       <CornerBack label={label} onClick={() => setMenuView("home")} />
     );
-    const randomLabel = xpBonusText(1 + RANDOM_MAP_XP_BONUS);
     return (
       // every menu view scrolls if it has to: the title card fits any
       // screen at 100%, but at a big UI size on a short screen it can
@@ -2173,19 +2217,12 @@ export default function MechSwarm() {
                   <div className="flex flex-col gap-2">
                     <MacroButton
                       label="Map"
-                      value={pickedWorld ? pickedWorld.name : `Random, ${randomLabel}`}
+                      value={pickedWorld ? pickedWorld.name : "Random"}
                       onClick={() => setPicker("maps")}
                     >
-                      {pickedWorld ? (
-                        <span className="text-[#EDEDEF]">{pickedWorld.name}</span>
-                      ) : (
-                        <>
-                          <span className="text-[#EDEDEF]">Random</span>
-                          <span className="text-[14px]" style={{ color: XP_COLOR }}>
-                            {randomLabel}
-                          </span>
-                        </>
-                      )}
+                      <span className="text-[#EDEDEF]">
+                        {pickedWorld ? pickedWorld.name : "Random"}
+                      </span>
                     </MacroButton>
                     <MacroButton
                       label="Difficulty"
@@ -2254,6 +2291,7 @@ export default function MechSwarm() {
             <DifficultyPicker
               tier={tier}
               world={pickedWorld}
+              level={playLevel}
               onClose={() => setPicker(null)}
               onPick={(t) => {
                 setTier(t);
@@ -2614,7 +2652,6 @@ export default function MechSwarm() {
                         which is what makes a failed push into progress */}
                     <div>Earned (×{result.xpBonus.toFixed(2)})</div>
                     <XpAmount amount={result.xp} className="justify-center" />
-                    <RandomMapLine result={result} />
                     <LevelUpLine result={result} />
                   </div>
                 )}
@@ -2672,7 +2709,6 @@ export default function MechSwarm() {
                       </span>
                       <XpAmount amount={result.xp} />
                     </div>
-                    <RandomMapLine result={result} />
                     <LevelUpLine result={result} />
                   </>
                 )}

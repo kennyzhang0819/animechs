@@ -287,8 +287,14 @@ export function levelProgress(xp: number): { level: number; into: number; need: 
   return { level, into, need };
 }
 
-/** a run on a random map pays this much more XP */
-export const RANDOM_MAP_XP_BONUS = 0.25;
+/*
+ * A RANDOM MAP PAYS NOTHING EXTRA (RANDOM_MAP_XP_BONUS, a quarter, gone).
+ * It was a bribe to leave the macro alone, and a bribe is the wrong tool:
+ * Random is the DEFAULT and the best way to play the game, and a run that
+ * pays a quarter more for it makes every deliberate map choice feel like
+ * a tax on knowing what you want. The only thing that moves what a run
+ * pays is the difficulty it is played at.
+ */
 
 /** the scrap sprite and colour (Mindustry Items.scrap, 777777, lifted) */
 export const SCRAP_ICON = "/mindustry/sprites/items/item-scrap.png";

@@ -63,10 +63,12 @@ stale tab or a cached bundle looks exactly like a fix not working.
   script — the **stage table** (`stageAudit`) that the turret prices are
   tuned against
 - `game/track.ts` — the **level track**: the fifteen-level roster phase —
-  a fresh save owns three turrets (`STARTING_ROSTER`) and the track hands
-  out one more a level (`UNLOCKS`) to a complete card at 15 — then the
-  mutator phase, one rule a level; and `techStateFor(level)`, what a save
-  at that level may do. The turret upgrade rungs are off the track for now
+  a fresh save owns four turrets (`STARTING_ROSTER`) and three shapes
+  (`STARTING_SHAPES`), and the track hands out one more of each a level
+  (`UNLOCKS`, `SHAPE_UNLOCKS`) to a complete roster at 14 — then the
+  mutator phase, which opens with a whole band (`MUTATORS_FROM`) and one
+  rule a level after; and `techStateFor(level)`, what a save at that
+  level may do. The turret upgrade rungs are off the track for now
   (`UPGRADES_ON_TRACK`)
 - `game/formation.ts` — **the second roll**: the twelve shapes a card can
   carry (`FORMATIONS`, 4 to 36 turrets), their bands read straight off the
@@ -288,12 +290,15 @@ waves are cleared**. A wave is cleared when every body it sent is down
 linearly from wave 1 to the last (`WAVE_XP_RAMP`: the last wave pays three
 times the first) and sum to exactly the pot, so wave 1 is worth 1% and
 wave 50 is worth 3%. A run that dies keeps what it cleared; a win pays
-the whole pot however the last wave ended. The rung multiplies it, and a
-run on a **random map** — the menu's default — pays `RANDOM_MAP_XP_BONUS`
-(a quarter) more on top. XP turns into **player level** through a
-power-law curve (`xpToNext`), and **every level is a rung on the track**
-(`game/track.ts`) that hands out a map, a turret or a mutator — nothing
-is chosen and nothing is bought.
+the whole pot however the last wave ended. **The difficulty is the only
+multiplier.** A random map — the menu's default — used to pay a quarter
+more on top, and does not any more: Random is the default because it is
+the best way to play the campaign, not because it is bribed, and a bonus
+on it made every deliberate map choice feel like a tax on knowing what
+you want. XP turns into **player level** through a power-law curve
+(`xpToNext`), and **every level is a step on the track** (`game/track.ts`)
+that hands out a map, a turret, a shape or a mutator — nothing is chosen
+and nothing is bought.
 
 ### The deal
 
@@ -419,10 +424,20 @@ roster is complete. **The roster IS the draw pool** — the deal rolls over
 exactly what the track has handed out, which is what makes a level-2 save
 draw commons and a level-14 one draw anything. The levels between also
 carry the maps. Past 14 there is nothing left to build, so a level hands
-out a **rule** instead: one mutator a level, lightest first, into the deck
-the deploy roll draws from. The progress screen lists the whole track,
-every turret chip bordered in its rarity; the results screen names what a
-climb handed out.
+out **rules** instead, into the deck the deploy roll draws from. **Level
+15 opens three at once** — the whole Light band — because a deck with one
+card in it does not roll, it deals the same rule every run; after that it
+is one a level, cheapest first, to the top of the track at 21. The
+progress screen lists the whole track, every turret and shape chip
+bordered in its rarity; the results screen names what a climb handed out.
+
+**The difficulties that roll rules are shut until there are rules to
+roll** (`difficultyOpen`): Nemesis +1 and up promise a number of mutators,
+and a deck with nothing in it makes that promise a lie. The four named
+difficulties carry none and are open from level 1, so the whole script at
+full count is always playable. A shut row is greyed in the list and names
+the level it opens at in the detail beside it, the same way a locked map
+does.
 
 **The two menders are retired** (`RETIRED_KINDS` in `game/types.ts`): the
 support pair is off the field while the deal is being built, implemented

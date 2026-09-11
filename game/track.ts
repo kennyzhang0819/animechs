@@ -56,31 +56,57 @@ import {
 /** the level at which the last turret opens and the roster is complete */
 export const ROSTER_TOP = 14;
 
-/** one rule a level, LIGHTEST FIRST, from ROSTER_TOP + 1 */
-const MUTATOR_UNLOCKS: readonly MutationId[] = [
-  /* 15 */ "armored",
-  /* 16 */ "mitosis",
-  /* 17 */ "volatile",
-  /* 18 */ "shieldTowers",
-  /* 19 */ "overshields",
-  /* 20 */ "speedy",
-  /* 21 */ "hungry",
-  /* 22 */ "hydrophobic",
-  /* 23 */ "amphibious",
+/**
+ * THE RULES, LIGHTEST FIRST, one level a row from ROSTER_TOP + 1.
+ *
+ * THE FIRST ROW IS A POOL AND NOT A RULE. A deploy above Nemesis rolls
+ * several mutators to fit a points budget (mutation.ts), and a deck with
+ * ONE card in it does not roll — it deals the same rule every run, which
+ * is the opposite of what the mutator phase is for. The level that opens
+ * the phase therefore opens the whole LIGHT band at once, three rules the
+ * first mutator-bearing difficulty can actually afford, and a run above
+ * Nemesis is a different run from its first outing.
+ *
+ * After that it is one a level, cheapest first, up to the one Brutal rule
+ * in the catalog.
+ */
+const MUTATOR_UNLOCKS: readonly (readonly MutationId[])[] = [
+  /* 15 */ ["armored", "mitosis", "volatile"],
+  /* 16 */ ["shieldTowers"],
+  /* 17 */ ["overshields"],
+  /* 18 */ ["speedy"],
+  /* 19 */ ["hungry"],
+  /* 20 */ ["hydrophobic"],
+  /* 21 */ ["amphibious"],
 ];
 
 export const MAX_LEVEL = ROSTER_TOP + MUTATOR_UNLOCKS.length;
 
+/**
+ * THE LEVEL THE MUTATOR PHASE OPENS, and the one gate on the ladder: the
+ * difficulties that roll rules (Nemesis +1 and up) are shut until a save
+ * has rules to roll. Nothing prints this number at a player — a locked
+ * difficulty is simply locked, and the level it opens at is the progress
+ * screen's business.
+ */
+export const MUTATORS_FROM = ROSTER_TOP + 1;
+
 /** THE CATALOG IS DEALT WHOLE, ONCE EACH — checked at import */
 (() => {
   const seen = new Set<MutationId>();
-  for (const id of MUTATOR_UNLOCKS) {
-    if (!mutationById(id)) throw new Error(`the track opens "${id}", which is not a mutator`);
-    if (seen.has(id)) throw new Error(`the track opens the mutator "${id}" twice`);
-    seen.add(id);
-  }
+  for (const row of MUTATOR_UNLOCKS)
+    for (const id of row) {
+      if (!mutationById(id)) throw new Error(`the track opens "${id}", which is not a mutator`);
+      if (seen.has(id)) throw new Error(`the track opens the mutator "${id}" twice`);
+      seen.add(id);
+    }
   for (const m of MUTATIONS)
     if (!seen.has(m.id)) throw new Error(`the track never opens the mutator "${m.id}"`);
+  if (MUTATOR_UNLOCKS[0].length < 2)
+    throw new Error("the mutator phase opens with one rule — a deck of one does not roll");
+  MUTATOR_UNLOCKS.forEach((row, i) => {
+    if (row.length === 0) throw new Error(`level ${MUTATORS_FROM + i} opens no rule`);
+  });
 })();
 
 export type Reward =
@@ -285,8 +311,8 @@ export function rewardsAt(level: number): Reward[] {
   for (const id of TURRETS_DEALT.get(level) ?? []) out.push({ kind: "turret", id });
   const shape = SHAPE_UNLOCKS[level];
   if (shape) out.push({ kind: "shape", id: shape });
-  const mut = MUTATOR_UNLOCKS[level - ROSTER_TOP - 1];
-  if (mut) out.push({ kind: "mutator", id: mut });
+  for (const id of MUTATOR_UNLOCKS[level - MUTATORS_FROM] ?? [])
+    out.push({ kind: "mutator", id });
   for (const id of DEALT.get(level) ?? []) out.push({ kind: "upgrade", id });
   return out;
 }
@@ -299,7 +325,8 @@ export const TRACK: readonly { level: number; rewards: Reward[] }[] = Array.from
 
 /** the mutators a level has put in the deck — empty through the whole roster phase */
 export function mutatorsAt(level: number): Set<MutationId> {
-  return new Set(MUTATOR_UNLOCKS.slice(0, Math.max(0, Math.min(level, MAX_LEVEL) - ROSTER_TOP)));
+  const rows = Math.max(0, Math.min(level, MAX_LEVEL) - ROSTER_TOP);
+  return new Set(MUTATOR_UNLOCKS.slice(0, rows).flat());
 }
 
 /** ...and the ones it has not: what the deploy roll must leave in the bag */
@@ -310,8 +337,23 @@ export function lockedMutators(level: number): MutationId[] {
 
 /** the level a mutator joins the deck — MAX_LEVEL + 1 for one the track never opens */
 export function mutatorUnlockLevel(id: MutationId): number {
-  const i = MUTATOR_UNLOCKS.indexOf(id);
-  return i < 0 ? MAX_LEVEL + 1 : ROSTER_TOP + 1 + i;
+  const i = MUTATOR_UNLOCKS.findIndex((row) => row.includes(id));
+  return i < 0 ? MAX_LEVEL + 1 : MUTATORS_FROM + i;
+}
+
+/**
+ * IS THIS DIFFICULTY OPEN TO A SAVE AT THIS LEVEL? Only one thing is ever
+ * shut: the difficulties that ROLL MUTATORS (ladder.ts — Nemesis +1 and
+ * up, the ones with a rules budget), and only until the save has rules to
+ * roll. A deploy that promised three mutators and drew from an empty deck
+ * would be Nemesis with a longer name.
+ *
+ * The four named difficulties carry no rules and are open from level 1,
+ * which means a fresh save can always play the whole script at full count
+ * — the ladder gates the RULES, never the fight.
+ */
+export function difficultyOpen(level: number, rules: number): boolean {
+  return rules <= 0 || level >= MUTATORS_FROM;
 }
 
 /** the level a map opens at — 1 for a map the track never names */

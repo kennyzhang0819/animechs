@@ -1,6 +1,6 @@
 import { WORLD, WORLDS } from "./levels";
 import { tierXpBonus, TOP_TIER } from "./ladder";
-import { levelForXp, missionXp, RANDOM_MAP_XP_BONUS } from "./economy";
+import { levelForXp, missionXp } from "./economy";
 import { MAX_LEVEL, techStateFor, worldUnlockLevel } from "./track";
 import { type TechState } from "./tech";
 import { clearSave, readSave, writeSave } from "./storage";
@@ -401,11 +401,14 @@ export interface RunReward {
   wavesCleared: number;
   /** how many waves the mission held */
   totalWaves: number;
-  /** the whole multiplier the run carried — rung times map */
+  /** the multiplier the run carried, which is the difficulty's and
+   *  nothing else's — kept beside tierBonus, equal to it, because every
+   *  screen that prints a payout reads this one */
   xpBonus: number;
-  /** the XP multiplier the rung carried */
+  /** the XP multiplier the difficulty carried */
   tierBonus: number;
-  /** was the map the game's pick? then RANDOM_MAP_XP_BONUS was paid on top */
+  /** was the map the game's pick? it pays no more for it (economy.ts) —
+   *  the results screen still says which kind of run it was */
   randomMap: boolean;
   /** the rung that was played, 0-based */
   tier: number;
@@ -445,7 +448,8 @@ export function grantRunReward(
   const p = loadProgress();
   const n = Math.min(TOP_TIER, Math.max(0, Math.floor(tier)));
   const tierBonus = tierXpBonus(n);
-  const bonus = tierBonus * (randomMap ? 1 + RANDOM_MAP_XP_BONUS : 1);
+  // the difficulty is the whole multiplier; a random map adds nothing
+  const bonus = tierBonus;
   const waves = Math.max(0, Math.floor(totalWaves));
   const cleared = won ? waves : Math.min(waves, Math.max(0, Math.floor(wavesCleared)));
   const xp = Math.round(missionXp(cleared, waves) * bonus);
