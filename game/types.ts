@@ -175,8 +175,6 @@ export interface Tower {
    * before the Phoenix roll is even reached.
    */
   revives: number;
-  /** has the Phoenix relic already raised this turret? Once each, ever */
-  rose: boolean;
   /** seconds left on a neighbour's dying charge (Last Volley): while it
    *  runs the reload goes at LAST_VOLLEY_RATE on top of `fireRate` */
   boostT: number;

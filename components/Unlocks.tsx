@@ -278,7 +278,7 @@ function ModuleTile({ id }: { id: ModId }) {
     <Tile
       name={name}
       aria={`${d.scope === "turret" ? "Mod" : "Relic"}: ${name}, ${r.name}. ${d.blurb}`}
-      face={<Glyph glyph={d.glyph} color="currentColor" className="h-[22px] w-[22px]" />}
+      face={<Glyph glyph={d.glyph} className="h-[22px] w-[22px]" />}
       color={r.color}
       tag={r.name}
       lit

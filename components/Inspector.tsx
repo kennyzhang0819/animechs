@@ -67,7 +67,7 @@ function ModPip({ id, n, total }: { id: ModId; n: number; total: number }) {
       style={{ borderColor: r.color, background: r.ground }}
       aria-label={many ? `${modName(d)}, on ${n} of them` : modName(d)}
     >
-      <Glyph glyph={d.glyph} color={r.color} className="h-[16px] w-[16px]" />
+      <Glyph glyph={d.glyph} className="h-[16px] w-[16px]" />
       {many && (
         <span
           className="pointer-events-none absolute -bottom-[4px] -right-[3px] bg-[#0b0b0d] px-[2px] text-[9px] font-bold leading-none"

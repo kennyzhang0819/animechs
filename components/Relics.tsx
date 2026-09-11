@@ -3,7 +3,7 @@
 import type { RefObject } from "react";
 
 import { modDef, modName, oddsLine, type ModGlyph, type ModId } from "@/game/mods";
-import { DRAWN_GLYPHS, MOD_GRID, modGlyph } from "./modArt";
+import { MOD_GRID, modGlyph } from "./modArt";
 import { RARITY } from "@/game/rarity";
 import { HoverCard, useHoverCard } from "./HoverCard";
 
@@ -32,111 +32,40 @@ import { HoverCard, useHoverCard } from "./HoverCard";
  */
 
 /**
- * THE FACES, AND THERE ARE TWO KINDS OF THEM HERE.
+ * THE FACES — every one of them pixel art (modArt.ts): a 16-square
+ * drawing in the game's own palette, the same way the mutator faces are
+ * drawn, because these hang beside Mindustry block sprites and a line
+ * glyph beside that art reads as a placeholder.
  *
- * THE TURRET HALF IS PIXEL ART (modArt.ts): a 16-square drawing in the
- * game's own palette, the same way the mutator faces are drawn, because
- * these hang beside Mindustry block sprites and a line glyph beside that
- * art reads as a placeholder. The `color` prop does NOT reach them — a
- * drawing carries the palette of the THING it depicts and never the
- * colour of how good it is, and the band is on the border of the box this
- * sits in at all three call sites below. That is also what lets the
- * common "+10% damage" and the uncommon "+25%" share one barrel: same
- * art, different border, one legend.
+ * THERE IS NO COLOUR PROP, ON PURPOSE. A drawing carries the palette of
+ * the THING it depicts and never the colour of how good it is; the band
+ * is on the border of the box this sits in at every call site. That is
+ * what lets the common "+10% damage" and the uncommon "+25%" share one
+ * barrel — same art, different border, one legend — and it is why the
+ * relics read as a different kind of thing from across the room: an
+ * attribute is one gunmetal object with a pip of colour, a relic is the
+ * colour of what it does over the whole drawing.
  *
- * THE RELIC HALF IS STILL STROKES — a few marks on a 24x24 grid in the
- * band's colour. Nothing about that is principled; they simply have not
- * been drawn yet, and anything modArt.ts does not know falls through to
- * the old drawing below.
- *
- * Either way they are read at 12 to 22 CSS pixels, so every one of them
- * is a silhouette and none of them is a picture.
+ * They are read at 12 to 22 CSS pixels, so every one of them is a
+ * silhouette and none of them is a picture.
  */
 export function Glyph({
   glyph,
-  color,
   className = "h-[15px] w-[15px]",
 }: {
   glyph: ModGlyph;
-  color: string;
   className?: string;
 }) {
-  if (DRAWN_GLYPHS.has(glyph))
-    return (
-      <svg
-        viewBox={`0 0 ${MOD_GRID} ${MOD_GRID}`}
-        className={className}
-        shapeRendering="crispEdges"
-        aria-hidden="true"
-      >
-        {modGlyph(glyph).map((layer) => (
-          <path key={layer.color} fill={layer.color} d={layer.d} />
-        ))}
-      </svg>
-    );
-  const s = { stroke: color, strokeWidth: 2, fill: "none", strokeLinecap: "round" as const };
-  const f = { fill: color, stroke: "none" };
   return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-      {glyph === "crosshair" && (
-        <>
-          <circle cx="12" cy="12" r="7" {...s} />
-          <path d="M12 1v6M12 17v6M1 12h6M17 12h6" {...s} />
-        </>
-      )}
-      {glyph === "coolant" && (
-        <>
-          <path d="M12 2v20M12 6l-4-3M12 6l4-3M12 18l-4 3M12 18l4 3" {...s} />
-          <path d="M4 7l16 10M4 17L20 7" {...s} strokeWidth={1.2} />
-        </>
-      )}
-      {glyph === "coin" && (
-        <>
-          <circle cx="12" cy="12" r="8" {...s} />
-          <path d="M12 7v10M9 9.5h6M9 14.5h6" {...s} strokeWidth={1.6} />
-        </>
-      )}
-      {glyph === "vault" && (
-        <>
-          <rect x="3" y="4" width="18" height="16" rx="1" {...s} />
-          <circle cx="12" cy="12" r="4" {...s} />
-          <path d="M12 12l3-3" {...s} />
-        </>
-      )}
-      {glyph === "flame" && (
-        <>
-          <path d="M12 2c4 5 6 7 6 11a6 6 0 01-12 0c0-2 1-3 2-5 1 2 2 2 3 1 0-3 0-5 1-7z" {...s} />
-        </>
-      )}
-      {glyph === "volley" && (
-        <>
-          <circle cx="12" cy="12" r="2.5" {...f} />
-          <path d="M12 2v4M12 18v4M2 12h4M18 12h4" {...s} />
-          <circle cx="12" cy="12" r="8" {...s} strokeWidth={1.1} />
-        </>
-      )}
-      {glyph === "phoenix" && (
-        <>
-          <path d="M12 21c-5-3-8-6-8-10a5 5 0 018-4 5 5 0 018 4c0 4-3 7-8 10z" {...s} />
-          <path d="M12 12l-3-3M12 12l3-3" {...s} strokeWidth={1.2} />
-        </>
-      )}
-      {glyph === "fan" && (
-        <>
-          <path d="M12 21L5 5M12 21L12 3M12 21L19 5" {...s} />
-        </>
-      )}
-      {glyph === "legion" && (
-        <>
-          <path d="M6 21V9l6-6 6 6v12" {...s} />
-          <path d="M6 15h12M10 21v-5h4v5" {...s} strokeWidth={1.3} />
-        </>
-      )}
-      {glyph === "star" && (
-        <>
-          <path d="M12 2l2.8 6.6 7.2.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.2l7.2-.6z" {...s} />
-        </>
-      )}
+    <svg
+      viewBox={`0 0 ${MOD_GRID} ${MOD_GRID}`}
+      className={className}
+      shapeRendering="crispEdges"
+      aria-hidden="true"
+    >
+      {modGlyph(glyph).map((layer) => (
+        <path key={layer.color} fill={layer.color} d={layer.d} />
+      ))}
     </svg>
   );
 }
@@ -164,7 +93,7 @@ function RelicChip({ id, n }: { id: ModId; n: number }) {
       style={{ borderColor: r.color, background: r.ground }}
       aria-label={`${name}${n > 1 ? ` times ${n}` : ""}, ${r.name} upgrade`}
     >
-      <Glyph glyph={d.glyph} color={r.color} />
+      <Glyph glyph={d.glyph} />
       {n > 1 && (
         <span
           className="pointer-events-none absolute -bottom-[3px] -right-[2px] bg-[#0b0b0d] px-[2px] text-[9px] font-bold leading-none"
@@ -207,7 +136,7 @@ export function RelicShelf({ relics }: { relics: { id: ModId; n: number }[] }) {
  * A MODULE HAS NOWHERE TO LAND. A turret draw puts a card in the corner
  * and the player is left holding it; a module is in force the instant it
  * is paid for (Game.buyModules), so without this the only feedback for
- * three and a half thousand scrap would be a chip quietly appearing in a
+ * thirty thousand scrap would be a chip quietly appearing in a
  * row at the other end of the screen. So the draw gets a card of its own
  * for a few seconds, over the buttons, in the band's colour and saying
  * what it does — and then it goes, because it is not a thing being held.
@@ -250,7 +179,7 @@ export function ModReveal({ ids }: { ids: readonly ModId[] }) {
               className="flex h-[18px] w-[18px] shrink-0 items-center justify-center border"
               style={{ borderColor: r.color }}
             >
-              <Glyph glyph={d.glyph} color={r.color} className="h-[12px] w-[12px]" />
+              <Glyph glyph={d.glyph} className="h-[12px] w-[12px]" />
             </span>
             <span
               className="min-w-0 flex-1 truncate text-[10px] font-bold uppercase leading-none tracking-wide"
@@ -285,7 +214,7 @@ function SingleReveal({ id }: { id: ModId }) {
           className="flex h-[22px] w-[22px] shrink-0 items-center justify-center border"
           style={{ borderColor: r.color }}
         >
-          <Glyph glyph={d.glyph} color={r.color} />
+          <Glyph glyph={d.glyph} />
         </span>
         <span
           className="min-w-0 flex-1 truncate text-[11px] font-bold uppercase leading-none tracking-wide"

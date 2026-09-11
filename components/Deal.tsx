@@ -576,7 +576,7 @@ export function DealCorner({
             disabled={!hud.modsLeft}
             amount={n}
             tint="#7BDFF2"
-            glyph={<Glyph glyph="barrel" color="currentColor" className="h-[22px] w-[22px]" />}
+            glyph={<Glyph glyph="barrel" className="h-[22px] w-[22px]" />}
             onPress={deal.buyMods}
             aria={
               hud.modsLeft
@@ -593,7 +593,7 @@ export function DealCorner({
             disabled={!hud.relicsLeft}
             amount={n}
             tint="#C08BFF"
-            glyph={<Glyph glyph="star" color="currentColor" className="h-[22px] w-[22px]" />}
+            glyph={<Glyph glyph="star" className="h-[22px] w-[22px]" />}
             onPress={deal.buyRelics}
             aria={
               hud.relicsLeft
