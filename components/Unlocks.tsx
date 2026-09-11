@@ -47,10 +47,14 @@ import { HoverCard, useHoverCard } from "./HoverCard";
  * tile SCALED cannot.
  *
  * NOTHING HERE IS BUYABLE and nothing is hidden. Every unlock that exists
- * is drawn, locked ones dimmed and badged with the level that opens them,
- * exactly as a StarCraft II player can read the mutator list before
- * queueing. The surprise is meant to be WHICH ones a run rolls, not what
- * exists.
+ * is drawn, exactly as a StarCraft II player can read the mutator list
+ * before queueing — the surprise is meant to be WHICH ones a run rolls,
+ * not what exists.
+ *
+ * A LOCKED TILE IS DIMMED AND SAYS NOTHING ELSE. No level badged on it,
+ * no line in its card about what hands it over. The track next door is
+ * the screen that answers "when"; this one answers "what", and a number
+ * repeated on forty-seven squares is the caption this board just took off.
  */
 
 /** the filters, in the order the track deals them out */
@@ -82,9 +86,7 @@ const SCALE = TILE_PX / CHIP_PX;
  * the name included — in the card that opens on hover.
  *
  * A locked tile is dimmed through its CONTENT rather than its wrapper, so
- * the level badged on it and the card it opens stay readable at full
- * strength. The badge is the one thing printed on the square, because it
- * is the one thing a locked tile owes the player: when.
+ * the card it opens reads at full strength either way.
  */
 function UnlockTile({
   entry,
@@ -97,7 +99,7 @@ function UnlockTile({
   reached: boolean;
   face: ReactNode;
   color: string;
-  /** the corner word of the hover card: the band, the weight — or nothing */
+  /** the hover card's corner word: the band, the weight — or nothing */
   tag?: string;
 }) {
   const tip = useHoverCard("auto");
@@ -112,9 +114,9 @@ function UnlockTile({
       {...tip.anchorProps}
       role="listitem"
       tabIndex={0}
-      aria-label={`${text}${tag ? `, ${tag}` : ""}. ${
-        reached ? "" : `Locked — opens at level ${entry.level}. `
-      }${rewardBlurb(entry.reward)}`}
+      aria-label={`${text}${tag ? `, ${tag}` : ""}${reached ? "" : ", locked"}. ${rewardBlurb(
+        entry.reward,
+      )}`}
       className="relative flex shrink-0 items-center justify-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FFD37F]"
       style={{ width: TILE_PX, height: TILE_PX }}
     >
@@ -137,31 +139,15 @@ function UnlockTile({
       >
         {face}
       </div>
-      {/* WHEN, and only where it is still owed. A tile already earned has
-          nothing to say here — printing "3" on something a player has had
-          for twenty levels is a number to read and then discard */}
-      {!reached && (
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute bottom-0 right-0 bg-[#0b0b0d]/90 px-[4px] py-[1px] text-[11px] font-bold leading-none text-[#A6A6AF]"
-        >
-          {entry.level}
-        </span>
-      )}
       <HoverCard
         tip={tip}
         title={name}
-        tag={reached ? tag : `Level ${entry.level}`}
+        tag={tag}
         color={reached ? color : "#71717C"}
         align="center"
       >
         {rewardBlurb(entry.reward)}
         {targeting && <span className="mt-1.5 block font-bold text-[#A6A6AF]">{targeting}</span>}
-        {!reached && (
-          <span className="mt-1.5 block text-[#71717C]">
-            Not yours yet — level {entry.level} hands it over.
-          </span>
-        )}
       </HoverCard>
     </div>
   );
