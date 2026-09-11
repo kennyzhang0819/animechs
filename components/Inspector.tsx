@@ -7,6 +7,7 @@ import { RARITY } from "@/game/rarity";
 import type { UiState } from "@/game/game";
 import type { TowerKind } from "@/game/types";
 import { HoverCard, useHoverCard } from "./HoverCard";
+import { PAL } from "./pixelArt";
 import { Glyph } from "./Relics";
 import { TOWER_ICONS } from "./towerIcons";
 
@@ -99,7 +100,7 @@ function HealthBar({ hp, max }: { hp: number; max: number }) {
   const color = f > 2 / 3 ? "#7BE58A" : f > 1 / 3 ? "#FFD37F" : "#e55454";
   return (
     <div className="flex items-center gap-2">
-      <div className="relative h-[10px] w-[11rem] overflow-hidden border border-[#26262b] bg-[#101013]">
+      <div className="relative h-[10px] w-[7rem] overflow-hidden border border-[#26262b] bg-[#101013]">
         <div
           className="absolute inset-y-0 left-0 transition-[width] duration-150"
           style={{ width: `${f * 100}%`, background: color }}
@@ -114,11 +115,43 @@ function HealthBar({ hp, max }: { hp: number; max: number }) {
 }
 
 /**
- * THE PLATING, beside the bar: a number and the word, in the steel the
- * armour glyphs are drawn in. It is printed for a ZERO too — a 1x1 wears
- * none, and "0" is how a player learns that the 2x2 beside it does. What
- * it means is one hover away, because "a flat shave per hit, floored at a
- * tenth" is not a thing a label can say.
+ * THE PLATING MARK — a plain steel shield, and the one drawing in this
+ * panel that is not a mod glyph.
+ *
+ * IT IS NOT THE `shield` GLYPH (modArt.ts). That one is BULWARK PLATING's
+ * face and wears a repair cross, because that mod is armour that also
+ * mends; armour on its own mends nothing, and borrowing the cross would
+ * say a thing about the turret that is not true. Same silhouette, same
+ * gunmetal ramp, no pip — so the two read as the same KIND of thing
+ * without reading as the same thing.
+ */
+function PlateMark({ className = "h-[14px] w-[14px]" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} shapeRendering="crispEdges" aria-hidden="true">
+      <path d="M5 2h14v13l-7 8-7-8z" fill={PAL.steel} />
+      {/* the plating runs DOWN the shield, lit band and shadow — the same
+          rule every armour glyph in modArt.ts is drawn to */}
+      <path d="M11 2h2v18l-1 1-1-1z" fill={PAL.steelLite} />
+      <path d="M5 17h14l-7 6z" fill={PAL.steelDark} />
+    </svg>
+  );
+}
+
+/**
+ * THE PLATING, ON THE NAME LINE: the shield and the number, up beside
+ * what the thing is called and how many of it are selected.
+ *
+ * IT USED TO SIT RIGHT OF THE HEALTH BAR, spelling out "12 ARMOR" in a
+ * caption — which put two numbers about damage on one line, made the row
+ * as wide as the panel, and read as part of the pool rather than as a
+ * property of the building. Armour is a fact about WHAT THIS IS, like its
+ * name, so it goes where the name is; the bar is left to the one number
+ * that moves.
+ *
+ * It is printed for a ZERO too — a 1x1 wears none, and "0" is how a
+ * player learns that the 2x2 beside it does. What it means is one hover
+ * away, because "a flat shave per hit, floored at a tenth" is not a thing
+ * a label can say.
  */
 function Plating({ armor }: { armor: number }) {
   const tip = useHoverCard("up");
@@ -126,11 +159,11 @@ function Plating({ armor }: { armor: number }) {
     <span
       ref={tip.ref as RefObject<HTMLSpanElement | null>}
       {...tip.anchorProps}
-      className="pointer-events-auto flex shrink-0 items-baseline gap-1 border-l border-[#26262b] pl-3"
+      className="pointer-events-auto flex shrink-0 items-center gap-1"
       aria-label={`${armor} armor`}
     >
-      <span className="text-[13px] font-bold tabular-nums text-[#C1C3D4]">{armor}</span>
-      <span className="text-[9px] font-bold uppercase tracking-widest text-[#71717C]">armor</span>
+      <PlateMark />
+      <span className="text-[12px] font-bold leading-none tabular-nums text-[#C1C3D4]">{armor}</span>
       <HoverCard tip={tip} title="Plating" tag={`${armor} armor`} color="#C1C3D4" align="center">
         Every hit this takes is shaved by {armor} first, down to a tenth of the hit at most —
         small arms bounce, the heavies still bite. Bigger footprints wear more; Bulwark Plating
@@ -169,20 +202,28 @@ export function Inspector({
         />
       )}
       <div className="flex min-w-0 flex-col gap-1">
-        <span className="truncate text-[13px] font-bold uppercase leading-none tracking-wide text-[#EDEDEF]">
-          {many && <span className="text-[#FFD37F]">{n}× </span>}
-          {name}
-        </span>
-        <div className="flex items-center gap-3">
-          <HealthBar hp={hp} max={hpMax} />
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-[13px] font-bold uppercase leading-none tracking-wide text-[#EDEDEF]">
+            {many && <span className="text-[#FFD37F]">{n}× </span>}
+            {name}
+          </span>
           {armor !== null && <Plating armor={armor} />}
-        </div>
+        </span>
+        <HealthBar hp={hp} max={hpMax} />
       </div>
       {mods.length > 0 && (
+        /* TWO ROWS, FILLED COLUMN BY COLUMN. A single wrapping line grew
+           the panel as wide as the field a turret born with eight
+           attributes was standing on; two rows is the same pips in half
+           the width, and it is a GRID rather than a wrapped flex so the
+           second row starts on the second pip and not on whatever pip the
+           available width happened to run out at */
         <div
           role="list"
           aria-label="attributes"
-          className="ml-1 flex max-w-[26rem] flex-wrap items-center gap-1 border-l border-[#26262b] pl-3"
+          className={`ml-1 grid max-w-[26rem] grid-flow-col justify-start gap-1 overflow-x-auto border-l border-[#26262b] pl-3 ${
+            mods.length > 1 ? "grid-rows-2" : "grid-rows-1"
+          }`}
         >
           {mods.map((m) => (
             <ModPip key={m.id} id={m.id} n={m.n} total={n} />
