@@ -1608,10 +1608,9 @@ export class Sim {
     this.reset();
   }
 
-  /** every PLAYER structure's cells as the field takes them — soft, routed
-   *  through at a cost and shot at: the player's turrets and walls, and the core */
-  /** the player's buildings: SOFT to the swarm's path — it routes through
-   *  one at a price and shoots it when it gets there */
+  /** every PLAYER structure's cells as the field takes them — SOFT, routed
+   *  through at a cost and shot at when the swarm gets there: the player's
+   *  turrets and the core */
   private footprints(): Footprint[] {
     const out: Footprint[] = [];
     for (const t of this.towers) if (t.team === "player") out.push({ gx: t.gx, gy: t.gy, size: t.size });
@@ -5693,6 +5692,11 @@ export class Sim {
     // THE RELICS THAT ANSWER A DEATH (mods.ts) get their say BEFORE the
     // ground is given back, because one of them refuses the death outright
     if (this.reviveTower(t)) return;
+    // ...and so do the relics that answer a turret being LOST, which is
+    // what a conquest is from the player's side: Salvage Insurance pays
+    // out and Last Volley charges the neighbours, because the thing they
+    // are for — a hole in the line, right here, right now — has happened
+    // whether the wreck is cleared away or turned round
     this.payOutTower(t);
     // CONQUEST (mutation.ts): the wreck changes sides instead of leaving.
     // It is asked AFTER every revive has been refused — a turret that can
