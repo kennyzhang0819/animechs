@@ -79,8 +79,11 @@ const REWARD_COLOR: Record<Reward["kind"], string> = {
   // a mutator wears the codex's pink on the track, not its own weight
   // band: the band lives on the codex board where a shelf of rules is
   // being compared, and on the track the question is only "what kind of
-  // thing is this row handing me". The FACE inside the chip is still
-  // tinted by the band (MutationFace), so the weight is there to read
+  // thing is this row handing me". THE WEIGHT IS NOT READABLE HERE AT
+  // ALL any more — the face used to be tinted by it and now carries the
+  // rule's own colours instead (mutationArt.ts) — and that is the right
+  // way round on this row, where the chip below holds a full-colour
+  // turret sprite and a flat-tinted glyph was the odd one out
   mutator: MUT_LIT,
   upgrade: "#FFD37F",
 };

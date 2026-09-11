@@ -69,6 +69,7 @@ h2{font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.16e
 code{font-family:var(--mono);font-size:.88em;color:var(--codex)}
 .flag{border-left:2px solid var(--codex);background:var(--panel);padding:16px 18px;font-size:15px;color:var(--ink-dim);margin:0}
 .flag b{color:var(--ink);font-weight:600}
+.shipped{border-left:2px solid var(--codex);padding-left:12px;font-size:14px;color:var(--ink-dim)}
 @media (max-width:520px){body{padding-block:36px}.wrap{gap:44px}}
 </style>
 <div class="wrap">
@@ -269,7 +270,8 @@ code{font-family:var(--mono);font-size:.88em;color:var(--codex)}
       <div class="note">
         <h3>The band moves to the frame</h3>
         <p>A face used to be a single tinted path, because the tint was how a player read a rule's weight. Two of the three screens don't need it to be: the codex tile draws a <b>3px band-coloured border</b> and the deploy chip a 1px one, so the weight is answered by the frame either way.</p>
-        <p>The third is the progress track, where a mutator chip wears the codex's pink ring and the face was the only thing carrying the band. That signal goes. It is a fair trade — the chip beside it holds a full-colour turret sprite, so a full-colour mutator face is <b>more</b> consistent there, not less — but it is a real change and it is the one decision worth a second opinion before this is wired in.</p>
+        <p>The third is the progress track, where a mutator chip wears the codex's pink ring and the face was the only thing carrying the band. That signal is gone. It is a fair trade — the chip beside it holds a full-colour turret sprite, so a full-colour mutator face is <b>more</b> at home on that row, not less — and the comment in <code>Progress.tsx</code> that claimed the weight was still readable there has been corrected rather than left to rot.</p>
+        <p class="shipped"><b>Shipped.</b> The faces are drawn by <code>components/mutationArt.ts</code> and rendered by <code>MutationFace</code> — art as code, the way <code>tiles.ts</code> already draws the floors, so there is no sprite sheet and no checked-in SVG to fall out of step with it.</p>
       </div>
     </div>
   </section>
