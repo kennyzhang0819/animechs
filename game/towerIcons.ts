@@ -21,8 +21,8 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
   mendProjector: `/mindustry/sprites/blocks/defense/mend-projector.png`,
   swarmer: `${T}/swarmer.png`,
   cyclone: `${T}/cyclone/cyclone-preview.png`,
-  spectre: "/sprites/turrets/spectre.png",
-  meltdown: "/sprites/turrets/meltdown.png",
+  spectre: `${T}/spectre.png`,
+  meltdown: `${T}/meltdown.png`,
   foreshadow: `${T}/foreshadow.png`,
 };
 

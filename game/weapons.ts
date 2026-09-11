@@ -375,8 +375,8 @@ const ARKYID_SAP = sapStyle({ color: PAL.sapBullet, width: 0.55, lifetime: t(30)
  * The class's shape is untouched: a deep wash twice over at rising alpha,
  * a light one at full, and a white filament down the middle. Only the two
  * hues move — Mindustry's ec7458/ff9c5a for the blue a meltdown's own line
- * already fires in, since arc and lancer stand below it and
- * its hull is repainted to match (scripts/reskin-turrets.mjs).
+ * already fires in, since arc and lancer stand below it. The hull itself
+ * is upstream's gunmetal again; the beam keeps the line's blue.
  *
  * 6974c4 is lancer.png's own plating shade, so the beam's base is the
  * colour of the turret throwing it; Pal.lancerLaser is what arc's bolt and

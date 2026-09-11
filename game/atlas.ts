@@ -1703,13 +1703,8 @@ const SPRITES = {
   // cyclone's own art is the bare head; its three barrels are separate
   // sprites the preview already has assembled underneath
   cyclonePreview: "/mindustry/sprites/blocks/turrets/cyclone/cyclone-preview.png",
-  // spectre and meltdown are the ONLY two blocks here not drawn from the
-  // upstream tree: each ends a line whose other two guns wear a different
-  // palette, so their four flat colours are swapped for that line's four
-  // (scripts/reskin-turrets.mjs). Same art, same shading, other hues —
-  // foreshadow keeps Mindustry's gunmetal, its line being the surge one
-  spectre: "/sprites/turrets/spectre.png",
-  meltdown: "/sprites/turrets/meltdown.png",
+  spectre: "/mindustry/sprites/blocks/turrets/spectre.png",
+  meltdown: "/mindustry/sprites/blocks/turrets/meltdown.png",
   foreshadow: "/mindustry/sprites/blocks/turrets/foreshadow.png",
   // the walls, 1x1 block art at Mindustry's 32px
   // ...and the 2x2 large walls, 64px block art
