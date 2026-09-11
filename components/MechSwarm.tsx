@@ -1393,6 +1393,11 @@ export default function MechSwarm() {
     if (!g) return;
     const tech = techOf(loadProgress());
     g.setTech(admin ? null : tech);
+    // the sandbox lifts the LOCKS, not the economy: the run stays charged
+    // (same prices, same deal, same odds in the corner) and the purse just
+    // never empties. Leaving hands the player's own scrap back, so the
+    // turrets, mods and relics bought in there come out with the run
+    g.setRich(admin);
     // dropping out of sandbox drops a sandbox-only pace with it, or the run
     // keeps running at a speed whose button is no longer on screen. What the
     // save allows is the utilities path rather than a constant, so it falls

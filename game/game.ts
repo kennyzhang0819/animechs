@@ -1693,6 +1693,12 @@ export class Game {
     this.sim.setTech(tech);
   }
 
+  /** the admin view's unlimited income (Sim.setRich) — everything else
+   *  about the economy, prices and odds included, stays where it was */
+  setRich(on: boolean): void {
+    this.sim.setRich(on);
+  }
+
 
   /**
    * The ambient-effects switch, both halves at once — the sim stops

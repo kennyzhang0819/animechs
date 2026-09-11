@@ -66,6 +66,14 @@ export function dropForUnit(hp: number, boss = false): Drop {
 /** every run opens with this much in the bank */
 export const SCRAP_START = 7500;
 
+/**
+ * WHAT THE ADMIN VIEW'S BOTTOMLESS PURSE READS ON THE COUNTER. Large
+ * enough that no price or bulk-buy check can ever come up short, small
+ * enough to still render as a number on the HUD — the spending itself is
+ * a no-op (Sim.spend), so this is a display and a threshold, not a budget.
+ */
+export const RICH_SCRAP = 99_999_999;
+
 /*
  * THERE IS NO WAVE BONUS. Staging a wave used to pay a lump on top of
  * what its bodies dropped — 250 and 50 more each wave, so 500 by wave 5
