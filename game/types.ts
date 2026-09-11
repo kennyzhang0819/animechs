@@ -383,6 +383,15 @@ export const enum FxKind {
   ShootBig2 = 56, // Fx.shootBig2 — the big artillery's muzzle
   HitEmpSpark = 57, // Fx.hitEmpSpark — the emp cannon's muzzle spray
   ShootHeal = 58, // Fx.shootHeal — a heal-coloured shootSmall
+  /** THIS GAME'S OWN, and the one bullet effect with no Mindustry entry
+   *  behind it: the flood a bursting water shell throws out. Fx.hitLiquid
+   *  is five droplets at a fixed handspan, which is the right size for an
+   *  orb landing on one body and useless for a shell that soaks a whole
+   *  stretch of lane — the player has to be able to SEE which bodies got
+   *  wet. So this one carries the blast's reach in `len` and floods out to
+   *  exactly it. (See Sim.updateProjectiles, where the splash branch hands
+   *  it splashRadius and every other hit effect keeps its own scale.) */
+  WaterBurst = 59,
 }
 
 /** an r,g,b triple in 0..1, the form every draw call wants */

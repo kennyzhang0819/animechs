@@ -2405,7 +2405,8 @@ export class Renderer {
         if (
           kind === FxKind.Laser || kind === FxKind.Shrapnel ||
           kind === FxKind.HealWave || kind === FxKind.ShieldBreak ||
-          kind === FxKind.Sap || kind === FxKind.EmpHit
+          kind === FxKind.Sap || kind === FxKind.EmpHit ||
+          kind === FxKind.WaterBurst
         )
           em += fxLen[f];
         else if (kind === FxKind.UnitSpawn) em += KIND_SPRITE[fxUnit[f]] * 2;
@@ -2508,6 +2509,25 @@ export class Renderer {
         const rad = (0.5 + (1 - t) * 2.5) * MU;
         this.scatter(e.seed ?? 1, 2, FIN_POW(t) * 15 * MU, e.rot ?? 0, SPREAD_11, (x, y) => {
           this.fillCircle(dyn, e.x + x, e.y + y, rad, e.col ?? PAL.water, 1);
+        });
+      } else if (e.kind === FxKind.WaterBurst) {
+        // A SHELL'S WORTH OF WATER, drawn at the radius it actually soaked
+        // (e.len, handed over by the splash branch in Sim). Three layers,
+        // all running out to the same edge so the burst reads as one body:
+        // a flood that fills the blast and thins as it spreads, a rim
+        // racing the flood out to the edge, and droplets thrown clear of
+        // it in every direction rather than in hitLiquid's forward cone —
+        // a shell bursts, it does not spray.
+        const reach = e.len || 24 * MU;
+        const col = e.col ?? PAL.water;
+        const grow = FIN_POW(t) * reach;
+        this.fillDisc(dyn, e.x, e.y, grow, col, (1 - t) * 0.45);
+        this.strokeCircle(dyn, e.x, e.y, grow, ((1 - t) * 2 + 0.4) * MU,
+          col[0], col[1], col[2], 1 - t);
+        const drop = (1 - t) * 2.5 * MU;
+        // a spread of PI is +-PI off the shot line, which is every bearing
+        this.scatter(e.seed ?? 1, 12, grow, e.rot ?? 0, Math.PI, (x, y) => {
+          this.fillCircle(dyn, e.x + x, e.y + y, drop, col, 1 - t * 0.5);
         });
       } else if (e.kind === FxKind.HitLiquid) {
         // Fx.hitLiquid: five droplets scattering off the landing inside a

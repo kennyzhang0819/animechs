@@ -7083,8 +7083,15 @@ export class Sim {
         // every splash bullet despawnHit, so a shell that simply runs out
         // of lifetime blasts exactly as one that ran into something
         if (b.splash > 0) {
-          this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor);
-          this.bulletFx(b.hitFx2, pr.x, pr.y, rot, b.fxColor);
+          // ONLY the water burst is told how far the blast reached. Every
+          // other hit effect — a flak pop, a shockwave ring — carries its
+          // own fixed Mindustry size, and handing them a radius here would
+          // quietly resize effects that have drawn the same for every
+          // turret that shipped before this one
+          this.bulletFx(b.hitFx, pr.x, pr.y, rot, b.fxColor, false,
+            b.hitFx === FxKind.WaterBurst ? b.splashRadius : 0);
+          this.bulletFx(b.hitFx2, pr.x, pr.y, rot, b.fxColor, false,
+            b.hitFx2 === FxKind.WaterBurst ? b.splashRadius : 0);
           this.splash(
             pr.x,
             pr.y,
@@ -7339,7 +7346,10 @@ export class Sim {
    * The kind carries its Mindustry lifetime (FX_LIFE) and every one of
    * them scatters particles, so both are filled in here rather than at the
    * dozen call sites. An unset kind is Fx.none and draws nothing.
-   * `force` as on pushFx: weapon-defining artifacts skip the cap.
+   * `force` as on pushFx: weapon-defining artifacts skip the cap. `len` is
+   * left at 0 by every effect that draws at its own Mindustry size and is
+   * only filled in for the one kind that cannot (FxKind.WaterBurst, whose
+   * whole job is to show the reach of the blast that fired it).
    */
   private bulletFx(
     kind: BulletFx | undefined,
@@ -7348,6 +7358,7 @@ export class Sim {
     rot: number,
     col?: RGB,
     force = false,
+    len = 0,
   ): void {
     // refuse before rolling the seed, so a capped board — or one with the
     // effects switched off (see setEffects) — leaves the random stream
@@ -7356,7 +7367,7 @@ export class Sim {
     if (!force && (!this.fxOn || this.fxN >= FX_CAP)) return;
     if (this.fxN >= FX_MAX) return;
     const i = this.pushSlot(
-      x, y, FX_LIFE[kind], kind, rot, 0, (Math.random() * 0x7fffffff) | 0, 0, force,
+      x, y, FX_LIFE[kind], kind, rot, len, (Math.random() * 0x7fffffff) | 0, 0, force,
     );
     if (i >= 0 && col) {
       this.fxHasCol[i] = 1;
