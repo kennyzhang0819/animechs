@@ -247,9 +247,9 @@ export interface UnitStats {
    * Mindustry UnitType.drag, "movement drag as fraction": how much of an
    * external shove a unit sheds per tick. Nothing this game does steers by
    * it — our units chase a flow field rather than accelerating — but a
-   * parallax beam's pull is a Mindustry impulse, and this is what decides
-   * how long that pull keeps acting after it stops. Unset takes UnitType's
-   * own 0.3, which is what every kind below that omits it has.
+   * spectre round's knockback is a Mindustry impulse, and this is what
+   * decides how long that shove keeps acting after it lands. Unset takes
+   * UnitType's own 0.3, which is what every kind below that omits it has.
    */
   drag?: number;
   /**

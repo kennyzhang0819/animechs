@@ -193,12 +193,21 @@ export interface BulletStats {
   lightning?: {
     length: number; // Lightning.create's `length`; the bolt walks half of it
   };
-  // Mindustry TractorBeamTurret: not a bullet at all. The turret holds a
-  // beam on one target, damaging it continuously and PULLING it toward
-  // itself with a force divided by the target's mass
-  tractor?: {
-    force: number; // Mindustry world units of impulse per tick
-    scaledForce: number; // ...plus this much again, at point-blank
+  // A LOCK-ON BEAM (Sim.updateLockBeam): not a bullet at all. The turret
+  // holds a beam on ONE target and damages it continuously, and the beam
+  // SPOOLS UP — `damage` is what it does the instant it catches, and it
+  // climbs from there to `peak` times that over `spool` seconds of
+  // unbroken contact. It has no reload and no volley: the spool is the
+  // whole clock.
+  //
+  // THE SPOOL BELONGS TO THE LOCK, NOT TO THE TURRET. It fills while the
+  // beam is landing, bleeds back at the same rate while it is not (swung
+  // off, out of cone), and is ZEROED the moment the turret changes
+  // target — so a beam walked across a crowd never gets anywhere and one
+  // held on a single big body is the whole point of the turret
+  lock?: {
+    spool: number; // seconds of unbroken contact to reach full power
+    peak: number; // the damage multiplier there (1 would be no ramp at all)
   };
   // Mindustry BulletType.armorMultiplier: the TARGET's armour is scaled by
   // this before the flat subtraction, so a 4 here quadruples what armour
@@ -225,7 +234,8 @@ export interface BulletStats {
   // Mindustry knockback: on every direct hit the victim takes an impulse
   // of knockback * 80 world units, straight out along the shot's line
   knockback?: number;
-  // StatusEffects.wet, and THE ROSTER'S ONE DELIBERATE DEVIATION. Upstream
+  // StatusEffects.wet, and ONE OF THE ROSTER'S TWO DELIBERATE DEVIATIONS
+  // (the other is parallax's spool, below). Upstream
   // a water shot knocks its victim back and wets it for a 0.94x speed
   // multiplier — a garnish on a turret whose real jobs (extinguishing
   // fires, cooling reactors) do not exist here. Here the wet status IS the
@@ -985,16 +995,32 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.water,
     },
   },
-  // Parallax, 1:1 from mindustry/content/Blocks.java. A TractorBeamTurret
-  // has no reload and fires no bullet at all: it holds a beam on ONE flyer
-  // and, every tick it is aimed within 6 degrees, deals 0.5 armour-piercing
-  // damage and pulls the target toward itself.
+  // Parallax, and THE ROSTER'S OTHER DELIBERATE DEVIATION (the first is
+  // the liquid turrets' soak, see `wet`). Mindustry's parallax is a
+  // TractorBeamTurret: it holds a beam on one FLYER, deals 30
+  // armour-piercing damage a second and DRAGS it backwards. The drag is a
+  // lovely thing in a game where flyers steer themselves and a menace in
+  // one where they walk a flow field — it shoves the swarm off the lane
+  // the whole board was built around — so the beam keeps everything else
+  // and trades the pull for a SPOOL.
   //
-  // The pull is an impulse divided by the target's MASS (hitSize squared,
-  // times pi), which is the whole character of the turret: the same 16-25
-  // units of force that nearly stops a flare barely leans on an antumbra.
-  // Thirty damage a second will not kill anything on its own — parallax
-  // takes air units out of formation and hands them to something else.
+  // The beam takes both layers, locks the HIGHEST-HEALTH body in range the
+  // way foreshadow's rail does, and holds it until it dies or leaves.
+  // Thirty damage a second is what it opens with — still nothing, still
+  // upstream's number — and eight seconds of unbroken contact walks it up
+  // to seven times that. So it is a SIEGE WEAPON, not a gun: worthless
+  // against anything that dies quickly or arrives in a crowd (a target
+  // change zeroes the spool outright), and the tier-2 answer to the one
+  // armoured body nothing else can chew through, because the beam never
+  // meets armour at all.
+  //
+  // IT IS NOT A FORESHADOW AND MUST NEVER READ AS ONE. Fully spooled it is
+  // 210 damage a second against a single body; foreshadow spends 1,755 on
+  // a queue every 3.3 seconds — better than twice parallax's rate, through
+  // as many bodies as the budget reaches, from 200 units further out, and
+  // from the first shot rather than the eighth second. The ramp buys
+  // parallax the ONE case foreshadow is wasted on: a lone heavy that has
+  // to be ground down rather than deleted.
   parallax: {
     name: "Parallax",
     size: 2,
@@ -1009,7 +1035,11 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     shootCone: (6 * Math.PI) / 180, // TractorBeamTurret's own default
     rotateSpeed: ((12 * Math.PI) / 180) * TICK,
     targetAir: true,
-    targetGround: false,
+    targetGround: true,
+    // foreshadow's pick, for foreshadow's reason: a beam that has to be
+    // held for seconds to be worth anything cannot spend them on whichever
+    // crawler wandered nearest
+    sort: "strongest",
     bullet: {
       // damageContinuousPierce is per TICK; this table is per second
       speed: 0,
@@ -1018,9 +1048,9 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       splash: 0,
       splashRadius: 0,
       collidesAir: true,
-      collidesGround: false,
+      collidesGround: true,
       pierceArmor: true,
-      tractor: { force: 16, scaledForce: 9 },
+      lock: { spool: 8, peak: 7 },
     },
   },
   // Tsunami — wave's weapon at the endgame's scale, and the same departure
@@ -1509,7 +1539,7 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   wave: "Lobs a ball of water that bursts and soaks everything nearby.",
   lancer: "Charges up, then fires a beam through a line of enemies.",
   ripple: "Lobs four shells at once over a long distance.",
-  parallax: "Pulls enemies backwards with a tractor beam.",
+  parallax: "Locks a beam onto one enemy that burns hotter the longer it holds.",
   fuse: "Shoots three heavy rays at very close range.",
   swarmer: "Shoots homing missiles that explode on contact.",
   cyclone: "Shoots a fast stream of shells that burst into fragments.",

@@ -1686,8 +1686,10 @@ const SPRITES = {
   tsunami: "/mindustry/sprites/blocks/turrets/tsunami.png",
   tsunamiLiquid: "/mindustry/sprites/blocks/turrets/tsunami-liquid.png",
   tsunamiTop: "/mindustry/sprites/blocks/turrets/tsunami-top.png",
-  // parallax is filed under defense, not turrets — it damages almost
-  // nothing and Mindustry classes it with the support blocks
+  // parallax is filed under defense, not turrets — upstream it damages
+  // almost nothing and Mindustry classes it with the support blocks (ours
+  // spools up into a real gun; the sprite still lives where Mindustry
+  // packs it)
   parallax: "/mindustry/sprites/blocks/defense/parallax.png",
   // the support pair, each in the two layers DrawDefault + DrawRegion lays
   // down: the block and the `-top` crystal over it (see mendBlock)

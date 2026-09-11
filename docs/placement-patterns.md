@@ -137,7 +137,7 @@ learns.
 | **salvo** | **Magazine** | **+1 shot per burst** per orthogonally adjacent salvo, max +2 |
 | **lancer** | **Capacitor bank** | an arc within 2 cells of the footprint → **−40% charge time**; a second arc → **−60%** |
 | **ripple** | **Dug in** | no open floor orthogonally adjacent to the 3×3 — walled in rock on every side → **+25% range, −15% minimum range** |
-| **parallax** | **Anchor** | two or more of its 2×2's four sides fully on open floor, **and** no other parallax within 6 cells → **+30% pull, +15% range** |
+| **parallax** | **Anchor** | two or more of its 2×2's four sides fully on open floor, **and** no other parallax within 6 cells → **the beam spools 30% faster, +15% range** |
 
 Salvo's is the first pattern that changes a turret's *shape of fire* rather
 than a multiplier — three salvos in a row are a different weapon, not a

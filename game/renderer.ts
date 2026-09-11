@@ -2215,10 +2215,10 @@ export class Renderer {
       const tint = HP_TINT[t3 <= 1 ? 0 : t3 <= 2 ? 1 : 2];
       this.push(dyn, s.x, s.y, spx, spx, 0, UV_SHIELD_TOWER, tint[0], tint[1], tint[2], 1);
     }
-    // a tractor turret's beam sits over the turrets and under the units it
-    // is dragging — it has no bullet, so this is its only visual
+    // a lock turret's beam sits over the turrets and under the body it is
+    // burning — it has no bullet, so this is its only visual
     for (const t of sim.towers) {
-      if (t.beamStr > 0.01) this.drawTractorBeam(dyn, t);
+      if (t.beamStr > 0.01) this.drawLockBeam(dyn, t);
       // the beam's LIVE stats, not the table's: a meltdown whose upgrade
       // branch lengthened its beam has to be drawn at the length it is
       // actually burning at (see Sim.statsFor)
@@ -3551,12 +3551,14 @@ export class Renderer {
   }
 
   /**
-   * Drawf.laser for a TractorBeamTurret's held beam: a 12-unit-wide line
-   * scaled by the turret's `strength` and laserWidth, inset at both ends by
-   * the caps that close it off. Parallax fires no bullet, so this is the
-   * only thing on screen that says it is working.
+   * Drawf.laser for a LOCK BEAM (parallax): a 12-unit-wide line scaled by
+   * the turret's `strength` and laserWidth, inset at both ends by the caps
+   * that close it off. Parallax fires no bullet, so this is the only thing
+   * on screen that says it is working — and `strength` carries the SPOOL
+   * (Sim.updateLockBeam), so a beam that has held its target for seconds
+   * is visibly fatter than the one that just caught it.
    */
-  private drawTractorBeam(dyn: Batch, t: Tower): void {
+  private drawLockBeam(dyn: Batch, t: Tower): void {
     const scale = t.beamStr * 0.6; // TractorBeamTurret.laserWidth
     const x1 = t.x + Math.cos(t.angle) * 5 * MU; // shootLength
     const y1 = t.y + Math.sin(t.angle) * 5 * MU;

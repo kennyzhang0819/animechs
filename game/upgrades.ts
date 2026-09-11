@@ -242,13 +242,19 @@ const fusedAt = (s: TowerStats, mul: number): TowerStats =>
     ? withBullet(s, { flak: { ...s.bullet.flak, explodeRange: s.bullet.flak.explodeRange * mul } })
     : s;
 
-/** the tractor beam's pull, both the flat term and the point-blank one */
-const pulling = (s: TowerStats, mul: number): TowerStats =>
-  s.bullet.tractor
+/** a lock beam's SPOOL: how long it takes to reach full power (`faster`,
+ *  a multiplier on the rate) and how much power that is (`peak`, added to
+ *  the multiplier at the top of the ramp). Neither touches `damage` — the
+ *  cold beam is what `stronger` moves */
+const spooling = (
+  s: TowerStats,
+  { faster = 1, peak = 0 }: { faster?: number; peak?: number },
+): TowerStats =>
+  s.bullet.lock
     ? withBullet(s, {
-        tractor: {
-          force: s.bullet.tractor.force * mul,
-          scaledForce: s.bullet.tractor.scaledForce * mul,
+        lock: {
+          spool: s.bullet.lock.spool / faster,
+          peak: s.bullet.lock.peak + peak,
         },
       })
     : s;
@@ -679,15 +685,20 @@ const RIPPLE: readonly TurretUpgradeDef[] = [
   },
 ];
 
+// the ramp is what parallax IS, so its branch buys the ramp: a hotter
+// beam at both ends, then reach, then the spool itself. Nothing here may
+// take the fully-upgraded beam anywhere near foreshadow's rail — the top
+// rung lands it at 405 damage a second against ONE body, where an
+// upgraded foreshadow spends better than four times that on a queue
 const PARALLAX: readonly TurretUpgradeDef[] = [
   {
     id: "parallax-field",
     turret: "parallax",
     tier: 1,
-    name: "Stronger Field",
-    blurb: "+50% pull force.",
-    glyph: "homing",
-    apply: (s) => pulling(s, 1.5),
+    name: "Focused Emitter",
+    blurb: "+50% beam damage, cold and fully spooled alike.",
+    glyph: "damage",
+    apply: (s) => stronger(s, 1.5),
   },
   {
     id: "parallax-aperture",
@@ -703,9 +714,9 @@ const PARALLAX: readonly TurretUpgradeDef[] = [
     turret: "parallax",
     tier: 3,
     name: "Phase Coils",
-    blurb: "Phase fabric in the emitter: +300% armour-piercing damage and +60% pull force.",
-    glyph: "damage",
-    apply: (s) => pulling(stronger(s, 4), 1.6),
+    blurb: "Phase fabric in the emitter: the beam spools twice as fast and burns up to 9x the cold beam.",
+    glyph: "beam",
+    apply: (s) => spooling(s, { faster: 2, peak: 2 }),
   },
 ];
 

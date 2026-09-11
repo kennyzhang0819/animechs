@@ -216,12 +216,23 @@ export interface Tower {
   // charge, or -1 when nothing is charging. Lancer sets moveWhileCharging
   // false, so a charging turret also stops turning
   chargeT: number;
-  // TractorBeamTurret's live beam: where it ends, and Mindustry's
-  // `strength`, which lerps in as the beam catches and out as it lets go.
-  // A tractor turret has no bullets, so this IS its whole visual state
+  // A LOCK BEAM's live state (parallax, Sim.updateLockBeam): where the
+  // beam ends, and Mindustry's `strength` — which lerps in as the beam
+  // catches and out as it lets go, and which the spool below rides on top
+  // of so a hot beam is visibly fatter than a cold one. A lock turret has
+  // no bullets, so this IS its whole visual state
   beamX: number;
   beamY: number;
   beamStr: number;
+  /**
+   * Seconds of UNBROKEN contact the current lock has, capped at the
+   * bullet's `lock.spool`: the beam's damage is scaled from 1 up to
+   * `lock.peak` across it. It fills while the beam is landing, bleeds at
+   * the same rate while it is not, and is zeroed outright the moment the
+   * turret changes target — the spool belongs to the lock, never to the
+   * turret (see Sim.updateLockBeam).
+   */
+  beamSpool: number;
   // LaserTurret's held beam (meltdown). Mindustry pins the beam bullet to
   // the muzzle for shootDuration and then simply LETS GO of it: the last
   // fadeTime of beam stays where it was released while the turret is

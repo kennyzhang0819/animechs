@@ -1038,7 +1038,8 @@ for (let t = 1; t < MITOSIS_BROOD.length; t++)
 // no matter what is being fired at it meanwhile. Only with the
 // dome down can the shield tower's body be hurt, and a destroyed shield tower is GONE
 // FOR GOOD; another rises elsewhere on the timer. Instant weapons —
-// lancer, arc, fuse, foreshadow, meltdown's held beam — are not absorbed,
+// lancer, arc, fuse, foreshadow, meltdown's held beam, parallax's lock
+// beam — are not absorbed,
 // exactly as unit force fields never absorb them: aimed at the shield tower
 // they damage shield first, then body, which quietly makes the beam
 // roster the shield tower-breaking roster.

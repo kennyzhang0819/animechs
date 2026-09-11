@@ -525,8 +525,8 @@ const KIND_WET_IMMUNE = Uint8Array.from(UNIT_KINDS, (k) =>
 );
 /**
  * UnitType.drag per kind — the fraction of an external shove a unit sheds
- * per tick. It bleeds the pull channel, which a parallax beam's drag and a
- * spectre round's knockback both feed (see impulse()).
+ * per tick. It bleeds the pull channel, which a spectre round's knockback
+ * feeds (see impulse()).
  * Mindustry's own default is 0.3, which is what every kind that does not
  * state one carries.
  */
@@ -730,10 +730,10 @@ export class Sim {
   readonly uforceDown = new Uint8Array(MAX_UNITS);
   /**
    * Mindustry's impulse velocity, px/s: an outside shove that is NOT the
-   * unit's own drive. A parallax beam adds to it, the kind's drag bleeds
-   * it away, and it rides on top of the capped drive exactly like the
-   * crowd shove does — a unit can be dragged faster than it can walk, and
-   * has to walk back out of it
+   * unit's own drive. A spectre round's knockback adds to it, the kind's
+   * drag bleeds it away, and it rides on top of the capped drive exactly
+   * like the crowd shove does — a unit can be shoved faster than it can
+   * walk, and has to walk back out of it
    */
   readonly upullx = new Float32Array(MAX_UNITS);
   readonly upully = new Float32Array(MAX_UNITS);
@@ -2267,6 +2267,7 @@ export class Sim {
       beamX: 0,
       beamY: 0,
       beamStr: 0,
+      beamSpool: 0,
       beamT: -1,
       beamOX: 0,
       beamOY: 0,
@@ -5049,10 +5050,11 @@ export class Sim {
         mvx = (mvx / ml) * spd;
         mvy = (mvy / ml) * spd;
       }
-      // an outside shove (a parallax beam) rides on top of the capped drive
-      // like the crowd shove does, and bleeds off at the kind's own drag —
-      // Mindustry keeps the impulse in `vel` and scales the whole thing by
-      // (1 - drag) every tick, so the pull outlives the beam by a moment
+      // an outside shove (a spectre round's knockback) rides on top of the
+      // capped drive like the crowd shove does, and bleeds off at the
+      // kind's own drag — Mindustry keeps the impulse in `vel` and scales
+      // the whole thing by (1 - drag) every tick, so a shove outlives the
+      // hit that dealt it by a moment
       const pull = upullx[i] !== 0 || upully[i] !== 0;
       const dxT = mvx * dt + shx + (pull ? upullx[i] * dt : 0);
       const dyT = mvy * dt + shy + (pull ? upully[i] * dt : 0);
@@ -5842,10 +5844,10 @@ export class Sim {
         this.updateMender(t, st, dt);
         continue;
       }
-      // a tractor turret has no reload and no volley — it holds a beam.
-      // The swarm's drags nothing: its beam only ever caught units
-      if (st.bullet.tractor) {
-        this.updateTractor(t, st, dt);
+      // a lock turret has no reload and no volley — it holds a beam on one
+      // body and spools up on it (updateLockBeam)
+      if (st.bullet.lock) {
+        this.updateLockBeam(t, st, dt);
         continue;
       }
       // LaserTurret: while the beam is lit the reload does NOT run, so a
@@ -6773,75 +6775,137 @@ export class Sim {
   }
 
   /**
-   * Mindustry TractorBeamTurret.updateTile: parallax has no reload, no
-   * volley and no bullet. It locks the CLOSEST flyer in range, swings onto
-   * it, and for as long as it is aimed within its cone it deals continuous
-   * armour-piercing damage and pulls the target toward itself.
+   * THE LOCK BEAM (BulletStats.lock, parallax and nothing else). No
+   * reload, no volley and no bullet: the turret picks ONE body, swings
+   * onto it, and for as long as it is aimed within its cone it burns that
+   * body and nothing else.
    *
-   * The pull is an impulse divided by the target's mass — hitSize squared
-   * times pi (PhysicsComp.mass) — so it is the same force on everything and
-   * a completely different effect: it nearly stops a flare, leans hard on a
-   * zenith, and barely troubles an antumbra.
+   * WHAT MAKES IT A WEAPON IS THE SPOOL. `bullet.damage` is what the beam
+   * does the instant it catches — thirty a second, which kills nothing —
+   * and every second of unbroken contact walks that up toward `peak` times
+   * as much, reached after `spool` seconds. The ramp is linear in time and
+   * hard-capped there; it never climbs past it, however long the siege
+   * runs.
+   *
+   * THE SPOOL BELONGS TO THE LOCK. Changing target zeroes it outright, so
+   * a beam walked across a crowd is worth its cold damage the whole way
+   * and the turret is only ever paid for holding still. Swinging off the
+   * held target — out of cone, or mid-turn — bleeds it back at the rate it
+   * filled rather than dropping it, so a target that jinks costs seconds
+   * and not the siege.
+   *
+   * WHICH BODY IT PICKS is foreshadow's rule (TowerStats.sort
+   * "strongest"): the highest CURRENT health in range, because the one
+   * thing a ramp cannot afford is to spend its climb on a crawler. And it
+   * HOLDS that pick — the scan only runs once the lock is broken by death
+   * or by the target leaving reach, never to trade up — because re-picking
+   * the strongest every interval would ping-pong between two bodies as
+   * their pools crossed and the beam would never spool at all.
    */
-  private updateTractor(t: Tower, st: TowerStats, dt: number): void {
-    const spec = st.bullet.tractor!;
-    const { upx, upy, uhp, urad, ufly, bStart, bUnits } = this;
-    // Units.closestEnemy, over the turret's own layer filter — same pick
-    // the O(units) scan made (nearest eligible, ties to the lowest index),
-    // read off the hash's buckets under the reach circle instead. A turret
-    // whose whole target layer is empty pays for none of it
-    let best = -1, bd = Infinity;
-    if (!(st.targetAir && this.nAliveAir > 0) && !(st.targetGround && this.nAliveGround > 0)) {
-      t.beamStr += (0 - t.beamStr) * (1 - Math.pow(1 - 0.1, dt * 60));
-      return;
-    }
-    const pad = st.range + this.rmaxAliveFor(st.targetAir, st.targetGround) + 8;
-    const hx0 = clamp(((t.x - pad) / HC) | 0, 0, HCOLS - 1);
-    const hy0 = clamp(((t.y - pad) / HC) | 0, 0, HROWS - 1);
-    const hx1 = clamp(((t.x + pad) / HC) | 0, 0, HCOLS - 1);
-    const hy1 = clamp(((t.y + pad) / HC) | 0, 0, HROWS - 1);
-    for (let hy = hy0; hy <= hy1; hy++) {
-      const row = hy * HCOLS;
-      const e = bStart[row + hx1 + 1];
-      for (let k = bStart[row + hx0]; k < e; k++) {
-        const i = bUnits[k];
-        if (i >= this.n) continue;
-        if (ufly[i] !== 0 ? !st.targetAir : !st.targetGround) continue;
-        const dx = upx[i] - t.x, dy = upy[i] - t.y;
-        const d = Math.sqrt(dx * dx + dy * dy);
-        // within(range + hitSize/2): a wide target counts from its edge
-        if (d <= st.range + urad[i] && (d < bd || (d === bd && i < best))) {
-          bd = d;
-          best = i;
-        }
+  private updateLockBeam(t: Tower, st: TowerStats, dt: number): void {
+    const lock = st.bullet.lock!;
+    const { upx, upy, uhp, urad, ufly } = this;
+    // what the beam was holding LAST frame, as one comparable key: a
+    // unit's never-reused uid, or a shield tower folded into the negatives
+    // below -1. It is what decides whether the spool survives this frame
+    const prevKey = t.aimShieldTower >= 0 ? -2 - t.aimShieldTower : t.target;
+    const r2 = st.range * st.range;
+
+    // THE PLAYER'S MARK FIRST, exactly as the volley path takes it: a
+    // tapped body overrides both the held lock and the scan for every
+    // turret that can reach it
+    let best = -1;
+    if (this.focusIdx >= 0 && this.uid[this.focusIdx] === this.focusUid) {
+      const fi = this.focusIdx;
+      if (ufly[fi] !== 0 ? st.targetAir : st.targetGround) {
+        const dx = upx[fi] - t.x, dy = upy[fi] - t.y;
+        if (dx * dx + dy * dy < r2) best = fi;
       }
     }
-    // `strength` lerps in as the beam catches and out as it lets go
+    // the held lock, revalidated against the uid the index hint claims —
+    // alive, and still within reach counted from its EDGE, so a wide body
+    // sliding out is not dropped a moment before it visibly leaves
+    if (best < 0 && t.target >= 0 && t.targetIdx >= 0 && t.targetIdx < this.n &&
+        this.uid[t.targetIdx] === t.target) {
+      const i = t.targetIdx;
+      if (ufly[i] !== 0 ? st.targetAir : st.targetGround) {
+        const dx = upx[i] - t.x, dy = upy[i] - t.y;
+        const reach = st.range + urad[i];
+        if (dx * dx + dy * dy <= reach * reach) best = i;
+      }
+    }
+    // ...and only a BROKEN lock scans, on BaseTurret's clock so a turret
+    // staring at an empty lane pays for the walk at most five times a
+    // second
+    t.targetT -= dt;
+    if (best < 0 && t.targetT <= 0) {
+      const hasTargets =
+        (st.targetAir && this.nAliveAir > 0) || (st.targetGround && this.nAliveGround > 0);
+      best = hasTargets
+        ? this.bestTarget(t.x, t.y, st.range, st.targetAir, st.targetGround, st.sort === "strongest")
+        : -1;
+      t.targetT = TARGET_INTERVAL;
+    }
+    // a live lock leaves the clock ARMED, so the frame the lock breaks —
+    // the body died, or walked out — re-scans on the spot rather than
+    // standing dark for the rest of an interval
+    if (best >= 0) t.targetT = 0;
+    t.targetIdx = best;
+    t.target = best >= 0 ? this.uid[best] : -1;
+
+    // IDLE HANDS CHEW THE MAP'S SHIELD TOWERS (see the volley path): a
+    // beam with nothing else in range spends the lull on a dome, and the
+    // spool it builds there is a real one — it just never survives the
+    // switch to the body that walks in next
+    let shr: ShieldTower | null = null;
+    if (best < 0 && st.targetGround && this.shieldTowers.length > 0) {
+      const si = this.idleShieldTowerFor(t, r2);
+      if (si >= 0) shr = this.shieldTowers[si];
+    }
+    t.aimShieldTower = shr ? this.shieldTowers.indexOf(shr) : -1;
+
+    // `strength` lerps in as the beam catches and out as it lets go, and
+    // the spool rides on top of it: a cold beam is drawn at a third of its
+    // width and a fully spooled one at all of it
     const ease = 1 - Math.pow(1 - 0.1, dt * 60);
-    if (best < 0) {
+    if (best < 0 && !shr) {
       t.beamStr += (0 - t.beamStr) * ease;
+      t.beamSpool = 0; // nothing held: the next lock starts cold
       return;
     }
-    const targetRot = Math.atan2(upy[best] - t.y, upx[best] - t.x);
+    // a changed lock is a new lock, and a new lock starts at zero — and
+    // the ramp is read only after that, so the frame a beam jumps bodies
+    // is already worth the cold damage and not the last lock's
+    const key = shr ? -2 - t.aimShieldTower : t.target;
+    if (key !== prevKey) t.beamSpool = 0;
+    const frac = lock.spool > 0 ? t.beamSpool / lock.spool : 1;
+
+    const tx = shr ? shr.x : upx[best];
+    const ty = shr ? shr.y : upy[best];
+    const targetRot = Math.atan2(ty - t.y, tx - t.x);
     const diff = Sim.angleDiff(t.angle, targetRot);
     const turn = st.rotateSpeed * dt;
     t.angle = Math.abs(diff) <= turn ? targetRot : t.angle + Math.sign(diff) * turn;
-    t.beamX = upx[best];
-    t.beamY = upy[best];
-    t.beamStr += (1 - t.beamStr) * ease;
-    if (Math.abs(Sim.angleDiff(t.angle, targetRot)) >= st.shootCone) return;
-
-    // damageContinuousPierce: armour never applies, but a shield still eats it
-    this.damageUnit(best, st.bullet.damage * dt, true);
-    if (uhp[best] <= 0) {
-      this.killUnit(best);
+    t.beamX = tx;
+    t.beamY = ty;
+    t.beamStr += (0.35 + 0.65 * frac - t.beamStr) * ease;
+    if (Math.abs(Sim.angleDiff(t.angle, targetRot)) >= st.shootCone) {
+      // swung off it, but still HOLDING it: the spool bleeds back at the
+      // rate it filled rather than being thrown away
+      t.beamSpool = Math.max(0, t.beamSpool - dt);
       return;
     }
-    // the pull is applied every TICK, so this frame is worth dt * 60 of
-    // them; impulse() does the mass division and the unit conversion
-    const mag = (spec.force + (1 - bd / st.range) * spec.scaledForce) * dt * 60;
-    const inv = bd > 1e-4 ? 1 / bd : 0;
-    this.impulse(best, (t.x - upx[best]) * inv * mag, (t.y - upy[best]) * inv * mag);
+
+    // the ramp, linear in contact time and capped at `peak`
+    const dmg = st.bullet.damage * (1 + (lock.peak - 1) * frac) * dt;
+    t.beamSpool = Math.min(lock.spool, t.beamSpool + dt);
+    if (shr) {
+      this.shieldTowerHit(shr, dmg, st.bullet.hitFx, t.angle, st.bullet.fxColor);
+      return;
+    }
+    // damageContinuousPierce: armour never applies, but a shield still eats it
+    this.damageUnit(best, dmg, st.bullet.pierceArmor ?? false);
+    if (uhp[best] <= 0) this.killUnit(best);
   }
 
   /**
