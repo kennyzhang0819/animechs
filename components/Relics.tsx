@@ -2,7 +2,7 @@
 
 import type { RefObject } from "react";
 
-import { modDef, modName, oddsLine, type ModGlyph, type ModId } from "@/game/mods";
+import { modDef, modName, oddsLine, stackLine, type ModGlyph, type ModId } from "@/game/mods";
 import { MOD_GRID, modGlyph } from "./modArt";
 import { RARITY } from "@/game/rarity";
 import { HoverCard, useHoverCard } from "./HoverCard";
@@ -22,11 +22,10 @@ import { HoverCard, useHoverCard } from "./HoverCard";
  * the shelf too even though they do nothing by themselves, because what
  * they are is a standing CHANCE on every placement from here on, and a
  * player deciding whether to press T needs to know the odds they have
- * bought. The hover card prints the live chance with every COPY owned
- * folded in, so "+10% damage x3" says 66% and not 30% (mods.ts oddsLine).
- * A copy is another roll and never a second application — a turret either
- * has the attribute or does not — so that number is the whole of what a
- * second copy buys.
+ * bought. THE ODDS NO LONGER MOVE: a copy used to be another roll folded
+ * in, so "+10% damage x3" printed 66%; copies buy the NUMBER now (mods.ts),
+ * so the chip says 30% however many are on it and the card says what the
+ * x3 in the corner is worth.
  *
  * The band colour is the whole legend, the same four the cards wear.
  */
@@ -80,11 +79,13 @@ function RelicChip({ id, n }: { id: ModId; n: number }) {
   // thing it is, and a made-up name over the top would be a word to learn
   // in order to be told what the number already said (mods.ts)
   const name = modName(d);
-  // A TURRET ATTRIBUTE PRINTS ITS LIVE ODDS and a relic prints nothing:
-  // the chance is the only number about these that MOVES, and the only
-  // one a player has to re-read after a purchase. Every copy owned folded
-  // in, and per CARD rather than per turret where that is what it means
-  const odds = d.scope === "turret" ? oddsLine(d, n) : null;
+  // A TURRET ATTRIBUTE PRINTS ITS ODDS and a relic prints nothing: the
+  // chance is the one thing a player has to know before pressing T, and
+  // it is per CARD rather than per turret where that is what it means.
+  // It does not move any more — copies buy strength now (mods.ts) — so
+  // what a second copy did is the line under it
+  const odds = d.scope === "turret" ? oddsLine(d) : null;
+  const stack = stackLine(d, n);
   return (
     <span
       ref={tip.ref as RefObject<HTMLSpanElement | null>}
@@ -109,6 +110,7 @@ function RelicChip({ id, n }: { id: ModId; n: number }) {
             {odds}
           </span>
         )}
+        {stack && <span className="mt-1.5 block font-bold text-[#EDEDEF]">{stack}</span>}
       </HoverCard>
     </span>
   );

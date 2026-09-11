@@ -73,28 +73,53 @@ import { armored, faster, piercing, reaching, stronger } from "./upgrades";
  * price tag, and the run could not tell the two buttons apart by what
  * they did — only by what they cost.
  *
- * NOTHING STACKS, AND THE WORD IS NOT USED HERE. An attribute is either
- * ON a turret or it is not — one bit in Tower.mods, so a turret may carry
- * all twenty and can never carry the same one twice. What owning a second
- * COPY of an attribute buys is not a bigger effect and not a second
- * application: it is ANOTHER ROLL at every placement, and the two rolls
- * fold into one probability (chanceAt). The effect is fixed at the def and
- * the copies only ever move the odds of getting it at all.
+ * A SECOND COPY IS A BIGGER NUMBER, NOT BETTER ODDS. This is the one
+ * rule in the file that has been turned round: a copy used to be another
+ * independent roll, folded into one probability, and the effect was fixed
+ * at the def — so the tenth "+10% damage" a run bought was still +10%
+ * damage, bought at odds that were already nearly certain. It bought
+ * nothing a player could feel. Now the ODDS ARE THE DEF'S AND NEVER MOVE,
+ * and the copies multiply what a turret born with the attribute gets:
+ * three copies of +8% damage is +24% on every turret that wins the same
+ * one roll in three.
  *
- * A TURRET ATTRIBUTE HAS NO CAP AND A RELIC HAS ONE OF EXACTLY ONE.
- * There is no third rule and no per-mod number to look up: an attribute is
- * a standing CHANCE, so a second copy is simply better odds and a
- * twentieth is better odds again — nothing about the board stops a run
- * fielding ten sniper turrets, and the only thing making that rare is how
- * rarely the top band comes up at all. A relic is a rule in force; a rule
- * does not get more in force, so owning it twice would have to mean
- * something and there is nothing for it to mean.
+ * THE COPIES SCALE THE BONUS AND NEVER THE PRICE. Every attribute's
+ * upside is linear in copies — a multiplier `m` reads 1 + (m - 1) x n,
+ * and a flat step (pierce, plating, repair) is simply n of it — while
+ * what an attribute CHARGES stays exactly where the def put it: a second
+ * Sniper does not take another ninety per cent of the turret's health,
+ * and a second Giant is not four times the footprint. A build is meant to
+ * get better as it is repeated, not to become impossible.
  *
- * SO NOTHING ON SCREEN SAYS ANY OF THIS. The boards used to print "One a
- * run" and "Up to 2 of them" and a line about stacking under every
- * module, which is a line of housekeeping repeated twenty times to say
- * what two sentences of the rules say once. A relic is self-explanatory;
- * an attribute's only number is its odds, and the odds are already there.
+ * AND IT IS STILL ONE BIT ON THE TURRET. Tower.mods is a mask, so a
+ * turret carries an attribute or does not; the STRENGTH is read off the
+ * run's ledger when the spec is composed (applyTurretMods), which means a
+ * copy bought mid-wave reaches the turrets already standing. That is a
+ * deliberate change from what an attribute used to promise — it used to
+ * change nothing on the board at all — and it is the only way "the number
+ * goes up" can mean anything to a player who already has a board.
+ *
+ * A TURRET ATTRIBUTE HAS NO CAP AND A RELIC HAS ONE OF EXACTLY ONE. An
+ * attribute is a number that grows, so there is always something a copy
+ * can do. A relic is a rule in force; a rule does not get more in force,
+ * so owning it twice would have to mean something and there is nothing
+ * for it to mean.
+ *
+ * SO THE ONLY HOUSEKEEPING ON SCREEN IS THE COUNT. The boards used to
+ * print "One a run" and "Up to 2 of them" under every module, which is a
+ * line repeated twenty times to say what one rule says once. A relic is
+ * self-explanatory; an attribute prints its odds, and the x3 on its chip
+ * is now the whole of what the copies did.
+ *
+ * THE LOW BANDS WERE HALVED WHEN THE COPIES STARTED COUNTING. A tick was
+ * worth a tenth of a turret when a tenth was all it would ever be worth;
+ * the same tenth, ten times over, is a doubled gun, and the commons are
+ * the band a run banks by the fistful. So every unnamed tick is half what
+ * it shipped at — five per cent and twelve rather than ten and
+ * twenty-five — and the SECOND copy is where a player gets back to the
+ * number they used to buy with the first. The rares and the ultras were
+ * left alone: at a tenth of a draw and a fiftieth, a run holding three of
+ * one has earned whatever that is.
  *
  * ONLY THE RARE AND ULTRA ATTRIBUTES HAVE NAMES. A common is not a
  * character, it is a tick: "+10% damage" IS its name, and a made-up one
@@ -227,16 +252,16 @@ export interface ModDef {
    * cap (rollMod), which is what lets the relic half be owned out and the
    * attribute half never be.
    *
-   * A SECOND COPY IS ODDS AND NEVER EFFECT. It is another independent
-   * roll folded into one probability (chanceAt), so a second Sniper does
-   * not make a sniper turret better — it makes sniper turrets likelier.
-   * The effect is fixed at the def, and a turret either has the attribute
-   * or does not.
+   * A SECOND COPY IS EFFECT AND NEVER ODDS (see the header). It scales
+   * what a turret born with the attribute gets — a second Sniper makes
+   * sniper turrets better, not likelier — and the chance below does not
+   * move for it.
    */
   max: number;
   /**
-   * TURRET MODS ONLY: the odds one new turret is born with this, per
-   * COPY owned. Read through chanceAt, never directly.
+   * TURRET MODS ONLY: the odds one new turret is born with this, and they
+   * are a CONSTANT — copies buy strength, never odds (see the header).
+   * Read through chanceAt, which is the dashboard's dial folded in.
    *
    * These numbers are small on purpose and they are multiplied by the
    * size of a formation: a citadel is thirty-six placements, so a common
@@ -248,9 +273,10 @@ export interface ModDef {
   /**
    * The stat surgery, if the mod is one — both scopes use it.
    *
-   * It is handed a COUNT for historical reasons and every caller passes
-   * 1: a relic is owned once and a turret either has an attribute or does
-   * not, so there is never a second copy of anything to fold in.
+   * IT IS HANDED THE RUN'S COPY COUNT and every turret attribute below
+   * uses it: the bonuses are linear in `copies` and the costs are not
+   * (see the header). A relic is capped at one, so its own `apply` is
+   * always called with 1.
    *
    * Mods with no `apply` are the behavioural ones — a revive, a refund, a
    * shift in the deal's odds — and the sim reads those BY NAME at the one
@@ -260,7 +286,8 @@ export interface ModDef {
    */
   apply?: (s: TowerStats, copies: number) => TowerStats;
   /**
-   * HEALTH RETURNED A SECOND, as a fraction of the turret's OWN ceiling —
+   * HEALTH RETURNED A SECOND PER COPY OWNED, as a fraction of the
+   * turret's OWN ceiling —
    * so the same 3% mends a braced spectre faster in absolute hp than a
    * bare duo, which is what "a percentage of its own pool" has to mean.
    * The sim resolves it to hp/second once at the placement
@@ -274,6 +301,11 @@ export interface ModDef {
    * foreshadow becomes an 8x8 building. It is on the def rather than a
    * check on the id so the sim asks the catalog "how big is a turret with
    * this mask" (sizeWithMods) instead of asking "is it the giant".
+   *
+   * IT IS THE ONE THING COPIES DO NOT SCALE. The ground a building
+   * claims is read off the MASK before the turret exists (sizeWithMods,
+   * Sim.placeTower), and a second Giant making every giant a 16x16 would
+   * be a card that cannot be placed on most of the map.
    */
   scale?: number;
   /**
@@ -398,9 +430,16 @@ const bigger = (s: TowerStats, mul: number): TowerStats => ({ ...s, size: s.size
  * THE STEPS ARE SMALL AND THAT IS THE POINT. Every turret rolls for every
  * attribute the run owns, so a late run is folding eight or ten of these
  * multipliers onto one gun; a common worth a quarter of a turret
- * compounds into nonsense, and a common worth a tenth compounds into a
- * gun that is noticeably better than the one beside it. Ten per cent is
- * the number you feel across a patch of thirty-six and never across one.
+ * compounds into nonsense, and a common worth a twentieth compounds into
+ * a gun that is noticeably better than the one beside it.
+ *
+ * AND EVERY COPY ADDS ITS STEP AGAIN — `apply` is handed the run's count
+ * and the tick is written linear in it, so four of the common damage tick
+ * is one turret in three carrying +20%. That is what HALVED these numbers
+ * from the tenth and the quarter they shipped at: the tick is a dial now
+ * and a dial is read at the far end of its travel, not at the first stop,
+ * and what the old step was worth once a run owns it is what the new one
+ * is worth twice over.
  */
 const tick = (
   id: ModId,
@@ -408,7 +447,7 @@ const tick = (
   glyph: ModGlyph,
   tweak: string,
   chance: number,
-  apply: (s: TowerStats) => TowerStats,
+  apply: (s: TowerStats, copies: number) => TowerStats,
   regen?: number,
 ): ModDef => ({
   id,
@@ -420,29 +459,36 @@ const tick = (
   // a dial that stops being a decision — see the header
   max: Infinity,
   chance,
-  blurb: `New turrets have a chance to be born with ${tweak}.`,
-  apply: (t) => apply(t),
+  blurb: `New turrets have a chance to be born with ${tweak}, once for every copy of it the run holds.`,
+  apply,
   regen,
 });
 
+/** a multiplier as COPIES of it read: 1 + (m - 1) x n, so two of a x1.5
+ *  is a x2 and never a x2.25. Linear is the promise on the chip — "+50%"
+ *  twice is "+100%" — and compounding would quietly outrun it */
+const per = (mul: number, copies: number): number => 1 + (mul - 1) * Math.max(1, copies);
+
 const TURRET_MODS: readonly ModDef[] = [
-  // ---- COMMON: a tenth of a turret, at three rolls in ten -------------
-  tick("dmg1", "common", "barrel", "+10% damage", 0.3, (t) => stronger(t, 1.1)),
-  tick("rate1", "common", "gear", "+10% fire rate", 0.3, (t) => faster(t, 1.1)),
-  tick("hp1", "common", "plate", "+20% health", 0.3, (t) => tougher(t, 1.2)),
-  tick("range1", "common", "lens", "+10% range", 0.3, (t) => reaching(t, 1.1)),
-  // ---- UNCOMMON: a quarter, at under one roll in five -----------------
-  tick("dmg2", "uncommon", "barrel", "+25% damage", 0.18, (t) => stronger(t, 1.25)),
-  tick("rate2", "uncommon", "gear", "+25% fire rate", 0.18, (t) => faster(t, 1.25)),
-  tick("hp2", "uncommon", "plate", "+50% health", 0.18, (t) => tougher(t, 1.5)),
-  tick("range2", "uncommon", "lens", "+25% range", 0.18, (t) => reaching(t, 1.25)),
+  // ---- COMMON: a twentieth of a turret, at three rolls in ten ---------
+  tick("dmg1", "common", "barrel", "+5% damage", 0.3, (t, n) => stronger(t, per(1.05, n))),
+  tick("rate1", "common", "gear", "+5% fire rate", 0.3, (t, n) => faster(t, per(1.05, n))),
+  tick("hp1", "common", "plate", "+10% health", 0.3, (t, n) => tougher(t, per(1.1, n))),
+  tick("range1", "common", "lens", "+5% range", 0.3, (t, n) => reaching(t, per(1.05, n))),
+  // ---- UNCOMMON: an eighth, at under one roll in five -----------------
+  tick("dmg2", "uncommon", "barrel", "+12% damage", 0.18, (t, n) => stronger(t, per(1.12, n))),
+  tick("rate2", "uncommon", "gear", "+12% fire rate", 0.18, (t, n) => faster(t, per(1.12, n))),
+  tick("hp2", "uncommon", "plate", "+25% health", 0.18, (t, n) => tougher(t, per(1.25, n))),
+  tick("range2", "uncommon", "lens", "+12% range", 0.18, (t, n) => reaching(t, per(1.12, n))),
   // PIERCE IS A WHOLE BODY AND NEVER A PERCENTAGE. There is no "+10% of a
   // body to punch through", so the dial has one step and it lives here,
-  // at the band where one extra body is worth about what a quarter is
-  tick("pierce1", "uncommon", "spike", "+1 pierce", 0.18, (t) => piercing(t, 1)),
+  // at the band where one extra body is worth about what a fifth is —
+  // and a copy is simply another body through
+  tick("pierce1", "uncommon", "spike", "+1 pierce", 0.18, (t, n) => piercing(t, Math.max(1, n))),
   // ...and REPAIR is the one stat a plain turret has none of, so the tick
-  // is the whole thing rather than a percentage of nothing
-  tick("regen1", "uncommon", "weave", "repairs 1% a second", 0.18, (t) => t, 0.01),
+  // is the whole thing rather than a percentage of nothing. Its copies are
+  // summed by modRegen rather than here — `regen` is a field, not an apply
+  tick("regen1", "uncommon", "weave", "repairs 0.5% a second", 0.18, (t) => t, 0.005),
 
   // ---- RARE: NAMED, and a pair of stats rather than a dial ------------
   // Half a turret is the rare step. What makes these rare rather than a
@@ -457,8 +503,8 @@ const TURRET_MODS: readonly ModDef[] = [
     glyph: "chassis",
     max: Infinity,
     chance: 0.1,
-    blurb: "New turrets have a chance to be born on a prototype frame: half again the damage and half again the rate of fire.",
-    apply: (t) => faster(stronger(t, 1.5), 1.5),
+    blurb: "New turrets have a chance to be born on a prototype frame: half again the damage and half again the rate of fire, once for every copy of it the run holds.",
+    apply: (t, n) => faster(stronger(t, per(1.5, n)), per(1.5, n)),
   },
   {
     id: "bulwark",
@@ -471,8 +517,8 @@ const TURRET_MODS: readonly ModDef[] = [
     chance: 0.1,
     // the +6 is a mace's plate and a half: on a 1x1 it is the difference
     // between a dagger biting and a dagger bouncing off
-    blurb: "New turrets have a chance to be born armoured: double health, six points of plating, and they mend 3% of it a second.",
-    apply: (t) => armored(tougher(t, 2), 6),
+    blurb: "New turrets have a chance to be born armoured: double health, six points of plating, and they mend 3% of it a second — again for every copy of it the run holds.",
+    apply: (t, n) => armored(tougher(t, per(2, n)), 6 * Math.max(1, n)),
     regen: 0.03,
   },
   {
@@ -484,8 +530,8 @@ const TURRET_MODS: readonly ModDef[] = [
     glyph: "spike",
     max: Infinity,
     chance: 0.1,
-    blurb: "New turrets have a chance to fire sabot: half again the damage, and the round punches through two more bodies.",
-    apply: (t) => piercing(stronger(t, 1.5), 2),
+    blurb: "New turrets have a chance to fire sabot: half again the damage, and the round punches through two more bodies — again for every copy of it the run holds.",
+    apply: (t, n) => piercing(stronger(t, per(1.5, n)), 2 * Math.max(1, n)),
   },
   {
     // THE FIRST ATTRIBUTE THAT IS NOT A NUMBER GOING UP — see the header.
@@ -505,8 +551,8 @@ const TURRET_MODS: readonly ModDef[] = [
     // tenth would speckle a patch of duos and never once show on the two
     // fuses a run puts down
     chance: 0.3,
-    blurb: "New fuses have a chance to fire two extra spikes — five to the volley instead of three.",
-    apply: (s) => ({ ...s, shots: s.shots + 2 }),
+    blurb: "New fuses have a chance to fire two extra spikes — five to the volley instead of three, and two more again for every copy of it the run holds.",
+    apply: (s, n) => ({ ...s, shots: s.shots + 2 * Math.max(1, n) }),
   },
 
   // ---- ULTRA: NAMED, and the turret changes species --------------------
@@ -524,7 +570,12 @@ const TURRET_MODS: readonly ModDef[] = [
     chance: 0.05,
     blurb:
       "A card has a chance to come out GIANT instead: one building, twice the size, eleven times the health, ten more plating and triple the damage — but it sees barely a tenth as far, so it has to be put where the swarm is already coming.",
-    apply: (t) => bigger(armored(tougher(reaching(stronger(t, 3), 0.1), 11), 10), GIANT_SCALE),
+    // THE FOOTPRINT AND THE BLINDNESS ARE THE PRICE AND DO NOT STACK
+    // (see `scale`): copies buy a harder-hitting, tougher, better plated
+    // giant standing on exactly the same ground, still seeing a tenth as
+    // far as its kind
+    apply: (t, n) =>
+      bigger(armored(tougher(reaching(stronger(t, per(3, n)), 0.1), per(11, n)), 10 * Math.max(1, n)), GIANT_SCALE),
     scale: GIANT_SCALE,
     solo: true,
   },
@@ -539,7 +590,9 @@ const TURRET_MODS: readonly ModDef[] = [
     chance: 0.04,
     blurb:
       "New turrets have a chance to be born SNIPER: four times the reach, triple the rate of fire and double the damage — on a tenth of the health. It kills everything it can see and dies to anything that reaches it.",
-    apply: (t) => tougher(faster(reaching(stronger(t, 2), 4), 3), 0.1),
+    // the tenth of a health pool is the PRICE and is paid once, however
+    // many copies the run holds — see the header
+    apply: (t, n) => tougher(faster(reaching(stronger(t, per(2, n)), per(4, n)), per(3, n)), 0.1),
   },
   {
     id: "allround",
@@ -555,7 +608,11 @@ const TURRET_MODS: readonly ModDef[] = [
     chance: 0.03,
     blurb:
       "New turrets have a chance to be born ALL ROUND: double damage, double rate of fire, double health, half again the reach, and the round punches through three more bodies. No cost at all — it is simply a better turret.",
-    apply: (t) => piercing(tougher(reaching(faster(stronger(t, 2), 2), 1.5), 2), 3),
+    apply: (t, n) =>
+      piercing(
+        tougher(reaching(faster(stronger(t, per(2, n)), per(2, n)), per(1.5, n)), per(2, n)),
+        3 * Math.max(1, n),
+      ),
   },
 ];
 
@@ -763,25 +820,21 @@ export function maskRarity(mask: number): Rarity | null {
 }
 
 /**
- * THE ODDS ONE NEW TURRET IS BORN WITH THIS ATTRIBUTE, given how many
- * copies of it the run owns.
+ * THE ODDS ONE NEW TURRET IS BORN WITH THIS ATTRIBUTE — and they are the
+ * def's, whatever the run holds.
  *
- * EVERY COPY IS ANOTHER INDEPENDENT ROLL, folded into one probability and
- * never summed: three copies of a 0.30 attribute is 1 - 0.7^3 = 0.657 and
- * never 0.9, so another copy always helps and can never reach certainty.
- *
- * WHAT IT CANNOT DO IS PUT THE ATTRIBUTE ON TWICE. The turret carries one
- * bit (Tower.mods) and the effect is the def's; copies move only the
- * chance of winning that bit at all. There is no stacking anywhere in this
- * file and the word is not used for anything.
+ * A COPY USED TO BE ANOTHER INDEPENDENT ROLL folded in here, so three
+ * copies of a 0.30 attribute read 0.657. It does not any more: copies buy
+ * STRENGTH now (see the header), and the one thing this number must do is
+ * stay still, because a player reading "30% on every turret placed" off
+ * the shelf has to be able to keep reading it after they buy the fourth.
  */
-export function chanceAt(id: ModId, copies: number): number {
+export function chanceAt(id: ModId): number {
   const d = modDef(id);
   // chanceOf, not d.chance: the dashboard's dial has to move the odds the
   // shelf prints and the odds the placement rolls, or the two disagree
   const c = chanceOf(id);
-  if (d.scope !== "turret" || !c || copies <= 0) return 0;
-  return 1 - (1 - Math.min(1, c)) ** copies;
+  return d.scope === "turret" && c ? Math.min(1, c) : 0;
 }
 
 /**
@@ -808,19 +861,30 @@ export function rollTurretMods(
     // ...and a KIND-BOUND one is only ever rolled by its own kind
     if (d.only && d.only !== kind) continue;
     const n = owned[id] ?? 0;
-    if (n > 0 && rng() < chanceAt(id, n)) mask |= modBit(id);
+    if (n > 0 && rng() < chanceAt(id)) mask |= modBit(id);
   }
   return mask;
 }
 
-/** the attributes in a mask folded onto a turret's stats, catalog order */
-export function applyTurretMods(s: TowerStats, mask: number): TowerStats {
+/**
+ * The attributes in a mask folded onto a turret's stats, catalog order —
+ * EACH AT THE STRENGTH THE RUN'S COPIES BUY (`owned`, and see the header).
+ *
+ * The mask says WHICH and the ledger says HOW MUCH, which is why a copy
+ * bought mid-wave reaches the turrets already standing: Sim.refreshSpecs
+ * re-composes every one of them through here.
+ */
+export function applyTurretMods(
+  s: TowerStats,
+  mask: number,
+  owned: Readonly<Partial<Record<ModId, number>>> = {},
+): TowerStats {
   if (mask === 0) return s;
   let out = s;
   for (const id of TURRET_MOD_IDS) {
     if ((mask & modBit(id)) === 0) continue;
     const f = modDef(id).apply;
-    if (f) out = f(out, 1);
+    if (f) out = f(out, Math.max(1, owned[id] ?? 1));
   }
   return out;
 }
@@ -854,10 +918,14 @@ export function applyGlobalMods(
  * as fast in absolute terms. Data rather than a list of ids, so adding a
  * repairing attribute is one field on its def.
  */
-export function modRegen(mask: number): number {
+export function modRegen(
+  mask: number,
+  owned: Readonly<Partial<Record<ModId, number>>> = {},
+): number {
   let r = 0;
   for (const id of TURRET_MOD_IDS)
-    if ((mask & modBit(id)) !== 0) r += modDef(id).regen ?? 0;
+    if ((mask & modBit(id)) !== 0)
+      r += (modDef(id).regen ?? 0) * Math.max(1, owned[id] ?? 1);
   return r;
 }
 
@@ -899,7 +967,7 @@ export function rollSolo(
     const d = modDef(id);
     if (!d.solo) continue;
     const n = owned[id] ?? 0;
-    if (n > 0 && rng() < chanceAt(id, n)) return id;
+    if (n > 0 && rng() < chanceAt(id)) return id;
   }
   return null;
 }
@@ -1033,13 +1101,31 @@ export function rollMod(
  * is rolled once per CARD, so saying "on every turret placed" would
  * overstate it by a factor of the whole formation — which on a x10
  * citadel is three hundred and sixty.
+ *
+ * IT TAKES NO COPY COUNT ANY MORE. The odds are a constant (chanceAt) and
+ * what the copies moved is the strength — stackLine says that half.
  */
-export function oddsLine(d: ModDef, copies = 1): string {
+export function oddsLine(d: ModDef): string {
   if (d.scope === "global") return "In force over the whole board the moment it is bought";
-  const pct = Math.round(chanceAt(d.id, copies) * 100);
+  const pct = Math.round(chanceAt(d.id) * 100);
   if (d.solo) return `${pct}% on every card placed`;
   if (d.only) return `${pct}% on every ${TOWERS[d.only].name.toLowerCase()} placed`;
   return `${pct}% on every turret placed`;
+}
+
+/**
+ * WHAT THE COPIES BOUGHT, in the player's terms — null for a single copy
+ * and for every relic, which cannot have one.
+ *
+ * It says the count rather than the arithmetic: an attribute's tweak is a
+ * hand-written string ("+8% damage", "+2 pierce, +50% damage") and there
+ * is no honest way to multiply a sentence by three. What a player needs
+ * off the shelf is that the copies are DOING something, and how many of
+ * them there are; the exact number is on the turret, in the inspector.
+ */
+export function stackLine(d: ModDef, copies: number): string | null {
+  if (d.scope !== "turret" || copies <= 1) return null;
+  return `${copies} copies — every one of them applies, so a turret born with it gets all ${copies}`;
 }
 
 /** is there anything left in this half of the catalog to draw? — what

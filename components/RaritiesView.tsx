@@ -228,10 +228,10 @@ export default function RaritiesView() {
           other one, independently, so this whole column multiplies together on one gun.
           With each owned once an average turret carries{" "}
           <span className="font-mono tabular-nums text-[#A6A6AF]">{perTurret.toFixed(2)}</span>{" "}
-          attributes; a patch of thirty-six is that thirty-six times over. Nothing stacks: a
-          turret either has an attribute or it does not, and a second copy owned buys another
-          roll rather than a bigger effect — folded as 1 − (1 − p)ⁿ, so it always helps and
-          can never reach certainty.
+          attributes; a patch of thirty-six is that thirty-six times over. These odds are
+          CONSTANT: a turret either has an attribute or it does not, and a second copy owned
+          buys a bigger effect rather than another roll — every copy adds its own step again
+          (mods.ts), so the column below is what a run is offered and never what it is worth.
         </p>
         {(["common", "uncommon", "rare", "ultra"] as const).map((band) => {
           const ids = modsOfScope("turret")

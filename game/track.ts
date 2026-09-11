@@ -607,7 +607,9 @@ export function rewardNote(r: Reward): string | null {
   if (r.kind === "turret") return targetingLine(TOWERS[r.id]);
   if (r.kind !== "module") return null;
   const d = modDef(r.id);
-  const odds = oddsLine(d) + (d.scope === "turret" ? ", per copy owned" : "");
+  // "a copy over" rather than "per copy owned": the odds are a constant
+  // now and it is the EFFECT that every copy adds again (mods.ts)
+  const odds = oddsLine(d) + (d.scope === "turret" ? ", and every copy adds its effect again" : "");
   return d.name && d.tweak ? `${d.tweak}. ${odds}` : odds;
 }
 

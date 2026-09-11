@@ -2034,14 +2034,18 @@ export class Sim {
    */
   private resolveTower(t: Tower): void {
     const kind = this.specs.get(t.kind) ?? structStats(t.kind);
-    t.spec = applyTurretMods(kind, t.mods);
+    // the mask says WHICH attributes this turret won and the run's ledger
+    // says how strong each of them is right now (mods.ts): copies scale
+    // the effect, so a copy bought mid-wave lands on the board already
+    // standing, through this very call
+    t.spec = applyTurretMods(kind, t.mods, this.mods);
     const max = t.spec.health * TOWER_HP_SCALE;
     if (max !== t.hpMax) {
       const f = t.hpMax > 0 ? t.hp / t.hpMax : 1;
       t.hpMax = max;
       t.hp = Math.min(max, Math.max(1, f * max));
     }
-    t.regen = modRegen(t.mods) * max;
+    t.regen = modRegen(t.mods, this.mods) * max;
   }
 
   // ---------- the run's upgrades (mods.ts) ----------
