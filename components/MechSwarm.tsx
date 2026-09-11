@@ -119,6 +119,7 @@ import { HoverCard, useHoverCard } from "./HoverCard";
 import MenuBackground from "./MenuBackground";
 import { useEscapeBack } from "./Board";
 import { DealCorner, useDeal } from "./Deal";
+import { Inspector } from "./Inspector";
 import { RelicShelf } from "./Relics";
 import { useConfirm } from "./ConfirmDialog";
 
@@ -322,10 +323,16 @@ const levelSummary = (lv: LevelSpec): { waves: number; enemies: number } => {
 const runSpec = (
   world: LevelSpec,
   tier: number,
-  families: readonly FamilyKey[],
   mutation: readonly MutationId[],
 ): LevelSpec => {
   const spec = specForTier(world, tier);
+  // THE DIE IS ROLLED HERE, against the script it is about to be dealt
+  // into, because the roll is not free of it: a flying family may not take
+  // a slot the OPENING WAVE sends (levels.ts rollFamilies), and which
+  // slots those are is a property of this tier's expanded script. Rolling
+  // outside and passing the result in let a caller hand over a deal that
+  // opens wave 1 with flares, which is an opening with one legal answer.
+  const families = rollFamilies(Math.random, spec.script);
   return {
     ...spec,
     script: transformScript(spec.script, families),
@@ -1520,7 +1527,7 @@ export default function MechSwarm() {
     setTier(t);
     setRunRandom(false); // asked for by id: nothing random about it
     setAdmin(true); // a sandbox run: whole tree, no caps, every pace
-    setLevel(runSpec(w, t, rollFamilies(), mutation));
+    setLevel(runSpec(w, t, mutation));
     setScreen("game");
     setLoadUi({ step: firstLoadStep(), out: false });
     // straight past the front of house: the level's own loading screen takes
@@ -1825,12 +1832,11 @@ export default function MechSwarm() {
       tierMutationCount(tier),
       lockedMutators(effectiveLevel(p)),
     );
-    // THE FAMILY DIE: three of the six families, in the order the
-    // script's slots are dealt to them (rollFamilies)
-    const families = rollFamilies();
     saveRunPick(tier, picked?.id ?? null);
     setRunRandom(random);
-    setLevel(runSpec(w, tier, families, roll));
+    // the family die is rolled inside runSpec, against the script it is
+    // dealt into — see there for why it cannot be rolled out here
+    setLevel(runSpec(w, tier, roll));
     setScreen("game");
     // raised in the same batch as the screen switch, so the game screen's
     // FIRST paint is already covered - an effect would run after that
@@ -2389,29 +2395,23 @@ export default function MechSwarm() {
             ))}
           </div>
         )}
-        {/* THE CORNER IS ONE NUMBER ON BARE SCREEN.
-            It was a panel: a bevelled box with the core's health bar
-            across the top of it and the bank underneath, and a caret to
-            fold the second away. Both of the things that box held are said
-            better somewhere else — the core wears its own health bar on
-            the board like every other building does (drawStructureBars),
-            and a bar in the corner asked the player to look away from the
-            thing being hit to find out how it was doing. What is left is
-            the ONE number that is nowhere else on the field and that every
-            build decision is made against, drawn straight onto the screen
-            with no chrome under it at all: no pane, no border, no
-            background, just the scrap. The stack keeps its place so the
-            sandbox pace strip still hangs off the same corner, and it is
-            as wide as the widest thing in it — the mission's objective
-            lines, which read as sentences and must not wrap. */}
+        {/* THE TOP-LEFT CORNER IS WHAT IS TRUE OF THE RUN, and no longer
+            the bank. It was a panel once — a bevelled box with the core's
+            health bar across the top and the scrap underneath — and both
+            of those are said better elsewhere now: the core wears its own
+            health bar on the board like every other building does
+            (drawStructureBars), and the scrap moved down to the
+            bottom-right, one line above the prices it is read against.
+            What hangs here is the standing state — the relics, the
+            sandbox pace strip, the mission's objective lines — and the
+            stack is as wide as the widest of those, the objective lines,
+            which read as sentences and must not wrap. */}
         {hud && (
           <div className="ui-zoom absolute left-[1rem] top-[1rem] flex w-[34rem] max-w-[calc(100vw-8rem)] flex-col items-start gap-2">
-            {hud.scrap !== null && <ScrapAmount amount={hud.scrap} size="md" className="text-xl" />}
-            {/* THE RELIC SHELF (components/Relics.tsx), under the bank and
-                over everything else the corner says. An upgrade is a RULE
-                in force for the rest of the run, so it belongs beside the
-                other number that is always true — and this is the corner
-                every build decision is already made against. */}
+            {/* THE RELIC SHELF (components/Relics.tsx), over everything
+                else the corner says. An upgrade is a RULE in force for
+                the rest of the run, so it heads the corner that holds
+                what is true of the run for good. */}
             <RelicShelf relics={hud.relics} />
             {admin && !hud.lost && !hud.won && !hud.menuOpen && (
               /* THE PACE STRIP IS SANDBOX'S, and nothing else on the field
@@ -2508,8 +2508,14 @@ export default function MechSwarm() {
                 this got to" rather than to make a decision, and the answer
                 to that question has a time in it. Simulated seconds
                 (UiState.elapsed), so a run at 2x reads the clock the wave
-                script is actually keeping rather than the wall's */}
-            <div className="ms-pane mb-1 px-2 py-0.5 text-center text-[13px] font-bold uppercase tracking-widest tabular-nums text-[#A1A1AA]">
+                script is actually keeping rather than the wall's.
+
+                It wears no pane, for the same reason the scrap in the
+                opposite corner does not: the two are one number each,
+                sitting the same distance above the square below them at
+                the same size, and the bottom of the screen reads as a
+                pair. A box round one of them breaks that. */}
+            <div className="mb-2 text-left text-xl font-bold uppercase tracking-widest tabular-nums text-[#A1A1AA]">
               {clock(hud.elapsed)}
             </div>
             <div className="ms-pane p-1">
@@ -2519,6 +2525,19 @@ export default function MechSwarm() {
                 className="block h-auto w-[13rem] cursor-pointer [image-rendering:pixelated]"
               />
             </div>
+          </div>
+        )}
+        {/* WHAT IS SELECTED, along the bottom between the two corners
+            (components/Inspector.tsx): what it is, what it has left, and
+            which attributes it was born with. A click on a turret used to
+            draw a range ring and say nothing else, and the attributes a
+            placement rolls (mods.ts) are most of what a turret IS.
+            It stands only while the run does — the end screens own the
+            frame — and it goes with the pause menu, which is the one time
+            a panel over the field is in the way of reading the field. */}
+        {hud?.inspect && !hud.lost && !hud.won && !hud.menuOpen && (
+          <div className="ui-zoom pointer-events-none absolute bottom-[1rem] left-1/2 z-10 -translate-x-1/2">
+            <Inspector inspect={hud.inspect} icons={icons} />
           </div>
         )}
         {/* THE BOTTOM-RIGHT CORNER, in ONE column: the run's deal on top
@@ -2574,6 +2593,13 @@ export default function MechSwarm() {
                 reach a NAMED turret, which is the one thing a random deal
                 cannot do. Like the minimap, whichever of the two it is
                 stands until the run ends: the end screens own the frame. */}
+            {/* THE BANK SITS ON THE CARD IT IS SPENT ON. It used to be
+                alone in the top-left corner, a screen away from the
+                prices it is read against; here it is one line above the
+                badges it has to cover, still drawn straight onto the
+                screen with no chrome under it — no pane, no border, no
+                background, just the number. */}
+            {hud.scrap !== null && <ScrapAmount amount={hud.scrap} size="md" className="text-xl" />}
             {hud.dealing ? (
               <DealCorner hud={hud} icons={icons} deal={deal} />
             ) : (

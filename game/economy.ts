@@ -124,8 +124,17 @@ export const RELIC_ROLL_PRICE = 3500;
  * THE AMOUNT LADDER — the corner's fourth button, which cycles through
  * these and multiplies whichever of the other three is pressed next.
  *
+ * THEY ARE SQUARE NUMBERS, and that is the point of these three and not
+ * some other three. On the turret button the amount TILES the shape
+ * (formation.ts), so a square amount tiles into a square: 4 is two copies
+ * by two and 9 is three by three, and a fleet comes out with the
+ * proportions of the card that bought it. They were 5 and 10, which are
+ * not squares, and an oblong number has to be laid out as something — a
+ * plus, a five-by-two slab — that nobody designed and the player has to
+ * find ground for anyway.
+ *
  * IT IS A FLAT MULTIPLIER ON THE PRICE, with no bulk discount anywhere:
- * x10 turrets costs exactly ten roll fees. The button saves KEYSTROKES
+ * x9 turrets costs exactly nine roll fees. The button saves KEYSTROKES
  * and nothing else — a discount would make the single press strictly
  * wrong, and the single press is the whole T-click-T-click flow the deal
  * was built around.
@@ -134,14 +143,22 @@ export const RELIC_ROLL_PRICE = 3500;
  * button it is ONE card carrying the shape tiled N times (formation.ts —
  * one turret roll, one shape roll, a fleet on the ground). On the module
  * buttons it is N INDEPENDENT DRAWS, because there is no ground involved
- * and nothing to tile: ten relics is ten relics.
+ * and nothing to tile: nine relics is nine relics.
  */
-export const BUY_AMOUNTS = [1, 5, 10] as const;
+export const BUY_AMOUNTS = [1, 4, 9] as const;
 export type BuyAmount = (typeof BUY_AMOUNTS)[number];
 
 /** the amount after this one, wrapping — what the fourth button does */
 export const nextAmount = (n: BuyAmount): BuyAmount =>
   BUY_AMOUNTS[(BUY_AMOUNTS.indexOf(n) + 1) % BUY_AMOUNTS.length];
+
+/** EVERY AMOUNT IS A SQUARE, so every fleet tiles into a square — see
+ *  BUY_AMOUNTS for why, and formation.ts fleetLayout for what reads it */
+(() => {
+  for (const n of BUY_AMOUNTS)
+    if (!Number.isInteger(Math.sqrt(n)))
+      throw new Error(`the buy amount ${n} is not a square; a fleet of it cannot tile square`);
+})();
 
 /** a placement is spent: selling returns this fraction of the price */
 export const SELL_REFUND = 0;

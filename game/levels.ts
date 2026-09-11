@@ -1123,6 +1123,31 @@ export const ACTIVE_FAMILIES: readonly FamilyKey[] = FAMILIES.map((f) => f.key).
 /** how many families a deploy sends — the die picks this many */
 export const FAMILIES_PER_RUN = 3;
 
+/**
+ * THE FAMILIES THAT ARRIVE BY AIR, and they are never dealt an opening
+ * slot (rollFamilies).
+ *
+ * WAVE 1 MUST BE WALKABLE. A run opens with nothing on the board — no
+ * turret is bought until the first scrap is banked — and the opening wave
+ * is the one the player answers by putting the first card down. A ground
+ * wave walks the route, which is a route the player can read and block; a
+ * flight of flares crosses everything between the door and the core in a
+ * straight line and cares about none of it. Meeting that on wave 1 is not
+ * a hard opening, it is an opening with one legal answer, and the deal has
+ * not necessarily handed over a turret that can even shoot up.
+ *
+ * IT IS READ OFF THE BODIES, not off the family's `layer` label: a family
+ * is "air" here if ANY of its kinds flies, so a mixed family could never
+ * sneak a flyer into the opening by being filed under ground. The two
+ * agree today and the import check below keeps them agreeing.
+ */
+export const AIR_FAMILIES: readonly FamilyKey[] = FAMILIES.filter((f) =>
+  f.kinds.some((k) => UNIT_STATS[k].flying),
+).map((f) => f.key);
+
+/** does this family put anything in the sky? */
+export const familyFlies = (key: FamilyKey): boolean => AIR_FAMILIES.includes(key);
+
 /** the family a kind belongs to, or null for the boss */
 const FAMILY_OF: Partial<Record<UnitKind, FamilyKey>> = {};
 for (const f of FAMILIES) for (const k of f.kinds) FAMILY_OF[k] = f.key;
@@ -1156,6 +1181,32 @@ export function scriptFamilies(script: readonly LevelStep[]): FamilyKey[] {
 }
 
 /**
+ * WHICH SLOTS THE OPENING WAVE DRAWS ON — the indices into scriptFamilies
+ * that the script's FIRST wave actually sends, and therefore the slots a
+ * flying family must be kept out of.
+ *
+ * It is a list rather than "slot 0" because a script is a document the
+ * level editor writes: wave 1 is one family today, and the day somebody
+ * opens with two, the second one must be kept walkable as well without
+ * anybody having to remember that this rule exists.
+ */
+export function openingSlots(script: readonly LevelStep[]): number[] {
+  const first = script.find((st) => "wave" in st);
+  if (!first) return [];
+  const slots = scriptFamilies(script);
+  const out = new Set<number>();
+  for (const g of waveGroups(first.wave))
+    g.counts.forEach((c, i) => {
+      if (c <= 0) return;
+      const f = familyOf(UNIT_KINDS[i]);
+      if (!f) return; // the boss belongs to no family and fills no slot
+      const at = slots.indexOf(f);
+      if (at >= 0) out.add(at);
+    });
+  return [...out].sort((a, b) => a - b);
+}
+
+/**
  * THE DIE ROLL: FAMILIES_PER_RUN families, in a random order — the order
  * is the deal, since slot i of the script plays as families[i].
  *
@@ -1166,14 +1217,60 @@ export function scriptFamilies(script: readonly LevelStep[]): FamilyKey[] {
  * (Sim.padMaskFor), so there is no longer such a thing as a map a family
  * cannot play. The only thing that keeps a family out of the draw is the
  * shelf (SHELVED_FAMILIES).
+ *
+ * ...BUT NOT EVERY FAMILY IS ELIGIBLE FOR EVERY SLOT. A flying family is
+ * never dealt a slot the opening wave sends (AIR_FAMILIES, openingSlots):
+ * wave 1 is answered with the first card off the deal, and a flight that
+ * ignores the route and the walls is not an opening a player can be asked
+ * to solve with whatever the die handed them. Pass the script and the
+ * guarantee is exact; pass none and it holds for slot 0, which is the
+ * opening slot of every script this game has ever had.
+ *
+ * THE SHUFFLE IS OTHERWISE UNTOUCHED. The opening slots take the first
+ * walking families off the shuffled pile and everything else falls into
+ * the remaining slots in the order it was shuffled, so a flying family is
+ * still equally likely to land in any slot that is not an opening one —
+ * this narrows WHERE air can be dealt, never how often it is drawn.
  */
-export function rollFamilies(rand: () => number = Math.random): FamilyKey[] {
+export function rollFamilies(
+  rand: () => number = Math.random,
+  script?: readonly LevelStep[],
+): FamilyKey[] {
   const pool: FamilyKey[] = [...ACTIVE_FAMILIES];
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  return pool.slice(0, FAMILIES_PER_RUN);
+  const picked = pool.slice(0, FAMILIES_PER_RUN);
+  const opening = script ? openingSlots(script) : [0];
+  if (opening.length === 0) return picked;
+  const out: (FamilyKey | undefined)[] = new Array(picked.length).fill(undefined);
+  const spent = new Set<number>();
+  // the opening slots first, each taking the earliest WALKING family still
+  // unspent. If there are somehow none left the slot keeps a flyer rather
+  // than coming up empty — a wave with nothing in it is worse than a hard one
+  for (const slot of opening) {
+    if (slot >= picked.length) continue;
+    const at = picked.findIndex((f, i) => !spent.has(i) && !familyFlies(f));
+    if (at < 0) continue;
+    out[slot] = picked[at];
+    spent.add(at);
+  }
+  // ...and everything else is SHUFFLED AGAIN into the slots that are left.
+  // Filling them in the order the first shuffle happened to leave would
+  // bias which slot a flyer lands in — reserving slot 0 pushes a family
+  // shuffled to the front into slot 1, so air would take the second slot
+  // twice as often as the third for no reason anyone designed. A second
+  // shuffle over the leftovers costs two swaps and makes every
+  // non-opening slot equally likely again
+  const rest = picked.filter((_, i) => !spent.has(i));
+  for (let i = rest.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [rest[i], rest[j]] = [rest[j], rest[i]];
+  }
+  let next = 0;
+  for (let i = 0; i < out.length; i++) if (!out[i]) out[i] = rest[next++];
+  return out as FamilyKey[];
 }
 
 /**
@@ -1761,3 +1858,19 @@ export async function saveLevel(doc: LevelDoc): Promise<SaveResult> {
   applyLevelDoc(doc);
   return { ok: true };
 }
+
+/**
+ * A FAMILY'S `layer` AND ITS BODIES MUST AGREE about flight. AIR_FAMILIES
+ * is read off the bodies so a mixed family cannot smuggle a flyer into
+ * wave 1 under a "ground" label — and this says so at build time rather
+ * than leaving the label quietly wrong for whatever else reads it.
+ */
+(() => {
+  for (const f of FAMILIES) {
+    const flies = f.kinds.some((k) => UNIT_STATS[k].flying);
+    if (flies !== (f.layer === "air"))
+      throw new Error(
+        `the family "${f.key}" is filed under "${f.layer}" and ${flies ? "does" : "does not"} fly`,
+      );
+  }
+})();

@@ -253,7 +253,7 @@ function UnlockTile({
  *
  * THE ONE LINE UNDER THE BLURB IS THE SCOPE, because scope is the one
  * thing about a module that changes what buying it MEANS and it is not
- * visible in the face: a mod is a chance printed at ONE stack (mods.ts
+ * visible in the face: a mod is a chance printed for ONE COPY (mods.ts
  * oddsLine, the odds a first copy buys — and per CARD rather than per
  * turret for the giant) and a relic is in force the moment it lands.
  *

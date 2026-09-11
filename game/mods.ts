@@ -48,7 +48,7 @@ import { faster, piercing, reaching, stronger } from "./upgrades";
  * "at most one": a placement rolls once per attribute the run owns
  * (rollTurretMods), so a turret can come out carrying all of them, and
  * the odds alone make that rare. That is why the low bands are small
- * numbers — a run banking ten attributes is stacking ten multipliers on
+ * numbers — a run banking ten attributes is folding ten multipliers onto
  * the same gun, and a common worth a quarter of a turret would compound
  * into nonsense by wave twenty.
  *
@@ -60,6 +60,14 @@ import { faster, piercing, reaching, stronger } from "./upgrades";
  * a turret's stats be composed once at the placement and then read flat
  * by the fire loop (Tower.spec) instead of switched on per shot.
  *
+ * NOTHING STACKS, AND THE WORD IS NOT USED HERE. An attribute is either
+ * ON a turret or it is not — one bit in Tower.mods, so a turret may carry
+ * all twenty and can never carry the same one twice. What owning a second
+ * COPY of an attribute buys is not a bigger effect and not a second
+ * application: it is ANOTHER ROLL at every placement, and the two rolls
+ * fold into one probability (chanceAt). The effect is fixed at the def and
+ * the copies only ever move the odds of getting it at all.
+ *
  * A TURRET ATTRIBUTE HAS NO CAP AND A RELIC HAS ONE OF EXACTLY ONE.
  * There is no third rule and no per-mod number to look up: an attribute is
  * a standing CHANCE, so a second copy is simply better odds and a
@@ -70,7 +78,7 @@ import { faster, piercing, reaching, stronger } from "./upgrades";
  * something and there is nothing for it to mean.
  *
  * SO NOTHING ON SCREEN SAYS ANY OF THIS. The boards used to print "One a
- * run" and "Up to 2 of them" and "Stacks without limit" under every
+ * run" and "Up to 2 of them" and a line about stacking under every
  * module, which is a line of housekeeping repeated twenty times to say
  * what two sentences of the rules say once. A relic is self-explanatory;
  * an attribute's only number is its odds, and the odds are already there.
@@ -204,15 +212,16 @@ export interface ModDef {
    * cap (rollMod), which is what lets the relic half be owned out and the
    * attribute half never be.
    *
-   * A STACK OF AN ATTRIBUTE IS ODDS AND NEVER EFFECT. Every copy is
-   * another independent roll folded into one probability (chanceAt), so a
-   * second Sniper does not make a sniper turret better — it makes sniper
-   * turrets likelier. The effect is fixed at the def.
+   * A SECOND COPY IS ODDS AND NEVER EFFECT. It is another independent
+   * roll folded into one probability (chanceAt), so a second Sniper does
+   * not make a sniper turret better — it makes sniper turrets likelier.
+   * The effect is fixed at the def, and a turret either has the attribute
+   * or does not.
    */
   max: number;
   /**
    * TURRET MODS ONLY: the odds one new turret is born with this, per
-   * stack owned. Read through chanceAt, never directly.
+   * COPY owned. Read through chanceAt, never directly.
    *
    * These numbers are small on purpose and they are multiplied by the
    * size of a formation: a citadel is thirty-six placements, so a common
@@ -224,10 +233,9 @@ export interface ModDef {
   /**
    * The stat surgery, if the mod is one — both scopes use it.
    *
-   * A GLOBAL'S IS HANDED ITS STACK COUNT and folds every copy at once, so
-   * three Calibration Matrices are one call and not three. A TURRET
-   * MOD'S is handed 1 and ignores it: a turret either has the attribute
-   * or does not.
+   * It is handed a COUNT for historical reasons and every caller passes
+   * 1: a relic is owned once and a turret either has an attribute or does
+   * not, so there is never a second copy of anything to fold in.
    *
    * Mods with no `apply` are the behavioural ones — a revive, a refund, a
    * shift in the deal's odds — and the sim reads those BY NAME at the one
@@ -235,7 +243,7 @@ export interface ModDef {
    * dies" as a stat, and pretending otherwise would put a switch in the
    * hot loop for every one of them.
    */
-  apply?: (s: TowerStats, stacks: number) => TowerStats;
+  apply?: (s: TowerStats, copies: number) => TowerStats;
   /**
    * HEALTH RETURNED A SECOND, as a fraction of the turret's OWN ceiling —
    * so the same 3% mends a braced spectre faster in absolute hp than a
@@ -297,7 +305,7 @@ export const GIANT_SCALE = 2;
 export const INSURANCE_CHANCE = 0.4;
 export const INSURANCE_SCRAP = 500;
 
-/** scavenger: what one stack adds to every kill's drop */
+/** scavenger: what it adds to every kill's drop */
 export const SCAVENGER_BONUS = 0.15;
 
 /** last volley: the reload multiplier a death hands its neighbours, how
@@ -344,8 +352,8 @@ const bigger = (s: TowerStats, mul: number): TowerStats => ({ ...s, size: s.size
  * NAMED rares are for.
  *
  * THE STEPS ARE SMALL AND THAT IS THE POINT. Every turret rolls for every
- * attribute the run owns, so a late run is stacking eight or ten of these
- * multiplicatively on one gun; a common worth a quarter of a turret
+ * attribute the run owns, so a late run is folding eight or ten of these
+ * multipliers onto one gun; a common worth a quarter of a turret
  * compounds into nonsense, and a common worth a tenth compounds into a
  * gun that is noticeably better than the one beside it. Ten per cent is
  * the number you feel across a patch of thirty-six and never across one.
@@ -444,8 +452,9 @@ const TURRET_MODS: readonly ModDef[] = [
     glyph: "giant",
     max: Infinity,
     // ROLLED ONCE PER CARD (`solo`), not once per turret — so this is the
-    // odds that a PLACEMENT comes out giant, whatever the card was
-    chance: 0.12,
+    // odds that a PLACEMENT comes out giant, whatever the card was. It is
+    // the loosest of the three because it costs the whole card to happen
+    chance: 0.05,
     blurb:
       "A card has a chance to come out GIANT instead: one building, twice the size, eleven times the health and triple the damage — but it sees barely a tenth as far, so it has to be put where the swarm is already coming.",
     apply: (t) => bigger(tougher(reaching(stronger(t, 3), 0.1), 11), GIANT_SCALE),
@@ -460,7 +469,7 @@ const TURRET_MODS: readonly ModDef[] = [
     scope: "turret",
     glyph: "scope",
     max: Infinity,
-    chance: 0.05,
+    chance: 0.04,
     blurb:
       "New turrets have a chance to be born SNIPER: four times the reach, triple the rate of fire and double the damage — on a tenth of the health. It kills everything it can see and dies to anything that reaches it.",
     apply: (t) => tougher(faster(reaching(stronger(t, 2), 4), 3), 0.1),
@@ -473,7 +482,10 @@ const TURRET_MODS: readonly ModDef[] = [
     scope: "turret",
     glyph: "allround",
     max: Infinity,
-    chance: 0.05,
+    // THE RAREST OF THE THREE, because it is the only one that charges
+    // nothing: the giant gives up its range and the sniper its health, and
+    // this one is simply a better turret (see the header)
+    chance: 0.03,
     blurb:
       "New turrets have a chance to be born ALL ROUND: double damage, double rate of fire, double health, half again the reach, and the round punches through three more bodies. No cost at all — it is simply a better turret.",
     apply: (t) => piercing(tougher(reaching(faster(stronger(t, 2), 2), 1.5), 2), 3),
@@ -680,18 +692,22 @@ export function maskRarity(mask: number): Rarity | null {
  * THE ODDS ONE NEW TURRET IS BORN WITH THIS ATTRIBUTE, given how many
  * copies of it the run owns.
  *
- * Stacks are INDEPENDENT ROLLS folded into one probability, not a sum:
- * three copies of a 0.30 attribute is 1 - 0.7^3 = 0.657 and never 0.9,
- * so a stack always helps and can never reach certainty. A global's
- * stack strengthens the effect instead — see ModDef.max.
+ * EVERY COPY IS ANOTHER INDEPENDENT ROLL, folded into one probability and
+ * never summed: three copies of a 0.30 attribute is 1 - 0.7^3 = 0.657 and
+ * never 0.9, so another copy always helps and can never reach certainty.
+ *
+ * WHAT IT CANNOT DO IS PUT THE ATTRIBUTE ON TWICE. The turret carries one
+ * bit (Tower.mods) and the effect is the def's; copies move only the
+ * chance of winning that bit at all. There is no stacking anywhere in this
+ * file and the word is not used for anything.
  */
-export function chanceAt(id: ModId, stacks: number): number {
+export function chanceAt(id: ModId, copies: number): number {
   const d = modDef(id);
   // chanceOf, not d.chance: the dashboard's dial has to move the odds the
   // shelf prints and the odds the placement rolls, or the two disagree
   const c = chanceOf(id);
-  if (d.scope !== "turret" || !c || stacks <= 0) return 0;
-  return 1 - (1 - Math.min(1, c)) ** stacks;
+  if (d.scope !== "turret" || !c || copies <= 0) return 0;
+  return 1 - (1 - Math.min(1, c)) ** copies;
 }
 
 /**
@@ -887,7 +903,7 @@ export function applyChanceOverrides(doc: Record<string, unknown>): void {
  * mods that are actually in the pool, so the relic table's own ultras
  * come up at the ultra rate rather than at half of it.
  *
- * A MOD AT ITS CAP IS NOT IN THE POOL. `owned` is the run's stacks, and a
+ * A MOD AT ITS CAP IS NOT IN THE POOL. `owned` is the run's copies, and a
  * mod with max copies is skipped and its band's weight redistributed — a
  * late run draws from what is left rather than paying to be told it
  * already has the thing. Null when that half is owned out, which is the
@@ -933,9 +949,9 @@ export function rollMod(
  * overstate it by a factor of the whole formation — which on a x10
  * citadel is three hundred and sixty.
  */
-export function oddsLine(d: ModDef, stacks = 1): string {
+export function oddsLine(d: ModDef, copies = 1): string {
   if (d.scope === "global") return "In force over the whole board the moment it is bought";
-  const pct = Math.round(chanceAt(d.id, stacks) * 100);
+  const pct = Math.round(chanceAt(d.id, copies) * 100);
   return d.solo ? `${pct}% on every card placed` : `${pct}% on every turret placed`;
 }
 
@@ -986,10 +1002,10 @@ export const dropScale = (owned: Readonly<Partial<Record<ModId, number>>>): numb
       throw new Error(
         `the ${m.rarity} turret mod "${m.id}" ${m.name ? "has" : "has no"} name; only rare and ultra are named`,
       );
-    // ...AND NO ATTRIBUTE HAS A CAP. A stack is odds, and odds have no
+    // ...AND NO ATTRIBUTE HAS A CAP. A copy buys odds, and odds have no
     // ceiling worth authoring — see the header
     if (m.max !== Infinity)
-      throw new Error(`the turret mod "${m.id}" is capped at ${m.max}; attributes stack without limit`);
+      throw new Error(`the turret mod "${m.id}" is capped at ${m.max}; attributes have no cap`);
   }
   for (const m of GLOBAL_MODS) {
     if (m.chance) throw new Error(`the global mod "${m.id}" carries a placement chance`);

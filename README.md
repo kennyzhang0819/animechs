@@ -55,7 +55,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   (`MISSION_XP`, `waveXpShare`), **what the corner's three buy buttons
   cost** (`TURRET_ROLL_PRICE` 1,000, `MOD_ROLL_PRICE` 2,000,
   `RELIC_ROLL_PRICE` 3,500, all flat — the run's only outgoings) and the
-  **amount ladder** that multiplies them (`BUY_AMOUNTS`: 1 / 5 / 10, flat,
+  **amount ladder** that multiplies them (`BUY_AMOUNTS`: 1 / 4 / 9, flat,
   no bulk discount), the three price bands and
   what a draw in each is WORTH (`TOWER_PRICE` — no longer what a board
   spends), the sell refund (zero), the level curve and the random-map bonus
@@ -162,12 +162,13 @@ stale tab or a cached bundle looks exactly like a fix not working.
   plus **R**, which turns the ghost rather than pressing anything,
   the ONE card the first of them throws, drawn already in hand, and the
   few-second **reveal** the module buttons get because a module has
-  nowhere to land. **Amount** cycles 1 / 5 / 10 and multiplies whichever
+  nowhere to land. **Amount** cycles 1 / 4 / 9 and multiplies whichever
   button is pressed next, at a flat price with no bulk discount: on the
   modules that is N draws, on the TURRET it is one card whose shape is
-  **tiled** N times (`formation.ts` `fleetLayout` — a plus of five, a slab
-  of ten) and turnable a quarter at a time (`fleetFootprint`), so what the
-  amount buys is ground rather than variety. It keeps
+  **tiled** N times (`formation.ts` `fleetLayout` — the amounts are
+  SQUARES, so a fleet tiles square and the copies butt with no gap) and
+  turnable a quarter at a time (`fleetFootprint`), so what the amount buys
+  is ground rather than variety. It keeps
   no state of its own: the card IS what is in hand (`Game.buildKind` +
   `buildForm` + the card's `n`), so the corner reads it off the HUD
 - `components/Relics.tsx` — **the shelf**: every upgrade the run owns, in
@@ -232,8 +233,8 @@ is no touch input.
 | re-roll | **T** again — it throws the card in hand away and draws another, at full price. Spam it until the shape is the one you want |
 | buy mods | **M**, 2,000 each. Turret attributes: a standing chance on every turret placed from then on. In force the instant they land — nothing to aim, nothing to place, no re-roll |
 | buy relics | **G**, 3,500 each. Global rules, over the whole board the moment they are paid for. Same: nothing to aim, no re-roll |
-| turn the card | **R** while the ghost is up, or the strip under the card — a quarter clockwise, free, and it turns the WHOLE footprint. Ten of the twelve shapes are symmetric under a quarter turn, so at ×1 only the Wedge visibly moves; at ×10 everything does, because the slab it is tiled into does |
-| amount | **X** cycles ×1 / ×5 / ×10 and multiplies the next press, at flat price. On **M** and **R** that is N draws; on **T** it is one card carrying the shape **tiled** N times — a plus of five or a slab of ten, gutters between them — so ×10 of a citadel is one ghost of 360 turrets to find ground for |
+| turn the card | **R** while the ghost is up, or the strip under the card — a quarter clockwise, free, and it turns the WHOLE footprint. Ten of the twelve shapes are symmetric under a quarter turn, so only the Wedge visibly moves — and a fleet of wedges turns as one |
+| amount | **X** cycles ×1 / ×4 / ×9 and multiplies the next press, at flat price. On **M** and **R** that is N draws; on **T** it is one card carrying the shape **tiled** N times, square and gapless — so ×9 of a citadel is one ghost of 324 turrets in an 18×18 block to find ground for |
 | discard | right press while holding a card. No refund |
 | demolish | right press, drag to chain |
 | select a building | left click with no tool picked — its range ring shows; drag a box for a region; shift adds |
@@ -414,7 +415,7 @@ is one turret; there is no chaining and no ruler on a dealt board.
 
 ### The amount
 
-**The fourth button cycles ×1 / ×5 / ×10** (`BUY_AMOUNTS`) and multiplies
+**The fourth button cycles ×1 / ×4 / ×9** (`BUY_AMOUNTS`) and multiplies
 whichever of the other three is pressed next. It is a **standing setting**
 and not a held modifier — a player who has decided they are buying in tens
 is buying in tens until they say otherwise — and it wears the gold
@@ -432,29 +433,38 @@ seven it stretched to.
 design.** On **M** and **R** it is N independent draws: ten relics is ten
 relics, and one press gets ONE reveal card listing its ten rather than ten
 cards queued five seconds apart. On **T** it is *not* ten cards — it is
-**ONE card whose shape is tiled N times** (`fleetLayout`), so a ×10 press
+**ONE card whose shape is tiled N times** (`fleetLayout`), so a ×9 press
 still rolls one gun and one shape and what it multiplies is **the ground
-being asked for**. ×5 lays the shape out as a **plus** (a quincunx on a
-3×3, which holds a junction from every approach and leaves its corners for
-the map to keep); ×10 as a **slab**, five wide and two deep, which is a
-wall. A **gutter of one turret-cell** runs between the copies — one
-turret's own size in tiles, four for a spectre — so the fleet reads as its
-copies rather than as one undifferentiated block, and the lanes are
-courtyards the swarm walks into and is shot at from both sides.
+being asked for**.
 
-So ×10 of a citadel of spectres is 360 turrets in one ghost, 10,000 scrap,
+**The amounts are SQUARE NUMBERS, and that is the point of these three.**
+4 is two copies by two and 9 is three by three, so a fleet is the shape
+scaled up and still the shape: a square block stays a square block, a ring
+stays a grid of rings, and the footprint has the proportions of the card
+that bought it. They were 5 and 10 once, which are not squares — 5 had to
+be laid out as a plus and 10 as a five-by-two slab, shapes nobody designed
+that an oblong number forces. A square amount needs no authored layout at
+all; `fleetLayout` fills a square grid and the answer is right by
+construction.
+
+**The copies butt together.** ×9 of a Block is one solid **9×9** of
+turrets, not nine 3×3s with lanes between. A gutter of one turret-cell
+used to run between them so a fleet would read as its copies; what it
+actually did was turn every square amount back into an oblong footprint
+with holes in it, and holes in a wall are where the swarm walks. The
+card's own diagram already says how many copies are in the fleet.
+
+So ×9 of a citadel of spectres is 324 turrets in one ghost, 9,000 scrap,
 and **finding ground for it is most of the reward**. The card's corner
-diagram draws the whole tiling, gutters and all, so what the hand is
+diagram draws the whole tiling, so what the hand is
 holding is a picture of what the board is about to get.
 
 **R turns it** — a quarter clockwise, free, as many times as you like
 (`fleetFootprint`). It turns the **whole footprint** and not the shape
-inside it: the ×10 slab is five copies wide and two deep, and R is what
-stands that wall on its end to plug a north-south choke with the card that
-was about to plug an east-west one. The shape stays centred on the cursor
-through the turn, because the span it is centred on swaps with it. Most
-formations are symmetric under a quarter turn, so at ×1 only the **Wedge**
-visibly moves — which is why the strip under the card reads the *angle*
+inside it: a fleet is the shape tiled square, so turning it turns every
+copy at once. The shape stays centred on the cursor through the turn,
+because the span it is centred on swaps with it. Most formations are
+symmetric under a quarter turn, so only the **Wedge** visibly moves — which is why the strip under the card reads the *angle*
 (0 / 90 / 180 / 270) rather than just "turn", so a press of R on a Bastion
 does not look like a key that does nothing. The turn belongs to the
 **aiming**, not to the card: it survives a right click that stows the
@@ -548,10 +558,10 @@ attribute it has, always, not on hover: the whole point of a chance is
 being able to see which ones won it.
 
 **A turret attribute is on the shelf too**, even though it does nothing by
-itself, and its hover card prints the **live odds** with stacks folded in
-— a stack of a turret mod raises the chance and never the effect
-(`chanceAt`: three copies of a 30% attribute is 65.7%, never 90%), while a
-stack of a global strengthens it.
+itself, and its hover card prints the **live odds** with every copy owned
+folded in — a second copy raises the chance and never the effect
+(`chanceAt`: three copies of a 30% attribute is 65.7%, never 90%). A relic
+is owned once, so there is nothing to fold in on that side at all.
 
 ### The mods (M) — turret attributes
 
@@ -601,14 +611,17 @@ on a turret.
 no "at most one". A placement rolls once per attribute the run owns
 (`rollTurretMods`), so a turret can come out carrying all of them and the
 odds alone make that rare. That is *why* the low bands are small numbers:
-a run banking ten attributes is stacking ten multipliers on one gun, and
+a run banking ten attributes is folding ten multipliers onto one gun, and
 with the whole catalog owned once an average turret carries **2.7
 attributes at about ×1.31 damage**. A common worth a quarter of a turret
 would compound into nonsense by wave twenty.
 
-**Stacks are independent rolls folded into one probability, never a sum**
-(`chanceAt`): three copies of a 30% tick is 1 − 0.7³ = **65.7%**, ten is
-**97.2%**. A stack always helps and can never reach certainty.
+**Nothing stacks.** An attribute is either ON a turret or it is not — one
+bit in `Tower.mods`, so a turret may carry all sixteen and can never carry
+the same one twice. A second COPY owned is not a bigger effect and not a
+second application: it is **another roll** at every placement, folded into
+one probability and never summed (`chanceAt`). Three copies of a 30% tick
+is 1 − 0.7³ = **65.7%**, ten is **97.2%** — always better, never certain.
 
 **THE GIANT EATS THE CARD.** If a placement rolls it, the shape is
 discarded and the whole card is spent on **one building** at the middle of
@@ -620,8 +633,8 @@ read it, never the table.
 
 **It is rolled once per CARD, not once per turret,** and it has to be.
 Every other attribute is per placement because a patch coming out speckled
-is the charm of them; this one *replaces* the patch, and a ×10 citadel is
-360 rolls — at any chance worth having, 360 rolls is a giant every single
+is the charm of them; this one *replaces* the patch, and a ×9 citadel is
+324 rolls — at any chance worth having, 324 rolls is a giant every single
 time. **A giant that will not fit is not a wasted card:** if the ground has
 no room for the doubled footprint the shape goes down as it always would.
 

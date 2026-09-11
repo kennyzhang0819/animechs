@@ -47,7 +47,7 @@ import { HoverCard, useHoverCard } from "./HoverCard";
  *   button that flipped a coin between them let the player aim at
  *   neither.
  *
- *   AMOUNT (X) cycles 1 -> 5 -> 10 and multiplies whichever of the other
+ *   AMOUNT (X) cycles 1 -> 4 -> 9 and multiplies whichever of the other
  *   three is pressed next. It spends nothing and it is a standing
  *   setting, not a held modifier.
  *
@@ -60,13 +60,14 @@ import { HoverCard, useHoverCard } from "./HoverCard";
  * the key an older run's fingers already go to for a module.
  *
  * WHAT THE AMOUNT DOES IS DIFFERENT ON THE TWO SIDES, and that is the
- * whole design. On the modules it is N draws: ten relics is ten relics.
- * On the TURRET it is not ten cards — it is ONE card whose shape is TILED
- * ten times (formation.ts fleetLayout), so a x10 press still rolls one
- * gun and one shape and what it multiplies is the GROUND being asked
- * for. Five citadels of spectres is a single decision about a single
- * piece of map the size of a town, and the ghost of it going down over
- * the terrain is most of what the button is for.
+ * whole design. On the modules it is N draws: nine relics is nine relics.
+ * On the TURRET it is not nine cards — it is ONE card whose shape is
+ * TILED nine times (formation.ts fleetLayout), so a x9 press still rolls
+ * one gun and one shape and what it multiplies is the GROUND being asked
+ * for. THE AMOUNTS ARE SQUARES (economy.ts) so the tiling is square and
+ * the copies butt with no gap: nine citadels of spectres is one solid
+ * decision about one piece of map the size of a town, and the ghost of it
+ * going down over the terrain is most of what the button is for.
  *
  *   BECAUSE A MODULE HAS NOWHERE TO LAND, THE DRAW GETS A REVEAL: a card
  *   over the buttons for a few seconds saying what was bought, and then

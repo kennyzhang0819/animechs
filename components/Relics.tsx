@@ -22,10 +22,11 @@ import { HoverCard, useHoverCard } from "./HoverCard";
  * the shelf too even though they do nothing by themselves, because what
  * they are is a standing CHANCE on every placement from here on, and a
  * player deciding whether to press T needs to know the odds they have
- * bought. The hover card prints the live chance, stacks folded in, so
- * "+10% damage x3" says 66% and not 30% (mods.ts oddsLine) — and the
- * unnamed ticks stack without limit, so that number is most of what a
- * late run is buying.
+ * bought. The hover card prints the live chance with every COPY owned
+ * folded in, so "+10% damage x3" says 66% and not 30% (mods.ts oddsLine).
+ * A copy is another roll and never a second application — a turret either
+ * has the attribute or does not — so that number is the whole of what a
+ * second copy buys.
  *
  * The band colour is the whole legend, the same four the cards wear.
  */
@@ -140,8 +141,8 @@ export function Glyph({
   );
 }
 
-/** one owned upgrade: its face on its band's ground, the stack count if
- *  it is stacked, and the whole of what it does on hover */
+/** one owned upgrade: its face on its band's ground, how many COPIES the
+ *  run holds if it is more than one, and what it does on hover */
 function RelicChip({ id, n }: { id: ModId; n: number }) {
   const tip = useHoverCard("down");
   const d = modDef(id);
@@ -152,8 +153,8 @@ function RelicChip({ id, n }: { id: ModId; n: number }) {
   const name = modName(d);
   // A TURRET ATTRIBUTE PRINTS ITS LIVE ODDS and a relic prints nothing:
   // the chance is the only number about these that MOVES, and the only
-  // one a player has to re-read after a purchase. Stacks folded in, and
-  // per CARD rather than per turret where that is what it means
+  // one a player has to re-read after a purchase. Every copy owned folded
+  // in, and per CARD rather than per turret where that is what it means
   const odds = d.scope === "turret" ? oddsLine(d, n) : null;
   return (
     <span

@@ -43,8 +43,10 @@ import {
 import {
   anyModLeft,
   maskRarity,
+  modsInMask,
   rollMod,
   shiftedWeights,
+  TURRET_MOD_IDS,
   type ModId,
   type ModScope,
 } from "./mods";
@@ -162,6 +164,36 @@ export interface UiState {
    *  greys out the M button and the R button, separately */
   modsLeft: boolean;
   relicsLeft: boolean;
+  /**
+   * WHAT IS SELECTED ON THE BOARD, for the panel at the bottom of the
+   * screen — null when nothing is.
+   *
+   * IT IS A SUMMARY AND NOT A LIST OF STRUCTURES. A marquee can take three
+   * hundred turrets and the HUD is polled a few times a second; handing
+   * React three hundred objects to diff, several times a second, to draw
+   * one panel would be the most expensive thing on the screen. So the
+   * whole selection is folded here into the four things the panel prints:
+   * how many, what they are, what they have left, and which attributes are
+   * among them.
+   */
+  inspect: {
+    /** how many structures are selected */
+    n: number;
+    /** the kind they are, when they are all ONE kind — null for the core
+     *  or for a mixed bag, where a sprite would be a lie about the rest */
+    kind: TowerKind | null;
+    /** what to call them: the turret's name, "Core", or "Structures" */
+    name: string;
+    /** health, SUMMED over the selection — one bar for the whole thing,
+     *  because "what is left of what I picked" is the question a player
+     *  asks of a wall they just dragged a box over */
+    hp: number;
+    hpMax: number;
+    /** every attribute anything in the selection carries, catalog order,
+     *  with HOW MANY of them carry it — the speckle, counted. One turret
+     *  selected reads as a plain row of what that turret is */
+    mods: { id: ModId; n: number }[];
+  } | null;
   /** structures placed this run, only going up — the card layer watches it
    *  to know the card in hand has landed (see Game.built) */
   built: number;
@@ -442,8 +474,6 @@ const hpColor = (f: number): string => (f > 0.5 ? "#7BE58A" : f > 0.2 ? "#FFD37F
  * the LENGTH says how much is left, which is what a bar is for.
  */
 const ENEMY_HP = "#FF5A5A";
-/** how far from the cursor a body still counts as the one under it, in world px */
-const HOVER_MIN_R = 10;
 const PAN_KEYS: Record<string, readonly [number, number]> = {
   KeyW: [0, -1],
   KeyS: [0, 1],
@@ -548,9 +578,9 @@ export class Game {
    * IT BELONGS TO THE AIMING AND NOT TO THE CARD. A player turns a fleet
    * because of the ground under the cursor, not because of what they
    * bought, so the turn survives a right click that stows the ghost and
-   * the click that picks it back up — walking a x10 slab across the map
-   * on its end must not un-turn it halfway — and a NEW card comes out
-   * square, because a new card is a new question about the ground.
+   * the click that picks it back up — walking a turned fleet across the
+   * map must not un-turn it halfway — and a NEW card comes out square,
+   * because a new card is a new question about the ground.
    */
   private buildFacing: Facing = 0;
   /**
@@ -1061,8 +1091,8 @@ export class Game {
    * A FLEET IS THE SAME ARITHMETIC, and so is a TURNED one. The card's
    * amount (heldCard.n) is the shape tiled that many times and
    * buildFacing is the quarter turns R has put on it; both go through the
-   * same span-and-clamp as a single copy — so a x10 citadel stood on its
-   * end is centred, clamped and placed by exactly the code a x1 quad is,
+   * same span-and-clamp as a single copy — so a x9 citadel turned on its
+   * side is centred, clamped and placed by exactly the code a x1 quad is,
    * and there is no second path for the big one to be wrong in.
    */
   private heldCells(p: { x: number; y: number }): { gx: number; gy: number }[] {
@@ -1137,10 +1167,10 @@ export class Game {
    * work. The card it throws away is not refunded — the thousand scrap IS
    * the price of another look at the shape table.
    *
-   * THE AMOUNT IS A THIRD AXIS AND IT IS NOT A THIRD ROLL. At x5 this
-   * still rolls ONE turret and ONE shape and then TILES that shape five
+   * THE AMOUNT IS A THIRD AXIS AND IT IS NOT A THIRD ROLL. At x4 this
+   * still rolls ONE turret and ONE shape and then TILES that shape four
    * times (formation.ts fleetLayout) — so what the amount multiplies is
-   * the GROUND the card asks for, not the variety it hands over. Five
+   * the GROUND the card asks for, not the variety it hands over. Nine
    * citadels of spectres is one decision about one piece of map, and the
    * ghost of it is most of the reward for pressing the button.
    *
@@ -1249,9 +1279,9 @@ export class Game {
    * R TURNS THE CARD IN HAND A QUARTER CLOCKWISE, and it spends nothing.
    *
    * THE WHOLE FOOTPRINT TURNS, not the shape inside it (formation.ts
-   * fleetFootprint): the x10 slab is five copies wide and two deep, and
-   * what R is for is standing that wall on its end to plug a north-south
-   * choke with the same card that was about to plug an east-west one.
+   * fleetFootprint): a fleet is the shape tiled square, so turning it
+   * turns every copy at once — which is what R is for on the shapes that
+   * are not square themselves, the wedge above all.
    *
    * IT ONLY MEANS ANYTHING WHILE THE GHOST IS UP. There is nothing to
    * turn on a bare cursor, and a free board (the sandbox, the editors)
@@ -1260,8 +1290,8 @@ export class Game {
    * the key can decline the press rather than swallow it.
    *
    * The shape stays CENTRED on the cursor through the turn, because
-   * heldCells re-centres on the turned span every frame — a slab stood on
-   * its end pivots about the cursor instead of swinging off it.
+   * heldCells re-centres on the turned span every frame — an oblong
+   * footprint pivots about the cursor instead of swinging off it.
    */
   rotateHeld(): boolean {
     if (!this.buildKind || !this.buildForm) return false;
@@ -1789,12 +1819,63 @@ export class Game {
       modDraws: this.modDraws,
       modsLeft: anyModLeft(this.sim.modLedger, "turret"),
       relicsLeft: anyModLeft(this.sim.modLedger, "global"),
+      inspect: this.inspect(),
       built: this.built,
       // off the sim's live stats (statsFor), never the static table: the
       // whole point of deriving the line is that an upgrade moves it
       targeting: Object.fromEntries(
         TOWER_KINDS.map((k) => [k, targetingLine(this.sim.statsFor(k))]),
       ) as Record<TowerKind, string>,
+    };
+  }
+
+  /**
+   * THE SELECTION, FOLDED INTO WHAT THE PANEL PRINTS (UiState.inspect).
+   *
+   * One pass over the selected structures: sum the pools, tally the
+   * attribute bits, and decide whether they are all one kind. The core is
+   * a structure too and has no attributes and no kind, which is exactly
+   * what a null kind and an empty row say.
+   */
+  private inspect(): UiState["inspect"] {
+    const picked = this.sim.selectedStructs;
+    if (picked.length === 0) return null;
+    let hp = 0, hpMax = 0;
+    let kind: TowerKind | null = null;
+    let mixed = false;
+    let anyCore = false;
+    const tally = new Map<ModId, number>();
+    for (const st of picked) {
+      hp += st.hp;
+      hpMax += st.hpMax;
+      if (isCore(st)) {
+        anyCore = true;
+        continue;
+      }
+      const t = st as Tower;
+      if (kind === null) kind = t.kind;
+      else if (kind !== t.kind) mixed = true;
+      for (const d of modsInMask(t.mods)) tally.set(d.id, (tally.get(d.id) ?? 0) + 1);
+    }
+    if (anyCore) mixed = kind !== null; // the core plus anything is a mixed bag
+    const one = !mixed && kind !== null ? kind : null;
+    return {
+      n: picked.length,
+      kind: one,
+      name: one
+        ? TOWERS[one].name
+        : anyCore && picked.length === 1
+          ? "Core"
+          : "Structures",
+      hp: Math.ceil(hp),
+      hpMax: Math.ceil(hpMax),
+      // CATALOG ORDER, never tally order: the shelf at the other corner
+      // lists attributes in that order and the two must not disagree about
+      // which chip is which
+      mods: TURRET_MOD_IDS.filter((id) => tally.has(id)).map((id) => ({
+        id,
+        n: tally.get(id)!,
+      })),
     };
   }
 
@@ -2240,54 +2321,18 @@ export class Game {
    * Interface tab's two knobs are read, so a unit, a turret, a wall and
    * the core all answer the question the same way.
    *
-   * `hovered` is only ever true for the one body under the cursor, and
    * `selected` is the standing exception to every mode but `never`: a
    * player who has picked a squad or a building out of a board is asking
    * about those, and a hurt one in the picked set says so whatever the
    * field at large is set to. A full-health selection still wears nothing
    * — the amber ring or outline on it is the mark that says it is picked.
    */
-  private barsOn(ally: boolean, f: number, hovered: boolean, selected: boolean): boolean {
+  private barsOn(ally: boolean, f: number, selected: boolean): boolean {
     const mode = ally ? this.allyBars : this.enemyBars;
     if (mode === "never") return false;
     if (mode === "always") return true;
     if (selected && f < 1) return true;
-    return mode === "hover" ? hovered : f < 1;
-  }
-
-  /** is either side's knob on `hover`? — the only case that costs a hit test */
-  private hoverBars(): boolean {
-    return this.allyBars === "hover" || this.enemyBars === "hover";
-  }
-
-  /**
-   * THE BODY UNDER THE CURSOR, or -1 — what the `hover` mode reads. Both
-   * sides, unlike Sim.unitAt, which answers the narrower question of what
-   * a press would MARK; a bar is not an order, and a player pointing at a
-   * dagger to see how hurt it is means the dagger.
-   */
-  private hoverUnit(): number {
-    if (this.hoverX < 0) return -1;
-    const { upx, upy, urad, uhp, n } = this.sim;
-    let best = -1, bd = Infinity;
-    for (let i = 0; i < n; i++) {
-      if (uhp[i] <= 0) continue;
-      const dx = upx[i] - this.hoverX, dy = upy[i] - this.hoverY;
-      const d2 = dx * dx + dy * dy;
-      const r = Math.max(urad[i] * 1.6, HOVER_MIN_R);
-      if (d2 < r * r && d2 < bd) {
-        bd = d2;
-        best = i;
-      }
-    }
-    return best;
-  }
-
-  /** is the cursor inside this footprint? — the buildings' half of `hover` */
-  private hoverOver(x: number, y: number, size: number): boolean {
-    if (this.hoverX < 0) return false;
-    const half = size / 2;
-    return Math.abs(this.hoverX - x) <= half && Math.abs(this.hoverY - y) <= half;
+    return f < 1;
   }
 
   /**
@@ -2301,12 +2346,11 @@ export class Game {
   private drawUnitBars(c: CanvasRenderingContext2D): void {
     if (this.allyBars === "never" && this.enemyBars === "never") return;
     const { upx, upy, urad, uhp, uhpmax, n } = this.sim;
-    const hoverI = this.hoverBars() ? this.hoverUnit() : -1;
     const bars: { v: number; col: string }[] = [];
     for (let i = 0; i < n; i++) {
       if (uhp[i] <= 0) continue;
       const f = clamp(uhp[i] / Math.max(1, uhpmax[i]), 0, 1);
-      if (!this.barsOn(false, f, i === hoverI, false)) continue;
+      if (!this.barsOn(false, f, false)) continue;
       bars.length = 0;
       bars.push({ v: f, col: ENEMY_HP });
       const r = Math.max(urad[i] * 1.25, 7);
@@ -2340,7 +2384,7 @@ export class Game {
     const csz = core.size * CELL;
     bars.length = 0;
     const cf = clamp(core.hp / Math.max(1, core.hpMax), 0, 1);
-    if (this.barsOn(true, cf, this.hoverOver(core.x, core.y, csz), picked?.has(core) === true))
+    if (this.barsOn(true, cf, picked?.has(core) === true))
       bars.push({ v: cf, col: hpColor(cf) });
     this.drawBars(c, core.x, core.y - csz / 2, csz - 2, bars);
     for (const t of this.sim.towers) {
@@ -2349,7 +2393,7 @@ export class Game {
       bars.length = 0;
       const hpMax = t.hpMax;
       const f = clamp(t.hp / Math.max(1, hpMax), 0, 1);
-      if (this.barsOn(true, f, this.hoverOver(t.x, t.y, sz), picked?.has(t) === true))
+      if (this.barsOn(true, f, picked?.has(t) === true))
         bars.push({ v: f, col: hpColor(f) });
       this.drawBars(c, t.x, t.y - sz / 2, sz - 2, bars);
       // THE ATTRIBUTE PIP (mods.ts): a turret that won one of the upgrade
@@ -2380,7 +2424,7 @@ export class Game {
     for (const s of this.sim.shieldTowers) {
       if (s.hp <= 0) continue;
       const f = clamp(s.hp / Math.max(1, s.hpMax), 0, 1);
-      if (!this.barsOn(false, f, this.hoverOver(s.x, s.y, ssz), false)) continue;
+      if (!this.barsOn(false, f, false)) continue;
       this.drawBars(c, s.x, s.y - ssz / 2, ssz - 2, [{ v: f, col: ENEMY_HP }]);
     }
   }

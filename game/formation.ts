@@ -257,54 +257,47 @@ export function rollFormation(
  * THE FLEET — one card bought N TIMES, and what the Amount button in the
  * corner actually buys (economy.ts BUY_AMOUNTS).
  *
- * A x5 press does NOT roll five cards. It rolls ONE turret and ONE shape,
- * exactly as a single press does, and then TILES that shape five times
- * into a bigger shape. So the two rolls stay the two rolls the deal has
- * always had — the amount is a third, independent axis, and what it
- * multiplies is the GROUND the card asks for rather than the variety it
- * hands over. Five citadels of spectres is one decision about one piece
- * of map, and it is a decision about a piece of map the size of a town.
+ * A x4 press does NOT roll four cards. It rolls ONE turret and ONE shape,
+ * exactly as a single press does, and then TILES that shape four times.
+ * So the two rolls stay the two rolls the deal has always had — the amount
+ * is a third, independent axis, and what it multiplies is the GROUND the
+ * card asks for rather than the variety it hands over. Nine citadels of
+ * spectres is one decision about one piece of map, and it is a decision
+ * about a piece of map the size of a town.
  *
- * THE COPIES DO NOT TOUCH. A gutter of one turret-cell (FLEET_GUTTER)
- * runs between them, which is one turret's own SIZE in tiles — four tiles
- * for a spectre, two for a duo. Butted together, ten grids would read as
- * one undifferentiated wall and the player would have no way to see that
- * they bought ten of something; spaced, the fleet reads as its copies at
- * a glance. The lanes are not decoration either: the swarm walks into
- * them and is shot at from both sides, which is the ring's courtyard
- * repeated down the whole footprint.
+ * THE AMOUNTS ARE SQUARE NUMBERS AND THAT IS THE WHOLE REASON FOR THEM.
+ * 4 is two copies by two and 9 is three by three, so a fleet is the shape
+ * scaled up and still the shape: a square block stays a square block, a
+ * ring stays a grid of rings, and the footprint a player has to find
+ * ground for has the proportions they already learned from the card. They
+ * were 5 and 10 once, which are not squares — 5 had to be laid out as a
+ * plus and 10 as a five-by-two slab, and a slab is a shape nobody asked
+ * for that happens to be what an oblong number forces. A square amount
+ * needs no authored layout at all: fleetLayout fills a square grid and
+ * the answer is right by construction.
+ *
+ * THE COPIES BUTT TOGETHER. There is no gap between them — a x9 block of
+ * duos is one solid 9x9 of turrets, not nine 3x3s with lanes between. A
+ * gutter of one turret-cell used to run between the copies so the fleet
+ * would read as its copies; what it actually did was turn every square
+ * amount back into an oblong footprint with holes in it, and holes in a
+ * wall are where the swarm walks. The card's own diagram already says how
+ * many copies are in the fleet.
  */
-export const FLEET_GUTTER = 1;
 
 /**
  * WHERE THE N COPIES SIT, in copies — the macro-grid the tiling is laid
  * out on, and the same kind of [col, row] list a formation's own cells
- * are. The authored ones are the amounts the corner offers:
+ * are.
  *
- *   5  — THE PLUS. A quincunx on a 3x3: four copies on the arms and one
- *        at the crossing. It holds a junction from every approach and it
- *        leaves its four corners for the map to keep, so a x5 fits ground
- *        a x5 block never would.
- *   10 — THE SLAB. Five wide and two deep, which is a WALL: the shape a
- *        player buys when they have found the choke and intend to end the
- *        argument there.
- *
- * Anything else falls back to a balanced block, widest row first, so a
- * fourth amount added to BUY_AMOUNTS lays out sensibly on the day it is
- * added rather than on the day somebody remembers this table exists.
+ * It fills a square grid row by row, which for a SQUARE amount (the only
+ * kind the corner offers — see economy.ts BUY_AMOUNTS) is exactly the
+ * square arrangement and needs no table of authored special cases. An
+ * amount that is not square still lays out sensibly, with a short last
+ * row, rather than throwing.
  */
-const FLEET_LAYOUTS: Readonly<Record<number, readonly (readonly [number, number])[]>> = {
-  5: [[1, 0], [0, 1], [1, 1], [2, 1], [1, 2]],
-  10: [
-    [0, 0], [1, 0], [2, 0], [3, 0], [4, 0],
-    [0, 1], [1, 1], [2, 1], [3, 1], [4, 1],
-  ],
-};
-
 export function fleetLayout(n: number): readonly (readonly [number, number])[] {
   if (n <= 1) return [[0, 0]];
-  const authored = FLEET_LAYOUTS[n];
-  if (authored) return authored;
   const w = Math.ceil(Math.sqrt(n));
   return Array.from({ length: n }, (_, i) => [i % w, Math.floor(i / w)] as const);
 }
@@ -325,18 +318,17 @@ function fleetGrid(n: number): [number, number] {
  *
  * IT TURNS THE WHOLE FOOTPRINT AND NOT THE SHAPE INSIDE IT. A fleet is
  * two grids nested — the copies, and the cells inside each copy — and
- * rotating only one of them would be a lie about what lands: the x10
- * slab is five copies wide and two deep, and what a player wants when
- * they press R at a choke is the WALL stood on its end. So the two grids
+ * rotating only one of them would be a lie about what lands. So the two
  * are flattened into one grid of turret cells first (fleetCells) and the
  * turn is applied to that, once.
  *
  * MOST SHAPES DO NOT MOVE and that is honest rather than broken. Ten of
  * the twelve formations are symmetric under a quarter turn — every solid
  * block, the cross, the saltire, the ring, the snowflake, the octagon,
- * the rampart — so at x1 only the WEDGE visibly turns. Rotation is a
- * FLEET tool, which is where it was asked for: at x10 every shape turns,
- * because the slab it is tiled into does.
+ * the rampart — so only the WEDGE visibly turns, and a fleet of wedges
+ * turns as one. The amounts are square (economy.ts), so tiling one no
+ * longer makes an oblong that has to be stood on its end: R is a tool for
+ * the shape now rather than for the arrangement.
  */
 export type Facing = 0 | 1 | 2 | 3;
 
@@ -361,25 +353,21 @@ function fleetCells(id: FormationId, n: number): {
   const [gw, gh] = fleetGrid(n);
   const cells: (readonly [number, number])[] = [];
   for (const [tx, ty] of fleetLayout(n)) {
-    // the copy's own origin: its column times the shape's grid plus the
-    // gutters that have accumulated to its left, in TURRET CELLS
-    const ox = tx * (f.w + FLEET_GUTTER);
-    const oy = ty * (f.h + FLEET_GUTTER);
+    // the copy's own origin, in TURRET CELLS: its column times the shape's
+    // grid, and nothing between — the copies butt (see the header)
+    const ox = tx * f.w;
+    const oy = ty * f.h;
     for (const [cx, cy] of f.cells) cells.push([ox + cx, oy + cy]);
   }
-  return {
-    cells,
-    w: gw * f.w + (gw - 1) * FLEET_GUTTER,
-    h: gh * f.h + (gh - 1) * FLEET_GUTTER,
-  };
+  return { cells, w: gw * f.w, h: gh * f.h };
 }
 
 /**
  * THE FLEET TURNED, and the size of what it turned into: the cells in
  * turret-cell units with `facing` quarter turns clockwise applied, and
- * the [w, h] of the result — which SWAPS on the odd turns, so a 34x13
- * slab becomes a 13x34 tower and the caller that centres it recentres it
- * on the new shape.
+ * the [w, h] of the result — which SWAPS on the odd turns, so an oblong
+ * footprint (a wedge, a fleet of them) comes back the other way round and
+ * the caller that centres it recentres it on the new shape.
  */
 export function fleetFootprint(
   id: FormationId,
@@ -448,9 +436,13 @@ export function formationSpan(
       if (x < 0 || y < 0 || x >= f.w || y >= f.h)
         throw new Error(`the formation "${id}" has a cell outside its own ${f.w}x${f.h} grid`);
   }
-  // ...and an authored fleet layout carries exactly the copies it is for:
-  // a five-cell table under the key 10 would silently sell half a fleet
-  for (const [key, cells] of Object.entries(FLEET_LAYOUTS))
-    if (cells.length !== Number(key))
-      throw new Error(`the fleet layout for x${key} places ${cells.length} copies`);
+  // ...and a fleet lays down exactly the copies it was sold: the layout
+  // is generated rather than authored now, so this is guarding the
+  // arithmetic and not a table somebody might mistype
+  for (const n of [1, 2, 4, 9, 16]) {
+    if (fleetLayout(n).length !== n)
+      throw new Error(`a fleet of ${n} lays down ${fleetLayout(n).length} copies`);
+    const seen = new Set(fleetLayout(n).map(([x, y]) => `${x},${y}`));
+    if (seen.size !== n) throw new Error(`a fleet of ${n} stacks two copies on one cell`);
+  }
 })();
