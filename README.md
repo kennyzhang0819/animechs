@@ -831,7 +831,7 @@ change what happens to a wave after it lands. **Nobody picks them.** The
 rolled to fit it when you deploy. It is the StarCraft II model, and the
 mode it exists for is endgame resource farming: the same fifty waves, a
 different set of rules every time. The catalog (`game/mutation.ts`):
-Overshields, Shield Towers, Hungry, Speedy, Volatile, Armored Swarms,
-Mitosis, Hydrophobic, Amphibious — the Unlocks board on the progress
-screen says what each does, and the sandbox is the one place they are
+Conquest, Reconstruction, Overshields, Shield Towers, Hungry, Speedy,
+Volatile, Armored Swarms, Mitosis, Hydrophobic, Amphibious — the Unlocks
+board on the progress screen says what each does, and the sandbox is the one place they are
 chosen by hand.

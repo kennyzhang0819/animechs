@@ -92,9 +92,29 @@ export interface Core {
   hpMax: number;
 }
 
-/** anything the swarm can shoot: a turret, or the core */
+/** anything either side can shoot: a turret, or the core */
 export type Structure = Tower | Core;
 export const isCore = (s: Structure): s is Core => "core" in s;
+
+/**
+ * WHOSE BUILDING IT IS. The player builds every structure on the board and
+ * the core is always theirs — so in an ordinary run this is "player" on
+ * everything and nothing ever reads it twice.
+ *
+ * THE SWARM OWNS BUILDINGS UNDER ONE RULE AND ONE RULE ONLY: CONQUEST
+ * (mutation.ts). A turret the swarm wrecks under it is not removed, it
+ * CHANGES SIDES — same footprint, same stats, same gun, pointed the other
+ * way — and from that moment it is a thing the player has to shoot down.
+ * The two sides fight only each other: the player's guns take the swarm's
+ * buildings and its bodies, the swarm's guns and bodies take the player's.
+ * Nothing sells, selects, upgrades or counts a building of the swarm's,
+ * and the swarm walks AROUND its own turret rather than chewing through
+ * it.
+ */
+export type Team = "player" | "enemy";
+
+/** whose it is — the core is the player's by definition */
+export const teamOf = (s: Structure): Team => (isCore(s) ? "player" : s.team);
 
 
 
@@ -109,6 +129,13 @@ export const isCore = (s: Structure): s is Core => "core" in s;
  */
 export interface Tower {
   kind: TowerKind;
+  /**
+   * WHOSE IT IS (Team). "player" on everything a run builds, and the only
+   * thing that ever writes "enemy" is the CONQUEST mutator taking a wreck
+   * over (Sim.conquerTower). It is not fixed at the placement the way
+   * `size` and `mods` are — changing sides is the whole rule.
+   */
+  team: Team;
   gx: number; // top-left cell of the size x size footprint
   gy: number;
   /**
@@ -175,6 +202,19 @@ export interface Tower {
    * before the Phoenix roll is even reached.
    */
   revives: number;
+  /**
+   * How many stand-ups this turret was BORN with — what `revives` started
+   * at, held so CONQUEST (mutation.ts) can hand the swarm's copy the same
+   * charges the player's turret had. A turret that spent its Undying
+   * Legion charge holding the line does not get to keep the swarm from
+   * spending one in its turn: the thing that changes sides is the whole
+   * turret, its stubbornness included.
+   *
+   * PHOENIX IS NOT IN HERE, and cannot be: it is a roll the RUN owns
+   * rather than a charge the turret carries (mods.ts PHOENIX_CHANCE), and
+   * the swarm never rolls it — see Sim.reviveTower.
+   */
+  revivesMax: number;
   /** seconds left on a neighbour's dying charge (Last Volley): while it
    *  runs the reload goes at LAST_VOLLEY_RATE on top of `fireRate` */
   boostT: number;
@@ -186,6 +226,17 @@ export interface Tower {
    * know when "the target" is a shield tower and not a unit index.
    */
   aimShieldTower: number;
+  /**
+   * The STRUCTURE this turret's volley is aimed at — one of the swarm's
+   * conquered turrets for a gun of the player's, one of the player's
+   * buildings (the core included) for a gun of the swarm's — or null, the
+   * usual case, when it is aimed at a body or at nothing.
+   *
+   * It is held by reference and revalidated against the occupancy grid
+   * before every use (Sim.inReach), because a building that came down is
+   * a building whose cells no longer point at it.
+   */
+  aimTower: Structure | null;
   cd: number; // reload: seconds until the next volley is ready
   /**
    * How fast this tower's reload runs: 1 everywhere, HYDROPHOBIC_RATE on
@@ -305,6 +356,7 @@ export interface Projectile {
   // fired by one of the SWARM's turrets (Tower.team): it flies past every
   // unit and lands on the player's structures, by the cell it is over —
   // the enemy shots' rule (updateEnemyShots) on the turrets' own bullets
+  enemy: boolean;
 }
 
 export const enum FxKind {

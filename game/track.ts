@@ -100,10 +100,18 @@ const MUTATOR_UNLOCKS: Readonly<Record<number, readonly MutationId[]>> = {
   23: ["hungry"],
   25: ["hydrophobic"],
   27: ["amphibious"],
+  // THE LAST TWO RUN BACK TO BACK, and that is the every-other-level
+  // rhythm ending rather than being broken: the gaps above are where the
+  // maps, shapes and turrets sit, and by level 28 the track has dealt all
+  // of those. A level that opens nothing at all is a level with no reason
+  // to be looked at, so the two dearest rules take the last two rows
+  // rather than leaving an empty one between them.
+  28: ["reconstruction"],
+  29: ["conquest"],
 };
 
 /** the last level that hands anything out — the bottom of the progress screen */
-export const MAX_LEVEL = 27;
+export const MAX_LEVEL = 29;
 
 /** THE CATALOG IS DEALT WHOLE, ONCE EACH, INSIDE THE PHASE — checked at import */
 (() => {
