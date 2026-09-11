@@ -9,7 +9,7 @@ import {
   zoneStyle,
 } from "./maps";
 import { SHIELD_TOWER_SIZE } from "./mutation";
-import { TOWER_ICONS } from "./towerIcons";
+import { TOWER_ICONS, towerBaseIcon } from "./towerIcons";
 import {
   CELL,
   clamp,
@@ -2668,16 +2668,16 @@ export class Game {
       const b = !ok ? 0 : this.sim.isWaterlogged(cell.gx, cell.gy, kind) ? 1 : 2;
       buckets[b].push(cell);
     }
-    // THE SPRITE, ONCE PER FOOTPRINT. It is the same PNG the build card
-    // and the unlocks board wear (towerIcons.ts) — the player has been
-    // looking at this exact picture on the card in their hand, so the
-    // ghost being the same picture is the ghost saying "this, here". The
-    // image is a shared cache that fills on first use; until it has
-    // loaded there is a frame or two of wash-only, which is no worse than
-    // the lines this replaced
-    const img = this.ghostSprite(kind);
-    const ready = img.complete && img.naturalWidth > 0;
-    if (ready) {
+    // THE WHOLE TURRET, ONCE PER FOOTPRINT — plate and head, pointing the
+    // way it will point the moment it is built (ghostArt). It is the same
+    // pair of PNGs the renderer packs and draws on the field, so the
+    // ghost is a picture of the building and not of its hat.
+    //
+    // The composite is a cache that fills on first use; until both
+    // sprites have loaded there is a frame or two of wash-only, which is
+    // no worse than the lines this replaced.
+    const img = this.ghostArt(kind);
+    if (img) {
       c.imageSmoothingEnabled = false; // pixel art, blown up — no blur
       c.globalAlpha = GHOST_ALPHA;
       for (const group of buckets)
@@ -2697,16 +2697,67 @@ export class Game {
     }
   }
 
-  /** the ghost's picture of one kind — the card's own sprite, loaded once
-   *  and kept for the life of the game */
-  private ghostSprites = new Map<TowerKind, HTMLImageElement>();
-  private ghostSprite(kind: TowerKind): HTMLImageElement {
-    let img = this.ghostSprites.get(kind);
+  /** one sprite off the public folder, loaded once and kept for the life
+   *  of the game — the ghost's two halves both come through here */
+  private ghostSprites = new Map<string, HTMLImageElement>();
+  private ghostSprite(src: string): HTMLImageElement {
+    let img = this.ghostSprites.get(src);
     if (!img) {
       img = new Image();
-      img.src = TOWER_ICONS[kind];
-      this.ghostSprites.set(kind, img);
+      img.src = src;
+      this.ghostSprites.set(src, img);
     }
     return img;
+  }
+
+  /**
+   * THE GHOST'S PICTURE OF ONE KIND: the plate, and the head over it,
+   * COMPOSED ONCE into an offscreen square and then stamped per
+   * footprint.
+   *
+   * IT IS THE WHOLE BUILDING AND IT FACES THE RIGHT WAY. The ghost used
+   * to be the head sprite alone, drawn straight off the file — so it
+   * stood on nothing, and it pointed UP, because a Mindustry turret
+   * sprite is drawn facing up while a turret on the field is built at
+   * angle 0, which is facing +x. A player aiming a card was shown a
+   * turret in a pose the board would never put it in. This is the same
+   * pair the renderer draws (renderer.ts: UV_TOWER_BASE* under
+   * UV_TURRETS, the tops packed pre-turned) and the same quarter turn,
+   * so the ghost and the building it becomes are one picture.
+   *
+   * COMPOSING IT BEATS DRAWING IT. A x9 citadel is three hundred and
+   * sixty footprints a frame; two draws and a transform each would be
+   * over a thousand canvas calls, and the composite makes it one stamp
+   * per footprint — fewer than the single-sprite ghost this replaces.
+   *
+   * Null until both halves have loaded — the caller draws the washes and
+   * nothing else for those few frames.
+   */
+  private ghostComposites = new Map<TowerKind, HTMLCanvasElement>();
+  private ghostArt(kind: TowerKind): HTMLCanvasElement | null {
+    const done = this.ghostComposites.get(kind);
+    if (done) return done;
+    const size = TOWERS[kind].size;
+    const top = this.ghostSprite(TOWER_ICONS[kind]);
+    const base = this.ghostSprite(towerBaseIcon(size));
+    const loaded = (i: HTMLImageElement) => i.complete && i.naturalWidth > 0;
+    if (!loaded(top) || !loaded(base)) return null;
+    // at the sprites' own resolution: a quarter turn of a square is
+    // lossless, and the stamp is scaled to the footprint at draw time
+    const n = Math.max(top.naturalWidth, base.naturalWidth);
+    const cv = document.createElement("canvas");
+    cv.width = n;
+    cv.height = n;
+    const g = cv.getContext("2d");
+    if (!g) return null;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(base, 0, 0, n, n);
+    // THE PLATE NEVER TURNS and the head always does (renderer.ts pushes
+    // the base at rotation 0 and the top at the turret's angle)
+    g.translate(n / 2, n / 2);
+    g.rotate(Math.PI / 2);
+    g.drawImage(top, -n / 2, -n / 2, n, n);
+    this.ghostComposites.set(kind, cv);
+    return cv;
   }
 }

@@ -27,3 +27,25 @@ export const TOWER_ICONS: Record<TowerKind, string> = {
 };
 
 export const structIcon = (kind: TowerKind): string => TOWER_ICONS[kind];
+
+/**
+ * THE PLATE A TURRET STANDS ON — Mindustry's block-N, one per footprint
+ * in cells, and the same four the renderer packs into the atlas and
+ * draws under every turret on the field (renderer.ts UV_TOWER_BASE*).
+ *
+ * The sprites above are the turret's TOP and nothing else (the four that
+ * point at a `-preview` are the assembled head, still without ground
+ * under it), so anything drawing a whole turret outside the WebGL pass —
+ * the placement ghost — needs this half as well.
+ */
+const TOWER_BASES: readonly string[] = [
+  `${T}/bases/block-1.png`,
+  `${T}/bases/block-2.png`,
+  `${T}/bases/block-3.png`,
+  `${T}/bases/block-4.png`,
+];
+
+/** the plate for a footprint this many cells on a side, clamped to the
+ *  four that exist — exactly the renderer's own pick */
+export const towerBaseIcon = (size: number): string =>
+  TOWER_BASES[Math.min(TOWER_BASES.length, Math.max(1, Math.floor(size))) - 1];
