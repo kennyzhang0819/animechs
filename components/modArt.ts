@@ -76,22 +76,25 @@ const GLYPHS: Record<string, (g: Pen) => void> = {
     g.disc(0.5, 0.5, 0.16, PAL.flame);                 // the hub, running hot
   },
 
-  /** HEALTH — a green plus, and nothing else.
+  /** HEALTH — a heart, with a plate bolted across it. The heart is
+   *  health in every game anyone has played; the plating is what makes
+   *  it THIS game's, and keeps it from reading as a life pickup. Ember
+   *  red rather than the mender's green, because the green is REPAIR
+   *  (weave, below) and the two have to be told apart at 12 pixels.
    *
-   *  NO PLATING, NO ACCENT, NO SKIRT. This is the one drawing in the file
-   *  that skips rule 5's flat-plate treatment, because a plus has no
-   *  parts to butt against each other and shading one only makes it
-   *  harder to read at 12 pixels. It is also the most legible thing the
-   *  file can say: a plus is health in every game anyone has played, and
-   *  the health tick is drawn twice on a shelf (common and uncommon) so
-   *  it is the glyph that most needs reading at a glance.
-   *
-   *  The glyph's NAME is still `plate` in game/mods.ts, which is what it
-   *  used to be. The name is a key, not a description, and renaming it
-   *  would churn the catalog to no effect. */
+   *  The glyph's NAME is still `plate` in game/mods.ts — a key, not a
+   *  description, and renaming it would churn the catalog to no effect. */
   plate: (g) => {
-    g.box(0.31, 0.09, 0.69, 0.91, PAL.heal);
-    g.box(0.09, 0.31, 0.91, 0.69, PAL.heal);
+    g.disc(0.32, 0.36, 0.24, PAL.ember);               // the two lobes
+    g.disc(0.68, 0.36, 0.24, PAL.ember);
+    g.poly([[0.06, 0.44], [0.94, 0.44], [0.5, 0.98]], PAL.ember);  // the point
+    g.over((o) => {
+      o.box(0, 0, 1, 0.3, PAL.emberLite);              // the lit tops of the lobes
+      o.box(0, 0.78, 1, 1, PAL.emberDark);             // the skirt
+      o.box(0, 0.48, 1, 0.64, PAL.steelLite);          // the plate, bolted across
+      o.box(0, 0.62, 1, 0.66, PAL.steelDark);          // its lower edge
+    });
+    for (const x of [0.22, 0.46, 0.7]) g.box(x, 0.52, x + 0.08, 0.6, PAL.steelDeep);  // rivets
   },
 
   /** RANGE — a magnifying glass: a RING of rim, glass inside it, and a
@@ -118,16 +121,16 @@ const GLYPHS: Record<string, (g: Pen) => void> = {
     g.poly([[0.98, 0.5], [0.7, 0.34], [0.7, 0.66]], PAL.emberLite);  // the head, out the far side
   },
 
-  /** REPAIR — an open-end wrench with a mender-green grip. A SQUARE head
-   *  with a notch bitten out of it, not a C bent out of a ring: the ring
-   *  version came out as a pair of antlers at this size. The old glyph
-   *  was a woven lattice, which is a picture of a material rather than of
-   *  anything being mended. */
+  /** REPAIR — a green plus, and nothing else. Mender green is the
+   *  colour every healing thing in this game already wears, and a plus
+   *  is the one shape nobody has to think about. NO PLATING: a plus has
+   *  no parts to butt against each other, and shading one only costs
+   *  legibility at the 12 pixels the deal card's list draws it at. It
+   *  was a wrench; the plus is the more honest picture of "mends 1% a
+   *  second". */
   weave: (g) => {
-    g.box(0.22, 0.04, 0.78, 0.36, PAL.steelLite);      // the head
-    g.erase((e) => e.box(0.4, 0.0, 0.6, 0.22, null));  // the jaw
-    g.box(0.38, 0.3, 0.62, 1.0, PAL.steel);            // the handle
-    g.over((o) => o.box(0, 0.66, 1, 1, PAL.heal));     // the grip
+    g.box(0.31, 0.09, 0.69, 0.91, PAL.heal);
+    g.box(0.09, 0.31, 0.91, 0.69, PAL.heal);
   },
 
   /** PROTOTYPE CHASSIS — a frame with a live core in it. Half again the
