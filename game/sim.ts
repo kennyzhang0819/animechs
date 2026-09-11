@@ -71,6 +71,7 @@ import {
   UNIT_STATS,
   unitDrop,
   waveGroups,
+  WAVE_GAP_OPENING,
   WAVE_RELEASE_SECONDS,
   type LegSpec,
   type LevelSpec,
@@ -141,7 +142,10 @@ import {
   LAST_VOLLEY_RATE,
   LAST_VOLLEY_SECONDS,
   LAST_VOLLEY_TILES,
+  modBit,
   modRegen,
+  rollSolo,
+  sizeWithMods,
   MODS,
   PHOENIX_CHANCE,
   rollTurretMods,
@@ -1538,7 +1542,7 @@ export class Sim {
    *  through at a cost and shot at: the player's turrets and walls, and the core */
   private footprints(): Footprint[] {
     const out: Footprint[] = [];
-    for (const t of this.towers) out.push({ gx: t.gx, gy: t.gy, size: structStats(t.kind).size });
+    for (const t of this.towers) out.push({ gx: t.gx, gy: t.gy, size: t.size });
     out.push(this.core);
     return out;
   }
@@ -2165,8 +2169,17 @@ export class Sim {
     return n;
   }
 
-  private addTower(gx: number, gy: number, kind: TowerKind): void {
-    const sz = structStats(kind).size;
+  /**
+   * THE BUILDING GOES UP, on the footprint and with the attributes the
+   * placement already settled.
+   *
+   * THE MASK ARRIVES FROM OUTSIDE NOW rather than being rolled here. It
+   * used to be rolled on this line, which was fine while every turret was
+   * its kind's own size; the GIANT (mods.ts) decides a FOOTPRINT, and a
+   * footprint has to be known before the ground can be tested — so the
+   * roll moved up to placeTower and this takes the answer.
+   */
+  private addTower(gx: number, gy: number, kind: TowerKind, sz: number, mods: number): void {
     // EVERY STRUCTURE IS PLACED FINISHED — full pool, gun live, this tick.
     // It used to go up as a 1 hp shell on a timer (see Tower in types.ts)
     const x = (gx + sz / 2) * CELL, y = (gy + sz / 2) * CELL;
@@ -2176,13 +2189,10 @@ export class Sim {
       gy,
       x,
       y,
+      size: sz,
       hp: towerMaxHp(kind),
-      // THE ATTRIBUTE ROLL, and it happens exactly once, here (mods.ts):
-      // one independent roll per turret upgrade the run owns. A card that
-      // puts down thirty-six turrets rolls thirty-six times, which is why
-      // a patch comes out speckled rather than uniform
       hpMax: towerMaxHp(kind),
-      mods: this.charging ? rollTurretMods(this.mods) : 0,
+      mods,
       spec: structStats(kind),
       regen: 0,
       // Undying Legion (mods.ts) grants every turret one stand-up, the
@@ -2193,7 +2203,7 @@ export class Sim {
       aimShieldTower: -1,
       cd: Math.random() * 0.1,
       // Hydrophobic (mutation.ts): read the ground once, here, and carry it
-      fireRate: this.isWaterlogged(gx, gy, kind) ? HYDROPHOBIC_RATE : 1,
+      fireRate: this.isWaterlogged(gx, gy, kind, sz) ? HYDROPHOBIC_RATE : 1,
       angle: 0,
       target: -1,
       targetIdx: -1,
@@ -2327,6 +2337,9 @@ export class Sim {
    * `waveGap` and the sim puts it BEFORE every wave, the opening one
    * included: the first wave is the breather a run builds its first line
    * in. A step therefore always describes enemies and never time.
+   *
+   * The opening gap is the one exception — WAVE_GAP_OPENING, a few seconds
+   * rather than the full gap, so a run does not open on an empty map.
    */
   private loadStep(): void {
     this.waveEntries.length = 0;
@@ -2348,7 +2361,10 @@ export class Sim {
         // the top of the gap; every scrap comes off the swarm now
         // (economy.ts). Hold the gap, then let this wave drain — waitLeft
         // gates runScript
-        this.waitLeft = Math.max(0, this.level.waveGap);
+        this.waitLeft =
+          this.wavesStarted === 1
+            ? Math.min(WAVE_GAP_OPENING, Math.max(0, this.level.waveGap))
+            : Math.max(0, this.level.waveGap);
         return;
       }
     }
@@ -2465,9 +2481,10 @@ export class Sim {
    * ends the search. A unit asks this every few tenths of a second
    * (utT), never every tick.
    */
-  /** a structure's edge, in cells: the turret's footprint or the core's */
+  /** a structure's edge, in cells: the turret's own footprint (Tower.size
+   *  — a GIANT's is twice its kind's) or the core's */
   private sizeOf(s: Structure): number {
-    return isCore(s) ? s.size : structStats(s.kind).size;
+    return s.size;
   }
 
   /**
@@ -3340,17 +3357,17 @@ export class Sim {
    * building, so one wet corner soaks the whole thing rather than the
    * penalty depending on which cell the game happens to measure from.
    */
-  isWaterlogged(gx: number, gy: number, kind: TowerKind): boolean {
+  isWaterlogged(gx: number, gy: number, kind: TowerKind, size?: number): boolean {
     const mask = this.waterlogged;
     if (!mask) return false;
-    const sz = structStats(kind).size;
+    const sz = size ?? structStats(kind).size;
     for (let y = gy; y < gy + sz; y++)
       for (let x = gx; x < gx + sz; x++)
         if (x >= 0 && y >= 0 && x < COLS && y < ROWS && mask[y * COLS + x]) return true;
     return false;
   }
 
-  canPlace(gx: number, gy: number, kind: TowerKind): boolean {
+  canPlace(gx: number, gy: number, kind: TowerKind, size?: number): boolean {
     // THE TECH GATE, and no price gate at all. A turret is bought as a
     // CARD (spend, and rarity.ts for the roll) and the card is placed for
     // nothing, so by the time a footprint is being tested the scrap is
@@ -3359,7 +3376,10 @@ export class Sim {
     // track, track.ts) it may place from wave 1; there is no stage gate
     // inside a run. A sandbox or an editor (tech null) owns everything
     if (this.tech && !this.tech.unlocked.has(kind)) return false;
-    const sz = TOWERS[kind].size;
+    // the footprint the CALLER means, which is the kind's own everywhere
+    // but the giant (mods.ts): a building has to be tested on the ground
+    // it will actually stand on, and that is decided before it exists
+    const sz = size ?? TOWERS[kind].size;
     if (gx < 0 || gy < 0 || gx > COLS - sz || gy > ROWS - sz) return false;
     const { blocked } = this.terrain;
     const { isGoal } = this.field;
@@ -3391,10 +3411,66 @@ export class Sim {
 
 
 
+  /**
+   * ONE ORDINARY TURRET. THE ATTRIBUTE ROLL HAPPENS HERE (mods.ts): one
+   * independent roll per turret upgrade the run owns, so a card that puts
+   * down thirty-six turrets rolls thirty-six times and the patch comes
+   * out speckled rather than uniform.
+   *
+   * None of the attributes it can roll changes the footprint — the one
+   * that does is rolled once per CARD and lands through placeSolo — so
+   * the ground is tested at the kind's own size.
+   */
   placeTower(gx: number, gy: number, kind: TowerKind): PlaceResult {
-    if (!this.canPlace(gx, gy, kind)) return "invalid";
-    this.addTower(gx, gy, kind);
+    const sz = structStats(kind).size;
+    if (!this.canPlace(gx, gy, kind, sz)) return "invalid";
+    this.addTower(gx, gy, kind, sz, this.charging ? rollTurretMods(this.mods) : 0);
     return "ok";
+  }
+
+  /**
+   * DOES THIS CARD COME OUT AS ONE BUILDING INSTEAD? — the once-per-card
+   * roll (mods.ts rollSolo), asked by Game.placeFormation before a single
+   * footprint is laid. Null is the ordinary case.
+   */
+  rollSoloMod(): ModId | null {
+    return this.charging ? rollSolo(this.mods) : null;
+  }
+
+  /**
+   * THE CARD SPENT ON ONE BUILDING: a GIANT, at the middle of where the
+   * shape was going to go, on twice its kind's ground.
+   *
+   * `cells` is the ghost the player was aiming — the whole shape — and
+   * the giant is centred on its bounding box, so the building lands where
+   * the patch was going to be rather than at some corner of it. The
+   * attributes it rolls are the ordinary ones on top of the solo one: a
+   * giant is still a turret and still rolls like one.
+   *
+   * IT RETURNS 0 RATHER THAN FORCING ITSELF ON. A giant is four times the
+   * area of the shape's own cells and the ground may simply not have room
+   * — in which case the caller lays the ordinary shape down instead, and
+   * the card is not wasted on a roll the map could not honour.
+   */
+  placeSolo(cells: readonly { gx: number; gy: number }[], kind: TowerKind, id: ModId): number {
+    if (cells.length === 0) return 0;
+    const base = structStats(kind).size;
+    const mask = modBit(id) | (this.charging ? rollTurretMods(this.mods) : 0);
+    const sz = sizeWithMods(base, mask);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const c of cells) {
+      if (c.gx < x0) x0 = c.gx;
+      if (c.gy < y0) y0 = c.gy;
+      if (c.gx > x1) x1 = c.gx;
+      if (c.gy > y1) y1 = c.gy;
+    }
+    // the shape's own middle, in cells — its far edge is a turret wide
+    const cx = (x0 + x1 + base) / 2, cy = (y0 + y1 + base) / 2;
+    const gx = clamp(Math.round(cx - sz / 2), 0, COLS - sz);
+    const gy = clamp(Math.round(cy - sz / 2), 0, ROWS - sz);
+    if (!this.canPlace(gx, gy, kind, sz)) return 0;
+    this.addTower(gx, gy, kind, sz, mask);
+    return 1;
   }
 
   /**
@@ -5349,7 +5425,7 @@ export class Sim {
     t.hp = t.hpMax;
     // the support line's own green, on a structure rather than a body —
     // the one thing on the field that says "this did not die"
-    this.pushFx(t.x, t.y, 0.6, FxKind.HealWave, 0, (structStats(t.kind).size * CELL) / 2);
+    this.pushFx(t.x, t.y, 0.6, FxKind.HealWave, 0, (t.size * CELL) / 2);
     this.pushFx(t.x, t.y, 0.4, FxKind.Heal);
     return true;
   }
@@ -5640,7 +5716,7 @@ export class Sim {
       const maxHp = t.hpMax;
       if (t.hp < maxHp * DAMAGE_SMOKE_BELOW) {
         const hurt = 1 - t.hp / (maxHp * DAMAGE_SMOKE_BELOW);
-        const cells = structStats(t.kind).size;
+        const cells = t.size;
         if (Math.random() < DAMAGE_SMOKE_RATE * hurt * cells * dt) {
           const sz = cells * CELL;
           this.pushFx(

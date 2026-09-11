@@ -109,8 +109,22 @@ export const isCore = (s: Structure): s is Core => "core" in s;
  */
 export interface Tower {
   kind: TowerKind;
-  gx: number; // top-left cell of the size x size footprint (TOWERS[kind].size)
+  gx: number; // top-left cell of the size x size footprint
   gy: number;
+  /**
+   * HOW MANY TILES ON A SIDE THIS BUILDING ACTUALLY STANDS ON, and it is
+   * per-TOWER rather than per-kind because the GIANT attribute doubles it
+   * (mods.ts sizeWithMods): a giant foreshadow is an 8x8 where every
+   * other foreshadow is a 4x4.
+   *
+   * EVERYTHING THAT MEASURES A FOOTPRINT READS THIS, never the table —
+   * the ground it claims, the shadow it casts, the quad it is drawn on,
+   * what a unit walks into. It is fixed at the placement: the mask that
+   * decided it is fixed too, and re-sizing a building that already owns
+   * its cells would leave the occupancy grid holding ground nothing
+   * stands on.
+   */
+  size: number;
   x: number; // world-space center
   y: number;
   /**

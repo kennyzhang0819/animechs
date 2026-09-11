@@ -98,20 +98,50 @@ export const SCRAP_START = 7500;
 export const TURRET_ROLL_PRICE = 1000;
 
 /**
- * WHAT ONE UPGRADE COSTS — the deal's second button (G), and the run's
- * only other outgoing.
+ * WHAT ONE MOD COSTS, AND WHAT ONE RELIC COSTS — the deal's second and
+ * third buttons, and the run's only other outgoings.
  *
- * TWO AND A HALF TIMES A TURRET, because the two things are not the same
- * purchase. A turret card is SPENT: it is placed, it is shot at, and one
- * day it is gone. An upgrade is OWNED for the rest of the run — a relic on
- * the shelf that keeps applying, or a chance riding every turret the run
- * will ever place. A player choosing between the two buttons is choosing
- * between board now and board later, and the prices have to say so.
+ * BOTH ARE DEARER THAN A TURRET CARD, because the two things are not the
+ * same purchase. A turret card is SPENT: it is placed, it is shot at, and
+ * one day it is gone. A module is OWNED for the rest of the run.
  *
- * Flat, like the roll fee and for the same reason: one number a player can
- * hold in their head, and one number a balance sweep turns.
+ * AND A RELIC IS DEARER THAN A MOD, because the two halves of the catalog
+ * are not the same purchase either (mods.ts). A MOD is a CHANCE — it
+ * improves nothing standing and adds a roll to every turret placed from
+ * here on, so what it is worth depends on how much board the run has left
+ * to buy. A RELIC is IN FORCE THE MOMENT IT IS PAID FOR, over every turret
+ * already up and every one still to come, and it never stops. The player
+ * pressing the third button is buying certainty and the second one is
+ * buying odds, and the prices have to say so.
+ *
+ * Flat, like the roll fee and for the same reason: numbers a player can
+ * hold in their head, and numbers a balance sweep turns.
  */
-export const UPGRADE_ROLL_PRICE = 2500;
+export const MOD_ROLL_PRICE = 2000;
+export const RELIC_ROLL_PRICE = 3500;
+
+/**
+ * THE AMOUNT LADDER — the corner's fourth button, which cycles through
+ * these and multiplies whichever of the other three is pressed next.
+ *
+ * IT IS A FLAT MULTIPLIER ON THE PRICE, with no bulk discount anywhere:
+ * x10 turrets costs exactly ten roll fees. The button saves KEYSTROKES
+ * and nothing else — a discount would make the single press strictly
+ * wrong, and the single press is the whole T-click-T-click flow the deal
+ * was built around.
+ *
+ * What the multiplier buys is different on the two sides. On the turret
+ * button it is ONE card carrying the shape tiled N times (formation.ts —
+ * one turret roll, one shape roll, a fleet on the ground). On the module
+ * buttons it is N INDEPENDENT DRAWS, because there is no ground involved
+ * and nothing to tile: ten relics is ten relics.
+ */
+export const BUY_AMOUNTS = [1, 5, 10] as const;
+export type BuyAmount = (typeof BUY_AMOUNTS)[number];
+
+/** the amount after this one, wrapping — what the fourth button does */
+export const nextAmount = (n: BuyAmount): BuyAmount =>
+  BUY_AMOUNTS[(BUY_AMOUNTS.indexOf(n) + 1) % BUY_AMOUNTS.length];
 
 /** a placement is spent: selling returns this fraction of the price */
 export const SELL_REFUND = 0;
@@ -252,27 +282,34 @@ export function missionXp(cleared: number, waves: number): number {
   return total;
 }
 
+/**
+ * THE CLIMB IS A STRAIGHT LINE AND THEN A WALL.
+ *
+ * Level 1 -> 2 costs XP_LEVEL_BASE; level XP_LEVEL_PLATEAU - 1 -> PLATEAU
+ * costs XP_LEVEL_FLAT; every step between is the straight line joining
+ * them, which works out to a clean XP_LEVEL_BASE x level. From the plateau
+ * to LEVEL_CAP every level costs XP_LEVEL_FLAT flat — the climb stops
+ * getting steeper, so the hundreds are a grind of KNOWN length rather than
+ * a curve that quietly leaves the player behind.
+ *
+ * It used to be a power curve with a knee; linear is the same shape a
+ * player can actually hold in their head — "the next level costs five
+ * thousand times its number, until a hundred."
+ */
 export const XP_LEVEL_BASE = 5000;
-export const XP_LEVEL_POWER = 1.14;
-/** the level the power curve hands over to the straight ramp */
-export const XP_LEVEL_KNEE = 15;
-/** the level the ramp reaches the plateau */
+/** the level the ramp reaches the plateau, and the first flat one */
 export const XP_LEVEL_PLATEAU = 100;
-/** what every level on the plateau costs — and what the ramp climbs to */
+/** what every level from the plateau up costs — and what the ramp climbs to */
 export const XP_LEVEL_FLAT = 500_000;
 /** the highest level a save can stand at; XP past it banks and does nothing */
 export const LEVEL_CAP = 1000;
 
-/** the climb's step: XP_LEVEL_BASE x level to the power */
-const climbStep = (level: number): number => XP_LEVEL_BASE * Math.max(1, level) ** XP_LEVEL_POWER;
-
 /** XP needed to climb from `level` to `level + 1` */
 export function xpToNext(level: number): number {
-  if (level >= XP_LEVEL_PLATEAU) return XP_LEVEL_FLAT;
-  if (level < XP_LEVEL_KNEE) return Math.round(climbStep(level));
-  const knee = climbStep(XP_LEVEL_KNEE);
-  const t = (level - XP_LEVEL_KNEE) / (XP_LEVEL_PLATEAU - XP_LEVEL_KNEE);
-  return Math.round(knee + (XP_LEVEL_FLAT - knee) * t);
+  const l = Math.max(1, Math.floor(level));
+  if (l >= XP_LEVEL_PLATEAU) return XP_LEVEL_FLAT;
+  const t = (l - 1) / (XP_LEVEL_PLATEAU - 1);
+  return Math.round(XP_LEVEL_BASE + (XP_LEVEL_FLAT - XP_LEVEL_BASE) * t);
 }
 
 /** total XP at which `level` is reached — level 1 is zero */

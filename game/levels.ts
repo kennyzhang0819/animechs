@@ -1385,6 +1385,13 @@ export interface LevelDoc {
 export const WAVE_GAP_DEFAULT = 15;
 
 /**
+ * The OPENING gap only, in seconds. Every later wave waits WAVE_GAP_DEFAULT
+ * (or whatever the document sets); the first one lands almost at once, so a
+ * run starts playing instead of watching an empty map count down.
+ */
+export const WAVE_GAP_OPENING = 3;
+
+/**
  * The documents as last loaded or saved, by world id — the raw counts the
  * level editor edits. A world absent here has no document yet and plays
  * the empty script WORLDS ships with, which is a visible failure where a

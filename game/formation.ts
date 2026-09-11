@@ -176,8 +176,9 @@ export const FORMATIONS: Readonly<Record<FormationId, FormationDef>> = {
 
 export const formationDef = (id: FormationId): FormationDef => FORMATIONS[id];
 
-/** how many turrets this formation carries */
-export const formationCount = (id: FormationId): number => FORMATIONS[id].cells.length;
+/** how many turrets this formation carries — times the fleet, if it is one */
+export const formationCount = (id: FormationId, n = 1): number =>
+  FORMATIONS[id].cells.length * Math.max(1, n);
 
 /**
  * THE BAND A SHAPE IS IN, read off its cell count and nothing else: nine
@@ -249,24 +250,184 @@ export function rollFormation(
 }
 
 /**
+ * THE FLEET — one card bought N TIMES, and what the Amount button in the
+ * corner actually buys (economy.ts BUY_AMOUNTS).
+ *
+ * A x5 press does NOT roll five cards. It rolls ONE turret and ONE shape,
+ * exactly as a single press does, and then TILES that shape five times
+ * into a bigger shape. So the two rolls stay the two rolls the deal has
+ * always had — the amount is a third, independent axis, and what it
+ * multiplies is the GROUND the card asks for rather than the variety it
+ * hands over. Five citadels of spectres is one decision about one piece
+ * of map, and it is a decision about a piece of map the size of a town.
+ *
+ * THE COPIES DO NOT TOUCH. A gutter of one turret-cell (FLEET_GUTTER)
+ * runs between them, which is one turret's own SIZE in tiles — four tiles
+ * for a spectre, two for a duo. Butted together, ten grids would read as
+ * one undifferentiated wall and the player would have no way to see that
+ * they bought ten of something; spaced, the fleet reads as its copies at
+ * a glance. The lanes are not decoration either: the swarm walks into
+ * them and is shot at from both sides, which is the ring's courtyard
+ * repeated down the whole footprint.
+ */
+export const FLEET_GUTTER = 1;
+
+/**
+ * WHERE THE N COPIES SIT, in copies — the macro-grid the tiling is laid
+ * out on, and the same kind of [col, row] list a formation's own cells
+ * are. The authored ones are the amounts the corner offers:
+ *
+ *   5  — THE PLUS. A quincunx on a 3x3: four copies on the arms and one
+ *        at the crossing. It holds a junction from every approach and it
+ *        leaves its four corners for the map to keep, so a x5 fits ground
+ *        a x5 block never would.
+ *   10 — THE SLAB. Five wide and two deep, which is a WALL: the shape a
+ *        player buys when they have found the choke and intend to end the
+ *        argument there.
+ *
+ * Anything else falls back to a balanced block, widest row first, so a
+ * fourth amount added to BUY_AMOUNTS lays out sensibly on the day it is
+ * added rather than on the day somebody remembers this table exists.
+ */
+const FLEET_LAYOUTS: Readonly<Record<number, readonly (readonly [number, number])[]>> = {
+  5: [[1, 0], [0, 1], [1, 1], [2, 1], [1, 2]],
+  10: [
+    [0, 0], [1, 0], [2, 0], [3, 0], [4, 0],
+    [0, 1], [1, 1], [2, 1], [3, 1], [4, 1],
+  ],
+};
+
+export function fleetLayout(n: number): readonly (readonly [number, number])[] {
+  if (n <= 1) return [[0, 0]];
+  const authored = FLEET_LAYOUTS[n];
+  if (authored) return authored;
+  const w = Math.ceil(Math.sqrt(n));
+  return Array.from({ length: n }, (_, i) => [i % w, Math.floor(i / w)] as const);
+}
+
+/** the macro-grid a fleet of n copies spans, in copies, as [cols, rows] */
+function fleetGrid(n: number): [number, number] {
+  let w = 0, h = 0;
+  for (const [x, y] of fleetLayout(n)) {
+    if (x + 1 > w) w = x + 1;
+    if (y + 1 > h) h = y + 1;
+  }
+  return [w, h];
+}
+
+/**
+ * WHICH WAY THE CARD IS FACING — quarter turns clockwise, and R turns it
+ * one more (Game.rotateHeld).
+ *
+ * IT TURNS THE WHOLE FOOTPRINT AND NOT THE SHAPE INSIDE IT. A fleet is
+ * two grids nested — the copies, and the cells inside each copy — and
+ * rotating only one of them would be a lie about what lands: the x10
+ * slab is five copies wide and two deep, and what a player wants when
+ * they press R at a choke is the WALL stood on its end. So the two grids
+ * are flattened into one grid of turret cells first (fleetCells) and the
+ * turn is applied to that, once.
+ *
+ * MOST SHAPES DO NOT MOVE and that is honest rather than broken. Ten of
+ * the twelve formations are symmetric under a quarter turn — every solid
+ * block, the cross, the saltire, the ring, the snowflake, the octagon,
+ * the rampart — so at x1 only the WEDGE visibly turns. Rotation is a
+ * FLEET tool, which is where it was asked for: at x10 every shape turns,
+ * because the slab it is tiled into does.
+ */
+export type Facing = 0 | 1 | 2 | 3;
+
+export const FACINGS: readonly Facing[] = [0, 1, 2, 3];
+
+/** the quarter turn after this one — what one press of R does */
+export const nextFacing = (f: Facing): Facing => (((f + 1) & 3) as Facing);
+
+/**
+ * THE WHOLE FLEET AS ONE GRID OF TURRET CELLS, before any turn: the n
+ * copies and the gutters between them flattened into a single [col, row]
+ * list, with the grid's own size. Everything else here is this list moved
+ * about, so the diagram on the card, the ghost on the ground and the
+ * structures that land are one arithmetic with one place to be wrong.
+ */
+function fleetCells(id: FormationId, n: number): {
+  cells: (readonly [number, number])[];
+  w: number;
+  h: number;
+} {
+  const f = FORMATIONS[id];
+  const [gw, gh] = fleetGrid(n);
+  const cells: (readonly [number, number])[] = [];
+  for (const [tx, ty] of fleetLayout(n)) {
+    // the copy's own origin: its column times the shape's grid plus the
+    // gutters that have accumulated to its left, in TURRET CELLS
+    const ox = tx * (f.w + FLEET_GUTTER);
+    const oy = ty * (f.h + FLEET_GUTTER);
+    for (const [cx, cy] of f.cells) cells.push([ox + cx, oy + cy]);
+  }
+  return {
+    cells,
+    w: gw * f.w + (gw - 1) * FLEET_GUTTER,
+    h: gh * f.h + (gh - 1) * FLEET_GUTTER,
+  };
+}
+
+/**
+ * THE FLEET TURNED, and the size of what it turned into: the cells in
+ * turret-cell units with `facing` quarter turns clockwise applied, and
+ * the [w, h] of the result — which SWAPS on the odd turns, so a 34x13
+ * slab becomes a 13x34 tower and the caller that centres it recentres it
+ * on the new shape.
+ */
+export function fleetFootprint(
+  id: FormationId,
+  n = 1,
+  facing: Facing = 0,
+): { cells: (readonly [number, number])[]; w: number; h: number } {
+  const { cells, w, h } = fleetCells(id, n);
+  if (facing === 0) return { cells, w, h };
+  const turned = cells.map(([x, y]): readonly [number, number] => {
+    // clockwise, each turn taking the grid's height to the new width
+    if (facing === 1) return [h - 1 - y, x];
+    if (facing === 2) return [w - 1 - x, h - 1 - y];
+    return [y, w - 1 - x];
+  });
+  const odd = facing === 1 || facing === 3;
+  return { cells: turned, w: odd ? h : w, h: odd ? w : h };
+}
+
+/**
  * THE FORMATION LAID DOWN: every turret's top-left cell, given the
  * formation's own top-left and the SIZE OF THE TURRET filling it. One
  * function, so the ghost the player is aiming and the structures that
  * actually land are the same arithmetic and cannot drift apart.
+ *
+ * `n` is the fleet — the shape tiled that many times, gutters folded in —
+ * and `facing` is the quarter turns R has put on it. n=1 facing 0 is the
+ * ordinary card and costs the same arithmetic, so there is no second code
+ * path for the single buy to be wrong in.
  */
 export function formationCells(
   gx: number,
   gy: number,
   size: number,
   id: FormationId,
+  n = 1,
+  facing: Facing = 0,
 ): { gx: number; gy: number }[] {
-  return FORMATIONS[id].cells.map(([cx, cy]) => ({ gx: gx + cx * size, gy: gy + cy * size }));
+  return fleetFootprint(id, n, facing).cells.map(([cx, cy]) => ({
+    gx: gx + cx * size,
+    gy: gy + cy * size,
+  }));
 }
 
-/** the footprint in TILES a formation of this turret covers, as [w, h] */
-export function formationSpan(size: number, id: FormationId): [number, number] {
-  const f = FORMATIONS[id];
-  return [f.w * size, f.h * size];
+/** the footprint in TILES a fleet of n of this formation covers, as [w, h] */
+export function formationSpan(
+  size: number,
+  id: FormationId,
+  n = 1,
+  facing: Facing = 0,
+): [number, number] {
+  const { w, h } = fleetFootprint(id, n, facing);
+  return [w * size, h * size];
 }
 
 /** NOTHING IS SMALLER THAN THE QUAD, and nothing is a line — checked at import */
@@ -283,4 +444,9 @@ export function formationSpan(size: number, id: FormationId): [number, number] {
       if (x < 0 || y < 0 || x >= f.w || y >= f.h)
         throw new Error(`the formation "${id}" has a cell outside its own ${f.w}x${f.h} grid`);
   }
+  // ...and an authored fleet layout carries exactly the copies it is for:
+  // a five-cell table under the key 10 would silently sell half a fleet
+  for (const [key, cells] of Object.entries(FLEET_LAYOUTS))
+    if (cells.length !== Number(key))
+      throw new Error(`the fleet layout for x${key} places ${cells.length} copies`);
 })();

@@ -1,23 +1,34 @@
 "use client";
 
-import { useCallback, useEffect, useState, type RefObject } from "react";
+import { useCallback, useEffect, useState, type ReactNode, type RefObject } from "react";
 
 import { TOWER_DESC, TOWERS } from "@/game/constants";
-import { formationDef, formationRarity, type FormationId } from "@/game/formation";
+import {
+  fleetFootprint,
+  formationCount,
+  formationDef,
+  formationRarity,
+  formationSpan,
+  type Facing,
+  type FormationId,
+} from "@/game/formation";
 import type { Game, UiState } from "@/game/game";
 import { RARITY, rarityDef } from "@/game/rarity";
 import type { ModId } from "@/game/mods";
 import type { TowerKind } from "@/game/types";
 import { TOWER_ICONS } from "./towerIcons";
-import { ModReveal } from "./Relics";
+import { Glyph, ModReveal } from "./Relics";
 import { HoverCard, useHoverCard } from "./HoverCard";
 
 /**
- * THE DEAL — the roguelike door a charged run buys turrets through, and
+ * THE DEAL — the roguelike door a charged run buys through, and
  * everything the field's bottom-right corner is while one is being played.
  *
- * The command card (tech.ts BUILD_SLOTS) is gone from a real run. In its
- * place: two buttons, and ONE card at a time.
+ * THE CORNER IS A SQUARE, and it is the minimap's square. The two bottom
+ * corners of the field are the two halves of a StarCraft HUD — where you
+ * are on the left, what you can do on the right — and they now read as a
+ * matched pair rather than as a map and whatever height a stack of
+ * buttons happened to come to. FOUR BUTTONS, in a 2x2 inside it:
  *
  *   BUY TURRET (T) pays a flat fee (economy.ts TURRET_ROLL_PRICE), rolls
  *   two tables — which turret (rarity.ts) and what shape of it
@@ -25,27 +36,51 @@ import { HoverCard, useHoverCard } from "./HoverCard";
  *   already aimed. The ghost is on the board before the finger has left
  *   the key.
  *
- *   BUY UPGRADE (G) is the second half of the same idea, and it is the
- *   OPPOSITE PURCHASE. It pays its own fee (economy.ts
- *   UPGRADE_ROLL_PRICE), rolls one table (mods.ts) and the thing that
- *   comes out is ALREADY IN FORCE — there is no card, nothing to aim and
- *   nothing to place. A global lands on the shelf at the top-left of the
- *   field and applies to the whole board at once; a turret attribute
- *   joins the pool every future placement rolls against. So G is a bet on
- *   the run and T is a bet on the ground, which is why they are two
- *   buttons and not one.
+ *   BUY MODS (M) and BUY RELICS (G) are the two halves of the module
+ *   catalog (mods.ts), and they are TWO BUTTONS because they are two
+ *   purchases. A MOD is a turret attribute: it improves nothing standing,
+ *   and adds a chance to every turret placed from here on. A RELIC is
+ *   global: it is in force over the whole board the moment it is paid
+ *   for. They cost differently (economy.ts MOD_ROLL_PRICE,
+ *   RELIC_ROLL_PRICE) and they answer different questions — "is the rest
+ *   of this run going to be worth it" against "is this wave" — and one
+ *   button that flipped a coin between them let the player aim at
+ *   neither.
  *
- *   BECAUSE AN UPGRADE HAS NOWHERE TO LAND, THE DRAW GETS A REVEAL: a
- *   card over the buttons for a few seconds saying what was bought, and
- *   then gone. It is the only feedback the purchase has at the moment it
- *   is made.
+ *   AMOUNT (X) cycles 1 -> 5 -> 10 and multiplies whichever of the other
+ *   three is pressed next. It spends nothing and it is a standing
+ *   setting, not a held modifier.
+ *
+ * AND R TURNS THE CARD IN HAND a quarter clockwise, which is the one
+ * thing here that is not a button in the square: it is a verb on the
+ * GHOST, aimed with the cursor, and it belongs under the hand rather than
+ * in a panel the hand would have to leave the board to reach. R is the
+ * rotate key every builder in the genre uses, so the relics moved to G —
+ * which is the key the merged upgrade button used to own, and therefore
+ * the key an older run's fingers already go to for a module.
+ *
+ * WHAT THE AMOUNT DOES IS DIFFERENT ON THE TWO SIDES, and that is the
+ * whole design. On the modules it is N draws: ten relics is ten relics.
+ * On the TURRET it is not ten cards — it is ONE card whose shape is TILED
+ * ten times (formation.ts fleetLayout), so a x10 press still rolls one
+ * gun and one shape and what it multiplies is the GROUND being asked
+ * for. Five citadels of spectres is a single decision about a single
+ * piece of map the size of a town, and the ghost of it going down over
+ * the terrain is most of what the button is for.
+ *
+ *   BECAUSE A MODULE HAS NOWHERE TO LAND, THE DRAW GETS A REVEAL: a card
+ *   over the buttons for a few seconds saying what was bought, and then
+ *   gone. It is the only feedback the purchase has at the moment it is
+ *   made, and a x10 press gets ONE card listing its ten.
  *
  * THE FLOW IS T, CLICK, T, CLICK. There is no hand to manage, no slot to
  * choose and no clock to beat: a card is drawn already aimed, and it
  * stands until the ground takes it. A player who wants a bastion and drew
  * a quad presses T until they get one, at a thousand scrap a look — THE
  * SPAM IS THE MECHANIC, and a re-roll is not refunded, because a free one
- * would make the shape roll decorative.
+ * would make the shape roll decorative. The amount button does not touch
+ * that: it is a flat multiplier on the price with no bulk discount
+ * anywhere, so it buys keystrokes and never value.
  *
  * OWNING A CARD AND AIMING IT ARE TWO DIFFERENT STATES. The right button
  * puts the GHOST away and leaves the card in its slot; clicking the slot
@@ -61,24 +96,35 @@ import { HoverCard, useHoverCard } from "./HoverCard";
 export interface DealCard {
   kind: TowerKind;
   form: FormationId;
+  /** how many copies of the shape it carries — the amount it was bought at */
+  n: number;
 }
 
 /** what the corner is holding right now, or null for an empty slot */
 export const cardOf = (hud: UiState | null): DealCard | null => hud?.held ?? null;
 
 /**
- * THE DEAL'S TWO ACTIONS, and its keyboard.
+ * THE DEAL'S FOUR ACTIONS, and its keyboard.
  *
  * There is no state machine left here. The Game owns the card
- * (Game.heldCard) and owns whether it is being aimed, so buying is one
- * call, picking it up is one call, and the card on screen is read
+ * (Game.heldCard), owns whether it is being aimed and owns the amount, so
+ * every one of these is a single call and everything on screen is read
  * straight off the HUD poll.
  */
+export interface DealActions {
+  buy: () => void;
+  buyMods: () => void;
+  buyRelics: () => void;
+  cycleAmount: () => void;
+  rotate: () => void;
+  toggle: () => void;
+}
+
 export function useDeal(
   gameRef: RefObject<Game | null>,
   hud: UiState | null,
   refresh: () => void,
-): { buy: () => void; buyUpgrade: () => void; toggle: () => void } {
+): DealActions {
   const dealing = hud?.dealing ?? false;
   const over = !hud || hud.lost || hud.won;
 
@@ -90,13 +136,36 @@ export function useDeal(
     refresh();
   }, [gameRef, refresh]);
 
-  /** ONE UPGRADE, AND IT IS ALREADY APPLIED — there is nothing to pick
+  /** THE MODULES, AND THEY ARE ALREADY APPLIED — there is nothing to pick
    *  up and nothing to re-roll (see the header) */
-  const buyUpgrade = useCallback(() => {
+  const buyMods = useCallback(() => {
     const g = gameRef.current;
     if (!g) return;
-    g.buyUpgrade();
+    g.buyMods();
     refresh();
+  }, [gameRef, refresh]);
+
+  const buyRelics = useCallback(() => {
+    const g = gameRef.current;
+    if (!g) return;
+    g.buyRelics();
+    refresh();
+  }, [gameRef, refresh]);
+
+  /** the fourth button, and the only one that spends nothing */
+  const cycleAmount = useCallback(() => {
+    const g = gameRef.current;
+    if (!g) return;
+    g.cycleBuyAmount();
+    refresh();
+  }, [gameRef, refresh]);
+
+  /** R: turn the ghost a quarter clockwise. It spends nothing either, and
+   *  it does nothing at all unless a card is being aimed */
+  const rotate = useCallback(() => {
+    const g = gameRef.current;
+    if (!g) return;
+    if (g.rotateHeld()) refresh();
   }, [gameRef, refresh]);
 
   /** pick the owned card back up, or put the ghost down — it spends
@@ -109,17 +178,27 @@ export function useDeal(
   }, [gameRef, refresh]);
 
   /**
-   * T DEALS AND G UPGRADES. Two keys, and the flow of a run is both of
-   * them: T, click, T, click, and G whenever the bank can stand it.
+   * T, M, G, X — one key a button, in the order the square reads — and R
+   * on top of them, which turns the ghost rather than pressing anything.
+   * The flow of a run is the first of them: T, R until the fleet lies the
+   * way the ground wants it, click; and M or G whenever the bank can
+   * stand it.
    *
    * It declines the same presses the buttons would: a modifier held (ctrl
    * and cmd belong to the browser and the system), a text field focused,
    * the run over or the pause menu up. And it is off entirely on a free
-   * board, where T and G are two of the command card's own letters
-   * (tech.ts) and mean a turret each.
+   * board, where these are the command card's own letters (tech.ts) and
+   * mean a turret each.
    */
   useEffect(() => {
     if (!dealing || over) return;
+    const by: Record<string, () => void> = {
+      KeyT: buy,
+      KeyM: buyMods,
+      KeyG: buyRelics,
+      KeyX: cycleAmount,
+      KeyR: rotate,
+    };
     const onKey = (e: KeyboardEvent): void => {
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
       if (
@@ -127,33 +206,33 @@ export function useDeal(
         e.target.closest("input, textarea, [contenteditable]")
       )
         return;
-      if (e.code !== "KeyT" && e.code !== "KeyG") return;
+      const act = by[e.code];
+      if (!act) return;
       const g = gameRef.current;
       if (!g || g.ui().menuOpen) return;
       e.preventDefault();
-      if (e.code === "KeyT") buy();
-      else buyUpgrade();
+      act();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dealing, over, buy, buyUpgrade, gameRef]);
+  }, [dealing, over, buy, buyMods, buyRelics, cycleAmount, rotate, gameRef]);
 
-  return { buy, buyUpgrade, toggle };
+  return { buy, buyMods, buyRelics, cycleAmount, rotate, toggle };
 }
 
 /** how long the reveal stands before it goes (seconds x 1000) */
 const REVEAL_MS = 5000;
 
 /**
- * WHAT THE LAST G PRESS BOUGHT, while it is still worth saying.
+ * WHAT THE LAST MODULE PRESS BOUGHT, while it is still worth saying.
  *
- * It watches `modDraws`, not `lastMod`: the counter moves on EVERY draw
- * and the id does not, so drawing a third Calibration Matrix re-opens the
- * reveal instead of silently leaving the second one's card standing.
+ * It watches `modDraws`, not the ids: the counter moves on EVERY press
+ * and the ids need not, so drawing a third Calibration Matrix re-opens
+ * the reveal instead of silently leaving the second one's card standing.
  */
-function useReveal(hud: UiState | null): ModId | null {
+function useReveal(hud: UiState | null): readonly ModId[] {
   const draws = hud?.modDraws ?? 0;
-  const id = hud?.lastMod ?? null;
+  const ids = hud?.lastMods;
   const [shownAt, setShownAt] = useState(0);
   const [gone, setGone] = useState(true);
   useEffect(() => {
@@ -163,12 +242,19 @@ function useReveal(hud: UiState | null): ModId | null {
     const t = window.setTimeout(() => setGone(true), REVEAL_MS);
     return () => window.clearTimeout(t);
   }, [draws]);
-  return !gone && shownAt === draws && id ? id : null;
+  return !gone && shownAt === draws && ids ? ids : EMPTY;
 }
+
+const EMPTY: readonly ModId[] = [];
 
 /**
  * THE FORMATION, AS A PICTURE (formation.ts): the shape's own grid, a
- * filled square per turret in it, framed in ITS OWN rarity's colour.
+ * filled square per turret in it, framed in ITS OWN rarity's colour —
+ * and at x5 or x10, the WHOLE FLEET, tiled exactly the way the ground
+ * will take it, gutters and all, and TURNED the way R has turned it. The
+ * diagram is read off fleetFootprint, which is the same call the ghost
+ * makes, so pressing R turns the picture in the corner and the shape on
+ * the ground in the same frame.
  *
  * Two rarities on one card, in one palette. The border round the whole
  * card is the TURRET's band and the little frame in the corner is the
@@ -181,29 +267,24 @@ function useReveal(hud: UiState | null): ModId | null {
  * to have learned; a picture of thirteen squares in a star is not. The
  * hover card carries the name and the count for the second look.
  */
-function FormationMark({ form }: { form: FormationId }) {
-  const f = formationDef(form);
+function FormationMark({ form, n, facing }: { form: FormationId; n: number; facing: Facing }) {
   const color = RARITY[formationRarity(form)].color;
-  const n = Math.max(f.w, f.h);
+  // the same footprint the ghost is drawing, turns and all — the diagram
+  // on the card and the shape on the ground are one function (formation.ts)
+  const { cells, w, h } = fleetFootprint(form, n, facing);
+  const span = Math.max(w, h);
   return (
     <span
       aria-hidden="true"
       className="pointer-events-none absolute right-[2px] top-[2px] flex h-[17px] w-[17px] items-center justify-center border bg-[#0b0b0d]"
       style={{ borderColor: color }}
     >
-      <svg viewBox={`0 0 ${n} ${n}`} className="h-[13px] w-[13px]">
+      <svg viewBox={`0 0 ${span} ${span}`} className="h-[13px] w-[13px]">
         {/* centred in a square viewBox, so a quad and a citadel are drawn
             at the same scale and the difference between them IS the picture */}
-        <g transform={`translate(${(n - f.w) / 2} ${(n - f.h) / 2})`}>
-          {f.cells.map(([x, y]) => (
-            <rect
-              key={`${x},${y}`}
-              x={x + 0.08}
-              y={y + 0.08}
-              width={0.84}
-              height={0.84}
-              fill={color}
-            />
+        <g transform={`translate(${(span - w) / 2} ${(span - h) / 2})`}>
+          {cells.map(([x, y]) => (
+            <rect key={`${x},${y}`} x={x + 0.08} y={y + 0.08} width={0.84} height={0.84} fill={color} />
           ))}
         </g>
       </svg>
@@ -220,6 +301,11 @@ function FormationMark({ form }: { form: FormationId }) {
  * player mid-wave has no time to read a word, and the difference between
  * grey and purple lands before the eye reaches the sprite.
  *
+ * THE NUMBER UNDER THE SPRITE IS THE WHOLE FLEET — 360 and not 36 — and
+ * the line under that says how it is arranged, because "10x Citadel" is
+ * the thing a player is about to have to find ground for and the total is
+ * the thing they are about to have on the board.
+ *
  * IT IS A BUTTON, and the click is a toggle: a card whose ghost has been
  * put away with the right button is picked back up here, and a card being
  * aimed is put down again. It is the command card's own gesture, kept
@@ -229,12 +315,15 @@ function TurretCard({
   card,
   icon,
   aimed,
+  facing,
   onToggle,
 }: {
   card: DealCard;
   icon: string;
   /** is the ghost on the board right now? */
   aimed: boolean;
+  /** the quarter turns R has put on it */
+  facing: Facing;
   onToggle: () => void;
 }) {
   const tip = useHoverCard("up");
@@ -242,38 +331,42 @@ function TurretCard({
   const stats = TOWERS[card.kind];
   const f = formationDef(card.form);
   const fr = RARITY[formationRarity(card.form)];
-  const n = f.cells.length;
+  const n = formationCount(card.form, card.n);
+  const shape = card.n > 1 ? `${card.n}× ${f.name}` : f.name;
+  const [sw, sh] = formationSpan(stats.size, card.form, card.n, facing);
   return (
     <button
       ref={tip.ref as RefObject<HTMLButtonElement | null>}
       {...tip.anchorProps}
       onClick={onToggle}
       aria-pressed={aimed}
-      aria-label={`${n} ${stats.name}, ${r.name}, in a ${f.name}, ${fr.name} shape. ${
-        aimed ? "Aimed — click the board to place it." : "Click to pick it up."
+      aria-label={`${n} ${stats.name}, ${r.name}, in ${shape}, ${fr.name} shape. ${
+        aimed
+          ? `Aimed, turned ${facing * 90} degrees — R turns it, click the board to place it.`
+          : "Click to pick it up."
       }`}
       className={`ms-deal-card pointer-events-auto relative flex h-[5rem] w-[3.8rem] cursor-pointer flex-col items-center justify-center gap-0.5 border-2 p-0 ${
         aimed ? "" : "ms-deal-down"
       }`}
       style={{ borderColor: r.color, background: r.ground, color: r.color }}
     >
-      <FormationMark form={card.form} />
+      <FormationMark form={card.form} n={card.n} facing={facing} />
       {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
       <img src={icon} alt="" className="mt-1.5 h-8 w-8 [image-rendering:pixelated]" />
       <span className="max-w-full truncate px-0.5 text-[10px] font-bold uppercase leading-none tracking-wide">
         {n}× {stats.name}
       </span>
-      <span className="text-[8px] font-bold uppercase leading-none tracking-wide opacity-70">
-        {f.name}
+      <span className="max-w-full truncate px-0.5 text-[8px] font-bold uppercase leading-none tracking-wide opacity-70">
+        {shape}
       </span>
       <HoverCard tip={tip} title={`${n}× ${stats.name}`} tag={r.name} color={r.color} align="right">
         {TOWER_DESC[card.kind]}
         <span className="mt-1.5 block font-bold" style={{ color: fr.color }}>
-          {f.name} — {n} turrets, {f.w * stats.size}×{f.h * stats.size} tiles, {fr.name} shape
+          {shape} — {n} turrets, {sw}×{sh} tiles, {fr.name} shape
         </span>
         <span className="mt-1.5 block text-[#EDEDEF]">
           {aimed
-            ? "Click the board to place it. Right click puts it back here."
+            ? "R turns it a quarter. Click the board to place it, right click puts it back here."
             : "Click to pick it up again."}
         </span>
       </HoverCard>
@@ -281,82 +374,263 @@ function TurretCard({
   );
 }
 
-/** the two buttons, and the one card standing over them */
+/**
+ * THE SQUARE, and the one card standing over it.
+ *
+ * FOUR BUTTONS IN A 2x2, in a pane the size of the minimap's (13rem
+ * inside a p-1 frame, which is what components/MechSwarm.tsx gives the
+ * map on the other side). The two bottom corners are a matched pair now,
+ * and each button is a big square target rather than a strip of text —
+ * which is what a control pressed a hundred times a run, mid-wave,
+ * without looking, has to be.
+ *
+ * READING ORDER IS THE ORDER OF A DECISION: the three things that can be
+ * bought first — the turret (which goes on the ground) and then the two
+ * halves of the module catalog (which never do) — and the AMOUNT last, in
+ * the far corner, because it is the modifier on the other three rather
+ * than a fourth thing to buy.
+ */
+function BuyButton({
+  keyCap,
+  label,
+  sub,
+  price,
+  poor,
+  disabled,
+  amount,
+  tint,
+  glyph,
+  onPress,
+  aria,
+}: {
+  /** the printed letter, worn in the corner the way a command card's is */
+  keyCap: string;
+  label: string;
+  /** the line under the price — what the press hands over, or why it is dark */
+  sub: string;
+  /** total scrap this press costs, or null when there is nothing to pay */
+  price: number | null;
+  poor: boolean;
+  disabled?: boolean;
+  /** the multiplier badge, drawn only while the amount is not 1 */
+  amount: number;
+  tint: string;
+  glyph: ReactNode;
+  onPress: () => void;
+  aria: string;
+}) {
+  return (
+    <button
+      onClick={onPress}
+      disabled={disabled}
+      aria-keyshortcuts={keyCap}
+      aria-label={aria}
+      className={`ms-btn ms-btn-tint relative flex h-full w-full flex-col items-center justify-center gap-1 px-1 py-1 ${
+        !disabled && poor ? "opacity-60" : ""
+      }`}
+      style={{ ["--ms-tint" as string]: tint }}
+    >
+      <span className="pointer-events-none absolute left-[4px] top-[3px] text-[10px] font-bold leading-none text-[#A6A6AF]">
+        {keyCap}
+      </span>
+      {amount > 1 && !disabled && (
+        <span
+          className="pointer-events-none absolute right-[4px] top-[3px] text-[10px] font-bold leading-none"
+          style={{ color: tint }}
+        >
+          {"×"}
+          {amount}
+        </span>
+      )}
+      {glyph}
+      <span className="max-w-full truncate text-[11px] font-bold uppercase leading-none tracking-wide text-[#EDEDEF]">
+        {label}
+      </span>
+      {price !== null && (
+        <span
+          className={`text-[13px] font-bold leading-none tabular-nums ${
+            poor ? "text-[#FF8A8A]" : "text-white"
+          }`}
+        >
+          {price.toLocaleString()}
+        </span>
+      )}
+      <span className="max-w-full truncate text-[8px] font-bold uppercase leading-none tracking-widest text-[#7A7A85]">
+        {sub}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * THE TURN, under the card and only while the ghost is up.
+ *
+ * R IS NOT A BUTTON IN THE SQUARE and must not become one: it is a verb
+ * on the thing being aimed, so it lives with the card rather than with
+ * the three things that can be bought. But a key nothing on screen ever
+ * mentions is a key nobody presses, so the card grows a thin strip that
+ * says R while there is something to turn — and the strip is a BUTTON
+ * too, because a hand already on the mouse should be able to stand a slab
+ * on its end without reaching for the keyboard.
+ *
+ * It says which way the card is lying (0, 90, 180, 270) rather than just
+ * "turn", because most formations are symmetric under a quarter turn
+ * (formation.ts Facing) and a x1 press of R on a Bastion would otherwise
+ * look like a key that does nothing.
+ */
+function TurnStrip({ facing, onRotate }: { facing: Facing; onRotate: () => void }) {
+  return (
+    <button
+      onClick={onRotate}
+      aria-keyshortcuts="R"
+      aria-label={`Turn the card. Lying at ${facing * 90} degrees, shortcut R`}
+      className="ms-btn pointer-events-auto flex h-6 w-[3.8rem] items-center justify-center gap-1 px-1 text-[10px]"
+    >
+      <span className="text-[#A6A6AF]">R</span>
+      <svg viewBox="0 0 24 24" className="h-[12px] w-[12px]" aria-hidden="true">
+        <path
+          d="M20 12a8 8 0 1 1-2.6-5.9"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+        />
+        <path d="M20 3v5h-5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      </svg>
+      <span className="font-bold tabular-nums tracking-normal text-[#EDEDEF]">{facing * 90}</span>
+    </button>
+  );
+}
+
+/** the turret: a gun from above, which is the shape of the thing bought */
+const TURRET_GLYPH = (
+  <svg viewBox="0 0 24 24" className="h-[22px] w-[22px]" aria-hidden="true">
+    <rect x="3" y="7" width="12" height="10" fill="none" stroke="currentColor" strokeWidth="2" />
+    <path d="M15 12h6" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+  </svg>
+);
+
 export function DealCorner({
   hud,
   icons,
-  onBuy,
-  onBuyUpgrade,
-  onToggle,
+  deal,
 }: {
   hud: UiState;
   icons: Partial<Record<TowerKind, string>>;
-  onBuy: () => void;
-  onBuyUpgrade: () => void;
-  onToggle: () => void;
+  deal: DealActions;
 }) {
-  const poor = hud.scrap !== null && hud.scrap < hud.rollPrice;
-  const tooPoor = hud.scrap !== null && hud.scrap < hud.upgradePrice;
   const card = cardOf(hud);
   const revealed = useReveal(hud);
+  const n = hud.amount;
+  // WHAT A PRESS COSTS IS THE FLAT FEE TIMES THE AMOUNT, everywhere — no
+  // bulk discount lives anywhere in this game (economy.ts BUY_AMOUNTS)
+  const turretCost = hud.rollPrice * n;
+  const modCost = hud.modPrice * n;
+  const relicCost = hud.relicPrice * n;
+  const short = (cost: number): boolean => hud.scrap !== null && hud.scrap < cost;
+  const free = hud.scrap === null;
   return (
     <div className="flex flex-col items-end gap-2">
-      {revealed && <ModReveal id={revealed} />}
+      <ModReveal ids={revealed} />
       {card && (
         <TurretCard
           card={card}
           icon={icons[card.kind] ?? TOWER_ICONS[card.kind]}
           aimed={hud.buildKind !== null}
-          onToggle={onToggle}
+          facing={hud.buildFacing}
+          onToggle={deal.toggle}
         />
       )}
-      <div className="ms-pane pointer-events-auto flex w-[13rem] flex-col gap-1 p-1">
-        <button
-          className={`ms-btn h-9 w-full justify-between px-2 text-[13px] font-bold uppercase tracking-wide ${
-            poor ? "opacity-60" : ""
-          }`}
-          onClick={onBuy}
-          aria-keyshortcuts="T"
-          aria-label={`Buy turret for ${hud.rollPrice} scrap, shortcut T`}
+      {card && hud.buildKind !== null && (
+        <TurnStrip facing={hud.buildFacing} onRotate={deal.rotate} />
+      )}
+      <div className="ms-pane pointer-events-auto p-1">
+        <div
+          role="group"
+          aria-label="deal"
+          className="grid h-[13rem] w-[13rem] grid-cols-2 grid-rows-2 gap-1"
         >
-          <span>
-            <span className="text-[#A6A6AF]">T</span> {card ? "Re-roll" : "Buy turret"}
-          </span>
-          {hud.scrap !== null && (
-            <span className={poor ? "text-[#FF8A8A]" : "text-white"}>{hud.rollPrice}</span>
-          )}
-        </button>
-        {/* THE OTHER HALF OF THE RUN. It never says "re-roll": what it
-            buys is in force the moment it is bought, so a second press is
-            simply a second upgrade (see the header). It goes dark only
-            when the catalog is owned out, which is the one case where the
-            press would take the money for nothing. */}
-        <button
-          className={`ms-btn h-9 w-full justify-between px-2 text-[13px] font-bold uppercase tracking-wide ${
-            hud.modsLeft ? (tooPoor ? "opacity-60" : "") : "cursor-not-allowed opacity-45"
-          }`}
-          onClick={onBuyUpgrade}
-          disabled={!hud.modsLeft}
-          aria-keyshortcuts="G"
-          aria-label={
-            hud.modsLeft
-              ? `Buy upgrade for ${hud.upgradePrice} scrap, shortcut G`
-              : "Buy upgrade — every upgrade is owned"
-          }
-        >
-          <span>
-            <span className="text-[#A6A6AF]">G</span> Buy upgrade
-          </span>
-          {hud.modsLeft ? (
-            hud.scrap !== null && (
-              <span className={tooPoor ? "text-[#FF8A8A]" : "text-white"}>
-                {hud.upgradePrice}
-              </span>
-            )
-          ) : (
-            <span className="text-[11px] tracking-normal text-[#A6A6AF]">All owned</span>
-          )}
-        </button>
+          <BuyButton
+            keyCap="T"
+            label={card ? "Re-roll" : "Turret"}
+            sub={n > 1 ? `${n} of the shape` : "one card"}
+            price={free ? null : turretCost}
+            poor={short(turretCost)}
+            amount={n}
+            tint="#FFD37F"
+            glyph={TURRET_GLYPH}
+            onPress={deal.buy}
+            aria={`${card ? "Re-roll" : "Buy"} turret at ${n} times the shape for ${turretCost} scrap, shortcut T`}
+          />
+          {/* THE TWO HALVES OF THE CATALOG (mods.ts). Each goes dark on
+              its OWN half being owned out, which is the one case a press
+              would take the money for nothing — so a run that has taken
+              every relic keeps buying mods */}
+          <BuyButton
+            keyCap="M"
+            label="Mods"
+            sub={!hud.modsLeft ? "all owned" : n > 1 ? `${n} draws` : "on new turrets"}
+            price={hud.modsLeft && !free ? modCost : null}
+            poor={short(modCost)}
+            disabled={!hud.modsLeft}
+            amount={n}
+            tint="#7BDFF2"
+            glyph={<Glyph glyph="barrel" color="currentColor" className="h-[22px] w-[22px]" />}
+            onPress={deal.buyMods}
+            aria={
+              hud.modsLeft
+                ? `Buy ${n} turret mod${n > 1 ? "s" : ""} for ${modCost} scrap, shortcut M`
+                : "Buy mods — every turret mod is owned"
+            }
+          />
+          <BuyButton
+            keyCap="G"
+            label="Relics"
+            sub={!hud.relicsLeft ? "all owned" : n > 1 ? `${n} draws` : "in force now"}
+            price={hud.relicsLeft && !free ? relicCost : null}
+            poor={short(relicCost)}
+            disabled={!hud.relicsLeft}
+            amount={n}
+            tint="#C08BFF"
+            glyph={<Glyph glyph="star" color="currentColor" className="h-[22px] w-[22px]" />}
+            onPress={deal.buyRelics}
+            aria={
+              hud.relicsLeft
+                ? `Buy ${n} relic${n > 1 ? "s" : ""} for ${relicCost} scrap, shortcut G`
+                : "Buy relics — every relic is owned"
+            }
+          />
+          {/* THE AMOUNT COMES LAST, in the far corner of the square,
+              because it is the MODIFIER on the other three and not a
+              fourth thing to buy — the quantity field goes after the
+              item. It is the only one of the four that spends nothing, so
+              it is the only one with no price on it, and it wears the
+              gold pressed-in band while it is off 1: a run that has
+              forgotten it is buying in tens is a run about to spend ten
+              thousand scrap by accident */}
+          <button
+            onClick={deal.cycleAmount}
+            aria-keyshortcuts="X"
+            aria-label={`Amount: ${n} per press. Click to cycle, shortcut X`}
+            className={`ms-btn relative flex h-full w-full flex-col items-center justify-center gap-1 px-1 py-1 ${
+              n > 1 ? "ms-on" : ""
+            }`}
+          >
+            <span className="pointer-events-none absolute left-[4px] top-[3px] text-[10px] font-bold leading-none text-[#A6A6AF]">
+              X
+            </span>
+            <span className="font-display text-[28px] font-bold leading-none tabular-nums">
+              {"×"}
+              {n}
+            </span>
+            <span className="text-[11px] font-bold uppercase leading-none tracking-wide text-[#EDEDEF]">
+              Amount
+            </span>
+            <span className="text-[8px] font-bold uppercase leading-none tracking-widest text-[#7A7A85]">
+              per press
+            </span>
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -31,18 +31,30 @@ import {
   type UnitKind,
 } from "./levels";
 import {
+  MOD_ROLL_PRICE,
   missionXp,
+  nextAmount,
+  RELIC_ROLL_PRICE,
   scrapPriceOf,
   sellValue,
   TURRET_ROLL_PRICE,
-  UPGRADE_ROLL_PRICE,
+  type BuyAmount,
 } from "./economy";
-import { anyModLeft, maskRarity, rollMod, shiftedWeights, type ModId } from "./mods";
+import {
+  anyModLeft,
+  maskRarity,
+  rollMod,
+  shiftedWeights,
+  type ModId,
+  type ModScope,
+} from "./mods";
 import {
   FORMATION_IDS,
   formationCells,
   formationSpan,
+  nextFacing,
   rollFormation,
+  type Facing,
   type FormationId,
 } from "./formation";
 import { BASE_WEIGHTS, RARITY, rollTurret, type RarityWeights } from "./rarity";
@@ -77,10 +89,13 @@ export interface UiState {
   /** the SHAPE the cursor is aiming (formation.ts) — null on a free
    *  board, where the command card picks a bare turret */
   buildForm: FormationId | null;
-  /** THE CARD THE RUN OWNS, bought and not yet placed. It outlives the
-   *  aiming: a right click clears buildKind and leaves this standing, so
-   *  the corner keeps drawing it and a click picks it back up */
-  held: { kind: TowerKind; form: FormationId } | null;
+  /** ...and the quarter turns R has put on it (Game.buildFacing) */
+  buildFacing: Facing;
+  /** THE CARD THE RUN OWNS, bought and not yet placed, and how many
+   *  copies of its shape it carries (the amount it was bought at). It
+   *  outlives the aiming: a right click clears buildKind and leaves this
+   *  standing, so the corner keeps drawing it and a click picks it back up */
+  held: { kind: TowerKind; form: FormationId; n: number } | null;
   /** the demolish tool is picked: the next press sells instead of selecting */
   paused: boolean;
   /** the core is destroyed — the field is frozen behind the score screen */
@@ -124,10 +139,13 @@ export interface UiState {
   /** is this board DEALT (a charged run) or PICKED (sandbox, editors)? —
    *  which of the two corners the overlay puts in the bottom right */
   dealing: boolean;
-  /** what one draw off the deal costs right now */
+  /** what ONE draw off each of the three buttons costs right now — before
+   *  the amount, which multiplies all three flat (economy.ts) */
   rollPrice: number;
-  /** ...and what one upgrade costs (economy.ts UPGRADE_ROLL_PRICE) */
-  upgradePrice: number;
+  modPrice: number;
+  relicPrice: number;
+  /** how many a press buys: the corner's fourth button (BUY_AMOUNTS) */
+  amount: BuyAmount;
   /**
    * EVERY UPGRADE THE RUN OWNS (mods.ts), catalog order, with its stack
    * count — the shelf on the top-left of the field draws exactly this,
@@ -135,12 +153,15 @@ export interface UiState {
    * is always on screen.
    */
   relics: { id: ModId; n: number }[];
-  /** the last upgrade drawn, and a counter that MOVES on every draw — the
-   *  two things a reveal needs to fire, including for a repeat (Game.lastMod) */
-  lastMod: ModId | null;
+  /** everything the LAST PRESS drew (one id, or ten), and a counter that
+   *  MOVES on every press — the two things a reveal needs to fire,
+   *  including for a repeat (Game.lastMods) */
+  lastMods: ModId[];
   modDraws: number;
-  /** is there anything left in the catalog to draw? */
+  /** is there anything left in each half of the catalog to draw? — what
+   *  greys out the M button and the R button, separately */
   modsLeft: boolean;
+  relicsLeft: boolean;
   /** structures placed this run, only going up — the card layer watches it
    *  to know the card in hand has landed (see Game.built) */
   built: number;
@@ -521,6 +542,18 @@ export class Game {
    */
   private buildForm: FormationId | null = null;
   /**
+   * WHICH WAY THE CARD IN HAND IS FACING (formation.ts Facing) — quarter
+   * turns clockwise, and R adds one (rotateHeld).
+   *
+   * IT BELONGS TO THE AIMING AND NOT TO THE CARD. A player turns a fleet
+   * because of the ground under the cursor, not because of what they
+   * bought, so the turn survives a right click that stows the ghost and
+   * the click that picks it back up — walking a x10 slab across the map
+   * on its end must not un-turn it halfway — and a NEW card comes out
+   * square, because a new card is a new question about the ground.
+   */
+  private buildFacing: Facing = 0;
+  /**
    * THE CARD THE PLAYER OWNS, which is NOT the same thing as the card
    * they are aiming.
    *
@@ -536,7 +569,19 @@ export class Game {
    * click on the card picks back up. The only two things that spend a
    * card are placing it and buying another.
    */
-  private heldCard: { kind: TowerKind; form: FormationId } | null = null;
+  private heldCard: { kind: TowerKind; form: FormationId; n: number } | null = null;
+  /**
+   * THE AMOUNT THE NEXT PRESS BUYS (economy.ts BUY_AMOUNTS) — the
+   * corner's fourth button, cycled with X and shared by all three of the
+   * others. It is a STANDING setting and not a modifier held down: a
+   * player who has decided they are buying in tens is buying in tens
+   * until they say otherwise, and a run spent holding a key would be a
+   * worse run.
+   *
+   * It survives a reset. The amount is a habit of the player's, not a
+   * fact about the level.
+   */
+  private buyAmount: BuyAmount = 1;
   private building = false;
   private buildFrom = { x: 0, y: 0 };
   /**
@@ -601,17 +646,23 @@ export class Game {
    */
   private rarityWeights: RarityWeights = BASE_WEIGHTS;
   /**
-   * THE LAST UPGRADE THE DEAL HANDED OVER, and a counter of how many it
-   * has handed over at all.
+   * THE LAST PRESS'S WHOLE DRAW, and a counter of how many presses there
+   * have been at all.
    *
-   * An upgrade is not a card: it lands the moment it is bought and there
-   * is nothing to place (mods.ts). So the ONLY way a player learns what
-   * they just got is a reveal, and the corner needs two things to run one
-   * — what to show, and a number that MOVES so a repeat draw of the same
+   * A module is not a card: it lands the moment it is bought and there is
+   * nothing to place (mods.ts). So the ONLY way a player learns what they
+   * just got is a reveal, and the corner needs two things to run one —
+   * what to show, and a number that MOVES so a repeat draw of the same
    * mod still reads as a second draw. The reveal's timing is the React
    * layer's business; this is the whole of the sim-side state behind it.
+   *
+   * A LIST RATHER THAN ONE ID, because the amount button buys ten at a
+   * time: one press is one reveal, and what it reveals is everything that
+   * press handed over. The counter still moves once per PRESS, so ten
+   * relics is one card of ten chips and not ten cards fighting over the
+   * same corner for five seconds each.
    */
-  private lastMod: ModId | null = null;
+  private lastMods: ModId[] = [];
   private modDraws = 0;
   /**
    * HOW MANY STRUCTURES THIS RUN HAS PLACED, only ever going up. The card
@@ -1006,6 +1057,13 @@ export class Game {
    * The shape is CENTRED on the cursor, over its whole span in tiles
    * (formationSpan: the grid times the turret's own size), and clamped to
    * the board so aiming at the rim slides it inside rather than off.
+   *
+   * A FLEET IS THE SAME ARITHMETIC, and so is a TURNED one. The card's
+   * amount (heldCard.n) is the shape tiled that many times and
+   * buildFacing is the quarter turns R has put on it; both go through the
+   * same span-and-clamp as a single copy — so a x10 citadel stood on its
+   * end is centred, clamped and placed by exactly the code a x1 quad is,
+   * and there is no second path for the big one to be wrong in.
    */
   private heldCells(p: { x: number; y: number }): { gx: number; gy: number }[] {
     const kind = this.buildKind;
@@ -1019,18 +1077,41 @@ export class Game {
         },
       ];
     }
-    const [w, h] = formationSpan(sz, this.buildForm);
+    const n = this.heldCard?.n ?? 1;
+    const [w, h] = formationSpan(sz, this.buildForm, n, this.buildFacing);
     const gx = clamp(Math.round(p.x / CELL - w / 2), 0, Math.max(0, COLS - w));
     const gy = clamp(Math.round(p.y / CELL - h / 2), 0, Math.max(0, ROWS - h));
-    return formationCells(gx, gy, sz, this.buildForm);
+    return formationCells(gx, gy, sz, this.buildForm, n, this.buildFacing);
   }
 
-  /** lay the formation in hand down here; how many of it the ground took */
+  /**
+   * LAY THE FORMATION IN HAND DOWN HERE; how many of it the ground took.
+   *
+   * THE CARD GETS ONE ROLL BEFORE A SINGLE FOOTPRINT IS LAID (mods.ts
+   * rollSolo): if it comes out GIANT, the shape is discarded and the
+   * whole card is spent on ONE building at the middle of where the patch
+   * was going — twice its kind's edge, eleven times the health, and
+   * barely a tenth of the reach. That is the one attribute allowed to eat
+   * a card, and it is rolled per CARD rather than per turret because
+   * three hundred and sixty rolls at any useful chance is a giant every
+   * time (see ModDef.solo).
+   *
+   * A GIANT THAT WILL NOT FIT IS NOT A WASTED CARD. If the ground has no
+   * room for the doubled footprint, the shape goes down as it always
+   * would — the roll was the game's, and the player should not lose a
+   * thousand scrap to it.
+   */
   private placeFormation(p: { x: number; y: number }): number {
     const kind = this.buildKind;
     if (!kind || !this.inWorld(p)) return 0;
+    const cells = this.heldCells(p);
+    const solo = this.sim.rollSoloMod();
+    if (solo) {
+      const one = this.sim.placeSolo(cells, kind, solo);
+      if (one > 0) return one;
+    }
     let n = 0;
-    for (const c of this.heldCells(p)) if (this.sim.placeTower(c.gx, c.gy, kind) === "ok") n++;
+    for (const c of cells) if (this.sim.placeTower(c.gx, c.gy, kind) === "ok") n++;
     return n;
   }
 
@@ -1056,6 +1137,19 @@ export class Game {
    * work. The card it throws away is not refunded — the thousand scrap IS
    * the price of another look at the shape table.
    *
+   * THE AMOUNT IS A THIRD AXIS AND IT IS NOT A THIRD ROLL. At x5 this
+   * still rolls ONE turret and ONE shape and then TILES that shape five
+   * times (formation.ts fleetLayout) — so what the amount multiplies is
+   * the GROUND the card asks for, not the variety it hands over. Five
+   * citadels of spectres is one decision about one piece of map, and the
+   * ghost of it is most of the reward for pressing the button.
+   *
+   * IT IS ALL OR NOTHING ON THE SCRAP. The fee is flat (economy.ts, no
+   * bulk discount) times the amount, and a bank that cannot cover the
+   * whole fleet buys none of it rather than quietly handing over the
+   * seven the money stretched to — a press that silently changes what it
+   * bought is a press the player cannot aim.
+   *
    * The turret pool is what the track has dealt, minus the kinds that are
    * off the field for now (types.ts RETIRED_KINDS); the shape pool is
    * what the track has dealt too (TechState.shapes). A free board draws
@@ -1064,56 +1158,126 @@ export class Game {
    * Returns what it drew, or null when the bank could not cover it or the
    * run is over.
    */
-  buyTurretCard(): { kind: TowerKind; form: FormationId } | null {
+  buyTurretCard(): { kind: TowerKind; form: FormationId; n: number } | null {
     if (this.sim.lost() || this.won() || this.menuOpen) return null;
     const kind = rollTurret(this.drawPool(), this.rarityWeights);
     if (!kind) return null;
     // TWO ROLLS, INDEPENDENT: which gun, and how much of it in what shape
     const form = rollFormation(this.shapePool());
     if (!form) return null;
-    if (!this.sim.spend(this.rollPrice())) return null;
-    this.heldCard = { kind, form };
+    const n = this.buyAmount;
+    if (!this.sim.spend(this.rollPrice() * n)) return null;
+    this.heldCard = { kind, form, n };
     this.buildKind = kind;
     this.buildForm = form;
+    this.buildFacing = 0; // a new card is a new question about the ground
+
     this.sim.clearStructSelection();
-    return { kind, form };
+    return { kind, form, n };
   }
 
   /**
-   * ONE DRAW OFF THE UPGRADE TABLE (G), AND IT IS ALREADY IN FORCE.
+   * ONE DRAW OFF THE MODULE TABLE, AND IT IS ALREADY IN FORCE — the M
+   * button (turret attributes) and the R button (relics), which are this
+   * one method under two scopes (mods.ts).
    *
    * THERE IS NO CARD AND NOTHING TO PLACE. A turret draw hands over a
-   * thing to put somewhere and the decision is WHERE; an upgrade draw is
+   * thing to put somewhere and the decision is WHERE; a module draw is
    * the opposite kind of purchase — it applies to the whole run the
    * instant it is paid for, either as a relic on the shelf or as a chance
-   * riding every turret still to be placed. The two buttons sit beside
-   * each other and mean genuinely different things, which is the point.
+   * riding every turret still to be placed. The buttons sit beside each
+   * other and mean genuinely different things, which is the point.
    *
    * SO THERE IS NO RE-ROLL EITHER. What T buys can be thrown away and
    * drawn again at a thousand a look, because a shape a player cannot use
-   * is a dead card; what G buys is never dead, so spamming it is simply
-   * buying more upgrades, which is allowed and is not a mechanic.
+   * is a dead card; what these buy is never dead, so spamming them is
+   * simply buying more modules, which is allowed and is not a mechanic.
    *
-   * It refuses when the catalog is owned out — every mod at its cap
-   * (mods.ts rollMod) — rather than taking the money for nothing.
+   * THE AMOUNT IS N INDEPENDENT DRAWS here, not a tiling: there is no
+   * ground involved and nothing to tile, so ten relics is ten relics. The
+   * bank must cover all N before the first one is taken — same all-or-
+   * nothing as the turret button — but a table that RUNS OUT part way
+   * through stops there and is charged only for what it handed over,
+   * because the alternative is taking relic money for a relic that does
+   * not exist.
+   *
+   * It refuses outright when that half is owned out already (mods.ts
+   * anyModLeft) rather than taking the money for nothing.
    */
-  buyUpgrade(): ModId | null {
-    if (this.sim.lost() || this.won() || this.menuOpen) return null;
-    const id = rollMod(this.sim.modLedger);
-    if (!id) return null;
-    if (!this.sim.spend(this.upgradePrice())) return null;
-    this.sim.takeMod(id);
+  private buyModules(scope: ModScope): ModId[] {
+    if (this.sim.lost() || this.won() || this.menuOpen) return [];
+    const each = this.modulePrice(scope);
+    const n = this.buyAmount;
+    // the whole fleet or none of it — checked before a single draw is
+    // taken, so a refused press has changed nothing at all
+    if (this.sim.scrap < each * n && this.sim.charging) return [];
+    const got: ModId[] = [];
+    for (let i = 0; i < n; i++) {
+      const id = rollMod(this.sim.modLedger, scope);
+      if (!id) break; // this half is owned out mid-press: stop, charge for the rest
+      if (!this.sim.spend(each)) break;
+      this.sim.takeMod(id);
+      got.push(id);
+    }
+    if (got.length === 0) return [];
     // ASCENDANCY (mods.ts) bends the TURRET deal's odds, so the weights
     // are re-read off the run's relics here rather than being a constant
     this.rarityWeights = shiftedWeights(BASE_WEIGHTS, this.sim.modLedger);
-    this.lastMod = id;
+    this.lastMods = got;
     this.modDraws++;
-    return id;
+    return got;
   }
 
-  /** what one upgrade costs right now — flat, and free on a free board */
-  private upgradePrice(): number {
-    return this.dealing ? UPGRADE_ROLL_PRICE : 0;
+  /** the M button: turret attributes, a chance on every placement to come */
+  buyMods(): ModId[] {
+    return this.buyModules("turret");
+  }
+
+  /** the R button: relics, in force over the whole board the moment they land */
+  buyRelics(): ModId[] {
+    return this.buyModules("global");
+  }
+
+  /** what one module of that half costs right now — flat (economy.ts),
+   *  and free on a free board */
+  private modulePrice(scope: ModScope): number {
+    if (!this.dealing) return 0;
+    return scope === "global" ? RELIC_ROLL_PRICE : MOD_ROLL_PRICE;
+  }
+
+  /**
+   * R TURNS THE CARD IN HAND A QUARTER CLOCKWISE, and it spends nothing.
+   *
+   * THE WHOLE FOOTPRINT TURNS, not the shape inside it (formation.ts
+   * fleetFootprint): the x10 slab is five copies wide and two deep, and
+   * what R is for is standing that wall on its end to plug a north-south
+   * choke with the same card that was about to plug an east-west one.
+   *
+   * IT ONLY MEANS ANYTHING WHILE THE GHOST IS UP. There is nothing to
+   * turn on a bare cursor, and a free board (the sandbox, the editors)
+   * has no formation at all — it picks a single turret off the command
+   * card, and a lone footprint is square. Returns whether it turned, so
+   * the key can decline the press rather than swallow it.
+   *
+   * The shape stays CENTRED on the cursor through the turn, because
+   * heldCells re-centres on the turned span every frame — a slab stood on
+   * its end pivots about the cursor instead of swinging off it.
+   */
+  rotateHeld(): boolean {
+    if (!this.buildKind || !this.buildForm) return false;
+    if (this.sim.lost() || this.won() || this.menuOpen) return false;
+    this.buildFacing = nextFacing(this.buildFacing);
+    return true;
+  }
+
+  /**
+   * THE AMOUNT BUTTON (X): 1 -> 5 -> 10 -> 1, and it spends nothing.
+   * It is a standing setting shared by all three buy buttons — see
+   * Game.buyAmount for why it is not a held modifier.
+   */
+  cycleBuyAmount(): BuyAmount {
+    this.buyAmount = nextAmount(this.buyAmount);
+    return this.buyAmount;
   }
 
   /** throw the owned card away — what a second T does to the first one's
@@ -1594,6 +1758,7 @@ export class Game {
       totalWaves: this.sim.totalWaves,
       buildKind: this.buildKind,
       buildForm: this.buildForm,
+      buildFacing: this.buildFacing,
       held: this.heldCard,
       paused: this.paused,
       speed: this.speed,
@@ -1616,11 +1781,14 @@ export class Game {
       unlocked: this.tech ? Array.from(this.tech.unlocked) : null,
       dealing: this.dealing,
       rollPrice: this.rollPrice(),
-      upgradePrice: this.upgradePrice(),
+      modPrice: this.modulePrice("turret"),
+      relicPrice: this.modulePrice("global"),
+      amount: this.buyAmount,
       relics: this.sim.ownedMods(),
-      lastMod: this.lastMod,
+      lastMods: this.lastMods,
       modDraws: this.modDraws,
-      modsLeft: anyModLeft(this.sim.modLedger),
+      modsLeft: anyModLeft(this.sim.modLedger, "turret"),
+      relicsLeft: anyModLeft(this.sim.modLedger, "global"),
       built: this.built,
       // off the sim's live stats (statsFor), never the static table: the
       // whole point of deriving the line is that an upgrade moves it
@@ -1660,7 +1828,7 @@ export class Game {
     // the run's upgrades went with the sim's reset (Sim.mods), so the odds
     // they were bending go back to the opening table and the reveal empties
     this.rarityWeights = BASE_WEIGHTS;
-    this.lastMod = null;
+    this.lastMods = [];
     this.modDraws = 0;
     this.soakLayer = null; // a new level is a new coastline
     this.mmBase = null; // ...and a new ground under the minimap
@@ -1973,7 +2141,7 @@ export class Game {
     }
     // ...and the player's, over everything: the line is what the map is read for
     for (const t of this.sim.towers)
-      struct(t.gx, t.gy, structStats(t.kind).size, 0xff, 0xff, 0xff);
+      struct(t.gx, t.gy, t.size, 0xff, 0xff, 0xff);
     struct(T.base.x, T.base.y, T.base.size, 0xff, 0xff, 0xff);
     lc.putImageData(img, 0, 0);
 
@@ -2288,7 +2456,7 @@ export class Game {
     // the selection as it leaves the board (removeTower), so nothing here
     // can be drawn over bare ground
     for (const st of this.sim.selectedStructs) {
-      const size = isCore(st) ? st.size : structStats(st.kind).size;
+      const size = st.size;
       if (!isCore(st)) {
         // the LIVE range, not the table's: an upgrade branch that lengthened
         // this turret's reach has to move the ring it is drawn with, or the

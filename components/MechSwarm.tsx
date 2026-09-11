@@ -2557,11 +2557,14 @@ export default function MechSwarm() {
             )}
             {/* THE CORNER IS ONE OF TWO THINGS.
 
-                ON A CHARGED RUN it is THE DEAL (Deal.tsx): two buttons,
-                Buy turret and Buy upgrade, and the cards the first of them
-                throws. A turret is not picked off a shelf any more, it is
-                drawn — see rarity.ts for the odds and economy.ts for what
-                a draw costs.
+                ON A CHARGED RUN it is THE DEAL (Deal.tsx): a square the
+                size of the minimap's, four buttons in it — Buy turret,
+                Amount, Buy mods, Buy relics — and the cards the first of
+                them throws. A turret is not picked off a shelf any more,
+                it is drawn — see rarity.ts for the odds and economy.ts
+                for what a draw costs. The square is the minimap's square
+                on purpose: the two bottom corners of a StarCraft HUD are
+                where you are and what you can do, and they read as a pair.
 
                 ON A FREE BOARD — the sandbox, the editors — it is still
                 StarCraft's command card: a fixed 4x4 grid (tech.ts
@@ -2572,13 +2575,7 @@ export default function MechSwarm() {
                 cannot do. Like the minimap, whichever of the two it is
                 stands until the run ends: the end screens own the frame. */}
             {hud.dealing ? (
-              <DealCorner
-                hud={hud}
-                icons={icons}
-                onBuy={deal.buy}
-                onBuyUpgrade={deal.buyUpgrade}
-                onToggle={deal.toggle}
-              />
+              <DealCorner hud={hud} icons={icons} deal={deal} />
             ) : (
               <div className="ms-pane p-1">
                 <div

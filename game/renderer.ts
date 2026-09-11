@@ -1820,13 +1820,15 @@ export class Renderer {
   private syncBuildShadow(sim: Sim): void {
     // the line as it stands, packed cell-and-size in field order, so a
     // footprint appearing, moving, resizing or being replaced by another
-    // in the same frame all read as a change. Three bits for the size: the
-    // biggest thing on the board is the core's five
+    // in the same frame all read as a change. FOUR bits for the size: it
+    // used to be three, which held the core's five and a foreshadow's
+    // four — and then the GIANT attribute (mods.ts) doubled a footprint
+    // to eight, which is the first size that does not fit in three
     const next = this.shadowNext;
     next.length = 0;
-    for (const t of sim.towers) next.push((t.gy * COLS + t.gx) * 8 + structStats(t.kind).size);
+    for (const t of sim.towers) next.push((t.gy * COLS + t.gx) * 16 + t.size);
     for (const s of sim.shieldTowers)
-      if (s.hp > 0) next.push((s.gy * COLS + s.gx) * 8 + SHIELD_TOWER_SIZE);
+      if (s.hp > 0) next.push((s.gy * COLS + s.gx) * 16 + SHIELD_TOWER_SIZE);
     const cur = this.shadowBuilds;
     if (next.length === cur.length) {
       let same = true;
@@ -1842,8 +1844,8 @@ export class Renderer {
     // `on` stamps the building; off puts the cell back to what the terrain
     // alone casts there, which is how a wrecked turret's ground reopens
     const paint = (id: number, on: boolean): void => {
-      const sz = id & 7;
-      const cell = (id - sz) / 8;
+      const sz = id & 15;
+      const cell = (id - sz) / 16;
       const gx = cell % COLS, gy = (cell - gx) / COLS;
       const x1 = Math.min(COLS - 1, gx + sz - 1), y1 = Math.min(ROWS - 1, gy + sz - 1);
       for (let y = gy; y <= y1; y++)
@@ -2178,8 +2180,10 @@ export class Renderer {
     const buffered = this.ensureShieldTarget(this.canvas.width, this.canvas.height);
     this.drawForceFields(sim, buffered);
     for (const t of sim.towers) {
-      const st = structStats(t.kind);
-      const sz = st.size;
+      // THE FOOTPRINT IT ACTUALLY STANDS ON (Tower.size), not the table's:
+      // a GIANT is twice its kind's edge, so its sprite is drawn over four
+      // times the ground and reads as the building it is
+      const sz = t.size;
       const px = sz * CELL;
       if (t.x < vx0 - px || t.x > vx1 + px || t.y < vy0 - px || t.y > vy1 + px) continue;
       // ONE ROSTER, ONE DRAWING: the swarm's lancer is the lancer's own

@@ -17,11 +17,18 @@ import { faster, piercing, reaching, stronger } from "./upgrades";
  * A MOD IS A MODULE LIKE ANY OTHER. It carries one of the four rarities
  * (rarity.ts) and wears that band's border, exactly as a turret card and
  * a formation do — one palette, now answering "how good is this" a third
- * time. The deal's second button (G, economy.ts UPGRADE_ROLL_PRICE) rolls
- * a band and then a mod uniformly inside it, the same two-step every
- * table in this game uses.
+ * time. A press rolls a band and then a mod uniformly inside it, the same
+ * two-step every table in this game uses.
  *
- * THERE ARE TWO SCOPES AND THEY ARE NOT THE SAME KIND OF THING.
+ * THERE ARE TWO SCOPES, THEY ARE NOT THE SAME KIND OF THING, AND THEY ARE
+ * SOLD BY TWO DIFFERENT BUTTONS. The corner's "Buy mods" (M) draws from
+ * the turret half and "Buy relics" (R) from the global half, at prices of
+ * their own (economy.ts MOD_ROLL_PRICE, RELIC_ROLL_PRICE) — see rollMod's
+ * `scope`. They used to be one button and one coin-flip between the two,
+ * which meant a player who needed a relic paid relic money for even odds
+ * of an attribute; a purchase whose SCOPE is random is a purchase the
+ * player cannot aim, and the two halves below are exactly the two things
+ * a player is ever trying to aim at.
  *
  *   GLOBAL — a RELIC. It lands the instant it is bought and it applies to
  *   EVERYTHING: every turret already standing, every turret still to come,
@@ -37,30 +44,71 @@ import { faster, piercing, reaching, stronger } from "./upgrades";
  *   mod is a bet on the future of the board, and the patch a card puts
  *   down comes out speckled — thirty-six turrets, four of them gleaming.
  *
- * THE WHOLE CATALOG BUFFS THE PLAYER. Nothing in this file weakens the
- * swarm: debuffing the enemy is the mutators' half of the game
- * (mutation.ts) and they pull the other way. An upgrade makes a turret
- * better at being a turret, and that is the only thing it may do.
+ * EVERY ATTRIBUTE IS ROLLED FOR EVERY TURRET, INDEPENDENTLY. There is no
+ * "at most one": a placement rolls once per attribute the run owns
+ * (rollTurretMods), so a turret can come out carrying all of them, and
+ * the odds alone make that rare. That is why the low bands are small
+ * numbers — a run banking ten attributes is stacking ten multipliers on
+ * the same gun, and a common worth a quarter of a turret would compound
+ * into nonsense by wave twenty.
  *
- * AN ULTRA MOD IS THE RUN CHANGING SHAPE. One draw in fifty (MOD_WEIGHTS)
- * and there are only three of them, so when one lands it has to be worth
- * the fifty: a turret that fires twice as fast for twice the damage, a
- * board where nothing dies the first time, a deal that hands out purple.
- * A "+15%" at the top band would be a betrayal of the border it wears.
+ * A TURRET MOD IS A STAT TWEAK AND NOTHING ELSE. Damage, fire rate,
+ * range, pierce, health, repair — `apply` and `regen`, and no behaviour
+ * anywhere. Behaviour is the RELIC half's job: a revive, a refund, a
+ * shift in the deal's odds are all things that happen at a moment, and a
+ * moment is not a number on a turret. Keeping the two apart is what lets
+ * a turret's stats be composed once at the placement and then read flat
+ * by the fire loop (Tower.spec) instead of switched on per shot.
+ *
+ * ONLY THE RARE AND ULTRA ATTRIBUTES HAVE NAMES. A common is not a
+ * character, it is a tick: "+10% damage" IS its name, and a made-up one
+ * over the top of that ("Honed Barrels") is a word the player has to
+ * learn in order to be told a thing the number already said. So the low
+ * bands print their tweak and the top two print a name — and the glyph
+ * says WHICH STAT while the band colour says HOW MUCH, so a grey barrel
+ * and a blue barrel are the same stat at two sizes and need no caption at
+ * all. Relics keep their names, all of them: a relic is never a number.
+ *
+ * ...AND THE LOW BANDS STACK FOREVER (`max`). A named attribute is a
+ * thing a run either has or does not; an unnamed tick is a dial, and a
+ * dial with a stop at three is a dial that stops being a decision. So:
+ * NAMED IS CAPPED, UNNAMED IS INFINITE, checked at import.
+ *
+ * THE WHOLE CATALOG BUFFS THE PLAYER, on balance. Nothing here weakens
+ * the swarm — debuffing the enemy is the mutators' half of the game
+ * (mutation.ts) and they pull the other way — but an ULTRA attribute may
+ * pay for its size by gutting a stat the build does not want, which is
+ * what makes it a build and not a bonus.
+ *
+ * AN ULTRA MOD IS THE TURRET CHANGING SPECIES. One draw in fifty
+ * (MOD_WEIGHTS), so when one lands it has to be worth the fifty: a
+ * SNIPER that reaches four times as far and dies to a stiff breeze, an
+ * ALL ROUND that is simply better at everything, and a GIANT that is
+ * twice the building and eats the whole card to be it. A "+15%" at the
+ * top band would be a betrayal of the border it wears.
  */
 
 export const MOD_IDS = [
   // ---- turret attributes: a chance to be born on a new turret ----------
-  "honed",
-  "overclocked",
-  "braced",
-  "optics",
-  "nanoweave",
-  "sabot",
-  "autoloader",
+  // the unnamed ticks first, band by band — their id is the stat and the
+  // step, because their LABEL is the tweak (see the header)
+  "dmg1",
+  "rate1",
+  "hp1",
+  "range1",
+  "dmg2",
+  "rate2",
+  "hp2",
+  "range2",
+  "pierce1",
+  "regen1",
+  // ...then the named ones
   "prototype",
   "bulwark",
-  "singularity",
+  "sabot",
+  "giant",
+  "sniper",
+  "allround",
   // ---- globals: relics, in force the moment they are bought ------------
   "calibration",
   "coolant",
@@ -84,9 +132,14 @@ export type ModScope = "global" | "turret";
 /**
  * The face a mod wears on its chip. There are no sprites for these — a
  * mod is not a building — so the shelf draws each one as a small piece of
- * geometry (components/Relics.tsx), and the glyph is what it draws. Two
- * mods may share a glyph only if they can never be owned at once; today
- * none do.
+ * geometry (components/Relics.tsx), and the glyph is what it draws.
+ *
+ * THE GLYPH IS THE STAT AND THE COLOUR IS THE SIZE. A barrel is damage
+ * whatever band it wears, so the four unnamed damage ticks and the rare
+ * that is mostly damage all wear one, and what tells them apart is the
+ * border — which is the same thing that tells a grey turret card from a
+ * purple one. Two mods may therefore share a glyph, but never inside ONE
+ * BAND, where the colour could not separate them (checked at import).
  */
 export type ModGlyph =
   | "barrel"
@@ -95,10 +148,11 @@ export type ModGlyph =
   | "lens"
   | "weave"
   | "spike"
-  | "belt"
   | "chassis"
   | "shield"
-  | "singularity"
+  | "giant"
+  | "scope"
+  | "allround"
   | "crosshair"
   | "coolant"
   | "coin"
@@ -112,7 +166,22 @@ export type ModGlyph =
 
 export interface ModDef {
   id: ModId;
-  name: string;
+  /**
+   * THE NAME — and only the RARE and ULTRA attributes have one, plus
+   * every relic (see the header). A common is a tick, not a character:
+   * its label is its tweak, and `modName` is the one place that decides.
+   */
+  name?: string;
+  /**
+   * WHAT IT DOES TO THE STATS, in the fewest words that can be true:
+   * "+10% damage", "+50% damage, +50% fire rate". Every turret attribute
+   * carries one — it is the LABEL of an unnamed one and the summary line
+   * of a named one — and a relic carries one only where it is a plain
+   * stat change. It is written by hand rather than derived from `apply`,
+   * because a function that returns a TowerStats cannot be asked what it
+   * changed without running it on something.
+   */
+  tweak?: string;
   rarity: Rarity;
   scope: ModScope;
   glyph: ModGlyph;
@@ -157,6 +226,37 @@ export interface ModDef {
    */
   apply?: (s: TowerStats, stacks: number) => TowerStats;
   /**
+   * HEALTH RETURNED A SECOND, as a fraction of the turret's OWN ceiling —
+   * so the same 3% mends a braced spectre faster in absolute hp than a
+   * bare duo, which is what "a percentage of its own pool" has to mean.
+   * The sim resolves it to hp/second once at the placement
+   * (Sim.resolveTower) and the fire loop adds `regen * dt`; nothing
+   * re-reads a percentage per tick.
+   */
+  regen?: number;
+  /**
+   * THE FOOTPRINT MULTIPLIER — the GIANT and nothing else. A turret with
+   * this stands on `scale` times its kind's edge in tiles, so a 4x4
+   * foreshadow becomes an 8x8 building. It is on the def rather than a
+   * check on the id so the sim asks the catalog "how big is a turret with
+   * this mask" (sizeWithMods) instead of asking "is it the giant".
+   */
+  scale?: number;
+  /**
+   * THIS ATTRIBUTE EATS THE CARD. A formation that rolls one places ONE
+   * turret carrying it, at the middle of where the shape would have gone,
+   * instead of the shape — see Game.placeFormation. Only the giant has
+   * it, and only the giant should: a card is a patch, and the one thing
+   * worth breaking that promise for is a building too big to be a patch.
+   *
+   * IT IS ROLLED ONCE PER CARD, NOT ONCE PER TURRET, which is the one
+   * place rollTurretMods's rule is bent and it has to be: a x10 citadel
+   * is three hundred and sixty rolls, and at any chance worth having,
+   * three hundred and sixty rolls is a giant every single time. See
+   * rollSolo.
+   */
+  solo?: boolean;
+  /**
    * A global that improves ONE TURRET KIND rather than the board — the
    * unique-turret relics (splitter: a fuse fires two extra spikes). Unset
    * is every kind. It is on the def rather than inside `apply` so that
@@ -175,9 +275,12 @@ export interface ModDef {
 // keep (mutation.ts).
 // ---------------------------------------------------------------------------
 
-/** nanoweave / bulwark: the fraction of its own pool a turret returns a second */
-export const NANOWEAVE_REGEN = 0.02;
-export const BULWARK_REGEN = 0.03;
+/**
+ * THE GIANT'S EDGE, as a multiple of the turret's own: twice, so a duo's
+ * 2x2 is a 4x4 and a foreshadow's 4x4 is an 8x8 — the biggest thing that
+ * will ever stand on this board, core included.
+ */
+export const GIANT_SCALE = 2;
 
 /** insurance: the odds a wrecked turret pays out, and what it pays */
 export const INSURANCE_CHANCE = 0.4;
@@ -220,121 +323,149 @@ export const ASCENDANCY_MUL: Readonly<Record<Rarity, number>> = {
 /** a turret with a fatter pool — `health` is pre-scale (constants.ts towerMaxHp) */
 const tougher = (s: TowerStats, mul: number): TowerStats => ({ ...s, health: s.health * mul });
 
+/** ...and one that stands on more ground: the giant, and nothing else */
+const bigger = (s: TowerStats, mul: number): TowerStats => ({ ...s, size: s.size * mul });
+
+/**
+ * THE UNNAMED TICKS — four stats, two bands, and the id says which is
+ * which. `dmg1` is the common damage tick and `dmg2` the uncommon one;
+ * there is no third, because a third band of the same dial is what the
+ * NAMED rares are for.
+ *
+ * THE STEPS ARE SMALL AND THAT IS THE POINT. Every turret rolls for every
+ * attribute the run owns, so a late run is stacking eight or ten of these
+ * multiplicatively on one gun; a common worth a quarter of a turret
+ * compounds into nonsense, and a common worth a tenth compounds into a
+ * gun that is noticeably better than the one beside it. Ten per cent is
+ * the number you feel across a patch of thirty-six and never across one.
+ */
+const tick = (
+  id: ModId,
+  rarity: Rarity,
+  glyph: ModGlyph,
+  tweak: string,
+  chance: number,
+  apply: (s: TowerStats) => TowerStats,
+  regen?: number,
+): ModDef => ({
+  id,
+  tweak,
+  rarity,
+  scope: "turret",
+  glyph,
+  // NO CAP. An unnamed tick is a dial, and a dial with a stop at three is
+  // a dial that stops being a decision — see the header
+  max: Infinity,
+  chance,
+  blurb: `New turrets have a chance to be born with ${tweak}.`,
+  apply: (t) => apply(t),
+  regen,
+});
+
 const TURRET_MODS: readonly ModDef[] = [
-  {
-    id: "honed",
-    name: "Honed Barrels",
-    rarity: "common",
-    scope: "turret",
-    glyph: "barrel",
-    max: 3,
-    chance: 0.3,
-    blurb: "New turrets have a chance to deal 25% more damage.",
-    apply: (s) => stronger(s, 1.25),
-  },
-  {
-    id: "overclocked",
-    name: "Overclocked Breech",
-    rarity: "common",
-    scope: "turret",
-    glyph: "gear",
-    max: 3,
-    chance: 0.3,
-    blurb: "New turrets have a chance to fire 25% faster.",
-    apply: (s) => faster(s, 1.25),
-  },
-  {
-    id: "braced",
-    name: "Braced Frame",
-    rarity: "common",
-    scope: "turret",
-    glyph: "plate",
-    max: 3,
-    chance: 0.3,
-    blurb: "New turrets have a chance to carry 50% more health.",
-    apply: (s) => tougher(s, 1.5),
-  },
-  {
-    id: "optics",
-    name: "Long Optics",
-    rarity: "common",
-    scope: "turret",
-    glyph: "lens",
-    max: 3,
-    chance: 0.25,
-    blurb: "New turrets have a chance to reach 20% further.",
-    apply: (s) => reaching(s, 1.2),
-  },
-  {
-    id: "nanoweave",
-    name: "Nanoweave",
-    rarity: "uncommon",
-    scope: "turret",
-    glyph: "weave",
-    max: 3,
-    chance: 0.2,
-    // the one attribute that changes what a turret IS rather than what it
-    // does: a structure that heals itself survives the tide it lost to
-    blurb: "New turrets have a chance to repair 2% of their health a second.",
-  },
-  {
-    id: "sabot",
-    name: "Sabot Rounds",
-    rarity: "uncommon",
-    scope: "turret",
-    glyph: "spike",
-    max: 3,
-    chance: 0.18,
-    blurb: "New turrets have a chance to punch through one extra body.",
-    apply: (s) => piercing(s, 1),
-  },
-  {
-    id: "autoloader",
-    name: "Autoloader",
-    rarity: "uncommon",
-    scope: "turret",
-    glyph: "belt",
-    max: 3,
-    chance: 0.18,
-    blurb: "New turrets have a chance to fire 50% faster and reach 15% further.",
-    apply: (s) => reaching(faster(s, 1.5), 1.15),
-  },
+  // ---- COMMON: a tenth of a turret, at three rolls in ten -------------
+  tick("dmg1", "common", "barrel", "+10% damage", 0.3, (t) => stronger(t, 1.1)),
+  tick("rate1", "common", "gear", "+10% fire rate", 0.3, (t) => faster(t, 1.1)),
+  tick("hp1", "common", "plate", "+20% health", 0.3, (t) => tougher(t, 1.2)),
+  tick("range1", "common", "lens", "+10% range", 0.3, (t) => reaching(t, 1.1)),
+  // ---- UNCOMMON: a quarter, at under one roll in five -----------------
+  tick("dmg2", "uncommon", "barrel", "+25% damage", 0.18, (t) => stronger(t, 1.25)),
+  tick("rate2", "uncommon", "gear", "+25% fire rate", 0.18, (t) => faster(t, 1.25)),
+  tick("hp2", "uncommon", "plate", "+50% health", 0.18, (t) => tougher(t, 1.5)),
+  tick("range2", "uncommon", "lens", "+25% range", 0.18, (t) => reaching(t, 1.25)),
+  // PIERCE IS A WHOLE BODY AND NEVER A PERCENTAGE. There is no "+10% of a
+  // body to punch through", so the dial has one step and it lives here,
+  // at the band where one extra body is worth about what a quarter is
+  tick("pierce1", "uncommon", "spike", "+1 pierce", 0.18, (t) => piercing(t, 1)),
+  // ...and REPAIR is the one stat a plain turret has none of, so the tick
+  // is the whole thing rather than a percentage of nothing
+  tick("regen1", "uncommon", "weave", "repairs 1% a second", 0.18, (t) => t, 0.01),
+
+  // ---- RARE: NAMED, and a pair of stats rather than a dial ------------
+  // Half a turret is the rare step. What makes these rare rather than a
+  // third tick is that each one is a SHAPE — a gun, a wall, a spear — so
+  // rolling one says something about the turret it landed on.
   {
     id: "prototype",
     name: "Prototype Chassis",
+    tweak: "+50% damage, +50% fire rate",
     rarity: "rare",
     scope: "turret",
     glyph: "chassis",
     max: 2,
-    chance: 0.12,
-    blurb: "New turrets have a chance to gain 40% damage, 30% fire rate and 25% range.",
-    apply: (s) => reaching(faster(stronger(s, 1.4), 1.3), 1.25),
+    chance: 0.1,
+    blurb: "New turrets have a chance to be born on a prototype frame: half again the damage and half again the rate of fire.",
+    apply: (t) => faster(stronger(t, 1.5), 1.5),
   },
   {
     id: "bulwark",
     name: "Bulwark Plating",
+    tweak: "+100% health, repairs 3% a second",
     rarity: "rare",
     scope: "turret",
     glyph: "shield",
     max: 2,
-    chance: 0.12,
-    blurb:
-      "New turrets have a chance to carry 150% more health and repair 3% of it a second.",
-    apply: (s) => tougher(s, 2.5),
+    chance: 0.1,
+    blurb: "New turrets have a chance to be born armoured: double health, and they mend 3% of it a second.",
+    apply: (t) => tougher(t, 2),
+    regen: 0.03,
   },
   {
-    id: "singularity",
-    name: "Singularity Core",
+    id: "sabot",
+    name: "Sabot Rounds",
+    tweak: "+2 pierce, +50% damage",
+    rarity: "rare",
+    scope: "turret",
+    glyph: "spike",
+    max: 2,
+    chance: 0.1,
+    blurb: "New turrets have a chance to fire sabot: half again the damage, and the round punches through two more bodies.",
+    apply: (t) => piercing(stronger(t, 1.5), 2),
+  },
+
+  // ---- ULTRA: NAMED, and the turret changes species --------------------
+  {
+    id: "giant",
+    name: "Giant",
+    tweak: "+1000% health, +200% damage, −90% range, twice the footprint",
     rarity: "ultra",
     scope: "turret",
-    glyph: "singularity",
+    glyph: "giant",
     max: 1,
-    // 5% of thirty-six placements is about two per citadel, and two
-    // doubled turrets in a patch is a patch that reads differently
+    // ROLLED ONCE PER CARD (`solo`), not once per turret — so this is the
+    // odds that a PLACEMENT comes out giant, whatever the card was
+    chance: 0.12,
+    blurb:
+      "A card has a chance to come out GIANT instead: one building, twice the size, eleven times the health and triple the damage — but it sees barely a tenth as far, so it has to be put where the swarm is already coming.",
+    apply: (t) => bigger(tougher(reaching(stronger(t, 3), 0.1), 11), GIANT_SCALE),
+    scale: GIANT_SCALE,
+    solo: true,
+  },
+  {
+    id: "sniper",
+    name: "Sniper",
+    tweak: "+300% range, +200% fire rate, +100% damage, −90% health",
+    rarity: "ultra",
+    scope: "turret",
+    glyph: "scope",
+    max: 1,
     chance: 0.05,
     blurb:
-      "New turrets have a chance to be born SINGULAR: double damage, double fire rate, 40% more range, and their shots punch through one extra body.",
-    apply: (s) => piercing(reaching(faster(stronger(s, 2), 2), 1.4), 1),
+      "New turrets have a chance to be born SNIPER: four times the reach, triple the rate of fire and double the damage — on a tenth of the health. It kills everything it can see and dies to anything that reaches it.",
+    apply: (t) => tougher(faster(reaching(stronger(t, 2), 4), 3), 0.1),
+  },
+  {
+    id: "allround",
+    name: "All Round",
+    tweak: "+100% damage, +100% fire rate, +100% health, +50% range, +3 pierce",
+    rarity: "ultra",
+    scope: "turret",
+    glyph: "allround",
+    max: 1,
+    chance: 0.05,
+    blurb:
+      "New turrets have a chance to be born ALL ROUND: double damage, double rate of fire, double health, half again the reach, and the round punches through three more bodies. No cost at all — it is simply a better turret.",
+    apply: (t) => piercing(tougher(reaching(faster(stronger(t, 2), 2), 1.5), 2), 3),
   },
 ];
 
@@ -463,6 +594,19 @@ export const MODS: readonly ModDef[] = [...TURRET_MODS, ...GLOBAL_MODS];
 
 const BY_ID = new Map<ModId, ModDef>(MODS.map((m) => [m.id, m]));
 
+/**
+ * WHAT TO CALL ONE, and the single answer every screen reads: the name if
+ * it has one, and its tweak if it does not (see the header — only the
+ * rare and ultra attributes are named, and every relic is).
+ */
+export const modName = (d: ModDef): string => d.name ?? d.tweak ?? d.id;
+
+/** ...by id, for the callers that only have one */
+export const modNameOf = (id: ModId): string => modName(modDef(id));
+
+/** is this one a character or a tick? — what a board prints differently */
+export const isNamed = (d: ModDef): boolean => d.name !== undefined;
+
 export const modDef = (id: ModId): ModDef => {
   const d = BY_ID.get(id);
   if (!d) throw new Error(`no such mod: ${id}`);
@@ -550,6 +694,11 @@ export function rollTurretMods(
 ): number {
   let mask = 0;
   for (const id of TURRET_MOD_IDS) {
+    // a SOLO attribute is not rolled here — it is the card's roll, once,
+    // before a single footprint is chosen (rollSolo). Rolling it per
+    // turret as well would hand one out on top of the shape it is
+    // supposed to have replaced
+    if (modDef(id).solo) continue;
     const n = owned[id] ?? 0;
     if (n > 0 && rng() < chanceAt(id, n)) mask |= modBit(id);
   }
@@ -587,12 +736,64 @@ export function applyGlobalMods(
   return out;
 }
 
-/** the fraction of its own pool one turret's attributes repair a second */
+/**
+ * THE FRACTION OF ITS OWN POOL one turret's attributes repair a second,
+ * summed over everything in the mask (ModDef.regen).
+ *
+ * IT IS A PERCENTAGE OF THE TURRET'S OWN CEILING, not a flat number of
+ * hit points: Sim.resolveTower multiplies this by hpMax once, at the
+ * placement, so a turret that also rolled +50% health mends half again
+ * as fast in absolute terms. Data rather than a list of ids, so adding a
+ * repairing attribute is one field on its def.
+ */
 export function modRegen(mask: number): number {
   let r = 0;
-  if (hasMod(mask, "nanoweave")) r += NANOWEAVE_REGEN;
-  if (hasMod(mask, "bulwark")) r += BULWARK_REGEN;
+  for (const id of TURRET_MOD_IDS)
+    if ((mask & modBit(id)) !== 0) r += modDef(id).regen ?? 0;
   return r;
+}
+
+/**
+ * HOW BIG A TURRET WITH THIS MASK STANDS, in tiles — the kind's own edge
+ * times whatever the mask scales it by (ModDef.scale, the giant and
+ * nothing else).
+ *
+ * THE SIM ASKS THIS BEFORE THE TURRET EXISTS. A giant's footprint has to
+ * be known to test the ground and to claim it (Sim.placeTower), which is
+ * the one thing that cannot be read off the finished Tower.spec — so the
+ * scale lives on the def and the placement path asks the catalog.
+ */
+export function sizeWithMods(base: number, mask: number): number {
+  let sz = base;
+  for (const id of TURRET_MOD_IDS)
+    if ((mask & modBit(id)) !== 0) sz *= modDef(id).scale ?? 1;
+  return sz;
+}
+
+/**
+ * THE ONCE-PER-CARD ROLL: which SOLO attribute, if any, this placement
+ * comes out as (ModDef.solo — the giant). Null is the ordinary case, and
+ * the card lays its shape down as usual.
+ *
+ * ONE ROLL A CARD, NOT ONE A TURRET, and it has to be. Every other
+ * attribute is rolled per placement (rollTurretMods) because a patch
+ * coming out speckled is the whole charm of them; a solo attribute EATS
+ * the patch, so rolling it per turret would mean a x10 citadel — three
+ * hundred and sixty rolls — comes out giant at any chance above about a
+ * hundredth of a per cent. The card is the unit of the decision, so the
+ * card is the unit of the roll.
+ */
+export function rollSolo(
+  owned: Readonly<Partial<Record<ModId, number>>>,
+  rng: () => number = Math.random,
+): ModId | null {
+  for (const id of TURRET_MOD_IDS) {
+    const d = modDef(id);
+    if (!d.solo) continue;
+    const n = owned[id] ?? 0;
+    if (n > 0 && rng() < chanceAt(id, n)) return id;
+  }
+  return null;
 }
 
 /**
@@ -614,24 +815,37 @@ export const MOD_WEIGHTS: RarityWeights = {
 };
 
 /**
- * ONE DRAW OFF THE UPGRADE TABLE: a band against the weights, then a mod
+ * ONE DRAW OFF THE MODULE TABLE: a band against the weights, then a mod
  * uniformly inside it — the deal's own two-step (rarity.ts rollTurret),
  * for the same reason: adding a fourth ultra mod must make WHICH ultra
  * less predictable and never make ultras more likely.
  *
+ * `scope` IS WHICH BUTTON WAS PRESSED. The corner sells the two halves of
+ * this catalog separately — "Buy mods" draws only turret attributes,
+ * "Buy relics" only globals — because they are different purchases and a
+ * player who needs one should not be made to pay for a coin-flip between
+ * them. Null draws from the whole table, which is what a test or a free
+ * board wants.
+ *
+ * EACH HALF RENORMALISES OVER ITSELF. The bands are weighed across the
+ * mods that are actually in the pool, so the relic table's own ultras
+ * come up at the ultra rate rather than at half of it.
+ *
  * A MOD AT ITS CAP IS NOT IN THE POOL. `owned` is the run's stacks, and a
  * mod with max copies is skipped and its band's weight redistributed — a
  * late run draws from what is left rather than paying to be told it
- * already has the thing. Null when the whole catalog is owned out, which
- * is the one case the button must refuse.
+ * already has the thing. Null when that half is owned out, which is the
+ * one case the button must refuse.
  */
 export function rollMod(
   owned: Readonly<Partial<Record<ModId, number>>> = {},
+  scope: ModScope | null = null,
   weights: RarityWeights = MOD_WEIGHTS,
   rng: () => number = Math.random,
 ): ModId | null {
   const byRarity = new Map<Rarity, ModId[]>();
   for (const m of MODS) {
+    if (scope && m.scope !== scope) continue;
     if ((owned[m.id] ?? 0) >= m.max) continue;
     const list = byRarity.get(m.rarity);
     if (list) list.push(m.id);
@@ -653,10 +867,29 @@ export function rollMod(
   return pick(live[live.length - 1]);
 }
 
-/** is there anything left in the catalog to draw? — what greys the button
- *  out on a run that has bought the whole table */
-export const anyModLeft = (owned: Readonly<Partial<Record<ModId, number>>>): boolean =>
-  MODS.some((m) => (owned[m.id] ?? 0) < m.max);
+/**
+ * WHAT ONE COPY OF THIS BUYS, in the player's terms — the line every
+ * board and every chip prints under the blurb.
+ *
+ * THE UNIT IS NOT ALWAYS A TURRET. An ordinary attribute is rolled once
+ * per turret placed, so its odds are per turret; a SOLO one (the giant)
+ * is rolled once per CARD, so saying "on every turret placed" would
+ * overstate it by a factor of the whole formation — which on a x10
+ * citadel is three hundred and sixty.
+ */
+export function oddsLine(d: ModDef, stacks = 1): string {
+  if (d.scope === "global") return "In force over the whole board the moment it is bought";
+  const pct = Math.round(chanceAt(d.id, stacks) * 100);
+  return d.solo ? `${pct}% on every card placed` : `${pct}% on every turret placed`;
+}
+
+/** is there anything left in this half of the catalog to draw? — what
+ *  greys one of the two buttons out on a run that has bought it out */
+export const anyModLeft = (
+  owned: Readonly<Partial<Record<ModId, number>>>,
+  scope: ModScope | null = null,
+): boolean =>
+  MODS.some((m) => (!scope || m.scope === scope) && (owned[m.id] ?? 0) < m.max);
 
 /** the turret deal's odds as the run's relics leave them (ascendancy) */
 export function shiftedWeights(
@@ -683,10 +916,37 @@ export const dropScale = (owned: Readonly<Partial<Record<ModId, number>>>): numb
     throw new Error(
       `${TURRET_MOD_IDS.length} turret attributes will not fit in Tower.mods — widen the mask`,
     );
-  for (const m of TURRET_MODS)
+  for (const m of TURRET_MODS) {
     if (!m.chance) throw new Error(`the turret mod "${m.id}" has no chance to be rolled`);
-  for (const m of GLOBAL_MODS)
+    if (!m.tweak) throw new Error(`the turret mod "${m.id}" does not say what it tweaks`);
+    // A TURRET MOD IS A STAT TWEAK AND NOTHING ELSE (see the header): if
+    // it neither composes stats nor repairs, it is behaviour wearing an
+    // attribute's clothes and belongs in the relic half
+    if (!m.apply && !m.regen)
+      throw new Error(`the turret mod "${m.id}" changes no stat — behaviour belongs to the relics`);
+    // NAMED IS CAPPED, UNNAMED IS INFINITE, and the bands decide which
+    const named = m.rarity === "rare" || m.rarity === "ultra";
+    if (named !== (m.name !== undefined))
+      throw new Error(
+        `the ${m.rarity} turret mod "${m.id}" ${m.name ? "has" : "has no"} name; only rare and ultra are named`,
+      );
+    if (named === (m.max === Infinity))
+      throw new Error(`the turret mod "${m.id}" is ${named ? "named" : "unnamed"} and capped at ${m.max}`);
+  }
+  for (const m of GLOBAL_MODS) {
     if (m.chance) throw new Error(`the global mod "${m.id}" carries a placement chance`);
-  if (new Set(MODS.map((m) => m.glyph)).size !== MODS.length)
-    throw new Error("two mods wear the same glyph — the shelf cannot tell them apart");
+    // EVERY RELIC IS NAMED. A relic is never a number, so there is
+    // nothing for an unnamed one to be called
+    if (!m.name) throw new Error(`the relic "${m.id}" has no name`);
+    if (m.solo || m.scale) throw new Error(`the relic "${m.id}" is trying to be a turret`);
+  }
+  // ONE GLYPH MAY BE WORN TWICE, but never inside one band, where the
+  // border colour could not tell the two apart (see ModGlyph)
+  const worn = new Set<string>();
+  for (const m of MODS) {
+    const key = `${m.glyph}/${m.rarity}`;
+    if (worn.has(key))
+      throw new Error(`two ${m.rarity} mods wear the ${m.glyph} glyph — nothing can tell them apart`);
+    worn.add(key);
+  }
 })();

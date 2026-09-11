@@ -35,78 +35,86 @@ import {
  *
  * THE TRACK HAS TWO PHASES, AND THEY PULL OPPOSITE WAYS.
  *
- *   THE ROSTER PHASE, levels 1 to ROSTER_TOP. Every level opens a new
- *   turret, and at the top of it the save owns the whole roster — which
- *   is also the whole DRAW POOL, since the deal (rarity.ts) rolls over
- *   exactly what the track has handed out. A fresh save opens with
- *   STARTING_ROSTER, the four that make a first board; the other thirteen
- *   come one a level by UNLOCKS below. There is no gate inside a run.
+ *   THE ROSTER PHASE, levels 1 to ROSTER_TOP. What opens here is a
+ *   turret — and therefore a card in the DRAW POOL, since the deal
+ *   (rarity.ts) rolls over exactly what the track has handed out. A fresh
+ *   save opens with STARTING_ROSTER, the four that make a first board; the
+ *   other thirteen come by UNLOCKS below. There is no gate inside a run.
  *
- *   THE MUTATOR PHASE, ROSTER_TOP + 1 to MAX_LEVEL. There is nothing left
- *   to build, so what a level hands out is a RULE: one mutator a level,
- *   lightest first, added to the deck the deploy roll draws from
+ *   THE MUTATOR PHASE, MUTATORS_FROM to MAX_LEVEL. What a level hands out
+ *   here is a RULE, added to the deck the deploy roll draws from
  *   (MUTATOR_UNLOCKS). The reward for climbing is that the game is allowed
  *   to be harder — which is the reward a tower defence player is actually
  *   climbing for.
+ *
+ *   THE TWO PHASES OVERLAP ON PURPOSE. They used to be back to back, the
+ *   roster finished at 14 and the rules starting at 15, so the whole track
+ *   was 21 levels and every one of them carried something. It is spread
+ *   out now: the three purples are levels 12, 16 and 20, the maps run to
+ *   22, and the rules land on the levels between them. Every level still
+ *   carries something — the shapes are placed last, into whatever the guns
+ *   and the maps left empty.
  *
  * THE UPGRADE RUNGS ARE OFF THE TRACK (UPGRADES_ON_TRACK): the branches in
  * upgrades.ts are intact and waiting to be put back somewhere.
  */
 
 /** the level at which the last turret opens and the roster is complete */
-export const ROSTER_TOP = 14;
-
-/**
- * THE RULES, LIGHTEST FIRST, one level a row from ROSTER_TOP + 1.
- *
- * THE FIRST ROW IS A POOL AND NOT A RULE. A deploy above Nemesis rolls
- * several mutators to fit a points budget (mutation.ts), and a deck with
- * ONE card in it does not roll — it deals the same rule every run, which
- * is the opposite of what the mutator phase is for. The level that opens
- * the phase therefore opens the whole LIGHT band at once, three rules the
- * first mutator-bearing difficulty can actually afford, and a run above
- * Nemesis is a different run from its first outing.
- *
- * After that it is one a level, cheapest first, up to the one Brutal rule
- * in the catalog.
- */
-const MUTATOR_UNLOCKS: readonly (readonly MutationId[])[] = [
-  /* 15 */ ["armored", "mitosis", "volatile"],
-  /* 16 */ ["shieldTowers"],
-  /* 17 */ ["overshields"],
-  /* 18 */ ["speedy"],
-  /* 19 */ ["hungry"],
-  /* 20 */ ["hydrophobic"],
-  /* 21 */ ["amphibious"],
-];
-
-export const MAX_LEVEL = ROSTER_TOP + MUTATOR_UNLOCKS.length;
+export const ROSTER_TOP = 20;
 
 /**
  * THE LEVEL THE MUTATOR PHASE OPENS, and the one gate on the ladder: the
  * difficulties that roll rules (Nemesis +1 and up) are shut until a save
- * has rules to roll. Nothing prints this number at a player — a locked
- * difficulty is simply locked, and the level it opens at is the progress
- * screen's business.
+ * has rules to roll. THIS NUMBER IS LOAD-BEARING — MechSwarm.tsx prints it
+ * at a player looking at a locked difficulty — and it is the one thing on
+ * the track that is not free to move.
  */
-export const MUTATORS_FROM = ROSTER_TOP + 1;
+export const MUTATORS_FROM = 15;
 
-/** THE CATALOG IS DEALT WHOLE, ONCE EACH — checked at import */
+/**
+ * THE RULES, LIGHTEST FIRST, by the level that opens them.
+ *
+ * THE FIRST ROW IS A POOL AND NOT A RULE. A deploy above Nemesis rolls
+ * several mutators to fit a points budget (mutation.ts), and a deck with
+ * ONE card in it does not roll — it deals the same rule every run, which
+ * is the opposite of what the mutator phase is for. MUTATORS_FROM
+ * therefore opens the whole LIGHT band at once, three rules the first
+ * mutator-bearing difficulty can actually afford, and a run above Nemesis
+ * is a different run from its first outing.
+ *
+ * After that it is cheapest first, every other level, threaded between the
+ * two purples and the last maps rather than crowded onto consecutive ones.
+ */
+const MUTATOR_UNLOCKS: Readonly<Record<number, readonly MutationId[]>> = {
+  15: ["armored", "mitosis", "volatile"],
+  17: ["shieldTowers"],
+  19: ["overshields"],
+  21: ["speedy"],
+  23: ["hungry"],
+  25: ["hydrophobic"],
+  27: ["amphibious"],
+};
+
+/** the last level that hands anything out — the bottom of the progress screen */
+export const MAX_LEVEL = 27;
+
+/** THE CATALOG IS DEALT WHOLE, ONCE EACH, INSIDE THE PHASE — checked at import */
 (() => {
   const seen = new Set<MutationId>();
-  for (const row of MUTATOR_UNLOCKS)
+  for (const [level, row] of Object.entries(MUTATOR_UNLOCKS)) {
+    if (+level < MUTATORS_FROM || +level > MAX_LEVEL)
+      throw new Error(`the track opens a rule on level ${level}, outside the mutator phase`);
+    if (row.length === 0) throw new Error(`level ${level} opens no rule`);
     for (const id of row) {
       if (!mutationById(id)) throw new Error(`the track opens "${id}", which is not a mutator`);
       if (seen.has(id)) throw new Error(`the track opens the mutator "${id}" twice`);
       seen.add(id);
     }
+  }
   for (const m of MUTATIONS)
     if (!seen.has(m.id)) throw new Error(`the track never opens the mutator "${m.id}"`);
-  if (MUTATOR_UNLOCKS[0].length < 2)
+  if ((MUTATOR_UNLOCKS[MUTATORS_FROM]?.length ?? 0) < 2)
     throw new Error("the mutator phase opens with one rule — a deck of one does not roll");
-  MUTATOR_UNLOCKS.forEach((row, i) => {
-    if (row.length === 0) throw new Error(`level ${MUTATORS_FROM + i} opens no rule`);
-  });
 })();
 
 export type Reward =
@@ -117,16 +125,23 @@ export type Reward =
   | { kind: "mutator"; id: MutationId }
   | { kind: "upgrade"; id: UpgradeKind };
 
-/** the rewards placed by hand — the structure of the campaign */
+/**
+ * THE MAPS, and the spine of the campaign: one every other level through
+ * the opening, then stretched out as the levels get dearer, so a save that
+ * has seen everything the roster can do still has somewhere new to take
+ * it. They used to be levels 2 through 9 back to back, which spent the
+ * whole campaign in the first hour and left the rest of the track handing
+ * out nothing a player could stand on.
+ */
 const PLACED: readonly { level: number; reward: Reward }[] = [
   { level: 2, reward: { kind: "world", worldId: "4" } },
-  { level: 3, reward: { kind: "world", worldId: "2" } },
-  { level: 4, reward: { kind: "world", worldId: "5" } },
-  { level: 5, reward: { kind: "world", worldId: "6" } },
-  { level: 6, reward: { kind: "world", worldId: "7" } },
-  { level: 7, reward: { kind: "world", worldId: "3" } },
-  { level: 8, reward: { kind: "world", worldId: "8" } },
-  { level: 9, reward: { kind: "world", worldId: "9" } },
+  { level: 4, reward: { kind: "world", worldId: "2" } },
+  { level: 6, reward: { kind: "world", worldId: "5" } },
+  { level: 8, reward: { kind: "world", worldId: "6" } },
+  { level: 11, reward: { kind: "world", worldId: "7" } },
+  { level: 14, reward: { kind: "world", worldId: "3" } },
+  { level: 18, reward: { kind: "world", worldId: "8" } },
+  { level: 22, reward: { kind: "world", worldId: "9" } },
 ];
 
 /**
@@ -152,32 +167,37 @@ export const STARTING_ROSTER: readonly TowerKind[] = [
  * the shape of the opening — which gun answers which wave — is a design
  * decision and not an arithmetic on build cost. Index 0 is level 2.
  */
-const UNLOCKS: readonly (readonly TowerKind[])[] = [
-  // THE COMMONS FIRST, because every one of them widens the floor of the
+const UNLOCKS: Readonly<Record<number, readonly TowerKind[]>> = {
+  // THE COMMONS LEAD, because every one of them widens the floor of the
   // draw rather than its ceiling: the opening levels are where a save
   // learns what the deal FEELS like, and it should feel like a board being
   // filled in. The two menders that used to lead this list are retired
   // (types.ts RETIRED_KINDS) and no level hands one out
-  /*  2 */ ["scorch"],
-  /*  3 */ ["arc"],
-  /*  4 */ ["wave"],
-  // the blues, one a level: each is an answer the commons cannot give
-  /*  5 */ ["lancer"],
-  /*  6 */ ["ripple"],
-  /*  7 */ ["parallax"],
-  // ...and the ambers threaded through them, so the middle of the track is
-  // where a draw stops being predictable
-  /*  8 */ ["swarmer"],
-  /*  9 */ ["cyclone"],
-  /* 10 */ ["fuse"],
-  /* 11 */ ["tsunami"],
-  // THE PURPLES LAST, one a level, and the track ends on them. A 4x4 is
-  // the thing a run is hoping the deal turns over, and a save has to have
-  // earned the right to be hoping for it
-  /* 12 */ ["spectre"],
-  /* 13 */ ["meltdown"],
-  /* 14 */ ["foreshadow"],
-];
+  2: ["scorch"],
+  3: ["arc"],
+  // ...but the bands are INTERLEAVED rather than dealt in blocks. A blue
+  // among the commons is the first level that changes what a board can do
+  // instead of how much of it there is, and the last common lands after it
+  // so the floor is still being filled in while the ceiling rises
+  4: ["lancer"],
+  5: ["wave"],
+  6: ["ripple"],
+  // the first amber comes early for the same reason, and the blue that
+  // follows it keeps the middle of the track from settling into a pattern
+  7: ["swarmer"],
+  8: ["parallax"],
+  9: ["cyclone"],
+  10: ["fuse"],
+  11: ["tsunami"],
+  // THE PURPLES ARE SPREAD, four levels apart, and the last of them is the
+  // top of the roster. A 4x4 is the thing a run is hoping the deal turns
+  // over, and handing all three out on consecutive levels spent the whole
+  // ceiling of the game in three clears. The gaps are the point: a save
+  // plays a good while WITH the spectre before the meltdown turns up
+  12: ["spectre"],
+  16: ["meltdown"],
+  20: ["foreshadow"],
+};
 
 /**
  * THE OPENING SHAPES (formation.ts): a small solid, a bigger solid, and
@@ -190,23 +210,22 @@ const UNLOCKS: readonly (readonly TowerKind[])[] = [
 export const STARTING_SHAPES: readonly FormationId[] = ["quad", "block", "grid"];
 
 /**
- * ...and the other nine, one a level, smallest first — which is also
- * rarest-last, since a shape's band is read off its cell count
- * (formationRarity). They are threaded through the turret levels rather
- * than given a phase of their own: a level that opens a gun AND a shape
- * is a level that changes what the corner can do twice, and the roster
- * phase is short enough to carry both.
+ * ...and the other nine, smallest first — which is also rarest-last, since
+ * a shape's band is read off its cell count (formationRarity). They are
+ * threaded through the whole track rather than given a phase of their own,
+ * and they land on the levels the guns and maps leave empty: a level that
+ * opens nothing at all is a level with no reason to be looked at.
  */
 const SHAPE_UNLOCKS: Readonly<Record<number, FormationId>> = {
-  2: "cross",
-  3: "saltire",
-  4: "wedge",
-  5: "ring",
-  6: "snowflake",
-  8: "octagon",
-  10: "bastion",
-  12: "rampart",
-  14: "citadel",
+  3: "cross",
+  5: "saltire",
+  7: "wedge",
+  9: "ring",
+  13: "snowflake",
+  17: "octagon",
+  20: "rampart",
+  24: "bastion",
+  26: "citadel",
 };
 
 /** every shape exactly once, none dealt before the save can use it — checked at import */
@@ -215,7 +234,7 @@ const SHAPE_UNLOCKS: Readonly<Record<number, FormationId>> = {
   if (seen.size !== STARTING_SHAPES.length) throw new Error("a starting shape is dealt twice");
   for (const [level, id] of Object.entries(SHAPE_UNLOCKS)) {
     if (seen.has(id)) throw new Error(`the track opens the shape "${id}" twice`);
-    if (+level < 2 || +level > ROSTER_TOP)
+    if (+level < 2 || +level > MAX_LEVEL)
       throw new Error(`the track opens "${id}" on level ${level}, outside the roster phase`);
     seen.add(id);
   }
@@ -241,7 +260,7 @@ export function shapeUnlockLevel(id: FormationId): number {
 function dealTurrets(): Map<number, TowerKind[]> {
   const out = new Map<number, TowerKind[]>();
   out.set(1, [...STARTING_ROSTER]);
-  UNLOCKS.forEach((kinds, i) => out.set(i + 2, [...kinds]));
+  for (const [level, kinds] of Object.entries(UNLOCKS)) out.set(+level, [...kinds]);
   return out;
 }
 
@@ -262,13 +281,14 @@ const TURRETS_DEALT = dealTurrets();
       throw new Error(`the track opens "${k}", which is retired from the field (types.ts)`);
   for (const k of FIELDED_KINDS)
     if (!seen.has(k)) throw new Error(`the track never opens "${k}" — no level hands it out`);
-  if (UNLOCKS.length !== ROSTER_TOP - 1)
-    throw new Error(
-      `UNLOCKS covers levels 2-${UNLOCKS.length + 1}; the roster phase runs to ${ROSTER_TOP}`,
-    );
-  UNLOCKS.forEach((kinds, i) => {
-    if (kinds.length === 0) throw new Error(`level ${i + 2} opens nothing`);
-  });
+  for (const [level, kinds] of Object.entries(UNLOCKS)) {
+    if (kinds.length === 0) throw new Error(`level ${level} opens no turret`);
+    if (+level < 2 || +level > ROSTER_TOP)
+      throw new Error(`the track opens a turret on level ${level}, outside the roster phase`);
+  }
+  const top = Math.max(...Object.keys(UNLOCKS).map(Number));
+  if (top !== ROSTER_TOP)
+    throw new Error(`the last turret opens on level ${top}, and ROSTER_TOP says ${ROSTER_TOP}`);
 })();
 
 /** the level a turret joins the roster — 1 for the starting four */
@@ -305,16 +325,42 @@ const UPGRADES_ON_TRACK = false;
 
 const DEALT: Map<number, UpgradeKind[]> = UPGRADES_ON_TRACK ? dealUpgrades() : new Map();
 
-/** every reward a level hands out: maps and paces first, then the turrets, then the rungs */
+/**
+ * THE ORDER A LEVEL'S REWARDS ARE READ IN, and it is the same on every
+ * level of the track — REWARD_ORDER below, not the order the tables
+ * happen to be written in. A row of the progress screen is scanned, not
+ * read: if a map is the third chip on one level and the first on the next,
+ * the eye has to re-find it every row. Fixed slots mean a player learns
+ * where to look once.
+ *
+ * Smallest change to the board first: a turret is one more card in the
+ * deal, a shape is what the card puts down, a rule changes the fight, and
+ * a pace or a MAP is a place to take all of it — so the maps come last,
+ * where a row's biggest reward sits at its end.
+ */
+const REWARD_ORDER: readonly Reward["kind"][] = [
+  "turret",
+  "shape",
+  "upgrade",
+  "mutator",
+  "speed",
+  "world",
+];
+
+const rewardRank = (r: Reward): number => REWARD_ORDER.indexOf(r.kind);
+
+/** every reward a level hands out, in REWARD_ORDER */
 export function rewardsAt(level: number): Reward[] {
-  const out: Reward[] = PLACED.filter((p) => p.level === level).map((p) => p.reward);
+  const out: Reward[] = [];
   for (const id of TURRETS_DEALT.get(level) ?? []) out.push({ kind: "turret", id });
   const shape = SHAPE_UNLOCKS[level];
   if (shape) out.push({ kind: "shape", id: shape });
-  for (const id of MUTATOR_UNLOCKS[level - MUTATORS_FROM] ?? [])
-    out.push({ kind: "mutator", id });
   for (const id of DEALT.get(level) ?? []) out.push({ kind: "upgrade", id });
-  return out;
+  for (const id of MUTATOR_UNLOCKS[level] ?? []) out.push({ kind: "mutator", id });
+  for (const p of PLACED) if (p.level === level) out.push(p.reward);
+  // ...and the tables are only APPROXIMATELY in that order, so sort. A
+  // stable sort keeps each kind in the order its table deals it
+  return out.sort((a, b) => rewardRank(a) - rewardRank(b));
 }
 
 /** the whole track, level by level, for the progress screen */
@@ -325,8 +371,10 @@ export const TRACK: readonly { level: number; rewards: Reward[] }[] = Array.from
 
 /** the mutators a level has put in the deck — empty through the whole roster phase */
 export function mutatorsAt(level: number): Set<MutationId> {
-  const rows = Math.max(0, Math.min(level, MAX_LEVEL) - ROSTER_TOP);
-  return new Set(MUTATOR_UNLOCKS.slice(0, rows).flat());
+  const out = new Set<MutationId>();
+  for (const [l, row] of Object.entries(MUTATOR_UNLOCKS))
+    if (+l <= level) for (const id of row) out.add(id);
+  return out;
 }
 
 /** ...and the ones it has not: what the deploy roll must leave in the bag */
@@ -337,8 +385,8 @@ export function lockedMutators(level: number): MutationId[] {
 
 /** the level a mutator joins the deck — MAX_LEVEL + 1 for one the track never opens */
 export function mutatorUnlockLevel(id: MutationId): number {
-  const i = MUTATOR_UNLOCKS.findIndex((row) => row.includes(id));
-  return i < 0 ? MAX_LEVEL + 1 : MUTATORS_FROM + i;
+  for (const [l, row] of Object.entries(MUTATOR_UNLOCKS)) if (row.includes(id)) return +l;
+  return MAX_LEVEL + 1;
 }
 
 /**
@@ -421,7 +469,7 @@ export function rewardBlurb(r: Reward): string {
     return `A formation of ${formationCount(r.id)} turrets on a ${f.w}x${f.h} grid.`;
   }
   if (r.kind === "mutator")
-    return `${mutationById(r.id)?.blurb ?? ""} From here on a run may roll it.`;
+    return mutationById(r.id)?.blurb ?? "";
   return upgradeDef(r.id).blurb;
 }
 
