@@ -506,27 +506,21 @@ svg {
   }
 }
 
-/* ---- the deal's cards (components/Deal.tsx) --------------------------
-   A turret bought in a run arrives as a card thrown onto the field, and
-   it has ten seconds to be picked up. Three animations carry that, and
-   they are the only moving things in the corner:
+/* ---- the deal's card (components/Deal.tsx) ---------------------------
+   A turret bought in a run arrives as a card already in hand, one at a
+   time, and POP is its arrival: Plants vs Zombies' seed packet, which is
+   the shape this whole interaction is borrowed from. The card overshoots
+   its size and settles back, so the eye is at the bottom-right corner
+   before it has decided to look — and since a re-roll REPLACES the card
+   rather than adding one, that bounce is the only thing on screen saying
+   the thousand scrap did something.
 
-   POP is the arrival. Plants vs Zombies' seed packet, which is the shape
-   this whole interaction is borrowed from: the card overshoots its size,
-   settles back, and the eye is at the bottom-right corner before it has
-   decided to look. A card that faded in would be missed, and a missed
-   card is paid-for scrap on a ten-second fuse.
+   It is the one moving thing in the corner. The blink that used to run
+   out a card's clock is gone with the clock (there is no hand and no
+   fuse any more), and so is the lift that marked which card of a row was
+   picked, since the only card there is is always picked.
 
-   BLINK is the last three seconds. Opacity alone, no colour change, so
-   the rarity border — the one thing the card is actually saying — stays
-   readable while it flashes.
-
-   HELD is the card in hand: it stands a little proud of the row and glows
-   in its own rarity colour, because the board now has a ghost on it and
-   the two have to read as the same decision.
-
-   All three are dropped under prefers-reduced-motion, where the card
-   simply appears, sits still and is dimmed rather than blinking. */
+   Dropped under prefers-reduced-motion, where the card simply appears. */
 @keyframes deal-pop {
   0% {
     opacity: 0;
@@ -545,31 +539,13 @@ svg {
   }
 }
 
-@keyframes deal-blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
-  }
-}
-
 .ms-deal-card {
   /* the fallback ground; the rarity's own opaque one (rarity.ts) is set
      inline over it. NEVER translucent — see the note on RarityDef.ground */
   background: #0b0b0d;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
-  cursor: pointer;
   user-select: none;
   animation: deal-pop 280ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
-  transition:
-    transform 90ms linear,
-    filter 90ms linear;
-}
-
-.ms-deal-card:hover {
-  filter: brightness(1.25);
 }
 
 .ms-deal-card:focus-visible {
@@ -577,23 +553,8 @@ svg {
   outline-offset: 2px;
 }
 
-.ms-deal-blink {
-  animation:
-    deal-pop 280ms cubic-bezier(0.34, 1.56, 0.64, 1) both,
-    deal-blink 620ms steps(1, end) 280ms infinite;
-}
-
-.ms-deal-held {
-  transform: translateY(-4px);
-  filter: drop-shadow(0 0 6px currentColor);
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .ms-deal-card,
-  .ms-deal-blink {
+  .ms-deal-card {
     animation: none;
-  }
-  .ms-deal-blink {
-    opacity: 0.55;
   }
 }

@@ -21,7 +21,8 @@ import { HoverCard, useHoverCard } from "./HoverCard";
 import { itemCount } from "./Items";
 import MutationTree from "./MutationTree";
 import { bandFor, MutationFace, MUT_GLYPH, MUT_LIT } from "./mutationFace";
-import { rarityDef } from "@/game/rarity";
+import { formationDef, formationRarity, type FormationId } from "@/game/formation";
+import { RARITY, rarityDef } from "@/game/rarity";
 import { TOWER_ICONS } from "./towerIcons";
 
 /**
@@ -56,6 +57,8 @@ const REWARD_COLOR: Record<Reward["kind"], string> = {
   world: "#7BE58A",
   speed: "#7FC4FF",
   turret: "#FF9A62",
+  // a shape wears its own band (formationRarity), like a turret does
+  shape: "#C6C6CE",
   // a mutator wears the codex's pink on the track, not its own weight
   // band: the band lives on the codex board where a shelf of rules is
   // being compared, and on the track the question is only "what kind of
@@ -98,14 +101,33 @@ function MapThumb({ mapId }: { mapId: string }) {
   return <canvas ref={ref} className="h-full w-full object-cover [image-rendering:pixelated]" />;
 }
 
+/** A SHAPE REWARD'S FACE: the formation itself, drawn the size of a
+ *  sprite — the same diagram the card in a run wears in its corner, so
+ *  the track teaches the picture and the field reads it back */
+function ShapeFace({ id }: { id: FormationId }) {
+  const f = formationDef(id);
+  const n = Math.max(f.w, f.h);
+  return (
+    <svg viewBox={`0 0 ${n} ${n}`} className="h-[24px] w-[24px]" aria-hidden="true">
+      <g transform={`translate(${(n - f.w) / 2} ${(n - f.h) / 2})`}>
+        {f.cells.map(([x, y]) => (
+          <rect key={`${x},${y}`} x={x + 0.08} y={y + 0.08} width={0.84} height={0.84} fill="currentColor" />
+        ))}
+      </g>
+    </svg>
+  );
+}
+
 /** what a reward chip WEARS: the turret's own menu sprite, the map's own
- *  thumbnail, a pace as its multiplier. An upgrade rung shows the turret
- *  it buffs — the ring colour is what separates it from owning the gun */
+ *  thumbnail, the shape's own diagram, a pace as its multiplier. An
+ *  upgrade rung shows the turret it buffs — the ring colour is what
+ *  separates it from owning the gun */
 function RewardFace({ reward }: { reward: Reward }) {
   if (reward.kind === "world") return <MapThumb mapId={worldMapId(reward.worldId)} />;
   if (reward.kind === "speed")
     return <span className="font-display text-[13px] font-bold leading-none">{reward.mult}x</span>;
   if (reward.kind === "mutator") return <MutationFace id={reward.id} size="h-6 w-6" />;
+  if (reward.kind === "shape") return <ShapeFace id={reward.id} />;
   const kind = reward.kind === "turret" ? reward.id : upgradeDef(reward.id).turret;
   return (
     <img
@@ -140,7 +162,12 @@ function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
    * the gun: the row that opens a spectre is purple here and the card that
    * turns one over mid-wave is purple there, and nothing has to say so.
    */
-  const rarity = reward.kind === "turret" ? rarityDef(reward.id) : null;
+  const rarity =
+    reward.kind === "turret"
+      ? rarityDef(reward.id)
+      : reward.kind === "shape"
+        ? RARITY[formationRarity(reward.id)]
+        : null;
   const color = rarity ? rarity.color : REWARD_COLOR[reward.kind];
   const text = rewardText(reward);
   // "auto": the list scrolls, so which side of the window a chip is on is

@@ -4,6 +4,7 @@ import {
   type UpgradeContext,
   type UpgradePoints,
 } from "./upgrades";
+import type { FormationId } from "./formation";
 import { FIELDED_KINDS, type TowerKind } from "./types";
 
 /**
@@ -15,6 +16,9 @@ import { FIELDED_KINDS, type TowerKind } from "./types";
 export interface TechState {
   /** the turrets the save owns — what the track has dealt so far */
   unlocked: ReadonlySet<TowerKind>;
+  /** ...and the SHAPES it owns (formation.ts), dealt the same way: the
+   *  deal's second roll draws from exactly this and nothing else */
+  shapes: ReadonlySet<FormationId>;
   /** the fast-forward paces switched on, ascending, 1x included */
   speeds: readonly number[];
   /** each turret's upgrade rungs, as the sim folds them (upgradedTower) */

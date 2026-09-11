@@ -68,12 +68,13 @@ stale tab or a cached bundle looks exactly like a fix not working.
   mutator phase, one rule a level; and `techStateFor(level)`, what a save
   at that level may do. The turret upgrade rungs are off the track for now
   (`UPGRADES_ON_TRACK`)
-- `game/formation.ts` — **the second roll**: the six shapes a card can
-  carry (`FORMATIONS` — a 2×2 quad, a cross of five, a 3×3 block, the
-  13-turret snowflake, a 4×4 grid, a 5×5 bastion), flat odds between them,
-  and the one piece of arithmetic the ghost and the placement share
-  (`formationCells`). A formation's cells are counted in WHOLE TURRETS, so
-  a quad of duos is 2×2 tiles and a quad of spectres is 8×8
+- `game/formation.ts` — **the second roll**: the twelve shapes a card can
+  carry (`FORMATIONS`, 4 to 36 turrets), their bands read straight off the
+  cell count (`formationRarity`), the deliberately soft odds between those
+  bands (`FORMATION_WEIGHTS`), and the one piece of arithmetic the ghost
+  and the placement share (`formationCells`). A formation's cells are
+  counted in WHOLE TURRETS, so a quad of duos is 2×2 tiles and a quad of
+  spectres is 8×8
 - `game/rarity.ts` — **the deal**: every turret's rarity and its border
   colour (`TURRET_RARITY`, `RARITY` — greyish white, blue, amber, purple),
   the odds a draw is rolled against (`BASE_WEIGHTS`: 62 / 27 / 10 / **1**)
@@ -142,11 +143,9 @@ stale tab or a cached bundle looks exactly like a fix not working.
   looks there, a drag keeps steering
 - `components/Deal.tsx` — **the field's bottom-right corner on a charged
   run**: the two buttons (Buy turret **T**, Buy upgrade **G** — the second
-  not built yet) and the hand of cards the first of them throws, ten slots
-  deep (`HAND_MAX`) on the keys 1 to 0. `useDeal` is the whole state
-  machine: a card pops, blinks for its last three seconds and is gone at
-  ten (`CARD_LIFE`, `CARD_BLINK`), unless it is PICKED, which stops its
-  clock for as long as the player is deciding where it goes
+  not built yet) and the ONE card the first of them throws, drawn already
+  in hand. It keeps no state of its own: the card IS what is in hand
+  (`Game.buildKind` + `buildForm`), so the corner reads it off the HUD
 - `components/MechSwarm.tsx` — React shell: HUD (scrap, XP), difficulty
   picker, the corner (the deal above, or — on a free board — StarCraft's
   command card, a fixed grid the size of the minimap, `BUILD_SLOTS`, one
@@ -183,8 +182,9 @@ is no touch input.
 
 | | |
 |---|---|
-| build | **Buy turret** (**T**), then pick the card it throws — click it, or press its slot's number — and left press on the ground. One card is one FORMATION, four to twenty-five turrets in a shape. On a free board (sandbox, editors) pick a turret on the command card instead, or its key, and drag to chain; **shift-drag for a straight line** |
-| the hand | ten slots, keys **1**–**9** and **0**. A slot is a position, not a card: place slot 1 and everything shifts down, so a full hand empties under one repeated finger |
+| build | **T**, then left press on the ground. The draw comes out already in hand, so the flow is T, click, T, click. One card is one FORMATION, four to thirty-six turrets in a shape. On a free board (sandbox, editors) pick a turret on the command card instead, or its key, and drag to chain; **shift-drag for a straight line** |
+| re-roll | **T** again — it throws the card in hand away and draws another, at full price. Spam it until the shape is the one you want |
+| discard | right press while holding a card. No refund |
 | demolish | right press, drag to chain |
 | select a building | left click with no tool picked — its range ring shows; drag a box for a region; shift adds |
 | select every like it nearby | ctrl-click or double-click (`SEL_LIKE_STRUCT_R`) |
@@ -293,9 +293,10 @@ is chosen and nothing is bought.
 ### The deal
 
 **A turret is not bought, it is drawn.** The field's bottom-right corner
-is two buttons — **Buy turret** and **Buy upgrade**, the second not built
-yet. Buy turret pays the roll fee, rolls the rarity odds and **pops a card
-onto the field**: the turret's sprite, its rarity's border, its name.
+is two buttons — **Buy turret** (**T**) and **Buy upgrade** (**G**, not
+built yet). Buy turret pays the roll fee, rolls both tables and **puts the
+card straight into the hand**: the turret's sprite, its rarity's border,
+the shape's diagram in the corner in the shape's own band colour.
 
 **The fee is 1,000 flat** (`TURRET_ROLL_PRICE`), on every pool and at every
 level — one number a player can hold in their head, and the one dial a
@@ -314,14 +315,35 @@ the six are flat on purpose — the rarity roll is where the tension is, and
 what a player should feel at the button is *which gun* first and *how much
 of it* second.
 
-| formation | turrets | grid |
-|---|---|---|
-| Quad | 4 | 2×2 |
-| Cross | 5 | 3×3, a plus |
-| Block | 9 | 3×3 |
-| Snowflake | 13 | 5×5, a cross two deep with its inner diagonals filled |
-| Grid | 16 | 4×4 |
-| Bastion | 25 | 5×5 |
+**Shapes have bands too**, the turrets' own four, worn on the same frames
+— so one palette says "how good is this card" twice, once for the gun
+(the border round the whole card) and once for the shape (the little frame
+round the diagram). **The band is read straight off the cell count**
+(`formationRarity`), which is the only honest measure of what a shape is
+worth, and a shape edited to carry four more turrets changes band by
+itself.
+
+| formation | turrets | grid | band |
+|---|---|---|---|
+| Quad | 4 | 2×2 | Common |
+| Cross | 5 | 3×3 plus | Common |
+| Saltire | 5 | 3×3 X | Common |
+| Block | 9 | 3×3 | Common |
+| Wedge | 10 | 4×4 stair | Uncommon |
+| Ring | 12 | hollow 4×4 | Uncommon |
+| Snowflake | 13 | 5×5 cross with its inner diagonals filled | Uncommon |
+| Grid | 16 | 4×4 | Uncommon |
+| Octagon | 21 | 5×5 with its corners knocked off | Rare |
+| Bastion | 25 | 5×5 | Rare |
+| Rampart | 33 | 7×7 plus, three turrets thick | Ultra Rare |
+| Citadel | 36 | 6×6 | Ultra Rare |
+
+**Nothing is ever smaller than the quad** and nothing is a line — both are
+checked at import. **The track deals shapes out like everything else**: a
+save opens with the quad, the block and the grid (`STARTING_SHAPES` — three
+solids, because the first thing to learn is that a card puts down a
+*patch*, not a turret) and earns the other nine one a level through the
+roster phase, smallest first.
 
 Ground that takes **none** of the shape keeps the card in hand — walk it
 somewhere it fits. Ground that takes **part** of it spends the card on the
@@ -331,21 +353,15 @@ them. Click the card to pick it up, and the next left press on
 the ground puts that turret down — **free**, finished, shooting. One card
 is one turret; there is no chaining and no ruler on a dealt board.
 
-**The hand is ten cards deep** (`HAND_MAX`) and its slots are numbered 1 to
-0 — and a slot is a POSITION, not a card, so placing the one in slot 1
-shifts everything down into it. That is what the numbers are for: a full
-hand empties as 1, click, 1, click, 1, click, without the eye leaving the
-board. Buying with ten out does nothing and the button says *Full*.
-
-**A card is on a ten-second clock** (`CARD_LIFE`), blinking for the last
-three (`CARD_BLINK`), and an unclaimed one is gone with the scrap it cost.
-**The clock stops the moment the card is picked up**, though, for as long
-as the player wants to look for the right ground: the question the timer
-is asking is "do you want this", and once that is answered the game would
-rather the second question — *where does this go* — be played well. A
-placement the ground refuses (red ghost) keeps the card in hand; a right
-click puts it back on the field and its clock starts again where it
-stopped.
+**There is no hand and no clock.** One card exists at a time, it is drawn
+already picked, and it stands until the ground takes it — **T, click, T,
+click**. Pressing T again throws it away and draws another; the right
+button throws it away for nothing. So a player who wants a bastion and
+drew a quad presses T until they get one, at a thousand scrap a look:
+**the spam is the mechanic**, and a discarded card is never refunded,
+because a free re-roll would make the shape roll decorative. A placement
+the ground refuses (red ghost) keeps the card in hand — walk it somewhere
+it fits.
 
 | rarity | border | turrets | odds |
 |---|---|---|---|
@@ -361,6 +377,12 @@ turret picked uniformly inside it, so adding a fourth purple would make
 *which* purple less predictable and never make purples more likely. The
 draw pool is exactly what the track has handed the save (`turretsAt`),
 minus the retired kinds.
+
+**The shape odds are the generous half of the same button**
+(`FORMATION_WEIGHTS`: 40 / 30 / 20 / **10**) — an ultra shape about one
+draw in ten against an ultra turret's one in a hundred. The turret roll is
+where a run's tension lives, and odds as steep on both would invert what a
+player feels at the button: *which gun* first, *how much of it* second.
 
 ### Three stages, three price bands
 

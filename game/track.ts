@@ -1,4 +1,11 @@
 import { targetingLine, TOWER_DESC, TOWERS } from "./constants";
+import {
+  FORMATION_IDS,
+  formationCount,
+  formationDef,
+  formationRarity,
+  type FormationId,
+} from "./formation";
 import { WORLDS } from "./levels";
 import { MUTATIONS, mutationById, type MutationId } from "./mutation";
 import { BY_MINDUSTRY_VALUE, type TechState } from "./tech";
@@ -80,6 +87,7 @@ export type Reward =
   | { kind: "world"; worldId: string }
   | { kind: "speed"; mult: number }
   | { kind: "turret"; id: TowerKind }
+  | { kind: "shape"; id: FormationId }
   | { kind: "mutator"; id: MutationId }
   | { kind: "upgrade"; id: UpgradeKind };
 
@@ -144,6 +152,64 @@ const UNLOCKS: readonly (readonly TowerKind[])[] = [
   /* 13 */ ["meltdown"],
   /* 14 */ ["foreshadow"],
 ];
+
+/**
+ * THE OPENING SHAPES (formation.ts): a small solid, a bigger solid, and
+ * the one that is bigger again. Three blocks and nothing clever — the
+ * first thing a save has to learn is what a formation IS, which is "the
+ * card puts down a patch of turrets, not a turret", and three squares of
+ * four, nine and sixteen teach that without also asking what a saltire is
+ * for. Every shape with a hole in it is earned.
+ */
+export const STARTING_SHAPES: readonly FormationId[] = ["quad", "block", "grid"];
+
+/**
+ * ...and the other nine, one a level, smallest first — which is also
+ * rarest-last, since a shape's band is read off its cell count
+ * (formationRarity). They are threaded through the turret levels rather
+ * than given a phase of their own: a level that opens a gun AND a shape
+ * is a level that changes what the corner can do twice, and the roster
+ * phase is short enough to carry both.
+ */
+const SHAPE_UNLOCKS: Readonly<Record<number, FormationId>> = {
+  2: "cross",
+  3: "saltire",
+  4: "wedge",
+  5: "ring",
+  6: "snowflake",
+  8: "octagon",
+  10: "bastion",
+  12: "rampart",
+  14: "citadel",
+};
+
+/** every shape exactly once, none dealt before the save can use it — checked at import */
+(() => {
+  const seen = new Set<FormationId>(STARTING_SHAPES);
+  if (seen.size !== STARTING_SHAPES.length) throw new Error("a starting shape is dealt twice");
+  for (const [level, id] of Object.entries(SHAPE_UNLOCKS)) {
+    if (seen.has(id)) throw new Error(`the track opens the shape "${id}" twice`);
+    if (+level < 2 || +level > ROSTER_TOP)
+      throw new Error(`the track opens "${id}" on level ${level}, outside the roster phase`);
+    seen.add(id);
+  }
+  for (const id of FORMATION_IDS)
+    if (!seen.has(id)) throw new Error(`the track never opens the shape "${id}"`);
+})();
+
+/** the shapes a level has dealt: the starting three and every one since */
+export function shapesAt(level: number): Set<FormationId> {
+  const out = new Set<FormationId>(STARTING_SHAPES);
+  for (const [l, id] of Object.entries(SHAPE_UNLOCKS)) if (+l <= level) out.add(id);
+  return out;
+}
+
+/** the level a shape joins the deal — 1 for the starting three */
+export function shapeUnlockLevel(id: FormationId): number {
+  if (STARTING_SHAPES.includes(id)) return 1;
+  for (const [l, s] of Object.entries(SHAPE_UNLOCKS)) if (s === id) return +l;
+  return MAX_LEVEL + 1;
+}
 
 /** the roster by the level it opens on: the starting four on 1, UNLOCKS after */
 function dealTurrets(): Map<number, TowerKind[]> {
@@ -217,6 +283,8 @@ const DEALT: Map<number, UpgradeKind[]> = UPGRADES_ON_TRACK ? dealUpgrades() : n
 export function rewardsAt(level: number): Reward[] {
   const out: Reward[] = PLACED.filter((p) => p.level === level).map((p) => p.reward);
   for (const id of TURRETS_DEALT.get(level) ?? []) out.push({ kind: "turret", id });
+  const shape = SHAPE_UNLOCKS[level];
+  if (shape) out.push({ kind: "shape", id: shape });
   const mut = MUTATOR_UNLOCKS[level - ROSTER_TOP - 1];
   if (mut) out.push({ kind: "mutator", id: mut });
   for (const id of DEALT.get(level) ?? []) out.push({ kind: "upgrade", id });
@@ -295,6 +363,7 @@ export function rewardText(r: Reward): string {
   if (r.kind === "world") return `${WORLDS.find((w) => w.id === r.worldId)?.name ?? "A map"} opens`;
   if (r.kind === "speed") return `${r.mult}x speed`;
   if (r.kind === "turret") return `Turret: ${TOWER_NAME[r.id]}`;
+  if (r.kind === "shape") return `Shape: ${formationDef(r.id).name}`;
   if (r.kind === "mutator") return `Mutator: ${mutationById(r.id)?.name ?? r.id}`;
   const u = upgradeDef(r.id);
   return `${TOWER_NAME[u.turret]}: ${u.name}`;
@@ -305,6 +374,10 @@ export function rewardBlurb(r: Reward): string {
   if (r.kind === "world") return "Unlocks a new map ";
   if (r.kind === "speed") return `Fast-forward: a run may be played at ${r.mult}x pace from the strip under the wave panel.`;
   if (r.kind === "turret") return TOWER_DESC[r.id];
+  if (r.kind === "shape") {
+    const f = formationDef(r.id);
+    return `A formation of ${formationCount(r.id)} turrets on a ${f.w}x${f.h} grid.`;
+  }
   if (r.kind === "mutator")
     return `${mutationById(r.id)?.blurb ?? ""} From here on a run may roll it.`;
   return upgradeDef(r.id).blurb;
@@ -330,7 +403,11 @@ export const TOWER_NAME: Readonly<Record<TowerKind, string>> = Object.fromEntrie
 export function techStateFor(level: number): TechState {
   return {
     unlocked: turretsAt(level),
+    shapes: shapesAt(level),
     speeds: speedsAt(level),
     upgrades: upgradesAt(level),
   };
 }
+
+/** a shape reward's band, for the chip that wears it */
+export const rewardShapeRarity = formationRarity;

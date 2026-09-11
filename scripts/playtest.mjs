@@ -260,6 +260,8 @@ function play() {
   const owned = tech.unlocked;
   /** what the deal may turn over for this save — Game.drawPool's twin */
   const roster = TY.FIELDED_KINDS.filter((k) => owned.has(k));
+  /** ...and the shapes it may turn over, which the track deals too */
+  const shapes = [...tech.shapes];
   sim.setTech(tech);
 
   // THE ROUTES, one per movement layer, and WHAT EACH IS WORTH: the share
@@ -420,7 +422,9 @@ function play() {
       // button: which gun, and how many of it
       const kind = RA.rollTurret(pool);
       if (!kind) break;
-      const want = FO.formationCount(FO.rollFormation());
+      const shape = FO.rollFormation(shapes);
+      if (!shape) break;
+      const want = FO.formationCount(shape);
       // the fee is charged once the FIRST of them lands rather than at the
       // draw, which is the one place the bot is kinder to itself than the
       // game is: a player who cannot find ground for a card watches it

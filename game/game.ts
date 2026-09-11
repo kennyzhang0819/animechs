@@ -32,6 +32,7 @@ import {
 } from "./levels";
 import { missionXp, scrapPriceOf, sellValue, TURRET_ROLL_PRICE } from "./economy";
 import {
+  FORMATION_IDS,
   formationCells,
   formationSpan,
   rollFormation,
@@ -64,8 +65,12 @@ export interface UiState {
   /** 1-based wave now on the field, out of how many the level holds */
   currentWave: number;
   totalWaves: number;
-  /** the tower kind picked in the build bar, or null for the bare cursor */
+  /** the tower kind in hand, or null for the bare cursor */
   buildKind: TowerKind | null;
+  /** the SHAPE it will land in (formation.ts) — null on a free board,
+   *  where the command card picks a bare turret. With buildKind it is the
+   *  whole of the card the corner draws: there is no other card state */
+  buildForm: FormationId | null;
   /** the demolish tool is picked: the next press sells instead of selecting */
   paused: boolean;
   /** the core is destroyed — the field is frozen behind the score screen */
@@ -325,6 +330,30 @@ const MM_SCALE = 1;
  */
 const MM_UNIT_PX = 3.75;
 const MM_STRUCT_PX = 4.5;
+/**
+ * HOW DARK A HILL IS ON THE MINIMAP, as a factor on the rock's true tone.
+ *
+ * The wall art is painted a shade LIGHTER than the floor of its own family,
+ * which is correct on the board — a hill there has an outline, a cast
+ * shadow and a dark interior, and its face is the lit top of all that. The
+ * corner map has room for none of those: at a pixel a cell a hill was a
+ * slightly paler patch of ground, and the one question the map is read for
+ * after "where are they" is "what can they not walk through". Multiplying
+ * the rock down restates the height with the only channel left, and it is
+ * a MULTIPLY rather than a fixed grey so every family keeps its own hue —
+ * a snow map's hills stay white-blue and a spore map's stay violet.
+ *
+ * It is an EIGHTH of the true tone. Two thirds was tried first and told a
+ * snow map's hills from its snow and very little else; a third was better
+ * and still left the pale grounds' rock bright enough to read as more
+ * ground. At an eighth the rock is very nearly black, and that is the
+ * point: the corner map is not a picture, it is an answer to "where can
+ * they walk", and the strongest mark a one-pixel cell has is to be the
+ * darkest thing on the canvas. A trace of hue survives the multiply — a
+ * snow map's hills are a blue-black and a spore map's a violet one — so
+ * the map is still recognisably its own place at a glance.
+ */
+const MM_HILL_SHADE = 0.12;
 /** how often the minimap's CSS width is measured, in draws. Reading
  *  clientWidth is a layout read, and one per frame is a reflow per frame;
  *  the width only moves when the window or the HUD's zoom does */
@@ -959,29 +988,54 @@ export class Game {
   }
 
   /**
-   * ONE DRAW OFF THE DEAL: pay the fee, roll the odds, hand back the
-   * turret the card carries — or null, which means either the bank could
-   * not cover it or the run is over. The pool is what the save has been
-   * dealt on the track, minus the kinds that are off the field for now
-   * (types.ts RETIRED_KINDS); a free board draws from the whole roster for
-   * nothing, so the button works in the sandbox too.
+   * ONE DRAW OFF THE DEAL, AND IT GOES STRAIGHT INTO THE HAND: pay the
+   * fee, roll the two tables, and the card that comes out is ALREADY
+   * PICKED — the ghost is on the board before the finger has left the T.
+   * There is no hand and no second click: the flow is T, click, T, click,
+   * and a shape a player does not want is one more T away.
    *
-   * The scrap is spent HERE, at the draw, and never again: the card that
-   * comes out of it is placed for free (Sim.placeTower).
+   * It overwrites whatever was in hand, which is what makes that spam
+   * work. The card it throws away is not refunded — the thousand scrap IS
+   * the price of another look at the shape table.
+   *
+   * The turret pool is what the track has dealt, minus the kinds that are
+   * off the field for now (types.ts RETIRED_KINDS); the shape pool is
+   * what the track has dealt too (TechState.shapes). A free board draws
+   * from everything for nothing, so the button works in the sandbox.
+   *
+   * Returns what it drew, or null when the bank could not cover it or the
+   * run is over.
    */
   buyTurretCard(): { kind: TowerKind; form: FormationId } | null {
     if (this.sim.lost() || this.won() || this.menuOpen) return null;
     const kind = rollTurret(this.drawPool(), this.rarityWeights);
     if (!kind) return null;
-    if (!this.sim.spend(this.rollPrice())) return null;
     // TWO ROLLS, INDEPENDENT: which gun, and how much of it in what shape
-    return { kind, form: rollFormation() };
+    const form = rollFormation(this.shapePool());
+    if (!form) return null;
+    if (!this.sim.spend(this.rollPrice())) return null;
+    this.buildKind = kind;
+    this.buildForm = form;
+    this.sim.clearStructSelection();
+    return { kind, form };
+  }
+
+  /** throw the card in hand away — the right button, and what a second T
+   *  does to the first one's draw. Nothing comes back */
+  discardCard(): void {
+    this.buildKind = null;
+    this.buildForm = null;
   }
 
   /** what the deal may turn over: the track's roster, minus the retired
    *  kinds — the whole thing on a free board */
   private drawPool(): TowerKind[] {
     return (this.tech ? [...this.tech.unlocked] : FIELDED_KINDS).filter((k) => !isRetired(k));
+  }
+
+  /** ...and the shapes it may turn over, which the track deals the same way */
+  private shapePool(): readonly FormationId[] {
+    return this.tech ? [...this.tech.shapes] : FORMATION_IDS;
   }
 
   /** what one draw costs right now — flat (economy.ts), and nothing at
@@ -1271,11 +1325,17 @@ export class Game {
     console.log(this.diagOut.join("\n"));
   }
 
-  /** the on-screen menu button — esc, for a screen with no keyboard */
+  /**
+   * The on-screen menu button — esc, for a screen with no keyboard.
+   *
+   * IT NO LONGER PUTS THE CARD DOWN. Clearing buildKind here was free
+   * when a building was merely PICKED off a shelf; the thing in hand is a
+   * card somebody paid a thousand scrap for now, and pausing to look at
+   * the settings must not spend it. The card waits, ghost and all, under
+   * the overlay.
+   */
   openMenu(): void {
     if (this.sim.lost() || this.won()) return;
-    this.buildKind = null;
-    this.buildForm = null;
     this.menuOpen = true;
   }
 
@@ -1419,6 +1479,7 @@ export class Game {
       currentWave: this.sim.currentWave(),
       totalWaves: this.sim.totalWaves,
       buildKind: this.buildKind,
+      buildForm: this.buildForm,
       paused: this.paused,
       speed: this.speed,
       showRoutes: this.showRoutes,
@@ -1727,7 +1788,7 @@ export class Game {
     if (!c) return;
     if (!this.mmBase) {
       this.mmBase = document.createElement("canvas");
-      paintThumb(T, rows, this.mmBase);
+      paintThumb(T, rows, this.mmBase, MM_HILL_SHADE);
     }
     if (!this.mmLayer) {
       this.mmLayer = document.createElement("canvas");

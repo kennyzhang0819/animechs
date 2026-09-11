@@ -1262,8 +1262,8 @@ export default function MechSwarm() {
   const askQuit = useCallback(async () => {
     if (
       await confirm({
-        title: "Quit MechSwarm?",
-        body: "Progress is saved as it is earned — anything you have unlocked will be here when you come back.",
+        title: "Quit Game",
+        body: "Are you sure you want to quite the game?",
         confirmLabel: "Quit",
         cancelLabel: "Stay",
       })
@@ -2527,15 +2527,7 @@ export default function MechSwarm() {
                 cannot do. Like the minimap, whichever of the two it is
                 stands until the run ends: the end screens own the frame. */}
             {hud.dealing ? (
-              <DealCorner
-                hud={hud}
-                icons={icons}
-                cards={deal.cards}
-                picked={deal.picked}
-                full={deal.full}
-                onBuy={deal.buy}
-                onPick={deal.pick}
-              />
+              <DealCorner hud={hud} icons={icons} onBuy={deal.buy} />
             ) : (
               <div className="ms-pane p-1">
                 <div
@@ -2773,8 +2765,8 @@ export default function MechSwarm() {
                 <button
                   onClick={async () => {
                     const ok = await confirm({
-                      title: "Abandon this run?",
-                      body: "The board is lost and the waves it cleared pay nothing. The rung and the map stay picked.",
+                      title: "Abandon this run",
+                      body: "You will lose all xp from this game.",
                       confirmLabel: "Abandon",
                       cancelLabel: "Keep playing",
                     });
