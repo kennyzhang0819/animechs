@@ -2532,6 +2532,7 @@ export default function MechSwarm() {
                 icons={icons}
                 cards={deal.cards}
                 picked={deal.picked}
+                full={deal.full}
                 onBuy={deal.buy}
                 onPick={deal.pick}
               />

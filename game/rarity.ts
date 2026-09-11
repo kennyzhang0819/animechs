@@ -5,7 +5,7 @@ import { TOWER_KINDS, type TowerKind } from "./types";
  *
  * The build card is gone (components/MechSwarm.tsx): a turret is not
  * picked off a shelf any more, it is DEALT. The player pays a flat fee
- * (rollPriceFor in economy.ts), the deal rolls a rarity against the
+ * (TURRET_ROLL_PRICE in economy.ts), the deal rolls a rarity against the
  * weights below and then a turret uniformly inside it, and what comes out
  * pops onto the field as a card to place. So a rarity is two things at
  * once — how often the deal hands the thing over, and the border the card

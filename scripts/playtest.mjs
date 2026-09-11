@@ -10,15 +10,16 @@
  * The bot is deliberately ordinary: it walks the map's routes (ground,
  * water and air), scores every buildable cell by how much route it can
  * reach that nothing else covers yet, and BUYS THE WAY A PLAYER BUYS —
- * paying the roll fee (economy.ts rollPriceFor) for a draw off the deal
- * (rarity.ts) and
- * putting down whatever the roll hands it. It cannot choose a turret any
- * more than a player can, so `--mix` no longer names what it buys: it
- * narrows the POOL the draw comes out of, which is the only lever the
- * game itself has. It never sells, never upgrades a placement, and never
- * reads the wave ahead. A script it clears is a script a person who
- * builds sensibly clears; a script it dies on at wave 11 is a script
- * with a wall.
+ * paying TURRET_ROLL_PRICE for a draw off the deal and putting down
+ * whatever the roll hands it — which is a TURRET (rarity.ts) and a
+ * FORMATION (formation.ts), so one fee buys between four and twenty-five
+ * of the same gun. It places them at its own best spots rather than in
+ * the shape: the bot has never been shape-aware, and what it is here to
+ * measure is the ECONOMY — what a fee buys against what the script sends
+ * — and not whether a snowflake fits on a junction. It cannot choose a
+ * turret any more than a player can, so `--mix` no longer names what it
+ * buys: it narrows the POOL the draw comes out of. It never sells, never
+ * upgrades a placement, and never reads the wave ahead.
  *
  * Options:
  *   --world <id>     WORLDS id (default 1)
@@ -33,7 +34,8 @@
  *                    owns (the default, and the only one the real game has),
  *                    or a narrowed pool for an experiment — the stage's band,
  *                    every open band, duos only. The fee follows the pool
- *                    (rollPriceFor), so a narrowed pool is a cheaper deal
+ *                    every open band, duos only. The fee is flat, so a
+ *                    narrowed pool is a poorer deal and not a cheaper one
  *   --log <n>        print a line every n waves (default 5)
  *   --seconds <n>    give up after this much sim time (default 2400)
  *   --probe <n>      seconds of turret-less dry run the bot learns the routes from (default 90, a few waves' worth)
@@ -90,7 +92,7 @@ if (!flag("no-build") || !existsSync(path.join(DIST, "sim.js"))) {
       // rarity.ts is named on purpose: nothing the sim reaches imports it
       // (the deal is bought through Game, which is a browser module), and
       // the bot draws off it
-      "game/rarity.ts",
+      "game/rarity.ts", "game/formation.ts",
       "--outDir", DIST, "--module", "commonjs", "--target", "es2022",
       "--moduleResolution", "node", "--esModuleInterop", "--skipLibCheck",
       "--noEmitOnError", "false", "--resolveJsonModule",
@@ -105,6 +107,7 @@ if (!flag("no-build") || !existsSync(path.join(DIST, "sim.js"))) {
 
 const L = require(path.join(DIST, "levels.js"));
 const RA = require(path.join(DIST, "rarity.js"));
+const FO = require(path.join(DIST, "formation.js"));
 const E = require(path.join(DIST, "economy.js"));
 const C = require(path.join(DIST, "constants.js"));
 const M = require(path.join(DIST, "maps.js"));
@@ -245,10 +248,8 @@ function airCells(sim) {
 function play() {
   for (const k of TY.TOWER_KINDS)
     E.setScrapPrice(k, Math.max(1, Math.round(E.scrapPriceOf(k) * SCALE)));
-  // WHAT A DRAW COSTS — the one price a run actually pays now
-  // (economy.ts rollPriceFor: a fraction of what the pool it comes out of
-  // is worth). --scale has already moved every turret price above, so the
-  // fee moves with them and a sweep still turns one dial
+  // WHAT A DRAW COSTS is one flat number now (economy.ts
+  // TURRET_ROLL_PRICE), read at the buy below
   if (START !== null) E.SCRAP_START = +START;
   if (UNIT_DAMAGE !== null) WP.setUnitDamageScale(+UNIT_DAMAGE);
 
@@ -414,17 +415,20 @@ function play() {
     const pool = plan.length > 0 ? plan : ["duo"];
     let stuck = 0;
     for (let tries = 0; tries < 40; tries++) {
-      const roll = E.rollPriceFor(pool);
-      if (sim.scrap < roll || sim.towers.length >= CAP) break;
-      // the roll decides, exactly as it does for a player at the button
+      if (sim.scrap < E.TURRET_ROLL_PRICE || sim.towers.length >= CAP) break;
+      // the two rolls decide, exactly as they do for a player at the
+      // button: which gun, and how many of it
       const kind = RA.rollTurret(pool);
       if (!kind) break;
-      // the fee is charged on the PLACEMENT rather than the draw, which is
-      // the one place the bot is kinder to itself than the game is: a
-      // player who cannot find ground for a card watches it expire, and a
-      // bot that burned its bank failing to place would report a wall that
-      // is the bot's and not the map's
-      if (place(kind)) { sim.spend(roll); rot++; }
+      const want = FO.formationCount(FO.rollFormation());
+      // the fee is charged once the FIRST of them lands rather than at the
+      // draw, which is the one place the bot is kinder to itself than the
+      // game is: a player who cannot find ground for a card watches it
+      // expire, and a bot that burned its bank failing to place would
+      // report a wall that is the bot's and not the map's
+      let put = 0;
+      for (let i = 0; i < want && sim.towers.length < CAP; i++) if (place(kind)) put++;
+      if (put > 0) { sim.spend(E.TURRET_ROLL_PRICE); rot++; }
       else { rot++; if (++stuck > pool.length) break; }
     }
     if (w !== lastWave) {

@@ -30,7 +30,13 @@ import {
   type TowerKind,
   type UnitKind,
 } from "./levels";
-import { missionXp, rollPriceFor, scrapPriceOf, sellValue } from "./economy";
+import { missionXp, scrapPriceOf, sellValue, TURRET_ROLL_PRICE } from "./economy";
+import {
+  formationCells,
+  formationSpan,
+  rollFormation,
+  type FormationId,
+} from "./formation";
 import { BASE_WEIGHTS, rollTurret, type RarityWeights } from "./rarity";
 import { HEALTH_BARS_DEFAULT, type HealthBarMode, type TowerPlacement } from "./progress";
 import { FIELDED_KINDS, isRetired, TOWER_KINDS } from "./types";
@@ -452,6 +458,14 @@ export class Game {
   // cursor mode: null is the normal cursor (click a tower to inspect its
   // range); a kind from the tower menu turns on the ghost + paint placement
   private buildKind: TowerKind | null = null;
+  /**
+   * THE FORMATION IN HAND (formation.ts) — the shape the thing being
+   * aimed will land in, and never null while buildKind is set. A free
+   * board (the sandbox, the editors) picks a bare turret off the command
+   * card and gets the smallest formation there is, one cell: a dev door
+   * that dropped four turrets a click would be a worse dev door.
+   */
+  private buildForm: FormationId | null = null;
   private building = false;
   private buildFrom = { x: 0, y: 0 };
   /**
@@ -620,13 +634,18 @@ export class Game {
     if (e.button === 0 && !this.panning) {
       const p = this.mouseWorld(e);
       if (this.buildKind && this.dealing) {
-        // ONE CARD IS ONE TURRET. A dealt card carries a single structure,
-        // so the press puts that structure down and the hand is empty —
-        // no chain, no ruler — and a press on ground that refuses it (the
-        // ghost is already red) keeps the card in hand to try again
-        if (this.placeOne(p)) {
-          this.built++;
+        // ONE CARD IS ONE FORMATION. A dealt card carries a shape of four
+        // to twenty-five turrets, so the press lays the whole shape down
+        // and the hand is empty — no chain, no ruler. Ground that takes
+        // NONE of it (the ghost is already red) keeps the card in hand to
+        // try somewhere else; ground that takes part of it spends the
+        // card on the part, which is the player's call to make and the
+        // ghost showed them exactly which cells they were making it about
+        const n = this.placeFormation(p);
+        if (n > 0) {
+          this.built += n;
           this.buildKind = null;
+          this.buildForm = null;
         }
       } else if (this.buildKind) {
         // the FREE board (the sandbox, the editors): left press places
@@ -664,6 +683,7 @@ export class Game {
       // the ghost away, and that press must never also demolish something
       if (this.buildKind) {
         this.buildKind = null;
+        this.buildForm = null;
         return;
       }
       const p = this.mouseWorld(e);
@@ -889,6 +909,45 @@ export class Game {
   }
 
   /**
+   * EVERY CELL THE FORMATION IN HAND WOULD FILL, aimed at this world
+   * point: the top-left cell of each turret in it. The ghost draws these
+   * and the press places these, so what is shown and what lands are the
+   * same list — a formation whose preview and result could disagree would
+   * be the worst kind of bug to have in a game with a ten-second clock on
+   * the decision.
+   *
+   * The shape is CENTRED on the cursor, over its whole span in tiles
+   * (formationSpan: the grid times the turret's own size), and clamped to
+   * the board so aiming at the rim slides it inside rather than off.
+   */
+  private heldCells(p: { x: number; y: number }): { gx: number; gy: number }[] {
+    const kind = this.buildKind;
+    if (!kind) return [];
+    const sz = TOWERS[kind].size;
+    if (!this.buildForm) {
+      return [
+        {
+          gx: clamp(Math.round(p.x / CELL - sz / 2), 0, COLS - sz),
+          gy: clamp(Math.round(p.y / CELL - sz / 2), 0, ROWS - sz),
+        },
+      ];
+    }
+    const [w, h] = formationSpan(sz, this.buildForm);
+    const gx = clamp(Math.round(p.x / CELL - w / 2), 0, Math.max(0, COLS - w));
+    const gy = clamp(Math.round(p.y / CELL - h / 2), 0, Math.max(0, ROWS - h));
+    return formationCells(gx, gy, sz, this.buildForm);
+  }
+
+  /** lay the formation in hand down here; how many of it the ground took */
+  private placeFormation(p: { x: number; y: number }): number {
+    const kind = this.buildKind;
+    if (!kind || !this.inWorld(p)) return 0;
+    let n = 0;
+    for (const c of this.heldCells(p)) if (this.sim.placeTower(c.gx, c.gy, kind) === "ok") n++;
+    return n;
+  }
+
+  /**
    * IS THIS BOARD DEALT? A charged run buys its turrets as cards off the
    * deal (buyTurretCard) and places them one at a time; a free board — the
    * sandbox and the editors — keeps the old command card, where a kind is
@@ -910,12 +969,13 @@ export class Game {
    * The scrap is spent HERE, at the draw, and never again: the card that
    * comes out of it is placed for free (Sim.placeTower).
    */
-  buyTurretCard(): TowerKind | null {
+  buyTurretCard(): { kind: TowerKind; form: FormationId } | null {
     if (this.sim.lost() || this.won() || this.menuOpen) return null;
     const kind = rollTurret(this.drawPool(), this.rarityWeights);
     if (!kind) return null;
     if (!this.sim.spend(this.rollPrice())) return null;
-    return kind;
+    // TWO ROLLS, INDEPENDENT: which gun, and how much of it in what shape
+    return { kind, form: rollFormation() };
   }
 
   /** what the deal may turn over: the track's roster, minus the retired
@@ -924,10 +984,10 @@ export class Game {
     return (this.tech ? [...this.tech.unlocked] : FIELDED_KINDS).filter((k) => !isRetired(k));
   }
 
-  /** what one draw costs right now: a fraction of what this pool is worth
-   *  (economy.ts rollPriceFor), and nothing at all on a free board */
+  /** what one draw costs right now — flat (economy.ts), and nothing at
+   *  all on a free board */
   private rollPrice(): number {
-    return this.dealing ? rollPriceFor(this.drawPool(), this.rarityWeights) : 0;
+    return this.dealing ? TURRET_ROLL_PRICE : 0;
   }
 
   /** point the deal at different odds — what an upgrade will do */
@@ -942,6 +1002,9 @@ export class Game {
     if (!this.inWorld(p)) return this.clearHover();
     this.hoverX = p.x;
     this.hoverY = p.y;
+    // the ghost's own anchor is the formation's (heldCells); this pair is
+    // the cell a bare tool acts on, and it spans the whole shape so that
+    // "is the cursor aiming at the board at all" is asked of all of it
     const hsz = this.buildKind ? TOWERS[this.buildKind].size : 2;
     this.hoverGx = clamp(Math.round(p.x / CELL - hsz / 2), 0, COLS - hsz);
     this.hoverGy = clamp(Math.round(p.y / CELL - hsz / 2), 0, ROWS - hsz);
@@ -1095,9 +1158,10 @@ export class Game {
     this.attachMinimap(null);
   }
 
-  setBuildKind(kind: TowerKind | null): void {
+  setBuildKind(kind: TowerKind | null, form: FormationId | null = null): void {
     if (kind && this.tech && !this.tech.unlocked.has(kind)) return;
     this.buildKind = kind;
+    this.buildForm = kind ? form : null;
     // a building picked up puts the inspected one down: the ring the hand
     // was reading belongs to a decision it has moved on from
     if (kind) this.sim.clearStructSelection();
@@ -1211,6 +1275,7 @@ export class Game {
   openMenu(): void {
     if (this.sim.lost() || this.won()) return;
     this.buildKind = null;
+    this.buildForm = null;
     this.menuOpen = true;
   }
 
@@ -2076,7 +2141,7 @@ export class Game {
       const cells =
         this.ruler && this.building
           ? this.sim.rulerCells(this.rulerFrom.x, this.rulerFrom.y, this.hoverX, this.hoverY, this.buildKind)
-          : [{ gx: this.hoverGx, gy: this.hoverGy }];
+          : this.heldCells({ x: this.hoverX, y: this.hoverY });
       for (const cell of cells) this.drawGhost(c, cell.gx, cell.gy, this.buildKind);
     }
   }
