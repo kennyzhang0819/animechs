@@ -309,14 +309,16 @@ const MM_SCALE = 1;
  * ground under it. Bodies read a touch smaller than structures: a line of
  * turrets is what the map is read for, and it wins the overdraw.
  *
- * Both numbers are DOUBLE what they were (2.5 and 3). A mark at those
- * sizes was two or three screen px on a 13rem canvas — legible only if
- * you already knew where to look, which is not what a corner map is for.
- * At five and six a body is a clear speck and the line is a clear bar,
- * and the ground keeps its true scale underneath either way.
+ * Both numbers are ONE AND A HALF times what they first were (2.5 and 3).
+ * A mark at those sizes was two or three screen px on a 13rem canvas —
+ * legible only if you already knew where to look, which is not what a
+ * corner map is for. Double read as blobs: a handful of bodies merged
+ * into one red smear and the line swallowed the ground it stood on. At
+ * three and a half a body is a clear speck and the line is a clear bar,
+ * with the ground still visible between them.
  */
-const MM_UNIT_PX = 5;
-const MM_STRUCT_PX = 6;
+const MM_UNIT_PX = 3.75;
+const MM_STRUCT_PX = 4.5;
 /** how often the minimap's CSS width is measured, in draws. Reading
  *  clientWidth is a layout read, and one per frame is a reflow per frame;
  *  the width only moves when the window or the HUD's zoom does */
