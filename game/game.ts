@@ -474,6 +474,17 @@ const hpColor = (f: number): string => (f > 0.5 ? "#7BE58A" : f > 0.2 ? "#FFD37F
  * the LENGTH says how much is left, which is what a bar is for.
  */
 const ENEMY_HP = "#FF5A5A";
+
+/**
+ * THE PLACEMENT GHOST'S THREE TINTS, fill and edge — refused, taxed by the
+ * Hydrophobic rule, and ordinary. Every cell of the shape in hand is sorted
+ * into one of them and each is drawn as one path (drawGhosts).
+ */
+const GHOST_TINTS: readonly (readonly [string, string])[] = [
+  ["rgba(255,90,90,0.3)", "rgba(255,90,90,0.9)"],
+  ["rgba(138,162,255,0.22)", "rgba(138,162,255,0.95)"],
+  ["rgba(255,211,127,0.14)", "rgba(255,211,127,0.85)"],
+];
 const PAN_KEYS: Record<string, readonly [number, number]> = {
   KeyW: [0, -1],
   KeyS: [0, 1],
@@ -1135,14 +1146,20 @@ export class Game {
     const kind = this.buildKind;
     if (!kind || !this.inWorld(p)) return 0;
     const cells = this.heldCells(p);
-    const solo = this.sim.rollSoloMod();
-    if (solo) {
-      const one = this.sim.placeSolo(cells, kind, solo);
-      if (one > 0) return one;
-    }
-    let n = 0;
-    for (const c of cells) if (this.sim.placeTower(c.gx, c.gy, kind) === "ok") n++;
-    return n;
+    // THE WHOLE CARD IS ONE BOARD CHANGE (Sim.batchPlacement): a x9 fleet
+    // is three hundred and sixty footprints, and the spec table they all
+    // compose against is worth rebuilding once at the end rather than
+    // once per turret
+    return this.sim.batchPlacement(() => {
+      const solo = this.sim.rollSoloMod();
+      if (solo) {
+        const one = this.sim.placeSolo(cells, kind, solo);
+        if (one > 0) return one;
+      }
+      let n = 0;
+      for (const c of cells) if (this.sim.placeTower(c.gx, c.gy, kind) === "ok") n++;
+      return n;
+    });
   }
 
   /**
@@ -1901,7 +1918,9 @@ export class Game {
    */
   applyLayout(towers: readonly TowerPlacement[]): number {
     let placed = 0;
-    for (const t of towers) if (this.sim.placeTower(t.gx, t.gy, t.kind) === "ok") placed++;
+    this.sim.batchPlacement(() => {
+      for (const t of towers) if (this.sim.placeTower(t.gx, t.gy, t.kind) === "ok") placed++;
+    });
     return placed;
   }
 
@@ -2565,44 +2584,71 @@ export class Game {
         this.ruler && this.building
           ? this.sim.rulerCells(this.rulerFrom.x, this.rulerFrom.y, this.hoverX, this.hoverY, this.buildKind)
           : this.heldCells({ x: this.hoverX, y: this.hoverY });
-      for (const cell of cells) this.drawGhost(c, cell.gx, cell.gy, this.buildKind);
+      this.drawGhosts(c, cells, this.buildKind);
     }
   }
 
-  /** one placement ghost: the footprint, tinted by what the ground says */
-  private drawGhost(c: CanvasRenderingContext2D, gx: number, gy: number, kind: TowerKind): void {
-    // red marks anything that blocks the spot: walls, the base, units
-    // underneath, or a placement that would seal the swarm's last route
+  /**
+   * THE GHOST — every footprint the hand is aiming, in ONE PASS PER TINT.
+   *
+   * A x9 fleet card is three hundred and sixty footprints and this runs
+   * every frame the card is in hand, so it is drawn as three batched
+   * paths (refused, soaked, ordinary) rather than as six canvas calls per
+   * cell: the cells are sorted into buckets first and each bucket pays
+   * one fill, one stroke and one stroke for its interior lines. What is
+   * on screen is identical — each cell still asks canPlace for itself, so
+   * the line still shows exactly which of them the ground will take.
+   */
+  private drawGhosts(
+    c: CanvasRenderingContext2D,
+    cells: readonly { gx: number; gy: number }[],
+    kind: TowerKind,
+  ): void {
+    if (cells.length === 0) return;
     const sz = TOWERS[kind].size;
     const px = sz * CELL;
-    const ok = this.sim.canPlace(gx, gy, kind);
-    const x = gx * CELL, y = gy * CELL;
-    // a legal spot that the Hydrophobic rule TAXES is drawn in the
-    // special rule's own blue rather than the ordinary amber: the
-    // placement is allowed, so it must not read as refused, but most of
-    // a turret's damage is worth a colour of its own
-    const soaked = ok && this.sim.isWaterlogged(gx, gy, kind);
-    const tint = !ok
-      ? ["rgba(255,90,90,0.3)", "rgba(255,90,90,0.9)"]
-      : soaked
-        ? ["rgba(138,162,255,0.22)", "rgba(138,162,255,0.95)"]
-        : ["rgba(255,211,127,0.14)", "rgba(255,211,127,0.85)"];
-    c.fillStyle = tint[0];
-    c.fillRect(x, y, px, px);
-    c.strokeStyle = tint[1];
-    c.lineWidth = 1.5;
-    c.strokeRect(x + 1, y + 1, px - 2, px - 2);
-    // interior lines so the ghost reads as the cells it occupies
-    c.lineWidth = 1;
-    c.globalAlpha = 0.45;
-    c.beginPath();
-    for (let i = 1; i < sz; i++) {
-      c.moveTo(x + CELL * i, y + 1);
-      c.lineTo(x + CELL * i, y + px - 1);
-      c.moveTo(x + 1, y + CELL * i);
-      c.lineTo(x + px - 1, y + CELL * i);
+    // red marks anything that blocks the spot: walls, the base, units
+    // underneath, or a placement the ground will not take. A legal spot
+    // that the Hydrophobic rule TAXES is drawn in the special rule's own
+    // blue rather than the ordinary amber: the placement is allowed, so
+    // it must not read as refused, but most of a turret's damage is worth
+    // a colour of its own
+    const buckets: { gx: number; gy: number }[][] = [[], [], []];
+    for (const cell of cells) {
+      const ok = this.sim.canPlace(cell.gx, cell.gy, kind);
+      const b = !ok ? 0 : this.sim.isWaterlogged(cell.gx, cell.gy, kind) ? 1 : 2;
+      buckets[b].push(cell);
     }
-    c.stroke();
-    c.globalAlpha = 1;
+    for (let b = 0; b < buckets.length; b++) {
+      const group = buckets[b];
+      if (group.length === 0) continue;
+      const [fill, stroke] = GHOST_TINTS[b];
+      c.fillStyle = fill;
+      c.beginPath();
+      for (const { gx, gy } of group) c.rect(gx * CELL, gy * CELL, px, px);
+      c.fill();
+      c.strokeStyle = stroke;
+      c.lineWidth = 1.5;
+      c.beginPath();
+      for (const { gx, gy } of group) c.rect(gx * CELL + 1, gy * CELL + 1, px - 2, px - 2);
+      c.stroke();
+      // interior lines so each ghost reads as the cells it occupies
+      if (sz > 1) {
+        c.lineWidth = 1;
+        c.globalAlpha = 0.45;
+        c.beginPath();
+        for (const { gx, gy } of group) {
+          const x = gx * CELL, y = gy * CELL;
+          for (let i = 1; i < sz; i++) {
+            c.moveTo(x + CELL * i, y + 1);
+            c.lineTo(x + CELL * i, y + px - 1);
+            c.moveTo(x + 1, y + CELL * i);
+            c.lineTo(x + px - 1, y + CELL * i);
+          }
+        }
+        c.stroke();
+        c.globalAlpha = 1;
+      }
+    }
   }
 }

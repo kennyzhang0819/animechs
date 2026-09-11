@@ -1046,6 +1046,11 @@ export class Sim {
    * for these branches existing.
    */
   private specs = new Map<TowerKind, TowerStats>();
+
+  /** how deep the placement batch is (batchPlacement), and whether anything
+   *  inside it asked for a spec refresh that is still owed */
+  private specsHold = 0;
+  private specsPending = false;
   /**
    * THE RUN'S UPGRADES (mods.ts), id to how many copies of it are owned —
    * both scopes in one ledger, because the deal draws them off one table
@@ -1991,6 +1996,17 @@ export class Sim {
    * of it.
    */
   private refreshSpecs(): void {
+    // INSIDE A BATCH, THE WORK IS OWED RATHER THAN DONE. Every placement
+    // asks for this and the answer only depends on the board it leaves
+    // behind, so a card that lays three hundred and sixty turrets would
+    // otherwise re-compose every standing turret three hundred and sixty
+    // times — quadratic in the board, and the stutter a big fleet card
+    // used to cost. One flush at the end of the batch is the same answer
+    // (batchPlacement).
+    if (this.specsHold > 0) {
+      this.specsPending = true;
+      return;
+    }
     this.specs.clear();
     const up = this.tech?.upgrades;
     const counts = up ? this.towerCounts() : null;
@@ -3441,6 +3457,37 @@ export class Sim {
 
 
   /**
+   * ONE CARD'S WORTH OF PLACEMENTS AS ONE BOARD CHANGE.
+   *
+   * Everything a placement does to a single footprint (the roll, the
+   * ground test, claiming the cells) is per turret and stays per turret.
+   * The one thing that is NOT is the spec table: it is composed off the
+   * board as a whole — the count-dependent rungs read a census, and every
+   * standing turret is re-resolved on top of the result — so asking for
+   * it once per turret means the ninth copy of a x9 citadel re-resolves
+   * the eight that went before it, and the board, and the card costs
+   * O(turrets squared) to lay down.
+   *
+   * Inside here refreshSpecs only notes that it is owed; the flush at the
+   * end does it once, against the finished board, which is the same table
+   * the last of those calls would have produced. Re-entrant (a giant that
+   * will not fit falls back to the ordinary shape through the same path),
+   * and it flushes even if the body throws.
+   */
+  batchPlacement<T>(fn: () => T): T {
+    this.specsHold++;
+    try {
+      return fn();
+    } finally {
+      this.specsHold--;
+      if (this.specsHold === 0 && this.specsPending) {
+        this.specsPending = false;
+        this.refreshSpecs();
+      }
+    }
+  }
+
+  /**
    * ONE ORDINARY TURRET. THE ATTRIBUTE ROLL HAPPENS HERE (mods.ts): one
    * independent roll per turret upgrade the run owns, so a card that puts
    * down thirty-six turrets rolls thirty-six times and the patch comes
@@ -3529,6 +3576,10 @@ export class Sim {
    * which is what spaces the chain). Returns how many towers landed.
    */
   placeLine(x0: number, y0: number, x1: number, y1: number, kind: TowerKind): number {
+    return this.batchPlacement(() => this.placeLineInner(x0, y0, x1, y1, kind));
+  }
+
+  private placeLineInner(x0: number, y0: number, x1: number, y1: number, kind: TowerKind): number {
     const sz = TOWERS[kind].size;
     const dx = x1 - x0, dy = y1 - y0;
     const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / CELL));
@@ -3594,10 +3645,12 @@ export class Sim {
 
   /** ...and build it: every cell of the ruler's line that will take one */
   placeRuler(x0: number, y0: number, x1: number, y1: number, kind: TowerKind): number {
-    let placed = 0;
-    for (const c of this.rulerCells(x0, y0, x1, y1, kind))
-      if (this.placeTower(c.gx, c.gy, kind) === "ok") placed++;
-    return placed;
+    return this.batchPlacement(() => {
+      let placed = 0;
+      for (const c of this.rulerCells(x0, y0, x1, y1, kind))
+        if (this.placeTower(c.gx, c.gy, kind) === "ok") placed++;
+      return placed;
+    });
   }
 
   /** the PLAYER's tower whose footprint covers the world point, if any —
@@ -3681,13 +3734,17 @@ export class Sim {
    * Returns how many towers came down.
    */
   sellLine(x0: number, y0: number, x1: number, y1: number): number {
-    const dx = x1 - x0, dy = y1 - y0;
-    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / CELL));
-    let sold = 0;
-    for (let s = 0; s <= steps; s++) {
-      if (this.sellTowerAt(x0 + (dx * s) / steps, y0 + (dy * s) / steps)) sold++;
-    }
-    return sold;
+    // one board change, one spec refresh — the same batching a multi-cell
+    // placement gets (batchPlacement), for the same reason
+    return this.batchPlacement(() => {
+      const dx = x1 - x0, dy = y1 - y0;
+      const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / CELL));
+      let sold = 0;
+      for (let s = 0; s <= steps; s++) {
+        if (this.sellTowerAt(x0 + (dx * s) / steps, y0 + (dy * s) / steps)) sold++;
+      }
+      return sold;
+    });
   }
 
   /** remove the tower whose footprint covers the world point, if any */
@@ -3705,15 +3762,17 @@ export class Sim {
 
   /** sell every selected building — the delete key over a gathered row */
   sellSelected(): number {
-    let k = 0;
-    for (const st of [...this.selStructs]) {
-      if (isCore(st)) continue;
-      if (this.charging) this.scrap += sellValue(st.kind);
-      this.pushFx(st.x, st.y, 0.35, FxKind.Death);
-      this.removeTower(st);
-      k++;
-    }
-    return k;
+    return this.batchPlacement(() => {
+      let k = 0;
+      for (const st of [...this.selStructs]) {
+        if (isCore(st)) continue;
+        if (this.charging) this.scrap += sellValue(st.kind);
+        this.pushFx(st.x, st.y, 0.35, FxKind.Death);
+        this.removeTower(st);
+        k++;
+      }
+      return k;
+    });
   }
 
   // ---------- spawning ----------
