@@ -3,6 +3,7 @@
 import type { RefObject } from "react";
 
 import { modDef, modName, oddsLine, type ModGlyph, type ModId } from "@/game/mods";
+import { DRAWN_GLYPHS, MOD_GRID, modGlyph } from "./modArt";
 import { RARITY } from "@/game/rarity";
 import { HoverCard, useHoverCard } from "./HoverCard";
 
@@ -30,11 +31,25 @@ import { HoverCard, useHoverCard } from "./HoverCard";
  */
 
 /**
- * THE FACES. A mod is not a building and has nothing in the atlas, so
- * each one is a few strokes on a 24x24 grid, drawn in its own band's
- * colour — a barrel, a gear, a plate, a lens. They are read at 22 CSS
- * pixels, which is the size a relic row is read at everywhere, so every
- * one of them is a silhouette and none of them is a picture.
+ * THE FACES, AND THERE ARE TWO KINDS OF THEM HERE.
+ *
+ * THE TURRET HALF IS PIXEL ART (modArt.ts): a 16-square drawing in the
+ * game's own palette, the same way the mutator faces are drawn, because
+ * these hang beside Mindustry block sprites and a line glyph beside that
+ * art reads as a placeholder. The `color` prop does NOT reach them — a
+ * drawing carries the palette of the THING it depicts and never the
+ * colour of how good it is, and the band is on the border of the box this
+ * sits in at all three call sites below. That is also what lets the
+ * common "+10% damage" and the uncommon "+25%" share one barrel: same
+ * art, different border, one legend.
+ *
+ * THE RELIC HALF IS STILL STROKES — a few marks on a 24x24 grid in the
+ * band's colour. Nothing about that is principled; they simply have not
+ * been drawn yet, and anything modArt.ts does not know falls through to
+ * the old drawing below.
+ *
+ * Either way they are read at 12 to 22 CSS pixels, so every one of them
+ * is a silhouette and none of them is a picture.
  */
 export function Glyph({
   glyph,
@@ -45,83 +60,23 @@ export function Glyph({
   color: string;
   className?: string;
 }) {
+  if (DRAWN_GLYPHS.has(glyph))
+    return (
+      <svg
+        viewBox={`0 0 ${MOD_GRID} ${MOD_GRID}`}
+        className={className}
+        shapeRendering="crispEdges"
+        aria-hidden="true"
+      >
+        {modGlyph(glyph).map((layer) => (
+          <path key={layer.color} fill={layer.color} d={layer.d} />
+        ))}
+      </svg>
+    );
   const s = { stroke: color, strokeWidth: 2, fill: "none", strokeLinecap: "round" as const };
   const f = { fill: color, stroke: "none" };
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-      {glyph === "barrel" && (
-        <>
-          <rect x="4" y="9" width="13" height="6" {...s} />
-          <path d="M17 12h4" {...s} />
-        </>
-      )}
-      {glyph === "gear" && (
-        <>
-          <circle cx="12" cy="12" r="5" {...s} />
-          <path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" {...s} />
-        </>
-      )}
-      {glyph === "plate" && (
-        <>
-          <path d="M12 3l8 4v6c0 4-4 7-8 8-4-1-8-4-8-8V7z" {...s} />
-        </>
-      )}
-      {glyph === "lens" && (
-        <>
-          <circle cx="10" cy="10" r="6" {...s} />
-          <path d="M15 15l6 6" {...s} />
-        </>
-      )}
-      {glyph === "weave" && (
-        <>
-          <path d="M3 8h18M3 16h18M8 3v18M16 3v18" {...s} />
-        </>
-      )}
-      {glyph === "spike" && (
-        <>
-          <path d="M12 2l4 8-4 12-4-12z" {...s} />
-        </>
-      )}
-      {/* THE GIANT: a building that does not fit its own square. The
-          glyph is the mechanic — a block overflowing the frame — and it
-          is the one face here that is a SHAPE rather than a device */}
-      {glyph === "giant" && (
-        <>
-          <rect x="2" y="2" width="14" height="14" {...f} />
-          <path d="M8 8h14v14H8z" {...s} />
-        </>
-      )}
-      {glyph === "chassis" && (
-        <>
-          <path d="M4 6h16v12H4z" {...s} />
-          <path d="M4 12h16M12 6v12" {...s} />
-        </>
-      )}
-      {glyph === "shield" && (
-        <>
-          <path d="M12 2l9 4v7c0 5-4 8-9 9-5-1-9-4-9-9V6z" {...s} />
-          <path d="M12 8v8" {...s} />
-        </>
-      )}
-      {/* THE SNIPER: a reticle down a long tube — the crosshair relic's
-          rings, drawn narrow and stretched, because what this one buys is
-          reach and the shape of it should say so */}
-      {glyph === "scope" && (
-        <>
-          <circle cx="12" cy="12" r="6" {...s} />
-          <path d="M12 2v4M12 18v4M2 12h4M18 12h4" {...s} />
-          <circle cx="12" cy="12" r="1.5" {...f} />
-        </>
-      )}
-      {/* ALL ROUND: every arrow at once, out of one point. It is the only
-          attribute that costs nothing, and a face with no edge to it is
-          the honest picture of that */}
-      {glyph === "allround" && (
-        <>
-          <circle cx="12" cy="12" r="3.5" {...f} />
-          <path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l3 3M16 16l3 3M19 5l-3 3M8 16l-3 3" {...s} />
-        </>
-      )}
       {glyph === "crosshair" && (
         <>
           <circle cx="12" cy="12" r="7" {...s} />

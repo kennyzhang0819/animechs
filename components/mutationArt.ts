@@ -1,145 +1,28 @@
 /**
- * THE MUTATOR FACES, DRAWN RATHER THAN STORED.
+ * THE MUTATOR FACES — one drawing per rule, on a 32-square grid.
  *
- * WHY THERE IS NO SPRITE SHEET AND NO CHECKED-IN SVG. The faces are ten
- * 32x32 pictures built out of discs, polygons and boxes; describing them
- * costs less than a tenth of what storing them costs, and the description
- * is the thing anyone would actually edit. tiles.ts already draws the
- * game's floors and props this way — art as code, generated once on
- * demand — and this is the same trade at a much smaller scale.
+ * THE HOUSE RULES FOR DRAWING ONE OF THESE ARE IN pixelArt.ts, and so are
+ * the pen and the palette. Read them before adding a face: three of the
+ * faces below had to be redrawn during the first pass, and those three
+ * are the worked examples behind half of those rules.
  *
- * WHY 32. Mindustry's status effect sprites — its icons for exactly this
- * thing, a rule laid over a body — are 32x32, and its block art is 32px to
- * the tile. These faces are read beside that art on the same screens, so
- * they are drawn on its grid.
+ * WHY THERE IS NO SPRITE SHEET AND NO CHECKED-IN SVG. These are ten
+ * pictures built out of discs, polygons and boxes; describing them costs
+ * less than a tenth of what storing them costs, and the description is
+ * the thing anyone would actually edit. tiles.ts already draws the game's
+ * floors and props this way.
  *
- * WHY FLAT, AND WHY NO OUTLINE. Count the colours in lancer.png or
- * mender.png: four or five, butted against each other along straight
- * edges, with no dark contour anywhere and no gradient. An icon shaded the
- * other way — light traced down its top-left edge, shadow down its
- * bottom-right — looks EMBOSSED, like a button pressed out of the page,
- * and sits wrong beside blocks that look stamped flat. So the only
- * shading primitive here is over(): draw a plain rectangle, clip it to
- * what the face has already drawn, and a top plate or a skirt follows the
- * silhouette exactly. Form comes from parts, not from a light source.
+ * WHY 32 WHEN THE MOD GLYPHS ARE 16. Match the grid to the size the thing
+ * is read at. A face is read at 20 to 56 CSS pixels — a deploy chip, a
+ * reward chip, an unlocks tile — and Mindustry's own status effect
+ * sprites, its icons for exactly this thing, are 32x32. A mod glyph is
+ * read at 12 to 15 and is drawn at 16 for the same reason (modArt.ts).
  */
+
+import { memoDraw, PAL, type Ink, type Layer, type Pen } from "./pixelArt";
 
 /** the grid, and the viewBox every face is drawn in */
 export const FACE_GRID = 32;
-
-/**
- * THE PALETTE, COUNTED OFF THE GAME'S OWN SPRITES rather than invented.
- * Every hex below was taken from the art under public/mindustry/sprites —
- * the gunmetal ramp is what lancer, fuse and spectre are plated in, the
- * green is the mender's and the force projector's, the field blue is
- * parallax's, the ember ramp is spectre's and swarmer's heat, and the
- * water is the #5c6dbb renderer.ts already records shallow-water.png as
- * averaging. A face that invented its own colours next to art this
- * consistent would read as bolted on, and a rule would say nothing about
- * itself; on this palette green heals, blue is a field, ember is damage
- * and gunmetal is a structure, which is the vocabulary the player has
- * already been taught by everything else on the screen.
- */
-const PAL = {
-  steelDeep: "#2c2d38", steelDark: "#4d4e58", steel: "#7b7b7b",
-  steelLite: "#c1c3d4", steelWhite: "#f4f4f4",
-  blueDark: "#4e57a0",
-  healDark: "#62ae7f", heal: "#84f491", healLite: "#c8ffd2",
-  fieldDark: "#6f80e8", field: "#88a4ff", fieldLite: "#c6d6ff",
-  emberDark: "#db401c", ember: "#ec7458", emberLite: "#ff9c5a",
-  flame: "#ffdd55", flameLite: "#fff2ad",
-  waterDark: "#3f4c96", water: "#5c6dbb", waterLite: "#8aa3f4",
-  codexDark: "#c25a97", codex: "#ff8acb", codexLite: "#ffc7e6",
-} as const;
-
-type Ink = (typeof PAL)[keyof typeof PAL] | null;
-
-/** the pen — unit coordinates in, palette keys on a square grid out */
-type Pen = {
-  box(x0: number, y0: number, x1: number, y1: number, c: Ink): Pen;
-  disc(cx: number, cy: number, r: number, c: Ink): Pen;
-  ring(cx: number, cy: number, r: number, w: number, c: Ink): Pen;
-  poly(pts: readonly (readonly [number, number])[], c: Ink): Pen;
-  over(fn: (o: Pen) => void): Pen;
-  erase(fn: (e: Pen) => void): Pen;
-};
-
-function grid(n: number): { px: Ink[]; pen: Pen } {
-  const px: Ink[] = new Array<Ink>(n * n).fill(null);
-  let clipped = false;
-  let erasing = false;
-  const u = (v: number) => Math.round(v * n);
-  const set = (x: number, y: number, c: Ink) => {
-    if (x < 0 || y < 0 || x >= n || y >= n) return;
-    if (clipped && px[y * n + x] === null) return;
-    px[y * n + x] = erasing ? null : c;
-  };
-
-  const pen: Pen = {
-    box(x0, y0, x1, y1, c) {
-      for (let y = u(y0); y < u(y1); y++) for (let x = u(x0); x < u(x1); x++) set(x, y, c);
-      return pen;
-    },
-
-    /** midpoint circle, filled by span — the pixel artist's circle */
-    disc(cx, cy, r, c) {
-      const [cxp, cyp, pr] = [u(cx), u(cy), u(r)];
-      for (let y = -pr; y <= pr; y++) {
-        const half = Math.floor(Math.sqrt(pr * pr - y * y + 0.25));
-        for (let x = -half; x <= half; x++) set(cxp + x, cyp + y, c);
-      }
-      return pen;
-    },
-
-    /**
-     * The same circle, hollow, `w` pixels of wall — and the wall is the
-     * same `w` at the apex as at the flanks. Taking an inner span off an
-     * outer one row by row does NOT give you that: it thins to nothing
-     * where the curve runs flat, which at 32 is a visible notch out of the
-     * top of an arch. So the test is on the radius itself.
-     */
-    ring(cx, cy, r, w, c) {
-      const [cxp, cyp, pr] = [u(cx), u(cy), u(r)];
-      const inner = pr - w;
-      for (let y = -pr; y <= pr; y++) for (let x = -pr; x <= pr; x++) {
-        const d = Math.sqrt(x * x + y * y);
-        if (d <= pr + 0.5 && d >= inner - 0.5) set(cxp + x, cyp + y, c);
-      }
-      return pen;
-    },
-
-    /** integer scanline polygon — unit points, wound either way */
-    poly(pts, c) {
-      const P = pts.map(([x, y]) => [u(x), u(y)] as const);
-      let lo = Infinity, hi = -Infinity;
-      for (const [, y] of P) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
-      for (let y = lo; y < hi; y++) {
-        const xs: number[] = [];
-        for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
-          const [xi, yi] = P[i], [xj, yj] = P[j];
-          if ((yi <= y && yj > y) || (yj <= y && yi > y))
-            xs.push(xi + ((y - yi) / (yj - yi)) * (xj - xi));
-        }
-        xs.sort((a, b) => a - b);
-        for (let k = 0; k + 1 < xs.length; k += 2)
-          for (let x = Math.round(xs[k]); x < Math.round(xs[k + 1]); x++) set(x, y, c);
-      }
-      return pen;
-    },
-
-    /**
-     * A PLATE. Everything drawn inside `fn` lands only where the face has
-     * already put something, so a plain rectangle becomes a top plate or a
-     * skirt that follows the silhouette exactly and spills nowhere. This
-     * is the whole shading model.
-     */
-    over(fn) { clipped = true; fn(pen); clipped = false; return pen; },
-
-    /** punch a hole — whatever `fn` draws goes back to nothing */
-    erase(fn) { erasing = true; fn(pen); erasing = false; return pen; },
-  };
-  return { px, pen };
-}
 
 /** the heater shield both armour rules are cut from, at any scale about
  *  its own middle — see `armored` for why the plating is concentric */
@@ -310,45 +193,10 @@ const FACES: Record<string, (g: Pen) => void> = {
   },
 };
 
-/** one <path> per colour: the face's pixels of that colour, as a run of
- *  1-tall boxes. A face lands in three to six paths. */
-export type FaceLayer = { readonly color: string; readonly d: string };
+export type { Layer as FaceLayer };
 
 /**
- * Drawn ONCE per rule and kept. Three screens render a shelf of these and
- * a shelf re-renders on every hover; redrawing ten 32-squares each time
- * would be work nobody asked for, and a face never changes after its
- * first draw.
+ * The face a rule wears, as paths. An id with no drawing of its own falls
+ * back to the codex's chevrons, the way it always has.
  */
-const drawn = new Map<string, readonly FaceLayer[]>();
-
-/** the face a rule wears, as paths — an id with no drawing of its own
- *  falls back to the codex's chevrons, the way it always has */
-export function mutatorFace(id: string): readonly FaceLayer[] {
-  const key = id in FACES ? id : "glyph";
-  const hit = drawn.get(key);
-  if (hit) return hit;
-
-  const { px, pen } = grid(FACE_GRID);
-  FACES[key](pen);
-
-  // runs of one colour along a row, collected per colour, so the hex is
-  // written once per layer rather than once per pixel
-  const byColor = new Map<string, string[]>();
-  for (let y = 0; y < FACE_GRID; y++) {
-    let x = 0;
-    while (x < FACE_GRID) {
-      const c = px[y * FACE_GRID + x];
-      if (c === null) { x++; continue; }
-      let w = 1;
-      while (x + w < FACE_GRID && px[y * FACE_GRID + x + w] === c) w++;
-      const runs = byColor.get(c) ?? [];
-      runs.push(`M${x} ${y}h${w}v1h-${w}z`);
-      byColor.set(c, runs);
-      x += w;
-    }
-  }
-  const layers: readonly FaceLayer[] = [...byColor].map(([color, d]) => ({ color, d: d.join("") }));
-  drawn.set(key, layers);
-  return layers;
-}
+export const mutatorFace = memoDraw(FACES, FACE_GRID, "glyph");
