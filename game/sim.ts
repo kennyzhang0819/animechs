@@ -151,7 +151,7 @@ import {
   rollTurretMods,
   type ModId,
 } from "./mods";
-import { SCRAP_START, sellValue } from "./economy";
+import { RICH_SCRAP, SCRAP_START, sellValue } from "./economy";
 import { airWalkMask, isBuildableWall, isWaterFloor, navalWalkMask, WALL_DEEP, type Terrain } from "./terrain";
 import {
   MAX_WEAPONS,
@@ -1013,6 +1013,22 @@ export class Sim {
   // the map editor's mode) places no restrictions; the campaign sets it from
   // the save's level through the track before play (see Game.setTech)
   private tech: TechState | null = null;
+  /**
+   * THE BOTTOMLESS PURSE — the admin view's unlimited income.
+   *
+   * It is deliberately NOT the old "tech null builds for free" road. Free
+   * building switches the whole economy off: no deal, no mod rolls, no
+   * prices, which is the one thing the sandbox must not do when the point
+   * of the sandbox is to look at the deal. So the run stays CHARGED and
+   * the money simply never runs out — same prices, same odds, same corner.
+   *
+   * The player's real balance is parked in `purseWas` while it is on and
+   * handed back when it goes off, so a run dropped into the sandbox and
+   * pulled out again comes back with the scrap it actually earned rather
+   * than a sandbox fortune.
+   */
+  private rich = false;
+  private purseWas = 0;
   /**
    * EVERY TURRET AS THIS SAVE HAS UPGRADED IT — the stats each kind on the
    * field actually fires with, standing in for the stock TOWERS entry.
@@ -1909,10 +1925,23 @@ export class Sim {
     this.refreshSpecs();
   }
 
+  /** unlimited income: the balance goes bottomless, spending stops
+   *  deducting, and the player's own scrap is held to be given back */
+  setRich(on: boolean): void {
+    if (on === this.rich) return;
+    this.rich = on;
+    if (on) {
+      this.purseWas = this.scrap;
+      this.scrap = RICH_SCRAP;
+    } else {
+      this.scrap = this.purseWas;
+    }
+  }
+
   /** is building charged? — a campaign run, as opposed to an editor or the
    *  sandbox, which both build for nothing */
   get charging(): boolean {
-    return this.tech !== null;
+    return this.tech !== null || this.rich;
   }
 
   /**
@@ -3483,6 +3512,11 @@ export class Sim {
    */
   spend(amount: number): boolean {
     if (!this.charging) return true;
+    // the purse is bottomless, but every other rule of the economy — the
+    // affordability checks upstream, the prices on the buttons — reads a
+    // real balance, so it is left sitting at RICH_SCRAP rather than
+    // special-cased at each till
+    if (this.rich) return true;
     const n = Math.max(0, amount);
     if (this.scrap < n) return false;
     this.scrap -= n;
