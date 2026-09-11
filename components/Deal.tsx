@@ -469,46 +469,6 @@ function BuyButton({
   );
 }
 
-/**
- * THE TURN, under the card and only while the ghost is up.
- *
- * R IS NOT A BUTTON IN THE SQUARE and must not become one: it is a verb
- * on the thing being aimed, so it lives with the card rather than with
- * the three things that can be bought. But a key nothing on screen ever
- * mentions is a key nobody presses, so the card grows a thin strip that
- * says R while there is something to turn — and the strip is a BUTTON
- * too, because a hand already on the mouse should be able to stand a slab
- * on its end without reaching for the keyboard.
- *
- * It says which way the card is lying (0, 90, 180, 270) rather than just
- * "turn", because most formations are symmetric under a quarter turn
- * (formation.ts Facing) and a x1 press of R on a Bastion would otherwise
- * look like a key that does nothing.
- */
-function TurnStrip({ facing, onRotate }: { facing: Facing; onRotate: () => void }) {
-  return (
-    <button
-      onClick={onRotate}
-      aria-keyshortcuts="R"
-      aria-label={`Turn the card. Lying at ${facing * 90} degrees, shortcut R`}
-      className="ms-btn pointer-events-auto flex h-6 w-[3.8rem] items-center justify-center gap-1 px-1 text-[10px]"
-    >
-      <span className="text-[#A6A6AF]">R</span>
-      <svg viewBox="0 0 24 24" className="h-[12px] w-[12px]" aria-hidden="true">
-        <path
-          d="M20 12a8 8 0 1 1-2.6-5.9"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-        />
-        <path d="M20 3v5h-5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-      </svg>
-      <span className="font-bold tabular-nums tracking-normal text-[#EDEDEF]">{facing * 90}</span>
-    </button>
-  );
-}
-
 /** the turret: a gun from above, which is the shape of the thing bought */
 const TURRET_GLYPH = (
   <svg viewBox="0 0 24 24" className="h-[22px] w-[22px]" aria-hidden="true">
@@ -547,9 +507,6 @@ export function DealCorner({
           facing={hud.buildFacing}
           onToggle={deal.toggle}
         />
-      )}
-      {card && hud.buildKind !== null && (
-        <TurnStrip facing={hud.buildFacing} onRotate={deal.rotate} />
       )}
       <div className="ms-pane pointer-events-auto p-1">
         <div
