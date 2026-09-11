@@ -73,15 +73,22 @@ const GLYPHS: Record<string, (g: Pen) => void> = {
     g.disc(0.5, 0.5, 0.16, PAL.flame);                 // the hub, running hot
   },
 
-  /** HEALTH — a bolted hull plate. Deliberately RECTANGULAR: the Bulwark
-   *  shield below is a tower shield and the mutator's Armored Swarms is a
-   *  heater shield, and three armour icons in one game need three
-   *  silhouettes rather than three sizes of the same one. */
+  /** HEALTH — a green plus, and nothing else.
+   *
+   *  NO PLATING, NO ACCENT, NO SKIRT. This is the one drawing in the file
+   *  that skips rule 5's flat-plate treatment, because a plus has no
+   *  parts to butt against each other and shading one only makes it
+   *  harder to read at 12 pixels. It is also the most legible thing the
+   *  file can say: a plus is health in every game anyone has played, and
+   *  the health tick is drawn twice on a shelf (common and uncommon) so
+   *  it is the glyph that most needs reading at a glance.
+   *
+   *  The glyph's NAME is still `plate` in game/mods.ts, which is what it
+   *  used to be. The name is a key, not a description, and renaming it
+   *  would churn the catalog to no effect. */
   plate: (g) => {
-    g.box(0.08, 0.16, 0.92, 0.84, PAL.steel);
-    g.box(0.2, 0.28, 0.8, 0.72, PAL.steelLite);        // the inner panel
-    for (const x of [0.11, 0.83]) for (const y of [0.2, 0.68])
-      g.box(x, y, x + 0.1, y + 0.12, PAL.steelWhite);  // four corner bolts
+    g.box(0.31, 0.09, 0.69, 0.91, PAL.heal);
+    g.box(0.09, 0.31, 0.91, 0.69, PAL.heal);
   },
 
   /** RANGE — a magnifying glass: a RING of rim, glass inside it, and a
@@ -135,7 +142,10 @@ const GLYPHS: Record<string, (g: Pen) => void> = {
 
   /** BULWARK PLATING — a tower shield with a mender pip. A TOWER shield,
    *  flat-topped and square-shouldered, so it does not collide with the
-   *  heater shield the Armored Swarms mutator wears. */
+   *  heater shield the Armored Swarms mutator wears. The pip is a CROSS
+   *  ON A SHIELD and the health tick is a bare plus, which is the right
+   *  way round: this mod is armour that also mends, and the tick is plain
+   *  hit points. */
   shield: (g) => {
     g.poly([[0.2, 0.08], [0.8, 0.08], [0.8, 0.6], [0.5, 0.94], [0.2, 0.6]], PAL.steel);
     g.over((o) => {
