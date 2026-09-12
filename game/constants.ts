@@ -675,10 +675,17 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       fxColor: PAL.thoriumAmmoBack,
     },
   },
-  // Scatter, 1:1 from mindustry/content/Blocks.java with lead ammo
+  // Scatter, from mindustry/content/Blocks.java with lead ammo
   // (FlakBulletType(4.2, 3), splash 27*1.5 in a 15-unit radius).
-  // Anti-air only, exactly like upstream: it ignores the ground swarm and
-  // waits for flyers.
+  //
+  // The ONE deliberate break from upstream: our scatter is not anti-air
+  // only. Upstream's flak waits for flyers, and a turret that idles
+  // through every ground wave is a turret nobody buys — so its shells
+  // fuse over the ground swarm too. That doubles the board it covers, and
+  // the shell pays for it: the lead flak's 3/40.5 goes to 2/13.5, a third
+  // of the blast it carried when it only ever saw the air. A tier-1
+  // common at 180 scrap should not out-damage a 900-scrap salvo on both
+  // layers at once.
   scatter: {
     name: "Scatter",
     size: 2,
@@ -693,15 +700,15 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
     shootCone: (35 * Math.PI) / 180,
     rotateSpeed: ((15 * Math.PI) / 180) * TICK,
     targetAir: true,
-    targetGround: false,
+    targetGround: true,
     bullet: {
       speed: 4.2 * TICK * MU,
-      damage: 3,
+      damage: 2,
       lifetime: (220 + 2 + 10) / 4.2 / TICK, // limitRange(2) + base 10-unit margin
-      splash: 27 * 1.5,
+      splash: 27 * 0.5,
       splashRadius: 15 * MU,
       collidesAir: true,
-      collidesGround: false,
+      collidesGround: true,
       flak: {
         explodeRange: 30 * MU,
         explodeDelay: 5 / TICK,

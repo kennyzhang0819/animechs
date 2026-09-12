@@ -399,6 +399,9 @@ const SCATTER: readonly TurretUpgradeDef[] = [
     // Mindustry's own metaglass flak is scatter's best ammo — damage 5
     // over lead's 3 and splashDamage 33 over 22. Taken as ratios rather
     // than absolutes, because our scatter's numbers are already scaled
+    // down for a flak that fuses over the ground swarm as well as the air
+    // (constants.ts): doubled, the blast still lands short of the
+    // air-only shell this turret used to carry
     apply: (s) => fusedAt(wider(stronger(s, 2), 1.15), 1.35),
   },
 ];
