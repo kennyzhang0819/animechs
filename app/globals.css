@@ -32,10 +32,9 @@
        buttons and the build grid are keycaps, because they ARE keys.
 
    THE RULES, everywhere: every line is 3px, no line is 1px; no blur, no
-   drop shadow, no anti-aliased edge; nothing translucent — where the map
-   has to show through a sheet it shows through a pixel screen
-   (.ms-screen), a grid of dark pixels with one in four left open; and
-   corners are SQUARE.
+   drop shadow, no anti-aliased edge; no translucent panels — the one
+   thing that dims is the plain scrim a sheet goes over (.ms-screen);
+   and corners are SQUARE.
    A rounded corner is the one thing pixel art cannot draw, so the
    radius is zeroed on every element at the bottom of this file. */
 :root {
@@ -574,17 +573,11 @@
     line-height: 1.3;
   }
 
-  /* THE SCREEN: what goes over the field when a sheet is up. Not a
-     translucent scrim — a grid of dark pixels with one pixel in four left
-     open, so the held run shows through at a quarter, in the same
-     material the sheet is drawn in. (A 50% checker was tried and read as
-     static over a bright map.) */
+  /* THE SCREEN: what goes over the field when a sheet is up. A plain
+     dark scrim, no pattern — a pixel checker was tried and read as
+     static over a bright map. */
   .ms-screen {
-    background-color: transparent;
-    background-image:
-      linear-gradient(90deg, var(--ms-outline) 50%, transparent 50%),
-      linear-gradient(180deg, var(--ms-outline) 50%, transparent 50%);
-    background-size: 6px 6px;
+    background-color: rgba(6, 7, 9, 0.72);
   }
 
   /* THE BOARD'S GROUND — the tech tree and the codex pan over this. Plain
