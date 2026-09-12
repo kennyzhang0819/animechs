@@ -106,7 +106,7 @@ export const PAL = {
    *  throws a navy round */
   navalBack: pal(0x4a5aa8),
   navalFront: pal(0xdfe6ff),
-  /** THE EMP: the Aegis tanks' arc, an electric cyan that is neither the
+  /** THE EMP: the Wraith fleet's arc, an electric cyan that is neither the
    *  lancer's blue nor the support line's green — the one colour in the
    *  game that means a gun has been SHORTED */
   emp: pal(0x8cf2ff),
@@ -1682,8 +1682,11 @@ export const MOVE_LAYERS = ["ground", "air", "water"] as const;
 export type MoveLayer = (typeof MOVE_LAYERS)[number];
 
 /**
- * WHAT A NAVAL TANK LOSES ASHORE: thirty per cent of its speed, applied to
- * the drive and to nothing else.
+ * WHAT A HULL LOSES ASHORE: half its speed, applied to the drive and to
+ * nothing else. The Harpoon fleet is the sniper family (weapons.ts) and
+ * the crawl up the beach is the point of it — a hull that is slow to
+ * arrive has been shooting the whole way in, and is old when it arrives
+ * (levels.ts veteran).
  *
  * It is deliberately NOT a pathfinding input. The naval field is a plain
  * shortest-path solve over "rock, and nothing else" (navalWalkMask), so a
@@ -1698,7 +1701,7 @@ export type MoveLayer = (typeof MOVE_LAYERS)[number];
  * penalty would be a pathfinding input. Here it is not one — the field
  * never reads it.
  */
-export const NAVAL_LAND_SPEED = 0.7;
+export const NAVAL_LAND_SPEED = 0.5;
 /**
  * ...AND WHAT IT GAINS AFLOAT: half again its stat, on the drive and on
  * nothing else, on every cell that IS a water floor (Sim.updateUnits).

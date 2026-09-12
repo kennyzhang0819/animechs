@@ -45,8 +45,8 @@ stale tab or a cached bundle looks exactly like a fix not working.
   script itself (50 waves, a 15-second gap — `WAVE_GAP_DEFAULT`) lives in
   `public/levels/campaign.json`, loaded by `loadLevelDocs()`. Six unit
   families, each one idea at five sizes: ground mechs, venom spitters,
-  starlight mechs, sky gunships and the two **naval** lines (naval tanks,
-  aegis tanks), which travel on the amphibious water layer. The **family roll**
+  starlight mechs, skyfall bombers and the two **naval** lines (the harpoon
+  fleet, the wraith fleet), which travel on the amphibious water layer. The **family roll**
   (`rollFamilies`, `transformScript`) is what makes one run's swarm differ
   from the next's; `unitDrop` is what a kill pays
 - `game/economy.ts` — **the economy**: scrap (in-run money — a kill drops
@@ -759,9 +759,9 @@ script are forty of whichever family took the first slot. The boss
 | Ground mechs | dagger, mace, fortress, scepter, reign | ground | yellow straight bullets | plating and worn shields |
 | Venom spitters | crawler, atrax, spiroct, arkyid, toxopid | ground | purple orbs | rot, which ignores plating |
 | Starlight mechs | nova, pulsar, quasar, vela, corvus | ground | green lasers | every laser pierces; heals and shields |
-| Sky gunships | flare, horizon, zenith, antumbra, eclipse | air | orange shotgun fans | flying and fast; a jam over the guns |
-| Naval tanks | risso, minke, bryde, sei, omura | water | navy lobbed shells | artillery over the wall, quick afloat |
-| Aegis tanks | retusa, oxynoe, cyerce, aegires, navanax | water | cyan arcs | shorts, which take a gun's time |
+| Skyfall bombers | flare, horizon, zenith, antumbra, eclipse | air | no gun: the body is the bomb | goes off on contact or on death; the T5 is a nuke |
+| Harpoon fleet | risso, minke, bryde, sei, omura | water | foam-white harpoon rails | insane reach, a crawl, and the longer alive the harder it hits |
+| Wraith fleet | retusa, oxynoe, cyerce, aegires, navanax | water | cyan arcs that short a gun | blinks forward when hit; the top tiers cloak |
 
 The deal is shown on the field in the bottom-right corner, StarCraft-style:
 a column of squares growing upward, the bottom one always the three
@@ -869,57 +869,57 @@ top of the line was missing.
 *What it poses:* a wall of green across a patch from behind a crowd that
 does not go down. Kill the carriers before the line reaches the guns.
 
-**Sky gunships — shotguns, and fast at every tier.** No round crosses the
-field: every weapon is a **cone** (`scatter`, `Sim.structuresInCone`) in
-which every structure takes a pellet's worth the instant the trigger is
-pulled, less the further out it stands, nearest first up to a cap — and
-what is drawn is the **fan of orange streaks** leaving the ship
-(`FxKind.Scatter`) plus the sparks on what it struck. The **horizon**'s cone
-is a full circle straight down, where its bombs used to fall; the
-**eclipse**'s broadside is the family's long gun. The line **keeps its
-speed**: Mindustry's tree trades it away (flare 20 tiles/s to eclipse 4)
-and this one flies every tier faster than any walker, eclipse at 9. The
-**zenith** shields the flight; the **antumbra** carries a **jam**
-(`jamField`, `Tower.jamT`) — every gun within eleven tiles reloads at half
-pace while it is overhead, the first aura in the game that lands on the
-board rather than on the swarm.
+**Skyfall bombers — the body is the bomb.** No bomber carries a gun.
+Each has one weapon and it is itself (`payload`): it picks the nearest
+structure inside its seek reach, **dives** at it (`Sim.updateUnits`) and
+goes off on contact — and it goes off **the same way when it is shot
+down**, wherever that is (`Sim.killUnit`, `detonate`). A bomber that
+arrives pays no scrap; one shot down does. The line keeps its speed at
+every tier (eclipse 9 tiles/s, not 4). The **zenith** is the afterburner
+(`hasteField`: the flight round it flies four tenths faster), the
+**antumbra** carries a **jam** (`jamField`: guns within eleven tiles reload
+at half pace under it) and a **cluster charge** that throws eight bomblets
+first, and the **eclipse** carries the **small nuke**: where it goes off
+the charge arms, sits for two and a half seconds as a swelling orange orb,
+and then takes 4,000 off everything within eleven tiles.
 
-*What it poses:* it ignores the maze and is over the line before a slow
-gun has turned. The answer is reach into the sky and rate of fire, at
-every tier.
+*What it poses:* an AA line over the guns it protects detonates bombers
+over them. The answer is reach: kill them over nothing.
 
-**Naval tanks — artillery from the water.** Every gun on the fleet **lobs a
-navy shell** (`navalShell`, `collide: false`) over whatever is in front of
-it and bursts where it was aimed, landing in the sea's own colours. The
-fortress gave up its arc so that exactly one family would keep it, and this
-is the family: the **risso**'s mortar at nineteen tiles up to the
-**omura**'s siege shell — 500 over five tiles at **fifty**, the longest
-reach on the roster. The hulls are **half again as quick afloat** as their
-stat (`NAVAL_WATER_SPEED`) and a third down on it ashore
-(`NAVAL_LAND_SPEED`), the **bryde** shields the fleet, and the **sei**'s
-**bow wave** (`wakeField`) lifts the land tax off every hull near it.
+**Harpoon fleet — snipers that grow old.** Every gun on the fleet is a
+**rail** (`fx: "rail"`, in the fleet's foam white) from **beyond the
+board's reach**: forty tiles on the risso, eighty on the omura, past the
+foreshadow's sixty-two — and the omura's **pierces** everything on its
+line. The hulls crawl ashore (`NAVAL_PACE`, `NAVAL_LAND_SPEED` at half)
+and are half again as quick afloat, and every one carries **veterancy**
+(`veteran`, `Sim.uvet`): every hit is multiplied by how long the hull has
+been alive, to triple after two minutes — the rows are set light against
+that, so a fresh fleet is a nuisance and an old one is a siege. The
+**bryde** is the **spotter** (`spotterField`: the hulls round it reach half
+again as far) and the **sei** the **drill** (`drillField`: they age two and
+a half times as fast).
 
-*What it poses:* bombardment over the wall. A wall is no answer to a
-shell; the answer is guns whose reach covers the channel.
+*What it poses:* it is shooting you long before you can shoot it, and it
+is getting stronger. The answer is the long guns, and killing them young —
+the spotter and the drill first.
 
-**Aegis tanks — arcs that short the guns, from inside the biggest bubbles
-in the game.** Every weapon is **chain lightning** in an electric cyan
-(`PAL.emp`, fx `arc`): the target first, then the nearest structure the
-last one struck can reach, hop after hop, each carrying a share of the
-last — and every structure it connects with rolls a **short**
-(`Tower.shortT`): its gun is out for a moment, neither reloading nor firing
-nor mending. A short is a **refresh, never a stack**, and every tier's
-reload is longer than its short, so one hull flickers a gun and a crowd
-holds it down — the venom rule read for time instead of health. What a tier
-buys is reach, hops and reliability: a **retusa** shorts one gun in eight
-it touches for half a second; a **navanax** one in two for a full second,
-seven guns at a time, from thirty-two tiles. The **oxynoe** and the
-**navanax** stand inside **force fields** (the navanax's 1,500 points, three
-times the quasar's) and the **aegires** heals the fleet by a share of its
-health while its field shorts everything in twenty-two tiles.
+**Wraith fleet — arcs that short the guns, off hulls that cannot be
+held.** Every weapon is **chain lightning** in an electric cyan (`PAL.emp`,
+fx `arc`): the target first, then the nearest structure the last one
+struck can reach, hop after hop — and every structure it connects with
+rolls a **short** (`Tower.shortT`): its gun is out for a moment, a
+refresh never a stack, so one hull flickers a gun and a crowd holds it
+down. Every hull **blinks** (`blink`, `Sim.blinkUnit`): a hit that lands
+throws it four to six tiles up its route, past the gun that landed it,
+stopping short of rock and of any building. The top three **cloak**
+(`cloak`): three to five seconds gone in every nine to twelve, untargetable
+and untouchable and drawn as a ghost; the **navanax**'s cloak **veils**
+every body within ten tiles. The **aegires**'s field shorts everything in
+twenty-two tiles and heals the fleet by a share of its health.
 
-*What it poses:* a board that goes quiet. A short ignores a turret's pool
-and its plating both. Kill them through the bubbles, or wait for the gap.
+*What it poses:* a line that cannot hold a target. The answer is bursts
+and fields that catch a body wherever it lands, and killing the flagship
+in the seconds it shows.
 
 ### The swarm shoots back
 

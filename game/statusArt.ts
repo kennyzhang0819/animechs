@@ -161,9 +161,33 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
   },
 
   /**
+   * VETERAN — two chevrons, a sergeant's stripes, in the flame gold that
+   * means "more" everywhere else in the game (last volley's bolt is the
+   * same ink). The lower one is darker so the pair reads as stacked
+   * rather than as one fat V.
+   */
+  veteran: (g) => {
+    g.poly([[0.5, 0.06], [0.94, 0.4], [0.78, 0.56], [0.5, 0.34], [0.22, 0.56], [0.06, 0.4]], PAL.flame);
+    g.poly([[0.5, 0.5], [0.94, 0.84], [0.78, 1.0], [0.5, 0.78], [0.22, 1.0], [0.06, 0.84]], PAL.flameLite);
+    g.over((o) => o.box(0, 0.7, 1, 1, PAL.ember));
+  },
+
+  /**
+   * CLOAKED — a hollow ring with a bite out of it, in the wraiths' cyan:
+   * the outline of a thing whose middle is not there. It is the one
+   * symbol in the file drawn as a ring rather than a body, because that
+   * is what a cloak is.
+   */
+  cloaked: (g) => {
+    g.ring(0.5, 0.5, 0.42, 0.16, PAL.emp);
+    g.over((o) => o.box(0, 0.6, 1, 1, PAL.empDark));
+    g.erase((e) => e.poly([[0.5, 0.5], [1.0, 0.2], [1.0, 0.8]], PAL.emp));
+  },
+
+  /**
    * SHORTED — a cyan bolt across a dark bar. The bar is the gun that is
    * out; the bolt is what put it out, in the one colour that means EMP
-   * (PAL.emp, the Aegis tanks' arc). It shares a shape with LAST VOLLEY
+   * (PAL.emp, the Wraith fleet's arc). It shares a shape with LAST VOLLEY
    * below on purpose and nothing else: both are electricity doing
    * something to a reload, and the colour is which — hot means faster,
    * cyan means off.

@@ -165,7 +165,9 @@ import {
 import { RICH_SCRAP, SCRAP_START, sellValue } from "./economy";
 import { airWalkMask, isBuildableWall, isWaterFloor, navalWalkMask, WALL_DEEP, type Terrain } from "./terrain";
 import {
+  BOMBLET_LOOK,
   MAX_WEAPONS,
+  NUKE_LOOK,
   unitDamageScale,
   UNIT_REACH,
   UNIT_WEAPONS,
@@ -189,6 +191,10 @@ import {
 
 /** px per Mindustry world unit — the ported turret geometry is in those */
 const MU = CELL / 8;
+/** how close a bomber has to be to what it dives at before it goes off
+ *  (levels.ts payload): two world units past touching, so a body hovering
+ *  at the core's rim (updateUnits) is in contact with it */
+const CONTACT_REACH = 8 * MU;
 
 /**
  * An effect kind's Mindustry lifetime in seconds: FX_LIFE for the bullet
@@ -489,6 +495,15 @@ const KIND_HASTE_F = UNIT_KINDS.map((k) => UNIT_STATS[k].hasteField ?? null);
  *  sei's on the hulls around it */
 const KIND_JAM_F = UNIT_KINDS.map((k) => UNIT_STATS[k].jamField ?? null);
 const KIND_WAKE_F = UNIT_KINDS.map((k) => UNIT_STATS[k].wakeField ?? null);
+/** the Harpoon fleet's two stamps: the bryde's reach and the sei's drill */
+const KIND_SPOTTER_F = UNIT_KINDS.map((k) => UNIT_STATS[k].spotterField ?? null);
+const KIND_DRILL_F = UNIT_KINDS.map((k) => UNIT_STATS[k].drillField ?? null);
+/** the three families' own traits (levels.ts): veterancy, blink, cloak,
+ *  and the payload a bomber IS */
+const KIND_VET = UNIT_KINDS.map((k) => UNIT_STATS[k].veteran ?? null);
+const KIND_BLINK = UNIT_KINDS.map((k) => UNIT_STATS[k].blink ?? null);
+const KIND_CLOAK = UNIT_KINDS.map((k) => UNIT_STATS[k].cloak ?? null);
+const KIND_PAYLOAD = UNIT_KINDS.map((k) => UNIT_STATS[k].payload ?? null);
 const KIND_BOSS: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].boss);
 const BOSS_KINDS = KIND_BOSS.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
 /** the pad list a brood spawn is handed — it picks its own spot, so there
@@ -647,6 +662,8 @@ function clampLen(dx: number, dy: number, min: number, max: number, out: Vec2): 
 
 /** scratch vectors for the leg pass — one per call site, never nested */
 const legTmp: Vec2 = { x: 0, y: 0 };
+/** ...and one for a blink's route sample (Sim.blinkUnit) */
+const flowTmpBlink: Vec2 = { x: 0, y: 0 };
 const legTmp2: Vec2 = { x: 0, y: 0 };
 
 /** any support unit on the roster at all? skips the pass entirely when not */
@@ -658,6 +675,8 @@ const HAS_ABILITIES =
   KIND_HASTE_F.some(Boolean) ||
   KIND_JAM_F.some(Boolean) ||
   KIND_WAKE_F.some(Boolean) ||
+  KIND_SPOTTER_F.some(Boolean) ||
+  KIND_DRILL_F.some(Boolean) ||
   FORCE_KINDS.length > 0;
 /** ...and whether either STAMP is on the roster at all — the two reads that
  *  cost something are in the movement and damage hot loops, so they are
@@ -665,6 +684,10 @@ const HAS_ABILITIES =
 const HAS_ARMOR_AURA = KIND_ARMOR_F.some(Boolean);
 const HAS_HASTE_AURA = KIND_HASTE_F.some(Boolean);
 const HAS_WAKE_AURA = KIND_WAKE_F.some(Boolean);
+const HAS_SPOTTER = KIND_SPOTTER_F.some(Boolean);
+const HAS_VET = KIND_VET.some(Boolean);
+const HAS_BLINK = KIND_BLINK.some(Boolean);
+const HAS_CLOAK = KIND_CLOAK.some(Boolean);
 
 // how fast body and chassis swivel: Mindustry's default rotateSpeed /
 // baseRotateSpeed, 5 degrees per tick
@@ -809,6 +832,24 @@ export class Sim {
   /** THE BOW WAVE (levels.ts wakeField): seconds a hull still drives
    *  ashore at its afloat pace. Only ever written onto naval bodies */
   readonly ubowT = new Float32Array(MAX_UNITS);
+  /** seconds since the body arrived, run only on the kinds that age
+   *  (levels.ts veteran) and `udrillMul` times faster under a drill */
+  readonly uage = new Float32Array(MAX_UNITS);
+  /** what age is worth right now: the damage multiplier every weapon the
+   *  body fires carries (1 on everything that does not age) */
+  readonly uvet = new Float32Array(MAX_UNITS);
+  readonly udrillMul = new Float32Array(MAX_UNITS);
+  readonly udrillT = new Float32Array(MAX_UNITS);
+  /** THE SPOTTER'S STAMP (levels.ts spotterField): the reach multiplier
+   *  and the seconds it has left */
+  readonly ureachMul = new Float32Array(MAX_UNITS);
+  readonly ureachT = new Float32Array(MAX_UNITS);
+  /** BLINK (levels.ts blink): seconds until the body may jump again */
+  readonly ublinkCd = new Float32Array(MAX_UNITS);
+  /** CLOAK (levels.ts cloak): seconds still hidden, and seconds until the
+   *  next time it hides */
+  readonly ucloakT = new Float32Array(MAX_UNITS);
+  readonly ucloakCd = new Float32Array(MAX_UNITS);
   /**
    * StatusEffects.wet: seconds of soaking left, and the drive-speed
    * multiplier in force while it lasts. One entry like the status map's —
@@ -2368,7 +2409,7 @@ export class Sim {
       poison: 0,
       poisonUnit: 0,
       poisonT: 0,
-      // ...nor shorted (the Aegis tanks' EMP) nor jammed (the sky's T4)
+      // ...nor shorted (the Wraith fleet's EMP) nor jammed (the sky's T4)
       shortT: 0,
       jamT: 0,
       jamRate: 1,
@@ -2903,13 +2944,13 @@ export class Sim {
   }
 
   /**
-   * EVERY LIVE STRUCTURE IN A CONE OFF THE MUZZLE — the Sky gunships'
+   * EVERY LIVE STRUCTURE IN A CONE OFF THE MUZZLE — the old sky line's
    * shotgun (weapons.ts fx "scatter"): within `reach`, and with its centre
    * inside `cone` either side of `aim` (a footprint's own half-width
    * widens the test, so a wall the cone's edge clips is in it). The list
    * comes back nearest first, which is what `maxTargets` cuts against.
    * A ground body only takes what it can see; a flyer sees the whole
-   * wedge, and every gunship flies.
+   * wedge, and the flyers that carried it flew.
    */
   private structuresInCone(
     x: number,
@@ -2980,9 +3021,14 @@ export class Sim {
    * rot, which is the entire reason that body is on the field.
    */
   private hitStructure(t: Structure, dmg: number, poison = 0, poisonChance = 1): void {
-    if (dmg > 0) this.damageTower(t, dmg * unitDamageScale());
+    // ...times the firing body's VETERANCY (uvet), set for the body whose
+    // weapons are being run (updateUnitWeapons) and 1 the rest of the
+    // time; a shot in flight carried it out of the muzzle already
+    if (dmg > 0) this.damageTower(t, dmg * unitDamageScale() * this.dmgMul);
     if (poison > 0) this.poisonTower(t, poison, poisonChance);
   }
+  /** the veterancy of the body whose weapons are being run right now */
+  private dmgMul = 1;
 
   /**
    * THE ROT LANDING (Tower.poison): the rate stacks and the clock refreshes.
@@ -3120,6 +3166,14 @@ export class Sim {
       // and sees its whole radius (canSee) — that, and not the ability to
       // cross a mountain, is what the air layer is worth.
       const sighted = this.ufly[i] === 0;
+      // THE SPOTTER'S STAMP (levels.ts spotterField): every reach this body
+      // has is this much longer while it lasts — the longest gun's, for
+      // the pick, and each weapon's own below
+      const reachMul = HAS_SPOTTER && this.ureachT[i] > 0 ? this.ureachMul[i] : 1;
+      const reach = UNIT_REACH[kind] * reachMul;
+      // ...and its VETERANCY (uvet): what every hit below is multiplied by
+      // (hitStructure), and what a shot leaving the muzzle carries
+      this.dmgMul = HAS_VET ? this.uvet[i] : 1;
       // the target, re-picked every few tenths of a second, dropped the
       // moment it dies, walks out of the longest gun's reach, or goes
       // behind rock — the sight test rides here, once per body per tick,
@@ -3127,7 +3181,7 @@ export class Sim {
       utT[i] -= dt;
       let tgt = utgt[i];
       const had = tgt !== null;
-      if (tgt && (!this.aimReach(tgt, x, y, UNIT_REACH[kind]) || (sighted && !this.aimSeen(tgt, x, y))))
+      if (tgt && (!this.aimReach(tgt, x, y, reach) || (sighted && !this.aimSeen(tgt, x, y))))
         tgt = null;
       // ...on the clock, or the moment the one it had is gone. A body that
       // has NOTHING waits for the clock like everyone else rather than
@@ -3137,13 +3191,15 @@ export class Sim {
       // open ground is running. `had` is what tells the two apart
       if (utT[i] <= 0 || (had && !tgt)) {
         utT[i] = 0.3 + Math.random() * 0.2;
-        tgt = this.pickAim(x, y, UNIT_REACH[kind], sighted);
+        tgt = this.pickAim(x, y, reach, sighted);
         utgt[i] = tgt;
       }
       let exploded = false;
       for (let w = 0; w < ws.length && !exploded; w++) {
         const wp = ws[w];
         const slot = i * MAX_WEAPONS + w;
+        // this weapon's reach, the spotter's stamp folded in
+        const wrange = wp.range * reachMul;
         if (wp.beam) {
           // a held beam: while it burns it bites every interval, and the
           // reload only starts once it has gone out. Fx.hitMeltHeal (its
@@ -3168,12 +3224,12 @@ export class Sim {
                 // THE STARLIGHT RULE: a held beam bites everything under
                 // it, every interval, the width of its own washes
                 const halfW = ((wp.beamStyle?.width ?? 4) * MU) / 2;
-                const hit = this.structuresAlong(x, y, uheldRot[i], wp.range, halfW, this.alongOut);
+                const hit = this.structuresAlong(x, y, uheldRot[i], wrange, halfW, this.alongOut);
                 for (let k = 0; k < hit.length; k++) {
                   this.hitStructure(hit[k], wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
                   if (k < 4) this.pushFxCol(hit[k].x, hit[k].y, 12 / 60, FxKind.HitMeltHeal, 0, 0, PAL.heal);
                 }
-              } else if (tgt && this.aimReach(tgt, x, y, wp.range)) {
+              } else if (tgt && this.aimReach(tgt, x, y, wrange)) {
                 this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
                 this.pushFxCol(tgt.x, tgt.y, 12 / 60, FxKind.HitMeltHeal, 0, 0, PAL.heal);
               }
@@ -3192,7 +3248,7 @@ export class Sim {
             continue;
           }
           ucd[slot] -= dt;
-          if (ucd[slot] <= 0 && tgt && this.aimReach(tgt, x, y, wp.range)) {
+          if (ucd[slot] <= 0 && tgt && this.aimReach(tgt, x, y, wrange)) {
             uheldRot[i] = Math.atan2(tgt.y - y, tgt.x - x);
             if (wp.charge) ucharge[i] = wp.charge;
             else {
@@ -3208,13 +3264,13 @@ export class Sim {
           if (ucharge[i] > 0) {
             ucharge[i] -= dt;
             if (ucharge[i] <= 0) {
-              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp);
+              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp, wrange);
               ucd[slot] = wp.reload - wp.charge;
             }
             continue;
           }
           ucd[slot] -= dt;
-          if (ucd[slot] <= 0 && tgt && this.aimReach(tgt, x, y, wp.range)) {
+          if (ucd[slot] <= 0 && tgt && this.aimReach(tgt, x, y, wrange)) {
             uheldRot[i] = Math.atan2(tgt.y - y, tgt.x - x);
             ucharge[i] = wp.charge;
           }
@@ -3222,7 +3278,7 @@ export class Sim {
         }
         ucd[slot] -= dt;
         if (ucd[slot] > 0) continue;
-        if (!tgt || !this.aimReach(tgt, x, y, wp.range)) {
+        if (!tgt || !this.aimReach(tgt, x, y, wrange)) {
           ucd[slot] = 0; // ready, waiting for something in reach
           continue;
         }
@@ -3256,7 +3312,7 @@ export class Sim {
           case "laser": {
             // a volley of them fans by ShootSpread (the pulsar's three)
             for (let k = 0; k < shots; k++)
-              this.fireUnitLaser(x, y, aim + (k - (shots - 1) / 2) * (wp.spread ?? 0), tgt, wp);
+              this.fireUnitLaser(x, y, aim + (k - (shots - 1) / 2) * (wp.spread ?? 0), tgt, wp, wrange);
             break;
           }
           case "sap": {
@@ -3278,7 +3334,7 @@ export class Sim {
             for (let k = 0; k < shots; k++) {
               this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
               const a = aim + (k - (shots - 1) / 2) * (wp.spread ?? 0);
-              if (st) this.pushFx(x, y, 10 / 60, FxKind.Shrapnel, a, wp.range, 0, st.id, true);
+              if (st) this.pushFx(x, y, 10 / 60, FxKind.Shrapnel, a, wrange, 0, st.id, true);
             }
             this.pushFxCol(x, y, FX_LIFE[FxKind.SparkShoot], FxKind.SparkShoot, aim, 0, PAL.white);
             break;
@@ -3313,11 +3369,21 @@ export class Sim {
           }
           case "bomb": {
             if (wp.suicide) {
-              // the crawler IS the bullet: Fx.pulverize where it went off,
-              // and the body's own death blast, centred on itself
-              this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
-              this.splashStructures(x, y, wp.splash ?? 0, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1);
-              this.pushFx(x, y, 40 / 60, FxKind.Pulverize, 0, 0, (Math.random() * 0x7fffffff) | 0);
+              // A BODY THAT IS THE BULLET. A kind with a PAYLOAD (levels.ts)
+              // seeks to `range` and goes off on CONTACT — the last
+              // stretch is flown at the target (updateUnits) and the
+              // charge is the payload's; a kind without one is the old
+              // crawler charge, the row's own splash centred on itself.
+              // Either way it is gone: no kill, no scrap — the player is
+              // paid for a bomber shot down, never for one that arrived
+              if (KIND_PAYLOAD[ukind[i]]) {
+                if (!this.aimReach(tgt, x, y, CONTACT_REACH)) break;
+                this.detonate(i);
+              } else {
+                this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+                this.splashStructures(x, y, wp.splash ?? 0, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1);
+                this.pushFx(x, y, 40 / 60, FxKind.Pulverize, 0, 0, (Math.random() * 0x7fffffff) | 0);
+              }
               this.pushDeathFx(x, y);
               this.removeUnit(i);
               this.exploded++;
@@ -3342,14 +3408,29 @@ export class Sim {
           case "rail": {
             // RailBulletType: Fx.railShoot at the muzzle, Fx.railTrail every
             // 60 units down the line (pointEffectSpace), Fx.railHit on what
-            // it punched through, Fx.shootBig2 smoke — all its 500 units
-            this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
-            this.pushFx(x, y, 24 / 60, FxKind.RailShoot, aim, 0, 0, 0, true);
+            // it punched through, Fx.shootBig2 smoke — its whole length,
+            // in the row's colour (the Harpoon fleet's foam white). A
+            // PIERCING rail punches through everything on the line
+            const rc = wp.railColor ?? PAL.orangeSpark;
+            if (wp.pierce) {
+              const hit = this.structuresAlong(x, y, aim, wrange, CELL * 0.5, this.alongOut);
+              for (let k = 0; k < hit.length; k++) {
+                this.hitStructure(hit[k], wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+                if (k < 8) this.pushFxCol(hit[k].x, hit[k].y, 18 / 60, FxKind.RailHit, aim, 0, rc, 0, true);
+              }
+            } else {
+              this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+              this.pushFxCol(tgt.x, tgt.y, 18 / 60, FxKind.RailHit, aim, 0, rc, 0, true);
+            }
+            this.pushFxCol(x, y, 24 / 60, FxKind.RailShoot, aim, 0, rc, 0, true);
             this.pushFx(x, y, 10 / 60, FxKind.ShootBig2, aim);
             const ca = Math.cos(aim), sa = Math.sin(aim);
-            for (let d = 0; d <= wp.range; d += 60 * MU)
-              this.pushFx(x + ca * d, y + sa * d, 16 / 60, FxKind.RailTrail, aim, 0, 0, 0, true);
-            this.pushFx(tgt.x, tgt.y, 18 / 60, FxKind.RailHit, aim, 0, 0, 0, true);
+            // the blades down the line: as far as the target, or the whole
+            // length when the rail runs through
+            const dx = tgt.x - x, dy = tgt.y - y;
+            const along = wp.pierce ? wrange : Math.min(wrange, Math.sqrt(dx * dx + dy * dy));
+            for (let d = 0; d <= along; d += 60 * MU)
+              this.pushFxCol(x + ca * d, y + sa * d, 16 / 60, FxKind.RailTrail, aim, 0, rc, 0, true);
             break;
           }
           case "scatter": {
@@ -3359,7 +3440,7 @@ export class Sim {
             // the cap; the fan out of the muzzle is the whole of what is
             // drawn (FxKind.Scatter), plus the sparks on what it struck
             const cone = wp.cone ?? Math.PI;
-            const hit = this.structuresInCone(x, y, aim, wp.range, cone, sighted, this.splashOut);
+            const hit = this.structuresInCone(x, y, aim, wrange, cone, sighted, this.splashOut);
             const max = wp.maxTargets ?? hit.length;
             const fall = wp.falloff ?? 1;
             const col = wp.scatterColor ?? PAL.unitFront;
@@ -3368,7 +3449,7 @@ export class Sim {
               const half = (this.sizeOf(t) * CELL) / 2;
               const dx = t.x - x, dy = t.y - y;
               const d = Math.max(0, Math.sqrt(dx * dx + dy * dy) - half);
-              const share = 1 - (1 - fall) * Math.min(1, d / wp.range);
+              const share = 1 - (1 - fall) * Math.min(1, d / wrange);
               this.hitStructure(t, wp.damage * share, wp.poison ?? 0, wp.poisonChance ?? 1);
               if (k < 6)
                 this.pushFxCol(t.x, t.y, FX_LIFE[FxKind.BulletHit], FxKind.BulletHit, Math.atan2(dy, dx), 0, col, 0,
@@ -3377,7 +3458,7 @@ export class Sim {
             // the fan carries its cone in degrees down the style lane
             const deg = Math.min(255, Math.round((cone * 180) / Math.PI));
             for (let k = 0; k < shots; k++)
-              this.pushFxCol(x, y, 13 / 60, FxKind.Scatter, aim, wp.range, col, deg, true,
+              this.pushFxCol(x, y, 13 / 60, FxKind.Scatter, aim, wrange, col, deg, true,
                 (Math.random() * 0x7fffffff) | 0);
             break;
           }
@@ -3429,7 +3510,7 @@ export class Sim {
             // EnergyFieldAbility: one pulse to every structure in reach, a
             // Fx.chainLightning to each and Fx.hitLaserBlast off the unit
             // toward it, in the ability's colour
-            const hit = this.structuresWithin(x, y, wp.range, this.splashOut);
+            const hit = this.structuresWithin(x, y, wrange, this.splashOut);
             const max = wp.maxTargets ?? hit.length;
             const col = wp.fieldColor ?? PAL.heal;
             for (let k = 0; k < hit.length && k < max; k++) {
@@ -3443,6 +3524,7 @@ export class Sim {
         }
       }
     }
+    this.dmgMul = 1;
   }
 
   /**
@@ -3506,24 +3588,24 @@ export class Sim {
    * the damage; the shootEffect (Fx.hitLancer, or eclipse's shockwave)
    * goes off at the muzzle
    */
-  private fireUnitLaser(x: number, y: number, aim: number, tgt: Aim | null, wp: UnitWeapon): void {
+  private fireUnitLaser(x: number, y: number, aim: number, tgt: Aim | null, wp: UnitWeapon, range = wp.range): void {
     const st = wp.laser;
     if (wp.pierce) {
       // THE STARLIGHT RULE (UnitWeapon.pierce): everything the beam
       // crosses takes the hit, the corridor the style's own width
       const halfW = ((st?.width ?? 6) * MU) / 2;
-      const hit = this.structuresAlong(x, y, aim, wp.range, halfW, this.alongOut);
+      const hit = this.structuresAlong(x, y, aim, range, halfW, this.alongOut);
       for (let k = 0; k < hit.length; k++) {
         this.hitStructure(hit[k], wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
         if (wp.short) this.shortTower(hit[k], wp.short, wp.shortChance ?? 1);
         if (st && k > 0 && k < 6)
           this.pushFxCol(hit[k].x, hit[k].y, 12 / 60, FxKind.HitLaserBlast, aim, 0, st.colors[st.colors.length - 1][0]);
       }
-    } else if (tgt && this.aimReach(tgt, x, y, wp.range)) {
+    } else if (tgt && this.aimReach(tgt, x, y, range)) {
       this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
     }
     if (!st) return;
-    this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, wp.range, 0, st.id, true);
+    this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, range, 0, st.id, true);
     if (wp.shoot === FxKind.Shockwave) this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, wp.shootLen ?? 0);
     else if (wp.shoot !== undefined) this.pushFx(x, y, fxLife(wp.shoot), wp.shoot, aim, 0, (Math.random() * 0x7fffffff) | 0);
     if (tgt) this.pushFxCol(tgt.x, tgt.y, 12 / 60, FxKind.HitLaserBlast, aim, 0, st.colors[st.colors.length - 1][0]);
@@ -4404,6 +4486,18 @@ export class Sim {
       this.uhasteMul[i] = 1;
       this.uhasteT[i] = 0;
       this.ubowT[i] = 0;
+      this.uage[i] = 0;
+      this.uvet[i] = 1;
+      this.udrillMul[i] = 1;
+      this.udrillT[i] = 0;
+      this.ureachMul[i] = 1;
+      this.ureachT[i] = 0;
+      this.ublinkCd[i] = 0;
+      // a cloaking kind walks in visible and hides for the first time a
+      // full period in — a door that spat out ghosts would be a door with
+      // no answer
+      this.ucloakT[i] = 0;
+      this.ucloakCd[i] = stats.cloak ? stats.cloak.period : 0;
       // AMPHIBIOUS (mutation.ts): every body walks in dry and unstacked,
       // whatever ground it happens to have been dropped onto — a drop zone
       // is not a crossing, and crediting one would hand the bonus out for
@@ -4543,8 +4637,10 @@ export class Sim {
       // ...and the sky's and the sea's (levels.ts jamField / wakeField)
       const jamF = KIND_JAM_F[k];
       const wakeF = KIND_WAKE_F[k];
-      if (!repair && !shield && !energy && !armorF && !hasteF && !jamF && !wakeF) continue;
-      const spec = (repair ?? shield ?? energy ?? armorF ?? hasteF ?? jamF ?? wakeF)!;
+      const spotF = KIND_SPOTTER_F[k];
+      const drillF = KIND_DRILL_F[k];
+      if (!repair && !shield && !energy && !armorF && !hasteF && !jamF && !wakeF && !spotF && !drillF) continue;
+      const spec = (repair ?? shield ?? energy ?? armorF ?? hasteF ?? jamF ?? wakeF ?? spotF ?? drillF)!;
       const reload = spec.reload;
       uability[i] += dt;
       if (uability[i] < reload) continue;
@@ -4564,7 +4660,7 @@ export class Sim {
         }
         if (hit.length > 0)
           this.pushFxCol(upx[i], upy[i], 22 / 60, FxKind.ShieldWave, 0, jamF.range, PAL.unitFront);
-        if (!repair && !shield && !energy && !armorF && !hasteF && !wakeF) continue;
+        if (!repair && !shield && !energy && !armorF && !hasteF && !wakeF && !spotF && !drillF) continue;
       }
       // EnergyFieldAbility.maxTargets: how many units one zap may still
       // reach. Upstream sorts the candidates by distance and takes the
@@ -4618,6 +4714,19 @@ export class Sim {
             this.ubowT[j] = reload + AURA_LINGER;
             did = true;
           }
+          // THE SPOTTER'S REACH and THE DRILL'S CLOCK (levels.ts), the
+          // stamp rule again: the stronger of what is on the body and
+          // what this carrier gives, on a clock that outlives the pulse
+          if (spotF) {
+            if (this.ureachT[j] <= 0 || spotF.mult > this.ureachMul[j]) this.ureachMul[j] = spotF.mult;
+            this.ureachT[j] = reload + AURA_LINGER;
+            did = true;
+          }
+          if (drillF && KIND_VET[ukind[j]]) {
+            if (this.udrillT[j] <= 0 || drillF.mult > this.udrillMul[j]) this.udrillMul[j] = drillF.mult;
+            this.udrillT[j] = reload + AURA_LINGER;
+            did = true;
+          }
           if (shield && ushield[j] < shield.max * ss) {
             ushield[j] = Math.min(ushield[j] + shield.amount * ss, shield.max * ss);
             ushieldAlpha[j] = 1;
@@ -4651,7 +4760,7 @@ export class Sim {
           upx[i], upy[i], 22 / 60,
           repair || energy ? FxKind.HealWave : FxKind.ShieldWave,
           0, range,
-          repair || energy ? PAL.heal : hasteF ? PAL.sapBullet : wakeF ? PAL.navalFront : TEAM_CRUX_RGB,
+          repair || energy ? PAL.heal : hasteF ? PAL.sapBullet : wakeF || spotF || drillF ? PAL.navalFront : TEAM_CRUX_RGB,
         );
     }
   }
@@ -4692,6 +4801,41 @@ export class Sim {
         this.uhasteMul[i] = 1;
       }
       if (this.ubowT[i] > 0 && (this.ubowT[i] -= dt) <= 0) this.ubowT[i] = 0;
+      if (this.ureachT[i] > 0 && (this.ureachT[i] -= dt) <= 0) {
+        this.ureachT[i] = 0;
+        this.ureachMul[i] = 1;
+      }
+      if (this.udrillT[i] > 0 && (this.udrillT[i] -= dt) <= 0) {
+        this.udrillT[i] = 0;
+        this.udrillMul[i] = 1;
+      }
+      // VETERANCY (levels.ts veteran): the clock, faster under a drill,
+      // and what it is worth — read by every weapon the body fires
+      // (updateUnitWeapons) and by the inspector's chip
+      if (HAS_VET) {
+        const vet = KIND_VET[this.ukind[i]];
+        if (vet && uspawn[i] <= 0) {
+          this.uage[i] += dt * this.udrillMul[i];
+          this.uvet[i] = 1 + Math.min(vet.max, this.uage[i] * vet.perSecond);
+        }
+      }
+      if (HAS_BLINK && this.ublinkCd[i] > 0) this.ublinkCd[i] -= dt;
+      // THE CLOAK CYCLE (levels.ts cloak): hidden for `duration`, then
+      // seen for the rest of `period`, from the first period in. The
+      // flagship's veil hides the bodies round it for the same spell —
+      // one hash search each time it goes, which is rare
+      if (HAS_CLOAK) {
+        const cl = KIND_CLOAK[this.ukind[i]];
+        if (cl) {
+          if (this.ucloakT[i] > 0) this.ucloakT[i] -= dt;
+          else if ((this.ucloakCd[i] -= dt) <= 0) {
+            this.ucloakCd[i] = cl.period;
+            this.ucloakT[i] = cl.duration;
+            this.pushFxCol(upx[i], upy[i], 22 / 60, FxKind.ShieldWave, 0, urad[i] * 3, PAL.emp);
+            if (cl.veil) this.veil(i, cl.veil, cl.duration);
+          }
+        } else if (this.ucloakT[i] > 0) this.ucloakT[i] -= dt;
+      }
       if (uwet[i] > 0) {
         uwet[i] -= dt;
         if (uwet[i] <= 0) {
@@ -4904,6 +5048,9 @@ export class Sim {
     // VOLATILE (mutation.ts): the body's parting blast, before the arrays
     // reshuffle under it
     if (this.volatileOn) this.volatileBlast(x, y, this.urad[i], kind);
+    // THE PAYLOAD (levels.ts): a bomber shot down goes off where it was
+    // shot down, exactly as it would have on arrival
+    if (KIND_PAYLOAD[kind]) this.detonate(i);
     this.removeUnit(i);
     this.kills++;
     // MITOSIS (mutation.ts): what the body breaks into, AFTER the removal
@@ -5077,6 +5224,15 @@ export class Sim {
     this.uhasteMul[i] = this.uhasteMul[n];
     this.uhasteT[i] = this.uhasteT[n];
     this.ubowT[i] = this.ubowT[n];
+    this.uage[i] = this.uage[n];
+    this.uvet[i] = this.uvet[n];
+    this.udrillMul[i] = this.udrillMul[n];
+    this.udrillT[i] = this.udrillT[n];
+    this.ureachMul[i] = this.ureachMul[n];
+    this.ureachT[i] = this.ureachT[n];
+    this.ublinkCd[i] = this.ublinkCd[n];
+    this.ucloakT[i] = this.ucloakT[n];
+    this.ucloakCd[i] = this.ucloakCd[n];
     this.uhungry[i] = this.uhungry[n];
     this.ueaten[i] = this.ueaten[n];
     this.uhungerT[i] = this.uhungerT[n];
@@ -5515,7 +5671,16 @@ export class Sim {
         const gdx = this.ugx[i] - upx[i], gdy = this.ugy[i] - upy[i];
         const gl = Math.sqrt(gdx * gdx + gdy * gdy) || 1;
         const hold = (this.core.size * CELL) / 2 + CELL * 1.5;
-        if (gl <= hold) {
+        // A BOMBER DIVES (levels.ts payload): with a structure picked
+        // inside its seek reach (updateUnitWeapons) it flies straight at
+        // that instead of the core, and goes off on contact
+        const dive = KIND_PAYLOAD[ukind[i]] ? this.utgt[i] : null;
+        if (dive) {
+          const tx = dive.x - upx[i], ty = dive.y - upy[i];
+          const tl = Math.sqrt(tx * tx + ty * ty) || 1;
+          flowTmp.x = tx / tl;
+          flowTmp.y = ty / tl;
+        } else if (gl <= hold) {
           flowTmp.x = 0;
           flowTmp.y = 0;
         } else this.airHeading(upx[i], upy[i], gdx / gl, gdy / gl, flowTmp, this.airField);
@@ -6718,7 +6883,7 @@ export class Sim {
       // there (see conquerTower)
       const st = t.spec;
       const hostile = t.team === "enemy";
-      // SHORTED OUT (Tower.shortT, the Aegis tanks' EMP): nothing below
+      // SHORTED OUT (Tower.shortT, the Wraith fleet's EMP): nothing below
       // runs — no reload, no volley, no mending, no beam — until the clock
       // is out. The sparks are the only sign, on the rot's own footprint
       // rule, so a shorted spectre reads from across the field
@@ -6764,7 +6929,7 @@ export class Sim {
       // ...at the TOWER'S rate, which is 1 for everything except a turret
       // the Hydrophobic rule has waterlogged (mutation.ts)
       // ...times a dying neighbour's parting charge, if one is running
-      // ...times the sky's jam, while a gunship's stamp is on it
+      // ...times the sky's jam, while a bomber wing's stamp is on it
       const rate = t.fireRate * (t.boostT > 0 ? LAST_VOLLEY_RATE : 1) * (t.jamT > 0 ? t.jamRate : 1);
       if (t.cd > 0 && !(cont && t.beamT > cont.fade)) t.cd -= dt * rate;
 
@@ -7022,6 +7187,7 @@ export class Sim {
     if (n <= 128) {
       for (let i = 0; i < n; i++) {
         if (ufly[i] !== 0 ? !air : !ground) continue;
+        if (HAS_CLOAK && this.ucloakT[i] > 0) continue; // hidden: not there to aim at
         const dx = upx[i] - x, dy = upy[i] - y;
         const d2 = dx * dx + dy * dy;
         if (d2 >= r2) continue;
@@ -7046,6 +7212,7 @@ export class Sim {
         const i = bUnits[k];
         if (i >= n) continue;
         if (ufly[i] !== 0 ? !air : !ground) continue;
+        if (HAS_CLOAK && this.ucloakT[i] > 0) continue;
         const dx = upx[i] - x, dy = upy[i] - y;
         const d2 = dx * dx + dy * dy;
         if (d2 >= r2) continue;
@@ -8027,6 +8194,9 @@ export class Sim {
     // on a unit still arriving for exactly nothing. It runs a full second,
     // half of it after the unit has started walking
     if (this.uspawn[i] > 0) return;
+    // ...and on a CLOAKED body (levels.ts cloak) the same: nothing can hit
+    // it, splash and beams and bolts included, until it shows again
+    if (HAS_CLOAK && this.ucloakT[i] > 0) return;
     // THE REIGN'S PLATING STAMP rides on top of the body's own armour
     // (levels.ts armorField), and it goes through the same armorMult a
     // bullet carries — borrowed plating is plating, so a lancer's
@@ -8044,7 +8214,122 @@ export class Sim {
       this.ushield[i] -= soaked;
       amount -= soaked;
     }
-    if (amount > 0) this.uhp[i] -= amount;
+    if (amount > 0) {
+      this.uhp[i] -= amount;
+      // BLINK (levels.ts blink): a hit that got through throws the body
+      // forward, if its jump is off cooldown and it is still alive to jump
+      if (HAS_BLINK && this.uhp[i] > 0 && this.ublinkCd[i] <= 0) {
+        const bl = KIND_BLINK[this.ukind[i]];
+        if (bl) this.blinkUnit(i, bl.dist, bl.cooldown);
+      }
+    }
+  }
+
+  /**
+   * THE JUMP (levels.ts blink): `dist` px along the route the body is on,
+   * half a cell at a time, stopping short of the first cell its layer
+   * cannot enter and of any building's cell — a wraith blinks past a
+   * turret line, never into it. Its momentum is kept; only the position
+   * moves, so the crowd shove and the wall slide pick it up where it
+   * lands. The streak between the two points is the whole of the effect.
+   */
+  private blinkUnit(i: number, dist: number, cooldown: number): void {
+    const fly = this.ufly[i] !== 0;
+    const mf = this.unav[i] !== 0 ? this.navalField : this.field;
+    const x0 = this.upx[i], y0 = this.upy[i];
+    let dx: number, dy: number;
+    if (fly) {
+      const gx = this.ugx[i] - x0, gy = this.ugy[i] - y0;
+      const gl = Math.sqrt(gx * gx + gy * gy) || 1;
+      dx = gx / gl;
+      dy = gy / gl;
+    } else {
+      mf.sample(x0, y0, flowTmpBlink);
+      dx = flowTmpBlink.x;
+      dy = flowTmpBlink.y;
+      if (dx * dx + dy * dy < 0.01) return;
+    }
+    const step = CELL * 0.5;
+    let d = 0;
+    for (let t = step; t <= dist; t += step) {
+      const px = x0 + dx * t, py = y0 + dy * t;
+      const cx = (px / CELL) | 0, cy = (py / CELL) | 0;
+      if (cx < 1 || cy < 1 || cx >= COLS - 1 || cy >= ROWS - 1) break;
+      const ci = cy * COLS + cx;
+      if (!fly && (mf.walk[ci] || this.cellTower[ci])) break;
+      d = t;
+    }
+    this.ublinkCd[i] = cooldown;
+    if (d < step) return;
+    this.upx[i] = x0 + dx * d;
+    this.upy[i] = y0 + dy * d;
+    this.pushFxCol(x0, y0, 18 / 60, FxKind.Blink, Math.atan2(dy, dx), d, PAL.emp, 0, true);
+  }
+
+  /**
+   * THE VEIL (levels.ts cloak.veil): the flagship going dark takes every
+   * body within `range` with it for the same spell — a stamp, like the
+   * auras, written once as it cloaks
+   */
+  private veil(i: number, range: number, duration: number): void {
+    const { upx, upy, urad } = this;
+    const pad = range + Math.max(this.rmaxAliveGround, this.rmaxAliveAir);
+    const hx0 = clamp(((upx[i] - pad) / HC) | 0, 0, HCOLS - 1);
+    const hy0 = clamp(((upy[i] - pad) / HC) | 0, 0, HROWS - 1);
+    const hx1 = clamp(((upx[i] + pad) / HC) | 0, 0, HCOLS - 1);
+    const hy1 = clamp(((upy[i] + pad) / HC) | 0, 0, HROWS - 1);
+    for (let hy = hy0; hy <= hy1; hy++) {
+      const row = hy * HCOLS;
+      const e = this.bStart[row + hx1 + 1];
+      for (let b = this.bStart[row + hx0]; b < e; b++) {
+        const j = this.bUnits[b];
+        if (j >= this.n || j === i) continue;
+        const dx = upx[j] - upx[i], dy = upy[j] - upy[i];
+        const rr = range + urad[j];
+        if (dx * dx + dy * dy > rr * rr) continue;
+        if (this.ucloakT[j] < duration) this.ucloakT[j] = duration;
+      }
+    }
+    this.pushFxCol(upx[i], upy[i], 30 / 60, FxKind.ShieldWave, 0, range, PAL.emp);
+  }
+
+  /**
+   * THE PAYLOAD GOING OFF (levels.ts payload), where the body is — on
+   * contact (updateUnitWeapons, the suicide branch) or on its death
+   * (killUnit), the same either way. A plain charge bursts at once;
+   * bomblets are thrown out as short fused shots that burst where they
+   * stop; a fuse ARMS a charge that sits there and goes off later, which
+   * is the nuke, and the seconds it sits are the seconds the player has
+   * to see it
+   */
+  private detonate(i: number): void {
+    const pl = KIND_PAYLOAD[this.ukind[i]];
+    if (!pl) return;
+    const x = this.upx[i], y = this.upy[i];
+    if (pl.bomblets) {
+      const b = pl.bomblets;
+      for (let k = 0; k < b.count; k++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = (b.spread * (0.4 + Math.random() * 0.6)) / 0.5;
+        this.shots.push({
+          x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          life: 0.5, age: 0, damage: 0, splash: b.splash, splashRadius: b.radius,
+          look: BOMBLET_LOOK, collide: false, trailT: 0, poison: 0, poisonChance: 1,
+        });
+      }
+    }
+    if (pl.fuse) {
+      this.shots.push({
+        x, y, vx: 0, vy: 0,
+        life: pl.fuse, age: 0, damage: 0, splash: pl.splash, splashRadius: pl.radius,
+        look: NUKE_LOOK, collide: false, trailT: 0, poison: 0, poisonChance: 1,
+      });
+      this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, pl.radius * 0.35);
+      return;
+    }
+    this.splashStructures(x, y, pl.splash, pl.radius);
+    this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, pl.radius);
+    this.pushFx(x, y, fxLife(FxKind.BlastExplosion), FxKind.BlastExplosion, 0, pl.radius, (Math.random() * 0x7fffffff) | 0);
   }
 
   /**

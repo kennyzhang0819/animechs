@@ -93,10 +93,10 @@ export const PAL = {
   // venom line's two-tone purple, and the only colour in the game that
   // means ROT
   sapDark: "#6d56bf", sap: "#bf92f9",
-  // PAL.emp / empDark off constants.ts — the Aegis tanks' arc, and the only
+  // PAL.emp / empDark off constants.ts — the Wraith fleet's arc, and the only
   // colour in the game that means a gun is SHORTED
   empDark: "#3f9cb8", emp: "#8cf2ff",
-  // Pal.unitBack / unitFront — the Sky gunships' blast, and their jam
+  // Pal.unitBack / unitFront — the Skyfall bombers' charges, and their jam
   skyDark: "#d06b53", sky: "#ffa665",
   codexDark: "#c25a97", codex: "#ff8acb", codexLite: "#ffc7e6",
 } as const;

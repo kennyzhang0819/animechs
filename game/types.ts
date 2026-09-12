@@ -531,6 +531,12 @@ export const enum FxKind {
    *  jumping off a building whose gun is out. The rot's mote is the same
    *  idea in purple; this one is a bar, because a short is electrical */
   ShortSpark = 62,
+  /** A BLINK (levels.ts blink): the streak a wraith leaves between where
+   *  it was hit and where it landed — `rot` and `len` are the jump */
+  Blink = 63,
+  /** THE NUKE (levels.ts payload.fuse): the flash that fills the whole
+   *  blast radius (`len`), white into orange, with the ring on its rim */
+  NukeBurst = 64,
 }
 
 /** an r,g,b triple in 0..1, the form every draw call wants */

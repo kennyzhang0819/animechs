@@ -11,8 +11,9 @@ import { FxKind, type RGB } from "./types";
  * authored so that a shot in the air says which family fired it and what
  * it is about to do: yellow straight bullets (Ground mechs), purple orbs
  * that rot (Venom spitters), green lasers that pierce (Starlight mechs),
- * orange shotgun fans (Sky gunships), navy shells lobbed over the wall
- * (Naval tanks) and cyan arcs that short a gun (Aegis tanks). Each tree's
+ * a body that is a bomb (Skyfall bombers), foam-white harpoon rails from
+ * beyond the board's reach (Harpoon fleet) and cyan arcs that short a gun
+ * off a hull that blinks and cloaks (Wraith fleet). Each tree's
  * header below says what its tiers buy. The notes on THE LOOK and THE
  * BITE that follow are about the rows that are still Mindustry's.
  *
@@ -322,7 +323,7 @@ export interface UnitWeapon {
    */
   arc?: { jumps: number; reach: number; decay: number; color: RGB };
   /**
-   * THE SHORT — the Aegis tanks' family trait, and the first status on a
+   * THE SHORT — the Wraith fleet's attack, and the first status on a
    * building after the rot: every structure this weapon connects with
    * (the target, every hop of a chain, every structure a field pulse
    * reaches) has its gun put out for this many seconds (Tower.shortT).
@@ -342,6 +343,9 @@ export interface UnitWeapon {
   /** fx "scatter": the colour the fan is drawn in, and the sparks on what
    *  it struck. The sky's own orange unless set */
   scatterColor?: RGB;
+  /** fx "rail": the colour of the muzzle wings, the blades down the line
+   *  and the spikes off what it struck. Pal.orangeSpark unless set */
+  railColor?: RGB;
   // ---- THE LOOK, per fx kind ------------------------------------------
   /** bullet / missile / shell / bomb: the sprite in flight */
   look?: ShotLook;
@@ -514,30 +518,6 @@ const VELA_BEAM = beamStyle({
 });
 /** fuse's ray — style 0, the geometry constants.ts already carries */
 export const FUSE_SHRAPNEL = shrapnelStyle({ ...SHRAPNEL });
-/** THE NAVAL SHELL'S LANDING: blastExplosion's shape in the water's own
- *  colours — a navy wave, foam-white smoke, navy sparks — scaled to the
- *  three-tile burst the line's middle tiers throw. The fleet's every shell
- *  lands in this, so a burst on the shore reads as the sea's from across
- *  the field */
-const NAVAL_EXPLOSION = explosionStyle({
-  lifetime: t(26),
-  waveColor: PAL.navalBack,
-  waveLife: 8,
-  waveStroke: 4,
-  waveRad: 26,
-  waveRadBase: 4,
-  smokeColor: PAL.navalFront,
-  smokes: 6,
-  smokeSize: 3.5,
-  smokeSizeBase: 0.4,
-  smokeRad: 22,
-  sparkColor: PAL.navalBack,
-  sparks: 7,
-  sparkStroke: 1.5,
-  sparkRad: 30,
-  sparkLen: 4,
-});
-
 /** the disrupt missile's shootOnDeath burst: Pal.sap x 1.8 wave, suppress smoke and sparks */
 const sapBright: RGB = [Math.min(1, PAL.sap[0] * 1.8), Math.min(1, PAL.sap[1] * 1.8), Math.min(1, PAL.sap[2] * 1.8)];
 const DISRUPT_EXPLOSION = explosionStyle({
@@ -624,38 +604,6 @@ const venomOrb = (size: number, o: { trail?: boolean } = {}): ShotLook => ({
 });
 
 /**
- * THE NAVAL SHELL — the one thing the Naval tanks throw, at five sizes.
- *
- * ArtilleryBulletType's own "shell" sprite and slope shrink, in the
- * water's navy with a foam-white face (PAL.navalBack / navalFront) and a
- * navy trail behind it, landing in NAVAL_EXPLOSION. `collide: false` is
- * the family's whole trajectory: a lobbed shell flies over whatever is in
- * front of it and bursts where it was aimed — the fortress gave that up
- * (a flat, blockable siege round) so that exactly one family would keep
- * it, and this is the family. `size` is the sprite's box in world units,
- * and the family's ladder of look: a risso's mortar round is 8, an
- * omura's siege shell 22.
- */
-const navalShell = (size: number, o: Partial<ShotLook> = {}): ShotLook => ({
-  region: "shell",
-  width: u(size),
-  height: u(size),
-  shrinkX: 0.15,
-  shrinkY: 0.5,
-  slope: true,
-  back: PAL.navalBack,
-  front: PAL.navalFront,
-  shoot: FxKind.ShootBig,
-  smoke: FxKind.SmokeSmall,
-  hit: FxKind.Explosion,
-  hitStyle: NAVAL_EXPLOSION.id,
-  hitColor: PAL.navalBack,
-  trail: { size: u(Math.max(3, size * 0.3)), mult: 1, color: PAL.navalBack },
-  collide: false,
-  ...o,
-});
-
-/**
  * Bullets.standardCopper: BasicBulletType(2.5, 9), lifetime 60 — THE BITE
  * ONLY. The round itself is not drawn any more: the tier-1 guns (dagger,
  * risso) fire as a "gun", an instant hit with the round's own muzzle
@@ -677,6 +625,42 @@ const copper = (name: string, reload: number, mounts: number, damage = 9): UnitW
   smoke: FxKind.SmokeSmall,
   shootColor: PAL.lightOrange,
 });
+
+/**
+ * THE SKYFALL BOMBERS' CHARGES (levels.ts UnitStats.payload), drawn by the
+ * sim when a bomber goes off: the bomblets an antumbra scatters — small
+ * shells in the sky's orange, fused, bursting where they stop — and the
+ * eclipse's armed nuke, a fat orange orb sitting where the hull fell
+ * until its fuse runs out. Both are BombBulletType's shape: dropped, not
+ * fired, collides = false.
+ */
+export const BOMBLET_LOOK: ShotLook = {
+  region: "shell",
+  width: u(8),
+  height: u(11),
+  shrinkX: 0,
+  shrinkY: 0.6,
+  back: PAL.unitBack,
+  front: PAL.unitFront,
+  shoot: FxKind.ShootSmall,
+  hit: FxKind.BlastExplosion,
+  hitColor: PAL.unitFront,
+  puff: { chance: 0.3, size: u(2), color: PAL.unitBack },
+  collide: false,
+};
+export const NUKE_LOOK: ShotLook = {
+  region: "circle-bullet",
+  width: u(26),
+  height: u(26),
+  shrinkX: -0.4,
+  shrinkY: -0.4,
+  back: PAL.unitBack,
+  front: PAL.lighterOrange,
+  shoot: FxKind.ShootBig,
+  hit: FxKind.NukeBurst,
+  hitColor: PAL.unitFront,
+  collide: false,
+};
 
 export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // ---- the dagger line --------------------------------------------------
@@ -946,93 +930,33 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
     },
   ],
 
-  // ---- THE SKY GUNSHIPS -----------------------------------------------
+  // ---- THE SKYFALL BOMBERS --------------------------------------------
   //
-  // ONE BLAST ACROSS FIVE TIERS, AND NOTHING IN THE AIR BUT THE SHIPS. Every
-  // weapon on this tree is a SHOTGUN (fx "scatter"): an instant cone off
-  // the muzzle in which every structure takes a pellet's worth, less the
-  // further out it stands, nearest first up to a cap. No round crosses the
-  // field — what is drawn is the fan of hot streaks leaving the ship
-  // (FxKind.Scatter), white into Pal.unitFront's orange, and the sparks on
-  // what it struck. The line used to fire five different things — copper
-  // rounds, dropped bombs, missiles, a cannon, a laser and flak — and read
-  // as five families that happened to fly. It is one family now.
+  // A BODY THAT IS A BOMB, FIVE SIZES OF IT. Not one of these carries a
+  // gun. Each has ONE weapon and it is itself (fx "bomb", suicide): it
+  // picks the nearest structure inside its seek reach, dives at it
+  // (Sim.updateUnits) and goes off on contact — and it goes off THE SAME
+  // WAY when it is shot down, wherever that is (levels.ts payload,
+  // Sim.detonate). The charge is the payload's; this row is only the
+  // trigger: `range` is how far out it will spot something to dive at,
+  // and the reload is the tick between checks.
   //
-  // THE FAMILY'S TWO IDEAS ARE FLYING AND SPEED. Flying it always had: it
-  // ignores the route and the walls and sees its whole radius. Speed it
-  // used to throw away — the T5 flew at a fifth of the T1's pace and
-  // crossed a field of scatter at walking speed — and it keeps now
-  // (levels.ts): every tier is quicker than any walker, so what a gunship
-  // wave asks the board for is GUNS THAT REACH THE SKY AND ANSWER FAST,
-  // because the flight will be over the line before a slow gun has turned.
-  // A shotgun is the weapon of a body that arrives before it is answered:
-  // short, wide, and spent on whatever it is over.
+  // THE FAMILY'S TWO IDEAS ARE FLYING AND THE PAYLOAD. It ignores the
+  // maze and sees everything under it, as the air always did; and what it
+  // brings is a charge that goes off on your turrets whether it arrives
+  // or is stopped — so an AA line over the guns it protects is an AA line
+  // that detonates bombers over them, and the answer is REACH: kill them
+  // over nothing. Its carriers are the zenith (afterburner: the flight
+  // moves faster round it) and the antumbra (a jam over the guns under
+  // it). The eclipse carries the small nuke.
   //
-  // WHAT A TIER BUYS IS WIDTH AND WEIGHT. A flare's fan is eighteen degrees
-  // and touches three things for nine each; an eclipse's broadside is
-  // twenty-nine tiles long and takes six for a hundred and twenty. The
-  // horizon's is the odd one — a full circle, straight down, the family's
-  // blast under the ship where its bombs used to fall.
-  //
-  // THE REACH IS THE OLD GUNS' REACH: a fan runs as far as the round it
-  // replaced flew (a flare's copper 14 tiles, a zenith's missiles 19, the
-  // eclipse's laser 29). The first cut of this family was a five-tile
-  // shotgun on every tier and the flight died in the flak before it fired
-  // — reach is what a fast body converts into time over the target, and a
-  // shotgun with none is a body with none. The rates are set against what
-  // the old guns did to ONE turret: a flare bites a duo as its copper pair
-  // did, an antumbra rather less than its 55-a-round cannon on a
-  // seven-tick reload (the heaviest single-target gun on the roster, on a
-  // flyer) and an eclipse about what its laser and flak did together; the
-  // family's real damage lives in the spread on top of that.
-  flare: [
-    {
-      name: "flare-scatter", reload: t(20), mounts: 2, damage: 9, range: u(110), speed: 0, fx: "scatter",
-      cone: 18 * DEG, falloff: 0.5, maxTargets: 3, shoot: FxKind.ShootSmall,
-    },
-  ],
-  // THE BLAST UNDER THE SHIP: a full-circle scatter at under four tiles,
-  // where the horizon used to drop bombs. It is the family's area tier,
-  // and its pellets go every way at once, so a horizon over a patch is a
-  // horizon on all of it
-  horizon: [
-    {
-      name: "horizon-blast", reload: t(24), mounts: 1, damage: 60, range: u(36), speed: 0, fx: "scatter",
-      cone: Math.PI, falloff: 0.6, maxTargets: 6,
-    },
-  ],
-  // the zenith's two missile racks, as two fans: a wider cone than the
-  // flare's, twice the reach, four things a shot. The tier also carries
-  // the flight's shield (levels.ts shieldField)
-  zenith: [
-    {
-      name: "zenith-scatter", reload: t(30), mounts: 2, damage: 30, range: u(150), speed: 0, fx: "scatter",
-      cone: 22 * DEG, falloff: 0.5, maxTargets: 4, shoot: FxKind.ShootBig,
-    },
-  ],
-  // the antumbra's whole battery as one heavy fan on a mirrored pair. The
-  // tier's real contribution is the jam it carries (levels.ts jamField):
-  // it hangs over the line and the line reloads at half pace under it
-  antumbra: [
-    {
-      name: "antumbra-scatter", reload: t(20), mounts: 2, damage: 80, range: u(170), speed: 0, fx: "scatter",
-      cone: 25 * DEG, falloff: 0.5, maxTargets: 5, shoot: FxKind.ShootBig,
-    },
-  ],
-  // THE BROADSIDE: the family's long gun — a hundred units, a narrow cone,
-  // six things for ninety — where the large-laser-mount pair used to be;
-  // and four flak fans off the wings, wide and fast, where the artillery
-  // was. A T5 that fills the sky over a patch and fills the patch
-  eclipse: [
-    {
-      name: "eclipse-broadside", reload: t(40), mounts: 2, damage: 120, range: u(230), speed: 0, fx: "scatter",
-      cone: 15 * DEG, falloff: 0.6, maxTargets: 6, shoot: FxKind.Shockwave, shootLen: u(28),
-    },
-    {
-      name: "eclipse-flak", reload: t(12), mounts: 4, damage: 18, range: u(150), speed: 0, fx: "scatter",
-      cone: 30 * DEG, falloff: 0.5, maxTargets: 4,
-    },
-  ],
+  // THE SEEK REACH IS THE LADDER: a flare dives at what is under it, an
+  // eclipse picks its target from twenty tiles out.
+  flare: [{ name: "flare-charge", reload: t(6), mounts: 1, damage: 0, range: u(56), speed: 0, fx: "bomb", suicide: true }],
+  horizon: [{ name: "horizon-charge", reload: t(6), mounts: 1, damage: 0, range: u(72), speed: 0, fx: "bomb", suicide: true }],
+  zenith: [{ name: "zenith-charge", reload: t(6), mounts: 1, damage: 0, range: u(96), speed: 0, fx: "bomb", suicide: true }],
+  antumbra: [{ name: "antumbra-charge", reload: t(6), mounts: 1, damage: 0, range: u(120), speed: 0, fx: "bomb", suicide: true }],
+  eclipse: [{ name: "eclipse-nuke", reload: t(6), mounts: 1, damage: 0, range: u(160), speed: 0, fx: "bomb", suicide: true }],
   // disrupt-weapon: three disrupt-missile UNITS a volley (shoot.shots 3,
   // inaccuracy 28), each its own sprite with a sapBulletBack engine, going
   // off as ExplosionBulletType(140, 25) in Pal.sap x 1.8 and Pal.suppress,
@@ -1052,124 +976,66 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
     },
   ],
 
-  // ---- THE NAVAL TANKS ------------------------------------------------
+  // ---- THE HARPOON FLEET ----------------------------------------------
   //
-  // ONE SHELL ACROSS FIVE TIERS: every weapon on this tree LOBS an
-  // artillery round (fx "shell") in the water's own navy with a foam-white
-  // face (navalShell), that flies OVER whatever is in front of it and
-  // bursts where it was aimed. The line used to carry copper rounds, flak,
-  // missiles, artillery and a railgun; it is the ARTILLERY family now, the
-  // one line on the roster whose every shot arcs, which the fortress gave
-  // up in the ground rework so that exactly one family would keep it.
+  // ONE HARPOON ACROSS FIVE TIERS: every gun on this tree is a RAIL (fx
+  // "rail") — an instant line the length of its reach, in the fleet's
+  // foam white (railColor), that hits what it was aimed at and nothing
+  // else, except the omura's, which PIERCES everything on the line. And
+  // every tier has INSANE REACH: a risso harpoons from forty tiles, an
+  // omura from EIGHTY, past the longest gun on the board (the foreshadow's
+  // sixty-two). The line used to be copper, flak, missiles and artillery
+  // at the walkers' reaches; it is the SNIPER family now.
   //
-  // WHAT IT POSES: bombardment from the water. The hulls are quick afloat
-  // (constants.ts NAVAL_WATER_SPEED — half again their stat) and slow
-  // ashore, so a channel that points at the core is a road the fleet
-  // comes up fast and shells the shore from, over the wall a player put
-  // there. The answer is not a wall — a shell ignores one — it is
-  // contesting the water: guns whose reach covers the channel, and the
-  // hulls dead before the big shells arrive.
-  //
-  // WHAT A TIER BUYS IS THE BURST. A shell lands ON a turret for its
-  // damage and then bursts over it and its neighbours (Sim.updateEnemyShots).
-  // A risso's mortar is a one-tile burst at nineteen tiles; a minke's a
-  // tile and a half; a bryde's three and a half; an omura's siege shell is
-  // five hundred over four and a half tiles at FIFTY, the longest reach any
-  // body on the roster has. The bryde's shield and the sei's bow wave
-  // (levels.ts) are what the fleet does for itself.
-  //
-  // THE AREA IS METERED ON THE MASS TIERS, because the script sends its T1
-  // by the thousand — wave 15 is two thousand of them — so a burst on the
-  // risso is a burst two thousand times over. Against ONE turret each tier
-  // bites at two thirds to nine tenths of its old row's paper number (the
-  // copper, flak, missiles and rail it replaced), and the burst over the
-  // patch, over the wall, is the rest. Set by playtest, world 1, the fleet
-  // alone, over three seeds: the old fleet took the bot's board at waves
-  // 9, 11 and 26, which was a family stronger than the mixed deal it
-  // plays in; this one is meant to land later than that and still land.
+  // WHAT IT POSES: it opens fire long before anything can answer, from a
+  // hull that crawls ashore (levels.ts NAVAL_PACE, NAVAL_LAND_SPEED) and
+  // GROWS THE LONGER IT LIVES (levels.ts veteran: every hit here is
+  // multiplied by the hull's age, to triple). The rows below are DELIBERATELY
+  // LIGHT — a fresh risso's harpoon is a sixth of the old copper pair —
+  // because a fleet that has been alive two minutes hits three times as
+  // hard and is still out of reach. The answer is a gun that reaches out
+  // (ripple, spectre, foreshadow) and kills them YOUNG, and the spotter
+  // (bryde) and the drill (sei) are the hulls to kill first.
   risso: [
-    {
-      name: "risso-mortar", reload: t(40), mounts: 2, damage: 20, splash: 20, splashRadius: u(8),
-      range: rng(2.5, 60), speed: spd(2.5), fx: "shell", look: navalShell(8),
-    },
+    { name: "risso-harpoon", reload: t(120), mounts: 1, damage: 14, range: u(320), speed: 0, fx: "rail", railColor: PAL.navalFront },
   ],
-  // twin mortars, two shells a volley: the tier that puts more of the
-  // family's one idea in the air at once
   minke: [
-    {
-      name: "minke-mortar", reload: t(40), mounts: 2, shots: 2, damage: 20, splash: 36, splashRadius: u(12),
-      range: rng(3, 55), speed: spd(3), fx: "shell", look: navalShell(10),
-    },
+    { name: "minke-harpoon", reload: t(90), mounts: 2, damage: 24, range: u(360), speed: 0, fx: "rail", railColor: PAL.navalFront },
   ],
-  // large-artillery, as upstream has it: ArtilleryBulletType(3.2, 15)
-  // 15x15.5, Fx.massiveExplosion — repainted navy. THIRTY TILES, the
-  // fortress's old reach, and the first tier that outranges most of a
-  // board. The tier also carries the fleet's shield (levels.ts)
+  // THE SPOTTER (levels.ts spotterField) — its own harpoon is the
+  // middling one; what it does is make every hull round it reach half
+  // again as far
   bryde: [
-    {
-      name: "bryde-artillery", reload: t(45), mounts: 1, damage: 50, splash: 140, splashRadius: u(28),
-      range: rng(3, 80), speed: spd(3), fx: "shell",
-      look: navalShell(15, { height: u(15.5), shoot: FxKind.ShootBig2 }),
-    },
+    { name: "bryde-harpoon", reload: t(90), mounts: 1, damage: 60, range: u(400), speed: 0, fx: "rail", railColor: PAL.navalFront },
   ],
-  // THE BARRAGE: the sei-launcher's six a volley, as six shells. upstream
-  // fires them as missiles for 42 + 45 in 35; these burst for 20 + 40
-  // over three tiles each, which across six is the family's area tier
+  // THE DRILL (levels.ts drillField): the hulls round it age twice as fast
   sei: [
-    {
-      name: "sei-barrage", reload: t(40), mounts: 1, shots: 6, damage: 28, splash: 66, splashRadius: u(24),
-      range: rng(4.2, 55), speed: spd(4.2), fx: "shell", look: navalShell(9),
-    },
+    { name: "sei-harpoon", reload: t(80), mounts: 2, damage: 110, range: u(480), speed: 0, fx: "rail", railColor: PAL.navalFront },
   ],
-  // THE SIEGE SHELL: fifty tiles, five hundred over a five-tile burst,
-  // once every two seconds — the omura's
-  // railgun read as artillery. The rail punched one thing for 1250 down a
-  // line; this drops on a patch from further away than any gun on the
-  // board reaches back. And a pair of the T1's mortars off the deck, so
-  // the hull is never idle between shells
+  // omura-cannon, as upstream has it: RailBulletType, and it goes THROUGH
+  // — every structure on its eighty-tile line takes the hit
+  // (UnitWeapon.pierce). upstream damage 1250, length 500
   omura: [
-    {
-      name: "omura-siege", reload: t(120), mounts: 1, damage: 400, splash: 500, splashRadius: u(36),
-      range: rng(4, 100), speed: spd(4), fx: "shell",
-      look: navalShell(22, { shoot: FxKind.ShootBig2, smoke: FxKind.SmokeBig2 }),
-    },
-    {
-      name: "omura-mortar", reload: t(40), mounts: 2, damage: 18, splash: 36, splashRadius: u(8),
-      range: rng(3, 55), speed: spd(3), fx: "shell", look: navalShell(10),
-    },
+    { name: "omura-cannon", reload: t(150), mounts: 1, damage: 700, range: u(640), speed: 0, fx: "rail", pierce: true, railColor: PAL.navalFront },
   ],
 
-  // ---- THE AEGIS TANKS ------------------------------------------------
+  // ---- THE WRAITH FLEET -----------------------------------------------
   //
-  // ONE ARC ACROSS FIVE TIERS: every weapon on this tree is CHAIN LIGHTNING
-  // (fx "arc") in an electric cyan (PAL.emp) — instant, the target first
-  // and then the nearest structure the last one struck can reach, hop
-  // after hop, each carrying a share of the last — and every structure it
-  // connects with rolls a SHORT (UnitWeapon.short, Tower.shortT): its gun
-  // is out for a moment. The line used to be a torpedo, a plasma flame,
-  // plasma missiles, a heal field and an EMP cannon, all in the support
-  // line's green; it is the EMP family now, in a colour nothing else wears.
+  // THE ARC IS THE ATTACK; THE FAMILY IS HOW IT CANNOT BE HIT. Every gun
+  // on this tree is CHAIN LIGHTNING (fx "arc") in an electric cyan
+  // (PAL.emp): the target first, then the nearest structure the last one
+  // struck can reach, hop after hop, each carrying a share of the last —
+  // and every structure it connects with rolls a SHORT (UnitWeapon.short,
+  // Tower.shortT): its gun is out for a moment, a refresh and never a
+  // stack, so one hull flickers a gun and a crowd holds it down.
   //
-  // WHAT IT POSES: a board that goes quiet. Rot takes a turret's health
-  // and ignores plating; a short takes its TIME and ignores everything —
-  // a shorted spectre is a spectre that is not shooting, whatever its
-  // pool or its plating. And it is the venom rule read for time: the
-  // short is a refresh, not a stack, and every tier's reload is longer
-  // than its short, so one hull flickers a gun and a crowd of them holds
-  // it down. What a tier buys is reach, hops and reliability — a retusa
-  // shorts one gun in eight it touches for half a second, a navanax one in
-  // two for a full second, seven guns at a time.
-  //
-  // THE BITE SITS BETWEEN THE STARLIGHT LINE'S AND THE GROUND LINE'S, tier
-  // for tier, before the hops: a family whose trick is taking a gun's TIME
-  // still has to be worth shooting when the gun is up, or it is a slot the
-  // die spends on nothing — which is what put it on the shelf before.
-  //
-  // THE AEGIS ITSELF is in levels.ts: the T2 and the T5 stand inside FORCE
-  // FIELDS that eat the player's shots outright, and the T4 heals the
-  // fleet by a share of its health. A family named for a shield carries
-  // the game's biggest ones, and the arcs are what it does from behind
-  // them.
+  // WHAT IT POSES is in levels.ts: every hull BLINKS — a hit that lands
+  // throws it forward past the gun that landed it — and the top three
+  // CLOAK: gone, untargetable and untouchable, on a cycle, the flagship
+  // taking the hulls round it with it. A turret line that opens fire on
+  // wraiths is a line the wraiths are past; the answer is bursts and
+  // fields that catch a body wherever it lands, and killing the flagship
+  // in the seconds it shows.
   //
   // THE CHAIN'S REACH is a patch neighbour — three to four tiles — so an
   // arc on a lone duo is one hit and an arc on a wall of them is the wall.
@@ -1179,16 +1045,12 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
       arc: { jumps: 1, reach: u(28), decay: 0.7, color: PAL.emp }, short: 0.6, shortChance: 0.12,
     },
   ],
-  // the plasma-mount-weapon's five-tick reload, as a fast short arc: the
-  // family's volume tier, and the first that stands inside a bubble
   oxynoe: [
     {
       name: "oxynoe-arc", reload: t(12), mounts: 2, damage: 12, range: u(60), speed: 0, fx: "arc",
       arc: { jumps: 2, reach: u(24), decay: 0.6, color: PAL.emp }, short: 0.4, shortChance: 0.06,
     },
   ],
-  // the family's chain tier: four hops, so one cyerce on the corner of a
-  // patch lights five of it
   cyerce: [
     {
       name: "cyerce-arc", reload: t(50), mounts: 2, damage: 60, range: u(140), speed: 0, fx: "arc",
@@ -1196,8 +1058,8 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
     },
   ],
   // EnergyFieldAbility(40, 65, 180): 80 (upstream 40) to everything in 180
-  // — twenty-two tiles — every 65 ticks, a Fx.chainLightning to each, in the
-  // family's cyan and with a SHORT rolled on every one of them. The
+  // — twenty-two tiles — every 65 ticks, a Fx.chainLightning to each, in
+  // the family's cyan and with a SHORT rolled on every one of them. The
   // family's area tier and its healer at once (levels.ts energyField)
   aegires: [
     {
@@ -1208,7 +1070,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // THE EMP CANNON as the family's long arc: thirty-two tiles, six hops,
   // a one-second short on every other thing it touches — upstream's
   // EmpBulletType (damage 110, splash 110 in 100) read as a chain instead
-  // of a burst. The tier stands inside the biggest bubble in the game
+  // of a burst. The flagship, and its cloak veils the fleet (levels.ts)
   navanax: [
     {
       name: "navanax-emp", reload: t(120), mounts: 2, damage: 300, range: u(260), speed: 0, fx: "arc",
@@ -1255,6 +1117,6 @@ for (const [k, ws] of Object.entries(UNIT_WEAPONS)) {
     if (w.fx === "lightning" && !w.bolt) throw new Error(`${k}/${w.name} is lightning with no bolt`);
     if (w.fx === "scatter" && w.cone === undefined) throw new Error(`${k}/${w.name} is a scatter with no cone`);
     if (w.fx === "arc" && !w.arc) throw new Error(`${k}/${w.name} is an arc with no chain`);
-    if (w.pierce && w.fx !== "laser") throw new Error(`${k}/${w.name} pierces but is not a laser`);
+    if (w.pierce && w.fx !== "laser" && w.fx !== "rail") throw new Error(`${k}/${w.name} pierces but is neither laser nor rail`);
   }
 }

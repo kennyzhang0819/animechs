@@ -2146,7 +2146,7 @@ export class Renderer {
   private pushUnitPass(dyn: Batch, sim: Sim, pass: number): void {
     const { vx0, vy0, vx1, vy1 } = this;
     const { upx, upy, uhp, uhpmax, ukind, uwalk, ubrot, urot, n } = sim;
-    const { ushield, ushieldAlpha, urad, uwet, uhungry, ufly, ueaten, uwade } = sim;
+    const { ushield, ushieldAlpha, urad, uwet, uhungry, ufly, ueaten, uwade, ucloakT } = sim;
     // pass 1 is nothing but the flyers' drop shadows — a whole second
     // quad per flyer, and the first decoration to go with the effects
     // switched off (see setEffects)
@@ -2236,8 +2236,17 @@ export class Renderer {
         // stock 5 deg/tick is close enough to instant that the light
         // flyers read as banking with their drift, while antumbra's 1.9
         // visibly swings the hull round after the course change
-        this.push(dyn, upx[i], upy[i], usz, usz, urot[i], KIND_UV[k], tint[0], tint[1], tint[2], 1);
-        if (cell) this.pushCell(dyn, cell, upx[i], upy[i], usz, urot[i], this.cellTint);
+        // A CLOAKED BODY (Sim.ucloakT, levels.ts cloak) is a ghost of
+        // itself: the hull at a fifth, no cell, no halo — enough to read
+        // that something is there and nothing to aim at. Only the plain
+        // hulls cloak (the Wraith fleet); a mech or a walker that took the
+        // trait would need the same on its own draw path
+        if (ucloakT[i] > 0) {
+          this.push(dyn, upx[i], upy[i], usz, usz, urot[i], KIND_UV[k], tint[0], tint[1], tint[2], 0.2);
+        } else {
+          this.push(dyn, upx[i], upy[i], usz, usz, urot[i], KIND_UV[k], tint[0], tint[1], tint[2], 1);
+          if (cell) this.pushCell(dyn, cell, upx[i], upy[i], usz, urot[i], this.cellTint);
+        }
       }
       this.endScale();
     }
@@ -2449,7 +2458,8 @@ export class Renderer {
           kind === FxKind.Laser || kind === FxKind.Shrapnel ||
           kind === FxKind.HealWave || kind === FxKind.ShieldBreak ||
           kind === FxKind.Sap || kind === FxKind.EmpHit ||
-          kind === FxKind.WaterBurst || kind === FxKind.Scatter
+          kind === FxKind.WaterBurst || kind === FxKind.Scatter ||
+          kind === FxKind.Blink || kind === FxKind.NukeBurst
         )
           em += fxLen[f];
         else if (kind === FxKind.UnitSpawn) em += KIND_SPRITE[fxUnit[f]] * 2;
@@ -2595,6 +2605,30 @@ export class Renderer {
         });
       } else if (e.kind === FxKind.Scatter) {
         this.drawScatter(dyn, e, t);
+      } else if (e.kind === FxKind.Blink) {
+        // A BLINK (Sim.blinkUnit): the streak from where the body was to
+        // where it landed, cyan, thinning from the far end back — and a
+        // ring snapping shut where it left, so the jump reads as a jump
+        // and not as a body that was never there
+        const col = e.col ?? PAL.emp;
+        const len = (e.len ?? 0) * (1 - t * 0.6);
+        this.strokeLine(dyn, e.x, e.y, e.rot ?? 0, len, (0.6 + (1 - t) * 1.6) * MU, col, (1 - t) * 0.9);
+        this.strokeCircle(dyn, e.x, e.y, (1 - t) * 6 * MU, (1 - t) * 1.5 * MU, col[0], col[1], col[2], RING_ALPHA);
+      } else if (e.kind === FxKind.NukeBurst) {
+        // THE NUKE (Sim.detonate, levels.ts payload.fuse): a flash that
+        // fills the whole blast radius (e.len), white into the sky's
+        // orange and out, a rim racing to the edge, and a ring of sparks
+        // thrown clear — the WaterBurst's shape in fire, and at the size
+        // of the damage, which is the whole point of drawing it that big
+        const reach = e.len || 60 * MU;
+        const col = ramp(PAL.white, e.col ?? PAL.unitFront, PAL.unitBack, t);
+        const grow = FIN_POW(t) * reach;
+        this.fillDisc(dyn, e.x, e.y, grow, col, (1 - t) * 0.55);
+        this.strokeCircle(dyn, e.x, e.y, grow, ((1 - t) * 3 + 0.5) * MU, col[0], col[1], col[2], 1 - t * 0.5);
+        const spark = (1 + (1 - t) * 5) * MU;
+        this.scatter(e.seed ?? 1, 16, grow, 0, Math.PI, (x, y, bearing) => {
+          this.strokeLine(dyn, e.x + x, e.y + y, bearing, spark, (1 - t) * 1.5 * MU, col, 1);
+        });
       } else if (e.kind === FxKind.ShortSpark) {
         // A SHORTED BUILDING (Tower.shortT): one cyan bar flicking off it
         // on a random bearing, white at birth and gone in a blink — the
@@ -2623,7 +2657,7 @@ export class Renderer {
         // punched through, 140 degrees off the line it is still travelling
         for (const side of [-1, 1])
           this.tri(dyn, e.x, e.y, 10 * (1 - t) * MU, 60 * MU,
-            (e.rot ?? 0) + (side * 140 * Math.PI) / 180, PAL.orangeSpark, 1);
+            (e.rot ?? 0) + (side * 140 * Math.PI) / 180, e.col ?? PAL.orangeSpark, 1);
       } else if (e.kind === FxKind.SmokeCloud) {
         this.drawSmokeCloud(dyn, e, t);
       } else if (e.kind === FxKind.DamageSmoke) {
@@ -2690,7 +2724,7 @@ export class Renderer {
       } else if (e.kind === FxKind.RailTrail) {
         // Fx.railTrail: two coppery blades along the line, fore and aft
         for (const side of [0, 1])
-          this.tri(dyn, e.x, e.y, 10 * (1 - t) * MU, 24 * MU, (e.rot ?? 0) + side * Math.PI, PAL.orangeSpark, 1);
+          this.tri(dyn, e.x, e.y, 10 * (1 - t) * MU, 24 * MU, (e.rot ?? 0) + side * Math.PI, e.col ?? PAL.orangeSpark, 1);
       } else if (e.kind === FxKind.EmpHit) {
         this.drawEmpHit(dyn, e, t);
       } else if (e.kind === FxKind.HitLaserBlast || e.kind === FxKind.HitMeltHeal) {
@@ -4185,7 +4219,7 @@ export class Renderer {
       this.strokeCircle(dyn, e.x, e.y, s * 50 * MU, ((1 - s) * 3 + 0.2) * MU, col[0], col[1], col[2], RING_ALPHA);
     }
     for (const side of [-1, 1])
-      this.tri(dyn, e.x, e.y, 13 * (1 - t) * MU, 85 * MU, (e.rot ?? 0) + (side * Math.PI) / 2, PAL.orangeSpark, 1);
+      this.tri(dyn, e.x, e.y, 13 * (1 - t) * MU, 85 * MU, (e.rot ?? 0) + (side * Math.PI) / 2, e.col ?? PAL.orangeSpark, 1);
   }
 
   /**
