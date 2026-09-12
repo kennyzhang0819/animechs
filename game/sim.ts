@@ -3264,7 +3264,7 @@ export class Sim {
           if (ucharge[i] > 0) {
             ucharge[i] -= dt;
             if (ucharge[i] <= 0) {
-              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp, wrange);
+              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp, wrange, true);
               ucd[slot] = wp.reload - wp.charge;
             }
             continue;
@@ -3312,7 +3312,7 @@ export class Sim {
           case "laser": {
             // a volley of them fans by ShootSpread (the pulsar's three)
             for (let k = 0; k < shots; k++)
-              this.fireUnitLaser(x, y, aim + (k - (shots - 1) / 2) * (wp.spread ?? 0), tgt, wp, wrange);
+              this.fireUnitLaser(x, y, aim + (k - (shots - 1) / 2) * (wp.spread ?? 0), tgt, wp, wrange, KIND_TIER[ukind[i]] >= 4);
             break;
           }
           case "sap": {
@@ -3422,25 +3422,30 @@ export class Sim {
             // in the row's colour (the Harpoon fleet's teal). A
             // PIERCING rail punches through everything on the line
             const rc = wp.railColor ?? PAL.orangeSpark;
+            // A THIN LINE AND NOTHING ELSE. The rail used to throw a muzzle
+            // splash, a blade every sixty units down its length and a
+            // spike on what it struck, every one of them forced past the
+            // effect cap — which on a thousand rissos was thousands of
+            // uncapped quads a second and a frame that stalled. It is ONE
+            // effect now: the whole line as a hair-thin streak carrying its
+            // length (FxKind.RailShoot, `len`), a small hit flick, and only
+            // the top tiers' rails are forced (`big`): a T1 that fires by
+            // the thousand fires small, and vanishes under the cap like
+            // everything else that small
+            const big = KIND_TIER[ukind[i]] >= 4;
             if (wp.pierce) {
               const hit = this.structuresAlong(x, y, aim, wrange, CELL * 0.5, this.alongOut);
               for (let k = 0; k < hit.length; k++) {
                 this.hitStructure(hit[k], wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
-                if (k < 8) this.pushFxCol(hit[k].x, hit[k].y, 18 / 60, FxKind.RailHit, aim, 0, rc, 0, true);
+                if (k < 6) this.pushFxCol(hit[k].x, hit[k].y, 14 / 60, FxKind.RailHit, aim, 0, rc, 0, big);
               }
             } else {
               this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
-              this.pushFxCol(tgt.x, tgt.y, 18 / 60, FxKind.RailHit, aim, 0, rc, 0, true);
+              this.pushFxCol(tgt.x, tgt.y, 14 / 60, FxKind.RailHit, aim, 0, rc, 0, big);
             }
-            this.pushFxCol(x, y, 24 / 60, FxKind.RailShoot, aim, 0, rc, 0, true);
-            this.pushFx(x, y, 10 / 60, FxKind.ShootBig2, aim);
-            const ca = Math.cos(aim), sa = Math.sin(aim);
-            // the blades down the line: as far as the target, or the whole
-            // length when the rail runs through
             const dx = tgt.x - x, dy = tgt.y - y;
             const along = wp.pierce ? wrange : Math.min(wrange, Math.sqrt(dx * dx + dy * dy));
-            for (let d = 0; d <= along; d += 60 * MU)
-              this.pushFxCol(x + ca * d, y + sa * d, 16 / 60, FxKind.RailTrail, aim, 0, rc, 0, true);
+            this.pushFxCol(x, y, 16 / 60, FxKind.RailShoot, aim, along, rc, big ? 1 : 0, big);
             break;
           }
           case "scatter": {
@@ -3598,7 +3603,9 @@ export class Sim {
    * the damage; the shootEffect (Fx.hitLancer, or eclipse's shockwave)
    * goes off at the muzzle
    */
-  private fireUnitLaser(x: number, y: number, aim: number, tgt: Aim | null, wp: UnitWeapon, range = wp.range): void {
+  private fireUnitLaser(
+    x: number, y: number, aim: number, tgt: Aim | null, wp: UnitWeapon, range = wp.range, big = true,
+  ): void {
     const st = wp.laser;
     if (wp.pierce) {
       // THE STARLIGHT RULE (UnitWeapon.pierce): everything the beam
@@ -3608,14 +3615,17 @@ export class Sim {
       for (let k = 0; k < hit.length; k++) {
         this.hitStructure(hit[k], wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
         if (wp.short) this.shortTower(hit[k], wp.short, wp.shortChance ?? 1);
-        if (st && k > 0 && k < 6)
+        if (st && k > 0 && k < (big ? 6 : 2))
           this.pushFxCol(hit[k].x, hit[k].y, 12 / 60, FxKind.HitLaserBlast, aim, 0, st.colors[st.colors.length - 1][0]);
       }
     } else if (tgt && this.aimReach(tgt, x, y, range)) {
       this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
     }
     if (!st) return;
-    this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, range, 0, st.id, true);
+    // only a heavy tier's beam is forced past the effect cap (`big`): a
+    // thousand novas' lances are a thousand small effects that fall under
+    // it like any other, or the cap means nothing on the wave that needs it
+    this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, range, 0, st.id, big);
     if (wp.shoot === FxKind.Shockwave) this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, wp.shootLen ?? 0);
     else if (wp.shoot !== undefined)
       this.pushFxCol(x, y, fxLife(wp.shoot), wp.shoot, aim, 0, st?.colors[1][0] ?? PAL.heal, 0, false, (Math.random() * 0x7fffffff) | 0);
@@ -8274,7 +8284,7 @@ export class Sim {
     if (d < step) return;
     this.upx[i] = x0 + dx * d;
     this.upy[i] = y0 + dy * d;
-    this.pushFxCol(x0, y0, 18 / 60, FxKind.Blink, Math.atan2(dy, dx), d, PAL.wraith, 0, true);
+    this.pushFxCol(x0, y0, 18 / 60, FxKind.Blink, Math.atan2(dy, dx), d, PAL.wraith);
   }
 
   /**
@@ -8339,7 +8349,9 @@ export class Sim {
       return;
     }
     this.splashStructures(x, y, pl.splash, pl.radius);
-    this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, pl.radius);
+    // the ring at the blast's reach is the heavy tiers' — a T1 that goes
+    // off by the hundred goes off as a small burst and no more
+    if (KIND_TIER[this.ukind[i]] >= 4) this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, pl.radius);
     this.pushFx(x, y, fxLife(FxKind.BlastExplosion), FxKind.BlastExplosion, 0, pl.radius, (Math.random() * 0x7fffffff) | 0);
   }
 

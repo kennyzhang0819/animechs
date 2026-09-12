@@ -451,10 +451,10 @@ export const LANCER_LASER = laserStyle({
 /** quasar's beam-weapon: the family's star-gold, a wide 45-degree side flare */
 const QUASAR_LASER = laserStyle({
   colors: [[PAL.starDark, 0.4], [PAL.star, 1], [WHITE, 1]],
-  width: 15,
+  width: 9,
   sideAngle: 45 * DEG,
-  sideWidth: 1,
-  sideLength: 70,
+  sideWidth: 0.8,
+  sideLength: 30,
   lifetime: t(16),
 });
 /** corvus-weapon: the same gold, 75 wide, no side flare, 65 ticks */
@@ -473,19 +473,19 @@ const CORVUS_LASER = laserStyle({
  *  the family's opening tiers fire the family's light */
 const NOVA_LASER = laserStyle({
   colors: [[PAL.starDark, 0.4], [PAL.star, 1], [WHITE, 1]],
-  width: 7,
+  width: 4,
   sideAngle: 45 * DEG,
-  sideWidth: 0.7,
-  sideLength: 18,
-  lifetime: t(14),
+  sideWidth: 0.5,
+  sideLength: 6,
+  lifetime: t(12),
 });
 const PULSAR_LASER = laserStyle({
   colors: [[PAL.starDark, 0.4], [PAL.star, 1], [WHITE, 1]],
-  width: 5,
+  width: 3,
   sideAngle: 45 * DEG,
-  sideWidth: 0.6,
-  sideLength: 14,
-  lifetime: t(14),
+  sideWidth: 0.4,
+  sideLength: 5,
+  lifetime: t(12),
 });
 
 /**
@@ -697,7 +697,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   mace: [
     {
       name: "mace-carbine", reload: t(7), mounts: 2, damage: 26, range: rng(4, 22), speed: spd(4), fx: "bullet",
-      look: basic(8, 11, { shoot: FxKind.ShootSmall, smoke: FxKind.SmokeSmall }),
+      look: basic(6, 9, { shoot: FxKind.ShootSmall, smoke: FxKind.SmokeSmall }),
     },
   ],
   // THE FORTRESS SHOOTS FLAT AND THE SHELL EXPLODES WHERE IT LANDS. Upstream
@@ -722,7 +722,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
     {
       name: "fortress-siege", reload: t(75), mounts: 2, damage: 55, splash: 80, splashRadius: u(35),
       range: rng(5, 48), speed: spd(5), fx: "bullet",
-      look: basic(13, 17, {
+      look: basic(10, 14, {
         shoot: FxKind.ShootBig, smoke: FxKind.SmokeBig,
         hit: FxKind.BlastExplosion, hitColor: PAL.mechDark,
       }),
@@ -808,7 +808,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   atrax: [
     {
       name: "venom-spit", reload: t(180), mounts: 4, damage: 8, splash: 20, splashRadius: u(10),
-      range: rng(6, 18), speed: spd(6), fx: "bullet", poison: 4, poisonChance: 0.3, look: venomOrb(8),
+      range: rng(6, 18), speed: spd(6), fx: "bullet", poison: 4, poisonChance: 0.3, look: venomOrb(7),
     },
   ],
   // THE PACE TIER. Its gun is the family's standard orb at a middling rate;
@@ -819,7 +819,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   spiroct: [
     {
       name: "venom-spit", reload: t(120), mounts: 2, damage: 10, splash: 24, splashRadius: u(14),
-      range: rng(6, 20), speed: spd(6), fx: "bullet", poison: 6, poisonChance: 0.4, look: venomOrb(10),
+      range: rng(6, 20), speed: spd(6), fx: "bullet", poison: 6, poisonChance: 0.4, look: venomOrb(9),
     },
   ],
   // TWO WEAPONS, AND THE FIRST TIME THE FAMILY REACHES PAST ONE TURRET. The
