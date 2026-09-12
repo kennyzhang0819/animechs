@@ -6,6 +6,7 @@ import { modDef, modName, oddsLine, stackLine, type ModGlyph, type ModId } from 
 import { MOD_GRID, modGlyph } from "./modArt";
 import { RARITY } from "@/game/rarity";
 import { HoverCard, useHoverCard } from "./HoverCard";
+import { tile } from "./tile";
 
 /**
  * THE SHELF — every upgrade the run owns, in a row along the top-left of
@@ -99,19 +100,12 @@ function RelicChip({ id, n }: { id: ModId; n: number }) {
     <span
       ref={tip.ref as RefObject<HTMLSpanElement | null>}
       {...tip.anchorProps}
-      className="pointer-events-auto relative flex h-[22px] w-[22px] items-center justify-center border"
-      style={{ borderColor: r.color, background: r.ground }}
+      className="ms-tile ms-tile-sm pointer-events-auto flex h-[22px] w-[22px] items-center justify-center"
+      style={tile(r.color)}
       aria-label={`${name}${n > 1 ? ` times ${n}` : ""}, ${r.name} upgrade`}
     >
       <Glyph glyph={d.glyph} />
-      {n > 1 && (
-        <span
-          className="pointer-events-none absolute -bottom-[3px] -right-[2px] bg-[#0b0b0d] px-[2px] text-[9px] font-bold leading-none"
-          style={{ color: r.color }}
-        >
-          {n}
-        </span>
-      )}
+      {n > 1 && <span className="ms-tile-count">{n}</span>}
       <HoverCard tip={tip} title={name} tag={r.name} color={r.color} align="left">
         {blurb}
         {odds && (
@@ -187,8 +181,8 @@ export function ModReveal({ ids }: { ids: readonly ModId[] }) {
         return (
           <span key={row.id} className="flex items-center gap-1.5">
             <span
-              className="flex h-[18px] w-[18px] shrink-0 items-center justify-center border"
-              style={{ borderColor: r.color }}
+              className="ms-tile ms-tile-sm flex h-[18px] w-[18px] shrink-0 items-center justify-center"
+              style={tile(r.color)}
             >
               <Glyph glyph={d.glyph} className="h-[12px] w-[12px]" />
             </span>
@@ -216,14 +210,14 @@ function SingleReveal({ id }: { id: ModId }) {
   const r = RARITY[d.rarity];
   return (
     <div
-      className="ms-deal-card pointer-events-none flex w-[13rem] flex-col gap-1 border-[3px] p-2"
-      style={{ borderColor: r.color, background: r.ground }}
+      className="ms-deal-card ms-tile pointer-events-none flex w-[13rem] flex-col gap-1 p-2"
+      style={tile(r.color)}
       role="status"
     >
       <div className="flex items-center gap-1.5">
         <span
-          className="flex h-[22px] w-[22px] shrink-0 items-center justify-center border"
-          style={{ borderColor: r.color }}
+          className="ms-tile ms-tile-sm flex h-[22px] w-[22px] shrink-0 items-center justify-center"
+          style={tile(r.color)}
         >
           <Glyph glyph={d.glyph} />
         </span>

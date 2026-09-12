@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type ReactNode, type RefObject } from "react";
+import { tile } from "./tile";
 import { createPortal } from "react-dom";
 
 /**
@@ -120,13 +121,12 @@ export function HoverCard({
   return createPortal(
     <span
       role="tooltip"
-      className="ui-zoom pointer-events-none fixed z-50 block w-64 border-[3px] p-2.5 text-left normal-case tracking-normal"
+      className="ms-tile ui-zoom pointer-events-none fixed z-50 block w-64 p-2.5 text-left normal-case tracking-normal"
       style={{
+        ...tile(color),
         left: align === "center" ? x + w / 2 : align === "right" ? x + w : x,
         top: y,
         transform: `translate(${dx}, ${dy})`,
-        borderColor: color,
-        background: "#0b0b0d",
       }}
     >
       <span className="flex items-baseline justify-between gap-2">

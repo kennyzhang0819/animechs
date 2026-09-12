@@ -33,6 +33,7 @@ import { bandFor, MutationFace, MUT_LIT } from "./mutationFace";
 import { Glyph } from "./Relics";
 import { RARITY, rarityDef } from "@/game/rarity";
 import { TOWER_ICONS } from "./towerIcons";
+import { tile } from "./tile";
 
 /**
  * THE PROGRESS SCREEN: the track, centred on where the save stands.
@@ -212,12 +213,15 @@ function RewardChip({ reward, reached }: { reward: Reward; reached: boolean }) {
           rewardNote(reward) ? `. ${rewardNote(reward)}` : ""
         }`}
         {...tip.anchorProps}
-        className={`relative flex h-9 w-9 shrink-0 cursor-default items-center justify-center overflow-hidden border-2 bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F] ${
-          reached ? "" : "opacity-45"
-        }`}
-        style={{ borderColor: color, color }}
+        className="ms-tile flex h-9 w-9 shrink-0 cursor-default items-center justify-center overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+        style={tile(color)}
       >
-        <RewardFace reward={reward} />
+        {/* the fade is on the FACE and the frame keeps its colour: a
+            purple the save has not reached is still legibly a purple
+            (Unlocks.tsx says the same) */}
+        <span className={`flex items-center justify-center ${reached ? "" : "opacity-45"}`}>
+          <RewardFace reward={reward} />
+        </span>
       </span>
       <HoverCard
         tip={tip}

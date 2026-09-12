@@ -19,6 +19,7 @@ import type { TowerKind } from "@/game/types";
 import { TOWER_ICONS } from "./towerIcons";
 import { Glyph, ModReveal } from "./Relics";
 import { HoverCard, useHoverCard } from "./HoverCard";
+import { tile } from "./tile";
 
 /** what a shut half of the catalog says under its label (game.ts DealHalf) */
 const HALF_SUB: Record<Exclude<DealHalf, "open">, string> = {
@@ -283,8 +284,8 @@ function FormationMark({ form, n, facing }: { form: FormationId; n: number; faci
   return (
     <span
       aria-hidden="true"
-      className="pointer-events-none absolute right-[3px] top-[3px] flex h-[18px] w-[18px] items-center justify-center border-[3px] bg-[#0d0d10]"
-      style={{ borderColor: color }}
+      className="ms-tile ms-tile-sm pointer-events-none absolute right-[3px] top-[3px] flex h-[18px] w-[18px] items-center justify-center"
+      style={tile(color)}
     >
       <svg viewBox={`0 0 ${span} ${span}`} className="h-[13px] w-[13px]">
         {/* centred in a square viewBox, so a quad and a citadel are drawn
@@ -352,10 +353,10 @@ function TurretCard({
           ? `Aimed, turned ${facing * 90} degrees — R turns it, click the board to place it.`
           : "Click to pick it up."
       }`}
-      className={`ms-deal-card pointer-events-auto relative flex h-[5rem] w-[4.5rem] cursor-pointer flex-col items-center justify-center gap-0.5 border-[3px] p-0 ${
+      className={`ms-deal-card ms-tile pointer-events-auto flex h-[5rem] w-[4.5rem] cursor-pointer flex-col items-center justify-center gap-0.5 p-0 ${
         aimed ? "" : "ms-deal-down"
       }`}
-      style={{ borderColor: r.color, background: r.ground, color: r.color }}
+      style={tile(r.color)}
     >
       <FormationMark form={card.form} n={card.n} facing={facing} />
       {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
