@@ -46,6 +46,9 @@
  *                    dice — so two runs with one seed differ only by the code under
  *                    them. Unset is Math.random, which is how a run varies: the
  *                    opening deal alone can move a result by twenty waves
+ *   --dump           at the end, print every body still alive — kind, where it is,
+ *                    what it is aiming at, how far from the core and the nearest
+ *                    building — for a run that stalled with the swarm still out
  *   --json           print the report as JSON
  *   --no-build       skip the TypeScript transpile (use the last one)
  *
@@ -87,6 +90,7 @@ const MAX_SECONDS = +opt("seconds", 2400);
 const PROBE_OPT = opt("probe", null);
 const JSON_OUT = flag("json");
 const SEED = opt("seed", null);
+const DUMP = flag("dump");
 // A SEEDED RUN, for an A/B: mulberry32 over Math.random itself, so the
 // deal (rarity.ts), the shapes (formation.ts) and every die the sim throws
 // come out the same for the same seed. Installed before any module loads
@@ -483,6 +487,20 @@ function play() {
     }
   }
   const won = sim.won();
+  if (DUMP) {
+    const rows = [];
+    for (let i = 0; i < sim.n; i++) {
+      const k = L.UNIT_KINDS[sim.ukind[i]];
+      let near = Infinity;
+      for (const t of sim.towers) { const d = Math.hypot(t.x - sim.upx[i], t.y - sim.upy[i]); if (d < near) near = d; }
+      rows.push(`${k} hp ${Math.round(sim.uhp[i])}/${Math.round(sim.uhpmax[i])} at ${Math.round(sim.upx[i] / CELL)},${Math.round(sim.upy[i] / CELL)}` +
+        ` core ${Math.round(Math.hypot(sim.core.x - sim.upx[i], sim.core.y - sim.upy[i]) / CELL)}t nearest ${Math.round(near / CELL)}t` +
+        ` tgt ${sim.utgt[i] ? sim.utgt[i].s.kind + "@" + Math.round(sim.utgt[i].x / CELL) + "," + Math.round(sim.utgt[i].y / CELL) : "-"}` +
+        ` spawn ${sim.uspawn[i].toFixed(1)} v ${Math.round(Math.hypot(sim.uvx[i], sim.uvy[i]))}`);
+    }
+    console.error(`ALIVE ${sim.n} at ${Math.round(sim.time)}s, wave ${sim.currentWave()}, core ${Math.round(sim.core.hp)}`);
+    for (const r of rows.slice(0, 60)) console.error("  " + r);
+  }
   return {
     world: `${world.id} ${world.name}`, mission: L.missionText(world).title, tier: TIER,
     mutators: [...(world.intrinsicMutation ?? []), ...MUTATORS], level: LEVEL,
