@@ -11,8 +11,8 @@ import { FxKind, type RGB } from "./types";
  * authored so that a shot in the air says which family fired it and what
  * it is about to do: yellow straight bullets (Ground mechs), purple orbs
  * that rot (Venom spitters), green lasers that pierce (Starlight mechs),
- * a body that is a bomb (Skyfall bombers), foam-white harpoon rails from
- * beyond the board's reach (Harpoon fleet) and cyan arcs that short a gun
+ * a body that is a bomb (Skyfall bombers), teal harpoon rails from
+ * beyond the board's reach (Harpoon fleet) and violet arcs that short a gun
  * off a hull that blinks and cloaks (Wraith fleet). Each tree's
  * header below says what its tiers buy. The notes on THE LOOK and THE
  * BITE that follow are about the rows that are still Mindustry's.
@@ -448,18 +448,18 @@ export const LANCER_LASER = laserStyle({
   sideLength: 29,
   lifetime: t(16),
 });
-/** quasar's beam-weapon: Pal.heal, a wide 45-degree side flare */
+/** quasar's beam-weapon: the family's star-gold, a wide 45-degree side flare */
 const QUASAR_LASER = laserStyle({
-  colors: [[PAL.heal, 0.4], [PAL.heal, 1], [WHITE, 1]],
+  colors: [[PAL.starDark, 0.4], [PAL.star, 1], [WHITE, 1]],
   width: 15,
   sideAngle: 45 * DEG,
   sideWidth: 1,
   sideLength: 70,
   lifetime: t(16),
 });
-/** corvus-weapon: the same green, 75 wide, no side flare, 65 ticks */
+/** corvus-weapon: the same gold, 75 wide, no side flare, 65 ticks */
 const CORVUS_LASER = laserStyle({
-  colors: [[PAL.heal, 0.4], [PAL.heal, 1], [WHITE, 1]],
+  colors: [[PAL.starDark, 0.4], [PAL.star, 1], [WHITE, 1]],
   width: 75,
   sideAngle: 15 * DEG,
   sideWidth: 0,
@@ -472,7 +472,7 @@ const CORVUS_LASER = laserStyle({
  *  green ones above are Mindustry's own; these two are this game's, so
  *  the family's opening tiers fire the family's light */
 const NOVA_LASER = laserStyle({
-  colors: [[PAL.heal, 0.4], [PAL.heal, 1], [WHITE, 1]],
+  colors: [[PAL.starDark, 0.4], [PAL.star, 1], [WHITE, 1]],
   width: 7,
   sideAngle: 45 * DEG,
   sideWidth: 0.7,
@@ -480,7 +480,7 @@ const NOVA_LASER = laserStyle({
   lifetime: t(14),
 });
 const PULSAR_LASER = laserStyle({
-  colors: [[PAL.heal, 0.4], [PAL.heal, 1], [WHITE, 1]],
+  colors: [[PAL.starDark, 0.4], [PAL.star, 1], [WHITE, 1]],
   width: 5,
   sideAngle: 45 * DEG,
   sideWidth: 0.6,
@@ -510,10 +510,10 @@ export const MELTDOWN_BEAM = beamStyle({
   ],
   width: 9,
 });
-/** Pal.heal at .2, .5, x1.2 and white — vela's plasma */
-const healBright: RGB = [Math.min(1, PAL.heal[0] * 1.2), 1, Math.min(1, PAL.heal[2] * 1.2)];
+/** the star-gold at .2, .5, then the bright face and white — vela's beam,
+ *  the four washes of ContinuousLaserBulletType in the family's hue */
 const VELA_BEAM = beamStyle({
-  colors: [[PAL.heal, 0.2], [PAL.heal, 0.5], [healBright, 1], [WHITE, 1]],
+  colors: [[PAL.starDark, 0.2], [PAL.starDark, 0.5], [PAL.star, 1], [WHITE, 1]],
   width: 9,
 });
 /** fuse's ray — style 0, the geometry constants.ts already carries */
@@ -553,12 +553,12 @@ const basic = (width: number, height: number, o: Partial<ShotLook> = {}): ShotLo
   height: u(height),
   shrinkX: 0,
   shrinkY: 0.5,
-  back: PAL.bulletYellowBack,
-  front: PAL.bulletYellow,
+  back: PAL.mechDark,
+  front: PAL.mech,
   shoot: FxKind.ShootSmall,
   smoke: FxKind.SmokeSmall,
   hit: FxKind.BulletHit,
-  hitColor: PAL.lightOrange,
+  hitColor: PAL.mech,
   ...o,
 });
 /**
@@ -579,17 +579,17 @@ const venomOrb = (size: number, o: { trail?: boolean } = {}): ShotLook => ({
   height: u(size),
   shrinkX: 0,
   shrinkY: 0,
-  back: PAL.sapBulletBack,
-  front: PAL.sapBullet,
+  back: PAL.venomDark,
+  front: PAL.venom,
   shoot: FxKind.ShootSmall,
   smoke: FxKind.SmokeSmall,
   hit: FxKind.SapExplosion,
-  hitColor: PAL.sapBullet,
+  hitColor: PAL.venom,
   // the thrown bombs stream; the spits do not, or the field would be a
   // purple fog by wave thirty
   ...(o.trail
     ? {
-        trail: { size: u(size * 0.35), mult: 1, color: PAL.sapBulletBack },
+        trail: { size: u(size * 0.35), mult: 1, color: PAL.venomDark },
         // A THROWN BOMB FLIES OVER WHAT IS IN FRONT OF IT. It is the one
         // unblockable shot left in these two families — the fortress's
         // siege round was made flat and blockable in the same pass, and
@@ -623,7 +623,7 @@ const copper = (name: string, reload: number, mounts: number, damage = 9): UnitW
   fx: "gun",
   shoot: FxKind.ShootSmall,
   smoke: FxKind.SmokeSmall,
-  shootColor: PAL.lightOrange,
+  shootColor: PAL.mech,
 });
 
 /**
@@ -640,12 +640,12 @@ export const BOMBLET_LOOK: ShotLook = {
   height: u(11),
   shrinkX: 0,
   shrinkY: 0.6,
-  back: PAL.unitBack,
-  front: PAL.unitFront,
+  back: PAL.bomberDark,
+  front: PAL.bomber,
   shoot: FxKind.ShootSmall,
   hit: FxKind.BlastExplosion,
-  hitColor: PAL.unitFront,
-  puff: { chance: 0.3, size: u(2), color: PAL.unitBack },
+  hitColor: PAL.bomber,
+  puff: { chance: 0.3, size: u(2), color: PAL.bomberDark },
   collide: false,
 };
 export const NUKE_LOOK: ShotLook = {
@@ -654,11 +654,11 @@ export const NUKE_LOOK: ShotLook = {
   height: u(26),
   shrinkX: -0.4,
   shrinkY: -0.4,
-  back: PAL.unitBack,
-  front: PAL.lighterOrange,
+  back: PAL.bomberDark,
+  front: PAL.white,
   shoot: FxKind.ShootBig,
   hit: FxKind.NukeBurst,
-  hitColor: PAL.unitFront,
+  hitColor: PAL.bomber,
   collide: false,
 };
 
@@ -724,7 +724,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
       range: rng(5, 48), speed: spd(5), fx: "bullet",
       look: basic(13, 17, {
         shoot: FxKind.ShootBig, smoke: FxKind.SmokeBig,
-        hit: FxKind.BlastExplosion, hitColor: PAL.bulletYellowBack,
+        hit: FxKind.BlastExplosion, hitColor: PAL.mechDark,
       }),
     },
   ],
@@ -740,7 +740,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
     },
     {
       name: "scepter-mount", reload: t(13), mounts: 4, damage: 20, range: rng(3, 50), speed: spd(3), fx: "bullet",
-      look: basic(4.5, 35, { shrinkX: 0.6, shrinkY: 0, slope: true, hitColor: PAL.bulletYellowBack }),
+      look: basic(4.5, 35, { shrinkX: 0.6, shrinkY: 0, slope: true, hitColor: PAL.mechDark }),
     },
   ],
   // reign-weapon: BasicBulletType(13, 80) 14x33, Fx.shootBig,
@@ -980,7 +980,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   //
   // ONE HARPOON ACROSS FIVE TIERS: every gun on this tree is a RAIL (fx
   // "rail") — an instant line the length of its reach, in the fleet's
-  // foam white (railColor), that hits what it was aimed at and nothing
+  // teal (railColor), that hits what it was aimed at and nothing
   // else, except the omura's, which PIERCES everything on the line. And
   // every tier has INSANE REACH: a risso harpoons from FIFTY tiles, past
   // every gun on the board but the foreshadow (sixty-two), and an omura
@@ -1000,33 +1000,33 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // (ripple, spectre, foreshadow) and kills them YOUNG, and the spotter
   // (bryde) and the drill (sei) are the hulls to kill first.
   risso: [
-    { name: "risso-harpoon", reload: t(90), mounts: 1, damage: 20, range: u(400), speed: 0, fx: "rail", railColor: PAL.navalFront },
+    { name: "risso-harpoon", reload: t(90), mounts: 1, damage: 20, range: u(400), speed: 0, fx: "rail", railColor: PAL.harpoon },
   ],
   minke: [
-    { name: "minke-harpoon", reload: t(75), mounts: 2, damage: 36, range: u(440), speed: 0, fx: "rail", railColor: PAL.navalFront },
+    { name: "minke-harpoon", reload: t(75), mounts: 2, damage: 36, range: u(440), speed: 0, fx: "rail", railColor: PAL.harpoon },
   ],
   // THE SPOTTER (levels.ts spotterField) — its own harpoon is the
   // middling one; what it does is make every hull round it reach half
   // again as far
   bryde: [
-    { name: "bryde-harpoon", reload: t(75), mounts: 1, damage: 90, range: u(480), speed: 0, fx: "rail", railColor: PAL.navalFront },
+    { name: "bryde-harpoon", reload: t(75), mounts: 1, damage: 90, range: u(480), speed: 0, fx: "rail", railColor: PAL.harpoon },
   ],
   // THE DRILL (levels.ts drillField): the hulls round it age twice as fast
   sei: [
-    { name: "sei-harpoon", reload: t(60), mounts: 2, damage: 160, range: u(560), speed: 0, fx: "rail", railColor: PAL.navalFront },
+    { name: "sei-harpoon", reload: t(60), mounts: 2, damage: 160, range: u(560), speed: 0, fx: "rail", railColor: PAL.harpoon },
   ],
   // omura-cannon, as upstream has it: RailBulletType, and it goes THROUGH
   // — every structure on its eighty-tile line takes the hit
   // (UnitWeapon.pierce). upstream damage 1250, length 500
   omura: [
-    { name: "omura-cannon", reload: t(120), mounts: 1, damage: 900, range: u(720), speed: 0, fx: "rail", pierce: true, railColor: PAL.navalFront },
+    { name: "omura-cannon", reload: t(120), mounts: 1, damage: 900, range: u(720), speed: 0, fx: "rail", pierce: true, railColor: PAL.harpoon },
   ],
 
   // ---- THE WRAITH FLEET -----------------------------------------------
   //
   // THE ARC IS THE ATTACK; THE FAMILY IS HOW IT CANNOT BE HIT. Every gun
-  // on this tree is CHAIN LIGHTNING (fx "arc") in an electric cyan
-  // (PAL.emp): the target first, then the nearest structure the last one
+  // on this tree is CHAIN LIGHTNING (fx "arc") in the family's violet
+  // (PAL.wraith): the target first, then the nearest structure the last one
   // struck can reach, hop after hop, each carrying a share of the last —
   // and every structure it connects with rolls a SHORT (UnitWeapon.short,
   // Tower.shortT): its gun is out for a moment, a refresh and never a
@@ -1045,29 +1045,29 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   retusa: [
     {
       name: "retusa-arc", reload: t(40), mounts: 2, damage: 20, range: u(110), speed: 0, fx: "arc",
-      arc: { jumps: 1, reach: u(28), decay: 0.7, color: PAL.emp }, short: 0.6, shortChance: 0.12,
+      arc: { jumps: 1, reach: u(28), decay: 0.7, color: PAL.wraith }, short: 0.6, shortChance: 0.12,
     },
   ],
   oxynoe: [
     {
       name: "oxynoe-arc", reload: t(12), mounts: 2, damage: 12, range: u(60), speed: 0, fx: "arc",
-      arc: { jumps: 2, reach: u(24), decay: 0.6, color: PAL.emp }, short: 0.4, shortChance: 0.06,
+      arc: { jumps: 2, reach: u(24), decay: 0.6, color: PAL.wraith }, short: 0.4, shortChance: 0.06,
     },
   ],
   cyerce: [
     {
       name: "cyerce-arc", reload: t(50), mounts: 2, damage: 60, range: u(140), speed: 0, fx: "arc",
-      arc: { jumps: 4, reach: u(30), decay: 0.75, color: PAL.emp }, short: 0.7, shortChance: 0.15,
+      arc: { jumps: 4, reach: u(30), decay: 0.75, color: PAL.wraith }, short: 0.7, shortChance: 0.15,
     },
   ],
   // EnergyFieldAbility(40, 65, 180): 80 (upstream 40) to everything in 180
   // — twenty-two tiles — every 65 ticks, a Fx.chainLightning to each, in
-  // the family's cyan and with a SHORT rolled on every one of them. The
+  // the family's violet and with a SHORT rolled on every one of them. The
   // family's area tier and its healer at once (levels.ts energyField)
   aegires: [
     {
       name: "energy-field", reload: t(65), mounts: 1, damage: 80, range: u(180), speed: 0, fx: "field",
-      maxTargets: 25, fieldColor: PAL.emp, short: 1, shortChance: 0.35,
+      maxTargets: 25, fieldColor: PAL.wraith, short: 1, shortChance: 0.35,
     },
   ],
   // THE EMP CANNON as the family's long arc: thirty-two tiles, six hops,
@@ -1077,7 +1077,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   navanax: [
     {
       name: "navanax-emp", reload: t(120), mounts: 2, damage: 300, range: u(260), speed: 0, fx: "arc",
-      arc: { jumps: 6, reach: u(36), decay: 0.8, color: PAL.emp }, short: 1, shortChance: 0.5,
+      arc: { jumps: 6, reach: u(36), decay: 0.8, color: PAL.wraith }, short: 1, shortChance: 0.5,
     },
   ],
 };

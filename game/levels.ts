@@ -1,5 +1,5 @@
-import { CELL, HP0, UNIT_SPEED, UR, type MoveLayer } from "./constants";
-import { explain, type SaveResult } from "./types";
+import { CELL, HP0, PAL, UNIT_SPEED, UR, type MoveLayer } from "./constants";
+import { explain, type RGB, type SaveResult } from "./types";
 import { addDrop, dropForUnit, emptyDrop, type Drop } from "./economy";
 // type only — mutation.ts must never depend on the campaign, and this
 // import must never become a value one or the two files form a cycle
@@ -1378,7 +1378,7 @@ export const FAMILIES = [
   { key: "naval", name: "Harpoon fleet", layer: "water", icon: "risso",
     kinds: ["risso", "minke", "bryde", "sei", "omura"] },
   // THE WRAITHS: the sea slugs — retusa, oxynoe, cyerce, aegires, navanax
-  // — and every gun on them is an ARC (weapons.ts): cyan chain lightning
+  // — and every gun on them is an ARC (weapons.ts): violet chain lightning
   // that hops from the structure it struck to its neighbours and SHORTS
   // every one it touches (Tower.shortT). Every hull BLINKS: a hit that
   // lands throws it forward, past the gun that landed it. The top three
@@ -1399,6 +1399,25 @@ export const FAMILIES = [
 }[];
 
 export type FamilyKey = (typeof FAMILIES)[number]["key"];
+
+/**
+ * THE HIGHLIGHT EVERY BODY WEARS, by family (constants.ts, the family
+ * palette): the `-cell` region on its hull and the flames behind its
+ * engines, which Mindustry paints in the team's colour and this game
+ * paints in the FAMILY'S. A player reads which family a body is off the
+ * colour on it before they read the sprite, and it is the same hue its
+ * shots and its statuses are drawn in. The sprite itself is untouched —
+ * a dagger is still Mindustry's dagger — only what it wears is ours. The
+ * boss belongs to no family and keeps the swarm's crux red.
+ */
+export const FAMILY_ACCENT: Readonly<Record<FamilyKey, RGB>> = {
+  ground: PAL.mech,
+  crawler: PAL.venom,
+  groundSupport: PAL.star,
+  air: PAL.bomber,
+  naval: PAL.harpoon,
+  navalSupport: PAL.wraith,
+};
 
 /**
  * THE FAMILIES OFF THE BOARD, and the whole of how one gets there: name it

@@ -154,48 +154,47 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
    * becoming a face.
    */
   rot: (g) => {
-    g.disc(0.5, 0.38, 0.37, PAL.sapDark);
-    g.over((o) => o.disc(0.5, 0.34, 0.21, PAL.sap));
-    g.box(0.14, 0.72, 0.36, 1, PAL.sapDark);
-    g.box(0.58, 0.78, 0.86, 1, PAL.sap);
+    g.disc(0.5, 0.38, 0.37, PAL.venomDark);
+    g.over((o) => o.disc(0.5, 0.34, 0.21, PAL.venom));
+    g.box(0.14, 0.72, 0.36, 1, PAL.venomDark);
+    g.box(0.58, 0.78, 0.86, 1, PAL.venom);
   },
 
   /**
-   * VETERAN — two chevrons, a sergeant's stripes, in the flame gold that
-   * means "more" everywhere else in the game (last volley's bolt is the
-   * same ink). The lower one is darker so the pair reads as stacked
-   * rather than as one fat V.
+   * VETERAN — two chevrons, a sergeant's stripes, in the Harpoon fleet's
+   * teal: the family whose hulls earn them. The lower one is darker so
+   * the pair reads as stacked rather than as one fat V.
    */
   veteran: (g) => {
-    g.poly([[0.5, 0.06], [0.94, 0.4], [0.78, 0.56], [0.5, 0.34], [0.22, 0.56], [0.06, 0.4]], PAL.flame);
-    g.poly([[0.5, 0.5], [0.94, 0.84], [0.78, 1.0], [0.5, 0.78], [0.22, 1.0], [0.06, 0.84]], PAL.flameLite);
-    g.over((o) => o.box(0, 0.7, 1, 1, PAL.ember));
+    g.poly([[0.5, 0.06], [0.94, 0.4], [0.78, 0.56], [0.5, 0.34], [0.22, 0.56], [0.06, 0.4]], PAL.harpoon);
+    g.poly([[0.5, 0.5], [0.94, 0.84], [0.78, 1.0], [0.5, 0.78], [0.22, 1.0], [0.06, 0.84]], PAL.harpoon);
+    g.over((o) => o.box(0, 0.7, 1, 1, PAL.harpoonDark));
   },
 
   /**
-   * CLOAKED — a hollow ring with a bite out of it, in the wraiths' cyan:
+   * CLOAKED — a hollow ring with a bite out of it, in the wraiths' violet:
    * the outline of a thing whose middle is not there. It is the one
    * symbol in the file drawn as a ring rather than a body, because that
    * is what a cloak is.
    */
   cloaked: (g) => {
-    g.ring(0.5, 0.5, 0.42, 0.16, PAL.emp);
-    g.over((o) => o.box(0, 0.6, 1, 1, PAL.empDark));
-    g.erase((e) => e.poly([[0.5, 0.5], [1.0, 0.2], [1.0, 0.8]], PAL.emp));
+    g.ring(0.5, 0.5, 0.42, 0.16, PAL.wraith);
+    g.over((o) => o.box(0, 0.6, 1, 1, PAL.wraithDark));
+    g.erase((e) => e.poly([[0.5, 0.5], [1.0, 0.2], [1.0, 0.8]], PAL.wraith));
   },
 
   /**
-   * SHORTED — a cyan bolt across a dark bar. The bar is the gun that is
+   * SHORTED — a violet bolt across a dark bar. The bar is the gun that is
    * out; the bolt is what put it out, in the one colour that means EMP
-   * (PAL.emp, the Wraith fleet's arc). It shares a shape with LAST VOLLEY
+   * (PAL.wraith, the Wraith fleet's arc). It shares a shape with LAST VOLLEY
    * below on purpose and nothing else: both are electricity doing
    * something to a reload, and the colour is which — hot means faster,
-   * cyan means off.
+   * violet means off.
    */
   short: (g) => {
     g.box(0.06, 0.34, 0.94, 0.66, PAL.steelDark);
-    g.poly([[0.68, 0.0], [0.2, 0.56], [0.46, 0.56], [0.32, 1.0], [0.82, 0.42], [0.56, 0.42]], PAL.emp);
-    g.over((o) => o.box(0, 0.62, 1, 1, PAL.empDark));
+    g.poly([[0.68, 0.0], [0.2, 0.56], [0.46, 0.56], [0.32, 1.0], [0.82, 0.42], [0.56, 0.42]], PAL.wraith);
+    g.over((o) => o.box(0, 0.62, 1, 1, PAL.wraithDark));
   },
 
   /**
@@ -204,9 +203,9 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
    * blanket and the bar is what it does to the gun under it.
    */
   jam: (g) => {
-    g.ring(0.5, 0.5, 0.44, 0.14, PAL.sky);
-    g.ring(0.5, 0.5, 0.2, 0.12, PAL.sky);
-    g.over((o) => o.box(0, 0.6, 1, 1, PAL.skyDark));
+    g.ring(0.5, 0.5, 0.44, 0.14, PAL.bomber);
+    g.ring(0.5, 0.5, 0.2, 0.12, PAL.bomber);
+    g.over((o) => o.box(0, 0.6, 1, 1, PAL.bomberDark));
     g.poly([[0.06, 0.2], [0.2, 0.06], [0.94, 0.8], [0.8, 0.94]], PAL.steelDark);
   },
 

@@ -756,12 +756,20 @@ script are forty of whichever family took the first slot. The boss
 
 | family | bodies | layer | one look | one mechanic |
 |---|---|---|---|---|
-| Ground mechs | dagger, mace, fortress, scepter, reign | ground | yellow straight bullets | plating and worn shields |
-| Venom spitters | crawler, atrax, spiroct, arkyid, toxopid | ground | purple orbs | rot, which ignores plating |
-| Starlight mechs | nova, pulsar, quasar, vela, corvus | ground | green lasers | every laser pierces; heals and shields |
-| Skyfall bombers | flare, horizon, zenith, antumbra, eclipse | air | no gun: the body is the bomb | goes off on contact or on death; the T5 is a nuke |
-| Harpoon fleet | risso, minke, bryde, sei, omura | water | foam-white harpoon rails | insane reach, a crawl, and the longer alive the harder it hits |
-| Wraith fleet | retusa, oxynoe, cyerce, aegires, navanax | water | cyan arcs that short a gun | blinks forward when hit; the top tiers cloak |
+| Ground mechs | dagger, mace, fortress, scepter, reign | ground | **crimson** straight bullets | plating and worn shields |
+| Venom spitters | crawler, atrax, spiroct, arkyid, toxopid | ground | **acid** orbs | rot, which ignores plating |
+| Starlight mechs | nova, pulsar, quasar, vela, corvus | ground | **star-gold** lasers | every laser pierces; heals and shields |
+| Skyfall bombers | flare, horizon, zenith, antumbra, eclipse | air | **magenta** charges; no gun, the body is the bomb | goes off on contact or on death; the T5 is a nuke |
+| Harpoon fleet | risso, minke, bryde, sei, omura | water | **teal** harpoon rails | insane reach, a crawl, and the longer alive the harder it hits |
+| Wraith fleet | retusa, oxynoe, cyerce, aegires, navanax | water | **violet** arcs that short a gun | blinks forward when hit; the top tiers cloak |
+
+**One hue a family, worn everywhere the family shows** (`PAL.mech` and the
+rest in constants.ts, `FAMILY_ACCENT` in levels.ts): the highlight on the
+hull — the `-cell` region and the engine flames, which Mindustry paints in
+the team's colour and this game paints in the family's — its shots, its
+motes and rings, and the symbol of every status it lays. The sprites are
+Mindustry's; what they wear is ours, and none of the six hues is a
+Mindustry ammo colour, so the swarm's colours are never the board's.
 
 The deal is shown on the field in the bottom-right corner, StarCraft-style:
 a column of squares growing upward, the bottom one always the three
@@ -854,7 +862,7 @@ venom line's thrown bomb unblockable, so one family is answered by putting
 something in the way and the other is not.
 
 **Starlight mechs — green lasers that pierce, and a crowd that keeps
-mending.** Every weapon on the tree is an instant beam in `Pal.heal`, and
+mending.** Every weapon on the tree is an instant beam in the family's star-gold (`PAL.star`), and
 every beam hits **every structure along its length** (`pierce`,
 `Sim.structuresAlong`) — the corridor is the style's own width, so a
 nova's thin lance takes the row it points down and the **corvus**'s
@@ -887,7 +895,7 @@ and then takes 4,000 off everything within eleven tiles.
 over them. The answer is reach: kill them over nothing.
 
 **Harpoon fleet — snipers that grow old.** Every gun on the fleet is a
-**rail** (`fx: "rail"`, in the fleet's foam white) from **beyond the
+**rail** (`fx: "rail"`, in the fleet's teal) from **beyond the
 board's reach**: fifty tiles on the risso, ninety on the omura, past the
 foreshadow's sixty-two — and the omura's **pierces** everything on its
 line. The hulls crawl ashore (`NAVAL_PACE`, `NAVAL_LAND_SPEED` at half)
@@ -904,7 +912,7 @@ is getting stronger. The answer is the long guns, and killing them young —
 the spotter and the drill first.
 
 **Wraith fleet — arcs that short the guns, off hulls that cannot be
-held.** Every weapon is **chain lightning** in an electric cyan (`PAL.emp`,
+held.** Every weapon is **chain lightning** in the wraiths' violet (`PAL.wraith`,
 fx `arc`): the target first, then the nearest structure the last one
 struck can reach, hop after hop — and every structure it connects with
 rolls a **short** (`Tower.shortT`): its gun is out for a moment, a

@@ -3227,11 +3227,11 @@ export class Sim {
                 const hit = this.structuresAlong(x, y, uheldRot[i], wrange, halfW, this.alongOut);
                 for (let k = 0; k < hit.length; k++) {
                   this.hitStructure(hit[k], wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
-                  if (k < 4) this.pushFxCol(hit[k].x, hit[k].y, 12 / 60, FxKind.HitMeltHeal, 0, 0, PAL.heal);
+                  if (k < 4) this.pushFxCol(hit[k].x, hit[k].y, 12 / 60, FxKind.HitMeltHeal, 0, 0, wp.beamStyle?.colors[2][0] ?? PAL.heal);
                 }
               } else if (tgt && this.aimReach(tgt, x, y, wrange)) {
                 this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
-                this.pushFxCol(tgt.x, tgt.y, 12 / 60, FxKind.HitMeltHeal, 0, 0, PAL.heal);
+                this.pushFxCol(tgt.x, tgt.y, 12 / 60, FxKind.HitMeltHeal, 0, 0, wp.beamStyle?.colors[2][0] ?? PAL.heal);
               }
             }
             if (ubeamT[i] <= 0) ucd[slot] = wp.reload - (wp.charge ?? 0);
@@ -3419,7 +3419,7 @@ export class Sim {
             // RailBulletType: Fx.railShoot at the muzzle, Fx.railTrail every
             // 60 units down the line (pointEffectSpace), Fx.railHit on what
             // it punched through, Fx.shootBig2 smoke — its whole length,
-            // in the row's colour (the Harpoon fleet's foam white). A
+            // in the row's colour (the Harpoon fleet's teal). A
             // PIERCING rail punches through everything on the line
             const rc = wp.railColor ?? PAL.orangeSpark;
             if (wp.pierce) {
@@ -3453,7 +3453,7 @@ export class Sim {
             const hit = this.structuresInCone(x, y, aim, wrange, cone, sighted, this.splashOut);
             const max = wp.maxTargets ?? hit.length;
             const fall = wp.falloff ?? 1;
-            const col = wp.scatterColor ?? PAL.unitFront;
+            const col = wp.scatterColor ?? PAL.bomber;
             for (let k = 0; k < hit.length && k < max; k++) {
               const t = hit[k];
               const half = (this.sizeOf(t) * CELL) / 2;
@@ -3617,7 +3617,8 @@ export class Sim {
     if (!st) return;
     this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, range, 0, st.id, true);
     if (wp.shoot === FxKind.Shockwave) this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, wp.shootLen ?? 0);
-    else if (wp.shoot !== undefined) this.pushFx(x, y, fxLife(wp.shoot), wp.shoot, aim, 0, (Math.random() * 0x7fffffff) | 0);
+    else if (wp.shoot !== undefined)
+      this.pushFxCol(x, y, fxLife(wp.shoot), wp.shoot, aim, 0, st?.colors[1][0] ?? PAL.heal, 0, false, (Math.random() * 0x7fffffff) | 0);
     if (tgt) this.pushFxCol(tgt.x, tgt.y, 12 / 60, FxKind.HitLaserBlast, aim, 0, st.colors[st.colors.length - 1][0]);
   }
 
@@ -4669,7 +4670,7 @@ export class Sim {
           t.jamT = reload + AURA_LINGER;
         }
         if (hit.length > 0)
-          this.pushFxCol(upx[i], upy[i], 22 / 60, FxKind.ShieldWave, 0, jamF.range, PAL.unitFront);
+          this.pushFxCol(upx[i], upy[i], 22 / 60, FxKind.ShieldWave, 0, jamF.range, PAL.bomber);
         if (!repair && !shield && !energy && !armorF && !hasteF && !wakeF && !spotF && !drillF) continue;
       }
       // EnergyFieldAbility.maxTargets: how many units one zap may still
@@ -4770,7 +4771,7 @@ export class Sim {
           upx[i], upy[i], 22 / 60,
           repair || energy ? FxKind.HealWave : FxKind.ShieldWave,
           0, range,
-          repair || energy ? PAL.heal : hasteF ? PAL.sapBullet : wakeF || spotF || drillF ? PAL.navalFront : TEAM_CRUX_RGB,
+          repair || energy ? PAL.heal : hasteF ? PAL.venom : wakeF || spotF || drillF ? PAL.harpoon : TEAM_CRUX_RGB,
         );
     }
   }
@@ -4841,7 +4842,7 @@ export class Sim {
           else if ((this.ucloakCd[i] -= dt) <= 0) {
             this.ucloakCd[i] = cl.period;
             this.ucloakT[i] = cl.duration;
-            this.pushFxCol(upx[i], upy[i], 22 / 60, FxKind.ShieldWave, 0, urad[i] * 3, PAL.emp);
+            this.pushFxCol(upx[i], upy[i], 22 / 60, FxKind.ShieldWave, 0, urad[i] * 3, PAL.wraith);
             if (cl.veil) this.veil(i, cl.veil, cl.duration);
           }
         } else if (this.ucloakT[i] > 0) this.ucloakT[i] -= dt;
@@ -6906,7 +6907,7 @@ export class Sim {
             this.pushFxCol(
               t.x + (Math.random() - 0.5) * sz * 0.8,
               t.y + (Math.random() - 0.5) * sz * 0.8,
-              SHORT_FX_LIFE, FxKind.ShortSpark, Math.random() * Math.PI * 2, 0, PAL.emp, 0, false,
+              SHORT_FX_LIFE, FxKind.ShortSpark, Math.random() * Math.PI * 2, 0, PAL.wraith, 0, false,
               (Math.random() * 0x7fffffff) | 0,
             );
           }
@@ -8273,7 +8274,7 @@ export class Sim {
     if (d < step) return;
     this.upx[i] = x0 + dx * d;
     this.upy[i] = y0 + dy * d;
-    this.pushFxCol(x0, y0, 18 / 60, FxKind.Blink, Math.atan2(dy, dx), d, PAL.emp, 0, true);
+    this.pushFxCol(x0, y0, 18 / 60, FxKind.Blink, Math.atan2(dy, dx), d, PAL.wraith, 0, true);
   }
 
   /**
@@ -8300,7 +8301,7 @@ export class Sim {
         if (this.ucloakT[j] < duration) this.ucloakT[j] = duration;
       }
     }
-    this.pushFxCol(upx[i], upy[i], 30 / 60, FxKind.ShieldWave, 0, range, PAL.emp);
+    this.pushFxCol(upx[i], upy[i], 30 / 60, FxKind.ShieldWave, 0, range, PAL.wraith);
   }
 
   /**

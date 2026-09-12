@@ -141,7 +141,7 @@ export const STATUSES: readonly StatusDef[] = [
   {
     id: "veteran",
     name: "Veteran",
-    color: PAL.flame,
+    color: PAL.harpoon,
     blurb:
       "A Harpoon hull, and the longer it lives the harder it hits: every shot it fires is multiplied by this. Kill it young.",
     field: true,
@@ -149,7 +149,7 @@ export const STATUSES: readonly StatusDef[] = [
   {
     id: "cloaked",
     name: "Cloaked",
-    color: PAL.emp,
+    color: PAL.wraith,
     blurb:
       "Gone dark. Nothing can target it and nothing can hurt it until it shows again; the count is the seconds it has left.",
     field: true,
@@ -157,7 +157,7 @@ export const STATUSES: readonly StatusDef[] = [
   {
     id: "rot",
     name: "Rot",
-    color: PAL.sap,
+    color: PAL.venom,
     blurb:
       "Venom. It takes raw health a second and ignores plating; more spitters on one building rot it faster, up to a cap.",
     field: true,
@@ -165,7 +165,7 @@ export const STATUSES: readonly StatusDef[] = [
   {
     id: "short",
     name: "Shorted",
-    color: PAL.emp,
+    color: PAL.wraith,
     blurb:
       "A Wraith arc put this gun out. It neither reloads nor fires nor mends while this lasts; a fresh short re-times it rather than stacking.",
     field: true,
@@ -173,7 +173,7 @@ export const STATUSES: readonly StatusDef[] = [
   {
     id: "jam",
     name: "Jammed",
-    color: PAL.sky,
+    color: PAL.bomber,
     blurb:
       "A bomber wing is blanketing the ground under it. This gun reloads slower for as long as the flight is over it.",
     field: true,

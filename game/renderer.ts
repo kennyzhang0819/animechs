@@ -103,6 +103,8 @@ const ROWS = ROWS_IMPORT;
 const TOWERS = TOWERS_IMPORT;
 const W = W_IMPORT;
 import {
+  FAMILY_ACCENT,
+  familyOf,
   UNIT_KINDS,
   UNIT_STATS,
   type ForceFieldSpec,
@@ -516,6 +518,13 @@ const KIND_GAIT_TRIG = KIND_GAIT.map((L) => {
 });
 /** the force field each kind stands inside, null for everything else */
 const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
+/** THE HIGHLIGHT each kind wears (levels.ts FAMILY_ACCENT): its family's
+ *  hue on its cell, its engines, its halo and its bubble — the boss, in no
+ *  family, keeps the swarm's crux red */
+const KIND_ACCENT: readonly RGB[] = UNIT_KINDS.map((k) => {
+  const f = familyOf(k);
+  return f ? FAMILY_ACCENT[f] : TEAM_CRUX_RGB;
+});
 /** the engines a flyer burns (UNIT_ENGINES), null for anything that has none */
 const KIND_ENGINES = UNIT_KINDS.map((k) => UNIT_ENGINES[k] ?? null);
 /** the held beam or charged shot each kind carries (UNIT_HELD), null for the rest */
@@ -2186,7 +2195,7 @@ export class Renderer {
         // UnitType.drawShield: Fill.light at hitSize * 1.3 — a disc that is
         // clear at the centre and carries the colour at its rim
         const sr = urad[i] * 2 * 1.3 * 2;
-        const sc = TEAM_CRUX_RGB;
+        const sc = KIND_ACCENT[k];
         this.push(dyn, upx[i], upy[i], sr, sr, 0, UV_RING,
           // shieldColor lerped to white by the hit flash, at 0.7 x alpha
           sc[0] + (1 - sc[0]) * Math.min(1, ushieldAlpha[i]),
@@ -2213,10 +2222,11 @@ export class Renderer {
         }
       }
       // the cell over the hull, and the engines behind it, are the two
-      // things a body wears in its OWN team's colour (TEAM_COL) — carried
-      // through the body's tint, so both grey with its health and darken
-      // in a hill's shade with the sprite they sit on
-      const team = TEAM_CRUX_RGB;
+      // things a body wears in ITS FAMILY'S colour (KIND_ACCENT; Mindustry
+      // paints them in the team's) — carried through the body's tint, so
+      // both grey with its health and darken in a hill's shade with the
+      // sprite they sit on
+      const team = KIND_ACCENT[k];
       this.cellTint[0] = team[0] * tint[0];
       this.cellTint[1] = team[1] * tint[1];
       this.cellTint[2] = team[2] * tint[2];
@@ -2564,7 +2574,7 @@ export class Renderer {
         const fout = 1 - t;
         const lift = t * 9 * MU;
         const rad = (0.35 + fout * 1.5) * MU;
-        this.fillCircle(dyn, e.x + lift * 0.35, e.y - lift, rad, PAL.sapBullet, fout);
+        this.fillCircle(dyn, e.x + lift * 0.35, e.y - lift, rad, PAL.venom, fout);
       } else if (e.kind === FxKind.Wet) {
         // Fx.wet: one water-coloured droplet fading in over its first half
         // (alpha clamp(fin*2)) while it shrinks away (radius fout)
@@ -2607,10 +2617,10 @@ export class Renderer {
         this.drawScatter(dyn, e, t);
       } else if (e.kind === FxKind.Blink) {
         // A BLINK (Sim.blinkUnit): the streak from where the body was to
-        // where it landed, cyan, thinning from the far end back — and a
+        // where it landed, violet, thinning from the far end back — and a
         // ring snapping shut where it left, so the jump reads as a jump
         // and not as a body that was never there
-        const col = e.col ?? PAL.emp;
+        const col = e.col ?? PAL.wraith;
         const len = (e.len ?? 0) * (1 - t * 0.6);
         this.strokeLine(dyn, e.x, e.y, e.rot ?? 0, len, (0.6 + (1 - t) * 1.6) * MU, col, (1 - t) * 0.9);
         this.strokeCircle(dyn, e.x, e.y, (1 - t) * 6 * MU, (1 - t) * 1.5 * MU, col[0], col[1], col[2], RING_ALPHA);
@@ -2621,7 +2631,7 @@ export class Renderer {
         // thrown clear — the WaterBurst's shape in fire, and at the size
         // of the damage, which is the whole point of drawing it that big
         const reach = e.len || 60 * MU;
-        const col = ramp(PAL.white, e.col ?? PAL.unitFront, PAL.unitBack, t);
+        const col = ramp(PAL.white, e.col ?? PAL.bomber, PAL.bomberDark, t);
         const grow = FIN_POW(t) * reach;
         this.fillDisc(dyn, e.x, e.y, grow, col, (1 - t) * 0.55);
         this.strokeCircle(dyn, e.x, e.y, grow, ((1 - t) * 3 + 0.5) * MU, col[0], col[1], col[2], 1 - t * 0.5);
@@ -2630,10 +2640,10 @@ export class Renderer {
           this.strokeLine(dyn, e.x + x, e.y + y, bearing, spark, (1 - t) * 1.5 * MU, col, 1);
         });
       } else if (e.kind === FxKind.ShortSpark) {
-        // A SHORTED BUILDING (Tower.shortT): one cyan bar flicking off it
+        // A SHORTED BUILDING (Tower.shortT): one violet bar flicking off it
         // on a random bearing, white at birth and gone in a blink — the
         // rot's rising mote read as electricity rather than as gas
-        const col = ramp(PAL.white, e.col ?? PAL.emp, null, t);
+        const col = ramp(PAL.white, e.col ?? PAL.wraith, null, t);
         const bar = (2 + (1 - t) * 3) * MU;
         this.strokeLine(dyn, e.x, e.y, e.rot ?? 0, bar, (0.4 + (1 - t) * 1.2) * MU, col, 1 - t * 0.5);
       } else if (e.kind === FxKind.Lightning) {
@@ -2848,7 +2858,7 @@ export class Renderer {
       // rides into the buffer with the fill, so the shader's rim and hatch
       // pick it up without knowing anything about the carrier
       const w = Math.min(1, ushieldAlpha[i]);
-      const sc = TEAM_CRUX_RGB;
+      const sc = KIND_ACCENT[ukind[i]];
       const col: RGB = [
         sc[0] + (1 - sc[0]) * w,
         sc[1] + (1 - sc[1]) * w,
@@ -3601,8 +3611,8 @@ export class Renderer {
     const cone = ((e.sides ?? 20) * Math.PI) / 180;
     const ring = cone >= Math.PI - 0.01;
     const reach = e.len || 60 * MU;
-    const base = e.col ?? PAL.unitFront;
-    const col = ramp(PAL.white, base, PAL.unitBack, t);
+    const base = e.col ?? PAL.bomber;
+    const col = ramp(PAL.white, base, PAL.bomberDark, t);
     const rot = e.rot ?? 0;
     this.fillCircle(dyn, e.x, e.y, (1.5 + fout * (ring ? 5 : 3)) * MU, col, fout);
     const n = ring ? 14 : 9;
@@ -4145,7 +4155,7 @@ export class Renderer {
     if (t < RING) {
       const s = t / RING;
       this.strokeCircle(dyn, e.x, e.y, (3 + s * 80) * MU, 3 * (1 - s) * MU,
-        PAL.sapBullet[0], PAL.sapBullet[1], PAL.sapBullet[2], RING_ALPHA);
+        PAL.venom[0], PAL.venom[1], PAL.venom[2], RING_ALPHA);
     }
     const grit = (fout * 4 + 0.5) * MU;
     this.scatter(e.seed ?? 1, 9, (2 + 70 * FIN_POW(t)) * MU, 0, Math.PI, (x, y) => {
@@ -4153,7 +4163,7 @@ export class Renderer {
     });
     const spark = (1 + fout * 3) * MU;
     this.scatter((e.seed ?? 1) + 1, 8, (1 + 60 * FIN_POW(t)) * MU, 0, Math.PI, (x, y, bearing) => {
-      this.strokeLine(dyn, e.x + x, e.y + y, bearing, spark, fout * MU, PAL.sapBulletBack, 1);
+      this.strokeLine(dyn, e.x + x, e.y + y, bearing, spark, fout * MU, PAL.venomDark, 1);
     });
   }
 

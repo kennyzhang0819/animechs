@@ -99,18 +99,39 @@ export const PAL = {
   surge: pal(0xf3e979),
   /** Liquids.slag.color — what an atrax spits */
   slag: pal(0xffa166),
-  // ---- THIS GAME'S OWN, for the reworked families (weapons.ts) ---------
-  /** THE NAVAL SHELL: a deep-water navy with a foam-white face. Mindustry's
-   *  hulls fire the same yellows every walker does; a family that fights
-   *  from the water wears the water's colour, and nothing else on the field
-   *  throws a navy round */
-  navalBack: pal(0x4a5aa8),
-  navalFront: pal(0xdfe6ff),
-  /** THE EMP: the Wraith fleet's arc, an electric cyan that is neither the
-   *  lancer's blue nor the support line's green — the one colour in the
-   *  game that means a gun has been SHORTED */
-  emp: pal(0x8cf2ff),
-  empDark: pal(0x3f9cb8),
+  // ---- THE FAMILY PALETTE, this game's own ----------------------------
+  //
+  // ONE HUE A FAMILY, and it is worn everywhere the family shows: the
+  // highlight on its hulls (the `-cell` region and the engine flames,
+  // levels.ts FAMILY_ACCENT), its shots, its motes and its rings, and the
+  // symbol of every status it lays. A player reads a family off the colour
+  // before they read the sprite. NONE OF THEM IS A MINDUSTRY AMMO COLOUR:
+  // the yellows, the heal green, the sap purple and the missile orange stay
+  // the turrets' and the boss's, so the swarm's colours are never the
+  // board's.
+  //
+  // Each is a pair — the bright face a round is drawn in and the dark rim
+  // behind it — and six hues spread round the wheel so no two families
+  // sit next to each other: crimson, acid, star-gold, magenta, teal,
+  // violet.
+  /** Ground mechs: crimson — the wall that walks */
+  mech: pal(0xff4d6d),
+  mechDark: pal(0x8c1c3a),
+  /** Venom spitters: acid — the orb, the rot's mote, the haste ring */
+  venom: pal(0xd4ff3a),
+  venomDark: pal(0x5c8a12),
+  /** Starlight mechs: star-gold — every laser on the tree */
+  star: pal(0xfff0a8),
+  starDark: pal(0xf0b840),
+  /** Skyfall bombers: magenta — the charges, the nuke, the jam */
+  bomber: pal(0xff5fd6),
+  bomberDark: pal(0x8f2280),
+  /** Harpoon fleet: teal — the rails, the spotter's and the drill's rings */
+  harpoon: pal(0x4dffe0),
+  harpoonDark: pal(0x0f8a78),
+  /** Wraith fleet: violet — the arcs, a short's sparks, a blink, a cloak */
+  wraith: pal(0xb48cff),
+  wraithDark: pal(0x5a35b8),
 } as const;
 
 /**
