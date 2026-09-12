@@ -2770,44 +2770,32 @@ export default function MechSwarm() {
                       not a list: there are two of them, they are the frame
                       every macro under here hangs in, and a control that
                       has to be opened to say which one it is on is the
-                      wrong control for two words. The line under it is the
-                      whole bargain — what each mode hands over, and what it
-                      pays — because that trade decides the press and cannot
-                      be inferred from two names */}
-                  <div className="flex flex-col gap-2">
-                    <div role="group" aria-label="Mode" className="ms-seg w-full">
-                      {(
-                        [
-                          ["regular", "Regular"],
-                          ["custom", "Custom"],
-                        ] as ReadonlyArray<[GameMode, string]>
-                      ).map(([m, label]) => (
-                        <button
-                          key={m}
-                          aria-pressed={mode === m}
-                          onClick={() => {
-                            setMode(m);
-                            savePick({ mode: m });
-                          }}
-                          className="ms-btn flex-1 py-2.5 text-[15px]"
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="text-center text-[13px] text-[#a2a2a2]">
-                      {mode === "regular" ? (
-                        <>
-                          The map, the swarm and the rules are rolled on Start — and the run
-                          banks <span style={{ color: XP_COLOR }}>XP</span>.
-                        </>
-                      ) : (
-                        <>
-                          Pick everything: the map, the swarm, the rules, any difficulty.{" "}
-                          <span className="text-[#EDEDEF]">Pays no XP.</span>
-                        </>
-                      )}
-                    </p>
+                      wrong control for two words.
+                      NOTHING EXPLAINS THEM UNDER IT. A paragraph saying
+                      what each mode hands over is a paragraph describing
+                      the rows directly beneath it, which say it better by
+                      being there: regular shows one macro and custom four.
+                      The one thing the rows cannot show is the price, and
+                      that rides in the difficulty row's own XP slot */}
+                  <div role="group" aria-label="Mode" className="ms-seg w-full">
+                    {(
+                      [
+                        ["regular", "Regular"],
+                        ["custom", "Custom"],
+                      ] as ReadonlyArray<[GameMode, string]>
+                    ).map(([m, label]) => (
+                      <button
+                        key={m}
+                        aria-pressed={mode === m}
+                        onClick={() => {
+                          setMode(m);
+                          savePick({ mode: m });
+                        }}
+                        className="ms-btn flex-1 py-2.5 text-[15px]"
+                      >
+                        {label}
+                      </button>
+                    ))}
                   </div>
 
                   {/* THE MACROS: what the next run is, as rows that read as
@@ -2832,18 +2820,23 @@ export default function MechSwarm() {
                     )}
                     <MacroButton
                       label="Difficulty"
-                      value={
-                        mode === "regular"
-                          ? `${rungLabel(tier)}, ${xpShareText(tierXpBonus(tier))}`
-                          : rungLabel(tier)
-                      }
+                      value={`${rungLabel(tier)}, ${
+                        mode === "regular" ? xpShareText(tierXpBonus(tier)) : "no XP"
+                      }`}
                       onClick={() => setPicker("difficulty")}
                     >
                       <span style={{ color: rungColor(tier) }}>{rungLabel(tier)}</span>
-                      {mode === "regular" && (
+                      {/* WHAT THE RUN IS WORTH, in the slot it is worth it
+                          in: the rung's share of the pot in regular, and
+                          the whole of what custom mode costs in custom —
+                          greyed, because it is the absence of the number
+                          beside it */}
+                      {mode === "regular" ? (
                         <span className="text-[14px]" style={{ color: XP_COLOR }}>
                           {xpShareText(tierXpBonus(tier))}
                         </span>
+                      ) : (
+                        <span className="text-[14px] text-[#71717C]">No XP</span>
                       )}
                     </MacroButton>
                     {mode === "custom" && (
