@@ -409,6 +409,24 @@ const FIELD_MAX_STALE = 1;
  * behind it. Three milliseconds leaves a 60fps frame the other thirteen.
  */
 const FIELD_BUDGET_MS = 3;
+/**
+ * ...AND WHAT IT COSTS A HEADLESS RUN, which must be a different question.
+ *
+ * A wall-clock budget is right for a game — a re-route takes three
+ * milliseconds of a frame and the swarm steers by the last finished field
+ * until the new one is whole. It is WRONG FOR A MEASUREMENT: how much of
+ * the field is solved per tick then depends on how fast the machine is and
+ * what else it is running, so the same script on the same seed routes the
+ * swarm differently on a loaded box than on an idle one, and a faster sim
+ * is a HARDER sim. Two playtests of the same build came back at wave 15 and
+ * wave 50 for exactly that reason.
+ *
+ * Sim.setFieldBudget(Infinity) is what the playtest sets: every queued
+ * solve finishes in the tick that queued it, so a run is reproducible and
+ * comparable to another run on another machine. The shipped game never
+ * sets it and keeps the slice.
+ */
+
 /** ...and the smallest slice worth entering the solver for */
 const FIELD_MIN_SLICE = 0.25;
 /** the clock the slices are measured by */
@@ -1792,7 +1810,7 @@ export class Sim {
    * whole (FlowField.advance).
    */
   private runSolveQueue(): void {
-    const until = nowMs() + FIELD_BUDGET_MS;
+    const until = nowMs() + this.fieldBudgetMs;
     while (this.solveQueue.length > 0) {
       const left = until - nowMs();
       if (!this.solveQueue[0].advance(Math.max(left, FIELD_MIN_SLICE))) return;
@@ -1800,6 +1818,16 @@ export class Sim {
       if (nowMs() >= until) return;
     }
   }
+
+  /**
+   * What a re-route may spend per tick (FIELD_BUDGET_MS). Infinity finishes
+   * every queued solve in the tick it was queued, which is what makes a
+   * headless run reproducible — see the note on FIELD_BUDGET_MS.
+   */
+  setFieldBudget(ms: number): void {
+    this.fieldBudgetMs = ms;
+  }
+  private fieldBudgetMs = FIELD_BUDGET_MS;
 
   /** drop the solves in flight: the board they were solving has moved on */
   private abortSolves(): void {
@@ -3217,15 +3245,22 @@ export class Sim {
       // (hitStructure), and what a shot leaving the muzzle carries
       this.dmgMul = HAS_VET ? this.uvet[i] : 1;
       // the target, re-picked every few tenths of a second, dropped the
-      // moment it dies or walks out of the longest gun's reach. SIGHT IS
-      // TESTED ON THE CLOCK, NOT EVERY TICK: the re-pick (pickAim) refuses
-      // what it cannot see, so a body that has just lost its line keeps
-      // firing for at most half a second — and a raycast per body per
-      // tick, at ninety tiles on four thousand hulls, was a frame
+      // moment it dies, walks out of the longest gun's reach, or goes
+      // behind rock — the sight test rides here, ONCE PER BODY PER TICK.
+      //
+      // IT CANNOT BE SAMPLED. Thinning this raycast to one tick in six, or
+      // to the re-pick clock, looks like a pure saving and is a balance
+      // change: a long gun over rough ground is behind a ridge most of the
+      // time, so between checks it goes on firing through the rock at a
+      // target it can no longer see. Measured, that alone took the Harpoon
+      // fleet from losing on wave 50 to taking the bot's board on wave 15.
+      // The saving that was real is in the SCAN (nearestStructure), not
+      // here.
       utT[i] -= dt;
       let tgt = utgt[i];
       const had = tgt !== null;
-      if (tgt && !this.aimReach(tgt, x, y, reach)) tgt = null;
+      if (tgt && (!this.aimReach(tgt, x, y, reach) || (sighted && !this.canSee(tgt.s, x, y))))
+        tgt = null;
       // ...on the clock, or the moment the one it had is gone. A body that
       // has NOTHING waits for the clock like everyone else rather than
       // re-scanning every tick: an empty search is the most expensive one
@@ -3233,9 +3268,7 @@ export class Sim {
       // each candidate), and it is exactly the search a swarm still crossing
       // open ground is running. `had` is what tells the two apart
       if (utT[i] <= 0 || (had && !tgt)) {
-        // a long reach re-picks at half the rate: what it can see is far
-        // away and changes slowly, and its scan is the expensive kind
-        utT[i] = (reach > 40 * CELL ? 2 : 1) * (0.3 + Math.random() * 0.2);
+        utT[i] = 0.3 + Math.random() * 0.2;
         tgt = this.pickAim(x, y, reach, sighted);
         utgt[i] = tgt;
       }

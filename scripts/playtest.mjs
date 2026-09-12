@@ -42,6 +42,13 @@
  *   --log <n>        print a line every n waves (default 5)
  *   --seconds <n>    give up after this much sim time (default 2400)
  *   --probe <n>      seconds of turret-less dry run the bot learns the routes from (default 90, a few waves' worth)
+ *   --field-budget <ms>  what a re-route may spend per tick. The default is
+ *                    INFINITE — every queued solve finishes in the tick that
+ *                    queued it — because the shipped 3ms slice is measured
+ *                    against a WALL CLOCK, which makes a run's routing
+ *                    depend on how fast and how loaded the machine is: the
+ *                    same build and seed came back at wave 15 and wave 50.
+ *                    Pass 3 to measure what a 60fps frame actually gets
  *   --seed <n>       seed every roll in the run — the deal, the shapes, the sim's own
  *                    dice — so two runs with one seed differ only by the code under
  *                    them. Unset is Math.random, which is how a run varies: the
@@ -90,6 +97,7 @@ const MAX_SECONDS = +opt("seconds", 2400);
 const PROBE_OPT = opt("probe", null);
 const JSON_OUT = flag("json");
 const SEED = opt("seed", null);
+const FIELD_BUDGET = opt("field-budget", null);
 const DUMP = flag("dump");
 // A SEEDED RUN, for an A/B: mulberry32 over Math.random itself, so the
 // deal (rarity.ts), the shapes (formation.ts) and every die the sim throws
@@ -220,6 +228,7 @@ const mixFor = (t, wet = false, roster = null) =>
  */
 function heatRoutes(seconds) {
   const probe = new Sim(spec);
+  probe.setFieldBudget(FIELD_BUDGET === null ? Infinity : +FIELD_BUDGET);
   probe.setTech(null);
   const hits = [new Float32Array(COLS * ROWS), new Float32Array(COLS * ROWS)]; // ground, water
   let next = 0;
@@ -293,6 +302,8 @@ function play() {
   if (UNIT_DAMAGE !== null) WP.setUnitDamageScale(+UNIT_DAMAGE);
 
   const sim = new Sim(spec);
+  // THE FIELD SOLVES WHOLE, so the run is reproducible (see --field-budget)
+  sim.setFieldBudget(FIELD_BUDGET === null ? Infinity : +FIELD_BUDGET);
   // what the save at --level owns (the track, track.ts); the default is
   // the whole roster, which is what a map is balanced against
   const tech = TR.techStateFor(LEVEL);
@@ -505,6 +516,7 @@ function play() {
     world: `${world.id} ${world.name}`, mission: L.missionText(world).title, tier: TIER,
     mutators: [...(world.intrinsicMutation ?? []), ...MUTATORS], level: LEVEL,
     families: FAMILIES.length ? FAMILIES : null, seed: SEED,
+    fieldBudget: FIELD_BUDGET === null ? "whole" : +FIELD_BUDGET,
     scale: SCALE, start: E.SCRAP_START, unitDamage: WP.unitDamageScale(),
     outcome: won ? "WON" : sim.lost() ? "LOST" : "TIMEOUT",
     wave: sim.currentWave(), time: Math.round(sim.time), core: Math.round((100 * sim.core.hp) / sim.core.hpMax),
@@ -527,7 +539,7 @@ if (JSON_OUT) {
   console.log(
     `${r.world} — ${r.mission} — rung ${r.tier + 1}${r.mutators.length ? ` [${r.mutators.join(", ")}]` : ""} — level ${r.level}` +
       `${r.scale !== 1 ? ` — prices x${r.scale}` : ""} — unit damage x${r.unitDamage}` +
-      `${r.families ? ` — families ${r.families.join(", ")}` : ""}${r.seed !== null ? ` — seed ${r.seed}` : ""}`,
+      `${r.families ? ` — families ${r.families.join(", ")}` : ""}${r.seed !== null ? ` — seed ${r.seed}` : ""} — field ${r.fieldBudget}`,
   );
   console.log(
     `${r.outcome} at wave ${r.wave}, ${mmss(r.time)} in — core ${r.core}%, kills ${r.kills}, ${r.cleared}/${r.waves} waves cleared for ${r.xp} xp` +
