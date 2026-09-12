@@ -42,6 +42,10 @@
  *   --log <n>        print a line every n waves (default 5)
  *   --seconds <n>    give up after this much sim time (default 2400)
  *   --probe <n>      seconds of turret-less dry run the bot learns the routes from (default 90, a few waves' worth)
+ *   --seed <n>       seed every roll in the run — the deal, the shapes, the sim's own
+ *                    dice — so two runs with one seed differ only by the code under
+ *                    them. Unset is Math.random, which is how a run varies: the
+ *                    opening deal alone can move a result by twenty waves
  *   --json           print the report as JSON
  *   --no-build       skip the TypeScript transpile (use the last one)
  *
@@ -82,6 +86,20 @@ const LOG_EVERY = +opt("log", 5);
 const MAX_SECONDS = +opt("seconds", 2400);
 const PROBE_OPT = opt("probe", null);
 const JSON_OUT = flag("json");
+const SEED = opt("seed", null);
+// A SEEDED RUN, for an A/B: mulberry32 over Math.random itself, so the
+// deal (rarity.ts), the shapes (formation.ts) and every die the sim throws
+// come out the same for the same seed. Installed before any module loads
+if (SEED !== null) {
+  let a = (+SEED >>> 0) || 1;
+  Math.random = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 // ---------- transpile ----------
 
@@ -468,7 +486,7 @@ function play() {
   return {
     world: `${world.id} ${world.name}`, mission: L.missionText(world).title, tier: TIER,
     mutators: [...(world.intrinsicMutation ?? []), ...MUTATORS], level: LEVEL,
-    families: FAMILIES.length ? FAMILIES : null,
+    families: FAMILIES.length ? FAMILIES : null, seed: SEED,
     scale: SCALE, start: E.SCRAP_START, unitDamage: WP.unitDamageScale(),
     outcome: won ? "WON" : sim.lost() ? "LOST" : "TIMEOUT",
     wave: sim.currentWave(), time: Math.round(sim.time), core: Math.round((100 * sim.core.hp) / sim.core.hpMax),
@@ -491,7 +509,7 @@ if (JSON_OUT) {
   console.log(
     `${r.world} — ${r.mission} — rung ${r.tier + 1}${r.mutators.length ? ` [${r.mutators.join(", ")}]` : ""} — level ${r.level}` +
       `${r.scale !== 1 ? ` — prices x${r.scale}` : ""} — unit damage x${r.unitDamage}` +
-      `${r.families ? ` — families ${r.families.join(", ")}` : ""}`,
+      `${r.families ? ` — families ${r.families.join(", ")}` : ""}${r.seed !== null ? ` — seed ${r.seed}` : ""}`,
   );
   console.log(
     `${r.outcome} at wave ${r.wave}, ${mmss(r.time)} in — core ${r.core}%, kills ${r.kills}, ${r.cleared}/${r.waves} waves cleared for ${r.xp} xp` +

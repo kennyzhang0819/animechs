@@ -913,7 +913,7 @@ reload is longer than its short, so one hull flickers a gun and a crowd
 holds it down — the venom rule read for time instead of health. What a tier
 buys is reach, hops and reliability: a **retusa** shorts one gun in eight
 it touches for half a second; a **navanax** one in two for a full second,
-seven guns at a time, from twenty-five tiles. The **oxynoe** and the
+seven guns at a time, from thirty-two tiles. The **oxynoe** and the
 **navanax** stand inside **force fields** (the navanax's 1,500 points, three
 times the quasar's) and the **aegires** heals the fleet by a share of its
 health while its field shorts everything in twenty-two tiles.

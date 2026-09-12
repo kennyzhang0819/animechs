@@ -894,13 +894,14 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // the swarm, and a Starlight wave is answered by killing the carriers
   // before the wall of green reaches the guns.
   //
-  // nova-lance: a thin heal-green beam, seven and a half tiles, on a
-  // mirrored pair. Replaces the LaserBoltBulletType(5.2, 13) that flew —
-  // the same 30-tick cycle upstream gives the heal-weapon, on a beam that
-  // lands the moment it fires and keeps going
+  // nova-lance: a thin heal-green beam, nineteen tiles — the bolt's own
+  // reach (5.2 x 30) — on a mirrored pair. Replaces the
+  // LaserBoltBulletType(5.2, 13) that flew, on the same 30-tick cycle
+  // upstream gives the heal-weapon: a beam that lands the moment it fires
+  // and keeps going
   nova: [
     {
-      name: "nova-lance", reload: t(30), mounts: 2, damage: 12, range: u(60), speed: 0, fx: "laser",
+      name: "nova-lance", reload: t(30), mounts: 2, damage: 14, range: u(150), speed: 0, fx: "laser",
       pierce: true, laser: NOVA_LASER, shoot: FxKind.ShootHeal,
     },
   ],
@@ -910,7 +911,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // do seven each and go through; the fan is the shotgun read as light
   pulsar: [
     {
-      name: "pulsar-fan", reload: t(36), mounts: 2, shots: 3, spread: 12 * DEG, damage: 7, range: u(50), speed: 0,
+      name: "pulsar-fan", reload: t(36), mounts: 2, shots: 3, spread: 12 * DEG, damage: 8, range: u(90), speed: 0,
       fx: "laser", pierce: true, laser: PULSAR_LASER, shoot: FxKind.ShootHeal,
     },
   ],
@@ -968,19 +969,25 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // short, wide, and spent on whatever it is over.
   //
   // WHAT A TIER BUYS IS WIDTH AND WEIGHT. A flare's fan is eighteen degrees
-  // and touches three things for six each; an eclipse's broadside is a
-  // hundred units long and takes six for ninety. The horizon's is the odd
-  // one — a full circle, straight down, the family's blast under the ship
-  // where its bombs used to fall.
+  // and touches three things for nine each; an eclipse's broadside is
+  // twenty-nine tiles long and takes six for a hundred and twenty. The
+  // horizon's is the odd one — a full circle, straight down, the family's
+  // blast under the ship where its bombs used to fall.
   //
-  // The rates are set against what the old guns did to one turret: a flare
-  // still bites a duo about as hard as its copper pair did, an antumbra
-  // rather less than its 55-a-round cannon on a seven-tick reload (which
-  // was the heaviest single-target gun on the roster, on a flyer), and the
-  // family's damage lives in the spread instead.
+  // THE REACH IS THE OLD GUNS' REACH: a fan runs as far as the round it
+  // replaced flew (a flare's copper 14 tiles, a zenith's missiles 19, the
+  // eclipse's laser 29). The first cut of this family was a five-tile
+  // shotgun on every tier and the flight died in the flak before it fired
+  // — reach is what a fast body converts into time over the target, and a
+  // shotgun with none is a body with none. The rates are set against what
+  // the old guns did to ONE turret: a flare bites a duo as its copper pair
+  // did, an antumbra rather less than its 55-a-round cannon on a
+  // seven-tick reload (the heaviest single-target gun on the roster, on a
+  // flyer) and an eclipse about what its laser and flak did together; the
+  // family's real damage lives in the spread on top of that.
   flare: [
     {
-      name: "flare-scatter", reload: t(24), mounts: 2, damage: 6, range: u(40), speed: 0, fx: "scatter",
+      name: "flare-scatter", reload: t(20), mounts: 2, damage: 9, range: u(110), speed: 0, fx: "scatter",
       cone: 18 * DEG, falloff: 0.5, maxTargets: 3, shoot: FxKind.ShootSmall,
     },
   ],
@@ -990,7 +997,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // horizon on all of it
   horizon: [
     {
-      name: "horizon-blast", reload: t(40), mounts: 1, damage: 20, range: u(28), speed: 0, fx: "scatter",
+      name: "horizon-blast", reload: t(24), mounts: 1, damage: 60, range: u(36), speed: 0, fx: "scatter",
       cone: Math.PI, falloff: 0.6, maxTargets: 6,
     },
   ],
@@ -999,7 +1006,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // the flight's shield (levels.ts shieldField)
   zenith: [
     {
-      name: "zenith-scatter", reload: t(36), mounts: 2, damage: 22, range: u(60), speed: 0, fx: "scatter",
+      name: "zenith-scatter", reload: t(30), mounts: 2, damage: 30, range: u(150), speed: 0, fx: "scatter",
       cone: 22 * DEG, falloff: 0.5, maxTargets: 4, shoot: FxKind.ShootBig,
     },
   ],
@@ -1008,7 +1015,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // it hangs over the line and the line reloads at half pace under it
   antumbra: [
     {
-      name: "antumbra-scatter", reload: t(24), mounts: 2, damage: 50, range: u(65), speed: 0, fx: "scatter",
+      name: "antumbra-scatter", reload: t(20), mounts: 2, damage: 80, range: u(170), speed: 0, fx: "scatter",
       cone: 25 * DEG, falloff: 0.5, maxTargets: 5, shoot: FxKind.ShootBig,
     },
   ],
@@ -1018,11 +1025,11 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // was. A T5 that fills the sky over a patch and fills the patch
   eclipse: [
     {
-      name: "eclipse-broadside", reload: t(40), mounts: 2, damage: 90, range: u(100), speed: 0, fx: "scatter",
+      name: "eclipse-broadside", reload: t(40), mounts: 2, damage: 120, range: u(230), speed: 0, fx: "scatter",
       cone: 15 * DEG, falloff: 0.6, maxTargets: 6, shoot: FxKind.Shockwave, shootLen: u(28),
     },
     {
-      name: "eclipse-flak", reload: t(12), mounts: 4, damage: 14, range: u(50), speed: 0, fx: "scatter",
+      name: "eclipse-flak", reload: t(12), mounts: 4, damage: 18, range: u(150), speed: 0, fx: "scatter",
       cone: 30 * DEG, falloff: 0.5, maxTargets: 4,
     },
   ],
@@ -1064,13 +1071,20 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // hulls dead before the big shells arrive.
   //
   // WHAT A TIER BUYS IS WEIGHT AND REACH. A risso's mortar bursts for
-  // sixteen over a tile and a half at nineteen tiles; an omura's siege
-  // shell for three hundred and fifty over five tiles at FIFTY, the
-  // longest reach any body on the roster has. The bryde's shield and the
-  // sei's bow wave (levels.ts) are what the fleet does for itself.
+  // twenty-four over a tile and a half at nineteen tiles; an omura's siege
+  // shell for five hundred over five tiles at FIFTY, the longest reach any
+  // body on the roster has. The bryde's shield and the sei's bow wave
+  // (levels.ts) are what the fleet does for itself.
+  //
+  // THE BITE IS SET AGAINST THE OLD ROWS, tier for tier: what a hull did
+  // to one turret with its copper, flak, missiles and rail, it does now
+  // with a shell and its burst — the bryde lands the fortress's 216 a
+  // second, the sei some eight hundred across its six — and the family's
+  // extra is that every one of those bursts is over a patch and over a
+  // wall. The first cut halved all of it and the fleet read as chaff.
   risso: [
     {
-      name: "risso-mortar", reload: t(60), mounts: 2, damage: 10, splash: 16, splashRadius: u(12),
+      name: "risso-mortar", reload: t(40), mounts: 2, damage: 16, splash: 24, splashRadius: u(12),
       range: rng(2.5, 60), speed: spd(2.5), fx: "shell", look: navalShell(8),
     },
   ],
@@ -1078,7 +1092,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // family's one idea in the air at once
   minke: [
     {
-      name: "minke-mortar", reload: t(60), mounts: 2, shots: 2, damage: 10, splash: 26, splashRadius: u(16),
+      name: "minke-mortar", reload: t(40), mounts: 2, shots: 2, damage: 20, splash: 50, splashRadius: u(16),
       range: rng(3, 55), speed: spd(3), fx: "shell", look: navalShell(10),
     },
   ],
@@ -1088,7 +1102,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // board. The tier also carries the fleet's shield (levels.ts)
   bryde: [
     {
-      name: "bryde-artillery", reload: t(65), mounts: 1, damage: 20, splash: 70, splashRadius: u(28),
+      name: "bryde-artillery", reload: t(45), mounts: 1, damage: 40, splash: 120, splashRadius: u(28),
       range: rng(3, 80), speed: spd(3), fx: "shell",
       look: navalShell(15, { height: u(15.5), shoot: FxKind.ShootBig2 }),
     },
@@ -1098,24 +1112,24 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // over three tiles each, which across six is the family's area tier
   sei: [
     {
-      name: "sei-barrage", reload: t(50), mounts: 1, shots: 6, damage: 20, splash: 40, splashRadius: u(24),
+      name: "sei-barrage", reload: t(40), mounts: 1, shots: 6, damage: 30, splash: 60, splashRadius: u(24),
       range: rng(4.2, 55), speed: spd(4.2), fx: "shell", look: navalShell(9),
     },
   ],
-  // THE SIEGE SHELL: fifty tiles, three hundred and fifty over a
-  // five-tile burst, once every two and a half seconds — the omura's
+  // THE SIEGE SHELL: fifty tiles, five hundred over a five-tile burst,
+  // once every two seconds — the omura's
   // railgun read as artillery. The rail punched one thing for 1250 down a
   // line; this drops on a patch from further away than any gun on the
   // board reaches back. And a pair of the T1's mortars off the deck, so
   // the hull is never idle between shells
   omura: [
     {
-      name: "omura-siege", reload: t(150), mounts: 1, damage: 250, splash: 350, splashRadius: u(40),
+      name: "omura-siege", reload: t(120), mounts: 1, damage: 400, splash: 500, splashRadius: u(40),
       range: rng(4, 100), speed: spd(4), fx: "shell",
       look: navalShell(22, { shoot: FxKind.ShootBig2, smoke: FxKind.SmokeBig2 }),
     },
     {
-      name: "omura-mortar", reload: t(45), mounts: 2, damage: 12, splash: 30, splashRadius: u(18),
+      name: "omura-mortar", reload: t(40), mounts: 2, damage: 16, splash: 40, splashRadius: u(18),
       range: rng(3, 55), speed: spd(3), fx: "shell", look: navalShell(10),
     },
   ],
@@ -1141,6 +1155,11 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // shorts one gun in eight it touches for half a second, a navanax one in
   // two for a full second, seven guns at a time.
   //
+  // THE BITE SITS BETWEEN THE STARLIGHT LINE'S AND THE GROUND LINE'S, tier
+  // for tier, before the hops: a family whose trick is taking a gun's TIME
+  // still has to be worth shooting when the gun is up, or it is a slot the
+  // die spends on nothing — which is what put it on the shelf before.
+  //
   // THE AEGIS ITSELF is in levels.ts: the T2 and the T5 stand inside FORCE
   // FIELDS that eat the player's shots outright, and the T4 heals the
   // fleet by a share of its health. A family named for a shield carries
@@ -1151,7 +1170,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // arc on a lone duo is one hit and an arc on a wall of them is the wall.
   retusa: [
     {
-      name: "retusa-arc", reload: t(50), mounts: 2, damage: 12, range: u(70), speed: 0, fx: "arc",
+      name: "retusa-arc", reload: t(40), mounts: 2, damage: 20, range: u(110), speed: 0, fx: "arc",
       arc: { jumps: 1, reach: u(28), decay: 0.7, color: PAL.emp }, short: 0.6, shortChance: 0.12,
     },
   ],
@@ -1159,7 +1178,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // family's volume tier, and the first that stands inside a bubble
   oxynoe: [
     {
-      name: "oxynoe-arc", reload: t(12), mounts: 2, damage: 7, range: u(36), speed: 0, fx: "arc",
+      name: "oxynoe-arc", reload: t(12), mounts: 2, damage: 12, range: u(60), speed: 0, fx: "arc",
       arc: { jumps: 2, reach: u(24), decay: 0.6, color: PAL.emp }, short: 0.4, shortChance: 0.06,
     },
   ],
@@ -1167,27 +1186,27 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // patch lights five of it
   cyerce: [
     {
-      name: "cyerce-arc", reload: t(60), mounts: 2, damage: 30, range: u(90), speed: 0, fx: "arc",
-      arc: { jumps: 4, reach: u(30), decay: 0.75, color: PAL.emp }, short: 0.7, shortChance: 0.18,
+      name: "cyerce-arc", reload: t(50), mounts: 2, damage: 60, range: u(140), speed: 0, fx: "arc",
+      arc: { jumps: 4, reach: u(30), decay: 0.75, color: PAL.emp }, short: 0.7, shortChance: 0.15,
     },
   ],
-  // EnergyFieldAbility(40, 65, 180): 40 to everything in 180 — twenty-two
-  // tiles — every 65 ticks, a Fx.chainLightning to each, and now in the
+  // EnergyFieldAbility(40, 65, 180): 80 (upstream 40) to everything in 180
+  // — twenty-two tiles — every 65 ticks, a Fx.chainLightning to each, in the
   // family's cyan and with a SHORT rolled on every one of them. The
   // family's area tier and its healer at once (levels.ts energyField)
   aegires: [
     {
-      name: "energy-field", reload: t(65), mounts: 1, damage: 40, range: u(180), speed: 0, fx: "field",
+      name: "energy-field", reload: t(65), mounts: 1, damage: 80, range: u(180), speed: 0, fx: "field",
       maxTargets: 25, fieldColor: PAL.emp, short: 1, shortChance: 0.35,
     },
   ],
-  // THE EMP CANNON as the family's long arc: twenty-five tiles, six hops,
+  // THE EMP CANNON as the family's long arc: thirty-two tiles, six hops,
   // a one-second short on every other thing it touches — upstream's
   // EmpBulletType (damage 110, splash 110 in 100) read as a chain instead
   // of a burst. The tier stands inside the biggest bubble in the game
   navanax: [
     {
-      name: "navanax-emp", reload: t(120), mounts: 2, damage: 150, range: u(200), speed: 0, fx: "arc",
+      name: "navanax-emp", reload: t(120), mounts: 2, damage: 300, range: u(260), speed: 0, fx: "arc",
       arc: { jumps: 6, reach: u(36), decay: 0.8, color: PAL.emp }, short: 1, shortChance: 0.5,
     },
   ],
