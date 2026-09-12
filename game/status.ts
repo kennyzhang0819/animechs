@@ -159,7 +159,7 @@ export const STATUSES: readonly StatusDef[] = [
     name: "Rot",
     color: PAL.venom,
     blurb:
-      "Venom. It takes raw health a second and ignores plating; more spitters on one building rot it faster, up to a cap.",
+      "Venom. It takes raw health a second and ignores plating; the more spitters on one building, the faster it rots.",
     field: true,
   },
   {

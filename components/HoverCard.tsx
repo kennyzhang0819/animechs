@@ -120,7 +120,7 @@ export function HoverCard({
   return createPortal(
     <span
       role="tooltip"
-      className="ui-zoom pointer-events-none fixed z-50 block w-64 border-[3px] p-2.5 text-left normal-case tracking-normal shadow-lg"
+      className="ui-zoom pointer-events-none fixed z-50 block w-64 border-[3px] p-2.5 text-left normal-case tracking-normal"
       style={{
         left: align === "center" ? x + w / 2 : align === "right" ? x + w : x,
         top: y,

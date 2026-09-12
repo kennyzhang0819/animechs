@@ -60,6 +60,29 @@ export const UNIT_ID: Record<UnitKind, number> = {
 const NAVAL_PACE = 0.45;
 
 /**
+ * ...AND THE WRAITH FLEET RUNS AT TWICE THAT. The crawl is the SNIPER
+ * family's premise, not this one's: a wraith carries no rail and no
+ * veterancy, it BLINKS forward out of a hit and the top three go dark on
+ * a cycle (blink, cloak), and every one of those reads as speed. At the
+ * Harpoon fleet's pace the fleet that is supposed to be impossible to
+ * hold a target on arrived slowly enough to be shot at leisure between
+ * the hops, which made the whole family a worse Harpoon fleet.
+ *
+ * IT IS ALSO LESS TAXED ASHORE (WRAITH_LAND_SPEED): a beach is where the
+ * hops happen, and the family cannot be quick in the water and a sitting
+ * target on the sand.
+ */
+const WRAITH_PACE = NAVAL_PACE * 2;
+
+/**
+ * WHAT A WRAITH LOSES ASHORE (UnitStats.landSpeed) — a fifth, against the
+ * half the Harpoon fleet pays (constants.ts NAVAL_LAND_SPEED). Same
+ * reason as the pace above: the beach is this family's ground, so the
+ * land tax cannot be the thing that decides its fights.
+ */
+const WRAITH_LAND_SPEED = 0.8;
+
+/**
  * THE HARPOON FLEET'S VETERANCY (UnitStats.veteran), one number for all
  * five hulls: a hit grows by 2.5% of its row a second alive, to triple —
  * eighty seconds to full, half a minute round a sei (drillField). The rows
@@ -236,9 +259,11 @@ export type StatusKind = "burning" | "wet";
 
 export interface UnitStats {
   /** Health. THIS IS WHAT A KILL PAYS: the drop is the pool times
-   *  SCRAP_PER_HP (economy.ts), so a heavier kind is worth more scrap and a
-   *  stats edit here moves the salvage with it. No XP either way — XP is
-   *  paid per wave cleared (MISSION_XP), never per body */
+   *  SCRAP_PER_HP, bent down past the knee at the heavy end (payableHp in
+   *  economy.ts), so a heavier kind is worth more scrap — just not
+   *  proportionally more once it is a T4 or a T5 — and a stats edit here
+   *  moves the salvage with it. No XP either way — XP is paid per wave
+   *  cleared (MISSION_XP), never per body */
   hp: number;
   /** world px/s */
   speed: number;
@@ -297,6 +322,18 @@ export interface UnitStats {
    * to both.
    */
   naval?: boolean;
+  /**
+   * WHAT THIS HULL LOSES ASHORE, overriding the layer's own land tax
+   * (constants.ts NAVAL_LAND_SPEED, the half the Harpoon fleet pays). It
+   * multiplies the drive on any cell that is not a water floor and
+   * nothing else — the naval field never reads it either, so the route is
+   * still the plain shortest path.
+   *
+   * Only meaningful on a `naval` kind: a walker is never charged the tax
+   * to begin with. The Wraith fleet sets it (WRAITH_LAND_SPEED) because
+   * the beach is the ground its blinks happen on.
+   */
+  landSpeed?: number;
   /**
    * The naval wake: Mindustry's two WaveTrails, one either side of the
    * hull (UnitType.waveTrailX/waveTrailY/trailScl/trailLength, drawn by
@@ -1095,13 +1132,14 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // repair beam was a weapon and does not port
   retusa: {
     hp: 270,
-    speed: 6.75 * CELL * NAVAL_PACE,
+    speed: 6.75 * CELL * WRAITH_PACE,
     armor: 3,
     radius: UR * 1.375,
     tier: 1,
     drag: 0.14,
     rotateSpeed: 5,
     naval: true,
+    landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
     blink: { dist: 4 * CELL, cooldown: 2 },
     wake: wake({ x: 5 * MU, length: 20, scl: 1.3 * MU }),
@@ -1112,13 +1150,14 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // short arc, and the quickest blink on the tree
   oxynoe: {
     hp: 560,
-    speed: 6.225 * CELL * NAVAL_PACE,
+    speed: 6.225 * CELL * WRAITH_PACE,
     armor: 4,
     radius: UR * 1.75,
     tier: 2,
     drag: 0.14,
     rotateSpeed: 4,
     naval: true,
+    landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
     blink: { dist: 4 * CELL, cooldown: 1.5 },
     wake: wake({ x: 5.5 * MU, y: -4 * MU, length: 22, scl: 1.9 * MU }),
@@ -1131,13 +1170,14 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // and goes the same way
   cyerce: {
     hp: 870,
-    speed: 6.45 * CELL * NAVAL_PACE,
+    speed: 6.45 * CELL * WRAITH_PACE,
     armor: 6,
     radius: UR * 2.5,
     tier: 3,
     drag: 0.16,
     rotateSpeed: 2.6,
     naval: true,
+    landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
     blink: { dist: 5 * CELL, cooldown: 1.5 },
     cloak: { duration: 3, period: 9 },
@@ -1157,13 +1197,14 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // hard to remove as one
   aegires: {
     hp: 12000,
-    speed: 5.25 * CELL * NAVAL_PACE,
+    speed: 5.25 * CELL * WRAITH_PACE,
     armor: 12,
     radius: UR * 5.5,
     tier: 4,
     drag: 0.17,
     rotateSpeed: 1.4,
     naval: true,
+    landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
     blink: { dist: 5 * CELL, cooldown: 2 },
     cloak: { duration: 4, period: 10 },
@@ -1185,13 +1226,14 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // seven seconds it shows are the seven seconds to kill it in
   navanax: {
     hp: 20000,
-    speed: 4.875 * CELL * NAVAL_PACE,
+    speed: 4.875 * CELL * WRAITH_PACE,
     armor: 20,
     radius: UR * 7.25,
     tier: 5,
     drag: 0.17,
     rotateSpeed: 1.1,
     naval: true,
+    landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
     blink: { dist: 6 * CELL, cooldown: 2 },
     cloak: { duration: 5, period: 12, veil: 10 * CELL },
@@ -1384,6 +1426,11 @@ export const FAMILIES = [
   // lands throws it forward, past the gun that landed it. The top three
   // CLOAK on a cycle — gone, untargetable, untouchable — and the
   // flagship's cloak veils the fleet round it.
+  //
+  // AND IT IS THE QUICK FLEET: twice the Harpoon fleet's pace (WRAITH_PACE)
+  // and a fifth ashore rather than a half (WRAITH_LAND_SPEED). A retusa
+  // outruns a dagger. The crawl belongs to the snipers — a hull that is
+  // hard to hold a target on has to arrive faster than a gun can settle.
   //
   // WHAT IT POSES: a line that cannot hold a target. The answer is
   // bursts and fields that catch a body wherever it lands, and killing

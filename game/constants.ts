@@ -970,10 +970,18 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   //  - reload 45 ticks. One ball every 0.75 s where the hose threw fifteen
   //    in that time. The soak lasts 2 s, so a single wave still holds a
   //    patch of lane wet with uptime to spare.
-  //  - splash 1 over a 30-unit radius — near four tiles of reach, so the
-  //    burst is better than seven tiles across. "Little to no damage" is
-  //    the point: armour floors a hit at a tenth of it, so this never
-  //    kills anything — it slows what the rest of the board is shooting.
+  //  - splash 10 over a 30-unit radius — near four tiles of reach, so the
+  //    burst is better than seven tiles across. It USED TO BE 1, which is
+  //    not a number, and a turret that soaked a crowd and left the bank
+  //    untouched read as a debuff with a price tag rather than a gun. Ten
+  //    is a BIT of damage and is meant to stay one: thirteen a second
+  //    laid over the whole burst, against hail's thirty-three into a
+  //    third of the area for a third of the price. It chips what it wets
+  //    and it still kills nothing on its own — armour shaves it like any
+  //    other hit (applyArmor), and ten points shaved is most of ten.
+  //    Tsunami is the same ball at twenty a piece and six times the rate,
+  //    so the pair still reads as one weapon at two scales rather than
+  //    one turret at two prices.
   //  - 18 degrees of inaccuracy, where upstream sprays 5. A ball that
   //    lands on the aim point every time is a ball that soaks the same
   //    patch forever; scattering them means consecutive shots cover lane
@@ -1007,7 +1015,7 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
       // and the splash branch in updateProjectiles), so a shot thrown past
       // a dodging target still wets the ground it was headed for
       lifetime: 34 / TICK,
-      splash: 1,
+      splash: 10,
       splashRadius: 30 * MU,
       collidesAir: true,
       collidesGround: true,
@@ -1115,9 +1123,9 @@ export const TOWERS: Record<import("./types").TowerKind, TowerStats> = {
   //    flat eight times a second is what a hail does to a heavy, while
   //    ripple's seventy lands whole. What tsunami has over the artillery
   //    is the area — four times ripple's — and the four seconds of wet
-  //    under it. Wave is still the one that kills nothing (splash 1): it
-  //    is a size-2 common, and the two must not read as the same turret
-  //    at two prices.
+  //    under it. Wave chips at ten a ball and a ball and a third a second
+  //    — a twelfth of this rate — so the two never read as the same
+  //    turret at two prices: one softens a group, this one kills it.
   // The shot itself is upstream's heavy round — speed 4, lifetime 49 ticks
   // over 190 range — and the soak is upstream's duration (statusDuration
   // 60*4): wet units drive at 45% speed for 4 s, so anything crossing its
@@ -1569,7 +1577,7 @@ export const TOWER_DESC: Record<import("./types").TowerKind, string> = {
   hail: "Lobs shells that explode where they land.",
   scorch: "Sprays fire at close range and sets enemies alight.",
   salvo: "Shoots four shells at once, then reloads slowly.",
-  wave: "Lobs a ball of water that bursts and soaks everything nearby.",
+  wave: "Lobs a ball of water that bursts, soaking everything nearby and chipping at it.",
   lancer: "Charges up, then fires a beam through a line of enemies.",
   ripple: "Lobs four shells at once over a long distance.",
   parallax: "Locks a beam onto one enemy that burns hotter the longer it holds.",
@@ -1721,6 +1729,12 @@ export type MoveLayer = (typeof MOVE_LAYERS)[number];
  * we skip it for walkers (see terrain.ts WALL_DEEP): there, a speed
  * penalty would be a pathfinding input. Here it is not one — the field
  * never reads it.
+ *
+ * IT IS THE DEFAULT AND NOT THE RULE: a kind may name its own tax
+ * (levels.ts UnitStats.landSpeed), and the Wraith fleet does — it pays a
+ * fifth, because the sniper family's crawl up the beach is the Harpoon
+ * fleet's premise and the wraiths' whole idea is a body that cannot be
+ * held wherever it is.
  */
 export const NAVAL_LAND_SPEED = 0.5;
 /**
@@ -1773,11 +1787,9 @@ export const LAYER_BIT: Readonly<Record<ZoneKind, number>> = {
  *  and what a pre-layer document's exits are read as */
 export const ALL_MOVE_BITS = LAYER_BIT.ground | LAYER_BIT.air | LAYER_BIT.water;
 
-/** Fx.unitSpawn's own 30 ticks, and Fx.spawn's — the second is run 30
- *  ticks BEHIND the first (Time.run), so it lands exactly as the unit
- *  stops being unmoving and takes its first step */
+/** Fx.unitSpawn's own 30 ticks — the entrance, and the only thing an
+ *  arrival draws now */
 export const FX_UNIT_SPAWN = 30 / TICK;
-export const FX_SPAWN = 30 / TICK;
 
 // StatusEffects.burning, 1:1: 0.167 damage per tick, and it pierces armor
 // (StatusEffect.update calls damageContinuousPierce) — but a shield still

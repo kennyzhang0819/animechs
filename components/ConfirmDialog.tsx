@@ -81,16 +81,16 @@ export function ConfirmDialog({
   return (
     <div
       onClick={onCancel}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      className="ms-screen fixed inset-0 z-50 flex items-center justify-center p-4"
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        className="ui-zoom ms-pane-solid flex w-full max-w-[24rem] flex-col p-5 shadow-2xl"
+        className="ui-zoom ms-pane-solid flex w-full max-w-[24rem] flex-col p-5"
       >
-        <h2 className="ms-heading text-[15px] tracking-[0.35em]">{title}</h2>
+        <h2 className="ms-heading ms-strip -mx-5 -mt-5 mb-1 text-[14px]">{title}</h2>
         {body !== undefined && body !== null && (
           <div className="mt-3 text-[15px] leading-relaxed text-[#a2a2a2]">{body}</div>
         )}
@@ -100,14 +100,14 @@ export function ConfirmDialog({
           <button
             ref={cancelRef}
             onClick={onCancel}
-            className="ms-btn px-5 py-2 text-[15px]"
+            className="ms-btn px-5 py-2 text-[13px]"
           >
             {cancelLabel}
           </button>
           <button
             ref={confirmRef}
             onClick={onConfirm}
-            className={`ms-btn px-5 py-2 text-[15px] ${
+            className={`ms-btn px-5 py-2 text-[13px] ${
               tone === "danger" ? "ms-btn-red" : "ms-btn-accent"
             }`}
           >

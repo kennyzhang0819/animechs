@@ -18,7 +18,7 @@ import { TOWER_ICONS } from "./towerIcons";
  *
  * A CLICK ALREADY DID SOMETHING: on a turret it drew a range ring
  * (Game.drawSelection), and on an enemy it told every gun in range to drop
- * what it was doing (Sim.setFocusUnit). Neither of them said what the
+ * what it was doing (Sim.setInspectUnit). Neither of them said what the
  * thing WAS. A turret born with three attributes is the story of a patch
  * (mods.ts: every placement rolls for every attribute the run owns, so a
  * card comes out speckled); a body halfway across the field is a pool, a
