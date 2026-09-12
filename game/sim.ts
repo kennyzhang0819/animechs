@@ -3374,11 +3374,21 @@ export class Sim {
               // stretch is flown at the target (updateUnits) and the
               // charge is the payload's; a kind without one is the old
               // crawler charge, the row's own splash centred on itself.
-              // Either way it is gone: no kill, no scrap — the player is
-              // paid for a bomber shot down, never for one that arrived
+              // Either way it is gone, and no kill goes on the ledger.
+              //
+              // AN ARRIVAL PAYS HALF. A bomber shot down pays its kill
+              // like any body; one that arrived pays half of it — the
+              // run's whole income is the swarm's health (economy.ts), and
+              // a wing that paid nothing for arriving starved the board
+              // that was failing to stop it (the headless bot, bombers
+              // alone: 261 scrap in twenty waves). Half keeps the reason
+              // to shoot them down without making a wing a famine
               if (KIND_PAYLOAD[ukind[i]]) {
                 if (!this.aimReach(tgt, x, y, CONTACT_REACH)) break;
                 this.detonate(i);
+                const half = Math.round((unitDrop(kind).scrap * dropScale(this.mods)) / 2);
+                this.scrap += half;
+                this.scrapEarned += half;
               } else {
                 this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
                 this.splashStructures(x, y, wp.splash ?? 0, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1);
