@@ -1070,28 +1070,23 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // contesting the water: guns whose reach covers the channel, and the
   // hulls dead before the big shells arrive.
   //
-  // WHAT A TIER BUYS IS THE BURST. A risso's mortar lands on one turret
-  // and clips the four touching it, for twelve, at nineteen tiles; a
-  // minke's burst is a tile and a quarter and takes the eight round it; a
-  // bryde's is three tiles; an omura's siege shell is five hundred over
-  // four and a half tiles at FIFTY, the longest reach any body on the
-  // roster has. The bryde's shield and the sei's bow wave (levels.ts) are
-  // what the fleet does for itself.
+  // WHAT A TIER BUYS IS THE BURST. A shell lands ON a turret for its
+  // damage and then bursts over it and its neighbours (Sim.updateEnemyShots).
+  // A risso's mortar is a one-tile burst at nineteen tiles; a minke's a
+  // tile and a half; a bryde's three and a half; an omura's siege shell is
+  // five hundred over four and a half tiles at FIFTY, the longest reach any
+  // body on the roster has. The bryde's shield and the sei's bow wave
+  // (levels.ts) are what the fleet does for itself.
   //
-  // THE AREA IS METERED ON THE MASS TIERS, and the meter was set by
-  // playtest (seed 7, world 1, the fleet alone). The script sends its T1
+  // THE AREA IS METERED ON THE MASS TIERS, because the script sends its T1
   // by the thousand — wave 15 is two thousand of them — so a burst on the
-  // risso is a burst two thousand times over: a tile-and-a-half one on a
-  // lobbed, unblockable, nineteen-tile round on a hull half again as quick
-  // afloat took the bot's board apart by wave eighteen, where the old
-  // copper-and-missiles risso took until forty-two; a burst under half a
-  // tile and the bot won with the core untouched. The four-neighbour clip
-  // is the line between those two. Against ONE turret each tier bites
-  // near its old row, less on the T1, since its round now flies over the
-  // wall.
+  // risso is a burst two thousand times over. Against ONE turret each tier
+  // bites at about half its old row's paper number (the copper, flak,
+  // missiles and rail it replaced), and the burst over the patch, over the
+  // wall, is the other half. Set by playtest, world 1, the fleet alone.
   risso: [
     {
-      name: "risso-mortar", reload: t(40), mounts: 2, damage: 16, splash: 12, splashRadius: u(7),
+      name: "risso-mortar", reload: t(40), mounts: 2, damage: 16, splash: 16, splashRadius: u(8),
       range: rng(2.5, 60), speed: spd(2.5), fx: "shell", look: navalShell(8),
     },
   ],
@@ -1099,7 +1094,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // family's one idea in the air at once
   minke: [
     {
-      name: "minke-mortar", reload: t(40), mounts: 2, shots: 2, damage: 16, splash: 24, splashRadius: u(10),
+      name: "minke-mortar", reload: t(40), mounts: 2, shots: 2, damage: 16, splash: 30, splashRadius: u(12),
       range: rng(3, 55), speed: spd(3), fx: "shell", look: navalShell(10),
     },
   ],
@@ -1109,7 +1104,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // board. The tier also carries the fleet's shield (levels.ts)
   bryde: [
     {
-      name: "bryde-artillery", reload: t(50), mounts: 1, damage: 40, splash: 100, splashRadius: u(24),
+      name: "bryde-artillery", reload: t(45), mounts: 1, damage: 40, splash: 120, splashRadius: u(28),
       range: rng(3, 80), speed: spd(3), fx: "shell",
       look: navalShell(15, { height: u(15.5), shoot: FxKind.ShootBig2 }),
     },
@@ -1119,7 +1114,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // over three tiles each, which across six is the family's area tier
   sei: [
     {
-      name: "sei-barrage", reload: t(45), mounts: 1, shots: 6, damage: 24, splash: 48, splashRadius: u(24),
+      name: "sei-barrage", reload: t(40), mounts: 1, shots: 6, damage: 24, splash: 60, splashRadius: u(24),
       range: rng(4.2, 55), speed: spd(4.2), fx: "shell", look: navalShell(9),
     },
   ],

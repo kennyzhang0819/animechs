@@ -3625,11 +3625,20 @@ export class Sim {
           this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison, sh.poisonChance);
         this.shotHitFx(sh);
       } else if (sh.life <= 0 && !off) {
-        // a shell that runs out of flight lands where it is
+        // a shell that runs out of flight lands where it is — ON whatever
+        // stands there, which takes the round's own damage as a struck
+        // structure would (the shot was aimed at it, and a lobbed round
+        // that flew over the wall to reach it is not a round that missed),
+        // and then the burst reaches it and its neighbours. Without the
+        // first half a lobbed row's `damage` was a number nothing read: the
+        // naval shells landed at a fraction of their rows and the venom
+        // line's thrown bombs at their splash alone
+        const under = sh.collide ? null : this.structureAt(sh.x, sh.y);
+        if (under) this.hitStructure(under, sh.damage, sh.poison, sh.poisonChance);
         if (sh.splash > 0) {
           this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison, sh.poisonChance);
           this.shotHitFx(sh);
-        } else if (look.hit === FxKind.HitLaser) this.shotHitFx(sh);
+        } else if (under || look.hit === FxKind.HitLaser) this.shotHitFx(sh);
       }
       if (t || off || sh.life <= 0) {
         shots[p] = shots[shots.length - 1];
