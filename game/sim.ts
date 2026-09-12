@@ -3189,6 +3189,8 @@ export class Sim {
    */
   private updateUnitWeapons(dt: number): void {
     const { upx, upy, urot, ukind, uspawn, ucd, utT, ubeamT, ucharge, uheldRot, utgt } = this;
+    // which sixth of the bodies re-test their sight this tick
+    const sightPhase = Math.floor(this.time * 60) % 6;
     for (let i = this.n - 1; i >= 0; i--) {
       if (uspawn[i] > 0) continue; // still arriving, untouchable and unarmed
       const kind = UNIT_KINDS[ukind[i]];
@@ -3210,15 +3212,23 @@ export class Sim {
       // (hitStructure), and what a shot leaving the muzzle carries
       this.dmgMul = HAS_VET ? this.uvet[i] : 1;
       // the target, re-picked every few tenths of a second, dropped the
-      // moment it dies or walks out of the longest gun's reach. SIGHT IS
-      // TESTED ON THE CLOCK, NOT EVERY TICK: the re-pick (pickAim) refuses
-      // what it cannot see, so a body that has just lost its line keeps
-      // firing for at most half a second — and a raycast per body per
-      // tick, at ninety tiles on four thousand hulls, was a frame
+      // moment it dies, walks out of the longest gun's reach, or goes
+      // behind rock. THE SIGHT TEST RUNS EVERY SIXTH TICK PER BODY,
+      // staggered, rather than every tick: a body fires through a hill for
+      // a tenth of a second at most, and a raycast per body per tick — at
+      // ninety tiles on four thousand hulls — was a frame. It cannot ride
+      // the re-pick clock alone: a sniper whose line flickers over rough
+      // ground would fire for a whole second of every one, and alone on
+      // seed 7 the fleet took the bot's board at wave 14 instead of 50
       utT[i] -= dt;
       let tgt = utgt[i];
       const had = tgt !== null;
-      if (tgt && !this.aimReach(tgt, x, y, reach)) tgt = null;
+      if (
+        tgt &&
+        (!this.aimReach(tgt, x, y, reach) ||
+          (sighted && (i + sightPhase) % 6 === 0 && !this.canSee(tgt.s, x, y)))
+      )
+        tgt = null;
       // ...on the clock, or the moment the one it had is gone. A body that
       // has NOTHING waits for the clock like everyone else rather than
       // re-scanning every tick: an empty search is the most expensive one
