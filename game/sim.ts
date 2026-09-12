@@ -109,6 +109,7 @@ import {
   mutationsInForce,
   OVERSHIELD_SCALE,
   HUNGRY_CHANCE,
+  HUNGRY_DMG_PER_MEAL,
   HUNGRY_HP_PER_MEAL,
   HUNGRY_MAX_MEALS,
   HUNGRY_PERIOD,
@@ -3334,8 +3335,22 @@ export class Sim {
         utgt[i] = tgt;
       }
       let exploded = false;
+      // HUNGRY MECHS (mutation.ts): A MEAL IS WORTH WHAT IT ATE, NOT JUST
+      // WHAT IT WEIGHED. The rule used to move health alone, and health
+      // alone is what made it a GIFT: twenty daggers walking at a line do
+      // twenty daggers' worth of damage to it, and one body carrying their
+      // health does one dagger's. Measured, a run under the rule lasted a
+      // third LONGER than the same run without it — the swarm was eating
+      // its own damage. So a meal carries the eaten body's bite as well:
+      // what the rule concentrates is the threat, not just the pool
+      const fed =
+        this.hungryOn && this.uhungry[i] ? 1 + this.ueaten[i] * HUNGRY_DMG_PER_MEAL : 1;
       for (let w = 0; w < ws.length && !exploded; w++) {
         const wp = ws[w];
+        // what THIS body's copy of the weapon hits for (see `fed` above);
+        // in every ordinary run it is the weapon's own number
+        const wpDamage = wp.damage * fed;
+        const wpSplash = (wp.splash ?? 0) * fed;
         const slot = i * MAX_WEAPONS + w;
         // this weapon's reach, the spotter's stamp folded in
         const wrange = wp.range * reachMul;
@@ -3365,11 +3380,11 @@ export class Sim {
                 const halfW = ((wp.beamStyle?.width ?? 4) * MU) / 2;
                 const hit = this.structuresAlong(x, y, uheldRot[i], wrange, halfW, this.alongOut);
                 for (let k = 0; k < hit.length; k++) {
-                  this.hitStructure(hit[k], wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+                  this.hitStructure(hit[k], wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
                   if (k < 4) this.pushFxCol(hit[k].x, hit[k].y, 12 / 60, FxKind.HitMeltHeal, 0, 0, wp.beamStyle?.colors[2][0] ?? PAL.heal);
                 }
               } else if (tgt && this.aimReach(tgt, x, y, wrange)) {
-                this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+                this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
                 this.pushFxCol(tgt.x, tgt.y, 12 / 60, FxKind.HitMeltHeal, 0, 0, wp.beamStyle?.colors[2][0] ?? PAL.heal);
               }
             }
@@ -3441,9 +3456,9 @@ export class Sim {
             // torpedo). Splash, where a row carries it, bursts on the
             // target the way the round would have
             for (let k = 0; k < shots; k++) {
-              this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
-              if (wp.splash)
-                this.splashStructures(tgt.x, tgt.y, wp.splash, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1);
+              this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
+              if (wpSplash)
+                this.splashStructures(tgt.x, tgt.y, wpSplash, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1);
               this.fireUnitGun(x, y, aim + (k - (shots - 1) / 2) * 0.06, wp);
             }
             break;
@@ -3457,7 +3472,7 @@ export class Sim {
           case "sap": {
             // SapBulletType: the line lands on the target and retracts onto
             // the mount as it fades (the draw lerps its far end back over fin)
-            for (let k = 0; k < shots; k++) this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+            for (let k = 0; k < shots; k++) this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
             const st = wp.sap;
             if (st) {
               const dx = tgt.x - x, dy = tgt.y - y;
@@ -3471,7 +3486,7 @@ export class Sim {
             // one per shot, fanned by ShootSpread; Fx.sparkShoot at the muzzle
             const st = wp.shrapnel;
             for (let k = 0; k < shots; k++) {
-              this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+              this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
               const a = aim + (k - (shots - 1) / 2) * (wp.spread ?? 0);
               if (st) this.pushFx(x, y, 10 / 60, FxKind.Shrapnel, a, wrange, 0, st.id, true);
             }
@@ -3483,7 +3498,7 @@ export class Sim {
             // of the muzzle, in the bullet's colour, `inaccuracy` off the aim
             const bt = wp.bolt;
             for (let k = 0; k < shots; k++) {
-              this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+              this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
               if (bt) {
                 const a = aim + (Math.random() * 2 - 1) * bt.inaccuracy;
                 this.unitBolt(x, y, a, bt.length + Math.floor(Math.random() * (bt.lengthRand + 1)), bt.color);
@@ -3495,7 +3510,7 @@ export class Sim {
           case "flame": {
             // Fx.shootSmallFlame out of the barrel and Fx.hitFlameSmall on
             // the wall — or their plasma pair, white through heal to grey
-            for (let k = 0; k < shots; k++) this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+            for (let k = 0; k < shots; k++) this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
             const seed = (Math.random() * 0x7fffffff) | 0;
             if (wp.plasma) {
               this.pushFxCol(x, y, 32 / 60, FxKind.Flame, aim, 0, PAL.heal, 1, false, seed);
@@ -3529,8 +3544,8 @@ export class Sim {
                 this.scrap += half;
                 this.scrapEarned += half;
               } else {
-                this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
-                this.splashStructures(x, y, wp.splash ?? 0, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1);
+                this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
+                this.splashStructures(x, y, wpSplash, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1);
                 this.pushFx(x, y, 40 / 60, FxKind.Pulverize, 0, 0, (Math.random() * 0x7fffffff) | 0);
               }
               this.pushDeathFx(x, y);
@@ -3546,7 +3561,7 @@ export class Sim {
               this.shots.push({
                 x, y, vx: Math.cos(urot[i]) * bs, vy: Math.sin(urot[i]) * bs,
                 life: wp.look.lifetime ?? 0.5, age: 0,
-                damage: wp.damage, splash: wp.splash ?? 0, splashRadius: wp.splashRadius ?? 0,
+                damage: wpDamage, splash: wpSplash, splashRadius: wp.splashRadius ?? 0,
                 look: wp.look, collide: wp.look.collide !== false, trailT: 0,
                 poison: wp.poison ?? 0,
                 poisonChance: wp.poisonChance ?? 1,
@@ -3575,11 +3590,11 @@ export class Sim {
             if (wp.pierce) {
               const hit = this.structuresAlong(x, y, aim, wrange, CELL * 0.5, this.alongOut);
               for (let k = 0; k < hit.length; k++) {
-                this.hitStructure(hit[k], wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+                this.hitStructure(hit[k], wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
                 if (k < 6) this.pushFxCol(hit[k].x, hit[k].y, 14 / 60, FxKind.RailHit, aim, 0, rc, 0, big);
               }
             } else {
-              this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+              this.aimHit(tgt, wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
               this.pushFxCol(tgt.x, tgt.y, 14 / 60, FxKind.RailHit, aim, 0, rc, 0, big);
             }
             const dx = tgt.x - x, dy = tgt.y - y;
@@ -3604,7 +3619,7 @@ export class Sim {
               const dx = t.x - x, dy = t.y - y;
               const d = Math.max(0, Math.sqrt(dx * dx + dy * dy) - half);
               const share = 1 - (1 - fall) * Math.min(1, d / wrange);
-              this.hitStructure(t, wp.damage * share, wp.poison ?? 0, wp.poisonChance ?? 1);
+              this.hitStructure(t, wpDamage * share, wp.poison ?? 0, wp.poisonChance ?? 1);
               if (k < 6)
                 this.pushFxCol(t.x, t.y, FX_LIFE[FxKind.BulletHit], FxKind.BulletHit, Math.atan2(dy, dx), 0, col, 0,
                   false, (Math.random() * 0x7fffffff) | 0);
@@ -3627,7 +3642,7 @@ export class Sim {
             const seen = this.arcOut;
             seen.length = 0;
             let cur: Structure = tgt.s;
-            let dmg = wp.damage;
+            let dmg = wpDamage;
             this.hitStructure(cur, dmg, wp.poison ?? 0, wp.poisonChance ?? 1);
             this.shortTower(cur, wp.short ?? 0, wp.shortChance ?? 1);
             this.chainFx(x, y, cur, ar.color);
@@ -3671,7 +3686,7 @@ export class Sim {
               // the rot rides a field pulse exactly as it rides a bullet: no
               // hit path in this file may quietly drop a weapon's status, or
               // the next family built on `field` loses it without a word
-              this.hitStructure(hit[k], wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+              this.hitStructure(hit[k], wpDamage, wp.poison ?? 0, wp.poisonChance ?? 1);
               if (wp.short) this.shortTower(hit[k], wp.short, wp.shortChance ?? 1);
               this.chainFx(x, y, hit[k], col);
               this.pushFxCol(x, y, 12 / 60, FxKind.HitLaserBlast, Math.atan2(hit[k].y - y, hit[k].x - x), 0, col);

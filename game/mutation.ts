@@ -120,25 +120,63 @@ export const MUT_COST_MAX = 6;
  * player reads opens on the map-bound SPECIAL rules and then falls from
  * the ruinous to the survivable.
  *
- * THESE COSTS CAME OFF THE DASHBOARD. They rode in public/balance.json's
- * `mutations` section while they were being tuned and are authored here
- * now; that file is empty again. ONE rule spends into the BRUTAL band:
- * Conquest, at the scale's ceiling (MUT_COST_MAX), because a board that
- * arms the swarm in proportion to how well it was built is the one rule
- * here that takes a way of playing away outright.
+ * THESE COSTS ARE MEASURED, NOT FELT. Every number below was set from the
+ * same experiment: a fixed board on a fixed map, the same seeded run with
+ * the rule ON and OFF, and the answer is HOW MUCH SHORTER THE RUN GETS.
+ * That is what a point is — how much of the player's game a rule takes
+ * away — and it is the only question this file can be wrong about
+ * quietly. The board is 400 turrets of ten kinds packed at the core on
+ * Confluence at the first mutating tier, three seeds a cell; a rule the
+ * instrument cannot see there (one that reads the terrain, one that waits
+ * for the last waves) was measured somewhere it can, and the note on that
+ * rule says where.
+ *
+ *   rule             life lost   what the number is
+ *   Hungry Mechs        -26%     ...and +32%, i.e. a GIFT, before the
+ *                                damage half of a meal was put back
+ *   Speedy              -16%
+ *   Overshields         -12%
+ *   Reconstruction      -10%
+ *   Mitosis              -7%
+ *   Mech Virus           -7%     -10% on a thin line, which is its board
+ *   Leadership           -5%     on a run that reaches the tier fives at
+ *                                all; nil before wave 36, where they start
+ *   Armored Swarms       -4%     -9% against small guns, which it is for
+ *   Conquest             -2%     the least-trusted number here: see below
+ *   Volatile             -2%
+ *   Amphibious           -2%     -9% on Shoals, and 0.7 crossings a body
+ *                                averaged over the nine maps
+ *   Hydrophobic          -1%     -20% on Shoals; it taxes 6% of the
+ *                                buildable ground on the driest map and
+ *                                66% on the wettest
+ *   Shield Towers        -1%
+ *
+ * ONE RULE SPENDS INTO THE BRUTAL BAND: Hungry Mechs, at the scale's
+ * ceiling (MUT_COST_MAX), because a wave that eats itself into one body
+ * carrying forty times the health and twenty times the bite is not a
+ * harder wave, it is a different fight.
+ *
+ * CONQUEST IS THE ONE NUMBER TO DISTRUST, and it is priced with that said
+ * out loud. The instrument's board is four hundred turrets in a blob that
+ * is dying anyway, and what Conquest costs a player is the LINE — a thin
+ * one, held for fifty waves, where every gun lost is a gun shooting back.
+ * It measured -2% and was authored at six on nothing but a hunch; four is
+ * the compromise, and the honest thing to do is measure it on a real
+ * board rather than argue about it here.
  */
 export const MUTATIONS: readonly MutationDef[] = [
   {
-    id: "conquest",
-    name: "Conquest",
+    id: "hungry",
+    name: "Hungry Mechs",
     cost: 6,
-    blurb: "Every turret the swarm wrecks rises again on its side.",
+    blurb:
+      "A few mechs eat their neighbours, and every meal leaves one bigger and hitting harder.",
   },
   {
-    id: "leadership",
-    name: "Leadership",
+    id: "speedy",
+    name: "Speedy",
     cost: 5,
-    blurb: "Nothing standing near a tier five body can be hit for more than a scratch.",
+    blurb: "Every enemy moves twice as fast, and nothing can slow them.",
   },
   {
     id: "reconstruction",
@@ -147,10 +185,10 @@ export const MUTATIONS: readonly MutationDef[] = [
     blurb: "Every enemy stands back up once, whole, where it fell.",
   },
   {
-    id: "amphibious",
-    name: "Amphibious",
-    cost: 5,
-    blurb: "Ground enemies that wade come out faster, tougher and healing.",
+    id: "conquest",
+    name: "Conquest",
+    cost: 4,
+    blurb: "Every turret the swarm wrecks rises again on its side.",
   },
   {
     id: "mechVirus",
@@ -159,35 +197,48 @@ export const MUTATIONS: readonly MutationDef[] = [
     blurb: "A few enemies carry a virus that eats a turret and jumps to the next.",
   },
   {
-    id: "hydrophobic",
-    name: "Hydrophobic",
-    cost: 4,
-    blurb: "Turrets built near water attack slower.",
-  },
-  {
-    id: "hungry",
-    name: "Hungry Mechs",
-    cost: 4,
-    blurb:
-      "Hungry mechs eats its neighbours and become stronger with every meal.",
-  },
-  {
-    id: "speedy",
-    name: "Speedy",
-    cost: 4,
-    blurb: "Every enemy moves twice as fast, and nothing can slow them.",
-  },
-  {
     id: "overshields",
     name: "Overshields",
-    cost: 3,
+    cost: 4,
     blurb:
       "Force fields are five times as strong.",
   },
   {
+    id: "armored",
+    name: "Armored Swarms",
+    cost: 3,
+    blurb:
+      "Lower tier units gain massive armor boosts.",
+  },
+  {
+    id: "hydrophobic",
+    name: "Hydrophobic",
+    cost: 3,
+    blurb: "Turrets built near water attack slower.",
+  },
+  {
+    id: "leadership",
+    name: "Leadership",
+    cost: 3,
+    blurb: "Nothing standing near a tier five body can be hit for more than a scratch.",
+  },
+  {
+    id: "mitosis",
+    name: "Mitosis",
+    cost: 3,
+    blurb:
+      "Every enemy breaks apart into tier one units when it dies.",
+  },
+  {
+    id: "amphibious",
+    name: "Amphibious",
+    cost: 2,
+    blurb: "Ground enemies that wade come out faster, tougher and healing.",
+  },
+  {
     id: "shieldTowers",
     name: "Shield Towers",
-    cost: 3,
+    cost: 2,
     blurb:
       "Shield towers rise periodically, obsorbing bullets until they are destroyed.",
   },
@@ -197,20 +248,6 @@ export const MUTATIONS: readonly MutationDef[] = [
     cost: 2,
     blurb:
       "Enemies detonate when they die and damages nearby turrets.",
-  },
-  {
-    id: "mitosis",
-    name: "Mitosis",
-    cost: 2,
-    blurb:
-      "Every enemy breaks apart into tier one units when it dies.",
-  },
-  {
-    id: "armored",
-    name: "Armored Swarms",
-    cost: 1,
-    blurb:
-      "Lower tier units gain massive armor boosts.",
   },
 ];
 
@@ -615,6 +652,32 @@ export const HUNGRY_MAX_MEALS = 20;
 export const HUNGRY_HP_PER_MEAL = 2;
 
 /**
+ * ...AND WHAT A MEAL ADDS TO ITS BITE, as a share of the weapon's own
+ * damage per meal taken.
+ *
+ * THE RULE USED TO BE A GIFT AND THIS IS WHY. A meal moved HEALTH and
+ * nothing else, so the rule spent the swarm's numbers to buy one body a
+ * pool — and numbers are what a swarm hurts a line with. Twenty daggers
+ * walking into a board do twenty daggers' worth of damage to it; one body
+ * carrying all twenty pools does ONE dagger's. Measured on a fixed board
+ * at a fixed seed, a run under Hungry Mechs lasted THIRTY PER CENT LONGER
+ * than the same run without it: the mutator was eating the swarm's own
+ * damage and handing the player the difference.
+ *
+ * So a meal now carries the eaten body's bite as well as its pool. At
+ * HUNGRY_MAX_MEALS the eater hits for twenty-one times its own weapon,
+ * which is roughly what the bodies it swallowed would have done between
+ * them — the rule CONCENTRATES a wave's threat into one terrible body
+ * instead of deleting it, which is what the card has always promised.
+ *
+ * IT IS A SHARE OF ITS OWN WEAPON, NOT OF WHAT IT ATE, for the reason the
+ * health is not: a dagger that eats a quasar does not come out firing a
+ * quasar's gun. It comes out firing a great many daggers' worth of its
+ * own.
+ */
+export const HUNGRY_DMG_PER_MEAL = 1;
+
+/**
  * How much bigger a meal draws the unit — art only, the hitbox never moves
  * (see the note in Sim.feedHungry).
  *
@@ -750,9 +813,45 @@ export const SPEEDY_SPEED = 2;
 // at all and so is untouched — it is not a damage piece, and taxing it
 // would be taxing nothing.
 
+// WHAT IT IS ACTUALLY WORTH NOW, AND WHY IT IS TWO POINTS. The rule was
+// authored at five for QUAGMIRE, a map drawn so that no ground lane is
+// dry: three fords on the trunk road alone, and a body that has waded
+// every one of them arrives as something the board has not fought. That
+// map is one of nine. Counted across all of them — the stacks a body has
+// taken by the time it reaches the core, with no turrets on the map at
+// all, which is the most generous reading the terrain can give:
+//
+//   Shoals 3.0   Quagmire 1.4   Estuary 0.5   Tundra 0.5   Riverlands 0.4
+//   Crater 0.4   Greenwood 0.2  Confluence 0.1   Maelstrom 0.04
+//
+// Two maps deliver the rule and the other seven hand out under half a
+// stack — a tenth of a body's health. On Confluence it costs the player
+// 2% of a run; on Shoals, 9%. A rule that is a full slot on two maps and
+// a free one on the rest is a LIGHT rule with a good day, not a heavy one.
+//
+// AND THE OBVIOUS REWORK DOES NOT WORK — measured, not guessed. If the
+// swarm ROUTED through water (the flow field charging less for a wet
+// cell, so a ford beats the dry way round) the rule would fire on every
+// map that has any water at all, and it does: the average body's
+// crossings roughly double, and Greenwood goes from 0.2 stacks to 1.2.
+// The run gets EASIER anyway. A discount deep enough to pull a lane into
+// the water is deep enough to buy a detour, and a detour is more seconds
+// spent walking under the guns than the stacks are worth: +5.5% run life
+// at a 0.45 discount, and 0% at 0.8, over three seeds on two maps. The
+// swarm arrives tougher and later, and later wins. Anyone reaching for
+// this again should reach for the STACK's own numbers instead.
+
 /** how far from water the tax reaches, in cells — measured from any water
  *  floor, shallow or deep, to the nearest cell of the turret's footprint */
 export const HYDROPHOBIC_RANGE = 10;
+
+// WHAT IT TAXES, MAP BY MAP, as a share of the buildable ground: Shoals
+// 66%, Quagmire 34%, Estuary 25%, Maelstrom 21%, Crater 13%, Greenwood
+// 12%, Tundra 8%, Riverlands 8%, Confluence 6%. So the SAME rule is a
+// wall on two maps and a rounding error on four, and it is priced at the
+// middle of that: three points. It costs 20% of a run on Shoals and 1% on
+// Confluence, which is the widest spread of any rule in the catalog and
+// the reason it is not priced for its best day.
 
 /** what a waterlogged turret's reload runs at — 70% off, so a volley it
  *  used to start every second now takes three and a third */
@@ -1390,6 +1489,17 @@ if (RECONSTRUCT_DELAY <= 0 || RECONSTRUCT_GRACE <= 0)
 // That is also why it is not the nerf to damage-over-time it looks like:
 // a burn tick and a beam tick are already worth a fraction of the cap, so
 // the rule never touches them. It only ever takes the top off a big one.
+
+// AND IT IS A LATE-RUN RULE, WHICH IS MOST OF WHY IT IS THREE. The
+// script's first tier five walks in on WAVE 36 of fifty, and tier fives
+// are 2% of the bodies in the ten waves after that — so for seventy per
+// cent of a run this rule is an empty slot, and the deploy panel has
+// already charged for it. Where it does apply it is savage: measured
+// against the board, the ceiling deletes 87% of a mixed line's damage,
+// and per turret it takes 0% off a duo, 11% off an arc, 35% off a
+// scorch, 61% off a salvo, 71% off a ripple and 90% off a spectre, a
+// fuse or a lancer. On a run that actually reaches the tier fives it
+// costs 5% of the run's life.
 
 /** how far the order carries, in cells, measured centre to centre */
 export const LEADERSHIP_TILES = 15;

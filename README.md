@@ -1030,15 +1030,10 @@ regular mode.** The **difficulty decides the budget and the count**, and
 that many rules are rolled to fit it when you deploy. It is the StarCraft II model, and the
 mode it exists for is endgame resource farming: the same fifty waves, a
 different set of rules every time. The catalog (`game/mutation.ts`):
-<<<<<<< HEAD
-Conquest, Reconstruction, Overshields, Shield Towers, Hungry, Speedy,
-Volatile, Armored Swarms, Mitosis, Hydrophobic, Amphibious — the Unlocks
+Hungry Mechs, Speedy, Reconstruction, Conquest, Mech Virus, Overshields,
+Armored Swarms, Hydrophobic, Leadership, Mitosis, Amphibious, Shield
+Towers, Volatile — dearest first, which is codex order, and every one of
+those prices is measured rather than felt (see the head of
+`game/mutation.ts`) — the Unlocks
 board on the progress screen says what each does, and **custom mode** (see
 *Two modes*) is the one place they are chosen by hand.
-=======
-Conquest, Leadership, Reconstruction, Amphibious, Mech Virus,
-Hydrophobic, Hungry, Speedy, Overshields, Shield Towers, Volatile,
-Mitosis, Armored Swarms — dearest first, which is codex order — the Unlocks
-board on the progress screen says what each does, and the sandbox is the one place they are
-chosen by hand.
->>>>>>> f322c01 (Two more rules: a tier five's escort cannot be hit hard, and one enemy in a hundred is carrying a machine plague)
