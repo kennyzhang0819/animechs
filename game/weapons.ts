@@ -1070,26 +1070,28 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // contesting the water: guns whose reach covers the channel, and the
   // hulls dead before the big shells arrive.
   //
-  // WHAT A TIER BUYS IS THE BURST. A risso's mortar is a shell that hits
-  // the one thing it lands on — its burst is under half a tile, the
-  // family's look on the family's chaff tier — at nineteen tiles; a
-  // minke's takes the four neighbours; a bryde's is two and a half tiles;
-  // an omura's siege shell is five hundred over four and a half tiles at
-  // FIFTY, the longest reach any body on the roster has. The bryde's
-  // shield and the sei's bow wave (levels.ts) are what the fleet does for
-  // itself.
+  // WHAT A TIER BUYS IS THE BURST. A risso's mortar lands on one turret
+  // and clips the four touching it, for twelve, at nineteen tiles; a
+  // minke's burst is a tile and a quarter and takes the eight round it; a
+  // bryde's is three tiles; an omura's siege shell is five hundred over
+  // four and a half tiles at FIFTY, the longest reach any body on the
+  // roster has. The bryde's shield and the sei's bow wave (levels.ts) are
+  // what the fleet does for itself.
   //
-  // THE AREA LIVES IN THE TOP TIERS AND NOT IN THE MASS. The script sends
-  // its T1 by the thousand (wave 15 is two thousand of them), and a
-  // tile-and-a-half burst on a lobbed, unblockable, nineteen-tile round on
-  // a hull that is half again as quick afloat took a board apart by wave
-  // eighteen where the old copper-and-missiles risso took until forty-two
-  // (seed 7, world 1, the fleet alone). A thousand bodies is the scaling;
-  // the burst is the T5's. Against ONE turret each tier bites near its old
-  // row — less on the T1, since its round now flies over the wall.
+  // THE AREA IS METERED ON THE MASS TIERS, and the meter was set by
+  // playtest (seed 7, world 1, the fleet alone). The script sends its T1
+  // by the thousand — wave 15 is two thousand of them — so a burst on the
+  // risso is a burst two thousand times over: a tile-and-a-half one on a
+  // lobbed, unblockable, nineteen-tile round on a hull half again as quick
+  // afloat took the bot's board apart by wave eighteen, where the old
+  // copper-and-missiles risso took until forty-two; a burst under half a
+  // tile and the bot won with the core untouched. The four-neighbour clip
+  // is the line between those two. Against ONE turret each tier bites
+  // near its old row, less on the T1, since its round now flies over the
+  // wall.
   risso: [
     {
-      name: "risso-mortar", reload: t(40), mounts: 2, damage: 16, splash: 16, splashRadius: u(3),
+      name: "risso-mortar", reload: t(40), mounts: 2, damage: 16, splash: 12, splashRadius: u(7),
       range: rng(2.5, 60), speed: spd(2.5), fx: "shell", look: navalShell(8),
     },
   ],
@@ -1097,7 +1099,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // family's one idea in the air at once
   minke: [
     {
-      name: "minke-mortar", reload: t(40), mounts: 2, shots: 2, damage: 16, splash: 24, splashRadius: u(7),
+      name: "minke-mortar", reload: t(40), mounts: 2, shots: 2, damage: 16, splash: 24, splashRadius: u(10),
       range: rng(3, 55), speed: spd(3), fx: "shell", look: navalShell(10),
     },
   ],
@@ -1107,7 +1109,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // board. The tier also carries the fleet's shield (levels.ts)
   bryde: [
     {
-      name: "bryde-artillery", reload: t(50), mounts: 1, damage: 40, splash: 100, splashRadius: u(20),
+      name: "bryde-artillery", reload: t(50), mounts: 1, damage: 40, splash: 100, splashRadius: u(24),
       range: rng(3, 80), speed: spd(3), fx: "shell",
       look: navalShell(15, { height: u(15.5), shoot: FxKind.ShootBig2 }),
     },
@@ -1117,7 +1119,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // over three tiles each, which across six is the family's area tier
   sei: [
     {
-      name: "sei-barrage", reload: t(45), mounts: 1, shots: 6, damage: 24, splash: 48, splashRadius: u(20),
+      name: "sei-barrage", reload: t(45), mounts: 1, shots: 6, damage: 24, splash: 48, splashRadius: u(24),
       range: rng(4.2, 55), speed: spd(4.2), fx: "shell", look: navalShell(9),
     },
   ],
