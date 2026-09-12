@@ -24,13 +24,30 @@ import { faster, piercing, stronger } from "./upgrades";
  * by arithmetic. So the relics are the answers that change the
  * arithmetic: armour simply stops applying, the round hits harder for
  * every tier the body stands above the first, the last sliver of a pool
- * is skipped, a dead hull takes its neighbours with it, and the support
- * line stops supporting. A run that has banked relics is not playing the
- * same game as a run that has banked mods.
+ * is skipped, and a dead hull takes its neighbours with it. A run that has
+ * banked relics is not playing the same game as a run that has banked
+ * mods.
+ *
+ * A RELIC ADDS SOMETHING; IT NEVER SWITCHES SOMETHING OFF. This is the one
+ * rule about what may go in the catalog, and it is a rule about the GAME
+ * and not about the code: a relic that reaches over and disables a system
+ * somebody authored — the support line's auras, a mutator, a unit's
+ * ability — is a relic whose whole effect is that content stops happening.
+ * It reads as the game doing less rather than the player doing more, and
+ * it quietly deletes the reason the disabled thing was written. An Aegis
+ * Breaker that turned the swarm's mender, shield, plating and haste fields
+ * off lived here for exactly one commit and is gone for this reason.
+ *
+ * CHANGING AN ARITHMETIC IS NOT SWITCHING A SYSTEM OFF, and the line is
+ * worth saying out loud because Monofilament sits close to it. Armour
+ * stopping applying changes how a number resolves; every body on the field
+ * still does every single thing it was authored to do. The support hull
+ * still mends, the reign still stamps its plating — the player just has an
+ * answer to it.
  *
  * AND THE TRACK SAYS SO (track.ts RELICS_FROM). The relic half of the
  * catalog opens in the LATE half of the campaign, where the mutator phase
- * is and where the heavies arrive, and every one of the fifteen is dealt
+ * is and where the heavies arrive, and every one of the fourteen is dealt
  * after it. A save's front half is mods; its back half is relics.
  *
  * EVERY RELIC IS POWERFUL, AND THE PRICE IS WHY. A hundred and fifty
@@ -48,7 +65,7 @@ import { faster, piercing, stronger } from "./upgrades";
  * out. That is why the run's holdings are a SET and not a tally — the
  * mods keep the tally, because a mod is a number that grows.
  *
- * EVERY RELIC IS NAMED, all fifteen. A mod in the low bands is called its
+ * EVERY RELIC IS NAMED, all fourteen. A mod in the low bands is called its
  * own tweak ("+2% damage" IS its name) because a made-up name over a
  * number is a word to learn in order to be told what the number said. A
  * relic is never a number, so it always has a name.
@@ -67,9 +84,9 @@ import { faster, piercing, stronger } from "./upgrades";
  * owns WHEN each of those happens and this file owns HOW MUCH, the same
  * split the mutators keep (mutation.ts).
  *
- * WHY THE ANTI-T5 FIVE LIVE IN THE SIM AND NOT ON A BULLET. Monofilament,
- * Titan, Terminal, Cascade and Aegis all reach the swarm rather than the
- * gun, and the honest place for that is Sim.damageUnit and Sim.killUnit —
+ * WHY THE ANTI-T5 FOUR LIVE IN THE SIM AND NOT ON A BULLET. Monofilament,
+ * Titan, Terminal and Cascade all reach the swarm rather than the gun, and
+ * the honest place for that is Sim.damageUnit and Sim.killUnit —
  * the chokepoints EVERY damage path in the game goes through. Written as
  * bullet fields instead they would have been silently inert for half the
  * roster: `pierceArmor` is honoured on exactly one of the sim's damage
@@ -89,12 +106,11 @@ export const RELIC_IDS = [
   "overclock",
   "coolant",
   "scavenger",
-  // ---- the uncommons: what a death is worth, and what the swarm is not --
+  // ---- the uncommons: what a death is worth, whose ever it was ---------
   "insurance",
   "phosphor",
   "lastVolley",
   "cascade",
-  "aegis",
   // ---- the rares: the arithmetic of a heavy body ------------------------
   "phoenix",
   "twinfire",
@@ -136,7 +152,6 @@ export type RelicGlyph =
   | "flame"
   | "volley"
   | "chain"
-  | "aegis"
   | "phoenix"
   | "twin"
   | "thread"
@@ -238,22 +253,6 @@ export const CASCADE_TILES = 6;
  */
 export const CASCADE_CHAIN_CAP = 64;
 
-/**
- * AEGIS BREAKER: nothing to tune. It is a switch, and what it switches
- * off is the five auras the swarm's support line uses to make a crowd of
- * heavies harder to kill — the mender's pool, the energy field's top-up,
- * the shield it hands out, the plating stamp and the haste stamp
- * (levels.ts repairField, energyField, shieldField, armorField,
- * hasteField). Two of the five are carried by T5 hulls themselves, which
- * is the wall mending the wall.
- *
- * IT IS DELIBERATELY NOT AN OFF SWITCH FOR EVERYTHING. The jam, the wake,
- * the spotter and the drill are the swarm's other business — they do not
- * make a body harder to kill, they make the board harder to hold — and a
- * relic that turned every aura in the game off would be four relics in
- * one coat. This one is aimed at exactly the thing that makes a wall of
- * T5s a wall: the support standing behind it.
- */
 
 /** PHOENIX: the odds a wrecked turret stands back up — EVERY time, not
  *  once. A coin flip with no floor under it is worth one extra life on
@@ -390,14 +389,6 @@ export const RELICS: readonly RelicDef[] = [
     glyph: "chain",
     blurb:
       "A T4 or T5 hull comes apart where it falls, for a FIFTH of its own maximum health over 6 tiles — enough to set off the next one. A wall of heavies unzips itself.",
-  },
-  {
-    id: "aegis",
-    name: "Aegis Breaker",
-    rarity: "uncommon",
-    glyph: "aegis",
-    blurb:
-      "The swarm's support line stops supporting: no mending, no shields handed out, no borrowed plating and no borrowed speed, anywhere on the field. The hulls that hold a wall together stop holding it.",
   },
   {
     id: "phoenix",

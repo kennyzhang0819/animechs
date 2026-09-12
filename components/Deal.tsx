@@ -523,17 +523,21 @@ export function DealCorner({
             onPress={deal.buy}
             aria={`${card ? "Re-roll" : "Buy"} turret at ${n} times the shape for ${turretCost} scrap, shortcut T`}
           />
-          {/* THE TWO HALVES OF THE CATALOG (mods.ts). Each goes dark on
-              its OWN half being shut, which is the one case a press would
-              take the money for nothing — so a run that has taken every
-              relic keeps buying mods.
+          {/* THE TWO CATEGORIES, ONE BUTTON EACH — mods (mods.ts) and
+              relics (relics.ts). Each goes dark on its OWN catalog being
+              shut, which is the one case a press would take the money for
+              nothing, so a run that has taken every relic keeps buying
+              mods.
               A DARK BUTTON SAYS WHICH KIND OF DARK IT IS (game.ts
               DealHalf): "all owned" is a run that has taken everything
-              there is, and "locked" is a save the track has not dealt
-              this half to yet — relics open at a level (track.ts
-              RELICS_FROM), so the G button starts shut and a player owed
-              an explanation gets one rather than being told they own
-              relics they have never seen */}
+              there is, and "locked" is a save the track has not dealt that
+              category to yet. Only the G button ever reads "all owned" —
+              a relic is held once and there are fourteen, while a mod has
+              no cap — and only the G button starts LOCKED, because relics
+              are the late game's answer and open at a level (track.ts
+              RELICS_FROM) rather than from wave one, so a player owed an
+              explanation gets one rather than being told they own relics
+              they have never seen */}
           <BuyButton
             keyCap="M"
             label="Mods"

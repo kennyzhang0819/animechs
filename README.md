@@ -73,7 +73,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   then the **late half**, where the mutator phase opens with a whole band
   (`MUTATORS_FROM` = 15) and the **relics** start one level later
   (`RELIC_UNLOCKS`, `RELICS_FROM` = 16), one a level to the top of the track
-  at 29. **Mods across the front, relics across the back**, because the two
+  at 29, one a level. **Mods across the front, relics across the back**, because the two
   categories are two answers to two halves of a run. Plus
   `techStateFor(level)`, what a save at that level may do. The turret
   upgrade rungs are off the track for now (`UPGRADES_ON_TRACK`) and are not
@@ -109,13 +109,14 @@ stale tab or a cached bundle looks exactly like a fix not working.
   (`applyTurretMods`), the odds (`MOD_WEIGHTS`: 52 / 30 / 16 / **2**) and
   the roll chances live here
 - `game/relics.ts` — **the RELICS**, the second category and the **late
-  game's** answer: fifteen of them, sold off **G** at 150,000, each one a
+  game's** answer: fourteen of them, sold off **G** at 150,000, each one a
   RULE over the whole board in force the moment it is paid for. What they
   are for is a swarm of T5 hulls — twenty thousand health behind
-  twenty-two points of armour — so five of them change the arithmetic
+  twenty-two points of armour — so four of them change the arithmetic
   rather than the numbers: armour stops applying, a round gains a quarter
-  a tier, the last sliver of a pool is skipped, a heavy hull detonates
-  where it falls, and the swarm's support auras stop working. A relic is
+  a tier, the last sliver of a pool is skipped, and a heavy hull detonates
+  where it falls. A relic never switches an authored system OFF, only adds
+  an answer to one. A relic is
   held once, so a run's relics are a **Set** where its mods are a tally,
   and the G button genuinely runs out. Its own odds table (`RELIC_ODDS`)
   and every tuning number the behavioural relics need
@@ -589,7 +590,7 @@ mod: **a purchase whose category is random is a purchase the player cannot
 aim.**
 
 **Only the G button ever runs out.** A relic is held once and there are
-fifteen, so the relic half empties and the button goes dark saying *all
+fourteen, so the relic half empties and the button goes dark saying *all
 owned*; a mod has no cap — a copy scales what a turret born with it gets —
 so M is **open or locked and nothing else**. A press whose half runs out
 part way through stops there and is **charged only for what it handed
@@ -608,7 +609,7 @@ swarm — that is the mutators' half of the game, and they pull the other way.
 **And the track deals them in that order** (`game/track.ts`). The mods fill
 the **front** of the campaign, levels 2 to 14, cheapest band first; the
 relics fill the **back**, `RELICS_FROM` = **16** to the top of the track at
-29. That is not housekeeping — it is the two categories being two answers to
+29, one a level and landing exactly. That is not housekeeping — it is the two categories being two answers to
 two halves of a run. The G button prints *locked* until level 16, which is
 the level after the mutator phase opens: where the game is first allowed to
 be hard. It used to open on level **3**, which handed a player Overclock
@@ -630,7 +631,7 @@ it is a tick: **"+2% damage" IS its name**, and a made-up one over the top
 would be a word to learn in order to be told what the number already said.
 The **glyph is the stat** and the **band colour is the size**, so a grey
 barrel and a blue barrel are the same dial at two steps and need no caption
-at all. *(Relics keep their names, all fifteen — a relic is never a
+at all. *(Relics keep their names, all fourteen — a relic is never a
 number.)*
 
 **Every mod is rolled for every turret, independently** — there is no "at
@@ -726,13 +727,12 @@ of every gun on the field.
 | Phosphor Rounds | Uncommon | 20 | every shot burns white, hits half again as hard, and punches through 2 more bodies |
 | Last Volley | Uncommon | 21 | a wrecked turret gives every turret within 8 tiles **triple** fire rate for 15s |
 | **Cascade Charges** | Uncommon | 22 | a **T4 or T5 hull comes apart where it falls**, for a fifth of its own maximum health over 6 tiles — enough to set off the next one. A wall of heavies unzips itself |
-| **Aegis Breaker** | Uncommon | 23 | **the swarm's support line stops supporting**: no mending, no shields handed out, no borrowed plating and no borrowed speed, anywhere on the field |
-| Phoenix Protocol | Rare | 24 | a wrecked turret has a 50% chance to stand straight back up — **every time**, no limit |
-| Twin Fire | Rare | 25 | every turret fires one more round in every volley |
-| **Monofilament Rounds** | Rare | 26 | **ARMOUR STOPS APPLYING.** Every hit the board lands is dealt in full, whatever the body is plated in |
-| **Titan Rounds** | Rare | 27 | every hit gains **a quarter again per tier** above the first, so a T5 hull takes **double** |
-| **Undying Legion** | **Ultra** | 28 | **every turret you own stands back up once, at full health — the ones already on the field included** |
-| **Terminal Protocol** | **Ultra** | 29 | **anything knocked to 15% of its own health dies on the spot** — and 15% of an eclipse is three thousand the board never has to grind through |
+| Phoenix Protocol | Rare | 23 | a wrecked turret has a 50% chance to stand straight back up — **every time**, no limit |
+| Twin Fire | Rare | 24 | every turret fires one more round in every volley |
+| **Monofilament Rounds** | Rare | 25 | **ARMOUR STOPS APPLYING.** Every hit the board lands is dealt in full, whatever the body is plated in |
+| **Titan Rounds** | Rare | 26 | every hit gains **a quarter again per tier** above the first, so a T5 hull takes **double** |
+| **Undying Legion** | **Ultra** | 27 | **every turret you own stands back up once, at full health — the ones already on the field included** |
+| **Terminal Protocol** | **Ultra** | 28 | **anything knocked to 15% of its own health dies on the spot** — and 15% of an eclipse is three thousand the board never has to grind through |
 | **Ascendancy Protocol** | **Ultra** | 29 | **the turret deal hands over rares 5× and ULTRAS 20× as often, for the rest of the run** |
 
 **Four of them are stat surgery and the rest are moments.** Overclock,
@@ -742,7 +742,20 @@ are read **by name** at the one place each of them happens — a revive, a
 refund, a body's parting blast — because there is no way to express "when
 this dies" as a stat.
 
-**The five anti-T5 relics live in the sim, not on a bullet,** and that is
+**A relic ADDS something; it never switches something off.** This is the
+one rule about what may go in the catalog, and it is a rule about the game
+rather than about the code: a relic that reaches over and disables a system
+somebody authored — the support line's auras, a mutator, a unit's ability —
+is a relic whose whole effect is that content stops happening. It reads as
+the game doing less rather than the player doing more, and it quietly
+deletes the reason the disabled thing was written. **Changing an arithmetic
+is not switching a system off**, which is the line Monofilament sits just
+inside: armour stopping applying changes how a number resolves, and every
+body on the field still does every single thing it was authored to do — the
+support hull still mends, the reign still stamps its plating, the player
+just has an answer to it.
+
+**The four anti-T5 relics live in the sim, not on a bullet,** and that is
 deliberate. `Sim.damageUnit` and `Sim.killUnit` are the chokepoints *every*
 damage path and *every* death in the game passes through. Written as
 `BulletStats` fields instead they would have been silently inert for half

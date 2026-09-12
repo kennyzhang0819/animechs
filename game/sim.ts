@@ -1266,7 +1266,7 @@ export class Sim {
   private relics = new Set<RelicId>();
   /**
    * THE ANTI-T5 RELICS, PRE-READ (relics.ts, and see `relics` above).
-   * Every one of these is checked inside Sim.damageUnit or Sim.killUnit —
+   * Every one of the four is checked inside Sim.damageUnit or Sim.killUnit —
    * the chokepoints every damage path and every death in the game passes
    * through — so what they must never be is a Set lookup per hit. They
    * are refreshed together whenever the run's relics change (takeRelic).
@@ -1276,13 +1276,11 @@ export class Sim {
    *   executeAt   Terminal Protocol: the fraction of its own pool a body
    *               dies at, or 0 for "nothing is executed"
    *   cascadeOn   Cascade Charges: a heavy hull detonates where it falls
-   *   aegisOn     Aegis Breaker: the swarm's support auras do nothing
    */
   private armorBlind = false;
   private titanOn = false;
   private executeAt = 0;
   private cascadeOn = false;
-  private aegisOn = false;
   /**
    * WHAT CASCADE CHARGES HAS LEFT TO SET OFF — a queue rather than a call,
    * and it has to be one. A detonation damages units, a damaged unit can
@@ -2411,17 +2409,16 @@ export class Sim {
   }
 
   /**
-   * THE FIVE FLAGS THE HOT LOOPS READ, re-derived from the set (see
+   * THE FOUR FLAGS THE HOT LOOPS READ, re-derived from the set (see
    * `armorBlind` and the fields beside it). Called wherever the run's
    * relics change and nowhere else — damageUnit must never do a Set
-   * lookup, and killUnit must never do five.
+   * lookup, and killUnit must never do four.
    */
   private readRelics(): void {
     this.armorBlind = this.relics.has("monofil");
     this.titanOn = this.relics.has("titan");
     this.executeAt = this.relics.has("terminal") ? TERMINAL_FRACTION : 0;
     this.cascadeOn = this.relics.has("cascade");
-    this.aegisOn = this.relics.has("aegis");
   }
 
   /**
@@ -4947,25 +4944,15 @@ export class Sim {
             : 0;
         continue;
       }
-      // AEGIS BREAKER (relics.ts): the swarm's SUPPORT auras do nothing
-      // while the relic is in force — the mender's pool, the energy field's
-      // top-up, the shield it hands out, the plating stamp and the haste
-      // stamp, which are the five things that make a wall of T5s a wall.
-      // The jam, the wake, the spotter and the drill below are the swarm's
-      // other business — they make the board harder to HOLD rather than a
-      // body harder to kill — and a relic that switched every aura in the
-      // game off would be four relics in one coat. Read off the flag, not
-      // the Set: this pass runs over every carrier on the field every tick
-      const aegis = this.aegisOn;
-      const repair = aegis ? null : KIND_REPAIR[k];
-      const shield = aegis ? null : KIND_SHIELD[k];
-      const energy = aegis ? null : KIND_ENERGY[k];
+      const repair = KIND_REPAIR[k];
+      const shield = KIND_SHIELD[k];
+      const energy = KIND_ENERGY[k];
       // THE TWO STAMPS (levels.ts armorField / hasteField). They ride the
       // same clock and the same one search as the healers above, because
       // they are the same shape of thing: a carrier, a radius, a reload.
       // What they write is a timer rather than a pool
-      const armorF = aegis ? null : KIND_ARMOR_F[k];
-      const hasteF = aegis ? null : KIND_HASTE_F[k];
+      const armorF = KIND_ARMOR_F[k];
+      const hasteF = KIND_HASTE_F[k];
       // ...and the sky's and the sea's (levels.ts jamField / wakeField)
       const jamF = KIND_JAM_F[k];
       const wakeF = KIND_WAKE_F[k];

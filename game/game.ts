@@ -102,7 +102,7 @@ import {
  * their first run would be told a lie about their save.
  *
  * ONLY THE G BUTTON EVER READS "owned". A relic is held once and there are
- * fifteen, so the relic half runs out; a mod has no cap, so the M button is
+ * fourteen, so the relic half runs out; a mod has no cap, so the M button is
  * OPEN or LOCKED and nothing else (Game.modDeal).
  */
 export type DealHalf = "open" | "owned" | "locked";
@@ -1415,7 +1415,7 @@ export class Game {
    * not exist.
    *
    * A RELIC PRESS can refuse outright, and a MOD press cannot: the relic
-   * half runs out (there are fifteen and each is held once) while the mod
+   * half runs out (there are fourteen and each is held once) while the mod
    * half never does (a copy is always worth something). That asymmetry is
    * the two categories, not an accident — see relics.ts anyRelicLeft.
    */
@@ -1566,7 +1566,7 @@ export class Game {
 
   /**
    * ...AND WHAT THE G BUTTON CAN DO, which has all three answers. A save
-   * below RELICS_FROM reads LOCKED, and a run holding all fifteen reads
+   * below RELICS_FROM reads LOCKED, and a run holding all fourteen reads
    * OWNED — a relic is held once, so this half genuinely runs out
    * (relics.ts).
    */

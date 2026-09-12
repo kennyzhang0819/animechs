@@ -27,7 +27,7 @@
  * the whole board doing something different, and at a hundred and fifty
  * thousand scrap it is the most expensive thing on the shelf, so its
  * picture carries the colour of what it does — heat, coolant blue, scrap
- * gold, mender green, shield blue — over the whole drawing rather than as
+ * gold, mender green — over the whole drawing rather than as
  * a pip. A player scanning the shelf should be able to tell the relics
  * from the mods before reading a single border.
  *
@@ -44,7 +44,7 @@ export const MOD_GRID = 16;
 /**
  * TWELVE DRAWINGS FOR SIXTEEN MODS. Damage, fire rate, health and range
  * each have a common and an uncommon sharing one picture; the rest are one
- * apiece. The fifteen relics get one drawing each — a relic is never a
+ * apiece. The fourteen relics get one drawing each — a relic is never a
  * "better version of" anything, so rule 3 has nothing to collapse.
  *
  * NONE OF THESE TRACES THE LINE GLYPH IT REPLACES (rule 1). The strokes
@@ -334,23 +334,6 @@ const GLYPHS: Record<string, (g: Pen) => void> = {
     g.ring(0.62, 0.36, 0.34, 3, PAL.flame);            // ...and the one it lit
     g.disc(0.62, 0.36, 0.16, PAL.emberLite);
     g.disc(0.62, 0.36, 0.07, PAL.flameLite);
-  },
-
-  /** AEGIS BREAKER — a shield, in the FIELD BLUE every borrowed defence in
-   *  this game wears, with a break straight through it. The Bulwark mod's
-   *  shield above is gunmetal and whole; this one is the support's colour
-   *  and is not, which is the whole difference between owning a shield and
-   *  taking one away. */
-  aegis: (g) => {
-    g.poly([[0.12, 0.04], [0.88, 0.04], [0.88, 0.5], [0.5, 0.98], [0.12, 0.5]], PAL.field);
-    g.over((o) => {
-      o.box(0, 0, 1, 0.26, PAL.fieldLite);             // the lit top of the face
-      o.box(0, 0.74, 1, 1, PAL.fieldDark);             // ...and the dark of the point
-    });
-    // THE BREAK, and it is an ERASE rather than a dark line: a shield with
-    // a stripe painted on it is a shield with a stripe (rule 5), and a
-    // shield with a piece missing is a broken shield
-    g.erase((e) => e.poly([[0, 0.52], [1, 0.32], [1, 0.44], [0, 0.64]], null));
   },
 
   /** MONOFILAMENT ROUNDS — a plate in two pieces, and the thread that did

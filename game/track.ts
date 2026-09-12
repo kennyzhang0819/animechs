@@ -303,10 +303,9 @@ const MOD_UNLOCKS: Readonly<Record<number, readonly ModId[]>> = {
  * hard — and the G button prints "locked" until then. It used to open on
  * level 3, which handed a player Overclock Core before their second map.
  *
- * CHEAPEST BAND FIRST, one a level to the top of the track, and the last
- * row deals TWO: the two ultras that stop a run scaling like a run close
- * the campaign together, which is a better last level than an empty one
- * with a purple stranded above it.
+ * CHEAPEST BAND FIRST, one a level, and it lands exactly: fourteen relics
+ * across levels 16 to 29, so every row of the back half of the track hands
+ * one over and the top of the track is the last ultra.
  */
 export const RELICS_FROM = 16;
 
@@ -317,20 +316,20 @@ const RELIC_UNLOCKS: Readonly<Record<number, readonly RelicId[]>> = {
   16: ["overclock"],
   17: ["coolant"],
   18: ["scavenger"],
-  // the uncommons: what a death is worth, and what the swarm is not
+  // the uncommons: what a death is worth, whose ever it was
   19: ["insurance"],
   20: ["phosphor"],
   21: ["lastVolley"],
   22: ["cascade"],
-  23: ["aegis"],
   // the rares: the arithmetic of a heavy body
-  24: ["phoenix"],
-  25: ["twinfire"],
-  26: ["monofil"],
-  27: ["titan"],
+  23: ["phoenix"],
+  24: ["twinfire"],
+  25: ["monofil"],
+  26: ["titan"],
   // the ultras
-  28: ["undying"],
-  29: ["terminal", "ascendancy"],
+  27: ["undying"],
+  28: ["terminal"],
+  29: ["ascendancy"],
 };
 
 /** every MOD exactly once, in the front half — checked at import */
