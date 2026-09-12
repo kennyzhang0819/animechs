@@ -796,7 +796,8 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // per reload divided by its mount count (updateUnitWeapons), so four
   // barrels is four times the APPLICATIONS rather than four shots at once —
   // which is what an atrax is for now that the rot bleeds back down
-  // (constants.ts POISON_DECAY): volume is how the family holds a ceiling.
+  // (constants.ts POISON_DECAY): volume is the only thing that holds a
+  // stack up, so four barrels on one body is four bodies' worth of rot.
   //
   // THE SPLASH IS SMALL ON PURPOSE — under two tiles, so it catches a
   // turret and its four neighbours and nothing more. The family's ladder

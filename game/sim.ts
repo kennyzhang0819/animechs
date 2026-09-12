@@ -3567,7 +3567,10 @@ export class Sim {
             const max = wp.maxTargets ?? hit.length;
             const col = wp.fieldColor ?? PAL.heal;
             for (let k = 0; k < hit.length && k < max; k++) {
-              this.hitStructure(hit[k], wp.damage);
+              // the rot rides a field pulse exactly as it rides a bullet: no
+              // hit path in this file may quietly drop a weapon's status, or
+              // the next family built on `field` loses it without a word
+              this.hitStructure(hit[k], wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
               if (wp.short) this.shortTower(hit[k], wp.short, wp.shortChance ?? 1);
               this.chainFx(x, y, hit[k], col);
               this.pushFxCol(x, y, 12 / 60, FxKind.HitLaserBlast, Math.atan2(hit[k].y - y, hit[k].x - x), 0, col);
@@ -6884,18 +6887,19 @@ export class Sim {
           // contribution, and it is the crowd's only for as long as the
           // crowd keeps landing shots.
           //
-// THIS IS WHAT MAKES THE ROT A SWARM MECHANIC. With a plain
-          // refresh-and-hold clock a lone body walked itself to the ceiling
-          // and a hundred bodies did no more — the one thing on this field
-          // that did not scale with how many there were.
+          // THIS IS WHAT MAKES THE ROT A SWARM MECHANIC. On a plain
+          // refresh-and-hold clock a lone body walked itself to the old
+          // ceiling and a hundred bodies did no more — the one thing on this
+          // field that did not scale with how many there were.
           //
           // THE BLEED IS A SHARE OF THE EXCESS, not a flat number. A flat
-          // drain is a threshold: a shooter that out-paces it climbs to the
-          // ceiling alone however slowly it fires, and one that does not
-          // never stacks at all. Draining a fraction of what is ABOVE the
-          // floor gives a real equilibrium instead, and that equilibrium is
-          // linear in how many spitters are landing shots — which is the
-          // whole point.
+          // drain is a threshold: a shooter that out-paces it climbs without
+          // limit however slowly it fires, and one that does not never
+          // stacks at all. Draining a fraction of what is ABOVE the floor
+          // gives a real equilibrium instead, at roughly inflow over decay —
+          // and that is linear in how many spitters are landing shots, which
+          // is the whole point. It is also the ONLY bound on the rot now,
+          // so it is the line that keeps `poison += rate` from running away.
           if (t.poison > t.poisonUnit)
             t.poison =
               t.poisonUnit + (t.poison - t.poisonUnit) * Math.exp(-POISON_DECAY * dt);

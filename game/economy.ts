@@ -43,23 +43,58 @@ export const isEmptyDrop = (d: Drop): boolean => d.scrap === 0;
  *
  * The rate is anchored on the dagger, which is the unit every other number
  * in this game is anchored on: 150 health at a fifteenth is the ten scrap
- * it has always paid. So the opening stages bank what they always banked
- * and the heavy end of the script is what actually moves.
+ * it has always paid.
  *
- * It reads the AUTHORED health (UnitStats.hp), never the rung-scaled pool
- * (unitHpAtLevel): a full clear has to pay the same scrap on every rung, or
- * the turret prices would mean a different thing on each of them.
+ * It reads the AUTHORED health (UnitStats.hp), never the level-scaled pool
+ * (unitHpAtLevel): a full clear has to pay the same scrap on every
+ * difficulty tier, or the turret prices would mean a different thing on
+ * each of them.
  */
 export const SCRAP_PER_HP = 1 / 15;
+
+/**
+ * AND THE RATE BENDS AT THE HEAVY END, because a health pool is what a
+ * body is worth to KILL and not what it should be worth to BANK.
+ *
+ * Straight health times the rate was right about the shape and wrong about
+ * the late game's scale. The unit trees do not climb smoothly: a T3 hull
+ * is nine hundred health and the T4 above it is nine THOUSAND, so the step
+ * from the middle of the script to the end of it multiplied the income by
+ * ten in one shelf. A reign paid 1,600 — a card and a half for one body —
+ * and a late wave is hundreds of bodies, so by wave 40 the bank stopped
+ * being a constraint at all: everything was affordable, every roll was
+ * free, and the only decision left was where to put what fell out.
+ *
+ * So health under the knee pays the full rate and health above it pays a
+ * shrinking one: the drop is the dagger-anchored rate applied to `hp`
+ * raised to DROP_HEAVY_EXP past DROP_KNEE_HP. A heavier kind is still
+ * strictly worth more than a lighter one — that is the whole reason the
+ * drop reads health, and it is untouched — but the curve is flatter than
+ * the health curve, so the T4 and T5 shelves no longer pay ten times the
+ * shelf below them for being ten times the pool.
+ *
+ * The knee sits at 600, the top of the T2 shelf, which is what makes this
+ * a LATE-GAME edit and not a balance sweep: every T1 and T2 body pays
+ * exactly what it always paid, a T3 gives up roughly a tenth, and the
+ * cut lands where the complaint was — about 55% off a T4 and 65% off a T5.
+ */
+export const DROP_KNEE_HP = 600;
+export const DROP_HEAVY_EXP = 0.7;
+
+/** health as the drop prices it: full under the knee, shrinking above */
+export function payableHp(hp: number): number {
+  const pool = Math.max(0, hp);
+  if (pool <= DROP_KNEE_HP) return pool;
+  return DROP_KNEE_HP * Math.pow(pool / DROP_KNEE_HP, DROP_HEAVY_EXP);
+}
 
 /** a boss is an event as well as a body: it pays this ON TOP of its health */
 export const BOSS_SCRAP = 5000;
 
 /** the drop for one unit: scrap off its health pool, a boss its lump on top */
 export function dropForUnit(hp: number, boss = false): Drop {
-  const pool = Math.max(0, hp);
   return {
-    scrap: Math.max(1, Math.round(pool * SCRAP_PER_HP)) + (boss ? BOSS_SCRAP : 0),
+    scrap: Math.max(1, Math.round(payableHp(hp) * SCRAP_PER_HP)) + (boss ? BOSS_SCRAP : 0),
   };
 }
 

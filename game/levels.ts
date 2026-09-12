@@ -236,9 +236,11 @@ export type StatusKind = "burning" | "wet";
 
 export interface UnitStats {
   /** Health. THIS IS WHAT A KILL PAYS: the drop is the pool times
-   *  SCRAP_PER_HP (economy.ts), so a heavier kind is worth more scrap and a
-   *  stats edit here moves the salvage with it. No XP either way — XP is
-   *  paid per wave cleared (MISSION_XP), never per body */
+   *  SCRAP_PER_HP, bent down past the knee at the heavy end (payableHp in
+   *  economy.ts), so a heavier kind is worth more scrap — just not
+   *  proportionally more once it is a T4 or a T5 — and a stats edit here
+   *  moves the salvage with it. No XP either way — XP is paid per wave
+   *  cleared (MISSION_XP), never per body */
   hp: number;
   /** world px/s */
   speed: number;
