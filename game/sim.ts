@@ -3217,8 +3217,6 @@ export class Sim {
    */
   private updateUnitWeapons(dt: number): void {
     const { upx, upy, urot, ukind, uspawn, ucd, utT, ubeamT, ucharge, uheldRot, utgt } = this;
-    // which sixth of the bodies re-test their sight this tick
-    const sightPhase = Math.floor(this.time * 60) % 6;
     for (let i = this.n - 1; i >= 0; i--) {
       if (uspawn[i] > 0) continue; // still arriving, untouchable and unarmed
       const kind = UNIT_KINDS[ukind[i]];
@@ -3241,21 +3239,20 @@ export class Sim {
       this.dmgMul = HAS_VET ? this.uvet[i] : 1;
       // the target, re-picked every few tenths of a second, dropped the
       // moment it dies, walks out of the longest gun's reach, or goes
-      // behind rock. THE SIGHT TEST RUNS EVERY SIXTH TICK PER BODY,
-      // staggered, rather than every tick: a body fires through a hill for
-      // a tenth of a second at most, and a raycast per body per tick — at
-      // ninety tiles on four thousand hulls — was a frame. It cannot ride
-      // the re-pick clock alone: a sniper whose line flickers over rough
-      // ground would fire for a whole second of every one, and alone on
-      // seed 7 the fleet took the bot's board at wave 14 instead of 50
+      // behind rock — the sight test rides here, ONCE PER BODY PER TICK.
+      //
+      // IT CANNOT BE SAMPLED. Thinning this raycast to one tick in six, or
+      // to the re-pick clock, looks like a pure saving and is a balance
+      // change: a long gun over rough ground is behind a ridge most of the
+      // time, so between checks it goes on firing through the rock at a
+      // target it can no longer see. Measured, that alone took the Harpoon
+      // fleet from losing on wave 50 to taking the bot's board on wave 15.
+      // The saving that was real is in the SCAN (nearestStructure), not
+      // here.
       utT[i] -= dt;
       let tgt = utgt[i];
       const had = tgt !== null;
-      if (
-        tgt &&
-        (!this.aimReach(tgt, x, y, reach) ||
-          (sighted && (i + sightPhase) % 6 === 0 && !this.canSee(tgt.s, x, y)))
-      )
+      if (tgt && (!this.aimReach(tgt, x, y, reach) || (sighted && !this.canSee(tgt.s, x, y))))
         tgt = null;
       // ...on the clock, or the moment the one it had is gone. A body that
       // has NOTHING waits for the clock like everyone else rather than
@@ -3264,9 +3261,7 @@ export class Sim {
       // each candidate), and it is exactly the search a swarm still crossing
       // open ground is running. `had` is what tells the two apart
       if (utT[i] <= 0 || (had && !tgt)) {
-        // a long reach re-picks at half the rate: what it can see is far
-        // away and changes slowly, and its scan is the expensive kind
-        utT[i] = (reach > 40 * CELL ? 2 : 1) * (0.3 + Math.random() * 0.2);
+        utT[i] = 0.3 + Math.random() * 0.2;
         tgt = this.pickAim(x, y, reach, sighted);
         utgt[i] = tgt;
       }
