@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Pixelify_Sans, Silkscreen } from "next/font/google";
+import { Jersey_20, Silkscreen } from "next/font/google";
 import AdminShortcut from "@/components/AdminShortcut";
 import CrashGuard from "@/components/CrashGuard";
 import { BUILD } from "@/game/version";
@@ -16,9 +16,13 @@ const display = Silkscreen({
 
 // THE BODY FACE: a pixel sans that is still a sans — descriptions, the
 // codex and the settings rows are read as sentences, and a bitmap face
-// at paragraph length is not.
-const body = Pixelify_Sans({
-  weight: ["400", "500", "600", "700"],
+// at paragraph length is not. It is also the face EVERY NUMBER wears:
+// Pixelify Sans was tried first and its 2, 5 and 8 shared almost every
+// pixel, so a price read wrong at a glance. Jersey's digits are drawn to
+// differ. One weight: a pixel face must never be faux-bolded (see
+// font-synthesis in globals.css), so bold on this face is the same face.
+const body = Jersey_20({
+  weight: "400",
   subsets: ["latin"],
   variable: "--font-body",
 });
