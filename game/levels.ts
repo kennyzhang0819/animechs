@@ -504,6 +504,14 @@ export interface UnitStats {
    * over three tiles was a scratch on a board that fields turrets with
    * five figures of health, and a 4000 nuke over eleven tiles was one
    * turret's worth of damage spread thin enough to kill nothing.
+   *
+   * THE WEIGHT IS IN THE RADIUS AND NOT THE NUMBER. The charges were cut
+   * a fifth back from the first pass at these figures, radii untouched:
+   * what makes a bomber frightening is how much of the board is inside
+   * the burst, and a splash with no falloff (Sim.splashStructures) pays
+   * a wide one every turret it covers. Trimming the damage costs the
+   * family the turrets it was overkilling and none of the turrets it was
+   * reaching, which is the cheapest fifth on the table.
    */
   payload?: {
     splash: number;
@@ -760,7 +768,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // flare: 70 hp, no armor, 1.125-block hitbox, 2.7 px/tick = 20.25 tiles/s.
   // THE T1 IS THE FAMILY IN MINIATURE (the Skyfall bombers): no gun, a
   // charge that goes off on the turret it dives at — or wherever it is
-  // shot down — for 200 over three and a half tiles
+  // shot down — for 150 over three and a half tiles
   flare: {
     hp: 70,
     speed: 20.25 * CELL,
@@ -769,7 +777,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 1,
     drag: 0.04,
     flying: true,
-    payload: { splash: 200, radius: 28 * MU },
+    payload: { splash: 150, radius: 28 * MU },
   },
   // nova: the T1 of the Starlight mechs — 200 hp, armor 1, 1x1-block
   // hitbox, 0.55 px/tick = 4.125 tiles/s. Frailer than a dagger but a step
@@ -905,7 +913,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // horizon: the T2 — 340 hp, armor 3, 1.375x1.375-block hitbox, 15 tiles/s
   // (upstream 12.375). Slower than a flare but four times the health, and
   // armour 3 blunts the scatter flak that shreds the T1
-  // The charge is the bomber's whole reason: 700 over five tiles, which
+  // The charge is the bomber's whole reason: 550 over five tiles, which
   // is the old bomb rack's whole rain delivered in one arrival
   horizon: {
     hp: 340,
@@ -916,7 +924,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.03,
     rotateSpeed: 4.5,
     flying: true,
-    payload: { splash: 700, radius: 40 * MU },
+    payload: { splash: 550, radius: 40 * MU },
   },
   // zenith: the T3 — 700 hp, armor 5, a 2.5x2.5-block hitbox that makes it
   // the widest thing in the sky below the T4/T5 hulls, at 13.5 tiles/s
@@ -933,7 +941,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.016,
     flying: true,
     hasteField: { mult: 1.4, reload: 2, range: 9 * CELL },
-    payload: { splash: 1000, radius: 48 * MU },
+    payload: { splash: 800, radius: 48 * MU },
   },
   // antumbra: the air line's T4 — 7200 hp, armor 17, and a 5.75x5.75-block
   // hitbox, more than twice the zenith across; only the eclipse's 7.25
@@ -948,9 +956,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // THE JAM (jamField): every 2 s it stamps every building within eleven
   // tiles, and a stamped gun reloads at HALF pace while the flight is over
   // it — the guns under the wing get half the shots off before the
-  // bombers land on them. THE CLUSTER CHARGE: 2,500 over NINE TILES where
+  // bombers land on them. THE CLUSTER CHARGE: 2,000 over NINE TILES where
   // it goes off, and ten bomblets thrown out to eleven tiles first, each
-  // bursting for 500 over four — so the pattern overlaps itself across
+  // bursting for 400 over four — so the pattern overlaps itself across
   // twenty tiles of board and a turret in the middle of it is hit by the
   // charge and by three or four bomblets. This is the family's area tier
   // and the one whose death over a patch TAKES the patch, which is a
@@ -966,9 +974,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     flying: true,
     jamField: { rate: 0.5, reload: 2, range: 11 * CELL },
     payload: {
-      splash: 2500,
+      splash: 2000,
       radius: 72 * MU,
-      bomblets: { count: 10, splash: 500, radius: 32 * MU, spread: 88 * MU },
+      bomblets: { count: 10, splash: 400, radius: 32 * MU, spread: 88 * MU },
     },
   },
   // eclipse: the air line's T5 — 22000 hp, armor 22, and a 7.25x7.25-block
@@ -988,7 +996,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // THE NUKE (payload.fuse): where it goes off — on the structure it
   // dived at, or wherever it was shot down — the charge ARMS and sits for
   // two and a half seconds, a fat orange orb swelling on the ground, and
-  // then takes 12,000 off everything within SIXTEEN TILES. That is a
+  // then takes 9,000 off everything within SIXTEEN TILES. That is a
   // 32-tile circle of board, which is most of a citadel, at four figures
   // past what a spectre carrying half the catalog is holding: nothing in
   // the blast is meant to survive it. The fuse is the player's warning
@@ -1004,7 +1012,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.04,
     rotateSpeed: 1,
     flying: true,
-    payload: { splash: 12000, radius: 128 * MU, fuse: 2.5 },
+    payload: { splash: 9000, radius: 128 * MU, fuse: 2.5 },
   },
   // disrupt: THE FINAL BOSS — Erekir's tier-5 missile bomber, the one kind
   // on the roster from the other planet. Base shape from
