@@ -61,7 +61,9 @@
  *  never an index, so the catalog can be reordered freely */
 export type MutationId =
   | "conquest"
+  | "leadership"
   | "reconstruction"
+  | "mechVirus"
   | "volatile"
   | "mitosis"
   | "overshields"
@@ -133,6 +135,12 @@ export const MUTATIONS: readonly MutationDef[] = [
     blurb: "Every turret the swarm wrecks rises again on its side.",
   },
   {
+    id: "leadership",
+    name: "Leadership",
+    cost: 5,
+    blurb: "Nothing standing near a tier five body can be hit for more than a scratch.",
+  },
+  {
     id: "reconstruction",
     name: "Reconstruction",
     cost: 5,
@@ -143,6 +151,12 @@ export const MUTATIONS: readonly MutationDef[] = [
     name: "Amphibious",
     cost: 5,
     blurb: "Ground enemies that wade come out faster, tougher and healing.",
+  },
+  {
+    id: "mechVirus",
+    name: "Mech Virus",
+    cost: 4,
+    blurb: "A few enemies carry a virus that eats a turret and jumps to the next.",
   },
   {
     id: "hydrophobic",
@@ -1345,3 +1359,104 @@ export const RECONSTRUCT_GRACE = 6;
 
 if (RECONSTRUCT_DELAY <= 0 || RECONSTRUCT_GRACE <= 0)
   throw new Error("Reconstruction's clocks have to be positive seconds");
+
+// ---------- LEADERSHIP ---------------------------------------------------
+//
+// THE BIG ONES LEAD, AND NOTHING NEAR THEM CAN BE HIT HARD. Every body
+// within LEADERSHIP_TILES of a LIVE TIER FIVE takes at most
+// LEADERSHIP_CAP off any one hit — not a share of the hit, a CEILING on
+// it — so the escort around a reign stops caring what is being fired at
+// it and starts caring only how often.
+//
+// IT INVALIDATES A WAY OF PLAYING, WHICH IS WHAT FIVE POINTS BUYS. A board
+// built on big single shots — a spectre's cannon, a foreshadow's rail, a
+// ripple's shells — is a board whose whole damage is the SIZE of each
+// hit, and this rule prices that at ten whatever the number on the tin
+// says. A board built on rate — duos, scorches, arcs, a meltdown's beam —
+// is untouched, because every one of those already lands under the cap.
+// So the rule does not make the swarm tougher so much as it makes one
+// half of the roster worthless while a tier five is on the screen, and
+// hands the other half the wave.
+//
+// THE LEADER IS NOT UNDER ITS OWN ORDER. A tier five takes its hits in
+// full, and that is the whole answer to the rule: kill the thing the aura
+// is coming from and the escort is ordinary again. Capping the leader too
+// would have made the one body that must die the one body that cannot,
+// and left the rule with no counter at all except waiting.
+//
+// IT CAPS EVERYTHING, NOT JUST SHOTS. Fire, a held beam's tick, a blast's
+// share, a spitter's own hit — every point of damage that lands on a body
+// goes through one door (Sim.damageUnit) and the ceiling is on that door.
+// That is also why it is not the nerf to damage-over-time it looks like:
+// a burn tick and a beam tick are already worth a fraction of the cap, so
+// the rule never touches them. It only ever takes the top off a big one.
+
+/** how far the order carries, in cells, measured centre to centre */
+export const LEADERSHIP_TILES = 15;
+
+/** the most any one hit may take off a led body */
+export const LEADERSHIP_CAP = 10;
+
+/**
+ * How often the aura is re-stamped, in seconds, and how long a stamp
+ * outlives its pulse. The pair is the armour aura's own bargain
+ * (Sim.updateAbilities, AURA_LINGER): a body inside the circle is capped
+ * CONTINUOUSLY rather than flickering with the beat, and a body that
+ * walks out of it loses the cap a beat later rather than on the frame.
+ */
+export const LEADERSHIP_PERIOD = 0.25;
+export const LEADERSHIP_LINGER = 0.2;
+
+if (LEADERSHIP_CAP <= 0 || LEADERSHIP_TILES <= 0 || LEADERSHIP_PERIOD <= 0)
+  throw new Error("Leadership's ceiling, reach and beat all have to be positive");
+
+// ---------- MECH VIRUS ---------------------------------------------------
+//
+// AN ELITE THAT KILLS BUILDINGS INSTEAD OF FIGHTING THEM. VIRUS_CHANCE of
+// the bodies a wave sends carry it — the same shape of roll Hungry Mechs
+// uses, and the same kind of thing: one body in a hundred, marked, that a
+// player has to treat differently from the ninety-nine beside it. Killing
+// the carrier is what SETS THE VIRUS OFF: it jumps to the nearest turret
+// within VIRUS_JUMP_TILES and starts eating it, VIRUS_DPS of that
+// turret's own ceiling every second.
+//
+// IT IS A SHARE OF THE POOL AND THAT IS DELIBERATE. A flat rate would be
+// death to a duo and a rounding error to a Giant Bulwarked spectre; five
+// percent is TWENTY SECONDS whatever the building is, so the rule reads
+// the same on the first wave and the fiftieth and cannot be out-built.
+// Plating does not shave it either (it is raw, the rot's own rule): a
+// status a plate could blunt would just be the ground mechs again.
+//
+// AND IT DOES NOT STOP WHEN THE TURRET DOES. A building the virus kills
+// hands it on to the nearest turret in range, and that one to the next:
+// what starts as one dead dagger walks through a dense line one gun at a
+// time until it runs out of neighbours. THE GAP IS THE COUNTER — a line
+// with air in it is a line the virus cannot cross, and the player's own
+// spacing is the whole defence.
+//
+// THE OTHER COUNTER IS A STAND-UP. A turret that revives comes back CLEAN
+// (Sim.reviveTower clears every status a turret can be under, this one and
+// the rot alike), so Undying Legion and the Phoenix roll are the two
+// relics that genuinely answer this rule rather than merely surviving it.
+//
+// SELLING AN INFECTED TURRET IS NOT AN ESCAPE. A removal order on an
+// infected building is its DEATH, with everything a death does — the virus
+// jumps, the payout relics fire, and under Conquest the swarm takes it —
+// so the only way to be rid of the thing is to take its neighbours away
+// first and leave it nowhere to go. That is the rule's whole puzzle, and
+// a sale that quietly deleted it would be the answer to the puzzle.
+
+/** the share of a wave's bodies that carry it */
+export const VIRUS_CHANCE = 0.01;
+
+/** what an infected turret loses a second, as a share of its OWN ceiling */
+export const VIRUS_DPS = 0.05;
+
+/** how far it reaches for its next host, in cells — from the dead body,
+ *  and from each turret it finishes */
+export const VIRUS_JUMP_TILES = 5;
+
+if (VIRUS_CHANCE <= 0 || VIRUS_CHANCE > 1)
+  throw new Error(`the Mech Virus rides ${VIRUS_CHANCE} of a wave; that is not a share of one`);
+if (VIRUS_DPS <= 0 || VIRUS_DPS > 1)
+  throw new Error(`the Mech Virus eats ${VIRUS_DPS} of a pool a second; that is not a share of one`);

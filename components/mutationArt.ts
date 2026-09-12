@@ -221,6 +221,55 @@ const FACES: Record<string, (g: Pen) => void> = {
   },
 
   /**
+   * A GENERAL'S BATON OVER A RANK CHEVRON — Leadership is one big body
+   * giving an order to everything around it.
+   *
+   * THE CHEVRON IS THE SAME MARK THE STATUS WEARS (statusArt.ts `led`),
+   * one grid up: a player meets the stripe over a body on the field and
+   * then meets it again on the deploy chip, and they are obviously the
+   * same thing. What the face adds is the SOURCE — the heavy shape above
+   * the stripe, which is the tier five the order comes from.
+   */
+  leadership: (g) => {
+    // the leader: a blunt gunmetal hull, wider at the shoulders
+    g.poly([[0.5, 0.04], [0.86, 0.22], [0.86, 0.42], [0.5, 0.56], [0.14, 0.42], [0.14, 0.22]], PAL.steel);
+    g.over((o) => {
+      o.box(0, 0.3, 1, 1, PAL.steelDeep);                    // the shaded half
+      o.box(0.38, 0, 0.62, 0.3, PAL.steelLite);              // the crest
+    });
+    // ...and the order it gives, in the status's own white. Both stripes
+    // are drawn INSIDE the grid on purpose: a chevron whose tails run off
+    // the bottom edge loses the very corners that say which way it points
+    const chev = (y: number, c: Ink) =>
+      g.poly([[0.5, y], [0.94, y + 0.15], [0.94, y + 0.28],
+              [0.5, y + 0.13], [0.06, y + 0.28], [0.06, y + 0.15]], c);
+    chev(0.7, PAL.steel);
+    chev(0.52, PAL.steelWhite);
+  },
+
+  /**
+   * A BITTEN PLATE WITH THE BUG IN THE HOLE — the status symbol
+   * (statusArt.ts `virus`) at four times the grid, which is where the
+   * extra room goes: the plate gets its rivets and the bug gets a second
+   * bite behind it, so the drawing reads as something SPREADING rather
+   * than as one chip with a dent.
+   */
+  mechVirus: (g) => {
+    g.box(0.08, 0.22, 0.92, 0.78, PAL.steel);
+    g.over((o) => {
+      o.box(0, 0.56, 1, 1, PAL.steelDeep);                   // the shaded half
+      o.box(0, 0.22, 1, 0.3, PAL.steelLite);                 // the lit lip
+    });
+    // ONE bite and ONE bug. The first pass had two of each, a plate eaten
+    // from both ends, and at a deploy chip's size it read as static: the
+    // rule is legible because the plate is still obviously a plate, and
+    // that stops being true the moment there is more hole than metal
+    g.erase((e) => e.disc(0.9, 0.5, 0.28, null));
+    g.disc(0.72, 0.5, 0.2, PAL.venomDark);
+    g.over((o) => o.disc(0.72, 0.42, 0.1, PAL.venom));
+  },
+
+  /**
    * Three chevrons climbing, brightening as they climb — the face a rule
    * nobody has drawn yet falls back to. ONE THICKNESS ALL THE WAY ROUND:
    * the first pass hung a bar under each chevron's elbow, and three of

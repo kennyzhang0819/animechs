@@ -133,11 +133,18 @@ import {
   HYDROPHOBIC_RATE,
   CONQUEST_HP,
   CONQUEST_RATE,
+  LEADERSHIP_CAP,
+  LEADERSHIP_LINGER,
+  LEADERSHIP_PERIOD,
+  LEADERSHIP_TILES,
   MITOSIS_BROOD,
   MITOSIS_SPREAD,
   MITOSIS_TRIES,
   RECONSTRUCT_DELAY,
   RECONSTRUCT_GRACE,
+  VIRUS_CHANCE,
+  VIRUS_DPS,
+  VIRUS_JUMP_TILES,
   SPEEDY_SPEED,
   VOLATILE_DMG,
   VOLATILE_RADIUS,
@@ -715,6 +722,16 @@ const HAS_ABILITIES =
  *  cost something are in the movement and damage hot loops, so they are
  *  gated on this rather than on a per-unit test */
 const HAS_ARMOR_AURA = KIND_ARMOR_F.some(Boolean);
+
+/** LEADERSHIP (mutation.ts): the bodies that give the order. Tier five is
+ *  the roster's top rung — the reigns, toxopids, correspondingly huge
+ *  hulls and flyers, and the boss — so the rule turns itself on exactly
+ *  where a wave is at its heaviest and is dead weight everywhere else */
+const KIND_T5 = Uint8Array.from(UNIT_KINDS, (k) => (UNIT_STATS[k].tier === 5 ? 1 : 0));
+
+/** MECH VIRUS (mutation.ts): the venom purple the rot already wears, which
+ *  is this board's colour for "something is eating that building" */
+const VIRUS_RGB: RGB = PAL.sap;
 const HAS_HASTE_AURA = KIND_HASTE_F.some(Boolean);
 const HAS_WAKE_AURA = KIND_WAKE_F.some(Boolean);
 const HAS_SPOTTER = KIND_SPOTTER_F.some(Boolean);
@@ -960,6 +977,20 @@ export class Sim {
    * BODY, so no clock, count or table can turn a lane into a loop.
    */
   private readonly urisen = new Uint8Array(MAX_UNITS);
+  /**
+   * LEADERSHIP (mutation.ts): seconds left on the order stamped over this
+   * body by a tier five standing near it. A timer rather than a flag, for
+   * the reason the armour aura's is (AURA_LINGER): it is re-stamped on a
+   * beat, and a body that walks out of the circle has to stop being
+   * covered on its own rather than waiting for someone to notice.
+   */
+  readonly uled = new Float32Array(MAX_UNITS);
+  /**
+   * MECH VIRUS (mutation.ts): is this body a carrier? One byte, rolled
+   * once at the spawn like the hungry mark beside it, and read once when
+   * the body dies.
+   */
+  readonly uvirus = new Uint8Array(MAX_UNITS);
   /**
    * THE WAVE EVERY BODY BELONGS TO, 1-based: the number loadStep staged
    * it under, and a brood member's is its parent's. It is what makes a
@@ -1330,6 +1361,13 @@ export class Sim {
   private enemyTowers = 0;
   /** RECONSTRUCTION (mutation.ts): does a body get back up? */
   private reconstructOn = false;
+  /** LEADERSHIP (mutation.ts): is the tier-five aura in force? */
+  private leadershipOn = false;
+  /** the aura's own beat, counted down once for the whole field rather
+   *  than per carrier: every leader stamps on the same tick */
+  private leadT = 0;
+  /** MECH VIRUS (mutation.ts): are a few of the bodies carrying it? */
+  private virusOn = false;
   /**
    * THE CORPSES WAITING TO STAND UP (updateCorpses). A body killed under
    * Reconstruction leaves the field at once — it is off the physics, off
@@ -1589,6 +1627,9 @@ export class Sim {
     this.amphibiousOn = hasMutation(inForce, "amphibious");
     this.conquestOn = hasMutation(inForce, "conquest");
     this.reconstructOn = hasMutation(inForce, "reconstruction");
+    this.leadershipOn = hasMutation(inForce, "leadership");
+    this.virusOn = hasMutation(inForce, "mechVirus");
+    this.leadT = 0;
     this.enemyTowers = 0;
     this.corpses.length = 0;
     this.shieldTowers.length = 0;
@@ -2456,6 +2497,9 @@ export class Sim {
       shortT: 0,
       jamT: 0,
       jamRate: 1,
+      // ...and nothing is infected the moment it is built: the Mech Virus
+      // only ever arrives off a dead carrier or off a dead neighbour
+      virus: false,
       // Undying Legion (mods.ts) grants every turret one stand-up, the
       // ones bought after it included
       revives: this.mods.undying ? 1 : 0,
@@ -2537,6 +2581,11 @@ export class Sim {
     this.updatePhysics();
     this.updateUnits(dt);
     this.updateAbilities(dt);
+    // ...and the ORDER over the tier fives' escorts (Leadership), on its
+    // own beat. After the abilities and before anything shoots, so a body
+    // that walked into the circle this tick is covered for the volley
+    // that lands this tick
+    this.updateLeadership(dt);
     this.updateStatus(dt);
     // the hungry eat AFTER the status pass and before the towers fire, so a
     // unit that burned to death this tick is already gone rather than being
@@ -4364,6 +4413,29 @@ export class Sim {
     }
   }
 
+  /**
+   * A REMOVAL ORDER ON AN INFECTED TURRET, answered as the DEATH it is
+   * (Mech Virus, mutation.ts) — the virus jumps, Salvage Insurance and
+   * Last Volley fire, and under Conquest the swarm takes the wreck. There
+   * is no refund and no demolish puff: nothing was sold.
+   *
+   * THE STAND-UP CHARGES ARE NOT ASKED. A revive REFUSES a death, and an
+   * order the player gave has to be carried out — an Undying board whose
+   * sell key did nothing would be a board that cannot be rearranged.
+   *
+   * Returns true when it took the building; false leaves it to the
+   * ordinary sale.
+   */
+  private wreckIfInfected(t: Tower): boolean {
+    if (!t.virus) return false;
+    this.pushFx(t.x, t.y, 0.5, FxKind.Breach);
+    this.payOutTower(t);
+    this.spreadVirusFrom(t);
+    if (this.conquestOn) this.conquerTower(t);
+    else this.removeTower(t);
+    return true;
+  }
+
   /** take a structure off the board — sold or wrecked, the ground is the swarm's again */
   private removeTower(t: Tower): void {
     const at = this.towers.indexOf(t);
@@ -4402,6 +4474,12 @@ export class Sim {
   sellTowerAt(px: number, py: number): boolean {
     const t = this.towerAt(px, py);
     if (!t) return false;
+    // AN INFECTED TURRET CANNOT BE SOLD, ONLY LOST (mutation.ts): the
+    // order goes through as a DEATH, so the virus jumps, the payout
+    // relics fire, and under Conquest the swarm takes the wreck. Isolating
+    // the thing and leaving it nowhere to jump is the counter; deleting
+    // it with a click would be the answer to the puzzle
+    if (this.wreckIfInfected(t)) return true;
     this.removeTower(t);
     // nothing back (SELL_REFUND is 0, economy.ts): a placed turret is
     // spent, and demolishing it only clears the ground. The dial stays
@@ -4417,6 +4495,12 @@ export class Sim {
       let k = 0;
       for (const st of [...this.selStructs]) {
         if (isCore(st)) continue;
+        // ...the infected ones are lost rather than sold, exactly as they
+        // are under a single click (see sellTowerAt)
+        if (this.wreckIfInfected(st)) {
+          k++;
+          continue;
+        }
         if (this.charging) this.scrap += sellValue(st.kind);
         this.pushFx(st.x, st.y, 0.35, FxKind.Death);
         this.removeTower(st);
@@ -4627,6 +4711,12 @@ export class Sim {
       // first meal is a second after it lands rather than the instant it
       // does
       this.uhungry[i] = this.hungryOn && Math.random() < HUNGRY_CHANCE ? 1 : 0;
+      // MECH VIRUS (mutation.ts): the other elite mark, rolled the same
+      // way and on the same line — one body in a hundred walks in with a
+      // building-killer in it, and nothing about it shows until it dies
+      this.uvirus[i] = this.virusOn && Math.random() < VIRUS_CHANCE ? 1 : 0;
+      // ...and nothing is under anyone's order until a leader stamps it
+      this.uled[i] = 0;
       // ...and the one thing a brood body carries that a door body does
       // not: the mark that says it may not brood in its turn (see ubrood)
       this.ubrood[i] = brood ? 1 : 0;
@@ -4945,6 +5035,9 @@ export class Sim {
           }
         } else if (this.ucloakT[i] > 0) this.ucloakT[i] -= dt;
       }
+      // ...and the ORDER (Leadership, mutation.ts), which is the same
+      // shape of thing with nothing but a clock behind it
+      if (this.uled[i] > 0 && (this.uled[i] -= dt) <= 0) this.uled[i] = 0;
       if (uwet[i] > 0) {
         uwet[i] -= dt;
         if (uwet[i] <= 0) {
@@ -5160,6 +5253,12 @@ export class Sim {
     // THE PAYLOAD (levels.ts): a bomber shot down goes off where it was
     // shot down, exactly as it would have on arrival
     if (KIND_PAYLOAD[kind]) this.detonate(i);
+    // MECH VIRUS (mutation.ts): KILLING THE CARRIER IS WHAT SETS IT OFF.
+    // The body has to actually die for it — a carrier Reconstruction is
+    // about to stand back up returned above and still has it, and one that
+    // walks off the board was never killed at all, so the thing only ever
+    // goes off where the player is fighting
+    if (this.uvirus[i]) this.infectNear(x, y, null);
     this.removeUnit(i);
     this.kills++;
     // MITOSIS (mutation.ts): what the body breaks into, AFTER the removal
@@ -5171,6 +5270,65 @@ export class Sim {
     // finished with, and a stale index there meets a body with health,
     // which every one of them re-tests for
     if (this.mitosisOn && !wasBrood) this.splitUnit(x, y, kind, wave);
+  }
+
+  /**
+   * THE MECH VIRUS LOOKING FOR A HOST (mutation.ts): the nearest turret
+   * of the PLAYER's within VIRUS_JUMP_TILES of a point that is not
+   * already carrying it, infected — or nothing at all, which is what a
+   * player who left a gap has bought.
+   *
+   * NEAREST, AND NOT THE NEAREST ALREADY ROTTING. "Closest turret in
+   * range" with no second thought would have the virus jump back and
+   * forth between the same two guns and spread nowhere, so an infected
+   * neighbour is skipped and the search goes on past it: what the rule
+   * promises is that it moves ON.
+   *
+   * THE SWARM'S OWN ARE NOT HOSTS. A turret Conquest has taken is the
+   * swarm's building, and a weapon the swarm is carrying does not eat it.
+   *
+   * `from` is the turret handing it on, excluded so a jump is always a
+   * move. The walk is over the standing turrets rather than the cell grid
+   * because the reach is short and the board's turret list is the shorter
+   * of the two on every map that matters.
+   */
+  private infectNear(x: number, y: number, from: Tower | null): boolean {
+    const reach = VIRUS_JUMP_TILES * CELL;
+    let best: Tower | null = null;
+    let bd = Infinity;
+    for (const t of this.towers) {
+      if (t === from || t.virus || t.team !== "player" || t.hp <= 0) continue;
+      const half = (this.sizeOf(t) * CELL) / 2;
+      const dx = t.x - x, dy = t.y - y;
+      // centre to the footprint's EDGE, the reach every building test in
+      // this file uses: a fortress is in range as soon as its wall is
+      const d = Math.sqrt(dx * dx + dy * dy) - half;
+      if (d <= reach && d < bd) {
+        bd = d;
+        best = t;
+      }
+    }
+    if (!best) return false;
+    best.virus = true;
+    // the jump is drawn as a chain from where it came to what it found —
+    // the one moment the rule is visible before a health bar starts
+    // falling somewhere new
+    this.chainFx(x, y, best, VIRUS_RGB);
+    this.pushFxCol(best.x, best.y, 0.5, FxKind.ShieldWave, 0, (best.size * CELL) / 2, VIRUS_RGB);
+    return true;
+  }
+
+  /**
+   * A TURRET THAT IS REALLY GONE HANDS THE VIRUS ON (mutation.ts): to the
+   * nearest turret in range of where it stood, and to nothing if there is
+   * none — which is the whole counter. Called from every door a turret
+   * leaves the player's board by, the sale included, because a sale that
+   * quietly deleted the thing would be the answer to the rule's puzzle.
+   */
+  private spreadVirusFrom(t: Tower): void {
+    if (!t.virus) return;
+    t.virus = false;
+    this.infectNear(t.x, t.y, t);
   }
 
   /**
@@ -5347,6 +5505,8 @@ export class Sim {
     this.uhungerT[i] = this.uhungerT[n];
     this.ubrood[i] = this.ubrood[n];
     this.urisen[i] = this.urisen[n];
+    this.uled[i] = this.uled[n];
+    this.uvirus[i] = this.uvirus[n];
     this.uwave[i] = this.uwave[n];
     this.uid[i] = this.uid[n];
     this.ukind[i] = this.ukind[n];
@@ -6421,6 +6581,11 @@ export class Sim {
     // are for — a hole in the line, right here, right now — has happened
     // whether the wreck is cleared away or turned round
     this.payOutTower(t);
+    // ...and the MECH VIRUS moves on (mutation.ts). Before the conquest
+    // below, so the swarm never takes an infected building: the thing is
+    // theirs, it does not eat their own, and a turret that changes sides
+    // changes sides clean
+    this.spreadVirusFrom(t);
     // CONQUEST (mutation.ts): the wreck changes sides instead of leaving.
     // It is asked AFTER every revive has been refused — a turret that can
     // still stand up stands up on the player's side, and only the death
@@ -6558,6 +6723,17 @@ export class Sim {
     }
     if (!rose) return false;
     t.hp = t.hpMax;
+    // A STAND-UP IS A NEW BUILDING IN AN OLD ONE'S PLACE, so it comes back
+    // clean: every status a turret can be under goes with the death it
+    // just refused — the Mech Virus (mutation.ts), which makes the two
+    // revive relics the one real answer to that rule, and the spitters'
+    // rot with it. Nothing that is a property of WHERE it stands is
+    // touched: a waterlogged turret is waterlogged because of the ground
+    // under it (Hydrophobic), and standing up does not move it
+    t.virus = false;
+    t.poison = 0;
+    t.poisonUnit = 0;
+    t.poisonT = 0;
     // the support line's own green, on a structure rather than a body —
     // the one thing on the field that says "this did not die"
     this.pushFx(t.x, t.y, 0.6, FxKind.HealWave, 0, (t.size * CELL) / 2);
@@ -6933,6 +7109,13 @@ export class Sim {
       // first, so a Bulwarked turret under one spitter is genuinely mending
       // faster than it rots and a player can watch that hold and then fail
       // as the stack grows. Two dials pulling on one pool is the fight.
+      // THE MECH VIRUS (mutation.ts), on the rot's own terms and with none
+      // of its arithmetic: no stack, no decay and no clock, a flat share
+      // of this turret's OWN ceiling every second, raw so plating cannot
+      // blunt it. Twenty seconds is twenty seconds whether the building is
+      // a duo or a Giant Bulwarked spectre, which is the only way a status
+      // stays worth something across a run that multiplies pools
+      if (t.virus && t.hp > 0) this.damageTower(t, t.hpMax * VIRUS_DPS * dt, true);
       if (t.poisonT > 0) {
         t.poisonT -= dt;
         if (t.poisonT <= 0) {
@@ -8336,6 +8519,14 @@ export class Sim {
         ? this.uarmor[i] + this.uarmorAdd[i]
         : this.uarmor[i];
     let amount = pierceArmor ? raw : Sim.applyArmor(raw, armor * armorMult);
+    // LEADERSHIP (mutation.ts): the CEILING on one hit, taken after
+    // plating and before anything is spent — so a hit that lands on a led
+    // body is worth at most LEADERSHIP_CAP whether it goes into the force
+    // field or into the pool, and a weapon whose whole damage is the size
+    // of each shot is worth exactly that. It sits on this line because
+    // this line is the one door every point of damage to a body comes
+    // through: a shot, a blast's share, a beam's tick, fire, venom
+    if (this.uled[i] > 0 && amount > LEADERSHIP_CAP) amount = LEADERSHIP_CAP;
     if (this.ushield[i] > 0.0001) {
       this.ushieldAlpha[i] = 1;
       const soaked = Math.min(this.ushield[i], amount);
@@ -8460,6 +8651,64 @@ export class Sim {
     // off by the hundred goes off as a small burst and no more
     if (KIND_TIER[this.ukind[i]] >= 4) this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, pl.radius);
     this.pushFx(x, y, fxLife(FxKind.BlastExplosion), FxKind.BlastExplosion, 0, pl.radius, (Math.random() * 0x7fffffff) | 0);
+  }
+
+  /**
+   * LEADERSHIP (mutation.ts): the tier fives stamping their order over
+   * everything around them.
+   *
+   * IT IS ONE PASS ON ONE BEAT, not a question asked per hit. Asking "is
+   * a tier five near this body" inside damageUnit would put a radius
+   * search on the hottest path in the file — every bullet, every splash
+   * victim, every burn tick — so the answer is written onto the bodies
+   * instead, LEADERSHIP_PERIOD apart, and the hot path reads one float.
+   *
+   * THE SCAN COSTS NOTHING WHEN THERE IS NOBODY TO LEAD. The census
+   * (aliveByKind) says how many tier fives are out there before anything
+   * is walked, and it doubles as the walk's early exit once the last one
+   * has been found — so the ordinary wave, which fields none, pays one
+   * loop over seven counters.
+   */
+  private updateLeadership(dt: number): void {
+    if (!this.leadershipOn) return;
+    this.leadT -= dt;
+    if (this.leadT > 0) return;
+    this.leadT = LEADERSHIP_PERIOD;
+    let left = 0;
+    for (let k = 0; k < KIND_T5.length; k++) if (KIND_T5[k]) left += this.aliveByKind[k];
+    if (left === 0) return;
+    const { upx, upy, uhp, ukind, urad, bStart, bUnits } = this;
+    const range = LEADERSHIP_TILES * CELL;
+    const hold = LEADERSHIP_PERIOD + LEADERSHIP_LINGER;
+    for (let i = 0; i < this.n && left > 0; i++) {
+      if (!KIND_T5[ukind[i]] || uhp[i] <= 0) continue;
+      left--;
+      // the same broad phase every aura in this file walks, over the
+      // circle the order carries (a body is covered as soon as its OWN
+      // hitbox reaches the edge, which is Units.nearby's rule)
+      const pad = range + Math.max(this.rmaxAliveGround, this.rmaxAliveAir);
+      const hx0 = clamp(((upx[i] - pad) / HC) | 0, 0, HCOLS - 1);
+      const hy0 = clamp(((upy[i] - pad) / HC) | 0, 0, HROWS - 1);
+      const hx1 = clamp(((upx[i] + pad) / HC) | 0, 0, HCOLS - 1);
+      const hy1 = clamp(((upy[i] + pad) / HC) | 0, 0, HROWS - 1);
+      for (let hy = hy0; hy <= hy1; hy++) {
+        const row = hy * HCOLS;
+        const e = bStart[row + hx1 + 1];
+        for (let b = bStart[row + hx0]; b < e; b++) {
+          const j = bUnits[b];
+          if (j >= this.n || uhp[j] <= 0) continue;
+          // THE LEADER IS NOT UNDER ITS OWN ORDER, and neither is any
+          // other tier five standing in the circle: the bodies the rule
+          // is about are the escort, and the thing giving the order has
+          // to stay killable or the rule has no answer (see mutation.ts)
+          if (KIND_T5[ukind[j]]) continue;
+          const dx = upx[j] - upx[i], dy = upy[j] - upy[i];
+          const rr = range + urad[j];
+          if (dx * dx + dy * dy > rr * rr) continue;
+          this.uled[j] = hold;
+        }
+      }
+    }
   }
 
   /**
