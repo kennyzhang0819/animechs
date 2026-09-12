@@ -29,7 +29,7 @@
  * NOT statuses; they are the thing itself.
  */
 
-import { AMPHIBIOUS_MAX_STACKS, HUNGRY_MAX_MEALS } from "./mutation";
+import { AMPHIBIOUS_MAX_STACKS, HUNGRY_MAX_MEALS, LEADERSHIP_CAP, VIRUS_DPS } from "./mutation";
 import { PAL } from "./pixelArt";
 import type { Sim } from "./sim";
 import { isCore, type Structure, type Tower } from "./types";
@@ -44,6 +44,8 @@ export type StatusId =
   | "waded"
   | "veteran"
   | "cloaked"
+  | "led"
+  | "virus"
   | "rot"
   | "short"
   | "jam"
@@ -155,6 +157,22 @@ export const STATUSES: readonly StatusDef[] = [
     field: true,
   },
   {
+    id: "led",
+    name: "Led",
+    color: PAL.steelWhite,
+    blurb:
+      "A tier five is standing near it, and nothing can take more than a scratch off it in one hit. Kill the big one and the order is gone.",
+    field: true,
+  },
+  {
+    id: "virus",
+    name: "Mech virus",
+    color: PAL.venom,
+    blurb:
+      "A machine plague. On a body it is waiting for the thing to die; in a turret it is eating a share of the pool every second, and when the turret goes it jumps to the nearest one left.",
+    field: true,
+  },
+  {
     id: "rot",
     name: "Rot",
     color: PAL.venom,
@@ -256,7 +274,9 @@ export function unitHasFieldStatus(sim: Sim, i: number): boolean {
     sim.uhungry[i] !== 0 ||
     sim.uwade[i] !== 0 ||
     sim.uvet[i] >= 1.1 ||
-    sim.ucloakT[i] > 0
+    sim.ucloakT[i] > 0 ||
+    sim.uled[i] > 0 ||
+    sim.uvirus[i] !== 0
   );
 }
 
@@ -272,6 +292,8 @@ export function unitFieldStatuses(sim: Sim, i: number, out: StatusId[]): number 
   if (sim.uwade[i] !== 0) out.push("waded");
   if (sim.uvet[i] >= 1.1) out.push("veteran");
   if (sim.ucloakT[i] > 0) out.push("cloaked");
+  if (sim.uled[i] > 0) out.push("led");
+  if (sim.uvirus[i] !== 0) out.push("virus");
   return out.length;
 }
 
@@ -319,6 +341,10 @@ export function unitStatusChips(sim: Sim, i: number): StatusChip[] {
     });
   if (sim.ucloakT[i] > 0)
     out.push({ id: "cloaked", n: Math.ceil(sim.ucloakT[i]), note: `untouchable — ${secs(sim.ucloakT[i])}` });
+  if (sim.uled[i] > 0)
+    out.push({ id: "led", n: null, note: `at most ${LEADERSHIP_CAP} off any one hit` });
+  if (sim.uvirus[i] !== 0)
+    out.push({ id: "virus", n: null, note: "it infects a turret when it dies" });
   return out;
 }
 
@@ -336,6 +362,7 @@ export function structHasFieldStatus(s: Structure): boolean {
   if (isCore(s)) return false;
   const t = s;
   return (
+    t.virus ||
     t.poison > 0 || t.shortT > 0 || t.jamT > 0 || t.boostT > 0 || t.regen > 0 || t.revives > 0 ||
     t.fireRate < 1 || t.team === "enemy"
   );
@@ -345,6 +372,7 @@ export function structHasFieldStatus(s: Structure): boolean {
 export function structFieldStatuses(s: Structure, out: StatusId[]): number {
   out.length = 0;
   if (isCore(s)) return 0;
+  if (s.virus) out.push("virus");
   if (s.poison > 0) out.push("rot");
   if (s.shortT > 0) out.push("short");
   if (s.jamT > 0) out.push("jam");
@@ -376,6 +404,7 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
   // the single-pick numbers. Summed or maxed so they stay meaningful for
   // one building, which is the only case that ever reads them back
   let poison = 0, boostT = 0, regen = 0, revives = 0, rate = 1, shortT = 0, jamRate = 1;
+  let virusDps = 0;
   for (const s of picked) {
     if (isCore(s)) {
       armorMixed = true; // the core wears none, so a bag holding one disagrees
@@ -384,6 +413,7 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
     poison += s.poison;
     shortT = Math.max(shortT, s.shortT);
     if (s.jamT > 0) jamRate = Math.min(jamRate, s.jamRate);
+    virusDps += s.virus ? s.hpMax * VIRUS_DPS : 0;
     boostT = Math.max(boostT, s.boostT);
     regen += s.regen;
     revives += s.revives;
@@ -394,6 +424,7 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
     if (armor === null) armor = s.spec.armor;
     else if (armor !== s.spec.armor) armorMixed = true;
     const bump = (id: StatusId): void => void tally.set(id, (tally.get(id) ?? 0) + 1);
+    if (s.virus) bump("virus");
     if (s.poison > 0) bump("rot");
     if (s.shortT > 0) bump("short");
     if (s.jamT > 0) bump("jam");
@@ -415,6 +446,11 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
       note: many ? `on ${held} of the ${picked.length} selected` : note,
     });
   };
+  on(
+    "virus",
+    null,
+    `${num(virusDps)} health a second — it jumps when this goes`,
+  );
   on("rot", null, `${num(poison)} health a second`);
   on("short", null, secs(shortT));
   on("jam", null, `reloads at ${Math.round(jamRate * 100)}%`);

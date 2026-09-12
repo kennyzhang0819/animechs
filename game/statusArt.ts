@@ -29,7 +29,7 @@
  * rot, the mender's green for repair.
  */
 
-import { memoDraw, PAL, type Layer, type Pen } from "./pixelArt";
+import { memoDraw, PAL, type Ink, type Layer, type Pen } from "./pixelArt";
 import { STATUSES, type StatusId } from "./status";
 
 /** the grid, and the viewBox every symbol is drawn in */
@@ -143,6 +143,48 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
     g.box(0, 0.7, 1, 0.84, PAL.water);
     g.box(0, 0.84, 1, 1, PAL.waterDark);
     g.poly([[0.5, 0.02], [0.96, 0.48], [0.68, 0.48], [0.68, 0.72], [0.32, 0.72], [0.32, 0.48], [0.04, 0.48]], PAL.heal);
+  },
+
+  /**
+   * LED — two rank chevrons, the pale one over the dim. A stripe on a
+   * sleeve is what "there is an officer here" has looked like for two
+   * centuries, and at seven pixels a chevron is the one shape that still
+   * has a direction.
+   *
+   * The pair is UNEVEN — the top one wider and brighter — because two
+   * identical marks stacked above a gap read as a face at this size
+   * (rule 6), and because the eye needs one of them to lead.
+   */
+  led: (g) => {
+    const chev = (y: number, k: number, c: Ink) =>
+      g.poly([
+        [0.5, y], [0.5 + 0.46 * k, y + 0.26 * k], [0.5 + 0.46 * k, y + 0.44 * k],
+        [0.5, y + 0.18 * k], [0.5 - 0.46 * k, y + 0.44 * k], [0.5 - 0.46 * k, y + 0.26 * k],
+      ], c);
+    chev(0.5, 1, PAL.steel);
+    chev(0.06, 1, PAL.steelWhite);
+  },
+
+  /**
+   * MECH VIRUS — a gunmetal plate with a venom bite taken out of its
+   * side and the bug sitting in the hole.
+   *
+   * IT IS DELIBERATELY NOT THE ROT SYMBOL IN ANOTHER COLOUR. Both eat a
+   * building and both are drawn in the venom ink, so if they shared a
+   * silhouette a
+   * player would have to read the colour to tell "a spitter is on that"
+   * from "the plague is on that" — and colour is the first thing seven
+   * pixels takes away. Rot is a round blob dripping; this is a straight
+   * plate with a piece missing. Different shape, same palette, one
+   * glance.
+   */
+  virus: (g) => {
+    g.box(0.06, 0.1, 0.94, 0.9, PAL.steel);
+    g.over((o) => o.box(0, 0.62, 1, 1, PAL.steelDark));
+    // the bite: a disc cut clean out of the plate's right edge
+    g.erase((e) => e.disc(0.88, 0.5, 0.3, null));
+    g.disc(0.74, 0.5, 0.19, PAL.venomDark);
+    g.over((o) => o.disc(0.74, 0.44, 0.1, PAL.venom));
   },
 
   /**

@@ -250,6 +250,16 @@ export interface Tower {
   jamT: number;
   jamRate: number;
   /**
+   * THE MECH VIRUS IS IN THIS BUILDING (mutation.ts). Unlike the rot
+   * above it carries no rate and no clock, because it has neither: it
+   * eats a fixed share of the turret's OWN ceiling every second and it
+   * never times out. It leaves on exactly two events — the turret stands
+   * back up (Sim.reviveTower, which is the rule's counter) or the turret
+   * is gone for good, in which case it does not leave so much as MOVE
+   * (Sim.spreadVirusFrom).
+   */
+  virus: boolean;
+  /**
    * How many times this turret still gets to stand back up when it is
    * wrecked (mods.ts: Undying Legion grants one to everything). Spent
    * before the Phoenix roll is even reached.

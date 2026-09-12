@@ -87,25 +87,31 @@ export const MUTATORS_FROM = 15;
  * two purples and the last maps rather than crowded onto consecutive ones.
  */
 const MUTATOR_UNLOCKS: Readonly<Record<number, readonly MutationId[]>> = {
-  15: ["armored", "mitosis", "volatile"],
-  17: ["shieldTowers"],
-  19: ["overshields"],
-  21: ["speedy"],
-  23: ["hungry"],
-  25: ["hydrophobic"],
-  27: ["amphibious"],
-  // THE LAST TWO RUN BACK TO BACK, and that is the every-other-level
-  // rhythm ending rather than being broken: the gaps above are where the
-  // maps, modules and turrets sit, and by level 28 the track has dealt all
-  // of those. A level that opens nothing at all is a level with no reason
-  // to be looked at, so the two dearest rules take the last two rows
-  // rather than leaving an empty one between them.
+  // CHEAPEST FIRST, and the order is the CATALOG's (mutation.ts), which is
+  // re-authored whenever the costs are — a rule that got dearer moves down
+  // this table with it, or the phase would be handing out its hardest
+  // rules first and calling them an opening hand
+  15: ["amphibious", "shieldTowers", "volatile"],
+  17: ["armored"],
+  19: ["hydrophobic"],
+  21: ["leadership"],
+  23: ["mitosis"],
+  25: ["conquest"],
+  26: ["mechVirus"],
+  27: ["overshields"],
+  // THE TAIL RUNS BACK TO BACK, and that is the every-other-level rhythm
+  // ending rather than being broken: the gaps above are where the maps,
+  // modules and turrets sit, and by level 26 the track has dealt all of
+  // those. A level that opens nothing at all is a level with no reason to
+  // be looked at, so the dearest rules take the last rows one after
+  // another rather than leaving empty ones between them.
   28: ["reconstruction"],
-  29: ["conquest"],
+  29: ["speedy"],
+  30: ["hungry"],
 };
 
 /** the last level that hands anything out — the bottom of the progress screen */
-export const MAX_LEVEL = 29;
+export const MAX_LEVEL = 30;
 
 /** THE CATALOG IS DEALT WHOLE, ONCE EACH, INSIDE THE PHASE — checked at import */
 (() => {
