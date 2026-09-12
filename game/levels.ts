@@ -458,6 +458,17 @@ export interface UnitStats {
    * A turret line that opens fire on a wraith is a turret line the wraith
    * is suddenly past; the answer is bursts and fields, or killing it in
    * the one hit.
+   *
+   * A BLINK IS A TELEPORT, AND FOUR TILES WAS A STUMBLE. The jumps used
+   * to be four to six tiles on a one-and-a-half to two second cooldown:
+   * about the width of the hull doing the jumping, which at the pace
+   * these things already swim read as a hitch in the walk rather than a
+   * body appearing somewhere else. They are TWELVE TO EIGHTEEN now — a
+   * whole patch crossed in one frame, past the guns that just fired —
+   * and the cooldown is DOUBLED to pay for it. A rarer, bigger jump is
+   * an event the player watches happen; a constant small one is noise,
+   * and at the new distance a constant one would also mean no turret
+   * line ever gets a second volley into the same hull.
    */
   blink?: { dist: number; cooldown: number };
   /**
@@ -480,6 +491,19 @@ export interface UnitStats {
    * many smaller charges out to `spread` px first, each bursting for its
    * own splash. `fuse` ARMS the charge instead: it sits where the body
    * fell for that many seconds and then goes off — the T5's small nuke.
+   *
+   * THE CHARGES ARE HEAVY AND THE RADII ARE WIDE, and they have to be
+   * heavier than any other family's for one structural reason: THIS
+   * FAMILY CANNOT BE THE WAVE. The wave script never picks an air kind as
+   * a wave's most frequent body, so a flight of bombers is always a
+   * garnish on somebody else's ground push — a dozen or two hulls, never
+   * the two thousand that make the venom line or the Harpoon guns
+   * frightening by weight of numbers. A family that only ever arrives in
+   * handfuls has to land like a handful of artillery, so one charge takes
+   * a corner of a patch and the T4's and the T5's take the patch: 200
+   * over three tiles was a scratch on a board that fields turrets with
+   * five figures of health, and a 4000 nuke over eleven tiles was one
+   * turret's worth of damage spread thin enough to kill nothing.
    */
   payload?: {
     splash: number;
@@ -736,7 +760,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // flare: 70 hp, no armor, 1.125-block hitbox, 2.7 px/tick = 20.25 tiles/s.
   // THE T1 IS THE FAMILY IN MINIATURE (the Skyfall bombers): no gun, a
   // charge that goes off on the turret it dives at — or wherever it is
-  // shot down — for 60 over a tile and three quarters
+  // shot down — for 200 over three and a half tiles
   flare: {
     hp: 70,
     speed: 20.25 * CELL,
@@ -745,7 +769,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 1,
     drag: 0.04,
     flying: true,
-    payload: { splash: 60, radius: 14 * MU },
+    payload: { splash: 200, radius: 28 * MU },
   },
   // nova: the T1 of the Starlight mechs — 200 hp, armor 1, 1x1-block
   // hitbox, 0.55 px/tick = 4.125 tiles/s. Frailer than a dagger but a step
@@ -881,8 +905,8 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // horizon: the T2 — 340 hp, armor 3, 1.375x1.375-block hitbox, 15 tiles/s
   // (upstream 12.375). Slower than a flare but four times the health, and
   // armour 3 blunts the scatter flak that shreds the T1
-  // The charge is the bomber's whole reason: 200 over three tiles, which
-  // is the old bomb rack's damage delivered once instead of a rain
+  // The charge is the bomber's whole reason: 700 over five tiles, which
+  // is the old bomb rack's whole rain delivered in one arrival
   horizon: {
     hp: 340,
     speed: 15 * CELL,
@@ -892,7 +916,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.03,
     rotateSpeed: 4.5,
     flying: true,
-    payload: { splash: 200, radius: 24 * MU },
+    payload: { splash: 700, radius: 40 * MU },
   },
   // zenith: the T3 — 700 hp, armor 5, a 2.5x2.5-block hitbox that makes it
   // the widest thing in the sky below the T4/T5 hulls, at 13.5 tiles/s
@@ -909,7 +933,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.016,
     flying: true,
     hasteField: { mult: 1.4, reload: 2, range: 9 * CELL },
-    payload: { splash: 200, radius: 24 * MU },
+    payload: { splash: 1000, radius: 48 * MU },
   },
   // antumbra: the air line's T4 — 7200 hp, armor 17, and a 5.75x5.75-block
   // hitbox, more than twice the zenith across; only the eclipse's 7.25
@@ -924,10 +948,13 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // THE JAM (jamField): every 2 s it stamps every building within eleven
   // tiles, and a stamped gun reloads at HALF pace while the flight is over
   // it — the guns under the wing get half the shots off before the
-  // bombers land on them. THE CLUSTER CHARGE: 300 over three tiles where
-  // it goes off, and eight bomblets thrown out to seven and a half tiles
-  // first, each bursting for 90 over two — the family's area tier, and
-  // the one whose death over a patch takes the patch
+  // bombers land on them. THE CLUSTER CHARGE: 2,500 over NINE TILES where
+  // it goes off, and ten bomblets thrown out to eleven tiles first, each
+  // bursting for 500 over four — so the pattern overlaps itself across
+  // twenty tiles of board and a turret in the middle of it is hit by the
+  // charge and by three or four bomblets. This is the family's area tier
+  // and the one whose death over a patch TAKES the patch, which is a
+  // promise the old 300-over-three-tiles never came close to keeping
   antumbra: {
     hp: 7200,
     speed: 10.5 * CELL,
@@ -939,9 +966,9 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     flying: true,
     jamField: { rate: 0.5, reload: 2, range: 11 * CELL },
     payload: {
-      splash: 300,
-      radius: 24 * MU,
-      bomblets: { count: 8, splash: 90, radius: 16 * MU, spread: 60 * MU },
+      splash: 2500,
+      radius: 72 * MU,
+      bomblets: { count: 10, splash: 500, radius: 32 * MU, spread: 88 * MU },
     },
   },
   // eclipse: the air line's T5 — 22000 hp, armor 22, and a 7.25x7.25-block
@@ -958,12 +985,16 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // 1 is the slowest turn of anything that moves here: it cannot answer a
   // flank, and it does not need to, because its broadside is a cone
   //
-  // THE SMALL NUKE (payload.fuse): where it goes off — on the structure it
+  // THE NUKE (payload.fuse): where it goes off — on the structure it
   // dived at, or wherever it was shot down — the charge ARMS and sits for
   // two and a half seconds, a fat orange orb swelling on the ground, and
-  // then takes 4000 off everything within eleven tiles. The fuse is the
-  // player's warning and the family's rule at its largest: an eclipse
-  // shot down over the line is a line with two and a half seconds left
+  // then takes 12,000 off everything within SIXTEEN TILES. That is a
+  // 32-tile circle of board, which is most of a citadel, at four figures
+  // past what a spectre carrying half the catalog is holding: nothing in
+  // the blast is meant to survive it. The fuse is the player's warning
+  // and the family's rule at its largest — an eclipse shot down over the
+  // line is a line with two and a half seconds to be somewhere else, and
+  // a turret cannot be somewhere else
   eclipse: {
     hp: 22000,
     speed: 9 * CELL,
@@ -973,7 +1004,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.04,
     rotateSpeed: 1,
     flying: true,
-    payload: { splash: 4000, radius: 90 * MU, fuse: 2.5 },
+    payload: { splash: 12000, radius: 128 * MU, fuse: 2.5 },
   },
   // disrupt: THE FINAL BOSS — Erekir's tier-5 missile bomber, the one kind
   // on the roster from the other planet. Base shape from
@@ -1128,7 +1159,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // rate every ground unit turns at and the quickest hull on the water by
   // a distance. THE T1 IS THE FAMILY IN MINIATURE: one arc, one hop, one
   // short in eight (weapons.ts), and it BLINKS — a hit that lands throws
-  // it four tiles up its route, once every two seconds. Its upstream
+  // it twelve tiles up its route, once every four seconds. Its upstream
   // repair beam was a weapon and does not port
   retusa: {
     hp: 270,
@@ -1141,7 +1172,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     naval: true,
     landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
-    blink: { dist: 4 * CELL, cooldown: 2 },
+    blink: { dist: 12 * CELL, cooldown: 4 },
     wake: wake({ x: 5 * MU, length: 20, scl: 1.3 * MU }),
   },
   // oxynoe: Wraith T2 — 560 hp, armor 4, a 1.75x1.75-block hitbox, 0.83
@@ -1159,14 +1190,17 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     naval: true,
     landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
-    blink: { dist: 4 * CELL, cooldown: 1.5 },
+    blink: { dist: 12 * CELL, cooldown: 3 },
     wake: wake({ x: 5.5 * MU, y: -4 * MU, length: 22, scl: 1.9 * MU }),
   },
   // cyerce: Wraith T3 — 870 hp, armor 6, a 2.5x2.5-block hitbox, 0.86
   // units/tick = 6.45 tiles/s: fractionally quicker than the bryde it
   // shares a hitbox with. The family's chain tier (four hops, weapons.ts),
-  // and THE FIRST THAT CLOAKS: three seconds gone in every nine, from the
-  // first nine in. Its upstream repair beam is a weapon, like retusa's,
+  // and THE FIRST THAT CLOAKS: two and a half seconds gone in every nine,
+  // from the first nine in. The cloak is a window with nothing in it for
+  // the guns, and it was shortened a notch across the fleet when the
+  // blinks tripled — a hull that cannot be hurt AND cannot be pinned is
+  // two answers to the same volley, and one of them has to give. Its upstream repair beam is a weapon, like retusa's,
   // and goes the same way
   cyerce: {
     hp: 870,
@@ -1179,8 +1213,8 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     naval: true,
     landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
-    blink: { dist: 5 * CELL, cooldown: 1.5 },
-    cloak: { duration: 3, period: 9 },
+    blink: { dist: 15 * CELL, cooldown: 3 },
+    cloak: { duration: 2.5, period: 9 },
     wake: wake({ x: 9 * MU, y: -9 * MU, length: 23, scl: 2 * MU }),
   },
   // aegires: Wraith T4 — 12000 hp, armor 12, a 5.5x5.5-block hitbox,
@@ -1206,8 +1240,8 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     naval: true,
     landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
-    blink: { dist: 5 * CELL, cooldown: 2 },
-    cloak: { duration: 4, period: 10 },
+    blink: { dist: 15 * CELL, cooldown: 4 },
+    cloak: { duration: 3.5, period: 10 },
     energyField: {
       healPercent: 1.5,
       sameTypeHealMult: 0.5,
@@ -1220,10 +1254,11 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // navanax: the Wraith fleet's T5 — 20000 hp, armor 20, and the omura's
   // 7.25x7.25-block hitbox, at 0.65 units/tick = 4.875 tiles/s. Its EMP
   // cannon is the family's long arc (weapons.ts), and it is THE FLAGSHIP:
-  // when it cloaks — five seconds in every twelve — every body within ten
-  // tiles goes dark with it (cloak.veil). A fleet that vanishes together
-  // and reappears six tiles on is the family's rule at its largest; the
-  // seven seconds it shows are the seven seconds to kill it in
+  // when it cloaks — four and a half seconds in every twelve — every body
+  // within ten tiles goes dark with it (cloak.veil). A fleet that vanishes
+  // together and reappears EIGHTEEN tiles on is the family's rule at its
+  // largest; the seven and a half seconds it shows are the seven and a
+  // half seconds to kill it in
   navanax: {
     hp: 20000,
     speed: 4.875 * CELL * WRAITH_PACE,
@@ -1235,8 +1270,8 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     naval: true,
     landSpeed: WRAITH_LAND_SPEED,
     immunities: ["wet"],
-    blink: { dist: 6 * CELL, cooldown: 2 },
-    cloak: { duration: 5, period: 12, veil: 10 * CELL },
+    blink: { dist: 18 * CELL, cooldown: 4 },
+    cloak: { duration: 4.5, period: 12, veil: 10 * CELL },
     wake: wake({ x: 23 * MU, y: -32 * MU, length: 70, scl: 3.5 * MU }),
   },
 };

@@ -85,7 +85,16 @@ function RelicChip({ id, n }: { id: ModId; n: number }) {
   // It does not move any more — copies buy strength now (mods.ts) — so
   // what a second copy did is the line under it
   const odds = d.scope === "turret" ? oddsLine(d) : null;
+  // WHAT THE WHOLE STACK IS WORTH, at the count the run holds — the one
+  // number a player wanted off this chip (mods.ts stackLine)
   const stack = stackLine(d, n);
+  // AN UNNAMED TICK SHOWS NO BLURB. Its title IS its tweak, so the
+  // sentence under it ("a chance for a new turret to be born with +2%
+  // damage...") is the title, the odds line and the total all said again
+  // in prose — three lines of reading for a card that exists to be
+  // glanced at mid-wave. A named attribute keeps its blurb, because a
+  // name says nothing about what the thing does.
+  const blurb = d.name ? d.blurb : null;
   return (
     <span
       ref={tip.ref as RefObject<HTMLSpanElement | null>}
@@ -104,7 +113,7 @@ function RelicChip({ id, n }: { id: ModId; n: number }) {
         </span>
       )}
       <HoverCard tip={tip} title={name} tag={r.name} color={r.color} align="left">
-        {d.blurb}
+        {blurb}
         {odds && (
           <span className="mt-1.5 block font-bold" style={{ color: r.color }}>
             {odds}
