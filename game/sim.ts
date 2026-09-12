@@ -2836,6 +2836,42 @@ export class Sim {
     const grid = this.cellTower;
     let best: Structure | null = null;
     let bd = Infinity;
+    // A LONG REACH WALKS THE LIST, NOT THE RING. The ring walk below costs
+    // the square of the reach in cells whatever is out there — a harpoon
+    // hull's ninety tiles is eight thousand reads a scan, four thousand
+    // hulls a wave, and it was the single most expensive thing in the sim.
+    // When the ring would read more cells than there are buildings to
+    // find, the buildings are read directly: nearest first, so the sight
+    // test is spent on the few that would actually be taken
+    if (R * R > (this.towers.length + 1) * 6) {
+      // no allocation and no sort: the candidates go into two scratch
+      // arrays, and the nearest is pulled out and sight-tested until one
+      // passes — nearly always the first
+      const list = this.nearList, dist = this.nearDist;
+      let n = 0;
+      const take = (t: Structure): void => {
+        if (this.enemyTowers > 0 && teamOf(t) !== team) return;
+        const half = (this.sizeOf(t) * CELL) / 2;
+        const dx = t.x - x, dy = t.y - y;
+        const d = Math.sqrt(dx * dx + dy * dy) - half;
+        if (d <= reach && n < list.length) {
+          list[n] = t;
+          dist[n++] = d;
+        }
+      };
+      take(this.core);
+      for (const t of this.towers) if (grid[t.gy * COLS + t.gx] === t) take(t);
+      while (n > 0) {
+        let m = 0;
+        for (let k = 1; k < n; k++) if (dist[k] < dist[m]) m = k;
+        const t = list[m];
+        if (!sighted || this.canSee(t, x, y)) return t;
+        n--;
+        list[m] = list[n];
+        dist[m] = dist[n];
+      }
+      return null;
+    }
     const consider = (i: number): void => {
       const t = grid[i];
       // only the OTHER side's buildings are targets: a body walks past the
@@ -2895,6 +2931,10 @@ export class Sim {
   }
 
   private readonly splashOut: Structure[] = [];
+  /** nearestStructure's list-scan scratch, for the long reaches: room for
+   *  every building a board can hold, filled and drained in place */
+  private readonly nearList: Structure[] = new Array<Structure>(4096);
+  private readonly nearDist = new Float32Array(4096);
   /** the arc's own scratch: the structures one chain has already struck */
   private readonly arcOut: Structure[] = [];
   private readonly arcNear: Structure[] = [];
@@ -3127,11 +3167,6 @@ export class Sim {
     return this.inReach(a.s, x, y, reach);
   }
 
-  /** can a ground body at the point see its aim? */
-  private aimSeen(a: Aim, x: number, y: number): boolean {
-    return this.canSee(a.s, x, y);
-  }
-
   /** one hit on the aim, from a body of `team` */
   private aimHit(a: Aim, dmg: number, poison = 0, poisonChance = 1): void {
     this.hitStructure(a.s, dmg, poison, poisonChance);
@@ -3175,14 +3210,15 @@ export class Sim {
       // (hitStructure), and what a shot leaving the muzzle carries
       this.dmgMul = HAS_VET ? this.uvet[i] : 1;
       // the target, re-picked every few tenths of a second, dropped the
-      // moment it dies, walks out of the longest gun's reach, or goes
-      // behind rock — the sight test rides here, once per body per tick,
-      // rather than in inReach, which every weapon calls every tick
+      // moment it dies or walks out of the longest gun's reach. SIGHT IS
+      // TESTED ON THE CLOCK, NOT EVERY TICK: the re-pick (pickAim) refuses
+      // what it cannot see, so a body that has just lost its line keeps
+      // firing for at most half a second — and a raycast per body per
+      // tick, at ninety tiles on four thousand hulls, was a frame
       utT[i] -= dt;
       let tgt = utgt[i];
       const had = tgt !== null;
-      if (tgt && (!this.aimReach(tgt, x, y, reach) || (sighted && !this.aimSeen(tgt, x, y))))
-        tgt = null;
+      if (tgt && !this.aimReach(tgt, x, y, reach)) tgt = null;
       // ...on the clock, or the moment the one it had is gone. A body that
       // has NOTHING waits for the clock like everyone else rather than
       // re-scanning every tick: an empty search is the most expensive one
@@ -3190,7 +3226,9 @@ export class Sim {
       // each candidate), and it is exactly the search a swarm still crossing
       // open ground is running. `had` is what tells the two apart
       if (utT[i] <= 0 || (had && !tgt)) {
-        utT[i] = 0.3 + Math.random() * 0.2;
+        // a long reach re-picks at half the rate: what it can see is far
+        // away and changes slowly, and its scan is the expensive kind
+        utT[i] = (reach > 40 * CELL ? 2 : 1) * (0.3 + Math.random() * 0.2);
         tgt = this.pickAim(x, y, reach, sighted);
         utgt[i] = tgt;
       }
@@ -3264,7 +3302,7 @@ export class Sim {
           if (ucharge[i] > 0) {
             ucharge[i] -= dt;
             if (ucharge[i] <= 0) {
-              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp, wrange);
+              this.fireUnitLaser(x, y, uheldRot[i], tgt, wp, wrange, true);
               ucd[slot] = wp.reload - wp.charge;
             }
             continue;
@@ -3312,7 +3350,7 @@ export class Sim {
           case "laser": {
             // a volley of them fans by ShootSpread (the pulsar's three)
             for (let k = 0; k < shots; k++)
-              this.fireUnitLaser(x, y, aim + (k - (shots - 1) / 2) * (wp.spread ?? 0), tgt, wp, wrange);
+              this.fireUnitLaser(x, y, aim + (k - (shots - 1) / 2) * (wp.spread ?? 0), tgt, wp, wrange, KIND_TIER[ukind[i]] >= 4);
             break;
           }
           case "sap": {
@@ -3422,25 +3460,30 @@ export class Sim {
             // in the row's colour (the Harpoon fleet's teal). A
             // PIERCING rail punches through everything on the line
             const rc = wp.railColor ?? PAL.orangeSpark;
+            // A THIN LINE AND NOTHING ELSE. The rail used to throw a muzzle
+            // splash, a blade every sixty units down its length and a
+            // spike on what it struck, every one of them forced past the
+            // effect cap — which on a thousand rissos was thousands of
+            // uncapped quads a second and a frame that stalled. It is ONE
+            // effect now: the whole line as a hair-thin streak carrying its
+            // length (FxKind.RailShoot, `len`), a small hit flick, and only
+            // the top tiers' rails are forced (`big`): a T1 that fires by
+            // the thousand fires small, and vanishes under the cap like
+            // everything else that small
+            const big = KIND_TIER[ukind[i]] >= 4;
             if (wp.pierce) {
               const hit = this.structuresAlong(x, y, aim, wrange, CELL * 0.5, this.alongOut);
               for (let k = 0; k < hit.length; k++) {
                 this.hitStructure(hit[k], wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
-                if (k < 8) this.pushFxCol(hit[k].x, hit[k].y, 18 / 60, FxKind.RailHit, aim, 0, rc, 0, true);
+                if (k < 6) this.pushFxCol(hit[k].x, hit[k].y, 14 / 60, FxKind.RailHit, aim, 0, rc, 0, big);
               }
             } else {
               this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
-              this.pushFxCol(tgt.x, tgt.y, 18 / 60, FxKind.RailHit, aim, 0, rc, 0, true);
+              this.pushFxCol(tgt.x, tgt.y, 14 / 60, FxKind.RailHit, aim, 0, rc, 0, big);
             }
-            this.pushFxCol(x, y, 24 / 60, FxKind.RailShoot, aim, 0, rc, 0, true);
-            this.pushFx(x, y, 10 / 60, FxKind.ShootBig2, aim);
-            const ca = Math.cos(aim), sa = Math.sin(aim);
-            // the blades down the line: as far as the target, or the whole
-            // length when the rail runs through
             const dx = tgt.x - x, dy = tgt.y - y;
             const along = wp.pierce ? wrange : Math.min(wrange, Math.sqrt(dx * dx + dy * dy));
-            for (let d = 0; d <= along; d += 60 * MU)
-              this.pushFxCol(x + ca * d, y + sa * d, 16 / 60, FxKind.RailTrail, aim, 0, rc, 0, true);
+            this.pushFxCol(x, y, 16 / 60, FxKind.RailShoot, aim, along, rc, big ? 1 : 0, big);
             break;
           }
           case "scatter": {
@@ -3598,7 +3641,9 @@ export class Sim {
    * the damage; the shootEffect (Fx.hitLancer, or eclipse's shockwave)
    * goes off at the muzzle
    */
-  private fireUnitLaser(x: number, y: number, aim: number, tgt: Aim | null, wp: UnitWeapon, range = wp.range): void {
+  private fireUnitLaser(
+    x: number, y: number, aim: number, tgt: Aim | null, wp: UnitWeapon, range = wp.range, big = true,
+  ): void {
     const st = wp.laser;
     if (wp.pierce) {
       // THE STARLIGHT RULE (UnitWeapon.pierce): everything the beam
@@ -3608,14 +3653,17 @@ export class Sim {
       for (let k = 0; k < hit.length; k++) {
         this.hitStructure(hit[k], wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
         if (wp.short) this.shortTower(hit[k], wp.short, wp.shortChance ?? 1);
-        if (st && k > 0 && k < 6)
+        if (st && k > 0 && k < (big ? 6 : 2))
           this.pushFxCol(hit[k].x, hit[k].y, 12 / 60, FxKind.HitLaserBlast, aim, 0, st.colors[st.colors.length - 1][0]);
       }
     } else if (tgt && this.aimReach(tgt, x, y, range)) {
       this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
     }
     if (!st) return;
-    this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, range, 0, st.id, true);
+    // only a heavy tier's beam is forced past the effect cap (`big`): a
+    // thousand novas' lances are a thousand small effects that fall under
+    // it like any other, or the cap means nothing on the wave that needs it
+    this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, range, 0, st.id, big);
     if (wp.shoot === FxKind.Shockwave) this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, wp.shootLen ?? 0);
     else if (wp.shoot !== undefined)
       this.pushFxCol(x, y, fxLife(wp.shoot), wp.shoot, aim, 0, st?.colors[1][0] ?? PAL.heal, 0, false, (Math.random() * 0x7fffffff) | 0);
@@ -8274,7 +8322,7 @@ export class Sim {
     if (d < step) return;
     this.upx[i] = x0 + dx * d;
     this.upy[i] = y0 + dy * d;
-    this.pushFxCol(x0, y0, 18 / 60, FxKind.Blink, Math.atan2(dy, dx), d, PAL.wraith, 0, true);
+    this.pushFxCol(x0, y0, 18 / 60, FxKind.Blink, Math.atan2(dy, dx), d, PAL.wraith);
   }
 
   /**
@@ -8339,7 +8387,9 @@ export class Sim {
       return;
     }
     this.splashStructures(x, y, pl.splash, pl.radius);
-    this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, pl.radius);
+    // the ring at the blast's reach is the heavy tiers' — a T1 that goes
+    // off by the hundred goes off as a small burst and no more
+    if (KIND_TIER[this.ukind[i]] >= 4) this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, pl.radius);
     this.pushFx(x, y, fxLife(FxKind.BlastExplosion), FxKind.BlastExplosion, 0, pl.radius, (Math.random() * 0x7fffffff) | 0);
   }
 

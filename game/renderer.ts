@@ -2633,11 +2633,13 @@ export class Renderer {
         const reach = e.len || 60 * MU;
         const col = ramp(PAL.white, e.col ?? PAL.bomber, PAL.bomberDark, t);
         const grow = FIN_POW(t) * reach;
-        this.fillDisc(dyn, e.x, e.y, grow, col, (1 - t) * 0.55);
-        this.strokeCircle(dyn, e.x, e.y, grow, ((1 - t) * 3 + 0.5) * MU, col[0], col[1], col[2], 1 - t * 0.5);
-        const spark = (1 + (1 - t) * 5) * MU;
-        this.scatter(e.seed ?? 1, 16, grow, 0, Math.PI, (x, y, bearing) => {
-          this.strokeLine(dyn, e.x + x, e.y + y, bearing, spark, (1 - t) * 1.5 * MU, col, 1);
+        this.fillDisc(dyn, e.x, e.y, grow, col, (1 - t) * 0.45);
+        // the rim is a thread: the flash is the disc, and a fat ring on a
+        // blast this wide read as a wall
+        this.strokeCircle(dyn, e.x, e.y, grow, ((1 - t) * 0.8 + 0.3) * MU, col[0], col[1], col[2], 0.8 - t * 0.5);
+        const spark = (1 + (1 - t) * 4) * MU;
+        this.scatter(e.seed ?? 1, 8, grow, 0, Math.PI, (x, y, bearing) => {
+          this.strokeLine(dyn, e.x + x, e.y + y, bearing, spark, (1 - t) * 0.8 * MU, col, 1);
         });
       } else if (e.kind === FxKind.ShortSpark) {
         // A SHORTED BUILDING (Tower.shortT): one violet bar flicking off it
@@ -2663,10 +2665,12 @@ export class Renderer {
       } else if (e.kind === FxKind.InstBomb) {
         this.drawInstBomb(dyn, e, t);
       } else if (e.kind === FxKind.RailHit) {
-        // Fx.railHit: two coppery spikes thrown back off a body the rail
-        // punched through, 140 degrees off the line it is still travelling
+        // Fx.railHit's two spikes thrown back off what the rail punched
+        // through, 140 degrees off its line — a fifth of Mindustry's
+        // length and width, so a harpoon's landing is a flick and not a
+        // splash (the fleet fires by the thousand)
         for (const side of [-1, 1])
-          this.tri(dyn, e.x, e.y, 10 * (1 - t) * MU, 60 * MU,
+          this.tri(dyn, e.x, e.y, 2.5 * (1 - t) * MU, 12 * MU,
             (e.rot ?? 0) + (side * 140 * Math.PI) / 180, e.col ?? PAL.orangeSpark, 1);
       } else if (e.kind === FxKind.SmokeCloud) {
         this.drawSmokeCloud(dyn, e, t);
@@ -4222,14 +4226,25 @@ export class Renderer {
    * square to the shot, thinning as it goes.
    */
   private drawRailShoot(dyn: Batch, e: Effect, t: number): void {
-    const RING = 10 / 24;
+    const col = e.col ?? PAL.orangeSpark;
+    const fout = 1 - t;
+    // THE HARPOON: a hair-thin line the whole length of the shot (e.len),
+    // white at birth and thinning to nothing, and a small ring at the
+    // muzzle. `sides` is 1 on a heavy tier's rail, which is drawn a touch
+    // wider; the mass tiers' are a thread. Mindustry's railShoot threw
+    // two 85-unit wings and a 50-unit ring off the muzzle — on a fleet
+    // that fires by the thousand that was the thickest thing on the field
+    const big = (e.sides ?? 0) > 0;
+    if (e.len && e.len > 0.01) {
+      const w = ((big ? 1.1 : 0.7) * fout + 0.25) * MU;
+      const c = ramp(PAL.white, col, null, Math.min(1, t * 2));
+      this.strokeLine(dyn, e.x, e.y, e.rot ?? 0, e.len, w, c, 0.35 + fout * 0.65);
+    }
+    const RING = 8 / 16;
     if (t < RING) {
       const s = t / RING;
-      const col = ramp(PAL.white, PAL.lightGray, null, s);
-      this.strokeCircle(dyn, e.x, e.y, s * 50 * MU, ((1 - s) * 3 + 0.2) * MU, col[0], col[1], col[2], RING_ALPHA);
+      this.strokeCircle(dyn, e.x, e.y, s * (big ? 9 : 5) * MU, ((1 - s) * 1 + 0.2) * MU, col[0], col[1], col[2], RING_ALPHA);
     }
-    for (const side of [-1, 1])
-      this.tri(dyn, e.x, e.y, 13 * (1 - t) * MU, 85 * MU, (e.rot ?? 0) + (side * Math.PI) / 2, e.col ?? PAL.orangeSpark, 1);
   }
 
   /**
