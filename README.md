@@ -73,7 +73,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
   then the **late half**, where the mutator phase opens with a whole band
   (`MUTATORS_FROM` = 15) and the **relics** start one level later
   (`RELIC_UNLOCKS`, `RELICS_FROM` = 16), one a level to the top of the track
-  at 29, one a level. **Mods across the front, relics across the back**, because the two
+  at 30, one a level. **Mods across the front, relics across the back**, because the two
   categories are two answers to two halves of a run. Plus
   `techStateFor(level)`, what a save at that level may do. The turret
   upgrade rungs are off the track for now (`UPGRADES_ON_TRACK`) and are not
@@ -609,7 +609,8 @@ swarm — that is the mutators' half of the game, and they pull the other way.
 **And the track deals them in that order** (`game/track.ts`). The mods fill
 the **front** of the campaign, levels 2 to 14, cheapest band first; the
 relics fill the **back**, `RELICS_FROM` = **16** to the top of the track at
-29, one a level and landing exactly. That is not housekeeping — it is the two categories being two answers to
+30, one a level — so the campaign's last row hands over Ascendancy
+Protocol. That is not housekeeping — it is the two categories being two answers to
 two halves of a run. The G button prints *locked* until level 16, which is
 the level after the mutator phase opens: where the game is first allowed to
 be hard. It used to open on level **3**, which handed a player Overclock
@@ -722,18 +723,25 @@ of every gun on the field.
 |---|---|---|---|
 | Overclock Core | Common | 16 | every turret deals **double** damage |
 | Coolant Loop | Common | 17 | every turret fires **twice** as fast |
-| Scavenger Rig | Common | 18 | every kill pays **triple** scrap |
-| Salvage Insurance | Uncommon | 19 | every wrecked turret pays 2,000 scrap — two cards' worth, every time |
-| Phosphor Rounds | Uncommon | 20 | every shot burns white, hits half again as hard, and punches through 2 more bodies |
-| Last Volley | Uncommon | 21 | a wrecked turret gives every turret within 8 tiles **triple** fire rate for 15s |
-| **Cascade Charges** | Uncommon | 22 | a **T4 or T5 hull comes apart where it falls**, for a fifth of its own maximum health over 6 tiles — enough to set off the next one. A wall of heavies unzips itself |
-| Phoenix Protocol | Rare | 23 | a wrecked turret has a 50% chance to stand straight back up — **every time**, no limit |
-| Twin Fire | Rare | 24 | every turret fires one more round in every volley |
-| **Monofilament Rounds** | Rare | 25 | **ARMOUR STOPS APPLYING.** Every hit the board lands is dealt in full, whatever the body is plated in |
-| **Titan Rounds** | Rare | 26 | every hit gains **a quarter again per tier** above the first, so a T5 hull takes **double** |
-| **Undying Legion** | **Ultra** | 27 | **every turret you own stands back up once, at full health — the ones already on the field included** |
-| **Terminal Protocol** | **Ultra** | 28 | **anything knocked to 15% of its own health dies on the spot** — and 15% of an eclipse is three thousand the board never has to grind through |
-| **Ascendancy Protocol** | **Ultra** | 29 | **the turret deal hands over rares 5× and ULTRAS 20× as often, for the rest of the run** |
+| Scavenger Rig | Common | 19 | every kill pays **triple** scrap |
+| Salvage Insurance | Uncommon | 20 | every wrecked turret pays 2,000 scrap — two cards' worth, every time |
+| Phosphor Rounds | Uncommon | 21 | every shot burns white, hits half again as hard, and punches through 2 more bodies |
+| Last Volley | Uncommon | 22 | a wrecked turret gives every turret within 8 tiles **triple** fire rate for 15s |
+| **Cascade Charges** | Uncommon | 23 | a **T4 or T5 hull comes apart where it falls**, for a fifth of its own maximum health over 6 tiles — enough to set off the next one. A wall of heavies unzips itself |
+| Phoenix Protocol | Rare | 24 | a wrecked turret has a 50% chance to stand straight back up — **every time**, no limit |
+| Twin Fire | Rare | 25 | every turret fires one more round in every volley |
+| **Monofilament Rounds** | Rare | 26 | **ARMOUR STOPS APPLYING.** Every hit the board lands is dealt in full, whatever the body is plated in |
+| **Titan Rounds** | Rare | 27 | every hit gains **a quarter again per tier** above the first, so a T5 hull takes **double** |
+| **Undying Legion** | **Ultra** | 28 | **every turret you own stands back up once, at full health — the ones already on the field included** |
+| **Terminal Protocol** | **Ultra** | 29 | **anything knocked to 15% of its own health dies on the spot** — and 15% of an eclipse is three thousand the board never has to grind through |
+| **Ascendancy Protocol** | **Ultra** | 30 | **the turret deal hands over rares 5× and ULTRAS 20× as often, for the rest of the run** |
+
+**And the mutators pull the other way, which is the point of them.**
+**Leadership** (`mutation.ts`) caps any one hit on a body near a live T5 at
+10 damage, and that cap is taken *last* in `Sim.damageUnit` — so
+Monofilament and Titan, which both make a hit bigger, buy almost nothing
+under it. **Terminal Protocol is the relic that answers Leadership**: an
+execute is not damage, so it never comes through that door at all.
 
 **Four of them are stat surgery and the rest are moments.** Overclock,
 Coolant, Phosphor and Twin Fire compose onto every kind's table

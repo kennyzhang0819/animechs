@@ -303,9 +303,15 @@ const MOD_UNLOCKS: Readonly<Record<number, readonly ModId[]>> = {
  * hard — and the G button prints "locked" until then. It used to open on
  * level 3, which handed a player Overclock Core before their second map.
  *
- * CHEAPEST BAND FIRST, one a level, and it lands exactly: fourteen relics
- * across levels 16 to 29, so every row of the back half of the track hands
- * one over and the top of the track is the last ultra.
+ * CHEAPEST BAND FIRST, one a level from RELICS_FROM to the TOP OF THE
+ * TRACK, so the campaign's last row hands over Ascendancy Protocol — the
+ * relic that changes what the deal itself deals — rather than finishing on
+ * a rule with a purple stranded a row above it.
+ *
+ * ONE GAP, at 18, because fourteen relics do not quite fill fifteen rows.
+ * It sits on a level that already opens a MAP, which is the same choice the
+ * mod half makes with its own gap at 11: a row that is already carrying
+ * something is the row that can afford to carry nothing else.
  */
 export const RELICS_FROM = 16;
 
@@ -315,21 +321,22 @@ const RELIC_UNLOCKS: Readonly<Record<number, readonly RelicId[]>> = {
   // not the one that does least (relics.ts)
   16: ["overclock"],
   17: ["coolant"],
-  18: ["scavenger"],
+  // 18 deals no relic: it opens the Riverlands (see the note above)
+  19: ["scavenger"],
   // the uncommons: what a death is worth, whose ever it was
-  19: ["insurance"],
-  20: ["phosphor"],
-  21: ["lastVolley"],
-  22: ["cascade"],
+  20: ["insurance"],
+  21: ["phosphor"],
+  22: ["lastVolley"],
+  23: ["cascade"],
   // the rares: the arithmetic of a heavy body
-  23: ["phoenix"],
-  24: ["twinfire"],
-  25: ["monofil"],
-  26: ["titan"],
-  // the ultras
-  27: ["undying"],
-  28: ["terminal"],
-  29: ["ascendancy"],
+  24: ["phoenix"],
+  25: ["twinfire"],
+  26: ["monofil"],
+  27: ["titan"],
+  // the ultras, and the last row of the campaign is the biggest of them
+  28: ["undying"],
+  29: ["terminal"],
+  30: ["ascendancy"],
 };
 
 /** every MOD exactly once, in the front half — checked at import */
