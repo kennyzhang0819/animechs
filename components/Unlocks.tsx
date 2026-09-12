@@ -12,6 +12,7 @@ import {
 } from "@/game/track";
 import { BackButton } from "./Board";
 import { HoverCard, useHoverCard } from "./HoverCard";
+import { tile } from "./tile";
 
 /**
  * THE UNLOCKS BOARD — everything the track will ever hand out, on one
@@ -175,18 +176,17 @@ function Tile({
           ui-zoom and throw the hover card's anchor arithmetic off
           (HoverCard.tsx divides by --ui-scale exactly once) */}
       <div
-        className={`flex items-center justify-center overflow-hidden border-2 bg-black/80 ${
-          lit ? "" : "opacity-40"
-        }`}
+        className="ms-tile flex items-center justify-center overflow-hidden"
         style={{
+          ...tile(color),
           width: CHIP_PX,
           height: CHIP_PX,
           transform: `scale(${SCALE})`,
-          borderColor: color,
-          color,
         }}
       >
-        {face}
+        {/* the fade is on the FACE, not the frame: a locked purple is
+            still legibly a purple (the note above) */}
+        <span className={`flex items-center justify-center ${lit ? "" : "opacity-40"}`}>{face}</span>
       </div>
       <HoverCard tip={tip} title={name} tag={tag} color={color} align="center">
         {children}

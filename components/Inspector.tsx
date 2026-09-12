@@ -11,6 +11,7 @@ import type { TowerKind, UnitKind } from "@/game/levels";
 import { HoverCard, useHoverCard } from "./HoverCard";
 import { Glyph } from "./Relics";
 import { TOWER_ICONS } from "./towerIcons";
+import { tile } from "./tile";
 
 /**
  * THE INSPECTOR — what the thing you just clicked is, along the bottom of
@@ -75,19 +76,12 @@ function ModPip({ id, n, total }: { id: ModId; n: number; total: number }) {
     <span
       ref={tip.ref as RefObject<HTMLSpanElement | null>}
       {...tip.anchorProps}
-      className="pointer-events-auto relative flex h-[24px] w-[24px] shrink-0 items-center justify-center border"
-      style={{ borderColor: r.color, background: r.ground }}
+      className="ms-tile ms-tile-sm pointer-events-auto flex h-[24px] w-[24px] shrink-0 items-center justify-center"
+      style={tile(r.color)}
       aria-label={many ? `${modName(d)}, on ${n} of them` : modName(d)}
     >
       <Glyph glyph={d.glyph} className="h-[16px] w-[16px]" />
-      {many && (
-        <span
-          className="pointer-events-none absolute -bottom-[4px] -right-[3px] bg-[#0b0b0d] px-[2px] text-[9px] font-bold leading-none"
-          style={{ color: r.color }}
-        >
-          {n}
-        </span>
-      )}
+      {many && <span className="ms-tile-count">{n}</span>}
       <HoverCard tip={tip} title={modName(d)} tag={r.name} color={r.color} align="center">
         {d.blurb}
         {many && (
@@ -141,19 +135,12 @@ function StatusPip({ chip }: { chip: Chip }) {
     <span
       ref={tip.ref as RefObject<HTMLSpanElement | null>}
       {...tip.anchorProps}
-      className="pointer-events-auto relative flex h-[22px] w-[22px] shrink-0 items-center justify-center border border-[#26262b] bg-[#101013]"
-      style={{ borderColor: d.color }}
+      className="ms-tile ms-tile-sm pointer-events-auto flex h-[22px] w-[22px] shrink-0 items-center justify-center"
+      style={tile(d.color)}
       aria-label={`${d.name}${chip.n !== null ? ` ${chip.n}` : ""}, ${chip.note}`}
     >
       <StatusGlyph id={chip.id} className="h-[15px] w-[15px]" />
-      {chip.n !== null && (
-        <span
-          className="pointer-events-none absolute -bottom-[4px] -right-[3px] bg-[#0b0b0d] px-[2px] text-[9px] font-bold leading-none tabular-nums"
-          style={{ color: d.color }}
-        >
-          {chip.n}
-        </span>
-      )}
+      {chip.n !== null && <span className="ms-tile-count">{chip.n}</span>}
       <HoverCard tip={tip} title={d.name} tag={chip.note} color={d.color} align="center">
         {d.blurb}
       </HoverCard>

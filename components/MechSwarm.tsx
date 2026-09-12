@@ -122,6 +122,7 @@ import { levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
 import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
 import ProgressView from "./Progress";
 import { bandFor, MutationFace } from "./mutationFace";
+import { tile } from "./tile";
 import { HoverCard, useHoverCard } from "./HoverCard";
 import MenuBackground from "./MenuBackground";
 import { useEscapeBack } from "./Board";
@@ -850,8 +851,8 @@ function DealRuleCell({ def }: { def: MutationDef }) {
       role="listitem"
       tabIndex={0}
       aria-label={`${def.name}: ${band.label} mutator. ${def.blurb}`}
-      className="pointer-events-auto flex h-12 w-12 items-center justify-center border bg-[#0b0b0d] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
-      style={{ borderColor: band.color }}
+      className="ms-tile pointer-events-auto flex h-12 w-12 items-center justify-center focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FFD37F]"
+      style={tile(band.color)}
     >
       <MutationFace id={def.id} size="h-7 w-7" />
       <HoverCard tip={tip} title={def.name} tag={band.label} color={band.color} align="right">

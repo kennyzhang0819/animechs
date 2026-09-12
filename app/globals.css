@@ -587,6 +587,106 @@
   .ms-grid {
     background-color: #08080a;
   }
+
+  /* THE TILE: the square a thing sits in — a turret on the track and the
+     unlocks board, a module on the relic shelf and in the inspector, a rule
+     in the corner, the dealt card, the hover card. It is the PANE'S OWN
+     RECIPE (.ms-pane above: notched corners, a light row under the top
+     edge, a dark row over the bottom one, a stud in each corner) drawn in
+     whatever colour the thing wears, so the four rarities, the three
+     mutator weights and the category colours all come off one drawing.
+
+     ONE VARIABLE DRIVES IT: set `--tile` inline (components/tile.ts) and
+     the light, the dark and the ground are mixed from it here. Never set
+     border-color or background on a tile — the frame is painted as
+     background strips over a transparent border, exactly as the pane is,
+     so an inline border or background would paint straight over it.
+     The ground is opaque on purpose (the note on RarityDef.ground in
+     game/rarity.ts): a tile is a thing held in front of the field. */
+  .ms-tile {
+    --tile: #a9adb5;
+    --tile-light: color-mix(in srgb, var(--tile) 55%, #ffffff);
+    --tile-dark: color-mix(in srgb, var(--tile) 45%, #000000);
+    --tile-ground: color-mix(in srgb, var(--tile) 12%, #0b0b0d);
+    position: relative;
+    color: var(--tile);
+    border: 3px solid transparent;
+    background-color: var(--tile-ground);
+    background-origin: border-box;
+    background-clip: border-box;
+    background-repeat: no-repeat;
+    background-image:
+      linear-gradient(var(--tile), var(--tile)),
+      linear-gradient(var(--tile), var(--tile)),
+      linear-gradient(var(--tile), var(--tile)),
+      linear-gradient(var(--tile), var(--tile)),
+      linear-gradient(var(--tile-light), var(--tile-light)),
+      linear-gradient(var(--tile-dark), var(--tile-dark)),
+      linear-gradient(var(--tile-light), var(--tile-light)),
+      linear-gradient(var(--tile-light), var(--tile-light)),
+      linear-gradient(var(--tile-light), var(--tile-light)),
+      linear-gradient(var(--tile-light), var(--tile-light));
+    background-size:
+      calc(100% - 6px) 3px,
+      calc(100% - 6px) 3px,
+      3px calc(100% - 6px),
+      3px calc(100% - 6px),
+      calc(100% - 6px) 3px,
+      calc(100% - 6px) 3px,
+      3px 3px,
+      3px 3px,
+      3px 3px,
+      3px 3px;
+    background-position:
+      3px 0,
+      3px 100%,
+      0 3px,
+      100% 3px,
+      3px 3px,
+      3px calc(100% - 3px),
+      6px 6px,
+      calc(100% - 6px) 6px,
+      6px calc(100% - 6px),
+      calc(100% - 6px) calc(100% - 6px);
+  }
+
+  /* UNDER 36PX the rows and studs would eat the face: only the notched
+     frame stays. The relic shelf, the inspector's pips, the reveal's rows
+     and the held card's formation mark are this size. */
+  .ms-tile-sm {
+    background-image:
+      linear-gradient(var(--tile), var(--tile)),
+      linear-gradient(var(--tile), var(--tile)),
+      linear-gradient(var(--tile), var(--tile)),
+      linear-gradient(var(--tile), var(--tile));
+    background-size:
+      calc(100% - 6px) 3px,
+      calc(100% - 6px) 3px,
+      3px calc(100% - 6px),
+      3px calc(100% - 6px);
+    background-position:
+      3px 0,
+      3px 100%,
+      0 3px,
+      100% 3px;
+  }
+
+  /* A STACK COUNT on a tile: a black block over the bottom-right corner,
+     the number in the tile's own colour */
+  .ms-tile-count {
+    position: absolute;
+    right: -3px;
+    bottom: -3px;
+    z-index: 1;
+    padding: 2px 2px 1px;
+    background: #0b0b0d;
+    font-family: var(--font-display);
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--tile);
+    pointer-events: none;
+  }
 }
 
 :root {
@@ -772,38 +872,14 @@ svg {
   }
 }
 
-/* THE CARD IS A TILE WITH A RARITY FLAG: a plate-coloured square, its 3px
-   outline in the rarity's colour (set inline from rarity.ts), and a
-   stepped triangle of the same colour in the top-left corner — the
-   pixel flag that says what band the draw came from before the label is
-   read. The ground is the rarity's own opaque one, set inline over the
-   fallback; NEVER translucent — see the note on RarityDef.ground */
+/* THE CARD IS A TILE (.ms-tile in the rarity's colour, components/tile.ts)
+   that pops when dealt. It used to carry a stepped rarity flag in its
+   top-left corner as well; the plate frame is the band now, corner to
+   corner, and the flag sat on the notch and the stud. */
 .ms-deal-card {
   position: relative;
-  background: #1b1d22;
   user-select: none;
   animation: deal-pop 280ms steps(7, end) both;
-}
-
-.ms-deal-card::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 3px;
-  height: 3px;
-  background: currentColor;
-  box-shadow:
-    3px 0 0 currentColor,
-    6px 0 0 currentColor,
-    9px 0 0 currentColor,
-    0 3px 0 currentColor,
-    3px 3px 0 currentColor,
-    6px 3px 0 currentColor,
-    0 6px 0 currentColor,
-    3px 6px 0 currentColor,
-    0 9px 0 currentColor;
-  pointer-events: none;
 }
 
 .ms-deal-card:focus-visible {
