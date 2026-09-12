@@ -42,7 +42,11 @@ export type StatusId =
   | "arriving"
   | "hungry"
   | "waded"
+  | "veteran"
+  | "cloaked"
   | "rot"
+  | "short"
+  | "jam"
   | "boost"
   | "regen"
   | "revive"
@@ -135,11 +139,43 @@ export const STATUSES: readonly StatusDef[] = [
     field: true,
   },
   {
+    id: "veteran",
+    name: "Veteran",
+    color: PAL.harpoon,
+    blurb:
+      "A Harpoon hull, and the longer it lives the harder it hits: every shot it fires is multiplied by this. Kill it young.",
+    field: true,
+  },
+  {
+    id: "cloaked",
+    name: "Cloaked",
+    color: PAL.wraith,
+    blurb:
+      "Gone dark. Nothing can target it and nothing can hurt it until it shows again; the count is the seconds it has left.",
+    field: true,
+  },
+  {
     id: "rot",
     name: "Rot",
-    color: PAL.sap,
+    color: PAL.venom,
     blurb:
       "Venom. It takes raw health a second and ignores plating; more spitters on one building rot it faster, up to a cap.",
+    field: true,
+  },
+  {
+    id: "short",
+    name: "Shorted",
+    color: PAL.wraith,
+    blurb:
+      "A Wraith arc put this gun out. It neither reloads nor fires nor mends while this lasts; a fresh short re-times it rather than stacking.",
+    field: true,
+  },
+  {
+    id: "jam",
+    name: "Jammed",
+    color: PAL.bomber,
+    blurb:
+      "A bomber wing is blanketing the ground under it. This gun reloads slower for as long as the flight is over it.",
     field: true,
   },
   {
@@ -218,7 +254,9 @@ export function unitHasFieldStatus(sim: Sim, i: number): boolean {
     sim.ushield[i] > 0 ||
     sim.uspawn[i] > 0 ||
     sim.uhungry[i] !== 0 ||
-    sim.uwade[i] !== 0
+    sim.uwade[i] !== 0 ||
+    sim.uvet[i] >= 1.1 ||
+    sim.ucloakT[i] > 0
   );
 }
 
@@ -232,6 +270,8 @@ export function unitFieldStatuses(sim: Sim, i: number, out: StatusId[]): number 
   if (sim.uspawn[i] > 0) out.push("arriving");
   if (sim.uhungry[i] !== 0) out.push("hungry");
   if (sim.uwade[i] !== 0) out.push("waded");
+  if (sim.uvet[i] >= 1.1) out.push("veteran");
+  if (sim.ucloakT[i] > 0) out.push("cloaked");
   return out.length;
 }
 
@@ -269,6 +309,16 @@ export function unitStatusChips(sim: Sim, i: number): StatusChip[] {
       n: sim.uwade[i],
       note: `${sim.uwade[i]} of ${AMPHIBIOUS_MAX_STACKS} wades`,
     });
+  // the veteran's chip prints the bonus as a percentage, since "x1.6" does
+  // not fit under a seven-pixel symbol and "+60" does
+  if (sim.uvet[i] >= 1.1)
+    out.push({
+      id: "veteran",
+      n: Math.round((sim.uvet[i] - 1) * 100),
+      note: `hits x${sim.uvet[i].toFixed(1)} after ${Math.round(sim.uage[i])}s alive`,
+    });
+  if (sim.ucloakT[i] > 0)
+    out.push({ id: "cloaked", n: Math.ceil(sim.ucloakT[i]), note: `untouchable — ${secs(sim.ucloakT[i])}` });
   return out;
 }
 
@@ -286,7 +336,8 @@ export function structHasFieldStatus(s: Structure): boolean {
   if (isCore(s)) return false;
   const t = s;
   return (
-    t.poison > 0 || t.boostT > 0 || t.regen > 0 || t.revives > 0 || t.fireRate < 1 || t.team === "enemy"
+    t.poison > 0 || t.shortT > 0 || t.jamT > 0 || t.boostT > 0 || t.regen > 0 || t.revives > 0 ||
+    t.fireRate < 1 || t.team === "enemy"
   );
 }
 
@@ -295,6 +346,8 @@ export function structFieldStatuses(s: Structure, out: StatusId[]): number {
   out.length = 0;
   if (isCore(s)) return 0;
   if (s.poison > 0) out.push("rot");
+  if (s.shortT > 0) out.push("short");
+  if (s.jamT > 0) out.push("jam");
   if (s.boostT > 0) out.push("boost");
   if (s.regen > 0) out.push("regen");
   if (s.revives > 0) out.push("revive");
@@ -322,13 +375,15 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
   const tally = new Map<StatusId, number>();
   // the single-pick numbers. Summed or maxed so they stay meaningful for
   // one building, which is the only case that ever reads them back
-  let poison = 0, boostT = 0, regen = 0, revives = 0, rate = 1;
+  let poison = 0, boostT = 0, regen = 0, revives = 0, rate = 1, shortT = 0, jamRate = 1;
   for (const s of picked) {
     if (isCore(s)) {
       armorMixed = true; // the core wears none, so a bag holding one disagrees
       continue;
     }
     poison += s.poison;
+    shortT = Math.max(shortT, s.shortT);
+    if (s.jamT > 0) jamRate = Math.min(jamRate, s.jamRate);
     boostT = Math.max(boostT, s.boostT);
     regen += s.regen;
     revives += s.revives;
@@ -340,6 +395,8 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
     else if (armor !== s.spec.armor) armorMixed = true;
     const bump = (id: StatusId): void => void tally.set(id, (tally.get(id) ?? 0) + 1);
     if (s.poison > 0) bump("rot");
+    if (s.shortT > 0) bump("short");
+    if (s.jamT > 0) bump("jam");
     if (s.boostT > 0) bump("boost");
     if (s.regen > 0) bump("regen");
     if (s.revives > 0) bump("revive");
@@ -359,6 +416,8 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
     });
   };
   on("rot", null, `${num(poison)} health a second`);
+  on("short", null, secs(shortT));
+  on("jam", null, `reloads at ${Math.round(jamRate * 100)}%`);
   on("boost", null, secs(boostT));
   on("regen", null, `${num(regen)} health a second`);
   on("revive", revives, `${revives} stand-up${revives === 1 ? "" : "s"} left`);

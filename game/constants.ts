@@ -99,6 +99,39 @@ export const PAL = {
   surge: pal(0xf3e979),
   /** Liquids.slag.color — what an atrax spits */
   slag: pal(0xffa166),
+  // ---- THE FAMILY PALETTE, this game's own ----------------------------
+  //
+  // ONE HUE A FAMILY, and it is worn everywhere the family shows: the
+  // highlight on its hulls (the `-cell` region and the engine flames,
+  // levels.ts FAMILY_ACCENT), its shots, its motes and its rings, and the
+  // symbol of every status it lays. A player reads a family off the colour
+  // before they read the sprite. NONE OF THEM IS A MINDUSTRY AMMO COLOUR:
+  // the yellows, the heal green, the sap purple and the missile orange stay
+  // the turrets' and the boss's, so the swarm's colours are never the
+  // board's.
+  //
+  // Each is a pair — the bright face a round is drawn in and the dark rim
+  // behind it — and six hues spread round the wheel so no two families
+  // sit next to each other: crimson, acid, star-gold, magenta, teal,
+  // violet.
+  /** Ground mechs: crimson — the wall that walks */
+  mech: pal(0xff4d6d),
+  mechDark: pal(0x8c1c3a),
+  /** Venom spitters: acid — the orb, the rot's mote, the haste ring */
+  venom: pal(0xd4ff3a),
+  venomDark: pal(0x5c8a12),
+  /** Starlight mechs: star-gold — every laser on the tree */
+  star: pal(0xfff0a8),
+  starDark: pal(0xf0b840),
+  /** Skyfall bombers: magenta — the charges, the nuke, the jam */
+  bomber: pal(0xff5fd6),
+  bomberDark: pal(0x8f2280),
+  /** Harpoon fleet: teal — the rails, the spotter's and the drill's rings */
+  harpoon: pal(0x4dffe0),
+  harpoonDark: pal(0x0f8a78),
+  /** Wraith fleet: violet — the arcs, a short's sparks, a blink, a cloak */
+  wraith: pal(0xb48cff),
+  wraithDark: pal(0x5a35b8),
 } as const;
 
 /**
@@ -1670,8 +1703,11 @@ export const MOVE_LAYERS = ["ground", "air", "water"] as const;
 export type MoveLayer = (typeof MOVE_LAYERS)[number];
 
 /**
- * WHAT A NAVAL TANK LOSES ASHORE: thirty per cent of its speed, applied to
- * the drive and to nothing else.
+ * WHAT A HULL LOSES ASHORE: half its speed, applied to the drive and to
+ * nothing else. The Harpoon fleet is the sniper family (weapons.ts) and
+ * the crawl up the beach is the point of it — a hull that is slow to
+ * arrive has been shooting the whole way in, and is old when it arrives
+ * (levels.ts veteran).
  *
  * It is deliberately NOT a pathfinding input. The naval field is a plain
  * shortest-path solve over "rock, and nothing else" (navalWalkMask), so a
@@ -1686,7 +1722,23 @@ export type MoveLayer = (typeof MOVE_LAYERS)[number];
  * penalty would be a pathfinding input. Here it is not one — the field
  * never reads it.
  */
-export const NAVAL_LAND_SPEED = 0.7;
+export const NAVAL_LAND_SPEED = 0.5;
+/**
+ * ...AND WHAT IT GAINS AFLOAT: half again its stat, on the drive and on
+ * nothing else, on every cell that IS a water floor (Sim.updateUnits).
+ *
+ * The naval stat is the speed a hull was authored at, and ashore it was
+ * always fine — a sei on a beach reads as a tank and drives like one. The
+ * water was the problem: the same number on the water made the sea a road
+ * no faster than the land, and a family whose whole premise is "quick in
+ * the water, slow on it ashore" had a premise nobody could see. Half
+ * again is the number that makes a channel read as a channel — a risso
+ * crossing a bay is a boat and a risso crossing a beach is not — without
+ * a hull outrunning the guns a fresh board has (NAVAL_PACE in levels.ts
+ * is still the dial under it). Like the land tax it is not a pathfinding
+ * input: the naval field never reads it.
+ */
+export const NAVAL_WATER_SPEED = 1.5;
 
 /**
  * What a drop zone feeds: one of the movement layers, or the BOSS door.
@@ -1875,6 +1927,11 @@ export const POISON_DECAY = 1;
 export const POISON_FX_RATE = 6;
 /** seconds one mote lives */
 export const POISON_FX_LIFE = 0.6;
+/** sparks a second a SHORTED building throws (Tower.shortT), for a 1x1 —
+ *  scaled by the footprint as the rot's motes are */
+export const SHORT_FX_RATE = 8;
+/** seconds one spark lives */
+export const SHORT_FX_LIFE = 0.22;
 
 /**
  * THE AURAS THE TWO REWORKED FAMILIES CARRY, both of them a STAMP rather

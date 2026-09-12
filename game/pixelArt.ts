@@ -89,10 +89,14 @@ export const PAL = {
   emberDark: "#db401c", ember: "#ec7458", emberLite: "#ff9c5a",
   flame: "#ffdd55", flameLite: "#fff2ad",
   waterDark: "#3f4c96", water: "#5c6dbb", waterLite: "#8aa3f4",
-  // Pal.sapBulletBack and Pal.sapBullet, straight off constants.ts — the
-  // venom line's two-tone purple, and the only colour in the game that
-  // means ROT
-  sapDark: "#6d56bf", sap: "#bf92f9",
+  // THE FAMILY PALETTE, straight off constants.ts (PAL.mech and the rest):
+  // one hue a family, and the symbol of every status a family lays is
+  // drawn in that family's hue — acid for the rot, violet for a short and
+  // a cloak, magenta for a jam, teal for a veteran
+  venomDark: "#5c8a12", venom: "#d4ff3a",
+  wraithDark: "#5a35b8", wraith: "#b48cff",
+  bomberDark: "#8f2280", bomber: "#ff5fd6",
+  harpoonDark: "#0f8a78", harpoon: "#4dffe0",
   codexDark: "#c25a97", codex: "#ff8acb", codexLite: "#ffc7e6",
 } as const;
 

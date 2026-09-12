@@ -25,6 +25,9 @@
  *   --world <id>     WORLDS id (default 1)
  *   --tier <n>       rung, 0-based (default 0 — no rolled mutators)
  *   --mutators a,b   mutators to play under (default none; intrinsic ones always apply)
+ *   --families a,b,c the three families to deal into the script's slots, by key
+ *                    (ground, crawler, groundSupport, air, naval, navalSupport) —
+ *                    default: the script as authored, which is ground, groundSupport, air
  *   --level <n>      player level: which turrets the track has opened (default 15 — the whole roster)
  *   --scale <x>      multiply the roll fee and every turret price (default 1)
  *   --unit-damage <x>  the swarm's damage to structures, as a multiple of Mindustry's (default: the shipped dial, weapons.ts)
@@ -39,6 +42,13 @@
  *   --log <n>        print a line every n waves (default 5)
  *   --seconds <n>    give up after this much sim time (default 2400)
  *   --probe <n>      seconds of turret-less dry run the bot learns the routes from (default 90, a few waves' worth)
+ *   --seed <n>       seed every roll in the run — the deal, the shapes, the sim's own
+ *                    dice — so two runs with one seed differ only by the code under
+ *                    them. Unset is Math.random, which is how a run varies: the
+ *                    opening deal alone can move a result by twenty waves
+ *   --dump           at the end, print every body still alive — kind, where it is,
+ *                    what it is aiming at, how far from the core and the nearest
+ *                    building — for a run that stalled with the swarm still out
  *   --json           print the report as JSON
  *   --no-build       skip the TypeScript transpile (use the last one)
  *
@@ -68,6 +78,7 @@ const flag = (name) => args.includes(`--${name}`);
 const WORLD_ID = String(opt("world", "1"));
 const TIER = +opt("tier", 0);
 const MUTATORS = String(opt("mutators", "")).split(",").filter(Boolean);
+const FAMILIES = String(opt("families", "")).split(",").filter(Boolean);
 const LEVEL = +opt("level", 15);
 const SCALE = +opt("scale", 1);
 const UNIT_DAMAGE = opt("unit-damage", null);
@@ -78,6 +89,21 @@ const LOG_EVERY = +opt("log", 5);
 const MAX_SECONDS = +opt("seconds", 2400);
 const PROBE_OPT = opt("probe", null);
 const JSON_OUT = flag("json");
+const SEED = opt("seed", null);
+const DUMP = flag("dump");
+// A SEEDED RUN, for an A/B: mulberry32 over Math.random itself, so the
+// deal (rarity.ts), the shapes (formation.ts) and every die the sim throws
+// come out the same for the same seed. Installed before any module loads
+if (SEED !== null) {
+  let a = (+SEED >>> 0) || 1;
+  Math.random = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 // ---------- transpile ----------
 
@@ -137,6 +163,19 @@ if (!world) {
   process.exit(1);
 }
 const spec = { ...LA.specForTier(world, TIER), mutation: MUTATORS };
+// THE DEAL, forced: the script's slots played as these families, exactly
+// as a run's roll deals them (levels.ts transformScript). Unset plays the
+// script as authored, so the numbers a playtest reports against the stage
+// table are the authored ones unless a sweep asks otherwise
+if (FAMILIES.length > 0) {
+  for (const f of FAMILIES)
+    if (!L.FAMILIES.some((x) => x.key === f)) {
+      console.error(`no family "${f}"; have ${L.FAMILIES.map((x) => x.key).join(", ")}`);
+      process.exit(1);
+    }
+  spec.families = FAMILIES;
+  spec.script = L.transformScript(spec.script, FAMILIES);
+}
 // the probe has to see a few waves walk or the bot lays its line off the
 // traced gradient alone
 const PROBE_SECONDS = PROBE_OPT === null ? 90 : +PROBE_OPT;
@@ -448,9 +487,24 @@ function play() {
     }
   }
   const won = sim.won();
+  if (DUMP) {
+    const rows = [];
+    for (let i = 0; i < sim.n; i++) {
+      const k = L.UNIT_KINDS[sim.ukind[i]];
+      let near = Infinity;
+      for (const t of sim.towers) { const d = Math.hypot(t.x - sim.upx[i], t.y - sim.upy[i]); if (d < near) near = d; }
+      rows.push(`${k} hp ${Math.round(sim.uhp[i])}/${Math.round(sim.uhpmax[i])} at ${Math.round(sim.upx[i] / CELL)},${Math.round(sim.upy[i] / CELL)}` +
+        ` core ${Math.round(Math.hypot(sim.core.x - sim.upx[i], sim.core.y - sim.upy[i]) / CELL)}t nearest ${Math.round(near / CELL)}t` +
+        ` tgt ${sim.utgt[i] ? sim.utgt[i].s.kind + "@" + Math.round(sim.utgt[i].x / CELL) + "," + Math.round(sim.utgt[i].y / CELL) : "-"}` +
+        ` spawn ${sim.uspawn[i].toFixed(1)} v ${Math.round(Math.hypot(sim.uvx[i], sim.uvy[i]))}`);
+    }
+    console.error(`ALIVE ${sim.n} at ${Math.round(sim.time)}s, wave ${sim.currentWave()}, core ${Math.round(sim.core.hp)}`);
+    for (const r of rows.slice(0, 60)) console.error("  " + r);
+  }
   return {
     world: `${world.id} ${world.name}`, mission: L.missionText(world).title, tier: TIER,
     mutators: [...(world.intrinsicMutation ?? []), ...MUTATORS], level: LEVEL,
+    families: FAMILIES.length ? FAMILIES : null, seed: SEED,
     scale: SCALE, start: E.SCRAP_START, unitDamage: WP.unitDamageScale(),
     outcome: won ? "WON" : sim.lost() ? "LOST" : "TIMEOUT",
     wave: sim.currentWave(), time: Math.round(sim.time), core: Math.round((100 * sim.core.hp) / sim.core.hpMax),
@@ -472,7 +526,8 @@ if (JSON_OUT) {
 } else {
   console.log(
     `${r.world} — ${r.mission} — rung ${r.tier + 1}${r.mutators.length ? ` [${r.mutators.join(", ")}]` : ""} — level ${r.level}` +
-      `${r.scale !== 1 ? ` — prices x${r.scale}` : ""} — unit damage x${r.unitDamage}`,
+      `${r.scale !== 1 ? ` — prices x${r.scale}` : ""} — unit damage x${r.unitDamage}` +
+      `${r.families ? ` — families ${r.families.join(", ")}` : ""}${r.seed !== null ? ` — seed ${r.seed}` : ""}`,
   );
   console.log(
     `${r.outcome} at wave ${r.wave}, ${mmss(r.time)} in — core ${r.core}%, kills ${r.kills}, ${r.cleared}/${r.waves} waves cleared for ${r.xp} xp` +

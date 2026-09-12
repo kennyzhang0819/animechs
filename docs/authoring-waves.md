@@ -61,10 +61,11 @@ Rules of thumb for the counts:
 - **Spend the budget on T3/T4/T5.** One reign weighs as much as sixty
   daggers, and the late script is where the phase-tier turrets earn
   their price.
-- **Naval waves need water.** The ten hulls travel the water layer and
-  the family roll only deals a naval family onto a map with a water door
-  (`rollFamilies`), so a script authored in the three land families plays
-  every map.
+- **Naval waves want water, and play without it.** The ten hulls travel
+  the amphibious layer: half again their stat afloat and a third down on
+  it ashore (`NAVAL_WATER_SPEED`, `NAVAL_LAND_SPEED`), so a naval family
+  rolls onto every map (`rollFamilies`) and simply drives where the map
+  has no channel.
 
 ## Checking a script
 
