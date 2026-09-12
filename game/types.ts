@@ -348,6 +348,25 @@ export interface Tower {
   beamOY: number;
   beamRot: number;
   beamDmgT: number; // Bullet.timer(1, damageInterval): the beam's own clock
+  /**
+   * THE FALLBACK MUZZLE FLASH (Sim.fireShot, Renderer's tower pass).
+   *
+   * Seconds left on a mark drawn at the barrel for a shot whose own muzzle
+   * effect the effect pool REFUSED — so a screen saturated past FX_CAP can
+   * never make a firing turret look like a stalled one. It is state on the
+   * TURRET rather than an effect precisely because the pool is what failed:
+   * one quad, no slot, no cap to be refused by.
+   *
+   * Set only on refusal, so a board inside its budget never draws it and
+   * never pays for it, and the shot's own effect is never doubled.
+   * `flashX/flashY` is the muzzle the shot actually left from and
+   * `flashRot` its heading, both fixed at the shot — the turret slews on
+   * while the mark fades, exactly as a real muzzle effect would.
+   */
+  flashT: number;
+  flashX: number;
+  flashY: number;
+  flashRot: number;
 }
 
 /**
@@ -418,6 +437,19 @@ export interface Projectile {
   // unit and lands on the player's structures, by the cell it is over —
   // the enemy shots' rule (updateEnemyShots) on the turrets' own bullets
   enemy: boolean;
+  /**
+   * A shot with NO SPRITE OF ITS OWN — scorch's flame is the only one —
+   * whose muzzle effect the pool refused. Such a bullet normally draws
+   * nothing at all, the visible weapon being Fx.shootSmallFlame at the
+   * barrel, so with the flame dropped the turret reads as one that tracks
+   * and never fires. Flagged here, the renderer draws the bullet itself as
+   * a single disc on the flame's own ramp: a twelfth of the quads, and a
+   * tongue that still leaves the barrel and runs down the lane.
+   *
+   * False for every bullet that has a sprite or an orb, and false again
+   * the moment the pool has room — the real flame is always preferred.
+   */
+  bare: boolean;
 }
 
 export const enum FxKind {

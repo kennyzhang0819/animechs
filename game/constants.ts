@@ -1905,10 +1905,15 @@ export const DAMAGE_SMOKE_LIFE = 0.55;
  * minutes of rot on a run that lasts twelve. The status quietly expired
  * somewhere around wave thirty.
  *
- * SO THE NUMBERS PER APPLICATION ARE SMALL AND THE CROWD IS THE SCALING.
- * A crawler's spit is six health a second at one roll in four; what makes
- * a wave of them frightening is that there is a wave of them. The decay is
- * the only bound, and it is a self-correcting one.
+ * SO THE CROWD IS THE SCALING, AND THE TIER IS THE WEIGHT. A crawler's
+ * spit is twelve health a second at two rolls in five, and what makes a
+ * wave of them frightening is that there is a wave of them; a toxopid's
+ * bomb is a hundred and fifty across seventeen tiles, and what makes one
+ * frightening is the one. The per-application rates used to top out at
+ * ten a second for every tier alike, which against a pool that grows by
+ * MULTIPLIERS was a status that had quietly expired — see the venom
+ * ladder in weapons.ts. The decay is still the only bound, and it is
+ * still a self-correcting one.
  */
 export const POISON_TIME = 6;
 /**

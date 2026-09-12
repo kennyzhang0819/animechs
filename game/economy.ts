@@ -163,18 +163,28 @@ export const TURRET_ROLL_PRICE = 1000;
 export const MOD_ROLL_PRICE = 2000;
 
 /**
- * THIRTY THOUSAND FOR A RELIC, AND IT IS NOT A TYPO. It was three and a
- * half, which is where a "+10% damage" belongs, and every relic in the
- * catalog has since been rewritten to change the game rather than nudge
- * it (mods.ts) — the board fires twice as fast, every kill pays triple,
- * every turret stands back up. A rule that size at four cards' price
- * would be the first thing every run bought and the last decision it
- * ever made; at thirty cards' price it is a run's whole mid-game bet, and
- * pressing G is a decision again. The amount ladder still multiplies it,
- * so x9 relics is two hundred and seventy thousand — nine relics is nine
- * relics.
+ * A HUNDRED AND FIFTY THOUSAND FOR A RELIC, AND IT IS NOT A TYPO. It was
+ * three and a half thousand, which is where a "+10% damage" belongs, and
+ * every relic in the catalog has since been rewritten to change the game
+ * rather than nudge it (mods.ts) — the board fires twice as fast, every
+ * kill pays triple, every turret stands back up. A rule that size at four
+ * cards' price would be the first thing every run bought and the last
+ * decision it ever made.
+ *
+ * THIRTY THOUSAND WAS STILL TOO CHEAP, and what proved it was how early
+ * the button stopped being a decision: thirty turret cards is a bank a
+ * run rebuilds inside a couple of waves once a line is holding, so the
+ * relics arrived in a block in the mid-game and after that the G button
+ * was a formality with nothing left behind it. At a HUNDRED AND FIFTY
+ * thousand — a hundred and fifty cards, the opening bank twenty times
+ * over — a relic is a whole act of a run saved for, and buying one is
+ * giving up the board that money would have been. That is the trade the
+ * button is supposed to put in front of the player.
+ *
+ * The amount ladder still multiplies it, so x9 relics is one and a
+ * third million — nine relics is nine relics.
  */
-export const RELIC_ROLL_PRICE = 30000;
+export const RELIC_ROLL_PRICE = 150000;
 
 /**
  * THE AMOUNT LADDER — the corner's fourth button, which cycles through

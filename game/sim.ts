@@ -249,6 +249,14 @@ const FX_DUST_CAP = 140;
  * game state this never clips — it exists so the arrays have a size.
  */
 const FX_MAX = 8192;
+/**
+ * How long the FALLBACK MUZZLE FLASH burns (Tower.flashT, and the tower
+ * pass in the renderer that draws it). Eight ticks — Fx.shootSmall's own
+ * lifetime, since that is the effect it is standing in for — so a turret
+ * whose muzzle effect the pool refused flickers at exactly the rate it
+ * would have flickered with the budget to spare.
+ */
+export const MUZZLE_FLASH_LIFE = 8 / 60;
 /** seconds a death ring lives — the puff a body leaves wherever it went */
 const FX_DEATH = 0.35;
 /** what a DEVOURED body's ring is drawn in (see feedHungry) — the hungry
@@ -2481,6 +2489,10 @@ export class Sim {
       beamOY: 0,
       beamRot: 0,
       beamDmgT: 0,
+      flashT: 0,
+      flashX: 0,
+      flashY: 0,
+      flashRot: 0,
     };
     this.towers.push(tower);
     // the attributes it just rolled become its stats and its pool, and it
@@ -6899,6 +6911,10 @@ export class Sim {
       }
     }
     for (const t of this.towers) {
+      // the fallback muzzle mark burning down (Tower.flashT, set in
+      // fireShot): first thing in the pass, so it fades whatever else the
+      // turret is or is not doing — shorted, mending, holding a beam
+      if (t.flashT > 0) t.flashT -= dt;
       // DAMAGE SMOKE, the units' own rule (updateStatus): under half its
       // pool a structure sheds soot, thicker the lower it gets, scaled by
       // its footprint so a spectre smokes like the building it is. The
@@ -7338,8 +7354,31 @@ export class Sim {
     // BulletType.shootEffect and smokeEffect, both fired at the muzzle
     // along the shot's angle. For scorch the pair IS the weapon: the
     // bullet itself draws nothing at all
-    this.bulletFx(st.bullet.shootFx, x, y, a, st.bullet.fxColor);
-    this.bulletFx(st.bullet.smokeFx, x, y, a, st.bullet.fxColor);
+    const shownShoot = this.bulletFx(st.bullet.shootFx, x, y, a, st.bullet.fxColor);
+    const shownSmoke = this.bulletFx(st.bullet.smokeFx, x, y, a, st.bullet.fxColor);
+    // A SHOT MUST NEVER BE SILENT (Tower.flashT). The pool drops the
+    // NEWEST push once it is over FX_CAP, which is to say it drops the
+    // flash of the shot being fired while stale puffs linger — and a
+    // swarm big enough to saturate the budget is exactly the moment a
+    // player is reading the line for which guns are still working. So a
+    // turret whose muzzle effect was refused stands its own mark up
+    // instead: state on the building, one quad, nothing the pool can say
+    // no to. Only on refusal, so a board inside its budget draws the real
+    // effect and nothing else, and the two are never both on screen.
+    //
+    // The instant weapons below never reach this: their shape IS their
+    // shot and is already forced past the cap.
+    // ...only where the ammo ASKED for a muzzle effect: a bullet that
+    // deliberately has neither is a bullet whose barrel is meant to be
+    // quiet, and standing a flash in for an effect nobody wanted would
+    // invent one
+    const wantsMuzzle = st.bullet.shootFx !== undefined || st.bullet.smokeFx !== undefined;
+    if (wantsMuzzle && !shownShoot && !shownSmoke && this.fxOn) {
+      t.flashT = MUZZLE_FLASH_LIFE;
+      t.flashX = x;
+      t.flashY = y;
+      t.flashRot = a;
+    }
     // aimed at a shield tower, the INSTANT weapons hand their damage straight to
     // it — the sweeps behind laser/lightning/rail/ray know only the unit
     // arrays. Projectile weapons need nothing here: their shots really fly,
@@ -7465,6 +7504,11 @@ export class Sim {
       // a shot of the swarm's flies past every body and lands on the
       // player's buildings instead (stepHostileProjectile)
       enemy: hostile,
+      // SCORCH, AND ONLY SCORCH: a bullet with neither sprite nor orb has
+      // no visible body of its own, so when the pool refused its flame
+      // there is nothing left on screen at all. Say so, and the renderer
+      // draws the bullet itself down the lane (see Projectile.bare)
+      bare: !shownShoot && !st.bullet.sprite && !st.bullet.orb,
     });
   }
 
@@ -7564,6 +7608,10 @@ export class Sim {
         frag: true,
         // fragments belong to whoever threw the parent
         enemy: pr.enemy,
+        // a fragment is thrown by a burst, not by a barrel: it has no
+        // muzzle effect to have been refused, and every frag ammo in the
+        // game has a sprite of its own
+        bare: false,
       });
     }
   }
@@ -8981,6 +9029,11 @@ export class Sim {
    * left at 0 by every effect that draws at its own Mindustry size and is
    * only filled in for the one kind that cannot (FxKind.WaterBurst, whose
    * whole job is to show the reach of the blast that fired it).
+   *
+   * Returns whether the effect actually LANDED. Nearly every caller
+   * ignores it; fireShot does not, because a muzzle effect the pool
+   * refused is a shot with nothing to show for it (see the fallback flash
+   * on Tower.flashT and the bare flag on Projectile).
    */
   private bulletFx(
     kind: BulletFx | undefined,
@@ -8990,22 +9043,24 @@ export class Sim {
     col?: RGB,
     force = false,
     len = 0,
-  ): void {
+  ): boolean {
     // refuse before rolling the seed, so a capped board — or one with the
     // effects switched off (see setEffects) — leaves the random stream
     // exactly where the old object push left it
-    if (kind === undefined) return;
-    if (!force && (!this.fxOn || this.fxN >= FX_CAP)) return;
-    if (this.fxN >= FX_MAX) return;
+    if (kind === undefined) return false;
+    if (!force && (!this.fxOn || this.fxN >= FX_CAP)) return false;
+    if (this.fxN >= FX_MAX) return false;
     const i = this.pushSlot(
       x, y, FX_LIFE[kind], kind, rot, len, (Math.random() * 0x7fffffff) | 0, 0, force,
     );
-    if (i >= 0 && col) {
+    if (i < 0) return false;
+    if (col) {
       this.fxHasCol[i] = 1;
       this.fxColR[i] = col[0];
       this.fxColG[i] = col[1];
       this.fxColB[i] = col[2];
     }
+    return true;
   }
 
   /**

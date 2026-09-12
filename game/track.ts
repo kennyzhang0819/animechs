@@ -237,7 +237,8 @@ const UNLOCKS: Readonly<Record<number, readonly TowerKind[]>> = {
  *
  * RELICS OPEN AT RELICS_FROM, and they are the one half of a corner
  * button that starts SHUT. That is deliberate and it is said out loud: a
- * relic changes the game and costs thirty thousand (economy.ts), and a
+ * relic changes the game and costs a hundred and fifty thousand
+ * (economy.ts), and a
  * save that has not yet seen its second map has no business being offered
  * one. The G button prints "locked" until the level lands.
  *
@@ -263,7 +264,11 @@ const MOD_UNLOCKS: Readonly<Record<number, readonly ModId[]>> = {
   7: ["coolant"],
   8: ["range2"],
   9: ["insurance"],
-  10: ["pierce1"],
+  // 10 deals no module: the pierce tick that used to open here is retired
+  // (mods.ts — Sabot Rounds is the same idea, one band up), and the level
+  // is left as a gap rather than backfilled. A module's unlock level is
+  // the pacing a player has already learned; shuffling eight of them up
+  // one rung to close a hole moves eight things to hide one.
   11: ["phosphor"],
   12: ["regen1"],
   13: ["prototype"],

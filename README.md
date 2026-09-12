@@ -210,13 +210,11 @@ stale tab or a cached bundle looks exactly like a fix not working.
   tech tree — the wrong instrument for a list read once and closed
 - `components/LevelEditorView.tsx`, `MapEditorView.tsx`, `BalanceView.tsx` —
   the admin authoring surfaces
-- `components/SandboxView.tsx` — the admin **Sandbox** tab, and the one
-  door in the game where a mutator is CHOSEN rather than rolled: pick a
-  world, a difficulty and any combination of rules, and deploy. It hands
-  off as a query string onto the game page — `/?sandbox=1&world=…&tier=…&mut=…`
-  — so the exact run that reproduced a bug is a URL you can paste into a
-  report. The run starts in sandbox mode: whole card unlocked, nothing
-  charged, every pace offered
+
+There is no Sandbox tab any more: **custom mode** on the deploy screen is
+that door (see *Two modes* below), and Ctrl+Shift+S inside a custom run is
+the rest of what the sandbox was — whole card unlocked, nothing charged,
+every pace offered.
 
 In dev builds the running `Game` instance is exposed as `window.__mechswarm`
 for console poking, and the ladder's tuning surface as `window.__ladder`
@@ -254,8 +252,8 @@ ceiling is 12. **Pan speed** — one knob for the keys, `PAN_RATE` times the
 setting, defaulting to 150% — lives on the Controls tab of Settings, saved
 with the rest of the preferences. There is no edge panning.
 
-There is **no pace strip on a campaign run**: the multipliers are the
-sandbox's, and space pauses.
+There is **no pace strip on a campaign run**: the multipliers belong to
+the sandbox — Ctrl+Shift+S inside a custom run — and space pauses.
 
 Settings is five tabs — **Game** (the save), **Video**, **Interface**,
 **Controls**, **Info**. **The Interface tab** holds the UI-size slider and
@@ -264,6 +262,41 @@ Settings is five tabs — **Game** (the save), **Video**, **Interface**,
 buildings alike, the core included. The player's bars run the HUD's
 green-amber-red ramp and the swarm's are red throughout. Both knobs are
 saved and reach a run under way the moment they are touched.
+
+## Two modes
+
+**Every run is deployed in one of two modes**, picked at the top of the
+deploy screen (`GameMode` in progress.ts). They are the same game; what
+separates them is how much is CHOSEN, and what that costs:
+
+| | Regular | Custom |
+|---|---|---|
+| map | rolled over every map the track has opened | picked — any map, locked ones included — or Random |
+| difficulty | picked, up to what the track has opened | picked, the whole ladder open |
+| enemy factions | rolled (`rollFamilies`) | picked, any one to three of the six; the rest rolled |
+| mutators | rolled, from the deck the track has dealt | picked from the whole catalog, or rolled over all of it |
+| **XP** | **banked, times the rung's bonus** | **none, and no clear recorded** |
+
+**Regular is the campaign and the only mode that pays.** It takes ONE
+pick — the difficulty — and rolls everything else on Start, because a
+run's map, swarm and rules are the run's own news and a menu that showed
+them in advance is a menu a player re-rolls by touching a macro.
+
+**Custom is the sandbox.** It hands over every dial, ignores every track
+lock, and banks nothing — which is precisely what makes the dials safe to
+hand over: a run built to be won cannot be turned into levels. It is also
+where the old admin **Sandbox** tab went. Inside a custom run
+**Ctrl+Shift+S** opens the rest of it — the whole tech tree, free
+placement, every game speed — and that key is **refused on a regular
+deploy**, because there it would be the conversion the no-XP rule exists
+to prevent.
+
+Mutators can only be named where the difficulty rolls any at all (Nemesis
++1 and up); ticking rules at Incursion would be a difficulty the ladder
+has never priced. A named set is played EXACTLY as named — as many as you
+like, over budget if you like, which is the whole point of being able to
+look at a rule rather than wait for the dice to offer it. The difficulty's
+own budget is printed beside the total as an advisory.
 
 ## Progression
 
@@ -750,7 +783,9 @@ authored in three unit families (ground, ground support, air), and those
 are its three **slots**. When a run deploys, **the die rolls three
 families** from the six — every layer crosses every map now, and a fleet
 on a map with no channel simply drives — and deals them into the slots,
-tier for tier (`rollFamilies`, `transformScript` in levels.ts). Forty daggers in the
+tier for tier (`rollFamilies`, `transformScript` in levels.ts). In custom
+mode the hand is named instead, in whole or in part, and whatever is left
+unnamed is still rolled. Forty daggers in the
 script are forty of whichever family took the first slot. The boss
 (Disrupt) is in no family and is never swapped.
 
@@ -990,12 +1025,12 @@ edge; the rim is rock, the swarm's only way out is through the core.
 ### Mutators
 
 Every deploy above Nemesis is played under **mutators** — rules that
-change what happens to a wave after it lands. **Nobody picks them.** The
-**difficulty decides the budget and the count**, and that many rules are
-rolled to fit it when you deploy. It is the StarCraft II model, and the
+change what happens to a wave after it lands. **Nobody picks them in
+regular mode.** The **difficulty decides the budget and the count**, and
+that many rules are rolled to fit it when you deploy. It is the StarCraft II model, and the
 mode it exists for is endgame resource farming: the same fifty waves, a
 different set of rules every time. The catalog (`game/mutation.ts`):
 Conquest, Reconstruction, Overshields, Shield Towers, Hungry, Speedy,
 Volatile, Armored Swarms, Mitosis, Hydrophobic, Amphibious — the Unlocks
-board on the progress screen says what each does, and the sandbox is the one place they are
-chosen by hand.
+board on the progress screen says what each does, and **custom mode** (see
+*Two modes*) is the one place they are chosen by hand.

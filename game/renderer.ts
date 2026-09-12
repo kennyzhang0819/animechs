@@ -118,7 +118,7 @@ import {
   SHIELD_TOWER_COL,
   SHIELD_TOWER_SIZE,
 } from "./mutation";
-import { MAX_LEGS, WAKE_PTS, type Sim } from "./sim";
+import { MAX_LEGS, MUZZLE_FLASH_LIFE, WAKE_PTS, type Sim } from "./sim";
 import {
   BEAM_STYLES,
   EXPLOSION_STYLES,
@@ -2068,17 +2068,24 @@ export class Renderer {
       // burst carries the CHILD ammo's sprite, not the shell's
       const sp = b.sprite;
       if (!sp) {
-        // THE ONE TURRET THE EFFECTS SWITCH WOULD SILENCE. With its shoot
-        // and hit effects refused (Sim.setEffects), a spriteless bullet
-        // has no visible shot left at all, and scorch reads as a turret
-        // that tracks and never fires. So the bullet — which is real, and
-        // already flying — draws itself instead: one disc on the flame's
-        // own ramp, against drawShootFlame's twelve. It stays a flame
-        // tongue leaving the barrel, for a twelfth of the quads.
+        // THE ONE TURRET A MISSING EFFECT WOULD SILENCE. With its shoot
+        // and hit effects gone, a spriteless bullet has no visible shot
+        // left at all, and scorch reads as a turret that tracks and never
+        // fires. So the bullet — which is real, and already flying —
+        // draws itself instead: one disc on the flame's own ramp, against
+        // drawShootFlame's twelve. It stays a flame tongue leaving the
+        // barrel, for a twelfth of the quads.
         //
-        // Only with the effects OFF: with them on this would be a second
-        // flame drawn over the real one.
-        if (!this.fxOn) {
+        // TWO WAYS THE FLAME GOES MISSING, and this covers both. The
+        // effects switch is the flat one (Sim.setEffects) — nothing is
+        // pushed at all. The other is the EFFECT CAP: over FX_CAP the
+        // pool drops the newest push, which is the flash of the shot
+        // being fired, and a wave big enough to saturate the budget is
+        // exactly when a player is reading the line for dead guns. The
+        // sim marks the shots it could not draw (Projectile.bare), so
+        // this is per BULLET and not per frame: a scorch whose flame
+        // landed keeps its full tongue and is never drawn twice.
+        if (!this.fxOn || p.bare) {
           const fout = clamp(p.life / (p.life + p.age), 0, 1);
           this.fillCircle(
             dyn, p.x, p.y,
@@ -2368,6 +2375,27 @@ export class Renderer {
       const b = own ? tint[2] : tint[2] * TEAM_CRUX_RGB[2];
       this.push(dyn, t.x, t.y, px, px, 0, base, r, g, b, 1);
       this.push(dyn, t.x, t.y, px, px, t.angle, top, r, g, b, 1);
+      // THE FALLBACK MUZZLE FLASH (Sim, Tower.flashT): this turret fired
+      // and the effect pool refused its muzzle effect, so the shot has
+      // nothing else on screen. One tongue at the barrel — half of
+      // drawShootTri, which is what it stands in for, on the same ramp and
+      // the same eight-tick life — drawn straight from the building's own
+      // state, so the one thing that cannot go missing on a saturated
+      // board is the news that a gun is still working.
+      if (t.flashT > 0 && this.fxOn) {
+        const ft = 1 - t.flashT / MUZZLE_FLASH_LIFE;
+        const fout = 1 - ft;
+        // in the AMMO'S OWN colour where it has one, so a water turret
+        // flashes water and not gunpowder — the same rule every effect
+        // that takes a colour already follows (BulletStats.fxColor)
+        const fc = t.spec.bullet.fxColor;
+        this.tri(
+          dyn, t.flashX, t.flashY,
+          (1 + 5 * fout) * MU, 15 * fout * MU, t.flashRot,
+          fc ? ramp(PAL.white, fc, null, ft) : ramp(PAL.lighterOrange, PAL.lightOrange, null, ft),
+          1,
+        );
+      }
     }
     // the shieldTowers, AFTER the towers: they stand on free rock of their
     // own (Sim.trySpawnShieldTower) and never overlap one, so the order is
