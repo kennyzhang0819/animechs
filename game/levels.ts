@@ -61,12 +61,12 @@ const NAVAL_PACE = 0.45;
 
 /**
  * THE HARPOON FLEET'S VETERANCY (UnitStats.veteran), one number for all
- * five hulls: a hit grows by 1.7% of its row a second alive, to triple —
- * two minutes to full, under a minute round a sei (drillField). The rows
+ * five hulls: a hit grows by 2.5% of its row a second alive, to triple —
+ * eighty seconds to full, half a minute round a sei (drillField). The rows
  * in weapons.ts are set light against this: a fresh fleet is a nuisance
  * at forty tiles and an old one is a siege.
  */
-const HARPOON_VETERAN = { perSecond: 0.017, max: 2 } as const;
+const HARPOON_VETERAN = { perSecond: 0.025, max: 2 } as const;
 
 /** px per Mindustry world unit — leg geometry is written in those units */
 const MU = CELL / 8;

@@ -888,12 +888,12 @@ over them. The answer is reach: kill them over nothing.
 
 **Harpoon fleet — snipers that grow old.** Every gun on the fleet is a
 **rail** (`fx: "rail"`, in the fleet's foam white) from **beyond the
-board's reach**: forty tiles on the risso, eighty on the omura, past the
+board's reach**: fifty tiles on the risso, ninety on the omura, past the
 foreshadow's sixty-two — and the omura's **pierces** everything on its
 line. The hulls crawl ashore (`NAVAL_PACE`, `NAVAL_LAND_SPEED` at half)
 and are half again as quick afloat, and every one carries **veterancy**
 (`veteran`, `Sim.uvet`): every hit is multiplied by how long the hull has
-been alive, to triple after two minutes — the rows are set light against
+been alive, to triple after eighty seconds — the rows are set light against
 that, so a fresh fleet is a nuisance and an old one is a siege. The
 **bryde** is the **spotter** (`spotterField`: the hulls round it reach half
 again as far) and the **sei** the **drill** (`drillField`: they age two and

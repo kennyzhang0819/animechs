@@ -982,41 +982,44 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // "rail") — an instant line the length of its reach, in the fleet's
   // foam white (railColor), that hits what it was aimed at and nothing
   // else, except the omura's, which PIERCES everything on the line. And
-  // every tier has INSANE REACH: a risso harpoons from forty tiles, an
-  // omura from EIGHTY, past the longest gun on the board (the foreshadow's
-  // sixty-two). The line used to be copper, flak, missiles and artillery
-  // at the walkers' reaches; it is the SNIPER family now.
+  // every tier has INSANE REACH: a risso harpoons from FIFTY tiles, past
+  // every gun on the board but the foreshadow (sixty-two), and an omura
+  // from NINETY, past that too. The line used to be copper, flak,
+  // missiles and artillery at the walkers' reaches; it is the SNIPER
+  // family now — and the reach has to clear the long guns, or it is a
+  // slow family standing inside a ripple's range for its whole crawl in
+  // (the first cut, at forty tiles, was a walkover for the headless bot).
   //
   // WHAT IT POSES: it opens fire long before anything can answer, from a
   // hull that crawls ashore (levels.ts NAVAL_PACE, NAVAL_LAND_SPEED) and
   // GROWS THE LONGER IT LIVES (levels.ts veteran: every hit here is
-  // multiplied by the hull's age, to triple). The rows below are DELIBERATELY
-  // LIGHT — a fresh risso's harpoon is a sixth of the old copper pair —
-  // because a fleet that has been alive two minutes hits three times as
-  // hard and is still out of reach. The answer is a gun that reaches out
+  // multiplied by the hull's age, to triple). The rows below are LIGHT —
+  // a fresh risso's harpoon is a tenth of the old copper pair — because a
+  // fleet that has been alive eighty seconds hits three times as hard and
+  // is still out of reach. The answer is a gun that reaches out
   // (ripple, spectre, foreshadow) and kills them YOUNG, and the spotter
   // (bryde) and the drill (sei) are the hulls to kill first.
   risso: [
-    { name: "risso-harpoon", reload: t(120), mounts: 1, damage: 14, range: u(320), speed: 0, fx: "rail", railColor: PAL.navalFront },
+    { name: "risso-harpoon", reload: t(90), mounts: 1, damage: 20, range: u(400), speed: 0, fx: "rail", railColor: PAL.navalFront },
   ],
   minke: [
-    { name: "minke-harpoon", reload: t(90), mounts: 2, damage: 24, range: u(360), speed: 0, fx: "rail", railColor: PAL.navalFront },
+    { name: "minke-harpoon", reload: t(75), mounts: 2, damage: 36, range: u(440), speed: 0, fx: "rail", railColor: PAL.navalFront },
   ],
   // THE SPOTTER (levels.ts spotterField) — its own harpoon is the
   // middling one; what it does is make every hull round it reach half
   // again as far
   bryde: [
-    { name: "bryde-harpoon", reload: t(90), mounts: 1, damage: 60, range: u(400), speed: 0, fx: "rail", railColor: PAL.navalFront },
+    { name: "bryde-harpoon", reload: t(75), mounts: 1, damage: 90, range: u(480), speed: 0, fx: "rail", railColor: PAL.navalFront },
   ],
   // THE DRILL (levels.ts drillField): the hulls round it age twice as fast
   sei: [
-    { name: "sei-harpoon", reload: t(80), mounts: 2, damage: 110, range: u(480), speed: 0, fx: "rail", railColor: PAL.navalFront },
+    { name: "sei-harpoon", reload: t(60), mounts: 2, damage: 160, range: u(560), speed: 0, fx: "rail", railColor: PAL.navalFront },
   ],
   // omura-cannon, as upstream has it: RailBulletType, and it goes THROUGH
   // — every structure on its eighty-tile line takes the hit
   // (UnitWeapon.pierce). upstream damage 1250, length 500
   omura: [
-    { name: "omura-cannon", reload: t(150), mounts: 1, damage: 700, range: u(640), speed: 0, fx: "rail", pierce: true, railColor: PAL.navalFront },
+    { name: "omura-cannon", reload: t(120), mounts: 1, damage: 900, range: u(720), speed: 0, fx: "rail", pierce: true, railColor: PAL.navalFront },
   ],
 
   // ---- THE WRAITH FLEET -----------------------------------------------
