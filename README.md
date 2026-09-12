@@ -893,7 +893,7 @@ navy shell** (`navalShell`, `collide: false`) over whatever is in front of
 it and bursts where it was aimed, landing in the sea's own colours. The
 fortress gave up its arc so that exactly one family would keep it, and this
 is the family: the **risso**'s mortar at nineteen tiles up to the
-**omura**'s siege shell — 350 over five tiles at **fifty**, the longest
+**omura**'s siege shell — 500 over five tiles at **fifty**, the longest
 reach on the roster. The hulls are **half again as quick afloat** as their
 stat (`NAVAL_WATER_SPEED`) and a third down on it ashore
 (`NAVAL_LAND_SPEED`), the **bryde** shields the fleet, and the **sei**'s
