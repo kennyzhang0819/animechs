@@ -2,9 +2,10 @@
 
 @theme {
   --font-display: var(--font-display), "Silkscreen", "Courier New", monospace;
-  --font-body: var(--font-body), "Pixelify Sans", "Barlow", system-ui, sans-serif;
-  /* numbers wear the bitmap face too: one pixel grid, one material */
-  --font-mono: var(--font-display), "Silkscreen", ui-monospace, monospace;
+  --font-body: var(--font-body), "Jersey 20", "Barlow", system-ui, sans-serif;
+  /* numbers wear the body face: its digits are drawn to differ (2, 5
+     and 8 in particular), which is what a price has to do at a glance */
+  --font-mono: var(--font-body), "Jersey 20", ui-monospace, monospace;
 }
 
 /* ---- THE KIT: how every button and panel in the game is drawn -----------
@@ -605,6 +606,10 @@
 /* ---- dark scrollbars ---- */
 html {
   color-scheme: dark;
+  /* a pixel face has one weight and one slant: a synthesised bold or
+     italic smears its pixels. `font-bold` on the body face is therefore
+     the same face, and hierarchy comes from size and colour. */
+  font-synthesis: none;
 }
 
 /* No pull-to-refresh and no rubber-banding: a drag on the map is the camera,
