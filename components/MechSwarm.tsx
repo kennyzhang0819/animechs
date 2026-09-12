@@ -25,6 +25,8 @@ import {
 } from "@/game/game";
 import { loadBalanceDoc } from "@/game/balance";
 import {
+  FAMILIES,
+  FAMILY_ACCENT,
   familyByKey,
   loadLevelDocs,
   missionText,
@@ -88,7 +90,7 @@ import {
   type Progress,
   type RunReward,
 } from "@/game/progress";
-import { atlasReady, buildAtlas, turretIcon } from "@/game/atlas";
+import { atlasReady, buildAtlas, turretIcon, unitIcon } from "@/game/atlas";
 import {
   cleanMutations,
   mutationById,
@@ -761,10 +763,53 @@ function DifficultyPicker({
  */
 const DEAL_COLOR = "#FFD37F";
 
+/**
+ * THE FAMILY PICTURES, one per family, carved off the PACKED SHEET rather
+ * than loaded from /mindustry/sprites/units (atlas.ts unitIcon).
+ *
+ * The raw sprite file is not the body the game draws: the packed one is
+ * outlined, antialiased, and wears its family's colour on its team cell,
+ * so a thumbnail off the file showed a picture of upstream's unit — right
+ * silhouette, wrong edges, and Mindustry's crux red where the hue that
+ * tells a player which family this is belongs.
+ *
+ * Built ONCE per page, memoised on the promise so overlapping callers
+ * share one build, and primed by the boot warm-up so the squares are not
+ * empty on the first wave. A failure leaves the map short an entry and
+ * the cell falls back to the sprite file.
+ */
+const FAMILY_ICONS = new Map<FamilyKey, string>();
+let familyIconBuild: Promise<void> | null = null;
+
+function buildFamilyIcons(): Promise<void> {
+  familyIconBuild ??= Promise.all(
+    FAMILIES.map(async (f) => {
+      try {
+        FAMILY_ICONS.set(f.key, await unitIcon(f.icon, FAMILY_ACCENT[f.key]));
+      } catch {
+        // the fallback in DealFamiliesCell covers it
+      }
+    }),
+  ).then(() => undefined);
+  return familyIconBuild;
+}
+
 /** the bottom square: which families the die dealt this map */
 function DealFamiliesCell({ families }: { families: readonly FamilyKey[] }) {
   const tip = useHoverCard("up");
   const names = families.map((f) => familyByKey(f).name);
+  // the pictures are built off the sheet and so cannot be read on the
+  // first render; re-render once they are there
+  const [, setCarved] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    void buildFamilyIcons().then(() => {
+      if (alive) setCarved((n) => n + 1);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   return (
     <div
       ref={tip.ref as RefObject<HTMLDivElement | null>}
@@ -777,7 +822,10 @@ function DealFamiliesCell({ families }: { families: readonly FamilyKey[] }) {
       {families.map((f) => (
         <img
           key={f}
-          src={`/mindustry/sprites/units/${familyByKey(f).icon}.png`}
+          src={
+            FAMILY_ICONS.get(f) ??
+            `/mindustry/sprites/units/${familyByKey(f).icon}.png`
+          }
           alt=""
           className="h-4 w-4 object-contain [image-rendering:pixelated]"
         />
@@ -1462,9 +1510,13 @@ export default function MechSwarm() {
       // region of the sheet drawn out to its own canvas: cheap, but a
       // screenful of them popping in after the menu is up is exactly the
       // half-built front of house this screen exists to hide
-      const entries = await Promise.all(
-        TOWER_MENU.map(async (t) => [t.kind, await turretIcon(t.icon)] as const),
-      ).catch(() => []);
+      const [entries] = await Promise.all([
+        Promise.all(
+          TOWER_MENU.map(async (t) => [t.kind, await turretIcon(t.icon)] as const),
+        ).catch(() => [] as (readonly [TowerKind, string])[]),
+        // the deal stack's family pictures, carved off the same sheet
+        buildFamilyIcons(),
+      ]);
       if (!alive) return;
       setIcons(Object.fromEntries(entries));
       ready.current.icons = true;

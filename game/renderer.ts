@@ -2689,11 +2689,6 @@ export class Renderer {
         });
       } else if (e.kind === FxKind.UnitSpawn) {
         this.drawUnitSpawn(dyn, e, t);
-      } else if (e.kind === FxKind.Spawn) {
-        // Fx.spawn: an accent square snapping out where a unit finished
-        // arriving — vertices on the axes, like Arc's Lines.poly at zero
-        this.strokePoly(dyn, e.x, e.y, 4, (5 + t * 12) * MU, 0,
-          2 * (1 - t) * MU, PAL.accent, RING_ALPHA);
       } else if (e.kind === FxKind.SmokeBig2) {
         // Fx.shootBigSmoke2: shootBigSmoke's cloud, but nine motes over
         // 23 units instead of eight over 19. Meltdown used to be the only
@@ -3018,39 +3013,6 @@ export class Renderer {
     gl.bindVertexArray(this.blitVao);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
-  }
-
-  /**
-   * Arc Lines.poly: the outline of a regular polygon, mitred at the
-   * corners. Each edge is one rectangle run long by half a stroke's worth
-   * of tangent so neighbours meet cleanly instead of leaving notches.
-   */
-  private strokePoly(
-    dyn: Batch,
-    cx: number,
-    cy: number,
-    sides: number,
-    radius: number,
-    rotation: number,
-    stroke: number,
-    col: RGB,
-    a: number,
-  ): void {
-    if (radius <= 0.01 || stroke <= 0.01 || a <= 0.004) return;
-    const step = (Math.PI * 2) / sides;
-    const half = step / 2;
-    const apothem = radius * Math.cos(half);
-    const len = 2 * radius * Math.sin(half) + stroke * Math.tan(half);
-    for (let k = 0; k < sides; k++) {
-      const ang = rotation + (k + 0.5) * step;
-      this.push(
-        dyn,
-        cx + Math.cos(ang) * apothem,
-        cy + Math.sin(ang) * apothem,
-        len, stroke, ang + Math.PI / 2, UV_SOLID,
-        col[0], col[1], col[2], a,
-      );
-    }
   }
 
   /**

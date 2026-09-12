@@ -1076,11 +1076,10 @@ for (let t = 1; t < MITOSIS_BROOD.length; t++)
 // rule could undo a decision the player had already paid for.
 //
 // TURRETS CHEW SHIELD TOWERS ONLY WHEN IDLE — a turret with nothing else in
-// range spends its reload on one, so clearing a shield tower costs time between
-// waves and never mid-wave DPS. The player can TAP a shield tower (or any
-// enemy) to focus it, forcing every turret in range onto it: spending
-// mid-wave DPS on the dome becomes a choice with a cost, which is the
-// whole game of the rule.
+// range spends its reload on one, so clearing a shield tower costs time
+// between waves and never mid-wave DPS. That is the whole game of the rule:
+// a dome comes down in the gaps, or it does not come down. A tap on one is
+// only a question about it (Game.inspect) and never an order to the line.
 //
 // BOTH POOLS ARE SET BY THE WAVE THE SHIELD TOWER RISES ON and then ride
 // the run's shield multiplier — see THE WAVE CURVE below. They used to

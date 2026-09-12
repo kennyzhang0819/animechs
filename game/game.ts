@@ -1107,11 +1107,11 @@ export class Game {
    * THE BARE-CURSOR CLICK — everything one left click on the board can
    * mean, in the order a player means them:
    *
-   *   an ENEMY   — mark it for FOCUS FIRE: every turret in range drops
-   *                what it was doing for it (Sim.setFocusUnit), and the
-   *                mark wears a bobbing arrow so there is never a question
-   *                of what the board is angry at
-   *   a SHIELD TOWER   — the same mark, on the mutator's structure
+   *   an ENEMY   — ASK WHAT IT IS: the panel answers for the tapped body
+   *                (Sim.setInspectUnit) and an arrow over it says which
+   *                one is being read. It is a question and nothing else —
+   *                no turret's aim moves for it
+   *   a SHIELD TOWER   — the same question, of the mutator's structure
    *   a BUILDING OF OURS — SELECT IT, which is what draws its range ring
    *                and what the delete key sells. Shift adds it to whatever
    *                is already held: a row of duos and the core is a
@@ -1140,23 +1140,22 @@ export class Game {
     const ui = sim.unitAt(p.x, p.y);
     if (ui >= 0) {
       replaced();
-      sim.setFocusUnit(ui);
+      sim.setInspectUnit(ui);
       return;
     }
     const si = sim.shieldTowerAt(p.x, p.y);
     if (si >= 0) {
       replaced();
-      sim.setFocusShieldTower(si);
+      sim.setInspectShieldTower(si);
       return;
     }
-    // a turret the swarm has taken (Conquest) is a mark like any other
+    // a turret the swarm has taken (Conquest) is read like any other
     // enemy, and asked BEFORE the selection: it is not the player's to
-    // select, and it is the one target a line will otherwise only shoot
-    // at when it has nothing else to do (Sim.fireTowers)
+    // select, so a click on one can only ever be the question
     const et = sim.enemyTowerAt(p.x, p.y);
     if (et) {
       replaced();
-      sim.setFocusTower(et);
+      sim.setInspectTower(et);
       return;
     }
     if (sim.selectStructAt(p.x, p.y, add)) return;
@@ -1169,12 +1168,12 @@ export class Game {
     const lui = sim.unitAt(p.x, p.y, PICK_LENIENT);
     if (lui >= 0) {
       replaced();
-      sim.setFocusUnit(lui);
+      sim.setInspectUnit(lui);
       return;
     }
     if (add) return; // a shift-click on bare ground is not a change of mind
     sim.clearAllSelection();
-    sim.clearFocus();
+    sim.clearInspect();
   }
 
   /** is this world point on the map at all, or out in the void past it? */
@@ -2019,12 +2018,10 @@ export class Game {
    * asked in: what the player is HOLDING first, and then what their last
    * tap MARKED.
    *
-   * THAT SECOND HALF IS WHY THE PANEL ANSWERS FOR BODIES. A tap on an
-   * enemy already told the line to burn it (Sim.setFocusUnit) and drew an
-   * arrow saying so, and a tap is just as much a question — what is that,
-   * how much of it is left, what has landed on it. Everything needed to
-   * answer was already in the sim's arrays and none of it was ever on the
-   * screen.
+   * THAT SECOND HALF IS THE WHOLE OF WHAT A TAP ON AN ENEMY MEANS
+   * (Sim.setInspectUnit) — what is that, how much of it is left, what has
+   * landed on it. Everything needed to answer was already in the sim's
+   * arrays and none of it was ever on the screen.
    *
    * It is the same panel either way: a picture, a name, the row of
    * statuses, a pool. What a body cannot have is attributes, which is
@@ -2035,10 +2032,9 @@ export class Game {
     const picked = sim.selectedStructs;
     if (picked.length > 0) return this.inspectStructs(picked);
     // NOTHING OF OURS IS HELD, so the panel answers the other thing a
-    // click can mean: what the last tap MARKED. A tap on an enemy was
-    // already an order (Sim.setFocusUnit) and the panel makes it a
-    // question as well — bodies first, exactly as pickAt asks them
-    const ui = sim.focusedUnit;
+    // click can mean: what the last tap MARKED (Sim.setInspectUnit) —
+    // bodies first, exactly as pickAt asks them
+    const ui = sim.inspectedUnit;
     if (ui >= 0) {
       return {
         n: 1,
@@ -2056,9 +2052,9 @@ export class Game {
     // a turret the swarm has taken is a BUILDING, and reads as one — its
     // pools, its plating, the attributes it was built with and the fact
     // that it has changed sides, which is a status of its own
-    const et = sim.focusedTower;
+    const et = sim.inspectedTower;
     if (et) return this.inspectStructs([et]);
-    const st = sim.focusedShieldTower;
+    const st = sim.inspectedShieldTower;
     if (st) {
       return {
         n: 1,
@@ -2729,10 +2725,10 @@ export class Game {
     const noBars = this.allyBars === "never" && this.enemyBars === "never";
     const symbols = this.statusOn();
     // ...and on `selected` the row belongs to ONE body: whatever the last
-    // click marked (Sim.focusedUnit), which is the same body the
+    // click marked (Sim.inspectedUnit), which is the same body the
     // inspector is printing the full row for
     const onlyMarked = this.statusMarks === "selected";
-    const only = onlyMarked ? sim.focusedUnit : -1;
+    const only = onlyMarked ? sim.inspectedUnit : -1;
     // nothing to draw at all: no bars anywhere, and either no symbols or
     // a `selected` field with nothing marked to put them over
     if (noBars && (!symbols || (onlyMarked && only < 0))) return;
@@ -2821,7 +2817,7 @@ export class Game {
     // rather than selected (pickAt), and it is exactly the thing whose
     // row a player is asking after
     const onlyPicked = this.statusMarks === "selected";
-    const marked = onlyPicked ? this.sim.focusedTower : null;
+    const marked = onlyPicked ? this.sim.inspectedTower : null;
     // ...and the same window test the bodies get: a board can be three
     // hundred turrets and the window holds a fraction of them
     const x0 = this.tlx - VIEW_PAD, y0 = this.tly - VIEW_PAD;
@@ -2958,13 +2954,18 @@ export class Game {
       c.globalAlpha = 1;
     }
 
-    // THE SELECTED BUILDINGS: a footprint outline on every one of them, a
-    // range ring on the ones that have a range. The sim drops a building from
-    // the selection as it leaves the board (removeTower), so nothing here
-    // can be drawn over bare ground
+    // THE SELECTED BUILDINGS: a footprint outline on every one of them,
+    // and a range ring only when the selection is ONE building. A marquee
+    // over a corner of the board is thirty turrets and thirty overlapping
+    // discs, which is a screen nobody can see the fight through — and a
+    // ring answers "how far does THIS one reach", a question a crowd does
+    // not have an answer to anyway. The sim drops a building from the
+    // selection as it leaves the board (removeTower), so nothing here can
+    // be drawn over bare ground
+    const ring = this.sim.selectedStructN === 1;
     for (const st of this.sim.selectedStructs) {
       const size = st.size;
-      if (!isCore(st)) {
+      if (ring && !isCore(st)) {
         // the LIVE range, not the table's: an upgrade branch that lengthened
         // this turret's reach has to move the ring it is drawn with, or the
         // ring becomes a lie about what the turret can shoot (Sim.statsFor)
@@ -2985,11 +2986,13 @@ export class Game {
       c.strokeRect(st.gx * CELL + 1, st.gy * CELL + 1, selPx - 2, selPx - 2);
     }
 
-    // THE FOCUS MARK (Sim.setFocusUnit / setFocusShieldTower): a bobbing red
-    // arrow over the tapped target, so what the board was told to burn is
-    // never a question. Rides sim time, so it holds still under pause and
-    // keeps pace at 4x exactly as its target does
-    const mark = this.sim.focusMark();
+    // THE INSPECT MARK (Sim.setInspectUnit / setInspectShieldTower): a
+    // bobbing arrow over the tapped target, so which body the panel is
+    // talking about is never in doubt. It wears the SELECTION's amber and
+    // not a hostile red, because it is a cursor and not an order. Rides
+    // sim time, so it holds still under pause and keeps pace at 4x exactly
+    // as its target does
+    const mark = this.sim.inspectMark();
     if (mark) {
       const bob = Math.sin(this.sim.time * 6) * 3;
       const ax = mark.x, ay = mark.top - 12 + bob;
@@ -3002,7 +3005,7 @@ export class Game {
       c.lineTo(ax + 3.5, ay - 2);
       c.lineTo(ax + 8, ay - 2);
       c.closePath();
-      c.fillStyle = "#FF5A5A";
+      c.fillStyle = "#FFD37F";
       c.fill();
     }
 
