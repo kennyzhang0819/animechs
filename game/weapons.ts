@@ -234,8 +234,30 @@ export interface UnitWeapon {
    * how it opens.
    */
   charge?: number;
-  /** the unit dies firing it (crawler): the splash is centred on itself */
+  /** the unit dies firing it: the splash is centred on itself. NOTHING
+   *  CARRIES IT ANY MORE — the crawler's charge was the venom line's old
+   *  opening tier and the rework took it off (see the crawler row below).
+   *  The mechanism stays because it is one branch in updateUnitWeapons and
+   *  a family built around contact is a family this game should be able to
+   *  field again */
   suicide?: boolean;
+  /**
+   * THE ROT this weapon lays on what it hits, in RAW health a second — and
+   * on everything its splash reaches, where it has splash. It is the Venom
+   * spitters' family trait and nothing else in the game carries it.
+   *
+   * IT IS NOT A CHANCE. Every venom shot that connects poisons, every time:
+   * a status that lands one time in five is a status the player cannot plan
+   * around, and the whole reason the family exists is to be a problem a
+   * board answers deliberately (repair, or killing them before the clock
+   * runs down) rather than one it absorbs on average.
+   *
+   * The duration is the same for every source (constants.ts POISON_TIME) —
+   * what a tier buys is RATE and REACH, not a longer clock, so the family
+   * scales by landing more of the same thing rather than by landing a
+   * better version of it.
+   */
+  poison?: number;
   /** the most structures one field pulse reaches (EnergyFieldAbility.maxTargets) */
   maxTargets?: number;
   // ---- THE LOOK, per fx kind ------------------------------------------
@@ -514,6 +536,48 @@ const artillery = (size: number, back: RGB, front: RGB, hit: FxKind, o: Partial<
   ...o,
 });
 /** FlakBulletType: a "shell" in the default yellows, 8x10 unless set, Fx.flakExplosion */
+/**
+ * THE VENOM ORB — the one thing the Venom spitters throw, at five sizes.
+ *
+ * ShotRegion "orb" is no sprite at all: the renderer fills a disc, so the
+ * family's signature costs nothing in the atlas and cannot be confused with
+ * any other shot in the game. It is drawn two-tone — Pal.sapBulletBack
+ * outside, the bright Pal.sapBullet as a core — which is what makes a
+ * purple ball read as a THING at a glance rather than as a coloured dot.
+ *
+ * `size` is the diameter in world units, and it is the whole tier ladder of
+ * the family's look: a crawler's spit is 7 across, a toxopid's bomb 22.
+ */
+const venomOrb = (size: number, o: { trail?: boolean } = {}): ShotLook => ({
+  region: "orb",
+  width: u(size),
+  height: u(size),
+  shrinkX: 0,
+  shrinkY: 0,
+  back: PAL.sapBulletBack,
+  front: PAL.sapBullet,
+  shoot: FxKind.ShootSmall,
+  smoke: FxKind.SmokeSmall,
+  hit: FxKind.SapExplosion,
+  hitColor: PAL.sapBullet,
+  // the thrown bombs stream; the spits do not, or the field would be a
+  // purple fog by wave thirty
+  ...(o.trail
+    ? {
+        trail: { size: u(size * 0.35), mult: 1, color: PAL.sapBulletBack },
+        // A THROWN BOMB FLIES OVER WHAT IS IN FRONT OF IT. It is the one
+        // unblockable shot left in these two families — the fortress's
+        // siege round was made flat and blockable in the same pass, and
+        // this is the deliberate other side of that: the ground mechs are
+        // answered by putting something in the way, and the venom line is
+        // answered by killing it. A family that can be walled and a family
+        // that cannot are two problems; two families that can both be
+        // walled are one.
+        collide: false as const,
+      }
+    : {}),
+});
+
 const flak = (width = 8, height = 10, o: Partial<ShotLook> = {}): ShotLook => ({
   region: "shell",
   width: u(width),
@@ -557,11 +621,11 @@ const healBolt: ShotLook = {
  * a flash at the muzzle does not; the reload, damage and range are the
  * same numbers they were.
  */
-const copper = (name: string, reload: number, mounts: number): UnitWeapon => ({
+const copper = (name: string, reload: number, mounts: number, damage = 9): UnitWeapon => ({
   name,
   reload: t(reload),
   mounts,
-  damage: 9,
+  damage,
   range: rng(2.5, 60),
   speed: 0,
   fx: "gun",
@@ -592,29 +656,75 @@ const missilesMount = (mounts: number, reload = 25, splash = 10, lifetime = 50):
 
 export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // ---- the dagger line --------------------------------------------------
-  // large-weapon: reload 13, BasicBulletType(2.5, 9) 7x9, lifetime 60, mirrored
-  dagger: [copper("large-weapon", 13, 2)],
-  // flamethrower: BulletType(4.2, 37) lifetime 13, pierceBuilding —
-  // Fx.shootSmallFlame out of the barrel, Fx.hitFlameSmall on the wall.
-  // upstream: reload 22, damage 37 x 2 (hitSize 7)
+  //
+  // ONE WEAPON CLASS ACROSS FIVE TIERS: a round that goes where it is
+  // pointed. No arc, no beam, no flame. What a tier buys is CALIBRE — 18,
+  // 26, 55, 70, 80 a round — which is the same thing the line's own armour
+  // asks the player for, read from the other side.
+  //
+  // large-weapon: BasicBulletType 7x9, mirrored pair. Mindustry fires it
+  // every 13 ticks for 9; this one fires every 26 for 18. HALF THE RATE AND
+  // TWICE THE BITE is the same paper damage and a different weapon: a
+  // slower, heavier round is one that gets through plating, and the dagger
+  // is the tier a player first learns that armour is a flat shave off each
+  // HIT rather than a share of the damage
+  dagger: [copper("large-weapon", 26, 2, 18)],
+  // THE MACE IS RANGED NOW. It used to carry Mindustry's flamethrower — 74
+  // damage at four tiles, which meant the T2 of a straight-bullet family
+  // had to be standing on the turret to do anything at all, and read as a
+  // different family every time it arrived. It carries a short, fast
+  // carbine instead: the line's quickest round, at the line's shortest
+  // reach, so the mace is still the tier that wants to be close and is no
+  // longer the tier that is useless until it gets there.
+  //
+  // THE RATE IS SET AGAINST WHAT THE FLAME WAS WORTH. Upstream's
+  // flamethrower is 74 a hit every 11 ticks off a mirrored pair — some 800
+  // damage a second, four times anything else the family carries, and
+  // dropping that on the floor quietly took a fifth of the swarm's bite out
+  // of the ground line (the headless bot lived twenty waves longer for it).
+  // A 26-damage round every seven ticks off the same pair is a little over
+  // half the flame's output, which is where a T2 belongs next to the
+  // fortress's 55 and the scepter's 70: the calibre ladder is kept, and the
+  // mace stays the family's FAST gun rather than its big one.
   mace: [
-    { name: "flamethrower", reload: t(11), mounts: 2, damage: 74, range: rng(4.2, 13), speed: 0, fx: "flame" },
+    {
+      name: "mace-carbine", reload: t(7), mounts: 2, damage: 26, range: rng(4, 22), speed: spd(4), fx: "bullet",
+      look: basic(8, 11, { shoot: FxKind.ShootSmall, smoke: FxKind.SmokeSmall }),
+    },
   ],
-  // artillery: reload 60, ArtilleryBulletType(2, 20, "shell") 14x14 in
-  // bulletYellowBack / bulletYellow, Fx.blastExplosion, splash 80 in 35.
-  // upstream: lifetime 120 - (35 - 8) / 2 = 106.5
+  // THE FORTRESS SHOOTS FLAT AND THE SHELL EXPLODES WHERE IT LANDS. Upstream
+  // this is an ArtilleryBulletType — a lobbed shell that ignores everything
+  // in flight and blasts on arrival. It is a direct round here: it flies the
+  // line of sight, it hits the FIRST thing it reaches, and it bursts there
+  // for 80 in a 35-unit radius.
+  //
+  // THAT IS A REAL CHANGE AND IT IS THE POINT OF THE TIER. An arcing shell
+  // cannot be blocked, so the fortress used to be the one body in the family
+  // that did not care what the player built in front of it. Flat fire can
+  // be blocked, which puts it back inside the rule the rest of the line
+  // plays by — and makes the front rank of a patch the thing that eats the
+  // splash. It keeps its upstream reach exactly (2 x 120 = 240 world units,
+  // thirty tiles) — the change is the trajectory, not the distance.
+  //
+  // AND IT IS STILL THE SLOW ONE. Five eighths of a second off a mirrored
+  // pair against the mace's fifteenth: the same 135 damage a round arriving
+  // at a third of the rate, which is the tier reading as artillery without
+  // being artillery
   fortress: [
     {
-      name: "artillery", reload: t(60), mounts: 2, damage: 20, splash: 80, splashRadius: u(35),
-      range: rng(2, 120), speed: spd(2), fx: "shell",
-      look: artillery(14, PAL.bulletYellowBack, PAL.bulletYellow, FxKind.BlastExplosion),
+      name: "fortress-siege", reload: t(75), mounts: 2, damage: 55, splash: 80, splashRadius: u(35),
+      range: rng(5, 48), speed: spd(5), fx: "bullet",
+      look: basic(13, 17, {
+        shoot: FxKind.ShootBig, smoke: FxKind.SmokeBig,
+        hit: FxKind.BlastExplosion, hitColor: PAL.bulletYellowBack,
+      }),
     },
   ],
   // scepter-weapon: BasicBulletType(8, 70) 11x20, shrinkX 0.4 / shrinkY 0,
   // Fx.shootBig, Fx.blastExplosion — plus two scepter-mount pairs firing a
-  // 4.5x35 sliver (shrinkX 0.6, shrinkY 0, Interp.slope).
-  // upstream: main reload 45 with shoot.shots 3 (shotDelay 4), speed 8,
-  // damage 70, lifetime 27; mounts reload 12 and 15, BasicBulletType(12, 20)
+  // 4.5x35 sliver (shrinkX 0.6, shrinkY 0, Interp.slope). Straight bullets
+  // already, and left alone: the tier's contribution is the shield field it
+  // walks under (levels.ts), not the gun
   scepter: [
     {
       name: "scepter-weapon", reload: t(60), mounts: 2, damage: 70, range: rng(7, 25), speed: spd(7), fx: "bullet",
@@ -625,9 +735,9 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
       look: basic(4.5, 35, { shrinkX: 0.6, shrinkY: 0, slope: true, hitColor: PAL.bulletYellowBack }),
     },
   ],
-  // reign-weapon: BasicBulletType(13, 80) 14x33, pierce, Fx.shootBig,
-  // Fx.blastExplosion. upstream: reload 9, lifetime 15, splash 18 in 13
-  // and three 10x10 frag rounds
+  // reign-weapon: BasicBulletType(13, 80) 14x33, Fx.shootBig,
+  // Fx.blastExplosion. The heaviest round in the family, on the tier that
+  // hands its plating to everything around it (levels.ts armorField)
   reign: [
     {
       name: "reign-weapon", reload: t(25), mounts: 2, damage: 80, range: rng(13, 24), speed: spd(13), fx: "bullet",
@@ -635,62 +745,86 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
     },
   ],
 
-  // ---- the crawler line -------------------------------------------------
-  // the crawler IS the bullet: splash 90 in 55, rangeOverride 30, and it
-  // dies — Fx.pulverize where it went off, and the body's own death blast.
-  // upstream: splash 80 x 0.68 in 44, rangeOverride 25
+  // ---- the venom spitters -----------------------------------------------
+  //
+  // ONE LOOK AND ONE STATUS ACROSS FIVE TIERS. Every weapon on this tree
+  // throws the same thing: a filled purple orb (ShotRegion "orb" — no
+  // sprite, LiquidBulletType's own draw) in Pal.sap, landing POISON. The
+  // line used to be four different weapon classes wearing one colour — a
+  // contact bomb, slag orbs, sap beams, shrapnel rays — and read as four
+  // families that happened to share a palette. It is one family now, and a
+  // player who sees a purple orb in the air knows exactly what is about to
+  // be wrong with the turret it lands on.
+  //
+  // WHAT A TIER BUYS IS RATE AND REACH, NEVER A BETTER STATUS. The rot is
+  // the same six seconds from the T1 and the T5 (constants.ts POISON_TIME);
+  // the toxopid is frightening because it lands eight of them a second
+  // across a whole patch, not because its version is stronger. That keeps
+  // the status one number the player learns once.
+  //
+  // THE DIRECT DAMAGE IS DELIBERATELY SMALL. These bodies are light and
+  // quick (levels.ts) and what they do to a board is make it rot, not
+  // punch it down — a patch under venom fire loses health with nothing
+  // visibly shooting it, which is the whole feel of the family.
+  //
+  // NO SUICIDE CHARGE. The crawler's contact bomb is gone: a status that
+  // works over six seconds cannot have its opening tier delete itself on
+  // arrival, because a dead spitter is one that never refreshes the clock.
   crawler: [
     {
-      name: "crawler", reload: t(24), mounts: 1, damage: 0, splash: 80, splashRadius: u(55),
-      range: u(30), speed: 0, fx: "bomb", suicide: true,
+      name: "venom-spit", reload: t(180), mounts: 1, damage: 8, range: rng(6, 16), speed: spd(6),
+      fx: "bullet", poison: 9, look: venomOrb(7),
     },
   ],
-  // atrax-weapon: reload 9, LiquidBulletType(slag) damage 13, speed 2.5,
-  // lifetime 57 — an orb of slag (Fill.circle, radius 3) with Fx.shootSmall
-  // and Fx.hitLiquid in the same colour
+  // THE SAME GUN, FOUR BARRELS. The atrax is the crawler's volume tier and
+  // nothing else: the identical orb, the identical rot, on four mounts
+  // instead of one — and a mirrored bank fires once per reload divided by
+  // its mount count (updateUnitWeapons), so four barrels is four times the
+  // applications rather than four shots at once. A pair of atraxes holds a
+  // turret at the stack cap on its own (constants.ts POISON_MAX_RATE)
   atrax: [
     {
-      name: "atrax-weapon", reload: t(9), mounts: 2, damage: 13, range: rng(2.5, 57), speed: spd(2.5), fx: "bullet",
-      look: {
-        region: "orb", width: u(6), height: u(6), shrinkX: 0, shrinkY: 0,
-        back: PAL.slag, front: PAL.slag,
-        shoot: FxKind.ShootSmall, hit: FxKind.HitLiquid, hitColor: PAL.slag,
-      },
+      name: "venom-spit", reload: t(180), mounts: 4, damage: 8, range: rng(6, 18), speed: spd(6),
+      fx: "bullet", poison: 9, look: venomOrb(7),
     },
   ],
-  // spiroct-weapon: reload 14, SapBulletType damage 23, length 75, width
-  // 0.54; mount-purple-weapon: SapBulletType damage 18, length 40, width
-  // 0.4 — both in bf92f9. upstream: mount reload 18 (row 20)
+  // THE PACE TIER. Its gun is the family's standard orb at a middling rate;
+  // what the spiroct is FOR is the haste field it walks under (levels.ts
+  // hasteField) — a third again on everything within ten tiles. It is the
+  // only tier on the tree that hands something out, and what it hands out
+  // is more applications inside the same six seconds
   spiroct: [
-    { name: "spiroct-weapon", reload: t(14), mounts: 2, damage: 23, range: u(75), speed: 0, fx: "sap", sap: SPIROCT_SAP },
-    { name: "mount-purple-weapon", reload: t(20), mounts: 2, damage: 18, range: u(40), speed: 0, fx: "sap", sap: SPIROCT_MOUNT_SAP },
-  ],
-  // three spiroct-weapon sap pairs (SapBulletType width 0.55) and a
-  // large-purple-mount ArtilleryBulletType(2, 12), 19x19 in sapBulletBack /
-  // sapBullet, Fx.sapExplosion, Fx.shootBigSmoke2.
-  // upstream: saps at reload 9 / 14 / 22, damage 40, length 55; the
-  // artillery reload 45, lifetime 70, splash 65 in 70
-  arkyid: [
-    { name: "spiroct-weapon", reload: t(14), mounts: 4, damage: 40, range: u(90), speed: 0, fx: "sap", sap: ARKYID_SAP },
     {
-      name: "large-purple-mount", reload: t(60), mounts: 1, damage: 12, splash: 70, splashRadius: u(60),
-      range: rng(2, 100), speed: spd(2), fx: "shell",
-      look: artillery(19, PAL.sapBulletBack, PAL.sapBullet, FxKind.SapExplosion, { smoke: FxKind.SmokeBig2 }),
+      name: "venom-spit", reload: t(120), mounts: 2, damage: 10, range: rng(6, 20), speed: spd(6),
+      fx: "bullet", poison: 10, look: venomOrb(8),
     },
   ],
-  // large-purple-mount: ShrapnelBulletType damage 110, length 90, two rays
-  // 17 degrees apart (ShootSpread), Fx.sparkShoot; toxopid-cannon:
-  // ArtilleryBulletType(3, 50) 25x25 in the sap purples, Fx.sapExplosion.
-  // upstream: cannon reload 210, lifetime 80, splash 75 in 80, nine frags
+  // TWO WEAPONS, AND THE FIRST TIME THE FAMILY REACHES PAST ONE TURRET. The
+  // spit is the family's standard orb; the BOMB is a heavy orb thrown far
+  // that bursts for 70 across a 60-unit radius and poisons every structure
+  // inside it. A patch is four to thirty-six turrets standing in a block —
+  // this is the tier that rots the block instead of the turret, and it does
+  // it from a hundred units out
+  arkyid: [
+    {
+      name: "venom-spit", reload: t(90), mounts: 4, damage: 10, range: rng(6, 20), speed: spd(6),
+      fx: "bullet", poison: 10, look: venomOrb(8),
+    },
+    {
+      name: "venom-bomb", reload: t(150), mounts: 1, damage: 14, splash: 70, splashRadius: u(60),
+      range: rng(4, 50), speed: spd(4), fx: "shell", poison: 12, look: venomOrb(18, { trail: true }),
+    },
+  ],
+  // THE BOMB, FAST. The toxopid drops the single-target spit altogether and
+  // throws nothing but area rot — three mounts on a one-second cycle, each
+  // one an arkyid's bomb with more reach behind it. It is the same weapon
+  // the tier below introduces, arriving often enough that a patch is never
+  // out from under it, which is what a T5 of this family should be: not a
+  // new idea, the family's idea at a rate nothing answers casually
   toxopid: [
     {
-      name: "large-purple-mount", reload: t(30), mounts: 2, shots: 2, spread: 17 * DEG, damage: 110, range: u(90),
-      speed: 0, fx: "shrapnel", shrapnel: TOXOPID_SHRAPNEL,
-    },
-    {
-      name: "toxopid-cannon", reload: t(65), mounts: 1, damage: 50, splash: 75, splashRadius: u(55),
-      range: rng(3, 90), speed: spd(3), fx: "shell",
-      look: artillery(25, PAL.sapBulletBack, PAL.sapBullet, FxKind.SapExplosion, { smoke: FxKind.SmokeBig2 }),
+      name: "venom-bomb", reload: t(180), mounts: 3, damage: 18, splash: 75, splashRadius: u(70),
+      range: rng(4, 62), speed: spd(4), fx: "shell", poison: 14, look: venomOrb(22, { trail: true }),
     },
   ],
 

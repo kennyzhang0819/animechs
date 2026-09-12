@@ -2,17 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { currentBalanceDoc, saveBalanceDoc } from "@/game/balance";
-import { TOWERS } from "@/game/constants";
-import {
-  allScrapPriceOverrides,
-  authoredScrapPrice,
-  pricePerTile,
-  SCRAP_START,
-  scrapPriceOf,
-  setScrapPrice,
-  STAGES,
-  TOWER_TIER,
-} from "@/game/economy";
+import { SCRAP_START } from "@/game/economy";
 import {
   allRungOverrides,
   authoredRungKnobs,
@@ -41,8 +31,6 @@ import {
   setMutationCost,
   type MutationId,
 } from "@/game/mutation";
-import { BY_MINDUSTRY_VALUE } from "@/game/tech";
-import { type TowerKind } from "@/game/types";
 import { ScrapAmount, XpAmount } from "./Items";
 import { Knob } from "./Knob";
 
@@ -51,21 +39,8 @@ const NUM = "font-mono tabular-nums";
 const TIER_COLOR: Record<number, string> = { 1: "#7BE58A", 2: "#FFB65C", 3: "#FF6B6B" };
 
 export default function BalanceView() {
-  const [sel, setSel] = useState<TowerKind>("duo");
   const [, bump] = useState(0);
   const [status, setStatus] = useState<string | null>(null);
-
-  const price = scrapPriceOf(sel);
-  const authored = authoredScrapPrice(sel);
-
-  const setPrice = useCallback(
-    (kind: TowerKind, v: number | undefined) => {
-      setScrapPrice(kind, v);
-      setStatus(null);
-      bump((n) => n + 1);
-    },
-    [],
-  );
 
   const setDifficulty = useCallback(
     (tier: number, knob: keyof RungKnobs, v: number | undefined) => {
@@ -97,11 +72,11 @@ export default function BalanceView() {
     <div>
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
         <p className="max-w-3xl text-[15px] leading-relaxed text-[#71717C]">
-          Three dials, one document. A turret&apos;s <span className="text-[#A6A6AF]">price</span>{" "}
-          is what it costs to place, in scrap, inside a run — held against what the
-          waves of its stage pay in the table below. A rung&apos;s dials are the mutator
-          roll and the XP bonus (enemy level is a mechanism the ladder no longer turns,
-          left here at zero). A mutator&apos;s cost decides which rungs can afford it.
+          Two dials, one document. A rung&apos;s dials are the mutator roll and the XP
+          bonus (enemy level is a mechanism the ladder no longer turns, left here at
+          zero). A mutator&apos;s cost decides which rungs can afford it. The stage table
+          below is read-only: what each stage&apos;s waves pay, held against the authored
+          turret prices.
         </p>
         <div className="flex shrink-0 items-center gap-2">
           {status && <span className="text-[15px] text-[#71717C]">{status}</span>}
@@ -114,9 +89,9 @@ export default function BalanceView() {
         </div>
       </div>
 
-      {/* THE STAGE TABLE — the one thing the turret prices are authored
-          against (TOWER_PRICE in economy.ts): what each stage's waves pay,
-          and how many of the tier's turrets that buys */}
+      {/* THE STAGE TABLE — what the authored turret prices (TOWER_PRICE in
+          economy.ts) are held against: what each stage's waves pay, and how
+          many of the tier's turrets that buys */}
       <div className="mb-4 rounded-lg border border-[#2E2E36] p-4">
         <div className="mb-1 text-[17px] font-bold text-[#EDEDEF]">Stages</div>
         <p className="mb-3 max-w-3xl text-[14.5px] text-[#71717C]">
@@ -326,70 +301,6 @@ export default function BalanceView() {
         </div>
       </div>
 
-      {/* THE PRICE LIST, saved under `prices`. One number a turret: what it
-          costs to place. The picker on the left carries the tier and the
-          price per tile, which is the number two turrets are compared by */}
-      <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-        <div className="max-h-[560px] overflow-y-auto rounded-lg border border-[#2E2E36]">
-          {BY_MINDUSTRY_VALUE.map((t) => {
-            const dirty = scrapPriceOf(t) !== authoredScrapPrice(t);
-            return (
-              <button
-                key={t}
-                onClick={() => setSel(t)}
-                className={`flex w-full items-baseline justify-between border-b border-[#2E2E36] px-3 py-2 text-left last:border-b-0 ${
-                  t === sel ? "bg-[#1C1C21]" : "hover:bg-[#151518]"
-                }`}
-              >
-                <span className={t === sel ? "font-bold text-[#EDEDEF]" : "text-[#A6A6AF]"}>
-                  <span className="mr-2 text-[13px]" style={{ color: TIER_COLOR[TOWER_TIER[t]] }}>
-                    T{TOWER_TIER[t]}
-                  </span>
-                  {TOWERS[t].name}
-                  {dirty && <span className="ml-1 text-[#3987e5]">•</span>}
-                </span>
-                <span className={`shrink-0 text-[13px] text-[#71717C] ${NUM}`}>
-                  {scrapPriceOf(t)} · {TOWERS[t].size}×{TOWERS[t].size} ·{" "}
-                  {Math.round(pricePerTile(t))}/tile
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="rounded-lg border border-[#2E2E36] p-4">
-          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
-            <div>
-              <span className="text-[17px] font-bold text-[#EDEDEF]">{TOWERS[sel].name}</span>
-              <span className={`ml-2 text-[14px] text-[#71717C] ${NUM}`}>
-                tier {TOWER_TIER[sel]} · {TOWERS[sel].size}×{TOWERS[sel].size}
-              </span>
-            </div>
-            <div className={`text-[14px] text-[#71717C] ${NUM}`}>
-              priced for waves {STAGES[TOWER_TIER[sel] - 1].from}–{STAGES[TOWER_TIER[sel] - 1].to}
-            </div>
-          </div>
-          <Knob
-            label="Price"
-            hint="scrap to place one; selling returns all of it"
-            value={price}
-            min={10}
-            max={Math.max(500, authored * 3)}
-            step={10}
-            decimals={0}
-            bent={price !== authored}
-            onChange={(v) => setPrice(sel, Math.max(1, v))}
-            onReset={() => setPrice(sel, undefined)}
-          />
-          <p className="mt-2 text-[14.5px] leading-relaxed text-[#71717C]">
-            The stage table above is what this number is authored against: a tier-
-            {TOWER_TIER[sel]} turret should be a real purchase during waves{" "}
-            {STAGES[TOWER_TIER[sel] - 1].from}–{STAGES[TOWER_TIER[sel] - 1].to} and out of reach
-            before them. Within a tier the order follows Mindustry&apos;s build costs; move a
-            price past its neighbours and that order is given up.
-          </p>
-        </div>
-      </div>
     </div>
   );
 }

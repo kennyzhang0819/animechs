@@ -155,6 +155,30 @@
         "4188"
       ],
       "port": 4188
+    },
+    {
+      "name": "mechswarm-4277",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:web",
+        "--",
+        "-p",
+        "4277"
+      ],
+      "port": 4277
+    },
+    {
+      "name": "mechswarm-4300",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:web",
+        "--",
+        "-p",
+        "4300"
+      ],
+      "port": 4300
     }
   ]
 }

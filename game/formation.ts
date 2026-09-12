@@ -18,32 +18,28 @@ import { RARITIES, weightDial, type Rarity, type RarityWeights, type WeightDial 
  * a purple in a citadel is a fortress and a common in one is a suburb,
  * and both come out of the same button.
  *
+ * EVERY SHAPE IS A SQUARE, 2x2 up to 6x6, and there are five of them.
+ * There were twelve once, with crosses and rings and a wedge cut into
+ * them, and a hole in a formation is a hole in a wall — the swarm walks
+ * it, so a carved card was a worse card wearing a better border. A square
+ * has one thing to say and says it in its own diagram: THIS MUCH GROUND.
+ * The decision the second roll asks is how big a patch a player can find
+ * room for, and nothing about the outline made that question better.
+ *
  * SHAPES HAVE RARITIES TOO, and they are the turrets' own four
  * (rarity.ts), worn on the same frames — so one palette answers "how good
  * is this card" twice over, once for the gun and once for the shape. The
- * band is read straight off the CELL COUNT, which is the only honest
- * measure of what a shape is worth: nine turrets or fewer is common, up
- * to sixteen uncommon, up to twenty-five rare, and anything past that is
+ * band is read straight off the CELL COUNT, which for a square is its
+ * side: 2x2 and 3x3 are common, 4x4 uncommon, 5x5 rare, and the 6x6 is
  * the jackpot.
  *
- * The track deals them out like everything else (track.ts): a save opens
- * with three and earns the other nine.
+ * NOTHING HERE IS EARNED. Every shape is a save's from wave one — the
+ * track deals guns, modules, maps and rules (track.ts) and deals no
+ * shapes at all, so a level-1 board rolls the same five a level-29 board
+ * does and the 6x6 is rare because it is RARE, not because it is locked.
  */
 
-export const FORMATION_IDS = [
-  "quad",
-  "cross",
-  "saltire",
-  "block",
-  "wedge",
-  "ring",
-  "snowflake",
-  "grid",
-  "octagon",
-  "bastion",
-  "rampart",
-  "citadel",
-] as const;
+export const FORMATION_IDS = ["quad", "block", "grid", "bastion", "citadel"] as const;
 export type FormationId = (typeof FORMATION_IDS)[number];
 
 export interface FormationDef {
@@ -64,113 +60,24 @@ const solid = (w: number, h: number): (readonly [number, number])[] => {
   return out;
 };
 
-/** every cell of a w x h grid the test keeps — the shaped ones */
-const carve = (
-  w: number,
-  h: number,
-  keep: (x: number, y: number) => boolean,
-): (readonly [number, number])[] => solid(w, h).filter(([x, y]) => keep(x, y));
-
 /**
- * THE TWELVE, smallest first. Solids, rings and stars, and deliberately
- * no shape that is a line: a row of turrets is what a player builds by
- * hand anyway, and a card should hand over something they would not have
- * thought to draw.
+ * THE FIVE, smallest first — one solid square per side from 2 to 6, and
+ * the name is the size. Nothing is carved and nothing is a line: what a
+ * card hands over is a patch of ground, and the only question worth
+ * putting on the second roll is how much of it.
  */
 export const FORMATIONS: Readonly<Record<FormationId, FormationDef>> = {
-  /* 4 — the floor of the deal, and nothing is ever smaller
-     X X
-     X X */
+  /* 4 — the floor of the deal, and nothing is ever smaller */
   quad: { id: "quad", name: "Quad", w: 2, h: 2, cells: solid(2, 2) },
-  /* 5 — an intersection covered on all four approaches
-     . X .
-     X X X
-     . X . */
-  cross: {
-    id: "cross",
-    name: "Cross",
-    w: 3,
-    h: 3,
-    cells: [[1, 0], [0, 1], [1, 1], [2, 1], [1, 2]],
-  },
-  /* 5 — the cross's diagonal twin: same count, opposite coverage, and the
-     one small shape that leaves its own orthogonals open to walk through
-     X . X
-     . X .
-     X . X */
-  saltire: {
-    id: "saltire",
-    name: "Saltire",
-    w: 3,
-    h: 3,
-    cells: [[0, 0], [2, 0], [1, 1], [0, 2], [2, 2]],
-  },
-  /* 9 — the solid 3x3 */
+  /* 9 */
   block: { id: "block", name: "Block", w: 3, h: 3, cells: solid(3, 3) },
-  /* 10 — a stair, and the one shape with a long diagonal face: it fits
-     into a corner nothing square will take
-     X . . .
-     X X . .
-     X X X .
-     X X X X */
-  wedge: { id: "wedge", name: "Wedge", w: 4, h: 4, cells: carve(4, 4, (x, y) => x <= y) },
-  /* 12 — a hollow 4x4: a courtyard with a hole in the middle, which is
-     a hole the swarm walks into and is shot at from four sides
-     X X X X
-     X . . X
-     X . . X
-     X X X X */
-  ring: {
-    id: "ring",
-    name: "Ring",
-    w: 4,
-    h: 4,
-    cells: carve(4, 4, (x, y) => x === 0 || y === 0 || x === 3 || y === 3),
-  },
-  /* 13 — a cross two deep with its inner diagonals filled
-     . . X . .
-     . X X X .
-     X X X X X
-     . X X X .
-     . . X . . */
-  snowflake: {
-    id: "snowflake",
-    name: "Snowflake",
-    w: 5,
-    h: 5,
-    cells: carve(5, 5, (x, y) => Math.abs(x - 2) + Math.abs(y - 2) <= 2),
-  },
-  /* 16 — the solid 4x4 */
+  /* 16 */
   grid: { id: "grid", name: "Grid", w: 4, h: 4, cells: solid(4, 4) },
-  /* 21 — a 5x5 with its corners knocked off, which is the biggest shape
-     that still reads as round
-     . X X X .
-     X X X X X
-     X X X X X
-     X X X X X
-     . X X X . */
-  octagon: {
-    id: "octagon",
-    name: "Octagon",
-    w: 5,
-    h: 5,
-    cells: carve(5, 5, (x, y) => !((x === 0 || x === 4) && (y === 0 || y === 4))),
-  },
-  /* 25 — the solid 5x5 */
+  /* 25 */
   bastion: { id: "bastion", name: "Bastion", w: 5, h: 5, cells: solid(5, 5) },
-  /* 33 — a plus three turrets thick on a 7x7: the shape that takes a
-     crossroads whole, and the cheaper of the two jackpots because it
-     leaves its corners for the map to keep */
-  rampart: {
-    id: "rampart",
-    name: "Rampart",
-    w: 7,
-    h: 7,
-    cells: carve(7, 7, (x, y) => (x >= 2 && x <= 4) || (y >= 2 && y <= 4)),
-  },
-  /* 36 — the solid 6x6, and the largest thing the deal will ever hand
-     over: thirty-six spectres is a 24x24 tile fortress, and finding the
-     ground for one is most of the reward */
+  /* 36 — the largest thing the deal will ever hand over: thirty-six
+     spectres is a 24x24 tile fortress, and finding the ground for one is
+     most of the reward */
   citadel: { id: "citadel", name: "Citadel", w: 6, h: 6, cells: solid(6, 6) },
 };
 
@@ -184,8 +91,9 @@ export const formationCount = (id: FormationId, n = 1): number =>
  * THE BAND A SHAPE IS IN, read off its cell count and nothing else: nine
  * or fewer is common, ten to sixteen uncommon, seventeen to twenty-five
  * rare, and past that ultra. A rule rather than a table because the count
- * IS the worth — a shape edited to carry four more turrets should change
- * bands by itself rather than wait for somebody to notice.
+ * IS the worth — so the five squares fall out as two commons (2x2, 3x3),
+ * one blue (4x4), one amber (5x5) and the 6x6 purple, and a square added
+ * or taken away lands in its band by itself.
  */
 export function formationRarity(id: FormationId): Rarity {
   const n = formationCount(id);
@@ -204,9 +112,10 @@ export const formationsOfRarity = (r: Rarity): FormationId[] =>
  * is "which gun" first and "how much of it" second, and odds as steep as
  * the turrets' would invert that.
  *
- * Weights are relative and renormalised over the bands a save actually
- * owns (rollFormation), so a level-1 board drawing from three shapes
- * still draws.
+ * Weights are relative and renormalised over whatever bands the pool
+ * handed in actually covers (rollFormation), so a caller that narrows
+ * the pool still draws. Nothing narrows it in a run — every save owns
+ * every shape — but the editors and the tests do.
  */
 export const FORMATION_WEIGHTS: RarityWeights = {
   common: 40,
@@ -222,8 +131,8 @@ export const SHAPE_ODDS: WeightDial = weightDial(FORMATION_WEIGHTS);
 /**
  * ONE DRAW OFF THE SHAPE TABLE: a band against the weights, then a shape
  * uniformly inside it. The same two-step the turret roll uses and for the
- * same reason — adding a thirteenth shape should change WHICH shape of
- * its band comes up, never how often that band does.
+ * same reason — adding a sixth square should change WHICH shape of its
+ * band comes up, never how often that band does.
  */
 export function rollFormation(
   pool: readonly FormationId[] = FORMATION_IDS,
@@ -266,10 +175,12 @@ export function rollFormation(
  * about a piece of map the size of a town.
  *
  * THE AMOUNTS ARE SQUARE NUMBERS AND THAT IS THE WHOLE REASON FOR THEM.
- * 4 is two copies by two and 9 is three by three, so a fleet is the shape
- * scaled up and still the shape: a square block stays a square block, a
- * ring stays a grid of rings, and the footprint a player has to find
- * ground for has the proportions they already learned from the card. They
+ * 4 is two copies by two and 9 is three by three, and since every shape
+ * is a solid square that butts against its neighbours (below), a fleet is
+ * simply THE SAME SQUARE, BIGGER: a x4 block is a solid 6x6 of turrets
+ * and a x9 grid is a solid 12x12. The Amount button does one thing a
+ * player can see at a glance — it enlarges the patch — and the footprint
+ * they have to find ground for keeps the proportions of the card. They
  * were 5 and 10 once, which are not squares — 5 had to be laid out as a
  * plus and 10 as a five-by-two slab, and a slab is a shape nobody asked
  * for that happens to be what an oblong number forces. A square amount
@@ -322,13 +233,13 @@ function fleetGrid(n: number): [number, number] {
  * are flattened into one grid of turret cells first (fleetCells) and the
  * turn is applied to that, once.
  *
- * MOST SHAPES DO NOT MOVE and that is honest rather than broken. Ten of
- * the twelve formations are symmetric under a quarter turn — every solid
- * block, the cross, the saltire, the ring, the snowflake, the octagon,
- * the rampart — so only the WEDGE visibly turns, and a fleet of wedges
- * turns as one. The amounts are square (economy.ts), so tiling one no
- * longer makes an oblong that has to be stood on its end: R is a tool for
- * the shape now rather than for the arrangement.
+ * NOTHING VISIBLY TURNS ANY MORE, and that is what a table of squares
+ * costs. Every formation is a solid square (see the header) and every
+ * amount is square too (economy.ts), so a fleet's footprint is a square
+ * of squares and a quarter turn maps it onto itself. The arithmetic is
+ * kept whole rather than torn out: it is what every caller centres and
+ * places through, it costs one branch on facing 0, and the day a
+ * formation that is not square goes back on the table it works.
  */
 export type Facing = 0 | 1 | 2 | 3;
 
@@ -366,8 +277,9 @@ function fleetCells(id: FormationId, n: number): {
  * THE FLEET TURNED, and the size of what it turned into: the cells in
  * turret-cell units with `facing` quarter turns clockwise applied, and
  * the [w, h] of the result — which SWAPS on the odd turns, so an oblong
- * footprint (a wedge, a fleet of them) comes back the other way round and
- * the caller that centres it recentres it on the new shape.
+ * footprint would come back the other way round and the caller that
+ * centres it recentres it on the new shape. Every footprint on the table
+ * today is square, so the swap is a no-op and the turn is invisible.
  */
 export function fleetFootprint(
   id: FormationId,
@@ -422,7 +334,11 @@ export function formationSpan(
   return [w * size, h * size];
 }
 
-/** NOTHING IS SMALLER THAN THE QUAD, and nothing is a line — checked at import */
+/** EVERY FORMATION IS A SOLID SQUARE, none smaller than the quad — checked
+ *  at import, because "the shapes are squares" is a rule the rest of the
+ *  file leans on (the rarity bands, the fleet tiling, the turn) and a
+ *  carved one added back by hand should fail loudly rather than quietly
+ *  put a hole in a wall */
 (() => {
   const floor = FORMATIONS.quad.cells.length;
   for (const id of FORMATION_IDS) {
@@ -431,7 +347,12 @@ export function formationSpan(
       throw new Error(
         `the formation "${id}" carries ${f.cells.length} turrets; nothing may be smaller than or equal to the quad's ${floor}`,
       );
-    if (f.w < 2 || f.h < 2) throw new Error(`the formation "${id}" is a line, not a shape`);
+    if (f.w < 2 || f.w !== f.h)
+      throw new Error(`the formation "${id}" is ${f.w}x${f.h}; every formation is a square of 2 or more`);
+    if (f.cells.length !== f.w * f.h)
+      throw new Error(
+        `the formation "${id}" carries ${f.cells.length} of its ${f.w * f.h} cells; every formation is solid`,
+      );
     for (const [x, y] of f.cells)
       if (x < 0 || y < 0 || x >= f.w || y >= f.h)
         throw new Error(`the formation "${id}" has a cell outside its own ${f.w}x${f.h} grid`);

@@ -43,7 +43,7 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `game/levels.ts` — unit stats and wave-script plumbing; the authored
   script itself (50 waves, a 15-second gap — `WAVE_GAP_DEFAULT`) lives in
   `public/levels/campaign.json`, loaded by `loadLevelDocs()`. Six unit
-  families: ground, crawlers, ground support, air and the two **naval**
+  families: ground, venom spitters, ground support, air and the two **naval**
   lines, which travel on the water layer. The **family roll**
   (`rollFamilies`, `transformScript`) is what makes one run's swarm differ
   from the next's; `unitDrop` is what a kill pays
@@ -755,7 +755,7 @@ script are forty of whichever family took the first slot. The boss
 | family | bodies | needs a door for |
 |---|---|---|
 | Ground | dagger, mace, fortress, scepter, reign | ground |
-| Crawlers | crawler, atrax, spiroct, arkyid, toxopid | ground |
+| Venom spitters | crawler, atrax, spiroct, arkyid, toxopid | ground |
 | Ground support | nova, pulsar, quasar, vela, corvus | ground |
 | Air | flare, horizon, zenith, antumbra, eclipse | air |
 | Naval | risso, minke, bryde, sei, omura | water |
@@ -764,6 +764,60 @@ script are forty of whichever family took the first slot. The boss
 The deal is shown on the field in the bottom-right corner, StarCraft-style:
 a column of squares growing upward, the bottom one always the three
 families dealt, every square above it one mutator in force.
+
+### What a family IS
+
+A family is not five bodies that share a colour — it is **one idea at five
+sizes**, and the two that have been reworked say so in every row. The rest
+of the roster is still 1:1 with `UnitTypes.java`; these two are authored.
+
+**Ground mechs — straight bullets, heavy plating, worn shields.** Every
+weapon in the line is a round that goes where it is pointed: no arc, no
+beam, no flame. What a tier buys is **calibre** — 18, 26, 55, 70, 80 a
+round — which is the same thing the line's own armour asks the player for,
+read from the other side. The **mace** carries a fast short carbine where
+Mindustry gives it a flamethrower, so the T2 of a bullet family is no
+longer useless until it is standing on the turret. The **fortress** fires
+its siege shell **flat** rather than lobbing it, at exactly its upstream
+reach (30 tiles) — so it can be blocked, which puts it back inside the rule
+the rest of the line plays by. The mace and the fortress wear a **personal
+shield**; the **scepter** projects one over the crowd; and the **reign**
+hands down its **plating** — +12 armour to everything within nine tiles
+(`armorField`). Armour is a flat shave floored at a tenth, so a reign in
+the crowd does not make it tougher, it makes **small calibre stop working**.
+
+*What it poses:* a wall that walks. The answer is calibre, never volume.
+
+**Venom spitters — one orb, one status, five tiers.** Every weapon on the
+tree throws the same thing: a filled **purple orb** (`venomOrb`, no sprite
+— the renderer fills a disc, bright core over dark rim) landing **poison**.
+The line used to be four weapon classes wearing one palette — a contact
+bomb, slag orbs, sap beams, shrapnel rays — and read as four families. The
+**crawler**'s suicide charge is gone: a status that works over six seconds
+cannot have its opening tier delete itself on arrival. It spits once every
+three seconds instead; the **atrax** is the same gun on four barrels; the
+**spiroct** carries the game's only **haste field** (`hasteField`, ×1.35
+within ten tiles) because rot runs on a clock and the family wants more
+applications inside it; the **arkyid** adds a thrown **poison bomb** that
+rots a whole patch from 25 tiles; and the **toxopid** throws nothing else.
+The bodies are lighter and quicker than upstream's, and the legs are cut to
+about a third of Mindustry's length — the family scuttles rather than
+strides.
+
+*What it poses:* **rot ignores plating** (`Tower.poison`, and
+`damageTower`'s `pierceArmor` door — burning has the same exemption on the
+swarm's side). It is the family a board that out-armoured the ground mechs
+still loses turrets to. What a tier buys is **rate and reach, never a
+better status**: the rot is the same six seconds from the T1 and the T5
+(`POISON_TIME`), stacking additively on the rate to a ceiling of four
+applications (`POISON_MAX_RATE`) and refreshing the clock rather than
+queueing. The counter is killing them, or out-mending them.
+
+The two are built to be **opposite problems on purpose**: one is answered
+by bringing a bigger gun, the other by not letting the clock refresh. The
+ground mechs' siege shell was made blockable in the same pass that left the
+venom line's thrown bomb unblockable, so one family is answered by putting
+something in the way and the other is not.
 
 ### The swarm shoots back
 
@@ -775,7 +829,8 @@ in sight** on the way — a walker cannot shoot through a hill
 round before it can answer; a flyer is looking down and sees its whole
 radius. Every weapon plays `UnitTypes.java` as written, with the look —
 bullets, missiles, shells, beams, bolts, flames, saps, fields and bombs —
-read off the bullet classes 1:1; a crawler is its own bomb. The swarm is
+read off the bullet classes 1:1 — except where a FAMILY REWORK has
+deliberately left them (below). The swarm is
 Mindustry's crux team: every unit wears its `-cell` region in crux red.
 
 A turret's cells are solid to the body but **passable to the path at a

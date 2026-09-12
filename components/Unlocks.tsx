@@ -26,16 +26,27 @@ import { HoverCard, useHoverCard } from "./HoverCard";
  * slower than a page. So: a page.
  *
  * AND IT OPENS ON EVERYTHING. The filter strip is a filter and not a set
- * of doors: the default is ALL, every turret, shape, map and rule in one
+ * of doors: the default is ALL, every turret, module, map and rule in one
  * grid, because the first question is "what is there" and only the second
- * one is "what shapes are there". Categories stay contiguous inside it —
- * the guns, then the upgrades, then the shapes, then the rules, then the
- * maps (FILTERS) — so the grid is one list and not a shuffle.
+ * one is "what kind of thing is there". Categories stay contiguous inside
+ * it — the guns, then the upgrades, then the rules, then the maps
+ * (FILTERS) — so the grid is one list and not a shuffle.
+ *
+ * THE SHAPES ARE NOT ON IT. Every save owns all five squares from wave
+ * one (formation.ts), nothing on the track deals one, and a tab of tiles
+ * that are lit for everybody forever answers no question this board is
+ * for.
+ *
+ * AND INSIDE A CATEGORY IT IS SORTED BY RARITY (track.ts, unlocksOf):
+ * commons first and purples last, with the level a tiebreak inside a
+ * band. The tiles carry no captions, so the border is the only thing a
+ * row of them can teach — and a shelf that walks the four colours in
+ * order teaches it, where one sorted by level scatters them.
  *
  * IT IS A WALL OF SQUARES AND NOTHING ELSE. No names under the tiles: the
- * square IS the answer at this size — a turret's own sprite, a shape's
- * own diagram, a map's own thumbnail, a rule's own face — and forty-seven
- * captions under forty-seven pictures is a page of text pretending to be
+ * square IS the answer at this size — a turret's own sprite, a module's
+ * own glyph, a map's own thumbnail, a rule's own face — and forty-odd
+ * captions under forty-odd pictures is a page of text pretending to be
  * a shelf. What the thing is CALLED is one hover away, with everything
  * else worth knowing about it.
  *
@@ -69,8 +80,8 @@ import { HoverCard, useHoverCard } from "./HoverCard";
 /**
  * THE ORDER, and it is the order a player thinks in rather than the order
  * the track deals in: the GUN first, then what can be bolted to it, then
- * the shape it comes in, then the rules the run is played under, then the
- * ground it is played on. Turrets, upgrades, shapes, mutators, maps — one
+ * then the rules the run is played under, then the
+ * ground it is played on. Turrets, upgrades, mutators, maps — one
  * list that walks outward from the thing on the board to the world round
  * it, and the strip and the "All" grid use the same order so switching a
  * filter never re-shuffles what was already on screen.
@@ -79,16 +90,15 @@ const FILTERS: readonly { id: Category | "all"; label: string }[] = [
   { id: "all", label: "All" },
   { id: "turret", label: "Turrets" },
   { id: "upgrade", label: "Upgrades" },
-  { id: "shape", label: "Shapes" },
   { id: "mutator", label: "Mutators" },
   { id: "world", label: "Maps" },
 ];
 
 /** every category, in strip order — what "All" concatenates */
-const EVERY: readonly Category[] = ["turret", "upgrade", "shape", "mutator", "world"];
+const EVERY: readonly Category[] = ["turret", "upgrade", "mutator", "world"];
 
 /**
- * A BOARD CATEGORY IS A TRACK CATEGORY — the same five names, asked of
+ * A BOARD CATEGORY IS A TRACK CATEGORY — the same four names, asked of
  * the same function (unlocksOf). "Upgrade" is the widest of them: it
  * holds the modules the deal sells (mods.ts, mods then relics) and the
  * tech tree's per-turret branches (upgrades.ts, which nothing deals
@@ -113,8 +123,8 @@ const SCALE = TILE_PX / CHIP_PX;
  * everything else — the name included — in the card that opens on hover.
  *
  * It knows nothing about what it is drawing — the geometry is asked once,
- * which is the only way a grid of turrets, modules, shapes, rules and
- * maps reads as one shelf.
+ * which is the only way a grid of turrets, modules, rules and maps reads
+ * as one shelf.
  *
  * A LOCKED TILE KEEPS ITS OWN COLOUR AND IS DIMMED, exactly as the
  * track's chip is (RewardChip in Progress.tsx): the border stays the

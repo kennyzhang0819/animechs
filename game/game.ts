@@ -69,7 +69,18 @@ import { Renderer } from "./renderer";
 import { fitZoom } from "./fit";
 import { PICK_LENIENT, PICK_STRUCT_PAD, Sim } from "./sim";
 import { type TechState } from "./tech";
-import { isCore, type Tower } from "./types";
+import { isCore, type Structure, type Tower } from "./types";
+import { statusSprite } from "./statusArt";
+import {
+  structFieldStatuses,
+  structHasFieldStatus,
+  structSelectionChips,
+  unitFieldStatuses,
+  unitHasFieldStatus,
+  unitStatusChips,
+  type StatusChip,
+  type StatusId,
+} from "./status";
 
 /**
  * WHAT ONE HALF OF THE MODULE CATALOG CAN DO RIGHT NOW (mods.ts): draw,
@@ -192,23 +203,38 @@ export interface UiState {
    * among them.
    */
   inspect: {
-    /** how many structures are selected */
+    /** how many things are inspected — a marquee's whole catch, or the 1
+     *  a tapped body always is */
     n: number;
-    /** the kind they are, when they are all ONE kind — null for the core
-     *  or for a mixed bag, where a sprite would be a lie about the rest */
+    /** the turret they are, when they are all ONE kind — null for the
+     *  core, for a mixed bag, and for a body, where a turret sprite would
+     *  be a lie about the rest */
     kind: TowerKind | null;
-    /** what to call them: the turret's name, "Core", or "Structures" */
+    /** the BODY this is, when what was tapped is one of the swarm's —
+     *  null for everything the player built. It is what puts a dagger's
+     *  own picture over a dagger's name */
+    unit: UnitKind | null;
+    /** what to call it: the turret's name, the body's kind, "Core", or
+     *  "Structures" */
     name: string;
     /** health, SUMMED over the selection — one bar for the whole thing,
      *  because "what is left of what I picked" is the question a player
      *  asks of a wall they just dragged a box over */
     hp: number;
     hpMax: number;
-    /** the PLATING the selection wears (TowerStats.armor) — one number
-     *  when every turret picked wears the same, null for the core or for
-     *  a bag that disagrees, where an average would be a lie about all
-     *  of them */
-    armor: number | null;
+    /**
+     * EVERYTHING TRUE OF IT RIGHT NOW (status.ts), catalog order, PLATING
+     * FIRST. It is the same list, in the same order, drawn with the same
+     * symbols, as the row the field stamps over the thing itself — so a
+     * player who has learned the droplet over a walker reads it in the
+     * panel without being taught twice.
+     *
+     * The plating that used to be a caption on the name line is the first
+     * chip in here now. It was two numbers about damage on one line with
+     * the health bar, and it read as part of the pool rather than as a
+     * property of the thing.
+     */
+    statuses: StatusChip[];
     /** every attribute anything in the selection carries, catalog order,
      *  with HOW MANY of them carry it — the speckle, counted. One turret
      *  selected reads as a plain row of what that turret is */
@@ -481,6 +507,63 @@ const BAR_H = 3.5;
 const BAR_GAP = 1.5;
 /** ...and a floor on the width, so a 1x1 turret's bar is still a bar */
 const BAR_MIN_W = 14;
+/**
+ * A STATUS SYMBOL ON THE FIELD (status.ts, drawStatusRow): how wide one
+ * is in world px, the gap between two of them, and how far the row floats
+ * above whatever bars are under it.
+ *
+ * SEVEN IS TWO BAR-HEIGHTS, and it is the size the symbols were DRAWN for
+ * (statusArt.ts is a 12-grid because 12 is what survives being read at
+ * 7). A body carrying six of them wears a strip about as wide as its own
+ * health bar, which is the whole budget: anything bigger and a crowd
+ * under fire stops reading as a crowd.
+ */
+const STATUS_PX = 7;
+const STATUS_SP = 1;
+const STATUS_GAP = 1.5;
+/**
+ * ...and the smallest a symbol may land on the SCREEN, in device px,
+ * before the row is not drawn at all (Game.statusLegible). It is what
+ * makes the symbols a ZOOMED-IN reading of the field rather than
+ * something the board wears at every distance, and both halves of that
+ * are deliberate.
+ *
+ * FIVE PIXELS IS WHERE THE DRAWING RESOLVES. These are 12-grid pictures
+ * (statusArt.ts) and a 12-grid picture on five device pixels is the point
+ * where a droplet still reads as a droplet and a flame as a flame. The
+ * first cut of this put the floor at two, on the reasoning that colour
+ * still carries at two even when shape does not — which was true, and
+ * beside the point: a row of coloured specks over every body says only
+ * that SOMETHING is happening, which the bar under it already said.
+ *
+ * AND IT IS THE WHOLE COST OF THE FEATURE. The number of rows a frame
+ * pays for is (bodies on screen) x (this gate), and those two pull
+ * against each other — pulled back, the window holds the whole swarm;
+ * pushed in, it holds a dozen bodies. So the expensive band is the
+ * MIDDLE, and the gate's job is to cut it out: above this floor the view
+ * cull has already reduced the board to what fits on a screen, and there
+ * is no zoom at which the overlay is asked to draw hundreds of rows.
+ *
+ * Zoomed out to read the map you get bars; zoomed in to read a fight you
+ * get the symbols. On a 1x display that crossover is around zoom 5.7, a
+ * little under halfway up the range; on a denser display it is lower,
+ * because the symbol is the same physical size there at a lower zoom,
+ * which is the thing the floor is actually about.
+ */
+const STATUS_MIN_PX = 5;
+/**
+ * How far outside the window a body may be and still have its marks
+ * drawn, in world px. The passes over the board run over EVERYTHING on
+ * the map rather than over what is in front of the player, and the map
+ * is several windows wide — so most of what they drew was landing off
+ * the canvas and being thrown away by the clip.
+ *
+ * 128 is the tallest stack a body can wear: the widest hull on the
+ * roster carries 72 px of radius and the bar and the symbols sit above
+ * that, so a body whose centre is just off the edge and whose SYMBOLS
+ * are on it is still drawn.
+ */
+const VIEW_PAD = 128;
 const BAR_BACK = "rgba(10,14,26,0.72)";
 const BAR_EDGE = "rgba(0,0,0,0.55)";
 /** a health bar's colour at a fraction of full, the HUD's own three */
@@ -837,8 +920,8 @@ export class Game {
     if (e.button === 0 && !this.panning) {
       const p = this.mouseWorld(e);
       if (this.buildKind && this.dealing) {
-        // ONE CARD IS ONE FORMATION. A dealt card carries a shape of four
-        // to twenty-five turrets, so the press lays the whole shape down
+        // ONE CARD IS ONE FORMATION. A dealt card carries a square of
+        // four to thirty-six turrets, so the press lays the whole shape down
         // and the hand is empty — no chain, no ruler. Ground that takes
         // NONE of it (the ghost is already red) keeps the card in hand to
         // try somewhere else; ground that takes part of it spends the
@@ -1235,9 +1318,11 @@ export class Game {
    * bought is a press the player cannot aim.
    *
    * The turret pool is what the track has dealt, minus the kinds that are
-   * off the field for now (types.ts RETIRED_KINDS); the shape pool is
-   * what the track has dealt too (TechState.shapes). A free board draws
-   * from everything for nothing, so the button works in the sandbox.
+   * off the field for now (types.ts RETIRED_KINDS). THE SHAPE POOL IS
+   * ALWAYS THE WHOLE TABLE — every save owns all five squares from wave
+   * one (formation.ts) — so the second roll is the same roll on a level-1
+   * board as on a finished one. A free board draws from everything for
+   * nothing, so the button works in the sandbox.
    *
    * Returns what it drew, or null when the bank could not cover it or the
    * run is over.
@@ -1247,7 +1332,7 @@ export class Game {
     const kind = rollTurret(this.drawPool(), this.rarityWeights);
     if (!kind) return null;
     // TWO ROLLS, INDEPENDENT: which gun, and how much of it in what shape
-    const form = rollFormation(this.shapePool());
+    const form = rollFormation(FORMATION_IDS);
     if (!form) return null;
     const n = this.buyAmount;
     if (!this.sim.spend(this.rollPrice() * n)) return null;
@@ -1335,8 +1420,14 @@ export class Game {
    *
    * THE WHOLE FOOTPRINT TURNS, not the shape inside it (formation.ts
    * fleetFootprint): a fleet is the shape tiled square, so turning it
-   * turns every copy at once — which is what R is for on the shapes that
-   * are not square themselves, the wedge above all.
+   * turns every copy at once.
+   *
+   * IT CHANGES NOTHING ON TODAY'S TABLE, because every formation is a
+   * solid square and so is every fleet of one (formation.ts): a quarter
+   * turn maps the footprint onto itself. The key is kept because the
+   * arithmetic under it is kept — the ghost and the structures both go
+   * through fleetFootprint — and the day a formation that is not square
+   * goes back on the table, R already works.
    *
    * IT ONLY MEANS ANYTHING WHILE THE GHOST IS UP. There is nothing to
    * turn on a bare cursor, and a free board (the sandbox, the editors)
@@ -1394,11 +1485,6 @@ export class Game {
    *  kinds — the whole thing on a free board */
   private drawPool(): TowerKind[] {
     return (this.tech ? [...this.tech.unlocked] : FIELDED_KINDS).filter((k) => !isRetired(k));
-  }
-
-  /** ...and the shapes it may turn over, which the track deals the same way */
-  private shapePool(): readonly FormationId[] {
-    return this.tech ? [...this.tech.shapes] : FORMATION_IDS;
   }
 
   /** ...and the modules the M and G buttons may turn over — dealt by the
@@ -1906,22 +1992,90 @@ export class Game {
   }
 
   /**
-   * THE SELECTION, FOLDED INTO WHAT THE PANEL PRINTS (UiState.inspect).
+   * WHAT THE PANEL PRINTS (UiState.inspect), and the order the question is
+   * asked in: what the player is HOLDING first, and then what their last
+   * tap MARKED.
    *
-   * One pass over the selected structures: sum the pools, tally the
-   * attribute bits, and decide whether they are all one kind. The core is
-   * a structure too and has no attributes and no kind, which is exactly
-   * what a null kind and an empty row say.
+   * THAT SECOND HALF IS WHY THE PANEL ANSWERS FOR BODIES. A tap on an
+   * enemy already told the line to burn it (Sim.setFocusUnit) and drew an
+   * arrow saying so, and a tap is just as much a question — what is that,
+   * how much of it is left, what has landed on it. Everything needed to
+   * answer was already in the sim's arrays and none of it was ever on the
+   * screen.
+   *
+   * It is the same panel either way: a picture, a name, the row of
+   * statuses, a pool. What a body cannot have is attributes, which is
+   * exactly what an empty mods row says.
    */
   private inspect(): UiState["inspect"] {
-    const picked = this.sim.selectedStructs;
-    if (picked.length === 0) return null;
+    const sim = this.sim;
+    const picked = sim.selectedStructs;
+    if (picked.length > 0) return this.inspectStructs(picked);
+    // NOTHING OF OURS IS HELD, so the panel answers the other thing a
+    // click can mean: what the last tap MARKED. A tap on an enemy was
+    // already an order (Sim.setFocusUnit) and the panel makes it a
+    // question as well — bodies first, exactly as pickAt asks them
+    const ui = sim.focusedUnit;
+    if (ui >= 0) {
+      return {
+        n: 1,
+        kind: null,
+        unit: UNIT_KINDS[sim.ukind[ui]],
+        // the kind IS the name — the roster is Mindustry's and every one
+        // of them is called what it is called (levels.ts UNIT_KINDS)
+        name: UNIT_KINDS[sim.ukind[ui]],
+        hp: Math.ceil(sim.uhp[ui]),
+        hpMax: Math.ceil(sim.uhpmax[ui]),
+        statuses: unitStatusChips(sim, ui),
+        mods: [],
+      };
+    }
+    // a turret the swarm has taken is a BUILDING, and reads as one — its
+    // pools, its plating, the attributes it was built with and the fact
+    // that it has changed sides, which is a status of its own
+    const et = sim.focusedTower;
+    if (et) return this.inspectStructs([et]);
+    const st = sim.focusedShieldTower;
+    if (st) {
+      return {
+        n: 1,
+        kind: null,
+        unit: null,
+        name: st.mega ? "Mega shield tower" : "Shield tower",
+        hp: Math.ceil(st.hp),
+        hpMax: Math.ceil(st.hpMax),
+        // the DOME is what a player is actually asking about, and it is
+        // the same force field a carrier's bubble is
+        statuses:
+          st.shield > 0
+            ? [
+                {
+                  id: "shield",
+                  n: Math.ceil(st.shield),
+                  note: `${Math.ceil(st.shield)} of ${Math.ceil(st.shieldMax)} absorbed before the body`,
+                },
+              ]
+            : [],
+        mods: [],
+      };
+    }
+    return null;
+  }
+
+  /**
+   * THE BUILDING HALF OF THE PANEL — one turret, a marquee's whole catch,
+   * or the one emplacement the swarm has taken.
+   *
+   * One pass over them: sum the pools, tally the attribute bits, and
+   * decide whether they are all one kind. The core is a structure too and
+   * has no attributes and no kind, which is exactly what a null kind and
+   * an empty row say.
+   */
+  private inspectStructs(picked: readonly Structure[]): UiState["inspect"] {
     let hp = 0, hpMax = 0;
     let kind: TowerKind | null = null;
     let mixed = false;
     let anyCore = false;
-    let armor: number | null = null;
-    let armorMixed = false;
     const tally = new Map<ModId, number>();
     for (const st of picked) {
       hp += st.hp;
@@ -1933,10 +2087,6 @@ export class Game {
       const t = st as Tower;
       if (kind === null) kind = t.kind;
       else if (kind !== t.kind) mixed = true;
-      // the live spec's plating, attributes folded in — a Bulwarked duo
-      // beside a plain one is two answers, and two answers is null
-      if (armor === null) armor = t.spec.armor;
-      else if (armor !== t.spec.armor) armorMixed = true;
       for (const d of modsInMask(t.mods)) tally.set(d.id, (tally.get(d.id) ?? 0) + 1);
     }
     if (anyCore) mixed = kind !== null; // the core plus anything is a mixed bag
@@ -1944,6 +2094,7 @@ export class Game {
     return {
       n: picked.length,
       kind: one,
+      unit: null,
       name: one
         ? TOWERS[one].name
         : anyCore && picked.length === 1
@@ -1951,7 +2102,11 @@ export class Game {
           : "Structures",
       hp: Math.ceil(hp),
       hpMax: Math.ceil(hpMax),
-      armor: anyCore || armorMixed ? null : armor,
+      // the plating that used to be a caption up here is the first chip
+      // in this row now, on the same terms it was printed on before: one
+      // number when every building picked wears the same, and nothing at
+      // all when they disagree (status.ts)
+      statuses: structSelectionChips(picked),
       // CATALOG ORDER, never tally order: the shelf at the other corner
       // lists attributes in that order and the two must not disagree about
       // which chip is which
@@ -2387,8 +2542,8 @@ export class Game {
     topY: number,
     width: number,
     bars: ReadonlyArray<{ v: number; col: string }>,
-  ): void {
-    if (bars.length === 0) return;
+  ): number {
+    if (bars.length === 0) return topY;
     const w = Math.max(width, BAR_MIN_W);
     const x = cx - w / 2;
     let y = topY - BAR_GAP;
@@ -2407,7 +2562,111 @@ export class Game {
       y -= BAR_GAP;
     }
     c.lineWidth = 1;
+    // WHERE THE STACK ENDED, so the status row knows what to sit on top
+    // of (drawStatusRow). A body wearing a health bar puts its symbols
+    // above it; one wearing none puts them where the bar would have been
+    return y;
   }
+
+  /**
+   * THE STATUS SYMBOLS OVER ONE THING ON THE BOARD (status.ts) — a row of
+   * little pictures on dark chips, sitting on top of whatever bars the
+   * thing is already wearing.
+   *
+   * THEY GO ON THE FIELD AND NOT ONLY IN THE PANEL because the panel
+   * answers about ONE thing and the field is where the question is
+   * actually asked: which half of that push is on fire, which of those
+   * turrets is rotting, whether the wall that is not shooting is the one
+   * the swarm took. A row over the body is the only place that reads
+   * without clicking anything.
+   *
+   * NOTHING IS DRAWN HERE. The row is QUEUED, and every row on the board
+   * is painted in one pass at the end of the frame (flushStatusRows).
+   * That is not tidiness, it is the whole performance of the feature —
+   * see the comment on the flush.
+   */
+  private queueStatusRow(cx: number, topY: number, ids: readonly StatusId[], n: number): void {
+    if (n === 0) return;
+    this.sqX.push(cx);
+    this.sqY.push(topY);
+    this.sqN.push(n);
+    for (let i = 0; i < n; i++) this.sqIds.push(ids[i]);
+  }
+
+  /** the queue, reused frame to frame: a row's centre, the top of the
+   *  stack it sits on, how many symbols it has, and the symbols
+   *  themselves flattened across every row */
+  private readonly sqX: number[] = [];
+  private readonly sqY: number[] = [];
+  private readonly sqN: number[] = [];
+  private readonly sqIds: StatusId[] = [];
+
+  /**
+   * EVERY STATUS ROW ON THE BOARD, IN ONE PASS, IN DEVICE PIXELS.
+   *
+   * THIS IS THE SHAPE THE FIRST CUT GOT WRONG, and it is worth saying why
+   * because the mistake is an easy one to make again. The symbols used to
+   * be FILLED AS GEOMETRY, in world space, one body at a time: a save, a
+   * scale, and three to five Path2D fills of twenty-odd sub-rectangles
+   * each. It looked cheap — a timer around the call reads hundredths of a
+   * millisecond — because what costs is the canvas RASTERISING those
+   * paths, which happens after the call returns. A wave soaked by a
+   * tsunami puts a few hundred symbols up at once, and the frame died
+   * under a couple of thousand path fills that no profiler pointed at.
+   *
+   * Two things fix it, and both of them are this function:
+   *
+   * ONE BLIT A SYMBOL. The drawing is rasterised once per size and cached
+   * (statusArt.ts statusSprite), so a symbol is a drawImage of a ready
+   * bitmap — the cheapest thing a 2D context does.
+   *
+   * ONE TRANSFORM FOR THE WHOLE BOARD. Rows are collected while the
+   * passes walk the board in world space and painted here in DEVICE
+   * space: one setTransform, one path for every chip's ground, then the
+   * blits. Nothing per row, and the sprite lands on whole pixels, so the
+   * symbols are crisp instead of the smear that filling a 12-grid at 2.6
+   * px produced.
+   */
+  private flushStatusRows(c: CanvasRenderingContext2D): void {
+    const rows = this.sqN.length;
+    if (rows === 0) return;
+    const k = this.scale * this.zoom; // world px -> device px
+    const px = Math.max(2, Math.round(STATUS_PX * k));
+    const step = px + Math.max(1, Math.round(STATUS_SP * k));
+    const lift = STATUS_GAP * k;
+    c.save();
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    // where each row starts, worked out once and read twice
+    const xs = this.sqRowX, ys = this.sqRowY;
+    xs.length = 0;
+    ys.length = 0;
+    for (let r = 0; r < rows; r++) {
+      const n = this.sqN[r];
+      xs.push(Math.round((this.sqX[r] - this.tlx) * k - (n * step - (step - px)) / 2));
+      ys.push(Math.round((this.sqY[r] - this.tly) * k - lift - px));
+    }
+    // every chip's ground on the whole board in ONE path
+    c.fillStyle = BAR_BACK;
+    c.beginPath();
+    for (let r = 0; r < rows; r++)
+      for (let i = 0; i < this.sqN[r]; i++) c.rect(xs[r] + i * step - 1, ys[r] - 1, px + 2, px + 2);
+    c.fill();
+    // ...and the symbols over them
+    let at = 0;
+    for (let r = 0; r < rows; r++) {
+      const n = this.sqN[r];
+      for (let i = 0; i < n; i++) c.drawImage(statusSprite(this.sqIds[at + i], px), xs[r] + i * step, ys[r]);
+      at += n;
+    }
+    c.restore();
+    this.sqX.length = 0;
+    this.sqY.length = 0;
+    this.sqN.length = 0;
+    this.sqIds.length = 0;
+  }
+
+  private readonly sqRowX: number[] = [];
+  private readonly sqRowY: number[] = [];
 
   /**
    * DOES A BODY ON THIS SIDE WEAR ITS HEALTH RIGHT NOW? The one place the
@@ -2430,26 +2689,71 @@ export class Game {
 
   /**
    * EVERY BODY'S HEALTH, one bar over each, on whatever terms the
-   * Interface tab is set to (barsOn). The player's own run the HUD's
-   * green-amber-red ramp; the swarm's are red throughout (ENEMY_HP), so
-   * a glance at a melee says which bars belong to which army without
-   * reading a single length.
-   *
+   * Interface tab is set to (barsOn) — and whatever is happening to it,
+   * as a row of symbols over that (status.ts). The player's own run the
+   * HUD's green-amber-red ramp; the swarm's are red throughout
+   * (ENEMY_HP), so a glance at a melee says which bars belong to which
+   * army without reading a single length.
    */
   private drawUnitBars(c: CanvasRenderingContext2D): void {
-    if (this.allyBars === "never" && this.enemyBars === "never") return;
-    const { upx, upy, urad, uhp, uhpmax, n } = this.sim;
-    const bars: { v: number; col: string }[] = [];
+    const sim = this.sim;
+    const { upx, upy, urad, uhp, uhpmax, n } = sim;
+    const bars = this.barBuf;
+    const ids = this.statusBuf;
+    // the two knobs gate the BAR and not the symbols. A player who turned
+    // health bars off asked for a field without health bars on it; "that
+    // one is on fire" is a different fact, and the only place it is ever
+    // said
+    const noBars = this.allyBars === "never" && this.enemyBars === "never";
+    const symbols = this.statusLegible();
+    if (noBars && !symbols) return;
+    // WHAT IS ACTUALLY ON THE SCREEN. This loop runs over every body on
+    // the map, and the map is several windows wide at the zoom it opens
+    // on — so most of what it was drawing was landing outside the canvas
+    // and being thrown away by the clip. The pad is the tallest stack a
+    // body can wear (the widest hull is 72 px of radius, and the bar and
+    // the symbols sit above that) so nothing whose MARKS are on screen is
+    // culled by its centre being off it
+    const x0 = this.tlx - VIEW_PAD, y0 = this.tly - VIEW_PAD;
+    const x1 = this.tlx + this.visW() + VIEW_PAD, y1 = this.tly + this.visH() + VIEW_PAD;
     for (let i = 0; i < n; i++) {
       if (uhp[i] <= 0) continue;
-      const f = clamp(uhp[i] / Math.max(1, uhpmax[i]), 0, 1);
-      if (!this.barsOn(false, f, false)) continue;
+      const bx = upx[i], by = upy[i];
+      if (bx < x0 || bx > x1 || by < y0 || by > y1) continue;
       bars.length = 0;
-      bars.push({ v: f, col: ENEMY_HP });
+      if (!noBars) {
+        const f = clamp(uhp[i] / Math.max(1, uhpmax[i]), 0, 1);
+        if (this.barsOn(false, f, false)) bars.push({ v: f, col: ENEMY_HP });
+      }
+      // THE GATE, and why this is affordable over eight hundred bodies:
+      // six typed-array reads, no allocation, and a no for nearly all of
+      // them (status.ts). Only the ones carrying something pay for a row
+      const flagged = symbols && unitHasFieldStatus(sim, i);
+      if (bars.length === 0 && !flagged) continue;
       const r = Math.max(urad[i] * 1.25, 7);
-      this.drawBars(c, upx[i], upy[i] - r, Math.max(r * 2, BAR_MIN_W), bars);
+      const top = this.drawBars(c, bx, by - r, Math.max(r * 2, BAR_MIN_W), bars);
+      if (flagged) this.queueStatusRow(bx, top, ids, unitFieldStatuses(sim, i, ids));
     }
   }
+
+  /**
+   * IS A STATUS SYMBOL BIG ENOUGH TO BE ONE RIGHT NOW (STATUS_MIN_PX)?
+   * Asked ONCE A FRAME rather than per body, because it is a fact about
+   * the camera and not about anything on the board.
+   *
+   * It is the worst case's whole bill. Eight hundred bodies under a
+   * wave's soak is five thousand symbols a frame; pulled all the way back
+   * to look at the map, every one of them lands on less than half a pixel
+   * and none of them is worth what it costs.
+   */
+  private statusLegible(): boolean {
+    return STATUS_PX * this.scale * this.zoom >= STATUS_MIN_PX;
+  }
+
+  /** scratch for the two passes over the board, reused rather than
+   *  rebuilt: one body's bars, and one body's status symbols */
+  private readonly barBuf: { v: number; col: string }[] = [];
+  private readonly statusBuf: StatusId[] = [];
 
   /**
    * Every structure's bar: what is left of it, on the Interface tab's
@@ -2471,6 +2775,12 @@ export class Game {
     // does (barsOn): asked for only when there is a selection to ask about,
     // since selectedStructs copies the set to answer
     const picked = this.sim.selectedStructN > 0 ? new Set(this.sim.selectedStructs) : null;
+    const symbols = this.statusLegible();
+    // ...and the same window test the bodies get: a board can be three
+    // hundred turrets and the window holds a fraction of them
+    const x0 = this.tlx - VIEW_PAD, y0 = this.tly - VIEW_PAD;
+    const x1 = this.tlx + this.visW() + VIEW_PAD, y1 = this.tly + this.visH() + VIEW_PAD;
+    const off = (x: number, y: number): boolean => x < x0 || x > x1 || y < y0 || y > y1;
     // the core's shipment, and what is left of the thing the whole run is
     // spent defending — one body, both bars, on the player's own terms
     const core = this.sim.core;
@@ -2481,6 +2791,7 @@ export class Game {
       bars.push({ v: cf, col: hpColor(cf) });
     this.drawBars(c, core.x, core.y - csz / 2, csz - 2, bars);
     for (const t of this.sim.towers) {
+      if (off(t.x, t.y)) continue;
       const st = structStats(t.kind);
       const sz = st.size * CELL;
       bars.length = 0;
@@ -2493,7 +2804,14 @@ export class Game {
       const own = t.team === "player";
       if (this.barsOn(own, f, own && picked?.has(t) === true))
         bars.push({ v: f, col: own ? hpColor(f) : ENEMY_HP });
-      this.drawBars(c, t.x, t.y - sz / 2, sz - 2, bars);
+      const top = this.drawBars(c, t.x, t.y - sz / 2, sz - 2, bars);
+      // ...and WHAT IS BEING DONE TO IT (status.ts) over the bar: the rot
+      // eating it, the dying neighbour's charge, the water tax it was
+      // built into, the fact that it is not ours any more. Gated the same
+      // way a body's is, and answering no for the plain turret a board is
+      // mostly made of
+      if (symbols && structHasFieldStatus(t))
+        this.queueStatusRow(t.x, top, this.statusBuf, structFieldStatuses(t, this.statusBuf));
       // THE ATTRIBUTE PIP (mods.ts): a turret that won one of the upgrade
       // rolls at its placement wears a dot in the corner of its footprint,
       // in the band of the BEST attribute it carries. It is drawn always
@@ -2520,7 +2838,7 @@ export class Game {
     // what it is, a dome
     const ssz = SHIELD_TOWER_SIZE * CELL;
     for (const s of this.sim.shieldTowers) {
-      if (s.hp <= 0) continue;
+      if (s.hp <= 0 || off(s.x, s.y)) continue;
       const f = clamp(s.hp / Math.max(1, s.hpMax), 0, 1);
       if (!this.barsOn(false, f, false)) continue;
       this.drawBars(c, s.x, s.y - ssz / 2, ssz - 2, [{ v: f, col: ENEMY_HP }]);
@@ -2645,6 +2963,11 @@ export class Game {
     this.drawStructureBars(c);
     // ...and what every BODY has left, on the Interface tab's terms
     this.drawUnitBars(c);
+    // ...and the STATUS SYMBOLS both passes queued, every one of them in a
+    // single pass in device pixels (flushStatusRows). Drawing them where
+    // they were queued, one body at a time in world space, is what made
+    // the first cut of this feature cost a frame
+    this.flushStatusRows(c);
     // ...and the rectangle being dragged over the board right now
     this.drawSelection(c);
 

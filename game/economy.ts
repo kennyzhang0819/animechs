@@ -99,7 +99,7 @@ export const RICH_SCRAP = 99_999_999;
  * derived from what the save's pool was worth — which priced a level-2
  * deal fairly and a level-14 one fairly too — and it stopped being worth
  * the cleverness the moment a card started carrying a FORMATION: a draw
- * is four to twenty-five turrets now, so what it is worth swings by more
+ * is four to thirty-six turrets now, so what it is worth swings by more
  * with one roll than the whole pool's depth ever moved it. One number a
  * player can hold in their head, and one number to turn.
  */

@@ -2369,8 +2369,17 @@ export class Renderer {
       // a bomb has no velocity: it keeps the heading it was dropped on, 0
       const rot = sh.vx === 0 && sh.vy === 0 ? 0 : Math.atan2(sh.vy, sh.vx);
       if (look.region === "orb") {
-        // LiquidBulletType.draw: Fill.circle in the liquid's colour
+        // LiquidBulletType.draw: Fill.circle in the liquid's colour — and
+        // where the shot carries a distinct `front`, a brighter core over
+        // it at two thirds the radius. That second disc is the VENOM
+        // SPITTERS' whole signature (weapons.ts venomOrb): one purple ball
+        // with a lit centre, the same shape from the T1's spit to the T5's
+        // bomb, so a player reads the family off a shot in flight. A liquid
+        // orb whose two colours are the same (the old slag round) draws
+        // exactly as it always did.
         this.fillCircle(dyn, sh.x, sh.y, look.width / 2, look.back, 1);
+        if (look.front !== look.back)
+          this.fillCircle(dyn, sh.x, sh.y, look.width / 3, look.front, 1);
         continue;
       }
       const fout = clamp(sh.life / (sh.life + sh.age), 0, 1);
@@ -2508,6 +2517,19 @@ export class Renderer {
         this.drawHitFlame(dyn, e, t);
       } else if (e.kind === FxKind.Burning) {
         this.drawBurning(dyn, e, t);
+      } else if (e.kind === FxKind.Poison) {
+        // THE ROT (Sim, the tower loop): a mote of the venom line's purple
+        // lifting off a poisoned structure and thinning out as it goes.
+        // Burning's flicker is three motes scattered flat around a body,
+        // because a fire is ON the thing; this one RISES, because it is a
+        // building giving something off — the two read differently at a
+        // glance even though both are coloured specks, which is the whole
+        // job. It drifts up-right on the shadow's own bearing so the field
+        // reads as lit from one place.
+        const fout = 1 - t;
+        const lift = t * 9 * MU;
+        const rad = (0.35 + fout * 1.5) * MU;
+        this.fillCircle(dyn, e.x + lift * 0.35, e.y - lift, rad, PAL.sapBullet, fout);
       } else if (e.kind === FxKind.Wet) {
         // Fx.wet: one water-coloured droplet fading in over its first half
         // (alpha clamp(fin*2)) while it shrinks away (radius fout)

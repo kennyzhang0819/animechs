@@ -10,9 +10,14 @@ import {
   type ZoneKind,
   BURN_DPS as BURN_DPS_IMPORT,
   BURN_FX_CHANCE as BURN_FX_CHANCE_IMPORT,
+  AURA_LINGER,
   DAMAGE_SMOKE_BELOW,
   DAMAGE_SMOKE_LIFE,
   DAMAGE_SMOKE_RATE,
+  POISON_FX_LIFE,
+  POISON_FX_RATE,
+  POISON_MAX_RATE,
+  POISON_TIME,
   FX_SPAWN,
   FX_UNIT_SPAWN,
   SPAWN_INVINCIBLE as SPAWN_INVINCIBLE_IMPORT,
@@ -472,6 +477,10 @@ const KIND_REPAIR = UNIT_KINDS.map((k) => UNIT_STATS[k].repairField ?? null);
 const KIND_SHIELD = UNIT_KINDS.map((k) => UNIT_STATS[k].shieldField ?? null);
 const KIND_ENERGY = UNIT_KINDS.map((k) => UNIT_STATS[k].energyField ?? null);
 const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
+/** the two STAMP auras (levels.ts armorField / hasteField): the reign's
+ *  plating and the spiroct's pace, one carrier each at the moment */
+const KIND_ARMOR_F = UNIT_KINDS.map((k) => UNIT_STATS[k].armorField ?? null);
+const KIND_HASTE_F = UNIT_KINDS.map((k) => UNIT_STATS[k].hasteField ?? null);
 const KIND_BOSS: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].boss);
 const BOSS_KINDS = KIND_BOSS.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
 /** the pad list a brood spawn is handed — it picks its own spot, so there
@@ -637,7 +646,14 @@ const HAS_ABILITIES =
   KIND_REPAIR.some(Boolean) ||
   KIND_SHIELD.some(Boolean) ||
   KIND_ENERGY.some(Boolean) ||
+  KIND_ARMOR_F.some(Boolean) ||
+  KIND_HASTE_F.some(Boolean) ||
   FORCE_KINDS.length > 0;
+/** ...and whether either STAMP is on the roster at all — the two reads that
+ *  cost something are in the movement and damage hot loops, so they are
+ *  gated on this rather than on a per-unit test */
+const HAS_ARMOR_AURA = KIND_ARMOR_F.some(Boolean);
+const HAS_HASTE_AURA = KIND_HASTE_F.some(Boolean);
 
 // how fast body and chassis swivel: Mindustry's default rotateSpeed /
 // baseRotateSpeed, 5 degrees per tick
@@ -757,6 +773,28 @@ export class Sim {
    * status map, which keeps one entry per effect
    */
   readonly uburn = new Float32Array(MAX_UNITS);
+  /**
+   * THE TWO STAMPED AURAS (constants.ts AURA_LINGER), each a value and the
+   * seconds it has left to run: extra armour from a reign, a speed
+   * multiplier from a spiroct. A carrier's pulse writes both; nothing else
+   * ever does, and a body with an expired clock reads as if it had never
+   * been stamped.
+   *
+   * A STAMP AND NOT A LOOKUP. There are up to 22,000 bodies and a handful
+   * of carriers, so the carrier pays for one search on its own reload and
+   * every body pays one float compare — the other way round is 22,000
+   * searches a frame for a buff almost nobody is in range of.
+   *
+   * THEY ARE MAXIMA, NOT SUMS. Two reigns walking together do not stack
+   * their plating: the stronger stamp wins and the clock refreshes. An
+   * aura that summed would make a T5 pair the answer to every board, and
+   * the family trait is meant to be a rule about calibre rather than a
+   * number that runs away.
+   */
+  readonly uarmorAdd = new Float32Array(MAX_UNITS);
+  readonly uarmorT = new Float32Array(MAX_UNITS);
+  readonly uhasteMul = new Float32Array(MAX_UNITS);
+  readonly uhasteT = new Float32Array(MAX_UNITS);
   /**
    * StatusEffects.wet: seconds of soaking left, and the drive-speed
    * multiplier in force while it lasts. One entry like the status map's —
@@ -2311,6 +2349,11 @@ export class Sim {
       team: "player" as Team,
       spec: structStats(kind),
       regen: 0,
+      // a fresh building is not rotting (Tower.poison); only the venom
+      // line's orbs ever write these two
+      poison: 0,
+      poisonUnit: 0,
+      poisonT: 0,
       // Undying Legion (mods.ts) grants every turret one stand-up, the
       // ones bought after it included
       revives: this.mods.undying ? 1 : 0,
@@ -2794,16 +2837,63 @@ export class Sim {
 
   private readonly splashOut: Structure[] = [];
 
-  /** a unit's hit on a structure, through the one dial (unitDamageScale) */
-  private hitStructure(t: Structure, dmg: number): void {
-    if (dmg <= 0) return;
-    this.damageTower(t, dmg * unitDamageScale());
+  /**
+   * A unit's hit on a structure, through the one dial (unitDamageScale) —
+   * and the ROT it carries, if it is a venom shot (weapons.ts
+   * UnitWeapon.poison).
+   *
+   * THE ROT IS NOT SCALED BY THE DIAL. `unitDamageScale` is the sweep
+   * handle over the swarm's BITE — what a balance pass turns to make the
+   * bodies hit harder or softer — and poison is authored as health a second
+   * against a turret's pool directly. A status that moved with the dial
+   * would make every sweep silently re-tune the venom family twice.
+   *
+   * A HIT THAT DOES NO DAMAGE STILL POISONS. The rot rides on the shot
+   * CONNECTING, not on the damage surviving armour: a crawler's 8-point
+   * spit against a foreshadow's plating lands 0.8 and six full seconds of
+   * rot, which is the entire reason that body is on the field.
+   */
+  private hitStructure(t: Structure, dmg: number, poison = 0): void {
+    if (dmg > 0) this.damageTower(t, dmg * unitDamageScale());
+    if (poison > 0) this.poisonTower(t, poison);
   }
 
-  /** a burst at a point: splash to every structure it reaches */
-  private splashStructures(x: number, y: number, splash: number, radius: number): void {
+  /**
+   * THE ROT LANDING (Tower.poison): the rate stacks and the clock refreshes.
+   *
+   * ADDITIVE ON THE RATE, CAPPED. Four spitters on one turret rot it four
+   * times as fast, which is what makes a pack of them frightening; a whole
+   * wave in reach does not, or how long a patch lives would be decided by
+   * how many bodies happened to be standing near it rather than by anything
+   * the player did. POISON_MAX_RATE is that ceiling, in multiples of the
+   * heaviest single application in force — Tower.poisonUnit, which is held
+   * precisely so the ceiling cannot chase the total it is meant to bound.
+   *
+   * THE CLOCK IS A REFRESH AND NEVER A QUEUE, the same rule burning runs on
+   * a body: a turret under steady fire rots continuously, and one the wave
+   * has walked past stops POISON_TIME later. So the counter is killing them
+   * or out-mending them, never waiting.
+   */
+  private poisonTower(t: Structure, rate: number): void {
+    if (rate <= 0 || isCore(t) || t.hp <= 0) return;
+    // the ceiling is read off the heaviest single source in force, so a
+    // toxopid's bomb raises it and a crawler's spit cannot
+    if (rate > t.poisonUnit) t.poisonUnit = rate;
+    t.poison = Math.min(t.poison + rate, t.poisonUnit * POISON_MAX_RATE);
+    t.poisonT = POISON_TIME;
+  }
+
+  /** a burst at a point: splash — and rot — to every structure it reaches */
+  private splashStructures(
+    x: number,
+    y: number,
+    splash: number,
+    radius: number,
+    poison = 0,
+  ): void {
     if (splash <= 0 || radius <= 0) return;
-    for (const t of this.structuresWithin(x, y, radius, this.splashOut)) this.hitStructure(t, splash);
+    for (const t of this.structuresWithin(x, y, radius, this.splashOut))
+      this.hitStructure(t, splash, poison);
   }
 
   /**
@@ -2857,8 +2947,8 @@ export class Sim {
   }
 
   /** one hit on the aim, from a body of `team` */
-  private aimHit(a: Aim, dmg: number): void {
-    this.hitStructure(a.s, dmg);
+  private aimHit(a: Aim, dmg: number, poison = 0): void {
+    this.hitStructure(a.s, dmg, poison);
   }
 
 
@@ -2935,7 +3025,7 @@ export class Sim {
             if (ucd[slot] <= 0) {
               ucd[slot] += wp.beam.interval;
               if (tgt && this.aimReach(tgt, x, y, wp.range)) {
-                this.aimHit(tgt, wp.damage);
+                this.aimHit(tgt, wp.damage, wp.poison ?? 0);
                 this.pushFxCol(tgt.x, tgt.y, 12 / 60, FxKind.HitMeltHeal, 0, 0, PAL.heal);
               }
             }
@@ -3007,8 +3097,9 @@ export class Sim {
             // torpedo). Splash, where a row carries it, bursts on the
             // target the way the round would have
             for (let k = 0; k < shots; k++) {
-              this.aimHit(tgt, wp.damage);
-              if (wp.splash) this.splashStructures(tgt.x, tgt.y, wp.splash, wp.splashRadius ?? 0);
+              this.aimHit(tgt, wp.damage, wp.poison ?? 0);
+              if (wp.splash)
+                this.splashStructures(tgt.x, tgt.y, wp.splash, wp.splashRadius ?? 0, wp.poison ?? 0);
               this.fireUnitGun(x, y, aim + (k - (shots - 1) / 2) * 0.06, wp);
             }
             break;
@@ -3020,7 +3111,7 @@ export class Sim {
           case "sap": {
             // SapBulletType: the line lands on the target and retracts onto
             // the mount as it fades (the draw lerps its far end back over fin)
-            for (let k = 0; k < shots; k++) this.aimHit(tgt, wp.damage);
+            for (let k = 0; k < shots; k++) this.aimHit(tgt, wp.damage, wp.poison ?? 0);
             const st = wp.sap;
             if (st) {
               const dx = tgt.x - x, dy = tgt.y - y;
@@ -3034,7 +3125,7 @@ export class Sim {
             // one per shot, fanned by ShootSpread; Fx.sparkShoot at the muzzle
             const st = wp.shrapnel;
             for (let k = 0; k < shots; k++) {
-              this.aimHit(tgt, wp.damage);
+              this.aimHit(tgt, wp.damage, wp.poison ?? 0);
               const a = aim + (k - (shots - 1) / 2) * (wp.spread ?? 0);
               if (st) this.pushFx(x, y, 10 / 60, FxKind.Shrapnel, a, wp.range, 0, st.id, true);
             }
@@ -3046,7 +3137,7 @@ export class Sim {
             // of the muzzle, in the bullet's colour, `inaccuracy` off the aim
             const bt = wp.bolt;
             for (let k = 0; k < shots; k++) {
-              this.aimHit(tgt, wp.damage);
+              this.aimHit(tgt, wp.damage, wp.poison ?? 0);
               if (bt) {
                 const a = aim + (Math.random() * 2 - 1) * bt.inaccuracy;
                 this.unitBolt(x, y, a, bt.length + Math.floor(Math.random() * (bt.lengthRand + 1)), bt.color);
@@ -3058,7 +3149,7 @@ export class Sim {
           case "flame": {
             // Fx.shootSmallFlame out of the barrel and Fx.hitFlameSmall on
             // the wall — or their plasma pair, white through heal to grey
-            for (let k = 0; k < shots; k++) this.aimHit(tgt, wp.damage);
+            for (let k = 0; k < shots; k++) this.aimHit(tgt, wp.damage, wp.poison ?? 0);
             const seed = (Math.random() * 0x7fffffff) | 0;
             if (wp.plasma) {
               this.pushFxCol(x, y, 32 / 60, FxKind.Flame, aim, 0, PAL.heal, 1, false, seed);
@@ -3073,8 +3164,8 @@ export class Sim {
             if (wp.suicide) {
               // the crawler IS the bullet: Fx.pulverize where it went off,
               // and the body's own death blast, centred on itself
-              this.aimHit(tgt, wp.damage);
-              this.splashStructures(x, y, wp.splash ?? 0, wp.splashRadius ?? 0);
+              this.aimHit(tgt, wp.damage, wp.poison ?? 0);
+              this.splashStructures(x, y, wp.splash ?? 0, wp.splashRadius ?? 0, wp.poison ?? 0);
               this.pushFx(x, y, 40 / 60, FxKind.Pulverize, 0, 0, (Math.random() * 0x7fffffff) | 0);
               this.pushDeathFx(x, y);
               this.removeUnit(i);
@@ -3091,6 +3182,7 @@ export class Sim {
                 life: wp.look.lifetime ?? 0.5, age: 0,
                 damage: wp.damage, splash: wp.splash ?? 0, splashRadius: wp.splashRadius ?? 0,
                 look: wp.look, collide: wp.look.collide !== false, trailT: 0,
+                poison: wp.poison ?? 0,
               });
             }
             break;
@@ -3099,7 +3191,7 @@ export class Sim {
             // RailBulletType: Fx.railShoot at the muzzle, Fx.railTrail every
             // 60 units down the line (pointEffectSpace), Fx.railHit on what
             // it punched through, Fx.shootBig2 smoke — all its 500 units
-            this.aimHit(tgt, wp.damage);
+            this.aimHit(tgt, wp.damage, wp.poison ?? 0);
             this.pushFx(x, y, 24 / 60, FxKind.RailShoot, aim, 0, 0, 0, true);
             this.pushFx(x, y, 10 / 60, FxKind.ShootBig2, aim);
             const ca = Math.cos(aim), sa = Math.sin(aim);
@@ -3167,6 +3259,10 @@ export class Sim {
       look,
       collide: look.collide !== false,
       trailT: 0,
+      // the venom line's rot rides the shot, so a bomb still in the air
+      // poisons what it lands on rather than what its shooter was aiming at
+      // when it was fired (weapons.ts UnitWeapon.poison)
+      poison: wp.poison ?? 0,
     });
     // the bullet's own shootEffect and smokeEffect, in its hitColor (what
     // Effect.at is handed for a shootEffect) — sparkShoot ramps into it
@@ -3184,7 +3280,7 @@ export class Sim {
    * goes off at the muzzle
    */
   private fireUnitLaser(x: number, y: number, aim: number, tgt: Aim | null, wp: UnitWeapon): void {
-    if (tgt && this.aimReach(tgt, x, y, wp.range)) this.aimHit(tgt, wp.damage);
+    if (tgt && this.aimReach(tgt, x, y, wp.range)) this.aimHit(tgt, wp.damage, wp.poison ?? 0);
     const st = wp.laser;
     if (!st) return;
     this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, wp.range, 0, st.id, true);
@@ -3284,13 +3380,14 @@ export class Sim {
       const off = sh.x < 0 || sh.y < 0 || sh.x >= W || sh.y >= H;
       const t = off || !sh.collide ? null : this.structureAt(sh.x, sh.y);
       if (t) {
-        this.hitStructure(t, sh.damage);
-        if (sh.splash > 0) this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius);
+        this.hitStructure(t, sh.damage, sh.poison);
+        if (sh.splash > 0)
+          this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison);
         this.shotHitFx(sh);
       } else if (sh.life <= 0 && !off) {
         // a shell that runs out of flight lands where it is
         if (sh.splash > 0) {
-          this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius);
+          this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison);
           this.shotHitFx(sh);
         } else if (look.hit === FxKind.HitLaser) this.shotHitFx(sh);
       }
@@ -4051,6 +4148,12 @@ export class Sim {
       this.uburn[i] = 0;
       this.uwet[i] = 0;
       this.uwetSlow[i] = 1;
+      // a body walks in unstamped: the reign's plating and the spiroct's
+      // pace are both things it has to be standing near something to have
+      this.uarmorAdd[i] = 0;
+      this.uarmorT[i] = 0;
+      this.uhasteMul[i] = 1;
+      this.uhasteT[i] = 0;
       // AMPHIBIOUS (mutation.ts): every body walks in dry and unstacked,
       // whatever ground it happens to have been dropped onto — a drop zone
       // is not a crossing, and crediting one would hand the bonus out for
@@ -4181,8 +4284,14 @@ export class Sim {
       const repair = KIND_REPAIR[k];
       const shield = KIND_SHIELD[k];
       const energy = KIND_ENERGY[k];
-      if (!repair && !shield && !energy) continue;
-      const spec = (repair ?? shield ?? energy)!;
+      // THE TWO STAMPS (levels.ts armorField / hasteField). They ride the
+      // same clock and the same one search as the healers above, because
+      // they are the same shape of thing: a carrier, a radius, a reload.
+      // What they write is a timer rather than a pool
+      const armorF = KIND_ARMOR_F[k];
+      const hasteF = KIND_HASTE_F[k];
+      if (!repair && !shield && !energy && !armorF && !hasteF) continue;
+      const spec = (repair ?? shield ?? energy ?? armorF ?? hasteF)!;
       const reload = spec.reload;
       uability[i] += dt;
       if (uability[i] < reload) continue;
@@ -4218,6 +4327,23 @@ export class Sim {
             this.pushFx(upx[j], upy[j], 0.18, FxKind.Heal);
             did = true;
           }
+          // THE PLATING STAMP: the stronger of what is already on the body
+          // and what this carrier gives, on a clock that outlives the pulse
+          // by AURA_LINGER so a body inside the field is buffed
+          // continuously rather than flickering off between beats
+          if (armorF) {
+            if (this.uarmorT[j] <= 0 || armorF.amount > this.uarmorAdd[j])
+              this.uarmorAdd[j] = armorF.amount;
+            this.uarmorT[j] = reload + AURA_LINGER;
+            did = true;
+          }
+          // ...and the PACE STAMP, the same rule
+          if (hasteF) {
+            if (this.uhasteT[j] <= 0 || hasteF.mult > this.uhasteMul[j])
+              this.uhasteMul[j] = hasteF.mult;
+            this.uhasteT[j] = reload + AURA_LINGER;
+            did = true;
+          }
           if (shield && ushield[j] < shield.max * ss) {
             ushield[j] = Math.min(ushield[j] + shield.amount * ss, shield.max * ss);
             ushieldAlpha[j] = 1;
@@ -4242,11 +4368,16 @@ export class Sim {
       }
       // healWaveDynamic / shieldWave: a 22-tick ring out to the field edge
       // — the shield one in the unit's shieldColor, its own team's colour
+      // the pulse's own ring, in the colour of what it did: the healers'
+      // green, the shield and plating stamps' crux red, and the venom
+      // line's purple for the pace one — one ring, three meanings, and the
+      // player learns which is which by what happens next
       if (did)
         this.pushFxCol(
           upx[i], upy[i], 22 / 60,
           repair || energy ? FxKind.HealWave : FxKind.ShieldWave,
-          0, range, repair || energy ? PAL.heal : TEAM_CRUX_RGB,
+          0, range,
+          repair || energy ? PAL.heal : hasteF ? PAL.sapBullet : TEAM_CRUX_RGB,
         );
     }
   }
@@ -4273,6 +4404,18 @@ export class Sim {
         const walks = SPAWN_INVINCIBLE - SPAWN_UNMOVING;
         if (was > walks && uspawn[i] <= walks)
           this.pushFx(upx[i], upy[i], FX_SPAWN, FxKind.Spawn);
+      }
+      // THE TWO STAMPED AURAS running down (constants.ts AURA_LINGER). No
+      // effect on the way out: an aura is a thing a body has while it is
+      // near the carrier, and a puff announcing that it no longer is would
+      // be noise on every body leaving a reign's wake
+      if (this.uarmorT[i] > 0 && (this.uarmorT[i] -= dt) <= 0) {
+        this.uarmorT[i] = 0;
+        this.uarmorAdd[i] = 0;
+      }
+      if (this.uhasteT[i] > 0 && (this.uhasteT[i] -= dt) <= 0) {
+        this.uhasteT[i] = 0;
+        this.uhasteMul[i] = 1;
       }
       if (uwet[i] > 0) {
         uwet[i] -= dt;
@@ -4654,6 +4797,10 @@ export class Sim {
     this.uburn[i] = this.uburn[n];
     this.uwet[i] = this.uwet[n];
     this.uwetSlow[i] = this.uwetSlow[n];
+    this.uarmorAdd[i] = this.uarmorAdd[n];
+    this.uarmorT[i] = this.uarmorT[n];
+    this.uhasteMul[i] = this.uhasteMul[n];
+    this.uhasteT[i] = this.uhasteT[n];
     this.uhungry[i] = this.uhungry[n];
     this.ueaten[i] = this.ueaten[n];
     this.uhungerT[i] = this.uhungerT[n];
@@ -5113,12 +5260,20 @@ export class Sim {
       // shortest path and the water is a place a tank is quicker rather
       // than a place it is drawn to.
       const land = nav && !water[ci] ? NAVAL_LAND_SPEED : 1;
+      // ...and a FOURTH multiplier: the spiroct's pace stamp (levels.ts
+      // hasteField). It rides here with the wet slow and the land penalty
+      // rather than on uspd, so it is a thing happening TO the body and
+      // never a permanent change to what it is — walk out of the field and
+      // the next frame is at its own speed again. The two can meet: a
+      // soaked body under a spiroct is slowed and hurried at once, and the
+      // product is the honest answer to both.
+      const haste = HAS_HASTE_AURA && this.uhasteT[i] > 0 ? this.uhasteMul[i] : 1;
       const spd =
         uspawn[i] > SPAWN_INVINCIBLE - SPAWN_UNMOVING
           ? 0
           : uwet[i] > 0
-            ? uspd[i] * uwetSlow[i] * land
-            : uspd[i] * land;
+            ? uspd[i] * uwetSlow[i] * land * haste
+            : uspd[i] * land * haste;
       uvx[i] += (flowTmp.x * spd - uvx[i]) * steer;
       uvy[i] += (flowTmp.y * spd - uvy[i]) * steer;
 
@@ -5662,14 +5817,20 @@ export class Sim {
    * hits whatever stands in the way, and a wall across its route is a
    * wall it chews through.
    */
-  private damageTower(t: Structure, dmg: number): void {
+  private damageTower(t: Structure, dmg: number, pierceArmor = false): void {
     // PLATING, the way a body wears it (constants.ts TowerStats.armor): a
     // flat shave off this hit, floored at a tenth, through the same
     // applyArmor the swarm's armour goes through. It comes off AFTER the
     // unit-damage dial has scaled the hit, as Mindustry applies it to the
     // final amount. The core wears none — its pool is written on its own
     // (CORE_HP) and its fall is the run ending, not a structure dying
-    if (!isCore(t)) dmg = Sim.applyArmor(dmg, t.spec.armor);
+    //
+    // ...UNLESS THE CALLER SAYS OTHERWISE. `pierceArmor` is the rot's door
+    // (Tower.poison), and the swarm's own burning status has exactly the
+    // same exemption on the other side of the field: a status is not a hit,
+    // so there is nothing for plating to shave. It is also the whole reason
+    // the Venom spitters and the Ground mechs are different problems.
+    if (!pierceArmor && !isCore(t)) dmg = Sim.applyArmor(dmg, t.spec.armor);
     t.hp -= dmg;
     if (t.hp > 0) return;
     t.hp = 0;
@@ -5953,6 +6114,40 @@ export class Sim {
   }
 
   /**
+   * THE MARKED BODY, as a live index — -1 when the mark is on something
+   * else, on a body that has since died, or on nothing.
+   *
+   * A tap on an enemy was always two things at once: an order (every gun
+   * in range drops what it was doing for it) and a QUESTION — what is
+   * that, and what is happening to it. The order was answered by the
+   * bobbing arrow and the question by nothing at all, so this is what the
+   * inspector reads to answer the second half (Game.inspect).
+   *
+   * The revalidation is focusMark's, for the same reason: indices are
+   * recycled by swap-remove, so a uid that no longer sits at the hint is
+   * a body that is gone.
+   */
+  get focusedUnit(): number {
+    return this.focusIdx >= 0 && this.focusIdx < this.n && this.uid[this.focusIdx] === this.focusUid
+      ? this.focusIdx
+      : -1;
+  }
+
+  /** the marked SHIELD TOWER, or null — the same question of the mutator's
+   *  structure. A dead one is not a mark, and its entry never moves */
+  get focusedShieldTower(): ShieldTower | null {
+    const s = this.focusShieldTower >= 0 ? this.shieldTowers[this.focusShieldTower] : undefined;
+    return s && s.hp > 0 ? s : null;
+  }
+
+  /** the marked TURRET OF THE SWARM'S (Conquest), or null. Held by
+   *  reference, so the occupancy grid is what says it is still standing */
+  get focusedTower(): Tower | null {
+    const t = this.focusTower;
+    return t && this.cellTower[t.gy * COLS + t.gx] === t ? t : null;
+  }
+
+  /**
    * Where the focus mark should be drawn, in world px — the overlay's
    * arrow. `top` is above the target's art; null when nothing is marked
    * (or the marked unit has died since, which clears the mark for good).
@@ -6162,6 +6357,36 @@ export class Sim {
       // faster than the plain one beside it because its pool is bigger
       if (t.regen > 0 && t.hp > 0 && t.hp < t.hpMax)
         t.hp = Math.min(t.hpMax, t.hp + t.regen * dt);
+      // THE ROT (Tower.poison, the Venom spitters' weapons.ts trait). Raw
+      // health a second, straight off the pool — applyArmor is not on this
+      // path and must not be, because a status that plating shaved would be
+      // a second copy of the thing the ground mechs already do.
+      //
+      // IT RUNS AGAINST REPAIR RATHER THAN AROUND IT. The tick above went
+      // first, so a Bulwarked turret under one spitter is genuinely mending
+      // faster than it rots and a player can watch that hold and then fail
+      // as the stack grows. Two dials pulling on one pool is the fight.
+      if (t.poisonT > 0) {
+        t.poisonT -= dt;
+        if (t.poisonT <= 0) {
+          t.poisonT = 0;
+          t.poison = 0;
+          t.poisonUnit = 0;
+        } else if (t.hp > 0) {
+          this.damageTower(t, t.poison * dt, true);
+          // the motes, on the damage smoke's own rule: scaled by footprint,
+          // so a rotting 4x4 reads from across the field
+          if (Math.random() < POISON_FX_RATE * t.size * dt) {
+            const sz = t.size * CELL;
+            this.pushFx(
+              t.x + (Math.random() - 0.5) * sz * 0.7,
+              t.y + (Math.random() - 0.5) * sz * 0.7,
+              POISON_FX_LIFE,
+              FxKind.Poison,
+            );
+          }
+        }
+      }
       // LAST VOLLEY (mods.ts): a dead neighbour's charge, running down
       if (t.boostT > 0) t.boostT -= dt;
       const maxHp = t.hpMax;
@@ -7471,7 +7696,17 @@ export class Sim {
     // on a unit still arriving for exactly nothing. It runs a full second,
     // half of it after the unit has started walking
     if (this.uspawn[i] > 0) return;
-    let amount = pierceArmor ? raw : Sim.applyArmor(raw, this.uarmor[i] * armorMult);
+    // THE REIGN'S PLATING STAMP rides on top of the body's own armour
+    // (levels.ts armorField), and it goes through the same armorMult a
+    // bullet carries — borrowed plating is plating, so a lancer's
+    // armorMultiplier counts it four times over exactly as it counts the
+    // body's own. Nothing is stamped when no carrier is on the roster
+    // (HAS_ARMOR_AURA), so this costs one compare in the usual case
+    const armor =
+      HAS_ARMOR_AURA && this.uarmorT[i] > 0
+        ? this.uarmor[i] + this.uarmorAdd[i]
+        : this.uarmor[i];
+    let amount = pierceArmor ? raw : Sim.applyArmor(raw, armor * armorMult);
     if (this.ushield[i] > 0.0001) {
       this.ushieldAlpha[i] = 1;
       const soaked = Math.min(this.ushield[i], amount);

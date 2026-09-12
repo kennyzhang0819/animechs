@@ -197,6 +197,36 @@ export interface Tower {
    *  bulwark) — 0 on everything else, and the fire loop's cheap gate */
   regen: number;
   /**
+   * THE ROT IN FORCE ON THIS BUILDING, in raw health a second, and the
+   * seconds it still has to run (constants.ts POISON_TIME). The venom line
+   * is the only thing in the game that applies it.
+   *
+   * IT IS RAW DAMAGE AND NOT A PERCENTAGE. A tenth of a duo's pool a second
+   * and a tenth of a foreshadow's are not the same rule, and the one that
+   * scales with the target turns the venom family into a flat tax the big
+   * guns pay hardest. A number of hit points a second is a number the
+   * player can hold against the thing they are about to place.
+   *
+   * IT ALSO IGNORES ARMOUR, exactly as burning does on the other side
+   * (Sim.applyStatusDamage): plating is the ground mechs' answer to volume,
+   * and rot is the answer to plating. The two families are built to pose
+   * opposite problems.
+   *
+   * STACKING IS ADDITIVE ON THE RATE AND A REFRESH ON THE CLOCK, capped at
+   * POISON_MAX_RATE times ONE APPLICATION (Sim.poisonTower) — four spitters
+   * on one turret rot it four times as fast, forty do not.
+   *
+   * `poisonUnit` IS WHAT THE CAP IS ANCHORED TO: the heaviest single
+   * application in force, held so the ceiling is a fact about the WEAPON
+   * rather than about the running total. Capping the total against itself
+   * is not a cap at all — it chases whatever the total has already reached,
+   * and a crowd drives it to hundreds of hit points a second. All three
+   * fields are cleared together when the clock runs out.
+   */
+  poison: number;
+  poisonUnit: number;
+  poisonT: number;
+  /**
    * How many times this turret still gets to stand back up when it is
    * wrecked (mods.ts: Undying Legion grants one to everything). Spent
    * before the Phoenix roll is even reached.
@@ -326,6 +356,10 @@ export interface EnemyShot {
   /** ArtilleryBulletType.update's trail clock, and the missiles' chance
    *  roll — see Sim.updateEnemyShots */
   trailT: number;
+  /** raw health a second of ROT this shot lays on what it hits, and on
+   *  everything its splash reaches — 0 on every shot that is not the venom
+   *  line's (weapons.ts UnitWeapon.poison) */
+  poison: number;
 }
 
 export interface Projectile {
@@ -453,6 +487,12 @@ export const enum FxKind {
    *  exactly it. (See Sim.updateProjectiles, where the splash branch hands
    *  it splashRadius and every other hit effect keeps its own scale.) */
   WaterBurst = 59,
+  /** THE ROT, and the venom line's whole signature (weapons.ts, the Venom
+   *  spitters): a purple mote lifting off a poisoned STRUCTURE, the
+   *  burning flicker's counterpart on the other side of the field. Burning
+   *  is a status a body carries; this is one a building carries, so it is
+   *  pushed by the tower loop (Sim.updateTowers) and never by updateStatus. */
+  Poison = 60,
 }
 
 /** an r,g,b triple in 0..1, the form every draw call wants */

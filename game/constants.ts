@@ -1815,5 +1815,49 @@ export const DAMAGE_SMOKE_RATE = 5;
  *  smoking within a breath rather than trailing it */
 export const DAMAGE_SMOKE_LIFE = 0.55;
 
+/**
+ * POISON — the Venom spitters' whole family trait (weapons.ts), and the
+ * only status this game puts on a BUILDING.
+ *
+ * IT IS RAW HEALTH A SECOND AND IT IGNORES ARMOUR. Every other thing the
+ * swarm does to a structure is a hit that plating shaves; this one is not,
+ * which is what makes the venom line the answer to a board that has
+ * out-armoured the ground mechs. See the note on Tower.poison.
+ *
+ * ONE CLOCK, REFRESHED. A fresh application does not queue behind the last
+ * one — it adds its rate and puts the clock back to full, the way burning
+ * resets on a body. So a turret under steady fire rots continuously and a
+ * turret the wave has walked past stops rotting POISON_TIME later.
+ */
+export const POISON_TIME = 6;
+/** the ceiling on stacked rot, as a multiple of ONE application's rate.
+ *  Four spitters on one turret rot it four times as fast; a whole wave
+ *  standing on it does not, or the cap on a patch's life would be how many
+ *  bodies happened to be in reach rather than anything the player chose */
+export const POISON_MAX_RATE = 4;
+/** motes a second a rotting structure lifts, for a 1x1 — scaled by the
+ *  footprint exactly as the damage smoke is, so a rotting spectre reads
+ *  from across the field */
+export const POISON_FX_RATE = 6;
+/** seconds one mote lives */
+export const POISON_FX_LIFE = 0.6;
+
+/**
+ * THE AURAS THE TWO REWORKED FAMILIES CARRY, both of them a STAMP rather
+ * than a standing lookup: a carrier's pulse writes a timer onto every body
+ * in reach (Sim.updateAbilities), and the buff is live while that timer is.
+ *
+ * IT IS A STAMP BECAUSE THE ALTERNATIVE IS A SCAN PER BODY PER TICK. There
+ * are up to 22,000 bodies and a handful of carriers; asking every body
+ * "is a reign near me" every frame is the wrong way round. The carrier
+ * pulses on its own reload and pays for the search once.
+ *
+ * THE TIMER OUTLIVES THE PULSE by AURA_LINGER, so a body inside a field
+ * that pulses every two seconds is buffed continuously rather than
+ * flickering off in the gaps — and one that walks out of the field keeps it
+ * for that long and no longer.
+ */
+export const AURA_LINGER = 1.35;
+
 export const clamp = (v: number, a: number, b: number): number =>
   v < a ? a : v > b ? b : v;

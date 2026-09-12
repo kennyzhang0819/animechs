@@ -12,11 +12,11 @@
  * reach that nothing else covers yet, and BUYS THE WAY A PLAYER BUYS —
  * paying TURRET_ROLL_PRICE for a draw off the deal and putting down
  * whatever the roll hands it — which is a TURRET (rarity.ts) and a
- * FORMATION (formation.ts), so one fee buys between four and twenty-five
+ * FORMATION (formation.ts), so one fee buys between four and thirty-six
  * of the same gun. It places them at its own best spots rather than in
  * the shape: the bot has never been shape-aware, and what it is here to
  * measure is the ECONOMY — what a fee buys against what the script sends
- * — and not whether a snowflake fits on a junction. It cannot choose a
+ * — and not whether a citadel fits on a junction. It cannot choose a
  * turret any more than a player can, so `--mix` no longer names what it
  * buys: it narrows the POOL the draw comes out of. It never sells, never
  * upgrades a placement, and never reads the wave ahead.
@@ -260,8 +260,9 @@ function play() {
   const owned = tech.unlocked;
   /** what the deal may turn over for this save — Game.drawPool's twin */
   const roster = TY.FIELDED_KINDS.filter((k) => owned.has(k));
-  /** ...and the shapes it may turn over, which the track deals too */
-  const shapes = [...tech.shapes];
+  /** ...and the shapes it may turn over, which is the whole table: every
+   *  save owns all five squares (formation.ts) */
+  const shapes = FO.FORMATION_IDS;
   sim.setTech(tech);
 
   // THE ROUTES, one per movement layer, and WHAT EACH IS WORTH: the share

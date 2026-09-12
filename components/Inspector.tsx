@@ -5,9 +5,10 @@ import type { RefObject } from "react";
 import { modDef, modName, type ModId } from "@/game/mods";
 import { RARITY } from "@/game/rarity";
 import type { UiState } from "@/game/game";
-import type { TowerKind } from "@/game/types";
+import { statusDef, type StatusChip as Chip } from "@/game/status";
+import { statusGlyph, STATUS_GRID } from "@/game/statusArt";
+import type { TowerKind, UnitKind } from "@/game/levels";
 import { HoverCard, useHoverCard } from "./HoverCard";
-import { PAL } from "./pixelArt";
 import { Glyph } from "./Relics";
 import { TOWER_ICONS } from "./towerIcons";
 
@@ -15,14 +16,19 @@ import { TOWER_ICONS } from "./towerIcons";
  * THE INSPECTOR — what the thing you just clicked is, along the bottom of
  * the field between the two corners.
  *
- * A CLICK ON A TURRET ALREADY DID SOMETHING: it drew a range ring
- * (Game.drawSelection). But the two facts a player actually wants off a
- * building — what is left of it, and WHICH ATTRIBUTES IT WON — were
- * nowhere on the screen. A turret born with three attributes is the story
- * of a patch (mods.ts: every placement rolls for every attribute the run
- * owns, so a card comes out speckled), and until now the only sign of it
- * was a single coloured pip in the corner of the footprint saying "this
- * one is special" without saying how.
+ * A CLICK ALREADY DID SOMETHING: on a turret it drew a range ring
+ * (Game.drawSelection), and on an enemy it told every gun in range to drop
+ * what it was doing (Sim.setFocusUnit). Neither of them said what the
+ * thing WAS. A turret born with three attributes is the story of a patch
+ * (mods.ts: every placement rolls for every attribute the run owns, so a
+ * card comes out speckled); a body halfway across the field is a pool, a
+ * plate, and whatever the line has managed to put on it.
+ *
+ * IT ANSWERS FOR BODIES TOO, and that is the half this panel was missing.
+ * The swarm's units carry real state — armour every shot is measured
+ * against, a soak that halves their pace, fire that ignores the plate, an
+ * absorbing bubble, meals eaten, wades taken — and until now every bit of
+ * it was invisible except as a tint. Click one and the panel reads it.
  *
  * IT GOES BOTTOM-CENTRE because that is the one edge of the field with
  * nothing on it: the minimap owns the bottom-left, the deal owns the
@@ -31,19 +37,24 @@ import { TOWER_ICONS } from "./towerIcons";
  * does not slide about as the corners change size, and it is capped at the
  * width between them so it never slips under either.
  *
- * ONE PANEL FOR ONE TURRET OR THREE HUNDRED. A marquee is a selection too,
+ * ONE PANEL FOR ONE THING OR THREE HUNDRED. A marquee is a selection too,
  * so the panel reads a SUMMARY (UiState.inspect): the pools summed into
- * one bar, and the attributes tallied across everything picked. Select one
- * turret and that summary is just that turret; drag a box over a wall and
- * the same row answers "how much of this patch came out gleaming", which
- * is the better question anyway.
+ * one bar, the attributes tallied across everything picked, and the
+ * statuses counted the same way — "rot on 4 of them" is the question a
+ * player drags a box to ask.
  *
- * IT IS ICONS AND A BAR AND NOTHING ELSE. Every attribute already has a
+ * IT IS PICTURES AND A BAR AND NOTHING ELSE. Every attribute already has a
  * face the player has learned in two other places — the shelf at the
- * top-left and the codex — and a fourth place that spelled the names out
- * in words would be a paragraph over the field, mid-wave, for a glance.
- * The names are one hover away, as they are everywhere else.
+ * top-left and the codex — and every status has one they have learned on
+ * the field, where the same symbols sit over the bodies wearing them
+ * (game.ts drawStatusRow). A panel that spelled the names out in words
+ * would be a paragraph over the field, mid-wave, for a glance. The names
+ * are one hover away, as they are everywhere else.
  */
+
+/** the portrait a body wears — the same sprite the level editor's roster
+ *  and the wave script draw it with */
+const unitIcon = (k: UnitKind): string => `/mindustry/sprites/units/${k}.png`;
 
 /**
  * ONE ATTRIBUTE IN THE SELECTION: its glyph on its band's border, and the
@@ -89,6 +100,67 @@ function ModPip({ id, n, total }: { id: ModId; n: number; total: number }) {
   );
 }
 
+/** one status symbol, at whatever size it is asked for — the same drawing
+ *  the field stamps over the body itself (game/statusArt.ts) */
+export function StatusGlyph({
+  id,
+  className = "h-[15px] w-[15px]",
+}: {
+  id: Chip["id"];
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox={`0 0 ${STATUS_GRID} ${STATUS_GRID}`}
+      className={className}
+      shapeRendering="crispEdges"
+      aria-hidden="true"
+    >
+      {statusGlyph(id).map((layer) => (
+        <path key={layer.color} fill={layer.color} d={layer.d} />
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * ONE STATUS IN THE ROW: its symbol on a chip framed in the status's own
+ * ink, and the number it carries when it has one — the plate's value, the
+ * shield's pool, the meals eaten, or how many of a selection are wearing
+ * it.
+ *
+ * THE FRAME IS THE COLOUR OF THE THING and never of a rarity band (the
+ * house rule, pixelArt.ts rule 4): water blue for a soak, ember for fire,
+ * the venom line's purple for rot. A player reading the row is being told
+ * what is happening, not how lucky they got.
+ */
+function StatusPip({ chip }: { chip: Chip }) {
+  const tip = useHoverCard("up");
+  const d = statusDef(chip.id);
+  return (
+    <span
+      ref={tip.ref as RefObject<HTMLSpanElement | null>}
+      {...tip.anchorProps}
+      className="pointer-events-auto relative flex h-[22px] w-[22px] shrink-0 items-center justify-center border border-[#26262b] bg-[#101013]"
+      style={{ borderColor: d.color }}
+      aria-label={`${d.name}${chip.n !== null ? ` ${chip.n}` : ""}, ${chip.note}`}
+    >
+      <StatusGlyph id={chip.id} className="h-[15px] w-[15px]" />
+      {chip.n !== null && (
+        <span
+          className="pointer-events-none absolute -bottom-[4px] -right-[3px] bg-[#0b0b0d] px-[2px] text-[9px] font-bold leading-none tabular-nums"
+          style={{ color: d.color }}
+        >
+          {chip.n}
+        </span>
+      )}
+      <HoverCard tip={tip} title={d.name} tag={chip.note} color={d.color} align="center">
+        {d.blurb}
+      </HoverCard>
+    </span>
+  );
+}
+
 /**
  * THE POOL, AS A BAR, in the field's own hp thirds — the same green /
  * amber / red a unit's bar and a structure's damage tint already use
@@ -100,7 +172,7 @@ function HealthBar({ hp, max }: { hp: number; max: number }) {
   const color = f > 2 / 3 ? "#7BE58A" : f > 1 / 3 ? "#FFD37F" : "#e55454";
   return (
     <div className="flex items-center gap-2">
-      <div className="relative h-[10px] w-[7rem] overflow-hidden border border-[#26262b] bg-[#101013]">
+      <div className="relative h-[10px] w-[9rem] overflow-hidden border border-[#26262b] bg-[#101013]">
         <div
           className="absolute inset-y-0 left-0 transition-[width] duration-150"
           style={{ width: `${f * 100}%`, background: color }}
@@ -114,65 +186,6 @@ function HealthBar({ hp, max }: { hp: number; max: number }) {
   );
 }
 
-/**
- * THE PLATING MARK — a plain steel shield, and the one drawing in this
- * panel that is not a mod glyph.
- *
- * IT IS NOT THE `shield` GLYPH (modArt.ts). That one is BULWARK PLATING's
- * face and wears a repair cross, because that mod is armour that also
- * mends; armour on its own mends nothing, and borrowing the cross would
- * say a thing about the turret that is not true. Same silhouette, same
- * gunmetal ramp, no pip — so the two read as the same KIND of thing
- * without reading as the same thing.
- */
-function PlateMark({ className = "h-[14px] w-[14px]" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} shapeRendering="crispEdges" aria-hidden="true">
-      <path d="M5 2h14v13l-7 8-7-8z" fill={PAL.steel} />
-      {/* the plating runs DOWN the shield, lit band and shadow — the same
-          rule every armour glyph in modArt.ts is drawn to */}
-      <path d="M11 2h2v18l-1 1-1-1z" fill={PAL.steelLite} />
-      <path d="M5 17h14l-7 6z" fill={PAL.steelDark} />
-    </svg>
-  );
-}
-
-/**
- * THE PLATING, ON THE NAME LINE: the shield and the number, up beside
- * what the thing is called and how many of it are selected.
- *
- * IT USED TO SIT RIGHT OF THE HEALTH BAR, spelling out "12 ARMOR" in a
- * caption — which put two numbers about damage on one line, made the row
- * as wide as the panel, and read as part of the pool rather than as a
- * property of the building. Armour is a fact about WHAT THIS IS, like its
- * name, so it goes where the name is; the bar is left to the one number
- * that moves.
- *
- * It is printed for a ZERO too — a 1x1 wears none, and "0" is how a
- * player learns that the 2x2 beside it does. What it means is one hover
- * away, because "a flat shave per hit, floored at a tenth" is not a thing
- * a label can say.
- */
-function Plating({ armor }: { armor: number }) {
-  const tip = useHoverCard("up");
-  return (
-    <span
-      ref={tip.ref as RefObject<HTMLSpanElement | null>}
-      {...tip.anchorProps}
-      className="pointer-events-auto flex shrink-0 items-center gap-1"
-      aria-label={`${armor} armor`}
-    >
-      <PlateMark />
-      <span className="text-[12px] font-bold leading-none tabular-nums text-[#C1C3D4]">{armor}</span>
-      <HoverCard tip={tip} title="Plating" tag={`${armor} armor`} color="#C1C3D4" align="center">
-        Every hit this takes is shaved by {armor} first, down to a tenth of the hit at most —
-        small arms bounce, the heavies still bite. Bigger footprints wear more; Bulwark Plating
-        and the Giant add their own.
-      </HoverCard>
-    </span>
-  );
-}
-
 export function Inspector({
   inspect,
   icons,
@@ -180,35 +193,58 @@ export function Inspector({
   inspect: NonNullable<UiState["inspect"]>;
   icons: Partial<Record<TowerKind, string>>;
 }) {
-  const { n, kind, name, hp, hpMax, armor, mods } = inspect;
+  const { n, kind, unit, name, hp, hpMax, statuses, mods } = inspect;
   const many = n > 1;
+  // the picture, and ONLY when the whole selection is one thing — a duo
+  // over a box that also holds spectres would be the one part of this
+  // panel that could lie
+  const art = unit ? unitIcon(unit) : kind ? (icons[kind] ?? TOWER_ICONS[kind]) : null;
   return (
     <div
       className="ms-pane pointer-events-auto flex max-w-[calc(100vw-30rem)] items-center gap-3 px-3 py-2"
       role="status"
-      aria-label={`Selected: ${many ? `${n} ` : ""}${name}, ${hp} of ${hpMax} health${
-        armor !== null ? `, ${armor} armor` : ""
-      }, ${mods.length} attributes`}
+      aria-label={`Selected: ${many ? `${n} ` : ""}${name}, ${hp} of ${hpMax} health, ${
+        statuses.length
+      } statuses, ${mods.length} attributes`}
     >
-      {/* the sprite, and ONLY when the selection is all one kind — a
-          picture of a duo over a box that also holds spectres would be the
-          one part of this panel that could lie */}
-      {kind && (
-        // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted
-        <img
-          src={icons[kind] ?? TOWER_ICONS[kind]}
-          alt=""
-          className="h-8 w-8 shrink-0 [image-rendering:pixelated]"
-        />
-      )}
-      <div className="flex min-w-0 flex-col gap-1">
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-[13px] font-bold uppercase leading-none tracking-wide text-[#EDEDEF]">
-            {many && <span className="text-[#FFD37F]">{n}× </span>}
-            {name}
-          </span>
-          {armor !== null && <Plating armor={armor} />}
+      {/* THE PICTURE WITH THE NAME UNDER IT. The name used to run along
+          the top of the right-hand column, which put it on the same line
+          as the plating caption and left the sprite floating beside a
+          stack it was not part of. A label belongs under the thing it
+          labels, and moving it there freed the whole top of the panel for
+          the status row. */}
+      {/* the column is given a floor so a two-letter name does not
+          collapse it under the sprite, and a ceiling so "Mega shield
+          tower" cannot push the bar off the far corner — between the two
+          it is as wide as what it is labelling */}
+      <div className="flex min-w-[4.5rem] max-w-[8rem] shrink-0 flex-col items-center gap-1">
+        {art && (
+          // eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted
+          <img src={art} alt="" className="h-9 w-9 shrink-0 object-contain [image-rendering:pixelated]" />
+        )}
+        <span className="w-full truncate text-center text-[11px] font-bold uppercase leading-none tracking-wide text-[#EDEDEF]">
+          {many && <span className="text-[#FFD37F]">{n}× </span>}
+          {name}
         </span>
+      </div>
+      {/* ...and to the right of it, the two rows that move: what is being
+          done to the thing, over what is left of it. */}
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <div
+          role="list"
+          aria-label="statuses"
+          className="flex min-h-[22px] items-center gap-1"
+        >
+          {statuses.length > 0 ? (
+            statuses.map((chip) => <StatusPip key={chip.id} chip={chip} />)
+          ) : (
+            /* A THING WITH NOTHING ON IT STILL KEEPS THE ROW. The bar
+               below would otherwise jump up by a chip's height the moment
+               a soak expired, under a cursor that is already hovering
+               something in it. */
+            <span className="text-[11px] uppercase tracking-wide text-[#4A4A55]">nothing on it</span>
+          )}
+        </div>
         <HealthBar hp={hp} max={hpMax} />
       </div>
       {mods.length > 0 && (

@@ -1,14 +1,8 @@
 import { targetingLine, TOWER_DESC, TOWERS } from "./constants";
-import {
-  FORMATION_IDS,
-  formationCount,
-  formationDef,
-  formationRarity,
-  type FormationId,
-} from "./formation";
 import { WORLDS } from "./levels";
 import { MODS, modDef, modName, modsOfScope, oddsLine, type ModId } from "./mods";
-import { MUTATIONS, mutationById, type MutationId } from "./mutation";
+import { MUTATIONS, mutationById, mutationCostOf, type MutationId } from "./mutation";
+import { RARITIES, rarityDef } from "./rarity";
 import { BY_MINDUSTRY_VALUE, type TechState } from "./tech";
 import {
   FIELDED_KINDS,
@@ -53,8 +47,8 @@ import {
  *   was 21 levels and every one of them carried something. It is spread
  *   out now: the three purples are levels 12, 16 and 20, the maps run to
  *   22, and the rules land on the levels between them. Every level still
- *   carries something — the shapes are placed last, into whatever the guns
- *   and the maps left empty.
+ *   carries something — the modules are placed last, into whatever the
+ *   guns and the maps left empty.
  *
  *   THE MODULES RUN THE WHOLE LENGTH OF IT (MOD_UNLOCKS). A mod or a
  *   relic is dealt on nearly every level from 2 up, because the deal's
@@ -102,7 +96,7 @@ const MUTATOR_UNLOCKS: Readonly<Record<number, readonly MutationId[]>> = {
   27: ["amphibious"],
   // THE LAST TWO RUN BACK TO BACK, and that is the every-other-level
   // rhythm ending rather than being broken: the gaps above are where the
-  // maps, shapes and turrets sit, and by level 28 the track has dealt all
+  // maps, modules and turrets sit, and by level 28 the track has dealt all
   // of those. A level that opens nothing at all is a level with no reason
   // to be looked at, so the two dearest rules take the last two rows
   // rather than leaving an empty one between them.
@@ -136,7 +130,6 @@ export type Reward =
   | { kind: "world"; worldId: string }
   | { kind: "speed"; mult: number }
   | { kind: "turret"; id: TowerKind }
-  | { kind: "shape"; id: FormationId }
   | { kind: "module"; id: ModId }
   | { kind: "mutator"; id: MutationId }
   | { kind: "upgrade"; id: UpgradeKind };
@@ -216,61 +209,17 @@ const UNLOCKS: Readonly<Record<number, readonly TowerKind[]>> = {
 };
 
 /**
- * THE OPENING SHAPES (formation.ts): a small solid, a bigger solid, and
- * the one that is bigger again. Three blocks and nothing clever — the
- * first thing a save has to learn is what a formation IS, which is "the
- * card puts down a patch of turrets, not a turret", and three squares of
- * four, nine and sixteen teach that without also asking what a saltire is
- * for. Every shape with a hole in it is earned.
+ * THE SHAPES ARE NOT ON THE TRACK AT ALL (formation.ts). Every save owns
+ * every one of the five squares from wave one, so nothing here deals one
+ * and the Unlocks board has no Shapes tab. They were dealt once — three
+ * to open with and nine earned — back when a shape was an OUTLINE and
+ * learning what a saltire was for was a reward in itself. A table of
+ * plain squares has nothing to teach that way: gating the 6x6 behind
+ * level 26 only meant a low save's purple shape roll silently came back
+ * as a smaller square, which reads as the deal being stingy rather than
+ * as progress. The size is the rarity now and the roll is the whole of
+ * it (SHAPE_ODDS).
  */
-export const STARTING_SHAPES: readonly FormationId[] = ["quad", "block", "grid"];
-
-/**
- * ...and the other nine, smallest first — which is also rarest-last, since
- * a shape's band is read off its cell count (formationRarity). They are
- * threaded through the whole track rather than given a phase of their own,
- * and they land on the levels the guns and maps leave empty: a level that
- * opens nothing at all is a level with no reason to be looked at.
- */
-const SHAPE_UNLOCKS: Readonly<Record<number, FormationId>> = {
-  3: "cross",
-  5: "saltire",
-  7: "wedge",
-  9: "ring",
-  13: "snowflake",
-  17: "octagon",
-  20: "rampart",
-  24: "bastion",
-  26: "citadel",
-};
-
-/** every shape exactly once, none dealt before the save can use it — checked at import */
-(() => {
-  const seen = new Set<FormationId>(STARTING_SHAPES);
-  if (seen.size !== STARTING_SHAPES.length) throw new Error("a starting shape is dealt twice");
-  for (const [level, id] of Object.entries(SHAPE_UNLOCKS)) {
-    if (seen.has(id)) throw new Error(`the track opens the shape "${id}" twice`);
-    if (+level < 2 || +level > MAX_LEVEL)
-      throw new Error(`the track opens "${id}" on level ${level}, outside the roster phase`);
-    seen.add(id);
-  }
-  for (const id of FORMATION_IDS)
-    if (!seen.has(id)) throw new Error(`the track never opens the shape "${id}"`);
-})();
-
-/** the shapes a level has dealt: the starting three and every one since */
-export function shapesAt(level: number): Set<FormationId> {
-  const out = new Set<FormationId>(STARTING_SHAPES);
-  for (const [l, id] of Object.entries(SHAPE_UNLOCKS)) if (+l <= level) out.add(id);
-  return out;
-}
-
-/** the level a shape joins the deal — 1 for the starting three */
-export function shapeUnlockLevel(id: FormationId): number {
-  if (STARTING_SHAPES.includes(id)) return 1;
-  for (const [l, s] of Object.entries(SHAPE_UNLOCKS)) if (s === id) return +l;
-  return MAX_LEVEL + 1;
-}
 
 /**
  * THE MODULES (mods.ts) — the third thing the track deals, and the one a
@@ -282,7 +231,7 @@ export function shapeUnlockLevel(id: FormationId): number {
  * over an ALL ROUND as a save that had earned its way to the top of the
  * track, and the shelf of relics a player is climbing towards was already
  * theirs on the first wave. The modules are dealt now, exactly as the
- * turrets and the shapes are, and the opening four are the four commons —
+ * turrets and the maps are, and the opening four are the four commons —
  * one per stat, so the first mod a run buys teaches what a mod IS (a
  * chance riding every turret placed) without also asking what a sabot is.
  *
@@ -450,13 +399,12 @@ const DEALT: Map<number, UpgradeKind[]> = UPGRADES_ON_TRACK ? dealUpgrades() : n
  * where to look once.
  *
  * Smallest change to the board first: a turret is one more card in the
- * deal, a shape is what the card puts down, a rule changes the fight, and
- * a pace or a MAP is a place to take all of it — so the maps come last,
- * where a row's biggest reward sits at its end.
+ * deal, a module is what rides it, a rule changes the fight, and a pace
+ * or a MAP is a place to take all of it — so the maps come last, where a
+ * row's biggest reward sits at its end.
  */
 const REWARD_ORDER: readonly Reward["kind"][] = [
   "turret",
-  "shape",
   "module",
   "upgrade",
   "mutator",
@@ -470,8 +418,6 @@ const rewardRank = (r: Reward): number => REWARD_ORDER.indexOf(r.kind);
 export function rewardsAt(level: number): Reward[] {
   const out: Reward[] = [];
   for (const id of TURRETS_DEALT.get(level) ?? []) out.push({ kind: "turret", id });
-  const shape = SHAPE_UNLOCKS[level];
-  if (shape) out.push({ kind: "shape", id: shape });
   for (const id of MOD_UNLOCKS[level] ?? []) out.push({ kind: "module", id });
   for (const id of DEALT.get(level) ?? []) out.push({ kind: "upgrade", id });
   for (const id of MUTATOR_UNLOCKS[level] ?? []) out.push({ kind: "mutator", id });
@@ -571,7 +517,6 @@ export function rewardText(r: Reward): string {
   if (r.kind === "world") return `Map: ${WORLDS.find((w) => w.id === r.worldId)?.name ?? "Unknown"}`;
   if (r.kind === "speed") return `${r.mult}x speed`;
   if (r.kind === "turret") return `Turret: ${TOWER_NAME[r.id]}`;
-  if (r.kind === "shape") return `Shape: ${formationDef(r.id).name}`;
   if (r.kind === "module") {
     const d = modDef(r.id);
     return `${d.scope === "global" ? "Relic" : "Mod"}: ${modName(d)}`;
@@ -586,10 +531,6 @@ export function rewardBlurb(r: Reward): string {
   if (r.kind === "world") return "A map the campaign can be deployed on.";
   if (r.kind === "speed") return `Fast-forward: a run may be played at ${r.mult}x pace from the strip under the wave panel.`;
   if (r.kind === "turret") return TOWER_DESC[r.id];
-  if (r.kind === "shape") {
-    const f = formationDef(r.id);
-    return `A formation of ${formationCount(r.id)} turrets on a ${f.w}x${f.h} grid.`;
-  }
   if (r.kind === "module") return modDef(r.id).blurb;
   if (r.kind === "mutator")
     return mutationById(r.id)?.blurb ?? "";
@@ -635,13 +576,14 @@ export const TOWER_NAME: Readonly<Record<TowerKind, string>> = Object.fromEntrie
  * is there, and when do I get it": answering that off TRACK means walking
  * twenty-three rows looking for the turrets. So this inverts it once, at
  * import, and every category is derived from the same source the track
- * deals from — a new turret or shape appears on the board by existing.
+ * deals from — a new turret or module appears on the board by existing.
  *
  * A reward the track never hands out (a map nobody's level opens, the
- * starting roster, the starting shapes) reads as LEVEL 1: it is not
- * locked, it was simply always there.
+ * starting roster) reads as LEVEL 1: it is not locked, it was simply
+ * always there. The SHAPES are not on this board at all: nothing deals
+ * one and every save owns all five (see the shapes note above).
  */
-export type UnlockKind = "world" | "turret" | "shape" | "mutator" | "upgrade";
+export type UnlockKind = "world" | "turret" | "mutator" | "upgrade";
 
 export interface UnlockEntry {
   reward: Reward;
@@ -649,7 +591,32 @@ export interface UnlockEntry {
   level: number;
 }
 
-/** every unlock of one category, soonest first, then by name */
+/**
+ * WHERE ONE REWARD SITS IN ITS CATEGORY'S LADDER — the number the board
+ * shelves by, and it is only ever compared against another reward of the
+ * same kind.
+ *
+ * A turret and a module both wear one of the four borders
+ * (rarity.ts), so both rank by it, commons first and the purples
+ * last — the same direction RARITIES is written in, which is the
+ * direction the border teaches. A RULE has no border but it has a
+ * weight, and the weight is its rarity: the cost itself, so the light
+ * ones lead and the brutal ones close, finer than the four bands the
+ * hover card prints. Everything else — a map — has no ladder at all and
+ * ranks flat, which leaves its category in the order it was authored in.
+ *
+ * The rankless sit at the END rather than the start, so the day the tech
+ * tree's branches join the upgrade tab they fall in behind the twenty
+ * modules instead of ahead of the commons.
+ */
+function rarityRank(reward: Reward): number {
+  if (reward.kind === "turret") return RARITIES.indexOf(rarityDef(reward.id).id);
+  if (reward.kind === "module") return RARITIES.indexOf(modDef(reward.id).rarity);
+  if (reward.kind === "mutator") return mutationCostOf(reward.id);
+  return RARITIES.length;
+}
+
+/** every unlock of one category, by rarity, then soonest first */
 export function unlocksOf(kind: UnlockKind): UnlockEntry[] {
   const out: UnlockEntry[] = [];
   if (kind === "world")
@@ -658,9 +625,6 @@ export function unlocksOf(kind: UnlockKind): UnlockEntry[] {
   if (kind === "turret")
     for (const k of FIELDED_KINDS)
       out.push({ reward: { kind: "turret", id: k }, level: turretUnlockLevel(k) });
-  if (kind === "shape")
-    for (const f of FORMATION_IDS)
-      out.push({ reward: { kind: "shape", id: f }, level: shapeUnlockLevel(f) });
   // MODS BEFORE RELICS, the order the corner's two buttons read in — the
   // sort below is stable, so inside a level that order survives
   if (kind === "upgrade")
@@ -679,24 +643,26 @@ export function unlocksOf(kind: UnlockKind): UnlockEntry[] {
       for (const [l, ids] of DEALT) if (ids.includes(u.id)) level = l;
       out.push({ reward: { kind: "upgrade", id: u.id }, level });
     }
-  // SOONEST FIRST, and within a level the order the category itself is
-  // written in — FIELDED_KINDS, FORMATION_IDS, WORLDS. Array.sort is
-  // stable, so that order survives untouched, which is what puts the
-  // shapes smallest-first instead of alphabetical (a level-1 shelf
-  // reading Block, Grid, Quad tells a player nothing; 4, 9, 16 does)
-  return out.sort((a, b) => a.level - b.level);
+  // RARITY FIRST, THEN SOONEST FIRST. The board is a shelf a player reads
+  // to learn what exists, and what they are learning along the way is the
+  // border: a tab that runs greyish white, then blue, then amber, then
+  // purple teaches the ladder by walking it, where a tab sorted by level
+  // scatters the four colours and teaches nothing. Level is the tiebreak
+  // inside a band, so "what is next" is still legible one band at a time.
+  //
+  // And within a level the order the category itself is written in —
+  // FIELDED_KINDS, WORLDS, mods before relics. Array.sort is stable, so
+  // that order survives untouched rather than falling back to whatever
+  // alphabetical would have done to it.
+  return out.sort((a, b) => rarityRank(a.reward) - rarityRank(b.reward) || a.level - b.level);
 }
 
 /** what a save at this level may do — the sim's and the build menu's allowance */
 export function techStateFor(level: number): TechState {
   return {
     unlocked: turretsAt(level),
-    shapes: shapesAt(level),
     speeds: speedsAt(level),
     mods: modsAt(level),
     upgrades: upgradesAt(level),
   };
 }
-
-/** a shape reward's band, for the chip that wears it */
-export const rewardShapeRarity = formationRarity;

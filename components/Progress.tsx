@@ -31,7 +31,6 @@ import { itemCount } from "./Items";
 import Unlocks from "./Unlocks";
 import { bandFor, MutationFace, MUT_LIT } from "./mutationFace";
 import { Glyph } from "./Relics";
-import { formationDef, formationRarity, type FormationId } from "@/game/formation";
 import { RARITY, rarityDef } from "@/game/rarity";
 import { TOWER_ICONS } from "./towerIcons";
 
@@ -48,7 +47,7 @@ import { TOWER_ICONS } from "./towerIcons";
  * button: the track is not spent, it is climbed.
  *
  * THE UNLOCKS BOARD rides beside it as a second tab (Unlocks.tsx): every
- * turret, shape, map and rule the track will ever hand out, filtered by
+ * turret, module, map and rule the track will ever hand out, filtered by
  * kind. The two answer the two halves of one question — this one is
  * "where am I and what is next", that one is "what is there at all" — and
  * the tab strip sits in the SAME corner on both, beside back, so
@@ -76,8 +75,6 @@ const REWARD_COLOR: Record<Reward["kind"], string> = {
   world: "#7BE58A",
   speed: "#7FC4FF",
   turret: "#FF9A62",
-  // a shape wears its own band (formationRarity), like a turret does
-  shape: "#C6C6CE",
   // a mutator wears the codex's pink here, not its own weight band: the
   // question a row answers is "what kind of thing is this handing me",
   // and the weight rides in the hover card's corner instead (the `tag`
@@ -87,8 +84,8 @@ const REWARD_COLOR: Record<Reward["kind"], string> = {
   // chip below holds a full-colour turret sprite and a flat-tinted glyph
   // was the odd one out
   mutator: MUT_LIT,
-  // a module wears its own band (rarityDef below), like a turret and a
-  // shape do — this is the fallback nothing reaches
+  // a module wears its own band (rarityDef below), like a turret does —
+  // this is the fallback nothing reaches
   module: "#C6C6CE",
   upgrade: "#FFD37F",
 };
@@ -126,25 +123,8 @@ function MapThumb({ mapId }: { mapId: string }) {
   return <canvas ref={ref} className="h-full w-full object-cover [image-rendering:pixelated]" />;
 }
 
-/** A SHAPE REWARD'S FACE: the formation itself, drawn the size of a
- *  sprite — the same diagram the card in a run wears in its corner, so
- *  the track teaches the picture and the field reads it back */
-function ShapeFace({ id }: { id: FormationId }) {
-  const f = formationDef(id);
-  const n = Math.max(f.w, f.h);
-  return (
-    <svg viewBox={`0 0 ${n} ${n}`} className="h-[24px] w-[24px]" aria-hidden="true">
-      <g transform={`translate(${(n - f.w) / 2} ${(n - f.h) / 2})`}>
-        {f.cells.map(([x, y]) => (
-          <rect key={`${x},${y}`} x={x + 0.08} y={y + 0.08} width={0.84} height={0.84} fill="currentColor" />
-        ))}
-      </g>
-    </svg>
-  );
-}
-
 /** what a reward chip WEARS: the turret's own menu sprite, the map's own
- *  thumbnail, the shape's own diagram, a pace as its multiplier. An
+ *  thumbnail, a pace as its multiplier. An
  *  upgrade rung shows the turret it buffs — the ring colour is what
  *  separates it from owning the gun */
 function RewardFace({ reward }: { reward: Reward }) {
@@ -152,7 +132,6 @@ function RewardFace({ reward }: { reward: Reward }) {
   if (reward.kind === "speed")
     return <span className="font-display text-[13px] font-bold leading-none">{reward.mult}x</span>;
   if (reward.kind === "mutator") return <MutationFace id={reward.id} size="h-6 w-6" />;
-  if (reward.kind === "shape") return <ShapeFace id={reward.id} />;
   // a module has no sprite — it is not a building — so it wears the same
   // small geometry the shelf and the reveal draw it as (Relics.tsx)
   if (reward.kind === "module")
@@ -187,8 +166,8 @@ function RewardFace({ reward }: { reward: Reward }) {
  * WHAT ONE REWARD IS DRAWN AND COLOURED BY — the single answer both
  * boards read.
  *
- * A TURRET IS BORDERED BY ITS RARITY (rarity.ts), and a shape by its band
- * (formationRarity), not by the fact that they are a turret and a shape.
+ * A TURRET IS BORDERED BY ITS RARITY (rarity.ts), and a module by its
+ * own, not by the fact that they are a turret and a module.
  * The track is where a player learns what the deal can hand them, and it
  * teaches the border at the same time it teaches the gun: the row that
  * opens a spectre is purple here, the tile on the unlocks board is purple
@@ -203,11 +182,9 @@ export function rewardLook(reward: Reward): {
   const rarity =
     reward.kind === "turret"
       ? rarityDef(reward.id)
-      : reward.kind === "shape"
-        ? RARITY[formationRarity(reward.id)]
-        : reward.kind === "module"
-          ? RARITY[modDef(reward.id).rarity]
-          : null;
+      : reward.kind === "module"
+        ? RARITY[modDef(reward.id).rarity]
+        : null;
   return {
     face: <RewardFace reward={reward} />,
     color: rarity ? rarity.color : REWARD_COLOR[reward.kind],

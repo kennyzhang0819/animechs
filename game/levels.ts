@@ -327,6 +327,34 @@ export interface UnitStats {
    */
   forceField?: ForceFieldSpec;
   /**
+   * THE PLATING AURA — the reign's, and the ground mechs' family trait made
+   * into a rule (FAMILIES). Every `reload` seconds the carrier stamps
+   * `amount` of extra armour onto every body in `range`, live for as long as
+   * the stamp lasts (constants.ts AURA_LINGER).
+   *
+   * ARMOUR IS A FLAT SHAVE FLOORED AT A TENTH OF THE HIT (Sim.applyArmor),
+   * so this is not a percentage of anything and its worth depends entirely
+   * on what is shooting: +12 armour is nothing at all to a fuse and very
+   * nearly everything to a wall of duos. That is the point of it — a reign
+   * in the crowd does not make the crowd tougher, it makes SMALL CALIBRE
+   * stop working, and the answer is to bring a bigger gun rather than more
+   * of the same one.
+   */
+  armorField?: { amount: number; reload: number; range: number };
+  /**
+   * THE HASTE AURA — the spiroct's, and the venom line's family trait made
+   * into a rule. Every `reload` seconds the carrier stamps a speed
+   * MULTIPLIER onto every body in `range`, live for as long as the stamp
+   * lasts.
+   *
+   * IT MULTIPLIES THE DRIVE AND NOT THE STAT (Sim.updateUnits, alongside
+   * the wet slow), so it compounds with nothing permanently and a body that
+   * walks out of the field goes back to its own pace. The venom line is the
+   * light, fast one; this is the tier that makes the rest of the family —
+   * and whatever else the wave happens to be carrying — move like it.
+   */
+  hasteField?: { mult: number; reload: number; range: number };
+  /**
    * Mindustry UnitType.immunities: status effects that simply never take.
    * The check is at application time (StatusComp.apply returns early), not
    * a resistance — an immune unit is never lit at all, so it also never
@@ -356,7 +384,20 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // dagger: 150 hp, no armor, 1x1-block hitbox, 3.75 tiles/s
   dagger: { hp: HP0, speed: UNIT_SPEED, armor: 0, radius: UR, tier: 1 },
   // mace: 550 hp, armor 4, 1.25x1.25-block hitbox, 3.75 tiles/s
-  mace: { hp: 550, speed: UNIT_SPEED, armor: 4, radius: UR * 1.25, tier: 2 },
+  // ...and where the line's plating starts, so does its SHIELD. A personal
+  // field at range 0 is the whole of the ground mechs' second family trait
+  // (FAMILIES): the pulse catches whatever its own hitbox covers, which on
+  // a body standing still is the body itself. Nothing else in the crowd is
+  // topped up — that is the scepter's job, three tiers up, and the reason
+  // this one is a bar the mech carries rather than a field it projects
+  mace: {
+    hp: 550,
+    speed: UNIT_SPEED,
+    armor: 4,
+    radius: UR * 1.25,
+    tier: 2,
+    shieldField: { amount: 30, max: 120, reload: 3, range: 0 },
+  },
   // fortress: 900 hp, armor 9, 1.625x1.625-block hitbox, 3.225 tiles/s
   // (0.43 px/tick) — the T3 heavy walks noticeably slower than the line,
   // and rotateSpeed 3 against the stock 5 makes it turn slower too
@@ -367,6 +408,8 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     radius: UR * 1.625,
     tier: 3,
     rotateSpeed: 3,
+    // the mace's bar, deeper: the line's shield grows with its plating
+    shieldField: { amount: 40, max: 200, reload: 3, range: 0 },
   },
   // scepter: the ground line's T4 — 9000 hp, armor 20, a 2.75x2.75-block
   // hitbox, 0.36 px/tick = 2.7 tiles/s. Ten fortresses' health on something
@@ -403,48 +446,81 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     radius: UR * 3.75,
     tier: 5,
     rotateSpeed: 1.65,
+    // THE CROWN HANDS ITS PLATING DOWN. The line's whole argument is that
+    // armour is a flat shave and the counter is calibre, not volume; this
+    // is that argument applied to everything walking with it. +12 within
+    // nine tiles turns a dagger escort into something a duo wall reduces
+    // itself against, and changes nothing at all for a fuse.
+    //
+    // It carries no shield of its own. The mace and the fortress wear one
+    // because they are the tiers that have to survive their own approach;
+    // the reign survives on thirty armour and twenty-four thousand health,
+    // and what it adds to the line is the thing it is already best at.
+    armorField: { amount: 12, reload: 2, range: 9 * CELL },
   },
-  // crawler: 150 hp, no armor, 1x1-block hitbox, 1 px/tick = 7.5 tiles/s —
-  // twice the line's pace; the swarm closes distance before towers thin it
-  crawler: { hp: 150, speed: 7.5 * CELL, armor: 0, radius: UR, tier: 1 },
-  // atrax: the crawler line's T2 — 600 hp, armor 3, a 1.625x1.625-block
-  // hitbox, 0.6 px/tick = 4.5 tiles/s. Where the crawler is a fast, frail
-  // swarm, its successor plods: four legs carrying four times the health
-  // legCount 4 / legLength 9 / legForwardScl 0.6 / legMoveSpace 1.4 — a
-  // short reach and a wide gait, so it visibly hauls itself along
+  // crawler: 150 hp, no armor, 1x1-block hitbox, 7.5 tiles/s — twice the
+  // ground line's pace, and the fastest walker in the game.
   //
-  // immunities burning (and melting, which this game does not field): the
-  // slag-throwing unit does not burn. Scorch is the counter to the crawler
-  // swarm and slides straight off the thing the swarm upgrades INTO
+  // IT IS NOT A BOMB ANY MORE. The suicide charge is gone (weapons.ts): a
+  // family whose signature is a status that takes six seconds to work
+  // cannot have its opening tier delete itself on contact, because a dead
+  // spitter stops refreshing the clock it just started. So the T1 lives,
+  // keeps its pace, and spits — one orb every three seconds, and every orb
+  // lands the rot.
+  crawler: { hp: 150, speed: 7.5 * CELL, armor: 0, radius: UR, tier: 1 },
+  // atrax: the venom line's T2 — 600 hp, armor 2, a 1.625x1.625-block
+  // hitbox, 5.5 tiles/s. It is the crawler's VOLUME tier and nothing else:
+  // the same orb, the same rot, four times the health and four barrels.
+  //
+  // IT NO LONGER THROWS SLAG — the whole tree throws one thing now
+  // (weapons.ts) — but it keeps `immunities: burning`, and the reason has
+  // simply moved. Upstream it is fireproof because it is the slag unit;
+  // here it is fireproof because SCORCH IS THE OBVIOUS ANSWER TO A LIGHT,
+  // FAST, CLOSE-RANGE FAMILY, and a family with no answer to its own
+  // counter is one the player solves with a wall of one turret. So the tier
+  // the swarm upgrades INTO is the tier the flame slides off, and a board
+  // that opened with scorch has to find a second idea by wave twenty.
   atrax: {
     hp: 600,
-    speed: 4.5 * CELL,
-    armor: 3,
+    speed: 5.5 * CELL,
+    armor: 2,
     radius: UR * 1.625,
     tier: 2,
     drag: 0.4,
     rotateSpeed: 3,
     immunities: ["burning"],
-    legs: legs({ count: 4, length: 9 * MU, forwardScl: 0.6, moveSpace: 1.4, elevation: 0.2 }),
+    // SHORT LEGS. The line used to haul itself along on a wide, slow gait;
+    // the family is the light fast one now, and a long stride reads as
+    // weight. Every leg on this tree is cut to roughly a third of what
+    // Mindustry gives it and the elevation with it, so the body sits down
+    // on its feet and scuttles instead of striding.
+    legs: legs({ count: 4, length: 5 * MU, forwardScl: 0.6, moveSpace: 1.1, elevation: 0.12 }),
   },
   // spiroct: the line's T3 — 1000 hp, armor 9, a 1.875x1.875-block hitbox,
   // 0.54 px/tick = 4.05 tiles/s, the slowest thing on the field. Six legs
   // on longer mounts (legBaseOffset 2) stepping three at a time
   spiroct: {
     hp: 1000,
-    speed: 4.05 * CELL,
-    armor: 9,
+    speed: 5.5 * CELL,
+    armor: 4,
     radius: UR * 1.875,
     tier: 3,
     drag: 0.4,
     rotateSpeed: 3,
+    // THE ONE THAT MAKES THE REST GO. The venom line poisons on a clock —
+    // six seconds of rot per application — so what it actually wants is
+    // more applications landing before the first one runs out, and the
+    // cheapest way to buy that is to get the whole family to the wall
+    // sooner. A third of again on everything within ten tiles, itself
+    // included, and it is the only speed buff in the game.
+    hasteField: { mult: 1.35, reload: 2, range: 10 * CELL },
     legs: legs({
       count: 6,
-      length: 13 * MU,
+      length: 6.5 * MU,
       forwardScl: 0.8,
-      moveSpace: 1.4,
-      baseOffset: 2 * MU,
-      elevation: 0.3,
+      moveSpace: 1.1,
+      baseOffset: 1.5 * MU,
+      elevation: 0.15,
     }),
   },
   // arkyid: the crawler line's T4 — 8000 hp, armor 14, a 2.875x2.875-block
@@ -467,21 +543,21 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // what survives of the footfall is the dust and the reach
   arkyid: {
     hp: 8000,
-    speed: 4.65 * CELL,
-    armor: 14,
+    speed: 5.5 * CELL,
+    armor: 7,
     radius: UR * 2.875,
     tier: 4,
     drag: 0.1,
     rotateSpeed: 2.7,
     legs: legs({
       count: 6,
-      length: 30 * MU,
+      length: 11 * MU,
       pairOffset: 3 * MU,
-      baseOffset: 10 * MU,
-      extension: -15 * MU,
+      baseOffset: 5 * MU,
+      extension: -6 * MU,
       lengthScl: 0.96,
       speed: 0.2,
-      elevation: 0.65,
+      elevation: 0.25,
       ripple: 2,
     }),
   },
@@ -505,22 +581,22 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // — so what lands is rippleScale 3, half again the arkyid's dust
   toxopid: {
     hp: 22000,
-    speed: UNIT_SPEED,
-    armor: 22,
+    speed: 5 * CELL,
+    armor: 10,
     radius: UR * 3.25,
     tier: 5,
     drag: 0.1,
     rotateSpeed: 1.9,
     legs: legs({
       count: 8,
-      length: 75 * MU,
+      length: 20 * MU,
       moveSpace: 0.8,
       pairOffset: 3 * MU,
-      extension: -20 * MU,
-      baseOffset: 8 * MU,
+      extension: -8 * MU,
+      baseOffset: 5 * MU,
       lengthScl: 0.93,
       speed: 0.19,
-      elevation: 0.95,
+      elevation: 0.3,
       ripple: 3,
     }),
   },
@@ -959,7 +1035,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
 export const UNIT_TREES = [
   { key: "ground", name: "Ground mechs", kinds: ["dagger", "mace", "fortress", "scepter", "reign"] },
   { key: "support", name: "Starlight mechs", kinds: ["nova", "pulsar", "quasar", "vela", "corvus"] },
-  { key: "crawler", name: "Venom crawlers", kinds: ["crawler", "atrax", "spiroct", "arkyid", "toxopid"] },
+  { key: "crawler", name: "Venom spitters", kinds: ["crawler", "atrax", "spiroct", "arkyid", "toxopid"] },
   { key: "air", name: "Sky gunships", kinds: ["flare", "horizon", "zenith", "antumbra", "eclipse"] },
   // the two naval tank trees: upgrade paths like the four above, on the
   // amphibious layer. They used to be the only rows whose units needed a
@@ -1066,13 +1142,29 @@ export type LevelStep = { wave: WaveUnits | readonly RegionWave[] };
  * is never swapped: a boss is an event, not a volume.
  */
 export const FAMILIES = [
-  // the mechs of the line: a blade, a mace, a bunker, a sceptre and a
-  // crown — Mindustry named this tree after the regalia of a war
+  // THE LINE: straight bullets, heavy plating, and a shield on every tier
+  // that has to survive its own approach. Not one arcing shell and not one
+  // beam between them — everything this family fires goes where it is
+  // pointed, and everything it does to stay alive is worn rather than
+  // projected. Its two carriers are the scepter (a shield for the crowd)
+  // and the reign (plating for the crowd), so the tiers that hand something
+  // out are the top two rather than the bottom three.
+  //
+  // WHAT IT POSES: a wall that walks, and armour is a flat shave floored at
+  // a tenth (Sim.applyArmor) — so the answer is calibre and never volume.
   { key: "ground", name: "Ground mechs", layer: "ground", icon: "dagger",
     kinds: ["dagger", "mace", "fortress", "scepter", "reign"] },
-  // the spiders, and every one of them a poison: the crawler's blast, the
-  // atrax's acid, the spiroct's sap, the toxopid's name itself
-  { key: "crawler", name: "Venom crawlers", layer: "ground", icon: "crawler",
+  // THE SPITTERS: light, quick, and every shot they fire is the same purple
+  // orb landing the same rot (weapons.ts POISON). No suicide charge, no
+  // sap beams, no slag — one weapon look and one status across five tiers,
+  // which is the whole point of the family. Its carrier is the spiroct,
+  // and what it hands out is PACE, because rot runs on a clock and the
+  // family wants more applications inside it.
+  //
+  // WHAT IT POSES: rot ignores armour, so this is the family a board that
+  // out-plated the ground mechs still loses turrets to. Kill them before
+  // the clock refreshes, or bring repair.
+  { key: "crawler", name: "Venom spitters", layer: "ground", icon: "crawler",
     kinds: ["crawler", "atrax", "spiroct", "arkyid", "toxopid"] },
   // named for stars, armed with light: nova, pulsar, quasar, vela, corvus,
   // and not one ballistic gun between them
