@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from "fs/promises";
+import { ADMIN_ENABLED } from "@/game/env";
 import path from "path";
 import { NextResponse } from "next/server";
 import { CAMPAIGN_DOC_ID, UNIT_KINDS, type LevelDoc, type LevelStep } from "@/game/levels";
@@ -12,7 +13,7 @@ import { CAMPAIGN_DOC_ID, UNIT_KINDS, type LevelDoc, type LevelStep } from "@/ga
  * path, so anything else is refused rather than sanitized. Production builds refuse outright, exactly like /api/maps.
  */
 export async function POST(req: Request): Promise<NextResponse> {
-  if (process.env.NODE_ENV === "production")
+  if (!ADMIN_ENABLED)
     return NextResponse.json({ error: "level editing is a dev tool" }, { status: 403 });
 
   const doc = (await req.json()) as Partial<LevelDoc>;

@@ -14,9 +14,9 @@ import {
   DAMAGE_SMOKE_BELOW,
   DAMAGE_SMOKE_LIFE,
   DAMAGE_SMOKE_RATE,
+  POISON_DECAY,
   POISON_FX_LIFE,
   POISON_FX_RATE,
-  POISON_MAX_RATE,
   POISON_TIME,
   FX_SPAWN,
   FX_UNIT_SPAWN,
@@ -2853,33 +2853,46 @@ export class Sim {
    * spit against a foreshadow's plating lands 0.8 and six full seconds of
    * rot, which is the entire reason that body is on the field.
    */
-  private hitStructure(t: Structure, dmg: number, poison = 0): void {
+  private hitStructure(t: Structure, dmg: number, poison = 0, poisonChance = 1): void {
     if (dmg > 0) this.damageTower(t, dmg * unitDamageScale());
-    if (poison > 0) this.poisonTower(t, poison);
+    if (poison > 0) this.poisonTower(t, poison, poisonChance);
   }
 
   /**
    * THE ROT LANDING (Tower.poison): the rate stacks and the clock refreshes.
    *
-   * ADDITIVE ON THE RATE, CAPPED. Four spitters on one turret rot it four
-   * times as fast, which is what makes a pack of them frightening; a whole
-   * wave in reach does not, or how long a patch lives would be decided by
-   * how many bodies happened to be standing near it rather than by anything
-   * the player did. POISON_MAX_RATE is that ceiling, in multiples of the
-   * heaviest single application in force — Tower.poisonUnit, which is held
-   * precisely so the ceiling cannot chase the total it is meant to bound.
+   * ADDITIVE ON THE RATE, WITH NO CEILING, AND BLEEDING BACK DOWN. Each
+   * application adds its rate here; everything above ONE application drains
+   * again in the tower loop (POISON_DECAY), so the rot a turret is actually
+   * taking is the balance of the two — and that level is LINEAR IN HOW MANY
+   * SPITTERS ARE SHOOTING IT. Ten bodies is a trickle and three thousand is
+   * a flood, which is the only shape a status can have in a game that puts
+   * twenty thousand of them on a field.
+   *
+   * A FLAT CEILING WAS THE WRONG BOUND AND IT IS GONE. It made the rot
+   * identical under ten bodies and under three thousand, and — being a fixed
+   * number of hit points a second — it aged out entirely against a pool that
+   * grows by multipliers: a late-run Giant-and-Bulwark turret (mods.ts) is a
+   * quarter of a million health, eighty minutes of rot at the old ceiling,
+   * on a run that lasts twelve. The decay is the bound now, and it is one
+   * that scales with what is doing the shooting.
+   *
+   * THE ODDS ARE ROLLED HERE, PER STRUCTURE, so a burst that reaches a whole
+   * patch comes out speckled rather than all-or-nothing — see
+   * UnitWeapon.poisonChance.
    *
    * THE CLOCK IS A REFRESH AND NEVER A QUEUE, the same rule burning runs on
    * a body: a turret under steady fire rots continuously, and one the wave
    * has walked past stops POISON_TIME later. So the counter is killing them
    * or out-mending them, never waiting.
    */
-  private poisonTower(t: Structure, rate: number): void {
+  private poisonTower(t: Structure, rate: number, chance = 1): void {
     if (rate <= 0 || isCore(t) || t.hp <= 0) return;
-    // the ceiling is read off the heaviest single source in force, so a
-    // toxopid's bomb raises it and a crawler's spit cannot
+    if (chance < 1 && Math.random() >= chance) return;
+    // the FLOOR — the heaviest single source in force, which the decay never
+    // eats into, so one spitter rots at exactly what its weapon says
     if (rate > t.poisonUnit) t.poisonUnit = rate;
-    t.poison = Math.min(t.poison + rate, t.poisonUnit * POISON_MAX_RATE);
+    t.poison += rate;
     t.poisonT = POISON_TIME;
   }
 
@@ -2890,10 +2903,11 @@ export class Sim {
     splash: number,
     radius: number,
     poison = 0,
+    poisonChance = 1,
   ): void {
     if (splash <= 0 || radius <= 0) return;
     for (const t of this.structuresWithin(x, y, radius, this.splashOut))
-      this.hitStructure(t, splash, poison);
+      this.hitStructure(t, splash, poison, poisonChance);
   }
 
   /**
@@ -2947,8 +2961,8 @@ export class Sim {
   }
 
   /** one hit on the aim, from a body of `team` */
-  private aimHit(a: Aim, dmg: number, poison = 0): void {
-    this.hitStructure(a.s, dmg, poison);
+  private aimHit(a: Aim, dmg: number, poison = 0, poisonChance = 1): void {
+    this.hitStructure(a.s, dmg, poison, poisonChance);
   }
 
 
@@ -3025,7 +3039,7 @@ export class Sim {
             if (ucd[slot] <= 0) {
               ucd[slot] += wp.beam.interval;
               if (tgt && this.aimReach(tgt, x, y, wp.range)) {
-                this.aimHit(tgt, wp.damage, wp.poison ?? 0);
+                this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
                 this.pushFxCol(tgt.x, tgt.y, 12 / 60, FxKind.HitMeltHeal, 0, 0, PAL.heal);
               }
             }
@@ -3097,9 +3111,9 @@ export class Sim {
             // torpedo). Splash, where a row carries it, bursts on the
             // target the way the round would have
             for (let k = 0; k < shots; k++) {
-              this.aimHit(tgt, wp.damage, wp.poison ?? 0);
+              this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
               if (wp.splash)
-                this.splashStructures(tgt.x, tgt.y, wp.splash, wp.splashRadius ?? 0, wp.poison ?? 0);
+                this.splashStructures(tgt.x, tgt.y, wp.splash, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1);
               this.fireUnitGun(x, y, aim + (k - (shots - 1) / 2) * 0.06, wp);
             }
             break;
@@ -3111,7 +3125,7 @@ export class Sim {
           case "sap": {
             // SapBulletType: the line lands on the target and retracts onto
             // the mount as it fades (the draw lerps its far end back over fin)
-            for (let k = 0; k < shots; k++) this.aimHit(tgt, wp.damage, wp.poison ?? 0);
+            for (let k = 0; k < shots; k++) this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
             const st = wp.sap;
             if (st) {
               const dx = tgt.x - x, dy = tgt.y - y;
@@ -3125,7 +3139,7 @@ export class Sim {
             // one per shot, fanned by ShootSpread; Fx.sparkShoot at the muzzle
             const st = wp.shrapnel;
             for (let k = 0; k < shots; k++) {
-              this.aimHit(tgt, wp.damage, wp.poison ?? 0);
+              this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
               const a = aim + (k - (shots - 1) / 2) * (wp.spread ?? 0);
               if (st) this.pushFx(x, y, 10 / 60, FxKind.Shrapnel, a, wp.range, 0, st.id, true);
             }
@@ -3137,7 +3151,7 @@ export class Sim {
             // of the muzzle, in the bullet's colour, `inaccuracy` off the aim
             const bt = wp.bolt;
             for (let k = 0; k < shots; k++) {
-              this.aimHit(tgt, wp.damage, wp.poison ?? 0);
+              this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
               if (bt) {
                 const a = aim + (Math.random() * 2 - 1) * bt.inaccuracy;
                 this.unitBolt(x, y, a, bt.length + Math.floor(Math.random() * (bt.lengthRand + 1)), bt.color);
@@ -3149,7 +3163,7 @@ export class Sim {
           case "flame": {
             // Fx.shootSmallFlame out of the barrel and Fx.hitFlameSmall on
             // the wall — or their plasma pair, white through heal to grey
-            for (let k = 0; k < shots; k++) this.aimHit(tgt, wp.damage, wp.poison ?? 0);
+            for (let k = 0; k < shots; k++) this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
             const seed = (Math.random() * 0x7fffffff) | 0;
             if (wp.plasma) {
               this.pushFxCol(x, y, 32 / 60, FxKind.Flame, aim, 0, PAL.heal, 1, false, seed);
@@ -3164,8 +3178,8 @@ export class Sim {
             if (wp.suicide) {
               // the crawler IS the bullet: Fx.pulverize where it went off,
               // and the body's own death blast, centred on itself
-              this.aimHit(tgt, wp.damage, wp.poison ?? 0);
-              this.splashStructures(x, y, wp.splash ?? 0, wp.splashRadius ?? 0, wp.poison ?? 0);
+              this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+              this.splashStructures(x, y, wp.splash ?? 0, wp.splashRadius ?? 0, wp.poison ?? 0, wp.poisonChance ?? 1);
               this.pushFx(x, y, 40 / 60, FxKind.Pulverize, 0, 0, (Math.random() * 0x7fffffff) | 0);
               this.pushDeathFx(x, y);
               this.removeUnit(i);
@@ -3183,6 +3197,7 @@ export class Sim {
                 damage: wp.damage, splash: wp.splash ?? 0, splashRadius: wp.splashRadius ?? 0,
                 look: wp.look, collide: wp.look.collide !== false, trailT: 0,
                 poison: wp.poison ?? 0,
+                poisonChance: wp.poisonChance ?? 1,
               });
             }
             break;
@@ -3191,7 +3206,7 @@ export class Sim {
             // RailBulletType: Fx.railShoot at the muzzle, Fx.railTrail every
             // 60 units down the line (pointEffectSpace), Fx.railHit on what
             // it punched through, Fx.shootBig2 smoke — all its 500 units
-            this.aimHit(tgt, wp.damage, wp.poison ?? 0);
+            this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
             this.pushFx(x, y, 24 / 60, FxKind.RailShoot, aim, 0, 0, 0, true);
             this.pushFx(x, y, 10 / 60, FxKind.ShootBig2, aim);
             const ca = Math.cos(aim), sa = Math.sin(aim);
@@ -3263,6 +3278,7 @@ export class Sim {
       // poisons what it lands on rather than what its shooter was aiming at
       // when it was fired (weapons.ts UnitWeapon.poison)
       poison: wp.poison ?? 0,
+      poisonChance: wp.poisonChance ?? 1,
     });
     // the bullet's own shootEffect and smokeEffect, in its hitColor (what
     // Effect.at is handed for a shootEffect) — sparkShoot ramps into it
@@ -3280,7 +3296,7 @@ export class Sim {
    * goes off at the muzzle
    */
   private fireUnitLaser(x: number, y: number, aim: number, tgt: Aim | null, wp: UnitWeapon): void {
-    if (tgt && this.aimReach(tgt, x, y, wp.range)) this.aimHit(tgt, wp.damage, wp.poison ?? 0);
+    if (tgt && this.aimReach(tgt, x, y, wp.range)) this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
     const st = wp.laser;
     if (!st) return;
     this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, wp.range, 0, st.id, true);
@@ -3380,14 +3396,14 @@ export class Sim {
       const off = sh.x < 0 || sh.y < 0 || sh.x >= W || sh.y >= H;
       const t = off || !sh.collide ? null : this.structureAt(sh.x, sh.y);
       if (t) {
-        this.hitStructure(t, sh.damage, sh.poison);
+        this.hitStructure(t, sh.damage, sh.poison, sh.poisonChance);
         if (sh.splash > 0)
-          this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison);
+          this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison, sh.poisonChance);
         this.shotHitFx(sh);
       } else if (sh.life <= 0 && !off) {
         // a shell that runs out of flight lands where it is
         if (sh.splash > 0) {
-          this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison);
+          this.splashStructures(sh.x, sh.y, sh.splash, sh.splashRadius, sh.poison, sh.poisonChance);
           this.shotHitFx(sh);
         } else if (look.hit === FxKind.HitLaser) this.shotHitFx(sh);
       }
@@ -6372,18 +6388,43 @@ export class Sim {
           t.poisonT = 0;
           t.poison = 0;
           t.poisonUnit = 0;
-        } else if (t.hp > 0) {
-          this.damageTower(t, t.poison * dt, true);
-          // the motes, on the damage smoke's own rule: scaled by footprint,
-          // so a rotting 4x4 reads from across the field
-          if (Math.random() < POISON_FX_RATE * t.size * dt) {
-            const sz = t.size * CELL;
-            this.pushFx(
-              t.x + (Math.random() - 0.5) * sz * 0.7,
-              t.y + (Math.random() - 0.5) * sz * 0.7,
-              POISON_FX_LIFE,
-              FxKind.Poison,
-            );
+        } else {
+          // THE STACK BLEEDS BACK TO ONE APPLICATION (constants.ts
+          // POISON_DECAY). The floor is poisonUnit — the heaviest single
+          // source in force — and it never decays while the clock runs, so
+          // a turret with one spitter on it rots at exactly the rate that
+          // spitter's weapon says. Everything ABOVE the floor is the crowd's
+          // contribution, and it is the crowd's only for as long as the
+          // crowd keeps landing shots.
+          //
+// THIS IS WHAT MAKES THE ROT A SWARM MECHANIC. With a plain
+          // refresh-and-hold clock a lone body walked itself to the ceiling
+          // and a hundred bodies did no more — the one thing on this field
+          // that did not scale with how many there were.
+          //
+          // THE BLEED IS A SHARE OF THE EXCESS, not a flat number. A flat
+          // drain is a threshold: a shooter that out-paces it climbs to the
+          // ceiling alone however slowly it fires, and one that does not
+          // never stacks at all. Draining a fraction of what is ABOVE the
+          // floor gives a real equilibrium instead, and that equilibrium is
+          // linear in how many spitters are landing shots — which is the
+          // whole point.
+          if (t.poison > t.poisonUnit)
+            t.poison =
+              t.poisonUnit + (t.poison - t.poisonUnit) * Math.exp(-POISON_DECAY * dt);
+          if (t.hp > 0) {
+            this.damageTower(t, t.poison * dt, true);
+            // the motes, on the damage smoke's own rule: scaled by
+            // footprint, so a rotting 4x4 reads from across the field
+            if (Math.random() < POISON_FX_RATE * t.size * dt) {
+              const sz = t.size * CELL;
+              this.pushFx(
+                t.x + (Math.random() - 0.5) * sz * 0.7,
+                t.y + (Math.random() - 0.5) * sz * 0.7,
+                POISON_FX_LIFE,
+                FxKind.Poison,
+              );
+            }
           }
         }
       }

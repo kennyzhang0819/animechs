@@ -1824,17 +1824,51 @@ export const DAMAGE_SMOKE_LIFE = 0.55;
  * which is what makes the venom line the answer to a board that has
  * out-armoured the ground mechs. See the note on Tower.poison.
  *
- * ONE CLOCK, REFRESHED. A fresh application does not queue behind the last
- * one — it adds its rate and puts the clock back to full, the way burning
- * resets on a body. So a turret under steady fire rots continuously and a
- * turret the wave has walked past stops rotting POISON_TIME later.
+ * IT STACKS WITH HOW MANY ARE SHOOTING, AND THERE IS NO CEILING. Every
+ * application adds its rate and puts the clock back to full; everything
+ * above one application drains again (POISON_DECAY below). So the rot a
+ * turret takes settles wherever the shooting balances the draining, and
+ * that level is LINEAR IN THE SIZE OF THE CROWD — ten bodies is a trickle,
+ * three thousand is a flood.
+ *
+ * THERE USED TO BE A FLAT CEILING AND IT GAVE THE MECHANIC A SHELF LIFE.
+ * Capped at four applications, the rot a turret took was IDENTICAL under
+ * ten bodies and under three thousand — the one thing on a field built for
+ * twenty thousand of them that did not care how many there were. Worse, a
+ * fixed number of hit points a second ages badly against a pool that grows
+ * by MULTIPLIERS: a late-run turret carrying Giant and Bulwark (mods.ts) is
+ * some quarter of a million health, which at the old ceiling was eighty
+ * minutes of rot on a run that lasts twelve. The status quietly expired
+ * somewhere around wave thirty.
+ *
+ * SO THE NUMBERS PER APPLICATION ARE SMALL AND THE CROWD IS THE SCALING.
+ * A crawler's spit is six health a second at one roll in four; what makes
+ * a wave of them frightening is that there is a wave of them. The decay is
+ * the only bound, and it is a self-correcting one.
  */
 export const POISON_TIME = 6;
-/** the ceiling on stacked rot, as a multiple of ONE application's rate.
- *  Four spitters on one turret rot it four times as fast; a whole wave
- *  standing on it does not, or the cap on a patch's life would be how many
- *  bodies happened to be in reach rather than anything the player chose */
-export const POISON_MAX_RATE = 4;
+/**
+ * EVERYTHING ABOVE ONE APPLICATION BLEEDS BACK, at this fraction of itself
+ * a second (Sim.updateTowers). This is the whole bound on the rot, and it
+ * is what makes it a SWARM mechanic rather than a switch.
+ *
+ * IT HAS TO BE PROPORTIONAL, NOT FLAT. A flat drain — so many hit points a
+ * second, whatever the stack — is a threshold and not an equilibrium: a
+ * shooter whose inflow beats it climbs forever however slowly it fires, and
+ * one whose inflow does not never accumulates at all. Draining a share of
+ * the EXCESS gives a stable level instead, at roughly `inflow / decay`,
+ * which is linear in how many spitters are landing shots.
+ *
+ * AND IT IS THE ONLY THING STOPPING A RATCHET. Without it, "add and refresh"
+ * means the rot only ever climbs while a wave is in reach, so what kills a
+ * patch is how LONG the wave stands there rather than how big it is — and
+ * the damage goes quadratic in time. One line of decay is what turns that
+ * into a level the crowd has to hold up.
+ *
+ * ONE A SECOND puts a lone spitter a little over its own rate and lets a
+ * crowd push as far as it can feed.
+ */
+export const POISON_DECAY = 1;
 /** motes a second a rotting structure lifts, for a 1x1 — scaled by the
  *  footprint exactly as the damage smoke is, so a rotting spectre reads
  *  from across the field */

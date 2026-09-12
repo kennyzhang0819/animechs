@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ADMIN_ENABLED } from "@/game/env";
 import { useConfirm } from "./ConfirmDialog";
 import { MapEditor, PATH_WIDTHS, type BrushShape } from "@/game/editor";
 import { LEGACY_COLS, SPAWN_RADII, SPAWN_RADIUS_DEFAULT } from "@/game/maps";
@@ -241,7 +242,7 @@ export default function MapEditorView({
         }
         editor = ed;
         editorRef.current = ed;
-        if (process.env.NODE_ENV !== "production") {
+        if (ADMIN_ENABLED) {
           (window as unknown as Record<string, unknown>).__swarmeditor = ed;
         }
       })

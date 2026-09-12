@@ -253,11 +253,29 @@ export interface UnitWeapon {
    * runs down) rather than one it absorbs on average.
    *
    * The duration is the same for every source (constants.ts POISON_TIME) —
-   * what a tier buys is RATE and REACH, not a longer clock, so the family
-   * scales by landing more of the same thing rather than by landing a
-   * better version of it.
+   * what a tier buys is RATE, REACH and RELIABILITY, not a longer clock, so
+   * the family scales by landing more of the same thing rather than by
+   * landing a better version of it.
    */
   poison?: number;
+  /**
+   * ...AND THE ODDS IT TAKES, rolled once PER STRUCTURE the shot reaches
+   * (Sim.poisonTower). 1, or absent, is a tier that never misses.
+   *
+   * IT IS THE TIER LADDER THAT DOES NOT MOVE THE NUMBER. `rate x chance` is
+   * the same expected rot as a smaller rate landing every time, so the odds
+   * buy no scaling of their own — what they buy is a way to say "a toxopid
+   * poisons every time and a crawler one time in four" while both still
+   * read as the same status doing the same thing. A player learns one rule
+   * and then learns which bodies are reliable.
+   *
+   * AND IT IS WHY A BURST COMES OUT SPECKLED. The roll is per structure, so
+   * an arkyid's bomb rots most of a patch and not all of it — the same
+   * charm the turret attributes have (mods.ts), on the other side of the
+   * field. A crowd large enough averages it away, which is exactly when
+   * volume is supposed to take over.
+   */
+  poisonChance?: number;
   /** the most structures one field pulse reaches (EnergyFieldAbility.maxTargets) */
   maxTargets?: number;
   // ---- THE LOOK, per fx kind ------------------------------------------
@@ -756,11 +774,19 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // player who sees a purple orb in the air knows exactly what is about to
   // be wrong with the turret it lands on.
   //
-  // WHAT A TIER BUYS IS RATE AND REACH, NEVER A BETTER STATUS. The rot is
-  // the same six seconds from the T1 and the T5 (constants.ts POISON_TIME);
-  // the toxopid is frightening because it lands eight of them a second
-  // across a whole patch, not because its version is stronger. That keeps
-  // the status one number the player learns once.
+  // WHAT A TIER BUYS IS RATE, REACH AND RELIABILITY — never a better
+  // status. The rot is the same six seconds from the T1 and the T5
+  // (constants.ts POISON_TIME); a crawler's spit is six health a second at
+  // one roll in four and a toxopid's bomb is ten across a whole patch,
+  // every time. That keeps the status one thing the player learns once.
+  //
+  // THE NUMBERS ARE SMALL BECAUSE THE CROWD IS THE SCALING. There is no
+  // ceiling on the rot any more: applications add up and bleed back down
+  // (POISON_DECAY), so what a turret takes is linear in how many spitters
+  // are shooting it. Six a hit at one roll in four is nothing from one
+  // crawler and is the board coming apart from three hundred — which is
+  // the only way a status stays relevant against a late-run pool that has
+  // grown by multipliers (mods.ts: Giant is +1000% health on its own).
   //
   // THE DIRECT DAMAGE IS DELIBERATELY SMALL. These bodies are light and
   // quick (levels.ts) and what they do to a board is make it rot, not
@@ -772,20 +798,27 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // arrival, because a dead spitter is one that never refreshes the clock.
   crawler: [
     {
-      name: "venom-spit", reload: t(180), mounts: 1, damage: 8, range: rng(6, 16), speed: spd(6),
-      fx: "bullet", poison: 9, look: venomOrb(7),
+      name: "venom-spit", reload: t(180), mounts: 1, damage: 25, range: rng(6, 16), speed: spd(6),
+      fx: "bullet", poison: 6, poisonChance: 0.25, look: venomOrb(7),
     },
   ],
-  // THE SAME GUN, FOUR BARRELS. The atrax is the crawler's volume tier and
-  // nothing else: the identical orb, the identical rot, on four mounts
-  // instead of one — and a mirrored bank fires once per reload divided by
-  // its mount count (updateUnitWeapons), so four barrels is four times the
-  // applications rather than four shots at once. A pair of atraxes holds a
-  // turret at the stack cap on its own (constants.ts POISON_MAX_RATE)
+  // FOUR BARRELS, AND THE FIRST ORB THAT BURSTS. A mirrored bank fires once
+  // per reload divided by its mount count (updateUnitWeapons), so four
+  // barrels is four times the APPLICATIONS rather than four shots at once —
+  // which is what an atrax is for now that the rot bleeds back down
+  // (constants.ts POISON_DECAY): volume is how the family holds a ceiling.
+  //
+  // THE SPLASH IS SMALL ON PURPOSE — under two tiles, so it catches a
+  // turret and its four neighbours and nothing more. The family's ladder
+  // used to be three tiers of single-target pea-shooters and then two tiers
+  // of area bombardment, a fortyfold step between the spiroct and the
+  // arkyid; it reads as one idea growing now: a ball, a small burst, a
+  // bigger burst, a thrown bomb, a barrage. The rot rides the burst, so
+  // what a tier really buys is HOW MUCH OF A PATCH one orb rots at once.
   atrax: [
     {
-      name: "venom-spit", reload: t(180), mounts: 4, damage: 8, range: rng(6, 18), speed: spd(6),
-      fx: "bullet", poison: 9, look: venomOrb(7),
+      name: "venom-spit", reload: t(180), mounts: 4, damage: 8, splash: 20, splashRadius: u(10),
+      range: rng(6, 18), speed: spd(6), fx: "bullet", poison: 4, poisonChance: 0.3, look: venomOrb(8),
     },
   ],
   // THE PACE TIER. Its gun is the family's standard orb at a middling rate;
@@ -795,8 +828,8 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // is more applications inside the same six seconds
   spiroct: [
     {
-      name: "venom-spit", reload: t(120), mounts: 2, damage: 10, range: rng(6, 20), speed: spd(6),
-      fx: "bullet", poison: 10, look: venomOrb(8),
+      name: "venom-spit", reload: t(120), mounts: 2, damage: 10, splash: 24, splashRadius: u(14),
+      range: rng(6, 20), speed: spd(6), fx: "bullet", poison: 6, poisonChance: 0.4, look: venomOrb(10),
     },
   ],
   // TWO WEAPONS, AND THE FIRST TIME THE FAMILY REACHES PAST ONE TURRET. The
@@ -808,11 +841,12 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   arkyid: [
     {
       name: "venom-spit", reload: t(90), mounts: 4, damage: 10, range: rng(6, 20), speed: spd(6),
-      fx: "bullet", poison: 10, look: venomOrb(8),
+      fx: "bullet", poison: 3, poisonChance: 0.5, look: venomOrb(8),
     },
     {
       name: "venom-bomb", reload: t(150), mounts: 1, damage: 14, splash: 70, splashRadius: u(60),
-      range: rng(4, 50), speed: spd(4), fx: "shell", poison: 12, look: venomOrb(18, { trail: true }),
+      range: rng(4, 50), speed: spd(4), fx: "shell", poison: 8, poisonChance: 0.8,
+      look: venomOrb(18, { trail: true }),
     },
   ],
   // THE BOMB, FAST. The toxopid drops the single-target spit altogether and
@@ -824,7 +858,8 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   toxopid: [
     {
       name: "venom-bomb", reload: t(180), mounts: 3, damage: 18, splash: 75, splashRadius: u(70),
-      range: rng(4, 62), speed: spd(4), fx: "shell", poison: 14, look: venomOrb(22, { trail: true }),
+      range: rng(4, 62), speed: spd(4), fx: "shell", poison: 10, poisonChance: 1,
+      look: venomOrb(22, { trail: true }),
     },
   ],
 

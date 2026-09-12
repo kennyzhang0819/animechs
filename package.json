@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/desktop-dev.mjs",
-    "dev:web": "next dev --turbopack",
+    "dev:web": "node scripts/desktop-dev.mjs --no-shell",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
@@ -14,7 +14,8 @@
     "desktop": "npm run build:static && npm --prefix desktop run start",
     "desktop:pack": "npm run build:static && npm --prefix desktop run pack",
     "desktop:pack:steam": "npm run build:static && npm --prefix desktop run pack:steam",
-    "desktop:test": "npm --prefix desktop test"
+    "desktop:test": "npm --prefix desktop test",
+    "dev:hot": "next dev --turbopack"
   },
   "dependencies": {
     "next": "^15.5.0",

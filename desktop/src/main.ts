@@ -38,11 +38,12 @@ function bundleDir(): string {
 }
 
 /**
- * THE DEV SERVER, instead of the export: `--dev-url=http://localhost:3000`
- * points the window at Next's dev server (scripts/desktop-dev.mjs at the
- * repo root starts both), so the game is developed inside the shell it
- * ships in — hot reload, the admin editors and their API routes, and the
- * save on disk. Only honoured in an unpackaged shell.
+ * A SERVER, instead of the export: `--dev-url=http://localhost:3000`
+ * points the window at a running Next server (scripts/desktop-dev.mjs at
+ * the repo root builds and starts one — a production build, with the
+ * admin tools compiled in), so the game is developed inside the shell it
+ * ships in: the admin editors and their API routes, and the save on
+ * disk. Only honoured in an unpackaged shell.
  */
 function devUrl(): string | null {
   if (app.isPackaged) return null;

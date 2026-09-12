@@ -1,5 +1,6 @@
 import { WORLD, WORLDS } from "./levels";
 import { tierXpBonus, TOP_TIER } from "./ladder";
+import { ADMIN_ENABLED } from "./env";
 import { levelForXp, missionXp } from "./economy";
 import { MAX_LEVEL, techStateFor, worldUnlockLevel } from "./track";
 import { type TechState } from "./tech";
@@ -34,6 +35,32 @@ export const HEALTH_BAR_MODES: ReadonlyArray<{ mode: HealthBarMode; label: strin
 
 /** absent from the save means this — the behaviour the game had before the knob */
 export const HEALTH_BARS_DEFAULT: HealthBarMode = "damaged";
+
+/**
+ * WHEN A BODY WEARS ITS ROW OF STATUS SYMBOLS (status.ts, statusArt.ts) —
+ * the same three-way shape the health bars have, and deliberately a
+ * SEPARATE knob from them, because the two answer different questions: a
+ * bar is how much is left of that, a symbol is what is being done to it.
+ *
+ * - `always`   — every flagged body on the field, at any zoom close
+ *   enough for a symbol to resolve (Game.statusLegible)
+ * - `selected` — only what the player has actually asked about: the
+ *   buildings in hand, and whatever the last click marked. The field
+ *   stays clean and the row becomes a thing you go and get.
+ * - `never`    — nothing on the field; the inspector still prints the
+ *   whole row, which is where the symbols are learned anyway
+ */
+export type StatusMode = "always" | "selected" | "never";
+
+/** the three, in the order the Interface tab prints them: most marks to none */
+export const STATUS_MODES: ReadonlyArray<{ mode: StatusMode; label: string }> = [
+  { mode: "always", label: "Always" },
+  { mode: "selected", label: "Selected" },
+  { mode: "never", label: "Never" },
+];
+
+/** absent from the save means this — the behaviour the game had before the knob */
+export const STATUS_MARKS_DEFAULT: StatusMode = "always";
 
 /**
  * The player's persistent campaign state: lifetime XP, and how far up
@@ -111,6 +138,13 @@ export interface Progress {
   allyBars?: HealthBarMode;
   enemyBars?: HealthBarMode;
   /**
+   * WHEN THE STATUS SYMBOLS RIDE OVER A BODY on the field — one knob for
+   * both sides, unlike the bars, because "what is happening to that" is
+   * the same question whoever owns the thing it is happening to. Absent
+   * means STATUS_MARKS_DEFAULT.
+   */
+  statusMarks?: StatusMode;
+  /**
    * THIS SAVE HAS DECLINED THE DEV GRANT — the wipe's half of the back
    * door (see resetProgress and DEV_UNLOCK_ALL). A wiped save on a dev
    * build would otherwise play at the top of the track again on the next
@@ -148,7 +182,7 @@ const fresh = (): Progress => ({
 const DEV_UNLOCK_ALL = true;
 
 const devUnlocking = (p?: { devGrantOff?: boolean }): boolean =>
-  DEV_UNLOCK_ALL && process.env.NODE_ENV !== "production" && !p?.devGrantOff;
+  DEV_UNLOCK_ALL && ADMIN_ENABLED && !p?.devGrantOff;
 
 function readClearedByMap(p: { clearedByMap?: unknown; cleared?: unknown }): Record<string, number> {
   const out: Record<string, number> = {};
@@ -209,6 +243,13 @@ function readBars(v: unknown): HealthBarMode | undefined {
     : undefined;
 }
 
+/** the stored status-symbol mode, or undefined for anything unrecognised */
+function readStatusMode(v: unknown): StatusMode | undefined {
+  return typeof v === "string" && STATUS_MODES.some((m) => m.mode === v)
+    ? (v as StatusMode)
+    : undefined;
+}
+
 export function loadProgress(): Progress {
   try {
     const raw = readSave();
@@ -232,6 +273,7 @@ export function loadProgress(): Progress {
       // absent means ON — only an explicit false switches it off
       allyBars: readBars(p.allyBars),
       enemyBars: readBars(p.enemyBars),
+      statusMarks: readStatusMode(p.statusMarks),
       ...(p.devGrantOff === true ? { devGrantOff: true } : null),
     };
     // a migrated save is rewritten here rather than re-converted on every
@@ -311,6 +353,13 @@ export function saveEnemyBars(mode: HealthBarMode): void {
   const p = loadProgress();
   if ((p.enemyBars ?? HEALTH_BARS_DEFAULT) === mode) return;
   saveProgress({ ...p, enemyBars: mode });
+}
+
+/** the Interface tab's status-symbol knob — one setting for both sides */
+export function saveStatusMarks(mode: StatusMode): void {
+  const p = loadProgress();
+  if ((p.statusMarks ?? STATUS_MARKS_DEFAULT) === mode) return;
+  saveProgress({ ...p, statusMarks: mode });
 }
 
 export function savePanSpeed(mult: number): void {

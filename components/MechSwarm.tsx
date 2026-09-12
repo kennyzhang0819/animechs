@@ -10,6 +10,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { ADMIN_ENABLED } from "@/game/env";
 import {
   BOOT_STEP_LABEL,
   BOOT_STEPS,
@@ -68,9 +69,13 @@ import {
   savePanSpeed,
   saveAllyBars,
   saveEnemyBars,
+  saveStatusMarks,
   HEALTH_BAR_MODES,
   HEALTH_BARS_DEFAULT,
   type HealthBarMode,
+  STATUS_MODES,
+  STATUS_MARKS_DEFAULT,
+  type StatusMode,
   PAN_SPEED_DEFAULT,
   PAN_SPEEDS,
   UI_SCALE_DEFAULT,
@@ -1249,6 +1254,12 @@ export default function MechSwarm() {
   const [allyBars, setAllyBars] = useState<HealthBarMode>(HEALTH_BARS_DEFAULT);
   const [enemyBars, setEnemyBars] = useState<HealthBarMode>(HEALTH_BARS_DEFAULT);
   /**
+   * ...AND WHO WEARS THE ROW OF STATUS SYMBOLS over that
+   * (Progress.statusMarks, Game.setStatusMarks). One knob for both sides,
+   * saved and live like the bars.
+   */
+  const [statusMarks, setStatusMarks] = useState<StatusMode>(STATUS_MARKS_DEFAULT);
+  /**
    * THE CONTROLS — saved preferences like `uiScale` (Progress.panSpeed,
    * Progress.edgePan): how fast the keys and the screen's edges pan the
    * view, and whether the edges pan it at all. Both reach a run under way
@@ -1362,6 +1373,7 @@ export default function MechSwarm() {
     setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
     setAllyBars(p.allyBars ?? HEALTH_BARS_DEFAULT);
     setEnemyBars(p.enemyBars ?? HEALTH_BARS_DEFAULT);
+    setStatusMarks(p.statusMarks ?? STATUS_MARKS_DEFAULT);
   }, []);
 
   /**
@@ -1572,6 +1584,7 @@ export default function MechSwarm() {
         // the controls, off the save for the same reason as the effects
         g.setPanSpeed(save.panSpeed ?? PAN_SPEED_DEFAULT);
         g.setHealthBars(save.allyBars ?? HEALTH_BARS_DEFAULT, save.enemyBars ?? HEALTH_BARS_DEFAULT);
+        g.setStatusMarks(save.statusMarks ?? STATUS_MARKS_DEFAULT);
         // the minimap's canvas is already mounted under the loading screen
         g.attachMinimap(mmRef.current);
         // NO SAVED BOARD STANDS BACK UP. A board is bought in scrap now,
@@ -1584,7 +1597,7 @@ export default function MechSwarm() {
         // the hairline diagnostic (Game.diagnose), a few frames in, once
         // the atlas is up and the first frames have drawn
         if (diagRef.current) timers.push(setTimeout(() => g.diagnose(), 2500));
-        if (process.env.NODE_ENV !== "production") {
+        if (ADMIN_ENABLED) {
           const w = window as unknown as Record<string, unknown>;
           w.__mechswarm = g;
           // the ladder's number guide, next to the running game.
@@ -2017,6 +2030,24 @@ export default function MechSwarm() {
                 setEnemyBars(mode);
                 saveEnemyBars(mode);
                 gameRef.current?.setHealthBars(allyBars, mode);
+              }}
+            />
+            {/* WHEN A BODY WEARS WHAT IS HAPPENING TO IT (status.ts): the
+                soak, the burn, the rot, the fact that a turret is not ours
+                any more. One knob for both sides, because that question
+                does not change with who owns the thing — and `Selected`
+                for a player who wants a clean field and the row only on
+                what they clicked, which the inspector prints in full
+                anyway. Zoomed out past where a symbol resolves there is
+                no row at any setting (Game.statusLegible). */}
+            <ChoiceRow
+              label="Status icons"
+              choices={STATUS_MODES}
+              value={statusMarks}
+              onPick={(mode) => {
+                setStatusMarks(mode);
+                saveStatusMarks(mode); // remembered across sessions
+                gameRef.current?.setStatusMarks(mode); // live, mid-run
               }}
             />
           </SettingsBox>

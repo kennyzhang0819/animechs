@@ -63,7 +63,13 @@ import {
   type FormationId,
 } from "./formation";
 import { RARITY, rollTurret, TURRET_ODDS, type RarityWeights } from "./rarity";
-import { HEALTH_BARS_DEFAULT, type HealthBarMode, type TowerPlacement } from "./progress";
+import {
+  HEALTH_BARS_DEFAULT,
+  STATUS_MARKS_DEFAULT,
+  type HealthBarMode,
+  type StatusMode,
+  type TowerPlacement,
+} from "./progress";
 import { FIELDED_KINDS, isRetired, TOWER_KINDS } from "./types";
 import { Renderer } from "./renderer";
 import { fitZoom } from "./fit";
@@ -663,6 +669,13 @@ export class Game {
    */
   private allyBars: HealthBarMode = HEALTH_BARS_DEFAULT;
   private enemyBars: HealthBarMode = HEALTH_BARS_DEFAULT;
+  /**
+   * ...AND WHO WEARS THE ROW OF STATUS SYMBOLS over that (setStatusMarks).
+   * One knob for both sides, because what is being done to a thing reads
+   * the same whoever owns it — and separate from the bars above, because
+   * a player who wants a field clear of green still wants to see the fire.
+   */
+  private statusMarks: StatusMode = STATUS_MARKS_DEFAULT;
   // THE MINIMAP (attachMinimap, drawMinimap): the whole map at a glance,
   // the field on it and the viewport's frame; a press or
   // a drag on it puts that place in view
@@ -1889,6 +1902,16 @@ export class Game {
   }
 
   /**
+   * The Interface tab's status-symbol knob, read the same way and as
+   * live: `always` is every flagged body the zoom can resolve a symbol
+   * on, `selected` is only what the player is holding or has marked, and
+   * `never` leaves the field to the bars alone.
+   */
+  setStatusMarks(mode: StatusMode): void {
+    this.statusMarks = mode;
+  }
+
+  /**
    * THE MINIMAP'S CANVAS, or null to let go of it. React owns the element
    * and hands it over when the game screen mounts; the game paints it
    * every frame (drawMinimap) and listens on it for the press and the
@@ -2645,13 +2668,12 @@ export class Game {
       xs.push(Math.round((this.sqX[r] - this.tlx) * k - (n * step - (step - px)) / 2));
       ys.push(Math.round((this.sqY[r] - this.tly) * k - lift - px));
     }
-    // every chip's ground on the whole board in ONE path
-    c.fillStyle = BAR_BACK;
-    c.beginPath();
-    for (let r = 0; r < rows; r++)
-      for (let i = 0; i < this.sqN[r]; i++) c.rect(xs[r] + i * step - 1, ys[r] - 1, px + 2, px + 2);
-    c.fill();
-    // ...and the symbols over them
+    // NO GROUND UNDER THE SYMBOLS. Each used to sit on a dark chip, the
+    // bars' own backing (BAR_BACK) squared off around it — which read as
+    // a row of black tiles with something in them rather than as a row of
+    // marks on the body, and at seven pixels the tile is most of what the
+    // eye gets. The drawings are solid shapes in their own colours
+    // (statusArt.ts) and carry themselves over terrain and hull alike.
     let at = 0;
     for (let r = 0; r < rows; r++) {
       const n = this.sqN[r];
@@ -2705,8 +2727,15 @@ export class Game {
     // one is on fire" is a different fact, and the only place it is ever
     // said
     const noBars = this.allyBars === "never" && this.enemyBars === "never";
-    const symbols = this.statusLegible();
-    if (noBars && !symbols) return;
+    const symbols = this.statusOn();
+    // ...and on `selected` the row belongs to ONE body: whatever the last
+    // click marked (Sim.focusedUnit), which is the same body the
+    // inspector is printing the full row for
+    const onlyMarked = this.statusMarks === "selected";
+    const only = onlyMarked ? sim.focusedUnit : -1;
+    // nothing to draw at all: no bars anywhere, and either no symbols or
+    // a `selected` field with nothing marked to put them over
+    if (noBars && (!symbols || (onlyMarked && only < 0))) return;
     // WHAT IS ACTUALLY ON THE SCREEN. This loop runs over every body on
     // the map, and the map is several windows wide at the zoom it opens
     // on — so most of what it was drawing was landing outside the canvas
@@ -2728,7 +2757,7 @@ export class Game {
       // THE GATE, and why this is affordable over eight hundred bodies:
       // six typed-array reads, no allocation, and a no for nearly all of
       // them (status.ts). Only the ones carrying something pay for a row
-      const flagged = symbols && unitHasFieldStatus(sim, i);
+      const flagged = symbols && (!onlyMarked || i === only) && unitHasFieldStatus(sim, i);
       if (bars.length === 0 && !flagged) continue;
       const r = Math.max(urad[i] * 1.25, 7);
       const top = this.drawBars(c, bx, by - r, Math.max(r * 2, BAR_MIN_W), bars);
@@ -2748,6 +2777,17 @@ export class Game {
    */
   private statusLegible(): boolean {
     return STATUS_PX * this.scale * this.zoom >= STATUS_MIN_PX;
+  }
+
+  /**
+   * DOES THE FIELD WEAR STATUS SYMBOLS AT ALL right now — the Interface
+   * tab's knob (setStatusMarks) and the legibility floor in one question,
+   * since the answer to either being no is the same no. `selected` still
+   * answers yes here; WHICH bodies it lets through is the caller's, and
+   * each of the two passes knows its own half of the selection.
+   */
+  private statusOn(): boolean {
+    return this.statusMarks !== "never" && this.statusLegible();
   }
 
   /** scratch for the two passes over the board, reused rather than
@@ -2775,7 +2815,13 @@ export class Game {
     // does (barsOn): asked for only when there is a selection to ask about,
     // since selectedStructs copies the set to answer
     const picked = this.sim.selectedStructN > 0 ? new Set(this.sim.selectedStructs) : null;
-    const symbols = this.statusLegible();
+    const symbols = this.statusOn();
+    // on `selected`, a building wears its row when it is in hand or when
+    // it is the one the last click marked — a taken turret is marked
+    // rather than selected (pickAt), and it is exactly the thing whose
+    // row a player is asking after
+    const onlyPicked = this.statusMarks === "selected";
+    const marked = onlyPicked ? this.sim.focusedTower : null;
     // ...and the same window test the bodies get: a board can be three
     // hundred turrets and the window holds a fraction of them
     const x0 = this.tlx - VIEW_PAD, y0 = this.tly - VIEW_PAD;
@@ -2810,7 +2856,8 @@ export class Game {
       // built into, the fact that it is not ours any more. Gated the same
       // way a body's is, and answering no for the plain turret a board is
       // mostly made of
-      if (symbols && structHasFieldStatus(t))
+      const mine = !onlyPicked || t === marked || picked?.has(t) === true;
+      if (symbols && mine && structHasFieldStatus(t))
         this.queueStatusRow(t.x, top, this.statusBuf, structFieldStatuses(t, this.statusBuf));
       // THE ATTRIBUTE PIP (mods.ts): a turret that won one of the upgrade
       // rolls at its placement wears a dot in the corner of its footprint,

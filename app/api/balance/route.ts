@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "fs/promises";
+import { ADMIN_ENABLED } from "@/game/env";
 import path from "path";
 import { NextResponse } from "next/server";
 import { RUNG_COUNT } from "@/game/ladder";
@@ -82,7 +83,7 @@ const CHANCE_KEYS: readonly string[] = TURRET_MOD_IDS;
  * from a file anyone who can reach the box could drop beside it.
  */
 export async function POST(req: Request): Promise<NextResponse> {
-  if (process.env.NODE_ENV === "production")
+  if (!ADMIN_ENABLED)
     return NextResponse.json({ error: "balance editing is a dev tool" }, { status: 403 });
 
   const body = (await req.json()) as unknown;

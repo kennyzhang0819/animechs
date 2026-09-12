@@ -1,4 +1,5 @@
 import { access, writeFile } from "fs/promises";
+import { ADMIN_ENABLED } from "@/game/env";
 import path from "path";
 import { NextResponse } from "next/server";
 import type { MapData } from "@/game/maps";
@@ -10,7 +11,7 @@ import type { MapData } from "@/game/maps";
  * new maps from the browser), and production builds refuse entirely.
  */
 export async function POST(req: Request): Promise<NextResponse> {
-  if (process.env.NODE_ENV === "production")
+  if (!ADMIN_ENABLED)
     return NextResponse.json({ error: "map editing is a dev tool" }, { status: 403 });
 
   const map = (await req.json()) as Partial<MapData>;

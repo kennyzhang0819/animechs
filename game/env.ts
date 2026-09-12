@@ -1,14 +1,24 @@
 /**
  * Whether the admin tools — the /admin page (map, level and balance
- * editors) and the Ctrl+Shift+M shortcut that opens it — exist in this
- * build.
+ * editors), the Ctrl+Shift+M shortcut that opens it, the three API routes
+ * they save through, the window.__mechswarm / __swarmeditor debug handles
+ * and the dev unlock (progress.ts) — exist in this build.
  *
- * They are development tools: they write files back through /api/maps,
- * /api/levels and /api/balance, all three of which already refuse in a
- * production build. The UI now refuses in the same place, so a deployed
- * game has no way in rather than a way in that fails at the save button.
+ * ONE SWITCH, READ EVERYWHERE. They are development tools that write files
+ * back into the repo, and a shipped game must have no way in — not a way in
+ * that fails at the save button. Every gate in the tree reads this constant
+ * rather than NODE_ENV, so there is exactly one place that decides.
  *
- * NODE_ENV is inlined at build time, so a production bundle folds this to
- * a constant `false` — the check costs nothing at runtime.
+ * WHY IT IS NOT JUST "NOT PRODUCTION". The development loop runs a
+ * PRODUCTION build (scripts/desktop-dev.mjs: next build + next start, so
+ * what is played is what ships, at shipped speed), and the tools have to
+ * come along with it. So the loop sets NEXT_PUBLIC_ADMIN=1 at build time
+ * and this is on; the static export for the desktop shell and Steam
+ * (build-static.sh) never sets it, so there this folds to `false` and the
+ * tools are compiled out. NEXT_PUBLIC_ variables are inlined by Next at
+ * build time, which is what makes that a constant rather than a runtime
+ * check — and what makes the API routes, which read it at request time,
+ * agree with the UI that was built against it.
  */
-export const ADMIN_ENABLED = process.env.NODE_ENV !== "production";
+export const ADMIN_ENABLED =
+  process.env.NEXT_PUBLIC_ADMIN === "1" || process.env.NODE_ENV !== "production";

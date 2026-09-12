@@ -10,8 +10,9 @@ at them with Mindustry's own weapons.
 
 ```bash
 npm install
-npm run dev       # the desktop app: Next's dev server inside the Electron shell
-npm run dev:web   # a bare browser tab: Next.js + Turbopack, nothing around it
+npm run dev       # the desktop app: a PRODUCTION build served inside the Electron shell
+npm run dev:web   # the same production server, in a bare browser tab
+npm run dev:hot   # Next's dev server with hot reload — slow, and not what ships; only when you need it
 ```
 
 **The game is a desktop game**, shipped to Steam as an Electron app
@@ -795,7 +796,11 @@ The line used to be four weapon classes wearing one palette — a contact
 bomb, slag orbs, sap beams, shrapnel rays — and read as four families. The
 **crawler**'s suicide charge is gone: a status that works over six seconds
 cannot have its opening tier delete itself on arrival. It spits once every
-three seconds instead; the **atrax** is the same gun on four barrels; the
+three seconds instead, and the orb **bursts** from the T2 up — a tile-wide
+splash on the atrax, wider on the spiroct, a thrown bomb at T4 and a
+barrage at T5, so the family is one idea growing rather than three tiers of
+pea-shooter and then two of bombardment. The **atrax** is the same gun on
+four barrels; the
 **spiroct** carries the game's only **haste field** (`hasteField`, ×1.35
 within ten tiles) because rot runs on a clock and the family wants more
 applications inside it; the **arkyid** adds a thrown **poison bomb** that
@@ -809,9 +814,32 @@ strides.
 swarm's side). It is the family a board that out-armoured the ground mechs
 still loses turrets to. What a tier buys is **rate and reach, never a
 better status**: the rot is the same six seconds from the T1 and the T5
-(`POISON_TIME`), stacking additively on the rate to a ceiling of four
-applications (`POISON_MAX_RATE`) and refreshing the clock rather than
-queueing. The counter is killing them, or out-mending them.
+(`POISON_TIME`). What a tier buys is **how much of a patch one orb rots at
+once**.
+
+Applications add their rate and refresh the clock, and everything above one
+application **bleeds back down** (`POISON_DECAY`) — so what a turret is
+actually rotting at is an equilibrium between how fast the spitters are
+landing shots and how fast the stack drains, **linear in how many of them
+there are, with no ceiling**. Ten bodies is a trickle; three thousand is a
+flood.
+
+**The numbers per application are small and most of them are a chance**
+(`poisonChance`): a crawler's spit is six health a second at one roll in
+four, a toxopid's bomb is ten every time, and the odds are rolled **per
+structure** so a burst across a patch comes out speckled. `rate x chance` is
+the same expected rot as a smaller rate landing every time — what the odds
+buy is a tier ladder that doesn't move the number the player learned.
+
+There was a flat ceiling here and it was the wrong bound twice over: it made
+the rot **identical under ten bodies and under three thousand** — the one
+mechanic on a field built for twenty thousand of them that did not care how
+many there were — and, being a fixed number of hit points a second, it aged
+out entirely against a pool that grows by multipliers. A late-run turret
+carrying Giant and Bulwark is a quarter of a million health, which at the old
+ceiling was eighty minutes of rot on a run that lasts twelve. The decay is
+the only bound now, and it is a self-correcting one. The counter is killing
+them, or out-mending them.
 
 The two are built to be **opposite problems on purpose**: one is answered
 by bringing a bigger gun, the other by not letting the clock refresh. The

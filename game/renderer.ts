@@ -1999,6 +1999,144 @@ export class Renderer {
   }
 
   /**
+   * EVERYTHING IN FLIGHT — the artillery trails, the player's projectiles
+   * and the swarm's shots — drawn ABOVE THE HILL DARKNESS at the end of
+   * the frame rather than with the crowd that fired them.
+   *
+   * WHY IT IS ITS OWN PASS. A shot crosses ground the walkers cannot: it
+   * flies over the rock between a turret and the lane, and inside a hill
+   * the darkness quad (DARK_RADIUS) is nearly black. Drawn with the
+   * crowd, a round on that stretch of its flight went out entirely and
+   * came back on the far side — the one thing on the screen that is
+   * moving fast enough for a player to lose it and not find it again.
+   * Mindustry has the same order, for the same reason: Layer.bullet is
+   * above Layer.darkness, and a shot is in the air over the terrain, not
+   * in it.
+   *
+   * Order INSIDE the pass is unchanged: the trails first (Layer.bullet -
+   * 0.01, under the shells that laid them), then the two rosters' rounds.
+   * It runs after the flyers for the same reason it runs after the
+   * darkness — a bullet is above the thing it is flying at.
+   */
+  private pushBullets(dyn: Batch, sim: Sim): void {
+    const { vx0, vy0, vx1, vy1 } = this;
+    const { fxN, fxX, fxY, fxAge, fxTtl, fxKind, fxLen, fxHasCol, fxColR, fxColG, fxColB } = sim;
+    // Layer.bullet - 0.01: an artillery shell's trail is laid UNDER the
+    // shells, so a volley's puffs never sit on top of the shot that made
+    // them. It is the only effect below that line, which is why it takes a
+    // pass of its own rather than a place in the loop after this one
+    for (let f = 0; f < fxN; f++) {
+      if (fxKind[f] !== FxKind.ArtilleryTrail) continue;
+      const len = fxLen[f];
+      const ex = fxX[f], ey = fxY[f];
+      const tm = len + 8;
+      if (ex < vx0 - tm || ex > vx1 + tm || ey < vy0 - tm || ey > vy1 + tm) continue;
+      let col: RGB = PAL.white;
+      if (fxHasCol[f]) {
+        FX_VIEW_COL[0] = fxColR[f];
+        FX_VIEW_COL[1] = fxColG[f];
+        FX_VIEW_COL[2] = fxColB[f];
+        col = FX_VIEW_COL;
+      }
+      this.fillCircle(dyn, ex, ey, len * (1 - fxAge[f] / fxTtl[f]), col, 1);
+    }
+    for (const p of sim.projs) {
+      if (p.x < vx0 - 48 || p.x > vx1 + 48 || p.y < vy0 - 48 || p.y > vy1 + 48) continue;
+      // the SIM's resolution, not the static table: a duo the tree has
+      // upgraded fires a different bullet, and drawing the stock one made
+      // the graphite round invisible as a graphite round
+      const b = sim.bulletFor(p.kind, p.frag);
+      // LiquidBulletType.draw: a water orb is not a sprite pair but a
+      // filled disc of the liquid's own colour — Fill.circle(x, y,
+      // orbSize). (The fout()/100 lerp toward white is a 1% shade and is
+      // dropped.)
+      if (b.orb) {
+        this.fillCircle(dyn, p.x, p.y, b.orb, b.fxColor ?? PAL.white, 1);
+        continue;
+      }
+      // a bare BulletType has no sprite at all — scorch's flame lives
+      // entirely in its shoot and hit effects. A shot thrown by a frag
+      // burst carries the CHILD ammo's sprite, not the shell's
+      const sp = b.sprite;
+      if (!sp) {
+        // THE ONE TURRET THE EFFECTS SWITCH WOULD SILENCE. With its shoot
+        // and hit effects refused (Sim.setEffects), a spriteless bullet
+        // has no visible shot left at all, and scorch reads as a turret
+        // that tracks and never fires. So the bullet — which is real, and
+        // already flying — draws itself instead: one disc on the flame's
+        // own ramp, against drawShootFlame's twelve. It stays a flame
+        // tongue leaving the barrel, for a twelfth of the quads.
+        //
+        // Only with the effects OFF: with them on this would be a second
+        // flame drawn over the real one.
+        if (!this.fxOn) {
+          const fout = clamp(p.life / (p.life + p.age), 0, 1);
+          this.fillCircle(
+            dyn, p.x, p.y,
+            (0.65 + fout * 1.5) * MU,
+            ramp(LIGHT_FLAME, DARK_FLAME, FLAME_GRAY, 1 - fout),
+            1,
+          );
+        }
+        continue;
+      }
+      // BasicBulletType.draw: shrinkInterp(fout) drives both axes, so a
+      // pellet tapers as it flies and a shell — on Mathf.slope — opens out
+      // of the barrel, peaks at half life and closes again on the way down.
+      // life + age is the lifetime the shot was born with, EXCEPT on a flak
+      // shell whose fuse has primed it: that zeroes the life outright, and
+      // reading fout 0 off it is exactly Mindustry's b.time = b.lifetime
+      const fout = clamp(p.life / (p.life + p.age), 0, 1);
+      const shrink = sp.slopeShrink ? 1 - Math.abs(fout - 0.5) * 2 : fout;
+      const along = sp.along * (1 - sp.shrinkY + sp.shrinkY * shrink);
+      const across = sp.across * (1 - sp.shrinkX + sp.shrinkX * shrink);
+      const rot = Math.atan2(p.vy, p.vx);
+      const [back, front] = BULLET_REGIONS[sp.region];
+      this.push(dyn, p.x, p.y, along, across, rot, back, sp.back[0], sp.back[1], sp.back[2], 1);
+      this.push(dyn, p.x, p.y, along, across, rot, front, sp.front[0], sp.front[1], sp.front[2], 1);
+    }
+    // THE SWARM'S SHOTS (Sim.shots): BasicBulletType.draw off each weapon's
+    // own ShotLook (weapons.ts) — its sprite pair at its size in its
+    // colours, shrinking on fout as the class says, a LaserBolt's lines
+    // over it, or a liquid orb's plain disc
+    for (const sh of sim.shots) {
+      if (sh.x < vx0 - 48 || sh.x > vx1 + 48 || sh.y < vy0 - 48 || sh.y > vy1 + 48) continue;
+      const look = sh.look;
+      // a bomb has no velocity: it keeps the heading it was dropped on, 0
+      const rot = sh.vx === 0 && sh.vy === 0 ? 0 : Math.atan2(sh.vy, sh.vx);
+      if (look.region === "orb") {
+        // LiquidBulletType.draw: Fill.circle in the liquid's colour — and
+        // where the shot carries a distinct `front`, a brighter core over
+        // it at two thirds the radius. That second disc is the VENOM
+        // SPITTERS' whole signature (weapons.ts venomOrb): one purple ball
+        // with a lit centre, the same shape from the T1's spit to the T5's
+        // bomb, so a player reads the family off a shot in flight. A liquid
+        // orb whose two colours are the same (the old slag round) draws
+        // exactly as it always did.
+        this.fillCircle(dyn, sh.x, sh.y, look.width / 2, look.back, 1);
+        if (look.front !== look.back)
+          this.fillCircle(dyn, sh.x, sh.y, look.width / 3, look.front, 1);
+        continue;
+      }
+      const fout = clamp(sh.life / (sh.life + sh.age), 0, 1);
+      const shrink = look.slope ? 1 - Math.abs(fout - 0.5) * 2 : fout;
+      const along = look.height * (1 - look.shrinkY + look.shrinkY * shrink);
+      const across = look.width * (1 - look.shrinkX + look.shrinkX * shrink);
+      const [back, front] = SHOT_REGIONS[look.region];
+      if (back) this.push(dyn, sh.x, sh.y, along, across, rot, back, look.back[0], look.back[1], look.back[2], 1);
+      this.push(dyn, sh.x, sh.y, along, across, rot, front, look.front[0], look.front[1], look.front[2], 1);
+      if (look.bolt) {
+        // LaserBoltBulletType.draw: a 2-wide line the bolt's length in the
+        // back colour, and one half as long in the front colour, centred
+        const cx = sh.x - (Math.cos(rot) * look.height) / 2, cy = sh.y - (Math.sin(rot) * look.height) / 2;
+        this.strokeLine(dyn, cx, cy, rot, look.height, 2 * MU, look.back, 1);
+        this.strokeLine(dyn, sh.x - (Math.cos(rot) * look.height) / 4, sh.y - (Math.sin(rot) * look.height) / 4,
+          rot, look.height / 2, 2 * MU, look.front, 1);
+      }
+    }
+  }
+
+  /**
    * One painter's pass over the crowd (drawFrame): 0 is the ground units
    * and hulls, 1 the flyers' drop shadows over them, 2 the flyers
    * themselves. Passes 0 and 1 go into the frame's batch under the
@@ -2108,9 +2246,9 @@ export class Renderer {
   /**
    * The darkness inside the hills (DARK_RADIUS), over the finished frame:
    * Layer.darkness is above the ground units, the effects and the shields.
-   * Only the flyers come after it (drawFrame) — they are above the
-   * terrain, so a range never darkens them.
-   *
+   * Two things come after it (drawFrame) — the FLYERS and the BULLETS,
+   * because both are in the air over the terrain rather than in it, so a
+   * hill never swallows either.
    */
   private drawDarkness(): void {
     const gl = this.gl;
@@ -2281,123 +2419,10 @@ export class Renderer {
         }
       }
     }
-    // Layer.bullet - 0.01: an artillery shell's trail is laid UNDER the
-    // shells, so a volley's puffs never sit on top of the shot that made
-    // them. It is the only effect below that line, which is why it takes a
-    // pass of its own rather than a place in the loop after this one
     const {
       fxN, fxX, fxY, fxAge, fxTtl, fxKind, fxRot, fxLen, fxSeed, fxSides,
       fxUnit, fxHasCol, fxColR, fxColG, fxColB, fxPts,
     } = sim;
-    for (let f = 0; f < fxN; f++) {
-      if (fxKind[f] !== FxKind.ArtilleryTrail) continue;
-      const len = fxLen[f];
-      const ex = fxX[f], ey = fxY[f];
-      const tm = len + 8;
-      if (ex < vx0 - tm || ex > vx1 + tm || ey < vy0 - tm || ey > vy1 + tm) continue;
-      let col: RGB = PAL.white;
-      if (fxHasCol[f]) {
-        FX_VIEW_COL[0] = fxColR[f];
-        FX_VIEW_COL[1] = fxColG[f];
-        FX_VIEW_COL[2] = fxColB[f];
-        col = FX_VIEW_COL;
-      }
-      this.fillCircle(dyn, ex, ey, len * (1 - fxAge[f] / fxTtl[f]), col, 1);
-    }
-    for (const p of sim.projs) {
-      if (p.x < vx0 - 48 || p.x > vx1 + 48 || p.y < vy0 - 48 || p.y > vy1 + 48) continue;
-      // the SIM's resolution, not the static table: a duo the tree has
-      // upgraded fires a different bullet, and drawing the stock one made
-      // the graphite round invisible as a graphite round
-      const b = sim.bulletFor(p.kind, p.frag);
-      // LiquidBulletType.draw: a water orb is not a sprite pair but a
-      // filled disc of the liquid's own colour — Fill.circle(x, y,
-      // orbSize). (The fout()/100 lerp toward white is a 1% shade and is
-      // dropped.)
-      if (b.orb) {
-        this.fillCircle(dyn, p.x, p.y, b.orb, b.fxColor ?? PAL.white, 1);
-        continue;
-      }
-      // a bare BulletType has no sprite at all — scorch's flame lives
-      // entirely in its shoot and hit effects. A shot thrown by a frag
-      // burst carries the CHILD ammo's sprite, not the shell's
-      const sp = b.sprite;
-      if (!sp) {
-        // THE ONE TURRET THE EFFECTS SWITCH WOULD SILENCE. With its shoot
-        // and hit effects refused (Sim.setEffects), a spriteless bullet
-        // has no visible shot left at all, and scorch reads as a turret
-        // that tracks and never fires. So the bullet — which is real, and
-        // already flying — draws itself instead: one disc on the flame's
-        // own ramp, against drawShootFlame's twelve. It stays a flame
-        // tongue leaving the barrel, for a twelfth of the quads.
-        //
-        // Only with the effects OFF: with them on this would be a second
-        // flame drawn over the real one.
-        if (!this.fxOn) {
-          const fout = clamp(p.life / (p.life + p.age), 0, 1);
-          this.fillCircle(
-            dyn, p.x, p.y,
-            (0.65 + fout * 1.5) * MU,
-            ramp(LIGHT_FLAME, DARK_FLAME, FLAME_GRAY, 1 - fout),
-            1,
-          );
-        }
-        continue;
-      }
-      // BasicBulletType.draw: shrinkInterp(fout) drives both axes, so a
-      // pellet tapers as it flies and a shell — on Mathf.slope — opens out
-      // of the barrel, peaks at half life and closes again on the way down.
-      // life + age is the lifetime the shot was born with, EXCEPT on a flak
-      // shell whose fuse has primed it: that zeroes the life outright, and
-      // reading fout 0 off it is exactly Mindustry's b.time = b.lifetime
-      const fout = clamp(p.life / (p.life + p.age), 0, 1);
-      const shrink = sp.slopeShrink ? 1 - Math.abs(fout - 0.5) * 2 : fout;
-      const along = sp.along * (1 - sp.shrinkY + sp.shrinkY * shrink);
-      const across = sp.across * (1 - sp.shrinkX + sp.shrinkX * shrink);
-      const rot = Math.atan2(p.vy, p.vx);
-      const [back, front] = BULLET_REGIONS[sp.region];
-      this.push(dyn, p.x, p.y, along, across, rot, back, sp.back[0], sp.back[1], sp.back[2], 1);
-      this.push(dyn, p.x, p.y, along, across, rot, front, sp.front[0], sp.front[1], sp.front[2], 1);
-    }
-    // THE SWARM'S SHOTS (Sim.shots): BasicBulletType.draw off each weapon's
-    // own ShotLook (weapons.ts) — its sprite pair at its size in its
-    // colours, shrinking on fout as the class says, a LaserBolt's lines
-    // over it, or a liquid orb's plain disc
-    for (const sh of sim.shots) {
-      if (sh.x < vx0 - 48 || sh.x > vx1 + 48 || sh.y < vy0 - 48 || sh.y > vy1 + 48) continue;
-      const look = sh.look;
-      // a bomb has no velocity: it keeps the heading it was dropped on, 0
-      const rot = sh.vx === 0 && sh.vy === 0 ? 0 : Math.atan2(sh.vy, sh.vx);
-      if (look.region === "orb") {
-        // LiquidBulletType.draw: Fill.circle in the liquid's colour — and
-        // where the shot carries a distinct `front`, a brighter core over
-        // it at two thirds the radius. That second disc is the VENOM
-        // SPITTERS' whole signature (weapons.ts venomOrb): one purple ball
-        // with a lit centre, the same shape from the T1's spit to the T5's
-        // bomb, so a player reads the family off a shot in flight. A liquid
-        // orb whose two colours are the same (the old slag round) draws
-        // exactly as it always did.
-        this.fillCircle(dyn, sh.x, sh.y, look.width / 2, look.back, 1);
-        if (look.front !== look.back)
-          this.fillCircle(dyn, sh.x, sh.y, look.width / 3, look.front, 1);
-        continue;
-      }
-      const fout = clamp(sh.life / (sh.life + sh.age), 0, 1);
-      const shrink = look.slope ? 1 - Math.abs(fout - 0.5) * 2 : fout;
-      const along = look.height * (1 - look.shrinkY + look.shrinkY * shrink);
-      const across = look.width * (1 - look.shrinkX + look.shrinkX * shrink);
-      const [back, front] = SHOT_REGIONS[look.region];
-      if (back) this.push(dyn, sh.x, sh.y, along, across, rot, back, look.back[0], look.back[1], look.back[2], 1);
-      this.push(dyn, sh.x, sh.y, along, across, rot, front, look.front[0], look.front[1], look.front[2], 1);
-      if (look.bolt) {
-        // LaserBoltBulletType.draw: a 2-wide line the bolt's length in the
-        // back colour, and one half as long in the front colour, centred
-        const cx = sh.x - (Math.cos(rot) * look.height) / 2, cy = sh.y - (Math.sin(rot) * look.height) / 2;
-        this.strokeLine(dyn, cx, cy, rot, look.height, 2 * MU, look.back, 1);
-        this.strokeLine(dyn, sh.x - (Math.cos(rot) * look.height) / 4, sh.y - (Math.sin(rot) * look.height) / 4,
-          rot, look.height / 2, 2 * MU, look.front, 1);
-      }
-    }
     for (let f = 0; f < fxN; f++) {
       const kind = fxKind[f] as FxKind;
       const ex = fxX[f], ey = fxY[f];
@@ -2722,13 +2747,17 @@ export class Renderer {
     // finished frame
     this.blitShields(zoom, offX, offY, kPx, sim.time, buffered);
     this.drawDarkness();
-    // THE FLYERS, LAST OF ALL — above the darkness, not under it. Mindustry
-    // draws Layer.darkness over its flyingUnit layer, so a flyer crossing a
-    // range goes black inside it; here a flyer is always above the
-    // terrain, and the crowd's ground pass, the bullets and the effects are
-    // already on the frame under it
+    // THE FLYERS AND THE SHOTS, LAST OF ALL — above the darkness, not
+    // under it. Mindustry draws Layer.darkness over its flyingUnit layer,
+    // so a flyer crossing a range goes black inside it; here a flyer is
+    // always above the terrain, and the crowd's ground pass and the
+    // effects are already on the frame under it. The rounds go over both
+    // (pushBullets): a shot flies across rock no walker can stand on, and
+    // one that went dark halfway there was a shot the player lost
     dyn.n = 0;
     this.pushUnitPass(dyn, sim, 2);
+    // ...and the shots over them, above the darkness as well (pushBullets)
+    this.pushBullets(dyn, sim);
     this.draw(dyn, true);
   }
 

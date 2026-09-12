@@ -8,16 +8,25 @@ game finds it through one bridge on `window` (see below).
 ## Build and run
 
 ```bash
-npm run dev                # DEVELOP HERE: Next's dev server inside the shell
+npm run dev                # DEVELOP HERE: a production build, served inside the shell
 npm run desktop            # static export into out/, then launch the shell
 npm run desktop:pack       # + electron-builder → desktop/release/<os>-unpacked/
 npm run desktop:pack:steam # Windows and Linux unpacked dirs, from any OS
 npm run desktop:test       # the smoke test (needs out/ and a display; see below)
 ```
 
-**`npm run dev` is the development loop.** It starts `next dev` and the
+**`npm run dev` is the development loop, and it is a PRODUCTION BUILD.** The
+game is a real-time simulation drawn at sixty frames a second, and Next's
+dev mode — React reconciling in development, no minification, a file
+watcher and a hot-reload socket on the same main thread — made the thing
+being played feel nothing like the thing being shipped. So the loop runs
+`next build` and then `next start`, with NEXT_PUBLIC_ADMIN=1 so the admin
+editors and their API routes come along (game/env.ts ADMIN_ENABLED). A
+code change is a rebuild — thirty-odd seconds, cached — rather than a hot
+reload; `npm run dev:hot` is the old loop for when that trade is wrong.
+It starts the server and the
 shell together (scripts/desktop-dev.mjs) and points the window at the
-server (`--dev-url`, honoured only by an unpackaged shell), so hot reload,
+server (`--dev-url`, honoured only by an unpackaged shell), so
 the admin editors (Ctrl+Shift+M) and their file-writing API routes all
 work, the save lands in the same file on disk the shipped game uses, and
 closing the window ends both. The shell keeps retrying the URL until Next

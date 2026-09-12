@@ -212,16 +212,21 @@ export interface Tower {
    * and rot is the answer to plating. The two families are built to pose
    * opposite problems.
    *
-   * STACKING IS ADDITIVE ON THE RATE AND A REFRESH ON THE CLOCK, capped at
-   * POISON_MAX_RATE times ONE APPLICATION (Sim.poisonTower) — four spitters
-   * on one turret rot it four times as fast, forty do not.
+   * STACKING IS ADDITIVE ON THE RATE, A REFRESH ON THE CLOCK, AND HAS NO
+   * CEILING. Every application adds its rate; everything above one
+   * application bleeds back down (POISON_DECAY), so what a turret is
+   * actually rotting at is an equilibrium between how fast the spitters are
+   * landing shots and how fast the stack drains — and that level is LINEAR
+   * IN THE SIZE OF THE CROWD.
    *
-   * `poisonUnit` IS WHAT THE CAP IS ANCHORED TO: the heaviest single
-   * application in force, held so the ceiling is a fact about the WEAPON
-   * rather than about the running total. Capping the total against itself
-   * is not a cap at all — it chases whatever the total has already reached,
-   * and a crowd drives it to hundreds of hit points a second. All three
-   * fields are cleared together when the clock runs out.
+   * THE NUMBERS PER APPLICATION ARE SMALL AND MOST OF THEM ARE A CHANCE
+   * (weapons.ts poisonChance). A crawler's spit is six health a second, one
+   * roll in four; a toxopid's bomb lands every time. What makes a wave
+   * lethal is that it is a wave.
+   *
+   * `poisonUnit` IS THE FLOOR — the heaviest single application in force,
+   * which does not decay while the clock runs, so one spitter on a turret
+   * rots it at exactly the rate its weapon says.
    */
   poison: number;
   poisonUnit: number;
@@ -360,6 +365,10 @@ export interface EnemyShot {
    *  everything its splash reaches — 0 on every shot that is not the venom
    *  line's (weapons.ts UnitWeapon.poison) */
   poison: number;
+  /** ...and the odds it takes, rolled PER STRUCTURE so a burst comes out
+   *  speckled (weapons.ts UnitWeapon.poisonChance). 1 on the tiers that
+   *  never miss */
+  poisonChance: number;
 }
 
 export interface Projectile {
