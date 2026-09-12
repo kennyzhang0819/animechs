@@ -2836,6 +2836,42 @@ export class Sim {
     const grid = this.cellTower;
     let best: Structure | null = null;
     let bd = Infinity;
+    // A LONG REACH WALKS THE LIST, NOT THE RING. The ring walk below costs
+    // the square of the reach in cells whatever is out there — a harpoon
+    // hull's ninety tiles is eight thousand reads a scan, four thousand
+    // hulls a wave, and it was the single most expensive thing in the sim.
+    // When the ring would read more cells than there are buildings to
+    // find, the buildings are read directly: nearest first, so the sight
+    // test is spent on the few that would actually be taken
+    if (R * R > (this.towers.length + 1) * 6) {
+      // no allocation and no sort: the candidates go into two scratch
+      // arrays, and the nearest is pulled out and sight-tested until one
+      // passes — nearly always the first
+      const list = this.nearList, dist = this.nearDist;
+      let n = 0;
+      const take = (t: Structure): void => {
+        if (this.enemyTowers > 0 && teamOf(t) !== team) return;
+        const half = (this.sizeOf(t) * CELL) / 2;
+        const dx = t.x - x, dy = t.y - y;
+        const d = Math.sqrt(dx * dx + dy * dy) - half;
+        if (d <= reach && n < list.length) {
+          list[n] = t;
+          dist[n++] = d;
+        }
+      };
+      take(this.core);
+      for (const t of this.towers) if (grid[t.gy * COLS + t.gx] === t) take(t);
+      while (n > 0) {
+        let m = 0;
+        for (let k = 1; k < n; k++) if (dist[k] < dist[m]) m = k;
+        const t = list[m];
+        if (!sighted || this.canSee(t, x, y)) return t;
+        n--;
+        list[m] = list[n];
+        dist[m] = dist[n];
+      }
+      return null;
+    }
     const consider = (i: number): void => {
       const t = grid[i];
       // only the OTHER side's buildings are targets: a body walks past the
@@ -2895,6 +2931,10 @@ export class Sim {
   }
 
   private readonly splashOut: Structure[] = [];
+  /** nearestStructure's list-scan scratch, for the long reaches: room for
+   *  every building a board can hold, filled and drained in place */
+  private readonly nearList: Structure[] = new Array<Structure>(4096);
+  private readonly nearDist = new Float32Array(4096);
   /** the arc's own scratch: the structures one chain has already struck */
   private readonly arcOut: Structure[] = [];
   private readonly arcNear: Structure[] = [];
@@ -3127,11 +3167,6 @@ export class Sim {
     return this.inReach(a.s, x, y, reach);
   }
 
-  /** can a ground body at the point see its aim? */
-  private aimSeen(a: Aim, x: number, y: number): boolean {
-    return this.canSee(a.s, x, y);
-  }
-
   /** one hit on the aim, from a body of `team` */
   private aimHit(a: Aim, dmg: number, poison = 0, poisonChance = 1): void {
     this.hitStructure(a.s, dmg, poison, poisonChance);
@@ -3175,14 +3210,15 @@ export class Sim {
       // (hitStructure), and what a shot leaving the muzzle carries
       this.dmgMul = HAS_VET ? this.uvet[i] : 1;
       // the target, re-picked every few tenths of a second, dropped the
-      // moment it dies, walks out of the longest gun's reach, or goes
-      // behind rock — the sight test rides here, once per body per tick,
-      // rather than in inReach, which every weapon calls every tick
+      // moment it dies or walks out of the longest gun's reach. SIGHT IS
+      // TESTED ON THE CLOCK, NOT EVERY TICK: the re-pick (pickAim) refuses
+      // what it cannot see, so a body that has just lost its line keeps
+      // firing for at most half a second — and a raycast per body per
+      // tick, at ninety tiles on four thousand hulls, was a frame
       utT[i] -= dt;
       let tgt = utgt[i];
       const had = tgt !== null;
-      if (tgt && (!this.aimReach(tgt, x, y, reach) || (sighted && !this.aimSeen(tgt, x, y))))
-        tgt = null;
+      if (tgt && !this.aimReach(tgt, x, y, reach)) tgt = null;
       // ...on the clock, or the moment the one it had is gone. A body that
       // has NOTHING waits for the clock like everyone else rather than
       // re-scanning every tick: an empty search is the most expensive one
@@ -3190,7 +3226,9 @@ export class Sim {
       // each candidate), and it is exactly the search a swarm still crossing
       // open ground is running. `had` is what tells the two apart
       if (utT[i] <= 0 || (had && !tgt)) {
-        utT[i] = 0.3 + Math.random() * 0.2;
+        // a long reach re-picks at half the rate: what it can see is far
+        // away and changes slowly, and its scan is the expensive kind
+        utT[i] = (reach > 40 * CELL ? 2 : 1) * (0.3 + Math.random() * 0.2);
         tgt = this.pickAim(x, y, reach, sighted);
         utgt[i] = tgt;
       }
