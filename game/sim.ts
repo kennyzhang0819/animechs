@@ -410,6 +410,24 @@ const FIELD_MAX_STALE = 1;
  * behind it. Three milliseconds leaves a 60fps frame the other thirteen.
  */
 const FIELD_BUDGET_MS = 3;
+/**
+ * ...AND WHAT IT COSTS A HEADLESS RUN, which must be a different question.
+ *
+ * A wall-clock budget is right for a game — a re-route takes three
+ * milliseconds of a frame and the swarm steers by the last finished field
+ * until the new one is whole. It is WRONG FOR A MEASUREMENT: how much of
+ * the field is solved per tick then depends on how fast the machine is and
+ * what else it is running, so the same script on the same seed routes the
+ * swarm differently on a loaded box than on an idle one, and a faster sim
+ * is a HARDER sim. Two playtests of the same build came back at wave 15 and
+ * wave 50 for exactly that reason.
+ *
+ * Sim.setFieldBudget(Infinity) is what the playtest sets: every queued
+ * solve finishes in the tick that queued it, so a run is reproducible and
+ * comparable to another run on another machine. The shipped game never
+ * sets it and keeps the slice.
+ */
+
 /** ...and the smallest slice worth entering the solver for */
 const FIELD_MIN_SLICE = 0.25;
 /** the clock the slices are measured by */
@@ -1785,7 +1803,7 @@ export class Sim {
    * whole (FlowField.advance).
    */
   private runSolveQueue(): void {
-    const until = nowMs() + FIELD_BUDGET_MS;
+    const until = nowMs() + this.fieldBudgetMs;
     while (this.solveQueue.length > 0) {
       const left = until - nowMs();
       if (!this.solveQueue[0].advance(Math.max(left, FIELD_MIN_SLICE))) return;
@@ -1793,6 +1811,16 @@ export class Sim {
       if (nowMs() >= until) return;
     }
   }
+
+  /**
+   * What a re-route may spend per tick (FIELD_BUDGET_MS). Infinity finishes
+   * every queued solve in the tick it was queued, which is what makes a
+   * headless run reproducible — see the note on FIELD_BUDGET_MS.
+   */
+  setFieldBudget(ms: number): void {
+    this.fieldBudgetMs = ms;
+  }
+  private fieldBudgetMs = FIELD_BUDGET_MS;
 
   /** drop the solves in flight: the board they were solving has moved on */
   private abortSolves(): void {
