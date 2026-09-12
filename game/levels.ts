@@ -1564,6 +1564,30 @@ export const familyOf = (kind: UnitKind): FamilyKey | null => FAMILY_OF[kind] ??
 /** a family's entry by key — every key in FamilyKey is in the table */
 export const familyByKey = (key: FamilyKey) => FAMILIES.find((f) => f.key === key)!;
 
+/**
+ * Clean a raw list of family keys: families IN PLAY only (the shelf is
+ * still a shelf, whoever is asking), no duplicates, never more than a run
+ * has slots for, in the order given.
+ *
+ * It is cleanMutations' opposite number (mutation.ts) and exists for the
+ * same reason: custom mode lets a player NAME a family, and that name
+ * reaches the roller by way of the save, where it can be hand-edited, go
+ * stale across a release, or name something since shelved. Every reader
+ * goes through here, so a bad key degrades to a rolled family rather than
+ * reaching transformScript as a slot that casts to nothing.
+ */
+export function cleanFamilies(raw: unknown): FamilyKey[] {
+  if (!Array.isArray(raw)) return [];
+  const out: FamilyKey[] = [];
+  for (const v of raw) {
+    const key = ACTIVE_FAMILIES.find((f) => f === v);
+    if (!key || out.includes(key)) continue;
+    out.push(key);
+    if (out.length >= FAMILIES_PER_RUN) break;
+  }
+  return out;
+}
+
 /** a kind's tier index within its family, 0-4 */
 const tierIndexOf = (kind: UnitKind): number => {
   const f = familyOf(kind);
@@ -1639,17 +1663,31 @@ export function openingSlots(script: readonly LevelStep[]): number[] {
  * the remaining slots in the order it was shuffled, so a flying family is
  * still equally likely to land in any slot that is not an opening one —
  * this narrows WHERE air can be dealt, never how often it is drawn.
+ *
+ * `chosen` IS CUSTOM MODE'S HAND, and the one way a family arrives
+ * without the die. A regular deploy passes nothing and gets the roll
+ * above; a custom one passes the families the player ticked, which are
+ * taken FIRST and the rest of the run filled out by the same shuffle —
+ * so a hand of one is one family asked for and two rolled. The
+ * arrangement rule still holds over a chosen hand: a walker takes the
+ * opening slot where the hand has one, because a script's first wave is
+ * answered with the first card off the deal whoever picked the swarm.
+ * What a chosen hand does NOT get is the second shuffle: the slots are
+ * the player's list in the order they gave it, since a hand is not a
+ * roll and there is no bias left to spread.
  */
 export function rollFamilies(
   rand: () => number = Math.random,
   script?: readonly LevelStep[],
+  chosen: readonly FamilyKey[] = [],
 ): FamilyKey[] {
-  const pool: FamilyKey[] = [...ACTIVE_FAMILIES];
+  const hand = cleanFamilies(chosen);
+  const pool: FamilyKey[] = ACTIVE_FAMILIES.filter((f) => !hand.includes(f));
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  const picked = pool.slice(0, FAMILIES_PER_RUN);
+  const picked = [...hand, ...pool].slice(0, FAMILIES_PER_RUN);
   const opening = script ? openingSlots(script) : [0];
   if (opening.length === 0) return picked;
   const out: (FamilyKey | undefined)[] = new Array(picked.length).fill(undefined);
@@ -1670,12 +1708,15 @@ export function rollFamilies(
   // shuffled to the front into slot 1, so air would take the second slot
   // twice as often as the third for no reason anyone designed. A second
   // shuffle over the leftovers costs two swaps and makes every
-  // non-opening slot equally likely again
+  // non-opening slot equally likely again.
+  // A CHOSEN HAND SKIPS IT (see `chosen` above): there is no roll to
+  // de-bias, and a player who listed three families is owed their list.
   const rest = picked.filter((_, i) => !spent.has(i));
-  for (let i = rest.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    [rest[i], rest[j]] = [rest[j], rest[i]];
-  }
+  if (hand.length === 0)
+    for (let i = rest.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [rest[i], rest[j]] = [rest[j], rest[i]];
+    }
   let next = 0;
   for (let i = 0; i < out.length; i++) if (!out[i]) out[i] = rest[next++];
   return out as FamilyKey[];

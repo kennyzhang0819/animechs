@@ -26,8 +26,10 @@ import {
 import { loadBalanceDoc } from "@/game/balance";
 import {
   FAMILIES,
+  FAMILIES_PER_RUN,
   FAMILY_ACCENT,
   familyByKey,
+  familyFlies,
   loadLevelDocs,
   missionText,
   rollFamilies,
@@ -87,6 +89,8 @@ import {
   startingSpeed,
   techOf,
   worldLock,
+  GAME_MODE_DEFAULT,
+  type GameMode,
   type Progress,
   type RunReward,
 } from "@/game/progress";
@@ -94,7 +98,11 @@ import { atlasReady, buildAtlas, turretIcon, unitIcon } from "@/game/atlas";
 import {
   cleanMutations,
   mutationById,
+  mutationCost,
+  mutationCostOf,
   mutationsInForce,
+  MUTATIONS,
+  MUT_COST_MAX,
   rollMutations,
   type MutationDef,
   type MutationId,
@@ -117,7 +125,7 @@ import {
 } from "@/game/track";
 import { TOWER_DESC, TOWERS } from "@/game/constants";
 import { TOWER_ICONS } from "@/game/towerIcons";
-import { TOWER_KINDS } from "@/game/types";
+import { TOWER_KINDS, type RGB } from "@/game/types";
 import { levelProgress, POINT_COLOR, XP_COLOR } from "@/game/economy";
 import { itemCount, LevelStrip, ScrapAmount, XpAmount } from "./Items";
 import ProgressView from "./Progress";
@@ -331,6 +339,8 @@ const runSpec = (
   world: LevelSpec,
   tier: number,
   mutation: readonly MutationId[],
+  /** custom mode's named families; empty (regular mode's always) is rolled */
+  hand: readonly FamilyKey[] = [],
 ): LevelSpec => {
   const spec = specForTier(world, tier);
   // THE DIE IS ROLLED HERE, against the script it is about to be dealt
@@ -339,7 +349,10 @@ const runSpec = (
   // slots those are is a property of this tier's expanded script. Rolling
   // outside and passing the result in let a caller hand over a deal that
   // opens wave 1 with flares, which is an opening with one legal answer.
-  const families = rollFamilies(Math.random, spec.script);
+  // A custom hand goes through the same call and is dealt under the same
+  // rule — what it changes is which families are in the pile, never how
+  // they are laid into the slots.
+  const families = rollFamilies(Math.random, spec.script, hand);
   return {
     ...spec,
     script: transformScript(spec.script, families),
@@ -350,11 +363,15 @@ const runSpec = (
 
 
 /**
- * A MACRO — one of the two dials on the start screen, printed as a row:
- * what it is on the left, what it is set to on the right, and the whole
- * row a button that opens the list to change it. The value is what a
- * player reads at a glance ("Random · +25% XP", "Scourge · 80% XP"), so
+ * A MACRO — one dial on the deploy screen, printed as a row: what it is
+ * on the left, what it is set to on the right, and the whole row a
+ * button that opens the list to change it. The value is what a player
+ * reads at a glance ("Nemesis +2 · 140% XP", "1 named · 2 rolled"), so
  * it gets the ink and the label sits small beside it.
+ *
+ * Regular mode shows ONE of these (the difficulty) and custom four —
+ * see the deploy screen for why a mode's non-picks are absent rather
+ * than dimmed.
  */
 function MacroButton({
   label,
@@ -374,8 +391,11 @@ function MacroButton({
       aria-label={`${label}: ${value}. Change`}
       className="ms-btn w-full justify-between gap-3 px-4 py-3 text-left"
     >
-      <span className="text-[13px] text-[#a2a2a2]">{label}</span>
-      <span className="flex items-center gap-2 whitespace-nowrap text-[16px] tracking-[0.12em]">
+      <span className="shrink-0 text-[13px] text-[#a2a2a2]">{label}</span>
+      {/* the value gives way before the row does: a setting whose name
+          runs long ellipsizes rather than pushing the chevron off the
+          card, which is what a long faction hand used to do */}
+      <span className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[16px] tracking-[0.12em]">
         {children}
         <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current text-[#71717C]" aria-hidden="true">
           <path d="M9.3 5.1 16.2 12l-6.9 6.9-1.7-1.7L12.8 12 7.6 6.8z" />
@@ -405,6 +425,8 @@ function PickerDialog({
   onClose,
   list,
   detail,
+  footer,
+  wide = false,
 }: {
   title: string;
   onClose: () => void;
@@ -412,6 +434,23 @@ function PickerDialog({
   list: ReactNode;
   /** what the cursor is on, right */
   detail: ReactNode;
+  /**
+   * A BAR UNDER BOTH PANES, and only the MULTI-PICKERS have one. A list
+   * that takes one answer closes on Select, so the way out is the answer;
+   * a list that takes several (the factions, the mutators) stays open
+   * while the hand is built, and a dialog with no visible way out is one
+   * a player has to guess Escape at. So those carry a Done button here.
+   */
+  footer?: ReactNode;
+  /**
+   * HOW WIDE THE ROWS ARE, and the whole of why it is a knob: a row is
+   * ONE LINE and a truncated one is a row a player cannot read. The map
+   * and difficulty lists hold short proper nouns and fit the default;
+   * the factions and the mutators are two-word names ("Starlight mechs",
+   * "Armored Swarms") that need the wider column, and the dialog widens
+   * with them so the detail pane does not pay for it.
+   */
+  wide?: boolean;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -431,31 +470,53 @@ function PickerDialog({
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        className="ui-zoom ms-pane-solid flex max-h-[calc(100vh-2rem)] w-full max-w-[38rem] flex-col p-4"
+        className={`ui-zoom ms-pane-solid flex max-h-[calc(100vh-2rem)] w-full flex-col p-4 ${
+          wide ? "max-w-[46rem]" : "max-w-[38rem]"
+        }`}
       >
         <h2 className="ms-heading ms-strip -mx-4 -mt-4 mb-3 text-[14px]">{title}</h2>
         <div className="flex min-h-0 gap-3">
-          <div role="listbox" className="flex w-[12rem] shrink-0 flex-col gap-1.5 overflow-y-auto">
+          <div
+            role="listbox"
+            className={`flex shrink-0 flex-col gap-1.5 overflow-y-auto ${
+              wide ? "w-[17rem]" : "w-[12rem]"
+            }`}
+          >
             {list}
           </div>
           <div className="ms-pane-solid flex min-h-[16rem] min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
             {detail}
           </div>
         </div>
+        {footer && <div className="mt-3">{footer}</div>}
       </div>
     </div>
   );
 }
 
-/** the one button on a detail pane: take what the cursor is on */
-function SelectButton({ onClick, disabled = false }: { onClick: () => void; disabled?: boolean }) {
+/**
+ * The one button on a detail pane: take what the cursor is on. Its label
+ * is "Select" wherever the list takes one answer; the multi-pickers pass
+ * their own ("Add", "Remove", "Roll them"), because on a list a player is
+ * building a hand out of, "Select" says nothing about which way the press
+ * moves the thing under the cursor.
+ */
+function SelectButton({
+  onClick,
+  disabled = false,
+  label = "Select",
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  label?: string;
+}) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       className="ms-btn ms-btn-accent mt-auto w-full py-2.5 text-[15px]"
     >
-      Select
+      {label}
     </button>
   );
 }
@@ -530,15 +591,19 @@ const TOP_RULELESS_TIER = Math.max(
 const xpShareText = (mult: number): string => `${Math.round(mult * 100)}% XP`;
 
 /**
- * THE MAP LIST. Random leads and is the default: the game picks any open
- * map on Start. It used to pay a quarter more XP for the trust and does
- * not any more — it is the default because it is the best way to play the
- * campaign, not because it is bribed. Under it, every world by name, one
- * line each — a locked one is on the list, never hidden, greyed. THE PICTURE IS ON THE RIGHT AND ONLY AFTER A CLICK: the
- * list is names, the cursor starts on Random, and a row click puts that
- * map's thumbnail, mission and standing (what opens it, or the best
- * difficulty beaten on it) beside it. No map is ranked against another: every map is as hard as the
- * difficulty it is played at, and the difficulty is the other macro.
+ * THE MAP LIST — CUSTOM MODE'S ONLY (GameMode). Regular rolls its map on
+ * Start and never opens this: a run's map is the campaign's to deal, and
+ * it is the default there because it is the best way to play the
+ * campaign, not because it is bribed.
+ *
+ * Random leads and is the default here too. Under it, every world by
+ * name, one line each — and every one of them is PLAYABLE, the track's
+ * locks included, because a custom run pays nothing for reaching a map
+ * early (see the note in the body). THE PICTURE IS ON THE RIGHT AND ONLY
+ * AFTER A CLICK: the list is names, the cursor starts on Random, and a
+ * row click puts that map's thumbnail, mission and standing beside it.
+ * No map is ranked against another: every map is as hard as the
+ * difficulty it is played at, and the difficulty is another macro.
  */
 function MapPicker({
   progress,
@@ -554,6 +619,13 @@ function MapPicker({
   onPick: (worldId: string | null) => void;
   onClose: () => void;
 }) {
+  // THE LIST IS ONLY EVER OPENED IN CUSTOM MODE, where the track's locks
+  // do not apply (GameMode): a custom run pays nothing, so there is
+  // nothing for an unopened map to be a shortcut to. Regular mode never
+  // opens it at all — its map is rolled on Start. What the lock still
+  // does is DESCRIBE: the detail pane says which level would have opened
+  // a map the campaign has not reached, because that is worth knowing
+  // even where it is not a gate.
   // the row under the cursor: null is Random, which is where it starts —
   // so the right pane is on screen from the first frame (a map's picture
   // only appears once its row is clicked)
@@ -568,21 +640,16 @@ function MapPicker({
       <PickRow selected={pick == null} focused={focus === null} onPick={() => setFocus(null)}>
         <span className={`${rowText} text-[#EDEDEF]`}>Random</span>
       </PickRow>
-      {WORLDS.map((w) => {
-        const locked = worldLock(progress, w.id) != null;
-        return (
-          <PickRow
-            key={w.id}
-            selected={pick === w.id}
-            focused={focus === w.id}
-            onPick={() => setFocus(w.id)}
-          >
-            <span className={`${rowText} ${locked ? "text-[#71717C]" : "text-[#EDEDEF]"}`}>
-              {w.name}
-            </span>
-          </PickRow>
-        );
-      })}
+      {WORLDS.map((w) => (
+        <PickRow
+          key={w.id}
+          selected={pick === w.id}
+          focused={focus === w.id}
+          onPick={() => setFocus(w.id)}
+        >
+          <span className={`${rowText} text-[#EDEDEF]`}>{w.name}</span>
+        </PickRow>
+      ))}
     </>
   );
 
@@ -609,7 +676,7 @@ function MapPicker({
         <div className="font-display text-[17px] font-bold uppercase tracking-widest text-[#EDEDEF]">
           Random
         </div>
-        <p className="text-[14px] text-[#A6A6AF]">Any open map, picked on start.</p>
+        <p className="text-[14px] text-[#A6A6AF]">Any map, picked on start.</p>
         <SelectButton onClick={() => onPick(null)} />
       </>
     );
@@ -617,7 +684,7 @@ function MapPicker({
     const mission = missionText(world);
     detail = (
       <>
-        <div className={`w-full ${lock ? "grayscale" : ""}`}>
+        <div className="w-full">
           {mapsReady ? (
             <LevelThumb mapId={world.map ?? OFFICIAL_MAP_IDS[0]} bare />
           ) : (
@@ -629,16 +696,21 @@ function MapPicker({
         </div>
         <DetailLine label="Mission">{mission.title}</DetailLine>
         <p className="text-[14px] text-[#A6A6AF]">{mission.detail}</p>
-        <DetailLine label={lock ? "Opens at" : "Best"}>
-          {lock ? (
-            <span style={{ color: POINT_COLOR }}>level {lock.level}</span>
-          ) : best > 0 ? (
+        <DetailLine label="Best">
+          {best > 0 ? (
             <span style={{ color: rungColor(best - 1) }}>{rungLabel(best - 1)}</span>
           ) : (
             "New"
           )}
         </DetailLine>
-        <SelectButton onClick={() => onPick(world.id)} disabled={lock != null} />
+        {/* a map the campaign has not reached is still playable here — the
+            line says what regular mode is still holding it behind */}
+        {lock && (
+          <DetailLine label="Campaign opens at">
+            <span style={{ color: POINT_COLOR }}>level {lock.level}</span>
+          </DetailLine>
+        )}
+        <SelectButton onClick={() => onPick(world.id)} />
       </>
     );
   }
@@ -659,14 +731,15 @@ function MapPicker({
  * difficultyOpen): Nemesis +1 and up promise a number of mutators, and a
  * deck with nothing in it makes that promise a lie. The four named
  * difficulties carry no rules and are open from level 1, so the whole
- * script at full count is always playable.
+ * script at full count is always playable. IN CUSTOM MODE NOTHING IS
+ * SHUT (see `custom`): the draw there is the whole catalog or the
+ * player's own list, so the promise is good at any level.
  *
  * A SHUT ROW IS GREYED IN THE LIST AND NAMES ITS LEVEL IN THE DETAIL —
- * the map list's own arrangement (see MapPicker's "Opens at"), and for
- * the same reason: a row a player cannot click is a question, and the
- * answer costs one line beside the thing they are already looking at.
- * The list itself stays wordless, so nine greyed names do not become
- * nine copies of the same sentence.
+ * a row a player cannot click is a question, and the answer costs one
+ * line beside the thing they are already looking at. The list itself
+ * stays wordless, so nine greyed names do not become nine copies of the
+ * same sentence.
  */
 /** how big the swarm is, in words, one per named difficulty (COUNT_SCALE) */
 const SWARM_SIZE: readonly string[] = [
@@ -680,6 +753,7 @@ function DifficultyPicker({
   tier,
   world,
   level,
+  custom,
   onPick,
   onClose,
 }: {
@@ -688,6 +762,14 @@ function DifficultyPicker({
   world: LevelSpec | null;
   /** the level the save PLAYS at — what decides which rows are shut */
   level: number;
+  /**
+   * CUSTOM MODE OPENS THE WHOLE LADDER (GameMode). The gate above exists
+   * so that a difficulty promising three mutators can actually draw
+   * three — and in custom mode the draw is the whole catalog, or the
+   * player's own list, so the promise is good at every level. The run
+   * pays nothing either way, so there is nothing to shortcut to.
+   */
+  custom: boolean;
   onPick: (tier: number) => void;
   onClose: () => void;
 }) {
@@ -696,10 +778,10 @@ function DifficultyPicker({
   const rules = tierMutationCount(focus);
   const step = tierMutationStep(focus);
   const swarm = world ? budget(world, focus) : null;
-  const open = difficultyOpen(level, rules);
+  const open = custom || difficultyOpen(level, rules);
 
   const list = Array.from({ length: RUNG_COUNT }, (_, t) => {
-    const shut = !difficultyOpen(level, tierMutationCount(t));
+    const shut = !custom && !difficultyOpen(level, tierMutationCount(t));
     return (
       <PickRow key={t} selected={t === tier} focused={t === focus} onPick={() => setFocus(t)}>
         <span
@@ -724,7 +806,9 @@ function DifficultyPicker({
       </div>
       <p className="text-[14px] text-[#A6A6AF]">
         {step > 0
-          ? `${SWARM_SIZE[SWARM_SIZE.length - 1]}, under ${rules} mutator${rules === 1 ? "" : "s"} rolled when the run starts.`
+          ? `${SWARM_SIZE[SWARM_SIZE.length - 1]}, under ${rules} mutator${rules === 1 ? "" : "s"}${
+              custom ? " — rolled, or yours to name." : " rolled when the run starts."
+            }`
           : `${SWARM_SIZE[Math.min(focus, SWARM_SIZE.length - 1)]}. No mutators.`}
       </p>
       <DetailLine label="Swarm">
@@ -732,7 +816,11 @@ function DifficultyPicker({
         {swarm ? ` · ${swarm.units.toLocaleString()} units over ${swarm.waves} waves` : ""}
       </DetailLine>
       <DetailLine label="Mutators">{rules === 0 ? "None" : `${rules} rules`}</DetailLine>
-      {open ? (
+      {custom ? (
+        <DetailLine label="Pays">
+          <span className="text-[#71717C]">No XP</span>
+        </DetailLine>
+      ) : open ? (
         <DetailLine label="Pays">
           <span style={{ color: XP_COLOR }}>{xpShareText(tierXpBonus(focus))}</span>
         </DetailLine>
@@ -748,6 +836,297 @@ function DifficultyPicker({
   return <PickerDialog title="Difficulty" onClose={onClose} list={list} detail={detail} />;
 }
 
+/**
+ * THE DONE BAR under a multi-picker (PickerDialog's `footer`): what is in
+ * the hand so far on the left, the way out on the right. Nothing is
+ * "applied" by it — every toggle has already been taken and remembered —
+ * so it closes and nothing else.
+ */
+function PickerDone({ summary, onClose }: { summary: string; onClose: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="min-w-0 truncate text-[14px] uppercase tracking-widest text-[#71717C]">
+        {summary}
+      </span>
+      <button onClick={onClose} className="ms-btn ms-btn-accent shrink-0 px-6 py-2 text-[15px]">
+        Done
+      </button>
+    </div>
+  );
+}
+
+/**
+ * THE FACTION LIST — custom mode's, and the only place in the game where
+ * the swarm is NAMED rather than rolled.
+ *
+ * A run sends FAMILIES_PER_RUN families dealt into the script's three
+ * slots (levels.ts rollFamilies), and this builds that hand a family at a
+ * time. AN EMPTY HAND IS THE DEFAULT AND MEANS ROLLED, and a PARTIAL hand
+ * is honoured as far as it goes: name one family and the other two are
+ * rolled around it, which is how "I want to see what the Wraith fleet
+ * does here" is asked without also deciding the rest of the run. The
+ * Random row at the top is not a choice sitting alongside the six — it is
+ * the empty hand, and pressing it clears.
+ *
+ * A FULL HAND STOPS TAKING MORE rather than pushing the oldest out: a
+ * silent swap in a list of six is a hand a player cannot keep track of,
+ * so the button under a seventh family says it is full and the way to
+ * change it is to drop one.
+ */
+function FactionPicker({
+  picked,
+  onSet,
+  onClose,
+}: {
+  picked: readonly FamilyKey[];
+  onSet: (families: readonly FamilyKey[]) => void;
+  onClose: () => void;
+}) {
+  // the cursor starts on Random, which is the row that describes what an
+  // untouched custom run does — so the right pane means something from
+  // the first frame whether or not a hand has been built yet
+  const [focus, setFocus] = useState<FamilyKey | null>(null);
+  const family = focus == null ? null : familyByKey(focus);
+  const on = focus != null && picked.includes(focus);
+  const full = picked.length >= FAMILIES_PER_RUN;
+  const rolled = FAMILIES_PER_RUN - picked.length;
+
+  const rowText = "truncate font-display text-[15px] font-bold uppercase tracking-widest";
+  const list = (
+    <>
+      <PickRow selected={picked.length === 0} focused={focus === null} onPick={() => setFocus(null)}>
+        <span className={`${rowText} text-[#EDEDEF]`}>Random</span>
+      </PickRow>
+      {FAMILIES.map((f) => (
+        <PickRow
+          key={f.key}
+          selected={picked.includes(f.key)}
+          focused={focus === f.key}
+          onPick={() => setFocus(f.key)}
+        >
+          <span className={rowText} style={{ color: rgbHex(FAMILY_ACCENT[f.key]) }}>
+            {f.name}
+          </span>
+        </PickRow>
+      ))}
+    </>
+  );
+
+  const detail =
+    family == null ? (
+      <>
+        <div className="font-display text-[17px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+          Random
+        </div>
+        <p className="text-[14px] text-[#A6A6AF]">
+          The die deals {FAMILIES_PER_RUN} of the {FAMILIES.length} families into the
+          script&apos;s slots when the run starts — the campaign&apos;s own deal.
+        </p>
+        <SelectButton
+          label="Roll them all"
+          disabled={picked.length === 0}
+          onClick={() => onSet([])}
+        />
+      </>
+    ) : (
+      <>
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
+          <img
+            src={FAMILY_ICONS.get(family.key) ?? `/mindustry/sprites/units/${family.icon}.png`}
+            alt=""
+            className="h-10 w-10 shrink-0 object-contain [image-rendering:pixelated]"
+          />
+          <div
+            className="font-display text-[17px] font-bold uppercase tracking-widest"
+            style={{ color: rgbHex(FAMILY_ACCENT[family.key]) }}
+          >
+            {family.name}
+          </div>
+        </div>
+        <DetailLine label="Comes in by">
+          {familyFlies(family.key) ? "air" : family.layer === "water" ? "water" : "ground"}
+        </DetailLine>
+        {/* the five bodies in tier order — a family IS one idea at five
+            sizes (see FAMILIES), and the names are how a player who has
+            met them recognises which one this is */}
+        <p className="text-[14px] leading-snug text-[#A6A6AF]">
+          {family.kinds.join(" · ")}
+        </p>
+        <SelectButton
+          label={on ? "Remove" : full ? `Hand is full — ${FAMILIES_PER_RUN}` : "Add"}
+          disabled={!on && full}
+          onClick={() =>
+            onSet(on ? picked.filter((k) => k !== focus) : [...picked, focus as FamilyKey])
+          }
+        />
+      </>
+    );
+
+  return (
+    <PickerDialog
+      title="Enemy factions"
+      wide
+      onClose={onClose}
+      list={list}
+      detail={detail}
+      footer={
+        <PickerDone
+          summary={
+            picked.length === 0
+              ? `All ${FAMILIES_PER_RUN} rolled`
+              : `${picked.length} named · ${rolled} rolled`
+          }
+          onClose={onClose}
+        />
+      }
+    />
+  );
+}
+
+/**
+ * A family's accent as a CSS colour. The palette keeps every colour as an
+ * 0-1 triple because that is what the GL renderer wants (constants.ts
+ * `pal`), and this is the one screen that has to hand one to the DOM.
+ */
+const rgbHex = (c: RGB): string => {
+  const ch = (v: number): string =>
+    Math.round(Math.max(0, Math.min(1, v)) * 255)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${ch(c[0])}${ch(c[1])}${ch(c[2])}`;
+};
+
+/**
+ * THE MUTATOR LIST — custom mode's, and only reachable where the picked
+ * difficulty rolls rules at all (tierMutationCount): under Nemesis +1 the
+ * campaign is the script as authored, and a run with rules ticked on at
+ * Incursion would be a difficulty the ladder has never priced.
+ *
+ * AN EMPTY LIST MEANS ROLLED, exactly as the faction picker's does — the
+ * difficulty's own roll, over the WHOLE catalog rather than the deck the
+ * track has opened, because custom mode is not the campaign and pays
+ * nothing. Tick anything and the run is played under precisely that,
+ * however many and however dear: this is the door the old admin sandbox
+ * was, and its whole purpose is to be able to LOOK at a rule — to see
+ * what Volatile does to a fuse wall without re-rolling a Nemesis deploy
+ * until it turns up.
+ *
+ * THE DIFFICULTY'S OWN BUDGET IS PRINTED BESIDE THE TICKED TOTAL and is
+ * ADVISORY. Exceeding it is allowed and is often the point; what the
+ * number buys is calibration — "four points past anything Nemesis +2
+ * would roll" is the difference between a fair test and a misleading one.
+ */
+function MutatorPicker({
+  picked,
+  tier,
+  onSet,
+  onClose,
+}: {
+  picked: readonly MutationId[];
+  /** the rung the run is set to — its budget and count are what this is read against */
+  tier: number;
+  onSet: (ids: readonly MutationId[]) => void;
+  onClose: () => void;
+}) {
+  const [focus, setFocus] = useState<MutationId | null>(null);
+  const def = focus == null ? null : mutationById(focus);
+  const on = focus != null && picked.includes(focus);
+  const spent = mutationCost(picked);
+  const budgetPts = tierMutationPoints(tier);
+  const rolls = tierMutationCount(tier);
+
+  const rowText = "truncate font-display text-[15px] font-bold uppercase tracking-widest";
+  const list = (
+    <>
+      <PickRow selected={picked.length === 0} focused={focus === null} onPick={() => setFocus(null)}>
+        <span className={`${rowText} text-[#EDEDEF]`}>Random</span>
+      </PickRow>
+      {MUTATIONS.map((m) => {
+        const band = bandFor(m);
+        return (
+          <PickRow
+            key={m.id}
+            selected={picked.includes(m.id)}
+            focused={focus === m.id}
+            onPick={() => setFocus(m.id)}
+          >
+            <span className={rowText} style={{ color: band.color }}>
+              {m.name}
+            </span>
+            <span className="ml-auto shrink-0 text-[13px] tracking-widest text-[#71717C]">
+              {mutationCostOf(m.id)}
+            </span>
+          </PickRow>
+        );
+      })}
+    </>
+  );
+
+  const detail =
+    def == null ? (
+      <>
+        <div className="font-display text-[17px] font-bold uppercase tracking-widest text-[#EDEDEF]">
+          Random
+        </div>
+        <p className="text-[14px] text-[#A6A6AF]">
+          {rungLabel(tier)} rolls {rolls} rule{rolls === 1 ? "" : "s"} for {budgetPts} points
+          when the run starts — every rule in the catalog in the draw.
+        </p>
+        <SelectButton
+          label="Roll them all"
+          disabled={picked.length === 0}
+          onClick={() => onSet([])}
+        />
+      </>
+    ) : (
+      <>
+        <div className="flex items-center gap-3">
+          <MutationFace id={def.id} size="h-10 w-10" />
+          <div
+            className="font-display text-[17px] font-bold uppercase tracking-widest"
+            style={{ color: bandFor(def).color }}
+          >
+            {def.name}
+          </div>
+        </div>
+        <DetailLine label="Weight">
+          {mutationCostOf(def.id)} / {MUT_COST_MAX} points · {bandFor(def).label}
+        </DetailLine>
+        <p className="text-[14px] leading-snug text-[#A6A6AF]">{def.blurb}</p>
+        <SelectButton
+          label={on ? "Remove" : "Add"}
+          onClick={() =>
+            onSet(
+              on
+                ? picked.filter((id) => id !== focus)
+                : cleanMutations([...picked, focus as MutationId]),
+            )
+          }
+        />
+      </>
+    );
+
+  return (
+    <PickerDialog
+      title="Mutators"
+      wide
+      onClose={onClose}
+      list={list}
+      detail={detail}
+      footer={
+        <PickerDone
+          summary={
+            picked.length === 0
+              ? `${rolls} rolled for ${budgetPts} points`
+              : `${picked.length} named · ${spent} pts${spent > budgetPts ? ` — over ${rungLabel(tier)}'s ${budgetPts}` : ""}`
+          }
+          onClose={onClose}
+        />
+      }
+    />
+  );
+}
 
 /**
  * THE DEAL STACK'S CELLS — one square each in the field's bottom-right
@@ -1170,10 +1549,10 @@ export default function MechSwarm() {
   /**
    * WHERE IN THE FRONT-OF-HOUSE THE PLAYER IS. The menu screen is three
    * panels, not one: a title card, settings, and the DEPLOY screen behind
-   * Start — the two macros a run is chosen by (map and difficulty) and
-   * the button that starts it. Each macro opens its list as a dialog over
-   * the deploy screen (`picker`), so choosing a run never leaves the
-   * screen it is started from.
+   * Start — the mode, the macros that mode offers, and the button that
+   * starts it. Each macro opens its list as a dialog over the deploy
+   * screen (`picker`), so choosing a run never leaves the screen it is
+   * started from.
    *
    * The title card shows a game and two buttons and NOTHING else — no map,
    * no level, no difficulty. Everything that describes a run lives behind
@@ -1186,7 +1565,9 @@ export default function MechSwarm() {
    */
   const [menuView, setMenuView] = useState<"home" | "settings" | "deploy">("home");
   /** which macro's list is open over the deploy screen, if any */
-  const [picker, setPicker] = useState<"maps" | "difficulty" | null>(null);
+  const [picker, setPicker] = useState<"maps" | "difficulty" | "factions" | "mutators" | null>(
+    null,
+  );
   const [level, setLevel] = useState<LevelSpec | null>(null);
   /**
    * The difficulty macro: the rung the next run is played at. Every rung
@@ -1195,26 +1576,83 @@ export default function MechSwarm() {
    */
   const [tier, setTier] = useState(0);
   /**
-   * The map macro: a world id, or null for RANDOM — the default, and the
-   * pick that pays RANDOM_MAP_XP_BONUS. Resolved through worldById so a
-   * stale id reads as Random rather than as a world that is not there.
+   * WHICH OF THE TWO MODES THE DEPLOY SCREEN IS ON (progress.ts GameMode).
+   * Regular is the campaign — one pick, the difficulty, and the map, the
+   * swarm and the rules all rolled — and it is the only mode that pays
+   * XP. Custom hands every dial over and pays nothing.
+   *
+   * IT IS THE FIRST THING ON THE DEPLOY SCREEN because it decides what
+   * else is on it: the three macros below the difficulty are custom's
+   * alone, and in regular mode they are not dimmed, they are simply not
+   * there — a row that says "Random, and you cannot change it" is a row
+   * about nothing.
+   */
+  const [mode, setMode] = useState<GameMode>(GAME_MODE_DEFAULT);
+  /**
+   * The map macro: a world id, or null for RANDOM. CUSTOM MODE'S ONLY —
+   * a regular deploy rolls its map on Start and never reads this, which
+   * is why a map picked in custom survives a regular run. Resolved
+   * through worldById so a stale id reads as Random rather than as a
+   * world that is not there.
    */
   const [mapPick, setMapPick] = useState<string | null>(null);
   const pickedWorld = mapPick == null ? null : worldById(mapPick);
+  /**
+   * CUSTOM MODE'S HAND: the families named for the swarm and the rules
+   * named for the run, both EMPTY meaning rolled and both ignored
+   * outright in regular mode. Kept as two lists rather than folded into
+   * one "custom setup" object because they are picked, saved and read
+   * one at a time.
+   */
+  const [families, setFamilies] = useState<readonly FamilyKey[]>([]);
+  const [mutators, setMutators] = useState<readonly MutationId[]>([]);
+  /**
+   * WHAT THE TWO CUSTOM MACROS SAY ON THEIR FACE. A macro row is ONE
+   * LINE the width of the card, so what they report is a COUNT — a
+   * faction name is two words and even one of them alongside "2 rolled"
+   * is wider than the row has. The one exception is a single mutator,
+   * whose name fits and is the thing worth knowing at a glance.
+   *
+   * Both always say how much is still being ROLLED, because a hand of
+   * one is two thirds a roll and the row would otherwise read as the
+   * whole answer. Which families are in the hand is the list's to say.
+   */
+  const factionsText =
+    families.length === 0
+      ? "Random"
+      : families.length >= FAMILIES_PER_RUN
+        ? `${families.length} named`
+        : `${families.length} named · ${FAMILIES_PER_RUN - families.length} rolled`;
+  const mutatorsText =
+    tierMutationCount(tier) === 0
+      ? `None at ${rungLabel(tier)}`
+      : mutators.length === 0
+        ? `${tierMutationCount(tier)} rolled`
+        : mutators.length === 1
+          ? (mutationById(mutators[0])?.name ?? "1 named")
+          : `${mutators.length} named`;
   /**
    * Was the run under way started on a map the game picked? Read when the
    * run settles (grantRunReward), which is the one moment it pays.
    */
   const [runRandom, setRunRandom] = useState(false);
+  /**
+   * ...AND WHICH MODE IT WAS DEPLOYED IN. Separate from `mode` above,
+   * which is the MENU's setting and is free to move while a run is on:
+   * what a finished run pays is decided by the mode it was started in,
+   * and so is whether the sandbox door (Ctrl+Shift+S) opens for it.
+   */
+  const [runMode, setRunMode] = useState<GameMode>(GAME_MODE_DEFAULT);
   // the selector draws map previews, so the documents load with the menu —
   // Game.create re-fetches later, keeping in-game state just as fresh
   const [mapsReady, setMapsReady] = useState(false);
-  // sandbox mode, hidden until Ctrl+Shift+S like the admin page's
-  // Ctrl+Shift+M: widens the pace strip to every SPEEDS multiplier AND
-  // lifts the stage gate and the price of every placement
-  // (Game.setTech(null)), so a run can be staged for filming. Leaving it
-  // drops back to whatever the save allows — a sandbox-only pace steps
-  // down to the fastest speed the save owns (see the effect below)
+  // SANDBOX MODE, hidden until Ctrl+Shift+S ON A CUSTOM RUN (see the key
+  // handler below for why it is refused on a regular one): widens the
+  // pace strip to every SPEEDS multiplier AND lifts the stage gate and
+  // the price of every placement (Game.setTech(null)), so a run can be
+  // staged for filming. Leaving it drops back to whatever the save
+  // allows — a sandbox-only pace steps down to the fastest speed the
+  // save owns (see the effect below)
   const [admin, setAdmin] = useState(false);
   // the campaign save (bank, cleared levels, tech nodes) — localStorage,
   // so it loads in an effect; null only for the first client frame
@@ -1227,10 +1665,14 @@ export default function MechSwarm() {
    *  may since have been reset, or written by the dev door — either way
    *  the deploy screen must never stand on a difficulty whose Start is
    *  dead. Silent, and it costs nothing: the four named ones are open at
-   *  every level, so there is always somewhere for it to land */
+   *  every level, so there is always somewhere for it to land.
+   *  IN REGULAR MODE ONLY: custom opens the whole ladder (GameMode), so
+   *  the clamp also fires the moment a player flips back to regular
+   *  standing on a rung the track has not reached */
   useEffect(() => {
-    if (!difficultyOpen(playLevel, tierMutationCount(tier))) setTier(TOP_RULELESS_TIER);
-  }, [playLevel, tier]);
+    if (mode === "regular" && !difficultyOpen(playLevel, tierMutationCount(tier)))
+      setTier(TOP_RULELESS_TIER);
+  }, [playLevel, tier, mode]);
   // a finished run's settled payout: non-null exactly while the results
   // overlay shows the breakdown, and the guard against granting twice
   const [result, setResult] = useState<RunReward | null>(null);
@@ -1405,14 +1847,15 @@ export default function MechSwarm() {
    * re-opening never lands somewhere the player did not ask for.
    */
   const [pauseSettings, setPauseSettings] = useState(false);
-  /** the sandbox door asked for the hairline diagnostic — see the handoff */
-  const diagRef = useRef(false);
 
   useEffect(() => {
     const p = loadProgress();
     setProgress(p);
     setTier(p.difficulty ?? 0);
     setMapPick(p.map ?? null);
+    setMode(p.mode ?? GAME_MODE_DEFAULT);
+    setFamilies(p.families ?? []);
+    setMutators(p.mutators ?? []);
     setEffects(p.effects ?? true);
     setUiScale(p.uiScale ?? UI_SCALE_DEFAULT);
     setPanSpeed(p.panSpeed ?? PAN_SPEED_DEFAULT);
@@ -1432,7 +1875,21 @@ export default function MechSwarm() {
     document.documentElement.style.setProperty("--ui-scale", String(uiScale));
   }, [uiScale]);
 
+  /**
+   * THE SANDBOX DOOR, and it only opens on a CUSTOM run.
+   *
+   * There is no Sandbox tab on the admin page any more — custom mode is
+   * the sandbox: pick the map, the difficulty, the swarm and the rules,
+   * deploy, and press this for the rest of it (the whole tech tree, every
+   * placement free, every pace). The two halves belong together because
+   * ONE of them is what makes the other safe to hand out: a custom run
+   * banks no XP and records no clear (grantRunReward), so a run built to
+   * be won cannot be converted into progress. Letting this key open on a
+   * regular deploy would be exactly that conversion, which is why it is
+   * refused rather than merely discouraged.
+   */
   useEffect(() => {
+    if (screen !== "game" || runMode !== "custom") return;
     const onKey = (e: KeyboardEvent): void => {
       // ctrl OR cmd, same as AdminShortcut — Ctrl+Shift+S is the pair that
       // arrives on every platform (Cmd+Shift+S is the browser's save dialog)
@@ -1442,7 +1899,7 @@ export default function MechSwarm() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [screen, runMode]);
 
   // a run already in progress picks the mode up immediately
   useEffect(() => {
@@ -1558,50 +2015,6 @@ export default function MechSwarm() {
     reveal.current?.(false);
   }, []);
 
-  /**
-   * THE SANDBOX HANDOFF (admin → game): `/?sandbox=1&world=…&tier=…&mut=…`,
-   * written by the admin page's Sandbox tab and consumed here.
-   *
-   * It waits on `mapsReady` because a run's spec is the LEVEL DOCUMENT's
-   * script, not the shipped one — deploying before the documents land
-   * would quietly play the campaign as compiled rather than as authored,
-   * which is the one thing a debug tool must not do silently.
-   *
-   * THE RULES COME FROM THE URL AND ARE NEVER ROLLED. That is the whole
-   * point of the door: the campaign's mutators arrive by dice
-   * (rollMutations) and cannot be asked for, so testing one meant
-   * re-deploying until it turned up. `cleanMutations` still filters the
-   * list — a hand-typed or stale id degrades to the rules that exist
-   * rather than reaching the sim as a name it has never heard of.
-   *
-   * The query is STRIPPED once consumed (replaceState, no reload), so
-   * abandoning the run lands on an ordinary menu and a refresh mid-run
-   * does not silently re-deploy something the player has already left.
-   */
-  useEffect(() => {
-    if (!mapsReady || typeof window === "undefined") return;
-    const q = new URLSearchParams(window.location.search);
-    if (q.get("sandbox") !== "1") return;
-    const w = worldById(q.get("world") ?? "") ?? WORLD;
-    const t = Math.max(0, Math.min(RUNG_COUNT - 1, Math.floor(Number(q.get("tier")) || 0)));
-    const mutation = cleanMutations((q.get("mut") ?? "").split(",").filter(Boolean));
-    // `&diag=1` asks for the hairline diagnostic (Game.diagnose) once the
-    // run is up. Read here, because the next line takes the query away
-    diagRef.current = q.get("diag") === "1";
-    window.history.replaceState(null, "", window.location.pathname);
-    setMapPick(w.id);
-    setTier(t);
-    setRunRandom(false); // asked for by id: nothing random about it
-    setAdmin(true); // a sandbox run: whole tree, no caps, every pace
-    setLevel(runSpec(w, t, mutation));
-    setScreen("game");
-    setLoadUi({ step: firstLoadStep(), out: false });
-    // straight past the front of house: the level's own loading screen takes
-    // over from here, and the menu's ground is never built to wait on
-    booted.current = true;
-    setBoot(null);
-  }, [mapsReady]);
-
   useEffect(() => {
     if (screen !== "game" || !level || !glRef.current || !uiRef.current) return;
     let alive = true;
@@ -1643,9 +2056,14 @@ export default function MechSwarm() {
         game = g;
         gameRef.current = g;
         setHud(g.ui());
-        // the hairline diagnostic (Game.diagnose), a few frames in, once
-        // the atlas is up and the first frames have drawn
-        if (diagRef.current) timers.push(setTimeout(() => g.diagnose(), 2500));
+        // THE HAIRLINE DIAGNOSTIC IS A CONSOLE CALL NOW. It used to be
+        // armed by `&diag=1` on the admin Sandbox tab's handoff URL, and
+        // that door is gone with the tab (custom mode replaced it, and a
+        // mode picked on the deploy screen has no query string to carry
+        // a flag on). On a dev build the running Game is
+        // `window.__mechswarm`, so the same test is __mechswarm.diagnose()
+        // at whatever moment of a run is worth measuring — which is more
+        // than the fixed 2.5s mark ever gave.
         if (ADMIN_ENABLED) {
           const w = window as unknown as Record<string, unknown>;
           w.__mechswarm = g;
@@ -1699,6 +2117,8 @@ export default function MechSwarm() {
         // the game picked it, which is what the map bonus is paid for
         // the waves cleared are the objectives met, and the objectives are
         // what the mission pays for (missionXp) — a win is every one
+        // ...and runMode decides whether any of it is BANKED: a custom
+        // run settles into a results panel and nothing else
         const reward = grantRunReward(
           level.tier ?? 0,
           ui.wavesCleared,
@@ -1706,6 +2126,7 @@ export default function MechSwarm() {
           ui.won,
           level.id,
           runRandom,
+          runMode,
         );
         const after = loadProgress();
         setResult(reward);
@@ -1728,7 +2149,7 @@ export default function MechSwarm() {
       const w = window as unknown as Record<string, unknown>;
       if (w.__mechswarm === game) delete w.__mechswarm;
     };
-  }, [screen, level, runRandom]);
+  }, [screen, level, runRandom, runMode]);
 
   /** the run state, re-read now rather than at the next poll — what every
    *  click that changes something asks for on its way out */
@@ -1866,44 +2287,82 @@ export default function MechSwarm() {
   };
 
   /**
-   * START, from the macros as they stand. Random resolves to any map the
-   * track has opened; the picks are remembered (saveRunPick) so the next
-   * launch opens on them.
+   * REMEMBER THE DEPLOY SCREEN, whichever macro was just touched. Every
+   * pick is written together (progress.ts RunPick) because they are read
+   * together on the next launch — and they are written on the PRESS
+   * rather than on Start, so a player who picks a map and then quits
+   * comes back to it.
+   */
+  const savePick = useCallback(
+    (over: Partial<Parameters<typeof saveRunPick>[0]> = {}): void =>
+      saveRunPick({ mode, difficulty: tier, map: mapPick, families, mutators, ...over }),
+    [mode, tier, mapPick, families, mutators],
+  );
+
+  /**
+   * START, from the macros as they stand — and the ONE place the two
+   * modes actually part company (progress.ts GameMode).
    *
-   * THE MUTATORS ARE ROLLED HERE, ON THE PRESS, and this is the only
-   * place they are rolled. As many rules as the difficulty asks for,
-   * costing no more than the points it carries (both dials on the rung).
-   * A named difficulty carries zero of each and so rolls nothing. The
-   * families are rolled here too, against the map's doors.
+   * REGULAR TAKES ONE PICK, the difficulty. The map is rolled over
+   * everything the track has opened, the families are rolled, and the
+   * rules are rolled from the deck the track has dealt — so a save
+   * inside the roster phase deploys clean however hard the rung it
+   * picked. It is the only mode that banks anything.
+   *
+   * CUSTOM TAKES WHATEVER IS NAMED and rolls the rest: the picked map
+   * (or Random over every map, locked ones included), the named
+   * families, and the named rules — or, where nothing is named, the same
+   * roll regular would make except over the WHOLE catalog, since the
+   * track's deck is a campaign rule and custom is not the campaign.
+   *
+   * THE RULES ARE ROLLED HERE, ON THE PRESS, and this is the only place
+   * they are rolled. As many as the difficulty asks for, costing no more
+   * than the points it carries (both dials on the rung). A named
+   * difficulty carries zero of each and so plays clean — and that holds
+   * in custom too: rules ticked under Nemesis are DROPPED rather than
+   * smuggled onto a rung the ladder has never priced them for.
    *
    * IT USED TO ROLL ON THE DEPLOY SCREEN, once per (map, difficulty), so
-   * that the panel could show the roll before the press. Nothing shows it
-   * now — a run's rules are the run's news — so the roll waits for the
-   * press, which is also what makes it a roll: a preview a player could
-   * see was a preview a player could re-roll by touching a macro.
+   * that the panel could show the roll before the press. Regular shows
+   * nothing now — a run's rules are the run's news — so the roll waits
+   * for the press, which is also what makes it a roll: a preview a
+   * player could see was a preview a player could re-roll by touching a
+   * macro. Custom shows everything, because in custom nothing is news.
    */
   const startRun = (): void => {
     const p = progress ?? loadProgress();
-    const open = WORLDS.filter((w) => worldLock(p, w.id) == null);
-    // a remembered pick the track has since closed (a wiped save) plays
-    // as Random rather than as a map the save may not enter
-    const picked = pickedWorld && worldLock(p, pickedWorld.id) == null ? pickedWorld : null;
+    const custom = mode === "custom";
+    // the hat Random draws from: the campaign's own maps, or every map
+    // there is when the run pays nothing for reaching one early
+    const hat = custom ? WORLDS : WORLDS.filter((w) => worldLock(p, w.id) == null);
+    // REGULAR NEVER READS THE MAP MACRO — its map is rolled, always. In
+    // custom a remembered pick is taken as it stands, locks and all
+    const picked = custom ? pickedWorld : null;
     const random = picked == null;
-    const w = picked ?? open[Math.floor(Math.random() * open.length)] ?? WORLD;
-    // THE DECK IS WHAT THE TRACK HAS OPENED. Past the roster phase every
-    // level puts one more rule in the bag (MUTATOR_UNLOCKS); everything
-    // still locked is kept out of this draw, so a save inside the roster
-    // phase deploys clean however hard the tier it picked is
-    const roll = rollMutations(
-      tierMutationPoints(tier),
-      tierMutationCount(tier),
-      lockedMutators(effectiveLevel(p)),
-    );
-    saveRunPick(tier, picked?.id ?? null);
+    const w = picked ?? hat[Math.floor(Math.random() * hat.length)] ?? WORLD;
+    const rules = tierMutationCount(tier);
+    const named = custom ? cleanMutations(mutators) : [];
+    const roll =
+      rules === 0
+        ? []
+        : named.length > 0
+          ? named
+          : rollMutations(
+              tierMutationPoints(tier),
+              rules,
+              // THE DECK IS WHAT THE TRACK HAS OPENED — in regular mode.
+              // Past the roster phase every level puts one more rule in
+              // the bag (MUTATOR_UNLOCKS); everything still locked is
+              // kept out of the draw. Custom draws from all of it.
+              custom ? [] : lockedMutators(effectiveLevel(p)),
+            );
+    savePick();
     setRunRandom(random);
+    setRunMode(mode);
     // the family die is rolled inside runSpec, against the script it is
-    // dealt into — see there for why it cannot be rolled out here
-    setLevel(runSpec(w, tier, roll));
+    // dealt into — see there for why it cannot be rolled out here. The
+    // custom hand goes the same way, and is empty in regular mode
+    setLevel(runSpec(w, tier, roll, custom ? families : []));
     setScreen("game");
     // raised in the same batch as the screen switch, so the game screen's
     // FIRST paint is already covered - an effect would run after that
@@ -1963,8 +2422,13 @@ export default function MechSwarm() {
                     resetProgress();
                     const p = loadProgress();
                     setProgress(p);
+                    // the deploy screen goes back to a fresh save's own:
+                    // regular, Incursion, everything rolled
                     setTier(0);
                     setMapPick(null);
+                    setMode(GAME_MODE_DEFAULT);
+                    setFamilies([]);
+                    setMutators([]);
                   }
                 }}
                 className="ms-btn ms-btn-red shrink-0 px-3 py-1.5 text-[15px]"
@@ -2295,47 +2759,134 @@ export default function MechSwarm() {
               </>
             )}
 
-            {/* THE DEPLOY SCREEN. The two macros a run is chosen by, and
-                Start under them. There is no map grid and no deploy dialog
-                any more: a run is two picks, each one press away, and the
-                defaults (Random, Incursion) are a run in themselves */}
+            {/* THE DEPLOY SCREEN. The mode, the macros that mode offers,
+                and Start under them. There is no map grid and no deploy
+                dialog: every pick is one press away, and the defaults
+                (Regular, Incursion) are a run in themselves */}
             {menuView === "deploy" && (
               <>
                 <div className="flex w-full max-w-[28rem] flex-col gap-3">
-                  {/* THE MACROS: what the next run is, as two rows that read
-                      as a sentence — this map, at this level — and what
-                      each pays, in the XP colour, so the trade is on the
-                      screen before either list is opened */}
+                  {/* THE MODE, ABOVE EVERYTHING, as a segmented control and
+                      not a list: there are two of them, they are the frame
+                      every macro under here hangs in, and a control that
+                      has to be opened to say which one it is on is the
+                      wrong control for two words. The line under it is the
+                      whole bargain — what each mode hands over, and what it
+                      pays — because that trade decides the press and cannot
+                      be inferred from two names */}
                   <div className="flex flex-col gap-2">
-                    <MacroButton
-                      label="Map"
-                      value={pickedWorld ? pickedWorld.name : "Random"}
-                      onClick={() => setPicker("maps")}
-                    >
-                      <span className="text-[#EDEDEF]">
-                        {pickedWorld ? pickedWorld.name : "Random"}
-                      </span>
-                    </MacroButton>
+                    <div role="group" aria-label="Mode" className="ms-seg w-full">
+                      {(
+                        [
+                          ["regular", "Regular"],
+                          ["custom", "Custom"],
+                        ] as ReadonlyArray<[GameMode, string]>
+                      ).map(([m, label]) => (
+                        <button
+                          key={m}
+                          aria-pressed={mode === m}
+                          onClick={() => {
+                            setMode(m);
+                            savePick({ mode: m });
+                          }}
+                          className="ms-btn flex-1 py-2.5 text-[15px]"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-center text-[13px] text-[#a2a2a2]">
+                      {mode === "regular" ? (
+                        <>
+                          The map, the swarm and the rules are rolled on Start — and the run
+                          banks <span style={{ color: XP_COLOR }}>XP</span>.
+                        </>
+                      ) : (
+                        <>
+                          Pick everything: the map, the swarm, the rules, any difficulty.{" "}
+                          <span className="text-[#EDEDEF]">Pays no XP.</span>
+                        </>
+                      )}
+                    </p>
+                  </div>
+
+                  {/* THE MACROS: what the next run is, as rows that read as
+                      a sentence — this map, at this difficulty, against
+                      these — and, in regular mode, what it pays in the XP
+                      colour, so the trade is on the screen before any list
+                      is opened. REGULAR SHOWS ONE ROW: its map, its swarm
+                      and its rules are not picks, and a row saying
+                      "Random, and you cannot change it" is a row about
+                      nothing */}
+                  <div className="flex flex-col gap-2">
+                    {mode === "custom" && (
+                      <MacroButton
+                        label="Map"
+                        value={pickedWorld ? pickedWorld.name : "Random"}
+                        onClick={() => setPicker("maps")}
+                      >
+                        <span className="text-[#EDEDEF]">
+                          {pickedWorld ? pickedWorld.name : "Random"}
+                        </span>
+                      </MacroButton>
+                    )}
                     <MacroButton
                       label="Difficulty"
-                      value={`${rungLabel(tier)}, ${xpShareText(tierXpBonus(tier))}`}
+                      value={
+                        mode === "regular"
+                          ? `${rungLabel(tier)}, ${xpShareText(tierXpBonus(tier))}`
+                          : rungLabel(tier)
+                      }
                       onClick={() => setPicker("difficulty")}
                     >
                       <span style={{ color: rungColor(tier) }}>{rungLabel(tier)}</span>
-                      <span className="text-[14px]" style={{ color: XP_COLOR }}>
-                        {xpShareText(tierXpBonus(tier))}
-                      </span>
+                      {mode === "regular" && (
+                        <span className="text-[14px]" style={{ color: XP_COLOR }}>
+                          {xpShareText(tierXpBonus(tier))}
+                        </span>
+                      )}
                     </MacroButton>
+                    {mode === "custom" && (
+                      <MacroButton
+                        label="Factions"
+                        value={factionsText}
+                        onClick={() => setPicker("factions")}
+                      >
+                        <span className="text-[#EDEDEF]">{factionsText}</span>
+                      </MacroButton>
+                    )}
+                    {/* THE MUTATOR ROW ONLY EXISTS WHERE THERE ARE RULES TO
+                        PICK. Under Nemesis +1 the difficulty rolls none at
+                        all (ladder.ts), so there is nothing for the list to
+                        hold — the row says which difficulties have one
+                        rather than opening onto an empty promise */}
+                    {mode === "custom" && (
+                      <MacroButton
+                        label="Mutators"
+                        value={mutatorsText}
+                        onClick={() => tierMutationCount(tier) > 0 && setPicker("mutators")}
+                      >
+                        <span
+                          className={
+                            tierMutationCount(tier) > 0 ? "text-[#EDEDEF]" : "text-[#71717C]"
+                          }
+                        >
+                          {mutatorsText}
+                        </span>
+                      </MacroButton>
+                    )}
                   </div>
-                  {/* NOTHING HERE SAYS WHAT THE RUN WILL BE PLAYED UNDER.
-                      The roll used to sit under the macros as a row of
-                      faces, which meant the deploy screen answered the
-                      question the first wave is supposed to: a player read
-                      the rules, weighed them and re-picked the map to
+                  {/* NOTHING ON A REGULAR DEPLOY SAYS WHAT THE RUN WILL BE
+                      PLAYED UNDER. The roll used to sit under the macros as
+                      a row of faces, which meant the deploy screen answered
+                      the question the first wave is supposed to: a player
+                      read the rules, weighed them and re-picked the map to
                       re-roll them. The rules are a thing the run tells you,
                       not a thing the menu offers — they are on the HUD
                       (hudRules) from the first frame of the field, and the
-                      codex on the progress screen says what each one does */}
+                      codex on the progress screen says what each one does.
+                      Custom is the exception and is meant to be: there,
+                      the rules are the thing being tested */}
                   {/* ONE ACTION, at the bottom: this map, at this level, go */}
                   <button
                     onClick={startRun}
@@ -2374,7 +2925,7 @@ export default function MechSwarm() {
               onClose={() => setPicker(null)}
               onPick={(id) => {
                 setMapPick(id);
-                saveRunPick(tier, id);
+                savePick({ map: id });
                 setPicker(null);
               }}
             />
@@ -2382,13 +2933,41 @@ export default function MechSwarm() {
           {picker === "difficulty" && (
             <DifficultyPicker
               tier={tier}
-              world={pickedWorld}
+              // the body count on the detail pane is the PICKED map's, and
+              // only custom mode has one — regular's is rolled on Start
+              world={mode === "custom" ? pickedWorld : null}
               level={playLevel}
+              custom={mode === "custom"}
               onClose={() => setPicker(null)}
               onPick={(t) => {
                 setTier(t);
-                saveRunPick(t, pickedWorld?.id ?? null);
+                savePick({ difficulty: t });
                 setPicker(null);
+              }}
+            />
+          )}
+          {/* THE TWO CUSTOM LISTS. Both stay open while a hand is built
+              (PickerDialog's footer is their way out) and both write on
+              every toggle, so a hand survives a quit the same way a map
+              pick does */}
+          {picker === "factions" && (
+            <FactionPicker
+              picked={families}
+              onClose={() => setPicker(null)}
+              onSet={(f) => {
+                setFamilies(f);
+                savePick({ families: f });
+              }}
+            />
+          )}
+          {picker === "mutators" && (
+            <MutatorPicker
+              picked={mutators}
+              tier={tier}
+              onClose={() => setPicker(null)}
+              onSet={(ids) => {
+                setMutators(ids);
+                savePick({ mutators: ids });
               }}
             />
           )}
@@ -2766,15 +3345,27 @@ export default function MechSwarm() {
                     {hud.mission.kind === "survive" ? null : <> of {result.totalWaves}</>}
                   </div>
                 )}
-                {result && result.xp > 0 && (
-                  <div className="space-y-1 pt-1">
-                    {/* the waves are the objectives, so a loss still pays
-                        for every wave the board cleared on the way down —
-                        which is what makes a failed push into progress */}
-                    <div>Earned (×{result.xpBonus.toFixed(2)})</div>
-                    <XpAmount amount={result.xp} className="justify-center" />
-                    <LevelUpLine result={result} />
+                {/* A CUSTOM RUN SAYS SO INSTEAD OF PRINTING A ZERO. The
+                    run was played under rules its player chose, so it
+                    banks nothing (progress.ts) — and a results panel that
+                    simply left the XP block out would read as a bug the
+                    first time somebody lost one */}
+                {result?.custom ? (
+                  <div className="pt-1 text-[14px] uppercase tracking-widest text-[#71717C]">
+                    Custom run — no XP
                   </div>
+                ) : (
+                  result &&
+                  result.xp > 0 && (
+                    <div className="space-y-1 pt-1">
+                      {/* the waves are the objectives, so a loss still pays
+                          for every wave the board cleared on the way down —
+                          which is what makes a failed push into progress */}
+                      <div>Earned (×{result.xpBonus.toFixed(2)})</div>
+                      <XpAmount amount={result.xp} className="justify-center" />
+                      <LevelUpLine result={result} />
+                    </div>
+                  )
                 )}
               </div>
               <div className="mt-6 space-y-3">
@@ -2819,19 +3410,28 @@ export default function MechSwarm() {
                 <div>
                   Kills <span className="font-bold text-[#EDEDEF]">{hud.kills}</span>
                 </div>
-                {result && (
-                  <>
-                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t-2 border-[#454545] pt-1.5">
-                      <span className="font-bold text-[#EDEDEF]">
-                        Earned
-                        <span className="ml-1 font-normal text-[#EDEDEF]">
-                          ×{result.xpBonus.toFixed(2)}
+                {/* ...and the same on a win: a custom clear is not a
+                    clear, it is not recorded on the map, and it pays
+                    nothing (progress.ts grantRunReward) */}
+                {result?.custom ? (
+                  <div className="border-t-2 border-[#454545] pt-1.5 text-[14px] uppercase tracking-widest text-[#71717C]">
+                    Custom run — no XP, not recorded
+                  </div>
+                ) : (
+                  result && (
+                    <>
+                      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t-2 border-[#454545] pt-1.5">
+                        <span className="font-bold text-[#EDEDEF]">
+                          Earned
+                          <span className="ml-1 font-normal text-[#EDEDEF]">
+                            ×{result.xpBonus.toFixed(2)}
+                          </span>
                         </span>
-                      </span>
-                      <XpAmount amount={result.xp} />
-                    </div>
-                    <LevelUpLine result={result} />
-                  </>
+                        <XpAmount amount={result.xp} />
+                      </div>
+                      <LevelUpLine result={result} />
+                    </>
+                  )
                 )}
               </div>
               <div className="mt-6 flex justify-center">
@@ -2870,8 +3470,9 @@ export default function MechSwarm() {
         {hud?.menuOpen && !hud.lost && !hud.won && !pauseSettings && (
           <div className="ms-screen absolute inset-0 flex items-center justify-center">
             <div className="ui-zoom ms-pane flex max-h-[calc(100vh-2rem)] w-[30rem] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 overflow-y-auto p-6">
-              {/* the sandbox door is Ctrl+Shift+S; the row below says when
-                  it is open, and is also what closes it */}
+              {/* the sandbox door is Ctrl+Shift+S ON A CUSTOM RUN, and
+                  nowhere else; the row below says when it is open, and is
+                  also what closes it */}
               <h2 className="ms-strip -mx-6 -mt-6 mb-1 self-stretch font-display text-lg font-bold uppercase text-[#FFD37F]">
                 Paused
               </h2>

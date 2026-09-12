@@ -9,7 +9,6 @@ import { loadBalanceDoc } from "@/game/balance";
 import { ADMIN_ENABLED } from "@/game/env";
 import LevelEditorView from "@/components/LevelEditorView";
 import MapEditorView from "@/components/MapEditorView";
-import SandboxView from "@/components/SandboxView";
 import {
   loadLevelDocs,
   UNIT_KINDS,
@@ -143,8 +142,13 @@ function AdminInner() {
   // the tab lives in the URL like the editors do, so a reload lands back
   // where you were mid-tune
   const raw = params.get("tab");
-  const tab =
-    raw === "balance" || raw === "rarities" || raw === "sandbox" ? raw : "content";
+  // THE SANDBOX TAB IS GONE and its door is the game's own CUSTOM mode
+  // now: pick the map, the difficulty, the factions and the rules on the
+  // deploy screen, deploy, and press Ctrl+Shift+S for the rest of what
+  // the sandbox was (whole tech tree, free placement, every pace). A
+  // bookmarked ?tab=sandbox lands on the content tab rather than on
+  // nothing.
+  const tab = raw === "balance" || raw === "rarities" ? raw : "content";
   const [maps, setMaps] = useState<MapData[]>([]);
   const [open, setOpen] = useState<MapData | null>(null);
   // level documents overlay WORLDS in place, so this is a "have they landed
@@ -221,7 +225,6 @@ function AdminInner() {
             ["content", "Levels & maps"],
             ["balance", "Balance"],
             ["rarities", "Rarities"],
-            ["sandbox", "Sandbox"],
           ] as const).map(([id, label]) => (
             <button
               key={id}
@@ -236,13 +239,6 @@ function AdminInner() {
             </button>
           ))}
         </div>
-
-        {tab === "sandbox" &&
-          (levelsReady ? (
-            <SandboxView />
-          ) : (
-            <p className="text-[#71717C]">Reading the level documents…</p>
-          ))}
 
         {tab === "balance" &&
           (balanceReady ? (

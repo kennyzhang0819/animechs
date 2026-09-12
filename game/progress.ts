@@ -1,4 +1,5 @@
-import { WORLD, WORLDS } from "./levels";
+import { cleanFamilies, WORLD, WORLDS, type FamilyKey } from "./levels";
+import { cleanMutations, type MutationId } from "./mutation";
 import { tierXpBonus, TOP_TIER } from "./ladder";
 import { ADMIN_ENABLED } from "./env";
 import { levelForXp, missionXp } from "./economy";
@@ -63,6 +64,33 @@ export const STATUS_MODES: ReadonlyArray<{ mode: StatusMode; label: string }> = 
 export const STATUS_MARKS_DEFAULT: StatusMode = "always";
 
 /**
+ * THE TWO WAYS TO DEPLOY, and the one thing that tells them apart is what
+ * they PAY.
+ *
+ * - `regular` — the campaign. The map is rolled, the families are rolled,
+ *   the mutators are rolled inside the difficulty's budget (ladder.ts),
+ *   and the run banks XP. The player picks the difficulty and nothing
+ *   else: what is coming is the run's own news.
+ * - `custom` — the same game with every dial handed over. Pick the map,
+ *   the difficulty, the enemy families and — where the difficulty rolls
+ *   rules at all — the mutators themselves. The track's locks do not
+ *   apply: every map, every rung and every rule in the catalog is on the
+ *   list from the first run.
+ *
+ * AND CUSTOM PAYS NOTHING. Not a share, not a reduced rate — zero XP and
+ * no entry in the record (grantRunReward). That is the whole reason the
+ * dials can be handed over: a run whose difficulty, swarm and rules are
+ * all chosen is not a measurement of anything, so it must not be able to
+ * level a save. It is also where the SANDBOX lives now (MechSwarm.tsx,
+ * Ctrl+Shift+S) — free building and every pace, in the one mode where
+ * that cannot be converted into progress.
+ */
+export type GameMode = "regular" | "custom";
+
+/** absent from the save means this — the mode the game had before there were two */
+export const GAME_MODE_DEFAULT: GameMode = "regular";
+
+/**
  * The player's persistent campaign state: lifetime XP, and how far up
  * each world's ladder they have climbed. Lives in ONE SAVE SLOT
  * (storage.ts: localStorage in a browser, a file under the desktop shell)
@@ -110,10 +138,30 @@ export interface Progress {
    * THE MENU'S LAST PICKS, so the start screen opens on what the player
    * played last rather than on Level 1 every launch. `difficulty` is the
    * rung index (0-based, see ladder.ts); `map` is a world id, and ABSENT
-   * means Random — the default, and the pick that pays the bonus.
+   * means Random — the default.
+   *
+   * ONE SET OF PICKS FOR BOTH MODES, not one each. The difficulty means
+   * the same thing either way, and the three custom-only picks below are
+   * simply not read in regular mode — where the map is always rolled, so
+   * `map` is remembered through a regular run rather than wiped by one.
+   * The one place the modes disagree is reach: regular clamps a
+   * difficulty the track has not opened back down (MechSwarm.tsx), so
+   * flipping to regular can lower a rung custom was standing on.
    */
   difficulty?: number;
   map?: string;
+  /** which of the two modes the deploy screen was last on (GameMode) */
+  mode?: GameMode;
+  /**
+   * CUSTOM MODE'S HAND, and never read in regular mode: the families the
+   * player named for the swarm, and the mutators they named for the run.
+   * EMPTY MEANS ROLLED, for each of the two independently — a custom run
+   * can pick its map and its rules and still let the die deal the swarm.
+   * Both are cleaned on load (cleanFamilies, cleanMutations), so a save
+   * naming something this build has never heard of degrades to a roll.
+   */
+  families?: FamilyKey[];
+  mutators?: MutationId[];
   /**
    * Ambient effects — the particle work, and nothing a weapon is made of
    * (see Sim.setEffects). Absent means ON; only an explicit `false` is off.
@@ -266,6 +314,9 @@ export function loadProgress(): Progress {
       hudMinimized: p.hudMinimized === true,
       difficulty: readDifficulty(p),
       map: readMapPick(p),
+      mode: readMode(p),
+      families: cleanFamilies(p.families),
+      mutators: cleanMutations(p.mutators),
       // absent means ON — only an explicit false switches them off
       effects: p.effects !== false,
       uiScale: readUiScale(p),
@@ -299,19 +350,60 @@ function readMapPick(p: { map?: unknown }): string | undefined {
   return typeof m === "string" && WORLDS.some((w) => w.id === m) ? m : undefined;
 }
 
+/** the remembered mode; anything the game does not recognise reads regular */
+function readMode(p: { mode?: unknown }): GameMode {
+  return p.mode === "custom" ? "custom" : GAME_MODE_DEFAULT;
+}
+
+/**
+ * THE MENU'S PICKS AS ONE THING, because they are set as one thing: the
+ * deploy screen holds all five in state and writes the lot whenever any of
+ * them is touched. Five writers taking one field each would mean every
+ * caller passing the four it is not changing.
+ */
+export interface RunPick {
+  mode: GameMode;
+  difficulty: number;
+  /** a world id, or null for Random */
+  map: string | null;
+  /** custom mode's hand — empty is rolled */
+  families: readonly FamilyKey[];
+  mutators: readonly MutationId[];
+}
+
 /**
  * Remember the menu's picks. `map` null is Random, and is stored as an
  * ABSENT field rather than a sentinel string, so a save that has never
- * picked and one that picked Random read the same way.
+ * picked and one that picked Random read the same way; the two custom
+ * lists are stored the same way, absent when nothing is named.
  */
-export function saveRunPick(difficulty: number, map: string | null): void {
+export function saveRunPick(pick: RunPick): void {
   const p = loadProgress();
-  const tier = Math.min(TOP_TIER, Math.max(0, Math.floor(difficulty)));
-  if ((p.difficulty ?? 0) === tier && (p.map ?? null) === map) return;
-  const { map: _dropped, ...rest } = p;
-  void _dropped;
-  saveProgress({ ...rest, difficulty: tier, ...(map ? { map } : null) });
+  const tier = Math.min(TOP_TIER, Math.max(0, Math.floor(pick.difficulty)));
+  const families = cleanFamilies(pick.families);
+  const mutators = cleanMutations(pick.mutators);
+  const same =
+    (p.difficulty ?? 0) === tier &&
+    (p.map ?? null) === pick.map &&
+    (p.mode ?? GAME_MODE_DEFAULT) === pick.mode &&
+    sameList(p.families ?? [], families) &&
+    sameList(p.mutators ?? [], mutators);
+  if (same) return;
+  const { map: _map, families: _families, mutators: _mutators, ...rest } = p;
+  void [_map, _families, _mutators];
+  saveProgress({
+    ...rest,
+    difficulty: tier,
+    mode: pick.mode,
+    ...(pick.map ? { map: pick.map } : null),
+    ...(families.length > 0 ? { families } : null),
+    ...(mutators.length > 0 ? { mutators } : null),
+  });
 }
+
+/** same ids in the same order — both lists come out of a cleaner, so this is exact */
+const sameList = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((v, i) => v === b[i]);
 
 
 export function saveSpeed(mult: number): void {
@@ -446,8 +538,16 @@ export const isWorldUnlocked = (p: Progress, worldId: string): boolean =>
 // ---------- settling a run ----------
 
 export interface RunReward {
-  /** XP the run banked: the waves it cleared, times every bonus below */
+  /** XP the run banked: the waves it cleared, times every bonus below.
+   *  ALWAYS ZERO on a custom run — see `custom` */
   xp: number;
+  /**
+   * Was this a CUSTOM run? Then it paid nothing and recorded nothing, and
+   * the results panel says so rather than printing a zero. Everything else
+   * on this object is still true — the waves cleared, the rung, the map —
+   * because a custom run is still a run worth reading the end of.
+   */
+  custom: boolean;
   /** how many of the mission's waves the run cleared — every one on a win */
   wavesCleared: number;
   /** how many waves the mission held */
@@ -484,6 +584,15 @@ export interface RunReward {
  * NOTHING ACCRUES WHILE THE APP IS SHUT. There is no offline income and
  * no idle tick: every point of XP was paid for by a run somebody watched.
  *
+ * A CUSTOM RUN SETTLES INTO NOTHING (GameMode): it pays no XP and records
+ * no clear, and the save is not written at all. It still comes back as a
+ * RunReward — the waves cleared, the rung, the map — because the results
+ * panel reads one shape whichever mode was played, and `custom` is what
+ * makes it print "no XP" instead of a zero. THIS IS THE ONE GATE. Every
+ * point of XP in the game is minted here, so keeping custom out of the
+ * ledger is one branch in one function rather than a rule every caller
+ * has to remember.
+ *
  * Only call this on a run that reached its own end (won or lost):
  * abandoning mid-level is worth nothing, which is why the UI settles from
  * the win/loss state and never on the way out to the menu.
@@ -495,6 +604,7 @@ export function grantRunReward(
   won: boolean,
   worldId: string = WORLD.id,
   randomMap = false,
+  mode: GameMode = "regular",
 ): RunReward {
   const p = loadProgress();
   const n = Math.min(TOP_TIER, Math.max(0, Math.floor(tier)));
@@ -503,13 +613,17 @@ export function grantRunReward(
   const bonus = tierBonus;
   const waves = Math.max(0, Math.floor(totalWaves));
   const cleared = won ? waves : Math.min(waves, Math.max(0, Math.floor(wavesCleared)));
-  const xp = Math.round(missionXp(cleared, waves) * bonus);
+  const custom = mode === "custom";
+  const xp = custom ? 0 : Math.round(missionXp(cleared, waves) * bonus);
   const levelBefore = levelOf(p);
-  p.xp += xp;
-  if (won) p.clearedByMap[worldId] = Math.max(bestClearOn(p, worldId), n + 1);
-  saveProgress(p);
+  if (!custom) {
+    p.xp += xp;
+    if (won) p.clearedByMap[worldId] = Math.max(bestClearOn(p, worldId), n + 1);
+    saveProgress(p);
+  }
   return {
     xp,
+    custom,
     wavesCleared: cleared,
     totalWaves: waves,
     xpBonus: bonus,
