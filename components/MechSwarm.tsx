@@ -372,7 +372,7 @@ function MacroButton({
       aria-label={`${label}: ${value}. Change`}
       className="ms-btn w-full justify-between gap-3 px-4 py-3 text-left"
     >
-      <span className="text-[13px] tracking-[0.3em] text-[#a2a2a2]">{label}</span>
+      <span className="text-[13px] text-[#a2a2a2]">{label}</span>
       <span className="flex items-center gap-2 whitespace-nowrap text-[16px] tracking-[0.12em]">
         {children}
         <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current text-[#71717C]" aria-hidden="true">
@@ -422,16 +422,16 @@ function PickerDialog({
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      className="ms-screen fixed inset-0 z-30 flex items-center justify-center p-4"
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        className="ui-zoom ms-pane-solid flex max-h-[calc(100vh-2rem)] w-full max-w-[38rem] flex-col p-4 shadow-2xl"
+        className="ui-zoom ms-pane-solid flex max-h-[calc(100vh-2rem)] w-full max-w-[38rem] flex-col p-4"
       >
-        <h2 className="ms-heading mb-3 text-[15px] tracking-[0.35em]">{title}</h2>
+        <h2 className="ms-heading ms-strip -mx-4 -mt-4 mb-3 text-[14px]">{title}</h2>
         <div className="flex min-h-0 gap-3">
           <div role="listbox" className="flex w-[12rem] shrink-0 flex-col gap-1.5 overflow-y-auto">
             {list}
@@ -451,7 +451,7 @@ function SelectButton({ onClick, disabled = false }: { onClick: () => void; disa
     <button
       onClick={onClick}
       disabled={disabled}
-      className="ms-btn ms-btn-accent mt-auto w-full py-2.5 text-[15px] tracking-[0.3em]"
+      className="ms-btn ms-btn-accent mt-auto w-full py-2.5 text-[15px]"
     >
       Select
     </button>
@@ -882,23 +882,20 @@ function BuildCell({
       aria-keyshortcuts={slot.key}
       aria-pressed={picked}
       onClick={onPick}
-      className={`ms-btn relative aspect-square w-full flex-col justify-center gap-0 p-0 ${
+      className={`ms-btn ms-btn-key relative aspect-square w-full flex-col justify-center gap-0 p-0 ${
         picked ? "" : "text-[#a2a2a2]"
       } ${poor ? "opacity-60" : ""}`}
     >
-      {/* THE KEY, on its own dark ground in the corner: the sprite fills
-          almost the whole square, and a bare letter over it is unreadable */}
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute left-0 top-0 bg-[#0b0b0d]/85 px-[3px] py-[1px] text-[11px] font-bold leading-none text-[#A6A6AF]"
-      >
+      {/* THE KEY, printed on the cap's corner: the sprite fills almost
+          the whole square, and a bare letter over it is unreadable */}
+      <span aria-hidden="true" className="ms-key">
         {slot.key}
       </span>
       {/* eslint-disable-next-line @next/next/no-img-element -- raw pixel sprite, no optimization wanted */}
       <img src={icon} alt="" className="h-8 w-8 [image-rendering:pixelated]" />
       {price !== null && (
         <span
-          className={`text-[12px] font-bold leading-none ${poor ? "text-[#FF8A8A]" : "text-white"}`}
+          className={`font-display text-[10px] font-bold leading-none ${poor ? "text-[#FF8A8A]" : "text-white"}`}
         >
           {price}
         </span>
@@ -2105,7 +2102,7 @@ export default function MechSwarm() {
    */
   const settingsBody = (inGame: boolean) => (
     <>
-      <h2 className="ms-heading text-[17px] tracking-[0.35em]">Settings</h2>
+      <h2 className="ms-heading text-[17px]">Settings</h2>
       {settingsPanel(inGame)}
     </>
   );
@@ -2206,9 +2203,9 @@ export default function MechSwarm() {
                       text, and a title set in it read as more of the same.
                       The name is one word: it is the COLOUR that splits MECH
                       from SWARM, not a space or a line break. */}
-                  <h1 className="font-display text-5xl font-bold uppercase tracking-[0.08em] [text-shadow:0_3px_0_rgba(0,0,0,0.85),0_0_32px_rgba(0,0,0,0.9)] sm:text-6xl">
+                  <h1 className="font-display text-5xl font-bold uppercase tracking-[0.02em] [text-shadow:4px_4px_0_#000] sm:text-6xl">
                     <span className="text-[#EDEDEF]">Mech</span>
-                    <span className="text-[#FFD37F] [text-shadow:0_3px_0_rgba(0,0,0,0.85),0_0_28px_rgba(255,211,127,0.45)]">
+                    <span className="text-[#FFD37F]">
                       Swarm
                     </span>
                   </h1>
@@ -2216,13 +2213,13 @@ export default function MechSwarm() {
                 <div className="flex w-full max-w-[20rem] flex-col gap-3">
                   <button
                     onClick={() => setMenuView("deploy")}
-                    className="ms-btn ms-btn-accent w-full py-3.5 text-[17px] tracking-[0.3em]"
+                    className="ms-btn ms-btn-accent w-full py-3.5 text-[17px]"
                   >
                     Start
                   </button>
                   <button
                     onClick={() => setMenuView("settings")}
-                    className="ms-btn w-full py-3.5 text-[17px] tracking-[0.3em]"
+                    className="ms-btn w-full py-3.5 text-[17px]"
                   >
                     Settings
                   </button>
@@ -2234,7 +2231,7 @@ export default function MechSwarm() {
                   {quitAble && (
                     <button
                       onClick={() => void askQuit()}
-                      className="ms-btn w-full py-3.5 text-[17px] tracking-[0.3em]"
+                      className="ms-btn w-full py-3.5 text-[17px]"
                     >
                       Exit
                     </button>
@@ -2290,7 +2287,7 @@ export default function MechSwarm() {
                   {/* ONE ACTION, at the bottom: this map, at this level, go */}
                   <button
                     onClick={startRun}
-                    className="ms-btn ms-btn-accent mt-2 w-full py-3.5 text-[17px] tracking-[0.3em]"
+                    className="ms-btn ms-btn-accent mt-2 w-full py-3.5 text-[17px]"
                   >
                     Start
                   </button>
@@ -2407,7 +2404,7 @@ export default function MechSwarm() {
         {hud?.paused && (
           // on a phone the wave panel already fills the top of the screen, so
           // the badge drops onto the map rather than landing on top of it
-          <div className="ms-pane absolute left-1/2 top-[30%] -translate-x-1/2 border-[#FFD37F] px-4 py-1.5 font-display text-base font-bold uppercase tracking-[0.3em] text-[#FFD37F] sm:top-[1rem]">
+          <div className="ms-pane absolute left-1/2 top-[30%] -translate-x-1/2 border-[#FFD37F] px-4 py-1.5 font-display text-base font-bold uppercase text-[#FFD37F] sm:top-[1rem]">
             Paused
           </div>
         )}
@@ -2688,7 +2685,7 @@ export default function MechSwarm() {
           </div>
         )}
         {hud?.lost && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="ms-screen absolute inset-0 flex items-center justify-center">
             <div className="ui-zoom ms-pane-solid w-80 max-w-[calc(100vw-2rem)] border-[#6b2a2a] p-6 text-center">
               <div className="font-display text-xl font-bold uppercase tracking-widest text-[#e55454]">
                 Core destroyed
@@ -2757,7 +2754,7 @@ export default function MechSwarm() {
           </div>
         )}
         {hud?.won && !hud.lost && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="ms-screen absolute inset-0 flex items-center justify-center">
             <div className="ui-zoom ms-pane-solid w-80 max-w-[calc(100vw-2rem)] border-[#2f5a3a] p-6 text-center">
               <div className="font-display text-xl font-bold uppercase tracking-widest text-[#7BE58A]">
                 {hud.mission.kind === "survive" ? "Survived" : "Line held"}
@@ -2811,7 +2808,7 @@ export default function MechSwarm() {
             when the framerate dips — and the same goes for the health bars
             the fight in front of the player is or is not wearing. */}
         {hud?.menuOpen && !hud.lost && !hud.won && pauseSettings && (
-          <div className="absolute inset-0 z-30 overflow-y-auto bg-[#0b0b0d]/95 backdrop-blur-sm">
+          <div className="absolute inset-0 z-30 overflow-y-auto bg-[#0b0b0d]/95">
             <div className={`${MENU_COLUMN} ${MENU_COLUMN_PAD}`}>{settingsBody(true)}</div>
             <CornerBack label="Back" onClick={() => setPauseSettings(false)} />
           </div>
@@ -2819,11 +2816,11 @@ export default function MechSwarm() {
         {/* THE PAUSE SHEET. Opening it holds the sim (Game.openMenu), so
             its heading says what the run is doing */}
         {hud?.menuOpen && !hud.lost && !hud.won && !pauseSettings && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="ms-screen absolute inset-0 flex items-center justify-center">
             <div className="ui-zoom ms-pane flex max-h-[calc(100vh-2rem)] w-[30rem] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 overflow-y-auto p-6">
               {/* the sandbox door is Ctrl+Shift+S; the row below says when
                   it is open, and is also what closes it */}
-              <h2 className="font-display text-xl font-bold uppercase tracking-[0.3em] text-[#FFD37F]">
+              <h2 className="ms-strip -mx-6 -mt-6 mb-1 self-stretch font-display text-lg font-bold uppercase text-[#FFD37F]">
                 Paused
               </h2>
               {admin && (

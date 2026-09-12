@@ -1,28 +1,26 @@
 import type { Metadata, Viewport } from "next";
-import { Barlow, Chakra_Petch, IBM_Plex_Mono } from "next/font/google";
+import { Pixelify_Sans, Silkscreen } from "next/font/google";
 import AdminShortcut from "@/components/AdminShortcut";
 import CrashGuard from "@/components/CrashGuard";
 import { BUILD } from "@/game/version";
 import "./globals.css";
 
-const display = Chakra_Petch({
-  weight: ["600", "700"],
+// THE DISPLAY FACE: a bitmap face. Every heading, label, button and
+// number in the kit is set in it, on the same pixel grid the turret
+// sprites are drawn at (app/globals.css, THE KIT).
+const display = Silkscreen({
+  weight: ["400", "700"],
   subsets: ["latin"],
   variable: "--font-display",
 });
 
-// THE BODY FACE: a sturdy industrial sans. The mono used to carry the body
-// as well and read too thin at small sizes; it stays for numbers only.
-const body = Barlow({
-  weight: ["500", "600", "700"],
-  subsets: ["latin"],
-  variable: "--font-body",
-});
-
-const mono = IBM_Plex_Mono({
+// THE BODY FACE: a pixel sans that is still a sans — descriptions, the
+// codex and the settings rows are read as sentences, and a bitmap face
+// at paragraph length is not.
+const body = Pixelify_Sans({
   weight: ["400", "500", "600", "700"],
   subsets: ["latin"],
-  variable: "--font-mono",
+  variable: "--font-body",
 });
 
 export const metadata: Metadata = {
@@ -40,7 +38,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${display.variable} ${body.variable} ${mono.variable} font-body font-medium bg-[#0B0B0D] text-[18px] leading-snug text-[#C9C9D4] antialiased`}>
+      <body className={`${display.variable} ${body.variable} font-body font-medium bg-[#0B0B0D] text-[18px] leading-snug text-[#D8D4CA]`}>
         <AdminShortcut />
         {/* a throw out of the game's own loop or a dropped promise never
             reaches a React boundary — this catches both and puts the fault
@@ -49,7 +47,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {children}
         {/* the build stamp: the only proof of WHICH build this browser is
             running — see game/version.ts, and bump it every change */}
-        <div className="ui-zoom pointer-events-none fixed bottom-[0.375rem] right-[0.5rem] z-50 text-[10px] text-[#5A5A63]">
+        <div className="ui-zoom pointer-events-none fixed bottom-[0.375rem] right-[0.5rem] z-50 font-display text-[9px] text-[#5A5A63]">
           v{BUILD}
         </div>
       </body>

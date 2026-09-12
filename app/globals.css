@@ -1,312 +1,522 @@
 @import "tailwindcss";
 
 @theme {
-  --font-display: var(--font-display), "IBM Plex Mono", sans-serif;
-  --font-body: var(--font-body), "Barlow", system-ui, sans-serif;
-  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: var(--font-display), "Silkscreen", "Courier New", monospace;
+  --font-body: var(--font-body), "Pixelify Sans", "Barlow", system-ui, sans-serif;
+  /* numbers wear the bitmap face too: one pixel grid, one material */
+  --font-mono: var(--font-display), "Silkscreen", ui-monospace, monospace;
 }
 
 /* ---- THE KIT: how every button and panel in the game is drawn -----------
-   The chrome used to be a SaaS idiom — 1px hairlines in near-black greys,
-   rounded corners, a hover that nudged the border one shade lighter — and
-   it read as a dashboard sitting on top of a game rather than as the game.
+   The chrome used to be Mindustry's nine-patch sprites written as CSS: a
+   4px grey bevel around black at 60%, blurred behind, tracked caps on
+   everything. It was tidy and it read as a dashboard sitting on top of a
+   game — every surface was the same flat rectangle with a line, nothing
+   was raised or sunk, and a press changed a line's colour and moved
+   nothing.
 
-   The look here is lifted from Mindustry's own nine-patch UI sprites
-   (public/mindustry/sprites/ui): `button.9.png` is a black fill inside a
-   4px #454545 bevel with square corners; `button-over` swaps the bevel for
-   the accent gold, `button-down` for white, `button-disabled` sinks the
-   whole thing into #252525; `pane.9.png` is the same bevel around a black
-   fill at 60% so the field shows through; `flat-down-base` (a checked
-   toggle) is the accent bevel on black. Every class below is one of those
-   sprites written as CSS, so a button can carry any Tailwind utility on top
-   (width, font size) and still be the same button.
+   THE KIT IS NOW PIXEL ART, drawn on the same 3px pixel the turret sprites
+   are drawn at, so the interface and the field are one material:
 
-   Corners are SQUARE everywhere. A rounded corner is the one thing pixel
-   art cannot draw, and it is the single strongest tell that a panel was
-   made with a web toolkit. */
+     THE PLATE (.ms-pane) — a riveted steel plate: a 3px edge with the
+       corner pixel notched out, one light row under the top edge and one
+       dark row over the bottom edge so it reads as a raised slab, a stud
+       in each corner. Its header, where it has one, is a darker strip
+       with a stud at each end (.ms-strip).
+     THE BEVEL BUTTON (.ms-btn) — the SNES button: a light edge top-left,
+       a dark edge bottom-right, and the press SWAPS them and moves the
+       face one pixel down and right, so every click visibly sinks.
+     THE KEYCAP (.ms-btn-key) — the bevel button drawn as the key that
+       triggers it: the letter printed top-left on a light tile
+       (.ms-key), six rows of side under the face. The deal's four
+       buttons and the build grid are keycaps, because they ARE keys.
+
+   THE RULES, everywhere: every line is 3px, no line is 1px; no blur, no
+   drop shadow, no anti-aliased edge; nothing translucent — where the map
+   has to show through a sheet it shows through a pixel screen
+   (.ms-screen), a grid of dark pixels with one in four left open; and
+   corners are SQUARE.
+   A rounded corner is the one thing pixel art cannot draw, so the
+   radius is zeroed on every element at the bottom of this file. */
 :root {
-  --ms-accent: #ffd37f; /* Pal.accent */
-  --ms-accent-dim: rgba(255, 211, 127, 0.14);
-  --ms-gray: #454545; /* Pal.gray — the bevel on every sprite */
-  --ms-gray-dark: #2b2b2b;
-  --ms-disabled: #252525; /* button-disabled.9.png */
-  --ms-red: #e55454; /* Pal.negativeStat / button-red */
+  --ms-px: 3px;
+  --ms-accent: #ffd37f; /* Pal.accent — the gold every primary action wears */
+  --ms-accent-face: #f2bd5a;
+  --ms-accent-light: #ffe7ad;
+  --ms-accent-dark: #a86f16;
+  --ms-accent-ink: #2a1a04; /* the text on a gold face */
+  --ms-accent-dim: #3a3220; /* a gold face sunk: the toggle that is ON */
+  --ms-outline: #0d0d10; /* the black line around every button */
+  --ms-face: #2a2d34; /* a button's face at rest */
+  --ms-face-hover: #343841;
+  --ms-face-down: #22252b;
+  --ms-face-light: #5c606a; /* the bevel's lit edge */
+  --ms-face-dark: #15161a; /* the bevel's shaded edge */
+  --ms-plate: #1b1d22; /* the plate's fill */
+  --ms-plate-edge: #6a6f7a;
+  --ms-plate-light: #8a8e98;
+  --ms-plate-dark: #101114;
+  --ms-plate-strip: #2a2d34; /* the header strip */
+  --ms-stud: #c9ccd2;
+  --ms-gray: #4a4d55; /* a quiet line: the segment strip's frame, the scrollbar */
+  --ms-disabled: #1b1d22;
+  --ms-red: #e55454; /* Pal.negativeStat */
   --ms-green: #7be58a;
   --ms-surge: #f3e979;
-  --ms-ink: #ffffff;
-  --ms-ink-dim: #a2a2a2; /* Pal.lightishGray */
-  --ms-ink-faint: #6f6f6f;
-  --ms-fill: rgba(0, 0, 0, 0.62); /* pane.9.png's #00000099 */
-  --ms-fill-solid: #0b0b0d;
+  --ms-ink: #e8e4d8; /* the bitmap face's white — a shade warm, never pure */
+  --ms-ink-dim: #a9adb5;
+  --ms-ink-faint: #6a6f7a;
+  --ms-fill-solid: #1b1d22;
   --ms-bevel: 3px;
 }
 
 @layer components {
-  /* the pane: what every floating panel, sheet and card sits in. The
-     translucent fill is deliberate — over the field it lets the map read
-     through, and on the menu it lets the terrain behind it read through */
-  .ms-pane {
-    border: var(--ms-bevel) solid var(--ms-gray);
-    background: var(--ms-fill);
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.85);
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
-  }
+  /* THE PLATE. The edge is painted as four background strips rather than
+     a border, each pulled 3px short at both ends, which is what leaves the
+     corner pixel out — the notch a pixel frame never has a square corner
+     without. The 3px transparent border keeps content off the edge, and
+     it is also what a Tailwind border-colour utility paints onto, so a
+     pane that wears a colour (a rarity, the sandbox's purple) wears it as
+     a plain 3px line over the plate. The two inner rows, light under the
+     top and dark over the bottom, are what make the slab stand up, and
+     the four studs are the rivets. */
+  .ms-pane,
   .ms-pane-solid {
-    border: var(--ms-bevel) solid var(--ms-gray);
-    background: var(--ms-fill-solid);
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.85);
+    border: var(--ms-px) solid transparent;
+    background-color: var(--ms-plate);
+    background-image:
+      linear-gradient(var(--ms-plate-edge), var(--ms-plate-edge)),
+      linear-gradient(var(--ms-plate-edge), var(--ms-plate-edge)),
+      linear-gradient(var(--ms-plate-edge), var(--ms-plate-edge)),
+      linear-gradient(var(--ms-plate-edge), var(--ms-plate-edge)),
+      linear-gradient(var(--ms-plate-light), var(--ms-plate-light)),
+      linear-gradient(var(--ms-plate-dark), var(--ms-plate-dark)),
+      linear-gradient(var(--ms-stud), var(--ms-stud)),
+      linear-gradient(var(--ms-stud), var(--ms-stud)),
+      linear-gradient(var(--ms-stud), var(--ms-stud)),
+      linear-gradient(var(--ms-stud), var(--ms-stud));
+    background-size:
+      calc(100% - 6px) 3px,
+      calc(100% - 6px) 3px,
+      3px calc(100% - 6px),
+      3px calc(100% - 6px),
+      calc(100% - 6px) 3px,
+      calc(100% - 6px) 3px,
+      3px 3px,
+      3px 3px,
+      3px 3px,
+      3px 3px;
+    background-position:
+      3px 0,
+      3px 100%,
+      0 3px,
+      100% 3px,
+      3px 3px,
+      3px calc(100% - 3px),
+      6px 6px,
+      calc(100% - 6px) 6px,
+      6px calc(100% - 6px),
+      calc(100% - 6px) calc(100% - 6px);
+    background-repeat: no-repeat;
+    background-origin: border-box;
+    background-clip: border-box;
   }
-  /* wavepane.9.png: a bar with no bevel of its own, a rule along one edge */
+  /* wavepane.9.png's descendant: a bar with a rule along one edge */
   .ms-rule-b {
-    border-bottom: var(--ms-bevel) solid var(--ms-gray);
+    border-bottom: var(--ms-px) solid var(--ms-outline);
   }
   .ms-rule-t {
-    border-top: var(--ms-bevel) solid var(--ms-gray);
+    border-top: var(--ms-px) solid var(--ms-outline);
   }
 
-  /* THE BUTTON. Colour lives on the BEVEL, not the fill: rest is grey,
-     hover is gold, the press is white and a toggle that is on is gold with
-     a wash of gold behind it — exactly the four sprites. The 1px inner
-     shadow is the pixel of black the nine-patch keeps between bevel and
-     fill, and it is what stops the bevel reading as a CSS border. */
+  /* THE HEADER STRIP: a darker band across the top of a plate with a
+     stud at each end, the title on it. It is pulled out to the plate's
+     edge with negative margins by whoever uses it (the padding differs
+     per dialog), and it names the plate the way a stamped label names a
+     machine. */
+  .ms-strip {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    padding: 9px 21px 6px;
+    background: var(--ms-plate-strip);
+    border-bottom: var(--ms-px) solid var(--ms-outline);
+    text-align: center;
+  }
+  .ms-strip::before,
+  .ms-strip::after {
+    content: "";
+    position: absolute;
+    top: 9px;
+    width: 3px;
+    height: 3px;
+    background: var(--ms-stud);
+    box-shadow: 3px 3px 0 var(--ms-outline);
+  }
+  .ms-strip::before {
+    left: 6px;
+  }
+  .ms-strip::after {
+    right: 9px;
+  }
+
+  /* THE BUTTON: the bevel. A black outline, a face, a lit edge top-left
+     and a shaded edge bottom-right. Hover turns the outline and the
+     label gold; the press swaps the two edges and moves the face one
+     pixel down and right, which is what makes it sink. */
   .ms-btn {
     position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    border: var(--ms-bevel) solid var(--ms-gray);
-    background: rgba(0, 0, 0, 0.72);
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+    border: var(--ms-px) solid var(--ms-outline);
+    background: var(--ms-face);
+    box-shadow:
+      inset 3px 3px 0 var(--ms-face-light),
+      inset -3px -3px 0 var(--ms-face-dark);
     color: var(--ms-ink);
+    font-family: var(--font-display);
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.02em;
     line-height: 1.2;
     cursor: pointer;
     user-select: none;
-    transition:
-      border-color 90ms linear,
-      background-color 90ms linear,
-      color 90ms linear;
   }
   .ms-btn:hover:not(:disabled):not([aria-disabled="true"]) {
     border-color: var(--ms-accent);
+    background: var(--ms-face-hover);
+    color: var(--ms-accent);
   }
   .ms-btn:active:not(:disabled):not([aria-disabled="true"]) {
-    border-color: #ffffff;
-    transform: translateY(1px);
+    background: var(--ms-face-down);
+    box-shadow:
+      inset 3px 3px 0 var(--ms-face-dark),
+      inset -3px -3px 0 var(--ms-face-light);
+    transform: translate(3px, 3px);
   }
   .ms-btn:focus-visible {
-    outline: 2px solid var(--ms-accent);
-    outline-offset: 2px;
+    outline: 3px solid var(--ms-accent);
+    outline-offset: 3px;
   }
   .ms-btn:disabled,
   .ms-btn[aria-disabled="true"] {
-    border-color: var(--ms-disabled);
+    border-color: var(--ms-outline);
     background: var(--ms-disabled);
     color: var(--ms-ink-faint);
+    box-shadow:
+      inset 3px 3px 0 #2a2d34,
+      inset -3px -3px 0 var(--ms-plate-dark);
     cursor: not-allowed;
-    box-shadow: none;
   }
-  /* a toggle that is ON, or a tab that is showing: flat-down-base.9.png */
+  /* a toggle that is ON, or a tab that is showing: the face sunk and
+     gold, the outline gold */
   .ms-btn[aria-pressed="true"],
   .ms-btn[aria-selected="true"],
   .ms-btn.ms-on {
     border-color: var(--ms-accent);
     background: var(--ms-accent-dim);
+    box-shadow:
+      inset 3px 3px 0 var(--ms-face-dark),
+      inset -3px -3px 0 #5c4b22;
     color: var(--ms-accent);
   }
-  /* the one action a screen is FOR — Start, Deploy, Resume, Continue — is
-     gold at rest, and hovering it fills the button rather than the bevel */
+  /* THE ONE ACTION A SCREEN IS FOR — Start, Deploy, Resume, Continue —
+     is a gold face with dark text, so it is the loudest thing in view */
   .ms-btn-accent {
-    border-color: var(--ms-accent);
-    color: var(--ms-accent);
-    background: rgba(0, 0, 0, 0.72);
+    background: var(--ms-accent-face);
+    color: var(--ms-accent-ink);
+    box-shadow:
+      inset 3px 3px 0 var(--ms-accent-light),
+      inset -3px -3px 0 var(--ms-accent-dark);
   }
   .ms-btn-accent:hover:not(:disabled):not([aria-disabled="true"]) {
-    background: var(--ms-accent-dim);
-    color: #ffffff;
+    border-color: #ffffff;
+    background: var(--ms-accent);
+    color: var(--ms-accent-ink);
   }
-  /* the one thing that cannot be undone: red at rest, redder on hover */
+  .ms-btn-accent:active:not(:disabled):not([aria-disabled="true"]) {
+    background: #d99c34;
+    box-shadow:
+      inset 3px 3px 0 var(--ms-accent-dark),
+      inset -3px -3px 0 var(--ms-accent-light);
+  }
+  /* the one thing that cannot be undone: a dark red face */
   .ms-btn-red {
-    border-color: #6b2a2a;
-    color: var(--ms-red);
+    background: #3a1616;
+    color: #ff8d7a;
+    box-shadow:
+      inset 3px 3px 0 #8f2f1e,
+      inset -3px -3px 0 #1d0806;
   }
   .ms-btn-red:hover:not(:disabled):not([aria-disabled="true"]) {
     border-color: var(--ms-red);
-    background: rgba(229, 84, 84, 0.12);
+    background: #4a1a1a;
     color: #ffffff;
   }
   .ms-btn-red:focus-visible {
     outline-color: var(--ms-red);
   }
+  .ms-btn-red[aria-pressed="true"],
+  .ms-btn-red.ms-on {
+    border-color: var(--ms-red);
+    background: #4a1a1a;
+    color: var(--ms-red);
+  }
   .ms-btn-green {
-    border-color: var(--ms-green);
+    background: #16301b;
     color: var(--ms-green);
+    box-shadow:
+      inset 3px 3px 0 #2f6b3a,
+      inset -3px -3px 0 #0a1a0d;
   }
   .ms-btn-green:hover:not(:disabled):not([aria-disabled="true"]) {
-    background: rgba(123, 229, 138, 0.12);
+    border-color: var(--ms-green);
+    background: #1c3d22;
     color: #ffffff;
   }
   .ms-btn-green:focus-visible {
     outline-color: var(--ms-green);
   }
-  .ms-btn-red[aria-pressed="true"],
-  .ms-btn-red.ms-on {
-    border-color: var(--ms-red);
-    background: rgba(229, 84, 84, 0.16);
-    color: var(--ms-red);
-  }
-  /* a bevel in any other colour (a tab wearing its own board's colour,
-     the sandbox row's purple) — set --ms-tint inline */
+  /* a label in any other colour (a tab wearing its own board's colour,
+     the sandbox row's purple, the deal's three tints) — set --ms-tint
+     inline. The face stays the grey face: colour lives on the label and
+     the outline, not the fill, so four tints in one square still read as
+     one panel. */
   .ms-btn-tint {
-    border-color: var(--ms-tint);
     color: var(--ms-tint);
   }
   .ms-btn-tint:hover:not(:disabled):not([aria-disabled="true"]) {
     border-color: var(--ms-tint);
-    background: color-mix(in srgb, var(--ms-tint) 14%, transparent);
-    color: #ffffff;
+    color: var(--ms-tint);
   }
   .ms-btn-tint[aria-pressed="true"],
   .ms-btn-tint[aria-selected="true"],
   .ms-btn-tint.ms-on {
     border-color: var(--ms-tint);
-    background: color-mix(in srgb, var(--ms-tint) 14%, transparent);
+    background: color-mix(in srgb, var(--ms-tint) 18%, var(--ms-plate));
     color: var(--ms-tint);
   }
-  /* cleart: no bevel until it is hovered — for the small, quiet controls
-     (the HUD's collapse chevron, the difficulty stepper's arrows) */
+
+  /* THE KEYCAP: the bevel button drawn as a key. Six rows of side under
+     the face instead of three, and the press drops the face onto them.
+     `padding-bottom` is forced because the deal's buttons carry their own
+     padding utilities and the side must stay clear of the label. */
+  .ms-btn-key {
+    box-shadow:
+      inset 0 -6px 0 var(--ms-face-dark),
+      inset 3px 3px 0 var(--ms-face-light);
+    padding-bottom: 9px !important;
+  }
+  .ms-btn-key:active:not(:disabled):not([aria-disabled="true"]) {
+    box-shadow:
+      inset 0 -3px 0 var(--ms-face-dark),
+      inset 3px 3px 0 var(--ms-face-dark);
+    transform: translateY(3px);
+    padding-bottom: 6px !important;
+  }
+  .ms-btn-key[aria-pressed="true"],
+  .ms-btn-key.ms-on {
+    box-shadow:
+      inset 0 -6px 0 #2a2314,
+      inset 3px 3px 0 var(--ms-face-dark);
+  }
+  .ms-btn-key:disabled,
+  .ms-btn-key[aria-disabled="true"] {
+    box-shadow:
+      inset 0 -6px 0 var(--ms-plate-dark),
+      inset 3px 3px 0 #2a2d34;
+  }
+  /* the letter printed on the key: a light tile in the top-left corner */
+  .ms-key {
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    padding: 0 3px;
+    font-family: var(--font-display);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 12px;
+    letter-spacing: 0;
+    color: var(--ms-outline);
+    background: var(--ms-stud);
+    pointer-events: none;
+  }
+  .ms-btn:hover:not(:disabled):not([aria-disabled="true"]) > .ms-key,
+  .ms-btn[aria-pressed="true"] > .ms-key,
+  .ms-btn.ms-on > .ms-key {
+    background: var(--ms-accent);
+  }
+  .ms-btn:disabled > .ms-key,
+  .ms-btn[aria-disabled="true"] > .ms-key {
+    background: var(--ms-ink-faint);
+  }
+
+  /* THE GHOST: no fill and a dashed pixel outline until it is wanted —
+     for the quiet controls (the HUD's collapse chevron, the corner back,
+     the difficulty stepper's arrows). Hover brings the bevel up. */
   .ms-btn-ghost {
     border-color: transparent;
     background: transparent;
+    background-image:
+      repeating-linear-gradient(90deg, var(--ms-gray) 0 6px, transparent 6px 12px),
+      repeating-linear-gradient(90deg, var(--ms-gray) 0 6px, transparent 6px 12px),
+      repeating-linear-gradient(180deg, var(--ms-gray) 0 6px, transparent 6px 12px),
+      repeating-linear-gradient(180deg, var(--ms-gray) 0 6px, transparent 6px 12px);
+    background-size:
+      100% 3px,
+      100% 3px,
+      3px 100%,
+      3px 100%;
+    background-position:
+      0 0,
+      0 100%,
+      0 0,
+      100% 0;
+    background-repeat: no-repeat;
+    background-origin: border-box;
     box-shadow: none;
     color: var(--ms-ink-dim);
   }
   .ms-btn-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
-    color: var(--ms-ink);
-    background: rgba(0, 0, 0, 0.5);
+    border-color: var(--ms-accent);
+    background: var(--ms-face);
+    box-shadow:
+      inset 3px 3px 0 var(--ms-face-light),
+      inset -3px -3px 0 var(--ms-face-dark);
+    color: var(--ms-accent);
   }
 
-  /* THE SEGMENT STRIP: one pane holding several buttons that share their
-     bevels — the pace strip, the settings tabs, the UI-size picker. The
-     children lose their own bevels and are parted by a rule the same
-     colour as the frame, and whichever is on wears the accent wash. */
+  /* THE SEGMENT STRIP: one frame holding several blocks that share
+     edges — the pace strip, the settings tabs, the UI-size picker. The
+     children lose their own outlines and bevels and sit as flat blocks
+     with a dark row under each, and whichever is on is a gold block. */
   .ms-seg {
     display: inline-flex;
     align-items: stretch;
-    border: var(--ms-bevel) solid var(--ms-gray);
-    background: var(--ms-fill);
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.85);
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
+    gap: 3px;
+    padding: 3px;
+    border: var(--ms-px) solid var(--ms-gray);
+    background: var(--ms-outline);
   }
   .ms-seg > .ms-btn {
     border: 0;
-    background: transparent;
-    box-shadow: none;
+    background: var(--ms-plate);
+    box-shadow: inset 0 -3px 0 var(--ms-plate-dark);
+    color: var(--ms-ink-dim);
     transform: none;
   }
-  .ms-seg > .ms-btn + .ms-btn {
-    border-left: var(--ms-bevel) solid var(--ms-gray);
-  }
   .ms-seg > .ms-btn:hover:not(:disabled):not([aria-disabled="true"]) {
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--ms-face);
     color: var(--ms-accent);
   }
   .ms-seg > .ms-btn:active:not(:disabled):not([aria-disabled="true"]) {
     transform: none;
-    background: rgba(255, 255, 255, 0.12);
+    background: var(--ms-face-down);
+    box-shadow: inset 0 3px 0 var(--ms-plate-dark);
   }
   .ms-seg > .ms-btn[aria-pressed="true"],
   .ms-seg > .ms-btn[aria-selected="true"],
   .ms-seg > .ms-btn.ms-on {
-    background: var(--ms-accent-dim);
-    color: var(--ms-accent);
-    box-shadow: inset 0 -3px 0 var(--ms-accent);
+    background: var(--ms-accent-face);
+    color: var(--ms-accent-ink);
+    box-shadow: inset 0 -3px 0 var(--ms-accent-dark);
+  }
+  .ms-seg > .ms-btn-tint[aria-pressed="true"],
+  .ms-seg > .ms-btn-tint[aria-selected="true"],
+  .ms-seg > .ms-btn-tint.ms-on {
+    background: var(--ms-tint);
+    color: var(--ms-outline);
+    box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--ms-tint) 55%, #000);
   }
   .ms-seg > .ms-btn:focus-visible {
     outline-offset: -3px;
   }
 
-  /* A SECTION OF SETTINGS IS ONE BOX, its rows divided by a hairline
-     rather than each row a box of its own: five bevelled panes stacked up
-     read as five things to deal with, one pane with five rows reads as one
-     section. The divider is dimmer than the pane's own border, which is
-     what keeps the rows from looking like panes again. */
+  /* A SECTION OF SETTINGS IS ONE PLATE, its rows parted by a dotted
+     pixel rule rather than each row a plate of its own */
   .ms-rows > * + * {
-    border-top: 1px solid rgba(255, 255, 255, 0.09);
+    border-top: var(--ms-px) dotted #2a2d34;
   }
 
-  /* THE SLIDER, for a setting with a handful of stops on it (UI size, pan
-     speed): slider.png's trough with a squared knob riding in it. The
-     stops are the input's own `step`, so the knob can only ever land on
-     one and the keyboard walks them one at a time. Never rounded. */
+  /* THE SLIDER: a pixel trough with a bevelled knob riding in it. The
+     stops are the input's own `step`; the keyboard walks them one at a
+     time. */
   .ms-slider {
     -webkit-appearance: none;
     appearance: none;
-    height: 18px;
+    height: 24px;
     background: transparent;
     cursor: pointer;
   }
   .ms-slider::-webkit-slider-runnable-track {
-    height: 8px;
-    border: 2px solid var(--ms-gray);
-    background: rgba(0, 0, 0, 0.75);
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+    height: 12px;
+    border: var(--ms-px) solid var(--ms-gray);
+    background: var(--ms-outline);
   }
   .ms-slider::-moz-range-track {
-    height: 8px;
-    border: 2px solid var(--ms-gray);
-    background: rgba(0, 0, 0, 0.75);
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+    height: 12px;
+    border: var(--ms-px) solid var(--ms-gray);
+    background: var(--ms-outline);
   }
   .ms-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 12px;
-    height: 18px;
-    margin-top: -7px;
-    border: 2px solid var(--ms-accent);
-    background: var(--ms-accent-dim);
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+    width: 18px;
+    height: 24px;
+    margin-top: -9px;
+    border: var(--ms-px) solid var(--ms-outline);
+    background: var(--ms-face);
+    box-shadow:
+      inset 3px 3px 0 var(--ms-face-light),
+      inset -3px -3px 0 var(--ms-face-dark);
   }
   .ms-slider::-moz-range-thumb {
-    width: 12px;
-    height: 18px;
-    border: 2px solid var(--ms-accent);
-    background: var(--ms-accent-dim);
+    width: 18px;
+    height: 24px;
+    border: var(--ms-px) solid var(--ms-outline);
     border-radius: 0;
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+    background: var(--ms-face);
+    box-shadow:
+      inset 3px 3px 0 var(--ms-face-light),
+      inset -3px -3px 0 var(--ms-face-dark);
   }
   .ms-slider:hover::-webkit-slider-thumb,
   .ms-slider:focus-visible::-webkit-slider-thumb {
-    background: var(--ms-accent);
+    border-color: var(--ms-accent);
+    background: var(--ms-accent-face);
+    box-shadow:
+      inset 3px 3px 0 var(--ms-accent-light),
+      inset -3px -3px 0 var(--ms-accent-dark);
   }
   .ms-slider:hover::-moz-range-thumb,
   .ms-slider:focus-visible::-moz-range-thumb {
-    background: var(--ms-accent);
+    border-color: var(--ms-accent);
+    background: var(--ms-accent-face);
+    box-shadow:
+      inset 3px 3px 0 var(--ms-accent-light),
+      inset -3px -3px 0 var(--ms-accent-dark);
   }
   .ms-slider:focus-visible {
-    outline: 2px solid var(--ms-accent);
-    outline-offset: 2px;
+    outline: 3px solid var(--ms-accent);
+    outline-offset: 3px;
   }
 
-  /* A LIST TO PICK ONE OF — the monitors, and nothing else so far. A
-     button's bevel around the platform's own select, since a list of
-     screen names is not a row of buttons. */
+  /* A LIST TO PICK ONE OF — the monitors. A bevel around the platform's
+     own select. */
   .ms-select {
     appearance: none;
-    border: var(--ms-bevel) solid var(--ms-gray);
-    background: rgba(0, 0, 0, 0.72);
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+    border: var(--ms-px) solid var(--ms-outline);
+    background: var(--ms-face);
+    box-shadow:
+      inset 3px 3px 0 var(--ms-face-light),
+      inset -3px -3px 0 var(--ms-face-dark);
     color: var(--ms-ink);
     font-weight: 700;
-    /* a monitor's name is a proper noun and often a long one: this is the
-       one control in the panel that is not upper-cased and letter-spaced */
-    letter-spacing: 0.02em;
+    letter-spacing: 0;
     text-overflow: ellipsis;
     cursor: pointer;
   }
@@ -314,36 +524,38 @@
     border-color: var(--ms-accent);
   }
   .ms-select:focus-visible {
-    outline: 2px solid var(--ms-accent);
-    outline-offset: 2px;
+    outline: 3px solid var(--ms-accent);
+    outline-offset: 3px;
   }
   .ms-select > option {
-    background: #0b0b0d;
+    background: var(--ms-plate);
     color: var(--ms-ink);
   }
 
-  /* THE BAR: bar.9.png — a squared trough with the fill flush inside it.
-     Used for loading and for boss health; never rounded */
+  /* THE BAR: a pixel trough with the fill flush inside it, a light row
+     along the fill's top and a dark row along its bottom. Loading and
+     boss health. */
   .ms-bar {
     position: relative;
-    height: 10px;
-    border: 2px solid var(--ms-gray);
-    background: rgba(0, 0, 0, 0.75);
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+    height: 18px;
+    border: var(--ms-px) solid var(--ms-ink-dim);
+    background: var(--ms-outline);
     overflow: hidden;
   }
   .ms-bar > * {
     height: 100%;
     background: var(--ms-accent);
-    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.35);
+    box-shadow:
+      inset 0 3px 0 rgba(255, 255, 255, 0.35),
+      inset 0 -3px 0 rgba(0, 0, 0, 0.35);
   }
 
-  /* a heading with the accent rule under it, the way Mindustry titles a
-     dialog: the word, then a line the width of the panel */
+  /* a heading in the bitmap face: the word, upper-cased, barely tracked
+     (a bitmap face is already wide) */
   .ms-heading {
     font-family: var(--font-display);
     text-transform: uppercase;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.04em;
     font-weight: 700;
     color: var(--ms-ink);
   }
@@ -351,21 +563,33 @@
   /* a badge: the small label pinned onto a picture (a map's rank) */
   .ms-badge {
     display: inline-block;
-    border: 2px solid currentColor;
-    background: rgba(0, 0, 0, 0.8);
-    padding: 0.1rem 0.5rem;
-    font-size: 10px;
+    border: var(--ms-px) solid currentColor;
+    background: var(--ms-outline);
+    padding: 3px 6px 2px;
+    font-family: var(--font-display);
+    font-size: 9px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.18em;
-    line-height: 1.4;
+    letter-spacing: 0.04em;
+    line-height: 1.3;
+  }
+
+  /* THE SCREEN: what goes over the field when a sheet is up. Not a
+     translucent scrim — a grid of dark pixels with one pixel in four left
+     open, so the held run shows through at a quarter, in the same
+     material the sheet is drawn in. (A 50% checker was tried and read as
+     static over a bright map.) */
+  .ms-screen {
+    background-color: transparent;
+    background-image:
+      linear-gradient(90deg, var(--ms-outline) 50%, transparent 50%),
+      linear-gradient(180deg, var(--ms-outline) 50%, transparent 50%);
+    background-size: 6px 6px;
   }
 
   /* THE BOARD'S GROUND — the tech tree and the codex pan over this. Plain
-     dark, no graticule: the ruled lines competed with the nodes, so the
-     board is now a bare field and the nodes are the only marks on it. The
-     fill matches the viewport behind it (Board.tsx's #08080a) so the panned
-     sheet's edge never shows as a lighter rectangle. */
+     dark; the fill matches the viewport behind it (Board.tsx's #08080a) so
+     the panned sheet's edge never shows as a lighter rectangle. */
   .ms-grid {
     background-color: #08080a;
   }
@@ -419,6 +643,17 @@ select,
   user-select: text;
 }
 
+/* CORNERS ARE SQUARE, EVERYWHERE. The one rule a pixel kit cannot make an
+   exception to: a rounded corner is the single strongest tell that a
+   panel was made with a web toolkit, and it is also the one thing pixel
+   art cannot draw. Stated once here, over every utility, so the admin
+   tooling's leftover `rounded-*` classes stop mattering. */
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
+}
+
 /* IMAGE ASSETS ARE PART OF THE INTERFACE, NOT CONTENT TO TAKE AWAY. Every
    picture in the app is a turret sprite, a unit icon, a currency glyph or a
    map thumbnail sitting inside a button, and none of them is a thing to
@@ -442,12 +677,12 @@ svg {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #454545 transparent;
+  scrollbar-color: #4a4d55 transparent;
 }
 
 *::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
 }
 
 *::-webkit-scrollbar-track {
@@ -455,8 +690,8 @@ svg {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #454545;
-  border: 2px solid transparent;
+  background: #4a4d55;
+  border: 3px solid transparent;
   background-clip: padding-box;
 }
 
@@ -515,16 +750,16 @@ svg {
    rather than adding one, that bounce is the only thing on screen saying
    the thousand scrap did something.
 
-   It is the one moving thing in the corner. The blink that used to run
-   out a card's clock is gone with the clock (there is no hand and no
-   fuse any more), and so is the lift that marked which card of a row was
-   picked, since the only card there is is always picked.
+   It plays in STEPS, seven frames over the 280ms, because a pixel sprite
+   that tweens smoothly is a web page pretending; a sprite that jumps
+   between poses is animation.
 
-   Dropped under prefers-reduced-motion, where the card simply appears. */
+   It is the one moving thing in the corner. Dropped under
+   prefers-reduced-motion, where the card simply appears. */
 @keyframes deal-pop {
   0% {
     opacity: 0;
-    transform: translateY(14px) scale(0.4);
+    transform: translateY(12px) scale(0.4);
   }
   60% {
     opacity: 1;
@@ -539,18 +774,43 @@ svg {
   }
 }
 
+/* THE CARD IS A TILE WITH A RARITY FLAG: a plate-coloured square, its 3px
+   outline in the rarity's colour (set inline from rarity.ts), and a
+   stepped triangle of the same colour in the top-left corner — the
+   pixel flag that says what band the draw came from before the label is
+   read. The ground is the rarity's own opaque one, set inline over the
+   fallback; NEVER translucent — see the note on RarityDef.ground */
 .ms-deal-card {
-  /* the fallback ground; the rarity's own opaque one (rarity.ts) is set
-     inline over it. NEVER translucent — see the note on RarityDef.ground */
-  background: #0b0b0d;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+  position: relative;
+  background: #1b1d22;
   user-select: none;
-  animation: deal-pop 280ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: deal-pop 280ms steps(7, end) both;
+}
+
+.ms-deal-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 3px;
+  background: currentColor;
+  box-shadow:
+    3px 0 0 currentColor,
+    6px 0 0 currentColor,
+    9px 0 0 currentColor,
+    0 3px 0 currentColor,
+    3px 3px 0 currentColor,
+    6px 3px 0 currentColor,
+    0 6px 0 currentColor,
+    3px 6px 0 currentColor,
+    0 9px 0 currentColor;
+  pointer-events: none;
 }
 
 .ms-deal-card:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
+  outline: 3px solid currentColor;
+  outline-offset: 3px;
 }
 
 /* A CARD OWNED BUT NOT AIMED — the right button put its ghost away and it
