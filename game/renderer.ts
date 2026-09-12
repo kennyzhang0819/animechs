@@ -2449,7 +2449,7 @@ export class Renderer {
           kind === FxKind.Laser || kind === FxKind.Shrapnel ||
           kind === FxKind.HealWave || kind === FxKind.ShieldBreak ||
           kind === FxKind.Sap || kind === FxKind.EmpHit ||
-          kind === FxKind.WaterBurst
+          kind === FxKind.WaterBurst || kind === FxKind.Scatter
         )
           em += fxLen[f];
         else if (kind === FxKind.UnitSpawn) em += KIND_SPRITE[fxUnit[f]] * 2;
@@ -2593,6 +2593,15 @@ export class Renderer {
         this.scatter(e.seed ?? 1, 5, (1 + t * 15) * MU, e.rot ?? 0, SPREAD_60, (x, y) => {
           this.fillCircle(dyn, e.x + x, e.y + y, rad, e.col ?? PAL.water, 1);
         });
+      } else if (e.kind === FxKind.Scatter) {
+        this.drawScatter(dyn, e, t);
+      } else if (e.kind === FxKind.ShortSpark) {
+        // A SHORTED BUILDING (Tower.shortT): one cyan bar flicking off it
+        // on a random bearing, white at birth and gone in a blink — the
+        // rot's rising mote read as electricity rather than as gas
+        const col = ramp(PAL.white, e.col ?? PAL.emp, null, t);
+        const bar = (2 + (1 - t) * 3) * MU;
+        this.strokeLine(dyn, e.x, e.y, e.rot ?? 0, bar, (0.4 + (1 - t) * 1.2) * MU, col, 1 - t * 0.5);
       } else if (e.kind === FxKind.Lightning) {
         this.drawBolt(dyn, e, t);
       } else if (e.kind === FxKind.Laser) {
@@ -3542,6 +3551,40 @@ export class Renderer {
    * dot at every node so the corners read as joints rather than kinks. The
    * colour washes from Pal.lancerLaser to white as it goes out.
    */
+  /**
+   * THE SKY GUNSHIPS' SHOTGUN (FxKind.Scatter, weapons.ts fx "scatter"):
+   * the blast IS the shot. A flash at the muzzle and a fan of streaks
+   * thrown the cone's width (`sides`, degrees) and a share of the gun's
+   * reach (`len`) — every streak leaves at once, its tip running out over
+   * the first third of the effect and its tail chasing it, so the fan
+   * reads as pellets leaving rather than a beam held, and is gone in a
+   * fifth of a second. White into the sky's own orange. A full-circle
+   * cone (the horizon's blast straight down) throws more streaks, shorter,
+   * so it reads as a burst under the ship rather than a fan off its nose.
+   */
+  private drawScatter(dyn: Batch, e: Effect, t: number): void {
+    const fout = 1 - t;
+    const cone = ((e.sides ?? 20) * Math.PI) / 180;
+    const ring = cone >= Math.PI - 0.01;
+    const reach = e.len || 60 * MU;
+    const base = e.col ?? PAL.unitFront;
+    const col = ramp(PAL.white, base, PAL.unitBack, t);
+    const rot = e.rot ?? 0;
+    this.fillCircle(dyn, e.x, e.y, (1.5 + fout * (ring ? 5 : 3)) * MU, col, fout);
+    const n = ring ? 14 : 9;
+    const stroke = (0.4 + fout * 1.3) * MU;
+    rngSeed(e.seed ?? 1);
+    for (let i = 0; i < n; i++) {
+      const a = rot + (rng() * 2 - 1) * cone;
+      const l = reach * (0.45 + rng() * 0.55) * (ring ? 0.8 : 1);
+      const head = l * Math.min(1, t * 3 + 0.35);
+      const tail = l * t;
+      const seg = head - tail;
+      if (seg <= 0.01) continue;
+      this.strokeLine(dyn, e.x + Math.cos(a) * tail, e.y + Math.sin(a) * tail, a, seg, stroke, col, fout);
+    }
+  }
+
   private drawBolt(dyn: Batch, e: Effect, t: number): void {
     const pts = e.pts;
     if (!pts || pts.length < 4) return;

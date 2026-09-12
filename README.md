@@ -44,8 +44,9 @@ stale tab or a cached bundle looks exactly like a fix not working.
 - `game/levels.ts` — unit stats and wave-script plumbing; the authored
   script itself (50 waves, a 15-second gap — `WAVE_GAP_DEFAULT`) lives in
   `public/levels/campaign.json`, loaded by `loadLevelDocs()`. Six unit
-  families: ground, venom spitters, ground support, air and the two **naval**
-  lines, which travel on the water layer. The **family roll**
+  families, each one idea at five sizes: ground mechs, venom spitters,
+  starlight mechs, sky gunships and the two **naval** lines (naval tanks,
+  aegis tanks), which travel on the amphibious water layer. The **family roll**
   (`rollFamilies`, `transformScript`) is what makes one run's swarm differ
   from the next's; `unitDrop` is what a kill pays
 - `game/economy.ts` — **the economy**: scrap (in-run money — a kill drops
@@ -747,20 +748,20 @@ that list.
 edited in the admin level editor from any world's card. The script is
 authored in three unit families (ground, ground support, air), and those
 are its three **slots**. When a run deploys, **the die rolls three
-families** from the ones the map's drop zones allow — a map with no water
-door cannot send hulls — and deals them into the slots, tier for tier
-(`rollFamilies`, `transformScript` in levels.ts). Forty daggers in the
+families** from the six — every layer crosses every map now, and a fleet
+on a map with no channel simply drives — and deals them into the slots,
+tier for tier (`rollFamilies`, `transformScript` in levels.ts). Forty daggers in the
 script are forty of whichever family took the first slot. The boss
 (Disrupt) is in no family and is never swapped.
 
-| family | bodies | needs a door for |
-|---|---|---|
-| Ground | dagger, mace, fortress, scepter, reign | ground |
-| Venom spitters | crawler, atrax, spiroct, arkyid, toxopid | ground |
-| Ground support | nova, pulsar, quasar, vela, corvus | ground |
-| Air | flare, horizon, zenith, antumbra, eclipse | air |
-| Naval | risso, minke, bryde, sei, omura | water |
-| Naval support | retusa, oxynoe, cyerce, aegires, navanax | water |
+| family | bodies | layer | one look | one mechanic |
+|---|---|---|---|---|
+| Ground mechs | dagger, mace, fortress, scepter, reign | ground | yellow straight bullets | plating and worn shields |
+| Venom spitters | crawler, atrax, spiroct, arkyid, toxopid | ground | purple orbs | rot, which ignores plating |
+| Starlight mechs | nova, pulsar, quasar, vela, corvus | ground | green lasers | every laser pierces; heals and shields |
+| Sky gunships | flare, horizon, zenith, antumbra, eclipse | air | orange shotgun fans | flying and fast; a jam over the guns |
+| Naval tanks | risso, minke, bryde, sei, omura | water | navy lobbed shells | artillery over the wall, quick afloat |
+| Aegis tanks | retusa, oxynoe, cyerce, aegires, navanax | water | cyan arcs | shorts, which take a gun's time |
 
 The deal is shown on the field in the bottom-right corner, StarCraft-style:
 a column of squares growing upward, the bottom one always the three
@@ -769,8 +770,13 @@ families dealt, every square above it one mutator in force.
 ### What a family IS
 
 A family is not five bodies that share a colour — it is **one idea at five
-sizes**, and the two that have been reworked say so in every row. The rest
-of the roster is still 1:1 with `UnitTypes.java`; these two are authored.
+sizes**, and every row says so. Every family is authored to the same
+shape: **the T1 is the idea in miniature**, one or two tiers carry a
+**field** for the crowd (a shield, a bubble, a heal, a stamp), one tier
+**reaches** further than the rest, and one tier hits an **area**. The
+looks are Mindustry's classes and palettes where a family kept them and
+this game's own where it did not; the bite is tuned with the stage table
+open.
 
 **Ground mechs — straight bullets, heavy plating, worn shields.** Every
 weapon in the line is a round that goes where it is pointed: no arc, no
@@ -847,6 +853,74 @@ ground mechs' siege shell was made blockable in the same pass that left the
 venom line's thrown bomb unblockable, so one family is answered by putting
 something in the way and the other is not.
 
+**Starlight mechs — green lasers that pierce, and a crowd that keeps
+mending.** Every weapon on the tree is an instant beam in `Pal.heal`, and
+every beam hits **every structure along its length** (`pierce`,
+`Sim.structuresAlong`) — the corridor is the style's own width, so a
+nova's thin lance takes the row it points down and the **corvus**'s
+57-tile, nine-cell beam takes the patch. Nothing flies: the nova's bolt is
+a lance now and the pulsar's lightning a **fan of three** thin beams. Every
+tier heals or shields the crowd around it — the nova mends, the pulsar
+shields, the **quasar** stands in its 500-point force field — and the
+**vela** and **corvus** do both at once (a repair field and a shield field
+on one pulse, the corvus's the biggest on the roster), which is what the
+top of the line was missing.
+
+*What it poses:* a wall of green across a patch from behind a crowd that
+does not go down. Kill the carriers before the line reaches the guns.
+
+**Sky gunships — shotguns, and fast at every tier.** No round crosses the
+field: every weapon is a **cone** (`scatter`, `Sim.structuresInCone`) in
+which every structure takes a pellet's worth the instant the trigger is
+pulled, less the further out it stands, nearest first up to a cap — and
+what is drawn is the **fan of orange streaks** leaving the ship
+(`FxKind.Scatter`) plus the sparks on what it struck. The **horizon**'s cone
+is a full circle straight down, where its bombs used to fall; the
+**eclipse**'s broadside is the family's long gun. The line **keeps its
+speed**: Mindustry's tree trades it away (flare 20 tiles/s to eclipse 4)
+and this one flies every tier faster than any walker, eclipse at 9. The
+**zenith** shields the flight; the **antumbra** carries a **jam**
+(`jamField`, `Tower.jamT`) — every gun within eleven tiles reloads at half
+pace while it is overhead, the first aura in the game that lands on the
+board rather than on the swarm.
+
+*What it poses:* it ignores the maze and is over the line before a slow
+gun has turned. The answer is reach into the sky and rate of fire, at
+every tier.
+
+**Naval tanks — artillery from the water.** Every gun on the fleet **lobs a
+navy shell** (`navalShell`, `collide: false`) over whatever is in front of
+it and bursts where it was aimed, landing in the sea's own colours. The
+fortress gave up its arc so that exactly one family would keep it, and this
+is the family: the **risso**'s mortar at nineteen tiles up to the
+**omura**'s siege shell — 350 over five tiles at **fifty**, the longest
+reach on the roster. The hulls are **half again as quick afloat** as their
+stat (`NAVAL_WATER_SPEED`) and a third down on it ashore
+(`NAVAL_LAND_SPEED`), the **bryde** shields the fleet, and the **sei**'s
+**bow wave** (`wakeField`) lifts the land tax off every hull near it.
+
+*What it poses:* bombardment over the wall. A wall is no answer to a
+shell; the answer is guns whose reach covers the channel.
+
+**Aegis tanks — arcs that short the guns, from inside the biggest bubbles
+in the game.** Every weapon is **chain lightning** in an electric cyan
+(`PAL.emp`, fx `arc`): the target first, then the nearest structure the
+last one struck can reach, hop after hop, each carrying a share of the
+last — and every structure it connects with rolls a **short**
+(`Tower.shortT`): its gun is out for a moment, neither reloading nor firing
+nor mending. A short is a **refresh, never a stack**, and every tier's
+reload is longer than its short, so one hull flickers a gun and a crowd
+holds it down — the venom rule read for time instead of health. What a tier
+buys is reach, hops and reliability: a **retusa** shorts one gun in eight
+it touches for half a second; a **navanax** one in two for a full second,
+seven guns at a time, from twenty-five tiles. The **oxynoe** and the
+**navanax** stand inside **force fields** (the navanax's 1,500 points, three
+times the quasar's) and the **aegires** heals the fleet by a share of its
+health while its field shorts everything in twenty-two tiles.
+
+*What it poses:* a board that goes quiet. A short ignores a turret's pool
+and its plating both. Kill them through the bubbles, or wait for the gap.
+
 ### The swarm shoots back
 
 **Turrets stand on open ground, and the swarm attacks them.** Every unit
@@ -855,10 +929,9 @@ every weapon it carries fires at the nearest structure within reach **and
 in sight** on the way — a walker cannot shoot through a hill
 (`Sim.hasSight`), so a turret behind a ridge is one the swarm has to come
 round before it can answer; a flyer is looking down and sees its whole
-radius. Every weapon plays `UnitTypes.java` as written, with the look —
-bullets, missiles, shells, beams, bolts, flames, saps, fields and bombs —
-read off the bullet classes 1:1 — except where a FAMILY REWORK has
-deliberately left them (below). The swarm is
+radius. Every weapon is authored in `game/weapons.ts` — one look and one
+mechanic a family (above) — on Mindustry's bullet classes and palettes
+where a family kept them. The swarm is
 Mindustry's crux team: every unit wears its `-cell` region in crux red.
 
 A turret's cells are solid to the body but **passable to the path at a

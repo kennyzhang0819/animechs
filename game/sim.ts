@@ -5,6 +5,7 @@ import {
   LAYER_BIT,
   MOVE_LAYERS,
   NAVAL_LAND_SPEED,
+  NAVAL_WATER_SPEED,
   NCELLS,
   type MoveLayer,
   type ZoneKind,
@@ -18,6 +19,8 @@ import {
   POISON_FX_LIFE,
   POISON_FX_RATE,
   POISON_TIME,
+  SHORT_FX_LIFE,
+  SHORT_FX_RATE,
   FX_SPAWN,
   FX_UNIT_SPAWN,
   SPAWN_INVINCIBLE as SPAWN_INVINCIBLE_IMPORT,
@@ -481,6 +484,11 @@ const KIND_FORCE = UNIT_KINDS.map((k) => UNIT_STATS[k].forceField ?? null);
  *  plating and the spiroct's pace, one carrier each at the moment */
 const KIND_ARMOR_F = UNIT_KINDS.map((k) => UNIT_STATS[k].armorField ?? null);
 const KIND_HASTE_F = UNIT_KINDS.map((k) => UNIT_STATS[k].hasteField ?? null);
+/** ...and the two the sky and the sea carry (levels.ts jamField /
+ *  wakeField): the antumbra's stamp on the BUILDINGS under it, and the
+ *  sei's on the hulls around it */
+const KIND_JAM_F = UNIT_KINDS.map((k) => UNIT_STATS[k].jamField ?? null);
+const KIND_WAKE_F = UNIT_KINDS.map((k) => UNIT_STATS[k].wakeField ?? null);
 const KIND_BOSS: readonly boolean[] = UNIT_KINDS.map((k) => !!UNIT_STATS[k].boss);
 const BOSS_KINDS = KIND_BOSS.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
 /** the pad list a brood spawn is handed — it picks its own spot, so there
@@ -648,12 +656,15 @@ const HAS_ABILITIES =
   KIND_ENERGY.some(Boolean) ||
   KIND_ARMOR_F.some(Boolean) ||
   KIND_HASTE_F.some(Boolean) ||
+  KIND_JAM_F.some(Boolean) ||
+  KIND_WAKE_F.some(Boolean) ||
   FORCE_KINDS.length > 0;
 /** ...and whether either STAMP is on the roster at all — the two reads that
  *  cost something are in the movement and damage hot loops, so they are
  *  gated on this rather than on a per-unit test */
 const HAS_ARMOR_AURA = KIND_ARMOR_F.some(Boolean);
 const HAS_HASTE_AURA = KIND_HASTE_F.some(Boolean);
+const HAS_WAKE_AURA = KIND_WAKE_F.some(Boolean);
 
 // how fast body and chassis swivel: Mindustry's default rotateSpeed /
 // baseRotateSpeed, 5 degrees per tick
@@ -795,6 +806,9 @@ export class Sim {
   readonly uarmorT = new Float32Array(MAX_UNITS);
   readonly uhasteMul = new Float32Array(MAX_UNITS);
   readonly uhasteT = new Float32Array(MAX_UNITS);
+  /** THE BOW WAVE (levels.ts wakeField): seconds a hull still drives
+   *  ashore at its afloat pace. Only ever written onto naval bodies */
+  readonly ubowT = new Float32Array(MAX_UNITS);
   /**
    * StatusEffects.wet: seconds of soaking left, and the drive-speed
    * multiplier in force while it lasts. One entry like the status map's —
@@ -2354,6 +2368,10 @@ export class Sim {
       poison: 0,
       poisonUnit: 0,
       poisonT: 0,
+      // ...nor shorted (the Aegis tanks' EMP) nor jammed (the sky's T4)
+      shortT: 0,
+      jamT: 0,
+      jamRate: 1,
       // Undying Legion (mods.ts) grants every turret one stand-up, the
       // ones bought after it included
       revives: this.mods.undying ? 1 : 0,
@@ -2836,6 +2854,114 @@ export class Sim {
   }
 
   private readonly splashOut: Structure[] = [];
+  /** the arc's own scratch: the structures one chain has already struck */
+  private readonly arcOut: Structure[] = [];
+  private readonly arcNear: Structure[] = [];
+  private readonly alongOut: Structure[] = [];
+
+  /**
+   * EVERY LIVE STRUCTURE A BEAM CROSSES — the Starlight mechs' family
+   * trait (weapons.ts UnitWeapon.pierce). The line is walked half a cell
+   * at a time from the muzzle to `len`, and a corridor `halfW` either side
+   * of it a cell at a time, reading the occupancy grid at each sample;
+   * each structure is taken once, in the order the beam reaches it.
+   *
+   * IT IS A GRID WALK AND NOT A SEARCH: a corvus's 57-tile beam is some
+   * hundred and fifteen samples down the line and nine across, a thousand
+   * array reads, once every seven seconds. A nova's is fifteen. It costs
+   * what it looks like it costs.
+   */
+  private structuresAlong(
+    x: number,
+    y: number,
+    angle: number,
+    len: number,
+    halfW: number,
+    out: Structure[],
+    team: Team = "player",
+  ): Structure[] {
+    out.length = 0;
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    // the corridor: offsets square to the line, a cell apart, the centre
+    // line always one of them
+    const lanes = Math.max(0, Math.floor(halfW / CELL));
+    const step = CELL * 0.5;
+    const grid = this.cellTower;
+    for (let d = 0; d <= len; d += step) {
+      const px = x + cos * d, py = y + sin * d;
+      for (let l = -lanes; l <= lanes; l++) {
+        const ox = px - sin * l * CELL, oy = py + cos * l * CELL;
+        const cx = (ox / CELL) | 0, cy = (oy / CELL) | 0;
+        if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) continue;
+        const t = grid[cy * COLS + cx];
+        if (!t || out.includes(t)) continue;
+        if (this.enemyTowers > 0 && teamOf(t) !== team) continue;
+        out.push(t);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * EVERY LIVE STRUCTURE IN A CONE OFF THE MUZZLE — the Sky gunships'
+   * shotgun (weapons.ts fx "scatter"): within `reach`, and with its centre
+   * inside `cone` either side of `aim` (a footprint's own half-width
+   * widens the test, so a wall the cone's edge clips is in it). The list
+   * comes back nearest first, which is what `maxTargets` cuts against.
+   * A ground body only takes what it can see; a flyer sees the whole
+   * wedge, and every gunship flies.
+   */
+  private structuresInCone(
+    x: number,
+    y: number,
+    aim: number,
+    reach: number,
+    cone: number,
+    sighted: boolean,
+    out: Structure[],
+  ): Structure[] {
+    this.structuresWithin(x, y, reach, out);
+    if (cone < Math.PI) {
+      let w = 0;
+      for (let k = 0; k < out.length; k++) {
+        const t = out[k];
+        const dx = t.x - x, dy = t.y - y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        const half = (this.sizeOf(t) * CELL) / 2;
+        let da = Math.atan2(dy, dx) - aim;
+        while (da > Math.PI) da -= Math.PI * 2;
+        while (da < -Math.PI) da += Math.PI * 2;
+        // the footprint's angular half-width, as seen from the muzzle
+        const slack = d > half ? Math.asin(half / d) : Math.PI;
+        if (Math.abs(da) <= cone + slack) out[w++] = t;
+      }
+      out.length = w;
+    }
+    if (sighted) {
+      let w = 0;
+      for (let k = 0; k < out.length; k++) if (this.canSee(out[k], x, y)) out[w++] = out[k];
+      out.length = w;
+    }
+    if (out.length > 1)
+      out.sort((a, b) => {
+        const ax = a.x - x, ay = a.y - y, bx = b.x - x, by = b.y - y;
+        return ax * ax + ay * ay - (bx * bx + by * by);
+      });
+    return out;
+  }
+
+  /**
+   * THE SHORT LANDING (Tower.shortT): the gun goes out for `dur` seconds,
+   * or stays out that long from now if it already was — a REFRESH, never
+   * a stack, and never on the core (the core has no gun to put out). The
+   * odds are rolled here, per structure, exactly as the rot's are
+   * (poisonTower), so a chain across a patch comes out speckled.
+   */
+  private shortTower(t: Structure, dur: number, chance = 1): void {
+    if (dur <= 0 || isCore(t) || t.hp <= 0) return;
+    if (chance < 1 && Math.random() >= chance) return;
+    if (dur > t.shortT) t.shortT = dur;
+  }
 
   /**
    * A unit's hit on a structure, through the one dial (unitDamageScale) —
@@ -3038,7 +3164,16 @@ export class Sim {
             }
             if (ucd[slot] <= 0) {
               ucd[slot] += wp.beam.interval;
-              if (tgt && this.aimReach(tgt, x, y, wp.range)) {
+              if (wp.pierce) {
+                // THE STARLIGHT RULE: a held beam bites everything under
+                // it, every interval, the width of its own washes
+                const halfW = ((wp.beamStyle?.width ?? 4) * MU) / 2;
+                const hit = this.structuresAlong(x, y, uheldRot[i], wp.range, halfW, this.alongOut);
+                for (let k = 0; k < hit.length; k++) {
+                  this.hitStructure(hit[k], wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+                  if (k < 4) this.pushFxCol(hit[k].x, hit[k].y, 12 / 60, FxKind.HitMeltHeal, 0, 0, PAL.heal);
+                }
+              } else if (tgt && this.aimReach(tgt, x, y, wp.range)) {
                 this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
                 this.pushFxCol(tgt.x, tgt.y, 12 / 60, FxKind.HitMeltHeal, 0, 0, PAL.heal);
               }
@@ -3119,7 +3254,9 @@ export class Sim {
             break;
           }
           case "laser": {
-            this.fireUnitLaser(x, y, aim, tgt, wp);
+            // a volley of them fans by ShootSpread (the pulsar's three)
+            for (let k = 0; k < shots; k++)
+              this.fireUnitLaser(x, y, aim + (k - (shots - 1) / 2) * (wp.spread ?? 0), tgt, wp);
             break;
           }
           case "sap": {
@@ -3215,6 +3352,79 @@ export class Sim {
             this.pushFx(tgt.x, tgt.y, 18 / 60, FxKind.RailHit, aim, 0, 0, 0, true);
             break;
           }
+          case "scatter": {
+            // THE SKY'S SHOTGUN: no round at all. Every structure in the
+            // cone takes a pellet's worth the instant the trigger is
+            // pulled, less the further out it stands, nearest first up to
+            // the cap; the fan out of the muzzle is the whole of what is
+            // drawn (FxKind.Scatter), plus the sparks on what it struck
+            const cone = wp.cone ?? Math.PI;
+            const hit = this.structuresInCone(x, y, aim, wp.range, cone, sighted, this.splashOut);
+            const max = wp.maxTargets ?? hit.length;
+            const fall = wp.falloff ?? 1;
+            const col = wp.scatterColor ?? PAL.unitFront;
+            for (let k = 0; k < hit.length && k < max; k++) {
+              const t = hit[k];
+              const half = (this.sizeOf(t) * CELL) / 2;
+              const dx = t.x - x, dy = t.y - y;
+              const d = Math.max(0, Math.sqrt(dx * dx + dy * dy) - half);
+              const share = 1 - (1 - fall) * Math.min(1, d / wp.range);
+              this.hitStructure(t, wp.damage * share, wp.poison ?? 0, wp.poisonChance ?? 1);
+              if (k < 6)
+                this.pushFxCol(t.x, t.y, FX_LIFE[FxKind.BulletHit], FxKind.BulletHit, Math.atan2(dy, dx), 0, col, 0,
+                  false, (Math.random() * 0x7fffffff) | 0);
+            }
+            // the fan carries its cone in degrees down the style lane
+            const deg = Math.min(255, Math.round((cone * 180) / Math.PI));
+            for (let k = 0; k < shots; k++)
+              this.pushFxCol(x, y, 13 / 60, FxKind.Scatter, aim, wp.range, col, deg, true,
+                (Math.random() * 0x7fffffff) | 0);
+            break;
+          }
+          case "arc": {
+            // THE AEGIS ARC: the target, then the nearest structure the
+            // last one struck can reach, `jumps` times, each hop a share
+            // of the last — and a SHORT rolled on every one of them. A
+            // Fx.chainLightning from the mount to the first and from each
+            // to the next, so the chain is drawn where it went
+            const ar = wp.arc;
+            if (!ar) break;
+            const seen = this.arcOut;
+            seen.length = 0;
+            let cur: Structure = tgt.s;
+            let dmg = wp.damage;
+            this.hitStructure(cur, dmg, wp.poison ?? 0, wp.poisonChance ?? 1);
+            this.shortTower(cur, wp.short ?? 0, wp.shortChance ?? 1);
+            this.chainFx(x, y, cur, ar.color);
+            this.pushFxCol(cur.x, cur.y, 12 / 60, FxKind.HitLaserBlast, aim, 0, ar.color);
+            seen.push(cur);
+            for (let j = 0; j < ar.jumps; j++) {
+              const near = this.structuresWithin(cur.x, cur.y, ar.reach, this.arcNear);
+              let next: Structure | null = null;
+              let bd = Infinity;
+              for (let k = 0; k < near.length; k++) {
+                const c = near[k];
+                if (seen.includes(c)) continue;
+                const ddx = c.x - cur.x, ddy = c.y - cur.y;
+                const d2 = ddx * ddx + ddy * ddy;
+                if (d2 < bd) {
+                  bd = d2;
+                  next = c;
+                }
+              }
+              if (!next) break;
+              dmg *= ar.decay;
+              this.hitStructure(next, dmg, wp.poison ?? 0, wp.poisonChance ?? 1);
+              this.shortTower(next, wp.short ?? 0, wp.shortChance ?? 1);
+              this.chainFx(cur.x, cur.y, next, ar.color);
+              this.pushFxCol(next.x, next.y, 12 / 60, FxKind.HitLaserBlast, 0, 0, ar.color);
+              seen.push(next);
+              cur = next;
+            }
+            this.pushFxCol(x, y, 8 / 60, FxKind.HitEmpSpark, aim, 0, ar.color, 0, false,
+              (Math.random() * 0x7fffffff) | 0);
+            break;
+          }
           case "field": {
             // EnergyFieldAbility: one pulse to every structure in reach, a
             // Fx.chainLightning to each and Fx.hitLaserBlast off the unit
@@ -3224,6 +3434,7 @@ export class Sim {
             const col = wp.fieldColor ?? PAL.heal;
             for (let k = 0; k < hit.length && k < max; k++) {
               this.hitStructure(hit[k], wp.damage);
+              if (wp.short) this.shortTower(hit[k], wp.short, wp.shortChance ?? 1);
               this.chainFx(x, y, hit[k], col);
               this.pushFxCol(x, y, 12 / 60, FxKind.HitLaserBlast, Math.atan2(hit[k].y - y, hit[k].x - x), 0, col);
             }
@@ -3296,8 +3507,21 @@ export class Sim {
    * goes off at the muzzle
    */
   private fireUnitLaser(x: number, y: number, aim: number, tgt: Aim | null, wp: UnitWeapon): void {
-    if (tgt && this.aimReach(tgt, x, y, wp.range)) this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
     const st = wp.laser;
+    if (wp.pierce) {
+      // THE STARLIGHT RULE (UnitWeapon.pierce): everything the beam
+      // crosses takes the hit, the corridor the style's own width
+      const halfW = ((st?.width ?? 6) * MU) / 2;
+      const hit = this.structuresAlong(x, y, aim, wp.range, halfW, this.alongOut);
+      for (let k = 0; k < hit.length; k++) {
+        this.hitStructure(hit[k], wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+        if (wp.short) this.shortTower(hit[k], wp.short, wp.shortChance ?? 1);
+        if (st && k > 0 && k < 6)
+          this.pushFxCol(hit[k].x, hit[k].y, 12 / 60, FxKind.HitLaserBlast, aim, 0, st.colors[st.colors.length - 1][0]);
+      }
+    } else if (tgt && this.aimReach(tgt, x, y, wp.range)) {
+      this.aimHit(tgt, wp.damage, wp.poison ?? 0, wp.poisonChance ?? 1);
+    }
     if (!st) return;
     this.pushFx(x, y, st.lifetime, FxKind.Laser, aim, wp.range, 0, st.id, true);
     if (wp.shoot === FxKind.Shockwave) this.pushFx(x, y, 10 / 60, FxKind.Shockwave, 0, wp.shootLen ?? 0);
@@ -4170,6 +4394,7 @@ export class Sim {
       this.uarmorT[i] = 0;
       this.uhasteMul[i] = 1;
       this.uhasteT[i] = 0;
+      this.ubowT[i] = 0;
       // AMPHIBIOUS (mutation.ts): every body walks in dry and unstacked,
       // whatever ground it happens to have been dropped onto — a drop zone
       // is not a crossing, and crediting one would hand the bonus out for
@@ -4306,14 +4531,32 @@ export class Sim {
       // What they write is a timer rather than a pool
       const armorF = KIND_ARMOR_F[k];
       const hasteF = KIND_HASTE_F[k];
-      if (!repair && !shield && !energy && !armorF && !hasteF) continue;
-      const spec = (repair ?? shield ?? energy ?? armorF ?? hasteF)!;
+      // ...and the sky's and the sea's (levels.ts jamField / wakeField)
+      const jamF = KIND_JAM_F[k];
+      const wakeF = KIND_WAKE_F[k];
+      if (!repair && !shield && !energy && !armorF && !hasteF && !jamF && !wakeF) continue;
+      const spec = (repair ?? shield ?? energy ?? armorF ?? hasteF ?? jamF ?? wakeF)!;
       const reload = spec.reload;
       uability[i] += dt;
       if (uability[i] < reload) continue;
       uability[i] = 0;
 
       const range = spec.range;
+      // THE JAM lands on BUILDINGS, not bodies: one structure search per
+      // pulse, a timer and a rate written onto each. It rides the same
+      // clock as the rest and shares a ring with them below
+      if (jamF) {
+        const hit = this.structuresWithin(upx[i], upy[i], jamF.range, this.splashOut);
+        for (let q = 0; q < hit.length; q++) {
+          const t = hit[q];
+          if (isCore(t)) continue;
+          if (t.jamT <= 0 || jamF.rate < t.jamRate) t.jamRate = jamF.rate;
+          t.jamT = reload + AURA_LINGER;
+        }
+        if (hit.length > 0)
+          this.pushFxCol(upx[i], upy[i], 22 / 60, FxKind.ShieldWave, 0, jamF.range, PAL.unitFront);
+        if (!repair && !shield && !energy && !armorF && !hasteF && !wakeF) continue;
+      }
       // EnergyFieldAbility.maxTargets: how many units one zap may still
       // reach. Upstream sorts the candidates by distance and takes the
       // nearest few; this walks the hash in bucket order and stops when
@@ -4360,6 +4603,12 @@ export class Sim {
             this.uhasteT[j] = reload + AURA_LINGER;
             did = true;
           }
+          // ...and THE BOW WAVE, on hulls and on nothing else: the land tax
+          // is lifted while the stamp runs (updateUnits)
+          if (wakeF && this.unav[j] !== 0) {
+            this.ubowT[j] = reload + AURA_LINGER;
+            did = true;
+          }
           if (shield && ushield[j] < shield.max * ss) {
             ushield[j] = Math.min(ushield[j] + shield.amount * ss, shield.max * ss);
             ushieldAlpha[j] = 1;
@@ -4393,7 +4642,7 @@ export class Sim {
           upx[i], upy[i], 22 / 60,
           repair || energy ? FxKind.HealWave : FxKind.ShieldWave,
           0, range,
-          repair || energy ? PAL.heal : hasteF ? PAL.sapBullet : TEAM_CRUX_RGB,
+          repair || energy ? PAL.heal : hasteF ? PAL.sapBullet : wakeF ? PAL.navalFront : TEAM_CRUX_RGB,
         );
     }
   }
@@ -4433,6 +4682,7 @@ export class Sim {
         this.uhasteT[i] = 0;
         this.uhasteMul[i] = 1;
       }
+      if (this.ubowT[i] > 0 && (this.ubowT[i] -= dt) <= 0) this.ubowT[i] = 0;
       if (uwet[i] > 0) {
         uwet[i] -= dt;
         if (uwet[i] <= 0) {
@@ -4817,6 +5067,7 @@ export class Sim {
     this.uarmorT[i] = this.uarmorT[n];
     this.uhasteMul[i] = this.uhasteMul[n];
     this.uhasteT[i] = this.uhasteT[n];
+    this.ubowT[i] = this.ubowT[n];
     this.uhungry[i] = this.uhungry[n];
     this.ueaten[i] = this.ueaten[n];
     this.uhungerT[i] = this.uhungerT[n];
@@ -5275,7 +5526,10 @@ export class Sim {
       // it is reading knows nothing about it, so the route stays the plain
       // shortest path and the water is a place a tank is quicker rather
       // than a place it is drawn to.
-      const land = nav && !water[ci] ? NAVAL_LAND_SPEED : 1;
+      // ...AND HALF AGAIN AFLOAT (NAVAL_WATER_SPEED): the water is the road
+      // the family is quick on, and a hull under the sei's bow wave
+      // (ubowT, levels.ts wakeField) keeps its afloat pace ashore too
+      const land = !nav ? 1 : water[ci] ? NAVAL_WATER_SPEED : HAS_WAKE_AURA && this.ubowT[i] > 0 ? 1 : NAVAL_LAND_SPEED;
       // ...and a FOURTH multiplier: the spiroct's pace stamp (levels.ts
       // hasteField). It rides here with the wet slow and the land penalty
       // rather than on uspd, so it is a thing happening TO the body and
@@ -6430,6 +6684,12 @@ export class Sim {
       }
       // LAST VOLLEY (mods.ts): a dead neighbour's charge, running down
       if (t.boostT > 0) t.boostT -= dt;
+      // THE JAM (levels.ts jamField), running down the same way — the
+      // rate it wrote is read at the reload below while the clock runs
+      if (t.jamT > 0 && (t.jamT -= dt) <= 0) {
+        t.jamT = 0;
+        t.jamRate = 1;
+      }
       const maxHp = t.hpMax;
       if (t.hp < maxHp * DAMAGE_SMOKE_BELOW) {
         const hurt = 1 - t.hp / (maxHp * DAMAGE_SMOKE_BELOW);
@@ -6449,6 +6709,26 @@ export class Sim {
       // there (see conquerTower)
       const st = t.spec;
       const hostile = t.team === "enemy";
+      // SHORTED OUT (Tower.shortT, the Aegis tanks' EMP): nothing below
+      // runs — no reload, no volley, no mending, no beam — until the clock
+      // is out. The sparks are the only sign, on the rot's own footprint
+      // rule, so a shorted spectre reads from across the field
+      if (t.shortT > 0) {
+        t.shortT -= dt;
+        if (t.shortT <= 0) t.shortT = 0;
+        else {
+          if (Math.random() < SHORT_FX_RATE * t.size * dt) {
+            const sz = t.size * CELL;
+            this.pushFxCol(
+              t.x + (Math.random() - 0.5) * sz * 0.8,
+              t.y + (Math.random() - 0.5) * sz * 0.8,
+              SHORT_FX_LIFE, FxKind.ShortSpark, Math.random() * Math.PI * 2, 0, PAL.emp, 0, false,
+              (Math.random() * 0x7fffffff) | 0,
+            );
+          }
+          continue;
+        }
+      }
       // a support block has no target and no barrel — it pulses (the
       // damage smoke above is still its, because it is still a building
       // the swarm can chew on). THE SWARM'S COPY PULSES NOTHING: a mender
@@ -6475,7 +6755,8 @@ export class Sim {
       // ...at the TOWER'S rate, which is 1 for everything except a turret
       // the Hydrophobic rule has waterlogged (mutation.ts)
       // ...times a dying neighbour's parting charge, if one is running
-      const rate = t.fireRate * (t.boostT > 0 ? LAST_VOLLEY_RATE : 1);
+      // ...times the sky's jam, while a gunship's stamp is on it
+      const rate = t.fireRate * (t.boostT > 0 ? LAST_VOLLEY_RATE : 1) * (t.jamT > 0 ? t.jamRate : 1);
       if (t.cd > 0 && !(cont && t.beamT > cont.fade)) t.cd -= dt * rate;
 
       // a queued volley that is still charging: the shots are already spent

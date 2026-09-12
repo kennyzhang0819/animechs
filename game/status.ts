@@ -43,6 +43,8 @@ export type StatusId =
   | "hungry"
   | "waded"
   | "rot"
+  | "short"
+  | "jam"
   | "boost"
   | "regen"
   | "revive"
@@ -140,6 +142,22 @@ export const STATUSES: readonly StatusDef[] = [
     color: PAL.sap,
     blurb:
       "Venom. It takes raw health a second and ignores plating; more spitters on one building rot it faster, up to a cap.",
+    field: true,
+  },
+  {
+    id: "short",
+    name: "Shorted",
+    color: PAL.emp,
+    blurb:
+      "An Aegis arc put this gun out. It neither reloads nor fires nor mends while this lasts; a fresh short re-times it rather than stacking.",
+    field: true,
+  },
+  {
+    id: "jam",
+    name: "Jammed",
+    color: PAL.sky,
+    blurb:
+      "A gunship is blanketing the ground under it. This gun reloads slower for as long as the flight is over it.",
     field: true,
   },
   {
@@ -286,7 +304,8 @@ export function structHasFieldStatus(s: Structure): boolean {
   if (isCore(s)) return false;
   const t = s;
   return (
-    t.poison > 0 || t.boostT > 0 || t.regen > 0 || t.revives > 0 || t.fireRate < 1 || t.team === "enemy"
+    t.poison > 0 || t.shortT > 0 || t.jamT > 0 || t.boostT > 0 || t.regen > 0 || t.revives > 0 ||
+    t.fireRate < 1 || t.team === "enemy"
   );
 }
 
@@ -295,6 +314,8 @@ export function structFieldStatuses(s: Structure, out: StatusId[]): number {
   out.length = 0;
   if (isCore(s)) return 0;
   if (s.poison > 0) out.push("rot");
+  if (s.shortT > 0) out.push("short");
+  if (s.jamT > 0) out.push("jam");
   if (s.boostT > 0) out.push("boost");
   if (s.regen > 0) out.push("regen");
   if (s.revives > 0) out.push("revive");
@@ -322,13 +343,15 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
   const tally = new Map<StatusId, number>();
   // the single-pick numbers. Summed or maxed so they stay meaningful for
   // one building, which is the only case that ever reads them back
-  let poison = 0, boostT = 0, regen = 0, revives = 0, rate = 1;
+  let poison = 0, boostT = 0, regen = 0, revives = 0, rate = 1, shortT = 0, jamRate = 1;
   for (const s of picked) {
     if (isCore(s)) {
       armorMixed = true; // the core wears none, so a bag holding one disagrees
       continue;
     }
     poison += s.poison;
+    shortT = Math.max(shortT, s.shortT);
+    if (s.jamT > 0) jamRate = Math.min(jamRate, s.jamRate);
     boostT = Math.max(boostT, s.boostT);
     regen += s.regen;
     revives += s.revives;
@@ -340,6 +363,8 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
     else if (armor !== s.spec.armor) armorMixed = true;
     const bump = (id: StatusId): void => void tally.set(id, (tally.get(id) ?? 0) + 1);
     if (s.poison > 0) bump("rot");
+    if (s.shortT > 0) bump("short");
+    if (s.jamT > 0) bump("jam");
     if (s.boostT > 0) bump("boost");
     if (s.regen > 0) bump("regen");
     if (s.revives > 0) bump("revive");
@@ -359,6 +384,8 @@ export function structSelectionChips(picked: readonly Structure[]): StatusChip[]
     });
   };
   on("rot", null, `${num(poison)} health a second`);
+  on("short", null, secs(shortT));
+  on("jam", null, `reloads at ${Math.round(jamRate * 100)}%`);
   on("boost", null, secs(boostT));
   on("regen", null, `${num(regen)} health a second`);
   on("revive", revives, `${revives} stand-up${revives === 1 ? "" : "s"} left`);

@@ -160,6 +160,32 @@ const SYMBOLS: Record<StatusId, (g: Pen) => void> = {
     g.box(0.58, 0.78, 0.86, 1, PAL.sap);
   },
 
+  /**
+   * SHORTED — a cyan bolt across a dark bar. The bar is the gun that is
+   * out; the bolt is what put it out, in the one colour that means EMP
+   * (PAL.emp, the Aegis tanks' arc). It shares a shape with LAST VOLLEY
+   * below on purpose and nothing else: both are electricity doing
+   * something to a reload, and the colour is which — hot means faster,
+   * cyan means off.
+   */
+  short: (g) => {
+    g.box(0.06, 0.34, 0.94, 0.66, PAL.steelDark);
+    g.poly([[0.68, 0.0], [0.2, 0.56], [0.46, 0.56], [0.32, 1.0], [0.82, 0.42], [0.56, 0.42]], PAL.emp);
+    g.over((o) => o.box(0, 0.62, 1, 1, PAL.empDark));
+  },
+
+  /**
+   * JAMMED — a signal crossed out: two rings, in the sky's own orange,
+   * with a dark bar struck through them. The rings are the flight's
+   * blanket and the bar is what it does to the gun under it.
+   */
+  jam: (g) => {
+    g.ring(0.5, 0.5, 0.44, 0.14, PAL.sky);
+    g.ring(0.5, 0.5, 0.2, 0.12, PAL.sky);
+    g.over((o) => o.box(0, 0.6, 1, 1, PAL.skyDark));
+    g.poly([[0.06, 0.2], [0.2, 0.06], [0.94, 0.8], [0.8, 0.94]], PAL.steelDark);
+  },
+
   /** LAST VOLLEY — a bolt, hot at the tip and cooling down its length.
    *  A gun reloading three times as fast is speed, and speed is a bolt. */
   boost: (g) => {

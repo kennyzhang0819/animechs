@@ -355,6 +355,29 @@ export interface UnitStats {
    */
   hasteField?: { mult: number; reload: number; range: number };
   /**
+   * THE JAMMING AURA — the antumbra's, and the Sky gunships' second family
+   * trait made into a rule (FAMILIES). Every `reload` seconds the carrier
+   * stamps every BUILDING in `range` with `rate`: while the stamp lasts
+   * that turret's reload runs at `rate` of its own (Tower.jamT / jamRate,
+   * on top of the Hydrophobic tax and a dying neighbour's charge).
+   *
+   * IT IS THE FIRST AURA IN THE GAME THAT LANDS ON THE BOARD AND NOT ON THE
+   * SWARM. The three above make the crowd tougher or quicker; this one
+   * makes the guns under the flight slower, which is what a family that
+   * ignores the maze and hangs over the turrets should be doing to them.
+   * Kill the carrier and the line wakes up on the next pulse.
+   */
+  jamField?: { rate: number; reload: number; range: number };
+  /**
+   * THE BOW WAVE — the sei's, and the Naval tanks' own aura. Every
+   * `reload` seconds the carrier stamps every HULL in `range`: while the
+   * stamp lasts the hull drives ashore as it would afloat — the land tax
+   * (constants.ts NAVAL_LAND_SPEED) is lifted, and nothing else changes.
+   * A walker or a flyer in the same water takes nothing from it: it is a
+   * thing the big hull does to the water, not to the crowd.
+   */
+  wakeField?: { reload: number; range: number };
+  /**
    * Mindustry UnitType.immunities: status effects that simply never take.
    * The check is at application time (StatusComp.apply returns early), not
    * a resistance — an immune unit is never lit at all, so it also never
@@ -610,30 +633,34 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     drag: 0.04,
     flying: true,
   },
-  // nova: the T1 of the support line — 200 hp, armor 1, 1x1-block hitbox,
-  // 0.55 px/tick = 4.125 tiles/s. Frailer than a dagger but a step quicker
-  // RepairFieldAbility(10, 60*4, 60): 10 hp to everything within 7.5 tiles,
-  // every 4 s — a nova escort keeps a dagger line topped up between volleys
+  // nova: the T1 of the Starlight mechs — 200 hp, armor 1, 1x1-block
+  // hitbox, 0.55 px/tick = 4.125 tiles/s. Frailer than a dagger but a step
+  // quicker. THE T1 IS THE FAMILY IN MINIATURE: a thin piercing green
+  // lance (weapons.ts) and a repair field — RepairFieldAbility(10, 60*4)
+  // upstream, a little quicker here: 12 hp to everything within 7.5 tiles
+  // every 3 s, so a nova escort keeps its line topped up between volleys
   nova: {
     hp: 200,
     speed: 4.125 * CELL,
     armor: 1,
     radius: UR,
     tier: 1,
-    repairField: { amount: 10, reload: 4, range: 7.5 * CELL },
+    repairField: { amount: 12, reload: 3, range: 7.5 * CELL },
   },
   // pulsar: support T2 — 320 hp, armor 4 (a mace's plating on half its hp),
   // 1.375x1.375-block hitbox, 0.7 px/tick = 5.25 tiles/s: the line's fastest
   // walker, so it arrives ahead of the daggers it escorts
-  // ShieldRegenFieldAbility(20, 40, 60*5, 60): +20 shield every 5 s up to a
-  // 40-point cap, over the same 7.5-tile field
+  // ShieldRegenFieldAbility(20, 40, 60*5, 60) upstream; +25 shield every
+  // 4 s up to a 60-point cap here, over the same 7.5-tile field — the
+  // family is the one that hands out shields, and its T2 is where that
+  // starts
   pulsar: {
     hp: 320,
     speed: 5.25 * CELL,
     armor: 4,
     radius: UR * 1.375,
     tier: 2,
-    shieldField: { amount: 20, max: 40, reload: 5, range: 7.5 * CELL },
+    shieldField: { amount: 25, max: 60, reload: 4, range: 7.5 * CELL },
   },
   // quasar: support T3 — 640 hp, armor 9 (a fortress's plating), a
   // 1.625x1.625-block hitbox, 0.5 px/tick = 3.75 tiles/s: after the
@@ -673,6 +700,13 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // terrain at more than double pace. That is a player's button: the wave
   // AI (GroundAI) only ever LOWERS a boosting unit back down, and never
   // calls updateBoosting to raise one, so a vela arriving in a wave walks
+  //
+  // IT CARRIES BOTH FIELDS NOW. Upstream's vela heals through its beam
+  // (healPercent on the bullet), which this game's enemies had nothing to
+  // aim at; here the healing is an ability, as the nova's is — 40 hp to
+  // everything within nine tiles every 2 s, and 30 shield up to 300 on the
+  // same pulse. A vela in the crowd is a crowd that does not go down, and
+  // the beam it drags across the patch is the part that hurts
   vela: {
     hp: 8200,
     speed: 3.3 * CELL,
@@ -681,19 +715,22 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     tier: 4,
     rotateSpeed: 1.8,
     immunities: ["burning"],
+    repairField: { amount: 40, reload: 2, range: 9 * CELL },
+    shieldField: { amount: 30, max: 300, reload: 2, range: 9 * CELL },
   },
   // corvus: the support line's T5 — 18000 hp, armor 14, a 3.625x3.625-block
   // hitbox, and 0.3 px/tick = 2.25 tiles/s, the slowest thing in the game.
   // rotateSpeed 1.5 is likewise the slowest turn on the roster, under a
   // third of stock: it arrives late and cannot answer a flank
   //
-  // It is also the lightest of the four T5s, and the support line's tier
-  // where support stops. Mindustry's corvus heals through its WEAPON — a
-  // 560-damage charged laser with healPercent 25 and collidesTeam — not
-  // through an ability, and enemies in this game never shoot, so nothing
-  // of it survives the port. nova, pulsar and quasar all carry real
-  // abilities; their T4 and T5 carry none, which makes the top of the
-  // support line a pair of very large bodies and nothing more
+  // It is also the lightest of the four T5s, and THE FAMILY'S WHOLE IDEA
+  // AT ITS LARGEST. Mindustry's corvus heals through its WEAPON — a
+  // 560-damage charged laser with healPercent 25 and collidesTeam — which
+  // this game's enemies had nothing to aim at; here the healing is the
+  // biggest field on the roster (80 hp to everything within eleven tiles
+  // every 2 s, and 50 shield up to 500 on the same pulse), and the laser
+  // is the long one: fifty-seven tiles, nine cells wide, every structure
+  // inside it (weapons.ts). Kill it before it fires, or lose the row
   //
   // Four legs, not the six or eight the crawler line runs on, at 14 world
   // units on mounts 11 out: nearly all of the leg is the mount offset, so
@@ -705,6 +742,8 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     radius: UR * 3.625,
     tier: 5,
     rotateSpeed: 1.5,
+    repairField: { amount: 80, reload: 2, range: 11 * CELL },
+    shieldField: { amount: 50, max: 500, reload: 2, range: 11 * CELL },
     legs: legs({
       count: 4,
       length: 14 * MU,
@@ -714,12 +753,23 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
       elevation: 0.2,
     }),
   },
-  // horizon: the T2 bomber — 340 hp, armor 3, 1.375x1.375-block hitbox,
-  // 1.65 px/tick = 12.375 tiles/s. Slower than a flare but four times the
-  // health, and armour 3 blunts the scatter flak that shreds the T1
+  // ---- THE SKY GUNSHIPS' PACE ----
+  //
+  // THE LINE STAYS FAST. Mindustry's air tree trades its speed away as it
+  // climbs — flare 20.25 tiles/s, horizon 12.4, zenith 12.75, antumbra 6,
+  // eclipse 4.05 — so its T5 crossed a field of scatter at walking pace and
+  // the family's own premise (arrive before the guns can answer) was gone
+  // by its fourth body. Every tier here is quicker than any walker: the
+  // flare keeps its 20.25, and the rest are re-cut so the T5 still flies at
+  // more than a crawler runs. What the family asks a board for is guns that
+  // reach the sky AND answer fast, at every tier and not just the first.
+
+  // horizon: the T2 — 340 hp, armor 3, 1.375x1.375-block hitbox, 15 tiles/s
+  // (upstream 12.375). Slower than a flare but four times the health, and
+  // armour 3 blunts the scatter flak that shreds the T1
   horizon: {
     hp: 340,
-    speed: 12.375 * CELL,
+    speed: 15 * CELL,
     armor: 3,
     radius: UR * 1.375,
     tier: 2,
@@ -728,38 +778,45 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     flying: true,
   },
   // zenith: the T3 gunship — 700 hp, armor 5, a 2.5x2.5-block hitbox that
-  // makes it the widest thing in the sky below the T4/T5 hulls, at
-  // 1.7 px/tick = 12.75 tiles/s
+  // makes it the widest thing in the sky below the T4/T5 hulls, at 13.5
+  // tiles/s (upstream 12.75). THE FLIGHT'S SHIELD: +25 every 2 s up to 150
+  // over nine tiles, so the flares crossing the flak beside it are wearing
+  // a bar the guns have to strip first
   zenith: {
     hp: 700,
-    speed: 12.75 * CELL,
+    speed: 13.5 * CELL,
     armor: 5,
     radius: UR * 2.5,
     tier: 3,
     drag: 0.016,
     flying: true,
+    shieldField: { amount: 25, max: 150, reload: 2, range: 9 * CELL },
   },
   // antumbra: the air line's T4 — 7200 hp, armor 17, and a 5.75x5.75-block
   // hitbox, more than twice the zenith across; only the eclipse's 7.25
-  // outspans it. At 0.8 px/tick = 6 tiles/s it also gives up
-  // more speed than any other upgrade takes: the zenith flies at 12.75, so
-  // where the rest of the air line's appeal is arriving before the guns
-  // can answer, this one crosses at half that pace and spends twice as
-  // long inside their range
+  // outspans it. 10.5 tiles/s (upstream 6, which gave up more speed than
+  // any other upgrade took): quicker than every walker still, and slower
+  // than the zenith it replaces only by a fifth
   //
   // rotateSpeed 1.9 against the stock 5 is what sells the weight: a flyer
   // holds its heading through its own drift, and this one visibly swings
-  // round rather than snapping. It carries no ability — the air line has
-  // none at any tier
+  // round rather than snapping.
+  //
+  // THE JAM (jamField): every 2 s it stamps every building within eleven
+  // tiles, and a stamped gun reloads at HALF pace while the flight is over
+  // it. It is the family's second idea made a rule — the flight ignores
+  // the maze and hangs over the guns, and the guns under it are slower —
+  // and it is answered by killing the carrier, which is what a T4 is for
   antumbra: {
     hp: 7200,
-    speed: 6 * CELL,
+    speed: 10.5 * CELL,
     armor: 17,
     radius: UR * 5.75,
     tier: 4,
     drag: 0.04,
     rotateSpeed: 1.9,
     flying: true,
+    jamField: { rate: 0.5, reload: 2, range: 11 * CELL },
   },
   // eclipse: the air line's T5 — 22000 hp, armor 22, and a 7.25x7.25-block
   // hitbox. That is the widest thing in the game by a clear margin (the
@@ -768,15 +825,15 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // splash pattern like a body that fills it
   //
   // The air line's whole premise is arriving before the guns can answer,
-  // and this is where that premise is abandoned. 0.54 px/tick = 4.05
-  // tiles/s is a fifth of the flare's 20.25 and two thirds of the
-  // antumbra's 6 — slower than most of the GROUND roster, so it crosses a
-  // field of scatter at walking pace. rotateSpeed 1 is the slowest turn of
-  // anything that moves here. Like every unit in its line it has no
-  // ability; unlike them it cannot outrun the mistake
+  // and upstream is where that premise was abandoned: 0.54 px/tick = 4.05
+  // tiles/s, a fifth of the flare's 20.25, slower than most of the GROUND
+  // roster. It flies at 9 here — faster than a crawler runs — so the
+  // heaviest thing in the sky still arrives like the sky does. rotateSpeed
+  // 1 is the slowest turn of anything that moves here: it cannot answer a
+  // flank, and it does not need to, because its broadside is a cone
   eclipse: {
     hp: 22000,
-    speed: 4.05 * CELL,
+    speed: 9 * CELL,
     armor: 22,
     radius: UR * 7.25,
     tier: 5,
@@ -825,9 +882,11 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // are otherwise read off mindustry/content/UnitTypes.java like every
   // walker's — hitSize/8 tiles of hitbox, speed x 7.5 tiles a second.
   //
-  // THESE ARE THE SPEEDS AFLOAT. A naval tank ashore drives at
-  // NAVAL_LAND_SPEED of the number below, which is the only thing the
-  // land costs it — the route it takes there is the walkers' own.
+  // THESE ARE THE HULLS' STATS, and the water and the land both move them:
+  // afloat a tank drives at NAVAL_WATER_SPEED of the number below (half
+  // again), ashore at NAVAL_LAND_SPEED of it (constants.ts) — which is the
+  // only thing the ground costs it; the route it takes there is the
+  // walkers' own.
   //
   // A tank's speed is the thing to read twice. The naval line tops out at
   // 8.25 tiles/s (risso) and BOTTOMS OUT at 4.65 (omura) — so the fastest
@@ -868,11 +927,11 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     wake: wake({ x: 5.5 * MU, y: -4 * MU, length: 20, scl: 1.9 * MU }),
   },
   // bryde: T3 — 910 hp, armor 7, a 2.5x2.5-block hitbox, 0.85 units/tick
-  // = 6.375 tiles/s. The one hull in the ATTACK tree carrying an ability:
-  // ShieldRegenFieldAbility(20, 40, 60*4, 60) is the pulsar's exact field
-  // — +20 shield every 4 s to a 40 cap over 7.5 tiles — so a bryde in the
-  // middle of a formation keeps the rissos around it wearing a shield the
-  // player has to strip again every four seconds
+  // = 6.375 tiles/s. The fleet's shield: ShieldRegenFieldAbility(20, 40,
+  // 60*4, 60) is the pulsar's old field — +20 shield every 4 s to a 40 cap
+  // over 7.5 tiles — so a bryde in the middle of a formation keeps the
+  // rissos around it wearing a shield the player has to strip again every
+  // four seconds
   bryde: {
     hp: 910,
     speed: 6.375 * CELL * NAVAL_PACE,
@@ -889,8 +948,13 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
   // sei: T4 — 11000 hp, armor 12, a 4.875x4.875-block hitbox, 0.73
   // units/tick = 5.475 tiles/s. More health than the scepter at the same
   // tier and two more points of armour, on something that also moves
-  // twice as fast: from here up the water line has the better body at
-  // every tier, and pays for it with a map most of which it cannot enter
+  // twice as fast.
+  //
+  // THE BOW WAVE (wakeField): every 2 s it stamps every HULL within twelve
+  // tiles, and a stamped hull drives ashore as it would afloat — the land
+  // tax is lifted for as long as the sei is near. The fleet's whole
+  // weakness is the beach; the T4 is the tier that brings the water up
+  // onto it
   sei: {
     hp: 11000,
     speed: 5.475 * CELL * NAVAL_PACE,
@@ -901,6 +965,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 1.3,
     naval: true,
     immunities: ["wet"],
+    wakeField: { reload: 2, range: 12 * CELL },
     wake: wake({ x: 18 * MU, y: -21 * MU, length: 50, scl: 3 * MU }),
   },
   // omura: the fleet's T5 — 22000 hp, armor 16, and a 7.25x7.25-block
@@ -920,15 +985,12 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     immunities: ["wet"],
     wake: wake({ x: 23 * MU, y: -32 * MU, length: 70, scl: 3.5 * MU }),
   },
-  // retusa: the naval SUPPORT line's T1 — 270 hp, armor 3, a
-  // 1.375x1.375-block hitbox, 0.9 units/tick = 6.75 tiles/s, and
-  // rotateSpeed 5, the stock rate every ground unit turns at and the
-  // quickest hull on the water by a distance
-  //
-  // Its repair beam does not port. Where nova heals through a
-  // RepairFieldAbility, retusa heals through a WEAPON (RepairBeamWeapon,
-  // repairSpeed 0.75) — and a weapon is the one thing this game's enemies
-  // do not have, exactly as with the corvus's charged laser
+  // retusa: the Aegis tanks' T1 — 270 hp, armor 3, a 1.375x1.375-block
+  // hitbox, 0.9 units/tick = 6.75 tiles/s, and rotateSpeed 5, the stock
+  // rate every ground unit turns at and the quickest hull on the water by
+  // a distance. THE T1 IS THE FAMILY IN MINIATURE: one arc, one hop, one
+  // short in eight (weapons.ts). Its upstream repair beam was a weapon and
+  // does not port; the family's healing is the aegires's, three tiers up
   retusa: {
     hp: 270,
     speed: 6.75 * CELL * NAVAL_PACE,
@@ -941,14 +1003,16 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     immunities: ["wet"],
     wake: wake({ x: 5 * MU, length: 20, scl: 1.3 * MU }),
   },
-  // oxynoe: support T2 — 560 hp, armor 4, a 1.75x1.75-block hitbox, 0.83
+  // oxynoe: Aegis T2 — 560 hp, armor 4, a 1.75x1.75-block hitbox, 0.83
   // units/tick = 6.225 tiles/s
   //
-  // Its ability IS an ability, and still does not port:
-  // StatusFieldAbility(overclock, ...) hands everything around it a speed
-  // buff, and this game fields exactly two statuses (see StatusKind).
-  // Adding a third that only one enemy kind can apply is a bigger change
-  // than the buff is worth, so the support fleet's T2 is a plain hull
+  // Upstream's ability (StatusFieldAbility(overclock)) does not port; THE
+  // AEGIS does instead. A small force field — five tiles, 250 points,
+  // 18 a second back, dark for 5 s when it breaks — is the family's name
+  // made a T2: a bubble that eats the player's shots outright, walking up
+  // the channel ahead of the arcs. The quasar carries the same mechanic
+  // once; this family carries it twice, and the T5's is the biggest in
+  // the game
   oxynoe: {
     hp: 560,
     speed: 6.225 * CELL * NAVAL_PACE,
@@ -959,12 +1023,14 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 4,
     naval: true,
     immunities: ["wet"],
+    forceField: { radius: 5 * CELL, regen: 0.3 * 60, max: 250, cooldown: 5 },
     wake: wake({ x: 5.5 * MU, y: -4 * MU, length: 22, scl: 1.9 * MU }),
   },
-  // cyerce: support T3 — 870 hp, armor 6, a 2.5x2.5-block hitbox, 0.86
+  // cyerce: Aegis T3 — 870 hp, armor 6, a 2.5x2.5-block hitbox, 0.86
   // units/tick = 6.45 tiles/s: fractionally quicker than the bryde it
-  // shares a hitbox with. Its repair beam is a weapon, like retusa's, and
-  // goes the same way
+  // shares a hitbox with. The family's chain tier (four hops, weapons.ts);
+  // its upstream repair beam is a weapon, like retusa's, and goes the same
+  // way
   cyerce: {
     hp: 870,
     speed: 6.45 * CELL * NAVAL_PACE,
@@ -977,16 +1043,18 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     immunities: ["wet"],
     wake: wake({ x: 9 * MU, y: -9 * MU, length: 23, scl: 2 * MU }),
   },
-  // aegires: support T4 — 12000 hp, armor 12, a 5.5x5.5-block hitbox,
+  // aegires: Aegis T4 — 12000 hp, armor 12, a 5.5x5.5-block hitbox,
   // 0.7 units/tick = 5.25 tiles/s. The most health of any T4 in the game
   //
-  // EnergyFieldAbility(40, 65, 180) is the reason to shoot it first. Its
-  // 22.5-TILE radius is three times the 7.5 every other support field on
-  // the roster reaches — one aegires covers most of a lane — and it heals
-  // 1.5% of MAX health, so it mends an omura for 330 a zap and a risso
-  // for 4. sameTypeHealMult 0.5 halves what it does for another aegires,
-  // which is upstream's guard against a pair of them being unkillable; a
-  // pair is still twice as hard to remove as one
+  // EnergyFieldAbility(40, 65, 180) is the reason to shoot it first, and
+  // it does both halves here: the zap SHORTS every structure it reaches
+  // (weapons.ts) and the heal mends the fleet. Its 22.5-TILE radius is
+  // three times the 7.5 most fields on the roster reach — one aegires
+  // covers most of a lane — and it heals 1.5% of MAX health, so it mends
+  // a navanax for 300 a zap and a retusa for 4. sameTypeHealMult 0.5
+  // halves what it does for another aegires, which is upstream's guard
+  // against a pair of them being unkillable; a pair is still twice as
+  // hard to remove as one
   aegires: {
     hp: 12000,
     speed: 5.25 * CELL * NAVAL_PACE,
@@ -1006,12 +1074,14 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     },
     wake: wake({ x: 18 * MU, y: -17 * MU, length: 50, scl: 3.2 * MU }),
   },
-  // navanax: the support fleet's T5 — 20000 hp, armor 20, and the omura's
+  // navanax: the Aegis tanks' T5 — 20000 hp, armor 20, and the omura's
   // 7.25x7.25-block hitbox, at 0.65 units/tick = 4.875 tiles/s. Its EMP
-  // cannon heals through its shots (healPercent 20 on the bullet), which
-  // is a weapon again, so the top of this tree is a bare hull like the
-  // top of every other support tree — corvus, vela and this one all
-  // arrive with nothing but their size
+  // cannon is the family's long arc (weapons.ts), and THE AEGIS ITSELF is
+  // the bubble it stands in: nine tiles, 1500 points, 72 a second back,
+  // dark for 8 s when it breaks — three times the quasar's pool on a hull
+  // with thirty times its health. Nothing the player fires reaches the
+  // fleet behind it until the bubble is down, and it comes back up eight
+  // seconds later. Kill it, or wait for the gap
   navanax: {
     hp: 20000,
     speed: 4.875 * CELL * NAVAL_PACE,
@@ -1022,6 +1092,7 @@ export const UNIT_STATS: Record<UnitKind, UnitStats> = {
     rotateSpeed: 1.1,
     naval: true,
     immunities: ["wet"],
+    forceField: { radius: 9 * CELL, regen: 1.2 * 60, max: 1500, cooldown: 8 },
     wake: wake({ x: 23 * MU, y: -32 * MU, length: 70, scl: 3.5 * MU }),
   },
 };
@@ -1166,20 +1237,52 @@ export const FAMILIES = [
   // the clock refreshes, or bring repair.
   { key: "crawler", name: "Venom spitters", layer: "ground", icon: "crawler",
     kinds: ["crawler", "atrax", "spiroct", "arkyid", "toxopid"] },
-  // named for stars, armed with light: nova, pulsar, quasar, vela, corvus,
-  // and not one ballistic gun between them
+  // THE LIGHT: named for stars, armed with green lasers, and every laser
+  // PIERCES — it takes every structure along its length (weapons.ts
+  // pierce). Nothing flies; nothing is ballistic. Every tier heals or
+  // shields the crowd around it, and the top two do both at once, so the
+  // family is the one the board cannot wear down.
+  //
+  // WHAT IT POSES: a wall of green across a patch, from behind a crowd
+  // that keeps mending. The answer is the carriers — kill the vela and
+  // the corvus before the line reaches the guns, because a row under a
+  // corvus beam is a row.
   { key: "groundSupport", name: "Starlight mechs", layer: "ground", icon: "nova",
     kinds: ["nova", "pulsar", "quasar", "vela", "corvus"] },
-  // the sky's own words — a flare, a horizon, a zenith, a shadow and an
-  // eclipse — hung on five gunships
+  // THE FLIGHT: five gunships, every one a SHOTGUN (weapons.ts scatter) —
+  // an instant cone off the muzzle that hits everything in it, no round
+  // in the air — and every one FAST (the T5 flies at 9 tiles/s, faster
+  // than a crawler runs). Its carriers are the zenith (a shield over the
+  // flight) and the antumbra (a JAM over the ground: guns under it reload
+  // at half pace).
+  //
+  // WHAT IT POSES: it ignores the maze and is over the line before a slow
+  // gun has turned. The answer is reach into the sky and rate of fire —
+  // at every tier, since none of them is slow.
   { key: "air", name: "Sky gunships", layer: "air", icon: "flare",
     kinds: ["flare", "horizon", "zenith", "antumbra", "eclipse"] },
-  // the whales: risso, minke, bryde, sei, omura. Amphibious armour, quick
-  // in the water and a third down on it ashore (NAVAL_LAND_SPEED)
+  // THE FLEET: the whales — risso, minke, bryde, sei, omura — and every
+  // gun on them is ARTILLERY (weapons.ts navalShell): a navy shell lobbed
+  // over whatever is in front of it. Half again as quick afloat as their
+  // stat and a third down on it ashore (NAVAL_WATER_SPEED /
+  // NAVAL_LAND_SPEED); the bryde shields the fleet and the sei's bow wave
+  // carries its pace up the beach.
+  //
+  // WHAT IT POSES: bombardment from the water, over the wall. A wall is no
+  // answer to a shell; the answer is guns whose reach covers the channel.
   { key: "naval", name: "Naval tanks", layer: "water", icon: "risso",
     kinds: ["risso", "minke", "bryde", "sei", "omura"] },
-  // the sea slugs, and the aegis is one of them by name: retusa, oxynoe,
-  // cyerce, AEGIRES, navanax — hulls that carry a shield rather than a gun
+  // THE AEGIS: the sea slugs — retusa, oxynoe, cyerce, AEGIRES, navanax —
+  // and every gun on them is an ARC (weapons.ts): cyan chain lightning
+  // that hops from the structure it struck to its neighbours and SHORTS
+  // every one it touches — the gun is out for a moment (Tower.shortT).
+  // Named for a shield and carrying the game's two biggest force fields
+  // (oxynoe, navanax), with the aegires mending the fleet between them.
+  //
+  // WHAT IT POSES: a board that goes quiet. A short takes a turret's TIME
+  // and ignores its pool and its plating; one hull flickers a gun, a crowd
+  // holds it down. The answer is killing them through the bubbles, or
+  // waiting for the bubble's gap.
   { key: "navalSupport", name: "Aegis tanks", layer: "water", icon: "retusa",
     kinds: ["retusa", "oxynoe", "cyerce", "aegires", "navanax"] },
 ] as const satisfies readonly {
@@ -1200,12 +1303,11 @@ export type FamilyKey = (typeof FAMILIES)[number]["key"];
  * Take the name back out and it is on the board again, at the level the
  * track always meant to open it on.
  *
- * The Aegis tanks are shelved while the support lines are re-cut: a
- * support family is meant to hold a front on its own rather than to prop
- * up whatever it was dealt beside, and until its bodies are worth that
- * it is a slot the die can spend on nothing.
+ * NOTHING IS SHELVED. The Aegis tanks sat here while the support lines
+ * were re-cut; they are the EMP family now (weapons.ts, the arcs) and hold
+ * a front on their own, so all six families roll.
  */
-export const SHELVED_FAMILIES: readonly FamilyKey[] = ["navalSupport"];
+export const SHELVED_FAMILIES: readonly FamilyKey[] = [];
 
 /** the families in play: the table, less the shelf */
 export const ACTIVE_FAMILIES: readonly FamilyKey[] = FAMILIES.map((f) => f.key).filter(

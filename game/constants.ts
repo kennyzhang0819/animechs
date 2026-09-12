@@ -99,6 +99,18 @@ export const PAL = {
   surge: pal(0xf3e979),
   /** Liquids.slag.color — what an atrax spits */
   slag: pal(0xffa166),
+  // ---- THIS GAME'S OWN, for the reworked families (weapons.ts) ---------
+  /** THE NAVAL SHELL: a deep-water navy with a foam-white face. Mindustry's
+   *  hulls fire the same yellows every walker does; a family that fights
+   *  from the water wears the water's colour, and nothing else on the field
+   *  throws a navy round */
+  navalBack: pal(0x4a5aa8),
+  navalFront: pal(0xdfe6ff),
+  /** THE EMP: the Aegis tanks' arc, an electric cyan that is neither the
+   *  lancer's blue nor the support line's green — the one colour in the
+   *  game that means a gun has been SHORTED */
+  emp: pal(0x8cf2ff),
+  empDark: pal(0x3f9cb8),
 } as const;
 
 /**
@@ -1687,6 +1699,22 @@ export type MoveLayer = (typeof MOVE_LAYERS)[number];
  * never reads it.
  */
 export const NAVAL_LAND_SPEED = 0.7;
+/**
+ * ...AND WHAT IT GAINS AFLOAT: half again its stat, on the drive and on
+ * nothing else, on every cell that IS a water floor (Sim.updateUnits).
+ *
+ * The naval stat is the speed a hull was authored at, and ashore it was
+ * always fine — a sei on a beach reads as a tank and drives like one. The
+ * water was the problem: the same number on the water made the sea a road
+ * no faster than the land, and a family whose whole premise is "quick in
+ * the water, slow on it ashore" had a premise nobody could see. Half
+ * again is the number that makes a channel read as a channel — a risso
+ * crossing a bay is a boat and a risso crossing a beach is not — without
+ * a hull outrunning the guns a fresh board has (NAVAL_PACE in levels.ts
+ * is still the dial under it). Like the land tax it is not a pathfinding
+ * input: the naval field never reads it.
+ */
+export const NAVAL_WATER_SPEED = 1.5;
 
 /**
  * What a drop zone feeds: one of the movement layers, or the BOSS door.
@@ -1875,6 +1903,11 @@ export const POISON_DECAY = 1;
 export const POISON_FX_RATE = 6;
 /** seconds one mote lives */
 export const POISON_FX_LIFE = 0.6;
+/** sparks a second a SHORTED building throws (Tower.shortT), for a 1x1 —
+ *  scaled by the footprint as the rot's motes are */
+export const SHORT_FX_RATE = 8;
+/** seconds one spark lives */
+export const SHORT_FX_LIFE = 0.22;
 
 /**
  * THE AURAS THE TWO REWORKED FAMILIES CARRY, both of them a STAMP rather

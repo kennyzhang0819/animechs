@@ -232,6 +232,24 @@ export interface Tower {
   poisonUnit: number;
   poisonT: number;
   /**
+   * SHORTED OUT — the Aegis tanks' EMP (weapons.ts UnitWeapon.short): the
+   * seconds this building's gun is dead. While it runs the turret neither
+   * reloads nor fires nor mends; the clock is a REFRESH and never a stack
+   * (Sim.shortTower), so one hull cannot hold a gun down on its own — its
+   * reload is longer than its short — and a crowd of them can, which is
+   * the shape every swarm status here has.
+   */
+  shortT: number;
+  /**
+   * JAMMED — the Sky gunships' T4 blankets the ground under it
+   * (levels.ts jamField): while `jamT` runs, the reload goes at `jamRate`
+   * on top of `fireRate`. A stamp like the swarm's own auras — the carrier
+   * pulses, the building carries the timer — so a gun under the flight is
+   * slowed for as long as the flight is over it and no longer.
+   */
+  jamT: number;
+  jamRate: number;
+  /**
    * How many times this turret still gets to stand back up when it is
    * wrecked (mods.ts: Undying Legion grants one to everything). Spent
    * before the Phoenix roll is even reached.
@@ -502,6 +520,17 @@ export const enum FxKind {
    *  is a status a body carries; this is one a building carries, so it is
    *  pushed by the tower loop (Sim.updateTowers) and never by updateStatus. */
   Poison = 60,
+  /** THE SKY GUNSHIPS' WHOLE LOOK (weapons.ts, fx "scatter"): a shotgun
+   *  blast out of the muzzle — a fan of hot streaks thrown the cone's
+   *  width (`sides`, in degrees) and out to the gun's reach (`len`), gone
+   *  in a fifth of a second. Nothing crosses the field: the blast IS the
+   *  shot, and the pellets that struck are read off the sparks on what
+   *  they hit. Every gunship fires this and nothing else does */
+  Scatter = 61,
+  /** A SHORTED TURRET (Tower.shortT, the Aegis tanks' EMP): a cyan spark
+   *  jumping off a building whose gun is out. The rot's mote is the same
+   *  idea in purple; this one is a bar, because a short is electrical */
+  ShortSpark = 62,
 }
 
 /** an r,g,b triple in 0..1, the form every draw call wants */
