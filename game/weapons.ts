@@ -1081,12 +1081,15 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // THE AREA IS METERED ON THE MASS TIERS, because the script sends its T1
   // by the thousand — wave 15 is two thousand of them — so a burst on the
   // risso is a burst two thousand times over. Against ONE turret each tier
-  // bites at about half its old row's paper number (the copper, flak,
-  // missiles and rail it replaced), and the burst over the patch, over the
-  // wall, is the other half. Set by playtest, world 1, the fleet alone.
+  // bites at two thirds to nine tenths of its old row's paper number (the
+  // copper, flak, missiles and rail it replaced), and the burst over the
+  // patch, over the wall, is the rest. Set by playtest, world 1, the fleet
+  // alone, over three seeds: the old fleet took the bot's board at waves
+  // 9, 11 and 26, which was a family stronger than the mixed deal it
+  // plays in; this one is meant to land later than that and still land.
   risso: [
     {
-      name: "risso-mortar", reload: t(40), mounts: 2, damage: 16, splash: 16, splashRadius: u(8),
+      name: "risso-mortar", reload: t(40), mounts: 2, damage: 20, splash: 20, splashRadius: u(8),
       range: rng(2.5, 60), speed: spd(2.5), fx: "shell", look: navalShell(8),
     },
   ],
@@ -1094,7 +1097,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // family's one idea in the air at once
   minke: [
     {
-      name: "minke-mortar", reload: t(40), mounts: 2, shots: 2, damage: 16, splash: 30, splashRadius: u(12),
+      name: "minke-mortar", reload: t(40), mounts: 2, shots: 2, damage: 20, splash: 36, splashRadius: u(12),
       range: rng(3, 55), speed: spd(3), fx: "shell", look: navalShell(10),
     },
   ],
@@ -1104,7 +1107,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // board. The tier also carries the fleet's shield (levels.ts)
   bryde: [
     {
-      name: "bryde-artillery", reload: t(45), mounts: 1, damage: 40, splash: 120, splashRadius: u(28),
+      name: "bryde-artillery", reload: t(45), mounts: 1, damage: 50, splash: 140, splashRadius: u(28),
       range: rng(3, 80), speed: spd(3), fx: "shell",
       look: navalShell(15, { height: u(15.5), shoot: FxKind.ShootBig2 }),
     },
@@ -1114,7 +1117,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
   // over three tiles each, which across six is the family's area tier
   sei: [
     {
-      name: "sei-barrage", reload: t(40), mounts: 1, shots: 6, damage: 24, splash: 60, splashRadius: u(24),
+      name: "sei-barrage", reload: t(40), mounts: 1, shots: 6, damage: 28, splash: 66, splashRadius: u(24),
       range: rng(4.2, 55), speed: spd(4.2), fx: "shell", look: navalShell(9),
     },
   ],
@@ -1131,7 +1134,7 @@ export const UNIT_WEAPONS: Record<UnitKind, readonly UnitWeapon[]> = {
       look: navalShell(22, { shoot: FxKind.ShootBig2, smoke: FxKind.SmokeBig2 }),
     },
     {
-      name: "omura-mortar", reload: t(40), mounts: 2, damage: 16, splash: 30, splashRadius: u(7),
+      name: "omura-mortar", reload: t(40), mounts: 2, damage: 18, splash: 36, splashRadius: u(8),
       range: rng(3, 55), speed: spd(3), fx: "shell", look: navalShell(10),
     },
   ],
